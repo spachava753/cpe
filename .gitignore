@@ -21,3 +21,6 @@
 # Go workspace file
 go.work
 
+# Prompt specific files
+output.md
+prompt.txt
