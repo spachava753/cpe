@@ -141,6 +141,8 @@ func TestGoplsLSPServer(t *testing.T) {
 	// Wait for the server to process the initialization
 	time.Sleep(2 * time.Second)
 
+	searchForMainSymbol(t, client)
+
 	// Shutdown the server
 	shutdownResponse, pipeErr := client.SendRequest("shutdown", nil)
 	if pipeErr != nil {
@@ -161,4 +163,35 @@ func TestGoplsLSPServer(t *testing.T) {
 	}
 
 	t.Log("Sent exit")
+}
+
+func searchForMainSymbol(t *testing.T, client *Client) {
+	params := &types.WorkspaceSymbolParams{
+		Query: "main",
+	}
+
+	response, err := client.SendRequest("workspace/symbol", params)
+	if err != nil {
+		t.Fatalf("Failed to search for main symbol: %v", err)
+	}
+
+	var symbols []types.SymbolInformation
+	err = response.GetResult(&symbols)
+	if err != nil {
+		t.Fatalf("Failed to parse symbol search result: %v", err)
+	}
+
+	found := false
+	for _, symbol := range symbols {
+		if symbol.Name == "main" && symbol.Kind == types.SymbolKindFunction {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Fatalf("Main symbol not found")
+	}
+
+	t.Logf("Main symbol found successfully")
 }
