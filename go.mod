@@ -1,4 +1,4 @@
-module cpe
+module github.com/spachava753/cpe
 
 go 1.22
 
