@@ -90,6 +90,36 @@ func TestParseModifyCode(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "Valid ModifyCode - Example 2",
+			input: `<modify_code>
+<path>parser/parser.go</path>
+<modification>
+<search>explanation = strings.TrimSpace(explanationMatch[1])</search>
+<replace>explanation = strings.TrimSpace(explanationMatch[1])
+                if explanation == "" {
+                        fmt.Println("Warning: Empty explanation found in ModifyCode")
+                }</replace>
+</modification>
+<explanation>
+This change adds a warning message if an empty explanation is found during parsing. This will help us identify if the issue is in the parsing logic or in the printing logic.
+</explanation>
+</modify_code>`,
+			expected: ModifyCode{
+				Path: "parser/parser.go",
+				Modifications: []struct {
+					Search  string
+					Replace string
+				}{
+					{Search: `explanation = strings.TrimSpace(explanationMatch[1])`, Replace: `explanation = strings.TrimSpace(explanationMatch[1])
+                if explanation == "" {
+                        fmt.Println("Warning: Empty explanation found in ModifyCode")
+                }`},
+				},
+				Explanation: `This change adds a warning message if an empty explanation is found during parsing. This will help us identify if the issue is in the parsing logic or in the printing logic.`,
+			},
+			wantErr: false,
+		},
+		{
 			name: "Invalid ModifyCode - Malformed Structure",
 			input: `<modify_code>
 <path>main.go</path>

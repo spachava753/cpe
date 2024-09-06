@@ -149,7 +149,7 @@ func parseModifyCode(input string) (ModifyCode, error) {
 	pathPattern := regexp.MustCompile(`<path>(.*?)</path>`)
 	modificationPattern := regexp.MustCompile(`(?s)<modification>.*?<search>(.*?)</search>.*?<replace>(.*?)</replace>.*?</modification>`)
 	incompleteModificationPattern := regexp.MustCompile(`(?s)<modification>.*?<search>.*?</search>.*?</modification>`)
-	explanationPattern := regexp.MustCompile(`<explanation>(.*?)</explanation>`)
+	explanationPattern := regexp.MustCompile(`(?s)<explanation>(.*?)</explanation>`)
 
 	pathMatch := pathPattern.FindStringSubmatch(input)
 	if len(pathMatch) < 2 {
@@ -186,6 +186,9 @@ func parseModifyCode(input string) (ModifyCode, error) {
 	if len(explanationMatch) >= 2 {
 		explanation = strings.TrimSpace(explanationMatch[1])
 	}
+	if explanation == "" {
+		fmt.Println("Warning: Empty explanation found in ModifyCode")
+	}
 
 	return ModifyCode{
 		Path:          strings.TrimSpace(pathMatch[1]),
@@ -196,7 +199,7 @@ func parseModifyCode(input string) (ModifyCode, error) {
 
 func parseRemoveFile(input string) (RemoveFile, error) {
 	pathPattern := regexp.MustCompile(`<path>(.*?)</path>`)
-	explanationPattern := regexp.MustCompile(`<explanation>(.*?)</explanation>`)
+	explanationPattern := regexp.MustCompile(`(?s)<explanation>(.*?)</explanation>`)
 
 	pathMatch := pathPattern.FindStringSubmatch(input)
 	if len(pathMatch) < 2 {
@@ -211,6 +214,9 @@ func parseRemoveFile(input string) (RemoveFile, error) {
 	if len(explanationMatch) >= 2 {
 		explanation = strings.TrimSpace(explanationMatch[1])
 	}
+	if explanation == "" {
+		fmt.Println("Warning: Empty explanation found in ModifyCode")
+	}
 
 	return RemoveFile{
 		Path:        strings.TrimSpace(pathMatch[1]),
@@ -221,7 +227,7 @@ func parseRemoveFile(input string) (RemoveFile, error) {
 func parseCreateFile(input string) (CreateFile, error) {
 	pathPattern := regexp.MustCompile(`<path>(.*?)</path>`)
 	contentPattern := regexp.MustCompile(`(?s)<content>(.*?)</content>`)
-	explanationPattern := regexp.MustCompile(`<explanation>(.*?)</explanation>`)
+	explanationPattern := regexp.MustCompile(`(?s)<explanation>(.*?)</explanation>`)
 
 	pathMatch := pathPattern.FindStringSubmatch(input)
 	if len(pathMatch) < 2 {
@@ -241,6 +247,9 @@ func parseCreateFile(input string) (CreateFile, error) {
 	if len(explanationMatch) >= 2 {
 		explanation = strings.TrimSpace(explanationMatch[1])
 	}
+	if explanation == "" {
+		fmt.Println("Warning: Empty explanation found in ModifyCode")
+	}
 
 	return CreateFile{
 		Path:        strings.TrimSpace(pathMatch[1]),
@@ -252,7 +261,7 @@ func parseCreateFile(input string) (CreateFile, error) {
 func parseRenameFile(input string) (RenameFile, error) {
 	oldPathPattern := regexp.MustCompile(`<old_path>(.*?)</old_path>`)
 	newPathPattern := regexp.MustCompile(`<new_path>(.*?)</new_path>`)
-	explanationPattern := regexp.MustCompile(`<explanation>(.*?)</explanation>`)
+	explanationPattern := regexp.MustCompile(`(?s)<explanation>(.*?)</explanation>`)
 
 	oldPathMatch := oldPathPattern.FindStringSubmatch(input)
 	if len(oldPathMatch) < 2 {
@@ -275,6 +284,9 @@ func parseRenameFile(input string) (RenameFile, error) {
 	if len(explanationMatch) >= 2 {
 		explanation = strings.TrimSpace(explanationMatch[1])
 	}
+	if explanation == "" {
+		fmt.Println("Warning: Empty explanation found in ModifyCode")
+	}
 
 	return RenameFile{
 		OldPath:     strings.TrimSpace(oldPathMatch[1]),
@@ -286,7 +298,7 @@ func parseRenameFile(input string) (RenameFile, error) {
 func parseMoveFile(input string) (MoveFile, error) {
 	oldPathPattern := regexp.MustCompile(`<old_path>(.*?)</old_path>`)
 	newPathPattern := regexp.MustCompile(`<new_path>(.*?)</new_path>`)
-	explanationPattern := regexp.MustCompile(`<explanation>(.*?)</explanation>`)
+	explanationPattern := regexp.MustCompile(`(?s)<explanation>(.*?)</explanation>`)
 
 	oldPathMatch := oldPathPattern.FindStringSubmatch(input)
 	if len(oldPathMatch) < 2 {
@@ -309,6 +321,9 @@ func parseMoveFile(input string) (MoveFile, error) {
 	if len(explanationMatch) >= 2 {
 		explanation = strings.TrimSpace(explanationMatch[1])
 	}
+	if explanation == "" {
+		fmt.Println("Warning: Empty explanation found in ModifyCode")
+	}
 
 	return MoveFile{
 		OldPath:     strings.TrimSpace(oldPathMatch[1]),
@@ -319,7 +334,7 @@ func parseMoveFile(input string) (MoveFile, error) {
 
 func parseCreateDirectory(input string) (CreateDirectory, error) {
 	pathPattern := regexp.MustCompile(`<path>(.*?)</path>`)
-	explanationPattern := regexp.MustCompile(`<explanation>(.*?)</explanation>`)
+	explanationPattern := regexp.MustCompile(`(?s)<explanation>(.*?)</explanation>`)
 
 	pathMatch := pathPattern.FindStringSubmatch(input)
 	if len(pathMatch) < 2 {
@@ -333,6 +348,9 @@ func parseCreateDirectory(input string) (CreateDirectory, error) {
 	explanation := ""
 	if len(explanationMatch) >= 2 {
 		explanation = strings.TrimSpace(explanationMatch[1])
+	}
+	if explanation == "" {
+		fmt.Println("Warning: Empty explanation found in ModifyCode")
 	}
 
 	return CreateDirectory{
