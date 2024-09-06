@@ -169,20 +169,15 @@ func main() {
 
 	// Read content from stdin
 	reader := bufio.NewReader(os.Stdin)
-	var content strings.Builder
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			fmt.Println("Error reading from stdin:", err)
-			return
-		}
-		content.WriteString(line)
+	contentBytes, readErr := io.ReadAll(reader)
+	if readErr != nil {
+		fmt.Println("No input provided")
+		os.Exit(1)
 	}
 
-	if content.Len() == 0 {
+	content := string(contentBytes)
+
+	if len(content) == 0 {
 		fmt.Println("Error: No input provided. Please provide input via stdin.")
 		return
 	}
@@ -191,7 +186,7 @@ func main() {
 		Model:     "claude-3-5-sonnet-20240620",
 		MaxTokens: 8192,
 		Messages: []Message{
-			{Role: "user", Content: content.String()},
+			{Role: "user", Content: content},
 		},
 		SystemMessage: systemMessage,
 	}
