@@ -154,6 +154,9 @@ func parseModifyCode(input string) (ModifyCode, error) {
 	if len(pathMatch) < 2 {
 		return ModifyCode{}, fmt.Errorf("path not found in modify_code")
 	}
+	if strings.TrimSpace(pathMatch[1]) == "" {
+		return ModifyCode{}, fmt.Errorf("empty path in modify_code")
+	}
 
 	modificationMatches := modificationPattern.FindAllStringSubmatch(input, -1)
 	var modifications []struct {
@@ -191,6 +194,9 @@ func parseRemoveFile(input string) (RemoveFile, error) {
 	if len(pathMatch) < 2 {
 		return RemoveFile{}, fmt.Errorf("path not found in remove_file")
 	}
+	if strings.TrimSpace(pathMatch[1]) == "" {
+		return RemoveFile{}, fmt.Errorf("empty path in remove_file")
+	}
 
 	explanationMatch := explanationPattern.FindStringSubmatch(input)
 	explanation := ""
@@ -212,6 +218,9 @@ func parseCreateFile(input string) (CreateFile, error) {
 	pathMatch := pathPattern.FindStringSubmatch(input)
 	if len(pathMatch) < 2 {
 		return CreateFile{}, fmt.Errorf("path not found in create_file")
+	}
+	if strings.TrimSpace(pathMatch[1]) == "" {
+		return CreateFile{}, fmt.Errorf("empty path in create_file")
 	}
 
 	contentMatch := contentPattern.FindStringSubmatch(input)
@@ -241,10 +250,16 @@ func parseRenameFile(input string) (RenameFile, error) {
 	if len(oldPathMatch) < 2 {
 		return RenameFile{}, fmt.Errorf("old_path not found in rename_file")
 	}
+	if strings.TrimSpace(oldPathMatch[1]) == "" {
+		return RenameFile{}, fmt.Errorf("empty old_path in rename_file")
+	}
 
 	newPathMatch := newPathPattern.FindStringSubmatch(input)
 	if len(newPathMatch) < 2 {
 		return RenameFile{}, fmt.Errorf("new_path not found in rename_file")
+	}
+	if strings.TrimSpace(newPathMatch[1]) == "" {
+		return RenameFile{}, fmt.Errorf("empty new_path in rename_file")
 	}
 
 	explanationMatch := explanationPattern.FindStringSubmatch(input)
@@ -269,10 +284,16 @@ func parseMoveFile(input string) (MoveFile, error) {
 	if len(oldPathMatch) < 2 {
 		return MoveFile{}, fmt.Errorf("old_path not found in move_file")
 	}
+	if strings.TrimSpace(oldPathMatch[1]) == "" {
+		return MoveFile{}, fmt.Errorf("empty old_path in move_file")
+	}
 
 	newPathMatch := newPathPattern.FindStringSubmatch(input)
 	if len(newPathMatch) < 2 {
 		return MoveFile{}, fmt.Errorf("new_path not found in move_file")
+	}
+	if strings.TrimSpace(newPathMatch[1]) == "" {
+		return MoveFile{}, fmt.Errorf("empty new_path in move_file")
 	}
 
 	explanationMatch := explanationPattern.FindStringSubmatch(input)
@@ -295,6 +316,9 @@ func parseCreateDirectory(input string) (CreateDirectory, error) {
 	pathMatch := pathPattern.FindStringSubmatch(input)
 	if len(pathMatch) < 2 {
 		return CreateDirectory{}, fmt.Errorf("path not found in create_directory")
+	}
+	if strings.TrimSpace(pathMatch[1]) == "" {
+		return CreateDirectory{}, fmt.Errorf("empty path in create_directory")
 	}
 
 	explanationMatch := explanationPattern.FindStringSubmatch(input)
