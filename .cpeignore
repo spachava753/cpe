@@ -1,0 +1,6 @@
+prompt.txt
+output.md
+system_prompt.md
+.git/**
+.git/objects/*
+.idea/**
