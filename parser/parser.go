@@ -148,6 +148,7 @@ func ParseModifications(input string) ([]Modification, error) {
 func parseModifyCode(input string) (ModifyCode, error) {
 	pathPattern := regexp.MustCompile(`<path>(.*?)</path>`)
 	modificationPattern := regexp.MustCompile(`(?s)<modification>.*?<search>(.*?)</search>.*?<replace>(.*?)</replace>.*?</modification>`)
+	incompleteModificationPattern := regexp.MustCompile(`(?s)<modification>.*?<search>.*?</search>.*?</modification>`)
 	explanationPattern := regexp.MustCompile(`<explanation>(.*?)</explanation>`)
 
 	pathMatch := pathPattern.FindStringSubmatch(input)
@@ -156,6 +157,13 @@ func parseModifyCode(input string) (ModifyCode, error) {
 	}
 	if strings.TrimSpace(pathMatch[1]) == "" {
 		return ModifyCode{}, fmt.Errorf("empty path in modify_code")
+	}
+
+	// Check for incomplete modifications
+	incompleteModifications := incompleteModificationPattern.FindAllString(input, -1)
+	completeModifications := modificationPattern.FindAllString(input, -1)
+	if len(incompleteModifications) > len(completeModifications) {
+		return ModifyCode{}, fmt.Errorf("incomplete modification found in modify_code")
 	}
 
 	modificationMatches := modificationPattern.FindAllStringSubmatch(input, -1)
