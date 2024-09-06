@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gobwas/glob"
+	"github.com/spachava753/cpe/parser"
 	"io"
 	"net/http"
 	"os"
@@ -268,4 +269,43 @@ func main() {
 	fmt.Println("\n--- Full Content ---")
 	fmt.Println(fullContent.String())
 	fmt.Println("--- End of Content ---")
+
+	// Parse modifications
+	modifications, err := parser.ParseModifications(fullContent.String())
+	if err != nil {
+		fmt.Printf("Error parsing modifications: %v\n", err)
+		return
+	}
+
+	// Print parsed modifications
+	fmt.Println("\n--- Parsed Modifications ---")
+	for _, mod := range modifications {
+		fmt.Printf("Type: %s\n", mod.Type())
+		switch m := mod.(type) {
+		case parser.ModifyCode:
+			fmt.Printf("  Path: %s\n", m.Path)
+			fmt.Printf("  Modifications: %d\n", len(m.Modifications))
+			fmt.Printf("  Explanation: %s\n", m.Explanation)
+		case parser.RemoveFile:
+			fmt.Printf("  Path: %s\n", m.Path)
+			fmt.Printf("  Explanation: %s\n", m.Explanation)
+		case parser.CreateFile:
+			fmt.Printf("  Path: %s\n", m.Path)
+			fmt.Printf("  Content length: %d\n", len(m.Content))
+			fmt.Printf("  Explanation: %s\n", m.Explanation)
+		case parser.RenameFile:
+			fmt.Printf("  Old Path: %s\n", m.OldPath)
+			fmt.Printf("  New Path: %s\n", m.NewPath)
+			fmt.Printf("  Explanation: %s\n", m.Explanation)
+		case parser.MoveFile:
+			fmt.Printf("  Old Path: %s\n", m.OldPath)
+			fmt.Printf("  New Path: %s\n", m.NewPath)
+			fmt.Printf("  Explanation: %s\n", m.Explanation)
+		case parser.CreateDirectory:
+			fmt.Printf("  Path: %s\n", m.Path)
+			fmt.Printf("  Explanation: %s\n", m.Explanation)
+		}
+		fmt.Println()
+	}
+	fmt.Println("--- End of Parsed Modifications ---")
 }
