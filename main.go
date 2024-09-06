@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gobwas/glob"
+	"github.com/spachava753/cpe/fileops"
 	"github.com/spachava753/cpe/parser"
 	"io"
 	"net/http"
@@ -308,4 +309,7 @@ func main() {
 		fmt.Println()
 	}
 	fmt.Println("--- End of Parsed Modifications ---")
+
+	// Execute file operations
+	fileops.ExecuteFileOperations(modifications)
 }
