@@ -187,7 +187,7 @@ func parseModifyCode(input string) (ModifyCode, error) {
 		explanation = strings.TrimSpace(explanationMatch[1])
 	}
 	if explanation == "" {
-		fmt.Println("Warning: Empty explanation found in ModifyCode")
+		fmt.Printf("Warning: Empty explanation found in %s\n", ModifyCode{}.Type())
 	}
 
 	return ModifyCode{
@@ -215,7 +215,7 @@ func parseRemoveFile(input string) (RemoveFile, error) {
 		explanation = strings.TrimSpace(explanationMatch[1])
 	}
 	if explanation == "" {
-		fmt.Println("Warning: Empty explanation found in ModifyCode")
+		fmt.Printf("Warning: Empty explanation found in %s\n", RemoveFile{}.Type())
 	}
 
 	return RemoveFile{
@@ -248,7 +248,7 @@ func parseCreateFile(input string) (CreateFile, error) {
 		explanation = strings.TrimSpace(explanationMatch[1])
 	}
 	if explanation == "" {
-		fmt.Println("Warning: Empty explanation found in ModifyCode")
+		fmt.Printf("Warning: Empty explanation found in %s\n", CreateFile{}.Type())
 	}
 
 	return CreateFile{
@@ -285,7 +285,7 @@ func parseRenameFile(input string) (RenameFile, error) {
 		explanation = strings.TrimSpace(explanationMatch[1])
 	}
 	if explanation == "" {
-		fmt.Println("Warning: Empty explanation found in ModifyCode")
+		fmt.Printf("Warning: Empty explanation found in %s\n", RenameFile{}.Type())
 	}
 
 	return RenameFile{
@@ -322,7 +322,7 @@ func parseMoveFile(input string) (MoveFile, error) {
 		explanation = strings.TrimSpace(explanationMatch[1])
 	}
 	if explanation == "" {
-		fmt.Println("Warning: Empty explanation found in ModifyCode")
+		fmt.Printf("Warning: Empty explanation found in %s\n", MoveFile{}.Type())
 	}
 
 	return MoveFile{
@@ -350,7 +350,7 @@ func parseCreateDirectory(input string) (CreateDirectory, error) {
 		explanation = strings.TrimSpace(explanationMatch[1])
 	}
 	if explanation == "" {
-		fmt.Println("Warning: Empty explanation found in ModifyCode")
+		fmt.Printf("Warning: Empty explanation found in %s\n", CreateDirectory{}.Type())
 	}
 
 	return CreateDirectory{
