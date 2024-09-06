@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -46,9 +47,12 @@ type ResponseBody struct {
 	Usage        Usage         `json:"usage"`
 }
 
+//go:embed system_prompt.txt
+var systemPromptTemplate string
+
 func buildSystemMessage() (string, error) {
 	var systemMessage strings.Builder
-	systemMessage.WriteString("Context from Go files in the current directory:\n\n")
+	systemMessage.WriteString(systemPromptTemplate)
 
 	err := filepath.Walk(
 		".", func(path string, info os.FileInfo, err error) error {
@@ -56,11 +60,17 @@ func buildSystemMessage() (string, error) {
 				return err
 			}
 			if !info.IsDir() && (strings.HasSuffix(path, ".go") || path == "go.mod" || path == "go.sum") {
-				content, err := os.ReadFile(path)
-				if err != nil {
-					return err
+				content, readFileErr := os.ReadFile(path)
+				if readFileErr != nil {
+					return readFileErr
 				}
-				systemMessage.WriteString(fmt.Sprintf("File: %s\n\nContent:\n```\n%s\n```\n\n", path, string(content)))
+				systemMessage.WriteString(fmt.Sprintf(`<file>
+<path>%s</path>
+<code>
+%s
+</code>
+</file>
+`, path, string(content)))
 			}
 			return nil
 		},
