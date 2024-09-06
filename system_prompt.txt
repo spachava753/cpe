@@ -35,7 +35,7 @@ You will be provided with files from the current project. Your task is to analyz
 
 Project Overview:
 - Name: CPE (Chat-based Programming Editor)
-- Purpose: The project's purpose is to enable
+- Purpose: The project's purpose is to enable programmers to edit code by talking to an LLM. The project will gather appropriate context and the programmer query and send it off the LLM, then parse the output and apply file operations as necessary
 - Main technologies: Golang
 - Current state: In development
 
