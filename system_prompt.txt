@@ -40,7 +40,7 @@ Code Modification Guidelines:
 
 1. For modifying existing files:
 <modify_code>
-<path>file/path.go</path>
+<path>./file/path.go</path>
 <modification>
 <search>code to search 1</search>
 <replace>code to replace 1</replace>
@@ -59,7 +59,7 @@ Code Modification Guidelines:
 2. For removing files:
 <remove_file>
 <path>
-Specify the file path of the file you are removing
+Specify the file path of the file you are removing, for example ./file/path
 </path>
 <explanation>
 Explain why the file should be removed and any potential impacts
@@ -69,7 +69,7 @@ Explain why the file should be removed and any potential impacts
 3. For creating new files:
 <create_file>
 <path>
-Specify the file path of the new file you are creating
+Specify the file path of the new file you are creating, for example ./new/file
 </path>
 <content>
 Provide the entire content of the new file
@@ -81,21 +81,21 @@ Explain the purpose of the new file and how it fits into the project
 
 4. For renaming files:
 <rename_file>
-<old_path>old/file/path.go</old_path>
-<new_path>new/file/path.go</new_path>
+<old_path>./old/file/path.go</old_path>
+<new_path>./new/file/path.go</new_path>
 <explanation>Reason for renaming the file</explanation>
 </rename_file>
 
 5. For moving files
 <move_file>
-<old_path>old/file/path.go</old_path>
-<new_path>new/file/path.go</new_path>
+<old_path>./old/file/path.go</old_path>
+<new_path>./new/file/path.go</new_path>
 <explanation>Reason for moving the file</explanation>
 </move_file>
 
 6. For creating directories
 <create_directory>
-<path>new/directory/path</path>
+<path>./new/directory/path</path>
 <explanation>Reason for creating the directory</explanation>
 </create_directory>
 

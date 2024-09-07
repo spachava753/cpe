@@ -2,54 +2,17 @@ package main
 
 import (
 	"bufio"
-	"bytes"
-	"context"
 	_ "embed"
-	"encoding/json"
 	"fmt"
 	"github.com/gobwas/glob"
 	"github.com/spachava753/cpe/fileops"
+	"github.com/spachava753/cpe/llm"
 	"github.com/spachava753/cpe/parser"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
-
-type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type RequestBody struct {
-	Model         string    `json:"model"`
-	MaxTokens     int       `json:"max_tokens"`
-	Messages      []Message `json:"messages"`
-	SystemMessage string    `json:"system"`
-}
-
-type ContentItem struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
-}
-
-type Usage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
-}
-
-type ResponseBody struct {
-	ID           string        `json:"id"`
-	Type         string        `json:"type"`
-	Role         string        `json:"role"`
-	Model        string        `json:"model"`
-	Content      []ContentItem `json:"content"`
-	StopReason   string        `json:"stop_reason"`
-	StopSequence interface{}   `json:"stop_sequence"`
-	Usage        Usage         `json:"usage"`
-}
 
 //go:embed system_prompt.txt
 var systemPromptTemplate string
@@ -152,7 +115,13 @@ func main() {
 		return
 	}
 
-	url := "https://api.anthropic.com/v1/messages"
+	// Create and initialize the Anthropic provider
+	provider := llm.NewAnthropicProvider()
+	err := provider.Initialize(apiKey)
+	if err != nil {
+		fmt.Println("Error initializing Anthropic provider:", err)
+		return
+	}
 
 	// Build system message
 	systemMessage, err := buildSystemMessage()
@@ -169,6 +138,16 @@ func main() {
 	}
 	fmt.Println("System prompt written to system_prompt.md")
 
+	// Set up the conversation
+	conversation := llm.Conversation{
+		SystemPrompt: systemMessage,
+	}
+	err = provider.SetConversation(conversation)
+	if err != nil {
+		fmt.Println("Error setting conversation:", err)
+		return
+	}
+
 	// Read content from stdin
 	reader := bufio.NewReader(os.Stdin)
 	contentBytes, readErr := io.ReadAll(reader)
@@ -184,89 +163,31 @@ func main() {
 		return
 	}
 
-	requestBody := RequestBody{
+	// Add user message to the conversation
+	err = provider.AddMessage(llm.Message{Role: "user", Content: content})
+	if err != nil {
+		fmt.Println("Error adding user message:", err)
+		return
+	}
+
+	// Generate response
+	config := llm.ModelConfig{
 		Model:     "claude-3-5-sonnet-20240620",
 		MaxTokens: 8192,
-		Messages: []Message{
-			{Role: "user", Content: content},
-		},
-		SystemMessage: systemMessage,
 	}
-
-	jsonBody, err := json.Marshal(requestBody)
+	response, err := provider.GenerateResponse(config)
 	if err != nil {
-		fmt.Println("Error marshaling JSON:", err)
+		fmt.Println("Error generating response:", err)
 		return
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
-	if err != nil {
-		fmt.Println("Error creating request:", err)
-		return
-	}
-
-	req.Header.Set("x-api-key", apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-	req.Header.Set("anthropic-beta", "max-tokens-3-5-sonnet-2024-07-15")
-	req.Header.Set("content-type", "application/json")
-
-	client := &http.Client{
-		Timeout: 2 * time.Minute,
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-
-	req = req.WithContext(ctx)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Println("Error sending request:", err)
-		return
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Println("Error reading response:", err)
-		return
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("Error: Status code %d\n", resp.StatusCode)
-		fmt.Println("Response body:", string(body))
-		return
-	}
-
-	var responseBody ResponseBody
-	err = json.Unmarshal(body, &responseBody)
-	if err != nil {
-		fmt.Println("Error parsing response JSON:", err)
-		return
-	}
-
-	fmt.Println("Response parsed successfully:")
-	fmt.Printf("ID: %s\n", responseBody.ID)
-	fmt.Printf("Model: %s\n", responseBody.Model)
-
-	var fullContent strings.Builder
-	for _, item := range responseBody.Content {
-		if item.Type == "text" {
-			fullContent.WriteString(item.Text)
-		}
-	}
-
-	fmt.Printf("Stop Reason: %s\n", responseBody.StopReason)
-	fmt.Printf("Input Tokens: %d\n", responseBody.Usage.InputTokens)
-	fmt.Printf("Output Tokens: %d\n", responseBody.Usage.OutputTokens)
-
-	// Print full content to stdout
+	fmt.Println("Response generated successfully:")
 	fmt.Println("\n--- Full Content ---")
-	fmt.Println(fullContent.String())
+	fmt.Println(response)
 	fmt.Println("--- End of Content ---")
 
 	// Parse modifications
-	modifications, err := parser.ParseModifications(fullContent.String())
+	modifications, err := parser.ParseModifications(response)
 	if err != nil {
 		fmt.Printf("Error parsing modifications: %v\n", err)
 		return
