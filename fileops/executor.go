@@ -115,9 +115,18 @@ func validateCreateDirectory(m parser.CreateDirectory) error {
 }
 
 func validatePath(path string) error {
-	if !strings.HasPrefix(filepath.Clean(path), ".") {
+	cleanPath := filepath.Clean(path)
+
+	// Check if the path is absolute
+	if filepath.IsAbs(cleanPath) {
+		return fmt.Errorf("invalid path: %s (absolute paths are not allowed)", path)
+	}
+
+	// Check if the path starts with ".." (parent directory)
+	if strings.HasPrefix(cleanPath, "..") {
 		return fmt.Errorf("invalid path: %s (must be within project directory)", path)
 	}
+
 	return nil
 }
 

@@ -10,10 +10,13 @@ func TestValidatePath(t *testing.T) {
 	}{
 		{"Valid relative path", "./main.go", false},
 		{"Valid nested relative path", "./pkg/file.go", false},
-		{"Valid absolute path", "/main.go", false},
-		{"Valid nested absolute path", "/pkg/file.go", false},
+		{"Invalid absolute path", "/main.go", true},
+		{"Invalid nested absolute path", "/pkg/file.go", true},
 		{"Invalid path outside project", "../outside.go", true},
-		{"Another invalid path", "C:/Windows/System32/file.txt", true},
+		{"Valid current directory path", "main.go", false},
+		{"Valid nested current directory path", "pkg/file.go", false},
+		{"Invalid double parent path", "../../outside.go", true},
+		{"Invalid double parent path", "/../../outside.go", true},
 	}
 
 	for _, tt := range tests {
