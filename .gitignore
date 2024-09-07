@@ -23,5 +23,5 @@ go.work
 
 # Prompt specific files
 output.md
-prompt.txt
+prompt_*.txt
 /system_prompt.md

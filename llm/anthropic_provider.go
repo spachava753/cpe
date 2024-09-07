@@ -19,6 +19,10 @@ type anthropicRequestBody struct {
 	MaxTokens     int       `json:"max_tokens"`
 	Messages      []Message `json:"messages"`
 	SystemMessage string    `json:"system"`
+	Temperature   float32   `json:"temperature,omitempty"`
+	TopP          float32   `json:"top_p,omitempty"`
+	TopK          int       `json:"top_k,omitempty"`
+	Stop          []string  `json:"stop_sequences,omitempty"`
 }
 
 type anthropicResponseBody struct {
@@ -65,6 +69,10 @@ func (a *AnthropicProvider) GenerateResponse(config ModelConfig) (string, error)
 		MaxTokens:     config.MaxTokens,
 		Messages:      a.conversation.Messages,
 		SystemMessage: a.conversation.SystemPrompt,
+		Temperature:   config.Temperature,
+		TopP:          config.TopP,
+		TopK:          config.TopK,
+		Stop:          config.Stop,
 	}
 
 	jsonBody, err := json.Marshal(requestBody)

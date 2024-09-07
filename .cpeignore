@@ -1,4 +1,4 @@
-prompt.txt
+prompt*.txt
 output.md
 system_prompt.md
 .git/**
