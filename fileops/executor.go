@@ -161,9 +161,12 @@ func executeRemoveFile(m parser.RemoveFile) error {
 func executeCreateFile(m parser.CreateFile) error {
 	dir := filepath.Dir(m.Path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
-	return os.WriteFile(m.Path, []byte(m.Content), 0644)
+	if err := os.WriteFile(m.Path, []byte(m.Content), 0644); err != nil {
+		return fmt.Errorf("failed to write file %s: %w", m.Path, err)
+	}
+	return nil
 }
 
 func executeRenameFile(m parser.RenameFile) error {
