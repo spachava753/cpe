@@ -29,9 +29,6 @@ type ModelConfig struct {
 
 // LLMProvider defines the interface for interacting with LLM providers
 type LLMProvider interface {
-	// Initialize sets up the provider with the given API key
-	Initialize(apiKey string) error
-
 	// SetConversation sets or updates the current conversation context
 	SetConversation(conv Conversation) error
 

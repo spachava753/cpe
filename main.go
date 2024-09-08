@@ -116,12 +116,7 @@ func main() {
 	}
 
 	// Create and initialize the Anthropic provider
-	provider := llm.NewAnthropicProvider()
-	err := provider.Initialize(apiKey)
-	if err != nil {
-		fmt.Println("Error initializing Anthropic provider:", err)
-		return
-	}
+	provider := llm.NewAnthropicProvider(apiKey)
 
 	// Build system message
 	systemMessage, err := buildSystemMessage()

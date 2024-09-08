@@ -42,13 +42,10 @@ type anthropicResponseBody struct {
 	} `json:"usage"`
 }
 
-func NewAnthropicProvider() *AnthropicProvider {
-	return &AnthropicProvider{}
-}
-
-func (a *AnthropicProvider) Initialize(apiKey string) error {
-	a.apiKey = apiKey
-	return nil
+func NewAnthropicProvider(apiKey string) *AnthropicProvider {
+	return &AnthropicProvider{
+		apiKey: apiKey,
+	}
 }
 
 func (a *AnthropicProvider) SetConversation(conv Conversation) error {
