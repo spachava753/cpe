@@ -141,11 +141,7 @@ func main() {
 	// Set up the conversation
 	conversation := llm.Conversation{
 		SystemPrompt: systemMessage,
-	}
-	err = provider.SetConversation(conversation)
-	if err != nil {
-		fmt.Println("Error setting conversation:", err)
-		return
+		Messages:     []llm.Message{},
 	}
 
 	// Read content from stdin
@@ -164,18 +160,14 @@ func main() {
 	}
 
 	// Add user message to the conversation
-	err = provider.AddMessage(llm.Message{Role: "user", Content: content})
-	if err != nil {
-		fmt.Println("Error adding user message:", err)
-		return
-	}
+	conversation.Messages = append(conversation.Messages, llm.Message{Role: "user", Content: content})
 
 	// Generate response
 	config := llm.ModelConfig{
 		Model:     "claude-3-5-sonnet-20240620",
 		MaxTokens: 8192,
 	}
-	response, err := provider.GenerateResponse(config)
+	response, err := provider.GenerateResponse(config, conversation)
 	if err != nil {
 		fmt.Println("Error generating response:", err)
 		return

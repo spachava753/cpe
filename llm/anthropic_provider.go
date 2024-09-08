@@ -10,8 +10,7 @@ import (
 )
 
 type AnthropicProvider struct {
-	apiKey       string
-	conversation Conversation
+	apiKey string
 }
 
 type anthropicRequestBody struct {
@@ -48,24 +47,14 @@ func NewAnthropicProvider(apiKey string) *AnthropicProvider {
 	}
 }
 
-func (a *AnthropicProvider) SetConversation(conv Conversation) error {
-	a.conversation = conv
-	return nil
-}
-
-func (a *AnthropicProvider) AddMessage(message Message) error {
-	a.conversation.Messages = append(a.conversation.Messages, message)
-	return nil
-}
-
-func (a *AnthropicProvider) GenerateResponse(config ModelConfig) (string, error) {
+func (a *AnthropicProvider) GenerateResponse(config ModelConfig, conversation Conversation) (string, error) {
 	url := "https://api.anthropic.com/v1/messages"
 
 	requestBody := anthropicRequestBody{
 		Model:         config.Model,
 		MaxTokens:     config.MaxTokens,
-		Messages:      a.conversation.Messages,
-		SystemMessage: a.conversation.SystemPrompt,
+		Messages:      conversation.Messages,
+		SystemMessage: conversation.SystemPrompt,
 		Temperature:   config.Temperature,
 		TopP:          config.TopP,
 		TopK:          config.TopK,
@@ -114,13 +103,8 @@ func (a *AnthropicProvider) GenerateResponse(config ModelConfig) (string, error)
 
 	if len(responseBody.Content) > 0 {
 		generatedResponse := responseBody.Content[0].Text
-		a.AddMessage(Message{Role: "assistant", Content: generatedResponse})
 		return generatedResponse, nil
 	}
 
 	return "", fmt.Errorf("no content in response")
-}
-
-func (a *AnthropicProvider) GetConversation() Conversation {
-	return a.conversation
 }

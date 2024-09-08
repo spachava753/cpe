@@ -29,15 +29,6 @@ type ModelConfig struct {
 
 // LLMProvider defines the interface for interacting with LLM providers
 type LLMProvider interface {
-	// SetConversation sets or updates the current conversation context
-	SetConversation(conv Conversation) error
-
-	// AddMessage adds a new message to the current conversation
-	AddMessage(message Message) error
-
-	// GenerateResponse generates a response from the assistant based on the current conversation
-	GenerateResponse(config ModelConfig) (string, error)
-
-	// GetConversation returns the current conversation context
-	GetConversation() Conversation
+	// GenerateResponse generates a response from the assistant based on the provided conversation
+	GenerateResponse(config ModelConfig, conversation Conversation) (string, error)
 }

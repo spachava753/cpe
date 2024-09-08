@@ -26,11 +26,6 @@ func TestGeminiProvider(t *testing.T) {
 		},
 	}
 
-	err = provider.SetConversation(conversation)
-	if err != nil {
-		t.Fatalf("Failed to set conversation: %v", err)
-	}
-
 	// Generate a response
 	config := ModelConfig{
 		Model:       "gemini-1.5-flash",
@@ -39,7 +34,7 @@ func TestGeminiProvider(t *testing.T) {
 	}
 
 	genai.NewUserContent()
-	response, err := provider.GenerateResponse(config)
+	response, err := provider.GenerateResponse(config, conversation)
 	if err != nil {
 		t.Fatalf("Failed to generate response: %v", err)
 	}
@@ -50,18 +45,4 @@ func TestGeminiProvider(t *testing.T) {
 	}
 
 	t.Logf("Generated response: %s", response)
-
-	// Check if the response was added to the conversation
-	updatedConversation := provider.GetConversation()
-	if len(updatedConversation.Messages) != 2 {
-		t.Errorf("Expected 2 messages in conversation, got %d", len(updatedConversation.Messages))
-	}
-
-	if updatedConversation.Messages[1].Role != "assistant" {
-		t.Errorf("Expected last message role to be 'assistant', got '%s'", updatedConversation.Messages[1].Role)
-	}
-
-	if updatedConversation.Messages[1].Content != response {
-		t.Errorf("Last message content doesn't match generated response")
-	}
 }
