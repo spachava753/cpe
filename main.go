@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	_ "embed"
+	"flag"
 	"fmt"
 	"github.com/gobwas/glob"
 	"github.com/spachava753/cpe/fileops"
@@ -109,14 +110,18 @@ func buildSystemMessage() (string, error) {
 }
 
 func main() {
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		fmt.Println("ANTHROPIC_API_KEY environment variable is not set")
+	modelFlag := flag.String("model", "", "Specify the model to use")
+	flag.Parse()
+
+	provider, err := GetProvider(*modelFlag)
+	if err != nil {
+		fmt.Printf("Error initializing provider: %v\n", err)
 		return
 	}
 
-	// Create and initialize the Anthropic provider
-	provider := llm.NewAnthropicProvider(apiKey)
+	if closer, ok := provider.(interface{ Close() error }); ok {
+		defer closer.Close()
+	}
 
 	// Build system message
 	systemMessage, err := buildSystemMessage()
