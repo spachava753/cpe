@@ -51,7 +51,7 @@ var modelConfigs = map[string]ModelConfig{
 	// Add more models here
 }
 
-var defaultModel = "claude-3-5-sonnet-20240620"
+var defaultModel = "claude-3-5-sonnet"
 
 func GetProvider(modelName string) (llm.LLMProvider, error) {
 	if modelName == "" {
