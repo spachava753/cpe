@@ -73,8 +73,12 @@ func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conv
 
 	req.Header.Set("x-api-key", a.apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
-	req.Header.Set("anthropic-beta", "max-tokens-3-5-sonnet-2024-07-15")
 	req.Header.Set("content-type", "application/json")
+
+	// Add anthropic-beta header only for claude-3-5-sonnet with max tokens > 4096
+	if config.Model == "claude-3-5-sonnet-20240620" && config.MaxTokens > 4096 {
+		req.Header.Set("anthropic-beta", "max-tokens-3-5-sonnet-2024-07-15")
+	}
 
 	client := &http.Client{
 		Timeout: 2 * time.Minute,
