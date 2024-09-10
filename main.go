@@ -133,6 +133,11 @@ func main() {
 		defer closer.Close()
 	}
 
+	model := *modelFlag
+	if model == "" {
+		model = defaultModel
+	}
+
 	// Build system message
 	systemMessage, err := buildSystemMessage()
 	if err != nil {
@@ -174,8 +179,7 @@ func main() {
 
 	// Generate response
 	config := llm.ModelConfig{
-		Model:     "claude-3-5-sonnet-20240620",
-		MaxTokens: 8192,
+		Model: model,
 	}
 	response, err := provider.GenerateResponse(config, conversation)
 	if err != nil {
