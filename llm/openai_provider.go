@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"fmt"
+	"github.com/spachava753/cpe/validate"
 	"time"
 
 	"github.com/sashabaranov/go-openai"
@@ -19,7 +20,13 @@ type OpenAIOption func(*openai.ClientConfig)
 // WithBaseURL sets a custom base URL for the OpenAI API
 func WithBaseURL(url string) OpenAIOption {
 	return func(c *openai.ClientConfig) {
-		c.BaseURL = url
+		if url != "" {
+			if _, err := validate.ValidateURL(url); err != nil {
+				fmt.Printf("Warning: Invalid OpenAI base URL provided. Using default.\n")
+				return
+			}
+			c.BaseURL = url
+		}
 	}
 }
 

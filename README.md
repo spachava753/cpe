@@ -28,10 +28,12 @@ go install github.com/spachava753/cpe@latest
 To use CPE, run the following command:
 
 ```
-cpe -model <model_name>
+cpe -model <model_name> [-openai-url <custom_url>]
 ```
 
-Where `<model_name>` is one of the supported models (e.g., "claude-3-5-sonnet", "gpt-4o", "gemini-1.5-flash"). If no model is specified, it defaults to "claude-3-5-sonnet".
+Where:
+- `<model_name>` is one of the supported models (e.g., "claude-3-5-sonnet", "gpt-4o", "gemini-1.5-flash"). If no model is specified, it defaults to "claude-3-5-sonnet".
+- `<custom_url>` (optional) is a custom base URL for the OpenAI API. This is only applicable when using OpenAI models.
 
 Provide your instructions or queries via stdin. CPE will analyze your project, process your request, and perform the necessary file operations.
 

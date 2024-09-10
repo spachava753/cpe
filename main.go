@@ -111,9 +111,10 @@ func buildSystemMessage() (string, error) {
 
 func main() {
 	modelFlag := flag.String("model", "", "Specify the model to use")
+	openaiURLFlag := flag.String("openai-url", "", "Specify a custom base URL for the OpenAI API")
 	flag.Parse()
 
-	provider, err := GetProvider(*modelFlag)
+	provider, err := GetProvider(*modelFlag, *openaiURLFlag)
 	if err != nil {
 		fmt.Printf("Error initializing provider: %v\n", err)
 		return

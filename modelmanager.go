@@ -53,7 +53,7 @@ var modelConfigs = map[string]ModelConfig{
 
 var defaultModel = "claude-3-5-sonnet"
 
-func GetProvider(modelName string) (llm.LLMProvider, error) {
+func GetProvider(modelName, openaiURL string) (llm.LLMProvider, error) {
 	if modelName == "" {
 		modelName = defaultModel
 	}
@@ -74,7 +74,7 @@ func GetProvider(modelName string) (llm.LLMProvider, error) {
 	case "gemini":
 		return llm.NewGeminiProvider(providerConfig.GetAPIKey())
 	case "openai":
-		return llm.NewOpenAIProvider(providerConfig.GetAPIKey()), nil
+		return llm.NewOpenAIProvider(providerConfig.GetAPIKey(), llm.WithBaseURL(openaiURL)), nil
 	default:
 		return nil, fmt.Errorf("unsupported provider type: %s", config.ProviderType)
 	}
