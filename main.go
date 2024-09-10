@@ -123,7 +123,7 @@ func main() {
 		}
 	}
 
-	provider, err := GetProvider(*modelFlag, *openaiURLFlag)
+	provider, mc, err := GetProvider(*modelFlag, *openaiURLFlag)
 	if err != nil {
 		fmt.Printf("Error initializing provider: %v\n", err)
 		return
@@ -131,11 +131,6 @@ func main() {
 
 	if closer, ok := provider.(interface{ Close() error }); ok {
 		defer closer.Close()
-	}
-
-	model := *modelFlag
-	if model == "" {
-		model = defaultModel
 	}
 
 	// Build system message
@@ -179,7 +174,8 @@ func main() {
 
 	// Generate response
 	config := llm.ModelConfig{
-		Model: model,
+		Model:     mc.Name,
+		MaxTokens: 8096,
 	}
 	response, err := provider.GenerateResponse(config, conversation)
 	if err != nil {

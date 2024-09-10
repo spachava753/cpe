@@ -54,7 +54,7 @@ var modelConfigs = map[string]ModelConfig{
 
 var defaultModel = "claude-3-5-sonnet"
 
-func GetProvider(modelName, openaiURL string) (llm.LLMProvider, error) {
+func GetProvider(modelName, openaiURL string) (llm.LLMProvider, ModelConfig, error) {
 	if modelName == "" {
 		modelName = defaultModel
 	}
@@ -63,7 +63,7 @@ func GetProvider(modelName, openaiURL string) (llm.LLMProvider, error) {
 	if !ok {
 		// Handle unknown model
 		if openaiURL == "" {
-			return nil, fmt.Errorf("unknown model '%s' requires -openai-url flag", modelName)
+			return nil, ModelConfig{}, fmt.Errorf("unknown model '%s' requires -openai-url flag", modelName)
 		}
 		fmt.Printf("Warning: Using unknown model '%s' with OpenAI provider\n", modelName)
 		config = ModelConfig{Name: modelName, ProviderType: "openai", IsKnown: false}
@@ -71,18 +71,19 @@ func GetProvider(modelName, openaiURL string) (llm.LLMProvider, error) {
 
 	providerConfig, err := loadProviderConfig(config.ProviderType)
 	if err != nil {
-		return nil, err
+		return nil, ModelConfig{}, err
 	}
 
 	switch config.ProviderType {
 	case "anthropic":
-		return llm.NewAnthropicProvider(providerConfig.GetAPIKey()), nil
+		return llm.NewAnthropicProvider(providerConfig.GetAPIKey()), config, nil
 	case "gemini":
-		return llm.NewGeminiProvider(providerConfig.GetAPIKey())
+		p, gemErr := llm.NewGeminiProvider(providerConfig.GetAPIKey())
+		return p, config, gemErr
 	case "openai":
-		return llm.NewOpenAIProvider(providerConfig.GetAPIKey(), llm.WithBaseURL(openaiURL)), nil
+		return llm.NewOpenAIProvider(providerConfig.GetAPIKey(), llm.WithBaseURL(openaiURL)), config, nil
 	default:
-		return nil, fmt.Errorf("unsupported provider type: %s", config.ProviderType)
+		return nil, config, fmt.Errorf("unsupported provider type: %s", config.ProviderType)
 	}
 }
 
