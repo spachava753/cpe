@@ -110,9 +110,18 @@ func buildSystemMessage() (string, error) {
 }
 
 func main() {
-	modelFlag := flag.String("model", "", "Specify the model to use")
-	openaiURLFlag := flag.String("openai-url", "", "Specify a custom base URL for the OpenAI API")
+	modelFlag := flag.String("model", "", "Specify the model to use (use with -openai-url for custom models)")
+	openaiURLFlag := flag.String("openai-url", "", "Specify a custom base URL for the OpenAI API (required for custom models)")
 	flag.Parse()
+
+	if *modelFlag != "" && *modelFlag != defaultModel {
+		_, ok := modelConfigs[*modelFlag]
+		if !ok && *openaiURLFlag == "" {
+			fmt.Printf("Error: Unknown model '%s' requires -openai-url flag\n", *modelFlag)
+			flag.Usage()
+			os.Exit(1)
+		}
+	}
 
 	provider, err := GetProvider(*modelFlag, *openaiURLFlag)
 	if err != nil {

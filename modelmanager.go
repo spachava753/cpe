@@ -11,6 +11,7 @@ import (
 type ModelConfig struct {
 	Name         string
 	ProviderType string
+	IsKnown      bool
 }
 
 type ProviderConfig interface {
@@ -42,12 +43,12 @@ func (c OpenAIConfig) GetAPIKey() string {
 }
 
 var modelConfigs = map[string]ModelConfig{
-	"claude-3-opus":     {Name: "claude-3-opus-20240229", ProviderType: "anthropic"},
-	"claude-3-5-sonnet": {Name: "claude-3-5-sonnet-20240620", ProviderType: "anthropic"},
-	"claude-3-5-haiku":  {Name: "claude-3-haiku-20240307", ProviderType: "anthropic"},
-	"gemini-1.5-flash":  {Name: "gemini-1.5-flash", ProviderType: "gemini"},
-	"gpt-4o":            {Name: openai.GPT4o20240806, ProviderType: "openai"},
-	"gpt-4o-mini":       {Name: openai.GPT4oMini20240718, ProviderType: "openai"},
+	"claude-3-opus":     {Name: "claude-3-opus-20240229", ProviderType: "anthropic", IsKnown: true},
+	"claude-3-5-sonnet": {Name: "claude-3-5-sonnet-20240620", ProviderType: "anthropic", IsKnown: true},
+	"claude-3-5-haiku":  {Name: "claude-3-haiku-20240307", ProviderType: "anthropic", IsKnown: true},
+	"gemini-1.5-flash":  {Name: "gemini-1.5-flash", ProviderType: "gemini", IsKnown: true},
+	"gpt-4o":            {Name: openai.GPT4o20240806, ProviderType: "openai", IsKnown: true},
+	"gpt-4o-mini":       {Name: openai.GPT4oMini20240718, ProviderType: "openai", IsKnown: true},
 	// Add more models here
 }
 
@@ -60,7 +61,12 @@ func GetProvider(modelName, openaiURL string) (llm.LLMProvider, error) {
 
 	config, ok := modelConfigs[modelName]
 	if !ok {
-		return nil, fmt.Errorf("unknown model: %s", modelName)
+		// Handle unknown model
+		if openaiURL == "" {
+			return nil, fmt.Errorf("unknown model '%s' requires -openai-url flag", modelName)
+		}
+		fmt.Printf("Warning: Using unknown model '%s' with OpenAI provider\n", modelName)
+		config = ModelConfig{Name: modelName, ProviderType: "openai", IsKnown: false}
 	}
 
 	providerConfig, err := loadProviderConfig(config.ProviderType)
