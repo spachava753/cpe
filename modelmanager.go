@@ -8,10 +8,21 @@ import (
 	"github.com/spachava753/cpe/llm"
 )
 
+type ModelDefaults struct {
+	MaxTokens         int
+	Temperature       float32
+	TopP              float32
+	TopK              int
+	FrequencyPenalty  float32
+	PresencePenalty   float32
+	NumberOfResponses int
+}
+
 type ModelConfig struct {
 	Name         string
 	ProviderType string
 	IsKnown      bool
+	Defaults     ModelDefaults
 }
 
 type ProviderConfig interface {
@@ -43,18 +54,35 @@ func (c OpenAIConfig) GetAPIKey() string {
 }
 
 var modelConfigs = map[string]ModelConfig{
-	"claude-3-opus":     {Name: "claude-3-opus-20240229", ProviderType: "anthropic", IsKnown: true},
-	"claude-3-5-sonnet": {Name: "claude-3-5-sonnet-20240620", ProviderType: "anthropic", IsKnown: true},
-	"claude-3-5-haiku":  {Name: "claude-3-haiku-20240307", ProviderType: "anthropic", IsKnown: true},
-	"gemini-1.5-flash":  {Name: "gemini-1.5-flash", ProviderType: "gemini", IsKnown: true},
-	"gpt-4o":            {Name: openai.GPT4o20240806, ProviderType: "openai", IsKnown: true},
-	"gpt-4o-mini":       {Name: openai.GPT4oMini20240718, ProviderType: "openai", IsKnown: true},
-	// Add more models here
+	"claude-3-opus": {
+		Name: "claude-3-opus-20240229", ProviderType: "anthropic", IsKnown: true,
+		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.7, TopP: 1, TopK: 0, FrequencyPenalty: 0, PresencePenalty: 0, NumberOfResponses: 1},
+	},
+	"claude-3-5-sonnet": {
+		Name: "claude-3-5-sonnet-20240620", ProviderType: "anthropic", IsKnown: true,
+		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.7, TopP: 1, TopK: 0, FrequencyPenalty: 0, PresencePenalty: 0, NumberOfResponses: 1},
+	},
+	"claude-3-5-haiku": {
+		Name: "claude-3-haiku-20240307", ProviderType: "anthropic", IsKnown: true,
+		Defaults: ModelDefaults{MaxTokens: 2048, Temperature: 0.7, TopP: 1, TopK: 0, FrequencyPenalty: 0, PresencePenalty: 0, NumberOfResponses: 1},
+	},
+	"gemini-1.5-flash": {
+		Name: "gemini-1.5-flash", ProviderType: "gemini", IsKnown: true,
+		Defaults: ModelDefaults{MaxTokens: 2048, Temperature: 0.7, TopP: 1, TopK: 0, FrequencyPenalty: 0, PresencePenalty: 0, NumberOfResponses: 1},
+	},
+	"gpt-4o": {
+		Name: openai.GPT4o20240806, ProviderType: "openai", IsKnown: true,
+		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.7, TopP: 1, TopK: 0, FrequencyPenalty: 0, PresencePenalty: 0, NumberOfResponses: 1},
+	},
+	"gpt-4o-mini": {
+		Name: openai.GPT4oMini20240718, ProviderType: "openai", IsKnown: true,
+		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.7, TopP: 1, TopK: 0, FrequencyPenalty: 0, PresencePenalty: 0, NumberOfResponses: 1},
+	},
 }
 
 var defaultModel = "claude-3-5-sonnet"
 
-func GetProvider(modelName, openaiURL string) (llm.LLMProvider, ModelConfig, error) {
+func GetProvider(modelName, openaiURL string, flags Flags) (llm.LLMProvider, llm.GenConfig, error) {
 	if modelName == "" {
 		modelName = defaultModel
 	}
@@ -63,28 +91,49 @@ func GetProvider(modelName, openaiURL string) (llm.LLMProvider, ModelConfig, err
 	if !ok {
 		// Handle unknown model
 		if openaiURL == "" {
-			return nil, ModelConfig{}, fmt.Errorf("unknown model '%s' requires -openai-url flag", modelName)
+			return nil, llm.GenConfig{}, fmt.Errorf("unknown model '%s' requires -openai-url flag", modelName)
 		}
 		fmt.Printf("Warning: Using unknown model '%s' with OpenAI provider\n", modelName)
 		config = ModelConfig{Name: modelName, ProviderType: "openai", IsKnown: false}
 	}
 
-	providerConfig, err := loadProviderConfig(config.ProviderType)
-	if err != nil {
-		return nil, ModelConfig{}, err
+	genConfig := llm.GenConfig{
+		Model:             config.Name,
+		MaxTokens:         config.Defaults.MaxTokens,
+		Temperature:       config.Defaults.Temperature,
+		TopP:              config.Defaults.TopP,
+		TopK:              config.Defaults.TopK,
+		FrequencyPenalty:  config.Defaults.FrequencyPenalty,
+		PresencePenalty:   config.Defaults.PresencePenalty,
+		NumberOfResponses: config.Defaults.NumberOfResponses,
 	}
+
+	genConfig = flags.ApplyToGenConfig(genConfig)
+
+	providerConfig, loadErr := loadProviderConfig(config.ProviderType)
+	if loadErr != nil {
+		return nil, llm.GenConfig{}, loadErr
+	}
+
+	var provider llm.LLMProvider
+	var err error
 
 	switch config.ProviderType {
 	case "anthropic":
-		return llm.NewAnthropicProvider(providerConfig.GetAPIKey()), config, nil
+		provider = llm.NewAnthropicProvider(providerConfig.GetAPIKey())
 	case "gemini":
-		p, gemErr := llm.NewGeminiProvider(providerConfig.GetAPIKey())
-		return p, config, gemErr
+		provider, err = llm.NewGeminiProvider(providerConfig.GetAPIKey())
 	case "openai":
-		return llm.NewOpenAIProvider(providerConfig.GetAPIKey(), llm.WithBaseURL(openaiURL)), config, nil
+		provider = llm.NewOpenAIProvider(providerConfig.GetAPIKey(), llm.WithBaseURL(openaiURL))
 	default:
-		return nil, config, fmt.Errorf("unsupported provider type: %s", config.ProviderType)
+		return nil, genConfig, fmt.Errorf("unsupported provider type: %s", config.ProviderType)
 	}
+
+	if err != nil {
+		return nil, genConfig, err
+	}
+
+	return provider, genConfig, nil
 }
 
 func loadProviderConfig(providerType string) (ProviderConfig, error) {

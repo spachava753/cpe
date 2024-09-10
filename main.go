@@ -110,20 +110,18 @@ func buildSystemMessage() (string, error) {
 }
 
 func main() {
-	modelFlag := flag.String("model", "", "Specify the model to use (use with -openai-url for custom models)")
-	openaiURLFlag := flag.String("openai-url", "", "Specify a custom base URL for the OpenAI API (required for custom models)")
-	flag.Parse()
+	flags := ParseFlags()
 
-	if *modelFlag != "" && *modelFlag != defaultModel {
-		_, ok := modelConfigs[*modelFlag]
-		if !ok && *openaiURLFlag == "" {
-			fmt.Printf("Error: Unknown model '%s' requires -openai-url flag\n", *modelFlag)
+	if flags.Model != "" && flags.Model != defaultModel {
+		_, ok := modelConfigs[flags.Model]
+		if !ok && flags.OpenAIURL == "" {
+			fmt.Printf("Error: Unknown model '%s' requires -openai-url flag\n", flags.Model)
 			flag.Usage()
 			os.Exit(1)
 		}
 	}
 
-	provider, mc, err := GetProvider(*modelFlag, *openaiURLFlag)
+	provider, genConfig, err := GetProvider(flags.Model, flags.OpenAIURL, flags)
 	if err != nil {
 		fmt.Printf("Error initializing provider: %v\n", err)
 		return
@@ -173,11 +171,7 @@ func main() {
 	conversation.Messages = append(conversation.Messages, llm.Message{Role: "user", Content: content})
 
 	// Generate response
-	config := llm.GenConfig{
-		Model:     mc.Name,
-		MaxTokens: 8096,
-	}
-	response, err := provider.GenerateResponse(config, conversation)
+	response, err := provider.GenerateResponse(genConfig, conversation)
 	if err != nil {
 		fmt.Println("Error generating response:", err)
 		return
