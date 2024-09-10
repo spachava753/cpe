@@ -12,10 +12,10 @@ type Conversation struct {
 	Messages     []Message
 }
 
-// ModelConfig represents the configuration when invoking a model.
+// GenConfig represents the configuration when invoking a model.
 // This helps divorce what model is invoked vs. what provider is used,
 // so the same provider can invoke different models.
-type ModelConfig struct {
+type GenConfig struct {
 	Model             string
 	MaxTokens         int
 	Temperature       float32  // Controls randomness: 0.0 - 1.0
@@ -30,5 +30,5 @@ type ModelConfig struct {
 // LLMProvider defines the interface for interacting with LLM providers
 type LLMProvider interface {
 	// GenerateResponse generates a response from the assistant based on the provided conversation
-	GenerateResponse(config ModelConfig, conversation Conversation) (string, error)
+	GenerateResponse(config GenConfig, conversation Conversation) (string, error)
 }

@@ -45,7 +45,7 @@ func NewOpenAIProvider(apiKey string, opts ...OpenAIOption) *OpenAIProvider {
 }
 
 // GenerateResponse generates a response using the OpenAI API
-func (o *OpenAIProvider) GenerateResponse(config ModelConfig, conversation Conversation) (string, error) {
+func (o *OpenAIProvider) GenerateResponse(config GenConfig, conversation Conversation) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 

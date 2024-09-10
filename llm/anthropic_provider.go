@@ -47,7 +47,7 @@ func NewAnthropicProvider(apiKey string) *AnthropicProvider {
 	}
 }
 
-func (a *AnthropicProvider) GenerateResponse(config ModelConfig, conversation Conversation) (string, error) {
+func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conversation) (string, error) {
 	url := "https://api.anthropic.com/v1/messages"
 
 	requestBody := anthropicRequestBody{

@@ -38,7 +38,7 @@ func NewGeminiProvider(apiKey string) (*GeminiProvider, error) {
 }
 
 // GenerateResponse generates a response using the Gemini API
-func (g *GeminiProvider) GenerateResponse(config ModelConfig, conversation Conversation) (string, error) {
+func (g *GeminiProvider) GenerateResponse(config GenConfig, conversation Conversation) (string, error) {
 
 	g.model = g.client.GenerativeModel(config.Model)
 

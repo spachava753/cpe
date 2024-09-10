@@ -27,7 +27,7 @@ func TestGeminiProvider(t *testing.T) {
 	}
 
 	// Generate a response
-	config := ModelConfig{
+	config := GenConfig{
 		Model:       "gemini-1.5-flash",
 		MaxTokens:   100,
 		Temperature: 0.7,

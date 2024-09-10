@@ -23,7 +23,7 @@ func TestOpenAIProvider(t *testing.T) {
 	}
 
 	// Generate a response
-	config := ModelConfig{
+	config := GenConfig{
 		Model:       openai.GPT4oMini20240718,
 		MaxTokens:   100,
 		Temperature: 0.7,

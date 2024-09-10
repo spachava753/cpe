@@ -173,7 +173,7 @@ func main() {
 	conversation.Messages = append(conversation.Messages, llm.Message{Role: "user", Content: content})
 
 	// Generate response
-	config := llm.ModelConfig{
+	config := llm.GenConfig{
 		Model:     mc.Name,
 		MaxTokens: 8096,
 	}
