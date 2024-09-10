@@ -13,9 +13,25 @@ type OpenAIProvider struct {
 	client *openai.Client
 }
 
-// NewOpenAIProvider creates a new OpenAIProvider with the given API key
-func NewOpenAIProvider(apiKey string) *OpenAIProvider {
-	client := openai.NewClient(apiKey)
+// OpenAIOption is a functional option for configuring the OpenAIProvider
+type OpenAIOption func(*openai.ClientConfig)
+
+// WithBaseURL sets a custom base URL for the OpenAI API
+func WithBaseURL(url string) OpenAIOption {
+	return func(c *openai.ClientConfig) {
+		c.BaseURL = url
+	}
+}
+
+// NewOpenAIProvider creates a new OpenAIProvider with the given API key and optional configuration
+func NewOpenAIProvider(apiKey string, opts ...OpenAIOption) *OpenAIProvider {
+	config := openai.DefaultConfig(apiKey)
+
+	for _, opt := range opts {
+		opt(&config)
+	}
+
+	client := openai.NewClientWithConfig(config)
 	return &OpenAIProvider{
 		client: client,
 	}
