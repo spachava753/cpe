@@ -210,11 +210,20 @@ func ProcessData(data *sync.Map) ([]byte, error)
 package comments
 
 // User represents a user in the system.
+// It contains basic information about the user.
 type User struct {
 	// ID is the unique identifier for the user.
 	ID   int
 	// Name is the user's full name.
 	Name string
+}
+
+// Admin represents an administrator in the system.
+// It extends the User type with additional permissions.
+type Admin struct {
+	User
+	// Permissions is a list of granted permissions.
+	Permissions []string
 }
 
 // NewUser creates a new User with the given name.
@@ -230,11 +239,19 @@ func NewUser(name string) *User {
 // Package comments demonstrates various levels of comments in Go code.
 package comments
 // User represents a user in the system.
+// It contains basic information about the user.
 type User struct {
     // ID is the unique identifier for the user.
     ID int
     // Name is the user's full name.
     Name string
+}
+// Admin represents an administrator in the system.
+// It extends the User type with additional permissions.
+type Admin struct {
+    User
+    // Permissions is a list of granted permissions.
+    Permissions []string
 }
 // NewUser creates a new User with the given name.
 func NewUser(name string) (*User)

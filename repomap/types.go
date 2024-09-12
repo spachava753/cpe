@@ -18,6 +18,8 @@ type FileMap struct {
 	Structs        []*ast.TypeSpec
 	Interfaces     []*ast.TypeSpec
 	Functions      []*ast.FuncDecl
-	Methods        map[string][]*ast.FuncDecl // New field to store methods
+	Methods        map[string][]*ast.FuncDecl
 	Comments       map[ast.Node]string
+	FieldComments  map[*ast.Field]string
+	StructComments map[*ast.TypeSpec]string
 }

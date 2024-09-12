@@ -55,10 +55,12 @@ func parseFile(fsys fs.FS, path string) (*FileMap, error) {
 	}
 
 	fileMap := &FileMap{
-		Path:        path,
-		PackageName: node.Name.Name,
-		Methods:     make(map[string][]*ast.FuncDecl),
-		Comments:    make(map[ast.Node]string),
+		Path:           path,
+		PackageName:    node.Name.Name,
+		Methods:        make(map[string][]*ast.FuncDecl),
+		Comments:       make(map[ast.Node]string),
+		FieldComments:  make(map[*ast.Field]string),
+		StructComments: make(map[*ast.TypeSpec]string),
 	}
 
 	if node.Doc != nil {
@@ -78,7 +80,7 @@ func parseFile(fsys fs.FS, path string) (*FileMap, error) {
 				}
 			case *ast.Field:
 				if t.Doc != nil {
-					fileMap.Comments[t] = t.Doc.Text()
+					fileMap.FieldComments[t] = t.Doc.Text()
 				}
 			case *ast.FuncDecl:
 				if t.Doc != nil {
@@ -105,6 +107,9 @@ func parseFile(fsys fs.FS, path string) (*FileMap, error) {
 						switch typeSpec.Type.(type) {
 						case *ast.StructType:
 							fileMap.Structs = append(fileMap.Structs, typeSpec)
+							if d.Doc != nil {
+								fileMap.StructComments[typeSpec] = d.Doc.Text()
+							}
 						case *ast.InterfaceType:
 							fileMap.Interfaces = append(fileMap.Interfaces, typeSpec)
 						}
