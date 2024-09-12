@@ -202,6 +202,47 @@ func ProcessData(data *sync.Map) ([]byte, error)
 </repo_map>
 `,
 		},
+		{
+			name: "File with comments at various levels",
+			files: map[string]string{
+				"comments.go": `
+// Package comments demonstrates various levels of comments in Go code.
+package comments
+
+// User represents a user in the system.
+type User struct {
+	// ID is the unique identifier for the user.
+	ID   int
+	// Name is the user's full name.
+	Name string
+}
+
+// NewUser creates a new User with the given name.
+func NewUser(name string) *User {
+	return &User{Name: name}
+}
+`,
+			},
+			expected: `<repo_map>
+<file>
+<path>comments.go</path>
+<file_map>
+// Package comments demonstrates various levels of comments in Go code.
+package comments
+// User represents a user in the system.
+type User struct {
+    // ID is the unique identifier for the user.
+    ID int
+    // Name is the user's full name.
+    Name string
+}
+// NewUser creates a new User with the given name.
+func NewUser(name string) (*User)
+</file_map>
+</file>
+</repo_map>
+`,
+		},
 	}
 
 	for _, tt := range tests {

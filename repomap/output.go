@@ -23,6 +23,9 @@ func (f *FileMap) generateOutput() string {
 	var sb strings.Builder
 
 	sb.WriteString(fmt.Sprintf("<file>\n<path>%s</path>\n<file_map>\n", f.Path))
+	if f.PackageComment != "" {
+		sb.WriteString(fmt.Sprintf("%s\n", f.PackageComment))
+	}
 	sb.WriteString(fmt.Sprintf("package %s\n", f.PackageName))
 
 	if len(f.Imports) > 0 {
@@ -34,6 +37,9 @@ func (f *FileMap) generateOutput() string {
 	}
 
 	for _, s := range f.Structs {
+		if comment, ok := f.Comments[s]; ok {
+			sb.WriteString(fmt.Sprintf("%s\n", comment))
+		}
 		typeParams := ""
 		if s.TypeParams != nil {
 			params := make([]string, len(s.TypeParams.List))
@@ -45,6 +51,9 @@ func (f *FileMap) generateOutput() string {
 		sb.WriteString(fmt.Sprintf("type %s%s struct {\n", s.Name.Name, typeParams))
 		if structType, ok := s.Type.(*ast.StructType); ok {
 			for _, field := range structType.Fields.List {
+				if comment, ok := f.Comments[field]; ok {
+					sb.WriteString(fmt.Sprintf("    %s\n", comment))
+				}
 				fieldNames := make([]string, len(field.Names))
 				for i, name := range field.Names {
 					fieldNames[i] = name.Name
@@ -68,6 +77,9 @@ func (f *FileMap) generateOutput() string {
 	}
 
 	for _, fn := range f.Functions {
+		if comment, ok := f.Comments[fn]; ok {
+			sb.WriteString(fmt.Sprintf("%s\n", comment))
+		}
 		sb.WriteString(fmt.Sprintf("func %s%s\n", fn.Name.Name, funcType(fn.Type)))
 	}
 

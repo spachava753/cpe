@@ -58,7 +58,36 @@ func parseFile(fsys fs.FS, path string) (*FileMap, error) {
 		Path:        path,
 		PackageName: node.Name.Name,
 		Methods:     make(map[string][]*ast.FuncDecl),
+		Comments:    make(map[ast.Node]string),
 	}
+
+	if node.Doc != nil {
+		fileMap.PackageComment = node.Doc.Text()
+	}
+
+	// Collect comments for all nodes
+	ast.Inspect(node, func(n ast.Node) bool {
+		if n == nil {
+			return true
+		}
+		if doc, ok := n.(ast.Node); ok && doc != nil {
+			switch t := n.(type) {
+			case *ast.GenDecl:
+				if t.Doc != nil {
+					fileMap.Comments[t] = t.Doc.Text()
+				}
+			case *ast.Field:
+				if t.Doc != nil {
+					fileMap.Comments[t] = t.Doc.Text()
+				}
+			case *ast.FuncDecl:
+				if t.Doc != nil {
+					fileMap.Comments[t] = t.Doc.Text()
+				}
+			}
+		}
+		return true
+	})
 
 	for _, decl := range node.Decls {
 		switch d := decl.(type) {

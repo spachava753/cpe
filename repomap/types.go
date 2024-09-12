@@ -11,11 +11,13 @@ type RepoMap struct {
 
 // FileMap represents a single Go file
 type FileMap struct {
-	Path        string
-	PackageName string
-	Imports     []*ast.ImportSpec
-	Structs     []*ast.TypeSpec
-	Interfaces  []*ast.TypeSpec
-	Functions   []*ast.FuncDecl
-	Methods     map[string][]*ast.FuncDecl // New field to store methods
+	Path           string
+	PackageName    string
+	PackageComment string
+	Imports        []*ast.ImportSpec
+	Structs        []*ast.TypeSpec
+	Interfaces     []*ast.TypeSpec
+	Functions      []*ast.FuncDecl
+	Methods        map[string][]*ast.FuncDecl // New field to store methods
+	Comments       map[ast.Node]string
 }
