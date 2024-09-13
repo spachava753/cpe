@@ -3,6 +3,7 @@ package repomap
 import (
 	"fmt"
 	"go/ast"
+	"go/token"
 	"strings"
 )
 
@@ -36,67 +37,72 @@ func (f *FileMap) generateOutput() string {
 		sb.WriteString(")\n")
 	}
 
-	for _, s := range f.Structs {
-		if comment, ok := f.StructComments[s]; ok {
-			sb.WriteString(fmt.Sprintf("%s\n", prependCommentSlashes(comment)))
-		}
-		typeParams := ""
-		if s.TypeParams != nil {
-			params := make([]string, len(s.TypeParams.List))
-			for i, param := range s.TypeParams.List {
-				params[i] = param.Names[0].Name + " any"
+	// Generate output for constants, variables, types, and functions in the order they appear
+	for _, item := range f.Declarations {
+		switch v := item.(type) {
+		case *ast.GenDecl:
+			switch v.Tok {
+			case token.CONST, token.VAR:
+				sb.WriteString(genDeclString(v, f.Comments))
+			case token.TYPE:
+				sb.WriteString(typeString(v, f.TypeComments, f.FieldComments))
 			}
-			typeParams = fmt.Sprintf("[%s]", strings.Join(params, ", "))
-		}
-		sb.WriteString(fmt.Sprintf("type %s%s struct {\n", s.Name.Name, typeParams))
-		if structType, ok := s.Type.(*ast.StructType); ok {
-			for _, field := range structType.Fields.List {
-				if comment, ok := f.FieldComments[field]; ok {
-					sb.WriteString(fmt.Sprintf("    %s\n", prependCommentSlashes(comment)))
-				}
-				fieldNames := make([]string, len(field.Names))
-				for i, name := range field.Names {
-					fieldNames[i] = name.Name
-				}
-				sb.WriteString(fmt.Sprintf("    %s %s\n", strings.Join(fieldNames, ", "), fieldType(field.Type)))
-			}
-		}
-		sb.WriteString("}\n")
-	}
-
-	for _, i := range f.Interfaces {
-		sb.WriteString(fmt.Sprintf("type %s interface {\n", i.Name.Name))
-		if interfaceType, ok := i.Type.(*ast.InterfaceType); ok {
-			for _, method := range interfaceType.Methods.List {
-				if len(method.Names) > 0 {
-					sb.WriteString(fmt.Sprintf("    %s%s\n", method.Names[0].Name, funcType(method.Type)))
-				}
-			}
-		}
-		sb.WriteString("}\n")
-	}
-
-	for _, fn := range f.Functions {
-		if comment, ok := f.Comments[fn]; ok {
-			sb.WriteString(fmt.Sprintf("%s\n", prependCommentSlashes(comment)))
-		}
-		sb.WriteString(fmt.Sprintf("func %s%s\n", fn.Name.Name, funcType(fn.Type)))
-	}
-
-	for _, methods := range f.Methods {
-		for _, method := range methods {
-			receiver := method.Recv.List[0]
-			recvType := fieldType(receiver.Type)
-			recvName := ""
-			if len(receiver.Names) > 0 {
-				recvName = receiver.Names[0].Name
-			}
-			sb.WriteString(fmt.Sprintf("func (%s %s) %s%s\n", recvName, recvType, method.Name.Name, funcType(method.Type)))
+		case *ast.FuncDecl:
+			sb.WriteString(funcString(v, f.Comments))
 		}
 	}
 
 	sb.WriteString("</file_map>\n</file>\n")
 
+	return sb.String()
+}
+
+func genDeclString(d *ast.GenDecl, comments map[ast.Node]string) string {
+	var sb strings.Builder
+	if comment, ok := comments[d]; ok {
+		sb.WriteString(fmt.Sprintf("%s\n", prependCommentSlashes(comment)))
+	}
+	sb.WriteString(fmt.Sprintf("%s ", d.Tok.String()))
+	if d.Lparen != 0 {
+		sb.WriteString("(\n")
+		for _, spec := range d.Specs {
+			sb.WriteString(fmt.Sprintf(" %s\n", valueSpecString(spec.(*ast.ValueSpec))))
+		}
+		sb.WriteString(")\n")
+	} else {
+		sb.WriteString(fmt.Sprintf("%s\n", valueSpecString(d.Specs[0].(*ast.ValueSpec))))
+	}
+	return sb.String()
+}
+
+func valueSpecString(v *ast.ValueSpec) string {
+	var sb strings.Builder
+	for i, name := range v.Names {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		sb.WriteString(name.Name)
+	}
+	if v.Type != nil {
+		sb.WriteString(" ")
+		sb.WriteString(fieldType(v.Type))
+	}
+	if len(v.Values) > 0 {
+		sb.WriteString(" = ")
+		for i, value := range v.Values {
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			switch val := value.(type) {
+			case *ast.BasicLit:
+				sb.WriteString(val.Value)
+			case *ast.Ident:
+				sb.WriteString(val.Name)
+			default:
+				sb.WriteString(fmt.Sprintf("%#v", value))
+			}
+		}
+	}
 	return sb.String()
 }
 
@@ -113,9 +119,6 @@ func fieldType(expr ast.Expr) string {
 	case *ast.MapType:
 		keyType := fieldType(t.Key)
 		valueType := fieldType(t.Value)
-		if valueType == "ast.InterfaceType" {
-			valueType = "interface{}"
-		}
 		return fmt.Sprintf("map[%s]%s", keyType, valueType)
 	case *ast.StructType:
 		return "struct"
@@ -134,6 +137,90 @@ func prependCommentSlashes(comment string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func typeString(d *ast.GenDecl, typeComments map[*ast.TypeSpec]string, fieldComments map[*ast.Field]string) string {
+	var sb strings.Builder
+	for _, spec := range d.Specs {
+		if typeSpec, ok := spec.(*ast.TypeSpec); ok {
+			if typeSpec.Assign == token.NoPos {
+				if comment, ok := typeComments[typeSpec]; ok {
+					sb.WriteString(fmt.Sprintf("%s\n", prependCommentSlashes(comment)))
+				}
+			}
+			sb.WriteString(fmt.Sprintf("type %s", typeSpec.Name.Name))
+			if typeSpec.TypeParams != nil {
+				sb.WriteString("[")
+				for i, param := range typeSpec.TypeParams.List {
+					if i > 0 {
+						sb.WriteString(", ")
+					}
+					sb.WriteString(fmt.Sprintf("%s any", param.Names[0].Name))
+				}
+				sb.WriteString("]")
+			}
+			if typeSpec.Assign != 0 {
+				sb.WriteString(" = ")
+			} else {
+				sb.WriteString(" ")
+			}
+			switch t := typeSpec.Type.(type) {
+			case *ast.StructType:
+				sb.WriteString("struct {\n")
+				for _, field := range t.Fields.List {
+					if comment, ok := fieldComments[field]; ok {
+						sb.WriteString(fmt.Sprintf("    %s\n", prependCommentSlashes(comment)))
+					}
+					sb.WriteString(fmt.Sprintf("    %s\n", fieldString(field)))
+				}
+				sb.WriteString("}")
+			case *ast.InterfaceType:
+				sb.WriteString("interface {\n")
+				for _, method := range t.Methods.List {
+					if comment, ok := fieldComments[method]; ok {
+						sb.WriteString(fmt.Sprintf("    %s\n", prependCommentSlashes(comment)))
+					}
+					sb.WriteString(fmt.Sprintf("    %s\n", methodString(method)))
+				}
+				sb.WriteString("}")
+			default:
+				sb.WriteString(fieldType(typeSpec.Type))
+			}
+			sb.WriteString("\n")
+		}
+	}
+	return sb.String()
+}
+
+func fieldString(f *ast.Field) string {
+	var names []string
+	for _, name := range f.Names {
+		names = append(names, name.Name)
+	}
+	if len(names) == 0 {
+		return fieldType(f.Type)
+	}
+	return fmt.Sprintf("%s %s", strings.Join(names, ", "), fieldType(f.Type))
+}
+
+func methodString(m *ast.Field) string {
+	if len(m.Names) > 0 {
+		return fmt.Sprintf("%s%s", m.Names[0].Name, funcType(m.Type))
+	}
+	return fieldType(m.Type)
+}
+
+func funcString(f *ast.FuncDecl, comments map[ast.Node]string) string {
+	var sb strings.Builder
+	if comment, ok := comments[f]; ok {
+		sb.WriteString(fmt.Sprintf("%s\n", prependCommentSlashes(comment)))
+	}
+	sb.WriteString(fmt.Sprintf("func "))
+	if f.Recv != nil {
+		sb.WriteString(fmt.Sprintf("(%s) ", fieldString(f.Recv.List[0])))
+	}
+	sb.WriteString(fmt.Sprintf("%s%s\n", f.Name.Name, funcType(f.Type)))
+	return sb.String()
 }
 
 func funcType(expr ast.Expr) string {

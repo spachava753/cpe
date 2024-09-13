@@ -55,12 +55,12 @@ func parseFile(fsys fs.FS, path string) (*FileMap, error) {
 	}
 
 	fileMap := &FileMap{
-		Path:           path,
-		PackageName:    node.Name.Name,
-		Methods:        make(map[string][]*ast.FuncDecl),
-		Comments:       make(map[ast.Node]string),
-		FieldComments:  make(map[*ast.Field]string),
-		StructComments: make(map[*ast.TypeSpec]string),
+		Path:          path,
+		PackageName:   node.Name.Name,
+		Methods:       make(map[string][]*ast.FuncDecl),
+		Comments:      make(map[ast.Node]string),
+		FieldComments: make(map[*ast.Field]string),
+		TypeComments:  make(map[*ast.TypeSpec]string),
 	}
 
 	if node.Doc != nil {
@@ -86,12 +86,24 @@ func parseFile(fsys fs.FS, path string) (*FileMap, error) {
 				if t.Doc != nil {
 					fileMap.Comments[t] = t.Doc.Text()
 				}
+			case *ast.TypeSpec:
+				if t.Doc != nil {
+					fileMap.TypeComments[t] = t.Doc.Text()
+				}
+				if iface, ok := t.Type.(*ast.InterfaceType); ok {
+					for _, method := range iface.Methods.List {
+						if method.Doc != nil {
+							fileMap.FieldComments[method] = method.Doc.Text()
+						}
+					}
+				}
 			}
 		}
 		return true
 	})
 
 	for _, decl := range node.Decls {
+		fileMap.Declarations = append(fileMap.Declarations, decl)
 		switch d := decl.(type) {
 		case *ast.GenDecl:
 			switch d.Tok {
@@ -101,17 +113,34 @@ func parseFile(fsys fs.FS, path string) (*FileMap, error) {
 						fileMap.Imports = append(fileMap.Imports, importSpec)
 					}
 				}
+			case token.CONST:
+				for _, spec := range d.Specs {
+					if valueSpec, ok := spec.(*ast.ValueSpec); ok {
+						fileMap.Constants = append(fileMap.Constants, valueSpec)
+					}
+				}
+			case token.VAR:
+				for _, spec := range d.Specs {
+					if valueSpec, ok := spec.(*ast.ValueSpec); ok {
+						fileMap.Variables = append(fileMap.Variables, valueSpec)
+					}
+				}
 			case token.TYPE:
 				for _, spec := range d.Specs {
 					if typeSpec, ok := spec.(*ast.TypeSpec); ok {
-						switch typeSpec.Type.(type) {
-						case *ast.StructType:
-							fileMap.Structs = append(fileMap.Structs, typeSpec)
+						if typeSpec.Assign == token.NoPos {
+							fileMap.Types = append(fileMap.Types, typeSpec)
 							if d.Doc != nil {
-								fileMap.StructComments[typeSpec] = d.Doc.Text()
+								fileMap.TypeComments[typeSpec] = d.Doc.Text()
 							}
-						case *ast.InterfaceType:
-							fileMap.Interfaces = append(fileMap.Interfaces, typeSpec)
+							switch typeSpec.Type.(type) {
+							case *ast.StructType:
+								fileMap.Structs = append(fileMap.Structs, typeSpec)
+							case *ast.InterfaceType:
+								fileMap.Interfaces = append(fileMap.Interfaces, typeSpec)
+							}
+						} else {
+							fileMap.TypeAliases = append(fileMap.TypeAliases, typeSpec)
 						}
 					}
 				}
