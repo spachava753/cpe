@@ -138,6 +138,13 @@ func main() {
 		return
 	}
 
+	// If debug flag is set, print the system message
+	if flags.Debug {
+		fmt.Println("Generated System Prompt:")
+		fmt.Println(systemMessage)
+		fmt.Println("--- End of System Prompt ---")
+	}
+
 	// Write system message to system_prompt.md
 	err = os.WriteFile("system_prompt.md", []byte(systemMessage), 0644)
 	if err != nil {

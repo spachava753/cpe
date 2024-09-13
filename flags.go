@@ -15,6 +15,7 @@ type Flags struct {
 	FrequencyPenalty  float64
 	PresencePenalty   float64
 	NumberOfResponses int
+	Debug             bool
 }
 
 func ParseFlags() Flags {
@@ -29,6 +30,7 @@ func ParseFlags() Flags {
 	flag.Float64Var(&f.FrequencyPenalty, "frequency-penalty", 0, "Frequency penalty (-2.0 - 2.0)")
 	flag.Float64Var(&f.PresencePenalty, "presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
 	flag.IntVar(&f.NumberOfResponses, "number-of-responses", 0, "Number of responses to generate")
+	flag.BoolVar(&f.Debug, "debug", false, "Print the generated system prompt")
 
 	flag.Parse()
 
