@@ -15,6 +15,109 @@ func TestRepoMap(t *testing.T) {
 		expected string
 	}{
 		{
+			name: "Comprehensive test case",
+			files: map[string]string{
+				"main.go": `
+// Package main is the entry point of the application.
+package main
+
+import (
+	"fmt"
+	"strings"
+)
+
+const (
+	MaxUsers = 100
+	Version  = "1.0.0"
+)
+
+var (
+	Debug = false
+	LogLevel = "info"
+)
+
+// User represents a user in the system.
+type User struct {
+	// ID is the unique identifier for the user.
+	ID   int
+	// Name is the user's full name.
+	Name string
+}
+
+// UserRole is an alias for string representing user roles.
+type UserRole = string
+
+// Greeter defines the interface for greeting users.
+type Greeter interface {
+	// Greet returns a greeting message for the given name.
+	Greet(name string) string
+}
+
+// SimpleGreeter implements the Greeter interface.
+type SimpleGreeter struct{}
+
+// Greet returns a simple greeting message.
+func (sg *SimpleGreeter) Greet(name string) string {
+	return fmt.Sprintf("Hello, %s!", name)
+}
+
+// main is the entry point of the application.
+func main() {
+	fmt.Println("Starting application...")
+}
+
+// CreateUser creates a new user with the given name.
+func CreateUser(name string) *User {
+	return &User{Name: name}
+}
+`,
+			},
+			expected: `<repo_map>
+<file>
+<path>main.go</path>
+<file_map>
+// Package main is the entry point of the application.
+package main
+import (
+ "fmt"
+ "strings"
+)
+const (
+ MaxUsers = 100
+ Version = "1.0.0"
+)
+var (
+ Debug = false
+ LogLevel = "info"
+)
+// User represents a user in the system.
+type User struct {
+    // ID is the unique identifier for the user.
+    ID int
+    // Name is the user's full name.
+    Name string
+}
+type UserRole = string
+// Greeter defines the interface for greeting users.
+type Greeter interface {
+    // Greet returns a greeting message for the given name.
+    Greet(name string) (string)
+}
+// SimpleGreeter implements the Greeter interface.
+type SimpleGreeter struct {
+}
+// Greet returns a simple greeting message.
+func (sg *SimpleGreeter) Greet(name string) (string)
+// main is the entry point of the application.
+func main() ()
+// CreateUser creates a new user with the given name.
+func CreateUser(name string) (*User)
+</file_map>
+</file>
+</repo_map>
+`,
+		},
+		{
 			name: "Single file with struct and function",
 			files: map[string]string{
 				"main.go": `
