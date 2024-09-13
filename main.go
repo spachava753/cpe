@@ -142,14 +142,6 @@ func main() {
 		fmt.Println("--- End of System Prompt ---")
 	}
 
-	// Write system message to system_prompt.md
-	err = os.WriteFile("system_prompt.md", []byte(systemMessage), 0644)
-	if err != nil {
-		fmt.Println("Error writing to system_prompt.md:", err)
-		return
-	}
-	fmt.Println("System prompt written to system_prompt.md")
-
 	// Set up the conversation
 	conversation := llm.Conversation{
 		SystemPrompt: systemMessage,
