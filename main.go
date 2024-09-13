@@ -15,9 +15,6 @@ import (
 	"strings"
 )
 
-//go:embed system_prompt.txt
-var systemPromptTemplate string
-
 func readIgnorePatterns(filename string) ([]glob.Glob, error) {
 	content, err := os.ReadFile(filename)
 	if err != nil {
@@ -57,7 +54,7 @@ var ignoreFolders = []string{
 
 func buildSystemMessage() (string, error) {
 	var systemMessage strings.Builder
-	systemMessage.WriteString(systemPromptTemplate)
+	systemMessage.WriteString(SimplePrompt)
 
 	ignorePatterns, err := readIgnorePatterns(".cpeignore")
 	if err != nil {
