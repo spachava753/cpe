@@ -1,4 +1,4 @@
-package repomap
+package codemap
 
 import (
 	"github.com/stretchr/testify/assert"
@@ -8,7 +8,7 @@ import (
 	"testing/fstest"
 )
 
-func TestRepoMap(t *testing.T) {
+func TestCodeMap(t *testing.T) {
 	tests := []struct {
 		name     string
 		files    map[string]string
@@ -72,7 +72,7 @@ func CreateUser(name string) *User {
 }
 `,
 			},
-			expected: `<repo_map>
+			expected: `<code_map>
 <file>
 <path>main.go</path>
 <file_map>
@@ -114,7 +114,7 @@ func main() ()
 func CreateUser(name string) (*User)
 </file_map>
 </file>
-</repo_map>
+</code_map>
 `,
 		},
 		{
@@ -138,7 +138,7 @@ func main() {
 }
 `,
 			},
-			expected: `<repo_map>
+			expected: `<code_map>
 <file>
 <path>main.go</path>
 <file_map>
@@ -154,7 +154,7 @@ type User struct {
 func main() ()
 </file_map>
 </file>
-</repo_map>
+</code_map>
 `,
 		},
 		{
@@ -182,7 +182,7 @@ func NewUser(name string) *User {
 }
 `,
 			},
-			expected: `<repo_map>
+			expected: `<code_map>
 <file>
 <path>main.go</path>
 <file_map>
@@ -204,7 +204,7 @@ type User struct {
 func NewUser(name string) (*User)
 </file_map>
 </file>
-</repo_map>
+</code_map>
 `,
 		},
 		{
@@ -236,7 +236,7 @@ func (s *serviceImpl) Create(ctx context.Context, data string) error {
 }
 `,
 			},
-			expected: `<repo_map>
+			expected: `<code_map>
 <file>
 <path>service.go</path>
 <file_map>
@@ -254,7 +254,7 @@ func (s *serviceImpl) Get(ctx context.Context, id string) (string, error)
 func (s *serviceImpl) Create(ctx context.Context, data string) (error)
 </file_map>
 </file>
-</repo_map>
+</code_map>
 `,
 		},
 		{
@@ -283,7 +283,7 @@ func ProcessData(data *sync.Map) ([]byte, error) {
 }
 `,
 			},
-			expected: `<repo_map>
+			expected: `<code_map>
 <file>
 <path>complex.go</path>
 <file_map>
@@ -302,7 +302,7 @@ type GenericType[T any] struct {
 func ProcessData(data *sync.Map) ([]byte, error)
 </file_map>
 </file>
-</repo_map>
+</code_map>
 `,
 		},
 		{
@@ -335,7 +335,7 @@ func NewUser(name string) *User {
 }
 `,
 			},
-			expected: `<repo_map>
+			expected: `<code_map>
 <file>
 <path>comments.go</path>
 <file_map>
@@ -360,7 +360,7 @@ type Admin struct {
 func NewUser(name string) (*User)
 </file_map>
 </file>
-</repo_map>
+</code_map>
 `,
 		},
 	}
@@ -370,14 +370,14 @@ func NewUser(name string) (*User)
 			// Set up the in-memory file system
 			memFS := setupInMemoryFS(tt.files)
 
-			// Parse the repository
-			repoMap, err := ParseRepo(memFS)
+			// Parse the code
+			codebase, err := ParseCodebase(memFS)
 			if err != nil {
-				t.Fatalf("Failed to parse repo: %v", err)
+				t.Fatalf("Failed to parse code: %v", err)
 			}
 
 			// Generate the output
-			output := repoMap.GenerateOutput()
+			output := codebase.GenerateOutput()
 
 			// Compare the output with the expected result
 			if !assert.Equal(t, normalizeWhitespace(tt.expected), normalizeWhitespace(output)) {

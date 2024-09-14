@@ -1,11 +1,11 @@
-package repomap
+package codemap
 
 import (
 	"go/ast"
 )
 
-// RepoMap represents the entire repository
-type RepoMap struct {
+// CodeMap represents the entire codebase
+type CodeMap struct {
 	Files []*FileMap
 }
 

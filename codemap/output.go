@@ -1,4 +1,4 @@
-package repomap
+package codemap
 
 import (
 	"fmt"
@@ -7,15 +7,15 @@ import (
 	"strings"
 )
 
-// GenerateOutput creates the XML-like output for the repo map
-func (r *RepoMap) GenerateOutput() string {
+// GenerateOutput creates the XML-like output for the code map
+func (r *CodeMap) GenerateOutput() string {
 	var sb strings.Builder
 
-	sb.WriteString("<repo_map>\n")
+	sb.WriteString("<code_map>\n")
 	for _, file := range r.Files {
 		sb.WriteString(file.generateOutput())
 	}
-	sb.WriteString("</repo_map>\n")
+	sb.WriteString("</code_map>\n")
 
 	return sb.String()
 }

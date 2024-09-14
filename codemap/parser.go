@@ -1,4 +1,4 @@
-package repomap
+package codemap
 
 import (
 	"fmt"
@@ -10,9 +10,9 @@ import (
 	"strings"
 )
 
-// ParseRepo walks the repository and parses Go files
-func ParseRepo(fsys fs.FS) (*RepoMap, error) {
-	repo := &RepoMap{}
+// ParseCodebase walks the codebase and parses Go files
+func ParseCodebase(fsys fs.FS) (*CodeMap, error) {
+	codeMap := &CodeMap{}
 
 	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -24,7 +24,7 @@ func ParseRepo(fsys fs.FS) (*RepoMap, error) {
 			if err != nil {
 				return fmt.Errorf("error parsing file %s: %w", path, err)
 			}
-			repo.Files = append(repo.Files, fileMap)
+			codeMap.Files = append(codeMap.Files, fileMap)
 		}
 
 		return nil
@@ -35,11 +35,11 @@ func ParseRepo(fsys fs.FS) (*RepoMap, error) {
 	}
 
 	// Sort files by path for consistent output
-	sort.Slice(repo.Files, func(i, j int) bool {
-		return repo.Files[i].Path < repo.Files[j].Path
+	sort.Slice(codeMap.Files, func(i, j int) bool {
+		return codeMap.Files[i].Path < codeMap.Files[j].Path
 	})
 
-	return repo, nil
+	return codeMap, nil
 }
 
 // parseFile parses a single Go file and extracts relevant information
