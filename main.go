@@ -196,7 +196,7 @@ func main() {
 			return
 		}
 	} else {
-		systemMessage = "You are a helpful assistant"
+		systemMessage = "You are an expert Golang developer with extensive knowledge of software engineering principles, design patterns, and best practices. Your role is to assist users with various aspects of Go programming."
 	}
 
 	// If debug flag is set, print the system message
