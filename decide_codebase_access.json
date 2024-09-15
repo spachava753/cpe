@@ -1,18 +1,17 @@
 {
-  "name": "decide_codebase_access",
-  "description": "Reports the decision on whether codebase access is required",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "requires_codebase": {
-        "type": "boolean",
-        "description": "Whether codebase access is required (true) or not (false)"
-      },
-      "reason": {
-        "type": "string",
-        "description": "A brief explanation for the decision"
-      }
+  "type": "object",
+  "properties": {
+    "requires_codebase": {
+      "type": "boolean",
+      "description": "Whether codebase access is required (true) or not (false)"
     },
-    "required": ["requires_codebase", "reason"]
-  }
+    "reason": {
+      "type": "string",
+      "description": "A brief explanation for the decision"
+    }
+  },
+  "required": [
+    "requires_codebase",
+    "reason"
+  ]
 }

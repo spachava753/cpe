@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	_ "embed"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/gobwas/glob"
@@ -106,6 +107,42 @@ func buildSystemMessage() (string, error) {
 	return systemMessage.String(), nil
 }
 
+func determineCodebaseAccess(provider llm.LLMProvider, genConfig llm.GenConfig, userInput string) (bool, error) {
+	initialConversation := llm.Conversation{
+		SystemPrompt: InitialPrompt,
+		Messages:     []llm.Message{{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: userInput}}}},
+		Tools: []llm.Tool{{
+			Name:        "decide_codebase_access",
+			Description: "Reports the decision on whether codebase access is required",
+			InputSchema: InitialPromptToolCallDef,
+		}},
+	}
+
+	genConfig.ToolChoice = "auto"
+	response, err := provider.GenerateResponse(genConfig, initialConversation)
+	if err != nil {
+		return false, fmt.Errorf("error generating initial response: %w", err)
+	}
+
+	fmt.Println("Initial response generated successfully:")
+	fmt.Println(response)
+
+	for _, block := range response {
+		if block.Type == "tool_use" && block.ToolUse.Name == "decide_codebase_access" {
+			var result struct {
+				RequiresCodebase bool   `json:"requires_codebase"`
+				Reason           string `json:"reason"`
+			}
+			if err := json.Unmarshal(block.ToolUse.Input, &result); err != nil {
+				return false, fmt.Errorf("error parsing tool use result: %w", err)
+			}
+			return result.RequiresCodebase, nil
+		}
+	}
+
+	return false, fmt.Errorf("no decision made on codebase access")
+}
+
 func main() {
 	flags := ParseFlags()
 
@@ -128,26 +165,6 @@ func main() {
 		defer closer.Close()
 	}
 
-	// Build system message
-	systemMessage, err := buildSystemMessage()
-	if err != nil {
-		fmt.Println("Error building system message:", err)
-		return
-	}
-
-	// If debug flag is set, print the system message
-	if flags.Debug {
-		fmt.Println("Generated System Prompt:")
-		fmt.Println(systemMessage)
-		fmt.Println("--- End of System Prompt ---")
-	}
-
-	// Set up the conversation
-	conversation := llm.Conversation{
-		SystemPrompt: systemMessage,
-		Messages:     []llm.Message{},
-	}
-
 	// Read content from stdin
 	reader := bufio.NewReader(os.Stdin)
 	contentBytes, readErr := io.ReadAll(reader)
@@ -163,8 +180,37 @@ func main() {
 		return
 	}
 
-	// Add user message to the conversation
-	conversation.Messages = append(conversation.Messages, llm.Message{Role: "user", Content: content})
+	// Determine if codebase access is required
+	requiresCodebase, err := determineCodebaseAccess(provider, genConfig, content)
+	if err != nil {
+		fmt.Printf("Error determining codebase access: %v\n", err)
+		return
+	}
+
+	var systemMessage string
+	if requiresCodebase {
+		// Build system message with codebase
+		systemMessage, err = buildSystemMessage()
+		if err != nil {
+			fmt.Println("Error building system message:", err)
+			return
+		}
+	} else {
+		systemMessage = "You are a helpful assistant"
+	}
+
+	// If debug flag is set, print the system message
+	if flags.Debug {
+		fmt.Println("Generated System Prompt:")
+		fmt.Println(systemMessage)
+		fmt.Println("--- End of System Prompt ---")
+	}
+
+	// Set up the conversation
+	conversation := llm.Conversation{
+		SystemPrompt: systemMessage,
+		Messages:     []llm.Message{{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: content}}}},
+	}
 
 	// Generate response
 	response, err := provider.GenerateResponse(genConfig, conversation)
@@ -175,16 +221,20 @@ func main() {
 
 	fmt.Println("Response generated successfully:")
 	fmt.Println("\n--- Full Content ---")
-	fmt.Println(response)
+	for _, block := range response {
+		fmt.Println(block.Text)
+	}
 	fmt.Println("--- End of Content ---")
 
-	// Parse modifications
-	modifications, err := parser.ParseModifications(response)
-	if err != nil {
-		fmt.Printf("Error parsing modifications: %v\n", err)
-		return
-	}
+	if requiresCodebase {
+		// Parse modifications
+		modifications, err := parser.ParseModifications(response[0].Text)
+		if err != nil {
+			fmt.Printf("Error parsing modifications: %v\n", err)
+			return
+		}
 
-	// Execute file operations
-	fileops.ExecuteFileOperations(modifications)
+		// Execute file operations
+		fileops.ExecuteFileOperations(modifications)
+	}
 }

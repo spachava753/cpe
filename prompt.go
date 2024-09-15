@@ -1,7 +1,12 @@
 package main
 
-import _ "embed"
+import (
+	_ "embed"
+	"encoding/json"
+)
 
+// SimplePrompt embeds the contents of the file "simple_prompt.txt" as a string for use in the application.
+//
 //go:embed simple_prompt.txt
 var SimplePrompt string
 
@@ -10,3 +15,11 @@ var SimplePrompt string
 //
 //go:embed agentless_prompt.txt
 var AgentlessPrompt string
+
+// InitialPrompt contains the embedded content of the initial_prompt.txt file.
+//
+//go:embed initial_prompt.txt
+var InitialPrompt string
+
+//go:embed decide_codebase_access.json
+var InitialPromptToolCallDef json.RawMessage
