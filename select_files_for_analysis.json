@@ -1,0 +1,20 @@
+{
+  "type": "object",
+  "properties": {
+    "selected_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "An array of file paths selected for high-fidelity analysis"
+    },
+    "reason": {
+      "type": "string",
+      "description": "A brief explanation for the file selection"
+    }
+  },
+  "required": [
+    "selected_files",
+    "reason"
+  ]
+}

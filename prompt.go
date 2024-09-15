@@ -10,12 +10,6 @@ import (
 //go:embed simple_prompt.txt
 var SimplePrompt string
 
-// AgentlessPrompt is a system prompt for a two-step approach, not yet in use. The first step is creating a high level map of the code_mapsitory for reduced token count and to fit large code bases in the context window.
-// Then we will ask the AIto identify which files it thinks is relevant. With the relevant files, we will feed them and any dependencies (callsites? definitions?) back into the LLM to modify.
-//
-//go:embed agentless_prompt.txt
-var AgentlessPrompt string
-
 // InitialPrompt contains the embedded content of the initial_prompt.txt file.
 //
 //go:embed initial_prompt.txt
@@ -23,3 +17,12 @@ var InitialPrompt string
 
 //go:embed decide_codebase_access.json
 var InitialPromptToolCallDef json.RawMessage
+
+//go:embed code_map_analysis_prompt.txt
+var CodeMapAnalysisPrompt string
+
+//go:embed select_files_for_analysis.json
+var SelectFilesForAnalysisToolDef json.RawMessage
+
+//go:embed code_analysis_modification_prompt.txt
+var CodeAnalysisModificationPrompt string
