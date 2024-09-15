@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -38,7 +39,10 @@ func NewGeminiProvider(apiKey string) (*GeminiProvider, error) {
 }
 
 // GenerateResponse generates a response using the Gemini API
-func (g *GeminiProvider) GenerateResponse(config GenConfig, conversation Conversation) (string, error) {
+func (g *GeminiProvider) GenerateResponse(config GenConfig, conversation Conversation) ([]ContentBlock, error) {
+	if conversation.Messages[len(conversation.Messages)-1].Content[0].Type != "text" {
+		return nil, fmt.Errorf("last message in conversation must be text")
+	}
 
 	g.model = g.client.GenerativeModel(config.Model)
 
@@ -50,6 +54,10 @@ func (g *GeminiProvider) GenerateResponse(config GenConfig, conversation Convers
 		Parts: []genai.Part{genai.Text(conversation.SystemPrompt)},
 	}
 
+	// Set up tools for function calling
+	tools := convertToGeminiTools(conversation.Tools)
+	g.model.Tools = tools
+
 	session := g.model.StartChat()
 
 	session.History = convertToGeminiContent(conversation.Messages[:len(conversation.Messages)-1])
@@ -60,19 +68,38 @@ func (g *GeminiProvider) GenerateResponse(config GenConfig, conversation Convers
 	var resp *genai.GenerateContentResponse
 	var err error
 
-	resp, err = session.SendMessage(ctx, genai.Text(conversation.Messages[len(conversation.Messages)-1].Content))
+	resp, err = session.SendMessage(ctx, genai.Text(conversation.Messages[len(conversation.Messages)-1].Content[0].Text))
 
 	if err != nil {
-		return "", fmt.Errorf("error sending message to Gemini: %w", err)
+		return nil, fmt.Errorf("error sending message to Gemini: %w", err)
 	}
 
 	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
-		return "", fmt.Errorf("no response generated")
+		return nil, fmt.Errorf("no response generated")
 	}
 
-	response := resp.Candidates[0].Content.Parts[0].(genai.Text)
+	var contentBlocks []ContentBlock
 
-	return string(response), nil
+	for _, part := range resp.Candidates[0].Content.Parts {
+		switch v := part.(type) {
+		case genai.Text:
+			contentBlocks = append(contentBlocks, ContentBlock{Type: "text", Text: string(v)})
+		case genai.FunctionCall:
+			toolUse := &ToolUse{
+				ID:   v.Name, // Using the function name as the ID
+				Name: v.Name,
+			}
+			// Convert the args map to JSON
+			inputJSON, err := json.Marshal(v.Args)
+			if err != nil {
+				return nil, fmt.Errorf("error marshaling function args: %w", err)
+			}
+			toolUse.Input = inputJSON
+			contentBlocks = append(contentBlocks, ContentBlock{Type: "tool_use", ToolUse: toolUse})
+		}
+	}
+
+	return contentBlocks, nil
 }
 
 // Close closes the Gemini client and cleans up resources
@@ -95,8 +122,94 @@ func convertToGeminiContent(messages []Message) []*genai.Content {
 
 // convertMessageToGeminiContent converts a single Message to genai.Content
 func convertMessageToGeminiContent(message Message) *genai.Content {
+	var parts []genai.Part
+
+	for _, content := range message.Content {
+		switch content.Type {
+		case "text":
+			parts = append(parts, genai.Text(content.Text))
+		case "tool_use":
+			// For tool use, we don't add anything to parts as it's handled separately
+		case "tool_result":
+			parts = append(parts, genai.FunctionResponse{
+				Name:     content.ToolResult.ToolUseID,
+				Response: content.ToolResult.Content.(map[string]interface{}),
+			})
+		}
+	}
+
 	return &genai.Content{
-		Parts: []genai.Part{genai.Text(message.Content)},
+		Parts: parts,
 		Role:  message.Role,
+	}
+}
+
+// convertToGeminiTools converts internal Tool type to Gemini's Tool
+func convertToGeminiTools(tools []Tool) []*genai.Tool {
+	geminiTools := make([]*genai.Tool, len(tools))
+	for i, tool := range tools {
+		geminiTools[i] = &genai.Tool{
+			FunctionDeclarations: []*genai.FunctionDeclaration{
+				{
+					Name:        tool.Name,
+					Description: tool.Description,
+					Parameters: &genai.Schema{
+						Type:       genai.TypeObject,
+						Properties: make(map[string]*genai.Schema),
+					},
+				},
+			},
+		}
+
+		// Parse the input schema JSON
+		var schema map[string]interface{}
+		if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
+			fmt.Printf("Error parsing input schema for tool %s: %v\n", tool.Name, err)
+			continue
+		}
+
+		// Convert the schema to Gemini's format
+		if properties, ok := schema["properties"].(map[string]interface{}); ok {
+			for propName, propSchema := range properties {
+				if propDetails, ok := propSchema.(map[string]interface{}); ok {
+					geminiTools[i].FunctionDeclarations[0].Parameters.Properties[propName] = &genai.Schema{
+						Type:        convertToGeminiType(propDetails["type"].(string)),
+						Description: propDetails["description"].(string),
+					}
+				}
+			}
+		}
+
+		// Add required properties
+		if required, ok := schema["required"].([]interface{}); ok {
+			for _, req := range required {
+				geminiTools[i].FunctionDeclarations[0].Parameters.Required = append(
+					geminiTools[i].FunctionDeclarations[0].Parameters.Required,
+					req.(string),
+				)
+			}
+		}
+	}
+	return geminiTools
+}
+
+// convertToGeminiType converts a string type to the corresponding genai.Type
+func convertToGeminiType(typeStr string) genai.Type {
+	switch typeStr {
+	case "string":
+		return genai.TypeString
+	case "number":
+		return genai.TypeNumber
+	case "integer":
+		return genai.TypeInteger
+	case "boolean":
+		return genai.TypeBoolean
+	case "array":
+		return genai.TypeArray
+	case "object":
+		return genai.TypeObject
+	default:
+		fmt.Printf("Warning: Unknown type %s, defaulting to TypeString\n", typeStr)
+		return genai.TypeString
 	}
 }

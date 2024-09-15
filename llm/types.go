@@ -2,14 +2,23 @@ package llm
 
 // Message represents a single message in a conversation
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string         `json:"role"`
+	Content []ContentBlock `json:"content"`
 }
 
 // Conversation represents a full conversation context
 type Conversation struct {
 	SystemPrompt string
 	Messages     []Message
+	Tools        []Tool
+}
+
+// ContentBlock represents a single block of content in a message
+type ContentBlock struct {
+	Type       string      `json:"type"`
+	Text       string      `json:"text,omitempty"`
+	ToolUse    *ToolUse    `json:"tool_use,omitempty"`
+	ToolResult *ToolResult `json:"tool_result,omitempty"`
 }
 
 // GenConfig represents the configuration when invoking a model.
@@ -25,10 +34,12 @@ type GenConfig struct {
 	PresencePenalty   float32  // Penalizes repeated tokens: -2.0 - 2.0
 	Stop              []string // List of sequences where the API will stop generating further tokens
 	NumberOfResponses int      // Number of chat completion choices to generate
+	ToolChoice        string   // Controls tool use: "auto", "any", or "tool"
+	ForcedTool        string   // Name of the tool to force when ToolChoice is "tool"
 }
 
 // LLMProvider defines the interface for interacting with LLM providers
 type LLMProvider interface {
 	// GenerateResponse generates a response from the assistant based on the provided conversation
-	GenerateResponse(config GenConfig, conversation Conversation) (string, error)
+	GenerateResponse(config GenConfig, conversation Conversation) ([]ContentBlock, error)
 }
