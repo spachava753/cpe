@@ -9,6 +9,170 @@ import (
 )
 
 func TestCodeMap(t *testing.T) {
+	t.Run("Including test files", func(t *testing.T) {
+		files := map[string]string{
+			"main.go": `
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("Hello, World!")
+}
+`,
+			"utils/helper.go": `
+package utils
+
+func Add(a, b int) int {
+	return a + b
+}
+`,
+			"utils/helper_test.go": `
+package utils
+
+import "testing"
+
+func TestAdd(t *testing.T) {
+	result := Add(2, 3)
+	if result != 5 {
+		t.Errorf("Expected 5, got %d", result)
+	}
+}
+`,
+		}
+
+		expected := `<code_map>
+<file>
+<path>main.go</path>
+<file_map>
+package main
+import (
+ "fmt"
+)
+func main() ()
+</file_map>
+</file>
+<file>
+<path>utils/helper.go</path>
+<file_map>
+package utils
+func Add(a int, b int) (int)
+</file_map>
+</file>
+<file>
+<path>utils/helper_test.go</path>
+<file_map>
+package utils
+import (
+ "testing"
+)
+func TestAdd(t *testing.T) ()
+</file_map>
+</file>
+</code_map>
+`
+
+		// Set up the in-memory file system
+		memFS := setupInMemoryFS(files)
+
+		// Parse the code
+		codebase, err := ParseCodebase(memFS)
+		if err != nil {
+			t.Fatalf("Failed to parse code: %v", err)
+		}
+
+		// Generate the output
+		output := codebase.GenerateOutput()
+
+		// Compare the output with the expected result
+		if !assert.Equal(t, normalizeWhitespace(expected), normalizeWhitespace(output)) {
+			t.Errorf("Unexpected output.\nExpected:\n%s\nGot:\n%s", expected, output)
+		}
+	})
+
+	// Existing test cases...
+	t.Run("Multiple files including test files", func(t *testing.T) {
+		files := map[string]string{
+			"main.go": `
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("Hello, World!")
+}
+`,
+			"utils/helper.go": `
+package utils
+
+func Add(a, b int) int {
+	return a + b
+}
+`,
+			"utils/helper_test.go": `
+package utils
+
+import "testing"
+
+func TestAdd(t *testing.T) {
+	result := Add(2, 3)
+	if result != 5 {
+		t.Errorf("Expected 5, got %d", result)
+	}
+}
+`,
+		}
+
+		expected := `<code_map>
+<file>
+<path>main.go</path>
+<file_map>
+package main
+import (
+ "fmt"
+)
+func main() ()
+</file_map>
+</file>
+<file>
+<path>utils/helper.go</path>
+<file_map>
+package utils
+func Add(a int, b int) (int)
+</file_map>
+</file>
+<file>
+<path>utils/helper_test.go</path>
+<file_map>
+package utils
+import (
+ "testing"
+)
+func TestAdd(t *testing.T) ()
+</file_map>
+</file>
+</code_map>
+`
+
+		// Set up the in-memory file system
+		memFS := setupInMemoryFS(files)
+
+		// Parse the code
+		codebase, err := ParseCodebase(memFS)
+		if err != nil {
+			t.Fatalf("Failed to parse code: %v", err)
+		}
+
+		// Generate the output
+		output := codebase.GenerateOutput()
+
+		// Compare the output with the expected result
+		if !assert.Equal(t, normalizeWhitespace(expected), normalizeWhitespace(output)) {
+			t.Errorf("Unexpected output.\nExpected:\n%s\nGot:\n%s", expected, output)
+		}
+	})
+
+	// Existing test cases...
 	tests := []struct {
 		name     string
 		files    map[string]string

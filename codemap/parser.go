@@ -19,7 +19,7 @@ func ParseCodebase(fsys fs.FS) (*CodeMap, error) {
 			return err
 		}
 
-		if !d.IsDir() && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+		if !d.IsDir() && strings.HasSuffix(path, ".go") {
 			fileMap, err := parseFile(fsys, path)
 			if err != nil {
 				return fmt.Errorf("error parsing file %s: %w", path, err)
