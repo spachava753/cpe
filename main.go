@@ -101,7 +101,7 @@ func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, c
 
 func buildSystemMessageWithSelectedFiles(selectedFiles []string) (string, error) {
 	var systemMessage strings.Builder
-	systemMessage.WriteString(SimplePrompt)
+	systemMessage.WriteString(CodeAnalysisModificationPrompt)
 
 	for _, filePath := range selectedFiles {
 		content, err := os.ReadFile(filePath)

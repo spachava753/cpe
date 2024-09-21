@@ -4,4 +4,4 @@ system_prompt.md
 .git/**
 .git/objects/*
 .idea/**
-*prompt.txt
+*.txt

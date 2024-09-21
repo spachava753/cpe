@@ -5,11 +5,6 @@ import (
 	"encoding/json"
 )
 
-// SimplePrompt embeds the contents of the file "simple_prompt.txt" as a string for use in the application.
-//
-//go:embed simple_prompt.txt
-var SimplePrompt string
-
 // InitialPrompt contains the embedded content of the initial_prompt.txt file.
 //
 //go:embed initial_prompt.txt
