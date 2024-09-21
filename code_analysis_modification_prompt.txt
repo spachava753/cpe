@@ -14,6 +14,7 @@ Instructions:
    - Provide a clear explanation for each suggested change.
    - Ensure that changes maintain correct Golang syntax and project consistency.
    - Consider the impact of changes on other parts of the code.
+   - Never omit or abbreviate when generating code to search for, it must match exactly against some existing source code
 Follow the below XMl format for modifying, creating, and removing files:
 <modify_code>
     <path>./file/path.go</path>
