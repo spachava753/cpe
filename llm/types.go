@@ -1,9 +1,35 @@
 package llm
 
+import "fmt"
+
 // Message represents a single message in a conversation
 type Message struct {
 	Role    string         `json:"role"`
 	Content []ContentBlock `json:"content"`
+}
+
+// String implements the Stringer interface for Message
+func (m Message) String() string {
+	var result string
+	result += fmt.Sprintf("Role: %s\n", m.Role)
+	for i, content := range m.Content {
+		result += fmt.Sprintf("  Content[%d]: Type=%s", i, content.Type)
+		if content.Text != "" {
+			result += ", Text=" + content.Text
+		}
+		if content.ToolUse != nil {
+			result += fmt.Sprintf(", ToolUse={Name: %s}", content.ToolUse.Name)
+		}
+		if content.ToolResult != nil {
+			result += fmt.Sprintf(
+				", ToolResult={ToolUse Id: %s, Content: %s}",
+				content.ToolResult.ToolUseID,
+				content.ToolResult.Content,
+			)
+		}
+		result += "\n"
+	}
+	return result
 }
 
 // Conversation represents a full conversation context
@@ -11,6 +37,28 @@ type Conversation struct {
 	SystemPrompt string
 	Messages     []Message
 	Tools        []Tool
+}
+
+// String implements the Stringer interface for Conversation
+func (c Conversation) String() string {
+	var result string
+	result += "System Prompt: " + c.SystemPrompt + "\n"
+	result += "Messages:\n"
+	for i, msg := range c.Messages {
+		result += fmt.Sprintf("  [%d] Role: %s\n", i, msg.Role)
+		for j, content := range msg.Content {
+			result += fmt.Sprintf("    Content[%d]: Type=%s", j, content.Type)
+			if content.Text != "" {
+				result += ", Text=" + content.Text
+			}
+			result += "\n"
+		}
+	}
+	result += "Tools:\n"
+	for i, tool := range c.Tools {
+		result += fmt.Sprintf("  [%d] %s\n", i, tool.Name)
+	}
+	return result
 }
 
 // ContentBlock represents a single block of content in a message
