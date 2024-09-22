@@ -90,3 +90,20 @@ AI: Sure, we can modify the tests to use the github.com/stretchr/testify package
     <explanation>Explanation for all edits</explanation>
 </modify_code>
 </example>
+
+<example>
+User: Can you create some tests for `UserValidation`?
+AI: Sure, since there is no test file, I will create one
+
+<create_file>
+    <path>./pkgs/path_test.go</path>
+    <content>
+        <![CDATA[
+            func TestCustomFunc(t *testing.T) {
+                // existing source code in the file
+            }
+        ]]>
+    </content>
+    <explanation>Explanation for all edits</explanation>
+</create_file>
+</example>
