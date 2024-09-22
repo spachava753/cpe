@@ -24,6 +24,149 @@ func TestGenerateOutputFromAST(t *testing.T) {
 		expected string
 	}{
 		{
+			name: "Comprehensive comments test",
+			files: map[string]string{
+				"comments.go": `
+// Package comments demonstrates comprehensive comment usage in Go.
+package comments
+
+import "fmt"
+
+// UserRole represents the role of a user in the system.
+type UserRole string
+
+// Predefined user roles.
+const (
+	// AdminRole represents an administrator user.
+	AdminRole UserRole = "admin"
+	// RegularRole represents a regular user.
+	RegularRole UserRole = "regular"
+)
+
+// Config holds the application configuration.
+var Config struct {
+	// Debug enables debug mode when true.
+	Debug bool
+	// LogLevel sets the logging level.
+	LogLevel string
+}
+
+// User represents a user in the system.
+type User struct {
+	// ID is the unique identifier for the user.
+	ID int
+	// Name is the user's full name.
+	Name string
+	// Role defines the user's role in the system.
+	Role UserRole
+}
+
+// UserManager defines the interface for managing users.
+type UserManager interface {
+	// CreateUser creates a new user with the given name and role.
+	// Returns the created user and any error encountered.
+	CreateUser(name string, role UserRole) (*User, error)
+	
+	// GetUser retrieves a user by their ID.
+	// Returns the user if found, or an error if not found or any other issue occurs.
+	GetUser(id int) (*User, error)
+}
+
+// DefaultUserManager is the default implementation of UserManager.
+type DefaultUserManager struct {
+	// users is a map of user IDs to User objects.
+	users map[int]*User
+}
+
+// CreateUser implements UserManager.CreateUser.
+func (um *DefaultUserManager) CreateUser(name string, role UserRole) (*User, error) {
+	// Implementation details...
+	return nil, nil
+}
+
+// GetUser implements UserManager.GetUser.
+func (um *DefaultUserManager) GetUser(id int) (*User, error) {
+	// Implementation details...
+	return nil, nil
+}
+
+// NewDefaultUserManager creates a new instance of DefaultUserManager.
+func NewDefaultUserManager() *DefaultUserManager {
+	return &DefaultUserManager{
+		users: make(map[int]*User),
+	}
+}
+`,
+			},
+			expected: `<code_map>
+<file>
+<path>comments.go</path>
+<file_map>
+// Package comments demonstrates comprehensive comment usage in Go.
+package comments
+
+import "fmt"
+
+// UserRole represents the role of a user in the system.
+type UserRole string
+
+// Predefined user roles.
+const (
+	// AdminRole represents an administrator user.
+	AdminRole UserRole = "admin"
+	// RegularRole represents a regular user.
+	RegularRole UserRole = "regular"
+)
+
+// Config holds the application configuration.
+var Config struct {
+	// Debug enables debug mode when true.
+	Debug bool
+	// LogLevel sets the logging level.
+	LogLevel string
+}
+
+// User represents a user in the system.
+type User struct {
+	// ID is the unique identifier for the user.
+	ID int
+	// Name is the user's full name.
+	Name string
+	// Role defines the user's role in the system.
+	Role UserRole
+}
+
+// UserManager defines the interface for managing users.
+type UserManager interface {
+	// CreateUser creates a new user with the given name and role.
+	// Returns the created user and any error encountered.
+	CreateUser(name string, role UserRole) (*User, error)
+
+	// GetUser retrieves a user by their ID.
+	// Returns the user if found, or an error if not found or any other issue occurs.
+	GetUser(id int) (*User, error)
+}
+
+// DefaultUserManager is the default implementation of UserManager.
+type DefaultUserManager struct {
+	// users is a map of user IDs to User objects.
+	users map[int]*User
+}
+
+// CreateUser implements UserManager.CreateUser.
+func (um *DefaultUserManager) CreateUser(name string, role UserRole) (*User, error)
+
+// GetUser implements UserManager.GetUser.
+func (um *DefaultUserManager) GetUser(id int) (*User, error)
+
+// NewDefaultUserManager creates a new instance of DefaultUserManager.
+func NewDefaultUserManager() *DefaultUserManager
+</file_map>
+</file>
+</code_map>
+`,
+		},
+		{
 			name: "Including test files",
 			files: map[string]string{
 				"main.go": `
