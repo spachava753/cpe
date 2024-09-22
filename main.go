@@ -11,6 +11,9 @@ import (
 	"github.com/spachava753/cpe/extract"
 	"github.com/spachava753/cpe/fileops"
 	"github.com/spachava753/cpe/llm"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"strings"
@@ -97,11 +100,69 @@ func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, c
 	return nil, fmt.Errorf("no files selected for analysis")
 }
 
+func resolveTypeFiles(selectedFiles []string) (map[string]bool, error) {
+	fset := token.NewFileSet()
+	typeDefinitions := make(map[string]string)
+	typeUsages := make(map[string]bool)
+
+	// Parse all files and collect type definitions
+	for _, file := range selectedFiles {
+		astFile, err := parser.ParseFile(fset, file, nil, parser.ParseComments)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing file %s: %w", file, err)
+		}
+
+		ast.Inspect(astFile, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.TypeSpec:
+				typeDefinitions[x.Name.Name] = file
+			}
+			return true
+		})
+	}
+
+	// Collect type usages
+	for _, file := range selectedFiles {
+		astFile, err := parser.ParseFile(fset, file, nil, parser.ParseComments)
+		if err != nil {
+			return nil, fmt.Errorf("error parsing file %s: %w", file, err)
+		}
+
+		ast.Inspect(astFile, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.Ident:
+				if defFile, ok := typeDefinitions[x.Name]; ok {
+					typeUsages[defFile] = true
+				}
+			}
+			return true
+		})
+	}
+
+	// Add all selected files to the type usages
+	for _, file := range selectedFiles {
+		typeUsages[file] = true
+	}
+
+	return typeUsages, nil
+}
+
 func buildSystemMessageWithSelectedFiles(selectedFiles []string) (string, error) {
 	var systemMessage strings.Builder
 	systemMessage.WriteString(CodeAnalysisModificationPrompt)
 
-	for _, filePath := range selectedFiles {
+	resolvedFiles, err := resolveTypeFiles(selectedFiles)
+	if err != nil {
+		return "", fmt.Errorf("error resolving type files: %w", err)
+	}
+
+	// Debug: Print resolved files
+	fmt.Println("Resolved files:")
+	for filePath := range resolvedFiles {
+		fmt.Printf("  - %s\n", filePath)
+	}
+
+	for filePath := range resolvedFiles {
 		content, err := os.ReadFile(filePath)
 		if err != nil {
 			return "", fmt.Errorf("error reading file %s: %w", filePath, err)
