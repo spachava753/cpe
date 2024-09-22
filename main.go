@@ -107,7 +107,7 @@ func resolveTypeFiles(selectedFiles []string) (map[string]bool, error) {
 
 	// Parse all files and collect type definitions
 	for _, file := range selectedFiles {
-		astFile, err := parser.ParseFile(fset, file, nil, parser.ParseComments)
+		astFile, err := parser.ParseFile(fset, file, nil, parser.ParseComments|parser.SkipObjectResolution)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing file %s: %w", file, err)
 		}
@@ -123,7 +123,7 @@ func resolveTypeFiles(selectedFiles []string) (map[string]bool, error) {
 
 	// Collect type usages
 	for _, file := range selectedFiles {
-		astFile, err := parser.ParseFile(fset, file, nil, parser.ParseComments)
+		astFile, err := parser.ParseFile(fset, file, nil, parser.ParseComments|parser.SkipObjectResolution)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing file %s: %w", file, err)
 		}
