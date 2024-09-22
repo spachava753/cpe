@@ -14,6 +14,12 @@ type OperationResult struct {
 }
 
 func ExecuteFileOperations(modifications []parser.Modification) []OperationResult {
+	// Check if modifications slice is empty
+	if len(modifications) == 0 {
+		fmt.Println("No modifications to apply.")
+		return []OperationResult{}
+	}
+
 	// First pass: Validate operations
 	validOperations, invalidOperations := validateOperations(modifications)
 
