@@ -11,56 +11,6 @@ import (
 	"strings"
 )
 
-// GenerateOutput creates the XML-like output for the code map
-func (r *CodeMap) GenerateOutput() string {
-	var sb strings.Builder
-
-	sb.WriteString("<code_map>\n")
-	for _, file := range r.Files {
-		sb.WriteString(file.generateOutput())
-	}
-	sb.WriteString("</code_map>\n")
-
-	return sb.String()
-}
-
-func (f *FileMap) generateOutput() string {
-	var sb strings.Builder
-
-	sb.WriteString(fmt.Sprintf("<file>\n<path>%s</path>\n<file_map>\n", f.Path))
-	if f.PackageComment != "" {
-		sb.WriteString(fmt.Sprintf("%s\n", prependCommentSlashes(f.PackageComment)))
-	}
-	sb.WriteString(fmt.Sprintf("package %s\n", f.PackageName))
-
-	if len(f.Imports) > 0 {
-		sb.WriteString("import (\n")
-		for _, imp := range f.Imports {
-			sb.WriteString(fmt.Sprintf(" %s\n", imp.Path.Value))
-		}
-		sb.WriteString(")\n")
-	}
-
-	// Generate output for constants, variables, types, and functions in the order they appear
-	for _, item := range f.Declarations {
-		switch v := item.(type) {
-		case *ast.GenDecl:
-			switch v.Tok {
-			case token.CONST, token.VAR:
-				sb.WriteString(genDeclString(v, f.Comments))
-			case token.TYPE:
-				sb.WriteString(typeString(v, f.TypeComments, f.FieldComments))
-			}
-		case *ast.FuncDecl:
-			sb.WriteString(funcString(v, f.Comments))
-		}
-	}
-
-	sb.WriteString("</file_map>\n</file>\n")
-
-	return sb.String()
-}
-
 func genDeclString(d *ast.GenDecl, comments map[ast.Node]string) string {
 	var sb strings.Builder
 	if comment, ok := comments[d]; ok {

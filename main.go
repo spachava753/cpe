@@ -53,17 +53,15 @@ var ignoreFolders = []string{
 	"target",
 }
 
-func generateCodeMap() (*codemap.CodeMap, error) {
-	codebase, err := codemap.ParseCodebase(os.DirFS("."))
+func generateCodeMapOutput() (string, error) {
+	output, err := codemap.GenerateOutputFromAST(os.DirFS("."))
 	if err != nil {
-		return nil, fmt.Errorf("error parsing codebase: %w", err)
+		return "", fmt.Errorf("error generating code map output: %w", err)
 	}
-	return codebase, nil
+	return output, nil
 }
 
-func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, codeMap *codemap.CodeMap, userQuery string) ([]string, error) {
-	codeMapOutput := codeMap.GenerateOutput()
-
+func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, codeMapOutput string, userQuery string) ([]string, error) {
 	conversation := llm.Conversation{
 		SystemPrompt: CodeMapAnalysisPrompt,
 		Messages: []llm.Message{
@@ -202,15 +200,15 @@ func main() {
 
 	var systemMessage string
 	if requiresCodebase {
-		// Generate low-fidelity code map
-		codeMap, err := generateCodeMap()
+		// Generate low-fidelity code map output
+		codeMapOutput, err := generateCodeMapOutput()
 		if err != nil {
-			fmt.Printf("Error generating code map: %v\n", err)
+			fmt.Printf("Error generating code map output: %v\n", err)
 			return
 		}
 
 		// Perform code map analysis and select files
-		selectedFiles, err := performCodeMapAnalysis(provider, genConfig, codeMap, content)
+		selectedFiles, err := performCodeMapAnalysis(provider, genConfig, codeMapOutput, content)
 		if err != nil {
 			fmt.Printf("Error performing code map analysis: %v\n", err)
 			return
