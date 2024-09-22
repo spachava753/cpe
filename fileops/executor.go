@@ -55,12 +55,6 @@ func validateOperation(mod parser.Modification) error {
 		return validateRemoveFile(m)
 	case parser.CreateFile:
 		return validateCreateFile(m)
-	case parser.RenameFile:
-		return validateRenameFile(m)
-	case parser.MoveFile:
-		return validateMoveFile(m)
-	case parser.CreateDirectory:
-		return validateCreateDirectory(m)
 	default:
 		return fmt.Errorf("unknown modification type")
 	}
@@ -83,33 +77,6 @@ func validateRemoveFile(m parser.RemoveFile) error {
 func validateCreateFile(m parser.CreateFile) error {
 	if fileExists(m.Path) {
 		return fmt.Errorf("file already exists: %s", m.Path)
-	}
-	return validatePath(m.Path)
-}
-
-func validateRenameFile(m parser.RenameFile) error {
-	if !fileExists(m.OldPath) {
-		return fmt.Errorf("file does not exist: %s", m.OldPath)
-	}
-	if fileExists(m.NewPath) {
-		return fmt.Errorf("file already exists: %s", m.NewPath)
-	}
-	return validatePath(m.NewPath)
-}
-
-func validateMoveFile(m parser.MoveFile) error {
-	if !fileExists(m.OldPath) {
-		return fmt.Errorf("file does not exist: %s", m.OldPath)
-	}
-	if fileExists(m.NewPath) {
-		return fmt.Errorf("file already exists: %s", m.NewPath)
-	}
-	return validatePath(m.NewPath)
-}
-
-func validateCreateDirectory(m parser.CreateDirectory) error {
-	if fileExists(m.Path) {
-		return fmt.Errorf("file or directory already exists: %s", m.Path)
 	}
 	return validatePath(m.Path)
 }
@@ -138,12 +105,6 @@ func executeOperation(mod parser.Modification) error {
 		return executeRemoveFile(m)
 	case parser.CreateFile:
 		return executeCreateFile(m)
-	case parser.RenameFile:
-		return executeRenameFile(m)
-	case parser.MoveFile:
-		return executeMoveFile(m)
-	case parser.CreateDirectory:
-		return executeCreateDirectory(m)
 	default:
 		return fmt.Errorf("unknown modification type")
 	}
@@ -156,7 +117,7 @@ func executeModifyCode(m parser.ModifyCode) error {
 	}
 
 	newContent := string(content)
-	for _, mod := range m.Modifications {
+	for _, mod := range m.Edits {
 		newContent = strings.Replace(newContent, mod.Search, mod.Replace, -1)
 	}
 
@@ -176,22 +137,6 @@ func executeCreateFile(m parser.CreateFile) error {
 		return fmt.Errorf("failed to write file %s: %w", m.Path, err)
 	}
 	return nil
-}
-
-func executeRenameFile(m parser.RenameFile) error {
-	return os.Rename(m.OldPath, m.NewPath)
-}
-
-func executeMoveFile(m parser.MoveFile) error {
-	dir := filepath.Dir(m.NewPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-	return os.Rename(m.OldPath, m.NewPath)
-}
-
-func executeCreateDirectory(m parser.CreateDirectory) error {
-	return os.MkdirAll(m.Path, 0755)
 }
 
 func fileExists(path string) bool {
@@ -227,12 +172,6 @@ func getOperationDescription(op parser.Modification) string {
 		return fmt.Sprintf("Remove %s", m.Path)
 	case parser.CreateFile:
 		return fmt.Sprintf("Create %s", m.Path)
-	case parser.RenameFile:
-		return fmt.Sprintf("Rename %s to %s", m.OldPath, m.NewPath)
-	case parser.MoveFile:
-		return fmt.Sprintf("Move %s to %s", m.OldPath, m.NewPath)
-	case parser.CreateDirectory:
-		return fmt.Sprintf("Create directory %s", m.Path)
 	default:
 		return "Unknown operation"
 	}
