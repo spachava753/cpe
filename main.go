@@ -135,7 +135,6 @@ func determineCodebaseAccess(provider llm.LLMProvider, genConfig llm.GenConfig, 
 		return false, fmt.Errorf("error generating initial response: %w", err)
 	}
 
-	fmt.Println("Initial response generated successfully:")
 	fmt.Println(response)
 
 	for _, block := range response.Content {
@@ -245,16 +244,11 @@ func main() {
 		return
 	}
 
-	fmt.Println("Response generated successfully:")
-	fmt.Println("\n--- Full Content ---")
 	for _, block := range response.Content {
 		if block.Type == "text" {
-			fmt.Println(block.Text)
-		} else if block.Type == "tool_use" {
-			fmt.Printf("Tool Use: %s\n", block.ToolUse.Name)
+			fmt.Print(block.Text)
 		}
 	}
-	fmt.Println("--- End of Content ---")
 
 	if requiresCodebase {
 		// Parse modifications
