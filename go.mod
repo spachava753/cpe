@@ -7,6 +7,7 @@ require (
 	github.com/google/generative-ai-go v0.17.0
 	github.com/sashabaranov/go-openai v1.29.1
 	github.com/stretchr/testify v1.9.0
+	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d
 	google.golang.org/api v0.196.0
 )
 

@@ -3,19 +3,9 @@ package codemap
 import (
 	"github.com/stretchr/testify/assert"
 	"io/fs"
-	"strings"
 	"testing"
 	"testing/fstest"
 )
-
-// normalizeWhitespace removes leading/trailing whitespace and normalizes newlines
-func normalizeWhitespace(s string) string {
-	lines := strings.Split(s, "\n")
-	for i, line := range lines {
-		lines[i] = strings.TrimSpace(line)
-	}
-	return strings.Join(lines, "\n")
-}
 
 func setupInMemoryFS(files map[string]string) fs.FS {
 	memFS := fstest.MapFS{}
@@ -226,15 +216,18 @@ func main() {
 <path>main.go</path>
 <file_map>
 package main
+
 import (
- "fmt"
- "os"
+	"fmt"
+	"os"
 )
+
 type User struct {
-    Name string
-    Age int
+	Name string
+	Age  int
 }
-func main() ()
+
+func main()
 </file_map>
 </file>
 </code_map>
@@ -270,21 +263,23 @@ func NewUser(name string) *User {
 <path>main.go</path>
 <file_map>
 package main
-import (
- "fmt"
-)
-func main() ()
+
+import "fmt"
+
+func main()
 </file_map>
 </file>
 <file>
 <path>user/user.go</path>
 <file_map>
 package user
+
 type User struct {
-    ID int
-    Name string
+	ID   int
+	Name string
 }
-func NewUser(name string) (*User)
+
+func NewUser(name string) *User
 </file_map>
 </file>
 </code_map>
@@ -330,20 +325,26 @@ func (s *serviceImpl) Create(ctx context.Context, data string) error {
 <path>service.go</path>
 <file_map>
 package service
+
 import (
- "context"
- "time"
+	"context"
+	"time"
 )
+
 type Service interface {
-    Get(ctx context.Context, id string) (string, error)
-    Create(ctx context.Context, data string) (error)
+	Get(ctx context.Context, id string) (string, error)
+	Create(ctx context.Context, data string) error
 }
-func NewService(timeout time.Duration) (Service)
+
+func NewService(timeout time.Duration) Service
+
 type serviceImpl struct {
-    timeout time.Duration
+	timeout time.Duration
 }
+
 func (s *serviceImpl) Get(ctx context.Context, id string) (string, error)
-func (s *serviceImpl) Create(ctx context.Context, data string) (error)
+
+func (s *serviceImpl) Create(ctx context.Context, data string) error
 </file_map>
 </file>
 </code_map>
@@ -381,20 +382,22 @@ func ProcessData(data *sync.Map) ([]byte, error) {
 <path>complex.go</path>
 <file_map>
 package complex
-import (
- "sync"
-)
+
+import "sync"
+
 type Outer struct {
-    Inner struct {
-        Field1 string
-        Field2 int
-    }
-    Map map[string]interface{}
-    Slice []int
+	Inner struct {
+		Field1 string
+		Field2 int
+	}
+	Map   map[string]interface{}
+	Slice []int
 }
+
 type GenericType[T any] struct {
-    Data T
+	Data T
 }
+
 func ProcessData(data *sync.Map) ([]byte, error)
 </file_map>
 </file>
@@ -437,23 +440,26 @@ func NewUser(name string) *User {
 <file_map>
 // Package comments demonstrates various levels of comments in Go code.
 package comments
+
 // User represents a user in the system.
 // It contains basic information about the user.
 type User struct {
-    // ID is the unique identifier for the user.
-    ID int
-    // Name is the user's full name.
-    Name string
+	// ID is the unique identifier for the user.
+	ID int
+	// Name is the user's full name.
+	Name string
 }
+
 // Admin represents an administrator in the system.
 // It extends the User type with additional permissions.
 type Admin struct {
-    User
-    // Permissions is a list of granted permissions.
-    Permissions []string
+	User
+	// Permissions is a list of granted permissions.
+	Permissions []string
 }
+
 // NewUser creates a new User with the given name.
-func NewUser(name string) (*User)
+func NewUser(name string) *User
 </file_map>
 </file>
 </code_map>
@@ -473,7 +479,7 @@ func NewUser(name string) (*User)
 			}
 
 			// Compare the output with the expected result
-			if !assert.Equal(t, normalizeWhitespace(tt.expected), normalizeWhitespace(output)) {
+			if !assert.Equal(t, tt.expected, output) {
 				t.Errorf("Unexpected output.\nExpected:\n%s\nGot:\n%s", tt.expected, output)
 			}
 		})
