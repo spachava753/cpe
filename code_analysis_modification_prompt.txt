@@ -69,6 +69,24 @@ User: Can you refactor the tests to use the testify package?
 AI: Sure, we can modify the tests to use the github.com/stretchr/testify package
 
 <modify_code>
-<!-- modifications go here -->
+    <path>./pkgs/path_test.go</path>
+    <edit>
+        <search>
+            <![CDATA[
+                func TestCustomFunc(t *testing.T) {
+                    // existing source code in the file
+                }
+            ]]>
+        </search>
+        <replace>
+            <![CDATA[
+                func TestCustomFunc(t *testing.T) {
+                    // new source code to replace existing source code
+                }
+            ]]>
+        </replace>
+    </edit>
+    <!-- add more edits as needed -->
+    <explanation>Explanation for all edits</explanation>
 </modify_code>
 </example>
