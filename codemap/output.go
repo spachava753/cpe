@@ -59,13 +59,22 @@ func generateFileOutput(fsys fs.FS, path string) (string, error) {
 		return "", err
 	}
 
-	// Walk the AST and remove function bodies
+	// Walk the AST and remove function bodies and their associated comments
 	astutil.Apply(file, func(c *astutil.Cursor) bool {
-		if fd, ok := c.Node().(*ast.FuncDecl); ok {
-			fd.Body = nil
+		switch n := c.Node().(type) {
+		case *ast.FuncDecl:
+			n.Body = nil
+			// Remove comments associated with the function body
+			n.Doc = nil
+		case *ast.BlockStmt:
+			// Remove comments inside block statements (including function bodies)
+			n.List = nil
 		}
 		return true
 	}, nil)
+
+	// Remove all comments that are not associated with declarations
+	file.Comments = nil
 
 	// Format the modified AST
 	var buf bytes.Buffer

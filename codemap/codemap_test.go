@@ -60,27 +60,28 @@ func TestAdd(t *testing.T) {
 <path>main.go</path>
 <file_map>
 package main
-import (
- "fmt"
-)
-func main() ()
+
+import "fmt"
+
+func main()
 </file_map>
 </file>
 <file>
 <path>utils/helper.go</path>
 <file_map>
 package utils
-func Add(a int, b int) (int)
+
+func Add(a, b int) int
 </file_map>
 </file>
 <file>
 <path>utils/helper_test.go</path>
 <file_map>
 package utils
-import (
- "testing"
-)
-func TestAdd(t *testing.T) ()
+
+import "testing"
+
+func TestAdd(t *testing.T)
 </file_map>
 </file>
 </code_map>
@@ -150,41 +151,50 @@ func CreateUser(name string) *User {
 <file_map>
 // Package main is the entry point of the application.
 package main
+
 import (
- "fmt"
- "strings"
+	"fmt"
+	"strings"
 )
+
 const (
- MaxUsers = 100
- Version = "1.0.0"
+	MaxUsers = 100
+	Version  = "1.0.0"
 )
+
 var (
- Debug = false
- LogLevel = "info"
+	Debug    = false
+	LogLevel = "info"
 )
+
 // User represents a user in the system.
 type User struct {
-    // ID is the unique identifier for the user.
-    ID int
-    // Name is the user's full name.
-    Name string
+	// ID is the unique identifier for the user.
+	ID int
+	// Name is the user's full name.
+	Name string
 }
+
 // UserRole is an alias for string representing user roles.
 type UserRole = string
+
 // Greeter defines the interface for greeting users.
 type Greeter interface {
-    // Greet returns a greeting message for the given name.
-    Greet(name string) (string)
+	// Greet returns a greeting message for the given name.
+	Greet(name string) string
 }
+
 // SimpleGreeter implements the Greeter interface.
-type SimpleGreeter struct {
-}
+type SimpleGreeter struct{}
+
 // Greet returns a simple greeting message.
-func (sg *SimpleGreeter) Greet(name string) (string)
+func (sg *SimpleGreeter) Greet(name string) string
+
 // main is the entry point of the application.
-func main() ()
+func main()
+
 // CreateUser creates a new user with the given name.
-func CreateUser(name string) (*User)
+func CreateUser(name string) *User
 </file_map>
 </file>
 </code_map>
