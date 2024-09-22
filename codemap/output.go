@@ -3,7 +3,11 @@ package codemap
 import (
 	"fmt"
 	"go/ast"
+	"go/parser"
 	"go/token"
+	"io/fs"
+	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -256,4 +260,142 @@ func funcType(expr ast.Expr) string {
 		return fmt.Sprintf("(%s) (%s)", strings.Join(params, ", "), strings.Join(results, ", "))
 	}
 	return ""
+}
+
+// GenerateOutputFromAST creates the XML-like output for the code map using AST
+func GenerateOutputFromAST(fsys fs.FS) (string, error) {
+	var sb strings.Builder
+	sb.WriteString("<code_map>\n")
+
+	var filePaths []string
+	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && filepath.Ext(path) == ".go" {
+			filePaths = append(filePaths, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("error walking directory: %w", err)
+	}
+
+	sort.Strings(filePaths)
+
+	for _, path := range filePaths {
+		fileContent, err := generateFileOutput(fsys, path)
+		if err != nil {
+			return "", fmt.Errorf("error generating output for file %s: %w", path, err)
+		}
+		sb.WriteString(fileContent)
+	}
+
+	sb.WriteString("</code_map>\n")
+	return sb.String(), nil
+}
+
+func generateFileOutput(fsys fs.FS, path string) (string, error) {
+	var sb strings.Builder
+
+	fset := token.NewFileSet()
+	src, err := fs.ReadFile(fsys, path)
+	if err != nil {
+		return "", err
+	}
+	file, err := parser.ParseFile(fset, path, src, parser.ParseComments)
+	if err != nil {
+		return "", err
+	}
+
+	sb.WriteString(fmt.Sprintf("<file>\n<path>%s</path>\n<file_map>\n", path))
+
+	if file.Doc != nil {
+		sb.WriteString(fmt.Sprintf("%s\n", prependCommentSlashes(file.Doc.Text())))
+	}
+	sb.WriteString(fmt.Sprintf("package %s\n", file.Name.Name))
+
+	if len(file.Imports) > 0 {
+		sb.WriteString("import (\n")
+		for _, imp := range file.Imports {
+			sb.WriteString(fmt.Sprintf(" %s\n", imp.Path.Value))
+		}
+		sb.WriteString(")\n")
+	}
+
+	for _, decl := range file.Decls {
+		switch d := decl.(type) {
+		case *ast.GenDecl:
+			switch d.Tok {
+			case token.CONST, token.VAR:
+				sb.WriteString(genDeclString(d, extractComments(file)))
+			case token.TYPE:
+				sb.WriteString(typeString(d, extractTypeComments(file), extractFieldComments(file)))
+			}
+		case *ast.FuncDecl:
+			sb.WriteString(funcString(d, extractComments(file)))
+		}
+	}
+
+	sb.WriteString("</file_map>\n</file>\n")
+	return sb.String(), nil
+}
+
+func extractComments(file *ast.File) map[ast.Node]string {
+	comments := make(map[ast.Node]string)
+	for _, cg := range file.Comments {
+		if cg.List == nil {
+			continue
+		}
+		lastComment := cg.List[len(cg.List)-1]
+		if lastComment.End()+1 >= file.Package {
+			comments[file] = cg.Text()
+		} else {
+			for _, decl := range file.Decls {
+				if decl.Pos() > lastComment.End() {
+					comments[decl] = cg.Text()
+					break
+				}
+			}
+		}
+	}
+	return comments
+}
+
+func extractTypeComments(file *ast.File) map[*ast.TypeSpec]string {
+	typeComments := make(map[*ast.TypeSpec]string)
+	for _, decl := range file.Decls {
+		if genDecl, ok := decl.(*ast.GenDecl); ok && genDecl.Tok == token.TYPE {
+			for _, spec := range genDecl.Specs {
+				if typeSpec, ok := spec.(*ast.TypeSpec); ok {
+					if typeSpec.Doc != nil {
+						typeComments[typeSpec] = typeSpec.Doc.Text()
+					}
+				}
+			}
+		}
+	}
+	return typeComments
+}
+
+func extractFieldComments(file *ast.File) map[*ast.Field]string {
+	fieldComments := make(map[*ast.Field]string)
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch t := n.(type) {
+		case *ast.StructType:
+			for _, field := range t.Fields.List {
+				if field.Doc != nil {
+					fieldComments[field] = field.Doc.Text()
+				}
+			}
+		case *ast.InterfaceType:
+			for _, method := range t.Methods.List {
+				if method.Doc != nil {
+					fieldComments[method] = method.Doc.Text()
+				}
+			}
+		}
+		return true
+	})
+	return fieldComments
 }
