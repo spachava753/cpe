@@ -15,6 +15,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io"
+	"io/fs"
 	"os"
 	"strings"
 )
@@ -100,30 +101,52 @@ func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, c
 	return nil, fmt.Errorf("no files selected for analysis")
 }
 
-func resolveTypeFiles(selectedFiles []string) (map[string]bool, error) {
+func resolveTypeFiles(selectedFiles []string, sourceFS fs.FS) (map[string]bool, error) {
 	fset := token.NewFileSet()
 	typeDefinitions := make(map[string]string)
 	typeUsages := make(map[string]bool)
 
-	// Parse all files and collect type definitions
-	for _, file := range selectedFiles {
-		astFile, err := parser.ParseFile(fset, file, nil, parser.ParseComments|parser.SkipObjectResolution)
+	// Parse all files in the source directory and collect type definitions
+	err := fs.WalkDir(sourceFS, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil, fmt.Errorf("error parsing file %s: %w", file, err)
+			return err
 		}
-
-		ast.Inspect(astFile, func(n ast.Node) bool {
-			switch x := n.(type) {
-			case *ast.TypeSpec:
-				typeDefinitions[x.Name.Name] = file
+		if !d.IsDir() && strings.HasSuffix(path, ".go") {
+			file, err := sourceFS.Open(path)
+			if err != nil {
+				return fmt.Errorf("error opening file %s: %w", path, err)
 			}
-			return true
-		})
+			defer file.Close()
+
+			astFile, err := parser.ParseFile(fset, path, file, parser.ParseComments|parser.SkipObjectResolution)
+			if err != nil {
+				return fmt.Errorf("error parsing file %s: %w", path, err)
+			}
+
+			ast.Inspect(astFile, func(n ast.Node) bool {
+				switch x := n.(type) {
+				case *ast.TypeSpec:
+					typeDefinitions[x.Name.Name] = path
+				}
+				return true
+			})
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("error walking source directory: %w", err)
 	}
 
-	// Collect type usages
+	// Collect type usages for selected files
 	for _, file := range selectedFiles {
-		astFile, err := parser.ParseFile(fset, file, nil, parser.ParseComments|parser.SkipObjectResolution)
+		f, err := sourceFS.Open(file)
+		if err != nil {
+			return nil, fmt.Errorf("error opening file %s: %w", file, err)
+		}
+		defer f.Close()
+
+		astFile, err := parser.ParseFile(fset, file, f, parser.ParseComments|parser.SkipObjectResolution)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing file %s: %w", file, err)
 		}
@@ -137,10 +160,8 @@ func resolveTypeFiles(selectedFiles []string) (map[string]bool, error) {
 			}
 			return true
 		})
-	}
 
-	// Add all selected files to the type usages
-	for _, file := range selectedFiles {
+		// Add the selected file to the type usages
 		typeUsages[file] = true
 	}
 
@@ -151,7 +172,7 @@ func buildSystemMessageWithSelectedFiles(selectedFiles []string) (string, error)
 	var systemMessage strings.Builder
 	systemMessage.WriteString(CodeAnalysisModificationPrompt)
 
-	resolvedFiles, err := resolveTypeFiles(selectedFiles)
+	resolvedFiles, err := resolveTypeFiles(selectedFiles, nil)
 	if err != nil {
 		return "", fmt.Errorf("error resolving type files: %w", err)
 	}
