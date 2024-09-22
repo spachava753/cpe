@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"github.com/gobwas/glob"
 	"github.com/spachava753/cpe/codemap"
+	"github.com/spachava753/cpe/extract"
 	"github.com/spachava753/cpe/fileops"
 	"github.com/spachava753/cpe/llm"
-	"github.com/spachava753/cpe/parser"
 	"io"
 	"os"
 	"strings"
@@ -258,7 +258,7 @@ func main() {
 				textContent += block.Text
 			}
 		}
-		modifications, err := parser.ParseModifications(textContent)
+		modifications, err := extract.Modifications(textContent)
 		if err != nil {
 			fmt.Printf("Error parsing modifications: %v\n", err)
 			return

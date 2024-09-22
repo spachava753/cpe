@@ -1,11 +1,11 @@
-package parser
+package extract
 
 import (
 	"reflect"
 	"testing"
 )
 
-func TestParseModifyCode(t *testing.T) {
+func TestGetModifyCode(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -94,19 +94,19 @@ func TestParseModifyCode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := parseModifyCode(tt.input)
+			result, err := getModifyCode(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseModifyCode() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("getModifyCode() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !reflect.DeepEqual(result, tt.expected) {
-				t.Errorf("parseModifyCode() = %v, want %v", result, tt.expected)
+				t.Errorf("getModifyCode() = %v, want %v", result, tt.expected)
 			}
 		})
 	}
 }
 
-func TestParseRemoveFile(t *testing.T) {
+func TestGetRemoveFile(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -173,19 +173,19 @@ func TestParseRemoveFile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := parseRemoveFile(tt.input)
+			result, err := getRemoveFile(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseRemoveFile() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("getRemoveFile() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !reflect.DeepEqual(result, tt.expected) {
-				t.Errorf("parseRemoveFile() = %v, want %v", result, tt.expected)
+				t.Errorf("getRemoveFile() = %v, want %v", result, tt.expected)
 			}
 		})
 	}
 }
 
-func TestParseCreateFile(t *testing.T) {
+func TestGetCreateFile(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -258,13 +258,13 @@ func main() {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := parseCreateFile(tt.input)
+			result, err := getCreateFile(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("parseCreateFile() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("getCreateFile() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if !reflect.DeepEqual(result, tt.expected) {
-				t.Errorf("parseCreateFile() = %v, want %v", result, tt.expected)
+				t.Errorf("getCreateFile() = %v, want %v", result, tt.expected)
 			}
 		})
 	}

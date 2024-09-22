@@ -2,18 +2,18 @@ package fileops
 
 import (
 	"fmt"
-	"github.com/spachava753/cpe/parser"
+	"github.com/spachava753/cpe/extract"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
 type OperationResult struct {
-	Operation parser.Modification
+	Operation extract.Modification
 	Error     error
 }
 
-func ExecuteFileOperations(modifications []parser.Modification) []OperationResult {
+func ExecuteFileOperations(modifications []extract.Modification) []OperationResult {
 	// Check if modifications slice is empty
 	if len(modifications) == 0 {
 		fmt.Println("No modifications to apply.")
@@ -38,8 +38,8 @@ func ExecuteFileOperations(modifications []parser.Modification) []OperationResul
 	return results
 }
 
-func validateOperations(modifications []parser.Modification) ([]parser.Modification, []OperationResult) {
-	var validOperations []parser.Modification
+func validateOperations(modifications []extract.Modification) ([]extract.Modification, []OperationResult) {
+	var validOperations []extract.Modification
 	var invalidOperations []OperationResult
 
 	for _, mod := range modifications {
@@ -53,34 +53,34 @@ func validateOperations(modifications []parser.Modification) ([]parser.Modificat
 	return validOperations, invalidOperations
 }
 
-func validateOperation(mod parser.Modification) error {
+func validateOperation(mod extract.Modification) error {
 	switch m := mod.(type) {
-	case parser.ModifyCode:
+	case extract.ModifyCode:
 		return validateModifyCode(m)
-	case parser.RemoveFile:
+	case extract.RemoveFile:
 		return validateRemoveFile(m)
-	case parser.CreateFile:
+	case extract.CreateFile:
 		return validateCreateFile(m)
 	default:
 		return fmt.Errorf("unknown modification type")
 	}
 }
 
-func validateModifyCode(m parser.ModifyCode) error {
+func validateModifyCode(m extract.ModifyCode) error {
 	if !fileExists(m.Path) {
 		return fmt.Errorf("file does not exist: %s", m.Path)
 	}
 	return nil
 }
 
-func validateRemoveFile(m parser.RemoveFile) error {
+func validateRemoveFile(m extract.RemoveFile) error {
 	if !fileExists(m.Path) {
 		return fmt.Errorf("file does not exist: %s", m.Path)
 	}
 	return nil
 }
 
-func validateCreateFile(m parser.CreateFile) error {
+func validateCreateFile(m extract.CreateFile) error {
 	if fileExists(m.Path) {
 		return fmt.Errorf("file already exists: %s", m.Path)
 	}
@@ -103,20 +103,20 @@ func validatePath(path string) error {
 	return nil
 }
 
-func executeOperation(mod parser.Modification) error {
+func executeOperation(mod extract.Modification) error {
 	switch m := mod.(type) {
-	case parser.ModifyCode:
+	case extract.ModifyCode:
 		return executeModifyCode(m)
-	case parser.RemoveFile:
+	case extract.RemoveFile:
 		return executeRemoveFile(m)
-	case parser.CreateFile:
+	case extract.CreateFile:
 		return executeCreateFile(m)
 	default:
 		return fmt.Errorf("unknown modification type")
 	}
 }
 
-func executeModifyCode(m parser.ModifyCode) error {
+func executeModifyCode(m extract.ModifyCode) error {
 	content, err := os.ReadFile(m.Path)
 	if err != nil {
 		return err
@@ -130,11 +130,11 @@ func executeModifyCode(m parser.ModifyCode) error {
 	return os.WriteFile(m.Path, []byte(newContent), 0644)
 }
 
-func executeRemoveFile(m parser.RemoveFile) error {
+func executeRemoveFile(m extract.RemoveFile) error {
 	return os.Remove(m.Path)
 }
 
-func executeCreateFile(m parser.CreateFile) error {
+func executeCreateFile(m extract.CreateFile) error {
 	dir := filepath.Dir(m.Path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create directory %s: %w", dir, err)
@@ -170,13 +170,13 @@ func printSummary(results []OperationResult) {
 	fmt.Printf("Failed: %d\n", failed)
 }
 
-func getOperationDescription(op parser.Modification) string {
+func getOperationDescription(op extract.Modification) string {
 	switch m := op.(type) {
-	case parser.ModifyCode:
+	case extract.ModifyCode:
 		return fmt.Sprintf("Modify %s", m.Path)
-	case parser.RemoveFile:
+	case extract.RemoveFile:
 		return fmt.Sprintf("Remove %s", m.Path)
-	case parser.CreateFile:
+	case extract.CreateFile:
 		return fmt.Sprintf("Create %s", m.Path)
 	default:
 		return "Unknown operation"

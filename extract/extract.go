@@ -1,4 +1,4 @@
-package parser
+package extract
 
 import (
 	"fmt"
@@ -44,7 +44,7 @@ func (c CreateFile) Type() string {
 	return "CreateFile"
 }
 
-func ParseModifications(input string) ([]Modification, error) {
+func Modifications(input string) ([]Modification, error) {
 	var modifications []Modification
 
 	// Define regex patterns for each modification type
@@ -55,7 +55,7 @@ func ParseModifications(input string) ([]Modification, error) {
 	// Parse modify_code
 	modifyCodeMatches := modifyCodePattern.FindAllStringSubmatch(input, -1)
 	for _, match := range modifyCodeMatches {
-		mod, err := parseModifyCode(match[1])
+		mod, err := getModifyCode(match[1])
 		if err != nil {
 			return nil, err
 		}
@@ -65,7 +65,7 @@ func ParseModifications(input string) ([]Modification, error) {
 	// Parse remove_file
 	removeFileMatches := removeFilePattern.FindAllStringSubmatch(input, -1)
 	for _, match := range removeFileMatches {
-		mod, err := parseRemoveFile(match[1])
+		mod, err := getRemoveFile(match[1])
 		if err != nil {
 			return nil, err
 		}
@@ -75,7 +75,7 @@ func ParseModifications(input string) ([]Modification, error) {
 	// Parse create_file
 	createFileMatches := createFilePattern.FindAllStringSubmatch(input, -1)
 	for _, match := range createFileMatches {
-		mod, err := parseCreateFile(match[1])
+		mod, err := getCreateFile(match[1])
 		if err != nil {
 			return nil, err
 		}
@@ -85,7 +85,7 @@ func ParseModifications(input string) ([]Modification, error) {
 	return modifications, nil
 }
 
-func parseModifyCode(input string) (ModifyCode, error) {
+func getModifyCode(input string) (ModifyCode, error) {
 	pathPattern := regexp.MustCompile(`<path>(.*?)</path>`)
 	editPattern := regexp.MustCompile(`(?s)<edit>.*?<search>\s*<!\[CDATA\[(.*?)\]\]>\s*</search>.*?<replace>\s*<!\[CDATA\[(.*?)\]\]>\s*</replace>.*?</edit>`)
 	explanationPattern := regexp.MustCompile(`(?s)<explanation>(.*?)</explanation>`)
@@ -127,7 +127,7 @@ func parseModifyCode(input string) (ModifyCode, error) {
 	}, nil
 }
 
-func parseRemoveFile(input string) (RemoveFile, error) {
+func getRemoveFile(input string) (RemoveFile, error) {
 	pathPattern := regexp.MustCompile(`<path>(.*?)</path>`)
 	explanationPattern := regexp.MustCompile(`(?s)<explanation>(.*?)</explanation>`)
 
@@ -154,7 +154,7 @@ func parseRemoveFile(input string) (RemoveFile, error) {
 	}, nil
 }
 
-func parseCreateFile(input string) (CreateFile, error) {
+func getCreateFile(input string) (CreateFile, error) {
 	pathPattern := regexp.MustCompile(`<path>(.*?)</path>`)
 	contentPattern := regexp.MustCompile(`(?s)<content>\s*<!\[CDATA\[(.*?)\]\]>\s*</content>`)
 	explanationPattern := regexp.MustCompile(`(?s)<explanation>(.*?)</explanation>`)
