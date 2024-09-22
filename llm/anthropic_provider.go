@@ -88,7 +88,7 @@ func (a *AnthropicProvider) convertToAnthropicTools(tools []Tool) []anthropicToo
 	return anthropicTools
 }
 
-func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conversation) ([]ContentBlock, error) {
+func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conversation) (Message, error) {
 	url := "https://api.anthropic.com/v1/messages"
 
 	requestBody := anthropicRequestBody{
@@ -112,12 +112,12 @@ func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conv
 
 	jsonBody, err := json.Marshal(requestBody)
 	if err != nil {
-		return nil, fmt.Errorf("error marshaling request body: %w", err)
+		return Message{}, fmt.Errorf("error marshaling request body: %w", err)
 	}
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
 	if err != nil {
-		return nil, fmt.Errorf("error creating request: %w", err)
+		return Message{}, fmt.Errorf("error creating request: %w", err)
 	}
 
 	req.Header.Set("x-api-key", a.apiKey)
@@ -131,23 +131,23 @@ func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conv
 
 	resp, err := a.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("error sending request: %w", err)
+		return Message{}, fmt.Errorf("error sending request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("error reading response body: %w", err)
+		return Message{}, fmt.Errorf("error reading response body: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("error: status code %d, body: %s", resp.StatusCode, string(body))
+		return Message{}, fmt.Errorf("error: status code %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	var responseBody anthropicResponseBody
 	err = json.Unmarshal(body, &responseBody)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing response JSON: %w", err)
+		return Message{}, fmt.Errorf("error parsing response JSON: %w", err)
 	}
 
 	var contentBlocks []ContentBlock
@@ -166,8 +166,11 @@ func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conv
 	}
 
 	if len(contentBlocks) > 0 {
-		return contentBlocks, nil
+		return Message{
+			Role:    "assistant",
+			Content: contentBlocks,
+		}, nil
 	}
 
-	return nil, fmt.Errorf("no content in response")
+	return Message{}, fmt.Errorf("no content in response")
 }

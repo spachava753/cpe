@@ -89,5 +89,5 @@ type GenConfig struct {
 // LLMProvider defines the interface for interacting with LLM providers
 type LLMProvider interface {
 	// GenerateResponse generates a response from the assistant based on the provided conversation
-	GenerateResponse(config GenConfig, conversation Conversation) ([]ContentBlock, error)
+	GenerateResponse(config GenConfig, conversation Conversation) (Message, error)
 }

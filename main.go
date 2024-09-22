@@ -80,7 +80,7 @@ func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, c
 		return nil, fmt.Errorf("error generating code map analysis: %w", err)
 	}
 
-	for _, block := range response {
+	for _, block := range response.Content {
 		if block.Type == "tool_use" && block.ToolUse.Name == "select_files_for_analysis" {
 			var result struct {
 				SelectedFiles []string `json:"selected_files"`
@@ -138,7 +138,7 @@ func determineCodebaseAccess(provider llm.LLMProvider, genConfig llm.GenConfig, 
 	fmt.Println("Initial response generated successfully:")
 	fmt.Println(response)
 
-	for _, block := range response {
+	for _, block := range response.Content {
 		if block.Type == "tool_use" && block.ToolUse.Name == "decide_codebase_access" {
 			var result struct {
 				RequiresCodebase bool   `json:"requires_codebase"`
@@ -147,6 +147,7 @@ func determineCodebaseAccess(provider llm.LLMProvider, genConfig llm.GenConfig, 
 			if err := json.Unmarshal(block.ToolUse.Input, &result); err != nil {
 				return false, fmt.Errorf("error parsing tool use result: %w", err)
 			}
+			fmt.Printf("Codebase access decision: %v\nReason: %s\n", result.RequiresCodebase, result.Reason)
 			return result.RequiresCodebase, nil
 		}
 	}
@@ -246,14 +247,24 @@ func main() {
 
 	fmt.Println("Response generated successfully:")
 	fmt.Println("\n--- Full Content ---")
-	for _, block := range response {
-		fmt.Println(block.Text)
+	for _, block := range response.Content {
+		if block.Type == "text" {
+			fmt.Println(block.Text)
+		} else if block.Type == "tool_use" {
+			fmt.Printf("Tool Use: %s\n", block.ToolUse.Name)
+		}
 	}
 	fmt.Println("--- End of Content ---")
 
 	if requiresCodebase {
 		// Parse modifications
-		modifications, err := parser.ParseModifications(response[0].Text)
+		var textContent string
+		for _, block := range response.Content {
+			if block.Type == "text" {
+				textContent += block.Text
+			}
+		}
+		modifications, err := parser.ParseModifications(textContent)
 		if err != nil {
 			fmt.Printf("Error parsing modifications: %v\n", err)
 			return
