@@ -68,7 +68,11 @@ var modelConfigs = map[string]ModelConfig{
 	},
 	"gemini-1.5-flash": {
 		Name: "gemini-1.5-flash", ProviderType: "gemini", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.7, TopP: 1, TopK: 0, FrequencyPenalty: 0, PresencePenalty: 0, NumberOfResponses: 1},
+		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.7, TopP: 1, TopK: 0, FrequencyPenalty: 0, PresencePenalty: 0, NumberOfResponses: 1},
+	},
+	"gemini-1.5-pro": {
+		Name: "gemini-1.5-pro", ProviderType: "gemini", IsKnown: true,
+		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.7, TopP: 1, TopK: 0, FrequencyPenalty: 0, PresencePenalty: 0, NumberOfResponses: 1},
 	},
 	"gpt-4o": {
 		Name: openai.GPT4o20240806, ProviderType: "openai", IsKnown: true,
