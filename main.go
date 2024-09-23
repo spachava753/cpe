@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/gobwas/glob"
 	"github.com/spachava753/cpe/codemap"
 	"github.com/spachava753/cpe/extract"
 	"github.com/spachava753/cpe/fileops"
@@ -19,43 +18,6 @@ import (
 	"os"
 	"strings"
 )
-
-func readIgnorePatterns(filename string) ([]glob.Glob, error) {
-	content, err := os.ReadFile(filename)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-
-	var patterns []glob.Glob
-	lines := strings.Split(string(content), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line != "" && !strings.HasPrefix(line, "#") {
-			pattern, err := glob.Compile(line)
-			if err != nil {
-				return nil, fmt.Errorf("invalid pattern %q: %v", line, err)
-			}
-			patterns = append(patterns, pattern)
-		}
-	}
-	return patterns, nil
-}
-
-var ignoreFolders = []string{
-	".git",
-	"vendor",
-	"node_modules",
-	".idea",
-	".vscode",
-	"bin",
-	"obj",
-	"dist",
-	"build",
-	"target",
-}
 
 func generateCodeMapOutput() (string, error) {
 	output, err := codemap.GenerateOutputFromAST(os.DirFS("."))
