@@ -21,7 +21,7 @@ type Flags struct {
 func ParseFlags() Flags {
 	f := Flags{}
 
-	flag.StringVar(&f.Model, "model", "", "Specify the model to use")
+	flag.StringVar(&f.Model, "model", "", "Specify the model to use. Supported models: claude-3-opus, claude-3-5-sonnet, claude-3-5-haiku, gemini-1.5-flash, gemini-1.5-pro, gpt-4o, gpt-4o-mini")
 	flag.StringVar(&f.OpenAIURL, "openai-url", "", "Specify a custom base URL for the OpenAI API")
 	flag.IntVar(&f.MaxTokens, "max-tokens", 0, "Maximum number of tokens to generate")
 	flag.Float64Var(&f.Temperature, "temperature", 0, "Sampling temperature (0.0 - 1.0)")
