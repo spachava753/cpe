@@ -24,6 +24,91 @@ func TestGenerateOutputFromAST(t *testing.T) {
 		expected string
 	}{
 		{
+			name: "Global variables truncation",
+			files: map[string]string{
+				"globals.go": `
+package globals
+
+var (
+	LongString = ` + "`" + `This is a very long string
+that spans multiple lines.
+Line 3
+Line 4
+Line 5
+Line 6
+Line 7
+Line 8
+Line 9
+Line 10
+Line 11
+Line 12
+Line 13
+Line 14
+Line 15` + "`" + `
+
+	LongByteSlice = []byte(` + "`" + `Another long string
+that also spans multiple lines.
+Line 3
+Line 4
+Line 5
+Line 6
+Line 7
+Line 8
+Line 9
+Line 10
+Line 11
+Line 12
+Line 13
+Line 14
+Line 15` + "`" + `)
+
+	ShortString = "This is a short string"
+
+	RegularVar = 42
+)
+`,
+			},
+			expected: `<code_map>
+<file>
+<path>globals.go</path>
+<file_map>
+package globals
+
+var (
+	LongString = ` + "`" + `This is a very long string
+that spans multiple lines.
+Line 3
+Line 4
+Line 5
+Line 6
+Line 7
+Line 8
+Line 9
+Line 10
+// ... (truncated)` + "`" + `
+
+	LongByteSlice = []byte(` + "`" + `Another long string
+that also spans multiple lines.
+Line 3
+Line 4
+Line 5
+Line 6
+Line 7
+Line 8
+Line 9
+Line 10
+// ... (truncated)` + "`" + `)
+
+	ShortString = "This is a short string"
+
+	RegularVar = 42
+)
+</file_map>
+</file>
+</code_map>
+`,
+		},
+		{
 			name: "Comprehensive comments test",
 			files: map[string]string{
 				"comments.go": `
