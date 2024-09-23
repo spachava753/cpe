@@ -30,37 +30,13 @@ func TestGenerateOutputFromAST(t *testing.T) {
 package globals
 
 var (
-	LongString = ` + "`" + `This is a very long string
-that spans multiple lines.
-Line 3
-Line 4
-Line 5
-Line 6
-Line 7
-Line 8
-Line 9
-Line 10
-Line 11
-Line 12
-Line 13
-Line 14
-Line 15` + "`" + `
+	LongString = "This is a very long string that spans multiple lines. It goes on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on"
 
-	LongByteSlice = []byte(` + "`" + `Another long string
-that also spans multiple lines.
-Line 3
-Line 4
-Line 5
-Line 6
-Line 7
-Line 8
-Line 9
-Line 10
-Line 11
-Line 12
-Line 13
-Line 14
-Line 15` + "`" + `)
+	LongStringBackTick = ` + "`" + `This is a very long string that spans multiple lines. It goes on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on` + "`" + `
+
+	LongByteSlice = []byte("This is a very long string that spans multiple lines. It goes on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on")
+
+	LongByteSliceBackTick = []byte(` + "`" + `This is a very long string that spans multiple lines. It goes on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on` + "`" + `)
 
 	ShortString = "This is a short string"
 
@@ -75,29 +51,13 @@ Line 15` + "`" + `)
 package globals
 
 var (
-	LongString = ` + "`" + `This is a very long string
-that spans multiple lines.
-Line 3
-Line 4
-Line 5
-Line 6
-Line 7
-Line 8
-Line 9
-Line 10
-// ... (truncated)` + "`" + `
+	LongString = "This is a very long string that spans multiple lines. It goes on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and ..."
 
-	LongByteSlice = []byte(` + "`" + `Another long string
-that also spans multiple lines.
-Line 3
-Line 4
-Line 5
-Line 6
-Line 7
-Line 8
-Line 9
-Line 10
-// ... (truncated)` + "`" + `)
+	LongStringBackTick = ` + "`" + `This is a very long string that spans multiple lines. It goes on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and ...` + "`" + `
+
+	LongByteSlice = []byte("This is a very long string that spans multiple lines. It goes on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and ...")
+
+	LongByteSliceBackTick = []byte(` + "`" + `This is a very long string that spans multiple lines. It goes on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and ...` + "`" + `)
 
 	ShortString = "This is a short string"
 

@@ -60,6 +60,7 @@ func generateFileOutput(fsys fs.FS, path string) (string, error) {
 	}
 
 	// Walk the AST and remove function bodies while preserving their document comments
+	// Also truncate string literals longer than 500 characters
 	astutil.Apply(file, func(c *astutil.Cursor) bool {
 		switch n := c.Node().(type) {
 		case *ast.FuncDecl:
@@ -67,6 +68,10 @@ func generateFileOutput(fsys fs.FS, path string) (string, error) {
 		case *ast.BlockStmt:
 			// Remove comments inside block statements (including function bodies)
 			n.List = nil
+		case *ast.BasicLit:
+			if n.Kind == token.STRING && len(n.Value) > 500 {
+				n.Value = n.Value[:497] + "..." + string(n.Value[len(n.Value)-1])
+			}
 		}
 		return true
 	}, nil)
