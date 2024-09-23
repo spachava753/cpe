@@ -172,7 +172,9 @@ func buildSystemMessageWithSelectedFiles(selectedFiles []string) (string, error)
 	var systemMessage strings.Builder
 	systemMessage.WriteString(CodeAnalysisModificationPrompt)
 
-	resolvedFiles, err := resolveTypeFiles(selectedFiles, nil)
+	// Use the current directory for resolveTypeFiles
+	currentDir := "."
+	resolvedFiles, err := resolveTypeFiles(selectedFiles, os.DirFS(currentDir))
 	if err != nil {
 		return "", fmt.Errorf("error resolving type files: %w", err)
 	}
