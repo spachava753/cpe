@@ -214,6 +214,9 @@ func buildSystemMessageWithSelectedFiles(selectedFiles []string) (string, error)
 		fmt.Printf("  - %s\n", filePath)
 	}
 
+	// Add go.mod file to the resolved files
+	resolvedFiles["go.mod"] = true
+
 	for filePath := range resolvedFiles {
 		content, err := os.ReadFile(filePath)
 		if err != nil {
