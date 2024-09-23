@@ -187,4 +187,41 @@ func doSomething() {}
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{"types.go": true, "usage.go": true, "other.go": true}, result)
 	})
+
+	// Test case 10: Types with the same name in different packages
+	t.Run("SameNameTypesInDifferentPackages", func(t *testing.T) {
+		fsys := createTestFS(map[string]string{
+			"pkg1/types.go": `
+package pkg1
+type User struct {
+	ID   int
+	Name string
+}
+`,
+			"pkg2/types.go": `
+package pkg2
+type User struct {
+	Email    string
+	Password string
+}
+`,
+			"main.go": `
+package main
+import (
+	"myproject/pkg1"
+	"myproject/pkg2"
+)
+func processUsers(u1 pkg1.User, u2 pkg2.User) {
+	// Do something with both User types
+}
+`,
+		})
+		result, err := resolveTypeFiles([]string{"main.go"}, fsys)
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]bool{
+			"main.go":       true,
+			"pkg1/types.go": true,
+			"pkg2/types.go": true,
+		}, result)
+	})
 }

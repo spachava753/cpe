@@ -103,8 +103,9 @@ func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, c
 
 func resolveTypeFiles(selectedFiles []string, sourceFS fs.FS) (map[string]bool, error) {
 	fset := token.NewFileSet()
-	typeDefinitions := make(map[string]string)
+	typeDefinitions := make(map[string]map[string]string) // package.type -> file
 	typeUsages := make(map[string]bool)
+	imports := make(map[string]map[string]string) // file -> alias -> package
 
 	// Parse all files in the source directory and collect type definitions
 	err := fs.WalkDir(sourceFS, ".", func(path string, d fs.DirEntry, err error) error {
@@ -118,15 +119,33 @@ func resolveTypeFiles(selectedFiles []string, sourceFS fs.FS) (map[string]bool, 
 			}
 			defer file.Close()
 
-			astFile, err := parser.ParseFile(fset, path, file, parser.ParseComments|parser.SkipObjectResolution)
+			astFile, err := parser.ParseFile(fset, path, file, parser.ParseComments)
 			if err != nil {
 				return fmt.Errorf("error parsing file %s: %w", path, err)
+			}
+
+			pkgName := astFile.Name.Name
+			if _, ok := typeDefinitions[pkgName]; !ok {
+				typeDefinitions[pkgName] = make(map[string]string)
 			}
 
 			ast.Inspect(astFile, func(n ast.Node) bool {
 				switch x := n.(type) {
 				case *ast.TypeSpec:
-					typeDefinitions[x.Name.Name] = path
+					typeDefinitions[pkgName][x.Name.Name] = path
+				case *ast.ImportSpec:
+					if imports[path] == nil {
+						imports[path] = make(map[string]string)
+					}
+					importPath := strings.Trim(x.Path.Value, "\"")
+					alias := ""
+					if x.Name != nil {
+						alias = x.Name.Name
+					} else {
+						parts := strings.Split(importPath, "/")
+						alias = parts[len(parts)-1]
+					}
+					imports[path][alias] = importPath
 				}
 				return true
 			})
@@ -146,15 +165,25 @@ func resolveTypeFiles(selectedFiles []string, sourceFS fs.FS) (map[string]bool, 
 		}
 		defer f.Close()
 
-		astFile, err := parser.ParseFile(fset, file, f, parser.ParseComments|parser.SkipObjectResolution)
+		astFile, err := parser.ParseFile(fset, file, f, parser.ParseComments)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing file %s: %w", file, err)
 		}
 
 		ast.Inspect(astFile, func(n ast.Node) bool {
 			switch x := n.(type) {
+			case *ast.SelectorExpr:
+				if ident, ok := x.X.(*ast.Ident); ok {
+					if importPath, ok := imports[file][ident.Name]; ok {
+						parts := strings.Split(importPath, "/")
+						pkgName := parts[len(parts)-1]
+						if defFile, ok := typeDefinitions[pkgName][x.Sel.Name]; ok {
+							typeUsages[defFile] = true
+						}
+					}
+				}
 			case *ast.Ident:
-				if defFile, ok := typeDefinitions[x.Name]; ok {
+				if defFile, ok := typeDefinitions[astFile.Name.Name][x.Name]; ok {
 					typeUsages[defFile] = true
 				}
 			}
