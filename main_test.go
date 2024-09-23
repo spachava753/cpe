@@ -224,4 +224,23 @@ func processUsers(u1 pkg1.User, u2 pkg2.User) {
 			"pkg2/types.go": true,
 		}, result)
 	})
+
+	// Test case 11: Using imported type from standard library
+	t.Run("UsingImportedTypeFromStdLib", func(t *testing.T) {
+		fsys := createTestFS(map[string]string{
+			"main.go": `
+package main
+import (
+	"net/http"
+	"fmt"
+)
+func handleRequest(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Hello, %s!", r.URL.Path[1:])
+}
+`,
+		})
+		result, err := resolveTypeFiles([]string{"main.go"}, fsys)
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]bool{"main.go": true}, result)
+	})
 }
