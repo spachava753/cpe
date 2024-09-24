@@ -88,7 +88,7 @@ func (a *AnthropicProvider) convertToAnthropicTools(tools []Tool) []anthropicToo
 	return anthropicTools
 }
 
-func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conversation) (Message, error) {
+func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conversation) (Message, TokenUsage, error) {
 	url := "https://api.anthropic.com/v1/messages"
 
 	requestBody := anthropicRequestBody{
@@ -112,12 +112,12 @@ func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conv
 
 	jsonBody, err := json.Marshal(requestBody)
 	if err != nil {
-		return Message{}, fmt.Errorf("error marshaling request body: %w", err)
+		return Message{}, TokenUsage{}, fmt.Errorf("error marshaling request body: %w", err)
 	}
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
 	if err != nil {
-		return Message{}, fmt.Errorf("error creating request: %w", err)
+		return Message{}, TokenUsage{}, fmt.Errorf("error creating request: %w", err)
 	}
 
 	req.Header.Set("x-api-key", a.apiKey)
@@ -131,23 +131,28 @@ func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conv
 
 	resp, err := a.client.Do(req)
 	if err != nil {
-		return Message{}, fmt.Errorf("error sending request: %w", err)
+		return Message{}, TokenUsage{}, fmt.Errorf("error sending request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return Message{}, fmt.Errorf("error reading response body: %w", err)
+		return Message{}, TokenUsage{}, fmt.Errorf("error reading response body: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return Message{}, fmt.Errorf("error: status code %d, body: %s", resp.StatusCode, string(body))
+		return Message{}, TokenUsage{}, fmt.Errorf("error: status code %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	var responseBody anthropicResponseBody
 	err = json.Unmarshal(body, &responseBody)
 	if err != nil {
-		return Message{}, fmt.Errorf("error parsing response JSON: %w", err)
+		return Message{}, TokenUsage{}, fmt.Errorf("error parsing response JSON: %w", err)
+	}
+
+	tokenUsage := TokenUsage{
+		InputTokens:  responseBody.Usage.InputTokens,
+		OutputTokens: responseBody.Usage.OutputTokens,
 	}
 
 	var contentBlocks []ContentBlock
@@ -169,8 +174,8 @@ func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conv
 		return Message{
 			Role:    "assistant",
 			Content: contentBlocks,
-		}, nil
+		}, tokenUsage, nil
 	}
 
-	return Message{}, fmt.Errorf("no content in response")
+	return Message{}, TokenUsage{}, fmt.Errorf("no content in response")
 }

@@ -41,10 +41,12 @@ func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, c
 	}
 
 	genConfig.ToolChoice = "auto"
-	response, err := provider.GenerateResponse(genConfig, conversation)
+	response, tokenUsage, err := provider.GenerateResponse(genConfig, conversation)
 	if err != nil {
 		return nil, fmt.Errorf("error generating code map analysis: %w", err)
 	}
+
+	printTokenUsage(tokenUsage)
 
 	for _, block := range response.Content {
 		if block.Type == "tool_use" && block.ToolUse.Name == "select_files_for_analysis" {
@@ -208,12 +210,13 @@ func determineCodebaseAccess(provider llm.LLMProvider, genConfig llm.GenConfig, 
 	}
 
 	genConfig.ToolChoice = "auto"
-	response, err := provider.GenerateResponse(genConfig, initialConversation)
+	response, tokenUsage, err := provider.GenerateResponse(genConfig, initialConversation)
 	if err != nil {
 		return false, fmt.Errorf("error generating initial response: %w", err)
 	}
 
 	fmt.Println(response)
+	printTokenUsage(tokenUsage)
 
 	for _, block := range response.Content {
 		if block.Type == "tool_use" && block.ToolUse.Name == "decide_codebase_access" {
@@ -230,6 +233,14 @@ func determineCodebaseAccess(provider llm.LLMProvider, genConfig llm.GenConfig, 
 	}
 
 	return false, fmt.Errorf("no decision made on codebase access")
+}
+
+func printTokenUsage(usage llm.TokenUsage) {
+	fmt.Printf("\n--- Token Usage ---\n")
+	fmt.Printf("Input tokens:  %d\n", usage.InputTokens)
+	fmt.Printf("Output tokens: %d\n", usage.OutputTokens)
+	fmt.Printf("Total tokens:  %d\n", usage.InputTokens+usage.OutputTokens)
+	fmt.Printf("-------------------\n")
 }
 
 func main() {
@@ -327,7 +338,7 @@ func main() {
 	}
 
 	// Generate response
-	response, err := provider.GenerateResponse(genConfig, conversation)
+	response, tokenUsage, err := provider.GenerateResponse(genConfig, conversation)
 	if err != nil {
 		fmt.Println("Error generating response:", err)
 		return
@@ -338,6 +349,9 @@ func main() {
 			fmt.Print(block.Text)
 		}
 	}
+
+	// Print token usage
+	printTokenUsage(tokenUsage)
 
 	if requiresCodebase {
 		// Parse modifications

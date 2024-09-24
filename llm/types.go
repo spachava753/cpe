@@ -86,8 +86,14 @@ type GenConfig struct {
 	ForcedTool        string   // Name of the tool to force when ToolChoice is "tool"
 }
 
+// TokenUsage represents the token usage for a generated response
+type TokenUsage struct {
+	InputTokens  int
+	OutputTokens int
+}
+
 // LLMProvider defines the interface for interacting with LLM providers
 type LLMProvider interface {
 	// GenerateResponse generates a response from the assistant based on the provided conversation
-	GenerateResponse(config GenConfig, conversation Conversation) (Message, error)
+	GenerateResponse(config GenConfig, conversation Conversation) (Message, TokenUsage, error)
 }

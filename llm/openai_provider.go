@@ -46,7 +46,7 @@ func NewOpenAIProvider(apiKey string, opts ...OpenAIOption) *OpenAIProvider {
 }
 
 // GenerateResponse generates a response using the OpenAI API
-func (o *OpenAIProvider) GenerateResponse(config GenConfig, conversation Conversation) (Message, error) {
+func (o *OpenAIProvider) GenerateResponse(config GenConfig, conversation Conversation) (Message, TokenUsage, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -82,11 +82,16 @@ func (o *OpenAIProvider) GenerateResponse(config GenConfig, conversation Convers
 	resp, err := o.client.CreateChatCompletion(ctx, req)
 
 	if err != nil {
-		return Message{}, fmt.Errorf("OpenAI API error: %w", err)
+		return Message{}, TokenUsage{}, fmt.Errorf("OpenAI API error: %w", err)
 	}
 
 	if len(resp.Choices) == 0 {
-		return Message{}, fmt.Errorf("no response generated")
+		return Message{}, TokenUsage{}, fmt.Errorf("no response generated")
+	}
+
+	tokenUsage := TokenUsage{
+		InputTokens:  resp.Usage.PromptTokens,
+		OutputTokens: resp.Usage.CompletionTokens,
 	}
 
 	var contentBlocks []ContentBlock
@@ -110,7 +115,7 @@ func (o *OpenAIProvider) GenerateResponse(config GenConfig, conversation Convers
 	return Message{
 		Role:    "assistant",
 		Content: contentBlocks,
-	}, nil
+	}, tokenUsage, nil
 }
 
 // convertToOpenAIMessages converts internal Message type to OpenAI's ChatCompletionMessage

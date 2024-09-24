@@ -39,9 +39,9 @@ func NewGeminiProvider(apiKey string) (*GeminiProvider, error) {
 }
 
 // GenerateResponse generates a response using the Gemini API
-func (g *GeminiProvider) GenerateResponse(config GenConfig, conversation Conversation) (Message, error) {
+func (g *GeminiProvider) GenerateResponse(config GenConfig, conversation Conversation) (Message, TokenUsage, error) {
 	if conversation.Messages[len(conversation.Messages)-1].Content[0].Type != "text" {
-		return Message{}, fmt.Errorf("last message in conversation must be text")
+		return Message{}, TokenUsage{}, fmt.Errorf("last message in conversation must be text")
 	}
 
 	g.model = g.client.GenerativeModel(config.Model)
@@ -71,11 +71,16 @@ func (g *GeminiProvider) GenerateResponse(config GenConfig, conversation Convers
 	resp, err = session.SendMessage(ctx, genai.Text(conversation.Messages[len(conversation.Messages)-1].Content[0].Text))
 
 	if err != nil {
-		return Message{}, fmt.Errorf("error sending message to Gemini: %w", err)
+		return Message{}, TokenUsage{}, fmt.Errorf("error sending message to Gemini: %w", err)
 	}
 
 	if len(resp.Candidates) == 0 || len(resp.Candidates[0].Content.Parts) == 0 {
-		return Message{}, fmt.Errorf("no response generated")
+		return Message{}, TokenUsage{}, fmt.Errorf("no response generated")
+	}
+
+	tokenUsage := TokenUsage{
+		InputTokens:  int(resp.UsageMetadata.PromptTokenCount),
+		OutputTokens: int(resp.UsageMetadata.CandidatesTokenCount),
 	}
 
 	var contentBlocks []ContentBlock
@@ -92,7 +97,7 @@ func (g *GeminiProvider) GenerateResponse(config GenConfig, conversation Convers
 			// Convert the args map to JSON
 			inputJSON, err := json.Marshal(v.Args)
 			if err != nil {
-				return Message{}, fmt.Errorf("error marshaling function args: %w", err)
+				return Message{}, TokenUsage{}, fmt.Errorf("error marshaling function args: %w", err)
 			}
 			toolUse.Input = inputJSON
 			contentBlocks = append(contentBlocks, ContentBlock{Type: "tool_use", ToolUse: toolUse})
@@ -102,7 +107,7 @@ func (g *GeminiProvider) GenerateResponse(config GenConfig, conversation Convers
 	return Message{
 		Role:    "assistant",
 		Content: contentBlocks,
-	}, nil
+	}, tokenUsage, nil
 }
 
 // Close closes the Gemini client and cleans up resources
