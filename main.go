@@ -254,18 +254,29 @@ func main() {
 		defer closer.Close()
 	}
 
-	// Read content from stdin
-	reader := bufio.NewReader(os.Stdin)
-	contentBytes, readErr := io.ReadAll(reader)
-	if readErr != nil {
-		fmt.Println("No input provided")
-		os.Exit(1)
+	// Read content from input source
+	var content string
+	if flags.Input == "-" {
+		// Read from stdin
+		reader := bufio.NewReader(os.Stdin)
+		contentBytes, readErr := io.ReadAll(reader)
+		if readErr != nil {
+			fmt.Println("Error reading from stdin:", readErr)
+			os.Exit(1)
+		}
+		content = string(contentBytes)
+	} else {
+		// Read from file
+		contentBytes, readErr := os.ReadFile(flags.Input)
+		if readErr != nil {
+			fmt.Printf("Error reading from file %s: %v\n", flags.Input, readErr)
+			os.Exit(1)
+		}
+		content = string(contentBytes)
 	}
 
-	content := string(contentBytes)
-
 	if len(content) == 0 {
-		fmt.Println("Error: No input provided. Please provide input via stdin.")
+		fmt.Println("Error: No input provided. Please provide input via stdin or specify an input file.")
 		return
 	}
 

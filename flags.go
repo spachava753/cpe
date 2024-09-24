@@ -16,6 +16,7 @@ type Flags struct {
 	PresencePenalty   float64
 	NumberOfResponses int
 	Debug             bool
+	Input             string
 }
 
 func ParseFlags() Flags {
@@ -31,6 +32,7 @@ func ParseFlags() Flags {
 	flag.Float64Var(&f.PresencePenalty, "presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
 	flag.IntVar(&f.NumberOfResponses, "number-of-responses", 0, "Number of responses to generate")
 	flag.BoolVar(&f.Debug, "debug", false, "Print the generated system prompt")
+	flag.StringVar(&f.Input, "input", "-", "Specify the input file path. Use '-' for stdin")
 
 	flag.Parse()
 
