@@ -191,7 +191,6 @@ func parseSchemaObject(schema map[string]interface{}) *genai.Schema {
 				geminiSchema.Properties = make(map[string]*genai.Schema)
 			}
 			geminiSchema.Properties[propName] = parseSchemaObject(propSchema.(map[string]interface{}))
-
 		}
 	}
 
@@ -202,6 +201,14 @@ func parseSchemaObject(schema map[string]interface{}) *genai.Schema {
 	if required, ok := schema["required"].([]interface{}); ok {
 		for _, req := range required {
 			geminiSchema.Required = append(geminiSchema.Required, req.(string))
+		}
+	}
+
+	// Handle enum
+	if enum, ok := schema["enum"].([]interface{}); ok {
+		geminiSchema.Enum = make([]string, len(enum))
+		for i, v := range enum {
+			geminiSchema.Enum[i] = fmt.Sprintf("%v", v)
 		}
 	}
 
