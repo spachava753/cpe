@@ -156,44 +156,56 @@ func convertToGeminiTools(tools []Tool) []*genai.Tool {
 				{
 					Name:        tool.Name,
 					Description: tool.Description,
-					Parameters: &genai.Schema{
-						Type:       genai.TypeObject,
-						Properties: make(map[string]*genai.Schema),
-					},
+					Parameters:  convertToGeminiSchema(tool.InputSchema),
 				},
 			},
 		}
-
-		// Parse the input schema JSON
-		var schema map[string]interface{}
-		if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
-			fmt.Printf("Error parsing input schema for tool %s: %v\n", tool.Name, err)
-			continue
-		}
-
-		// Convert the schema to Gemini's format
-		if properties, ok := schema["properties"].(map[string]interface{}); ok {
-			for propName, propSchema := range properties {
-				if propDetails, ok := propSchema.(map[string]interface{}); ok {
-					geminiTools[i].FunctionDeclarations[0].Parameters.Properties[propName] = &genai.Schema{
-						Type:        convertToGeminiType(propDetails["type"].(string)),
-						Description: propDetails["description"].(string),
-					}
-				}
-			}
-		}
-
-		// Add required properties
-		if required, ok := schema["required"].([]interface{}); ok {
-			for _, req := range required {
-				geminiTools[i].FunctionDeclarations[0].Parameters.Required = append(
-					geminiTools[i].FunctionDeclarations[0].Parameters.Required,
-					req.(string),
-				)
-			}
-		}
 	}
 	return geminiTools
+}
+
+// convertToGeminiSchema converts a JSON schema to Gemini's Schema
+func convertToGeminiSchema(schemaJSON json.RawMessage) *genai.Schema {
+	var schema map[string]interface{}
+	if err := json.Unmarshal(schemaJSON, &schema); err != nil {
+		fmt.Printf("Error parsing schema JSON: %v\n", err)
+		return &genai.Schema{Type: genai.TypeObject}
+	}
+
+	return parseSchemaObject(schema)
+}
+
+// parseSchemaObject recursively parses a schema object
+func parseSchemaObject(schema map[string]interface{}) *genai.Schema {
+	geminiSchema := &genai.Schema{
+		Type: convertToGeminiType(schema["type"].(string)),
+	}
+
+	if description, ok := schema["description"].(string); ok {
+		geminiSchema.Description = description
+	}
+
+	if properties, ok := schema["properties"].(map[string]interface{}); ok {
+		for propName, propSchema := range properties {
+			if geminiSchema.Properties == nil {
+				geminiSchema.Properties = make(map[string]*genai.Schema)
+			}
+			geminiSchema.Properties[propName] = parseSchemaObject(propSchema.(map[string]interface{}))
+
+		}
+	}
+
+	if items, ok := schema["items"].(map[string]interface{}); ok {
+		geminiSchema.Items = parseSchemaObject(items)
+	}
+
+	if required, ok := schema["required"].([]interface{}); ok {
+		for _, req := range required {
+			geminiSchema.Required = append(geminiSchema.Required, req.(string))
+		}
+	}
+
+	return geminiSchema
 }
 
 // convertToGeminiType converts a string type to the corresponding genai.Type

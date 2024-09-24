@@ -37,7 +37,7 @@ func TestOpenAIProvider(t *testing.T) {
 		}
 
 		// Check if we got a non-empty response
-		if len(response) == 0 {
+		if len(response.Content) == 0 {
 			t.Error("Generated response is empty")
 		}
 
@@ -74,13 +74,13 @@ func TestOpenAIProvider(t *testing.T) {
 		}
 
 		// Check if we got a non-empty response
-		if len(response) == 0 {
+		if len(response.Content) == 0 {
 			t.Error("Generated response is empty")
 		}
 
 		// Check if the response includes a tool call
 		hasToolCall := false
-		for _, block := range response {
+		for _, block := range response.Content {
 			if block.Type == "tool_use" {
 				hasToolCall = true
 				break
