@@ -31,7 +31,7 @@ func TestOpenAIProvider(t *testing.T) {
 			Temperature: 0.7,
 		}
 
-		response, err := provider.GenerateResponse(config, conversation)
+		response, _, err := provider.GenerateResponse(config, conversation)
 		if err != nil {
 			t.Fatalf("Failed to generate response: %v", err)
 		}
@@ -68,7 +68,7 @@ func TestOpenAIProvider(t *testing.T) {
 			ToolChoice:  "auto",
 		}
 
-		response, err := provider.GenerateResponse(config, conversation)
+		response, _, err := provider.GenerateResponse(config, conversation)
 		if err != nil {
 			t.Fatalf("Failed to generate response: %v", err)
 		}
