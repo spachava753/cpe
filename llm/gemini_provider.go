@@ -70,8 +70,12 @@ func (g *GeminiProvider) GenerateResponse(config GenConfig, conversation Convers
 
 	// Handle forced tool use
 	if config.ToolChoice == "tool" && config.ForcedTool != "" {
-		g.model.ToolConfig.FunctionCallingConfig.Mode = genai.FunctionCallingAny
-		g.model.ToolConfig.FunctionCallingConfig.AllowedFunctionNames = []string{config.ForcedTool}
+		g.model.ToolConfig = &genai.ToolConfig{
+			FunctionCallingConfig: &genai.FunctionCallingConfig{
+				Mode:                 genai.FunctionCallingAny,
+				AllowedFunctionNames: []string{config.ForcedTool},
+			},
+		}
 	}
 	resp, err = session.SendMessage(ctx, genai.Text(conversation.Messages[len(conversation.Messages)-1].Content[0].Text))
 
