@@ -31,7 +31,7 @@ type anthropicRequestBody struct {
 
 type anthropicToolChoice struct {
 	Type string `json:"type"`
-	Tool string `json:"tool,omitempty"`
+	Name string `json:"name,omitempty"`
 }
 
 type anthropicTool struct {
@@ -106,7 +106,7 @@ func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conv
 	if config.ToolChoice != "" {
 		requestBody.ToolChoice = &anthropicToolChoice{Type: config.ToolChoice}
 		if config.ForcedTool != "" {
-			requestBody.ToolChoice.Tool = config.ForcedTool
+			requestBody.ToolChoice.Name = config.ForcedTool
 		}
 	}
 
