@@ -40,7 +40,8 @@ func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, c
 		}},
 	}
 
-	genConfig.ToolChoice = "auto"
+	genConfig.ToolChoice = "tool"
+	genConfig.ForcedTool = "select_files_for_analysis"
 	response, tokenUsage, err := provider.GenerateResponse(genConfig, conversation)
 	if err != nil {
 		return nil, fmt.Errorf("error generating code map analysis: %w", err)
@@ -51,13 +52,13 @@ func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, c
 	for _, block := range response.Content {
 		if block.Type == "tool_use" && block.ToolUse.Name == "select_files_for_analysis" {
 			var result struct {
+				Thinking      string   `json:"thinking"`
 				SelectedFiles []string `json:"selected_files"`
-				Reason        string   `json:"reason"`
 			}
 			if err := json.Unmarshal(block.ToolUse.Input, &result); err != nil {
 				return nil, fmt.Errorf("error parsing tool use result: %w", err)
 			}
-			fmt.Printf("Selected files: %v\nReason: %s\n", result.SelectedFiles, result.Reason)
+			fmt.Printf("Thinking: %s\nSelected files: %v\n", result.Thinking, result.SelectedFiles)
 			return result.SelectedFiles, nil
 		}
 	}
