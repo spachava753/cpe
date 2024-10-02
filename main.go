@@ -210,7 +210,8 @@ func determineCodebaseAccess(provider llm.LLMProvider, genConfig llm.GenConfig, 
 		}},
 	}
 
-	genConfig.ToolChoice = "auto"
+	genConfig.ToolChoice = "tool"
+	genConfig.ForcedTool = "decide_codebase_access"
 	response, tokenUsage, err := provider.GenerateResponse(genConfig, initialConversation)
 	if err != nil {
 		return false, fmt.Errorf("error generating initial response: %w", err)
@@ -222,13 +223,13 @@ func determineCodebaseAccess(provider llm.LLMProvider, genConfig llm.GenConfig, 
 	for _, block := range response.Content {
 		if block.Type == "tool_use" && block.ToolUse.Name == "decide_codebase_access" {
 			var result struct {
+				Thinking         string `json:"thinking"`
 				RequiresCodebase bool   `json:"requires_codebase"`
-				Reason           string `json:"reason"`
 			}
 			if err := json.Unmarshal(block.ToolUse.Input, &result); err != nil {
 				return false, fmt.Errorf("error parsing tool use result: %w", err)
 			}
-			fmt.Printf("Codebase access decision: %v\nReason: %s\n", result.RequiresCodebase, result.Reason)
+			fmt.Printf("Thinking: %s\nCodebase access decision: %v\n", result.Thinking, result.RequiresCodebase)
 			return result.RequiresCodebase, nil
 		}
 	}

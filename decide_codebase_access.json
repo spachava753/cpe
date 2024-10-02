@@ -1,17 +1,17 @@
 {
   "type": "object",
   "properties": {
+    "thinking": {
+      "type": "string",
+      "description": "Use this field to think about whether you need access to the codebase"
+    },
     "requires_codebase": {
       "type": "boolean",
       "description": "Whether codebase access is required (true) or not (false)"
-    },
-    "reason": {
-      "type": "string",
-      "description": "A brief explanation for the decision"
     }
   },
   "required": [
-    "requires_codebase",
-    "reason"
+    "thinking",
+    "requires_codebase"
   ]
 }
