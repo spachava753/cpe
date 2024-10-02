@@ -17,11 +17,13 @@ type Flags struct {
 	NumberOfResponses int
 	Debug             bool
 	Input             string
+	Version           bool
 }
 
 func ParseFlags() Flags {
 	f := Flags{}
 
+	flag.BoolVar(&f.Version, "version", false, "Print the version number and exit")
 	flag.StringVar(&f.Model, "model", "", "Specify the model to use. Supported models: claude-3-opus, claude-3-5-sonnet, claude-3-5-haiku, gemini-1.5-flash, gemini-1.5-pro, gpt-4o, gpt-4o-mini")
 	flag.StringVar(&f.OpenAIURL, "openai-url", "", "Specify a custom base URL for the OpenAI API")
 	flag.IntVar(&f.MaxTokens, "max-tokens", 0, "Maximum number of tokens to generate")

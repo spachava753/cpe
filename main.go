@@ -243,8 +243,15 @@ func printTokenUsage(usage llm.TokenUsage) {
 	fmt.Printf("-------------------\n")
 }
 
+const version = "0.8.0"
+
 func main() {
 	flags := ParseFlags()
+
+	if flags.Version {
+		fmt.Printf("cpe version %s\n", version)
+		return
+	}
 
 	if flags.Model != "" && flags.Model != defaultModel {
 		_, ok := modelConfigs[flags.Model]
