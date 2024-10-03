@@ -243,4 +243,128 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{"main.go": true}, result)
 	})
+	// Test case 12: Function defined in separate file
+	t.Run("FunctionDefinedInSeparateFile", func(t *testing.T) {
+		fsys := createTestFS(map[string]string{
+			"utils.go": `
+package main
+func HelperFunction(s string) string {
+	return s + " processed"
+}
+`,
+			"main.go": `
+package main
+func main() {
+	result := HelperFunction("test")
+	println(result)
+}
+`,
+		})
+		result, err := resolveTypeFiles([]string{"main.go"}, fsys)
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]bool{"utils.go": true, "main.go": true}, result)
+	})
+
+	// Test case 13: Function from separate package
+	t.Run("FunctionFromSeparatePackage", func(t *testing.T) {
+		fsys := createTestFS(map[string]string{
+			"pkg/utils.go": `
+package pkg
+func UtilFunction(i int) int {
+	return i * 2
+}
+`,
+			"main.go": `
+package main
+import "myproject/pkg"
+func main() {
+	result := pkg.UtilFunction(5)
+	println(result)
+}
+`,
+		})
+		result, err := resolveTypeFiles([]string{"main.go"}, fsys)
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]bool{"pkg/utils.go": true, "main.go": true}, result)
+	})
+
+	// Test case 14: Multiple function definitions and usages
+	t.Run("MultipleFunctionDefinitionsAndUsages", func(t *testing.T) {
+		fsys := createTestFS(map[string]string{
+			"math/operations.go": `
+package math
+func Add(a, b int) int {
+	return a + b
+}
+func Multiply(a, b int) int {
+	return a * b
+}
+`,
+			"utils/formatter.go": `
+package utils
+import "fmt"
+func FormatResult(operation string, result int) string {
+	return fmt.Sprintf("Result of %s: %d", operation, result)
+}
+`,
+			"main.go": `
+package main
+import (
+	"myproject/math"
+	"myproject/utils"
+)
+func main() {
+	sum := math.Add(5, 3)
+	product := math.Multiply(4, 2)
+	println(utils.FormatResult("addition", sum))
+	println(utils.FormatResult("multiplication", product))
+}
+`,
+		})
+		result, err := resolveTypeFiles([]string{"main.go"}, fsys)
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]bool{
+			"math/operations.go": true,
+			"utils/formatter.go": true,
+			"main.go":            true,
+		}, result)
+	})
+
+	// Test case 15: Function with custom type parameters
+	t.Run("FunctionWithCustomTypeParameters", func(t *testing.T) {
+		fsys := createTestFS(map[string]string{
+			"types/custom.go": `
+package types
+type CustomType struct {
+	Value string
+}
+`,
+			"operations/process.go": `
+package operations
+import "myproject/types"
+func ProcessCustomType(ct types.CustomType) string {
+	return "Processed: " + ct.Value
+}
+`,
+			"main.go": `
+package main
+import (
+	"myproject/types"
+	"myproject/operations"
+)
+func main() {
+	ct := types.CustomType{Value: "test"}
+	result := operations.ProcessCustomType(ct)
+	println(result)
+}
+`,
+		})
+		result, err := resolveTypeFiles([]string{"main.go"}, fsys)
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]bool{
+			"types/custom.go":       true,
+			"operations/process.go": true,
+			"main.go":               true,
+		}, result)
+	})
 }
