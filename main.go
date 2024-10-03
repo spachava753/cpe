@@ -66,13 +66,14 @@ func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, c
 	return nil, fmt.Errorf("no files selected for analysis")
 }
 
-func resolveTypeFiles(selectedFiles []string, sourceFS fs.FS) (map[string]bool, error) {
+func resolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS) (map[string]bool, error) {
 	fset := token.NewFileSet()
-	typeDefinitions := make(map[string]map[string]string) // package.type -> file
-	typeUsages := make(map[string]bool)
+	typeDefinitions := make(map[string]map[string]string)     // package.type -> file
+	functionDefinitions := make(map[string]map[string]string) // package.function -> file
+	usages := make(map[string]bool)
 	imports := make(map[string]map[string]string) // file -> alias -> package
 
-	// Parse all files in the source directory and collect type definitions
+	// Parse all files in the source directory and collect type and function definitions
 	err := fs.WalkDir(sourceFS, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -93,11 +94,16 @@ func resolveTypeFiles(selectedFiles []string, sourceFS fs.FS) (map[string]bool, 
 			if _, ok := typeDefinitions[pkgName]; !ok {
 				typeDefinitions[pkgName] = make(map[string]string)
 			}
+			if _, ok := functionDefinitions[pkgName]; !ok {
+				functionDefinitions[pkgName] = make(map[string]string)
+			}
 
 			ast.Inspect(astFile, func(n ast.Node) bool {
 				switch x := n.(type) {
 				case *ast.TypeSpec:
 					typeDefinitions[pkgName][x.Name.Name] = path
+				case *ast.FuncDecl:
+					functionDefinitions[pkgName][x.Name.Name] = path
 				case *ast.ImportSpec:
 					if imports[path] == nil {
 						imports[path] = make(map[string]string)
@@ -122,7 +128,7 @@ func resolveTypeFiles(selectedFiles []string, sourceFS fs.FS) (map[string]bool, 
 		return nil, fmt.Errorf("error walking source directory: %w", err)
 	}
 
-	// Collect type usages for selected files
+	// Collect type and function usages for selected files
 	for _, file := range selectedFiles {
 		f, err := sourceFS.Open(file)
 		if err != nil {
@@ -143,23 +149,29 @@ func resolveTypeFiles(selectedFiles []string, sourceFS fs.FS) (map[string]bool, 
 						parts := strings.Split(importPath, "/")
 						pkgName := parts[len(parts)-1]
 						if defFile, ok := typeDefinitions[pkgName][x.Sel.Name]; ok {
-							typeUsages[defFile] = true
+							usages[defFile] = true
+						}
+						if defFile, ok := functionDefinitions[pkgName][x.Sel.Name]; ok {
+							usages[defFile] = true
 						}
 					}
 				}
 			case *ast.Ident:
 				if defFile, ok := typeDefinitions[astFile.Name.Name][x.Name]; ok {
-					typeUsages[defFile] = true
+					usages[defFile] = true
+				}
+				if defFile, ok := functionDefinitions[astFile.Name.Name][x.Name]; ok {
+					usages[defFile] = true
 				}
 			}
 			return true
 		})
 
-		// Add the selected file to the type usages
-		typeUsages[file] = true
+		// Add the selected file to the usages
+		usages[file] = true
 	}
 
-	return typeUsages, nil
+	return usages, nil
 }
 
 func buildSystemMessageWithSelectedFiles(selectedFiles []string) (string, error) {
@@ -168,7 +180,7 @@ func buildSystemMessageWithSelectedFiles(selectedFiles []string) (string, error)
 
 	// Use the current directory for resolveTypeFiles
 	currentDir := "."
-	resolvedFiles, err := resolveTypeFiles(selectedFiles, os.DirFS(currentDir))
+	resolvedFiles, err := resolveTypeAndFunctionFiles(selectedFiles, os.DirFS(currentDir))
 	if err != nil {
 		return "", fmt.Errorf("error resolving type files: %w", err)
 	}
