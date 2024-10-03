@@ -18,6 +18,7 @@ type Flags struct {
 	Debug             bool
 	Input             string
 	Version           bool
+	IncludeFiles      string
 }
 
 func ParseFlags() Flags {
@@ -35,6 +36,7 @@ func ParseFlags() Flags {
 	flag.IntVar(&f.NumberOfResponses, "number-of-responses", 0, "Number of responses to generate")
 	flag.BoolVar(&f.Debug, "debug", false, "Print the generated system prompt")
 	flag.StringVar(&f.Input, "input", "-", "Specify the input file path. Use '-' for stdin")
+	flag.StringVar(&f.IncludeFiles, "include-files", "", "Comma-separated list of file paths to include in the system message")
 
 	flag.Parse()
 
