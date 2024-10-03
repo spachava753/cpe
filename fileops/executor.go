@@ -70,6 +70,19 @@ func validateModifyCode(m extract.ModifyCode) error {
 	if !fileExists(m.Path) {
 		return fmt.Errorf("file does not exist: %s", m.Path)
 	}
+
+	content, err := os.ReadFile(m.Path)
+	if err != nil {
+		return fmt.Errorf("failed to read file %s: %w", m.Path, err)
+	}
+
+	fileContent := string(content)
+	for _, edit := range m.Edits {
+		if !strings.Contains(fileContent, edit.Search) {
+			return fmt.Errorf("search text not found in file %s", m.Path)
+		}
+	}
+
 	return nil
 }
 
