@@ -367,4 +367,86 @@ func main() {
 			"main.go":               true,
 		}, result)
 	})
+
+	// Test case 16: Function resolution with unnecessary files
+	t.Run("FunctionResolutionWithUnnecessaryFiles", func(t *testing.T) {
+		fsys := createTestFS(map[string]string{
+			"math/operations.go": `
+package math
+func Add(a, b int) int {
+	return a + b
+}
+`,
+			"utils/helper.go": `
+package utils
+func HelperFunction() string {
+	return "I'm a helper"
+}
+`,
+			"main.go": `
+package main
+import "myproject/math"
+func main() {
+	result := math.Add(5, 3)
+	println(result)
+}
+`,
+			"unused.go": `
+package main
+func UnusedFunction() {
+	// This function is not used
+}
+`,
+		})
+		result, err := resolveTypeFiles([]string{"main.go"}, fsys)
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]bool{
+			"math/operations.go": true,
+			"main.go":            true,
+		}, result)
+		assert.NotContains(t, result, "utils/helper.go")
+		assert.NotContains(t, result, "unused.go")
+	})
+
+	// Test case 17: Type resolution with unnecessary files
+	t.Run("TypeResolutionWithUnnecessaryFiles", func(t *testing.T) {
+		fsys := createTestFS(map[string]string{
+			"models/user.go": `
+package models
+type User struct {
+	ID   int
+	Name string
+}
+`,
+			"models/product.go": `
+package models
+type Product struct {
+	ID    int
+	Title string
+}
+`,
+			"main.go": `
+package main
+import "myproject/models"
+func main() {
+	user := models.User{ID: 1, Name: "John"}
+	println(user.Name)
+}
+`,
+			"unused_types.go": `
+package main
+type UnusedType struct {
+	Field string
+}
+`,
+		})
+		result, err := resolveTypeFiles([]string{"main.go"}, fsys)
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]bool{
+			"models/user.go": true,
+			"main.go":        true,
+		}, result)
+		assert.NotContains(t, result, "models/product.go")
+		assert.NotContains(t, result, "unused_types.go")
+	})
 }
