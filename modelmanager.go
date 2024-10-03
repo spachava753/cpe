@@ -86,7 +86,7 @@ var modelConfigs = map[string]ModelConfig{
 
 var defaultModel = "claude-3-5-sonnet"
 
-func GetProvider(modelName, openaiURL string, flags Flags) (llm.LLMProvider, llm.GenConfig, error) {
+func GetProvider(modelName string, flags Flags) (llm.LLMProvider, llm.GenConfig, error) {
 	if modelName == "" {
 		modelName = defaultModel
 	}
@@ -94,8 +94,8 @@ func GetProvider(modelName, openaiURL string, flags Flags) (llm.LLMProvider, llm
 	config, ok := modelConfigs[modelName]
 	if !ok {
 		// Handle unknown model
-		if openaiURL == "" {
-			return nil, llm.GenConfig{}, fmt.Errorf("unknown model '%s' requires -openai-url flag", modelName)
+		if flags.CustomURL == "" {
+			return nil, llm.GenConfig{}, fmt.Errorf("unknown model '%s' requires -custom-url flag", modelName)
 		}
 		fmt.Printf("Warning: Using unknown model '%s' with OpenAI provider\n", modelName)
 		config = ModelConfig{Name: modelName, ProviderType: "openai", IsKnown: false}
@@ -124,11 +124,11 @@ func GetProvider(modelName, openaiURL string, flags Flags) (llm.LLMProvider, llm
 
 	switch config.ProviderType {
 	case "anthropic":
-		provider = llm.NewAnthropicProvider(providerConfig.GetAPIKey())
+		provider = llm.NewAnthropicProvider(providerConfig.GetAPIKey(), flags.CustomURL)
 	case "gemini":
-		provider, err = llm.NewGeminiProvider(providerConfig.GetAPIKey())
+		provider, err = llm.NewGeminiProvider(providerConfig.GetAPIKey(), flags.CustomURL)
 	case "openai":
-		provider = llm.NewOpenAIProvider(providerConfig.GetAPIKey(), llm.WithBaseURL(openaiURL))
+		provider = llm.NewOpenAIProvider(providerConfig.GetAPIKey(), flags.CustomURL)
 	default:
 		return nil, genConfig, fmt.Errorf("unsupported provider type: %s", config.ProviderType)
 	}

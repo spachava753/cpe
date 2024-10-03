@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/spachava753/cpe/validate"
 	"time"
 
 	"github.com/sashabaranov/go-openai"
@@ -15,28 +14,12 @@ type OpenAIProvider struct {
 	client *openai.Client
 }
 
-// OpenAIOption is a functional option for configuring the OpenAIProvider
-type OpenAIOption func(*openai.ClientConfig)
-
-// WithBaseURL sets a custom base URL for the OpenAI API
-func WithBaseURL(url string) OpenAIOption {
-	return func(c *openai.ClientConfig) {
-		if url != "" {
-			if _, err := validate.ValidateURL(url); err != nil {
-				fmt.Printf("Warning: Invalid OpenAI base URL provided. Using default.\n")
-				return
-			}
-			c.BaseURL = url
-		}
-	}
-}
-
 // NewOpenAIProvider creates a new OpenAIProvider with the given API key and optional configuration
-func NewOpenAIProvider(apiKey string, opts ...OpenAIOption) *OpenAIProvider {
+func NewOpenAIProvider(apiKey string, baseURL string) *OpenAIProvider {
 	config := openai.DefaultConfig(apiKey)
 
-	for _, opt := range opts {
-		opt(&config)
+	if baseURL != "" {
+		config.BaseURL = baseURL
 	}
 
 	client := openai.NewClientWithConfig(config)

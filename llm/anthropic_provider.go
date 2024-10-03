@@ -10,8 +10,9 @@ import (
 )
 
 type AnthropicProvider struct {
-	apiKey string
-	client *http.Client
+	apiKey  string
+	baseURL string
+	client  *http.Client
 }
 
 type anthropicRequestBody struct {
@@ -67,13 +68,19 @@ type anthropicContentItem struct {
 	Input json.RawMessage `json:"input"`
 }
 
-func NewAnthropicProvider(apiKey string) *AnthropicProvider {
-	return &AnthropicProvider{
+func NewAnthropicProvider(apiKey string, baseURL string) *AnthropicProvider {
+	provider := &AnthropicProvider{
 		apiKey: apiKey,
 		client: &http.Client{
 			Timeout: 2 * time.Minute,
 		},
 	}
+	if baseURL != "" {
+		provider.baseURL = baseURL
+	} else {
+		provider.baseURL = "https://api.anthropic.com"
+	}
+	return provider
 }
 
 func (a *AnthropicProvider) convertToAnthropicTools(tools []Tool) []anthropicTool {
@@ -89,7 +96,7 @@ func (a *AnthropicProvider) convertToAnthropicTools(tools []Tool) []anthropicToo
 }
 
 func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conversation) (Message, TokenUsage, error) {
-	url := "https://api.anthropic.com/v1/messages"
+	url := a.baseURL + "/v1/messages"
 
 	requestBody := anthropicRequestBody{
 		Model:       config.Model,

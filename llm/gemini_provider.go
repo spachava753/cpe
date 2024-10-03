@@ -18,7 +18,7 @@ type GeminiProvider struct {
 }
 
 // NewGeminiProvider creates a new GeminiProvider with the given API key
-func NewGeminiProvider(apiKey string) (*GeminiProvider, error) {
+func NewGeminiProvider(apiKey string, baseURL string) (*GeminiProvider, error) {
 	if apiKey == "" {
 		return nil, fmt.Errorf("API key is required")
 	}
@@ -26,7 +26,12 @@ func NewGeminiProvider(apiKey string) (*GeminiProvider, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
+	opts := []option.ClientOption{option.WithAPIKey(apiKey)}
+	if baseURL != "" {
+		opts = append(opts, option.WithEndpoint(baseURL))
+	}
+
+	client, err := genai.NewClient(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("error creating Gemini client: %w", err)
 	}

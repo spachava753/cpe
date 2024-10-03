@@ -274,14 +274,14 @@ func main() {
 
 	if flags.Model != "" && flags.Model != defaultModel {
 		_, ok := modelConfigs[flags.Model]
-		if !ok && flags.OpenAIURL == "" {
-			fmt.Printf("Error: Unknown model '%s' requires -openai-url flag\n", flags.Model)
+		if !ok && flags.CustomURL == "" {
+			fmt.Printf("Error: Unknown model '%s' requires -custom-url flag\n", flags.Model)
 			flag.Usage()
 			os.Exit(1)
 		}
 	}
 
-	provider, genConfig, err := GetProvider(flags.Model, flags.OpenAIURL, flags)
+	provider, genConfig, err := GetProvider(flags.Model, flags)
 	if err != nil {
 		fmt.Printf("Error initializing provider: %v\n", err)
 		return
