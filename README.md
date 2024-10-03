@@ -23,7 +23,6 @@ CPE is a Go-based tool designed to allow developers to leverage the power of AI 
   - Accept input from stdin or file
 - Debugging support with system prompt visibility
 - Version information
-- Intelligent file ignoring based on .cpeignore patterns (if implemented)
 
 ## Installation
 
@@ -50,7 +49,7 @@ cpe [flags] -input input.txt
 ### Flags
 
 - `-model <model_name>`: Specify the model to use. Supported models: claude-3-opus, claude-3-5-sonnet, claude-3-5-haiku, gemini-1.5-flash, gemini-1.5-pro, gpt-4o, gpt-4o-mini. Default is "claude-3-5-sonnet".
-- `-openai-url <custom_url>`: Specify a custom base URL for the OpenAI API.
+- `-custom-url <url>`: Specify a custom base URL for the model provider API.
 - `-max-tokens <int>`: Maximum number of tokens to generate.
 - `-temperature <float>`: Sampling temperature (0.0 - 1.0).
 - `-top-p <float>`: Nucleus sampling parameter (0.0 - 1.0).
@@ -80,12 +79,40 @@ cpe [flags] -input input.txt
    cpe -include-files main.go,flags.go -input instructions.txt
    ```
 
-4. Using a custom OpenAI URL:
+4. Using a custom API URL:
    ```
-   cpe -model gpt-4o -openai-url https://custom-openai-endpoint.com/v1 < input.txt
+   cpe -model gpt-4o -custom-url https://custom-api-endpoint.com/v1 < input.txt
    ```
 
-CPE will analyze your project, process your request, and perform the necessary file operations based on the input provided.
+5. Debugging mode:
+   ```
+   cpe -debug -input query.txt
+   ```
+
+6. Adjusting generation parameters:
+   ```
+   cpe -max-tokens 2000 -top-p 0.9 -frequency-penalty 0.5 < input.txt
+   ```
+
+7. Checking the version:
+   ```
+   cpe -version
+   ```
+
+## How It Works
+
+1. CPE parses the command-line flags and reads the input query.
+2. It determines whether codebase access is required based on the query.
+3. If codebase access is needed:
+   a. It generates a low-fidelity code map of the project.
+   b. It performs code map analysis to select relevant files.
+   c. It builds a system message with the selected files and any specifically included files.
+4. CPE then sends the query and system message to the specified LLM provider.
+5. The LLM generates a response, which may include suggestions for code modifications.
+6. If modifications are suggested, CPE validates and executes the file operations (modify, create, or remove files).
+7. Finally, it outputs the LLM's response and a summary of any file operations performed.
+
+CPE is designed to be a powerful tool for developers, allowing them to leverage AI for code analysis, refactoring, and improvement while maintaining full control over the modifications made to their codebase.
 
 ## Supported LLM Providers
 
