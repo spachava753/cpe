@@ -4,16 +4,26 @@ CPE is a Go-based tool designed to allow developers to leverage the power of AI 
 
 ## Features
 
-- Integrates with multiple LLM providers (OpenAI, Anthropic, Google's Gemini)
-- Supports various file operations:
+- Integrates with multiple LLM providers:
+  - OpenAI (GPT-4 and variants)
+  - Anthropic (Claude-3 and variants)
+  - Google (Gemini-1.5 and variants)
+- Supports various code analysis and modification operations:
+  - Analyzing existing code
   - Modifying existing files
   - Creating new files
   - Removing files
-  - Renaming files
-  - Moving files
-  - Creating directories
-- Configurable model settings
-- Intelligent file ignoring based on .cpeignore patterns
+- Configurable model settings:
+  - Choice of AI model
+  - Adjustable generation parameters (temperature, max tokens, etc.)
+- Smart code analysis:
+  - Automatic selection of relevant files for analysis
+  - Option to include specific files in the analysis
+- Flexible input methods:
+  - Accept input from stdin or file
+- Debugging support with system prompt visibility
+- Version information
+- Intelligent file ignoring based on .cpeignore patterns (if implemented)
 
 ## Installation
 
@@ -28,14 +38,54 @@ go install github.com/spachava753/cpe@latest
 To use CPE, run the following command:
 
 ```
-cpe -model <model_name> [-openai-url <custom_url>]
+cpe [flags] < input.txt
 ```
 
-Where:
-- `<model_name>` is one of the supported models (e.g., "claude-3-5-sonnet", "gpt-4o", "gemini-1.5-flash"). If no model is specified, it defaults to "claude-3-5-sonnet".
-- `<custom_url>` (optional) is a custom base URL for the OpenAI API. This is only applicable when using OpenAI models.
+or
 
-Provide your instructions or queries via stdin. CPE will analyze your project, process your request, and perform the necessary file operations.
+```
+cpe [flags] -input input.txt
+```
+
+### Flags
+
+- `-model <model_name>`: Specify the model to use. Supported models: claude-3-opus, claude-3-5-sonnet, claude-3-5-haiku, gemini-1.5-flash, gemini-1.5-pro, gpt-4o, gpt-4o-mini. Default is "claude-3-5-sonnet".
+- `-openai-url <custom_url>`: Specify a custom base URL for the OpenAI API.
+- `-max-tokens <int>`: Maximum number of tokens to generate.
+- `-temperature <float>`: Sampling temperature (0.0 - 1.0).
+- `-top-p <float>`: Nucleus sampling parameter (0.0 - 1.0).
+- `-top-k <int>`: Top-k sampling parameter.
+- `-frequency-penalty <float>`: Frequency penalty (-2.0 - 2.0).
+- `-presence-penalty <float>`: Presence penalty (-2.0 - 2.0).
+- `-number-of-responses <int>`: Number of responses to generate.
+- `-debug`: Print the generated system prompt.
+- `-input <file_path>`: Specify the input file path. Use '-' for stdin (default).
+- `-include-files <file_list>`: Comma-separated list of file paths to include in the system message.
+- `-version`: Print the version number and exit.
+
+### Examples
+
+1. Basic usage with default model:
+   ```
+   echo "Analyze the main.go file" | cpe
+   ```
+
+2. Using a specific model and custom temperature:
+   ```
+   cpe -model gpt-4o -temperature 0.8 < input.txt
+   ```
+
+3. Including specific files in the analysis:
+   ```
+   cpe -include-files main.go,flags.go -input instructions.txt
+   ```
+
+4. Using a custom OpenAI URL:
+   ```
+   cpe -model gpt-4o -openai-url https://custom-openai-endpoint.com/v1 < input.txt
+   ```
+
+CPE will analyze your project, process your request, and perform the necessary file operations based on the input provided.
 
 ## Supported LLM Providers
 
