@@ -17,7 +17,7 @@ func setupInMemoryFS(files map[string]string) fs.FS {
 	return memFS
 }
 
-func TestGenerateOutputFromAST(t *testing.T) {
+func TestGenerateOutput(t *testing.T) {
 	tests := []struct {
 		name     string
 		files    map[string]string
@@ -670,8 +670,8 @@ func NewUser(name string) *User
 			// Set up the in-memory file system
 			memFS := setupInMemoryFS(tt.files)
 
-			// Generate the output using GenerateOutputFromAST
-			output, err := GenerateOutputFromAST(memFS)
+			// Generate the output using GenerateOutput
+			output, err := GenerateOutput(memFS)
 			if err != nil {
 				t.Fatalf("Failed to generate output: %v", err)
 			}

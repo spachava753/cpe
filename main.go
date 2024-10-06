@@ -20,7 +20,7 @@ import (
 )
 
 func generateCodeMapOutput() (string, error) {
-	output, err := codemap.GenerateOutputFromAST(os.DirFS("."))
+	output, err := codemap.GenerateOutput(os.DirFS("."))
 	if err != nil {
 		return "", fmt.Errorf("error generating code map output: %w", err)
 	}

@@ -15,8 +15,8 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 )
 
-// GenerateOutputFromAST creates the XML-like output for the code map using AST
-func GenerateOutputFromAST(fsys fs.FS) (string, error) {
+// GenerateOutput creates the XML-like output for the code map using AST
+func GenerateOutput(fsys fs.FS) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("<code_map>\n")
 
