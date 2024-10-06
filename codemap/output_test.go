@@ -111,7 +111,7 @@ type UserManager interface {
 	// CreateUser creates a new user with the given name and role.
 	// Returns the created user and any error encountered.
 	CreateUser(name string, role UserRole) (*User, error)
-	
+
 	// GetUser retrieves a user by their ID.
 	// Returns the user if found, or an error if not found or any other issue occurs.
 	GetUser(id int) (*User, error)
@@ -351,14 +351,14 @@ const (
 )
 
 var (
-	Debug    = false
+	Debug = false
 	LogLevel = "info"
 )
 
 // User represents a user in the system.
 type User struct {
 	// ID is the unique identifier for the user.
-	ID int
+	ID   int
 	// Name is the user's full name.
 	Name string
 }
@@ -379,7 +379,7 @@ type SimpleGreeter struct{}
 func (sg *SimpleGreeter) Greet(name string) string
 
 // main is the entry point of the application.
-func main()
+func main() 
 
 // CreateUser creates a new user with the given name.
 func CreateUser(name string) *User
@@ -643,7 +643,7 @@ package comments
 // It contains basic information about the user.
 type User struct {
 	// ID is the unique identifier for the user.
-	ID int
+	ID   int
 	// Name is the user's full name.
 	Name string
 }

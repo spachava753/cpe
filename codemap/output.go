@@ -1,18 +1,15 @@
 package codemap
 
 import (
-	"bytes"
+	"context"
 	"fmt"
-	"go/ast"
-	"go/format"
-	"go/parser"
-	"go/token"
 	"io/fs"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"golang.org/x/tools/go/ast/astutil"
+	sitter "github.com/smacker/go-tree-sitter"
+	"github.com/smacker/go-tree-sitter/golang"
 )
 
 // GenerateOutput creates the XML-like output for the code map using AST
@@ -49,41 +46,56 @@ func GenerateOutput(fsys fs.FS) (string, error) {
 }
 
 func generateFileOutput(fsys fs.FS, path string) (string, error) {
-	fset := token.NewFileSet()
 	src, err := fs.ReadFile(fsys, path)
 	if err != nil {
 		return "", err
 	}
-	file, err := parser.ParseFile(fset, path, src, parser.ParseComments|parser.SkipObjectResolution)
+
+	parser := sitter.NewParser()
+	parser.SetLanguage(golang.GetLanguage())
+
+	tree, err := parser.ParseCtx(context.Background(), nil, src)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("error parsing file: %w", err)
 	}
+	defer tree.Close()
 
-	// Walk the AST and remove function bodies while preserving their document comments
-	// Also truncate string literals longer than 500 characters
-	astutil.Apply(file, func(c *astutil.Cursor) bool {
-		switch n := c.Node().(type) {
-		case *ast.FuncDecl:
-			n.Body = nil
-		case *ast.BlockStmt:
-			// Remove comments inside block statements (including function bodies)
-			n.List = nil
-		case *ast.BasicLit:
-			if n.Kind == token.STRING && len(n.Value) > 500 {
-				n.Value = n.Value[:497] + "..." + string(n.Value[len(n.Value)-1])
+	root := tree.RootNode()
+	var output strings.Builder
+
+	// Traverse the tree and extract relevant information
+	var traverse func(node *sitter.Node)
+	traverse = func(node *sitter.Node) {
+		switch node.Type() {
+		case "source_file":
+			for i := 0; i < int(node.NamedChildCount()); i++ {
+				traverse(node.NamedChild(i))
 			}
+		case "function_declaration", "method_declaration":
+			// Extract only the signature for functions and methods
+			output.WriteString("func ")
+			for i := 0; i < int(node.NamedChildCount()); i++ {
+				child := node.NamedChild(i)
+				cName := node.FieldNameForChild(i + 1)
+				if child.Type() != "block" {
+					output.WriteString(child.Content(src))
+				}
+				switch cName {
+				case "receiver", "parameters":
+					output.WriteString(" ")
+				}
+			}
+			output.WriteString("\n\n")
+		case "comment":
+			output.WriteString(node.Content(src))
+			output.WriteString("\n")
+		default:
+			output.WriteString(node.Content(src))
+			output.WriteString("\n\n")
 		}
-		return true
-	}, nil)
-
-	// Remove all comments that are not associated with declarations
-	file.Comments = nil
-
-	// Format the modified AST
-	var buf bytes.Buffer
-	if err := format.Node(&buf, fset, file); err != nil {
-		return "", fmt.Errorf("error formatting AST: %w", err)
 	}
 
-	return fmt.Sprintf("<file>\n<path>%s</path>\n<file_map>\n%s</file_map>\n</file>\n", path, buf.String()), nil
+	traverse(root)
+
+	return fmt.Sprintf("<file>\n<path>%s</path>\n<file_map>\n%s\n</file_map>\n</file>\n", path, strings.TrimSpace(output.String())), nil
 }
