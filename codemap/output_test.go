@@ -25,6 +25,190 @@ func TestGenerateOutput(t *testing.T) {
 		expected string
 	}{
 		{
+			name:   "Comprehensive string literal truncation test",
+			maxLen: 10,
+			files: map[string]string{
+				"globals.go": `
+package globals
+
+import "time"
+
+// Single constant declaration
+const singleConst = "This is a long single constant"
+
+// Grouped constant declaration
+const (
+	groupedConst1 = "First grouped constant"
+	groupedConst2 = "Second grouped constant"
+	groupedConst3 = ` + "`" + `Third grouped constant
+	with multiple lines` + "`" + `
+)
+
+// Single variable declaration
+var singleVar = "This is a long single variable"
+
+// Grouped variable declaration
+var (
+	groupedVar1 = "First grouped variable"
+	groupedVar2 = "Second grouped variable"
+	groupedVar3 = ` + "`" + `Third grouped variable
+	with multiple lines` + "`" + `
+)
+
+// Constants with different types
+const (
+	intConst    = 42
+	floatConst  = 3.14
+	boolConst   = true
+	runeConst   = 'A'
+	stringConst = "Regular string constant"
+)
+
+// Variables with different types
+var (
+	intVar    = 42
+	floatVar  = 3.14
+	boolVar   = true
+	runeVar   = 'A'
+	stringVar = "Regular string variable"
+)
+
+// Byte slice constants
+const (
+	byteSliceConst1 = []byte("Byte slice constant")
+	byteSliceConst2 = []byte(` + "`" + `Raw byte slice constant` + "`" + `)
+)
+
+// Byte slice variables
+var (
+	byteSliceVar1 = []byte("Byte slice variable")
+	byteSliceVar2 = []byte(` + "`" + `Raw byte slice variable` + "`" + `)
+)
+
+// Complex type constants
+const (
+	complexConst1 = complex(1, 2)
+	complexConst2 = 3 + 4i
+)
+
+// Complex type variables
+var (
+	complexVar1 = complex(1, 2)
+	complexVar2 = 3 + 4i
+)
+
+// Constant expressions
+const (
+	constExpr1 = len("Hello, World!")
+	constExpr2 = 60 * 60 * 24 // Seconds in a day
+)
+
+// Variable with type
+var typedVar string = "This is a typed variable"
+
+// Variables with initializer functions
+var (
+	timeVar = time.Now()
+	uuidVar = generateUUID()
+)
+
+func generateUUID() string {
+	return "not-a-real-uuid"
+}
+`,
+			},
+			expected: `<code_map>
+<file>
+<path>globals.go</path>
+<file_map>
+package globals
+
+import "time"
+
+// Single constant declaration
+const singleConst = "This is a ..."
+
+// Grouped constant declaration
+const (
+	groupedConst1 = "First grou..."
+	groupedConst2 = "Second gro..."
+	groupedConst3 = ` + "`" + `Third grou...` + "`" + `
+)
+
+// Single variable declaration
+var singleVar = "This is a ..."
+
+// Grouped variable declaration
+var (
+	groupedVar1 = "First grou..."
+	groupedVar2 = "Second gro..."
+	groupedVar3 = ` + "`" + `Third grou...` + "`" + `
+)
+
+// Constants with different types
+const (
+	intConst    = 42
+	floatConst  = 3.14
+	boolConst   = true
+	runeConst   = 'A'
+	stringConst = "Regular st..."
+)
+
+// Variables with different types
+var (
+	intVar    = 42
+	floatVar  = 3.14
+	boolVar   = true
+	runeVar   = 'A'
+	stringVar = "Regular st..."
+)
+
+// Byte slice constants
+const (
+	byteSliceConst1 = []byte("Byte slice...")
+	byteSliceConst2 = []byte(` + "`" + `Raw byte s...` + "`" + `)
+)
+
+// Byte slice variables
+var (
+	byteSliceVar1 = []byte("Byte slice...")
+	byteSliceVar2 = []byte(` + "`" + `Raw byte s...` + "`" + `)
+)
+
+// Complex type constants
+const (
+	complexConst1 = complex(1, 2)
+	complexConst2 = 3 + 4i
+)
+
+// Complex type variables
+var (
+	complexVar1 = complex(1, 2)
+	complexVar2 = 3 + 4i
+)
+
+// Constant expressions
+const (
+	constExpr1 = len("Hello, Wor...")
+	constExpr2 = 60 * 60 * 24 // Seconds in a day
+)
+
+// Variable with type
+var typedVar string = "This is a ..."
+
+// Variables with initializer functions
+var (
+	timeVar = time.Now()
+	uuidVar = generateUUID()
+)
+
+func generateUUID() string
+</file_map>
+</file>
+</code_map>
+`,
+		},
+		{
 			name:   "Global variables truncation",
 			maxLen: 1,
 			files: map[string]string{
@@ -92,7 +276,7 @@ const (
 )
 
 // Config holds the application configuration.
-var Config struct {
+type Config struct {
 	// Debug enables debug mode when true.
 	Debug bool
 	// LogLevel sets the logging level.
@@ -167,7 +351,7 @@ const (
 )
 
 // Config holds the application configuration.
-var Config struct {
+type Config struct {
 	// Debug enables debug mode when true.
 	Debug bool
 	// LogLevel sets the logging level.
@@ -356,14 +540,14 @@ const (
 )
 
 var (
-	Debug = false
+	Debug    = false
 	LogLevel = "info"
 )
 
 // User represents a user in the system.
 type User struct {
 	// ID is the unique identifier for the user.
-	ID   int
+	ID int
 	// Name is the user's full name.
 	Name string
 }
@@ -384,7 +568,7 @@ type SimpleGreeter struct{}
 func (sg *SimpleGreeter) Greet(name string) string
 
 // main is the entry point of the application.
-func main() 
+func main()
 
 // CreateUser creates a new user with the given name.
 func CreateUser(name string) *User
@@ -653,7 +837,7 @@ package comments
 // It contains basic information about the user.
 type User struct {
 	// ID is the unique identifier for the user.
-	ID   int
+	ID int
 	// Name is the user's full name.
 	Name string
 }

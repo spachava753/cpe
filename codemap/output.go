@@ -3,6 +3,7 @@ package codemap
 import (
 	"context"
 	"fmt"
+	"go/format"
 	"io/fs"
 	"path/filepath"
 	"sort"
@@ -68,8 +69,8 @@ func generateFileOutput(fsys fs.FS, path string, maxLiteralLen int) (string, err
 	traverse = func(node *sitter.Node) {
 		switch node.Type() {
 		case "source_file":
-			for i := 0; i < int(node.NamedChildCount()); i++ {
-				traverse(node.NamedChild(i))
+			for i := 0; i < int(node.ChildCount()); i++ {
+				traverse(node.Child(i))
 			}
 		case "function_declaration", "method_declaration":
 			// Extract only the signature for functions and methods
@@ -93,13 +94,18 @@ func generateFileOutput(fsys fs.FS, path string, maxLiteralLen int) (string, err
 			output.WriteString("\n")
 		default:
 			output.WriteString(node.Content(src))
-			output.WriteString("\n\n")
 		}
 	}
 
 	traverse(root)
 
-	return fmt.Sprintf("<file>\n<path>%s</path>\n<file_map>\n%s\n</file_map>\n</file>\n", path, strings.TrimSpace(output.String())), nil
+	code := strings.TrimSpace(output.String())
+	formattedCode, fmtErr := format.Source([]byte(code))
+	if fmtErr != nil {
+		return "", fmt.Errorf("error formatting code: %w", fmtErr)
+	}
+
+	return fmt.Sprintf("<file>\n<path>%s</path>\n<file_map>\n%s</file_map>\n</file>\n", path, formattedCode), nil
 }
 
 func traverseAndTruncate(node *sitter.Node, src []byte, output *strings.Builder, maxLiteralLen int) {
@@ -118,26 +124,38 @@ func traverseAndTruncate(node *sitter.Node, src []byte, output *strings.Builder,
 			} else {
 				output.WriteString(content)
 			}
-		case "(", ")":
+		case "(":
 			output.WriteString(child.Content(src))
-			if child.Parent().Type() == "var_spec_list" || child.Parent().Type() == "const_spec_list" {
+			if node.Type() == "var_spec_list" ||
+				(node.Type() == "const_declaration" && node.NamedChildCount() > 0) {
 				output.WriteString("\n")
 			}
 		case "=":
 			output.WriteString(child.Content(src))
 			output.WriteString(" ")
-		case "var":
+		case "var", "const":
 			output.WriteString(child.Content(src))
 			output.WriteString(" ")
 		case "identifier":
-			for p := child.Parent(); p != nil; p = p.Parent() {
-				if p.Type() == "var_spec_list" || p.Type() == "const_spec_list" {
+			for p := node; p != nil; p = p.Parent() {
+				if p.Type() == "var_spec_list" ||
+					(p.Type() == "const_declaration" && p.NamedChildCount() > 1) {
 					output.WriteString("\t")
 					break
 				}
 			}
 			output.WriteString(child.Content(src))
 			output.WriteString(" ")
+		case "comment":
+			for p := node; p != nil; p = p.Parent() {
+				if p.Type() == "var_spec_list" ||
+					(p.Type() == "const_declaration" && p.NamedChildCount() > 1) {
+					output.WriteString("\t")
+					break
+				}
+			}
+			output.WriteString(child.Content(src))
+			output.WriteString("\n")
 		default:
 			if child.ChildCount() > 0 {
 				traverseAndTruncate(child, src, output, maxLiteralLen)
