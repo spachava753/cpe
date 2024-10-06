@@ -3,11 +3,10 @@ module github.com/spachava753/cpe
 go 1.22
 
 require (
-	github.com/gobwas/glob v0.2.3
 	github.com/google/generative-ai-go v0.17.0
 	github.com/sashabaranov/go-openai v1.29.1
+	github.com/smacker/go-tree-sitter v0.0.0-20240827094217-dd81d9e9be82
 	github.com/stretchr/testify v1.9.0
-	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d
 	google.golang.org/api v0.196.0
 )
 
@@ -28,7 +27,6 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.3 // indirect
 	github.com/googleapis/gax-go/v2 v2.13.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/smacker/go-tree-sitter v0.0.0-20240827094217-dd81d9e9be82 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.54.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.54.0 // indirect
