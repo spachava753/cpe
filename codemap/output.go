@@ -155,7 +155,9 @@ func traverseAndTruncate(node *sitter.Node, src []byte, output *strings.Builder,
 				}
 			}
 			output.WriteString(child.Content(src))
-			output.WriteString("\n")
+			if child.PrevNamedSibling() == nil || child.PrevNamedSibling().EndPoint().Row != child.EndPoint().Row {
+				output.WriteString("\n")
+			}
 		default:
 			if child.ChildCount() > 0 {
 				traverseAndTruncate(child, src, output, maxLiteralLen)
