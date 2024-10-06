@@ -19,8 +19,8 @@ import (
 	"strings"
 )
 
-func generateCodeMapOutput() (string, error) {
-	output, err := codemap.GenerateOutput(os.DirFS("."))
+func generateCodeMapOutput(maxLiteralLen int) (string, error) {
+	output, err := codemap.GenerateOutput(os.DirFS("."), maxLiteralLen)
 	if err != nil {
 		return "", fmt.Errorf("error generating code map output: %w", err)
 	}
@@ -327,7 +327,8 @@ func main() {
 	var systemMessage string
 	if requiresCodebase {
 		// Generate low-fidelity code map output
-		codeMapOutput, err := generateCodeMapOutput()
+		maxLiteralLen := 100 // You can adjust this value or make it configurable
+		codeMapOutput, err := generateCodeMapOutput(maxLiteralLen)
 		if err != nil {
 			fmt.Printf("Error generating code map output: %v\n", err)
 			return

@@ -13,7 +13,7 @@ import (
 )
 
 // GenerateOutput creates the XML-like output for the code map using AST
-func GenerateOutput(fsys fs.FS) (string, error) {
+func GenerateOutput(fsys fs.FS, maxLiteralLen int) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("<code_map>\n")
 
@@ -34,7 +34,7 @@ func GenerateOutput(fsys fs.FS) (string, error) {
 	sort.Strings(filePaths)
 
 	for _, path := range filePaths {
-		fileContent, err := generateFileOutput(fsys, path)
+		fileContent, err := generateFileOutput(fsys, path, maxLiteralLen)
 		if err != nil {
 			return "", fmt.Errorf("error generating output for file %s: %w", path, err)
 		}
@@ -45,7 +45,7 @@ func GenerateOutput(fsys fs.FS) (string, error) {
 	return sb.String(), nil
 }
 
-func generateFileOutput(fsys fs.FS, path string) (string, error) {
+func generateFileOutput(fsys fs.FS, path string, maxLiteralLen int) (string, error) {
 	src, err := fs.ReadFile(fsys, path)
 	if err != nil {
 		return "", err
@@ -84,6 +84,17 @@ func generateFileOutput(fsys fs.FS, path string) (string, error) {
 				case "receiver", "parameters":
 					output.WriteString(" ")
 				}
+			}
+			output.WriteString("\n\n")
+		case "const_declaration", "var_declaration":
+			for i := 0; i < int(node.ChildCount()); i++ {
+				child := node.Child(i)
+				content := child.Content(src)
+				if len(content) > maxLiteralLen {
+					content = content[:maxLiteralLen] + "..."
+				}
+				output.WriteString(content)
+				output.WriteString(" ")
 			}
 			output.WriteString("\n\n")
 		case "comment":
