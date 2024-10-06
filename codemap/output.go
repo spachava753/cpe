@@ -87,16 +87,7 @@ func generateFileOutput(fsys fs.FS, path string, maxLiteralLen int) (string, err
 			}
 			output.WriteString("\n\n")
 		case "const_declaration", "var_declaration":
-			for i := 0; i < int(node.ChildCount()); i++ {
-				child := node.Child(i)
-				content := child.Content(src)
-				if len(content) > maxLiteralLen {
-					content = content[:maxLiteralLen] + "..."
-				}
-				output.WriteString(content)
-				output.WriteString(" ")
-			}
-			output.WriteString("\n\n")
+			traverseAndTruncate(node, src, &output, maxLiteralLen)
 		case "comment":
 			output.WriteString(node.Content(src))
 			output.WriteString("\n")
@@ -109,4 +100,50 @@ func generateFileOutput(fsys fs.FS, path string, maxLiteralLen int) (string, err
 	traverse(root)
 
 	return fmt.Sprintf("<file>\n<path>%s</path>\n<file_map>\n%s\n</file_map>\n</file>\n", path, strings.TrimSpace(output.String())), nil
+}
+
+func traverseAndTruncate(node *sitter.Node, src []byte, output *strings.Builder, maxLiteralLen int) {
+	for i := 0; i < int(node.ChildCount()); i++ {
+		child := node.Child(i)
+		cchild := child.Content(src)
+		_ = cchild
+		tchild := child.Type()
+		_ = tchild
+		switch child.Type() {
+		case "interpreted_string_literal", "raw_string_literal":
+			content := child.Content(src)
+			if len(content)-2 > maxLiteralLen {
+				truncated := content[:maxLiteralLen+1] + "..." + content[len(content)-1:]
+				output.WriteString(truncated)
+			} else {
+				output.WriteString(content)
+			}
+		case "(", ")":
+			output.WriteString(child.Content(src))
+			if child.Parent().Type() == "var_spec_list" || child.Parent().Type() == "const_spec_list" {
+				output.WriteString("\n")
+			}
+		case "=":
+			output.WriteString(child.Content(src))
+			output.WriteString(" ")
+		case "var":
+			output.WriteString(child.Content(src))
+			output.WriteString(" ")
+		case "identifier":
+			for p := child.Parent(); p != nil; p = p.Parent() {
+				if p.Type() == "var_spec_list" || p.Type() == "const_spec_list" {
+					output.WriteString("\t")
+					break
+				}
+			}
+			output.WriteString(child.Content(src))
+			output.WriteString(" ")
+		default:
+			if child.ChildCount() > 0 {
+				traverseAndTruncate(child, src, output, maxLiteralLen)
+			} else {
+				output.WriteString(child.Content(src))
+			}
+		}
+	}
 }

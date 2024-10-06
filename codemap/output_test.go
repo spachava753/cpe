@@ -26,7 +26,7 @@ func TestGenerateOutput(t *testing.T) {
 	}{
 		{
 			name:   "Global variables truncation",
-			maxLen: 500,
+			maxLen: 1,
 			files: map[string]string{
 				"globals.go": `
 package globals
