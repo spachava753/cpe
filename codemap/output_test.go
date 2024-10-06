@@ -21,24 +21,26 @@ func TestGenerateOutput(t *testing.T) {
 	tests := []struct {
 		name     string
 		files    map[string]string
+		maxLen   int
 		expected string
 	}{
 		{
-			name: "Global variables truncation",
+			name:   "Global variables truncation",
+			maxLen: 500,
 			files: map[string]string{
 				"globals.go": `
 package globals
 
 var (
-	LongString = "This is a very long string that spans multiple lines. It goes on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on"
+	LongString = "Text"
 
-	LongStringBackTick = ` + "`" + `This is a very long string that spans multiple lines. It goes on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on` + "`" + `
+	LongStringBackTick = ` + "`" + `Text` + "`" + `
 
-	LongByteSlice = []byte("This is a very long string that spans multiple lines. It goes on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on")
+	LongByteSlice = []byte("Text")
 
-	LongByteSliceBackTick = []byte(` + "`" + `This is a very long string that spans multiple lines. It goes on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on` + "`" + `)
+	LongByteSliceBackTick = []byte(` + "`" + `Text` + "`" + `)
 
-	ShortString = "This is a short string"
+	ShortString = "T"
 
 	RegularVar = 42
 )
@@ -51,15 +53,15 @@ var (
 package globals
 
 var (
-	LongString = "This is a very long string that spans multiple lines. It goes on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and ..."
+	LongString = "T..."
 
-	LongStringBackTick = ` + "`" + `This is a very long string that spans multiple lines. It goes on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and ...` + "`" + `
+	LongStringBackTick = ` + "`" + `T...` + "`" + `
 
-	LongByteSlice = []byte("This is a very long string that spans multiple lines. It goes on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and ...")
+	LongByteSlice = []byte("T...")
 
-	LongByteSliceBackTick = []byte(` + "`" + `This is a very long string that spans multiple lines. It goes on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and on and ...` + "`" + `)
+	LongByteSliceBackTick = []byte(` + "`" + `T...` + "`" + `)
 
-	ShortString = "This is a short string"
+	ShortString = "T"
 
 	RegularVar = 42
 )
@@ -69,7 +71,8 @@ var (
 `,
 		},
 		{
-			name: "Comprehensive comments test",
+			name:   "Comprehensive comments test",
+			maxLen: 500,
 			files: map[string]string{
 				"comments.go": `
 // Package comments demonstrates comprehensive comment usage in Go.
@@ -212,7 +215,8 @@ func NewDefaultUserManager() *DefaultUserManager
 `,
 		},
 		{
-			name: "Including test files",
+			name:   "Including test files",
+			maxLen: 500,
 			files: map[string]string{
 				"main.go": `
 package main
@@ -276,7 +280,8 @@ func TestAdd(t *testing.T)
 `,
 		},
 		{
-			name: "Comprehensive test case",
+			name:   "Comprehensive test case",
+			maxLen: 500,
 			files: map[string]string{
 				"main.go": `
 // Package main is the entry point of the application.
@@ -389,7 +394,8 @@ func CreateUser(name string) *User
 `,
 		},
 		{
-			name: "Single file with struct and function",
+			name:   "Single file with struct and function",
+			maxLen: 500,
 			files: map[string]string{
 				"main.go": `
 package main
@@ -432,7 +438,8 @@ func main()
 `,
 		},
 		{
-			name: "Multiple files with different structures",
+			name:   "Multiple files with different structures",
+			maxLen: 500,
 			files: map[string]string{
 				"main.go": `
 package main
@@ -484,7 +491,8 @@ func NewUser(name string) *User
 `,
 		},
 		{
-			name: "File with interface and multiple functions",
+			name:   "File with interface and multiple functions",
+			maxLen: 500,
 			files: map[string]string{
 				"service.go": `
 package service
@@ -549,7 +557,8 @@ func (s *serviceImpl) Create(ctx context.Context, data string) error
 `,
 		},
 		{
-			name: "File with nested structs and complex types",
+			name:   "File with nested structs and complex types",
+			maxLen: 500,
 			files: map[string]string{
 				"complex.go": `
 package complex
@@ -603,7 +612,8 @@ func ProcessData(data *sync.Map) ([]byte, error)
 `,
 		},
 		{
-			name: "File with comments at various levels",
+			name:   "File with comments at various levels",
+			maxLen: 500,
 			files: map[string]string{
 				"comments.go": `
 // Package comments demonstrates various levels of comments in Go code.
@@ -671,7 +681,7 @@ func NewUser(name string) *User
 			memFS := setupInMemoryFS(tt.files)
 
 			// Generate the output using GenerateOutput
-			output, err := GenerateOutput(memFS)
+			output, err := GenerateOutput(memFS, tt.maxLen)
 			if err != nil {
 				t.Fatalf("Failed to generate output: %v", err)
 			}
