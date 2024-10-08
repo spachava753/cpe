@@ -3,7 +3,9 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/googleapis/gax-go/v2/apierror"
 	"time"
 
 	"github.com/google/generative-ai-go/genai"
@@ -87,8 +89,12 @@ func (g *GeminiProvider) GenerateResponse(config GenConfig, conversation Convers
 			},
 		}
 	}
-	resp, err = session.SendMessage(ctx, genai.Text(conversation.Messages[len(conversation.Messages)-1].Content[0].Text))
 
+	resp, err = session.SendMessage(ctx, genai.Text(conversation.Messages[len(conversation.Messages)-1].Content[0].Text))
+	var apiErr *apierror.APIError
+	if errors.As(err, &apiErr) {
+		return Message{}, TokenUsage{}, fmt.Errorf("error sending message to Gemini: %w", apiErr.Unwrap())
+	}
 	if err != nil {
 		return Message{}, TokenUsage{}, fmt.Errorf("error sending message to Gemini: %w", err)
 	}
