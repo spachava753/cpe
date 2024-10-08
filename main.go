@@ -346,13 +346,13 @@ func resolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS) (map[st
 	return usages, nil
 }
 
-func buildSystemMessageWithSelectedFiles(selectedFiles []string, includeFiles []string) (string, error) {
+func buildSystemMessageWithSelectedFiles(allFiles []string) (string, error) {
 	var systemMessage strings.Builder
 	systemMessage.WriteString(CodeAnalysisModificationPrompt)
 
 	// Use the current directory for resolveTypeFiles
 	currentDir := "."
-	resolvedFiles, err := resolveTypeAndFunctionFiles(selectedFiles, os.DirFS(currentDir))
+	resolvedFiles, err := resolveTypeAndFunctionFiles(allFiles, os.DirFS(currentDir))
 	if err != nil {
 		return "", fmt.Errorf("error resolving type files: %w", err)
 	}
@@ -366,12 +366,7 @@ func buildSystemMessageWithSelectedFiles(selectedFiles []string, includeFiles []
 	// Add go.mod file to the resolved files
 	resolvedFiles["go.mod"] = true
 
-	// Add includeFiles to the resolvedFiles
-	for _, filePath := range includeFiles {
-		resolvedFiles[filePath] = true
-	}
-
-	for filePath := range resolvedFiles {
+	for _, filePath := range allFiles {
 		content, err := os.ReadFile(filePath)
 		if err != nil {
 			return "", fmt.Errorf("error reading file %s: %w", filePath, err)
@@ -519,8 +514,10 @@ func main() {
 			includeFiles = strings.Split(flags.IncludeFiles, ",")
 		}
 
-		// Build system message with selected files and included files
-		systemMessage, err = buildSystemMessageWithSelectedFiles(selectedFiles, includeFiles)
+		// Combine selected and included files
+		allFiles := append(selectedFiles, includeFiles...)
+		// Build system message with all files
+		systemMessage, err = buildSystemMessageWithSelectedFiles(allFiles)
 		if err != nil {
 			fmt.Println("Error building system message:", err)
 			return
