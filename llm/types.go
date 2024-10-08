@@ -76,12 +76,12 @@ type GenConfig struct {
 	Model             string
 	MaxTokens         int
 	Temperature       float32  // Controls randomness: 0.0 - 1.0
-	TopP              float32  // Controls diversity: 0.0 - 1.0
-	TopK              int      // Controls token sampling:
-	FrequencyPenalty  float32  // Penalizes frequent tokens: -2.0 - 2.0
-	PresencePenalty   float32  // Penalizes repeated tokens: -2.0 - 2.0
+	TopP              *float32 // Controls diversity: 0.0 - 1.0
+	TopK              *int     // Controls token sampling:
+	FrequencyPenalty  *float32 // Penalizes frequent tokens: -2.0 - 2.0
+	PresencePenalty   *float32 // Penalizes repeated tokens: -2.0 - 2.0
 	Stop              []string // List of sequences where the API will stop generating further tokens
-	NumberOfResponses int      // Number of chat completion choices to generate
+	NumberOfResponses *int     // Number of chat completion choices to generate
 	ToolChoice        string   // Controls tool use: "auto", "any", or "tool"
 	ForcedTool        string   // Name of the tool to force when ToolChoice is "tool"
 }

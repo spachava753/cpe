@@ -51,19 +51,24 @@ func (f Flags) ApplyToGenConfig(config llm.GenConfig) llm.GenConfig {
 		config.Temperature = float32(f.Temperature)
 	}
 	if f.TopP != 0 {
-		config.TopP = float32(f.TopP)
+		topP := float32(f.TopP)
+		config.TopP = &topP
 	}
 	if f.TopK != 0 {
-		config.TopK = f.TopK
+		topK := f.TopK
+		config.TopK = &topK
 	}
 	if f.FrequencyPenalty != 0 {
-		config.FrequencyPenalty = float32(f.FrequencyPenalty)
+		freqPenalty := float32(f.FrequencyPenalty)
+		config.FrequencyPenalty = &freqPenalty
 	}
 	if f.PresencePenalty != 0 {
-		config.PresencePenalty = float32(f.PresencePenalty)
+		presPenalty := float32(f.PresencePenalty)
+		config.PresencePenalty = &presPenalty
 	}
 	if f.NumberOfResponses != 0 {
-		config.NumberOfResponses = f.NumberOfResponses
+		numResponses := f.NumberOfResponses
+		config.NumberOfResponses = &numResponses
 	}
 	return config
 }

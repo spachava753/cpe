@@ -38,16 +38,25 @@ func (o *OpenAIProvider) GenerateResponse(config GenConfig, conversation Convers
 	tools := convertToOpenAITools(conversation.Tools)
 
 	req := openai.ChatCompletionRequest{
-		Model:            config.Model,
-		Messages:         messages,
-		Temperature:      config.Temperature,
-		MaxTokens:        config.MaxTokens,
-		TopP:             config.TopP,
-		N:                config.NumberOfResponses,
-		PresencePenalty:  config.PresencePenalty,
-		FrequencyPenalty: config.FrequencyPenalty,
-		Stop:             config.Stop,
-		Tools:            tools,
+		Model:       config.Model,
+		Messages:    messages,
+		Temperature: config.Temperature,
+		MaxTokens:   config.MaxTokens,
+		Stop:        config.Stop,
+		Tools:       tools,
+	}
+
+	if config.TopP != nil {
+		req.TopP = *config.TopP
+	}
+	if config.NumberOfResponses != nil {
+		req.N = *config.NumberOfResponses
+	}
+	if config.PresencePenalty != nil {
+		req.PresencePenalty = *config.PresencePenalty
+	}
+	if config.FrequencyPenalty != nil {
+		req.FrequencyPenalty = *config.FrequencyPenalty
 	}
 
 	if config.ToolChoice != "" {

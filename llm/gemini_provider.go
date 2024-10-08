@@ -52,9 +52,14 @@ func (g *GeminiProvider) GenerateResponse(config GenConfig, conversation Convers
 	g.model = g.client.GenerativeModel(config.Model)
 
 	g.model.SetTemperature(config.Temperature)
-	g.model.SetTopK(int32(config.TopK))
-	g.model.SetTopP(config.TopP)
 	g.model.SetMaxOutputTokens(int32(config.MaxTokens))
+
+	if config.TopK != nil {
+		g.model.SetTopK(int32(*config.TopK))
+	}
+	if config.TopP != nil {
+		g.model.SetTopP(*config.TopP)
+	}
 	g.model.SystemInstruction = &genai.Content{
 		Parts: []genai.Part{genai.Text(conversation.SystemPrompt)},
 	}

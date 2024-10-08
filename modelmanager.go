@@ -11,11 +11,11 @@ import (
 type ModelDefaults struct {
 	MaxTokens         int
 	Temperature       float32
-	TopP              float32
-	TopK              int
-	FrequencyPenalty  float32
-	PresencePenalty   float32
-	NumberOfResponses int
+	TopP              *float32
+	TopK              *int
+	FrequencyPenalty  *float32
+	PresencePenalty   *float32
+	NumberOfResponses *int
 }
 
 type ModelConfig struct {
@@ -56,35 +56,35 @@ func (c OpenAIConfig) GetAPIKey() string {
 var modelConfigs = map[string]ModelConfig{
 	"claude-3-opus": {
 		Name: "claude-3-opus-20240229", ProviderType: "anthropic", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.3, TopP: 1, TopK: 0, FrequencyPenalty: 0, PresencePenalty: 0, NumberOfResponses: 1},
+		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.3},
 	},
 	"claude-3-5-sonnet": {
 		Name: "claude-3-5-sonnet-20240620", ProviderType: "anthropic", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3, TopP: 1, TopK: 0, FrequencyPenalty: 0, PresencePenalty: 0, NumberOfResponses: 1},
+		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
 	"claude-3-5-haiku": {
 		Name: "claude-3-haiku-20240307", ProviderType: "anthropic", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.3, TopP: 1, TopK: 0, FrequencyPenalty: 0, PresencePenalty: 0, NumberOfResponses: 1},
+		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.3},
 	},
 	"gemini-1.5-flash-8b": {
 		Name: "gemini-1.5-flash-8b", ProviderType: "gemini", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3, TopP: 1, TopK: 40, FrequencyPenalty: 0, PresencePenalty: 0, NumberOfResponses: 1},
+		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
 	"gemini-1.5-flash": {
 		Name: "gemini-1.5-flash-002", ProviderType: "gemini", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3, TopP: 1, TopK: 40, FrequencyPenalty: 0, PresencePenalty: 0, NumberOfResponses: 1},
+		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
 	"gemini-1.5-pro": {
 		Name: "gemini-1.5-pro-002", ProviderType: "gemini", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3, TopP: 1, TopK: 40, FrequencyPenalty: 0, PresencePenalty: 0, NumberOfResponses: 1},
+		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
 	"gpt-4o": {
 		Name: openai.GPT4o20240806, ProviderType: "openai", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3, TopP: 1, TopK: 0, FrequencyPenalty: 0, PresencePenalty: 0, NumberOfResponses: 1},
+		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
 	"gpt-4o-mini": {
 		Name: openai.GPT4oMini20240718, ProviderType: "openai", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3, TopP: 1, TopK: 0, FrequencyPenalty: 0, PresencePenalty: 0, NumberOfResponses: 1},
+		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
 }
 
@@ -106,14 +106,25 @@ func GetProvider(modelName string, flags Flags) (llm.LLMProvider, llm.GenConfig,
 	}
 
 	genConfig := llm.GenConfig{
-		Model:             config.Name,
-		MaxTokens:         config.Defaults.MaxTokens,
-		Temperature:       config.Defaults.Temperature,
-		TopP:              config.Defaults.TopP,
-		TopK:              config.Defaults.TopK,
-		FrequencyPenalty:  config.Defaults.FrequencyPenalty,
-		PresencePenalty:   config.Defaults.PresencePenalty,
-		NumberOfResponses: config.Defaults.NumberOfResponses,
+		Model:       config.Name,
+		MaxTokens:   config.Defaults.MaxTokens,
+		Temperature: config.Defaults.Temperature,
+	}
+
+	if config.Defaults.TopP != nil {
+		genConfig.TopP = config.Defaults.TopP
+	}
+	if config.Defaults.TopK != nil {
+		genConfig.TopK = config.Defaults.TopK
+	}
+	if config.Defaults.FrequencyPenalty != nil {
+		genConfig.FrequencyPenalty = config.Defaults.FrequencyPenalty
+	}
+	if config.Defaults.PresencePenalty != nil {
+		genConfig.PresencePenalty = config.Defaults.PresencePenalty
+	}
+	if config.Defaults.NumberOfResponses != nil {
+		genConfig.NumberOfResponses = config.Defaults.NumberOfResponses
 	}
 
 	genConfig = flags.ApplyToGenConfig(genConfig)

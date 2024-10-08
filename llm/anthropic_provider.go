@@ -104,10 +104,15 @@ func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conv
 		Messages:    conversation.Messages,
 		System:      conversation.SystemPrompt,
 		Temperature: config.Temperature,
-		TopP:        config.TopP,
-		TopK:        config.TopK,
 		Stop:        config.Stop,
 		Tools:       a.convertToAnthropicTools(conversation.Tools),
+	}
+
+	if config.TopP != nil {
+		requestBody.TopP = *config.TopP
+	}
+	if config.TopK != nil {
+		requestBody.TopK = *config.TopK
 	}
 
 	if config.ToolChoice != "" {
