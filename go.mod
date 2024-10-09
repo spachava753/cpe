@@ -8,11 +8,9 @@ require (
 	github.com/google/generative-ai-go v0.18.0
 	github.com/googleapis/gax-go/v2 v2.13.0
 	github.com/sashabaranov/go-openai v1.32.0
-	github.com/smacker/go-tree-sitter v0.0.0-20240827094217-dd81d9e9be82
 	github.com/stretchr/testify v1.9.0
 	github.com/tree-sitter/go-tree-sitter v0.23.1
 	github.com/tree-sitter/tree-sitter-go v0.23.1
-	golang.org/x/net v0.30.0
 	google.golang.org/api v0.199.0
 )
 
@@ -40,6 +38,7 @@ require (
 	go.opentelemetry.io/otel/metric v1.30.0 // indirect
 	go.opentelemetry.io/otel/trace v1.30.0 // indirect
 	golang.org/x/crypto v0.28.0 // indirect
+	golang.org/x/net v0.29.0 // indirect
 	golang.org/x/oauth2 v0.23.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.26.0 // indirect
