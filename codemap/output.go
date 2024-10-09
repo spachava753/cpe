@@ -1,7 +1,6 @@
 package codemap
 
 import (
-	"context"
 	"fmt"
 	"go/format"
 	"io/fs"
@@ -9,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	sitter "github.com/smacker/go-tree-sitter"
-	"github.com/smacker/go-tree-sitter/golang"
+	sitter "github.com/tree-sitter/go-tree-sitter"
+	golang "github.com/tree-sitter/tree-sitter-go/bindings/go"
 )
 
 // GenerateOutput creates the XML-like output for the code map using AST
@@ -53,12 +52,13 @@ func generateFileOutput(fsys fs.FS, path string, maxLiteralLen int) (string, err
 	}
 
 	parser := sitter.NewParser()
-	parser.SetLanguage(golang.GetLanguage())
-
-	tree, err := parser.ParseCtx(context.Background(), nil, src)
+	defer parser.Close()
+	err = parser.SetLanguage(sitter.NewLanguage(golang.Language()))
 	if err != nil {
-		return "", fmt.Errorf("error parsing file: %w", err)
+		return "", err
 	}
+
+	tree := parser.Parse(src, nil)
 	defer tree.Close()
 
 	root := tree.RootNode()
@@ -67,19 +67,19 @@ func generateFileOutput(fsys fs.FS, path string, maxLiteralLen int) (string, err
 	// Traverse the tree and extract relevant information
 	var traverse func(node *sitter.Node)
 	traverse = func(node *sitter.Node) {
-		switch node.Type() {
+		switch node.GrammarName() {
 		case "source_file":
 			for i := 0; i < int(node.ChildCount()); i++ {
-				traverse(node.Child(i))
+				traverse(node.Child(uint(i)))
 			}
 		case "function_declaration", "method_declaration":
 			// Extract only the signature for functions and methods
 			output.WriteString("func ")
 			for i := 0; i < int(node.NamedChildCount()); i++ {
-				child := node.NamedChild(i)
-				cName := node.FieldNameForChild(i + 1)
-				if child.Type() != "block" {
-					output.WriteString(child.Content(src))
+				child := node.NamedChild(uint(i))
+				cName := node.FieldNameForChild(uint32(i + 1))
+				if child.GrammarName() != "block" {
+					output.WriteString(child.Utf8Text(src))
 				}
 				switch cName {
 				case "receiver", "parameters":
@@ -90,10 +90,10 @@ func generateFileOutput(fsys fs.FS, path string, maxLiteralLen int) (string, err
 		case "const_declaration", "var_declaration":
 			traverseAndTruncate(node, src, &output, maxLiteralLen)
 		case "comment":
-			output.WriteString(node.Content(src))
+			output.WriteString(node.Utf8Text(src))
 			output.WriteString("\n")
 		default:
-			output.WriteString(node.Content(src))
+			output.WriteString(node.Utf8Text(src))
 		}
 	}
 
@@ -110,14 +110,14 @@ func generateFileOutput(fsys fs.FS, path string, maxLiteralLen int) (string, err
 
 func traverseAndTruncate(node *sitter.Node, src []byte, output *strings.Builder, maxLiteralLen int) {
 	for i := 0; i < int(node.ChildCount()); i++ {
-		child := node.Child(i)
-		cchild := child.Content(src)
+		child := node.Child(uint(i))
+		cchild := child.Utf8Text(src)
 		_ = cchild
-		tchild := child.Type()
+		tchild := child.GrammarName()
 		_ = tchild
-		switch child.Type() {
+		switch child.GrammarName() {
 		case "interpreted_string_literal", "raw_string_literal":
-			content := child.Content(src)
+			content := child.Utf8Text(src)
 			if len(content)-2 > maxLiteralLen {
 				truncated := content[:maxLiteralLen+1] + "..." + content[len(content)-1:]
 				output.WriteString(truncated)
@@ -125,44 +125,44 @@ func traverseAndTruncate(node *sitter.Node, src []byte, output *strings.Builder,
 				output.WriteString(content)
 			}
 		case "(":
-			output.WriteString(child.Content(src))
-			if node.Type() == "var_spec_list" ||
-				(node.Type() == "const_declaration" && node.NamedChildCount() > 0) {
+			output.WriteString(child.Utf8Text(src))
+			if node.GrammarName() == "var_spec_list" ||
+				(node.GrammarName() == "const_declaration" && node.NamedChildCount() > 0) {
 				output.WriteString("\n")
 			}
 		case "=":
-			output.WriteString(child.Content(src))
+			output.WriteString(child.Utf8Text(src))
 			output.WriteString(" ")
 		case "var", "const":
-			output.WriteString(child.Content(src))
+			output.WriteString(child.Utf8Text(src))
 			output.WriteString(" ")
 		case "identifier":
 			for p := node; p != nil; p = p.Parent() {
-				if p.Type() == "var_spec_list" ||
-					(p.Type() == "const_declaration" && p.NamedChildCount() > 1) {
+				if p.GrammarName() == "var_spec_list" ||
+					(p.GrammarName() == "const_declaration" && p.NamedChildCount() > 1) {
 					output.WriteString("\t")
 					break
 				}
 			}
-			output.WriteString(child.Content(src))
+			output.WriteString(child.Utf8Text(src))
 			output.WriteString(" ")
 		case "comment":
 			for p := node; p != nil; p = p.Parent() {
-				if p.Type() == "var_spec_list" ||
-					(p.Type() == "const_declaration" && p.NamedChildCount() > 1) {
+				if p.GrammarName() == "var_spec_list" ||
+					(p.GrammarName() == "const_declaration" && p.NamedChildCount() > 1) {
 					output.WriteString("\t")
 					break
 				}
 			}
-			output.WriteString(child.Content(src))
-			if child.PrevNamedSibling() == nil || child.PrevNamedSibling().EndPoint().Row != child.EndPoint().Row {
+			output.WriteString(child.Utf8Text(src))
+			if child.PrevNamedSibling() == nil || child.PrevNamedSibling().EndPosition().Row != child.EndPosition().Row {
 				output.WriteString("\n")
 			}
 		default:
 			if child.ChildCount() > 0 {
 				traverseAndTruncate(child, src, output, maxLiteralLen)
 			} else {
-				output.WriteString(child.Content(src))
+				output.WriteString(child.Utf8Text(src))
 			}
 		}
 	}
