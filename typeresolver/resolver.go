@@ -2,12 +2,11 @@ package typeresolver
 
 import (
 	"fmt"
-	"golang.org/x/net/context"
 	"io/fs"
 	"strings"
 
-	sitter "github.com/smacker/go-tree-sitter"
-	"github.com/smacker/go-tree-sitter/golang"
+	sitter "github.com/tree-sitter/go-tree-sitter"
+	golang "github.com/tree-sitter/tree-sitter-go/bindings/go"
 )
 
 // ResolveTypeAndFunctionFiles resolves all type and function definitions used in the given files
@@ -18,21 +17,25 @@ func ResolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS) (map[st
 	imports := make(map[string]map[string]string) // file -> alias -> package
 
 	parser := sitter.NewParser()
-	parser.SetLanguage(golang.GetLanguage())
+	goLang := sitter.NewLanguage(golang.Language())
+	err := parser.SetLanguage(sitter.NewLanguage(golang.Language()))
+	if err != nil {
+		return nil, fmt.Errorf("error setting language: %w", err)
+	}
 
 	// Queries
-	typeDefQuery, _ := sitter.NewQuery([]byte(`
+	typeDefQuery, _ := sitter.NewQuery(goLang, `
                 (type_declaration
                     (type_spec
                         name: (type_identifier) @type.definition))
                 (type_alias
-                    name: (type_identifier) @type.alias.definition)`), golang.GetLanguage())
-	funcDefQuery, _ := sitter.NewQuery([]byte(`
+                    name: (type_identifier) @type.alias.definition)`)
+	funcDefQuery, _ := sitter.NewQuery(goLang, `
                 (function_declaration
                         name: (identifier) @function.definition)
                 (method_declaration
-                        name: (field_identifier) @method.definition)`), golang.GetLanguage())
-	importQuery, _ := sitter.NewQuery([]byte(`
+                        name: (field_identifier) @method.definition)`)
+	importQuery, _ := sitter.NewQuery(goLang, `
                 (import_declaration
                     (import_spec_list
                         (import_spec
@@ -41,8 +44,8 @@ func ResolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS) (map[st
                 (import_declaration
                     (import_spec
                         name: (_)? @import.name
-                        path: (interpreted_string_literal) @import.path))`), golang.GetLanguage())
-	typeUsageQuery, _ := sitter.NewQuery([]byte(`
+                        path: (interpreted_string_literal) @import.path))`)
+	typeUsageQuery, _ := sitter.NewQuery(goLang, `
                 [
                     (type_identifier) @type.usage
                     (qualified_type
@@ -55,8 +58,8 @@ func ResolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS) (map[st
                                 package: (package_identifier) @package
                                 name: (type_identifier) @type)
                         ])
-                ]`), golang.GetLanguage())
-	funcUsageQuery, _ := sitter.NewQuery([]byte(`
+                ]`)
+	funcUsageQuery, _ := sitter.NewQuery(goLang, `
                 (call_expression
                     function: [
                         (identifier) @function.usage
@@ -65,32 +68,32 @@ func ResolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS) (map[st
                                 (identifier) @package
                                 (selector_expression)
                             ]?
-                            field: (field_identifier) @method.usage)])`), golang.GetLanguage())
+                            field: (field_identifier) @method.usage)])`)
 
 	// Parse all files in the source directory and collect type and function definitions
-	err := fs.WalkDir(sourceFS, ".", func(path string, d fs.DirEntry, err error) error {
+	err = fs.WalkDir(sourceFS, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if !d.IsDir() && strings.HasSuffix(path, ".go") {
-			content, err := fs.ReadFile(sourceFS, path)
-			if err != nil {
-				return fmt.Errorf("error reading file %s: %w", path, err)
+			content, readErr := fs.ReadFile(sourceFS, path)
+			if readErr != nil {
+				return fmt.Errorf("error reading file %s: %w", path, readErr)
 			}
 
-			tree, err := parser.ParseCtx(context.Background(), nil, content)
-			if err != nil {
-				return fmt.Errorf("error parsing file %s: %w", path, err)
-			}
+			tree := parser.Parse(content, nil)
+			defer tree.Close()
 
 			// Extract package name
-			pkgNameQuery, _ := sitter.NewQuery([]byte(`(package_clause (package_identifier) @package.name)`), golang.GetLanguage())
+			pkgNameQuery, _ := sitter.NewQuery(goLang, `(package_clause (package_identifier) @package.name)`)
+			defer pkgNameQuery.Close()
 			pkgNameCursor := sitter.NewQueryCursor()
-			pkgNameCursor.Exec(pkgNameQuery, tree.RootNode())
+			defer pkgNameCursor.Close()
+			matches := pkgNameCursor.Matches(pkgNameQuery, tree.RootNode(), content)
 			pkgName := ""
-			if match, ok := pkgNameCursor.NextMatch(); ok {
+			for match := matches.Next(); match != nil; match = matches.Next() {
 				for _, capture := range match.Captures {
-					pkgName = capture.Node.Content(content)
+					pkgName = capture.Node.Utf8Text(content)
 					break
 				}
 			}
@@ -104,46 +107,37 @@ func ResolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS) (map[st
 
 			// Process type definitions and aliases
 			typeCursor := sitter.NewQueryCursor()
-			typeCursor.Exec(typeDefQuery, tree.RootNode())
-			for {
-				match, ok := typeCursor.NextMatch()
-				if !ok {
-					break
-				}
+			defer typeCursor.Close()
+			matches = typeCursor.Matches(typeDefQuery, tree.RootNode(), content)
+			for match := matches.Next(); match != nil; match = matches.Next() {
 				for _, capture := range match.Captures {
-					typeName := capture.Node.Content(content)
+					typeName := capture.Node.Utf8Text(content)
 					typeDefinitions[pkgName][typeName] = path
 				}
 			}
 
 			// Process function definitions
 			funcCursor := sitter.NewQueryCursor()
-			funcCursor.Exec(funcDefQuery, tree.RootNode())
-			for {
-				match, ok := funcCursor.NextMatch()
-				if !ok {
-					break
-				}
+			defer funcCursor.Close()
+			matches = funcCursor.Matches(funcDefQuery, tree.RootNode(), content)
+			for match := matches.Next(); match != nil; match = matches.Next() {
 				for _, capture := range match.Captures {
-					functionDefinitions[pkgName][capture.Node.Content(content)] = path
+					functionDefinitions[pkgName][capture.Node.Utf8Text(content)] = path
 				}
 			}
 
 			// Process imports
 			importCursor := sitter.NewQueryCursor()
-			importCursor.Exec(importQuery, tree.RootNode())
-			for {
-				match, ok := importCursor.NextMatch()
-				if !ok {
-					break
-				}
+			defer importCursor.Close()
+			matches = importCursor.Matches(importQuery, tree.RootNode(), content)
+			for match := matches.Next(); match != nil; match = matches.Next() {
 				var importName, importPath string
 				for _, capture := range match.Captures {
-					switch capture.Node.Type() {
+					switch capture.Node.Kind() {
 					case "identifier":
-						importName = capture.Node.Content(content)
+						importName = capture.Node.Utf8Text(content)
 					case "interpreted_string_literal":
-						importPath = strings.Trim(capture.Node.Content(content), "\"")
+						importPath = strings.Trim(capture.Node.Utf8Text(content), "\"")
 					}
 				}
 				if importName == "" {
@@ -169,31 +163,24 @@ func ResolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS) (map[st
 		if !strings.HasSuffix(file, ".go") {
 			continue
 		}
-		content, err := fs.ReadFile(sourceFS, file)
-		if err != nil {
-			return nil, fmt.Errorf("error reading file %s: %w", file, err)
+		content, readErr := fs.ReadFile(sourceFS, file)
+		if readErr != nil {
+			return nil, fmt.Errorf("error reading file %s: %w", file, readErr)
 		}
 
-		tree, err := parser.ParseCtx(context.Background(), nil, content)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing file %s: %w", file, err)
-		}
+		tree := parser.Parse(content, nil)
 
 		// Process type usages
 		typeUsageCursor := sitter.NewQueryCursor()
-		typeUsageCursor.Exec(typeUsageQuery, tree.RootNode())
-		for {
-			match, ok := typeUsageCursor.NextMatch()
-			if !ok {
-				break
-			}
+		matches := typeUsageCursor.Matches(typeUsageQuery, tree.RootNode(), content)
+		for match := matches.Next(); match != nil; match = matches.Next() {
 			var packageName, typeName string
 			for _, capture := range match.Captures {
-				switch capture.Node.Type() {
+				switch capture.Node.Kind() {
 				case "package_identifier":
-					packageName = capture.Node.Content(content)
+					packageName = capture.Node.Utf8Text(content)
 				case "type_identifier":
-					typeName = capture.Node.Content(content)
+					typeName = capture.Node.Utf8Text(content)
 				}
 			}
 
@@ -229,19 +216,15 @@ func ResolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS) (map[st
 
 		// Process function usages
 		funcUsageCursor := sitter.NewQueryCursor()
-		funcUsageCursor.Exec(funcUsageQuery, tree.RootNode())
-		for {
-			match, ok := funcUsageCursor.NextMatch()
-			if !ok {
-				break
-			}
+		matches = funcUsageCursor.Matches(funcUsageQuery, tree.RootNode(), content)
+		for match := matches.Next(); match != nil; match = matches.Next() {
 			var packageName, funcName string
 			for _, capture := range match.Captures {
-				switch capture.Node.Type() {
+				switch capture.Node.Kind() {
 				case "identifier", "package":
-					packageName = capture.Node.Content(content)
+					packageName = capture.Node.Utf8Text(content)
 				case "field_identifier", "function.usage", "method.usage":
-					funcName = capture.Node.Content(content)
+					funcName = capture.Node.Utf8Text(content)
 				}
 			}
 
@@ -286,6 +269,8 @@ func ResolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS) (map[st
 
 		// Add the selected file to the usages
 		usages[file] = true
+
+		tree.Close()
 	}
 
 	return usages, nil
