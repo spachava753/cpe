@@ -68,9 +68,12 @@ func generateFileOutput(fsys fs.FS, path string, maxLiteralLen int) (string, err
 	var output string
 	ext := filepath.Ext(path)
 
-	if ext == ".go" {
+	switch ext {
+	case ".go":
 		output, err = generateGoFileOutput(src, maxLiteralLen)
-	} else {
+	case ".java":
+		output, err = generateJavaFileOutput(src, maxLiteralLen)
+	default:
 		output = string(src)
 	}
 
@@ -78,7 +81,7 @@ func generateFileOutput(fsys fs.FS, path string, maxLiteralLen int) (string, err
 		return "", fmt.Errorf("error generating output for file %s: %w", path, err)
 	}
 
-	return fmt.Sprintf("<file>\n<path>%s</path>\n<file_map>\n%s</file_map>\n</file>\n", path, output), nil
+	return fmt.Sprintf("<file>\n<path>%s</path>\n<file_map>\n%s\n</file_map>\n</file>\n", path, output), nil
 }
 
 func convertQueryError(queryType string, err *sitter.QueryError) error {
@@ -233,5 +236,5 @@ func generateGoFileOutput(src []byte, maxLiteralLen int) (string, error) {
 		return "", fmt.Errorf("error formatting code: %w", fmtErr)
 	}
 
-	return string(formattedCode), nil
+	return strings.TrimSpace(string(formattedCode)), nil
 }
