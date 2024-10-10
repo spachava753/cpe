@@ -12,6 +12,7 @@ require (
 	github.com/tree-sitter/go-tree-sitter v0.23.1
 	github.com/tree-sitter/tree-sitter-go v0.23.1
 	github.com/tree-sitter/tree-sitter-java v0.23.2
+	github.com/tree-sitter/tree-sitter-python v0.23.2
 	google.golang.org/api v0.199.0
 )
 

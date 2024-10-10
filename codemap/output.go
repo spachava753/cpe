@@ -73,6 +73,8 @@ func generateFileOutput(fsys fs.FS, path string, maxLiteralLen int) (string, err
 		output, err = generateGoFileOutput(src, maxLiteralLen)
 	case ".java":
 		output, err = generateJavaFileOutput(src, maxLiteralLen)
+	case ".py":
+		output, err = generatePythonFileOutput(src, maxLiteralLen)
 	default:
 		output = string(src)
 	}
