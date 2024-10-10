@@ -237,12 +237,17 @@ var (
 package globals
 
 var (
-	LongString            = "T..."
-	LongStringBackTick    = ` + "`" + `T...` + "`" + `
-	LongByteSlice         = []byte("T...")
+	LongString = "T..."
+
+	LongStringBackTick = ` + "`" + `T...` + "`" + `
+
+	LongByteSlice = []byte("T...")
+
 	LongByteSliceBackTick = []byte(` + "`" + `T...` + "`" + `)
-	ShortString           = "T"
-	RegularVar            = 42
+
+	ShortString = "T"
+
+	RegularVar = 42
 )
 </file_map>
 </file>
