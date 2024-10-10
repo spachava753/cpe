@@ -159,10 +159,12 @@ func ResolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS) (map[st
 
 	// Collect type and function usages for selected files
 	for _, file := range selectedFiles {
-		// Check if the file has a .go extension
+		// Include non-Go files directly in the usages
 		if !strings.HasSuffix(file, ".go") {
+			usages[file] = true
 			continue
 		}
+
 		content, readErr := fs.ReadFile(sourceFS, file)
 		if readErr != nil {
 			return nil, fmt.Errorf("error reading file %s: %w", file, readErr)
