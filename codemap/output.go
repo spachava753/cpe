@@ -124,6 +124,16 @@ func generateGoFileOutput(src []byte, maxLiteralLen int) (string, error) {
 	}
 	defer methodQuery.Close()
 
+	// Query for string literals
+	stringLiteralQuery, queryErr := sitter.NewQuery(goLang, `
+			(interpreted_string_literal) @string
+			(raw_string_literal) @string
+	`)
+	if queryErr != nil {
+		return "", convertQueryError("string literal query", queryErr)
+	}
+	defer stringLiteralQuery.Close()
+
 	// Execute queries
 	funcCursor := sitter.NewQueryCursor()
 	defer funcCursor.Close()
@@ -133,16 +143,23 @@ func generateGoFileOutput(src []byte, maxLiteralLen int) (string, error) {
 	defer methodCursor.Close()
 	methodMatches := methodCursor.Matches(methodQuery, root, src)
 
+	stringLiteralCursor := sitter.NewQueryCursor()
+	defer stringLiteralCursor.Close()
+	stringLiteralMatches := stringLiteralCursor.Matches(stringLiteralQuery, root, src)
+
 	// Collect positions to cut
 	type cutRange struct {
 		start, end uint
 	}
 	cutRanges := make([]cutRange, 0)
 
+	// Collect function and method body ranges
+	bodyRanges := make([]cutRange, 0)
+
 	for match := funcMatches.Next(); match != nil; match = funcMatches.Next() {
 		for _, capture := range match.Captures {
 			if capture.Node.Kind() == "block" {
-				cutRanges = append(cutRanges, cutRange{
+				bodyRanges = append(bodyRanges, cutRange{
 					start: capture.Node.StartByte(),
 					end:   capture.Node.EndByte(),
 				})
@@ -153,7 +170,7 @@ func generateGoFileOutput(src []byte, maxLiteralLen int) (string, error) {
 	for match := methodMatches.Next(); match != nil; match = methodMatches.Next() {
 		for _, capture := range match.Captures {
 			if capture.Node.Kind() == "block" {
-				cutRanges = append(cutRanges, cutRange{
+				bodyRanges = append(bodyRanges, cutRange{
 					start: capture.Node.StartByte(),
 					end:   capture.Node.EndByte(),
 				})
@@ -161,12 +178,40 @@ func generateGoFileOutput(src []byte, maxLiteralLen int) (string, error) {
 		}
 	}
 
+	// Collect string literal ranges
+	for match := stringLiteralMatches.Next(); match != nil; match = stringLiteralMatches.Next() {
+		for _, capture := range match.Captures {
+			start := capture.Node.StartByte()
+			end := capture.Node.EndByte()
+			content := src[start:end]
+
+			// Check if the string literal is within a function or method body
+			inBody := false
+			for _, bodyRange := range bodyRanges {
+				if start >= bodyRange.start && end <= bodyRange.end {
+					inBody = true
+					break
+				}
+			}
+
+			if !inBody && len(content)-2 > maxLiteralLen+3 { // +3 for the ellipsis
+				cutRanges = append(cutRanges, cutRange{
+					start: start + uint(maxLiteralLen) + 1, // +1 to keep the starting quote
+					end:   end - 1,                         // -1 to keep the closing quote
+				})
+			}
+		}
+	}
+
+	// Add function and method body ranges to cutRanges
+	cutRanges = append(cutRanges, bodyRanges...)
+
 	// Sort cutRanges by start position
 	sort.Slice(cutRanges, func(i, j int) bool {
 		return cutRanges[i].start < cutRanges[j].start
 	})
 
-	// Create new source without function bodies
+	// Create new source with truncated string literals and without function bodies
 	var newSrc []byte
 	lastEnd := uint(0)
 	for _, r := range cutRanges {
