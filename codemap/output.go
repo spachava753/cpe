@@ -12,6 +12,15 @@ import (
 	golang "github.com/tree-sitter/tree-sitter-go/bindings/go"
 )
 
+var supportedLanguages = map[string]bool{
+	".go":   true,
+	".java": true,
+	".c":    true,
+	".py":   true,
+	".js":   true,
+	".ts":   true,
+}
+
 // GenerateOutput creates the XML-like output for the code map using AST
 func GenerateOutput(fsys fs.FS, maxLiteralLen int) (string, error) {
 	var sb strings.Builder
@@ -22,7 +31,7 @@ func GenerateOutput(fsys fs.FS, maxLiteralLen int) (string, error) {
 		if err != nil {
 			return err
 		}
-		if !d.IsDir() && filepath.Ext(path) == ".go" {
+		if !d.IsDir() && isSourceCode(path) {
 			filePaths = append(filePaths, path)
 		}
 		return nil
@@ -45,15 +54,37 @@ func GenerateOutput(fsys fs.FS, maxLiteralLen int) (string, error) {
 	return sb.String(), nil
 }
 
+func isSourceCode(path string) bool {
+	ext := filepath.Ext(path)
+	return supportedLanguages[ext]
+}
+
 func generateFileOutput(fsys fs.FS, path string, maxLiteralLen int) (string, error) {
 	src, err := fs.ReadFile(fsys, path)
 	if err != nil {
 		return "", err
 	}
 
+	var output string
+	ext := filepath.Ext(path)
+
+	if ext == ".go" {
+		output, err = generateGoFileOutput(src, maxLiteralLen)
+	} else {
+		output = string(src)
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("error generating output for file %s: %w", path, err)
+	}
+
+	return fmt.Sprintf("<file>\n<path>%s</path>\n<file_map>\n%s</file_map>\n</file>\n", path, output), nil
+}
+
+func generateGoFileOutput(src []byte, maxLiteralLen int) (string, error) {
 	parser := sitter.NewParser()
 	defer parser.Close()
-	err = parser.SetLanguage(sitter.NewLanguage(golang.Language()))
+	err := parser.SetLanguage(sitter.NewLanguage(golang.Language()))
 	if err != nil {
 		return "", err
 	}
@@ -109,7 +140,7 @@ func generateFileOutput(fsys fs.FS, path string, maxLiteralLen int) (string, err
 		return "", fmt.Errorf("error formatting code: %w", fmtErr)
 	}
 
-	return fmt.Sprintf("<file>\n<path>%s</path>\n<file_map>\n%s</file_map>\n</file>\n", path, formattedCode), nil
+	return string(formattedCode), nil
 }
 
 func traverseAndTruncate(node *sitter.Node, src []byte, output *strings.Builder, maxLiteralLen int) {
