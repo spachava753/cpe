@@ -25,6 +25,52 @@ func TestGenerateOutput(t *testing.T) {
 		expected string
 	}{
 		{
+			name:   "Function returning another function",
+			maxLen: 500,
+			files: map[string]string{
+				"higher_order.go": `
+package higherorder
+
+// GreeterFactory returns a function that greets a person
+func GreeterFactory(greeting string) func(name string) string {
+	return func(name string) string {
+		return greeting + ", " + name + "!"
+	}
+}
+
+// UseGreeter demonstrates the usage of GreeterFactory
+func UseGreeter() {
+	greet := GreeterFactory("Hello")
+	message := greet("Alice")
+	println(message)
+}
+
+var testFunc = func(a int, b int) int {
+	return 0
+}
+`,
+			},
+			expected: `<code_map>
+<file>
+<path>higher_order.go</path>
+<file_map>
+package higherorder
+
+// GreeterFactory returns a function that greets a person
+func GreeterFactory(greeting string) func(name string) string
+
+// UseGreeter demonstrates the usage of GreeterFactory
+func UseGreeter()
+
+var testFunc = func(a int, b int) int {
+	return 0
+}
+</file_map>
+</file>
+</code_map>
+`,
+		},
+		{
 			name:   "Comprehensive string literal truncation test",
 			maxLen: 10,
 			files: map[string]string{
