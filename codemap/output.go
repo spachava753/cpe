@@ -149,7 +149,8 @@ func generateGoFileOutput(src []byte, maxLiteralLen int) (string, error) {
 
 	// Collect positions to cut
 	type cutRange struct {
-		start, end uint
+		start, end  uint
+		addEllipsis bool
 	}
 	cutRanges := make([]cutRange, 0)
 
@@ -160,8 +161,9 @@ func generateGoFileOutput(src []byte, maxLiteralLen int) (string, error) {
 		for _, capture := range match.Captures {
 			if capture.Node.Kind() == "block" {
 				bodyRanges = append(bodyRanges, cutRange{
-					start: capture.Node.StartByte(),
-					end:   capture.Node.EndByte(),
+					start:       capture.Node.StartByte(),
+					end:         capture.Node.EndByte(),
+					addEllipsis: false,
 				})
 			}
 		}
@@ -171,8 +173,9 @@ func generateGoFileOutput(src []byte, maxLiteralLen int) (string, error) {
 		for _, capture := range match.Captures {
 			if capture.Node.Kind() == "block" {
 				bodyRanges = append(bodyRanges, cutRange{
-					start: capture.Node.StartByte(),
-					end:   capture.Node.EndByte(),
+					start:       capture.Node.StartByte(),
+					end:         capture.Node.EndByte(),
+					addEllipsis: false,
 				})
 			}
 		}
@@ -194,10 +197,11 @@ func generateGoFileOutput(src []byte, maxLiteralLen int) (string, error) {
 				}
 			}
 
-			if !inBody && len(content)-2 > maxLiteralLen+3 { // +3 for the ellipsis
+			if !inBody && len(content)-2 > maxLiteralLen { // -2 for the quotes
 				cutRanges = append(cutRanges, cutRange{
-					start: start + uint(maxLiteralLen) + 1, // +1 to keep the starting quote
-					end:   end - 1,                         // -1 to keep the closing quote
+					start:       start + uint(maxLiteralLen) + 1, // +1 to keep the starting quote
+					end:         end - 1,                         // -1 to keep the closing quote
+					addEllipsis: true,
 				})
 			}
 		}
@@ -216,6 +220,9 @@ func generateGoFileOutput(src []byte, maxLiteralLen int) (string, error) {
 	lastEnd := uint(0)
 	for _, r := range cutRanges {
 		newSrc = append(newSrc, src[lastEnd:r.start]...)
+		if r.addEllipsis {
+			newSrc = append(newSrc, []byte("...")...)
+		}
 		lastEnd = r.end
 	}
 	newSrc = append(newSrc, src[lastEnd:]...)
