@@ -81,10 +81,19 @@ func generateFileOutput(fsys fs.FS, path string, maxLiteralLen int) (string, err
 	return fmt.Sprintf("<file>\n<path>%s</path>\n<file_map>\n%s</file_map>\n</file>\n", path, output), nil
 }
 
+func convertQueryError(queryType string, err *sitter.QueryError) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("error creating %s: %s (row: %d, column: %d, offset: %d, kind: %v)",
+		queryType, err.Message, err.Row, err.Column, err.Offset, err.Kind)
+}
+
 func generateGoFileOutput(src []byte, maxLiteralLen int) (string, error) {
 	parser := sitter.NewParser()
 	defer parser.Close()
-	err := parser.SetLanguage(sitter.NewLanguage(golang.Language()))
+	goLang := sitter.NewLanguage(golang.Language())
+	err := parser.SetLanguage(goLang)
 	if err != nil {
 		return "", err
 	}
@@ -93,124 +102,84 @@ func generateGoFileOutput(src []byte, maxLiteralLen int) (string, error) {
 	defer tree.Close()
 
 	root := tree.RootNode()
-	var output strings.Builder
 
-	// Traverse the tree and extract relevant information
-	var traverse func(node *sitter.Node)
-	traverse = func(node *sitter.Node) {
-		switch node.Kind() {
-		case "source_file":
-			for i := 0; i < int(node.ChildCount()); i++ {
-				traverse(node.Child(uint(i)))
+	// Queries for function and method declarations
+	funcQuery, queryErr := sitter.NewQuery(goLang, `
+		(function_declaration
+			name: (identifier) @func.name
+			body: (block) @func.body)
+	`)
+	if queryErr != nil {
+		return "", convertQueryError("function query", queryErr)
+	}
+	defer funcQuery.Close()
+
+	methodQuery, queryErr := sitter.NewQuery(goLang, `
+		(method_declaration
+			name: (field_identifier) @method.name
+			body: (block) @method.body)
+	`)
+	if queryErr != nil {
+		return "", convertQueryError("method query", queryErr)
+	}
+	defer methodQuery.Close()
+
+	// Execute queries
+	funcCursor := sitter.NewQueryCursor()
+	defer funcCursor.Close()
+	funcMatches := funcCursor.Matches(funcQuery, root, src)
+
+	methodCursor := sitter.NewQueryCursor()
+	defer methodCursor.Close()
+	methodMatches := methodCursor.Matches(methodQuery, root, src)
+
+	// Collect positions to cut
+	type cutRange struct {
+		start, end uint
+	}
+	cutRanges := make([]cutRange, 0)
+
+	for match := funcMatches.Next(); match != nil; match = funcMatches.Next() {
+		for _, capture := range match.Captures {
+			if capture.Node.Kind() == "block" {
+				cutRanges = append(cutRanges, cutRange{
+					start: capture.Node.StartByte(),
+					end:   capture.Node.EndByte(),
+				})
 			}
-		case "function_declaration", "method_declaration":
-			// Extract only the signature for functions and methods
-			output.WriteString("func ")
-			for i := 0; i < int(node.NamedChildCount()); i++ {
-				child := node.NamedChild(uint(i))
-				cName := node.FieldNameForChild(uint32(i + 1))
-				if child.Kind() != "block" {
-					output.WriteString(child.Utf8Text(src))
-				}
-				switch cName {
-				case "receiver", "parameters":
-					output.WriteString(" ")
-				}
-			}
-			output.WriteString("\n\n")
-		case "const_declaration", "var_declaration":
-			traverseAndTruncate(node, src, &output, maxLiteralLen)
-		case "comment":
-			output.WriteString(node.Utf8Text(src))
-			output.WriteString("\n")
-		case "type_declaration":
-			output.WriteString(node.Utf8Text(src))
-			output.WriteString("\n\n")
-		default:
-			output.WriteString(node.Utf8Text(src))
-			output.WriteString("\n")
 		}
 	}
 
-	traverse(root)
+	for match := methodMatches.Next(); match != nil; match = methodMatches.Next() {
+		for _, capture := range match.Captures {
+			if capture.Node.Kind() == "block" {
+				cutRanges = append(cutRanges, cutRange{
+					start: capture.Node.StartByte(),
+					end:   capture.Node.EndByte(),
+				})
+			}
+		}
+	}
 
-	code := strings.TrimSpace(output.String())
+	// Sort cutRanges by start position
+	sort.Slice(cutRanges, func(i, j int) bool {
+		return cutRanges[i].start < cutRanges[j].start
+	})
+
+	// Create new source without function bodies
+	var newSrc []byte
+	lastEnd := uint(0)
+	for _, r := range cutRanges {
+		newSrc = append(newSrc, src[lastEnd:r.start]...)
+		lastEnd = r.end
+	}
+	newSrc = append(newSrc, src[lastEnd:]...)
+
+	code := strings.TrimSpace(string(newSrc))
 	formattedCode, fmtErr := format.Source([]byte(code))
 	if fmtErr != nil {
 		return "", fmt.Errorf("error formatting code: %w", fmtErr)
 	}
 
 	return string(formattedCode), nil
-}
-
-func traverseAndTruncate(node *sitter.Node, src []byte, output *strings.Builder, maxLiteralLen int) {
-	for i := 0; i < int(node.ChildCount()); i++ {
-		child := node.Child(uint(i))
-		cchild := child.Utf8Text(src)
-		_ = cchild
-		tchild := child.Kind()
-		_ = tchild
-		switch child.Kind() {
-		case "interpreted_string_literal", "raw_string_literal":
-			content := child.Utf8Text(src)
-			if len(content)-2 > maxLiteralLen {
-				truncated := content[:maxLiteralLen+1] + "..." + content[len(content)-1:]
-				output.WriteString(truncated)
-			} else {
-				output.WriteString(content)
-			}
-		case "(":
-			output.WriteString(child.Utf8Text(src))
-			if node.Kind() == "var_spec_list" ||
-				(node.Kind() == "const_declaration" && node.NamedChildCount() > 0) {
-				output.WriteString("\n")
-			}
-		case ")":
-			if node.Kind() == "var_spec_list" ||
-				(node.Kind() == "const_declaration" && node.NamedChildCount() > 0) {
-				output.WriteString("\n)\n")
-			} else {
-				output.WriteString(")")
-			}
-		case "=":
-			output.WriteString(child.Utf8Text(src))
-			output.WriteString(" ")
-		case "var", "const":
-			output.WriteString(child.Utf8Text(src))
-			output.WriteString(" ")
-		case "identifier":
-			for p := node; p != nil; p = p.Parent() {
-				if p.Kind() == "var_spec_list" ||
-					(p.Kind() == "const_declaration" && p.NamedChildCount() > 1) {
-					output.WriteString("\t")
-					break
-				}
-			}
-			output.WriteString(child.Utf8Text(src))
-			output.WriteString(" ")
-		case "comment":
-			for p := node; p != nil; p = p.Parent() {
-				if p.Kind() == "var_spec_list" ||
-					(p.Kind() == "const_declaration" && p.NamedChildCount() > 1) {
-					output.WriteString("\t")
-					break
-				}
-			}
-			output.WriteString(child.Utf8Text(src))
-			if child.PrevNamedSibling() == nil || child.PrevNamedSibling().EndPosition().Row != child.EndPosition().Row {
-				output.WriteString("\n")
-			}
-		case "var_spec", "const_spec":
-			traverseAndTruncate(child, src, output, maxLiteralLen)
-			if child.NextNamedSibling() == nil || child.NextNamedSibling().StartPosition().Row > child.StartPosition().Row {
-				output.WriteString("\n")
-			}
-		default:
-			if child.ChildCount() > 0 {
-				traverseAndTruncate(child, src, output, maxLiteralLen)
-			} else {
-				output.WriteString(child.Utf8Text(src))
-			}
-		}
-	}
 }
