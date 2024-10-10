@@ -143,7 +143,7 @@ func printTokenUsage(usage llm.TokenUsage) {
 	fmt.Printf("-------------------\n")
 }
 
-const version = "0.11.2"
+const version = "0.11.4"
 
 func main() {
 	flags := ParseFlags()
