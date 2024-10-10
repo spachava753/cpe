@@ -119,8 +119,8 @@ func generateJavaFileOutput(src []byte, maxLiteralLen int) (string, error) {
 			quoteLen := (len(content) - len(str)) / 2
 			if !inBody && len(str) > maxLiteralLen {
 				cutRanges = append(cutRanges, cutRange{
-					start:       start + uint(maxLiteralLen) + uint(quoteLen), // +1 to keep the starting quote
-					end:         end - uint(quoteLen),                         // -quoteLen to keep the closing quote
+					start:       start + uint(maxLiteralLen) + uint(quoteLen), // +quoteLen to keep the starting quotes
+					end:         end - uint(quoteLen),                         // -quoteLen to keep the closing quotes
 					addEllipsis: true,
 				})
 			}

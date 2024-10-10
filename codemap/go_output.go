@@ -106,7 +106,7 @@ func generateGoFileOutput(src []byte, maxLiteralLen int) (string, error) {
 		for _, capture := range match.Captures {
 			start := capture.Node.StartByte()
 			end := capture.Node.EndByte()
-			content := src[start:end]
+			content := string(src[start:end])
 
 			// Check if the string literal is within a function or method body
 			inBody := false
@@ -117,10 +117,12 @@ func generateGoFileOutput(src []byte, maxLiteralLen int) (string, error) {
 				}
 			}
 
-			if !inBody && len(content)-2 > maxLiteralLen { // -2 for the quotes
+			str := strings.Trim(content, "\"`")
+			quoteLen := (len(content) - len(str)) / 2
+			if !inBody && len(str) > maxLiteralLen {
 				cutRanges = append(cutRanges, cutRange{
-					start:       start + uint(maxLiteralLen) + 1, // +1 to keep the starting quote
-					end:         end - 1,                         // -1 to keep the closing quote
+					start:       start + uint(maxLiteralLen) + uint(quoteLen), // +quoteLen to keep the starting quotes
+					end:         end - uint(quoteLen),                         // -quoteLen to keep the closing quotes
 					addEllipsis: true,
 				})
 			}
