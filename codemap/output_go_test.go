@@ -79,6 +79,10 @@ const (
 	byteSliceConst2 = []byte(` + "`" + `Raw byte slice constant` + "`" + `)
 )
 
+func generateId() string {
+	return "not-a-real-id"
+}
+
 // Byte slice variables
 var (
 	byteSliceVar1 = []byte("Byte slice variable")
@@ -168,6 +172,8 @@ const (
 	byteSliceConst1 = []byte("Byte slice...")
 	byteSliceConst2 = []byte(` + "`" + `Raw byte s...` + "`" + `)
 )
+
+func generateId() string
 
 // Byte slice variables
 var (
