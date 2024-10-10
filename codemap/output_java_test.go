@@ -13,6 +13,87 @@ func TestGenerateJavaOutput(t *testing.T) {
 		expected string
 	}{
 		{
+			name:   "Comprehensive string literal truncation test",
+			maxLen: 10,
+			files: map[string]string{
+				"Constants.java": `
+package com.example;
+
+public class Constants {
+    // Single constant declaration
+    public static final String SINGLE_CONST = "This is a long single constant";
+
+    // Grouped constant declaration
+    public static final String GROUPED_CONST1 = "First grouped constant";
+    public static final String GROUPED_CONST2 = "Second grouped constant";
+    public static final String GROUPED_CONST3 = """
+        Third grouped constant
+        with multiple lines
+        """;
+
+    // Constants with different types
+    public static final int INT_CONST = 42;
+    public static final double FLOAT_CONST = 3.14;
+    public static final boolean BOOL_CONST = true;
+    public static final char CHAR_CONST = 'A';
+    public static final String STRING_CONST = "Regular string constant";
+
+    // Byte array constants
+    public static final byte[] BYTE_ARRAY_CONST1 = "Byte array constant".getBytes();
+    public static final byte[] BYTE_ARRAY_CONST2 = """
+        Raw byte array constant
+        """.getBytes();
+
+    // Constant expressions
+    public static final int CONST_EXPR1 = "Hello, World!".length();
+    public static final int CONST_EXPR2 = 60 * 60 * 24; // Seconds in a day
+
+    private Constants() {
+        // Private constructor to prevent instantiation
+    }
+}
+`,
+			},
+			expected: `<code_map>
+<file>
+<path>Constants.java</path>
+<file_map>
+package com.example;
+
+public class Constants {
+    // Single constant declaration
+    public static final String SINGLE_CONST = "This is a ...";
+
+    // Grouped constant declaration
+    public static final String GROUPED_CONST1 = "First grou...";
+    public static final String GROUPED_CONST2 = "Second gro...";
+    public static final String GROUPED_CONST3 = """
+        T...""";
+
+    // Constants with different types
+    public static final int INT_CONST = 42;
+    public static final double FLOAT_CONST = 3.14;
+    public static final boolean BOOL_CONST = true;
+    public static final char CHAR_CONST = 'A';
+    public static final String STRING_CONST = "Regular st...";
+
+    // Byte array constants
+    public static final byte[] BYTE_ARRAY_CONST1 = "Byte array...".getBytes();
+    public static final byte[] BYTE_ARRAY_CONST2 = """
+        R...""".getBytes();
+
+    // Constant expressions
+    public static final int CONST_EXPR1 = "Hello, Wor...".length();
+    public static final int CONST_EXPR2 = 60 * 60 * 24; // Seconds in a day
+
+    private Constants()
+}
+</file_map>
+</file>
+</code_map>
+`,
+		},
+		{
 			name:   "Basic Java class",
 			maxLen: 50,
 			files: map[string]string{
