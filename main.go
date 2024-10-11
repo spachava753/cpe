@@ -279,9 +279,45 @@ func main() {
 		}
 
 		// Execute file operations
-		fileops.ExecuteFileOperations(modifications)
+		results := fileops.ExecuteFileOperations(modifications)
+
+		// Print summary of file operations
+		printSummary(results)
 	}
 
 	// Print token usage after the response
 	printTokenUsage(tokenUsage)
+}
+
+func printSummary(results []fileops.OperationResult) {
+	successful := 0
+	failed := 0
+
+	fmt.Println("\nOperation Summary:")
+	for _, result := range results {
+		if result.Error == nil {
+			successful++
+			fmt.Printf("✅ Success: %s - %s\n", result.Operation.Type(), getOperationDescription(result.Operation))
+		} else {
+			failed++
+			fmt.Printf("❌ Failed: %s - %s - Error: %v\n", result.Operation.Type(), getOperationDescription(result.Operation), result.Error)
+		}
+	}
+
+	fmt.Printf("\nTotal operations: %d\n", len(results))
+	fmt.Printf("Successful: %d\n", successful)
+	fmt.Printf("Failed: %d\n", failed)
+}
+
+func getOperationDescription(op extract.Modification) string {
+	switch m := op.(type) {
+	case extract.ModifyFile:
+		return fmt.Sprintf("Modify %s", m.Path)
+	case extract.RemoveFile:
+		return fmt.Sprintf("Remove %s", m.Path)
+	case extract.CreateFile:
+		return fmt.Sprintf("Create %s", m.Path)
+	default:
+		return "Unknown operation"
+	}
 }

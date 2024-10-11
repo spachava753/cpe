@@ -32,9 +32,6 @@ func ExecuteFileOperations(modifications []extract.Modification) []OperationResu
 		results = append(results, OperationResult{Operation: op, Error: err})
 	}
 
-	// Print summary
-	printSummary(results)
-
 	return results
 }
 
@@ -161,37 +158,4 @@ func executeCreateFile(m extract.CreateFile) error {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return !os.IsNotExist(err)
-}
-
-func printSummary(results []OperationResult) {
-	successful := 0
-	failed := 0
-
-	fmt.Println("\nOperation Summary:")
-	for _, result := range results {
-		if result.Error == nil {
-			successful++
-			fmt.Printf("✅ Success: %s - %s\n", result.Operation.Type(), getOperationDescription(result.Operation))
-		} else {
-			failed++
-			fmt.Printf("❌ Failed: %s - %s - Error: %v\n", result.Operation.Type(), getOperationDescription(result.Operation), result.Error)
-		}
-	}
-
-	fmt.Printf("\nTotal operations: %d\n", len(results))
-	fmt.Printf("Successful: %d\n", successful)
-	fmt.Printf("Failed: %d\n", failed)
-}
-
-func getOperationDescription(op extract.Modification) string {
-	switch m := op.(type) {
-	case extract.ModifyFile:
-		return fmt.Sprintf("Modify %s", m.Path)
-	case extract.RemoveFile:
-		return fmt.Sprintf("Remove %s", m.Path)
-	case extract.CreateFile:
-		return fmt.Sprintf("Create %s", m.Path)
-	default:
-		return "Unknown operation"
-	}
 }
