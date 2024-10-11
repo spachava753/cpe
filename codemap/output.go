@@ -19,6 +19,11 @@ var supportedLanguages = map[string]bool{
 	".js":   true,
 	".ts":   true,
 	".sql":  true,
+	".yaml": true,
+	".yml":  true,
+	".json": true,
+	".xml":  true,
+	".mod":  true,
 }
 
 // GenerateOutput creates the XML-like output for the code map using AST
