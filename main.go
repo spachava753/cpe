@@ -44,8 +44,6 @@ func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, c
 		return nil, fmt.Errorf("error generating code map analysis: %w", err)
 	}
 
-	printTokenUsage(tokenUsage)
-
 	for _, block := range response.Content {
 		if block.Type == "tool_use" && block.ToolUse.Name == "select_files_for_analysis" {
 			var result struct {
@@ -56,6 +54,7 @@ func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, c
 				return nil, fmt.Errorf("error parsing tool use result: %w", err)
 			}
 			fmt.Printf("Thinking: %s\nSelected files: %v\n", result.Thinking, result.SelectedFiles)
+			printTokenUsage(tokenUsage)
 			return result.SelectedFiles, nil
 		}
 	}
@@ -116,8 +115,6 @@ func determineCodebaseAccess(provider llm.LLMProvider, genConfig llm.GenConfig, 
 	}
 
 	fmt.Println(response)
-	printTokenUsage(tokenUsage)
-
 	for _, block := range response.Content {
 		if block.Type == "tool_use" && block.ToolUse.Name == "decide_codebase_access" {
 			var result struct {
@@ -128,6 +125,7 @@ func determineCodebaseAccess(provider llm.LLMProvider, genConfig llm.GenConfig, 
 				return false, fmt.Errorf("error parsing tool use result: %w", err)
 			}
 			fmt.Printf("Thinking: %s\nCodebase access decision: %v\n", result.Thinking, result.RequiresCodebase)
+			printTokenUsage(tokenUsage)
 			return result.RequiresCodebase, nil
 		}
 	}
@@ -266,9 +264,6 @@ func main() {
 		}
 	}
 
-	// Print token usage
-	printTokenUsage(tokenUsage)
-
 	if requiresCodebase {
 		// Parse modifications
 		var textContent string
@@ -286,4 +281,7 @@ func main() {
 		// Execute file operations
 		fileops.ExecuteFileOperations(modifications)
 	}
+
+	// Print token usage after the response
+	printTokenUsage(tokenUsage)
 }
