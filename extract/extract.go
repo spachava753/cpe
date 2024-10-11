@@ -10,7 +10,7 @@ type Modification interface {
 	Type() string
 }
 
-type ModifyCode struct {
+type ModifyFile struct {
 	Path        string
 	Edits       []Edit
 	Explanation string
@@ -21,8 +21,8 @@ type Edit struct {
 	Replace string
 }
 
-func (m ModifyCode) Type() string {
-	return "ModifyCode"
+func (m ModifyFile) Type() string {
+	return "ModifyFile"
 }
 
 type RemoveFile struct {
@@ -48,7 +48,7 @@ func Modifications(input string) ([]Modification, error) {
 	var modifications []Modification
 
 	// Define regex patterns for each modification type
-	modifyCodePattern := regexp.MustCompile(`(?s)<modify_code>(.*?)</modify_code>`)
+	modifyCodePattern := regexp.MustCompile(`(?s)<modify_file>(.*?)</modify_file>`)
 	removeFilePattern := regexp.MustCompile(`(?s)<remove_file>(.*?)</remove_file>`)
 	createFilePattern := regexp.MustCompile(`(?s)<create_file>(.*?)</create_file>`)
 
@@ -85,17 +85,17 @@ func Modifications(input string) ([]Modification, error) {
 	return modifications, nil
 }
 
-func getModifyCode(input string) (ModifyCode, error) {
+func getModifyCode(input string) (ModifyFile, error) {
 	pathPattern := regexp.MustCompile(`<path>(.*?)</path>`)
 	editPattern := regexp.MustCompile(`(?s)<edit>.*?<search>\s*<!\[CDATA\[(.*?)\]\]>\s*</search>.*?<replace>\s*<!\[CDATA\[(.*?)\]\]>\s*</replace>.*?</edit>`)
 	explanationPattern := regexp.MustCompile(`(?s)<explanation>(.*?)</explanation>`)
 
 	pathMatch := pathPattern.FindStringSubmatch(input)
 	if len(pathMatch) < 2 {
-		return ModifyCode{}, fmt.Errorf("path not found in modify_code")
+		return ModifyFile{}, fmt.Errorf("path not found in modify_code")
 	}
 	if strings.TrimSpace(pathMatch[1]) == "" {
-		return ModifyCode{}, fmt.Errorf("empty path in modify_code")
+		return ModifyFile{}, fmt.Errorf("empty path in modify_code")
 	}
 
 	editMatches := editPattern.FindAllStringSubmatch(input, -1)
@@ -108,7 +108,7 @@ func getModifyCode(input string) (ModifyCode, error) {
 	}
 
 	if len(edits) == 0 {
-		return ModifyCode{}, fmt.Errorf("no valid edits found in modify_code")
+		return ModifyFile{}, fmt.Errorf("no valid edits found in modify_code")
 	}
 
 	explanationMatch := explanationPattern.FindStringSubmatch(input)
@@ -117,10 +117,10 @@ func getModifyCode(input string) (ModifyCode, error) {
 		explanation = strings.TrimSpace(explanationMatch[1])
 	}
 	if explanation == "" {
-		fmt.Printf("Warning: Empty explanation found in %s\n", ModifyCode{}.Type())
+		fmt.Printf("Warning: Empty explanation found in %s\n", ModifyFile{}.Type())
 	}
 
-	return ModifyCode{
+	return ModifyFile{
 		Path:        strings.TrimSpace(pathMatch[1]),
 		Edits:       edits,
 		Explanation: explanation,

@@ -9,12 +9,12 @@ func TestGetModifyCode(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected ModifyCode
+		expected ModifyFile
 		wantErr  bool
 	}{
 		{
-			name: "Valid ModifyCode",
-			input: `<modify_code>
+			name: "Valid ModifyFile",
+			input: `<modify_file>
 <path>main.go</path>
 <edit>
 <search>
@@ -33,8 +33,8 @@ func TestGetModifyCode(t *testing.T) {
 </replace>
 </edit>
 <explanation>Updated greeting and changed variable type</explanation>
-</modify_code>`,
-			expected: ModifyCode{
+</modify_file>`,
+			expected: ModifyFile{
 				Path: "main.go",
 				Edits: []Edit{
 					{Search: `fmt.Println("Hello, World!")`, Replace: `fmt.Println("Hello, Go!")`},
@@ -45,8 +45,8 @@ func TestGetModifyCode(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "Invalid ModifyCode - Missing Path",
-			input: `<modify_code>
+			name: "Invalid ModifyFile - Missing Path",
+			input: `<modify_file>
 <edit>
 <search>
 <![CDATA[fmt.Println("Hello, World!")]]>
@@ -55,22 +55,22 @@ func TestGetModifyCode(t *testing.T) {
 <![CDATA[fmt.Println("Hello, Go!")]]>
 </replace>
 </edit>
-</modify_code>`,
-			expected: ModifyCode{},
+</modify_file>`,
+			expected: ModifyFile{},
 			wantErr:  true,
 		},
 		{
-			name: "Invalid ModifyCode - No Edits",
-			input: `<modify_code>
+			name: "Invalid ModifyFile - No Edits",
+			input: `<modify_file>
 <path>main.go</path>
 <explanation>No edits provided</explanation>
-</modify_code>`,
-			expected: ModifyCode{},
+</modify_file>`,
+			expected: ModifyFile{},
 			wantErr:  true,
 		},
 		{
-			name: "Valid ModifyCode - Multiple Paths (should use first)",
-			input: `<modify_code>
+			name: "Valid ModifyFile - Multiple Paths (should use first)",
+			input: `<modify_file>
 <path>main.go</path>
 <path>ignored.go</path>
 <edit>
@@ -81,8 +81,8 @@ func TestGetModifyCode(t *testing.T) {
 <![CDATA[fmt.Println("Hello, Go!")]]>
 </replace>
 </edit>
-</modify_code>`,
-			expected: ModifyCode{
+</modify_file>`,
+			expected: ModifyFile{
 				Path: "main.go",
 				Edits: []Edit{
 					{Search: `fmt.Println("Hello, World!")`, Replace: `fmt.Println("Hello, Go!")`},

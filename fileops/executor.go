@@ -55,7 +55,7 @@ func validateOperations(modifications []extract.Modification) ([]extract.Modific
 
 func validateOperation(mod extract.Modification) error {
 	switch m := mod.(type) {
-	case extract.ModifyCode:
+	case extract.ModifyFile:
 		return validateModifyCode(m)
 	case extract.RemoveFile:
 		return validateRemoveFile(m)
@@ -66,7 +66,7 @@ func validateOperation(mod extract.Modification) error {
 	}
 }
 
-func validateModifyCode(m extract.ModifyCode) error {
+func validateModifyCode(m extract.ModifyFile) error {
 	if !fileExists(m.Path) {
 		return fmt.Errorf("file does not exist: %s", m.Path)
 	}
@@ -118,7 +118,7 @@ func validatePath(path string) error {
 
 func executeOperation(mod extract.Modification) error {
 	switch m := mod.(type) {
-	case extract.ModifyCode:
+	case extract.ModifyFile:
 		return executeModifyCode(m)
 	case extract.RemoveFile:
 		return executeRemoveFile(m)
@@ -129,7 +129,7 @@ func executeOperation(mod extract.Modification) error {
 	}
 }
 
-func executeModifyCode(m extract.ModifyCode) error {
+func executeModifyCode(m extract.ModifyFile) error {
 	content, err := os.ReadFile(m.Path)
 	if err != nil {
 		return err
@@ -185,7 +185,7 @@ func printSummary(results []OperationResult) {
 
 func getOperationDescription(op extract.Modification) string {
 	switch m := op.(type) {
-	case extract.ModifyCode:
+	case extract.ModifyFile:
 		return fmt.Sprintf("Modify %s", m.Path)
 	case extract.RemoveFile:
 		return fmt.Sprintf("Remove %s", m.Path)
