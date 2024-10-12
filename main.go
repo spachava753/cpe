@@ -14,7 +14,13 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 )
+
+func logTimeElapsed(start time.Time, operation string) {
+	elapsed := time.Since(start)
+	fmt.Printf("Time elapsed for %s: %v\n", operation, elapsed)
+}
 
 func generateCodeMapOutput(maxLiteralLen int) (string, error) {
 	output, err := codemap.GenerateOutput(os.DirFS("."), maxLiteralLen)
@@ -141,9 +147,12 @@ func printTokenUsage(usage llm.TokenUsage) {
 	fmt.Printf("-------------------\n")
 }
 
-const version = "0.11.5"
+const version = "0.11.6"
 
 func main() {
+	startTime := time.Now()
+	defer logTimeElapsed(startTime, "entire operation")
+
 	flags := ParseFlags()
 
 	if flags.Version {
@@ -171,6 +180,7 @@ func main() {
 	}
 
 	// Read content from input source
+	readStart := time.Now()
 	var content string
 	if flags.Input == "-" {
 		// Read from stdin
@@ -190,6 +200,7 @@ func main() {
 		}
 		content = string(contentBytes)
 	}
+	logTimeElapsed(readStart, "reading input")
 
 	if len(content) == 0 {
 		fmt.Println("Error: No input provided. Please provide input via stdin or specify an input file.")
@@ -197,7 +208,9 @@ func main() {
 	}
 
 	// Determine if codebase access is required
+	codebaseAccessStart := time.Now()
 	requiresCodebase, err := determineCodebaseAccess(provider, genConfig, content)
+	logTimeElapsed(codebaseAccessStart, "determineCodebaseAccess")
 	if err != nil {
 		fmt.Printf("Error determining codebase access: %v\n", err)
 		return
@@ -206,15 +219,19 @@ func main() {
 	var systemMessage string
 	if requiresCodebase {
 		// Generate low-fidelity code map output
+		codeMapStart := time.Now()
 		maxLiteralLen := 100 // You can adjust this value or make it configurable
 		codeMapOutput, err := generateCodeMapOutput(maxLiteralLen)
+		logTimeElapsed(codeMapStart, "generateCodeMapOutput")
 		if err != nil {
 			fmt.Printf("Error generating code map output: %v\n", err)
 			return
 		}
 
 		// Perform code map analysis and select files
+		analysisStart := time.Now()
 		selectedFiles, err := performCodeMapAnalysis(provider, genConfig, codeMapOutput, content)
+		logTimeElapsed(analysisStart, "performCodeMapAnalysis")
 		if err != nil {
 			fmt.Printf("Error performing code map analysis: %v\n", err)
 			return
@@ -229,7 +246,9 @@ func main() {
 		// Combine selected and included files
 		allFiles := append(selectedFiles, includeFiles...)
 		// Build system message with all files
+		buildMessageStart := time.Now()
 		systemMessage, err = buildSystemMessageWithSelectedFiles(allFiles)
+		logTimeElapsed(buildMessageStart, "buildSystemMessageWithSelectedFiles")
 		if err != nil {
 			fmt.Println("Error building system message:", err)
 			return
@@ -252,7 +271,9 @@ func main() {
 	}
 
 	// Generate response
+	responseStart := time.Now()
 	response, tokenUsage, err := provider.GenerateResponse(genConfig, conversation)
+	logTimeElapsed(responseStart, "GenerateResponse")
 	if err != nil {
 		fmt.Println("Error generating response:", err)
 		return
