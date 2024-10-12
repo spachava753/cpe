@@ -2,6 +2,7 @@ package codemap
 
 import (
 	"fmt"
+	"github.com/spachava753/cpe/ignore"
 	sitter "github.com/tree-sitter/go-tree-sitter"
 	"io/fs"
 	"path/filepath"
@@ -31,13 +32,13 @@ type FileCodeMap struct {
 }
 
 // GenerateOutput creates the code map output for each file using AST
-func GenerateOutput(fsys fs.FS, maxLiteralLen int) ([]FileCodeMap, error) {
+func GenerateOutput(fsys fs.FS, maxLiteralLen int, ignoreRules *ignore.IgnoreRules) ([]FileCodeMap, error) {
 	var filePaths []string
 	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if !d.IsDir() && isSourceCode(path) {
+		if !d.IsDir() && isSourceCode(path) && !ignoreRules.ShouldIgnore(path) {
 			filePaths = append(filePaths, path)
 		}
 		return nil

@@ -5,6 +5,7 @@ go 1.23
 toolchain go1.23.2
 
 require (
+	github.com/gobwas/glob v0.2.3
 	github.com/google/generative-ai-go v0.18.0
 	github.com/googleapis/gax-go/v2 v2.13.0
 	github.com/pkoukk/tiktoken-go v0.1.7

@@ -10,6 +10,7 @@ import (
 	"github.com/spachava753/cpe/codemap"
 	"github.com/spachava753/cpe/extract"
 	"github.com/spachava753/cpe/fileops"
+	"github.com/spachava753/cpe/ignore"
 	"github.com/spachava753/cpe/llm"
 	"github.com/spachava753/cpe/tiktokenloader"
 	"github.com/spachava753/cpe/typeresolver"
@@ -24,8 +25,8 @@ func logTimeElapsed(start time.Time, operation string) {
 	fmt.Printf("Time elapsed for %s: %v\n", operation, elapsed)
 }
 
-func generateCodeMapOutput(maxLiteralLen int) (string, error) {
-	fileCodeMaps, err := codemap.GenerateOutput(os.DirFS("."), maxLiteralLen)
+func generateCodeMapOutput(maxLiteralLen int, ignoreRules *ignore.IgnoreRules) (string, error) {
+	fileCodeMaps, err := codemap.GenerateOutput(os.DirFS("."), maxLiteralLen, ignoreRules)
 	if err != nil {
 		return "", fmt.Errorf("error generating code map output: %w", err)
 	}
@@ -91,13 +92,13 @@ func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, c
 	return nil, fmt.Errorf("no files selected for analysis")
 }
 
-func buildSystemMessageWithSelectedFiles(allFiles []string) (string, error) {
+func buildSystemMessageWithSelectedFiles(allFiles []string, ignoreRules *ignore.IgnoreRules) (string, error) {
 	var systemMessage strings.Builder
 	systemMessage.WriteString(CodeAnalysisModificationPrompt)
 
 	// Use the current directory for resolveTypeFiles
 	currentDir := "."
-	resolvedFiles, err := typeresolver.ResolveTypeAndFunctionFiles(allFiles, os.DirFS(currentDir))
+	resolvedFiles, err := typeresolver.ResolveTypeAndFunctionFiles(allFiles, os.DirFS(currentDir), ignoreRules)
 	if err != nil {
 		return "", fmt.Errorf("error resolving type files: %w", err)
 	}
@@ -178,6 +179,13 @@ func main() {
 
 	flags := ParseFlags()
 
+	// Initialize ignore rules
+	ignoreRules := ignore.NewIgnoreRules()
+	if err := ignoreRules.LoadIgnoreFile("."); err != nil {
+		fmt.Printf("Error loading .cpeignore file: %v\n", err)
+		return
+	}
+
 	if flags.Version {
 		fmt.Printf("cpe version %s\n", version)
 		return
@@ -244,7 +252,7 @@ func main() {
 		// Generate low-fidelity code map output
 		codeMapStart := time.Now()
 		maxLiteralLen := 100 // You can adjust this value or make it configurable
-		codeMapOutput, err := generateCodeMapOutput(maxLiteralLen)
+		codeMapOutput, err := generateCodeMapOutput(maxLiteralLen, ignoreRules)
 		logTimeElapsed(codeMapStart, "generateCodeMapOutput")
 		if err != nil {
 			fmt.Printf("Error generating code map output: %v\n", err)
@@ -270,7 +278,7 @@ func main() {
 		allFiles := append(selectedFiles, includeFiles...)
 		// Build system message with all files
 		buildMessageStart := time.Now()
-		systemMessage, err = buildSystemMessageWithSelectedFiles(allFiles)
+		systemMessage, err = buildSystemMessageWithSelectedFiles(allFiles, ignoreRules)
 		logTimeElapsed(buildMessageStart, "buildSystemMessageWithSelectedFiles")
 		if err != nil {
 			fmt.Println("Error building system message:", err)

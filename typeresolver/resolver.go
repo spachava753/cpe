@@ -2,6 +2,7 @@ package typeresolver
 
 import (
 	"fmt"
+	"github.com/spachava753/cpe/ignore"
 	"io/fs"
 	"strings"
 
@@ -10,7 +11,7 @@ import (
 )
 
 // ResolveTypeAndFunctionFiles resolves all type and function definitions used in the given files
-func ResolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS) (map[string]bool, error) {
+func ResolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS, ignoreRules *ignore.IgnoreRules) (map[string]bool, error) {
 	typeDefinitions := make(map[string]map[string]string)     // package.type -> file
 	functionDefinitions := make(map[string]map[string]string) // package.function -> file
 	usages := make(map[string]bool)
@@ -75,7 +76,7 @@ func ResolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS) (map[st
 		if err != nil {
 			return err
 		}
-		if !d.IsDir() && strings.HasSuffix(path, ".go") {
+		if !d.IsDir() && strings.HasSuffix(path, ".go") && !ignoreRules.ShouldIgnore(path) {
 			content, readErr := fs.ReadFile(sourceFS, path)
 			if readErr != nil {
 				return fmt.Errorf("error reading file %s: %w", path, readErr)
