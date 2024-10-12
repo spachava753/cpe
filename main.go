@@ -97,7 +97,6 @@ func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, c
 						Role:    "user",
 						Content: []llm.ContentBlock{{Type: "text", Text: errorMsg}},
 					})
-					break
 				}
 				return nil, fmt.Errorf("error parsing tool use result %s: %w", block.ToolUse.Input, err)
 			}
