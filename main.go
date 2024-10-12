@@ -91,18 +91,36 @@ func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, c
 				SelectedFiles []string `json:"selected_files"`
 			}
 			if err := json.Unmarshal(block.ToolUse.Input, &result); err != nil {
+				errorMsg := fmt.Sprintf("Error parsing tool use result: %v", err)
+				fmt.Printf("Error: %s\n", errorMsg)
+				fmt.Printf("Model response:\n%s\n", response)
+
 				if attempt < maxRetries {
-					errorMsg := fmt.Sprintf("Error parsing tool use result: %v. The response did not contain the expected tool use. Please use the 'select_files_for_analysis' tool and provide the required input.", err)
+					retryMsg := fmt.Sprintf("%s\nThe response did not contain the expected tool use. Please use the 'select_files_for_analysis' tool and provide the required input.", errorMsg)
 					conversation.Messages = append(conversation.Messages, llm.Message{
 						Role:    "user",
-						Content: []llm.ContentBlock{{Type: "text", Text: errorMsg}},
+						Content: []llm.ContentBlock{{Type: "text", Text: retryMsg}},
 					})
+					continue
 				}
 				return nil, fmt.Errorf("error parsing tool use result %s: %w", block.ToolUse.Input, err)
 			}
 			fmt.Printf("Thinking: %s\nSelected files: %v\n", result.Thinking, result.SelectedFiles)
 			printTokenUsage(tokenUsage)
 			return result.SelectedFiles, nil
+		} else {
+			errorMsg := fmt.Sprintf("Unexpected tool use or response format")
+			fmt.Printf("Error: %s\n", errorMsg)
+			fmt.Printf("Model response:\n%s\n", response)
+
+			if attempt < maxRetries {
+				retryMsg := fmt.Sprintf("%s\nPlease use the 'select_files_for_analysis' tool and provide the required input.", errorMsg)
+				conversation.Messages = append(conversation.Messages, llm.Message{
+					Role:    "user",
+					Content: []llm.ContentBlock{{Type: "text", Text: retryMsg}},
+				})
+				continue
+			}
 		}
 	}
 
