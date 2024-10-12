@@ -198,8 +198,7 @@ func convertToGeminiTools(tools []Tool) []*genai.Tool {
 func convertToGeminiSchema(schemaJSON json.RawMessage) *genai.Schema {
 	var schema map[string]interface{}
 	if err := json.Unmarshal(schemaJSON, &schema); err != nil {
-		fmt.Printf("Error parsing schema JSON: %v\n", err)
-		return &genai.Schema{Type: genai.TypeObject}
+		panic(fmt.Sprintf("Error parsing schema JSON: %v\n", err))
 	}
 
 	return parseSchemaObject(schema)
@@ -261,7 +260,7 @@ func convertToGeminiType(typeStr string) genai.Type {
 	case "object":
 		return genai.TypeObject
 	default:
-		fmt.Printf("Warning: Unknown type %s, defaulting to TypeString\n", typeStr)
+		panic(fmt.Sprintf("Warning: Unknown type %s, defaulting to TypeString\n", typeStr))
 		return genai.TypeString
 	}
 }
