@@ -69,18 +69,36 @@ func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, c
 
 	genConfig.ToolChoice = "tool"
 	genConfig.ForcedTool = "select_files_for_analysis"
-	response, tokenUsage, err := provider.GenerateResponse(genConfig, conversation)
-	if err != nil {
-		return nil, fmt.Errorf("error generating code map analysis: %w", err)
-	}
 
-	for _, block := range response.Content {
+	maxRetries := 2
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		response, tokenUsage, err := provider.GenerateResponse(genConfig, conversation)
+		if err != nil {
+			return nil, fmt.Errorf("error generating code map analysis: %w", err)
+		}
+
+		// Add the response to the conversation
+		conversation.Messages = append(conversation.Messages, response)
+
+		// We expect only one block, as we are forcing tool use, which prefills the models response, meaning that there should not be any text before the tool call
+		if len(response.Content) != 1 {
+			return nil, fmt.Errorf("unexpected number of blocks in response, expected 0, got: %d", len(response.Content))
+		}
+		block := response.Content[0]
 		if block.Type == "tool_use" && block.ToolUse.Name == "select_files_for_analysis" {
 			var result struct {
 				Thinking      string   `json:"thinking"`
 				SelectedFiles []string `json:"selected_files"`
 			}
 			if err := json.Unmarshal(block.ToolUse.Input, &result); err != nil {
+				if attempt < maxRetries {
+					errorMsg := fmt.Sprintf("Error parsing tool use result: %v. The response did not contain the expected tool use. Please use the 'select_files_for_analysis' tool and provide the required input.", err)
+					conversation.Messages = append(conversation.Messages, llm.Message{
+						Role:    "user",
+						Content: []llm.ContentBlock{{Type: "text", Text: errorMsg}},
+					})
+					break
+				}
 				return nil, fmt.Errorf("error parsing tool use result %s: %w", block.ToolUse.Input, err)
 			}
 			fmt.Printf("Thinking: %s\nSelected files: %v\n", result.Thinking, result.SelectedFiles)
@@ -89,7 +107,7 @@ func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, c
 		}
 	}
 
-	return nil, fmt.Errorf("no files selected for analysis")
+	return nil, fmt.Errorf("no files selected for analysis after %d attempts", maxRetries+1)
 }
 
 func buildSystemMessageWithSelectedFiles(allFiles []string, ignoreRules *ignore.IgnoreRules) (string, error) {
