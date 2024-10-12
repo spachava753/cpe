@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/pkoukk/tiktoken-go"
 	"github.com/spachava753/cpe/codemap"
 	"github.com/spachava753/cpe/extract"
 	"github.com/spachava753/cpe/fileops"
 	"github.com/spachava753/cpe/llm"
+	"github.com/spachava753/cpe/tiktokenloader"
 	"github.com/spachava753/cpe/typeresolver"
 	"io"
 	"os"
@@ -23,11 +25,32 @@ func logTimeElapsed(start time.Time, operation string) {
 }
 
 func generateCodeMapOutput(maxLiteralLen int) (string, error) {
-	output, err := codemap.GenerateOutput(os.DirFS("."), maxLiteralLen)
+	fileCodeMaps, err := codemap.GenerateOutput(os.DirFS("."), maxLiteralLen)
 	if err != nil {
 		return "", fmt.Errorf("error generating code map output: %w", err)
 	}
-	return output, nil
+
+	// Initialize tiktoken
+	loader := tiktokenloader.NewOfflineLoader()
+	tiktoken.SetBpeLoader(loader)
+	encoding, err := tiktoken.GetEncoding("o200k_base")
+	if err != nil {
+		return "", fmt.Errorf("error initializing tiktoken: %w", err)
+	}
+
+	var sb strings.Builder
+	sb.WriteString("<code_map>\n")
+	for _, fileCodeMap := range fileCodeMaps {
+		tokens := encoding.Encode(fileCodeMap.Content, nil, nil)
+		tokenCount := len(tokens)
+		if tokenCount > 1024 {
+			fmt.Printf("Warning: Large file detected - %s (%d tokens)\n", fileCodeMap.Path, tokenCount)
+		}
+		sb.WriteString(fileCodeMap.Content)
+	}
+	sb.WriteString("</code_map>\n")
+
+	return sb.String(), nil
 }
 
 func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, codeMapOutput string, userQuery string) ([]string, error) {

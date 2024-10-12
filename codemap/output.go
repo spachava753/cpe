@@ -2,12 +2,10 @@ package codemap
 
 import (
 	"fmt"
+	sitter "github.com/tree-sitter/go-tree-sitter"
 	"io/fs"
 	"path/filepath"
 	"sort"
-	"strings"
-
-	sitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 var supportedLanguages = map[string]bool{
@@ -26,11 +24,14 @@ var supportedLanguages = map[string]bool{
 	".mod":  true,
 }
 
-// GenerateOutput creates the XML-like output for the code map using AST
-func GenerateOutput(fsys fs.FS, maxLiteralLen int) (string, error) {
-	var sb strings.Builder
-	sb.WriteString("<code_map>\n")
+// FileCodeMap represents a single file's code map output
+type FileCodeMap struct {
+	Path    string
+	Content string
+}
 
+// GenerateOutput creates the code map output for each file using AST
+func GenerateOutput(fsys fs.FS, maxLiteralLen int) ([]FileCodeMap, error) {
 	var filePaths []string
 	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -42,21 +43,24 @@ func GenerateOutput(fsys fs.FS, maxLiteralLen int) (string, error) {
 		return nil
 	})
 	if err != nil {
-		return "", fmt.Errorf("error walking directory: %w", err)
+		return nil, fmt.Errorf("error walking directory: %w", err)
 	}
 
 	sort.Strings(filePaths)
 
+	var results []FileCodeMap
 	for _, path := range filePaths {
 		fileContent, err := generateFileOutput(fsys, path, maxLiteralLen)
 		if err != nil {
-			return "", fmt.Errorf("error generating output for file %s: %w", path, err)
+			return nil, fmt.Errorf("error generating output for file %s: %w", path, err)
 		}
-		sb.WriteString(fileContent)
+		results = append(results, FileCodeMap{
+			Path:    path,
+			Content: fileContent,
+		})
 	}
 
-	sb.WriteString("</code_map>\n")
-	return sb.String(), nil
+	return results, nil
 }
 
 func isSourceCode(path string) bool {
