@@ -81,7 +81,7 @@ func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, c
 				SelectedFiles []string `json:"selected_files"`
 			}
 			if err := json.Unmarshal(block.ToolUse.Input, &result); err != nil {
-				return nil, fmt.Errorf("error parsing tool use result: %w", err)
+				return nil, fmt.Errorf("error parsing tool use result %s: %w", block.ToolUse.Input, err)
 			}
 			fmt.Printf("Thinking: %s\nSelected files: %v\n", result.Thinking, result.SelectedFiles)
 			printTokenUsage(tokenUsage)
@@ -171,7 +171,7 @@ func printTokenUsage(usage llm.TokenUsage) {
 	fmt.Printf("-------------------\n")
 }
 
-const version = "0.11.6"
+const version = "0.11.7"
 
 func main() {
 	startTime := time.Now()
