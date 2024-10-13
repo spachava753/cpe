@@ -1,12 +1,10 @@
-package main
+package llm
 
 import (
 	"fmt"
 	"github.com/sashabaranov/go-openai"
 	"github.com/spachava753/cpe/cliopts"
 	"os"
-
-	"github.com/spachava753/cpe/llm"
 )
 
 type ModelDefaults struct {
@@ -54,7 +52,7 @@ func (c OpenAIConfig) GetAPIKey() string {
 	return c.APIKey
 }
 
-var modelConfigs = map[string]ModelConfig{
+var ModelConfigs = map[string]ModelConfig{
 	"claude-3-opus": {
 		Name: "claude-3-opus-20240229", ProviderType: "anthropic", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.3},
@@ -89,24 +87,24 @@ var modelConfigs = map[string]ModelConfig{
 	},
 }
 
-var defaultModel = "claude-3-5-sonnet"
+var DefaultModel = "claude-3-5-sonnet"
 
-func GetProvider(modelName string, flags cliopts.Opts) (llm.LLMProvider, llm.GenConfig, error) {
+func GetProvider(modelName string, flags cliopts.Opts) (LLMProvider, GenConfig, error) {
 	if modelName == "" {
-		modelName = defaultModel
+		modelName = DefaultModel
 	}
 
-	config, ok := modelConfigs[modelName]
+	config, ok := ModelConfigs[modelName]
 	if !ok {
 		// Handle unknown model
 		if flags.CustomURL == "" {
-			return nil, llm.GenConfig{}, fmt.Errorf("unknown model '%s' requires -custom-url flag", modelName)
+			return nil, GenConfig{}, fmt.Errorf("unknown model '%s' requires -custom-url flag", modelName)
 		}
 		fmt.Printf("Warning: Using unknown model '%s' with OpenAI provider\n", modelName)
 		config = ModelConfig{Name: modelName, ProviderType: "openai", IsKnown: false}
 	}
 
-	genConfig := llm.GenConfig{
+	genConfig := GenConfig{
 		Model:       config.Name,
 		MaxTokens:   config.Defaults.MaxTokens,
 		Temperature: config.Defaults.Temperature,
@@ -132,19 +130,19 @@ func GetProvider(modelName string, flags cliopts.Opts) (llm.LLMProvider, llm.Gen
 
 	providerConfig, loadErr := loadProviderConfig(config.ProviderType)
 	if loadErr != nil {
-		return nil, llm.GenConfig{}, loadErr
+		return nil, GenConfig{}, loadErr
 	}
 
-	var provider llm.LLMProvider
+	var provider LLMProvider
 	var err error
 
 	switch config.ProviderType {
 	case "anthropic":
-		provider = llm.NewAnthropicProvider(providerConfig.GetAPIKey(), flags.CustomURL)
+		provider = NewAnthropicProvider(providerConfig.GetAPIKey(), flags.CustomURL)
 	case "gemini":
-		provider, err = llm.NewGeminiProvider(providerConfig.GetAPIKey(), flags.CustomURL)
+		provider, err = NewGeminiProvider(providerConfig.GetAPIKey(), flags.CustomURL)
 	case "openai":
-		provider = llm.NewOpenAIProvider(providerConfig.GetAPIKey(), flags.CustomURL)
+		provider = NewOpenAIProvider(providerConfig.GetAPIKey(), flags.CustomURL)
 	default:
 		return nil, genConfig, fmt.Errorf("unsupported provider type: %s", config.ProviderType)
 	}

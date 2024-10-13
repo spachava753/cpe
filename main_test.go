@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/spachava753/cpe/cliopts"
+	"github.com/spachava753/cpe/llm"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,14 +11,14 @@ import (
 func TestDetermineCodebaseAccess(t *testing.T) {
 	cliopts.ParseFlags()
 
-	if cliopts.Flags.Model != "" && cliopts.Flags.Model != defaultModel {
-		_, ok := modelConfigs[cliopts.Flags.Model]
+	if cliopts.Flags.Model != "" && cliopts.Flags.Model != llm.DefaultModel {
+		_, ok := llm.ModelConfigs[cliopts.Flags.Model]
 		if !ok && cliopts.Flags.CustomURL == "" {
 			t.Fatalf("Error: Unknown model '%s' requires -custom-url flag\n", cliopts.Flags.Model)
 		}
 	}
 
-	provider, genConfig, err := GetProvider(cliopts.Flags.Model, cliopts.Opts{
+	provider, genConfig, err := llm.GetProvider(cliopts.Flags.Model, cliopts.Opts{
 		Model:             cliopts.Flags.Model,
 		CustomURL:         cliopts.Flags.CustomURL,
 		MaxTokens:         cliopts.Flags.MaxTokens,

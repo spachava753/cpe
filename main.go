@@ -152,8 +152,8 @@ func main() {
 		return
 	}
 
-	if cliopts.Flags.Model != "" && cliopts.Flags.Model != defaultModel {
-		_, ok := modelConfigs[cliopts.Flags.Model]
+	if cliopts.Flags.Model != "" && cliopts.Flags.Model != llm.DefaultModel {
+		_, ok := llm.ModelConfigs[cliopts.Flags.Model]
 		if !ok && cliopts.Flags.CustomURL == "" {
 			fmt.Printf("Error: Unknown model '%s' requires -custom-url flag\n", cliopts.Flags.Model)
 			flag.Usage()
@@ -161,7 +161,7 @@ func main() {
 		}
 	}
 
-	provider, genConfig, err := GetProvider(cliopts.Flags.Model, cliopts.Flags)
+	provider, genConfig, err := llm.GetProvider(cliopts.Flags.Model, cliopts.Flags)
 	if err != nil {
 		fmt.Printf("Error initializing provider: %v\n", err)
 		return
