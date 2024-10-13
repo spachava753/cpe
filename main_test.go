@@ -1,40 +1,31 @@
 package main
 
 import (
-	"flag"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
-var model = flag.String("model", "", "Specify the model to use. Supported models: claude-3-opus, claude-3-5-sonnet, claude-3-5-haiku, gemini-1.5-flash, gemini-1.5-pro, gpt-4o, gpt-4o-mini")
-var customUrl = flag.String("custom-url", "", "Specify a custom base URL for the model provider API")
-var maxTokens = flag.Int("max-tokens", 0, "Maximum number of tokens to generate")
-var temp = flag.Float64("temperature", 0, "Sampling temperature (0.0 - 1.0)")
-var topP = flag.Float64("top-p", 0, "Nucleus sampling parameter (0.0 - 1.0)")
-var topK = flag.Int("top-k", 0, "Top-k sampling parameter")
-var freqPen = flag.Float64("frequency-penalty", 0, "Frequency penalty (-2.0 - 2.0)")
-var presencePen = flag.Float64("presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
-var n = flag.Int("number-of-responses", 0, "Number of responses to generate")
-
 func TestDetermineCodebaseAccess(t *testing.T) {
-	if *model != "" && *model != defaultModel {
-		_, ok := modelConfigs[*model]
-		if !ok && *customUrl == "" {
-			t.Fatalf("Error: Unknown model '%s' requires -custom-url flag\n", *model)
+	ParseFlags()
+
+	if flags.Model != "" && flags.Model != defaultModel {
+		_, ok := modelConfigs[flags.Model]
+		if !ok && flags.CustomURL == "" {
+			t.Fatalf("Error: Unknown model '%s' requires -custom-url flag\n", flags.Model)
 		}
 	}
 
-	provider, genConfig, err := GetProvider(*model, Flags{
-		Model:             *model,
-		CustomURL:         *customUrl,
-		MaxTokens:         *maxTokens,
-		Temperature:       *temp,
-		TopP:              *topP,
-		TopK:              *topK,
-		FrequencyPenalty:  *freqPen,
-		PresencePenalty:   *presencePen,
-		NumberOfResponses: *n,
+	provider, genConfig, err := GetProvider(flags.Model, Flags{
+		Model:             flags.Model,
+		CustomURL:         flags.CustomURL,
+		MaxTokens:         flags.MaxTokens,
+		Temperature:       flags.Temperature,
+		TopP:              flags.TopP,
+		TopK:              flags.TopK,
+		FrequencyPenalty:  flags.FrequencyPenalty,
+		PresencePenalty:   flags.PresencePenalty,
+		NumberOfResponses: flags.NumberOfResponses,
 	})
 	if err != nil {
 		t.Fatalf("Error initializing provider: %v\n", err)
