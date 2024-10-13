@@ -1,31 +1,32 @@
 package main
 
 import (
+	"github.com/spachava753/cpe/cliopts"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestDetermineCodebaseAccess(t *testing.T) {
-	ParseFlags()
+	cliopts.ParseFlags()
 
-	if flags.Model != "" && flags.Model != defaultModel {
-		_, ok := modelConfigs[flags.Model]
-		if !ok && flags.CustomURL == "" {
-			t.Fatalf("Error: Unknown model '%s' requires -custom-url flag\n", flags.Model)
+	if cliopts.Flags.Model != "" && cliopts.Flags.Model != defaultModel {
+		_, ok := modelConfigs[cliopts.Flags.Model]
+		if !ok && cliopts.Flags.CustomURL == "" {
+			t.Fatalf("Error: Unknown model '%s' requires -custom-url flag\n", cliopts.Flags.Model)
 		}
 	}
 
-	provider, genConfig, err := GetProvider(flags.Model, Flags{
-		Model:             flags.Model,
-		CustomURL:         flags.CustomURL,
-		MaxTokens:         flags.MaxTokens,
-		Temperature:       flags.Temperature,
-		TopP:              flags.TopP,
-		TopK:              flags.TopK,
-		FrequencyPenalty:  flags.FrequencyPenalty,
-		PresencePenalty:   flags.PresencePenalty,
-		NumberOfResponses: flags.NumberOfResponses,
+	provider, genConfig, err := GetProvider(cliopts.Flags.Model, cliopts.Opts{
+		Model:             cliopts.Flags.Model,
+		CustomURL:         cliopts.Flags.CustomURL,
+		MaxTokens:         cliopts.Flags.MaxTokens,
+		Temperature:       cliopts.Flags.Temperature,
+		TopP:              cliopts.Flags.TopP,
+		TopK:              cliopts.Flags.TopK,
+		FrequencyPenalty:  cliopts.Flags.FrequencyPenalty,
+		PresencePenalty:   cliopts.Flags.PresencePenalty,
+		NumberOfResponses: cliopts.Flags.NumberOfResponses,
 	})
 	if err != nil {
 		t.Fatalf("Error initializing provider: %v\n", err)

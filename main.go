@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/pkoukk/tiktoken-go"
+	"github.com/spachava753/cpe/cliopts"
 	"github.com/spachava753/cpe/codemap"
 	"github.com/spachava753/cpe/codemapanalysis"
 	"github.com/spachava753/cpe/extract"
@@ -137,7 +138,7 @@ func main() {
 	startTime := time.Now()
 	defer logTimeElapsed(startTime, "entire operation")
 
-	ParseFlags()
+	cliopts.ParseFlags()
 
 	// Initialize ignore rules
 	ignoreRules := ignore.NewIgnoreRules()
@@ -146,21 +147,21 @@ func main() {
 		return
 	}
 
-	if flags.Version {
+	if cliopts.Flags.Version {
 		fmt.Printf("cpe version %s\n", version)
 		return
 	}
 
-	if flags.Model != "" && flags.Model != defaultModel {
-		_, ok := modelConfigs[flags.Model]
-		if !ok && flags.CustomURL == "" {
-			fmt.Printf("Error: Unknown model '%s' requires -custom-url flag\n", flags.Model)
+	if cliopts.Flags.Model != "" && cliopts.Flags.Model != defaultModel {
+		_, ok := modelConfigs[cliopts.Flags.Model]
+		if !ok && cliopts.Flags.CustomURL == "" {
+			fmt.Printf("Error: Unknown model '%s' requires -custom-url flag\n", cliopts.Flags.Model)
 			flag.Usage()
 			os.Exit(1)
 		}
 	}
 
-	provider, genConfig, err := GetProvider(flags.Model, flags)
+	provider, genConfig, err := GetProvider(cliopts.Flags.Model, cliopts.Flags)
 	if err != nil {
 		fmt.Printf("Error initializing provider: %v\n", err)
 		return
@@ -173,7 +174,7 @@ func main() {
 	// Read content from input source
 	readStart := time.Now()
 	var content string
-	if flags.Input == "-" {
+	if cliopts.Flags.Input == "-" {
 		// Read from stdin
 		reader := bufio.NewReader(os.Stdin)
 		contentBytes, readErr := io.ReadAll(reader)
@@ -184,9 +185,9 @@ func main() {
 		content = string(contentBytes)
 	} else {
 		// Read from file
-		contentBytes, readErr := os.ReadFile(flags.Input)
+		contentBytes, readErr := os.ReadFile(cliopts.Flags.Input)
 		if readErr != nil {
-			fmt.Printf("Error reading from file %s: %v\n", flags.Input, readErr)
+			fmt.Printf("Error reading from file %s: %v\n", cliopts.Flags.Input, readErr)
 			os.Exit(1)
 		}
 		content = string(contentBytes)
@@ -230,8 +231,8 @@ func main() {
 
 		// Parse include-files flag
 		var includeFiles []string
-		if flags.IncludeFiles != "" {
-			includeFiles = strings.Split(flags.IncludeFiles, ",")
+		if cliopts.Flags.IncludeFiles != "" {
+			includeFiles = strings.Split(cliopts.Flags.IncludeFiles, ",")
 		}
 
 		// Combine selected and included files
@@ -249,7 +250,7 @@ func main() {
 	}
 
 	// If debug flag is set, print the system message
-	if flags.Debug {
+	if cliopts.Flags.Debug {
 		fmt.Println("Generated System Prompt:")
 		fmt.Println(systemMessage)
 		fmt.Println("--- End of System Prompt ---")

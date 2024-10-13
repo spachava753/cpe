@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/sashabaranov/go-openai"
+	"github.com/spachava753/cpe/cliopts"
 	"os"
 
 	"github.com/spachava753/cpe/llm"
@@ -90,7 +91,7 @@ var modelConfigs = map[string]ModelConfig{
 
 var defaultModel = "claude-3-5-sonnet"
 
-func GetProvider(modelName string, flags Flags) (llm.LLMProvider, llm.GenConfig, error) {
+func GetProvider(modelName string, flags cliopts.Opts) (llm.LLMProvider, llm.GenConfig, error) {
 	if modelName == "" {
 		modelName = defaultModel
 	}
