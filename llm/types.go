@@ -92,6 +92,15 @@ type TokenUsage struct {
 	OutputTokens int
 }
 
+// PrintTokenUsage prints a formatted summary of token usage
+func PrintTokenUsage(usage TokenUsage) {
+	fmt.Printf("\n--- Token Usage ---\n")
+	fmt.Printf("Input tokens:  %d\n", usage.InputTokens)
+	fmt.Printf("Output tokens: %d\n", usage.OutputTokens)
+	fmt.Printf("Total tokens:  %d\n", usage.InputTokens+usage.OutputTokens)
+	fmt.Printf("-------------------\n")
+}
+
 // LLMProvider defines the interface for interacting with LLM providers
 type LLMProvider interface {
 	// GenerateResponse generates a response from the assistant based on the provided conversation

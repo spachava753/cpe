@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/pkoukk/tiktoken-go"
 	"github.com/spachava753/cpe/codemap"
+	"github.com/spachava753/cpe/codemapanalysis"
 	"github.com/spachava753/cpe/extract"
 	"github.com/spachava753/cpe/fileops"
 	"github.com/spachava753/cpe/ignore"
@@ -52,79 +53,6 @@ func generateCodeMapOutput(maxLiteralLen int, ignoreRules *ignore.IgnoreRules) (
 	sb.WriteString("</code_map>\n")
 
 	return sb.String(), nil
-}
-
-func performCodeMapAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, codeMapOutput string, userQuery string) ([]string, error) {
-	conversation := llm.Conversation{
-		SystemPrompt: CodeMapAnalysisPrompt,
-		Messages: []llm.Message{
-			{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: "Here's the code map:\n\n" + codeMapOutput + "\n\nUser query: " + userQuery}}},
-		},
-		Tools: []llm.Tool{{
-			Name:        "select_files_for_analysis",
-			Description: "Select files for high-fidelity analysis",
-			InputSchema: SelectFilesForAnalysisToolDef,
-		}},
-	}
-
-	genConfig.ToolChoice = "tool"
-	genConfig.ForcedTool = "select_files_for_analysis"
-
-	maxRetries := 2
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		response, tokenUsage, err := provider.GenerateResponse(genConfig, conversation)
-		if err != nil {
-			return nil, fmt.Errorf("error generating code map analysis: %w", err)
-		}
-
-		// Add the response to the conversation
-		conversation.Messages = append(conversation.Messages, response)
-
-		// We expect only one block, as we are forcing tool use, which prefills the models response, meaning that there should not be any text before the tool call
-		if len(response.Content) != 1 {
-			return nil, fmt.Errorf("unexpected number of blocks in response, expected 0, got: %d", len(response.Content))
-		}
-		block := response.Content[0]
-		if block.Type == "tool_use" && block.ToolUse.Name == "select_files_for_analysis" {
-			var result struct {
-				Thinking      string   `json:"thinking"`
-				SelectedFiles []string `json:"selected_files"`
-			}
-			if err := json.Unmarshal(block.ToolUse.Input, &result); err != nil {
-				errorMsg := fmt.Sprintf("Error parsing tool use result: %v", err)
-				fmt.Printf("Error: %s\n", errorMsg)
-				fmt.Printf("Model response:\n%s\n", response)
-
-				if attempt < maxRetries {
-					retryMsg := fmt.Sprintf("%s\nThe response did not contain the expected tool use. Please use the 'select_files_for_analysis' tool and provide the required input.", errorMsg)
-					conversation.Messages = append(conversation.Messages, llm.Message{
-						Role:    "user",
-						Content: []llm.ContentBlock{{Type: "text", Text: retryMsg}},
-					})
-					continue
-				}
-				return nil, fmt.Errorf("error parsing tool use result %s: %w", block.ToolUse.Input, err)
-			}
-			fmt.Printf("Thinking: %s\nSelected files: %v\n", result.Thinking, result.SelectedFiles)
-			printTokenUsage(tokenUsage)
-			return result.SelectedFiles, nil
-		} else {
-			errorMsg := fmt.Sprintf("Unexpected tool use or response format")
-			fmt.Printf("Error: %s\n", errorMsg)
-			fmt.Printf("Model response:\n%s\n", response)
-
-			if attempt < maxRetries {
-				retryMsg := fmt.Sprintf("%s\nPlease use the 'select_files_for_analysis' tool and provide the required input.", errorMsg)
-				conversation.Messages = append(conversation.Messages, llm.Message{
-					Role:    "user",
-					Content: []llm.ContentBlock{{Type: "text", Text: retryMsg}},
-				})
-				continue
-			}
-		}
-	}
-
-	return nil, fmt.Errorf("no files selected for analysis after %d attempts", maxRetries+1)
 }
 
 func buildSystemMessageWithSelectedFiles(allFiles []string, ignoreRules *ignore.IgnoreRules) (string, error) {
@@ -198,12 +126,9 @@ func determineCodebaseAccess(provider llm.LLMProvider, genConfig llm.GenConfig, 
 	return false, fmt.Errorf("no decision made on codebase access")
 }
 
+// printTokenUsage is now just a wrapper around llm.PrintTokenUsage
 func printTokenUsage(usage llm.TokenUsage) {
-	fmt.Printf("\n--- Token Usage ---\n")
-	fmt.Printf("Input tokens:  %d\n", usage.InputTokens)
-	fmt.Printf("Output tokens: %d\n", usage.OutputTokens)
-	fmt.Printf("Total tokens:  %d\n", usage.InputTokens+usage.OutputTokens)
-	fmt.Printf("-------------------\n")
+	llm.PrintTokenUsage(usage)
 }
 
 const version = "0.11.7"
@@ -296,7 +221,7 @@ func main() {
 
 		// Perform code map analysis and select files
 		analysisStart := time.Now()
-		selectedFiles, err := performCodeMapAnalysis(provider, genConfig, codeMapOutput, content)
+		selectedFiles, err := codemapanalysis.PerformAnalysis(provider, genConfig, codeMapOutput, content)
 		logTimeElapsed(analysisStart, "performCodeMapAnalysis")
 		if err != nil {
 			fmt.Printf("Error performing code map analysis: %v\n", err)
