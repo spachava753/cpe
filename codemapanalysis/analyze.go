@@ -42,7 +42,7 @@ func PerformAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, codeMapO
 
 		// We expect only one block, as we are forcing tool use, which prefills the models response, meaning that there should not be any text before the tool call
 		if len(response.Content) != 1 {
-			return nil, fmt.Errorf("unexpected number of blocks in response, expected 0, got: %d", len(response.Content))
+			return nil, fmt.Errorf("unexpected number of blocks in response, expected 1, got: %d", len(response.Content))
 		}
 		block := response.Content[0]
 		if block.Type == "tool_use" && block.ToolUse.Name == "select_files_for_analysis" {
@@ -50,20 +50,26 @@ func PerformAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, codeMapO
 				Thinking      string   `json:"thinking"`
 				SelectedFiles []string `json:"selected_files"`
 			}
-			if err := json.Unmarshal(block.ToolUse.Input, &result); err != nil {
-				errorMsg := fmt.Sprintf("Error parsing tool use result: %v", err)
+			if unmarshallErr := json.Unmarshal(block.ToolUse.Input, &result); unmarshallErr != nil {
+				errorMsg := fmt.Sprintf("Error parsing tool use result: %v", unmarshallErr)
 				fmt.Printf("Error: %s\n", errorMsg)
 				fmt.Printf("Model response:\n%s\n", response)
 
 				if attempt < maxRetries {
-					retryMsg := fmt.Sprintf("%s\nThe response did not contain the expected tool use. Please use the 'select_files_for_analysis' tool and provide the required input.", errorMsg)
 					conversation.Messages = append(conversation.Messages, llm.Message{
-						Role:    "user",
-						Content: []llm.ContentBlock{{Type: "text", Text: retryMsg}},
+						Role: "user",
+						Content: []llm.ContentBlock{{
+							Type: "tool_result",
+							ToolResult: &llm.ToolResult{
+								ToolUseID: block.ToolUse.ID,
+								Content:   errorMsg,
+								IsError:   true,
+							},
+						}},
 					})
 					continue
 				}
-				return nil, fmt.Errorf("error parsing tool use result %s: %w", block.ToolUse.Input, err)
+				return nil, fmt.Errorf("error parsing tool use result %s: %w", block.ToolUse.Input, unmarshallErr)
 			}
 			fmt.Printf("Thinking: %s\nSelected files: %v\n", result.Thinking, result.SelectedFiles)
 			llm.PrintTokenUsage(tokenUsage)
