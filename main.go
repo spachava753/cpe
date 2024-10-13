@@ -137,7 +137,7 @@ func main() {
 	startTime := time.Now()
 	defer logTimeElapsed(startTime, "entire operation")
 
-	flags := ParseFlags()
+	ParseFlags()
 
 	// Initialize ignore rules
 	ignoreRules := ignore.NewIgnoreRules()

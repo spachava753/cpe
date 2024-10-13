@@ -21,26 +21,26 @@ type Flags struct {
 	IncludeFiles      string
 }
 
-func ParseFlags() Flags {
-	f := Flags{}
+var flags Flags
 
-	flag.BoolVar(&f.Version, "version", false, "Print the version number and exit")
-	flag.StringVar(&f.Model, "model", "", "Specify the model to use. Supported models: claude-3-opus, claude-3-5-sonnet, claude-3-5-haiku, gemini-1.5-flash, gemini-1.5-pro, gpt-4o, gpt-4o-mini")
-	flag.StringVar(&f.CustomURL, "custom-url", "", "Specify a custom base URL for the model provider API")
-	flag.IntVar(&f.MaxTokens, "max-tokens", 0, "Maximum number of tokens to generate")
-	flag.Float64Var(&f.Temperature, "temperature", 0, "Sampling temperature (0.0 - 1.0)")
-	flag.Float64Var(&f.TopP, "top-p", 0, "Nucleus sampling parameter (0.0 - 1.0)")
-	flag.IntVar(&f.TopK, "top-k", 0, "Top-k sampling parameter")
-	flag.Float64Var(&f.FrequencyPenalty, "frequency-penalty", 0, "Frequency penalty (-2.0 - 2.0)")
-	flag.Float64Var(&f.PresencePenalty, "presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
-	flag.IntVar(&f.NumberOfResponses, "number-of-responses", 0, "Number of responses to generate")
-	flag.BoolVar(&f.Debug, "debug", false, "Print the generated system prompt")
-	flag.StringVar(&f.Input, "input", "-", "Specify the input file path. Use '-' for stdin")
-	flag.StringVar(&f.IncludeFiles, "include-files", "", "Comma-separated list of file paths to include in the system message")
+func init() {
+	flag.BoolVar(&flags.Version, "version", false, "Print the version number and exit")
+	flag.StringVar(&flags.Model, "model", "", "Specify the model to use. Supported models: claude-3-opus, claude-3-5-sonnet, claude-3-5-haiku, gemini-1.5-flash, gemini-1.5-pro, gpt-4o, gpt-4o-mini")
+	flag.StringVar(&flags.CustomURL, "custom-url", "", "Specify a custom base URL for the model provider API")
+	flag.IntVar(&flags.MaxTokens, "max-tokens", 0, "Maximum number of tokens to generate")
+	flag.Float64Var(&flags.Temperature, "temperature", 0, "Sampling temperature (0.0 - 1.0)")
+	flag.Float64Var(&flags.TopP, "top-p", 0, "Nucleus sampling parameter (0.0 - 1.0)")
+	flag.IntVar(&flags.TopK, "top-k", 0, "Top-k sampling parameter")
+	flag.Float64Var(&flags.FrequencyPenalty, "frequency-penalty", 0, "Frequency penalty (-2.0 - 2.0)")
+	flag.Float64Var(&flags.PresencePenalty, "presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
+	flag.IntVar(&flags.NumberOfResponses, "number-of-responses", 0, "Number of responses to generate")
+	flag.BoolVar(&flags.Debug, "debug", false, "Print the generated system prompt")
+	flag.StringVar(&flags.Input, "input", "-", "Specify the input file path. Use '-' for stdin")
+	flag.StringVar(&flags.IncludeFiles, "include-files", "", "Comma-separated list of file paths to include in the system message")
+}
 
+func ParseFlags() {
 	flag.Parse()
-
-	return f
 }
 
 func (f Flags) ApplyToGenConfig(config llm.GenConfig) llm.GenConfig {
