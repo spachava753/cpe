@@ -1,6 +1,7 @@
 package codemap
 
 import (
+	"github.com/spachava753/cpe/ignore"
 	"github.com/stretchr/testify/assert"
 	"io/fs"
 	"testing"
@@ -22,7 +23,7 @@ func TestGenerateOutput(t *testing.T) {
 		name     string
 		files    map[string]string
 		maxLen   int
-		expected string
+		expected []FileCodeMap
 	}{
 		{
 			name:   "Function returning another function",
@@ -50,8 +51,10 @@ var testFunc = func(a int, b int) int {
 }
 `,
 			},
-			expected: `<code_map>
-<file>
+			expected: []FileCodeMap{
+				{
+					Path: "higher_order.go",
+					Content: `<file>
 <path>higher_order.go</path>
 <file_map>
 package higherorder
@@ -67,8 +70,9 @@ var testFunc = func(a int, b int) int {
 }
 </file_map>
 </file>
-</code_map>
 `,
+				},
+			},
 		},
 		{
 			name:   "Comprehensive string literal truncation test",
@@ -167,8 +171,10 @@ func generateUUID() string {
 }
 `,
 			},
-			expected: `<code_map>
-<file>
+			expected: []FileCodeMap{
+				{
+					Path: "globals.go",
+					Content: `<file>
 <path>globals.go</path>
 <file_map>
 package globals
@@ -257,8 +263,9 @@ var (
 func generateUUID() string
 </file_map>
 </file>
-</code_map>
 `,
+				},
+			},
 		},
 		{
 			name:   "Global variables truncation",
@@ -282,8 +289,10 @@ var (
 )
 `,
 			},
-			expected: `<code_map>
-<file>
+			expected: []FileCodeMap{
+				{
+					Path: "globals.go",
+					Content: `<file>
 <path>globals.go</path>
 <file_map>
 package globals
@@ -303,8 +312,9 @@ var (
 )
 </file_map>
 </file>
-</code_map>
 `,
+				},
+			},
 		},
 		{
 			name:   "Comprehensive comments test",
@@ -382,8 +392,10 @@ func NewDefaultUserManager() *DefaultUserManager {
 }
 `,
 			},
-			expected: `<code_map>
-<file>
+			expected: []FileCodeMap{
+				{
+					Path: "comments.go",
+					Content: `<file>
 <path>comments.go</path>
 <file_map>
 // Package comments demonstrates comprehensive comment usage in Go.
@@ -447,8 +459,9 @@ func (um *DefaultUserManager) GetUser(id int) (*User, error)
 func NewDefaultUserManager() *DefaultUserManager
 </file_map>
 </file>
-</code_map>
 `,
+				},
+			},
 		},
 		{
 			name:   "Including test files",
@@ -483,8 +496,10 @@ func TestAdd(t *testing.T) {
 }
 `,
 			},
-			expected: `<code_map>
-<file>
+			expected: []FileCodeMap{
+				{
+					Path: "main.go",
+					Content: `<file>
 <path>main.go</path>
 <file_map>
 package main
@@ -494,7 +509,11 @@ import "fmt"
 func main()
 </file_map>
 </file>
-<file>
+`,
+				},
+				{
+					Path: "utils/helper.go",
+					Content: `<file>
 <path>utils/helper.go</path>
 <file_map>
 package utils
@@ -502,7 +521,11 @@ package utils
 func Add(a, b int) int
 </file_map>
 </file>
-<file>
+`,
+				},
+				{
+					Path: "utils/helper_test.go",
+					Content: `<file>
 <path>utils/helper_test.go</path>
 <file_map>
 package utils
@@ -512,8 +535,9 @@ import "testing"
 func TestAdd(t *testing.T)
 </file_map>
 </file>
-</code_map>
 `,
+				},
+			},
 		},
 		{
 			name:   "Comprehensive test case",
@@ -574,8 +598,10 @@ func CreateUser(name string) *User {
 }
 `,
 			},
-			expected: `<code_map>
-<file>
+			expected: []FileCodeMap{
+				{
+					Path: "main.go",
+					Content: `<file>
 <path>main.go</path>
 <file_map>
 // Package main is the entry point of the application.
@@ -626,8 +652,9 @@ func main()
 func CreateUser(name string) *User
 </file_map>
 </file>
-</code_map>
 `,
+				},
+			},
 		},
 		{
 			name:   "Single file with struct and function",
@@ -651,8 +678,10 @@ func main() {
 }
 `,
 			},
-			expected: `<code_map>
-<file>
+			expected: []FileCodeMap{
+				{
+					Path: "main.go",
+					Content: `<file>
 <path>main.go</path>
 <file_map>
 package main
@@ -670,8 +699,9 @@ type User struct {
 func main()
 </file_map>
 </file>
-</code_map>
 `,
+				},
+			},
 		},
 		{
 			name:   "Multiple files with different structures",
@@ -699,8 +729,10 @@ func NewUser(name string) *User {
 }
 `,
 			},
-			expected: `<code_map>
-<file>
+			expected: []FileCodeMap{
+				{
+					Path: "main.go",
+					Content: `<file>
 <path>main.go</path>
 <file_map>
 package main
@@ -710,7 +742,11 @@ import "fmt"
 func main()
 </file_map>
 </file>
-<file>
+`,
+				},
+				{
+					Path: "user/user.go",
+					Content: `<file>
 <path>user/user.go</path>
 <file_map>
 package user
@@ -723,8 +759,9 @@ type User struct {
 func NewUser(name string) *User
 </file_map>
 </file>
-</code_map>
 `,
+				},
+			},
 		},
 		{
 			name:   "File with interface and multiple functions",
@@ -762,8 +799,10 @@ func (s *serviceImpl) Create(ctx context.Context, data string) error {
 }
 `,
 			},
-			expected: `<code_map>
-<file>
+			expected: []FileCodeMap{
+				{
+					Path: "service.go",
+					Content: `<file>
 <path>service.go</path>
 <file_map>
 package service
@@ -789,8 +828,9 @@ func (s *serviceImpl) Get(ctx context.Context, id string) (string, error)
 func (s *serviceImpl) Create(ctx context.Context, data string) error
 </file_map>
 </file>
-</code_map>
 `,
+				},
+			},
 		},
 		{
 			name:   "File with nested structs and complex types",
@@ -820,8 +860,10 @@ func ProcessData(data *sync.Map) ([]byte, error) {
 }
 `,
 			},
-			expected: `<code_map>
-<file>
+			expected: []FileCodeMap{
+				{
+					Path: "complex.go",
+					Content: `<file>
 <path>complex.go</path>
 <file_map>
 package complex
@@ -844,8 +886,9 @@ type GenericType[T any] struct {
 func ProcessData(data *sync.Map) ([]byte, error)
 </file_map>
 </file>
-</code_map>
 `,
+				},
+			},
 		},
 		{
 			name:   "File with comments at various levels",
@@ -878,8 +921,10 @@ func NewUser(name string) *User {
 }
 `,
 			},
-			expected: `<code_map>
-<file>
+			expected: []FileCodeMap{
+				{
+					Path: "comments.go",
+					Content: `<file>
 <path>comments.go</path>
 <file_map>
 // Package comments demonstrates various levels of comments in Go code.
@@ -906,8 +951,9 @@ type Admin struct {
 func NewUser(name string) *User
 </file_map>
 </file>
-</code_map>
 `,
+				},
+			},
 		},
 	}
 
@@ -917,14 +963,15 @@ func NewUser(name string) *User
 			memFS := setupInMemoryFS(tt.files)
 
 			// Generate the output using GenerateOutput
-			output, err := GenerateOutput(memFS, tt.maxLen)
+			ignoreRules := ignore.NewIgnoreRules()
+			output, err := GenerateOutput(memFS, tt.maxLen, ignoreRules)
 			if err != nil {
 				t.Fatalf("Failed to generate output: %v", err)
 			}
 
 			// Compare the output with the expected result
 			if !assert.Equal(t, tt.expected, output) {
-				t.Errorf("Unexpected output.\nExpected:\n%s\nGot:\n%s", tt.expected, output)
+				t.Errorf("Unexpected output.\nExpected:\n%v\nGot:\n%v", tt.expected, output)
 			}
 		})
 	}

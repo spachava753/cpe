@@ -1,6 +1,7 @@
 package codemap
 
 import (
+	"github.com/spachava753/cpe/ignore"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
@@ -10,7 +11,7 @@ func TestGeneratePythonOutput(t *testing.T) {
 		name     string
 		files    map[string]string
 		maxLen   int
-		expected string
+		expected []FileCodeMap
 	}{
 		{
 			name:   "Basic Python function and class",
@@ -34,8 +35,10 @@ if __name__ == "__main__":
     print(person.introduce())
 `,
 			},
-			expected: `<code_map>
-<file>
+			expected: []FileCodeMap{
+				{
+					Path: "main.py",
+					Content: `<file>
 <path>main.py</path>
 <file_map>
 def greet(name):
@@ -54,8 +57,9 @@ if __name__ == "__main__":
     print(person.introduce())
 </file_map>
 </file>
-</code_map>
 `,
+				},
+			},
 		},
 		{
 			name:   "Python class with decorators and docstrings",
@@ -95,8 +99,10 @@ class User:
         return self.__str__()
 `,
 			},
-			expected: `<code_map>
-<file>
+			expected: []FileCodeMap{
+				{
+					Path: "user.py",
+					Content: `<file>
 <path>user.py</path>
 <file_map>
 import datetime
@@ -130,8 +136,9 @@ class User:
         pass
 </file_map>
 </file>
-</code_map>
 `,
+				},
+			},
 		},
 		{
 			name:   "Python with multiple classes and functions",
@@ -179,8 +186,10 @@ if __name__ == "__main__":
     print(f"Total area: {calculate_total_area([circle, rectangle])}")
 `,
 			},
-			expected: `<code_map>
-<file>
+			expected: []FileCodeMap{
+				{
+					Path: "shapes.py",
+					Content: `<file>
 <path>shapes.py</path>
 <file_map>
 import math
@@ -223,8 +232,9 @@ if __name__ == "__main__":
     print(f"Total area: {calculate_total_area([circle, rectangle])}")
 </file_map>
 </file>
-</code_map>
 `,
+				},
+			},
 		},
 		{
 			name:   "Python with nested functions and lambda",
@@ -248,8 +258,10 @@ if __name__ == "__main__":
     print(higher_order_function(lambda x: x ** 2, 4))
 `,
 			},
-			expected: `<code_map>
-<file>
+			expected: []FileCodeMap{
+				{
+					Path: "nested.py",
+					Content: `<file>
 <path>nested.py</path>
 <file_map>
 def outer_function(x):
@@ -267,8 +279,9 @@ if __name__ == "__main__":
     print(higher_order_function(lambda x: x ** 2, 4))
 </file_map>
 </file>
-</code_map>
 `,
+				},
+			},
 		},
 	}
 
@@ -278,14 +291,15 @@ if __name__ == "__main__":
 			memFS := setupInMemoryFS(tt.files)
 
 			// Generate the output using GenerateOutput
-			output, err := GenerateOutput(memFS, tt.maxLen)
+			ignoreRules := ignore.NewIgnoreRules()
+			output, err := GenerateOutput(memFS, tt.maxLen, ignoreRules)
 			if err != nil {
 				t.Fatalf("Failed to generate output: %v", err)
 			}
 
 			// Compare the output with the expected result
 			if !assert.Equal(t, tt.expected, output) {
-				t.Errorf("Unexpected output.\nExpected:\n%s\nGot:\n%s", tt.expected, output)
+				t.Errorf("Unexpected output.\nExpected:\n%v\nGot:\n%v", tt.expected, output)
 			}
 		})
 	}

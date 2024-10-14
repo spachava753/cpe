@@ -1,6 +1,7 @@
 package codemap
 
 import (
+	"github.com/spachava753/cpe/ignore"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
@@ -10,7 +11,7 @@ func TestGenerateJavaOutput(t *testing.T) {
 		name     string
 		files    map[string]string
 		maxLen   int
-		expected string
+		expected []FileCodeMap
 	}{
 		{
 			name:   "Comprehensive string literal truncation test",
@@ -54,8 +55,10 @@ public class Constants {
 }
 `,
 			},
-			expected: `<code_map>
-<file>
+			expected: []FileCodeMap{
+				{
+					Path: "Constants.java",
+					Content: `<file>
 <path>Constants.java</path>
 <file_map>
 package com.example;
@@ -90,8 +93,9 @@ public class Constants {
 }
 </file_map>
 </file>
-</code_map>
 `,
+				},
+			},
 		},
 		{
 			name:   "Basic Java class",
@@ -121,8 +125,10 @@ public class Main {
 }
 `,
 			},
-			expected: `<code_map>
-<file>
+			expected: []FileCodeMap{
+				{
+					Path: "Main.java",
+					Content: `<file>
 <path>Main.java</path>
 <file_map>
 package com.example;
@@ -142,8 +148,9 @@ public class Main {
 }
 </file_map>
 </file>
-</code_map>
 `,
+				},
+			},
 		},
 		{
 			name:   "Java interface and implementation",
@@ -179,8 +186,10 @@ public class Circle implements Shape {
 }
 `,
 			},
-			expected: `<code_map>
-<file>
+			expected: []FileCodeMap{
+				{
+					Path: "Circle.java",
+					Content: `<file>
 <path>Circle.java</path>
 <file_map>
 package com.example.shapes;
@@ -198,7 +207,11 @@ public class Circle implements Shape {
 }
 </file_map>
 </file>
-<file>
+`,
+				},
+				{
+					Path: "Shape.java",
+					Content: `<file>
 <path>Shape.java</path>
 <file_map>
 package com.example.shapes;
@@ -209,8 +222,9 @@ public interface Shape {
 }
 </file_map>
 </file>
-</code_map>
 `,
+				},
+			},
 		},
 		{
 			name:   "Java class with comments and annotations",
@@ -267,8 +281,10 @@ public class User {
 }
 `,
 			},
-			expected: `<code_map>
-<file>
+			expected: []FileCodeMap{
+				{
+					Path: "User.java",
+					Content: `<file>
 <path>User.java</path>
 <file_map>
 package com.example.models;
@@ -302,8 +318,9 @@ public class User {
 }
 </file_map>
 </file>
-</code_map>
 `,
+				},
+			},
 		},
 		{
 			name:   "Java enum and nested class",
@@ -343,8 +360,10 @@ public class Vehicle {
 }
 `,
 			},
-			expected: `<code_map>
-<file>
+			expected: []FileCodeMap{
+				{
+					Path: "Vehicle.java",
+					Content: `<file>
 <path>Vehicle.java</path>
 <file_map>
 package com.example.vehicles;
@@ -372,8 +391,9 @@ public class Vehicle {
 }
 </file_map>
 </file>
-</code_map>
 `,
+				},
+			},
 		},
 	}
 
@@ -383,14 +403,15 @@ public class Vehicle {
 			memFS := setupInMemoryFS(tt.files)
 
 			// Generate the output using GenerateOutput
-			output, err := GenerateOutput(memFS, tt.maxLen)
+			ignoreRules := ignore.NewIgnoreRules()
+			output, err := GenerateOutput(memFS, tt.maxLen, ignoreRules)
 			if err != nil {
 				t.Fatalf("Failed to generate output: %v", err)
 			}
 
 			// Compare the output with the expected result
 			if !assert.Equal(t, tt.expected, output) {
-				t.Errorf("Unexpected output.\nExpected:\n%s\nGot:\n%s", tt.expected, output)
+				t.Errorf("Unexpected output.\nExpected:\n%v\nGot:\n%v", tt.expected, output)
 			}
 		})
 	}
