@@ -18,7 +18,7 @@ type AnthropicProvider struct {
 type anthropicRequestBody struct {
 	Model       string               `json:"model"`
 	MaxTokens   int                  `json:"max_tokens"`
-	Messages    []Message            `json:"messages"`
+	Messages    []anthropicMessage   `json:"messages"`
 	System      string               `json:"system,omitempty"`
 	Temperature float32              `json:"temperature,omitempty"`
 	TopP        float32              `json:"top_p,omitempty"`
@@ -28,6 +28,22 @@ type anthropicRequestBody struct {
 	Stream      bool                 `json:"stream,omitempty"`
 	ToolChoice  *anthropicToolChoice `json:"tool_choice,omitempty"`
 	Tools       []anthropicTool      `json:"tools,omitempty"`
+}
+
+type anthropicMessage struct {
+	Role    string                         `json:"role"`
+	Content []anthropicMessageContentBlock `json:"content"`
+}
+
+type anthropicMessageContentBlock struct {
+	Type      string          `json:"type"`
+	Text      string          `json:"text,omitempty"`
+	Id        string          `json:"id,omitempty"`
+	Name      string          `json:"name,omitempty"`
+	Input     json.RawMessage `json:"input,omitempty"`
+	ToolUseId string          `json:"tool_use_id,omitempty"`
+	IsError   *bool           `json:"is_error,omitempty"`
+	Content   interface{}     `json:"content,omitempty"`
 }
 
 type anthropicToolChoice struct {
@@ -95,13 +111,55 @@ func (a *AnthropicProvider) convertToAnthropicTools(tools []Tool) []anthropicToo
 	return anthropicTools
 }
 
+func (a *AnthropicProvider) convertToAnthropicMessages(messages []Message) []anthropicMessage {
+	anthropicMessages := make([]anthropicMessage, len(messages))
+	for i, msg := range messages {
+		anthropicMsg := anthropicMessage{
+			Role:    msg.Role,
+			Content: make([]anthropicMessageContentBlock, 0, len(msg.Content)),
+		}
+
+		for _, content := range msg.Content {
+			switch content.Type {
+			case "text":
+				anthropicMsg.Content = append(anthropicMsg.Content, anthropicMessageContentBlock{
+					Type: "text",
+					Text: content.Text,
+				})
+			case "tool_use":
+				if content.ToolUse != nil {
+					anthropicMsg.Content = append(anthropicMsg.Content, anthropicMessageContentBlock{
+						Type:  "tool_use",
+						Id:    content.ToolUse.ID,
+						Name:  content.ToolUse.Name,
+						Input: content.ToolUse.Input,
+					})
+				}
+			case "tool_result":
+				if content.ToolResult != nil {
+					isError := false
+					anthropicMsg.Content = append(anthropicMsg.Content, anthropicMessageContentBlock{
+						Type:      "tool_result",
+						ToolUseId: content.ToolResult.ToolUseID,
+						IsError:   &isError,
+						Content:   content.ToolResult.Content,
+					})
+				}
+			}
+		}
+
+		anthropicMessages[i] = anthropicMsg
+	}
+	return anthropicMessages
+}
+
 func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conversation) (Message, TokenUsage, error) {
 	url := a.baseURL + "/v1/messages"
 
 	requestBody := anthropicRequestBody{
 		Model:       config.Model,
 		MaxTokens:   config.MaxTokens,
-		Messages:    conversation.Messages,
+		Messages:    a.convertToAnthropicMessages(conversation.Messages),
 		System:      conversation.SystemPrompt,
 		Temperature: config.Temperature,
 		Stop:        config.Stop,
