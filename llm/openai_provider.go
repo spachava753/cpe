@@ -30,7 +30,7 @@ func NewOpenAIProvider(apiKey string, baseURL string) *OpenAIProvider {
 
 // GenerateResponse generates a response using the OpenAI API
 func (o *OpenAIProvider) GenerateResponse(config GenConfig, conversation Conversation) (Message, TokenUsage, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	messages := convertToOpenAIMessages(conversation.SystemPrompt, conversation.Messages)

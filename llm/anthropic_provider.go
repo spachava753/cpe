@@ -88,7 +88,7 @@ func NewAnthropicProvider(apiKey string, baseURL string) *AnthropicProvider {
 	provider := &AnthropicProvider{
 		apiKey: apiKey,
 		client: &http.Client{
-			Timeout: 2 * time.Minute,
+			Timeout: 5 * time.Minute,
 		},
 	}
 	if baseURL != "" {

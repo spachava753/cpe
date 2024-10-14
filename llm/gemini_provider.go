@@ -74,7 +74,7 @@ func (g *GeminiProvider) GenerateResponse(config GenConfig, conversation Convers
 
 	session.History = convertToGeminiContent(conversation.Messages[:len(conversation.Messages)-1])
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	var resp *genai.GenerateContentResponse
