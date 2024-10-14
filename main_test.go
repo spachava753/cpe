@@ -11,23 +11,23 @@ import (
 func TestDetermineCodebaseAccess(t *testing.T) {
 	cliopts.ParseFlags()
 
-	if cliopts.Flags.Model != "" && cliopts.Flags.Model != llm.DefaultModel {
-		_, ok := llm.ModelConfigs[cliopts.Flags.Model]
-		if !ok && cliopts.Flags.CustomURL == "" {
-			t.Fatalf("Error: Unknown model '%s' requires -custom-url flag\n", cliopts.Flags.Model)
+	if cliopts.Opts.Model != "" && cliopts.Opts.Model != llm.DefaultModel {
+		_, ok := llm.ModelConfigs[cliopts.Opts.Model]
+		if !ok && cliopts.Opts.CustomURL == "" {
+			t.Fatalf("Error: Unknown model '%s' requires -custom-url flag\n", cliopts.Opts.Model)
 		}
 	}
 
-	provider, genConfig, err := llm.GetProvider(cliopts.Flags.Model, cliopts.Opts{
-		Model:             cliopts.Flags.Model,
-		CustomURL:         cliopts.Flags.CustomURL,
-		MaxTokens:         cliopts.Flags.MaxTokens,
-		Temperature:       cliopts.Flags.Temperature,
-		TopP:              cliopts.Flags.TopP,
-		TopK:              cliopts.Flags.TopK,
-		FrequencyPenalty:  cliopts.Flags.FrequencyPenalty,
-		PresencePenalty:   cliopts.Flags.PresencePenalty,
-		NumberOfResponses: cliopts.Flags.NumberOfResponses,
+	provider, genConfig, err := llm.GetProvider(cliopts.Opts.Model, llm.ModelOptions{
+		Model:             cliopts.Opts.Model,
+		CustomURL:         cliopts.Opts.CustomURL,
+		MaxTokens:         cliopts.Opts.MaxTokens,
+		Temperature:       cliopts.Opts.Temperature,
+		TopP:              cliopts.Opts.TopP,
+		TopK:              cliopts.Opts.TopK,
+		FrequencyPenalty:  cliopts.Opts.FrequencyPenalty,
+		PresencePenalty:   cliopts.Opts.PresencePenalty,
+		NumberOfResponses: cliopts.Opts.NumberOfResponses,
 	})
 	if err != nil {
 		t.Fatalf("Error initializing provider: %v\n", err)

@@ -147,21 +147,35 @@ func main() {
 		return
 	}
 
-	if cliopts.Flags.Version {
+	if cliopts.Opts.Version {
 		fmt.Printf("cpe version %s\n", version)
 		return
 	}
 
-	if cliopts.Flags.Model != "" && cliopts.Flags.Model != llm.DefaultModel {
-		_, ok := llm.ModelConfigs[cliopts.Flags.Model]
-		if !ok && cliopts.Flags.CustomURL == "" {
-			fmt.Printf("Error: Unknown model '%s' requires -custom-url flag\n", cliopts.Flags.Model)
+	if cliopts.Opts.Model != "" && cliopts.Opts.Model != llm.DefaultModel {
+		_, ok := llm.ModelConfigs[cliopts.Opts.Model]
+		if !ok && cliopts.Opts.CustomURL == "" {
+			fmt.Printf("Error: Unknown model '%s' requires -custom-url flag\n", cliopts.Opts.Model)
 			flag.Usage()
 			os.Exit(1)
 		}
 	}
 
-	provider, genConfig, err := llm.GetProvider(cliopts.Flags.Model, cliopts.Flags)
+	provider, genConfig, err := llm.GetProvider(cliopts.Opts.Model, llm.ModelOptions{
+		Model:             cliopts.Opts.Model,
+		CustomURL:         cliopts.Opts.CustomURL,
+		MaxTokens:         cliopts.Opts.MaxTokens,
+		Temperature:       cliopts.Opts.Temperature,
+		TopP:              cliopts.Opts.TopP,
+		TopK:              cliopts.Opts.TopK,
+		FrequencyPenalty:  cliopts.Opts.FrequencyPenalty,
+		PresencePenalty:   cliopts.Opts.PresencePenalty,
+		NumberOfResponses: cliopts.Opts.NumberOfResponses,
+		Debug:             cliopts.Opts.Debug,
+		Input:             cliopts.Opts.Input,
+		Version:           cliopts.Opts.Version,
+		IncludeFiles:      cliopts.Opts.IncludeFiles,
+	})
 	if err != nil {
 		fmt.Printf("Error initializing provider: %v\n", err)
 		return
@@ -174,7 +188,7 @@ func main() {
 	// Read content from input source
 	readStart := time.Now()
 	var content string
-	if cliopts.Flags.Input == "-" {
+	if cliopts.Opts.Input == "-" {
 		// Read from stdin
 		reader := bufio.NewReader(os.Stdin)
 		contentBytes, readErr := io.ReadAll(reader)
@@ -185,9 +199,9 @@ func main() {
 		content = string(contentBytes)
 	} else {
 		// Read from file
-		contentBytes, readErr := os.ReadFile(cliopts.Flags.Input)
+		contentBytes, readErr := os.ReadFile(cliopts.Opts.Input)
 		if readErr != nil {
-			fmt.Printf("Error reading from file %s: %v\n", cliopts.Flags.Input, readErr)
+			fmt.Printf("Error reading from file %s: %v\n", cliopts.Opts.Input, readErr)
 			os.Exit(1)
 		}
 		content = string(contentBytes)
@@ -231,8 +245,8 @@ func main() {
 
 		// Parse include-files flag
 		var includeFiles []string
-		if cliopts.Flags.IncludeFiles != "" {
-			includeFiles = strings.Split(cliopts.Flags.IncludeFiles, ",")
+		if cliopts.Opts.IncludeFiles != "" {
+			includeFiles = strings.Split(cliopts.Opts.IncludeFiles, ",")
 		}
 
 		// Combine selected and included files
@@ -250,7 +264,7 @@ func main() {
 	}
 
 	// If debug flag is set, print the system message
-	if cliopts.Flags.Debug {
+	if cliopts.Opts.Debug {
 		fmt.Println("Generated System Prompt:")
 		fmt.Println(systemMessage)
 		fmt.Println("--- End of System Prompt ---")

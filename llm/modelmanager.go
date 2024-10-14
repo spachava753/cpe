@@ -3,7 +3,6 @@ package llm
 import (
 	"fmt"
 	"github.com/sashabaranov/go-openai"
-	"github.com/spachava753/cpe/cliopts"
 	"os"
 )
 
@@ -89,7 +88,53 @@ var ModelConfigs = map[string]ModelConfig{
 
 var DefaultModel = "claude-3-5-sonnet"
 
-func GetProvider(modelName string, flags cliopts.Opts) (LLMProvider, GenConfig, error) {
+type ModelOptions struct {
+	Model             string
+	CustomURL         string
+	MaxTokens         int
+	Temperature       float64
+	TopP              float64
+	TopK              int
+	FrequencyPenalty  float64
+	PresencePenalty   float64
+	NumberOfResponses int
+	Debug             bool
+	Input             string
+	Version           bool
+	IncludeFiles      string
+}
+
+func (f ModelOptions) ApplyToGenConfig(config GenConfig) GenConfig {
+	if f.MaxTokens != 0 {
+		config.MaxTokens = f.MaxTokens
+	}
+	if f.Temperature != 0 {
+		config.Temperature = float32(f.Temperature)
+	}
+	if f.TopP != 0 {
+		topP := float32(f.TopP)
+		config.TopP = &topP
+	}
+	if f.TopK != 0 {
+		topK := f.TopK
+		config.TopK = &topK
+	}
+	if f.FrequencyPenalty != 0 {
+		freqPenalty := float32(f.FrequencyPenalty)
+		config.FrequencyPenalty = &freqPenalty
+	}
+	if f.PresencePenalty != 0 {
+		presPenalty := float32(f.PresencePenalty)
+		config.PresencePenalty = &presPenalty
+	}
+	if f.NumberOfResponses != 0 {
+		numResponses := f.NumberOfResponses
+		config.NumberOfResponses = &numResponses
+	}
+	return config
+}
+
+func GetProvider(modelName string, flags ModelOptions) (LLMProvider, GenConfig, error) {
 	if modelName == "" {
 		modelName = DefaultModel
 	}
