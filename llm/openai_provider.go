@@ -128,15 +128,18 @@ func convertToOpenAIMessages(systemPrompt string, messages []Message) []openai.C
 				openAIMessage.Content = content.Text
 			case "tool_use":
 				openAIMessage.ToolCalls = append(openAIMessage.ToolCalls, openai.ToolCall{
-					ID: content.ToolUse.ID,
+					ID:   content.ToolUse.ID,
+					Type: openai.ToolTypeFunction,
 					Function: openai.FunctionCall{
 						Name:      content.ToolUse.Name,
 						Arguments: string(content.ToolUse.Input),
 					},
 				})
 			case "tool_result":
+				openAIMessage.Role = "tool"
 				openAIMessage.ToolCallID = content.ToolResult.ToolUseID
-				openAIMessage.Content = fmt.Sprintf("%v", content.ToolResult.Content)
+				jsonContent, _ := json.Marshal(content.ToolResult.Content)
+				openAIMessage.Content = string(jsonContent)
 			}
 		}
 
