@@ -47,10 +47,6 @@ func NewGeminiProvider(apiKey string, baseURL string) (*GeminiProvider, error) {
 
 // GenerateResponse generates a response using the Gemini API
 func (g *GeminiProvider) GenerateResponse(config GenConfig, conversation Conversation) (Message, TokenUsage, error) {
-	if conversation.Messages[len(conversation.Messages)-1].Content[0].Type != "text" {
-		return Message{}, TokenUsage{}, fmt.Errorf("last message in conversation must be text")
-	}
-
 	g.model = g.client.GenerativeModel(config.Model)
 
 	g.model.SetTemperature(config.Temperature)
@@ -90,7 +86,11 @@ func (g *GeminiProvider) GenerateResponse(config GenConfig, conversation Convers
 		}
 	}
 
-	resp, err = session.SendMessage(ctx, genai.Text(conversation.Messages[len(conversation.Messages)-1].Content[0].Text))
+	msg := convertMessageToGeminiContent(conversation.Messages[len(conversation.Messages)-1])
+	if len(msg.Parts) != 1 {
+		return Message{}, TokenUsage{}, fmt.Errorf("last message in conversation must have exactly one part")
+	}
+	resp, err = session.SendMessage(ctx, msg.Parts[0])
 	var apiErr *apierror.APIError
 	if errors.As(err, &apiErr) {
 		return Message{}, TokenUsage{}, fmt.Errorf("error sending message to Gemini: %w", apiErr.Unwrap())
@@ -113,6 +113,9 @@ func (g *GeminiProvider) GenerateResponse(config GenConfig, conversation Convers
 	for _, part := range resp.Candidates[0].Content.Parts {
 		switch v := part.(type) {
 		case genai.Text:
+			if len(v) == 0 {
+				continue
+			}
 			contentBlocks = append(contentBlocks, ContentBlock{Type: "text", Text: string(v)})
 		case genai.FunctionCall:
 			toolUse := &ToolUse{
@@ -162,11 +165,33 @@ func convertMessageToGeminiContent(message Message) *genai.Content {
 		case "text":
 			parts = append(parts, genai.Text(content.Text))
 		case "tool_use":
-			// For tool use, we don't add anything to parts as it's handled separately
+			functionCall := genai.FunctionCall{
+				Name: content.ToolUse.Name,
+				Args: make(map[string]any),
+			}
+			// Unmarshal the JSON input into the Args map
+			if err := json.Unmarshal(content.ToolUse.Input, &functionCall.Args); err != nil {
+				// Handle error (log it or panic, depending on your error handling strategy)
+				fmt.Printf("Error unmarshaling tool use input: %v\n", err)
+			}
+			parts = append(parts, functionCall)
 		case "tool_result":
+			var response map[string]any
+			switch v := content.ToolResult.Content.(type) {
+			case string:
+				response = map[string]any{"result": v}
+			case map[string]interface{}:
+				response = v
+			default:
+				// Handle unexpected types
+				panic("unexpected type")
+			}
+			if content.ToolResult.IsError {
+				response["error"] = true
+			}
 			parts = append(parts, genai.FunctionResponse{
 				Name:     content.ToolResult.ToolUseID,
-				Response: content.ToolResult.Content.(map[string]interface{}),
+				Response: response,
 			})
 		}
 	}
