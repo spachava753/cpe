@@ -32,6 +32,7 @@ func PerformAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, codeMapO
 
 	maxRetries := 2
 	for attempt := 0; attempt <= maxRetries; attempt++ {
+		fmt.Printf("Attempt %d of %d\n", attempt+1, maxRetries+1)
 		response, tokenUsage, err := provider.GenerateResponse(genConfig, conversation)
 		if err != nil {
 			return nil, fmt.Errorf("error generating code map analysis: %w", err)
@@ -45,49 +46,38 @@ func PerformAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, codeMapO
 			return nil, fmt.Errorf("unexpected number of blocks in response, expected 1, got: %d", len(response.Content))
 		}
 		block := response.Content[0]
-		if block.Type == "tool_use" && block.ToolUse.Name == "select_files_for_analysis" {
-			var result struct {
-				Thinking      string   `json:"thinking"`
-				SelectedFiles []string `json:"selected_files"`
-			}
-			if unmarshallErr := json.Unmarshal(block.ToolUse.Input, &result); unmarshallErr != nil {
-				errorMsg := fmt.Sprintf("Error parsing tool use result: %v", unmarshallErr)
-				fmt.Printf("Error: %s\n", errorMsg)
-				fmt.Printf("Model response:\n%s\n", response)
+		if block.Type != "tool_use" || block.ToolUse.Name != "select_files_for_analysis" {
+			return nil, fmt.Errorf("unexpected response format: expected tool_use with select_files_for_analysis, got %s", response)
+		}
 
-				if attempt < maxRetries {
-					conversation.Messages = append(conversation.Messages, llm.Message{
-						Role: "user",
-						Content: []llm.ContentBlock{{
-							Type: "tool_result",
-							ToolResult: &llm.ToolResult{
-								ToolUseID: block.ToolUse.ID,
-								Content:   errorMsg,
-								IsError:   true,
-							},
-						}},
-					})
-					continue
-				}
-				return nil, fmt.Errorf("error parsing tool use result %s: %w", block.ToolUse.Input, unmarshallErr)
-			}
-			fmt.Printf("Thinking: %s\nSelected files: %v\n", result.Thinking, result.SelectedFiles)
-			llm.PrintTokenUsage(tokenUsage)
-			return result.SelectedFiles, nil
-		} else {
-			errorMsg := fmt.Sprintf("Unexpected tool use or response format")
+		var result struct {
+			Thinking      string   `json:"thinking"`
+			SelectedFiles []string `json:"selected_files"`
+		}
+		if unmarshallErr := json.Unmarshal(block.ToolUse.Input, &result); unmarshallErr != nil {
+			errorMsg := fmt.Sprintf("Error parsing tool use result: %v", unmarshallErr)
 			fmt.Printf("Error: %s\n", errorMsg)
 			fmt.Printf("Model response:\n%s\n", response)
 
 			if attempt < maxRetries {
-				retryMsg := fmt.Sprintf("%s\nPlease use the 'select_files_for_analysis' tool and provide the required input.", errorMsg)
 				conversation.Messages = append(conversation.Messages, llm.Message{
-					Role:    "user",
-					Content: []llm.ContentBlock{{Type: "text", Text: retryMsg}},
+					Role: "user",
+					Content: []llm.ContentBlock{{
+						Type: "tool_result",
+						ToolResult: &llm.ToolResult{
+							ToolUseID: block.ToolUse.ID,
+							Content:   errorMsg,
+							IsError:   true,
+						},
+					}},
 				})
 				continue
 			}
+			return nil, fmt.Errorf("error parsing tool use result %s: %w", block.ToolUse.Input, unmarshallErr)
 		}
+		fmt.Printf("Thinking: %s\nSelected files: %v\n", result.Thinking, result.SelectedFiles)
+		llm.PrintTokenUsage(tokenUsage)
+		return result.SelectedFiles, nil
 	}
 
 	return nil, fmt.Errorf("no files selected for analysis after %d attempts", maxRetries+1)
