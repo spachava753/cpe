@@ -292,24 +292,49 @@ func main() {
 	}
 
 	if requiresCodebase {
-		// Parse modifications
-		var textContent string
-		for _, block := range response.Content {
-			if block.Type == "text" {
-				textContent += block.Text
+		maxRetries := 3
+		for retry := 0; retry < maxRetries; retry++ {
+			conversation.Messages = append(conversation.Messages, response)
+
+			// Parse modifications
+			var textContent string
+			for _, block := range response.Content {
+				if block.Type == "text" {
+					textContent += block.Text
+				}
+			}
+			modifications, err := extract.Modifications(textContent)
+			if err != nil {
+				fmt.Printf("Error parsing modifications: %v\n", err)
+				return
+			}
+
+			// Execute file operations
+			results := fileops.ExecuteFileOperations(modifications)
+
+			// Check for errors and retry if necessary
+			errors := collectErrors(results)
+			if len(errors) == 0 {
+				fmt.Println("All operations completed successfully.")
+				printSummary(results)
+				break
+			} else if retry < maxRetries-1 {
+				fmt.Printf("Errors encountered. Retrying (Attempt %d/%d)...\n", retry+2, maxRetries)
+				retryMessage := buildRetryMessage(errors)
+				conversation.Messages = append(conversation.Messages, llm.Message{
+					Role:    "user",
+					Content: []llm.ContentBlock{{Type: "text", Text: retryMessage}},
+				})
+				response, tokenUsage, err = provider.GenerateResponse(genConfig, conversation)
+				if err != nil {
+					fmt.Printf("Error generating retry response: %v\n", err)
+					return
+				}
+			} else {
+				fmt.Println("Max retries reached. Some operations failed.")
+				printSummary(results)
 			}
 		}
-		modifications, err := extract.Modifications(textContent)
-		if err != nil {
-			fmt.Printf("Error parsing modifications: %v\n", err)
-			return
-		}
-
-		// Execute file operations
-		results := fileops.ExecuteFileOperations(modifications)
-
-		// Print summary of file operations
-		printSummary(results)
 	}
 
 	// Print token usage after the response
@@ -347,4 +372,26 @@ func getOperationDescription(op extract.Modification) string {
 	default:
 		return "Unknown operation"
 	}
+}
+
+func collectErrors(results []fileops.OperationResult) []string {
+	var errors []string
+	for _, result := range results {
+		if result.Error != nil {
+			errors = append(errors, fmt.Sprintf("%s: %s", getOperationDescription(result.Operation), result.Error))
+		}
+	}
+	return errors
+}
+
+func buildRetryMessage(errors []string) string {
+	errorMessage := "The following errors occurred while attempting to modify the codebase:\n\n"
+	for _, err := range errors {
+		errorMessage += "- " + err + "\n"
+	}
+	errorMessage += "\nPlease review these errors and provide updated instructions to resolve them. " +
+		"Ensure that the modifications are valid and can be applied to the existing codebase. " +
+		"Here's a reminder of the original request:\n\n"
+
+	return errorMessage
 }
