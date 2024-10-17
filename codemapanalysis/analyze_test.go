@@ -6,6 +6,7 @@ import (
 	"github.com/spachava753/cpe/llm"
 	"github.com/stretchr/testify/assert"
 	"testing"
+	"testing/fstest"
 )
 
 // CustomMockLLMProvider is a custom mock implementation of the LLMProvider interface
@@ -121,8 +122,18 @@ func TestTokenUsage(t *testing.T)
 </code_map>`
 	userQuery := "What testing packages am I using?"
 
+	// Create a mock file system
+	mockFS := fstest.MapFS{
+		"main.go": &fstest.MapFile{
+			Data: []byte("package main\n\nimport (\n\t\"github.com/stretchr/testify/assert\"\n\t\"testing\"\n)\n\nfunc TestMain(t *testing.T)"),
+		},
+		"llm/types.go": &fstest.MapFile{
+			Data: []byte("package llm\n\nimport \"testing\"\n\nfunc TestTokenUsage(t *testing.T)"),
+		},
+	}
+
 	// Call the function under test
-	selectedFiles, err := PerformAnalysis(mockProvider, genConfig, codeMapOutput, userQuery)
+	selectedFiles, err := PerformAnalysis(mockProvider, genConfig, codeMapOutput, userQuery, mockFS)
 
 	// Assertions
 	assert.NoError(t, err)
@@ -205,8 +216,18 @@ func TestTokenUsage(t *testing.T)
 </code_map>`
 	userQuery := "What testing packages am I using?"
 
+	// Create a mock file system
+	mockFS := fstest.MapFS{
+		"main.go": &fstest.MapFile{
+			Data: []byte("package main\n\nimport (\n\t\"github.com/stretchr/testify/assert\"\n\t\"testing\"\n)\n\nfunc TestMain(t *testing.T)"),
+		},
+		"llm/types.go": &fstest.MapFile{
+			Data: []byte("package llm\n\nimport \"testing\"\n\nfunc TestTokenUsage(t *testing.T)"),
+		},
+	}
+
 	// Call the function under test
-	selectedFiles, err := PerformAnalysis(mockProvider, genConfig, codeMapOutput, userQuery)
+	selectedFiles, err := PerformAnalysis(mockProvider, genConfig, codeMapOutput, userQuery, mockFS)
 
 	// Assertions
 	assert.NoError(t, err)

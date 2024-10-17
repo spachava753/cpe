@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/spachava753/cpe/llm"
-	"os"
+	"io/fs"
 )
 
 //go:embed select_files_for_analysis.json
@@ -15,7 +15,7 @@ var selectFilesForAnalysisToolDef json.RawMessage
 var codeMapAnalysisPrompt string
 
 // PerformAnalysis performs code map analysis and returns selected files
-func PerformAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, codeMapOutput string, userQuery string) ([]string, error) {
+func PerformAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, codeMapOutput string, userQuery string, fsys fs.FS) ([]string, error) {
 	conversation := llm.Conversation{
 		SystemPrompt: codeMapAnalysisPrompt,
 		Messages: []llm.Message{
@@ -78,7 +78,7 @@ func PerformAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, codeMapO
 		}
 
 		// Validate selected files
-		if selectedFilesErr := validateSelectedFiles(result.SelectedFiles); selectedFilesErr != nil {
+		if selectedFilesErr := validateSelectedFiles(result.SelectedFiles, fsys); selectedFilesErr != nil {
 			if attempt < maxAttempts {
 				errorMsg := fmt.Sprintf("Error validating selected files: %v", selectedFilesErr)
 				conversation.Messages = append(conversation.Messages, llm.Message{
@@ -105,10 +105,9 @@ func PerformAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, codeMapO
 	return nil, fmt.Errorf("no valid files selected for analysis after %d attempts", maxAttempts+1)
 }
 
-func validateSelectedFiles(selectedFiles []string) error {
-	var validFiles []string
+func validateSelectedFiles(selectedFiles []string, fsys fs.FS) error {
 	for _, file := range selectedFiles {
-		fileInfo, err := os.Stat(file)
+		fileInfo, err := fs.Stat(fsys, file)
 		if err != nil {
 			return fmt.Errorf("error checking file %s: %w", file, err)
 		}
@@ -116,8 +115,6 @@ func validateSelectedFiles(selectedFiles []string) error {
 		if fileInfo.IsDir() {
 			return fmt.Errorf("%s is a directory, expect a file", file)
 		}
-
-		validFiles = append(validFiles, file)
 	}
 
 	return nil

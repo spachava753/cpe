@@ -236,7 +236,7 @@ func main() {
 
 		// Perform code map analysis and select files
 		analysisStart := time.Now()
-		selectedFiles, err := codemapanalysis.PerformAnalysis(provider, genConfig, codeMapOutput, content)
+		selectedFiles, err := codemapanalysis.PerformAnalysis(provider, genConfig, codeMapOutput, content, os.DirFS("."))
 		logTimeElapsed(analysisStart, "performCodeMapAnalysis")
 		if err != nil {
 			fmt.Printf("Error performing code map analysis: %v\n", err)
