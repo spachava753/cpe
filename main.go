@@ -142,8 +142,8 @@ func main() {
 
 	// Initialize ignore rules
 	ignoreRules := ignore.NewIgnoreRules()
-	if err := ignoreRules.LoadIgnoreFile("."); err != nil {
-		fmt.Printf("Error loading .cpeignore file: %v\n", err)
+	if err := ignoreRules.LoadIgnoreFiles("."); err != nil {
+		fmt.Printf("Error loading .cpeignore files: %v\n", err)
 		return
 	}
 

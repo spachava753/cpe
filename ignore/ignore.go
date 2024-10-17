@@ -19,12 +19,17 @@ func NewIgnoreRules() *IgnoreRules {
 	}
 }
 
-func (ir *IgnoreRules) LoadIgnoreFile(startDir string) error {
-	ignoreFile := findIgnoreFile(startDir)
-	if ignoreFile == "" {
-		return nil // No .cpeignore file found, which is okay
+func (ir *IgnoreRules) LoadIgnoreFiles(startDir string) error {
+	ignoreFiles := findIgnoreFiles(startDir)
+	for _, ignoreFile := range ignoreFiles {
+		if err := ir.loadIgnoreFile(ignoreFile); err != nil {
+			return err
+		}
 	}
+	return nil
+}
 
+func (ir *IgnoreRules) loadIgnoreFile(ignoreFile string) error {
 	file, err := os.Open(ignoreFile)
 	if err != nil {
 		return err
@@ -55,12 +60,13 @@ func (ir *IgnoreRules) ShouldIgnore(path string) bool {
 	return false
 }
 
-func findIgnoreFile(startDir string) string {
+func findIgnoreFiles(startDir string) []string {
+	var ignoreFiles []string
 	dir := startDir
 	for {
 		ignoreFile := filepath.Join(dir, ".cpeignore")
 		if _, err := os.Stat(ignoreFile); err == nil {
-			return ignoreFile
+			ignoreFiles = append(ignoreFiles, ignoreFile)
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -68,5 +74,5 @@ func findIgnoreFile(startDir string) string {
 		}
 		dir = parent
 	}
-	return ""
+	return ignoreFiles
 }

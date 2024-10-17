@@ -4,7 +4,6 @@ import (
 	"github.com/gobwas/glob"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -18,25 +17,59 @@ func TestNewIgnoreRules(t *testing.T) {
 	}
 }
 
-func TestLoadIgnoreFile(t *testing.T) {
-	// Create a temporary directory for testing
+func TestLoadIgnoreFiles(t *testing.T) {
+	// Create a temporary directory structure for testing
 	tempDir := t.TempDir()
-
-	// Create a .cpeignore file
-	ignoreContent := []byte("*.txt\n#comment\n/dir/*\n")
-	err := os.WriteFile(filepath.Join(tempDir, ".cpeignore"), ignoreContent, 0644)
+	subDir := filepath.Join(tempDir, "path", "to", "repo")
+	err := os.MkdirAll(subDir, 0755)
 	if err != nil {
-		t.Fatalf("Failed to create .cpeignore file: %v", err)
+		t.Fatalf("Failed to create subdirectories: %v", err)
+	}
+
+	// Create multiple .cpeignore files
+	ignoreFiles := map[string]string{
+		filepath.Join(tempDir, ".cpeignore"): `*.txt`,
+		filepath.Join(tempDir, "path", ".cpeignore"): `#comment
+/dir/*`,
+		filepath.Join(tempDir, "path", "to", ".cpeignore"): `*.md`,
+		filepath.Join(subDir, ".cpeignore"): `*.go
+#another comment`,
+	}
+
+	for path, content := range ignoreFiles {
+		err := os.WriteFile(path, []byte(content), 0644)
+		if err != nil {
+			t.Fatalf("Failed to create .cpeignore file at %s: %v", path, err)
+		}
 	}
 
 	ir := NewIgnoreRules()
-	err = ir.LoadIgnoreFile(tempDir)
+	err = ir.LoadIgnoreFiles(subDir)
 	if err != nil {
-		t.Fatalf("LoadIgnoreFile failed: %v", err)
+		t.Fatalf("LoadIgnoreFiles failed: %v", err)
 	}
 
-	if len(ir.patterns) != 2 {
-		t.Errorf("Expected 2 patterns, got %d", len(ir.patterns))
+	expectedPatterns := 4 // *.txt, /dir/*, *.md, *.go
+	if len(ir.patterns) != expectedPatterns {
+		t.Errorf("Expected %d patterns, got %d", expectedPatterns, len(ir.patterns))
+	}
+
+	// Test if patterns from all ignore files are loaded
+	testCases := []struct {
+		path     string
+		expected bool
+	}{
+		{"file.txt", true},
+		{"/dir/file.go", true},
+		{"README.md", true},
+		{"main.go", true},
+		{"file.jpg", false},
+	}
+
+	for _, tc := range testCases {
+		if ir.ShouldIgnore(tc.path) != tc.expected {
+			t.Errorf("ShouldIgnore(%q) = %v, want %v", tc.path, !tc.expected, tc.expected)
+		}
 	}
 }
 
@@ -68,68 +101,82 @@ func TestShouldIgnore(t *testing.T) {
 	}
 }
 
-func TestFindIgnoreFile(t *testing.T) {
+func TestFindIgnoreFiles(t *testing.T) {
 	tests := []struct {
-		name           string
-		setupFunc      func(t *testing.T) (string, string)
-		expectedSuffix string
+		name          string
+		setupFunc     func(t *testing.T) (string, []string)
+		expectedCount int
 	}{
 		{
-			name: "ExistingIgnoreFile",
-			setupFunc: func(t *testing.T) (string, string) {
+			name: "MultipleIgnoreFiles",
+			setupFunc: func(t *testing.T) (string, []string) {
 				tempDir := t.TempDir()
-				ignoreFilePath := filepath.Join(tempDir, ".cpeignore")
-				err := os.WriteFile(ignoreFilePath, []byte{}, 0644)
+				subDir := filepath.Join(tempDir, "path", "to", "repo")
+				err := os.MkdirAll(subDir, 0755)
+				if err != nil {
+					t.Fatalf("Failed to create subdirectories: %v", err)
+				}
+
+				ignoreFiles := []string{
+					filepath.Join(tempDir, ".cpeignore"),
+					filepath.Join(tempDir, "path", ".cpeignore"),
+					filepath.Join(tempDir, "path", "to", ".cpeignore"),
+					filepath.Join(subDir, ".cpeignore"),
+				}
+
+				for _, path := range ignoreFiles {
+					err := os.WriteFile(path, []byte{}, 0644)
+					if err != nil {
+						t.Fatalf("Failed to create .cpeignore file at %s: %v", path, err)
+					}
+				}
+
+				return subDir, ignoreFiles
+			},
+			expectedCount: 4,
+		},
+		{
+			name: "NoIgnoreFiles",
+			setupFunc: func(t *testing.T) (string, []string) {
+				tempDir := t.TempDir()
+				return tempDir, []string{}
+			},
+			expectedCount: 0,
+		},
+		{
+			name: "SingleIgnoreFile",
+			setupFunc: func(t *testing.T) (string, []string) {
+				tempDir := t.TempDir()
+				ignoreFile := filepath.Join(tempDir, ".cpeignore")
+				err := os.WriteFile(ignoreFile, []byte{}, 0644)
 				if err != nil {
 					t.Fatalf("Failed to create .cpeignore file: %v", err)
 				}
-				return tempDir, ignoreFilePath
+				return tempDir, []string{ignoreFile}
 			},
-			expectedSuffix: ".cpeignore",
-		},
-		{
-			name: "SubdirectoryWithParentIgnoreFile",
-			setupFunc: func(t *testing.T) (string, string) {
-				tempDir := t.TempDir()
-				subDir := filepath.Join(tempDir, "subdir")
-				err := os.Mkdir(subDir, 0755)
-				if err != nil {
-					t.Fatalf("Failed to create subdirectory: %v", err)
-				}
-				ignoreFilePath := filepath.Join(tempDir, ".cpeignore")
-				err = os.WriteFile(ignoreFilePath, []byte{}, 0644)
-				if err != nil {
-					t.Fatalf("Failed to create .cpeignore file: %v", err)
-				}
-				return subDir, ignoreFilePath
-			},
-			expectedSuffix: ".cpeignore",
-		},
-		{
-			name: "NoIgnoreFile",
-			setupFunc: func(t *testing.T) (string, string) {
-				tempDir := t.TempDir()
-				return tempDir, ""
-			},
-			expectedSuffix: "",
+			expectedCount: 1,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			startDir, expectedPath := tt.setupFunc(t)
-			result := findIgnoreFile(startDir)
+			startDir, expectedFiles := tt.setupFunc(t)
+			result := findIgnoreFiles(startDir)
 
-			if tt.expectedSuffix == "" {
-				if result != "" {
-					t.Errorf("findIgnoreFile(%q) = %q, want empty string", startDir, result)
+			if len(result) != tt.expectedCount {
+				t.Errorf("findIgnoreFiles(%q) returned %d files, want %d", startDir, len(result), tt.expectedCount)
+			}
+
+			for _, expectedFile := range expectedFiles {
+				found := false
+				for _, resultFile := range result {
+					if resultFile == expectedFile {
+						found = true
+						break
+					}
 				}
-			} else {
-				if !strings.HasSuffix(result, tt.expectedSuffix) {
-					t.Errorf("findIgnoreFile(%q) = %q, want path ending with %q", startDir, result, tt.expectedSuffix)
-				}
-				if result != expectedPath {
-					t.Errorf("findIgnoreFile(%q) = %q, want %q", startDir, result, expectedPath)
+				if !found {
+					t.Errorf("findIgnoreFiles(%q) did not return expected file: %s", startDir, expectedFile)
 				}
 			}
 		})
