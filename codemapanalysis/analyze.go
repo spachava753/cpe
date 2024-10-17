@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/spachava753/cpe/llm"
+	"os"
 )
 
 //go:embed select_files_for_analysis.json
@@ -30,9 +31,9 @@ func PerformAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, codeMapO
 	genConfig.ToolChoice = "tool"
 	genConfig.ForcedTool = "select_files_for_analysis"
 
-	maxRetries := 2
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		fmt.Printf("Attempt %d of %d\n", attempt+1, maxRetries+1)
+	maxAttempts := 3
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		fmt.Printf("Attempt %d of %d\n", attempt, maxAttempts)
 		response, tokenUsage, err := provider.GenerateResponse(genConfig, conversation)
 		if err != nil {
 			return nil, fmt.Errorf("error generating code map analysis: %w", err)
@@ -59,7 +60,7 @@ func PerformAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, codeMapO
 			fmt.Printf("Error: %s\n", errorMsg)
 			fmt.Printf("Model response:\n%s\n", response)
 
-			if attempt < maxRetries {
+			if attempt < maxAttempts {
 				conversation.Messages = append(conversation.Messages, llm.Message{
 					Role: "user",
 					Content: []llm.ContentBlock{{
@@ -75,10 +76,49 @@ func PerformAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, codeMapO
 			}
 			return nil, fmt.Errorf("error parsing tool use result %s: %w", block.ToolUse.Input, unmarshallErr)
 		}
+
+		// Validate selected files
+		if selectedFilesErr := validateSelectedFiles(result.SelectedFiles); selectedFilesErr != nil {
+			if attempt < maxAttempts {
+				errorMsg := fmt.Sprintf("Error validating selected files: %v", selectedFilesErr)
+				conversation.Messages = append(conversation.Messages, llm.Message{
+					Role: "user",
+					Content: []llm.ContentBlock{{
+						Type: "tool_result",
+						ToolResult: &llm.ToolResult{
+							ToolUseID: block.ToolUse.ID,
+							Content:   errorMsg,
+							IsError:   true,
+						},
+					}},
+				})
+				continue
+			}
+			return nil, fmt.Errorf("error validating selected files: %w", selectedFilesErr)
+		}
+
 		fmt.Printf("Thinking: %s\nSelected files: %v\n", result.Thinking, result.SelectedFiles)
 		llm.PrintTokenUsage(tokenUsage)
 		return result.SelectedFiles, nil
 	}
 
-	return nil, fmt.Errorf("no files selected for analysis after %d attempts", maxRetries+1)
+	return nil, fmt.Errorf("no valid files selected for analysis after %d attempts", maxAttempts+1)
+}
+
+func validateSelectedFiles(selectedFiles []string) error {
+	var validFiles []string
+	for _, file := range selectedFiles {
+		fileInfo, err := os.Stat(file)
+		if err != nil {
+			return fmt.Errorf("error checking file %s: %w", file, err)
+		}
+
+		if fileInfo.IsDir() {
+			return fmt.Errorf("%s is a directory, expect a file", file)
+		}
+
+		validFiles = append(validFiles, file)
+	}
+
+	return nil
 }
