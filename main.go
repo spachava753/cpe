@@ -4,6 +4,7 @@ import (
 	"bufio"
 	_ "embed"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"github.com/pkoukk/tiktoken-go"
 	"github.com/spachava753/cpe/cliopts"
@@ -26,6 +27,16 @@ func logTimeElapsed(start time.Time, operation string) {
 	fmt.Printf("Time elapsed for %s: %v\n", operation, elapsed)
 }
 
+type CodeMap struct {
+	XMLName xml.Name `xml:"code_map"`
+	Files   []File   `xml:"file"`
+}
+
+type File struct {
+	Path    string `xml:"path,attr"`
+	Content string `xml:",cdata"`
+}
+
 func generateCodeMapOutput(maxLiteralLen int, ignoreRules *ignore.IgnoreRules) (string, error) {
 	fileCodeMaps, err := codemap.GenerateOutput(os.DirFS("."), maxLiteralLen, ignoreRules)
 	if err != nil {
@@ -40,19 +51,25 @@ func generateCodeMapOutput(maxLiteralLen int, ignoreRules *ignore.IgnoreRules) (
 		return "", fmt.Errorf("error initializing tiktoken: %w", err)
 	}
 
-	var sb strings.Builder
-	sb.WriteString("<code_map>\n")
+	codeMap := CodeMap{}
 	for _, fileCodeMap := range fileCodeMaps {
 		tokens := encoding.Encode(fileCodeMap.Content, nil, nil)
 		tokenCount := len(tokens)
 		if tokenCount > 1024 {
 			fmt.Printf("Warning: Large file detected - %s (%d tokens)\n", fileCodeMap.Path, tokenCount)
 		}
-		sb.WriteString(fileCodeMap.Content)
+		codeMap.Files = append(codeMap.Files, File{
+			Path:    fileCodeMap.Path,
+			Content: fileCodeMap.Content,
+		})
 	}
-	sb.WriteString("</code_map>\n")
 
-	return sb.String(), nil
+	output, err := xml.MarshalIndent(codeMap, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("error marshaling XML: %w", err)
+	}
+
+	return string(output), nil
 }
 
 func buildSystemMessageWithSelectedFiles(allFiles []string, ignoreRules *ignore.IgnoreRules) (string, error) {
@@ -72,19 +89,24 @@ func buildSystemMessageWithSelectedFiles(allFiles []string, ignoreRules *ignore.
 		fmt.Printf("  - %s\n", filePath)
 	}
 
+	codeMap := CodeMap{}
 	for _, filePath := range allFiles {
 		content, err := os.ReadFile(filePath)
 		if err != nil {
 			return "", fmt.Errorf("error reading file %s: %w", filePath, err)
 		}
-		systemMessage.WriteString(fmt.Sprintf(`<file>
-<path>%s</path>
-<code>
-%s
-</code>
-</file>
-`, filePath, string(content)))
+		codeMap.Files = append(codeMap.Files, File{
+			Path:    filePath,
+			Content: string(content),
+		})
 	}
+
+	output, err := xml.MarshalIndent(codeMap, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("error marshaling XML: %w", err)
+	}
+
+	systemMessage.Write(output)
 
 	return systemMessage.String(), nil
 }
