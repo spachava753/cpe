@@ -93,7 +93,7 @@ func generateFileOutput(fsys fs.FS, path string, maxLiteralLen int) (string, err
 		return "", fmt.Errorf("error generating output for file %s: %w", path, err)
 	}
 
-	return fmt.Sprintf("<file>\n<path>%s</path>\n<file_map>\n%s\n</file_map>\n</file>\n", path, output), nil
+	return output, nil
 }
 
 func convertQueryError(queryType string, err *sitter.QueryError) error {

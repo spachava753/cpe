@@ -54,10 +54,7 @@ var testFunc = func(a int, b int) int {
 			expected: []FileCodeMap{
 				{
 					Path: "higher_order.go",
-					Content: `<file>
-<path>higher_order.go</path>
-<file_map>
-package higherorder
+					Content: `package higherorder
 
 // GreeterFactory returns a function that greets a person
 func GreeterFactory(greeting string) func(name string) string
@@ -67,10 +64,7 @@ func UseGreeter()
 
 var testFunc = func(a int, b int) int {
 	return 0
-}
-</file_map>
-</file>
-`,
+}`,
 				},
 			},
 		},
@@ -174,10 +168,7 @@ func generateUUID() string {
 			expected: []FileCodeMap{
 				{
 					Path: "globals.go",
-					Content: `<file>
-<path>globals.go</path>
-<file_map>
-package globals
+					Content: `package globals
 
 import "time"
 
@@ -260,10 +251,7 @@ var (
 	uuidVar = generateUUID()
 )
 
-func generateUUID() string
-</file_map>
-</file>
-`,
+func generateUUID() string`,
 				},
 			},
 		},
@@ -292,10 +280,7 @@ var (
 			expected: []FileCodeMap{
 				{
 					Path: "globals.go",
-					Content: `<file>
-<path>globals.go</path>
-<file_map>
-package globals
+					Content: `package globals
 
 var (
 	LongString = "T..."
@@ -309,10 +294,7 @@ var (
 	ShortString = "T"
 
 	RegularVar = 42
-)
-</file_map>
-</file>
-`,
+)`,
 				},
 			},
 		},
@@ -395,10 +377,7 @@ func NewDefaultUserManager() *DefaultUserManager {
 			expected: []FileCodeMap{
 				{
 					Path: "comments.go",
-					Content: `<file>
-<path>comments.go</path>
-<file_map>
-// Package comments demonstrates comprehensive comment usage in Go.
+					Content: `// Package comments demonstrates comprehensive comment usage in Go.
 package comments
 
 import "fmt"
@@ -456,10 +435,7 @@ func (um *DefaultUserManager) CreateUser(name string, role UserRole) (*User, err
 func (um *DefaultUserManager) GetUser(id int) (*User, error)
 
 // NewDefaultUserManager creates a new instance of DefaultUserManager.
-func NewDefaultUserManager() *DefaultUserManager
-</file_map>
-</file>
-`,
+func NewDefaultUserManager() *DefaultUserManager`,
 				},
 			},
 		},
@@ -499,43 +475,25 @@ func TestAdd(t *testing.T) {
 			expected: []FileCodeMap{
 				{
 					Path: "main.go",
-					Content: `<file>
-<path>main.go</path>
-<file_map>
-package main
+					Content: `package main
 
 import "fmt"
 
-func main()
-</file_map>
-</file>
-`,
+func main()`,
 				},
 				{
 					Path: "utils/helper.go",
-					Content: `<file>
-<path>utils/helper.go</path>
-<file_map>
-package utils
+					Content: `package utils
 
-func Add(a, b int) int
-</file_map>
-</file>
-`,
+func Add(a, b int) int`,
 				},
 				{
 					Path: "utils/helper_test.go",
-					Content: `<file>
-<path>utils/helper_test.go</path>
-<file_map>
-package utils
+					Content: `package utils
 
 import "testing"
 
-func TestAdd(t *testing.T)
-</file_map>
-</file>
-`,
+func TestAdd(t *testing.T)`,
 				},
 			},
 		},
@@ -601,10 +559,7 @@ func CreateUser(name string) *User {
 			expected: []FileCodeMap{
 				{
 					Path: "main.go",
-					Content: `<file>
-<path>main.go</path>
-<file_map>
-// Package main is the entry point of the application.
+					Content: `// Package main is the entry point of the application.
 package main
 
 import (
@@ -649,10 +604,7 @@ func (sg *SimpleGreeter) Greet(name string) string
 func main()
 
 // CreateUser creates a new user with the given name.
-func CreateUser(name string) *User
-</file_map>
-</file>
-`,
+func CreateUser(name string) *User`,
 				},
 			},
 		},
@@ -681,10 +633,7 @@ func main() {
 			expected: []FileCodeMap{
 				{
 					Path: "main.go",
-					Content: `<file>
-<path>main.go</path>
-<file_map>
-package main
+					Content: `package main
 
 import (
 	"fmt"
@@ -696,10 +645,7 @@ type User struct {
 	Age  int
 }
 
-func main()
-</file_map>
-</file>
-`,
+func main()`,
 				},
 			},
 		},
@@ -732,34 +678,22 @@ func NewUser(name string) *User {
 			expected: []FileCodeMap{
 				{
 					Path: "main.go",
-					Content: `<file>
-<path>main.go</path>
-<file_map>
-package main
+					Content: `package main
 
 import "fmt"
 
-func main()
-</file_map>
-</file>
-`,
+func main()`,
 				},
 				{
 					Path: "user/user.go",
-					Content: `<file>
-<path>user/user.go</path>
-<file_map>
-package user
+					Content: `package user
 
 type User struct {
 	ID   int
 	Name string
 }
 
-func NewUser(name string) *User
-</file_map>
-</file>
-`,
+func NewUser(name string) *User`,
 				},
 			},
 		},
@@ -802,10 +736,7 @@ func (s *serviceImpl) Create(ctx context.Context, data string) error {
 			expected: []FileCodeMap{
 				{
 					Path: "service.go",
-					Content: `<file>
-<path>service.go</path>
-<file_map>
-package service
+					Content: `package service
 
 import (
 	"context"
@@ -825,10 +756,7 @@ type serviceImpl struct {
 
 func (s *serviceImpl) Get(ctx context.Context, id string) (string, error)
 
-func (s *serviceImpl) Create(ctx context.Context, data string) error
-</file_map>
-</file>
-`,
+func (s *serviceImpl) Create(ctx context.Context, data string) error`,
 				},
 			},
 		},
@@ -863,10 +791,7 @@ func ProcessData(data *sync.Map) ([]byte, error) {
 			expected: []FileCodeMap{
 				{
 					Path: "complex.go",
-					Content: `<file>
-<path>complex.go</path>
-<file_map>
-package complex
+					Content: `package complex
 
 import "sync"
 
@@ -883,10 +808,7 @@ type GenericType[T any] struct {
 	Data T
 }
 
-func ProcessData(data *sync.Map) ([]byte, error)
-</file_map>
-</file>
-`,
+func ProcessData(data *sync.Map) ([]byte, error)`,
 				},
 			},
 		},
@@ -924,10 +846,7 @@ func NewUser(name string) *User {
 			expected: []FileCodeMap{
 				{
 					Path: "comments.go",
-					Content: `<file>
-<path>comments.go</path>
-<file_map>
-// Package comments demonstrates various levels of comments in Go code.
+					Content: `// Package comments demonstrates various levels of comments in Go code.
 package comments
 
 // User represents a user in the system.
@@ -948,10 +867,7 @@ type Admin struct {
 }
 
 // NewUser creates a new User with the given name.
-func NewUser(name string) *User
-</file_map>
-</file>
-`,
+func NewUser(name string) *User`,
 				},
 			},
 		},

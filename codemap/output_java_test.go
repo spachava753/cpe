@@ -58,10 +58,7 @@ public class Constants {
 			expected: []FileCodeMap{
 				{
 					Path: "Constants.java",
-					Content: `<file>
-<path>Constants.java</path>
-<file_map>
-package com.example;
+					Content: `package com.example;
 
 public class Constants {
     // Single constant declaration
@@ -90,10 +87,7 @@ public class Constants {
     public static final int CONST_EXPR2 = 60 * 60 * 24; // Seconds in a day
 
     private Constants()
-}
-</file_map>
-</file>
-`,
+}`,
 				},
 			},
 		},
@@ -128,10 +122,7 @@ public class Main {
 			expected: []FileCodeMap{
 				{
 					Path: "Main.java",
-					Content: `<file>
-<path>Main.java</path>
-<file_map>
-package com.example;
+					Content: `package com.example;
 
 import java.util.List;
 import java.util.ArrayList;
@@ -145,10 +136,7 @@ public class Main {
     public void addItem(String item)
 
     public static void main(String[] args)
-}
-</file_map>
-</file>
-`,
+}`,
 				},
 			},
 		},
@@ -189,10 +177,7 @@ public class Circle implements Shape {
 			expected: []FileCodeMap{
 				{
 					Path: "Circle.java",
-					Content: `<file>
-<path>Circle.java</path>
-<file_map>
-package com.example.shapes;
+					Content: `package com.example.shapes;
 
 public class Circle implements Shape {
     private double radius;
@@ -204,25 +189,16 @@ public class Circle implements Shape {
 
     @Override
     public double getPerimeter()
-}
-</file_map>
-</file>
-`,
+}`,
 				},
 				{
 					Path: "Shape.java",
-					Content: `<file>
-<path>Shape.java</path>
-<file_map>
-package com.example.shapes;
+					Content: `package com.example.shapes;
 
 public interface Shape {
     double getArea();
     double getPerimeter();
-}
-</file_map>
-</file>
-`,
+}`,
 				},
 			},
 		},
@@ -284,10 +260,7 @@ public class User {
 			expected: []FileCodeMap{
 				{
 					Path: "User.java",
-					Content: `<file>
-<path>User.java</path>
-<file_map>
-package com.example.models;
+					Content: `package com.example.models;
 
 import java.util.Date;
 
@@ -315,10 +288,7 @@ public class User {
 
     @Override
     public String toString()
-}
-</file_map>
-</file>
-`,
+}`,
 				},
 			},
 		},
@@ -363,10 +333,7 @@ public class Vehicle {
 			expected: []FileCodeMap{
 				{
 					Path: "Vehicle.java",
-					Content: `<file>
-<path>Vehicle.java</path>
-<file_map>
-package com.example.vehicles;
+					Content: `package com.example.vehicles;
 
 public class Vehicle {
     private String make;
@@ -388,10 +355,7 @@ public class Vehicle {
     }
 
     // Other methods...
-}
-</file_map>
-</file>
-`,
+}`,
 				},
 			},
 		},

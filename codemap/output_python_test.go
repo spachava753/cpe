@@ -38,10 +38,7 @@ if __name__ == "__main__":
 			expected: []FileCodeMap{
 				{
 					Path: "main.py",
-					Content: `<file>
-<path>main.py</path>
-<file_map>
-def greet(name):
+					Content: `def greet(name):
     pass
 
 class Person:
@@ -54,10 +51,7 @@ class Person:
 if __name__ == "__main__":
     person = Person("Alice", 30)
     print(greet(person.name))
-    print(person.introduce())
-</file_map>
-</file>
-`,
+    print(person.introduce())`,
 				},
 			},
 		},
@@ -102,10 +96,7 @@ class User:
 			expected: []FileCodeMap{
 				{
 					Path: "user.py",
-					Content: `<file>
-<path>user.py</path>
-<file_map>
-import datetime
+					Content: `import datetime
 
 class User:
     """
@@ -133,10 +124,7 @@ class User:
         pass
 
     def __repr__(self):
-        pass
-</file_map>
-</file>
-`,
+        pass`,
 				},
 			},
 		},
@@ -189,10 +177,7 @@ if __name__ == "__main__":
 			expected: []FileCodeMap{
 				{
 					Path: "shapes.py",
-					Content: `<file>
-<path>shapes.py</path>
-<file_map>
-import math
+					Content: `import math
 
 class Shape:
     def area(self):
@@ -229,10 +214,7 @@ if __name__ == "__main__":
     rectangle = Rectangle(4, 6)
     print(f"Circle area: {circle.area()}")
     print(f"Rectangle perimeter: {rectangle.perimeter()}")
-    print(f"Total area: {calculate_total_area([circle, rectangle])}")
-</file_map>
-</file>
-`,
+    print(f"Total area: {calculate_total_area([circle, rectangle])}")`,
 				},
 			},
 		},
@@ -261,10 +243,7 @@ if __name__ == "__main__":
 			expected: []FileCodeMap{
 				{
 					Path: "nested.py",
-					Content: `<file>
-<path>nested.py</path>
-<file_map>
-def outer_function(x):
+					Content: `def outer_function(x):
     pass
 
 lambda_func = lambda x: x * 2
@@ -276,10 +255,7 @@ if __name__ == "__main__":
     closure = outer_function(10)
     print(closure(5))
     print(lambda_func(3))
-    print(higher_order_function(lambda x: x ** 2, 4))
-</file_map>
-</file>
-`,
+    print(higher_order_function(lambda x: x ** 2, 4))`,
 				},
 			},
 		},
