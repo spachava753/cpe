@@ -4,7 +4,6 @@ import (
 	"bufio"
 	_ "embed"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"github.com/pkoukk/tiktoken-go"
 	"github.com/spachava753/cpe/cliopts"
@@ -138,207 +137,244 @@ func main() {
 	startTime := time.Now()
 	defer logTimeElapsed(startTime, "entire operation")
 
-	cliopts.ParseFlags()
-
-	// Initialize ignore rules
-	ignoreRules := ignore.NewIgnoreRules()
-	if err := ignoreRules.LoadIgnoreFiles("."); err != nil {
-		fmt.Printf("Error loading .cpeignore files: %v\n", err)
-		return
-	}
-
-	if cliopts.Opts.Version {
-		fmt.Printf("cpe version %s\n", version)
-		return
-	}
-
-	if cliopts.Opts.Model != "" && cliopts.Opts.Model != llm.DefaultModel {
-		_, ok := llm.ModelConfigs[cliopts.Opts.Model]
-		if !ok && cliopts.Opts.CustomURL == "" {
-			fmt.Printf("Error: Unknown model '%s' requires -custom-url flag\n", cliopts.Opts.Model)
-			flag.Usage()
-			os.Exit(1)
-		}
-	}
-
-	provider, genConfig, err := llm.GetProvider(cliopts.Opts.Model, llm.ModelOptions{
-		Model:             cliopts.Opts.Model,
-		CustomURL:         cliopts.Opts.CustomURL,
-		MaxTokens:         cliopts.Opts.MaxTokens,
-		Temperature:       cliopts.Opts.Temperature,
-		TopP:              cliopts.Opts.TopP,
-		TopK:              cliopts.Opts.TopK,
-		FrequencyPenalty:  cliopts.Opts.FrequencyPenalty,
-		PresencePenalty:   cliopts.Opts.PresencePenalty,
-		NumberOfResponses: cliopts.Opts.NumberOfResponses,
-		Debug:             cliopts.Opts.Debug,
-		Input:             cliopts.Opts.Input,
-		Version:           cliopts.Opts.Version,
-		IncludeFiles:      cliopts.Opts.IncludeFiles,
-	})
+	config, err := parseConfig()
 	if err != nil {
-		fmt.Printf("Error initializing provider: %v\n", err)
-		return
+		handleFatalError(err)
+	}
+
+	provider, genConfig, err := initializeLLMProvider(config)
+	if err != nil {
+		handleFatalError(err)
 	}
 
 	if closer, ok := provider.(interface{ Close() error }); ok {
 		defer closer.Close()
 	}
 
-	// Read content from input source
-	readStart := time.Now()
-	var content string
-	if cliopts.Opts.Input == "-" {
-		// Read from stdin
-		reader := bufio.NewReader(os.Stdin)
-		contentBytes, readErr := io.ReadAll(reader)
-		if readErr != nil {
-			fmt.Println("Error reading from stdin:", readErr)
-			os.Exit(1)
-		}
-		content = string(contentBytes)
-	} else {
-		// Read from file
-		contentBytes, readErr := os.ReadFile(cliopts.Opts.Input)
-		if readErr != nil {
-			fmt.Printf("Error reading from file %s: %v\n", cliopts.Opts.Input, readErr)
-			os.Exit(1)
-		}
-		content = string(contentBytes)
+	input, err := readInput(config.Input)
+	if err != nil {
+		handleFatalError(err)
 	}
-	logTimeElapsed(readStart, "reading input")
+
+	requiresCodebase, err := determineCodebaseAccess(provider, genConfig, input)
+	if err != nil {
+		handleFatalError(err)
+	}
+
+	if requiresCodebase {
+		err = handleCodebaseSpecificQuery(provider, genConfig, input, config)
+		if err != nil {
+			handleFatalError(err)
+		}
+	} else {
+		response, tokenUsage, err := generateSimpleResponse(provider, genConfig, input)
+		if err != nil {
+			handleFatalError(err)
+		}
+		printResponse(response)
+		printTokenUsage(tokenUsage)
+	}
+}
+
+func parseConfig() (cliopts.Options, error) {
+	cliopts.ParseFlags()
+
+	if cliopts.Opts.Version {
+		fmt.Printf("cpe version %s\n", version)
+		os.Exit(0)
+	}
+
+	if cliopts.Opts.Model != "" && cliopts.Opts.Model != llm.DefaultModel {
+		_, ok := llm.ModelConfigs[cliopts.Opts.Model]
+		if !ok && cliopts.Opts.CustomURL == "" {
+			return cliopts.Options{}, fmt.Errorf("unknown model '%s' requires -custom-url flag", cliopts.Opts.Model)
+		}
+	}
+
+	return cliopts.Opts, nil
+}
+
+func initializeLLMProvider(config cliopts.Options) (llm.LLMProvider, llm.GenConfig, error) {
+	return llm.GetProvider(config.Model, llm.ModelOptions{
+		Model:             config.Model,
+		CustomURL:         config.CustomURL,
+		MaxTokens:         config.MaxTokens,
+		Temperature:       config.Temperature,
+		TopP:              config.TopP,
+		TopK:              config.TopK,
+		FrequencyPenalty:  config.FrequencyPenalty,
+		PresencePenalty:   config.PresencePenalty,
+		NumberOfResponses: config.NumberOfResponses,
+		Debug:             config.Debug,
+		Input:             config.Input,
+		Version:           config.Version,
+		IncludeFiles:      config.IncludeFiles,
+	})
+}
+
+func readInput(inputPath string) (string, error) {
+	readStart := time.Now()
+	defer logTimeElapsed(readStart, "reading input")
+
+	var content string
+	var err error
+
+	if inputPath == "-" {
+		content, err = readFromStdin()
+	} else {
+		content, err = readFromFile(inputPath)
+	}
+
+	if err != nil {
+		return "", err
+	}
 
 	if len(content) == 0 {
-		fmt.Println("Error: No input provided. Please provide input via stdin or specify an input file.")
-		return
+		return "", fmt.Errorf("no input provided. Please provide input via stdin or specify an input file")
 	}
 
-	// Determine if codebase access is required
-	codebaseAccessStart := time.Now()
-	requiresCodebase, err := determineCodebaseAccess(provider, genConfig, content)
-	logTimeElapsed(codebaseAccessStart, "determineCodebaseAccess")
+	return content, nil
+}
+
+func readFromStdin() (string, error) {
+	reader := bufio.NewReader(os.Stdin)
+	contentBytes, err := io.ReadAll(reader)
 	if err != nil {
-		fmt.Printf("Error determining codebase access: %v\n", err)
-		return
+		return "", fmt.Errorf("error reading from stdin: %w", err)
+	}
+	return string(contentBytes), nil
+}
+
+func readFromFile(filePath string) (string, error) {
+	contentBytes, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("error reading from file %s: %w", filePath, err)
+	}
+	return string(contentBytes), nil
+}
+
+func handleCodebaseSpecificQuery(provider llm.LLMProvider, genConfig llm.GenConfig, input string, config cliopts.Options) error {
+	ignoreRules := ignore.NewIgnoreRules()
+	if err := ignoreRules.LoadIgnoreFiles("."); err != nil {
+		return fmt.Errorf("error loading .cpeignore files: %w", err)
 	}
 
-	var systemMessage string
-	if requiresCodebase {
-		// Generate low-fidelity code map output
-		codeMapStart := time.Now()
-		maxLiteralLen := 100 // You can adjust this value or make it configurable
-		codeMapOutput, err := generateCodeMapOutput(maxLiteralLen, ignoreRules)
-		logTimeElapsed(codeMapStart, "generateCodeMapOutput")
-		if err != nil {
-			fmt.Printf("Error generating code map output: %v\n", err)
-			return
-		}
-
-		// Perform code map analysis and select files
-		analysisStart := time.Now()
-		selectedFiles, err := codemapanalysis.PerformAnalysis(provider, genConfig, codeMapOutput, content, os.DirFS("."))
-		logTimeElapsed(analysisStart, "performCodeMapAnalysis")
-		if err != nil {
-			fmt.Printf("Error performing code map analysis: %v\n", err)
-			return
-		}
-
-		// Parse include-files flag
-		var includeFiles []string
-		if cliopts.Opts.IncludeFiles != "" {
-			includeFiles = strings.Split(cliopts.Opts.IncludeFiles, ",")
-		}
-
-		// Combine selected and included files
-		allFiles := append(selectedFiles, includeFiles...)
-		// Build system message with all files
-		buildMessageStart := time.Now()
-		systemMessage, err = buildSystemMessageWithSelectedFiles(allFiles, ignoreRules)
-		logTimeElapsed(buildMessageStart, "buildSystemMessageWithSelectedFiles")
-		if err != nil {
-			fmt.Println("Error building system message:", err)
-			return
-		}
-	} else {
-		systemMessage = "You are an expert Golang developer with extensive knowledge of software engineering principles, design patterns, and best practices. Your role is to assist users with various aspects of Go programming."
+	codeMapOutput, err := generateCodeMapOutput(100, ignoreRules)
+	if err != nil {
+		return fmt.Errorf("error generating code map output: %w", err)
 	}
 
-	// If debug flag is set, print the system message
-	if cliopts.Opts.Debug {
+	selectedFiles, err := codemapanalysis.PerformAnalysis(provider, genConfig, codeMapOutput, input, os.DirFS("."))
+	if err != nil {
+		return fmt.Errorf("error performing code map analysis: %w", err)
+	}
+
+	if config.IncludeFiles != "" {
+		selectedFiles = append(selectedFiles, strings.Split(config.IncludeFiles, ",")...)
+	}
+	systemMessage, err := buildSystemMessageWithSelectedFiles(selectedFiles, ignoreRules)
+	if err != nil {
+		return fmt.Errorf("error building system message: %w", err)
+	}
+
+	if config.Debug {
 		fmt.Println("Generated System Prompt:")
 		fmt.Println(systemMessage)
 		fmt.Println("--- End of System Prompt ---")
 	}
 
-	// Set up the conversation
 	conversation := llm.Conversation{
 		SystemPrompt: systemMessage,
-		Messages:     []llm.Message{{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: content}}}},
+		Messages:     []llm.Message{{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: input}}}},
 	}
 
-	// Generate response
-	responseStart := time.Now()
 	response, tokenUsage, err := provider.GenerateResponse(genConfig, conversation)
-	logTimeElapsed(responseStart, "GenerateResponse")
 	if err != nil {
-		fmt.Println("Error generating response:", err)
-		return
+		return fmt.Errorf("error generating response: %w", err)
 	}
 
+	printResponse(response)
+
+	err = handleFileModifications(provider, genConfig, conversation, response)
+	if err != nil {
+		return fmt.Errorf("error handling file modifications: %w", err)
+	}
+
+	printTokenUsage(tokenUsage)
+	return nil
+}
+
+func handleFileModifications(provider llm.LLMProvider, genConfig llm.GenConfig, conversation llm.Conversation, initialResponse llm.Message) error {
+	maxRetries := 3
+	for retry := 0; retry < maxRetries; retry++ {
+		conversation.Messages = append(conversation.Messages, initialResponse)
+
+		modifications, err := extractModifications(initialResponse)
+		if err != nil {
+			return fmt.Errorf("error parsing modifications: %w", err)
+		}
+
+		results := fileops.ExecuteFileOperations(modifications)
+		errors := collectErrors(results)
+
+		if len(errors) == 0 {
+			fmt.Println("All operations completed successfully.")
+			printSummary(results)
+			return nil
+		}
+
+		if retry < maxRetries-1 {
+			fmt.Printf("Errors encountered. Retrying (Attempt %d/%d)...\n", retry+2, maxRetries)
+			retryMessage := buildRetryMessage(errors)
+			conversation.Messages = append(conversation.Messages, llm.Message{
+				Role:    "user",
+				Content: []llm.ContentBlock{{Type: "text", Text: retryMessage}},
+			})
+			initialResponse, _, err = provider.GenerateResponse(genConfig, conversation)
+			if err != nil {
+				return fmt.Errorf("error generating retry response: %w", err)
+			}
+		} else {
+			fmt.Println("Max retries reached. Some operations failed.")
+			printSummary(results)
+			return fmt.Errorf("failed to complete all file modifications")
+		}
+	}
+
+	return nil
+}
+
+func extractModifications(response llm.Message) ([]extract.Modification, error) {
+	var textContent string
+	for _, block := range response.Content {
+		if block.Type == "text" {
+			textContent += block.Text
+		}
+	}
+	return extract.Modifications(textContent)
+}
+
+func generateSimpleResponse(provider llm.LLMProvider, genConfig llm.GenConfig, input string) (llm.Message, llm.TokenUsage, error) {
+	systemMessage := "You are an expert Golang developer with extensive knowledge of software engineering principles, design patterns, and best practices. Your role is to assist users with various aspects of Go programming."
+	conversation := llm.Conversation{
+		SystemPrompt: systemMessage,
+		Messages:     []llm.Message{{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: input}}}},
+	}
+
+	return provider.GenerateResponse(genConfig, conversation)
+}
+
+func printResponse(response llm.Message) {
 	for _, block := range response.Content {
 		if block.Type == "text" {
 			fmt.Print(block.Text)
 		}
 	}
+}
 
-	if requiresCodebase {
-		maxRetries := 3
-		for retry := 0; retry < maxRetries; retry++ {
-			conversation.Messages = append(conversation.Messages, response)
-
-			// Parse modifications
-			var textContent string
-			for _, block := range response.Content {
-				if block.Type == "text" {
-					textContent += block.Text
-				}
-			}
-			modifications, err := extract.Modifications(textContent)
-			if err != nil {
-				fmt.Printf("Error parsing modifications: %v\n", err)
-				return
-			}
-
-			// Execute file operations
-			results := fileops.ExecuteFileOperations(modifications)
-
-			// Check for errors and retry if necessary
-			errors := collectErrors(results)
-			if len(errors) == 0 {
-				fmt.Println("All operations completed successfully.")
-				printSummary(results)
-				break
-			} else if retry < maxRetries-1 {
-				fmt.Printf("Errors encountered. Retrying (Attempt %d/%d)...\n", retry+2, maxRetries)
-				retryMessage := buildRetryMessage(errors)
-				conversation.Messages = append(conversation.Messages, llm.Message{
-					Role:    "user",
-					Content: []llm.ContentBlock{{Type: "text", Text: retryMessage}},
-				})
-				response, tokenUsage, err = provider.GenerateResponse(genConfig, conversation)
-				if err != nil {
-					fmt.Printf("Error generating retry response: %v\n", err)
-					return
-				}
-			} else {
-				fmt.Println("Max retries reached. Some operations failed.")
-				printSummary(results)
-			}
-		}
-	}
-
-	// Print token usage after the response
-	printTokenUsage(tokenUsage)
+func handleFatalError(err error) {
+	fmt.Printf("Fatal error: %v\n", err)
+	os.Exit(1)
 }
 
 func printSummary(results []fileops.OperationResult) {
