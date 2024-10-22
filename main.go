@@ -153,7 +153,7 @@ func printTokenUsage(usage llm.TokenUsage) {
 	llm.PrintTokenUsage(usage)
 }
 
-const version = "0.11.8"
+const version = "0.12.0"
 
 func main() {
 	startTime := time.Now()
