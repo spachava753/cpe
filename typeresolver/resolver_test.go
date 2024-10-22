@@ -1,6 +1,7 @@
 package typeresolver
 
 import (
+	"github.com/spachava753/cpe/ignore"
 	"github.com/stretchr/testify/assert"
 	"io/fs"
 	"testing"
@@ -30,7 +31,7 @@ import "myproject/pkg"
 func useMyStruct(s pkg.MyStruct) {}
 `,
 		})
-		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys)
+		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys, ignore.NewIgnoreRules())
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{"pkg/types.go": true, "main.go": true}, result)
 	})
@@ -54,7 +55,7 @@ package main
 func useInterface(i MyInterface) {}
 `,
 		})
-		result, err := ResolveTypeAndFunctionFiles([]string{"usage.go"}, fsys)
+		result, err := ResolveTypeAndFunctionFiles([]string{"usage.go"}, fsys, ignore.NewIgnoreRules())
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{"interfaces.go": true, "usage.go": true}, result)
 	})
@@ -82,7 +83,7 @@ import (
 func useTypes(t1 pkg1.Type1, t2 pkg2.Type2) {}
 `,
 		})
-		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys)
+		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys, ignore.NewIgnoreRules())
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{"pkg1/types.go": true, "pkg2/types.go": true, "main.go": true}, result)
 	})
@@ -105,7 +106,7 @@ type ExtendedInterface interface {
 }
 `,
 		})
-		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys)
+		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys, ignore.NewIgnoreRules())
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{"pkg/interfaces.go": true, "main.go": true}, result)
 	})
@@ -124,7 +125,7 @@ type AliasType = pkgalias.OriginalType
 func useAliasType(a AliasType) {}
 `,
 		})
-		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys)
+		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys, ignore.NewIgnoreRules())
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{"pkg/types.go": true, "main.go": true}, result)
 	})
@@ -132,7 +133,7 @@ func useAliasType(a AliasType) {}
 	// Test case 6: Empty input
 	t.Run("EmptyInput", func(t *testing.T) {
 		fsys := createTestFS(map[string]string{})
-		result, err := ResolveTypeAndFunctionFiles([]string{}, fsys)
+		result, err := ResolveTypeAndFunctionFiles([]string{}, fsys, ignore.NewIgnoreRules())
 		assert.NoError(t, err)
 		assert.Empty(t, result)
 	})
@@ -140,7 +141,7 @@ func useAliasType(a AliasType) {}
 	// Test case 7: Non-existent file
 	t.Run("NonExistentFile", func(t *testing.T) {
 		fsys := createTestFS(map[string]string{})
-		_, err := ResolveTypeAndFunctionFiles([]string{"non_existent.go"}, fsys)
+		_, err := ResolveTypeAndFunctionFiles([]string{"non_existent.go"}, fsys, ignore.NewIgnoreRules())
 		assert.Error(t, err)
 	})
 
@@ -162,7 +163,7 @@ type GenericType[T pkg.Number] struct {
 func useGenericType[T pkg.Number](g GenericType[T]) {}
 `,
 		})
-		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys)
+		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys, ignore.NewIgnoreRules())
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{"pkg/constraints.go": true, "main.go": true}, result)
 	})
@@ -183,7 +184,7 @@ package main
 func doSomething() {}
 `,
 		})
-		result, err := ResolveTypeAndFunctionFiles([]string{"usage.go", "other.go"}, fsys)
+		result, err := ResolveTypeAndFunctionFiles([]string{"usage.go", "other.go"}, fsys, ignore.NewIgnoreRules())
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{"types.go": true, "usage.go": true, "other.go": true}, result)
 	})
@@ -216,7 +217,7 @@ func processUsers(u1 pkg1.User, u2 pkg2.User) {
 }
 `,
 		})
-		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys)
+		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys, ignore.NewIgnoreRules())
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{
 			"main.go":       true,
@@ -239,7 +240,7 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 }
 `,
 		})
-		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys)
+		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys, ignore.NewIgnoreRules())
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{"main.go": true}, result)
 	})
@@ -260,7 +261,7 @@ func main() {
 }
 `,
 		})
-		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys)
+		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys, ignore.NewIgnoreRules())
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{"utils.go": true, "main.go": true}, result)
 	})
@@ -283,7 +284,7 @@ func main() {
 }
 `,
 		})
-		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys)
+		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys, ignore.NewIgnoreRules())
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{"pkg/utils.go": true, "main.go": true}, result)
 	})
@@ -321,7 +322,7 @@ func main() {
 }
 `,
 		})
-		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys)
+		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys, ignore.NewIgnoreRules())
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{
 			"math/operations.go": true,
@@ -359,7 +360,7 @@ func main() {
 }
 `,
 		})
-		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys)
+		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys, ignore.NewIgnoreRules())
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{
 			"types/custom.go":       true,
@@ -398,7 +399,7 @@ func UnusedFunction() {
 }
 `,
 		})
-		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys)
+		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys, ignore.NewIgnoreRules())
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{
 			"math/operations.go": true,
@@ -440,7 +441,7 @@ type UnusedType struct {
 }
 `,
 		})
-		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys)
+		result, err := ResolveTypeAndFunctionFiles([]string{"main.go"}, fsys, ignore.NewIgnoreRules())
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{
 			"models/user.go": true,
