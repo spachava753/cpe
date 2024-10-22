@@ -56,8 +56,12 @@ var ModelConfigs = map[string]ModelConfig{
 		Name: "claude-3-opus-20240229", ProviderType: "anthropic", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.3},
 	},
+	"claude-3-5-sonnet-20241022": {
+		Name: "claude-3-5-sonnet-20241022", ProviderType: "anthropic", IsKnown: true,
+		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.3},
+	},
 	"claude-3-5-sonnet": {
-		Name: "claude-3-5-sonnet-20240620", ProviderType: "anthropic", IsKnown: true,
+		Name: "claude-3-5-sonnet-20241022", ProviderType: "anthropic", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
 	"claude-3-5-haiku": {
