@@ -178,9 +178,16 @@ func main() {
 		handleFatalError(err)
 	}
 
-	requiresCodebase, err := determineCodebaseAccess(provider, genConfig, input)
-	if err != nil {
-		handleFatalError(err)
+	var requiresCodebase bool
+	if config.IncludeFiles != "" {
+		// Skip codebase access check if include-files is provided
+		requiresCodebase = true
+	} else {
+		var err error
+		requiresCodebase, err = determineCodebaseAccess(provider, genConfig, input)
+		if err != nil {
+			handleFatalError(err)
+		}
 	}
 
 	if requiresCodebase {
