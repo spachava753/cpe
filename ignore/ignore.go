@@ -62,7 +62,10 @@ func (ir *IgnoreRules) ShouldIgnore(path string) bool {
 
 func findIgnoreFiles(startDir string) []string {
 	var ignoreFiles []string
-	dir := startDir
+	dir, err := filepath.Abs(startDir)
+	if err != nil {
+		panic("Could not find absolute start dir: " + startDir)
+	}
 	for {
 		ignoreFile := filepath.Join(dir, ".cpeignore")
 		if _, err := os.Stat(ignoreFile); err == nil {
