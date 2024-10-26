@@ -18,11 +18,13 @@ type Options struct {
 	Input             string
 	Version           bool
 	IncludeFiles      string
+	TokenCountPath    string
 }
 
 var Opts Options
 
 func init() {
+	flag.StringVar(&Opts.TokenCountPath, "token-count", "", "Print a tree of directories and files with their token counts for the given path")
 	flag.BoolVar(&Opts.Version, "version", false, "Print the version number and exit")
 	flag.StringVar(&Opts.Model, "model", "", "Specify the model to use. Supported models: claude-3-opus, claude-3-5-sonnet, claude-3-5-haiku, gemini-1.5-flash, gemini-1.5-pro, gpt-4o, gpt-4o-mini")
 	flag.StringVar(&Opts.CustomURL, "custom-url", "", "Specify a custom base URL for the model provider API")

@@ -15,6 +15,7 @@ import (
 	"github.com/spachava753/cpe/ignore"
 	"github.com/spachava753/cpe/llm"
 	"github.com/spachava753/cpe/tiktokenloader"
+	"github.com/spachava753/cpe/tokentree"
 	"github.com/spachava753/cpe/typeresolver"
 	"io"
 	"os"
@@ -162,6 +163,13 @@ func main() {
 	config, err := parseConfig()
 	if err != nil {
 		handleFatalError(err)
+	}
+
+	if config.TokenCountPath != "" {
+		if err := tokentree.PrintTokenTree(config.TokenCountPath); err != nil {
+			handleFatalError(err)
+		}
+		return
 	}
 
 	provider, genConfig, err := initializeLLMProvider(config)
@@ -399,6 +407,7 @@ func printResponse(response llm.Message) {
 			fmt.Print(block.Text)
 		}
 	}
+	fmt.Println()
 }
 
 func handleFatalError(err error) {
