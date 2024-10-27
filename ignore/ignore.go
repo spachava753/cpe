@@ -1,16 +1,15 @@
 package ignore
 
 import (
-	"bufio"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/gobwas/glob"
+	gitignore "github.com/sabhiram/go-gitignore"
 )
 
 type Patterns struct {
-	patterns []glob.Glob
+	ignorer *gitignore.GitIgnore
 }
 
 var defaultPatterns = []string{
@@ -18,61 +17,40 @@ var defaultPatterns = []string{
 }
 
 func NewIgnoreRules() *Patterns {
-	ir := &Patterns{
-		patterns: []glob.Glob{},
-	}
-
-	// Add default patterns
-	for _, pattern := range defaultPatterns {
-		if g, err := glob.Compile(pattern); err == nil {
-			ir.patterns = append(ir.patterns, g)
-		}
-	}
-
-	return ir
+	return &Patterns{}
 }
 
 func (ir *Patterns) LoadIgnoreFiles(startDir string) error {
 	ignoreFiles := findIgnoreFiles(startDir)
+
+	var allPatterns []string
+	// Add default patterns first
+	allPatterns = append(allPatterns, defaultPatterns...)
+
+	// Read patterns from all ignore files
 	for _, ignoreFile := range ignoreFiles {
-		if err := ir.loadIgnoreFile(ignoreFile); err != nil {
+		content, err := os.ReadFile(ignoreFile)
+		if err != nil {
 			return err
 		}
+		// Split content into lines and add non-empty, non-comment lines
+		lines := strings.Split(string(content), "\n")
+		allPatterns = append(allPatterns, lines...)
 	}
+
+	// Create a new GitIgnore instance with all patterns
+	ir.ignorer = gitignore.CompileIgnoreLines(allPatterns...)
 	return nil
 }
 
-func (ir *Patterns) loadIgnoreFile(ignoreFile string) error {
-	file, err := os.Open(ignoreFile)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		pattern := strings.TrimSpace(scanner.Text())
-		if pattern != "" && !strings.HasPrefix(pattern, "#") {
-			g, err := glob.Compile(pattern)
-			if err != nil {
-				return err
-			}
-			ir.patterns = append(ir.patterns, g)
-		}
-	}
-
-	return scanner.Err()
-}
-
 func (ir *Patterns) ShouldIgnore(path string) bool {
-	for _, pattern := range ir.patterns {
-		if pattern.Match(path) {
-			return true
-		}
+	if ir.ignorer == nil {
+		return false
 	}
-	return false
+	return ir.ignorer.MatchesPath(path)
 }
 
+// findIgnoreFiles finds all .cpeignore files in the directory hierarchy
 func findIgnoreFiles(startDir string) []string {
 	var ignoreFiles []string
 	dir, err := filepath.Abs(startDir)

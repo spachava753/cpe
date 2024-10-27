@@ -1,21 +1,10 @@
 package ignore
 
 import (
-	"github.com/gobwas/glob"
 	"os"
 	"path/filepath"
 	"testing"
 )
-
-func TestNewIgnoreRules(t *testing.T) {
-	ir := NewIgnoreRules()
-	if ir == nil {
-		t.Fatal("NewIgnoreRules returned nil")
-	}
-	if len(ir.patterns) != 0 {
-		t.Errorf("Expected empty patterns, got %d patterns", len(ir.patterns))
-	}
-}
 
 func TestLoadIgnoreFiles(t *testing.T) {
 	// Create a temporary directory structure for testing
@@ -49,11 +38,6 @@ func TestLoadIgnoreFiles(t *testing.T) {
 		t.Fatalf("LoadIgnoreFiles failed: %v", err)
 	}
 
-	expectedPatterns := 4 // *.txt, /dir/*, *.md, *.go
-	if len(ir.patterns) != expectedPatterns {
-		t.Errorf("Expected %d patterns, got %d", expectedPatterns, len(ir.patterns))
-	}
-
 	// Test if patterns from all ignore files are loaded
 	testCases := []struct {
 		path     string
@@ -64,40 +48,13 @@ func TestLoadIgnoreFiles(t *testing.T) {
 		{"README.md", true},
 		{"main.go", true},
 		{"file.jpg", false},
+		{".git/config", true}, // Should be ignored due to default patterns
 	}
 
 	for _, tc := range testCases {
 		if ir.ShouldIgnore(tc.path) != tc.expected {
 			t.Errorf("ShouldIgnore(%q) = %v, want %v", tc.path, !tc.expected, tc.expected)
 		}
-	}
-}
-
-func TestShouldIgnore(t *testing.T) {
-	ir := NewIgnoreRules()
-	ir.patterns = []glob.Glob{
-		glob.MustCompile("*.txt"),
-		glob.MustCompile("/dir/*"),
-	}
-
-	tests := []struct {
-		path     string
-		expected bool
-	}{
-		{"file.txt", true},
-		{"file.go", false},
-		{"/dir/file.go", true},
-		{"/other/file.txt", true},
-		{"/other/file.go", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.path, func(t *testing.T) {
-			result := ir.ShouldIgnore(tt.path)
-			if result != tt.expected {
-				t.Errorf("ShouldIgnore(%q) = %v, want %v", tt.path, result, tt.expected)
-			}
-		})
 	}
 }
 

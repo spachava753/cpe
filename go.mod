@@ -5,10 +5,10 @@ go 1.23
 toolchain go1.23.2
 
 require (
-	github.com/gobwas/glob v0.2.3
 	github.com/google/generative-ai-go v0.18.0
 	github.com/googleapis/gax-go/v2 v2.13.0
 	github.com/pkoukk/tiktoken-go v0.1.7
+	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
 	github.com/sashabaranov/go-openai v1.32.0
 	github.com/stretchr/testify v1.9.0
 	github.com/tree-sitter/go-tree-sitter v0.23.1
