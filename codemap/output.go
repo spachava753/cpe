@@ -32,7 +32,7 @@ type FileCodeMap struct {
 }
 
 // GenerateOutput creates the code map output for each file using AST
-func GenerateOutput(fsys fs.FS, maxLiteralLen int, ignoreRules *ignore.IgnoreRules) ([]FileCodeMap, error) {
+func GenerateOutput(fsys fs.FS, maxLiteralLen int, ignoreRules *ignore.Patterns) ([]FileCodeMap, error) {
 	var filePaths []string
 	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

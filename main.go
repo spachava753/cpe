@@ -38,7 +38,7 @@ type File struct {
 	Content string `xml:",cdata"`
 }
 
-func generateCodeMapOutput(maxLiteralLen int, ignoreRules *ignore.IgnoreRules) (string, error) {
+func generateCodeMapOutput(maxLiteralLen int, ignoreRules *ignore.Patterns) (string, error) {
 	fileCodeMaps, err := codemap.GenerateOutput(os.DirFS("."), maxLiteralLen, ignoreRules)
 	if err != nil {
 		return "", fmt.Errorf("error generating code map output: %w", err)
@@ -73,7 +73,7 @@ func generateCodeMapOutput(maxLiteralLen int, ignoreRules *ignore.IgnoreRules) (
 	return string(output), nil
 }
 
-func buildSystemMessageWithSelectedFiles(allFiles []string, ignoreRules *ignore.IgnoreRules) (string, error) {
+func buildSystemMessageWithSelectedFiles(allFiles []string, ignoreRules *ignore.Patterns) (string, error) {
 	var systemMessage strings.Builder
 	systemMessage.WriteString(CodeAnalysisModificationPrompt)
 

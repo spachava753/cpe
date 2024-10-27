@@ -11,7 +11,7 @@ import (
 )
 
 // ResolveTypeAndFunctionFiles resolves all type and function definitions used in the given files
-func ResolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS, ignoreRules *ignore.IgnoreRules) (map[string]bool, error) {
+func ResolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS, ignoreRules *ignore.Patterns) (map[string]bool, error) {
 	typeDefinitions := make(map[string]map[string]string)     // package.type -> file
 	functionDefinitions := make(map[string]map[string]string) // package.function -> file
 	usages := make(map[string]bool)

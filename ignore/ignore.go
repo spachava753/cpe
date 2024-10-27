@@ -9,17 +9,30 @@ import (
 	"github.com/gobwas/glob"
 )
 
-type IgnoreRules struct {
+type Patterns struct {
 	patterns []glob.Glob
 }
 
-func NewIgnoreRules() *IgnoreRules {
-	return &IgnoreRules{
-		patterns: []glob.Glob{},
-	}
+var defaultPatterns = []string{
+	".git/**",
 }
 
-func (ir *IgnoreRules) LoadIgnoreFiles(startDir string) error {
+func NewIgnoreRules() *Patterns {
+	ir := &Patterns{
+		patterns: []glob.Glob{},
+	}
+
+	// Add default patterns
+	for _, pattern := range defaultPatterns {
+		if g, err := glob.Compile(pattern); err == nil {
+			ir.patterns = append(ir.patterns, g)
+		}
+	}
+
+	return ir
+}
+
+func (ir *Patterns) LoadIgnoreFiles(startDir string) error {
 	ignoreFiles := findIgnoreFiles(startDir)
 	for _, ignoreFile := range ignoreFiles {
 		if err := ir.loadIgnoreFile(ignoreFile); err != nil {
@@ -29,7 +42,7 @@ func (ir *IgnoreRules) LoadIgnoreFiles(startDir string) error {
 	return nil
 }
 
-func (ir *IgnoreRules) loadIgnoreFile(ignoreFile string) error {
+func (ir *Patterns) loadIgnoreFile(ignoreFile string) error {
 	file, err := os.Open(ignoreFile)
 	if err != nil {
 		return err
@@ -51,7 +64,7 @@ func (ir *IgnoreRules) loadIgnoreFile(ignoreFile string) error {
 	return scanner.Err()
 }
 
-func (ir *IgnoreRules) ShouldIgnore(path string) bool {
+func (ir *Patterns) ShouldIgnore(path string) bool {
 	for _, pattern := range ir.patterns {
 		if pattern.Match(path) {
 			return true
