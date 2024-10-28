@@ -19,6 +19,7 @@ import (
 	"github.com/spachava753/cpe/typeresolver"
 	"io"
 	"os"
+	"runtime/debug"
 	"strings"
 	"time"
 )
@@ -154,7 +155,13 @@ func printTokenUsage(usage llm.TokenUsage) {
 	llm.PrintTokenUsage(usage)
 }
 
-const version = "0.13.0"
+// getVersion returns the version of the application from build info
+func getVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		return info.Main.Version
+	}
+	return "(unknown version)"
+}
 
 func main() {
 	startTime := time.Now()
@@ -217,7 +224,7 @@ func parseConfig() (cliopts.Options, error) {
 	cliopts.ParseFlags()
 
 	if cliopts.Opts.Version {
-		fmt.Printf("cpe version %s\n", version)
+		fmt.Printf("cpe version %s\n", getVersion())
 		os.Exit(0)
 	}
 
