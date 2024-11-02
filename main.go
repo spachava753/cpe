@@ -142,17 +142,12 @@ func determineCodebaseAccess(provider llm.LLMProvider, genConfig llm.GenConfig, 
 				return false, fmt.Errorf("error parsing tool use result: %w", err)
 			}
 			fmt.Printf("Thinking: %s\nCodebase access decision: %v\n", result.Thinking, result.RequiresCodebase)
-			printTokenUsage(tokenUsage)
+			llm.PrintTokenUsage(tokenUsage)
 			return result.RequiresCodebase, nil
 		}
 	}
 
 	return false, fmt.Errorf("no decision made on codebase access")
-}
-
-// printTokenUsage is now just a wrapper around llm.PrintTokenUsage
-func printTokenUsage(usage llm.TokenUsage) {
-	llm.PrintTokenUsage(usage)
 }
 
 // getVersion returns the version of the application from build info
@@ -216,7 +211,7 @@ func main() {
 			handleFatalError(err)
 		}
 		printResponse(response)
-		printTokenUsage(tokenUsage)
+		llm.PrintTokenUsage(tokenUsage)
 	}
 }
 
@@ -344,7 +339,7 @@ func handleCodebaseSpecificQuery(provider llm.LLMProvider, genConfig llm.GenConf
 		return fmt.Errorf("error handling file modifications: %w", err)
 	}
 
-	printTokenUsage(tokenUsage)
+	llm.PrintTokenUsage(tokenUsage)
 	return nil
 }
 
