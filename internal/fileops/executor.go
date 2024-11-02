@@ -2,7 +2,7 @@ package fileops
 
 import (
 	"fmt"
-	"github.com/spachava753/cpe/extract"
+	"github.com/spachava753/cpe/internal/extract"
 	"os"
 	"path/filepath"
 	"strings"

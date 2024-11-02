@@ -1,7 +1,7 @@
 package fileops
 
 import (
-	"github.com/spachava753/cpe/extract"
+	"github.com/spachava753/cpe/internal/extract"
 	"os"
 	"strings"
 	"testing"

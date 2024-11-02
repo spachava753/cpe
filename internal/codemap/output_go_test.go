@@ -1,7 +1,7 @@
 package codemap
 
 import (
-	"github.com/spachava753/cpe/ignore"
+	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/stretchr/testify/assert"
 	"io/fs"
 	"testing"

@@ -2,8 +2,8 @@ package codemapanalysis
 
 import (
 	"encoding/json"
-	"github.com/spachava753/cpe/cliopts"
-	"github.com/spachava753/cpe/llm"
+	"github.com/spachava753/cpe/internal/cliopts"
+	llm2 "github.com/spachava753/cpe/internal/llm"
 	"github.com/stretchr/testify/assert"
 	"testing"
 	"testing/fstest"
@@ -12,21 +12,21 @@ import (
 // CustomMockLLMProvider is a custom mock implementation of the LLMProvider interface
 type CustomMockLLMProvider struct {
 	t           *testing.T
-	calls       []func(llm.GenConfig, llm.Conversation) (llm.Message, llm.TokenUsage, error)
+	calls       []func(llm2.GenConfig, llm2.Conversation) (llm2.Message, llm2.TokenUsage, error)
 	currentCall int
 }
 
-func NewCustomMockLLMProvider(t *testing.T, calls []func(llm.GenConfig, llm.Conversation) (llm.Message, llm.TokenUsage, error), realProvider llm.LLMProvider) *CustomMockLLMProvider {
+func NewCustomMockLLMProvider(t *testing.T, calls []func(llm2.GenConfig, llm2.Conversation) (llm2.Message, llm2.TokenUsage, error), realProvider llm2.LLMProvider) *CustomMockLLMProvider {
 	return &CustomMockLLMProvider{
 		t:     t,
 		calls: calls,
 	}
 }
 
-func (m *CustomMockLLMProvider) GenerateResponse(config llm.GenConfig, conversation llm.Conversation) (llm.Message, llm.TokenUsage, error) {
+func (m *CustomMockLLMProvider) GenerateResponse(config llm2.GenConfig, conversation llm2.Conversation) (llm2.Message, llm2.TokenUsage, error) {
 	if m.currentCall >= len(m.calls) {
 		m.t.Error("Too many calls to GenerateResponse")
-		return llm.Message{}, llm.TokenUsage{}, nil
+		return llm2.Message{}, llm2.TokenUsage{}, nil
 	}
 
 	response, usage, err := m.calls[m.currentCall](config, conversation)
@@ -44,14 +44,14 @@ func (m *CustomMockLLMProvider) AssertExpectations() {
 func TestPerformAnalysis_Retry(t *testing.T) {
 	cliopts.ParseFlags()
 
-	if cliopts.Opts.Model != "" && cliopts.Opts.Model != llm.DefaultModel {
-		_, ok := llm.ModelConfigs[cliopts.Opts.Model]
+	if cliopts.Opts.Model != "" && cliopts.Opts.Model != llm2.DefaultModel {
+		_, ok := llm2.ModelConfigs[cliopts.Opts.Model]
 		if !ok && cliopts.Opts.CustomURL == "" {
 			t.Fatalf("Error: Unknown model '%s' requires -custom-url flag\n", cliopts.Opts.Model)
 		}
 	}
 
-	provider, genConfig, err := llm.GetProvider(cliopts.Opts.Model, llm.ModelOptions{
+	provider, genConfig, err := llm2.GetProvider(cliopts.Opts.Model, llm2.ModelOptions{
 		Model:             cliopts.Opts.Model,
 		CustomURL:         cliopts.Opts.CustomURL,
 		MaxTokens:         cliopts.Opts.MaxTokens,
@@ -71,15 +71,15 @@ func TestPerformAnalysis_Retry(t *testing.T) {
 	}
 
 	// Define the mock calls
-	mockCalls := []func(llm.GenConfig, llm.Conversation) (llm.Message, llm.TokenUsage, error){
+	mockCalls := []func(llm2.GenConfig, llm2.Conversation) (llm2.Message, llm2.TokenUsage, error){
 		// First call: return a malformed response
-		func(config llm.GenConfig, conversation llm.Conversation) (llm.Message, llm.TokenUsage, error) {
-			return llm.Message{
+		func(config llm2.GenConfig, conversation llm2.Conversation) (llm2.Message, llm2.TokenUsage, error) {
+			return llm2.Message{
 				Role: "assistant",
-				Content: []llm.ContentBlock{
+				Content: []llm2.ContentBlock{
 					{
 						Type: "tool_use",
-						ToolUse: &llm.ToolUse{
+						ToolUse: &llm2.ToolUse{
 							ID:   "toolu_01CkfkQxg335fJ4yjUyaWStU",
 							Name: "select_files_for_analysis",
 							Input: json.RawMessage(`{
@@ -90,10 +90,10 @@ func TestPerformAnalysis_Retry(t *testing.T) {
 						},
 					},
 				},
-			}, llm.TokenUsage{InputTokens: 100, OutputTokens: 50}, nil
+			}, llm2.TokenUsage{InputTokens: 100, OutputTokens: 50}, nil
 		},
 		// Second call: delegate to the real provider
-		func(config llm.GenConfig, conversation llm.Conversation) (llm.Message, llm.TokenUsage, error) {
+		func(config llm2.GenConfig, conversation llm2.Conversation) (llm2.Message, llm2.TokenUsage, error) {
 			return provider.GenerateResponse(config, conversation)
 		},
 	}
@@ -146,7 +146,7 @@ func TestTokenUsage(t *testing.T)
 func TestPerformAnalysis_HallucinatedFile(t *testing.T) {
 	cliopts.ParseFlags()
 
-	provider, genConfig, err := llm.GetProvider(cliopts.Opts.Model, llm.ModelOptions{
+	provider, genConfig, err := llm2.GetProvider(cliopts.Opts.Model, llm2.ModelOptions{
 		Model:             cliopts.Opts.Model,
 		CustomURL:         cliopts.Opts.CustomURL,
 		MaxTokens:         cliopts.Opts.MaxTokens,
@@ -166,14 +166,14 @@ func TestPerformAnalysis_HallucinatedFile(t *testing.T) {
 	}
 
 	// Define the mock call with a hallucinated file
-	mockCalls := []func(llm.GenConfig, llm.Conversation) (llm.Message, llm.TokenUsage, error){
-		func(config llm.GenConfig, conversation llm.Conversation) (llm.Message, llm.TokenUsage, error) {
-			return llm.Message{
+	mockCalls := []func(llm2.GenConfig, llm2.Conversation) (llm2.Message, llm2.TokenUsage, error){
+		func(config llm2.GenConfig, conversation llm2.Conversation) (llm2.Message, llm2.TokenUsage, error) {
+			return llm2.Message{
 				Role: "assistant",
-				Content: []llm.ContentBlock{
+				Content: []llm2.ContentBlock{
 					{
 						Type: "tool_use",
-						ToolUse: &llm.ToolUse{
+						ToolUse: &llm2.ToolUse{
 							ID:   "toolu_01CkfkQxg335fJ4yjUyaWStU",
 							Name: "select_files_for_analysis",
 							Input: json.RawMessage(`{
@@ -184,10 +184,10 @@ func TestPerformAnalysis_HallucinatedFile(t *testing.T) {
 						},
 					},
 				},
-			}, llm.TokenUsage{InputTokens: 100, OutputTokens: 50}, nil
+			}, llm2.TokenUsage{InputTokens: 100, OutputTokens: 50}, nil
 		},
 		// Second call: delegate to the real provider, this one should get rid of the hallucinated file
-		func(config llm.GenConfig, conversation llm.Conversation) (llm.Message, llm.TokenUsage, error) {
+		func(config llm2.GenConfig, conversation llm2.Conversation) (llm2.Message, llm2.TokenUsage, error) {
 			return provider.GenerateResponse(config, conversation)
 		},
 	}

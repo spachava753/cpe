@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/spachava753/cpe/cliopts"
-	"github.com/spachava753/cpe/llm"
+	"github.com/spachava753/cpe/internal/cliopts"
+	"github.com/spachava753/cpe/internal/llm"
 	"testing"
 
 	"github.com/stretchr/testify/assert"

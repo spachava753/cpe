@@ -4,7 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"github.com/spachava753/cpe/llm"
+	llm2 "github.com/spachava753/cpe/internal/llm"
 	"io/fs"
 )
 
@@ -15,13 +15,13 @@ var selectFilesForAnalysisToolDef json.RawMessage
 var codeMapAnalysisPrompt string
 
 // PerformAnalysis performs code map analysis and returns selected files
-func PerformAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, codeMapOutput string, userQuery string, fsys fs.FS) ([]string, error) {
-	conversation := llm.Conversation{
+func PerformAnalysis(provider llm2.LLMProvider, genConfig llm2.GenConfig, codeMapOutput string, userQuery string, fsys fs.FS) ([]string, error) {
+	conversation := llm2.Conversation{
 		SystemPrompt: codeMapAnalysisPrompt,
-		Messages: []llm.Message{
-			{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: "Here's the code map:\n\n" + codeMapOutput + "\n\nUser query: " + userQuery}}},
+		Messages: []llm2.Message{
+			{Role: "user", Content: []llm2.ContentBlock{{Type: "text", Text: "Here's the code map:\n\n" + codeMapOutput + "\n\nUser query: " + userQuery}}},
 		},
-		Tools: []llm.Tool{{
+		Tools: []llm2.Tool{{
 			Name:        "select_files_for_analysis",
 			Description: "Select files for high-fidelity analysis",
 			InputSchema: selectFilesForAnalysisToolDef,
@@ -61,11 +61,11 @@ func PerformAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, codeMapO
 			fmt.Printf("Model response:\n%s\n", response)
 
 			if attempt < maxAttempts {
-				conversation.Messages = append(conversation.Messages, llm.Message{
+				conversation.Messages = append(conversation.Messages, llm2.Message{
 					Role: "user",
-					Content: []llm.ContentBlock{{
+					Content: []llm2.ContentBlock{{
 						Type: "tool_result",
-						ToolResult: &llm.ToolResult{
+						ToolResult: &llm2.ToolResult{
 							ToolUseID: block.ToolUse.ID,
 							Content:   errorMsg,
 							IsError:   true,
@@ -81,11 +81,11 @@ func PerformAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, codeMapO
 		if selectedFilesErr := validateSelectedFiles(result.SelectedFiles, fsys); selectedFilesErr != nil {
 			if attempt < maxAttempts {
 				errorMsg := fmt.Sprintf("Error validating selected files: %v", selectedFilesErr)
-				conversation.Messages = append(conversation.Messages, llm.Message{
+				conversation.Messages = append(conversation.Messages, llm2.Message{
 					Role: "user",
-					Content: []llm.ContentBlock{{
+					Content: []llm2.ContentBlock{{
 						Type: "tool_result",
-						ToolResult: &llm.ToolResult{
+						ToolResult: &llm2.ToolResult{
 							ToolUseID: block.ToolUse.ID,
 							Content:   errorMsg,
 							IsError:   true,
@@ -98,7 +98,7 @@ func PerformAnalysis(provider llm.LLMProvider, genConfig llm.GenConfig, codeMapO
 		}
 
 		fmt.Printf("Thinking: %s\nSelected files: %v\n", result.Thinking, result.SelectedFiles)
-		llm.PrintTokenUsage(tokenUsage)
+		llm2.PrintTokenUsage(tokenUsage)
 		return result.SelectedFiles, nil
 	}
 

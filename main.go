@@ -7,16 +7,16 @@ import (
 	"encoding/xml"
 	"fmt"
 	"github.com/pkoukk/tiktoken-go"
-	"github.com/spachava753/cpe/cliopts"
-	"github.com/spachava753/cpe/codemap"
-	"github.com/spachava753/cpe/codemapanalysis"
-	"github.com/spachava753/cpe/extract"
-	"github.com/spachava753/cpe/fileops"
-	"github.com/spachava753/cpe/ignore"
-	"github.com/spachava753/cpe/llm"
-	"github.com/spachava753/cpe/tiktokenloader"
-	"github.com/spachava753/cpe/tokentree"
-	"github.com/spachava753/cpe/typeresolver"
+	"github.com/spachava753/cpe/internal/cliopts"
+	"github.com/spachava753/cpe/internal/codemap"
+	"github.com/spachava753/cpe/internal/codemapanalysis"
+	"github.com/spachava753/cpe/internal/extract"
+	"github.com/spachava753/cpe/internal/fileops"
+	"github.com/spachava753/cpe/internal/ignore"
+	llm2 "github.com/spachava753/cpe/internal/llm"
+	"github.com/spachava753/cpe/internal/tiktokenloader"
+	"github.com/spachava753/cpe/internal/tokentree"
+	"github.com/spachava753/cpe/internal/typeresolver"
 	"io"
 	"os"
 	"runtime/debug"
@@ -113,11 +113,11 @@ func buildSystemMessageWithSelectedFiles(allFiles []string, ignoreRules *ignore.
 	return systemMessage.String(), nil
 }
 
-func determineCodebaseAccess(provider llm.LLMProvider, genConfig llm.GenConfig, userInput string) (bool, error) {
-	initialConversation := llm.Conversation{
+func determineCodebaseAccess(provider llm2.LLMProvider, genConfig llm2.GenConfig, userInput string) (bool, error) {
+	initialConversation := llm2.Conversation{
 		SystemPrompt: InitialPrompt,
-		Messages:     []llm.Message{{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: userInput}}}},
-		Tools: []llm.Tool{{
+		Messages:     []llm2.Message{{Role: "user", Content: []llm2.ContentBlock{{Type: "text", Text: userInput}}}},
+		Tools: []llm2.Tool{{
 			Name:        "decide_codebase_access",
 			Description: "Reports the decision on whether codebase access is required",
 			InputSchema: InitialPromptToolCallDef,
@@ -142,7 +142,7 @@ func determineCodebaseAccess(provider llm.LLMProvider, genConfig llm.GenConfig, 
 				return false, fmt.Errorf("error parsing tool use result: %w", err)
 			}
 			fmt.Printf("Thinking: %s\nCodebase access decision: %v\n", result.Thinking, result.RequiresCodebase)
-			llm.PrintTokenUsage(tokenUsage)
+			llm2.PrintTokenUsage(tokenUsage)
 			return result.RequiresCodebase, nil
 		}
 	}
@@ -211,7 +211,7 @@ func main() {
 			handleFatalError(err)
 		}
 		printResponse(response)
-		llm.PrintTokenUsage(tokenUsage)
+		llm2.PrintTokenUsage(tokenUsage)
 	}
 }
 
@@ -223,8 +223,8 @@ func parseConfig() (cliopts.Options, error) {
 		os.Exit(0)
 	}
 
-	if cliopts.Opts.Model != "" && cliopts.Opts.Model != llm.DefaultModel {
-		_, ok := llm.ModelConfigs[cliopts.Opts.Model]
+	if cliopts.Opts.Model != "" && cliopts.Opts.Model != llm2.DefaultModel {
+		_, ok := llm2.ModelConfigs[cliopts.Opts.Model]
 		if !ok && cliopts.Opts.CustomURL == "" {
 			return cliopts.Options{}, fmt.Errorf("unknown model '%s' requires -custom-url flag", cliopts.Opts.Model)
 		}
@@ -233,8 +233,8 @@ func parseConfig() (cliopts.Options, error) {
 	return cliopts.Opts, nil
 }
 
-func initializeLLMProvider(config cliopts.Options) (llm.LLMProvider, llm.GenConfig, error) {
-	return llm.GetProvider(config.Model, llm.ModelOptions{
+func initializeLLMProvider(config cliopts.Options) (llm2.LLMProvider, llm2.GenConfig, error) {
+	return llm2.GetProvider(config.Model, llm2.ModelOptions{
 		Model:             config.Model,
 		CustomURL:         config.CustomURL,
 		MaxTokens:         config.MaxTokens,
@@ -292,7 +292,7 @@ func readFromFile(filePath string) (string, error) {
 	return string(contentBytes), nil
 }
 
-func handleCodebaseSpecificQuery(provider llm.LLMProvider, genConfig llm.GenConfig, input string, config cliopts.Options) error {
+func handleCodebaseSpecificQuery(provider llm2.LLMProvider, genConfig llm2.GenConfig, input string, config cliopts.Options) error {
 	ignoreRules := ignore.NewIgnoreRules()
 	if err := ignoreRules.LoadIgnoreFiles("."); err != nil {
 		return fmt.Errorf("error loading .cpeignore files: %w", err)
@@ -322,9 +322,9 @@ func handleCodebaseSpecificQuery(provider llm.LLMProvider, genConfig llm.GenConf
 		fmt.Println("--- End of System Prompt ---")
 	}
 
-	conversation := llm.Conversation{
+	conversation := llm2.Conversation{
 		SystemPrompt: systemMessage,
-		Messages:     []llm.Message{{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: input}}}},
+		Messages:     []llm2.Message{{Role: "user", Content: []llm2.ContentBlock{{Type: "text", Text: input}}}},
 	}
 
 	response, tokenUsage, err := provider.GenerateResponse(genConfig, conversation)
@@ -339,11 +339,11 @@ func handleCodebaseSpecificQuery(provider llm.LLMProvider, genConfig llm.GenConf
 		return fmt.Errorf("error handling file modifications: %w", err)
 	}
 
-	llm.PrintTokenUsage(tokenUsage)
+	llm2.PrintTokenUsage(tokenUsage)
 	return nil
 }
 
-func handleFileModifications(provider llm.LLMProvider, genConfig llm.GenConfig, conversation llm.Conversation, initialResponse llm.Message) error {
+func handleFileModifications(provider llm2.LLMProvider, genConfig llm2.GenConfig, conversation llm2.Conversation, initialResponse llm2.Message) error {
 	maxRetries := 3
 	for retry := 0; retry < maxRetries; retry++ {
 		conversation.Messages = append(conversation.Messages, initialResponse)
@@ -365,9 +365,9 @@ func handleFileModifications(provider llm.LLMProvider, genConfig llm.GenConfig, 
 		if retry < maxRetries-1 {
 			fmt.Printf("Errors encountered. Retrying (Attempt %d/%d)...\n", retry+2, maxRetries)
 			retryMessage := buildRetryMessage(errors)
-			conversation.Messages = append(conversation.Messages, llm.Message{
+			conversation.Messages = append(conversation.Messages, llm2.Message{
 				Role:    "user",
-				Content: []llm.ContentBlock{{Type: "text", Text: retryMessage}},
+				Content: []llm2.ContentBlock{{Type: "text", Text: retryMessage}},
 			})
 			initialResponse, _, err = provider.GenerateResponse(genConfig, conversation)
 			if err != nil {
@@ -383,7 +383,7 @@ func handleFileModifications(provider llm.LLMProvider, genConfig llm.GenConfig, 
 	return nil
 }
 
-func extractModifications(response llm.Message) ([]extract.Modification, error) {
+func extractModifications(response llm2.Message) ([]extract.Modification, error) {
 	var textContent string
 	for _, block := range response.Content {
 		if block.Type == "text" {
@@ -393,17 +393,17 @@ func extractModifications(response llm.Message) ([]extract.Modification, error) 
 	return extract.Modifications(textContent)
 }
 
-func generateSimpleResponse(provider llm.LLMProvider, genConfig llm.GenConfig, input string) (llm.Message, llm.TokenUsage, error) {
+func generateSimpleResponse(provider llm2.LLMProvider, genConfig llm2.GenConfig, input string) (llm2.Message, llm2.TokenUsage, error) {
 	systemMessage := "You are an expert Golang developer with extensive knowledge of software engineering principles, design patterns, and best practices. Your role is to assist users with various aspects of Go programming."
-	conversation := llm.Conversation{
+	conversation := llm2.Conversation{
 		SystemPrompt: systemMessage,
-		Messages:     []llm.Message{{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: input}}}},
+		Messages:     []llm2.Message{{Role: "user", Content: []llm2.ContentBlock{{Type: "text", Text: input}}}},
 	}
 
 	return provider.GenerateResponse(genConfig, conversation)
 }
 
-func printResponse(response llm.Message) {
+func printResponse(response llm2.Message) {
 	for _, block := range response.Content {
 		if block.Type == "text" {
 			fmt.Print(block.Text)

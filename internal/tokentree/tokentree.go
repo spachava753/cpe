@@ -3,8 +3,8 @@ package tokentree
 import (
 	"fmt"
 	"github.com/pkoukk/tiktoken-go"
-	"github.com/spachava753/cpe/ignore"
-	"github.com/spachava753/cpe/tiktokenloader"
+	"github.com/spachava753/cpe/internal/ignore"
+	"github.com/spachava753/cpe/internal/tiktokenloader"
 	"io/fs"
 	"os"
 	"path/filepath"

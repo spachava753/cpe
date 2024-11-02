@@ -2,7 +2,7 @@ package codemap
 
 import (
 	"fmt"
-	"github.com/spachava753/cpe/ignore"
+	"github.com/spachava753/cpe/internal/ignore"
 	sitter "github.com/tree-sitter/go-tree-sitter"
 	"io/fs"
 	"path/filepath"

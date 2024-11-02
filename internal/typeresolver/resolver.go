@@ -2,7 +2,7 @@ package typeresolver
 
 import (
 	"fmt"
-	"github.com/spachava753/cpe/ignore"
+	"github.com/spachava753/cpe/internal/ignore"
 	"io/fs"
 	"strings"
 
