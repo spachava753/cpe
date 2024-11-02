@@ -75,8 +75,12 @@ func validateModifyCode(m extract.ModifyFile) error {
 
 	fileContent := string(content)
 	for _, edit := range m.Edits {
-		if !strings.Contains(fileContent, edit.Search) {
+		count := strings.Count(fileContent, edit.Search)
+		if count == 0 {
 			return fmt.Errorf("search text not found in file %s", m.Path)
+		}
+		if count > 1 {
+			return fmt.Errorf("search text matches %d times in file %s, expected exactly one match", count, m.Path)
 		}
 	}
 
