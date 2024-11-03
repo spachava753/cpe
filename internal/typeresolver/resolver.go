@@ -18,8 +18,9 @@ func ResolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS, ignoreR
 	imports := make(map[string]map[string]string) // file -> alias -> package
 
 	parser := sitter.NewParser()
+	defer parser.Close()
 	goLang := sitter.NewLanguage(golang.Language())
-	err := parser.SetLanguage(sitter.NewLanguage(golang.Language()))
+	err := parser.SetLanguage(goLang)
 	if err != nil {
 		return nil, fmt.Errorf("error setting language: %w", err)
 	}

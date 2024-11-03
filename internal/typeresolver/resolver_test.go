@@ -1,12 +1,57 @@
 package typeresolver
 
 import (
+	"fmt"
 	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/stretchr/testify/assert"
+	sitter "github.com/tree-sitter/go-tree-sitter"
+	golang "github.com/tree-sitter/tree-sitter-go/bindings/go"
 	"io/fs"
+	"os"
+	"strings"
 	"testing"
 	"testing/fstest"
 )
+
+// TestPrintTreeSitterTree is a utility function that prints the tree-sitter AST for a given file
+func TestPrintTreeSitterTree(t *testing.T) {
+	path := "../../main.go"
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("Failed to read file %s: %v", path, err)
+	}
+
+	parser := sitter.NewParser()
+	defer parser.Close()
+	goLang := sitter.NewLanguage(golang.Language())
+	err = parser.SetLanguage(goLang)
+	if err != nil {
+		t.Fatalf("error setting language: %s", err)
+	}
+
+	tree := parser.Parse(content, nil)
+	defer tree.Close()
+
+	var printNode func(node *sitter.Node, level int)
+	printNode = func(node *sitter.Node, level int) {
+		indent := strings.Repeat("  ", level)
+		nodeText := node.Kind()
+		if node.ChildCount() == 0 {
+			nodeText += fmt.Sprintf(": '%s'", node.Utf8Text(content))
+		}
+		t.Logf("%s%s\n", indent, nodeText)
+
+		for i := uint(0); i < node.ChildCount(); i++ {
+			child := node.Child(i)
+			printNode(child, level+1)
+		}
+	}
+
+	t.Logf("\nTree-sitter AST for %s:\n", path)
+	t.Logf(strings.Repeat("=", 40))
+	printNode(tree.RootNode(), 0)
+	t.Logf(strings.Repeat("=", 40))
+}
 
 func TestResolveTypeFiles(t *testing.T) {
 	// Helper function to create an in-memory file system
