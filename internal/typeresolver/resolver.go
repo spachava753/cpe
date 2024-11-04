@@ -1,16 +1,17 @@
 package typeresolver
 
 import (
+	"errors"
 	"fmt"
 	"github.com/spachava753/cpe/internal/ignore"
 	sitter "github.com/tree-sitter/go-tree-sitter"
 	golang "github.com/tree-sitter/tree-sitter-go/bindings/go"
 	"io/fs"
-	"maps"
 	"path/filepath"
-	"slices"
 	"strings"
 )
+
+var errUnknownExt = errors.New("unsupported file extension")
 
 // getFileExtension returns the file extension without the dot
 func getFileExtension(path string) string {
@@ -27,192 +28,8 @@ func extractSymbolsAndCreateQueries(content []byte, ext string, parser *sitter.P
 	case "py":
 		return extractPythonSymbols(content, parser)
 	default:
-		return nil, fmt.Errorf("unsupported file extension: %s", ext)
+		return nil, errUnknownExt
 	}
-}
-
-// extractGoSymbols extracts symbols from Go source code
-func extractGoSymbols(content []byte, parser *sitter.Parser) ([]string, error) {
-	// Set Go language for the parser
-	goLang := sitter.NewLanguage(golang.Language())
-	if err := parser.SetLanguage(goLang); err != nil {
-		return nil, fmt.Errorf("failed to set Go language: %v", err)
-	}
-
-	// Parse the content
-	tree := parser.Parse(content, nil)
-	defer tree.Close()
-
-	root := tree.RootNode()
-
-	// Create type usage query
-	typeUsageQuery, err := sitter.NewQuery(goLang, `
-		(
-			[
-				(type_arguments (type_elem (type_identifier) @ignore))
-				(type_declaration (type_spec name: (type_identifier) @ignore))
-				(method_declaration receiver: 
-					(parameter_list
-						(parameter_declaration
-							[
-								type: (type_identifier) @ignore
-								type: (pointer_type (type_identifier) @ignore) 
-							]
-						)
-					)
-				)
-				(qualified_type (type_identifier) @type.usage) @qualified_type
-				((type_identifier) @type.usage)
-			]
-			(#not-any-of? @type.usage
-				"any"
-				"interface{}"
-				"string"
-				"rune"
-				"bool"
-				"byte"
-				"comparable"
-				"complex128"
-				"complex64"
-				"error"
-				"float32"
-				"float64"
-				"int16"
-				"int32"
-				"int64"
-				"int8"
-				"int"
-				"uint"
-				"uint16"
-				"uint32"
-				"uint64"
-				"uint8"
-				"uintptr"
-			)
-		)
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create type usage query: %v", err)
-	}
-	defer typeUsageQuery.Close()
-
-	// Create function/method usage query
-	funcUsageQuery, err := sitter.NewQuery(goLang, `
-		(call_expression
-			function: [
-				(identifier) @usage
-				(selector_expression
-					operand: [
-						(identifier) @operand_identifier
-					]?
-					field: (field_identifier) @usage
-				)
-			]
-		)
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create function usage query: %v", err)
-	}
-	defer funcUsageQuery.Close()
-
-	// Extract type usages
-	typeUsages := make(map[string]bool)
-	ignoreTypeUsages := make(map[string]bool)
-	cursor := sitter.NewQueryCursor()
-	defer cursor.Close()
-	queryMatches := cursor.Matches(typeUsageQuery, root, content)
-	for match := queryMatches.Next(); match != nil; match = queryMatches.Next() {
-		for _, capture := range match.Captures {
-			text := capture.Node.Utf8Text(content)
-			_ = text
-			if capture.Index == 0 {
-				ignoreTypeUsages[capture.Node.Utf8Text(content)] = true
-			}
-			if !ignoreTypeUsages[capture.Node.Utf8Text(content)] && capture.Index == 1 || capture.Index == 3 { // @type.usage
-				typeUsages[capture.Node.Utf8Text(content)] = true
-			}
-		}
-	}
-
-	// Extract function/method usages
-	funcUsages := make(map[string]bool)
-	queryMatches = cursor.Matches(funcUsageQuery, root, content)
-	for match := queryMatches.Next(); match != nil; match = queryMatches.Next() {
-		for _, capture := range match.Captures {
-			if capture.Index == 0 || capture.Index == 2 { // @usage
-				funcUsages[capture.Node.Utf8Text(content)] = true
-			}
-		}
-	}
-
-	queries := make([]string, 0, 2)
-
-	typeSymbols := slices.Collect(maps.Keys(typeUsages))
-	for i := range len(typeSymbols) {
-		typeSymbols[i] = strings.TrimSpace(typeSymbols[i])
-	}
-	slices.Sort(typeSymbols)
-
-	// Construct type definition query
-	if len(typeSymbols) > 0 {
-		queries = append(queries, fmt.Sprintf(`
-		(type_declaration
-			[
-				(type_spec
-					name: (type_identifier) @type.definition)
-				(type_alias
-					name: (type_identifier) @type.definition)
-			]
-			(#any-of? @type.definition "%s")
-		)
-	`, strings.Join(typeSymbols, `" "`)))
-	}
-
-	funcSymbols := slices.Collect(maps.Keys(funcUsages))
-	for i := range len(funcSymbols) {
-		funcSymbols[i] = strings.TrimSpace(funcSymbols[i])
-	}
-	slices.Sort(funcSymbols)
-
-	// Construct function/method definition query
-	if len(funcSymbols) > 0 {
-		queries = append(queries, fmt.Sprintf(`
-		(
-			[
-				(function_declaration
-					name: (identifier) @func.definition)
-				(method_declaration
-					name: (field_identifier) @func.definition)
-			]
-			(#any-of? @func.definition "%s")
-		)
-`, strings.Join(funcSymbols, `" "`)))
-	}
-
-	// Return both queries
-	return queries, nil
-}
-
-// extractJavaSymbols extracts symbols from Java source code
-func extractJavaSymbols(content []byte, parser *sitter.Parser) ([]string, error) {
-	// TODO: Implement Java-specific symbol extraction
-	// The query should look for:
-	// - Class references in extends/implements clauses
-	// - Type usage in method parameters, return types, variable declarations
-	// - Generic type parameters
-	// - Annotation types
-	return []string{}, nil
-}
-
-// extractPythonSymbols extracts symbols from Python source code
-func extractPythonSymbols(content []byte, parser *sitter.Parser) ([]string, error) {
-	// TODO: Implement Python-specific symbol extraction
-	// The query should look for:
-	// - Type hints in function parameters and return types
-	// - Class inheritance
-	// - Type annotations in variable declarations
-	// - Import statements
-	return []string{}, nil
 }
 
 // runQueriesOnFile runs the provided queries on a file and returns true if any match is found
@@ -306,7 +123,10 @@ func ResolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS, ignoreR
 		// Extract symbols and create queries
 		queries, err := extractSymbolsAndCreateQueries(content, ext, parser)
 		if err != nil {
-			return nil, fmt.Errorf("failed to extract symbols from %s: %v", file, err)
+			if !errors.Is(err, errUnknownExt) {
+				return nil, fmt.Errorf("failed to extract symbols from %s: %v", file, err)
+			}
+			fmt.Printf("failed to extract symbols from %s: %v\n", file, err)
 		}
 
 		// Add queries to the map, using map[string]bool to ensure uniqueness
