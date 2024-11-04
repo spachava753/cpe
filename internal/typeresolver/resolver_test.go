@@ -85,14 +85,16 @@ func ProcessData(data CustomType) error {
 		)
 	`,
 				`
-		[
-			(function_declaration
-				name: (identifier) @func.definition)
-			(method_declaration
-				name: (field_identifier) @func.definition)
-		]
-		(#any-of? @func.definition "ProcessCustomType")
-	`,
+		(
+			[
+				(function_declaration
+					name: (identifier) @func.definition)
+				(method_declaration
+					name: (field_identifier) @func.definition)
+			]
+			(#any-of? @func.definition "ProcessCustomType")
+		)
+`,
 			},
 			wantErr: false,
 		},
@@ -123,13 +125,15 @@ func (h *Handler) HandleRequest(req Request) Response {
 		)
 	`,
 				`
-		[
-			(function_declaration
-				name: (identifier) @func.definition)
-			(method_declaration
-				name: (field_identifier) @func.definition)
-		]
-		(#any-of? @func.definition "Data" "NewResponse" "Process")
+		(
+			[
+				(function_declaration
+					name: (identifier) @func.definition)
+				(method_declaration
+					name: (field_identifier) @func.definition)
+			]
+			(#any-of? @func.definition "Data" "NewResponse" "Process")
+		)
 	`,
 			},
 			wantErr: false,
@@ -163,13 +167,15 @@ func ProcessGeneric[T CustomConstraint](input Result[T]) {
 		)
 	`,
 				`
-		[
-			(function_declaration
-				name: (identifier) @func.definition)
-			(method_declaration
-				name: (field_identifier) @func.definition)
-		]
-		(#any-of? @func.definition "NewProcessor" "Process")
+		(
+			[
+				(function_declaration
+					name: (identifier) @func.definition)
+				(method_declaration
+					name: (field_identifier) @func.definition)
+			]
+			(#any-of? @func.definition "NewProcessor" "Process")
+		)
 	`,
 			},
 			wantErr: false,
@@ -205,13 +211,15 @@ func (s *serviceImpl) Process(data CustomData) (Result, error) {
 		)
 	`,
 				`
-		[
-			(function_declaration
-				name: (identifier) @func.definition)
-			(method_declaration
-				name: (field_identifier) @func.definition)
-		]
-		(#any-of? @func.definition "ProcessData")
+		(
+			[
+				(function_declaration
+					name: (identifier) @func.definition)
+				(method_declaration
+					name: (field_identifier) @func.definition)
+			]
+			(#any-of? @func.definition "ProcessData")
+		)
 	`,
 			},
 			wantErr: false,
