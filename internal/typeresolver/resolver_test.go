@@ -53,6 +53,203 @@ func TestPrintTreeSitterTree(t *testing.T) {
 	t.Logf(strings.Repeat("=", 40))
 }
 
+func TestExtractGoSymbols(t *testing.T) {
+	parser := sitter.NewParser()
+	defer parser.Close()
+
+	tests := []struct {
+		name            string
+		content         string
+		expectedQueries []string
+		wantErr         bool
+	}{
+		{
+			name: "Simple type and function usage",
+			content: `
+package main
+
+func ProcessData(data CustomType) error {
+	result := helper.ProcessCustomType(data)
+	return nil
+}`,
+			expectedQueries: []string{
+				`
+		(type_declaration
+			[
+				(type_spec
+					name: (type_identifier) @type.definition)
+				(type_alias
+					name: (type_identifier) @type.definition)
+			]
+			(#any-of? @type.definition "CustomType")
+		)
+	`,
+				`
+		[
+			(function_declaration
+				name: (identifier) @func.definition)
+			(method_declaration
+				name: (field_identifier) @func.definition)
+		]
+		(#any-of? @func.definition "ProcessCustomType")
+	`,
+			},
+			wantErr: false,
+		},
+		{
+			name: "Complex type usage with methods",
+			content: `
+package main
+
+type Handler struct {
+	processor DataProcessor
+	cache     Cache
+}
+
+func (h *Handler) HandleRequest(req Request) Response {
+	data := h.processor.Process(req.Data())
+	return NewResponse(data)
+}`,
+			expectedQueries: []string{
+				`
+		(type_declaration
+			[
+				(type_spec
+					name: (type_identifier) @type.definition)
+				(type_alias
+					name: (type_identifier) @type.definition)
+			]
+			(#any-of? @type.definition "Cache" "DataProcessor" "Request" "Response")
+		)
+	`,
+				`
+		[
+			(function_declaration
+				name: (identifier) @func.definition)
+			(method_declaration
+				name: (field_identifier) @func.definition)
+		]
+		(#any-of? @func.definition "Data" "NewResponse" "Process")
+	`,
+			},
+			wantErr: false,
+		},
+		{
+			name: "Generic types and builtin types",
+			content: `
+package main
+
+type Result[T any] struct {
+	data    T
+	err     error
+	status  string
+	counter int
+}
+
+func ProcessGeneric[T CustomConstraint](input Result[T]) {
+	processor := NewProcessor[T]()
+	processor.Process(input.data)
+}`,
+			expectedQueries: []string{
+				`
+		(type_declaration
+			[
+				(type_spec
+					name: (type_identifier) @type.definition)
+				(type_alias
+					name: (type_identifier) @type.definition)
+			]
+			(#any-of? @type.definition "CustomConstraint")
+		)
+	`,
+				`
+		[
+			(function_declaration
+				name: (identifier) @func.definition)
+			(method_declaration
+				name: (field_identifier) @func.definition)
+		]
+		(#any-of? @func.definition "NewProcessor" "Process")
+	`,
+			},
+			wantErr: false,
+		},
+		{
+			name: "Interface definitions and implementations",
+			content: `
+package main
+
+type Service interface {
+	Process(data CustomData) (Result, error)
+	Validate(input ValidationInput) bool
+}
+
+type serviceImpl struct {
+	validator Validator
+	processor Processor
+}
+
+func (s *serviceImpl) Process(data CustomData) (Result, error) {
+	return s.processor.ProcessData(data)
+}`,
+			expectedQueries: []string{
+				`
+		(type_declaration
+			[
+				(type_spec
+					name: (type_identifier) @type.definition)
+				(type_alias
+					name: (type_identifier) @type.definition)
+			]
+			(#any-of? @type.definition "CustomData" "Processor" "Result" "ValidationInput" "Validator")
+		)
+	`,
+				`
+		[
+			(function_declaration
+				name: (identifier) @func.definition)
+			(method_declaration
+				name: (field_identifier) @func.definition)
+		]
+		(#any-of? @func.definition "ProcessData")
+	`,
+			},
+			wantErr: false,
+		},
+		{
+			name: "Empty content",
+			content: `
+package main
+`,
+			expectedQueries: []string{},
+			wantErr:         false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			queries, err := extractGoSymbols([]byte(tt.content), parser)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+
+			assert.NoError(t, err)
+			assert.Equal(t, len(tt.expectedQueries), len(queries), "number of queries should match")
+
+			// Compare queries after normalizing whitespace
+			for i := range queries {
+				expectedNormalized := strings.Join(strings.Fields(tt.expectedQueries[i]), " ")
+				actualNormalized := strings.Join(strings.Fields(queries[i]), " ")
+				assert.Equal(t, expectedNormalized, actualNormalized,
+					"Query %d doesn't match\nExpected:\n%s\n\nGot:\n%s",
+					i, tt.expectedQueries[i], queries[i])
+			}
+		})
+	}
+}
+
 func TestResolveTypeFiles(t *testing.T) {
 	// Helper function to create an in-memory file system
 	createTestFS := func(files map[string]string) fs.FS {
