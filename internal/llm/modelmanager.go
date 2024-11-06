@@ -65,6 +65,10 @@ var ModelConfigs = map[string]ModelConfig{
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
 	"claude-3-5-haiku": {
+		Name: "claude-3-5-haiku-20241022", ProviderType: "anthropic", IsKnown: true,
+		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
+	},
+	"claude-3-haiku": {
 		Name: "claude-3-haiku-20240307", ProviderType: "anthropic", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.3},
 	},
