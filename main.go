@@ -394,9 +394,8 @@ func extractModifications(response llm2.Message) ([]extract.Modification, error)
 }
 
 func generateSimpleResponse(provider llm2.LLMProvider, genConfig llm2.GenConfig, input string) (llm2.Message, llm2.TokenUsage, error) {
-	systemMessage := "You are an expert Golang developer with extensive knowledge of software engineering principles, design patterns, and best practices. Your role is to assist users with various aspects of Go programming."
 	conversation := llm2.Conversation{
-		SystemPrompt: systemMessage,
+		SystemPrompt: GeneralAssistantPrompt,
 		Messages:     []llm2.Message{{Role: "user", Content: []llm2.ContentBlock{{Type: "text", Text: input}}}},
 	}
 

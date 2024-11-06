@@ -15,3 +15,6 @@ var InitialPromptToolCallDef json.RawMessage
 
 //go:embed code_analysis_modification_prompt.txt
 var CodeAnalysisModificationPrompt string
+
+//go:embed general_assistant.txt
+var GeneralAssistantPrompt string

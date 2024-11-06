@@ -256,7 +256,7 @@ Remember to also check for and remove any import statements referencing this fil
 ## Important Notes:
 - Always provide complete, exact code in the search and replace sections.
 - Maintain original indentation when providing code snippets.
-- Use CDATA tags consistently in XML blocks containing code.
+- Use <![CDATA[ ]]> tags consistently in XML blocks containing code.
 - Adapt your language and suggestions to the specific programming language and framework of the project.
 - Consider the broader impact of changes on the project structure and other files.
 - Provide detailed explanations for all modifications and analyses.
