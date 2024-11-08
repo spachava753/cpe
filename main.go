@@ -76,7 +76,6 @@ func generateCodeMapOutput(maxLiteralLen int, ignoreRules *ignore.Patterns) (str
 
 func buildSystemMessageWithSelectedFiles(allFiles []string, ignoreRules *ignore.Patterns) (string, error) {
 	var systemMessage strings.Builder
-	systemMessage.WriteString(CodeAnalysisModificationPrompt)
 
 	// Use the current directory for resolveTypeFiles
 	currentDir := "."
@@ -109,6 +108,9 @@ func buildSystemMessageWithSelectedFiles(allFiles []string, ignoreRules *ignore.
 	}
 
 	systemMessage.Write(output)
+
+	systemMessage.WriteString("\n\n")
+	systemMessage.WriteString(CodeAnalysisModificationPrompt)
 
 	return systemMessage.String(), nil
 }
