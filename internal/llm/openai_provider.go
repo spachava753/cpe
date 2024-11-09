@@ -38,12 +38,12 @@ func (o *OpenAIProvider) GenerateResponse(config GenConfig, conversation Convers
 	tools := convertToOpenAITools(conversation.Tools)
 
 	req := openai.ChatCompletionRequest{
-		Model:       config.Model,
-		Messages:    messages,
-		Temperature: config.Temperature,
-		MaxTokens:   config.MaxTokens,
-		Stop:        config.Stop,
-		Tools:       tools,
+		Model:               config.Model,
+		Messages:            messages,
+		Temperature:         config.Temperature,
+		MaxCompletionTokens: config.MaxTokens,
+		Stop:                config.Stop,
+		Tools:               tools,
 	}
 
 	if config.TopP != nil {
@@ -74,7 +74,7 @@ func (o *OpenAIProvider) GenerateResponse(config GenConfig, conversation Convers
 	resp, err := o.client.CreateChatCompletion(ctx, req)
 
 	if err != nil {
-		return Message{}, TokenUsage{}, fmt.Errorf("OpenAI API error: %w", err)
+		return Message{}, TokenUsage{}, err
 	}
 
 	if len(resp.Choices) == 0 {

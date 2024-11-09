@@ -13,7 +13,7 @@ func TestOpenAIProvider(t *testing.T) {
 		t.Skip("OPENAI_API_KEY environment variable is not set")
 	}
 
-	provider := NewOpenAIProvider(apiKey)
+	provider := NewOpenAIProvider(apiKey, "")
 
 	t.Run("Basic conversation", func(t *testing.T) {
 		// Set up a test conversation
