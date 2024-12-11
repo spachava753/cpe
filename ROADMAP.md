@@ -4,6 +4,9 @@ This document outlines the planned features, improvements, and notes for the CPE
 
 ## Features
 
+### Agentic flow
+- [ ] Move from disparate mulit-agent to single-agent, will reduce necessary calls, as we can remove the needs codebase function call
+
 ### Token Analysis and Visualization
 - [x] Implement basic token counting per file
 - [x] Show total tokens for each directory (tree)
@@ -38,7 +41,6 @@ This document outlines the planned features, improvements, and notes for the CPE
 
 ### Performance
 - [ ] Parallel processing for large codebases
-- [ ] Caching mechanism for token counts
 
 ### Documentation
 - [ ] Comprehensive user guide
@@ -54,7 +56,3 @@ This document outlines the planned features, improvements, and notes for the CPE
   - [ ] SWE bench?
 - [ ] Test against extremely large multi-lang codebases
   - ???
----
-
-Last updated: [Current Date]
-Feel free to suggest additions or modifications to this roadmap by opening an issue or pull request.
