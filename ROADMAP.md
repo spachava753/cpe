@@ -6,7 +6,7 @@ This document outlines the planned features, improvements, and notes for the CPE
 
 ### Token Analysis and Visualization
 - [x] Implement basic token counting per file
-- [ ] Show total tokens for each directory (tree)
+- [x] Show total tokens for each directory (tree)
 - [ ] Improve token count visualization
   - [ ] Add color coding for token count
     - use statistical methods to calculate outliers and highlight in red?
