@@ -8,19 +8,11 @@ import (
 	gitignore "github.com/sabhiram/go-gitignore"
 )
 
-type Patterns struct {
-	ignorer *gitignore.GitIgnore
-}
-
 var defaultPatterns = []string{
 	".git/**",
 }
 
-func NewIgnoreRules() *Patterns {
-	return &Patterns{}
-}
-
-func (ir *Patterns) LoadIgnoreFiles(startDir string) error {
+func LoadIgnoreFiles(startDir string) (*gitignore.GitIgnore, error) {
 	ignoreFiles := findIgnoreFiles(startDir)
 
 	var allPatterns []string
@@ -31,7 +23,7 @@ func (ir *Patterns) LoadIgnoreFiles(startDir string) error {
 	for _, ignoreFile := range ignoreFiles {
 		content, err := os.ReadFile(ignoreFile)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		// Split content into lines and add non-empty, non-comment lines
 		lines := strings.Split(string(content), "\n")
@@ -39,15 +31,7 @@ func (ir *Patterns) LoadIgnoreFiles(startDir string) error {
 	}
 
 	// Create a new GitIgnore instance with all patterns
-	ir.ignorer = gitignore.CompileIgnoreLines(allPatterns...)
-	return nil
-}
-
-func (ir *Patterns) ShouldIgnore(path string) bool {
-	if ir.ignorer == nil {
-		return false
-	}
-	return ir.ignorer.MatchesPath(path)
+	return gitignore.CompileIgnoreLines(allPatterns...), nil
 }
 
 // findIgnoreFiles finds all .cpeignore files in the directory hierarchy

@@ -24,9 +24,9 @@ This document outlines the planned features, improvements, and notes for the CPE
   - [ ] Mistral
   - [ ] Deepseek
   - [ ] Nous
-- [ ] Add support for fine grained model selection similar to aider
-  - [ ] "file selection" model for codemap -> relevant files part of flow
-  - [ ] "coding" model for codebase analysis/modification
+- [ ] support multimodality
+  - [ ] images
+  - [ ] videos
 
 ### Observability
 - [ ] Export each cpe command run to a tracing tool

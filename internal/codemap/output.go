@@ -2,7 +2,7 @@ package codemap
 
 import (
 	"fmt"
-	"github.com/spachava753/cpe/internal/ignore"
+	gitignore "github.com/sabhiram/go-gitignore"
 	sitter "github.com/tree-sitter/go-tree-sitter"
 	"io/fs"
 	"path/filepath"
@@ -32,13 +32,13 @@ type FileCodeMap struct {
 }
 
 // GenerateOutput creates the code map output for each file using AST
-func GenerateOutput(fsys fs.FS, maxLiteralLen int, ignoreRules *ignore.Patterns) ([]FileCodeMap, error) {
+func GenerateOutput(fsys fs.FS, maxLiteralLen int, ignorer *gitignore.GitIgnore) ([]FileCodeMap, error) {
 	var filePaths []string
 	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if !d.IsDir() && isSourceCode(path) && !ignoreRules.ShouldIgnore(path) {
+		if !d.IsDir() && isSourceCode(path) && !ignorer.MatchesPath(path) {
 			filePaths = append(filePaths, path)
 		}
 		return nil

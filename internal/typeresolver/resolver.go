@@ -3,7 +3,7 @@ package typeresolver
 import (
 	"errors"
 	"fmt"
-	"github.com/spachava753/cpe/internal/ignore"
+	gitignore "github.com/sabhiram/go-gitignore"
 	sitter "github.com/tree-sitter/go-tree-sitter"
 	golang "github.com/tree-sitter/tree-sitter-go/bindings/go"
 	"io/fs"
@@ -86,7 +86,7 @@ func runQueriesOnFile(content []byte, queries []string, ext string, parser *sitt
 }
 
 // ResolveTypeAndFunctionFiles resolves all type and function definitions used in the given files.
-func ResolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS, ignoreRules *ignore.Patterns) (map[string]bool, error) {
+func ResolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS, ignorer *gitignore.GitIgnore) (map[string]bool, error) {
 	// Map to store queries grouped by file extension
 	// The inner map stores unique queries to prevent duplicates
 	queriesByExt := make(map[string]map[string]bool)
@@ -160,7 +160,7 @@ func ResolveTypeAndFunctionFiles(selectedFiles []string, sourceFS fs.FS, ignoreR
 		// - it's a directory
 		// - it's already in the result set
 		// - it should be ignored
-		if d.IsDir() || result[path] || (ignoreRules != nil && ignoreRules.ShouldIgnore(path)) {
+		if d.IsDir() || result[path] || (ignorer != nil && ignorer.MatchesPath(path)) {
 			return nil
 		}
 

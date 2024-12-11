@@ -5,8 +5,10 @@ import (
 	_ "embed"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"github.com/pkoukk/tiktoken-go"
+	gitignore "github.com/sabhiram/go-gitignore"
 	"github.com/spachava753/cpe/internal/cliopts"
 	"github.com/spachava753/cpe/internal/codemap"
 	"github.com/spachava753/cpe/internal/codemapanalysis"
@@ -39,8 +41,8 @@ type File struct {
 	Content string `xml:",cdata"`
 }
 
-func generateCodeMapOutput(maxLiteralLen int, ignoreRules *ignore.Patterns) (string, error) {
-	fileCodeMaps, err := codemap.GenerateOutput(os.DirFS("."), maxLiteralLen, ignoreRules)
+func generateCodeMapOutput(maxLiteralLen int, ignorer *gitignore.GitIgnore) (string, error) {
+	fileCodeMaps, err := codemap.GenerateOutput(os.DirFS("."), maxLiteralLen, ignorer)
 	if err != nil {
 		return "", fmt.Errorf("error generating code map output: %w", err)
 	}
@@ -74,12 +76,12 @@ func generateCodeMapOutput(maxLiteralLen int, ignoreRules *ignore.Patterns) (str
 	return string(output), nil
 }
 
-func buildSystemMessageWithSelectedFiles(allFiles []string, ignoreRules *ignore.Patterns) (string, error) {
+func buildSystemMessageWithSelectedFiles(allFiles []string, ignorer *gitignore.GitIgnore) (string, error) {
 	var systemMessage strings.Builder
 
 	// Use the current directory for resolveTypeFiles
 	currentDir := "."
-	resolvedFiles, err := typeresolver.ResolveTypeAndFunctionFiles(allFiles, os.DirFS(currentDir), ignoreRules)
+	resolvedFiles, err := typeresolver.ResolveTypeAndFunctionFiles(allFiles, os.DirFS(currentDir), ignorer)
 	if err != nil {
 		return "", fmt.Errorf("error resolving type files: %w", err)
 	}
@@ -168,9 +170,16 @@ func main() {
 	if err != nil {
 		handleFatalError(err)
 	}
+	ignorer, err := ignore.LoadIgnoreFiles(".")
+	if err != nil {
+		handleFatalError(err)
+	}
+	if ignorer == nil {
+		handleFatalError(errors.New("git ignorer was nil"))
+	}
 
 	if config.TokenCountPath != "" {
-		if err := tokentree.PrintTokenTree(config.TokenCountPath); err != nil {
+		if err := tokentree.PrintTokenTree(os.DirFS("."), ignorer); err != nil {
 			handleFatalError(err)
 		}
 		return
@@ -203,7 +212,7 @@ func main() {
 	}
 
 	if requiresCodebase {
-		err = handleCodebaseSpecificQuery(provider, genConfig, input, config)
+		err = handleCodebaseSpecificQuery(provider, genConfig, input, config, ignorer)
 		if err != nil {
 			handleFatalError(err)
 		}
@@ -294,13 +303,8 @@ func readFromFile(filePath string) (string, error) {
 	return string(contentBytes), nil
 }
 
-func handleCodebaseSpecificQuery(provider llm2.LLMProvider, genConfig llm2.GenConfig, input string, config cliopts.Options) error {
-	ignoreRules := ignore.NewIgnoreRules()
-	if err := ignoreRules.LoadIgnoreFiles("."); err != nil {
-		return fmt.Errorf("error loading .cpeignore files: %w", err)
-	}
-
-	codeMapOutput, err := generateCodeMapOutput(100, ignoreRules)
+func handleCodebaseSpecificQuery(provider llm2.LLMProvider, genConfig llm2.GenConfig, input string, config cliopts.Options, ignorer *gitignore.GitIgnore) error {
+	codeMapOutput, err := generateCodeMapOutput(100, ignorer)
 	if err != nil {
 		return fmt.Errorf("error generating code map output: %w", err)
 	}
@@ -313,7 +317,7 @@ func handleCodebaseSpecificQuery(provider llm2.LLMProvider, genConfig llm2.GenCo
 	if config.IncludeFiles != "" {
 		selectedFiles = append(selectedFiles, strings.Split(config.IncludeFiles, ",")...)
 	}
-	systemMessage, err := buildSystemMessageWithSelectedFiles(selectedFiles, ignoreRules)
+	systemMessage, err := buildSystemMessageWithSelectedFiles(selectedFiles, ignorer)
 	if err != nil {
 		return fmt.Errorf("error building system message: %w", err)
 	}
@@ -414,7 +418,7 @@ func printResponse(response llm2.Message) {
 }
 
 func handleFatalError(err error) {
-	fmt.Printf("Fatal error: %v\n", err)
+	fmt.Printf("fatal error: %v\n", err)
 	os.Exit(1)
 }
 
