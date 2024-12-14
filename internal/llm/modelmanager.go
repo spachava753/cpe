@@ -80,6 +80,10 @@ var ModelConfigs = map[string]ModelConfig{
 		Name: "gemini-1.5-flash-002", ProviderType: "gemini", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
+	"gemini-2.0-flash-exp": {
+		Name: "gemini-2.0-flash-exp", ProviderType: "gemini", IsKnown: true,
+		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
+	},
 	"gemini-1.5-pro": {
 		Name: "gemini-1.5-pro-002", ProviderType: "gemini", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
