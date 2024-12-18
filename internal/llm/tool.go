@@ -4,9 +4,9 @@ import "encoding/json"
 
 // Tool represents a function that can be called by the LLM
 type Tool struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"input_schema"`
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	InputSchema interface{} `json:"input_schema"`
 }
 
 // ToolUse represents a request from the LLM to use a tool

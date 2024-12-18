@@ -15,7 +15,7 @@ import (
 	"github.com/spachava753/cpe/internal/extract"
 	"github.com/spachava753/cpe/internal/fileops"
 	"github.com/spachava753/cpe/internal/ignore"
-	llm2 "github.com/spachava753/cpe/internal/llm"
+	"github.com/spachava753/cpe/internal/llm"
 	"github.com/spachava753/cpe/internal/tiktokenloader"
 	"github.com/spachava753/cpe/internal/tokentree"
 	"github.com/spachava753/cpe/internal/typeresolver"
@@ -117,11 +117,11 @@ func buildSystemMessageWithSelectedFiles(allFiles []string, ignorer *gitignore.G
 	return systemMessage.String(), nil
 }
 
-func determineCodebaseAccess(provider llm2.LLMProvider, genConfig llm2.GenConfig, userInput string) (bool, error) {
-	initialConversation := llm2.Conversation{
+func determineCodebaseAccess(provider llm.LLMProvider, genConfig llm.GenConfig, userInput string) (bool, error) {
+	initialConversation := llm.Conversation{
 		SystemPrompt: InitialPrompt,
-		Messages:     []llm2.Message{{Role: "user", Content: []llm2.ContentBlock{{Type: "text", Text: userInput}}}},
-		Tools: []llm2.Tool{{
+		Messages:     []llm.Message{{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: userInput}}}},
+		Tools: []llm.Tool{{
 			Name:        "decide_codebase_access",
 			Description: "Reports the decision on whether codebase access is required",
 			InputSchema: InitialPromptToolCallDef,
@@ -146,7 +146,7 @@ func determineCodebaseAccess(provider llm2.LLMProvider, genConfig llm2.GenConfig
 				return false, fmt.Errorf("error parsing tool use result: %w", err)
 			}
 			fmt.Printf("Thinking: %s\nCodebase access decision: %v\n", result.Thinking, result.RequiresCodebase)
-			llm2.PrintTokenUsage(tokenUsage)
+			llm.PrintTokenUsage(tokenUsage)
 			return result.RequiresCodebase, nil
 		}
 	}
@@ -222,7 +222,7 @@ func main() {
 			handleFatalError(err)
 		}
 		printResponse(response)
-		llm2.PrintTokenUsage(tokenUsage)
+		llm.PrintTokenUsage(tokenUsage)
 	}
 }
 
@@ -234,8 +234,8 @@ func parseConfig() (cliopts.Options, error) {
 		os.Exit(0)
 	}
 
-	if cliopts.Opts.Model != "" && cliopts.Opts.Model != llm2.DefaultModel {
-		_, ok := llm2.ModelConfigs[cliopts.Opts.Model]
+	if cliopts.Opts.Model != "" && cliopts.Opts.Model != llm.DefaultModel {
+		_, ok := llm.ModelConfigs[cliopts.Opts.Model]
 		if !ok && cliopts.Opts.CustomURL == "" {
 			return cliopts.Options{}, fmt.Errorf("unknown model '%s' requires -custom-url flag", cliopts.Opts.Model)
 		}
@@ -244,8 +244,8 @@ func parseConfig() (cliopts.Options, error) {
 	return cliopts.Opts, nil
 }
 
-func initializeLLMProvider(config cliopts.Options) (llm2.LLMProvider, llm2.GenConfig, error) {
-	return llm2.GetProvider(config.Model, llm2.ModelOptions{
+func initializeLLMProvider(config cliopts.Options) (llm.LLMProvider, llm.GenConfig, error) {
+	return llm.GetProvider(config.Model, llm.ModelOptions{
 		Model:             config.Model,
 		CustomURL:         config.CustomURL,
 		MaxTokens:         config.MaxTokens,
@@ -303,7 +303,7 @@ func readFromFile(filePath string) (string, error) {
 	return string(contentBytes), nil
 }
 
-func handleCodebaseSpecificQuery(provider llm2.LLMProvider, genConfig llm2.GenConfig, input string, config cliopts.Options, ignorer *gitignore.GitIgnore) error {
+func handleCodebaseSpecificQuery(provider llm.LLMProvider, genConfig llm.GenConfig, input string, config cliopts.Options, ignorer *gitignore.GitIgnore) error {
 	codeMapOutput, err := generateCodeMapOutput(100, ignorer)
 	if err != nil {
 		return fmt.Errorf("error generating code map output: %w", err)
@@ -328,9 +328,71 @@ func handleCodebaseSpecificQuery(provider llm2.LLMProvider, genConfig llm2.GenCo
 		fmt.Println("--- End of System Prompt ---")
 	}
 
-	conversation := llm2.Conversation{
+	conversation := llm.Conversation{
 		SystemPrompt: systemMessage,
-		Messages:     []llm2.Message{{Role: "user", Content: []llm2.ContentBlock{{Type: "text", Text: input}}}},
+		Messages:     []llm.Message{{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: input}}}},
+		Tools: []llm.Tool{
+			{
+				Name: "bash",
+				Description: `Run commands in a bash shell
+* When invoking this tool, the contents of the "command" parameter does NOT need to be escaped.
+* You don't have access to the internet via this tool.
+* You do have access to a mirror of common linux and python packages via apt and pip.
+* State is persistent across command calls and discussions with the user.
+* To inspect a particular line range of a file, e.g. lines 10-25, try 'sed -n 10,25p /path/to/the/file'.
+* Avoid commands that may produce a very large amount of output.
+* Run long lived commands in the background, e.g. 'sleep 10 &' or start a server in the background`,
+				InputSchema: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"command": map[string]interface{}{
+							"type":        "string",
+							"description": "The bash command to run.",
+						},
+					},
+					"required": []string{"command"},
+				},
+			},
+			{
+				Name: "file_editor",
+				Description: `A tool to edit, create and delete files
+* The "create" command cannot be used if the specified "path" already exists as a file. It should only be used to create a file, and "file_text" must be supplied as the contents of the new file
+* The "remove" command can be used to remove an existing file
+
+Notes for using the "str_replace" command:
+* The "old_str" parameter should match EXACTLY one or more consecutive lines from the original file. Be mindful of whitespaces!
+* If the "old_str" parameter is not unique in the file, the replacement will not be performed. Make sure to include enough context in "old_str" to make it unique
+* The "new_str" parameter should contain the edited lines that should replace the "old_str"
+* Leave "new_str" parameter empty effectively remove "old_str" text from the file`,
+				InputSchema: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"command": map[string]interface{}{
+							"type":        "string",
+							"enum":        []string{"create", "str_replace", "remove"},
+							"description": `The commands to run. Allowed options are: "view", "create", "str_replace", "insert", "undo_edit".`,
+						},
+						"file_text": map[string]interface{}{
+							"description": `Required parameter of "create" command, with the content of the file to be created.`,
+							"type":        "string",
+						},
+						"new_str": map[string]interface{}{
+							"description": `Required parameter of "str_replace" command containing the new string.`,
+							"type":        "string",
+						},
+						"old_str": map[string]interface{}{
+							"description": `Required parameter of "str_replace" command containing the string in "path" to replace.`,
+							"type":        "string",
+						},
+						"path": map[string]interface{}{
+							"description": `Relative path to file or directory, e.g. "./file.py"`,
+							"type":        "string",
+						},
+					},
+					"required": []string{"command", "path"},
+				},
+			},
+		},
 	}
 
 	response, tokenUsage, err := provider.GenerateResponse(genConfig, conversation)
@@ -345,24 +407,111 @@ func handleCodebaseSpecificQuery(provider llm2.LLMProvider, genConfig llm2.GenCo
 		return fmt.Errorf("error handling file modifications: %w", err)
 	}
 
-	llm2.PrintTokenUsage(tokenUsage)
+	llm.PrintTokenUsage(tokenUsage)
 	return nil
 }
 
-func handleFileModifications(provider llm2.LLMProvider, genConfig llm2.GenConfig, conversation llm2.Conversation, initialResponse llm2.Message) error {
+// FileEditorInput represents the input schema for the file_editor tool
+type FileEditorInput struct {
+	Command  string `json:"command"`             // Required: "create", "str_replace", or "append"
+	Path     string `json:"path"`                // Required: relative path to file
+	FileText string `json:"file_text,omitempty"` // Required for "create" command
+	NewStr   string `json:"new_str,omitempty"`   // Required for "str_replace" and "append" commands
+	OldStr   string `json:"old_str,omitempty"`   // Required for "str_replace" command
+}
+
+func validateFileEditorInput(input FileEditorInput) error {
+	if input.Path == "" {
+		return fmt.Errorf("path cannot be empty")
+	}
+
+	switch input.Command {
+	case "create":
+		if input.FileText == "" {
+			return fmt.Errorf("file_text is required for create command")
+		}
+		if input.NewStr != "" || input.OldStr != "" {
+			return fmt.Errorf("new_str and old_str should not be provided for create command")
+		}
+	case "str_replace":
+		if input.OldStr == "" {
+			return fmt.Errorf("old_str is required for str_replace command")
+		}
+		if input.FileText != "" {
+			return fmt.Errorf("file_text should not be provided for str_replace command")
+		}
+	case "remove":
+		if input.FileText != "" || input.NewStr != "" || input.OldStr != "" {
+			return fmt.Errorf("file_text, new_str, and old_str should not be provided for remove command")
+		}
+	default:
+		return fmt.Errorf("invalid command: %s", input.Command)
+	}
+
+	return nil
+}
+
+func convertFileEditorInputToModification(input FileEditorInput) (extract.Modification, error) {
+	switch input.Command {
+	case "create":
+		return extract.CreateFile{
+			Path:        input.Path,
+			Content:     input.FileText,
+			Explanation: "File creation requested via file_editor tool",
+		}, nil
+	case "str_replace":
+		return extract.ModifyFile{
+			Path: input.Path,
+			Edits: []extract.Edit{{
+				Search:  input.OldStr,
+				Replace: input.NewStr,
+			}},
+			Explanation: "File modification requested via file_editor tool",
+		}, nil
+	case "remove":
+		return extract.RemoveFile{
+			Path:        input.Path,
+			Explanation: "File removal requested via file_editor tool",
+		}, nil
+	default:
+		return nil, fmt.Errorf("invalid command: %s", input.Command)
+	}
+}
+
+func handleFileModifications(provider llm.LLMProvider, genConfig llm.GenConfig, conversation llm.Conversation, initialResponse llm.Message) error {
 	maxRetries := 3
 	for retry := 0; retry < maxRetries; retry++ {
 		conversation.Messages = append(conversation.Messages, initialResponse)
 
-		modifications, err := extractModifications(initialResponse)
-		if err != nil {
-			return fmt.Errorf("error parsing modifications: %w", err)
+		var modifications []extract.Modification
+
+		// Check for tool use blocks
+		for _, block := range initialResponse.Content {
+			if block.Type == "tool_use" && block.ToolUse.Name == "file_editor" {
+				var input FileEditorInput
+				if err := json.Unmarshal(block.ToolUse.Input, &input); err != nil {
+					return fmt.Errorf("error unmarshaling file editor input: %w", err)
+				}
+
+				// Validate the input
+				if err := validateFileEditorInput(input); err != nil {
+					return fmt.Errorf("invalid file editor input: %w", err)
+				}
+
+				// Convert input to modification
+				mod, err := convertFileEditorInputToModification(input)
+				if err != nil {
+					return fmt.Errorf("error converting file editor input to modification: %w", err)
+				}
+
+				modifications = append(modifications, mod)
+			}
 		}
 
 		results := fileops.ExecuteFileOperations(modifications)
-		errors := collectErrors(results)
+		fileOpErrs := collectErrors(results)
 
-		if len(errors) == 0 {
+		if len(fileOpErrs) == 0 {
 			fmt.Println("All operations completed successfully.")
 			printSummary(results)
 			return nil
@@ -370,11 +519,12 @@ func handleFileModifications(provider llm2.LLMProvider, genConfig llm2.GenConfig
 
 		if retry < maxRetries-1 {
 			fmt.Printf("Errors encountered. Retrying (Attempt %d/%d)...\n", retry+2, maxRetries)
-			retryMessage := buildRetryMessage(errors)
-			conversation.Messages = append(conversation.Messages, llm2.Message{
+			retryMessage := buildRetryMessage(fileOpErrs)
+			conversation.Messages = append(conversation.Messages, llm.Message{
 				Role:    "user",
-				Content: []llm2.ContentBlock{{Type: "text", Text: retryMessage}},
+				Content: []llm.ContentBlock{{Type: "text", Text: retryMessage}},
 			})
+			var err error
 			initialResponse, _, err = provider.GenerateResponse(genConfig, conversation)
 			if err != nil {
 				return fmt.Errorf("error generating retry response: %w", err)
@@ -389,26 +539,16 @@ func handleFileModifications(provider llm2.LLMProvider, genConfig llm2.GenConfig
 	return nil
 }
 
-func extractModifications(response llm2.Message) ([]extract.Modification, error) {
-	var textContent string
-	for _, block := range response.Content {
-		if block.Type == "text" {
-			textContent += block.Text
-		}
-	}
-	return extract.Modifications(textContent)
-}
-
-func generateSimpleResponse(provider llm2.LLMProvider, genConfig llm2.GenConfig, input string) (llm2.Message, llm2.TokenUsage, error) {
-	conversation := llm2.Conversation{
+func generateSimpleResponse(provider llm.LLMProvider, genConfig llm.GenConfig, input string) (llm.Message, llm.TokenUsage, error) {
+	conversation := llm.Conversation{
 		SystemPrompt: GeneralAssistantPrompt,
-		Messages:     []llm2.Message{{Role: "user", Content: []llm2.ContentBlock{{Type: "text", Text: input}}}},
+		Messages:     []llm.Message{{Role: "user", Content: []llm.ContentBlock{{Type: "text", Text: input}}}},
 	}
 
 	return provider.GenerateResponse(genConfig, conversation)
 }
 
-func printResponse(response llm2.Message) {
+func printResponse(response llm.Message) {
 	for _, block := range response.Content {
 		if block.Type == "text" {
 			fmt.Print(block.Text)

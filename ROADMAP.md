@@ -38,6 +38,7 @@ This document outlines the planned features, improvements, and notes for the CPE
 
 ### User Experience
 - [ ] Command auto-completion
+- [ ] Convert token-count flag to sub command
 
 ### Performance
 - [ ] Parallel processing for large codebases

@@ -54,7 +54,7 @@ type anthropicToolChoice struct {
 type anthropicTool struct {
 	Name         string                 `json:"name"`
 	Description  string                 `json:"description,omitempty"`
-	InputSchema  json.RawMessage        `json:"input_schema"`
+	InputSchema  interface{}            `json:"input_schema"`
 	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
 }
 
