@@ -370,7 +370,7 @@ Notes for using the "str_replace" command:
 						"command": map[string]interface{}{
 							"type":        "string",
 							"enum":        []string{"create", "str_replace", "remove"},
-							"description": `The commands to run. Allowed options are: "view", "create", "str_replace", "insert", "undo_edit".`,
+							"description": `The commands to run. Allowed options are: "create", "create", "str_replace", "remove".`,
 						},
 						"file_text": map[string]interface{}{
 							"description": `Required parameter of "create" command, with the content of the file to be created.`,

@@ -17,10 +17,10 @@ This document outlines the planned features, improvements, and notes for the CPE
 
 ### Code Map
 - [ ] Some repos are too large to fit in a context window, even without function bodies, so we should process the codebase in chunks if it exceeds the context window
+- [ ] Instead of detecting file extensions, try to detect if file of text context using magic bytes
 
-### Code Analysis
-- [ ] Implement dependency graph visualization
-- [ ] Support for more programming languages
+### Tooling
+- [ ] Add support for bash execution tool
 
 ### LLM Integration
 - [ ] Support for more LLM providers

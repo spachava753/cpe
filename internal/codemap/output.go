@@ -23,6 +23,7 @@ var supportedLanguages = map[string]bool{
 	".json": true,
 	".xml":  true,
 	".mod":  true,
+	".md":   true,
 }
 
 // FileCodeMap represents a single file's code map output
