@@ -34,6 +34,7 @@ This document outlines the planned features, improvements, and notes for the CPE
 - [ ] Use official sdks instead for openai, gemini
   - [ ] openai
   - [ ] gemini
+- [ ] Use structured outputs for openai and gemini to ensure strict following of tool schemas.
 
 ### Observability
 - [ ] Export each cpe command run to a tracing tool
@@ -42,6 +43,7 @@ This document outlines the planned features, improvements, and notes for the CPE
 
 ### User Experience
 - [ ] Command auto-completion
+- [ ] Add support for continuing a conversation if user chooses to do so
 - [ ] Convert token-count flag to sub command
 - [ ] Support sending requests to multiple models and picking the best one
 
