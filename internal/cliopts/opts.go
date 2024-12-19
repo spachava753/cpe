@@ -2,6 +2,11 @@ package cliopts
 
 import (
 	"flag"
+	"fmt"
+	"github.com/spachava753/cpe/internal/llm"
+	"maps"
+	"slices"
+	"strings"
 )
 
 type Options struct {
@@ -26,7 +31,7 @@ var Opts Options
 func init() {
 	flag.StringVar(&Opts.TokenCountPath, "token-count", "", "Print a tree of directories and files with their token counts for the given path")
 	flag.BoolVar(&Opts.Version, "version", false, "Print the version number and exit")
-	flag.StringVar(&Opts.Model, "model", "", "Specify the model to use. Supported models: claude-3-opus, claude-3-5-sonnet, claude-3-5-haiku, gemini-1.5-flash, gemini-1.5-pro, gpt-4o, gpt-4o-mini")
+	flag.StringVar(&Opts.Model, "model", "", fmt.Sprintf("Specify the model to use. Supported models: %s", strings.Join(slices.Collect(maps.Keys(llm.ModelConfigs)), ", ")))
 	flag.StringVar(&Opts.CustomURL, "custom-url", "", "Specify a custom base URL for the model provider API")
 	flag.IntVar(&Opts.MaxTokens, "max-tokens", 0, "Maximum number of tokens to generate")
 	flag.Float64Var(&Opts.Temperature, "temperature", 0, "Sampling temperature (0.0 - 1.0)")
