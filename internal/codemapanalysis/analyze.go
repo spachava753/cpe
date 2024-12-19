@@ -8,8 +8,26 @@ import (
 	"io/fs"
 )
 
-//go:embed select_files_for_analysis.json
-var selectFilesForAnalysisToolDef json.RawMessage
+var selectFilesForAnalysisToolDef = map[string]interface{}{
+	"type": "object",
+	"properties": map[string]interface{}{
+		"thinking": map[string]interface{}{
+			"type":        "string",
+			"description": "Use this field to think about analyze what files should be selected",
+		},
+		"selected_files": map[string]interface{}{
+			"type": "array",
+			"items": map[string]interface{}{
+				"type": "string",
+			},
+			"description": "An array of file paths selected for high-fidelity analysis",
+		},
+	},
+	"required": []string{
+		"thinking",
+		"selected_files",
+	},
+}
 
 //go:embed code_map_analysis_prompt.txt
 var codeMapAnalysisPrompt string

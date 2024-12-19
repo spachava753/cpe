@@ -191,23 +191,20 @@ func GetProvider(modelName string, flags ModelOptions) (LLMProvider, GenConfig, 
 	}
 
 	var provider LLMProvider
+	var err error
 
 	switch config.ProviderType {
 	case "anthropic":
 		provider = NewAnthropicProvider(providerConfig.GetAPIKey(), flags.CustomURL)
 	case "gemini":
-		url := flags.CustomURL
-		if url == "" {
-			url = "https://generativelanguage.googleapis.com/v1beta/"
-		}
-		provider = NewOpenAIProvider(providerConfig.GetAPIKey(), url)
+		provider, err = NewGeminiProvider(providerConfig.GetAPIKey(), flags.CustomURL)
 	case "openai":
 		provider = NewOpenAIProvider(providerConfig.GetAPIKey(), flags.CustomURL)
 	default:
 		return nil, genConfig, fmt.Errorf("unsupported provider type: %s", config.ProviderType)
 	}
 
-	return provider, genConfig, nil
+	return provider, genConfig, err
 }
 
 func loadProviderConfig(providerType string) (ProviderConfig, error) {

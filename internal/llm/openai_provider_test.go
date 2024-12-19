@@ -1,7 +1,6 @@
 package llm
 
 import (
-	"encoding/json"
 	"github.com/sashabaranov/go-openai"
 	"os"
 	"testing"
@@ -55,7 +54,15 @@ func TestOpenAIProvider(t *testing.T) {
 				{
 					Name:        "get_weather",
 					Description: "Get the current weather in a given location",
-					InputSchema: json.RawMessage(`{"type":"object","properties":{"location":{"type":"string"}},"required":["location"]}`),
+					InputSchema: map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"location": map[string]interface{}{
+								"type": "string",
+							},
+						},
+						"required": []string{"location"},
+					},
 				},
 			},
 		}

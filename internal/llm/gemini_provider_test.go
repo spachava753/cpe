@@ -1,7 +1,6 @@
 package llm
 
 import (
-	"encoding/json"
 	"os"
 	"testing"
 )
@@ -12,7 +11,7 @@ func TestGeminiProvider(t *testing.T) {
 		t.Skip("GEMINI_API_KEY environment variable is not set")
 	}
 
-	provider, _, err := GetProvider("gemini-1.5-flash", ModelOptions{})
+	provider, _, err := GetProvider("gemini-2.0-flash-exp", ModelOptions{})
 	if err != nil {
 		t.Fatalf("Failed to create GeminiProvider: %v", err)
 	}
@@ -57,7 +56,16 @@ func TestGeminiProvider(t *testing.T) {
 				{
 					Name:        "get_weather",
 					Description: "Get the current weather in a given location",
-					InputSchema: json.RawMessage(`{"type":"object","properties":{"location":{"type":"string","description":"The city and country"}},"required":["location"]}`),
+					InputSchema: map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"location": map[string]interface{}{
+								"type":        "string",
+								"description": "The city and country",
+							},
+						},
+						"required": []string{"location"},
+					},
 				},
 			},
 		}

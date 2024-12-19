@@ -124,7 +124,20 @@ func determineCodebaseAccess(provider llm.LLMProvider, genConfig llm.GenConfig, 
 		Tools: []llm.Tool{{
 			Name:        "decide_codebase_access",
 			Description: "Reports the decision on whether codebase access is required",
-			InputSchema: InitialPromptToolCallDef,
+			InputSchema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"thinking": map[string]interface{}{
+						"type":        "string",
+						"description": "Use this field to think about whether you need access to the codebase",
+					},
+					"requires_codebase": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Whether codebase access is required (true) or not (false)",
+					},
+				},
+				"required": []string{"thinking", "requires_codebase"},
+			},
 		}},
 	}
 
