@@ -6,6 +6,7 @@ This document outlines the planned features, improvements, and notes for the CPE
 
 ### Agentic flow
 - [ ] Move from disparate mulit-agent to single-agent, will reduce necessary calls, as we can remove the needs codebase function call
+  - [ ] Will have a separate sub-agent to retrieve relevant text snippets
 
 ### Token Analysis and Visualization
 - [x] Implement basic token counting per file
@@ -30,6 +31,9 @@ This document outlines the planned features, improvements, and notes for the CPE
 - [ ] support multimodality
   - [ ] images
   - [ ] videos
+- [ ] Use official sdks instead for openai, gemini
+  - [ ] openai
+  - [ ] gemini
 
 ### Observability
 - [ ] Export each cpe command run to a tracing tool
@@ -39,6 +43,7 @@ This document outlines the planned features, improvements, and notes for the CPE
 ### User Experience
 - [ ] Command auto-completion
 - [ ] Convert token-count flag to sub command
+- [ ] Support sending requests to multiple models and picking the best one
 
 ### Performance
 - [ ] Parallel processing for large codebases
