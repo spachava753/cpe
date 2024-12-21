@@ -18,6 +18,11 @@ This document outlines the planned features, improvements, and notes for the CPE
 
 ### Code Map
 - [ ] Some repos are too large to fit in a context window, even without function bodies, so we should process the codebase in chunks if it exceeds the context window
+  - [ ] Or maybe we can create further levels of fidelity hierarchy. Maybe something like:
+    1. File paths (for extremely large repos, or maybe just in arbitrary directories?)
+    2. Only type, function and method names (and class names for object-oriented langs)
+    3. Code comments, global variables, full type definitions (like all struct fields, tags, field comments, etc.) (this is the current lowest fidelity level today)
+    4. Full file contents
 - [ ] Instead of detecting file extensions, try to detect if file of text context using magic bytes
 
 ### Tooling
