@@ -25,24 +25,25 @@ func getVersion() string {
 }
 
 func main() {
+	logger := slog.Default()
 	startTime := time.Now()
 	defer func() {
 		elapsed := time.Since(startTime)
-		slog.Info("finished execution", "elapsed", elapsed)
+		logger.Info("finished execution", "elapsed", elapsed)
 	}()
 
 	config, err := parseConfig()
 	if err != nil {
-		slog.Error("fatal error", slog.Any("err", err))
+		logger.Error("fatal error", slog.Any("err", err))
 		os.Exit(1)
 	}
 	ignorer, err := ignore.LoadIgnoreFiles(".")
 	if err != nil {
-		slog.Error("fatal error", slog.Any("err", err))
+		logger.Error("fatal error", slog.Any("err", err))
 		os.Exit(1)
 	}
 	if ignorer == nil {
-		slog.Error("git ignorer was nil")
+		logger.Error("git ignorer was nil")
 		os.Exit(1)
 	}
 
@@ -54,7 +55,21 @@ func main() {
 		return
 	}
 
-	provider, genConfig, err := initializeLLMProvider(config)
+	provider, genConfig, err := llm.GetProvider(logger, config.Model, llm.ModelOptions{
+		Model:             config.Model,
+		CustomURL:         config.CustomURL,
+		MaxTokens:         config.MaxTokens,
+		Temperature:       config.Temperature,
+		TopP:              config.TopP,
+		TopK:              config.TopK,
+		FrequencyPenalty:  config.FrequencyPenalty,
+		PresencePenalty:   config.PresencePenalty,
+		NumberOfResponses: config.NumberOfResponses,
+		Debug:             config.Debug,
+		Input:             config.Input,
+		Version:           config.Version,
+		IncludeFiles:      config.IncludeFiles,
+	})
 	if err != nil {
 		slog.Error("fatal error", slog.Any("err", err))
 		os.Exit(1)
@@ -74,6 +89,7 @@ func main() {
 		Provider:  provider,
 		GenConfig: genConfig,
 		Logger:    slog.Default(),
+		Ignorer:   ignorer,
 	}
 
 	if err := a.Execute(input); err != nil {
@@ -98,24 +114,6 @@ func parseConfig() (cliopts.Options, error) {
 	}
 
 	return cliopts.Opts, nil
-}
-
-func initializeLLMProvider(config cliopts.Options) (llm.LLMProvider, llm.GenConfig, error) {
-	return llm.GetProvider(config.Model, llm.ModelOptions{
-		Model:             config.Model,
-		CustomURL:         config.CustomURL,
-		MaxTokens:         config.MaxTokens,
-		Temperature:       config.Temperature,
-		TopP:              config.TopP,
-		TopK:              config.TopK,
-		FrequencyPenalty:  config.FrequencyPenalty,
-		PresencePenalty:   config.PresencePenalty,
-		NumberOfResponses: config.NumberOfResponses,
-		Debug:             config.Debug,
-		Input:             config.Input,
-		Version:           config.Version,
-		IncludeFiles:      config.IncludeFiles,
-	})
 }
 
 func readInput(inputPath string) (string, error) {

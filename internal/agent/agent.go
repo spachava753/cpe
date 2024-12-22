@@ -1,6 +1,7 @@
 package agent
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	gitignore "github.com/sabhiram/go-gitignore"
@@ -15,6 +16,9 @@ import (
 	"sort"
 	"strings"
 )
+
+//go:embed agent_instructions.txt
+var agentInstructions string
 
 var bashTool = llm.Tool{
 	Name: "bash",
@@ -84,6 +88,10 @@ var filesOverviewTool = llm.Tool{
 * Each file is recursively listed with its relative path from the current directory and the contents of the file.
 * The contents of the file may omit certain lines to reduce the number of lines returned. For example, for source code files, the function and method bodies are omitted.
 * The file can be of any type, as long as it contains only text`,
+	InputSchema: map[string]interface{}{
+		"type":       "object",
+		"properties": map[string]interface{}{},
+	},
 }
 
 var getRelatedFilesTool = llm.Tool{
@@ -113,7 +121,7 @@ type Agent struct {
 	Provider  llm.LLMProvider
 	GenConfig llm.GenConfig
 	Logger    *slog.Logger
-	ignorer   *gitignore.GitIgnore
+	Ignorer   *gitignore.GitIgnore
 }
 
 // executeBashTool validates and executes the bash tool
@@ -232,7 +240,7 @@ func (a Agent) executeFileEditorTool(input json.RawMessage) (*llm.ToolResult, er
 // executeFilesOverviewTool validates and executes the files overview tool
 func (a Agent) executeFilesOverviewTool(input json.RawMessage) (*llm.ToolResult, error) {
 	// Use the codemap package to generate output
-	results, err := codemap.GenerateOutput(os.DirFS("."), 1000, a.ignorer)
+	results, err := codemap.GenerateOutput(os.DirFS("."), 1000, a.Ignorer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate files overview: %w", err)
 	}
@@ -266,7 +274,7 @@ func (a Agent) executeGetRelatedFilesTool(input json.RawMessage) (*llm.ToolResul
 	}
 
 	// Use the typeresolver package to find related files
-	relatedFiles, err := typeresolver.ResolveTypeAndFunctionFiles(params.InputFiles, os.DirFS("."), a.ignorer)
+	relatedFiles, err := typeresolver.ResolveTypeAndFunctionFiles(params.InputFiles, os.DirFS("."), a.Ignorer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve related files: %w", err)
 	}
@@ -285,5 +293,90 @@ func (a Agent) executeGetRelatedFilesTool(input json.RawMessage) (*llm.ToolResul
 }
 
 func (a Agent) Execute(input string) error {
+	// Initialize conversation with available tools and user input
+	conversation := llm.Conversation{
+		Tools: []llm.Tool{bashTool, fileEditor, filesOverviewTool, getRelatedFilesTool},
+		Messages: []llm.Message{
+			{
+				Role: "user",
+				Content: []llm.ContentBlock{
+					{
+						Type: "text",
+						Text: input,
+					},
+				},
+			},
+		},
+		SystemPrompt: agentInstructions,
+	}
+
+	// Start conversation loop
+	for {
+		// Get response from LLM provider
+		response, _, err := a.Provider.GenerateResponse(a.GenConfig, conversation)
+		if err != nil {
+			return fmt.Errorf("failed to generate response: %w", err)
+		}
+
+		// Add assistant's response to conversation history
+		conversation.Messages = append(conversation.Messages, response)
+
+		// Process each content block in the response
+		for _, block := range response.Content {
+			// Handle text content
+			if block.Type == "text" {
+				a.Logger.Info(block.Text)
+			}
+
+			// Handle tool calls
+			if block.Type == "tool_use" && block.ToolUse != nil {
+				var result *llm.ToolResult
+
+				// Execute the appropriate tool based on name
+				switch block.ToolUse.Name {
+				case "bash":
+					result, err = a.executeBashTool(block.ToolUse.Input)
+				case "file_editor":
+					result, err = a.executeFileEditorTool(block.ToolUse.Input)
+				case "files_overview":
+					result, err = a.executeFilesOverviewTool(block.ToolUse.Input)
+				case "get_related_files":
+					result, err = a.executeGetRelatedFilesTool(block.ToolUse.Input)
+				default:
+					return fmt.Errorf("unknown tool: %s", block.ToolUse.Name)
+				}
+
+				if err != nil {
+					return fmt.Errorf("failed to execute tool %s: %w", block.ToolUse.Name, err)
+				}
+
+				// Add tool result to conversation
+				result.ToolUseID = block.ToolUse.ID
+				conversation.Messages = append(conversation.Messages, llm.Message{
+					Role: "user",
+					Content: []llm.ContentBlock{
+						{
+							Type:       "tool_result",
+							ToolResult: result,
+						},
+					},
+				})
+			}
+		}
+
+		// Check if the response has no tool calls, which means we're done
+		hasToolCalls := false
+		for _, block := range response.Content {
+			if block.Type == "tool_use" && block.ToolUse != nil {
+				hasToolCalls = true
+				break
+			}
+		}
+
+		if !hasToolCalls {
+			break
+		}
+	}
+
 	return nil
 }

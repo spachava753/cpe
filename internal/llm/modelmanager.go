@@ -3,6 +3,7 @@ package llm
 import (
 	"fmt"
 	"github.com/sashabaranov/go-openai"
+	"log/slog"
 	"os"
 )
 
@@ -146,7 +147,7 @@ func (f ModelOptions) ApplyToGenConfig(config GenConfig) GenConfig {
 	return config
 }
 
-func GetProvider(modelName string, flags ModelOptions) (LLMProvider, GenConfig, error) {
+func GetProvider(logger *slog.Logger, modelName string, flags ModelOptions) (LLMProvider, GenConfig, error) {
 	if modelName == "" {
 		modelName = DefaultModel
 	}
@@ -157,7 +158,7 @@ func GetProvider(modelName string, flags ModelOptions) (LLMProvider, GenConfig, 
 		if flags.CustomURL == "" {
 			return nil, GenConfig{}, fmt.Errorf("unknown model '%s' requires -custom-url flag", modelName)
 		}
-		fmt.Printf("Warning: Using unknown model '%s' with OpenAI provider\n", modelName)
+		logger.Info("Using unknown model with OpenAI provider", slog.String("model", modelName), slog.String("custom-url", flags.CustomURL))
 		config = ModelConfig{Name: modelName, ProviderType: "openai", IsKnown: false}
 	}
 
