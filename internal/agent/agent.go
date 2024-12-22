@@ -370,6 +370,15 @@ func (a Agent) Execute(input string) error {
 					return fmt.Errorf("failed to execute tool %s: %w", block.ToolUse.Name, err)
 				}
 
+				// Log bash command output if this was a bash command
+				if block.ToolUse.Name == "bash" {
+					if result.IsError {
+						a.Logger.Error("bash command output", slog.String("output", result.Content.(string)))
+					} else {
+						a.Logger.Info("bash command output", slog.String("output", result.Content.(string)))
+					}
+				}
+
 				// Add tool result to conversation
 				result.ToolUseID = block.ToolUse.ID
 				conversation.Messages = append(conversation.Messages, llm.Message{
