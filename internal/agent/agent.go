@@ -347,6 +347,9 @@ func (a Agent) Execute(input string) error {
 					continue
 				}
 
+				// Print out the tool call block
+				a.Logger.Info("calling tool", slog.String("name", block.ToolUse.Name), slog.Any("input", block.ToolUse.Input))
+
 				var result *llm.ToolResult
 
 				// Execute the appropriate tool based on name
