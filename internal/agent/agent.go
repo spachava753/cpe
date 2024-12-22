@@ -286,8 +286,23 @@ func (a Agent) executeGetRelatedFilesTool(input json.RawMessage) (*llm.ToolResul
 	}
 	sort.Strings(files)
 
+	// Build output string with file paths and contents
+	var output strings.Builder
+	for _, file := range files {
+		// Read file content
+		content, err := os.ReadFile(file)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read file %s: %w", file, err)
+		}
+
+		output.WriteString(fmt.Sprintf("File: %s\n", file))
+		output.WriteString("Content:\n```")
+		output.WriteString(string(content))
+		output.WriteString("```\n\n")
+	}
+
 	return &llm.ToolResult{
-		Content: files,
+		Content: output.String(),
 		IsError: false,
 	}, nil
 }
@@ -323,13 +338,15 @@ func (a Agent) Execute(input string) error {
 
 		// Process each content block in the response
 		for _, block := range response.Content {
-			// Handle text content
-			if block.Type == "text" {
+			// Handle different block types
+			switch block.Type {
+			case "text":
 				a.Logger.Info(block.Text)
-			}
+			case "tool_use":
+				if block.ToolUse == nil {
+					continue
+				}
 
-			// Handle tool calls
-			if block.Type == "tool_use" && block.ToolUse != nil {
 				var result *llm.ToolResult
 
 				// Execute the appropriate tool based on name
