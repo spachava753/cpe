@@ -32,8 +32,7 @@ func TestLoadIgnoreFiles(t *testing.T) {
 		}
 	}
 
-	ir := NewIgnoreRules()
-	err = ir.LoadIgnoreFiles(subDir)
+	ignorer, err := LoadIgnoreFiles(subDir)
 	if err != nil {
 		t.Fatalf("LoadIgnoreFiles failed: %v", err)
 	}
@@ -52,8 +51,8 @@ func TestLoadIgnoreFiles(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		if ir.ShouldIgnore(tc.path) != tc.expected {
-			t.Errorf("ShouldIgnore(%q) = %v, want %v", tc.path, !tc.expected, tc.expected)
+		if ignorer.MatchesPath(tc.path) != tc.expected {
+			t.Errorf("MatchesPath(%q) = %v, want %v", tc.path, !tc.expected, tc.expected)
 		}
 	}
 }

@@ -1,6 +1,8 @@
 package llm
 
 import (
+	"bytes"
+	"log/slog"
 	"os"
 	"testing"
 )
@@ -11,7 +13,14 @@ func TestGeminiProvider(t *testing.T) {
 		t.Skip("GEMINI_API_KEY environment variable is not set")
 	}
 
-	provider, _, err := GetProvider("gemini-2.0-flash-exp", ModelOptions{})
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+	defer func() {
+		if logBuf.Len() > 0 {
+			t.Logf("log output:\n%s", logBuf.String())
+		}
+	}()
+	provider, _, err := GetProvider(logger, "gemini-2.0-flash-exp", ModelOptions{})
 	if err != nil {
 		t.Fatalf("Failed to create GeminiProvider: %v", err)
 	}
