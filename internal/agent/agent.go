@@ -1,8 +1,19 @@
 package agent
 
 import (
+	"encoding/json"
+	"fmt"
+	gitignore "github.com/sabhiram/go-gitignore"
+	"github.com/spachava753/cpe/internal/codemap"
+	"github.com/spachava753/cpe/internal/extract"
+	"github.com/spachava753/cpe/internal/fileops"
 	"github.com/spachava753/cpe/internal/llm"
+	"github.com/spachava753/cpe/internal/typeresolver"
 	"log/slog"
+	"os"
+	"os/exec"
+	"sort"
+	"strings"
 )
 
 var bashTool = llm.Tool{
@@ -102,6 +113,168 @@ type Agent struct {
 	Provider  llm.LLMProvider
 	GenConfig llm.GenConfig
 	Logger    *slog.Logger
+	ignorer   *gitignore.GitIgnore
+}
+
+// executeBashTool validates and executes the bash tool
+func (a Agent) executeBashTool(input json.RawMessage) (*llm.ToolResult, error) {
+	var params struct {
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return nil, fmt.Errorf("invalid bash tool input: %w", err)
+	}
+
+	if params.Command == "" {
+		return nil, fmt.Errorf("command parameter is required")
+	}
+
+	// Execute the bash command
+	cmd := exec.Command("bash", "-c", params.Command)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return &llm.ToolResult{
+			Content: string(output),
+			IsError: true,
+		}, nil
+	}
+
+	return &llm.ToolResult{
+		Content: string(output),
+		IsError: false,
+	}, nil
+}
+
+// executeFileEditorTool validates and executes the file editor tool
+func (a Agent) executeFileEditorTool(input json.RawMessage) (*llm.ToolResult, error) {
+	var params struct {
+		Command  string `json:"command"`
+		Path     string `json:"path"`
+		FileText string `json:"file_text,omitempty"`
+		OldStr   string `json:"old_str,omitempty"`
+		NewStr   string `json:"new_str,omitempty"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return nil, fmt.Errorf("invalid file editor tool input: %w", err)
+	}
+
+	if params.Path == "" {
+		return nil, fmt.Errorf("path parameter is required")
+	}
+
+	var mods []extract.Modification
+	switch params.Command {
+	case "create":
+		if params.FileText == "" {
+			return nil, fmt.Errorf("file_text parameter is required for create command")
+		}
+		mods = append(mods, extract.CreateFile{
+			Path:    params.Path,
+			Content: params.FileText,
+		})
+	case "str_replace":
+		if params.OldStr == "" {
+			return nil, fmt.Errorf("old_str parameter is required for str_replace command")
+		}
+		mods = append(mods, extract.ModifyFile{
+			Path: params.Path,
+			Edits: []extract.Edit{
+				{
+					Search:  params.OldStr,
+					Replace: params.NewStr,
+				},
+			},
+		})
+	case "remove":
+		mods = append(mods, extract.RemoveFile{
+			Path: params.Path,
+		})
+	default:
+		return nil, fmt.Errorf("invalid command: %s", params.Command)
+	}
+
+	results := fileops.ExecuteFileOperations(mods)
+	if len(results) == 0 {
+		return &llm.ToolResult{
+			Content: "no modifications applied",
+			IsError: false,
+		}, nil
+	}
+
+	// Check if any operation failed
+	var errs []string
+	for _, result := range results {
+		if result.Error != nil {
+			errs = append(errs, result.Error.Error())
+		}
+	}
+
+	if len(errs) > 0 {
+		return &llm.ToolResult{
+			Content: strings.Join(errs, "\n"),
+			IsError: true,
+		}, nil
+	}
+
+	return &llm.ToolResult{
+		Content: fmt.Sprintf("successfully executed %s command on %s", params.Command, params.Path),
+		IsError: false,
+	}, nil
+}
+
+// executeFilesOverviewTool validates and executes the files overview tool
+func (a Agent) executeFilesOverviewTool(input json.RawMessage) (*llm.ToolResult, error) {
+	// Use the codemap package to generate output
+	results, err := codemap.GenerateOutput(os.DirFS("."), 1000, a.ignorer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate files overview: %w", err)
+	}
+
+	// Format the results
+	var output strings.Builder
+	for _, result := range results {
+		output.WriteString(fmt.Sprintf("File: %s\n", result.Path))
+		output.WriteString("Content:\n```")
+		output.WriteString(result.Content)
+		output.WriteString("```\n\n")
+	}
+
+	return &llm.ToolResult{
+		Content: output.String(),
+		IsError: false,
+	}, nil
+}
+
+// executeGetRelatedFilesTool validates and executes the get related files tool
+func (a Agent) executeGetRelatedFilesTool(input json.RawMessage) (*llm.ToolResult, error) {
+	var params struct {
+		InputFiles []string `json:"input_files"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return nil, fmt.Errorf("invalid get related files tool input: %w", err)
+	}
+
+	if len(params.InputFiles) == 0 {
+		return nil, fmt.Errorf("input_files parameter is required")
+	}
+
+	// Use the typeresolver package to find related files
+	relatedFiles, err := typeresolver.ResolveTypeAndFunctionFiles(params.InputFiles, os.DirFS("."), a.ignorer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve related files: %w", err)
+	}
+
+	// Convert map to sorted slice for consistent output
+	var files []string
+	for file := range relatedFiles {
+		files = append(files, file)
+	}
+	sort.Strings(files)
+
+	return &llm.ToolResult{
+		Content: files,
+		IsError: false,
+	}, nil
 }
 
 func (a Agent) Execute(input string) error {
