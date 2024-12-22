@@ -193,6 +193,13 @@ func (a Agent) executeFileEditorTool(input json.RawMessage) (*llm.ToolResult, er
 		return nil, fmt.Errorf("invalid command: %s", params.Command)
 	}
 
+	if len(mods) == 0 {
+		return &llm.ToolResult{
+			Content: "at least one modification action is required",
+			IsError: true,
+		}, nil
+	}
+
 	results := fileops.ExecuteFileOperations(mods)
 	if len(results) == 0 {
 		return &llm.ToolResult{
@@ -205,7 +212,7 @@ func (a Agent) executeFileEditorTool(input json.RawMessage) (*llm.ToolResult, er
 	var errs []string
 	for _, result := range results {
 		if result.Error != nil {
-			errs = append(errs, result.Error.Error())
+			errs = append(errs, fmt.Sprintf("failed to execute %T on %s: %v", result.Operation, params.Path, result.Error))
 		}
 	}
 
