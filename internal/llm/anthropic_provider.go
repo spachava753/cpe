@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -21,6 +22,10 @@ func NewAnthropicProvider(apiKey string, baseURL string) *AnthropicProvider {
 		option.WithRequestTimeout(5 * time.Minute),
 	}
 	if baseURL != "" {
+		// Ensure baseURL ends with a trailing "/"
+		if !strings.HasSuffix(baseURL, "/") {
+			baseURL = baseURL + "/"
+		}
 		opts = append(opts, option.WithBaseURL(baseURL))
 	}
 

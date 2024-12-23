@@ -55,9 +55,15 @@ func main() {
 		return
 	}
 
+	// Check for custom URL in environment variable
+	customURL := config.CustomURL
+	if envURL := os.Getenv("CPE_CUSTOM_URL"); envURL != "" {
+		customURL = envURL
+	}
+
 	provider, genConfig, err := llm.GetProvider(logger, config.Model, llm.ModelOptions{
 		Model:             config.Model,
-		CustomURL:         config.CustomURL,
+		CustomURL:         customURL,
 		MaxTokens:         config.MaxTokens,
 		Temperature:       config.Temperature,
 		TopP:              config.TopP,

@@ -154,7 +154,7 @@ func GetProvider(logger *slog.Logger, modelName string, flags ModelOptions) (LLM
 	if !ok {
 		// Handle unknown model
 		if flags.CustomURL == "" {
-			return nil, GenConfig{}, fmt.Errorf("unknown model '%s' requires -custom-url flag", modelName)
+			return nil, GenConfig{}, fmt.Errorf("unknown model '%s' requires -custom-url flag or CPE_CUSTOM_URL environment variable", modelName)
 		}
 		logger.Info("Using unknown model with OpenAI provider", slog.String("model", modelName), slog.String("custom-url", flags.CustomURL))
 		config = ModelConfig{Name: modelName, ProviderType: "openai", IsKnown: false}
