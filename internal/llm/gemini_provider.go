@@ -196,14 +196,18 @@ func convertMessageToGeminiContent(message Message) *genai.Content {
 func convertToGeminiTools(tools []Tool) []*genai.Tool {
 	geminiTools := make([]*genai.Tool, len(tools))
 	for i, tool := range tools {
+		declaration := &genai.FunctionDeclaration{
+			Name:        tool.Name,
+			Description: tool.Description,
+		}
+
+		// Only include Parameters if the schema has properties
+		if properties, ok := tool.InputSchema["properties"].(map[string]interface{}); ok && len(properties) > 0 {
+			declaration.Parameters = parseSchemaObject(tool.InputSchema)
+		}
+
 		geminiTools[i] = &genai.Tool{
-			FunctionDeclarations: []*genai.FunctionDeclaration{
-				{
-					Name:        tool.Name,
-					Description: tool.Description,
-					Parameters:  parseSchemaObject(tool.InputSchema),
-				},
-			},
+			FunctionDeclarations: []*genai.FunctionDeclaration{declaration},
 		}
 	}
 	return geminiTools
