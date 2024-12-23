@@ -208,7 +208,7 @@ func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conv
 		resp.Body.Close()
 
 		// Check if we need to retry
-		if resp.StatusCode == 429 || (resp.StatusCode >= 500 && resp.StatusCode < 600) {
+		if resp.StatusCode == 429 || resp.StatusCode == 400 || (resp.StatusCode >= 500 && resp.StatusCode < 600) {
 			// Wait for 1 minute before retrying
 			time.Sleep(1 * time.Minute)
 			continue
