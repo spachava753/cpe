@@ -137,6 +137,9 @@ func (a Agent) executeBashTool(input json.RawMessage) (*llm.ToolResult, error) {
 		return nil, fmt.Errorf("command parameter is required")
 	}
 
+	// Log the command parameter
+	a.Logger.Info("executing bash command", slog.String("command", params.Command))
+
 	// Execute the bash command
 	cmd := exec.Command("bash", "-c", params.Command)
 	output, err := cmd.CombinedOutput()
@@ -170,20 +173,33 @@ func (a Agent) executeFileEditorTool(input json.RawMessage) (*llm.ToolResult, er
 		return nil, fmt.Errorf("path parameter is required")
 	}
 
-	var mods []extract.Modification
+	// Validate command-specific parameters and construct log message
+	var logMsg string
 	switch params.Command {
 	case "create":
 		if params.FileText == "" {
 			return nil, fmt.Errorf("file_text parameter is required for create command")
 		}
+		logMsg = fmt.Sprintf("creating file %s with content: %s", params.Path, params.FileText)
+	case "str_replace":
+		if params.OldStr == "" {
+			return nil, fmt.Errorf("old_str parameter is required for str_replace command")
+		}
+		logMsg = fmt.Sprintf("replacing text in file %s: old_str=%q, new_str=%q", params.Path, params.OldStr, params.NewStr)
+	case "remove":
+		logMsg = fmt.Sprintf("removing file %s", params.Path)
+	}
+
+	a.Logger.Info(logMsg)
+
+	var mods []extract.Modification
+	switch params.Command {
+	case "create":
 		mods = append(mods, extract.CreateFile{
 			Path:    params.Path,
 			Content: params.FileText,
 		})
 	case "str_replace":
-		if params.OldStr == "" {
-			return nil, fmt.Errorf("old_str parameter is required for str_replace command")
-		}
 		mods = append(mods, extract.ModifyFile{
 			Path: params.Path,
 			Edits: []extract.Edit{
@@ -239,6 +255,9 @@ func (a Agent) executeFileEditorTool(input json.RawMessage) (*llm.ToolResult, er
 
 // executeFilesOverviewTool validates and executes the files overview tool
 func (a Agent) executeFilesOverviewTool(input json.RawMessage) (*llm.ToolResult, error) {
+	// Log that we're executing the files overview tool
+	a.Logger.Info("executing files overview")
+
 	// Use the codemap package to generate output
 	results, err := codemap.GenerateOutput(os.DirFS("."), 1000, a.Ignorer)
 	if err != nil {
@@ -273,6 +292,9 @@ func (a Agent) executeGetRelatedFilesTool(input json.RawMessage) (*llm.ToolResul
 		return nil, fmt.Errorf("input_files parameter is required")
 	}
 
+	// Log the input files
+	a.Logger.Info("executing get related files", slog.Any("input_files", params.InputFiles))
+
 	// Use the typeresolver package to find related files
 	relatedFiles, err := typeresolver.ResolveTypeAndFunctionFiles(params.InputFiles, os.DirFS("."), a.Ignorer)
 	if err != nil {
@@ -285,6 +307,9 @@ func (a Agent) executeGetRelatedFilesTool(input json.RawMessage) (*llm.ToolResul
 		files = append(files, file)
 	}
 	sort.Strings(files)
+
+	// Log the resolved file paths
+	a.Logger.Info("resolved related files", slog.Any("files", files))
 
 	// Build output string with file paths and contents
 	var output strings.Builder
@@ -347,8 +372,8 @@ func (a Agent) Execute(input string) error {
 					continue
 				}
 
-				// Print out the tool call block
-				a.Logger.Info("calling tool", slog.String("name", block.ToolUse.Name), slog.Any("input", block.ToolUse.Input))
+				// Print out the tool call block - we'll log the specific parameters in each tool's function
+				a.Logger.Info("calling tool", slog.String("name", block.ToolUse.Name))
 
 				var result *llm.ToolResult
 
