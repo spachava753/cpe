@@ -214,7 +214,7 @@ func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conv
 		if resp.StatusCode == 429 || resp.StatusCode == 400 || (resp.StatusCode >= 500 && resp.StatusCode < 600) {
 			retryCount++
 			if retryCount >= maxRetries {
-				return Message{}, TokenUsage{}, fmt.Errorf("max retries (%d) exceeded, last status code: %d, body: %s", maxRetries, resp.StatusCode, string(body))
+				return Message{}, TokenUsage{}, fmt.Errorf("max retries (%d) exceeded, last status code: %d, body: %s, request: %+v", maxRetries, resp.StatusCode, string(body), req)
 			}
 			// Wait for 1 minute before retrying
 			time.Sleep(1 * time.Minute)
