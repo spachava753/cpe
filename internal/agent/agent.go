@@ -185,7 +185,7 @@ func (a Agent) executeFileEditorTool(input json.RawMessage) (*llm.ToolResult, er
 		if params.OldStr == "" {
 			return nil, fmt.Errorf("old_str parameter is required for str_replace command")
 		}
-		logMsg = fmt.Sprintf("replacing text in file %s: old_str=%q, new_str=%q", params.Path, params.OldStr, params.NewStr)
+		logMsg = fmt.Sprintf("replacing text in file %s with old_str: %s, new_str: %s", params.Path, params.OldStr, params.NewStr)
 	case "remove":
 		logMsg = fmt.Sprintf("removing file %s", params.Path)
 	}
