@@ -194,25 +194,38 @@ func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conv
 	req.Header.Set("anthropic-version", "2023-06-01")
 	req.Header.Set("content-type", "application/json")
 
-	resp, err := a.client.Do(req)
-	if err != nil {
-		return Message{}, TokenUsage{}, fmt.Errorf("error sending request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return Message{}, TokenUsage{}, fmt.Errorf("error reading response body: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return Message{}, TokenUsage{}, fmt.Errorf("error: status code %d, body: %s", resp.StatusCode, string(body))
-	}
-
 	var responseBody anthropicResponseBody
-	err = json.Unmarshal(body, &responseBody)
-	if err != nil {
-		return Message{}, TokenUsage{}, fmt.Errorf("error parsing response JSON: %w", err)
+	for {
+		resp, err := a.client.Do(req)
+		if err != nil {
+			return Message{}, TokenUsage{}, fmt.Errorf("error sending request: %w", err)
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return Message{}, TokenUsage{}, fmt.Errorf("error reading response body: %w", err)
+		}
+		resp.Body.Close()
+
+		// Check if we need to retry
+		if resp.StatusCode == 429 || (resp.StatusCode >= 500 && resp.StatusCode < 600) {
+			// Wait for 1 minute before retrying
+			time.Sleep(1 * time.Minute)
+			continue
+		}
+
+		// For non-retryable errors, return error
+		if resp.StatusCode != http.StatusOK {
+			return Message{}, TokenUsage{}, fmt.Errorf("error: status code %d, body: %s", resp.StatusCode, string(body))
+		}
+
+		err = json.Unmarshal(body, &responseBody)
+		if err != nil {
+			return Message{}, TokenUsage{}, fmt.Errorf("error parsing response JSON: %w", err)
+		}
+
+		// If we got here, we have a successful response
+		break
 	}
 
 	tokenUsage := TokenUsage{
