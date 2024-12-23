@@ -111,10 +111,8 @@ type ModelOptions struct {
 	FrequencyPenalty  float64
 	PresencePenalty   float64
 	NumberOfResponses int
-	Debug             bool
 	Input             string
 	Version           bool
-	IncludeFiles      string
 }
 
 func (f ModelOptions) ApplyToGenConfig(config GenConfig) GenConfig {

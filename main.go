@@ -65,10 +65,8 @@ func main() {
 		FrequencyPenalty:  config.FrequencyPenalty,
 		PresencePenalty:   config.PresencePenalty,
 		NumberOfResponses: config.NumberOfResponses,
-		Debug:             config.Debug,
 		Input:             config.Input,
 		Version:           config.Version,
-		IncludeFiles:      config.IncludeFiles,
 	})
 	if err != nil {
 		slog.Error("fatal error", slog.Any("err", err))

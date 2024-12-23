@@ -19,10 +19,8 @@ type Options struct {
 	FrequencyPenalty  float64
 	PresencePenalty   float64
 	NumberOfResponses int
-	Debug             bool
 	Input             string
 	Version           bool
-	IncludeFiles      string
 	TokenCountPath    string
 }
 
@@ -40,9 +38,7 @@ func init() {
 	flag.Float64Var(&Opts.FrequencyPenalty, "frequency-penalty", 0, "Frequency penalty (-2.0 - 2.0)")
 	flag.Float64Var(&Opts.PresencePenalty, "presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
 	flag.IntVar(&Opts.NumberOfResponses, "number-of-responses", 0, "Number of responses to generate")
-	flag.BoolVar(&Opts.Debug, "debug", false, "Print the generated system prompt")
 	flag.StringVar(&Opts.Input, "input", "-", "Specify the input file path. Use '-' for stdin")
-	flag.StringVar(&Opts.IncludeFiles, "include-files", "", "Comma-separated list of file paths to include in the system message")
 }
 
 func ParseFlags() {

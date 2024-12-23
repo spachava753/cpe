@@ -270,6 +270,5 @@ func convertToGeminiType(typeStr string) genai.Type {
 		return genai.TypeObject
 	default:
 		panic(fmt.Sprintf("Warning: Unknown type %s, defaulting to TypeString\n", typeStr))
-		return genai.TypeString
 	}
 }
