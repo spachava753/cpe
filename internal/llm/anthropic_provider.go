@@ -195,6 +195,9 @@ func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conv
 	req.Header.Set("content-type", "application/json")
 
 	var responseBody anthropicResponseBody
+	maxRetries := 5
+	retryCount := 0
+
 	for {
 		resp, err := a.client.Do(req)
 		if err != nil {
@@ -209,6 +212,10 @@ func (a *AnthropicProvider) GenerateResponse(config GenConfig, conversation Conv
 
 		// Check if we need to retry
 		if resp.StatusCode == 429 || resp.StatusCode == 400 || (resp.StatusCode >= 500 && resp.StatusCode < 600) {
+			retryCount++
+			if retryCount >= maxRetries {
+				return Message{}, TokenUsage{}, fmt.Errorf("max retries (%d) exceeded, last status code: %d, body: %s", maxRetries, resp.StatusCode, string(body))
+			}
 			// Wait for 1 minute before retrying
 			time.Sleep(1 * time.Minute)
 			continue
