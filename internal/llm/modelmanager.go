@@ -2,7 +2,8 @@ package llm
 
 import (
 	"fmt"
-	"github.com/sashabaranov/go-openai"
+	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/openai/openai-go"
 	"log/slog"
 	"os"
 )
@@ -54,23 +55,19 @@ func (c OpenAIConfig) GetAPIKey() string {
 
 var ModelConfigs = map[string]ModelConfig{
 	"claude-3-opus": {
-		Name: "claude-3-opus-20240229", ProviderType: "anthropic", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.3},
-	},
-	"claude-3-5-sonnet-20241022": {
-		Name: "claude-3-5-sonnet-20241022", ProviderType: "anthropic", IsKnown: true,
+		Name: anthropic.ModelClaude_3_Opus_20240229, ProviderType: "anthropic", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.3},
 	},
 	"claude-3-5-sonnet": {
-		Name: "claude-3-5-sonnet-20241022", ProviderType: "anthropic", IsKnown: true,
+		Name: anthropic.ModelClaude3_5Sonnet20241022, ProviderType: "anthropic", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
 	"claude-3-5-haiku": {
-		Name: "claude-3-5-haiku-20241022", ProviderType: "anthropic", IsKnown: true,
+		Name: anthropic.ModelClaude3_5Haiku20241022, ProviderType: "anthropic", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
 	"claude-3-haiku": {
-		Name: "claude-3-haiku-20240307", ProviderType: "anthropic", IsKnown: true,
+		Name: anthropic.ModelClaude_3_Haiku_20240307, ProviderType: "anthropic", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.3},
 	},
 	"gemini-1.5-flash-8b": {
@@ -90,12 +87,16 @@ var ModelConfigs = map[string]ModelConfig{
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
 	"gpt-4o": {
-		Name: openai.GPT4o20240806, ProviderType: "openai", IsKnown: true,
+		Name: openai.ChatModelGPT4o2024_11_20, ProviderType: "openai", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
 	"gpt-4o-mini": {
-		Name: openai.GPT4oMini20240718, ProviderType: "openai", IsKnown: true,
+		Name: openai.ChatModelGPT4oMini2024_07_18, ProviderType: "openai", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
+	},
+	"o1": {
+		Name: openai.ChatModelO1_2024_12_17, ProviderType: "openai", IsKnown: true,
+		Defaults: ModelDefaults{MaxTokens: 100000, Temperature: 1},
 	},
 }
 

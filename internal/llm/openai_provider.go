@@ -42,16 +42,16 @@ func (o *OpenAIProvider) GenerateResponse(config GenConfig, conversation Convers
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	messages := convertToOpenAIMessages(conversation.SystemPrompt, conversation.Messages)
+	messages := convertToOpenAIMessages(config.Model, conversation.SystemPrompt, conversation.Messages)
 	tools := convertToOpenAITools(conversation.Tools)
 
 	params := openai.ChatCompletionNewParams{
-		Model:       openai.F(config.Model),
-		Messages:    openai.F(messages),
-		Temperature: openai.Float(float64(config.Temperature)),
-		MaxTokens:   openai.Int(int64(config.MaxTokens)),
-		Stop:        openai.F[openai.ChatCompletionNewParamsStopUnion](openai.ChatCompletionNewParamsStopArray(config.Stop)),
-		Tools:       openai.F(tools),
+		Model:               openai.F(config.Model),
+		Messages:            openai.F(messages),
+		Temperature:         openai.Float(float64(config.Temperature)),
+		MaxCompletionTokens: openai.Int(int64(config.MaxTokens)),
+		Stop:                openai.F[openai.ChatCompletionNewParamsStopUnion](openai.ChatCompletionNewParamsStopArray(config.Stop)),
+		Tools:               openai.F(tools),
 	}
 
 	if config.TopP != nil {
@@ -123,18 +123,31 @@ func (o *OpenAIProvider) GenerateResponse(config GenConfig, conversation Convers
 }
 
 // convertToOpenAIMessages converts internal Message type to OpenAI's ChatCompletionMessageParamUnion
-func convertToOpenAIMessages(systemPrompt string, messages []Message) []openai.ChatCompletionMessageParamUnion {
+func convertToOpenAIMessages(model string, systemPrompt string, messages []Message) []openai.ChatCompletionMessageParamUnion {
+	// For O1 series models, we need to pass the system prompt as a preamble to the first user message
+	isO1Model := model == openai.ChatModelO1_2024_12_17
+
 	l := len(messages)
-	if systemPrompt != "" {
+	if systemPrompt != "" && !isO1Model {
 		l += 1
 	}
 	openAIMessages := make([]openai.ChatCompletionMessageParamUnion, l)
-	if l > len(messages) {
+	if l > len(messages) && !isO1Model {
 		openAIMessages[0] = openai.SystemMessage(systemPrompt)
 	}
 
 	for m, i := 0, l-len(messages); i < l; m, i = m+1, i+1 {
 		msg := messages[m]
+
+		// For O1 models, prepend system prompt to first user message
+		if isO1Model && systemPrompt != "" && m == 0 && msg.Role == "user" {
+			for j, contentBlock := range msg.Content {
+				if contentBlock.Type == "text" {
+					msg.Content[j].Text = systemPrompt + "\n\n" + contentBlock.Text
+					break
+				}
+			}
+		}
 		switch msg.Role {
 		case "assistant":
 			var toolCalls []openai.ChatCompletionMessageToolCallParam
