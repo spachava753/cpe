@@ -19,7 +19,7 @@ type GeminiProvider struct {
 
 // NewGeminiProvider creates a new GeminiProvider with the given API key
 func NewGeminiProvider(apiKey string, baseURL string) (*GeminiProvider, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	opts := []option.ClientOption{option.WithAPIKey(apiKey)}
@@ -58,7 +58,7 @@ func (g *GeminiProvider) GenerateResponse(config GenConfig, conversation Convers
 
 	// Set up tools for function calling
 	tools := convertToGeminiTools(conversation.Tools)
-	g.model.Tools = tools
+	g.model.Tools = []*genai.Tool{tools}
 
 	session := g.model.StartChat()
 
@@ -193,9 +193,9 @@ func convertMessageToGeminiContent(message Message) *genai.Content {
 }
 
 // convertToGeminiTools converts internal Tool type to Gemini's Tool
-func convertToGeminiTools(tools []Tool) []*genai.Tool {
-	geminiTools := make([]*genai.Tool, len(tools))
-	for i, tool := range tools {
+func convertToGeminiTools(tools []Tool) *genai.Tool {
+	var geminiTools genai.Tool
+	for _, tool := range tools {
 		declaration := &genai.FunctionDeclaration{
 			Name:        tool.Name,
 			Description: tool.Description,
@@ -206,11 +206,9 @@ func convertToGeminiTools(tools []Tool) []*genai.Tool {
 			declaration.Parameters = parseSchemaObject(tool.InputSchema)
 		}
 
-		geminiTools[i] = &genai.Tool{
-			FunctionDeclarations: []*genai.FunctionDeclaration{declaration},
-		}
+		geminiTools.FunctionDeclarations = append(geminiTools.FunctionDeclarations, declaration)
 	}
-	return geminiTools
+	return &geminiTools
 }
 
 // parseSchemaObject converts a tool schema to Gemini's Schema
