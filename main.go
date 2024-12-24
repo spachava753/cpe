@@ -57,7 +57,7 @@ func main() {
 
 	// Check for custom URL in environment variable
 	customURL := config.CustomURL
-	if envURL := os.Getenv("CPE_CUSTOM_URL"); envURL != "" {
+	if envURL := os.Getenv("CPE_CUSTOM_URL"); customURL == "" && envURL != "" {
 		customURL = envURL
 	}
 

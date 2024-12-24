@@ -5,7 +5,9 @@ go 1.23
 toolchain go1.23.2
 
 require (
+	github.com/anthropics/anthropic-sdk-go v0.2.0-alpha.8
 	github.com/google/generative-ai-go v0.19.0
+	github.com/openai/openai-go v0.1.0-alpha.41
 	github.com/pkoukk/tiktoken-go v0.1.7
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
 	github.com/sashabaranov/go-openai v1.36.0
@@ -24,7 +26,6 @@ require (
 	cloud.google.com/go/auth/oauth2adapt v0.2.6 // indirect
 	cloud.google.com/go/compute/metadata v0.6.0 // indirect
 	cloud.google.com/go/longrunning v0.6.3 // indirect
-	github.com/anthropics/anthropic-sdk-go v0.2.0-alpha.8 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dlclark/regexp2 v1.11.4 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect

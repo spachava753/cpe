@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
 )
 
 // OpenAIProvider implements the LLMProvider interface for OpenAI API
@@ -16,13 +18,20 @@ type OpenAIProvider struct {
 
 // NewOpenAIProvider creates a new OpenAIProvider with the given API key and optional configuration
 func NewOpenAIProvider(apiKey string, baseURL string) *OpenAIProvider {
-	config := openai.DefaultConfig(apiKey)
-
+	opts := []option.RequestOption{
+		option.WithAPIKey(apiKey),
+		option.WithMaxRetries(5),
+		option.WithRequestTimeout(5 * time.Minute),
+	}
 	if baseURL != "" {
-		config.BaseURL = baseURL
+		// Ensure baseURL ends with a trailing "/"
+		if !strings.HasSuffix(baseURL, "/") {
+			baseURL = baseURL + "/"
+		}
+		opts = append(opts, option.WithBaseURL(baseURL))
 	}
 
-	client := openai.NewClientWithConfig(config)
+	client := openai.NewClient(opts...)
 	return &OpenAIProvider{
 		client: client,
 	}
@@ -34,45 +43,48 @@ func (o *OpenAIProvider) GenerateResponse(config GenConfig, conversation Convers
 	defer cancel()
 
 	messages := convertToOpenAIMessages(conversation.SystemPrompt, conversation.Messages)
-
 	tools := convertToOpenAITools(conversation.Tools)
 
-	req := openai.ChatCompletionRequest{
-		Model:               config.Model,
-		Messages:            messages,
-		Temperature:         config.Temperature,
-		MaxCompletionTokens: config.MaxTokens,
-		Stop:                config.Stop,
-		Tools:               tools,
+	params := openai.ChatCompletionNewParams{
+		Model:       openai.F(config.Model),
+		Messages:    openai.F(messages),
+		Temperature: openai.Float(float64(config.Temperature)),
+		MaxTokens:   openai.Int(int64(config.MaxTokens)),
+		Stop:        openai.F[openai.ChatCompletionNewParamsStopUnion](openai.ChatCompletionNewParamsStopArray(config.Stop)),
+		Tools:       openai.F(tools),
 	}
 
 	if config.TopP != nil {
-		req.TopP = *config.TopP
+		params.TopP = openai.Float(float64(*config.TopP))
 	}
 	if config.NumberOfResponses != nil {
-		req.N = *config.NumberOfResponses
+		params.N = openai.Int(int64(*config.NumberOfResponses))
 	}
 	if config.PresencePenalty != nil {
-		req.PresencePenalty = *config.PresencePenalty
+		params.PresencePenalty = openai.Float(float64(*config.PresencePenalty))
 	}
 	if config.FrequencyPenalty != nil {
-		req.FrequencyPenalty = *config.FrequencyPenalty
+		params.FrequencyPenalty = openai.Float(float64(*config.FrequencyPenalty))
 	}
 
 	if config.ToolChoice != "" {
-		req.ToolChoice = config.ToolChoice
 		if config.ForcedTool != "" {
-			req.ToolChoice = &openai.ToolChoice{
-				Type: openai.ToolTypeFunction,
-				Function: openai.ToolFunction{
-					Name: config.ForcedTool,
+			params.ToolChoice = openai.F[openai.ChatCompletionToolChoiceOptionUnionParam](
+				openai.ChatCompletionNamedToolChoiceParam{
+					Type: openai.F(openai.ChatCompletionNamedToolChoiceTypeFunction),
+					Function: openai.F(openai.ChatCompletionNamedToolChoiceFunctionParam{
+						Name: openai.F(config.ForcedTool),
+					}),
 				},
-			}
+			)
+		} else {
+			params.ToolChoice = openai.F[openai.ChatCompletionToolChoiceOptionUnionParam](
+				openai.ChatCompletionToolChoiceOptionBehavior(config.ToolChoice),
+			)
 		}
 	}
 
-	resp, err := o.client.CreateChatCompletion(ctx, req)
-
+	resp, err := o.client.Chat.Completions.New(ctx, params)
 	if err != nil {
 		return Message{}, TokenUsage{}, err
 	}
@@ -82,8 +94,8 @@ func (o *OpenAIProvider) GenerateResponse(config GenConfig, conversation Convers
 	}
 
 	tokenUsage := TokenUsage{
-		InputTokens:  resp.Usage.PromptTokens,
-		OutputTokens: resp.Usage.CompletionTokens,
+		InputTokens:  int(resp.Usage.PromptTokens),
+		OutputTokens: int(resp.Usage.CompletionTokens),
 	}
 
 	var contentBlocks []ContentBlock
@@ -91,7 +103,7 @@ func (o *OpenAIProvider) GenerateResponse(config GenConfig, conversation Convers
 		if choice.Message.Content != "" {
 			contentBlocks = append(contentBlocks, ContentBlock{Type: "text", Text: choice.Message.Content})
 		}
-		if choice.Message.ToolCalls != nil {
+		if len(choice.Message.ToolCalls) > 0 {
 			for _, toolCall := range choice.Message.ToolCalls {
 				contentBlocks = append(contentBlocks, ContentBlock{
 					Type: "tool_use",
@@ -110,55 +122,87 @@ func (o *OpenAIProvider) GenerateResponse(config GenConfig, conversation Convers
 	}, tokenUsage, nil
 }
 
-// convertToOpenAIMessages converts internal Message type to OpenAI's ChatCompletionMessage
-func convertToOpenAIMessages(systemPrompt string, messages []Message) []openai.ChatCompletionMessage {
-	openAIMessages := make([]openai.ChatCompletionMessage, len(messages)+1)
-	openAIMessages[0] = openai.ChatCompletionMessage{
-		Role:    openai.ChatMessageRoleSystem,
-		Content: systemPrompt,
+// convertToOpenAIMessages converts internal Message type to OpenAI's ChatCompletionMessageParamUnion
+func convertToOpenAIMessages(systemPrompt string, messages []Message) []openai.ChatCompletionMessageParamUnion {
+	l := len(messages)
+	if systemPrompt != "" {
+		l += 1
 	}
-	for i, msg := range messages {
-		openAIMessage := openai.ChatCompletionMessage{
-			Role: msg.Role,
-		}
+	openAIMessages := make([]openai.ChatCompletionMessageParamUnion, l)
+	if l > len(messages) {
+		openAIMessages[0] = openai.SystemMessage(systemPrompt)
+	}
 
-		for _, content := range msg.Content {
-			switch content.Type {
-			case "text":
-				openAIMessage.Content = content.Text
-			case "tool_use":
-				openAIMessage.ToolCalls = append(openAIMessage.ToolCalls, openai.ToolCall{
-					ID:   content.ToolUse.ID,
-					Type: openai.ToolTypeFunction,
-					Function: openai.FunctionCall{
-						Name:      content.ToolUse.Name,
-						Arguments: string(content.ToolUse.Input),
-					},
-				})
-			case "tool_result":
-				openAIMessage.Role = "tool"
-				openAIMessage.ToolCallID = content.ToolResult.ToolUseID
-				jsonContent, _ := json.Marshal(content.ToolResult.Content)
-				openAIMessage.Content = string(jsonContent)
+	for m, i := 0, l-len(messages); i < l; m, i = m+1, i+1 {
+		msg := messages[m]
+		switch msg.Role {
+		case "assistant":
+			var toolCalls []openai.ChatCompletionMessageToolCallParam
+			var content string
+
+			for _, contentBlock := range msg.Content {
+				switch contentBlock.Type {
+				case "text":
+					content = contentBlock.Text
+				case "tool_use":
+					toolCalls = append(toolCalls, openai.ChatCompletionMessageToolCallParam{
+						ID:   openai.F(contentBlock.ToolUse.ID),
+						Type: openai.F(openai.ChatCompletionMessageToolCallTypeFunction),
+						Function: openai.F(openai.ChatCompletionMessageToolCallFunctionParam{
+							Name:      openai.F(contentBlock.ToolUse.Name),
+							Arguments: openai.F(string(contentBlock.ToolUse.Input)),
+						}),
+					})
+				}
 			}
-		}
 
-		openAIMessages[i+1] = openAIMessage
+			assistantMsg := openai.ChatCompletionAssistantMessageParam{
+				Role: openai.F(openai.ChatCompletionAssistantMessageParamRoleAssistant),
+				Content: openai.F([]openai.ChatCompletionAssistantMessageParamContentUnion{
+					openai.TextPart(content),
+				}),
+			}
+			if len(toolCalls) > 0 {
+				assistantMsg.ToolCalls = openai.F(toolCalls)
+			}
+			openAIMessages[i] = assistantMsg
+
+		case "user":
+			for _, contentBlock := range msg.Content {
+				switch contentBlock.Type {
+				case "tool_result":
+					content, err := json.Marshal(struct {
+						Content interface{} `json:"content"`
+						Error   bool        `json:"error"`
+					}{
+						contentBlock.ToolResult.Content,
+						contentBlock.ToolResult.IsError,
+					})
+					if err != nil {
+						panic(fmt.Sprintf("error marshalling tool result: %v", err))
+					}
+					openAIMessages[i] = openai.ToolMessage(contentBlock.ToolResult.ToolUseID, string(content))
+				case "text":
+					openAIMessages[i] = openai.UserMessage(contentBlock.Text)
+				}
+			}
+
+		}
 	}
 	return openAIMessages
 }
 
-// convertToOpenAITools converts internal Tool type to OpenAI's Tool
-func convertToOpenAITools(tools []Tool) []openai.Tool {
-	openAITools := make([]openai.Tool, len(tools))
+// convertToOpenAITools converts internal Tool type to OpenAI's ChatCompletionToolParam
+func convertToOpenAITools(tools []Tool) []openai.ChatCompletionToolParam {
+	openAITools := make([]openai.ChatCompletionToolParam, len(tools))
 	for i, tool := range tools {
-		openAITools[i] = openai.Tool{
-			Type: openai.ToolTypeFunction,
-			Function: &openai.FunctionDefinition{
-				Name:        tool.Name,
-				Description: tool.Description,
-				Parameters:  tool.InputSchema,
-			},
+		openAITools[i] = openai.ChatCompletionToolParam{
+			Type: openai.F(openai.ChatCompletionToolTypeFunction),
+			Function: openai.F(openai.FunctionDefinitionParam{
+				Name:        openai.F(tool.Name),
+				Description: openai.F(tool.Description),
+				Parameters:  openai.F(openai.FunctionParameters(tool.InputSchema)),
+			}),
 		}
 	}
 	return openAITools
