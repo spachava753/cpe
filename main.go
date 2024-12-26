@@ -37,17 +37,17 @@ func main() {
 		logger.Error("fatal error", slog.Any("err", err))
 		os.Exit(1)
 	}
-	ignorer, err := ignore.LoadIgnoreFiles(".")
-	if err != nil {
-		logger.Error("fatal error", slog.Any("err", err))
-		os.Exit(1)
-	}
-	if ignorer == nil {
-		logger.Error("git ignorer was nil")
-		os.Exit(1)
-	}
 
 	if config.TokenCountPath != "" {
+		ignorer, err := ignore.LoadIgnoreFiles(".")
+		if err != nil {
+			logger.Error("fatal error", slog.Any("err", err))
+			os.Exit(1)
+		}
+		if ignorer == nil {
+			logger.Error("git ignorer was nil")
+			os.Exit(1)
+		}
 		if err := tokentree.PrintTokenTree(os.DirFS("."), ignorer); err != nil {
 			slog.Error("fatal error", slog.Any("err", err))
 			os.Exit(1)
@@ -55,15 +55,9 @@ func main() {
 		return
 	}
 
-	// Check for custom URL in environment variable
-	customURL := config.CustomURL
-	if envURL := os.Getenv("CPE_CUSTOM_URL"); customURL == "" && envURL != "" {
-		customURL = envURL
-	}
-
-	provider, genConfig, err := llm.GetProvider(logger, config.Model, llm.ModelOptions{
+	executor, err := agent.InitExecutor(logger, config.Model, llm.ModelOptions{
 		Model:             config.Model,
-		CustomURL:         customURL,
+		CustomURL:         config.CustomURL,
 		MaxTokens:         config.MaxTokens,
 		Temperature:       config.Temperature,
 		TopP:              config.TopP,
@@ -79,23 +73,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if closer, ok := provider.(interface{ Close() error }); ok {
-		defer closer.Close()
-	}
-
 	input, err := readInput(config.Input)
-	if err != nil {
-		slog.Error("fatal error", slog.Any("err", err))
-		os.Exit(1)
-	}
-
-	executor, err := agent.NewExecutor(
-		customURL,
-		provider,
-		genConfig,
-		slog.Default(),
-		ignorer,
-	)
 	if err != nil {
 		slog.Error("fatal error", slog.Any("err", err))
 		os.Exit(1)
