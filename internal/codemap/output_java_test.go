@@ -1,6 +1,7 @@
 package codemap
 
 import (
+	gitignore "github.com/sabhiram/go-gitignore"
 	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/stretchr/testify/assert"
 	"testing"
@@ -367,7 +368,7 @@ public class Vehicle {
 			memFS := setupInMemoryFS(tt.files)
 
 			// Generate the output using GenerateOutput
-			ignoreRules := ignore.NewIgnoreRules()
+			ignoreRules := gitignore.CompileIgnoreLines(ignore.DefaultPatterns...)
 			output, err := GenerateOutput(memFS, tt.maxLen, ignoreRules)
 			if err != nil {
 				t.Fatalf("Failed to generate output: %v", err)

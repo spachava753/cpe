@@ -8,7 +8,7 @@ import (
 	gitignore "github.com/sabhiram/go-gitignore"
 )
 
-var defaultPatterns = []string{
+var DefaultPatterns = []string{
 	".git/**",
 }
 
@@ -17,7 +17,7 @@ func LoadIgnoreFiles(startDir string) (*gitignore.GitIgnore, error) {
 
 	var allPatterns []string
 	// Add default patterns first
-	allPatterns = append(allPatterns, defaultPatterns...)
+	allPatterns = append(allPatterns, DefaultPatterns...)
 
 	// Read patterns from all ignore files
 	for _, ignoreFile := range ignoreFiles {
