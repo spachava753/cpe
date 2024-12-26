@@ -176,11 +176,11 @@ func (s *sonnet35Executor) Execute(input string) error {
 					if unmarshallErr := json.Unmarshal(jsonInput, &toolInput); unmarshallErr != nil {
 						panic(unmarshallErr)
 					}
-					result, err = executeBashTool(toolInput)
+					result, err = executeBashTool(toolInput, s.logger)
 				case string(a.BetaToolTextEditor20241022NameStrReplaceEditor):
 					panic("not implemented")
 				case filesOverviewTool.Name:
-					result, err = executeFilesOverviewTool(s.ignorer)
+					result, err = executeFilesOverviewTool(s.ignorer, s.logger)
 				case getRelatedFilesTool.Name:
 					jsonInput, marshalErr := json.Marshal(block.Input)
 					if marshalErr != nil {
@@ -190,7 +190,7 @@ func (s *sonnet35Executor) Execute(input string) error {
 					if unmarshallErr := json.Unmarshal(jsonInput, &toolInput); unmarshallErr != nil {
 						panic(unmarshallErr)
 					}
-					result, err = executeGetRelatedFilesTool(toolInput, s.ignorer)
+					result, err = executeGetRelatedFilesTool(toolInput, s.ignorer, s.logger)
 				default:
 					return fmt.Errorf("unexpected tool use block type: %s", block.Name)
 				}

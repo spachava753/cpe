@@ -39,6 +39,13 @@ func (a *genericExecutor) executeFileEditorTool(input json.RawMessage) (*llm.Too
 		return nil, fmt.Errorf("failed to unmarshal file editor tool input: %w", err)
 	}
 
+	a.logger.Info("executing file editor tool",
+		slog.String("command", params.Command),
+		slog.String("path", params.Path),
+	)
+
+	a.logger.Info("old_str:\n%s\n\nnew_str:\n%s", params.OldStr, params.NewStr)
+
 	switch params.Command {
 	case "create":
 		if params.FileText == "" {
@@ -146,13 +153,13 @@ func (a *genericExecutor) Execute(input string) error {
 				// Execute the appropriate tool based on name
 				switch block.ToolUse.Name {
 				case "bash":
-					result, err = executeBashTool(block.ToolUse.Input)
+					result, err = executeBashTool(block.ToolUse.Input, a.logger)
 				case "file_editor":
 					result, err = a.executeFileEditorTool(block.ToolUse.Input)
 				case "files_overview":
-					result, err = executeFilesOverviewTool(a.ignorer)
+					result, err = executeFilesOverviewTool(a.ignorer, a.logger)
 				case "get_related_files":
-					result, err = executeGetRelatedFilesTool(block.ToolUse.Input, a.ignorer)
+					result, err = executeGetRelatedFilesTool(block.ToolUse.Input, a.ignorer, a.logger)
 				default:
 					return fmt.Errorf("unknown tool: %s", block.ToolUse.Name)
 				}

@@ -7,6 +7,7 @@ import (
 	"github.com/spachava753/cpe/internal/codemap"
 	"github.com/spachava753/cpe/internal/llm"
 	"github.com/spachava753/cpe/internal/typeresolver"
+	"log/slog"
 	"os"
 	"os/exec"
 	"sort"
@@ -111,13 +112,15 @@ var getRelatedFilesTool = llm.Tool{
 }
 
 // executeBashTool validates and executes the bash tool
-func executeBashTool(input json.RawMessage) (*llm.ToolResult, error) {
+func executeBashTool(input json.RawMessage, logger *slog.Logger) (*llm.ToolResult, error) {
 	var params struct {
 		Command string `json:"command"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal bash tool input: %w", err)
 	}
+
+	logger.Info(fmt.Sprintf("executing bash command: %s", params.Command))
 
 	cmd := exec.Command("bash", "-c", params.Command)
 	cmd.Env = os.Environ()
@@ -136,7 +139,7 @@ func executeBashTool(input json.RawMessage) (*llm.ToolResult, error) {
 }
 
 // executeFilesOverviewTool validates and executes the files overview tool
-func executeFilesOverviewTool(ignorer *ignore.GitIgnore) (*llm.ToolResult, error) {
+func executeFilesOverviewTool(ignorer *ignore.GitIgnore, logger *slog.Logger) (*llm.ToolResult, error) {
 	fsys := os.DirFS(".")
 	files, err := codemap.GenerateOutput(fsys, 100, ignorer)
 	if err != nil {
@@ -154,13 +157,15 @@ func executeFilesOverviewTool(ignorer *ignore.GitIgnore) (*llm.ToolResult, error
 }
 
 // executeGetRelatedFilesTool validates and executes the get related files tool
-func executeGetRelatedFilesTool(input json.RawMessage, ignorer *ignore.GitIgnore) (*llm.ToolResult, error) {
+func executeGetRelatedFilesTool(input json.RawMessage, ignorer *ignore.GitIgnore, logger *slog.Logger) (*llm.ToolResult, error) {
 	var params struct {
 		InputFiles []string `json:"input_files"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal get related files tool input: %w", err)
 	}
+
+	logger.Info("getting related files", slog.Any("input_files", params.InputFiles))
 
 	relatedFiles, err := typeresolver.ResolveTypeAndFunctionFiles(params.InputFiles, os.DirFS("."), ignorer)
 	if err != nil {
@@ -173,6 +178,8 @@ func executeGetRelatedFilesTool(input json.RawMessage, ignorer *ignore.GitIgnore
 		files = append(files, file)
 	}
 	sort.Strings(files)
+
+	logger.Info("found related files", slog.Any("files", files))
 
 	var sb strings.Builder
 	for _, file := range files {
