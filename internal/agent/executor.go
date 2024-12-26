@@ -48,7 +48,7 @@ func InitExecutor(logger *slog.Logger, modelName string, flags llm.ModelOptions)
 		//}
 		//return NewSonnet35Executor(customURL, apiKey, logger, ignorer, genConfig), nil
 		// TODO: there seems to be an error in the anthropic api, holding off on enabling sonnet specific executor until issue is resolve: https://github.com/anthropics/anthropic-sdk-go/issues/86
-		fallthrough
+		return NewGenericExecutor(provider, genConfig, logger, ignorer), nil
 	case "gemini-1.5-pro-002", "gemini-1.5-flash-002", "gemini-2.0-flash-exp":
 		apiKey := os.Getenv("GEMINI_API_KEY")
 		if apiKey == "" {
@@ -56,7 +56,10 @@ func InitExecutor(logger *slog.Logger, modelName string, flags llm.ModelOptions)
 		}
 		return NewGeminiExecutor(customURL, apiKey, logger, ignorer, genConfig)
 	default:
-		// Use generic executor for all other models
-		return NewGenericExecutor(provider, genConfig, logger, ignorer), nil
+		apiKey := os.Getenv("OPENAI_API_KEY")
+		if apiKey == "" {
+			return nil, fmt.Errorf("OPENAI_API_KEY environment variable not set")
+		}
+		return NewOpenAIExecutor(customURL, apiKey, logger, ignorer, genConfig), nil
 	}
 }
