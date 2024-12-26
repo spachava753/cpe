@@ -138,6 +138,90 @@ func executeBashTool(input json.RawMessage, logger *slog.Logger) (*llm.ToolResul
 	}, nil
 }
 
+// executeFileEditorTool validates and executes the file editor tool
+func executeFileEditorTool(input json.RawMessage, logger *slog.Logger) (*llm.ToolResult, error) {
+	var params struct {
+		Command  string `json:"command"`
+		Path     string `json:"path"`
+		FileText string `json:"file_text,omitempty"`
+		OldStr   string `json:"old_str,omitempty"`
+		NewStr   string `json:"new_str,omitempty"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal file editor tool input: %w", err)
+	}
+
+	logger.Info("executing file editor tool",
+		slog.String("command", params.Command),
+		slog.String("path", params.Path),
+	)
+
+	logger.Info(fmt.Sprintf("old_str:\n%s\n\nnew_str:\n%s", params.OldStr, params.NewStr))
+
+	switch params.Command {
+	case "create":
+		if params.FileText == "" {
+			return &llm.ToolResult{
+				Content: "file_text parameter is required for create command",
+				IsError: true,
+			}, nil
+		}
+		if err := os.WriteFile(params.Path, []byte(params.FileText), 0644); err != nil {
+			return &llm.ToolResult{
+				Content: fmt.Sprintf("Error creating file: %s", err),
+				IsError: true,
+			}, nil
+		}
+		return &llm.ToolResult{
+			Content: fmt.Sprintf("Successfully created file %s", params.Path),
+		}, nil
+
+	case "str_replace":
+		content, err := os.ReadFile(params.Path)
+		if err != nil {
+			return &llm.ToolResult{
+				Content: fmt.Sprintf("Error reading file: %s", err),
+				IsError: true,
+			}, nil
+		}
+
+		if !strings.Contains(string(content), params.OldStr) {
+			return &llm.ToolResult{
+				Content: "old_str not found in file",
+				IsError: true,
+			}, nil
+		}
+
+		newContent := strings.Replace(string(content), params.OldStr, params.NewStr, 1)
+		if err := os.WriteFile(params.Path, []byte(newContent), 0644); err != nil {
+			return &llm.ToolResult{
+				Content: fmt.Sprintf("Error writing file: %s", err),
+				IsError: true,
+			}, nil
+		}
+		return &llm.ToolResult{
+			Content: fmt.Sprintf("Successfully replaced text in %s", params.Path),
+		}, nil
+
+	case "remove":
+		if err := os.Remove(params.Path); err != nil {
+			return &llm.ToolResult{
+				Content: fmt.Sprintf("Error removing file: %s", err),
+				IsError: true,
+			}, nil
+		}
+		return &llm.ToolResult{
+			Content: fmt.Sprintf("Successfully removed file %s", params.Path),
+		}, nil
+
+	default:
+		return &llm.ToolResult{
+			Content: fmt.Sprintf("Unknown command: %s", params.Command),
+			IsError: true,
+		}, nil
+	}
+}
+
 // executeFilesOverviewTool validates and executes the files overview tool
 func executeFilesOverviewTool(ignorer *ignore.GitIgnore, logger *slog.Logger) (*llm.ToolResult, error) {
 	fsys := os.DirFS(".")
