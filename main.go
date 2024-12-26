@@ -89,14 +89,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	a := agent.Agent{
-		Provider:  provider,
-		GenConfig: genConfig,
-		Logger:    slog.Default(),
-		Ignorer:   ignorer,
+	executor, err := agent.NewExecutor(
+		customURL,
+		provider,
+		genConfig,
+		slog.Default(),
+		ignorer,
+	)
+	if err != nil {
+		slog.Error("fatal error", slog.Any("err", err))
+		os.Exit(1)
 	}
 
-	if err := a.Execute(input); err != nil {
+	if err := executor.Execute(input); err != nil {
 		slog.Error("fatal error", slog.Any("err", err))
 		os.Exit(1)
 	}
