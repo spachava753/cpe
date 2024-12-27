@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/spachava753/cpe/internal/ignore"
-	"github.com/spachava753/cpe/internal/llm"
 	"log/slog"
 	"os"
 )
@@ -19,7 +18,7 @@ type Executor interface {
 }
 
 // InitExecutor initializes and returns an appropriate executor based on the model configuration
-func InitExecutor(logger *slog.Logger, modelName string, flags llm.ModelOptions) (Executor, error) {
+func InitExecutor(logger *slog.Logger, modelName string, flags ModelOptions) (Executor, error) {
 	ignorer, err := ignore.LoadIgnoreFiles(".")
 	if err != nil {
 		return nil, fmt.Errorf("failed to load ignore files: %w", err)
@@ -34,21 +33,19 @@ func InitExecutor(logger *slog.Logger, modelName string, flags llm.ModelOptions)
 		customURL = envURL
 	}
 
-	provider, genConfig, err := llm.GetProvider(logger, modelName, flags)
+	genConfig, err := GetProvider(logger, modelName, flags)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get provider: %w", err)
 	}
 
 	// Check if we have a specific executor for this model
 	switch genConfig.Model {
-	case anthropic.ModelClaude3_5Sonnet20241022:
-		//apiKey := os.Getenv("ANTHROPIC_API_KEY")
-		//if apiKey == "" {
-		//	return nil, fmt.Errorf("ANTHROPIC_API_KEY environment variable not set")
-		//}
-		//return NewSonnet35Executor(customURL, apiKey, logger, ignorer, genConfig), nil
-		// TODO: there seems to be an error in the anthropic api, holding off on enabling sonnet specific executor until issue is resolve: https://github.com/anthropics/anthropic-sdk-go/issues/86
-		return NewGenericExecutor(provider, genConfig, logger, ignorer), nil
+	case anthropic.ModelClaude3_5Sonnet20241022, anthropic.ModelClaude3_5Haiku20241022, anthropic.ModelClaude_3_Haiku_20240307, anthropic.ModelClaude_3_Opus_20240229:
+		apiKey := os.Getenv("ANTHROPIC_API_KEY")
+		if apiKey == "" {
+			return nil, fmt.Errorf("ANTHROPIC_API_KEY environment variable not set")
+		}
+		return NewAnthropicExecutor(customURL, apiKey, logger, ignorer, genConfig), nil
 	case "gemini-1.5-pro-002", "gemini-1.5-flash-002", "gemini-2.0-flash-exp":
 		apiKey := os.Getenv("GEMINI_API_KEY")
 		if apiKey == "" {

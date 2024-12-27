@@ -5,7 +5,6 @@ import (
 	"fmt"
 	ignore "github.com/sabhiram/go-gitignore"
 	"github.com/spachava753/cpe/internal/codemap"
-	"github.com/spachava753/cpe/internal/llm"
 	"github.com/spachava753/cpe/internal/typeresolver"
 	"log/slog"
 	"os"
@@ -14,7 +13,13 @@ import (
 	"strings"
 )
 
-var bashTool = llm.Tool{
+type Tool struct {
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	InputSchema map[string]interface{} `json:"input_schema"`
+}
+
+var bashTool = Tool{
 	Name: "bash",
 	Description: `Run commands in a bash shell
 * When invoking this tool, the contents of the "command" parameter does NOT need to be escaped.
@@ -36,7 +41,7 @@ var bashTool = llm.Tool{
 	},
 }
 
-var fileEditor = llm.Tool{
+var fileEditor = Tool{
 	Name: "file_editor",
 	Description: `A tool to edit, create and delete files
 * The "create" command cannot be used if the specified "path" already exists as a file. It should only be used to create a file, and "file_text" must be supplied as the contents of the new file
@@ -76,7 +81,7 @@ Notes for using the "str_replace" command:
 	},
 }
 
-var filesOverviewTool = llm.Tool{
+var filesOverviewTool = Tool{
 	Name: "files_overview",
 	Description: `A tool to get an overview of all of the files found recursively in the current directory 
 * Each file is recursively listed with its relative path from the current directory and the contents of the file.
@@ -88,7 +93,7 @@ var filesOverviewTool = llm.Tool{
 	},
 }
 
-var getRelatedFilesTool = llm.Tool{
+var getRelatedFilesTool = Tool{
 	Name: "get_related_files",
 	Description: `A tool to help retrieve relevant files for a given set of input files
 * If the input files contain source code files, symbols like functions and types are extracted and matched in other files that contain the symbol's definition
@@ -111,8 +116,14 @@ var getRelatedFilesTool = llm.Tool{
 	},
 }
 
+type ToolResult struct {
+	ToolUseID string
+	Content   any
+	IsError   bool
+}
+
 // executeBashTool validates and executes the bash tool
-func executeBashTool(input json.RawMessage, logger *slog.Logger) (*llm.ToolResult, error) {
+func executeBashTool(input json.RawMessage, logger *slog.Logger) (*ToolResult, error) {
 	var params struct {
 		Command string `json:"command"`
 	}
@@ -127,19 +138,19 @@ func executeBashTool(input json.RawMessage, logger *slog.Logger) (*llm.ToolResul
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return &llm.ToolResult{
+		return &ToolResult{
 			Content: fmt.Sprintf("Error executing command: %s\nOutput: %s", err, string(output)),
 			IsError: true,
 		}, nil
 	}
 
-	return &llm.ToolResult{
+	return &ToolResult{
 		Content: string(output),
 	}, nil
 }
 
 // executeFileEditorTool validates and executes the file editor tool
-func executeFileEditorTool(input json.RawMessage, logger *slog.Logger) (*llm.ToolResult, error) {
+func executeFileEditorTool(input json.RawMessage, logger *slog.Logger) (*ToolResult, error) {
 	var params struct {
 		Command  string `json:"command"`
 		Path     string `json:"path"`
@@ -161,32 +172,32 @@ func executeFileEditorTool(input json.RawMessage, logger *slog.Logger) (*llm.Too
 	switch params.Command {
 	case "create":
 		if params.FileText == "" {
-			return &llm.ToolResult{
+			return &ToolResult{
 				Content: "file_text parameter is required for create command",
 				IsError: true,
 			}, nil
 		}
 		if err := os.WriteFile(params.Path, []byte(params.FileText), 0644); err != nil {
-			return &llm.ToolResult{
+			return &ToolResult{
 				Content: fmt.Sprintf("Error creating file: %s", err),
 				IsError: true,
 			}, nil
 		}
-		return &llm.ToolResult{
+		return &ToolResult{
 			Content: fmt.Sprintf("Successfully created file %s", params.Path),
 		}, nil
 
 	case "str_replace":
 		content, err := os.ReadFile(params.Path)
 		if err != nil {
-			return &llm.ToolResult{
+			return &ToolResult{
 				Content: fmt.Sprintf("Error reading file: %s", err),
 				IsError: true,
 			}, nil
 		}
 
 		if !strings.Contains(string(content), params.OldStr) {
-			return &llm.ToolResult{
+			return &ToolResult{
 				Content: "old_str not found in file",
 				IsError: true,
 			}, nil
@@ -194,28 +205,28 @@ func executeFileEditorTool(input json.RawMessage, logger *slog.Logger) (*llm.Too
 
 		newContent := strings.Replace(string(content), params.OldStr, params.NewStr, 1)
 		if err := os.WriteFile(params.Path, []byte(newContent), 0644); err != nil {
-			return &llm.ToolResult{
+			return &ToolResult{
 				Content: fmt.Sprintf("Error writing file: %s", err),
 				IsError: true,
 			}, nil
 		}
-		return &llm.ToolResult{
+		return &ToolResult{
 			Content: fmt.Sprintf("Successfully replaced text in %s", params.Path),
 		}, nil
 
 	case "remove":
 		if err := os.Remove(params.Path); err != nil {
-			return &llm.ToolResult{
+			return &ToolResult{
 				Content: fmt.Sprintf("Error removing file: %s", err),
 				IsError: true,
 			}, nil
 		}
-		return &llm.ToolResult{
+		return &ToolResult{
 			Content: fmt.Sprintf("Successfully removed file %s", params.Path),
 		}, nil
 
 	default:
-		return &llm.ToolResult{
+		return &ToolResult{
 			Content: fmt.Sprintf("Unknown command: %s", params.Command),
 			IsError: true,
 		}, nil
@@ -223,7 +234,7 @@ func executeFileEditorTool(input json.RawMessage, logger *slog.Logger) (*llm.Too
 }
 
 // executeFilesOverviewTool validates and executes the files overview tool
-func executeFilesOverviewTool(ignorer *ignore.GitIgnore, logger *slog.Logger) (*llm.ToolResult, error) {
+func executeFilesOverviewTool(ignorer *ignore.GitIgnore, logger *slog.Logger) (*ToolResult, error) {
 	fsys := os.DirFS(".")
 	files, err := codemap.GenerateOutput(fsys, 100, ignorer)
 	if err != nil {
@@ -235,13 +246,13 @@ func executeFilesOverviewTool(ignorer *ignore.GitIgnore, logger *slog.Logger) (*
 		sb.WriteString(fmt.Sprintf("File: %s\nContent:\n```%s```\n\n", file.Path, file.Content))
 	}
 
-	return &llm.ToolResult{
+	return &ToolResult{
 		Content: sb.String(),
 	}, nil
 }
 
 // executeGetRelatedFilesTool validates and executes the get related files tool
-func executeGetRelatedFilesTool(input json.RawMessage, ignorer *ignore.GitIgnore, logger *slog.Logger) (*llm.ToolResult, error) {
+func executeGetRelatedFilesTool(input json.RawMessage, ignorer *ignore.GitIgnore, logger *slog.Logger) (*ToolResult, error) {
 	var params struct {
 		InputFiles []string `json:"input_files"`
 	}
@@ -274,7 +285,7 @@ func executeGetRelatedFilesTool(input json.RawMessage, ignorer *ignore.GitIgnore
 		sb.WriteString(fmt.Sprintf("File: %s\nContent:\n```%s```\n\n", file, string(content)))
 	}
 
-	return &llm.ToolResult{
+	return &ToolResult{
 		Content: sb.String(),
 	}, nil
 }

@@ -1,12 +1,28 @@
-package llm
+package agent
 
 import (
 	"fmt"
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go"
 	"log/slog"
-	"os"
 )
+
+// GenConfig represents the configuration when invoking a model.
+// This helps divorce what model is invoked vs. what provider is used,
+// so the same provider can invoke different models.
+type GenConfig struct {
+	Model             string
+	MaxTokens         int
+	Temperature       float32  // Controls randomness: 0.0 - 1.0
+	TopP              *float32 // Controls diversity: 0.0 - 1.0
+	TopK              *int     // Controls token sampling:
+	FrequencyPenalty  *float32 // Penalizes frequent tokens: -2.0 - 2.0
+	PresencePenalty   *float32 // Penalizes repeated tokens: -2.0 - 2.0
+	Stop              []string // List of sequences where the API will stop generating further tokens
+	NumberOfResponses *int     // Number of chat completion choices to generate
+	ToolChoice        string   // Controls tool use: "auto", "any", or "tool"
+	ForcedTool        string   // Name of the tool to force when ToolChoice is "tool"
+}
 
 type ModelDefaults struct {
 	MaxTokens         int
@@ -146,7 +162,7 @@ func (f ModelOptions) ApplyToGenConfig(config GenConfig) GenConfig {
 	return config
 }
 
-func GetProvider(logger *slog.Logger, modelName string, flags ModelOptions) (LLMProvider, GenConfig, error) {
+func GetProvider(logger *slog.Logger, modelName string, flags ModelOptions) (GenConfig, error) {
 	if modelName == "" {
 		modelName = DefaultModel
 	}
@@ -155,7 +171,7 @@ func GetProvider(logger *slog.Logger, modelName string, flags ModelOptions) (LLM
 	if !ok {
 		// Handle unknown model
 		if flags.CustomURL == "" {
-			return nil, GenConfig{}, fmt.Errorf("unknown model '%s' requires -custom-url flag or CPE_CUSTOM_URL environment variable", modelName)
+			return GenConfig{}, fmt.Errorf("unknown model '%s' requires -custom-url flag or CPE_CUSTOM_URL environment variable", modelName)
 		}
 		logger.Info("Using unknown model with OpenAI provider", slog.String("model", modelName), slog.String("custom-url", flags.CustomURL))
 		config = ModelConfig{Name: modelName, ProviderType: "openai", IsKnown: false}
@@ -185,49 +201,5 @@ func GetProvider(logger *slog.Logger, modelName string, flags ModelOptions) (LLM
 
 	genConfig = flags.ApplyToGenConfig(genConfig)
 
-	providerConfig, loadErr := loadProviderConfig(config.ProviderType)
-	if loadErr != nil {
-		return nil, GenConfig{}, loadErr
-	}
-
-	var provider LLMProvider
-	var err error
-
-	switch config.ProviderType {
-	case "anthropic":
-		provider = NewAnthropicProvider(providerConfig.GetAPIKey(), flags.CustomURL)
-	case "gemini":
-		provider, err = NewGeminiProvider(providerConfig.GetAPIKey(), flags.CustomURL)
-	case "openai":
-		provider = NewOpenAIProvider(providerConfig.GetAPIKey(), flags.CustomURL)
-	default:
-		return nil, genConfig, fmt.Errorf("unsupported provider type: %s", config.ProviderType)
-	}
-
-	return provider, genConfig, err
-}
-
-func loadProviderConfig(providerType string) (ProviderConfig, error) {
-	switch providerType {
-	case "anthropic":
-		apiKey := os.Getenv("ANTHROPIC_API_KEY")
-		if apiKey == "" {
-			return nil, fmt.Errorf("ANTHROPIC_API_KEY environment variable is not set")
-		}
-		return AnthropicConfig{APIKey: apiKey}, nil
-	case "gemini":
-		apiKey := os.Getenv("GEMINI_API_KEY")
-		if apiKey == "" {
-			return nil, fmt.Errorf("GEMINI_API_KEY environment variable is not set")
-		}
-		return GeminiConfig{APIKey: apiKey}, nil
-	case "openai":
-		apiKey := os.Getenv("OPENAI_API_KEY")
-		if apiKey == "" {
-			return nil, fmt.Errorf("OPENAI_API_KEY environment variable is not set")
-		}
-		return OpenAIConfig{APIKey: apiKey}, nil
-	default:
-		return nil, fmt.Errorf("unsupported provider type: %s", providerType)
-	}
+	return genConfig, nil
 }

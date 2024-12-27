@@ -7,7 +7,6 @@ import (
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/cliopts"
 	"github.com/spachava753/cpe/internal/ignore"
-	"github.com/spachava753/cpe/internal/llm"
 	"github.com/spachava753/cpe/internal/tokentree"
 	"io"
 	"log/slog"
@@ -55,7 +54,7 @@ func main() {
 		return
 	}
 
-	executor, err := agent.InitExecutor(logger, config.Model, llm.ModelOptions{
+	executor, err := agent.InitExecutor(logger, config.Model, agent.ModelOptions{
 		Model:             config.Model,
 		CustomURL:         config.CustomURL,
 		MaxTokens:         config.MaxTokens,
@@ -93,8 +92,8 @@ func parseConfig() (cliopts.Options, error) {
 		os.Exit(0)
 	}
 
-	if cliopts.Opts.Model != "" && cliopts.Opts.Model != llm.DefaultModel {
-		_, ok := llm.ModelConfigs[cliopts.Opts.Model]
+	if cliopts.Opts.Model != "" && cliopts.Opts.Model != agent.DefaultModel {
+		_, ok := agent.ModelConfigs[cliopts.Opts.Model]
 		if !ok && cliopts.Opts.CustomURL == "" {
 			return cliopts.Options{}, fmt.Errorf("unknown model '%s' requires -custom-url flag", cliopts.Opts.Model)
 		}

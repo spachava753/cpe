@@ -7,20 +7,19 @@ import (
 	a "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	gitignore "github.com/sabhiram/go-gitignore"
-	"github.com/spachava753/cpe/internal/llm"
 	"log/slog"
 	"strings"
 	"time"
 )
 
-type sonnet35Executor struct {
+type anthropicExecutor struct {
 	client  *a.Client
 	logger  *slog.Logger
 	ignorer *gitignore.GitIgnore
-	config  llm.GenConfig
+	config  GenConfig
 }
 
-func NewSonnet35Executor(baseUrl string, apiKey string, logger *slog.Logger, ignorer *gitignore.GitIgnore, config llm.GenConfig) Executor {
+func NewAnthropicExecutor(baseUrl string, apiKey string, logger *slog.Logger, ignorer *gitignore.GitIgnore, config GenConfig) Executor {
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithMaxRetries(5),
@@ -34,7 +33,7 @@ func NewSonnet35Executor(baseUrl string, apiKey string, logger *slog.Logger, ign
 		opts = append(opts, option.WithBaseURL(baseUrl))
 	}
 	client := a.NewClient(opts...)
-	return &sonnet35Executor{
+	return &anthropicExecutor{
 		client:  client,
 		logger:  logger,
 		ignorer: ignorer,
@@ -42,7 +41,7 @@ func NewSonnet35Executor(baseUrl string, apiKey string, logger *slog.Logger, ign
 	}
 }
 
-func (s *sonnet35Executor) Execute(input string) error {
+func (s *anthropicExecutor) Execute(input string) error {
 	params := a.BetaMessageNewParams{
 		Model:       a.F(s.config.Model),
 		MaxTokens:   a.F(int64(s.config.MaxTokens)),
@@ -51,24 +50,38 @@ func (s *sonnet35Executor) Execute(input string) error {
 			{
 				Text: a.F(agentInstructions),
 				Type: a.F(a.BetaTextBlockParamTypeText),
-				CacheControl: a.F(a.BetaCacheControlEphemeralParam{
-					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
-				}),
 			},
 		}),
 		Tools: a.F([]a.BetaToolUnionUnionParam{
-			&a.BetaToolBash20241022Param{
-				Name: a.F(a.BetaToolBash20241022NameBash),
-				Type: a.F(a.BetaToolBash20241022TypeBash20241022),
-				CacheControl: a.F(a.BetaCacheControlEphemeralParam{
-					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
+			// TODO: there seems to be an error in the anthropic api, holding off on enabling sonnet specific executor until issue is resolve: https://github.com/anthropics/anthropic-sdk-go/issues/86
+			//&a.BetaToolBash20241022Param{
+			//	Name: a.F(a.BetaToolBash20241022NameBash),
+			//	Type: a.F(a.BetaToolBash20241022TypeBash20241022),
+			//	CacheControl: a.F(a.BetaCacheControlEphemeralParam{
+			//		Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
+			//	}),
+			//},
+			//&a.BetaToolTextEditor20241022Param{
+			//	Name: a.F(a.BetaToolTextEditor20241022NameStrReplaceEditor),
+			//	Type: a.F(a.BetaToolTextEditor20241022TypeTextEditor20241022),
+			//	CacheControl: a.F(a.BetaCacheControlEphemeralParam{
+			//		Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
+			//	}),
+			//},
+			&a.BetaToolParam{
+				Name:        a.F(bashTool.Name),
+				Description: a.F(bashTool.Description),
+				InputSchema: a.F(a.BetaToolInputSchemaParam{
+					Type:       a.F(a.BetaToolInputSchemaTypeObject),
+					Properties: a.F[any](bashTool.InputSchema["properties"]),
 				}),
 			},
-			&a.BetaToolTextEditor20241022Param{
-				Name: a.F(a.BetaToolTextEditor20241022NameStrReplaceEditor),
-				Type: a.F(a.BetaToolTextEditor20241022TypeTextEditor20241022),
-				CacheControl: a.F(a.BetaCacheControlEphemeralParam{
-					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
+			&a.BetaToolParam{
+				Name:        a.F(fileEditor.Name),
+				Description: a.F(fileEditor.Description),
+				InputSchema: a.F(a.BetaToolInputSchemaParam{
+					Type:       a.F(a.BetaToolInputSchemaTypeObject),
+					Properties: a.F[any](fileEditor.InputSchema["properties"]),
 				}),
 			},
 			&a.BetaToolParam{
@@ -77,27 +90,13 @@ func (s *sonnet35Executor) Execute(input string) error {
 				InputSchema: a.F(a.BetaToolInputSchemaParam{
 					Type: a.F(a.BetaToolInputSchemaTypeObject),
 				}),
-				CacheControl: a.F(a.BetaCacheControlEphemeralParam{
-					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
-				}),
 			},
 			&a.BetaToolParam{
 				Name:        a.F(getRelatedFilesTool.Name),
 				Description: a.F(getRelatedFilesTool.Description),
 				InputSchema: a.F(a.BetaToolInputSchemaParam{
-					Type: a.F(a.BetaToolInputSchemaTypeObject),
-					Properties: a.F[interface{}](map[string]interface{}{
-						"input_files": map[string]interface{}{
-							"type": "array",
-							"items": map[string]interface{}{
-								"type": "string",
-							},
-							"description": `An array of input files to retrieve related files, e.g. source code files that have symbol definitions in another file or other files that mention the file's name.'`,
-						},
-					}),
-				}),
-				CacheControl: a.F(a.BetaCacheControlEphemeralParam{
-					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
+					Type:       a.F(a.BetaToolInputSchemaTypeObject),
+					Properties: a.F[any](getRelatedFilesTool.InputSchema["properties"]),
 				}),
 			},
 		}),
@@ -147,9 +146,6 @@ func (s *sonnet35Executor) Execute(input string) error {
 				assistantMsgContentBlocks[i] = &a.BetaTextBlockParam{
 					Text: a.F(block.Text),
 					Type: a.F(a.BetaTextBlockParamTypeText),
-					CacheControl: a.F(a.BetaCacheControlEphemeralParam{
-						Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
-					}),
 				}
 			case a.BetaContentBlockTypeToolUse:
 				finished = false
@@ -160,11 +156,8 @@ func (s *sonnet35Executor) Execute(input string) error {
 					Input: a.F(block.Input),
 					Name:  a.F(block.Name),
 					Type:  a.F(a.BetaToolUseBlockParamTypeToolUse),
-					CacheControl: a.F(a.BetaCacheControlEphemeralParam{
-						Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
-					}),
 				}
-				var result *llm.ToolResult
+				var result *ToolResult
 				var err error
 				switch block.Name {
 				case string(a.BetaToolBash20241022NameBash):
@@ -212,16 +205,10 @@ func (s *sonnet35Executor) Execute(input string) error {
 							Content: a.F([]a.BetaToolResultBlockParamContentUnion{
 								a.BetaToolResultBlockParamContent{
 									Type: a.F(a.BetaToolResultBlockParamContentTypeText),
-									CacheControl: a.F(a.BetaCacheControlEphemeralParam{
-										Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
-									}),
 									Text: a.F[string](fmt.Sprintf("%+v", result.Content)),
 								},
 							}),
 							IsError: a.F(result.IsError),
-							CacheControl: a.F(a.BetaCacheControlEphemeralParam{
-								Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
-							}),
 						},
 					}),
 					Role: a.F(a.BetaMessageParamRoleUser),

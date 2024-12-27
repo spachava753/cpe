@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/google/generative-ai-go/genai"
 	gitignore "github.com/sabhiram/go-gitignore"
-	"github.com/spachava753/cpe/internal/llm"
 	"google.golang.org/api/option"
 	"log/slog"
 	"time"
@@ -16,10 +15,10 @@ type geminiExecutor struct {
 	model   *genai.GenerativeModel
 	logger  *slog.Logger
 	ignorer *gitignore.GitIgnore
-	config  llm.GenConfig
+	config  GenConfig
 }
 
-func NewGeminiExecutor(baseUrl string, apiKey string, logger *slog.Logger, ignorer *gitignore.GitIgnore, config llm.GenConfig) (Executor, error) {
+func NewGeminiExecutor(baseUrl string, apiKey string, logger *slog.Logger, ignorer *gitignore.GitIgnore, config GenConfig) (Executor, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -162,7 +161,7 @@ func (g *geminiExecutor) Execute(input string) error {
 				finished = false
 				g.logger.Info(fmt.Sprintf("%+v", v.Args))
 
-				var result *llm.ToolResult
+				var result *ToolResult
 				switch v.Name {
 				case bashTool.Name:
 					jsonInput, marshalErr := json.Marshal(v.Args)
