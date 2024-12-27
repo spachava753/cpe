@@ -115,7 +115,10 @@ func (o *deepseekExecutor) Execute(input string) error {
 		// Log any text content
 		if choice.Message.Content != "" {
 			o.logger.Info(choice.Message.Content)
-			assistantMsg = append(assistantMsg, oai.AssistantMessage(choice.Message.Content))
+			assistantMsg = append(assistantMsg, oai.ChatCompletionMessageParam{
+				Role:    oai.F(oai.ChatCompletionMessageParamRoleAssistant),
+				Content: oai.F[any](choice.Message.Content),
+			})
 		}
 
 		// If no tool calls, add message and finish
@@ -176,8 +179,6 @@ func (o *deepseekExecutor) Execute(input string) error {
 				return fmt.Errorf("failed to marshal tool result: %w", unmarshallErr)
 			}
 
-			// Convert OpenAI tool message to DeepSeek tool message and back
-			//toolMsg := oai.ToolMessage(toolCall.ID, string(content))
 			toolMsg := oai.ChatCompletionMessageParam{
 				Role:       oai.F(oai.ChatCompletionMessageParamRoleTool),
 				Content:    oai.F[any](string(content)),
