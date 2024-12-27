@@ -124,7 +124,7 @@ func (o *openaiExecutor) Execute(input string) error {
 
 		// Process tool calls
 		for _, toolCall := range choice.Message.ToolCalls {
-			o.logger.Info(fmt.Sprintf("%+v", toolCall.Function.Arguments))
+			o.logger.Info(fmt.Sprintf("Tool: %s, Arguments: %+v", toolCall.Function.Name, toolCall.Function.Arguments))
 
 			var result *ToolResult
 
