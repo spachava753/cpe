@@ -160,7 +160,7 @@ func (s *anthropicExecutor) Execute(input string) error {
 				var result *ToolResult
 				var err error
 				switch block.Name {
-				case string(a.BetaToolBash20241022NameBash):
+				case bashTool.Name:
 					jsonInput, marshalErr := json.Marshal(block.Input)
 					if marshalErr != nil {
 						panic(marshalErr)
@@ -170,8 +170,16 @@ func (s *anthropicExecutor) Execute(input string) error {
 						panic(unmarshallErr)
 					}
 					result, err = executeBashTool(toolInput, s.logger)
-				case string(a.BetaToolTextEditor20241022NameStrReplaceEditor):
-					panic("not implemented")
+				case fileEditor.Name:
+					jsonInput, marshalErr := json.Marshal(block.Input)
+					if marshalErr != nil {
+						panic(marshalErr)
+					}
+					var toolInput json.RawMessage
+					if unmarshallErr := json.Unmarshal(jsonInput, &toolInput); unmarshallErr != nil {
+						panic(unmarshallErr)
+					}
+					result, err = executeFileEditorTool(toolInput, s.logger)
 				case filesOverviewTool.Name:
 					result, err = executeFilesOverviewTool(s.ignorer, s.logger)
 				case getRelatedFilesTool.Name:

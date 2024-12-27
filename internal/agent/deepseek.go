@@ -12,14 +12,14 @@ import (
 	"time"
 )
 
-type openaiExecutor struct {
+type deepseekExecutor struct {
 	client  *oai.Client
 	logger  *slog.Logger
 	ignorer *gitignore.GitIgnore
 	config  GenConfig
 }
 
-func NewOpenAIExecutor(baseUrl string, apiKey string, logger *slog.Logger, ignorer *gitignore.GitIgnore, config GenConfig) Executor {
+func NewDeepSeekExecutor(baseUrl string, apiKey string, logger *slog.Logger, ignorer *gitignore.GitIgnore, config GenConfig) Executor {
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithMaxRetries(5),
@@ -30,10 +30,12 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger *slog.Logger, ignor
 		if !strings.HasSuffix(baseUrl, "/") {
 			baseUrl = baseUrl + "/"
 		}
-		opts = append(opts, option.WithBaseURL(baseUrl))
+	} else {
+		baseUrl = "https://api.deepseek.com/"
 	}
+	opts = append(opts, option.WithBaseURL(baseUrl))
 	client := oai.NewClient(opts...)
-	return &openaiExecutor{
+	return &deepseekExecutor{
 		client:  client,
 		logger:  logger,
 		ignorer: ignorer,
@@ -41,7 +43,7 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger *slog.Logger, ignor
 	}
 }
 
-func (o *openaiExecutor) Execute(input string) error {
+func (o *deepseekExecutor) Execute(input string) error {
 	params := oai.ChatCompletionNewParams{
 		Model:               oai.F(o.config.Model),
 		MaxCompletionTokens: oai.Int(int64(o.config.MaxTokens)),
@@ -174,7 +176,14 @@ func (o *openaiExecutor) Execute(input string) error {
 				return fmt.Errorf("failed to marshal tool result: %w", unmarshallErr)
 			}
 
-			assistantMsg = append(assistantMsg, oai.ToolMessage(toolCall.ID, string(content)))
+			// Convert OpenAI tool message to DeepSeek tool message and back
+			//toolMsg := oai.ToolMessage(toolCall.ID, string(content))
+			toolMsg := oai.ChatCompletionMessageParam{
+				Role:       oai.F(oai.ChatCompletionMessageParamRoleTool),
+				Content:    oai.F[any](string(content)),
+				ToolCallID: oai.F(toolCall.ID),
+			}
+			assistantMsg = append(assistantMsg, toolMsg)
 		}
 
 		// Add messages and continue conversation

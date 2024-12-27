@@ -35,10 +35,9 @@ type ModelDefaults struct {
 }
 
 type ModelConfig struct {
-	Name         string
-	ProviderType string
-	IsKnown      bool
-	Defaults     ModelDefaults
+	Name     string
+	IsKnown  bool
+	Defaults ModelDefaults
 }
 
 type ProviderConfig interface {
@@ -70,48 +69,52 @@ func (c OpenAIConfig) GetAPIKey() string {
 }
 
 var ModelConfigs = map[string]ModelConfig{
+	"deepseek-chat": {
+		Name: "deepseek-chat", IsKnown: true,
+		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
+	},
 	"claude-3-opus": {
-		Name: anthropic.ModelClaude_3_Opus_20240229, ProviderType: "anthropic", IsKnown: true,
+		Name: anthropic.ModelClaude_3_Opus_20240229, IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.3},
 	},
 	"claude-3-5-sonnet": {
-		Name: anthropic.ModelClaude3_5Sonnet20241022, ProviderType: "anthropic", IsKnown: true,
+		Name: anthropic.ModelClaude3_5Sonnet20241022, IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
 	"claude-3-5-haiku": {
-		Name: anthropic.ModelClaude3_5Haiku20241022, ProviderType: "anthropic", IsKnown: true,
+		Name: anthropic.ModelClaude3_5Haiku20241022, IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
 	"claude-3-haiku": {
-		Name: anthropic.ModelClaude_3_Haiku_20240307, ProviderType: "anthropic", IsKnown: true,
+		Name: anthropic.ModelClaude_3_Haiku_20240307, IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.3},
 	},
 	"gemini-1.5-flash-8b": {
-		Name: "gemini-1.5-flash-8b", ProviderType: "gemini", IsKnown: true,
+		Name: "gemini-1.5-flash-8b", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
 	"gemini-1.5-flash": {
-		Name: "gemini-1.5-flash-002", ProviderType: "gemini", IsKnown: true,
+		Name: "gemini-1.5-flash-002", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
 	"gemini-2.0-flash-exp": {
-		Name: "gemini-2.0-flash-exp", ProviderType: "gemini", IsKnown: true,
+		Name: "gemini-2.0-flash-exp", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
 	"gemini-1.5-pro": {
-		Name: "gemini-1.5-pro-002", ProviderType: "gemini", IsKnown: true,
+		Name: "gemini-1.5-pro-002", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
 	"gpt-4o": {
-		Name: openai.ChatModelGPT4o2024_11_20, ProviderType: "openai", IsKnown: true,
+		Name: openai.ChatModelGPT4o2024_11_20, IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
 	"gpt-4o-mini": {
-		Name: openai.ChatModelGPT4oMini2024_07_18, ProviderType: "openai", IsKnown: true,
+		Name: openai.ChatModelGPT4oMini2024_07_18, IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
 	"o1": {
-		Name: openai.ChatModelO1_2024_12_17, ProviderType: "openai", IsKnown: true,
+		Name: openai.ChatModelO1_2024_12_17, IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 100000, Temperature: 1},
 	},
 }
@@ -162,7 +165,7 @@ func (f ModelOptions) ApplyToGenConfig(config GenConfig) GenConfig {
 	return config
 }
 
-func GetProvider(logger *slog.Logger, modelName string, flags ModelOptions) (GenConfig, error) {
+func GetConfig(logger *slog.Logger, modelName string, flags ModelOptions) (GenConfig, error) {
 	if modelName == "" {
 		modelName = DefaultModel
 	}
@@ -174,7 +177,7 @@ func GetProvider(logger *slog.Logger, modelName string, flags ModelOptions) (Gen
 			return GenConfig{}, fmt.Errorf("unknown model '%s' requires -custom-url flag or CPE_CUSTOM_URL environment variable", modelName)
 		}
 		logger.Info("Using unknown model with OpenAI provider", slog.String("model", modelName), slog.String("custom-url", flags.CustomURL))
-		config = ModelConfig{Name: modelName, ProviderType: "openai", IsKnown: false}
+		config = ModelConfig{Name: modelName, IsKnown: false}
 	}
 
 	genConfig := GenConfig{

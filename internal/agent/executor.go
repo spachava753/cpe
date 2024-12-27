@@ -33,13 +33,19 @@ func InitExecutor(logger *slog.Logger, modelName string, flags ModelOptions) (Ex
 		customURL = envURL
 	}
 
-	genConfig, err := GetProvider(logger, modelName, flags)
+	genConfig, err := GetConfig(logger, modelName, flags)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get provider: %w", err)
 	}
 
 	// Check if we have a specific executor for this model
 	switch genConfig.Model {
+	case "deepseek-chat":
+		apiKey := os.Getenv("DEEPSEEK_API_KEY")
+		if apiKey == "" {
+			return nil, fmt.Errorf("DEEPSEEK_API_KEY environment variable not set")
+		}
+		return NewDeepSeekExecutor(customURL, apiKey, logger, ignorer, genConfig), nil
 	case anthropic.ModelClaude3_5Sonnet20241022, anthropic.ModelClaude3_5Haiku20241022, anthropic.ModelClaude_3_Haiku_20240307, anthropic.ModelClaude_3_Opus_20240229:
 		apiKey := os.Getenv("ANTHROPIC_API_KEY")
 		if apiKey == "" {
