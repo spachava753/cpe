@@ -3,9 +3,11 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/google/generative-ai-go/genai"
 	gitignore "github.com/sabhiram/go-gitignore"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	"log/slog"
 	"time"
@@ -136,9 +138,33 @@ func (g *geminiExecutor) Execute(input string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	// Send initial user message
-	resp, err := session.SendMessage(ctx, genai.Text(input))
-	if err != nil {
+	// Send initial user message with retries
+	var resp *genai.GenerateContentResponse
+	var err error
+	maxRetries := 5
+	retryCount := 0
+	retryWait := 1 * time.Minute
+
+	for retryCount <= maxRetries {
+		resp, err = session.SendMessage(ctx, genai.Text(input))
+		if err == nil {
+			break
+		}
+
+		var gerr *googleapi.Error
+		if errors.As(err, &gerr) && (gerr.Code == 429 || gerr.Code >= 500) {
+			retryCount++
+			if retryCount > maxRetries {
+				return fmt.Errorf("exceeded maximum retries (%d) when sending message to Gemini: %w", maxRetries, err)
+			}
+			g.logger.Info("retrying Gemini API call due to error",
+				slog.Int("retry", retryCount),
+				slog.Int("status_code", gerr.Code),
+				slog.String("error", gerr.Error()),
+			)
+			time.Sleep(retryWait)
+			continue
+		}
 		return fmt.Errorf("error sending message to Gemini: %w", err)
 	}
 
@@ -216,9 +242,28 @@ func (g *geminiExecutor) Execute(input string) error {
 			break
 		}
 
-		// Send next message
-		resp, err = session.SendMessage(ctx, nextMsg...)
-		if err != nil {
+		// Send next message with retries
+		retryCount = 0
+		for retryCount <= maxRetries {
+			resp, err = session.SendMessage(ctx, nextMsg...)
+			if err == nil {
+				break
+			}
+
+			var gerr *googleapi.Error
+			if errors.As(err, &gerr) && (gerr.Code == 429 || gerr.Code >= 500) {
+				retryCount++
+				if retryCount > maxRetries {
+					return fmt.Errorf("exceeded maximum retries (%d) when sending message to Gemini: %w", maxRetries, err)
+				}
+				g.logger.Info("retrying Gemini API call due to error",
+					slog.Int("retry", retryCount),
+					slog.Int("status_code", gerr.Code),
+					slog.String("error", gerr.Error()),
+				)
+				time.Sleep(retryWait)
+				continue
+			}
 			return fmt.Errorf("error sending message to Gemini: %w", err)
 		}
 	}
