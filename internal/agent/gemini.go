@@ -162,6 +162,10 @@ func (g *geminiExecutor) Execute(input string) error {
 				slog.Int("status_code", gerr.Code),
 				slog.String("error", gerr.Error()),
 			)
+			// Remove the failed message from session history before retrying
+			if len(session.History) > 0 {
+				session.History = session.History[:len(session.History)-1]
+			}
 			time.Sleep(retryWait)
 			continue
 		}
@@ -261,6 +265,10 @@ func (g *geminiExecutor) Execute(input string) error {
 					slog.Int("status_code", gerr.Code),
 					slog.String("error", gerr.Error()),
 				)
+				// Remove the failed message from session history before retrying
+				if len(session.History) > 0 {
+					session.History = session.History[:len(session.History)-1]
+				}
 				time.Sleep(retryWait)
 				continue
 			}
