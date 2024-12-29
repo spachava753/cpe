@@ -130,13 +130,29 @@ func (o *openaiExecutor) Execute(input string) error {
 
 			switch toolCall.Function.Name {
 			case bashTool.Name:
-				result, err = executeBashTool(json.RawMessage(toolCall.Function.Arguments), o.logger)
+				var params struct {
+					Command string `json:"command"`
+				}
+				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &params); err != nil {
+					return fmt.Errorf("failed to unmarshal bash tool arguments: %w", err)
+				}
+				result, err = executeBashTool(params.Command, o.logger)
 			case fileEditor.Name:
-				result, err = executeFileEditorTool(json.RawMessage(toolCall.Function.Arguments), o.logger)
+				var params FileEditorParams
+				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &params); err != nil {
+					return fmt.Errorf("failed to unmarshal file editor tool arguments: %w", err)
+				}
+				result, err = executeFileEditorTool(params, o.logger)
 			case filesOverviewTool.Name:
 				result, err = executeFilesOverviewTool(o.ignorer, o.logger)
 			case getRelatedFilesTool.Name:
-				result, err = executeGetRelatedFilesTool(json.RawMessage(toolCall.Function.Arguments), o.ignorer, o.logger)
+				var params struct {
+					InputFiles []string `json:"input_files"`
+				}
+				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &params); err != nil {
+					return fmt.Errorf("failed to unmarshal get related files tool arguments: %w", err)
+				}
+				result, err = executeGetRelatedFilesTool(params.InputFiles, o.ignorer, o.logger)
 			default:
 				return fmt.Errorf("unexpected tool name: %s", toolCall.Function.Name)
 			}

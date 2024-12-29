@@ -161,37 +161,41 @@ func (s *anthropicExecutor) Execute(input string) error {
 				var err error
 				switch block.Name {
 				case bashTool.Name:
+					var params struct {
+						Command string `json:"command"`
+					}
 					jsonInput, marshalErr := json.Marshal(block.Input)
 					if marshalErr != nil {
-						panic(marshalErr)
+						return fmt.Errorf("failed to marshal bash tool input: %w", marshalErr)
 					}
-					var toolInput json.RawMessage
-					if unmarshallErr := json.Unmarshal(jsonInput, &toolInput); unmarshallErr != nil {
-						panic(unmarshallErr)
+					if err := json.Unmarshal(jsonInput, &params); err != nil {
+						return fmt.Errorf("failed to unmarshal bash tool arguments: %w", err)
 					}
-					result, err = executeBashTool(toolInput, s.logger)
+					result, err = executeBashTool(params.Command, s.logger)
 				case fileEditor.Name:
+					var params FileEditorParams
 					jsonInput, marshalErr := json.Marshal(block.Input)
 					if marshalErr != nil {
-						panic(marshalErr)
+						return fmt.Errorf("failed to marshal file editor tool input: %w", marshalErr)
 					}
-					var toolInput json.RawMessage
-					if unmarshallErr := json.Unmarshal(jsonInput, &toolInput); unmarshallErr != nil {
-						panic(unmarshallErr)
+					if err := json.Unmarshal(jsonInput, &params); err != nil {
+						return fmt.Errorf("failed to unmarshal file editor tool arguments: %w", err)
 					}
-					result, err = executeFileEditorTool(toolInput, s.logger)
+					result, err = executeFileEditorTool(params, s.logger)
 				case filesOverviewTool.Name:
 					result, err = executeFilesOverviewTool(s.ignorer, s.logger)
 				case getRelatedFilesTool.Name:
+					var params struct {
+						InputFiles []string `json:"input_files"`
+					}
 					jsonInput, marshalErr := json.Marshal(block.Input)
 					if marshalErr != nil {
-						panic(marshalErr)
+						return fmt.Errorf("failed to marshal get related files tool input: %w", marshalErr)
 					}
-					var toolInput json.RawMessage
-					if unmarshallErr := json.Unmarshal(jsonInput, &toolInput); unmarshallErr != nil {
-						panic(unmarshallErr)
+					if err := json.Unmarshal(jsonInput, &params); err != nil {
+						return fmt.Errorf("failed to unmarshal get related files tool arguments: %w", err)
 					}
-					result, err = executeGetRelatedFilesTool(toolInput, s.ignorer, s.logger)
+					result, err = executeGetRelatedFilesTool(params.InputFiles, s.ignorer, s.logger)
 				default:
 					return fmt.Errorf("unexpected tool use block type: %s", block.Name)
 				}

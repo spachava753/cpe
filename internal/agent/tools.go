@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"encoding/json"
 	"fmt"
 	ignore "github.com/sabhiram/go-gitignore"
 	"github.com/spachava753/cpe/internal/codemap"
@@ -123,17 +122,10 @@ type ToolResult struct {
 }
 
 // executeBashTool validates and executes the bash tool
-func executeBashTool(input json.RawMessage, logger *slog.Logger) (*ToolResult, error) {
-	var params struct {
-		Command string `json:"command"`
-	}
-	if err := json.Unmarshal(input, &params); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal bash tool input: %w", err)
-	}
+func executeBashTool(command string, logger *slog.Logger) (*ToolResult, error) {
+	logger.Info(fmt.Sprintf("executing bash command: %s", command))
 
-	logger.Info(fmt.Sprintf("executing bash command: %s", params.Command))
-
-	cmd := exec.Command("bash", "-c", params.Command)
+	cmd := exec.Command("bash", "-c", command)
 	cmd.Env = os.Environ()
 
 	output, err := cmd.CombinedOutput()
@@ -149,19 +141,17 @@ func executeBashTool(input json.RawMessage, logger *slog.Logger) (*ToolResult, e
 	}, nil
 }
 
-// executeFileEditorTool validates and executes the file editor tool
-func executeFileEditorTool(input json.RawMessage, logger *slog.Logger) (*ToolResult, error) {
-	var params struct {
-		Command  string `json:"command"`
-		Path     string `json:"path"`
-		FileText string `json:"file_text,omitempty"`
-		OldStr   string `json:"old_str,omitempty"`
-		NewStr   string `json:"new_str,omitempty"`
-	}
-	if err := json.Unmarshal(input, &params); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal file editor tool input: %w", err)
-	}
+// FileEditorParams represents the parameters for the file editor tool
+type FileEditorParams struct {
+	Command  string `json:"command"`
+	Path     string `json:"path"`
+	FileText string `json:"file_text,omitempty"`
+	OldStr   string `json:"old_str,omitempty"`
+	NewStr   string `json:"new_str,omitempty"`
+}
 
+// executeFileEditorTool validates and executes the file editor tool
+func executeFileEditorTool(params FileEditorParams, logger *slog.Logger) (*ToolResult, error) {
 	logger.Info("executing file editor tool",
 		slog.String("command", params.Command),
 		slog.String("path", params.Path),
@@ -252,17 +242,10 @@ func executeFilesOverviewTool(ignorer *ignore.GitIgnore, logger *slog.Logger) (*
 }
 
 // executeGetRelatedFilesTool validates and executes the get related files tool
-func executeGetRelatedFilesTool(input json.RawMessage, ignorer *ignore.GitIgnore, logger *slog.Logger) (*ToolResult, error) {
-	var params struct {
-		InputFiles []string `json:"input_files"`
-	}
-	if err := json.Unmarshal(input, &params); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal get related files tool input: %w", err)
-	}
+func executeGetRelatedFilesTool(inputFiles []string, ignorer *ignore.GitIgnore, logger *slog.Logger) (*ToolResult, error) {
+	logger.Info("getting related files", slog.Any("input_files", inputFiles))
 
-	logger.Info("getting related files", slog.Any("input_files", params.InputFiles))
-
-	relatedFiles, err := typeresolver.ResolveTypeAndFunctionFiles(params.InputFiles, os.DirFS("."), ignorer)
+	relatedFiles, err := typeresolver.ResolveTypeAndFunctionFiles(inputFiles, os.DirFS("."), ignorer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve related files: %w", err)
 	}
