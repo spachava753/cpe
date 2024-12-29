@@ -44,6 +44,8 @@ func NewDeepSeekExecutor(baseUrl string, apiKey string, logger *slog.Logger, ign
 }
 
 func (o *deepseekExecutor) Execute(input string) error {
+	slog.Info("Note that the current V3 model is not yet perfected, it seems like the instruction following and tool calling performance is not yet tuned.")
+	slog.Info("Recommend using this model for one-off tasks like generating git commit messages or bash commands.")
 	params := oai.ChatCompletionNewParams{
 		Model:               oai.F(o.config.Model),
 		MaxCompletionTokens: oai.Int(int64(o.config.MaxTokens)),
