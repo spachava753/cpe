@@ -10,8 +10,20 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	"log/slog"
+	"strconv"
 	"time"
 )
+
+// unescapeString unescapes a string that contains escaped characters like quotes and whitespace
+func unescapeString(s string) string {
+	// First try to unescape as a JSON string
+	unquoted, err := strconv.Unquote(`"` + s + `"`)
+	if err == nil {
+		return unquoted
+	}
+	// If that fails, return the original string
+	return s
+}
 
 type geminiExecutor struct {
 	model   *genai.GenerativeModel
@@ -214,6 +226,9 @@ func (g *geminiExecutor) Execute(input string) error {
 					if err := json.Unmarshal(jsonInput, &params); err != nil {
 						return fmt.Errorf("failed to unmarshal file editor tool arguments: %w", err)
 					}
+					// Unescape old_str and new_str parameters
+					params.OldStr = unescapeString(params.OldStr)
+					params.NewStr = unescapeString(params.NewStr)
 					result, err = executeFileEditorTool(params, g.logger)
 				case filesOverviewTool.Name:
 					result, err = executeFilesOverviewTool(g.ignorer, g.logger)
