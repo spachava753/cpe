@@ -54,7 +54,7 @@ func main() {
 		return
 	}
 
-	executor, err := agent.InitExecutor(logger, config.Model, agent.ModelOptions{
+	executor, err := agent.InitExecutor(logger, agent.ModelOptions{
 		Model:             config.Model,
 		CustomURL:         config.CustomURL,
 		MaxTokens:         config.MaxTokens,

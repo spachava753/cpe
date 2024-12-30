@@ -29,7 +29,7 @@ var Opts Options
 func init() {
 	flag.StringVar(&Opts.TokenCountPath, "token-count", "", "Print a tree of directories and files with their token counts for the given path")
 	flag.BoolVar(&Opts.Version, "version", false, "Print the version number and exit")
-	flag.StringVar(&Opts.Model, "model", "", fmt.Sprintf("Specify the model to use. Supported models: %s", strings.Join(slices.Collect(maps.Keys(agent.ModelConfigs)), ", ")))
+	flag.StringVar(&Opts.Model, "model", agent.DefaultModel, fmt.Sprintf("Specify the model to use. Supported models: %s", strings.Join(slices.Collect(maps.Keys(agent.ModelConfigs)), ", ")))
 	flag.StringVar(&Opts.CustomURL, "custom-url", "", "Specify a custom base URL for the model provider API")
 	flag.IntVar(&Opts.MaxTokens, "max-tokens", 0, "Maximum number of tokens to generate")
 	flag.Float64Var(&Opts.Temperature, "temperature", 0, "Sampling temperature (0.0 - 1.0)")

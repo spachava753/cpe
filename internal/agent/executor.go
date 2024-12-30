@@ -19,7 +19,7 @@ type Executor interface {
 }
 
 // InitExecutor initializes and returns an appropriate executor based on the model configuration
-func InitExecutor(logger *slog.Logger, modelName string, flags ModelOptions) (Executor, error) {
+func InitExecutor(logger *slog.Logger, flags ModelOptions) (Executor, error) {
 	ignorer, err := ignore.LoadIgnoreFiles(".")
 	if err != nil {
 		return nil, fmt.Errorf("failed to load ignore files: %w", err)
@@ -30,14 +30,14 @@ func InitExecutor(logger *slog.Logger, modelName string, flags ModelOptions) (Ex
 
 	// Check for custom URL in environment variable
 	customURL := flags.CustomURL
+	if modelEnvURL := os.Getenv(fmt.Sprintf("CPE_%s_URL", strings.ToUpper(strings.ReplaceAll(flags.Model, "-", "_")))); customURL == "" && modelEnvURL != "" {
+		customURL = modelEnvURL
+	}
 	if envURL := os.Getenv("CPE_CUSTOM_URL"); customURL == "" && envURL != "" {
 		customURL = envURL
 	}
-	if modelEnvURL := os.Getenv(fmt.Sprintf("CPE_%s_URL", strings.ToUpper(strings.ReplaceAll(modelName, "-", "_")))); customURL == "" && modelEnvURL != "" {
-		customURL = modelEnvURL
-	}
 
-	genConfig, err := GetConfig(logger, modelName, flags)
+	genConfig, err := GetConfig(logger, flags)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get provider: %w", err)
 	}
