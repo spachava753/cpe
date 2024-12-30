@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	_ "embed"
 	"fmt"
 	"github.com/spachava753/cpe/internal/agent"
@@ -103,24 +102,37 @@ func parseConfig() (cliopts.Options, error) {
 }
 
 func readInput(inputPath string) (string, error) {
-	var r io.Reader
-	if inputPath == "-" {
-		r = bufio.NewReader(os.Stdin)
-	} else {
-		var err error
-		r, err = os.Open(inputPath)
+	var input string
+
+	// Read from stdin or file if provided
+	if inputPath != "" && inputPath != "-" {
+		// Read from file
+		content, err := os.ReadFile(inputPath)
 		if err != nil {
 			return "", fmt.Errorf("error opening input file %s: %w", inputPath, err)
 		}
-	}
-	content, err := io.ReadAll(r)
-	if err != nil {
-		return "", err
+		input = string(content)
+	} else if inputPath == "-" {
+		// Read from stdin
+		content, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return "", err
+		}
+		input = string(content)
 	}
 
-	if len(content) == 0 {
-		return "", fmt.Errorf("no input provided. Please provide input via stdin or specify an input file")
+	// If we have a prompt from command line arguments, append it to any existing input
+	if cliopts.Opts.Prompt != "" {
+		if input != "" {
+			input = input + "\n\n" + cliopts.Opts.Prompt
+		} else {
+			input = cliopts.Opts.Prompt
+		}
 	}
 
-	return string(content), nil
+	if input == "" {
+		return "", fmt.Errorf("no input provided. Please provide input via stdin, input file, or as a command line argument")
+	}
+
+	return input, nil
 }

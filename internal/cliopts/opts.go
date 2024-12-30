@@ -22,6 +22,7 @@ type Options struct {
 	Input             string
 	Version           bool
 	TokenCountPath    string
+	Prompt            string
 }
 
 var Opts Options
@@ -38,9 +39,14 @@ func init() {
 	flag.Float64Var(&Opts.FrequencyPenalty, "frequency-penalty", 0, "Frequency penalty (-2.0 - 2.0)")
 	flag.Float64Var(&Opts.PresencePenalty, "presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
 	flag.IntVar(&Opts.NumberOfResponses, "number-of-responses", 0, "Number of responses to generate")
-	flag.StringVar(&Opts.Input, "input", "-", "Specify the input file path. Use '-' for stdin")
+	flag.StringVar(&Opts.Input, "input", "", "Specify the input file path. Use '-' for stdin. If omitted, only command line arguments are used as input")
 }
 
 func ParseFlags() {
 	flag.Parse()
+
+	// Any remaining arguments after flags are treated as the prompt
+	if args := flag.Args(); len(args) > 0 {
+		Opts.Prompt = strings.Join(args, " ")
+	}
 }
