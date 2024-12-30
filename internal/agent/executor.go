@@ -7,6 +7,7 @@ import (
 	"github.com/spachava753/cpe/internal/ignore"
 	"log/slog"
 	"os"
+	"strings"
 )
 
 //go:embed agent_instructions.txt
@@ -31,6 +32,9 @@ func InitExecutor(logger *slog.Logger, modelName string, flags ModelOptions) (Ex
 	customURL := flags.CustomURL
 	if envURL := os.Getenv("CPE_CUSTOM_URL"); customURL == "" && envURL != "" {
 		customURL = envURL
+	}
+	if modelEnvURL := os.Getenv(fmt.Sprintf("CPE_%s_URL", strings.ToUpper(strings.ReplaceAll(modelName, "-", "_")))); customURL == "" && modelEnvURL != "" {
+		customURL = modelEnvURL
 	}
 
 	genConfig, err := GetConfig(logger, modelName, flags)

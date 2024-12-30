@@ -89,19 +89,19 @@ var ModelConfigs = map[string]ModelConfig{
 		Name: anthropic.ModelClaude_3_Haiku_20240307, IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.3},
 	},
-	"gemini-1.5-flash-8b": {
+	"gemini-1-5-flash-8b": {
 		Name: "gemini-1.5-flash-8b", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
-	"gemini-1.5-flash": {
+	"gemini-1-5-flash": {
 		Name: "gemini-1.5-flash-002", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
-	"gemini-2.0-flash-exp": {
+	"gemini-2-flash-exp": {
 		Name: "gemini-2.0-flash-exp", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
-	"gemini-1.5-pro": {
+	"gemini-1-5-pro": {
 		Name: "gemini-1.5-pro-002", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
