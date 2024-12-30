@@ -2,29 +2,14 @@ package codemap
 
 import (
 	"fmt"
+	"github.com/gabriel-vasile/mimetype"
 	gitignore "github.com/sabhiram/go-gitignore"
 	sitter "github.com/tree-sitter/go-tree-sitter"
 	"io/fs"
 	"path/filepath"
 	"sort"
+	"strings"
 )
-
-var supportedLanguages = map[string]bool{
-	".go":   true,
-	".java": true,
-	".c":    true,
-	".h":    true,
-	".py":   true,
-	".js":   true,
-	".ts":   true,
-	".sql":  true,
-	".yaml": true,
-	".yml":  true,
-	".json": true,
-	".xml":  true,
-	".mod":  true,
-	".md":   true,
-}
 
 // FileCodeMap represents a single file's code map output
 type FileCodeMap struct {
@@ -39,9 +24,23 @@ func GenerateOutput(fsys fs.FS, maxLiteralLen int, ignorer *gitignore.GitIgnore)
 		if err != nil {
 			return err
 		}
-		if !d.IsDir() && isSourceCode(path) && !ignorer.MatchesPath(path) {
-			filePaths = append(filePaths, path)
+		if d.IsDir() || ignorer.MatchesPath(path) {
+			return nil
 		}
+
+		// Read file content
+		content, err := fs.ReadFile(fsys, path)
+		if err != nil {
+			return fmt.Errorf("error reading file %s: %w", path, err)
+		}
+
+		// Detect if file is text
+		mime := mimetype.Detect(content)
+		if !strings.HasPrefix(mime.String(), "text/") {
+			return nil
+		}
+
+		filePaths = append(filePaths, path)
 		return nil
 	})
 	if err != nil {
@@ -63,11 +62,6 @@ func GenerateOutput(fsys fs.FS, maxLiteralLen int, ignorer *gitignore.GitIgnore)
 	}
 
 	return results, nil
-}
-
-func isSourceCode(path string) bool {
-	ext := filepath.Ext(path)
-	return supportedLanguages[ext]
 }
 
 func generateFileOutput(fsys fs.FS, path string, maxLiteralLen int) (string, error) {

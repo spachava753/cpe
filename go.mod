@@ -6,11 +6,11 @@ toolchain go1.23.2
 
 require (
 	github.com/anthropics/anthropic-sdk-go v0.2.0-alpha.8
+	github.com/gabriel-vasile/mimetype v1.4.7
 	github.com/google/generative-ai-go v0.19.0
 	github.com/openai/openai-go v0.1.0-alpha.41
 	github.com/pkoukk/tiktoken-go v0.1.7
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
-	github.com/sashabaranov/go-openai v1.36.0
 	github.com/stretchr/testify v1.10.0
 	github.com/tree-sitter/go-tree-sitter v0.24.0
 	github.com/tree-sitter/tree-sitter-go v0.23.4
