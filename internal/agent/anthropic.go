@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	a "github.com/anthropics/anthropic-sdk-go"
@@ -11,6 +12,9 @@ import (
 	"strings"
 	"time"
 )
+
+//go:embed claude_agent_instructions.txt
+var claudeAgentInstructions string
 
 type anthropicExecutor struct {
 	client  *a.Client
@@ -41,65 +45,76 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger *slog.Logger, ig
 	}
 }
 
+func (s *anthropicExecutor) getTools(expFlags ExperimentalFlags) []a.BetaToolUnionUnionParam {
+	bashToolDesc := bashTool.Description
+	if expFlags.DisabledRelatedFiles {
+		bashToolDesc = bashToolDesc + `
+* To get files that are related to a particular source code file, try using 'grep'
+  * Show some context around the match (-A for after, -B for before): grep -r "func YourFunctionName" --include="*.go" -A 1 .
+  * Search only Go files: 'grep -r "func YourFunctionName" --include="*.go" .'`
+	}
+
+	tools := []a.BetaToolUnionUnionParam{
+		&a.BetaToolParam{
+			Name:        a.F(bashTool.Name),
+			Description: a.F(bashToolDesc),
+			InputSchema: a.F(a.BetaToolInputSchemaParam{
+				Type:       a.F(a.BetaToolInputSchemaTypeObject),
+				Properties: a.F[any](bashTool.InputSchema["properties"]),
+			}),
+		},
+		&a.BetaToolParam{
+			Name:        a.F(fileEditor.Name),
+			Description: a.F(fileEditor.Description),
+			InputSchema: a.F(a.BetaToolInputSchemaParam{
+				Type:       a.F(a.BetaToolInputSchemaTypeObject),
+				Properties: a.F[any](fileEditor.InputSchema["properties"]),
+			}),
+		},
+		&a.BetaToolParam{
+			Name:        a.F(filesOverviewTool.Name),
+			Description: a.F(filesOverviewTool.Description),
+			InputSchema: a.F(a.BetaToolInputSchemaParam{
+				Type: a.F(a.BetaToolInputSchemaTypeObject),
+			}),
+		},
+	}
+
+	if !expFlags.DisabledRelatedFiles {
+		tools = append(tools, &a.BetaToolParam{
+			Name:        a.F(getRelatedFilesTool.Name),
+			Description: a.F(getRelatedFilesTool.Description),
+			InputSchema: a.F(a.BetaToolInputSchemaParam{
+				Type:       a.F(a.BetaToolInputSchemaTypeObject),
+				Properties: a.F[any](getRelatedFilesTool.InputSchema["properties"]),
+			}),
+		})
+	}
+
+	return tools
+}
+
+func (s *anthropicExecutor) getSystemPrompt(expFlags ExperimentalFlags) string {
+	if expFlags.DisabledRelatedFiles {
+		return claudeAgentInstructions
+	}
+	return agentInstructions
+}
+
 func (s *anthropicExecutor) Execute(input string) error {
+	expFlags := ParseExperimentalFlags()
+
 	params := a.BetaMessageNewParams{
 		Model:       a.F(s.config.Model),
 		MaxTokens:   a.F(int64(s.config.MaxTokens)),
 		Temperature: a.F(float64(s.config.Temperature)),
 		System: a.F([]a.BetaTextBlockParam{
 			{
-				Text: a.F(agentInstructions),
+				Text: a.F(s.getSystemPrompt(expFlags)),
 				Type: a.F(a.BetaTextBlockParamTypeText),
 			},
 		}),
-		Tools: a.F([]a.BetaToolUnionUnionParam{
-			// TODO: there seems to be an error in the anthropic api, holding off on enabling sonnet specific executor until issue is resolve: https://github.com/anthropics/anthropic-sdk-go/issues/86
-			//&a.BetaToolBash20241022Param{
-			//	Name: a.F(a.BetaToolBash20241022NameBash),
-			//	Type: a.F(a.BetaToolBash20241022TypeBash20241022),
-			//	CacheControl: a.F(a.BetaCacheControlEphemeralParam{
-			//		Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
-			//	}),
-			//},
-			//&a.BetaToolTextEditor20241022Param{
-			//	Name: a.F(a.BetaToolTextEditor20241022NameStrReplaceEditor),
-			//	Type: a.F(a.BetaToolTextEditor20241022TypeTextEditor20241022),
-			//	CacheControl: a.F(a.BetaCacheControlEphemeralParam{
-			//		Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
-			//	}),
-			//},
-			&a.BetaToolParam{
-				Name:        a.F(bashTool.Name),
-				Description: a.F(bashTool.Description),
-				InputSchema: a.F(a.BetaToolInputSchemaParam{
-					Type:       a.F(a.BetaToolInputSchemaTypeObject),
-					Properties: a.F[any](bashTool.InputSchema["properties"]),
-				}),
-			},
-			&a.BetaToolParam{
-				Name:        a.F(fileEditor.Name),
-				Description: a.F(fileEditor.Description),
-				InputSchema: a.F(a.BetaToolInputSchemaParam{
-					Type:       a.F(a.BetaToolInputSchemaTypeObject),
-					Properties: a.F[any](fileEditor.InputSchema["properties"]),
-				}),
-			},
-			&a.BetaToolParam{
-				Name:        a.F(filesOverviewTool.Name),
-				Description: a.F(filesOverviewTool.Description),
-				InputSchema: a.F(a.BetaToolInputSchemaParam{
-					Type: a.F(a.BetaToolInputSchemaTypeObject),
-				}),
-			},
-			&a.BetaToolParam{
-				Name:        a.F(getRelatedFilesTool.Name),
-				Description: a.F(getRelatedFilesTool.Description),
-				InputSchema: a.F(a.BetaToolInputSchemaParam{
-					Type:       a.F(a.BetaToolInputSchemaTypeObject),
-					Properties: a.F[any](getRelatedFilesTool.InputSchema["properties"]),
-				}),
-			},
-		}),
+		Tools: a.F(s.getTools(expFlags)),
 	}
 
 	if s.config.TopP != nil {
@@ -185,6 +200,9 @@ func (s *anthropicExecutor) Execute(input string) error {
 				case filesOverviewTool.Name:
 					result, err = executeFilesOverviewTool(s.ignorer, s.logger)
 				case getRelatedFilesTool.Name:
+					if expFlags.DisabledRelatedFiles {
+						return fmt.Errorf("get_related_files tool is disabled")
+					}
 					var params struct {
 						InputFiles []string `json:"input_files"`
 					}

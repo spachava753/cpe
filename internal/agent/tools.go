@@ -22,9 +22,9 @@ var bashTool = Tool{
 	Name: "bash",
 	Description: `Run commands in a bash shell
 * When invoking this tool, the contents of the "command" parameter does NOT need to be escaped.
-* You don't have access to the internet via this tool.
-* You do have access to a mirror of common linux and python packages via apt and pip.
-* State is persistent across command calls and discussions with the user.
+* You can access the internet via this tool with CLI's like "curl" or "wget" command.
+* You can install the necessary dependencies for your project with this tool, e.g. "pip install", "npm install", "apt-get install", "brew install", etc.
+* State is persistent across command calls.
 * To inspect a particular line range of a file, e.g. lines 10-25, try 'sed -n 10,25p /path/to/the/file'.
 * Avoid commands that may produce a very large amount of output.
 * Run long lived commands in the background, e.g. 'sleep 10 &' or start a server in the background`,
