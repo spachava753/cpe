@@ -13,9 +13,6 @@ import (
 	"time"
 )
 
-//go:embed claude_agent_instructions.txt
-var claudeAgentInstructions string
-
 type anthropicExecutor struct {
 	client  *a.Client
 	logger  *slog.Logger
@@ -45,76 +42,50 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger *slog.Logger, ig
 	}
 }
 
-func (s *anthropicExecutor) getTools(expFlags ExperimentalFlags) []a.BetaToolUnionUnionParam {
-	bashToolDesc := bashTool.Description
-	if expFlags.DisabledRelatedFiles {
-		bashToolDesc = bashToolDesc + `
-* To get files that are related to a particular source code file, try using 'grep'
-  * Show some context around the match (-A for after, -B for before): grep -r "func YourFunctionName" --include="*.go" -A 1 .
-  * Search only Go files: 'grep -r "func YourFunctionName" --include="*.go" .'`
-	}
-
-	tools := []a.BetaToolUnionUnionParam{
-		&a.BetaToolParam{
-			Name:        a.F(bashTool.Name),
-			Description: a.F(bashToolDesc),
-			InputSchema: a.F(a.BetaToolInputSchemaParam{
-				Type:       a.F(a.BetaToolInputSchemaTypeObject),
-				Properties: a.F[any](bashTool.InputSchema["properties"]),
-			}),
-		},
-		&a.BetaToolParam{
-			Name:        a.F(fileEditor.Name),
-			Description: a.F(fileEditor.Description),
-			InputSchema: a.F(a.BetaToolInputSchemaParam{
-				Type:       a.F(a.BetaToolInputSchemaTypeObject),
-				Properties: a.F[any](fileEditor.InputSchema["properties"]),
-			}),
-		},
-		&a.BetaToolParam{
-			Name:        a.F(filesOverviewTool.Name),
-			Description: a.F(filesOverviewTool.Description),
-			InputSchema: a.F(a.BetaToolInputSchemaParam{
-				Type: a.F(a.BetaToolInputSchemaTypeObject),
-			}),
-		},
-	}
-
-	if !expFlags.DisabledRelatedFiles {
-		tools = append(tools, &a.BetaToolParam{
-			Name:        a.F(getRelatedFilesTool.Name),
-			Description: a.F(getRelatedFilesTool.Description),
-			InputSchema: a.F(a.BetaToolInputSchemaParam{
-				Type:       a.F(a.BetaToolInputSchemaTypeObject),
-				Properties: a.F[any](getRelatedFilesTool.InputSchema["properties"]),
-			}),
-		})
-	}
-
-	return tools
-}
-
-func (s *anthropicExecutor) getSystemPrompt(expFlags ExperimentalFlags) string {
-	if expFlags.DisabledRelatedFiles {
-		return claudeAgentInstructions
-	}
-	return agentInstructions
-}
-
 func (s *anthropicExecutor) Execute(input string) error {
-	expFlags := ParseExperimentalFlags()
-
 	params := a.BetaMessageNewParams{
 		Model:       a.F(s.config.Model),
 		MaxTokens:   a.F(int64(s.config.MaxTokens)),
 		Temperature: a.F(float64(s.config.Temperature)),
 		System: a.F([]a.BetaTextBlockParam{
 			{
-				Text: a.F(s.getSystemPrompt(expFlags)),
+				Text: a.String(agentInstructions),
 				Type: a.F(a.BetaTextBlockParamTypeText),
 			},
 		}),
-		Tools: a.F(s.getTools(expFlags)),
+		Tools: a.F([]a.BetaToolUnionUnionParam{
+			&a.BetaToolParam{
+				Name:        a.String(bashTool.Name),
+				Description: a.String(bashTool.Description),
+				InputSchema: a.F(a.BetaToolInputSchemaParam{
+					Type:       a.F(a.BetaToolInputSchemaTypeObject),
+					Properties: a.F[any](bashTool.InputSchema["properties"]),
+				}),
+			},
+			&a.BetaToolParam{
+				Name:        a.String(fileEditor.Name),
+				Description: a.String(fileEditor.Description),
+				InputSchema: a.F(a.BetaToolInputSchemaParam{
+					Type:       a.F(a.BetaToolInputSchemaTypeObject),
+					Properties: a.F[any](fileEditor.InputSchema["properties"]),
+				}),
+			},
+			&a.BetaToolParam{
+				Name:        a.String(filesOverviewTool.Name),
+				Description: a.String(filesOverviewTool.Description),
+				InputSchema: a.F(a.BetaToolInputSchemaParam{
+					Type: a.F(a.BetaToolInputSchemaTypeObject),
+				}),
+			},
+			&a.BetaToolParam{
+				Name:        a.String(getRelatedFilesTool.Name),
+				Description: a.String(getRelatedFilesTool.Description),
+				InputSchema: a.F(a.BetaToolInputSchemaParam{
+					Type:       a.F(a.BetaToolInputSchemaTypeObject),
+					Properties: a.F[any](getRelatedFilesTool.InputSchema["properties"]),
+				}),
+			},
+		}),
 	}
 
 	if s.config.TopP != nil {
@@ -200,9 +171,6 @@ func (s *anthropicExecutor) Execute(input string) error {
 				case filesOverviewTool.Name:
 					result, err = executeFilesOverviewTool(s.ignorer, s.logger)
 				case getRelatedFilesTool.Name:
-					if expFlags.DisabledRelatedFiles {
-						return fmt.Errorf("get_related_files tool is disabled")
-					}
 					var params struct {
 						InputFiles []string `json:"input_files"`
 					}
