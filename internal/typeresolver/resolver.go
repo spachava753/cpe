@@ -6,6 +6,7 @@ import (
 	gitignore "github.com/sabhiram/go-gitignore"
 	sitter "github.com/tree-sitter/go-tree-sitter"
 	golang "github.com/tree-sitter/tree-sitter-go/bindings/go"
+	python "github.com/tree-sitter/tree-sitter-python/bindings/go"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -43,8 +44,7 @@ func runQueriesOnFile(content []byte, queries []string, ext string, parser *sitt
 		// TODO: Add Java language support when implemented
 		return false, fmt.Errorf("java support not yet implemented")
 	case "py":
-		// TODO: Add Python language support when implemented
-		return false, fmt.Errorf("python support not yet implemented")
+		lang = sitter.NewLanguage(python.Language())
 	default:
 		return false, fmt.Errorf("unsupported file extension: %s", ext)
 	}

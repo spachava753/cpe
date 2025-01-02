@@ -259,6 +259,261 @@ package main
 	}
 }
 
+func TestResolvePythonFiles(t *testing.T) {
+	// Helper function to create an in-memory file system
+	createTestFS := func(files map[string]string) fs.FS {
+		fsys := fstest.MapFS{}
+		for path, content := range files {
+			fsys[path] = &fstest.MapFile{Data: []byte(content)}
+		}
+		return fsys
+	}
+
+	// Test case 1: Class from separate module
+	t.Run("ClassFromSeparateModule", func(t *testing.T) {
+		fsys := createTestFS(map[string]string{
+			"pkg/types.py": `
+class MyClass:
+    def __init__(self):
+        pass
+`,
+			"main.py": `
+from pkg.types import MyClass
+
+def use_my_class(obj: MyClass) -> None:
+    pass
+`,
+		})
+		ignoreRules := gitignore.CompileIgnoreLines(ignore.DefaultPatterns...)
+		result, err := ResolveTypeAndFunctionFiles([]string{"main.py"}, fsys, ignoreRules)
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]bool{"pkg/types.py": true, "main.py": true}, result)
+	})
+
+	// Test case 2: Multiple class inheritance
+	t.Run("MultipleClassInheritance", func(t *testing.T) {
+		fsys := createTestFS(map[string]string{
+			"base.py": `
+class BaseOne:
+    pass
+
+class BaseTwo:
+    pass
+`,
+			"derived.py": `
+from base import BaseOne, BaseTwo
+
+class Derived(BaseOne, BaseTwo):
+    pass
+`,
+			"usage.py": `
+from derived import Derived
+
+def use_derived(obj: Derived):
+    pass
+`,
+		})
+		ignoreRules := gitignore.CompileIgnoreLines(ignore.DefaultPatterns...)
+		result, err := ResolveTypeAndFunctionFiles([]string{"usage.py"}, fsys, ignoreRules)
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]bool{
+			"derived.py": true,
+			"usage.py":   true,
+		}, result)
+	})
+
+	// Test case 3: Function decorators and type hints
+	t.Run("FunctionDecoratorsAndTypeHints", func(t *testing.T) {
+		fsys := createTestFS(map[string]string{
+			"decorators.py": `
+from typing import Callable, TypeVar, ParamSpec
+
+P = ParamSpec("P")
+R = TypeVar("R")
+
+def my_decorator(func: Callable[P, R]) -> Callable[P, R]:
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        return func(*args, **kwargs)
+    return wrapper
+`,
+			"main.py": `
+from decorators import my_decorator
+
+@my_decorator
+def decorated_function(x: int) -> str:
+    return str(x)
+`,
+		})
+		ignoreRules := gitignore.CompileIgnoreLines(ignore.DefaultPatterns...)
+		result, err := ResolveTypeAndFunctionFiles([]string{"main.py"}, fsys, ignoreRules)
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]bool{
+			"decorators.py": true,
+			"main.py":       true,
+		}, result)
+	})
+
+	// Test case 4: Abstract base classes
+	t.Run("AbstractBaseClasses", func(t *testing.T) {
+		fsys := createTestFS(map[string]string{
+			"abstract.py": `
+from abc import ABC, abstractmethod
+
+class AbstractBase(ABC):
+    @abstractmethod
+    def abstract_method(self) -> None:
+        pass
+`,
+			"concrete.py": `
+from abstract import AbstractBase
+
+class ConcreteClass(AbstractBase):
+    def abstract_method(self) -> None:
+        pass
+`,
+			"usage.py": `
+from abstract import AbstractBase
+from concrete import ConcreteClass
+
+def use_abstract(obj: AbstractBase):
+    obj.abstract_method()
+`,
+		})
+		ignoreRules := gitignore.CompileIgnoreLines(ignore.DefaultPatterns...)
+		result, err := ResolveTypeAndFunctionFiles([]string{"usage.py"}, fsys, ignoreRules)
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]bool{
+			"abstract.py": true,
+			"concrete.py": true,
+			"usage.py":    true,
+		}, result)
+	})
+
+	// Test case 5: Type aliases and protocols
+	t.Run("TypeAliasesAndProtocols", func(t *testing.T) {
+		fsys := createTestFS(map[string]string{
+			"protocols.py": `
+from typing import Protocol, TypeAlias
+
+class DataProtocol(Protocol):
+    def process(self) -> str: ...
+
+ProcessorType: TypeAlias = DataProtocol
+`,
+			"implementation.py": `
+from protocols import ProcessorType
+
+class DataProcessor:
+    def process(self) -> str:
+        return "processed"
+
+def use_processor(p: ProcessorType) -> str:
+    return p.process()
+`,
+		})
+		ignoreRules := gitignore.CompileIgnoreLines(ignore.DefaultPatterns...)
+		result, err := ResolveTypeAndFunctionFiles([]string{"implementation.py"}, fsys, ignoreRules)
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]bool{
+			"protocols.py":      true,
+			"implementation.py": true,
+		}, result)
+	})
+
+	// Test case 6: Nested classes and imports
+	t.Run("NestedClassesAndImports", func(t *testing.T) {
+		fsys := createTestFS(map[string]string{
+			"models/nested.py": `
+class Outer:
+    class Inner:
+        def inner_method(self) -> None:
+            pass
+`,
+			"models/utils.py": `
+from typing import Type
+from .nested import Outer
+
+def get_inner() -> Type[Outer.Inner]:
+    return Outer.Inner
+`,
+			"main.py": `
+from models.utils import get_inner
+
+def use_inner():
+    Inner = get_inner()
+    inner = Inner()
+    inner.inner_method()
+`,
+		})
+		ignoreRules := gitignore.CompileIgnoreLines(ignore.DefaultPatterns...)
+		result, err := ResolveTypeAndFunctionFiles([]string{"main.py"}, fsys, ignoreRules)
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]bool{
+			"models/nested.py": true,
+			"models/utils.py":  true,
+			"main.py":          true,
+		}, result)
+	})
+
+	// Test case 7: Generic types
+	t.Run("GenericTypes", func(t *testing.T) {
+		fsys := createTestFS(map[string]string{
+			"generics.py": `
+from typing import TypeVar, Generic
+
+T = TypeVar('T')
+
+class Container(Generic[T]):
+    def __init__(self, value: T):
+        self.value = value
+`,
+			"usage.py": `
+from generics import Container
+
+def use_container(c: Container[str]):
+    print(c.value)
+`,
+		})
+		ignoreRules := gitignore.CompileIgnoreLines(ignore.DefaultPatterns...)
+		result, err := ResolveTypeAndFunctionFiles([]string{"usage.py"}, fsys, ignoreRules)
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]bool{
+			"generics.py": true,
+			"usage.py":    true,
+		}, result)
+	})
+
+	// Test case 8: Dataclasses and type annotations
+	t.Run("DataclassesAndTypeAnnotations", func(t *testing.T) {
+		fsys := createTestFS(map[string]string{
+			"models/data.py": `
+from dataclasses import dataclass
+from typing import List, Optional
+
+@dataclass
+class User:
+    name: str
+    age: int
+    tags: List[str]
+    address: Optional[str] = None
+`,
+			"main.py": `
+from models.data import User
+
+def process_user(user: User) -> None:
+    print(f"Processing {user.name}")
+`,
+		})
+		ignoreRules := gitignore.CompileIgnoreLines(ignore.DefaultPatterns...)
+		result, err := ResolveTypeAndFunctionFiles([]string{"main.py"}, fsys, ignoreRules)
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]bool{
+			"models/data.py": true,
+			"main.py":        true,
+		}, result)
+	})
+}
+
 func TestResolveTypeFiles(t *testing.T) {
 	// Helper function to create an in-memory file system
 	createTestFS := func(files map[string]string) fs.FS {
