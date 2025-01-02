@@ -5,7 +5,6 @@ import (
 	ignore "github.com/sabhiram/go-gitignore"
 	"github.com/spachava753/cpe/internal/codemap"
 	"github.com/spachava753/cpe/internal/typeresolver"
-	"log/slog"
 	"os"
 	"os/exec"
 	"sort"
@@ -122,9 +121,7 @@ type ToolResult struct {
 }
 
 // executeBashTool validates and executes the bash tool
-func executeBashTool(command string, logger *slog.Logger) (*ToolResult, error) {
-	logger.Info(fmt.Sprintf("executing bash command: %s", command))
-
+func executeBashTool(command string) (*ToolResult, error) {
 	cmd := exec.Command("bash", "-c", command)
 	cmd.Env = os.Environ()
 
@@ -151,13 +148,7 @@ type FileEditorParams struct {
 }
 
 // executeFileEditorTool validates and executes the file editor tool
-func executeFileEditorTool(params FileEditorParams, logger *slog.Logger) (*ToolResult, error) {
-	logger.Info("executing file editor tool",
-		slog.String("command", params.Command),
-		slog.String("path", params.Path),
-	)
-
-	logger.Info(fmt.Sprintf("old_str:\n%s\n\nnew_str:\n%s", params.OldStr, params.NewStr))
+func executeFileEditorTool(params FileEditorParams) (*ToolResult, error) {
 
 	switch params.Command {
 	case "create":
@@ -224,7 +215,7 @@ func executeFileEditorTool(params FileEditorParams, logger *slog.Logger) (*ToolR
 }
 
 // executeFilesOverviewTool validates and executes the files overview tool
-func executeFilesOverviewTool(ignorer *ignore.GitIgnore, logger *slog.Logger) (*ToolResult, error) {
+func executeFilesOverviewTool(ignorer *ignore.GitIgnore) (*ToolResult, error) {
 	fsys := os.DirFS(".")
 	files, err := codemap.GenerateOutput(fsys, 100, ignorer)
 	if err != nil {
@@ -242,8 +233,7 @@ func executeFilesOverviewTool(ignorer *ignore.GitIgnore, logger *slog.Logger) (*
 }
 
 // executeGetRelatedFilesTool validates and executes the get related files tool
-func executeGetRelatedFilesTool(inputFiles []string, ignorer *ignore.GitIgnore, logger *slog.Logger) (*ToolResult, error) {
-	logger.Info("getting related files", slog.Any("input_files", inputFiles))
+func executeGetRelatedFilesTool(inputFiles []string, ignorer *ignore.GitIgnore) (*ToolResult, error) {
 
 	relatedFiles, err := typeresolver.ResolveTypeAndFunctionFiles(inputFiles, os.DirFS("."), ignorer)
 	if err != nil {
@@ -256,8 +246,6 @@ func executeGetRelatedFilesTool(inputFiles []string, ignorer *ignore.GitIgnore, 
 		files = append(files, file)
 	}
 	sort.Strings(files)
-
-	logger.Info("found related files", slog.Any("files", files))
 
 	var sb strings.Builder
 	for _, file := range files {

@@ -124,35 +124,43 @@ func (o *openaiExecutor) Execute(input string) error {
 
 		// Process tool calls
 		for _, toolCall := range choice.Message.ToolCalls {
-			o.logger.Info(fmt.Sprintf("Tool: %s, Arguments: %+v", toolCall.Function.Name, toolCall.Function.Arguments))
+			o.logger.Info(fmt.Sprintf("Tool: %s", toolCall.Function.Name))
 
 			var result *ToolResult
 
 			switch toolCall.Function.Name {
 			case bashTool.Name:
-				var params struct {
+				var bashToolInput struct {
 					Command string `json:"command"`
 				}
-				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &params); err != nil {
+				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &bashToolInput); err != nil {
 					return fmt.Errorf("failed to unmarshal bash tool arguments: %w", err)
 				}
-				result, err = executeBashTool(params.Command, o.logger)
+				o.logger.Info(fmt.Sprintf("executing bash command: %s", bashToolInput.Command))
+				result, err = executeBashTool(bashToolInput.Command)
 			case fileEditor.Name:
-				var params FileEditorParams
-				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &params); err != nil {
+				var fileEditorToolInput FileEditorParams
+				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &fileEditorToolInput); err != nil {
 					return fmt.Errorf("failed to unmarshal file editor tool arguments: %w", err)
 				}
-				result, err = executeFileEditorTool(params, o.logger)
+				o.logger.Info("executing file editor tool",
+					slog.String("command", fileEditorToolInput.Command),
+					slog.String("path", fileEditorToolInput.Path),
+				)
+				o.logger.Info(fmt.Sprintf("old_str:\n%s\n\nnew_str:\n%s", fileEditorToolInput.OldStr, fileEditorToolInput.NewStr))
+				result, err = executeFileEditorTool(fileEditorToolInput)
 			case filesOverviewTool.Name:
-				result, err = executeFilesOverviewTool(o.ignorer, o.logger)
+				o.logger.Info("executing files overview tool")
+				result, err = executeFilesOverviewTool(o.ignorer)
 			case getRelatedFilesTool.Name:
-				var params struct {
+				var relatedFilesToolInput struct {
 					InputFiles []string `json:"input_files"`
 				}
-				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &params); err != nil {
+				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &relatedFilesToolInput); err != nil {
 					return fmt.Errorf("failed to unmarshal get related files tool arguments: %w", err)
 				}
-				result, err = executeGetRelatedFilesTool(params.InputFiles, o.ignorer, o.logger)
+				o.logger.Info("getting related files", slog.Any("input_files", relatedFilesToolInput.InputFiles))
+				result, err = executeGetRelatedFilesTool(relatedFilesToolInput.InputFiles, o.ignorer)
 			default:
 				return fmt.Errorf("unexpected tool name: %s", toolCall.Function.Name)
 			}
@@ -160,6 +168,12 @@ func (o *openaiExecutor) Execute(input string) error {
 			if err != nil {
 				return fmt.Errorf("failed to execute tool %s: %w", toolCall.Function.Name, err)
 			}
+
+			resultStr := fmt.Sprintf("tool result: %+v", result.Content)
+			if len(resultStr) > 10000 {
+				resultStr = resultStr[:10000] + "..."
+			}
+			o.logger.Info(resultStr)
 
 			result.ToolUseID = toolCall.ID
 

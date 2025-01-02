@@ -135,7 +135,6 @@ func (s *anthropicExecutor) Execute(input string) error {
 				}
 			case a.BetaContentBlockTypeToolUse:
 				finished = false
-				s.logger.Info(fmt.Sprintf("%+v", block.Input))
 				toolUseId = block.ID
 				assistantMsgContentBlocks[i] = &a.BetaToolUseBlockParam{
 					ID:    a.F(toolUseId),
@@ -147,41 +146,50 @@ func (s *anthropicExecutor) Execute(input string) error {
 				var err error
 				switch block.Name {
 				case bashTool.Name:
-					var params struct {
+					bashToolInput := struct {
 						Command string `json:"command"`
-					}
+					}{}
 					jsonInput, marshalErr := json.Marshal(block.Input)
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal bash tool input: %w", marshalErr)
 					}
-					if err := json.Unmarshal(jsonInput, &params); err != nil {
+					if err := json.Unmarshal(jsonInput, &bashToolInput); err != nil {
 						return fmt.Errorf("failed to unmarshal bash tool arguments: %w", err)
 					}
-					result, err = executeBashTool(params.Command, s.logger)
+					s.logger.Info(fmt.Sprintf("executing bash command: %s", bashToolInput.Command))
+					result, err = executeBashTool(bashToolInput.Command)
 				case fileEditor.Name:
-					var params FileEditorParams
+					var fileEditorToolInput FileEditorParams
 					jsonInput, marshalErr := json.Marshal(block.Input)
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal file editor tool input: %w", marshalErr)
 					}
-					if err := json.Unmarshal(jsonInput, &params); err != nil {
+					if err := json.Unmarshal(jsonInput, &fileEditorToolInput); err != nil {
 						return fmt.Errorf("failed to unmarshal file editor tool arguments: %w", err)
 					}
-					result, err = executeFileEditorTool(params, s.logger)
+					s.logger.Info("executing file editor tool",
+						slog.String("command", fileEditorToolInput.Command),
+						slog.String("path", fileEditorToolInput.Path),
+					)
+
+					s.logger.Info(fmt.Sprintf("old_str:\n%s\n\nnew_str:\n%s", fileEditorToolInput.OldStr, fileEditorToolInput.NewStr))
+					result, err = executeFileEditorTool(fileEditorToolInput)
 				case filesOverviewTool.Name:
-					result, err = executeFilesOverviewTool(s.ignorer, s.logger)
+					s.logger.Info("executing files overview tool")
+					result, err = executeFilesOverviewTool(s.ignorer)
 				case getRelatedFilesTool.Name:
-					var params struct {
+					relatedFilesToolInput := struct {
 						InputFiles []string `json:"input_files"`
-					}
+					}{}
 					jsonInput, marshalErr := json.Marshal(block.Input)
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal get related files tool input: %w", marshalErr)
 					}
-					if err := json.Unmarshal(jsonInput, &params); err != nil {
+					if err := json.Unmarshal(jsonInput, &relatedFilesToolInput); err != nil {
 						return fmt.Errorf("failed to unmarshal get related files tool arguments: %w", err)
 					}
-					result, err = executeGetRelatedFilesTool(params.InputFiles, s.ignorer, s.logger)
+					s.logger.Info("getting related files", slog.Any("input_files", relatedFilesToolInput.InputFiles))
+					result, err = executeGetRelatedFilesTool(relatedFilesToolInput.InputFiles, s.ignorer)
 				default:
 					return fmt.Errorf("unexpected tool use block type: %s", block.Name)
 				}
@@ -189,6 +197,12 @@ func (s *anthropicExecutor) Execute(input string) error {
 				if err != nil {
 					return fmt.Errorf("failed to execute tool %s: %w", block.Name, err)
 				}
+
+				resultStr := fmt.Sprintf("tool result: %+v", result.Content)
+				if len(resultStr) > 10000 {
+					resultStr = resultStr[:10000] + "..."
+				}
+				s.logger.Info(resultStr)
 
 				result.ToolUseID = block.ID
 				params.Messages = a.F(append(params.Messages.Value, a.BetaMessageParam{

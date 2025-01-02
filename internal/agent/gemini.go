@@ -209,49 +209,54 @@ func (g *geminiExecutor) Execute(input string) error {
 				g.logger.Info(string(v))
 			case genai.FunctionCall:
 				finished = false
-				g.logger.Info(fmt.Sprintf("%+v", v.Args))
+				g.logger.Info(fmt.Sprintf("Tool: %s", v.Name))
 
 				var result *ToolResult
 				switch v.Name {
 				case bashTool.Name:
-					var params struct {
+					var bashToolInput struct {
 						Command string `json:"command"`
 					}
 					jsonInput, marshalErr := json.Marshal(v.Args)
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal bash tool input: %w", marshalErr)
 					}
-					if err := json.Unmarshal(jsonInput, &params); err != nil {
+					if err := json.Unmarshal(jsonInput, &bashToolInput); err != nil {
 						return fmt.Errorf("failed to unmarshal bash tool arguments: %w", err)
 					}
-					result, err = executeBashTool(params.Command, g.logger)
+					g.logger.Info(fmt.Sprintf("executing bash command: %s", bashToolInput.Command))
+					result, err = executeBashTool(bashToolInput.Command)
 				case fileEditor.Name:
-					var params FileEditorParams
+					var fileEditorToolInput FileEditorParams
 					jsonInput, marshalErr := json.Marshal(v.Args)
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal file editor tool input: %w", marshalErr)
 					}
-					if err := json.Unmarshal(jsonInput, &params); err != nil {
+					if err := json.Unmarshal(jsonInput, &fileEditorToolInput); err != nil {
 						return fmt.Errorf("failed to unmarshal file editor tool arguments: %w", err)
 					}
-					// Unescape old_str and new_str parameters
-					params.OldStr = unescapeString(params.OldStr)
-					params.NewStr = unescapeString(params.NewStr)
-					result, err = executeFileEditorTool(params, g.logger)
+					g.logger.Info("executing file editor tool",
+						slog.String("command", fileEditorToolInput.Command),
+						slog.String("path", fileEditorToolInput.Path),
+					)
+					g.logger.Info(fmt.Sprintf("old_str:\n%s\n\nnew_str:\n%s", fileEditorToolInput.OldStr, fileEditorToolInput.NewStr))
+					result, err = executeFileEditorTool(fileEditorToolInput)
 				case filesOverviewTool.Name:
-					result, err = executeFilesOverviewTool(g.ignorer, g.logger)
+					g.logger.Info("executing files overview tool")
+					result, err = executeFilesOverviewTool(g.ignorer)
 				case getRelatedFilesTool.Name:
-					var params struct {
+					var relatedFilesToolInput struct {
 						InputFiles []string `json:"input_files"`
 					}
 					jsonInput, marshalErr := json.Marshal(v.Args)
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal get related files tool input: %w", marshalErr)
 					}
-					if err := json.Unmarshal(jsonInput, &params); err != nil {
+					if err := json.Unmarshal(jsonInput, &relatedFilesToolInput); err != nil {
 						return fmt.Errorf("failed to unmarshal get related files tool arguments: %w", err)
 					}
-					result, err = executeGetRelatedFilesTool(params.InputFiles, g.ignorer, g.logger)
+					g.logger.Info("getting related files", slog.Any("input_files", relatedFilesToolInput.InputFiles))
+					result, err = executeGetRelatedFilesTool(relatedFilesToolInput.InputFiles, g.ignorer)
 				default:
 					return fmt.Errorf("unexpected tool name: %s", v.Name)
 				}
@@ -259,6 +264,12 @@ func (g *geminiExecutor) Execute(input string) error {
 				if err != nil {
 					return fmt.Errorf("failed to execute tool %s: %w", v.Name, err)
 				}
+
+				resultStr := fmt.Sprintf("tool result: %+v", result.Content)
+				if len(resultStr) > 10000 {
+					resultStr = resultStr[:10000] + "..."
+				}
+				g.logger.Info(resultStr)
 
 				// Convert tool result to function response
 				var response map[string]any
