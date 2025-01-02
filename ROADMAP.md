@@ -5,16 +5,16 @@ This document outlines the planned features, improvements, and notes for the CPE
 ## Features
 
 ### Agentic flow
-- [ ] Move from disparate mulit-agent to single-agent, will reduce necessary calls, as we can remove the needs codebase function call
-  - [ ] Will have a separate sub-agent to retrieve relevant text snippets
+- [x] Move from disparate mulit-agent to single-agent, will reduce necessary calls, as we can remove the needs codebase function call
+- [ ] Experiment with idea of sub agent creation on the fly?
+  - Models like Gemini such at editing files with function calling. Maybe just have the model utilize the bash tool to give specific edit instructions to a file-editing function calling capable model? like gpt-4o-mini?
 
 ### Token Analysis and Visualization
 - [x] Implement basic token counting per file
 - [x] Show total tokens for each directory (tree)
-- [ ] Improve token count visualization
-  - [ ] Add color coding for token count
-    - use statistical methods to calculate outliers and highlight in red?
-    - and do this recursively
+- [ ] Model specific token counting
+  - [ ] Use anthropic token counting endpoint
+  - [ ] Default to using gpt-4o token counting
 
 ### Code Map
 - [ ] Some repos are too large to fit in a context window, even without function bodies, so we should process the codebase in chunks if it exceeds the context window
@@ -23,10 +23,17 @@ This document outlines the planned features, improvements, and notes for the CPE
     2. Only type, function and method names (and class names for object-oriented langs)
     3. Code comments, global variables, full type definitions (like all struct fields, tags, field comments, etc.) (this is the current lowest fidelity level today)
     4. Full file contents
-- [ ] Instead of detecting file extensions, try to detect if file of text context using magic bytes
+- [x] Instead of detecting file extensions, try to detect if file of text context using magic bytes
+- [ ] Include code from dependencies if possible in file overview
+- [ ] Use model token counting to return an error to the model if given level of file overview will exceed to context window (or maybe given threshold? 75% of context window to allow for some room?)
+
+### Getting related files
+- [ ] Transition from using tree sitter for go to using native ast pkg in stdlib
+- [ ] Explore using python in wasm runtime to resolve related files (RustPython?)
+- [ ] Explore using java in wasm runtime to resolve related files
 
 ### Tooling
-- [ ] Add support for bash execution tool
+- [x] Add support for bash execution tool
 
 ### LLM Integration
 - [ ] Support for more LLM providers
@@ -36,20 +43,16 @@ This document outlines the planned features, improvements, and notes for the CPE
 - [ ] support multimodality
   - [ ] images
   - [ ] videos
-- [ ] Use official sdks instead for openai, gemini
-  - [ ] openai
-  - [ ] gemini
+- [x] Use official sdks instead for openai, gemini
+  - [x] openai
+  - [x] gemini
+  - [x] anthropic
 - [ ] Use structured outputs for openai and gemini to ensure strict following of tool schemas.
-
-### Observability
-- [ ] Export each cpe command run to a tracing tool
-  - [ ] jsonl files?
-  - [ ] wandb
 
 ### User Experience
 - [ ] Command auto-completion
 - [ ] Add support for continuing a conversation if user chooses to do so
-- [ ] Convert token-count flag to sub command
+- [ ] Support sending requests to multiple models and picking the best one
 - [ ] Support sending requests to multiple models and picking the best one
 
 ### Performance
