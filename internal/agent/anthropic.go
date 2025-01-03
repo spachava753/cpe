@@ -101,12 +101,9 @@ func (s *anthropicExecutor) Execute(input string) error {
 	params.Messages = a.F([]a.BetaMessageParam{
 		{
 			Content: a.F([]a.BetaContentBlockParamUnion{
-				a.BetaTextBlockParam{
+				&a.BetaTextBlockParam{
 					Text: a.F(input),
 					Type: a.F(a.BetaTextBlockParamTypeText),
-					CacheControl: a.F(a.BetaCacheControlEphemeralParam{
-						Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
-					}),
 				},
 			}),
 			Role: a.F(a.BetaMessageParamRoleUser),
@@ -114,7 +111,100 @@ func (s *anthropicExecutor) Execute(input string) error {
 	})
 
 	for {
-		// Create message
+		// Remove all cache control values from messages
+		emptyVal := a.Null[a.BetaCacheControlEphemeralParam]()
+		emptyVal.Present = false
+		emptyVal.Null = false
+		for i := range params.Messages.Value {
+			for j := range params.Messages.Value[i].Content.Value {
+				switch block := params.Messages.Value[i].Content.Value[j].(type) {
+				case *a.BetaTextBlockParam:
+					block.CacheControl = emptyVal
+				case *a.BetaImageBlockParam:
+					block.CacheControl = emptyVal
+				case *a.BetaToolUseBlockParam:
+					block.CacheControl = emptyVal
+				case *a.BetaToolResultBlockParam:
+					block.CacheControl = emptyVal
+				case *a.BetaBase64PDFBlockParam:
+					block.CacheControl = emptyVal
+				case *a.BetaContentBlockParam:
+					block.CacheControl = emptyVal
+				default:
+					return fmt.Errorf("unhandled content block type %T when removing cache control", block)
+				}
+			}
+		}
+
+		// Add cache control to the last message
+		if len(params.Messages.Value) > 0 {
+			msgIndex := len(params.Messages.Value) - 1
+			contentBlockIdx := len(params.Messages.Value[msgIndex].Content.Value) - 1
+			switch block := params.Messages.Value[msgIndex].Content.Value[contentBlockIdx].(type) {
+			case *a.BetaTextBlockParam:
+				block.CacheControl = a.F(a.BetaCacheControlEphemeralParam{
+					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
+				})
+			case *a.BetaImageBlockParam:
+				block.CacheControl = a.F(a.BetaCacheControlEphemeralParam{
+					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
+				})
+			case *a.BetaToolUseBlockParam:
+				block.CacheControl = a.F(a.BetaCacheControlEphemeralParam{
+					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
+				})
+			case *a.BetaToolResultBlockParam:
+				block.CacheControl = a.F(a.BetaCacheControlEphemeralParam{
+					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
+				})
+			case *a.BetaBase64PDFBlockParam:
+				block.CacheControl = a.F(a.BetaCacheControlEphemeralParam{
+					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
+				})
+			case *a.BetaContentBlockParam:
+				block.CacheControl = a.F(a.BetaCacheControlEphemeralParam{
+					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
+				})
+			default:
+				return fmt.Errorf("unhandled content block type %T when setting cache control for last message", block)
+			}
+		}
+
+		// Add cache control to the third to last message if it exists
+		if len(params.Messages.Value) >= 3 {
+			msgIndex := len(params.Messages.Value) - 3
+			contentBlockIdx := len(params.Messages.Value[msgIndex].Content.Value) - 1
+			switch block := params.Messages.Value[msgIndex].Content.Value[contentBlockIdx].(type) {
+			case *a.BetaTextBlockParam:
+				block.CacheControl = a.F(a.BetaCacheControlEphemeralParam{
+					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
+				})
+			case *a.BetaImageBlockParam:
+				block.CacheControl = a.F(a.BetaCacheControlEphemeralParam{
+					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
+				})
+			case *a.BetaToolUseBlockParam:
+				block.CacheControl = a.F(a.BetaCacheControlEphemeralParam{
+					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
+				})
+			case *a.BetaToolResultBlockParam:
+				block.CacheControl = a.F(a.BetaCacheControlEphemeralParam{
+					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
+				})
+			case *a.BetaBase64PDFBlockParam:
+				block.CacheControl = a.F(a.BetaCacheControlEphemeralParam{
+					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
+				})
+			case *a.BetaContentBlockParam:
+				block.CacheControl = a.F(a.BetaCacheControlEphemeralParam{
+					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
+				})
+			default:
+				return fmt.Errorf("unhandled content block type %T when setting cache control for last message", block)
+			}
+		}
+
+		// Get model response
 		resp, respErr := s.client.Beta.Messages.New(context.Background(),
 			params,
 		)
@@ -211,7 +301,7 @@ func (s *anthropicExecutor) Execute(input string) error {
 				}))
 				params.Messages = a.F(append(params.Messages.Value, a.BetaMessageParam{
 					Content: a.F([]a.BetaContentBlockParamUnion{
-						a.BetaToolResultBlockParam{
+						&a.BetaToolResultBlockParam{
 							ToolUseID: a.F(toolUseId),
 							Type:      a.F(a.BetaToolResultBlockParamTypeToolResult),
 							Content: a.F([]a.BetaToolResultBlockParamContentUnion{
