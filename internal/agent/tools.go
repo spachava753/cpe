@@ -177,9 +177,16 @@ func executeFileEditorTool(params FileEditorParams) (*ToolResult, error) {
 			}, nil
 		}
 
-		if !strings.Contains(string(content), params.OldStr) {
+		count := strings.Count(string(content), params.OldStr)
+		if count == 0 {
 			return &ToolResult{
 				Content: "old_str not found in file",
+				IsError: true,
+			}, nil
+		}
+		if count > 1 {
+			return &ToolResult{
+				Content: fmt.Sprintf("old_str matches %d times in file, expected exactly one match", count),
 				IsError: true,
 			}, nil
 		}
