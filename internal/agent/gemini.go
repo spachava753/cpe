@@ -332,7 +332,14 @@ func (g *geminiExecutor) LoadMessages(r io.Reader) error {
 	if err := dec.Decode(&convo); err != nil {
 		return fmt.Errorf("failed to decode conversation: %w", err)
 	}
-	g.session = convo.Messages
+	if convo.Messages == nil {
+		return fmt.Errorf("loaded conversation has nil session")
+	}
+	if g.model == nil {
+		return fmt.Errorf("model is not initialized")
+	}
+	g.session = g.model.StartChat()
+	g.session.History = convo.Messages.History
 	return nil
 }
 
