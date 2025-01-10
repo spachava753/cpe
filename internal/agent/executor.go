@@ -2,9 +2,8 @@ package agent
 
 import (
 	_ "embed"
-	"encoding/gob"
 	"fmt"
-	"github.com/anthropics/anthropic-sdk-go"
+	a "github.com/anthropics/anthropic-sdk-go"
 	"github.com/spachava753/cpe/internal/ignore"
 	"io"
 	"log/slog"
@@ -56,7 +55,7 @@ func InitExecutor(logger *slog.Logger, flags ModelOptions) (Executor, error) {
 			return nil, fmt.Errorf("DEEPSEEK_API_KEY environment variable not set")
 		}
 		executor = NewDeepSeekExecutor(customURL, apiKey, logger, ignorer, genConfig)
-	case anthropic.ModelClaude3_5Sonnet20241022, anthropic.ModelClaude3_5Haiku20241022, anthropic.ModelClaude_3_Haiku_20240307, anthropic.ModelClaude_3_Opus_20240229:
+	case a.ModelClaude3_5Sonnet20241022, a.ModelClaude3_5Haiku20241022, a.ModelClaude_3_Haiku_20240307, a.ModelClaude_3_Opus_20240229:
 		apiKey := os.Getenv("ANTHROPIC_API_KEY")
 		if apiKey == "" {
 			return nil, fmt.Errorf("ANTHROPIC_API_KEY environment variable not set")
@@ -87,36 +86,6 @@ func InitExecutor(logger *slog.Logger, flags ModelOptions) (Executor, error) {
 			return nil, fmt.Errorf("failed to open conversation file: %w", err)
 		}
 		defer f.Close()
-
-		var convo struct {
-			Type string
-		}
-		dec := gob.NewDecoder(f)
-		if err := dec.Decode(&convo); err != nil {
-			return nil, fmt.Errorf("failed to decode conversation type: %w", err)
-		}
-
-		// Check if the previous executor type matches the current one
-		var executorType string
-		switch genConfig.Model {
-		case "deepseek-chat":
-			executorType = "deepseek"
-		case anthropic.ModelClaude3_5Sonnet20241022, anthropic.ModelClaude3_5Haiku20241022, anthropic.ModelClaude_3_Haiku_20240307, anthropic.ModelClaude_3_Opus_20240229:
-			executorType = "anthropic"
-		case "gemini-1.5-pro-002", "gemini-1.5-flash-002", "gemini-2.0-flash-exp":
-			executorType = "gemini"
-		default:
-			executorType = "openai"
-		}
-
-		if convo.Type != executorType {
-			return nil, fmt.Errorf("cannot continue conversation: previous conversation was with %s executor, but current executor is %s", convo.Type, executorType)
-		}
-
-		// Reopen file to read from beginning
-		if _, err := f.Seek(0, 0); err != nil {
-			return nil, fmt.Errorf("failed to seek to beginning of file: %w", err)
-		}
 
 		// Load messages into executor
 		if err := executor.LoadMessages(f); err != nil {
