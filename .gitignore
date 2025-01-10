@@ -25,3 +25,6 @@ go.work
 output.md
 prompt_*.txt
 /system_prompt.md
+
+### CPE specific stuff
+.cpeconvo

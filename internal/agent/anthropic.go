@@ -3,21 +3,40 @@ package agent
 import (
 	"context"
 	_ "embed"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	a "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	gitignore "github.com/sabhiram/go-gitignore"
+	"io"
 	"log/slog"
 	"strings"
 	"time"
 )
+
+func init() {
+	// Register Anthropic types with gob
+	gob.Register(&a.BetaTextBlockParam{})
+	gob.Register(&a.BetaToolUseBlockParam{})
+	gob.Register(&a.BetaToolResultBlockParam{})
+	gob.Register(&a.BetaImageBlockParam{})
+	gob.Register(&a.BetaBase64PDFBlockParam{})
+	gob.Register(&a.BetaContentBlockParam{})
+	gob.Register(a.BetaToolResultBlockParamContent{})
+	gob.Register([]a.BetaToolResultBlockParamContentUnion{})
+	gob.Register([]a.BetaContentBlockParamUnion{})
+	gob.Register([]a.BetaMessageParam{})
+	gob.Register(map[string]interface{}{})
+	gob.Register(a.BetaMessageNewParams{})
+}
 
 type anthropicExecutor struct {
 	client  *a.Client
 	logger  *slog.Logger
 	ignorer *gitignore.GitIgnore
 	config  GenConfig
+	params  *a.BetaMessageNewParams
 }
 
 func NewAnthropicExecutor(baseUrl string, apiKey string, logger *slog.Logger, ignorer *gitignore.GitIgnore, config GenConfig) Executor {
@@ -34,19 +53,11 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger *slog.Logger, ig
 		opts = append(opts, option.WithBaseURL(baseUrl))
 	}
 	client := a.NewClient(opts...)
-	return &anthropicExecutor{
-		client:  client,
-		logger:  logger,
-		ignorer: ignorer,
-		config:  config,
-	}
-}
 
-func (s *anthropicExecutor) Execute(input string) error {
-	params := a.BetaMessageNewParams{
-		Model:       a.F(s.config.Model),
-		MaxTokens:   a.F(int64(s.config.MaxTokens)),
-		Temperature: a.F(float64(s.config.Temperature)),
+	params := &a.BetaMessageNewParams{
+		Model:       a.F(config.Model),
+		MaxTokens:   a.F(int64(config.MaxTokens)),
+		Temperature: a.F(float64(config.Temperature)),
 		System: a.F([]a.BetaTextBlockParam{
 			{
 				Text: a.String(agentInstructions),
@@ -88,36 +99,48 @@ func (s *anthropicExecutor) Execute(input string) error {
 		}),
 	}
 
-	if s.config.TopP != nil {
-		params.TopP = a.F(float64(*s.config.TopP))
+	if config.TopP != nil {
+		params.TopP = a.F(float64(*config.TopP))
 	}
-	if s.config.TopK != nil {
-		params.TopK = a.F(int64(*s.config.TopK))
+	if config.TopK != nil {
+		params.TopK = a.F(int64(*config.TopK))
 	}
-	if s.config.Stop != nil {
-		params.StopSequences = a.F(s.config.Stop)
+	if config.Stop != nil {
+		params.StopSequences = a.F(config.Stop)
 	}
 
-	params.Messages = a.F([]a.BetaMessageParam{
-		{
-			Content: a.F([]a.BetaContentBlockParamUnion{
-				&a.BetaTextBlockParam{
-					Text: a.F(input),
-					Type: a.F(a.BetaTextBlockParamTypeText),
-				},
-			}),
-			Role: a.F(a.BetaMessageParamRoleUser),
-		},
-	})
+	return &anthropicExecutor{
+		client:  client,
+		logger:  logger,
+		ignorer: ignorer,
+		config:  config,
+		params:  params,
+	}
+}
+
+func (s *anthropicExecutor) Execute(input string) error {
+	if !s.params.Messages.Present {
+		s.params.Messages = a.F([]a.BetaMessageParam{})
+	}
+
+	s.params.Messages = a.F(append(s.params.Messages.Value, a.BetaMessageParam{
+		Content: a.F([]a.BetaContentBlockParamUnion{
+			&a.BetaTextBlockParam{
+				Text: a.F(input),
+				Type: a.F(a.BetaTextBlockParamTypeText),
+			},
+		}),
+		Role: a.F(a.BetaMessageParamRoleUser),
+	}))
 
 	for {
 		// Remove all cache control values from messages
 		emptyVal := a.Null[a.BetaCacheControlEphemeralParam]()
 		emptyVal.Present = false
 		emptyVal.Null = false
-		for i := range params.Messages.Value {
-			for j := range params.Messages.Value[i].Content.Value {
-				switch block := params.Messages.Value[i].Content.Value[j].(type) {
+		for i := range s.params.Messages.Value {
+			for j := range s.params.Messages.Value[i].Content.Value {
+				switch block := s.params.Messages.Value[i].Content.Value[j].(type) {
 				case *a.BetaTextBlockParam:
 					block.CacheControl = emptyVal
 				case *a.BetaImageBlockParam:
@@ -137,10 +160,10 @@ func (s *anthropicExecutor) Execute(input string) error {
 		}
 
 		// Add cache control to the last message
-		if len(params.Messages.Value) > 0 {
-			msgIndex := len(params.Messages.Value) - 1
-			contentBlockIdx := len(params.Messages.Value[msgIndex].Content.Value) - 1
-			switch block := params.Messages.Value[msgIndex].Content.Value[contentBlockIdx].(type) {
+		if len(s.params.Messages.Value) > 0 {
+			msgIndex := len(s.params.Messages.Value) - 1
+			contentBlockIdx := len(s.params.Messages.Value[msgIndex].Content.Value) - 1
+			switch block := s.params.Messages.Value[msgIndex].Content.Value[contentBlockIdx].(type) {
 			case *a.BetaTextBlockParam:
 				block.CacheControl = a.F(a.BetaCacheControlEphemeralParam{
 					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
@@ -171,10 +194,10 @@ func (s *anthropicExecutor) Execute(input string) error {
 		}
 
 		// Add cache control to the third to last message if it exists
-		if len(params.Messages.Value) >= 3 {
-			msgIndex := len(params.Messages.Value) - 3
-			contentBlockIdx := len(params.Messages.Value[msgIndex].Content.Value) - 1
-			switch block := params.Messages.Value[msgIndex].Content.Value[contentBlockIdx].(type) {
+		if len(s.params.Messages.Value) >= 3 {
+			msgIndex := len(s.params.Messages.Value) - 3
+			contentBlockIdx := len(s.params.Messages.Value[msgIndex].Content.Value) - 1
+			switch block := s.params.Messages.Value[msgIndex].Content.Value[contentBlockIdx].(type) {
 			case *a.BetaTextBlockParam:
 				block.CacheControl = a.F(a.BetaCacheControlEphemeralParam{
 					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
@@ -206,7 +229,7 @@ func (s *anthropicExecutor) Execute(input string) error {
 
 		// Get model response
 		resp, respErr := s.client.Beta.Messages.New(context.Background(),
-			params,
+			*s.params,
 		)
 		if respErr != nil {
 			return fmt.Errorf("failed to create message stream: %w", respErr)
@@ -295,11 +318,11 @@ func (s *anthropicExecutor) Execute(input string) error {
 				s.logger.Info(resultStr)
 
 				result.ToolUseID = block.ID
-				params.Messages = a.F(append(params.Messages.Value, a.BetaMessageParam{
+				s.params.Messages = a.F(append(s.params.Messages.Value, a.BetaMessageParam{
 					Role:    a.F(a.BetaMessageParamRoleAssistant),
 					Content: a.F(assistantMsgContentBlocks),
 				}))
-				params.Messages = a.F(append(params.Messages.Value, a.BetaMessageParam{
+				s.params.Messages = a.F(append(s.params.Messages.Value, a.BetaMessageParam{
 					Content: a.F([]a.BetaContentBlockParamUnion{
 						&a.BetaToolResultBlockParam{
 							ToolUseID: a.F(toolUseId),
@@ -324,5 +347,27 @@ func (s *anthropicExecutor) Execute(input string) error {
 		}
 	}
 
+	return nil
+}
+
+func (s *anthropicExecutor) LoadMessages(r io.Reader) error {
+	var convo Conversation[[]a.BetaMessageParam]
+	dec := gob.NewDecoder(r)
+	if err := dec.Decode(&convo); err != nil {
+		return fmt.Errorf("failed to decode conversation: %w", err)
+	}
+	s.params.Messages = a.F(convo.Messages)
+	return nil
+}
+
+func (s *anthropicExecutor) SaveMessages(w io.Writer) error {
+	convo := Conversation[[]a.BetaMessageParam]{
+		Type:     "anthropic",
+		Messages: s.params.Messages.Value,
+	}
+	enc := gob.NewEncoder(w)
+	if err := enc.Encode(convo); err != nil {
+		return fmt.Errorf("failed to encode conversation: %w", err)
+	}
 	return nil
 }

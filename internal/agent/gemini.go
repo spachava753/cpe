@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	_ "embed"
+	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,28 +11,20 @@ import (
 	gitignore "github.com/sabhiram/go-gitignore"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
+	"io"
 	"log/slog"
-	"strings"
 	"time"
 )
 
-// unescapeString unescapes a string that contains escaped characters like quotes and whitespace
-func unescapeString(s string) string {
-	// Replace escaped backslashes with a temporary marker
-	s = strings.ReplaceAll(s, `\\`, "\u0000")
-
-	// Replace escaped quotes with actual quotes
-	s = strings.ReplaceAll(s, `\"`, `"`)
-	s = strings.ReplaceAll(s, `\'`, `'`)
-
-	// Replace escaped newlines and tabs
-	s = strings.ReplaceAll(s, `\n`, "\n")
-	s = strings.ReplaceAll(s, `\t`, "\t")
-
-	// Restore backslashes
-	s = strings.ReplaceAll(s, "\u0000", `\`)
-
-	return s
+func init() {
+	// Register Gemini types with gob
+	gob.Register(&genai.ChatSession{})
+	gob.Register([]*genai.Content{})
+	gob.Register([]genai.Part{})
+	gob.Register(genai.Text(""))
+	gob.Register(genai.FunctionCall{})
+	gob.Register(genai.FunctionResponse{})
+	gob.Register(map[string]interface{}{})
 }
 
 type geminiExecutor struct {
@@ -38,6 +32,7 @@ type geminiExecutor struct {
 	logger  *slog.Logger
 	ignorer *gitignore.GitIgnore
 	config  GenConfig
+	session *genai.ChatSession
 }
 
 func NewGeminiExecutor(baseUrl string, apiKey string, logger *slog.Logger, ignorer *gitignore.GitIgnore, config GenConfig) (Executor, error) {
@@ -153,7 +148,9 @@ func NewGeminiExecutor(baseUrl string, apiKey string, logger *slog.Logger, ignor
 }
 
 func (g *geminiExecutor) Execute(input string) error {
-	session := g.model.StartChat()
+	if g.session == nil {
+		g.session = g.model.StartChat()
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -166,7 +163,7 @@ func (g *geminiExecutor) Execute(input string) error {
 	retryWait := 1 * time.Minute
 
 	for retryCount <= maxRetries {
-		resp, err = session.SendMessage(ctx, genai.Text(input))
+		resp, err = g.session.SendMessage(ctx, genai.Text(input))
 		if err == nil {
 			break
 		}
@@ -183,8 +180,8 @@ func (g *geminiExecutor) Execute(input string) error {
 				slog.String("error", gerr.Error()),
 			)
 			// Remove the failed message from session history before retrying
-			if len(session.History) > 0 {
-				session.History = session.History[:len(session.History)-1]
+			if len(g.session.History) > 0 {
+				g.session.History = g.session.History[:len(g.session.History)-1]
 			}
 			time.Sleep(retryWait)
 			continue
@@ -299,7 +296,7 @@ func (g *geminiExecutor) Execute(input string) error {
 		// Send next message with retries
 		retryCount = 0
 		for retryCount <= maxRetries {
-			resp, err = session.SendMessage(ctx, nextMsg...)
+			resp, err = g.session.SendMessage(ctx, nextMsg...)
 			if err == nil {
 				break
 			}
@@ -316,8 +313,8 @@ func (g *geminiExecutor) Execute(input string) error {
 					slog.String("error", gerr.Error()),
 				)
 				// Remove the failed message from session history before retrying
-				if len(session.History) > 0 {
-					session.History = session.History[:len(session.History)-1]
+				if len(g.session.History) > 0 {
+					g.session.History = g.session.History[:len(g.session.History)-1]
 				}
 				time.Sleep(retryWait)
 				continue
@@ -326,5 +323,27 @@ func (g *geminiExecutor) Execute(input string) error {
 		}
 	}
 
+	return nil
+}
+
+func (g *geminiExecutor) LoadMessages(r io.Reader) error {
+	var convo Conversation[*genai.ChatSession]
+	dec := gob.NewDecoder(r)
+	if err := dec.Decode(&convo); err != nil {
+		return fmt.Errorf("failed to decode conversation: %w", err)
+	}
+	g.session = convo.Messages
+	return nil
+}
+
+func (g *geminiExecutor) SaveMessages(w io.Writer) error {
+	convo := Conversation[*genai.ChatSession]{
+		Type:     "gemini",
+		Messages: g.session,
+	}
+	enc := gob.NewEncoder(w)
+	if err := enc.Encode(convo); err != nil {
+		return fmt.Errorf("failed to encode conversation: %w", err)
+	}
 	return nil
 }

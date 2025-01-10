@@ -2,21 +2,45 @@ package agent
 
 import (
 	"context"
+	_ "embed"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	oai "github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	gitignore "github.com/sabhiram/go-gitignore"
+	"io"
 	"log/slog"
 	"strings"
 	"time"
 )
+
+func init() {
+	// Register OpenAI types with gob (since DeepSeek uses OpenAI types)
+	gob.Register(oai.SystemMessage(""))
+	gob.Register(oai.UserMessage(""))
+	gob.Register(oai.AssistantMessage(""))
+	gob.Register(oai.ToolMessage("", ""))
+	gob.Register(oai.ChatCompletionAssistantMessageParam{})
+	gob.Register(oai.ChatCompletionMessageToolCallParam{})
+	gob.Register(oai.ChatCompletionMessageToolCallFunctionParam{})
+	gob.Register(oai.ChatCompletionUserMessageParam{})
+	gob.Register(oai.ChatCompletionToolMessageParam{})
+	gob.Register(oai.ChatCompletionContentPartTextParam{})
+	gob.Register([]oai.ChatCompletionMessageParamUnion{})
+	gob.Register([]oai.ChatCompletionMessageToolCallParam{})
+	gob.Register([]oai.ChatCompletionContentPartUnionParam{})
+	gob.Register([]oai.ChatCompletionContentPartTextParam{})
+	gob.Register([]oai.ChatCompletionAssistantMessageParamContentUnion{})
+	gob.Register(map[string]interface{}{})
+}
 
 type deepseekExecutor struct {
 	client  *oai.Client
 	logger  *slog.Logger
 	ignorer *gitignore.GitIgnore
 	config  GenConfig
+	params  *oai.ChatCompletionNewParams
 }
 
 func NewDeepSeekExecutor(baseUrl string, apiKey string, logger *slog.Logger, ignorer *gitignore.GitIgnore, config GenConfig) Executor {
@@ -35,21 +59,11 @@ func NewDeepSeekExecutor(baseUrl string, apiKey string, logger *slog.Logger, ign
 	}
 	opts = append(opts, option.WithBaseURL(baseUrl))
 	client := oai.NewClient(opts...)
-	return &deepseekExecutor{
-		client:  client,
-		logger:  logger,
-		ignorer: ignorer,
-		config:  config,
-	}
-}
 
-func (o *deepseekExecutor) Execute(input string) error {
-	slog.Info("Note that the current V3 model is not yet perfected, it seems like the instruction following and tool calling performance is not yet tuned.")
-	slog.Info("Recommend using this model for one-off tasks like generating git commit messages or bash commands.")
-	params := oai.ChatCompletionNewParams{
-		Model:               oai.F(o.config.Model),
-		MaxCompletionTokens: oai.Int(int64(o.config.MaxTokens)),
-		Temperature:         oai.Float(float64(o.config.Temperature)),
+	params := &oai.ChatCompletionNewParams{
+		Model:               oai.F(config.Model),
+		MaxCompletionTokens: oai.Int(int64(config.MaxTokens)),
+		Temperature:         oai.Float(float64(config.Temperature)),
 		Tools: oai.F([]oai.ChatCompletionToolParam{
 			{
 				Type: oai.F(oai.ChatCompletionToolTypeFunction),
@@ -86,22 +100,37 @@ func (o *deepseekExecutor) Execute(input string) error {
 		}),
 	}
 
-	if o.config.TopP != nil {
-		params.TopP = oai.Float(float64(*o.config.TopP))
+	if config.TopP != nil {
+		params.TopP = oai.Float(float64(*config.TopP))
 	}
-	if o.config.Stop != nil {
-		params.Stop = oai.F[oai.ChatCompletionNewParamsStopUnion](oai.ChatCompletionNewParamsStopArray(o.config.Stop))
+	if config.Stop != nil {
+		params.Stop = oai.F[oai.ChatCompletionNewParamsStopUnion](oai.ChatCompletionNewParamsStopArray(config.Stop))
 	}
 
-	// Add system prompt and user input as messages
+	// Add system prompt
 	params.Messages = oai.F([]oai.ChatCompletionMessageParamUnion{
 		oai.SystemMessage(agentInstructions),
-		oai.UserMessage(input),
 	})
+
+	return &deepseekExecutor{
+		client:  client,
+		logger:  logger,
+		ignorer: ignorer,
+		config:  config,
+		params:  params,
+	}
+}
+
+func (o *deepseekExecutor) Execute(input string) error {
+	slog.Info("Note that the current V3 model is not yet perfected, it seems like the instruction following and tool calling performance is not yet tuned.")
+	slog.Info("Recommend using this model for one-off tasks like generating git commit messages or bash commands.")
+
+	// Add user input as message
+	o.params.Messages = oai.F(append(o.params.Messages.Value, oai.UserMessage(input)))
 
 	for {
 		// Create message
-		resp, err := o.client.Chat.Completions.New(context.Background(), params)
+		resp, err := o.client.Chat.Completions.New(context.Background(), *o.params)
 		if err != nil {
 			return fmt.Errorf("failed to create message: %w", err)
 		}
@@ -117,15 +146,12 @@ func (o *deepseekExecutor) Execute(input string) error {
 		// Log any text content
 		if choice.Message.Content != "" {
 			o.logger.Info(choice.Message.Content)
-			assistantMsg = append(assistantMsg, oai.ChatCompletionMessageParam{
-				Role:    oai.F(oai.ChatCompletionMessageParamRoleAssistant),
-				Content: oai.F[any](choice.Message.Content),
-			})
+			assistantMsg = append(assistantMsg, oai.AssistantMessage(choice.Message.Content))
 		}
 
 		// If no tool calls, add message and finish
 		if len(choice.Message.ToolCalls) == 0 {
-			params.Messages = oai.F(append(params.Messages.Value, assistantMsg...))
+			o.params.Messages = oai.F(append(o.params.Messages.Value, assistantMsg...))
 			break
 		}
 
@@ -209,17 +235,34 @@ func (o *deepseekExecutor) Execute(input string) error {
 				return fmt.Errorf("failed to marshal tool result: %w", unmarshallErr)
 			}
 
-			toolMsg := oai.ChatCompletionMessageParam{
-				Role:       oai.F(oai.ChatCompletionMessageParamRoleTool),
-				Content:    oai.F[any](string(content)),
-				ToolCallID: oai.F(toolCall.ID),
-			}
-			assistantMsg = append(assistantMsg, toolMsg)
+			assistantMsg = append(assistantMsg, oai.ToolMessage(toolCall.ID, string(content)))
 		}
 
 		// Add messages and continue conversation
-		params.Messages = oai.F(append(params.Messages.Value, assistantMsg...))
+		o.params.Messages = oai.F(append(o.params.Messages.Value, assistantMsg...))
 	}
 
+	return nil
+}
+
+func (o *deepseekExecutor) LoadMessages(r io.Reader) error {
+	var convo Conversation[[]oai.ChatCompletionMessageParamUnion]
+	dec := gob.NewDecoder(r)
+	if err := dec.Decode(&convo); err != nil {
+		return fmt.Errorf("failed to decode conversation: %w", err)
+	}
+	o.params.Messages = oai.F(convo.Messages)
+	return nil
+}
+
+func (o *deepseekExecutor) SaveMessages(w io.Writer) error {
+	convo := Conversation[[]oai.ChatCompletionMessageParamUnion]{
+		Type:     "deepseek",
+		Messages: o.params.Messages.Value,
+	}
+	enc := gob.NewEncoder(w)
+	if err := enc.Encode(convo); err != nil {
+		return fmt.Errorf("failed to encode conversation: %w", err)
+	}
 	return nil
 }

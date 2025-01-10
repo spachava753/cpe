@@ -133,6 +133,7 @@ type ModelOptions struct {
 	NumberOfResponses int
 	Input             string
 	Version           bool
+	Continue          bool
 }
 
 func (f ModelOptions) ApplyToGenConfig(config GenConfig) GenConfig {

@@ -65,6 +65,7 @@ func main() {
 		NumberOfResponses: config.NumberOfResponses,
 		Input:             config.Input,
 		Version:           config.Version,
+		Continue:          config.Continue,
 	})
 	if err != nil {
 		slog.Error("fatal error", slog.Any("err", err))
@@ -79,6 +80,19 @@ func main() {
 
 	if err := executor.Execute(input); err != nil {
 		slog.Error("fatal error", slog.Any("err", err))
+		os.Exit(1)
+	}
+
+	// Save messages to file
+	f, err := os.Create(".cpeconvo")
+	if err != nil {
+		slog.Error("failed to create conversation file", slog.Any("err", err))
+		os.Exit(1)
+	}
+	defer f.Close()
+
+	if err := executor.SaveMessages(f); err != nil {
+		slog.Error("failed to save messages", slog.Any("err", err))
 		os.Exit(1)
 	}
 }
