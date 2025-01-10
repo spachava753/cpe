@@ -21,6 +21,7 @@ func init() {
 	gob.Register(oai.UserMessage(""))
 	gob.Register(oai.AssistantMessage(""))
 	gob.Register(oai.ToolMessage("", ""))
+	gob.Register(oai.ChatCompletionMessageParam{})
 	gob.Register(oai.ChatCompletionAssistantMessageParam{})
 	gob.Register(oai.ChatCompletionMessageToolCallParam{})
 	gob.Register(oai.ChatCompletionMessageToolCallFunctionParam{})

@@ -15,26 +15,6 @@ import (
 	"time"
 )
 
-func init() {
-	// Register OpenAI types with gob (since DeepSeek uses OpenAI types)
-	gob.Register(oai.SystemMessage(""))
-	gob.Register(oai.UserMessage(""))
-	gob.Register(oai.AssistantMessage(""))
-	gob.Register(oai.ToolMessage("", ""))
-	gob.Register(oai.ChatCompletionAssistantMessageParam{})
-	gob.Register(oai.ChatCompletionMessageToolCallParam{})
-	gob.Register(oai.ChatCompletionMessageToolCallFunctionParam{})
-	gob.Register(oai.ChatCompletionUserMessageParam{})
-	gob.Register(oai.ChatCompletionToolMessageParam{})
-	gob.Register(oai.ChatCompletionContentPartTextParam{})
-	gob.Register([]oai.ChatCompletionMessageParamUnion{})
-	gob.Register([]oai.ChatCompletionMessageToolCallParam{})
-	gob.Register([]oai.ChatCompletionContentPartUnionParam{})
-	gob.Register([]oai.ChatCompletionContentPartTextParam{})
-	gob.Register([]oai.ChatCompletionAssistantMessageParamContentUnion{})
-	gob.Register(map[string]interface{}{})
-}
-
 type deepseekExecutor struct {
 	client  *oai.Client
 	logger  *slog.Logger
@@ -146,7 +126,10 @@ func (o *deepseekExecutor) Execute(input string) error {
 		// Log any text content
 		if choice.Message.Content != "" {
 			o.logger.Info(choice.Message.Content)
-			assistantMsg = append(assistantMsg, oai.AssistantMessage(choice.Message.Content))
+			assistantMsg = append(assistantMsg, oai.ChatCompletionMessageParam{
+				Role:    oai.F(oai.ChatCompletionMessageParamRoleAssistant),
+				Content: oai.F[any](choice.Message.Content),
+			})
 		}
 
 		// If no tool calls, add message and finish
@@ -157,6 +140,8 @@ func (o *deepseekExecutor) Execute(input string) error {
 
 		// Process tool calls
 		for _, toolCall := range choice.Message.ToolCalls {
+			o.logger.Info(fmt.Sprintf("Tool: %s", toolCall.Function.Name))
+
 			var result *ToolResult
 
 			switch toolCall.Function.Name {
@@ -235,7 +220,12 @@ func (o *deepseekExecutor) Execute(input string) error {
 				return fmt.Errorf("failed to marshal tool result: %w", unmarshallErr)
 			}
 
-			assistantMsg = append(assistantMsg, oai.ToolMessage(toolCall.ID, string(content)))
+			toolMsg := oai.ChatCompletionMessageParam{
+				Role:       oai.F(oai.ChatCompletionMessageParamRoleTool),
+				Content:    oai.F[any](string(content)),
+				ToolCallID: oai.F(toolCall.ID),
+			}
+			assistantMsg = append(assistantMsg, toolMsg)
 		}
 
 		// Add messages and continue conversation
