@@ -1,5 +1,6 @@
 name: Execute CPE on Pull Request Comment
 
+# See https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#issue_comment
 on:
   issue_comment:
     types: [created]
@@ -13,9 +14,19 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      - name: Get PR information
+        id: pr_info
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          # Get PR data using GitHub CLI
+          pr_data=$(gh pr view $PR_NUMBER --json headRefName -q .headRefName)
+          echo "head_ref=$pr_data" >> $GITHUB_OUTPUT
+
       - uses: actions/checkout@v3
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ steps.pr_info.outputs.head_ref }}
 
       - name: Set up Go
         uses: actions/setup-go@v4
@@ -37,9 +48,9 @@ jobs:
         uses: actions/cache@v3
         with:
           path: .cpeconvo
-          key: cpe-cache-${{ github.event.pull_request.head.ref }}
+          key: cpe-cache-${{ steps.pr_info.outputs.head_ref }}
           restore-keys: |
-            cpe-cache-${{ github.event.pull_request.head.ref }}
+            cpe-cache-${{ steps.pr_info.outputs.head_ref }}
 
       - name: Run CPE
         env:
@@ -64,7 +75,7 @@ jobs:
           if [[ -n "$(git status --porcelain)" ]]; then
             git add .
             git commit -m "CPE: Process comment on PR #${{ github.event.issue.number }}"
-            git push origin HEAD:${{ github.event.pull_request.head.ref }}
+            git push origin HEAD:${{ steps.pr_info.outputs.head_ref }}
           else
             echo "No changes to commit"
           fi
