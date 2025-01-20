@@ -33,20 +33,13 @@ jobs:
       - name: Install CPE
         run: go install github.com/spachava753/cpe@latest
 
-      - name: Get PR branch
-        id: get_branch
-        run: |
-          PR_URL="${{ github.event.issue.pull_request.url }}"
-          PR_DATA=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" $PR_URL)
-          echo "branch=$(echo $PR_DATA | jq -r .head.ref)" >> $GITHUB_OUTPUT
-
       - name: Cache CPE conversation
         uses: actions/cache@v3
         with:
           path: .cpeconvo
-          key: cpe-cache-${{ steps.get_branch.outputs.branch }}
+          key: cpe-cache-${{ github.event.pull_request.head.ref }}
           restore-keys: |
-            cpe-cache-${{ steps.get_branch.outputs.branch }}
+            cpe-cache-${{ github.event.pull_request.head.ref }}
 
       - name: Run CPE
         env:
@@ -71,7 +64,7 @@ jobs:
           if [[ -n "$(git status --porcelain)" ]]; then
             git add .
             git commit -m "CPE: Process comment on PR #${{ github.event.issue.number }}"
-            git push
+            git push origin HEAD:${{ github.event.pull_request.head.ref }}
           else
             echo "No changes to commit"
           fi
