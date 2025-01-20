@@ -7,8 +7,8 @@ on:
 
 jobs:
   cpe-process-comment:
-    # Only run on PR comments
-    if: github.event.issue.pull_request
+    # Only run on PR comments and if PR is open
+    if: ${{ github.event.issue.pull_request && github.event.issue.state == 'open' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
