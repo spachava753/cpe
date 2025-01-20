@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/cliopts"
+	"github.com/spachava753/cpe/internal/codemap"
 	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/spachava753/cpe/internal/tokentree"
 	"io"
@@ -37,19 +38,33 @@ func main() {
 		os.Exit(1)
 	}
 
+	ignorer, err := ignore.LoadIgnoreFiles(".")
+	if err != nil {
+		logger.Error("fatal error", slog.Any("err", err))
+		os.Exit(1)
+	}
+	if ignorer == nil {
+		logger.Error("git ignorer was nil")
+		os.Exit(1)
+	}
+
 	if config.TokenCountPath != "" {
-		ignorer, err := ignore.LoadIgnoreFiles(".")
+		if err := tokentree.PrintTokenTree(os.DirFS("."), ignorer); err != nil {
+			slog.Error("fatal error", slog.Any("err", err))
+			os.Exit(1)
+		}
+		return
+	}
+
+	if config.ListFiles {
+		fsys := os.DirFS(".")
+		files, err := codemap.GenerateOutput(fsys, -1, ignorer)
 		if err != nil {
 			logger.Error("fatal error", slog.Any("err", err))
 			os.Exit(1)
 		}
-		if ignorer == nil {
-			logger.Error("git ignorer was nil")
-			os.Exit(1)
-		}
-		if err := tokentree.PrintTokenTree(os.DirFS("."), ignorer); err != nil {
-			slog.Error("fatal error", slog.Any("err", err))
-			os.Exit(1)
+		for _, file := range files {
+			fmt.Printf("File: %s\nContent:\n%s\n\n", file.Path, file.Content)
 		}
 		return
 	}
