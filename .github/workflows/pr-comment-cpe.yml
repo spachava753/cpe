@@ -45,8 +45,14 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CPE_CLAUDE_3_5_SONNET_URL: ${{ secrets.CPE_CLAUDE_3_5_SONNET_URL }}
         run: |
-          # Run CPE with the comment as input and continue flag
-          echo "${{ github.event.comment.body }}" | cpe -continue
+          # Check if .cpeconvo file exists and set the continue flag accordingly
+          if [ -f ".cpeconvo" ]; then
+            echo "Found existing conversation, using -continue flag"
+            echo "${{ github.event.comment.body }}" | cpe -continue
+          else
+            echo "No existing conversation found, starting new conversation"
+            echo "${{ github.event.comment.body }}" | cpe
+          fi
 
       - name: Commit and push changes
         run: |
