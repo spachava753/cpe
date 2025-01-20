@@ -13,6 +13,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      workflows: write  # Required to modify workflow files
     steps:
       # First checkout the default branch
       - uses: actions/checkout@v3
