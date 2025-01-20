@@ -28,6 +28,7 @@ func init() {
 	gob.Register([]a.BetaContentBlockParamUnion{})
 	gob.Register([]a.BetaMessageParam{})
 	gob.Register(map[string]interface{}{})
+	gob.Register([]interface{}{})
 	gob.Register(a.BetaMessageNewParams{})
 }
 
