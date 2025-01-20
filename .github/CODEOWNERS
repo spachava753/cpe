@@ -1,0 +1,13 @@
+# This file defines the code owners for the repository
+# Each line is a file pattern followed by one or more owners
+# For more information, see:
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# These owners will be the default owners for everything in
+# the repo. Unless a later match takes precedence,
+# @spachava753 will be requested for review when someone 
+# opens a pull request.
+*       @spachava753
+
+# Specific ownership for workflows
+.github/workflows/    @spachava753

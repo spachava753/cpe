@@ -1,0 +1,55 @@
+name: Execute CPE on Pull Request Comment
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  cpe-process-comment:
+    # Only run on PR comments
+    if: github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+
+      - name: Install CPE
+        run: go install github.com/spachava753/cpe@latest
+
+      - name: Get PR branch
+        id: get_branch
+        run: |
+          PR_URL="${{ github.event.issue.pull_request.url }}"
+          PR_DATA=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" $PR_URL)
+          echo "branch=$(echo $PR_DATA | jq -r .head.ref)" >> $GITHUB_OUTPUT
+
+      - name: Cache CPE conversation
+        uses: actions/cache@v3
+        with:
+          path: .cpeconvo
+          key: cpe-cache-${{ steps.get_branch.outputs.branch }}
+          restore-keys: |
+            cpe-cache-${{ steps.get_branch.outputs.branch }}
+
+      - name: Run CPE
+        run: |
+          # Run CPE with the comment as input and continue flag
+          echo "${{ github.event.comment.body }}" | cpe -continue
+
+      - name: Commit and push changes
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          
+          git add .
+          git commit -m "CPE: Process comment on PR #${{ github.event.issue.number }}"
+          git push
