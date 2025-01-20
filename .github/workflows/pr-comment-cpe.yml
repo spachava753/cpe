@@ -10,10 +10,7 @@ jobs:
     # Only run on PR comments
     if: github.event.issue.pull_request
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-      workflows: write  # Required to modify workflow files
+    permissions: write-all
     steps:
       # First checkout the default branch
       - uses: actions/checkout@v3
