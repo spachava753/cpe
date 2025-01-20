@@ -14,6 +14,9 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      # First checkout the default branch
+      - uses: actions/checkout@v3
+
       - name: Get PR information
         id: pr_info
         env:
@@ -24,6 +27,7 @@ jobs:
           pr_data=$(gh pr view $PR_NUMBER --json headRefName -q .headRefName)
           echo "head_ref=$pr_data" >> $GITHUB_OUTPUT
 
+      # Then fetch and checkout the PR branch
       - uses: actions/checkout@v3
         with:
           ref: ${{ steps.pr_info.outputs.head_ref }}
