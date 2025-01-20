@@ -40,7 +40,7 @@ func init() {
 	flag.Float64Var(&Opts.FrequencyPenalty, "frequency-penalty", 0, "Frequency penalty (-2.0 - 2.0)")
 	flag.Float64Var(&Opts.PresencePenalty, "presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
 	flag.IntVar(&Opts.NumberOfResponses, "number-of-responses", 0, "Number of responses to generate")
-	flag.StringVar(&Opts.Input, "input", "", "Specify the input file path. Use '-' for stdin. If omitted, only command line arguments are used as input")
+	flag.StringVar(&Opts.Input, "input", "", "Specify an input file path to read from. Can be combined with stdin input and command line arguments")
 	flag.BoolVar(&Opts.Continue, "continue", false, "Continue the conversation from the previous execution")
 }
 

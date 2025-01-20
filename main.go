@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"runtime/debug"
+	"strings"
 	"time"
 )
 
@@ -116,33 +117,39 @@ func parseConfig() (cliopts.Options, error) {
 }
 
 func readInput(inputPath string) (string, error) {
-	var input string
+	var inputs []string
 
-	// Read from stdin or file if provided
-	if inputPath != "" && inputPath != "-" {
-		// Read from file
+	// Check if there is any input from stdin by checking if stdin is a pipe or redirection
+	stat, _ := os.Stdin.Stat()
+	if (stat.Mode() & os.ModeCharDevice) == 0 {
+		// Stdin has data available
+		content, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return "", fmt.Errorf("error reading from stdin: %w", err)
+		}
+		if len(content) > 0 {
+			inputs = append(inputs, string(content))
+		}
+	}
+
+	// Check if there is input from the -input flag
+	if inputPath != "" {
 		content, err := os.ReadFile(inputPath)
 		if err != nil {
 			return "", fmt.Errorf("error opening input file %s: %w", inputPath, err)
 		}
-		input = string(content)
-	} else if inputPath == "-" {
-		// Read from stdin
-		content, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return "", err
+		if len(content) > 0 {
+			inputs = append(inputs, string(content))
 		}
-		input = string(content)
 	}
 
-	// If we have a prompt from command line arguments, append it to any existing input
+	// Check if there is input from command line arguments
 	if cliopts.Opts.Prompt != "" {
-		if input != "" {
-			input = input + "\n\n" + cliopts.Opts.Prompt
-		} else {
-			input = cliopts.Opts.Prompt
-		}
+		inputs = append(inputs, cliopts.Opts.Prompt)
 	}
+
+	// Combine all inputs with double newlines
+	input := strings.Join(inputs, "\n\n")
 
 	if input == "" {
 		return "", fmt.Errorf("no input provided. Please provide input via stdin, input file, or as a command line argument")

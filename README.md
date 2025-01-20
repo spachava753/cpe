@@ -38,23 +38,32 @@ go install github.com/spachava753/cpe@latest
 
 ## Usage
 
-If no `-model` flag is provided, Clause Sonnet 3.5 is used by default. To use CPE, run the following command:
+If no `-model` flag is provided, Claude Sonnet 3.5 is used by default. CPE accepts input from multiple sources that can be combined:
 
+1. Stdin (pipe or redirection):
 ```
 cpe [flags] < input.txt
 ```
-
 or
+```
+echo "Hi!" | cpe [flags]
+```
 
+2. Input file:
 ```
 cpe [flags] -input input.txt
 ```
 
-or
+3. Command line arguments:
+```
+cpe [flags] "Your prompt here"
+```
 
+These input methods can be combined. For example:
 ```
-echo "Hi!" | cpe [flags]
+echo "Context:" | cpe [flags] -input details.txt "Please analyze this"
 ```
+In this case, the inputs will be concatenated in order (stdin, input file, command line arguments) separated by double newlines.
 
 ### Examples
 
