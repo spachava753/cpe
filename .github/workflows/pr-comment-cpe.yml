@@ -41,6 +41,9 @@ jobs:
             cpe-cache-${{ steps.get_branch.outputs.branch }}
 
       - name: Run CPE
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CPE_CLAUDE_3_5_SONNET_URL: ${{ secrets.CPE_CLAUDE_3_5_SONNET_URL }}
         run: |
           # Run CPE with the comment as input and continue flag
           echo "${{ github.event.comment.body }}" | cpe -continue

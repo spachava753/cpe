@@ -30,6 +30,9 @@ jobs:
           key: cpe-cache-${{ github.event.pull_request.head.ref }}
 
       - name: Run CPE
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CPE_CLAUDE_3_5_SONNET_URL: ${{ secrets.CPE_CLAUDE_3_5_SONNET_URL }}
         run: |
           # Combine PR title and body for input
           echo "${{ github.event.pull_request.title }}" > pr_input.txt
