@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ github.event.pull_request.base.ref }}
 
       - name: Set up Go
         uses: actions/setup-go@v4
@@ -27,7 +27,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: .cpeconvo
-          key: cpe-cache-${{ github.event.pull_request.head.ref }}
+          key: cpe-cache-${{ github.event.pull_request.base.ref }}
 
       - name: Run CPE
         env:
@@ -49,4 +49,4 @@ jobs:
           
           git add .
           git commit -m "CPE: Process PR #${{ github.event.pull_request.number }}"
-          git push
+          git push origin HEAD:${{ github.event.pull_request.base.ref }}
