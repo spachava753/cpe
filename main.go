@@ -62,7 +62,7 @@ func main() {
 			os.Exit(1)
 		}
 		for _, file := range files {
-			fmt.Printf("File: %s\nContent:\n%s\n\n", file.Path, file.Content)
+			fmt.Printf("<file>\n  <path>%s</path>\n  <content>\n%s\n  </content>\n</file>\n", file.Path, file.Content)
 		}
 		return
 	}
