@@ -23,7 +23,7 @@ with your development workflow through standard Unix pipes and redirection.
   - Accept input from stdin or file
   - Pipe results to other commands
   - Integrates naturally with Unix tools
-  - List flags in copy-pasteable format with `-list-flags`
+  - List all text files recursively with `-list-files`
 - **Highly Configurable Generation**:
     - Choice of AI model
     - Adjustable generation parameters
