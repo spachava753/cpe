@@ -24,7 +24,7 @@ func getVersion() string {
 }
 
 func main() {
-	logger := slog.Default()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	startTime := time.Now()
 	defer func() {
 		elapsed := time.Since(startTime)
@@ -62,7 +62,7 @@ func main() {
 			os.Exit(1)
 		}
 		for _, file := range files {
-			fmt.Printf("<file>\n  <path>%s</path>\n  <content>\n%s\n  </content>\n</file>\n", file.Path, file.Content)
+			fmt.Fprintf(os.Stdout, "File: %s\nContent:\n%s\n\n", file.Path, file.Content)
 		}
 		return
 	}
