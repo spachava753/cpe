@@ -23,6 +23,7 @@ with your development workflow through standard Unix pipes and redirection.
   - Accept input from stdin or file
   - Pipe results to other commands
   - Integrates naturally with Unix tools
+  - List flags in copy-pasteable format with `-list-flags`
 - **Highly Configurable Generation**:
     - Choice of AI model
     - Adjustable generation parameters
@@ -123,6 +124,16 @@ To use specific LLM providers, set the corresponding API keys:
 - Anthropic: `ANTHROPIC_API_KEY`
 - Google: `GEMINI_API_KEY`
 - OpenAI: `OPENAI_API_KEY`
+
+### Custom URL Configuration
+
+CPE supports multiple ways to define a custom URL for API endpoints, with the following priority order (highest to lowest):
+
+1. Command line flag: `-custom-url`
+2. Model-specific environment variable (e.g., `CPE_CLAUDE_3_5_SONNET_URL` for the Claude 3.5 Sonnet model)
+3. General custom URL environment variable: `CPE_CUSTOM_URL`
+
+If multiple methods are used, the highest priority method takes precedence. For example, if both the `-custom-url` flag and environment variables are set, the flag value will be used.
 
 ### Ignore Patterns
 
