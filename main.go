@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/cliopts"
-	"github.com/spachava753/cpe/internal/codemap"
 	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/spachava753/cpe/internal/tokentree"
 	"io"
@@ -57,8 +56,7 @@ func main() {
 	}
 
 	if config.ListFiles {
-		fsys := os.DirFS(".")
-		files, err := codemap.GenerateOutput(fsys, -1, ignorer)
+		files, err := agent.ListTextFiles(ignorer)
 		if err != nil {
 			logger.Error("fatal error", slog.Any("err", err))
 			os.Exit(1)
