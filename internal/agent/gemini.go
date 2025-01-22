@@ -12,7 +12,7 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	"io"
-	"log/slog"
+	"strings"
 	"time"
 )
 
@@ -29,13 +29,13 @@ func init() {
 
 type geminiExecutor struct {
 	model   *genai.GenerativeModel
-	logger  *slog.Logger
+	logger  Logger
 	ignorer *gitignore.GitIgnore
 	config  GenConfig
 	session *genai.ChatSession
 }
 
-func NewGeminiExecutor(baseUrl string, apiKey string, logger *slog.Logger, ignorer *gitignore.GitIgnore, config GenConfig) (Executor, error) {
+func NewGeminiExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gitignore.GitIgnore, config GenConfig) (Executor, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -174,10 +174,10 @@ func (g *geminiExecutor) Execute(input string) error {
 			if retryCount > maxRetries {
 				return fmt.Errorf("exceeded maximum retries (%d) when sending message to Gemini: %w", maxRetries, err)
 			}
-			g.logger.Info("retrying Gemini API call due to error",
-				slog.Int("retry", retryCount),
-				slog.Int("status_code", gerr.Code),
-				slog.String("error", gerr.Error()),
+			g.logger.Printf("retrying Gemini API call due to error; retry: %d, status_code: %d, error: %s",
+				retryCount,
+				gerr.Code,
+				gerr.Error(),
 			)
 			// Remove the failed message from session history before retrying
 			if len(g.session.History) > 0 {
@@ -203,10 +203,10 @@ func (g *geminiExecutor) Execute(input string) error {
 				if len(v) == 0 {
 					continue
 				}
-				g.logger.Info(string(v))
+				g.logger.Println(string(v))
 			case genai.FunctionCall:
 				finished = false
-				g.logger.Info(fmt.Sprintf("Tool: %s", v.Name))
+				g.logger.Printf("Tool: %s", v.Name)
 
 				var result *ToolResult
 				switch v.Name {
@@ -221,7 +221,7 @@ func (g *geminiExecutor) Execute(input string) error {
 					if err := json.Unmarshal(jsonInput, &bashToolInput); err != nil {
 						return fmt.Errorf("failed to unmarshal bash tool arguments: %w", err)
 					}
-					g.logger.Info(fmt.Sprintf("executing bash command: %s", bashToolInput.Command))
+					g.logger.Printf("executing bash command: %s", bashToolInput.Command)
 					result, err = executeBashTool(bashToolInput.Command)
 				case fileEditor.Name:
 					var fileEditorToolInput FileEditorParams
@@ -232,14 +232,16 @@ func (g *geminiExecutor) Execute(input string) error {
 					if err := json.Unmarshal(jsonInput, &fileEditorToolInput); err != nil {
 						return fmt.Errorf("failed to unmarshal file editor tool arguments: %w", err)
 					}
-					g.logger.Info("executing file editor tool",
-						slog.String("command", fileEditorToolInput.Command),
-						slog.String("path", fileEditorToolInput.Path),
+					g.logger.Printf(
+						"executing file editor tool; command: %s\npath: %s\nold_str: %s\nnew_str%s",
+						fileEditorToolInput.Command,
+						fileEditorToolInput.Path,
+						fileEditorToolInput.OldStr,
+						fileEditorToolInput.NewStr,
 					)
-					g.logger.Info(fmt.Sprintf("old_str:\n%s\n\nnew_str:\n%s", fileEditorToolInput.OldStr, fileEditorToolInput.NewStr))
 					result, err = executeFileEditorTool(fileEditorToolInput)
 				case filesOverviewTool.Name:
-					g.logger.Info("executing files overview tool")
+					g.logger.Println("executing files overview tool")
 					result, err = executeFilesOverviewTool(g.ignorer)
 				case getRelatedFilesTool.Name:
 					var relatedFilesToolInput struct {
@@ -252,7 +254,7 @@ func (g *geminiExecutor) Execute(input string) error {
 					if err := json.Unmarshal(jsonInput, &relatedFilesToolInput); err != nil {
 						return fmt.Errorf("failed to unmarshal get related files tool arguments: %w", err)
 					}
-					g.logger.Info("getting related files", slog.Any("input_files", relatedFilesToolInput.InputFiles))
+					g.logger.Printf("getting related files: %s", strings.Join(relatedFilesToolInput.InputFiles, ", "))
 					result, err = executeGetRelatedFilesTool(relatedFilesToolInput.InputFiles, g.ignorer)
 				default:
 					return fmt.Errorf("unexpected tool name: %s", v.Name)
@@ -263,10 +265,7 @@ func (g *geminiExecutor) Execute(input string) error {
 				}
 
 				resultStr := fmt.Sprintf("tool result: %+v", result.Content)
-				if len(resultStr) > 10000 {
-					resultStr = resultStr[:10000] + "..."
-				}
-				g.logger.Info(resultStr)
+				g.logger.Println(resultStr)
 
 				// Convert tool result to function response
 				var response map[string]any
@@ -307,10 +306,10 @@ func (g *geminiExecutor) Execute(input string) error {
 				if retryCount > maxRetries {
 					return fmt.Errorf("exceeded maximum retries (%d) when sending message to Gemini: %w", maxRetries, err)
 				}
-				g.logger.Info("retrying Gemini API call due to error",
-					slog.Int("retry", retryCount),
-					slog.Int("status_code", gerr.Code),
-					slog.String("error", gerr.Error()),
+				g.logger.Printf("retrying Gemini API call due to error; retry: %d, status_code: %d, error: %s",
+					retryCount,
+					gerr.Code,
+					gerr.Error(),
 				)
 				// Remove the failed message from session history before retrying
 				if len(g.session.History) > 0 {

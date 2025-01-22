@@ -8,6 +8,7 @@ import (
 	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/spachava753/cpe/internal/tokentree"
 	"io"
+	"log"
 	"log/slog"
 	"os"
 	"runtime/debug"
@@ -24,33 +25,30 @@ func getVersion() string {
 }
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	startTime := time.Now()
+	log.SetFlags(0)
+	log.SetOutput(os.Stderr)
 	defer func() {
 		elapsed := time.Since(startTime)
-		logger.Info("finished execution", "elapsed", elapsed)
+		log.Printf("finished execution, elapsed: %s", elapsed)
 	}()
 
 	config, err := parseConfig()
 	if err != nil {
-		logger.Error("fatal error", slog.Any("err", err))
-		os.Exit(1)
+		log.Fatalf("fatal error: %s", err)
 	}
 
 	ignorer, err := ignore.LoadIgnoreFiles(".")
 	if err != nil {
-		logger.Error("fatal error", slog.Any("err", err))
-		os.Exit(1)
+		log.Fatalf("fatal error: %s", err)
 	}
 	if ignorer == nil {
-		logger.Error("git ignorer was nil")
-		os.Exit(1)
+		log.Fatal("git ignorer was nil")
 	}
 
 	if config.TokenCountPath != "" {
 		if err := tokentree.PrintTokenTree(os.DirFS("."), ignorer); err != nil {
-			slog.Error("fatal error", slog.Any("err", err))
-			os.Exit(1)
+			log.Fatalf("fatal error: %s", err)
 		}
 		return
 	}
@@ -58,16 +56,17 @@ func main() {
 	if config.ListFiles {
 		files, err := agent.ListTextFiles(ignorer)
 		if err != nil {
-			logger.Error("fatal error", slog.Any("err", err))
-			os.Exit(1)
+			log.Fatalf("fatal error: %s", err)
 		}
 		for _, file := range files {
-			fmt.Fprintf(os.Stdout, "File: %s\nContent:\n%s\n\n", file.Path, file.Content)
+			if _, writeErr := fmt.Fprintf(os.Stdout, "File: %s\nContent:\n%s\n\n", file.Path, file.Content); writeErr != nil {
+				log.Fatalf("fatal error: %s", writeErr)
+			}
 		}
 		return
 	}
 
-	executor, err := agent.InitExecutor(logger, agent.ModelOptions{
+	executor, err := agent.InitExecutor(log.Default(), agent.ModelOptions{
 		Model:             config.Model,
 		CustomURL:         config.CustomURL,
 		MaxTokens:         config.MaxTokens,

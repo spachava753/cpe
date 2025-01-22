@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go"
-	"log/slog"
 )
 
 // GenConfig represents the configuration when invoking a model.
@@ -170,7 +169,7 @@ func (f ModelOptions) ApplyToGenConfig(config GenConfig) GenConfig {
 	return config
 }
 
-func GetConfig(logger *slog.Logger, flags ModelOptions) (GenConfig, error) {
+func GetConfig(flags ModelOptions) (GenConfig, error) {
 	if flags.Model == "" {
 		flags.Model = DefaultModel
 	}
@@ -181,7 +180,6 @@ func GetConfig(logger *slog.Logger, flags ModelOptions) (GenConfig, error) {
 		if flags.CustomURL == "" {
 			return GenConfig{}, fmt.Errorf("unknown model '%s' requires -custom-url flag or CPE_CUSTOM_URL environment variable", flags.Model)
 		}
-		logger.Info("Using unknown model with OpenAI provider", slog.String("model", flags.Model), slog.String("custom-url", flags.CustomURL))
 		config = ModelConfig{Name: flags.Model, IsKnown: false}
 	}
 

@@ -10,7 +10,6 @@ import (
 	"github.com/openai/openai-go/option"
 	gitignore "github.com/sabhiram/go-gitignore"
 	"io"
-	"log/slog"
 	"strings"
 	"time"
 )
@@ -38,13 +37,13 @@ func init() {
 
 type openaiExecutor struct {
 	client  *oai.Client
-	logger  *slog.Logger
+	logger  Logger
 	ignorer *gitignore.GitIgnore
 	config  GenConfig
 	params  *oai.ChatCompletionNewParams
 }
 
-func NewOpenAIExecutor(baseUrl string, apiKey string, logger *slog.Logger, ignorer *gitignore.GitIgnore, config GenConfig) Executor {
+func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gitignore.GitIgnore, config GenConfig) Executor {
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithMaxRetries(5),
@@ -141,7 +140,7 @@ func (o *openaiExecutor) Execute(input string) error {
 
 		// Log any text content
 		if choice.Message.Content != "" {
-			o.logger.Info(choice.Message.Content)
+			o.logger.Println(choice.Message.Content)
 			assistantMsg = append(assistantMsg, oai.AssistantMessage(choice.Message.Content))
 		}
 
@@ -153,7 +152,7 @@ func (o *openaiExecutor) Execute(input string) error {
 
 		// Process tool calls
 		for _, toolCall := range choice.Message.ToolCalls {
-			o.logger.Info(fmt.Sprintf("Tool: %s", toolCall.Function.Name))
+			o.logger.Printf("Tool: %s", toolCall.Function.Name)
 
 			var result *ToolResult
 
@@ -165,21 +164,23 @@ func (o *openaiExecutor) Execute(input string) error {
 				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &bashToolInput); err != nil {
 					return fmt.Errorf("failed to unmarshal bash tool arguments: %w", err)
 				}
-				o.logger.Info(fmt.Sprintf("executing bash command: %s", bashToolInput.Command))
+				o.logger.Printf("executing bash command: %s", bashToolInput.Command)
 				result, err = executeBashTool(bashToolInput.Command)
 			case fileEditor.Name:
 				var fileEditorToolInput FileEditorParams
 				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &fileEditorToolInput); err != nil {
 					return fmt.Errorf("failed to unmarshal file editor tool arguments: %w", err)
 				}
-				o.logger.Info("executing file editor tool",
-					slog.String("command", fileEditorToolInput.Command),
-					slog.String("path", fileEditorToolInput.Path),
+				o.logger.Printf(
+					"executing file editor tool; command: %s\npath: %s\nold_str: %s\nnew_str: %s",
+					fileEditorToolInput.Command,
+					fileEditorToolInput.Path,
+					fileEditorToolInput.OldStr,
+					fileEditorToolInput.NewStr,
 				)
-				o.logger.Info(fmt.Sprintf("old_str:\n%s\n\nnew_str:\n%s", fileEditorToolInput.OldStr, fileEditorToolInput.NewStr))
 				result, err = executeFileEditorTool(fileEditorToolInput)
 			case filesOverviewTool.Name:
-				o.logger.Info("executing files overview tool")
+				o.logger.Println("executing files overview tool")
 				result, err = executeFilesOverviewTool(o.ignorer)
 			case getRelatedFilesTool.Name:
 				var relatedFilesToolInput struct {
@@ -188,7 +189,7 @@ func (o *openaiExecutor) Execute(input string) error {
 				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &relatedFilesToolInput); err != nil {
 					return fmt.Errorf("failed to unmarshal get related files tool arguments: %w", err)
 				}
-				o.logger.Info("getting related files", slog.Any("input_files", relatedFilesToolInput.InputFiles))
+				o.logger.Printf("getting related files: %s", strings.Join(relatedFilesToolInput.InputFiles, ", "))
 				result, err = executeGetRelatedFilesTool(relatedFilesToolInput.InputFiles, o.ignorer)
 			default:
 				return fmt.Errorf("unexpected tool name: %s", toolCall.Function.Name)
@@ -199,10 +200,7 @@ func (o *openaiExecutor) Execute(input string) error {
 			}
 
 			resultStr := fmt.Sprintf("tool result: %+v", result.Content)
-			if len(resultStr) > 10000 {
-				resultStr = resultStr[:10000] + "..."
-			}
-			o.logger.Info(resultStr)
+			o.logger.Println(resultStr)
 
 			result.ToolUseID = toolCall.ID
 

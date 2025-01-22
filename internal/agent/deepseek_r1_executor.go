@@ -9,7 +9,6 @@ import (
 	"github.com/openai/openai-go/option"
 	gitignore "github.com/sabhiram/go-gitignore"
 	"io"
-	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
@@ -18,13 +17,13 @@ import (
 
 type deepseekR1Executor struct {
 	client  *oai.Client
-	logger  *slog.Logger
+	logger  Logger
 	ignorer *gitignore.GitIgnore
 	config  GenConfig
 	params  *oai.ChatCompletionNewParams
 }
 
-func NewDeepSeekR1Executor(baseUrl string, apiKey string, logger *slog.Logger, ignorer *gitignore.GitIgnore, config GenConfig) Executor {
+func NewDeepSeekR1Executor(baseUrl string, apiKey string, logger Logger, ignorer *gitignore.GitIgnore, config GenConfig) Executor {
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithMaxRetries(3),
@@ -110,7 +109,7 @@ func (d *deepseekR1Executor) Execute(input string) error {
 
 	// Log and store response
 	response := resp.Choices[0].Message.Content
-	d.logger.Info(response)
+	d.logger.Println(response)
 
 	// Add assistant response to message history
 	d.params.Messages = oai.F(append(d.params.Messages.Value,

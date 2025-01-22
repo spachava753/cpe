@@ -6,7 +6,6 @@ import (
 	a "github.com/anthropics/anthropic-sdk-go"
 	"github.com/spachava753/cpe/internal/ignore"
 	"io"
-	"log/slog"
 	"os"
 	"strings"
 )
@@ -21,8 +20,14 @@ type Executor interface {
 	SaveMessages(w io.Writer) error
 }
 
+type Logger interface {
+	Print(v ...any)
+	Printf(format string, v ...any)
+	Println(v ...any)
+}
+
 // InitExecutor initializes and returns an appropriate executor based on the model configuration
-func InitExecutor(logger *slog.Logger, flags ModelOptions) (Executor, error) {
+func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 	ignorer, err := ignore.LoadIgnoreFiles(".")
 	if err != nil {
 		return nil, fmt.Errorf("failed to load ignore files: %w", err)
@@ -40,7 +45,7 @@ func InitExecutor(logger *slog.Logger, flags ModelOptions) (Executor, error) {
 		customURL = envURL
 	}
 
-	genConfig, err := GetConfig(logger, flags)
+	genConfig, err := GetConfig(flags)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get provider: %w", err)
 	}

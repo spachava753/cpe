@@ -10,7 +10,6 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	gitignore "github.com/sabhiram/go-gitignore"
 	"io"
-	"log/slog"
 	"strings"
 	"time"
 )
@@ -34,13 +33,13 @@ func init() {
 
 type anthropicExecutor struct {
 	client  *a.Client
-	logger  *slog.Logger
+	logger  Logger
 	ignorer *gitignore.GitIgnore
 	config  GenConfig
 	params  *a.BetaMessageNewParams
 }
 
-func NewAnthropicExecutor(baseUrl string, apiKey string, logger *slog.Logger, ignorer *gitignore.GitIgnore, config GenConfig) Executor {
+func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gitignore.GitIgnore, config GenConfig) Executor {
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithMaxRetries(5),
@@ -242,7 +241,7 @@ func (s *anthropicExecutor) Execute(input string) error {
 		for i, block := range resp.Content {
 			switch block.Type {
 			case a.BetaContentBlockTypeText:
-				s.logger.Info(block.Text)
+				s.logger.Println(block.Text)
 				assistantMsgContentBlocks[i] = &a.BetaTextBlockParam{
 					Text: a.F(block.Text),
 					Type: a.F(a.BetaTextBlockParamTypeText),
@@ -270,7 +269,7 @@ func (s *anthropicExecutor) Execute(input string) error {
 					if err := json.Unmarshal(jsonInput, &bashToolInput); err != nil {
 						return fmt.Errorf("failed to unmarshal bash tool arguments: %w", err)
 					}
-					s.logger.Info(fmt.Sprintf("executing bash command: %s", bashToolInput.Command))
+					s.logger.Printf("executing bash command: %s", bashToolInput.Command)
 					result, err = executeBashTool(bashToolInput.Command)
 				case fileEditor.Name:
 					var fileEditorToolInput FileEditorParams
@@ -281,15 +280,16 @@ func (s *anthropicExecutor) Execute(input string) error {
 					if err := json.Unmarshal(jsonInput, &fileEditorToolInput); err != nil {
 						return fmt.Errorf("failed to unmarshal file editor tool arguments: %w", err)
 					}
-					s.logger.Info("executing file editor tool",
-						slog.String("command", fileEditorToolInput.Command),
-						slog.String("path", fileEditorToolInput.Path),
+					s.logger.Printf(
+						"executing file editor tool; command: %s\npath: %s\nold_str: %s\nnew_str%s",
+						fileEditorToolInput.Command,
+						fileEditorToolInput.Path,
+						fileEditorToolInput.OldStr,
+						fileEditorToolInput.NewStr,
 					)
-
-					s.logger.Info(fmt.Sprintf("old_str:\n%s\n\nnew_str:\n%s", fileEditorToolInput.OldStr, fileEditorToolInput.NewStr))
 					result, err = executeFileEditorTool(fileEditorToolInput)
 				case filesOverviewTool.Name:
-					s.logger.Info("executing files overview tool")
+					s.logger.Println("executing files overview tool")
 					result, err = executeFilesOverviewTool(s.ignorer)
 				case getRelatedFilesTool.Name:
 					relatedFilesToolInput := struct {
@@ -302,7 +302,7 @@ func (s *anthropicExecutor) Execute(input string) error {
 					if err := json.Unmarshal(jsonInput, &relatedFilesToolInput); err != nil {
 						return fmt.Errorf("failed to unmarshal get related files tool arguments: %w", err)
 					}
-					s.logger.Info("getting related files", slog.Any("input_files", relatedFilesToolInput.InputFiles))
+					s.logger.Printf("getting related files: %s", strings.Join(relatedFilesToolInput.InputFiles, ", "))
 					result, err = executeGetRelatedFilesTool(relatedFilesToolInput.InputFiles, s.ignorer)
 				default:
 					return fmt.Errorf("unexpected tool use block type: %s", block.Name)
@@ -313,10 +313,7 @@ func (s *anthropicExecutor) Execute(input string) error {
 				}
 
 				resultStr := fmt.Sprintf("tool result: %+v", result.Content)
-				if len(resultStr) > 10000 {
-					resultStr = resultStr[:10000] + "..."
-				}
-				s.logger.Info(resultStr)
+				s.logger.Println(resultStr)
 
 				result.ToolUseID = block.ID
 				s.params.Messages = a.F(append(s.params.Messages.Value, a.BetaMessageParam{

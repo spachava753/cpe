@@ -10,20 +10,19 @@ import (
 	"github.com/openai/openai-go/option"
 	gitignore "github.com/sabhiram/go-gitignore"
 	"io"
-	"log/slog"
 	"strings"
 	"time"
 )
 
 type deepseekExecutor struct {
 	client  *oai.Client
-	logger  *slog.Logger
+	logger  Logger
 	ignorer *gitignore.GitIgnore
 	config  GenConfig
 	params  *oai.ChatCompletionNewParams
 }
 
-func NewDeepSeekExecutor(baseUrl string, apiKey string, logger *slog.Logger, ignorer *gitignore.GitIgnore, config GenConfig) Executor {
+func NewDeepSeekExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gitignore.GitIgnore, config GenConfig) Executor {
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithMaxRetries(5),
@@ -102,8 +101,8 @@ func NewDeepSeekExecutor(baseUrl string, apiKey string, logger *slog.Logger, ign
 }
 
 func (o *deepseekExecutor) Execute(input string) error {
-	slog.Info("Note that the current V3 model is not yet perfected, it seems like the instruction following and tool calling performance is not yet tuned.")
-	slog.Info("Recommend using this model for one-off tasks like generating git commit messages or bash commands.")
+	o.logger.Println("Note that the current V3 model is not yet perfected, it seems like the instruction following and tool calling performance is not yet tuned.")
+	o.logger.Println("Recommend using this model for one-off tasks like generating git commit messages or bash commands.")
 
 	// Add user input as message
 	o.params.Messages = oai.F(append(o.params.Messages.Value, oai.UserMessage(input)))
@@ -125,7 +124,7 @@ func (o *deepseekExecutor) Execute(input string) error {
 
 		// Log any text content
 		if choice.Message.Content != "" {
-			o.logger.Info(choice.Message.Content)
+			o.logger.Println(choice.Message.Content)
 			assistantMsg = append(assistantMsg, oai.ChatCompletionMessageParam{
 				Role:    oai.F(oai.ChatCompletionMessageParamRoleAssistant),
 				Content: oai.F[any](choice.Message.Content),
@@ -140,7 +139,7 @@ func (o *deepseekExecutor) Execute(input string) error {
 
 		// Process tool calls
 		for _, toolCall := range choice.Message.ToolCalls {
-			o.logger.Info(fmt.Sprintf("Tool: %s", toolCall.Function.Name))
+			o.logger.Printf("Tool: %s", toolCall.Function.Name)
 
 			var result *ToolResult
 
@@ -152,21 +151,23 @@ func (o *deepseekExecutor) Execute(input string) error {
 				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &bashToolInput); err != nil {
 					return fmt.Errorf("failed to unmarshal bash tool arguments: %w", err)
 				}
-				o.logger.Info(fmt.Sprintf("executing bash command: %s", bashToolInput.Command))
+				o.logger.Printf("executing bash command: %s", bashToolInput.Command)
 				result, err = executeBashTool(bashToolInput.Command)
 			case fileEditor.Name:
 				var fileEditorToolInput FileEditorParams
 				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &fileEditorToolInput); err != nil {
 					return fmt.Errorf("failed to unmarshal file editor tool arguments: %w", err)
 				}
-				o.logger.Info("executing file editor tool",
-					slog.String("command", fileEditorToolInput.Command),
-					slog.String("path", fileEditorToolInput.Path),
+				o.logger.Printf(
+					"executing file editor tool; command: %s\npath: %s\nold_str: %s\nnew_str%s",
+					fileEditorToolInput.Command,
+					fileEditorToolInput.Path,
+					fileEditorToolInput.OldStr,
+					fileEditorToolInput.NewStr,
 				)
-				o.logger.Info(fmt.Sprintf("old_str:\n%s\n\nnew_str:\n%s", fileEditorToolInput.OldStr, fileEditorToolInput.NewStr))
 				result, err = executeFileEditorTool(fileEditorToolInput)
 			case filesOverviewTool.Name:
-				o.logger.Info("executing files overview tool")
+				o.logger.Println("executing files overview tool")
 				result, err = executeFilesOverviewTool(o.ignorer)
 			case getRelatedFilesTool.Name:
 				var relatedFilesToolInput struct {
@@ -175,7 +176,7 @@ func (o *deepseekExecutor) Execute(input string) error {
 				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &relatedFilesToolInput); err != nil {
 					return fmt.Errorf("failed to unmarshal get related files tool arguments: %w", err)
 				}
-				o.logger.Info("getting related files", slog.Any("input_files", relatedFilesToolInput.InputFiles))
+				o.logger.Printf("getting related files: %s", strings.Join(relatedFilesToolInput.InputFiles, ", "))
 				result, err = executeGetRelatedFilesTool(relatedFilesToolInput.InputFiles, o.ignorer)
 			default:
 				return fmt.Errorf("unexpected tool name: %s", toolCall.Function.Name)
@@ -186,10 +187,7 @@ func (o *deepseekExecutor) Execute(input string) error {
 			}
 
 			resultStr := fmt.Sprintf("tool result: %+v", result.Content)
-			if len(resultStr) > 10000 {
-				resultStr = resultStr[:10000] + "..."
-			}
-			o.logger.Info(resultStr)
+			o.logger.Println(resultStr)
 
 			result.ToolUseID = toolCall.ID
 
