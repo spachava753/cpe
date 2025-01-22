@@ -73,6 +73,10 @@ var ModelConfigs = map[string]ModelConfig{
 		Name: "deepseek-chat", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 	},
+	"deepseek-r1": {
+		Name: "deepseek-reasoner", IsKnown: true,
+		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 1},
+	},
 	"claude-3-opus": {
 		Name: anthropic.ModelClaude_3_Opus_20240229, IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.3},

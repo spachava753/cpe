@@ -55,6 +55,12 @@ func InitExecutor(logger *slog.Logger, flags ModelOptions) (Executor, error) {
 			return nil, fmt.Errorf("DEEPSEEK_API_KEY environment variable not set")
 		}
 		executor = NewDeepSeekExecutor(customURL, apiKey, logger, ignorer, genConfig)
+	case "deepseek-reasoner":
+		apiKey := os.Getenv("DEEPSEEK_API_KEY")
+		if apiKey == "" {
+			return nil, fmt.Errorf("DEEPSEEK_API_KEY environment variable not set")
+		}
+		executor = NewDeepSeekR1Executor(customURL, apiKey, logger, ignorer, genConfig)
 	case a.ModelClaude3_5Sonnet20241022, a.ModelClaude3_5Haiku20241022, a.ModelClaude_3_Haiku_20240307, a.ModelClaude_3_Opus_20240229:
 		apiKey := os.Getenv("ANTHROPIC_API_KEY")
 		if apiKey == "" {
