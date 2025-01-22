@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/spachava753/cpe/internal/agent"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 )
@@ -30,6 +31,13 @@ type Options struct {
 var Opts Options
 
 func init() {
+	// Get default model from environment variable if available
+	defaultModel := agent.DefaultModel
+	if envModel := os.Getenv("CPE_MODEL"); envModel != "" {
+		defaultModel = envModel
+	}
+
+	flag.StringVar(&Opts.Model, "model", defaultModel, fmt.Sprintf("Specify the model to use. Supported models: %s (default: %s)", strings.Join(slices.Collect(maps.Keys(agent.ModelConfigs)), ", "), defaultModel))
 	flag.StringVar(&Opts.TokenCountPath, "token-count", "", "Print a tree of directories and files with their token counts for the given path")
 	flag.BoolVar(&Opts.Version, "version", false, "Print the version number and exit")
 	flag.BoolVar(&Opts.ListFiles, "list-files", false, "List all text files in the current directory recursively")
