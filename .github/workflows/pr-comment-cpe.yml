@@ -77,9 +77,10 @@ jobs:
             echo "${{ github.event.comment.body }}" | cpe 2>&1 | tee "$output_file"
           fi
           
-          # Escape GitHub Actions special characters in the output
-          output=$(cat "$output_file" | sed 's/%/%25/g' | sed 's/\r/%0D/g' | sed 's/\n/%0A/g')
-          echo "output=$output" >> $GITHUB_OUTPUT
+          # Format the output as a multiline string for GitHub Actions
+          echo 'cpe_output<<EOF' >> $GITHUB_OUTPUT
+          cat "$output_file" >> $GITHUB_OUTPUT
+          echo 'EOF' >> $GITHUB_OUTPUT
           rm "$output_file"
 
       - name: Comment on PR
@@ -87,7 +88,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.issue.number }}
         run: |
-          gh pr comment $PR_NUMBER --body "${{ steps.cpe_run.outputs.output }}"
+          # Format the output as a code block for better readability in PR comments
+          echo '### CPE Response' > comment.md
+          echo '```' >> comment.md
+          echo "${{ steps.cpe_run.outputs.cpe_output }}" >> comment.md
+          echo '```' >> comment.md
+          
+          # Post the comment
+          gh pr comment $PR_NUMBER --body-file comment.md
 
       - name: Commit and push changes
         run: |
