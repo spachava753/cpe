@@ -130,6 +130,20 @@ func NewGeminiExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 						Required: []string{"input_files"},
 					},
 				},
+				{
+					Name:        changeDirectoryTool.Name,
+					Description: changeDirectoryTool.Description,
+					Parameters: &genai.Schema{
+						Type: genai.TypeObject,
+						Properties: map[string]*genai.Schema{
+							"path": {
+								Type:        genai.TypeString,
+								Description: "The path to change to, can be relative or absolute",
+							},
+						},
+						Required: []string{"path"},
+					},
+				},
 			},
 		},
 	}
@@ -256,6 +270,19 @@ func (g *geminiExecutor) Execute(input string) error {
 					}
 					g.logger.Printf("getting related files: %s", strings.Join(relatedFilesToolInput.InputFiles, ", "))
 					result, err = executeGetRelatedFilesTool(relatedFilesToolInput.InputFiles, g.ignorer)
+				case changeDirectoryTool.Name:
+					var changeDirToolInput struct {
+						Path string `json:"path"`
+					}
+					jsonInput, marshalErr := json.Marshal(v.Args)
+					if marshalErr != nil {
+						return fmt.Errorf("failed to marshal change directory tool input: %w", marshalErr)
+					}
+					if err := json.Unmarshal(jsonInput, &changeDirToolInput); err != nil {
+						return fmt.Errorf("failed to unmarshal change directory tool arguments: %w", err)
+					}
+					g.logger.Printf("changing directory to: %s", changeDirToolInput.Path)
+					result, err = executeChangeDirectoryTool(changeDirToolInput.Path)
 				default:
 					return fmt.Errorf("unexpected tool name: %s", v.Name)
 				}

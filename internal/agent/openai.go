@@ -95,6 +95,14 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 					Parameters:  oai.F(oai.FunctionParameters(getRelatedFilesTool.InputSchema)),
 				}),
 			},
+			{
+				Type: oai.F(oai.ChatCompletionToolTypeFunction),
+				Function: oai.F(oai.FunctionDefinitionParam{
+					Name:        oai.F(changeDirectoryTool.Name),
+					Description: oai.F(changeDirectoryTool.Description),
+					Parameters:  oai.F(oai.FunctionParameters(changeDirectoryTool.InputSchema)),
+				}),
+			},
 		}),
 	}
 
@@ -191,6 +199,15 @@ func (o *openaiExecutor) Execute(input string) error {
 				}
 				o.logger.Printf("getting related files: %s", strings.Join(relatedFilesToolInput.InputFiles, ", "))
 				result, err = executeGetRelatedFilesTool(relatedFilesToolInput.InputFiles, o.ignorer)
+			case changeDirectoryTool.Name:
+				var changeDirToolInput struct {
+					Path string `json:"path"`
+				}
+				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &changeDirToolInput); err != nil {
+					return fmt.Errorf("failed to unmarshal change directory tool arguments: %w", err)
+				}
+				o.logger.Printf("changing directory to: %s", changeDirToolInput.Path)
+				result, err = executeChangeDirectoryTool(changeDirToolInput.Path)
 			default:
 				return fmt.Errorf("unexpected tool name: %s", toolCall.Function.Name)
 			}
