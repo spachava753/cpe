@@ -83,23 +83,12 @@ jobs:
           echo 'EOF' >> $GITHUB_OUTPUT
           rm "$output_file"
 
-      - name: Comment on PR
+      - name: Process changes and comment
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.issue.number }}
         run: |
-          # Format the output as a code block for better readability in PR comments
-          echo '### CPE Response' > comment.md
-          echo '```' >> comment.md
-          echo "${{ steps.cpe_run.outputs.cpe_output }}" >> comment.md
-          echo '```' >> comment.md
-          
-          # Post the comment
-          gh pr comment $PR_NUMBER --body-file comment.md
-
-      - name: Commit and push changes
-        run: |
-          # Check if there are any changes to commit
+          # First handle any changes and commits
           if [[ -n "$(git status --porcelain)" ]]; then
             # Ask CPE to commit the changes
             echo "Please commit the changes with a suitable commit message" | cpe -continue
@@ -109,3 +98,14 @@ jobs:
           else
             echo "No changes to commit"
           fi
+          
+          # Then create and post the PR comment
+          temp_comment_file=$(mktemp)
+          echo '### CPE Response' > "$temp_comment_file"
+          echo '```' >> "$temp_comment_file"
+          echo "${{ steps.cpe_run.outputs.cpe_output }}" >> "$temp_comment_file"
+          echo '```' >> "$temp_comment_file"
+          
+          # Post the comment and clean up
+          gh pr comment $PR_NUMBER --body-file "$temp_comment_file"
+          rm "$temp_comment_file"
