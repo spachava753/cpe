@@ -55,33 +55,24 @@ jobs:
           restore-keys: |
             cpe-cache-${{ steps.pr_info.outputs.head_ref }}
 
-      - name: Run CPE
-        id: cpe_run
-        run: |
-          # Create a temporary file to store the output
-          output_file=$(mktemp)
-          
-          # Run CPE and capture its output
-          if [ -f ".cpeconvo" ]; then
-            echo "Found existing conversation, using -continue flag"
-            echo "${{ github.event.comment.body }}" | cpe -continue 2>&1 | tee "$output_file"
-          else
-            echo "No existing conversation found, starting new conversation"
-            echo "${{ github.event.comment.body }}" | cpe 2>&1 | tee "$output_file"
-          fi
-          
-          # Format the output as a multiline string for GitHub Actions
-          echo 'cpe_output<<EOF' >> $GITHUB_OUTPUT
-          cat "$output_file" >> $GITHUB_OUTPUT
-          echo 'EOF' >> $GITHUB_OUTPUT
-          rm "$output_file"
-
-      - name: Process changes and comment
+      - name: Run CPE and process changes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.issue.number }}
         run: |
-          # First handle any changes and commits
+          # Create a temporary file for CPE output
+          temp_output_file=$(mktemp)
+          
+          # Run CPE and capture its output
+          if [ -f ".cpeconvo" ]; then
+            echo "Found existing conversation, using -continue flag"
+            echo "${{ github.event.comment.body }}" | cpe -continue 2>&1 | tee "$temp_output_file"
+          else
+            echo "No existing conversation found, starting new conversation"
+            echo "${{ github.event.comment.body }}" | cpe 2>&1 | tee "$temp_output_file"
+          fi
+          
+          # Handle any changes and commits
           if [[ -n "$(git status --porcelain)" ]]; then
             # Ask CPE to commit the changes
             echo "Please commit the changes with a suitable commit message" | cpe -continue
@@ -92,12 +83,12 @@ jobs:
             echo "No changes to commit"
           fi
           
-          # Then create and post the PR comment
+          # Create and post the PR comment
           temp_comment_file=$(mktemp)
           echo '### CPE Response' > "$temp_comment_file"
           echo "" >> "$temp_comment_file"  # Add a blank line after the header
-          echo "${{ steps.cpe_run.outputs.cpe_output }}" >> "$temp_comment_file"
+          cat "$temp_output_file" >> "$temp_comment_file"
           
           # Post the comment and clean up
           gh pr comment $PR_NUMBER --body-file "$temp_comment_file"
-          rm "$temp_comment_file"
+          rm "$temp_output_file" "$temp_comment_file"
