@@ -63,15 +63,31 @@ jobs:
             cpe-cache-${{ steps.pr_info.outputs.head_ref }}
 
       - name: Run CPE
+        id: cpe_run
         run: |
-          # Check if .cpeconvo file exists and set the continue flag accordingly
+          # Create a temporary file to store the output
+          output_file=$(mktemp)
+          
+          # Run CPE and capture its output
           if [ -f ".cpeconvo" ]; then
             echo "Found existing conversation, using -continue flag"
-            echo "${{ github.event.comment.body }}" | cpe -continue
+            echo "${{ github.event.comment.body }}" | cpe -continue 2>&1 | tee "$output_file"
           else
             echo "No existing conversation found, starting new conversation"
-            echo "${{ github.event.comment.body }}" | cpe
+            echo "${{ github.event.comment.body }}" | cpe 2>&1 | tee "$output_file"
           fi
+          
+          # Escape GitHub Actions special characters in the output
+          output=$(cat "$output_file" | sed 's/%/%25/g' | sed 's/\r/%0D/g' | sed 's/\n/%0A/g')
+          echo "output=$output" >> $GITHUB_OUTPUT
+          rm "$output_file"
+
+      - name: Comment on PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh pr comment $PR_NUMBER --body "${{ steps.cpe_run.outputs.output }}"
 
       - name: Commit and push changes
         run: |
