@@ -96,6 +96,14 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 					Properties: a.F[any](getRelatedFilesTool.InputSchema["properties"]),
 				}),
 			},
+			&a.BetaToolParam{
+				Name:        a.String(changeDirectoryTool.Name),
+				Description: a.String(changeDirectoryTool.Description),
+				InputSchema: a.F(a.BetaToolInputSchemaParam{
+					Type:       a.F(a.BetaToolInputSchemaTypeObject),
+					Properties: a.F[any](changeDirectoryTool.InputSchema["properties"]),
+				}),
+			},
 		}),
 	}
 
@@ -304,6 +312,19 @@ func (s *anthropicExecutor) Execute(input string) error {
 					}
 					s.logger.Printf("getting related files: %s", strings.Join(relatedFilesToolInput.InputFiles, ", "))
 					result, err = executeGetRelatedFilesTool(relatedFilesToolInput.InputFiles, s.ignorer)
+				case changeDirectoryTool.Name:
+					changeDirToolInput := struct {
+						Path string `json:"path"`
+					}{}
+					jsonInput, marshalErr := json.Marshal(block.Input)
+					if marshalErr != nil {
+						return fmt.Errorf("failed to marshal change directory tool input: %w", marshalErr)
+					}
+					if err := json.Unmarshal(jsonInput, &changeDirToolInput); err != nil {
+						return fmt.Errorf("failed to unmarshal change directory tool arguments: %w", err)
+					}
+					s.logger.Printf("changing directory to: %s", changeDirToolInput.Path)
+					result, err = executeChangeDirectoryTool(changeDirToolInput.Path)
 				default:
 					return fmt.Errorf("unexpected tool use block type: %s", block.Name)
 				}
