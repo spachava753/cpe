@@ -11,9 +11,17 @@ jobs:
     if: ${{ github.event.issue.pull_request && github.event.issue.state == 'open' }}
     runs-on: ubuntu-latest
     permissions: write-all
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      CPE_CLAUDE_3_5_SONNET_URL: ${{ secrets.CPE_CLAUDE_3_5_SONNET_URL }}
     steps:
       # First checkout the default branch
       - uses: actions/checkout@v3
+
+      - name: Configure Git
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
       - name: Get PR information
         id: pr_info
@@ -55,9 +63,6 @@ jobs:
             cpe-cache-${{ steps.pr_info.outputs.head_ref }}
 
       - name: Run CPE
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          CPE_CLAUDE_3_5_SONNET_URL: ${{ secrets.CPE_CLAUDE_3_5_SONNET_URL }}
         run: |
           # Check if .cpeconvo file exists and set the continue flag accordingly
           if [ -f ".cpeconvo" ]; then
@@ -70,13 +75,12 @@ jobs:
 
       - name: Commit and push changes
         run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          
           # Check if there are any changes to commit
           if [[ -n "$(git status --porcelain)" ]]; then
-            git add .
-            git commit -m "CPE: Process comment on PR #${{ github.event.issue.number }}"
+            # Ask CPE to commit the changes
+            echo "Please commit the changes with a suitable commit message" | cpe -continue
+            
+            # Push the changes
             git push origin HEAD:${{ steps.pr_info.outputs.head_ref }}
           else
             echo "No changes to commit"
