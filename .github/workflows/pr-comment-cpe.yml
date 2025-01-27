@@ -104,10 +104,10 @@ jobs:
           # Then create and post the PR comment
           temp_comment_file=$(mktemp)
           echo '### CPE Response' > "$temp_comment_file"
-          echo '```text' >> "$temp_comment_file"  # Specify the code block as 'text' type
-          # Escape any backticks in the output by replacing ` with \`
-          echo "${{ steps.cpe_run.outputs.cpe_output }}" | sed 's/`/\\`/g' >> "$temp_comment_file"
-          echo '```' >> "$temp_comment_file"
+          # Use four backticks to create a code fence that won't conflict with content containing single backticks
+          echo '````' >> "$temp_comment_file"
+          echo "${{ steps.cpe_run.outputs.cpe_output }}" >> "$temp_comment_file"
+          echo '````' >> "$temp_comment_file"
           
           # Post the comment and clean up
           gh pr comment $PR_NUMBER --body-file "$temp_comment_file"
