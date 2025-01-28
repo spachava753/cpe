@@ -333,6 +333,34 @@ func (s *anthropicExecutor) Execute(input string) error {
 					return fmt.Errorf("failed to execute tool %s: %w", block.Name, err)
 				}
 
+				// Count tokens in the tool result
+				resp, err := s.client.Beta.Messages.CountTokens(context.Background(), a.BetaMessageCountTokensParams{
+					Model: a.F(s.config.Model),
+					Messages: a.F([]a.BetaMessageParam{
+						{
+							Role: a.F(a.BetaMessageParamRoleUser),
+							Content: a.F([]a.BetaContentBlockParamUnion{
+								&a.BetaTextBlockParam{
+									Text: a.F(fmt.Sprintf("%+v", result.Content)),
+									Type: a.F(a.BetaTextBlockParamTypeText),
+								},
+							}),
+						},
+					}),
+				})
+
+				if err == nil && resp.InputTokens > 50000 {
+					// Truncate output to 150,000 characters
+					truncatedOutput := fmt.Sprintf("%+v", result.Content)
+					if len(truncatedOutput) > 150000 {
+						truncatedOutput = truncatedOutput[:150000]
+					}
+					result = &ToolResult{
+						Content: fmt.Sprintf("Warning: Output exceeded 50,000 tokens and was truncated.\n\n%s", truncatedOutput),
+						IsError: true,
+					}
+				}
+
 				resultStr := fmt.Sprintf("tool result: %+v", result.Content)
 				s.logger.Println(resultStr)
 
