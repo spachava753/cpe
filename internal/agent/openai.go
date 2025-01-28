@@ -217,8 +217,16 @@ func (o *openaiExecutor) Execute(input string) error {
 			}
 
 			resultStr := fmt.Sprintf("tool result: %+v", result.Content)
-			o.logger.Println(resultStr)
-
+			
+			// Truncate result if needed (use 1/4 of model's max tokens as limit for tool results)
+			maxResultTokens := o.config.MaxTokens / 4
+			truncatedResult, err := truncateResult(resultStr, maxResultTokens, o.config.Model)
+			if err != nil {
+				return fmt.Errorf("failed to truncate tool result: %w", err)
+			}
+			
+			o.logger.Println(truncatedResult)
+			result.Content = truncatedResult
 			result.ToolUseID = toolCall.ID
 
 			// Add assistant message for tool call
