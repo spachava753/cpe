@@ -76,7 +76,7 @@ var bashTool = Tool{
 * When invoking this tool, the contents of the "command" parameter does NOT need to be escaped.
 * You can access the internet via this tool with CLI's like "curl" or "wget" command.
 * You can install the necessary dependencies for your project with this tool, e.g. "pip install", "npm install", "apt-get install", "brew install", etc.
-* State is persistent across command calls.
+* State EXCEPT environment variables are persisted between calls.
 * To inspect a particular line range of a file, e.g. lines 10-25, try 'sed -n 10,25p /path/to/the/file'.
 * Avoid commands that may produce a very large amount of output.
 * Run long lived commands in the background, e.g. 'sleep 10 &' or start a server in the background`,
