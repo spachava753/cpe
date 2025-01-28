@@ -204,6 +204,46 @@ func executeBashTool(command string) (*ToolResult, error) {
 		}, nil
 	}
 
+	// Create Anthropic client to count tokens
+	client := a.NewClient([]option.RequestOption{
+		option.WithAPIKey(os.Getenv("ANTHROPIC_API_KEY")),
+	})
+
+	// Count tokens in the output
+	resp, err := client.Beta.Messages.CountTokens(context.Background(), a.BetaMessageCountTokensParams{
+		Model: a.F(a.ModelClaude3_5Sonnet20241022),
+		Messages: a.F([]a.BetaMessageParam{
+			{
+				Role: a.F(a.BetaMessageParamRoleUser),
+				Content: a.F([]a.BetaContentBlockParamUnion{
+					&a.BetaTextBlockParam{
+						Text: a.F(string(output)),
+						Type: a.F(a.BetaTextBlockParamTypeText),
+					},
+				}),
+			},
+		}),
+	})
+
+	if err != nil {
+		// If we can't count tokens, just return the output as is
+		return &ToolResult{
+			Content: string(output),
+		}, nil
+	}
+
+	if resp.InputTokens > 50000 {
+		// Truncate output to 150,000 characters
+		truncatedOutput := string(output)
+		if len(truncatedOutput) > 150000 {
+			truncatedOutput = truncatedOutput[:150000]
+		}
+		return &ToolResult{
+			Content: fmt.Sprintf("Warning: Output exceeded 50,000 tokens and was truncated.\n\n%s", truncatedOutput),
+			IsError: true,
+		}, nil
+	}
+
 	return &ToolResult{
 		Content: string(output),
 	}, nil
