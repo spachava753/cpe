@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"github.com/google/generative-ai-go/genai"
 	gitignore "github.com/sabhiram/go-gitignore"
-	"github.com/pkoukk/tiktoken-go"
-	"github.com/spachava753/cpe/internal/tiktokenloader"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	"io"
@@ -37,45 +35,36 @@ type geminiExecutor struct {
 	session *genai.ChatSession
 }
 
-// countTokens returns the number of tokens in the given text
+// countTokens returns the number of tokens in the given text using the model
 func (g *geminiExecutor) countTokens(text string) (int, error) {
-	// Use default loader since Gemini doesn't have a specific tokenizer
-	loader := tiktokenloader.NewOfflineLoader()
-	tkm, err := tiktoken.NewEncodingWithLoader("o200k_base", loader)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	resp, err := g.model.CountTokens(ctx, genai.Text(text))
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("error counting tokens: %w", err)
 	}
-	
-	return len(tkm.Encode(text, nil, nil)), nil
+	return int(resp.TotalTokens), nil
 }
 
-// truncateResult truncates a tool result to fit within maxTokens
+// truncateResult truncates a tool result to fit within maxTokens and returns an error message
 func (g *geminiExecutor) truncateResult(result string) (string, error) {
-	// Use 50,000 tokens as the tool result length limit
 	const maxTokens = 50000
-	
-	// First check if truncation is needed
 	tokens, err := g.countTokens(result)
 	if err != nil {
-		return "", err
+		return result, err
 	}
-	
+
 	if tokens <= maxTokens {
 		return result, nil
 	}
-	
-	// Get tokenizer
-	loader := tiktokenloader.NewOfflineLoader()
-	tkm, err := tiktoken.NewEncodingWithLoader("o200k_base", loader)
-	if err != nil {
-		return "", err
-	}
-	
-	// Encode full text and take first maxTokens tokens
-	encoded := tkm.Encode(result, nil, nil)
-	truncated := tkm.Decode(encoded[:maxTokens])
-	
-	return truncated + "\n...[truncated]...", nil
+
+	// Truncate by ratio
+	ratio := float64(maxTokens) / float64(tokens)
+	truncLen := int(float64(len(result)) * ratio)
+	truncated := result[:truncLen]
+
+	return truncated, fmt.Errorf("output exceeds context length (%d tokens), truncating to %d tokens", tokens, maxTokens)
 }
 
 func NewGeminiExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gitignore.GitIgnore, config GenConfig) (Executor, error) {
@@ -335,15 +324,15 @@ func (g *geminiExecutor) Execute(input string) error {
 				}
 
 				resultStr := fmt.Sprintf("tool result: %+v", result.Content)
-				
-				// Truncate result if needed using fixed 50k token limit
-				truncatedResult, err := g.truncateResult(resultStr)
+
+				// Check token count and truncate if necessary
+				resultStr, err := g.truncateResult(resultStr)
 				if err != nil {
 					return fmt.Errorf("failed to truncate tool result: %w", err)
 				}
-				
-				g.logger.Println(truncatedResult)
-				result.Content = truncatedResult
+
+				g.logger.Println(resultStr)
+				result.Content = resultStr
 
 				// Convert tool result to function response
 				var response map[string]any
