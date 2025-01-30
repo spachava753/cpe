@@ -335,7 +335,7 @@ func (s *anthropicExecutor) Execute(input string) error {
 					}
 				case filesOverviewTool.Name:
 					s.logger.Println("executing files overview tool")
-					result, err = executeFilesOverviewTool(s.ignorer)
+					result, err = ExecuteFilesOverviewTool(s.ignorer)
 				case getRelatedFilesTool.Name:
 					relatedFilesToolInput := struct {
 						InputFiles []string `json:"input_files"`
@@ -348,7 +348,7 @@ func (s *anthropicExecutor) Execute(input string) error {
 						return fmt.Errorf("failed to unmarshal get related files tool arguments: %w", err)
 					}
 					s.logger.Printf("getting related files: %s", strings.Join(relatedFilesToolInput.InputFiles, ", "))
-					result, err = executeGetRelatedFilesTool(relatedFilesToolInput.InputFiles, s.ignorer)
+					result, err = ExecuteGetRelatedFilesTool(relatedFilesToolInput.InputFiles, s.ignorer)
 				case changeDirectoryTool.Name:
 					changeDirToolInput := struct {
 						Path string `json:"path"`

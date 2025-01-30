@@ -53,6 +53,34 @@ func main() {
 		return
 	}
 
+	if config.Overview {
+		result, err := agent.ExecuteFilesOverviewTool(ignorer)
+		if err != nil {
+			log.Fatalf("fatal error: %s", err)
+		}
+		if _, writeErr := fmt.Fprint(os.Stdout, result.Content); writeErr != nil {
+			log.Fatalf("fatal error: %s", writeErr)
+		}
+		return
+	}
+
+	if config.RelatedFiles != "" {
+		// Split the comma-separated list of files
+		inputFiles := strings.Split(config.RelatedFiles, ",")
+		// Trim whitespace from each file path
+		for i := range inputFiles {
+			inputFiles[i] = strings.TrimSpace(inputFiles[i])
+		}
+		result, err := agent.ExecuteGetRelatedFilesTool(inputFiles, ignorer)
+		if err != nil {
+			log.Fatalf("fatal error: %s", err)
+		}
+		if _, writeErr := fmt.Fprint(os.Stdout, result.Content); writeErr != nil {
+			log.Fatalf("fatal error: %s", writeErr)
+		}
+		return
+	}
+
 	if config.ListFiles {
 		files, err := agent.ListTextFiles(ignorer)
 		if err != nil {

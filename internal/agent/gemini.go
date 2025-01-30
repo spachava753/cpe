@@ -303,7 +303,7 @@ func (g *geminiExecutor) Execute(input string) error {
 					}
 				case filesOverviewTool.Name:
 					g.logger.Println("executing files overview tool")
-					result, err = executeFilesOverviewTool(g.ignorer)
+					result, err = ExecuteFilesOverviewTool(g.ignorer)
 				case getRelatedFilesTool.Name:
 					var relatedFilesToolInput struct {
 						InputFiles []string `json:"input_files"`
@@ -316,7 +316,7 @@ func (g *geminiExecutor) Execute(input string) error {
 						return fmt.Errorf("failed to unmarshal get related files tool arguments: %w", err)
 					}
 					g.logger.Printf("getting related files: %s", strings.Join(relatedFilesToolInput.InputFiles, ", "))
-					result, err = executeGetRelatedFilesTool(relatedFilesToolInput.InputFiles, g.ignorer)
+					result, err = ExecuteGetRelatedFilesTool(relatedFilesToolInput.InputFiles, g.ignorer)
 				case changeDirectoryTool.Name:
 					var changeDirToolInput struct {
 						Path string `json:"path"`

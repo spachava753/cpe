@@ -26,6 +26,8 @@ type Options struct {
 	Prompt            string
 	Continue          bool
 	ListFiles         bool
+	Overview          bool
+	RelatedFiles      string
 }
 
 var Opts Options
@@ -41,6 +43,8 @@ func init() {
 	flag.StringVar(&Opts.TokenCountPath, "token-count", "", "Print a tree of directories and files with their token counts for the given path")
 	flag.BoolVar(&Opts.Version, "version", false, "Print the version number and exit")
 	flag.BoolVar(&Opts.ListFiles, "list-files", false, "List all text files in the current directory recursively")
+	flag.BoolVar(&Opts.Overview, "overview", false, "Get an overview of all files in the current directory with reduced content")
+	flag.StringVar(&Opts.RelatedFiles, "related-files", "", "Get related files for the given comma-separated list of files")
 	flag.StringVar(&Opts.CustomURL, "custom-url", "", "Specify a custom base URL for the model provider API")
 	flag.IntVar(&Opts.MaxTokens, "max-tokens", 0, "Maximum number of tokens to generate")
 	flag.Float64Var(&Opts.Temperature, "temperature", 0, "Sampling temperature (0.0 - 1.0)")

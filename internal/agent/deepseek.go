@@ -183,7 +183,7 @@ func (o *deepseekExecutor) Execute(input string) error {
 				}
 			case filesOverviewTool.Name:
 				o.logger.Println("executing files overview tool")
-				result, err = executeFilesOverviewTool(o.ignorer)
+				result, err = ExecuteFilesOverviewTool(o.ignorer)
 			case getRelatedFilesTool.Name:
 				var relatedFilesToolInput struct {
 					InputFiles []string `json:"input_files"`
@@ -192,7 +192,7 @@ func (o *deepseekExecutor) Execute(input string) error {
 					return fmt.Errorf("failed to unmarshal get related files tool arguments: %w", err)
 				}
 				o.logger.Printf("getting related files: %s", strings.Join(relatedFilesToolInput.InputFiles, ", "))
-				result, err = executeGetRelatedFilesTool(relatedFilesToolInput.InputFiles, o.ignorer)
+				result, err = ExecuteGetRelatedFilesTool(relatedFilesToolInput.InputFiles, o.ignorer)
 			case changeDirectoryTool.Name:
 				var changeDirToolInput struct {
 					Path string `json:"path"`

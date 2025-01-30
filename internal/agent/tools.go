@@ -296,8 +296,8 @@ func executeFileEditorTool(params FileEditorParams) (*ToolResult, error) {
 	}
 }
 
-// executeFilesOverviewTool validates and executes the files overview tool
-func executeFilesOverviewTool(ignorer *ignore.GitIgnore) (*ToolResult, error) {
+// ExecuteFilesOverviewTool validates and executes the files overview tool
+func ExecuteFilesOverviewTool(ignorer *ignore.GitIgnore) (*ToolResult, error) {
 	fsys := os.DirFS(".")
 	files, err := codemap.GenerateOutput(fsys, 100, ignorer)
 	if err != nil {
@@ -314,8 +314,8 @@ func executeFilesOverviewTool(ignorer *ignore.GitIgnore) (*ToolResult, error) {
 	}, nil
 }
 
-// executeGetRelatedFilesTool validates and executes the get related files tool
-func executeGetRelatedFilesTool(inputFiles []string, ignorer *ignore.GitIgnore) (*ToolResult, error) {
+// ExecuteGetRelatedFilesTool validates and executes the get related files tool
+func ExecuteGetRelatedFilesTool(inputFiles []string, ignorer *ignore.GitIgnore) (*ToolResult, error) {
 
 	relatedFiles, err := typeresolver.ResolveTypeAndFunctionFiles(inputFiles, os.DirFS("."), ignorer)
 	if err != nil {
