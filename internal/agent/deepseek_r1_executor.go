@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"bytes"
 	"context"
 	"encoding/gob"
 	"fmt"
@@ -9,8 +8,6 @@ import (
 	"github.com/openai/openai-go/option"
 	gitignore "github.com/sabhiram/go-gitignore"
 	"io"
-	"os"
-	"os/exec"
 	"strings"
 	"time"
 )
@@ -52,49 +49,10 @@ func NewDeepSeekR1Executor(baseUrl string, apiKey string, logger Logger, ignorer
 	}
 }
 
-func (d *deepseekR1Executor) gatherContext(originalInput string) (string, error) {
-	exePath, err := os.Executable()
-	if err != nil {
-		return "", fmt.Errorf("failed to get executable path: %w", err)
-	}
-
-	ctxPrompt := `You are a context-gathering sub-agent. Your task is to:
-1. Analyze the user's request and determine what information is needed to complete it
-2. Gather relevant context WITHOUT making any actual changes
-3. This may include:
-   - Getting high-level view of the project files using files_overview
-   - Retrieving related files with get_related_files
-   - Running read-only bash commands to inspect system state
-   - Checking package versions or dependencies
-4. Return the gathered context in a concise, organized format`
-
-	cmd := exec.Command(exePath,
-		"Context gathering for:\n"+originalInput,
-	)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	cmd.Stdin = strings.NewReader(ctxPrompt)
-
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("sub-agent failed: %v\nStderr: %s\nStdout: %s", err, stderr.String(), stdout.String())
-	}
-
-	return fmt.Sprintf("## Gathered Context\n%s\n\n## Original Task\n%s",
-		strings.TrimSpace(stderr.String()), originalInput), nil
-}
-
 func (d *deepseekR1Executor) Execute(input string) error {
-	// Gather context using sub-agent
-	augmentedInput, err := d.gatherContext(input)
-	if err != nil {
-		return fmt.Errorf("context gathering failed: %w", err)
-	}
-
 	// Add messages to conversation
 	d.params.Messages = oai.F(append(d.params.Messages.Value,
-		oai.UserMessage(augmentedInput),
+		oai.UserMessage(input),
 	))
 
 	// Get model response
