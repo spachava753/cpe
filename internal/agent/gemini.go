@@ -35,6 +35,31 @@ type geminiExecutor struct {
 	session *genai.ChatSession
 }
 
+// truncateResult truncates a tool result to fit within maxTokens and returns an error message
+func (g *geminiExecutor) truncateResult(result string) (string, error) {
+	const maxTokens = 50000
+
+	// Count tokens using model's API
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	resp, err := g.model.CountTokens(ctx, genai.Text(result))
+	if err != nil {
+		return result, fmt.Errorf("error counting tokens: %w", err)
+	}
+	tokens := int(resp.TotalTokens)
+
+	if tokens <= maxTokens {
+		return result, nil
+	}
+
+	// Truncate by ratio
+	ratio := float64(maxTokens) / float64(tokens)
+	truncLen := int(float64(len(result)) * ratio)
+	truncated := result[:truncLen] + "\n...[truncated]..."
+
+	return truncated, nil
+}
+
 func NewGeminiExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gitignore.GitIgnore, config GenConfig) (Executor, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -292,7 +317,15 @@ func (g *geminiExecutor) Execute(input string) error {
 				}
 
 				resultStr := fmt.Sprintf("tool result: %+v", result.Content)
+
+				// Check token count and truncate if necessary
+				resultStr, err := g.truncateResult(resultStr)
+				if err != nil {
+					return fmt.Errorf("failed to truncate tool result: %w", err)
+				}
+
 				g.logger.Println(resultStr)
+				result.Content = resultStr
 
 				// Convert tool result to function response
 				var response map[string]any
