@@ -94,7 +94,7 @@ var bashTool = Tool{
 
 var fileEditor = Tool{
 	Name: "file_editor",
-	Description: `A tool to edit, create and delete files
+	Description: `A tool to edit, create and delete files found in the current folder and any subfolders. Keep in mind that this tool does not allow modifying files outside current folder.
 * The "create" command cannot be used if the specified "path" already exists as a file. It should only be used to create a file, and "file_text" must be supplied as the contents of the new file
 * The "remove" command can be used to remove an existing file
 
@@ -102,7 +102,9 @@ Notes for using the "str_replace" command:
 * The "old_str" parameter should match EXACTLY one or more consecutive lines from the original file. Be mindful of whitespaces!
 * If the "old_str" parameter is not unique in the file, the replacement will not be performed. Make sure to include enough context in "old_str" to make it unique
 * The "new_str" parameter should contain the edited lines that should replace the "old_str"
-* Leave "new_str" parameter empty effectively remove "old_str" text from the file`,
+* Leave "new_str" parameter empty effectively remove "old_str" text from the file
+
+Note: if you need to create, delete, or modify outside of the current folder, use the 'change_directory' tool`,
 	InputSchema: map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -137,7 +139,8 @@ var filesOverviewTool = Tool{
 	Description: `A tool to get an overview of all of the files found recursively in the current directory 
 * Each file is recursively listed with its relative path from the current directory and the contents of the file.
 * The contents of the file may omit certain lines to reduce the number of lines returned. For example, for source code files, the function and method bodies are omitted.
-* The file can be of any type, as long as it contains only text`,
+* The file can be of any type, as long as it contains only text
+* You should use this tool to get an understanding of a codebase and to select input files to pass to the 'get_related_files' before attempting to address tasks that require you to understand and/or modify the codebase`,
 	InputSchema: map[string]interface{}{
 		"type":       "object",
 		"properties": map[string]interface{}{},
@@ -149,7 +152,8 @@ var getRelatedFilesTool = Tool{
 	Description: `A tool to help retrieve relevant files for a given set of input files
 * If the input files contain source code files, symbols like functions and types are extracted and matched in other files that contain the symbol's definition
 * If the input files contain other files, the tool will try to find files that mention the input files' names
-* This tool should only be called after the "files_overview" tool`,
+* This tool should only be called after the "files_overview" tool
+Note: You may not deem it necessary to call this tool if you have all the information necessary from calling the 'files_overview' tool. However, if you plan to modify the codebase, always call this tool, as it will aid you in getting a better understanding of the files you are about to modify by providing you with the full content of the input files and any relevant files`,
 	InputSchema: map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
