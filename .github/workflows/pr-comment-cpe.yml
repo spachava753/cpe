@@ -76,12 +76,10 @@ jobs:
           if [[ -n "$(git status --porcelain)" ]]; then
             # Ask CPE to commit the changes
             echo "Please commit the changes with a suitable commit message" | cpe -continue
-            
-            # Push the changes
-            git push origin HEAD:${{ steps.pr_info.outputs.head_ref }}
-          else
-            echo "No changes to commit"
           fi
+          
+          # Always push changes, as there might be commits from previous CPE invocations
+          git push origin HEAD:${{ steps.pr_info.outputs.head_ref }}
           
           # Create and post the PR comment
           temp_comment_file=$(mktemp)
