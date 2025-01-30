@@ -2,6 +2,9 @@ module github.com/spachava753/cpe
 
 go 1.23
 
+// v0.16.10 breaks one of the core input functionality and should be used
+retract v0.16.10
+
 toolchain go1.23.2
 
 require (
