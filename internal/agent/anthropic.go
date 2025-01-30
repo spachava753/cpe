@@ -322,9 +322,10 @@ func (s *anthropicExecutor) Execute(input string) error {
 						return fmt.Errorf("failed to unmarshal file editor tool arguments: %w", err)
 					}
 					s.logger.Printf(
-						"executing file editor tool; command: %s\npath: %s\nold_str: %s\nnew_str%s",
+						"executing file editor tool; command: %s\npath: %s\nfile_text: %s\nold_str: %s\nnew_str: %s",
 						fileEditorToolInput.Command,
 						fileEditorToolInput.Path,
+						fileEditorToolInput.FileText,
 						fileEditorToolInput.OldStr,
 						fileEditorToolInput.NewStr,
 					)
