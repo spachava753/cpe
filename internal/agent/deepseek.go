@@ -161,6 +161,9 @@ func (o *deepseekExecutor) Execute(input string) error {
 				}
 				o.logger.Printf("executing bash command: %s", bashToolInput.Command)
 				result, err = executeBashTool(bashToolInput.Command)
+				if err == nil {
+					o.logger.Printf("tool result: %+v", result.Content)
+				}
 			case fileEditor.Name:
 				var fileEditorToolInput FileEditorParams
 				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &fileEditorToolInput); err != nil {
@@ -174,6 +177,9 @@ func (o *deepseekExecutor) Execute(input string) error {
 					fileEditorToolInput.NewStr,
 				)
 				result, err = executeFileEditorTool(fileEditorToolInput)
+				if err == nil {
+					o.logger.Printf("tool result: %+v", result.Content)
+				}
 			case filesOverviewTool.Name:
 				o.logger.Println("executing files overview tool")
 				result, err = executeFilesOverviewTool(o.ignorer)
@@ -195,6 +201,9 @@ func (o *deepseekExecutor) Execute(input string) error {
 				}
 				o.logger.Printf("changing directory to: %s", changeDirToolInput.Path)
 				result, err = executeChangeDirectoryTool(changeDirToolInput.Path)
+				if err == nil {
+					o.logger.Printf("tool result: %+v", result.Content)
+				}
 			default:
 				return fmt.Errorf("unexpected tool name: %s", toolCall.Function.Name)
 			}
@@ -202,9 +211,6 @@ func (o *deepseekExecutor) Execute(input string) error {
 			if err != nil {
 				return fmt.Errorf("failed to execute tool %s: %w", toolCall.Function.Name, err)
 			}
-
-			resultStr := fmt.Sprintf("tool result: %+v", result.Content)
-			o.logger.Println(resultStr)
 
 			result.ToolUseID = toolCall.ID
 

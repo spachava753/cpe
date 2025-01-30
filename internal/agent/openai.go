@@ -204,6 +204,24 @@ func (o *openaiExecutor) Execute(input string) error {
 				}
 				o.logger.Printf("executing bash command: %s", bashToolInput.Command)
 				result, err = executeBashTool(bashToolInput.Command)
+				if err == nil {
+					// Log full output before truncation
+					o.logger.Printf("tool result: %+v", result.Content)
+
+					resultStr := fmt.Sprintf("tool result: %+v", result.Content)
+
+					// Truncate result if needed using fixed 50k token limit
+					truncatedResult, err := o.truncateResult(resultStr)
+					if err != nil {
+						return fmt.Errorf("failed to truncate tool result: %w", err)
+					}
+
+					if truncatedResult != resultStr {
+						o.logger.Println("Warning: bash output exceeded 50,000 tokens and was truncated")
+					}
+
+					result.Content = truncatedResult
+				}
 			case fileEditor.Name:
 				var fileEditorToolInput FileEditorParams
 				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &fileEditorToolInput); err != nil {
@@ -217,6 +235,9 @@ func (o *openaiExecutor) Execute(input string) error {
 					fileEditorToolInput.NewStr,
 				)
 				result, err = executeFileEditorTool(fileEditorToolInput)
+				if err == nil {
+					o.logger.Printf("tool result: %+v", result.Content)
+				}
 			case filesOverviewTool.Name:
 				o.logger.Println("executing files overview tool")
 				result, err = executeFilesOverviewTool(o.ignorer)
@@ -238,6 +259,9 @@ func (o *openaiExecutor) Execute(input string) error {
 				}
 				o.logger.Printf("changing directory to: %s", changeDirToolInput.Path)
 				result, err = executeChangeDirectoryTool(changeDirToolInput.Path)
+				if err == nil {
+					o.logger.Printf("tool result: %+v", result.Content)
+				}
 			default:
 				return fmt.Errorf("unexpected tool name: %s", toolCall.Function.Name)
 			}
@@ -246,16 +270,6 @@ func (o *openaiExecutor) Execute(input string) error {
 				return fmt.Errorf("failed to execute tool %s: %w", toolCall.Function.Name, err)
 			}
 
-			resultStr := fmt.Sprintf("tool result: %+v", result.Content)
-
-			// Truncate result if needed using fixed 50k token limit
-			truncatedResult, err := o.truncateResult(resultStr)
-			if err != nil {
-				return fmt.Errorf("failed to truncate tool result: %w", err)
-			}
-
-			o.logger.Println(truncatedResult)
-			result.Content = truncatedResult
 			result.ToolUseID = toolCall.ID
 
 			// Add assistant message for tool call

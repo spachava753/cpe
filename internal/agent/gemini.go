@@ -262,6 +262,24 @@ func (g *geminiExecutor) Execute(input string) error {
 					}
 					g.logger.Printf("executing bash command: %s", bashToolInput.Command)
 					result, err = executeBashTool(bashToolInput.Command)
+					if err == nil {
+						// Log full output before truncation
+						g.logger.Printf("tool result: %+v", result.Content)
+
+						resultStr := fmt.Sprintf("tool result: %+v", result.Content)
+
+						// Check token count and truncate if necessary
+						truncatedResult, err := g.truncateResult(resultStr)
+						if err != nil {
+							return fmt.Errorf("failed to truncate tool result: %w", err)
+						}
+
+						if truncatedResult != resultStr {
+							g.logger.Println("Warning: bash output exceeded 50,000 tokens and was truncated")
+						}
+
+						result.Content = truncatedResult
+					}
 				case fileEditor.Name:
 					var fileEditorToolInput FileEditorParams
 					jsonInput, marshalErr := json.Marshal(v.Args)
@@ -279,6 +297,9 @@ func (g *geminiExecutor) Execute(input string) error {
 						fileEditorToolInput.NewStr,
 					)
 					result, err = executeFileEditorTool(fileEditorToolInput)
+					if err == nil {
+						g.logger.Printf("tool result: %+v", result.Content)
+					}
 				case filesOverviewTool.Name:
 					g.logger.Println("executing files overview tool")
 					result, err = executeFilesOverviewTool(g.ignorer)
@@ -308,6 +329,9 @@ func (g *geminiExecutor) Execute(input string) error {
 					}
 					g.logger.Printf("changing directory to: %s", changeDirToolInput.Path)
 					result, err = executeChangeDirectoryTool(changeDirToolInput.Path)
+					if err == nil {
+						g.logger.Printf("tool result: %+v", result.Content)
+					}
 				default:
 					return fmt.Errorf("unexpected tool name: %s", v.Name)
 				}
@@ -315,17 +339,6 @@ func (g *geminiExecutor) Execute(input string) error {
 				if err != nil {
 					return fmt.Errorf("failed to execute tool %s: %w", v.Name, err)
 				}
-
-				resultStr := fmt.Sprintf("tool result: %+v", result.Content)
-
-				// Check token count and truncate if necessary
-				resultStr, err := g.truncateResult(resultStr)
-				if err != nil {
-					return fmt.Errorf("failed to truncate tool result: %w", err)
-				}
-
-				g.logger.Println(resultStr)
-				result.Content = resultStr
 
 				// Convert tool result to function response
 				var response map[string]any
