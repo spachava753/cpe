@@ -262,6 +262,9 @@ func (g *geminiExecutor) Execute(input string) error {
 					}
 					g.logger.Printf("executing bash command: %s", bashToolInput.Command)
 					result, err = executeBashTool(bashToolInput.Command)
+					if err == nil {
+						g.logger.Printf("tool result: %+v", result.Content)
+					}
 				case fileEditor.Name:
 					var fileEditorToolInput FileEditorParams
 					jsonInput, marshalErr := json.Marshal(v.Args)
@@ -279,6 +282,9 @@ func (g *geminiExecutor) Execute(input string) error {
 						fileEditorToolInput.NewStr,
 					)
 					result, err = executeFileEditorTool(fileEditorToolInput)
+					if err == nil {
+						g.logger.Printf("tool result: %+v", result.Content)
+					}
 				case filesOverviewTool.Name:
 					g.logger.Println("executing files overview tool")
 					result, err = executeFilesOverviewTool(g.ignorer)
@@ -295,6 +301,9 @@ func (g *geminiExecutor) Execute(input string) error {
 					}
 					g.logger.Printf("getting related files: %s", strings.Join(relatedFilesToolInput.InputFiles, ", "))
 					result, err = executeGetRelatedFilesTool(relatedFilesToolInput.InputFiles, g.ignorer)
+					if err == nil {
+						g.logger.Printf("tool result: %+v", result.Content)
+					}
 				case changeDirectoryTool.Name:
 					var changeDirToolInput struct {
 						Path string `json:"path"`
@@ -308,6 +317,9 @@ func (g *geminiExecutor) Execute(input string) error {
 					}
 					g.logger.Printf("changing directory to: %s", changeDirToolInput.Path)
 					result, err = executeChangeDirectoryTool(changeDirToolInput.Path)
+					if err == nil {
+						g.logger.Printf("tool result: %+v", result.Content)
+					}
 				default:
 					return fmt.Errorf("unexpected tool name: %s", v.Name)
 				}
@@ -324,7 +336,6 @@ func (g *geminiExecutor) Execute(input string) error {
 					return fmt.Errorf("failed to truncate tool result: %w", err)
 				}
 
-				g.logger.Println(resultStr)
 				result.Content = resultStr
 
 				// Convert tool result to function response

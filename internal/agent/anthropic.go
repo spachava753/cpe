@@ -279,6 +279,9 @@ func (s *anthropicExecutor) Execute(input string) error {
 					}
 					s.logger.Printf("executing bash command: %s", bashToolInput.Command)
 					result, err = executeBashTool(bashToolInput.Command)
+					if err == nil {
+						s.logger.Printf("tool result: %+v", result.Content)
+					}
 				case fileEditor.Name:
 					var fileEditorToolInput FileEditorParams
 					jsonInput, marshalErr := json.Marshal(block.Input)
@@ -296,6 +299,9 @@ func (s *anthropicExecutor) Execute(input string) error {
 						fileEditorToolInput.NewStr,
 					)
 					result, err = executeFileEditorTool(fileEditorToolInput)
+					if err == nil {
+						s.logger.Printf("tool result: %+v", result.Content)
+					}
 				case filesOverviewTool.Name:
 					s.logger.Println("executing files overview tool")
 					result, err = executeFilesOverviewTool(s.ignorer)
@@ -312,6 +318,9 @@ func (s *anthropicExecutor) Execute(input string) error {
 					}
 					s.logger.Printf("getting related files: %s", strings.Join(relatedFilesToolInput.InputFiles, ", "))
 					result, err = executeGetRelatedFilesTool(relatedFilesToolInput.InputFiles, s.ignorer)
+					if err == nil {
+						s.logger.Printf("tool result: %+v", result.Content)
+					}
 				case changeDirectoryTool.Name:
 					changeDirToolInput := struct {
 						Path string `json:"path"`
@@ -325,6 +334,9 @@ func (s *anthropicExecutor) Execute(input string) error {
 					}
 					s.logger.Printf("changing directory to: %s", changeDirToolInput.Path)
 					result, err = executeChangeDirectoryTool(changeDirToolInput.Path)
+					if err == nil {
+						s.logger.Printf("tool result: %+v", result.Content)
+					}
 				default:
 					return fmt.Errorf("unexpected tool use block type: %s", block.Name)
 				}
@@ -360,9 +372,6 @@ func (s *anthropicExecutor) Execute(input string) error {
 						IsError: true,
 					}
 				}
-
-				resultStr := fmt.Sprintf("tool result: %+v", result.Content)
-				s.logger.Println(resultStr)
 
 				result.ToolUseID = block.ID
 				s.params.Messages = a.F(append(s.params.Messages.Value, a.BetaMessageParam{
