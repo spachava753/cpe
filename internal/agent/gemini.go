@@ -263,7 +263,22 @@ func (g *geminiExecutor) Execute(input string) error {
 					g.logger.Printf("executing bash command: %s", bashToolInput.Command)
 					result, err = executeBashTool(bashToolInput.Command)
 					if err == nil {
+						// Log full output before truncation
 						g.logger.Printf("tool result: %+v", result.Content)
+
+						resultStr := fmt.Sprintf("tool result: %+v", result.Content)
+
+						// Check token count and truncate if necessary
+						truncatedResult, err := g.truncateResult(resultStr)
+						if err != nil {
+							return fmt.Errorf("failed to truncate tool result: %w", err)
+						}
+
+						if truncatedResult != resultStr {
+							g.logger.Println("Warning: bash output exceeded 50,000 tokens and was truncated")
+						}
+
+						result.Content = truncatedResult
 					}
 				case fileEditor.Name:
 					var fileEditorToolInput FileEditorParams
@@ -301,9 +316,6 @@ func (g *geminiExecutor) Execute(input string) error {
 					}
 					g.logger.Printf("getting related files: %s", strings.Join(relatedFilesToolInput.InputFiles, ", "))
 					result, err = executeGetRelatedFilesTool(relatedFilesToolInput.InputFiles, g.ignorer)
-					if err == nil {
-						g.logger.Printf("tool result: %+v", result.Content)
-					}
 				case changeDirectoryTool.Name:
 					var changeDirToolInput struct {
 						Path string `json:"path"`
@@ -327,16 +339,6 @@ func (g *geminiExecutor) Execute(input string) error {
 				if err != nil {
 					return fmt.Errorf("failed to execute tool %s: %w", v.Name, err)
 				}
-
-				resultStr := fmt.Sprintf("tool result: %+v", result.Content)
-
-				// Check token count and truncate if necessary
-				resultStr, err := g.truncateResult(resultStr)
-				if err != nil {
-					return fmt.Errorf("failed to truncate tool result: %w", err)
-				}
-
-				result.Content = resultStr
 
 				// Convert tool result to function response
 				var response map[string]any

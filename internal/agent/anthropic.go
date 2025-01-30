@@ -280,7 +280,37 @@ func (s *anthropicExecutor) Execute(input string) error {
 					s.logger.Printf("executing bash command: %s", bashToolInput.Command)
 					result, err = executeBashTool(bashToolInput.Command)
 					if err == nil {
+						// Log full output before truncation
 						s.logger.Printf("tool result: %+v", result.Content)
+
+						// Count tokens in the tool result
+						countTokensRes, err := s.client.Beta.Messages.CountTokens(context.Background(), a.BetaMessageCountTokensParams{
+							Model: a.F(s.config.Model),
+							Messages: a.F([]a.BetaMessageParam{
+								{
+									Role: a.F(a.BetaMessageParamRoleUser),
+									Content: a.F([]a.BetaContentBlockParamUnion{
+										&a.BetaTextBlockParam{
+											Text: a.F(fmt.Sprintf("%+v", result.Content)),
+											Type: a.F(a.BetaTextBlockParamTypeText),
+										},
+									}),
+								},
+							}),
+						})
+
+						if err == nil && countTokensRes.InputTokens > 50000 {
+							// Truncate output to 150,000 characters
+							truncatedOutput := fmt.Sprintf("%+v", result.Content)
+							if len(truncatedOutput) > 150000 {
+								truncatedOutput = truncatedOutput[:150000]
+							}
+							s.logger.Println("Warning: bash output exceeded 50,000 tokens and was truncated")
+							result = &ToolResult{
+								Content: fmt.Sprintf("Warning: Output exceeded 50,000 tokens and was truncated.\n\n%s", truncatedOutput),
+								IsError: true,
+							}
+						}
 					}
 				case fileEditor.Name:
 					var fileEditorToolInput FileEditorParams
@@ -318,9 +348,6 @@ func (s *anthropicExecutor) Execute(input string) error {
 					}
 					s.logger.Printf("getting related files: %s", strings.Join(relatedFilesToolInput.InputFiles, ", "))
 					result, err = executeGetRelatedFilesTool(relatedFilesToolInput.InputFiles, s.ignorer)
-					if err == nil {
-						s.logger.Printf("tool result: %+v", result.Content)
-					}
 				case changeDirectoryTool.Name:
 					changeDirToolInput := struct {
 						Path string `json:"path"`
@@ -343,34 +370,6 @@ func (s *anthropicExecutor) Execute(input string) error {
 
 				if err != nil {
 					return fmt.Errorf("failed to execute tool %s: %w", block.Name, err)
-				}
-
-				// Count tokens in the tool result
-				countTokensRes, err := s.client.Beta.Messages.CountTokens(context.Background(), a.BetaMessageCountTokensParams{
-					Model: a.F(s.config.Model),
-					Messages: a.F([]a.BetaMessageParam{
-						{
-							Role: a.F(a.BetaMessageParamRoleUser),
-							Content: a.F([]a.BetaContentBlockParamUnion{
-								&a.BetaTextBlockParam{
-									Text: a.F(fmt.Sprintf("%+v", result.Content)),
-									Type: a.F(a.BetaTextBlockParamTypeText),
-								},
-							}),
-						},
-					}),
-				})
-
-				if err == nil && countTokensRes.InputTokens > 50000 {
-					// Truncate output to 150,000 characters
-					truncatedOutput := fmt.Sprintf("%+v", result.Content)
-					if len(truncatedOutput) > 150000 {
-						truncatedOutput = truncatedOutput[:150000]
-					}
-					result = &ToolResult{
-						Content: fmt.Sprintf("Warning: Output exceeded 50,000 tokens and was truncated.\n\n%s", truncatedOutput),
-						IsError: true,
-					}
 				}
 
 				result.ToolUseID = block.ID

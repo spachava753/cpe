@@ -192,9 +192,6 @@ func (o *deepseekExecutor) Execute(input string) error {
 				}
 				o.logger.Printf("getting related files: %s", strings.Join(relatedFilesToolInput.InputFiles, ", "))
 				result, err = executeGetRelatedFilesTool(relatedFilesToolInput.InputFiles, o.ignorer)
-				if err == nil {
-					o.logger.Printf("tool result: %+v", result.Content)
-				}
 			case changeDirectoryTool.Name:
 				var changeDirToolInput struct {
 					Path string `json:"path"`
