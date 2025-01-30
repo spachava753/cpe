@@ -7,6 +7,7 @@ import (
 	"github.com/spachava753/cpe/internal/cliopts"
 	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/spachava753/cpe/internal/tokentree"
+	"io"
 	"log"
 	"log/slog"
 	"os"
@@ -131,17 +132,17 @@ func readInput(inputPath string) (string, error) {
 	var inputs []string
 
 	// Check if there is any input from stdin by checking if stdin is a pipe or redirection
-	//stat, _ := os.Stdin.Stat()
-	//if (stat.Mode() & os.ModeCharDevice) == 0 {
-	//	// Stdin has data available
-	//	content, err := io.ReadAll(os.Stdin)
-	//	if err != nil {
-	//		return "", fmt.Errorf("error reading from stdin: %w", err)
-	//	}
-	//	if len(content) > 0 {
-	//		inputs = append(inputs, string(content))
-	//	}
-	//}
+	stat, _ := os.Stdin.Stat()
+	if (stat.Mode() & os.ModeCharDevice) == 0 {
+		// Stdin has data available
+		content, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return "", fmt.Errorf("error reading from stdin: %w", err)
+		}
+		if len(content) > 0 {
+			inputs = append(inputs, string(content))
+		}
+	}
 
 	// Check if there is input from the -input flag
 	if inputPath != "" {
