@@ -334,7 +334,7 @@ func (s *anthropicExecutor) Execute(input string) error {
 				}
 
 				// Count tokens in the tool result
-				resp, err := s.client.Beta.Messages.CountTokens(context.Background(), a.BetaMessageCountTokensParams{
+				countTokensRes, err := s.client.Beta.Messages.CountTokens(context.Background(), a.BetaMessageCountTokensParams{
 					Model: a.F(s.config.Model),
 					Messages: a.F([]a.BetaMessageParam{
 						{
@@ -349,7 +349,7 @@ func (s *anthropicExecutor) Execute(input string) error {
 					}),
 				})
 
-				if err == nil && resp.InputTokens > 50000 {
+				if err == nil && countTokensRes.InputTokens > 50000 {
 					// Truncate output to 150,000 characters
 					truncatedOutput := fmt.Sprintf("%+v", result.Content)
 					if len(truncatedOutput) > 150000 {

@@ -8,7 +8,9 @@ import (
 	"fmt"
 	oai "github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
+	"github.com/pkoukk/tiktoken-go"
 	gitignore "github.com/sabhiram/go-gitignore"
+	"github.com/spachava753/cpe/internal/tiktokenloader"
 	"io"
 	"strings"
 	"time"
@@ -33,52 +35,33 @@ func init() {
 	gob.Register([]oai.ChatCompletionContentPartTextParam{})
 	gob.Register([]oai.ChatCompletionAssistantMessageParamContentUnion{})
 	gob.Register(map[string]interface{}{})
-}
 
-// countTokens returns the number of tokens in the given text using the specified model
-func (o *openaiExecutor) countTokens(text string) (int, error) {
-	tkm, err := tiktoken.EncodingForModel(o.config.Model)
-	if err != nil {
-		// If model not found, use default loader
-		loader := tiktokenloader.NewOfflineLoader()
-		tkm, err = tiktoken.NewEncodingWithLoader("o200k_base", loader)
-		if err != nil {
-			return 0, err
-		}
-	}
-	
-	return len(tkm.Encode(text, nil, nil)), nil
+	// Set up tiktoken loader
+	tiktoken.SetBpeLoader(tiktokenloader.NewOfflineLoader())
 }
 
 // truncateResult truncates a tool result to fit within maxTokens
 func (o *openaiExecutor) truncateResult(result string) (string, error) {
 	// Use 50,000 tokens as the tool result length limit
 	const maxTokens = 50000
-	
-	// First check if truncation is needed
-	tokens, err := o.countTokens(result)
+
+	// Get tokenizer
+	tkm, err := tiktoken.GetEncoding("o200k_base")
 	if err != nil {
 		return "", err
 	}
-	
+
+	// Count tokens
+	tokens := len(tkm.Encode(result, nil, nil))
+
 	if tokens <= maxTokens {
 		return result, nil
 	}
-	
-	// Get tokenizer
-	tkm, err := tiktoken.EncodingForModel(o.config.Model)
-	if err != nil {
-		loader := tiktokenloader.NewOfflineLoader()
-		tkm, err = tiktoken.NewEncodingWithLoader("o200k_base", loader)
-		if err != nil {
-			return "", err
-		}
-	}
-	
+
 	// Encode full text and take first maxTokens tokens
 	encoded := tkm.Encode(result, nil, nil)
 	truncated := tkm.Decode(encoded[:maxTokens])
-	
+
 	return truncated + "\n...[truncated]...", nil
 }
 
@@ -264,13 +247,13 @@ func (o *openaiExecutor) Execute(input string) error {
 			}
 
 			resultStr := fmt.Sprintf("tool result: %+v", result.Content)
-			
+
 			// Truncate result if needed using fixed 50k token limit
 			truncatedResult, err := o.truncateResult(resultStr)
 			if err != nil {
 				return fmt.Errorf("failed to truncate tool result: %w", err)
 			}
-			
+
 			o.logger.Println(truncatedResult)
 			result.Content = truncatedResult
 			result.ToolUseID = toolCall.ID

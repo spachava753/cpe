@@ -35,25 +35,18 @@ type geminiExecutor struct {
 	session *genai.ChatSession
 }
 
-// countTokens returns the number of tokens in the given text using the model
-func (g *geminiExecutor) countTokens(text string) (int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	resp, err := g.model.CountTokens(ctx, genai.Text(text))
-	if err != nil {
-		return 0, fmt.Errorf("error counting tokens: %w", err)
-	}
-	return int(resp.TotalTokens), nil
-}
-
 // truncateResult truncates a tool result to fit within maxTokens and returns an error message
 func (g *geminiExecutor) truncateResult(result string) (string, error) {
 	const maxTokens = 50000
-	tokens, err := g.countTokens(result)
+
+	// Count tokens using model's API
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	resp, err := g.model.CountTokens(ctx, genai.Text(result))
 	if err != nil {
-		return result, err
+		return result, fmt.Errorf("error counting tokens: %w", err)
 	}
+	tokens := int(resp.TotalTokens)
 
 	if tokens <= maxTokens {
 		return result, nil
@@ -62,9 +55,9 @@ func (g *geminiExecutor) truncateResult(result string) (string, error) {
 	// Truncate by ratio
 	ratio := float64(maxTokens) / float64(tokens)
 	truncLen := int(float64(len(result)) * ratio)
-	truncated := result[:truncLen]
+	truncated := result[:truncLen] + "\n...[truncated]..."
 
-	return truncated, fmt.Errorf("output exceeds context length (%d tokens), truncating to %d tokens", tokens, maxTokens)
+	return truncated, nil
 }
 
 func NewGeminiExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gitignore.GitIgnore, config GenConfig) (Executor, error) {
