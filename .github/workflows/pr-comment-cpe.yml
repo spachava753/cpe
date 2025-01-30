@@ -62,30 +62,44 @@ jobs:
         run: |
           # Create a temporary file for CPE output
           temp_output_file=$(mktemp)
-          
-          # Run CPE and capture its output
-          if [ -f ".cpeconvo" ]; then
-            echo "Found existing conversation, using -continue flag"
-            echo "${{ github.event.comment.body }}" | cpe -continue 2>&1 | tee "$temp_output_file"
-          else
-            echo "No existing conversation found, starting new conversation"
-            echo "${{ github.event.comment.body }}" | cpe 2>&1 | tee "$temp_output_file"
-          fi
-          
-          # Handle any changes and commits
-          if [[ -n "$(git status --porcelain)" ]]; then
-            # Ask CPE to commit the changes
-            echo "Please commit the changes with a suitable commit message" | cpe -continue
-          fi
-          
-          # Always push changes, as there might be commits from previous CPE invocations
-          git push origin HEAD:${{ steps.pr_info.outputs.head_ref }}
-          
-          # Create and post the PR comment
           temp_comment_file=$(mktemp)
-          echo '### CPE Response' > "$temp_comment_file"
-          echo "" >> "$temp_comment_file"  # Add a blank line after the header
-          cat "$temp_output_file" >> "$temp_comment_file"
+          
+          # Check if the comment is '/clear convo'
+          if [ "${{ github.event.comment.body }}" = "/clear convo" ]; then
+            if [ -f ".cpeconvo" ]; then
+              rm .cpeconvo
+              echo "### CPE Response" > "$temp_comment_file"
+              echo "" >> "$temp_comment_file"
+              echo "Conversation history cleared." >> "$temp_comment_file"
+            else
+              echo "### CPE Response" > "$temp_comment_file"
+              echo "" >> "$temp_comment_file"
+              echo "No conversation history found." >> "$temp_comment_file"
+            fi
+          else
+            # Run CPE and capture its output
+            if [ -f ".cpeconvo" ]; then
+              echo "Found existing conversation, using -continue flag"
+              echo "${{ github.event.comment.body }}" | cpe -continue 2>&1 | tee "$temp_output_file"
+            else
+              echo "No existing conversation found, starting new conversation"
+              echo "${{ github.event.comment.body }}" | cpe 2>&1 | tee "$temp_output_file"
+            fi
+            
+            # Handle any changes and commits
+            if [[ -n "$(git status --porcelain)" ]]; then
+              # Ask CPE to commit the changes
+              echo "Please commit the changes with a suitable commit message" | cpe -continue
+            fi
+            
+            # Always push changes, as there might be commits from previous CPE invocations
+            git push origin HEAD:${{ steps.pr_info.outputs.head_ref }}
+            
+            # Create the PR comment
+            echo "### CPE Response" > "$temp_comment_file"
+            echo "" >> "$temp_comment_file"
+            cat "$temp_output_file" >> "$temp_comment_file"
+          fi
           
           # Post the comment and clean up
           gh pr comment $PR_NUMBER --body-file "$temp_comment_file"
