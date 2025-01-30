@@ -120,6 +120,14 @@ var ModelConfigs = map[string]ModelConfig{
 		Name: openai.ChatModelO1_2024_12_17, IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 100000, Temperature: 1},
 	},
+	"o1-mini": {
+		Name: openai.ChatModelO1Mini2024_09_12, IsKnown: true,
+		Defaults: ModelDefaults{MaxTokens: 65536, Temperature: 1},
+	},
+	"o1-preview": {
+		Name: openai.ChatModelO1Preview2024_09_12, IsKnown: true,
+		Defaults: ModelDefaults{MaxTokens: 100000, Temperature: 1},
+	},
 }
 
 var DefaultModel = "claude-3-5-sonnet"

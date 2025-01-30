@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 	a "github.com/anthropics/anthropic-sdk-go"
+	"github.com/openai/openai-go"
 	"github.com/spachava753/cpe/internal/ignore"
 	"io"
 	"os"
@@ -12,6 +13,9 @@ import (
 
 //go:embed agent_instructions.txt
 var agentInstructions string
+
+//go:embed reasoning_agent_instructions.txt
+var reasoningAgentInstructions string
 
 // Executor defines the interface for executing agentic workflows
 type Executor interface {
@@ -65,7 +69,16 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 		if apiKey == "" {
 			return nil, fmt.Errorf("DEEPSEEK_API_KEY environment variable not set")
 		}
-		executor = NewDeepSeekR1Executor(customURL, apiKey, logger, ignorer, genConfig)
+		if customURL == "" {
+			customURL = "https://api.deepseek.com/"
+		}
+		executor = NewOpenAiReasoningExecutor(customURL, apiKey, logger, ignorer, genConfig)
+	case openai.ChatModelO1Preview, openai.ChatModelO1Preview2024_09_12, openai.ChatModelO1Mini, openai.ChatModelO1Mini2024_09_12:
+		apiKey := os.Getenv("OPENAI_API_KEY")
+		if apiKey == "" {
+			return nil, fmt.Errorf("OPENAI_API_KEY environment variable not set")
+		}
+		executor = NewOpenAiReasoningExecutor(customURL, apiKey, logger, ignorer, genConfig)
 	case a.ModelClaude3_5Sonnet20241022, a.ModelClaude3_5Haiku20241022, a.ModelClaude_3_Haiku_20240307, a.ModelClaude_3_Opus_20240229:
 		apiKey := os.Getenv("ANTHROPIC_API_KEY")
 		if apiKey == "" {
