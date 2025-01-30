@@ -7,8 +7,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -124,53 +122,55 @@ func (o *openAiReasoningExecutor) parseAndExecuteActions(response string) error 
 		return fmt.Errorf("error unmarshaling actions XML: %w", err)
 	}
 
-	// Execute create actions
+	// Convert create actions to FileEditorParams
 	for _, create := range actions.Create {
-		if err := createFile(create.Path, create.Content); err != nil {
-			o.logger.Println(fmt.Sprintf("Error creating file %s: %v", create.Path, err))
+		params := FileEditorParams{
+			Command:  "create",
+			Path:     create.Path,
+			FileText: create.Content,
+		}
+		result, err := executeFileEditorTool(params)
+		if err != nil {
+			return fmt.Errorf("failed to execute create action: %w", err)
+		}
+		if result.IsError {
+			o.logger.Println(fmt.Sprintf("Error creating file %s: %v", create.Path, result.Content))
 		}
 	}
 
-	// Execute delete actions
+	// Convert delete actions to FileEditorParams
 	for _, del := range actions.Delete {
-		if err := deleteFile(del.Path); err != nil {
-			o.logger.Println(fmt.Sprintf("Error deleting file %s: %v", del.Path, err))
+		params := FileEditorParams{
+			Command: "remove",
+			Path:    del.Path,
+		}
+		result, err := executeFileEditorTool(params)
+		if err != nil {
+			return fmt.Errorf("failed to execute delete action: %w", err)
+		}
+		if result.IsError {
+			o.logger.Println(fmt.Sprintf("Error deleting file %s: %v", del.Path, result.Content))
 		}
 	}
 
-	// Execute modify actions
+	// Convert modify actions to FileEditorParams
 	for _, mod := range actions.Modify {
-		if err := modifyFile(mod.Path, mod.Search, mod.Replace); err != nil {
-			o.logger.Println(fmt.Sprintf("Error modifying file %s: %v", mod.Path, err))
+		params := FileEditorParams{
+			Command: "str_replace",
+			Path:    mod.Path,
+			OldStr:  mod.Search,
+			NewStr:  mod.Replace,
+		}
+		result, err := executeFileEditorTool(params)
+		if err != nil {
+			return fmt.Errorf("failed to execute modify action: %w", err)
+		}
+		if result.IsError {
+			o.logger.Println(fmt.Sprintf("Error modifying file %s: %v", mod.Path, result.Content))
 		}
 	}
 
 	return nil
-}
-
-func createFile(path string, content string) error {
-	// Ensure directory exists
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create directories for %s: %w", path, err)
-	}
-
-	// Write content to file
-	return os.WriteFile(path, []byte(content), 0644)
-}
-
-func deleteFile(path string) error {
-	return os.Remove(path)
-}
-
-func modifyFile(path string, search string, replace string) error {
-	input, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("failed to read file %s: %w", path, err)
-	}
-
-	updatedContent := strings.ReplaceAll(string(input), search, replace)
-	return os.WriteFile(path, []byte(updatedContent), 0644)
 }
 
 func (o *openAiReasoningExecutor) LoadMessages(r io.Reader) error {
