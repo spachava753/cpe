@@ -47,8 +47,10 @@ jobs:
       - name: Install CPE
         run: go install github.com/spachava753/cpe@latest
 
-      - name: Cache CPE conversation
-        uses: actions/cache@v3
+      # Split the cache steps for better control
+      - name: Restore CPE conversation cache
+        id: cache-restore
+        uses: actions/cache/restore@v3
         with:
           path: .cpeconvo
           key: cpe-cache-${{ steps.pr_info.outputs.head_ref }}
@@ -56,6 +58,7 @@ jobs:
             cpe-cache-${{ steps.pr_info.outputs.head_ref }}
 
       - name: Run CPE and process changes
+        id: cpe-run
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.issue.number }}
@@ -72,15 +75,19 @@ jobs:
           if [ "$comment_body" = "/clear convo" ]; then
             if [ -f ".cpeconvo" ]; then
               rm .cpeconvo
+              # Set an output to indicate we cleared the conversation
+              echo "cleared_convo=true" >> $GITHUB_OUTPUT
               echo "### CPE Response" > "$temp_comment_file"
               echo "" >> "$temp_comment_file"
               echo "Conversation history cleared." >> "$temp_comment_file"
             else
+              echo "cleared_convo=false" >> $GITHUB_OUTPUT
               echo "### CPE Response" > "$temp_comment_file"
               echo "" >> "$temp_comment_file"
               echo "No conversation history found." >> "$temp_comment_file"
             fi
           else
+            echo "cleared_convo=false" >> $GITHUB_OUTPUT
             # Run CPE and capture its output
             if [ -f ".cpeconvo" ]; then
               echo "Found existing conversation, using -continue flag"
@@ -110,3 +117,11 @@ jobs:
           # Post the comment and clean up
           gh pr comment $PR_NUMBER --body-file "$temp_comment_file"
           rm "$temp_output_file" "$temp_comment_file"
+
+      # Save cache step - only if we didn't clear the conversation
+      - name: Save CPE conversation cache
+        if: steps.cpe-run.outputs.cleared_convo != 'true'
+        uses: actions/cache/save@v3
+        with:
+          path: .cpeconvo
+          key: cpe-cache-${{ steps.pr_info.outputs.head_ref }}
