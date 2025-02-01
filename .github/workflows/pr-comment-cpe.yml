@@ -47,10 +47,9 @@ jobs:
       - name: Install CPE
         run: go install github.com/spachava753/cpe@latest
 
-      # Split the cache steps for better control
-      - name: Restore CPE conversation cache
+      - name: Cache CPE conversation
         id: cache-restore
-        uses: actions/cache/restore@v3
+        uses: actions/cache@v3
         with:
           path: .cpeconvo
           key: cpe-cache-${{ steps.pr_info.outputs.head_ref }}
@@ -58,7 +57,6 @@ jobs:
             cpe-cache-${{ steps.pr_info.outputs.head_ref }}
 
       - name: Run CPE and process changes
-        id: cpe-run
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.issue.number }}
@@ -68,26 +66,24 @@ jobs:
           temp_comment_file=$(mktemp)
           
           # Extract the comment directly from the event payload JSON file
-          # This avoids any shell interpretation issues since the content is already properly escaped in the JSON
           comment_body=$(jq -r '.comment.body' "$GITHUB_EVENT_PATH")
           
           # Check if the comment is '/clear convo'
           if [ "$comment_body" = "/clear convo" ]; then
             if [ -f ".cpeconvo" ]; then
+              # Remove the local file
               rm .cpeconvo
-              # Set an output to indicate we cleared the conversation
-              echo "cleared_convo=true" >> $GITHUB_OUTPUT
+              # Delete the cache entry using gh cache delete
+              gh cache delete "cpe-cache-${{ steps.pr_info.outputs.head_ref }}"
               echo "### CPE Response" > "$temp_comment_file"
               echo "" >> "$temp_comment_file"
               echo "Conversation history cleared." >> "$temp_comment_file"
             else
-              echo "cleared_convo=false" >> $GITHUB_OUTPUT
               echo "### CPE Response" > "$temp_comment_file"
               echo "" >> "$temp_comment_file"
               echo "No conversation history found." >> "$temp_comment_file"
             fi
           else
-            echo "cleared_convo=false" >> $GITHUB_OUTPUT
             # Run CPE and capture its output
             if [ -f ".cpeconvo" ]; then
               echo "Found existing conversation, using -continue flag"
@@ -117,11 +113,3 @@ jobs:
           # Post the comment and clean up
           gh pr comment $PR_NUMBER --body-file "$temp_comment_file"
           rm "$temp_output_file" "$temp_comment_file"
-
-      # Save cache step - only if we didn't clear the conversation
-      - name: Save CPE conversation cache
-        if: steps.cpe-run.outputs.cleared_convo != 'true'
-        uses: actions/cache/save@v3
-        with:
-          path: .cpeconvo
-          key: cpe-cache-${{ steps.pr_info.outputs.head_ref }}
