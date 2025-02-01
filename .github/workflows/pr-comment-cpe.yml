@@ -60,12 +60,16 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.issue.number }}
         run: |
-          # Create a temporary file for CPE output
+          # Create temporary files
           temp_output_file=$(mktemp)
           temp_comment_file=$(mktemp)
           
+          # Extract the comment directly from the event payload JSON file
+          # This avoids any shell interpretation issues since the content is already properly escaped in the JSON
+          comment_body=$(jq -r '.comment.body' "$GITHUB_EVENT_PATH")
+          
           # Check if the comment is '/clear convo'
-          if [ "${{ github.event.comment.body }}" = "/clear convo" ]; then
+          if [ "$comment_body" = "/clear convo" ]; then
             if [ -f ".cpeconvo" ]; then
               rm .cpeconvo
               echo "### CPE Response" > "$temp_comment_file"
@@ -80,10 +84,12 @@ jobs:
             # Run CPE and capture its output
             if [ -f ".cpeconvo" ]; then
               echo "Found existing conversation, using -continue flag"
-              echo "${{ github.event.comment.body }}" | cpe -continue 2>&1 | tee "$temp_output_file"
+              # Extract comment directly from event JSON and pipe to cpe
+              jq -r '.comment.body' "$GITHUB_EVENT_PATH" | cpe -continue 2>&1 | tee "$temp_output_file"
             else
               echo "No existing conversation found, starting new conversation"
-              echo "${{ github.event.comment.body }}" | cpe 2>&1 | tee "$temp_output_file"
+              # Extract comment directly from event JSON and pipe to cpe
+              jq -r '.comment.body' "$GITHUB_EVENT_PATH" | cpe 2>&1 | tee "$temp_output_file"
             fi
             
             # Handle any changes and commits
