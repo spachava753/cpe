@@ -11,23 +11,28 @@ import (
 )
 
 type Options struct {
-	Model             string
-	CustomURL         string
-	MaxTokens         int
-	Temperature       float64
-	TopP              float64
-	TopK              int
-	FrequencyPenalty  float64
-	PresencePenalty   float64
-	NumberOfResponses int
-	Input             string
-	Version           bool
-	TokenCountPath    string
-	Prompt            string
-	Continue          bool
-	ListFiles         bool
-	Overview          bool
-	RelatedFiles      string
+	Model              string
+	CustomURL          string
+	MaxTokens          int
+	Temperature        float64
+	TopP               float64
+	TopK               int
+	FrequencyPenalty   float64
+	PresencePenalty    float64
+	NumberOfResponses  int
+	Input              string
+	Version            bool
+	TokenCountPath     string
+	Prompt             string
+	Continue           bool
+	ContinueFrom       string
+	ListConversations  bool
+	DeleteConversation string
+	DeleteCascade      bool
+	PrintConversation  string
+	ListFiles          bool
+	Overview           bool
+	RelatedFiles       string
 }
 
 var Opts Options
@@ -55,6 +60,11 @@ func init() {
 	flag.IntVar(&Opts.NumberOfResponses, "number-of-responses", 0, "Number of responses to generate")
 	flag.StringVar(&Opts.Input, "input", "", "Specify an input file path to read from. Can be combined with stdin input and command line arguments")
 	flag.BoolVar(&Opts.Continue, "continue", false, "Continue the conversation from the previous execution")
+	flag.StringVar(&Opts.ContinueFrom, "continue-from", "", "Continue the conversation from a specific conversation ID")
+	flag.BoolVar(&Opts.ListConversations, "list-convo", false, "List all conversations")
+	flag.StringVar(&Opts.DeleteConversation, "delete-convo", "", "Delete a specific conversation")
+	flag.BoolVar(&Opts.DeleteCascade, "cascade", false, "When deleting a conversation, also delete its children")
+	flag.StringVar(&Opts.PrintConversation, "print-convo", "", "Print a specific conversation")
 }
 
 func ParseFlags() {

@@ -1,14 +1,20 @@
 package agent
 
 import (
+	"bytes"
+	"context"
 	_ "embed"
 	"fmt"
-	a "github.com/anthropics/anthropic-sdk-go"
-	"github.com/openai/openai-go"
-	"github.com/spachava753/cpe/internal/ignore"
 	"io"
 	"os"
 	"strings"
+	"time"
+
+	a "github.com/anthropics/anthropic-sdk-go"
+	"github.com/openai/openai-go"
+	"github.com/spachava753/cpe/internal/conversation"
+	"github.com/spachava753/cpe/internal/db"
+	"github.com/spachava753/cpe/internal/ignore"
 )
 
 //go:embed agent_instructions.txt
@@ -38,6 +44,43 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 	}
 	if ignorer == nil {
 		return nil, fmt.Errorf("git ignorer was nil")
+	}
+
+	// Initialize conversation manager
+	convoManager, err := conversation.NewManager("cpe.db")
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize conversation manager: %w", err)
+	}
+	defer convoManager.Close()
+
+	// Handle conversation management commands
+	if flags.ListConversations {
+		if err := convoManager.ListConversations(context.Background()); err != nil {
+			return nil, fmt.Errorf("failed to list conversations: %w", err)
+		}
+		return nil, nil // Exit after listing conversations
+	}
+
+	if flags.DeleteConversation != "" {
+		if err := convoManager.DeleteConversation(context.Background(), flags.DeleteConversation, flags.DeleteCascade); err != nil {
+			return nil, fmt.Errorf("failed to delete conversation: %w", err)
+		}
+		return nil, nil // Exit after deleting conversation
+	}
+
+	if flags.PrintConversation != "" {
+		conv, err := convoManager.GetConversation(context.Background(), flags.PrintConversation)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get conversation: %w", err)
+		}
+		fmt.Printf("Conversation ID: %s\n", conv.ID)
+		if conv.ParentID.Valid {
+			fmt.Printf("Parent ID: %s\n", conv.ParentID.String)
+		}
+		fmt.Printf("Model: %s\n", conv.Model)
+		fmt.Printf("Created At: %s\n", conv.CreatedAt.Format(time.RFC3339))
+		fmt.Printf("\nUser Message:\n%s\n", conv.UserMessage)
+		return nil, nil // Exit after printing conversation
 	}
 
 	// Check for custom URL in environment variable
@@ -104,18 +147,34 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 
 	// If continue flag is set, load previous messages
 	if flags.Continue {
-		// First decode just the Type field to check executor compatibility
-		f, err := os.Open(".cpeconvo")
-		if err != nil {
-			return nil, fmt.Errorf("failed to open conversation file: %w", err)
+		var conv *db.Conversation
+		var err error
+
+		if flags.ContinueFrom != "" {
+			conv, err = convoManager.GetConversation(context.Background(), flags.ContinueFrom)
+		} else {
+			conv, err = convoManager.GetLatestConversation(context.Background())
 		}
-		defer f.Close()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get conversation: %w", err)
+		}
+
+		// Verify model compatibility
+		if conv.Model != genConfig.Model {
+			return nil, fmt.Errorf("cannot continue conversation from a different executor (conversation model: %s, requested model: %s)", conv.Model, genConfig.Model)
+		}
 
 		// Load messages into executor
-		if err := executor.LoadMessages(f); err != nil {
+		if err := executor.LoadMessages(bytes.NewReader(conv.ExecutorData)); err != nil {
 			return nil, fmt.Errorf("failed to load messages: %w", err)
 		}
 	}
 
-	return executor, nil
+	return &executorWrapper{
+		executor:     executor,
+		convoManager: convoManager,
+		model:       genConfig.Model,
+		userMessage: flags.Input,
+		continueID:  flags.ContinueFrom,
+	}, nil
 }

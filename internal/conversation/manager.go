@@ -40,16 +40,10 @@ func (m *Manager) Close() error {
 }
 
 // CreateConversation creates a new conversation
-func (m *Manager) CreateConversation(ctx context.Context, parentID *string, userMessage string, executorData interface{}, model string) (string, error) {
+func (m *Manager) CreateConversation(ctx context.Context, parentID *string, userMessage string, executorData []byte, model string) (string, error) {
 	// Generate ULID
 	entropy := ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0)
 	id := ulid.MustNew(ulid.Timestamp(time.Now()), entropy).String()
-
-	// Encode executor data
-	var encodedData bytes.Buffer
-	if err := gob.NewEncoder(&encodedData).Encode(executorData); err != nil {
-		return "", fmt.Errorf("failed to encode executor data: %w", err)
-	}
 
 	// Create conversation params
 	var parentIDSQL sql.NullString
@@ -64,7 +58,7 @@ func (m *Manager) CreateConversation(ctx context.Context, parentID *string, user
 		ID:           id,
 		ParentID:     parentIDSQL,
 		UserMessage:  userMessage,
-		ExecutorData: encodedData.Bytes(),
+		ExecutorData: executorData,
 		CreatedAt:    time.Now(),
 		Model:        model,
 	})
