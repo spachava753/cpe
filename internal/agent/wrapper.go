@@ -19,6 +19,8 @@ type executorWrapper struct {
 
 // Execute executes the executor and saves the conversation
 func (e *executorWrapper) Execute(input string) error {
+	defer e.convoManager.Close()  // Close the database connection when we're done
+
 	// Execute the wrapped executor
 	if err := e.executor.Execute(input); err != nil {
 		return err

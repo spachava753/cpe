@@ -51,7 +51,6 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize conversation manager: %w", err)
 	}
-	defer convoManager.Close()
 
 	// Check for custom URL in environment variable
 	customURL := flags.CustomURL
