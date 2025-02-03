@@ -24,8 +24,7 @@ type Options struct {
 	Version            bool
 	TokenCountPath     string
 	Prompt             string
-	Continue           bool
-	ContinueFrom       string
+	Continue           string
 	ListConversations  bool
 	DeleteConversation string
 	DeleteCascade      bool
@@ -59,8 +58,7 @@ func init() {
 	flag.Float64Var(&Opts.PresencePenalty, "presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
 	flag.IntVar(&Opts.NumberOfResponses, "number-of-responses", 0, "Number of responses to generate")
 	flag.StringVar(&Opts.Input, "input", "", "Specify an input file path to read from. Can be combined with stdin input and command line arguments")
-	flag.BoolVar(&Opts.Continue, "continue", false, "Continue the conversation from the previous execution")
-	flag.StringVar(&Opts.ContinueFrom, "continue-from", "", "Continue the conversation from a specific conversation ID")
+	flag.StringVar(&Opts.Continue, "continue", "", "Continue the conversation. Use 'last' to continue from the latest conversation, or provide a conversation ID")
 	flag.BoolVar(&Opts.ListConversations, "list-convo", false, "List all conversations")
 	flag.StringVar(&Opts.DeleteConversation, "delete-convo", "", "Delete a specific conversation")
 	flag.BoolVar(&Opts.DeleteCascade, "cascade", false, "When deleting a conversation, also delete its children")

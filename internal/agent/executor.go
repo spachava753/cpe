@@ -172,14 +172,14 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 	}
 
 	// If continue flag is set, load previous messages
-	if flags.Continue {
+	if flags.Continue != "" {
 		var conv *db.Conversation
 		var err error
 
-		if flags.ContinueFrom != "" {
-			conv, err = convoManager.GetConversation(context.Background(), flags.ContinueFrom)
-		} else {
+		if flags.Continue == "last" {
 			conv, err = convoManager.GetLatestConversation(context.Background())
+		} else {
+			conv, err = convoManager.GetConversation(context.Background(), flags.Continue)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to get conversation: %w", err)
@@ -201,6 +201,6 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 		convoManager: convoManager,
 		model:        genConfig.Model,
 		userMessage:  flags.Input,
-		continueID:   flags.ContinueFrom,
+		continueID:   flags.Continue,
 	}, nil
 }

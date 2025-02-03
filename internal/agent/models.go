@@ -144,8 +144,7 @@ type ModelOptions struct {
 	NumberOfResponses int
 	Input             string
 	Version           bool
-	Continue          bool
-	ContinueFrom      string  // Conversation ID to continue from
+	Continue           string  // "last" or conversation ID to continue from
 	ListConversations bool    // List all conversations
 	DeleteConversation string // Conversation ID to delete
 	DeleteCascade     bool    // Delete conversation and all children
