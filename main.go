@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"github.com/olekukonko/tablewriter"
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/cliopts"
 	"github.com/spachava753/cpe/internal/conversation"
@@ -13,6 +14,7 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -198,71 +200,105 @@ func readInput(inputPath string) (string, error) {
 }
 
 func handleConversationCommands(config cliopts.Options) error {
-	if !config.ListConversations && config.DeleteConversation == "" && config.PrintConversation == "" {
-		return nil
+	// Get user's home directory
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get user home directory: %w", err)
 	}
 
 	// Initialize conversation manager
-	dbPath := ".cpeconvo"
-	convoManager, err := conversation.NewManager(dbPath)
+	dbPath := filepath.Join(homeDir, ".config", "cpe", "conversations.db")
+	manager, err := conversation.NewManager(dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to initialize conversation manager: %w", err)
 	}
-	defer convoManager.Close()
+	defer manager.Close()
 
-	// Handle conversation management commands
+	ctx := context.Background()
+
 	if config.ListConversations {
-		conversations, err := convoManager.ListConversations(context.Background())
+		// List all conversations
+		conversations, err := manager.ListConversations(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to list conversations: %w", err)
 		}
 
-		// Print table header
-		fmt.Printf("%-24s %-24s %-15s %-25s %s\n", "ID", "Parent ID", "Model", "Created At", "Message")
-		fmt.Println(strings.Repeat("-", 120))
+		if len(conversations) == 0 {
+			fmt.Println("No conversations found.")
+			return nil
+		}
 
-		// Print each conversation
+		// Create and configure the table writer
+		table := tablewriter.NewWriter(os.Stdout)
+		table.SetHeader([]string{"ID", "Parent ID", "Model", "Message", "Created At"})
+		table.SetAutoWrapText(false)
+		table.SetAutoFormatHeaders(true)
+		table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
+		table.SetAlignment(tablewriter.ALIGN_LEFT)
+		table.SetCenterSeparator("")
+		table.SetColumnSeparator("")
+		table.SetRowSeparator("")
+		table.SetHeaderLine(false)
+		table.SetBorder(false)
+		table.SetTablePadding("\t")
+		table.SetNoWhiteSpace(true)
+
+		// Add rows to the table
 		for _, conv := range conversations {
-			parentID := "-"
+			parentID := ""
 			if conv.ParentID.Valid {
 				parentID = conv.ParentID.String
 			}
-			// Truncate user message if too long
+			
+			// Truncate user message if it's too long
 			message := conv.UserMessage
 			if len(message) > 50 {
 				message = message[:47] + "..."
 			}
-			fmt.Printf("%-24s %-24s %-15s %-25s %s\n",
+
+			table.Append([]string{
 				conv.ID,
 				parentID,
 				conv.Model,
-				conv.CreatedAt.Format("2006-01-02 15:04:05"),
 				message,
-			)
+				conv.CreatedAt.Format("2006-01-02 15:04:05"),
+			})
 		}
-		os.Exit(0)
+
+		// Render the table
+		table.Render()
+		return nil
 	}
 
 	if config.DeleteConversation != "" {
-		if err := convoManager.DeleteConversation(context.Background(), config.DeleteConversation, config.DeleteCascade); err != nil {
+		// Delete conversation
+		err := manager.DeleteConversation(ctx, config.DeleteConversation, config.DeleteCascade)
+		if err != nil {
 			return fmt.Errorf("failed to delete conversation: %w", err)
 		}
-		os.Exit(0)
+		fmt.Printf("Successfully deleted conversation %s\n", config.DeleteConversation)
+		if config.DeleteCascade {
+			fmt.Println("All child conversations were also deleted.")
+		}
+		return nil
 	}
 
 	if config.PrintConversation != "" {
-		conv, err := convoManager.GetConversation(context.Background(), config.PrintConversation)
+		// Get conversation
+		conv, err := manager.GetConversation(ctx, config.PrintConversation)
 		if err != nil {
 			return fmt.Errorf("failed to get conversation: %w", err)
 		}
-		fmt.Printf("Conversation ID: %s\n", conv.ID)
+
+		// Print conversation details
+		fmt.Printf("ID: %s\n", conv.ID)
 		if conv.ParentID.Valid {
 			fmt.Printf("Parent ID: %s\n", conv.ParentID.String)
 		}
 		fmt.Printf("Model: %s\n", conv.Model)
-		fmt.Printf("Created At: %s\n", conv.CreatedAt.Format(time.RFC3339))
-		fmt.Printf("\nUser Message:\n%s\n", conv.UserMessage)
-		os.Exit(0)
+		fmt.Printf("Created At: %s\n", conv.CreatedAt.Format("2006-01-02 15:04:05"))
+		fmt.Printf("Message: %s\n", conv.UserMessage)
+		return nil
 	}
 
 	return nil
