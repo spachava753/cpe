@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -48,11 +47,7 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 	}
 
 	// Initialize conversation manager
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user home directory: %w", err)
-	}
-	dbPath := filepath.Join(homeDir, ".cpe", "conversations.db")
+	dbPath := ".cpeconvo"
 	convoManager, err := conversation.NewManager(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize conversation manager: %w", err)
