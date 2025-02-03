@@ -10,8 +10,8 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/spachava753/cpe/internal/db"
 	"github.com/oklog/ulid"
-	"github.com/yourusername/cpe/db"
 )
 
 // Manager handles conversation persistence and retrieval
@@ -22,15 +22,15 @@ type Manager struct {
 
 // NewManager creates a new conversation manager
 func NewManager(dbPath string) (*Manager, error) {
-	db, err := sql.Open("sqlite3", dbPath)
+	sqlDB, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	queries := db.New(db)
+	queries := db.New(sqlDB)
 	return &Manager{
 		queries: queries,
-		db:      db,
+		db:      sqlDB,
 	}, nil
 }
 
@@ -51,10 +51,18 @@ func (m *Manager) CreateConversation(ctx context.Context, parentID *string, user
 		return "", fmt.Errorf("failed to encode executor data: %w", err)
 	}
 
-	// Create conversation
+	// Create conversation params
+	var parentIDSQL sql.NullString
+	if parentID != nil {
+		parentIDSQL = sql.NullString{
+			String: *parentID,
+			Valid:  true,
+		}
+	}
+
 	err := m.queries.CreateConversation(ctx, db.CreateConversationParams{
 		ID:           id,
-		ParentID:     parentID,
+		ParentID:     parentIDSQL,
 		UserMessage:  userMessage,
 		ExecutorData: encodedData.Bytes(),
 		CreatedAt:    time.Now(),

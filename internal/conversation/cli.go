@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
-	"github.com/yourusername/cpe/db"
+	"github.com/spachava753/cpe/internal/db"
 )
 
 // CLI handles conversation management command-line operations
