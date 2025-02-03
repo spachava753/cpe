@@ -115,6 +115,7 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 	}
 
 	// If continue flag is set, load previous messages
+	var continueId string
 	if flags.Continue != "" {
 		var conv *db.Conversation
 		var err error
@@ -127,6 +128,8 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to get conversation: %w", err)
 		}
+
+		continueId = conv.ID
 
 		// Verify model compatibility
 		if conv.Model != genConfig.Model {
@@ -144,6 +147,6 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 		convoManager: convoManager,
 		model:        genConfig.Model,
 		userMessage:  flags.Input,
-		continueID:   flags.Continue,
+		continueID:   continueId,
 	}, nil
 }
