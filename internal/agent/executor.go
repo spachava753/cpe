@@ -56,8 +56,33 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 
 	// Handle conversation management commands
 	if flags.ListConversations {
-		if _, err := convoManager.ListConversations(context.Background()); err != nil {
+		conversations, err := convoManager.ListConversations(context.Background())
+		if err != nil {
 			return nil, fmt.Errorf("failed to list conversations: %w", err)
+		}
+
+		// Print table header
+		fmt.Printf("%-24s %-24s %-15s %-25s %s\n", "ID", "Parent ID", "Model", "Created At", "Message")
+		fmt.Println(strings.Repeat("-", 120))
+
+		// Print each conversation
+		for _, conv := range conversations {
+			parentID := "-"
+			if conv.ParentID.Valid {
+				parentID = conv.ParentID.String
+			}
+			// Truncate user message if too long
+			message := conv.UserMessage
+			if len(message) > 50 {
+				message = message[:47] + "..."
+			}
+			fmt.Printf("%-24s %-24s %-15s %-25s %s\n",
+				conv.ID,
+				parentID,
+				conv.Model,
+				conv.CreatedAt.Format("2006-01-02 15:04:05"),
+				message,
+			)
 		}
 		return nil, nil // Exit after listing conversations
 	}
