@@ -7,8 +7,6 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
-
-	"github.com/spachava753/cpe/internal/db"
 )
 
 // CLI handles conversation management command-line operations

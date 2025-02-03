@@ -61,7 +61,7 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 
 	// Handle conversation management commands
 	if flags.ListConversations {
-		if err := convoManager.ListConversations(context.Background()); err != nil {
+		if _, err := convoManager.ListConversations(context.Background()); err != nil {
 			return nil, fmt.Errorf("failed to list conversations: %w", err)
 		}
 		return nil, nil // Exit after listing conversations
@@ -179,8 +179,8 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 	return &executorWrapper{
 		executor:     executor,
 		convoManager: convoManager,
-		model:       genConfig.Model,
-		userMessage: flags.Input,
-		continueID:  flags.ContinueFrom,
+		model:        genConfig.Model,
+		userMessage:  flags.Input,
+		continueID:   flags.ContinueFrom,
 	}, nil
 }

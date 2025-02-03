@@ -10,8 +10,8 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/spachava753/cpe/internal/db"
 	"github.com/oklog/ulid"
+	"github.com/spachava753/cpe/internal/db"
 )
 
 // Manager handles conversation persistence and retrieval
