@@ -46,8 +46,8 @@ func (m *Manager) Close() error {
 
 // CreateConversation creates a new conversation
 func (m *Manager) CreateConversation(ctx context.Context, parentID *string, userMessage string, executorData []byte, model string) (string, error) {
-	// Generate nanoid (12 characters by default)
-	id, err := gonanoid.New()
+	// Generate nanoid (6 characters)
+	id, err := gonanoid.Generate("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", 6)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate ID: %w", err)
 	}
