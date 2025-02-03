@@ -6,7 +6,7 @@ WHERE id = ? LIMIT 1;
 
 -- name: GetLatestConversation :one
 SELECT * FROM conversations
-ORDER BY id DESC LIMIT 1;
+ORDER BY created_at DESC LIMIT 1;
 
 -- name: ListConversations :many
 SELECT id, parent_id, user_message, model, created_at

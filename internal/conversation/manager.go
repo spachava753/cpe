@@ -7,10 +7,9 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
-	"math/rand"
 	"time"
 
-	"github.com/oklog/ulid"
+	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/spachava753/cpe/internal/db"
 )
 
@@ -47,9 +46,11 @@ func (m *Manager) Close() error {
 
 // CreateConversation creates a new conversation
 func (m *Manager) CreateConversation(ctx context.Context, parentID *string, userMessage string, executorData []byte, model string) (string, error) {
-	// Generate ULID
-	entropy := ulid.Monotonic(rand.New(rand.NewSource(time.Now().UnixNano())), 0)
-	id := ulid.MustNew(ulid.Timestamp(time.Now()), entropy).String()
+	// Generate nanoid (12 characters by default)
+	id, err := gonanoid.New()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate ID: %w", err)
+	}
 
 	// Create conversation params
 	var parentIDSQL sql.NullString
@@ -60,7 +61,7 @@ func (m *Manager) CreateConversation(ctx context.Context, parentID *string, user
 		}
 	}
 
-	err := m.queries.CreateConversation(ctx, db.CreateConversationParams{
+	err = m.queries.CreateConversation(ctx, db.CreateConversationParams{
 		ID:           id,
 		ParentID:     parentIDSQL,
 		UserMessage:  userMessage,

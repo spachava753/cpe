@@ -104,7 +104,7 @@ func (q *Queries) GetConversation(ctx context.Context, id string) (Conversation,
 
 const getLatestConversation = `-- name: GetLatestConversation :one
 SELECT id, parent_id, user_message, executor_data, created_at, model FROM conversations
-ORDER BY id DESC LIMIT 1
+ORDER BY created_at DESC LIMIT 1
 `
 
 func (q *Queries) GetLatestConversation(ctx context.Context) (Conversation, error) {
