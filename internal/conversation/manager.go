@@ -22,6 +22,12 @@ type Manager struct {
 
 // NewManager creates a new conversation manager
 func NewManager(dbPath string) (*Manager, error) {
+	// Initialize database
+	if err := InitDB(dbPath); err != nil {
+		return nil, fmt.Errorf("failed to initialize database: %w", err)
+	}
+
+	// Open database connection
 	sqlDB, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
