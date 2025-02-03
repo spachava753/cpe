@@ -143,7 +143,7 @@ func parseConfig() (cliopts.Options, error) {
 	cliopts.ParseFlags()
 
 	if cliopts.Opts.Version {
-		fmt.Printf("cpe version %s\n", getVersion())
+		log.Printf("cpe version %s\n", getVersion())
 		os.Exit(0)
 	}
 
@@ -273,12 +273,12 @@ func handleConversationCommands(config cliopts.Options) error {
 		}
 
 		// Print conversation metadata
-		fmt.Printf("Conversation ID: %s\n", conv.ID)
+		log.Printf("Conversation ID: %s\n", conv.ID)
 		if conv.ParentID.Valid {
-			fmt.Printf("Parent ID: %s\n", conv.ParentID.String)
+			log.Printf("Parent ID: %s\n", conv.ParentID.String)
 		}
-		fmt.Printf("Model: %s\n", conv.Model)
-		fmt.Printf("Created At: %s\n\n", conv.CreatedAt.Format(time.RFC3339))
+		log.Printf("Model: %s\n", conv.Model)
+		log.Printf("Created At: %s\n\n", conv.CreatedAt.Format(time.RFC3339))
 
 		// Create an executor of the appropriate type to print messages
 		executor, err := agent.InitExecutor(log.Default(), agent.ModelOptions{
@@ -294,9 +294,9 @@ func handleConversationCommands(config cliopts.Options) error {
 		}
 
 		// Print conversation messages
-		fmt.Println("Messages:")
-		fmt.Println("=========")
-		fmt.Print(executor.PrintMessages())
+		log.Println("Messages:")
+		log.Println("=========")
+		log.Print(executor.PrintMessages())
 		os.Exit(0)
 	}
 
