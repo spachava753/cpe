@@ -95,16 +95,14 @@ var bashTool = Tool{
 var fileEditor = Tool{
 	Name: "file_editor",
 	Description: `A tool to edit, create and delete files found in the current folder and any subfolders. Keep in mind that this tool does not allow modifying files outside current folder.
-* The "create" command cannot be used if the specified "path" already exists as a file. It should only be used to create a file, and "file_text" must be supplied as the contents of the new file
+* The "create" command should only be used to create a new file, and "file_text" must be supplied as the contents of the new file. It will error if the file already exists.
 * The "remove" command can be used to remove an existing file
 
 Notes for using the "str_replace" command:
 * The "old_str" parameter should match EXACTLY one or more consecutive lines from the original file. Be mindful of whitespaces!
 * If the "old_str" parameter is not unique in the file, the replacement will not be performed. Make sure to include enough context in "old_str" to make it unique
 * The "new_str" parameter should contain the edited lines that should replace the "old_str"
-* Leave "new_str" parameter empty effectively remove "old_str" text from the file
-
-Note: if you need to create, delete, or modify outside of the current folder, use the 'change_directory' tool`,
+* Leave "new_str" parameter empty effectively remove "old_str" text from the file`,
 	InputSchema: map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -173,10 +171,11 @@ Note: You may not deem it necessary to call this tool if you have all the inform
 
 var changeDirectoryTool = Tool{
 	Name: "change_directory",
-	Description: `A tool to change the current working directory
+	Description: fmt.Sprintf(`A tool to change the current working directory
 * The tool accepts a single parameter "path" specifying the target directory
 * Returns the full path of the new directory if successful
-* Returns an error message if the directory doesn't exist`,
+* Returns an error message if the directory doesn't exist
+* If you need to create, delete, or modify files outside of the current folder with the '%s' tool, you can use this tool to change the current folder`, fileEditor.Name),
 	InputSchema: map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
