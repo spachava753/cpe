@@ -427,3 +427,39 @@ func (g *geminiExecutor) SaveMessages(w io.Writer) error {
 	}
 	return nil
 }
+
+func (g *geminiExecutor) PrintMessages() string {
+	if g.session == nil || len(g.session.History) == 0 {
+		return ""
+	}
+
+	var sb strings.Builder
+	for _, content := range g.session.History {
+		switch content.Role {
+		case "user":
+			sb.WriteString("USER:\n")
+		case "model":
+			sb.WriteString("ASSISTANT:\n")
+		default:
+			continue // Skip other roles
+		}
+
+		for _, part := range content.Parts {
+			switch p := part.(type) {
+			case genai.Text:
+				sb.WriteString(string(p))
+				sb.WriteString("\n")
+			case genai.FunctionCall:
+				sb.WriteString(fmt.Sprintf("Tool Call: %s\n", p.Name))
+				jsonInput, _ := json.MarshalIndent(p.Args, "", "  ")
+				sb.WriteString(fmt.Sprintf("Input: %s\n", string(jsonInput)))
+			case genai.FunctionResponse:
+				sb.WriteString("Tool Result:\n")
+				jsonResp, _ := json.MarshalIndent(p.Response, "", "  ")
+				sb.WriteString(fmt.Sprintf("%s\n", string(jsonResp)))
+			}
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}

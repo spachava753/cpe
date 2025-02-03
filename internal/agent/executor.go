@@ -27,6 +27,7 @@ type Executor interface {
 	Execute(input string) error
 	LoadMessages(r io.Reader) error
 	SaveMessages(w io.Writer) error
+	PrintMessages() string
 }
 
 type Logger interface {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"fmt"
@@ -14,7 +15,6 @@ import (
 	"log"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -200,37 +200,28 @@ func readInput(inputPath string) (string, error) {
 }
 
 func handleConversationCommands(config cliopts.Options) error {
-	// Get user's home directory
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("failed to get user home directory: %w", err)
+	if !config.ListConversations && config.DeleteConversation == "" && config.PrintConversation == "" {
+		return nil
 	}
 
 	// Initialize conversation manager
-	dbPath := filepath.Join(homeDir, ".config", "cpe", "conversations.db")
-	manager, err := conversation.NewManager(dbPath)
+	dbPath := ".cpeconvo"
+	convoManager, err := conversation.NewManager(dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to initialize conversation manager: %w", err)
 	}
-	defer manager.Close()
+	defer convoManager.Close()
 
-	ctx := context.Background()
-
+	// Handle conversation management commands
 	if config.ListConversations {
-		// List all conversations
-		conversations, err := manager.ListConversations(ctx)
+		conversations, err := convoManager.ListConversations(context.Background())
 		if err != nil {
 			return fmt.Errorf("failed to list conversations: %w", err)
 		}
 
-		if len(conversations) == 0 {
-			fmt.Println("No conversations found.")
-			return nil
-		}
-
-		// Create and configure the table writer
+		// Create and configure table
 		table := tablewriter.NewWriter(os.Stdout)
-		table.SetHeader([]string{"ID", "Parent ID", "Model", "Message", "Created At"})
+		table.SetHeader([]string{"ID", "Parent ID", "Model", "Created At", "Message"})
 		table.SetAutoWrapText(false)
 		table.SetAutoFormatHeaders(true)
 		table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
@@ -243,62 +234,70 @@ func handleConversationCommands(config cliopts.Options) error {
 		table.SetTablePadding("\t")
 		table.SetNoWhiteSpace(true)
 
-		// Add rows to the table
+		// Add rows to table
 		for _, conv := range conversations {
-			parentID := ""
+			parentID := "-"
 			if conv.ParentID.Valid {
 				parentID = conv.ParentID.String
 			}
-			
-			// Truncate user message if it's too long
+			// Truncate user message if too long
 			message := conv.UserMessage
 			if len(message) > 50 {
 				message = message[:47] + "..."
 			}
-
 			table.Append([]string{
 				conv.ID,
 				parentID,
 				conv.Model,
-				message,
 				conv.CreatedAt.Format("2006-01-02 15:04:05"),
+				message,
 			})
 		}
 
-		// Render the table
+		// Render table
 		table.Render()
-		return nil
+		os.Exit(0)
 	}
 
 	if config.DeleteConversation != "" {
-		// Delete conversation
-		err := manager.DeleteConversation(ctx, config.DeleteConversation, config.DeleteCascade)
-		if err != nil {
+		if err := convoManager.DeleteConversation(context.Background(), config.DeleteConversation, config.DeleteCascade); err != nil {
 			return fmt.Errorf("failed to delete conversation: %w", err)
 		}
-		fmt.Printf("Successfully deleted conversation %s\n", config.DeleteConversation)
-		if config.DeleteCascade {
-			fmt.Println("All child conversations were also deleted.")
-		}
-		return nil
+		os.Exit(0)
 	}
 
 	if config.PrintConversation != "" {
-		// Get conversation
-		conv, err := manager.GetConversation(ctx, config.PrintConversation)
+		conv, err := convoManager.GetConversation(context.Background(), config.PrintConversation)
 		if err != nil {
 			return fmt.Errorf("failed to get conversation: %w", err)
 		}
 
-		// Print conversation details
-		fmt.Printf("ID: %s\n", conv.ID)
+		// Print conversation metadata
+		fmt.Printf("Conversation ID: %s\n", conv.ID)
 		if conv.ParentID.Valid {
 			fmt.Printf("Parent ID: %s\n", conv.ParentID.String)
 		}
 		fmt.Printf("Model: %s\n", conv.Model)
-		fmt.Printf("Created At: %s\n", conv.CreatedAt.Format("2006-01-02 15:04:05"))
-		fmt.Printf("Message: %s\n", conv.UserMessage)
-		return nil
+		fmt.Printf("Created At: %s\n\n", conv.CreatedAt.Format(time.RFC3339))
+
+		// Create an executor of the appropriate type to print messages
+		executor, err := agent.InitExecutor(log.Default(), agent.ModelOptions{
+			Model: conv.Model,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to initialize executor: %w", err)
+		}
+
+		// Load messages into executor
+		if err := executor.LoadMessages(bytes.NewReader(conv.ExecutorData)); err != nil {
+			return fmt.Errorf("failed to load messages: %w", err)
+		}
+
+		// Print conversation messages
+		fmt.Println("Messages:")
+		fmt.Println("=========")
+		fmt.Print(executor.PrintMessages())
+		os.Exit(0)
 	}
 
 	return nil

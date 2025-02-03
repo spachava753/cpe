@@ -331,3 +331,52 @@ func (o *openaiExecutor) SaveMessages(w io.Writer) error {
 	}
 	return nil
 }
+
+func (o *openaiExecutor) PrintMessages() string {
+	if !o.params.Messages.Present {
+		return ""
+	}
+
+	var sb strings.Builder
+	for _, msg := range o.params.Messages.Value {
+		switch m := msg.(type) {
+		case oai.ChatCompletionMessageParam:
+			if m.Role.Value == oai.ChatCompletionMessageParamRoleSystem {
+				continue
+			}
+			switch m.Role.Value {
+			case oai.ChatCompletionMessageParamRoleUser:
+				sb.WriteString("USER:\n")
+			case oai.ChatCompletionMessageParamRoleAssistant:
+				sb.WriteString("ASSISTANT:\n")
+			case oai.ChatCompletionMessageParamRoleTool:
+				sb.WriteString("Tool Result:\n")
+			}
+			if m.Content.Present {
+				sb.WriteString(fmt.Sprintf("%v", m.Content.Value))
+				sb.WriteString("\n")
+			}
+		case oai.ChatCompletionAssistantMessageParam:
+			sb.WriteString("ASSISTANT:\n")
+			if m.Content.Present {
+				for _, content := range m.Content.Value {
+					if text, ok := content.(oai.ChatCompletionContentPartTextParam); ok {
+						sb.WriteString(text.Text.Value)
+						sb.WriteString("\n")
+					}
+				}
+			}
+			if m.ToolCalls.Present {
+				for _, tc := range m.ToolCalls.Value {
+					if tc.Function.Present {
+						sb.WriteString(fmt.Sprintf("Tool Call: %s\n", tc.Function.Value.Name.Value))
+						jsonInput, _ := json.MarshalIndent(tc.Function.Value.Arguments.Value, "", "  ")
+						sb.WriteString(fmt.Sprintf("Input: %s\n", string(jsonInput)))
+					}
+				}
+			}
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}

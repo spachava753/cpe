@@ -416,6 +416,54 @@ func (s *anthropicExecutor) LoadMessages(r io.Reader) error {
 	return nil
 }
 
+func (s *anthropicExecutor) PrintMessages() string {
+	if !s.params.Messages.Present {
+		return ""
+	}
+
+	var sb strings.Builder
+	for _, msg := range s.params.Messages.Value {
+		// Skip system messages
+		if msg.Role.Value == "system" {
+			continue
+		}
+
+		// Print role header
+		switch msg.Role.Value {
+		case "user":
+			sb.WriteString("USER:\n")
+		case "assistant":
+			sb.WriteString("ASSISTANT:\n")
+		}
+
+		// Print message content
+		for _, block := range msg.Content.Value {
+			switch b := block.(type) {
+			case *a.BetaTextBlockParam:
+				sb.WriteString(b.Text.Value)
+				sb.WriteString("\n")
+			case *a.BetaToolUseBlockParam:
+				sb.WriteString(fmt.Sprintf("Tool Call: %s\n", b.Name.Value))
+				jsonInput, _ := json.MarshalIndent(b.Input.Value, "", "  ")
+				sb.WriteString(fmt.Sprintf("Input: %s\n", string(jsonInput)))
+			case *a.BetaToolResultBlockParam:
+				sb.WriteString("Tool Result:\n")
+				for _, content := range b.Content.Value {
+					switch c := content.(type) {
+					case a.BetaToolResultBlockParamContent:
+						if c.Type.Value == "text" {
+							sb.WriteString(c.Text.Value)
+							sb.WriteString("\n")
+						}
+					}
+				}
+			}
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}
+
 func (s *anthropicExecutor) SaveMessages(w io.Writer) error {
 	convo := Conversation[[]a.BetaMessageParam]{
 		Type:     "anthropic",

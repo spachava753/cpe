@@ -54,3 +54,7 @@ func (e *executorWrapper) LoadMessages(r io.Reader) error {
 func (e *executorWrapper) SaveMessages(w io.Writer) error {
 	return e.executor.SaveMessages(w)
 }
+
+func (e *executorWrapper) PrintMessages() string {
+	return e.executor.PrintMessages()
+}
