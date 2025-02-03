@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/cliopts"
+	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/spachava753/cpe/internal/tokentree"
 	"io"
@@ -38,6 +40,12 @@ func main() {
 		log.Fatalf("fatal error: %s", err)
 	}
 
+	// Handle conversation commands if any
+	if err := handleConversationCommands(config); err != nil {
+		log.Fatalf("fatal error: %s", err)
+	}
+
+	// Initialize ignorer
 	ignorer, err := ignore.LoadIgnoreFiles(".")
 	if err != nil {
 		log.Fatalf("fatal error: %s", err)
@@ -95,22 +103,22 @@ func main() {
 	}
 
 	executor, err := agent.InitExecutor(log.Default(), agent.ModelOptions{
-		Model:             config.Model,
-		CustomURL:         config.CustomURL,
-		MaxTokens:         config.MaxTokens,
-		Temperature:       config.Temperature,
-		TopP:              config.TopP,
-		TopK:              config.TopK,
-		FrequencyPenalty:  config.FrequencyPenalty,
-		PresencePenalty:   config.PresencePenalty,
-		NumberOfResponses: config.NumberOfResponses,
-		Input:             config.Input,
-		Version:           config.Version,
+		Model:              config.Model,
+		CustomURL:          config.CustomURL,
+		MaxTokens:          config.MaxTokens,
+		Temperature:        config.Temperature,
+		TopP:               config.TopP,
+		TopK:               config.TopK,
+		FrequencyPenalty:   config.FrequencyPenalty,
+		PresencePenalty:    config.PresencePenalty,
+		NumberOfResponses:  config.NumberOfResponses,
+		Input:              config.Input,
+		Version:            config.Version,
 		Continue:           config.Continue,
-		ListConversations: config.ListConversations,
+		ListConversations:  config.ListConversations,
 		DeleteConversation: config.DeleteConversation,
-		DeleteCascade:     config.DeleteCascade,
-		PrintConversation: config.PrintConversation,
+		DeleteCascade:      config.DeleteCascade,
+		PrintConversation:  config.PrintConversation,
 	})
 	if err != nil {
 		slog.Error("fatal error", slog.Any("err", err))
@@ -187,4 +195,75 @@ func readInput(inputPath string) (string, error) {
 	}
 
 	return input, nil
+}
+
+func handleConversationCommands(config cliopts.Options) error {
+	if !config.ListConversations && config.DeleteConversation == "" && config.PrintConversation == "" {
+		return nil
+	}
+
+	// Initialize conversation manager
+	dbPath := ".cpeconvo"
+	convoManager, err := conversation.NewManager(dbPath)
+	if err != nil {
+		return fmt.Errorf("failed to initialize conversation manager: %w", err)
+	}
+	defer convoManager.Close()
+
+	// Handle conversation management commands
+	if config.ListConversations {
+		conversations, err := convoManager.ListConversations(context.Background())
+		if err != nil {
+			return fmt.Errorf("failed to list conversations: %w", err)
+		}
+
+		// Print table header
+		fmt.Printf("%-24s %-24s %-15s %-25s %s\n", "ID", "Parent ID", "Model", "Created At", "Message")
+		fmt.Println(strings.Repeat("-", 120))
+
+		// Print each conversation
+		for _, conv := range conversations {
+			parentID := "-"
+			if conv.ParentID.Valid {
+				parentID = conv.ParentID.String
+			}
+			// Truncate user message if too long
+			message := conv.UserMessage
+			if len(message) > 50 {
+				message = message[:47] + "..."
+			}
+			fmt.Printf("%-24s %-24s %-15s %-25s %s\n",
+				conv.ID,
+				parentID,
+				conv.Model,
+				conv.CreatedAt.Format("2006-01-02 15:04:05"),
+				message,
+			)
+		}
+		os.Exit(0)
+	}
+
+	if config.DeleteConversation != "" {
+		if err := convoManager.DeleteConversation(context.Background(), config.DeleteConversation, config.DeleteCascade); err != nil {
+			return fmt.Errorf("failed to delete conversation: %w", err)
+		}
+		os.Exit(0)
+	}
+
+	if config.PrintConversation != "" {
+		conv, err := convoManager.GetConversation(context.Background(), config.PrintConversation)
+		if err != nil {
+			return fmt.Errorf("failed to get conversation: %w", err)
+		}
+		fmt.Printf("Conversation ID: %s\n", conv.ID)
+		if conv.ParentID.Valid {
+			fmt.Printf("Parent ID: %s\n", conv.ParentID.String)
+		}
+		fmt.Printf("Model: %s\n", conv.Model)
+		fmt.Printf("Created At: %s\n", conv.CreatedAt.Format(time.RFC3339))
+		fmt.Printf("\nUser Message:\n%s\n", conv.UserMessage)
+		os.Exit(0)
+	}
+
+	return nil
 }

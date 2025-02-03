@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"time"
 
 	a "github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go"
@@ -53,61 +52,6 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 		return nil, fmt.Errorf("failed to initialize conversation manager: %w", err)
 	}
 	defer convoManager.Close()
-
-	// Handle conversation management commands
-	if flags.ListConversations {
-		conversations, err := convoManager.ListConversations(context.Background())
-		if err != nil {
-			return nil, fmt.Errorf("failed to list conversations: %w", err)
-		}
-
-		// Print table header
-		fmt.Printf("%-24s %-24s %-15s %-25s %s\n", "ID", "Parent ID", "Model", "Created At", "Message")
-		fmt.Println(strings.Repeat("-", 120))
-
-		// Print each conversation
-		for _, conv := range conversations {
-			parentID := "-"
-			if conv.ParentID.Valid {
-				parentID = conv.ParentID.String
-			}
-			// Truncate user message if too long
-			message := conv.UserMessage
-			if len(message) > 50 {
-				message = message[:47] + "..."
-			}
-			fmt.Printf("%-24s %-24s %-15s %-25s %s\n",
-				conv.ID,
-				parentID,
-				conv.Model,
-				conv.CreatedAt.Format("2006-01-02 15:04:05"),
-				message,
-			)
-		}
-		return nil, nil // Exit after listing conversations
-	}
-
-	if flags.DeleteConversation != "" {
-		if err := convoManager.DeleteConversation(context.Background(), flags.DeleteConversation, flags.DeleteCascade); err != nil {
-			return nil, fmt.Errorf("failed to delete conversation: %w", err)
-		}
-		return nil, nil // Exit after deleting conversation
-	}
-
-	if flags.PrintConversation != "" {
-		conv, err := convoManager.GetConversation(context.Background(), flags.PrintConversation)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get conversation: %w", err)
-		}
-		fmt.Printf("Conversation ID: %s\n", conv.ID)
-		if conv.ParentID.Valid {
-			fmt.Printf("Parent ID: %s\n", conv.ParentID.String)
-		}
-		fmt.Printf("Model: %s\n", conv.Model)
-		fmt.Printf("Created At: %s\n", conv.CreatedAt.Format(time.RFC3339))
-		fmt.Printf("\nUser Message:\n%s\n", conv.UserMessage)
-		return nil, nil // Exit after printing conversation
-	}
 
 	// Check for custom URL in environment variable
 	customURL := flags.CustomURL
