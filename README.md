@@ -15,6 +15,12 @@ with your development workflow through standard Unix pipes and redirection.
     - Modify files with precision
     - Create new files
     - Remove files
+- **Conversation Management**:
+    - Continue conversations with `-continue`
+    - List all conversations with `-list-convo`
+    - Print specific conversations with `-print-convo`
+    - Delete conversations with `-delete-convo`
+    - Support for conversation threading
 - **Multiple LLM Providers**:
     - Anthropic
     - Google
@@ -98,6 +104,18 @@ In this case, the inputs will be concatenated in order (stdin, input file, comma
    cpe -token-count ./src
    ```
 
+4. Continuing a conversation thread:
+   ```bash
+   # Start a conversation about code structure
+   echo "Explain the structure of this codebase" | cpe
+   
+   # Continue the conversation with follow-up questions
+   cpe -continue last "How can we improve the error handling?"
+   
+   # Branch the conversation in a different direction
+   cpe -continue 01HQ6ABCDEF123456 "What about the test coverage?"
+   ```
+
 #### Configuration Examples
 
 1. Configuring generation parameters:
@@ -169,6 +187,49 @@ The token count visualization shows:
 - Total tokens per file
 - Directory summaries
 - Token distribution across the codebase
+
+## Conversation Management
+
+CPE maintains a history of your conversations and allows you to manage them through various commands. Conversations are stored in a local `.cpeconvo` file in your current directory.
+
+### Basic Conversation Commands
+
+1. List all conversations:
+   ```bash
+   cpe -list-convo
+   ```
+   This displays a table with conversation IDs, parent IDs (for threaded conversations), models used, timestamps, and message previews.
+
+2. Continue a conversation:
+   ```bash
+   # Continue from the latest conversation
+   cpe -continue last "Follow up question"
+
+   # Continue from a specific conversation by ID
+   cpe -continue 01HQ6ABCDEF123456 "Follow up question"
+   ```
+
+3. Print a specific conversation:
+   ```bash
+   cpe -print-convo 01HQ6ABCDEF123456
+   ```
+
+4. Delete a conversation:
+   ```bash
+   # Delete a single conversation
+   cpe -delete-convo 01HQ6ABCDEF123456
+
+   # Delete a conversation and all its children
+   cpe -delete-convo 01HQ6ABCDEF123456 -cascade
+   ```
+
+### Conversation Threading
+
+Conversations can form a tree structure where each conversation can have a parent and multiple children. When you continue a conversation:
+- A new conversation is created
+- It's linked to its parent conversation
+- It inherits the conversation history
+- You can use `-cascade` flag when deleting to remove an entire conversation thread
 
 ## File Operations
 

@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	_ "embed"
 	"fmt"
+	"github.com/olekukonko/tablewriter"
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/cliopts"
+	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/spachava753/cpe/internal/tokentree"
 	"io"
@@ -38,6 +42,12 @@ func main() {
 		log.Fatalf("fatal error: %s", err)
 	}
 
+	// Handle conversation commands if any
+	if err := handleConversationCommands(config); err != nil {
+		log.Fatalf("fatal error: %s", err)
+	}
+
+	// Initialize ignorer
 	ignorer, err := ignore.LoadIgnoreFiles(".")
 	if err != nil {
 		log.Fatalf("fatal error: %s", err)
@@ -95,18 +105,22 @@ func main() {
 	}
 
 	executor, err := agent.InitExecutor(log.Default(), agent.ModelOptions{
-		Model:             config.Model,
-		CustomURL:         config.CustomURL,
-		MaxTokens:         config.MaxTokens,
-		Temperature:       config.Temperature,
-		TopP:              config.TopP,
-		TopK:              config.TopK,
-		FrequencyPenalty:  config.FrequencyPenalty,
-		PresencePenalty:   config.PresencePenalty,
-		NumberOfResponses: config.NumberOfResponses,
-		Input:             config.Input,
-		Version:           config.Version,
-		Continue:          config.Continue,
+		Model:              config.Model,
+		CustomURL:          config.CustomURL,
+		MaxTokens:          config.MaxTokens,
+		Temperature:        config.Temperature,
+		TopP:               config.TopP,
+		TopK:               config.TopK,
+		FrequencyPenalty:   config.FrequencyPenalty,
+		PresencePenalty:    config.PresencePenalty,
+		NumberOfResponses:  config.NumberOfResponses,
+		Input:              config.Input,
+		Version:            config.Version,
+		Continue:           config.Continue,
+		ListConversations:  config.ListConversations,
+		DeleteConversation: config.DeleteConversation,
+		DeleteCascade:      config.DeleteCascade,
+		PrintConversation:  config.PrintConversation,
 	})
 	if err != nil {
 		slog.Error("fatal error", slog.Any("err", err))
@@ -123,26 +137,13 @@ func main() {
 		slog.Error("fatal error", slog.Any("err", err))
 		os.Exit(1)
 	}
-
-	// Save messages to file
-	f, err := os.Create(".cpeconvo")
-	if err != nil {
-		slog.Error("failed to create conversation file", slog.Any("err", err))
-		os.Exit(1)
-	}
-	defer f.Close()
-
-	if err := executor.SaveMessages(f); err != nil {
-		slog.Error("failed to save messages", slog.Any("err", err))
-		os.Exit(1)
-	}
 }
 
 func parseConfig() (cliopts.Options, error) {
 	cliopts.ParseFlags()
 
 	if cliopts.Opts.Version {
-		fmt.Printf("cpe version %s\n", getVersion())
+		log.Printf("cpe version %s\n", getVersion())
 		os.Exit(0)
 	}
 
@@ -196,4 +197,116 @@ func readInput(inputPath string) (string, error) {
 	}
 
 	return input, nil
+}
+
+func handleConversationCommands(config cliopts.Options) error {
+	if !config.ListConversations && config.DeleteConversation == "" && config.PrintConversation == "" {
+		return nil
+	}
+
+	// Initialize conversation manager
+	dbPath := ".cpeconvo"
+	convoManager, err := conversation.NewManager(dbPath)
+	if err != nil {
+		return fmt.Errorf("failed to initialize conversation manager: %w", err)
+	}
+	defer convoManager.Close()
+
+	// Handle conversation management commands
+	if config.ListConversations {
+		conversations, err := convoManager.ListConversations(context.Background())
+		if err != nil {
+			return fmt.Errorf("failed to list conversations: %w", err)
+		}
+
+		// Create and configure table
+		table := tablewriter.NewWriter(os.Stdout)
+		table.SetHeader([]string{"ID", "Parent ID", "Model", "Created At", "Message"})
+		table.SetAutoWrapText(false)
+		table.SetAutoFormatHeaders(true)
+		table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
+		table.SetAlignment(tablewriter.ALIGN_LEFT)
+		table.SetCenterSeparator("")
+		table.SetColumnSeparator("")
+		table.SetRowSeparator("")
+		table.SetHeaderLine(false)
+		table.SetBorder(false)
+		table.SetTablePadding("\t")
+		table.SetNoWhiteSpace(true)
+
+		// Add rows to table
+		for _, conv := range conversations {
+			parentID := "-"
+			if conv.ParentID.Valid {
+				parentID = conv.ParentID.String
+			}
+			// Truncate user message if too long
+			message := conv.UserMessage
+			if len(message) > 50 {
+				message = message[:47] + "..."
+			}
+			table.Append([]string{
+				conv.ID,
+				parentID,
+				conv.Model,
+				conv.CreatedAt.Format("2006-01-02 15:04:05"),
+				message,
+			})
+		}
+
+		// Render table
+		table.Render()
+		os.Exit(0)
+	}
+
+	if config.DeleteConversation != "" {
+		if err := convoManager.DeleteConversation(context.Background(), config.DeleteConversation, config.DeleteCascade); err != nil {
+			return fmt.Errorf("failed to delete conversation: %w", err)
+		}
+		os.Exit(0)
+	}
+
+	if config.PrintConversation != "" {
+		conv, err := convoManager.GetConversation(context.Background(), config.PrintConversation)
+		if err != nil {
+			return fmt.Errorf("failed to get conversation: %w", err)
+		}
+
+		genConfig, err := agent.GetConfig(agent.ModelOptions{Model: config.Model})
+		if err != nil {
+			return fmt.Errorf("failed to get config for model %s: %w", config.Model, err)
+		}
+		if conv.Model != genConfig.Model {
+			return fmt.Errorf("cannot print conversation for model %s: expected %s, got %s", config.Model, conv.Model, genConfig.Model)
+		}
+
+		// Print conversation metadata
+		log.Printf("Conversation ID: %s\n", conv.ID)
+		if conv.ParentID.Valid {
+			log.Printf("Parent ID: %s\n", conv.ParentID.String)
+		}
+		log.Printf("Model: %s\n", conv.Model)
+		log.Printf("Created At: %s\n\n", conv.CreatedAt.Format(time.RFC3339))
+
+		// Create an executor of the appropriate type to print messages
+		executor, err := agent.InitExecutor(log.Default(), agent.ModelOptions{
+			Model: config.Model,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to initialize executor: %w", err)
+		}
+
+		// Load messages into executor
+		if err := executor.LoadMessages(bytes.NewReader(conv.ExecutorData)); err != nil {
+			return fmt.Errorf("failed to load messages: %w", err)
+		}
+
+		// Print conversation messages
+		log.Println("Messages:")
+		log.Println("=========")
+		log.Print(executor.PrintMessages())
+		os.Exit(0)
+	}
+
+	return nil
 }

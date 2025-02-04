@@ -144,7 +144,11 @@ type ModelOptions struct {
 	NumberOfResponses int
 	Input             string
 	Version           bool
-	Continue          bool
+	Continue           string  // "last" or conversation ID to continue from
+	ListConversations bool    // List all conversations
+	DeleteConversation string // Conversation ID to delete
+	DeleteCascade     bool    // Delete conversation and all children
+	PrintConversation string  // Conversation ID to print
 }
 
 func (f ModelOptions) ApplyToGenConfig(config GenConfig) GenConfig {

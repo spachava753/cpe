@@ -191,3 +191,43 @@ func (o *openAiReasoningExecutor) SaveMessages(w io.Writer) error {
 	enc := gob.NewEncoder(w)
 	return enc.Encode(convo)
 }
+
+func (o *openAiReasoningExecutor) PrintMessages() string {
+	if !o.params.Messages.Present {
+		return ""
+	}
+
+	var sb strings.Builder
+	for _, msg := range o.params.Messages.Value {
+		switch m := msg.(type) {
+		case oai.ChatCompletionMessageParam:
+			if m.Role.Value == oai.ChatCompletionMessageParamRoleSystem {
+				continue
+			}
+			switch m.Role.Value {
+			case oai.ChatCompletionMessageParamRoleUser:
+				sb.WriteString("USER:\n")
+			case oai.ChatCompletionMessageParamRoleAssistant:
+				sb.WriteString("ASSISTANT:\n")
+			}
+			if m.Content.Present {
+				// For user messages, strip out the XML wrapper if present
+				content := m.Content.Value.(string)
+				if m.Role.Value == oai.ChatCompletionMessageParamRoleUser {
+					if strings.Contains(content, reasoningAgentInstructions) {
+						content = strings.TrimPrefix(content, reasoningAgentInstructions)
+						content = strings.TrimSpace(content)
+						if strings.HasPrefix(content, "<input>") && strings.HasSuffix(content, "</input>") {
+							content = strings.TrimPrefix(content, "<input>")
+							content = strings.TrimSuffix(content, "</input>")
+						}
+					}
+				}
+				sb.WriteString(content)
+				sb.WriteString("\n")
+			}
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
+}

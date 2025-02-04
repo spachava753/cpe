@@ -244,25 +244,26 @@ func (s *anthropicExecutor) Execute(input string) error {
 		}
 
 		finished := true
-		assistantMsgContentBlocks := make([]a.BetaContentBlockParamUnion, len(resp.Content))
+		assistantMsgContentBlocks := make([]a.BetaContentBlockParamUnion, 0, len(resp.Content))
+		toolResultContentBlocks := make([]a.BetaContentBlockParamUnion, 0, len(resp.Content))
 		var toolUseId string
-		for i, block := range resp.Content {
+		for _, block := range resp.Content {
 			switch block.Type {
 			case a.BetaContentBlockTypeText:
 				s.logger.Println(block.Text)
-				assistantMsgContentBlocks[i] = &a.BetaTextBlockParam{
+				assistantMsgContentBlocks = append(assistantMsgContentBlocks, &a.BetaTextBlockParam{
 					Text: a.F(block.Text),
 					Type: a.F(a.BetaTextBlockParamTypeText),
-				}
+				})
 			case a.BetaContentBlockTypeToolUse:
 				finished = false
 				toolUseId = block.ID
-				assistantMsgContentBlocks[i] = &a.BetaToolUseBlockParam{
+				assistantMsgContentBlocks = append(assistantMsgContentBlocks, &a.BetaToolUseBlockParam{
 					ID:    a.F(toolUseId),
 					Input: a.F(block.Input),
 					Name:  a.F(block.Name),
 					Type:  a.F(a.BetaToolUseBlockParamTypeToolUse),
-				}
+				})
 				var result *ToolResult
 				var err error
 				switch block.Name {
@@ -374,29 +375,43 @@ func (s *anthropicExecutor) Execute(input string) error {
 				}
 
 				result.ToolUseID = block.ID
-				s.params.Messages = a.F(append(s.params.Messages.Value, a.BetaMessageParam{
-					Role:    a.F(a.BetaMessageParamRoleAssistant),
-					Content: a.F(assistantMsgContentBlocks),
-				}))
-				s.params.Messages = a.F(append(s.params.Messages.Value, a.BetaMessageParam{
-					Content: a.F([]a.BetaContentBlockParamUnion{
-						&a.BetaToolResultBlockParam{
-							ToolUseID: a.F(toolUseId),
-							Type:      a.F(a.BetaToolResultBlockParamTypeToolResult),
-							Content: a.F([]a.BetaToolResultBlockParamContentUnion{
-								a.BetaToolResultBlockParamContent{
-									Type: a.F(a.BetaToolResultBlockParamContentTypeText),
-									Text: a.F[string](fmt.Sprintf("%+v", result.Content)),
-								},
-							}),
-							IsError: a.F(result.IsError),
+
+				toolResultContentBlocks = append(toolResultContentBlocks, &a.BetaToolResultBlockParam{
+					ToolUseID: a.F(toolUseId),
+					Type:      a.F(a.BetaToolResultBlockParamTypeToolResult),
+					Content: a.F([]a.BetaToolResultBlockParamContentUnion{
+						a.BetaToolResultBlockParamContent{
+							Type: a.F(a.BetaToolResultBlockParamContentTypeText),
+							Text: a.F[string](fmt.Sprintf("%+v", result.Content)),
 						},
 					}),
-					Role: a.F(a.BetaMessageParamRoleUser),
-				}))
+					IsError: a.F(result.IsError),
+				})
 			default:
 				return fmt.Errorf("unexpected content block type: %s", block.Type)
 			}
+		}
+
+		s.params.Messages = a.F(
+			append(
+				s.params.Messages.Value,
+				a.BetaMessageParam{
+					Role:    a.F(a.BetaMessageParamRoleAssistant),
+					Content: a.F(assistantMsgContentBlocks),
+				},
+			),
+		)
+
+		if len(toolResultContentBlocks) > 0 {
+			s.params.Messages = a.F(
+				append(
+					s.params.Messages.Value,
+					a.BetaMessageParam{
+						Role:    a.F(a.BetaMessageParamRoleUser),
+						Content: a.F(toolResultContentBlocks),
+					},
+				),
+			)
 		}
 		if finished {
 			break
@@ -414,6 +429,54 @@ func (s *anthropicExecutor) LoadMessages(r io.Reader) error {
 	}
 	s.params.Messages = a.F(convo.Messages)
 	return nil
+}
+
+func (s *anthropicExecutor) PrintMessages() string {
+	if !s.params.Messages.Present {
+		return ""
+	}
+
+	var sb strings.Builder
+	for _, msg := range s.params.Messages.Value {
+		// Skip system messages
+		if msg.Role.Value == "system" {
+			continue
+		}
+
+		// Print role header
+		switch msg.Role.Value {
+		case a.BetaMessageParamRoleUser:
+			sb.WriteString("USER:\n")
+		case a.BetaMessageParamRoleAssistant:
+			sb.WriteString("ASSISTANT:\n")
+		}
+
+		// Print message content
+		for _, block := range msg.Content.Value {
+			switch b := block.(type) {
+			case *a.BetaTextBlockParam:
+				sb.WriteString(b.Text.Value)
+				sb.WriteString("\n")
+			case *a.BetaToolUseBlockParam:
+				sb.WriteString(fmt.Sprintf("Tool Call: %s\n", b.Name.Value))
+				jsonInput, _ := json.MarshalIndent(b.Input.Value, "", "  ")
+				sb.WriteString(fmt.Sprintf("Input: %s\n", string(jsonInput)))
+			case *a.BetaToolResultBlockParam:
+				sb.WriteString("Tool Result:\n")
+				for _, content := range b.Content.Value {
+					switch c := content.(type) {
+					case a.BetaToolResultBlockParamContent:
+						if c.Type.Value == "text" {
+							sb.WriteString(c.Text.Value)
+							sb.WriteString("\n")
+						}
+					}
+				}
+			}
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String()
 }
 
 func (s *anthropicExecutor) SaveMessages(w io.Writer) error {

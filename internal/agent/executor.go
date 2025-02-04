@@ -1,14 +1,19 @@
 package agent
 
 import (
+	"bytes"
+	"context"
 	_ "embed"
 	"fmt"
-	a "github.com/anthropics/anthropic-sdk-go"
-	"github.com/openai/openai-go"
-	"github.com/spachava753/cpe/internal/ignore"
 	"io"
 	"os"
 	"strings"
+
+	a "github.com/anthropics/anthropic-sdk-go"
+	"github.com/openai/openai-go"
+	"github.com/spachava753/cpe/internal/conversation"
+	"github.com/spachava753/cpe/internal/db"
+	"github.com/spachava753/cpe/internal/ignore"
 )
 
 //go:embed agent_instructions.txt
@@ -22,6 +27,7 @@ type Executor interface {
 	Execute(input string) error
 	LoadMessages(r io.Reader) error
 	SaveMessages(w io.Writer) error
+	PrintMessages() string
 }
 
 type Logger interface {
@@ -38,6 +44,13 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 	}
 	if ignorer == nil {
 		return nil, fmt.Errorf("git ignorer was nil")
+	}
+
+	// Initialize conversation manager
+	dbPath := ".cpeconvo"
+	convoManager, err := conversation.NewManager(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize conversation manager: %w", err)
 	}
 
 	// Check for custom URL in environment variable
@@ -103,19 +116,38 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 	}
 
 	// If continue flag is set, load previous messages
-	if flags.Continue {
-		// First decode just the Type field to check executor compatibility
-		f, err := os.Open(".cpeconvo")
-		if err != nil {
-			return nil, fmt.Errorf("failed to open conversation file: %w", err)
+	var continueId string
+	if flags.Continue != "" {
+		var conv *db.Conversation
+		var err error
+
+		if flags.Continue == "last" {
+			conv, err = convoManager.GetLatestConversation(context.Background())
+		} else {
+			conv, err = convoManager.GetConversation(context.Background(), flags.Continue)
 		}
-		defer f.Close()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get conversation: %w", err)
+		}
+
+		continueId = conv.ID
+
+		// Verify model compatibility
+		if conv.Model != genConfig.Model {
+			return nil, fmt.Errorf("cannot continue conversation from a different executor (conversation model: %s, requested model: %s)", conv.Model, genConfig.Model)
+		}
 
 		// Load messages into executor
-		if err := executor.LoadMessages(f); err != nil {
+		if err := executor.LoadMessages(bytes.NewReader(conv.ExecutorData)); err != nil {
 			return nil, fmt.Errorf("failed to load messages: %w", err)
 		}
 	}
 
-	return executor, nil
+	return &executorWrapper{
+		executor:     executor,
+		convoManager: convoManager,
+		model:        genConfig.Model,
+		userMessage:  flags.Input,
+		continueID:   continueId,
+	}, nil
 }
