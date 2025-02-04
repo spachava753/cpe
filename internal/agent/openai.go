@@ -375,6 +375,24 @@ func (o *openaiExecutor) PrintMessages() string {
 					}
 				}
 			}
+		case oai.ChatCompletionUserMessageParam:
+			sb.WriteString("USER:\n")
+			if m.Content.Present {
+				for _, content := range m.Content.Value {
+					if text, ok := content.(oai.ChatCompletionContentPartTextParam); ok {
+						sb.WriteString(text.Text.Value)
+						sb.WriteString("\n")
+					}
+				}
+			}
+		case oai.ChatCompletionToolMessageParam:
+			sb.WriteString("Tool Result:\n")
+			if m.Content.Present {
+				for _, content := range m.Content.Value {
+					sb.WriteString(content.Text.Value)
+					sb.WriteString("\n")
+				}
+			}
 		}
 		sb.WriteString("\n")
 	}

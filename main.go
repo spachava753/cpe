@@ -272,6 +272,14 @@ func handleConversationCommands(config cliopts.Options) error {
 			return fmt.Errorf("failed to get conversation: %w", err)
 		}
 
+		genConfig, err := agent.GetConfig(agent.ModelOptions{Model: config.Model})
+		if err != nil {
+			return fmt.Errorf("failed to get config for model %s: %w", config.Model, err)
+		}
+		if conv.Model != genConfig.Model {
+			return fmt.Errorf("cannot print conversation for model %s: expected %s, got %s", config.Model, conv.Model, genConfig.Model)
+		}
+
 		// Print conversation metadata
 		log.Printf("Conversation ID: %s\n", conv.ID)
 		if conv.ParentID.Valid {
@@ -282,7 +290,7 @@ func handleConversationCommands(config cliopts.Options) error {
 
 		// Create an executor of the appropriate type to print messages
 		executor, err := agent.InitExecutor(log.Default(), agent.ModelOptions{
-			Model: conv.Model,
+			Model: config.Model,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to initialize executor: %w", err)
