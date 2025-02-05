@@ -27,9 +27,19 @@ func parseComment(comment string) Output {
 	comment = strings.TrimRight(strings.ReplaceAll(comment, "\r\n", "\n"), "\n")
 	lines := strings.Split(comment, "\n")
 
+	// Check if .cpeconvo exists to determine if this is the first conversation
+	_, err := os.Stat(".cpeconvo")
+	isFirstConversation := os.IsNotExist(err)
+
 	// Check if comment starts with "---"
 	if len(lines) == 0 || !strings.HasPrefix(lines[0], "---") {
 		// No header found, return default
+		if isFirstConversation {
+			return Output{
+				Args:    "", // No args for first conversation
+				Comment: comment,
+			}
+		}
 		return Output{
 			Args:    "-continue last",
 			Comment: comment,
@@ -48,6 +58,12 @@ func parseComment(comment string) Output {
 	// If we didn't find the end of the header,
 	// treat the whole thing as a regular comment
 	if headerEnd == 0 {
+		if isFirstConversation {
+			return Output{
+				Args:    "", // No args for first conversation
+				Comment: comment,
+			}
+		}
 		return Output{
 			Args:    "-continue last",
 			Comment: comment,
@@ -56,9 +72,15 @@ func parseComment(comment string) Output {
 
 	// Extract header content (everything between the --- markers)
 	header := strings.TrimSpace(strings.Join(lines[1:headerEnd], "\n"))
-
+	
 	// If header is empty, treat as regular comment
 	if header == "" {
+		if isFirstConversation {
+			return Output{
+				Args:    "", // No args for first conversation
+				Comment: strings.TrimSpace(strings.Join(lines[headerEnd+1:], "\n")),
+			}
+		}
 		return Output{
 			Args:    "-continue last",
 			Comment: strings.TrimSpace(strings.Join(lines[headerEnd+1:], "\n")),
@@ -91,7 +113,10 @@ func readGitHubEvent(eventPath string) (*GitHubPayload, error) {
 
 func executeCPE(args string, input string, outputFile string) error {
 	// Split the args string into individual arguments
-	argSlice := strings.Fields(args)
+	var argSlice []string
+	if args != "" {
+		argSlice = strings.Fields(args)
+	}
 
 	// Prepare the command
 	cmd := exec.Command("cpe", argSlice...)
@@ -117,10 +142,10 @@ func executeCPE(args string, input string, outputFile string) error {
 		return fmt.Errorf("failed to write header newline: %w", err)
 	}
 
-	// Set up separate buffers for stdout and stderr
-	var stdoutBuf, stderrBuf bytes.Buffer
-	cmd.Stdout = io.MultiWriter(out, &stdoutBuf)
-	cmd.Stderr = io.MultiWriter(out, &stderrBuf)
+	// Set up command output to write to both the file and a buffer
+	var buf bytes.Buffer
+	cmd.Stdout = io.MultiWriter(out, &buf)
+	cmd.Stderr = io.MultiWriter(out, &buf)
 
 	// Start the command
 	if err := cmd.Start(); err != nil {
@@ -139,18 +164,6 @@ func executeCPE(args string, input string, outputFile string) error {
 
 	// Wait for the command to complete
 	if err := cmd.Wait(); err != nil {
-		// Get the command output
-		stdout := stdoutBuf.String()
-		stderr := stderrBuf.String()
-
-		// Print the output to stderr for logging
-		if stdout != "" {
-			fmt.Fprintf(os.Stderr, "Command stdout:\n%s\n", stdout)
-		}
-		if stderr != "" {
-			fmt.Fprintf(os.Stderr, "Command stderr:\n%s\n", stderr)
-		}
-
 		return fmt.Errorf("cpe execution failed: %w", err)
 	}
 
