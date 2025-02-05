@@ -79,3 +79,10 @@ jobs:
           
           # Push any changes
           git push origin HEAD:${{ steps.pr_info.outputs.head_ref }}
+
+      - name: Save cache
+        if: always()  # Save cache even if the command failed
+        uses: actions/cache/save@v3
+        with:
+          path: .cpeconvo
+          key: cpe-cache-${{ steps.pr_info.outputs.head_ref }}
