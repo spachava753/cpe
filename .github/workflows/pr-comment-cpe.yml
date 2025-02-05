@@ -56,60 +56,26 @@ jobs:
           restore-keys: |
             cpe-cache-${{ steps.pr_info.outputs.head_ref }}
 
-      - name: Run CPE and process changes
+      - name: Process PR comment and run CPE
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.issue.number }}
         run: |
-          # Create temporary files
-          temp_output_file=$(mktemp)
+          # Create a temporary file for the CPE output
           temp_comment_file=$(mktemp)
           
-          # Extract the comment directly from the event payload JSON file
-          comment_body=$(jq -r '.comment.body' "$GITHUB_EVENT_PATH")
+          # Process the comment
+          go run scripts/process_pr_comment.go "$temp_comment_file"
           
-          # Check if the comment is '/clear convo'
-          if [ "$comment_body" = "/clear convo" ]; then
-            if [ -f ".cpeconvo" ]; then
-              # Remove the local file
-              rm .cpeconvo
-              # Delete the cache entry using gh cache delete
-              gh cache delete "cpe-cache-${{ steps.pr_info.outputs.head_ref }}"
-              echo "### CPE Response" > "$temp_comment_file"
-              echo "" >> "$temp_comment_file"
-              echo "Conversation history cleared." >> "$temp_comment_file"
-            else
-              echo "### CPE Response" > "$temp_comment_file"
-              echo "" >> "$temp_comment_file"
-              echo "No conversation history found." >> "$temp_comment_file"
-            fi
-          else
-            # Run CPE and capture its output
-            if [ -f ".cpeconvo" ]; then
-              echo "Found existing conversation, using -continue flag"
-              # Extract comment directly from event JSON and pipe to cpe
-              jq -r '.comment.body' "$GITHUB_EVENT_PATH" | cpe -continue 2>&1 | tee "$temp_output_file"
-            else
-              echo "No existing conversation found, starting new conversation"
-              # Extract comment directly from event JSON and pipe to cpe
-              jq -r '.comment.body' "$GITHUB_EVENT_PATH" | cpe 2>&1 | tee "$temp_output_file"
-            fi
-            
-            # Handle any changes and commits
-            if [[ -n "$(git status --porcelain)" ]]; then
-              # Ask CPE to commit the changes
-              echo "Please commit the changes with a suitable commit message" | cpe -continue
-            fi
-            
-            # Always push changes, as there might be commits from previous CPE invocations
-            git push origin HEAD:${{ steps.pr_info.outputs.head_ref }}
-            
-            # Create the PR comment
-            echo "### CPE Response" > "$temp_comment_file"
-            echo "" >> "$temp_comment_file"
-            cat "$temp_output_file" >> "$temp_comment_file"
+          # Check for uncommitted changes
+          if [[ -n "$(git status --porcelain)" ]]; then
+            # Ask CPE to commit the changes
+            echo "Please commit the changes with a suitable commit message" | cpe -continue last
           fi
           
-          # Post the comment and clean up
+          # Post the comment
           gh pr comment $PR_NUMBER --body-file "$temp_comment_file"
-          rm "$temp_output_file" "$temp_comment_file"
+          rm "$temp_comment_file"
+          
+          # Push any changes
+          git push origin HEAD:${{ steps.pr_info.outputs.head_ref }}
