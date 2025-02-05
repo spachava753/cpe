@@ -117,10 +117,10 @@ func executeCPE(args string, input string, outputFile string) error {
 		return fmt.Errorf("failed to write header newline: %w", err)
 	}
 
-	// Set up command output to write to both the file and a buffer
-	var buf bytes.Buffer
-	cmd.Stdout = io.MultiWriter(out, &buf)
-	cmd.Stderr = io.MultiWriter(out, &buf)
+	// Set up separate buffers for stdout and stderr
+	var stdoutBuf, stderrBuf bytes.Buffer
+	cmd.Stdout = io.MultiWriter(out, &stdoutBuf)
+	cmd.Stderr = io.MultiWriter(out, &stderrBuf)
 
 	// Start the command
 	if err := cmd.Start(); err != nil {
@@ -139,6 +139,18 @@ func executeCPE(args string, input string, outputFile string) error {
 
 	// Wait for the command to complete
 	if err := cmd.Wait(); err != nil {
+		// Get the command output
+		stdout := stdoutBuf.String()
+		stderr := stderrBuf.String()
+
+		// Print the output to stderr for logging
+		if stdout != "" {
+			fmt.Fprintf(os.Stderr, "Command stdout:\n%s\n", stdout)
+		}
+		if stderr != "" {
+			fmt.Fprintf(os.Stderr, "Command stderr:\n%s\n", stderr)
+		}
+
 		return fmt.Errorf("cpe execution failed: %w", err)
 	}
 
