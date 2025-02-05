@@ -52,9 +52,9 @@ jobs:
       - name: Install CPE
         run: go install github.com/spachava753/cpe@latest
 
-      - name: Restore CPE conversation
+      - name: Cache CPE conversation
         id: cache-restore
-        uses: actions/cache/restore@v3
+        uses: actions/cache@v3
         with:
           path: .cpeconvo
           key: cpe-cache-${{ steps.pr_info.outputs.head_ref }}
@@ -84,10 +84,3 @@ jobs:
           
           # Push any changes
           git push origin HEAD:${{ steps.pr_info.outputs.head_ref }}
-
-      - name: Save CPE conversation
-        uses: actions/cache/save@v3
-        if: always()
-        with:
-          path: .cpeconvo
-          key: cpe-cache-${{ steps.pr_info.outputs.head_ref }}
