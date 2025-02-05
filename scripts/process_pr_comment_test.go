@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -153,6 +154,29 @@ func TestExecuteCPE(t *testing.T) {
 	}
 	if len(content) == 0 {
 		t.Error("Output file is empty")
+	}
+
+	// Test with failing command but verify output is still written
+	outputFile = filepath.Join(tmpDir, "output_fail.md")
+	err = executeCPE("-nonexistent-flag", "", outputFile)
+	if err == nil {
+		t.Error("executeCPE() expected error with invalid flag")
+	}
+
+	// Verify file exists and has content even though command failed
+	content, err = os.ReadFile(outputFile)
+	if err != nil {
+		t.Errorf("Failed to read output file: %v", err)
+	}
+	if len(content) == 0 {
+		t.Error("Output file is empty despite command failure")
+	}
+	// Check that both the command output and the error message are present
+	if !strings.Contains(string(content), "### CPE Response") {
+		t.Error("Output file missing header despite command failure")
+	}
+	if !strings.Contains(string(content), "Error executing cpe:") {
+		t.Error("Output file missing error message despite command failure")
 	}
 }
 
