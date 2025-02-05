@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -142,10 +141,9 @@ func executeCPE(args string, input string, outputFile string) error {
 		return fmt.Errorf("failed to write header newline: %w", err)
 	}
 
-	// Set up command output to write to both the file and a buffer
-	var buf bytes.Buffer
-	cmd.Stdout = io.MultiWriter(out, &buf)
-	cmd.Stderr = io.MultiWriter(out, &buf)
+	// Set up command output to write to both the file and stderr/stdout
+	cmd.Stdout = io.MultiWriter(out, os.Stdout)
+	cmd.Stderr = io.MultiWriter(out, os.Stderr)
 
 	// Start the command
 	if err := cmd.Start(); err != nil {
@@ -162,16 +160,8 @@ func executeCPE(args string, input string, outputFile string) error {
 		stdin.Close()
 	}()
 
-	// Wait for the command to complete and capture any error
-	err = cmd.Wait()
-	
-	// If there was an error, append it to our output
-	if err != nil {
-		errMsg := fmt.Sprintf("\n\nError executing cpe: %v\n", err)
-		if _, writeErr := out.WriteString(errMsg); writeErr != nil {
-			// If we can't write to the file, append the error to the original error
-			return fmt.Errorf("command failed: %v; additionally failed to write error to output file: %v", err, writeErr)
-		}
+	// Wait for the command to complete
+	if err := cmd.Wait(); err != nil {
 		return fmt.Errorf("cpe execution failed: %w", err)
 	}
 

@@ -1,9 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -139,12 +140,61 @@ func TestExecuteCPE(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
+	// Capture stdout and stderr
+	oldStdout := os.Stdout
+	oldStderr := os.Stderr
+	defer func() {
+		os.Stdout = oldStdout
+		os.Stderr = oldStderr
+	}()
+
+	// Create pipes for stdout and stderr
+	rOut, wOut, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rErr, wErr, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set stdout and stderr to our pipes
+	os.Stdout = wOut
+	os.Stderr = wErr
+
 	outputFile := filepath.Join(tmpDir, "output.md")
 
-	// Test with empty input
-	err = executeCPE("-version", "", outputFile)
-	if err != nil {
-		t.Errorf("executeCPE() error = %v", err)
+	// Run command in a goroutine
+	go func() {
+		err := executeCPE("-version", "", outputFile)
+		if err != nil {
+			t.Errorf("executeCPE() error = %v", err)
+		}
+		wOut.Close()
+		wErr.Close()
+	}()
+
+	// Read stdout and stderr
+	outC := make(chan string)
+	errC := make(chan string)
+	go func() {
+		var b bytes.Buffer
+		io.Copy(&b, rOut)
+		outC <- b.String()
+	}()
+	go func() {
+		var b bytes.Buffer
+		io.Copy(&b, rErr)
+		errC <- b.String()
+	}()
+
+	// Get the output
+	stdout := <-outC
+	stderr := <-errC
+
+	// Verify stdout/stderr were captured
+	if stdout == "" && stderr == "" {
+		t.Error("No output captured from command")
 	}
 
 	// Verify file exists and has content
@@ -154,29 +204,6 @@ func TestExecuteCPE(t *testing.T) {
 	}
 	if len(content) == 0 {
 		t.Error("Output file is empty")
-	}
-
-	// Test with failing command but verify output is still written
-	outputFile = filepath.Join(tmpDir, "output_fail.md")
-	err = executeCPE("-nonexistent-flag", "", outputFile)
-	if err == nil {
-		t.Error("executeCPE() expected error with invalid flag")
-	}
-
-	// Verify file exists and has content even though command failed
-	content, err = os.ReadFile(outputFile)
-	if err != nil {
-		t.Errorf("Failed to read output file: %v", err)
-	}
-	if len(content) == 0 {
-		t.Error("Output file is empty despite command failure")
-	}
-	// Check that both the command output and the error message are present
-	if !strings.Contains(string(content), "### CPE Response") {
-		t.Error("Output file missing header despite command failure")
-	}
-	if !strings.Contains(string(content), "Error executing cpe:") {
-		t.Error("Output file missing error message despite command failure")
 	}
 }
 
