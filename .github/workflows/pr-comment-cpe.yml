@@ -53,13 +53,12 @@ jobs:
         run: go install github.com/spachava753/cpe@latest
 
       - name: Cache CPE conversation
-        id: cache-restore
         uses: actions/cache@v3
         with:
           path: .cpeconvo
-          key: cpe-cache-${{ steps.pr_info.outputs.head_ref }}
+          key: cpe-cache-${{ steps.pr_info.outputs.head_ref }}-${{ github.event.comment.id }}
           restore-keys: |
-            cpe-cache-${{ steps.pr_info.outputs.head_ref }}
+            cpe-cache-${{ steps.pr_info.outputs.head_ref }}-
 
       - name: Process PR comment and run CPE
         env:
