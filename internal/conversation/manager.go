@@ -44,12 +44,38 @@ func (m *Manager) Close() error {
 	return m.db.Close()
 }
 
+// generateUniqueID generates a unique conversation ID using only lowercase letters
+func (m *Manager) generateUniqueID(ctx context.Context) (string, error) {
+	const maxAttempts = 10 // Maximum number of attempts to generate a unique ID
+	const alphabet = "abcdefghijklmnopqrstuvwxyz"
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		// Generate ID (6 characters)
+		id, err := gonanoid.Generate(alphabet, 6)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate ID: %w", err)
+		}
+
+		// Check if ID already exists
+		_, err = m.queries.GetConversation(ctx, id)
+		if err == sql.ErrNoRows {
+			// ID doesn't exist, we can use it
+			return id, nil
+		} else if err != nil {
+			return "", fmt.Errorf("failed to check ID existence: %w", err)
+		}
+		// ID exists, try again
+	}
+
+	return "", fmt.Errorf("failed to generate unique ID after %d attempts", maxAttempts)
+}
+
 // CreateConversation creates a new conversation
 func (m *Manager) CreateConversation(ctx context.Context, parentID *string, userMessage string, executorData []byte, model string) (string, error) {
-	// Generate nanoid (6 characters)
-	id, err := gonanoid.Generate("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", 6)
+	// Generate unique ID
+	id, err := m.generateUniqueID(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate ID: %w", err)
+		return "", fmt.Errorf("failed to generate unique ID: %w", err)
 	}
 
 	// Create conversation params
