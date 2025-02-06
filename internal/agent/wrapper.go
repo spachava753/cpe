@@ -21,6 +21,9 @@ type executorWrapper struct {
 func (e *executorWrapper) Execute(input string) error {
 	defer e.convoManager.Close()  // Close the database connection when we're done
 
+	// Store the input as the user message
+	e.userMessage = input
+
 	// Execute the wrapped executor
 	if err := e.executor.Execute(input); err != nil {
 		return err

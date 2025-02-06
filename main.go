@@ -121,6 +121,7 @@ func main() {
 		DeleteConversation: config.DeleteConversation,
 		DeleteCascade:      config.DeleteCascade,
 		PrintConversation:  config.PrintConversation,
+		New:                config.New,
 	})
 	if err != nil {
 		slog.Error("fatal error", slog.Any("err", err))
