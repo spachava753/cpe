@@ -32,6 +32,7 @@ type Options struct {
 	ListFiles          bool
 	Overview           bool
 	RelatedFiles       string
+	New                bool
 }
 
 var Opts Options
@@ -58,11 +59,12 @@ func init() {
 	flag.Float64Var(&Opts.PresencePenalty, "presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
 	flag.IntVar(&Opts.NumberOfResponses, "number-of-responses", 0, "Number of responses to generate")
 	flag.StringVar(&Opts.Input, "input", "", "Specify an input file path to read from. Can be combined with stdin input and command line arguments")
-	flag.StringVar(&Opts.Continue, "continue", "", "Continue the conversation. Use 'last' to continue from the latest conversation, or provide a conversation ID")
+	flag.StringVar(&Opts.Continue, "continue", "", "Continue from a specific conversation ID")
 	flag.BoolVar(&Opts.ListConversations, "list-convo", false, "List all conversations")
 	flag.StringVar(&Opts.DeleteConversation, "delete-convo", "", "Delete a specific conversation")
 	flag.BoolVar(&Opts.DeleteCascade, "cascade", false, "When deleting a conversation, also delete its children")
 	flag.StringVar(&Opts.PrintConversation, "print-convo", "", "Print a specific conversation")
+	flag.BoolVar(&Opts.New, "new", false, "Start a new conversation instead of continuing from the last one")
 }
 
 func ParseFlags() {

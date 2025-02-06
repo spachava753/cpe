@@ -121,11 +121,7 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 		var conv *db.Conversation
 		var err error
 
-		if flags.Continue == "last" {
-			conv, err = convoManager.GetLatestConversation(context.Background())
-		} else {
-			conv, err = convoManager.GetConversation(context.Background(), flags.Continue)
-		}
+		conv, err = convoManager.GetConversation(context.Background(), flags.Continue)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get conversation: %w", err)
 		}
@@ -140,6 +136,22 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 		// Load messages into executor
 		if err := executor.LoadMessages(bytes.NewReader(conv.ExecutorData)); err != nil {
 			return nil, fmt.Errorf("failed to load messages: %w", err)
+		}
+	} else if !flags.New {
+		// Try to continue from latest conversation if one exists
+		conv, err := convoManager.GetLatestConversation(context.Background())
+		if err == nil {
+			continueId = conv.ID
+
+			// Verify model compatibility
+			if conv.Model != genConfig.Model {
+				return nil, fmt.Errorf("cannot continue conversation from a different executor (conversation model: %s, requested model: %s)", conv.Model, genConfig.Model)
+			}
+
+			// Load messages into executor
+			if err := executor.LoadMessages(bytes.NewReader(conv.ExecutorData)); err != nil {
+				return nil, fmt.Errorf("failed to load messages: %w", err)
+			}
 		}
 	}
 
