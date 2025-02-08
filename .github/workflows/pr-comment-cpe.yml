@@ -74,7 +74,7 @@ jobs:
           # Check for uncommitted changes
           if [[ -n "$(git status --porcelain)" ]]; then
             # Ask CPE to commit the changes
-            echo "Please commit the changes with a suitable commit message" | cpe -continue last
+            echo "Please commit the changes with a suitable commit message" | cpe
           fi
           
           # Post the comment
