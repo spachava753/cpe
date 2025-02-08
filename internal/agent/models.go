@@ -68,6 +68,10 @@ func (c OpenAIConfig) GetAPIKey() string {
 }
 
 var ModelConfigs = map[string]ModelConfig{
+	"o3-mini": {
+		Name: openai.ChatModelO3Mini, IsKnown: true,
+		Defaults: ModelDefaults{MaxTokens: 100000, Temperature: 1},
+	},
 	"deepseek-chat": {
 		Name: "deepseek-chat", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
@@ -133,23 +137,23 @@ var ModelConfigs = map[string]ModelConfig{
 var DefaultModel = "claude-3-5-sonnet"
 
 type ModelOptions struct {
-	Model             string
-	CustomURL         string
-	MaxTokens         int
-	Temperature       float64
-	TopP              float64
-	TopK              int
-	FrequencyPenalty  float64
-	PresencePenalty   float64
-	NumberOfResponses int
-	Input             string
-	Version           bool
-	Continue          string  // conversation ID to continue from
-	ListConversations bool    // List all conversations
+	Model              string
+	CustomURL          string
+	MaxTokens          int
+	Temperature        float64
+	TopP               float64
+	TopK               int
+	FrequencyPenalty   float64
+	PresencePenalty    float64
+	NumberOfResponses  int
+	Input              string
+	Version            bool
+	Continue           string // conversation ID to continue from
+	ListConversations  bool   // List all conversations
 	DeleteConversation string // Conversation ID to delete
-	DeleteCascade     bool    // Delete conversation and all children
-	PrintConversation string  // Conversation ID to print
-	New               bool    // Start a new conversation instead of continuing from the last one
+	DeleteCascade      bool   // Delete conversation and all children
+	PrintConversation  string // Conversation ID to print
+	New                bool   // Start a new conversation instead of continuing from the last one
 }
 
 func (f ModelOptions) ApplyToGenConfig(config GenConfig) GenConfig {
