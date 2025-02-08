@@ -98,7 +98,7 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 			return nil, fmt.Errorf("ANTHROPIC_API_KEY environment variable not set")
 		}
 		executor = NewAnthropicExecutor(customURL, apiKey, logger, ignorer, genConfig)
-	case "gemini-1.5-pro-002", "gemini-1.5-flash-002", "gemini-2.0-flash-exp":
+	case "gemini-1.5-pro-002", "gemini-1.5-flash-002", "gemini-2.0-flash-exp", "gemini-2.0-flash", "gemini-2.0-flash-lite-preview-02-05", "gemini-2.0-pro-exp-02-05":
 		apiKey := os.Getenv("GEMINI_API_KEY")
 		if apiKey == "" {
 			return nil, fmt.Errorf("GEMINI_API_KEY environment variable not set")
