@@ -43,7 +43,7 @@ func TestParseComment(t *testing.T) {
 			input: "Regular comment without header",
 			createCpeConvo: true,
 			want: Output{
-				Args:    "-continue last",
+				Args:    "", // No args needed since continue is default behavior
 				Comment: "Regular comment without header",
 			},
 		},
@@ -88,7 +88,7 @@ func TestParseComment(t *testing.T) {
 			input: "---\n-continue fdsF34",
 			createCpeConvo: true,
 			want: Output{
-				Args:    "-continue last",
+				Args:    "", // No args needed since continue is default behavior
 				Comment: "---\n-continue fdsF34",
 			},
 		},
@@ -106,7 +106,7 @@ func TestParseComment(t *testing.T) {
 			input: "---\n\n---\nI want you to...",
 			createCpeConvo: true,
 			want: Output{
-				Args:    "-continue last",
+				Args:    "", // No args needed since continue is default behavior
 				Comment: "I want you to...",
 			},
 		},

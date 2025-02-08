@@ -40,7 +40,7 @@ func parseComment(comment string) Output {
 			}
 		}
 		return Output{
-			Args:    "-continue last",
+			Args:    "", // No args needed since continue is default behavior
 			Comment: comment,
 		}
 	}
@@ -64,7 +64,7 @@ func parseComment(comment string) Output {
 			}
 		}
 		return Output{
-			Args:    "-continue last",
+			Args:    "", // No args needed since continue is default behavior
 			Comment: comment,
 		}
 	}
@@ -81,7 +81,7 @@ func parseComment(comment string) Output {
 			}
 		}
 		return Output{
-			Args:    "-continue last",
+			Args:    "", // No args needed since continue is default behavior
 			Comment: strings.TrimSpace(strings.Join(lines[headerEnd+1:], "\n")),
 		}
 	}
