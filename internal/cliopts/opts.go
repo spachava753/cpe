@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/spachava753/cpe/internal/agent"
+	"log"
 	"maps"
 	"os"
 	"slices"
@@ -58,7 +59,7 @@ func init() {
 	flag.Float64Var(&Opts.FrequencyPenalty, "frequency-penalty", 0, "Frequency penalty (-2.0 - 2.0)")
 	flag.Float64Var(&Opts.PresencePenalty, "presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
 	flag.IntVar(&Opts.NumberOfResponses, "number-of-responses", 0, "Number of responses to generate")
-	flag.StringVar(&Opts.Input, "input", "", "Specify an input file path to read from. Can be combined with stdin input and command line arguments")
+	flag.StringVar(&Opts.Input, "input", "", "When specified, all arguments except the last one are treated as input files. The last argument is the prompt. Without this flag, only one argument (the prompt) is accepted")
 	flag.StringVar(&Opts.Continue, "continue", "", "Continue from a specific conversation ID")
 	flag.BoolVar(&Opts.ListConversations, "list-convo", false, "List all conversations")
 	flag.StringVar(&Opts.DeleteConversation, "delete-convo", "", "Delete a specific conversation")
@@ -70,8 +71,24 @@ func init() {
 func ParseFlags() {
 	flag.Parse()
 
-	// Any remaining arguments after flags are treated as the prompt
-	if args := flag.Args(); len(args) > 0 {
-		Opts.Prompt = strings.Join(args, " ")
+	// Any remaining arguments after flags
+	args := flag.Args()
+	if len(args) > 0 {
+		if Opts.Input != "" {
+			// If -input flag is specified, all arguments except the last one are input files
+			// and the last argument is the prompt
+			if len(args) < 2 {
+				// Need at least one input file and the prompt
+				log.Fatal("when using -input flag, at least one input file and a prompt must be provided")
+			}
+			Opts.Input = strings.Join(args[:len(args)-1], ",")
+			Opts.Prompt = args[len(args)-1]
+		} else {
+			// If -input flag is not specified, the only argument is the prompt
+			if len(args) > 1 {
+				log.Fatal("without -input flag, only one argument (the prompt) can be provided")
+			}
+			Opts.Prompt = args[0]
+		}
 	}
 }
