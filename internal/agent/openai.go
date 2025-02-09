@@ -157,7 +157,17 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 	}
 }
 
-func (o *openaiExecutor) Execute(input string) error {
+func (o *openaiExecutor) Execute(inputs []Input) error {
+	// TODO: Handle non-text inputs (images) when implementing multimodal support
+	
+	// For now, just handle text inputs
+	var textInputs []string
+	for _, input := range inputs {
+		if input.Type == InputTypeText {
+			textInputs = append(textInputs, input.Text)
+		}
+	}
+	input := strings.Join(textInputs, "\n")
 	// Add user input as message
 	o.params.Messages = oai.F(append(o.params.Messages.Value, oai.UserMessage(input)))
 

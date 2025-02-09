@@ -134,6 +134,36 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Get model config to validate input types
+	modelConfig, ok := agent.ModelConfigs[config.Model]
+	if !ok {
+		// For unknown models, default to text only
+		modelConfig = agent.ModelConfig{
+			Name:            config.Model,
+			IsKnown:        false,
+			SupportedInputs: []agent.InputType{agent.InputTypeText},
+		}
+	}
+
+	// Validate input types against model capabilities
+	for _, input := range input {
+		supported := false
+		for _, t := range modelConfig.SupportedInputs {
+			if t == input.Type {
+				supported = true
+				break
+			}
+		}
+		if !supported {
+			slog.Error("model does not support input type", 
+				slog.String("model", config.Model),
+				slog.String("input_type", string(input.Type)),
+				slog.String("file", input.FilePath),
+			)
+			os.Exit(1)
+		}
+	}
+
 	if err := executor.Execute(input); err != nil {
 		slog.Error("fatal error", slog.Any("err", err))
 		os.Exit(1)
@@ -158,8 +188,8 @@ func parseConfig() (cliopts.Options, error) {
 	return cliopts.Opts, nil
 }
 
-func readInput(inputPath string) (string, error) {
-	var inputs []string
+func readInput(inputPath string) ([]agent.Input, error) {
+	var inputs []agent.Input
 
 	// Check if there is any input from stdin by checking if stdin is a pipe or redirection
 	stat, _ := os.Stdin.Stat()
@@ -167,37 +197,61 @@ func readInput(inputPath string) (string, error) {
 		// Stdin has data available
 		content, err := io.ReadAll(os.Stdin)
 		if err != nil {
-			return "", fmt.Errorf("error reading from stdin: %w", err)
+			return nil, fmt.Errorf("error reading from stdin: %w", err)
 		}
 		if len(content) > 0 {
-			inputs = append(inputs, string(content))
+			inputs = append(inputs, agent.Input{
+				Type: agent.InputTypeText,
+				Text: string(content),
+			})
 		}
 	}
 
 	// Check if there is input from the -input flag
 	if inputPath != "" {
-		content, err := os.ReadFile(inputPath)
-		if err != nil {
-			return "", fmt.Errorf("error opening input file %s: %w", inputPath, err)
-		}
-		if len(content) > 0 {
-			inputs = append(inputs, string(content))
+		// Split comma-separated list of files
+		for _, path := range strings.Split(inputPath, ",") {
+			path = strings.TrimSpace(path)
+			if path == "" {
+				continue
+			}
+
+			// Check if file exists
+			if _, err := os.Stat(path); err != nil {
+				// If file doesn't exist, treat as direct text input
+				inputs = append(inputs, agent.Input{
+					Type: agent.InputTypeText,
+					Text: path,
+				})
+				continue
+			}
+
+			// Detect input type from file
+			inputType, err := agent.DetectInputType(path)
+			if err != nil {
+				return nil, fmt.Errorf("error detecting input type for file %s: %w", path, err)
+			}
+
+			inputs = append(inputs, agent.Input{
+				Type:     inputType,
+				FilePath: path,
+			})
 		}
 	}
 
 	// Check if there is input from command line arguments
 	if cliopts.Opts.Prompt != "" {
-		inputs = append(inputs, cliopts.Opts.Prompt)
+		inputs = append(inputs, agent.Input{
+			Type: agent.InputTypeText,
+			Text: cliopts.Opts.Prompt,
+		})
 	}
 
-	// Combine all inputs with double newlines
-	input := strings.Join(inputs, "\n\n")
-
-	if input == "" {
-		return "", fmt.Errorf("no input provided. Please provide input via stdin, input file, or as a command line argument")
+	if len(inputs) == 0 {
+		return nil, fmt.Errorf("no input provided. Please provide input via stdin, input file, or as a command line argument")
 	}
 
-	return input, nil
+	return inputs, nil
 }
 
 func handleConversationCommands(config cliopts.Options) error {

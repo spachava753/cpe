@@ -126,7 +126,17 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 	}
 }
 
-func (s *anthropicExecutor) Execute(input string) error {
+func (s *anthropicExecutor) Execute(inputs []Input) error {
+	// TODO: Handle non-text inputs (images) when implementing multimodal support
+	
+	// For now, just handle text inputs
+	var textInputs []string
+	for _, input := range inputs {
+		if input.Type == InputTypeText {
+			textInputs = append(textInputs, input.Text)
+		}
+	}
+	input := strings.Join(textInputs, "\n")
 	if !s.params.Messages.Present {
 		s.params.Messages = a.F([]a.BetaMessageParam{})
 	}

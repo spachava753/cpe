@@ -186,7 +186,17 @@ func NewGeminiExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 	}, nil
 }
 
-func (g *geminiExecutor) Execute(input string) error {
+func (g *geminiExecutor) Execute(inputs []Input) error {
+	// TODO: Handle non-text inputs (images, video, audio) when implementing multimodal support
+	
+	// For now, just handle text inputs
+	var textInputs []string
+	for _, input := range inputs {
+		if input.Type == InputTypeText {
+			textInputs = append(textInputs, input.Text)
+		}
+	}
+	input := strings.Join(textInputs, "\n")
 	if g.session == nil {
 		g.session = g.model.StartChat()
 	}

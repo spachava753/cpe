@@ -72,7 +72,17 @@ func NewOpenAiReasoningExecutor(baseUrl string, apiKey string, logger Logger, ig
 	}
 }
 
-func (o *openAiReasoningExecutor) Execute(input string) error {
+func (o *openAiReasoningExecutor) Execute(inputs []Input) error {
+	// TODO: Handle non-text inputs when implementing multimodal support
+	
+	// For now, just handle text inputs
+	var textInputs []string
+	for _, input := range inputs {
+		if input.Type == InputTypeText {
+			textInputs = append(textInputs, input.Text)
+		}
+	}
+	input := strings.Join(textInputs, "\n")
 	// Add messages to conversation
 	o.params.Messages = oai.F(append(o.params.Messages.Value,
 		oai.UserMessage(fmt.Sprintf("%s\n\n<input>\n%s\n</input>", reasoningAgentInstructions, input)),
