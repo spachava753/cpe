@@ -3,15 +3,18 @@ package agent
 import (
 	"context"
 	_ "embed"
+	"encoding/base64"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	"github.com/gabriel-vasile/mimetype"
 	oai "github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/pkoukk/tiktoken-go"
 	gitignore "github.com/sabhiram/go-gitignore"
 	"github.com/spachava753/cpe/internal/tiktokenloader"
 	"io"
+	"os"
 	"strings"
 	"time"
 )
@@ -158,18 +161,49 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 }
 
 func (o *openaiExecutor) Execute(inputs []Input) error {
-	// TODO: Handle non-text inputs (images) when implementing multimodal support
-	
-	// For now, just handle text inputs
-	var textInputs []string
+	// Convert inputs into content parts
+	var contentParts []oai.ChatCompletionContentPartUnionParam
 	for _, input := range inputs {
-		if input.Type == InputTypeText {
-			textInputs = append(textInputs, input.Text)
+		switch input.Type {
+		case InputTypeText:
+			contentParts = append(contentParts, oai.ChatCompletionContentPartTextParam{
+				Text: oai.F(input.Text),
+				Type: oai.F(oai.ChatCompletionContentPartTextTypeText),
+			})
+		case InputTypeImage:
+			// Read and base64 encode the image file
+			imgData, err := os.ReadFile(input.FilePath)
+			if err != nil {
+				return fmt.Errorf("failed to read image file %s: %w", input.FilePath, err)
+			}
+			
+			// Detect mime type
+			mime := mimetype.Detect(imgData)
+			if !strings.HasPrefix(mime.String(), "image/") {
+				return fmt.Errorf("file %s is not an image", input.FilePath)
+			}
+			
+			// Base64 encode the image data with data URI prefix
+			encodedData := fmt.Sprintf("data:%s;base64,%s", mime.String(), base64.StdEncoding.EncodeToString(imgData))
+			
+			// Create image part
+			contentParts = append(contentParts, oai.ChatCompletionContentPartImageParam{
+				Type: oai.F(oai.ChatCompletionContentPartImageTypeImageURL),
+				ImageURL: oai.F(oai.ChatCompletionContentPartImageImageURLParam{
+					URL: oai.F(encodedData),
+				}),
+			})
+		case InputTypeVideo:
+			return fmt.Errorf("video input is not supported by OpenAI models")
+		case InputTypeAudio:
+			return fmt.Errorf("audio input is not supported by OpenAI models")
+		default:
+			return fmt.Errorf("unknown input type: %s", input.Type)
 		}
 	}
-	input := strings.Join(textInputs, "\n")
-	// Add user input as message
-	o.params.Messages = oai.F(append(o.params.Messages.Value, oai.UserMessage(input)))
+
+	// Add user message as message
+	o.params.Messages = oai.F(append(o.params.Messages.Value, oai.UserMessageParts(contentParts...)))
 
 	for {
 		// Create message
