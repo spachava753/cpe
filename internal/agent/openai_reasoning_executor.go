@@ -73,14 +73,13 @@ func NewOpenAiReasoningExecutor(baseUrl string, apiKey string, logger Logger, ig
 }
 
 func (o *openAiReasoningExecutor) Execute(inputs []Input) error {
-	// TODO: Handle non-text inputs when implementing multimodal support
-	
-	// For now, just handle text inputs
+	// Only text input is supported
 	var textInputs []string
 	for _, input := range inputs {
-		if input.Type == InputTypeText {
-			textInputs = append(textInputs, input.Text)
+		if input.Type != InputTypeText {
+			return fmt.Errorf("input type %s is not supported by OpenAI Reasoning models, only text input is supported", input.Type)
 		}
+		textInputs = append(textInputs, input.Text)
 	}
 	input := strings.Join(textInputs, "\n")
 	// Add messages to conversation

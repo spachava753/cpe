@@ -23,7 +23,7 @@ func (e *executorWrapper) Execute(inputs []Input) error {
 	defer e.convoManager.Close()  // Close the database connection when we're done
 
 	// Store the input as the user message
-	// For now, just store the text inputs
+	// Only store text inputs
 	var textInputs []string
 	for _, input := range inputs {
 		if input.Type == InputTypeText {

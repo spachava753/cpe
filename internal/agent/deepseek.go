@@ -109,14 +109,13 @@ func NewDeepSeekExecutor(baseUrl string, apiKey string, logger Logger, ignorer *
 }
 
 func (o *deepseekExecutor) Execute(inputs []Input) error {
-	// TODO: Handle non-text inputs when implementing multimodal support
-	
-	// For now, just handle text inputs
+	// Only text input is supported
 	var textInputs []string
 	for _, input := range inputs {
-		if input.Type == InputTypeText {
-			textInputs = append(textInputs, input.Text)
+		if input.Type != InputTypeText {
+			return fmt.Errorf("input type %s is not supported by DeepSeek models, only text input is supported", input.Type)
 		}
+		textInputs = append(textInputs, input.Text)
 	}
 	input := strings.Join(textInputs, "\n")
 	o.logger.Println("Note that the current V3 model is not yet perfected, it seems like the instruction following and tool calling performance is not yet tuned.")
