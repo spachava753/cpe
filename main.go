@@ -218,12 +218,7 @@ func readInput(inputPath string) ([]agent.Input, error) {
 
 			// Check if file exists
 			if _, err := os.Stat(path); err != nil {
-				// If file doesn't exist, treat as direct text input
-				inputs = append(inputs, agent.Input{
-					Type: agent.InputTypeText,
-					Text: path,
-				})
-				continue
+				return nil, fmt.Errorf("input file does not exist: %s", path)
 			}
 
 			// Detect input type from file
