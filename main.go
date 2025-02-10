@@ -209,11 +209,22 @@ func readInput(inputFlag bool) ([]agent.Input, error) {
 	// Check if there are input files from command line arguments
 	if inputFlag {
 		args := cliopts.Opts.Args
-		if len(args) < 2 {
-			return nil, fmt.Errorf("when using -input flag, need at least one input file and a prompt/file path")
+		if len(args) < 1 {
+			return nil, fmt.Errorf("when using -input flag, need at least one input file")
 		}
-		// All but last argument are input files
-		for _, path := range args[:len(args)-1] {
+		// All arguments are treated as input files, except the last one if it's not a file
+		lastIdx := len(args)
+		lastArg := args[lastIdx-1]
+		if _, err := os.Stat(lastArg); err != nil {
+			// Last argument doesn't exist as a file, treat it as prompt text
+			lastIdx--
+			inputs = append(inputs, agent.Input{
+				Type: agent.InputTypeText,
+				Text: lastArg,
+			})
+		}
+		// Process all other arguments as files
+		for _, path := range args[:lastIdx] {
 			// We already validated file existence in ParseFlags()
 			inputType, err := agent.DetectInputType(path)
 			if err != nil {
@@ -223,26 +234,6 @@ func readInput(inputFlag bool) ([]agent.Input, error) {
 			inputs = append(inputs, agent.Input{
 				Type:     inputType,
 				FilePath: path,
-			})
-		}
-
-		// Last argument could be a file or prompt text
-		lastArg := args[len(args)-1]
-		if _, err := os.Stat(lastArg); err == nil {
-			// It's a file that exists
-			inputType, err := agent.DetectInputType(lastArg)
-			if err != nil {
-				return nil, fmt.Errorf("error detecting input type for file %s: %w", lastArg, err)
-			}
-			inputs = append(inputs, agent.Input{
-				Type:     inputType,
-				FilePath: lastArg,
-			})
-		} else {
-			// Treat as prompt text
-			inputs = append(inputs, agent.Input{
-				Type: agent.InputTypeText,
-				Text: lastArg,
 			})
 		}
 	} else if cliopts.Opts.Prompt != "" {

@@ -179,6 +179,14 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 		s.params.Messages = a.F([]a.BetaMessageParam{})
 	}
 
+	// If we have no content blocks, create one with an empty prompt
+	if len(contentBlocks) == 0 {
+		contentBlocks = append(contentBlocks, &a.BetaTextBlockParam{
+			Text: a.F("Please analyze these files."),
+			Type: a.F(a.BetaTextBlockParamTypeText),
+		})
+	}
+
 	s.params.Messages = a.F(append(s.params.Messages.Value, a.BetaMessageParam{
 		Content: a.F(contentBlocks),
 		Role:    a.F(a.BetaMessageParamRoleUser),

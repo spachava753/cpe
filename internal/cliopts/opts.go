@@ -77,19 +77,24 @@ func ParseFlags() {
 
 	if len(Opts.Args) > 0 {
 		if Opts.Input {
-			// If -input flag is provided, need at least two arguments:
-			// one or more input files and a prompt/last file
-			if len(Opts.Args) < 2 {
-				log.Fatal("when using -input flag, need at least one input file and a prompt/file path")
+			// If -input flag is provided, need at least one input file
+			if len(Opts.Args) < 1 {
+				log.Fatal("when using -input flag, need at least one input file")
 			}
-			// All but last argument must be valid files
-			for _, path := range Opts.Args[:len(Opts.Args)-1] {
+			// All arguments are treated as input files, except the last one if it's not a file
+			lastIdx := len(Opts.Args)
+			lastArg := Opts.Args[lastIdx-1]
+			if _, err := os.Stat(lastArg); err != nil {
+				// Last argument doesn't exist as a file, treat it as prompt text
+				lastIdx--
+				Opts.Prompt = lastArg
+			}
+			// Validate all other arguments are valid files
+			for _, path := range Opts.Args[:lastIdx] {
 				if _, err := os.Stat(path); err != nil {
 					log.Fatalf("input file does not exist: %s", path)
 				}
 			}
-			// Store the prompt
-			Opts.Prompt = Opts.Args[len(Opts.Args)-1]
 		} else {
 			// If -input flag is not provided, only one argument (the prompt) is allowed
 			if len(Opts.Args) > 1 {
