@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/spachava753/cpe/internal/conversation"
 	"io"
+	"strings"
 )
 
 // executorWrapper wraps an executor to handle conversation persistence
@@ -18,14 +19,21 @@ type executorWrapper struct {
 }
 
 // Execute executes the executor and saves the conversation
-func (e *executorWrapper) Execute(input string) error {
+func (e *executorWrapper) Execute(inputs []Input) error {
 	defer e.convoManager.Close()  // Close the database connection when we're done
 
 	// Store the input as the user message
-	e.userMessage = input
+	// Only store text inputs
+	var textInputs []string
+	for _, input := range inputs {
+		if input.Type == InputTypeText {
+			textInputs = append(textInputs, input.Text)
+		}
+	}
+	e.userMessage = strings.Join(textInputs, "\n")
 
 	// Execute the wrapped executor
-	if err := e.executor.Execute(input); err != nil {
+	if err := e.executor.Execute(inputs); err != nil {
 		return err
 	}
 

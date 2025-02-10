@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/gabriel-vasile/mimetype"
 	"github.com/google/generative-ai-go/genai"
 	gitignore "github.com/sabhiram/go-gitignore"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	"io"
+	"os"
 	"strings"
 	"time"
 )
@@ -25,6 +27,7 @@ func init() {
 	gob.Register(genai.FunctionCall{})
 	gob.Register(genai.FunctionResponse{})
 	gob.Register(map[string]interface{}{})
+	gob.Register(genai.Blob{})  // Add this line
 }
 
 type geminiExecutor struct {
@@ -186,7 +189,7 @@ func NewGeminiExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 	}, nil
 }
 
-func (g *geminiExecutor) Execute(input string) error {
+func (g *geminiExecutor) Execute(inputs []Input) error {
 	if g.session == nil {
 		g.session = g.model.StartChat()
 	}
@@ -194,7 +197,72 @@ func (g *geminiExecutor) Execute(input string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	// Send initial user message with retries
+	// Convert inputs into parts
+	var parts []genai.Part
+	for _, input := range inputs {
+		switch input.Type {
+		case InputTypeText:
+			parts = append(parts, genai.Text(input.Text))
+		case InputTypeImage:
+			// Read image file
+			imgData, err := os.ReadFile(input.FilePath)
+			if err != nil {
+				return fmt.Errorf("failed to read image file %s: %w", input.FilePath, err)
+			}
+			
+			// Detect mime type
+			mime := mimetype.Detect(imgData)
+			if !strings.HasPrefix(mime.String(), "image/") {
+				return fmt.Errorf("file %s is not an image", input.FilePath)
+			}
+
+			// Verify supported image type
+			switch mime.String() {
+			case "image/png", "image/jpeg", "image/webp", "image/heic", "image/heif":
+				// These are supported
+			default:
+				return fmt.Errorf("unsupported image type %s for file %s. Supported types: PNG, JPEG, WEBP, HEIC, HEIF", mime.String(), input.FilePath)
+			}
+			
+			// Get format without the "image/" prefix
+			format := strings.TrimPrefix(mime.String(), "image/")
+			
+			// Create image part
+			parts = append(parts, genai.ImageData(format, imgData))
+		case InputTypeAudio:
+			// Read audio file
+			audioData, err := os.ReadFile(input.FilePath)
+			if err != nil {
+				return fmt.Errorf("failed to read audio file %s: %w", input.FilePath, err)
+			}
+			
+			// Detect mime type
+			mime := mimetype.Detect(audioData)
+			if !strings.HasPrefix(mime.String(), "audio/") {
+				return fmt.Errorf("file %s is not an audio file", input.FilePath)
+			}
+
+			// Verify supported audio type
+			switch mime.String() {
+			case "audio/wav", "audio/mp3", "audio/aiff", "audio/aac", "audio/ogg", "audio/flac":
+				// These are supported
+			default:
+				return fmt.Errorf("unsupported audio type %s for file %s. Supported types: WAV, MP3, AIFF, AAC, OGG, FLAC", mime.String(), input.FilePath)
+			}
+			
+			// Create audio part
+			parts = append(parts, genai.Blob{
+				MIMEType: mime.String(),
+				Data:     audioData,
+			})
+		case InputTypeVideo:
+			return fmt.Errorf("video input is not yet supported by this implementation")
+		default:
+			return fmt.Errorf("unknown input type: %s", input.Type)
+		}
+	}
+
+	// Send initial message with retries
 	var resp *genai.GenerateContentResponse
 	var err error
 	maxRetries := 5
@@ -202,7 +270,7 @@ func (g *geminiExecutor) Execute(input string) error {
 	retryWait := 1 * time.Minute
 
 	for retryCount <= maxRetries {
-		resp, err = g.session.SendMessage(ctx, genai.Text(input))
+		resp, err = g.session.SendMessage(ctx, parts...)
 		if err == nil {
 			break
 		}

@@ -70,6 +70,28 @@ func ListTextFiles(ignorer *ignore.GitIgnore) ([]FileInfo, error) {
 	return files, nil
 }
 
+// DetectInputType detects the type of input from a file
+func DetectInputType(path string) (InputType, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("error reading file: %w", err)
+	}
+
+	mime := mimetype.Detect(content)
+	switch {
+	case strings.HasPrefix(mime.String(), "text/"):
+		return InputTypeText, nil
+	case strings.HasPrefix(mime.String(), "image/"):
+		return InputTypeImage, nil
+	case strings.HasPrefix(mime.String(), "video/"):
+		return InputTypeVideo, nil
+	case strings.HasPrefix(mime.String(), "audio/"):
+		return InputTypeAudio, nil
+	default:
+		return "", fmt.Errorf("unsupported file type: %s", mime.String())
+	}
+}
+
 var bashTool = Tool{
 	Name: "bash",
 	Description: `Run commands in a bash shell

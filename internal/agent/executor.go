@@ -23,8 +23,24 @@ var agentInstructions string
 var reasoningAgentInstructions string
 
 // Executor defines the interface for executing agentic workflows
+type InputType string
+
+const (
+	InputTypeText  InputType = "text"
+	InputTypeImage InputType = "image"
+	InputTypeVideo InputType = "video"
+	InputTypeAudio InputType = "audio"
+)
+
+// Input represents a single input to be processed by the model
+type Input struct {
+	Type     InputType
+	Text     string // Used when Type is InputTypeText
+	FilePath string // Used when Type is InputTypeImage, InputTypeVideo, or InputTypeAudio
+}
+
 type Executor interface {
-	Execute(input string) error
+	Execute(inputs []Input) error
 	LoadMessages(r io.Reader) error
 	SaveMessages(w io.Writer) error
 	PrintMessages() string
@@ -159,7 +175,7 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 		executor:     executor,
 		convoManager: convoManager,
 		model:        genConfig.Model,
-		userMessage:  flags.Input,
+		userMessage:  "",  // Will be set during Execute
 		continueID:   continueId,
 	}, nil
 }

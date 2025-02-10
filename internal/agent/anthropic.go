@@ -3,13 +3,16 @@ package agent
 import (
 	"context"
 	_ "embed"
+	"encoding/base64"
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	a "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/gabriel-vasile/mimetype"
 	gitignore "github.com/sabhiram/go-gitignore"
 	"io"
+	"os"
 	"strings"
 	"time"
 )
@@ -126,19 +129,67 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 	}
 }
 
-func (s *anthropicExecutor) Execute(input string) error {
+func (s *anthropicExecutor) Execute(inputs []Input) error {
+	// Convert inputs into content blocks
+	var contentBlocks []a.BetaContentBlockParamUnion
+	for _, input := range inputs {
+		switch input.Type {
+		case InputTypeText:
+			if len(strings.TrimSpace(input.Text)) > 0 {
+				contentBlocks = append(contentBlocks, &a.BetaTextBlockParam{
+					Text: a.F(input.Text),
+					Type: a.F(a.BetaTextBlockParamTypeText),
+				})
+			}
+		case InputTypeImage:
+			// Read and base64 encode the image file
+			imgData, err := os.ReadFile(input.FilePath)
+			if err != nil {
+				return fmt.Errorf("failed to read image file %s: %w", input.FilePath, err)
+			}
+			
+			// Detect mime type
+			mime := mimetype.Detect(imgData)
+			if !strings.HasPrefix(mime.String(), "image/") {
+				return fmt.Errorf("file %s is not an image", input.FilePath)
+			}
+			
+			// Base64 encode the image data
+			encodedData := base64.StdEncoding.EncodeToString(imgData)
+			
+			// Create image block
+			contentBlocks = append(contentBlocks, &a.BetaImageBlockParam{
+				Type: a.F(a.BetaImageBlockParamTypeImage),
+				Source: a.F(a.BetaImageBlockParamSource{
+					Type:      a.F(a.BetaImageBlockParamSourceTypeBase64),
+					MediaType: a.F(a.BetaImageBlockParamSourceMediaType(mime.String())),
+					Data:      a.F(encodedData),
+				}),
+			})
+		case InputTypeVideo:
+			return fmt.Errorf("video input is not supported by Claude models")
+		case InputTypeAudio:
+			return fmt.Errorf("audio input is not supported by Claude models")
+		default:
+			return fmt.Errorf("unknown input type: %s", input.Type)
+		}
+	}
+
 	if !s.params.Messages.Present {
 		s.params.Messages = a.F([]a.BetaMessageParam{})
 	}
 
+	// If we have no content blocks, create one with an empty prompt
+	if len(contentBlocks) == 0 {
+		contentBlocks = append(contentBlocks, &a.BetaTextBlockParam{
+			Text: a.F("Please analyze these files."),
+			Type: a.F(a.BetaTextBlockParamTypeText),
+		})
+	}
+
 	s.params.Messages = a.F(append(s.params.Messages.Value, a.BetaMessageParam{
-		Content: a.F([]a.BetaContentBlockParamUnion{
-			&a.BetaTextBlockParam{
-				Text: a.F(input),
-				Type: a.F(a.BetaTextBlockParamTypeText),
-			},
-		}),
-		Role: a.F(a.BetaMessageParamRoleUser),
+		Content: a.F(contentBlocks),
+		Role:    a.F(a.BetaMessageParamRoleUser),
 	}))
 
 	for {

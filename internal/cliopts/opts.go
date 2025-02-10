@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/spachava753/cpe/internal/agent"
+	"log"
 	"maps"
 	"os"
 	"slices"
@@ -20,7 +21,7 @@ type Options struct {
 	FrequencyPenalty   float64
 	PresencePenalty    float64
 	NumberOfResponses  int
-	Input              string
+	Input              bool
 	Version            bool
 	TokenCountPath     string
 	Prompt             string
@@ -33,6 +34,7 @@ type Options struct {
 	Overview           bool
 	RelatedFiles       string
 	New                bool
+	Args               []string // Remaining arguments after flag parsing
 }
 
 var Opts Options
@@ -58,7 +60,7 @@ func init() {
 	flag.Float64Var(&Opts.FrequencyPenalty, "frequency-penalty", 0, "Frequency penalty (-2.0 - 2.0)")
 	flag.Float64Var(&Opts.PresencePenalty, "presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
 	flag.IntVar(&Opts.NumberOfResponses, "number-of-responses", 0, "Number of responses to generate")
-	flag.StringVar(&Opts.Input, "input", "", "Specify an input file path to read from. Can be combined with stdin input and command line arguments")
+	flag.BoolVar(&Opts.Input, "input", false, "When provided, all arguments except the last one are treated as input files that must exist. The last argument is either a file path or a prompt text")
 	flag.StringVar(&Opts.Continue, "continue", "", "Continue from a specific conversation ID")
 	flag.BoolVar(&Opts.ListConversations, "list-convo", false, "List all conversations")
 	flag.StringVar(&Opts.DeleteConversation, "delete-convo", "", "Delete a specific conversation")
@@ -70,8 +72,35 @@ func init() {
 func ParseFlags() {
 	flag.Parse()
 
-	// Any remaining arguments after flags are treated as the prompt
-	if args := flag.Args(); len(args) > 0 {
-		Opts.Prompt = strings.Join(args, " ")
+	// Store remaining arguments
+	Opts.Args = flag.Args()
+
+	if len(Opts.Args) > 0 {
+		if Opts.Input {
+			// If -input flag is provided, need at least one input file
+			if len(Opts.Args) < 1 {
+				log.Fatal("when using -input flag, need at least one input file")
+			}
+			// All arguments are treated as input files, except the last one if it's not a file
+			lastIdx := len(Opts.Args)
+			lastArg := Opts.Args[lastIdx-1]
+			if _, err := os.Stat(lastArg); err != nil {
+				// Last argument doesn't exist as a file, treat it as prompt text
+				lastIdx--
+				Opts.Prompt = lastArg
+			}
+			// Validate all other arguments are valid files
+			for _, path := range Opts.Args[:lastIdx] {
+				if _, err := os.Stat(path); err != nil {
+					log.Fatalf("input file does not exist: %s", path)
+				}
+			}
+		} else {
+			// If -input flag is not provided, only one argument (the prompt) is allowed
+			if len(Opts.Args) > 1 {
+				log.Fatal("without -input flag, only one argument (the prompt) can be provided")
+			}
+			Opts.Prompt = Opts.Args[0]
+		}
 	}
 }
