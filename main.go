@@ -231,10 +231,23 @@ func readInput(inputFlag bool) ([]agent.Input, error) {
 				return nil, fmt.Errorf("error detecting input type for file %s: %w", path, err)
 			}
 
-			inputs = append(inputs, agent.Input{
-				Type:     inputType,
-				FilePath: path,
-			})
+			if inputType == agent.InputTypeText {
+				// For text files, read the content and use it as text input
+				content, err := os.ReadFile(path)
+				if err != nil {
+					return nil, fmt.Errorf("error reading file %s: %w", path, err)
+				}
+				inputs = append(inputs, agent.Input{
+					Type: agent.InputTypeText,
+					Text: string(content),
+				})
+			} else {
+				// For non-text files, pass the file path
+				inputs = append(inputs, agent.Input{
+					Type:     inputType,
+					FilePath: path,
+				})
+			}
 		}
 	} else if cliopts.Opts.Prompt != "" {
 		// Without -input flag, the single argument is treated as prompt text
