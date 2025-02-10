@@ -135,10 +135,12 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 	for _, input := range inputs {
 		switch input.Type {
 		case InputTypeText:
-			contentBlocks = append(contentBlocks, &a.BetaTextBlockParam{
-				Text: a.F(input.Text),
-				Type: a.F(a.BetaTextBlockParamTypeText),
-			})
+			if len(strings.TrimSpace(input.Text)) > 0 {
+				contentBlocks = append(contentBlocks, &a.BetaTextBlockParam{
+					Text: a.F(input.Text),
+					Type: a.F(a.BetaTextBlockParamTypeText),
+				})
+			}
 		case InputTypeImage:
 			// Read and base64 encode the image file
 			imgData, err := os.ReadFile(input.FilePath)

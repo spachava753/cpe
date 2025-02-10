@@ -114,7 +114,6 @@ func main() {
 		FrequencyPenalty:   config.FrequencyPenalty,
 		PresencePenalty:    config.PresencePenalty,
 		NumberOfResponses:  config.NumberOfResponses,
-		Input:              config.Input,
 		Version:            config.Version,
 		Continue:           config.Continue,
 		ListConversations:  config.ListConversations,
@@ -188,7 +187,7 @@ func parseConfig() (cliopts.Options, error) {
 	return cliopts.Opts, nil
 }
 
-func readInput(inputPath string) ([]agent.Input, error) {
+func readInput(inputFlag bool) ([]agent.Input, error) {
 	var inputs []agent.Input
 
 	// Check if there is any input from stdin by checking if stdin is a pipe or redirection
@@ -207,21 +206,15 @@ func readInput(inputPath string) ([]agent.Input, error) {
 		}
 	}
 
-	// Check if there is input from the -input flag
-	if inputPath != "" {
-		// Split comma-separated list of files
-		for _, path := range strings.Split(inputPath, ",") {
-			path = strings.TrimSpace(path)
-			if path == "" {
-				continue
-			}
-
-			// Check if file exists
-			if _, err := os.Stat(path); err != nil {
-				return nil, fmt.Errorf("input file does not exist: %s", path)
-			}
-
-			// Detect input type from file
+	// Check if there are input files from command line arguments
+	if inputFlag {
+		args := cliopts.Opts.Args
+		if len(args) < 2 {
+			return nil, fmt.Errorf("when using -input flag, need at least one input file and a prompt/file path")
+		}
+		// All but last argument are input files
+		for _, path := range args[:len(args)-1] {
+			// We already validated file existence in ParseFlags()
 			inputType, err := agent.DetectInputType(path)
 			if err != nil {
 				return nil, fmt.Errorf("error detecting input type for file %s: %w", path, err)
@@ -232,10 +225,28 @@ func readInput(inputPath string) ([]agent.Input, error) {
 				FilePath: path,
 			})
 		}
-	}
 
-	// Check if there is input from command line arguments
-	if cliopts.Opts.Prompt != "" {
+		// Last argument could be a file or prompt text
+		lastArg := args[len(args)-1]
+		if _, err := os.Stat(lastArg); err == nil {
+			// It's a file that exists
+			inputType, err := agent.DetectInputType(lastArg)
+			if err != nil {
+				return nil, fmt.Errorf("error detecting input type for file %s: %w", lastArg, err)
+			}
+			inputs = append(inputs, agent.Input{
+				Type:     inputType,
+				FilePath: lastArg,
+			})
+		} else {
+			// Treat as prompt text
+			inputs = append(inputs, agent.Input{
+				Type: agent.InputTypeText,
+				Text: lastArg,
+			})
+		}
+	} else if cliopts.Opts.Prompt != "" {
+		// Without -input flag, the single argument is treated as prompt text
 		inputs = append(inputs, agent.Input{
 			Type: agent.InputTypeText,
 			Text: cliopts.Opts.Prompt,

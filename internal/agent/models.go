@@ -178,7 +178,6 @@ type ModelOptions struct {
 	FrequencyPenalty   float64
 	PresencePenalty    float64
 	NumberOfResponses  int
-	Input              string
 	Version            bool
 	Continue           string // conversation ID to continue from
 	ListConversations  bool   // List all conversations

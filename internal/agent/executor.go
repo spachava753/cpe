@@ -175,7 +175,7 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 		executor:     executor,
 		convoManager: convoManager,
 		model:        genConfig.Model,
-		userMessage:  flags.Input,
+		userMessage:  "",  // Will be set during Execute
 		continueID:   continueId,
 	}, nil
 }
