@@ -27,6 +27,7 @@ func init() {
 	gob.Register(genai.FunctionCall{})
 	gob.Register(genai.FunctionResponse{})
 	gob.Register(map[string]interface{}{})
+	gob.Register(genai.Blob{})  // Add this line
 }
 
 type geminiExecutor struct {
