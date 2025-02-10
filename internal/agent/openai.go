@@ -32,6 +32,7 @@ func init() {
 	gob.Register(oai.ChatCompletionUserMessageParam{})
 	gob.Register(oai.ChatCompletionToolMessageParam{})
 	gob.Register(oai.ChatCompletionContentPartTextParam{})
+	gob.Register(oai.ChatCompletionContentPartImageParam{})  // Add this line
 	gob.Register([]oai.ChatCompletionMessageParamUnion{})
 	gob.Register([]oai.ChatCompletionMessageToolCallParam{})
 	gob.Register([]oai.ChatCompletionContentPartUnionParam{})
