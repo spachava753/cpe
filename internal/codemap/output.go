@@ -80,6 +80,8 @@ func generateFileOutput(fsys fs.FS, path string, maxLiteralLen int) (string, err
 		output, err = generateJavaFileOutput(src, maxLiteralLen)
 	case ".py":
 		output, err = generatePythonFileOutput(src, maxLiteralLen)
+	case ".js", ".jsx":
+		output, err = generateJavaScriptFileOutput(src, maxLiteralLen)
 	default:
 		output = string(src)
 	}
