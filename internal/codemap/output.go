@@ -82,6 +82,8 @@ func generateFileOutput(fsys fs.FS, path string, maxLiteralLen int) (string, err
 		output, err = generatePythonFileOutput(src, maxLiteralLen)
 	case ".js", ".jsx":
 		output, err = generateJavaScriptFileOutput(src, maxLiteralLen)
+	case ".ts", ".tsx":
+		output, err = generateTypeScriptFileOutput(src, maxLiteralLen)
 	default:
 		output = string(src)
 	}
