@@ -5,14 +5,14 @@ import (
 	"strings"
 
 	sitter "github.com/tree-sitter/go-tree-sitter"
-	typescript "github.com/tree-sitter/tree-sitter-typescript"
+	typescript "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
 )
 
 func generateTypeScriptFileOutput(src []byte, maxLiteralLen int) (string, error) {
 	parser := sitter.NewParser()
 	defer parser.Close()
 
-	tsLang := sitter.NewLanguage(typescript.TypeScript())
+	tsLang := sitter.NewLanguage(typescript.Language())
 	err := parser.SetLanguage(tsLang)
 	if err != nil {
 		return "", err
