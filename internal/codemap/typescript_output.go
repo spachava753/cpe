@@ -5,15 +5,15 @@ import (
 	"strings"
 
 	sitter "github.com/tree-sitter/go-tree-sitter"
-	javascript "github.com/tree-sitter/tree-sitter-javascript/bindings/go"
+	typescript "github.com/tree-sitter/tree-sitter-typescript"
 )
 
 func generateTypeScriptFileOutput(src []byte, maxLiteralLen int) (string, error) {
 	parser := sitter.NewParser()
 	defer parser.Close()
 
-	jsLang := sitter.NewLanguage(javascript.Language())
-	err := parser.SetLanguage(jsLang)
+	tsLang := sitter.NewLanguage(typescript.TypeScript())
+	err := parser.SetLanguage(tsLang)
 	if err != nil {
 		return "", err
 	}
@@ -24,7 +24,7 @@ func generateTypeScriptFileOutput(src []byte, maxLiteralLen int) (string, error)
 	root := tree.RootNode()
 
 	// Query for function and method bodies
-	methodQuery, queryErr := sitter.NewQuery(jsLang, `
+	methodQuery, queryErr := sitter.NewQuery(tsLang, `
 		[
 			(method_definition
 				body: (statement_block) @method.body)
@@ -45,7 +45,7 @@ func generateTypeScriptFileOutput(src []byte, maxLiteralLen int) (string, error)
 	defer methodQuery.Close()
 
 	// Query for string literals
-	stringLiteralQuery, queryErr := sitter.NewQuery(jsLang, `
+	stringLiteralQuery, queryErr := sitter.NewQuery(tsLang, `
 		[
 			(string) @string
 			(template_string) @string
