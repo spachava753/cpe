@@ -99,22 +99,10 @@ type UserResponse = ApiResponse<{
 }`,
 			want: `class Queue<T> {
     private items: T[] = [];
-
-    constructor(initialItems?: T[]) {
-        if (initialItems) 
-    }
-
-    enqueue(item: T): void {
-        this.items.push(item);
-    }
-
-    dequeue(): T | undefined {
-        return this.items.shift();
-    }
-
-    peek(): T | undefined {
-        return this.items[0];
-    }
+    constructor(initialItems?: T[])
+    enqueue(item: T): void
+    dequeue(): T | undefined
+    peek(): T | undefined
 }`,
 		},
 		{
@@ -147,23 +135,18 @@ class Circle extends Shape {
     }
 }`,
 			want: `abstract class Shape {
-    constructor(protected color: string) 
-
+    constructor(protected color: string)
     abstract getArea(): number;
     abstract getPerimeter(): number;
-
-    getColor(): string 
+    getColor(): string
 }
-
 class Circle extends Shape {
     constructor(
         color: string,
         private radius: number
-    ) 
-
-    getArea(): number 
-
-    getPerimeter(): number 
+    )
+    getArea(): number
+    getPerimeter(): number
 }`,
 		},
 		{
@@ -189,20 +172,17 @@ class UserService {
         return this.userRepo.create(userData);
     }
 }`,
-			want: `function log(target: any, propertyKey: string, descriptor: PropertyDescriptor) 
-
+			want: `function log(target: any, propertyKey: string, descriptor: PropertyDescriptor)
 @injectable()
 class UserService {
     constructor(
         @inject('UserRepository')
         private userRepo: UserRepository
-    ) 
-
+    )
     @log
-    async getUser(@param('id') id: string): Promise<User> 
-
+    async getUser(@param('id') id: string): Promise<User>
     @validate
-    createUser(@body() userData: CreateUserDTO): Promise<User> 
+    createUser(@body() userData: CreateUserDTO): Promise<User>
 }`,
 		},
 		{
@@ -229,22 +209,12 @@ function merge<T extends object, U extends object>(obj1: T, obj2: U): T & U {
 			want: `interface HasId {
     id: string | number;
 }
-
 class Repository<T extends HasId> {
     private items: Map<T['id'], T> = new Map();
-
-    save(item: T): void {
-        this.items.set(item.id, item);
-    }
-
-    findById(id: T['id']): T | undefined {
-        return this.items.get(id);
-    }
+    save(item: T): void
+    findById(id: T['id']): T | undefined
 }
-
-function merge<T extends object, U extends object>(obj1: T, obj2: U): T & U {
-    return { ...obj1, ...obj2 };
-}`,
+function merge<T extends object, U extends object>(obj1: T, obj2: U): T & U`,
 		},
 		{
 			name: "enums and namespaces",
@@ -274,16 +244,13 @@ namespace Validation {
     Left = 'LEFT',
     Right = 'RIGHT'
 }
-
 namespace Validation {
     export interface StringValidator {
         isValid(s: string): boolean;
     }
-
     export class RegexValidator implements StringValidator {
-        constructor(private regex: RegExp) 
-
-        isValid(s: string): boolean 
+        constructor(private regex: RegExp)
+        isValid(s: string): boolean
     }
 }`,
 		},
@@ -370,21 +337,15 @@ namespace Box {
     height: number;
     width: number;
 }
-
 interface Box {
     scale: number;
 }
-
 class Box {
-    constructor(public height: number, public width: number, public scale: number) 
-
-    getArea(): number 
+    constructor(public height: number, public width: number, public scale: number)
+    getArea(): number
 }
-
 namespace Box {
-    export function create(height: number, width: number, scale: number = 1): Box {
-        return new Box(height, width, scale);
-    }
+    export function create(height: number, width: number, scale: number = 1): Box
 }`,
 		},
 		{
@@ -404,17 +365,10 @@ async function getData(): Promise<string[]> {
 type DataType = UnwrapPromise<ReturnType<typeof getData>>;  // string[]
 type ElementType = ArrayElement<DataType>;  // string`,
 			want: `type IsArray<T> = T extends Array<any> ? true : false;
-
 type UnwrapPromise<T> = T extends Promise<infer U> ? U : T;
-
 type ArrayElement<T> = T extends Array<infer E> ? E : never;
-
 type ReturnType<T extends (...args: any) => any> = T extends (...args: any) => infer R ? R : any;
-
-async function getData(): Promise<string[]> {
-    return ['data'];
-}
-
+async function getData(): Promise<string[]>
 type DataType = UnwrapPromise<ReturnType<typeof getData>>;  // string[]
 type ElementType = ArrayElement<DataType>;  // string`,
 		},
