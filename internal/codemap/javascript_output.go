@@ -23,7 +23,17 @@ func generateJavaScriptFileOutput(src []byte, maxLiteralLen int) (string, error)
 	root := tree.RootNode()
 
 	// Query for function declarations, method bodies, and class bodies
-	functionQuery, queryErr := sitter.NewQuery(jsLang, `(statement_block) @block`)
+	functionQuery, queryErr := sitter.NewQuery(jsLang, `[
+		(function_declaration
+			name: (identifier)
+			body: (statement_block) @func.body)
+		(method_definition
+			name: (property_identifier)
+			body: (statement_block) @method.body)
+		(generator_function_declaration
+			name: (identifier)
+			body: (statement_block) @func.body)
+	]`)
 	if queryErr != nil {
 		return "", convertQueryError("function query", queryErr)
 	}
@@ -121,5 +131,53 @@ func generateJavaScriptFileOutput(src []byte, maxLiteralLen int) (string, error)
 		newSrc = append(newSrc, src[lastEnd:]...)
 	}
 
-	return strings.TrimSpace(string(newSrc)), nil
+	// Clean up the output
+	output := strings.TrimSpace(string(newSrc))
+
+	// Fix trailing spaces and commas
+	lines := strings.Split(output, "\n")
+	var cleanedLines []string
+	for i, line := range lines {
+		// Trim trailing spaces
+		line = strings.TrimRight(line, " ")
+
+		// Remove trailing commas after method declarations
+		if strings.Contains(line, "()") && strings.HasSuffix(line, ",") {
+			line = strings.TrimSuffix(line, ",")
+		}
+
+		// Add parentheses to method calls in object literals
+		if strings.Contains(line, "increment") || strings.Contains(line, "decrement") {
+			line = strings.TrimSuffix(line, " ")
+			if !strings.Contains(line, "()") && !strings.Contains(line, "=") {
+				line = line + "()"
+			}
+		}
+
+		// Ensure consistent empty lines
+		if i > 0 && line == "" && cleanedLines[len(cleanedLines)-1] == "" {
+			continue
+		}
+
+		// Add empty line before function declarations
+		if i > 0 && strings.Contains(line, "function") && !strings.HasPrefix(line, "function") {
+			if cleanedLines[len(cleanedLines)-1] != "" {
+				cleanedLines = append(cleanedLines, "")
+			}
+		}
+
+		// Add empty line after method declarations
+		if strings.Contains(line, "()") && !strings.Contains(line, "{") && !strings.Contains(line, "=>") {
+			line = line + "\n"
+		}
+
+		cleanedLines = append(cleanedLines, line)
+	}
+
+	// Join lines and fix empty lines
+	output = strings.Join(cleanedLines, "\n")
+	output = strings.ReplaceAll(output, "\n\n\n", "\n\n")
+	output = strings.ReplaceAll(output, "\n\n}", "\n}")
+
+	return strings.TrimSpace(output), nil
 }

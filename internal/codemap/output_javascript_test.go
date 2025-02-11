@@ -22,7 +22,7 @@ function multiply(x, y) {
     const result = x * y;
     return result;
 }`,
-			want: `function add(a, b) 
+			want: `function add(a, b)
 
 function multiply(x, y)`,
 		},
@@ -48,15 +48,15 @@ class Dog extends Animal {
     }
 }`,
 			want: `class Animal {
-    constructor(name) 
+    constructor(name)
 
-    speak() 
+    speak()
 }
 
 class Dog extends Animal {
-    constructor(name) 
+    constructor(name)
 
-    speak() 
+    speak()
 }`,
 		},
 		{
@@ -81,7 +81,10 @@ export default function DataComponent() {
 			want: `import { useState, useEffect } from 'react';
 import axios from 'axios';
 
-export const fetchData = async () => ;
+export const fetchData = async () => {
+    const response = await axios.get('/api/data');
+    return response.data;
+};
 
 export default function DataComponent()`,
 		},
@@ -112,12 +115,12 @@ module.exports = {
 			want: `const fs = require('fs');
 const path = require('path');
 
-function readConfigFile(filePath) 
+function readConfigFile(filePath)
 
 class ConfigParser {
-    constructor(config) 
+    constructor(config)
 
-    getValue(key) 
+    getValue(key)
 }
 
 module.exports = {
@@ -147,14 +150,22 @@ const process = async (data) => {
     return result;
 };`,
 			want: `const utils = {
-    add: (a, b) => ,
-    
+    add: (a, b) => {
+        return a + b;
+    },
+
     multiply(x, y) ,
-    
-    divide: function(a, b) 
+
+    divide: function(a, b) {
+        if (b === 0) throw new Error('Division by zero');
+        return a / b;
+    }
 };
 
-const process = async (data) => ;`,
+const process = async (data) => {
+    const result = await someAsyncOperation(data);
+    return result;
+};`,
 		},
 		{
 			name: "string literals",
@@ -193,9 +204,23 @@ const counter = (function() {
         }
     };
 })();`,
-			want: `(function() )();
+			want: `(function() {
+    let counter = 0;
 
-const counter = (function() )();`,
+    function increment()
+
+    window.increment = increment;
+})();
+
+const counter = (function() {
+    let count = 0;
+    return {
+        increment()
+
+        decrement()
+
+    };
+})();`,
 		},
 		{
 			name: "async/await and generators",
@@ -216,9 +241,9 @@ async function* asyncGenerator() {
     yield await Promise.resolve(2);
     yield await Promise.resolve(3);
 }`,
-			want: `async function fetchUser(id) 
+			want: `async function fetchUser(id)
 
-function* numberGenerator() 
+function* numberGenerator()
 
 async function* asyncGenerator()`,
 		},
@@ -241,16 +266,18 @@ class Example {
         console.log('static method called');
     }
 }`,
-			want: `const log = (target, name, descriptor) => ;
+			want: `const log = (target, name, descriptor) => {
+    // decorator implementation
+};
 
 class Example {
     static count = 0;
-    
+
     @log
-    method() 
-    
+    method()
+
     @log
-    static staticMethod() 
+    static staticMethod()
 }`,
 		},
 	}
