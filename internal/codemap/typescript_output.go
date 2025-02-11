@@ -130,28 +130,5 @@ func generateTypeScriptFileOutput(src []byte, maxLiteralLen int) (string, error)
 
 	// Clean up extra whitespace
 	output := string(newSrc)
-	lines := strings.Split(output, "\n")
-	var cleanLines []string
-	for i, line := range lines {
-		trimmed := strings.TrimRight(line, " ")
-		if trimmed == "" {
-			// Keep empty line only between major constructs
-			if i > 0 && i < len(lines)-1 {
-				prev := strings.TrimSpace(lines[i-1])
-				next := strings.TrimSpace(lines[i+1])
-				if strings.HasSuffix(prev, "}") && (strings.HasPrefix(next, "interface") || strings.HasPrefix(next, "class") || strings.HasPrefix(next, "namespace") || strings.HasPrefix(next, "type")) {
-					cleanLines = append(cleanLines, "")
-				}
-			}
-		} else {
-			cleanLines = append(cleanLines, trimmed)
-		}
-	}
-
-	// Remove empty lines at the end
-	for len(cleanLines) > 0 && cleanLines[len(cleanLines)-1] == "" {
-		cleanLines = cleanLines[:len(cleanLines)-1]
-	}
-
-	return strings.Join(cleanLines, "\n"), nil
+	return strings.TrimSpace(output), nil
 }
