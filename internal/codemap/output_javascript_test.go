@@ -188,9 +188,16 @@ const counter = (function() {
         }
     };
 })();`,
-			want: `(function()
+			want: `(function() {
 
-const counter = (function()`,
+})();
+
+const counter = (function() {
+    return {
+        increment(),
+        decrement()
+    };
+})();`,
 		},
 		{
 			name: "async/await and generators",
