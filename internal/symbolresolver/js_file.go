@@ -4,9 +4,6 @@ import (
 	"fmt"
 	sitter "github.com/tree-sitter/go-tree-sitter"
 	javascript "github.com/tree-sitter/tree-sitter-javascript/bindings/go"
-	"maps"
-	"slices"
-	"strings"
 )
 
 // extractJavaScriptSymbols extracts symbols from JavaScript source code
@@ -20,8 +17,6 @@ func extractJavaScriptSymbols(content []byte, parser *sitter.Parser) ([]string, 
 	// Parse the content
 	tree := parser.Parse(content, nil)
 	defer tree.Close()
-
-	root := tree.RootNode()
 
 	// TODO: Implement symbol extraction
 	// Need to handle:
