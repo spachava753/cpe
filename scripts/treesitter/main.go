@@ -19,15 +19,15 @@ import (
 func getLanguage(lang string) (*sitter.Language, error) {
 	switch strings.ToLower(lang) {
 	case "go":
-		return golang.Language(), nil
+		return sitter.NewLanguage(golang.Language()), nil
 	case "java":
-		return java.Language(), nil
+		return sitter.NewLanguage(java.Language()), nil
 	case "js", "javascript":
-		return javascript.Language(), nil
+		return sitter.NewLanguage(javascript.Language()), nil
 	case "py", "python":
-		return python.Language(), nil
+		return sitter.NewLanguage(python.Language()), nil
 	case "ts", "typescript":
-		return typescript.Language(), nil
+		return sitter.NewLanguage(typescript.LanguageTypescript()), nil
 	default:
 		return nil, fmt.Errorf("unsupported language: %s", lang)
 	}
@@ -36,14 +36,14 @@ func getLanguage(lang string) (*sitter.Language, error) {
 func printNode(node *sitter.Node, source []byte, indent int) {
 	// Print the current node with indentation
 	indentStr := strings.Repeat("  ", indent)
-	nodeType := node.Type()
-	startPoint := node.StartPoint()
-	endPoint := node.EndPoint()
+	nodeType := node.Kind()
+	startPoint := node.StartPosition()
+	endPoint := node.EndPosition()
 
 	// If node has a field name (is a named child), include it
-	if node.Parent() != nil && node.Parent().NamedChildCount() > 0 {
-		for i := uint32(0); i < node.Parent().NamedChildCount(); i++ {
-			if node.Parent().NamedChild(i) == node {
+	if node.Parent() != nil {
+		for i := uint32(0); i < uint32(node.Parent().NamedChildCount()); i++ {
+			if node.Parent().NamedChild(uint(i)) == node {
 				field := node.Parent().FieldNameForChild(i)
 				if field != "" {
 					nodeType = fmt.Sprintf("%s: %s", field, nodeType)
@@ -63,8 +63,8 @@ func printNode(node *sitter.Node, source []byte, indent int) {
 	)
 
 	// Recursively print child nodes
-	for i := 0; i < int(node.ChildCount()); i++ {
-		child := node.Child(i)
+	for i := uint32(0); i < uint32(node.ChildCount()); i++ {
+		child := node.Child(uint(i))
 		if child != nil {
 			printNode(child, source, indent+1)
 		}
