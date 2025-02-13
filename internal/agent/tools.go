@@ -5,7 +5,7 @@ import (
 	"github.com/gabriel-vasile/mimetype"
 	ignore "github.com/sabhiram/go-gitignore"
 	"github.com/spachava753/cpe/internal/codemap"
-	"github.com/spachava753/cpe/internal/typeresolver"
+	"github.com/spachava753/cpe/internal/symbolresolver"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -338,7 +338,7 @@ func ExecuteFilesOverviewTool(ignorer *ignore.GitIgnore) (*ToolResult, error) {
 // ExecuteGetRelatedFilesTool validates and executes the get related files tool
 func ExecuteGetRelatedFilesTool(inputFiles []string, ignorer *ignore.GitIgnore) (*ToolResult, error) {
 
-	relatedFiles, err := typeresolver.ResolveTypeAndFunctionFiles(inputFiles, os.DirFS("."), ignorer)
+	relatedFiles, err := symbolresolver.ResolveTypeAndFunctionFiles(inputFiles, os.DirFS("."), ignorer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve related files: %w", err)
 	}

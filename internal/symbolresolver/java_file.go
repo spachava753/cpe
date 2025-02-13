@@ -1,4 +1,4 @@
-package typeresolver
+package symbolresolver
 
 import sitter "github.com/tree-sitter/go-tree-sitter"
 

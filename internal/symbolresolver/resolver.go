@@ -1,4 +1,4 @@
-package typeresolver
+package symbolresolver
 
 import (
 	"errors"
