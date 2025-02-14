@@ -106,6 +106,17 @@ func createExecutor(logger Logger, ignorer *gitignore.GitIgnore, customURL strin
 	return executor, nil
 }
 
+// getModelFromFlagsOrDefault returns the model to use based on flags, environment variable, or default
+func getModelFromFlagsOrDefault(flags ModelOptions) string {
+	if flags.Model != "" {
+		return flags.Model
+	}
+	if envModel := os.Getenv("CPE_MODEL"); envModel != "" {
+		return envModel
+	}
+	return DefaultModel
+}
+
 // InitExecutor initializes and returns an appropriate executor based on the model configuration
 func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 	ignorer, err := ignore.LoadIgnoreFiles(".")
@@ -132,17 +143,9 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 		customURL = envURL
 	}
 
-	// If -new flag is supplied, just create a new executor and return
+	// If -new flag is supplied or no previous conversation exists, create a new executor
 	if flags.New {
-		// If no model specified, check environment variable, then fall back to default model
-		if flags.Model == "" {
-			if envModel := os.Getenv("CPE_MODEL"); envModel != "" {
-				flags.Model = envModel
-			} else {
-				flags.Model = DefaultModel
-			}
-		}
-		
+		flags.Model = getModelFromFlagsOrDefault(flags)
 		genConfig, err := GetConfig(flags)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get config: %w", err)
@@ -172,7 +175,8 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 	} else {
 		conv, err = convoManager.GetLatestConversation(context.Background())
 		if err != nil {
-			// If no conversation exists, create new executor
+			// If no conversation exists, create new executor with default model
+			flags.Model = getModelFromFlagsOrDefault(flags)
 			genConfig, err := GetConfig(flags)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get config: %w", err)
