@@ -134,9 +134,13 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 
 	// If -new flag is supplied, just create a new executor and return
 	if flags.New {
-		// If no model specified, use default model
+		// If no model specified, check environment variable, then fall back to default model
 		if flags.Model == "" {
-			flags.Model = DefaultModel
+			if envModel := os.Getenv("CPE_MODEL"); envModel != "" {
+				flags.Model = envModel
+			} else {
+				flags.Model = DefaultModel
+			}
 		}
 		
 		genConfig, err := GetConfig(flags)
