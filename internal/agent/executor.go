@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	a "github.com/anthropics/anthropic-sdk-go"
+	gitignore "github.com/sabhiram/go-gitignore"
 	"github.com/openai/openai-go"
 	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/db"
@@ -52,40 +53,11 @@ type Logger interface {
 	Println(v ...any)
 }
 
-// InitExecutor initializes and returns an appropriate executor based on the model configuration
-func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
-	ignorer, err := ignore.LoadIgnoreFiles(".")
-	if err != nil {
-		return nil, fmt.Errorf("failed to load ignore files: %w", err)
-	}
-	if ignorer == nil {
-		return nil, fmt.Errorf("git ignorer was nil")
-	}
-
-	// Initialize conversation manager
-	dbPath := ".cpeconvo"
-	convoManager, err := conversation.NewManager(dbPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize conversation manager: %w", err)
-	}
-
-	// Check for custom URL in environment variable
-	customURL := flags.CustomURL
-	if modelEnvURL := os.Getenv(fmt.Sprintf("CPE_%s_URL", strings.ToUpper(strings.ReplaceAll(flags.Model, "-", "_")))); customURL == "" && modelEnvURL != "" {
-		customURL = modelEnvURL
-	}
-	if envURL := os.Getenv("CPE_CUSTOM_URL"); customURL == "" && envURL != "" {
-		customURL = envURL
-	}
-
-	genConfig, err := GetConfig(flags)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get provider: %w", err)
-	}
-
+// createExecutor creates a new executor instance based on the model configuration
+func createExecutor(logger Logger, ignorer *gitignore.GitIgnore, customURL string, genConfig GenConfig) (Executor, error) {
 	var executor Executor
+	var err error
 
-	// Check if we have a specific executor for this model
 	switch genConfig.Model {
 	case "deepseek-chat":
 		apiKey := os.Getenv("DEEPSEEK_API_KEY")
@@ -131,51 +103,150 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 		executor = NewOpenAIExecutor(customURL, apiKey, logger, ignorer, genConfig)
 	}
 
-	// If continue flag is set, load previous messages
-	var continueId string
-	if flags.Continue != "" {
-		var conv *db.Conversation
-		var err error
+	return executor, nil
+}
 
+// getModelFromFlagsOrDefault returns the model to use based on flags, environment variable, or default
+func getModelFromFlagsOrDefault(flags ModelOptions) string {
+	if flags.Model != "" {
+		return flags.Model
+	}
+	if envModel := os.Getenv("CPE_MODEL"); envModel != "" {
+		return envModel
+	}
+	return DefaultModel
+}
+
+// InitExecutor initializes and returns an appropriate executor based on the model configuration
+func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
+	ignorer, err := ignore.LoadIgnoreFiles(".")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load ignore files: %w", err)
+	}
+	if ignorer == nil {
+		return nil, fmt.Errorf("git ignorer was nil")
+	}
+
+	// Initialize conversation manager
+	dbPath := ".cpeconvo"
+	convoManager, err := conversation.NewManager(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize conversation manager: %w", err)
+	}
+
+	// Check for custom URL in environment variable
+	customURL := flags.CustomURL
+	if modelEnvURL := os.Getenv(fmt.Sprintf("CPE_%s_URL", strings.ToUpper(strings.ReplaceAll(flags.Model, "-", "_")))); customURL == "" && modelEnvURL != "" {
+		customURL = modelEnvURL
+	}
+	if envURL := os.Getenv("CPE_CUSTOM_URL"); customURL == "" && envURL != "" {
+		customURL = envURL
+	}
+
+	// If -new flag is supplied or no previous conversation exists, create a new executor
+	if flags.New {
+		flags.Model = getModelFromFlagsOrDefault(flags)
+		genConfig, err := GetConfig(flags)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get config: %w", err)
+		}
+
+		executor, err := createExecutor(logger, ignorer, customURL, genConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		return &executorWrapper{
+			executor:     executor,
+			convoManager: convoManager,
+			model:        genConfig.Model,
+			userMessage:  "",
+			continueID:   "",
+		}, nil
+	}
+
+	// Get conversation from DB (either specific conversation or latest)
+	var conv *db.Conversation
+	if flags.Continue != "" {
 		conv, err = convoManager.GetConversation(context.Background(), flags.Continue)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get conversation: %w", err)
 		}
-
-		continueId = conv.ID
-
-		// Verify model compatibility
-		if conv.Model != genConfig.Model {
-			return nil, fmt.Errorf("cannot continue conversation from a different executor (conversation model: %s, requested model: %s)", conv.Model, genConfig.Model)
-		}
-
-		// Load messages into executor
-		if err := executor.LoadMessages(bytes.NewReader(conv.ExecutorData)); err != nil {
-			return nil, fmt.Errorf("failed to load messages: %w", err)
-		}
-	} else if !flags.New {
-		// Try to continue from latest conversation if one exists
-		conv, err := convoManager.GetLatestConversation(context.Background())
-		if err == nil {
-			continueId = conv.ID
-
-			// Verify model compatibility
-			if conv.Model != genConfig.Model {
-				return nil, fmt.Errorf("cannot continue conversation from a different executor (conversation model: %s, requested model: %s)", conv.Model, genConfig.Model)
+	} else {
+		conv, err = convoManager.GetLatestConversation(context.Background())
+		if err != nil {
+			// If no conversation exists, create new executor with default model
+			flags.Model = getModelFromFlagsOrDefault(flags)
+			genConfig, err := GetConfig(flags)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get config: %w", err)
 			}
 
-			// Load messages into executor
-			if err := executor.LoadMessages(bytes.NewReader(conv.ExecutorData)); err != nil {
-				return nil, fmt.Errorf("failed to load messages: %w", err)
+			executor, err := createExecutor(logger, ignorer, customURL, genConfig)
+			if err != nil {
+				return nil, err
+			}
+
+			return &executorWrapper{
+				executor:     executor,
+				convoManager: convoManager,
+				model:        genConfig.Model,
+				userMessage:  "",
+				continueID:   "",
+			}, nil
+		}
+	}
+
+	// Determine which model to use (from flag or conversation)
+	var genConfig GenConfig
+	if flags.Model != "" {
+		// Model specified in flag - verify it matches conversation
+		flagConfig, ok := ModelConfigs[flags.Model]
+		if !ok {
+			return nil, fmt.Errorf("unknown model '%s'", flags.Model)
+		}
+		if flagConfig.Name != conv.Model {
+			return nil, fmt.Errorf("cannot continue conversation with a different model (conversation model: %s, requested model: %s)", conv.Model, flagConfig.Name)
+		}
+		genConfig, err = GetConfig(flags)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get config: %w", err)
+		}
+	} else {
+		// Use model from conversation - find config by model name
+		var modelAlias string
+		var found bool
+		for alias, config := range ModelConfigs {
+			if config.Name == conv.Model {
+				modelAlias = alias
+				found = true
+				break
 			}
 		}
+		if !found {
+			return nil, fmt.Errorf("cannot continue conversation: stored model '%s' is not supported", conv.Model)
+		}
+		genConfig, err = GetConfig(ModelOptions{Model: modelAlias})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get config for model %s: %w", modelAlias, err)
+		}
+	}
+
+	// Create executor and load conversation state
+	executor, err := createExecutor(logger, ignorer, customURL, genConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := executor.LoadMessages(bytes.NewReader(conv.ExecutorData)); err != nil {
+		return nil, fmt.Errorf("failed to load messages: %w", err)
 	}
 
 	return &executorWrapper{
 		executor:     executor,
 		convoManager: convoManager,
 		model:        genConfig.Model,
-		userMessage:  "",  // Will be set during Execute
-		continueID:   continueId,
+		userMessage:  "",
+		continueID:   conv.ID,
 	}, nil
 }

@@ -218,10 +218,6 @@ func (f ModelOptions) ApplyToGenConfig(config GenConfig) GenConfig {
 }
 
 func GetConfig(flags ModelOptions) (GenConfig, error) {
-	if flags.Model == "" {
-		flags.Model = DefaultModel
-	}
-
 	config, ok := ModelConfigs[flags.Model]
 	if !ok {
 		// Handle unknown model
