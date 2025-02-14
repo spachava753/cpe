@@ -144,9 +144,62 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 
 		continueId = conv.ID
 
-		// Verify model compatibility
-		if conv.Model != genConfig.Model {
-			return nil, fmt.Errorf("cannot continue conversation from a different executor (conversation model: %s, requested model: %s)", conv.Model, genConfig.Model)
+		// If no model was specified, use the model from the conversation
+		if flags.Model == "" {
+			// Verify the model exists in our configs
+			if _, ok := ModelConfigs[conv.Model]; !ok {
+				return nil, fmt.Errorf("cannot continue conversation: stored model '%s' is not supported", conv.Model)
+			}
+			
+			// Update genConfig with the conversation's model
+			genConfig, err = GetConfig(ModelOptions{Model: conv.Model})
+			if err != nil {
+				return nil, fmt.Errorf("failed to get config for model %s: %w", conv.Model, err)
+			}
+			
+			// Re-initialize executor with the correct model
+			executor = nil
+			switch conv.Model {
+			case "deepseek-chat":
+				apiKey := os.Getenv("DEEPSEEK_API_KEY")
+				if apiKey == "" {
+					return nil, fmt.Errorf("DEEPSEEK_API_KEY environment variable not set")
+				}
+				executor = NewDeepSeekExecutor(customURL, apiKey, logger, ignorer, genConfig)
+			case "deepseek-reasoner":
+				apiKey := os.Getenv("DEEPSEEK_API_KEY")
+				if apiKey == "" {
+					return nil, fmt.Errorf("DEEPSEEK_API_KEY environment variable not set")
+				}
+				if customURL == "" {
+					customURL = "https://api.deepseek.com/"
+				}
+				executor = NewOpenAiReasoningExecutor(customURL, apiKey, logger, ignorer, genConfig)
+			case "claude-3-5-sonnet", "claude-3-5-haiku", "claude-3-haiku", "claude-3-opus":
+				apiKey := os.Getenv("ANTHROPIC_API_KEY")
+				if apiKey == "" {
+					return nil, fmt.Errorf("ANTHROPIC_API_KEY environment variable not set")
+				}
+				executor = NewAnthropicExecutor(customURL, apiKey, logger, ignorer, genConfig)
+			case "gemini-1-5-pro", "gemini-1-5-flash", "gemini-2-flash-exp", "gemini-2-flash", "gemini-2-flash-lite-preview", "gemini-2-pro-exp":
+				apiKey := os.Getenv("GEMINI_API_KEY")
+				if apiKey == "" {
+					return nil, fmt.Errorf("GEMINI_API_KEY environment variable not set")
+				}
+				executor, err = NewGeminiExecutor(customURL, apiKey, logger, ignorer, genConfig)
+				if err != nil {
+					return nil, err
+				}
+			default:
+				apiKey := os.Getenv("OPENAI_API_KEY")
+				if apiKey == "" {
+					return nil, fmt.Errorf("OPENAI_API_KEY environment variable not set")
+				}
+				executor = NewOpenAIExecutor(customURL, apiKey, logger, ignorer, genConfig)
+			}
+		} else if conv.Model != genConfig.Model {
+			// If a model was specified and it doesn't match, return an error
+			return nil, fmt.Errorf("cannot continue conversation with a different model (conversation model: %s, requested model: %s)", conv.Model, genConfig.Model)
 		}
 
 		// Load messages into executor
@@ -159,9 +212,62 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 		if err == nil {
 			continueId = conv.ID
 
-			// Verify model compatibility
-			if conv.Model != genConfig.Model {
-				return nil, fmt.Errorf("cannot continue conversation from a different executor (conversation model: %s, requested model: %s)", conv.Model, genConfig.Model)
+			// If no model was specified, use the model from the conversation
+			if flags.Model == "" {
+				// Verify the model exists in our configs
+				if _, ok := ModelConfigs[conv.Model]; !ok {
+					return nil, fmt.Errorf("cannot continue conversation: stored model '%s' is not supported", conv.Model)
+				}
+				
+				// Update genConfig with the conversation's model
+				genConfig, err = GetConfig(ModelOptions{Model: conv.Model})
+				if err != nil {
+					return nil, fmt.Errorf("failed to get config for model %s: %w", conv.Model, err)
+				}
+				
+				// Re-initialize executor with the correct model
+				executor = nil
+				switch conv.Model {
+				case "deepseek-chat":
+					apiKey := os.Getenv("DEEPSEEK_API_KEY")
+					if apiKey == "" {
+						return nil, fmt.Errorf("DEEPSEEK_API_KEY environment variable not set")
+					}
+					executor = NewDeepSeekExecutor(customURL, apiKey, logger, ignorer, genConfig)
+				case "deepseek-reasoner":
+					apiKey := os.Getenv("DEEPSEEK_API_KEY")
+					if apiKey == "" {
+						return nil, fmt.Errorf("DEEPSEEK_API_KEY environment variable not set")
+					}
+					if customURL == "" {
+						customURL = "https://api.deepseek.com/"
+					}
+					executor = NewOpenAiReasoningExecutor(customURL, apiKey, logger, ignorer, genConfig)
+				case "claude-3-5-sonnet", "claude-3-5-haiku", "claude-3-haiku", "claude-3-opus":
+					apiKey := os.Getenv("ANTHROPIC_API_KEY")
+					if apiKey == "" {
+						return nil, fmt.Errorf("ANTHROPIC_API_KEY environment variable not set")
+					}
+					executor = NewAnthropicExecutor(customURL, apiKey, logger, ignorer, genConfig)
+				case "gemini-1-5-pro", "gemini-1-5-flash", "gemini-2-flash-exp", "gemini-2-flash", "gemini-2-flash-lite-preview", "gemini-2-pro-exp":
+					apiKey := os.Getenv("GEMINI_API_KEY")
+					if apiKey == "" {
+						return nil, fmt.Errorf("GEMINI_API_KEY environment variable not set")
+					}
+					executor, err = NewGeminiExecutor(customURL, apiKey, logger, ignorer, genConfig)
+					if err != nil {
+						return nil, err
+					}
+				default:
+					apiKey := os.Getenv("OPENAI_API_KEY")
+					if apiKey == "" {
+						return nil, fmt.Errorf("OPENAI_API_KEY environment variable not set")
+					}
+					executor = NewOpenAIExecutor(customURL, apiKey, logger, ignorer, genConfig)
+				}
+			} else if conv.Model != genConfig.Model {
+				// If a model was specified and it doesn't match, return an error
+				return nil, fmt.Errorf("cannot continue conversation with a different model (conversation model: %s, requested model: %s)", conv.Model, genConfig.Model)
 			}
 
 			// Load messages into executor
