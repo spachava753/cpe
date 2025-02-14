@@ -134,6 +134,11 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 
 	// If -new flag is supplied, just create a new executor and return
 	if flags.New {
+		// If no model specified, use default model
+		if flags.Model == "" {
+			flags.Model = DefaultModel
+		}
+		
 		genConfig, err := GetConfig(flags)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get config: %w", err)
