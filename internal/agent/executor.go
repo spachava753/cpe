@@ -132,97 +132,95 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 		customURL = envURL
 	}
 
-	genConfig, err := GetConfig(flags)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get provider: %w", err)
+	// If -new flag is supplied, just create a new executor and return
+	if flags.New {
+		genConfig, err := GetConfig(flags)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get config: %w", err)
+		}
+
+		executor, err := createExecutor(logger, ignorer, customURL, genConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		return &executorWrapper{
+			executor:     executor,
+			convoManager: convoManager,
+			model:        genConfig.Model,
+			userMessage:  "",
+			continueID:   "",
+		}, nil
 	}
 
+	// Get conversation from DB (either specific conversation or latest)
+	var conv *db.Conversation
+	if flags.Continue != "" {
+		conv, err = convoManager.GetConversation(context.Background(), flags.Continue)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get conversation: %w", err)
+		}
+	} else {
+		conv, err = convoManager.GetLatestConversation(context.Background())
+		if err != nil {
+			// If no conversation exists, create new executor
+			genConfig, err := GetConfig(flags)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get config: %w", err)
+			}
+
+			executor, err := createExecutor(logger, ignorer, customURL, genConfig)
+			if err != nil {
+				return nil, err
+			}
+
+			return &executorWrapper{
+				executor:     executor,
+				convoManager: convoManager,
+				model:        genConfig.Model,
+				userMessage:  "",
+				continueID:   "",
+			}, nil
+		}
+	}
+
+	// Determine which model to use (from flag or conversation)
+	var genConfig GenConfig
+	if flags.Model != "" {
+		// Model specified in flag - verify it matches conversation
+		if conv.Model != flags.Model {
+			return nil, fmt.Errorf("cannot continue conversation with a different model (conversation model: %s, requested model: %s)", conv.Model, flags.Model)
+		}
+		genConfig, err = GetConfig(flags)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get config: %w", err)
+		}
+	} else {
+		// Use model from conversation
+		if _, ok := ModelConfigs[conv.Model]; !ok {
+			return nil, fmt.Errorf("cannot continue conversation: stored model '%s' is not supported", conv.Model)
+		}
+		genConfig, err = GetConfig(ModelOptions{Model: conv.Model})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get config for model %s: %w", conv.Model, err)
+		}
+	}
+
+	// Create executor and load conversation state
 	executor, err := createExecutor(logger, ignorer, customURL, genConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	// If continue flag is set, load previous messages
-	var continueId string
-	if flags.Continue != "" {
-		var conv *db.Conversation
-		var err error
-
-		conv, err = convoManager.GetConversation(context.Background(), flags.Continue)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get conversation: %w", err)
-		}
-
-		continueId = conv.ID
-
-		// If no model was specified, use the model from the conversation
-		if flags.Model == "" {
-			// Verify the model exists in our configs
-			if _, ok := ModelConfigs[conv.Model]; !ok {
-				return nil, fmt.Errorf("cannot continue conversation: stored model '%s' is not supported", conv.Model)
-			}
-			
-			// Update genConfig with the conversation's model
-			genConfig, err = GetConfig(ModelOptions{Model: conv.Model})
-			if err != nil {
-				return nil, fmt.Errorf("failed to get config for model %s: %w", conv.Model, err)
-			}
-			
-			// Re-initialize executor with the correct model
-			executor, err = createExecutor(logger, ignorer, customURL, genConfig)
-			if err != nil {
-				return nil, err
-			}
-		} else if conv.Model != genConfig.Model {
-			// If a model was specified and it doesn't match, return an error
-			return nil, fmt.Errorf("cannot continue conversation with a different model (conversation model: %s, requested model: %s)", conv.Model, genConfig.Model)
-		}
-
-		// Load messages into executor
-		if err := executor.LoadMessages(bytes.NewReader(conv.ExecutorData)); err != nil {
-			return nil, fmt.Errorf("failed to load messages: %w", err)
-		}
-	} else if !flags.New {
-		// Try to continue from latest conversation if one exists
-		conv, err := convoManager.GetLatestConversation(context.Background())
-		if err == nil {
-			continueId = conv.ID
-
-			// If no model was specified, use the model from the conversation
-			if flags.Model == "" {
-				// Verify the model exists in our configs
-				if _, ok := ModelConfigs[conv.Model]; !ok {
-					return nil, fmt.Errorf("cannot continue conversation: stored model '%s' is not supported", conv.Model)
-				}
-				
-				// Update genConfig with the conversation's model
-				genConfig, err = GetConfig(ModelOptions{Model: conv.Model})
-				if err != nil {
-					return nil, fmt.Errorf("failed to get config for model %s: %w", conv.Model, err)
-				}
-				
-				// Re-initialize executor with the correct model
-				executor, err = createExecutor(logger, ignorer, customURL, genConfig)
-				if err != nil {
-					return nil, err
-				}
-			} else if conv.Model != genConfig.Model {
-				// If a model was specified and it doesn't match, return an error
-				return nil, fmt.Errorf("cannot continue conversation with a different model (conversation model: %s, requested model: %s)", conv.Model, genConfig.Model)
-			}
-
-			// Load messages into executor
-			if err := executor.LoadMessages(bytes.NewReader(conv.ExecutorData)); err != nil {
-				return nil, fmt.Errorf("failed to load messages: %w", err)
-			}
-		}
+	if err := executor.LoadMessages(bytes.NewReader(conv.ExecutorData)); err != nil {
+		return nil, fmt.Errorf("failed to load messages: %w", err)
 	}
 
 	return &executorWrapper{
 		executor:     executor,
 		convoManager: convoManager,
 		model:        genConfig.Model,
-		userMessage:  "",  // Will be set during Execute
-		continueID:   continueId,
+		userMessage:  "",
+		continueID:   conv.ID,
 	}, nil
 }
