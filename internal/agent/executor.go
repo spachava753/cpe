@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	a "github.com/anthropics/anthropic-sdk-go"
+	gitignore "github.com/sabhiram/go-gitignore"
 	"github.com/openai/openai-go"
 	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/db"
@@ -52,40 +53,11 @@ type Logger interface {
 	Println(v ...any)
 }
 
-// InitExecutor initializes and returns an appropriate executor based on the model configuration
-func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
-	ignorer, err := ignore.LoadIgnoreFiles(".")
-	if err != nil {
-		return nil, fmt.Errorf("failed to load ignore files: %w", err)
-	}
-	if ignorer == nil {
-		return nil, fmt.Errorf("git ignorer was nil")
-	}
-
-	// Initialize conversation manager
-	dbPath := ".cpeconvo"
-	convoManager, err := conversation.NewManager(dbPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize conversation manager: %w", err)
-	}
-
-	// Check for custom URL in environment variable
-	customURL := flags.CustomURL
-	if modelEnvURL := os.Getenv(fmt.Sprintf("CPE_%s_URL", strings.ToUpper(strings.ReplaceAll(flags.Model, "-", "_")))); customURL == "" && modelEnvURL != "" {
-		customURL = modelEnvURL
-	}
-	if envURL := os.Getenv("CPE_CUSTOM_URL"); customURL == "" && envURL != "" {
-		customURL = envURL
-	}
-
-	genConfig, err := GetConfig(flags)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get provider: %w", err)
-	}
-
+// createExecutor creates a new executor instance based on the model configuration
+func createExecutor(logger Logger, ignorer *gitignore.GitIgnore, customURL string, genConfig GenConfig) (Executor, error) {
 	var executor Executor
+	var err error
 
-	// Check if we have a specific executor for this model
 	switch genConfig.Model {
 	case "deepseek-chat":
 		apiKey := os.Getenv("DEEPSEEK_API_KEY")
@@ -131,6 +103,45 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 		executor = NewOpenAIExecutor(customURL, apiKey, logger, ignorer, genConfig)
 	}
 
+	return executor, nil
+}
+
+// InitExecutor initializes and returns an appropriate executor based on the model configuration
+func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
+	ignorer, err := ignore.LoadIgnoreFiles(".")
+	if err != nil {
+		return nil, fmt.Errorf("failed to load ignore files: %w", err)
+	}
+	if ignorer == nil {
+		return nil, fmt.Errorf("git ignorer was nil")
+	}
+
+	// Initialize conversation manager
+	dbPath := ".cpeconvo"
+	convoManager, err := conversation.NewManager(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize conversation manager: %w", err)
+	}
+
+	// Check for custom URL in environment variable
+	customURL := flags.CustomURL
+	if modelEnvURL := os.Getenv(fmt.Sprintf("CPE_%s_URL", strings.ToUpper(strings.ReplaceAll(flags.Model, "-", "_")))); customURL == "" && modelEnvURL != "" {
+		customURL = modelEnvURL
+	}
+	if envURL := os.Getenv("CPE_CUSTOM_URL"); customURL == "" && envURL != "" {
+		customURL = envURL
+	}
+
+	genConfig, err := GetConfig(flags)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get provider: %w", err)
+	}
+
+	executor, err := createExecutor(logger, ignorer, customURL, genConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	// If continue flag is set, load previous messages
 	var continueId string
 	if flags.Continue != "" {
@@ -158,44 +169,9 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 			}
 			
 			// Re-initialize executor with the correct model
-			executor = nil
-			switch conv.Model {
-			case "deepseek-chat":
-				apiKey := os.Getenv("DEEPSEEK_API_KEY")
-				if apiKey == "" {
-					return nil, fmt.Errorf("DEEPSEEK_API_KEY environment variable not set")
-				}
-				executor = NewDeepSeekExecutor(customURL, apiKey, logger, ignorer, genConfig)
-			case "deepseek-reasoner":
-				apiKey := os.Getenv("DEEPSEEK_API_KEY")
-				if apiKey == "" {
-					return nil, fmt.Errorf("DEEPSEEK_API_KEY environment variable not set")
-				}
-				if customURL == "" {
-					customURL = "https://api.deepseek.com/"
-				}
-				executor = NewOpenAiReasoningExecutor(customURL, apiKey, logger, ignorer, genConfig)
-			case "claude-3-5-sonnet", "claude-3-5-haiku", "claude-3-haiku", "claude-3-opus":
-				apiKey := os.Getenv("ANTHROPIC_API_KEY")
-				if apiKey == "" {
-					return nil, fmt.Errorf("ANTHROPIC_API_KEY environment variable not set")
-				}
-				executor = NewAnthropicExecutor(customURL, apiKey, logger, ignorer, genConfig)
-			case "gemini-1-5-pro", "gemini-1-5-flash", "gemini-2-flash-exp", "gemini-2-flash", "gemini-2-flash-lite-preview", "gemini-2-pro-exp":
-				apiKey := os.Getenv("GEMINI_API_KEY")
-				if apiKey == "" {
-					return nil, fmt.Errorf("GEMINI_API_KEY environment variable not set")
-				}
-				executor, err = NewGeminiExecutor(customURL, apiKey, logger, ignorer, genConfig)
-				if err != nil {
-					return nil, err
-				}
-			default:
-				apiKey := os.Getenv("OPENAI_API_KEY")
-				if apiKey == "" {
-					return nil, fmt.Errorf("OPENAI_API_KEY environment variable not set")
-				}
-				executor = NewOpenAIExecutor(customURL, apiKey, logger, ignorer, genConfig)
+			executor, err = createExecutor(logger, ignorer, customURL, genConfig)
+			if err != nil {
+				return nil, err
 			}
 		} else if conv.Model != genConfig.Model {
 			// If a model was specified and it doesn't match, return an error
@@ -226,44 +202,9 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 				}
 				
 				// Re-initialize executor with the correct model
-				executor = nil
-				switch conv.Model {
-				case "deepseek-chat":
-					apiKey := os.Getenv("DEEPSEEK_API_KEY")
-					if apiKey == "" {
-						return nil, fmt.Errorf("DEEPSEEK_API_KEY environment variable not set")
-					}
-					executor = NewDeepSeekExecutor(customURL, apiKey, logger, ignorer, genConfig)
-				case "deepseek-reasoner":
-					apiKey := os.Getenv("DEEPSEEK_API_KEY")
-					if apiKey == "" {
-						return nil, fmt.Errorf("DEEPSEEK_API_KEY environment variable not set")
-					}
-					if customURL == "" {
-						customURL = "https://api.deepseek.com/"
-					}
-					executor = NewOpenAiReasoningExecutor(customURL, apiKey, logger, ignorer, genConfig)
-				case "claude-3-5-sonnet", "claude-3-5-haiku", "claude-3-haiku", "claude-3-opus":
-					apiKey := os.Getenv("ANTHROPIC_API_KEY")
-					if apiKey == "" {
-						return nil, fmt.Errorf("ANTHROPIC_API_KEY environment variable not set")
-					}
-					executor = NewAnthropicExecutor(customURL, apiKey, logger, ignorer, genConfig)
-				case "gemini-1-5-pro", "gemini-1-5-flash", "gemini-2-flash-exp", "gemini-2-flash", "gemini-2-flash-lite-preview", "gemini-2-pro-exp":
-					apiKey := os.Getenv("GEMINI_API_KEY")
-					if apiKey == "" {
-						return nil, fmt.Errorf("GEMINI_API_KEY environment variable not set")
-					}
-					executor, err = NewGeminiExecutor(customURL, apiKey, logger, ignorer, genConfig)
-					if err != nil {
-						return nil, err
-					}
-				default:
-					apiKey := os.Getenv("OPENAI_API_KEY")
-					if apiKey == "" {
-						return nil, fmt.Errorf("OPENAI_API_KEY environment variable not set")
-					}
-					executor = NewOpenAIExecutor(customURL, apiKey, logger, ignorer, genConfig)
+				executor, err = createExecutor(logger, ignorer, customURL, genConfig)
+				if err != nil {
+					return nil, err
 				}
 			} else if conv.Model != genConfig.Model {
 				// If a model was specified and it doesn't match, return an error
