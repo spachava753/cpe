@@ -197,21 +197,34 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 	var genConfig GenConfig
 	if flags.Model != "" {
 		// Model specified in flag - verify it matches conversation
-		if conv.Model != flags.Model {
-			return nil, fmt.Errorf("cannot continue conversation with a different model (conversation model: %s, requested model: %s)", conv.Model, flags.Model)
+		flagConfig, ok := ModelConfigs[flags.Model]
+		if !ok {
+			return nil, fmt.Errorf("unknown model '%s'", flags.Model)
+		}
+		if flagConfig.Name != conv.Model {
+			return nil, fmt.Errorf("cannot continue conversation with a different model (conversation model: %s, requested model: %s)", conv.Model, flagConfig.Name)
 		}
 		genConfig, err = GetConfig(flags)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get config: %w", err)
 		}
 	} else {
-		// Use model from conversation
-		if _, ok := ModelConfigs[conv.Model]; !ok {
+		// Use model from conversation - find config by model name
+		var modelAlias string
+		var found bool
+		for alias, config := range ModelConfigs {
+			if config.Name == conv.Model {
+				modelAlias = alias
+				found = true
+				break
+			}
+		}
+		if !found {
 			return nil, fmt.Errorf("cannot continue conversation: stored model '%s' is not supported", conv.Model)
 		}
-		genConfig, err = GetConfig(ModelOptions{Model: conv.Model})
+		genConfig, err = GetConfig(ModelOptions{Model: modelAlias})
 		if err != nil {
-			return nil, fmt.Errorf("failed to get config for model %s: %w", conv.Model, err)
+			return nil, fmt.Errorf("failed to get config for model %s: %w", modelAlias, err)
 		}
 	}
 
