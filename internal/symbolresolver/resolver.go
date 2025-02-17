@@ -8,6 +8,7 @@ import (
 	golang "github.com/tree-sitter/tree-sitter-go/bindings/go"
 	javascript "github.com/tree-sitter/tree-sitter-javascript/bindings/go"
 	python "github.com/tree-sitter/tree-sitter-python/bindings/go"
+	typescript "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -31,6 +32,8 @@ func extractSymbolsAndCreateQueries(content []byte, ext string, parser *sitter.P
 		return extractPythonSymbols(content, parser)
 	case "js":
 		return extractJavaScriptSymbols(content, parser)
+	case "ts":
+		return extractTypeScriptSymbols(content, parser)
 	default:
 		return nil, errUnknownExt
 	}
@@ -50,6 +53,8 @@ func runQueriesOnFile(content []byte, queries []string, ext string, parser *sitt
 		lang = sitter.NewLanguage(python.Language())
 	case "js":
 		lang = sitter.NewLanguage(javascript.Language())
+	case "ts":
+		lang = sitter.NewLanguage(typescript.LanguageTypescript())
 	default:
 		return false, fmt.Errorf("unsupported file extension: %s", ext)
 	}
