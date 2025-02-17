@@ -6,6 +6,7 @@ import (
 	gitignore "github.com/sabhiram/go-gitignore"
 	sitter "github.com/tree-sitter/go-tree-sitter"
 	golang "github.com/tree-sitter/tree-sitter-go/bindings/go"
+	javascript "github.com/tree-sitter/tree-sitter-javascript/bindings/go"
 	python "github.com/tree-sitter/tree-sitter-python/bindings/go"
 	"io/fs"
 	"path/filepath"
@@ -28,6 +29,8 @@ func extractSymbolsAndCreateQueries(content []byte, ext string, parser *sitter.P
 		return extractJavaSymbols(content, parser)
 	case "py":
 		return extractPythonSymbols(content, parser)
+	case "js":
+		return extractJavaScriptSymbols(content, parser)
 	default:
 		return nil, errUnknownExt
 	}
@@ -45,6 +48,8 @@ func runQueriesOnFile(content []byte, queries []string, ext string, parser *sitt
 		return false, fmt.Errorf("java support not yet implemented")
 	case "py":
 		lang = sitter.NewLanguage(python.Language())
+	case "js":
+		lang = sitter.NewLanguage(javascript.Language())
 	default:
 		return false, fmt.Errorf("unsupported file extension: %s", ext)
 	}
