@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	a "github.com/anthropics/anthropic-sdk-go"
-	gitignore "github.com/sabhiram/go-gitignore"
 	"github.com/openai/openai-go"
+	gitignore "github.com/sabhiram/go-gitignore"
 	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/db"
 	"github.com/spachava753/cpe/internal/ignore"
@@ -106,6 +106,30 @@ func createExecutor(logger Logger, ignorer *gitignore.GitIgnore, customURL strin
 	return executor, nil
 }
 
+// getCustomURL returns the custom URL to use based on the following precedence:
+// 1. Command-line flag (-custom-url)
+// 2. Model-specific environment variable (CPE_MODEL_NAME_URL)
+// 3. General custom URL environment variable (CPE_CUSTOM_URL)
+func getCustomURL(flagURL string, modelName string) string {
+	// Start with the flag value
+	customURL := flagURL
+
+	// Check model-specific env var if we have a model name
+	if modelName != "" {
+		envVarName := fmt.Sprintf("CPE_%s_URL", strings.ToUpper(strings.ReplaceAll(modelName, "-", "_")))
+		if modelEnvURL := os.Getenv(envVarName); customURL == "" && modelEnvURL != "" {
+			customURL = modelEnvURL
+		}
+	}
+
+	// Finally, check the general custom URL env var
+	if envURL := os.Getenv("CPE_CUSTOM_URL"); customURL == "" && envURL != "" {
+		customURL = envURL
+	}
+
+	return customURL
+}
+
 // getModelFromFlagsOrDefault returns the model to use based on flags, environment variable, or default
 func getModelFromFlagsOrDefault(flags ModelOptions) string {
 	if flags.Model != "" {
@@ -134,15 +158,6 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 		return nil, fmt.Errorf("failed to initialize conversation manager: %w", err)
 	}
 
-	// Check for custom URL in environment variable
-	customURL := flags.CustomURL
-	if modelEnvURL := os.Getenv(fmt.Sprintf("CPE_%s_URL", strings.ToUpper(strings.ReplaceAll(flags.Model, "-", "_")))); customURL == "" && modelEnvURL != "" {
-		customURL = modelEnvURL
-	}
-	if envURL := os.Getenv("CPE_CUSTOM_URL"); customURL == "" && envURL != "" {
-		customURL = envURL
-	}
-
 	// If -new flag is supplied or no previous conversation exists, create a new executor
 	if flags.New {
 		flags.Model = getModelFromFlagsOrDefault(flags)
@@ -151,7 +166,7 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 			return nil, fmt.Errorf("failed to get config: %w", err)
 		}
 
-		executor, err := createExecutor(logger, ignorer, customURL, genConfig)
+		executor, err := createExecutor(logger, ignorer, getCustomURL(flags.CustomURL, flags.Model), genConfig)
 		if err != nil {
 			return nil, err
 		}
@@ -182,7 +197,7 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 				return nil, fmt.Errorf("failed to get config: %w", err)
 			}
 
-			executor, err := createExecutor(logger, ignorer, customURL, genConfig)
+			executor, err := createExecutor(logger, ignorer, getCustomURL(flags.CustomURL, flags.Model), genConfig)
 			if err != nil {
 				return nil, err
 			}
@@ -233,6 +248,11 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 	}
 
 	// Create executor and load conversation state
+	customURL := getCustomURL(flags.CustomURL, flags.Model)
+	if flags.Model == "" {
+		customURL = getCustomURL(flags.CustomURL, conv.Model)
+	}
+
 	executor, err := createExecutor(logger, ignorer, customURL, genConfig)
 	if err != nil {
 		return nil, err
