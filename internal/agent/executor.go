@@ -245,13 +245,12 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to get config for model %s: %w", modelAlias, err)
 		}
+
+		flags.Model = modelAlias
 	}
 
 	// Create executor and load conversation state
 	customURL := getCustomURL(flags.CustomURL, flags.Model)
-	if flags.Model == "" {
-		customURL = getCustomURL(flags.CustomURL, conv.Model)
-	}
 
 	executor, err := createExecutor(logger, ignorer, customURL, genConfig)
 	if err != nil {
