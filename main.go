@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	_ "embed"
 	"fmt"
@@ -139,7 +138,7 @@ func main() {
 		// For unknown models, default to text only
 		modelConfig = agent.ModelConfig{
 			Name:            config.Model,
-			IsKnown:        false,
+			IsKnown:         false,
 			SupportedInputs: []agent.InputType{agent.InputTypeText},
 		}
 	}
@@ -154,7 +153,7 @@ func main() {
 			}
 		}
 		if !supported {
-			slog.Error("model does not support input type", 
+			slog.Error("model does not support input type",
 				slog.String("model", config.Model),
 				slog.String("input_type", string(input.Type)),
 				slog.String("file", input.FilePath),
@@ -355,15 +354,11 @@ func handleConversationCommands(config cliopts.Options) error {
 
 		// Create an executor of the appropriate type to print messages
 		executor, err := agent.InitExecutor(log.Default(), agent.ModelOptions{
-			Model: config.Model,
+			Model:    config.Model,
+			Continue: conv.ID,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to initialize executor: %w", err)
-		}
-
-		// Load messages into executor
-		if err := executor.LoadMessages(bytes.NewReader(conv.ExecutorData)); err != nil {
-			return fmt.Errorf("failed to load messages: %w", err)
 		}
 
 		// Print conversation messages
