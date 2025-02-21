@@ -130,8 +130,8 @@ func getCustomURL(flagURL string, modelName string) string {
 	return customURL
 }
 
-// getModelFromFlagsOrDefault returns the model to use based on flags, environment variable, or default
-func getModelFromFlagsOrDefault(flags ModelOptions) string {
+// GetModelFromFlagsOrDefault returns the model to use based on flags, environment variable, or default
+func GetModelFromFlagsOrDefault(flags ModelOptions) string {
 	if flags.Model != "" {
 		return flags.Model
 	}
@@ -160,7 +160,7 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 
 	// If -new flag is supplied or no previous conversation exists, create a new executor
 	if flags.New {
-		flags.Model = getModelFromFlagsOrDefault(flags)
+		flags.Model = GetModelFromFlagsOrDefault(flags)
 		genConfig, err := GetConfig(flags)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get config: %w", err)
@@ -191,7 +191,7 @@ func InitExecutor(logger Logger, flags ModelOptions) (Executor, error) {
 		conv, err = convoManager.GetLatestConversation(context.Background())
 		if err != nil {
 			// If no conversation exists, create new executor with default model
-			flags.Model = getModelFromFlagsOrDefault(flags)
+			flags.Model = GetModelFromFlagsOrDefault(flags)
 			genConfig, err := GetConfig(flags)
 			if err != nil {
 				return nil, fmt.Errorf("failed to get config: %w", err)

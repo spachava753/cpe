@@ -8,6 +8,7 @@ import (
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/cliopts"
 	"github.com/spachava753/cpe/internal/conversation"
+	"github.com/spachava753/cpe/internal/db"
 	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/spachava753/cpe/internal/tokentree"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"log/slog"
 	"os"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"time"
 )
@@ -126,7 +128,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	input, err := readInput(config.Input)
+	inputs, err := readInput(config.Input)
 	if err != nil {
 		slog.Error("fatal error", slog.Any("err", err))
 		os.Exit(1)
@@ -135,34 +137,68 @@ func main() {
 	// Get model config to validate input types
 	modelConfig, ok := agent.ModelConfigs[config.Model]
 	if !ok {
-		// For unknown models, default to text only
-		modelConfig = agent.ModelConfig{
-			Name:            config.Model,
-			IsKnown:         false,
-			SupportedInputs: []agent.InputType{agent.InputTypeText},
+		// If no model flag, try to get model from conversation
+		if !config.New {
+			// Initialize conversation manager
+			dbPath := ".cpeconvo"
+			convoManager, err := conversation.NewManager(dbPath)
+			if err != nil {
+				slog.Error("fatal error", slog.Any("err", err))
+				os.Exit(1)
+			}
+			defer convoManager.Close()
+
+			// Get conversation
+			var conv *db.Conversation
+			if config.Continue != "" {
+				conv, err = convoManager.GetConversation(context.Background(), config.Continue)
+			} else {
+				conv, err = convoManager.GetLatestConversation(context.Background())
+			}
+			if err == nil {
+				// Find model alias by model name
+				for alias, cfg := range agent.ModelConfigs {
+					if cfg.Name == conv.Model {
+						modelConfig = cfg
+						config.Model = alias // Set the model name for GetModelFromFlagsOrDefault
+						ok = true
+						break
+					}
+				}
+			}
+		}
+
+		// If still not found, get model from flags/env/default
+		if !ok {
+			modelName := agent.GetModelFromFlagsOrDefault(agent.ModelOptions{
+				Model: config.Model,
+			})
+			modelConfig, ok = agent.ModelConfigs[modelName]
+			if !ok {
+				// Unknown model, default to text only
+				modelConfig = agent.ModelConfig{
+					Name:            modelName,
+					IsKnown:         false,
+					SupportedInputs: []agent.InputType{agent.InputTypeText},
+				}
+			}
 		}
 	}
 
 	// Validate input types against model capabilities
-	for _, input := range input {
-		supported := false
-		for _, t := range modelConfig.SupportedInputs {
-			if t == input.Type {
-				supported = true
-				break
-			}
+	for _, input := range inputs {
+		if slices.Contains(modelConfig.SupportedInputs, input.Type) {
+			continue
 		}
-		if !supported {
-			slog.Error("model does not support input type",
-				slog.String("model", config.Model),
-				slog.String("input_type", string(input.Type)),
-				slog.String("file", input.FilePath),
-			)
-			os.Exit(1)
-		}
+		slog.Error("model does not support input type",
+			slog.String("model", config.Model),
+			slog.String("input_type", string(input.Type)),
+			slog.String("file", input.FilePath),
+		)
+		os.Exit(1)
 	}
 
-	if err := executor.Execute(input); err != nil {
+	if err := executor.Execute(inputs); err != nil {
 		slog.Error("fatal error", slog.Any("err", err))
 		os.Exit(1)
 	}
