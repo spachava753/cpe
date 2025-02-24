@@ -21,6 +21,8 @@ type GenConfig struct {
 	NumberOfResponses *int     // Number of chat completion choices to generate
 	ToolChoice        string   // Controls tool use: "auto", "any", or "tool"
 	ForcedTool        string   // Name of the tool to force when ToolChoice is "tool"
+	ThinkingEnabled   bool     // Whether to enable extended thinking
+	ThinkingBudget    *int     // Token budget for extended thinking (must be ≥1024 and less than max_tokens)
 }
 
 type ModelDefaults struct {
@@ -83,6 +85,11 @@ var ModelConfigs = map[string]ModelConfig{
 		Name: "deepseek-reasoner", IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 1},
 		SupportedInputs: []InputType{InputTypeText},
+	},
+	"claude-3-7-sonnet": {
+		Name: "claude-3-7-sonnet-20250219", IsKnown: true,
+		Defaults: ModelDefaults{MaxTokens: 128000, Temperature: 0.3},
+		SupportedInputs: []InputType{InputTypeText, InputTypeImage},
 	},
 	"claude-3-opus": {
 		Name: anthropic.ModelClaude_3_Opus_20240229, IsKnown: true,
@@ -185,6 +192,8 @@ type ModelOptions struct {
 	DeleteCascade      bool   // Delete conversation and all children
 	PrintConversation  string // Conversation ID to print
 	New                bool   // Start a new conversation instead of continuing from the last one
+	ThinkingEnabled    bool   // Enable extended thinking
+	ThinkingBudget     int    // Token budget for extended thinking
 }
 
 func (f ModelOptions) ApplyToGenConfig(config GenConfig) GenConfig {
@@ -213,6 +222,13 @@ func (f ModelOptions) ApplyToGenConfig(config GenConfig) GenConfig {
 	if f.NumberOfResponses != 0 {
 		numResponses := f.NumberOfResponses
 		config.NumberOfResponses = &numResponses
+	}
+	if f.ThinkingEnabled {
+		config.ThinkingEnabled = true
+		if f.ThinkingBudget != 0 {
+			budget := f.ThinkingBudget
+			config.ThinkingBudget = &budget
+		}
 	}
 	return config
 }

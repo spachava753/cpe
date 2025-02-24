@@ -42,7 +42,7 @@ type anthropicExecutor struct {
 	params  *a.BetaMessageNewParams
 }
 
-func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gitignore.GitIgnore, config GenConfig) Executor {
+func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gitignore.GitIgnore, config GenConfig) (Executor, error) {
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithMaxRetries(5),
@@ -110,6 +110,26 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 		}),
 	}
 
+	// Add extended thinking configuration if enabled
+	if config.ThinkingEnabled {
+		if config.ThinkingBudget == nil {
+			// Default to 1024 tokens if not specified
+			defaultBudget := 1024
+			config.ThinkingBudget = &defaultBudget
+		}
+		if *config.ThinkingBudget < 1024 {
+			return nil, fmt.Errorf("thinking budget must be at least 1024 tokens")
+		}
+		if *config.ThinkingBudget >= config.MaxTokens {
+			return nil, fmt.Errorf("thinking budget must be less than max_tokens")
+		}
+		var thinkingConfig a.BetaThinkingConfigParamUnion = &a.BetaThinkingConfigEnabledParam{
+			Type: a.F(a.BetaThinkingConfigEnabledTypeEnabled),
+			BudgetTokens: a.F(int64(*config.ThinkingBudget)),
+		}
+		params.Thinking = a.F(thinkingConfig)
+	}
+
 	if config.TopP != nil {
 		params.TopP = a.F(float64(*config.TopP))
 	}
@@ -126,7 +146,7 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 		ignorer: ignorer,
 		config:  config,
 		params:  params,
-	}
+	}, nil
 }
 
 func (s *anthropicExecutor) Execute(inputs []Input) error {
@@ -305,6 +325,19 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 				assistantMsgContentBlocks = append(assistantMsgContentBlocks, &a.BetaTextBlockParam{
 					Text: a.F(block.Text),
 					Type: a.F(a.BetaTextBlockParamTypeText),
+				})
+			case a.BetaContentBlockTypeThinking:
+				s.logger.Printf("Thinking: %s\n", block.Thinking)
+				assistantMsgContentBlocks = append(assistantMsgContentBlocks, &a.BetaThinkingBlockParam{
+					Type:      a.F(a.BetaThinkingBlockParamTypeThinking),
+					Thinking:  a.F(block.Thinking),
+					Signature: a.F(block.Signature),
+				})
+			case a.BetaContentBlockTypeRedactedThinking:
+				s.logger.Println("Received redacted thinking block")
+				assistantMsgContentBlocks = append(assistantMsgContentBlocks, &a.BetaRedactedThinkingBlockParam{
+					Type: a.F(a.BetaRedactedThinkingBlockParamTypeRedactedThinking),
+					Data: a.F(block.Data),
 				})
 			case a.BetaContentBlockTypeToolUse:
 				finished = false
