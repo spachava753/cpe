@@ -59,6 +59,11 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 		}
 		opts = append(opts, option.WithBaseURL(baseUrl))
 	}
+
+	// Add beta header for >64k tokens
+	if config.MaxTokens > 64000 {
+		opts = append(opts, option.WithHeader("anthropic-beta", string(a.AnthropicBetaOutput128k2025_02_19)))
+	}
 	client := a.NewClient(opts...)
 
 	params := &a.BetaMessageNewParams{
@@ -140,6 +145,11 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 			}
 			params.Thinking = a.F(thinkingConfig)
 			thinkingEnabled = true
+
+			// When thinking is enabled, temperature must be 1.0 and other params must be zero value
+			params.Temperature = a.F(1.0)
+			params.TopP = a.Null[float64]()
+			params.TopK = a.Null[int64]()
 		}
 	}
 
