@@ -21,8 +21,6 @@ type GenConfig struct {
 	NumberOfResponses *int     // Number of chat completion choices to generate
 	ToolChoice        string   // Controls tool use: "auto", "any", or "tool"
 	ForcedTool        string   // Name of the tool to force when ToolChoice is "tool"
-	ThinkingEnabled   bool     // Whether to enable extended thinking
-	ThinkingBudget    *int     // Token budget for extended thinking (must be ≥1024 and less than max_tokens)
 }
 
 type ModelDefaults struct {
@@ -192,8 +190,6 @@ type ModelOptions struct {
 	DeleteCascade      bool   // Delete conversation and all children
 	PrintConversation  string // Conversation ID to print
 	New                bool   // Start a new conversation instead of continuing from the last one
-	ThinkingEnabled    bool   // Enable extended thinking
-	ThinkingBudget     int    // Token budget for extended thinking
 }
 
 func (f ModelOptions) ApplyToGenConfig(config GenConfig) GenConfig {
@@ -222,13 +218,6 @@ func (f ModelOptions) ApplyToGenConfig(config GenConfig) GenConfig {
 	if f.NumberOfResponses != 0 {
 		numResponses := f.NumberOfResponses
 		config.NumberOfResponses = &numResponses
-	}
-	if f.ThinkingEnabled {
-		config.ThinkingEnabled = true
-		if f.ThinkingBudget != 0 {
-			budget := f.ThinkingBudget
-			config.ThinkingBudget = &budget
-		}
 	}
 	return config
 }

@@ -13,6 +13,7 @@ import (
 	gitignore "github.com/sabhiram/go-gitignore"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -110,24 +111,25 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 		}),
 	}
 
-	// Add extended thinking configuration if enabled
-	if config.ThinkingEnabled {
-		if config.ThinkingBudget == nil {
-			// Default to 1024 tokens if not specified
-			defaultBudget := 1024
-			config.ThinkingBudget = &defaultBudget
+	// Add extended thinking configuration if CPE_CLAUDE_THINKING is set and this is Claude 3.7
+	if strings.HasPrefix(config.Model, "claude-3-7") {
+		if thinkingBudgetStr := os.Getenv("CPE_CLAUDE_THINKING"); thinkingBudgetStr != "" {
+			thinkingBudget, err := strconv.Atoi(thinkingBudgetStr)
+			if err != nil {
+				return nil, fmt.Errorf("invalid CPE_CLAUDE_THINKING value: %w", err)
+			}
+			if thinkingBudget < 1024 {
+				return nil, fmt.Errorf("CPE_CLAUDE_THINKING value must be at least 1024 tokens")
+			}
+			if thinkingBudget >= config.MaxTokens {
+				return nil, fmt.Errorf("CPE_CLAUDE_THINKING value must be less than max_tokens (%d)", config.MaxTokens)
+			}
+			var thinkingConfig a.BetaThinkingConfigParamUnion = &a.BetaThinkingConfigEnabledParam{
+				Type: a.F(a.BetaThinkingConfigEnabledTypeEnabled),
+				BudgetTokens: a.F(int64(thinkingBudget)),
+			}
+			params.Thinking = a.F(thinkingConfig)
 		}
-		if *config.ThinkingBudget < 1024 {
-			return nil, fmt.Errorf("thinking budget must be at least 1024 tokens")
-		}
-		if *config.ThinkingBudget >= config.MaxTokens {
-			return nil, fmt.Errorf("thinking budget must be less than max_tokens")
-		}
-		var thinkingConfig a.BetaThinkingConfigParamUnion = &a.BetaThinkingConfigEnabledParam{
-			Type: a.F(a.BetaThinkingConfigEnabledTypeEnabled),
-			BudgetTokens: a.F(int64(*config.ThinkingBudget)),
-		}
-		params.Thinking = a.F(thinkingConfig)
 	}
 
 	if config.TopP != nil {
