@@ -66,6 +66,7 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 	}
 	client := a.NewClient(opts...)
 
+	// Set initial parameters
 	params := &a.BetaMessageNewParams{
 		Model:       a.F(config.Model),
 		MaxTokens:   a.F(int64(config.MaxTokens)),
@@ -140,17 +141,30 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 				return nil, fmt.Errorf("CPE_CLAUDE_THINKING value must be less than max_tokens (%d)", config.MaxTokens)
 			}
 			var thinkingConfig a.BetaThinkingConfigParamUnion = &a.BetaThinkingConfigEnabledParam{
-				Type: a.F(a.BetaThinkingConfigEnabledTypeEnabled),
+				Type:         a.F(a.BetaThinkingConfigEnabledTypeEnabled),
 				BudgetTokens: a.F(int64(thinkingBudget)),
 			}
 			params.Thinking = a.F(thinkingConfig)
 			thinkingEnabled = true
 
-			// When thinking is enabled, temperature must be 1.0 and other params must be zero value
+			// When thinking is enabled, temperature must be 1.0 and other params must be unset
 			params.Temperature = a.F(1.0)
-			params.TopP = a.Null[float64]()
-			params.TopK = a.Null[int64]()
 		}
+	}
+
+	// Set optional parameters if provided and thinking is not enabled
+	if !thinkingEnabled {
+		if config.TopP != nil {
+			params.TopP = a.F(float64(*config.TopP))
+		}
+		if config.TopK != nil {
+			params.TopK = a.F(int64(*config.TopK))
+		}
+	}
+
+	// Set stop sequences if provided
+	if config.Stop != nil {
+		params.StopSequences = a.F(config.Stop)
 	}
 
 	return &anthropicExecutor{
@@ -160,24 +174,6 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 		config:          config,
 		params:          params,
 		thinkingEnabled: thinkingEnabled,
-	}, nil
-
-	if config.TopP != nil {
-		params.TopP = a.F(float64(*config.TopP))
-	}
-	if config.TopK != nil {
-		params.TopK = a.F(int64(*config.TopK))
-	}
-	if config.Stop != nil {
-		params.StopSequences = a.F(config.Stop)
-	}
-
-	return &anthropicExecutor{
-		client:  client,
-		logger:  logger,
-		ignorer: ignorer,
-		config:  config,
-		params:  params,
 	}, nil
 }
 
