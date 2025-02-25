@@ -80,7 +80,7 @@ func createExecutor(logger Logger, ignorer *gitignore.GitIgnore, customURL strin
 			return nil, fmt.Errorf("OPENAI_API_KEY environment variable not set")
 		}
 		executor = NewOpenAiReasoningExecutor(customURL, apiKey, logger, ignorer, genConfig)
-	case a.ModelClaude3_5Sonnet20241022, a.ModelClaude3_5Haiku20241022, a.ModelClaude_3_Haiku_20240307, a.ModelClaude_3_Opus_20240229:
+	case a.ModelClaude3_5Sonnet20241022, a.ModelClaude3_5Haiku20241022, a.ModelClaude_3_Haiku_20240307, a.ModelClaude_3_Opus_20240229, "claude-3-7-sonnet-20250219":
 		apiKey := os.Getenv("ANTHROPIC_API_KEY")
 		if apiKey == "" {
 			return nil, fmt.Errorf("ANTHROPIC_API_KEY environment variable not set")
