@@ -85,7 +85,7 @@ var ModelConfigs = map[string]ModelConfig{
 		SupportedInputs: []InputType{InputTypeText},
 	},
 	"claude-3-7-sonnet": {
-		Name: "claude-3-7-sonnet-20250219", IsKnown: true,
+		Name: anthropic.ModelClaude3_7Sonnet20250219, IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 128000, Temperature: 0.3},
 		SupportedInputs: []InputType{InputTypeText, InputTypeImage},
 	},
