@@ -26,6 +26,8 @@ func init() {
 	gob.Register(&a.BetaImageBlockParam{})
 	gob.Register(&a.BetaBase64PDFBlockParam{})
 	gob.Register(&a.BetaContentBlockParam{})
+	gob.Register(&a.BetaThinkingBlockParam{})
+	gob.Register(&a.BetaRedactedThinkingBlockParam{})
 	gob.Register(a.BetaToolResultBlockParamContent{})
 	gob.Register([]a.BetaToolResultBlockParamContentUnion{})
 	gob.Register([]a.BetaContentBlockParamUnion{})
