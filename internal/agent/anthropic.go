@@ -13,6 +13,7 @@ import (
 	gitignore "github.com/sabhiram/go-gitignore"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -25,6 +26,8 @@ func init() {
 	gob.Register(&a.BetaImageBlockParam{})
 	gob.Register(&a.BetaBase64PDFBlockParam{})
 	gob.Register(&a.BetaContentBlockParam{})
+	gob.Register(&a.BetaThinkingBlockParam{})
+	gob.Register(&a.BetaRedactedThinkingBlockParam{})
 	gob.Register(a.BetaToolResultBlockParamContent{})
 	gob.Register([]a.BetaToolResultBlockParamContentUnion{})
 	gob.Register([]a.BetaContentBlockParamUnion{})
@@ -35,14 +38,15 @@ func init() {
 }
 
 type anthropicExecutor struct {
-	client  *a.Client
-	logger  Logger
-	ignorer *gitignore.GitIgnore
-	config  GenConfig
-	params  *a.BetaMessageNewParams
+	client          *a.Client
+	logger          Logger
+	ignorer         *gitignore.GitIgnore
+	config          GenConfig
+	params          *a.BetaMessageNewParams
+	thinkingEnabled bool
 }
 
-func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gitignore.GitIgnore, config GenConfig) Executor {
+func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gitignore.GitIgnore, config GenConfig) (Executor, error) {
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithMaxRetries(5),
@@ -55,8 +59,14 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 		}
 		opts = append(opts, option.WithBaseURL(baseUrl))
 	}
+
+	// Add beta header for >64k tokens
+	if config.MaxTokens > 64000 {
+		opts = append(opts, option.WithHeader("anthropic-beta", string(a.AnthropicBetaOutput128k2025_02_19)))
+	}
 	client := a.NewClient(opts...)
 
+	// Set initial parameters
 	params := &a.BetaMessageNewParams{
 		Model:       a.F(config.Model),
 		MaxTokens:   a.F(int64(config.MaxTokens)),
@@ -65,6 +75,9 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 			{
 				Text: a.String(agentInstructions),
 				Type: a.F(a.BetaTextBlockParamTypeText),
+				CacheControl: a.F(a.BetaCacheControlEphemeralParam{
+					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
+				}),
 			},
 		}),
 		Tools: a.F([]a.BetaToolUnionUnionParam{
@@ -106,27 +119,62 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 					Type:       a.F(a.BetaToolInputSchemaTypeObject),
 					Properties: a.F[any](changeDirectoryTool.InputSchema["properties"]),
 				}),
+				CacheControl: a.F(a.BetaCacheControlEphemeralParam{
+					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
+				}),
 			},
 		}),
 	}
 
-	if config.TopP != nil {
-		params.TopP = a.F(float64(*config.TopP))
+	// Add extended thinking configuration if CPE_CLAUDE_THINKING is set and this is Claude 3.7
+	var thinkingEnabled bool
+	if strings.HasPrefix(config.Model, "claude-3-7") {
+		if thinkingBudgetStr := os.Getenv("CPE_CLAUDE_THINKING"); thinkingBudgetStr != "" {
+			thinkingBudget, err := strconv.Atoi(thinkingBudgetStr)
+			if err != nil {
+				return nil, fmt.Errorf("invalid CPE_CLAUDE_THINKING value: %w", err)
+			}
+			if thinkingBudget < 1024 {
+				return nil, fmt.Errorf("CPE_CLAUDE_THINKING value must be at least 1024 tokens")
+			}
+			if thinkingBudget >= config.MaxTokens {
+				return nil, fmt.Errorf("CPE_CLAUDE_THINKING value must be less than max_tokens (%d)", config.MaxTokens)
+			}
+			var thinkingConfig a.BetaThinkingConfigParamUnion = &a.BetaThinkingConfigEnabledParam{
+				Type:         a.F(a.BetaThinkingConfigEnabledTypeEnabled),
+				BudgetTokens: a.F(int64(thinkingBudget)),
+			}
+			params.Thinking = a.F(thinkingConfig)
+			thinkingEnabled = true
+
+			// When thinking is enabled, temperature must be 1.0 and other params must be unset
+			params.Temperature = a.F(1.0)
+		}
 	}
-	if config.TopK != nil {
-		params.TopK = a.F(int64(*config.TopK))
+
+	// Set optional parameters if provided and thinking is not enabled
+	if !thinkingEnabled {
+		if config.TopP != nil {
+			params.TopP = a.F(float64(*config.TopP))
+		}
+		if config.TopK != nil {
+			params.TopK = a.F(int64(*config.TopK))
+		}
 	}
+
+	// Set stop sequences if provided
 	if config.Stop != nil {
 		params.StopSequences = a.F(config.Stop)
 	}
 
 	return &anthropicExecutor{
-		client:  client,
-		logger:  logger,
-		ignorer: ignorer,
-		config:  config,
-		params:  params,
-	}
+		client:          client,
+		logger:          logger,
+		ignorer:         ignorer,
+		config:          config,
+		params:          params,
+		thinkingEnabled: thinkingEnabled,
+	}, nil
 }
 
 func (s *anthropicExecutor) Execute(inputs []Input) error {
@@ -212,14 +260,12 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					block.CacheControl = emptyVal
 				case *a.BetaContentBlockParam:
 					block.CacheControl = emptyVal
-				default:
-					return fmt.Errorf("unhandled content block type %T when removing cache control", block)
 				}
 			}
 		}
 
-		// Add cache control to the last message
-		if len(s.params.Messages.Value) > 0 {
+		// Add cache control to the last message if thinking is not enabled
+		if !s.thinkingEnabled && len(s.params.Messages.Value) > 0 {
 			msgIndex := len(s.params.Messages.Value) - 1
 			contentBlockIdx := len(s.params.Messages.Value[msgIndex].Content.Value) - 1
 			switch block := s.params.Messages.Value[msgIndex].Content.Value[contentBlockIdx].(type) {
@@ -247,13 +293,11 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 				block.CacheControl = a.F(a.BetaCacheControlEphemeralParam{
 					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
 				})
-			default:
-				return fmt.Errorf("unhandled content block type %T when setting cache control for last message", block)
 			}
 		}
 
-		// Add cache control to the third to last message if it exists
-		if len(s.params.Messages.Value) >= 3 {
+		// Add cache control to the third to last message if thinking is not enabled
+		if !s.thinkingEnabled && len(s.params.Messages.Value) >= 3 {
 			msgIndex := len(s.params.Messages.Value) - 3
 			contentBlockIdx := len(s.params.Messages.Value[msgIndex].Content.Value) - 1
 			switch block := s.params.Messages.Value[msgIndex].Content.Value[contentBlockIdx].(type) {
@@ -281,8 +325,6 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 				block.CacheControl = a.F(a.BetaCacheControlEphemeralParam{
 					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
 				})
-			default:
-				return fmt.Errorf("unhandled content block type %T when setting cache control for last message", block)
 			}
 		}
 
@@ -305,6 +347,19 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 				assistantMsgContentBlocks = append(assistantMsgContentBlocks, &a.BetaTextBlockParam{
 					Text: a.F(block.Text),
 					Type: a.F(a.BetaTextBlockParamTypeText),
+				})
+			case a.BetaContentBlockTypeThinking:
+				s.logger.Printf("Thinking: %s\n", block.Thinking)
+				assistantMsgContentBlocks = append(assistantMsgContentBlocks, &a.BetaThinkingBlockParam{
+					Type:      a.F(a.BetaThinkingBlockParamTypeThinking),
+					Thinking:  a.F(block.Thinking),
+					Signature: a.F(block.Signature),
+				})
+			case a.BetaContentBlockTypeRedactedThinking:
+				s.logger.Println("Received redacted thinking block")
+				assistantMsgContentBlocks = append(assistantMsgContentBlocks, &a.BetaRedactedThinkingBlockParam{
+					Type: a.F(a.BetaRedactedThinkingBlockParamTypeRedactedThinking),
+					Data: a.F(block.Data),
 				})
 			case a.BetaContentBlockTypeToolUse:
 				finished = false

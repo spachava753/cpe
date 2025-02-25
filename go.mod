@@ -8,7 +8,7 @@ retract v0.16.10
 toolchain go1.23.2
 
 require (
-	github.com/anthropics/anthropic-sdk-go v0.2.0-alpha.10
+	github.com/anthropics/anthropic-sdk-go v0.2.0-alpha.11
 	github.com/gabriel-vasile/mimetype v1.4.8
 	github.com/google/generative-ai-go v0.19.0
 	github.com/matoous/go-nanoid/v2 v2.1.0
