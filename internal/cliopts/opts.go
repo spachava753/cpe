@@ -34,6 +34,7 @@ type Options struct {
 	Overview           bool
 	RelatedFiles       string
 	New                bool
+	ListEnvVars        bool    // Flag to list environment variables
 	Args               []string // Remaining arguments after flag parsing
 }
 
@@ -61,6 +62,7 @@ func init() {
 	flag.BoolVar(&Opts.DeleteCascade, "cascade", false, "When deleting a conversation, also delete its children")
 	flag.StringVar(&Opts.PrintConversation, "print-convo", "", "Print a specific conversation")
 	flag.BoolVar(&Opts.New, "new", false, "Start a new conversation instead of continuing from the last one")
+	flag.BoolVar(&Opts.ListEnvVars, "env", false, "List all environment variables used by CPE")
 }
 
 func ParseFlags() {
