@@ -86,7 +86,7 @@ var ModelConfigs = map[string]ModelConfig{
 	},
 	"claude-3-7-sonnet": {
 		Name: anthropic.ModelClaude3_7Sonnet20250219, IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 128000, Temperature: 0.3},
+		Defaults: ModelDefaults{MaxTokens: 64000, Temperature: 0.3},
 		SupportedInputs: []InputType{InputTypeText, InputTypeImage},
 	},
 	"claude-3-opus": {
@@ -171,7 +171,7 @@ var ModelConfigs = map[string]ModelConfig{
 	},
 }
 
-var DefaultModel = "claude-3-5-sonnet"
+var DefaultModel = "claude-3-7-sonnet"
 
 type ModelOptions struct {
 	Model              string
