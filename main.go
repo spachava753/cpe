@@ -204,12 +204,44 @@ func main() {
 	}
 }
 
+func printEnvironmentVariables() {
+	fmt.Println("CPE Environment Variables:")
+	fmt.Println("=========================")
+	
+	// API Keys
+	fmt.Println("\nAPI Keys:")
+	fmt.Println("  ANTHROPIC_API_KEY    - Required for Claude models")
+	fmt.Println("  OPENAI_API_KEY       - Required for OpenAI models")
+	fmt.Println("  GEMINI_API_KEY       - Required for Google Gemini models")
+	fmt.Println("  DEEPSEEK_API_KEY     - Required for Deepseek models")
+	
+	// Model Selection
+	fmt.Println("\nModel Selection:")
+	fmt.Println("  CPE_MODEL            - Specify the model to use (overridden by -model flag)")
+	
+	// Custom API Endpoints
+	fmt.Println("\nCustom API Endpoints:")
+	fmt.Println("  CPE_CUSTOM_URL       - Default custom URL for API endpoints")
+	fmt.Println("  CPE_<MODEL_NAME>_URL - Model-specific URL (e.g., CPE_CLAUDE_3_5_SONNET_URL)")
+	fmt.Println("                         Replace hyphens with underscores and use uppercase")
+	
+	// Model-Specific Configuration
+	fmt.Println("\nModel-Specific Configuration:")
+	fmt.Println("  CPE_CLAUDE_THINKING  - Token budget for Claude's thinking mode (minimum 1024)")
+	
+	os.Exit(0)
+}
+
 func parseConfig() (cliopts.Options, error) {
 	cliopts.ParseFlags()
 
 	if cliopts.Opts.Version {
 		log.Printf("cpe version %s\n", getVersion())
 		os.Exit(0)
+	}
+	
+	if cliopts.Opts.ListEnvVars {
+		printEnvironmentVariables()
 	}
 
 	if cliopts.Opts.Model != "" && cliopts.Opts.Model != agent.DefaultModel {
