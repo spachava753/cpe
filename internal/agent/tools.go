@@ -254,19 +254,6 @@ func executeFileEditorTool(params FileEditorParams) (*ToolResult, error) {
 				IsError: true,
 			}, nil
 		}
-		// Check if file already exists before attempting to create it
-		if _, err := os.Stat(params.Path); err == nil {
-			return &ToolResult{
-				Content: fmt.Sprintf("File already exists: %s", params.Path),
-				IsError: true,
-			}, nil
-		} else if !os.IsNotExist(err) {
-			// Some other error occurred while checking file existence
-			return &ToolResult{
-				Content: fmt.Sprintf("Error checking if file exists: %s", err),
-				IsError: true,
-			}, nil
-		}
 		if err := os.WriteFile(params.Path, []byte(params.FileText), 0644); err != nil {
 			return &ToolResult{
 				Content: fmt.Sprintf("Error creating file: %s", err),
@@ -340,7 +327,56 @@ func ExecuteFilesOverviewTool(ignorer *ignore.GitIgnore) (*ToolResult, error) {
 
 	var sb strings.Builder
 	for _, file := range files {
-		sb.WriteString(fmt.Sprintf("File: %s\nContent:\n```%s```\n\n", file.Path, file.Content))
+		// Format output with consistent markdown formatting, 
+		// placing the content in code blocks with language hints where possible
+		extension := filepath.Ext(file.Path)
+		language := ""
+		
+		// Detect language for syntax highlighting based on file extension
+		switch extension {
+		case ".go":
+			language = "go"
+		case ".js":
+			language = "javascript"
+		case ".py":
+			language = "python"
+		case ".java":
+			language = "java"
+		case ".ts":
+			language = "typescript"
+		case ".sh":
+			language = "bash"
+		case ".json":
+			language = "json"
+		case ".yaml", ".yml":
+			language = "yaml"
+		case ".md":
+			language = "markdown"
+		case ".html":
+			language = "html"
+		case ".css":
+			language = "css"
+		case ".xml":
+			language = "xml"
+		case ".sql":
+			language = "sql"
+		case ".rb":
+			language = "ruby"
+		case ".php":
+			language = "php"
+		case ".rs":
+			language = "rust"
+		case ".c", ".cpp":
+			language = "c"
+		case ".h", ".hpp":
+			language = "cpp"
+		}
+		
+		if language != "" {
+			sb.WriteString(fmt.Sprintf("File: %s\nContent:\n```%s\n%s\n```\n\n", file.Path, language, file.Content))
+		} else {
+			sb.WriteString(fmt.Sprintf("File: %s\nContent:\n```\n%s\n```\n\n", file.Path, file.Content))
+		}
 	}
 
 	return &ToolResult{
@@ -369,7 +405,56 @@ func ExecuteGetRelatedFilesTool(inputFiles []string, ignorer *ignore.GitIgnore) 
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file %s: %w", file, err)
 		}
-		sb.WriteString(fmt.Sprintf("File: %s\nContent:\n```%s```\n\n", file, string(content)))
+		
+		// Format output with syntax highlighting based on file extension
+		extension := filepath.Ext(file)
+		language := ""
+		
+		// Detect language for syntax highlighting based on file extension
+		switch extension {
+		case ".go":
+			language = "go"
+		case ".js":
+			language = "javascript"
+		case ".py":
+			language = "python"
+		case ".java":
+			language = "java"
+		case ".ts":
+			language = "typescript"
+		case ".sh":
+			language = "bash"
+		case ".json":
+			language = "json"
+		case ".yaml", ".yml":
+			language = "yaml"
+		case ".md":
+			language = "markdown"
+		case ".html":
+			language = "html"
+		case ".css":
+			language = "css"
+		case ".xml":
+			language = "xml"
+		case ".sql":
+			language = "sql"
+		case ".rb":
+			language = "ruby"
+		case ".php":
+			language = "php"
+		case ".rs":
+			language = "rust"
+		case ".c", ".cpp":
+			language = "c"
+		case ".h", ".hpp":
+			language = "cpp"
+		}
+		
+		if language != "" {
+			sb.WriteString(fmt.Sprintf("File: %s\nContent:\n```%s\n%s\n```\n\n", file, language, string(content)))
+		} else {
+			sb.WriteString(fmt.Sprintf("File: %s\nContent:\n```\n%s\n```\n\n", file, string(content)))
+		}
 	}
 
 	return &ToolResult{

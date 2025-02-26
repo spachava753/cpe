@@ -41,7 +41,7 @@ This document outlines the planned features, improvements, and notes for the CPE
   - [x] Deepseek
   - [ ] Nous
 - [x] support multimodality
-  - [z] images
+  - [x] images
   - [x] videos
 - [x] Use official sdks instead for openai, gemini
   - [x] openai

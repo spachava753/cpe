@@ -391,55 +391,130 @@ func (o *openaiExecutor) PrintMessages() string {
 			}
 			switch m.Role.Value {
 			case oai.ChatCompletionMessageParamRoleUser:
-				sb.WriteString("USER:\n")
+				sb.WriteString("### 👤 USER\n\n")
 			case oai.ChatCompletionMessageParamRoleAssistant:
-				sb.WriteString("ASSISTANT:\n")
+				sb.WriteString("### 🤖 ASSISTANT\n\n")
 			case oai.ChatCompletionMessageParamRoleTool:
-				sb.WriteString("Tool Result:\n")
+				sb.WriteString("**Tool Result**:\n\n")
 			}
 			if m.Content.Present {
-				sb.WriteString(fmt.Sprintf("%v", m.Content.Value))
-				sb.WriteString("\n")
+				content := fmt.Sprintf("%v", m.Content.Value)
+				if m.Role.Value == oai.ChatCompletionMessageParamRoleTool {
+					// Format tool result output with code fences
+					if strings.Contains(content, "Successfully created file") || 
+						strings.Contains(content, "Successfully replaced text in") || 
+						strings.Contains(content, "Successfully removed file") {
+						sb.WriteString(fmt.Sprintf("```\n%s\n```\n\n", content))
+					} else if strings.HasPrefix(content, "Error") {
+						// Format error messages
+						sb.WriteString(fmt.Sprintf("> ⚠️ %s\n\n", content))
+					} else {
+						// Try to detect language for syntax highlighting
+						language := ""
+						if strings.Contains(content, "package ") && strings.Contains(content, "func ") {
+							language = "go"
+						} else if strings.Contains(content, "def ") && strings.Contains(content, "import ") {
+							language = "python"
+						} else if strings.Contains(content, "function ") && strings.Contains(content, "const ") {
+							language = "javascript"
+						} else if strings.Contains(content, "class ") && strings.Contains(content, "public ") {
+							language = "java"
+						}
+						
+						if language != "" {
+							sb.WriteString(fmt.Sprintf("```%s\n%s\n```\n\n", language, content))
+						} else {
+							sb.WriteString(fmt.Sprintf("```\n%s\n```\n\n", content))
+						}
+					}
+				} else {
+					sb.WriteString(content)
+					sb.WriteString("\n\n")
+				}
 			}
 		case oai.ChatCompletionAssistantMessageParam:
-			sb.WriteString("ASSISTANT:\n")
+			sb.WriteString("### 🤖 ASSISTANT\n\n")
 			if m.Content.Present {
 				for _, content := range m.Content.Value {
 					if text, ok := content.(oai.ChatCompletionContentPartTextParam); ok {
 						sb.WriteString(text.Text.Value)
-						sb.WriteString("\n")
+						sb.WriteString("\n\n")
 					}
 				}
 			}
 			if m.ToolCalls.Present {
 				for _, tc := range m.ToolCalls.Value {
 					if tc.Function.Present {
-						sb.WriteString(fmt.Sprintf("Tool Call: %s\n", tc.Function.Value.Name.Value))
+						sb.WriteString(fmt.Sprintf("**Tool Call**: `%s`\n\n", tc.Function.Value.Name.Value))
 						jsonInput, _ := json.MarshalIndent(tc.Function.Value.Arguments.Value, "", "  ")
-						sb.WriteString(fmt.Sprintf("Input: %s\n", string(jsonInput)))
+						sb.WriteString(fmt.Sprintf("**Input**:\n```json\n%s\n```\n\n", string(jsonInput)))
 					}
 				}
 			}
 		case oai.ChatCompletionUserMessageParam:
-			sb.WriteString("USER:\n")
+			sb.WriteString("### 👤 USER\n\n")
 			if m.Content.Present {
 				for _, content := range m.Content.Value {
 					if text, ok := content.(oai.ChatCompletionContentPartTextParam); ok {
 						sb.WriteString(text.Text.Value)
-						sb.WriteString("\n")
+						sb.WriteString("\n\n")
 					}
 				}
 			}
 		case oai.ChatCompletionToolMessageParam:
-			sb.WriteString("Tool Result:\n")
+			sb.WriteString("**Tool Result**:\n\n")
 			if m.Content.Present {
+				var contentStrings []string
 				for _, content := range m.Content.Value {
-					sb.WriteString(content.Text.Value)
-					sb.WriteString("\n")
+					contentStrings = append(contentStrings, content.Text.Value)
+				}
+				content := strings.Join(contentStrings, "")
+				
+				// Format tool results with code fences
+				if strings.Contains(content, "Successfully created file") || 
+				   strings.Contains(content, "Successfully replaced text in") || 
+				   strings.Contains(content, "Successfully removed file") {
+					sb.WriteString(fmt.Sprintf("```\n%s\n```\n\n", content))
+				} else if strings.HasPrefix(content, "Error") {
+					// Format error messages
+					sb.WriteString(fmt.Sprintf("> ⚠️ %s\n\n", content))
+				} else {
+					// Try to detect language for syntax highlighting based on tool call ID
+					language := ""
+					if m.ToolCallID.Present {
+						// Look for tool calls with matching ID to determine tool type
+						for _, msg2 := range o.params.Messages.Value {
+							if assistMsg, ok := msg2.(oai.ChatCompletionAssistantMessageParam); ok && assistMsg.ToolCalls.Present {
+								for _, tc := range assistMsg.ToolCalls.Value {
+									if tc.ID.Present && tc.ID.Value == m.ToolCallID.Value && tc.Function.Present {
+										// Check if this is a bash tool call
+										if tc.Function.Value.Name.Present && tc.Function.Value.Name.Value == "bash" {
+											// Try to detect language
+											if strings.Contains(content, "package ") && strings.Contains(content, "func ") {
+												language = "go"
+											} else if strings.Contains(content, "def ") && strings.Contains(content, "import ") {
+												language = "python"
+											} else if strings.Contains(content, "function ") && strings.Contains(content, "const ") {
+												language = "javascript"
+											} else if strings.Contains(content, "class ") && strings.Contains(content, "public ") {
+												language = "java"
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+					
+					// Format bash output with language hint if detected
+					if language != "" {
+						sb.WriteString(fmt.Sprintf("```%s\n%s\n```\n\n", language, content))
+					} else {
+						sb.WriteString(fmt.Sprintf("```\n%s\n```\n\n", content))
+					}
 				}
 			}
 		}
-		sb.WriteString("\n")
 	}
 	return sb.String()
 }

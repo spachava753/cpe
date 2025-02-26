@@ -549,12 +549,13 @@ func (s *anthropicExecutor) PrintMessages() string {
 			continue
 		}
 
-		// Print role header
+		// Print role header with clear formatting
 		switch msg.Role.Value {
 		case a.BetaMessageParamRoleUser:
-			sb.WriteString("USER:\n")
+			sb.WriteString("### 👤 USER\n\n")
 		case a.BetaMessageParamRoleAssistant:
-			sb.WriteString("ASSISTANT:\n")
+			sb.WriteString("### 🤖 ASSISTANT\n\n")
+		}
 		}
 
 		// Print message content
@@ -562,25 +563,62 @@ func (s *anthropicExecutor) PrintMessages() string {
 			switch b := block.(type) {
 			case *a.BetaTextBlockParam:
 				sb.WriteString(b.Text.Value)
-				sb.WriteString("\n")
+				sb.WriteString("\n\n")
 			case *a.BetaToolUseBlockParam:
-				sb.WriteString(fmt.Sprintf("Tool Call: %s\n", b.Name.Value))
+				sb.WriteString(fmt.Sprintf("**Tool Call**: `%s`\n\n", b.Name.Value))
 				jsonInput, _ := json.MarshalIndent(b.Input.Value, "", "  ")
-				sb.WriteString(fmt.Sprintf("Input: %s\n", string(jsonInput)))
+				sb.WriteString(fmt.Sprintf("**Input**:\n```json\n%s\n```\n\n", string(jsonInput)))
 			case *a.BetaToolResultBlockParam:
-				sb.WriteString("Tool Result:\n")
+				sb.WriteString("**Tool Result**:\n\n")
 				for _, content := range b.Content.Value {
 					switch c := content.(type) {
 					case a.BetaToolResultBlockParamContent:
 						if c.Type.Value == "text" {
-							sb.WriteString(c.Text.Value)
-							sb.WriteString("\n")
+							resultText := c.Text.Value
+							// Format file editor output
+							if strings.Contains(resultText, "Successfully created file") || 
+								strings.Contains(resultText, "Successfully replaced text in") ||
+								strings.Contains(resultText, "Successfully removed file") {
+								sb.WriteString(fmt.Sprintf("```\n%s\n```\n\n", resultText))
+							} else if strings.HasPrefix(resultText, "Error") {
+								// Format error messages
+								sb.WriteString(fmt.Sprintf("> ⚠️ %s\n\n", resultText))
+							} else {
+								// Determine if this is bash output and try to detect language
+								extension := ""
+								if b.ToolUseID.Present {
+									// Get tool use ID to determine if this is a bash output
+									for _, toolBlock := range msg.Content.Value {
+										if tb, ok := toolBlock.(*a.BetaToolUseBlockParam); ok && tb.ID.Present && tb.ID.Value == b.ToolUseID.Value {
+											if tb.Name.Present && tb.Name.Value == "bash" {
+												// Try to guess language based on output content
+												switch {
+												case strings.Contains(resultText, "package ") && strings.Contains(resultText, "func "):
+													extension = "go"
+												case strings.Contains(resultText, "def ") && strings.Contains(resultText, "import "):
+													extension = "python"
+												case strings.Contains(resultText, "function ") && strings.Contains(resultText, "const "):
+													extension = "javascript"
+												case strings.Contains(resultText, "class ") && strings.Contains(resultText, "public "):
+													extension = "java"
+												}
+											}
+										}
+									}
+								}
+								
+								// Format bash output with code fences and language hint if detected
+								if extension != "" {
+									sb.WriteString(fmt.Sprintf("```%s\n%s\n```\n\n", extension, resultText))
+								} else {
+									sb.WriteString(fmt.Sprintf("```\n%s\n```\n\n", resultText))
+								}
+							}
 						}
 					}
 				}
 			}
 		}
-		sb.WriteString("\n")
 	}
 	return sb.String()
 }

@@ -505,9 +505,9 @@ func (g *geminiExecutor) PrintMessages() string {
 	for _, content := range g.session.History {
 		switch content.Role {
 		case "user":
-			sb.WriteString("USER:\n")
+			sb.WriteString("### 👤 USER\n\n")
 		case "model":
-			sb.WriteString("ASSISTANT:\n")
+			sb.WriteString("### 🤖 ASSISTANT\n\n")
 		default:
 			continue // Skip other roles
 		}
@@ -516,18 +516,57 @@ func (g *geminiExecutor) PrintMessages() string {
 			switch p := part.(type) {
 			case genai.Text:
 				sb.WriteString(string(p))
-				sb.WriteString("\n")
+				sb.WriteString("\n\n")
 			case genai.FunctionCall:
-				sb.WriteString(fmt.Sprintf("Tool Call: %s\n", p.Name))
+				sb.WriteString(fmt.Sprintf("**Tool Call**: `%s`\n\n", p.Name))
 				jsonInput, _ := json.MarshalIndent(p.Args, "", "  ")
-				sb.WriteString(fmt.Sprintf("Input: %s\n", string(jsonInput)))
+				sb.WriteString(fmt.Sprintf("**Input**:\n```json\n%s\n```\n\n", string(jsonInput)))
 			case genai.FunctionResponse:
-				sb.WriteString("Tool Result:\n")
+				sb.WriteString("**Tool Result**:\n\n")
 				jsonResp, _ := json.MarshalIndent(p.Response, "", "  ")
-				sb.WriteString(fmt.Sprintf("%s\n", string(jsonResp)))
+				respStr := string(jsonResp)
+				
+				// Check if this is a file editor or bash output for special formatting
+				if strings.Contains(respStr, "Successfully created file") || 
+					strings.Contains(respStr, "Successfully replaced text in") || 
+					strings.Contains(respStr, "Successfully removed file") {
+					sb.WriteString(fmt.Sprintf("```\n%s\n```\n\n", respStr))
+				} else if strings.Contains(respStr, "error") {
+					// Format error messages
+					sb.WriteString(fmt.Sprintf("> ⚠️ %s\n\n", respStr))
+				} else {
+					// Try to detect language for bash tool outputs
+					language := ""
+					
+					// Check previous function calls to see if this is a bash tool result
+					for _, part2 := range content.Parts {
+						if fc, ok := part2.(genai.FunctionCall); ok && fc.Name == "bash" {
+							// Try to guess language based on output content
+							if strings.Contains(respStr, "package ") && strings.Contains(respStr, "func ") {
+								language = "go"
+							} else if strings.Contains(respStr, "def ") && strings.Contains(respStr, "import ") {
+								language = "python"
+							} else if strings.Contains(respStr, "function ") && strings.Contains(respStr, "const ") {
+								language = "javascript"
+							} else if strings.Contains(respStr, "class ") && strings.Contains(respStr, "public ") {
+								language = "java"
+							} else if strings.Contains(respStr, "<html>") && strings.Contains(respStr, "</html>") {
+								language = "html"
+							} else if strings.Contains(respStr, "@import") || strings.Contains(respStr, "body {") {
+								language = "css"
+							}
+						}
+					}
+					
+					// Format bash output with language hint if detected
+					if language != "" {
+						sb.WriteString(fmt.Sprintf("```%s\n%s\n```\n\n", language, respStr))
+					} else {
+						sb.WriteString(fmt.Sprintf("```\n%s\n```\n\n", respStr))
+					}
+				}
 			}
 		}
-		sb.WriteString("\n")
 	}
 	return sb.String()
 }

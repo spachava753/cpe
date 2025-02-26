@@ -215,9 +215,9 @@ func (o *openAiReasoningExecutor) PrintMessages() string {
 			}
 			switch m.Role.Value {
 			case oai.ChatCompletionMessageParamRoleUser:
-				sb.WriteString("USER:\n")
+				sb.WriteString("### 👤 USER\n\n")
 			case oai.ChatCompletionMessageParamRoleAssistant:
-				sb.WriteString("ASSISTANT:\n")
+				sb.WriteString("### 🤖 ASSISTANT\n\n")
 			}
 			if m.Content.Present {
 				// For user messages, strip out the XML wrapper if present
@@ -232,11 +232,37 @@ func (o *openAiReasoningExecutor) PrintMessages() string {
 						}
 					}
 				}
-				sb.WriteString(content)
-				sb.WriteString("\n")
+				
+				// Format XML actions blocks with code fences
+				if m.Role.Value == oai.ChatCompletionMessageParamRoleAssistant {
+					// Find and format <actions> blocks
+					startTag := "<actions>"
+					endTag := "</actions>"
+					start := strings.Index(content, startTag)
+					end := strings.LastIndex(content, endTag)
+					
+					if start != -1 && end != -1 && start < end {
+						beforeActions := content[:start]
+						actionsBlock := content[start:end+len(endTag)]
+						afterActions := content[end+len(endTag):]
+						
+						// Format actions block with code fences and XML highlighting
+						sb.WriteString(beforeActions)
+						sb.WriteString("\n\n```xml\n")
+						sb.WriteString(actionsBlock)
+						sb.WriteString("\n```\n\n")
+						sb.WriteString(afterActions)
+						sb.WriteString("\n\n")
+					} else {
+						sb.WriteString(content)
+						sb.WriteString("\n\n")
+					}
+				} else {
+					sb.WriteString(content)
+					sb.WriteString("\n\n")
+				}
 			}
 		}
-		sb.WriteString("\n")
 	}
 	return sb.String()
 }
