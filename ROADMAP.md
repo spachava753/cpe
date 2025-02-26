@@ -38,11 +38,11 @@ This document outlines the planned features, improvements, and notes for the CPE
 ### LLM Integration
 - [ ] Support for more LLM providers
   - [ ] Mistral
-  - [ ] Deepseek
+  - [x] Deepseek
   - [ ] Nous
-- [ ] support multimodality
-  - [ ] images
-  - [ ] videos
+- [x] support multimodality
+  - [z] images
+  - [x] videos
 - [x] Use official sdks instead for openai, gemini
   - [x] openai
   - [x] gemini
@@ -51,16 +51,19 @@ This document outlines the planned features, improvements, and notes for the CPE
 
 ### User Experience
 - [ ] Command auto-completion
-- [ ] Add support for continuing a conversation if user chooses to do so
+- [x] Add support for continuing a conversation if user chooses to do so
 - [ ] Support sending requests to multiple models and picking the best one
-- [ ] Support sending requests to multiple models and picking the best one
+- [ ] Add retries to increase robustness (retry on 500s, connection issues, etc.)
+
+### Conversation managment
+- [ ] need to support some method of context compression, like truncating file full contents in previous messages, remove error tool calls, summary, etc.
 
 ### Performance
 - [ ] Parallel processing for large codebases
 
 ### Documentation
-- [ ] Comprehensive user guide
-- [ ] Example use cases and tutorials
+- [x] Comprehensive user guide
+- [x] Example use cases and tutorials
 - [ ] Contributing guidelines
 - [ ] Architecture documentation
 
