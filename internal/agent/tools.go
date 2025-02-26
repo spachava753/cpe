@@ -254,6 +254,19 @@ func executeFileEditorTool(params FileEditorParams) (*ToolResult, error) {
 				IsError: true,
 			}, nil
 		}
+		// Check if file already exists before attempting to create it
+		if _, err := os.Stat(params.Path); err == nil {
+			return &ToolResult{
+				Content: fmt.Sprintf("File already exists: %s", params.Path),
+				IsError: true,
+			}, nil
+		} else if !os.IsNotExist(err) {
+			// Some other error occurred while checking file existence
+			return &ToolResult{
+				Content: fmt.Sprintf("Error checking if file exists: %s", err),
+				IsError: true,
+			}, nil
+		}
 		if err := os.WriteFile(params.Path, []byte(params.FileText), 0644); err != nil {
 			return &ToolResult{
 				Content: fmt.Sprintf("Error creating file: %s", err),
