@@ -58,6 +58,26 @@ func NewOpenAiReasoningExecutor(baseUrl string, apiKey string, logger Logger, ig
 		opts = append(opts, option.WithBaseURL(baseUrl))
 	}
 
+	// Prepare the system prompt, potentially with thinking directive
+	systemPrompt := reasoningAgentInstructions
+	if config.ThinkingBudget != "" && config.ThinkingBudget != "0" {
+		// Add thinking directive based on budget level
+		var thinkingDirective string
+		switch strings.ToLower(config.ThinkingBudget) {
+		case "low":
+			thinkingDirective = "Use minimal thinking for simple tasks."
+		case "medium":
+			thinkingDirective = "Use moderate thinking for complex analysis and planning."
+		case "high":
+			thinkingDirective = "Use extensive thinking for very complex tasks requiring deep analysis."
+		default:
+			// If a numeric value is provided, treat it as medium
+			thinkingDirective = "Use moderate thinking for complex analysis and planning."
+		}
+		
+		systemPrompt = fmt.Sprintf("%s\n\nThinking directive: %s", systemPrompt, thinkingDirective)
+	}
+
 	return &openAiReasoningExecutor{
 		client:  oai.NewClient(opts...),
 		logger:  logger,
@@ -82,9 +102,37 @@ func (o *openAiReasoningExecutor) Execute(inputs []Input) error {
 		textInputs = append(textInputs, input.Text)
 	}
 	input := strings.Join(textInputs, "\n")
-	// Add messages to conversation
+	
+	// Prepare the system prompt, potentially with thinking directive
+	systemPrompt := reasoningAgentInstructions
+	if o.config.ThinkingBudget != "" && o.config.ThinkingBudget != "0" {
+		// Add thinking directive based on budget level
+		var thinkingDirective string
+		switch strings.ToLower(o.config.ThinkingBudget) {
+		case "low":
+			thinkingDirective = "Use minimal thinking for simple tasks."
+		case "medium":
+			thinkingDirective = "Use moderate thinking for complex analysis and planning."
+		case "high":
+			thinkingDirective = "Use extensive thinking for very complex tasks requiring deep analysis."
+		default:
+			// If a numeric value is provided, treat it as medium
+			thinkingDirective = "Use moderate thinking for complex analysis and planning."
+		}
+		
+		systemPrompt = fmt.Sprintf("%s\n\nThinking directive: %s", systemPrompt, thinkingDirective)
+	}
+	
+	// Add system message first if none exists
+	if len(o.params.Messages.Value) == 0 {
+		o.params.Messages = oai.F([]oai.ChatCompletionMessageParamUnion{
+			oai.SystemMessage(systemPrompt),
+		})
+	}
+	
+	// Add user message with input
 	o.params.Messages = oai.F(append(o.params.Messages.Value,
-		oai.UserMessage(fmt.Sprintf("%s\n\n<input>\n%s\n</input>", reasoningAgentInstructions, input)),
+		oai.UserMessage(fmt.Sprintf("<input>\n%s\n</input>", input)),
 	))
 
 	// Get model response

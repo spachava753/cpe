@@ -126,30 +126,50 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 		}),
 	}
 
-	// Add extended thinking configuration if CPE_CLAUDE_THINKING is set and this is Claude 3.7
+	// Add extended thinking configuration if thinking budget is provided and this is Claude 3.7
 	var thinkingEnabled bool
-	if strings.HasPrefix(config.Model, "claude-3-7") {
-		if thinkingBudgetStr := os.Getenv("CPE_CLAUDE_THINKING"); thinkingBudgetStr != "" {
-			thinkingBudget, err := strconv.Atoi(thinkingBudgetStr)
-			if err != nil {
-				return nil, fmt.Errorf("invalid CPE_CLAUDE_THINKING value: %w", err)
+	if strings.HasPrefix(config.Model, "claude-3-7") && config.ThinkingBudget != "" && config.ThinkingBudget != "0" {
+		// Check if budget is a number
+		thinkingBudget, err := strconv.Atoi(config.ThinkingBudget)
+		if err != nil {
+			// If not a number, use preset values based on strings
+			switch strings.ToLower(config.ThinkingBudget) {
+			case "low":
+				thinkingBudget = 5000
+			case "medium":
+				thinkingBudget = 10000
+			case "high":
+				thinkingBudget = 20000
+			default:
+				// Use env var as fallback if provided
+				if thinkingBudgetStr := os.Getenv("CPE_CLAUDE_THINKING"); thinkingBudgetStr != "" {
+					thinkingBudget, err = strconv.Atoi(thinkingBudgetStr)
+					if err != nil {
+						return nil, fmt.Errorf("invalid CPE_CLAUDE_THINKING value: %w", err)
+					}
+				} else {
+					// Default to medium if string value is not recognized
+					thinkingBudget = 10000
+				}
 			}
-			if thinkingBudget < 1024 {
-				return nil, fmt.Errorf("CPE_CLAUDE_THINKING value must be at least 1024 tokens")
-			}
-			if thinkingBudget >= config.MaxTokens {
-				return nil, fmt.Errorf("CPE_CLAUDE_THINKING value must be less than max_tokens (%d)", config.MaxTokens)
-			}
-			var thinkingConfig a.BetaThinkingConfigParamUnion = &a.BetaThinkingConfigEnabledParam{
-				Type:         a.F(a.BetaThinkingConfigEnabledTypeEnabled),
-				BudgetTokens: a.F(int64(thinkingBudget)),
-			}
-			params.Thinking = a.F(thinkingConfig)
-			thinkingEnabled = true
-
-			// When thinking is enabled, temperature must be 1.0 and other params must be unset
-			params.Temperature = a.F(1.0)
 		}
+
+		if thinkingBudget < 1024 {
+			return nil, fmt.Errorf("thinking budget value must be at least 1024 tokens, got %d", thinkingBudget)
+		}
+		if thinkingBudget >= config.MaxTokens {
+			return nil, fmt.Errorf("thinking budget value must be less than max_tokens (%d), got %d", config.MaxTokens, thinkingBudget)
+		}
+
+		var thinkingConfig a.BetaThinkingConfigParamUnion = &a.BetaThinkingConfigEnabledParam{
+			Type:         a.F(a.BetaThinkingConfigEnabledTypeEnabled),
+			BudgetTokens: a.F(int64(thinkingBudget)),
+		}
+		params.Thinking = a.F(thinkingConfig)
+		thinkingEnabled = true
+
+		// When thinking is enabled, temperature must be 1.0 and other params must be unset
+		params.Temperature = a.F(1.0)
 	}
 
 	// Set optional parameters if provided and thinking is not enabled
