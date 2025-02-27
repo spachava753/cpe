@@ -22,7 +22,7 @@ jobs:
       CPE_CLAUDE_3_5_SONNET_URL: ${{ secrets.CPE_CLAUDE_3_5_SONNET_URL }}
       CPE_CLAUDE_3_7_SONNET_URL: ${{ secrets.CPE_CLAUDE_3_5_SONNET_URL }}
       CPE_O3_MINI_URL: ${{ secrets.CPE_O3_MINI_URL }}
-      CPE_CLAUDE_THINKING: 50000
+      CPE_CLAUDE_THINKING: 20000
     steps:
       # First checkout the default branch
       - uses: actions/checkout@v3
