@@ -92,19 +92,6 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 	}
 	client := oai.NewClient(opts...)
 
-	// Map thinking budget to temperature for o1/o3 mini models
-	if strings.HasSuffix(config.Model, "mini") && config.ThinkingBudget != "" {
-		// Override temperature based on thinking budget
-		switch strings.ToLower(config.ThinkingBudget) {
-		case "low":
-			config.Temperature = 0.3 // More focused
-		case "medium":
-			config.Temperature = 0.7 // Balanced
-		case "high":
-			config.Temperature = 1.0 // More creative
-		}
-	}
-
 	params := &oai.ChatCompletionNewParams{
 		Model:               oai.F(config.Model),
 		MaxCompletionTokens: oai.Int(int64(config.MaxTokens)),

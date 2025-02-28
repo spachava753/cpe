@@ -129,21 +129,10 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 	// Add extended thinking configuration if thinking budget is provided and this is Claude 3.7
 	var thinkingEnabled bool
 	if strings.HasPrefix(config.Model, "claude-3-7") && config.ThinkingBudget != "" && config.ThinkingBudget != "0" {
-		// Check if budget is a number
+		// Parse thinking budget as a number
 		thinkingBudget, err := strconv.Atoi(config.ThinkingBudget)
 		if err != nil {
-			// If not a number, use preset values based on strings
-			switch strings.ToLower(config.ThinkingBudget) {
-			case "low":
-				thinkingBudget = 5000
-			case "medium":
-				thinkingBudget = 10000
-			case "high":
-				thinkingBudget = 20000
-			default:
-				// Default to medium if string value is not recognized
-				thinkingBudget = 10000
-			}
+			return nil, fmt.Errorf("thinking budget must be a numerical value for Anthropic models, got %q", config.ThinkingBudget)
 		}
 
 		if thinkingBudget < 1024 {
