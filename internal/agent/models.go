@@ -76,16 +76,6 @@ var ModelConfigs = map[string]ModelConfig{
 		Defaults: ModelDefaults{MaxTokens: 100000, Temperature: 1, ThinkingBudget: "low"},
 		SupportedInputs: []InputType{InputTypeText},
 	},
-	"deepseek-chat": {
-		Name: "deepseek-chat", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
-		SupportedInputs: []InputType{InputTypeText},
-	},
-	"deepseek-r1": {
-		Name: "deepseek-reasoner", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 1},
-		SupportedInputs: []InputType{InputTypeText},
-	},
 	"claude-3-7-sonnet": {
 		Name: anthropic.ModelClaude3_7Sonnet20250219, IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 64000, Temperature: 0.3, ThinkingBudget: "0"},
