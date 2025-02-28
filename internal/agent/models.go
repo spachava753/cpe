@@ -156,21 +156,6 @@ var ModelConfigs = map[string]ModelConfig{
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 		SupportedInputs: []InputType{InputTypeText, InputTypeImage},
 	},
-	"o1": {
-		Name: openai.ChatModelO1_2024_12_17, IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 100000, Temperature: 1, ThinkingBudget: "medium"},
-		SupportedInputs: []InputType{InputTypeText},
-	},
-	"o1-mini": {
-		Name: openai.ChatModelO1Mini2024_09_12, IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 65536, Temperature: 1, ThinkingBudget: "low"},
-		SupportedInputs: []InputType{InputTypeText},
-	},
-	"o1-preview": {
-		Name: openai.ChatModelO1Preview2024_09_12, IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 100000, Temperature: 1, ThinkingBudget: "medium"},
-		SupportedInputs: []InputType{InputTypeText},
-	},
 }
 
 var DefaultModel = "claude-3-7-sonnet"
