@@ -140,6 +140,18 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 		}),
 	}
 
+	// Set reasoning effort based on thinking budget for o1/o3 mini models
+	if strings.HasSuffix(config.Model, "mini") && config.ThinkingBudget != "" {
+		switch strings.ToLower(config.ThinkingBudget) {
+		case "low":
+			params.ReasoningEffort = oai.F(oai.ChatCompletionReasoningEffortLow)
+		case "medium":
+			params.ReasoningEffort = oai.F(oai.ChatCompletionReasoningEffortMedium)
+		case "high":
+			params.ReasoningEffort = oai.F(oai.ChatCompletionReasoningEffortHigh)
+		}
+	}
+
 	if config.TopP != nil {
 		params.TopP = oai.Float(float64(*config.TopP))
 	}
