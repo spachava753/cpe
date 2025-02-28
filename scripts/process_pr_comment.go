@@ -150,9 +150,23 @@ func executeCPE(args string, input string, outputFile string) error {
 		return fmt.Errorf("failed to start cpe: %w", err)
 	}
 
+	// Check if this is the first conversation
+	_, err = os.Stat(".cpeconvo")
+	isFirstConversation := os.IsNotExist(err)
+
 	// Write input to stdin in a goroutine
 	go func() {
-		if input != "" {
+		// If this is the first conversation and there's existing input, add the GitHub Actions preamble
+		if isFirstConversation && input != "" {
+			preamble := `I'm running in a GitHub Actions workflow. Note that while I can help you analyze and modify code, I cannot directly make changes to GitHub Actions workflow files.
+
+---
+
+`
+			if _, err := io.WriteString(stdin, preamble+input); err != nil {
+				fmt.Fprintf(os.Stderr, "failed to write to stdin: %v\n", err)
+			}
+		} else if input != "" {
 			if _, err := io.WriteString(stdin, input); err != nil {
 				fmt.Fprintf(os.Stderr, "failed to write to stdin: %v\n", err)
 			}
