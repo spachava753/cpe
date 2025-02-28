@@ -263,15 +263,11 @@ func printEnvironmentVariables() {
 		printVar(envVarName, description, false)
 	}
 	
-	// Model-Specific Configuration
-	fmt.Println("\nModel-Specific Configuration:")
-	printVar("CPE_CLAUDE_THINKING", "Token budget for Claude's thinking mode (minimum 1024, legacy, use -thinking-budget instead)", false)
-	
 	fmt.Println("\nCommand-Line Options:")
 	fmt.Println("  -thinking-budget [value]     - Set thinking budget for reasoning models")
 	fmt.Println("                                 Use 'low', 'medium', 'high' or a number")
 	fmt.Println("                                 For Claude 3.7: minimum 1024 tokens, numerical value required")
-	fmt.Println("                                 For O1/O3-mini: 'low', 'medium', 'high' text values recommended")
+	fmt.Println("                                 For O1/O3-mini: maps to temperature (low=0.3, medium=0.7, high=1.0)")
 	
 	os.Exit(0)
 }
