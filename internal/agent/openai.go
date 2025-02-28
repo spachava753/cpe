@@ -105,6 +105,22 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 		}
 	}
 
+	// Map thinking budget to reasoning effort for o1/o3 mini models
+	if strings.HasSuffix(config.Model, "mini") && config.ThinkingBudget != "" {
+		// Set reasoning effort based on thinking budget
+		switch strings.ToLower(config.ThinkingBudget) {
+		case "low":
+			config.ReasoningEffort = string(oai.ChatCompletionReasoningEffortLow)
+		case "medium":
+			config.ReasoningEffort = string(oai.ChatCompletionReasoningEffortMedium)
+		case "high":
+			config.ReasoningEffort = string(oai.ChatCompletionReasoningEffortHigh)
+		default:
+			// Default to medium if not recognized
+			config.ReasoningEffort = string(oai.ChatCompletionReasoningEffortMedium)
+		}
+	}
+
 	params := &oai.ChatCompletionNewParams{
 		Model:               oai.F(config.Model),
 		MaxCompletionTokens: oai.Int(int64(config.MaxTokens)),
@@ -158,6 +174,9 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 	}
 	if config.Stop != nil {
 		params.Stop = oai.F[oai.ChatCompletionNewParamsStopUnion](oai.ChatCompletionNewParamsStopArray(config.Stop))
+	}
+	if config.ReasoningEffort != "" {
+		params.ReasoningEffort = oai.F(oai.ChatCompletionReasoningEffort(config.ReasoningEffort))
 	}
 
 	// Add system prompt
