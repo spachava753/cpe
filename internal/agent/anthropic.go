@@ -141,16 +141,8 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 			case "high":
 				thinkingBudget = 20000
 			default:
-				// Use env var as fallback if provided
-				if thinkingBudgetStr := os.Getenv("CPE_CLAUDE_THINKING"); thinkingBudgetStr != "" {
-					thinkingBudget, err = strconv.Atoi(thinkingBudgetStr)
-					if err != nil {
-						return nil, fmt.Errorf("invalid CPE_CLAUDE_THINKING value: %w", err)
-					}
-				} else {
-					// Default to medium if string value is not recognized
-					thinkingBudget = 10000
-				}
+				// Default to medium if string value is not recognized
+				thinkingBudget = 10000
 			}
 		}
 
@@ -161,11 +153,11 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 			return nil, fmt.Errorf("thinking budget value must be less than max_tokens (%d), got %d", config.MaxTokens, thinkingBudget)
 		}
 
-		var thinkingConfig a.BetaThinkingConfigParamUnion = &a.BetaThinkingConfigEnabledParam{
+		// Only set thinking config if we have a valid budget
+		params.Thinking = a.F(a.BetaThinkingConfigParamUnion(&a.BetaThinkingConfigEnabledParam{
 			Type:         a.F(a.BetaThinkingConfigEnabledTypeEnabled),
 			BudgetTokens: a.F(int64(thinkingBudget)),
-		}
-		params.Thinking = a.F(thinkingConfig)
+		}))
 		thinkingEnabled = true
 
 		// When thinking is enabled, temperature must be 1.0 and other params must be unset
