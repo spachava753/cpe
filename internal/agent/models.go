@@ -22,7 +22,6 @@ type GenConfig struct {
 	ToolChoice        string   // Controls tool use: "auto", "any", or "tool"
 	ForcedTool        string   // Name of the tool to force when ToolChoice is "tool"
 	ThinkingBudget    string   // Budget for reasoning/thinking capabilities
-	ReasoningEffort   string   // OpenAI SDK reasoning effort parameter
 }
 
 type ModelDefaults struct {
