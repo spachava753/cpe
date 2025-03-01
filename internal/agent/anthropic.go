@@ -499,15 +499,20 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 			}
 		}
 
-		s.params.Messages = a.F(
-			append(
-				s.params.Messages.Value,
-				a.BetaMessageParam{
-					Role:    a.F(a.BetaMessageParamRoleAssistant),
-					Content: a.F(assistantMsgContentBlocks),
-				},
-			),
-		)
+		// Only add assistant message if it has content
+		// This prevents empty assistant messages from being added to the conversation history
+		// which would cause API errors when continuing the conversation
+		if len(assistantMsgContentBlocks) > 0 {
+			s.params.Messages = a.F(
+				append(
+					s.params.Messages.Value,
+					a.BetaMessageParam{
+						Role:    a.F(a.BetaMessageParamRoleAssistant),
+						Content: a.F(assistantMsgContentBlocks),
+					},
+				),
+			)
+		}
 
 		if len(toolResultContentBlocks) > 0 {
 			s.params.Messages = a.F(
@@ -534,7 +539,24 @@ func (s *anthropicExecutor) LoadMessages(r io.Reader) error {
 	if err := dec.Decode(&convo); err != nil {
 		return fmt.Errorf("failed to decode conversation: %w", err)
 	}
-	s.params.Messages = a.F(convo.Messages)
+	
+	// Filter out any empty assistant messages
+	// This prevents API errors when continuing the conversation
+	// The Anthropic API requires that all messages have non-empty content
+	// except for the optional final assistant message
+	var filteredMessages []a.BetaMessageParam
+	for _, msg := range convo.Messages {
+		// Skip empty assistant messages (those with no content blocks)
+		if msg.Role.Value == a.BetaMessageParamRoleAssistant && 
+		   (len(msg.Content.Value) == 0 || 
+		    (len(msg.Content.Value) == 1 && 
+		     isEmptyTextBlock(msg.Content.Value[0]))) {
+			continue
+		}
+		filteredMessages = append(filteredMessages, msg)
+	}
+	
+	s.params.Messages = a.F(filteredMessages)
 	return nil
 }
 
@@ -587,13 +609,37 @@ func (s *anthropicExecutor) PrintMessages() string {
 }
 
 func (s *anthropicExecutor) SaveMessages(w io.Writer) error {
+	// Filter out any empty assistant messages before saving
+	// This prevents API errors when continuing the conversation
+	// The Anthropic API requires that all messages have non-empty content
+	// except for the optional final assistant message
+	var filteredMessages []a.BetaMessageParam
+	for _, msg := range s.params.Messages.Value {
+		// Skip empty assistant messages (those with no content blocks)
+		if msg.Role.Value == a.BetaMessageParamRoleAssistant && 
+		   (len(msg.Content.Value) == 0 || 
+		    (len(msg.Content.Value) == 1 && 
+		     isEmptyTextBlock(msg.Content.Value[0]))) {
+			continue
+		}
+		filteredMessages = append(filteredMessages, msg)
+	}
+	
 	convo := Conversation[[]a.BetaMessageParam]{
 		Type:     "anthropic",
-		Messages: s.params.Messages.Value,
+		Messages: filteredMessages,
 	}
 	enc := gob.NewEncoder(w)
 	if err := enc.Encode(convo); err != nil {
 		return fmt.Errorf("failed to encode conversation: %w", err)
 	}
 	return nil
+}
+
+// isEmptyTextBlock checks if a content block is an empty text block
+func isEmptyTextBlock(block a.BetaContentBlockParamUnion) bool {
+	if textBlock, ok := block.(*a.BetaTextBlockParam); ok {
+		return textBlock.Text.Value == ""
+	}
+	return false
 }
