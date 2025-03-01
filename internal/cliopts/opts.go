@@ -21,6 +21,7 @@ type Options struct {
 	FrequencyPenalty   float64
 	PresencePenalty    float64
 	NumberOfResponses  int
+	ThinkingBudget     string
 	Input              bool
 	Version            bool
 	TokenCountPath     string
@@ -55,6 +56,7 @@ func init() {
 	flag.Float64Var(&Opts.FrequencyPenalty, "frequency-penalty", 0, "Frequency penalty (-2.0 - 2.0)")
 	flag.Float64Var(&Opts.PresencePenalty, "presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
 	flag.IntVar(&Opts.NumberOfResponses, "number-of-responses", 0, "Number of responses to generate")
+	flag.StringVar(&Opts.ThinkingBudget, "thinking-budget", "", "Budget for reasoning/thinking capabilities (string or numerical value)")
 	flag.BoolVar(&Opts.Input, "input", false, "When provided, all arguments except the last one are treated as input files that must exist. The last argument is either a file path or a prompt text")
 	flag.StringVar(&Opts.Continue, "continue", "", "Continue from a specific conversation ID")
 	flag.BoolVar(&Opts.ListConversations, "list-convo", false, "List all conversations")

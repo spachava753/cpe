@@ -126,30 +126,31 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 		}),
 	}
 
-	// Add extended thinking configuration if CPE_CLAUDE_THINKING is set and this is Claude 3.7
+	// Add extended thinking configuration if thinking budget is provided and this is Claude 3.7
 	var thinkingEnabled bool
-	if strings.HasPrefix(config.Model, "claude-3-7") {
-		if thinkingBudgetStr := os.Getenv("CPE_CLAUDE_THINKING"); thinkingBudgetStr != "" {
-			thinkingBudget, err := strconv.Atoi(thinkingBudgetStr)
-			if err != nil {
-				return nil, fmt.Errorf("invalid CPE_CLAUDE_THINKING value: %w", err)
-			}
-			if thinkingBudget < 1024 {
-				return nil, fmt.Errorf("CPE_CLAUDE_THINKING value must be at least 1024 tokens")
-			}
-			if thinkingBudget >= config.MaxTokens {
-				return nil, fmt.Errorf("CPE_CLAUDE_THINKING value must be less than max_tokens (%d)", config.MaxTokens)
-			}
-			var thinkingConfig a.BetaThinkingConfigParamUnion = &a.BetaThinkingConfigEnabledParam{
-				Type:         a.F(a.BetaThinkingConfigEnabledTypeEnabled),
-				BudgetTokens: a.F(int64(thinkingBudget)),
-			}
-			params.Thinking = a.F(thinkingConfig)
-			thinkingEnabled = true
-
-			// When thinking is enabled, temperature must be 1.0 and other params must be unset
-			params.Temperature = a.F(1.0)
+	if strings.HasPrefix(config.Model, "claude-3-7") && config.ThinkingBudget != "" && config.ThinkingBudget != "0" {
+		// Parse thinking budget as a number
+		thinkingBudget, err := strconv.Atoi(config.ThinkingBudget)
+		if err != nil {
+			return nil, fmt.Errorf("thinking budget must be a numerical value for Anthropic models, got %q", config.ThinkingBudget)
 		}
+
+		if thinkingBudget < 1024 {
+			return nil, fmt.Errorf("thinking budget value must be at least 1024 tokens, got %d", thinkingBudget)
+		}
+		if thinkingBudget >= config.MaxTokens {
+			return nil, fmt.Errorf("thinking budget value must be less than max_tokens (%d), got %d", config.MaxTokens, thinkingBudget)
+		}
+
+		// Only set thinking config if we have a valid budget
+		params.Thinking = a.F(a.BetaThinkingConfigParamUnion(&a.BetaThinkingConfigEnabledParam{
+			Type:         a.F(a.BetaThinkingConfigEnabledTypeEnabled),
+			BudgetTokens: a.F(int64(thinkingBudget)),
+		}))
+		thinkingEnabled = true
+
+		// When thinking is enabled, temperature must be 1.0 and other params must be unset
+		params.Temperature = a.F(1.0)
 	}
 
 	// Set optional parameters if provided and thinking is not enabled

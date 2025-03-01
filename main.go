@@ -115,6 +115,7 @@ func main() {
 		FrequencyPenalty:   config.FrequencyPenalty,
 		PresencePenalty:    config.PresencePenalty,
 		NumberOfResponses:  config.NumberOfResponses,
+		ThinkingBudget:     config.ThinkingBudget,
 		Version:            config.Version,
 		Continue:           config.Continue,
 		ListConversations:  config.ListConversations,
@@ -261,10 +262,6 @@ func printEnvironmentVariables() {
 		// Print the variable
 		printVar(envVarName, description, false)
 	}
-	
-	// Model-Specific Configuration
-	fmt.Println("\nModel-Specific Configuration:")
-	printVar("CPE_CLAUDE_THINKING", "Token budget for Claude's thinking mode (minimum 1024)", false)
 	
 	os.Exit(0)
 }

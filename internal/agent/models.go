@@ -21,6 +21,7 @@ type GenConfig struct {
 	NumberOfResponses *int     // Number of chat completion choices to generate
 	ToolChoice        string   // Controls tool use: "auto", "any", or "tool"
 	ForcedTool        string   // Name of the tool to force when ToolChoice is "tool"
+	ThinkingBudget    string   // Budget for reasoning/thinking capabilities
 }
 
 type ModelDefaults struct {
@@ -31,6 +32,7 @@ type ModelDefaults struct {
 	FrequencyPenalty  *float32
 	PresencePenalty   *float32
 	NumberOfResponses *int
+	ThinkingBudget    string  // Default budget for reasoning/thinking capabilities
 }
 
 type ModelConfig struct {
@@ -38,6 +40,8 @@ type ModelConfig struct {
 	IsKnown         bool
 	Defaults        ModelDefaults
 	SupportedInputs []InputType
+	// Whether the model supports thinking budget configuration
+	SupportsThinking bool
 }
 
 type ProviderConfig interface {
@@ -71,23 +75,15 @@ func (c OpenAIConfig) GetAPIKey() string {
 var ModelConfigs = map[string]ModelConfig{
 	"o3-mini": {
 		Name: openai.ChatModelO3Mini, IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 100000, Temperature: 1},
+		Defaults: ModelDefaults{MaxTokens: 100000, Temperature: 1, ThinkingBudget: "low"},
 		SupportedInputs: []InputType{InputTypeText},
-	},
-	"deepseek-chat": {
-		Name: "deepseek-chat", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
-		SupportedInputs: []InputType{InputTypeText},
-	},
-	"deepseek-r1": {
-		Name: "deepseek-reasoner", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 1},
-		SupportedInputs: []InputType{InputTypeText},
+		SupportsThinking: true,
 	},
 	"claude-3-7-sonnet": {
 		Name: anthropic.ModelClaude3_7Sonnet20250219, IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 64000, Temperature: 0.3},
+		Defaults: ModelDefaults{MaxTokens: 64000, Temperature: 0.3, ThinkingBudget: "0"},
 		SupportedInputs: []InputType{InputTypeText, InputTypeImage},
+		SupportsThinking: true,
 	},
 	"claude-3-opus": {
 		Name: anthropic.ModelClaude_3_Opus_20240229, IsKnown: true,
@@ -154,21 +150,6 @@ var ModelConfigs = map[string]ModelConfig{
 		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 		SupportedInputs: []InputType{InputTypeText, InputTypeImage},
 	},
-	"o1": {
-		Name: openai.ChatModelO1_2024_12_17, IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 100000, Temperature: 1},
-		SupportedInputs: []InputType{InputTypeText},
-	},
-	"o1-mini": {
-		Name: openai.ChatModelO1Mini2024_09_12, IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 65536, Temperature: 1},
-		SupportedInputs: []InputType{InputTypeText},
-	},
-	"o1-preview": {
-		Name: openai.ChatModelO1Preview2024_09_12, IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 100000, Temperature: 1},
-		SupportedInputs: []InputType{InputTypeText},
-	},
 }
 
 var DefaultModel = "claude-3-7-sonnet"
@@ -183,6 +164,7 @@ type ModelOptions struct {
 	FrequencyPenalty   float64
 	PresencePenalty    float64
 	NumberOfResponses  int
+	ThinkingBudget     string // Budget for reasoning/thinking capabilities of models that support it
 	Version            bool
 	Continue           string // conversation ID to continue from
 	ListConversations  bool   // List all conversations
@@ -219,6 +201,9 @@ func (f ModelOptions) ApplyToGenConfig(config GenConfig) GenConfig {
 		numResponses := f.NumberOfResponses
 		config.NumberOfResponses = &numResponses
 	}
+	if f.ThinkingBudget != "" {
+		config.ThinkingBudget = f.ThinkingBudget
+	}
 	return config
 }
 
@@ -232,10 +217,16 @@ func GetConfig(flags ModelOptions) (GenConfig, error) {
 		config = ModelConfig{Name: flags.Model, IsKnown: false}
 	}
 
+	// Check if thinking budget is supported
+	if flags.ThinkingBudget != "" && !config.SupportsThinking {
+		return GenConfig{}, fmt.Errorf("model '%s' does not support thinking budget configuration", flags.Model)
+	}
+
 	genConfig := GenConfig{
-		Model:       config.Name,
-		MaxTokens:   config.Defaults.MaxTokens,
-		Temperature: config.Defaults.Temperature,
+		Model:          config.Name,
+		MaxTokens:      config.Defaults.MaxTokens,
+		Temperature:    config.Defaults.Temperature,
+		ThinkingBudget: config.Defaults.ThinkingBudget,
 	}
 
 	if config.Defaults.TopP != nil {
