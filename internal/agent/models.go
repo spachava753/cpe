@@ -40,6 +40,8 @@ type ModelConfig struct {
 	IsKnown         bool
 	Defaults        ModelDefaults
 	SupportedInputs []InputType
+	// Whether the model supports thinking budget configuration
+	SupportsThinking bool
 }
 
 type ProviderConfig interface {
@@ -75,11 +77,13 @@ var ModelConfigs = map[string]ModelConfig{
 		Name: openai.ChatModelO3Mini, IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 100000, Temperature: 1, ThinkingBudget: "low"},
 		SupportedInputs: []InputType{InputTypeText},
+		SupportsThinking: true,
 	},
 	"claude-3-7-sonnet": {
 		Name: anthropic.ModelClaude3_7Sonnet20250219, IsKnown: true,
 		Defaults: ModelDefaults{MaxTokens: 64000, Temperature: 0.3, ThinkingBudget: "0"},
 		SupportedInputs: []InputType{InputTypeText, InputTypeImage},
+		SupportsThinking: true,
 	},
 	"claude-3-opus": {
 		Name: anthropic.ModelClaude_3_Opus_20240229, IsKnown: true,
@@ -211,6 +215,11 @@ func GetConfig(flags ModelOptions) (GenConfig, error) {
 			return GenConfig{}, fmt.Errorf("unknown model '%s' requires -custom-url flag or CPE_CUSTOM_URL environment variable", flags.Model)
 		}
 		config = ModelConfig{Name: flags.Model, IsKnown: false}
+	}
+
+	// Check if thinking budget is supported
+	if flags.ThinkingBudget != "" && !config.SupportsThinking {
+		return GenConfig{}, fmt.Errorf("model '%s' does not support thinking budget configuration", flags.Model)
 	}
 
 	genConfig := GenConfig{
