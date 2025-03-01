@@ -140,8 +140,8 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 		}),
 	}
 
-	// Set reasoning effort based on thinking budget for o1/o3 mini models
-	if strings.HasSuffix(config.Model, "mini") && config.ThinkingBudget != "" {
+	// Set reasoning effort based on thinking budget
+	if config.ThinkingBudget != "" {
 		switch strings.ToLower(config.ThinkingBudget) {
 		case "low":
 			params.ReasoningEffort = oai.F(oai.ChatCompletionReasoningEffortLow)
@@ -159,10 +159,18 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 		params.Stop = oai.F[oai.ChatCompletionNewParamsStopUnion](oai.ChatCompletionNewParamsStopArray(config.Stop))
 	}
 
-	// Add system prompt
-	params.Messages = oai.F([]oai.ChatCompletionMessageParamUnion{
-		oai.SystemMessage(agentInstructions),
-	})
+	// Add system/developer prompt based on model
+	var messages []oai.ChatCompletionMessageParamUnion
+	switch config.Model {
+	case oai.ChatModelO1_2024_12_17, oai.ChatModelO3Mini:
+		messages = append(messages, oai.ChatCompletionMessageParam{
+			Role:    oai.F(oai.ChatCompletionMessageParamRoleDeveloper),
+			Content: oai.F[interface{}](agentInstructions),
+		})
+	default:
+		messages = append(messages, oai.SystemMessage(agentInstructions))
+	}
+	params.Messages = oai.F(messages)
 
 	return &openaiExecutor{
 		client:  client,
