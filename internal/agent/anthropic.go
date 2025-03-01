@@ -635,6 +635,7 @@ func (s *anthropicExecutor) SaveMessages(w io.Writer) error {
 	}
 	return nil
 }
+}
 
 // isEmptyTextBlock checks if a content block is an empty text block
 func isEmptyTextBlock(block a.BetaContentBlockParamUnion) bool {
