@@ -365,6 +365,26 @@ var moveFolderTool = Tool{
 	},
 }
 
+// View file tool
+var viewFileTool = Tool{
+	Name: "view_file",
+	Description: `A tool to view the full contents of a file in the current folder or its subfolders.
+* 'path' must specify the file to view
+* Will error if the file doesn't exist or if path points to a directory
+* Will error if the file is binary (non-text)
+* Returns the complete contents of the file as a string`,
+	InputSchema: map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"path": map[string]interface{}{
+				"type":        "string",
+				"description": "Relative path to the file to view",
+			},
+		},
+		"required": []string{"path"},
+	},
+}
+
 type ToolResult struct {
 	ToolUseID string
 	Content   any
@@ -582,6 +602,18 @@ func executeDeleteFolderTool(params tools.DeleteFolderParams) (*ToolResult, erro
 // executeMoveFolderTool validates and executes the move folder tool
 func executeMoveFolderTool(params tools.MoveFolderParams) (*ToolResult, error) {
 	result, err := tools.MoveFolderTool(params)
+	if err != nil {
+		return nil, err
+	}
+	return &ToolResult{
+		Content: result.Content,
+		IsError: result.IsError,
+	}, nil
+}
+
+// executeViewFileTool validates and executes the view file tool
+func executeViewFileTool(params tools.ViewFileParams) (*ToolResult, error) {
+	result, err := tools.ViewFileTool(params)
 	if err != nil {
 		return nil, err
 	}

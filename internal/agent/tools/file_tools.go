@@ -2,6 +2,7 @@ package tools
 
 import (
 	"fmt"
+	"github.com/gabriel-vasile/mimetype"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,6 +43,11 @@ type EditFileParams struct {
 type MoveFileParams struct {
 	SourcePath string `json:"source_path"`
 	TargetPath string `json:"target_path"`
+}
+
+// ViewFileParams represents the parameters for the view file tool
+type ViewFileParams struct {
+	Path string `json:"path"`
 }
 
 // CreateFileTool validates and executes the create file tool
@@ -234,5 +240,53 @@ func MoveFileTool(params MoveFileParams) (*ToolResult, error) {
 
 	return &ToolResult{
 		Content: fmt.Sprintf("Successfully moved file from %s to %s", params.SourcePath, params.TargetPath),
+	}, nil
+}
+
+// ViewFileTool validates and executes the view file tool
+func ViewFileTool(params ViewFileParams) (*ToolResult, error) {
+	// Check if file exists
+	fileInfo, err := os.Stat(params.Path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &ToolResult{
+				Content: fmt.Sprintf("File does not exist: %s", params.Path),
+				IsError: true,
+			}, nil
+		}
+		return &ToolResult{
+			Content: fmt.Sprintf("Error checking file: %s", err),
+			IsError: true,
+		}, nil
+	}
+
+	// Ensure it's not a directory
+	if fileInfo.IsDir() {
+		return &ToolResult{
+			Content: fmt.Sprintf("Path is a directory, not a file: %s", params.Path),
+			IsError: true,
+		}, nil
+	}
+
+	// Read the file content
+	content, err := os.ReadFile(params.Path)
+	if err != nil {
+		return &ToolResult{
+			Content: fmt.Sprintf("Error reading file: %s", err),
+			IsError: true,
+		}, nil
+	}
+
+	// Detect if file is binary
+	mime := mimetype.Detect(content)
+	if !strings.HasPrefix(mime.String(), "text/") {
+		return &ToolResult{
+			Content: fmt.Sprintf("File appears to be binary (MIME type: %s), not displaying content", mime.String()),
+			IsError: true,
+		}, nil
+	}
+
+	return &ToolResult{
+		Content: string(content),
 	}, nil
 }

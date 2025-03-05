@@ -168,6 +168,63 @@ func TestFileTools(t *testing.T) {
 			t.Error("DeleteFileTool should have failed when file doesn't exist")
 		}
 	})
+	
+	// Test ViewFileTool
+	t.Run("ViewFile", func(t *testing.T) {
+		// Create a test file with known content
+		testContent := "This is a test file for ViewFileTool.\nIt has multiple lines.\n"
+		err := os.WriteFile("view_test.txt", []byte(testContent), 0644)
+		if err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+		
+		params := ViewFileParams{
+			Path: "view_test.txt",
+		}
+		
+		result, err := ViewFileTool(params)
+		if err != nil {
+			t.Fatalf("ViewFileTool returned error: %v", err)
+		}
+		if result.IsError {
+			t.Errorf("ViewFileTool failed: %v", result.Content)
+		}
+		
+		// Check content matches
+		content, ok := result.Content.(string)
+		if !ok {
+			t.Fatalf("ViewFileTool result content is not a string")
+		}
+		if content != testContent {
+			t.Errorf("ViewFileTool content does not match: got %q, want %q", content, testContent)
+		}
+		
+		// Test viewing non-existent file
+		badParams := ViewFileParams{
+			Path: "nonexistent.txt",
+		}
+		
+		result, err = ViewFileTool(badParams)
+		if err != nil {
+			t.Fatalf("ViewFileTool returned error: %v", err)
+		}
+		if !result.IsError {
+			t.Error("ViewFileTool should have failed when file doesn't exist")
+		}
+		
+		// Test viewing a directory
+		dirParams := ViewFileParams{
+			Path: "subdir",
+		}
+		
+		result, err = ViewFileTool(dirParams)
+		if err != nil {
+			t.Fatalf("ViewFileTool returned error: %v", err)
+		}
+		if !result.IsError {
+			t.Error("ViewFileTool should have failed when path is a directory")
+		}
+	})
 }
 
 func TestFolderTools(t *testing.T) {
