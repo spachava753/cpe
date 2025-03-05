@@ -196,24 +196,26 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 			if err != nil {
 				return fmt.Errorf("failed to read image file %s: %w", input.FilePath, err)
 			}
-			
+
 			// Detect mime type
 			mime := mimetype.Detect(imgData)
 			if !strings.HasPrefix(mime.String(), "image/") {
 				return fmt.Errorf("file %s is not an image", input.FilePath)
 			}
-			
+
 			// Base64 encode the image data
 			encodedData := base64.StdEncoding.EncodeToString(imgData)
-			
+
+			var imageBlock a.BetaImageBlockParamSourceUnion = &a.BetaImageBlockParamSource{
+				Type:      a.F(a.BetaImageBlockParamSourceTypeBase64),
+				MediaType: a.F(a.BetaImageBlockParamSourceMediaType(mime.String())),
+				Data:      a.F(encodedData),
+			}
+
 			// Create image block
 			contentBlocks = append(contentBlocks, &a.BetaImageBlockParam{
-				Type: a.F(a.BetaImageBlockParamTypeImage),
-				Source: a.F(a.BetaImageBlockParamSource{
-					Type:      a.F(a.BetaImageBlockParamSourceTypeBase64),
-					MediaType: a.F(a.BetaImageBlockParamSourceMediaType(mime.String())),
-					Data:      a.F(encodedData),
-				}),
+				Type:   a.F(a.BetaImageBlockParamTypeImage),
+				Source: a.F(imageBlock),
 			})
 		case InputTypeVideo:
 			return fmt.Errorf("video input is not supported by Claude models")
@@ -539,7 +541,7 @@ func (s *anthropicExecutor) LoadMessages(r io.Reader) error {
 	if err := dec.Decode(&convo); err != nil {
 		return fmt.Errorf("failed to decode conversation: %w", err)
 	}
-	
+
 	// Filter out any empty assistant messages
 	// This prevents API errors when continuing the conversation
 	// The Anthropic API requires that all messages have non-empty content
@@ -547,15 +549,15 @@ func (s *anthropicExecutor) LoadMessages(r io.Reader) error {
 	var filteredMessages []a.BetaMessageParam
 	for _, msg := range convo.Messages {
 		// Skip empty assistant messages (those with no content blocks)
-		if msg.Role.Value == a.BetaMessageParamRoleAssistant && 
-		   (len(msg.Content.Value) == 0 || 
-		    (len(msg.Content.Value) == 1 && 
-		     isEmptyTextBlock(msg.Content.Value[0]))) {
+		if msg.Role.Value == a.BetaMessageParamRoleAssistant &&
+			(len(msg.Content.Value) == 0 ||
+				(len(msg.Content.Value) == 1 &&
+					isEmptyTextBlock(msg.Content.Value[0]))) {
 			continue
 		}
 		filteredMessages = append(filteredMessages, msg)
 	}
-	
+
 	s.params.Messages = a.F(filteredMessages)
 	return nil
 }
@@ -616,15 +618,15 @@ func (s *anthropicExecutor) SaveMessages(w io.Writer) error {
 	var filteredMessages []a.BetaMessageParam
 	for _, msg := range s.params.Messages.Value {
 		// Skip empty assistant messages (those with no content blocks)
-		if msg.Role.Value == a.BetaMessageParamRoleAssistant && 
-		   (len(msg.Content.Value) == 0 || 
-		    (len(msg.Content.Value) == 1 && 
-		     isEmptyTextBlock(msg.Content.Value[0]))) {
+		if msg.Role.Value == a.BetaMessageParamRoleAssistant &&
+			(len(msg.Content.Value) == 0 ||
+				(len(msg.Content.Value) == 1 &&
+					isEmptyTextBlock(msg.Content.Value[0]))) {
 			continue
 		}
 		filteredMessages = append(filteredMessages, msg)
 	}
-	
+
 	convo := Conversation[[]a.BetaMessageParam]{
 		Type:     "anthropic",
 		Messages: filteredMessages,
