@@ -41,6 +41,7 @@ var rootCmd = &cobra.Command{
 	Long: `CPE (Chat-based Programming Editor) is a powerful command-line tool that enables 
 developers to leverage AI for codebase analysis, modification, and improvement 
 through natural language interactions.`,
+	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Check if version flag is set
 		versionFlag, _ := cmd.Flags().GetBool("version")
