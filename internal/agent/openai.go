@@ -32,7 +32,7 @@ func init() {
 	gob.Register(oai.ChatCompletionUserMessageParam{})
 	gob.Register(oai.ChatCompletionToolMessageParam{})
 	gob.Register(oai.ChatCompletionContentPartTextParam{})
-	gob.Register(oai.ChatCompletionContentPartImageParam{})  // Add this line
+	gob.Register(oai.ChatCompletionContentPartImageParam{}) // Add this line
 	gob.Register([]oai.ChatCompletionMessageParamUnion{})
 	gob.Register([]oai.ChatCompletionMessageToolCallParam{})
 	gob.Register([]oai.ChatCompletionContentPartUnionParam{})
@@ -197,16 +197,16 @@ func (o *openaiExecutor) Execute(inputs []Input) error {
 			if err != nil {
 				return fmt.Errorf("failed to read image file %s: %w", input.FilePath, err)
 			}
-			
+
 			// Detect mime type
 			mime := mimetype.Detect(imgData)
 			if !strings.HasPrefix(mime.String(), "image/") {
 				return fmt.Errorf("file %s is not an image", input.FilePath)
 			}
-			
+
 			// Base64 encode the image data with data URI prefix
 			encodedData := fmt.Sprintf("data:%s;base64,%s", mime.String(), base64.StdEncoding.EncodeToString(imgData))
-			
+
 			// Create image part
 			contentParts = append(contentParts, oai.ChatCompletionContentPartImageParam{
 				Type: oai.F(oai.ChatCompletionContentPartImageTypeImageURL),

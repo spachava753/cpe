@@ -54,8 +54,8 @@ export class AuthService {
 		result, err := ResolveTypeAndFunctionFiles([]string{"services/auth.ts"}, fsys, ignoreRules)
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{
-			"types/user.ts":     true,
-			"services/auth.ts":  true,
+			"types/user.ts":    true,
+			"services/auth.ts": true,
 		}, result)
 	})
 
@@ -98,7 +98,7 @@ export class UserRepository extends InMemoryRepository<User> {
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{
 			"models/repository.ts": true,
-			"models/user-repo.ts": true,
+			"models/user-repo.ts":  true,
 		}, result)
 	})
 
@@ -135,7 +135,7 @@ export class DataService {
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{
 			"decorators/injectable.ts": true,
-			"services/data.ts":        true,
+			"services/data.ts":         true,
 		}, result)
 	})
 
@@ -204,8 +204,8 @@ export class EmailValidator extends Validation.RegexValidator {
 		result, err := ResolveTypeAndFunctionFiles([]string{"services/validator.ts"}, fsys, ignoreRules)
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{
-			"utils/validation.ts":    true,
-			"services/validator.ts":  true,
+			"utils/validation.ts":   true,
+			"services/validator.ts": true,
 		}, result)
 	})
 
@@ -285,9 +285,9 @@ export class NotificationService {
 		result, err := ResolveTypeAndFunctionFiles([]string{"services/user-service.ts"}, fsys, ignoreRules)
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]bool{
-			"types/user.ts":           true,
-			"types/role.ts":          true,
-			"types/audit.ts":         true,
+			"types/user.ts":            true,
+			"types/role.ts":            true,
+			"types/audit.ts":           true,
 			"services/user-service.ts": true,
 			// These files should NOT be included:
 			// "types/notification.ts" - not imported by user-service.ts
@@ -394,7 +394,7 @@ export class ProductForm {
 		assert.Equal(t, map[string]bool{
 			"models/base.ts":          true,
 			"models/validation.ts":    true,
-			"models/form.ts":         true,
+			"models/form.ts":          true,
 			"components/user-form.ts": true,
 			// These files should NOT be included:
 			// "models/product.ts" - not imported by user-form.ts

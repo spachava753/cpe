@@ -27,7 +27,7 @@ func init() {
 	gob.Register(genai.FunctionCall{})
 	gob.Register(genai.FunctionResponse{})
 	gob.Register(map[string]interface{}{})
-	gob.Register(genai.Blob{})  // Add this line
+	gob.Register(genai.Blob{}) // Add this line
 }
 
 type geminiExecutor struct {
@@ -209,7 +209,7 @@ func (g *geminiExecutor) Execute(inputs []Input) error {
 			if err != nil {
 				return fmt.Errorf("failed to read image file %s: %w", input.FilePath, err)
 			}
-			
+
 			// Detect mime type
 			mime := mimetype.Detect(imgData)
 			if !strings.HasPrefix(mime.String(), "image/") {
@@ -223,10 +223,10 @@ func (g *geminiExecutor) Execute(inputs []Input) error {
 			default:
 				return fmt.Errorf("unsupported image type %s for file %s. Supported types: PNG, JPEG, WEBP, HEIC, HEIF", mime.String(), input.FilePath)
 			}
-			
+
 			// Get format without the "image/" prefix
 			format := strings.TrimPrefix(mime.String(), "image/")
-			
+
 			// Create image part
 			parts = append(parts, genai.ImageData(format, imgData))
 		case InputTypeAudio:
@@ -235,7 +235,7 @@ func (g *geminiExecutor) Execute(inputs []Input) error {
 			if err != nil {
 				return fmt.Errorf("failed to read audio file %s: %w", input.FilePath, err)
 			}
-			
+
 			// Detect mime type
 			mime := mimetype.Detect(audioData)
 			if !strings.HasPrefix(mime.String(), "audio/") {
@@ -249,7 +249,7 @@ func (g *geminiExecutor) Execute(inputs []Input) error {
 			default:
 				return fmt.Errorf("unsupported audio type %s for file %s. Supported types: WAV, MP3, AIFF, AAC, OGG, FLAC", mime.String(), input.FilePath)
 			}
-			
+
 			// Create audio part
 			parts = append(parts, genai.Blob{
 				MIMEType: mime.String(),

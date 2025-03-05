@@ -35,7 +35,7 @@ type Options struct {
 	Overview           bool
 	RelatedFiles       string
 	New                bool
-	ListEnvVars        bool    // Flag to list environment variables
+	ListEnvVars        bool     // Flag to list environment variables
 	Args               []string // Remaining arguments after flag parsing
 }
 

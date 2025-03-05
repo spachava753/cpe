@@ -20,9 +20,9 @@ var (
 
 // conversationCmd represents the conversation command
 var conversationCmd = &cobra.Command{
-	Use:   "conversation",
-	Short: "Manage conversations",
-	Long:  `Manage conversations with list, print, and delete operations.`,
+	Use:     "conversation",
+	Short:   "Manage conversations",
+	Long:    `Manage conversations with list, print, and delete operations.`,
 	Aliases: []string{"convo", "conv"},
 }
 

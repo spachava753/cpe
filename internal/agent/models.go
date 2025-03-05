@@ -32,7 +32,7 @@ type ModelDefaults struct {
 	FrequencyPenalty  *float32
 	PresencePenalty   *float32
 	NumberOfResponses *int
-	ThinkingBudget    string  // Default budget for reasoning/thinking capabilities
+	ThinkingBudget    string // Default budget for reasoning/thinking capabilities
 }
 
 type ModelConfig struct {
@@ -75,79 +75,79 @@ func (c OpenAIConfig) GetAPIKey() string {
 var ModelConfigs = map[string]ModelConfig{
 	"o3-mini": {
 		Name: openai.ChatModelO3Mini, IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 100000, Temperature: 1, ThinkingBudget: "low"},
-		SupportedInputs: []InputType{InputTypeText},
+		Defaults:         ModelDefaults{MaxTokens: 100000, Temperature: 1, ThinkingBudget: "low"},
+		SupportedInputs:  []InputType{InputTypeText},
 		SupportsThinking: true,
 	},
 	"claude-3-7-sonnet": {
 		Name: anthropic.ModelClaude3_7Sonnet20250219, IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 64000, Temperature: 0.3, ThinkingBudget: "0"},
-		SupportedInputs: []InputType{InputTypeText, InputTypeImage},
+		Defaults:         ModelDefaults{MaxTokens: 64000, Temperature: 0.3, ThinkingBudget: "0"},
+		SupportedInputs:  []InputType{InputTypeText, InputTypeImage},
 		SupportsThinking: true,
 	},
 	"claude-3-opus": {
 		Name: anthropic.ModelClaude_3_Opus_20240229, IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.3},
+		Defaults:        ModelDefaults{MaxTokens: 4096, Temperature: 0.3},
 		SupportedInputs: []InputType{InputTypeText, InputTypeImage},
 	},
 	"claude-3-5-sonnet": {
 		Name: anthropic.ModelClaude3_5Sonnet20241022, IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
+		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 		SupportedInputs: []InputType{InputTypeText, InputTypeImage},
 	},
 	"claude-3-5-haiku": {
 		Name: anthropic.ModelClaude3_5Haiku20241022, IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
+		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 		SupportedInputs: []InputType{InputTypeText, InputTypeImage},
 	},
 	"claude-3-haiku": {
 		Name: anthropic.ModelClaude_3_Haiku_20240307, IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 4096, Temperature: 0.3},
+		Defaults:        ModelDefaults{MaxTokens: 4096, Temperature: 0.3},
 		SupportedInputs: []InputType{InputTypeText, InputTypeImage},
 	},
 	"gemini-1-5-flash-8b": {
 		Name: "gemini-1.5-flash-8b", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
+		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 		SupportedInputs: []InputType{InputTypeText, InputTypeImage, InputTypeVideo, InputTypeAudio},
 	},
 	"gemini-1-5-flash": {
 		Name: "gemini-1.5-flash-002", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
+		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 		SupportedInputs: []InputType{InputTypeText, InputTypeImage, InputTypeVideo, InputTypeAudio},
 	},
 	"gemini-2-flash-exp": {
 		Name: "gemini-2.0-flash-exp", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
+		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 		SupportedInputs: []InputType{InputTypeText, InputTypeImage, InputTypeVideo, InputTypeAudio},
 	},
 	"gemini-2-flash": {
 		Name: "gemini-2.0-flash", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
+		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 		SupportedInputs: []InputType{InputTypeText, InputTypeImage, InputTypeVideo, InputTypeAudio},
 	},
 	"gemini-2-flash-lite-preview": {
 		Name: "gemini-2.0-flash-lite-preview-02-05", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
+		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 		SupportedInputs: []InputType{InputTypeText, InputTypeImage, InputTypeVideo, InputTypeAudio},
 	},
 	"gemini-2-pro-exp": {
 		Name: "gemini-2.0-pro-exp-02-05", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
+		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 		SupportedInputs: []InputType{InputTypeText, InputTypeImage, InputTypeVideo, InputTypeAudio},
 	},
 	"gemini-1-5-pro": {
 		Name: "gemini-1.5-pro-002", IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
+		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 		SupportedInputs: []InputType{InputTypeText, InputTypeImage, InputTypeVideo, InputTypeAudio},
 	},
 	"gpt-4o": {
 		Name: openai.ChatModelGPT4o2024_11_20, IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
+		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 		SupportedInputs: []InputType{InputTypeText, InputTypeImage},
 	},
 	"gpt-4o-mini": {
 		Name: openai.ChatModelGPT4oMini2024_07_18, IsKnown: true,
-		Defaults: ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
+		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
 		SupportedInputs: []InputType{InputTypeText, InputTypeImage},
 	},
 }

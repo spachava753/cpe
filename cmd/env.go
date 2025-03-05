@@ -26,7 +26,7 @@ func init() {
 func printEnvironmentVariables() {
 	fmt.Println("CPE Environment Variables:")
 	fmt.Println("=========================")
-	
+
 	// Helper function to mask sensitive values
 	maskSensitive := func(value string) string {
 		if value == "" {
@@ -37,7 +37,7 @@ func printEnvironmentVariables() {
 		}
 		return value[:4] + "..." + value[len(value)-4:]
 	}
-	
+
 	// Helper function to print environment variable
 	printVar := func(name, description string, sensitive bool) {
 		value := os.Getenv(name)
@@ -50,22 +50,22 @@ func printEnvironmentVariables() {
 		}
 		fmt.Printf("  %-24s - %s\n    Value: %s\n\n", name, description, displayValue)
 	}
-	
+
 	// API Keys
 	fmt.Println("\nAPI Keys:")
 	printVar("ANTHROPIC_API_KEY", "Required for Claude models", true)
 	printVar("OPENAI_API_KEY", "Required for OpenAI models", true)
 	printVar("GEMINI_API_KEY", "Required for Google Gemini models", true)
 	printVar("DEEPSEEK_API_KEY", "Required for Deepseek models", true)
-	
+
 	// Model Selection
 	fmt.Println("\nModel Selection:")
 	printVar("CPE_MODEL", "Specify the model to use (overridden by -model flag)", false)
-	
+
 	// Custom API Endpoints
 	fmt.Println("\nCustom API Endpoints:")
 	printVar("CPE_CUSTOM_URL", "Default custom URL for API endpoints", false)
-	
+
 	// Print model-specific URL environment variables
 	fmt.Println("\nModel-Specific API Endpoints:")
 	for modelAlias, config := range agent.ModelConfigs {
@@ -73,10 +73,10 @@ func printEnvironmentVariables() {
 		// Replace hyphens with underscores and convert to uppercase
 		modelEnvName := strings.ToUpper(strings.ReplaceAll(modelAlias, "-", "_"))
 		envVarName := "CPE_" + modelEnvName + "_URL"
-		
+
 		// Description with the actual model name
 		description := fmt.Sprintf("Custom URL for %s (%s)", modelAlias, config.Name)
-		
+
 		// Print the variable
 		printVar(envVarName, description, false)
 	}

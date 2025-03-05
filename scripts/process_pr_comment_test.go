@@ -25,13 +25,13 @@ func TestParseComment(t *testing.T) {
 	// Create .cpeconvo in some tests to simulate existing conversation
 	tests := []struct {
 		name           string
-		input         string
+		input          string
 		createCpeConvo bool
-		want          Output
+		want           Output
 	}{
 		{
-			name: "regular comment without header (first conversation)",
-			input: "Regular comment without header",
+			name:           "regular comment without header (first conversation)",
+			input:          "Regular comment without header",
 			createCpeConvo: false,
 			want: Output{
 				Args:    "",
@@ -39,8 +39,8 @@ func TestParseComment(t *testing.T) {
 			},
 		},
 		{
-			name: "regular comment without header (existing conversation)",
-			input: "Regular comment without header",
+			name:           "regular comment without header (existing conversation)",
+			input:          "Regular comment without header",
 			createCpeConvo: true,
 			want: Output{
 				Args:    "", // No args needed since continue is default behavior
@@ -48,8 +48,8 @@ func TestParseComment(t *testing.T) {
 			},
 		},
 		{
-			name: "comment with header (first conversation)",
-			input: "---\n-continue fdsF34\n---\nI want you to...",
+			name:           "comment with header (first conversation)",
+			input:          "---\n-continue fdsF34\n---\nI want you to...",
 			createCpeConvo: false,
 			want: Output{
 				Args:    "-continue fdsF34",
@@ -57,8 +57,8 @@ func TestParseComment(t *testing.T) {
 			},
 		},
 		{
-			name: "comment with header (existing conversation)",
-			input: "---\n-continue fdsF34\n---\nI want you to...",
+			name:           "comment with header (existing conversation)",
+			input:          "---\n-continue fdsF34\n---\nI want you to...",
 			createCpeConvo: true,
 			want: Output{
 				Args:    "-continue fdsF34",
@@ -66,8 +66,8 @@ func TestParseComment(t *testing.T) {
 			},
 		},
 		{
-			name: "only header",
-			input: "---\n-continue fdsF34\n---\n",
+			name:           "only header",
+			input:          "---\n-continue fdsF34\n---\n",
 			createCpeConvo: true,
 			want: Output{
 				Args:    "-continue fdsF34",
@@ -75,8 +75,8 @@ func TestParseComment(t *testing.T) {
 			},
 		},
 		{
-			name: "incomplete header (first conversation)",
-			input: "---\n-continue fdsF34",
+			name:           "incomplete header (first conversation)",
+			input:          "---\n-continue fdsF34",
 			createCpeConvo: false,
 			want: Output{
 				Args:    "",
@@ -84,8 +84,8 @@ func TestParseComment(t *testing.T) {
 			},
 		},
 		{
-			name: "incomplete header (existing conversation)",
-			input: "---\n-continue fdsF34",
+			name:           "incomplete header (existing conversation)",
+			input:          "---\n-continue fdsF34",
 			createCpeConvo: true,
 			want: Output{
 				Args:    "", // No args needed since continue is default behavior
@@ -93,8 +93,8 @@ func TestParseComment(t *testing.T) {
 			},
 		},
 		{
-			name: "empty header (first conversation)",
-			input: "---\n\n---\nI want you to...",
+			name:           "empty header (first conversation)",
+			input:          "---\n\n---\nI want you to...",
 			createCpeConvo: false,
 			want: Output{
 				Args:    "",
@@ -102,8 +102,8 @@ func TestParseComment(t *testing.T) {
 			},
 		},
 		{
-			name: "empty header (existing conversation)",
-			input: "---\n\n---\nI want you to...",
+			name:           "empty header (existing conversation)",
+			input:          "---\n\n---\nI want you to...",
 			createCpeConvo: true,
 			want: Output{
 				Args:    "", // No args needed since continue is default behavior

@@ -20,7 +20,7 @@ type executorWrapper struct {
 
 // Execute executes the executor and saves the conversation
 func (e *executorWrapper) Execute(inputs []Input) error {
-	defer e.convoManager.Close()  // Close the database connection when we're done
+	defer e.convoManager.Close() // Close the database connection when we're done
 
 	// Store the input as the user message
 	// Only store text inputs

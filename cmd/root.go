@@ -19,19 +19,19 @@ import (
 
 var (
 	// Flags for the root command
-	model              string
-	customURL          string
-	maxTokens          int
-	temperature        float64
-	topP               float64
-	topK               int
-	frequencyPenalty   float64
-	presencePenalty    float64
-	numberOfResponses  int
-	thinkingBudget     string
-	input              []string
-	newConversation    bool
-	continueID         string
+	model             string
+	customURL         string
+	maxTokens         int
+	temperature       float64
+	topP              float64
+	topK              int
+	frequencyPenalty  float64
+	presencePenalty   float64
+	numberOfResponses int
+	thinkingBudget    string
+	input             []string
+	newConversation   bool
+	continueID        string
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -105,7 +105,7 @@ func getModelKeys() []string {
 func executeRootCommand(cmd *cobra.Command, args []string) {
 	var inputs []agent.Input
 	var err error
-	
+
 	// Read input from stdin, files, or arguments
 	inputs, err = readInput(input, args)
 	if err != nil {
@@ -131,18 +131,18 @@ func executeRootCommand(cmd *cobra.Command, args []string) {
 
 	// Initialize the executor
 	executor, err := agent.InitExecutor(log.Default(), agent.ModelOptions{
-		Model:              model,
-		CustomURL:          customURL,
-		MaxTokens:          maxTokens,
-		Temperature:        temperature,
-		TopP:               topP,
-		TopK:               topK,
-		FrequencyPenalty:   frequencyPenalty,
-		PresencePenalty:    presencePenalty,
-		NumberOfResponses:  numberOfResponses,
-		ThinkingBudget:     thinkingBudget,
-		Continue:           continueID,
-		New:                newConversation,
+		Model:             model,
+		CustomURL:         customURL,
+		MaxTokens:         maxTokens,
+		Temperature:       temperature,
+		TopP:              topP,
+		TopK:              topK,
+		FrequencyPenalty:  frequencyPenalty,
+		PresencePenalty:   presencePenalty,
+		NumberOfResponses: numberOfResponses,
+		ThinkingBudget:    thinkingBudget,
+		Continue:          continueID,
+		New:               newConversation,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -205,7 +205,7 @@ func executeRootCommand(cmd *cobra.Command, args []string) {
 		if slices.Contains(modelConfig.SupportedInputs, input.Type) {
 			continue
 		}
-		fmt.Fprintf(os.Stderr, "Error: model %s does not support input type %s (file: %s)\n", 
+		fmt.Fprintf(os.Stderr, "Error: model %s does not support input type %s (file: %s)\n",
 			model, string(input.Type), input.FilePath)
 		os.Exit(1)
 	}
@@ -243,7 +243,7 @@ func readInput(inputFiles []string, args []string) ([]agent.Input, error) {
 		if _, err := os.Stat(path); err != nil {
 			return nil, fmt.Errorf("input file does not exist: %s", path)
 		}
-		
+
 		inputType, err := agent.DetectInputType(path)
 		if err != nil {
 			return nil, fmt.Errorf("error detecting input type for file %s: %w", path, err)
