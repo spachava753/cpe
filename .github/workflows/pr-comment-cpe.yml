@@ -74,13 +74,7 @@ jobs:
           
           # Process the comment
           go run scripts/process_pr_comment.go "$temp_comment_file"
-          
-          # Check for uncommitted changes
-          if [[ -n "$(git status --porcelain)" ]]; then
-            # Ask CPE to commit the changes
-            echo "Please commit the changes with a suitable commit message" | cpe
-          fi
-          
+                 
           # Post the comment
           gh pr comment $PR_NUMBER --body-file "$temp_comment_file"
           rm "$temp_comment_file"

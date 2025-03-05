@@ -71,7 +71,7 @@ func parseComment(comment string) Output {
 
 	// Extract header content (everything between the --- markers)
 	header := strings.TrimSpace(strings.Join(lines[1:headerEnd], "\n"))
-	
+
 	// If header is empty, treat as regular comment
 	if header == "" {
 		if isFirstConversation {
@@ -158,9 +158,11 @@ func executeCPE(args string, input string, outputFile string) error {
 	go func() {
 		// If this is the first conversation and there's existing input, add the GitHub Actions preamble
 		if isFirstConversation && input != "" {
-			preamble := `You are running in a GitHub Actions workflow. Note that while you can help analyze and modify code, you cannot directly make changes to GitHub Actions workflow files.
+			preamble := `You are running inside a GitHub Actions workflow. Note that while you can help analyze and modify code, you cannot directly make changes to GitHub Actions workflow files.
+In particular, this means you can view the workflows files in .github/workflows/*, but cannot edit, or remove them.
 
-The workflow has a step to commit any changes you make to the codebase. Please ensure you clean up any temporary files (test files, summary files, etc.) unless I specifically ask you to keep them.
+If you edit any files, make sure the commit those changes towards the end, as once the Github Actions workflow you are running inside of finishes its execution, all local filesystem state is wiped. So ensure that any changes you wish to keep is commited.
+Also, ensure you clean up any temporary files (test files, summary files, etc.) unless I specifically ask you to keep them.
 
 ---
 
