@@ -37,7 +37,7 @@ cpe
 cpe "What does this code do?"
 
 # Using input files
-cpe -i main.go "Explain this file"
+cpe -i main.go -i utils.go "Explain these files"
 
 # Using specific model
 cpe -m claude-3-opus "Optimize this algorithm"

@@ -99,7 +99,7 @@ echo "Hi!" | cpe [flags]
 
 2. Input file:
 ```
-cpe [flags] -input input.txt
+cpe [flags] -input file1.txt -input file2.txt
 ```
 
 3. Command line arguments:
@@ -109,9 +109,9 @@ cpe [flags] "Your prompt here"
 
 These input methods can be combined. For example:
 ```
-echo "Context:" | cpe [flags] -input details.txt "Please analyze this"
+echo "Context:" | cpe [flags] -input details.txt -input code.go "Please analyze this"
 ```
-In this case, the inputs will be concatenated in order (stdin, input file, command line arguments) separated by double newlines.
+In this case, the inputs will be concatenated in order (stdin, input files, command line arguments) separated by double newlines.
 
 ### Examples
 
@@ -126,7 +126,7 @@ In this case, the inputs will be concatenated in order (stdin, input file, comma
 2. Using specific models:
    ```bash
    # Use Claude 3 Opus for complex tasks
-   cpe -model claude-3-opus -input query.txt
+   cpe -model claude-3-opus -input query.txt -input code.go
 
    # Use Gemini 2 Pro for visual analysis
    cpe -model gemini-2-pro-exp "Analyze this screenshot" -input screenshot.png

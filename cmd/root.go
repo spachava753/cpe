@@ -29,7 +29,7 @@ var (
 	presencePenalty    float64
 	numberOfResponses  int
 	thinkingBudget     string
-	input              bool
+	input              []string
 	newConversation    bool
 	continueID         string
 )
@@ -83,7 +83,7 @@ func init() {
 	rootCmd.PersistentFlags().Float64Var(&presencePenalty, "presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
 	rootCmd.PersistentFlags().IntVar(&numberOfResponses, "number-of-responses", 0, "Number of responses to generate")
 	rootCmd.PersistentFlags().StringVar(&thinkingBudget, "thinking-budget", "", "Budget for reasoning/thinking capabilities (string or numerical value)")
-	rootCmd.PersistentFlags().BoolVarP(&input, "input", "i", false, "When provided, all arguments except the last one are treated as input files that must exist. The last argument is either a file path or a prompt text")
+	rootCmd.PersistentFlags().StringSliceVarP(&input, "input", "i", []string{}, "Specify input files to process. Multiple files can be provided.")
 	rootCmd.PersistentFlags().BoolVarP(&newConversation, "new", "n", false, "Start a new conversation instead of continuing from the last one")
 	rootCmd.PersistentFlags().StringVarP(&continueID, "continue", "c", "", "Continue from a specific conversation ID")
 
@@ -217,7 +217,7 @@ func executeRootCommand(cmd *cobra.Command, args []string) {
 }
 
 // readInput reads input from stdin, files, or arguments
-func readInput(inputFlag bool, args []string) ([]agent.Input, error) {
+func readInput(inputFiles []string, args []string) ([]agent.Input, error) {
 	var inputs []agent.Input
 
 	// Check if there is any input from stdin by checking if stdin is a pipe or redirection
@@ -236,54 +236,40 @@ func readInput(inputFlag bool, args []string) ([]agent.Input, error) {
 		}
 	}
 
-	// Check if there are input files from command line arguments
-	if inputFlag {
-		if len(args) < 1 {
-			return nil, fmt.Errorf("when using --input flag, need at least one input file")
+	// Process input files specified with -input flag
+	for _, path := range inputFiles {
+		// Check if file exists
+		if _, err := os.Stat(path); err != nil {
+			return nil, fmt.Errorf("input file does not exist: %s", path)
 		}
-		// All arguments are treated as input files, except the last one if it's not a file
-		lastIdx := len(args)
-		lastArg := args[lastIdx-1]
-		if _, err := os.Stat(lastArg); err != nil {
-			// Last argument doesn't exist as a file, treat it as prompt text
-			lastIdx--
+		
+		inputType, err := agent.DetectInputType(path)
+		if err != nil {
+			return nil, fmt.Errorf("error detecting input type for file %s: %w", path, err)
+		}
+
+		if inputType == agent.InputTypeText {
+			// For text files, read the content and use it as text input
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return nil, fmt.Errorf("error reading file %s: %w", path, err)
+			}
 			inputs = append(inputs, agent.Input{
 				Type: agent.InputTypeText,
-				Text: lastArg,
+				Text: string(content),
+			})
+		} else {
+			// For non-text files, pass the file path
+			inputs = append(inputs, agent.Input{
+				Type:     inputType,
+				FilePath: path,
 			})
 		}
-		// Process all other arguments as files
-		for _, path := range args[:lastIdx] {
-			// Check if file exists
-			if _, err := os.Stat(path); err != nil {
-				return nil, fmt.Errorf("input file does not exist: %s", path)
-			}
-			
-			inputType, err := agent.DetectInputType(path)
-			if err != nil {
-				return nil, fmt.Errorf("error detecting input type for file %s: %w", path, err)
-			}
+	}
 
-			if inputType == agent.InputTypeText {
-				// For text files, read the content and use it as text input
-				content, err := os.ReadFile(path)
-				if err != nil {
-					return nil, fmt.Errorf("error reading file %s: %w", path, err)
-				}
-				inputs = append(inputs, agent.Input{
-					Type: agent.InputTypeText,
-					Text: string(content),
-				})
-			} else {
-				// For non-text files, pass the file path
-				inputs = append(inputs, agent.Input{
-					Type:     inputType,
-					FilePath: path,
-				})
-			}
-		}
-	} else if len(args) > 0 {
-		// Without --input flag, all arguments are combined into a single prompt
+	// If no input files were specified but we have command line arguments,
+	// treat all arguments as a single prompt
+	if len(inputFiles) == 0 && len(args) > 0 {
 		prompt := strings.Join(args, " ")
 		inputs = append(inputs, agent.Input{
 			Type: agent.InputTypeText,
