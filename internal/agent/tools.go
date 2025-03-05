@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/gabriel-vasile/mimetype"
 	ignore "github.com/sabhiram/go-gitignore"
+	"github.com/spachava753/cpe/internal/agent/tools"
 	"github.com/spachava753/cpe/internal/codemap"
 	"github.com/spachava753/cpe/internal/symbolresolver"
 	"os"
@@ -11,6 +12,16 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+)
+
+// Import the InputType from tools
+type InputType = tools.InputType
+
+const (
+	InputTypeText  = tools.InputTypeText
+	InputTypeImage = tools.InputTypeImage
+	InputTypeVideo = tools.InputTypeVideo
+	InputTypeAudio = tools.InputTypeAudio
 )
 
 type Tool struct {
@@ -72,24 +83,8 @@ func ListTextFiles(ignorer *ignore.GitIgnore) ([]FileInfo, error) {
 
 // DetectInputType detects the type of input from a file
 func DetectInputType(path string) (InputType, error) {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("error reading file: %w", err)
-	}
-
-	mime := mimetype.Detect(content)
-	switch {
-	case strings.HasPrefix(mime.String(), "text/"):
-		return InputTypeText, nil
-	case strings.HasPrefix(mime.String(), "image/"):
-		return InputTypeImage, nil
-	case strings.HasPrefix(mime.String(), "video/"):
-		return InputTypeVideo, nil
-	case strings.HasPrefix(mime.String(), "audio/"):
-		return InputTypeAudio, nil
-	default:
-		return "", fmt.Errorf("unsupported file type: %s", mime.String())
-	}
+	result, err := tools.DetectInputType(path)
+	return result, err
 }
 
 var bashTool = Tool{
@@ -210,6 +205,166 @@ var changeDirectoryTool = Tool{
 	},
 }
 
+// New specialized file operation tools
+var createFileTool = Tool{
+	Name: "create_file",
+	Description: `A tool to create a new file in the current folder or its subfolders.
+* 'path' must specify where to create the file (can include subdirectories)
+* 'file_text' must be supplied as the contents of the new file
+* Will error if the file already exists
+* Will create parent directories automatically if they don't exist`,
+	InputSchema: map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"path": map[string]interface{}{
+				"type":        "string",
+				"description": "Relative path where the file should be created",
+			},
+			"file_text": map[string]interface{}{
+				"type":        "string",
+				"description": "Content to write to the new file",
+			},
+		},
+		"required": []string{"path", "file_text"},
+	},
+}
+
+var deleteFileTool = Tool{
+	Name: "delete_file",
+	Description: `A tool to delete an existing file in the current folder or its subfolders.
+* 'path' must specify the file to delete
+* Will error if the file doesn't exist
+* Will error if the path is a directory instead of a file`,
+	InputSchema: map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"path": map[string]interface{}{
+				"type":        "string",
+				"description": "Relative path to the file to delete",
+			},
+		},
+		"required": []string{"path"},
+	},
+}
+
+var editFileTool = Tool{
+	Name: "edit_file",
+	Description: `A tool to edit an existing file in the current folder or its subfolders.
+* 'path' must specify the file to edit
+* 'old_str' should match EXACTLY one or more consecutive lines from the original file, including whitespace
+* 'old_str' must be unique in the file (only one match allowed)
+* 'new_str' contains the edited text that will replace 'old_str'
+* Will error if the file doesn't exist or if old_str isn't found exactly once`,
+	InputSchema: map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"path": map[string]interface{}{
+				"type":        "string",
+				"description": "Relative path to the file to edit",
+			},
+			"old_str": map[string]interface{}{
+				"type":        "string",
+				"description": "The exact text segment to replace (must be unique in the file)",
+			},
+			"new_str": map[string]interface{}{
+				"type":        "string",
+				"description": "The new text to replace the old text with",
+			},
+		},
+		"required": []string{"path", "old_str", "new_str"},
+	},
+}
+
+var moveFileTool = Tool{
+	Name: "move_file",
+	Description: `A tool to move or rename a file in the current folder or its subfolders.
+* 'source_path' specifies the file to move/rename
+* 'target_path' specifies the destination file path
+* Will error if source file doesn't exist or if target file already exists
+* Will create parent directories of target automatically if they don't exist`,
+	InputSchema: map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"source_path": map[string]interface{}{
+				"type":        "string",
+				"description": "Relative path to the file to move/rename",
+			},
+			"target_path": map[string]interface{}{
+				"type":        "string",
+				"description": "Relative path where the file should be moved/renamed to",
+			},
+		},
+		"required": []string{"source_path", "target_path"},
+	},
+}
+
+// New specialized folder operation tools
+var createFolderTool = Tool{
+	Name: "create_folder",
+	Description: `A tool to create a new folder in the current folder or its subfolders.
+* 'path' must specify where to create the folder
+* Will error if the folder already exists
+* Will create parent directories automatically if they don't exist`,
+	InputSchema: map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"path": map[string]interface{}{
+				"type":        "string",
+				"description": "Relative path where the folder should be created",
+			},
+		},
+		"required": []string{"path"},
+	},
+}
+
+var deleteFolderTool = Tool{
+	Name: "delete_folder",
+	Description: `A tool to delete an existing folder in the current folder or its subfolders.
+* 'path' must specify the folder to delete
+* 'recursive' determines whether to delete non-empty folders (defaults to false)
+* Will error if the folder doesn't exist
+* Will error if the path is a file instead of a folder
+* Will error if the folder is not empty and recursive=false`,
+	InputSchema: map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"path": map[string]interface{}{
+				"type":        "string",
+				"description": "Relative path to the folder to delete",
+			},
+			"recursive": map[string]interface{}{
+				"type":        "boolean",
+				"description": "Whether to delete non-empty folders (true) or error on non-empty folders (false)",
+				"default":     false,
+			},
+		},
+		"required": []string{"path"},
+	},
+}
+
+var moveFolderTool = Tool{
+	Name: "move_folder",
+	Description: `A tool to move or rename a folder in the current folder or its subfolders.
+* 'source_path' specifies the folder to move/rename
+* 'target_path' specifies the destination folder path
+* Will error if source folder doesn't exist or if target folder already exists
+* Will create parent directories of target automatically if they don't exist`,
+	InputSchema: map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"source_path": map[string]interface{}{
+				"type":        "string",
+				"description": "Relative path to the folder to move/rename",
+			},
+			"target_path": map[string]interface{}{
+				"type":        "string",
+				"description": "Relative path where the folder should be moved/renamed to",
+			},
+		},
+		"required": []string{"source_path", "target_path"},
+	},
+}
+
 type ToolResult struct {
 	ToolUseID string
 	Content   any
@@ -245,83 +400,22 @@ type FileEditorParams struct {
 
 // executeFileEditorTool validates and executes the file editor tool
 func executeFileEditorTool(params FileEditorParams) (*ToolResult, error) {
-
 	switch params.Command {
 	case "create":
-		if params.FileText == "" {
-			return &ToolResult{
-				Content: "file_text parameter is required for create command",
-				IsError: true,
-			}, nil
-		}
-		// Check if file already exists before attempting to create it
-		if _, err := os.Stat(params.Path); err == nil {
-			return &ToolResult{
-				Content: fmt.Sprintf("File already exists: %s", params.Path),
-				IsError: true,
-			}, nil
-		} else if !os.IsNotExist(err) {
-			// Some other error occurred while checking file existence
-			return &ToolResult{
-				Content: fmt.Sprintf("Error checking if file exists: %s", err),
-				IsError: true,
-			}, nil
-		}
-		if err := os.WriteFile(params.Path, []byte(params.FileText), 0644); err != nil {
-			return &ToolResult{
-				Content: fmt.Sprintf("Error creating file: %s", err),
-				IsError: true,
-			}, nil
-		}
-		return &ToolResult{
-			Content: fmt.Sprintf("Successfully created file %s", params.Path),
-		}, nil
-
+		return executeCreateFileTool(tools.CreateFileParams{
+			Path:     params.Path,
+			FileText: params.FileText,
+		})
 	case "str_replace":
-		content, err := os.ReadFile(params.Path)
-		if err != nil {
-			return &ToolResult{
-				Content: fmt.Sprintf("Error reading file: %s", err),
-				IsError: true,
-			}, nil
-		}
-
-		count := strings.Count(string(content), params.OldStr)
-		if count == 0 {
-			return &ToolResult{
-				Content: "old_str not found in file",
-				IsError: true,
-			}, nil
-		}
-		if count > 1 {
-			return &ToolResult{
-				Content: fmt.Sprintf("old_str matches %d times in file, expected exactly one match", count),
-				IsError: true,
-			}, nil
-		}
-
-		newContent := strings.Replace(string(content), params.OldStr, params.NewStr, 1)
-		if err := os.WriteFile(params.Path, []byte(newContent), 0644); err != nil {
-			return &ToolResult{
-				Content: fmt.Sprintf("Error writing file: %s", err),
-				IsError: true,
-			}, nil
-		}
-		return &ToolResult{
-			Content: fmt.Sprintf("Successfully replaced text in %s", params.Path),
-		}, nil
-
+		return executeEditFileTool(tools.EditFileParams{
+			Path:   params.Path,
+			OldStr: params.OldStr,
+			NewStr: params.NewStr,
+		})
 	case "remove":
-		if err := os.Remove(params.Path); err != nil {
-			return &ToolResult{
-				Content: fmt.Sprintf("Error removing file: %s", err),
-				IsError: true,
-			}, nil
-		}
-		return &ToolResult{
-			Content: fmt.Sprintf("Successfully removed file %s", params.Path),
-		}, nil
-
+		return executeDeleteFileTool(tools.DeleteFileParams{
+			Path: params.Path,
+		})
 	default:
 		return &ToolResult{
 			Content: fmt.Sprintf("Unknown command: %s", params.Command),
@@ -406,5 +500,93 @@ func executeChangeDirectoryTool(path string) (*ToolResult, error) {
 
 	return &ToolResult{
 		Content: absPath,
+	}, nil
+}
+
+// Execute specialized file tools
+
+// executeCreateFileTool validates and executes the create file tool
+func executeCreateFileTool(params tools.CreateFileParams) (*ToolResult, error) {
+	result, err := tools.CreateFileTool(params)
+	if err != nil {
+		return nil, err
+	}
+	return &ToolResult{
+		Content: result.Content,
+		IsError: result.IsError,
+	}, nil
+}
+
+// executeDeleteFileTool validates and executes the delete file tool
+func executeDeleteFileTool(params tools.DeleteFileParams) (*ToolResult, error) {
+	result, err := tools.DeleteFileTool(params)
+	if err != nil {
+		return nil, err
+	}
+	return &ToolResult{
+		Content: result.Content,
+		IsError: result.IsError,
+	}, nil
+}
+
+// executeEditFileTool validates and executes the edit file tool
+func executeEditFileTool(params tools.EditFileParams) (*ToolResult, error) {
+	result, err := tools.EditFileTool(params)
+	if err != nil {
+		return nil, err
+	}
+	return &ToolResult{
+		Content: result.Content,
+		IsError: result.IsError,
+	}, nil
+}
+
+// executeMoveFileTool validates and executes the move file tool
+func executeMoveFileTool(params tools.MoveFileParams) (*ToolResult, error) {
+	result, err := tools.MoveFileTool(params)
+	if err != nil {
+		return nil, err
+	}
+	return &ToolResult{
+		Content: result.Content,
+		IsError: result.IsError,
+	}, nil
+}
+
+// Execute specialized folder tools
+
+// executeCreateFolderTool validates and executes the create folder tool
+func executeCreateFolderTool(params tools.CreateFolderParams) (*ToolResult, error) {
+	result, err := tools.CreateFolderTool(params)
+	if err != nil {
+		return nil, err
+	}
+	return &ToolResult{
+		Content: result.Content,
+		IsError: result.IsError,
+	}, nil
+}
+
+// executeDeleteFolderTool validates and executes the delete folder tool
+func executeDeleteFolderTool(params tools.DeleteFolderParams) (*ToolResult, error) {
+	result, err := tools.DeleteFolderTool(params)
+	if err != nil {
+		return nil, err
+	}
+	return &ToolResult{
+		Content: result.Content,
+		IsError: result.IsError,
+	}, nil
+}
+
+// executeMoveFolderTool validates and executes the move folder tool
+func executeMoveFolderTool(params tools.MoveFolderParams) (*ToolResult, error) {
+	result, err := tools.MoveFolderTool(params)
+	if err != nil {
+		return nil, err
+	}
+	return &ToolResult{
+		Content: result.Content,
+		IsError: result.IsError,
 	}, nil
 }
