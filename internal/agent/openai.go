@@ -98,6 +98,7 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 		MaxCompletionTokens: oai.Int(int64(config.MaxTokens)),
 		Temperature:         oai.Float(float64(config.Temperature)),
 		Tools: oai.F([]oai.ChatCompletionToolParam{
+			// Basic tools
 			{
 				Type: oai.F(oai.ChatCompletionToolTypeFunction),
 				Function: oai.F(oai.FunctionDefinitionParam{
@@ -106,6 +107,7 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 					Parameters:  oai.F(oai.FunctionParameters(bashTool.InputSchema)),
 				}),
 			},
+			// Support for legacy file_editor tool for backward compatibility
 			{
 				Type: oai.F(oai.ChatCompletionToolTypeFunction),
 				Function: oai.F(oai.FunctionDefinitionParam{
@@ -114,6 +116,7 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 					Parameters:  oai.F(oai.FunctionParameters(fileEditor.InputSchema)),
 				}),
 			},
+			// Overview and analysis tools
 			{
 				Type: oai.F(oai.ChatCompletionToolTypeFunction),
 				Function: oai.F(oai.FunctionDefinitionParam{
@@ -130,12 +133,79 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 					Parameters:  oai.F(oai.FunctionParameters(getRelatedFilesTool.InputSchema)),
 				}),
 			},
+			// Navigation tool
 			{
 				Type: oai.F(oai.ChatCompletionToolTypeFunction),
 				Function: oai.F(oai.FunctionDefinitionParam{
 					Name:        oai.F(changeDirectoryTool.Name),
 					Description: oai.F(changeDirectoryTool.Description),
 					Parameters:  oai.F(oai.FunctionParameters(changeDirectoryTool.InputSchema)),
+				}),
+			},
+			// File operation tools
+			{
+				Type: oai.F(oai.ChatCompletionToolTypeFunction),
+				Function: oai.F(oai.FunctionDefinitionParam{
+					Name:        oai.F(createFileTool.Name),
+					Description: oai.F(createFileTool.Description),
+					Parameters:  oai.F(oai.FunctionParameters(createFileTool.InputSchema)),
+				}),
+			},
+			{
+				Type: oai.F(oai.ChatCompletionToolTypeFunction),
+				Function: oai.F(oai.FunctionDefinitionParam{
+					Name:        oai.F(editFileTool.Name),
+					Description: oai.F(editFileTool.Description),
+					Parameters:  oai.F(oai.FunctionParameters(editFileTool.InputSchema)),
+				}),
+			},
+			{
+				Type: oai.F(oai.ChatCompletionToolTypeFunction),
+				Function: oai.F(oai.FunctionDefinitionParam{
+					Name:        oai.F(deleteFileTool.Name),
+					Description: oai.F(deleteFileTool.Description),
+					Parameters:  oai.F(oai.FunctionParameters(deleteFileTool.InputSchema)),
+				}),
+			},
+			{
+				Type: oai.F(oai.ChatCompletionToolTypeFunction),
+				Function: oai.F(oai.FunctionDefinitionParam{
+					Name:        oai.F(moveFileTool.Name),
+					Description: oai.F(moveFileTool.Description),
+					Parameters:  oai.F(oai.FunctionParameters(moveFileTool.InputSchema)),
+				}),
+			},
+			{
+				Type: oai.F(oai.ChatCompletionToolTypeFunction),
+				Function: oai.F(oai.FunctionDefinitionParam{
+					Name:        oai.F(viewFileTool.Name),
+					Description: oai.F(viewFileTool.Description),
+					Parameters:  oai.F(oai.FunctionParameters(viewFileTool.InputSchema)),
+				}),
+			},
+			// Folder operation tools
+			{
+				Type: oai.F(oai.ChatCompletionToolTypeFunction),
+				Function: oai.F(oai.FunctionDefinitionParam{
+					Name:        oai.F(createFolderTool.Name),
+					Description: oai.F(createFolderTool.Description),
+					Parameters:  oai.F(oai.FunctionParameters(createFolderTool.InputSchema)),
+				}),
+			},
+			{
+				Type: oai.F(oai.ChatCompletionToolTypeFunction),
+				Function: oai.F(oai.FunctionDefinitionParam{
+					Name:        oai.F(deleteFolderTool.Name),
+					Description: oai.F(deleteFolderTool.Description),
+					Parameters:  oai.F(oai.FunctionParameters(deleteFolderTool.InputSchema)),
+				}),
+			},
+			{
+				Type: oai.F(oai.ChatCompletionToolTypeFunction),
+				Function: oai.F(oai.FunctionDefinitionParam{
+					Name:        oai.F(moveFolderTool.Name),
+					Description: oai.F(moveFolderTool.Description),
+					Parameters:  oai.F(oai.FunctionParameters(moveFolderTool.InputSchema)),
 				}),
 			},
 		}),
@@ -302,6 +372,118 @@ func (o *openaiExecutor) Execute(inputs []Input) error {
 					fileEditorToolInput.NewStr,
 				)
 				result, err = executeFileEditorTool(fileEditorToolInput)
+				if err == nil {
+					o.logger.Printf("tool result: %+v", result.Content)
+				}
+			// File operation tools
+			case createFileTool.Name:
+				var createFileToolInput tools.CreateFileParams
+				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &createFileToolInput); err != nil {
+					return fmt.Errorf("failed to unmarshal create file tool arguments: %w", err)
+				}
+				o.logger.Printf(
+					"executing create file tool; path: %s\nfile_text length: %d",
+					createFileToolInput.Path,
+					len(createFileToolInput.FileText),
+				)
+				result, err = executeCreateFileTool(createFileToolInput)
+				if err == nil {
+					o.logger.Printf("tool result: %+v", result.Content)
+				}
+			case editFileTool.Name:
+				var editFileToolInput tools.EditFileParams
+				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &editFileToolInput); err != nil {
+					return fmt.Errorf("failed to unmarshal edit file tool arguments: %w", err)
+				}
+				o.logger.Printf(
+					"executing edit file tool; path: %s\nold_str length: %d\nnew_str length: %d",
+					editFileToolInput.Path,
+					len(editFileToolInput.OldStr),
+					len(editFileToolInput.NewStr),
+				)
+				result, err = executeEditFileTool(editFileToolInput)
+				if err == nil {
+					o.logger.Printf("tool result: %+v", result.Content)
+				}
+			case deleteFileTool.Name:
+				var deleteFileToolInput tools.DeleteFileParams
+				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &deleteFileToolInput); err != nil {
+					return fmt.Errorf("failed to unmarshal delete file tool arguments: %w", err)
+				}
+				o.logger.Printf(
+					"executing delete file tool; path: %s",
+					deleteFileToolInput.Path,
+				)
+				result, err = executeDeleteFileTool(deleteFileToolInput)
+				if err == nil {
+					o.logger.Printf("tool result: %+v", result.Content)
+				}
+			case moveFileTool.Name:
+				var moveFileToolInput tools.MoveFileParams
+				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &moveFileToolInput); err != nil {
+					return fmt.Errorf("failed to unmarshal move file tool arguments: %w", err)
+				}
+				o.logger.Printf(
+					"executing move file tool; source_path: %s\ntarget_path: %s",
+					moveFileToolInput.SourcePath,
+					moveFileToolInput.TargetPath,
+				)
+				result, err = executeMoveFileTool(moveFileToolInput)
+				if err == nil {
+					o.logger.Printf("tool result: %+v", result.Content)
+				}
+			case viewFileTool.Name:
+				var viewFileToolInput tools.ViewFileParams
+				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &viewFileToolInput); err != nil {
+					return fmt.Errorf("failed to unmarshal view file tool arguments: %w", err)
+				}
+				o.logger.Printf(
+					"executing view file tool; path: %s",
+					viewFileToolInput.Path,
+				)
+				result, err = executeViewFileTool(viewFileToolInput)
+				if err == nil {
+					o.logger.Printf("tool result: %+v", result.Content)
+				}
+			// Folder operation tools
+			case createFolderTool.Name:
+				var createFolderToolInput tools.CreateFolderParams
+				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &createFolderToolInput); err != nil {
+					return fmt.Errorf("failed to unmarshal create folder tool arguments: %w", err)
+				}
+				o.logger.Printf(
+					"executing create folder tool; path: %s",
+					createFolderToolInput.Path,
+				)
+				result, err = executeCreateFolderTool(createFolderToolInput)
+				if err == nil {
+					o.logger.Printf("tool result: %+v", result.Content)
+				}
+			case deleteFolderTool.Name:
+				var deleteFolderToolInput tools.DeleteFolderParams
+				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &deleteFolderToolInput); err != nil {
+					return fmt.Errorf("failed to unmarshal delete folder tool arguments: %w", err)
+				}
+				o.logger.Printf(
+					"executing delete folder tool; path: %s, recursive: %v",
+					deleteFolderToolInput.Path,
+					deleteFolderToolInput.Recursive,
+				)
+				result, err = executeDeleteFolderTool(deleteFolderToolInput)
+				if err == nil {
+					o.logger.Printf("tool result: %+v", result.Content)
+				}
+			case moveFolderTool.Name:
+				var moveFolderToolInput tools.MoveFolderParams
+				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &moveFolderToolInput); err != nil {
+					return fmt.Errorf("failed to unmarshal move folder tool arguments: %w", err)
+				}
+				o.logger.Printf(
+					"executing move folder tool; source_path: %s\ntarget_path: %s",
+					moveFolderToolInput.SourcePath,
+					moveFolderToolInput.TargetPath,
+				)
+				result, err = executeMoveFolderTool(moveFolderToolInput)
 				if err == nil {
 					o.logger.Printf("tool result: %+v", result.Content)
 				}
