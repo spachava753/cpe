@@ -4,8 +4,18 @@ This document outlines the planned features, improvements, and notes for the CPE
 
 ## Features
 
+### System prompt improvements
+
+- [ ] Add system info to path
+  - Current Date
+  - Current working directory
+  - Operating system
+  - In a git repository
+- [ ] Remove model preference to summarize changes at the end of assistant turn, just wastes tokens
+
 ### Agentic flow
 - [x] Move from disparate mulit-agent to single-agent, will reduce necessary calls, as we can remove the needs codebase function call
+- [ ] 
 - [ ] Experiment with idea of sub agent creation on the fly?
   - Models like Gemini such at editing files with function calling. Maybe just have the model utilize the bash tool to give specific edit instructions to a file-editing function calling capable model? like gpt-4o-mini?
 
@@ -34,6 +44,8 @@ This document outlines the planned features, improvements, and notes for the CPE
 
 ### Tooling
 - [x] Add support for bash execution tool
+- [ ] Add autocorrection if input JSON from model does not match schema (this is mostly valid for Claude and opensource
+  models, we want to enforce schema adherence with structured outputs in openai and gemini)
 
 ### LLM Integration
 - [ ] Support for more LLM providers
@@ -75,3 +87,4 @@ This document outlines the planned features, improvements, and notes for the CPE
   - [ ] SWE bench?
 - [ ] Test against extremely large multi-lang codebases
   - ???
+- [ ] Exceed Claude Code in SWE-Verified (70%)
