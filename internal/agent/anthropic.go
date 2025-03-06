@@ -82,6 +82,7 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 			},
 		}),
 		Tools: a.F([]a.BetaToolUnionUnionParam{
+			// Basic tools
 			&a.BetaToolParam{
 				Name:        a.String(bashTool.Name),
 				Description: a.String(bashTool.Description),
@@ -90,6 +91,7 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 					Properties: a.F[any](bashTool.InputSchema["properties"]),
 				}),
 			},
+			// Support for legacy file_editor tool for backward compatibility
 			&a.BetaToolParam{
 				Name:        a.String(fileEditor.Name),
 				Description: a.String(fileEditor.Description),
@@ -98,6 +100,7 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 					Properties: a.F[any](fileEditor.InputSchema["properties"]),
 				}),
 			},
+			// Overview and analysis tools
 			&a.BetaToolParam{
 				Name:        a.String(filesOverviewTool.Name),
 				Description: a.String(filesOverviewTool.Description),
@@ -113,6 +116,7 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 					Properties: a.F[any](getRelatedFilesTool.InputSchema["properties"]),
 				}),
 			},
+			// Navigation tool
 			&a.BetaToolParam{
 				Name:        a.String(changeDirectoryTool.Name),
 				Description: a.String(changeDirectoryTool.Description),
@@ -122,6 +126,72 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 				}),
 				CacheControl: a.F(a.BetaCacheControlEphemeralParam{
 					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),
+				}),
+			},
+			// File operation tools
+			&a.BetaToolParam{
+				Name:        a.String(createFileTool.Name),
+				Description: a.String(createFileTool.Description),
+				InputSchema: a.F(a.BetaToolInputSchemaParam{
+					Type:       a.F(a.BetaToolInputSchemaTypeObject),
+					Properties: a.F[any](createFileTool.InputSchema["properties"]),
+				}),
+			},
+			&a.BetaToolParam{
+				Name:        a.String(editFileTool.Name),
+				Description: a.String(editFileTool.Description),
+				InputSchema: a.F(a.BetaToolInputSchemaParam{
+					Type:       a.F(a.BetaToolInputSchemaTypeObject),
+					Properties: a.F[any](editFileTool.InputSchema["properties"]),
+				}),
+			},
+			&a.BetaToolParam{
+				Name:        a.String(deleteFileTool.Name),
+				Description: a.String(deleteFileTool.Description),
+				InputSchema: a.F(a.BetaToolInputSchemaParam{
+					Type:       a.F(a.BetaToolInputSchemaTypeObject),
+					Properties: a.F[any](deleteFileTool.InputSchema["properties"]),
+				}),
+			},
+			&a.BetaToolParam{
+				Name:        a.String(moveFileTool.Name),
+				Description: a.String(moveFileTool.Description),
+				InputSchema: a.F(a.BetaToolInputSchemaParam{
+					Type:       a.F(a.BetaToolInputSchemaTypeObject),
+					Properties: a.F[any](moveFileTool.InputSchema["properties"]),
+				}),
+			},
+			&a.BetaToolParam{
+				Name:        a.String(viewFileTool.Name),
+				Description: a.String(viewFileTool.Description),
+				InputSchema: a.F(a.BetaToolInputSchemaParam{
+					Type:       a.F(a.BetaToolInputSchemaTypeObject),
+					Properties: a.F[any](viewFileTool.InputSchema["properties"]),
+				}),
+			},
+			// Folder operation tools
+			&a.BetaToolParam{
+				Name:        a.String(createFolderTool.Name),
+				Description: a.String(createFolderTool.Description),
+				InputSchema: a.F(a.BetaToolInputSchemaParam{
+					Type:       a.F(a.BetaToolInputSchemaTypeObject),
+					Properties: a.F[any](createFolderTool.InputSchema["properties"]),
+				}),
+			},
+			&a.BetaToolParam{
+				Name:        a.String(deleteFolderTool.Name),
+				Description: a.String(deleteFolderTool.Description),
+				InputSchema: a.F(a.BetaToolInputSchemaParam{
+					Type:       a.F(a.BetaToolInputSchemaTypeObject),
+					Properties: a.F[any](deleteFolderTool.InputSchema["properties"]),
+				}),
+			},
+			&a.BetaToolParam{
+				Name:        a.String(moveFolderTool.Name),
+				Description: a.String(moveFolderTool.Description),
+				InputSchema: a.F(a.BetaToolInputSchemaParam{
+					Type:       a.F(a.BetaToolInputSchemaTypeObject),
+					Properties: a.F[any](moveFolderTool.InputSchema["properties"]),
 				}),
 			},
 		}),
@@ -441,6 +511,150 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 						fileEditorToolInput.NewStr,
 					)
 					result, err = executeFileEditorTool(fileEditorToolInput)
+					if err == nil {
+						s.logger.Printf("tool result: %+v", result.Content)
+					}
+				// File operation tools
+				case createFileTool.Name:
+					var createFileToolInput tools.CreateFileParams
+					jsonInput, marshalErr := json.Marshal(block.Input)
+					if marshalErr != nil {
+						return fmt.Errorf("failed to marshal create file tool input: %w", marshalErr)
+					}
+					if err := json.Unmarshal(jsonInput, &createFileToolInput); err != nil {
+						return fmt.Errorf("failed to unmarshal create file tool arguments: %w", err)
+					}
+					s.logger.Printf(
+						"executing create file tool; path: %s\nfile_text length: %d",
+						createFileToolInput.Path,
+						len(createFileToolInput.FileText),
+					)
+					result, err = executeCreateFileTool(createFileToolInput)
+					if err == nil {
+						s.logger.Printf("tool result: %+v", result.Content)
+					}
+				case editFileTool.Name:
+					var editFileToolInput tools.EditFileParams
+					jsonInput, marshalErr := json.Marshal(block.Input)
+					if marshalErr != nil {
+						return fmt.Errorf("failed to marshal edit file tool input: %w", marshalErr)
+					}
+					if err := json.Unmarshal(jsonInput, &editFileToolInput); err != nil {
+						return fmt.Errorf("failed to unmarshal edit file tool arguments: %w", err)
+					}
+					s.logger.Printf(
+						"executing edit file tool; path: %s\nold_str length: %d\nnew_str length: %d",
+						editFileToolInput.Path,
+						len(editFileToolInput.OldStr),
+						len(editFileToolInput.NewStr),
+					)
+					result, err = executeEditFileTool(editFileToolInput)
+					if err == nil {
+						s.logger.Printf("tool result: %+v", result.Content)
+					}
+				case deleteFileTool.Name:
+					var deleteFileToolInput tools.DeleteFileParams
+					jsonInput, marshalErr := json.Marshal(block.Input)
+					if marshalErr != nil {
+						return fmt.Errorf("failed to marshal delete file tool input: %w", marshalErr)
+					}
+					if err := json.Unmarshal(jsonInput, &deleteFileToolInput); err != nil {
+						return fmt.Errorf("failed to unmarshal delete file tool arguments: %w", err)
+					}
+					s.logger.Printf(
+						"executing delete file tool; path: %s",
+						deleteFileToolInput.Path,
+					)
+					result, err = executeDeleteFileTool(deleteFileToolInput)
+					if err == nil {
+						s.logger.Printf("tool result: %+v", result.Content)
+					}
+				case moveFileTool.Name:
+					var moveFileToolInput tools.MoveFileParams
+					jsonInput, marshalErr := json.Marshal(block.Input)
+					if marshalErr != nil {
+						return fmt.Errorf("failed to marshal move file tool input: %w", marshalErr)
+					}
+					if err := json.Unmarshal(jsonInput, &moveFileToolInput); err != nil {
+						return fmt.Errorf("failed to unmarshal move file tool arguments: %w", err)
+					}
+					s.logger.Printf(
+						"executing move file tool; source_path: %s\ntarget_path: %s",
+						moveFileToolInput.SourcePath,
+						moveFileToolInput.TargetPath,
+					)
+					result, err = executeMoveFileTool(moveFileToolInput)
+					if err == nil {
+						s.logger.Printf("tool result: %+v", result.Content)
+					}
+				case viewFileTool.Name:
+					var viewFileToolInput tools.ViewFileParams
+					jsonInput, marshalErr := json.Marshal(block.Input)
+					if marshalErr != nil {
+						return fmt.Errorf("failed to marshal view file tool input: %w", marshalErr)
+					}
+					if err := json.Unmarshal(jsonInput, &viewFileToolInput); err != nil {
+						return fmt.Errorf("failed to unmarshal view file tool arguments: %w", err)
+					}
+					s.logger.Printf(
+						"executing view file tool; path: %s",
+						viewFileToolInput.Path,
+					)
+					result, err = executeViewFileTool(viewFileToolInput)
+					if err == nil {
+						s.logger.Printf("tool result: %+v", result.Content)
+					}
+				// Folder operation tools
+				case createFolderTool.Name:
+					var createFolderToolInput tools.CreateFolderParams
+					jsonInput, marshalErr := json.Marshal(block.Input)
+					if marshalErr != nil {
+						return fmt.Errorf("failed to marshal create folder tool input: %w", marshalErr)
+					}
+					if err := json.Unmarshal(jsonInput, &createFolderToolInput); err != nil {
+						return fmt.Errorf("failed to unmarshal create folder tool arguments: %w", err)
+					}
+					s.logger.Printf(
+						"executing create folder tool; path: %s",
+						createFolderToolInput.Path,
+					)
+					result, err = executeCreateFolderTool(createFolderToolInput)
+					if err == nil {
+						s.logger.Printf("tool result: %+v", result.Content)
+					}
+				case deleteFolderTool.Name:
+					var deleteFolderToolInput tools.DeleteFolderParams
+					jsonInput, marshalErr := json.Marshal(block.Input)
+					if marshalErr != nil {
+						return fmt.Errorf("failed to marshal delete folder tool input: %w", marshalErr)
+					}
+					if err := json.Unmarshal(jsonInput, &deleteFolderToolInput); err != nil {
+						return fmt.Errorf("failed to unmarshal delete folder tool arguments: %w", err)
+					}
+					s.logger.Printf(
+						"executing delete folder tool; path: %s, recursive: %v",
+						deleteFolderToolInput.Path,
+						deleteFolderToolInput.Recursive,
+					)
+					result, err = executeDeleteFolderTool(deleteFolderToolInput)
+					if err == nil {
+						s.logger.Printf("tool result: %+v", result.Content)
+					}
+				case moveFolderTool.Name:
+					var moveFolderToolInput tools.MoveFolderParams
+					jsonInput, marshalErr := json.Marshal(block.Input)
+					if marshalErr != nil {
+						return fmt.Errorf("failed to marshal move folder tool input: %w", marshalErr)
+					}
+					if err := json.Unmarshal(jsonInput, &moveFolderToolInput); err != nil {
+						return fmt.Errorf("failed to unmarshal move folder tool arguments: %w", err)
+					}
+					s.logger.Printf(
+						"executing move folder tool; source_path: %s\ntarget_path: %s",
+						moveFolderToolInput.SourcePath,
+						moveFolderToolInput.TargetPath,
+					)
+					result, err = executeMoveFolderTool(moveFolderToolInput)
 					if err == nil {
 						s.logger.Printf("tool result: %+v", result.Content)
 					}
