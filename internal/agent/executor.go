@@ -11,7 +11,6 @@ import (
 
 	a "github.com/anthropics/anthropic-sdk-go"
 	gitignore "github.com/sabhiram/go-gitignore"
-	"github.com/spachava753/cpe/internal/agent/tools"
 	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/db"
 	"github.com/spachava753/cpe/internal/ignore"
@@ -23,7 +22,7 @@ var agentInstructions string
 // Executor defines the interface for executing agentic workflows
 // Input represents a single input to be processed by the model
 type Input struct {
-	Type     tools.InputType
+	Type     InputType
 	Text     string // Used when Type is tools.InputTypeText
 	FilePath string // Used when Type is tools.InputTypeImage, tools.InputTypeVideo, or tools.InputTypeAudio
 }

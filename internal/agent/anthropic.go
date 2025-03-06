@@ -11,7 +11,6 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/gabriel-vasile/mimetype"
 	gitignore "github.com/sabhiram/go-gitignore"
-	"github.com/spachava753/cpe/internal/agent/tools"
 	"io"
 	"os"
 	"strconv"
@@ -89,15 +88,6 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 				InputSchema: a.F(a.BetaToolInputSchemaParam{
 					Type:       a.F(a.BetaToolInputSchemaTypeObject),
 					Properties: a.F[any](bashTool.InputSchema["properties"]),
-				}),
-			},
-			// Support for legacy file_editor tool for backward compatibility
-			&a.BetaToolParam{
-				Name:        a.String(fileEditor.Name),
-				Description: a.String(fileEditor.Description),
-				InputSchema: a.F(a.BetaToolInputSchemaParam{
-					Type:       a.F(a.BetaToolInputSchemaTypeObject),
-					Properties: a.F[any](fileEditor.InputSchema["properties"]),
 				}),
 			},
 			// Overview and analysis tools
@@ -254,14 +244,14 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 	var contentBlocks []a.BetaContentBlockParamUnion
 	for _, input := range inputs {
 		switch input.Type {
-		case tools.InputTypeText:
+		case InputTypeText:
 			if len(strings.TrimSpace(input.Text)) > 0 {
 				contentBlocks = append(contentBlocks, &a.BetaTextBlockParam{
 					Text: a.F(input.Text),
 					Type: a.F(a.BetaTextBlockParamTypeText),
 				})
 			}
-		case tools.InputTypeImage:
+		case InputTypeImage:
 			// Read and base64 encode the image file
 			imgData, err := os.ReadFile(input.FilePath)
 			if err != nil {
@@ -288,9 +278,9 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 				Type:   a.F(a.BetaImageBlockParamTypeImage),
 				Source: a.F(imageBlock),
 			})
-		case tools.InputTypeVideo:
+		case InputTypeVideo:
 			return fmt.Errorf("video input is not supported by Claude models")
-		case tools.InputTypeAudio:
+		case InputTypeAudio:
 			return fmt.Errorf("audio input is not supported by Claude models")
 		default:
 			return fmt.Errorf("unknown input type: %s", input.Type)
@@ -493,30 +483,9 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 							}
 						}
 					}
-				case fileEditor.Name:
-					var fileEditorToolInput FileEditorParams
-					jsonInput, marshalErr := json.Marshal(block.Input)
-					if marshalErr != nil {
-						return fmt.Errorf("failed to marshal file editor tool input: %w", marshalErr)
-					}
-					if err := json.Unmarshal(jsonInput, &fileEditorToolInput); err != nil {
-						return fmt.Errorf("failed to unmarshal file editor tool arguments: %w", err)
-					}
-					s.logger.Printf(
-						"executing file editor tool; command: %s\npath: %s\nfile_text: %s\nold_str: %s\nnew_str: %s",
-						fileEditorToolInput.Command,
-						fileEditorToolInput.Path,
-						fileEditorToolInput.FileText,
-						fileEditorToolInput.OldStr,
-						fileEditorToolInput.NewStr,
-					)
-					result, err = executeFileEditorTool(fileEditorToolInput)
-					if err == nil {
-						s.logger.Printf("tool result: %+v", result.Content)
-					}
 				// File operation tools
 				case createFileTool.Name:
-					var createFileToolInput tools.CreateFileParams
+					var createFileToolInput CreateFileParams
 					jsonInput, marshalErr := json.Marshal(block.Input)
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal create file tool input: %w", marshalErr)
@@ -529,12 +498,12 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 						createFileToolInput.Path,
 						len(createFileToolInput.FileText),
 					)
-					result, err = executeCreateFileTool(createFileToolInput)
+					result, err = CreateFileTool(createFileToolInput)
 					if err == nil {
 						s.logger.Printf("tool result: %+v", result.Content)
 					}
 				case editFileTool.Name:
-					var editFileToolInput tools.EditFileParams
+					var editFileToolInput EditFileParams
 					jsonInput, marshalErr := json.Marshal(block.Input)
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal edit file tool input: %w", marshalErr)
@@ -548,12 +517,12 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 						len(editFileToolInput.OldStr),
 						len(editFileToolInput.NewStr),
 					)
-					result, err = executeEditFileTool(editFileToolInput)
+					result, err = EditFileTool(editFileToolInput)
 					if err == nil {
 						s.logger.Printf("tool result: %+v", result.Content)
 					}
 				case deleteFileTool.Name:
-					var deleteFileToolInput tools.DeleteFileParams
+					var deleteFileToolInput DeleteFileParams
 					jsonInput, marshalErr := json.Marshal(block.Input)
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal delete file tool input: %w", marshalErr)
@@ -565,12 +534,12 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 						"executing delete file tool; path: %s",
 						deleteFileToolInput.Path,
 					)
-					result, err = executeDeleteFileTool(deleteFileToolInput)
+					result, err = DeleteFileTool(deleteFileToolInput)
 					if err == nil {
 						s.logger.Printf("tool result: %+v", result.Content)
 					}
 				case moveFileTool.Name:
-					var moveFileToolInput tools.MoveFileParams
+					var moveFileToolInput MoveFileParams
 					jsonInput, marshalErr := json.Marshal(block.Input)
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal move file tool input: %w", marshalErr)
@@ -583,12 +552,12 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 						moveFileToolInput.SourcePath,
 						moveFileToolInput.TargetPath,
 					)
-					result, err = executeMoveFileTool(moveFileToolInput)
+					result, err = MoveFileTool(moveFileToolInput)
 					if err == nil {
 						s.logger.Printf("tool result: %+v", result.Content)
 					}
 				case viewFileTool.Name:
-					var viewFileToolInput tools.ViewFileParams
+					var viewFileToolInput ViewFileParams
 					jsonInput, marshalErr := json.Marshal(block.Input)
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal view file tool input: %w", marshalErr)
@@ -600,13 +569,13 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 						"executing view file tool; path: %s",
 						viewFileToolInput.Path,
 					)
-					result, err = executeViewFileTool(viewFileToolInput)
+					result, err = ViewFileTool(viewFileToolInput)
 					if err == nil {
 						s.logger.Printf("tool result: %+v", result.Content)
 					}
 				// Folder operation tools
 				case createFolderTool.Name:
-					var createFolderToolInput tools.CreateFolderParams
+					var createFolderToolInput CreateFolderParams
 					jsonInput, marshalErr := json.Marshal(block.Input)
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal create folder tool input: %w", marshalErr)
@@ -618,12 +587,12 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 						"executing create folder tool; path: %s",
 						createFolderToolInput.Path,
 					)
-					result, err = executeCreateFolderTool(createFolderToolInput)
+					result, err = CreateFolderTool(createFolderToolInput)
 					if err == nil {
 						s.logger.Printf("tool result: %+v", result.Content)
 					}
 				case deleteFolderTool.Name:
-					var deleteFolderToolInput tools.DeleteFolderParams
+					var deleteFolderToolInput DeleteFolderParams
 					jsonInput, marshalErr := json.Marshal(block.Input)
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal delete folder tool input: %w", marshalErr)
@@ -636,12 +605,12 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 						deleteFolderToolInput.Path,
 						deleteFolderToolInput.Recursive,
 					)
-					result, err = executeDeleteFolderTool(deleteFolderToolInput)
+					result, err = DeleteFolderTool(deleteFolderToolInput)
 					if err == nil {
 						s.logger.Printf("tool result: %+v", result.Content)
 					}
 				case moveFolderTool.Name:
-					var moveFolderToolInput tools.MoveFolderParams
+					var moveFolderToolInput MoveFolderParams
 					jsonInput, marshalErr := json.Marshal(block.Input)
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal move folder tool input: %w", marshalErr)
@@ -654,7 +623,7 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 						moveFolderToolInput.SourcePath,
 						moveFolderToolInput.TargetPath,
 					)
-					result, err = executeMoveFolderTool(moveFolderToolInput)
+					result, err = MoveFolderTool(moveFolderToolInput)
 					if err == nil {
 						s.logger.Printf("tool result: %+v", result.Content)
 					}

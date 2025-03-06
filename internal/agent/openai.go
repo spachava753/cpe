@@ -12,7 +12,6 @@ import (
 	"github.com/openai/openai-go/option"
 	"github.com/pkoukk/tiktoken-go"
 	gitignore "github.com/sabhiram/go-gitignore"
-	"github.com/spachava753/cpe/internal/agent/tools"
 	"github.com/spachava753/cpe/internal/tiktokenloader"
 	"io"
 	"os"
@@ -105,15 +104,6 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 					Name:        oai.F(bashTool.Name),
 					Description: oai.F(bashTool.Description),
 					Parameters:  oai.F(oai.FunctionParameters(bashTool.InputSchema)),
-				}),
-			},
-			// Support for legacy file_editor tool for backward compatibility
-			{
-				Type: oai.F(oai.ChatCompletionToolTypeFunction),
-				Function: oai.F(oai.FunctionDefinitionParam{
-					Name:        oai.F(fileEditor.Name),
-					Description: oai.F(fileEditor.Description),
-					Parameters:  oai.F(oai.FunctionParameters(fileEditor.InputSchema)),
 				}),
 			},
 			// Overview and analysis tools
@@ -257,12 +247,12 @@ func (o *openaiExecutor) Execute(inputs []Input) error {
 	var contentParts []oai.ChatCompletionContentPartUnionParam
 	for _, input := range inputs {
 		switch input.Type {
-		case tools.InputTypeText:
+		case InputTypeText:
 			contentParts = append(contentParts, oai.ChatCompletionContentPartTextParam{
 				Text: oai.F(input.Text),
 				Type: oai.F(oai.ChatCompletionContentPartTextTypeText),
 			})
-		case tools.InputTypeImage:
+		case InputTypeImage:
 			// Read and base64 encode the image file
 			imgData, err := os.ReadFile(input.FilePath)
 			if err != nil {
@@ -285,9 +275,9 @@ func (o *openaiExecutor) Execute(inputs []Input) error {
 					URL: oai.F(encodedData),
 				}),
 			})
-		case tools.InputTypeVideo:
+		case InputTypeVideo:
 			return fmt.Errorf("video input is not supported by OpenAI models")
-		case tools.InputTypeAudio:
+		case InputTypeAudio:
 			return fmt.Errorf("audio input is not supported by OpenAI models")
 		default:
 			return fmt.Errorf("unknown input type: %s", input.Type)
@@ -358,26 +348,9 @@ func (o *openaiExecutor) Execute(inputs []Input) error {
 
 					result.Content = truncatedResult
 				}
-			case fileEditor.Name:
-				var fileEditorToolInput FileEditorParams
-				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &fileEditorToolInput); err != nil {
-					return fmt.Errorf("failed to unmarshal file editor tool arguments: %w", err)
-				}
-				o.logger.Printf(
-					"executing file editor tool; command: %s\npath: %s\nfile_text: %s\nold_str: %s\nnew_str: %s",
-					fileEditorToolInput.Command,
-					fileEditorToolInput.Path,
-					fileEditorToolInput.FileText,
-					fileEditorToolInput.OldStr,
-					fileEditorToolInput.NewStr,
-				)
-				result, err = executeFileEditorTool(fileEditorToolInput)
-				if err == nil {
-					o.logger.Printf("tool result: %+v", result.Content)
-				}
 			// File operation tools
 			case createFileTool.Name:
-				var createFileToolInput tools.CreateFileParams
+				var createFileToolInput CreateFileParams
 				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &createFileToolInput); err != nil {
 					return fmt.Errorf("failed to unmarshal create file tool arguments: %w", err)
 				}
@@ -386,12 +359,12 @@ func (o *openaiExecutor) Execute(inputs []Input) error {
 					createFileToolInput.Path,
 					len(createFileToolInput.FileText),
 				)
-				result, err = executeCreateFileTool(createFileToolInput)
+				result, err = CreateFileTool(createFileToolInput)
 				if err == nil {
 					o.logger.Printf("tool result: %+v", result.Content)
 				}
 			case editFileTool.Name:
-				var editFileToolInput tools.EditFileParams
+				var editFileToolInput EditFileParams
 				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &editFileToolInput); err != nil {
 					return fmt.Errorf("failed to unmarshal edit file tool arguments: %w", err)
 				}
@@ -401,12 +374,12 @@ func (o *openaiExecutor) Execute(inputs []Input) error {
 					len(editFileToolInput.OldStr),
 					len(editFileToolInput.NewStr),
 				)
-				result, err = executeEditFileTool(editFileToolInput)
+				result, err = EditFileTool(editFileToolInput)
 				if err == nil {
 					o.logger.Printf("tool result: %+v", result.Content)
 				}
 			case deleteFileTool.Name:
-				var deleteFileToolInput tools.DeleteFileParams
+				var deleteFileToolInput DeleteFileParams
 				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &deleteFileToolInput); err != nil {
 					return fmt.Errorf("failed to unmarshal delete file tool arguments: %w", err)
 				}
@@ -414,12 +387,12 @@ func (o *openaiExecutor) Execute(inputs []Input) error {
 					"executing delete file tool; path: %s",
 					deleteFileToolInput.Path,
 				)
-				result, err = executeDeleteFileTool(deleteFileToolInput)
+				result, err = DeleteFileTool(deleteFileToolInput)
 				if err == nil {
 					o.logger.Printf("tool result: %+v", result.Content)
 				}
 			case moveFileTool.Name:
-				var moveFileToolInput tools.MoveFileParams
+				var moveFileToolInput MoveFileParams
 				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &moveFileToolInput); err != nil {
 					return fmt.Errorf("failed to unmarshal move file tool arguments: %w", err)
 				}
@@ -428,12 +401,12 @@ func (o *openaiExecutor) Execute(inputs []Input) error {
 					moveFileToolInput.SourcePath,
 					moveFileToolInput.TargetPath,
 				)
-				result, err = executeMoveFileTool(moveFileToolInput)
+				result, err = MoveFileTool(moveFileToolInput)
 				if err == nil {
 					o.logger.Printf("tool result: %+v", result.Content)
 				}
 			case viewFileTool.Name:
-				var viewFileToolInput tools.ViewFileParams
+				var viewFileToolInput ViewFileParams
 				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &viewFileToolInput); err != nil {
 					return fmt.Errorf("failed to unmarshal view file tool arguments: %w", err)
 				}
@@ -441,13 +414,13 @@ func (o *openaiExecutor) Execute(inputs []Input) error {
 					"executing view file tool; path: %s",
 					viewFileToolInput.Path,
 				)
-				result, err = executeViewFileTool(viewFileToolInput)
+				result, err = ViewFileTool(viewFileToolInput)
 				if err == nil {
 					o.logger.Printf("tool result: %+v", result.Content)
 				}
 			// Folder operation tools
 			case createFolderTool.Name:
-				var createFolderToolInput tools.CreateFolderParams
+				var createFolderToolInput CreateFolderParams
 				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &createFolderToolInput); err != nil {
 					return fmt.Errorf("failed to unmarshal create folder tool arguments: %w", err)
 				}
@@ -455,12 +428,12 @@ func (o *openaiExecutor) Execute(inputs []Input) error {
 					"executing create folder tool; path: %s",
 					createFolderToolInput.Path,
 				)
-				result, err = executeCreateFolderTool(createFolderToolInput)
+				result, err = CreateFolderTool(createFolderToolInput)
 				if err == nil {
 					o.logger.Printf("tool result: %+v", result.Content)
 				}
 			case deleteFolderTool.Name:
-				var deleteFolderToolInput tools.DeleteFolderParams
+				var deleteFolderToolInput DeleteFolderParams
 				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &deleteFolderToolInput); err != nil {
 					return fmt.Errorf("failed to unmarshal delete folder tool arguments: %w", err)
 				}
@@ -469,12 +442,12 @@ func (o *openaiExecutor) Execute(inputs []Input) error {
 					deleteFolderToolInput.Path,
 					deleteFolderToolInput.Recursive,
 				)
-				result, err = executeDeleteFolderTool(deleteFolderToolInput)
+				result, err = DeleteFolderTool(deleteFolderToolInput)
 				if err == nil {
 					o.logger.Printf("tool result: %+v", result.Content)
 				}
 			case moveFolderTool.Name:
-				var moveFolderToolInput tools.MoveFolderParams
+				var moveFolderToolInput MoveFolderParams
 				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &moveFolderToolInput); err != nil {
 					return fmt.Errorf("failed to unmarshal move folder tool arguments: %w", err)
 				}
@@ -483,7 +456,7 @@ func (o *openaiExecutor) Execute(inputs []Input) error {
 					moveFolderToolInput.SourcePath,
 					moveFolderToolInput.TargetPath,
 				)
-				result, err = executeMoveFolderTool(moveFolderToolInput)
+				result, err = MoveFolderTool(moveFolderToolInput)
 				if err == nil {
 					o.logger.Printf("tool result: %+v", result.Content)
 				}

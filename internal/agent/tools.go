@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/gabriel-vasile/mimetype"
 	ignore "github.com/sabhiram/go-gitignore"
-	"github.com/spachava753/cpe/internal/agent/tools"
 	"github.com/spachava753/cpe/internal/codemap"
 	"github.com/spachava753/cpe/internal/symbolresolver"
 	"os"
@@ -71,8 +70,6 @@ func ListTextFiles(ignorer *ignore.GitIgnore) ([]FileInfo, error) {
 	return files, nil
 }
 
-
-
 var bashTool = Tool{
 	Name: "bash",
 	Description: `Run commands in a bash shell
@@ -92,46 +89,6 @@ var bashTool = Tool{
 			},
 		},
 		"required": []string{"command"},
-	},
-}
-
-var fileEditor = Tool{
-	Name: "file_editor",
-	Description: `A tool to edit, create and delete files found in the current folder and any subfolders. Keep in mind that this tool does not allow modifying files outside current folder.
-* The "create" command should only be used to create a new file, and "file_text" must be supplied as the contents of the new file. It will error if the file already exists.
-* The "remove" command can be used to remove an existing file
-
-Notes for using the "str_replace" command:
-* The "old_str" parameter should match EXACTLY one or more consecutive lines from the original file. Be mindful of whitespaces!
-* If the "old_str" parameter is not unique in the file, the replacement will not be performed. Make sure to include enough context in "old_str" to make it unique
-* The "new_str" parameter should contain the edited lines that should replace the "old_str"
-* Leave "new_str" parameter empty effectively remove "old_str" text from the file`,
-	InputSchema: map[string]interface{}{
-		"type": "object",
-		"properties": map[string]interface{}{
-			"command": map[string]interface{}{
-				"type":        "string",
-				"enum":        []string{"create", "str_replace", "remove"},
-				"description": `The commands to run. Allowed options are: "create", "str_replace", "remove".`,
-			},
-			"file_text": map[string]interface{}{
-				"description": `Required parameter of "create" command, with the content of the file to be created.`,
-				"type":        "string",
-			},
-			"new_str": map[string]interface{}{
-				"description": `Required parameter of "str_replace" command containing the new string.`,
-				"type":        "string",
-			},
-			"old_str": map[string]interface{}{
-				"description": `Required parameter of "str_replace" command containing the string in "path" to replace.`,
-				"type":        "string",
-			},
-			"path": map[string]interface{}{
-				"description": `Relative path to file or directory, e.g. "./file.py"`,
-				"type":        "string",
-			},
-		},
-		"required": []string{"command", "path"},
 	},
 }
 
@@ -174,11 +131,11 @@ Note: You may not deem it necessary to call this tool if you have all the inform
 
 var changeDirectoryTool = Tool{
 	Name: "change_directory",
-	Description: fmt.Sprintf(`A tool to change the current working directory
+	Description: `A tool to change the current working directory
 * The tool accepts a single parameter "path" specifying the target directory
 * Returns the full path of the new directory if successful
 * Returns an error message if the directory doesn't exist
-* If you need to create, delete, or modify files outside of the current folder with the '%s' tool, you can use this tool to change the current folder`, fileEditor.Name),
+* If you need to create, delete, or modify files outside of the current folder, you can use this tool to change the current folder`,
 	InputSchema: map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
@@ -404,32 +361,6 @@ type FileEditorParams struct {
 	NewStr   string `json:"new_str,omitempty"`
 }
 
-// executeFileEditorTool validates and executes the file editor tool
-func executeFileEditorTool(params FileEditorParams) (*ToolResult, error) {
-	switch params.Command {
-	case "create":
-		return executeCreateFileTool(tools.CreateFileParams{
-			Path:     params.Path,
-			FileText: params.FileText,
-		})
-	case "str_replace":
-		return executeEditFileTool(tools.EditFileParams{
-			Path:   params.Path,
-			OldStr: params.OldStr,
-			NewStr: params.NewStr,
-		})
-	case "remove":
-		return executeDeleteFileTool(tools.DeleteFileParams{
-			Path: params.Path,
-		})
-	default:
-		return &ToolResult{
-			Content: fmt.Sprintf("Unknown command: %s", params.Command),
-			IsError: true,
-		}, nil
-	}
-}
-
 // ExecuteFilesOverviewTool validates and executes the files overview tool
 func ExecuteFilesOverviewTool(ignorer *ignore.GitIgnore) (*ToolResult, error) {
 	fsys := os.DirFS(".")
@@ -506,105 +437,5 @@ func executeChangeDirectoryTool(path string) (*ToolResult, error) {
 
 	return &ToolResult{
 		Content: absPath,
-	}, nil
-}
-
-// Execute specialized file tools
-
-// executeCreateFileTool validates and executes the create file tool
-func executeCreateFileTool(params tools.CreateFileParams) (*ToolResult, error) {
-	result, err := tools.CreateFileTool(params)
-	if err != nil {
-		return nil, err
-	}
-	return &ToolResult{
-		Content: result.Content,
-		IsError: result.IsError,
-	}, nil
-}
-
-// executeDeleteFileTool validates and executes the delete file tool
-func executeDeleteFileTool(params tools.DeleteFileParams) (*ToolResult, error) {
-	result, err := tools.DeleteFileTool(params)
-	if err != nil {
-		return nil, err
-	}
-	return &ToolResult{
-		Content: result.Content,
-		IsError: result.IsError,
-	}, nil
-}
-
-// executeEditFileTool validates and executes the edit file tool
-func executeEditFileTool(params tools.EditFileParams) (*ToolResult, error) {
-	result, err := tools.EditFileTool(params)
-	if err != nil {
-		return nil, err
-	}
-	return &ToolResult{
-		Content: result.Content,
-		IsError: result.IsError,
-	}, nil
-}
-
-// executeMoveFileTool validates and executes the move file tool
-func executeMoveFileTool(params tools.MoveFileParams) (*ToolResult, error) {
-	result, err := tools.MoveFileTool(params)
-	if err != nil {
-		return nil, err
-	}
-	return &ToolResult{
-		Content: result.Content,
-		IsError: result.IsError,
-	}, nil
-}
-
-// Execute specialized folder tools
-
-// executeCreateFolderTool validates and executes the create folder tool
-func executeCreateFolderTool(params tools.CreateFolderParams) (*ToolResult, error) {
-	result, err := tools.CreateFolderTool(params)
-	if err != nil {
-		return nil, err
-	}
-	return &ToolResult{
-		Content: result.Content,
-		IsError: result.IsError,
-	}, nil
-}
-
-// executeDeleteFolderTool validates and executes the delete folder tool
-func executeDeleteFolderTool(params tools.DeleteFolderParams) (*ToolResult, error) {
-	result, err := tools.DeleteFolderTool(params)
-	if err != nil {
-		return nil, err
-	}
-	return &ToolResult{
-		Content: result.Content,
-		IsError: result.IsError,
-	}, nil
-}
-
-// executeMoveFolderTool validates and executes the move folder tool
-func executeMoveFolderTool(params tools.MoveFolderParams) (*ToolResult, error) {
-	result, err := tools.MoveFolderTool(params)
-	if err != nil {
-		return nil, err
-	}
-	return &ToolResult{
-		Content: result.Content,
-		IsError: result.IsError,
-	}, nil
-}
-
-// executeViewFileTool validates and executes the view file tool
-func executeViewFileTool(params tools.ViewFileParams) (*ToolResult, error) {
-	result, err := tools.ViewFileTool(params)
-	if err != nil {
-		return nil, err
-	}
-	return &ToolResult{
-		Content: result.Content,
-		IsError: result.IsError,
 	}, nil
 }

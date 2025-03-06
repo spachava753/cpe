@@ -1,4 +1,4 @@
-package tools
+package agent
 
 import (
 	"fmt"
@@ -13,8 +13,8 @@ type CreateFolderParams struct {
 
 // DeleteFolderParams represents the parameters for the delete folder tool
 type DeleteFolderParams struct {
-	Path    string `json:"path"`
-	Recursive bool  `json:"recursive"`
+	Path      string `json:"path"`
+	Recursive bool   `json:"recursive"`
 }
 
 // MoveFolderParams represents the parameters for the move folder tool
@@ -91,7 +91,7 @@ func DeleteFolderTool(params DeleteFolderParams) (*ToolResult, error) {
 				IsError: true,
 			}, nil
 		}
-		
+
 		// Delete the empty directory
 		if err := os.Remove(params.Path); err != nil {
 			return &ToolResult{
@@ -108,7 +108,7 @@ func DeleteFolderTool(params DeleteFolderParams) (*ToolResult, error) {
 			}, nil
 		}
 	}
-	
+
 	return &ToolResult{
 		Content: fmt.Sprintf("Successfully removed folder %s", params.Path),
 	}, nil

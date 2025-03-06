@@ -1,4 +1,4 @@
-package tools
+package agent
 
 import (
 	"fmt"
@@ -8,23 +8,10 @@ import (
 	"strings"
 )
 
-// FileInfo represents a file's path and content
-type FileInfo struct {
-	Path    string
-	Content string
-}
-
-// ToolResult represents the result of a tool execution
-type ToolResult struct {
-	ToolUseID string
-	Content   any
-	IsError   bool
-}
-
 // CreateFileParams represents the parameters for the create file tool
 type CreateFileParams struct {
-	Path      string `json:"path"`
-	FileText  string `json:"file_text"`
+	Path     string `json:"path"`
+	FileText string `json:"file_text"`
 }
 
 // DeleteFileParams represents the parameters for the delete file tool

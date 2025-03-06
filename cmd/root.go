@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/spachava753/cpe/internal/agent"
-	"github.com/spachava753/cpe/internal/agent/tools"
 	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/db"
 	"github.com/spachava753/cpe/internal/ignore"
@@ -195,7 +194,7 @@ func executeRootCommand(cmd *cobra.Command, args []string) {
 				modelConfig = agent.ModelConfig{
 					Name:            modelName,
 					IsKnown:         false,
-					SupportedInputs: []tools.InputType{tools.InputTypeText},
+					SupportedInputs: []agent.InputType{agent.InputTypeText},
 				}
 			}
 		}
@@ -232,7 +231,7 @@ func readInput(inputFiles []string, args []string) ([]agent.Input, error) {
 		}
 		if len(content) > 0 {
 			inputs = append(inputs, agent.Input{
-				Type: tools.InputTypeText,
+				Type: agent.InputTypeText,
 				Text: string(content),
 			})
 		}
@@ -245,19 +244,19 @@ func readInput(inputFiles []string, args []string) ([]agent.Input, error) {
 			return nil, fmt.Errorf("input file does not exist: %s", path)
 		}
 
-		inputType, err := tools.DetectInputType(path)
+		inputType, err := agent.DetectInputType(path)
 		if err != nil {
 			return nil, fmt.Errorf("error detecting input type for file %s: %w", path, err)
 		}
 
-		if inputType == tools.InputTypeText {
+		if inputType == agent.InputTypeText {
 			// For text files, read the content and use it as text input
 			content, err := os.ReadFile(path)
 			if err != nil {
 				return nil, fmt.Errorf("error reading file %s: %w", path, err)
 			}
 			inputs = append(inputs, agent.Input{
-				Type: tools.InputTypeText,
+				Type: agent.InputTypeText,
 				Text: string(content),
 			})
 		} else {
@@ -274,7 +273,7 @@ func readInput(inputFiles []string, args []string) ([]agent.Input, error) {
 	if len(inputFiles) == 0 && len(args) > 0 {
 		prompt := strings.Join(args, " ")
 		inputs = append(inputs, agent.Input{
-			Type: tools.InputTypeText,
+			Type: agent.InputTypeText,
 			Text: prompt,
 		})
 	}
