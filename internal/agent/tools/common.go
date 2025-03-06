@@ -10,6 +10,16 @@ import (
 	"strings"
 )
 
+// InputType defines the type of input for a model
+type InputType string
+
+const (
+	InputTypeText  InputType = "text"
+	InputTypeImage InputType = "image"
+	InputTypeVideo InputType = "video"
+	InputTypeAudio InputType = "audio"
+)
+
 // ListTextFiles walks through the current directory recursively and returns text files
 func ListTextFiles(ignorer *ignore.GitIgnore) ([]FileInfo, error) {
 	var files []FileInfo
@@ -54,16 +64,6 @@ func ListTextFiles(ignorer *ignore.GitIgnore) ([]FileInfo, error) {
 
 	return files, nil
 }
-
-// InputType defines the type of input for a model
-type InputType string
-
-const (
-	InputTypeText  InputType = "text"
-	InputTypeImage InputType = "image"
-	InputTypeVideo InputType = "video"
-	InputTypeAudio InputType = "audio"
-)
 
 // DetectInputType detects the type of input from a file
 func DetectInputType(path string) (InputType, error) {

@@ -14,16 +14,6 @@ import (
 	"strings"
 )
 
-// Import the InputType from tools
-type InputType = tools.InputType
-
-const (
-	InputTypeText  = tools.InputTypeText
-	InputTypeImage = tools.InputTypeImage
-	InputTypeVideo = tools.InputTypeVideo
-	InputTypeAudio = tools.InputTypeAudio
-)
-
 type Tool struct {
 	Name        string                 `json:"name"`
 	Description string                 `json:"description"`
@@ -83,9 +73,27 @@ func ListTextFiles(ignorer *ignore.GitIgnore) ([]FileInfo, error) {
 
 // DetectInputType detects the type of input from a file
 func DetectInputType(path string) (InputType, error) {
-	result, err := tools.DetectInputType(path)
-	return result, err
+	toolsInputType, err := tools.DetectInputType(path)
+	if err != nil {
+		return "", err
+	}
+	
+	// Convert from tools.InputType to agent.InputType
+	switch toolsInputType {
+	case tools.InputTypeText:
+		return InputTypeText, nil
+	case tools.InputTypeImage:
+		return InputTypeImage, nil
+	case tools.InputTypeVideo:
+		return InputTypeVideo, nil
+	case tools.InputTypeAudio:
+		return InputTypeAudio, nil
+	default:
+		return "", fmt.Errorf("unknown input type: %s", toolsInputType)
+	}
 }
+
+
 
 var bashTool = Tool{
 	Name: "bash",
