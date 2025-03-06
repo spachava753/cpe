@@ -355,9 +355,9 @@ func (o *openaiExecutor) Execute(inputs []Input) error {
 					return fmt.Errorf("failed to unmarshal create file tool arguments: %w", err)
 				}
 				o.logger.Printf(
-					"executing create file tool; path: %s\nfile_text length: %d",
+					"executing create file tool; path: %s\nfile_text:\n%s",
 					createFileToolInput.Path,
-					len(createFileToolInput.FileText),
+					createFileToolInput.FileText,
 				)
 				result, err = CreateFileTool(createFileToolInput)
 				if err == nil {
@@ -369,10 +369,10 @@ func (o *openaiExecutor) Execute(inputs []Input) error {
 					return fmt.Errorf("failed to unmarshal edit file tool arguments: %w", err)
 				}
 				o.logger.Printf(
-					"executing edit file tool; path: %s\nold_str length: %d\nnew_str length: %d",
+					"executing edit file tool; path: %s\nold_str:\n%s\nnew_str:\n%s",
 					editFileToolInput.Path,
-					len(editFileToolInput.OldStr),
-					len(editFileToolInput.NewStr),
+					editFileToolInput.OldStr,
+					editFileToolInput.NewStr,
 				)
 				result, err = EditFileTool(editFileToolInput)
 				if err == nil {
