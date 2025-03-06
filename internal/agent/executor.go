@@ -20,20 +20,11 @@ import (
 var agentInstructions string
 
 // Executor defines the interface for executing agentic workflows
-type InputType string
-
-const (
-	InputTypeText  InputType = "text"
-	InputTypeImage InputType = "image"
-	InputTypeVideo InputType = "video"
-	InputTypeAudio InputType = "audio"
-)
-
 // Input represents a single input to be processed by the model
 type Input struct {
 	Type     InputType
-	Text     string // Used when Type is InputTypeText
-	FilePath string // Used when Type is InputTypeImage, InputTypeVideo, or InputTypeAudio
+	Text     string // Used when Type is tools.InputTypeText
+	FilePath string // Used when Type is tools.InputTypeImage, tools.InputTypeVideo, or tools.InputTypeAudio
 }
 
 type Executor interface {

@@ -92,6 +92,7 @@ func NewGeminiExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 	model.Tools = []*genai.Tool{
 		{
 			FunctionDeclarations: []*genai.FunctionDeclaration{
+				// Basic tools
 				{
 					Name:        bashTool.Name,
 					Description: bashTool.Description,
@@ -106,37 +107,7 @@ func NewGeminiExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 						Required: []string{"command"},
 					},
 				},
-				{
-					Name:        fileEditor.Name,
-					Description: fileEditor.Description,
-					Parameters: &genai.Schema{
-						Type: genai.TypeObject,
-						Properties: map[string]*genai.Schema{
-							"command": {
-								Type:        genai.TypeString,
-								Enum:        []string{"create", "str_replace", "remove"},
-								Description: `The commands to run. Allowed options are: "create", "create", "str_replace", "remove".`,
-							},
-							"file_text": {
-								Type:        genai.TypeString,
-								Description: `Required parameter of "create" command, with the content of the file to be created.`,
-							},
-							"new_str": {
-								Type:        genai.TypeString,
-								Description: `Required parameter of "str_replace" command containing the new string. The contents of this parameter does NOT need to be escaped.`,
-							},
-							"old_str": {
-								Type:        genai.TypeString,
-								Description: `Required parameter of "str_replace" command containing the string in "path" to replace. The contents of this parameter does NOT need to be escaped.`,
-							},
-							"path": {
-								Type:        genai.TypeString,
-								Description: `Relative path to file or directory, e.g. "./file.py"`,
-							},
-						},
-						Required: []string{"command", "path"},
-					},
-				},
+				// Overview and analysis tools
 				{
 					Name:        filesOverviewTool.Name,
 					Description: filesOverviewTool.Description,
@@ -158,6 +129,7 @@ func NewGeminiExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 						Required: []string{"input_files"},
 					},
 				},
+				// Navigation tool
 				{
 					Name:        changeDirectoryTool.Name,
 					Description: changeDirectoryTool.Description,
@@ -170,6 +142,144 @@ func NewGeminiExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 							},
 						},
 						Required: []string{"path"},
+					},
+				},
+				// File operation tools
+				{
+					Name:        createFileTool.Name,
+					Description: createFileTool.Description,
+					Parameters: &genai.Schema{
+						Type: genai.TypeObject,
+						Properties: map[string]*genai.Schema{
+							"path": {
+								Type:        genai.TypeString,
+								Description: "Relative path where the file should be created",
+							},
+							"file_text": {
+								Type:        genai.TypeString,
+								Description: "Content to write to the new file",
+							},
+						},
+						Required: []string{"path", "file_text"},
+					},
+				},
+				{
+					Name:        deleteFileTool.Name,
+					Description: deleteFileTool.Description,
+					Parameters: &genai.Schema{
+						Type: genai.TypeObject,
+						Properties: map[string]*genai.Schema{
+							"path": {
+								Type:        genai.TypeString,
+								Description: "Relative path to the file to delete",
+							},
+						},
+						Required: []string{"path"},
+					},
+				},
+				{
+					Name:        editFileTool.Name,
+					Description: editFileTool.Description,
+					Parameters: &genai.Schema{
+						Type: genai.TypeObject,
+						Properties: map[string]*genai.Schema{
+							"path": {
+								Type:        genai.TypeString,
+								Description: "Relative path to the file to edit",
+							},
+							"old_str": {
+								Type:        genai.TypeString,
+								Description: "The exact text segment to replace (must be unique in the file)",
+							},
+							"new_str": {
+								Type:        genai.TypeString,
+								Description: "The new text to replace the old text with",
+							},
+						},
+						Required: []string{"path", "old_str", "new_str"},
+					},
+				},
+				{
+					Name:        moveFileTool.Name,
+					Description: moveFileTool.Description,
+					Parameters: &genai.Schema{
+						Type: genai.TypeObject,
+						Properties: map[string]*genai.Schema{
+							"source_path": {
+								Type:        genai.TypeString,
+								Description: "Relative path to the file to move/rename",
+							},
+							"target_path": {
+								Type:        genai.TypeString,
+								Description: "Relative path where the file should be moved/renamed to",
+							},
+						},
+						Required: []string{"source_path", "target_path"},
+					},
+				},
+				{
+					Name:        viewFileTool.Name,
+					Description: viewFileTool.Description,
+					Parameters: &genai.Schema{
+						Type: genai.TypeObject,
+						Properties: map[string]*genai.Schema{
+							"path": {
+								Type:        genai.TypeString,
+								Description: "Relative path to the file to view",
+							},
+						},
+						Required: []string{"path"},
+					},
+				},
+				// Folder operation tools
+				{
+					Name:        createFolderTool.Name,
+					Description: createFolderTool.Description,
+					Parameters: &genai.Schema{
+						Type: genai.TypeObject,
+						Properties: map[string]*genai.Schema{
+							"path": {
+								Type:        genai.TypeString,
+								Description: "Relative path where the folder should be created",
+							},
+						},
+						Required: []string{"path"},
+					},
+				},
+				{
+					Name:        deleteFolderTool.Name,
+					Description: deleteFolderTool.Description,
+					Parameters: &genai.Schema{
+						Type: genai.TypeObject,
+						Properties: map[string]*genai.Schema{
+							"path": {
+								Type:        genai.TypeString,
+								Description: "Relative path to the folder to delete",
+							},
+							"recursive": {
+								Type:        genai.TypeBoolean,
+								Description: "Whether to delete non-empty folders (true) or error on non-empty folders (false)",
+							},
+						},
+						Required: []string{"path"},
+					},
+				},
+				{
+					Name:        moveFolderTool.Name,
+					Description: moveFolderTool.Description,
+					Parameters: &genai.Schema{
+						Type: genai.TypeObject,
+						Properties: map[string]*genai.Schema{
+							"source_path": {
+								Type:        genai.TypeString,
+								Description: "Relative path to the folder to move/rename",
+							},
+							"target_path": {
+								Type:        genai.TypeString,
+								Description: "Relative path where the folder should be moved/renamed to",
+							},
+						},
+						Required: []string{"source_path", "target_path"},
 					},
 				},
 			},
@@ -348,24 +458,147 @@ func (g *geminiExecutor) Execute(inputs []Input) error {
 
 						result.Content = truncatedResult
 					}
-				case fileEditor.Name:
-					var fileEditorToolInput FileEditorParams
+				// File operation tools
+				case createFileTool.Name:
+					var createFileToolInput CreateFileParams
 					jsonInput, marshalErr := json.Marshal(v.Args)
 					if marshalErr != nil {
-						return fmt.Errorf("failed to marshal file editor tool input: %w", marshalErr)
+						return fmt.Errorf("failed to marshal create file tool input: %w", marshalErr)
 					}
-					if err := json.Unmarshal(jsonInput, &fileEditorToolInput); err != nil {
-						return fmt.Errorf("failed to unmarshal file editor tool arguments: %w", err)
+					if err := json.Unmarshal(jsonInput, &createFileToolInput); err != nil {
+						return fmt.Errorf("failed to unmarshal create file tool arguments: %w", err)
 					}
 					g.logger.Printf(
-						"executing file editor tool; command: %s\npath: %s\nfile_text: %s\nold_str: %s\nnew_str: %s",
-						fileEditorToolInput.Command,
-						fileEditorToolInput.Path,
-						fileEditorToolInput.FileText,
-						fileEditorToolInput.OldStr,
-						fileEditorToolInput.NewStr,
+						"executing create file tool; path: %s\nfile_text:\n%s",
+						createFileToolInput.Path,
+						createFileToolInput.FileText,
 					)
-					result, err = executeFileEditorTool(fileEditorToolInput)
+					result, err = CreateFileTool(createFileToolInput)
+					if err == nil {
+						g.logger.Printf("tool result: %+v", result.Content)
+					}
+				case editFileTool.Name:
+					var editFileToolInput EditFileParams
+					jsonInput, marshalErr := json.Marshal(v.Args)
+					if marshalErr != nil {
+						return fmt.Errorf("failed to marshal edit file tool input: %w", marshalErr)
+					}
+					if err := json.Unmarshal(jsonInput, &editFileToolInput); err != nil {
+						return fmt.Errorf("failed to unmarshal edit file tool arguments: %w", err)
+					}
+					g.logger.Printf(
+						"executing edit file tool; path: %s\nold_str:\n%s\nnew_str:\n%s",
+						editFileToolInput.Path,
+						editFileToolInput.OldStr,
+						editFileToolInput.NewStr,
+					)
+					result, err = EditFileTool(editFileToolInput)
+					if err == nil {
+						g.logger.Printf("tool result: %+v", result.Content)
+					}
+				case deleteFileTool.Name:
+					var deleteFileToolInput DeleteFileParams
+					jsonInput, marshalErr := json.Marshal(v.Args)
+					if marshalErr != nil {
+						return fmt.Errorf("failed to marshal delete file tool input: %w", marshalErr)
+					}
+					if err := json.Unmarshal(jsonInput, &deleteFileToolInput); err != nil {
+						return fmt.Errorf("failed to unmarshal delete file tool arguments: %w", err)
+					}
+					g.logger.Printf(
+						"executing delete file tool; path: %s",
+						deleteFileToolInput.Path,
+					)
+					result, err = DeleteFileTool(deleteFileToolInput)
+					if err == nil {
+						g.logger.Printf("tool result: %+v", result.Content)
+					}
+				case moveFileTool.Name:
+					var moveFileToolInput MoveFileParams
+					jsonInput, marshalErr := json.Marshal(v.Args)
+					if marshalErr != nil {
+						return fmt.Errorf("failed to marshal move file tool input: %w", marshalErr)
+					}
+					if err := json.Unmarshal(jsonInput, &moveFileToolInput); err != nil {
+						return fmt.Errorf("failed to unmarshal move file tool arguments: %w", err)
+					}
+					g.logger.Printf(
+						"executing move file tool; source_path: %s\ntarget_path: %s",
+						moveFileToolInput.SourcePath,
+						moveFileToolInput.TargetPath,
+					)
+					result, err = MoveFileTool(moveFileToolInput)
+					if err == nil {
+						g.logger.Printf("tool result: %+v", result.Content)
+					}
+				case viewFileTool.Name:
+					var viewFileToolInput ViewFileParams
+					jsonInput, marshalErr := json.Marshal(v.Args)
+					if marshalErr != nil {
+						return fmt.Errorf("failed to marshal view file tool input: %w", marshalErr)
+					}
+					if err := json.Unmarshal(jsonInput, &viewFileToolInput); err != nil {
+						return fmt.Errorf("failed to unmarshal view file tool arguments: %w", err)
+					}
+					g.logger.Printf(
+						"executing view file tool; path: %s",
+						viewFileToolInput.Path,
+					)
+					result, err = ViewFileTool(viewFileToolInput)
+					if err == nil {
+						g.logger.Printf("tool result: %+v", result.Content)
+					}
+				// Folder operation tools
+				case createFolderTool.Name:
+					var createFolderToolInput CreateFolderParams
+					jsonInput, marshalErr := json.Marshal(v.Args)
+					if marshalErr != nil {
+						return fmt.Errorf("failed to marshal create folder tool input: %w", marshalErr)
+					}
+					if err := json.Unmarshal(jsonInput, &createFolderToolInput); err != nil {
+						return fmt.Errorf("failed to unmarshal create folder tool arguments: %w", err)
+					}
+					g.logger.Printf(
+						"executing create folder tool; path: %s",
+						createFolderToolInput.Path,
+					)
+					result, err = CreateFolderTool(createFolderToolInput)
+					if err == nil {
+						g.logger.Printf("tool result: %+v", result.Content)
+					}
+				case deleteFolderTool.Name:
+					var deleteFolderToolInput DeleteFolderParams
+					jsonInput, marshalErr := json.Marshal(v.Args)
+					if marshalErr != nil {
+						return fmt.Errorf("failed to marshal delete folder tool input: %w", marshalErr)
+					}
+					if err := json.Unmarshal(jsonInput, &deleteFolderToolInput); err != nil {
+						return fmt.Errorf("failed to unmarshal delete folder tool arguments: %w", err)
+					}
+					g.logger.Printf(
+						"executing delete folder tool; path: %s, recursive: %v",
+						deleteFolderToolInput.Path,
+						deleteFolderToolInput.Recursive,
+					)
+					result, err = DeleteFolderTool(deleteFolderToolInput)
+					if err == nil {
+						g.logger.Printf("tool result: %+v", result.Content)
+					}
+				case moveFolderTool.Name:
+					var moveFolderToolInput MoveFolderParams
+					jsonInput, marshalErr := json.Marshal(v.Args)
+					if marshalErr != nil {
+						return fmt.Errorf("failed to marshal move folder tool input: %w", marshalErr)
+					}
+					if err := json.Unmarshal(jsonInput, &moveFolderToolInput); err != nil {
+						return fmt.Errorf("failed to unmarshal move folder tool arguments: %w", err)
+					}
+					g.logger.Printf(
+						"executing move folder tool; source_path: %s\ntarget_path: %s",
+						moveFolderToolInput.SourcePath,
+						moveFolderToolInput.TargetPath,
+					)
+					result, err = MoveFolderTool(moveFolderToolInput)
 					if err == nil {
 						g.logger.Printf("tool result: %+v", result.Content)
 					}
