@@ -12,6 +12,7 @@ import (
 	"github.com/openai/openai-go/option"
 	"github.com/pkoukk/tiktoken-go"
 	gitignore "github.com/sabhiram/go-gitignore"
+	"github.com/spachava753/cpe/internal/agent/tools"
 	"github.com/spachava753/cpe/internal/tiktokenloader"
 	"io"
 	"os"
@@ -186,12 +187,12 @@ func (o *openaiExecutor) Execute(inputs []Input) error {
 	var contentParts []oai.ChatCompletionContentPartUnionParam
 	for _, input := range inputs {
 		switch input.Type {
-		case InputTypeText:
+		case tools.InputTypeText:
 			contentParts = append(contentParts, oai.ChatCompletionContentPartTextParam{
 				Text: oai.F(input.Text),
 				Type: oai.F(oai.ChatCompletionContentPartTextTypeText),
 			})
-		case InputTypeImage:
+		case tools.InputTypeImage:
 			// Read and base64 encode the image file
 			imgData, err := os.ReadFile(input.FilePath)
 			if err != nil {
@@ -214,9 +215,9 @@ func (o *openaiExecutor) Execute(inputs []Input) error {
 					URL: oai.F(encodedData),
 				}),
 			})
-		case InputTypeVideo:
+		case tools.InputTypeVideo:
 			return fmt.Errorf("video input is not supported by OpenAI models")
-		case InputTypeAudio:
+		case tools.InputTypeAudio:
 			return fmt.Errorf("audio input is not supported by OpenAI models")
 		default:
 			return fmt.Errorf("unknown input type: %s", input.Type)

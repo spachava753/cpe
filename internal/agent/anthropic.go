@@ -11,6 +11,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/gabriel-vasile/mimetype"
 	gitignore "github.com/sabhiram/go-gitignore"
+	"github.com/spachava753/cpe/internal/agent/tools"
 	"io"
 	"os"
 	"strconv"
@@ -183,14 +184,14 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 	var contentBlocks []a.BetaContentBlockParamUnion
 	for _, input := range inputs {
 		switch input.Type {
-		case InputTypeText:
+		case tools.InputTypeText:
 			if len(strings.TrimSpace(input.Text)) > 0 {
 				contentBlocks = append(contentBlocks, &a.BetaTextBlockParam{
 					Text: a.F(input.Text),
 					Type: a.F(a.BetaTextBlockParamTypeText),
 				})
 			}
-		case InputTypeImage:
+		case tools.InputTypeImage:
 			// Read and base64 encode the image file
 			imgData, err := os.ReadFile(input.FilePath)
 			if err != nil {
@@ -217,9 +218,9 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 				Type:   a.F(a.BetaImageBlockParamTypeImage),
 				Source: a.F(imageBlock),
 			})
-		case InputTypeVideo:
+		case tools.InputTypeVideo:
 			return fmt.Errorf("video input is not supported by Claude models")
-		case InputTypeAudio:
+		case tools.InputTypeAudio:
 			return fmt.Errorf("audio input is not supported by Claude models")
 		default:
 			return fmt.Errorf("unknown input type: %s", input.Type)

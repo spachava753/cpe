@@ -10,6 +10,7 @@ import (
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/google/generative-ai-go/genai"
 	gitignore "github.com/sabhiram/go-gitignore"
+	"github.com/spachava753/cpe/internal/agent/tools"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	"io"
@@ -201,9 +202,9 @@ func (g *geminiExecutor) Execute(inputs []Input) error {
 	var parts []genai.Part
 	for _, input := range inputs {
 		switch input.Type {
-		case InputTypeText:
+		case tools.InputTypeText:
 			parts = append(parts, genai.Text(input.Text))
-		case InputTypeImage:
+		case tools.InputTypeImage:
 			// Read image file
 			imgData, err := os.ReadFile(input.FilePath)
 			if err != nil {
@@ -229,7 +230,7 @@ func (g *geminiExecutor) Execute(inputs []Input) error {
 
 			// Create image part
 			parts = append(parts, genai.ImageData(format, imgData))
-		case InputTypeAudio:
+		case tools.InputTypeAudio:
 			// Read audio file
 			audioData, err := os.ReadFile(input.FilePath)
 			if err != nil {
@@ -255,7 +256,7 @@ func (g *geminiExecutor) Execute(inputs []Input) error {
 				MIMEType: mime.String(),
 				Data:     audioData,
 			})
-		case InputTypeVideo:
+		case tools.InputTypeVideo:
 			return fmt.Errorf("video input is not yet supported by this implementation")
 		default:
 			return fmt.Errorf("unknown input type: %s", input.Type)

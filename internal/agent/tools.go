@@ -71,28 +71,6 @@ func ListTextFiles(ignorer *ignore.GitIgnore) ([]FileInfo, error) {
 	return files, nil
 }
 
-// DetectInputType detects the type of input from a file
-func DetectInputType(path string) (InputType, error) {
-	toolsInputType, err := tools.DetectInputType(path)
-	if err != nil {
-		return "", err
-	}
-	
-	// Convert from tools.InputType to agent.InputType
-	switch toolsInputType {
-	case tools.InputTypeText:
-		return InputTypeText, nil
-	case tools.InputTypeImage:
-		return InputTypeImage, nil
-	case tools.InputTypeVideo:
-		return InputTypeVideo, nil
-	case tools.InputTypeAudio:
-		return InputTypeAudio, nil
-	default:
-		return "", fmt.Errorf("unknown input type: %s", toolsInputType)
-	}
-}
-
 
 
 var bashTool = Tool{

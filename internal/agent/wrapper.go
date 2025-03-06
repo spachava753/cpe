@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/spachava753/cpe/internal/agent/tools"
 	"github.com/spachava753/cpe/internal/conversation"
 	"io"
 	"strings"
@@ -26,7 +27,7 @@ func (e *executorWrapper) Execute(inputs []Input) error {
 	// Only store text inputs
 	var textInputs []string
 	for _, input := range inputs {
-		if input.Type == InputTypeText {
+		if input.Type == tools.InputTypeText {
 			textInputs = append(textInputs, input.Text)
 		}
 	}

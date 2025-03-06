@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go"
+	"github.com/spachava753/cpe/internal/agent/tools"
 )
 
 // GenConfig represents the configuration when invoking a model.
@@ -39,7 +40,7 @@ type ModelConfig struct {
 	Name            string
 	IsKnown         bool
 	Defaults        ModelDefaults
-	SupportedInputs []InputType
+	SupportedInputs []tools.InputType
 	// Whether the model supports thinking budget configuration
 	SupportsThinking bool
 }
@@ -76,79 +77,79 @@ var ModelConfigs = map[string]ModelConfig{
 	"o3-mini": {
 		Name: openai.ChatModelO3Mini, IsKnown: true,
 		Defaults:         ModelDefaults{MaxTokens: 100000, Temperature: 1, ThinkingBudget: "low"},
-		SupportedInputs:  []InputType{InputTypeText},
+		SupportedInputs:  []tools.InputType{tools.InputTypeText},
 		SupportsThinking: true,
 	},
 	"claude-3-7-sonnet": {
 		Name: anthropic.ModelClaude3_7Sonnet20250219, IsKnown: true,
 		Defaults:         ModelDefaults{MaxTokens: 64000, Temperature: 0.3, ThinkingBudget: "0"},
-		SupportedInputs:  []InputType{InputTypeText, InputTypeImage},
+		SupportedInputs:  []tools.InputType{tools.InputTypeText, tools.InputTypeImage},
 		SupportsThinking: true,
 	},
 	"claude-3-opus": {
 		Name: anthropic.ModelClaude_3_Opus_20240229, IsKnown: true,
 		Defaults:        ModelDefaults{MaxTokens: 4096, Temperature: 0.3},
-		SupportedInputs: []InputType{InputTypeText, InputTypeImage},
+		SupportedInputs: []tools.InputType{tools.InputTypeText, tools.InputTypeImage},
 	},
 	"claude-3-5-sonnet": {
 		Name: anthropic.ModelClaude3_5Sonnet20241022, IsKnown: true,
 		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
-		SupportedInputs: []InputType{InputTypeText, InputTypeImage},
+		SupportedInputs: []tools.InputType{tools.InputTypeText, tools.InputTypeImage},
 	},
 	"claude-3-5-haiku": {
 		Name: anthropic.ModelClaude3_5Haiku20241022, IsKnown: true,
 		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
-		SupportedInputs: []InputType{InputTypeText, InputTypeImage},
+		SupportedInputs: []tools.InputType{tools.InputTypeText, tools.InputTypeImage},
 	},
 	"claude-3-haiku": {
 		Name: anthropic.ModelClaude_3_Haiku_20240307, IsKnown: true,
 		Defaults:        ModelDefaults{MaxTokens: 4096, Temperature: 0.3},
-		SupportedInputs: []InputType{InputTypeText, InputTypeImage},
+		SupportedInputs: []tools.InputType{tools.InputTypeText, tools.InputTypeImage},
 	},
 	"gemini-1-5-flash-8b": {
 		Name: "gemini-1.5-flash-8b", IsKnown: true,
 		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
-		SupportedInputs: []InputType{InputTypeText, InputTypeImage, InputTypeVideo, InputTypeAudio},
+		SupportedInputs: []tools.InputType{tools.InputTypeText, tools.InputTypeImage, tools.InputTypeVideo, tools.InputTypeAudio},
 	},
 	"gemini-1-5-flash": {
 		Name: "gemini-1.5-flash-002", IsKnown: true,
 		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
-		SupportedInputs: []InputType{InputTypeText, InputTypeImage, InputTypeVideo, InputTypeAudio},
+		SupportedInputs: []tools.InputType{tools.InputTypeText, tools.InputTypeImage, tools.InputTypeVideo, tools.InputTypeAudio},
 	},
 	"gemini-2-flash-exp": {
 		Name: "gemini-2.0-flash-exp", IsKnown: true,
 		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
-		SupportedInputs: []InputType{InputTypeText, InputTypeImage, InputTypeVideo, InputTypeAudio},
+		SupportedInputs: []tools.InputType{tools.InputTypeText, tools.InputTypeImage, tools.InputTypeVideo, tools.InputTypeAudio},
 	},
 	"gemini-2-flash": {
 		Name: "gemini-2.0-flash", IsKnown: true,
 		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
-		SupportedInputs: []InputType{InputTypeText, InputTypeImage, InputTypeVideo, InputTypeAudio},
+		SupportedInputs: []tools.InputType{tools.InputTypeText, tools.InputTypeImage, tools.InputTypeVideo, tools.InputTypeAudio},
 	},
 	"gemini-2-flash-lite-preview": {
 		Name: "gemini-2.0-flash-lite-preview-02-05", IsKnown: true,
 		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
-		SupportedInputs: []InputType{InputTypeText, InputTypeImage, InputTypeVideo, InputTypeAudio},
+		SupportedInputs: []tools.InputType{tools.InputTypeText, tools.InputTypeImage, tools.InputTypeVideo, tools.InputTypeAudio},
 	},
 	"gemini-2-pro-exp": {
 		Name: "gemini-2.0-pro-exp-02-05", IsKnown: true,
 		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
-		SupportedInputs: []InputType{InputTypeText, InputTypeImage, InputTypeVideo, InputTypeAudio},
+		SupportedInputs: []tools.InputType{tools.InputTypeText, tools.InputTypeImage, tools.InputTypeVideo, tools.InputTypeAudio},
 	},
 	"gemini-1-5-pro": {
 		Name: "gemini-1.5-pro-002", IsKnown: true,
 		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
-		SupportedInputs: []InputType{InputTypeText, InputTypeImage, InputTypeVideo, InputTypeAudio},
+		SupportedInputs: []tools.InputType{tools.InputTypeText, tools.InputTypeImage, tools.InputTypeVideo, tools.InputTypeAudio},
 	},
 	"gpt-4o": {
 		Name: openai.ChatModelGPT4o2024_11_20, IsKnown: true,
 		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
-		SupportedInputs: []InputType{InputTypeText, InputTypeImage},
+		SupportedInputs: []tools.InputType{tools.InputTypeText, tools.InputTypeImage},
 	},
 	"gpt-4o-mini": {
 		Name: openai.ChatModelGPT4oMini2024_07_18, IsKnown: true,
 		Defaults:        ModelDefaults{MaxTokens: 8192, Temperature: 0.3},
-		SupportedInputs: []InputType{InputTypeText, InputTypeImage},
+		SupportedInputs: []tools.InputType{tools.InputTypeText, tools.InputTypeImage},
 	},
 }
 
