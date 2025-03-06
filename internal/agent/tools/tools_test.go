@@ -2,21 +2,12 @@ package tools
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 )
 
 func TestFileTools(t *testing.T) {
-	// Setup test directory
-	testDir := filepath.Join(os.TempDir(), "cpe-file-tools-test")
-	t.Cleanup(func() {
-		os.RemoveAll(testDir)
-	})
-	
-	err := os.MkdirAll(testDir, 0755)
-	if err != nil {
-		t.Fatalf("Failed to create test directory: %v", err)
-	}
+	// Setup test directory using t.TempDir() for automatic cleanup
+	testDir := t.TempDir()
 	
 	// Change to test directory
 	origDir, err := os.Getwd()
@@ -228,16 +219,8 @@ func TestFileTools(t *testing.T) {
 }
 
 func TestFolderTools(t *testing.T) {
-	// Setup test directory
-	testDir := filepath.Join(os.TempDir(), "cpe-folder-tools-test")
-	t.Cleanup(func() {
-		os.RemoveAll(testDir)
-	})
-	
-	err := os.MkdirAll(testDir, 0755)
-	if err != nil {
-		t.Fatalf("Failed to create test directory: %v", err)
-	}
+	// Setup test directory using t.TempDir() for automatic cleanup
+	testDir := t.TempDir()
 	
 	// Change to test directory
 	origDir, err := os.Getwd()
