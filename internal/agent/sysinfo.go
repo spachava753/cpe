@@ -31,7 +31,7 @@ func GetSystemInfo() (*SystemInfo, error) {
 	}
 
 	return &SystemInfo{
-		CurrentDate: time.Now().Format(time.RFC3339),
+		CurrentDate: time.Now().Format(time.DateOnly),
 		WorkingDir:  wd,
 		OS:          runtime.GOOS,
 		IsGitRepo:   isGitRepo,
