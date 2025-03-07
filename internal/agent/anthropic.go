@@ -72,8 +72,8 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 		return nil, fmt.Errorf("failed to get system info: %w", err)
 	}
 
-	// Inject system info into prompt
-	prompt := strings.ReplaceAll(agentInstructions, "{system_info}", sysInfo.FormatSystemInfo())
+	// Format prompt with system info
+	prompt := fmt.Sprintf(agentInstructions, sysInfo)
 
 	// Set initial parameters
 	params := &a.BetaMessageNewParams{

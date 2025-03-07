@@ -38,17 +38,12 @@ func GetSystemInfo() (*SystemInfo, error) {
 	}, nil
 }
 
-// FormatSystemInfo formats the system information as a string
-func (si *SystemInfo) FormatSystemInfo() string {
-	gitStatus := "not a git repository"
-	if si.IsGitRepo {
-		gitStatus = "git repository"
-	}
-
+// String implements fmt.Stringer
+func (si *SystemInfo) String() string {
 	return fmt.Sprintf(`System Information:
 - Current Date: %s
 - Working Directory: %s
 - Operating System: %s
-- Repository: %s
-`, si.CurrentDate, si.WorkingDir, si.OS, gitStatus)
+- Is Git Repository: %v
+`, si.CurrentDate, si.WorkingDir, si.OS, si.IsGitRepo)
 }
