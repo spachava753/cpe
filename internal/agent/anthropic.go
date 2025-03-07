@@ -445,9 +445,29 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal bash tool input: %w", marshalErr)
 					}
-					if err := json.Unmarshal(jsonInput, &bashToolInput); err != nil {
-						return fmt.Errorf("failed to unmarshal bash tool arguments: %w", err)
+					
+					// First try standard unmarshaling
+					unmarshalErr := json.Unmarshal(jsonInput, &bashToolInput)
+					if unmarshalErr != nil {
+						// If that fails, try to autocorrect the JSON
+						s.logger.Printf("JSON parsing error for bash tool: %v. Attempting autocorrection.", unmarshalErr)
+						
+						// Convert to string for autocorrection
+						jsonStr := string(jsonInput)
+						correctedJSON, autocorrectErr := AutoCorrectJSON(jsonStr, &bashToolInput)
+						if autocorrectErr != nil {
+							s.logger.Printf("JSON autocorrection failed: %v", autocorrectErr)
+							return fmt.Errorf("failed to unmarshal bash tool arguments: %w", unmarshalErr)
+						}
+						
+						// Try again with the corrected JSON
+						if err := json.Unmarshal([]byte(correctedJSON), &bashToolInput); err != nil {
+							return fmt.Errorf("failed to unmarshal bash tool arguments even after correction: %w", err)
+						}
+						
+						s.logger.Printf("JSON autocorrection succeeded. Original: %s, Corrected: %s", jsonStr, correctedJSON)
 					}
+					
 					s.logger.Printf("executing bash command: %s", bashToolInput.Command)
 					result, err = executeBashTool(bashToolInput.Command)
 					if err == nil {
@@ -490,9 +510,29 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal create file tool input: %w", marshalErr)
 					}
-					if err := json.Unmarshal(jsonInput, &createFileToolInput); err != nil {
-						return fmt.Errorf("failed to unmarshal create file tool arguments: %w", err)
+					
+					// First try standard unmarshaling
+					unmarshalErr := json.Unmarshal(jsonInput, &createFileToolInput)
+					if unmarshalErr != nil {
+						// If that fails, try to autocorrect the JSON
+						s.logger.Printf("JSON parsing error for create_file tool: %v. Attempting autocorrection.", unmarshalErr)
+						
+						// Convert to string for autocorrection
+						jsonStr := string(jsonInput)
+						correctedJSON, autocorrectErr := AutoCorrectJSON(jsonStr, &createFileToolInput)
+						if autocorrectErr != nil {
+							s.logger.Printf("JSON autocorrection failed: %v", autocorrectErr)
+							return fmt.Errorf("failed to unmarshal create file tool arguments: %w", unmarshalErr)
+						}
+						
+						// Try again with the corrected JSON
+						if err := json.Unmarshal([]byte(correctedJSON), &createFileToolInput); err != nil {
+							return fmt.Errorf("failed to unmarshal create file tool arguments even after correction: %w", err)
+						}
+						
+						s.logger.Printf("JSON autocorrection succeeded. Original: %s, Corrected: %s", jsonStr, correctedJSON)
 					}
+					
 					s.logger.Printf(
 						"executing create file tool; path: %s\nfile_text:\n%s",
 						createFileToolInput.Path,
@@ -508,9 +548,29 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal edit file tool input: %w", marshalErr)
 					}
-					if err := json.Unmarshal(jsonInput, &editFileToolInput); err != nil {
-						return fmt.Errorf("failed to unmarshal edit file tool arguments: %w", err)
+					
+					// First try standard unmarshaling
+					unmarshalErr := json.Unmarshal(jsonInput, &editFileToolInput)
+					if unmarshalErr != nil {
+						// If that fails, try to autocorrect the JSON
+						s.logger.Printf("JSON parsing error for edit_file tool: %v. Attempting autocorrection.", unmarshalErr)
+						
+						// Convert to string for autocorrection
+						jsonStr := string(jsonInput)
+						correctedJSON, autocorrectErr := AutoCorrectJSON(jsonStr, &editFileToolInput)
+						if autocorrectErr != nil {
+							s.logger.Printf("JSON autocorrection failed: %v", autocorrectErr)
+							return fmt.Errorf("failed to unmarshal edit file tool arguments: %w", unmarshalErr)
+						}
+						
+						// Try again with the corrected JSON
+						if err := json.Unmarshal([]byte(correctedJSON), &editFileToolInput); err != nil {
+							return fmt.Errorf("failed to unmarshal edit file tool arguments even after correction: %w", err)
+						}
+						
+						s.logger.Printf("JSON autocorrection succeeded. Original: %s, Corrected: %s", jsonStr, correctedJSON)
 					}
+					
 					s.logger.Printf(
 						"executing edit file tool; path: %s\nold_str:\n%s\nnew_str:\n%s",
 						editFileToolInput.Path,
@@ -527,9 +587,29 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal delete file tool input: %w", marshalErr)
 					}
-					if err := json.Unmarshal(jsonInput, &deleteFileToolInput); err != nil {
-						return fmt.Errorf("failed to unmarshal delete file tool arguments: %w", err)
+					
+					// First try standard unmarshaling
+					unmarshalErr := json.Unmarshal(jsonInput, &deleteFileToolInput)
+					if unmarshalErr != nil {
+						// If that fails, try to autocorrect the JSON
+						s.logger.Printf("JSON parsing error for delete_file tool: %v. Attempting autocorrection.", unmarshalErr)
+						
+						// Convert to string for autocorrection
+						jsonStr := string(jsonInput)
+						correctedJSON, autocorrectErr := AutoCorrectJSON(jsonStr, &deleteFileToolInput)
+						if autocorrectErr != nil {
+							s.logger.Printf("JSON autocorrection failed: %v", autocorrectErr)
+							return fmt.Errorf("failed to unmarshal delete file tool arguments: %w", unmarshalErr)
+						}
+						
+						// Try again with the corrected JSON
+						if err := json.Unmarshal([]byte(correctedJSON), &deleteFileToolInput); err != nil {
+							return fmt.Errorf("failed to unmarshal delete file tool arguments even after correction: %w", err)
+						}
+						
+						s.logger.Printf("JSON autocorrection succeeded. Original: %s, Corrected: %s", jsonStr, correctedJSON)
 					}
+					
 					s.logger.Printf(
 						"executing delete file tool; path: %s",
 						deleteFileToolInput.Path,
@@ -544,9 +624,29 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal move file tool input: %w", marshalErr)
 					}
-					if err := json.Unmarshal(jsonInput, &moveFileToolInput); err != nil {
-						return fmt.Errorf("failed to unmarshal move file tool arguments: %w", err)
+					
+					// First try standard unmarshaling
+					unmarshalErr := json.Unmarshal(jsonInput, &moveFileToolInput)
+					if unmarshalErr != nil {
+						// If that fails, try to autocorrect the JSON
+						s.logger.Printf("JSON parsing error for move_file tool: %v. Attempting autocorrection.", unmarshalErr)
+						
+						// Convert to string for autocorrection
+						jsonStr := string(jsonInput)
+						correctedJSON, autocorrectErr := AutoCorrectJSON(jsonStr, &moveFileToolInput)
+						if autocorrectErr != nil {
+							s.logger.Printf("JSON autocorrection failed: %v", autocorrectErr)
+							return fmt.Errorf("failed to unmarshal move file tool arguments: %w", unmarshalErr)
+						}
+						
+						// Try again with the corrected JSON
+						if err := json.Unmarshal([]byte(correctedJSON), &moveFileToolInput); err != nil {
+							return fmt.Errorf("failed to unmarshal move file tool arguments even after correction: %w", err)
+						}
+						
+						s.logger.Printf("JSON autocorrection succeeded. Original: %s, Corrected: %s", jsonStr, correctedJSON)
 					}
+					
 					s.logger.Printf(
 						"executing move file tool; source_path: %s\ntarget_path: %s",
 						moveFileToolInput.SourcePath,
@@ -562,9 +662,29 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal view file tool input: %w", marshalErr)
 					}
-					if err := json.Unmarshal(jsonInput, &viewFileToolInput); err != nil {
-						return fmt.Errorf("failed to unmarshal view file tool arguments: %w", err)
+					
+					// First try standard unmarshaling
+					unmarshalErr := json.Unmarshal(jsonInput, &viewFileToolInput)
+					if unmarshalErr != nil {
+						// If that fails, try to autocorrect the JSON
+						s.logger.Printf("JSON parsing error for view_file tool: %v. Attempting autocorrection.", unmarshalErr)
+						
+						// Convert to string for autocorrection
+						jsonStr := string(jsonInput)
+						correctedJSON, autocorrectErr := AutoCorrectJSON(jsonStr, &viewFileToolInput)
+						if autocorrectErr != nil {
+							s.logger.Printf("JSON autocorrection failed: %v", autocorrectErr)
+							return fmt.Errorf("failed to unmarshal view file tool arguments: %w", unmarshalErr)
+						}
+						
+						// Try again with the corrected JSON
+						if err := json.Unmarshal([]byte(correctedJSON), &viewFileToolInput); err != nil {
+							return fmt.Errorf("failed to unmarshal view file tool arguments even after correction: %w", err)
+						}
+						
+						s.logger.Printf("JSON autocorrection succeeded. Original: %s, Corrected: %s", jsonStr, correctedJSON)
 					}
+					
 					s.logger.Printf(
 						"executing view file tool; path: %s",
 						viewFileToolInput.Path,
@@ -580,9 +700,29 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal create folder tool input: %w", marshalErr)
 					}
-					if err := json.Unmarshal(jsonInput, &createFolderToolInput); err != nil {
-						return fmt.Errorf("failed to unmarshal create folder tool arguments: %w", err)
+					
+					// First try standard unmarshaling
+					unmarshalErr := json.Unmarshal(jsonInput, &createFolderToolInput)
+					if unmarshalErr != nil {
+						// If that fails, try to autocorrect the JSON
+						s.logger.Printf("JSON parsing error for create_folder tool: %v. Attempting autocorrection.", unmarshalErr)
+						
+						// Convert to string for autocorrection
+						jsonStr := string(jsonInput)
+						correctedJSON, autocorrectErr := AutoCorrectJSON(jsonStr, &createFolderToolInput)
+						if autocorrectErr != nil {
+							s.logger.Printf("JSON autocorrection failed: %v", autocorrectErr)
+							return fmt.Errorf("failed to unmarshal create folder tool arguments: %w", unmarshalErr)
+						}
+						
+						// Try again with the corrected JSON
+						if err := json.Unmarshal([]byte(correctedJSON), &createFolderToolInput); err != nil {
+							return fmt.Errorf("failed to unmarshal create folder tool arguments even after correction: %w", err)
+						}
+						
+						s.logger.Printf("JSON autocorrection succeeded. Original: %s, Corrected: %s", jsonStr, correctedJSON)
 					}
+					
 					s.logger.Printf(
 						"executing create folder tool; path: %s",
 						createFolderToolInput.Path,
@@ -597,9 +737,29 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal delete folder tool input: %w", marshalErr)
 					}
-					if err := json.Unmarshal(jsonInput, &deleteFolderToolInput); err != nil {
-						return fmt.Errorf("failed to unmarshal delete folder tool arguments: %w", err)
+					
+					// First try standard unmarshaling
+					unmarshalErr := json.Unmarshal(jsonInput, &deleteFolderToolInput)
+					if unmarshalErr != nil {
+						// If that fails, try to autocorrect the JSON
+						s.logger.Printf("JSON parsing error for delete_folder tool: %v. Attempting autocorrection.", unmarshalErr)
+						
+						// Convert to string for autocorrection
+						jsonStr := string(jsonInput)
+						correctedJSON, autocorrectErr := AutoCorrectJSON(jsonStr, &deleteFolderToolInput)
+						if autocorrectErr != nil {
+							s.logger.Printf("JSON autocorrection failed: %v", autocorrectErr)
+							return fmt.Errorf("failed to unmarshal delete folder tool arguments: %w", unmarshalErr)
+						}
+						
+						// Try again with the corrected JSON
+						if err := json.Unmarshal([]byte(correctedJSON), &deleteFolderToolInput); err != nil {
+							return fmt.Errorf("failed to unmarshal delete folder tool arguments even after correction: %w", err)
+						}
+						
+						s.logger.Printf("JSON autocorrection succeeded. Original: %s, Corrected: %s", jsonStr, correctedJSON)
 					}
+					
 					s.logger.Printf(
 						"executing delete folder tool; path: %s, recursive: %v",
 						deleteFolderToolInput.Path,
@@ -615,9 +775,29 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal move folder tool input: %w", marshalErr)
 					}
-					if err := json.Unmarshal(jsonInput, &moveFolderToolInput); err != nil {
-						return fmt.Errorf("failed to unmarshal move folder tool arguments: %w", err)
+					
+					// First try standard unmarshaling
+					unmarshalErr := json.Unmarshal(jsonInput, &moveFolderToolInput)
+					if unmarshalErr != nil {
+						// If that fails, try to autocorrect the JSON
+						s.logger.Printf("JSON parsing error for move_folder tool: %v. Attempting autocorrection.", unmarshalErr)
+						
+						// Convert to string for autocorrection
+						jsonStr := string(jsonInput)
+						correctedJSON, autocorrectErr := AutoCorrectJSON(jsonStr, &moveFolderToolInput)
+						if autocorrectErr != nil {
+							s.logger.Printf("JSON autocorrection failed: %v", autocorrectErr)
+							return fmt.Errorf("failed to unmarshal move folder tool arguments: %w", unmarshalErr)
+						}
+						
+						// Try again with the corrected JSON
+						if err := json.Unmarshal([]byte(correctedJSON), &moveFolderToolInput); err != nil {
+							return fmt.Errorf("failed to unmarshal move folder tool arguments even after correction: %w", err)
+						}
+						
+						s.logger.Printf("JSON autocorrection succeeded. Original: %s, Corrected: %s", jsonStr, correctedJSON)
 					}
+					
 					s.logger.Printf(
 						"executing move folder tool; source_path: %s\ntarget_path: %s",
 						moveFolderToolInput.SourcePath,
@@ -638,9 +818,34 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal get related files tool input: %w", marshalErr)
 					}
-					if err := json.Unmarshal(jsonInput, &relatedFilesToolInput); err != nil {
-						return fmt.Errorf("failed to unmarshal get related files tool arguments: %w", err)
+					
+					// First try standard unmarshaling
+					unmarshalErr := json.Unmarshal(jsonInput, &relatedFilesToolInput)
+					if unmarshalErr != nil {
+						// If that fails, try to autocorrect the JSON
+						s.logger.Printf("JSON parsing error for get_related_files: %v. Attempting autocorrection.", unmarshalErr)
+						
+						// Convert to string for autocorrection
+						jsonStr := string(jsonInput)
+						correctedJSON, autocorrectErr := AutoCorrectJSON(jsonStr, &relatedFilesToolInput)
+						if autocorrectErr != nil {
+							s.logger.Printf("JSON autocorrection failed: %v", autocorrectErr)
+							return fmt.Errorf("failed to unmarshal get related files tool arguments: %w", unmarshalErr)
+						}
+						
+						// Try again with the corrected JSON
+						if err := json.Unmarshal([]byte(correctedJSON), &relatedFilesToolInput); err != nil {
+							return fmt.Errorf("failed to unmarshal get related files tool arguments even after correction: %w", err)
+						}
+						
+						s.logger.Printf("JSON autocorrection succeeded. Original: %s, Corrected: %s", jsonStr, correctedJSON)
 					}
+					
+					// Validate that we have some input files
+					if len(relatedFilesToolInput.InputFiles) == 0 {
+						return fmt.Errorf("get_related_files requires at least one input file")
+					}
+					
 					s.logger.Printf("getting related files: %s", strings.Join(relatedFilesToolInput.InputFiles, ", "))
 					result, err = ExecuteGetRelatedFilesTool(relatedFilesToolInput.InputFiles, s.ignorer)
 				case changeDirectoryTool.Name:
@@ -651,9 +856,29 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal change directory tool input: %w", marshalErr)
 					}
-					if err := json.Unmarshal(jsonInput, &changeDirToolInput); err != nil {
-						return fmt.Errorf("failed to unmarshal change directory tool arguments: %w", err)
+					
+					// First try standard unmarshaling
+					unmarshalErr := json.Unmarshal(jsonInput, &changeDirToolInput)
+					if unmarshalErr != nil {
+						// If that fails, try to autocorrect the JSON
+						s.logger.Printf("JSON parsing error for change_directory tool: %v. Attempting autocorrection.", unmarshalErr)
+						
+						// Convert to string for autocorrection
+						jsonStr := string(jsonInput)
+						correctedJSON, autocorrectErr := AutoCorrectJSON(jsonStr, &changeDirToolInput)
+						if autocorrectErr != nil {
+							s.logger.Printf("JSON autocorrection failed: %v", autocorrectErr)
+							return fmt.Errorf("failed to unmarshal change directory tool arguments: %w", unmarshalErr)
+						}
+						
+						// Try again with the corrected JSON
+						if err := json.Unmarshal([]byte(correctedJSON), &changeDirToolInput); err != nil {
+							return fmt.Errorf("failed to unmarshal change directory tool arguments even after correction: %w", err)
+						}
+						
+						s.logger.Printf("JSON autocorrection succeeded. Original: %s, Corrected: %s", jsonStr, correctedJSON)
 					}
+					
 					s.logger.Printf("changing directory to: %s", changeDirToolInput.Path)
 					result, err = executeChangeDirectoryTool(changeDirToolInput.Path)
 					if err == nil {

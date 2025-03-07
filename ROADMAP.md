@@ -44,7 +44,7 @@ This document outlines the planned features, improvements, and notes for the CPE
 
 ### Tooling
 - [x] Add support for bash execution tool
-- [ ] Add autocorrection if input JSON from model does not match schema (this is mostly valid for Claude and opensource
+- [x] Add autocorrection if input JSON from model does not match schema (this is mostly valid for Claude and opensource
   models, we want to enforce schema adherence with structured outputs in openai and gemini)
 
 ### LLM Integration
