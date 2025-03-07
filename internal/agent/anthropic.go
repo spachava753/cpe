@@ -66,6 +66,15 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 	}
 	client := a.NewClient(opts...)
 
+	// Get system info
+	sysInfo, err := GetSystemInfo()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get system info: %w", err)
+	}
+
+	// Format prompt with system info
+	prompt := fmt.Sprintf(agentInstructions, sysInfo)
+
 	// Set initial parameters
 	params := &a.BetaMessageNewParams{
 		Model:       a.F(config.Model),
@@ -73,7 +82,7 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 		Temperature: a.F(float64(config.Temperature)),
 		System: a.F([]a.BetaTextBlockParam{
 			{
-				Text: a.String(agentInstructions),
+				Text: a.String(prompt),
 				Type: a.F(a.BetaTextBlockParamTypeText),
 				CacheControl: a.F(a.BetaCacheControlEphemeralParam{
 					Type: a.F(a.BetaCacheControlEphemeralTypeEphemeral),

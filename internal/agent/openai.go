@@ -77,7 +77,7 @@ type openaiExecutor struct {
 	params  *oai.ChatCompletionNewParams
 }
 
-func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gitignore.GitIgnore, config GenConfig) Executor {
+func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gitignore.GitIgnore, config GenConfig) (Executor, error) {
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithMaxRetries(5),
@@ -220,16 +220,25 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 		params.Stop = oai.F[oai.ChatCompletionNewParamsStopUnion](oai.ChatCompletionNewParamsStopArray(config.Stop))
 	}
 
+	// Get system info
+	sysInfo, err := GetSystemInfo()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get system info: %w", err)
+	}
+
+	// Format prompt with system info
+	prompt := fmt.Sprintf(agentInstructions, sysInfo)
+
 	// Add system/developer prompt based on model
 	var messages []oai.ChatCompletionMessageParamUnion
 	switch config.Model {
 	case oai.ChatModelO1_2024_12_17, oai.ChatModelO3Mini:
 		messages = append(messages, oai.ChatCompletionMessageParam{
 			Role:    oai.F(oai.ChatCompletionMessageParamRoleDeveloper),
-			Content: oai.F[interface{}](agentInstructions),
+			Content: oai.F[interface{}](prompt),
 		})
 	default:
-		messages = append(messages, oai.SystemMessage(agentInstructions))
+		messages = append(messages, oai.SystemMessage(prompt))
 	}
 	params.Messages = oai.F(messages)
 
@@ -239,7 +248,7 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 		ignorer: ignorer,
 		config:  config,
 		params:  params,
-	}
+	}, nil
 }
 
 func (o *openaiExecutor) Execute(inputs []Input) error {

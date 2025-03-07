@@ -69,7 +69,10 @@ func createExecutor(logger Logger, ignorer *gitignore.GitIgnore, customURL strin
 		if apiKey == "" {
 			return nil, fmt.Errorf("OPENAI_API_KEY environment variable not set")
 		}
-		executor = NewOpenAIExecutor(customURL, apiKey, logger, ignorer, genConfig)
+		executor, err = NewOpenAIExecutor(customURL, apiKey, logger, ignorer, genConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create openai executor: %w", err)
+		}
 	}
 
 	return executor, nil

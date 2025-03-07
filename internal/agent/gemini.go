@@ -286,9 +286,18 @@ func NewGeminiExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 		},
 	}
 
+	// Get system info
+	sysInfo, err := GetSystemInfo()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get system info: %w", err)
+	}
+
+	// Format prompt with system info
+	prompt := fmt.Sprintf(agentInstructions, sysInfo)
+
 	// Set system prompt
 	model.SystemInstruction = &genai.Content{
-		Parts: []genai.Part{genai.Text(agentInstructions)},
+		Parts: []genai.Part{genai.Text(prompt)},
 	}
 
 	return &geminiExecutor{
