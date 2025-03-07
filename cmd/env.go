@@ -65,8 +65,6 @@ func printEnvironmentVariables() {
 	// Custom API Endpoints
 	fmt.Println("\nCustom API Endpoints:")
 	printVar("CPE_CUSTOM_URL", "Default custom URL for API endpoints", false)
-	printVar("CPE_CUSTOM_API_KEY", "API key for custom/unknown models (when using custom URLs)", true)
-	printVar("CPE_DISABLE_TOOL_USE", "When set, disables tool use for custom models (those with custom URLs not in the predefined list)", false)
 
 	// Print model-specific URL environment variables
 	fmt.Println("\nModel-Specific API Endpoints:")

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"runtime/debug"
@@ -174,23 +175,10 @@ func executeRootCommand(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	// Get the model alias (the key in ModelConfigs) from the model name if possible
-	// This ensures we can properly look up the model-specific environment variables
-	modelAlias := model
-	if modelConfig.IsKnown {
-		// Find the alias for this model
-		for alias, config := range agent.ModelConfigs {
-			if config.Name == modelConfig.Name {
-				modelAlias = alias
-				break
-			}
-		}
-	}
-
 	// Initialize the executor
 	executor, err := agent.InitExecutor(log.Default(), agent.ModelOptions{
 		Model:             model,
-		CustomURL:         getCustomURL(customURL, modelAlias),
+		CustomURL:         customURL,
 		MaxTokens:         maxTokens,
 		Temperature:       temperature,
 		TopP:              topP,
@@ -222,30 +210,6 @@ func executeRootCommand(cmd *cobra.Command, args []string) {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-}
-
-// getCustomURL returns the custom URL to use based on the following precedence:
-// 1. Command-line flag (-custom-url)
-// 2. Model-specific environment variable (CPE_MODEL_NAME_URL)
-// 3. General custom URL environment variable (CPE_CUSTOM_URL)
-func getCustomURL(flagURL string, modelName string) string {
-	// Start with the flag value
-	urlVal := flagURL
-
-	// Check model-specific env var if we have a model name
-	if modelName != "" {
-		envVarName := fmt.Sprintf("CPE_%s_URL", strings.ToUpper(strings.ReplaceAll(modelName, "-", "_")))
-		if modelEnvURL := os.Getenv(envVarName); urlVal == "" && modelEnvURL != "" {
-			urlVal = modelEnvURL
-		}
-	}
-
-	// Finally, check the general custom URL env var
-	if envURL := os.Getenv("CPE_CUSTOM_URL"); urlVal == "" && envURL != "" {
-		urlVal = envURL
-	}
-
-	return urlVal
 }
 
 // readInput reads input from stdin, files, or arguments

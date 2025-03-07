@@ -5,13 +5,15 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"io"
+	"os"
+	"strings"
+
 	a "github.com/anthropics/anthropic-sdk-go"
 	gitignore "github.com/sabhiram/go-gitignore"
 	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/db"
 	"github.com/spachava753/cpe/internal/ignore"
-	"io"
-	"os"
 )
 
 //go:embed agent_instructions.txt
@@ -101,6 +103,29 @@ func createExecutor(logger Logger, ignorer *gitignore.GitIgnore, customURL strin
 	return executor, nil
 }
 
+// getCustomURL returns the custom URL to use based on the following precedence:
+// 1. Command-line flag (-custom-url)
+// 2. Model-specific environment variable (CPE_MODEL_NAME_URL)
+// 3. General custom URL environment variable (CPE_CUSTOM_URL)
+func getCustomURL(flagURL string, modelName string) string {
+	// Start with the flag value
+	customURL := flagURL
+
+	// Check model-specific env var if we have a model name
+	if modelName != "" {
+		envVarName := fmt.Sprintf("CPE_%s_URL", strings.ToUpper(strings.ReplaceAll(modelName, "-", "_")))
+		if modelEnvURL := os.Getenv(envVarName); customURL == "" && modelEnvURL != "" {
+			customURL = modelEnvURL
+		}
+	}
+
+	// Finally, check the general custom URL env var
+	if envURL := os.Getenv("CPE_CUSTOM_URL"); customURL == "" && envURL != "" {
+		customURL = envURL
+	}
+
+	return customURL
+}
 // GetModelFromFlagsOrDefault returns the model to use based on flags, environment variable, or default
 func GetModelFromFlagsOrDefault(flags ModelOptions) string {
 	if flags.Model != "" {

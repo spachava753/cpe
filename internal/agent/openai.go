@@ -32,7 +32,8 @@ func init() {
 	gob.Register(oai.ChatCompletionUserMessageParam{})
 	gob.Register(oai.ChatCompletionToolMessageParam{})
 	gob.Register(oai.ChatCompletionContentPartTextParam{})
-	gob.Register(oai.ChatCompletionContentPartImageParam{}) // Add this line
+	gob.Register(oai.ChatCompletionContentPartImageParam{})
+	gob.Register(oai.ChatCompletionNewParamsResponseFormat{})
 	gob.Register([]oai.ChatCompletionMessageParamUnion{})
 	gob.Register([]oai.ChatCompletionMessageToolCallParam{})
 	gob.Register([]oai.ChatCompletionContentPartUnionParam{})
@@ -108,6 +109,9 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 		Model:               oai.F(config.Model),
 		MaxCompletionTokens: oai.Int(int64(config.MaxTokens)),
 		Temperature:         oai.Float(float64(config.Temperature)),
+		ResponseFormat: oai.F[oai.ChatCompletionNewParamsResponseFormatUnion](oai.ChatCompletionNewParamsResponseFormat{
+			Type: oai.F(oai.ChatCompletionNewParamsResponseFormatTypeJSONObject),
+		}),
 	}
 
 	// Only add tools if disableToolUse is false
@@ -214,7 +218,7 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 					Parameters:  oai.F(oai.FunctionParameters(moveFolderTool.InputSchema)),
 				}),
 			},
-		})
+		}),
 	}
 
 	// Set reasoning effort based on thinking budget
@@ -249,12 +253,16 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 	var messages []oai.ChatCompletionMessageParamUnion
 	switch config.Model {
 	case oai.ChatModelO1_2024_12_17, oai.ChatModelO3Mini:
+		// For models that support developer role, add structured output instructions
+		instructions := prompt + "\n\nIMPORTANT: You are configured to use JSON mode. Always ensure your responses are valid JSON."
 		messages = append(messages, oai.ChatCompletionMessageParam{
 			Role:    oai.F(oai.ChatCompletionMessageParamRoleDeveloper),
-			Content: oai.F[interface{}](prompt),
+			Content: oai.F[interface{}](instructions),
 		})
 	default:
-		messages = append(messages, oai.SystemMessage(prompt))
+		// For other models, use standard system prompt with structured output instructions
+		instructions := prompt + "\n\nIMPORTANT: You are configured to use JSON mode. Always ensure your responses are valid JSON."
+		messages = append(messages, oai.SystemMessage(instructions))
 	}
 	params.Messages = oai.F(messages)
 

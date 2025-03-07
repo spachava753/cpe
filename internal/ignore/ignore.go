@@ -9,13 +9,7 @@ import (
 )
 
 var DefaultPatterns = []string{
-	// Always ignore the .git folder
 	".git/**",
-	// Always ignore the conversation database
-	".cpeconvo",
-	".cpeconvo-*",
-	// Always ignore the ignore file itself
-	".cpeignore",
 }
 
 func LoadIgnoreFiles(startDir string) (*gitignore.GitIgnore, error) {

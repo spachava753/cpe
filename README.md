@@ -22,9 +22,6 @@ go install github.com/spachava753/cpe@latest
    
    # For Gemini models
    export GEMINI_API_KEY=your_api_key_here
-   
-   # For custom model endpoints (optional)
-   export CPE_CUSTOM_API_KEY=your_custom_api_key_here
    ```
 
 2. Run your first command:
@@ -181,16 +178,14 @@ cpe conversation delete abcd1234
 **Custom API Endpoints**:
 
 ```bash
-# Using a custom API endpoint with an unknown model (requires CPE_CUSTOM_API_KEY)
-export CPE_CUSTOM_API_KEY=your_custom_api_key_here
-cpe -m unknown-model --custom-url https://your-custom-endpoint.com/v1 "Your prompt here"
+# Using a custom API endpoint or proxy
+cpe --custom-url https://your-custom-endpoint.com/v1 "Your prompt here"
 
-# Using OpenRouter for accessing unknown models
+# Using OpenRouter for model access
 export CPE_CUSTOM_URL=https://openrouter.ai/api/v1
-export CPE_CUSTOM_API_KEY=your_openrouter_api_key_here
-cpe -m mistral-large "Create a logging library in Go"
+cpe "Create a logging library in Go"
 
-# Using Cloudflare AI Gateway for tracing and observability (uses ANTHROPIC_API_KEY)
+# Using Cloudflare AI Gateway for tracing and observability
 export CPE_CLAUDE_3_7_SONNET_URL=https://gateway.ai.cloudflare.com/v1/your-account/your-gateway/anthropic
 cpe "Write a sorting algorithm implementation"
 ```
@@ -239,9 +234,7 @@ cpe -m llama3 "How can I create a web server in Go?"
 - `GEMINI_API_KEY`: API key for Gemini models
 - `CPE_MODEL`: Default model to use
 - `CPE_CUSTOM_URL`: Custom base URL for model APIs
-- `CPE_CUSTOM_API_KEY`: API key to use with custom model endpoints
 - `CPE_[MODEL_NAME]_URL`: Model-specific custom URL (e.g., `CPE_CLAUDE_3_5_SONNET_URL`)
-- `CPE_DISABLE_TOOL_USE`: When set, disables tool use for custom models (used when working with models that don't support tool use)
 
 ### Ignore Files
 
