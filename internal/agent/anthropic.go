@@ -47,6 +47,18 @@ type anthropicExecutor struct {
 }
 
 func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gitignore.GitIgnore, config GenConfig) (Executor, error) {
+	// Check if tool use should be disabled for custom models
+	disableToolUse := false
+	if os.Getenv("CPE_DISABLE_TOOL_USE") != "" {
+		// Get the model config to check if it's a custom model
+		modelConfig, exists := ModelConfigs[config.Model]
+		if !exists || !modelConfig.IsKnown {
+			// It's a custom model, so disable tool use
+			disableToolUse = true
+			logger.Println("CPE_DISABLE_TOOL_USE is set, disabling tool use for custom model:", config.Model)
+		}
+	}
+
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithMaxRetries(5),
@@ -89,7 +101,11 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 				}),
 			},
 		}),
-		Tools: a.F([]a.BetaToolUnionUnionParam{
+	}
+
+	// Only add tools if disableToolUse is false
+	if !disableToolUse {
+		params.Tools = a.F([]a.BetaToolUnionUnionParam{
 			// Basic tools
 			&a.BetaToolParam{
 				Name:        a.String(bashTool.Name),
@@ -193,7 +209,7 @@ func NewAnthropicExecutor(baseUrl string, apiKey string, logger Logger, ignorer 
 					Properties: a.F[any](moveFolderTool.InputSchema["properties"]),
 				}),
 			},
-		}),
+		})
 	}
 
 	// Add extended thinking configuration if thinking budget is provided and this is Claude 3.7
