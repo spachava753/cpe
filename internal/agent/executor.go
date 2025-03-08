@@ -42,30 +42,46 @@ func createExecutor(logger Logger, ignorer *gitignore.GitIgnore, customURL strin
 	var executor Executor
 	var err error
 
+	// If a custom URL is specified, try to use CPE_CUSTOM_API_KEY first
+	var apiKey string
+	if customURL != "" {
+		apiKey = os.Getenv("CPE_CUSTOM_API_KEY")
+	}
+
+	// If no custom API key is set or no custom URL is specified, use the provider-specific key
+	if apiKey == "" {
+		switch genConfig.Model {
+		case a.ModelClaude3_5Sonnet20241022, a.ModelClaude3_5Haiku20241022, a.ModelClaude_3_Haiku_20240307, a.ModelClaude_3_Opus_20240229, a.ModelClaude3_7Sonnet20250219:
+			apiKey = os.Getenv("ANTHROPIC_API_KEY")
+			if apiKey == "" {
+				return nil, fmt.Errorf("ANTHROPIC_API_KEY environment variable not set")
+			}
+		case "gemini-1.5-pro-002", "gemini-1.5-flash-002", "gemini-2.0-flash-exp", "gemini-2.0-flash", "gemini-2.0-flash-lite-preview-02-05", "gemini-2.0-pro-exp-02-05":
+			apiKey = os.Getenv("GEMINI_API_KEY")
+			if apiKey == "" {
+				return nil, fmt.Errorf("GEMINI_API_KEY environment variable not set")
+			}
+		default:
+			apiKey = os.Getenv("OPENAI_API_KEY")
+			if apiKey == "" {
+				return nil, fmt.Errorf("OPENAI_API_KEY environment variable not set")
+			}
+		}
+	}
+
+	// Create the appropriate executor based on the model
 	switch genConfig.Model {
 	case a.ModelClaude3_5Sonnet20241022, a.ModelClaude3_5Haiku20241022, a.ModelClaude_3_Haiku_20240307, a.ModelClaude_3_Opus_20240229, a.ModelClaude3_7Sonnet20250219:
-		apiKey := os.Getenv("ANTHROPIC_API_KEY")
-		if apiKey == "" {
-			return nil, fmt.Errorf("ANTHROPIC_API_KEY environment variable not set")
-		}
 		executor, err = NewAnthropicExecutor(customURL, apiKey, logger, ignorer, genConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create anthropic executor: %w", err)
 		}
 	case "gemini-1.5-pro-002", "gemini-1.5-flash-002", "gemini-2.0-flash-exp", "gemini-2.0-flash", "gemini-2.0-flash-lite-preview-02-05", "gemini-2.0-pro-exp-02-05":
-		apiKey := os.Getenv("GEMINI_API_KEY")
-		if apiKey == "" {
-			return nil, fmt.Errorf("GEMINI_API_KEY environment variable not set")
-		}
 		executor, err = NewGeminiExecutor(customURL, apiKey, logger, ignorer, genConfig)
 		if err != nil {
 			return nil, err
 		}
 	default:
-		apiKey := os.Getenv("OPENAI_API_KEY")
-		if apiKey == "" {
-			return nil, fmt.Errorf("OPENAI_API_KEY environment variable not set")
-		}
 		executor, err = NewOpenAIExecutor(customURL, apiKey, logger, ignorer, genConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create openai executor: %w", err)
