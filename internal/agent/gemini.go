@@ -64,18 +64,6 @@ func (g *geminiExecutor) truncateResult(result string) (string, error) {
 }
 
 func NewGeminiExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gitignore.GitIgnore, config GenConfig) (Executor, error) {
-	// Check if tool use should be disabled for custom models
-	disableToolUse := false
-	if os.Getenv("CPE_DISABLE_TOOL_USE") != "" {
-		// Get the model config to check if it's a custom model
-		modelConfig, exists := ModelConfigs[config.Model]
-		if !exists || !modelConfig.IsKnown {
-			// It's a custom model, so disable tool use
-			disableToolUse = true
-			logger.Println("CPE_DISABLE_TOOL_USE is set, disabling tool use for custom model:", config.Model)
-		}
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -100,204 +88,202 @@ func NewGeminiExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 		model.SetTopP(*config.TopP)
 	}
 
-	// Set up tools only if disableToolUse is false
-	if !disableToolUse {
-		model.Tools = []*genai.Tool{
-			{
-				FunctionDeclarations: []*genai.FunctionDeclaration{
-					// Basic tools
-					{
-						Name:        bashTool.Name,
-						Description: bashTool.Description,
-						Parameters: &genai.Schema{
-							Type: genai.TypeObject,
-							Properties: map[string]*genai.Schema{
-								"command": {
-									Type:        genai.TypeString,
-									Description: "The bash command to run.",
+	// Set up tools
+	model.Tools = []*genai.Tool{
+		{
+			FunctionDeclarations: []*genai.FunctionDeclaration{
+				// Basic tools
+				{
+					Name:        bashTool.Name,
+					Description: bashTool.Description,
+					Parameters: &genai.Schema{
+						Type: genai.TypeObject,
+						Properties: map[string]*genai.Schema{
+							"command": {
+								Type:        genai.TypeString,
+								Description: "The bash command to run.",
+							},
+						},
+						Required: []string{"command"},
+					},
+				},
+				// Overview and analysis tools
+				{
+					Name:        filesOverviewTool.Name,
+					Description: filesOverviewTool.Description,
+				},
+				{
+					Name:        getRelatedFilesTool.Name,
+					Description: getRelatedFilesTool.Description,
+					Parameters: &genai.Schema{
+						Type: genai.TypeObject,
+						Properties: map[string]*genai.Schema{
+							"input_files": {
+								Type:        genai.TypeArray,
+								Description: `An array of input files to retrieve related files, e.g. source code files that have symbol definitions in another file or other files that mention the file's name.'`,
+								Items: &genai.Schema{
+									Type: genai.TypeString,
 								},
 							},
-							Required: []string{"command"},
 						},
+						Required: []string{"input_files"},
 					},
-					// Overview and analysis tools
-					{
-						Name:        filesOverviewTool.Name,
-						Description: filesOverviewTool.Description,
-					},
-					{
-						Name:        getRelatedFilesTool.Name,
-						Description: getRelatedFilesTool.Description,
-						Parameters: &genai.Schema{
-							Type: genai.TypeObject,
-							Properties: map[string]*genai.Schema{
-								"input_files": {
-									Type:        genai.TypeArray,
-									Description: `An array of input files to retrieve related files, e.g. source code files that have symbol definitions in another file or other files that mention the file's name.'`,
-									Items: &genai.Schema{
-										Type: genai.TypeString,
-									},
-								},
+				},
+				// Navigation tool
+				{
+					Name:        changeDirectoryTool.Name,
+					Description: changeDirectoryTool.Description,
+					Parameters: &genai.Schema{
+						Type: genai.TypeObject,
+						Properties: map[string]*genai.Schema{
+							"path": {
+								Type:        genai.TypeString,
+								Description: "The path to change to, can be relative or absolute",
 							},
-							Required: []string{"input_files"},
 						},
+						Required: []string{"path"},
 					},
-					// Navigation tool
-					{
-						Name:        changeDirectoryTool.Name,
-						Description: changeDirectoryTool.Description,
-						Parameters: &genai.Schema{
-							Type: genai.TypeObject,
-							Properties: map[string]*genai.Schema{
-								"path": {
-									Type:        genai.TypeString,
-									Description: "The path to change to, can be relative or absolute",
-								},
+				},
+				// File operation tools
+				{
+					Name:        createFileTool.Name,
+					Description: createFileTool.Description,
+					Parameters: &genai.Schema{
+						Type: genai.TypeObject,
+						Properties: map[string]*genai.Schema{
+							"path": {
+								Type:        genai.TypeString,
+								Description: "Relative path where the file should be created",
 							},
-							Required: []string{"path"},
+							"file_text": {
+								Type:        genai.TypeString,
+								Description: "Content to write to the new file",
+							},
 						},
+						Required: []string{"path", "file_text"},
 					},
-					// File operation tools
-					{
-						Name:        createFileTool.Name,
-						Description: createFileTool.Description,
-						Parameters: &genai.Schema{
-							Type: genai.TypeObject,
-							Properties: map[string]*genai.Schema{
-								"path": {
-									Type:        genai.TypeString,
-									Description: "Relative path where the file should be created",
-								},
-								"file_text": {
-									Type:        genai.TypeString,
-									Description: "Content to write to the new file",
-								},
+				},
+				{
+					Name:        deleteFileTool.Name,
+					Description: deleteFileTool.Description,
+					Parameters: &genai.Schema{
+						Type: genai.TypeObject,
+						Properties: map[string]*genai.Schema{
+							"path": {
+								Type:        genai.TypeString,
+								Description: "Relative path to the file to delete",
 							},
-							Required: []string{"path", "file_text"},
 						},
+						Required: []string{"path"},
 					},
-					{
-						Name:        deleteFileTool.Name,
-						Description: deleteFileTool.Description,
-						Parameters: &genai.Schema{
-							Type: genai.TypeObject,
-							Properties: map[string]*genai.Schema{
-								"path": {
-									Type:        genai.TypeString,
-									Description: "Relative path to the file to delete",
-								},
+				},
+				{
+					Name:        editFileTool.Name,
+					Description: editFileTool.Description,
+					Parameters: &genai.Schema{
+						Type: genai.TypeObject,
+						Properties: map[string]*genai.Schema{
+							"path": {
+								Type:        genai.TypeString,
+								Description: "Relative path to the file to edit",
 							},
-							Required: []string{"path"},
+							"old_str": {
+								Type:        genai.TypeString,
+								Description: "The exact text segment to replace (must be unique in the file)",
+							},
+							"new_str": {
+								Type:        genai.TypeString,
+								Description: "The new text to replace the old text with",
+							},
 						},
+						Required: []string{"path", "old_str", "new_str"},
 					},
-					{
-						Name:        editFileTool.Name,
-						Description: editFileTool.Description,
-						Parameters: &genai.Schema{
-							Type: genai.TypeObject,
-							Properties: map[string]*genai.Schema{
-								"path": {
-									Type:        genai.TypeString,
-									Description: "Relative path to the file to edit",
-								},
-								"old_str": {
-									Type:        genai.TypeString,
-									Description: "The exact text segment to replace (must be unique in the file)",
-								},
-								"new_str": {
-									Type:        genai.TypeString,
-									Description: "The new text to replace the old text with",
-								},
+				},
+				{
+					Name:        moveFileTool.Name,
+					Description: moveFileTool.Description,
+					Parameters: &genai.Schema{
+						Type: genai.TypeObject,
+						Properties: map[string]*genai.Schema{
+							"source_path": {
+								Type:        genai.TypeString,
+								Description: "Relative path to the file to move/rename",
 							},
-							Required: []string{"path", "old_str", "new_str"},
+							"target_path": {
+								Type:        genai.TypeString,
+								Description: "Relative path where the file should be moved/renamed to",
+							},
 						},
+						Required: []string{"source_path", "target_path"},
 					},
-					{
-						Name:        moveFileTool.Name,
-						Description: moveFileTool.Description,
-						Parameters: &genai.Schema{
-							Type: genai.TypeObject,
-							Properties: map[string]*genai.Schema{
-								"source_path": {
-									Type:        genai.TypeString,
-									Description: "Relative path to the file to move/rename",
-								},
-								"target_path": {
-									Type:        genai.TypeString,
-									Description: "Relative path where the file should be moved/renamed to",
-								},
+				},
+				{
+					Name:        viewFileTool.Name,
+					Description: viewFileTool.Description,
+					Parameters: &genai.Schema{
+						Type: genai.TypeObject,
+						Properties: map[string]*genai.Schema{
+							"path": {
+								Type:        genai.TypeString,
+								Description: "Relative path to the file to view",
 							},
-							Required: []string{"source_path", "target_path"},
 						},
+						Required: []string{"path"},
 					},
-					{
-						Name:        viewFileTool.Name,
-						Description: viewFileTool.Description,
-						Parameters: &genai.Schema{
-							Type: genai.TypeObject,
-							Properties: map[string]*genai.Schema{
-								"path": {
-									Type:        genai.TypeString,
-									Description: "Relative path to the file to view",
-								},
+				},
+				// Folder operation tools
+				{
+					Name:        createFolderTool.Name,
+					Description: createFolderTool.Description,
+					Parameters: &genai.Schema{
+						Type: genai.TypeObject,
+						Properties: map[string]*genai.Schema{
+							"path": {
+								Type:        genai.TypeString,
+								Description: "Relative path where the folder should be created",
 							},
-							Required: []string{"path"},
 						},
+						Required: []string{"path"},
 					},
-					// Folder operation tools
-					{
-						Name:        createFolderTool.Name,
-						Description: createFolderTool.Description,
-						Parameters: &genai.Schema{
-							Type: genai.TypeObject,
-							Properties: map[string]*genai.Schema{
-								"path": {
-									Type:        genai.TypeString,
-									Description: "Relative path where the folder should be created",
-								},
+				},
+				{
+					Name:        deleteFolderTool.Name,
+					Description: deleteFolderTool.Description,
+					Parameters: &genai.Schema{
+						Type: genai.TypeObject,
+						Properties: map[string]*genai.Schema{
+							"path": {
+								Type:        genai.TypeString,
+								Description: "Relative path to the folder to delete",
 							},
-							Required: []string{"path"},
+							"recursive": {
+								Type:        genai.TypeBoolean,
+								Description: "Whether to delete non-empty folders (true) or error on non-empty folders (false)",
+							},
 						},
+						Required: []string{"path"},
 					},
-					{
-						Name:        deleteFolderTool.Name,
-						Description: deleteFolderTool.Description,
-						Parameters: &genai.Schema{
-							Type: genai.TypeObject,
-							Properties: map[string]*genai.Schema{
-								"path": {
-									Type:        genai.TypeString,
-									Description: "Relative path to the folder to delete",
-								},
-								"recursive": {
-									Type:        genai.TypeBoolean,
-									Description: "Whether to delete non-empty folders (true) or error on non-empty folders (false)",
-								},
+				},
+				{
+					Name:        moveFolderTool.Name,
+					Description: moveFolderTool.Description,
+					Parameters: &genai.Schema{
+						Type: genai.TypeObject,
+						Properties: map[string]*genai.Schema{
+							"source_path": {
+								Type:        genai.TypeString,
+								Description: "Relative path to the folder to move/rename",
 							},
-							Required: []string{"path"},
-						},
-					},
-					{
-						Name:        moveFolderTool.Name,
-						Description: moveFolderTool.Description,
-						Parameters: &genai.Schema{
-							Type: genai.TypeObject,
-							Properties: map[string]*genai.Schema{
-								"source_path": {
-									Type:        genai.TypeString,
-									Description: "Relative path to the folder to move/rename",
-								},
-								"target_path": {
-									Type:        genai.TypeString,
-									Description: "Relative path where the folder should be moved/renamed to",
-								},
+							"target_path": {
+								Type:        genai.TypeString,
+								Description: "Relative path where the folder should be moved/renamed to",
 							},
-							Required: []string{"source_path", "target_path"},
 						},
+						Required: []string{"source_path", "target_path"},
 					},
 				},
 			},
-		}
+		},
 	}
 
 	// Get system info
