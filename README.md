@@ -181,21 +181,17 @@ cpe conversation delete abcd1234
 **Custom API Endpoints**:
 
 ```bash
-# Using a custom API endpoint or proxy with default provider API key
-cpe --custom-url https://your-custom-endpoint.com/v1 "Your prompt here"
-
-# Using a custom API endpoint with a separate API key
+# Using a custom API endpoint with an unknown model (requires CPE_CUSTOM_API_KEY)
 export CPE_CUSTOM_API_KEY=your_custom_api_key_here
-cpe --custom-url https://your-custom-endpoint.com/v1 "Your prompt here"
+cpe -m unknown-model --custom-url https://your-custom-endpoint.com/v1 "Your prompt here"
 
-# Using OpenRouter for model access
+# Using OpenRouter for accessing unknown models
 export CPE_CUSTOM_URL=https://openrouter.ai/api/v1
 export CPE_CUSTOM_API_KEY=your_openrouter_api_key_here
-cpe "Create a logging library in Go"
+cpe -m mistral-large "Create a logging library in Go"
 
-# Using Cloudflare AI Gateway for tracing and observability
+# Using Cloudflare AI Gateway for tracing and observability (uses ANTHROPIC_API_KEY)
 export CPE_CLAUDE_3_7_SONNET_URL=https://gateway.ai.cloudflare.com/v1/your-account/your-gateway/anthropic
-export CPE_CUSTOM_API_KEY=your_cloudflare_api_key_here
 cpe "Write a sorting algorithm implementation"
 ```
 
