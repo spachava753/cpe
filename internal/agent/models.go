@@ -212,7 +212,7 @@ func GetConfig(flags ModelOptions) (GenConfig, error) {
 	if !ok {
 		// Handle unknown model
 		if flags.CustomURL == "" {
-			return GenConfig{}, fmt.Errorf("unknown model '%s' requires -custom-url flag or CPE_CUSTOM_URL environment variable", flags.Model)
+			return GenConfig{}, fmt.Errorf("unknown model '%s' requires --custom-url flag or CPE_CUSTOM_URL environment variable", flags.Model)
 		}
 		config = ModelConfig{Name: flags.Model, IsKnown: false}
 	}
