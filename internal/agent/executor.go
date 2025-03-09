@@ -41,15 +41,25 @@ type Logger interface {
 func createExecutor(logger Logger, ignorer *gitignore.GitIgnore, customURL string, genConfig GenConfig) (Executor, error) {
 	var executor Executor
 	var err error
-
-	// If a custom URL is specified, try to use CPE_CUSTOM_API_KEY first
 	var apiKey string
-	if customURL != "" {
-		apiKey = os.Getenv("CPE_CUSTOM_API_KEY")
+	
+	// Check if this is a known model
+	isKnownModel := false
+	for _, config := range ModelConfigs {
+		if config.Name == genConfig.Model && config.IsKnown {
+			isKnownModel = true
+			break
+		}
 	}
-
-	// If no custom API key is set or no custom URL is specified, use the provider-specific key
-	if apiKey == "" {
+	
+	// If this is a custom model (not a known model), use CPE_CUSTOM_API_KEY
+	if !isKnownModel {
+		apiKey = os.Getenv("CPE_CUSTOM_API_KEY")
+		if apiKey == "" {
+			return nil, fmt.Errorf("CPE_CUSTOM_API_KEY environment variable is required for custom model '%s'", genConfig.Model)
+		}
+	} else {
+		// This is a known model, use the provider-specific key
 		switch genConfig.Model {
 		case a.ModelClaude3_5Sonnet20241022, a.ModelClaude3_5Haiku20241022, a.ModelClaude_3_Haiku_20240307, a.ModelClaude_3_Opus_20240229, a.ModelClaude3_7Sonnet20250219:
 			apiKey = os.Getenv("ANTHROPIC_API_KEY")
