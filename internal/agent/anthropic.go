@@ -454,12 +454,12 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal bash tool input: %w", marshalErr)
 					}
-					
+
 					if err := json.Unmarshal(jsonInput, &bashToolInput); err != nil {
 						// Instead of failing, return the error as a tool result to the model
 						s.logger.Printf("JSON parsing error for bash tool: %v", err)
 						errorMessage := fmt.Sprintf("Error parsing JSON for bash tool: %v\nReceived input: %s\n\nPlease provide input in the correct format with a string for 'command', e.g. {\"command\": \"ls -la\"}", err, string(jsonInput))
-						
+
 						result = &ToolResult{
 							Content: errorMessage,
 							IsError: true,
@@ -470,7 +470,7 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 						if err != nil {
 							return fmt.Errorf("failed to execute bash tool: %w", err)
 						}
-						
+
 						// Log full output before truncation
 						s.logger.Printf("tool result: %+v", result.Content)
 
@@ -510,12 +510,12 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal create file tool input: %w", marshalErr)
 					}
-					
+
 					if err := json.Unmarshal(jsonInput, &createFileToolInput); err != nil {
 						// Instead of failing, return the error as a tool result to the model
 						s.logger.Printf("JSON parsing error for create_file tool: %v", err)
 						errorMessage := fmt.Sprintf("Error parsing JSON for create_file tool: %v\nReceived input: %s\n\nPlease provide input in the correct format with 'path' and 'file_text' fields, e.g. {\"path\": \"file.txt\", \"file_text\": \"content\"}", err, string(jsonInput))
-						
+
 						result = &ToolResult{
 							Content: errorMessage,
 							IsError: true,
@@ -540,12 +540,12 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal edit file tool input: %w", marshalErr)
 					}
-					
+
 					if err := json.Unmarshal(jsonInput, &editFileToolInput); err != nil {
 						// Instead of failing, return the error as a tool result to the model
 						s.logger.Printf("JSON parsing error for edit_file tool: %v", err)
 						errorMessage := fmt.Sprintf("Error parsing JSON for edit_file tool: %v\nReceived input: %s\n\nPlease provide input in the correct format with 'path', 'old_str', and 'new_str' fields, e.g. {\"path\": \"file.txt\", \"old_str\": \"old text\", \"new_str\": \"new text\"}", err, string(jsonInput))
-						
+
 						result = &ToolResult{
 							Content: errorMessage,
 							IsError: true,
@@ -571,12 +571,12 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal delete file tool input: %w", marshalErr)
 					}
-					
+
 					if err := json.Unmarshal(jsonInput, &deleteFileToolInput); err != nil {
 						// Instead of failing, return the error as a tool result to the model
 						s.logger.Printf("JSON parsing error for delete_file tool: %v", err)
 						errorMessage := fmt.Sprintf("Error parsing JSON for delete_file tool: %v\nReceived input: %s\n\nPlease provide input in the correct format with a 'path' field, e.g. {\"path\": \"file.txt\"}", err, string(jsonInput))
-						
+
 						result = &ToolResult{
 							Content: errorMessage,
 							IsError: true,
@@ -600,12 +600,12 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal move file tool input: %w", marshalErr)
 					}
-					
+
 					if err := json.Unmarshal(jsonInput, &moveFileToolInput); err != nil {
 						// Instead of failing, return the error as a tool result to the model
 						s.logger.Printf("JSON parsing error for move_file tool: %v", err)
 						errorMessage := fmt.Sprintf("Error parsing JSON for move_file tool: %v\nReceived input: %s\n\nPlease provide input in the correct format with 'source_path' and 'target_path' fields, e.g. {\"source_path\": \"old.txt\", \"target_path\": \"new.txt\"}", err, string(jsonInput))
-						
+
 						result = &ToolResult{
 							Content: errorMessage,
 							IsError: true,
@@ -630,12 +630,12 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal view file tool input: %w", marshalErr)
 					}
-					
+
 					if err := json.Unmarshal(jsonInput, &viewFileToolInput); err != nil {
 						// Instead of failing, return the error as a tool result to the model
 						s.logger.Printf("JSON parsing error for view_file tool: %v", err)
 						errorMessage := fmt.Sprintf("Error parsing JSON for view_file tool: %v\nReceived input: %s\n\nPlease provide input in the correct format with a 'path' field, e.g. {\"path\": \"file.txt\"}", err, string(jsonInput))
-						
+
 						result = &ToolResult{
 							Content: errorMessage,
 							IsError: true,
@@ -660,12 +660,12 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal create folder tool input: %w", marshalErr)
 					}
-					
+
 					if err := json.Unmarshal(jsonInput, &createFolderToolInput); err != nil {
 						// Instead of failing, return the error as a tool result to the model
 						s.logger.Printf("JSON parsing error for create_folder tool: %v", err)
 						errorMessage := fmt.Sprintf("Error parsing JSON for create_folder tool: %v\nReceived input: %s\n\nPlease provide input in the correct format with a 'path' field, e.g. {\"path\": \"folder_name\"}", err, string(jsonInput))
-						
+
 						result = &ToolResult{
 							Content: errorMessage,
 							IsError: true,
@@ -689,12 +689,12 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal delete folder tool input: %w", marshalErr)
 					}
-					
+
 					if err := json.Unmarshal(jsonInput, &deleteFolderToolInput); err != nil {
 						// Instead of failing, return the error as a tool result to the model
 						s.logger.Printf("JSON parsing error for delete_folder tool: %v", err)
 						errorMessage := fmt.Sprintf("Error parsing JSON for delete_folder tool: %v\nReceived input: %s\n\nPlease provide input in the correct format with 'path' and optional 'recursive' fields, e.g. {\"path\": \"folder_name\", \"recursive\": true}", err, string(jsonInput))
-						
+
 						result = &ToolResult{
 							Content: errorMessage,
 							IsError: true,
@@ -719,12 +719,12 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal move folder tool input: %w", marshalErr)
 					}
-					
+
 					if err := json.Unmarshal(jsonInput, &moveFolderToolInput); err != nil {
 						// Instead of failing, return the error as a tool result to the model
 						s.logger.Printf("JSON parsing error for move_folder tool: %v", err)
 						errorMessage := fmt.Sprintf("Error parsing JSON for move_folder tool: %v\nReceived input: %s\n\nPlease provide input in the correct format with 'source_path' and 'target_path' fields, e.g. {\"source_path\": \"old_folder\", \"target_path\": \"new_folder\"}", err, string(jsonInput))
-						
+
 						result = &ToolResult{
 							Content: errorMessage,
 							IsError: true,
@@ -757,12 +757,12 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal get related files tool input: %w", marshalErr)
 					}
-					
+
 					if err := json.Unmarshal(jsonInput, &relatedFilesToolInput); err != nil {
 						// Instead of failing, return the error as a tool result to the model
 						s.logger.Printf("JSON parsing error for get_related_files: %v", err)
 						errorMessage := fmt.Sprintf("Error parsing JSON for get_related_files tool: %v\nReceived input: %s\n\nPlease provide input in the correct format with an array of strings for 'input_files', e.g. {\"input_files\": [\"file1.go\", \"file2.go\"]}", err, string(jsonInput))
-						
+
 						result = &ToolResult{
 							Content: errorMessage,
 							IsError: true,
@@ -782,12 +782,12 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 					if marshalErr != nil {
 						return fmt.Errorf("failed to marshal change directory tool input: %w", marshalErr)
 					}
-					
+
 					if err := json.Unmarshal(jsonInput, &changeDirToolInput); err != nil {
 						// Instead of failing, return the error as a tool result to the model
 						s.logger.Printf("JSON parsing error for change_directory tool: %v", err)
 						errorMessage := fmt.Sprintf("Error parsing JSON for change_directory tool: %v\nReceived input: %s\n\nPlease provide input in the correct format with a string for 'path', e.g. {\"path\": \"../some/directory\"}", err, string(jsonInput))
-						
+
 						result = &ToolResult{
 							Content: errorMessage,
 							IsError: true,

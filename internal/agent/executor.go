@@ -42,7 +42,7 @@ func createExecutor(logger Logger, ignorer *gitignore.GitIgnore, customURL strin
 	var executor Executor
 	var err error
 	var apiKey string
-	
+
 	// Check if this is a known model
 	isKnownModel := false
 	for _, config := range ModelConfigs {
@@ -51,7 +51,7 @@ func createExecutor(logger Logger, ignorer *gitignore.GitIgnore, customURL strin
 			break
 		}
 	}
-	
+
 	// If this is a custom model (not a known model), use CPE_CUSTOM_API_KEY
 	if !isKnownModel {
 		apiKey = os.Getenv("CPE_CUSTOM_API_KEY")
