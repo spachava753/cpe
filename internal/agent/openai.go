@@ -78,6 +78,18 @@ type openaiExecutor struct {
 }
 
 func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gitignore.GitIgnore, config GenConfig) (Executor, error) {
+	// Check if tool use should be disabled for custom models
+	disableToolUse := false
+	if os.Getenv("CPE_DISABLE_TOOL_USE") != "" {
+		// Get the model config to check if it's a custom model
+		modelConfig, exists := ModelConfigs[config.Model]
+		if !exists || !modelConfig.IsKnown {
+			// It's a custom model, so disable tool use
+			disableToolUse = true
+			logger.Println("CPE_DISABLE_TOOL_USE is set, disabling tool use for custom model:", config.Model)
+		}
+	}
+
 	opts := []option.RequestOption{
 		option.WithAPIKey(apiKey),
 		option.WithMaxRetries(5),
@@ -96,7 +108,11 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 		Model:               oai.F(config.Model),
 		MaxCompletionTokens: oai.Int(int64(config.MaxTokens)),
 		Temperature:         oai.Float(float64(config.Temperature)),
-		Tools: oai.F([]oai.ChatCompletionToolParam{
+	}
+
+	// Only add tools if disableToolUse is false
+	if !disableToolUse {
+		params.Tools = oai.F([]oai.ChatCompletionToolParam{
 			// Basic tools
 			{
 				Type: oai.F(oai.ChatCompletionToolTypeFunction),
@@ -198,7 +214,7 @@ func NewOpenAIExecutor(baseUrl string, apiKey string, logger Logger, ignorer *gi
 					Parameters:  oai.F(oai.FunctionParameters(moveFolderTool.InputSchema)),
 				}),
 			},
-		}),
+		})
 	}
 
 	// Set reasoning effort based on thinking budget

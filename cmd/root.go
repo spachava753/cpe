@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"runtime/debug"
@@ -175,10 +174,23 @@ func executeRootCommand(cmd *cobra.Command, args []string) {
 		}
 	}
 
+	// Get the model alias (the key in ModelConfigs) from the model name if possible
+	// This ensures we can properly look up the model-specific environment variables
+	modelAlias := model
+	if modelConfig.IsKnown {
+		// Find the alias for this model
+		for alias, config := range agent.ModelConfigs {
+			if config.Name == modelConfig.Name {
+				modelAlias = alias
+				break
+			}
+		}
+	}
+
 	// Initialize the executor
 	executor, err := agent.InitExecutor(log.Default(), agent.ModelOptions{
 		Model:             model,
-		CustomURL:         getCustomURL(customURL, model),
+		CustomURL:         getCustomURL(customURL, modelAlias),
 		MaxTokens:         maxTokens,
 		Temperature:       temperature,
 		TopP:              topP,

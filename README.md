@@ -241,6 +241,7 @@ cpe -m llama3 "How can I create a web server in Go?"
 - `CPE_CUSTOM_URL`: Custom base URL for model APIs
 - `CPE_CUSTOM_API_KEY`: API key to use with custom model endpoints
 - `CPE_[MODEL_NAME]_URL`: Model-specific custom URL (e.g., `CPE_CLAUDE_3_5_SONNET_URL`)
+- `CPE_DISABLE_TOOL_USE`: When set, disables tool use for custom models (used when working with models that don't support tool use)
 
 ### Ignore Files
 
