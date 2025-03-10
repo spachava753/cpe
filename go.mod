@@ -9,6 +9,7 @@ toolchain go1.23.2
 
 require (
 	github.com/anthropics/anthropic-sdk-go v0.2.0-alpha.13
+	github.com/aymanbagabas/go-udiff v0.2.0
 	github.com/gabriel-vasile/mimetype v1.4.8
 	github.com/google/generative-ai-go v0.19.0
 	github.com/matoous/go-nanoid/v2 v2.1.0

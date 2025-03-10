@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/aymanbagabas/go-udiff"
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/google/generative-ai-go/genai"
 	gitignore "github.com/sabhiram/go-gitignore"
@@ -495,11 +496,16 @@ func (g *geminiExecutor) Execute(inputs []Input) error {
 					if err := json.Unmarshal(jsonInput, &editFileToolInput); err != nil {
 						return fmt.Errorf("failed to unmarshal edit file tool arguments: %w", err)
 					}
-					g.logger.Printf(
-						"executing edit file tool; path: %s\nold_str:\n%s\nnew_str:\n%s",
-						editFileToolInput.Path,
+					unified := udiff.Unified(
+						"old_str",
+						"new_str",
 						editFileToolInput.OldStr,
 						editFileToolInput.NewStr,
+					)
+					g.logger.Printf(
+						"executing edit file tool; path: %s\ndiff:\n%s\n",
+						editFileToolInput.Path,
+						unified,
 					)
 					result, err = EditFileTool(editFileToolInput)
 					if err == nil {

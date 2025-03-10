@@ -9,6 +9,7 @@ import (
 	"fmt"
 	a "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/aymanbagabas/go-udiff"
 	"github.com/gabriel-vasile/mimetype"
 	gitignore "github.com/sabhiram/go-gitignore"
 	"io"
@@ -551,11 +552,16 @@ func (s *anthropicExecutor) Execute(inputs []Input) error {
 							IsError: true,
 						}
 					} else {
-						s.logger.Printf(
-							"executing edit file tool; path: %s\nold_str:\n%s\nnew_str:\n%s",
-							editFileToolInput.Path,
+						unified := udiff.Unified(
+							"old_str",
+							"new_str",
 							editFileToolInput.OldStr,
 							editFileToolInput.NewStr,
+						)
+						s.logger.Printf(
+							"executing edit file tool; path: %s\ndiff:\n%s\n",
+							editFileToolInput.Path,
+							unified,
 						)
 						result, err = EditFileTool(editFileToolInput)
 						if err != nil {
