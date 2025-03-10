@@ -7,6 +7,7 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	"github.com/aymanbagabas/go-udiff"
 	"github.com/gabriel-vasile/mimetype"
 	oai "github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
@@ -393,11 +394,16 @@ func (o *openaiExecutor) Execute(inputs []Input) error {
 				if err := json.Unmarshal([]byte(toolCall.Function.Arguments), &editFileToolInput); err != nil {
 					return fmt.Errorf("failed to unmarshal edit file tool arguments: %w", err)
 				}
-				o.logger.Printf(
-					"executing edit file tool; path: %s\nold_str:\n%s\nnew_str:\n%s",
-					editFileToolInput.Path,
+				unified := udiff.Unified(
+					"old_str",
+					"new_str",
 					editFileToolInput.OldStr,
 					editFileToolInput.NewStr,
+				)
+				o.logger.Printf(
+					"executing edit file tool; path: %s\ndiff:\n%s\n",
+					editFileToolInput.Path,
+					unified,
 				)
 				result, err = EditFileTool(editFileToolInput)
 				if err == nil {
