@@ -2,28 +2,23 @@ package cliopts
 
 import (
 	"flag"
+	"github.com/spachava753/gai"
 	"log"
 	"os"
 )
 
 type Options struct {
-	Model             string
-	CustomURL         string
-	MaxTokens         int
-	Temperature       float64
-	TopP              float64
-	TopK              int
-	FrequencyPenalty  float64
-	PresencePenalty   float64
-	NumberOfResponses int
-	ThinkingBudget    string
-	Input             bool
-	Version           bool
-	Prompt            string
-	Continue          string
-	DeleteCascade     bool
-	New               bool
-	Args              []string // Remaining arguments after flag parsing
+	gai.GenOpts
+	Model          string
+	CustomURL      string
+	ThinkingBudget string
+	Input          bool
+	Version        bool
+	Prompt         string
+	Continue       string
+	DeleteCascade  bool
+	New            bool
+	Args           []string // Remaining arguments after flag parsing
 }
 
 var Opts Options
@@ -32,13 +27,13 @@ func init() {
 	flag.StringVar(&Opts.Model, "model", "", "Specify the model to use")
 	flag.BoolVar(&Opts.Version, "version", false, "Print the version number and exit")
 	flag.StringVar(&Opts.CustomURL, "custom-url", "", "Specify a custom base URL for the model provider API")
-	flag.IntVar(&Opts.MaxTokens, "max-tokens", 0, "Maximum number of tokens to generate")
+	flag.IntVar(&Opts.MaxGenerationTokens, "max-tokens", 0, "Maximum number of tokens to generate")
 	flag.Float64Var(&Opts.Temperature, "temperature", 0, "Sampling temperature (0.0 - 1.0)")
 	flag.Float64Var(&Opts.TopP, "top-p", 0, "Nucleus sampling parameter (0.0 - 1.0)")
-	flag.IntVar(&Opts.TopK, "top-k", 0, "Top-k sampling parameter")
+	flag.UintVar(&Opts.TopK, "top-k", 0, "Top-k sampling parameter")
 	flag.Float64Var(&Opts.FrequencyPenalty, "frequency-penalty", 0, "Frequency penalty (-2.0 - 2.0)")
 	flag.Float64Var(&Opts.PresencePenalty, "presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
-	flag.IntVar(&Opts.NumberOfResponses, "number-of-responses", 0, "Number of responses to generate")
+	flag.UintVar(&Opts.N, "number-of-responses", 0, "Number of responses to generate")
 	flag.StringVar(&Opts.ThinkingBudget, "thinking-budget", "", "Budget for reasoning/thinking capabilities (string or numerical value)")
 	flag.BoolVar(&Opts.Input, "input", false, "When provided, all arguments except the last one are treated as input files that must exist. The last argument is either a file path or a prompt text")
 	flag.StringVar(&Opts.Continue, "continue", "", "Continue from a specific conversation ID")
