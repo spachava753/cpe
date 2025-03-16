@@ -2,52 +2,35 @@ package cliopts
 
 import (
 	"flag"
-	"fmt"
-	"github.com/spachava753/cpe/internal/agent"
 	"log"
-	"maps"
 	"os"
-	"slices"
-	"strings"
 )
 
 type Options struct {
-	Model              string
-	CustomURL          string
-	MaxTokens          int
-	Temperature        float64
-	TopP               float64
-	TopK               int
-	FrequencyPenalty   float64
-	PresencePenalty    float64
-	NumberOfResponses  int
-	ThinkingBudget     string
-	Input              bool
-	Version            bool
-	TokenCountPath     string
-	Prompt             string
-	Continue           string
-	ListConversations  bool
-	DeleteConversation string
-	DeleteCascade      bool
-	PrintConversation  string
-	ListFiles          bool
-	Overview           bool
-	RelatedFiles       string
-	New                bool
-	ListEnvVars        bool     // Flag to list environment variables
-	Args               []string // Remaining arguments after flag parsing
+	Model             string
+	CustomURL         string
+	MaxTokens         int
+	Temperature       float64
+	TopP              float64
+	TopK              int
+	FrequencyPenalty  float64
+	PresencePenalty   float64
+	NumberOfResponses int
+	ThinkingBudget    string
+	Input             bool
+	Version           bool
+	Prompt            string
+	Continue          string
+	DeleteCascade     bool
+	New               bool
+	Args              []string // Remaining arguments after flag parsing
 }
 
 var Opts Options
 
 func init() {
-	flag.StringVar(&Opts.Model, "model", "", fmt.Sprintf("Specify the model to use. Supported models: %s", strings.Join(slices.Collect(maps.Keys(agent.ModelConfigs)), ", ")))
-	flag.StringVar(&Opts.TokenCountPath, "token-count", "", "Print a tree of directories and files with their token counts for the given path")
+	flag.StringVar(&Opts.Model, "model", "", "Specify the model to use")
 	flag.BoolVar(&Opts.Version, "version", false, "Print the version number and exit")
-	flag.BoolVar(&Opts.ListFiles, "list-files", false, "List all text files in the current directory recursively")
-	flag.BoolVar(&Opts.Overview, "overview", false, "Get an overview of all files in the current directory with reduced content")
-	flag.StringVar(&Opts.RelatedFiles, "related-files", "", "Get related files for the given comma-separated list of files")
 	flag.StringVar(&Opts.CustomURL, "custom-url", "", "Specify a custom base URL for the model provider API")
 	flag.IntVar(&Opts.MaxTokens, "max-tokens", 0, "Maximum number of tokens to generate")
 	flag.Float64Var(&Opts.Temperature, "temperature", 0, "Sampling temperature (0.0 - 1.0)")
@@ -59,12 +42,8 @@ func init() {
 	flag.StringVar(&Opts.ThinkingBudget, "thinking-budget", "", "Budget for reasoning/thinking capabilities (string or numerical value)")
 	flag.BoolVar(&Opts.Input, "input", false, "When provided, all arguments except the last one are treated as input files that must exist. The last argument is either a file path or a prompt text")
 	flag.StringVar(&Opts.Continue, "continue", "", "Continue from a specific conversation ID")
-	flag.BoolVar(&Opts.ListConversations, "list-convo", false, "List all conversations")
-	flag.StringVar(&Opts.DeleteConversation, "delete-convo", "", "Delete a specific conversation")
 	flag.BoolVar(&Opts.DeleteCascade, "cascade", false, "When deleting a conversation, also delete its children")
-	flag.StringVar(&Opts.PrintConversation, "print-convo", "", "Print a specific conversation")
 	flag.BoolVar(&Opts.New, "new", false, "Start a new conversation instead of continuing from the last one")
-	flag.BoolVar(&Opts.ListEnvVars, "env", false, "List all environment variables used by CPE")
 }
 
 func ParseFlags() {

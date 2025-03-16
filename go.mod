@@ -1,11 +1,9 @@
 module github.com/spachava753/cpe
 
-go 1.23.0
+go 1.23.2
 
 // v0.16.10 breaks one of the core input functionality and should be used
 retract v0.16.10
-
-toolchain go1.23.2
 
 require (
 	github.com/anthropics/anthropic-sdk-go v0.2.0-alpha.13
@@ -15,9 +13,10 @@ require (
 	github.com/matoous/go-nanoid/v2 v2.1.0
 	github.com/mattn/go-sqlite3 v1.14.24
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/openai/openai-go v0.1.0-alpha.61
+	github.com/openai/openai-go v0.1.0-alpha.62
 	github.com/pkoukk/tiktoken-go v0.1.7
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
+	github.com/spachava753/gai v0.1.0
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
 	github.com/tree-sitter/go-tree-sitter v0.25.0

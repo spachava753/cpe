@@ -1,18 +1,11 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
-	"io"
-	"log"
 	"os"
 	"runtime/debug"
-	"slices"
 	"strings"
 
-	"github.com/spachava753/cpe/internal/agent"
-	"github.com/spachava753/cpe/internal/conversation"
-	"github.com/spachava753/cpe/internal/db"
 	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/spf13/cobra"
 )
@@ -74,7 +67,7 @@ func getVersion() string {
 
 func init() {
 	// Define flags for the root command
-	rootCmd.PersistentFlags().StringVarP(&model, "model", "m", "", fmt.Sprintf("Specify the model to use. Supported models: %s", strings.Join(getModelKeys(), ", ")))
+	rootCmd.PersistentFlags().StringVarP(&model, "model", "m", "", "Specify the model to use")
 	rootCmd.PersistentFlags().StringVar(&customURL, "custom-url", "", "Specify a custom base URL for the model provider API")
 	rootCmd.PersistentFlags().IntVarP(&maxTokens, "max-tokens", "x", 0, "Maximum number of tokens to generate")
 	rootCmd.PersistentFlags().Float64VarP(&temperature, "temperature", "t", 0, "Sampling temperature (0.0 - 1.0)")
@@ -92,27 +85,8 @@ func init() {
 	rootCmd.Flags().BoolP("version", "v", false, "Print the version number and exit")
 }
 
-// getModelKeys returns a slice of model keys from the ModelConfigs map
-func getModelKeys() []string {
-	var keys []string
-	for k := range agent.ModelConfigs {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
 // executeRootCommand handles the main functionality of the root command
 func executeRootCommand(cmd *cobra.Command, args []string) {
-	var inputs []agent.Input
-	var err error
-
-	// Read input from stdin, files, or arguments
-	inputs, err = readInput(input, args)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
 	// Initialize ignorer
 	ignorer, err := ignore.LoadIgnoreFiles(".")
 	if err != nil {
@@ -124,105 +98,7 @@ func executeRootCommand(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// Get model config to validate input types
-	modelConfig, ok := agent.ModelConfigs[model]
-	if !ok {
-		// If no model flag, try to get model from conversation
-		if !newConversation {
-			// Initialize conversation manager
-			dbPath := ".cpeconvo"
-			convoManager, err := conversation.NewManager(dbPath)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			defer convoManager.Close()
-
-			// Get conversation
-			var conv *db.Conversation
-			if continueID != "" {
-				conv, err = convoManager.GetConversation(context.Background(), continueID)
-			} else {
-				conv, err = convoManager.GetLatestConversation(context.Background())
-			}
-			if err == nil {
-				// Find model alias by model name
-				for alias, cfg := range agent.ModelConfigs {
-					if cfg.Name == conv.Model {
-						modelConfig = cfg
-						model = alias // Set the model name
-						ok = true
-						break
-					}
-				}
-			}
-		}
-
-		// If still not found, get model from flags/env/default
-		if !ok {
-			modelName := agent.GetModelFromFlagsOrDefault(agent.ModelOptions{
-				Model: model,
-			})
-			modelConfig, ok = agent.ModelConfigs[modelName]
-			if !ok {
-				// Unknown model, default to text only
-				modelConfig = agent.ModelConfig{
-					Name:            modelName,
-					IsKnown:         false,
-					SupportedInputs: []agent.InputType{agent.InputTypeText},
-				}
-			}
-		}
-	}
-
-	// Get the model alias (the key in ModelConfigs) from the model name if possible
-	// This ensures we can properly look up the model-specific environment variables
-	modelAlias := model
-	if modelConfig.IsKnown {
-		// Find the alias for this model
-		for alias, config := range agent.ModelConfigs {
-			if config.Name == modelConfig.Name {
-				modelAlias = alias
-				break
-			}
-		}
-	}
-
-	// Initialize the executor
-	executor, err := agent.InitExecutor(log.Default(), agent.ModelOptions{
-		Model:             model,
-		CustomURL:         getCustomURL(customURL, modelAlias),
-		MaxTokens:         maxTokens,
-		Temperature:       temperature,
-		TopP:              topP,
-		TopK:              topK,
-		FrequencyPenalty:  frequencyPenalty,
-		PresencePenalty:   presencePenalty,
-		NumberOfResponses: numberOfResponses,
-		ThinkingBudget:    thinkingBudget,
-		Continue:          continueID,
-		New:               newConversation,
-	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Validate input types against model capabilities
-	for _, input := range inputs {
-		if slices.Contains(modelConfig.SupportedInputs, input.Type) {
-			continue
-		}
-		fmt.Fprintf(os.Stderr, "Error: model %s does not support input type %s (file: %s)\n",
-			model, string(input.Type), input.FilePath)
-		os.Exit(1)
-	}
-
-	// Execute the model
-	if err := executor.Execute(inputs); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
+	// TODO: execute root command
 }
 
 // getCustomURL returns the custom URL to use based on the following precedence:
@@ -247,72 +123,4 @@ func getCustomURL(flagURL string, modelName string) string {
 	}
 
 	return urlVal
-}
-
-// readInput reads input from stdin, files, or arguments
-func readInput(inputFiles []string, args []string) ([]agent.Input, error) {
-	var inputs []agent.Input
-
-	// Check if there is any input from stdin by checking if stdin is a pipe or redirection
-	stat, _ := os.Stdin.Stat()
-	if (stat.Mode() & os.ModeCharDevice) == 0 {
-		// Stdin has data available
-		content, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return nil, fmt.Errorf("error reading from stdin: %w", err)
-		}
-		if len(content) > 0 {
-			inputs = append(inputs, agent.Input{
-				Type: agent.InputTypeText,
-				Text: string(content),
-			})
-		}
-	}
-
-	// Process input files specified with -input flag
-	for _, path := range inputFiles {
-		// Check if file exists
-		if _, err := os.Stat(path); err != nil {
-			return nil, fmt.Errorf("input file does not exist: %s", path)
-		}
-
-		inputType, err := agent.DetectInputType(path)
-		if err != nil {
-			return nil, fmt.Errorf("error detecting input type for file %s: %w", path, err)
-		}
-
-		if inputType == agent.InputTypeText {
-			// For text files, read the content and use it as text input
-			content, err := os.ReadFile(path)
-			if err != nil {
-				return nil, fmt.Errorf("error reading file %s: %w", path, err)
-			}
-			inputs = append(inputs, agent.Input{
-				Type: agent.InputTypeText,
-				Text: string(content),
-			})
-		} else {
-			// For non-text files, pass the file path
-			inputs = append(inputs, agent.Input{
-				Type:     inputType,
-				FilePath: path,
-			})
-		}
-	}
-
-	// If no input files were specified but we have command line arguments,
-	// treat all arguments as a single prompt
-	if len(inputFiles) == 0 && len(args) > 0 {
-		prompt := strings.Join(args, " ")
-		inputs = append(inputs, agent.Input{
-			Type: agent.InputTypeText,
-			Text: prompt,
-		})
-	}
-
-	if len(inputs) == 0 {
-		return nil, fmt.Errorf("no input provided. Please provide input via stdin, input file, or as a command line argument")
-	}
-
-	return inputs, nil
 }

@@ -2,11 +2,8 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"strings"
-
-	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spf13/cobra"
+	"os"
 )
 
 // envCmd represents the env command
@@ -70,16 +67,16 @@ func printEnvironmentVariables() {
 
 	// Print model-specific URL environment variables
 	fmt.Println("\nModel-Specific API Endpoints:")
-	for modelAlias, config := range agent.ModelConfigs {
-		// Convert model name to environment variable format
-		// Replace hyphens with underscores and convert to uppercase
-		modelEnvName := strings.ToUpper(strings.ReplaceAll(modelAlias, "-", "_"))
-		envVarName := "CPE_" + modelEnvName + "_URL"
-
-		// Description with the actual model name
-		description := fmt.Sprintf("Custom URL for %s (%s)", modelAlias, config.Name)
-
-		// Print the variable
-		printVar(envVarName, description, false)
-	}
+	//for modelAlias, config := range agent.ModelConfigs {
+	//	// Convert model name to environment variable format
+	//	// Replace hyphens with underscores and convert to uppercase
+	//	modelEnvName := strings.ToUpper(strings.ReplaceAll(modelAlias, "-", "_"))
+	//	envVarName := "CPE_" + modelEnvName + "_URL"
+	//
+	//	// Description with the actual model name
+	//	description := fmt.Sprintf("Custom URL for %s (%s)", modelAlias, config.Name)
+	//
+	//	// Print the variable
+	//	printVar(envVarName, description, false)
+	//}
 }
