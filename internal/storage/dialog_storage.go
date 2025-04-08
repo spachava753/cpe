@@ -3,10 +3,15 @@ package storage
 import (
 	"context"
 	"database/sql"
+	_ "embed"
 	"fmt"
 	"github.com/matoous/go-nanoid/v2"
 	"github.com/spachava753/gai"
+	"slices"
 )
+
+//go:embed schema.sql
+var schemaSQL string
 
 // DialogStorage provides operations for storing and retrieving gai.Dialog objects
 type DialogStorage struct {
@@ -15,7 +20,30 @@ type DialogStorage struct {
 	idGenerator func() string
 }
 
-// NewDialogStorage creates a new DialogStorage instance
+// InitDialogStorage initializes and returns a new DialogStorage instance
+// This function opens or creates the database and initializes the schema
+func InitDialogStorage(dbPath string) (*DialogStorage, error) {
+	// Open or create the database
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %w", err)
+	}
+
+	// Initialize schema from embedded SQL file
+	_, err = db.Exec(schemaSQL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize schema: %w", err)
+	}
+
+	// Create and return the dialog storage
+	return &DialogStorage{
+		db:          db,
+		q:           New(db),
+		idGenerator: func() string { return gonanoid.Must(6) },
+	}, nil
+}
+
+// NewDialogStorage creates a new DialogStorage instance with an existing database connection
 func NewDialogStorage(db *sql.DB) (*DialogStorage, error) {
 	return &DialogStorage{
 		db:          db,
@@ -50,6 +78,11 @@ func stringToRole(s string) (gai.Role, error) {
 	default:
 		return 0, fmt.Errorf("invalid role: %s", s)
 	}
+}
+
+// Close closes the underlying db connection
+func (s *DialogStorage) Close() error {
+	return s.db.Close()
 }
 
 // SaveMessage saves a single message and its blocks to the database
@@ -158,11 +191,11 @@ func (s *DialogStorage) GetMessage(ctx context.Context, messageID string) (gai.M
 	}, nil
 }
 
-// GetMostRecentMessage retrieves the most recently created message
-func (s *DialogStorage) GetMostRecentMessage(ctx context.Context) (gai.Message, string, error) {
-	msg, err := s.q.GetMostRecentMessage(ctx)
+// GetMostRecentUserMessage retrieves the most recently created user message
+func (s *DialogStorage) GetMostRecentUserMessage(ctx context.Context) (gai.Message, string, error) {
+	msg, err := s.q.GetMostRecentUserMessage(ctx)
 	if err != nil {
-		return gai.Message{}, "", fmt.Errorf("failed to get most recent message: %w", err)
+		return gai.Message{}, "", fmt.Errorf("failed to get most recent user message: %w", err)
 	}
 
 	message, err := s.GetMessage(ctx, msg.ID)
@@ -173,58 +206,105 @@ func (s *DialogStorage) GetMostRecentMessage(ctx context.Context) (gai.Message, 
 	return message, msg.ID, nil
 }
 
-// GetDialogFromLeaf reconstructs a dialog starting from a leaf message and traversing up to the root
-func (s *DialogStorage) GetDialogFromLeaf(ctx context.Context, leafMessageID string) (gai.Dialog, error) {
-	// Get the dialog path from leaf to root
-	rows, err := s.q.GetDialogPath(ctx, leafMessageID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get dialog path: %w", err)
-	}
+// GetDialogForUserMessage reconstructs a dialog starting from a user message and traversing up to the root
+func (s *DialogStorage) GetDialogForUserMessage(ctx context.Context, userMessageID string) (gai.Dialog, error) {
 
-	// Process the results to reconstruct the dialog
-	messagesMap := make(map[string]*gai.Message)
-	var orderedMessageIDs []string
 	var dialog gai.Dialog
 
-	for _, row := range rows {
-		// Process the message if we haven't seen it before
-		if _, exists := messagesMap[row.ID]; !exists {
-			role, err := stringToRole(row.Role)
-			if err != nil {
-				return nil, fmt.Errorf("invalid role in database: %s", row.Role)
-			}
-
-			message := &gai.Message{
-				Role:            role,
-				Blocks:          []gai.Block{},
-				ToolResultError: row.ToolResultError,
-			}
-
-			messagesMap[row.ID] = message
-			orderedMessageIDs = append([]string{row.ID}, orderedMessageIDs...)
-		}
-
-		// Skip if there's no block for this row
-		if !row.BlockID.Valid {
-			continue
-		}
-
-		// Process the block
-		block := gai.Block{
-			ID:           row.BlockID.String,
-			BlockType:    row.BlockType.String,
-			ModalityType: gai.Modality(row.ModalityType.Int64),
-			MimeType:     row.MimeType.String,
-			Content:      gai.Str(row.Content.String),
-		}
-
-		// Add the block to its message
-		messagesMap[row.ID].Blocks = append(messagesMap[row.ID].Blocks, block)
+	// get user message first
+	dbMsg, err := s.q.GetMessage(ctx, userMessageID)
+	if err != nil {
+		return gai.Dialog{}, fmt.Errorf("failed to get dialog: %w", err)
 	}
 
-	// Reconstruct the dialog in the correct order
-	for _, id := range orderedMessageIDs {
-		dialog = append(dialog, *messagesMap[id])
+	if dbMsg.Role != "user" {
+		return gai.Dialog{}, fmt.Errorf("invalid role: %s", dbMsg.Role)
+	}
+
+	userMsg, err := s.GetMessage(ctx, dbMsg.ID)
+	if err != nil {
+		return gai.Dialog{}, fmt.Errorf("failed to get dialog: %w", err)
+	}
+	dialog = append(dialog, userMsg)
+
+	// Then keep querying parent messages until we reach root message
+	parentId := dbMsg.ParentID.String
+	var msg gai.Message
+	for parentId != "" {
+		msg, err = s.GetMessage(ctx, parentId)
+		if err != nil {
+			return gai.Dialog{}, fmt.Errorf("failed to get dialog: %w", err)
+		}
+		dialog = append(dialog, msg)
+		dbMsg, err = s.q.GetMessage(ctx, parentId)
+		if err != nil {
+			return gai.Dialog{}, fmt.Errorf("failed to get dialog: %w", err)
+		}
+		parentId = dbMsg.ParentID.String
+	}
+
+	// Reverse the order so now the user message is last
+	slices.Reverse(dialog)
+
+	// Then get associated assistant message for the user message
+	children, err := s.q.GetMessageChildrenId(ctx, sql.NullString{
+		String: userMessageID,
+		Valid:  true,
+	})
+	if err != nil {
+		return gai.Dialog{}, err
+	}
+	if len(children) != 1 {
+		return gai.Dialog{}, fmt.Errorf("expected 1 child, got %d", len(children))
+	}
+
+	assistantMsg, err := s.q.GetMessage(ctx, children[0])
+	if err != nil {
+		return gai.Dialog{}, err
+	}
+
+	msg, err = s.GetMessage(ctx, assistantMsg.ID)
+	if err != nil {
+		return gai.Dialog{}, err
+	}
+
+	dialog = append(dialog, msg)
+
+	// Now, we keep getting the children of each message to get the chain of assistant messages
+	// that belong to this user-ai turn of conversation. We know we have reached the end of the turn when
+	// 1. There are no more children for an assistant message
+	// 2. The children are user messages (branching occurs after the end of the last assistant message)
+	//
+	// Example:
+	// ┌ User Message: Hi! How many files do I have?
+	// ├ Assistant Message: Sure let me help with that
+	// ├ Assistant Message: Tool call -> file overview
+	// ├ Assistant Message: You have 3 files
+	// ├──────────(BRANCHING)─────────┐
+	// ├ User Message: Delete a file  ├ User Message: add a file
+
+	assistantMsgId := assistantMsg.ID
+	for {
+		children, err = s.q.GetMessageChildrenId(ctx, sql.NullString{
+			String: assistantMsgId,
+			Valid:  true,
+		})
+		if err != nil {
+			return gai.Dialog{}, err
+		}
+
+		if len(children) == 0 || len(children) > 1 {
+			break
+		}
+
+		assistantMsgId = children[0]
+
+		msg, err = s.GetMessage(ctx, assistantMsgId)
+		if err != nil {
+			return gai.Dialog{}, err
+		}
+
+		dialog = append(dialog, msg)
 	}
 
 	return dialog, nil

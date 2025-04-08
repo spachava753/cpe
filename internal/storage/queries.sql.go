@@ -8,7 +8,6 @@ package storage
 import (
 	"context"
 	"database/sql"
-	"time"
 )
 
 const createBlock = `-- name: CreateBlock :exec
@@ -163,91 +162,6 @@ func (q *Queries) GetChildrenCount(ctx context.Context, parentID sql.NullString)
 	return count, err
 }
 
-const getDialogPath = `-- name: GetDialogPath :many
-WITH RECURSIVE message_path AS (
-    -- Start with the specified leaf message
-    SELECT id, parent_id, role, tool_result_error, title, created_at, 0 as depth
-    FROM messages
-    WHERE messages.id = ?
-    
-    UNION ALL
-
-    -- Add parent messages recursively
-    SELECT m.id, m.parent_id, m.role, m.tool_result_error, m.title, m.created_at, mp.depth + 1
-    FROM messages m
-             JOIN message_path mp ON m.id = mp.parent_id)
-SELECT mp.id,
-       mp.parent_id,
-       mp.role,
-       mp.tool_result_error,
-       mp.title,
-       mp.created_at,
-       mp.depth,
-       b.id as block_id,
-       b.block_type,
-       b.modality_type,
-       b.mime_type,
-       b.content,
-       b.sequence_order
-FROM message_path mp
-         LEFT JOIN blocks b ON mp.id = b.message_id
-ORDER BY mp.depth DESC
-`
-
-type GetDialogPathRow struct {
-	ID              string         `json:"id"`
-	ParentID        sql.NullString `json:"parent_id"`
-	Role            string         `json:"role"`
-	ToolResultError bool           `json:"tool_result_error"`
-	Title           sql.NullString `json:"title"`
-	CreatedAt       time.Time      `json:"created_at"`
-	Depth           int64          `json:"depth"`
-	BlockID         sql.NullString `json:"block_id"`
-	BlockType       sql.NullString `json:"block_type"`
-	ModalityType    sql.NullInt64  `json:"modality_type"`
-	MimeType        sql.NullString `json:"mime_type"`
-	Content         sql.NullString `json:"content"`
-	SequenceOrder   sql.NullInt64  `json:"sequence_order"`
-}
-
-// Dialog Reconstruction
-func (q *Queries) GetDialogPath(ctx context.Context, id string) ([]GetDialogPathRow, error) {
-	rows, err := q.db.QueryContext(ctx, getDialogPath, id)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []GetDialogPathRow{}
-	for rows.Next() {
-		var i GetDialogPathRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.ParentID,
-			&i.Role,
-			&i.ToolResultError,
-			&i.Title,
-			&i.CreatedAt,
-			&i.Depth,
-			&i.BlockID,
-			&i.BlockType,
-			&i.ModalityType,
-			&i.MimeType,
-			&i.Content,
-			&i.SequenceOrder,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getMessage = `-- name: GetMessage :one
 SELECT id, parent_id, title, role, tool_result_error, created_at
 FROM messages
@@ -268,15 +182,46 @@ func (q *Queries) GetMessage(ctx context.Context, id string) (Message, error) {
 	return i, err
 }
 
-const getMostRecentMessage = `-- name: GetMostRecentMessage :one
+const getMessageChildrenId = `-- name: GetMessageChildrenId :many
+SELECT id
+FROM messages
+WHERE parent_id = ?
+ORDER BY created_at DESC
+`
+
+func (q *Queries) GetMessageChildrenId(ctx context.Context, parentID sql.NullString) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, getMessageChildrenId, parentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getMostRecentUserMessage = `-- name: GetMostRecentUserMessage :one
 SELECT id, parent_id, title, role, tool_result_error, created_at
 FROM messages
+WHERE role = 'user'
 ORDER BY created_at DESC
 LIMIT 1
 `
 
-func (q *Queries) GetMostRecentMessage(ctx context.Context) (Message, error) {
-	row := q.db.QueryRowContext(ctx, getMostRecentMessage)
+func (q *Queries) GetMostRecentUserMessage(ctx context.Context) (Message, error) {
+	row := q.db.QueryRowContext(ctx, getMostRecentUserMessage)
 	var i Message
 	err := row.Scan(
 		&i.ID,

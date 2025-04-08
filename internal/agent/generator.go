@@ -15,7 +15,7 @@ import (
 
 // GetToolGenerator creates and returns a gai.ToolGenerator with all necessary tools registered
 // based on the specified model, base URL, and generation options.
-func GetToolGenerator(model, baseURL string, genOpts *gai.GenOpts) (*gai.ToolGenerator, error) {
+func GetToolGenerator(model, baseURL string) (*gai.ToolGenerator, error) {
 	// Create the underlying generator based on the model name
 	baseGenerator, err := getBaseGenerator(model, baseURL)
 	if err != nil {
@@ -84,7 +84,7 @@ func isAnthropicModel(model string) bool {
 
 // createOpenAIGenerator creates and configures an OpenAI generator
 func createOpenAIGenerator(model, baseURL string) (gai.Generator, error) {
-	// Create OpenAI client 
+	// Create OpenAI client
 	var client *openai.Client
 	if baseURL != "" {
 		client = openai.NewClient()
@@ -217,7 +217,7 @@ func (t GetRelatedFilesToolCallback) Call(ctx context.Context, input map[string]
 	if !ok {
 		return nil, fmt.Errorf("input_files parameter is required")
 	}
-	
+
 	// Convert to []string
 	files := make([]string, len(inputFiles))
 	for i, file := range inputFiles {
@@ -226,7 +226,7 @@ func (t GetRelatedFilesToolCallback) Call(ctx context.Context, input map[string]
 			return nil, fmt.Errorf("input_files must be an array of strings")
 		}
 	}
-	
+
 	result, err := ExecuteGetRelatedFilesTool(files, t.ignorer)
 	if err != nil {
 		return nil, err
@@ -387,13 +387,13 @@ func (t DeleteFolderToolCallback) Call(ctx context.Context, input map[string]any
 	if !ok {
 		return nil, fmt.Errorf("path parameter is required")
 	}
-	
+
 	// recursive is optional with a default value of false
 	recursive := false
 	if recursiveVal, ok := input["recursive"].(bool); ok {
 		recursive = recursiveVal
 	}
-	
+
 	result, err := DeleteFolderTool(DeleteFolderParams{
 		Path:      path,
 		Recursive: recursive,

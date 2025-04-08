@@ -1,13 +1,21 @@
 package cmd
 
 import (
+	"context"
+	"encoding/base64"
+	"errors"
 	"fmt"
+	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/gabriel-vasile/mimetype"
+	_ "github.com/mattn/go-sqlite3"
+	"github.com/spachava753/cpe/internal/agent"
+	"github.com/spachava753/cpe/internal/ignore"
+	"github.com/spachava753/cpe/internal/storage"
+	"github.com/spachava753/gai"
+	"github.com/spf13/cobra"
+	"io"
 	"os"
 	"runtime/debug"
-	"strings"
-
-	"github.com/spachava753/cpe/internal/ignore"
-	"github.com/spf13/cobra"
 )
 
 var (
@@ -35,16 +43,16 @@ var rootCmd = &cobra.Command{
 developers to leverage AI for codebase analysis, modification, and improvement 
 through natural language interactions.`,
 	Args: cobra.ArbitraryArgs,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		// Check if version flag is set
 		versionFlag, _ := cmd.Flags().GetBool("version")
 		if versionFlag {
 			fmt.Printf("cpe version %s\n", getVersion())
-			return
+			return nil
 		}
 
 		// Initialize the executor and run the main functionality
-		executeRootCommand(cmd, args)
+		return executeRootCommand(cmd, args)
 	},
 }
 
@@ -86,36 +94,245 @@ func init() {
 }
 
 // executeRootCommand handles the main functionality of the root command
-func executeRootCommand(cmd *cobra.Command, args []string) {
+func executeRootCommand(cmd *cobra.Command, args []string) error {
 	// Initialize ignorer
 	ignorer, err := ignore.LoadIgnoreFiles(".")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: failed to load ignore files: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to load ignore files: %w", err)
 	}
 	if ignorer == nil {
-		fmt.Fprintf(os.Stderr, "Error: git ignorer was nil\n")
+		return errors.New("git ignorer was nil")
+	}
+
+	userBlocks, err := processUserInput(args)
+	if err != nil {
+		return fmt.Errorf("could not process user input: %w", err)
+	}
+
+	// If no input was provided, print help
+	if len(userBlocks) == 0 {
+		return errors.New("empty input")
+	}
+
+	// Always use .cpeconvo as the DB path
+	dbPath := ".cpeconvo"
+
+	// Initialize or open the database through the storage package
+	dialogStorage, err := storage.InitDialogStorage(dbPath)
+	if err != nil {
+		return fmt.Errorf("failed to initialize dialog storage: %w", err)
+	}
+	defer dialogStorage.Close()
+
+	// Get most recent message
+	if continueID == "" && !newConversation {
+		_, continueID, err = dialogStorage.GetMostRecentUserMessage(context.Background())
+		if err != nil {
+			return fmt.Errorf("failed to get most recent message: %w", err)
+		}
+	}
+
+	// Get default model from environment variable
+	defaultModel := os.Getenv("CPE_MODEL")
+	if defaultModel == "" {
+		defaultModel = anthropic.ModelClaude3_7SonnetLatest // Default model if not specified
+	}
+
+	modelToUse := model
+	if modelToUse == "" {
+		modelToUse = defaultModel
+	}
+
+	customURLToUse := getCustomURL(customURL)
+	toolGen, err := agent.GetToolGenerator(modelToUse, customURLToUse)
+	if err != nil {
+		return fmt.Errorf("error initializing tool generator: %w", err)
+	}
+
+	userMessage := gai.Message{
+		Role:   gai.User,
+		Blocks: userBlocks,
+	}
+
+	// Create full dialog with parent message if available
+	dialog := gai.Dialog{
+		userMessage,
+	}
+
+	if !newConversation {
+		dialog, err = dialogStorage.GetDialogForUserMessage(context.Background(), continueID)
+		if err != nil {
+			return fmt.Errorf("failed to get previous dialog: %w", err)
+		}
+		dialog = append(dialog, userMessage)
+	}
+
+	// Create a generator function that returns generation options
+	genOptionsFunc := func(d gai.Dialog) *gai.GenOpts {
+		opts := &gai.GenOpts{}
+		if maxTokens > 0 {
+			opts.MaxGenerationTokens = maxTokens
+		}
+		if temperature > 0 {
+			opts.Temperature = temperature
+		}
+		if topP > 0 {
+			opts.TopP = topP
+		}
+		if topK > 0 {
+			opts.TopK = uint(topK)
+		}
+		if frequencyPenalty != 0 {
+			opts.FrequencyPenalty = frequencyPenalty
+		}
+		if presencePenalty != 0 {
+			opts.PresencePenalty = presencePenalty
+		}
+		if numberOfResponses > 0 {
+			opts.N = uint(numberOfResponses)
+		}
+		return opts
+	}
+
+	result, err := toolGen.Generate(context.Background(), dialog, genOptionsFunc)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating response: %v\n", err)
 		os.Exit(1)
 	}
 
-	// TODO: execute root command
+	// Save user message
+	userMsgID, err := dialogStorage.SaveMessage(context.Background(), userMessage, continueID, "")
+	if err != nil {
+		return fmt.Errorf("failed to save message: %w", err)
+	}
+
+	// Save assistant messages
+	assistantMsgs := result[len(dialog)-1:]
+
+	parentId := userMsgID
+	for _, assistantMsg := range assistantMsgs {
+		printMessage(assistantMsg)
+		parentId, err = dialogStorage.SaveMessage(context.Background(), assistantMsg, parentId, "")
+		if err != nil {
+			return fmt.Errorf("failed to save message: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// processUserInput processes and combines user input from all available sources
+func processUserInput(args []string) ([]gai.Block, error) {
+	var userBlocks []gai.Block
+
+	// Get input from stdin if available (non-blocking)
+	stdinStat, err := os.Stdin.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to check stdin: %w", err)
+	}
+
+	// If stdin has data, read it
+	if (stdinStat.Mode() & os.ModeCharDevice) == 0 {
+		stdinBytes, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read from stdin: %w", err)
+		}
+		if len(stdinBytes) > 0 {
+			userBlocks = append(userBlocks, gai.Block{
+				BlockType:    "text",
+				ModalityType: gai.Text,
+				MimeType:     "text/plain",
+				Content:      gai.Str(stdinBytes),
+			})
+		}
+	}
+
+	// Process input files and add them as blocks
+	for _, inputPath := range input {
+		// Validate file exists
+		if _, err := os.Stat(inputPath); os.IsNotExist(err) {
+			return nil, fmt.Errorf("input file does not exist: %s", inputPath)
+		}
+
+		// Detect input type (text, image, etc.)
+		modality, err := agent.DetectInputType(inputPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to detect input type for %s: %w", inputPath, err)
+		}
+
+		// Read file content
+		content, err := os.ReadFile(inputPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read input file %s: %w", inputPath, err)
+		}
+
+		// Apply size limits to prevent memory issues
+		if len(content) > 50*1024*1024 { // 50MB limit
+			return nil, fmt.Errorf("input file %s exceeds maximum size limit (50MB)", inputPath)
+		}
+
+		mime := mimetype.Detect(content).String()
+
+		// Create block based on modality
+		var block gai.Block
+		switch modality {
+		case gai.Text:
+			block = gai.Block{
+				BlockType:    "text",
+				ModalityType: gai.Text,
+				MimeType:     "text/plain",
+				Content:      gai.Str(string(content)),
+			}
+		case gai.Image, gai.Video, gai.Audio:
+			// For non-text files, encode as base64
+			contentStr := base64.StdEncoding.EncodeToString(content)
+			block = gai.Block{
+				BlockType:    "binary",
+				ModalityType: modality,
+				MimeType:     mime,
+				Content:      gai.Str(contentStr),
+			}
+		default:
+			return nil, fmt.Errorf("unsupported input type for %s", inputPath)
+		}
+
+		userBlocks = append(userBlocks, block)
+	}
+
+	// Add positional arguments if provided
+	if len(args) > 0 {
+		if len(args) != 1 {
+			return nil, fmt.Errorf("too many arguments to process")
+		}
+
+		userBlocks = append(userBlocks, gai.Block{
+			BlockType:    "text",
+			ModalityType: gai.Text,
+			MimeType:     "text/plain",
+			Content:      gai.Str(args[0]),
+		})
+	}
+
+	return userBlocks, nil
+}
+
+// printMessage prints a message to stdout
+func printMessage(msg gai.Message) {
+	for _, block := range msg.Blocks {
+		if block.ModalityType == gai.Text {
+			fmt.Println(block.Content.String())
+		} else {
+			fmt.Printf("[%s content of type %s]\n", block.BlockType, block.MimeType)
+		}
+	}
 }
 
 // getCustomURL returns the custom URL to use based on the following precedence:
-// 1. Command-line flag (-custom-url)
-// 2. Model-specific environment variable (CPE_MODEL_NAME_URL)
-// 3. General custom URL environment variable (CPE_CUSTOM_URL)
-func getCustomURL(flagURL string, modelName string) string {
+// 1. Command-line flag (--custom-url)
+// 2. General custom URL environment variable (CPE_CUSTOM_URL)
+func getCustomURL(flagURL string) string {
 	// Start with the flag value
 	urlVal := flagURL
-
-	// Check model-specific env var if we have a model name
-	if modelName != "" {
-		envVarName := fmt.Sprintf("CPE_%s_URL", strings.ToUpper(strings.ReplaceAll(modelName, "-", "_")))
-		if modelEnvURL := os.Getenv(envVarName); urlVal == "" && modelEnvURL != "" {
-			urlVal = modelEnvURL
-		}
-	}
 
 	// Finally, check the general custom URL env var
 	if envURL := os.Getenv("CPE_CUSTOM_URL"); urlVal == "" && envURL != "" {
