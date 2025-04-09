@@ -76,30 +76,8 @@ var KnownModels = append(anthropicModels, openAiModels...)
 //go:embed agent_instructions.txt
 var agentInstructions string
 
-// GetToolGenerator creates and returns a gai.ToolGenerator with all necessary tools registered
-// based on the specified model, base URL, and generation options.
-func GetToolGenerator(model, baseURL string) (*gai.ToolGenerator, error) {
-	// Create the underlying generator based on the model name
-	baseGenerator, err := getBaseGenerator(model, baseURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create base generator: %w", err)
-	}
-
-	// Create the tool generator
-	toolGen := &gai.ToolGenerator{
-		G: baseGenerator,
-	}
-
-	// Register all the necessary tools
-	if err := registerTools(toolGen); err != nil {
-		return nil, fmt.Errorf("failed to register tools: %w", err)
-	}
-
-	return toolGen, nil
-}
-
-// getBaseGenerator creates the appropriate generator based on the model name
-func getBaseGenerator(model, baseURL string) (gai.ToolCapableGenerator, error) {
+// InitGenerator creates the appropriate generator based on the model name
+func InitGenerator(model, baseURL string) (gai.ToolCapableGenerator, error) {
 	// Handle OpenAI models
 	if slices.Contains(openAiModels, model) {
 		generator, err := createOpenAIGenerator(model, baseURL)
@@ -448,8 +426,8 @@ func (t MoveFolderToolCallback) Call(ctx context.Context, input map[string]any) 
 	return result.Content, nil
 }
 
-// registerTools registers all the necessary tools with the tool generator
-func registerTools(toolGen *gai.ToolGenerator) error {
+// RegisterTools registers all the necessary tools with the gai.ToolGenerator
+func RegisterTools(toolGen *gai.ToolGenerator) error {
 	// Create ignorer for file system tools
 	ignorer, err := createIgnorer()
 	if err != nil {

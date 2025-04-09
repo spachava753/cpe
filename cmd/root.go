@@ -143,9 +143,20 @@ func executeRootCommand(args []string) error {
 	}
 
 	customURLToUse := getCustomURL(customURL)
-	toolGen, err := agent.GetToolGenerator(modelToUse, customURLToUse)
+	// Create the underlying generator based on the model name
+	baseGenerator, err := agent.InitGenerator(model, customURLToUse)
 	if err != nil {
-		return fmt.Errorf("error initializing tool generator: %w", err)
+		return fmt.Errorf("failed to create base generator: %w", err)
+	}
+
+	// Create the tool generator
+	toolGen := &gai.ToolGenerator{
+		G: baseGenerator,
+	}
+
+	// Register all the necessary tools
+	if err = agent.RegisterTools(toolGen); err != nil {
+		return fmt.Errorf("failed to register tools: %w", err)
 	}
 
 	userMessage := gai.Message{
