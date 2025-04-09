@@ -1,5 +1,5 @@
 -- schema.sql
-CREATE TABLE messages
+CREATE TABLE IF NOT EXISTS messages
 (
     id                TEXT PRIMARY KEY,
     parent_id         TEXT,
@@ -11,12 +11,12 @@ CREATE TABLE messages
 );
 
 -- Create an index on created_at for efficient timestamp-based queries
-CREATE INDEX idx_messages_created_at ON messages (created_at);
+CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages (created_at);
 
 -- Create an index on parent_id for efficient tree traversal
-CREATE INDEX idx_messages_parent_id ON messages (parent_id);
+CREATE INDEX IF NOT EXISTS idx_messages_parent_id ON messages (parent_id);
 
-CREATE TABLE blocks
+CREATE TABLE IF NOT EXISTS blocks
 (
     id             TEXT PRIMARY KEY,
     message_id     TEXT      NOT NULL,

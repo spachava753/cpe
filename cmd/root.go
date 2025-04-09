@@ -206,7 +206,7 @@ func executeRootCommand(args []string) error {
 	}
 
 	// Save assistant messages
-	assistantMsgs := result[len(dialog)-1:]
+	assistantMsgs := result[len(dialog):]
 
 	parentId := userMsgID
 	for _, assistantMsg := range assistantMsgs {
@@ -277,7 +277,7 @@ func processUserInput(args []string) ([]gai.Block, error) {
 		switch modality {
 		case gai.Text:
 			block = gai.Block{
-				BlockType:    "text",
+				BlockType:    gai.Content,
 				ModalityType: gai.Text,
 				MimeType:     "text/plain",
 				Content:      gai.Str(string(content)),
@@ -286,7 +286,7 @@ func processUserInput(args []string) ([]gai.Block, error) {
 			// For non-text files, encode as base64
 			contentStr := base64.StdEncoding.EncodeToString(content)
 			block = gai.Block{
-				BlockType:    "binary",
+				BlockType:    gai.Content,
 				ModalityType: modality,
 				MimeType:     mime,
 				Content:      gai.Str(contentStr),
@@ -305,7 +305,7 @@ func processUserInput(args []string) ([]gai.Block, error) {
 		}
 
 		userBlocks = append(userBlocks, gai.Block{
-			BlockType:    "text",
+			BlockType:    gai.Content,
 			ModalityType: gai.Text,
 			MimeType:     "text/plain",
 			Content:      gai.Str(args[0]),

@@ -5,11 +5,14 @@ import (
 	_ "embed"
 	"fmt"
 	"github.com/anthropics/anthropic-sdk-go"
+	aopts "github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/openai/openai-go"
+	oaiopt "github.com/openai/openai-go/option"
 	gitignore "github.com/sabhiram/go-gitignore"
 	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/spachava753/gai"
 	"slices"
+	"time"
 )
 
 var anthropicModels = []string{
@@ -136,8 +139,7 @@ func createOpenAIGenerator(model, baseURL string) (gai.Generator, error) {
 	// Create OpenAI client
 	var client *openai.Client
 	if baseURL != "" {
-		client = openai.NewClient()
-		// Can't use WithBaseURL directly, would need to set client options
+		client = openai.NewClient(oaiopt.WithBaseURL(baseURL))
 	} else {
 		client = openai.NewClient()
 	}
@@ -165,12 +167,16 @@ func createOpenAIGenerator(model, baseURL string) (gai.Generator, error) {
 func createAnthropicGenerator(model, baseURL string) (gai.Generator, error) {
 	// Create Anthropic client
 	var client *anthropic.Client
-	if baseURL != "" {
-		client = anthropic.NewClient()
-		// Can't use WithBaseURL directly, would need to set client options
-	} else {
-		client = anthropic.NewClient()
+	opts := []aopts.RequestOption{
+		// Add a custom timeout to disable to the error returned if a
+		// non-streaming request is expected to be above roughly 10 minutes long
+		aopts.WithRequestTimeout(25 * time.Minute),
 	}
+	if baseURL != "" {
+		opts = append(opts, aopts.WithBaseURL(baseURL))
+	}
+
+	client = anthropic.NewClient(opts...)
 
 	// Get system instructions
 	sysInfo, err := GetSystemInfo()
