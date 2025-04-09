@@ -169,9 +169,13 @@ func TestGetLatestMessage(t *testing.T) {
 	_, err = storage.SaveMessage(ctx, msg3, "", "")
 	require.NoError(t, err, "Failed to save third message")
 
-	// Get the latest message
-	latestMsg, latestID, err := storage.GetMostRecentUserMessage(ctx)
-	require.NoError(t, err, "Failed to get latest message")
+	// Get the latest message ID
+	latestID, err := storage.GetMostRecentUserMessageId(ctx)
+	require.NoError(t, err, "Failed to get latest message ID")
+
+	// Get the message using the ID
+	latestMsg, err := storage.GetMessage(ctx, latestID)
+	require.NoError(t, err, "Failed to get message by ID")
 
 	// Verify it's the third message using go-cmp
 	if diff := cmp.Diff(msg3, latestMsg, messageComparer); diff != "" {

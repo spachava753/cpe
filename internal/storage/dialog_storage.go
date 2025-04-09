@@ -191,19 +191,14 @@ func (s *DialogStorage) GetMessage(ctx context.Context, messageID string) (gai.M
 	}, nil
 }
 
-// GetMostRecentUserMessage retrieves the most recently created user message
-func (s *DialogStorage) GetMostRecentUserMessage(ctx context.Context) (gai.Message, string, error) {
+// GetMostRecentUserMessageId retrieves the most recently created user message
+func (s *DialogStorage) GetMostRecentUserMessageId(ctx context.Context) (string, error) {
 	msg, err := s.q.GetMostRecentUserMessage(ctx)
 	if err != nil {
-		return gai.Message{}, "", fmt.Errorf("failed to get most recent user message: %w", err)
+		return "", fmt.Errorf("failed to get most recent user message: %w", err)
 	}
 
-	message, err := s.GetMessage(ctx, msg.ID)
-	if err != nil {
-		return gai.Message{}, "", err
-	}
-
-	return message, msg.ID, nil
+	return msg.ID, nil
 }
 
 // GetDialogForUserMessage reconstructs a dialog starting from a user message and traversing up to the root

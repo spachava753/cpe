@@ -126,7 +126,7 @@ func executeRootCommand(cmd *cobra.Command, args []string) error {
 
 	// Get most recent message
 	if continueID == "" && !newConversation {
-		_, continueID, err = dialogStorage.GetMostRecentUserMessage(context.Background())
+		continueID, err = dialogStorage.GetMostRecentUserMessageId(context.Background())
 		if err != nil {
 			return fmt.Errorf("failed to get most recent message: %w", err)
 		}
