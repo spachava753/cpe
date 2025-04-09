@@ -2,16 +2,76 @@ package agent
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
-	"os"
-	"strings"
-
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/openai/openai-go"
 	gitignore "github.com/sabhiram/go-gitignore"
 	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/spachava753/gai"
+	"slices"
 )
+
+var anthropicModels = []string{
+	anthropic.ModelClaude3_7SonnetLatest,
+	anthropic.ModelClaude3_7Sonnet20250219,
+	anthropic.ModelClaude3_5HaikuLatest,
+	anthropic.ModelClaude3_5Haiku20241022,
+	anthropic.ModelClaude3_5SonnetLatest,
+	anthropic.ModelClaude3_5Sonnet20241022,
+	anthropic.ModelClaude_3_5_Sonnet_20240620,
+	anthropic.ModelClaude3OpusLatest,
+	anthropic.ModelClaude_3_Opus_20240229,
+}
+
+var openAiModels = []string{
+	openai.ChatModelO3Mini,
+	openai.ChatModelO3Mini2025_01_31,
+	openai.ChatModelO1,
+	openai.ChatModelO1_2024_12_17,
+	openai.ChatModelO1Preview,
+	openai.ChatModelO1Preview2024_09_12,
+	openai.ChatModelO1Mini,
+	openai.ChatModelO1Mini2024_09_12,
+	openai.ChatModelGPT4_5Preview,
+	openai.ChatModelGPT4_5Preview2025_02_27,
+	openai.ChatModelGPT4o,
+	openai.ChatModelGPT4o2024_11_20,
+	openai.ChatModelGPT4o2024_08_06,
+	openai.ChatModelGPT4o2024_05_13,
+	openai.ChatModelGPT4oAudioPreview,
+	openai.ChatModelGPT4oAudioPreview2024_10_01,
+	openai.ChatModelGPT4oAudioPreview2024_12_17,
+	openai.ChatModelGPT4oMiniAudioPreview,
+	openai.ChatModelGPT4oMiniAudioPreview2024_12_17,
+	openai.ChatModelChatgpt4oLatest,
+	openai.ChatModelGPT4oMini,
+	openai.ChatModelGPT4oMini2024_07_18,
+	openai.ChatModelGPT4Turbo,
+	openai.ChatModelGPT4Turbo2024_04_09,
+	openai.ChatModelGPT4_0125Preview,
+	openai.ChatModelGPT4TurboPreview,
+	openai.ChatModelGPT4_1106Preview,
+	openai.ChatModelGPT4VisionPreview,
+	openai.ChatModelGPT4,
+	openai.ChatModelGPT4_0314,
+	openai.ChatModelGPT4_0613,
+	openai.ChatModelGPT4_32k,
+	openai.ChatModelGPT4_32k0314,
+	openai.ChatModelGPT4_32k0613,
+	openai.ChatModelGPT3_5Turbo,
+	openai.ChatModelGPT3_5Turbo16k,
+	openai.ChatModelGPT3_5Turbo0301,
+	openai.ChatModelGPT3_5Turbo0613,
+	openai.ChatModelGPT3_5Turbo1106,
+	openai.ChatModelGPT3_5Turbo0125,
+	openai.ChatModelGPT3_5Turbo16k0613,
+}
+
+var KnownModels = append(anthropicModels, openAiModels...)
+
+//go:embed agent_instructions.txt
+var agentInstructions string
 
 // GetToolGenerator creates and returns a gai.ToolGenerator with all necessary tools registered
 // based on the specified model, base URL, and generation options.
@@ -38,7 +98,7 @@ func GetToolGenerator(model, baseURL string) (*gai.ToolGenerator, error) {
 // getBaseGenerator creates the appropriate generator based on the model name
 func getBaseGenerator(model, baseURL string) (gai.ToolCapableGenerator, error) {
 	// Handle OpenAI models
-	if isOpenAIModel(model) {
+	if slices.Contains(openAiModels, model) {
 		generator, err := createOpenAIGenerator(model, baseURL)
 		if err != nil {
 			return nil, err
@@ -48,7 +108,7 @@ func getBaseGenerator(model, baseURL string) (gai.ToolCapableGenerator, error) {
 	}
 
 	// Handle Anthropic models
-	if isAnthropicModel(model) {
+	if slices.Contains(anthropicModels, model) {
 		generator, err := createAnthropicGenerator(model, baseURL)
 		if err != nil {
 			return nil, err
@@ -57,29 +117,18 @@ func getBaseGenerator(model, baseURL string) (gai.ToolCapableGenerator, error) {
 		return generator.(gai.ToolCapableGenerator), nil
 	}
 
-	return nil, fmt.Errorf("unsupported model: %s", model)
-}
-
-// isOpenAIModel checks if the model is an OpenAI model
-func isOpenAIModel(model string) bool {
-	openAIModels := []string{"gpt-4o", "gpt-4o-mini", "o3-mini"}
-	for _, m := range openAIModels {
-		if strings.Contains(model, m) {
-			return true
-		}
+	// Custom openai-compatible models require a base url
+	if baseURL == "" {
+		return nil, fmt.Errorf("unknown model: %s, must specfiy a custom url", model)
 	}
-	return false
-}
 
-// isAnthropicModel checks if the model is an Anthropic model
-func isAnthropicModel(model string) bool {
-	anthropicModels := []string{"claude"}
-	for _, m := range anthropicModels {
-		if strings.Contains(model, m) {
-			return true
-		}
+	// custom model
+	generator, err := createOpenAIGenerator(model, baseURL)
+	if err != nil {
+		return nil, err
 	}
-	return false
+	// Convert to ToolCapableGenerator
+	return generator.(gai.ToolCapableGenerator), nil
 }
 
 // createOpenAIGenerator creates and configures an OpenAI generator
@@ -100,10 +149,7 @@ func createOpenAIGenerator(model, baseURL string) (gai.Generator, error) {
 	}
 
 	// Get agent instructions with system info
-	systemPrompt, err := formatAgentInstructions(sysInfo)
-	if err != nil {
-		return nil, fmt.Errorf("failed to format agent instructions: %w", err)
-	}
+	systemPrompt := fmt.Sprintf(agentInstructions, sysInfo.String())
 
 	// Create the OpenAI generator
 	generator := gai.NewOpenAiGenerator(
@@ -133,10 +179,7 @@ func createAnthropicGenerator(model, baseURL string) (gai.Generator, error) {
 	}
 
 	// Get agent instructions with system info
-	systemPrompt, err := formatAgentInstructions(sysInfo)
-	if err != nil {
-		return nil, fmt.Errorf("failed to format agent instructions: %w", err)
-	}
+	systemPrompt := fmt.Sprintf(agentInstructions, sysInfo.String())
 
 	// Create and return the Anthropic generator
 	generator := gai.NewAnthropicGenerator(
@@ -146,34 +189,6 @@ func createAnthropicGenerator(model, baseURL string) (gai.Generator, error) {
 	)
 
 	return &generator, nil
-}
-
-// formatAgentInstructions formats the agent instructions with system info
-func formatAgentInstructions(sysInfo *SystemInfo) (string, error) {
-	// Read agent instructions template from agent_instructions.txt
-	// The template contains a %s placeholder for system info
-	instructions, err := getAgentInstructions()
-	if err != nil {
-		return "", fmt.Errorf("failed to get agent instructions: %w", err)
-	}
-
-	// Format the instructions with the system info
-	return fmt.Sprintf(instructions, sysInfo.String()), nil
-}
-
-// getAgentInstructions returns the agent instructions template
-func getAgentInstructions() (string, error) {
-	// Read the agent instructions from the agent_instructions.txt file
-	data, err := os.ReadFile("internal/agent/agent_instructions.txt")
-	if err != nil {
-		return "", fmt.Errorf("failed to read agent instructions: %w", err)
-	}
-	return string(data), nil
-}
-
-// init initializes the package
-func init() {
-	// Nothing needed here now that we're reading from the file directly
 }
 
 // BashToolCallback is a callback for the bash tool

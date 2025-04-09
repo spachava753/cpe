@@ -13,7 +13,6 @@ import (
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/gai"
 	"github.com/spf13/cobra"
-	"io"
 	"os"
 	"runtime/debug"
 )
@@ -52,7 +51,7 @@ through natural language interactions.`,
 		}
 
 		// Initialize the executor and run the main functionality
-		return executeRootCommand(cmd, args)
+		return executeRootCommand(args)
 	},
 }
 
@@ -94,7 +93,7 @@ func init() {
 }
 
 // executeRootCommand handles the main functionality of the root command
-func executeRootCommand(cmd *cobra.Command, args []string) error {
+func executeRootCommand(args []string) error {
 	// Initialize ignorer
 	ignorer, err := ignore.LoadIgnoreFiles(".")
 	if err != nil {
@@ -225,27 +224,27 @@ func executeRootCommand(cmd *cobra.Command, args []string) error {
 func processUserInput(args []string) ([]gai.Block, error) {
 	var userBlocks []gai.Block
 
-	// Get input from stdin if available (non-blocking)
-	stdinStat, err := os.Stdin.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("failed to check stdin: %w", err)
-	}
-
-	// If stdin has data, read it
-	if (stdinStat.Mode() & os.ModeCharDevice) == 0 {
-		stdinBytes, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read from stdin: %w", err)
-		}
-		if len(stdinBytes) > 0 {
-			userBlocks = append(userBlocks, gai.Block{
-				BlockType:    "text",
-				ModalityType: gai.Text,
-				MimeType:     "text/plain",
-				Content:      gai.Str(stdinBytes),
-			})
-		}
-	}
+	//// Get input from stdin if available (non-blocking)
+	//stdinStat, err := os.Stdin.Stat()
+	//if err != nil {
+	//	return nil, fmt.Errorf("failed to check stdin: %w", err)
+	//}
+	//
+	//// If stdin has data, read it
+	//if (stdinStat.Mode() & os.ModeCharDevice) == 0 {
+	//	stdinBytes, err := io.ReadAll(os.Stdin)
+	//	if err != nil {
+	//		return nil, fmt.Errorf("failed to read from stdin: %w", err)
+	//	}
+	//	if len(stdinBytes) > 0 {
+	//		userBlocks = append(userBlocks, gai.Block{
+	//			BlockType:    "text",
+	//			ModalityType: gai.Text,
+	//			MimeType:     "text/plain",
+	//			Content:      gai.Str(stdinBytes),
+	//		})
+	//	}
+	//}
 
 	// Process input files and add them as blocks
 	for _, inputPath := range input {
