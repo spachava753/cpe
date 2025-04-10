@@ -137,14 +137,13 @@ func executeRootCommand(args []string) error {
 		defaultModel = anthropic.ModelClaude3_7SonnetLatest // Default model if not specified
 	}
 
-	modelToUse := model
-	if modelToUse == "" {
-		modelToUse = defaultModel
+	if model == "" {
+		model = defaultModel
 	}
 
-	customURLToUse := getCustomURL(customURL)
+	customURL = getCustomURL(customURL)
 	// Create the underlying generator based on the model name
-	baseGenerator, err := agent.InitGenerator(model, customURLToUse)
+	baseGenerator, err := agent.InitGenerator(model, customURL)
 	if err != nil {
 		return fmt.Errorf("failed to create base generator: %w", err)
 	}
