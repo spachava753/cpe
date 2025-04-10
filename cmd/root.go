@@ -148,9 +148,12 @@ func executeRootCommand(args []string) error {
 		return fmt.Errorf("failed to create base generator: %w", err)
 	}
 
-	// Create the tool generator
+	// Wrap the base generator with ResponsePrinterGenerator
+	printingGenerator := agent.NewResponsePrinterGenerator(baseGenerator)
+
+	// Create the tool generator using the wrapped generator
 	toolGen := &gai.ToolGenerator{
-		G: baseGenerator,
+		G: printingGenerator,
 	}
 
 	// Register all the necessary tools
@@ -203,7 +206,8 @@ func executeRootCommand(args []string) error {
 		return opts
 	}
 
-	result, err := toolGen.Generate(context.Background(), dialog, genOptionsFunc)
+	// The ResponsePrinterGenerator will print the responses as they come
+	resultDialog, err := toolGen.Generate(context.Background(), dialog, genOptionsFunc)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error generating response: %v\n", err)
 		os.Exit(1)
@@ -216,11 +220,10 @@ func executeRootCommand(args []string) error {
 	}
 
 	// Save assistant messages
-	assistantMsgs := result[len(dialog):]
+	assistantMsgs := resultDialog[len(dialog):]
 
 	parentId := userMsgID
 	for _, assistantMsg := range assistantMsgs {
-		printMessage(assistantMsg)
 		parentId, err = dialogStorage.SaveMessage(context.Background(), assistantMsg, parentId, "")
 		if err != nil {
 			return fmt.Errorf("failed to save message: %w", err)
@@ -323,17 +326,6 @@ func processUserInput(args []string) ([]gai.Block, error) {
 	}
 
 	return userBlocks, nil
-}
-
-// printMessage prints a message to stdout
-func printMessage(msg gai.Message) {
-	for _, block := range msg.Blocks {
-		if block.ModalityType == gai.Text {
-			fmt.Println(block.Content.String())
-		} else {
-			fmt.Printf("[%s content of type %s]\n", block.BlockType, block.MimeType)
-		}
-	}
 }
 
 // getCustomURL returns the custom URL to use based on the following precedence:
