@@ -13,7 +13,9 @@ import (
 //go:embed schema.sql
 var schemaSQL string
 
-// DialogStorage provides operations for storing and retrieving gai.Dialog objects
+// DialogStorage provides operations for storing and retrieving gai.Dialog objects.
+// It serves as an abstraction over the implementation details of how messages
+// are actually stored. Do not access its internal database directly.
 type DialogStorage struct {
 	db          *sql.DB
 	q           *Queries
@@ -78,6 +80,20 @@ func stringToRole(s string) (gai.Role, error) {
 	default:
 		return 0, fmt.Errorf("invalid role: %s", s)
 	}
+}
+
+// GetBlocksByMessage retrieves all blocks associated with a message ID
+func (s *DialogStorage) GetBlocksByMessage(ctx context.Context, messageID string) ([]Block, error) {
+	return s.q.GetBlocksByMessage(ctx, messageID)
+}
+
+// HasChildrenByID checks if a message has any children
+func (s *DialogStorage) HasChildrenByID(ctx context.Context, messageID string) (bool, error) {
+	hasChildren, err := s.q.HasChildren(ctx, sql.NullString{String: messageID, Valid: true})
+	if err != nil {
+		return false, err
+	}
+	return hasChildren > 0, nil
 }
 
 // Close closes the underlying db connection
@@ -201,69 +217,79 @@ func (s *DialogStorage) GetMostRecentUserMessageId(ctx context.Context) (string,
 	return msg.ID, nil
 }
 
-// GetDialogForUserMessage reconstructs a dialog starting from a user message and traversing up to the root
-func (s *DialogStorage) GetDialogForUserMessage(ctx context.Context, userMessageID string) (gai.Dialog, error) {
+// GetDialogForMessage reconstructs a dialog starting given a message and traversing up to the root.
+// Based on the message, we traverse up and down a conversation list of messages to fetch a complete dialog.
+func (s *DialogStorage) GetDialogForMessage(ctx context.Context, messageID string) (gai.Dialog, []string, error) {
 
 	var dialog gai.Dialog
+	var msgIds []string
 
 	// get user message first
-	dbMsg, err := s.q.GetMessage(ctx, userMessageID)
+	dbMsg, err := s.q.GetMessage(ctx, messageID)
 	if err != nil {
-		return gai.Dialog{}, fmt.Errorf("failed to get dialog: %w", err)
+		return gai.Dialog{}, msgIds, fmt.Errorf("failed to get dialog: %w", err)
 	}
 
-	if dbMsg.Role != "user" {
-		return gai.Dialog{}, fmt.Errorf("invalid role: %s", dbMsg.Role)
-	}
-
-	userMsg, err := s.GetMessage(ctx, dbMsg.ID)
+	msg, err := s.GetMessage(ctx, dbMsg.ID)
 	if err != nil {
-		return gai.Dialog{}, fmt.Errorf("failed to get dialog: %w", err)
+		return gai.Dialog{}, msgIds, fmt.Errorf("failed to get dialog: %w", err)
 	}
-	dialog = append(dialog, userMsg)
+	dialog = append(dialog, msg)
+	msgIds = append(msgIds, messageID)
 
 	// Then keep querying parent messages until we reach root message
 	parentId := dbMsg.ParentID.String
-	var msg gai.Message
 	for parentId != "" {
 		msg, err = s.GetMessage(ctx, parentId)
 		if err != nil {
-			return gai.Dialog{}, fmt.Errorf("failed to get dialog: %w", err)
+			return gai.Dialog{}, msgIds, fmt.Errorf("failed to get dialog: %w", err)
 		}
 		dialog = append(dialog, msg)
+		msgIds = append(msgIds, parentId)
 		dbMsg, err = s.q.GetMessage(ctx, parentId)
 		if err != nil {
-			return gai.Dialog{}, fmt.Errorf("failed to get dialog: %w", err)
+			return gai.Dialog{}, msgIds, fmt.Errorf("failed to get dialog: %w", err)
 		}
 		parentId = dbMsg.ParentID.String
 	}
 
-	// Reverse the order so now the user message is last
+	// Reverse the order so now the message is last
 	slices.Reverse(dialog)
+	slices.Reverse(msgIds)
 
-	// Then get associated assistant message for the user message
+	// Then get any leftover children messages
 	children, err := s.q.GetMessageChildrenId(ctx, sql.NullString{
-		String: userMessageID,
+		String: messageID,
 		Valid:  true,
 	})
 	if err != nil {
-		return gai.Dialog{}, err
-	}
-	if len(children) != 1 {
-		return gai.Dialog{}, fmt.Errorf("expected 1 child, got %d", len(children))
+		return gai.Dialog{}, msgIds, err
 	}
 
-	assistantMsg, err := s.q.GetMessage(ctx, children[0])
-	if err != nil {
-		return gai.Dialog{}, err
+	// If there are no children, this was the last message, so we can return the dialog as is.
+	// If there are more than one child, then this was the last message in an assistant turn,
+	// so we can return the dialog as is
+	if len(children) == 0 || len(children) > 1 {
+		return dialog, msgIds, nil
 	}
 
-	msg, err = s.GetMessage(ctx, assistantMsg.ID)
+	childMsg, err := s.q.GetMessage(ctx, children[0])
 	if err != nil {
-		return gai.Dialog{}, err
+		return gai.Dialog{}, msgIds, err
+	}
+
+	// If the single child is a user message, we should stop and return the dialog up until the current point
+	if childMsg.Role == "user" {
+		return dialog, msgIds, nil
+	}
+
+	msg, err = s.GetMessage(ctx, childMsg.ID)
+	if err != nil {
+		return gai.Dialog{}, msgIds, err
 	}
 
 	dialog = append(dialog, msg)
+	msgIds = append(msgIds, childMsg.ID)
 
 	// Now, we keep getting the children of each message to get the chain of assistant messages
 	// that belong to this user-ai turn of conversation. We know we have reached the end of the turn when
@@ -278,14 +304,14 @@ func (s *DialogStorage) GetDialogForUserMessage(ctx context.Context, userMessage
 	// ├──────────(BRANCHING)─────────┐
 	// ├ User Message: Delete a file  ├ User Message: add a file
 
-	assistantMsgId := assistantMsg.ID
+	assistantMsgId := childMsg.ID
 	for {
 		children, err = s.q.GetMessageChildrenId(ctx, sql.NullString{
 			String: assistantMsgId,
 			Valid:  true,
 		})
 		if err != nil {
-			return gai.Dialog{}, err
+			return gai.Dialog{}, msgIds, err
 		}
 
 		if len(children) == 0 || len(children) > 1 {
@@ -296,13 +322,14 @@ func (s *DialogStorage) GetDialogForUserMessage(ctx context.Context, userMessage
 
 		msg, err = s.GetMessage(ctx, assistantMsgId)
 		if err != nil {
-			return gai.Dialog{}, err
+			return gai.Dialog{}, msgIds, err
 		}
 
 		dialog = append(dialog, msg)
+		msgIds = append(msgIds, assistantMsgId)
 	}
 
-	return dialog, nil
+	return dialog, msgIds, nil
 }
 
 // ListMessages returns all messages, sorted by created_at timestamp (newest first)

@@ -331,7 +331,7 @@ func TestBranchingDialogs(t *testing.T) {
 	require.NoError(t, err, "Failed to save branch 1 message")
 
 	branch1Reply := createTextMessage(gai.Assistant, "Cats are wonderful pets...")
-	_, err = storage.SaveMessage(ctx, branch1Reply, branch1ID, "")
+	branch1ReplyID, err := storage.SaveMessage(ctx, branch1Reply, branch1ID, "")
 	require.NoError(t, err, "Failed to save branch 1 reply")
 
 	// Create branch 2 (from the same base reply)
@@ -340,11 +340,11 @@ func TestBranchingDialogs(t *testing.T) {
 	require.NoError(t, err, "Failed to save branch 2 message")
 
 	branch2Reply := createTextMessage(gai.Assistant, "Dogs are loyal companions...")
-	_, err = storage.SaveMessage(ctx, branch2Reply, branch2ID, "")
+	branch2ReplyID, err := storage.SaveMessage(ctx, branch2Reply, branch2ID, "")
 	require.NoError(t, err, "Failed to save branch 2 reply")
 
 	// Get the dialog from branch 1 leaf
-	dialog1, err := storage.GetDialogForUserMessage(ctx, branch1ID)
+	dialog1, msgList1, err := storage.GetDialogForMessage(ctx, branch1ID)
 	require.NoError(t, err, "Failed to get dialog 1")
 
 	// Print for debugging
@@ -358,7 +358,7 @@ func TestBranchingDialogs(t *testing.T) {
 	}
 
 	// Get the dialog from branch 2 leaf
-	dialog2, err := storage.GetDialogForUserMessage(ctx, branch2ID)
+	dialog2, msgList2, err := storage.GetDialogForMessage(ctx, branch2ID)
 	require.NoError(t, err, "Failed to get dialog 2")
 
 	// Print for debugging
@@ -369,6 +369,13 @@ func TestBranchingDialogs(t *testing.T) {
 			content = msg.Blocks[0].Content.String()
 		}
 		fmt.Printf("  %d. Role: %v, Content: %s\n", i, msg.Role, content)
+	}
+
+	expectedMsgIdList1 := []string{
+		rootID,
+		baseReplyID,
+		branch1ID,
+		branch1ReplyID,
 	}
 
 	// Define expected dialog structures
@@ -417,6 +424,13 @@ func TestBranchingDialogs(t *testing.T) {
 				},
 			},
 		},
+	}
+
+	expectedMsgIdList2 := []string{
+		rootID,
+		baseReplyID,
+		branch2ID,
+		branch2ReplyID,
 	}
 
 	expectedDialog2 := gai.Dialog{
@@ -494,6 +508,15 @@ func TestBranchingDialogs(t *testing.T) {
 
 	if diff := cmp.Diff(expectedDialog2, dialog2, dialogComparer); diff != "" {
 		t.Errorf("Dialog 2 mismatch (-want +got):\n%s", diff)
+	}
+
+	// Compare message lists
+	if diff := cmp.Diff(expectedMsgIdList1, msgList1); diff != "" {
+		t.Errorf("Message ID list 1 mismatch (-want +got):\n%s", diff)
+	}
+
+	if diff := cmp.Diff(expectedMsgIdList2, msgList2); diff != "" {
+		t.Errorf("Message ID list 2 mismatch (-want +got):\n%s", diff)
 	}
 
 	// Verify shared path and branches

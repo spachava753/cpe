@@ -51,7 +51,7 @@ through natural language interactions.`,
 		}
 
 		// Initialize the executor and run the main functionality
-		return executeRootCommand(args)
+		return executeRootCommand(cmd.Context(), args)
 	},
 }
 
@@ -93,7 +93,7 @@ func init() {
 }
 
 // executeRootCommand handles the main functionality of the root command
-func executeRootCommand(args []string) error {
+func executeRootCommand(ctx context.Context, args []string) error {
 	// Initialize ignorer
 	ignorer, err := ignore.LoadIgnoreFiles(".")
 	if err != nil {
@@ -125,7 +125,7 @@ func executeRootCommand(args []string) error {
 
 	// Get most recent message
 	if continueID == "" && !newConversation {
-		continueID, err = dialogStorage.GetMostRecentUserMessageId(context.Background())
+		continueID, err = dialogStorage.GetMostRecentUserMessageId(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get most recent message: %w", err)
 		}
@@ -171,8 +171,10 @@ func executeRootCommand(args []string) error {
 		userMessage,
 	}
 
+	var msgIdList []string
+
 	if !newConversation {
-		dialog, err = dialogStorage.GetDialogForUserMessage(context.Background(), continueID)
+		dialog, msgIdList, err = dialogStorage.GetDialogForMessage(ctx, continueID)
 		if err != nil {
 			return fmt.Errorf("failed to get previous dialog: %w", err)
 		}
@@ -207,14 +209,19 @@ func executeRootCommand(args []string) error {
 	}
 
 	// The ResponsePrinterGenerator will print the responses as they come
-	resultDialog, err := toolGen.Generate(context.Background(), dialog, genOptionsFunc)
+	resultDialog, err := toolGen.Generate(ctx, dialog, genOptionsFunc)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error generating response: %v\n", err)
 		os.Exit(1)
 	}
 
+	var parentId string
+	if len(msgIdList) != 0 {
+		parentId = msgIdList[len(msgIdList)-1]
+	}
+
 	// Save user message
-	userMsgID, err := dialogStorage.SaveMessage(context.Background(), userMessage, continueID, "")
+	userMsgID, err := dialogStorage.SaveMessage(ctx, userMessage, parentId, "")
 	if err != nil {
 		return fmt.Errorf("failed to save message: %w", err)
 	}
@@ -222,9 +229,9 @@ func executeRootCommand(args []string) error {
 	// Save assistant messages
 	assistantMsgs := resultDialog[len(dialog):]
 
-	parentId := userMsgID
+	parentId = userMsgID
 	for _, assistantMsg := range assistantMsgs {
-		parentId, err = dialogStorage.SaveMessage(context.Background(), assistantMsg, parentId, "")
+		parentId, err = dialogStorage.SaveMessage(ctx, assistantMsg, parentId, "")
 		if err != nil {
 			return fmt.Errorf("failed to save message: %w", err)
 		}
