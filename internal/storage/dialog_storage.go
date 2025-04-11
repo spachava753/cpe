@@ -144,10 +144,14 @@ func (s *DialogStorage) SaveMessage(ctx context.Context, message gai.Message, pa
 
 	// Create all blocks for this message
 	for j, block := range message.Blocks {
-		// Generate a unique block ID
-		blockID, err := s.generateUniqueID(ctx, s.checkBlockIDExists)
-		if err != nil {
-			return "", fmt.Errorf("failed to generate block ID: %w", err)
+		// If the block already has an ID, use it; otherwise leave it as NULL
+		var blockID sql.NullString
+		if block.ID != "" {
+			// Use the existing block ID
+			blockID = sql.NullString{
+				String: block.ID,
+				Valid:  true,
+			}
 		}
 
 		err = qtx.CreateBlock(ctx, CreateBlockParams{
@@ -191,8 +195,13 @@ func (s *DialogStorage) GetMessage(ctx context.Context, messageID string) (gai.M
 
 	var gaiBlocks []gai.Block
 	for _, block := range blocks {
+		var blockID string
+		if block.ID.Valid {
+			blockID = block.ID.String
+		}
+
 		gaiBlocks = append(gaiBlocks, gai.Block{
-			ID:           block.ID,
+			ID:           blockID,
 			BlockType:    block.BlockType,
 			ModalityType: gai.Modality(block.ModalityType),
 			MimeType:     block.MimeType,
@@ -436,31 +445,6 @@ func (s *DialogStorage) checkMessageIDExists(ctx context.Context, id string) (bo
 
 	// Otherwise, check if the ID exists in the table
 	_, err = s.q.GetMessage(ctx, id)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
-}
-
-// checkBlockIDExists checks if a block ID already exists
-func (s *DialogStorage) checkBlockIDExists(ctx context.Context, id string) (bool, error) {
-	// First check if the blocks table exists
-	var tableExists bool
-	err := s.db.QueryRowContext(ctx, "SELECT EXISTS (SELECT name FROM sqlite_master WHERE name = 'blocks')").Scan(&tableExists)
-	if err != nil {
-		return false, err
-	}
-
-	// If the table doesn't exist yet, then the ID definitely doesn't exist
-	if !tableExists {
-		return false, nil
-	}
-
-	// Otherwise, check if the ID exists in the table
-	_, err = s.q.GetBlock(ctx, id)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return false, nil

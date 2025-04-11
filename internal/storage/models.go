@@ -10,14 +10,14 @@ import (
 )
 
 type Block struct {
-	ID            string    `json:"id"`
-	MessageID     string    `json:"message_id"`
-	BlockType     string    `json:"block_type"`
-	ModalityType  int64     `json:"modality_type"`
-	MimeType      string    `json:"mime_type"`
-	Content       string    `json:"content"`
-	SequenceOrder int64     `json:"sequence_order"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID            sql.NullString `json:"id"`
+	MessageID     string         `json:"message_id"`
+	BlockType     string         `json:"block_type"`
+	ModalityType  int64          `json:"modality_type"`
+	MimeType      string         `json:"mime_type"`
+	Content       string         `json:"content"`
+	SequenceOrder int64          `json:"sequence_order"`
+	CreatedAt     time.Time      `json:"created_at"`
 }
 
 type Message struct {

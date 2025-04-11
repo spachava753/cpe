@@ -18,7 +18,7 @@ CREATE INDEX IF NOT EXISTS idx_messages_parent_id ON messages (parent_id);
 
 CREATE TABLE IF NOT EXISTS blocks
 (
-    id             TEXT PRIMARY KEY,
+    id        TEXT,
     message_id     TEXT      NOT NULL,
     block_type     TEXT      NOT NULL,
     modality_type  INTEGER   NOT NULL,
@@ -26,5 +26,6 @@ CREATE TABLE IF NOT EXISTS blocks
     content        TEXT      NOT NULL,
     sequence_order INTEGER   NOT NULL,
     created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (message_id, sequence_order),
     FOREIGN KEY (message_id) REFERENCES messages (id) ON DELETE CASCADE
 );

@@ -20,42 +20,12 @@ func setupTestDB(t *testing.T) (*sql.DB, *DialogStorage) {
 	//db, err := sql.Open("sqlite3", "./test_db")
 	require.NoError(t, err, "Failed to open in-memory database")
 
-	// Read schema content
-	schema := `
-	CREATE TABLE messages
-	(
-		id                TEXT PRIMARY KEY,
-		parent_id         TEXT,
-		title             TEXT,
-		role              TEXT     NOT NULL,
-		tool_result_error BOOLEAN  NOT NULL DEFAULT 0,
-		created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		FOREIGN KEY (parent_id) REFERENCES messages (id) ON DELETE RESTRICT
-	);
-	
-	CREATE INDEX idx_messages_created_at ON messages(created_at);
-	CREATE INDEX idx_messages_parent_id ON messages(parent_id);
-	
-	CREATE TABLE blocks
-	(
-		id             TEXT PRIMARY KEY,
-		message_id     TEXT      NOT NULL,
-		block_type     TEXT      NOT NULL,
-		modality_type  INTEGER   NOT NULL,
-		mime_type      TEXT      NOT NULL,
-		content        TEXT      NOT NULL,
-		sequence_order INTEGER   NOT NULL,
-		created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		FOREIGN KEY (message_id) REFERENCES messages (id) ON DELETE CASCADE
-	);
-	`
-
 	// Execute schema - enable foreign keys
 	_, err = db.Exec("PRAGMA foreign_keys = ON;")
 	require.NoError(t, err, "Failed to enable foreign keys")
 
 	// Execute schema - create tables
-	_, err = db.Exec(schema)
+	_, err = db.Exec(schemaSQL)
 	require.NoError(t, err, "Failed to create schema")
 
 	// Create dialog storage

@@ -16,13 +16,13 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateBlockParams struct {
-	ID            string `json:"id"`
-	MessageID     string `json:"message_id"`
-	BlockType     string `json:"block_type"`
-	ModalityType  int64  `json:"modality_type"`
-	MimeType      string `json:"mime_type"`
-	Content       string `json:"content"`
-	SequenceOrder int64  `json:"sequence_order"`
+	ID            sql.NullString `json:"id"`
+	MessageID     string         `json:"message_id"`
+	BlockType     string         `json:"block_type"`
+	ModalityType  int64          `json:"modality_type"`
+	MimeType      string         `json:"mime_type"`
+	Content       string         `json:"content"`
+	SequenceOrder int64          `json:"sequence_order"`
 }
 
 // Block queries
@@ -72,7 +72,7 @@ FROM blocks
 WHERE id = ?
 `
 
-func (q *Queries) DeleteBlock(ctx context.Context, id string) error {
+func (q *Queries) DeleteBlock(ctx context.Context, id sql.NullString) error {
 	_, err := q.db.ExecContext(ctx, deleteBlock, id)
 	return err
 }
@@ -94,7 +94,7 @@ FROM blocks
 WHERE id = ?
 `
 
-func (q *Queries) GetBlock(ctx context.Context, id string) (Block, error) {
+func (q *Queries) GetBlock(ctx context.Context, id sql.NullString) (Block, error) {
 	row := q.db.QueryRowContext(ctx, getBlock, id)
 	var i Block
 	err := row.Scan(
