@@ -6,7 +6,6 @@ import (
 	"github.com/spachava753/gai"
 	"github.com/spf13/cobra"
 	"os"
-	"sort"
 	"strings"
 )
 
@@ -42,68 +41,6 @@ var listConvoCmd = &cobra.Command{
 		if len(messages) == 0 {
 			fmt.Println("No messages found.")
 			return nil
-		}
-
-		// Build a tree structure from the messages
-		// The key is message ID, the value is a list of child message IDs
-		messageChildren := make(map[string][]string)
-		// Track which messages are root messages (no parent)
-		rootMessages := make(map[string]bool)
-		// Store message content by ID for easy access
-		messageContent := make(map[string]storage.Message)
-		// Map to store message blocks for content display
-		messageBlocks := make(map[string][]storage.Block)
-
-		for _, msg := range messages {
-			messageContent[msg.ID] = msg
-
-			// Get blocks for this message for later content display
-			blocks, err := dialogStorage.GetBlocksByMessage(cmd.Context(), msg.ID)
-			if err == nil && len(blocks) > 0 {
-				messageBlocks[msg.ID] = blocks
-			}
-
-			if msg.ParentID.Valid {
-				// Add this message as a child of its parent
-				parentID := msg.ParentID.String
-				messageChildren[parentID] = append(messageChildren[parentID], msg.ID)
-			} else {
-				// Mark this as a root message (no parent)
-				rootMessages[msg.ID] = true
-			}
-		}
-
-		// Sort children by creation time to ensure consistent display order
-		for parentID, children := range messageChildren {
-			sort.Slice(children, func(i, j int) bool {
-				return messageContent[children[i]].CreatedAt.Before(messageContent[children[j]].CreatedAt)
-			})
-			messageChildren[parentID] = children
-		}
-
-		// Sort root messages by creation time (oldest first)
-		var rootIDs []string
-		for id := range rootMessages {
-			rootIDs = append(rootIDs, id)
-		}
-		sort.Slice(rootIDs, func(i, j int) bool {
-			return messageContent[rootIDs[i]].CreatedAt.Before(messageContent[rootIDs[j]].CreatedAt)
-		})
-
-		// Keep track of columns used in the graph
-		var outputLines []string
-		var inProgress []string // tracks the current branch lines
-
-		// Start with root messages
-		for _, msgID := range rootIDs {
-			// Generate the commit graph for this root message and all its descendants
-			printMessageGraph(msgID, "", messageContent, messageChildren, messageBlocks, &outputLines, &inProgress)
-		}
-
-		// Print the final graph
-		fmt.Println("Conversation Message Graph:")
-		for _, line := range outputLines {
-			fmt.Println(line)
 		}
 
 		return nil
@@ -190,116 +127,6 @@ var printConvoCmd = &cobra.Command{
 
 		return nil
 	},
-}
-
-// printMessageGraph creates the git-like graph for a message and its descendants
-func printMessageGraph(messageID string, prefix string, messageContent map[string]storage.Message,
-	messageChildren map[string][]string, messageBlocks map[string][]storage.Block,
-	outputLines *[]string, inProgress *[]string) {
-
-	// Get the message content
-	msg, exists := messageContent[messageID]
-	if !exists {
-		return
-	}
-
-	// Get message content for display
-	role := msg.Role
-	content := formatMessageContent(msg, messageBlocks[messageID])
-
-	// Build the graph line
-	graphLine := buildGraphLine(*inProgress, prefix, messageID, role, content)
-
-	// Add to output
-	*outputLines = append(*outputLines, graphLine)
-
-	// Check for children
-	children, hasChildren := messageChildren[messageID]
-	if !hasChildren || len(children) == 0 {
-		return
-	}
-
-	// Process children
-	for i, childID := range children {
-		isLast := i == len(children)-1
-
-		// Determine the prefix for the child
-		var childPrefix string
-		var nextBranchPrefix string
-		if isLast {
-			childPrefix = prefix + "└── "
-			nextBranchPrefix = prefix + "    "
-		} else {
-			childPrefix = prefix + "├── "
-			nextBranchPrefix = prefix + "│   "
-		}
-
-		// Update inProgress to show the current branch state
-		*inProgress = append(*inProgress, nextBranchPrefix)
-
-		// Process the child
-		printMessageGraph(childID, childPrefix, messageContent, messageChildren, messageBlocks, outputLines, inProgress)
-
-		// Remove the last element from inProgress after processing this child
-		if len(*inProgress) > 0 {
-			*inProgress = (*inProgress)[:len(*inProgress)-1]
-		}
-	}
-}
-
-// buildGraphLine constructs a line of the git-like graph
-func buildGraphLine(inProgress []string, prefix, id, role, content string) string {
-	// Format role to be more readable
-	roleDisplay := role
-	switch role {
-	case "user":
-		roleDisplay = "User"
-	case "assistant":
-		roleDisplay = "Assistant"
-	case "tool_result":
-		roleDisplay = "Tool"
-	}
-
-	// Calculate how much space we need for ID and role
-	idRolePart := fmt.Sprintf("%s (%s): ", id, roleDisplay)
-
-	// Build the graph line with clean prefix
-	graphLine := prefix + idRolePart + content
-
-	return graphLine
-}
-
-// formatMessageContent truncates and formats message content for display
-func formatMessageContent(msg storage.Message, blocks []storage.Block) string {
-	// Default content if we can't extract from blocks
-	content := fmt.Sprintf("Message from %s", msg.CreatedAt.Format("2006-01-02 15:04:05"))
-
-	// Try to extract actual content from blocks
-	if len(blocks) > 0 {
-		// Find text blocks, prioritize content blocks
-		for _, block := range blocks {
-			if block.BlockType == gai.Content && block.ModalityType == int64(gai.Text) {
-				content = block.Content
-				break
-			}
-		}
-
-		// If no suitable block found, use the first one
-		if content == fmt.Sprintf("Message from %s", msg.CreatedAt.Format("2006-01-02 15:04:05")) && len(blocks) > 0 {
-			content = blocks[0].Content
-		}
-	}
-
-	// Strip newlines and extra whitespace
-	content = strings.ReplaceAll(content, "\n", " ")
-	content = strings.Join(strings.Fields(content), " ")
-
-	// Truncate to 50 chars if needed
-	if len(content) > 50 {
-		content = content[:47] + "..."
-	}
-
-	return content
 }
 
 // printDialog prints the full dialog to stdout in a readable format
