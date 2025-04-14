@@ -177,20 +177,21 @@ func (s *DialogStorage) SaveMessage(ctx context.Context, message gai.Message, pa
 }
 
 // GetMessage retrieves a message by its ID
-func (s *DialogStorage) GetMessage(ctx context.Context, messageID string) (gai.Message, error) {
+// Returns the message, the parent ID (empty string if no parent), and an error
+func (s *DialogStorage) GetMessage(ctx context.Context, messageID string) (gai.Message, string, error) {
 	msg, err := s.q.GetMessage(ctx, messageID)
 	if err != nil {
-		return gai.Message{}, fmt.Errorf("failed to get message: %w", err)
+		return gai.Message{}, "", fmt.Errorf("failed to get message: %w", err)
 	}
 
 	role, err := stringToRole(msg.Role)
 	if err != nil {
-		return gai.Message{}, fmt.Errorf("invalid role in database: %w", err)
+		return gai.Message{}, "", fmt.Errorf("invalid role in database: %w", err)
 	}
 
 	blocks, err := s.q.GetBlocksByMessage(ctx, messageID)
 	if err != nil {
-		return gai.Message{}, fmt.Errorf("failed to get blocks: %w", err)
+		return gai.Message{}, "", fmt.Errorf("failed to get blocks: %w", err)
 	}
 
 	var gaiBlocks []gai.Block
@@ -209,11 +210,17 @@ func (s *DialogStorage) GetMessage(ctx context.Context, messageID string) (gai.M
 		})
 	}
 
+	// Extract parent ID
+	parentID := ""
+	if msg.ParentID.Valid {
+		parentID = msg.ParentID.String
+	}
+
 	return gai.Message{
 		Role:            role,
 		Blocks:          gaiBlocks,
 		ToolResultError: msg.ToolResultError,
-	}, nil
+	}, parentID, nil
 }
 
 // GetMostRecentUserMessageId retrieves the most recently created user message
@@ -234,12 +241,7 @@ func (s *DialogStorage) GetDialogForMessage(ctx context.Context, messageID strin
 	var msgIds []string
 
 	// get user message first
-	dbMsg, err := s.q.GetMessage(ctx, messageID)
-	if err != nil {
-		return gai.Dialog{}, msgIds, fmt.Errorf("failed to get dialog: %w", err)
-	}
-
-	msg, err := s.GetMessage(ctx, dbMsg.ID)
+	msg, parentId, err := s.GetMessage(ctx, messageID)
 	if err != nil {
 		return gai.Dialog{}, msgIds, fmt.Errorf("failed to get dialog: %w", err)
 	}
@@ -247,19 +249,15 @@ func (s *DialogStorage) GetDialogForMessage(ctx context.Context, messageID strin
 	msgIds = append(msgIds, messageID)
 
 	// Then keep querying parent messages until we reach root message
-	parentId := dbMsg.ParentID.String
 	for parentId != "" {
-		msg, err = s.GetMessage(ctx, parentId)
+		var newParentID string
+		msg, newParentID, err = s.GetMessage(ctx, parentId)
 		if err != nil {
 			return gai.Dialog{}, msgIds, fmt.Errorf("failed to get dialog: %w", err)
 		}
 		dialog = append(dialog, msg)
 		msgIds = append(msgIds, parentId)
-		dbMsg, err = s.q.GetMessage(ctx, parentId)
-		if err != nil {
-			return gai.Dialog{}, msgIds, fmt.Errorf("failed to get dialog: %w", err)
-		}
-		parentId = dbMsg.ParentID.String
+		parentId = newParentID
 	}
 
 	// Reverse the order so now the message is last
@@ -292,7 +290,7 @@ func (s *DialogStorage) GetDialogForMessage(ctx context.Context, messageID strin
 		return dialog, msgIds, nil
 	}
 
-	msg, err = s.GetMessage(ctx, childMsg.ID)
+	msg, _, err = s.GetMessage(ctx, childMsg.ID)
 	if err != nil {
 		return gai.Dialog{}, msgIds, err
 	}
@@ -329,7 +327,7 @@ func (s *DialogStorage) GetDialogForMessage(ctx context.Context, messageID strin
 
 		assistantMsgId = children[0]
 
-		msg, err = s.GetMessage(ctx, assistantMsgId)
+		msg, _, err = s.GetMessage(ctx, assistantMsgId)
 		if err != nil {
 			return gai.Dialog{}, msgIds, err
 		}

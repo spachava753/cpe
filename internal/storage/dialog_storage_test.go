@@ -102,10 +102,13 @@ func TestStoreAndRetrieveMessages(t *testing.T) {
 	require.NoError(t, err, "Failed to save assistant message")
 
 	// Retrieve the individual messages directly
-	retrievedUserMsg, err := storage.GetMessage(ctx, userID)
+	retrievedUserMsg, _, err := storage.GetMessage(ctx, userID)
 	require.NoError(t, err, "Failed to get user message")
-	retrievedAssistantMsg, err := storage.GetMessage(ctx, assistantID)
+	retrievedAssistantMsg, parentID, err := storage.GetMessage(ctx, assistantID)
 	require.NoError(t, err, "Failed to get assistant message")
+
+	// Check parent ID
+	assert.Equal(t, userID, parentID, "Assistant message parent ID should match user ID")
 
 	// Verify individual messages using go-cmp with custom comparer
 	if diff := cmp.Diff(userMsg, retrievedUserMsg, messageComparer); diff != "" {
@@ -144,7 +147,7 @@ func TestGetLatestMessage(t *testing.T) {
 	require.NoError(t, err, "Failed to get latest message ID")
 
 	// Get the message using the ID
-	latestMsg, err := storage.GetMessage(ctx, latestID)
+	latestMsg, _, err := storage.GetMessage(ctx, latestID)
 	require.NoError(t, err, "Failed to get message by ID")
 
 	// Verify it's the third message using go-cmp
@@ -153,7 +156,7 @@ func TestGetLatestMessage(t *testing.T) {
 	}
 
 	// Verify we can retrieve it by ID
-	retrievedMsg, err := storage.GetMessage(ctx, latestID)
+	retrievedMsg, _, err := storage.GetMessage(ctx, latestID)
 	require.NoError(t, err, "Failed to get message by ID")
 
 	if diff := cmp.Diff(msg3, retrievedMsg, messageComparer); diff != "" {
@@ -193,7 +196,7 @@ func TestDeleteMessageWithoutChildren(t *testing.T) {
 	assert.Equal(t, userID, messageIds[0], "Remaining message should be the user message")
 
 	// Verify trying to get the deleted message returns an error
-	_, err = storage.GetMessage(ctx, assistantID)
+	_, _, err = storage.GetMessage(ctx, assistantID)
 	assert.Error(t, err, "Getting deleted message should return an error")
 }
 
@@ -265,17 +268,17 @@ func TestDeleteMessageRecursive(t *testing.T) {
 	assert.Len(t, messageIds, 2, "Should have 2 messages after recursive deletion")
 
 	// Verify we can still access root and child2
-	_, err = storage.GetMessage(ctx, rootID)
+	_, _, err = storage.GetMessage(ctx, rootID)
 	assert.NoError(t, err, "Root message should still exist")
 
-	_, err = storage.GetMessage(ctx, child2ID)
+	_, _, err = storage.GetMessage(ctx, child2ID)
 	assert.NoError(t, err, "Child 2 message should still exist")
 
 	// Verify child1 and grandchild are gone
-	_, err = storage.GetMessage(ctx, child1ID)
+	_, _, err = storage.GetMessage(ctx, child1ID)
 	assert.Error(t, err, "Child 1 message should be deleted")
 
-	_, err = storage.GetMessage(ctx, grandchildID)
+	_, _, err = storage.GetMessage(ctx, grandchildID)
 	assert.Error(t, err, "Grandchild message should be deleted")
 }
 
