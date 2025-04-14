@@ -246,31 +246,24 @@ func (q *Queries) HasChildren(ctx context.Context, parentID sql.NullString) (int
 }
 
 const listMessages = `-- name: ListMessages :many
-SELECT id, parent_id, title, role, tool_result_error, created_at
+SELECT id
 FROM messages
 ORDER BY created_at DESC
 `
 
-func (q *Queries) ListMessages(ctx context.Context) ([]Message, error) {
+func (q *Queries) ListMessages(ctx context.Context) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, listMessages)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Message{}
+	items := []string{}
 	for rows.Next() {
-		var i Message
-		if err := rows.Scan(
-			&i.ID,
-			&i.ParentID,
-			&i.Title,
-			&i.Role,
-			&i.ToolResultError,
-			&i.CreatedAt,
-		); err != nil {
+		var id string
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

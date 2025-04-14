@@ -178,19 +178,19 @@ func TestDeleteMessageWithoutChildren(t *testing.T) {
 	require.NoError(t, err, "Failed to save assistant message")
 
 	// Verify both messages exist
-	messages, err := storage.ListMessages(ctx)
+	messageIds, err := storage.ListMessages(ctx)
 	require.NoError(t, err, "Failed to list messages")
-	assert.Len(t, messages, 2, "Should have 2 messages initially")
+	assert.Len(t, messageIds, 2, "Should have 2 messages initially")
 
 	// Delete the leaf message (assistant's reply)
 	err = storage.DeleteMessage(ctx, assistantID)
 	require.NoError(t, err, "Failed to delete leaf message")
 
 	// Verify only one message remains
-	messages, err = storage.ListMessages(ctx)
+	messageIds, err = storage.ListMessages(ctx)
 	require.NoError(t, err, "Failed to list messages after deletion")
-	assert.Len(t, messages, 1, "Should have 1 message after deletion")
-	assert.Equal(t, userID, messages[0].ID, "Remaining message should be the user message")
+	assert.Len(t, messageIds, 1, "Should have 1 message after deletion")
+	assert.Equal(t, userID, messageIds[0], "Remaining message should be the user message")
 
 	// Verify trying to get the deleted message returns an error
 	_, err = storage.GetMessage(ctx, assistantID)
@@ -219,9 +219,9 @@ func TestDeleteMessageWithChildren(t *testing.T) {
 	assert.Contains(t, err.Error(), "has children", "Error should mention the message has children")
 
 	// Verify both messages still exist
-	messages, err := storage.ListMessages(ctx)
+	messageIds, err := storage.ListMessages(ctx)
 	require.NoError(t, err, "Failed to list messages")
-	assert.Len(t, messages, 2, "Should still have both messages")
+	assert.Len(t, messageIds, 2, "Should still have both messages")
 }
 
 // TestDeleteMessageRecursive tests recursive deletion of a message and its children
@@ -251,18 +251,18 @@ func TestDeleteMessageRecursive(t *testing.T) {
 	require.NoError(t, err, "Failed to save grandchild message")
 
 	// Verify we have 4 messages total
-	messages, err := storage.ListMessages(ctx)
+	messageIds, err := storage.ListMessages(ctx)
 	require.NoError(t, err, "Failed to list messages")
-	assert.Len(t, messages, 4, "Should have 4 messages initially")
+	assert.Len(t, messageIds, 4, "Should have 4 messages initially")
 
 	// Delete child1 and its descendants recursively
 	err = storage.DeleteMessageRecursive(ctx, child1ID)
 	require.NoError(t, err, "Failed to recursively delete message")
 
 	// Verify only 2 messages remain (root and child2)
-	messages, err = storage.ListMessages(ctx)
+	messageIds, err = storage.ListMessages(ctx)
 	require.NoError(t, err, "Failed to list messages after deletion")
-	assert.Len(t, messages, 2, "Should have 2 messages after recursive deletion")
+	assert.Len(t, messageIds, 2, "Should have 2 messages after recursive deletion")
 
 	// Verify we can still access root and child2
 	_, err = storage.GetMessage(ctx, rootID)

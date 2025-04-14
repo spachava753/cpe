@@ -341,8 +341,8 @@ func (s *DialogStorage) GetDialogForMessage(ctx context.Context, messageID strin
 	return dialog, msgIds, nil
 }
 
-// ListMessages returns all messages, sorted by created_at timestamp (newest first)
-func (s *DialogStorage) ListMessages(ctx context.Context) ([]Message, error) {
+// ListMessages returns all message IDs, sorted by created_at timestamp (newest first)
+func (s *DialogStorage) ListMessages(ctx context.Context) ([]string, error) {
 	return s.q.ListMessages(ctx)
 }
 

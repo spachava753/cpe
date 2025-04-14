@@ -23,7 +23,7 @@ FROM messages
 WHERE parent_id = ?;
 
 -- name: ListMessages :many
-SELECT *
+SELECT id
 FROM messages
 ORDER BY created_at DESC;
 
