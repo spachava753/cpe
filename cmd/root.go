@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"os"
 	"runtime/debug"
+	"strings"
 )
 
 var (
@@ -127,7 +128,10 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	if continueID == "" && !newConversation {
 		continueID, err = dialogStorage.GetMostRecentUserMessageId(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to get most recent message: %w", err)
+			if !strings.Contains(err.Error(), "no rows in result set") {
+				return fmt.Errorf("failed to get most recent message: %w", err)
+			}
+			newConversation = true
 		}
 	}
 
@@ -204,6 +208,9 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		}
 		if numberOfResponses > 0 {
 			opts.N = uint(numberOfResponses)
+		}
+		if thinkingBudget != "" {
+			opts.ThinkingBudget = thinkingBudget
 		}
 		return opts
 	}

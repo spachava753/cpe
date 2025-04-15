@@ -55,8 +55,8 @@ ORDER BY created_at DESC;
 
 -- Block queries
 -- name: CreateBlock :exec
-INSERT INTO blocks (id, message_id, block_type, modality_type, mime_type, content, sequence_order)
-VALUES (?, ?, ?, ?, ?, ?, ?);
+INSERT INTO blocks (id, message_id, block_type, modality_type, mime_type, content, extra_fields, sequence_order)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetBlock :one
 SELECT *

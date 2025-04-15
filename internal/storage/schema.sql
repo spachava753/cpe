@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS blocks
     modality_type  INTEGER   NOT NULL,
     mime_type TEXT NOT NULL,
     content        TEXT      NOT NULL,
+    extra_fields TEXT, -- JSON-encoded ExtraFields map, can be NULL
     sequence_order INTEGER   NOT NULL,
     created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (message_id, sequence_order),

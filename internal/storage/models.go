@@ -16,6 +16,7 @@ type Block struct {
 	ModalityType  int64          `json:"modality_type"`
 	MimeType      string         `json:"mime_type"`
 	Content       string         `json:"content"`
+	ExtraFields   sql.NullString `json:"extra_fields"`
 	SequenceOrder int64          `json:"sequence_order"`
 	CreatedAt     time.Time      `json:"created_at"`
 }

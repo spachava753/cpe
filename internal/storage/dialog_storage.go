@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"github.com/matoous/go-nanoid/v2"
 	"github.com/spachava753/gai"
@@ -155,6 +156,19 @@ func (s *DialogStorage) SaveMessage(ctx context.Context, message gai.Message, pa
 			}
 		}
 
+		// Encode ExtraFields as JSON if it exists
+		var extraFieldsParam sql.NullString
+		if block.ExtraFields != nil {
+			extraFieldsJSON, err := json.Marshal(block.ExtraFields)
+			if err != nil {
+				return "", fmt.Errorf("failed to marshal ExtraFields to JSON: %w", err)
+			}
+			extraFieldsParam = sql.NullString{
+				String: string(extraFieldsJSON),
+				Valid:  true,
+			}
+		}
+
 		err = qtx.CreateBlock(ctx, CreateBlockParams{
 			ID:            blockID,
 			MessageID:     messageID,
@@ -162,6 +176,7 @@ func (s *DialogStorage) SaveMessage(ctx context.Context, message gai.Message, pa
 			ModalityType:  int64(block.ModalityType),
 			MimeType:      block.MimeType,
 			Content:       block.Content.String(),
+			ExtraFields:   extraFieldsParam,
 			SequenceOrder: int64(j),
 		})
 		if err != nil {
@@ -202,12 +217,20 @@ func (s *DialogStorage) GetMessage(ctx context.Context, messageID string) (gai.M
 			blockID = block.ID.String
 		}
 
+		var extraFields map[string]interface{}
+		if block.ExtraFields.Valid && block.ExtraFields.String != "" {
+			if err := json.Unmarshal([]byte(block.ExtraFields.String), &extraFields); err != nil {
+				return gai.Message{}, "", fmt.Errorf("failed to unmarshal ExtraFields: %w", err)
+			}
+		}
+
 		gaiBlocks = append(gaiBlocks, gai.Block{
 			ID:           blockID,
 			BlockType:    block.BlockType,
 			ModalityType: gai.Modality(block.ModalityType),
 			MimeType:     block.MimeType,
 			Content:      gai.Str(block.Content),
+			ExtraFields:  extraFields,
 		})
 	}
 

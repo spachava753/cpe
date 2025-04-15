@@ -11,8 +11,8 @@ import (
 )
 
 const createBlock = `-- name: CreateBlock :exec
-INSERT INTO blocks (id, message_id, block_type, modality_type, mime_type, content, sequence_order)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO blocks (id, message_id, block_type, modality_type, mime_type, content, extra_fields, sequence_order)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateBlockParams struct {
@@ -22,6 +22,7 @@ type CreateBlockParams struct {
 	ModalityType  int64          `json:"modality_type"`
 	MimeType      string         `json:"mime_type"`
 	Content       string         `json:"content"`
+	ExtraFields   sql.NullString `json:"extra_fields"`
 	SequenceOrder int64          `json:"sequence_order"`
 }
 
@@ -34,6 +35,7 @@ func (q *Queries) CreateBlock(ctx context.Context, arg CreateBlockParams) error 
 		arg.ModalityType,
 		arg.MimeType,
 		arg.Content,
+		arg.ExtraFields,
 		arg.SequenceOrder,
 	)
 	return err
@@ -89,7 +91,7 @@ func (q *Queries) DeleteMessage(ctx context.Context, id string) error {
 }
 
 const getBlock = `-- name: GetBlock :one
-SELECT id, message_id, block_type, modality_type, mime_type, content, sequence_order, created_at
+SELECT id, message_id, block_type, modality_type, mime_type, content, extra_fields, sequence_order, created_at
 FROM blocks
 WHERE id = ?
 `
@@ -104,6 +106,7 @@ func (q *Queries) GetBlock(ctx context.Context, id sql.NullString) (Block, error
 		&i.ModalityType,
 		&i.MimeType,
 		&i.Content,
+		&i.ExtraFields,
 		&i.SequenceOrder,
 		&i.CreatedAt,
 	)
@@ -111,7 +114,7 @@ func (q *Queries) GetBlock(ctx context.Context, id sql.NullString) (Block, error
 }
 
 const getBlocksByMessage = `-- name: GetBlocksByMessage :many
-SELECT id, message_id, block_type, modality_type, mime_type, content, sequence_order, created_at
+SELECT id, message_id, block_type, modality_type, mime_type, content, extra_fields, sequence_order, created_at
 FROM blocks
 WHERE message_id = ?
 ORDER BY sequence_order
@@ -133,6 +136,7 @@ func (q *Queries) GetBlocksByMessage(ctx context.Context, messageID string) ([]B
 			&i.ModalityType,
 			&i.MimeType,
 			&i.Content,
+			&i.ExtraFields,
 			&i.SequenceOrder,
 			&i.CreatedAt,
 		); err != nil {
