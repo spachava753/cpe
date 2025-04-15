@@ -43,6 +43,7 @@ var listConvoCmd = &cobra.Command{
 			return nil
 		}
 
+		PrintMessageForest(os.Stdout, messageNodes)
 		return nil
 	},
 }
