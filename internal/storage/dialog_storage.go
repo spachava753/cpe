@@ -9,6 +9,7 @@ import (
 	"github.com/matoous/go-nanoid/v2"
 	"github.com/spachava753/gai"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -370,6 +371,8 @@ type MessageIdNode struct {
 	ID        string          `json:"id"`
 	ParentID  string          `json:"parent_id"`
 	CreatedAt time.Time       `json:"created_at"`
+	Content   string          `json:"content"` // Short snippet or modality type
+	Role      string          `json:"role"`    // user, assistant, or tool_result
 	Children  []MessageIdNode `json:"children"`
 }
 
@@ -425,16 +428,67 @@ func (s *DialogStorage) ListMessages(ctx context.Context) ([]MessageIdNode, erro
 
 // buildMessageTree recursively builds a message tree starting from the given node ID
 func (s *DialogStorage) buildMessageTree(nodeID string, childrenMap map[string][]string) (MessageIdNode, error) {
-	// Get the message from the database to get its parent ID and created_at
+	// Get the message from the database to get its parent ID and created_at/role
 	msg, err := s.q.GetMessage(context.Background(), nodeID)
 	if err != nil {
 		return MessageIdNode{}, fmt.Errorf("failed to get message %s: %w", nodeID, err)
 	}
 
+	// Retrieve all blocks for Content extraction
+	blocks, err := s.q.GetBlocksByMessage(context.Background(), nodeID)
+	if err != nil {
+		return MessageIdNode{}, fmt.Errorf("failed to get blocks for message %s: %w", nodeID, err)
+	}
+
+	escapeNewlines := func(s string) string {
+		// Replace both literal \n and actual newlines
+		s = strings.ReplaceAll(s, "\n", " ")
+		s = strings.ReplaceAll(s, "\r", " ")
+		return s
+	}
+
+	content := ""
+	modalityTypeName := func(mType int64) string {
+		switch mType {
+		case 0:
+			return "Text"
+		case 1:
+			return "Image"
+		case 2:
+			return "Audio"
+		case 3:
+			return "Video"
+		default:
+			return fmt.Sprintf("Unknown(%d)", mType)
+		}
+	}
+
+	foundText := false
+	for _, blk := range blocks {
+		if blk.ModalityType == 0 { // gai.Text
+			// Truncate to first 50 chars, replacing newlines
+			snippet := blk.Content
+			snippet = escapeNewlines(snippet)
+			if len(snippet) > 50 {
+				snippet = snippet[:50]
+			}
+			content = snippet
+			foundText = true
+			break
+		}
+	}
+	if !foundText && len(blocks) > 0 {
+		content = modalityTypeName(blocks[0].ModalityType)
+	}
+
+	role := msg.Role
+
 	node := MessageIdNode{
 		ID:        nodeID,
 		ParentID:  "",
 		CreatedAt: msg.CreatedAt,
+		Content:   content,
+		Role:      role,
 	}
 	if msg.ParentID.Valid {
 		node.ParentID = msg.ParentID.String
