@@ -6,15 +6,15 @@ go 1.23.2
 retract v0.16.10
 
 require (
-	github.com/anthropics/anthropic-sdk-go v0.2.0-alpha.13
+	github.com/anthropics/anthropic-sdk-go v0.2.0-beta.3
 	github.com/gabriel-vasile/mimetype v1.4.8
 	github.com/google/go-cmp v0.7.0
 	github.com/matoous/go-nanoid/v2 v2.1.0
 	github.com/mattn/go-sqlite3 v1.14.27
-	github.com/openai/openai-go v0.1.0-alpha.62
+	github.com/openai/openai-go v0.1.0-beta.10
 	github.com/pkoukk/tiktoken-go v0.1.7
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
-	github.com/spachava753/gai v0.2.0
+	github.com/spachava753/gai v0.3.0
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
 	github.com/tree-sitter/go-tree-sitter v0.25.0
@@ -39,7 +39,7 @@ require (
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
-	golang.org/x/net v0.37.0 // indirect
+	golang.org/x/net v0.39.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

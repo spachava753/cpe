@@ -28,6 +28,12 @@ var anthropicModels = []string{
 }
 
 var openAiModels = []string{
+	"gpt-4.1",
+	"gpt-4.1-mini",
+	"gpt-4.1-nano",
+	"gpt-4.1-2025-04-14",
+	"gpt-4.1-mini-2025-04-14",
+	"gpt-4.1-nano--2025-04-14",
 	openai.ChatModelO3Mini,
 	openai.ChatModelO3Mini2025_01_31,
 	openai.ChatModelO1,
@@ -36,8 +42,6 @@ var openAiModels = []string{
 	openai.ChatModelO1Preview2024_09_12,
 	openai.ChatModelO1Mini,
 	openai.ChatModelO1Mini2024_09_12,
-	openai.ChatModelGPT4_5Preview,
-	openai.ChatModelGPT4_5Preview2025_02_27,
 	openai.ChatModelGPT4o,
 	openai.ChatModelGPT4o2024_11_20,
 	openai.ChatModelGPT4o2024_08_06,
@@ -115,7 +119,7 @@ func InitGenerator(model, baseURL string) (gai.ToolCapableGenerator, error) {
 // createOpenAIGenerator creates and configures an OpenAI generator
 func createOpenAIGenerator(model, baseURL string) (gai.Generator, error) {
 	// Create OpenAI client
-	var client *openai.Client
+	var client openai.Client
 	if baseURL != "" {
 		client = openai.NewClient(oaiopt.WithBaseURL(baseURL))
 	} else {
@@ -133,7 +137,7 @@ func createOpenAIGenerator(model, baseURL string) (gai.Generator, error) {
 
 	// Create the OpenAI generator
 	generator := gai.NewOpenAiGenerator(
-		client.Chat.Completions,
+		&client.Chat.Completions,
 		model,
 		systemPrompt,
 	)
@@ -144,7 +148,7 @@ func createOpenAIGenerator(model, baseURL string) (gai.Generator, error) {
 // createAnthropicGenerator creates and configures an Anthropic generator
 func createAnthropicGenerator(model, baseURL string) (gai.Generator, error) {
 	// Create Anthropic client
-	var client *anthropic.Client
+	var client anthropic.Client
 	opts := []aopts.RequestOption{
 		// Add a custom timeout to disable to the error returned if a
 		// non-streaming request is expected to be above roughly 10 minutes long
@@ -167,7 +171,7 @@ func createAnthropicGenerator(model, baseURL string) (gai.Generator, error) {
 
 	// Create and return the Anthropic generator
 	generator := gai.NewAnthropicGenerator(
-		client.Messages,
+		&client.Messages,
 		model,
 		systemPrompt,
 	)
