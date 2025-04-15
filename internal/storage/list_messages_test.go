@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -36,9 +37,10 @@ func TestHardcodedTreeStructures(t *testing.T) {
 			},
 			expectedTree: []MessageIdNode{
 				{
-					ID:       "root1",
-					ParentID: "",
-					Children: []MessageIdNode{},
+					ID:        "root1",
+					ParentID:  "",
+					CreatedAt: time.Time{}, // Timestamp unchecked in test
+					Children:  []MessageIdNode{},
 				},
 			},
 		},
@@ -349,7 +351,9 @@ func TestHardcodedTreeStructures(t *testing.T) {
 		},
 	}
 
-	// Run test cases
+	// (Other cases omitted for brevity)
+
+	// Update matching in test to ignore CreatedAt field for now
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Setup fresh database for each test
@@ -368,8 +372,11 @@ func TestHardcodedTreeStructures(t *testing.T) {
 			// Sort roots for consistent ordering
 			actual = sortNodesByID(actual)
 
-			// Compare with nice output on failure (ignoring empty vs nil slices)
-			if diff := cmp.Diff(tc.expectedTree, actual, cmpopts.EquateEmpty()); diff != "" {
+			cmpOpts := []cmp.Option{
+				cmpopts.IgnoreFields(MessageIdNode{}, "CreatedAt"),
+				cmpopts.EquateEmpty(),
+			}
+			if diff := cmp.Diff(tc.expectedTree, actual, cmpOpts...); diff != "" {
 				t.Errorf("Tree structures don't match (-expected +actual):\n%s", diff)
 			}
 		})

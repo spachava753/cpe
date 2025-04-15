@@ -9,6 +9,7 @@ import (
 	"github.com/matoous/go-nanoid/v2"
 	"github.com/spachava753/gai"
 	"slices"
+	"time"
 )
 
 //go:embed schema.sql
@@ -364,10 +365,12 @@ func (s *DialogStorage) GetDialogForMessage(ctx context.Context, messageID strin
 }
 
 // MessageIdNode represents a message and its relationship with its parent and children
+// CreatedAt is the creation timestamp of the message.
 type MessageIdNode struct {
-	ID       string          // The ID of the message
-	ParentID string          // The ID of the parent message (empty if this is a root message)
-	Children []MessageIdNode // Child messages
+	ID        string          `json:"id"`
+	ParentID  string          `json:"parent_id"`
+	CreatedAt time.Time       `json:"created_at"`
+	Children  []MessageIdNode `json:"children"`
 }
 
 // ListMessages returns a hierarchical representation of messages as a forest of trees.
@@ -422,24 +425,21 @@ func (s *DialogStorage) ListMessages(ctx context.Context) ([]MessageIdNode, erro
 
 // buildMessageTree recursively builds a message tree starting from the given node ID
 func (s *DialogStorage) buildMessageTree(nodeID string, childrenMap map[string][]string) (MessageIdNode, error) {
-	// Get the message from the database to get its parent ID
+	// Get the message from the database to get its parent ID and created_at
 	msg, err := s.q.GetMessage(context.Background(), nodeID)
 	if err != nil {
 		return MessageIdNode{}, fmt.Errorf("failed to get message %s: %w", nodeID, err)
 	}
 
-	// Create the node
 	node := MessageIdNode{
-		ID:       nodeID,
-		ParentID: "",
+		ID:        nodeID,
+		ParentID:  "",
+		CreatedAt: msg.CreatedAt,
 	}
-
-	// Set parent ID if it exists
 	if msg.ParentID.Valid {
 		node.ParentID = msg.ParentID.String
 	}
 
-	// Recursively add children
 	children, exists := childrenMap[nodeID]
 	if exists {
 		for _, childID := range children {
@@ -450,7 +450,6 @@ func (s *DialogStorage) buildMessageTree(nodeID string, childrenMap map[string][
 			node.Children = append(node.Children, childNode)
 		}
 	}
-
 	return node, nil
 }
 
