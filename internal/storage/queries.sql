@@ -27,6 +27,12 @@ SELECT id
 FROM messages
 ORDER BY created_at DESC;
 
+-- name: ListRootMessages :many
+SELECT id
+FROM messages
+WHERE parent_id IS NULL
+ORDER BY created_at;
+
 -- name: ListMessagesByParent :many
 SELECT *
 FROM messages

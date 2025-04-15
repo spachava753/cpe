@@ -20,6 +20,7 @@ type DialogStorage struct {
 	db          *sql.DB
 	q           *Queries
 	idGenerator func() string
+	genIds      []string // Used only for testing to track generated IDs
 }
 
 // InitDialogStorage initializes and returns a new DialogStorage instance
@@ -339,9 +340,95 @@ func (s *DialogStorage) GetDialogForMessage(ctx context.Context, messageID strin
 	return dialog, msgIds, nil
 }
 
-// ListMessages returns all message IDs, sorted by created_at timestamp (newest first)
-func (s *DialogStorage) ListMessages(ctx context.Context) ([]string, error) {
-	return s.q.ListMessages(ctx)
+// MessageIdNode represents a message and its relationship with its parent and children
+type MessageIdNode struct {
+	ID       string          // The ID of the message
+	ParentID string          // The ID of the parent message (empty if this is a root message)
+	Children []MessageIdNode // Child messages
+}
+
+// ListMessages returns a hierarchical representation of messages as a forest of trees.
+// Each tree represents a conversation thread, starting with a root message (a message with no parent).
+// The returned slice contains the root messages, with their children accessible via the Children field.
+func (s *DialogStorage) ListMessages(ctx context.Context) ([]MessageIdNode, error) {
+	// First, get all root messages (messages with no parent)
+	rootMessageIDs, err := s.q.ListRootMessages(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list root messages: %w", err)
+	}
+
+	// Create a map to store all messages for quick lookup
+	allMessages := make(map[string]Message)
+
+	// Get all messages
+	allMessageIDs, err := s.q.ListMessages(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list all messages: %w", err)
+	}
+
+	// Fetch all messages and store them in the map
+	for _, id := range allMessageIDs {
+		msg, err := s.q.GetMessage(ctx, id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get message %s: %w", id, err)
+		}
+		allMessages[id] = msg
+	}
+
+	// Construct parent-child relationships
+	childrenMap := make(map[string][]string)
+	for id, msg := range allMessages {
+		if msg.ParentID.Valid {
+			parentID := msg.ParentID.String
+			childrenMap[parentID] = append(childrenMap[parentID], id)
+		}
+	}
+
+	// Build the forest starting with root nodes
+	var forest []MessageIdNode
+	for _, rootID := range rootMessageIDs {
+		node, err := s.buildMessageTree(rootID, childrenMap)
+		if err != nil {
+			return nil, err
+		}
+		forest = append(forest, node)
+	}
+
+	return forest, nil
+}
+
+// buildMessageTree recursively builds a message tree starting from the given node ID
+func (s *DialogStorage) buildMessageTree(nodeID string, childrenMap map[string][]string) (MessageIdNode, error) {
+	// Get the message from the database to get its parent ID
+	msg, err := s.q.GetMessage(context.Background(), nodeID)
+	if err != nil {
+		return MessageIdNode{}, fmt.Errorf("failed to get message %s: %w", nodeID, err)
+	}
+
+	// Create the node
+	node := MessageIdNode{
+		ID:       nodeID,
+		ParentID: "",
+	}
+
+	// Set parent ID if it exists
+	if msg.ParentID.Valid {
+		node.ParentID = msg.ParentID.String
+	}
+
+	// Recursively add children
+	children, exists := childrenMap[nodeID]
+	if exists {
+		for _, childID := range children {
+			childNode, err := s.buildMessageTree(childID, childrenMap)
+			if err != nil {
+				return MessageIdNode{}, err
+			}
+			node.Children = append(node.Children, childNode)
+		}
+	}
+
+	return node, nil
 }
 
 // DeleteMessage deletes a message if it has no children

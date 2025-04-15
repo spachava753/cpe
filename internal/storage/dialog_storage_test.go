@@ -181,19 +181,21 @@ func TestDeleteMessageWithoutChildren(t *testing.T) {
 	require.NoError(t, err, "Failed to save assistant message")
 
 	// Verify both messages exist
-	messageIds, err := storage.ListMessages(ctx)
+	messageNodes, err := storage.ListMessages(ctx)
 	require.NoError(t, err, "Failed to list messages")
-	assert.Len(t, messageIds, 2, "Should have 2 messages initially")
+	assert.Len(t, messageNodes, 1, "Should have 1 root message initially")
+	assert.Len(t, messageNodes[0].Children, 1, "Root should have 1 child")
 
 	// Delete the leaf message (assistant's reply)
 	err = storage.DeleteMessage(ctx, assistantID)
 	require.NoError(t, err, "Failed to delete leaf message")
 
 	// Verify only one message remains
-	messageIds, err = storage.ListMessages(ctx)
+	messageNodes, err = storage.ListMessages(ctx)
 	require.NoError(t, err, "Failed to list messages after deletion")
-	assert.Len(t, messageIds, 1, "Should have 1 message after deletion")
-	assert.Equal(t, userID, messageIds[0], "Remaining message should be the user message")
+	assert.Len(t, messageNodes, 1, "Should have 1 root message after deletion")
+	assert.Len(t, messageNodes[0].Children, 0, "Root should have no children after deletion")
+	assert.Equal(t, userID, messageNodes[0].ID, "Remaining message should be the user message")
 
 	// Verify trying to get the deleted message returns an error
 	_, _, err = storage.GetMessage(ctx, assistantID)
@@ -222,9 +224,10 @@ func TestDeleteMessageWithChildren(t *testing.T) {
 	assert.Contains(t, err.Error(), "has children", "Error should mention the message has children")
 
 	// Verify both messages still exist
-	messageIds, err := storage.ListMessages(ctx)
+	messageNodes, err := storage.ListMessages(ctx)
 	require.NoError(t, err, "Failed to list messages")
-	assert.Len(t, messageIds, 2, "Should still have both messages")
+	assert.Len(t, messageNodes, 1, "Should have 1 root message")
+	assert.Len(t, messageNodes[0].Children, 1, "Root should have 1 child")
 }
 
 // TestDeleteMessageRecursive tests recursive deletion of a message and its children
@@ -250,33 +253,46 @@ func TestDeleteMessageRecursive(t *testing.T) {
 
 	// Add a grandchild message
 	grandchildMsg := createTextMessage(gai.User, "Grandchild message")
-	grandchildID, err := storage.SaveMessage(ctx, grandchildMsg, child1ID, "")
+	grandchildID, err := storage.SaveMessage(ctx, grandchildMsg, child2ID, "")
 	require.NoError(t, err, "Failed to save grandchild message")
 
-	// Verify we have 4 messages total
-	messageIds, err := storage.ListMessages(ctx)
+	// Verify we have the correct tree structure
+	messageNodes, err := storage.ListMessages(ctx)
 	require.NoError(t, err, "Failed to list messages")
-	assert.Len(t, messageIds, 4, "Should have 4 messages initially")
+	assert.Len(t, messageNodes, 1, "Should have 1 root node")
+	assert.Len(t, messageNodes[0].Children, 2, "Root should have 2 children")
 
-	// Delete child1 and its descendants recursively
-	err = storage.DeleteMessageRecursive(ctx, child1ID)
+	// Find child2 (the one with a grandchild)
+	var child2Node MessageIdNode
+	for _, child := range messageNodes[0].Children {
+		if child.ID == child2ID {
+			child2Node = child
+			break
+		}
+	}
+	assert.Len(t, child2Node.Children, 1, "Child2 should have 1 grandchild")
+
+	// Delete child2 and its descendants recursively
+	err = storage.DeleteMessageRecursive(ctx, child2ID)
 	require.NoError(t, err, "Failed to recursively delete message")
 
-	// Verify only 2 messages remain (root and child2)
-	messageIds, err = storage.ListMessages(ctx)
+	// Verify updated tree structure
+	messageNodes, err = storage.ListMessages(ctx)
 	require.NoError(t, err, "Failed to list messages after deletion")
-	assert.Len(t, messageIds, 2, "Should have 2 messages after recursive deletion")
+	assert.Len(t, messageNodes, 1, "Should have 1 root node")
+	assert.Len(t, messageNodes[0].Children, 1, "Root should have 1 child after deletion")
+	assert.Equal(t, child1ID, messageNodes[0].Children[0].ID, "Remaining child should be child1")
 
-	// Verify we can still access root and child2
+	// Verify we can still access root and child1
 	_, _, err = storage.GetMessage(ctx, rootID)
 	assert.NoError(t, err, "Root message should still exist")
 
-	_, _, err = storage.GetMessage(ctx, child2ID)
-	assert.NoError(t, err, "Child 2 message should still exist")
-
-	// Verify child1 and grandchild are gone
 	_, _, err = storage.GetMessage(ctx, child1ID)
-	assert.Error(t, err, "Child 1 message should be deleted")
+	assert.NoError(t, err, "Child 1 message should still exist")
+
+	// Verify child2 and grandchild are gone
+	_, _, err = storage.GetMessage(ctx, child2ID)
+	assert.Error(t, err, "Child 2 message should be deleted")
 
 	_, _, err = storage.GetMessage(ctx, grandchildID)
 	assert.Error(t, err, "Grandchild message should be deleted")

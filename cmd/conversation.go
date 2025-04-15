@@ -32,13 +32,13 @@ var listConvoCmd = &cobra.Command{
 		}
 		defer dialogStorage.Close()
 
-		// Fetch all messages
-		messages, err := dialogStorage.ListMessages(cmd.Context())
+		// Fetch all messages as a hierarchical structure
+		messageNodes, err := dialogStorage.ListMessages(cmd.Context())
 		if err != nil {
 			return fmt.Errorf("failed to list messages: %v", err)
 		}
 
-		if len(messages) == 0 {
+		if len(messageNodes) == 0 {
 			fmt.Println("No messages found.")
 			return nil
 		}
