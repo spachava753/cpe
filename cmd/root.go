@@ -5,7 +5,10 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"github.com/anthropics/anthropic-sdk-go"
+	"os"
+	"runtime/debug"
+	"strings"
+
 	"github.com/gabriel-vasile/mimetype"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/spachava753/cpe/internal/agent"
@@ -13,13 +16,9 @@ import (
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/gai"
 	"github.com/spf13/cobra"
-	"os"
-	"runtime/debug"
-	"strings"
 )
 
 var (
-	// Flags for the root command
 	model             string
 	customURL         string
 	maxTokens         int
@@ -33,6 +32,10 @@ var (
 	input             []string
 	newConversation   bool
 	continueID        string
+
+	// DefaultModel holds the global default LLM model for the CLI.
+	// It is set at process startup from CPE_MODEL env var (or empty if unset).
+	DefaultModel = os.Getenv("CPE_MODEL")
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -135,14 +138,12 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		}
 	}
 
-	// Get default model from environment variable
-	defaultModel := os.Getenv("CPE_MODEL")
-	if defaultModel == "" {
-		defaultModel = anthropic.ModelClaude3_7SonnetLatest // Default model if not specified
-	}
-
+	// Use DefaultModel from global scope (must be set by env or CLI flag only)
 	if model == "" {
-		model = defaultModel
+		if DefaultModel == "" {
+			return errors.New("No model specified. Please set the CPE_MODEL environment variable or use the --model flag.")
+		}
+		model = DefaultModel
 	}
 
 	customURL = getCustomURL(customURL)

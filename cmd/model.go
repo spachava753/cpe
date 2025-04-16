@@ -22,7 +22,11 @@ var listModelCmd = &cobra.Command{
 	Aliases: []string{"ls"},
 	Run: func(cmd *cobra.Command, args []string) {
 		for _, model := range agent.KnownModels {
-			fmt.Println(model)
+			if model == DefaultModel {
+				fmt.Printf("%s (default)\n", model)
+			} else {
+				fmt.Println(model)
+			}
 		}
 	},
 }
