@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"bytes"
-	"strings"
+	"github.com/google/go-cmp/cmp"
 	"testing"
 	"time"
 
@@ -44,16 +44,16 @@ func TestPrintMessageForest_SimpleTree(t *testing.T) {
 	PrintMessageForest(&buf, forest)
 
 	actual := buf.String()
-	expected := strings.Join([]string{
-		"A (2025-04-15 14:00)",
-		"├── B (2025-04-15 14:01)",
-		"│   └── C (2025-04-15 14:02)",
-		"└── D (2025-04-15 14:03)",
-		"E (2025-04-15 14:04)",
-		"",
-	}, "\n")
+	expected := `A (2025-04-15 14:00) [] 
+    B (2025-04-15 14:01) [] 
+    C (2025-04-15 14:02) [] 
+    ------
+    D (2025-04-15 14:03) [] 
+    ------
+E (2025-04-15 14:04) [] 
+`
 
-	if actual != expected {
-		t.Errorf("Tree output mismatch.\nActual:\n%sExpected:\n%s", actual, expected)
+	if diff := cmp.Diff(expected, actual); diff != "" {
+		t.Errorf("Tree output mismatch.\n%s", diff)
 	}
 }
