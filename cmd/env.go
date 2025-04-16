@@ -2,11 +2,8 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"strings"
-
-	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spf13/cobra"
+	"os"
 )
 
 // envCmd represents the env command
@@ -56,7 +53,6 @@ func printEnvironmentVariables() {
 	printVar("ANTHROPIC_API_KEY", "Required for Claude models", true)
 	printVar("OPENAI_API_KEY", "Required for OpenAI models", true)
 	printVar("GEMINI_API_KEY", "Required for Google Gemini models", true)
-	printVar("DEEPSEEK_API_KEY", "Required for Deepseek models", true)
 
 	// Model Selection
 	fmt.Println("\nModel Selection:")
@@ -65,21 +61,5 @@ func printEnvironmentVariables() {
 	// Custom API Endpoints
 	fmt.Println("\nCustom API Endpoints:")
 	printVar("CPE_CUSTOM_URL", "Default custom URL for API endpoints", false)
-	printVar("CPE_CUSTOM_API_KEY", "API key for custom/unknown models (when using custom URLs)", true)
 	printVar("CPE_DISABLE_TOOL_USE", "When set, disables tool use for custom models (those with custom URLs not in the predefined list)", false)
-
-	// Print model-specific URL environment variables
-	fmt.Println("\nModel-Specific API Endpoints:")
-	for modelAlias, config := range agent.ModelConfigs {
-		// Convert model name to environment variable format
-		// Replace hyphens with underscores and convert to uppercase
-		modelEnvName := strings.ToUpper(strings.ReplaceAll(modelAlias, "-", "_"))
-		envVarName := "CPE_" + modelEnvName + "_URL"
-
-		// Description with the actual model name
-		description := fmt.Sprintf("Custom URL for %s (%s)", modelAlias, config.Name)
-
-		// Print the variable
-		printVar(envVarName, description, false)
-	}
 }

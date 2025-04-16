@@ -168,14 +168,20 @@ cpe -t 0.7 -b 10000 "Make the authentication more secure"
 # Continue from a specific conversation ID
 cpe -c abcd1234 "Let's discuss the rate limiting"
 
-# List all conversations
+# List all conversations in a git-like graph
 cpe conversation list
+# or use aliases
+cpe convo ls
 
-# View a specific conversation
+# View a specific conversation by message ID
 cpe conversation print abcd1234
+# or use aliases
+cpe convo show abcd1234
 
-# Delete a conversation
+# Delete a message by ID
 cpe conversation delete abcd1234
+# Delete a message and all its children
+cpe conversation delete --cascade abcd1234
 ```
 
 **Custom API Endpoints**:
@@ -215,7 +221,7 @@ cpe -m llama3 "How can I create a web server in Go?"
 
 ### Conversation Management
 
-- `cpe conversation list` (aliases: `convo list`, `conv ls`): List all conversations
+- `cpe conversation list` (aliases: `convo list`, `conv ls`): List all conversations in a git-like graph
 - `cpe conversation print [id]` (aliases: `convo show`, `conv view`): Print a specific conversation
 - `cpe conversation delete [id]` (aliases: `convo rm`, `conv remove`): Delete a conversation
 

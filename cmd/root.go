@@ -2,23 +2,23 @@ package cmd
 
 import (
 	"context"
+	"encoding/base64"
+	"errors"
 	"fmt"
-	"io"
-	"log"
 	"os"
 	"runtime/debug"
-	"slices"
 	"strings"
 
+	"github.com/gabriel-vasile/mimetype"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/spachava753/cpe/internal/agent"
-	"github.com/spachava753/cpe/internal/conversation"
-	"github.com/spachava753/cpe/internal/db"
 	"github.com/spachava753/cpe/internal/ignore"
+	"github.com/spachava753/cpe/internal/storage"
+	"github.com/spachava753/gai"
 	"github.com/spf13/cobra"
 )
 
 var (
-	// Flags for the root command
 	model             string
 	customURL         string
 	maxTokens         int
@@ -32,6 +32,10 @@ var (
 	input             []string
 	newConversation   bool
 	continueID        string
+
+	// DefaultModel holds the global default LLM model for the CLI.
+	// It is set at process startup from CPE_MODEL env var (or empty if unset).
+	DefaultModel = os.Getenv("CPE_MODEL")
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -42,16 +46,16 @@ var rootCmd = &cobra.Command{
 developers to leverage AI for codebase analysis, modification, and improvement 
 through natural language interactions.`,
 	Args: cobra.ArbitraryArgs,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		// Check if version flag is set
 		versionFlag, _ := cmd.Flags().GetBool("version")
 		if versionFlag {
 			fmt.Printf("cpe version %s\n", getVersion())
-			return
+			return nil
 		}
 
 		// Initialize the executor and run the main functionality
-		executeRootCommand(cmd, args)
+		return executeRootCommand(cmd.Context(), args)
 	},
 }
 
@@ -74,7 +78,7 @@ func getVersion() string {
 
 func init() {
 	// Define flags for the root command
-	rootCmd.PersistentFlags().StringVarP(&model, "model", "m", "", fmt.Sprintf("Specify the model to use. Supported models: %s", strings.Join(getModelKeys(), ", ")))
+	rootCmd.PersistentFlags().StringVarP(&model, "model", "m", "", "Specify the model to use")
 	rootCmd.PersistentFlags().StringVar(&customURL, "custom-url", "", "Specify a custom base URL for the model provider API")
 	rootCmd.PersistentFlags().IntVarP(&maxTokens, "max-tokens", "x", 0, "Maximum number of tokens to generate")
 	rootCmd.PersistentFlags().Float64VarP(&temperature, "temperature", "t", 0, "Sampling temperature (0.0 - 1.0)")
@@ -92,154 +96,259 @@ func init() {
 	rootCmd.Flags().BoolP("version", "v", false, "Print the version number and exit")
 }
 
-// getModelKeys returns a slice of model keys from the ModelConfigs map
-func getModelKeys() []string {
-	var keys []string
-	for k := range agent.ModelConfigs {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
 // executeRootCommand handles the main functionality of the root command
-func executeRootCommand(cmd *cobra.Command, args []string) {
-	var inputs []agent.Input
-	var err error
-
-	// Read input from stdin, files, or arguments
-	inputs, err = readInput(input, args)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
+func executeRootCommand(ctx context.Context, args []string) error {
 	// Initialize ignorer
 	ignorer, err := ignore.LoadIgnoreFiles(".")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: failed to load ignore files: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to load ignore files: %w", err)
 	}
 	if ignorer == nil {
-		fmt.Fprintf(os.Stderr, "Error: git ignorer was nil\n")
-		os.Exit(1)
+		return errors.New("git ignorer was nil")
 	}
 
-	// Get model config to validate input types
-	modelConfig, ok := agent.ModelConfigs[model]
-	if !ok {
-		// If no model flag, try to get model from conversation
-		if !newConversation {
-			// Initialize conversation manager
-			dbPath := ".cpeconvo"
-			convoManager, err := conversation.NewManager(dbPath)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-			defer convoManager.Close()
-
-			// Get conversation
-			var conv *db.Conversation
-			if continueID != "" {
-				conv, err = convoManager.GetConversation(context.Background(), continueID)
-			} else {
-				conv, err = convoManager.GetLatestConversation(context.Background())
-			}
-			if err == nil {
-				// Find model alias by model name
-				for alias, cfg := range agent.ModelConfigs {
-					if cfg.Name == conv.Model {
-						modelConfig = cfg
-						model = alias // Set the model name
-						ok = true
-						break
-					}
-				}
-			}
-		}
-
-		// If still not found, get model from flags/env/default
-		if !ok {
-			modelName := agent.GetModelFromFlagsOrDefault(agent.ModelOptions{
-				Model: model,
-			})
-			modelConfig, ok = agent.ModelConfigs[modelName]
-			if !ok {
-				// Unknown model, default to text only
-				modelConfig = agent.ModelConfig{
-					Name:            modelName,
-					IsKnown:         false,
-					SupportedInputs: []agent.InputType{agent.InputTypeText},
-				}
-			}
-		}
-	}
-
-	// Get the model alias (the key in ModelConfigs) from the model name if possible
-	// This ensures we can properly look up the model-specific environment variables
-	modelAlias := model
-	if modelConfig.IsKnown {
-		// Find the alias for this model
-		for alias, config := range agent.ModelConfigs {
-			if config.Name == modelConfig.Name {
-				modelAlias = alias
-				break
-			}
-		}
-	}
-
-	// Initialize the executor
-	executor, err := agent.InitExecutor(log.Default(), agent.ModelOptions{
-		Model:             model,
-		CustomURL:         getCustomURL(customURL, modelAlias),
-		MaxTokens:         maxTokens,
-		Temperature:       temperature,
-		TopP:              topP,
-		TopK:              topK,
-		FrequencyPenalty:  frequencyPenalty,
-		PresencePenalty:   presencePenalty,
-		NumberOfResponses: numberOfResponses,
-		ThinkingBudget:    thinkingBudget,
-		Continue:          continueID,
-		New:               newConversation,
-	})
+	userBlocks, err := processUserInput(args)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("could not process user input: %w", err)
 	}
 
-	// Validate input types against model capabilities
-	for _, input := range inputs {
-		if slices.Contains(modelConfig.SupportedInputs, input.Type) {
-			continue
+	// If no input was provided, print help
+	if len(userBlocks) == 0 {
+		return errors.New("empty input")
+	}
+
+	// Always use .cpeconvo as the DB path
+	dbPath := ".cpeconvo"
+
+	// Initialize or open the database through the storage package
+	dialogStorage, err := storage.InitDialogStorage(dbPath)
+	if err != nil {
+		return fmt.Errorf("failed to initialize dialog storage: %w", err)
+	}
+	defer dialogStorage.Close()
+
+	// Get most recent message
+	if continueID == "" && !newConversation {
+		continueID, err = dialogStorage.GetMostRecentUserMessageId(ctx)
+		if err != nil {
+			if !strings.Contains(err.Error(), "no rows in result set") {
+				return fmt.Errorf("failed to get most recent message: %w", err)
+			}
+			newConversation = true
 		}
-		fmt.Fprintf(os.Stderr, "Error: model %s does not support input type %s (file: %s)\n",
-			model, string(input.Type), input.FilePath)
+	}
+
+	// Use DefaultModel from global scope (must be set by env or CLI flag only)
+	if model == "" {
+		if DefaultModel == "" {
+			return errors.New("No model specified. Please set the CPE_MODEL environment variable or use the --model flag.")
+		}
+		model = DefaultModel
+	}
+
+	customURL = getCustomURL(customURL)
+	// Create the underlying generator based on the model name
+	baseGenerator, err := agent.InitGenerator(model, customURL)
+	if err != nil {
+		return fmt.Errorf("failed to create base generator: %w", err)
+	}
+
+	// Wrap the base generator with ResponsePrinterGenerator
+	printingGenerator := agent.NewResponsePrinterGenerator(baseGenerator)
+
+	// Create the tool generator using the wrapped generator
+	toolGen := &gai.ToolGenerator{
+		G: printingGenerator,
+	}
+
+	// Register all the necessary tools
+	if err = agent.RegisterTools(toolGen); err != nil {
+		return fmt.Errorf("failed to register tools: %w", err)
+	}
+
+	userMessage := gai.Message{
+		Role:   gai.User,
+		Blocks: userBlocks,
+	}
+
+	// Create full dialog with parent message if available
+	dialog := gai.Dialog{
+		userMessage,
+	}
+
+	var msgIdList []string
+
+	if !newConversation {
+		dialog, msgIdList, err = dialogStorage.GetDialogForMessage(ctx, continueID)
+		if err != nil {
+			return fmt.Errorf("failed to get previous dialog: %w", err)
+		}
+		dialog = append(dialog, userMessage)
+	}
+
+	// Create a generator function that returns generation options
+	genOptionsFunc := func(d gai.Dialog) *gai.GenOpts {
+		opts := &gai.GenOpts{}
+		if maxTokens > 0 {
+			opts.MaxGenerationTokens = maxTokens
+		}
+		if temperature > 0 {
+			opts.Temperature = temperature
+		}
+		if topP > 0 {
+			opts.TopP = topP
+		}
+		if topK > 0 {
+			opts.TopK = uint(topK)
+		}
+		if frequencyPenalty != 0 {
+			opts.FrequencyPenalty = frequencyPenalty
+		}
+		if presencePenalty != 0 {
+			opts.PresencePenalty = presencePenalty
+		}
+		if numberOfResponses > 0 {
+			opts.N = uint(numberOfResponses)
+		}
+		if thinkingBudget != "" {
+			opts.ThinkingBudget = thinkingBudget
+		}
+		return opts
+	}
+
+	// The ResponsePrinterGenerator will print the responses as they come
+	resultDialog, err := toolGen.Generate(ctx, dialog, genOptionsFunc)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating response: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Execute the model
-	if err := executor.Execute(inputs); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+	var parentId string
+	if len(msgIdList) != 0 {
+		parentId = msgIdList[len(msgIdList)-1]
 	}
+
+	// Save user message
+	userMsgID, err := dialogStorage.SaveMessage(ctx, userMessage, parentId, "")
+	if err != nil {
+		return fmt.Errorf("failed to save message: %w", err)
+	}
+
+	// Save assistant messages
+	assistantMsgs := resultDialog[len(dialog):]
+
+	parentId = userMsgID
+	for _, assistantMsg := range assistantMsgs {
+		parentId, err = dialogStorage.SaveMessage(ctx, assistantMsg, parentId, "")
+		if err != nil {
+			return fmt.Errorf("failed to save message: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// processUserInput processes and combines user input from all available sources
+func processUserInput(args []string) ([]gai.Block, error) {
+	var userBlocks []gai.Block
+
+	//// Get input from stdin if available (non-blocking)
+	//stdinStat, err := os.Stdin.Stat()
+	//if err != nil {
+	//	return nil, fmt.Errorf("failed to check stdin: %w", err)
+	//}
+	//
+	//// If stdin has data, read it
+	//if (stdinStat.Mode() & os.ModeCharDevice) == 0 {
+	//	stdinBytes, err := io.ReadAll(os.Stdin)
+	//	if err != nil {
+	//		return nil, fmt.Errorf("failed to read from stdin: %w", err)
+	//	}
+	//	if len(stdinBytes) > 0 {
+	//		userBlocks = append(userBlocks, gai.Block{
+	//			BlockType:    "text",
+	//			ModalityType: gai.Text,
+	//			MimeType:     "text/plain",
+	//			Content:      gai.Str(stdinBytes),
+	//		})
+	//	}
+	//}
+
+	// Process input files and add them as blocks
+	for _, inputPath := range input {
+		// Validate file exists
+		if _, err := os.Stat(inputPath); os.IsNotExist(err) {
+			return nil, fmt.Errorf("input file does not exist: %s", inputPath)
+		}
+
+		// Detect input type (text, image, etc.)
+		modality, err := agent.DetectInputType(inputPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to detect input type for %s: %w", inputPath, err)
+		}
+
+		// Read file content
+		content, err := os.ReadFile(inputPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read input file %s: %w", inputPath, err)
+		}
+
+		// Apply size limits to prevent memory issues
+		if len(content) > 50*1024*1024 { // 50MB limit
+			return nil, fmt.Errorf("input file %s exceeds maximum size limit (50MB)", inputPath)
+		}
+
+		mime := mimetype.Detect(content).String()
+
+		// Create block based on modality
+		var block gai.Block
+		switch modality {
+		case gai.Text:
+			block = gai.Block{
+				BlockType:    gai.Content,
+				ModalityType: gai.Text,
+				MimeType:     "text/plain",
+				Content:      gai.Str(string(content)),
+			}
+		case gai.Image, gai.Video, gai.Audio:
+			// For non-text files, encode as base64
+			contentStr := base64.StdEncoding.EncodeToString(content)
+			block = gai.Block{
+				BlockType:    gai.Content,
+				ModalityType: modality,
+				MimeType:     mime,
+				Content:      gai.Str(contentStr),
+			}
+		default:
+			return nil, fmt.Errorf("unsupported input type for %s", inputPath)
+		}
+
+		userBlocks = append(userBlocks, block)
+	}
+
+	// Add positional arguments if provided
+	if len(args) > 0 {
+		if len(args) != 1 {
+			return nil, fmt.Errorf("too many arguments to process")
+		}
+
+		userBlocks = append(userBlocks, gai.Block{
+			BlockType:    gai.Content,
+			ModalityType: gai.Text,
+			MimeType:     "text/plain",
+			Content:      gai.Str(args[0]),
+		})
+	}
+
+	return userBlocks, nil
 }
 
 // getCustomURL returns the custom URL to use based on the following precedence:
-// 1. Command-line flag (-custom-url)
-// 2. Model-specific environment variable (CPE_MODEL_NAME_URL)
-// 3. General custom URL environment variable (CPE_CUSTOM_URL)
-func getCustomURL(flagURL string, modelName string) string {
+// 1. Command-line flag (--custom-url)
+// 2. General custom URL environment variable (CPE_CUSTOM_URL)
+func getCustomURL(flagURL string) string {
 	// Start with the flag value
 	urlVal := flagURL
-
-	// Check model-specific env var if we have a model name
-	if modelName != "" {
-		envVarName := fmt.Sprintf("CPE_%s_URL", strings.ToUpper(strings.ReplaceAll(modelName, "-", "_")))
-		if modelEnvURL := os.Getenv(envVarName); urlVal == "" && modelEnvURL != "" {
-			urlVal = modelEnvURL
-		}
-	}
 
 	// Finally, check the general custom URL env var
 	if envURL := os.Getenv("CPE_CUSTOM_URL"); urlVal == "" && envURL != "" {
@@ -247,72 +356,4 @@ func getCustomURL(flagURL string, modelName string) string {
 	}
 
 	return urlVal
-}
-
-// readInput reads input from stdin, files, or arguments
-func readInput(inputFiles []string, args []string) ([]agent.Input, error) {
-	var inputs []agent.Input
-
-	// Check if there is any input from stdin by checking if stdin is a pipe or redirection
-	stat, _ := os.Stdin.Stat()
-	if (stat.Mode() & os.ModeCharDevice) == 0 {
-		// Stdin has data available
-		content, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return nil, fmt.Errorf("error reading from stdin: %w", err)
-		}
-		if len(content) > 0 {
-			inputs = append(inputs, agent.Input{
-				Type: agent.InputTypeText,
-				Text: string(content),
-			})
-		}
-	}
-
-	// Process input files specified with -input flag
-	for _, path := range inputFiles {
-		// Check if file exists
-		if _, err := os.Stat(path); err != nil {
-			return nil, fmt.Errorf("input file does not exist: %s", path)
-		}
-
-		inputType, err := agent.DetectInputType(path)
-		if err != nil {
-			return nil, fmt.Errorf("error detecting input type for file %s: %w", path, err)
-		}
-
-		if inputType == agent.InputTypeText {
-			// For text files, read the content and use it as text input
-			content, err := os.ReadFile(path)
-			if err != nil {
-				return nil, fmt.Errorf("error reading file %s: %w", path, err)
-			}
-			inputs = append(inputs, agent.Input{
-				Type: agent.InputTypeText,
-				Text: string(content),
-			})
-		} else {
-			// For non-text files, pass the file path
-			inputs = append(inputs, agent.Input{
-				Type:     inputType,
-				FilePath: path,
-			})
-		}
-	}
-
-	// If no input files were specified but we have command line arguments,
-	// treat all arguments as a single prompt
-	if len(inputFiles) == 0 && len(args) > 0 {
-		prompt := strings.Join(args, " ")
-		inputs = append(inputs, agent.Input{
-			Type: agent.InputTypeText,
-			Text: prompt,
-		})
-	}
-
-	if len(inputs) == 0 {
-		return nil, fmt.Errorf("no input provided. Please provide input via stdin, input file, or as a command line argument")
-	}
-
-	return inputs, nil
 }

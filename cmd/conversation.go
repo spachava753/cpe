@@ -1,181 +1,207 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
-	"log"
-	"os"
-	"time"
-
-	"github.com/olekukonko/tablewriter"
-	"github.com/spachava753/cpe/internal/agent"
-	"github.com/spachava753/cpe/internal/conversation"
+	"github.com/spachava753/cpe/internal/storage"
+	"github.com/spachava753/gai"
 	"github.com/spf13/cobra"
+	"os"
+	"strings"
 )
 
-var (
-	// Flags for the conversation command
-	deleteCascade bool
-)
-
-// conversationCmd represents the conversation command
-var conversationCmd = &cobra.Command{
+// convoCmd represents the conversation management command
+var convoCmd = &cobra.Command{
 	Use:     "conversation",
 	Short:   "Manage conversations",
-	Long:    `Manage conversations with list, print, and delete operations.`,
+	Long:    `Manage conversations stored in the database.`,
 	Aliases: []string{"convo", "conv"},
 }
 
-// listConversationCmd represents the list subcommand
-var listConversationCmd = &cobra.Command{
+// listConvoCmd represents the conversation list command
+var listConvoCmd = &cobra.Command{
 	Use:     "list",
-	Short:   "List all conversations",
-	Long:    `List all conversations with their IDs, parent IDs, models, creation times, and message previews.`,
+	Short:   "List all messages in a git commit graph style",
+	Long:    `Display all messages in the database with parent-child relationships in a git commit graph style.`,
 	Aliases: []string{"ls"},
-	Run: func(cmd *cobra.Command, args []string) {
-		// Initialize conversation manager
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Initialize the database connection
 		dbPath := ".cpeconvo"
-		convoManager, err := conversation.NewManager(dbPath)
+		dialogStorage, err := storage.InitDialogStorage(dbPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: failed to initialize conversation manager: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("failed to initialize dialog storage: %v", err)
 		}
-		defer convoManager.Close()
+		defer dialogStorage.Close()
 
-		conversations, err := convoManager.ListConversations(context.Background())
+		// Fetch all messages as a hierarchical structure
+		messageNodes, err := dialogStorage.ListMessages(cmd.Context())
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: failed to list conversations: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("failed to list messages: %v", err)
 		}
 
-		// Create and configure table
-		table := tablewriter.NewWriter(os.Stdout)
-		table.SetHeader([]string{"ID", "Parent ID", "Model", "Created At", "Message"})
-		table.SetAutoWrapText(false)
-		table.SetAutoFormatHeaders(true)
-		table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
-		table.SetAlignment(tablewriter.ALIGN_LEFT)
-		table.SetCenterSeparator("")
-		table.SetColumnSeparator("")
-		table.SetRowSeparator("")
-		table.SetHeaderLine(false)
-		table.SetBorder(false)
-		table.SetTablePadding("\t")
-		table.SetNoWhiteSpace(true)
-
-		// Add rows to table
-		for _, conv := range conversations {
-			parentID := "-"
-			if conv.ParentID.Valid {
-				parentID = conv.ParentID.String
-			}
-			// Truncate user message if too long
-			message := conv.UserMessage
-			if len(message) > 50 {
-				message = message[:47] + "..."
-			}
-			table.Append([]string{
-				conv.ID,
-				parentID,
-				conv.Model,
-				conv.CreatedAt.Format("2006-01-02 15:04:05"),
-				message,
-			})
+		if len(messageNodes) == 0 {
+			fmt.Println("No messages found.")
+			return nil
 		}
 
-		// Render table
-		table.Render()
+		PrintMessageForest(os.Stdout, messageNodes)
+		return nil
 	},
 }
 
-// printConversationCmd represents the print subcommand
-var printConversationCmd = &cobra.Command{
-	Use:     "print [conversation-id]",
-	Short:   "Print a specific conversation",
-	Long:    `Print the details and content of a specific conversation by ID.`,
-	Args:    cobra.ExactArgs(1),
-	Aliases: []string{"show", "view"},
-	Run: func(cmd *cobra.Command, args []string) {
-		conversationID := args[0]
-
-		// Initialize conversation manager
-		dbPath := ".cpeconvo"
-		convoManager, err := conversation.NewManager(dbPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: failed to initialize conversation manager: %v\n", err)
-			os.Exit(1)
-		}
-		defer convoManager.Close()
-
-		conv, err := convoManager.GetConversation(context.Background(), conversationID)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: failed to get conversation: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Print conversation metadata
-		fmt.Printf("Conversation ID: %s\n", conv.ID)
-		if conv.ParentID.Valid {
-			fmt.Printf("Parent ID: %s\n", conv.ParentID.String)
-		}
-		fmt.Printf("Model: %s\n", conv.Model)
-		fmt.Printf("Created At: %s\n\n", conv.CreatedAt.Format(time.RFC3339))
-
-		// Create an executor of the appropriate type to print messages
-		executor, err := agent.InitExecutor(log.New(os.Stderr, "", 0), agent.ModelOptions{
-			Continue: conversationID,
-		})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: failed to initialize executor: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Print conversation messages
-		fmt.Println("Messages:")
-		fmt.Println("=========")
-		fmt.Print(executor.PrintMessages())
-	},
-}
-
-// deleteConversationCmd represents the delete subcommand
-var deleteConversationCmd = &cobra.Command{
-	Use:     "delete [conversation-id]",
-	Short:   "Delete a specific conversation",
-	Long:    `Delete a specific conversation by ID. Use --cascade to also delete child conversations.`,
-	Args:    cobra.ExactArgs(1),
+// deleteConvoCmd represents the conversation delete command
+var deleteConvoCmd = &cobra.Command{
+	Use:     "delete [messageID...]",
+	Short:   "Delete one or more messages",
+	Long:    `Delete one or more messages by their ID. If a message has children, you must use the --cascade flag to delete it and all its descendants.`,
 	Aliases: []string{"rm", "remove"},
-	Run: func(cmd *cobra.Command, args []string) {
-		conversationID := args[0]
+	Args:    cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Get cascade flag
+		cascade, _ := cmd.Flags().GetBool("cascade")
 
-		// Initialize conversation manager
+		// Initialize the database connection
 		dbPath := ".cpeconvo"
-		convoManager, err := conversation.NewManager(dbPath)
+		dialogStorage, err := storage.InitDialogStorage(dbPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: failed to initialize conversation manager: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("failed to initialize dialog storage: %v", err)
 		}
-		defer convoManager.Close()
+		defer dialogStorage.Close()
 
-		if err := convoManager.DeleteConversation(context.Background(), conversationID, deleteCascade); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: failed to delete conversation: %v\n", err)
-			os.Exit(1)
+		for _, messageID := range args {
+			// Check if the message has children
+			hasChildren, err := dialogStorage.HasChildrenByID(cmd.Context(), messageID)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error checking if message %s has children: %v\n", messageID, err)
+				continue
+			}
+
+			if hasChildren && !cascade {
+				fmt.Fprintf(os.Stderr, "Error: message %s has children. Use --cascade to delete it and all its descendants.\n", messageID)
+				continue
+			}
+
+			var delErr error
+			if cascade {
+				delErr = dialogStorage.DeleteMessageRecursive(cmd.Context(), messageID)
+			} else {
+				delErr = dialogStorage.DeleteMessage(cmd.Context(), messageID)
+			}
+
+			if delErr != nil {
+				fmt.Fprintf(os.Stderr, "Error deleting message %s: %v\n", messageID, delErr)
+			} else {
+				fmt.Printf("Successfully deleted message %s", messageID)
+				if cascade && hasChildren {
+					fmt.Printf(" and all its descendants")
+				}
+				fmt.Println()
+			}
 		}
 
-		fmt.Printf("Successfully deleted conversation %s\n", conversationID)
-		if deleteCascade {
-			fmt.Println("All child conversations were also deleted.")
-		}
+		return nil
 	},
+}
+
+// printConvoCmd represents the conversation print command
+var printConvoCmd = &cobra.Command{
+	Use:     "print [messageID]",
+	Short:   "Print conversation history",
+	Long:    `Print the entire conversation history leading up to the specified message ID.`,
+	Aliases: []string{"show", "view"},
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		messageID := args[0]
+
+		// Initialize the database connection
+		dbPath := ".cpeconvo"
+		dialogStorage, err := storage.InitDialogStorage(dbPath)
+		if err != nil {
+			return fmt.Errorf("failed to initialize dialog storage: %v", err)
+		}
+		defer dialogStorage.Close()
+
+		dialog, _, err := dialogStorage.GetDialogForMessage(cmd.Context(), messageID)
+		if err != nil {
+			return fmt.Errorf("failed to get dialog: %v", err)
+		}
+		printDialog(dialog)
+
+		return nil
+	},
+}
+
+// printDialog prints the full dialog to stdout in a readable format
+func printDialog(dialog gai.Dialog) {
+	if len(dialog) == 0 {
+		fmt.Println("Empty conversation")
+		return
+	}
+
+	fmt.Println("\n=== Conversation History ===")
+
+	for i, message := range dialog {
+		// Print a separator between messages
+		if i > 0 {
+			fmt.Println("\n" + strings.Repeat("-", 80))
+		}
+
+		// Format based on role
+		var roleLabel string
+		switch message.Role {
+		case gai.User:
+			roleLabel = "🧑 USER"
+		case gai.Assistant:
+			roleLabel = "🤖 ASSISTANT"
+		case gai.ToolResult:
+			statusLabel := "✓"
+			if message.ToolResultError {
+				statusLabel = "✗"
+			}
+			roleLabel = fmt.Sprintf("🔧 TOOL RESULT %s", statusLabel)
+		default:
+			roleLabel = fmt.Sprintf("UNKNOWN ROLE (%d)", message.Role)
+		}
+
+		fmt.Printf("\n%s\n\n", roleLabel)
+
+		// Print each block in the message
+		for _, block := range message.Blocks {
+			// Only print text content directly
+			if block.ModalityType == gai.Text {
+				fmt.Println(block.Content.String())
+			} else {
+				fmt.Printf("[%s content, type: %s]\n",
+					formatModality(block.ModalityType),
+					block.MimeType)
+			}
+		}
+	}
+
+	fmt.Println("\n" + strings.Repeat("=", 80))
+}
+
+// formatModality converts a modality constant to a user-friendly string
+func formatModality(modality gai.Modality) string {
+	switch modality {
+	case gai.Text:
+		return "Text"
+	case gai.Image:
+		return "Image"
+	case gai.Audio:
+		return "Audio"
+	case gai.Video:
+		return "Video"
+	default:
+		return fmt.Sprintf("Unknown (%d)", modality)
+	}
 }
 
 func init() {
-	rootCmd.AddCommand(conversationCmd)
+	rootCmd.AddCommand(convoCmd)
+	convoCmd.AddCommand(listConvoCmd)
+	convoCmd.AddCommand(deleteConvoCmd)
+	convoCmd.AddCommand(printConvoCmd)
 
-	// Add subcommands to conversation command
-	conversationCmd.AddCommand(listConversationCmd)
-	conversationCmd.AddCommand(printConversationCmd)
-	conversationCmd.AddCommand(deleteConversationCmd)
-
-	// Add flags to delete subcommand
-	deleteConversationCmd.Flags().BoolVar(&deleteCascade, "cascade", false, "When deleting a conversation, also delete its children")
+	// Add cascade flag to delete command
+	deleteConvoCmd.Flags().Bool("cascade", false, "Cascade delete all child messages too")
 }
