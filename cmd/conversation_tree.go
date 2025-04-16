@@ -23,6 +23,16 @@ func mostRecentTimestamp(node storage.MessageIdNode) time.Time {
 	return maxT
 }
 
+// Recursively sort children by their max descendant timestamp (oldest-to-newest)
+func sortTreeRecursively(node *storage.MessageIdNode) {
+	for i := range node.Children {
+		sortTreeRecursively(&node.Children[i])
+	}
+	sort.Slice(node.Children, func(i, j int) bool {
+		return mostRecentTimestamp(node.Children[i]).Before(mostRecentTimestamp(node.Children[j]))
+	})
+}
+
 // PrintMessageForest prints a forest of trees with proper connectors, including Role and Content.
 func PrintMessageForest(w io.Writer, roots []storage.MessageIdNode) {
 	type treeWithMax struct {
@@ -41,6 +51,10 @@ func PrintMessageForest(w io.Writer, roots []storage.MessageIdNode) {
 	sort.Slice(trees, func(i, j int) bool {
 		return trees[i].maxTime.Before(trees[j].maxTime)
 	})
+
+	for i := range trees {
+		sortTreeRecursively(&trees[i].node)
+	}
 
 	for _, tr := range trees {
 		root := tr.node
