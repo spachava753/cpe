@@ -28,6 +28,8 @@ var anthropicModels = []string{
 }
 
 var openAiModels = []string{
+	"o3",
+	"o4-mini",
 	"gpt-4.1",
 	"gpt-4.1-mini",
 	"gpt-4.1-nano",
