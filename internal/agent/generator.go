@@ -239,22 +239,6 @@ func (t GetRelatedFilesToolCallback) Call(ctx context.Context, input map[string]
 	return result.Content, nil
 }
 
-// ChangeDirectoryToolCallback is a callback for the change directory tool
-type ChangeDirectoryToolCallback struct{}
-
-// Call executes the change directory tool
-func (t ChangeDirectoryToolCallback) Call(ctx context.Context, input map[string]any) (any, error) {
-	path, ok := input["path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("path parameter is required")
-	}
-	result, err := executeChangeDirectoryTool(path)
-	if err != nil {
-		return nil, err
-	}
-	return result.Content, nil
-}
-
 // CreateFileToolCallback is a callback for the create file tool
 type CreateFileToolCallback struct{}
 
@@ -452,11 +436,6 @@ func RegisterTools(toolGen *gai.ToolGenerator) error {
 
 	// Register get related files tool
 	if err := registerTool(toolGen, getRelatedFilesTool, &GetRelatedFilesToolCallback{ignorer: ignorer}); err != nil {
-		return err
-	}
-
-	// Register change directory tool
-	if err := registerTool(toolGen, changeDirectoryTool, &ChangeDirectoryToolCallback{}); err != nil {
 		return err
 	}
 

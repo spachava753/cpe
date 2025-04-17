@@ -145,38 +145,6 @@ func ExecuteGetRelatedFilesTool(inputFiles []string, ignorer *ignore.GitIgnore) 
 	}, nil
 }
 
-// executeChangeDirectoryTool validates and executes the change directory tool
-func executeChangeDirectoryTool(path string) (*ToolResult, error) {
-	// Get absolute path
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return &ToolResult{
-			Content: fmt.Sprintf("Error resolving absolute path: %s", err),
-			IsError: true,
-		}, nil
-	}
-
-	// Check if directory exists
-	if info, err := os.Stat(absPath); err != nil || !info.IsDir() {
-		return &ToolResult{
-			Content: fmt.Sprintf("Directory does not exist: %s", absPath),
-			IsError: true,
-		}, nil
-	}
-
-	// Change directory
-	if err := os.Chdir(absPath); err != nil {
-		return &ToolResult{
-			Content: fmt.Sprintf("Error changing directory: %s", err),
-			IsError: true,
-		}, nil
-	}
-
-	return &ToolResult{
-		Content: absPath,
-	}, nil
-}
-
 var bashTool = gai.Tool{
 	Name: "bash",
 	Description: `Run commands in a bash shell
@@ -231,25 +199,6 @@ Note: You may not deem it necessary to call this tool if you have all the inform
 			},
 		},
 		Required: []string{"input_files"},
-	},
-}
-
-var changeDirectoryTool = gai.Tool{
-	Name: "change_directory",
-	Description: `A tool to change the current working directory
-* The tool accepts a single parameter "path" specifying the target directory
-* Returns the full path of the new directory if successful
-* Returns an error message if the directory doesn't exist
-* If you need to create, delete, or modify files outside of the current folder, you can use this tool to change the current folder`,
-	InputSchema: gai.InputSchema{
-		Type: gai.Object,
-		Properties: map[string]gai.Property{
-			"path": {
-				Type:        gai.String,
-				Description: "The path to change to, can be relative or absolute",
-			},
-		},
-		Required: []string{"path"},
 	},
 }
 
