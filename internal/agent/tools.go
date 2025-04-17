@@ -99,8 +99,11 @@ type FileEditorParams struct {
 }
 
 // ExecuteFilesOverviewTool validates and executes the files overview tool
-func ExecuteFilesOverviewTool(ignorer *ignore.GitIgnore) (*ToolResult, error) {
-	fsys := os.DirFS(".")
+func ExecuteFilesOverviewTool(path string, ignorer *ignore.GitIgnore) (*ToolResult, error) {
+	if path == "" {
+		path = "."
+	}
+	fsys := os.DirFS(path)
 	files, err := codemap.GenerateOutput(fsys, 100, ignorer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate code map: %w", err)
@@ -169,14 +172,19 @@ var bashTool = gai.Tool{
 
 var filesOverviewTool = gai.Tool{
 	Name: "files_overview",
-	Description: `A tool to get an overview of all of the files found recursively in the current directory 
-* Each file is recursively listed with its relative path from the current directory and the contents of the file.
+	Description: `A tool to get an overview of all of the files found recursively in the current directory or a subfolder.
+* Each file is recursively listed with its relative path from the provided directory (or the current directory if not specified) and the contents of the file.
 * The contents of the file may omit certain lines to reduce the number of lines returned. For example, for source code files, the function and method bodies are omitted.
 * The file can be of any type, as long as it contains only text
-* You should use this tool to get an understanding of a codebase and to select input files to pass to the 'get_related_files' before attempting to address tasks that require you to understand and/or modify the codebase`,
+* You should use this tool to get an understanding of a codebase or subfolder and to select input files to pass to the 'get_related_files' before attempting to address tasks that require you to understand and/or modify the codebase`,
 	InputSchema: gai.InputSchema{
-		Type:       gai.Object,
-		Properties: map[string]gai.Property{},
+		Type: gai.Object,
+		Properties: map[string]gai.Property{
+			"path": {
+				Type:        gai.String,
+				Description: "Optional path to the folder to overview. Defaults to '.' (current directory) if not provided.",
+			},
+		},
 	},
 }
 

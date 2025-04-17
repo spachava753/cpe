@@ -204,7 +204,8 @@ type FilesOverviewToolCallback struct {
 
 // Call executes the files overview tool
 func (t FilesOverviewToolCallback) Call(ctx context.Context, input map[string]any) (any, error) {
-	result, err := ExecuteFilesOverviewTool(t.ignorer)
+	path, _ := input["path"].(string)
+	result, err := ExecuteFilesOverviewTool(path, t.ignorer)
 	if err != nil {
 		return nil, err
 	}

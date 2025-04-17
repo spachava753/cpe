@@ -35,7 +35,11 @@ var overviewCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		result, err := agent.ExecuteFilesOverviewTool(ignorer)
+		path := "."
+		if len(args) > 0 && args[0] != "" {
+			path = args[0]
+		}
+		result, err := agent.ExecuteFilesOverviewTool(path, ignorer)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
