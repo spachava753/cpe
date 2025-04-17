@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/spachava753/gai"
 )
 
@@ -15,6 +16,8 @@ type ResponsePrinterGenerator struct {
 	// wrapped is the generator being wrapped
 	wrapped gai.ToolCapableGenerator
 }
+
+var redStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 
 // NewResponsePrinterGenerator creates a new ResponsePrinterGenerator
 func NewResponsePrinterGenerator(wrapped gai.ToolCapableGenerator) *ResponsePrinterGenerator {
@@ -158,7 +161,8 @@ func (g *ResponsePrinterGenerator) Generate(ctx context.Context, dialog gai.Dial
 		outputTokens, hasOutputTokens := response.UsageMetrics[gai.UsageMetricGenerationTokens]
 
 		if hasInputTokens && hasOutputTokens {
-			fmt.Printf("\nTokens used: %v input, %v output\n", inputTokens, outputTokens)
+			tokenMsg := fmt.Sprintf("\nTokens used: %v input, %v output", inputTokens, outputTokens)
+			fmt.Println(redStyle.Render(tokenMsg))
 		}
 	}
 
