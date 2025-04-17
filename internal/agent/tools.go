@@ -2,16 +2,19 @@ package agent
 
 import (
 	"fmt"
-	"github.com/gabriel-vasile/mimetype"
-	ignore "github.com/sabhiram/go-gitignore"
-	"github.com/spachava753/cpe/internal/codemap"
-	"github.com/spachava753/cpe/internal/symbolresolver"
-	"github.com/spachava753/gai"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/gabriel-vasile/mimetype"
+	ignore "github.com/sabhiram/go-gitignore"
+	"github.com/spachava753/cpe/internal/codemap"
+	"github.com/spachava753/cpe/internal/symbolresolver"
+	"github.com/spachava753/gai"
 )
 
 // FileInfo represents a file's path and content
@@ -72,20 +75,75 @@ type ToolResult struct {
 }
 
 // executeBashTool validates and executes the bash tool
+var outStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "22", Dark: "120"})            // adaptive green
+var errStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "52", Dark: "197"}).Bold(true) // adaptive red
+
 func executeBashTool(command string) (*ToolResult, error) {
 	cmd := exec.Command("bash", "-c", command)
 	cmd.Env = os.Environ()
 
-	output, err := cmd.CombinedOutput()
+	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return &ToolResult{
-			Content: fmt.Sprintf("Error executing command: %s\nOutput: %s", err, string(output)),
+			Content: fmt.Sprintf("Error getting stdout pipe: %s", err),
+			IsError: true,
+		}, nil
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return &ToolResult{
+			Content: fmt.Sprintf("Error getting stderr pipe: %s", err),
+			IsError: true,
+		}, nil
+	}
+	if err := cmd.Start(); err != nil {
+		return &ToolResult{
+			Content: fmt.Sprintf("Error starting command: %s", err),
 			IsError: true,
 		}, nil
 	}
 
+	stdout, err := io.ReadAll(stdoutPipe)
+	if err != nil {
+		return &ToolResult{
+			Content: fmt.Sprintf("Error reading stdout: %s", err),
+			IsError: true,
+		}, nil
+	}
+	stderr, err := io.ReadAll(stderrPipe)
+	if err != nil {
+		return &ToolResult{
+			Content: fmt.Sprintf("Error reading stderr: %s", err),
+			IsError: true,
+		}, nil
+	}
+	if err := cmd.Wait(); err != nil {
+		// Print all outputs, but report error
+		if len(stdout) > 0 {
+			fmt.Print(outStyle.Render(string(stdout)))
+		}
+		if len(stderr) > 0 {
+			fmt.Fprint(os.Stderr, errStyle.Render(string(stderr)))
+		}
+		combined := append(stdout, stderr...)
+		return &ToolResult{
+			Content: fmt.Sprintf("Bash process exited with error: %s\nOutput: %s", err, string(combined)),
+			IsError: true,
+		}, nil
+	}
+
+	if len(stdout) > 0 {
+		fmt.Print(outStyle.Render(string(stdout)))
+		fmt.Println()
+	}
+	if len(stderr) > 0 {
+		fmt.Fprint(os.Stderr, errStyle.Render(string(stderr)))
+		fmt.Fprintln(os.Stderr)
+	}
+
+	combined := append(stdout, stderr...)
 	return &ToolResult{
-		Content: string(output),
+		Content: string(combined),
 	}, nil
 }
 
