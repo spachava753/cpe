@@ -4,9 +4,14 @@ This document outlines the planned features, improvements, and notes for the CPE
 
 ## Features
 
+### MCP
+
+- [ ] turn CPE into a MCP client
+- [ ] export tools like file overview as a mcp server
+
 ### System prompt improvements
 
-- [ ] Add system info to path
+- [x] Add system info to path
   - Current Date
   - Current working directory
   - Operating system
@@ -15,9 +20,10 @@ This document outlines the planned features, improvements, and notes for the CPE
 
 ### Agentic flow
 - [x] Move from disparate mulit-agent to single-agent, will reduce necessary calls, as we can remove the needs codebase function call
-- [ ] 
 - [ ] Experiment with idea of sub agent creation on the fly?
-  - Models like Gemini such at editing files with function calling. Maybe just have the model utilize the bash tool to give specific edit instructions to a file-editing function calling capable model? like gpt-4o-mini?
+  - Models like Gemini suck at editing files with function calling. Maybe just have the model utilize the bash tool to
+    give specific edit instructions to a file-editing function calling capable model? like gpt-4o-mini?
+- [ ] Allow for black listing/white listing of commands for bash to be able to execute using regex
 
 ### Token Analysis and Visualization
 - [x] Implement basic token counting per file
@@ -53,7 +59,7 @@ This document outlines the planned features, improvements, and notes for the CPE
   - [x] Deepseek
   - [ ] Nous
 - [x] support multimodality
-  - [z] images
+  - [x] images
   - [x] videos
 - [x] Use official sdks instead for openai, gemini
   - [x] openai
