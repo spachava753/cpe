@@ -2,7 +2,6 @@ package agent
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -82,68 +81,35 @@ func executeBashTool(command string) (*ToolResult, error) {
 	cmd := exec.Command("bash", "-c", command)
 	cmd.Env = os.Environ()
 
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return &ToolResult{
-			Content: fmt.Sprintf("Error getting stdout pipe: %s", err),
-			IsError: true,
-		}, nil
-	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return &ToolResult{
-			Content: fmt.Sprintf("Error getting stderr pipe: %s", err),
-			IsError: true,
-		}, nil
-	}
-	if err := cmd.Start(); err != nil {
-		return &ToolResult{
-			Content: fmt.Sprintf("Error starting command: %s", err),
-			IsError: true,
-		}, nil
+	combined, err := cmd.CombinedOutput()
+	// Print the combined output EXACTLY as bash would (no color, no splitting)
+	if len(combined) > 0 {
+		os.Stdout.Write(combined)
 	}
 
-	stdout, err := io.ReadAll(stdoutPipe)
+	// Print exit code at the end	similar to shell style
+	exitCode := 0
 	if err != nil {
-		return &ToolResult{
-			Content: fmt.Sprintf("Error reading stdout: %s", err),
-			IsError: true,
-		}, nil
-	}
-	stderr, err := io.ReadAll(stderrPipe)
-	if err != nil {
-		return &ToolResult{
-			Content: fmt.Sprintf("Error reading stderr: %s", err),
-			IsError: true,
-		}, nil
-	}
-	if err := cmd.Wait(); err != nil {
-		// Print all outputs, but report error
-		if len(stdout) > 0 {
-			fmt.Print(outStyle.Render(string(stdout)))
+		// Try to extract the exit code from the error
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			if status, ok := exitErr.Sys().(interface{ ExitStatus() int }); ok {
+				exitCode = status.ExitStatus()
+			} else {
+				exitCode = 1 // fallback if we can't extract
+			}
+		} else {
+			exitCode = 1 // fallback
 		}
-		if len(stderr) > 0 {
-			fmt.Fprint(os.Stderr, errStyle.Render(string(stderr)))
-		}
-		combined := append(stdout, stderr...)
-		return &ToolResult{
-			Content: fmt.Sprintf("Bash process exited with error: %s\nOutput: %s", err, string(combined)),
-			IsError: true,
-		}, nil
+	}
+	if exitCode == 0 {
+		fmt.Println(outStyle.Render("exit code: 0"))
+	} else {
+		fmt.Println(errStyle.Render(fmt.Sprintf("exit code: %d", exitCode)))
 	}
 
-	if len(stdout) > 0 {
-		fmt.Print(outStyle.Render(string(stdout)))
-		fmt.Println()
-	}
-	if len(stderr) > 0 {
-		fmt.Fprint(os.Stderr, errStyle.Render(string(stderr)))
-		fmt.Fprintln(os.Stderr)
-	}
-
-	combined := append(stdout, stderr...)
 	return &ToolResult{
 		Content: string(combined),
+		IsError: exitCode != 0,
 	}, nil
 }
 
