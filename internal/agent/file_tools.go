@@ -142,30 +142,79 @@ func EditFileTool(params EditFileParams) (*ToolResult, error) {
 		}, nil
 	}
 
-	count := strings.Count(string(content), params.OldStr)
-	if count == 0 {
-		return &ToolResult{
-			Content: "old_str not found in file",
-			IsError: true,
-		}, nil
-	}
-	if count > 1 {
-		return &ToolResult{
-			Content: fmt.Sprintf("old_str matches %d times in file, expected exactly one match", count),
-			IsError: true,
-		}, nil
-	}
+	s := string(content)
 
-	newContent := strings.Replace(string(content), params.OldStr, params.NewStr, 1)
-	if err := os.WriteFile(params.Path, []byte(newContent), 0644); err != nil {
+	switch {
+	// Edit: replace old_str with new_str (both required)
+	case params.OldStr != "" && params.NewStr != "":
+		count := strings.Count(s, params.OldStr)
+		if count == 0 {
+			return &ToolResult{
+				Content: "old_str not found in file",
+				IsError: true,
+			}, nil
+		}
+		if count > 1 {
+			return &ToolResult{
+				Content: fmt.Sprintf("old_str matches %d times in file, expected exactly one match", count),
+				IsError: true,
+			}, nil
+		}
+		newContent := strings.Replace(s, params.OldStr, params.NewStr, 1)
+		if err := os.WriteFile(params.Path, []byte(newContent), 0644); err != nil {
+			return &ToolResult{
+				Content: fmt.Sprintf("Error writing file: %s", err),
+				IsError: true,
+			}, nil
+		}
+		return &ToolResult{Content: fmt.Sprintf("Successfully edited text in %s", params.Path)}, nil
+	// Delete: only old_str provided
+	case params.OldStr != "" && params.NewStr == "":
+		count := strings.Count(s, params.OldStr)
+		if count == 0 {
+			return &ToolResult{
+				Content: "old_str not found in file for deletion",
+				IsError: true,
+			}, nil
+		}
+		if count > 1 {
+			return &ToolResult{
+				Content: fmt.Sprintf("old_str matches %d times in file, expected exactly one match for deletion", count),
+				IsError: true,
+			}, nil
+		}
+		newContent := strings.Replace(s, params.OldStr, "", 1)
+		if err := os.WriteFile(params.Path, []byte(newContent), 0644); err != nil {
+			return &ToolResult{
+				Content: fmt.Sprintf("Error writing file during deletion: %s", err),
+				IsError: true,
+			}, nil
+		}
+		return &ToolResult{Content: fmt.Sprintf("Successfully deleted text in %s", params.Path)}, nil
+	// Append: only new_str provided
+	case params.OldStr == "" && params.NewStr != "":
+		f, err := os.OpenFile(params.Path, os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return &ToolResult{
+				Content: fmt.Sprintf("Error opening file for append: %s", err),
+				IsError: true,
+			}, nil
+		}
+		defer f.Close()
+		if _, err := f.WriteString(params.NewStr); err != nil {
+			return &ToolResult{
+				Content: fmt.Sprintf("Error appending to file: %s", err),
+				IsError: true,
+			}, nil
+		}
+		return &ToolResult{Content: fmt.Sprintf("Successfully appended text to %s", params.Path)}, nil
+	// Neither provided
+	default:
 		return &ToolResult{
-			Content: fmt.Sprintf("Error writing file: %s", err),
+			Content: "Must provide at least one of old_str or new_str. See tool description for valid usages.",
 			IsError: true,
 		}, nil
 	}
-	return &ToolResult{
-		Content: fmt.Sprintf("Successfully edited text in %s", params.Path),
-	}, nil
 }
 
 // MoveFileTool validates and executes the move file tool

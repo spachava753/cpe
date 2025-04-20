@@ -290,13 +290,13 @@ func (t EditFileToolCallback) Call(ctx context.Context, input map[string]any) (a
 	if !ok {
 		return nil, fmt.Errorf("path parameter is required")
 	}
-	oldStr, ok := input["old_str"].(string)
-	if !ok {
-		return nil, fmt.Errorf("old_str parameter is required")
+	// old_str and new_str are optional for the new logic
+	var oldStr, newStr string
+	if v, ok := input["old_str"].(string); ok {
+		oldStr = v
 	}
-	newStr, ok := input["new_str"].(string)
-	if !ok {
-		return nil, fmt.Errorf("new_str parameter is required")
+	if v, ok := input["new_str"].(string); ok {
+		newStr = v
 	}
 	result, err := EditFileTool(EditFileParams{
 		Path:   path,

@@ -93,6 +93,59 @@ func TestFileTools(t *testing.T) {
 		if !result.IsError {
 			t.Error("EditFileTool should have failed when old string doesn't exist")
 		}
+
+		// Test deletion
+		paramsDelete := EditFileParams{
+			Path:   "test.txt",
+			OldStr: "Hello, CPE!",
+			NewStr: "",
+		}
+
+		result, err = EditFileTool(paramsDelete)
+		if err != nil {
+			t.Fatalf("EditFileTool(delete) returned error: %v", err)
+		}
+		if result.IsError {
+			t.Errorf("EditFileTool(delete) failed: %v", result.Content)
+		}
+		content, err = os.ReadFile("test.txt")
+		if err != nil {
+			t.Fatalf("Failed to read file after delete: %v", err)
+		}
+		if string(content) != "" {
+			t.Errorf("Delete should leave file empty, got: %q", string(content))
+		}
+
+		// Test append (put some content back first)
+		paramsAppend := EditFileParams{
+			Path:   "test.txt",
+			OldStr: "",
+			NewStr: "Appended content\n",
+		}
+		result, err = EditFileTool(paramsAppend)
+		if err != nil {
+			t.Fatalf("EditFileTool(append) returned error: %v", err)
+		}
+		if result.IsError {
+			t.Errorf("EditFileTool(append) failed: %v", result.Content)
+		}
+		content, err = os.ReadFile("test.txt")
+		if err != nil {
+			t.Fatalf("Failed to read file after append: %v", err)
+		}
+		if string(content) != "Appended content\n" {
+			t.Errorf("Append failed, got: %q", string(content))
+		}
+
+		// Test error if both old_str and new_str are empty
+		paramsNone := EditFileParams{Path: "test.txt"}
+		result, err = EditFileTool(paramsNone)
+		if err != nil {
+			t.Fatalf("EditFileTool(none) returned error: %v", err)
+		}
+		if !result.IsError {
+			t.Error("EditFileTool should fail if both old_str and new_str are empty")
+		}
 	})
 
 	// Test MoveFileTool
@@ -126,7 +179,7 @@ func TestFileTools(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to read moved file: %v", err)
 		}
-		if string(content) != "Hello, CPE!" {
+		if string(content) != "Appended content\n" {
 			t.Errorf("File content does not match after move: got %q, want %q", string(content), "Hello, CPE!")
 		}
 	})

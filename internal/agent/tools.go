@@ -312,12 +312,14 @@ var deleteFileTool = gai.Tool{
 
 var editFileTool = gai.Tool{
 	Name: "edit_file",
-	Description: `A tool to edit an existing file in the current folder or its subfolders.
+	Description: `A tool to edit, delete, or append content to an existing file in the current folder or its subfolders.
 * 'path' must specify the file to edit
-* 'old_str' should match EXACTLY one or more consecutive lines from the original file, including whitespace
-* 'old_str' must be unique in the file (only one match allowed)
-* 'new_str' contains the edited text that will replace 'old_str'
-* Will error if the file doesn't exist or if old_str isn't found exactly once`,
+* If both 'old_str' and 'new_str' are provided, replaces the unique occurrence of 'old_str' with 'new_str' (edit).
+* If 'old_str' is provided and 'new_str' is missing or blank, deletes the unique occurrence of 'old_str' from the file (delete).
+* If 'new_str' is provided and 'old_str' is missing or blank, appends 'new_str' to the end of the file (append).
+* If neither are provided, the operation errors.
+* For edit or delete modes, 'old_str' must match exactly one unique occurrence in the file (including whitespace).
+* Errors if file does not exist, or match count conditions are not met.`,
 	InputSchema: gai.InputSchema{
 		Type: gai.Object,
 		Properties: map[string]gai.Property{
@@ -327,14 +329,14 @@ var editFileTool = gai.Tool{
 			},
 			"old_str": {
 				Type:        gai.String,
-				Description: "The exact text segment to replace (must be unique in the file)",
+				Description: "The exact text segment to search for replacement or deletion (must be unique if provided)",
 			},
 			"new_str": {
 				Type:        gai.String,
-				Description: "The new text to replace the old text with",
+				Description: "The new text to replace the old text with, or text to append (if old_str missing)",
 			},
 		},
-		Required: []string{"path", "old_str", "new_str"},
+		Required: []string{"path"},
 	},
 }
 
