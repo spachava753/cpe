@@ -155,10 +155,27 @@ func ExecuteFilesOverviewTool(path string, ignorer *ignore.GitIgnore) (*ToolResu
 
 // ExecuteGetRelatedFilesTool validates and executes the get related files tool
 func ExecuteGetRelatedFilesTool(inputFiles []string, ignorer *ignore.GitIgnore) (*ToolResult, error) {
+	// Check all input files exist before continuing.
+	var missing []string
+	for _, file := range inputFiles {
+		if _, err := os.Stat(file); err != nil {
+			missing = append(missing, file)
+		}
+	}
+	if len(missing) > 0 {
+		errMsg := fmt.Sprintf("Error: the following input files do not exist or are not accessible: %s", strings.Join(missing, ", "))
+		return &ToolResult{
+			Content: errMsg,
+			IsError: true,
+		}, nil
+	}
 
 	relatedFiles, err := symbolresolver.ResolveTypeAndFunctionFiles(inputFiles, os.DirFS("."), ignorer)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve related files: %w", err)
+		return &ToolResult{
+			Content: fmt.Sprintf("Error: failed to resolve related files: %v", err),
+			IsError: true,
+		}, nil
 	}
 
 	// Convert map to sorted slice for consistent output
@@ -172,7 +189,10 @@ func ExecuteGetRelatedFilesTool(inputFiles []string, ignorer *ignore.GitIgnore) 
 	for _, file := range files {
 		content, err := os.ReadFile(file)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read file %s: %w", file, err)
+			return &ToolResult{
+				Content: fmt.Sprintf("Error: failed to read file %s: %v", file, err),
+				IsError: true,
+			}, nil
 		}
 		sb.WriteString(fmt.Sprintf("File: %s\nContent:\n```%s```\n\n", file, string(content)))
 	}
