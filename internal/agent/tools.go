@@ -127,10 +127,20 @@ func ExecuteFilesOverviewTool(path string, ignorer *ignore.GitIgnore) (*ToolResu
 	if path == "" {
 		path = "."
 	}
+	if _, err := os.Stat(path); err != nil {
+		errMsg := fmt.Sprintf("Error: the specified path '%s' does not exist or is not accessible.", path)
+		return &ToolResult{
+			Content: errMsg,
+			IsError: true,
+		}, nil
+	}
 	fsys := os.DirFS(path)
 	files, err := codemap.GenerateOutput(fsys, 100, ignorer)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate code map: %w", err)
+		return &ToolResult{
+			Content: fmt.Sprintf("Error: failed to generate code map for '%s': %v", path, err),
+			IsError: true,
+		}, nil
 	}
 
 	var sb strings.Builder
