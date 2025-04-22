@@ -32,6 +32,7 @@ var (
 	input             []string
 	newConversation   bool
 	continueID        string
+	incognitoMode     bool
 
 	// DefaultModel holds the global default LLM model for the CLI.
 	// It is set at process startup from CPE_MODEL env var (or empty if unset).
@@ -91,6 +92,7 @@ func init() {
 	rootCmd.PersistentFlags().StringSliceVarP(&input, "input", "i", []string{}, "Specify input files to process. Multiple files can be provided.")
 	rootCmd.PersistentFlags().BoolVarP(&newConversation, "new", "n", false, "Start a new conversation instead of continuing from the last one")
 	rootCmd.PersistentFlags().StringVarP(&continueID, "continue", "c", "", "Continue from a specific conversation ID")
+	rootCmd.PersistentFlags().BoolVarP(&incognitoMode, "incognito", "G", false, "Run in incognito mode (do not save conversations to storage)")
 
 	// Add version flag
 	rootCmd.Flags().BoolP("version", "v", false, "Print the version number and exit")
@@ -98,6 +100,10 @@ func init() {
 
 // executeRootCommand handles the main functionality of the root command
 func executeRootCommand(ctx context.Context, args []string) error {
+	if incognitoMode {
+		fmt.Fprintln(os.Stderr, "WARNING: Incognito mode is enabled. This conversation will NOT be saved to storage.")
+	}
+
 	// Initialize ignorer
 	ignorer, err := ignore.LoadIgnoreFiles(".")
 	if err != nil {
@@ -120,7 +126,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	// Always use .cpeconvo as the DB path
 	dbPath := ".cpeconvo"
 
-	// Initialize or open the database through the storage package
+	// Initialize or open the database through the storage package (for reading/threading)
 	dialogStorage, err := storage.InitDialogStorage(dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to initialize dialog storage: %w", err)
@@ -221,6 +227,11 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error generating response: %v\n", err)
 		os.Exit(1)
+	}
+
+	if incognitoMode {
+		// Don't save any conversation messages in incognito mode!
+		return nil
 	}
 
 	var parentId string
