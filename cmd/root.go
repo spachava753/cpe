@@ -159,7 +159,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed to create base generator: %w", err)
 	}
 
-	// Wrap the base generator with ResponsePrinterGenerator
+	// Wrap the base generator with ResponsePrinterGenerator to print responses
 	printingGenerator := agent.NewResponsePrinterGenerator(baseGenerator)
 
 	// Create the tool generator using the wrapped generator
@@ -167,8 +167,12 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		G: printingGenerator,
 	}
 
+	// Wrap the tool generator with ThinkingFilterToolGenerator to filter thinking blocks
+	// only from the initial dialog, but preserve them during tool execution
+	filterToolGen := agent.NewThinkingFilterToolGenerator(toolGen)
+
 	// Register all the necessary tools
-	if err = agent.RegisterTools(toolGen); err != nil {
+	if err = agent.RegisterTools(filterToolGen); err != nil {
 		return fmt.Errorf("failed to register tools: %w", err)
 	}
 
@@ -223,7 +227,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	}
 
 	// The ResponsePrinterGenerator will print the responses as they come
-	resultDialog, err := toolGen.Generate(ctx, dialog, genOptionsFunc)
+	resultDialog, err := filterToolGen.Generate(ctx, dialog, genOptionsFunc)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error generating response: %v\n", err)
 		os.Exit(1)

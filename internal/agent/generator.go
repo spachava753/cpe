@@ -417,8 +417,12 @@ func (t MoveFolderToolCallback) Call(ctx context.Context, input map[string]any) 
 	return result.Content, nil
 }
 
-// RegisterTools registers all the necessary tools with the gai.ToolGenerator
-func RegisterTools(toolGen *gai.ToolGenerator) error {
+type ToolRegisterer interface {
+	Register(tool gai.Tool, callback gai.ToolCallback) error
+}
+
+// RegisterTools registers all the necessary tools with a tool registerer
+func RegisterTools(toolRegisterer ToolRegisterer) error {
 	// Create ignorer for file system tools
 	ignorer, err := createIgnorer()
 	if err != nil {
@@ -426,45 +430,45 @@ func RegisterTools(toolGen *gai.ToolGenerator) error {
 	}
 
 	// Register bash tool
-	if err := registerTool(toolGen, bashTool, &BashToolCallback{}); err != nil {
+	if err := registerTool(toolRegisterer, bashTool, &BashToolCallback{}); err != nil {
 		return err
 	}
 
 	// Register files overview tool
-	if err := registerTool(toolGen, filesOverviewTool, &FilesOverviewToolCallback{ignorer: ignorer}); err != nil {
+	if err := registerTool(toolRegisterer, filesOverviewTool, &FilesOverviewToolCallback{ignorer: ignorer}); err != nil {
 		return err
 	}
 
 	// Register get related files tool
-	if err := registerTool(toolGen, getRelatedFilesTool, &GetRelatedFilesToolCallback{ignorer: ignorer}); err != nil {
+	if err := registerTool(toolRegisterer, getRelatedFilesTool, &GetRelatedFilesToolCallback{ignorer: ignorer}); err != nil {
 		return err
 	}
 
 	// Register file operation tools
-	if err := registerTool(toolGen, createFileTool, &CreateFileToolCallback{}); err != nil {
+	if err := registerTool(toolRegisterer, createFileTool, &CreateFileToolCallback{}); err != nil {
 		return err
 	}
-	if err := registerTool(toolGen, deleteFileTool, &DeleteFileToolCallback{}); err != nil {
+	if err := registerTool(toolRegisterer, deleteFileTool, &DeleteFileToolCallback{}); err != nil {
 		return err
 	}
-	if err := registerTool(toolGen, editFileTool, &EditFileToolCallback{}); err != nil {
+	if err := registerTool(toolRegisterer, editFileTool, &EditFileToolCallback{}); err != nil {
 		return err
 	}
-	if err := registerTool(toolGen, moveFileTool, &MoveFileToolCallback{}); err != nil {
+	if err := registerTool(toolRegisterer, moveFileTool, &MoveFileToolCallback{}); err != nil {
 		return err
 	}
-	if err := registerTool(toolGen, viewFileTool, &ViewFileToolCallback{}); err != nil {
+	if err := registerTool(toolRegisterer, viewFileTool, &ViewFileToolCallback{}); err != nil {
 		return err
 	}
 
 	// Register folder operation tools
-	if err := registerTool(toolGen, createFolderTool, &CreateFolderToolCallback{}); err != nil {
+	if err := registerTool(toolRegisterer, createFolderTool, &CreateFolderToolCallback{}); err != nil {
 		return err
 	}
-	if err := registerTool(toolGen, deleteFolderTool, &DeleteFolderToolCallback{}); err != nil {
+	if err := registerTool(toolRegisterer, deleteFolderTool, &DeleteFolderToolCallback{}); err != nil {
 		return err
 	}
-	if err := registerTool(toolGen, moveFolderTool, &MoveFolderToolCallback{}); err != nil {
+	if err := registerTool(toolRegisterer, moveFolderTool, &MoveFolderToolCallback{}); err != nil {
 		return err
 	}
 
@@ -484,10 +488,10 @@ func createIgnorer() (*gitignore.GitIgnore, error) {
 	return ignorer, nil
 }
 
-// registerTool registers a tool with the tool generator
-func registerTool(toolGen *gai.ToolGenerator, tool gai.Tool, callback gai.ToolCallback) error {
+// registerTool registers a tool with a tool registry
+func registerTool(toolReg ToolRegisterer, tool gai.Tool, callback gai.ToolCallback) error {
 	// Register the tool with the callback
-	if err := toolGen.Register(tool, callback); err != nil {
+	if err := toolReg.Register(tool, callback); err != nil {
 		return fmt.Errorf("failed to register %s tool: %w", tool.Name, err)
 	}
 
