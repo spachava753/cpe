@@ -39,12 +39,12 @@ var overviewCmd = &cobra.Command{
 		if len(args) > 0 && args[0] != "" {
 			path = args[0]
 		}
-		result, err := agent.ExecuteFilesOverviewTool(path, ignorer)
+		result, err := agent.CreateExecuteFilesOverviewFunc(ignorer)(cmd.Context(), agent.FileOverviewInput{Path: path})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Print(result.Content)
+		fmt.Print(result)
 	},
 }
 
@@ -73,12 +73,12 @@ var relatedFilesCmd = &cobra.Command{
 			inputFiles[i] = strings.TrimSpace(inputFiles[i])
 		}
 
-		result, err := agent.ExecuteGetRelatedFilesTool(inputFiles, ignorer)
+		result, err := agent.CreateExecuteGetRelatedFilesFunc(ignorer)(cmd.Context(), agent.GetRelatedFilesInput{InputFiles: inputFiles})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Print(result.Content)
+		fmt.Print(result)
 	},
 }
 

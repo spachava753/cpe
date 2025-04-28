@@ -1,328 +1,269 @@
 package agent
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"github.com/gabriel-vasile/mimetype"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/gabriel-vasile/mimetype"
 )
 
-// CreateFileParams represents the parameters for the create file tool
-type CreateFileParams struct {
+// CreateFileInput represents the parameters for the create file tool
+type CreateFileInput struct {
 	Path     string `json:"path"`
 	FileText string `json:"file_text"`
 }
 
-// DeleteFileParams represents the parameters for the delete file tool
-type DeleteFileParams struct {
+func (c CreateFileInput) Validate() error {
+	if c.Path == "" {
+		return errors.New("path is required")
+	}
+	if c.FileText == "" {
+		return errors.New("file_text is required")
+	}
+	return nil
+}
+
+// DeleteFileInput represents the parameters for the delete file tool
+type DeleteFileInput struct {
 	Path string `json:"path"`
 }
 
-// EditFileParams represents the parameters for the edit file tool
-type EditFileParams struct {
+func (d DeleteFileInput) Validate() error {
+	if d.Path == "" {
+		return errors.New("path is required")
+	}
+	return nil
+}
+
+// EditFileInput represents the parameters for the edit file tool
+type EditFileInput struct {
 	Path   string `json:"path"`
 	OldStr string `json:"old_str"`
 	NewStr string `json:"new_str"`
 }
 
-// MoveFileParams represents the parameters for the move file tool
-type MoveFileParams struct {
+func (e EditFileInput) Validate() error {
+	if e.Path == "" {
+		return errors.New("path is required")
+	}
+	if e.OldStr == "" && e.NewStr == "" {
+		return errors.New("at least one of old_str or new_str must be provided")
+	}
+	return nil
+}
+
+// MoveFileInput represents the parameters for the move file tool
+type MoveFileInput struct {
 	SourcePath string `json:"source_path"`
 	TargetPath string `json:"target_path"`
 }
 
-// ViewFileParams represents the parameters for the view file tool
-type ViewFileParams struct {
+func (m MoveFileInput) Validate() error {
+	if m.SourcePath == "" {
+		return errors.New("source_path is required")
+	}
+	if m.TargetPath == "" {
+		return errors.New("target_path is required")
+	}
+	return nil
+}
+
+// ViewFileInput represents the parameters for the view file tool
+type ViewFileInput struct {
 	Path string `json:"path"`
 }
 
-// CreateFileTool validates and executes the create file tool
-func CreateFileTool(params CreateFileParams) (*ToolResult, error) {
-	if params.FileText == "" {
-		return &ToolResult{
-			Content: "file_text parameter is required for create_file command",
-			IsError: true,
-		}, nil
+func (v ViewFileInput) Validate() error {
+	if v.Path == "" {
+		return errors.New("path is required")
 	}
+	return nil
+}
 
+// ExecuteCreateFile handles creating a file
+func ExecuteCreateFile(ctx context.Context, input CreateFileInput) (string, error) {
 	// Check if file already exists before attempting to create it
-	if _, err := os.Stat(params.Path); err == nil {
-		return &ToolResult{
-			Content: fmt.Sprintf("File already exists: %s", params.Path),
-			IsError: true,
-		}, nil
+	if _, err := os.Stat(input.Path); err == nil {
+		return "", fmt.Errorf("file already exists: %s", input.Path)
 	} else if !os.IsNotExist(err) {
 		// Some other error occurred while checking file existence
-		return &ToolResult{
-			Content: fmt.Sprintf("Error checking if file exists: %s", err),
-			IsError: true,
-		}, nil
+		return "", fmt.Errorf("error checking if file exists: %s", err)
 	}
 
 	// Ensure the directory exists
-	dir := filepath.Dir(params.Path)
+	dir := filepath.Dir(input.Path)
 	if dir != "." && dir != ".." {
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			return &ToolResult{
-				Content: fmt.Sprintf("Error creating directory structure: %s", err),
-				IsError: true,
-			}, nil
+			return "", fmt.Errorf("error creating directory structure: %s", err)
 		}
 	}
 
-	if err := os.WriteFile(params.Path, []byte(params.FileText), 0644); err != nil {
-		return &ToolResult{
-			Content: fmt.Sprintf("Error creating file: %s", err),
-			IsError: true,
-		}, nil
+	if err := os.WriteFile(input.Path, []byte(input.FileText), 0644); err != nil {
+		return "", fmt.Errorf("error creating file: %s", err)
 	}
-	return &ToolResult{
-		Content: fmt.Sprintf("Successfully created file %s", params.Path),
-	}, nil
+
+	return fmt.Sprintf("Successfully created file %s", input.Path), nil
 }
 
-// DeleteFileTool validates and executes the delete file tool
-func DeleteFileTool(params DeleteFileParams) (*ToolResult, error) {
+// ExecuteDeleteFile handles deleting a file
+func ExecuteDeleteFile(ctx context.Context, input DeleteFileInput) (string, error) {
 	// Check if file exists
-	fileInfo, err := os.Stat(params.Path)
+	fileInfo, err := os.Stat(input.Path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &ToolResult{
-				Content: fmt.Sprintf("File does not exist: %s", params.Path),
-				IsError: true,
-			}, nil
+			return "", fmt.Errorf("file does not exist: %s", input.Path)
 		}
-		return &ToolResult{
-			Content: fmt.Sprintf("Error checking file: %s", err),
-			IsError: true,
-		}, nil
+		return "", fmt.Errorf("error checking file: %s", err)
 	}
 
 	// Ensure it's not a directory
 	if fileInfo.IsDir() {
-		return &ToolResult{
-			Content: fmt.Sprintf("Path is a directory, not a file: %s. Use delete_folder tool instead.", params.Path),
-			IsError: true,
-		}, nil
+		return "", fmt.Errorf("path is a directory, not a file: %s. Use delete_folder tool instead", input.Path)
 	}
 
-	if err := os.Remove(params.Path); err != nil {
-		return &ToolResult{
-			Content: fmt.Sprintf("Error removing file: %s", err),
-			IsError: true,
-		}, nil
+	if err := os.Remove(input.Path); err != nil {
+		return "", fmt.Errorf("error removing file: %s", err)
 	}
-	return &ToolResult{
-		Content: fmt.Sprintf("Successfully removed file %s", params.Path),
-	}, nil
+
+	return fmt.Sprintf("Successfully removed file %s", input.Path), nil
 }
 
-// EditFileTool validates and executes the edit file tool
-func EditFileTool(params EditFileParams) (*ToolResult, error) {
+// ExecuteEditFile handles editing a file
+func ExecuteEditFile(ctx context.Context, input EditFileInput) (string, error) {
 	// Check if file exists
-	if _, err := os.Stat(params.Path); err != nil {
+	if _, err := os.Stat(input.Path); err != nil {
 		if os.IsNotExist(err) {
-			return &ToolResult{
-				Content: fmt.Sprintf("File does not exist: %s", params.Path),
-				IsError: true,
-			}, nil
+			return "", fmt.Errorf("file does not exist: %s", input.Path)
 		}
-		return &ToolResult{
-			Content: fmt.Sprintf("Error checking file: %s", err),
-			IsError: true,
-		}, nil
+		return "", fmt.Errorf("error checking file: %s", err)
 	}
 
-	content, err := os.ReadFile(params.Path)
+	content, err := os.ReadFile(input.Path)
 	if err != nil {
-		return &ToolResult{
-			Content: fmt.Sprintf("Error reading file: %s", err),
-			IsError: true,
-		}, nil
+		return "", fmt.Errorf("error reading file: %s", err)
 	}
 
 	s := string(content)
 
 	switch {
 	// Edit: replace old_str with new_str (both required)
-	case params.OldStr != "" && params.NewStr != "":
-		count := strings.Count(s, params.OldStr)
+	case input.OldStr != "" && input.NewStr != "":
+		count := strings.Count(s, input.OldStr)
 		if count == 0 {
-			return &ToolResult{
-				Content: "old_str not found in file",
-				IsError: true,
-			}, nil
+			return "", fmt.Errorf("old_str not found in file")
 		}
 		if count > 1 {
-			return &ToolResult{
-				Content: fmt.Sprintf("old_str matches %d times in file, expected exactly one match", count),
-				IsError: true,
-			}, nil
+			return "", fmt.Errorf("old_str matches %d times in file, expected exactly one match", count)
 		}
-		newContent := strings.Replace(s, params.OldStr, params.NewStr, 1)
-		if err := os.WriteFile(params.Path, []byte(newContent), 0644); err != nil {
-			return &ToolResult{
-				Content: fmt.Sprintf("Error writing file: %s", err),
-				IsError: true,
-			}, nil
+		newContent := strings.Replace(s, input.OldStr, input.NewStr, 1)
+		if err := os.WriteFile(input.Path, []byte(newContent), 0644); err != nil {
+			return "", fmt.Errorf("error writing file: %s", err)
 		}
-		return &ToolResult{Content: fmt.Sprintf("Successfully edited text in %s", params.Path)}, nil
+		return fmt.Sprintf("Successfully edited text in %s", input.Path), nil
+
 	// Delete: only old_str provided
-	case params.OldStr != "" && params.NewStr == "":
-		count := strings.Count(s, params.OldStr)
+	case input.OldStr != "" && input.NewStr == "":
+		count := strings.Count(s, input.OldStr)
 		if count == 0 {
-			return &ToolResult{
-				Content: "old_str not found in file for deletion",
-				IsError: true,
-			}, nil
+			return "", fmt.Errorf("old_str not found in file for deletion")
 		}
 		if count > 1 {
-			return &ToolResult{
-				Content: fmt.Sprintf("old_str matches %d times in file, expected exactly one match for deletion", count),
-				IsError: true,
-			}, nil
+			return "", fmt.Errorf("old_str matches %d times in file, expected exactly one match for deletion", count)
 		}
-		newContent := strings.Replace(s, params.OldStr, "", 1)
-		if err := os.WriteFile(params.Path, []byte(newContent), 0644); err != nil {
-			return &ToolResult{
-				Content: fmt.Sprintf("Error writing file during deletion: %s", err),
-				IsError: true,
-			}, nil
+		newContent := strings.Replace(s, input.OldStr, "", 1)
+		if err := os.WriteFile(input.Path, []byte(newContent), 0644); err != nil {
+			return "", fmt.Errorf("error writing file during deletion: %s", err)
 		}
-		return &ToolResult{Content: fmt.Sprintf("Successfully deleted text in %s", params.Path)}, nil
+		return fmt.Sprintf("Successfully deleted text in %s", input.Path), nil
+
 	// Append: only new_str provided
-	case params.OldStr == "" && params.NewStr != "":
-		f, err := os.OpenFile(params.Path, os.O_APPEND|os.O_WRONLY, 0644)
+	case input.OldStr == "" && input.NewStr != "":
+		f, err := os.OpenFile(input.Path, os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
-			return &ToolResult{
-				Content: fmt.Sprintf("Error opening file for append: %s", err),
-				IsError: true,
-			}, nil
+			return "", fmt.Errorf("error opening file for append: %s", err)
 		}
 		defer f.Close()
-		if _, err := f.WriteString(params.NewStr); err != nil {
-			return &ToolResult{
-				Content: fmt.Sprintf("Error appending to file: %s", err),
-				IsError: true,
-			}, nil
+		if _, err := f.WriteString(input.NewStr); err != nil {
+			return "", fmt.Errorf("error appending to file: %s", err)
 		}
-		return &ToolResult{Content: fmt.Sprintf("Successfully appended text to %s", params.Path)}, nil
-	// Neither provided
+		return fmt.Sprintf("Successfully appended text to %s", input.Path), nil
+
+	// Neither provided - this shouldn't happen because of Validate()
 	default:
-		return &ToolResult{
-			Content: "Must provide at least one of old_str or new_str. See tool description for valid usages.",
-			IsError: true,
-		}, nil
+		return "", fmt.Errorf("must provide at least one of old_str or new_str. See tool description for valid usages")
 	}
 }
 
-// MoveFileTool validates and executes the move file tool
-func MoveFileTool(params MoveFileParams) (*ToolResult, error) {
+// ExecuteMoveFile handles moving/renaming a file
+func ExecuteMoveFile(ctx context.Context, input MoveFileInput) (string, error) {
 	// Check if source file exists
-	sourceInfo, err := os.Stat(params.SourcePath)
+	sourceInfo, err := os.Stat(input.SourcePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &ToolResult{
-				Content: fmt.Sprintf("Source file does not exist: %s", params.SourcePath),
-				IsError: true,
-			}, nil
+			return "", fmt.Errorf("source file does not exist: %s", input.SourcePath)
 		}
-		return &ToolResult{
-			Content: fmt.Sprintf("Error checking source file: %s", err),
-			IsError: true,
-		}, nil
+		return "", fmt.Errorf("error checking source file: %s", err)
 	}
 
 	// Ensure source is not a directory
 	if sourceInfo.IsDir() {
-		return &ToolResult{
-			Content: fmt.Sprintf("Source path is a directory, not a file: %s. Use move_folder tool instead.", params.SourcePath),
-			IsError: true,
-		}, nil
+		return "", fmt.Errorf("source path is a directory, not a file: %s. Use move_folder tool instead", input.SourcePath)
 	}
 
 	// Check if target already exists
-	if _, err := os.Stat(params.TargetPath); err == nil {
-		return &ToolResult{
-			Content: fmt.Sprintf("Target file already exists: %s", params.TargetPath),
-			IsError: true,
-		}, nil
+	if _, err := os.Stat(input.TargetPath); err == nil {
+		return "", fmt.Errorf("target file already exists: %s", input.TargetPath)
 	} else if !os.IsNotExist(err) {
-		return &ToolResult{
-			Content: fmt.Sprintf("Error checking target file: %s", err),
-			IsError: true,
-		}, nil
+		return "", fmt.Errorf("error checking target file: %s", err)
 	}
 
 	// Ensure the target directory exists
-	targetDir := filepath.Dir(params.TargetPath)
+	targetDir := filepath.Dir(input.TargetPath)
 	if targetDir != "." && targetDir != ".." {
 		if err := os.MkdirAll(targetDir, 0755); err != nil {
-			return &ToolResult{
-				Content: fmt.Sprintf("Error creating target directory structure: %s", err),
-				IsError: true,
-			}, nil
+			return "", fmt.Errorf("error creating target directory structure: %s", err)
 		}
 	}
 
 	// Move the file
-	if err := os.Rename(params.SourcePath, params.TargetPath); err != nil {
-		return &ToolResult{
-			Content: fmt.Sprintf("Error moving file: %s", err),
-			IsError: true,
-		}, nil
+	if err := os.Rename(input.SourcePath, input.TargetPath); err != nil {
+		return "", fmt.Errorf("error moving file: %s", err)
 	}
 
-	return &ToolResult{
-		Content: fmt.Sprintf("Successfully moved file from %s to %s", params.SourcePath, params.TargetPath),
-	}, nil
+	return fmt.Sprintf("Successfully moved file from %s to %s", input.SourcePath, input.TargetPath), nil
 }
 
-// ViewFileTool validates and executes the view file tool
-func ViewFileTool(params ViewFileParams) (*ToolResult, error) {
+// ExecuteViewFile handles viewing a file
+func ExecuteViewFile(ctx context.Context, input ViewFileInput) (string, error) {
 	// Check if file exists
-	fileInfo, err := os.Stat(params.Path)
+	fileInfo, err := os.Stat(input.Path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &ToolResult{
-				Content: fmt.Sprintf("File does not exist: %s", params.Path),
-				IsError: true,
-			}, nil
+			return "", fmt.Errorf("file does not exist: %s", input.Path)
 		}
-		return &ToolResult{
-			Content: fmt.Sprintf("Error checking file: %s", err),
-			IsError: true,
-		}, nil
+		return "", fmt.Errorf("error checking file: %s", err)
 	}
 
 	// Ensure it's not a directory
 	if fileInfo.IsDir() {
-		return &ToolResult{
-			Content: fmt.Sprintf("Path is a directory, not a file: %s", params.Path),
-			IsError: true,
-		}, nil
+		return "", fmt.Errorf("path is a directory, not a file: %s", input.Path)
 	}
 
 	// Read the file content
-	content, err := os.ReadFile(params.Path)
+	content, err := os.ReadFile(input.Path)
 	if err != nil {
-		return &ToolResult{
-			Content: fmt.Sprintf("Error reading file: %s", err),
-			IsError: true,
-		}, nil
+		return "", fmt.Errorf("error reading file: %s", err)
 	}
 
 	// Detect if file is binary
 	mime := mimetype.Detect(content)
 	if !strings.HasPrefix(mime.String(), "text/") {
-		return &ToolResult{
-			Content: fmt.Sprintf("File appears to be binary (MIME type: %s), not displaying content", mime.String()),
-			IsError: true,
-		}, nil
+		return "", fmt.Errorf("file appears to be binary (MIME type: %s), not displaying content", mime.String())
 	}
 
-	return &ToolResult{
-		Content: string(content),
-	}, nil
+	return string(content), nil
 }

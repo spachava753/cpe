@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"context"
 	_ "embed"
 	"fmt"
 	"github.com/anthropics/anthropic-sdk-go"
@@ -178,301 +177,11 @@ func createAnthropicGenerator(model, baseURL string) (gai.Generator, error) {
 		systemPrompt,
 	)
 
-	return &generator, nil
-}
-
-// BashToolCallback is a callback for the bash tool
-type BashToolCallback struct{}
-
-// Call executes a bash command
-func (t BashToolCallback) Call(ctx context.Context, input map[string]any) (any, error) {
-	command, ok := input["command"].(string)
-	if !ok {
-		return nil, fmt.Errorf("command parameter is required")
-	}
-	result, err := executeBashTool(command)
-	if err != nil {
-		return nil, err
-	}
-	return result.Content, nil
-}
-
-// FilesOverviewToolCallback is a callback for the files overview tool
-type FilesOverviewToolCallback struct {
-	ignorer *gitignore.GitIgnore
-}
-
-// Call executes the files overview tool
-func (t FilesOverviewToolCallback) Call(ctx context.Context, input map[string]any) (any, error) {
-	path, _ := input["path"].(string)
-	result, err := ExecuteFilesOverviewTool(path, t.ignorer)
-	if err != nil {
-		return nil, err
-	}
-	return result.Content, nil
-}
-
-// GetRelatedFilesToolCallback is a callback for the get related files tool
-type GetRelatedFilesToolCallback struct {
-	ignorer *gitignore.GitIgnore
-}
-
-// Call executes the get related files tool
-func (t GetRelatedFilesToolCallback) Call(ctx context.Context, input map[string]any) (any, error) {
-	inputFiles, ok := input["input_files"].([]any)
-	if !ok {
-		return nil, fmt.Errorf("input_files parameter is required")
-	}
-
-	// Convert to []string
-	files := make([]string, len(inputFiles))
-	for i, file := range inputFiles {
-		files[i], ok = file.(string)
-		if !ok {
-			return nil, fmt.Errorf("input_files must be an array of strings")
-		}
-	}
-
-	result, err := ExecuteGetRelatedFilesTool(files, t.ignorer)
-	if err != nil {
-		return nil, err
-	}
-	return result.Content, nil
-}
-
-// CreateFileToolCallback is a callback for the create file tool
-type CreateFileToolCallback struct{}
-
-// Call executes the create file tool
-func (t CreateFileToolCallback) Call(ctx context.Context, input map[string]any) (any, error) {
-	path, ok := input["path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("path parameter is required")
-	}
-	fileText, ok := input["file_text"].(string)
-	if !ok {
-		return nil, fmt.Errorf("file_text parameter is required")
-	}
-	result, err := CreateFileTool(CreateFileParams{
-		Path:     path,
-		FileText: fileText,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result.Content, nil
-}
-
-// DeleteFileToolCallback is a callback for the delete file tool
-type DeleteFileToolCallback struct{}
-
-// Call executes the delete file tool
-func (t DeleteFileToolCallback) Call(ctx context.Context, input map[string]any) (any, error) {
-	path, ok := input["path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("path parameter is required")
-	}
-	result, err := DeleteFileTool(DeleteFileParams{
-		Path: path,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result.Content, nil
-}
-
-// EditFileToolCallback is a callback for the edit file tool
-type EditFileToolCallback struct{}
-
-// Call executes the edit file tool
-func (t EditFileToolCallback) Call(ctx context.Context, input map[string]any) (any, error) {
-	path, ok := input["path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("path parameter is required")
-	}
-	// old_str and new_str are optional for the new logic
-	var oldStr, newStr string
-	if v, ok := input["old_str"].(string); ok {
-		oldStr = v
-	}
-	if v, ok := input["new_str"].(string); ok {
-		newStr = v
-	}
-	result, err := EditFileTool(EditFileParams{
-		Path:   path,
-		OldStr: oldStr,
-		NewStr: newStr,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result.Content, nil
-}
-
-// MoveFileToolCallback is a callback for the move file tool
-type MoveFileToolCallback struct{}
-
-// Call executes the move file tool
-func (t MoveFileToolCallback) Call(ctx context.Context, input map[string]any) (any, error) {
-	sourcePath, ok := input["source_path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("source_path parameter is required")
-	}
-	targetPath, ok := input["target_path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("target_path parameter is required")
-	}
-	result, err := MoveFileTool(MoveFileParams{
-		SourcePath: sourcePath,
-		TargetPath: targetPath,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result.Content, nil
-}
-
-// ViewFileToolCallback is a callback for the view file tool
-type ViewFileToolCallback struct{}
-
-// Call executes the view file tool
-func (t ViewFileToolCallback) Call(ctx context.Context, input map[string]any) (any, error) {
-	path, ok := input["path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("path parameter is required")
-	}
-	result, err := ViewFileTool(ViewFileParams{
-		Path: path,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result.Content, nil
-}
-
-// CreateFolderToolCallback is a callback for the create folder tool
-type CreateFolderToolCallback struct{}
-
-// Call executes the create folder tool
-func (t CreateFolderToolCallback) Call(ctx context.Context, input map[string]any) (any, error) {
-	path, ok := input["path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("path parameter is required")
-	}
-	result, err := CreateFolderTool(CreateFolderParams{
-		Path: path,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result.Content, nil
-}
-
-// DeleteFolderToolCallback is a callback for the delete folder tool
-type DeleteFolderToolCallback struct{}
-
-// Call executes the delete folder tool
-func (t DeleteFolderToolCallback) Call(ctx context.Context, input map[string]any) (any, error) {
-	path, ok := input["path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("path parameter is required")
-	}
-
-	// recursive is optional with a default value of false
-	recursive := false
-	if recursiveVal, ok := input["recursive"].(bool); ok {
-		recursive = recursiveVal
-	}
-
-	result, err := DeleteFolderTool(DeleteFolderParams{
-		Path:      path,
-		Recursive: recursive,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result.Content, nil
-}
-
-// MoveFolderToolCallback is a callback for the move folder tool
-type MoveFolderToolCallback struct{}
-
-// Call executes the move folder tool
-func (t MoveFolderToolCallback) Call(ctx context.Context, input map[string]any) (any, error) {
-	sourcePath, ok := input["source_path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("source_path parameter is required")
-	}
-	targetPath, ok := input["target_path"].(string)
-	if !ok {
-		return nil, fmt.Errorf("target_path parameter is required")
-	}
-	result, err := MoveFolderTool(MoveFolderParams{
-		SourcePath: sourcePath,
-		TargetPath: targetPath,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result.Content, nil
+	return generator, nil
 }
 
 type ToolRegisterer interface {
 	Register(tool gai.Tool, callback gai.ToolCallback) error
-}
-
-// RegisterTools registers all the necessary tools with a tool registerer
-func RegisterTools(toolRegisterer ToolRegisterer) error {
-	// Create ignorer for file system tools
-	ignorer, err := createIgnorer()
-	if err != nil {
-		return fmt.Errorf("failed to create ignorer: %w", err)
-	}
-
-	// Register bash tool
-	if err := registerTool(toolRegisterer, bashTool, &BashToolCallback{}); err != nil {
-		return err
-	}
-
-	// Register files overview tool
-	if err := registerTool(toolRegisterer, filesOverviewTool, &FilesOverviewToolCallback{ignorer: ignorer}); err != nil {
-		return err
-	}
-
-	// Register get related files tool
-	if err := registerTool(toolRegisterer, getRelatedFilesTool, &GetRelatedFilesToolCallback{ignorer: ignorer}); err != nil {
-		return err
-	}
-
-	// Register file operation tools
-	if err := registerTool(toolRegisterer, createFileTool, &CreateFileToolCallback{}); err != nil {
-		return err
-	}
-	if err := registerTool(toolRegisterer, deleteFileTool, &DeleteFileToolCallback{}); err != nil {
-		return err
-	}
-	if err := registerTool(toolRegisterer, editFileTool, &EditFileToolCallback{}); err != nil {
-		return err
-	}
-	if err := registerTool(toolRegisterer, moveFileTool, &MoveFileToolCallback{}); err != nil {
-		return err
-	}
-	if err := registerTool(toolRegisterer, viewFileTool, &ViewFileToolCallback{}); err != nil {
-		return err
-	}
-
-	// Register folder operation tools
-	if err := registerTool(toolRegisterer, createFolderTool, &CreateFolderToolCallback{}); err != nil {
-		return err
-	}
-	if err := registerTool(toolRegisterer, deleteFolderTool, &DeleteFolderToolCallback{}); err != nil {
-		return err
-	}
-	if err := registerTool(toolRegisterer, moveFolderTool, &MoveFolderToolCallback{}); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 // createIgnorer creates an ignorer for file system operations
@@ -488,11 +197,55 @@ func createIgnorer() (*gitignore.GitIgnore, error) {
 	return ignorer, nil
 }
 
-// registerTool registers a tool with a tool registry
-func registerTool(toolReg ToolRegisterer, tool gai.Tool, callback gai.ToolCallback) error {
-	// Register the tool with the callback
-	if err := toolReg.Register(tool, callback); err != nil {
-		return fmt.Errorf("failed to register %s tool: %w", tool.Name, err)
+// RegisterTools registers all the necessary tools with a tool registerer
+func RegisterTools(toolRegisterer ToolRegisterer) error {
+	// Create ignorer for file system tools
+	ignorer, err := createIgnorer()
+	if err != nil {
+		return fmt.Errorf("failed to create ignorer: %w", err)
+	}
+
+	// Register bash tool
+	if err := toolRegisterer.Register(bashTool, gai.ToolCallBackFunc[bashToolInput](executeBashTool)); err != nil {
+		return err
+	}
+
+	// Register files overview tool
+	if err := toolRegisterer.Register(filesOverviewTool, CreateExecuteFilesOverviewFunc(ignorer)); err != nil {
+		return err
+	}
+
+	// Register get related files tool
+	if err := toolRegisterer.Register(getRelatedFilesTool, CreateExecuteGetRelatedFilesFunc(ignorer)); err != nil {
+		return err
+	}
+
+	// Register file operation tools
+	if err := toolRegisterer.Register(createFileTool, gai.ToolCallBackFunc[CreateFileInput](ExecuteCreateFile)); err != nil {
+		return err
+	}
+	if err := toolRegisterer.Register(deleteFileTool, gai.ToolCallBackFunc[DeleteFileInput](ExecuteDeleteFile)); err != nil {
+		return err
+	}
+	if err := toolRegisterer.Register(editFileTool, gai.ToolCallBackFunc[EditFileInput](ExecuteEditFile)); err != nil {
+		return err
+	}
+	if err := toolRegisterer.Register(moveFileTool, gai.ToolCallBackFunc[MoveFileInput](ExecuteMoveFile)); err != nil {
+		return err
+	}
+	if err := toolRegisterer.Register(viewFileTool, gai.ToolCallBackFunc[ViewFileInput](ExecuteViewFile)); err != nil {
+		return err
+	}
+
+	// Register folder operation tools
+	if err := toolRegisterer.Register(createFolderTool, gai.ToolCallBackFunc[CreateFolderInput](ExecuteCreateFolder)); err != nil {
+		return err
+	}
+	if err := toolRegisterer.Register(deleteFolderTool, gai.ToolCallBackFunc[DeleteFolderInput](ExecuteDeleteFolder)); err != nil {
+		return err
+	}
+	if err := toolRegisterer.Register(moveFolderTool, gai.ToolCallBackFunc[MoveFolderInput](ExecuteMoveFolder)); err != nil {
+		return err
 	}
 
 	return nil
