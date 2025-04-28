@@ -24,6 +24,15 @@ func (c CreateFileInput) Validate() error {
 	if c.FileText == "" {
 		return errors.New("file_text is required")
 	}
+
+	// For create operations, we should verify the file doesn't already exist
+	if _, err := os.Stat(c.Path); err == nil {
+		return fmt.Errorf("file already exists at path: %s", c.Path)
+	} else if !os.IsNotExist(err) {
+		// Some other error occurred while checking
+		return fmt.Errorf("error checking path: %s", err)
+	}
+
 	return nil
 }
 
@@ -36,6 +45,20 @@ func (d DeleteFileInput) Validate() error {
 	if d.Path == "" {
 		return errors.New("path is required")
 	}
+
+	// Verify the path exists and is a file
+	fileInfo, err := os.Stat(d.Path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("file does not exist at path: %s", d.Path)
+		}
+		return fmt.Errorf("error checking path: %s", err)
+	}
+
+	if fileInfo.IsDir() {
+		return fmt.Errorf("path is a directory, not a file: %s", d.Path)
+	}
+
 	return nil
 }
 
@@ -53,6 +76,20 @@ func (e EditFileInput) Validate() error {
 	if e.OldStr == "" && e.NewStr == "" {
 		return errors.New("at least one of old_str or new_str must be provided")
 	}
+
+	// Verify the path exists and is a file
+	fileInfo, err := os.Stat(e.Path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("file does not exist at path: %s", e.Path)
+		}
+		return fmt.Errorf("error checking path: %s", err)
+	}
+
+	if fileInfo.IsDir() {
+		return fmt.Errorf("path is a directory, not a file: %s", e.Path)
+	}
+
 	return nil
 }
 
@@ -69,6 +106,28 @@ func (m MoveFileInput) Validate() error {
 	if m.TargetPath == "" {
 		return errors.New("target_path is required")
 	}
+
+	// Verify the source path exists and is a file
+	sourceInfo, err := os.Stat(m.SourcePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("source file does not exist: %s", m.SourcePath)
+		}
+		return fmt.Errorf("error checking source path: %s", err)
+	}
+
+	if sourceInfo.IsDir() {
+		return fmt.Errorf("source path is a directory, not a file: %s", m.SourcePath)
+	}
+
+	// For target path, we should verify it doesn't already exist
+	if _, err := os.Stat(m.TargetPath); err == nil {
+		return fmt.Errorf("target file already exists: %s", m.TargetPath)
+	} else if !os.IsNotExist(err) {
+		// Some other error occurred while checking
+		return fmt.Errorf("error checking target path: %s", err)
+	}
+
 	return nil
 }
 
@@ -81,25 +140,29 @@ func (v ViewFileInput) Validate() error {
 	if v.Path == "" {
 		return errors.New("path is required")
 	}
+
+	// Verify the path exists and is a file
+	fileInfo, err := os.Stat(v.Path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("file does not exist at path: %s", v.Path)
+		}
+		return fmt.Errorf("error checking path: %s", err)
+	}
+
+	if fileInfo.IsDir() {
+		return fmt.Errorf("path is a directory, not a file: %s", v.Path)
+	}
+
 	return nil
 }
 
 // ExecuteCreateFile handles creating a file
 func ExecuteCreateFile(ctx context.Context, input CreateFileInput) (string, error) {
-	// Check if file already exists before attempting to create it
-	if _, err := os.Stat(input.Path); err == nil {
-		return "", fmt.Errorf("file already exists: %s", input.Path)
-	} else if !os.IsNotExist(err) {
-		// Some other error occurred while checking file existence
-		return "", fmt.Errorf("error checking if file exists: %s", err)
-	}
-
 	// Ensure the directory exists
 	dir := filepath.Dir(input.Path)
-	if dir != "." && dir != ".." {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return "", fmt.Errorf("error creating directory structure: %s", err)
-		}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("error creating directory structure: %s", err)
 	}
 
 	if err := os.WriteFile(input.Path, []byte(input.FileText), 0644); err != nil {
@@ -111,20 +174,6 @@ func ExecuteCreateFile(ctx context.Context, input CreateFileInput) (string, erro
 
 // ExecuteDeleteFile handles deleting a file
 func ExecuteDeleteFile(ctx context.Context, input DeleteFileInput) (string, error) {
-	// Check if file exists
-	fileInfo, err := os.Stat(input.Path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", fmt.Errorf("file does not exist: %s", input.Path)
-		}
-		return "", fmt.Errorf("error checking file: %s", err)
-	}
-
-	// Ensure it's not a directory
-	if fileInfo.IsDir() {
-		return "", fmt.Errorf("path is a directory, not a file: %s. Use delete_folder tool instead", input.Path)
-	}
-
 	if err := os.Remove(input.Path); err != nil {
 		return "", fmt.Errorf("error removing file: %s", err)
 	}
@@ -134,14 +183,6 @@ func ExecuteDeleteFile(ctx context.Context, input DeleteFileInput) (string, erro
 
 // ExecuteEditFile handles editing a file
 func ExecuteEditFile(ctx context.Context, input EditFileInput) (string, error) {
-	// Check if file exists
-	if _, err := os.Stat(input.Path); err != nil {
-		if os.IsNotExist(err) {
-			return "", fmt.Errorf("file does not exist: %s", input.Path)
-		}
-		return "", fmt.Errorf("error checking file: %s", err)
-	}
-
 	content, err := os.ReadFile(input.Path)
 	if err != nil {
 		return "", fmt.Errorf("error reading file: %s", err)
@@ -200,33 +241,10 @@ func ExecuteEditFile(ctx context.Context, input EditFileInput) (string, error) {
 
 // ExecuteMoveFile handles moving/renaming a file
 func ExecuteMoveFile(ctx context.Context, input MoveFileInput) (string, error) {
-	// Check if source file exists
-	sourceInfo, err := os.Stat(input.SourcePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", fmt.Errorf("source file does not exist: %s", input.SourcePath)
-		}
-		return "", fmt.Errorf("error checking source file: %s", err)
-	}
-
-	// Ensure source is not a directory
-	if sourceInfo.IsDir() {
-		return "", fmt.Errorf("source path is a directory, not a file: %s. Use move_folder tool instead", input.SourcePath)
-	}
-
-	// Check if target already exists
-	if _, err := os.Stat(input.TargetPath); err == nil {
-		return "", fmt.Errorf("target file already exists: %s", input.TargetPath)
-	} else if !os.IsNotExist(err) {
-		return "", fmt.Errorf("error checking target file: %s", err)
-	}
-
 	// Ensure the target directory exists
 	targetDir := filepath.Dir(input.TargetPath)
-	if targetDir != "." && targetDir != ".." {
-		if err := os.MkdirAll(targetDir, 0755); err != nil {
-			return "", fmt.Errorf("error creating target directory structure: %s", err)
-		}
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return "", fmt.Errorf("error creating target directory structure: %s", err)
 	}
 
 	// Move the file
@@ -239,20 +257,6 @@ func ExecuteMoveFile(ctx context.Context, input MoveFileInput) (string, error) {
 
 // ExecuteViewFile handles viewing a file
 func ExecuteViewFile(ctx context.Context, input ViewFileInput) (string, error) {
-	// Check if file exists
-	fileInfo, err := os.Stat(input.Path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", fmt.Errorf("file does not exist: %s", input.Path)
-		}
-		return "", fmt.Errorf("error checking file: %s", err)
-	}
-
-	// Ensure it's not a directory
-	if fileInfo.IsDir() {
-		return "", fmt.Errorf("path is a directory, not a file: %s", input.Path)
-	}
-
 	// Read the file content
 	content, err := os.ReadFile(input.Path)
 	if err != nil {

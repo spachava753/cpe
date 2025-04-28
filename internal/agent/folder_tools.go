@@ -17,6 +17,15 @@ func (c CreateFolderInput) Validate() error {
 	if c.Path == "" {
 		return errors.New("path is required")
 	}
+
+	// For create operations, we should verify the folder doesn't already exist
+	if _, err := os.Stat(c.Path); err == nil {
+		return fmt.Errorf("folder already exists at path: %s", c.Path)
+	} else if !os.IsNotExist(err) {
+		// Some other error occurred while checking
+		return fmt.Errorf("error checking path: %s", err)
+	}
+
 	return nil
 }
 
@@ -30,6 +39,31 @@ func (d DeleteFolderInput) Validate() error {
 	if d.Path == "" {
 		return errors.New("path is required")
 	}
+
+	// Verify the path exists and is a folder
+	fileInfo, err := os.Stat(d.Path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("folder does not exist at path: %s", d.Path)
+		}
+		return fmt.Errorf("error checking path: %s", err)
+	}
+
+	if !fileInfo.IsDir() {
+		return fmt.Errorf("path is a file, not a folder: %s", d.Path)
+	}
+
+	// If not recursive, verify the folder is empty
+	if !d.Recursive {
+		entries, err := os.ReadDir(d.Path)
+		if err != nil {
+			return fmt.Errorf("error reading directory: %s", err)
+		}
+		if len(entries) > 0 {
+			return fmt.Errorf("folder is not empty: %s (use recursive=true to delete non-empty folders)", d.Path)
+		}
+	}
+
 	return nil
 }
 
@@ -46,19 +80,33 @@ func (m MoveFolderInput) Validate() error {
 	if m.TargetPath == "" {
 		return errors.New("target_path is required")
 	}
+
+	// Verify the source path exists and is a folder
+	sourceInfo, err := os.Stat(m.SourcePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("source folder does not exist: %s", m.SourcePath)
+		}
+		return fmt.Errorf("error checking source path: %s", err)
+	}
+
+	if !sourceInfo.IsDir() {
+		return fmt.Errorf("source path is a file, not a folder: %s", m.SourcePath)
+	}
+
+	// For target path, we should verify it doesn't already exist
+	if _, err := os.Stat(m.TargetPath); err == nil {
+		return fmt.Errorf("target folder already exists: %s", m.TargetPath)
+	} else if !os.IsNotExist(err) {
+		// Some other error occurred while checking
+		return fmt.Errorf("error checking target path: %s", err)
+	}
+
 	return nil
 }
 
 // ExecuteCreateFolder handles creating a folder
 func ExecuteCreateFolder(ctx context.Context, input CreateFolderInput) (string, error) {
-	// Check if folder already exists
-	if _, err := os.Stat(input.Path); err == nil {
-		return "", fmt.Errorf("folder already exists: %s", input.Path)
-	} else if !os.IsNotExist(err) {
-		// Some other error occurred while checking folder existence
-		return "", fmt.Errorf("error checking if folder exists: %s", err)
-	}
-
 	// Create the folder with all necessary parent directories
 	if err := os.MkdirAll(input.Path, 0755); err != nil {
 		return "", fmt.Errorf("error creating folder: %s", err)
@@ -68,30 +116,7 @@ func ExecuteCreateFolder(ctx context.Context, input CreateFolderInput) (string, 
 
 // ExecuteDeleteFolder handles deleting a folder
 func ExecuteDeleteFolder(ctx context.Context, input DeleteFolderInput) (string, error) {
-	// Check if folder exists
-	fileInfo, err := os.Stat(input.Path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", fmt.Errorf("folder does not exist: %s", input.Path)
-		}
-		return "", fmt.Errorf("error checking folder: %s", err)
-	}
-
-	// Ensure it's a directory
-	if !fileInfo.IsDir() {
-		return "", fmt.Errorf("path is a file, not a folder: %s. Use delete_file tool instead", input.Path)
-	}
-
-	// Check if the directory is empty if we're not using recursive deletion
 	if !input.Recursive {
-		entries, err := os.ReadDir(input.Path)
-		if err != nil {
-			return "", fmt.Errorf("error reading directory: %s", err)
-		}
-		if len(entries) > 0 {
-			return "", fmt.Errorf("folder is not empty: %s. Use recursive=true to delete non-empty folders", input.Path)
-		}
-
 		// Delete the empty directory
 		if err := os.Remove(input.Path); err != nil {
 			return "", fmt.Errorf("error removing folder: %s", err)
@@ -108,33 +133,10 @@ func ExecuteDeleteFolder(ctx context.Context, input DeleteFolderInput) (string, 
 
 // ExecuteMoveFolder handles moving/renaming a folder
 func ExecuteMoveFolder(ctx context.Context, input MoveFolderInput) (string, error) {
-	// Check if source folder exists
-	sourceInfo, err := os.Stat(input.SourcePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", fmt.Errorf("source folder does not exist: %s", input.SourcePath)
-		}
-		return "", fmt.Errorf("error checking source folder: %s", err)
-	}
-
-	// Ensure source is a directory
-	if !sourceInfo.IsDir() {
-		return "", fmt.Errorf("source path is a file, not a folder: %s. Use move_file tool instead", input.SourcePath)
-	}
-
-	// Check if target already exists
-	if _, err := os.Stat(input.TargetPath); err == nil {
-		return "", fmt.Errorf("target folder already exists: %s", input.TargetPath)
-	} else if !os.IsNotExist(err) {
-		return "", fmt.Errorf("error checking target folder: %s", err)
-	}
-
 	// Ensure the parent directory of the target exists
 	targetParent := filepath.Dir(input.TargetPath)
-	if targetParent != "." && targetParent != ".." {
-		if err := os.MkdirAll(targetParent, 0755); err != nil {
-			return "", fmt.Errorf("error creating parent directory structure: %s", err)
-		}
+	if err := os.MkdirAll(targetParent, 0755); err != nil {
+		return "", fmt.Errorf("error creating parent directory structure: %s", err)
 	}
 
 	// Move the folder
