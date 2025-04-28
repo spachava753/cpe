@@ -127,13 +127,27 @@ func ExecuteFilesOverviewTool(path string, ignorer *ignore.GitIgnore) (*ToolResu
 	if path == "" {
 		path = "."
 	}
-	if _, err := os.Stat(path); err != nil {
+
+	// Check if the path exists
+	fileInfo, err := os.Stat(path)
+	if err != nil {
 		errMsg := fmt.Sprintf("Error: the specified path '%s' does not exist or is not accessible.", path)
 		return &ToolResult{
 			Content: errMsg,
 			IsError: true,
 		}, nil
 	}
+
+	// Check if the path is a file instead of a directory
+	if !fileInfo.IsDir() {
+		errMsg := fmt.Sprintf("Error: the specified path '%s' is a file, not a directory. The path should be a relative file path to a folder. If you want to view a single file, you should use the view_file tool instead.", path)
+		return &ToolResult{
+			Content: errMsg,
+			IsError: true,
+		}, nil
+	}
+
+	// Continue with the directory processing
 	fsys := os.DirFS(path)
 	files, err := codemap.GenerateOutput(fsys, 100, ignorer)
 	if err != nil {
