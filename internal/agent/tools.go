@@ -100,7 +100,7 @@ func executeBashTool(ctx context.Context, input bashToolInput) (string, error) {
 		os.Stdout.Write(combined)
 	}
 
-	// Print exit code at the end	similar to shell style
+	// Print exit code at the end similar to shell style
 	exitCode := 0
 	if err != nil {
 		// Try to extract the exit code from the error

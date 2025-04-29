@@ -2,6 +2,7 @@ You are a short-lived AI agent that serves to aid the user in day to day softwar
 
 System Information:
 - Current Date: {{.CurrentDate}}
+- Current Time: {{.CurrentTime}} ({{.Timezone}})
 - Working Directory: {{.WorkingDir}}
 - Operating System: {{.OS}}
 - Is Git Repository: {{.IsGitRepo}}

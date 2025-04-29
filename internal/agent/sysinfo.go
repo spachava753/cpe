@@ -21,9 +21,11 @@ type SystemInfo struct {
 	IsGitRepo   bool
 
 	// Additional fields
-	Username         string
-	Hostname         string
-	GoVersion        string
+	Username    string
+	Hostname    string
+	GoVersion   string
+	CurrentTime string
+	Timezone    string
 
 	// Git-specific fields
 	GitBranch        string
@@ -47,8 +49,19 @@ func GetSystemInfo() (*SystemInfo, error) {
 	}
 
 	// Create the base SystemInfo
+	now := time.Now()
+	_, offset := now.Zone()
+	offsetHours := offset / 3600
+	offsetSign := "+"
+	if offsetHours < 0 {
+		offsetSign = "-"
+		offsetHours = -offsetHours
+	}
+
 	sysInfo := &SystemInfo{
-		CurrentDate: time.Now().Format(time.DateOnly),
+		CurrentDate: now.Format(time.DateOnly),
+		CurrentTime: now.Format("15:04:05"),
+		Timezone:    fmt.Sprintf("%s (UTC%s%d)", now.Location().String(), offsetSign, offsetHours),
 		WorkingDir:  wd,
 		OS:          runtime.GOOS,
 		IsGitRepo:   isGitRepo,
@@ -103,29 +116,6 @@ func GetSystemInfo() (*SystemInfo, error) {
 	}
 
 	return sysInfo, nil
-}
-
-// String implements fmt.Stringer
-func (si *SystemInfo) String() string {
-	// Create the basic system info string
-	info := fmt.Sprintf(`System Information:
-- Current Date: %s
-- Working Directory: %s
-- Operating System: %s
-- Is Git Repository: %v
-`, si.CurrentDate, si.WorkingDir, si.OS, si.IsGitRepo)
-
-	// Add git info if available
-	if si.IsGitRepo && si.GitBranch != "" {
-		gitInfo := fmt.Sprintf(`- Git Branch: %s
-- Latest Commit: %s
-- Commit Message: %s
-- Has Uncommitted Changes: %v
-`, si.GitBranch, si.GitLatestCommit, si.GitCommitMessage, si.GitHasChanges)
-		info += gitInfo
-	}
-
-	return info
 }
 
 // ExecuteTemplateString renders a template string with system info data

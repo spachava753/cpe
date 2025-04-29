@@ -215,6 +215,8 @@ CPE supports custom system prompts using Go's text/template syntax. Your templat
 
 ```
 {{.CurrentDate}}      - Current date (YYYY-MM-DD format)
+{{.CurrentTime}}      - Current time (HH:MM:SS format)
+{{.Timezone}}         - Current timezone with UTC offset
 {{.WorkingDir}}       - Current working directory
 {{.OS}}               - Operating system (linux, darwin, windows)
 {{.IsGitRepo}}        - Whether the current directory is a git repository (true/false)
@@ -235,6 +237,7 @@ You are an AI assistant helping with Go development.
 
 System Context:
 - Date: {{.CurrentDate}}
+- Time: {{.CurrentTime}} {{.Timezone}}
 - Directory: {{.WorkingDir}}
 - OS: {{.OS}}
 {{if .IsGitRepo}}
