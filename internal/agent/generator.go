@@ -82,10 +82,10 @@ var KnownModels = append(anthropicModels, openAiModels...)
 var agentInstructions string
 
 // InitGenerator creates the appropriate generator based on the model name
-func InitGenerator(model, baseURL string) (gai.ToolCapableGenerator, error) {
+func InitGenerator(model, baseURL, systemPromptPath string) (gai.ToolCapableGenerator, error) {
 	// Handle OpenAI models
 	if slices.Contains(openAiModels, model) {
-		generator, err := createOpenAIGenerator(model, baseURL)
+		generator, err := createOpenAIGenerator(model, baseURL, systemPromptPath)
 		if err != nil {
 			return nil, err
 		}
@@ -95,7 +95,7 @@ func InitGenerator(model, baseURL string) (gai.ToolCapableGenerator, error) {
 
 	// Handle Anthropic models
 	if slices.Contains(anthropicModels, model) {
-		generator, err := createAnthropicGenerator(model, baseURL)
+		generator, err := createAnthropicGenerator(model, baseURL, systemPromptPath)
 		if err != nil {
 			return nil, err
 		}
@@ -109,7 +109,7 @@ func InitGenerator(model, baseURL string) (gai.ToolCapableGenerator, error) {
 	}
 
 	// custom model
-	generator, err := createOpenAIGenerator(model, baseURL)
+	generator, err := createOpenAIGenerator(model, baseURL, systemPromptPath)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +118,7 @@ func InitGenerator(model, baseURL string) (gai.ToolCapableGenerator, error) {
 }
 
 // createOpenAIGenerator creates and configures an OpenAI generator
-func createOpenAIGenerator(model, baseURL string) (gai.Generator, error) {
+func createOpenAIGenerator(model, baseURL, systemPromptPath string) (gai.Generator, error) {
 	// Create OpenAI client
 	var client openai.Client
 	if baseURL != "" {
@@ -134,7 +134,20 @@ func createOpenAIGenerator(model, baseURL string) (gai.Generator, error) {
 	}
 
 	// Get agent instructions with system info
-	systemPrompt := fmt.Sprintf(agentInstructions, sysInfo.String())
+	var systemPrompt string
+	if systemPromptPath != "" {
+		// User provided a custom template file
+		systemPrompt, err = sysInfo.ExecuteTemplate(systemPromptPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute custom system prompt template: %w", err)
+		}
+	} else {
+		// Use the default template
+		systemPrompt, err = sysInfo.ExecuteTemplateString(agentInstructions)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute default system prompt template: %w", err)
+		}
+	}
 
 	// Create the OpenAI generator
 	generator := gai.NewOpenAiGenerator(
@@ -147,7 +160,7 @@ func createOpenAIGenerator(model, baseURL string) (gai.Generator, error) {
 }
 
 // createAnthropicGenerator creates and configures an Anthropic generator
-func createAnthropicGenerator(model, baseURL string) (gai.Generator, error) {
+func createAnthropicGenerator(model, baseURL, systemPromptPath string) (gai.Generator, error) {
 	// Create Anthropic client
 	var client anthropic.Client
 	opts := []aopts.RequestOption{
@@ -168,7 +181,20 @@ func createAnthropicGenerator(model, baseURL string) (gai.Generator, error) {
 	}
 
 	// Get agent instructions with system info
-	systemPrompt := fmt.Sprintf(agentInstructions, sysInfo.String())
+	var systemPrompt string
+	if systemPromptPath != "" {
+		// User provided a custom template file
+		systemPrompt, err = sysInfo.ExecuteTemplate(systemPromptPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute custom system prompt template: %w", err)
+		}
+	} else {
+		// Use the default template
+		systemPrompt, err = sysInfo.ExecuteTemplateString(agentInstructions)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute default system prompt template: %w", err)
+		}
+	}
 
 	// Create and return the Anthropic generator
 	generator := gai.NewAnthropicGenerator(

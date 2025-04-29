@@ -33,6 +33,7 @@ var (
 	newConversation   bool
 	continueID        string
 	incognitoMode     bool
+	systemPromptPath  string
 
 	// DefaultModel holds the global default LLM model for the CLI.
 	// It is set at process startup from CPE_MODEL env var (or empty if unset).
@@ -93,6 +94,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&newConversation, "new", "n", false, "Start a new conversation instead of continuing from the last one")
 	rootCmd.PersistentFlags().StringVarP(&continueID, "continue", "c", "", "Continue from a specific conversation ID")
 	rootCmd.PersistentFlags().BoolVarP(&incognitoMode, "incognito", "G", false, "Run in incognito mode (do not save conversations to storage)")
+	rootCmd.PersistentFlags().StringVarP(&systemPromptPath, "system-prompt-file", "s", "", "Specify a custom system prompt template file")
 
 	// Add version flag
 	rootCmd.Flags().BoolP("version", "v", false, "Print the version number and exit")
@@ -154,7 +156,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 
 	customURL = getCustomURL(customURL)
 	// Create the underlying generator based on the model name
-	baseGenerator, err := agent.InitGenerator(model, customURL)
+	baseGenerator, err := agent.InitGenerator(model, customURL, systemPromptPath)
 	if err != nil {
 		return fmt.Errorf("failed to create base generator: %w", err)
 	}

@@ -149,6 +149,9 @@ cpe -x 2000 "Summarize this codebase concisely"
 cpe -m claude-3-7-sonnet -b 20000 "Solve this complex algorithmic problem"
 cpe -m o3-mini -b high "Design a scalable architecture for my application"
 
+# Using a custom system prompt template
+cpe --system-prompt-file my_template.tmpl "Write a Go function"
+
 # Combined parameters
 cpe -m gpt-4o -t 0.7 --top-p 0.95 -x 4000 "Refactor this code for better performance"
 ```
@@ -199,6 +202,47 @@ cpe -m mistral-large "Create a logging library in Go"
 # Using Cloudflare AI Gateway for tracing and observability (uses ANTHROPIC_API_KEY)
 export CPE_CLAUDE_3_7_SONNET_URL=https://gateway.ai.cloudflare.com/v1/your-account/your-gateway/anthropic
 cpe "Write a sorting algorithm implementation"
+```
+
+**Custom System Prompts**:
+
+```bash
+# Use a custom system prompt template file
+cpe --system-prompt-file ./my_system_prompt.tmpl "Your prompt here"
+```
+
+CPE supports custom system prompts using Go's text/template syntax. Your template file can use any of the following system information variables:
+
+```
+{{.CurrentDate}}      - Current date (YYYY-MM-DD format)
+{{.WorkingDir}}       - Current working directory
+{{.OS}}               - Operating system (linux, darwin, windows)
+{{.IsGitRepo}}        - Whether the current directory is a git repository (true/false)
+{{.Username}}         - Current username (if available)
+{{.Hostname}}         - System hostname (if available)
+{{.GoVersion}}        - Go version information (if available)
+
+# Git-related information (available when .IsGitRepo is true)
+{{.GitBranch}}        - Current Git branch
+{{.GitLatestCommit}}  - Latest commit hash
+{{.GitCommitMessage}} - Latest commit message
+{{.GitHasChanges}}    - Whether there are uncommitted changes (true/false)
+```
+
+Example template:
+```
+You are an AI assistant helping with Go development.
+
+System Context:
+- Date: {{.CurrentDate}}
+- Directory: {{.WorkingDir}}
+- OS: {{.OS}}
+{{if .IsGitRepo}}
+- Git: on branch '{{.GitBranch}}'{{if .GitHasChanges}} (with uncommitted changes){{end}}
+- Last commit: {{.GitCommitMessage}}
+{{end}}
+
+Please assist with the following task:
 ```
 
 **Offline Usage with Ollama**:
@@ -275,6 +319,7 @@ Flags:
   -b, --thinking-budget string      Budget for reasoning/thinking capabilities
       --top-k int                   Top-k sampling parameter
       --top-p float                 Nucleus sampling parameter (0.0 - 1.0)
+      --system-prompt-file string   Specify a custom system prompt template file
   -v, --version                     Print the version number and exit
 ```
 
