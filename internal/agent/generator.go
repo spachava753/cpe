@@ -174,6 +174,8 @@ func createAnthropicGenerator(model, baseURL, systemPromptPath string) (gai.Gene
 
 	client = anthropic.NewClient(opts...)
 
+	svc := gai.NewAnthropicServiceWrapper(&client.Messages, gai.EnableSystemCaching, gai.EnableMultiTurnCaching)
+
 	// Get system instructions
 	sysInfo, err := GetSystemInfo()
 	if err != nil {
@@ -198,7 +200,7 @@ func createAnthropicGenerator(model, baseURL, systemPromptPath string) (gai.Gene
 
 	// Create and return the Anthropic generator
 	generator := gai.NewAnthropicGenerator(
-		&client.Messages,
+		svc,
 		model,
 		systemPrompt,
 	)
