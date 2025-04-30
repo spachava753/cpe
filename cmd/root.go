@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"runtime/debug"
 	"strings"
@@ -278,27 +279,34 @@ func executeRootCommand(ctx context.Context, args []string) error {
 func processUserInput(args []string) ([]gai.Block, error) {
 	var userBlocks []gai.Block
 
-	//// Get input from stdin if available (non-blocking)
-	//stdinStat, err := os.Stdin.Stat()
-	//if err != nil {
-	//	return nil, fmt.Errorf("failed to check stdin: %w", err)
-	//}
-	//
-	//// If stdin has data, read it
-	//if (stdinStat.Mode() & os.ModeCharDevice) == 0 {
-	//	stdinBytes, err := io.ReadAll(os.Stdin)
-	//	if err != nil {
-	//		return nil, fmt.Errorf("failed to read from stdin: %w", err)
-	//	}
-	//	if len(stdinBytes) > 0 {
-	//		userBlocks = append(userBlocks, gai.Block{
-	//			BlockType:    "text",
-	//			ModalityType: gai.Text,
-	//			MimeType:     "text/plain",
-	//			Content:      gai.Str(stdinBytes),
-	//		})
-	//	}
-	//}
+	// Get input from stdin if available (non-blocking)
+	stdinStat, err := os.Stdin.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to check stdin: %w", err)
+	}
+
+	// If stdin has data, read it
+	// We check if SKIP_STDIN env var is set to skip reading from
+	// stdin, as reading from stdin can hang in environments like
+	// running in an IDE with a debugger. SKIP_STDIN is a hidden
+	// env var and should not be used by the end user, just the authors
+	if (stdinStat.Mode()&os.ModeCharDevice) == 0 && os.Getenv("SKIP_STDIN") != "" {
+		fmt.Println("SKIPPING READING FROM STDIN")
+	}
+	if (stdinStat.Mode()&os.ModeCharDevice) == 0 && os.Getenv("SKIP_STDIN") == "" {
+		stdinBytes, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read from stdin: %w", err)
+		}
+		if len(stdinBytes) > 0 {
+			userBlocks = append(userBlocks, gai.Block{
+				BlockType:    "text",
+				ModalityType: gai.Text,
+				MimeType:     "text/plain",
+				Content:      gai.Str(stdinBytes),
+			})
+		}
+	}
 
 	// Process input files and add them as blocks
 	for _, inputPath := range input {

@@ -13,7 +13,6 @@ import (
 	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/spachava753/gai"
 	genaiopts "google.golang.org/api/option"
-	"net/http"
 	"os"
 	"slices"
 	"time"
@@ -250,14 +249,15 @@ func createGeminiGenerator(model, baseURL, systemPromptPath string, timeout time
 		return nil, fmt.Errorf("GEMINI_API_KEY not set")
 	}
 
+	// TODO: using a custom http client seems to have issues with auth, need to find a different way to set timeout
 	// Create an HTTP client with timeout
-	httpClient := &http.Client{
-		Timeout: timeout,
-	}
+	//httpClient := &http.Client{
+	//	Timeout: timeout,
+	//}
 
 	clientOptions := []genaiopts.ClientOption{
+		//genaiopts.WithHTTPClient(httpClient),
 		genaiopts.WithAPIKey(apiKey),
-		genaiopts.WithHTTPClient(httpClient),
 	}
 
 	if baseURL != "" {
