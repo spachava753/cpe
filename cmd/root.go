@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/gabriel-vasile/mimetype"
 	_ "github.com/mattn/go-sqlite3"
@@ -34,6 +35,7 @@ var (
 	continueID        string
 	incognitoMode     bool
 	systemPromptPath  string
+	timeout           string
 
 	// DefaultModel holds the global default LLM model for the CLI.
 	// It is set at process startup from CPE_MODEL env var (or empty if unset).
@@ -95,6 +97,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&continueID, "continue", "c", "", "Continue from a specific conversation ID")
 	rootCmd.PersistentFlags().BoolVarP(&incognitoMode, "incognito", "G", false, "Run in incognito mode (do not save conversations to storage)")
 	rootCmd.PersistentFlags().StringVarP(&systemPromptPath, "system-prompt-file", "s", "", "Specify a custom system prompt template file")
+	rootCmd.PersistentFlags().StringVarP(&timeout, "timeout", "", "5m", "Specify request timeout duration (e.g. '5m', '30s')")
 
 	// Add version flag
 	rootCmd.Flags().BoolP("version", "v", false, "Print the version number and exit")
@@ -104,6 +107,12 @@ func init() {
 func executeRootCommand(ctx context.Context, args []string) error {
 	if incognitoMode {
 		fmt.Fprintln(os.Stderr, "WARNING: Incognito mode is enabled. This conversation will NOT be saved to storage.")
+	}
+
+	// Parse timeout duration
+	requestTimeout, err := time.ParseDuration(timeout)
+	if err != nil {
+		return fmt.Errorf("invalid timeout value '%s': %w", timeout, err)
 	}
 
 	// Initialize ignorer
@@ -156,7 +165,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 
 	customURL = getCustomURL(customURL)
 	// Create the underlying generator based on the model name
-	baseGenerator, err := agent.InitGenerator(model, customURL, systemPromptPath)
+	baseGenerator, err := agent.InitGenerator(model, customURL, systemPromptPath, requestTimeout)
 	if err != nil {
 		return fmt.Errorf("failed to create base generator: %w", err)
 	}

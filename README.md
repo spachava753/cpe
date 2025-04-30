@@ -145,6 +145,10 @@ cpe -t 0.8 "Generate 5 creative names for my new app"
 # Limiting token output
 cpe -x 2000 "Summarize this codebase concisely"
 
+# Setting a custom timeout for requests
+cpe --timeout 10m "Process this complex dataset"
+cpe --timeout 30s "Quick response needed"
+
 # Setting thinking budget for enhanced reasoning (for supported models)
 cpe -m claude-3-7-sonnet -b 20000 "Solve this complex algorithmic problem"
 cpe -m o3-mini -b high "Design a scalable architecture for my application"
@@ -153,7 +157,7 @@ cpe -m o3-mini -b high "Design a scalable architecture for my application"
 cpe --system-prompt-file my_template.tmpl "Write a Go function"
 
 # Combined parameters
-cpe -m gpt-4o -t 0.7 --top-p 0.95 -x 4000 "Refactor this code for better performance"
+cpe -m gpt-4o -t 0.7 --top-p 0.95 -x 4000 --timeout 8m "Refactor this code for better performance"
 ```
 
 **Conversation management**:
@@ -320,6 +324,7 @@ Flags:
       --presence-penalty float      Presence penalty (-2.0 - 2.0)
   -t, --temperature float           Sampling temperature (0.0 - 1.0)
   -b, --thinking-budget string      Budget for reasoning/thinking capabilities
+      --timeout string              Request timeout duration (default "5m")
       --top-k int                   Top-k sampling parameter
       --top-p float                 Nucleus sampling parameter (0.0 - 1.0)
       --system-prompt-file string   Specify a custom system prompt template file

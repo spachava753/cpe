@@ -13,6 +13,7 @@ import (
 	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/spachava753/gai"
 	genaiopts "google.golang.org/api/option"
+	"net/http"
 	"os"
 	"slices"
 	"time"
@@ -100,10 +101,10 @@ var KnownModels = slices.Concat(openAiModels, anthropicModels, geminiModels)
 var agentInstructions string
 
 // InitGenerator creates the appropriate generator based on the model name
-func InitGenerator(model, baseURL, systemPromptPath string) (gai.ToolCapableGenerator, error) {
+func InitGenerator(model, baseURL, systemPromptPath string, timeout time.Duration) (gai.ToolCapableGenerator, error) {
 	// Handle OpenAI models
 	if slices.Contains(openAiModels, model) {
-		generator, err := createOpenAIGenerator(model, baseURL, systemPromptPath)
+		generator, err := createOpenAIGenerator(model, baseURL, systemPromptPath, timeout)
 		if err != nil {
 			return nil, err
 		}
@@ -113,7 +114,7 @@ func InitGenerator(model, baseURL, systemPromptPath string) (gai.ToolCapableGene
 
 	// Handle Anthropic models
 	if slices.Contains(anthropicModels, model) {
-		generator, err := createAnthropicGenerator(model, baseURL, systemPromptPath)
+		generator, err := createAnthropicGenerator(model, baseURL, systemPromptPath, timeout)
 		if err != nil {
 			return nil, err
 		}
@@ -121,9 +122,9 @@ func InitGenerator(model, baseURL, systemPromptPath string) (gai.ToolCapableGene
 		return generator.(gai.ToolCapableGenerator), nil
 	}
 
-	// Handle Anthropic models
+	// Handle Gemini models
 	if slices.Contains(geminiModels, model) {
-		generator, err := createGeminiGenerator(model, baseURL, systemPromptPath)
+		generator, err := createGeminiGenerator(model, baseURL, systemPromptPath, timeout)
 		if err != nil {
 			return nil, err
 		}
@@ -137,7 +138,7 @@ func InitGenerator(model, baseURL, systemPromptPath string) (gai.ToolCapableGene
 	}
 
 	// custom model
-	generator, err := createOpenAIGenerator(model, baseURL, systemPromptPath)
+	generator, err := createOpenAIGenerator(model, baseURL, systemPromptPath, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -146,14 +147,20 @@ func InitGenerator(model, baseURL, systemPromptPath string) (gai.ToolCapableGene
 }
 
 // createOpenAIGenerator creates and configures an OpenAI generator
-func createOpenAIGenerator(model, baseURL, systemPromptPath string) (gai.Generator, error) {
+func createOpenAIGenerator(model, baseURL, systemPromptPath string, timeout time.Duration) (gai.Generator, error) {
+	clientOpts := []oaiopt.RequestOption{
+		oaiopt.WithRequestTimeout(timeout),
+	}
+
 	// Create OpenAI client
 	var client openai.Client
 	if baseURL != "" {
-		client = openai.NewClient(oaiopt.WithBaseURL(baseURL))
-	} else {
-		client = openai.NewClient()
+		clientOpts = append(clientOpts, oaiopt.WithBaseURL(baseURL))
 	}
+
+	client = openai.NewClient(
+		clientOpts...,
+	)
 
 	// Get system instructions
 	sysInfo, err := GetSystemInfo()
@@ -187,14 +194,13 @@ func createOpenAIGenerator(model, baseURL, systemPromptPath string) (gai.Generat
 	return &generator, nil
 }
 
-// createAnthropicGenerator creates and configures an Anthropic generator
-func createAnthropicGenerator(model, baseURL, systemPromptPath string) (gai.Generator, error) {
+// createGeminiGenerator creates and configures a Gemini generator
+func createAnthropicGenerator(model, baseURL, systemPromptPath string, timeout time.Duration) (gai.Generator, error) {
 	// Create Anthropic client
 	var client anthropic.Client
 	opts := []aopts.RequestOption{
-		// Add a custom timeout to disable to the error returned if a
-		// non-streaming request is expected to be above roughly 10 minutes long
-		aopts.WithRequestTimeout(25 * time.Minute),
+		// Set the request timeout
+		aopts.WithRequestTimeout(timeout),
 	}
 	if baseURL != "" {
 		opts = append(opts, aopts.WithBaseURL(baseURL))
@@ -236,16 +242,22 @@ func createAnthropicGenerator(model, baseURL, systemPromptPath string) (gai.Gene
 	return generator, nil
 }
 
-// createAnthropicGenerator creates and configures an Anthropic generator
-func createGeminiGenerator(model, baseURL, systemPromptPath string) (gai.Generator, error) {
+// createGeminiGenerator creates and configures a Gemini generator
+func createGeminiGenerator(model, baseURL, systemPromptPath string, timeout time.Duration) (gai.Generator, error) {
 	// Create Gemini client
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
 		return nil, fmt.Errorf("GEMINI_API_KEY not set")
 	}
 
+	// Create an HTTP client with timeout
+	httpClient := &http.Client{
+		Timeout: timeout,
+	}
+
 	clientOptions := []genaiopts.ClientOption{
 		genaiopts.WithAPIKey(apiKey),
+		genaiopts.WithHTTPClient(httpClient),
 	}
 
 	if baseURL != "" {
@@ -257,6 +269,9 @@ func createGeminiGenerator(model, baseURL, systemPromptPath string) (gai.Generat
 		ctx,
 		clientOptions...,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
+	}
 
 	// Get system instructions
 	sysInfo, err := GetSystemInfo()
