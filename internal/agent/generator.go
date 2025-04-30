@@ -1,18 +1,36 @@
 package agent
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"github.com/anthropics/anthropic-sdk-go"
 	aopts "github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/google/generative-ai-go/genai"
 	"github.com/openai/openai-go"
 	oaiopt "github.com/openai/openai-go/option"
 	gitignore "github.com/sabhiram/go-gitignore"
 	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/spachava753/gai"
+	genaiopts "google.golang.org/api/option"
+	"os"
 	"slices"
 	"time"
 )
+
+var geminiModels = []string{
+	"gemini-2.5-pro-preview-03-25",
+	"gemini-2.5-flash-preview-04-17",
+	"gemini-2.0-flash",
+	"gemini-2.0-flash-lite",
+	"gemini-1.5-pro",
+	"gemini-1.5-flash",
+	"gemini-1.5-flash-8b",
+	"gemma-3-27b-it",
+	"gemma-3-12b-it",
+	"gemma-3-4b-it",
+	"gemma-3-1b-it",
+}
 
 var anthropicModels = []string{
 	anthropic.ModelClaude3_7SonnetLatest,
@@ -76,7 +94,7 @@ var openAiModels = []string{
 	openai.ChatModelGPT3_5Turbo16k0613,
 }
 
-var KnownModels = append(anthropicModels, openAiModels...)
+var KnownModels = slices.Concat(openAiModels, anthropicModels, geminiModels)
 
 //go:embed agent_instructions.txt
 var agentInstructions string
@@ -96,6 +114,16 @@ func InitGenerator(model, baseURL, systemPromptPath string) (gai.ToolCapableGene
 	// Handle Anthropic models
 	if slices.Contains(anthropicModels, model) {
 		generator, err := createAnthropicGenerator(model, baseURL, systemPromptPath)
+		if err != nil {
+			return nil, err
+		}
+		// Convert to ToolCapableGenerator
+		return generator.(gai.ToolCapableGenerator), nil
+	}
+
+	// Handle Anthropic models
+	if slices.Contains(geminiModels, model) {
+		generator, err := createGeminiGenerator(model, baseURL, systemPromptPath)
 		if err != nil {
 			return nil, err
 		}
@@ -206,6 +234,54 @@ func createAnthropicGenerator(model, baseURL, systemPromptPath string) (gai.Gene
 	)
 
 	return generator, nil
+}
+
+// createAnthropicGenerator creates and configures an Anthropic generator
+func createGeminiGenerator(model, baseURL, systemPromptPath string) (gai.Generator, error) {
+	// Create Gemini client
+	apiKey := os.Getenv("GEMINI_API_KEY")
+	if apiKey == "" {
+		return nil, fmt.Errorf("GEMINI_API_KEY not set")
+	}
+
+	clientOptions := []genaiopts.ClientOption{
+		genaiopts.WithAPIKey(apiKey),
+	}
+
+	if baseURL != "" {
+		clientOptions = append(clientOptions, genaiopts.WithEndpoint(baseURL))
+	}
+
+	ctx := context.Background()
+	client, err := genai.NewClient(
+		ctx,
+		clientOptions...,
+	)
+
+	// Get system instructions
+	sysInfo, err := GetSystemInfo()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get system info: %w", err)
+	}
+
+	// Get agent instructions with system info
+	var systemPrompt string
+	if systemPromptPath != "" {
+		// User provided a custom template file
+		systemPrompt, err = sysInfo.ExecuteTemplate(systemPromptPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute custom system prompt template: %w", err)
+		}
+	} else {
+		// Use the default template
+		systemPrompt, err = sysInfo.ExecuteTemplateString(agentInstructions)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute default system prompt template: %w", err)
+		}
+	}
+
+	// Create and return the Gemini generator
+	return gai.NewGeminiGenerator(client, model, systemPrompt)
 }
 
 type ToolRegisterer interface {
