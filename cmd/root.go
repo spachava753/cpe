@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"runtime/debug"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gabriel-vasile/mimetype"
@@ -67,7 +69,12 @@ through natural language interactions.`,
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
-	err := rootCmd.Execute()
+	// Listen for cancellation
+	// - in shells for user-initiated interruption SIGINT
+	// - in system sent/container environments, SIGTERM
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+	err := rootCmd.ExecuteContext(ctx)
 	if err != nil {
 		os.Exit(1)
 	}
@@ -149,6 +156,9 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	if continueID == "" && !newConversation {
 		continueID, err = dialogStorage.GetMostRecentUserMessageId(ctx)
 		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
 			if !strings.Contains(err.Error(), "no rows in result set") {
 				return fmt.Errorf("failed to get most recent message: %w", err)
 			}
@@ -203,6 +213,9 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	if !newConversation {
 		dialog, msgIdList, err = dialogStorage.GetDialogForMessage(ctx, continueID)
 		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
 			return fmt.Errorf("failed to get previous dialog: %w", err)
 		}
 		dialog = append(dialog, userMessage)
@@ -240,7 +253,8 @@ func executeRootCommand(ctx context.Context, args []string) error {
 
 	// The ResponsePrinterGenerator will print the responses as they come
 	resultDialog, err := filterToolGen.Generate(ctx, dialog, genOptionsFunc)
-	if err != nil {
+	interrupted := errors.Is(err, context.Canceled)
+	if err != nil && !interrupted {
 		fmt.Fprintf(os.Stderr, "Error generating response: %v\n", err)
 		os.Exit(1)
 	}
@@ -255,9 +269,22 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		parentId = msgIdList[len(msgIdList)-1]
 	}
 
+	// If we were interrupted, make sure to save any partial dialog returned,
+	// but we also want to allow user to cancel storage operations by interrupting a second time
+	dialogCtx := ctx
+	if interrupted {
+		fmt.Fprintln(os.Stderr, "\nWARNING: Generation was interrupted. Saving partial dialog. You can cancel this operation by interrupting again.")
+		var cancel context.CancelFunc
+		dialogCtx, cancel = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+	}
+
 	// Save user message
-	userMsgID, err := dialogStorage.SaveMessage(ctx, userMessage, parentId, "")
+	userMsgID, err := dialogStorage.SaveMessage(dialogCtx, userMessage, parentId, "")
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
 		return fmt.Errorf("failed to save message: %w", err)
 	}
 
@@ -266,8 +293,11 @@ func executeRootCommand(ctx context.Context, args []string) error {
 
 	parentId = userMsgID
 	for _, assistantMsg := range assistantMsgs {
-		parentId, err = dialogStorage.SaveMessage(ctx, assistantMsg, parentId, "")
+		parentId, err = dialogStorage.SaveMessage(dialogCtx, assistantMsg, parentId, "")
 		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
 			return fmt.Errorf("failed to save message: %w", err)
 		}
 	}
