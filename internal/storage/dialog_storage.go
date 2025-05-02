@@ -416,7 +416,7 @@ func (s *DialogStorage) ListMessages(ctx context.Context) ([]MessageIdNode, erro
 	// Build the forest starting with root nodes
 	var forest []MessageIdNode
 	for _, rootID := range rootMessageIDs {
-		node, err := s.buildMessageTree(rootID, childrenMap)
+		node, err := s.buildMessageTree(ctx, rootID, childrenMap)
 		if err != nil {
 			return nil, err
 		}
@@ -427,15 +427,15 @@ func (s *DialogStorage) ListMessages(ctx context.Context) ([]MessageIdNode, erro
 }
 
 // buildMessageTree recursively builds a message tree starting from the given node ID
-func (s *DialogStorage) buildMessageTree(nodeID string, childrenMap map[string][]string) (MessageIdNode, error) {
+func (s *DialogStorage) buildMessageTree(ctx context.Context, nodeID string, childrenMap map[string][]string) (MessageIdNode, error) {
 	// Get the message from the database to get its parent ID and created_at/role
-	msg, err := s.q.GetMessage(context.Background(), nodeID)
+	msg, err := s.q.GetMessage(ctx, nodeID)
 	if err != nil {
 		return MessageIdNode{}, fmt.Errorf("failed to get message %s: %w", nodeID, err)
 	}
 
 	// Retrieve all blocks for Content extraction
-	blocks, err := s.q.GetBlocksByMessage(context.Background(), nodeID)
+	blocks, err := s.q.GetBlocksByMessage(ctx, nodeID)
 	if err != nil {
 		return MessageIdNode{}, fmt.Errorf("failed to get blocks for message %s: %w", nodeID, err)
 	}
@@ -497,7 +497,7 @@ func (s *DialogStorage) buildMessageTree(nodeID string, childrenMap map[string][
 	children, exists := childrenMap[nodeID]
 	if exists {
 		for _, childID := range children {
-			childNode, err := s.buildMessageTree(childID, childrenMap)
+			childNode, err := s.buildMessageTree(ctx, childID, childrenMap)
 			if err != nil {
 				return MessageIdNode{}, err
 			}
