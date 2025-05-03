@@ -5,7 +5,6 @@ This document outlines the planned features, improvements, and notes for the CPE
 ## Features
 
 ### MCP
-
 - [ ] turn CPE into a MCP client
 - [ ] export tools like file overview as a mcp server
 
@@ -19,7 +18,9 @@ This document outlines the planned features, improvements, and notes for the CPE
 - [ ] Remove model preference to summarize changes at the end of assistant turn, just wastes tokens
 
 ### Agentic flow
-- [x] Move from disparate mulit-agent to single-agent, will reduce necessary calls, as we can remove the needs codebase function call
+
+- [x] Move from disparate multi-agent to single-agent, will reduce necessary calls, as we can remove the needs codebase
+  function call
 - [ ] Experiment with idea of sub agent creation on the fly?
   - Models like Gemini suck at editing files with function calling. Maybe just have the model utilize the bash tool to
     give specific edit instructions to a file-editing function calling capable model? like gpt-4o-mini?
@@ -54,24 +55,11 @@ This document outlines the planned features, improvements, and notes for the CPE
   models, we want to enforce schema adherence with structured outputs in openai and gemini)
 
 ### LLM Integration
-- [ ] Support for more LLM providers
-  - [ ] Mistral
-  - [x] Deepseek
-  - [ ] Nous
-- [x] support multimodality
-  - [x] images
-  - [x] videos
-- [x] Use official sdks instead for openai, gemini
-  - [x] openai
-  - [x] gemini
-  - [x] anthropic
 - [ ] Use structured outputs for openai and gemini to ensure strict following of tool schemas.
 
 ### User Experience
 - [ ] Command auto-completion
 - [x] Add support for continuing a conversation if user chooses to do so
-- [ ] Support sending requests to multiple models and picking the best one
-- [ ] Add retries to increase robustness (retry on 500s, connection issues, etc.)
 
 ### Conversation managment
 - [ ] need to support some method of context compression, like truncating file full contents in previous messages, remove error tool calls, summary, etc.
