@@ -64,19 +64,16 @@ func generateTypeScriptFileOutput(src []byte, maxLiteralLen int) (string, error)
 	stringLiteralMatches := stringLiteralCursor.Matches(stringLiteralQuery, root, src)
 
 	// Collect positions to cut
-	type cutRange struct {
-		start, end  uint
-		addEllipsis bool
-	}
-	cutRanges := make([]cutRange, 0)
+	cutRanges := make([]transformation, 0)
 
 	// Collect method and function body ranges
 	for match := methodMatches.Next(); match != nil; match = methodMatches.Next() {
 		for _, capture := range match.Captures {
 			if strings.HasSuffix(capture.Node.Kind(), "_block") || capture.Node.Kind() == "expression" {
-				cutRanges = append(cutRanges, cutRange{
-					start:       capture.Node.StartByte(),
-					end:         capture.Node.EndByte(),
+				// Just remove the body without adding a replacement
+				cutRanges = append(cutRanges, transformation{
+					cutStart:    capture.Node.StartByte(),
+					cutEnd:      capture.Node.EndByte(),
 					addEllipsis: false,
 				})
 			}
@@ -90,41 +87,41 @@ func generateTypeScriptFileOutput(src []byte, maxLiteralLen int) (string, error)
 			end := capture.Node.EndByte()
 			content := string(src[start:end])
 
-			// Check if the string literal is within a method or function body
-			inBody := false
-			for _, bodyRange := range cutRanges {
-				if start >= bodyRange.start && end <= bodyRange.end {
-					inBody = true
-					break
-				}
-			}
-
 			str := strings.Trim(content, "\"`'")
 			quoteLen := (len(content) - len(str)) / 2
-			if !inBody && len(str) > maxLiteralLen {
-				cutRanges = append(cutRanges, cutRange{
-					start:       start + uint(maxLiteralLen) + uint(quoteLen),
-					end:         end - uint(quoteLen),
+			if len(str) > maxLiteralLen {
+				cutRanges = append(cutRanges, transformation{
+					cutStart:    start + uint(maxLiteralLen) + uint(quoteLen),
+					cutEnd:      end - uint(quoteLen),
 					addEllipsis: true,
 				})
 			}
 		}
 	}
 
-	// Sort cutRanges by start position
+	// Sort cutRanges by cutStart position
 	sort.Slice(cutRanges, func(i, j int) bool {
-		return cutRanges[i].start < cutRanges[j].start
+		return cutRanges[i].cutStart < cutRanges[j].cutStart
 	})
+
+	// Remove subset ranges and check for overlaps
+	filteredRanges, err := collapseTransformations(cutRanges)
+	if err != nil {
+		return "", err
+	}
 
 	// Create new source with truncated string literals and without method bodies
 	var newSrc []byte
 	lastEnd := uint(0)
-	for _, r := range cutRanges {
-		newSrc = append(newSrc, src[lastEnd:r.start]...)
+	for _, r := range filteredRanges {
+		newSrc = append(newSrc, src[lastEnd:r.cutStart]...)
+		if r.prependText != "" {
+			newSrc = append(newSrc, []byte(r.prependText)...)
+		}
 		if r.addEllipsis {
 			newSrc = append(newSrc, []byte("...")...)
 		}
-		lastEnd = r.end
+		lastEnd = r.cutEnd
 	}
 	newSrc = append(newSrc, src[lastEnd:]...)
 

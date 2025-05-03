@@ -1,7 +1,6 @@
 package codemap
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 
@@ -52,12 +51,6 @@ func generatePythonFileOutput(src []byte, maxLiteralLen int) (string, error) {
 	defer funcCursor.Close()
 	funcMatches := funcCursor.Matches(funcQuery, root, src)
 
-	// Collect positions to cut
-	type transformation struct {
-		cutStart, cutEnd uint
-		addEllipsis      bool
-		prependText      string
-	}
 	cutRanges := make([]transformation, 0)
 
 	// Collect function body ranges and preserve docstrings
@@ -97,24 +90,9 @@ func generatePythonFileOutput(src []byte, maxLiteralLen int) (string, error) {
 	})
 
 	// Remove subset ranges and check for overlaps
-	var filteredRanges []transformation
-	for i, r := range cutRanges {
-		isSubset := false
-		for j, other := range cutRanges {
-			if i != j {
-				if r.cutStart >= other.cutStart && r.cutEnd <= other.cutEnd {
-					isSubset = true
-					break
-				}
-				if (r.cutStart < other.cutStart && r.cutEnd > other.cutStart && r.cutEnd < other.cutEnd) ||
-					(r.cutStart > other.cutStart && r.cutStart < other.cutEnd && r.cutEnd > other.cutEnd) {
-					return "", fmt.Errorf("overlapping cut ranges detected: %v and %v", r, other)
-				}
-			}
-		}
-		if !isSubset {
-			filteredRanges = append(filteredRanges, r)
-		}
+	filteredRanges, err := collapseTransformations(cutRanges)
+	if err != nil {
+		return "", err
 	}
 
 	// Create new source with truncated string literals and without function, class, and method bodies
