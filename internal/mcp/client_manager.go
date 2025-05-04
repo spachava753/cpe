@@ -24,7 +24,7 @@ func NewClientManager(config *ConfigFile) *ClientManager {
 }
 
 // GetClient returns an initialized client for the specified server
-func (m *ClientManager) GetClient(serverName string) (*client.Client, error) {
+func (m *ClientManager) GetClient(ctx context.Context, serverName string) (*client.Client, error) {
 	// Check if client already exists
 	if c, ok := m.clients[serverName]; ok {
 		return c, nil
@@ -65,6 +65,12 @@ func (m *ClientManager) GetClient(serverName string) (*client.Client, error) {
 		return nil, fmt.Errorf("failed to create client for server %q: %w", serverName, err)
 	}
 
+	// start the client
+	err = c.Start(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start client for server %s: %w", serverName, err)
+	}
+
 	// Store the client for future use
 	m.clients[serverName] = c
 
@@ -73,7 +79,7 @@ func (m *ClientManager) GetClient(serverName string) (*client.Client, error) {
 
 // InitializeClient initializes a client with the MCP protocol
 func (m *ClientManager) InitializeClient(ctx context.Context, serverName string) (*mcp.InitializeResult, error) {
-	c, err := m.GetClient(serverName)
+	c, err := m.GetClient(ctx, serverName)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +112,7 @@ func (m *ClientManager) InitializeClient(ctx context.Context, serverName string)
 
 // ListTools lists the available tools from an MCP server
 func (m *ClientManager) ListTools(ctx context.Context, serverName string) (*mcp.ListToolsResult, error) {
-	c, err := m.GetClient(serverName)
+	c, err := m.GetClient(ctx, serverName)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +138,7 @@ func (m *ClientManager) ListTools(ctx context.Context, serverName string) (*mcp.
 
 // CallTool calls a tool on an MCP server
 func (m *ClientManager) CallTool(ctx context.Context, serverName string, toolName string, args map[string]interface{}) (*mcp.CallToolResult, error) {
-	c, err := m.GetClient(serverName)
+	c, err := m.GetClient(ctx, serverName)
 	if err != nil {
 		return nil, err
 	}

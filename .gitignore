@@ -28,3 +28,4 @@ prompt_*.txt
 
 ### CPE specific stuff
 .cpeconvo*
+.cpemcp.json
