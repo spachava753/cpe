@@ -21,18 +21,26 @@ var (
 var mcpInitCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize MCP configuration",
-	Long:  `Create an example .cpemcp.json configuration file in the current directory.`,
+	Long:  `Create example MCP configuration files in the current directory with different formats.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if mcp.ConfigExists() {
 			return fmt.Errorf("MCP configuration file already exists")
 		}
 
 		if err := mcp.CreateExampleConfig(); err != nil {
-			return fmt.Errorf("failed to create example config: %w", err)
+			return fmt.Errorf("failed to create example configs: %w", err)
 		}
 
-		fmt.Println("Created example .cpemcp.json configuration file")
-		fmt.Println("Edit this file to configure your MCP servers")
+		fmt.Println("Created example MCP configuration files:")
+		fmt.Println("- .cpemcp.json (JSON format)")
+		fmt.Println("- .cpemcp.yaml (YAML format)")
+		fmt.Println("- .cpemcp.yml (YAML format - alternative extension)")
+		fmt.Println("\nYou can use any of these formats. Edit only one file to configure your MCP servers.")
+		fmt.Println("CPE will automatically use the first one it finds in the following order:")
+		fmt.Println("1. .cpemcp.json")
+		fmt.Println("2. .cpemcp.yaml")
+		fmt.Println("3. .cpemcp.yml")
+		fmt.Println("\nNote: Configuration files are only searched for in the current directory.")
 
 		return nil
 	},
@@ -58,11 +66,19 @@ var mcpListServersCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		config, err := mcp.LoadConfig()
 		if err != nil {
-			return err
+			fmt.Printf("Warning: %v\n", err)
+			config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
 		}
 
 		if err := config.Validate(); err != nil {
-			return err
+			fmt.Printf("Warning: %v\n", err)
+			config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
+		}
+
+		if len(config.MCPServers) == 0 {
+			fmt.Println("No MCP servers configured.")
+			fmt.Println("Use 'cpe mcp init' to create an example configuration.")
+			return nil
 		}
 
 		fmt.Println("Configured MCP Servers:")
@@ -113,11 +129,21 @@ var mcpInfoCmd = &cobra.Command{
 
 		config, err := mcp.LoadConfig()
 		if err != nil {
-			return err
+			fmt.Printf("Warning: %v\n", err)
+			config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
 		}
 
 		if err := config.Validate(); err != nil {
-			return err
+			fmt.Printf("Warning: %v\n", err)
+			config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
+		}
+
+		if len(config.MCPServers) == 0 {
+			return fmt.Errorf("no MCP servers configured. Use 'cpe mcp init' to create an example configuration")
+		}
+
+		if _, exists := config.MCPServers[serverName]; !exists {
+			return fmt.Errorf("server '%s' not found in configuration", serverName)
 		}
 
 		clientManager := mcp.NewClientManager(config)
@@ -163,11 +189,21 @@ var mcpListToolsCmd = &cobra.Command{
 
 		config, err := mcp.LoadConfig()
 		if err != nil {
-			return err
+			fmt.Printf("Warning: %v\n", err)
+			config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
 		}
 
 		if err := config.Validate(); err != nil {
-			return err
+			fmt.Printf("Warning: %v\n", err)
+			config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
+		}
+
+		if len(config.MCPServers) == 0 {
+			return fmt.Errorf("no MCP servers configured. Use 'cpe mcp init' to create an example configuration")
+		}
+
+		if _, exists := config.MCPServers[serverName]; !exists {
+			return fmt.Errorf("server '%s' not found in configuration", serverName)
 		}
 
 		clientManager := mcp.NewClientManager(config)
@@ -248,11 +284,21 @@ var mcpCallToolCmd = &cobra.Command{
 
 		config, err := mcp.LoadConfig()
 		if err != nil {
-			return err
+			fmt.Printf("Warning: %v\n", err)
+			config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
 		}
 
 		if err := config.Validate(); err != nil {
-			return err
+			fmt.Printf("Warning: %v\n", err)
+			config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
+		}
+
+		if len(config.MCPServers) == 0 {
+			return fmt.Errorf("no MCP servers configured. Use 'cpe mcp init' to create an example configuration")
+		}
+
+		if _, exists := config.MCPServers[mcpServerName]; !exists {
+			return fmt.Errorf("server '%s' not found in configuration", mcpServerName)
 		}
 
 		clientManager := mcp.NewClientManager(config)

@@ -202,23 +202,26 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	// Load MCP configuration
 	config, err := mcp.LoadConfig()
 	if err != nil {
-		// Return error but don't fail completely if config isn't found
-		return fmt.Errorf("failed to load MCP configuration: %w", err)
+		fmt.Fprintf(os.Stderr, "Warning: failed to load MCP configuration: %v\n", err)
+		config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
 	}
 
 	// Validate configuration
 	if err := config.Validate(); err != nil {
-		return fmt.Errorf("invalid MCP configuration: %w", err)
+		fmt.Fprintf(os.Stderr, "Warning: invalid MCP configuration: %v\n", err)
+		config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
 	}
 
 	// Create client manager
 	clientManager := mcp.NewClientManager(config)
 	defer clientManager.Close()
 
-	// Register MCP server tools
-	if err = mcp.RegisterMCPServerTools(ctx, clientManager, filterToolGen); err != nil {
-		// Continue execution even if MCP tools fail to register
-		fmt.Fprintf(os.Stderr, "Warning: failed to register MCP tools: %v\n", err)
+	// Register MCP server tools if any servers are configured
+	if len(config.MCPServers) > 0 {
+		if err = mcp.RegisterMCPServerTools(ctx, clientManager, filterToolGen); err != nil {
+			// Continue execution even if MCP tools fail to register
+			fmt.Fprintf(os.Stderr, "Warning: failed to register MCP tools: %v\n", err)
+		}
 	}
 
 	userMessage := gai.Message{

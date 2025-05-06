@@ -4,64 +4,92 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
+	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
-// ConfigFile represents the structure of the .cpemcp.json configuration file
+// ConfigFile represents the structure of the MCP configuration file
 type ConfigFile struct {
-	MCPServers map[string]MCPServerConfig `json:"mcpServers"`
+	MCPServers map[string]MCPServerConfig `json:"mcpServers" yaml:"mcpServers"`
 }
 
 // MCPServerConfig represents the configuration for a single MCP server
 type MCPServerConfig struct {
-	Command string            `json:"command"`
-	Args    []string          `json:"args"`
-	Type    string            `json:"type,omitempty"` // Optional: "stdio" (default), "sse", or "http"
-	URL     string            `json:"url,omitempty"`  // Required for "sse" and "http" types
-	Timeout int               `json:"timeout,omitempty"` // Timeout in seconds (default: 60)
-	Env     map[string]string `json:"env,omitempty"`    // Environment variables for stdio servers
+	Command string            `json:"command" yaml:"command"`
+	Args    []string          `json:"args" yaml:"args"`
+	Type    string            `json:"type,omitempty" yaml:"type,omitempty"`       // Optional: "stdio" (default), "sse", or "http"
+	URL     string            `json:"url,omitempty" yaml:"url,omitempty"`         // Required for "sse" and "http" types
+	Timeout int               `json:"timeout,omitempty" yaml:"timeout,omitempty"` // Timeout in seconds (default: 60)
+	Env     map[string]string `json:"env,omitempty" yaml:"env,omitempty"`         // Environment variables for stdio servers
 }
 
-// LoadConfig loads the MCP configuration from the .cpemcp.json file
+// LoadConfig loads the MCP configuration from either .cpemcp.json or .cpemcp.yaml/.cpemcp.yml file
+// If no config file is found, it returns an empty configuration instead of an error
+// If a config file exists but has reading or parsing errors, it returns an error
 func LoadConfig() (*ConfigFile, error) {
-	// Look for config file in current directory
-	configPath := ".cpemcp.json"
-	
-	// Check if the file exists
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		// Try in home directory
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("could not determine home directory: %w", err)
-		}
-		
-		configPath = filepath.Join(homeDir, ".cpemcp.json")
-		if _, err := os.Stat(configPath); os.IsNotExist(err) {
-			return nil, fmt.Errorf("MCP config file not found in current directory or home directory")
+	// Define possible config file names in order of precedence
+	configFileNames := []string{".cpemcp.json", ".cpemcp.yaml", ".cpemcp.yml"}
+	configPath := ""
+
+	// Look only in the current directory
+	for _, fileName := range configFileNames {
+		if _, err := os.Stat(fileName); err == nil {
+			configPath = fileName
+			break
 		}
 	}
-	
-	// Read the config file
+
+	// If no config file found, return empty config
+	if configPath == "" {
+		return &ConfigFile{MCPServers: make(map[string]MCPServerConfig)}, nil
+	}
+
+	// Read the config file, return error if reading fails
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("error reading config file: %w", err)
+		return nil, fmt.Errorf("error reading config file %s: %w", configPath, err)
 	}
-	
-	// Parse the JSON
+
+	// Parse the file based on its extension
 	var config ConfigFile
-	if err := json.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("error parsing config file: %w", err)
+	var parseErr error
+
+	if strings.HasSuffix(configPath, ".json") {
+		// Parse JSON
+		parseErr = json.Unmarshal(data, &config)
+	} else if strings.HasSuffix(configPath, ".yaml") || strings.HasSuffix(configPath, ".yml") {
+		// Parse YAML
+		parseErr = yaml.Unmarshal(data, &config)
+	} else {
+		// Try JSON first, then YAML as a fallback
+		jsonErr := json.Unmarshal(data, &config)
+		if jsonErr != nil {
+			yamlErr := yaml.Unmarshal(data, &config)
+			if yamlErr != nil {
+				// Both parsing attempts failed
+				return nil, fmt.Errorf("failed to parse %s: JSON error: %v, YAML error: %v",
+					configPath, jsonErr, yamlErr)
+			}
+		}
 	}
-	
+
+	// If parsing failed, return error
+	if parseErr != nil {
+		return nil, fmt.Errorf("error parsing config file %s: %w", configPath, parseErr)
+	}
+
+	// Initialize the map if it's nil
+	if config.MCPServers == nil {
+		config.MCPServers = make(map[string]MCPServerConfig)
+	}
+
 	return &config, nil
 }
 
 // Validate checks if the configuration is valid
 func (c *ConfigFile) Validate() error {
-	if len(c.MCPServers) == 0 {
-		return fmt.Errorf("no MCP servers defined in configuration")
-	}
-	
+	// Check each server configuration if any exist
 	for name, server := range c.MCPServers {
 		// Validate type-specific requirements
 		switch server.Type {
@@ -77,12 +105,12 @@ func (c *ConfigFile) Validate() error {
 		default:
 			return fmt.Errorf("server %q has invalid type %q (must be 'stdio', 'sse', or 'http')", name, server.Type)
 		}
-		
+
 		// Validate timeout if provided (must be positive)
 		if server.Timeout < 0 {
 			return fmt.Errorf("server %q has invalid timeout %d (must be a positive integer)", name, server.Timeout)
 		}
-		
+
 		// Validate environment variables for stdio servers if provided
 		if (server.Type == "" || server.Type == "stdio") && server.Env != nil {
 			for k := range server.Env {
@@ -95,6 +123,6 @@ func (c *ConfigFile) Validate() error {
 			return fmt.Errorf("server %q has type %q but specifies environment variables (only valid for stdio servers)", name, server.Type)
 		}
 	}
-	
+
 	return nil
 }
