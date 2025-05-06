@@ -5,22 +5,11 @@ This document outlines the planned features, improvements, and notes for the CPE
 ## Features
 
 ### MCP
-- [ ] turn CPE into a MCP client
-- [ ] export tools like file overview as a mcp server
 
-### System prompt improvements
-
-- [x] Add system info to path
-  - Current Date
-  - Current working directory
-  - Operating system
-  - In a git repository
-- [ ] Remove model preference to summarize changes at the end of assistant turn, just wastes tokens
+- [x] turn CPE into a MCP client
+- [ ] export all custom tools as a mcp server
 
 ### Agentic flow
-
-- [x] Move from disparate multi-agent to single-agent, will reduce necessary calls, as we can remove the needs codebase
-  function call
 - [ ] Experiment with idea of sub agent creation on the fly?
   - Models like Gemini suck at editing files with function calling. Maybe just have the model utilize the bash tool to
     give specific edit instructions to a file-editing function calling capable model? like gpt-4o-mini?
@@ -41,18 +30,23 @@ This document outlines the planned features, improvements, and notes for the CPE
     3. Code comments, global variables, full type definitions (like all struct fields, tags, field comments, etc.) (this is the current lowest fidelity level today)
     4. Full file contents
 - [x] Instead of detecting file extensions, try to detect if file of text context using magic bytes
-- [ ] Include code from dependencies if possible in file overview
 - [ ] Use model token counting to return an error to the model if given level of file overview will exceed to context window (or maybe given threshold? 75% of context window to allow for some room?)
 
-### Getting related files
-- [ ] Transition from using tree sitter for go to using native ast pkg in stdlib
-- [ ] Explore using python in wasm runtime to resolve related files (RustPython?)
-- [ ] Explore using java in wasm runtime to resolve related files
+### Code Graph
 
-### Tooling
-- [x] Add support for bash execution tool
-- [x] Add autocorrection if input JSON from model does not match schema (this is mostly valid for Claude and opensource
-  models, we want to enforce schema adherence with structured outputs in openai and gemini)
+- [ ] get_related_files is useful for model when doing discovery and editing files, so the model is able to retrieve a
+  much more complete context, reducing the amount of hallucinations or the amount of needed tool calls required when
+  editing code files. However, we can take this a step further and construct a code graph on start up to support
+  features like with fuzzy symbol matching, function/method signature searching, and symbol neighbor lookup to allow for
+  LLMs to really be precise in what kind of context they are looking for. This may even be extended to returning code
+  from dependencies
+
+### Editing files
+
+- [ ] When an LLM edits files, it can frequently get mess up the edits, perhaps due to outdated in-context
+  representation of the file, or just perhaps making a mistake when editing a file. We should provide a simple signal to
+  the LLM if it introduces a syntax error when editing files. Read a file into memory, apply the edit, parse the file
+  with tree-sitter and check for parsing errors, and if any parsing errors exist, return an erroneous result to the LLM
 
 ### LLM Integration
 - [ ] Use structured outputs for openai and gemini to ensure strict following of tool schemas.
@@ -61,9 +55,6 @@ This document outlines the planned features, improvements, and notes for the CPE
 - [ ] Command auto-completion
 - [x] Add support for continuing a conversation if user chooses to do so
 
-### Conversation managment
-- [ ] need to support some method of context compression, like truncating file full contents in previous messages, remove error tool calls, summary, etc.
-
 ### Performance
 - [ ] Parallel processing for large codebases
 
@@ -71,7 +62,6 @@ This document outlines the planned features, improvements, and notes for the CPE
 - [x] Comprehensive user guide
 - [x] Example use cases and tutorials
 - [ ] Contributing guidelines
-- [ ] Architecture documentation
 
 ## Goals
 

@@ -1,0 +1,1 @@
+This folder contains example system and user prompts that you can get started with.
