@@ -118,12 +118,22 @@ func convertProperty(propMap map[string]interface{}) (gai.Property, error) {
 
 	// Handle enumerations for string properties
 	if property.Type == gai.String && propMap["enum"] != nil {
-		if enumValues, ok := propMap["enum"].([]string); ok && len(enumValues) > 0 {
+		switch enumValues := propMap["enum"].(type) {
+		case []string:
 			property.Enum = make([]string, len(enumValues))
 			for i, val := range enumValues {
 				property.Enum[i] = val
 			}
-		} else {
+		case []interface{}:
+			property.Enum = make([]string, len(enumValues))
+			for i, val := range enumValues {
+				strVal, isString := val.(string)
+				if !isString {
+					return gai.Property{}, fmt.Errorf("unexpected enum value type: %T %v", val, val)
+				}
+				property.Enum[i] = strVal
+			}
+		default:
 			return gai.Property{}, fmt.Errorf("enum value is not a []string")
 		}
 	}
