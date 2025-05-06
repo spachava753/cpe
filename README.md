@@ -1,405 +1,381 @@
 # CPE (Chat-based Programming Editor)
 
 CPE is a powerful command-line tool that enables developers to leverage AI for codebase analysis, modification, and
-improvement through natural language interactions. It serves as an intelligent agent to assist you with day-to-day
-software development tasks.
+software development through natural language interactions in your terminal.
+
+## Overview
+
+CPE serves as an intelligent agent to assist with day-to-day software development tasks by connecting multiple AI
+models (OpenAI, Anthropic, Google) to your local environment through a simple CLI interface. It helps you analyze
+codebases, make code modifications, debug issues, and perform various programming tasks through natural language
+conversations.
+
+## Features
+
+- **AI-powered code assistance**: Interact with advanced AI models through natural language to analyze and modify code
+- **Codebase understanding**: Process and analyze codebases of any size
+- **File & folder operations**: Create, view, edit, move, and delete files and folders with AI guidance
+- **Shell command execution**: Run bash commands directly through the AI
+- **Multiple AI model support**:
+  - OpenAI models (GPT-4o, GPT-4o Mini, etc.)
+  - Anthropic Claude models (Claude 3.5 Sonnet, Claude 3 Opus, etc.)
+  - Google Gemini models (Gemini 1.5 Pro, Gemini 1.5 Flash, etc.)
+- **Conversation management**: Save, list, view, and continue previous conversations
+- **Model Context Protocol (MCP)**: Connect to external MCP servers for enhanced functionality
 
 ## Installation
+
+### Prerequisites
+
+- Go 1.23+
+- API key for at least one supported AI model provider:
+  - OpenAI: https://platform.openai.com/
+  - Anthropic: https://console.anthropic.com/
+  - Google AI (Gemini): https://ai.google.dev/
+
+### Install from source
 
 ```bash
 go install github.com/spachava753/cpe@latest
 ```
 
-## Quick Start Guide
+### Environment Variables
 
-1. Set up required API keys as environment variables (at least one is needed):
-   ```bash
-   # For Claude models (default)
-   export ANTHROPIC_API_KEY=your_api_key_here
-   
-   # For OpenAI models
-   export OPENAI_API_KEY=your_api_key_here
-   
-   # For Gemini models
-   export GEMINI_API_KEY=your_api_key_here
-   
-   # For custom model endpoints (optional)
-   export CPE_CUSTOM_API_KEY=your_custom_api_key_here
-   ```
-
-2. Run your first command:
-   ```bash
-   cpe "Tell me about yourself"
-   ```
-
-3. Customize default model (optional):
-   ```bash
-   # Set a different default model
-   export CPE_MODEL=gpt-4o
-   
-   # Or specify model per command
-   cpe -m gpt-4o "Explain how promises work in JavaScript"
-   ```
-
-## Features
-
-- **Codebase Understanding**: Analyze and understand codebases of any size
-- **Code Modification**: The AI model can make precise changes to your code through natural language instructions
-- **Multi-Model Support**: Works with various AI models including:
-  - Claude models (3.5 Sonnet, 3.5 Haiku, 3.7 Sonnet, 3 Opus, 3 Haiku)
-  - OpenAI models (GPT-4o, GPT-4o-mini)
-  - Gemini models (1.5 Pro, 1.5 Flash, 2.0 Flash)
-- **Multi-Modal Inputs**: Support for text, images, video, and audio (depending on the model)
-- **Conversation Management**: Save, continue, and manage conversations
-- **AI-Powered File Operations**: The AI model can create, edit, view, and delete files through your instructions
-- **Code Analysis Tools**: Get overviews of codebases, find related files, and analyze token usage
-
-## Common Use Cases
-
-### Code Understanding
+Configure at least one of these API keys:
 
 ```bash
-# Understand a complex codebase quickly
-cpe "Explain the architecture of this project and how the components interact"
+# Required (at least one)
+export ANTHROPIC_API_KEY="your_anthropic_api_key"
+export OPENAI_API_KEY="your_openai_api_key"
+export GEMINI_API_KEY="your_gemini_api_key"
 
-# Analyze specific error output
-go build 2>&1 | cpe "Why is this build failing and how do I fix it?"
+# Optional
+export CPE_MODEL="claude-3-5-sonnet"  # Default model to use if not specified with --model
+export CPE_CUSTOM_URL="https://your-custom-endpoint.com"  # For custom API endpoints
+export CPE_DISABLE_TOOL_USE="true"    # Disables tool use for custom models (with custom URLs)
 
-# Get help with external API documentation
-curl -s https://api.example.com/docs | cpe "Explain how to implement authentication with this API"
+# To see all environment variables and their current values:
+cpe env
+```
 
-# Trace execution flow
-cpe "Walk through what happens when a user logs in to this application"
+## Quick Start
+
+### Basic Usage
+
+```bash
+# Ask a simple question
+cpe "What is a fibonacci sequence?"
+
+# Start a coding task
+cpe "Create a simple REST API server in Go with one endpoint to return the current time"
+
+# Analyze a specific file
+cpe "Analyze this code and suggest improvements" -i path/to/your/file.js
+
+# Analyze multiple files (either approach works)
+cpe "Check these files for bugs" -i file1.js -i file2.js
+cpe "Check these files for bugs" -i file1.js,file2.js
+
+# Start a new conversation (instead of continuing the last one)
+cpe -n "Let's start a new project"
+
+# Continue a specific conversation by ID
+cpe -c abc123 "Could you explain more about the previous solution?"
+```
+
+### Working with AI tools
+
+CPE provides a set of tools that the AI can use to help you:
+
+- **Codebase analysis**: Understanding your codebase structure
+- **File operations**: Creating, editing, viewing, and deleting files
+- **Folder operations**: Creating, moving, and deleting directories
+- **Shell integration**: Running commands directly in your environment
+- **Multimedia input support**: Process images, audio, and video files with the `-i` flag
+
+Just ask the AI naturally, and it will use the appropriate tools to help you:
+
+```bash
+cpe "Create a basic React component that fetches data from an API"
+cpe "Fix the bug in my app.js file that's causing the navbar to disappear"
+cpe "Write a unit test for the getUserData function in users.js"
+cpe -i screenshot.png "What's wrong with this UI layout?"
+cpe -i audio_recording.mp3 "Transcribe this meeting and summarize the key points"
+```
+
+### Combining Multiple Input Sources
+
+CPE can accept input from multiple sources simultaneously:
+
+```bash
+# Combine stdin, file input, and command-line argument
+cat error_log.txt | cpe -i screenshot.png "Debug this error and explain what's happening in the screenshot"
+
+# Process multiple files of different types
+cpe -i api_spec.yaml -i current_implementation.js "Update this code to match the API spec"
+
+# Feed complex text with special characters via a file rather than command line
+cpe -i complex_query.txt "Use this as a reference for the task"
+```
+
+## Conversation Management
+
+One of CPE's most powerful features is its sophisticated conversation management system:
+
+### Persistent Conversations
+
+All conversations are automatically saved to a local SQLite database (`.cpeconvo`), allowing you to:
+
+```bash
+# Continue your most recent conversation without any special flags
+cpe "Can you explain that last part in more detail?"
+
+# Start a new conversation thread
+cpe -n "I want to start working on a different project"
+
+# Continue from a specific conversation by ID
+cpe -c abc123 "Let's continue with the database schema design"
+
+# View previous conversations
+cpe conversation list
+
+# See the full dialog from a specific conversation
+cpe conversation print abc123
+```
+
+### Conversation Branching
+
+You can create branches from any point in your conversation history:
+
+```bash
+# Start a new branch from an earlier conversation point
+cpe -c abc123 "What if we used MongoDB instead of PostgreSQL?"
+
+# This creates a new branch while preserving the original conversation path
+```
+
+### Interruption Recovery
+
+If you interrupt the model during generation (Ctrl+C):
+
+- The partial response and all actions performed up to that point are automatically saved
+- You can continue from that interrupted state without losing context
+- The AI will pick up where it left off
+
+### Privacy Mode
+
+For sensitive or temporary inquiries:
+
+```bash
+# Use incognito mode to prevent saving the conversation
+cpe -G "How do I fix this security vulnerability?"
+```
+
+This powerful conversation system allows you to maintain context across multiple sessions, explore alternative solutions
+through branching, and never lose your work even if interrupted.
+
+## Command Reference
+
+### Main command
+
+```bash
+cpe [flags] "Your prompt here"
+```
+
+#### Common Flags
+
+| Flag                   | Short | Description                                                                                            |
+|------------------------|-------|--------------------------------------------------------------------------------------------------------|
+| `--model`,             | `-m`  | Specify which AI model to use                                                                          |
+| `--temperature`        | `-t`  | Control randomness (0.0-1.0)                                                                           |
+| `--max-tokens`         | `-x`  | Maximum tokens to generate                                                                             |
+| `--input`              | `-i`  | Input file(s) of any type (text, images, audio, video) to process (can be repeated or comma-separated) |
+| `--new`                | `-n`  | Start a new conversation                                                                               |
+| `--continue`           | `-c`  | Continue from specific conversation ID                                                                 |
+| `--incognito`          | `-G`  | Don't save conversation history                                                                        |
+| `--system-prompt-file` | `-s`  | Specify custom system prompt template                                                                  |
+| `--timeout`            |       | Request timeout (default 5m)                                                                           |
+
+#### Advanced Flags
+
+| Flag                    | Description                                 |
+|-------------------------|---------------------------------------------|
+| `--top-p`               | Nucleus sampling parameter (0.0-1.0)        |
+| `--top-k`               | Top-k sampling parameter                    |  
+| `--frequency-penalty`   | Penalize repeated tokens (-2.0-2.0)         |
+| `--presence-penalty`    | Penalize tokens already present (-2.0-2.0)  |
+| `--number-of-responses` | Number of alternative responses to generate |
+| `--thinking-budget`     | Budget for reasoning/thinking capabilities  |
+
+### Model Commands
+
+```bash
+# List all supported models
+cpe model list   # or cpe models list
+```
+
+### Conversation Management
+
+```bash
+# List all conversations
+cpe conversation list
+
+# View a specific conversation
+cpe conversation print <id>
+
+# Delete a specific conversation
+cpe conversation delete <id>
+
+# Delete with all child messages
+cpe conversation delete <id> --cascade
+```
+
+Note: Conversations are stored in a local SQLite database file named `.cpeconvo` in your current working directory. You
+can back up this file or remove it to clear all stored conversations. See
+the [Conversation Management](#conversation-management) section for more details.
+
+### Debug Tools
+
+```bash
+# Get an overview of files in a directory
+cpe tools overview [path]
+
+# Find files related to specific input files
+cpe tools related-files file1.go,file2.go
+
+# Count tokens in code files
+cpe tools token-count [path]
+
+# List all text files in directory
+cpe tools list-files
+```
+
+### MCP Tools
+
+```bash
+# Initialize a new MCP configuration
+cpe mcp init
+
+# List configured MCP servers
+cpe mcp list-servers
+
+# Get information about a specific MCP server
+cpe mcp info <server_name>
+
+# List tools available from an MCP server
+cpe mcp list-tools server_name
+
+# Directly call an MCP tool
+cpe mcp call-tool --server server_name --tool tool_name --args '{"param": "value"}'
+```
+
+## Customization
+
+### Customizing CPE
+
+#### .cpeignore
+
+Create a `.cpeignore` file to exclude certain paths from code analysis. It supports all standard Git-ignore syntax
+including globs, negation with `!`, and comments:
+
+```
+# Ignore build artifacts
+node_modules/
+*.log
+build/
+dist/
+
+# But don't ignore specific files
+!build/important.js
+
+# Ignore big data files
+**/*.csv
+**/*.json
+```
+
+#### Custom System Prompt
+
+You can customize the AI's system instructions with a template file. This is a Go template that will be filled with data
+from the environment where CPE is executed:
+
+```bash
+cpe -s path/to/custom_system_prompt.txt "Your prompt"
+```
+
+The system prompt file supports Go template syntax, allowing you to include dynamic information. For example:
+
+```
+You are an AI assistant helping with a codebase.
+Current working directory: {{.WorkingDirectory}}
+Git branch: {{.GitBranch}}
+User: {{.Username}}
+Operating System: {{.OperatingSystem}}
+```
+
+This allows you to create contextual system prompts that adapt to the current environment.
+
+### MCP Configuration
+
+Create a `.cpemcp.json` or `.cpemcp.yml` file to configure Model Context Protocol servers:
+
+```json
+{
+  "mcpServers": {
+    "my_server": {
+      "command": "path/to/server/binary",
+      "args": [
+        "--port",
+        "8080"
+      ],
+      "type": "stdio",
+      "timeout": 30,
+      "env": {
+        "SERVER_ENV": "production"
+      }
+    },
+    "external_server": {
+      "type": "http",
+      "url": "https://my-mcp-server.example.com/api"
+    }
+  }
+}
+```
+
+## Examples
+
+### Code Creation
+
+```bash
+cpe "Create a Python script that reads a CSV file, calculates statistics, and generates a report"
 ```
 
 ### Code Improvement
 
 ```bash
-# Refactoring suggestions
-cpe "Suggest refactoring opportunities in the authentication module"
-
-# Bug fixing with error context
-./run_tests.sh 2>&1 | cpe "Fix the failing tests"
-
-# Performance optimization with profiling data
-go test -bench=. | cpe "Identify performance bottlenecks and suggest improvements"
-
-# Multiple inputs for context
-go build -v 2>&1 > build_log.txt
-cpe -i build_log.txt -i config/settings.json -i src/main.go "Fix the build issues"
+cpe -i path/to/slow_function.js "This function is slow. Can you optimize it?"
 ```
 
-### Code Generation
+### Project Setup
 
 ```bash
-# Generate boilerplate
-cpe "Create a RESTful API endpoint for user registration with validation"
-
-# Test generation with multiple input files for context
-cpe -i src/auth/middleware.js -i src/auth/controllers.js -i src/models/user.js "Write comprehensive unit tests for the auth module"
-
-# Documentation based on multiple inputs
-cpe -i src/api/routes.js -i src/api/controllers/users.js -i src/api/models/user.js "Generate API documentation for the user endpoints"
+cpe "Set up a new TypeScript project with Express and MongoDB integration"
 ```
 
-## Usage
-
-### Basic Usage
+### Debugging
 
 ```bash
-cpe "Your prompt or question here"
+cpe "I'm getting this error when running my app: [error message]. What might be causing it?"
 ```
 
-### Advanced Usage Examples
-
-**Multiple input methods**:
-
-```bash
-# Using command line arguments
-cpe "Explain the main function in this codebase"
-
-# Using stdin
-cat main.go | cpe "Explain this code"
-
-# Using input file flag
-cpe -i main.go "Explain this code"
-
-# Using multiple input files
-cpe -i main.go -i config.json "Compare these two files"
-
-# Combining input methods
-cat error.log | cpe -i main.go "Fix the error in main.go based on this log"
-
-# Using image input (with models that support it)
-cpe -i screenshot.png "What's wrong with this UI?"
-```
-
-**Using specific models and parameters**:
-```bash
-# Using a specific model
-cpe -m claude-3-7-sonnet "Optimize this algorithm"
-
-# Setting temperature for more creative responses
-cpe -t 0.8 "Generate 5 creative names for my new app"
-
-# Limiting token output
-cpe -x 2000 "Summarize this codebase concisely"
-
-# Setting a custom timeout for requests
-cpe --timeout 10m "Process this complex dataset"
-cpe --timeout 30s "Quick response needed"
-
-# Setting thinking budget for enhanced reasoning (for supported models)
-cpe -m claude-3-7-sonnet -b 20000 "Solve this complex algorithmic problem"
-cpe -m o3-mini -b high "Design a scalable architecture for my application"
-
-# Using a custom system prompt template
-cpe --system-prompt-file my_template.tmpl "Write a Go function"
-
-# Combined parameters
-cpe -m gpt-4o -t 0.7 --top-p 0.95 -x 4000 --timeout 8m "Refactor this code for better performance"
-```
-
-**Conversation management**:
-
-```bash
-# Start a new conversation
-cpe -n "Let's design a REST API"
-
-# Continue the most recent conversation (model is remembered automatically)
-cpe "Add authentication to the API"
-
-# Continue with modified parameters (model is remembered, but generation params must be specified)
-cpe -t 0.7 -b 10000 "Make the authentication more secure"
-
-# Continue from a specific conversation ID
-cpe -c abcd1234 "Let's discuss the rate limiting"
-
-# List all conversations in a git-like graph
-cpe conversation list
-# or use aliases
-cpe convo ls
-
-# View a specific conversation by message ID
-cpe conversation print abcd1234
-# or use aliases
-cpe convo show abcd1234
-
-# Delete a message by ID
-cpe conversation delete abcd1234
-# Delete a message and all its children
-cpe conversation delete --cascade abcd1234
-```
-
-**Custom API Endpoints**:
-
-```bash
-# Using a custom API endpoint with an unknown model (requires CPE_CUSTOM_API_KEY)
-export CPE_CUSTOM_API_KEY=your_custom_api_key_here
-cpe -m unknown-model --custom-url https://your-custom-endpoint.com/v1 "Your prompt here"
-
-# Using OpenRouter for accessing unknown models
-export CPE_CUSTOM_URL=https://openrouter.ai/api/v1
-export CPE_CUSTOM_API_KEY=your_openrouter_api_key_here
-cpe -m mistral-large "Create a logging library in Go"
-
-# Using Cloudflare AI Gateway for tracing and observability (uses ANTHROPIC_API_KEY)
-export CPE_CLAUDE_3_7_SONNET_URL=https://gateway.ai.cloudflare.com/v1/your-account/your-gateway/anthropic
-cpe "Write a sorting algorithm implementation"
-```
-
-**Custom System Prompts**:
-
-```bash
-# Use a custom system prompt template file
-cpe --system-prompt-file ./my_system_prompt.tmpl "Your prompt here"
-```
-
-CPE supports custom system prompts using Go's text/template syntax. Your template file can use any of the following system information variables:
-
-```
-{{.CurrentDate}}      - Current date (YYYY-MM-DD format)
-{{.CurrentTime}}      - Current time (HH:MM:SS format)
-{{.Timezone}}         - Current timezone with UTC offset
-{{.WorkingDir}}       - Current working directory
-{{.OS}}               - Operating system (linux, darwin, windows)
-{{.IsGitRepo}}        - Whether the current directory is a git repository (true/false)
-{{.Username}}         - Current username (if available)
-{{.Hostname}}         - System hostname (if available)
-{{.GoVersion}}        - Go version information (if available)
-
-# Git-related information (available when .IsGitRepo is true)
-{{.GitBranch}}        - Current Git branch
-{{.GitLatestCommit}}  - Latest commit hash
-{{.GitCommitMessage}} - Latest commit message
-{{.GitHasChanges}}    - Whether there are uncommitted changes (true/false)
-```
-
-Example template:
-```
-You are an AI assistant helping with Go development.
-
-System Context:
-- Date: {{.CurrentDate}}
-- Time: {{.CurrentTime}} {{.Timezone}}
-- Directory: {{.WorkingDir}}
-- OS: {{.OS}}
-{{if .IsGitRepo}}
-- Git: on branch '{{.GitBranch}}'{{if .GitHasChanges}} (with uncommitted changes){{end}}
-- Last commit: {{.GitCommitMessage}}
-{{end}}
-
-Please assist with the following task:
-```
-
-**Offline Usage with Ollama**:
-
-```bash
-# Start ollama with your model of choice
-ollama run llama3
-
-# Configure CPE to use ollama
-export CPE_CUSTOM_URL=http://localhost:11434/v1
-export OPENAI_API_KEY=ollama
-cpe -m llama3 "How can I create a web server in Go?"
-```
-
-## Commands
-
-### Main Command
-
-- `cpe [flags] [prompt]`: Interact with the AI agent
-
-### Conversation Management
-
-- `cpe conversation list` (aliases: `convo list`, `conv ls`): List all conversations in a git-like graph
-- `cpe conversation print [id]` (aliases: `convo show`, `conv view`): Print a specific conversation
-- `cpe conversation delete [id]` (aliases: `convo rm`, `conv remove`): Delete a conversation
-
-### Tools
-
-- `cpe tools overview`: Debug tool to see what files the LLM would analyze for a given input
-- `cpe tools related-files [file1,file2,...]`: Debug tool to see what related files the LLM would find
-- `cpe tools list-files`: Output all text files recursively (useful for piping to clipboard for use in other AI apps)
-- `cpe tools token-count [path]`: Count tokens in files and display as a tree to understand context window usage
-
-### Environment
-
-- `cpe env`: Print all environment variables used by CPE
-
-## Configuration
-
-### Environment Variables
-
-- `ANTHROPIC_API_KEY`: API key for Claude models
-- `OPENAI_API_KEY`: API key for OpenAI models
-- `GEMINI_API_KEY`: API key for Gemini models
-- `CPE_MODEL`: Default model to use
-- `CPE_CUSTOM_URL`: Custom base URL for model APIs
-- `CPE_CUSTOM_API_KEY`: API key to use with custom model endpoints
-- `CPE_[MODEL_NAME]_URL`: Model-specific custom URL (e.g., `CPE_CLAUDE_3_5_SONNET_URL`)
-- `CPE_DISABLE_TOOL_USE`: When set, disables tool use for custom models (used when working with models that don't support tool use)
-
-### Ignore Files
-
-CPE respects `.cpeignore` files similar to `.gitignore` for excluding files from analysis. Create a `.cpeignore` file in
-your project root to customize what files should be excluded.
-
-**Warning**: The `.cpeignore` file mainly affects what files the AI model sees when using the overview and related-files
-tools. The model may still view, edit, and remove files that are ignored when performing file operations.
-
-### Command Line Flags
-
-```
-Flags:
-  -c, --continue string             Continue from a specific conversation ID
-  -h, --help                        Help for cpe
-  -i, --input strings               Specify input files to process. Multiple files can be provided.
-  -m, --model string                Specify the model to use
-      --custom-url string           Specify a custom base URL for the model provider API
-  -x, --max-tokens int              Maximum number of tokens to generate
-  -n, --new                         Start a new conversation instead of continuing from the last one
-      --number-of-responses int     Number of responses to generate
-      --frequency-penalty float     Frequency penalty (-2.0 - 2.0)
-      --presence-penalty float      Presence penalty (-2.0 - 2.0)
-  -t, --temperature float           Sampling temperature (0.0 - 1.0)
-  -b, --thinking-budget string      Budget for reasoning/thinking capabilities
-      --timeout string              Request timeout duration (default "5m")
-      --top-k int                   Top-k sampling parameter
-      --top-p float                 Nucleus sampling parameter (0.0 - 1.0)
-      --system-prompt-file string   Specify a custom system prompt template file
-  -v, --version                     Print the version number and exit
-```
-
-## Supported Models
-
-- Claude models:
-  - `claude-3-7-sonnet` (default)
-  - `claude-3-5-sonnet`
-  - `claude-3-5-haiku`
-  - `claude-3-opus`
-  - `claude-3-haiku`
-- OpenAI models:
-  - `gpt-4o`
-  - `gpt-4o-mini`
-  - `o3-mini`
-- Gemini models:
-  - `gemini-1-5-pro`
-  - `gemini-1-5-flash`
-  - `gemini-2-flash-exp`
-  - `gemini-2-flash`
-  - `gemini-2-flash-lite-preview`
-  - `gemini-2-pro-exp`
-
-## Version Compatibility
-
-- Go version: 1.23+ is recommended (the tool uses Go 1.23.0 or later)
-- OS compatibility: Linux, macOS, Windows
-
-## Security Considerations
-
-CPE interacts with external AI APIs and handles your codebase information. Keep in mind:
-
-- **API Key Security**: CPE requires API keys to be set as environment variables. Never hardcode these keys into scripts
-  or commit them to version control.
-
-- **Data Privacy**: All prompts, code, and other inputs you provide to CPE are sent to the corresponding AI model
-  provider (OpenAI, Anthropic, or Google). Be careful not to share sensitive or proprietary code.
-
-- **Output Visibility**: The tool's output is visible in your terminal. Be mindful of exposing sensitive information
-  when collaborating or screen sharing.
-
-- **File Protections**: Use `.cpeignore` to exclude sensitive files from analysis. However, be aware that if you
-  explicitly ask the model to interact with those files, it may still be able to do so through file operation tools.
-
-- **Credential Scanning**: Be careful when running CPE in repositories that might contain credentials or sensitive
-  tokens, as these could be picked up by the model.
-
-## How It Works
-
-CPE acts as an intelligent agent that:
-
-1. Analyzes your request and breaks it down into manageable steps
-2. Uses tools to understand your codebase (files overview, related files)
-3. Makes precise code modifications when needed through AI-powered tools
-4. Verifies changes to ensure correctness
-5. Maintains conversation context so you can continue where you left off
-
-The tool is designed to be integrated seamlessly into your development workflow, allowing you to get help with a wide
-range of software development tasks without leaving your terminal.
-
-## Roadmap
-
-CPE is actively being developed. See the [ROADMAP.md](ROADMAP.md) file for upcoming features and improvements,
-including:
-
-- Token analysis and visualization improvements
-- Enhanced code mapping for large repositories
-- Support for additional LLM providers
-- Conversation management enhancements
-- Performance improvements for large codebases
-- And more!
+## Known Limitations
+
+- Very large codebases might exceed token limits
+- Some complex refactoring operations may require multiple steps
+- File overview tool may omit some code details to stay within token limits
+- Code analysis primarily supports common languages (Go, JavaScript/TypeScript, Python, Java) using Tree-sitter parsers
+- Specialized or less common languages may have limited analysis capabilities
+- Performance varies based on the selected AI model
 
 ## License
 
-This project is open source and available under the [MIT License](LICENSE).
+MIT
