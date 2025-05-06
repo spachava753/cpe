@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"github.com/spachava753/cpe/internal/mcp"
 	"io"
 	"os"
 	"os/signal"
@@ -196,6 +197,28 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	// Register all the necessary tools
 	if err = agent.RegisterTools(filterToolGen); err != nil {
 		return fmt.Errorf("failed to register tools: %w", err)
+	}
+
+	// Load MCP configuration
+	config, err := mcp.LoadConfig()
+	if err != nil {
+		// Return error but don't fail completely if config isn't found
+		return fmt.Errorf("failed to load MCP configuration: %w", err)
+	}
+
+	// Validate configuration
+	if err := config.Validate(); err != nil {
+		return fmt.Errorf("invalid MCP configuration: %w", err)
+	}
+
+	// Create client manager
+	clientManager := mcp.NewClientManager(config)
+	defer clientManager.Close()
+
+	// Register MCP server tools
+	if err = mcp.RegisterMCPServerTools(ctx, clientManager, filterToolGen); err != nil {
+		// Continue execution even if MCP tools fail to register
+		fmt.Fprintf(os.Stderr, "Warning: failed to register MCP tools: %v\n", err)
 	}
 
 	userMessage := gai.Message{
