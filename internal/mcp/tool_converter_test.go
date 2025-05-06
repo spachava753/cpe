@@ -459,6 +459,183 @@ func TestConvertMCPToolToGAITool(t *testing.T) {
 			wantTool: gai.Tool{},
 			wantErr:  true,
 		},
+		{
+			name: "create_pull_request_review from github mcp server",
+			mcpTool: mcp.NewTool("create_pull_request_review",
+				mcp.WithDescription("Create a review for a pull request."),
+				mcp.WithToolAnnotation(mcp.ToolAnnotation{
+					Title:        "Submit pull request review",
+					ReadOnlyHint: false,
+				}),
+				mcp.WithString("owner",
+					mcp.Required(),
+					mcp.Description("Repository owner"),
+				),
+				mcp.WithString("repo",
+					mcp.Required(),
+					mcp.Description("Repository name"),
+				),
+				mcp.WithNumber("pullNumber",
+					mcp.Required(),
+					mcp.Description("Pull request number"),
+				),
+				mcp.WithString("body",
+					mcp.Description("Review comment text"),
+				),
+				mcp.WithString("event",
+					mcp.Required(),
+					mcp.Description("Review action to perform"),
+					mcp.Enum("APPROVE", "REQUEST_CHANGES", "COMMENT"),
+				),
+				mcp.WithString("commitId",
+					mcp.Description("SHA of commit to review"),
+				),
+				mcp.WithArray("comments",
+					mcp.Items(
+						map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": false,
+							"required":             []string{"path", "body", "position", "line", "side", "start_line", "start_side"},
+							"properties": map[string]interface{}{
+								"path": map[string]interface{}{
+									"type":        "string",
+									"description": "path to the file",
+								},
+								"position": map[string]interface{}{
+									"anyOf": []interface{}{
+										map[string]string{"type": "number"},
+										map[string]string{"type": "null"},
+									},
+									"description": "position of the comment in the diff",
+								},
+								"line": map[string]interface{}{
+									"anyOf": []interface{}{
+										map[string]string{"type": "number"},
+										map[string]string{"type": "null"},
+									},
+									"description": "line number in the file to comment on. For multi-line comments, the end of the line range",
+								},
+								"side": map[string]interface{}{
+									"anyOf": []interface{}{
+										map[string]string{"type": "string"},
+										map[string]string{"type": "null"},
+									},
+									"description": "The side of the diff on which the line resides. For multi-line comments, this is the side for the end of the line range. (LEFT or RIGHT)",
+								},
+								"start_line": map[string]interface{}{
+									"anyOf": []interface{}{
+										map[string]string{"type": "number"},
+										map[string]string{"type": "null"},
+									},
+									"description": "The first line of the range to which the comment refers. Required for multi-line comments.",
+								},
+								"start_side": map[string]interface{}{
+									"anyOf": []interface{}{
+										map[string]string{"type": "string"},
+										map[string]string{"type": "null"},
+									},
+									"description": "The side of the diff on which the start line resides for multi-line comments. (LEFT or RIGHT)",
+								},
+								"body": map[string]interface{}{
+									"type":        "string",
+									"description": "comment body",
+								},
+							},
+						},
+					),
+					mcp.Description("Line-specific comments array of objects to place comments on pull request changes. Requires path and body. For line comments use line or position. For multi-line comments use start_line and line with optional side parameters."),
+				),
+			),
+			wantTool: gai.Tool{
+				Name:        "create_pull_request_review",
+				Description: "Create a review for a pull request.",
+				InputSchema: gai.InputSchema{
+					Type: gai.Object,
+					Properties: map[string]gai.Property{
+						"owner": {
+							Type:        gai.String,
+							Description: "Repository owner",
+						},
+						"repo": {
+							Type:        gai.String,
+							Description: "Repository name",
+						},
+						"pullNumber": {
+							Type:        gai.Number,
+							Description: "Pull request number",
+						},
+						"body": {
+							Type:        gai.String,
+							Description: "Review comment text",
+						},
+						"event": {
+							Type:        gai.String,
+							Description: "Review action to perform",
+							Enum:        []string{"APPROVE", "REQUEST_CHANGES", "COMMENT"},
+						},
+						"commitId": {
+							Type:        gai.String,
+							Description: "SHA of commit to review",
+						},
+						"comments": {
+							Type:        gai.Array,
+							Description: "Line-specific comments array of objects to place comments on pull request changes. Requires path and body. For line comments use line or position. For multi-line comments use start_line and line with optional side parameters.",
+							Items: &gai.Property{
+								Type: gai.Object,
+								Properties: map[string]gai.Property{
+									"path": {
+										Type:        gai.String,
+										Description: "path to the file",
+									},
+									"position": {
+										AnyOf: []gai.Property{
+											{Type: gai.Number},
+											{Type: gai.Null},
+										},
+										Description: "position of the comment in the diff",
+									},
+									"line": {
+										AnyOf: []gai.Property{
+											{Type: gai.Number},
+											{Type: gai.Null},
+										},
+										Description: "line number in the file to comment on. For multi-line comments, the end of the line range",
+									},
+									"side": {
+										AnyOf: []gai.Property{
+											{Type: gai.String},
+											{Type: gai.Null},
+										},
+										Description: "The side of the diff on which the line resides. For multi-line comments, this is the side for the end of the line range. (LEFT or RIGHT)",
+									},
+									"start_line": {
+										AnyOf: []gai.Property{
+											{Type: gai.Number},
+											{Type: gai.Null},
+										},
+										Description: "The first line of the range to which the comment refers. Required for multi-line comments.",
+									},
+									"start_side": {
+										AnyOf: []gai.Property{
+											{Type: gai.String},
+											{Type: gai.Null},
+										},
+										Description: "The side of the diff on which the start line resides for multi-line comments. (LEFT or RIGHT)",
+									},
+									"body": {
+										Type:        gai.String,
+										Description: "comment body",
+									},
+								},
+								Required: []string{"path", "body", "position", "line", "side", "start_line", "start_side"},
+							},
+						},
+					},
+					Required: []string{"owner", "repo", "pullNumber", "event"},
+				},
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {

@@ -23,7 +23,7 @@ go.work
 
 # Prompt specific files
 output.md
-prompt_*.txt
+*prompt*.txt
 /system_prompt.md
 
 ### CPE specific stuff

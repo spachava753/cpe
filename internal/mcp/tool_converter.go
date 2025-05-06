@@ -49,6 +49,53 @@ func ConvertMCPToolToGAITool(mcpTool mcp.Tool) (gai.Tool, error) {
 
 // convertProperty converts a single property from MCP format to GAI format
 func convertProperty(propMap map[string]interface{}) (gai.Property, error) {
+	// Check for anyOf first - this has priority over "type"
+	if anyOf, ok := propMap["anyOf"].([]interface{}); ok && len(anyOf) > 0 {
+		property := gai.Property{
+			Description: "", // Will be updated later if a description exists
+		}
+
+		// Handle anyOf field
+		properties := make([]gai.Property, len(anyOf))
+		for i, typeOption := range anyOf {
+			// Handle different formats of the anyOf options
+			switch typeDef := typeOption.(type) {
+			case map[string]interface{}:
+				// Standard object format, convert recursively
+				typeProp, err := convertProperty(typeDef)
+				if err != nil {
+					return gai.Property{}, fmt.Errorf("failed to convert anyOf option: %w", err)
+				}
+				properties[i] = typeProp
+
+			case map[string]string:
+				// Simple map with just a type field
+				if typeVal, ok := typeDef["type"]; ok {
+					properties[i] = gai.Property{Type: stringToGAIType(typeVal)}
+				} else {
+					return gai.Property{}, fmt.Errorf("anyOf option map does not contain type: %v", typeDef)
+				}
+
+			case string:
+				// Just a string type name
+				properties[i] = gai.Property{Type: stringToGAIType(typeDef)}
+
+			default:
+				return gai.Property{}, fmt.Errorf("anyOf option has unsupported format: %T %v", typeOption, typeOption)
+			}
+		}
+
+		property.AnyOf = properties
+
+		// Add description if present
+		if descStr, ok := propMap["description"].(string); ok {
+			property.Description = descStr
+		}
+
+		return property, nil
+	}
+
+	// If no anyOf, proceed with normal type-based conversion
 	// Extract the type
 	typeStr, ok := propMap["type"].(string)
 	if !ok {
@@ -59,20 +106,8 @@ func convertProperty(propMap map[string]interface{}) (gai.Property, error) {
 	property := gai.Property{}
 
 	// Convert the property type
-	switch typeStr {
-	case "string":
-		property.Type = gai.String
-	case "number":
-		property.Type = gai.Number
-	case "integer":
-		property.Type = gai.Integer
-	case "boolean":
-		property.Type = gai.Boolean
-	case "object":
-		property.Type = gai.Object
-	case "array":
-		property.Type = gai.Array
-	default:
+	property.Type = stringToGAIType(typeStr)
+	if property.Type == gai.Null && typeStr != "null" {
 		return gai.Property{}, fmt.Errorf("unsupported property type: %s", typeStr)
 	}
 
@@ -82,16 +117,14 @@ func convertProperty(propMap map[string]interface{}) (gai.Property, error) {
 	}
 
 	// Handle enumerations for string properties
-	if property.Type == gai.String {
-		if enumValues, ok := propMap["enum"].([]interface{}); ok && len(enumValues) > 0 {
+	if property.Type == gai.String && propMap["enum"] != nil {
+		if enumValues, ok := propMap["enum"].([]string); ok && len(enumValues) > 0 {
 			property.Enum = make([]string, len(enumValues))
 			for i, val := range enumValues {
-				if strVal, ok := val.(string); ok {
-					property.Enum[i] = strVal
-				} else {
-					return gai.Property{}, fmt.Errorf("enum value is not a string")
-				}
+				property.Enum[i] = val
 			}
+		} else {
+			return gai.Property{}, fmt.Errorf("enum value is not a []string")
 		}
 	}
 
@@ -150,4 +183,27 @@ func convertProperty(propMap map[string]interface{}) (gai.Property, error) {
 	}
 
 	return property, nil
+}
+
+// stringToGAIType converts a string type representation to a gai.PropertyType
+func stringToGAIType(typeStr string) gai.PropertyType {
+	switch typeStr {
+	case "string":
+		return gai.String
+	case "number":
+		return gai.Number
+	case "integer":
+		return gai.Integer
+	case "boolean":
+		return gai.Boolean
+	case "object":
+		return gai.Object
+	case "array":
+		return gai.Array
+	case "null":
+		return gai.Null
+	default:
+		// Default to Null for unknown types
+		return gai.Null
+	}
 }
