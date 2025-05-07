@@ -295,37 +295,58 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		parentId = msgIdList[len(msgIdList)-1]
 	}
 
-	// If we were interrupted, make sure to save any partial dialog returned,
-	// but we also want to allow user to cancel storage operations by interrupting a second time
+	// If we were interrupted, prepare a new context for the save operation
+	// that can also be cancelled.
 	dialogCtx := ctx
+	var saveCancel context.CancelFunc
 	if interrupted {
-		fmt.Fprintln(os.Stderr, "\nWARNING: Generation was interrupted. Saving partial dialog. You can cancel this operation by interrupting again.")
-		var cancel context.CancelFunc
-		dialogCtx, cancel = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer cancel()
+		fmt.Fprintln(os.Stderr, "\nWARNING: Generation was interrupted. Attempting to save partial dialog.")
+		fmt.Fprintln(os.Stderr, "You can cancel this save operation by interrupting again (Ctrl+C).")
+		dialogCtx, saveCancel = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer saveCancel() // Ensure this new context's cancel is called
 	}
 
-	// Save user message
-	userMsgID, err := dialogStorage.SaveMessage(dialogCtx, userMessage, parentId, "")
-	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			return nil
-		}
-		return fmt.Errorf("failed to save message: %w", err)
-	}
-
-	// Save assistant messages
+	// Determine assistant messages from the result
+	// resultDialog contains the original dialog + any new assistant messages
+	// dialog contains the original dialog sent to the model
 	assistantMsgs := resultDialog[len(dialog):]
 
-	parentId = userMsgID
+	// Condition for saving:
+	// 1. Not interrupted (normal completion)
+	// 2. Interrupted BUT there are some assistant messages to save
+	shouldSave := !interrupted || (interrupted && len(assistantMsgs) > 0)
+
+	if !shouldSave && interrupted {
+		fmt.Fprintln(os.Stderr, "No new assistant messages to save from interrupted generation. Skipping save for this turn.")
+		return nil // Do not save the user message if no assistant messages were generated during interruption
+	}
+
+	// Save user message (part of the current turn)
+	// This userMessage is the one that initiated the current turn.
+	userMsgID, err := dialogStorage.SaveMessage(dialogCtx, userMessage, parentId, "")
+	if err != nil {
+		if errors.Is(err, context.Canceled) { // User cancelled the save operation itself
+			fmt.Fprintln(os.Stderr, "Save operation cancelled by user.")
+			return nil
+		}
+		return fmt.Errorf("failed to save user message: %w", err)
+	}
+
+	// Save assistant messages (if any)
+	currentParentId := userMsgID
 	for _, assistantMsg := range assistantMsgs {
-		parentId, err = dialogStorage.SaveMessage(dialogCtx, assistantMsg, parentId, "")
+		currentParentId, err = dialogStorage.SaveMessage(dialogCtx, assistantMsg, currentParentId, "")
 		if err != nil {
-			if errors.Is(err, context.Canceled) {
+			if errors.Is(err, context.Canceled) { // User cancelled the save operation during assistant message saving
+				fmt.Fprintln(os.Stderr, "Save operation cancelled by user during assistant message saving.")
 				return nil
 			}
-			return fmt.Errorf("failed to save message: %w", err)
+			return fmt.Errorf("failed to save assistant message: %w", err)
 		}
+	}
+
+	if interrupted && len(assistantMsgs) > 0 {
+		fmt.Fprintln(os.Stderr, "Partial dialog saved successfully.")
 	}
 
 	return nil
