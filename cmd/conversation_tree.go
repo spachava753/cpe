@@ -2,10 +2,21 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/spachava753/cpe/internal/storage"
 	"io"
 	"sort"
+	"strings"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/spachava753/cpe/internal/storage"
+)
+
+// Define adaptive colors for roles
+var (
+	userRoleStyle      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#2980b9", Dark: "#3498db"})
+	assistantRoleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#16a085", Dark: "#1abc9c"})
+	toolRoleStyle      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#d35400", Dark: "#f1c40f"})
+	unknownRoleStyle   = lipgloss.NewStyle().Bold(true)
 )
 
 const endOfBranch = "------"
@@ -72,13 +83,13 @@ func PrintMessageForest(w io.Writer, roots []storage.MessageIdNode) {
 func prettifyRole(role string) string {
 	switch role {
 	case "user":
-		return "user"
+		return userRoleStyle.Render("USER")
 	case "assistant":
-		return "assistant"
+		return assistantRoleStyle.Render("ASSISTANT")
 	case "tool_result":
-		return "tool result"
+		return toolRoleStyle.Render("TOOL RESULT")
 	default:
-		return role
+		return unknownRoleStyle.Render(strings.ToUpper(role))
 	}
 }
 
