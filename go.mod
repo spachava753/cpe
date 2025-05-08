@@ -27,6 +27,7 @@ require (
 	github.com/tree-sitter/tree-sitter-python v0.23.6
 	github.com/tree-sitter/tree-sitter-typescript v0.23.2
 	google.golang.org/api v0.189.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -87,5 +88,4 @@ require (
 	google.golang.org/grpc v1.64.1 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

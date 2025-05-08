@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/spachava753/cpe/internal/codemap" // Added for syntax checking in EditFile
+	"github.com/spachava753/gai"
 	"os"
 	"path/filepath"
 	"strings"
@@ -183,15 +185,15 @@ func ExecuteDeleteFile(ctx context.Context, input DeleteFileInput) (string, erro
 
 // ExecuteEditFile handles editing a file
 func ExecuteEditFile(ctx context.Context, input EditFileInput) (string, error) {
-	content, err := os.ReadFile(input.Path)
+	originalContent, err := os.ReadFile(input.Path)
 	if err != nil {
 		return "", fmt.Errorf("error reading file: %s", err)
 	}
 
-	s := string(content)
+	s := string(originalContent)
+	var newContentString string
 
 	switch {
-	// Edit: replace old_str with new_str (both required)
 	case input.OldStr != "" && input.NewStr != "":
 		count := strings.Count(s, input.OldStr)
 		if count == 0 {
@@ -200,13 +202,7 @@ func ExecuteEditFile(ctx context.Context, input EditFileInput) (string, error) {
 		if count > 1 {
 			return "", fmt.Errorf("old_str matches %d times in file, expected exactly one match", count)
 		}
-		newContent := strings.Replace(s, input.OldStr, input.NewStr, 1)
-		if err := os.WriteFile(input.Path, []byte(newContent), 0644); err != nil {
-			return "", fmt.Errorf("error writing file: %s", err)
-		}
-		return fmt.Sprintf("Successfully edited text in %s", input.Path), nil
-
-	// Delete: only old_str provided
+		newContentString = strings.Replace(s, input.OldStr, input.NewStr, 1)
 	case input.OldStr != "" && input.NewStr == "":
 		count := strings.Count(s, input.OldStr)
 		if count == 0 {
@@ -215,28 +211,73 @@ func ExecuteEditFile(ctx context.Context, input EditFileInput) (string, error) {
 		if count > 1 {
 			return "", fmt.Errorf("old_str matches %d times in file, expected exactly one match for deletion", count)
 		}
-		newContent := strings.Replace(s, input.OldStr, "", 1)
-		if err := os.WriteFile(input.Path, []byte(newContent), 0644); err != nil {
-			return "", fmt.Errorf("error writing file during deletion: %s", err)
-		}
-		return fmt.Sprintf("Successfully deleted text in %s", input.Path), nil
-
-	// Append: only new_str provided
+		newContentString = strings.Replace(s, input.OldStr, "", 1)
 	case input.OldStr == "" && input.NewStr != "":
+		// For append, we handle it differently as it doesn't replace existing content.
+		// Syntax checks will apply to the whole file *after* append.
+		newContentString = s + input.NewStr
+	default:
+		return "", fmt.Errorf("must provide at least one of old_str or new_str. See tool description for valid usages")
+	}
+
+	newContentBytes := []byte(newContentString)
+
+	// Syntax Check Logic
+	// Check original content first
+	originalHasError, parserFoundForOriginal, checkErrOriginal := codemap.CheckSyntax(ctx, input.Path, originalContent)
+	if checkErrOriginal != nil {
+		// Log a warning, but proceed with the edit as if no parser was found or if original had errors.
+		// This could be a more sophisticated logging in a real app.
+		fmt.Fprintf(os.Stderr, "Warning: could not perform initial syntax check on %s: %v. Proceeding with edit.\n", input.Path, checkErrOriginal)
+		parserFoundForOriginal = false // Treat as if parser wasn't found for decision making
+	}
+
+	performPostEditCheck := parserFoundForOriginal && !originalHasError
+
+	if performPostEditCheck {
+		// Original content was parsable and had no errors. Now check the new content.
+		newHasError, parserFoundForNew, checkErrNew := codemap.CheckSyntax(ctx, input.Path, newContentBytes)
+		if checkErrNew != nil {
+			// Log a warning, but proceed with the edit.
+			fmt.Fprintf(os.Stderr, "Warning: could not perform post-edit syntax check on %s: %v. Proceeding with edit.\n", input.Path, checkErrNew)
+		} else if parserFoundForNew && newHasError {
+			// Edit introduces syntax errors, reject the edit.
+			return "", fmt.Errorf("edit introduces syntax errors in %s. The edit has not been saved. Please check your parameters", input.Path)
+		}
+	}
+	// If we're here, either:
+	// 1. No parser was found for the original file.
+	// 2. The original file already had syntax errors.
+	// 3. The original file was clean, and the new file is also clean (or no parser for new, or checker error).
+	// 4. Syntax check was skipped due to an error in the checker itself.
+	// In all these cases, we proceed to write the file.
+
+	// Handle append separately for writing, as it's not a full rewrite
+	if input.OldStr == "" && input.NewStr != "" { // This is the append case
 		f, err := os.OpenFile(input.Path, os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
 			return "", fmt.Errorf("error opening file for append: %s", err)
 		}
 		defer f.Close()
-		if _, err := f.WriteString(input.NewStr); err != nil {
+		if _, err := f.WriteString(input.NewStr); err != nil { // Write only the new string for append
 			return "", fmt.Errorf("error appending to file: %s", err)
 		}
 		return fmt.Sprintf("Successfully appended text to %s", input.Path), nil
-
-	// Neither provided - this shouldn't happen because of Validate()
-	default:
-		return "", fmt.Errorf("must provide at least one of old_str or new_str. See tool description for valid usages")
 	}
+
+	// For edit and delete, write the whole new content
+	if err := os.WriteFile(input.Path, newContentBytes, 0644); err != nil {
+		return "", fmt.Errorf("error writing file: %s", err)
+	}
+
+	if input.OldStr != "" && input.NewStr != "" {
+		return fmt.Sprintf("Successfully edited text in %s", input.Path), nil
+	}
+	if input.OldStr != "" && input.NewStr == "" {
+		return fmt.Sprintf("Successfully deleted text in %s", input.Path), nil
+	}
+	// Should not be reached if append was handled correctly
+	return "", gai.CallbackExecErr{Err: fmt.Errorf("internal error in edit logic")}
 }
 
 // ExecuteMoveFile handles moving/renaming a file

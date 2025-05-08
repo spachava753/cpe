@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"os"
+	"path/filepath" // Added
+	"strings"       // Added
 	"testing"
 )
 
@@ -216,4 +218,238 @@ func TestFileFunctions(t *testing.T) {
 			t.Error("ExecuteViewFile should have failed when path is a directory")
 		}
 	})
+}
+
+func TestExecuteEditFile_SyntaxChecking(t *testing.T) {
+	ctx := context.Background()
+
+	// Valid Go code
+	validGoContent := `package main
+
+import "fmt"
+
+// A comment
+func main() {
+	fmt.Println("Hello, world!")
+}
+`
+	// Go code that will become invalid if "func" is removed
+	goContentMakeInvalidByDeletion := `package main
+func main() {}
+`
+	// Go code that will become invalid if "}" is removed
+	goContentMakeInvalidByMissingBrace := `package main
+func main() {
+	// comment
+}
+`
+
+	// Go code with an existing syntax error
+	invalidGoContentOriginal := `package main
+
+func main() {
+	fmt.Println("Hello" // Missing closing parenthesis
+}
+`
+
+	tests := []struct {
+		name              string
+		filename          string
+		initialContent    string
+		editInput         EditFileInput
+		wantErr           bool
+		wantErrMsgContain string // Substring to check in error message
+		wantContent       string // Expected content if successful or if edit bypasses syntax check
+		expectNoChange    bool   // True if file content should remain initialContent on error
+	}{
+		// --- Go Files (.go) - Parser Available ---
+		{
+			name:           "Go: Valid original, valid edit (replace comment)",
+			filename:       "test.go",
+			initialContent: validGoContent,
+			editInput: EditFileInput{
+				Path:   "test.go", // Path will be updated in the loop
+				OldStr: "// A comment",
+				NewStr: "// An edited comment",
+			},
+			wantErr:     false,
+			wantContent: strings.Replace(validGoContent, "// A comment", "// An edited comment", 1),
+		},
+		{
+			name:           "Go: Valid original, edit introduces syntax error (incomplete var decl)",
+			filename:       "test.go",
+			initialContent: validGoContent,
+			editInput: EditFileInput{
+				Path:   "test.go",
+				OldStr: `fmt.Println("Hello, world!")`,
+				NewStr: `var a =`,
+			},
+			wantErr:           true,
+			wantErrMsgContain: "edit introduces syntax errors",
+			expectNoChange:    true,
+		},
+		{
+			name:           "Go: Original has syntax error, edit applied (add newline)",
+			filename:       "test_invalid.go",
+			initialContent: invalidGoContentOriginal,
+			editInput: EditFileInput{
+				Path:   "test_invalid.go",
+				OldStr: "", // Append
+				NewStr: "\n// appended comment",
+			},
+			wantErr:     false, // Syntax check bypassed due to original error
+			wantContent: invalidGoContentOriginal + "\n// appended comment",
+		},
+		{
+			name:           "Go: Valid original, valid append",
+			filename:       "test_append.go",
+			initialContent: validGoContent,
+			editInput: EditFileInput{
+				Path:   "test_append.go",
+				OldStr: "", // Append
+				NewStr: "\n// appended line",
+			},
+			wantErr:     false,
+			wantContent: validGoContent + "\n// appended line",
+		},
+		{
+			name:           "Go: Valid original, append introduces syntax error",
+			filename:       "test_append_invalid.go",
+			initialContent: validGoContent,
+			editInput: EditFileInput{
+				Path:   "test_append_invalid.go",
+				OldStr: "", // Append
+				NewStr: "\nfunc oops {",
+			},
+			wantErr:           true,
+			wantErrMsgContain: "edit introduces syntax errors",
+			expectNoChange:    true,
+		},
+		{
+			name:           "Go: Valid original, valid delete",
+			filename:       "test_delete.go",
+			initialContent: validGoContent,
+			editInput: EditFileInput{
+				Path:   "test_delete.go",
+				OldStr: "// A comment\n", // Delete the comment and its newline
+				NewStr: "",
+			},
+			wantErr:     false,
+			wantContent: strings.Replace(validGoContent, "// A comment\n", "", 1),
+		},
+		{
+			name:           "Go: Valid original, delete introduces syntax error (delete 'func')",
+			filename:       "test_delete_invalid.go",
+			initialContent: goContentMakeInvalidByDeletion,
+			editInput: EditFileInput{
+				Path:   "test_delete_invalid.go",
+				OldStr: "func ",
+				NewStr: "",
+			},
+			wantErr:           true,
+			wantErrMsgContain: "edit introduces syntax errors",
+			expectNoChange:    true,
+		},
+		{
+			name:           "Go: Valid original, delete introduces syntax error (delete '}')",
+			filename:       "test_delete_brace_invalid.go",
+			initialContent: goContentMakeInvalidByMissingBrace,
+			editInput: EditFileInput{
+				Path:   "test_delete_brace_invalid.go",
+				OldStr: "}",
+				NewStr: "",
+			},
+			wantErr:           true,
+			wantErrMsgContain: "edit introduces syntax errors",
+			expectNoChange:    true,
+		},
+
+		// --- Text Files (.txt) - No Parser Available ---
+		{
+			name:           "Text: Valid edit, no syntax check",
+			filename:       "test.txt",
+			initialContent: "Hello text world.",
+			editInput: EditFileInput{
+				Path:   "test.txt",
+				OldStr: "text world",
+				NewStr: "CPE user",
+			},
+			wantErr:     false,
+			wantContent: "Hello CPE user.",
+		},
+		{
+			name:           "Text: Append, no syntax check",
+			filename:       "test_append.txt",
+			initialContent: "Initial line.",
+			editInput: EditFileInput{
+				Path:   "test_append.txt",
+				OldStr: "", // Append
+				NewStr: "\nAppended line.",
+			},
+			wantErr:     false,
+			wantContent: "Initial line.\nAppended line.",
+		},
+
+		// --- Standard Edit Errors ---
+		{
+			name:           "Go: old_str not found (valid Go file)",
+			filename:       "test_std_err.go",
+			initialContent: validGoContent,
+			editInput: EditFileInput{
+				Path:   "test_std_err.go",
+				OldStr: "nonExistentString",
+				NewStr: "replacement",
+			},
+			wantErr:           true,
+			wantErrMsgContain: "old_str not found", // Standard error from EditFile
+			expectNoChange:    true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			filePath := filepath.Join(tmpDir, tc.filename)
+
+			// Create initial file
+			err := os.WriteFile(filePath, []byte(tc.initialContent), 0644)
+			if err != nil {
+				t.Fatalf("Failed to write initial file %s: %v", filePath, err)
+			}
+
+			// Update path in editInput
+			editInput := tc.editInput
+			editInput.Path = filePath
+
+			_, err = ExecuteEditFile(ctx, editInput)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("ExecuteEditFile expected an error, but got nil")
+				} else if tc.wantErrMsgContain != "" && !strings.Contains(err.Error(), tc.wantErrMsgContain) {
+					t.Errorf("ExecuteEditFile error message %q does not contain %q", err.Error(), tc.wantErrMsgContain)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("ExecuteEditFile expected no error, but got: %v", err)
+				}
+			}
+
+			// Verify file content
+			finalContentBytes, readErr := os.ReadFile(filePath)
+			if readErr != nil {
+				t.Fatalf("Failed to read file %s after edit attempt: %v", filePath, readErr)
+			}
+			finalContent := string(finalContentBytes)
+
+			expectedFinalContent := tc.initialContent
+			if !tc.wantErr || (tc.wantErr && !tc.expectNoChange) { // if no error, or error but we expect change (e.g. original syntax error)
+				expectedFinalContent = tc.wantContent
+			}
+
+			if finalContent != expectedFinalContent {
+				t.Errorf("File content mismatch.\nExpected:\n%s\nGot:\n%s", expectedFinalContent, finalContent)
+			}
+		})
+	}
 }
