@@ -1,0 +1,21 @@
+I have a codebase at the current path, and I want to generate a detailed Markdown report that will help coding AI agents to understand the codebase. The report should be detailed enough for an AI coding agent can **only** read the report and fully understand and immediately begin to start hacking on the codebase. It is not necessary for the report to contain every single detail, but enough so that the AI coding agent, given a task or a bug description, can begin to dig into the codebase given the knowledge found in the report. Here are some things that a report should contain:
+ - common codebase patterns
+    - variable, type and function naming conventions
+    - error handling conventions
+    - logging conventions
+    - etc.
+ - codebase tech stack
+   - what programming language?
+   - any ancillary tools we use, like linters, custom test scaffold, build tools, etc.?
+   - has used any well-known libraries or frameworks for a given programming language ecosystem?
+ - high level purpose of the project
+ - breakdown of the purpose of submodules or packages within the codebase, and their relationship to each other (for example, understanding that how a persistence submodule is imported or used throughout the codebase, or a logging package, or a submodule containing business logic, etc.)
+ - entrypoint for running codebase, if it is runnable (not a library meant to be imported)
+ - What is the testing methodology? (TDD vs. BDD vs. something else, or maybe the tests are supposed to run inside of a container, or maybe tests needs some external dependencies to be started)
+ - and many other things
+
+Above is just **some** examples of what the report should contain. You should think of some more items that should be in the report, and then generate a report for the current codebase.
+
+Make sure that all details in the report is accurate, don't make up details to fill in gaps, or just because something may be common. For example, you shouldn't say that the codebase can use a linter, if **there is no linter config or linter itself installed**.
+
+Since the report is meant to be read by AI, you can just keep a neutral tone, but make sure to use standard markdown structure when generating the report. You don't need a table of contents. Write the report to a file named context_prompt.txt. Check if that file exists first, if so, just stop and warn the user.
