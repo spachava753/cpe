@@ -6,13 +6,12 @@ import (
 	"fmt"
 	"github.com/anthropics/anthropic-sdk-go"
 	aopts "github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/google/generative-ai-go/genai"
 	"github.com/openai/openai-go"
 	oaiopt "github.com/openai/openai-go/option"
 	gitignore "github.com/sabhiram/go-gitignore"
 	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/spachava753/gai"
-	genaiopts "google.golang.org/api/option"
+	"google.golang.org/genai"
 	"os"
 	"slices"
 	"time"
@@ -250,25 +249,17 @@ func createGeminiGenerator(model, baseURL, systemPromptPath string, timeout time
 		return nil, fmt.Errorf("GEMINI_API_KEY not set")
 	}
 
-	// TODO: using a custom http client seems to have issues with auth, need to find a different way to set timeout
-	// Create an HTTP client with timeout
-	//httpClient := &http.Client{
-	//	Timeout: timeout,
-	//}
-
-	clientOptions := []genaiopts.ClientOption{
-		//genaiopts.WithHTTPClient(httpClient),
-		genaiopts.WithAPIKey(apiKey),
-	}
-
-	if baseURL != "" {
-		clientOptions = append(clientOptions, genaiopts.WithEndpoint(baseURL))
+	cc := genai.ClientConfig{
+		APIKey: apiKey,
+		HTTPOptions: genai.HTTPOptions{
+			BaseURL: baseURL,
+		},
 	}
 
 	ctx := context.Background()
 	client, err := genai.NewClient(
 		ctx,
-		clientOptions...,
+		&cc,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
