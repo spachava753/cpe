@@ -194,11 +194,6 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	// only from the initial dialog, but preserve them during tool execution
 	filterToolGen := agent.NewThinkingFilterToolGenerator(toolGen)
 
-	// Register all the necessary tools
-	if err = agent.RegisterTools(filterToolGen); err != nil {
-		return fmt.Errorf("failed to register tools: %w", err)
-	}
-
 	// Load MCP configuration
 	config, err := mcp.LoadConfig()
 	if err != nil {
@@ -216,12 +211,10 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	clientManager := mcp.NewClientManager(config)
 	defer clientManager.Close()
 
-	// Register MCP server tools if any servers are configured
-	if len(config.MCPServers) > 0 {
-		if err = mcp.RegisterMCPServerTools(ctx, clientManager, filterToolGen); err != nil {
-			// Continue execution even if MCP tools fail to register
-			fmt.Fprintf(os.Stderr, "Warning: failed to register MCP tools: %v\n", err)
-		}
+	// Register MCP server tools
+	if err = mcp.RegisterMCPServerTools(ctx, clientManager, filterToolGen); err != nil {
+		// Continue execution even if MCP tools fail to register
+		fmt.Fprintf(os.Stderr, "Warning: failed to register MCP tools: %v\n", err)
 	}
 
 	userMessage := gai.Message{

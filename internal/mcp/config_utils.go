@@ -25,66 +25,54 @@ func ConfigExists() bool {
 // CreateExampleConfig creates example MCP configuration files in the current directory
 // Creates both JSON and YAML examples (both .yaml and .yml extensions)
 func CreateExampleConfig() error {
+	// Get the current executable path instead of hardcoding "cpe"
+	execPath, err := os.Executable()
+	if err != nil {
+		// Fallback to "cpe" if we can't determine the executable path
+		execPath = "cpe"
+	}
+
 	// JSON example
-	jsonExampleConfig := `{
+	jsonExampleConfig := fmt.Sprintf(`{
   "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "/tmp"
-      ],
-      "timeout": 30,
-      "env": {
-        "NODE_ENV": "production"
-      }
-    },
-    "sqlite": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-sqlite",
-        "--db-path",
-        "/tmp/example.db"
-      ],
+    "cpe_native_tools": {
+      "command": "%s",
+      "args": ["mcp", "serve"],
+      "type": "stdio",
       "timeout": 60
-    },
-    "remote-api": {
-      "type": "sse",
-      "url": "https://example.com/mcp",
-      "timeout": 120
     }
   }
-}`
+}`, execPath)
 
 	// YAML example
-	yamlExampleConfig := `# MCP Configuration in YAML format
+	yamlExampleConfig := fmt.Sprintf(`# MCP Configuration in YAML format
 mcpServers:
-  filesystem:
-    command: npx
+  # Native CPE tools available as an MCP server
+  cpe_native_tools:
+    command: %s
     args:
-      - -y
-      - "@modelcontextprotocol/server-filesystem"
-      - /tmp
-    timeout: 30
-    env:
-      NODE_ENV: production
-  
-  sqlite:
-    command: npx
-    args:
-      - -y
-      - "@modelcontextprotocol/server-sqlite"
-      - --db-path
-      - /tmp/example.db
+      - mcp
+      - serve
+    type: stdio
     timeout: 60
   
-  remote-api:
-    type: sse
-    url: https://example.com/mcp
-    timeout: 120
-`
+  # Example of an external MCP server (commented out)
+  # filesystem:
+  #   command: npx
+  #   args:
+  #     - -y
+  #     - "@modelcontextprotocol/server-filesystem"
+  #     - /tmp
+  #   timeout: 30
+  #   env:
+  #     NODE_ENV: production
+  
+  # Example of an SSE MCP server (commented out)
+  # remote-api:
+  #   type: sse
+  #   url: https://example.com/mcp
+  #   timeout: 120
+`, execPath)
 
 	// Create JSON example
 	if err := os.WriteFile(".cpemcp.json", []byte(jsonExampleConfig), 0644); err != nil {
@@ -94,6 +82,11 @@ mcpServers:
 	// Create YAML example (.yaml extension)
 	if err := os.WriteFile(".cpemcp.yaml", []byte(yamlExampleConfig), 0644); err != nil {
 		return fmt.Errorf("failed to create YAML example (.yaml): %w", err)
+	}
+
+	// Create YAML example (.yml extension) - same content as .yaml
+	if err := os.WriteFile(".cpemcp.yml", []byte(yamlExampleConfig), 0644); err != nil {
+		return fmt.Errorf("failed to create YAML example (.yml): %w", err)
 	}
 
 	return nil

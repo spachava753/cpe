@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/mark3labs/mcp-go/client"
@@ -17,6 +18,16 @@ type ClientManager struct {
 
 // NewClientManager creates a new ClientManager
 func NewClientManager(config *ConfigFile) *ClientManager {
+	// If the config is nil, create a default one with CPE's native tools
+	if config == nil {
+		config = &ConfigFile{MCPServers: make(map[string]MCPServerConfig)}
+	}
+
+	// If no servers are configured, add CPE's own serve command as an MCP server
+	if len(config.MCPServers) == 0 {
+		fmt.Fprintf(os.Stderr, "WARNING: No MCP servers configured.\n")
+	}
+
 	return &ClientManager{
 		clients: make(map[string]*client.Client),
 		config:  config,

@@ -40,9 +40,24 @@ func LoadConfig() (*ConfigFile, error) {
 		}
 	}
 
-	// If no config file found, return empty config
+	// If no config file found, return default config with CPE as a stdio server
 	if configPath == "" {
-		return &ConfigFile{MCPServers: make(map[string]MCPServerConfig)}, nil
+		// Get the current executable path instead of hardcoding "cpe"
+		execPath, err := os.Executable()
+		if err != nil {
+			// Fallback to "cpe" if we can't determine the executable path
+			execPath = "cpe"
+		}
+
+		defaultConfig := &ConfigFile{MCPServers: make(map[string]MCPServerConfig)}
+		// Add CPE's own serve command as an MCP server by default
+		defaultConfig.MCPServers["cpe_native_tools"] = MCPServerConfig{
+			Command: execPath,
+			Args:    []string{"mcp", "serve"},
+			Type:    "stdio",
+			Timeout: 60,
+		}
+		return defaultConfig, nil
 	}
 
 	// Read the config file, return error if reading fails

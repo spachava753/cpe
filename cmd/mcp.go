@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spachava753/cpe/internal/agent"
+	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/spachava753/cpe/internal/mcp"
 	"github.com/spf13/cobra"
 )
@@ -16,6 +18,26 @@ var (
 	mcpToolName   string
 	mcpToolArgs   string
 )
+
+// mcpServeCmd represents the 'mcp serve' subcommand
+var mcpServeCmd = &cobra.Command{
+	Use:   "serve",
+	Short: "Serve CPE native tools as an MCP server",
+	Long:  `Expose CPE's native tools through the Model Context Protocol over stdio.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// Create the ignorer for file operations
+		ignorer, err := ignore.LoadIgnoreFiles(".")
+		if err != nil {
+			return fmt.Errorf("failed to load ignore files: %w", err)
+		}
+
+		// Create the MCP server
+		mcpServer := agent.NewStdioMCPServer(ignorer)
+
+		// Serve over stdio
+		return agent.ServeStdio(mcpServer)
+	},
+}
 
 // mcpInitCmd represents the 'mcp init' subcommand
 var mcpInitCmd = &cobra.Command{
@@ -343,6 +365,7 @@ func init() {
 	mcpCmd.AddCommand(mcpInfoCmd)
 	mcpCmd.AddCommand(mcpListToolsCmd)
 	mcpCmd.AddCommand(mcpCallToolCmd)
+	mcpCmd.AddCommand(mcpServeCmd) // Add the new serve command
 
 	// Add flags to mcp list-tools command
 	mcpListToolsCmd.Flags().Bool("json", false, "Show schema in raw JSON format")
