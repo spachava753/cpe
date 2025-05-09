@@ -1,4 +1,4 @@
-package agent
+package mcp
 
 import (
 	"context"

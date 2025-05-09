@@ -1,4 +1,4 @@
-package agent
+package mcp
 
 import (
 	"context"
@@ -262,13 +262,11 @@ func NewStdioMCPServer(ignorer *ignore.GitIgnore) *server.MCPServer {
 	s.AddTool(bashTool, bashToolHandler)
 	s.AddTool(filesOverviewTool, filesOverviewToolHandler(ignorer))
 	s.AddTool(getRelatedFilesTool, getRelatedFilesToolHandler(ignorer))
-
 	s.AddTool(createFileTool, createFileToolHandler)
 	s.AddTool(deleteFileTool, deleteFileToolHandler)
 	s.AddTool(editFileTool, editFileToolHandler)
 	s.AddTool(moveFileTool, moveFileToolHandler)
 	s.AddTool(viewFileTool, viewFileToolHandler)
-
 	s.AddTool(createFolderTool, createFolderToolHandler)
 	s.AddTool(deleteFolderTool, deleteFolderToolHandler)
 	s.AddTool(moveFolderTool, moveFolderToolHandler)

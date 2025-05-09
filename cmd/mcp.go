@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/spachava753/cpe/internal/mcp"
 	"github.com/spf13/cobra"
@@ -32,10 +31,10 @@ var mcpServeCmd = &cobra.Command{
 		}
 
 		// Create the MCP server
-		mcpServer := agent.NewStdioMCPServer(ignorer)
+		mcpServer := mcp.NewStdioMCPServer(ignorer)
 
 		// Serve over stdio
-		return agent.ServeStdio(mcpServer)
+		return mcp.ServeStdio(mcpServer)
 	},
 }
 

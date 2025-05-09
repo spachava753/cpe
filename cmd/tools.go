@@ -2,13 +2,11 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"strings"
-
-	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/ignore"
+	"github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/tokentree"
 	"github.com/spf13/cobra"
+	"os"
 )
 
 // toolsCmd represents the tools command
@@ -16,70 +14,6 @@ var toolsCmd = &cobra.Command{
 	Use:   "tools",
 	Short: "Access various utility tools",
 	Long:  `Access various utility tools for file overview, related files, and token counting.`,
-}
-
-// overviewCmd represents the overview subcommand
-var overviewCmd = &cobra.Command{
-	Use:   "overview",
-	Short: "Get an overview of all files",
-	Long:  `Get an overview of all files in the current directory with reduced content.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		// Initialize ignorer
-		ignorer, err := ignore.LoadIgnoreFiles(".")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: failed to load ignore files: %v\n", err)
-			os.Exit(1)
-		}
-		if ignorer == nil {
-			fmt.Fprintf(os.Stderr, "Error: git ignorer was nil\n")
-			os.Exit(1)
-		}
-
-		path := "."
-		if len(args) > 0 && args[0] != "" {
-			path = args[0]
-		}
-		result, err := agent.CreateExecuteFilesOverviewFunc(ignorer)(cmd.Context(), agent.FileOverviewInput{Path: path})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Print(result)
-	},
-}
-
-// relatedFilesCmd represents the related-files subcommand
-var relatedFilesCmd = &cobra.Command{
-	Use:   "related-files [file1,file2,...]",
-	Short: "Get related files",
-	Long:  `Get related files for the given comma-separated list of files.`,
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		// Initialize ignorer
-		ignorer, err := ignore.LoadIgnoreFiles(".")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: failed to load ignore files: %v\n", err)
-			os.Exit(1)
-		}
-		if ignorer == nil {
-			fmt.Fprintf(os.Stderr, "Error: git ignorer was nil\n")
-			os.Exit(1)
-		}
-
-		// Split the comma-separated list of files
-		inputFiles := strings.Split(args[0], ",")
-		// Trim whitespace from each file path
-		for i := range inputFiles {
-			inputFiles[i] = strings.TrimSpace(inputFiles[i])
-		}
-
-		result, err := agent.CreateExecuteGetRelatedFilesFunc(ignorer)(cmd.Context(), agent.GetRelatedFilesInput{InputFiles: inputFiles})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Print(result)
-	},
 }
 
 // listFilesCmd represents the list-files subcommand
@@ -99,7 +33,7 @@ var listFilesCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		files, err := agent.ListTextFiles(ignorer)
+		files, err := mcp.ListTextFiles(ignorer)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -159,8 +93,6 @@ func init() {
 	rootCmd.AddCommand(toolsCmd)
 
 	// Add subcommands to tools command
-	toolsCmd.AddCommand(overviewCmd)
-	toolsCmd.AddCommand(relatedFilesCmd)
 	toolsCmd.AddCommand(listFilesCmd)
 	toolsCmd.AddCommand(tokenCountCmd)
 }

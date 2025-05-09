@@ -9,15 +9,15 @@ import (
 	"strings"
 )
 
-// MCPToolCallback implements the gai.ToolCallback interface for MCP tools
-type MCPToolCallback struct {
+// ToolCallback implements the gai.ToolCallback interface for MCP tools
+type ToolCallback struct {
 	ClientManager *ClientManager
 	ServerName    string
 	ToolName      string
 }
 
 // Call implements the gai.ToolCallback interface
-func (c *MCPToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage, toolCallID string) (gai.Message, error) {
+func (c *ToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage, toolCallID string) (gai.Message, error) {
 	// Parse parameters
 	var params map[string]interface{}
 	if err := json.Unmarshal(parametersJSON, &params); err != nil {
@@ -123,7 +123,7 @@ func RegisterMCPServerTools(ctx context.Context, clientManager *ClientManager, t
 			}
 
 			// Create a callback for this tool
-			callback := &MCPToolCallback{
+			callback := &ToolCallback{
 				ClientManager: clientManager,
 				ServerName:    serverName,
 				ToolName:      mcpTool.Name,
