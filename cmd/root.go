@@ -6,10 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"github.com/spachava753/cpe/internal/mcp"
+	"github.com/spachava753/cpe/internal/version"
 	"io"
 	"os"
 	"os/signal"
-	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -58,7 +58,7 @@ through natural language interactions.`,
 		// Check if version flag is set
 		versionFlag, _ := cmd.Flags().GetBool("version")
 		if versionFlag {
-			fmt.Printf("cpe version %s\n", getVersion())
+			fmt.Printf("cpe version %s\n", version.Get())
 			return nil
 		}
 
@@ -79,14 +79,6 @@ func Execute() {
 	if err != nil {
 		os.Exit(1)
 	}
-}
-
-// getVersion returns the version of the application from build info
-func getVersion() string {
-	if info, ok := debug.ReadBuildInfo(); ok {
-		return info.Main.Version
-	}
-	return "(unknown version)"
 }
 
 func init() {

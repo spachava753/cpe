@@ -1,11 +1,8 @@
 package mcp
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -14,9 +11,6 @@ import (
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/mark3labs/mcp-go/mcp"
 	ignore "github.com/sabhiram/go-gitignore"
-	"github.com/spachava753/cpe/internal/codemap"
-	"github.com/spachava753/cpe/internal/symbolresolver"
-	"github.com/spachava753/gai"
 )
 
 // FileInfo represents a file's path and content
@@ -80,51 +74,6 @@ type ToolResult struct {
 var outStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "22", Dark: "120"})            // adaptive green
 var errStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "52", Dark: "197"}).Bold(true) // adaptive red
 
-type bashToolInput struct {
-	Command string `json:"command"`
-}
-
-func (b bashToolInput) Validate() error {
-	if b.Command == "" {
-		return errors.New("command is required")
-	}
-	return nil
-}
-
-func executeBashTool(ctx context.Context, input bashToolInput) (string, error) {
-	cmd := exec.CommandContext(ctx, "bash", "-c", input.Command)
-	cmd.Env = os.Environ()
-
-	combined, err := cmd.CombinedOutput()
-	// Print the combined output EXACTLY as bash would (no color, no splitting)
-	if len(combined) > 0 {
-		os.Stdout.Write(combined)
-	}
-
-	// Print exit code at the end similar to shell style
-	exitCode := 0
-	if err != nil {
-		// Try to extract the exit code from the error
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			if status, ok := exitErr.Sys().(interface{ ExitStatus() int }); ok {
-				exitCode = status.ExitStatus()
-			} else {
-				exitCode = 1 // fallback if we can't extract
-			}
-		} else {
-			exitCode = 1 // fallback
-		}
-	}
-
-	if exitCode != 0 {
-		fmt.Println(errStyle.Render(fmt.Sprintf("exit code: %d", exitCode)))
-		return "", fmt.Errorf("command failed with exit code %d; output:\n%s", exitCode, string(combined))
-	}
-
-	fmt.Println(outStyle.Render("exit code: 0"))
-	return string(combined), nil
-}
-
 // FileEditorParams represents the parameters for the file editor tool
 type FileEditorParams struct {
 	Command  string `json:"command"`
@@ -132,100 +81,6 @@ type FileEditorParams struct {
 	FileText string `json:"file_text,omitempty"`
 	OldStr   string `json:"old_str,omitempty"`
 	NewStr   string `json:"new_str,omitempty"`
-}
-
-type FileOverviewInput struct {
-	Path string `json:"path"`
-}
-
-func (f FileOverviewInput) Validate() error {
-	if f.Path == "" {
-		return nil
-	}
-
-	// Check if the path exists
-	fileInfo, err := os.Stat(f.Path)
-	if err != nil {
-		return fmt.Errorf("error: the specified path '%s' does not exist or is not accessible", f.Path)
-	}
-
-	// Check if the path is a file instead of a directory
-	if !fileInfo.IsDir() {
-		return fmt.Errorf("error: the specified path '%s' is a file, not a directory. The path should be a relative file path to a folder. If you want to view a single file, you should use the view_file tool instead", f.Path)
-	}
-
-	return nil
-}
-
-func CreateExecuteFilesOverviewFunc(ignorer *ignore.GitIgnore) gai.ToolCallBackFunc[FileOverviewInput] {
-	return func(ctx context.Context, f FileOverviewInput) (string, error) {
-		if f.Path == "" {
-			f.Path = "."
-		}
-
-		// Continue with the directory processing
-		fsys := os.DirFS(f.Path)
-		files, err := codemap.GenerateOutput(fsys, 100, ignorer)
-		if err != nil {
-			return "", fmt.Errorf("error: failed to generate code map for '%s': %v", f.Path, err)
-		}
-
-		var sb strings.Builder
-		for _, file := range files {
-			sb.WriteString(fmt.Sprintf("File: %s\nContent:\n```%s```\n\n", file.Path, file.Content))
-		}
-
-		return sb.String(), nil
-	}
-}
-
-type GetRelatedFilesInput struct {
-	InputFiles []string `json:"input_files"`
-}
-
-func (g GetRelatedFilesInput) Validate() error {
-	if len(g.InputFiles) == 0 {
-		return errors.New("input_files is required and must not be empty")
-	}
-	return nil
-}
-
-func CreateExecuteGetRelatedFilesFunc(ignorer *ignore.GitIgnore) gai.ToolCallBackFunc[GetRelatedFilesInput] {
-	return func(ctx context.Context, input GetRelatedFilesInput) (string, error) {
-		// Check all input files exist before continuing.
-		var missing []string
-		for _, file := range input.InputFiles {
-			if _, err := os.Stat(file); err != nil {
-				missing = append(missing, file)
-			}
-		}
-		if len(missing) > 0 {
-			return "", fmt.Errorf("the following input files do not exist or are not accessible: %s", strings.Join(missing, ", "))
-		}
-
-		relatedFiles, err := symbolresolver.ResolveTypeAndFunctionFiles(input.InputFiles, os.DirFS("."), ignorer)
-		if err != nil {
-			return "", fmt.Errorf("failed to resolve related files: %v", err)
-		}
-
-		// Convert map to sorted slice for consistent output
-		var files []string
-		for file := range relatedFiles {
-			files = append(files, file)
-		}
-		sort.Strings(files)
-
-		var sb strings.Builder
-		for _, file := range files {
-			content, err := os.ReadFile(file)
-			if err != nil {
-				return "", fmt.Errorf("failed to read file %s: %v", file, err)
-			}
-			sb.WriteString(fmt.Sprintf("File: %s\nContent:\n```%s```\n\n", file, string(content)))
-		}
-
-		return sb.String(), nil
-	}
 }
 
 var bashTool = mcp.NewTool("bash",

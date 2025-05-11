@@ -52,7 +52,6 @@ export GEMINI_API_KEY="your_gemini_api_key"
 # Optional
 export CPE_MODEL="claude-3-5-sonnet"  # Default model to use if not specified with --model
 export CPE_CUSTOM_URL="https://your-custom-endpoint.com"  # For custom API endpoints
-export CPE_DISABLE_TOOL_USE="true"    # Disables tool use for custom models (with custom URLs)
 
 # To see all environment variables and their current values:
 cpe env
