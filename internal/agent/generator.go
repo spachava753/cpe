@@ -99,11 +99,38 @@ var KnownModels = slices.Concat(openAiModels, anthropicModels, geminiModels)
 //go:embed agent_instructions.txt
 var agentInstructions string
 
+// PrepareSystemPrompt prepares the system prompt from either a custom file or the default template
+func PrepareSystemPrompt(systemPromptPath string) (string, error) {
+	// Get system information for template execution
+	sysInfo, err := GetSystemInfo()
+	if err != nil {
+		return "", fmt.Errorf("failed to get system info: %w", err)
+	}
+
+	// Get agent instructions with system info
+	var systemPrompt string
+	if systemPromptPath != "" {
+		// User provided a custom template file
+		systemPrompt, err = sysInfo.ExecuteTemplate(systemPromptPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to execute custom system prompt template: %w", err)
+		}
+	} else {
+		// Use the default template
+		systemPrompt, err = sysInfo.ExecuteTemplateString(agentInstructions)
+		if err != nil {
+			return "", fmt.Errorf("failed to execute default system prompt template: %w", err)
+		}
+	}
+
+	return systemPrompt, nil
+}
+
 // InitGenerator creates the appropriate generator based on the model name
-func InitGenerator(model, baseURL, systemPromptPath string, timeout time.Duration) (gai.ToolCapableGenerator, error) {
+func InitGenerator(model, baseURL, systemPrompt string, timeout time.Duration) (gai.ToolCapableGenerator, error) {
 	// Handle OpenAI models
 	if slices.Contains(openAiModels, model) {
-		generator, err := createOpenAIGenerator(model, baseURL, systemPromptPath, timeout)
+		generator, err := createOpenAIGenerator(model, baseURL, systemPrompt, timeout)
 		if err != nil {
 			return nil, err
 		}
@@ -113,7 +140,7 @@ func InitGenerator(model, baseURL, systemPromptPath string, timeout time.Duratio
 
 	// Handle Anthropic models
 	if slices.Contains(anthropicModels, model) {
-		generator, err := createAnthropicGenerator(model, baseURL, systemPromptPath, timeout)
+		generator, err := createAnthropicGenerator(model, baseURL, systemPrompt, timeout)
 		if err != nil {
 			return nil, err
 		}
@@ -123,7 +150,7 @@ func InitGenerator(model, baseURL, systemPromptPath string, timeout time.Duratio
 
 	// Handle Gemini models
 	if slices.Contains(geminiModels, model) {
-		generator, err := createGeminiGenerator(model, baseURL, systemPromptPath, timeout)
+		generator, err := createGeminiGenerator(model, baseURL, systemPrompt, timeout)
 		if err != nil {
 			return nil, err
 		}
@@ -137,7 +164,7 @@ func InitGenerator(model, baseURL, systemPromptPath string, timeout time.Duratio
 	}
 
 	// custom model
-	generator, err := createOpenAIGenerator(model, baseURL, systemPromptPath, timeout)
+	generator, err := createOpenAIGenerator(model, baseURL, systemPrompt, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +173,7 @@ func InitGenerator(model, baseURL, systemPromptPath string, timeout time.Duratio
 }
 
 // createOpenAIGenerator creates and configures an OpenAI generator
-func createOpenAIGenerator(model, baseURL, systemPromptPath string, timeout time.Duration) (gai.Generator, error) {
+func createOpenAIGenerator(model, baseURL, systemPrompt string, timeout time.Duration) (gai.Generator, error) {
 	clientOpts := []oaiopt.RequestOption{
 		oaiopt.WithRequestTimeout(timeout),
 	}
@@ -161,28 +188,6 @@ func createOpenAIGenerator(model, baseURL, systemPromptPath string, timeout time
 		clientOpts...,
 	)
 
-	// Get system instructions
-	sysInfo, err := GetSystemInfo()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get system info: %w", err)
-	}
-
-	// Get agent instructions with system info
-	var systemPrompt string
-	if systemPromptPath != "" {
-		// User provided a custom template file
-		systemPrompt, err = sysInfo.ExecuteTemplate(systemPromptPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to execute custom system prompt template: %w", err)
-		}
-	} else {
-		// Use the default template
-		systemPrompt, err = sysInfo.ExecuteTemplateString(agentInstructions)
-		if err != nil {
-			return nil, fmt.Errorf("failed to execute default system prompt template: %w", err)
-		}
-	}
-
 	// Create the OpenAI generator
 	generator := gai.NewOpenAiGenerator(
 		&client.Chat.Completions,
@@ -193,8 +198,8 @@ func createOpenAIGenerator(model, baseURL, systemPromptPath string, timeout time
 	return &generator, nil
 }
 
-// createGeminiGenerator creates and configures a Gemini generator
-func createAnthropicGenerator(model, baseURL, systemPromptPath string, timeout time.Duration) (gai.Generator, error) {
+// createAnthropicGenerator creates and configures an Anthropic generator
+func createAnthropicGenerator(model, baseURL, systemPrompt string, timeout time.Duration) (gai.Generator, error) {
 	// Create Anthropic client
 	var client anthropic.Client
 	opts := []aopts.RequestOption{
@@ -209,28 +214,6 @@ func createAnthropicGenerator(model, baseURL, systemPromptPath string, timeout t
 
 	svc := gai.NewAnthropicServiceWrapper(&client.Messages, gai.EnableSystemCaching, gai.EnableMultiTurnCaching)
 
-	// Get system instructions
-	sysInfo, err := GetSystemInfo()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get system info: %w", err)
-	}
-
-	// Get agent instructions with system info
-	var systemPrompt string
-	if systemPromptPath != "" {
-		// User provided a custom template file
-		systemPrompt, err = sysInfo.ExecuteTemplate(systemPromptPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to execute custom system prompt template: %w", err)
-		}
-	} else {
-		// Use the default template
-		systemPrompt, err = sysInfo.ExecuteTemplateString(agentInstructions)
-		if err != nil {
-			return nil, fmt.Errorf("failed to execute default system prompt template: %w", err)
-		}
-	}
-
 	// Create and return the Anthropic generator
 	generator := gai.NewAnthropicGenerator(
 		svc,
@@ -242,7 +225,7 @@ func createAnthropicGenerator(model, baseURL, systemPromptPath string, timeout t
 }
 
 // createGeminiGenerator creates and configures a Gemini generator
-func createGeminiGenerator(model, baseURL, systemPromptPath string, timeout time.Duration) (gai.Generator, error) {
+func createGeminiGenerator(model, baseURL, systemPrompt string, timeout time.Duration) (gai.Generator, error) {
 	// Create Gemini client
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
@@ -263,28 +246,6 @@ func createGeminiGenerator(model, baseURL, systemPromptPath string, timeout time
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
-	}
-
-	// Get system instructions
-	sysInfo, err := GetSystemInfo()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get system info: %w", err)
-	}
-
-	// Get agent instructions with system info
-	var systemPrompt string
-	if systemPromptPath != "" {
-		// User provided a custom template file
-		systemPrompt, err = sysInfo.ExecuteTemplate(systemPromptPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to execute custom system prompt template: %w", err)
-		}
-	} else {
-		// Use the default template
-		systemPrompt, err = sysInfo.ExecuteTemplateString(agentInstructions)
-		if err != nil {
-			return nil, fmt.Errorf("failed to execute default system prompt template: %w", err)
-		}
 	}
 
 	// Create and return the Gemini generator

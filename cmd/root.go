@@ -23,6 +23,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// DefaultModel holds the global default LLM model for the CLI.
+// It is set at process startup from CPE_MODEL env var (or empty if unset).
+var DefaultModel = os.Getenv("CPE_MODEL")
+
 var (
 	model             string
 	customURL         string
@@ -40,10 +44,6 @@ var (
 	incognitoMode     bool
 	systemPromptPath  string
 	timeout           string
-
-	// DefaultModel holds the global default LLM model for the CLI.
-	// It is set at process startup from CPE_MODEL env var (or empty if unset).
-	DefaultModel = os.Getenv("CPE_MODEL")
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -83,7 +83,7 @@ func Execute() {
 
 func init() {
 	// Define flags for the root command
-	rootCmd.PersistentFlags().StringVarP(&model, "model", "m", "", "Specify the model to use")
+	rootCmd.PersistentFlags().StringVarP(&model, "model", "m", DefaultModel, "Specify the model to use")
 	rootCmd.PersistentFlags().StringVar(&customURL, "custom-url", "", "Specify a custom base URL for the model provider API")
 	rootCmd.PersistentFlags().IntVarP(&maxTokens, "max-tokens", "x", 0, "Maximum number of tokens to generate")
 	rootCmd.PersistentFlags().Float64VarP(&temperature, "temperature", "t", 0, "Sampling temperature (0.0 - 1.0)")
@@ -161,15 +161,19 @@ func executeRootCommand(ctx context.Context, args []string) error {
 
 	// Use DefaultModel from global scope (must be set by env or CLI flag only)
 	if model == "" {
-		if DefaultModel == "" {
-			return errors.New("No model specified. Please set the CPE_MODEL environment variable or use the --model flag.")
-		}
-		model = DefaultModel
+		return errors.New("no model specified. Please set the CPE_MODEL environment variable or use the --model flag")
 	}
 
 	customURL = getCustomURL(customURL)
+
+	// Prepare system prompt
+	systemPrompt, err := agent.PrepareSystemPrompt(systemPromptPath)
+	if err != nil {
+		return fmt.Errorf("failed to prepare system prompt: %w", err)
+	}
+
 	// Create the underlying generator based on the model name
-	baseGenerator, err := agent.InitGenerator(model, customURL, systemPromptPath, requestTimeout)
+	baseGenerator, err := agent.InitGenerator(model, customURL, systemPrompt, requestTimeout)
 	if err != nil {
 		return fmt.Errorf("failed to create base generator: %w", err)
 	}
