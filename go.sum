@@ -88,8 +88,8 @@ github.com/rogpeppe/go-internal v1.13.1/go.mod h1:uMEvuHeurkdAXX61udpOXGD/AzZDWN
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 h1:OkMGxebDjyw0ULyrTYWeN0UNCCkmCWfjPnIA2W6oviI=
 github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06/go.mod h1:+ePHsJ1keEjQtpvf9HHw0f4ZeJ0TLRsxhunSI2hYJSs=
-github.com/spachava753/gai v0.4.9 h1:BmByka6fRRLkOCkOIEQuhCjWGfmPPqU7Ka2nvG77ASE=
-github.com/spachava753/gai v0.4.9/go.mod h1:RgJvlFLR6ZgV3rJR7almkJfgkaoJTFdSTPgRr3GWAQ4=
+github.com/spachava753/gai v0.4.10 h1:yFLqLgYpIDpdqCH294HQHJMd1dl371ZBAYj7ONlruqw=
+github.com/spachava753/gai v0.4.10/go.mod h1:RgJvlFLR6ZgV3rJR7almkJfgkaoJTFdSTPgRr3GWAQ4=
 github.com/spf13/cast v1.7.1 h1:cuNEagBQEHWN1FnbGEjCXL2szYEXqfJPbP2HNUaca9Y=
 github.com/spf13/cast v1.7.1/go.mod h1:ancEpBxwJDODSW/UG4rDrAqiKolqNNh2DX3mk86cAdo=
 github.com/spf13/cobra v1.9.1 h1:CXSaggrXdbHK9CF+8ywj8Amf7PBRmPCOJugH954Nnlo=
