@@ -8,13 +8,13 @@ import (
 	aopts "github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/openai/openai-go"
 	oaiopt "github.com/openai/openai-go/option"
-	gitignore "github.com/sabhiram/go-gitignore"
-	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/spachava753/gai"
 	"google.golang.org/genai"
 	"os"
 	"slices"
 	"time"
+
+	"github.com/cenkalti/backoff/v5"
 )
 
 var geminiModels = []string{
@@ -207,7 +207,10 @@ func createAnthropicGenerator(model, baseURL, systemPrompt string, timeout time.
 		aopts.WithRequestTimeout(timeout),
 	}
 	if baseURL != "" {
-		opts = append(opts, aopts.WithBaseURL(baseURL))
+		opts = append(
+			opts,
+			aopts.WithBaseURL(baseURL), // If a custom baseURL is provided, we use that
+		)
 	}
 
 	client = anthropic.NewClient(opts...)
@@ -249,22 +252,22 @@ func createGeminiGenerator(model, baseURL, systemPrompt string, timeout time.Dur
 	}
 
 	// Create and return the Gemini generator
-	return gai.NewGeminiGenerator(client, model, systemPrompt)
+	g, err := gai.NewGeminiGenerator(client, model, systemPrompt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Gemini generator: %w", err)
+	}
+	b := backoff.NewExponentialBackOff()
+	b.InitialInterval = 500 * time.Millisecond
+	b.MaxInterval = 1 * time.Minute
+	b.Reset()
+	return gai.NewRetryGenerator(
+		g,
+		b,
+		backoff.WithMaxTries(3),
+		backoff.WithMaxElapsedTime(5*time.Minute),
+	), nil
 }
 
 type ToolRegisterer interface {
 	Register(tool gai.Tool, callback gai.ToolCallback) error
-}
-
-// createIgnorer creates an ignorer for file system operations
-func createIgnorer() (*gitignore.GitIgnore, error) {
-	// Use the existing ignore.LoadIgnoreFiles function to create an ignorer
-	ignorer, err := ignore.LoadIgnoreFiles(".")
-	if err != nil {
-		return nil, fmt.Errorf("failed to load ignore files: %w", err)
-	}
-	if ignorer == nil {
-		return nil, fmt.Errorf("git ignorer was nil")
-	}
-	return ignorer, nil
 }

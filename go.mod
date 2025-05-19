@@ -7,6 +7,7 @@ retract v0.16.10
 
 require (
 	github.com/anthropics/anthropic-sdk-go v0.2.0-beta.3
+	github.com/cenkalti/backoff/v5 v5.0.2
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/gabriel-vasile/mimetype v1.4.8
 	github.com/google/go-cmp v0.7.0
@@ -15,7 +16,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.27
 	github.com/openai/openai-go v0.1.0-beta.10
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
-	github.com/spachava753/gai v0.4.8
+	github.com/spachava753/gai v0.4.9
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
 	github.com/tree-sitter/go-tree-sitter v0.25.0
