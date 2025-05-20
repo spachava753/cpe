@@ -17,7 +17,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.27
 	github.com/openai/openai-go v0.1.0-beta.10
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
-	github.com/spachava753/gai v0.4.10
+	github.com/spachava753/gai v0.4.11
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
 	github.com/tree-sitter/go-tree-sitter v0.25.0
