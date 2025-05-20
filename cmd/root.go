@@ -366,7 +366,7 @@ func processUserInput(args []string) ([]gai.Block, error) {
 		}
 		if len(stdinBytes) > 0 {
 			userBlocks = append(userBlocks, gai.Block{
-				BlockType:    "text",
+				BlockType:    gai.Content,
 				ModalityType: gai.Text,
 				MimeType:     "text/plain",
 				Content:      gai.Str(stdinBytes),
@@ -408,7 +408,7 @@ func processUserInput(args []string) ([]gai.Block, error) {
 				BlockType:    gai.Content,
 				ModalityType: gai.Text,
 				MimeType:     "text/plain",
-				Content:      gai.Str(string(content)),
+				Content:      gai.Str(content),
 			}
 		case gai.Image, gai.Video, gai.Audio:
 			// For non-text files, encode as base64
