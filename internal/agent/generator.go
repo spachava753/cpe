@@ -33,15 +33,19 @@ var geminiModels = []string{
 }
 
 var anthropicModels = []string{
-	anthropic.ModelClaude3_7SonnetLatest,
-	anthropic.ModelClaude3_7Sonnet20250219,
-	anthropic.ModelClaude3_5HaikuLatest,
-	anthropic.ModelClaude3_5Haiku20241022,
-	anthropic.ModelClaude3_5SonnetLatest,
-	anthropic.ModelClaude3_5Sonnet20241022,
-	anthropic.ModelClaude_3_5_Sonnet_20240620,
-	anthropic.ModelClaude3OpusLatest,
-	anthropic.ModelClaude_3_Opus_20240229,
+	string(anthropic.ModelClaude3_7SonnetLatest),
+	string(anthropic.ModelClaude3_7Sonnet20250219),
+	string(anthropic.ModelClaude3_5HaikuLatest),
+	string(anthropic.ModelClaude3_5Haiku20241022),
+	string(anthropic.ModelClaude3_5SonnetLatest),
+	string(anthropic.ModelClaude3_5Sonnet20241022),
+	string(anthropic.ModelClaude_3_5_Sonnet_20240620),
+	string(anthropic.ModelClaude3OpusLatest),
+	string(anthropic.ModelClaude_3_Opus_20240229),
+	string(anthropic.ModelClaudeOpus4_0),
+	string(anthropic.ModelClaude4Opus20250514),
+	string(anthropic.ModelClaudeSonnet4_0),
+	string(anthropic.ModelClaude4Sonnet20250514),
 }
 
 var openAiModels = []string{
