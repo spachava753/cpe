@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"github.com/openai/openai-go"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -465,7 +466,7 @@ func TestConvertMCPToolToGAITool(t *testing.T) {
 				mcp.WithDescription("Create a review for a pull request."),
 				mcp.WithToolAnnotation(mcp.ToolAnnotation{
 					Title:        "Submit pull request review",
-					ReadOnlyHint: false,
+					ReadOnlyHint: openai.Ptr(false),
 				}),
 				mcp.WithString("owner",
 					mcp.Required(),

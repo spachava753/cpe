@@ -31,13 +31,7 @@ func TestCreateToolHandler(t *testing.T) {
 
 	// Prepare a test request
 	request := mcp.CallToolRequest{
-		Params: struct {
-			Name      string                 `json:"name"`
-			Arguments map[string]interface{} `json:"arguments,omitempty"`
-			Meta      *struct {
-				ProgressToken mcp.ProgressToken `json:"progressToken,omitempty"`
-			} `json:"_meta,omitempty"`
-		}{
+		Params: mcp.CallToolParams{
 			Arguments: map[string]interface{}{
 				"name":  "test",
 				"value": 65, // ASCII 'A'
@@ -91,13 +85,7 @@ func TestCreateToolHandlerValidation(t *testing.T) {
 
 	// Test with valid input
 	validRequest := mcp.CallToolRequest{
-		Params: struct {
-			Name      string                 `json:"name"`
-			Arguments map[string]interface{} `json:"arguments,omitempty"`
-			Meta      *struct {
-				ProgressToken mcp.ProgressToken `json:"progressToken,omitempty"`
-			} `json:"_meta,omitempty"`
-		}{
+		Params: mcp.CallToolParams{
 			Arguments: map[string]interface{}{
 				"name": "valid",
 			},
@@ -123,13 +111,7 @@ func TestCreateToolHandlerValidation(t *testing.T) {
 
 	// Test with invalid input that fails validation
 	invalidRequest := mcp.CallToolRequest{
-		Params: struct {
-			Name      string                 `json:"name"`
-			Arguments map[string]interface{} `json:"arguments,omitempty"`
-			Meta      *struct {
-				ProgressToken mcp.ProgressToken `json:"progressToken,omitempty"`
-			} `json:"_meta,omitempty"`
-		}{
+		Params: mcp.CallToolParams{
 			Arguments: map[string]interface{}{
 				"name": "invalid",
 			},

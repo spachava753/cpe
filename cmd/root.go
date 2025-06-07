@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -382,7 +383,12 @@ func processUserInput(args []string) ([]gai.Block, error) {
 		}
 
 		// Detect input type (text, image, etc.)
-		modality, err := agent.DetectInputType(inputPath)
+		filename := filepath.Base(inputPath)
+		bytes, err := os.ReadFile(inputPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read file %s: %w", inputPath, err)
+		}
+		modality, err := agent.DetectInputType(bytes)
 		if err != nil {
 			return nil, fmt.Errorf("failed to detect input type for %s: %w", inputPath, err)
 		}
@@ -410,14 +416,21 @@ func processUserInput(args []string) ([]gai.Block, error) {
 				MimeType:     "text/plain",
 				Content:      gai.Str(content),
 			}
-		case gai.Image, gai.Video, gai.Audio:
-			// For non-text files, encode as base64
+		case gai.Video:
 			contentStr := base64.StdEncoding.EncodeToString(content)
 			block = gai.Block{
 				BlockType:    gai.Content,
 				ModalityType: modality,
 				MimeType:     mime,
 				Content:      gai.Str(contentStr),
+			}
+		case gai.Audio:
+			block = gai.AudioBlock(content, mime)
+		case gai.Image:
+			if mime == "application/pdf" {
+				block = gai.PDFBlock(content, filename)
+			} else {
+				block = gai.ImageBlock(content, mime)
 			}
 		default:
 			return nil, fmt.Errorf("unsupported input type for %s", inputPath)
