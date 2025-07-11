@@ -52,20 +52,13 @@ func (c *ToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage,
 		}, nil
 	}
 
-	// Process the content
-	resultText := PrintContent(result.Content)
-	return gai.Message{
-		Role: gai.ToolResult,
-		Blocks: []gai.Block{
-			{
-				ID:           toolCallID,
-				BlockType:    gai.Content,
-				ModalityType: gai.Text,
-				MimeType:     "text/plain",
-				Content:      gai.Str(resultText),
-			},
-		},
-	}, nil
+	// Update the result message with the correct tool call ID
+	// Since CallTool now returns a gai.Message, we need to update the IDs
+	for i := range result.Blocks {
+		result.Blocks[i].ID = toolCallID
+	}
+
+	return result, nil
 }
 
 // RegisterMCPServerTools registers all tools from all MCP servers with the tool registerer
@@ -84,17 +77,9 @@ func RegisterMCPServerTools(ctx context.Context, clientManager *ClientManager, t
 	var warnings []string                      // To collect all warnings
 	registeredCount := 0                       // Count successful registrations
 
-	// For each server, initialize and register tools
+	// For each server, get tools and register
 	for _, serverName := range serverNames {
-		// Initialize the client
-		_, err := clientManager.InitializeClient(ctx, serverName)
-		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("failed to initialize MCP client for server %s: %v", serverName, err))
-			// Skip this server but continue with others
-			continue
-		}
-
-		// List tools
+		// List tools (client is already initialized in GetClient)
 		toolsResult, err := clientManager.ListTools(ctx, serverName)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("failed to list MCP tools for server %s: %v", serverName, err))
@@ -103,22 +88,12 @@ func RegisterMCPServerTools(ctx context.Context, clientManager *ClientManager, t
 		}
 
 		// Register each tool
-		for _, mcpTool := range toolsResult.Tools {
+		for _, gaiTool := range toolsResult {
 			// Check for duplicate tool names
-			if existingServer, exists := registeredTools[mcpTool.Name]; exists {
+			if existingServer, exists := registeredTools[gaiTool.Name]; exists {
 				warnings = append(warnings, fmt.Sprintf(
 					"skipping duplicate tool name '%s' in server '%s' (already registered from server '%s')",
-					mcpTool.Name, serverName, existingServer))
-				continue
-			}
-
-			// Convert MCP tool to GAI tool (preserving original name)
-			gaiTool, err := ConvertMCPToolToGAITool(mcpTool)
-			if err != nil {
-				warnings = append(warnings, fmt.Sprintf(
-					"failed to convert MCP tool '%s' from server '%s': %v",
-					mcpTool.Name, serverName, err))
-				// Skip this tool but continue with others
+					gaiTool.Name, serverName, existingServer))
 				continue
 			}
 
@@ -126,7 +101,7 @@ func RegisterMCPServerTools(ctx context.Context, clientManager *ClientManager, t
 			callback := &ToolCallback{
 				ClientManager: clientManager,
 				ServerName:    serverName,
-				ToolName:      mcpTool.Name,
+				ToolName:      gaiTool.Name,
 			}
 
 			// Register the tool with the callback
@@ -134,13 +109,13 @@ func RegisterMCPServerTools(ctx context.Context, clientManager *ClientManager, t
 			if err != nil {
 				warnings = append(warnings, fmt.Sprintf(
 					"failed to register MCP tool '%s' from server '%s': %v",
-					mcpTool.Name, serverName, err))
+					gaiTool.Name, serverName, err))
 				// Skip this tool but continue with others
 				continue
 			}
 
 			// Track this tool to detect duplicates
-			registeredTools[mcpTool.Name] = serverName
+			registeredTools[gaiTool.Name] = serverName
 			registeredCount++
 		}
 	}

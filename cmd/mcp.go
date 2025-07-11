@@ -9,6 +9,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/spachava753/cpe/internal/mcp"
+	"github.com/spachava753/gai"
 	"github.com/spf13/cobra"
 )
 
@@ -173,18 +174,23 @@ var mcpInfoCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 		defer cancel()
 
-		initResult, err := clientManager.InitializeClient(ctx, serverName)
+		// Get client to trigger initialization
+		client, err := clientManager.GetClient(ctx, serverName)
 		if err != nil {
 			return err
 		}
 
-		fmt.Printf("Server: %s %s\n", initResult.ServerInfo.Name, initResult.ServerInfo.Version)
-		fmt.Printf("Protocol Version: %s\n", initResult.ProtocolVersion)
+		// Get server info from the client
+		serverInfo := client.GetServerInfo()
+		fmt.Printf("Server: %s %s\n", serverInfo.Name, serverInfo.Version)
+
+		// Get server capabilities
+		serverCaps := client.GetServerCapabilities()
 
 		// Check capabilities
-		if initResult.Capabilities.Experimental != nil && len(initResult.Capabilities.Experimental) > 0 {
+		if serverCaps.Experimental != nil && len(serverCaps.Experimental) > 0 {
 			fmt.Println("\nExperimental Capabilities:")
-			for name, _ := range initResult.Capabilities.Experimental {
+			for name, _ := range serverCaps.Experimental {
 				fmt.Printf("- %s\n", name)
 			}
 		}
@@ -233,13 +239,7 @@ var mcpListToolsCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 		defer cancel()
 
-		// Initialize the client
-		_, err = clientManager.InitializeClient(ctx, serverName)
-		if err != nil {
-			return err
-		}
-
-		// List tools
+		// List tools (client is already initialized in GetClient)
 		tools, err := clientManager.ListTools(ctx, serverName)
 		if err != nil {
 			return err
@@ -249,11 +249,11 @@ var mcpListToolsCmd = &cobra.Command{
 		showJsonFormat, _ := cmd.Flags().GetBool("json")
 
 		fmt.Printf("Tools available on server '%s':\n", serverName)
-		for _, tool := range tools.Tools {
+		for _, tool := range tools {
 			fmt.Printf("- %s: %s\n", tool.Name, tool.Description)
 
 			// Print input schema
-			if tool.InputSchema.Type != "" {
+			if tool.InputSchema.Type != gai.Null {
 				fmt.Println("  Input Schema:")
 
 				if showJsonFormat {
@@ -266,7 +266,7 @@ var mcpListToolsCmd = &cobra.Command{
 					}
 				} else {
 					// Display human-readable format
-					fmt.Printf("    Type: %s\n", tool.InputSchema.Type)
+					fmt.Printf("    Type: %s\n", getPropertyTypeString(tool.InputSchema.Type))
 
 					if len(tool.InputSchema.Required) > 0 {
 						fmt.Printf("    Required: %s\n", strings.Join(tool.InputSchema.Required, ", "))
@@ -276,7 +276,7 @@ var mcpListToolsCmd = &cobra.Command{
 						fmt.Println("    Properties:")
 						for propName, propDetails := range tool.InputSchema.Properties {
 							// Print property details with nested schema info
-							printProperty(propName, propDetails, tool.InputSchema.Required, 6)
+							printGAIProperty(propName, propDetails, tool.InputSchema.Required, 6)
 						}
 					}
 				}
@@ -325,15 +325,6 @@ var mcpCallToolCmd = &cobra.Command{
 		clientManager := mcp.NewClientManager(config)
 		defer clientManager.Close()
 
-		ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
-		defer cancel()
-
-		// Initialize the client
-		_, err = clientManager.InitializeClient(ctx, mcpServerName)
-		if err != nil {
-			return err
-		}
-
 		// Parse tool args
 		toolArgs := make(map[string]interface{})
 		if mcpToolArgs != "" {
@@ -342,14 +333,19 @@ var mcpCallToolCmd = &cobra.Command{
 			}
 		}
 
-		// Call the tool
-		result, err := clientManager.CallTool(ctx, mcpServerName, mcpToolName, toolArgs)
+		// Call the tool (client is already initialized in GetClient)
+		result, err := clientManager.CallTool(cmd.Context(), mcpServerName, mcpToolName, toolArgs)
 		if err != nil {
 			return err
 		}
 
-		// Print the result
-		fmt.Print(mcp.PrintContent(result.Content))
+		// Print the result - the result is a gai.Message
+		// Extract text content from blocks
+		for _, block := range result.Blocks {
+			if block.ModalityType == gai.Text {
+				fmt.Print(block.Content)
+			}
+		}
 
 		return nil
 	},
@@ -594,5 +590,97 @@ func printProperty(name string, details interface{}, required []string, indent i
 				}
 			}
 		}
+	}
+}
+
+// printGAIProperty prints a gai.Property with proper indentation
+func printGAIProperty(name string, prop gai.Property, required []string, indent int) {
+	indentStr := strings.Repeat(" ", indent)
+
+	// Mark required parameters
+	requiredMarker := ""
+	for _, req := range required {
+		if req == name {
+			requiredMarker = " (required)"
+			break
+		}
+	}
+
+	// Get type string
+	typeStr := getPropertyTypeString(prop.Type)
+
+	// Handle anyOf case
+	if len(prop.AnyOf) > 0 {
+		types := []string{}
+		for _, anyProp := range prop.AnyOf {
+			types = append(types, getPropertyTypeString(anyProp.Type))
+		}
+		typeStr = fmt.Sprintf("anyOf[%s]", strings.Join(types, ", "))
+	}
+
+	// Print the property name, type, and description
+	fmt.Printf("%s%s: %s%s", indentStr, name, typeStr, requiredMarker)
+	if prop.Description != "" {
+		fmt.Printf(" - %s", prop.Description)
+	}
+	fmt.Println()
+
+	// Print enum values if present
+	if len(prop.Enum) > 0 {
+		fmt.Printf("%s  enum: [%s]\n", indentStr, strings.Join(prop.Enum, " "))
+	}
+
+	// Process additional schema information based on type
+	switch prop.Type {
+	case gai.Array:
+		// Process array items schema
+		if prop.Items != nil {
+			fmt.Printf("%s  items:\n", indentStr)
+			fmt.Printf("%s    type: %s\n", indentStr, getPropertyTypeString(prop.Items.Type))
+
+			// Process item enum values if present
+			if len(prop.Items.Enum) > 0 {
+				fmt.Printf("%s    enum: [%s]\n", indentStr, strings.Join(prop.Items.Enum, " "))
+			}
+
+			// Handle nested properties for object items
+			if prop.Items.Type == gai.Object && len(prop.Items.Properties) > 0 {
+				fmt.Printf("%s    properties:\n", indentStr)
+				for propName, propDetails := range prop.Items.Properties {
+					printGAIProperty(propName, propDetails, prop.Items.Required, indent+6)
+				}
+			}
+		}
+
+	case gai.Object:
+		// Process object properties
+		if len(prop.Properties) > 0 {
+			fmt.Printf("%s  properties:\n", indentStr)
+			for propName, propDetails := range prop.Properties {
+				printGAIProperty(propName, propDetails, prop.Required, indent+4)
+			}
+		}
+	}
+}
+
+// getPropertyTypeString converts a gai.PropertyType to a string
+func getPropertyTypeString(propType gai.PropertyType) string {
+	switch propType {
+	case gai.String:
+		return "string"
+	case gai.Number:
+		return "number"
+	case gai.Integer:
+		return "integer"
+	case gai.Boolean:
+		return "boolean"
+	case gai.Object:
+		return "object"
+	case gai.Array:
+		return "array"
+	case gai.Null:
+		return "null"
+	default:
+		return "unknown"
 	}
 }
