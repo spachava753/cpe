@@ -133,49 +133,43 @@ func PrepareSystemPrompt(systemPromptPath string) (string, error) {
 }
 
 // InitGenerator creates the appropriate generator based on the model name
-func InitGenerator(model, baseURL, systemPrompt string, timeout time.Duration) (gai.ToolCapableGenerator, error) {
+// without any printing wrappers
+func InitGenerator(model, baseURL, systemPrompt string, timeout time.Duration) (gai.Generator, error) {
+	var generator gai.Generator
+	var err error
+
 	// Handle OpenAI models
 	if slices.Contains(openAiModels, model) {
-		generator, err := createOpenAIGenerator(model, baseURL, systemPrompt, timeout)
+		generator, err = createOpenAIGenerator(model, baseURL, systemPrompt, timeout)
 		if err != nil {
 			return nil, err
 		}
-		// Convert to ToolCapableGenerator
-		return generator.(gai.ToolCapableGenerator), nil
-	}
-
-	// Handle Anthropic models
-	if slices.Contains(anthropicModels, model) {
-		generator, err := createAnthropicGenerator(model, baseURL, systemPrompt, timeout)
+	} else if slices.Contains(anthropicModels, model) {
+		// Handle Anthropic models
+		generator, err = createAnthropicGenerator(model, baseURL, systemPrompt, timeout)
 		if err != nil {
 			return nil, err
 		}
-		// Convert to ToolCapableGenerator
-		return generator.(gai.ToolCapableGenerator), nil
-	}
-
-	// Handle Gemini models
-	if slices.Contains(geminiModels, model) {
-		generator, err := createGeminiGenerator(model, baseURL, systemPrompt, timeout)
+	} else if slices.Contains(geminiModels, model) {
+		// Handle Gemini models
+		generator, err = createGeminiGenerator(model, baseURL, systemPrompt, timeout)
 		if err != nil {
 			return nil, err
 		}
-		// Convert to ToolCapableGenerator
-		return generator.(gai.ToolCapableGenerator), nil
+	} else {
+		// Custom openai-compatible models require a base url
+		if baseURL == "" {
+			return nil, fmt.Errorf("unknown model: %s, must specfiy a custom url", model)
+		}
+
+		// custom model
+		generator, err = createOpenAIGenerator(model, baseURL, systemPrompt, timeout)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// Custom openai-compatible models require a base url
-	if baseURL == "" {
-		return nil, fmt.Errorf("unknown model: %s, must specfiy a custom url", model)
-	}
-
-	// custom model
-	generator, err := createOpenAIGenerator(model, baseURL, systemPrompt, timeout)
-	if err != nil {
-		return nil, err
-	}
-	// Convert to ToolCapableGenerator
-	return generator.(gai.ToolCapableGenerator), nil
+	return generator, nil
 }
 
 // createOpenAIGenerator creates and configures an OpenAI generator

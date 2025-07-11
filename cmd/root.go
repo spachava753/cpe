@@ -173,18 +173,28 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed to prepare system prompt: %w", err)
 	}
 
-	// Create the underlying generator based on the model name
+	// Create the generator
 	baseGenerator, err := agent.InitGenerator(model, customURL, systemPrompt, requestTimeout)
 	if err != nil {
-		return fmt.Errorf("failed to create base generator: %w", err)
+		return fmt.Errorf("failed to create generator: %w", err)
 	}
 
-	// Wrap the base generator with ResponsePrinterGenerator to print responses
-	printingGenerator := agent.NewResponsePrinterGenerator(baseGenerator)
+	// Check if the generator supports streaming
+	var gen gai.ToolCapableGenerator
+	if streamingGen, ok := baseGenerator.(gai.StreamingGenerator); ok {
+		// Wrap with streaming printer
+		streamingPrinter := agent.NewStreamingPrinterGenerator(streamingGen)
+		// Use StreamingAdapter to convert back to Generator
+		adapter := &gai.StreamingAdapter{S: streamingPrinter}
+		gen = any(adapter).(gai.ToolCapableGenerator)
+	} else {
+		// Use ResponsePrinterGenerator for non-streaming generators
+		gen = agent.NewResponsePrinterGenerator(baseGenerator.(gai.ToolCapableGenerator))
+	}
 
-	// Create the tool generator using the wrapped generator
+	// Create the tool generator using the printing-enabled generator
 	toolGen := &gai.ToolGenerator{
-		G: printingGenerator,
+		G: gen,
 	}
 
 	// Wrap the tool generator with ThinkingFilterToolGenerator to filter thinking blocks
@@ -267,7 +277,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		return opts
 	}
 
-	// The ResponsePrinterGenerator will print the responses as they come
+	// Generate the response
 	resultDialog, err := filterToolGen.Generate(ctx, dialog, genOptionsFunc)
 	interrupted := errors.Is(err, context.Canceled)
 	if err != nil && !interrupted {
