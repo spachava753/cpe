@@ -8,47 +8,11 @@ import (
 
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/ignore"
-	"github.com/spachava753/cpe/internal/mcp"
 	tokenbuilder "github.com/spachava753/cpe/internal/token/builder"
 	tokentree "github.com/spachava753/cpe/internal/token/tree"
 	"github.com/spachava753/gai"
 	"github.com/spf13/cobra"
 )
-
-// toolsCmd represents the tools command
-var toolsCmd = &cobra.Command{
-	Use:   "tools",
-	Short: "Access various utility tools",
-	Long:  `Access various utility tools for file overview, related files, and token counting.`,
-}
-
-// listFilesCmd represents the list-files subcommand
-var listFilesCmd = &cobra.Command{
-	Use:   "list-files",
-	Short: "List all text files",
-	Long:  `List all text files in the current directory recursively.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		// Initialize ignorer
-		ignorer, err := ignore.LoadIgnoreFiles(".")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: failed to load ignore files: %v\n", err)
-			os.Exit(1)
-		}
-		if ignorer == nil {
-			fmt.Fprintf(os.Stderr, "Error: git ignorer was nil\n")
-			os.Exit(1)
-		}
-
-		files, err := mcp.ListTextFiles(ignorer)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		for _, file := range files {
-			fmt.Printf("File: %s\nContent:\n%s\n\n", file.Path, file.Content)
-		}
-	},
-}
 
 // tokenCountCmd represents the token-count subcommand
 var tokenCountCmd = &cobra.Command{
@@ -165,11 +129,7 @@ If no path is provided, the current directory is used.\nIf path is "-", content 
 }
 
 func init() {
-	rootCmd.AddCommand(toolsCmd)
-
-	// Add subcommands to tools command
-	toolsCmd.AddCommand(listFilesCmd)
-	toolsCmd.AddCommand(tokenCountCmd)
+	rootCmd.AddCommand(tokenCountCmd)
 
 	// Add flags to token count command
 	tokenCountCmd.Flags().IntVar(&tokentree.MaxConcurrentFiles, "concurrency", tokentree.DefaultMaxConcurrentFiles, "Maximum number of files to process concurrently")

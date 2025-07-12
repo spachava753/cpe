@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/tidwall/pretty"
 	"iter"
 	"strings"
 
@@ -76,7 +77,7 @@ func (g *StreamingPrinterGenerator) Stream(ctx context.Context, dialog gai.Dialo
 					inToolCall = true
 					toolCallBuffer.Reset()
 					currentToolName = chunk.Block.Content.String()
-					fmt.Printf("\n[Tool Call: %s", currentToolName)
+					fmt.Printf("\n[Tool Call: %s]\n", currentToolName)
 				} else {
 					// Tool call parameter chunk
 					toolCallBuffer.WriteString(chunk.Block.Content.String())
@@ -91,53 +92,11 @@ func (g *StreamingPrinterGenerator) Stream(ctx context.Context, dialog gai.Dialo
 			if params != "" {
 				var jsonParams map[string]any
 				if err := json.Unmarshal([]byte(params), &jsonParams); err == nil {
-					fmt.Printf(" with %s]\n", formatToolParams(currentToolName, jsonParams))
+					fmt.Printf("%s\n", string(pretty.Color([]byte(params), nil)))
 				} else {
-					fmt.Printf(" with %s]\n", params)
+					fmt.Printf("%s\n", params)
 				}
-			} else {
-				fmt.Println("]")
 			}
 		}
 	}
-}
-
-// formatToolParams provides a concise summary of tool parameters
-func formatToolParams(toolName string, params map[string]any) string {
-	switch toolName {
-	case "create_file", "delete_file", "view_file":
-		if path, ok := params["path"].(string); ok {
-			return fmt.Sprintf("path=%q", path)
-		}
-	case "edit_file":
-		if path, ok := params["path"].(string); ok {
-			return fmt.Sprintf("path=%q", path)
-		}
-	case "move_file", "move_folder":
-		source, _ := params["source_path"].(string)
-		target, _ := params["target_path"].(string)
-		return fmt.Sprintf("from=%q to=%q", source, target)
-	case "bash":
-		if cmd, ok := params["command"].(string); ok {
-			return fmt.Sprintf("command=%q", cmd)
-		}
-	case "files_overview":
-		if path, ok := params["path"].(string); ok && path != "" {
-			return fmt.Sprintf("path=%q", path)
-		}
-		return "path=."
-	case "get_related_files":
-		if files, ok := params["input_files"].([]any); ok {
-			fileList := make([]string, 0, len(files))
-			for _, f := range files {
-				if str, ok := f.(string); ok {
-					fileList = append(fileList, str)
-				}
-			}
-			return fmt.Sprintf("files=%v", fileList)
-		}
-	}
-
-	// Default: show parameter count
-	return fmt.Sprintf("%d params", len(params))
 }

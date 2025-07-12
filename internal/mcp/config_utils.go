@@ -44,49 +44,9 @@ func CreateExampleConfig() error {
   }
 }`, execPath)
 
-	// YAML example
-	yamlExampleConfig := fmt.Sprintf(`# MCP Configuration in YAML format
-mcpServers:
-  # Native CPE tools available as an MCP server
-  cpe_native_tools:
-    command: %s
-    args:
-      - mcp
-      - serve
-    type: stdio
-    timeout: 60
-  
-  # Example of an external MCP server (commented out)
-  # filesystem:
-  #   command: npx
-  #   args:
-  #     - -y
-  #     - "@modelcontextprotocol/server-filesystem"
-  #     - /tmp
-  #   timeout: 30
-  #   env:
-  #     NODE_ENV: production
-  
-  # Example of an SSE MCP server (commented out)
-  # remote-api:
-  #   type: sse
-  #   url: https://example.com/mcp
-  #   timeout: 120
-`, execPath)
-
 	// Create JSON example
 	if err := os.WriteFile(".cpemcp.json", []byte(jsonExampleConfig), 0644); err != nil {
 		return fmt.Errorf("failed to create JSON example: %w", err)
-	}
-
-	// Create YAML example (.yaml extension)
-	if err := os.WriteFile(".cpemcp.yaml", []byte(yamlExampleConfig), 0644); err != nil {
-		return fmt.Errorf("failed to create YAML example (.yaml): %w", err)
-	}
-
-	// Create YAML example (.yml extension) - same content as .yaml
-	if err := os.WriteFile(".cpemcp.yml", []byte(yamlExampleConfig), 0644); err != nil {
-		return fmt.Errorf("failed to create YAML example (.yml): %w", err)
 	}
 
 	return nil

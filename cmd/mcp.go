@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/gai"
 	"github.com/spf13/cobra"
@@ -18,26 +17,6 @@ var (
 	mcpToolName   string
 	mcpToolArgs   string
 )
-
-// mcpServeCmd represents the 'mcp serve' subcommand
-var mcpServeCmd = &cobra.Command{
-	Use:   "serve",
-	Short: "Serve CPE native tools as an MCP server",
-	Long:  `Expose CPE's native tools through the Model Context Protocol over stdio.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		// Create the ignorer for file operations
-		ignorer, err := ignore.LoadIgnoreFiles(".")
-		if err != nil {
-			return fmt.Errorf("failed to load ignore files: %w", err)
-		}
-
-		// Create the MCP server
-		mcpServer := mcp.NewStdioMCPServer(ignorer)
-
-		// Serve over stdio
-		return mcp.ServeStdio(mcpServer)
-	},
-}
 
 // mcpInitCmd represents the 'mcp init' subcommand
 var mcpInitCmd = &cobra.Command{
@@ -53,16 +32,15 @@ var mcpInitCmd = &cobra.Command{
 			return fmt.Errorf("failed to create example configs: %w", err)
 		}
 
-		fmt.Println("Created example MCP configuration files:")
-		fmt.Println("- .cpemcp.json (JSON format)")
-		fmt.Println("- .cpemcp.yaml (YAML format)")
-		fmt.Println("- .cpemcp.yml (YAML format - alternative extension)")
-		fmt.Println("\nYou can use any of these formats. Edit only one file to configure your MCP servers.")
-		fmt.Println("CPE will automatically use the first one it finds in the following order:")
-		fmt.Println("1. .cpemcp.json")
-		fmt.Println("2. .cpemcp.yaml")
-		fmt.Println("3. .cpemcp.yml")
-		fmt.Println("\nNote: Configuration files are only searched for in the current directory.")
+		fmt.Println(`Created example MCP configuration files:
+- .cpemcp.json (JSON format)
+
+You can also use a YAML file. Edit only one file to configure your MCP servers.
+CPE will automatically use the first one it finds in the following order:
+1. .cpemcp.json
+2. .cpemcp.yaml
+3. .cpemcp.yml
+Note: Configuration files are only searched for in the current directory.`)
 
 		return nil
 	},
@@ -360,7 +338,6 @@ func init() {
 	mcpCmd.AddCommand(mcpInfoCmd)
 	mcpCmd.AddCommand(mcpListToolsCmd)
 	mcpCmd.AddCommand(mcpCallToolCmd)
-	mcpCmd.AddCommand(mcpServeCmd) // Add the new serve command
 
 	// Add flags to mcp list-tools command
 	mcpListToolsCmd.Flags().Bool("json", false, "Show schema in raw JSON format")
@@ -396,200 +373,6 @@ func printConstraint(indentStr, key string, value interface{}) {
 		}
 	} else {
 		fmt.Printf("%s  %s: %v\n", indentStr, key, value)
-	}
-}
-
-// printProperty prints a property and its nested schema recursively with proper indentation
-// It handles complex nested structures of any depth in JSON Schema
-func printProperty(name string, details interface{}, required []string, indent int) {
-	indentStr := strings.Repeat(" ", indent)
-
-	// Handle primitive values (shouldn't happen for well-formed schemas but just in case)
-	propMap, ok := details.(map[string]interface{})
-	if !ok {
-		fmt.Printf("%s%s: %v\n", indentStr, name, details)
-		return
-	}
-
-	// Extract property type and description
-	propType := "object" // Default type if not specified
-	propDesc := ""
-	enumValues := []string{}
-
-	if t, ok := propMap["type"].(string); ok {
-		propType = t
-	}
-
-	if d, ok := propMap["description"].(string); ok {
-		propDesc = d
-	}
-
-	// Extract enum values if present
-	if enum, ok := propMap["enum"].([]interface{}); ok && len(enum) > 0 {
-		for _, v := range enum {
-			if s, ok := v.(string); ok {
-				enumValues = append(enumValues, s)
-			} else {
-				enumValues = append(enumValues, fmt.Sprintf("%v", v))
-			}
-		}
-	}
-
-	// Mark required parameters
-	requiredMarker := ""
-	for _, req := range required {
-		if req == name {
-			requiredMarker = " (required)"
-			break
-		}
-	}
-
-	// Print the property name, type, and description
-	fmt.Printf("%s%s: %s%s", indentStr, name, propType, requiredMarker)
-	if propDesc != "" {
-		fmt.Printf(" - %s", propDesc)
-	}
-	fmt.Println()
-
-	// Print enum values if present
-	if len(enumValues) > 0 {
-		fmt.Printf("%s  enum: [%s]\n", indentStr, strings.Join(enumValues, " "))
-	}
-
-	// Process additional schema information based on type
-	switch propType {
-	case "array":
-		// Process array items schema
-		if items, ok := propMap["items"].(map[string]interface{}); ok {
-			fmt.Printf("%s  items:\n", indentStr)
-
-			// Get item type
-			itemType := "object" // Default if not specified
-			if t, ok := items["type"].(string); ok {
-				itemType = t
-			}
-
-			fmt.Printf("%s    type: %s\n", indentStr, itemType)
-
-			// Process item enum values if present
-			if enum, ok := items["enum"].([]interface{}); ok && len(enum) > 0 {
-				itemEnumValues := []string{}
-				for _, v := range enum {
-					if s, ok := v.(string); ok {
-						itemEnumValues = append(itemEnumValues, s)
-					} else {
-						itemEnumValues = append(itemEnumValues, fmt.Sprintf("%v", v))
-					}
-				}
-				if len(itemEnumValues) > 0 {
-					fmt.Printf("%s    enum: [%s]\n", indentStr, strings.Join(itemEnumValues, " "))
-				}
-			}
-
-			// Handle nested properties based on item type
-			if itemType == "object" {
-				if props, ok := items["properties"].(map[string]interface{}); ok && len(props) > 0 {
-					fmt.Printf("%s    properties:\n", indentStr)
-
-					// Extract required fields list
-					var itemRequired []string
-					if req, ok := items["required"].([]interface{}); ok {
-						for _, v := range req {
-							if s, ok := v.(string); ok {
-								itemRequired = append(itemRequired, s)
-							}
-						}
-					}
-
-					// Process each property
-					for propName, propDetails := range props {
-						printProperty(propName, propDetails, itemRequired, indent+6)
-					}
-				} else {
-					// This is an "object" type without defined properties
-					// Check if it has a reference or additional constraints
-					for k, v := range items {
-						if k != "type" && k != "description" && k != "enum" {
-							printConstraint(indentStr+"    ", k, v)
-						}
-					}
-				}
-			} else {
-				// For non-object types, print any constraints or additional properties
-				for k, v := range items {
-					if k != "type" && k != "description" && k != "enum" {
-						printConstraint(indentStr+"    ", k, v)
-					}
-				}
-			}
-		}
-
-	case "object":
-		// Process object properties
-		if props, ok := propMap["properties"].(map[string]interface{}); ok && len(props) > 0 {
-			fmt.Printf("%s  properties:\n", indentStr)
-
-			// Extract required fields list
-			var objRequired []string
-			if req, ok := propMap["required"].([]interface{}); ok {
-				for _, v := range req {
-					if s, ok := v.(string); ok {
-						objRequired = append(objRequired, s)
-					}
-				}
-			}
-
-			// Process each property
-			for propName, propDetails := range props {
-				printProperty(propName, propDetails, objRequired, indent+4)
-			}
-		} else {
-			// This is an "object" type without defined properties
-			// It might be a reference, a primitive in disguise, or might have additional constraints
-			for k, v := range propMap {
-				if k != "type" && k != "description" && k != "enum" {
-					printConstraint(indentStr, k, v)
-				}
-			}
-		}
-
-	default:
-		// For primitive types, print constraints and additional properties
-		for k, v := range propMap {
-			if k != "type" && k != "description" && k != "enum" {
-				printConstraint(indentStr, k, v)
-			}
-		}
-	}
-
-	// Handle additionalProperties for objects
-	if addProps, ok := propMap["additionalProperties"].(map[string]interface{}); ok {
-		fmt.Printf("%s  additionalProperties:\n", indentStr)
-		addPropsType := "object"
-		if t, ok := addProps["type"].(string); ok {
-			addPropsType = t
-		}
-		fmt.Printf("%s    type: %s\n", indentStr, addPropsType)
-
-		// Recursively process additionalProperties if it's an object with properties
-		if addPropsType == "object" {
-			if nestedProps, ok := addProps["properties"].(map[string]interface{}); ok {
-				fmt.Printf("%s    properties:\n", indentStr)
-
-				var addPropsRequired []string
-				if req, ok := addProps["required"].([]interface{}); ok {
-					for _, v := range req {
-						if s, ok := v.(string); ok {
-							addPropsRequired = append(addPropsRequired, s)
-						}
-					}
-				}
-
-				for propName, propDetails := range nestedProps {
-					printProperty(propName, propDetails, addPropsRequired, indent+6)
-				}
-			}
-		}
 	}
 }
 

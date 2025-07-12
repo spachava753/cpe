@@ -42,8 +42,6 @@ var anthropicModels = []string{
 	string(anthropic.ModelClaude3_5SonnetLatest),
 	string(anthropic.ModelClaude3_5Sonnet20241022),
 	string(anthropic.ModelClaude_3_5_Sonnet_20240620),
-	string(anthropic.ModelClaude3OpusLatest),
-	string(anthropic.ModelClaude_3_Opus_20240229),
 	string(anthropic.ModelClaudeOpus4_0),
 	string(anthropic.ModelClaude4Opus20250514),
 	string(anthropic.ModelClaudeSonnet4_0),
