@@ -220,8 +220,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 
 	// Register MCP server tools
 	if err = mcp.RegisterMCPServerTools(ctx, clientManager, filterToolGen); err != nil {
-		// Continue execution even if MCP tools fail to register
-		fmt.Fprintf(os.Stderr, "Warning: failed to register MCP tools: %v\n", err)
+		return fmt.Errorf("failed to register MCP tools: %v\n", err)
 	}
 
 	userMessage := gai.Message{
