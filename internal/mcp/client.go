@@ -9,6 +9,65 @@ import (
 	"strings"
 )
 
+// filterTools applies tool filtering based on the server configuration
+// Returns the filtered tools and a list of filtered-out tool names for logging
+func filterTools(tools []gai.Tool, config MCPServerConfig, serverName string) ([]gai.Tool, []string) {
+	// Normalize tool filter value
+	toolFilter := config.ToolFilter
+	if toolFilter == "" {
+		toolFilter = "all" // Default value
+	}
+
+	// If "all" mode, return all tools without filtering
+	if toolFilter == "all" {
+		return tools, nil
+	}
+
+	var filteredTools []gai.Tool
+	var filteredOut []string
+
+	switch toolFilter {
+	case "whitelist":
+		// Create a set of enabled tools for fast lookup
+		enabledSet := make(map[string]bool)
+		for _, toolName := range config.EnabledTools {
+			enabledSet[toolName] = true
+		}
+
+		// Filter tools: only include those in the enabled set
+		for _, tool := range tools {
+			if enabledSet[tool.Name] {
+				filteredTools = append(filteredTools, tool)
+			} else {
+				filteredOut = append(filteredOut, tool.Name)
+			}
+		}
+
+	case "blacklist":
+		// Create a set of disabled tools for fast lookup
+		disabledSet := make(map[string]bool)
+		for _, toolName := range config.DisabledTools {
+			disabledSet[toolName] = true
+		}
+
+		// Filter tools: exclude those in the disabled set
+		for _, tool := range tools {
+			if !disabledSet[tool.Name] {
+				filteredTools = append(filteredTools, tool)
+			} else {
+				filteredOut = append(filteredOut, tool.Name)
+			}
+		}
+	}
+
+	return filteredTools, filteredOut
+}
+
+// FilterToolsPublic exposes the filterTools function for use in CLI commands
+func FilterToolsPublic(tools []gai.Tool, config MCPServerConfig, serverName string) ([]gai.Tool, []string) {
+	return filterTools(tools, config, serverName)
+}
+
 // ToolCallback implements the gai.ToolCallback interface for MCP tools
 type ToolCallback struct {
 	ClientManager *ClientManager
@@ -76,9 +135,13 @@ func RegisterMCPServerTools(ctx context.Context, clientManager *ClientManager, t
 	registeredTools := make(map[string]string) // Map to track tool names for duplicate detection
 	var warnings []string                      // To collect all warnings
 	registeredCount := 0                       // Count successful registrations
+	totalFilteredOut := 0                      // Count filtered-out tools
 
 	// For each server, get tools and register
 	for _, serverName := range serverNames {
+		// Get server config for filtering
+		serverConfig := clientManager.config.MCPServers[serverName]
+
 		// List tools (client is already initialized in GetClient)
 		toolsResult, err := clientManager.ListTools(ctx, serverName)
 		if err != nil {
@@ -87,8 +150,22 @@ func RegisterMCPServerTools(ctx context.Context, clientManager *ClientManager, t
 			continue
 		}
 
-		// Register each tool
-		for _, gaiTool := range toolsResult {
+		// Apply tool filtering
+		filteredTools, filteredOut := filterTools(toolsResult, serverConfig, serverName)
+		totalFilteredOut += len(filteredOut)
+
+		// Log filtering information if tools were filtered
+		if len(filteredOut) > 0 {
+			toolFilter := serverConfig.ToolFilter
+			if toolFilter == "" {
+				toolFilter = "all"
+			}
+			fmt.Fprintf(os.Stderr, "MCP server '%s' (filter: %s): filtered out %d tools: %s\n",
+				serverName, toolFilter, len(filteredOut), strings.Join(filteredOut, ", "))
+		}
+
+		// Register each filtered tool
+		for _, gaiTool := range filteredTools {
 			// Check for duplicate tool names
 			if existingServer, exists := registeredTools[gaiTool.Name]; exists {
 				warnings = append(warnings, fmt.Sprintf(
@@ -120,13 +197,24 @@ func RegisterMCPServerTools(ctx context.Context, clientManager *ClientManager, t
 		}
 	}
 
+	// Enhanced logging with filtering information
+	if registeredCount > 0 || totalFilteredOut > 0 {
+		fmt.Fprintf(os.Stderr, "MCP tools summary: registered %d tools", registeredCount)
+		if totalFilteredOut > 0 {
+			fmt.Fprintf(os.Stderr, ", filtered out %d tools", totalFilteredOut)
+		}
+		if len(warnings) > 0 {
+			fmt.Fprintf(os.Stderr, ", %d warnings", len(warnings))
+		}
+		fmt.Fprintf(os.Stderr, "\n")
+	}
+
 	// If we have warnings but also registered at least one tool, print warnings only
 	if len(warnings) > 0 {
 		if registeredCount > 0 {
 			// Print warnings to stderr for visibility
-			fmt.Fprintf(os.Stderr, "Registered %d MCP tools with %d warnings:\n", registeredCount, len(warnings))
 			for _, warning := range warnings {
-				fmt.Fprintf(os.Stderr, "  - %s\n", warning)
+				fmt.Fprintf(os.Stderr, "  WARNING: %s\n", warning)
 			}
 			return nil
 		}

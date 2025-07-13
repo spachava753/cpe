@@ -186,7 +186,13 @@ var mcpListToolsCmd = &cobra.Command{
   cpe mcp list-tools my-server
   
   # List tools with JSON schema format
-  cpe mcp list-tools my-server --json`,
+  cpe mcp list-tools my-server --json
+  
+  # Show all tools including filtered ones
+  cpe mcp list-tools my-server --show-all
+  
+  # Show only filtered-out tools
+  cpe mcp list-tools my-server --show-filtered`,
 	Aliases: []string{"ls-tools"},
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -207,7 +213,8 @@ var mcpListToolsCmd = &cobra.Command{
 			return fmt.Errorf("no MCP servers configured. Use 'cpe mcp init' to create an example configuration")
 		}
 
-		if _, exists := config.MCPServers[serverName]; !exists {
+		serverConfig, exists := config.MCPServers[serverName]
+		if !exists {
 			return fmt.Errorf("server '%s' not found in configuration", serverName)
 		}
 
@@ -218,17 +225,76 @@ var mcpListToolsCmd = &cobra.Command{
 		defer cancel()
 
 		// List tools (client is already initialized in GetClient)
-		tools, err := clientManager.ListTools(ctx, serverName)
+		allTools, err := clientManager.ListTools(ctx, serverName)
 		if err != nil {
 			return err
 		}
 
-		// Get the JSON flag
+		// Get flags
 		showJsonFormat, _ := cmd.Flags().GetBool("json")
+		showAll, _ := cmd.Flags().GetBool("show-all")
+		showFiltered, _ := cmd.Flags().GetBool("show-filtered")
 
-		fmt.Printf("Tools available on server '%s':\n", serverName)
-		for _, tool := range tools {
-			fmt.Printf("- %s: %s\n", tool.Name, tool.Description)
+		// Apply filtering to understand what would be filtered
+		filteredTools, filteredOut := mcp.FilterToolsPublic(allTools, serverConfig, serverName)
+
+		// Determine which tools to show based on flags
+		var toolsToShow []gai.Tool
+		var title string
+
+		if showAll {
+			toolsToShow = allTools
+			title = fmt.Sprintf("All tools on server '%s' (including filtered)", serverName)
+		} else if showFiltered {
+			// Create tool objects for filtered-out tools
+			for _, toolName := range filteredOut {
+				for _, tool := range allTools {
+					if tool.Name == toolName {
+						toolsToShow = append(toolsToShow, tool)
+						break
+					}
+				}
+			}
+			title = fmt.Sprintf("Filtered-out tools on server '%s'", serverName)
+		} else {
+			toolsToShow = filteredTools
+			title = fmt.Sprintf("Available tools on server '%s'", serverName)
+		}
+
+		// Show filtering information
+		toolFilter := serverConfig.ToolFilter
+		if toolFilter == "" {
+			toolFilter = "all"
+		}
+
+		fmt.Printf("%s:\n", title)
+		fmt.Printf("Filter mode: %s\n", toolFilter)
+		if toolFilter == "whitelist" && len(serverConfig.EnabledTools) > 0 {
+			fmt.Printf("Enabled tools: %s\n", strings.Join(serverConfig.EnabledTools, ", "))
+		}
+		if toolFilter == "blacklist" && len(serverConfig.DisabledTools) > 0 {
+			fmt.Printf("Disabled tools: %s\n", strings.Join(serverConfig.DisabledTools, ", "))
+		}
+		fmt.Printf("Total tools: %d, Available: %d, Filtered out: %d\n\n", len(allTools), len(filteredTools), len(filteredOut))
+
+		if len(toolsToShow) == 0 {
+			fmt.Println("No tools to display.")
+			return nil
+		}
+
+		for _, tool := range toolsToShow {
+			// Mark filtered tools with a prefix
+			prefix := ""
+			if showAll {
+				for _, filteredName := range filteredOut {
+					if tool.Name == filteredName {
+						prefix = "[FILTERED] "
+						break
+					}
+				}
+			}
+
+			fmt.Printf("- %s%s: %s\n", prefix, tool.Name, tool.Description)
 
 			// Print input schema
 			if tool.InputSchema.Type != gai.Null {
@@ -341,6 +407,8 @@ func init() {
 
 	// Add flags to mcp list-tools command
 	mcpListToolsCmd.Flags().Bool("json", false, "Show schema in raw JSON format")
+	mcpListToolsCmd.Flags().Bool("show-all", false, "Show all tools including filtered ones")
+	mcpListToolsCmd.Flags().Bool("show-filtered", false, "Show only filtered-out tools")
 
 	// Add flags to call-tool command
 	mcpCallToolCmd.Flags().StringVar(&mcpServerName, "server", "", "MCP server name")

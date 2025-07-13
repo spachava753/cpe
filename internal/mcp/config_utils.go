@@ -25,24 +25,42 @@ func ConfigExists() bool {
 // CreateExampleConfig creates example MCP configuration files in the current directory
 // Creates both JSON and YAML examples (both .yaml and .yml extensions)
 func CreateExampleConfig() error {
-	// Get the current executable path instead of hardcoding "cpe"
-	execPath, err := os.Executable()
-	if err != nil {
-		// Fallback to "cpe" if we can't determine the executable path
-		execPath = "cpe"
-	}
-
-	// JSON example
-	jsonExampleConfig := fmt.Sprintf(`{
+	// JSON example with tool filtering examples
+	jsonExampleConfig := `{
   "mcpServers": {
-    "cpe_native_tools": {
-      "command": "%s",
-      "args": ["mcp", "serve"],
+    "filesystem": {
+      "command": "pnpm",
+      "args": ["dlx", "@modelcontextprotocol/server-filesystem", "."],
       "type": "stdio",
-      "timeout": 60
+      "timeout": 30,
+      "toolFilter": "whitelist",
+      "enabledTools": [
+        "read_file",
+        "read_multiple_files",
+        "write_file",
+        "edit_file",
+        "create_directory",
+        "list_directory",
+        "list_directory_with_sizes",
+        "move_file",
+        "search_files",
+        "get_file_info"
+      ]
+    },
+    "shell": {
+      "command": "pnpm",
+      "args": ["dlx", "mcp-shell"],
+      "type": "stdio",
+      "timeout": 60,
+      "toolFilter": "blacklist",
+      "disabledTools": [
+        "system_restart",
+        "system_shutdown",
+        "rm_dangerous"
+      ]
     }
   }
-}`, execPath)
+}`
 
 	// Create JSON example
 	if err := os.WriteFile(".cpemcp.json", []byte(jsonExampleConfig), 0644); err != nil {

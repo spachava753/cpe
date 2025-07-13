@@ -16,12 +16,15 @@ type ConfigFile struct {
 
 // MCPServerConfig represents the configuration for a single MCP server
 type MCPServerConfig struct {
-	Command string            `json:"command" yaml:"command"`
-	Args    []string          `json:"args" yaml:"args"`
-	Type    string            `json:"type,omitempty" yaml:"type,omitempty"`       // Optional: "stdio" (default), "sse", or "http"
-	URL     string            `json:"url,omitempty" yaml:"url,omitempty"`         // Required for "sse" and "http" types
-	Timeout int               `json:"timeout,omitempty" yaml:"timeout,omitempty"` // Timeout in seconds (default: 60)
-	Env     map[string]string `json:"env,omitempty" yaml:"env,omitempty"`         // Environment variables for stdio servers
+	Command       string            `json:"command" yaml:"command"`
+	Args          []string          `json:"args" yaml:"args"`
+	Type          string            `json:"type,omitempty" yaml:"type,omitempty"`                   // Optional: "stdio" (default), "sse", or "http"
+	URL           string            `json:"url,omitempty" yaml:"url,omitempty"`                     // Required for "sse" and "http" types
+	Timeout       int               `json:"timeout,omitempty" yaml:"timeout,omitempty"`             // Timeout in seconds (default: 60)
+	Env           map[string]string `json:"env,omitempty" yaml:"env,omitempty"`                     // Environment variables for stdio servers
+	EnabledTools  []string          `json:"enabledTools,omitempty" yaml:"enabledTools,omitempty"`   // Whitelist approach
+	DisabledTools []string          `json:"disabledTools,omitempty" yaml:"disabledTools,omitempty"` // Blacklist approach
+	ToolFilter    string            `json:"toolFilter,omitempty" yaml:"toolFilter,omitempty"`       // "whitelist", "blacklist", or "all" (default)
 }
 
 // LoadConfig loads the MCP configuration from either .cpemcp.json or .cpemcp.yaml/.cpemcp.yml file
@@ -137,6 +140,52 @@ func (c *ConfigFile) Validate() error {
 		} else if server.Type != "" && server.Type != "stdio" && server.Env != nil {
 			return fmt.Errorf("server %q has type %q but specifies environment variables (only valid for stdio servers)", name, server.Type)
 		}
+
+		// Validate tool filtering configuration
+		if err := validateToolFilter(server, name); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateToolFilter validates the tool filtering configuration
+func validateToolFilter(server MCPServerConfig, serverName string) error {
+	// Normalize tool filter value
+	toolFilter := server.ToolFilter
+	if toolFilter == "" {
+		toolFilter = "all" // Default value
+	}
+
+	// Validate tool filter mode
+	switch toolFilter {
+	case "all":
+		// No restrictions - both EnabledTools and DisabledTools should be empty or ignored
+		if len(server.EnabledTools) > 0 {
+			return fmt.Errorf("server %q has toolFilter 'all' but specifies enabledTools (use 'whitelist' mode for enabledTools)", serverName)
+		}
+		if len(server.DisabledTools) > 0 {
+			return fmt.Errorf("server %q has toolFilter 'all' but specifies disabledTools (use 'blacklist' mode for disabledTools)", serverName)
+		}
+	case "whitelist":
+		// Only enabled tools should be specified
+		if len(server.EnabledTools) == 0 {
+			return fmt.Errorf("server %q has toolFilter 'whitelist' but no enabledTools specified", serverName)
+		}
+		if len(server.DisabledTools) > 0 {
+			return fmt.Errorf("server %q has toolFilter 'whitelist' but also specifies disabledTools (use only enabledTools for whitelist mode)", serverName)
+		}
+	case "blacklist":
+		// Only disabled tools should be specified
+		if len(server.DisabledTools) == 0 {
+			return fmt.Errorf("server %q has toolFilter 'blacklist' but no disabledTools specified", serverName)
+		}
+		if len(server.EnabledTools) > 0 {
+			return fmt.Errorf("server %q has toolFilter 'blacklist' but also specifies enabledTools (use only disabledTools for blacklist mode)", serverName)
+		}
+	default:
+		return fmt.Errorf("server %q has invalid toolFilter %q (must be 'all', 'whitelist', or 'blacklist')", serverName, toolFilter)
 	}
 
 	return nil
