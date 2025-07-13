@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	gitignore "github.com/sabhiram/go-gitignore"
 	"github.com/spachava753/cpe/internal/token/builder"
 	"github.com/spachava753/gai"
 	"github.com/stretchr/testify/assert"
@@ -171,14 +170,11 @@ func TestBuildDirTree(t *testing.T) {
 	err := os.WriteFile(ignoreFile, []byte(ignoreContent), 0644)
 	require.NoError(t, err)
 
-	ign, err := gitignore.CompileIgnoreFile(ignoreFile)
-	require.NoError(t, err)
-
 	// Use a buffer to capture progress output
 	var progressBuf bytes.Buffer
 
 	// Build the directory tree
-	tree, err := BuildDirTree(context.Background(), tempDir, ign, mockCounter, &progressBuf)
+	tree, err := BuildDirTree(context.Background(), tempDir, mockCounter, &progressBuf)
 	require.NoError(t, err)
 
 	// Check the tree structure

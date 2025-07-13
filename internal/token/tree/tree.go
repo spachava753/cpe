@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"sort"
 
-	gitignore "github.com/sabhiram/go-gitignore"
 	"github.com/spachava753/gai"
 )
 
@@ -23,7 +22,7 @@ type DirTreeNode struct {
 }
 
 // collectFilePaths collects all file paths in a directory recursively
-func collectFilePaths(ctx context.Context, rootPath string, ign *gitignore.GitIgnore) ([]string, error) {
+func collectFilePaths(ctx context.Context, rootPath string) ([]string, error) {
 	var files []string
 
 	// Use fs.WalkDir with context for cancellable walk
@@ -42,15 +41,6 @@ func collectFilePaths(ctx context.Context, rootPath string, ign *gitignore.GitIg
 
 		// Skip directories
 		if d.IsDir() {
-			// Skip ignored directories
-			if ign != nil && ign.MatchesPath(fullPath) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Skip ignored files
-		if ign != nil && ign.MatchesPath(fullPath) {
 			return nil
 		}
 
@@ -71,7 +61,6 @@ func collectFilePaths(ctx context.Context, rootPath string, ign *gitignore.GitIg
 func BuildDirTree(
 	ctx context.Context,
 	rootPath string,
-	ign *gitignore.GitIgnore,
 	tc gai.TokenCounter,
 	progressWriter io.Writer,
 ) (*DirTreeNode, error) {
@@ -83,7 +72,7 @@ func BuildDirTree(
 
 	// Step 1: Collect all file paths (fast operation)
 	fmt.Fprintf(progressWriter, "Collecting files in %s...\n", rootPath)
-	files, err := collectFilePaths(ctx, absRootPath, ign) // Pass context here
+	files, err := collectFilePaths(ctx, absRootPath) // Pass context here
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +80,7 @@ func BuildDirTree(
 	fmt.Fprintf(progressWriter, "Found %d files to process\n", len(files))
 
 	// Step 2: Count tokens in all files in parallel
-	fileCounts, err := countFilesParallel(ctx, files, ign, tc, true, progressWriter)
+	fileCounts, err := countFilesParallel(ctx, files, tc, true, progressWriter)
 	if err != nil {
 		return nil, err
 	}

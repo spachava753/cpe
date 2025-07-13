@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/spachava753/cpe/internal/agent"
-	"github.com/spachava753/cpe/internal/ignore"
 	tokenbuilder "github.com/spachava753/cpe/internal/token/builder"
 	tokentree "github.com/spachava753/cpe/internal/token/tree"
 	"github.com/spachava753/gai"
@@ -29,15 +28,6 @@ If no path is provided, the current directory is used.\nIf path is "-", content 
 
 		if tokentree.MaxFileSize <= 0 {
 			return fmt.Errorf("max-file-size must be a positive integer, got %d", tokentree.MaxFileSize)
-		}
-
-		// Initialize ignorer for skipping files
-		ignorer, err := ignore.LoadIgnoreFiles(".")
-		if err != nil {
-			return fmt.Errorf("failed to load ignore files: %w", err)
-		}
-		if ignorer == nil {
-			return fmt.Errorf("git ignorer was nil")
 		}
 
 		// Get model name using the persistent flag from rootCmd
@@ -104,7 +94,6 @@ If no path is provided, the current directory is used.\nIf path is "-", content 
 			tree, err := tokentree.BuildDirTree(
 				cmd.Context(),
 				path,
-				ignorer,
 				tokenCounter,
 				os.Stderr, // Progress writer
 			)

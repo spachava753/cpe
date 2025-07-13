@@ -8,7 +8,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	gitignore "github.com/sabhiram/go-gitignore"
 	"github.com/spachava753/cpe/internal/token/builder"
 	"github.com/spachava753/gai"
 	"golang.org/x/sync/errgroup"
@@ -32,7 +31,6 @@ var (
 func countFilesParallel(
 	ctx context.Context,
 	files []string,
-	ign *gitignore.GitIgnore,
 	tc gai.TokenCounter,
 	showFileSkip bool,
 	progressWriter io.Writer,
@@ -56,11 +54,6 @@ func countFilesParallel(
 			// Check for context cancellation first
 			if egCtx.Err() != nil {
 				return egCtx.Err()
-			}
-
-			// Skip files that match ignore patterns
-			if ign != nil && ign.MatchesPath(filePath) {
-				return nil
 			}
 
 			// Get file info for size check

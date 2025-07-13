@@ -18,7 +18,6 @@ import (
 	"github.com/gabriel-vasile/mimetype"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/spachava753/cpe/internal/agent"
-	"github.com/spachava753/cpe/internal/ignore"
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/gai"
 	"github.com/spf13/cobra"
@@ -115,15 +114,6 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	requestTimeout, err := time.ParseDuration(timeout)
 	if err != nil {
 		return fmt.Errorf("invalid timeout value '%s': %w", timeout, err)
-	}
-
-	// Initialize ignorer
-	ignorer, err := ignore.LoadIgnoreFiles(".")
-	if err != nil {
-		return fmt.Errorf("failed to load ignore files: %w", err)
-	}
-	if ignorer == nil {
-		return errors.New("git ignorer was nil")
 	}
 
 	userBlocks, err := processUserInput(args)
