@@ -279,9 +279,9 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	// Generate the response
 	resultDialog, err := filterToolGen.Generate(ctx, dialog, genOptionsFunc)
 	interrupted := errors.Is(err, context.Canceled)
+	// If we were not interrupted, print the error message, but continue to saving the returned dialog
 	if err != nil && !interrupted {
 		fmt.Fprintf(os.Stderr, "Error generating response: %v\n", err)
-		os.Exit(1)
 	}
 
 	if incognitoMode {
@@ -300,20 +300,17 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	var saveCancel context.CancelFunc
 	if interrupted {
 		fmt.Fprintln(os.Stderr, "\nWARNING: Generation was interrupted. Attempting to save partial dialog.")
-		fmt.Fprintln(os.Stderr, "You can cancel this save operation by interrupting again (Ctrl+C).")
-		dialogCtx, saveCancel = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer saveCancel() // Ensure this new context's cancel is called
 	}
+	fmt.Fprintln(os.Stderr, "You can cancel this save operation by interrupting again (Ctrl+C).")
+	dialogCtx, saveCancel = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer saveCancel() // Ensure this new context's cancel is called
 
 	// Determine assistant messages from the result
 	// resultDialog contains the original dialog + any new assistant messages
 	// dialog contains the original dialog sent to the model
 	assistantMsgs := resultDialog[len(dialog):]
 
-	// Condition for saving:
-	// 1. Not interrupted (normal completion)
-	// 2. Interrupted BUT there are some assistant messages to save
-	shouldSave := !interrupted || (interrupted && len(assistantMsgs) > 0)
+	shouldSave := len(assistantMsgs) > 0
 
 	if !shouldSave && interrupted {
 		fmt.Fprintln(os.Stderr, "No new assistant messages to save from interrupted generation. Skipping save for this turn.")
