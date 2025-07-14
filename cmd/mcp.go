@@ -416,34 +416,6 @@ func init() {
 	mcpCallToolCmd.Flags().StringVar(&mcpToolArgs, "args", "{}", "Tool arguments in JSON format")
 }
 
-// printConstraint formats and prints schema constraints like anyOf, allOf, etc
-func printConstraint(indentStr, key string, value interface{}) {
-	// Special handling for anyOf, oneOf, allOf for cleaner output
-	if key == "anyOf" || key == "oneOf" || key == "allOf" {
-		if types, ok := value.([]interface{}); ok {
-			typeStrs := []string{}
-			for _, t := range types {
-				// Format each type option
-				if tMap, ok := t.(map[string]interface{}); ok {
-					if tType, ok := tMap["type"]; ok {
-						typeStrs = append(typeStrs, fmt.Sprintf("%s", tType))
-					} else {
-						// For complex type options, use a simplified representation
-						typeStrs = append(typeStrs, fmt.Sprintf("%v", tMap))
-					}
-				} else {
-					typeStrs = append(typeStrs, fmt.Sprintf("%v", t))
-				}
-			}
-			fmt.Printf("%s  %s: [%s]\n", indentStr, key, strings.Join(typeStrs, ", "))
-		} else {
-			fmt.Printf("%s  %s: %v\n", indentStr, key, value)
-		}
-	} else {
-		fmt.Printf("%s  %s: %v\n", indentStr, key, value)
-	}
-}
-
 // printGAIProperty prints a gai.Property with proper indentation
 func printGAIProperty(name string, prop gai.Property, required []string, indent int) {
 	indentStr := strings.Repeat(" ", indent)
@@ -529,6 +501,8 @@ func getPropertyTypeString(propType gai.PropertyType) string {
 		return "object"
 	case gai.Array:
 		return "array"
+	case gai.Any:
+		return "any"
 	case gai.Null:
 		return "null"
 	default:
