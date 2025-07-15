@@ -44,6 +44,7 @@ var (
 	incognitoMode     bool
 	systemPromptPath  string
 	timeout           string
+	disableStreaming  bool
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -99,6 +100,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&incognitoMode, "incognito", "G", false, "Run in incognito mode (do not save conversations to storage)")
 	rootCmd.PersistentFlags().StringVarP(&systemPromptPath, "system-prompt-file", "s", "", "Specify a custom system prompt template file")
 	rootCmd.PersistentFlags().StringVarP(&timeout, "timeout", "", "5m", "Specify request timeout duration (e.g. '5m', '30s')")
+	rootCmd.PersistentFlags().BoolVar(&disableStreaming, "no-stream", false, "Disable streaming output (show complete response after generation)")
 
 	// Add version flag
 	rootCmd.Flags().BoolP("version", "v", false, "Print the version number and exit")
@@ -169,16 +171,16 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed to create generator: %w", err)
 	}
 
-	// Check if the generator supports streaming
+	// Check if the generator supports streaming and if streaming is enabled
 	var gen gai.ToolCapableGenerator
-	if streamingGen, ok := baseGenerator.(gai.StreamingGenerator); ok {
+	if streamingGen, ok := baseGenerator.(gai.StreamingGenerator); ok && !disableStreaming {
 		// Wrap with streaming printer
 		streamingPrinter := agent.NewStreamingPrinterGenerator(streamingGen)
 		// Use StreamingAdapter to convert back to Generator
 		adapter := &gai.StreamingAdapter{S: streamingPrinter}
 		gen = any(adapter).(gai.ToolCapableGenerator)
 	} else {
-		// Use ResponsePrinterGenerator for non-streaming generators
+		// Use ResponsePrinterGenerator for non-streaming generators or when streaming is disabled
 		gen = agent.NewResponsePrinterGenerator(baseGenerator.(gai.ToolCapableGenerator))
 	}
 
