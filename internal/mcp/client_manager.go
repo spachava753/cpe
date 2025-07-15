@@ -60,7 +60,11 @@ func (m *ClientManager) GetClient(ctx context.Context, serverName string) (*mcp.
 			Env:     serverConfig.Env,
 			Timeout: serverConfig.Timeout,
 		}
-		transport = mcp.NewStdio(stdioConfig)
+		stdio := mcp.NewStdio(stdioConfig)
+		stdio.SetStderrHandler(func(s string) {
+			fmt.Fprintf(os.Stderr, "%s\n", s)
+		})
+		transport = stdio
 	case "sse":
 		// SSE transport uses HTTPConfig
 		httpConfig := mcp.HTTPConfig{
