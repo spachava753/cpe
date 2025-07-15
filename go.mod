@@ -14,8 +14,8 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/matoous/go-nanoid/v2 v2.1.0
 	github.com/mattn/go-sqlite3 v1.14.28
-	github.com/openai/openai-go v1.10.0
-	github.com/spachava753/gai v0.7.0
+	github.com/openai/openai-go v1.10.3
+	github.com/spachava753/gai v0.7.1
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
 	github.com/tidwall/pretty v1.2.1
