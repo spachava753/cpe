@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spachava753/gai"
+	"github.com/tidwall/pretty"
 )
 
 // ResponsePrinterGenerator is a wrapper around another generator that prints out
@@ -26,81 +26,23 @@ func NewResponsePrinterGenerator(wrapped gai.ToolCapableGenerator) *ResponsePrin
 	}
 }
 
-// formatToolCall formats the tool call JSON as a concise, human-readable summary
 func formatToolCall(content string) string {
-	// Try to parse the content as an object with known keys
-	var call struct {
-		Name       string                 `json:"name"`
-		Parameters map[string]any         `json:"parameters"`
-	}
+	var call gai.ToolCallInput
 	if err := json.Unmarshal([]byte(content), &call); err != nil || call.Name == "" {
-		// Fallback: attempt to parse as raw map and infer
-		var data map[string]any
-		if err := json.Unmarshal([]byte(content), &data); err != nil {
-			return content
-		}
-		// Try to get name/parameters style
-		name, _ := data["name"].(string)
-		params, _ := data["parameters"].(map[string]any)
-		if name == "" {
-			// Sometimes tool name is not included; print the map as is
-			return prettyPrintJSON(content)
-		}
-		return toolCallSummary(name, params)
+		// Fallback: just pretty print the JSON
+		return prettyPrintJSON(content)
 	}
-	return toolCallSummary(call.Name, call.Parameters)
-}
 
-// toolCallSummary returns a human-readable summary per tool type
-func toolCallSummary(name string, params map[string]any) string {
-	switch name {
-	case "create_file", "delete_file", "edit_file", "move_file", "view_file":
-		if path, ok := params["path"].(string); ok {
-			return name + ": " + path
-		}
-		if source, ok := params["source_path"].(string); ok {
-			result := name + ": from " + source
-			if target, ok := params["target_path"].(string); ok {
-				result += " to " + target
-			}
-			return result
-		}
-	case "create_folder", "delete_folder", "move_folder":
-		if path, ok := params["path"].(string); ok {
-			return name + ": " + path
-		}
-		if source, ok := params["source_path"].(string); ok {
-			result := name + ": from " + source
-			if target, ok := params["target_path"].(string); ok {
-				result += " to " + target
-			}
-			return result
-		}
-	case "bash":
-		if command, ok := params["command"].(string); ok {
-			return "bash: " + command
-		}
-	case "files_overview":
-		if path, ok := params["path"].(string); ok && path != "" {
-			return name + ": " + path
-		}
-		return name
-	case "get_related_files":
-		if files, ok := params["input_files"].([]any); ok {
-			fileList := make([]string, 0, len(files))
-			for _, f := range files {
-				if str, ok := f.(string); ok {
-					fileList = append(fileList, str)
-				}
-			}
-			return name + ": [" + strings.Join(fileList, ", ") + "]"
+	// Format similar to streaming_printer: tool name and pretty-printed parameters
+	result := fmt.Sprintf("[Tool Call: %s]\n", call.Name)
+
+	if call.Parameters != nil {
+		if paramsJSON, err := json.Marshal(call.Parameters); err == nil {
+			result += string(pretty.Color(paramsJSON, nil))
 		}
 	}
-	// fallback: print the tool name and pretty params
-	if b, err := json.Marshal(params); err == nil {
-		return name + ": " + string(b)
-	}
-	return name
+
+	return result
 }
 
 // prettyPrintJSON attempts to pretty print a JSON string
@@ -113,14 +55,14 @@ func prettyPrintJSON(content string) string {
 		return content
 	}
 
-	// Pretty print with indentation
+	// Pretty print with color formatting
 	prettyJSON, err := json.MarshalIndent(jsonData, "", "  ")
 	if err != nil {
 		// Failed to pretty print, return the original content
 		return content
 	}
 
-	return string(prettyJSON)
+	return string(pretty.Color(prettyJSON, nil))
 }
 
 // Generate implements the gai.Generator interface.
