@@ -46,6 +46,7 @@ var (
 	timeout           string
 	disableStreaming  bool
 	mcpConfigPath     string
+	skipStdin         bool
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -103,6 +104,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&timeout, "timeout", "", "5m", "Specify request timeout duration (e.g. '5m', '30s')")
 	rootCmd.PersistentFlags().BoolVar(&disableStreaming, "no-stream", false, "Disable streaming output (show complete response after generation)")
 	rootCmd.PersistentFlags().StringVar(&mcpConfigPath, "mcp-config", "", "Specify path to MCP configuration file")
+	rootCmd.PersistentFlags().BoolVar(&skipStdin, "skip-stdin", false, "Skip reading from stdin (useful in scripts)")
 
 	// Add version flag
 	rootCmd.Flags().BoolP("version", "v", false, "Print the version number and exit")
@@ -353,14 +355,7 @@ func processUserInput(args []string) ([]gai.Block, error) {
 	}
 
 	// If stdin has data, read it
-	// We check if SKIP_STDIN env var is set to skip reading from
-	// stdin, as reading from stdin can hang in environments like
-	// running in an IDE with a debugger. SKIP_STDIN is a hidden
-	// env var and should not be used by the end user, just the authors
-	if (stdinStat.Mode()&os.ModeCharDevice) == 0 && os.Getenv("SKIP_STDIN") != "" {
-		fmt.Println("SKIPPING READING FROM STDIN")
-	}
-	if (stdinStat.Mode()&os.ModeCharDevice) == 0 && os.Getenv("SKIP_STDIN") == "" {
+	if (stdinStat.Mode()&os.ModeCharDevice) == 0 && !skipStdin {
 		stdinBytes, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read from stdin: %w", err)
