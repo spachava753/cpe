@@ -102,9 +102,9 @@ func (g *ResponsePrinterGenerator) Generate(ctx context.Context, dialog gai.Dial
 	}
 
 	if hasToolcalls {
-		fmt.Fprintf(os.Stderr, sb.String())
+		fmt.Fprintln(os.Stderr, sb.String())
 	} else {
-		fmt.Fprintf(os.Stdout, sb.String())
+		fmt.Fprintln(os.Stdout, sb.String())
 	}
 
 	// Print usage metrics if available
@@ -113,8 +113,8 @@ func (g *ResponsePrinterGenerator) Generate(ctx context.Context, dialog gai.Dial
 		outputTokens, hasOutputTokens := response.UsageMetrics[gai.UsageMetricGenerationTokens]
 
 		if hasInputTokens && hasOutputTokens {
-			tokenMsg := fmt.Sprintf("\nTokens used: %v input, %v output\n", inputTokens, outputTokens)
-			fmt.Fprintf(os.Stderr, redStyle.Render(tokenMsg))
+			tokenMsg := fmt.Sprintf("Tokens used: %v input, %v output", inputTokens, outputTokens)
+			fmt.Fprintln(os.Stderr, redStyle.Render(tokenMsg))
 		}
 	}
 

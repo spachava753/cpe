@@ -62,7 +62,7 @@ func (m *ClientManager) GetClient(ctx context.Context, serverName string) (*mcp.
 		}
 		stdio := mcp.NewStdio(stdioConfig)
 		stdio.SetStderrHandler(func(s string) {
-			fmt.Fprintf(os.Stderr, "%s\n", s)
+			fmt.Fprintf(os.Stderr, "mcp server '%s' stderr: %s\n", serverName, s)
 		})
 		transport = stdio
 	case "sse":
