@@ -45,6 +45,7 @@ var (
 	systemPromptPath  string
 	timeout           string
 	disableStreaming  bool
+	mcpConfigPath     string
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -101,6 +102,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&systemPromptPath, "system-prompt-file", "s", "", "Specify a custom system prompt template file")
 	rootCmd.PersistentFlags().StringVarP(&timeout, "timeout", "", "5m", "Specify request timeout duration (e.g. '5m', '30s')")
 	rootCmd.PersistentFlags().BoolVar(&disableStreaming, "no-stream", false, "Disable streaming output (show complete response after generation)")
+	rootCmd.PersistentFlags().StringVar(&mcpConfigPath, "mcp-config", "", "Specify path to MCP configuration file")
 
 	// Add version flag
 	rootCmd.Flags().BoolP("version", "v", false, "Print the version number and exit")
@@ -194,7 +196,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	filterToolGen := agent.NewThinkingFilterToolGenerator(toolGen)
 
 	// Load MCP configuration
-	config, err := mcp.LoadConfig()
+	config, err := mcp.LoadConfig(mcpConfigPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to load MCP configuration: %v\n", err)
 		config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}

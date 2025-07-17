@@ -27,41 +27,52 @@ type MCPServerConfig struct {
 	ToolFilter    string            `json:"toolFilter,omitempty" yaml:"toolFilter,omitempty"`       // "whitelist", "blacklist", or "all" (default)
 }
 
-// LoadConfig loads the MCP configuration from either .cpemcp.json or .cpemcp.yaml/.cpemcp.yml file
+// LoadConfig loads the MCP configuration from a specified file path or from default .cpemcp files
+// If configPath is provided, it loads from that specific file
+// If configPath is empty, it falls back to searching for .cpemcp.json, .cpemcp.yaml, or .cpemcp.yml files
 // If no config file is found, it returns an empty configuration instead of an error
 // If a config file exists but has reading or parsing errors, it returns an error
-func LoadConfig() (*ConfigFile, error) {
-	// Define possible config file names in order of precedence
-	configFileNames := []string{".cpemcp.json", ".cpemcp.yaml", ".cpemcp.yml"}
-	configPath := ""
+func LoadConfig(configPath string) (*ConfigFile, error) {
+	var actualConfigPath string
 
-	// Look only in the current directory
-	for _, fileName := range configFileNames {
-		if _, err := os.Stat(fileName); err == nil {
-			configPath = fileName
-			break
+	if configPath != "" {
+		// Load from specified path
+		actualConfigPath = configPath
+		if _, err := os.Stat(actualConfigPath); os.IsNotExist(err) {
+			return nil, fmt.Errorf("specified config file does not exist: %s", actualConfigPath)
+		}
+	} else {
+		// Define possible config file names in order of precedence
+		configFileNames := []string{".cpemcp.json", ".cpemcp.yaml", ".cpemcp.yml"}
+
+		// Look only in the current directory
+		for _, fileName := range configFileNames {
+			if _, err := os.Stat(fileName); err == nil {
+				actualConfigPath = fileName
+				break
+			}
+		}
+
+		// If no config file found, return empty config
+		if actualConfigPath == "" {
+			return &ConfigFile{MCPServers: make(map[string]MCPServerConfig)}, nil
 		}
 	}
 
-	// If no config file found, return empty config
-	if configPath == "" {
-		return &ConfigFile{MCPServers: make(map[string]MCPServerConfig)}, nil
-	}
-
 	// Read the config file, return error if reading fails
-	data, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(actualConfigPath)
 	if err != nil {
-		return nil, fmt.Errorf("error reading config file %s: %w", configPath, err)
+		return nil, fmt.Errorf("error reading config file %s: %w", actualConfigPath, err)
 	}
 
 	// Parse the file based on its extension
 	var config ConfigFile
 	var parseErr error
 
-	if strings.HasSuffix(configPath, ".json") {
+	if strings.HasSuffix(actualConfigPath, ".json") {
 		// Parse JSON
 		parseErr = json.Unmarshal(data, &config)
-	} else if strings.HasSuffix(configPath, ".yaml") || strings.HasSuffix(configPath, ".yml") {
+	} else if strings.HasSuffix(actualConfigPath, ".yaml") || strings.HasSuffix(actualConfigPath, ".yml") {
 		// Parse YAML
 		parseErr = yaml.Unmarshal(data, &config)
 	} else {
@@ -72,14 +83,14 @@ func LoadConfig() (*ConfigFile, error) {
 			if yamlErr != nil {
 				// Both parsing attempts failed
 				return nil, fmt.Errorf("failed to parse %s: JSON error: %v, YAML error: %v",
-					configPath, jsonErr, yamlErr)
+					actualConfigPath, jsonErr, yamlErr)
 			}
 		}
 	}
 
 	// If parsing failed, return error
 	if parseErr != nil {
-		return nil, fmt.Errorf("error parsing config file %s: %w", configPath, parseErr)
+		return nil, fmt.Errorf("error parsing config file %s: %w", actualConfigPath, parseErr)
 	}
 
 	// Initialize the map if it's nil

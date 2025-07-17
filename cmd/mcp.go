@@ -64,7 +64,7 @@ var mcpListServersCmd = &cobra.Command{
 	Long:    `List all MCP servers defined in .cpemcp.json configuration file.`,
 	Aliases: []string{"ls-servers"},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		config, err := mcp.LoadConfig()
+		config, err := mcp.LoadConfig(mcpConfigPath)
 		if err != nil {
 			fmt.Printf("Warning: %v\n", err)
 			config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
@@ -127,7 +127,7 @@ var mcpInfoCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		serverName := args[0]
 
-		config, err := mcp.LoadConfig()
+		config, err := mcp.LoadConfig(mcpConfigPath)
 		if err != nil {
 			fmt.Printf("Warning: %v\n", err)
 			config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
@@ -198,7 +198,7 @@ var mcpListToolsCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		serverName := args[0]
 
-		config, err := mcp.LoadConfig()
+		config, err := mcp.LoadConfig(mcpConfigPath)
 		if err != nil {
 			fmt.Printf("Warning: %v\n", err)
 			config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
@@ -347,7 +347,7 @@ var mcpCallToolCmd = &cobra.Command{
 			return fmt.Errorf("--tool is required")
 		}
 
-		config, err := mcp.LoadConfig()
+		config, err := mcp.LoadConfig(mcpConfigPath)
 		if err != nil {
 			fmt.Printf("Warning: %v\n", err)
 			config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
