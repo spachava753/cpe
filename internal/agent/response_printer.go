@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spachava753/gai"
@@ -34,7 +36,7 @@ func formatToolCall(content string) string {
 	}
 
 	// Format similar to streaming_printer: tool name and pretty-printed parameters
-	result := fmt.Sprintf("[Tool Call: %s]\n", call.Name)
+	result := fmt.Sprintf("[Tool Name: %s]\n", call.Name)
 
 	if call.Parameters != nil {
 		if paramsJSON, err := json.Marshal(call.Parameters); err == nil {
@@ -74,37 +76,45 @@ func (g *ResponsePrinterGenerator) Generate(ctx context.Context, dialog gai.Dial
 		return gai.Response{}, err
 	}
 
+	var sb strings.Builder
+	var hasToolcalls bool
 	// Print the response without demarcation
 	for _, candidate := range response.Candidates {
 		for _, block := range candidate.Blocks {
-			if block.ModalityType == gai.Text {
-				// For non-content blocks, print the block type as well
-				if block.BlockType != gai.Content {
-					fmt.Printf("[%s]\n", block.BlockType)
-				}
-
-				content := block.Content.String()
-				if block.BlockType == gai.ToolCall {
-					content = formatToolCall(content)
-				}
-
-				// Print to stdout only (not stderr)
-				fmt.Println(content)
-			} else {
-				// Print non-text blocks to stdout only (not stderr)
-				fmt.Printf("Received non-text block of type: %s\n", block.ModalityType)
+			if block.ModalityType != gai.Text {
+				fmt.Fprintf(&sb, "Received non-text block of type: %s\n", block.ModalityType)
 			}
+
+			hasToolcalls = block.BlockType == gai.ToolCall || hasToolcalls
+
+			// For non-content blocks, print the block type as well
+			if block.BlockType != gai.Content {
+				fmt.Fprintf(&sb, "\n[%s]\n", block.BlockType)
+			}
+
+			content := block.Content.String()
+			if block.BlockType == gai.ToolCall {
+				content = formatToolCall(content)
+			}
+
+			fmt.Fprintf(&sb, content)
 		}
 	}
 
-	// Print usage metrics if available (only to stdout)
+	if hasToolcalls {
+		fmt.Fprintf(os.Stderr, sb.String())
+	} else {
+		fmt.Fprintf(os.Stdout, sb.String())
+	}
+
+	// Print usage metrics if available
 	if response.UsageMetrics != nil {
 		inputTokens, hasInputTokens := response.UsageMetrics[gai.UsageMetricInputTokens]
 		outputTokens, hasOutputTokens := response.UsageMetrics[gai.UsageMetricGenerationTokens]
 
 		if hasInputTokens && hasOutputTokens {
-			tokenMsg := fmt.Sprintf("\nTokens used: %v input, %v output", inputTokens, outputTokens)
-			fmt.Println(redStyle.Render(tokenMsg))
+			tokenMsg := fmt.Sprintf("\nTokens used: %v input, %v output\n", inputTokens, outputTokens)
+			fmt.Fprintf(os.Stderr, redStyle.Render(tokenMsg))
 		}
 	}
 

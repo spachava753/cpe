@@ -200,14 +200,12 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	// Load MCP configuration
 	config, err := mcp.LoadConfig(mcpConfigPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to load MCP configuration: %v\n", err)
-		config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
+		return fmt.Errorf("failed to load MCP configuration: %w", err)
 	}
 
 	// Validate configuration
 	if err := config.Validate(); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: invalid MCP configuration: %v\n", err)
-		config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
+		return fmt.Errorf("invalid MCP configuration: %w", err)
 	}
 
 	// Create client manager
@@ -297,7 +295,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	if interrupted {
 		fmt.Fprintln(os.Stderr, "\nWARNING: Generation was interrupted. Attempting to save partial dialog.")
 	}
-	fmt.Fprintln(os.Stderr, "You can cancel this save operation by interrupting again (Ctrl+C).")
+	fmt.Fprintln(os.Stderr, "You can cancel this save operation by interrupting (Ctrl+C).")
 	dialogCtx, saveCancel = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer saveCancel() // Ensure this new context's cancel is called
 
