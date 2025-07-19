@@ -18,5 +18,7 @@
 !README.md
 !LICENSE
 
+!*.prompt
+
 # ...even if they are in subdirectories
 !*/

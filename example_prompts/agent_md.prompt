@@ -1,0 +1,121 @@
+I need your help in creating a AGENT.md file.
+
+## Specification
+
+The AGENT.md file SHOULD be placed in the root directory and MUST use Markdown formatting. The file SHOULD contain the
+following sections:
+
+- Project structure and organization
+- Build, test, and development commands
+- Code style and conventions
+- Architecture and design patterns
+- Testing guidelines
+- Security considerations
+
+The format is designed to be human-readable while providing structured information that can be parsed by agentic coding
+tools.
+
+### File References
+
+AGENT.md files MAY reference other files using @-mentions (e.g., @filename.md) to include additional context or
+documentation that should be considered when working in the project.
+
+## AGENT.md Content Structure
+What should be in your AGENT.md? Think about what you'd tell a new team member on their first day. Here's what works:
+
+- **Project Overview**: Brief description of the project's purpose and architecture
+- **Build & Commands**: Development, testing, and deployment commands
+- **Code Style**: Formatting rules, naming conventions, and best practices
+- **Testing**: Testing frameworks, conventions, and execution guidelines
+- **Security**: Security considerations and data protection guidelines
+- **Configuration**: Environment setup and configuration management
+
+## Example AGENT.md File
+Here's what a solid AGENT.md looks like in practice. Copy this structure and adapt it to your project:
+```markdown
+# MyApp Project
+
+MyApp is a full-stack web application with TypeScript frontend and Node.js backend.
+The core functionality lives in the `src/` folder, with separate client (`client/`)
+and server (`server/`) components.
+
+## Build & Commands
+
+- Typecheck and lint everything: `pnpm check`
+- Fix linting/formatting: `pnpm check:fix`
+- Run tests: `pnpm test --run --no-color`
+- Run single test: `pnpm test --run src/file.test.ts`
+- Start development server: `pnpm dev`
+- Build for production: `pnpm build`
+- Preview production build: `pnpm preview`
+
+### Development Environment
+
+- Frontend dev server: http://localhost:3000
+- Backend dev server: http://localhost:3001
+- Database runs on port 5432
+- Redis cache on port 6379
+
+## Code Style
+
+- TypeScript: Strict mode with exactOptionalPropertyTypes, noUncheckedIndexedAccess
+- Tabs for indentation (2 spaces for YAML/JSON/MD)
+- Single quotes, no semicolons, trailing commas
+- Use JSDoc docstrings for documenting TypeScript definitions, not `//` comments
+- 100 character line limit
+- Imports: Use consistent-type-imports
+- Use descriptive variable/function names
+- In CamelCase names, use "URL" (not "Url"), "API" (not "Api"), "ID" (not "Id")
+- Prefer functional programming patterns
+- Use TypeScript interfaces for public APIs
+- NEVER use `@ts-expect-error` or `@ts-ignore` to suppress type errors
+
+## Testing
+
+- Vitest for unit testing
+- Testing Library for component tests
+- Playwright for E2E tests
+- When writing tests, do it one test case at a time
+- Use `expect(VALUE).toXyz(...)` instead of storing in variables
+- Omit "should" from test names (e.g., `it("validates input")` not `it("should validate input")`)
+- Test files: `*.test.ts` or `*.spec.ts`
+- Mock external dependencies appropriately
+
+## Architecture
+
+- Frontend: React with TypeScript
+- Backend: Express.js with TypeScript
+- Database: PostgreSQL with Prisma ORM
+- State management: Zustand
+- Styling: Tailwind CSS
+- Build tool: Vite
+- Package manager: pnpm
+
+## Security
+
+- Use appropriate data types that limit exposure of sensitive information
+- Never commit secrets or API keys to repository
+- Use environment variables for sensitive data
+- Validate all user inputs on both client and server
+- Use HTTPS in production
+- Regular dependency updates
+- Follow principle of least privilege
+
+## Git Workflow
+
+- ALWAYS run `pnpm check` before committing
+- Fix linting errors with `pnpm check:fix`
+- Run `pnpm build` to verify typecheck passes
+- NEVER use `git push --force` on the main branch
+- Use `git push --force-with-lease` for feature branches if needed
+- Always verify current branch before force operations
+
+## Configuration
+
+When adding new configuration options, update all relevant places:
+1. Environment variables in `.env.example`
+2. Configuration schemas in `src/config/`
+3. Documentation in README.md
+
+All configuration keys use consistent naming and MUST be documented.
+```
