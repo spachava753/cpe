@@ -19,6 +19,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/storage"
+	"github.com/spachava753/cpe/internal/urlhandler"
 	"github.com/spachava753/gai"
 	"github.com/spf13/cobra"
 )
@@ -96,7 +97,7 @@ func init() {
 	rootCmd.PersistentFlags().Float64Var(&presencePenalty, "presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
 	rootCmd.PersistentFlags().IntVar(&numberOfResponses, "number-of-responses", 0, "Number of responses to generate")
 	rootCmd.PersistentFlags().StringVarP(&thinkingBudget, "thinking-budget", "b", "", "Budget for reasoning/thinking capabilities (string or numerical value)")
-	rootCmd.PersistentFlags().StringSliceVarP(&input, "input", "i", []string{}, "Specify input files to process. Multiple files can be provided.")
+	rootCmd.PersistentFlags().StringSliceVarP(&input, "input", "i", []string{}, "Specify input files or HTTP(S) URLs to process. Multiple inputs can be provided.")
 	rootCmd.PersistentFlags().BoolVarP(&newConversation, "new", "n", false, "Start a new conversation instead of continuing from the last one")
 	rootCmd.PersistentFlags().StringVarP(&continueID, "continue", "c", "", "Continue from a specific conversation ID")
 	rootCmd.PersistentFlags().BoolVarP(&incognitoMode, "incognito", "G", false, "Run in incognito mode (do not save conversations to storage)")
@@ -368,36 +369,67 @@ func processUserInput(args []string) ([]gai.Block, error) {
 		}
 	}
 
-	// Process input files and add them as blocks
+	// Process input files and URLs and add them as blocks
 	for _, inputPath := range input {
-		// Validate file exists
-		if _, err := os.Stat(inputPath); os.IsNotExist(err) {
-			return nil, fmt.Errorf("input file does not exist: %s", inputPath)
-		}
+		var content []byte
+		var filename string
+		var contentType string
 
-		// Detect input type (text, image, etc.)
-		filename := filepath.Base(inputPath)
-		bytes, err := os.ReadFile(inputPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read file %s: %w", inputPath, err)
-		}
-		modality, err := agent.DetectInputType(bytes)
-		if err != nil {
-			return nil, fmt.Errorf("failed to detect input type for %s: %w", inputPath, err)
-		}
+		// Check if input is a URL or file path
+		if urlhandler.IsURL(inputPath) {
+			// Handle URL input
+			fmt.Fprintf(os.Stderr, "Downloading: %s\n", inputPath)
 
-		// Read file content
-		content, err := os.ReadFile(inputPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read input file %s: %w", inputPath, err)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			downloaded, err := urlhandler.DownloadContent(ctx, inputPath, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to download content from URL %s: %w", inputPath, err)
+			}
+
+			content = downloaded.Data
+			filename = filepath.Base(inputPath) // Extract filename from URL path
+			contentType = downloaded.ContentType
+
+			fmt.Fprintf(os.Stderr, "Downloaded %d bytes from %s\n", len(content), inputPath)
+		} else {
+			// Handle local file input
+			// Validate file exists
+			if _, err := os.Stat(inputPath); os.IsNotExist(err) {
+				return nil, fmt.Errorf("input file does not exist: %s", inputPath)
+			}
+
+			// Read file content
+			var err error
+			content, err = os.ReadFile(inputPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read input file %s: %w", inputPath, err)
+			}
+
+			filename = filepath.Base(inputPath)
 		}
 
 		// Apply size limits to prevent memory issues
 		if len(content) > 50*1024*1024 { // 50MB limit
-			return nil, fmt.Errorf("input file %s exceeds maximum size limit (50MB)", inputPath)
+			return nil, fmt.Errorf("input content from %s exceeds maximum size limit (50MB)", inputPath)
 		}
 
-		mime := mimetype.Detect(content).String()
+		// Detect input type (text, image, etc.)
+		modality, err := agent.DetectInputType(content)
+		if err != nil {
+			return nil, fmt.Errorf("failed to detect input type for %s: %w", inputPath, err)
+		}
+
+		// Determine MIME type
+		var mime string
+		if contentType != "" {
+			// Use Content-Type from HTTP response if available
+			mime = strings.Split(contentType, ";")[0] // Remove charset and other parameters
+		} else {
+			// Fall back to content-based detection
+			mime = mimetype.Detect(content).String()
+		}
 
 		// Create block based on modality
 		var block gai.Block
