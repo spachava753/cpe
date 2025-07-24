@@ -17,6 +17,7 @@ tool-based interactions.
 - **Conversation Management**: SQLite-based storage with branching support
 - **MCP Integration**: Model Context Protocol for external tool integration
 - **Token Management**: Advanced token counting and context window handling
+- **URL Handler**: Secure HTTP/HTTPS content downloading with size limits and retry logic
 
 ## Project Structure and Organization
 
@@ -34,7 +35,8 @@ cpe/
 │   ├── mcp/              # Model Context Protocol implementation
 │   ├── storage/          # SQLite conversation storage
 │   ├── tiktokenloader/   # Token counting utilities
-│   └── token/            # Token management
+│   ├── token/            # Token management
+│   └── urlhandler/       # HTTP/HTTPS content downloading
 ├── scripts/               # Development and utility scripts
 ├── example_prompts/       # Example prompt templates
 ├── go.mod                # Go module definition
@@ -44,13 +46,68 @@ cpe/
 
 ## Build, Test, and Development Commands
 
-### Prerequisites
+### URL Handling
 
-- Go 1.23+
-- API key for at least one supported AI provider
-- SQLite3 (bundled with Go)
+CPE now supports downloading and processing content directly from HTTP/HTTPS URLs:
 
-### Development Commands
+```bash
+# Process content from URL
+cpe --input https://example.com/file.txt "Analyze this file"
+
+# Multiple URLs and files
+cpe --input local.go --input https://api.github.com/repos/spachava753/cpe/readme "Compare local vs remote"
+```
+
+**Features:**
+
+- 50MB size limit for security
+- Configurable timeouts and retry logic
+- Exponential backoff for failed requests
+- Custom user agent for identification
+- MIME type detection from response headers
+
+**Security:**
+
+- URL validation and sanitization
+- Size limits to prevent memory exhaustion
+- Timeout protection against hanging requests
+
+### CLI Flags and Options
+
+#### Core Flags
+
+```bash
+# Input handling
+--input, -i FILE/URL     Input file or URL to process (can be used multiple times)
+--skip-stdin            Skip reading from stdin even if data is available
+
+# Model configuration
+--model MODEL          Specify AI model to use (default: claude-3-5-sonnet)
+--no-stream            Disable streaming responses
+
+# MCP Configuration
+--mcp-config FILE      Custom path for MCP configuration file (default: .cpemcp.json)
+```
+
+#### Input Sources
+
+CPE can accept input from multiple sources:
+
+- Command line arguments (direct prompt)
+- Files (--input file.go)
+- URLs (--input https://example.com/file.txt)
+- Standard input (piped content)
+- Combination of the above
+
+Examples:
+
+```bash
+# File and URL processing
+cpe --input main.go --input https://raw.githubusercontent.com/spachava753/cpe/main/go.mod "Compare dependencies"
+
+# Skip stdin when piping
+echo "test" | cpe --skip-stdin "Process this without stdin"
+```
 
 #### Build Commands
 
@@ -181,6 +238,14 @@ CPE follows a modular architecture with clear separation of concerns:
 - **Migration**: Database schema migration support
 - **Cleanup**: Automatic cleanup of old conversations
 
+#### Input Processing Layer
+
+- **Multi-source Input**: Support for files, URLs, and stdin
+- **URL Handler**: Secure HTTP/HTTPS content downloading
+- **File Type Detection**: MIME type detection from content and headers
+- **Content Validation**: Size limits and security checks
+- **Stream Processing**: Real-time processing for large inputs
+
 #### CLI Layer
 
 - **Cobra CLI**: Modern CLI framework with nested commands
@@ -222,9 +287,34 @@ CPE follows a modular architecture with clear separation of concerns:
 
 ## Testing Guidelines
 
-### Testing Strategy
+### URL Handler Package (`internal/urlhandler/`)
 
-CPE uses a comprehensive testing approach:
+The URL handler package provides secure HTTP/HTTPS content downloading with the following features:
+
+**Security Features:**
+
+- 50MB size limit to prevent memory exhaustion
+- Configurable timeouts (default: 30s)
+- Exponential backoff for retry logic
+- Custom User-Agent identification
+- Content-Type validation
+
+**Usage:**
+
+```go
+import "github.com/spachava753/cpe/internal/urlhandler"
+
+handler := urlhandler.New()
+content, contentType, err := handler.Download("https://example.com/file.txt")
+```
+
+**Testing:**
+
+```bash
+# Run URL handler tests
+go test ./internal/urlhandler/...
+go test -v ./internal/urlhandler/...
+```
 
 #### Unit Tests
 
@@ -284,12 +374,24 @@ go tool cover -html=coverage.out -o coverage.html
 - **Cleanup**: Automatic cleanup of old conversations
 - **Privacy Mode**: Support for incognito mode (no storage)
 
-### Input Validation
+### URL Security
 
-- **File Size Limits**: 50MB limit for input files
-- **Type Checking**: Validate file types before processing
-- **Path Traversal**: Validate file paths to prevent directory traversal
-- **Content Sanitization**: Sanitize user inputs and file contents
+**Content Downloading:**
+
+- 50MB size limit prevents memory exhaustion attacks
+- Configurable timeouts prevent hanging requests
+- Exponential backoff prevents server overload
+- URL validation prevents SSRF attacks
+- Content-Type validation ensures safe processing
+- Custom User-Agent for responsible crawling
+
+**Input Validation:**
+
+- File size limits: 50MB for URLs, 100MB for local files
+- Path traversal protection for local files
+- URL validation and sanitization
+- Content-Type verification
+- Extension-based type detection for local files
 
 ### Network Security
 
@@ -315,14 +417,17 @@ export ANTHROPIC_API_KEY="your_anthropic_api_key"
 export OPENAI_API_KEY="your_openai_api_key"
 export GEMINI_API_KEY="your_gemini_api_key"
 
-# Optional
+# Optional model selection
 export CPE_MODEL="claude-3-5-sonnet"  # Default model
 export CPE_CUSTOM_URL="https://your-custom-endpoint.com"
+
+# Deprecated environment variables:
+# SKIP_STDIN - Use --skip-stdin flag instead
 ```
 
 ### Configuration Files
 
-- **`.cpemcp.json`**: MCP server configuration
+- **`.cpemcp.json`**: MCP server configuration (can be overridden with --mcp-config)
 - **`.cpeignore`**: Files to exclude from analysis (Git-ignore format)
 - **`.env`**: Local environment variables (not committed)
 
