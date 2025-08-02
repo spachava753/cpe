@@ -1,515 +1,248 @@
 # CPE (Chat-based Programming Editor)
 
-CPE is a powerful command-line tool that enables developers to leverage AI for codebase analysis, modification, and
-software development through natural language interactions in your terminal. It connects multiple AI models (OpenAI,
-Anthropic, Google) to your local environment through a simple CLI interface.
-
-## Project Overview
-
-CPE serves as an intelligent agent to assist with day-to-day software development tasks. The core functionality is
-implemented in Go, with a modular architecture that supports multiple AI providers, conversation management, and
-tool-based interactions.
-
-### Key Components
+CPE is a Go CLI that lets developers use LLMs to analyze, edit, and manage codebases directly from the terminal. It
+supports multiple providers (OpenAI, Anthropic, Google Gemini), conversation persistence/branching, MCP client
+capabilities, file operations, and shell execution.
 
-- **CLI Interface**: Cobra-based command-line interface in `cmd/`
-- **AI Providers**: Support for OpenAI, Anthropic Claude, and Google Gemini
-- **Conversation Management**: SQLite-based storage with branching support
-- **MCP Integration**: Model Context Protocol for external tool integration
-- **Token Management**: Advanced token counting and context window handling
-- **URL Handler**: Secure HTTP/HTTPS content downloading with size limits and retry logic
+Primary packages live under `cmd/` (Cobra CLI) and `internal/` (agent, storage, token utilities, MCP, etc.). See
+@README.md for end-user usage and flag reference.
 
-## Project Structure and Organization
+---
 
-```
-cpe/
-├── cmd/                    # CLI commands and root command
-│   ├── conversation.go      # Conversation management commands
-│   ├── mcp.go            # MCP-related commands
-│   ├── model.go          # Model management commands
-│   ├── tools.go          # Development tools commands
-│   └── root.go           # Main CLI entry point
-├── internal/              # Internal packages
-│   ├── agent/            # AI agent core functionality
-│   ├── cliopts/          # CLI option handling
-│   ├── mcp/              # Model Context Protocol implementation
-│   ├── storage/          # SQLite conversation storage
-│   ├── tiktokenloader/   # Token counting utilities
-│   ├── token/            # Token management
-│   └── urlhandler/       # HTTP/HTTPS content downloading
-├── scripts/               # Development and utility scripts
-├── example_prompts/       # Example prompt templates
-├── go.mod                # Go module definition
-├── sqlc.yaml             # SQLC configuration for database
-└── gen.go                # Code generation directives
-```
+## Project structure and organization
 
-## Build, Test, and Development Commands
+- Root
+  - `main.go` -> entrypoint invoking `cmd.Execute()` and initializes global slog JSON logger to `./.cpe.log`
+  - `go.mod`, `go.sum` -> module and dependencies
+  - `gen.go` -> sqlc codegen directive for DB queries
+  - `README.md` -> user guide and command reference
+  - `ROADMAP.md` -> future plans
+  - `AGENT.md` -> this file
+  - `.cpeconvo` -> SQLite conversation DB (runtime artifact)
+  - `.cpe.log` -> structured JSON log file (runtime artifact; MCP stderr + internal debug)
+- CLI (`cmd/`)
+  - `root.go` -> root command, flags, execution pipeline, stdin/files/URLs ingestion, stream/no-stream logic
+  - `conversation.go`, `conversation_tree.go` -> conversation helpers
+  - `model.go` -> model listing/info
+  - `tools.go` -> developer tools (overview, token count, related files, etc.)
+  - `env.go` -> environment inspection command
+  - `mcp.go` -> MCP related commands (init/list/info/call-tool)
+  - `integration_test.go`, `conversation_tree_test.go` -> tests
+- Internal packages (`internal/`)
+  - `agent/` -> system prompt assembly, generator wrappers, streaming printers, input modality detection
+  - `storage/` -> dialog (conversation) persistence using SQLite via `sqlc` generated queries; schema and queries in
+    `schema.sql`, `queries.sql`, generated `queries.sql.go`
+  - `mcp/` -> MCP client lifecycle, config parsing and helpers
+  - `cliopts/` -> shared option utilities
+  - `token/` -> token counting utilities (`builder/`, `tree/`)
+  - `urlhandler/` -> HTTP(S) downloads and content typing
+  - `version/` -> version getter
+- Scripts (`scripts/`)
+  - Utilities like `process_pr_comment.go` for CI/tooling
+- Examples (`example_prompts/`) and prompt files (`prompt_1.txt`, `prompt_wk.txt`)
 
-### URL Handling
+Conventions:
 
-CPE now supports downloading and processing content directly from HTTP/HTTPS URLs:
+- All end-user commands are exposed via Cobra commands in `cmd/`.
+- Core logic that should not be part of the public CLI surface resides in `internal/`.
+- SQLite database file `.cpeconvo` is always used in the CWD.
 
-```bash
-# Process content from URL
-cpe --input https://example.com/file.txt "Analyze this file"
+---
 
-# Multiple URLs and files
-cpe --input local.go --input https://api.github.com/repos/spachava753/cpe/readme "Compare local vs remote"
-```
+## Build, test, and development commands
 
-**Features:**
+Prerequisites: Go 1.23+
 
-- 50MB size limit for security
-- Configurable timeouts and retry logic
-- Exponential backoff for failed requests
-- Custom user agent for identification
-- MIME type detection from response headers
+Build/install:
 
-**Security:**
+- Build binary: `go build ./...`
+- Install CLI: `go install github.com/spachava753/cpe@latest`
 
-- URL validation and sanitization
-- Size limits to prevent memory exhaustion
-- Timeout protection against hanging requests
+Run:
 
-### CLI Flags and Options
+- From source: `go run . --help`
+- Example: `CPE_MODEL=claude-3-5-sonnet go run . "List supported models"`
 
-#### Core Flags
+Tests:
 
-```bash
-# Input handling
---input, -i FILE/URL     Input file or URL to process (can be used multiple times)
---skip-stdin            Skip reading from stdin even if data is available
+- Run all tests: `go test ./...`
+- Run with race: `go test -race ./...`
+- Specific package: `go test ./internal/storage -v`
 
-# Model configuration
---model MODEL          Specify AI model to use (default: claude-3-5-sonnet)
---no-stream            Disable streaming responses
+Codegen:
 
-# MCP Configuration
---mcp-config FILE      Custom path for MCP configuration file (default: .cpemcp.json)
-```
+- SQLC: `go generate ./...` (see `gen.go`) -> requires `sqlc` v1.28.0
 
-#### Input Sources
+Linting/formatting (suggested):
 
-CPE can accept input from multiple sources:
+- `gofmt -s -w .`
+- `go vet ./...`
+- Optional: `golangci-lint run`
 
-- Command line arguments (direct prompt)
-- Files (--input file.go)
-- URLs (--input https://example.com/file.txt)
-- Standard input (piped content)
-- Combination of the above
+Release (manual example):
 
-Examples:
+- Tag and build via standard Go tooling or your CI. No dedicated release scripts in-repo.
 
-```bash
-# File and URL processing
-cpe --input main.go --input https://raw.githubusercontent.com/spachava753/cpe/main/go.mod "Compare dependencies"
+---
 
-# Skip stdin when piping
-echo "test" | cpe --skip-stdin "Process this without stdin"
-```
+## Code style and conventions
 
-#### Build Commands
+General Go practices:
 
-```bash
-# Build the binary
-go build -o cpe .
+- Keep public CLI-facing code in `cmd/` minimal; move logic to `internal/`.
+- Prefer small, composable packages and functions; keep side effects explicit.
+- Use context for cancellation/timeouts; propagate `ctx` from Cobra handlers.
+- Handle errors explicitly; wrap with `fmt.Errorf("...: %w", err)` for context.
+- Avoid panics in library code; return errors.
+- Keep functions pure where possible; separate I/O from computation for testability.
+- Keep CLI flags defined in `init()` of the corresponding command file; document defaults.
+- For streaming vs. non-streaming, route through the generator wrappers in `internal/agent`.
 
-# Install globally
-go install github.com/spachava753/cpe@latest
+Formatting/naming:
 
-# Run with go run
-go run . "your prompt here"
+- `gofmt`/`goimports` enforced; idiomatic Go naming (ExportedNames for public, lowerCamel for internal).
+- 100-120 char soft line limit.
+- For initialisms, follow Go style: `ID`, `URL`, `API` (e.g., `MessageID`).
 
-# Cross-compile for different platforms
-GOOS=linux GOARCH=amd64 go build -o cpe-linux-amd64 .
-GOOS=darwin GOARCH=amd64 go build -o cpe-darwin-amd64 .
-GOOS=windows GOARCH=amd64 go build -o cpe-windows-amd64.exe .
-```
+Documentation:
 
-#### Test Commands
+- Package docs in `doc.go` where needed; function comments in GoDoc style.
+- For user docs, keep @README.md as the source of truth; reference it from commands where helpful.
 
-```bash
-# Run all tests
-go test ./...
+Dependencies:
 
-# Run tests with verbose output
-go test -v ./...
+- Keep third-party usage minimal; prefer stdlib where practical.
+- Pin with `go.mod`; update regularly and audit for security.
 
-# Run tests for specific package
-go test ./cmd/...
-go test ./internal/agent/...
+---
 
-# Run tests with coverage
-go test -cover ./...
-go test -coverprofile=coverage.out ./...
-go tool cover -html=coverage.out -o coverage.html
+## Architecture and design patterns
 
-# Run specific test
-go test -run TestConversationTree ./cmd/
+High-level flow (root command):
 
-# Run tests with race detection
-go test -race ./...
+1) Parse flags/env -> validate model presence (CPE_MODEL or --model).
+2) Collect user input blocks from stdin, files, URLs. Detect modality and MIME via `internal/agent` + `mimetype`.
+3) Prepare system prompt via `agent.PrepareSystemPrompt`, allowing override via `--system-prompt-file`.
+4) Initialize LLM generator (`agent.InitGenerator`) with timeouts and optional custom base URL.
+5) Wrap generator for streaming output (`StreamingPrinterGenerator`) or non-streaming (`ResponsePrinterGenerator`).
+6) Construct `gai.ToolGenerator` and wrap with `agent.NewThinkingFilterToolGenerator` to filter thinking in top-level
+   dialog while preserving it for tool execution.
+7) Run conversation turn; persist messages to SQLite via `internal/storage` unless incognito.
+8) Print last saved message id to stderr for automation.
 
-# Generate code and run tests
-go generate ./...
-go test ./...
-```
+Key patterns:
 
-#### Database Commands
+- Cobra for CLI composition.
+- Ports/adapters around model providers via `github.com/spachava753/gai` abstraction.
+- Repository-like storage layer with sqlc-generated queries.
+- Tooling commands in `cmd/tools.go` expose analysis helpers (overview, token counts, related files).
+- MCP integration encapsulated in `internal/mcp` and surfaced via `cmd/mcp.go`.
+- Centralized structured logging with `log/slog` (JSON), writing to `./.cpe.log` from `main.go`.
+  - On logger initialization failure, we fall back to a discard handler and emit a one-time warning on stderr.
 
-```bash
-# Generate SQLC code
-go generate ./...
+Data storage:
 
-# Check database schema
-sqlite3 .cpeconvo ".schema"
+- SQLite DB `.cpeconvo` with messages, parent-child relationships enabling branching; see `internal/storage/schema.sql`.
 
-# Reset conversation database
-rm .cpeconvo
-```
+---
 
-#### Linting and Formatting
+## Testing guidelines
 
-```bash
-# Format code
-go fmt ./...
+- Use `go test ./...` regularly; keep tests deterministic and stateless.
+- Unit tests should isolate packages (e.g., `internal/storage`, `internal/agent`).
+- For DB tests, use temporary SQLite files; tests in `internal/storage/*_test.go` illustrate patterns.
+- Prefer table-driven tests and subtests; use `testing.T` helpers.
+- Use `github.com/stretchr/testify` for assertions where it improves clarity; avoid over-mocking.
+- Keep I/O (network, filesystem) behind small interfaces to stub in tests.
+- Avoid hitting real model providers in unit tests; test adapters with fakes.
+- Naming: `foo_test.go`, functions `TestXxx`; avoid "should" in test names.
 
-# Run go vet
-go vet ./...
+Running selective tests:
 
-# Run static analysis
-go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+- `go test ./cmd -run TestName`
+- `go test ./internal/storage -run Dialog`
 
-# Check for vulnerabilities
-go install golang.org/x/vuln/cmd/govulncheck@latest
-govulncheck ./...
-```
+Coverage (optional):
 
-## Code Style and Conventions
+- `go test ./... -cover -coverprofile=cover.out && go tool cover -func=cover.out`
 
-### Go Style Guidelines
+---
 
-- **Format**: Use `gofmt` for consistent formatting
-- **Linting**: Follow standard Go conventions with `go vet` and `golint`
-- **Naming**: Use camelCase for variables and functions, PascalCase for exported types
-- **Error Handling**: Always check errors explicitly, use `fmt.Errorf` with context
-- **Context**: Always pass context for cancellation and timeouts
-- **Modules**: Use semantic versioning, avoid breaking changes in minor releases
+## Security considerations
 
-### Code Organization
+Secrets and configuration:
 
-- **Packages**: Keep packages small and focused on single responsibility
-- **Interfaces**: Define interfaces close to where they're used
-- **Dependencies**: Minimize external dependencies, prefer standard library
-- **Testing**: Place tests in the same package as code being tested
+- Never commit API keys; rely on env vars: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`. See @README.md.
+- Optional `CPE_MODEL`, `CPE_CUSTOM_URL` may influence provider selection and endpoints.
 
-### Documentation Conventions
+Runtime:
 
-- **Comments**: Use complete sentences for all exported symbols
-- **Examples**: Include examples in test files (`example_test.go`)
-- **README**: Keep README.md updated with the latest usage examples
-- **Godoc**: Ensure all public APIs have proper godoc comments
+- Validate and sanitize all file/URL inputs. Size limit enforced at 50MB per input in `cmd/root.go`.
+- Network downloads time out (30s) and use content-type checks; avoid executing downloaded content.
+- Follow principle of least privilege for filesystem access. The tool only writes `.cpeconvo`, `.cpe.log`, and
+  user-requested file edits.
+- Handle SIGINT/SIGTERM gracefully; partial outputs are saved and reported.
+- Avoid `git push --force` in scripts; prefer `--force-with-lease` when necessary.
 
-### Logging and Output
+Dependencies:
 
-- **CLI Output**: Use `fmt.Fprintln(os.Stderr, ...)` for diagnostic messages
-- **Progress**: Use clear, concise messages for long-running operations
-- **Error Messages**: Provide actionable error messages with context
-- **Success**: Confirm successful operations with appropriate messages
+- Keep dependencies updated; run `go list -m -u all` periodically and audit CVEs.
 
-## Architecture and Design Patterns
+Privacy:
 
-### Core Architecture
+- Use `-G/--incognito` to avoid saving conversations locally.
+- Be mindful that prompts and files may be sent to third-party model providers per your configuration.
+- `.cpe.log` contains structured diagnostic logs (including MCP server stderr lines). Review and handle accordingly
+  before sharing logs.
 
-CPE follows a modular architecture with clear separation of concerns:
+---
 
-#### AI Provider Layer
+## Configuration
 
-- **Provider Interface**: Unified interface for different AI providers
-- **Streaming Support**: Real-time response streaming for better UX
-- **Tool Integration**: Support for function calling and external tools
-- **Token Management**: Intelligent token counting and context management
+Environment variables:
 
-#### Storage Layer
+- Required: at least one of `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`.
+- Optional: `CPE_MODEL` (default model), `CPE_CUSTOM_URL` (custom API base URL).
+- See `cpe env` for a dump of current environment values recognized by the tool.
 
-- **SQLite**: Local conversation storage with full-text search
-- **Branching**: Support for conversation branching and merging
-- **Migration**: Database schema migration support
-- **Cleanup**: Automatic cleanup of old conversations
+CLI flags (selected):
 
-#### Input Processing Layer
+- `--model, -m` select model
+- `--input, -i` add files/URLs (can repeat or comma-separate)
+- `--new, -n` start new conversation; `--continue, -c` resume by message ID
+- `--incognito, -G` do not persist conversation
+- `--system-prompt-file, -s` custom system prompt template
+- `--timeout` request timeout (default 5m)
+- `--no-stream` disable streaming output
+- `--mcp-config` path to MCP config file
 
-- **Multi-source Input**: Support for files, URLs, and stdin
-- **URL Handler**: Secure HTTP/HTTPS content downloading
-- **File Type Detection**: MIME type detection from content and headers
-- **Content Validation**: Size limits and security checks
-- **Stream Processing**: Real-time processing for large inputs
+MCP configuration:
 
-#### CLI Layer
+- Configure servers via `.cpemcp.json` or `.cpemcp.yml` in repo root or CWD; see @README.md MCP section.
+- MCP server stderr is captured and logged to `.cpe.log` instead of printing to CLI stderr.
+- Internal MCP diagnostics (tool filtering/registration) log via `slog` at info/warn levels.
 
-- **Cobra CLI**: Modern CLI framework with nested commands
-- **Configuration**: Environment variable and flag-based configuration
-- **Input Handling**: Support for stdin, files, and command arguments
-- **Output**: Rich terminal output with colors and formatting
+Code generation and DB:
 
-### Design Patterns Used
+- Run `go generate ./...` to refresh sqlc outputs after editing `internal/storage/queries.sql` or `schema.sql`.
+- The SQLite DB path is fixed to `.cpeconvo` in the current working directory.
 
-#### Command Pattern
+---
 
-- Each CLI command implements the `cobra.Command` interface
-- Commands are organized hierarchically under the root command
-- Clear separation between command definition and execution
+## Build & Commands (quick reference)
 
-#### Repository Pattern
+- Build: `go build ./...`
+- Test: `go test ./...`
+- Lint: `go vet ./...` (and/or `golangci-lint run`)
+- Generate sqlc: `go generate ./...`
+- Run CLI: `CPE_MODEL=claude-3-5-sonnet go run . "Your prompt"`
+- List models: `go run . model list`
+- Tools: `go run . tools overview .`, `go run . tools list-files`, `go run . tools token-count .`
 
-- `DialogStorage` interface abstracts database operations
-- Clean separation between storage and business logic
-- Support for different backend implementations
+---
 
-#### Factory Pattern
+## Additional references
 
-- `InitGenerator` creates appropriate AI provider based on configuration
-- Extensible for adding new AI providers
-- Consistent interface across different providers
-
-#### Adapter Pattern
-
-- `StreamingAdapter` converts streaming interfaces to standard interfaces
-- `ToolGenerator` adapts AI providers to support tool calls
-- `ResponsePrinterGenerator` adds consistent output formatting
-
-#### Observer Pattern
-
-- Context-based cancellation for graceful shutdown
-- Signal handling for interrupt signals
-- Cleanup routines for resource management
-
-## Testing Guidelines
-
-### URL Handler Package (`internal/urlhandler/`)
-
-The URL handler package provides secure HTTP/HTTPS content downloading with the following features:
-
-**Security Features:**
-
-- 50MB size limit to prevent memory exhaustion
-- Configurable timeouts (default: 30s)
-- Exponential backoff for retry logic
-- Custom User-Agent identification
-- Content-Type validation
-
-**Usage:**
-
-```go
-import "github.com/spachava753/cpe/internal/urlhandler"
-
-handler := urlhandler.New()
-content, contentType, err := handler.Download("https://example.com/file.txt")
-```
-
-**Testing:**
-
-```bash
-# Run URL handler tests
-go test ./internal/urlhandler/...
-go test -v ./internal/urlhandler/...
-```
-
-#### Unit Tests
-
-- **Location**: `*_test.go` files alongside source code
-- **Coverage**: Aim for >80% code coverage
-- **Naming**: `TestFunctionName_ScenarioName`
-- **Table-driven tests**: Use for multiple input scenarios
-
-#### Integration Tests
-
-- **Database**: Test actual SQLite operations with temporary databases
-- **AI Providers**: Mock external APIs for consistent testing
-- **File System**: Use temporary directories for file operations
-
-#### Test Data
-
-- **Fixtures**: Store test data in `testdata/` directories
-- **Mocking**: Use interfaces for external dependencies
-- **Golden Files**: Use for complex output validation
-
-### Test Commands
-
-```bash
-# Run all tests with race detection
-go test -race ./...
-
-# Run tests with coverage
-go test -coverpkg=./... -coverprofile=coverage.out ./...
-
-# Run specific test category
-go test -tags=integration ./...
-
-# Generate test coverage report
-go tool cover -html=coverage.out -o coverage.html
-```
-
-### Test Utilities
-
-- **Test helpers**: Use `testify` for assertions and mocks
-- **Setup/Teardown**: Use `TestMain` for database setup
-- **Parallel tests**: Use `t.Parallel()` where appropriate
-- **Timeout handling**: Always test context cancellation
-
-## Security Considerations
-
-### API Key Management
-
-- **Environment Variables**: Never hardcode API keys
-- **Configuration**: Support for custom endpoints and API keys
-- **Validation**: Validate API keys before making requests
-- **Rotation**: Support for key rotation without restart
-
-### Data Protection
-
-- **Local Storage**: All conversation data stored locally
-- **Encryption**: Consider encryption for sensitive conversations
-- **Cleanup**: Automatic cleanup of old conversations
-- **Privacy Mode**: Support for incognito mode (no storage)
-
-### URL Security
-
-**Content Downloading:**
-
-- 50MB size limit prevents memory exhaustion attacks
-- Configurable timeouts prevent hanging requests
-- Exponential backoff prevents server overload
-- URL validation prevents SSRF attacks
-- Content-Type validation ensures safe processing
-- Custom User-Agent for responsible crawling
-
-**Input Validation:**
-
-- File size limits: 50MB for URLs, 100MB for local files
-- Path traversal protection for local files
-- URL validation and sanitization
-- Content-Type verification
-- Extension-based type detection for local files
-
-### Network Security
-
-- **HTTPS**: Always use HTTPS for external API calls
-- **Certificate Validation**: Validate SSL certificates
-- **Timeouts**: Set appropriate timeouts for network requests
-- **Rate Limiting**: Respect API rate limits and implement backoff
-
-### Configuration Security
-
-- **Secure Defaults**: Use secure defaults for all configurations
-- **Validation**: Validate all configuration inputs
-- **Secrets**: Never log sensitive information
-- **Audit Trail**: Log security-relevant events
-
-## Environment Setup and Configuration
-
-### Required Environment Variables
-
-```bash
-# Required (at least one)
-export ANTHROPIC_API_KEY="your_anthropic_api_key"
-export OPENAI_API_KEY="your_openai_api_key"
-export GEMINI_API_KEY="your_gemini_api_key"
-
-# Optional model selection
-export CPE_MODEL="claude-3-5-sonnet"  # Default model
-export CPE_CUSTOM_URL="https://your-custom-endpoint.com"
-
-# Deprecated environment variables:
-# SKIP_STDIN - Use --skip-stdin flag instead
-```
-
-### Configuration Files
-
-- **`.cpemcp.json`**: MCP server configuration (can be overridden with --mcp-config)
-- **`.cpeignore`**: Files to exclude from analysis (Git-ignore format)
-- **`.env`**: Local environment variables (not committed)
-
-### Development Environment
-
-```bash
-# Quick setup
-git clone https://github.com/spachava753/cpe.git
-cd cpe
-go mod download
-
-# Set up environment
-echo "CPE_MODEL=claude-3-5-sonnet" > .env
-echo "ANTHROPIC_API_KEY=your_key_here" >> .env
-
-# Build and test
-go build -o cpe .
-./cpe "Hello, CPE!"
-```
-
-### IDE Configuration
-
-- **GoLand/VS Code**: Enable gofmt on save
-- **Linting**: Install golangci-lint for IDE integration
-- **Testing**: Configure test runner for table-driven tests
-- **Debugging**: Use delve for debugging Go applications
-
-### Continuous Integration
-
-- **GitHub Actions**: Automated testing and building
-- **Code Coverage**: Track coverage trends
-- **Security Scanning**: Automated vulnerability scanning
-- **Dependency Updates**: Automated dependency updates
-
-## Git Workflow and Branching Strategy
-
-### Branch Naming
-
-- `feature/description` - New features
-- `bugfix/description` - Bug fixes
-- `hotfix/description` - Critical fixes
-- `docs/description` - Documentation updates
-- `refactor/description` - Code refactoring
-
-### Commit Messages
-
-Follow conventional commits format:
-
-```
-type(scope): description
-
-[optional body]
-
-[optional footer]
-```
-
-### Pre-commit Checks
-
-```bash
-# Always run before committing
-go fmt ./...
-go vet ./...
-go test ./...
-
-# Check for security issues
-govulncheck ./...
-```
-
-### Release Process
-
-1. Update version in `internal/version/version.go`
-2. Update CHANGELOG.md
-3. Create release branch: `release/v1.x.x`
-4. Run full test suite
-5. Create GitHub release with binaries
-6. Update documentation
-
-## Additional Resources
-
-- @README.md - Main project documentation
-- @ROADMAP.md - Project roadmap and future plans
-- @sqlc.yaml - Database configuration
-- @go.mod - Dependencies and Go version requirements
-- @cmd/root.go - Main CLI implementation
-- @internal/agent/ - AI agent core functionality
+- @README.md for end-user docs and examples
+- @ROADMAP.md for planned features
+- `internal/agent/agent_instructions.txt` for the system prompt template used by default
