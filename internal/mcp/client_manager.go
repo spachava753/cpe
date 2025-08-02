@@ -3,7 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"os"
+	"log/slog"
 	"time"
 
 	"github.com/spachava753/gai"
@@ -25,7 +25,7 @@ func NewClientManager(config *ConfigFile) *ClientManager {
 
 	// If no servers are configured
 	if len(config.MCPServers) == 0 {
-		fmt.Fprintf(os.Stderr, "WARNING: No MCP servers configured.\n")
+		slog.Warn("no mcp servers configured")
 	}
 
 	return &ClientManager{
@@ -62,7 +62,7 @@ func (m *ClientManager) GetClient(ctx context.Context, serverName string) (*mcp.
 		}
 		stdio := mcp.NewStdio(stdioConfig)
 		stdio.SetStderrHandler(func(s string) {
-			fmt.Fprintf(os.Stderr, "mcp server '%s' stderr: %s\n", serverName, s)
+			slog.Info("mcp server stderr", "server", serverName, "msg", s)
 		})
 		transport = stdio
 	case "sse":

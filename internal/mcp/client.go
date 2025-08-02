@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/spachava753/gai"
-	"os"
+	"log/slog"
 	"strings"
 )
 
@@ -160,8 +160,7 @@ func RegisterMCPServerTools(ctx context.Context, clientManager *ClientManager, t
 			if toolFilter == "" {
 				toolFilter = "all"
 			}
-			fmt.Fprintf(os.Stderr, "MCP server '%s' (filter: %s): filtered out %d tools: %s\n",
-				serverName, toolFilter, len(filteredOut), strings.Join(filteredOut, ", "))
+			slog.Info("mcp tools filtered", "server", serverName, "filter", toolFilter, "filtered_count", len(filteredOut), "filtered", strings.Join(filteredOut, ", "))
 		}
 
 		// Register each filtered tool
@@ -199,26 +198,17 @@ func RegisterMCPServerTools(ctx context.Context, clientManager *ClientManager, t
 
 	// Enhanced logging with filtering information
 	if registeredCount > 0 || totalFilteredOut > 0 {
-		fmt.Fprintf(os.Stderr, "MCP tools summary: registered %d tools", registeredCount)
-		if totalFilteredOut > 0 {
-			fmt.Fprintf(os.Stderr, ", filtered out %d tools", totalFilteredOut)
-		}
-		if len(warnings) > 0 {
-			fmt.Fprintf(os.Stderr, ", %d warnings", len(warnings))
-		}
-		fmt.Fprintf(os.Stderr, "\n")
+		slog.Info("mcp tools summary", "registered", registeredCount, "filtered_out", totalFilteredOut, "warnings", len(warnings))
 	}
 
 	// If we have warnings but also registered at least one tool, print warnings only
 	if len(warnings) > 0 {
 		if registeredCount > 0 {
-			// Print warnings to stderr for visibility
 			for _, warning := range warnings {
-				fmt.Fprintf(os.Stderr, "  WARNING: %s\n", warning)
+				slog.Warn("mcp tool registration warning", "warning", warning)
 			}
 			return nil
 		}
-		// If no tools were registered at all, return an error with the warnings
 		return fmt.Errorf("failed to register any MCP tools: %s", strings.Join(warnings, "; "))
 	}
 
