@@ -340,6 +340,18 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		fmt.Fprintln(os.Stderr, "Partial dialog saved successfully.")
 	}
 
+	// Print the last message's ID to stderr before exiting
+	lastID := currentParentId
+	if lastID == "" {
+		// Fallback: if we somehow didn't save any message, try most recent user message id
+		if id, err := dialogStorage.GetMostRecentUserMessageId(ctx); err == nil {
+			lastID = id
+		}
+	}
+	if lastID != "" {
+		fmt.Fprintf(os.Stderr, "[cpe] last_message_id=%s\n", lastID)
+	}
+
 	return nil
 }
 
