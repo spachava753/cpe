@@ -4,14 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/spachava753/gai"
 	"log/slog"
+	"maps"
+	"os/exec"
+	"slices"
 	"strings"
+
+	invopopjsonschema "github.com/invopop/jsonschema"
+	"github.com/modelcontextprotocol/go-sdk/jsonschema"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/spachava753/cpe/internal/version"
+	"github.com/spachava753/gai"
 )
 
-// filterTools applies tool filtering based on the server configuration
+// FilterMcpTools applies tool filtering based on the server configuration
 // Returns the filtered tools and a list of filtered-out tool names for logging
-func filterTools(tools []gai.Tool, config MCPServerConfig, serverName string) ([]gai.Tool, []string) {
+func FilterMcpTools(tools []*mcp.Tool, config ServerConfig) ([]*mcp.Tool, []string) {
 	// Normalize tool filter value
 	toolFilter := config.ToolFilter
 	if toolFilter == "" {
@@ -23,7 +31,7 @@ func filterTools(tools []gai.Tool, config MCPServerConfig, serverName string) ([
 		return tools, nil
 	}
 
-	var filteredTools []gai.Tool
+	var filteredTools []*mcp.Tool
 	var filteredOut []string
 
 	switch toolFilter {
@@ -63,16 +71,32 @@ func filterTools(tools []gai.Tool, config MCPServerConfig, serverName string) ([
 	return filteredTools, filteredOut
 }
 
-// FilterToolsPublic exposes the filterTools function for use in CLI commands
-func FilterToolsPublic(tools []gai.Tool, config MCPServerConfig, serverName string) ([]gai.Tool, []string) {
-	return filterTools(tools, config, serverName)
+// convertSchema converts an MCP jsonschema.Schema to a gai jsonschema.Schema
+func convertSchema(input *jsonschema.Schema) *invopopjsonschema.Schema {
+	if input == nil {
+		return nil
+	}
+
+	// Marshal the input schema to JSON
+	data, err := json.Marshal(input)
+	if err != nil {
+		return nil
+	}
+
+	// Unmarshal into the target schema type
+	var output invopopjsonschema.Schema
+	if err := json.Unmarshal(data, &output); err != nil {
+		return nil
+	}
+
+	return &output
 }
 
 // ToolCallback implements the gai.ToolCallback interface for MCP tools
 type ToolCallback struct {
-	ClientManager *ClientManager
-	ServerName    string
+	ClientSession *mcp.ClientSession
 	ToolName      string
+	ServerName    string
 }
 
 // Call implements the gai.ToolCallback interface
@@ -95,7 +119,10 @@ func (c *ToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage,
 	}
 
 	// Call the tool
-	result, err := c.ClientManager.CallTool(ctx, c.ServerName, c.ToolName, params)
+	result, err := c.ClientSession.CallTool(ctx, &mcp.CallToolParams{
+		Name:      c.ToolName,
+		Arguments: params,
+	})
 	if err != nil {
 		return gai.Message{
 			Role: gai.ToolResult,
@@ -111,21 +138,65 @@ func (c *ToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage,
 		}, nil
 	}
 
-	// Update the result message with the correct tool call ID
-	// Since CallTool now returns a gai.Message, we need to update the IDs
-	for i := range result.Blocks {
-		result.Blocks[i].ID = toolCallID
+	// Convert the MCP CallToolResult to a gai.Message
+	blocks := make([]gai.Block, len(result.Content))
+	for i, content := range result.Content {
+		block := gai.Block{
+			ID:        toolCallID,
+			BlockType: gai.Content,
+		}
+
+		switch c := content.(type) {
+		case *mcp.TextContent:
+			block.ModalityType = gai.Text
+			block.MimeType = "text/plain"
+			block.Content = gai.Str(c.Text)
+		case *mcp.ImageContent:
+			block.ModalityType = gai.Image
+			block.MimeType = c.MIMEType
+			block.Content = gai.Str(c.Data)
+		case *mcp.ResourceLink:
+			return gai.Message{}, fmt.Errorf("cannot handle resource links in tool call result")
+		default:
+			block.ModalityType = gai.Text
+			block.MimeType = "text/plain"
+			block.Content = gai.Str(fmt.Sprintf("Unknown content type: %T", content))
+		}
+
+		blocks[i] = block
 	}
 
-	return result, nil
+	return gai.Message{
+		Role:   gai.ToolResult,
+		Blocks: blocks,
+	}, nil
+}
+
+func CreateTransport(config ServerConfig) (transport mcp.Transport, err error) {
+	switch config.Type {
+	case "stdio", "":
+		transport = mcp.NewCommandTransport(exec.Command(config.Command, config.Args...))
+	case "http":
+		transport = mcp.NewStreamableClientTransport(config.URL, &mcp.StreamableClientTransportOptions{
+			HTTPClient: nil,
+		})
+	case "sse":
+		transport = mcp.NewSSEClientTransport(config.URL, &mcp.SSEClientTransportOptions{
+			HTTPClient: nil,
+		})
+	}
+	if transport == nil {
+		err = fmt.Errorf("transport not supported")
+	}
+	return
 }
 
 // RegisterMCPServerTools registers all tools from all MCP servers with the tool registerer
 // It continues registering tools even if some fail, collecting warnings along the way
-func RegisterMCPServerTools(ctx context.Context, clientManager *ClientManager, toolRegisterer interface {
+func RegisterMCPServerTools(ctx context.Context, client *mcp.Client, mcpConfig Config, toolRegisterer interface {
 	Register(tool gai.Tool, callback gai.ToolCallback) error
 }) error {
-	serverNames := clientManager.ListServerNames()
+	serverNames := slices.Collect(maps.Keys(mcpConfig.MCPServers))
 
 	// If no servers are configured, return early without an error
 	if len(serverNames) == 0 {
@@ -140,18 +211,31 @@ func RegisterMCPServerTools(ctx context.Context, clientManager *ClientManager, t
 	// For each server, get tools and register
 	for _, serverName := range serverNames {
 		// Get server config for filtering
-		serverConfig := clientManager.config.MCPServers[serverName]
+		serverConfig := mcpConfig.MCPServers[serverName]
+
+		transport, err := CreateTransport(serverConfig)
+		if err != nil {
+			return err
+		}
+
+		clientSession, err := client.Connect(ctx, transport)
+		if err != nil {
+			return err
+		}
 
 		// List tools (client is already initialized in GetClient)
-		toolsResult, err := clientManager.ListTools(ctx, serverName)
-		if err != nil {
-			warnings = append(warnings, fmt.Sprintf("failed to list MCP tools for server %s: %v", serverName, err))
-			// Skip this server but continue with others
-			continue
+		var tools []*mcp.Tool
+		for tool, err := range clientSession.Tools(ctx, nil) {
+			if err != nil {
+				warnings = append(warnings, fmt.Sprintf("failed to list MCP tools for server %s: %v", serverName, err))
+				// Skip this server but continue with others
+				continue
+			}
+			tools = append(tools, tool)
 		}
 
 		// Apply tool filtering
-		filteredTools, filteredOut := filterTools(toolsResult, serverConfig, serverName)
+		filteredTools, filteredOut := FilterMcpTools(tools, serverConfig)
 		totalFilteredOut += len(filteredOut)
 
 		// Log filtering information if tools were filtered
@@ -164,20 +248,28 @@ func RegisterMCPServerTools(ctx context.Context, clientManager *ClientManager, t
 		}
 
 		// Register each filtered tool
-		for _, gaiTool := range filteredTools {
+		for _, mcpTool := range filteredTools {
 			// Check for duplicate tool names
-			if existingServer, exists := registeredTools[gaiTool.Name]; exists {
+			if existingServer, exists := registeredTools[mcpTool.Name]; exists {
 				warnings = append(warnings, fmt.Sprintf(
 					"skipping duplicate tool name '%s' in server '%s' (already registered from server '%s')",
-					gaiTool.Name, serverName, existingServer))
+					mcpTool.Name, serverName, existingServer))
 				continue
 			}
 
 			// Create a callback for this tool
 			callback := &ToolCallback{
-				ClientManager: clientManager,
+				ClientSession: clientSession,
 				ServerName:    serverName,
-				ToolName:      gaiTool.Name,
+				ToolName:      mcpTool.Name,
+			}
+
+			// Convert the MCP Tool to a gai.Tool
+			gaiTool := gai.Tool{
+				Name:        mcpTool.Name,
+				Description: mcpTool.Description,
+				// Convert InputSchema from mcp jsonschema to gai jsonschema
+				InputSchema: convertSchema(mcpTool.InputSchema),
 			}
 
 			// Register the tool with the callback
@@ -185,13 +277,13 @@ func RegisterMCPServerTools(ctx context.Context, clientManager *ClientManager, t
 			if err != nil {
 				warnings = append(warnings, fmt.Sprintf(
 					"failed to register MCP tool '%s' from server '%s': %v",
-					gaiTool.Name, serverName, err))
+					mcpTool.Name, serverName, err))
 				// Skip this tool but continue with others
 				continue
 			}
 
 			// Track this tool to detect duplicates
-			registeredTools[gaiTool.Name] = serverName
+			registeredTools[mcpTool.Name] = serverName
 			registeredCount++
 		}
 	}
@@ -213,4 +305,14 @@ func RegisterMCPServerTools(ctx context.Context, clientManager *ClientManager, t
 	}
 
 	return nil
+}
+
+func NewClient() *mcp.Client {
+	return mcp.NewClient(
+		&mcp.Implementation{
+			Name:    "cpe",
+			Title:   "CPE",
+			Version: version.Get(),
+		}, nil,
+	)
 }

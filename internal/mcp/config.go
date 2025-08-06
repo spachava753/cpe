@@ -9,13 +9,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ConfigFile represents the structure of the MCP configuration file
-type ConfigFile struct {
-	MCPServers map[string]MCPServerConfig `json:"mcpServers" yaml:"mcpServers"`
+// Config represents the structure of the MCP configuration file
+type Config struct {
+	MCPServers map[string]ServerConfig `json:"mcpServers" yaml:"mcpServers"`
 }
 
-// MCPServerConfig represents the configuration for a single MCP server
-type MCPServerConfig struct {
+// ServerConfig represents the configuration for a single MCP server
+type ServerConfig struct {
 	Command       string            `json:"command" yaml:"command"`
 	Args          []string          `json:"args" yaml:"args"`
 	Type          string            `json:"type,omitempty" yaml:"type,omitempty"`                   // Optional: "stdio" (default), "sse", or "http"
@@ -32,7 +32,7 @@ type MCPServerConfig struct {
 // If configPath is empty, it falls back to searching for .cpemcp.json, .cpemcp.yaml, or .cpemcp.yml files
 // If no config file is found, it returns an empty configuration instead of an error
 // If a config file exists but has reading or parsing errors, it returns an error
-func LoadConfig(configPath string) (*ConfigFile, error) {
+func LoadConfig(configPath string) (*Config, error) {
 	var actualConfigPath string
 
 	if configPath != "" {
@@ -55,7 +55,7 @@ func LoadConfig(configPath string) (*ConfigFile, error) {
 
 		// If no config file found, return empty config
 		if actualConfigPath == "" {
-			return &ConfigFile{MCPServers: make(map[string]MCPServerConfig)}, nil
+			return &Config{MCPServers: make(map[string]ServerConfig)}, nil
 		}
 	}
 
@@ -66,7 +66,7 @@ func LoadConfig(configPath string) (*ConfigFile, error) {
 	}
 
 	// Parse the file based on its extension
-	var config ConfigFile
+	var config Config
 	var parseErr error
 
 	if strings.HasSuffix(actualConfigPath, ".json") {
@@ -95,14 +95,14 @@ func LoadConfig(configPath string) (*ConfigFile, error) {
 
 	// Initialize the map if it's nil
 	if config.MCPServers == nil {
-		config.MCPServers = make(map[string]MCPServerConfig)
+		config.MCPServers = make(map[string]ServerConfig)
 	}
 
 	return &config, nil
 }
 
 // Validate checks if the configuration is valid
-func (c *ConfigFile) Validate() error {
+func (c *Config) Validate() error {
 	// Check each server configuration if any exist
 	for name, server := range c.MCPServers {
 		// Validate type-specific requirements
@@ -147,7 +147,7 @@ func (c *ConfigFile) Validate() error {
 }
 
 // validateToolFilter validates the tool filtering configuration
-func validateToolFilter(server MCPServerConfig, serverName string) error {
+func validateToolFilter(server ServerConfig, serverName string) error {
 	// Normalize tool filter value
 	toolFilter := server.ToolFilter
 	if toolFilter == "" {

@@ -5,8 +5,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"github.com/spachava753/cpe/internal/mcp"
-	"github.com/spachava753/cpe/internal/version"
 	"io"
 	"os"
 	"os/signal"
@@ -15,6 +13,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/spachava753/cpe/internal/mcp"
+	"github.com/spachava753/cpe/internal/version"
+
 	"github.com/gabriel-vasile/mimetype"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/spachava753/cpe/internal/agent"
@@ -22,6 +23,8 @@ import (
 	"github.com/spachava753/cpe/internal/urlhandler"
 	"github.com/spachava753/gai"
 	"github.com/spf13/cobra"
+
+	mcpinternal "github.com/spachava753/cpe/internal/mcp"
 )
 
 // DefaultModel holds the global default LLM model for the CLI.
@@ -210,11 +213,10 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	}
 
 	// Create client manager
-	clientManager := mcp.NewClientManager(config)
-	defer clientManager.Close()
+	client := mcpinternal.NewClient()
 
 	// Register MCP server tools
-	if err = mcp.RegisterMCPServerTools(ctx, clientManager, filterToolGen); err != nil {
+	if err = mcp.RegisterMCPServerTools(ctx, client, *config, filterToolGen); err != nil {
 		return fmt.Errorf("failed to register MCP tools: %v\n", err)
 	}
 

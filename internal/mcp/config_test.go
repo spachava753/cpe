@@ -5,19 +5,19 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spachava753/gai"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestConfigValidation(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  ConfigFile
+		config  Config
 		wantErr bool
 	}{
 		{
 			name: "Valid stdio config",
-			config: ConfigFile{
-				MCPServers: map[string]MCPServerConfig{
+			config: Config{
+				MCPServers: map[string]ServerConfig{
 					"test": {
 						Command: "npx",
 						Args:    []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"},
@@ -28,8 +28,8 @@ func TestConfigValidation(t *testing.T) {
 		},
 		{
 			name: "Valid sse config without command",
-			config: ConfigFile{
-				MCPServers: map[string]MCPServerConfig{
+			config: Config{
+				MCPServers: map[string]ServerConfig{
 					"test": {
 						Type: "sse",
 						URL:  "http://localhost:3000",
@@ -40,8 +40,8 @@ func TestConfigValidation(t *testing.T) {
 		},
 		{
 			name: "Valid with timeout and env",
-			config: ConfigFile{
-				MCPServers: map[string]MCPServerConfig{
+			config: Config{
+				MCPServers: map[string]ServerConfig{
 					"test": {
 						Command: "npx",
 						Args:    []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"},
@@ -56,8 +56,8 @@ func TestConfigValidation(t *testing.T) {
 		},
 		{
 			name: "Missing URL for sse",
-			config: ConfigFile{
-				MCPServers: map[string]MCPServerConfig{
+			config: Config{
+				MCPServers: map[string]ServerConfig{
 					"test": {
 						Type: "sse",
 					},
@@ -67,8 +67,8 @@ func TestConfigValidation(t *testing.T) {
 		},
 		{
 			name: "Missing command for stdio",
-			config: ConfigFile{
-				MCPServers: map[string]MCPServerConfig{
+			config: Config{
+				MCPServers: map[string]ServerConfig{
 					"test": {
 						Type: "stdio",
 						Args: []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"},
@@ -79,8 +79,8 @@ func TestConfigValidation(t *testing.T) {
 		},
 		{
 			name: "Invalid type",
-			config: ConfigFile{
-				MCPServers: map[string]MCPServerConfig{
+			config: Config{
+				MCPServers: map[string]ServerConfig{
 					"test": {
 						Command: "npx",
 						Type:    "invalid",
@@ -91,8 +91,8 @@ func TestConfigValidation(t *testing.T) {
 		},
 		{
 			name: "Negative timeout",
-			config: ConfigFile{
-				MCPServers: map[string]MCPServerConfig{
+			config: Config{
+				MCPServers: map[string]ServerConfig{
 					"test": {
 						Command: "npx",
 						Timeout: -10,
@@ -103,8 +103,8 @@ func TestConfigValidation(t *testing.T) {
 		},
 		{
 			name: "Env vars on non-stdio server",
-			config: ConfigFile{
-				MCPServers: map[string]MCPServerConfig{
+			config: Config{
+				MCPServers: map[string]ServerConfig{
 					"test": {
 						Type: "sse",
 						URL:  "http://localhost:3000",
@@ -118,8 +118,8 @@ func TestConfigValidation(t *testing.T) {
 		},
 		{
 			name: "Empty servers",
-			config: ConfigFile{
-				MCPServers: map[string]MCPServerConfig{},
+			config: Config{
+				MCPServers: map[string]ServerConfig{},
 			},
 			wantErr: false, // Empty servers should be valid
 		},
@@ -210,13 +210,13 @@ func TestConfigFileIO(t *testing.T) {
 func TestToolFilterValidation(t *testing.T) {
 	tests := []struct {
 		name     string
-		config   MCPServerConfig
+		config   ServerConfig
 		wantErr  bool
 		errorMsg string
 	}{
 		{
 			name: "Valid whitelist config",
-			config: MCPServerConfig{
+			config: ServerConfig{
 				Command:      "test",
 				ToolFilter:   "whitelist",
 				EnabledTools: []string{"tool1", "tool2"},
@@ -225,7 +225,7 @@ func TestToolFilterValidation(t *testing.T) {
 		},
 		{
 			name: "Valid blacklist config",
-			config: MCPServerConfig{
+			config: ServerConfig{
 				Command:       "test",
 				ToolFilter:    "blacklist",
 				DisabledTools: []string{"tool1", "tool2"},
@@ -234,7 +234,7 @@ func TestToolFilterValidation(t *testing.T) {
 		},
 		{
 			name: "Valid all config (default)",
-			config: MCPServerConfig{
+			config: ServerConfig{
 				Command: "test",
 				// ToolFilter omitted, defaults to 'all'
 			},
@@ -242,7 +242,7 @@ func TestToolFilterValidation(t *testing.T) {
 		},
 		{
 			name: "Invalid: whitelist without enabled tools",
-			config: MCPServerConfig{
+			config: ServerConfig{
 				Command:    "test",
 				ToolFilter: "whitelist",
 			},
@@ -251,7 +251,7 @@ func TestToolFilterValidation(t *testing.T) {
 		},
 		{
 			name: "Invalid: blacklist without disabled tools",
-			config: MCPServerConfig{
+			config: ServerConfig{
 				Command:    "test",
 				ToolFilter: "blacklist",
 			},
@@ -260,7 +260,7 @@ func TestToolFilterValidation(t *testing.T) {
 		},
 		{
 			name: "Invalid: whitelist with disabled tools",
-			config: MCPServerConfig{
+			config: ServerConfig{
 				Command:       "test",
 				ToolFilter:    "whitelist",
 				EnabledTools:  []string{"tool1"},
@@ -271,7 +271,7 @@ func TestToolFilterValidation(t *testing.T) {
 		},
 		{
 			name: "Invalid: blacklist with enabled tools",
-			config: MCPServerConfig{
+			config: ServerConfig{
 				Command:       "test",
 				ToolFilter:    "blacklist",
 				EnabledTools:  []string{"tool1"},
@@ -282,7 +282,7 @@ func TestToolFilterValidation(t *testing.T) {
 		},
 		{
 			name: "Invalid: all mode with enabled tools",
-			config: MCPServerConfig{
+			config: ServerConfig{
 				Command:      "test",
 				ToolFilter:   "all",
 				EnabledTools: []string{"tool1"},
@@ -292,7 +292,7 @@ func TestToolFilterValidation(t *testing.T) {
 		},
 		{
 			name: "Invalid: all mode with disabled tools",
-			config: MCPServerConfig{
+			config: ServerConfig{
 				Command:       "test",
 				ToolFilter:    "all",
 				DisabledTools: []string{"tool1"},
@@ -302,7 +302,7 @@ func TestToolFilterValidation(t *testing.T) {
 		},
 		{
 			name: "Invalid: unknown filter mode",
-			config: MCPServerConfig{
+			config: ServerConfig{
 				Command:    "test",
 				ToolFilter: "invalid",
 			},
@@ -313,8 +313,8 @@ func TestToolFilterValidation(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			config := ConfigFile{
-				MCPServers: map[string]MCPServerConfig{
+			config := Config{
+				MCPServers: map[string]ServerConfig{
 					"test": tc.config,
 				},
 			}
@@ -334,7 +334,7 @@ func TestToolFilterValidation(t *testing.T) {
 
 func TestFilterTools(t *testing.T) {
 	// Mock tools for testing
-	allTools := []gai.Tool{
+	allTools := []*mcp.Tool{
 		{Name: "read_file", Description: "Read a file"},
 		{Name: "write_file", Description: "Write a file"},
 		{Name: "list_directory", Description: "List directory contents"},
@@ -344,21 +344,21 @@ func TestFilterTools(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		config        MCPServerConfig
+		config        ServerConfig
 		expectedTools []string // Names of tools that should be included
 		filteredOut   []string // Names of tools that should be filtered out
 	}{
 		{
 			name: "All mode - no filtering",
-			config: MCPServerConfig{
+			config: ServerConfig{
 				ToolFilter: "all",
 			},
 			expectedTools: []string{"read_file", "write_file", "list_directory", "run_command", "delete_file"},
 			filteredOut:   []string{},
 		},
 		{
-			name:   "Default mode (empty filter) - no filtering",
-			config: MCPServerConfig{
+			name: "Default mode (empty filter) - no filtering",
+			config: ServerConfig{
 				// ToolFilter omitted
 			},
 			expectedTools: []string{"read_file", "write_file", "list_directory", "run_command", "delete_file"},
@@ -366,7 +366,7 @@ func TestFilterTools(t *testing.T) {
 		},
 		{
 			name: "Whitelist mode - only specific tools",
-			config: MCPServerConfig{
+			config: ServerConfig{
 				ToolFilter:   "whitelist",
 				EnabledTools: []string{"read_file", "write_file", "list_directory"},
 			},
@@ -375,7 +375,7 @@ func TestFilterTools(t *testing.T) {
 		},
 		{
 			name: "Blacklist mode - exclude specific tools",
-			config: MCPServerConfig{
+			config: ServerConfig{
 				ToolFilter:    "blacklist",
 				DisabledTools: []string{"run_command", "delete_file"},
 			},
@@ -384,7 +384,7 @@ func TestFilterTools(t *testing.T) {
 		},
 		{
 			name: "Whitelist mode - non-existent tool names are ignored",
-			config: MCPServerConfig{
+			config: ServerConfig{
 				ToolFilter:   "whitelist",
 				EnabledTools: []string{"read_file", "non_existent_tool"},
 			},
@@ -393,7 +393,7 @@ func TestFilterTools(t *testing.T) {
 		},
 		{
 			name: "Blacklist mode - non-existent tool names are ignored",
-			config: MCPServerConfig{
+			config: ServerConfig{
 				ToolFilter:    "blacklist",
 				DisabledTools: []string{"non_existent_tool"},
 			},
@@ -404,7 +404,7 @@ func TestFilterTools(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			filteredTools, filteredOut := FilterToolsPublic(allTools, tc.config, "test-server")
+			filteredTools, filteredOut := FilterMcpTools(allTools, tc.config)
 
 			// Check that expected tools are present
 			if len(filteredTools) != len(tc.expectedTools) {

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spachava753/cpe/internal/mcp"
-	"github.com/spachava753/gai"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	mcpinternal "github.com/spachava753/cpe/internal/mcp"
 	"github.com/spf13/cobra"
 )
 
@@ -24,11 +24,11 @@ var mcpInitCmd = &cobra.Command{
 	Short: "Initialize MCP configuration",
 	Long:  `Create example MCP configuration files in the current directory with different formats.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if mcp.ConfigExists() {
+		if mcpinternal.ConfigExists() {
 			return fmt.Errorf("MCP configuration file already exists")
 		}
 
-		if err := mcp.CreateExampleConfig(); err != nil {
+		if err := mcpinternal.CreateExampleConfig(); err != nil {
 			return fmt.Errorf("failed to create example configs: %w", err)
 		}
 
@@ -64,15 +64,15 @@ var mcpListServersCmd = &cobra.Command{
 	Long:    `List all MCP servers defined in .cpemcp.json configuration file.`,
 	Aliases: []string{"ls-servers"},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		config, err := mcp.LoadConfig(mcpConfigPath)
+		config, err := mcpinternal.LoadConfig(mcpConfigPath)
 		if err != nil {
 			fmt.Printf("Warning: %v\n", err)
-			config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
+			config = &mcpinternal.Config{MCPServers: make(map[string]mcpinternal.ServerConfig)}
 		}
 
 		if err := config.Validate(); err != nil {
 			fmt.Printf("Warning: %v\n", err)
-			config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
+			config = &mcpinternal.Config{MCPServers: make(map[string]mcpinternal.ServerConfig)}
 		}
 
 		if len(config.MCPServers) == 0 {
@@ -127,15 +127,15 @@ var mcpInfoCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		serverName := args[0]
 
-		config, err := mcp.LoadConfig(mcpConfigPath)
+		config, err := mcpinternal.LoadConfig(mcpConfigPath)
 		if err != nil {
 			fmt.Printf("Warning: %v\n", err)
-			config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
+			config = &mcpinternal.Config{MCPServers: make(map[string]mcpinternal.ServerConfig)}
 		}
 
 		if err := config.Validate(); err != nil {
 			fmt.Printf("Warning: %v\n", err)
-			config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
+			config = &mcpinternal.Config{MCPServers: make(map[string]mcpinternal.ServerConfig)}
 		}
 
 		if len(config.MCPServers) == 0 {
@@ -146,34 +146,24 @@ var mcpInfoCmd = &cobra.Command{
 			return fmt.Errorf("server '%s' not found in configuration", serverName)
 		}
 
-		clientManager := mcp.NewClientManager(config)
-		defer clientManager.Close()
+		client := mcpinternal.NewClient()
 
 		ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
 		defer cancel()
 
 		// Get client to trigger initialization
-		client, err := clientManager.GetClient(ctx, serverName)
+		transport, err := mcpinternal.CreateTransport(config.MCPServers[serverName])
+		if err != nil {
+			return err
+		}
+		cs, err := client.Connect(ctx, transport)
 		if err != nil {
 			return err
 		}
 
-		// Get server info from the client
-		serverInfo := client.GetServerInfo()
-		fmt.Printf("Server: %s %s\n", serverInfo.Name, serverInfo.Version)
+		fmt.Printf("Connected to server: %s\n", serverName)
 
-		// Get server capabilities
-		serverCaps := client.GetServerCapabilities()
-
-		// Check capabilities
-		if serverCaps.Experimental != nil && len(serverCaps.Experimental) > 0 {
-			fmt.Println("\nExperimental Capabilities:")
-			for name, _ := range serverCaps.Experimental {
-				fmt.Printf("- %s\n", name)
-			}
-		}
-
-		return nil
+		return cs.Close()
 	},
 }
 
@@ -198,15 +188,15 @@ var mcpListToolsCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		serverName := args[0]
 
-		config, err := mcp.LoadConfig(mcpConfigPath)
+		config, err := mcpinternal.LoadConfig(mcpConfigPath)
 		if err != nil {
 			fmt.Printf("Warning: %v\n", err)
-			config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
+			config = &mcpinternal.Config{MCPServers: make(map[string]mcpinternal.ServerConfig)}
 		}
 
 		if err := config.Validate(); err != nil {
 			fmt.Printf("Warning: %v\n", err)
-			config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
+			config = &mcpinternal.Config{MCPServers: make(map[string]mcpinternal.ServerConfig)}
 		}
 
 		if len(config.MCPServers) == 0 {
@@ -218,16 +208,27 @@ var mcpListToolsCmd = &cobra.Command{
 			return fmt.Errorf("server '%s' not found in configuration", serverName)
 		}
 
-		clientManager := mcp.NewClientManager(config)
-		defer clientManager.Close()
+		client := mcpinternal.NewClient()
 
-		ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
-		defer cancel()
-
-		// List tools (client is already initialized in GetClient)
-		allTools, err := clientManager.ListTools(ctx, serverName)
-		if err != nil {
-			return err
+		var allTools []*mcp.Tool
+		for _, server := range config.MCPServers {
+			transport, err := mcpinternal.CreateTransport(server)
+			if err != nil {
+				return err
+			}
+			cs, err := client.Connect(cmd.Context(), transport)
+			if err != nil {
+				return err
+			}
+			for tool, err := range cs.Tools(cmd.Context(), nil) {
+				if err != nil {
+					return err
+				}
+				allTools = append(allTools, tool)
+			}
+			if err := cs.Close(); err != nil {
+				return err
+			}
 		}
 
 		// Get flags
@@ -236,10 +237,10 @@ var mcpListToolsCmd = &cobra.Command{
 		showFiltered, _ := cmd.Flags().GetBool("show-filtered")
 
 		// Apply filtering to understand what would be filtered
-		filteredTools, filteredOut := mcp.FilterToolsPublic(allTools, serverConfig, serverName)
+		filteredTools, filteredOut := mcpinternal.FilterMcpTools(allTools, serverConfig)
 
 		// Determine which tools to show based on flags
-		var toolsToShow []gai.Tool
+		var toolsToShow []*mcp.Tool
 		var title string
 
 		if showAll {
@@ -297,7 +298,7 @@ var mcpListToolsCmd = &cobra.Command{
 			fmt.Printf("- %s%s: %s\n", prefix, tool.Name, tool.Description)
 
 			// Print input schema
-			if tool.InputSchema.Type != gai.Null {
+			if tool.InputSchema != nil {
 				fmt.Println("  Input Schema:")
 
 				if showJsonFormat {
@@ -310,19 +311,8 @@ var mcpListToolsCmd = &cobra.Command{
 					}
 				} else {
 					// Display human-readable format
-					fmt.Printf("    Type: %s\n", getPropertyTypeString(tool.InputSchema.Type))
-
-					if len(tool.InputSchema.Required) > 0 {
-						fmt.Printf("    Required: %s\n", strings.Join(tool.InputSchema.Required, ", "))
-					}
-
-					if len(tool.InputSchema.Properties) > 0 {
-						fmt.Println("    Properties:")
-						for propName, propDetails := range tool.InputSchema.Properties {
-							// Print property details with nested schema info
-							printGAIProperty(propName, propDetails, tool.InputSchema.Required, 6)
-						}
-					}
+					// TODO: Implement human-readable schema display
+					fmt.Printf("    Schema: %v\n", tool.InputSchema)
 				}
 			}
 
@@ -347,15 +337,15 @@ var mcpCallToolCmd = &cobra.Command{
 			return fmt.Errorf("--tool is required")
 		}
 
-		config, err := mcp.LoadConfig(mcpConfigPath)
+		config, err := mcpinternal.LoadConfig(mcpConfigPath)
 		if err != nil {
 			fmt.Printf("Warning: %v\n", err)
-			config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
+			config = &mcpinternal.Config{MCPServers: make(map[string]mcpinternal.ServerConfig)}
 		}
 
 		if err := config.Validate(); err != nil {
 			fmt.Printf("Warning: %v\n", err)
-			config = &mcp.ConfigFile{MCPServers: make(map[string]mcp.MCPServerConfig)}
+			config = &mcpinternal.Config{MCPServers: make(map[string]mcpinternal.ServerConfig)}
 		}
 
 		if len(config.MCPServers) == 0 {
@@ -366,8 +356,7 @@ var mcpCallToolCmd = &cobra.Command{
 			return fmt.Errorf("server '%s' not found in configuration", mcpServerName)
 		}
 
-		clientManager := mcp.NewClientManager(config)
-		defer clientManager.Close()
+		client := mcpinternal.NewClient()
 
 		// Parse tool args
 		toolArgs := make(map[string]interface{})
@@ -377,17 +366,31 @@ var mcpCallToolCmd = &cobra.Command{
 			}
 		}
 
-		// Call the tool (client is already initialized in GetClient)
-		result, err := clientManager.CallTool(cmd.Context(), mcpServerName, mcpToolName, toolArgs)
+		transport, err := mcpinternal.CreateTransport(config.MCPServers[mcpServerName])
 		if err != nil {
 			return err
 		}
 
-		// Print the result - the result is a gai.Message
-		// Extract text content from blocks
-		for _, block := range result.Blocks {
-			if block.ModalityType == gai.Text {
-				fmt.Print(block.Content)
+		cs, err := client.Connect(cmd.Context(), transport)
+		if err != nil {
+			return err
+		}
+		defer cs.Close()
+
+		// Call the tool (client is already initialized in GetClient)
+		result, err := cs.CallTool(cmd.Context(), &mcp.CallToolParams{
+			Name:      mcpToolName,
+			Arguments: toolArgs,
+		})
+		if err != nil {
+			return err
+		}
+
+		// Print the result - the result is a mcp.CallToolResult
+		// Extract text content from content
+		for _, content := range result.Content {
+			if textContent, ok := content.(*mcp.TextContent); ok {
+				fmt.Print(textContent.Text)
 			}
 		}
 
@@ -414,98 +417,4 @@ func init() {
 	mcpCallToolCmd.Flags().StringVar(&mcpServerName, "server", "", "MCP server name")
 	mcpCallToolCmd.Flags().StringVar(&mcpToolName, "tool", "", "Tool name to call")
 	mcpCallToolCmd.Flags().StringVar(&mcpToolArgs, "args", "{}", "Tool arguments in JSON format")
-}
-
-// printGAIProperty prints a gai.Property with proper indentation
-func printGAIProperty(name string, prop gai.Property, required []string, indent int) {
-	indentStr := strings.Repeat(" ", indent)
-
-	// Mark required parameters
-	requiredMarker := ""
-	for _, req := range required {
-		if req == name {
-			requiredMarker = " (required)"
-			break
-		}
-	}
-
-	// Get type string
-	typeStr := getPropertyTypeString(prop.Type)
-
-	// Handle anyOf case
-	if len(prop.AnyOf) > 0 {
-		types := []string{}
-		for _, anyProp := range prop.AnyOf {
-			types = append(types, getPropertyTypeString(anyProp.Type))
-		}
-		typeStr = fmt.Sprintf("anyOf[%s]", strings.Join(types, ", "))
-	}
-
-	// Print the property name, type, and description
-	fmt.Printf("%s%s: %s%s", indentStr, name, typeStr, requiredMarker)
-	if prop.Description != "" {
-		fmt.Printf(" - %s", prop.Description)
-	}
-	fmt.Println()
-
-	// Print enum values if present
-	if len(prop.Enum) > 0 {
-		fmt.Printf("%s  enum: [%s]\n", indentStr, strings.Join(prop.Enum, " "))
-	}
-
-	// Process additional schema information based on type
-	switch prop.Type {
-	case gai.Array:
-		// Process array items schema
-		if prop.Items != nil {
-			fmt.Printf("%s  items:\n", indentStr)
-			fmt.Printf("%s    type: %s\n", indentStr, getPropertyTypeString(prop.Items.Type))
-
-			// Process item enum values if present
-			if len(prop.Items.Enum) > 0 {
-				fmt.Printf("%s    enum: [%s]\n", indentStr, strings.Join(prop.Items.Enum, " "))
-			}
-
-			// Handle nested properties for object items
-			if prop.Items.Type == gai.Object && len(prop.Items.Properties) > 0 {
-				fmt.Printf("%s    properties:\n", indentStr)
-				for propName, propDetails := range prop.Items.Properties {
-					printGAIProperty(propName, propDetails, prop.Items.Required, indent+6)
-				}
-			}
-		}
-
-	case gai.Object:
-		// Process object properties
-		if len(prop.Properties) > 0 {
-			fmt.Printf("%s  properties:\n", indentStr)
-			for propName, propDetails := range prop.Properties {
-				printGAIProperty(propName, propDetails, prop.Required, indent+4)
-			}
-		}
-	}
-}
-
-// getPropertyTypeString converts a gai.PropertyType to a string
-func getPropertyTypeString(propType gai.PropertyType) string {
-	switch propType {
-	case gai.String:
-		return "string"
-	case gai.Number:
-		return "number"
-	case gai.Integer:
-		return "integer"
-	case gai.Boolean:
-		return "boolean"
-	case gai.Object:
-		return "object"
-	case gai.Array:
-		return "array"
-	case gai.Any:
-		return "any"
-	case gai.Null:
-		return "null"
-	default:
-		return "unknown"
-	}
 }
