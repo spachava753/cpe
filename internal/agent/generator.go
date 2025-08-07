@@ -4,15 +4,16 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"github.com/anthropics/anthropic-sdk-go"
-	aopts "github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/openai/openai-go"
-	oaiopt "github.com/openai/openai-go/option"
-	"github.com/spachava753/gai"
-	"google.golang.org/genai"
 	"os"
 	"slices"
 	"time"
+
+	"github.com/anthropics/anthropic-sdk-go"
+	aopts "github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/openai/openai-go/v2"
+	oaiopt "github.com/openai/openai-go/v2/option"
+	"github.com/spachava753/gai"
+	"google.golang.org/genai"
 
 	"github.com/cenkalti/backoff/v5"
 )
