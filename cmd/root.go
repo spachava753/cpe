@@ -275,6 +275,10 @@ func executeRootCommand(ctx context.Context, args []string) error {
 
 	// Generate the response
 	resultDialog, err := filterToolGen.Generate(ctx, dialog, genOptionsFunc)
+
+	// add a new line to separate the following messages printed to stderr
+	fmt.Printf("\n\n")
+
 	interrupted := errors.Is(err, context.Canceled)
 	// If we were not interrupted, print the error message, but continue to saving the returned dialog
 	if err != nil && !interrupted {
@@ -296,7 +300,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	dialogCtx := ctx
 	var saveCancel context.CancelFunc
 	if interrupted {
-		fmt.Fprintln(os.Stderr, "\nWARNING: Generation was interrupted. Attempting to save partial dialog.")
+		fmt.Fprintln(os.Stderr, "WARNING: Generation was interrupted. Attempting to save partial dialog.")
 	}
 	fmt.Fprintln(os.Stderr, "You can cancel this save operation by interrupting (Ctrl+C).")
 	dialogCtx, saveCancel = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -351,7 +355,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		}
 	}
 	if lastID != "" {
-		fmt.Fprintf(os.Stderr, "[cpe] last_message_id=%s\n", lastID)
+		fmt.Fprintf(os.Stderr, "[cpe] last_message_id is %s\n", lastID)
 	}
 
 	return nil
