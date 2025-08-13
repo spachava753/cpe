@@ -19,6 +19,7 @@ import (
 	"github.com/gabriel-vasile/mimetype"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/spachava753/cpe/internal/agent"
+	"github.com/spachava753/cpe/internal/modelcatalog"
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/urlhandler"
 	"github.com/spachava753/gai"
@@ -51,6 +52,7 @@ var (
 	disableStreaming  bool
 	mcpConfigPath     string
 	skipStdin         bool
+	modelCatalogPath  string
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -109,6 +111,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&disableStreaming, "no-stream", false, "Disable streaming output (show complete response after generation)")
 	rootCmd.PersistentFlags().StringVar(&mcpConfigPath, "mcp-config", "", "Specify path to MCP configuration file")
 	rootCmd.PersistentFlags().BoolVar(&skipStdin, "skip-stdin", false, "Skip reading from stdin (useful in scripts)")
+	rootCmd.PersistentFlags().StringVar(&modelCatalogPath, "model-catalog", "", "Path to JSON model catalog file")
 
 	// Add version flag
 	rootCmd.Flags().BoolP("version", "v", false, "Print the version number and exit")
@@ -167,29 +170,51 @@ func executeRootCommand(ctx context.Context, args []string) error {
 
 	customURL = getCustomURL(customURL)
 
+	// Load model catalog if provided
+	var catalog []modelcatalog.Model
+	if modelCatalogPath != "" {
+		catalog, err = modelcatalog.Load(modelCatalogPath)
+		if err != nil {
+			return fmt.Errorf("failed to load model catalog: %w", err)
+		}
+	}
+	if len(catalog) == 0 {
+		return errors.New("no model catalog provided. Specify --model-catalog to use models for generation")
+	}
+
+	// Find model by Name
+	var selected *modelcatalog.Model
+	for i := range catalog {
+		if catalog[i].Name == model {
+			selected = &catalog[i]
+			break
+		}
+	}
+	if selected == nil {
+		return fmt.Errorf("model %q not found in catalog", model)
+	}
+
 	// Prepare system prompt
 	systemPrompt, err := agent.PrepareSystemPrompt(systemPromptPath)
 	if err != nil {
 		return fmt.Errorf("failed to prepare system prompt: %w", err)
 	}
 
-	// Create the generator
-	baseGenerator, err := agent.InitGenerator(model, customURL, systemPrompt, requestTimeout)
+	// Create the generator from catalog model
+	baseURLOverride := getCustomURL(customURL)
+	genBase, err := agent.InitGeneratorFromModel(*selected, systemPrompt, requestTimeout, baseURLOverride)
 	if err != nil {
 		return fmt.Errorf("failed to create generator: %w", err)
 	}
 
 	// Check if the generator supports streaming and if streaming is enabled
 	var gen gai.ToolCapableGenerator
-	if streamingGen, ok := baseGenerator.(gai.StreamingGenerator); ok && !disableStreaming {
-		// Wrap with streaming printer
+	if streamingGen, ok := genBase.(gai.StreamingGenerator); ok && !disableStreaming {
 		streamingPrinter := agent.NewStreamingPrinterGenerator(streamingGen)
-		// Use StreamingAdapter to convert back to Generator
 		adapter := &gai.StreamingAdapter{S: streamingPrinter}
 		gen = any(adapter).(gai.ToolCapableGenerator)
 	} else {
-		// Use ResponsePrinterGenerator for non-streaming generators or when streaming is disabled
-		gen = agent.NewResponsePrinterGenerator(baseGenerator.(gai.ToolCapableGenerator))
+		gen = agent.NewResponsePrinterGenerator(genBase.(gai.ToolCapableGenerator))
 	}
 
 	// Create the tool generator using the printing-enabled generator
@@ -246,6 +271,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	// Create a generator function that returns generation options
 	genOptionsFunc := func(d gai.Dialog) *gai.GenOpts {
 		opts := &gai.GenOpts{}
+		opts.MaxGenerationTokens = int(selected.MaxOutput)
 		if maxTokens > 0 {
 			opts.MaxGenerationTokens = maxTokens
 		}
@@ -266,6 +292,9 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		}
 		if numberOfResponses > 0 {
 			opts.N = uint(numberOfResponses)
+		}
+		if selected.SupportsReasoning {
+			opts.ThinkingBudget = selected.DefaultReasoningEffort
 		}
 		if thinkingBudget != "" {
 			opts.ThinkingBudget = thinkingBudget
