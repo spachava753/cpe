@@ -232,7 +232,6 @@ var mcpListToolsCmd = &cobra.Command{
 		}
 
 		// Get flags
-		showJsonFormat, _ := cmd.Flags().GetBool("json")
 		showAll, _ := cmd.Flags().GetBool("show-all")
 		showFiltered, _ := cmd.Flags().GetBool("show-filtered")
 
@@ -301,18 +300,12 @@ var mcpListToolsCmd = &cobra.Command{
 			if tool.InputSchema != nil {
 				fmt.Println("  Input Schema:")
 
-				if showJsonFormat {
-					// Display raw JSON schema
-					schemaBytes, err := json.MarshalIndent(tool.InputSchema, "    ", "  ")
-					if err != nil {
-						fmt.Printf("    Error marshaling schema: %v\n", err)
-					} else {
-						fmt.Println(string(schemaBytes))
-					}
+				// Display JSON schema
+				schemaBytes, err := json.MarshalIndent(tool.InputSchema, "  ", "  ")
+				if err != nil {
+					fmt.Printf("    Error marshaling schema: %v\n", err)
 				} else {
-					// Display human-readable format
-					// TODO: Implement human-readable schema display
-					fmt.Printf("    Schema: %v\n", tool.InputSchema)
+					fmt.Println("  " + string(schemaBytes))
 				}
 			}
 
@@ -409,7 +402,6 @@ func init() {
 	mcpCmd.AddCommand(mcpCallToolCmd)
 
 	// Add flags to mcp list-tools command
-	mcpListToolsCmd.Flags().Bool("json", false, "Show schema in raw JSON format")
 	mcpListToolsCmd.Flags().Bool("show-all", false, "Show all tools including filtered ones")
 	mcpListToolsCmd.Flags().Bool("show-filtered", false, "Show only filtered-out tools")
 
