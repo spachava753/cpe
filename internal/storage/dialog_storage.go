@@ -6,12 +6,19 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"github.com/matoous/go-nanoid/v2"
-	"github.com/spachava753/gai"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/matoous/go-nanoid/v2"
+	"github.com/spachava753/gai"
 )
+
+const idCharset = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+func generateId() string {
+	return gonanoid.MustGenerate(idCharset, 6)
+}
 
 //go:embed schema.sql
 var schemaSQL string
@@ -45,7 +52,7 @@ func InitDialogStorage(dbPath string) (*DialogStorage, error) {
 	return &DialogStorage{
 		db:          db,
 		q:           New(db),
-		idGenerator: func() string { return gonanoid.Must(6) },
+		idGenerator: generateId,
 	}, nil
 }
 
@@ -54,7 +61,7 @@ func NewDialogStorage(db *sql.DB) (*DialogStorage, error) {
 	return &DialogStorage{
 		db:          db,
 		q:           New(db),
-		idGenerator: func() string { return gonanoid.Must(6) },
+		idGenerator: generateId,
 	}, nil
 }
 
