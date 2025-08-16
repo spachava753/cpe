@@ -17,7 +17,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.30
 	github.com/modelcontextprotocol/go-sdk v0.2.0
 	github.com/openai/openai-go/v2 v2.0.0
-	github.com/spachava753/gai v0.9.0
+	github.com/spachava753/gai v0.10.0
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
 	github.com/tidwall/pretty v1.2.1
