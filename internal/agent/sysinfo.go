@@ -120,7 +120,7 @@ func GetSystemInfo() (*SystemInfo, error) {
 
 // ExecuteTemplateString renders a template string with system info data
 func (si *SystemInfo) ExecuteTemplateString(templateStr string) (string, error) {
-	tmpl, err := template.New("sysinfo").Parse(templateStr)
+	tmpl, err := template.New("sysinfo").Funcs(createTemplateFuncMap()).Parse(templateStr)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template string: %w", err)
 	}

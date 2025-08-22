@@ -1,0 +1,31 @@
+# System Information
+- Date: {{.CurrentDate}}
+- Working Directory: {{.WorkingDir}}
+- OS: {{.OS}}
+
+{{if fileExists "README.md"}}
+# Project README
+{{includeFile "README.md"}}
+{{end}}
+
+{{if fileExists "package.json"}}
+# Node.js Project Configuration
+{{includeFile "package.json"}}
+{{end}}
+
+{{if fileExists "go.mod"}}
+# Go Module Information
+{{includeFile "go.mod"}}
+{{end}}
+
+{{if .IsGitRepo}}
+# Git Repository Status
+Branch: {{.GitBranch}}
+Latest Commit: {{.GitLatestCommit}}
+
+## Recent Commits
+{{exec "git log --oneline -5"}}
+
+## Changed Files
+{{exec "git status --short"}}
+{{end}}

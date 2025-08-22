@@ -177,6 +177,45 @@ Files:
 - @.cpeignore: ignore patterns for file analysis
 - @internal/agent/agent_instructions.txt: system instructions template
 
+## System Prompt Template Functions
+
+The system prompt templates support custom functions for dynamic content:
+
+### Available Functions
+
+- `fileExists(path)` - Returns true if file exists, false otherwise
+- `includeFile(path)` - Returns file contents as string, empty string if file doesn't exist
+- `exec(command)` - Executes bash command and returns stdout (trimmed), empty string on error
+
+### Example Usage
+
+Create a custom system prompt template (`custom_prompt.txt`):
+
+```
+You are an AI assistant working on: {{.WorkingDir}}
+
+{{if fileExists "README.md"}}
+Project documentation:
+{{includeFile "README.md"}}
+{{end}}
+
+Current git status:
+{{exec "git status --short"}}
+
+Python version: {{exec "python --version 2>/dev/null || echo 'Not installed'"}}
+```
+
+Use it with:
+```bash
+./cpe --model-catalog ./.cpemodels.json -m sonnet -s custom_prompt.txt "your query"
+```
+
+### Example Templates
+
+See `examples/system_prompts/` for ready-to-use templates:
+- `project_aware.txt` - Includes project documentation and git status
+- `development_env.txt` - Shows installed tools and system resources
+
 ## Testing frameworks, conventions, and execution
 
 - Framework: standard library testing package
