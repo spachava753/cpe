@@ -12,10 +12,11 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/gabriel-vasile/mimetype v1.4.9
 	github.com/google/go-cmp v0.7.0
+	github.com/google/jsonschema-go v0.2.0
 	github.com/invopop/jsonschema v0.13.0
 	github.com/matoous/go-nanoid/v2 v2.1.0
 	github.com/mattn/go-sqlite3 v1.14.30
-	github.com/modelcontextprotocol/go-sdk v0.2.0
+	github.com/modelcontextprotocol/go-sdk v0.3.0
 	github.com/openai/openai-go/v2 v2.0.0
 	github.com/spachava753/gai v0.10.0
 	github.com/spf13/cobra v1.9.1

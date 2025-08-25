@@ -10,8 +10,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	invopopjsonschema "github.com/invopop/jsonschema"
-	"github.com/modelcontextprotocol/go-sdk/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/cpe/internal/version"
 	"github.com/spachava753/gai"
@@ -218,7 +218,7 @@ func RegisterMCPServerTools(ctx context.Context, client *mcp.Client, mcpConfig C
 			return err
 		}
 
-		clientSession, err := client.Connect(ctx, transport)
+		clientSession, err := client.Connect(ctx, transport, nil)
 		if err != nil {
 			return err
 		}

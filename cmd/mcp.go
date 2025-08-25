@@ -156,7 +156,7 @@ var mcpInfoCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		cs, err := client.Connect(ctx, transport)
+		cs, err := client.Connect(ctx, transport, nil)
 		if err != nil {
 			return err
 		}
@@ -216,7 +216,7 @@ var mcpListToolsCmd = &cobra.Command{
 			if err != nil {
 				return err
 			}
-			cs, err := client.Connect(cmd.Context(), transport)
+			cs, err := client.Connect(cmd.Context(), transport, nil)
 			if err != nil {
 				return err
 			}
@@ -364,7 +364,7 @@ var mcpCallToolCmd = &cobra.Command{
 			return err
 		}
 
-		cs, err := client.Connect(cmd.Context(), transport)
+		cs, err := client.Connect(cmd.Context(), transport, nil)
 		if err != nil {
 			return err
 		}
