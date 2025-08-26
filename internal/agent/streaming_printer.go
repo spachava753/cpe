@@ -22,6 +22,14 @@ func NewStreamingPrinterGenerator(wrapped gai.StreamingGenerator) *StreamingPrin
 	}
 }
 
+// Count implements the gai.TokenCounter interface by delegating to the wrapped generator
+func (g *StreamingPrinterGenerator) Count(ctx context.Context, dialog gai.Dialog) (uint, error) {
+	if counter, ok := g.wrapped.(gai.TokenCounter); ok {
+		return counter.Count(ctx, dialog)
+	}
+	return 0, fmt.Errorf("wrapped generator does not implement TokenCounter")
+}
+
 // Register implements the gai.ToolRegister interface by delegating to the wrapped generator
 func (g *StreamingPrinterGenerator) Register(tool gai.Tool) error {
 	if registerer, ok := g.wrapped.(gai.ToolRegister); ok {
@@ -68,5 +76,6 @@ func (g *StreamingPrinterGenerator) Stream(ctx context.Context, dialog gai.Dialo
 			}
 			g.continuation = true
 		}
+		fmt.Printf("\n")
 	}
 }

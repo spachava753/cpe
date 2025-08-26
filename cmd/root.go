@@ -212,7 +212,8 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	if streamingGen, ok := genBase.(gai.StreamingGenerator); ok && !disableStreaming {
 		streamingPrinter := agent.NewStreamingPrinterGenerator(streamingGen)
 		adapter := &gai.StreamingAdapter{S: streamingPrinter}
-		gen = any(adapter).(gai.ToolCapableGenerator)
+		tokenPrinter := agent.NewTokenUsagePrinterGenerator(adapter)
+		gen = any(tokenPrinter).(gai.ToolCapableGenerator)
 	} else {
 		gen = agent.NewResponsePrinterGenerator(genBase.(gai.ToolCapableGenerator))
 	}

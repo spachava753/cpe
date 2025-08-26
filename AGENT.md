@@ -226,3 +226,7 @@ See `examples/system_prompts/` for ready-to-use templates:
 
 - GitHub: https://github.com/spachava753/cpe
 - CI workflows: @.github/workflows/pr-comment-cpe.yml, @.github/workflows/issue-to-pr.yml
+
+## Documentation for Go Symbols
+
+When gathering context about symbols like types, global variables, constants, functions and methods, prefer to use go doc command. You may use `go doc -all github.com/example/pkg` to get a full overview of a package, but use sparingly, as it may overwhelm the context window. Alternatively, you may use `go doc github.com/example/pkg.Type` to get documentation about a specific symbol.  
