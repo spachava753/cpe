@@ -144,6 +144,15 @@ func InitGeneratorFromModel(m modelcatalog.Model, systemPrompt string, timeout t
 			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 		}
 		return createGeminiGenerator(m.ID, baseURL, systemPrompt, timeout, apiKey)
+	case "cerebras":
+		if apiEnv == "" {
+			apiEnv = "CEREBRAS_API_KEY"
+		}
+		apiKey := os.Getenv(apiEnv)
+		if apiKey == "" {
+			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
+		}
+		return gai.NewCerebrasGenerator(nil, baseURL, m.ID, systemPrompt, apiKey), nil
 	default:
 		return nil, fmt.Errorf("unsupported model type: %s", m.Type)
 	}
