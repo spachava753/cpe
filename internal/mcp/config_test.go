@@ -357,7 +357,7 @@ func TestFilterTools(t *testing.T) {
 			filteredOut:   []string{},
 		},
 		{
-			name: "Default mode (empty filter) - no filtering",
+			name:   "Default mode (empty filter) - no filtering",
 			config: ServerConfig{
 				// ToolFilter omitted
 			},
