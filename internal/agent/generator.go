@@ -105,6 +105,21 @@ func createGeminiGenerator(model, baseURL, systemPrompt string, timeout time.Dur
 	return gai.NewRetryGenerator(g, b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute)), nil
 }
 
+func createResponsesGenerator(model, baseURL, systemPrompt string, timeout time.Duration, apiKey string) (gai.Generator, error) {
+	clientOpts := []oaiopt.RequestOption{
+		oaiopt.WithRequestTimeout(timeout),
+	}
+	if baseURL != "" {
+		clientOpts = append(clientOpts, oaiopt.WithBaseURL(baseURL))
+	}
+	if apiKey != "" {
+		clientOpts = append(clientOpts, oaiopt.WithAPIKey(apiKey))
+	}
+	client := openai.NewClient(clientOpts...)
+	generator := gai.NewResponsesGenerator(&client.Responses, model, systemPrompt)
+	return &generator, nil
+}
+
 type ToolRegisterer interface {
 	Register(tool gai.Tool, callback gai.ToolCallback) error
 }
@@ -153,6 +168,15 @@ func InitGeneratorFromModel(m modelcatalog.Model, systemPrompt string, timeout t
 			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 		}
 		return gai.NewCerebrasGenerator(nil, baseURL, m.ID, systemPrompt, apiKey), nil
+	case "responses":
+		if apiEnv == "" {
+			apiEnv = "OPENAI_API_KEY"
+		}
+		apiKey := os.Getenv(apiEnv)
+		if apiKey == "" {
+			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
+		}
+		return createResponsesGenerator(m.ID, baseURL, systemPrompt, timeout, apiKey)
 	default:
 		return nil, fmt.Errorf("unsupported model type: %s", m.Type)
 	}

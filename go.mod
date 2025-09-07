@@ -1,6 +1,6 @@
 module github.com/spachava753/cpe
 
-go 1.23.2
+go 1.24.0
 
 retract v0.16.10
 
@@ -18,7 +18,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.30
 	github.com/modelcontextprotocol/go-sdk v0.3.0
 	github.com/openai/openai-go/v2 v2.0.0
-	github.com/spachava753/gai v0.11.0
+	github.com/spachava753/gai v0.14.0
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
 	github.com/tidwall/pretty v1.2.1

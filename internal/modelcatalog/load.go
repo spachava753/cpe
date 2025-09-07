@@ -33,9 +33,9 @@ func Validate(models []Model) error {
 		}
 		t := strings.ToLower(strings.TrimSpace(m.Type))
 		switch t {
-		case "openai", "anthropic", "gemini", "cerebras":
+		case "openai", "anthropic", "gemini", "cerebras", "responses":
 		default:
-			return fmt.Errorf("model[%d] %q: invalid type %q (must be openai|anthropic|gemini|cerebras)", i, m.Name, m.Type)
+			return fmt.Errorf("model[%d] %q: invalid type %q (must be openai|anthropic|gemini|cerebras|responses)", i, m.Name, m.Type)
 		}
 		if _, ok := seen[m.Name]; ok {
 			return fmt.Errorf("duplicate model name: %s", m.Name)

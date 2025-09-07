@@ -215,6 +215,10 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		tokenPrinter := agent.NewTokenUsagePrinterGenerator(adapter)
 		gen = any(tokenPrinter).(gai.ToolCapableGenerator)
 	} else {
+		// responses type generators need to be wrapped
+		if r, ok := genBase.(*gai.ResponsesGenerator); ok {
+			genBase = gai.NewResponsesToolGeneratorAdapter(*r, "")
+		}
 		gen = agent.NewResponsePrinterGenerator(genBase.(gai.ToolCapableGenerator))
 	}
 
