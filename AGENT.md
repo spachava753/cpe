@@ -113,7 +113,7 @@ go test ./...
     4) Register MCP servers (optional) and tools
     5) Generate, then persist dialog to SQLite (.cpeconvo) unless incognito
 - Agent layer (internal/agent):
-    - NewThinkingFilterToolGenerator: hides thinking blocks in initial turn while preserving during tool execution
+    - NewBlockWhitelistFilter: filters blocks based on a whitelist of allowed block types
     - Streaming vs response printing adapters
 - Model catalog (internal/modelcatalog): decouples model selection (name->type/id/base_url/limits/costs)
 - MCP (internal/mcp): declarative server config + validation; client registers tools for use by the generator

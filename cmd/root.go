@@ -227,9 +227,9 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		G: gen,
 	}
 
-	// Wrap the tool generator with ThinkingFilterToolGenerator to filter thinking blocks
+	// Wrap the tool generator with BlockWhitelistFilter to filter thinking blocks
 	// only from the initial dialog, but preserve them during tool execution
-	filterToolGen := agent.NewThinkingFilterToolGenerator(toolGen)
+	filterToolGen := agent.NewBlockWhitelistFilter(toolGen, []string{gai.Content, gai.ToolCall})
 
 	// Load MCP configuration
 	config, err := mcp.LoadConfig(mcpConfigPath)
