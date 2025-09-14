@@ -35,15 +35,9 @@ func NewBlockWhitelistFilter(generator DialogGenerator, allowedTypes []string) *
 
 // Generate wraps the DialogGenerator.Generate method and filters blocks based on the whitelist
 func (f *BlockWhitelistFilter) Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error) {
-	// Call the wrapped generator
-	resultDialog, err := f.generator.Generate(ctx, dialog, optsGen)
-	if err != nil {
-		return nil, err
-	}
-
 	// Filter blocks in each message based on whitelist
-	filteredDialog := make(gai.Dialog, 0, len(resultDialog))
-	for _, message := range resultDialog {
+	filteredDialog := make(gai.Dialog, 0, len(dialog))
+	for _, message := range dialog {
 		filteredBlocks := make([]gai.Block, 0)
 		for _, block := range message.Blocks {
 			if f.isAllowed(block.BlockType) {
@@ -60,7 +54,8 @@ func (f *BlockWhitelistFilter) Generate(ctx context.Context, dialog gai.Dialog, 
 		filteredDialog = append(filteredDialog, filteredMessage)
 	}
 
-	return filteredDialog, nil
+	// Call the wrapped generator
+	return f.generator.Generate(ctx, filteredDialog, optsGen)
 }
 
 // Register delegates to the underlying generator if it supports tool registration
