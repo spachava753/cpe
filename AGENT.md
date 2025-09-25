@@ -104,6 +104,13 @@ go test ./...
 - Concurrency: prefer small, bounded goroutine pools; configurable limits in token tools
 - I/O: guard large inputs; processUserInput caps at 50MB per input; detect MIME when needed
 
+## Commit message conventions
+
+- Use Conventional Commits: type(scope)!: short summary
+- Common types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
+- Imperative, present tense; no trailing period; scope optional; add ! for breaking changes
+- Include body/footer when helpful; use BREAKING CHANGE: and issue refs (e.g., Closes #123)
+
 ## Architecture and design patterns
 
 - CLI layer (cmd/*) orchestrates request:
