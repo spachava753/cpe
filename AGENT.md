@@ -186,6 +186,7 @@ The system prompt templates support custom functions for dynamic content:
 - `fileExists(path)` - Returns true if file exists, false otherwise
 - `includeFile(path)` - Returns file contents as string, empty string if file doesn't exist
 - `exec(command)` - Executes bash command and returns stdout (trimmed), empty string on error
+- All functions from `github.com/Masterminds/sprig/v3` (text/template): e.g., `upper`, `lower`, `default`, `toJson`, and more. See https://masterminds.github.io/sprig/ for full list.
 
 ### Example Usage
 

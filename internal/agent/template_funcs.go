@@ -5,15 +5,19 @@ import (
 	"os/exec"
 	"strings"
 	"text/template"
+
+	sprig "github.com/Masterminds/sprig/v3"
 )
 
 // createTemplateFuncMap returns the FuncMap for system prompt templates
 func createTemplateFuncMap() template.FuncMap {
-	return template.FuncMap{
-		"fileExists":  fileExists,
-		"includeFile": includeFile,
-		"exec":        execCommand,
-	}
+	// Start with sprig's rich set of template functions
+	fm := sprig.TxtFuncMap()
+	// Add/override with our custom helpers
+	fm["fileExists"] = fileExists
+	fm["includeFile"] = includeFile
+	fm["exec"] = execCommand
+	return fm
 }
 
 // fileExists checks if a file exists and is readable

@@ -107,7 +107,8 @@ func TestTemplateFunctionIntegration(t *testing.T) {
 	templateStr := `Date: {{.CurrentDate}}
 File exists: {{fileExists "` + testFile + `"}}
 File content: {{includeFile "` + testFile + `"}}
-Command output: {{exec "echo processed"}}`
+Command output: {{exec "echo processed"}}
+Upper sprig: {{ upper "hello" }}`
 
 	result, err := sysInfo.ExecuteTemplateString(templateStr)
 	if err != nil {
@@ -117,7 +118,8 @@ Command output: {{exec "echo processed"}}`
 	expected := `Date: 2024-01-01
 File exists: true
 File content: test data
-Command output: processed`
+Command output: processed
+Upper sprig: HELLO`
 
 	if result != expected {
 		t.Errorf("Template execution mismatch\nGot:\n%s\nWant:\n%s", result, expected)
