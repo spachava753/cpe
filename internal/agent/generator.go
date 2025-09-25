@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
 	"os"
 	"strings"
@@ -21,31 +20,23 @@ import (
 	mcpinternal "github.com/spachava753/cpe/internal/mcp"
 )
 
-//go:embed agent_instructions.txt
-var agentInstructions string
-
 // PrepareSystemPrompt prepares the system prompt from either a custom file or the default template
 func PrepareSystemPrompt(systemPromptPath string) (string, error) {
+	// If no system prompt path is provided, return empty string
+	if systemPromptPath == "" {
+		return "", nil
+	}
+
 	// Get system information for template execution
 	sysInfo, err := GetSystemInfo()
 	if err != nil {
 		return "", fmt.Errorf("failed to get system info: %w", err)
 	}
 
-	// Get agent instructions with system info
-	var systemPrompt string
-	if systemPromptPath != "" {
-		// User provided a custom template file
-		systemPrompt, err = sysInfo.ExecuteTemplate(systemPromptPath)
-		if err != nil {
-			return "", fmt.Errorf("failed to execute custom system prompt template: %w", err)
-		}
-	} else {
-		// Use the default template
-		systemPrompt, err = sysInfo.ExecuteTemplateString(agentInstructions)
-		if err != nil {
-			return "", fmt.Errorf("failed to execute default system prompt template: %w", err)
-		}
+	// Execute the custom template file
+	systemPrompt, err := sysInfo.ExecuteTemplate(systemPromptPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to execute custom system prompt template: %w", err)
 	}
 
 	return systemPrompt, nil
