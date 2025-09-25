@@ -12,11 +12,13 @@ import (
 	aopts "github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/openai/openai-go/v2"
 	oaiopt "github.com/openai/openai-go/v2/option"
+	"github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/modelcatalog"
 	"github.com/spachava753/gai"
 	"google.golang.org/genai"
 
 	"github.com/cenkalti/backoff/v5"
+	mcpinternal "github.com/spachava753/cpe/internal/mcp"
 )
 
 //go:embed agent_instructions.txt
@@ -180,4 +182,66 @@ func InitGeneratorFromModel(m modelcatalog.Model, systemPrompt string, timeout t
 	default:
 		return nil, fmt.Errorf("unsupported model type: %s", m.Type)
 	}
+}
+
+// CreateToolCapableGenerator creates a DialogGenerator with all middleware properly configured
+func CreateToolCapableGenerator(
+	ctx context.Context,
+	selectedModel modelcatalog.Model,
+	systemPrompt string,
+	requestTimeout time.Duration,
+	baseURLOverride string,
+	disableStreaming bool,
+	mcpConfigPath string,
+) (DialogGenerator, error) {
+	// Create the base generator from catalog model
+	genBase, err := InitGeneratorFromModel(selectedModel, systemPrompt, requestTimeout, baseURLOverride)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create generator: %w", err)
+	}
+
+	// Check if the generator supports streaming and if streaming is enabled
+	var gen gai.ToolCapableGenerator
+	if streamingGen, ok := genBase.(gai.StreamingGenerator); ok && !disableStreaming {
+		streamingPrinter := NewStreamingPrinterGenerator(streamingGen)
+		adapter := &gai.StreamingAdapter{S: streamingPrinter}
+		tokenPrinter := NewTokenUsagePrinterGenerator(adapter)
+		gen = any(tokenPrinter).(gai.ToolCapableGenerator)
+	} else {
+		// responses type generators need to be wrapped
+		if r, ok := genBase.(*gai.ResponsesGenerator); ok {
+			genBase = gai.NewResponsesToolGeneratorAdapter(*r, "")
+		}
+		gen = NewResponsePrinterGenerator(genBase.(gai.ToolCapableGenerator))
+	}
+
+	// Create the tool generator using the printing-enabled generator
+	toolGen := &gai.ToolGenerator{
+		G: gen,
+	}
+
+	// Wrap the tool generator with BlockWhitelistFilter to filter thinking blocks
+	// only from the initial dialog, but preserve them during tool execution
+	filterToolGen := NewBlockWhitelistFilter(toolGen, []string{gai.Content, gai.ToolCall})
+
+	// Load MCP configuration
+	config, err := mcp.LoadConfig(mcpConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load MCP configuration: %w", err)
+	}
+
+	// Validate configuration
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid MCP configuration: %w", err)
+	}
+
+	// Create client manager
+	client := mcpinternal.NewClient()
+
+	// Register MCP server tools
+	if err = mcp.RegisterMCPServerTools(ctx, client, *config, filterToolGen); err != nil {
+		return nil, fmt.Errorf("failed to register MCP tools: %v\n", err)
+	}
+
+	return filterToolGen, nil
 }

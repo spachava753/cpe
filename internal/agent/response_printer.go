@@ -97,7 +97,7 @@ func (g *ResponsePrinterGenerator) Generate(ctx context.Context, dialog gai.Dial
 				content = formatToolCall(content)
 			}
 
-			fmt.Fprintf(&sb, content)
+			fmt.Fprint(&sb, content)
 		}
 	}
 

@@ -13,7 +13,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/version"
 
 	"github.com/gabriel-vasile/mimetype"
@@ -24,8 +23,6 @@ import (
 	"github.com/spachava753/cpe/internal/urlhandler"
 	"github.com/spachava753/gai"
 	"github.com/spf13/cobra"
-
-	mcpinternal "github.com/spachava753/cpe/internal/mcp"
 )
 
 // DefaultModel holds the global default LLM model for the CLI.
@@ -200,54 +197,18 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed to prepare system prompt: %w", err)
 	}
 
-	// Create the generator from catalog model
-	baseURLOverride := getCustomURL(customURL)
-	genBase, err := agent.InitGeneratorFromModel(*selected, systemPrompt, requestTimeout, baseURLOverride)
+	// Create the ToolCapableGenerator with all middleware configured
+	toolGen, err := agent.CreateToolCapableGenerator(
+		ctx,
+		*selected,
+		systemPrompt,
+		requestTimeout,
+		getCustomURL(customURL),
+		disableStreaming,
+		mcpConfigPath,
+	)
 	if err != nil {
-		return fmt.Errorf("failed to create generator: %w", err)
-	}
-
-	// Check if the generator supports streaming and if streaming is enabled
-	var gen gai.ToolCapableGenerator
-	if streamingGen, ok := genBase.(gai.StreamingGenerator); ok && !disableStreaming {
-		streamingPrinter := agent.NewStreamingPrinterGenerator(streamingGen)
-		adapter := &gai.StreamingAdapter{S: streamingPrinter}
-		tokenPrinter := agent.NewTokenUsagePrinterGenerator(adapter)
-		gen = any(tokenPrinter).(gai.ToolCapableGenerator)
-	} else {
-		// responses type generators need to be wrapped
-		if r, ok := genBase.(*gai.ResponsesGenerator); ok {
-			genBase = gai.NewResponsesToolGeneratorAdapter(*r, "")
-		}
-		gen = agent.NewResponsePrinterGenerator(genBase.(gai.ToolCapableGenerator))
-	}
-
-	// Create the tool generator using the printing-enabled generator
-	toolGen := &gai.ToolGenerator{
-		G: gen,
-	}
-
-	// Wrap the tool generator with BlockWhitelistFilter to filter thinking blocks
-	// only from the initial dialog, but preserve them during tool execution
-	filterToolGen := agent.NewBlockWhitelistFilter(toolGen, []string{gai.Content, gai.ToolCall})
-
-	// Load MCP configuration
-	config, err := mcp.LoadConfig(mcpConfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to load MCP configuration: %w", err)
-	}
-
-	// Validate configuration
-	if err := config.Validate(); err != nil {
-		return fmt.Errorf("invalid MCP configuration: %w", err)
-	}
-
-	// Create client manager
-	client := mcpinternal.NewClient()
-
-	// Register MCP server tools
-	if err = mcp.RegisterMCPServerTools(ctx, client, *config, filterToolGen); err != nil {
-		return fmt.Errorf("failed to register MCP tools: %v\n", err)
+		return fmt.Errorf("failed to create tool capable generator: %w", err)
 	}
 
 	userMessage := gai.Message{
@@ -308,7 +269,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	}
 
 	// Generate the response
-	resultDialog, err := filterToolGen.Generate(ctx, dialog, genOptionsFunc)
+	resultDialog, err := toolGen.Generate(ctx, dialog, genOptionsFunc)
 
 	// add a new line to separate the following messages printed to stderr
 	fmt.Printf("\n\n")
