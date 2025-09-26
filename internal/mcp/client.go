@@ -175,15 +175,19 @@ func (c *ToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage,
 func CreateTransport(config ServerConfig) (transport mcp.Transport, err error) {
 	switch config.Type {
 	case "stdio", "":
-		transport = mcp.NewCommandTransport(exec.Command(config.Command, config.Args...))
+		transport = &mcp.CommandTransport{
+			Command: exec.Command(config.Command, config.Args...),
+		}
 	case "http":
-		transport = mcp.NewStreamableClientTransport(config.URL, &mcp.StreamableClientTransportOptions{
+		transport = &mcp.StreamableClientTransport{
+			Endpoint:   config.URL,
 			HTTPClient: nil,
-		})
+		}
 	case "sse":
-		transport = mcp.NewSSEClientTransport(config.URL, &mcp.SSEClientTransportOptions{
+		transport = &mcp.SSEClientTransport{
+			Endpoint:   config.URL,
 			HTTPClient: nil,
-		})
+		}
 	}
 	if transport == nil {
 		err = fmt.Errorf("transport not supported")
