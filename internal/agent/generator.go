@@ -204,13 +204,15 @@ func CreateToolCapableGenerator(
 			genBase = gai.NewResponsesToolGeneratorAdapter(*r, "")
 		}
 		gen = NewResponsePrinterGenerator(genBase.(gai.ToolCapableGenerator))
-		// Wrap non-streaming generators with a retry wrapper so Generate is retried on transient failures
-		b := backoff.NewExponentialBackOff()
-		b.InitialInterval = 500 * time.Millisecond
-		b.MaxInterval = 1 * time.Minute
-		b.Reset()
-		gen = gai.NewRetryGenerator(gen, b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute))
 	}
+
+	// Wrap non-streaming generators with a retry wrapper so Generate is retried on transient failures
+	b := backoff.NewExponentialBackOff()
+	b.InitialInterval = 500 * time.Millisecond
+	b.MaxInterval = 1 * time.Minute
+	b.Reset()
+
+	gen = gai.NewRetryGenerator(gen, b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute))
 
 	// Create the tool generator using the printing-enabled generator
 	toolGen := &gai.ToolGenerator{
