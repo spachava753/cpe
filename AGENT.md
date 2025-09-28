@@ -2,7 +2,7 @@
 
 This document equips agents and new contributors to work effectively in this repository.
 
-@README.md and @ROADMAP.md provide additional context. See @internal/agent/agent_instructions.txt for the system prompt
+@README.md and @ROADMAP.md provide additional context. See examples/agent_instructions.prompt for the system prompt
 used by CPE itself.
 
 ## Project Overview
@@ -26,7 +26,8 @@ BREAKING: Running cpe now requires a model catalog and a model present in that c
     - root.go: main CLI entry and flow (flags, IO processing, dialog, execution)
     - model.go: model list/info from the JSON catalog
     - tools.go: token counting utilities
-    - mcp.go, conversation.go, env.go, etc.: supporting subcommands
+    - system_prompt.go: system prompt template handling
+    - mcp.go, conversation.go, etc.: supporting subcommands
 - internal/
     - agent/: generator adapters, streaming/printing, thinking filter, sysinfo
     - modelcatalog/: Model struct, JSON loader, validation
@@ -39,9 +40,9 @@ BREAKING: Running cpe now requires a model catalog and a model present in that c
 - main.go: invokes cmd.Execute()
 - gen.go: code generation hooks (if any)
 - .github/workflows/: CI (PR comment processing, issue-to-PR)
-- .cpemodels.json: example model catalog (JSON)
-- .cpemcp.json: optional MCP server configuration
-- .cpeignore: ignore patterns for analysis tools
+- examples/models.json: example model catalog (JSON)
+- .cpemcp.json: optional MCP server configuration (example - not present in repo)
+- (No ignore patterns - all files are analyzed)
 
 ## Build, test, and development commands
 
@@ -59,30 +60,30 @@ Run (typical dev):
 
 ```bash
 # Required: provide a model catalog and select a model present in it
-./cpe --model-catalog ./.cpemodels.json -m sonnet "Your prompt"
+./cpe --model-catalog ./examples/models.json -m sonnet "Your prompt"
 
 # With inputs
-./cpe --model-catalog ./.cpemodels.json -m sonnet -i path/to/file "Task"
+./cpe --model-catalog ./examples/models.json -m sonnet -i path/to/file "Task"
 
 # New conversation or continue specific one
-./cpe --model-catalog ./.cpemodels.json -m sonnet -n "Start fresh"
-./cpe --model-catalog ./.cpemodels.json -m sonnet -c <message_id> "Continue"
+./cpe --model-catalog ./examples/models.json -m sonnet -n "Start fresh"
+./cpe --model-catalog ./examples/models.json -m sonnet -c <message_id> "Continue"
 
 # Streaming off, custom system prompt
-./cpe --model-catalog ./.cpemodels.json -m sonnet --no-stream -s prompt.txt "..."
+./cpe --model-catalog ./examples/models.json -m sonnet --no-stream -s prompt.txt "..."
 ```
 
 Model utilities:
 
 ```bash
-./cpe model list --model-catalog ./.cpemodels.json
-./cpe model info sonnet --model-catalog ./.cpemodels.json
+./cpe model list --model-catalog ./examples/models.json
+./cpe model info sonnet --model-catalog ./examples/models.json
 ```
 
 Token tools:
 
 ```bash
-./cpe tools token-count . --model-catalog ./.cpemodels.json -m sonnet
+./cpe tools token-count . --model-catalog ./examples/models.json -m sonnet
 ```
 
 Formatting, vetting, testing:
@@ -95,7 +96,7 @@ go test ./...
 
 ## Code style and conventions
 
-- Language: Go 1.23.x
+- Language: Go 1.24.0
 - Formatting: go fmt; keep imports tidy; idiomatic Go naming
 - Errors: wrap with fmt.Errorf("...: %w", err); prefer contextual errors
 - Context: pass context.Context where IO, network, or cancellation applies
@@ -141,10 +142,10 @@ go test ./...
 - Secrets: models read API keys from env per catalog entry api_key_env (e.g., OPENAI_API_KEY, ANTHROPIC_API_KEY,
   GROQ_API_KEY, CEREBRAS_API_KEY). Do not log keys.
 - Conversation data: .cpeconvo contains prompts, outputs, and file references. Use --incognito (-G) for sensitive
-  sessions. Add entries to @.cpeignore to exclude paths from analysis.
+  sessions.
 - Network IO: URL inputs are downloaded over HTTP(S) with size limits; validate sources before use.
 - Model catalog: only trust catalogs from trusted sources; base_url redirects requests; respect provider ToS.
-- MCP servers: stdio/http/sse tools can execute external code; review @.cpemcp.json, limit tools with enabled/disabled
+- MCP servers: stdio/http/sse tools can execute external code; review .cpemcp.json, limit tools with enabled/disabled
   lists, and pin commands/versions.
 - CI: GitHub Actions use repository secrets; avoid echoing secrets in logs.
 
@@ -160,13 +161,13 @@ Common flags:
 
 - --model-catalog, -m/--model, -t/--temperature, -x/--max-tokens, -i/--input
 - -n/--new, -c/--continue, -G/--incognito, -s/--system-prompt-file, --no-stream, --timeout
-- --mcp-config for MCP servers; see @.cpemcp.json
+- --mcp-config for MCP servers; see .cpemcp.json (optional configuration)
 
 Examples:
 
 ```bash
-cpe --model-catalog ./.cpemodels.json -m gpt5 "Explain the code in cmd/root.go"
-cpe --model-catalog ./.cpemodels.json -m sonnet -i README.md "Summarize"
+cpe --model-catalog ./examples/models.json -m gpt5 "Explain the code in cmd/root.go"
+cpe --model-catalog ./examples/models.json -m sonnet -i README.md "Summarize"
 ```
 
 ## Configuration
@@ -180,10 +181,9 @@ Environment variables:
 
 Files:
 
-- @.cpemodels.json: JSON model catalog (required at runtime via --model-catalog)
-- @.cpemcp.json: MCP servers (optional)
-- @.cpeignore: ignore patterns for file analysis
-- @internal/agent/agent_instructions.txt: system instructions template
+- examples/models.json: JSON model catalog (example file)
+- .cpemcp.json: MCP servers (optional, example configuration)
+- examples/agent_instructions.prompt: system instructions template
 
 ## System Prompt Template Functions
 
@@ -216,14 +216,15 @@ Python version: {{exec "python --version 2>/dev/null || echo 'Not installed'"}}
 
 Use it with:
 ```bash
-./cpe --model-catalog ./.cpemodels.json -m sonnet -s custom_prompt.txt "your query"
+./cpe --model-catalog ./examples/models.json -m sonnet -s custom_prompt.txt "your query"
 ```
 
 ### Example Templates
 
-See `examples/system_prompts/` for ready-to-use templates:
-- `project_aware.txt` - Includes project documentation and git status
-- `development_env.txt` - Shows installed tools and system resources
+See `examples/` for ready-to-use templates:
+- `project_aware.prompt` - Includes project documentation and git status
+- `development_env.prompt` - Shows installed tools and system resources
+- `agent_instructions.prompt` - System instructions template
 
 ## Testing frameworks, conventions, and execution
 
