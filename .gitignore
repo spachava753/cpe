@@ -23,5 +23,8 @@
 
 !examples/models.json
 
+!docs/
+!docs/**
+
 # ...even if they are in subdirectories
 !*/
