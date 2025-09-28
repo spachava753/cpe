@@ -103,6 +103,7 @@ go test ./...
 - Packages: keep public surface minimal; prefer internal/ for non-exported APIs
 - Concurrency: prefer small, bounded goroutine pools; configurable limits in token tools
 - I/O: guard large inputs; processUserInput caps at 50MB per input; detect MIME when needed
+- **String literals**: Use raw strings (``) for multi-line strings instead of multiple fmt.Println calls
 
 ## Commit message conventions
 
