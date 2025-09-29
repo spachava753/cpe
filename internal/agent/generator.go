@@ -11,8 +11,8 @@ import (
 	aopts "github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/openai/openai-go/v2"
 	oaiopt "github.com/openai/openai-go/v2/option"
+	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/mcp"
-	"github.com/spachava753/cpe/internal/modelcatalog"
 	"github.com/spachava753/gai"
 	"google.golang.org/genai"
 
@@ -117,7 +117,7 @@ type ToolRegisterer interface {
 	Register(tool gai.Tool, callback gai.ToolCallback) error
 }
 
-func InitGeneratorFromModel(m modelcatalog.Model, systemPrompt string, timeout time.Duration, overrideBaseURL string) (gai.Generator, error) {
+func InitGeneratorFromModel(m config.Model, systemPrompt string, timeout time.Duration, overrideBaseURL string) (gai.Generator, error) {
 	t := strings.ToLower(m.Type)
 	baseURL := m.BaseUrl
 	if overrideBaseURL != "" {
@@ -178,12 +178,12 @@ func InitGeneratorFromModel(m modelcatalog.Model, systemPrompt string, timeout t
 // CreateToolCapableGenerator creates a DialogGenerator with all middleware properly configured
 func CreateToolCapableGenerator(
 	ctx context.Context,
-	selectedModel modelcatalog.Model,
+	selectedModel config.Model,
 	systemPrompt string,
 	requestTimeout time.Duration,
 	baseURLOverride string,
 	disableStreaming bool,
-	mcpConfigPath string,
+	mcpServers map[string]mcp.ServerConfig,
 ) (DialogGenerator, error) {
 	// Create the base generator from catalog model
 	genBase, err := InitGeneratorFromModel(selectedModel, systemPrompt, requestTimeout, baseURLOverride)
@@ -223,22 +223,23 @@ func CreateToolCapableGenerator(
 	// only from the initial dialog, but preserve them during tool execution
 	filterToolGen := NewBlockWhitelistFilter(toolGen, []string{gai.Content, gai.ToolCall})
 
-	// Load MCP configuration
-	config, err := mcp.LoadConfig(mcpConfigPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load MCP configuration: %w", err)
+	// Create MCP configuration from unified config
+	mcpConfig := &mcp.Config{
+		MCPServers: mcpServers,
 	}
 
-	// Validate configuration
-	if err := config.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid MCP configuration: %w", err)
+	// Validate MCP configuration if servers exist
+	if len(mcpServers) > 0 {
+		if err := mcpConfig.Validate(); err != nil {
+			return nil, fmt.Errorf("invalid MCP configuration: %w", err)
+		}
 	}
 
 	// Create client manager
 	client := mcpinternal.NewClient()
 
 	// Register MCP server tools
-	if err = mcp.RegisterMCPServerTools(ctx, client, *config, filterToolGen); err != nil {
+	if err = mcp.RegisterMCPServerTools(ctx, client, *mcpConfig, filterToolGen); err != nil {
 		return nil, fmt.Errorf("failed to register MCP tools: %v\n", err)
 	}
 

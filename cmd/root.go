@@ -18,7 +18,7 @@ import (
 	"github.com/gabriel-vasile/mimetype"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/spachava753/cpe/internal/agent"
-	"github.com/spachava753/cpe/internal/modelcatalog"
+	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/urlhandler"
 	"github.com/spachava753/gai"
@@ -47,9 +47,8 @@ var (
 	systemPromptPath  string
 	timeout           string
 	disableStreaming  bool
-	mcpConfigPath     string
 	skipStdin         bool
-	modelCatalogPath  string
+	configPath        string
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -106,9 +105,8 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&systemPromptPath, "system-prompt-file", "s", "", "Specify a custom system prompt template file")
 	rootCmd.PersistentFlags().StringVarP(&timeout, "timeout", "", "5m", "Specify request timeout duration (e.g. '5m', '30s')")
 	rootCmd.PersistentFlags().BoolVar(&disableStreaming, "no-stream", false, "Disable streaming output (show complete response after generation)")
-	rootCmd.PersistentFlags().StringVar(&mcpConfigPath, "mcp-config", "", "Specify path to MCP configuration file")
 	rootCmd.PersistentFlags().BoolVar(&skipStdin, "skip-stdin", false, "Skip reading from stdin (useful in scripts)")
-	rootCmd.PersistentFlags().StringVar(&modelCatalogPath, "model-catalog", "", "Path to JSON model catalog file")
+	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Path to unified configuration file (default: ./cpe.yaml, ~/.config/cpe/cpe.yaml)")
 
 	// Add version flag
 	rootCmd.Flags().BoolP("version", "v", false, "Print the version number and exit")
@@ -118,12 +116,6 @@ func init() {
 func executeRootCommand(ctx context.Context, args []string) error {
 	if incognitoMode {
 		fmt.Fprintln(os.Stderr, "WARNING: Incognito mode is enabled. This conversation will NOT be saved to storage.")
-	}
-
-	// Parse timeout duration
-	requestTimeout, err := time.ParseDuration(timeout)
-	if err != nil {
-		return fmt.Errorf("invalid timeout value '%s': %w", timeout, err)
 	}
 
 	userBlocks, err := processUserInput(args)
@@ -167,32 +159,54 @@ func executeRootCommand(ctx context.Context, args []string) error {
 
 	customURL = getCustomURL(customURL)
 
-	// Load model catalog if provided
-	var catalog []modelcatalog.Model
-	if modelCatalogPath != "" {
-		catalog, err = modelcatalog.Load(modelCatalogPath)
-		if err != nil {
-			return fmt.Errorf("failed to load model catalog: %w", err)
-		}
-	}
-	if len(catalog) == 0 {
-		return errors.New("no model catalog provided. Specify --model-catalog to use models for generation")
+	// Load unified configuration
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	// Find model by Name
-	var selected *modelcatalog.Model
-	for i := range catalog {
-		if catalog[i].Name == model {
-			selected = &catalog[i]
-			break
+	// Determine effective timeout (CLI flag overrides config default)
+	effectiveTimeout := timeout
+	if effectiveTimeout == "" && cfg.Defaults.Timeout != "" {
+		effectiveTimeout = cfg.Defaults.Timeout
+	}
+	if effectiveTimeout == "" {
+		effectiveTimeout = "5m" // fallback default
+	}
+
+	// Parse timeout duration
+	requestTimeout, err := time.ParseDuration(effectiveTimeout)
+	if err != nil {
+		return fmt.Errorf("invalid timeout value '%s': %w", effectiveTimeout, err)
+	}
+
+	// Determine which model to use
+	modelName := model
+	if modelName == "" {
+		// Use default from config or environment
+		if cfg.GetDefaultModel() != "" {
+			modelName = cfg.GetDefaultModel()
+		} else if DefaultModel != "" {
+			modelName = DefaultModel
+		} else {
+			return fmt.Errorf("no model specified. Use --model flag or set defaults.model in configuration")
 		}
 	}
-	if selected == nil {
-		return fmt.Errorf("model %q not found in catalog", model)
+
+	// Find the model in configuration
+	selectedModel, found := cfg.FindModel(modelName)
+	if !found {
+		return fmt.Errorf("model %q not found in configuration", modelName)
+	}
+
+	// Determine system prompt path (CLI flag overrides config default)
+	effectiveSystemPromptPath := systemPromptPath
+	if effectiveSystemPromptPath == "" && cfg.Defaults.SystemPromptPath != "" {
+		effectiveSystemPromptPath = cfg.Defaults.SystemPromptPath
 	}
 
 	// Prepare system prompt
-	systemPrompt, err := agent.PrepareSystemPrompt(systemPromptPath)
+	systemPrompt, err := agent.PrepareSystemPrompt(effectiveSystemPromptPath)
 	if err != nil {
 		return fmt.Errorf("failed to prepare system prompt: %w", err)
 	}
@@ -200,12 +214,12 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	// Create the ToolCapableGenerator with all middleware configured
 	toolGen, err := agent.CreateToolCapableGenerator(
 		ctx,
-		*selected,
+		selectedModel.Model,
 		systemPrompt,
 		requestTimeout,
 		getCustomURL(customURL),
-		disableStreaming,
-		mcpConfigPath,
+		disableStreaming || cfg.Defaults.NoStream,
+		cfg.MCPServers,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create tool capable generator: %w", err)
@@ -234,37 +248,74 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		dialog = append(dialog, userMessage)
 	}
 
+	// Create CLI overrides from flags
+	cliOverrides := &config.GenerationParams{}
+	if maxTokens > 0 {
+		cliOverrides.MaxTokens = &maxTokens
+	}
+	if temperature > 0 {
+		cliOverrides.Temperature = &temperature
+	}
+	if topP > 0 {
+		cliOverrides.TopP = &topP
+	}
+	if topK > 0 {
+		cliOverrides.TopK = &topK
+	}
+	if frequencyPenalty != 0 {
+		cliOverrides.FrequencyPenalty = &frequencyPenalty
+	}
+	if presencePenalty != 0 {
+		cliOverrides.PresencePenalty = &presencePenalty
+	}
+	if numberOfResponses > 0 {
+		cliOverrides.NumberOfResponses = &numberOfResponses
+	}
+	if thinkingBudget != "" {
+		cliOverrides.ThinkingBudget = &thinkingBudget
+	}
+
+	// Get effective generation parameters by merging model defaults, global defaults, and CLI overrides
+	effective := selectedModel.GetEffectiveGenerationParams(cfg.Defaults.GenerationParams, cliOverrides)
+
 	// Create a generator function that returns generation options
 	genOptionsFunc := func(d gai.Dialog) *gai.GenOpts {
 		opts := &gai.GenOpts{}
-		opts.MaxGenerationTokens = int(selected.MaxOutput)
-		if maxTokens > 0 {
-			opts.MaxGenerationTokens = maxTokens
+
+		// Set max tokens from model max_output or effective params
+		opts.MaxGenerationTokens = int(selectedModel.Model.MaxOutput)
+		if effective.MaxTokens != nil {
+			opts.MaxGenerationTokens = *effective.MaxTokens
 		}
-		if temperature > 0 {
-			opts.Temperature = temperature
+
+		// Apply effective parameters
+		if effective.Temperature != nil {
+			opts.Temperature = *effective.Temperature
 		}
-		if topP > 0 {
-			opts.TopP = topP
+		if effective.TopP != nil {
+			opts.TopP = *effective.TopP
 		}
-		if topK > 0 {
-			opts.TopK = uint(topK)
+		if effective.TopK != nil {
+			opts.TopK = uint(*effective.TopK)
 		}
-		if frequencyPenalty != 0 {
-			opts.FrequencyPenalty = frequencyPenalty
+		if effective.FrequencyPenalty != nil {
+			opts.FrequencyPenalty = *effective.FrequencyPenalty
 		}
-		if presencePenalty != 0 {
-			opts.PresencePenalty = presencePenalty
+		if effective.PresencePenalty != nil {
+			opts.PresencePenalty = *effective.PresencePenalty
 		}
-		if numberOfResponses > 0 {
-			opts.N = uint(numberOfResponses)
+		if effective.NumberOfResponses != nil {
+			opts.N = uint(*effective.NumberOfResponses)
 		}
-		if selected.SupportsReasoning {
-			opts.ThinkingBudget = selected.DefaultReasoningEffort
+
+		// Handle reasoning/thinking budget
+		if selectedModel.Model.SupportsReasoning {
+			opts.ThinkingBudget = selectedModel.Model.DefaultReasoningEffort
 		}
-		if thinkingBudget != "" {
-			opts.ThinkingBudget = thinkingBudget
+		if effective.ThinkingBudget != nil {
+			opts.ThinkingBudget = *effective.ThinkingBudget
 		}
+
 		return opts
 	}
 

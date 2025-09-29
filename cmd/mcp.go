@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/spachava753/cpe/internal/config"
 	mcpinternal "github.com/spachava753/cpe/internal/mcp"
 	"github.com/spf13/cobra"
 )
@@ -17,6 +18,24 @@ var (
 	mcpToolName   string
 	mcpToolArgs   string
 )
+
+// getMCPConfig loads the unified configuration and returns the MCP configuration
+func getMCPConfig() (*mcpinternal.Config, error) {
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	mcpConfig := &mcpinternal.Config{
+		MCPServers: cfg.MCPServers,
+	}
+
+	if mcpConfig.MCPServers == nil {
+		mcpConfig.MCPServers = make(map[string]mcpinternal.ServerConfig)
+	}
+
+	return mcpConfig, nil
+}
 
 // mcpInitCmd represents the 'mcp init' subcommand
 var mcpInitCmd = &cobra.Command{
@@ -64,7 +83,7 @@ var mcpListServersCmd = &cobra.Command{
 	Long:    `List all MCP servers defined in .cpemcp.json configuration file.`,
 	Aliases: []string{"ls-servers"},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		config, err := mcpinternal.LoadConfig(mcpConfigPath)
+		config, err := getMCPConfig()
 		if err != nil {
 			fmt.Printf("Warning: %v\n", err)
 			config = &mcpinternal.Config{MCPServers: make(map[string]mcpinternal.ServerConfig)}
@@ -127,7 +146,7 @@ var mcpInfoCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		serverName := args[0]
 
-		config, err := mcpinternal.LoadConfig(mcpConfigPath)
+		config, err := getMCPConfig()
 		if err != nil {
 			fmt.Printf("Warning: %v\n", err)
 			config = &mcpinternal.Config{MCPServers: make(map[string]mcpinternal.ServerConfig)}
@@ -188,7 +207,7 @@ var mcpListToolsCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		serverName := args[0]
 
-		config, err := mcpinternal.LoadConfig(mcpConfigPath)
+		config, err := getMCPConfig()
 		if err != nil {
 			fmt.Printf("Warning: %v\n", err)
 			config = &mcpinternal.Config{MCPServers: make(map[string]mcpinternal.ServerConfig)}
@@ -330,7 +349,7 @@ var mcpCallToolCmd = &cobra.Command{
 			return fmt.Errorf("--tool is required")
 		}
 
-		config, err := mcpinternal.LoadConfig(mcpConfigPath)
+		config, err := getMCPConfig()
 		if err != nil {
 			fmt.Printf("Warning: %v\n", err)
 			config = &mcpinternal.Config{MCPServers: make(map[string]mcpinternal.ServerConfig)}

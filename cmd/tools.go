@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/spachava753/cpe/internal/agent"
-	"github.com/spachava753/cpe/internal/modelcatalog"
+	"github.com/spachava753/cpe/internal/config"
 	tokenbuilder "github.com/spachava753/cpe/internal/token/builder"
 	tokentree "github.com/spachava753/cpe/internal/token/tree"
 	"github.com/spachava753/gai"
@@ -37,22 +37,14 @@ If no path is provided, the current directory is used.\nIf path is "-", content 
 			fmt.Fprintf(os.Stderr, "Using default model: %s\n", model)
 		}
 
-		if modelCatalogPath == "" {
-			return fmt.Errorf("model catalog is required: provide --model-catalog path")
-		}
-		catalog, err := modelcatalog.Load(modelCatalogPath)
+		cfg, err := config.LoadConfig(configPath)
 		if err != nil {
-			return fmt.Errorf("failed to load model catalog: %w", err)
+			return fmt.Errorf("failed to load configuration: %w", err)
 		}
-		var selected *modelcatalog.Model
-		for i := range catalog {
-			if catalog[i].Name == model {
-				selected = &catalog[i]
-				break
-			}
-		}
-		if selected == nil {
-			return fmt.Errorf("model %q not found in catalog", model)
+
+		selectedModel, found := cfg.FindModel(model)
+		if !found {
+			return fmt.Errorf("model %q not found in configuration", model)
 		}
 
 		requestTimeout, err := time.ParseDuration(timeout)
@@ -60,7 +52,7 @@ If no path is provided, the current directory is used.\nIf path is "-", content 
 			return fmt.Errorf("failed to parse request timeout: %w", err)
 		}
 
-		gen, err := agent.InitGeneratorFromModel(*selected, "", requestTimeout, "")
+		gen, err := agent.InitGeneratorFromModel(selectedModel.Model, "", requestTimeout, "")
 		if err != nil {
 			return fmt.Errorf("failed to initialize generator for token counting: %w", err)
 		}

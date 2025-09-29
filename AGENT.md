@@ -13,12 +13,12 @@ conversation storage.
 
 Key capabilities:
 
-- Multi-model generation via a JSON model catalog
+- Multi-model generation via unified YAML/JSON configuration
 - Tool use (file ops, shell execution, MCP servers)
 - Streaming or non-streaming output with “thinking” filtering
 - Conversation persistence and branching
 
-BREAKING: Running cpe now requires a model catalog and a model present in that catalog.
+BREAKING: Running cpe now requires a unified configuration file with at least one model defined.
 
 ## Project structure and organization
 
@@ -30,8 +30,8 @@ BREAKING: Running cpe now requires a model catalog and a model present in that c
     - mcp.go, conversation.go, etc.: supporting subcommands
 - internal/
     - agent/: generator adapters, streaming/printing, thinking filter, sysinfo
-    - modelcatalog/: Model struct, JSON loader, validation
-    - mcp/: MCP config loader/validation and client
+    - config/: Unified configuration loading, validation, parameter merging, and Model struct
+    - mcp/: MCP config validation and client
     - storage/: SQLite-backed conversation storage (.cpeconvo)
     - token/: token counting builder and directory tree utilities
     - urlhandler/: URL detection and safe downloading
@@ -40,8 +40,7 @@ BREAKING: Running cpe now requires a model catalog and a model present in that c
 - main.go: invokes cmd.Execute()
 - gen.go: code generation hooks (if any)
 - .github/workflows/: CI (PR comment processing, issue-to-PR)
-- examples/models.json: example model catalog (JSON)
-- .cpemcp.json: optional MCP server configuration (example - not present in repo)
+- examples/cpe.yaml: example unified configuration (YAML)
 - (No ignore patterns - all files are analyzed)
 
 ## Build, test, and development commands
@@ -59,31 +58,34 @@ go install ./...
 Run (typical dev):
 
 ```bash
-# Required: provide a model catalog and select a model present in it
-./cpe --model-catalog ./examples/models.json -m sonnet "Your prompt"
+# Required: provide a unified configuration with models defined
+./cpe --config ./examples/cpe.yaml -m sonnet "Your prompt"
 
 # With inputs
-./cpe --model-catalog ./examples/models.json -m sonnet -i path/to/file "Task"
+./cpe --config ./examples/cpe.yaml -m sonnet -i path/to/file "Task"
+
+# Auto-detect config from current directory or user config
+./cpe -m sonnet "Your prompt"  # Uses ./cpe.yaml or ~/.config/cpe/cpe.yaml
 
 # New conversation or continue specific one
-./cpe --model-catalog ./examples/models.json -m sonnet -n "Start fresh"
-./cpe --model-catalog ./examples/models.json -m sonnet -c <message_id> "Continue"
+./cpe --config ./examples/cpe.yaml -m sonnet -n "Start fresh"
+./cpe --config ./examples/cpe.yaml -m sonnet -c <message_id> "Continue"
 
 # Streaming off, custom system prompt
-./cpe --model-catalog ./examples/models.json -m sonnet --no-stream -s prompt.txt "..."
+./cpe --config ./examples/cpe.yaml -m sonnet --no-stream -s prompt.txt "..."
 ```
 
 Model utilities:
 
 ```bash
-./cpe model list --model-catalog ./examples/models.json
-./cpe model info sonnet --model-catalog ./examples/models.json
+./cpe model list --config ./examples/cpe.yaml
+./cpe model info sonnet --config ./examples/cpe.yaml
 ```
 
 Token tools:
 
 ```bash
-./cpe tools token-count . --model-catalog ./examples/models.json -m sonnet
+./cpe tools token-count . --config ./examples/cpe.yaml -m sonnet
 ```
 
 Formatting, vetting, testing:
@@ -117,15 +119,18 @@ go test ./...
 
 - CLI layer (cmd/*) orchestrates request:
     1) Parse flags and inputs (stdin/files/URLs) into gai.Blocks
-    2) Load model from JSON catalog (required) and init generator
-    3) Wrap generator with printing/streaming adapters
-    4) Register MCP servers (optional) and tools
+    2) Load unified config (required) with models and MCP servers
+    3) Select model and merge generation parameters (model defaults + global defaults + CLI overrides)
+    4) Create generator with tool capabilities
     5) Generate, then persist dialog to SQLite (.cpeconvo) unless incognito
+- Config layer (internal/config):
+    - Unified YAML/JSON configuration loading with search paths
+    - Parameter precedence: CLI flags > model defaults > global defaults
+    - Environment variable expansion in config values
 - Agent layer (internal/agent):
     - NewBlockWhitelistFilter: filters blocks based on a whitelist of allowed block types
     - Streaming vs response printing adapters
-- Model catalog (internal/modelcatalog): decouples model selection (name->type/id/base_url/limits/costs)
-- MCP (internal/mcp): declarative server config + validation; client registers tools for use by the generator
+- MCP (internal/mcp): server validation; client registers tools for use by the generator
 - Storage (internal/storage): threadlike message DAG with parent IDs
 
 ## Testing guidelines
@@ -159,15 +164,16 @@ go test ./...
 
 Common flags:
 
-- --model-catalog, -m/--model, -t/--temperature, -x/--max-tokens, -i/--input
+- --config, -m/--model, -t/--temperature, -x/--max-tokens, -i/--input
 - -n/--new, -c/--continue, -G/--incognito, -s/--system-prompt-file, --no-stream, --timeout
-- --mcp-config for MCP servers; see .cpemcp.json (optional configuration)
 
 Examples:
 
 ```bash
-cpe --model-catalog ./examples/models.json -m gpt5 "Explain the code in cmd/root.go"
-cpe --model-catalog ./examples/models.json -m sonnet -i README.md "Summarize"
+cpe --config ./examples/cpe.yaml -m gpt5 "Explain the code in cmd/root.go"
+cpe --config ./examples/cpe.yaml -m sonnet -i README.md "Summarize"
+# or with auto-detected config:
+cpe -m sonnet -i README.md "Summarize"
 ```
 
 ## Configuration
@@ -175,15 +181,20 @@ cpe --model-catalog ./examples/models.json -m sonnet -i README.md "Summarize"
 Environment variables:
 
 - Provider keys: OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, GROQ_API_KEY, CEREBRAS_API_KEY (as required by
-  catalog entries via api_key_env)
-- CPE_MODEL: optional default model name (still must exist in the catalog)
+  config entries via api_key_env)
+- CPE_MODEL: optional default model name (still must exist in the configuration)
 - CPE_CUSTOM_URL: optional global base URL override
 
 Files:
 
-- examples/models.json: JSON model catalog (example file)
-- .cpemcp.json: MCP servers (optional, example configuration)
+- examples/cpe.yaml: unified configuration example (YAML)
 - examples/agent_instructions.prompt: system instructions template
+
+Configuration search paths:
+
+1. Explicit --config path
+2. ./cpe.yaml or ./cpe.yml (current directory)
+3. ~/.config/cpe/cpe.yaml or ~/.config/cpe/cpe.yml (user config directory)
 
 ## System Prompt Template Functions
 

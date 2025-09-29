@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spachava753/cpe/internal/modelcatalog"
+	"github.com/spachava753/cpe/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -17,19 +17,22 @@ var modelCmd = &cobra.Command{
 
 var listModelCmd = &cobra.Command{
 	Use:     "list",
-	Short:   "List models from catalog",
+	Short:   "List models from configuration",
 	Aliases: []string{"ls"},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if modelCatalogPath == "" {
-			return nil
-		}
-		models, err := modelcatalog.Load(modelCatalogPath)
+		cfg, err := config.LoadConfig(configPath)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to load configuration: %w", err)
 		}
-		for _, m := range models {
-			line := m.Name
-			if DefaultModel != "" && m.Name == DefaultModel {
+
+		defaultModel := cfg.GetDefaultModel()
+		if defaultModel == "" {
+			defaultModel = DefaultModel
+		}
+
+		for _, model := range cfg.Models {
+			line := model.Name
+			if defaultModel != "" && model.Name == defaultModel {
 				line += " (default)"
 			}
 			fmt.Println(line)
@@ -42,16 +45,14 @@ var infoModelCmd = &cobra.Command{
 	Use:   "info",
 	Short: "Show model details by name",
 	Example: `# Show model details by name
-cpe model init --model-catalog gpt5
+cpe model info sonnet
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if modelCatalogPath == "" {
-			return nil
-		}
-		models, err := modelcatalog.Load(modelCatalogPath)
+		cfg, err := config.LoadConfig(configPath)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to load configuration: %w", err)
 		}
+
 		if len(args) != 1 {
 			return cmd.Usage()
 		}
@@ -62,15 +63,37 @@ cpe model init --model-catalog gpt5
 		if name == "" {
 			return fmt.Errorf("no model name provided")
 		}
-		for _, m := range models {
-			if m.Name == name {
-				fmt.Printf("Name: %s\nType: %s\nID: %s\nContext: %d\nMaxOutput: %d\nInputCostPerMillion: %.6f\nOutputCostPerMillion: %.6f\nSupportsReasoning: %t\nDefaultReasoningEffort: %s\n",
-					m.Name, m.Type, m.ID, m.ContextWindow, m.MaxOutput, m.InputCostPerMillion, m.OutputCostPerMillion, m.SupportsReasoning, m.DefaultReasoningEffort,
-				)
-				return nil
+
+		model, found := cfg.FindModel(name)
+		if !found {
+			return fmt.Errorf("model %q not found", name)
+		}
+
+		fmt.Printf("Name: %s\nType: %s\nID: %s\nContext: %d\nMaxOutput: %d\nInputCostPerMillion: %.6f\nOutputCostPerMillion: %.6f\nSupportsReasoning: %t\nDefaultReasoningEffort: %s\n",
+			model.Name, model.Type, model.ID, model.ContextWindow, model.MaxOutput, model.InputCostPerMillion, model.OutputCostPerMillion, model.SupportsReasoning, model.DefaultReasoningEffort,
+		)
+
+		// Show generation defaults if present
+		if model.GenerationDefaults != nil {
+			fmt.Printf("\nGeneration Defaults:\n")
+			if model.GenerationDefaults.Temperature != nil {
+				fmt.Printf("  Temperature: %.2f\n", *model.GenerationDefaults.Temperature)
+			}
+			if model.GenerationDefaults.TopP != nil {
+				fmt.Printf("  TopP: %.2f\n", *model.GenerationDefaults.TopP)
+			}
+			if model.GenerationDefaults.TopK != nil {
+				fmt.Printf("  TopK: %d\n", *model.GenerationDefaults.TopK)
+			}
+			if model.GenerationDefaults.MaxTokens != nil {
+				fmt.Printf("  MaxTokens: %d\n", *model.GenerationDefaults.MaxTokens)
+			}
+			if model.GenerationDefaults.ThinkingBudget != nil {
+				fmt.Printf("  ThinkingBudget: %s\n", *model.GenerationDefaults.ThinkingBudget)
 			}
 		}
-		return fmt.Errorf("model %q not found", name)
+
+		return nil
 	},
 }
 
