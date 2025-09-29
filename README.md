@@ -56,6 +56,27 @@ export CPE_CUSTOM_URL="https://your-custom-endpoint.com"  # For custom API endpo
 
 ## Quick Start
 
+### Configuration Setup
+
+CPE requires a configuration file to define available models. Create a `cpe.yaml` file in your current directory or at `~/.config/cpe/cpe.yaml`:
+
+```yaml
+version: "1.0"
+
+models:
+  - name: "sonnet"
+    id: "claude-3-5-sonnet-20241022"
+    type: "anthropic"
+    api_key_env: "ANTHROPIC_API_KEY"
+    context_window: 200000
+    max_output: 8192
+
+defaults:
+  model: "sonnet"
+```
+
+See the [Configuration](#configuration) section for a complete example with multiple models and advanced settings.
+
 ### Basic Usage
 
 ```bash
@@ -182,6 +203,7 @@ cpe [flags] "Your prompt here"
 
 | Flag                   | Short | Description                                                                                            |
 |------------------------|-------|--------------------------------------------------------------------------------------------------------|
+| `--config`             |       | Path to configuration file (default: ./cpe.yaml or ~/.config/cpe/cpe.yaml)                            |
 | `--model`,             | `-m`  | Specify which AI model to use                                                                          |
 | `--temperature`        | `-t`  | Control randomness (0.0-1.0)                                                                           |
 | `--max-tokens`         | `-x`  | Maximum tokens to generate                                                                             |
@@ -206,8 +228,14 @@ cpe [flags] "Your prompt here"
 ### Model Commands
 
 ```bash
-# List all supported models
+# List all configured models
 cpe model list   # or cpe models list
+
+# View model details
+cpe model info sonnet
+
+# Use custom config file
+cpe --config ./my-config.yaml model list
 ```
 
 ### Conversation Management
@@ -265,6 +293,110 @@ cpe mcp list-tools server_name
 cpe mcp call-tool --server server_name --tool tool_name --args '{"param": "value"}'
 ```
 
+## Configuration
+
+CPE uses a unified YAML configuration file that defines models, MCP servers, and default settings. The configuration file is automatically detected from:
+
+1. Path specified with `--config` flag
+2. `./cpe.yaml` or `./cpe.yml` (current directory)
+3. `~/.config/cpe/cpe.yaml` or `~/.config/cpe/cpe.yml` (user config directory)
+
+### Configuration File Format
+
+Create a `cpe.yaml` file with the following structure:
+
+```yaml
+version: "1.0"
+
+# Model definitions
+models:
+  - name: "gpt4"
+    id: "gpt-4"
+    type: "openai"
+    api_key_env: "OPENAI_API_KEY"
+    context_window: 128000
+    max_output: 4096
+    input_cost_per_million: 30
+    output_cost_per_million: 60
+    generationDefaults:
+      temperature: 0.7
+      maxTokens: 2048
+
+  - name: "sonnet"
+    id: "claude-3-5-sonnet-20241022"
+    type: "anthropic"
+    api_key_env: "ANTHROPIC_API_KEY"
+    context_window: 200000
+    max_output: 8192
+    input_cost_per_million: 3
+    output_cost_per_million: 15
+    generationDefaults:
+      temperature: 0.5
+      maxTokens: 8192
+
+# MCP server definitions (optional)
+mcpServers:
+  editor:
+    command: "mcp-server-editor"
+    type: stdio
+    timeout: 60
+    toolFilter: whitelist
+    enabledTools:
+      - text_edit
+      - shell
+
+# Global defaults (optional)
+defaults:
+  model: "sonnet"
+  systemPromptPath: "./custom-prompt.txt"
+  timeout: "5m"
+  generationParams:
+    temperature: 0.7
+    maxTokens: 4096
+```
+
+### Model Configuration
+
+Each model requires:
+- `name`: Unique identifier used with `-m` flag
+- `id`: Model ID used by the provider
+- `type`: Provider type (`openai`, `anthropic`, `gemini`, `groq`, `cerebras`, `responses`)
+- `api_key_env`: Environment variable containing the API key
+- `context_window`: Maximum context size
+- `max_output`: Maximum output tokens
+
+Optional per-model settings:
+- `generationDefaults`: Default generation parameters for this model
+  - `temperature`, `topP`, `topK`, `maxTokens`, etc.
+
+### Parameter Precedence
+
+Generation parameters are merged with this priority (highest to lowest):
+1. CLI flags (e.g., `--temperature 0.9`)
+2. Model-specific defaults (`generationDefaults` in config)
+3. Global defaults (`defaults.generationParams` in config)
+4. Built-in defaults
+
+### Example Configuration
+
+See `examples/cpe.yaml` for a complete example with all supported models and MCP servers.
+
+### Using the Configuration
+
+```bash
+# Use default config location (./cpe.yaml or ~/.config/cpe/cpe.yaml)
+cpe -m sonnet "Your prompt"
+
+# Specify explicit config file
+cpe --config ./my-config.yaml -m gpt4 "Your prompt"
+
+# List models from config
+cpe model list
+
+# View model details
+cpe model info sonnet
+```
+
 ## Customization
 
 ### Customizing CPE
@@ -310,32 +442,9 @@ Operating System: {{.OperatingSystem}}
 
 This allows you to create contextual system prompts that adapt to the current environment.
 
-### MCP Configuration
+### MCP Servers
 
-Create a `.cpemcp.json` or `.cpemcp.yml` file to configure Model Context Protocol servers:
-
-```json
-{
-  "mcpServers": {
-    "my_server": {
-      "command": "path/to/server/binary",
-      "args": [
-        "--port",
-        "8080"
-      ],
-      "type": "stdio",
-      "timeout": 30,
-      "env": {
-        "SERVER_ENV": "production"
-      }
-    },
-    "external_server": {
-      "type": "http",
-      "url": "https://my-mcp-server.example.com/api"
-    }
-  }
-}
-```
+Model Context Protocol (MCP) servers are configured in the unified configuration file under the `mcpServers` section. See the [Configuration](#configuration) section above for details on configuring MCP servers in your `cpe.yaml` file.
 
 ## Examples
 
