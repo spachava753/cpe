@@ -21,7 +21,8 @@
 
 !*.prompt
 
-!examples/models.json
+!examples/
+!examples/**
 
 !docs/
 !docs/**

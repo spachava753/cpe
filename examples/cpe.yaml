@@ -1,0 +1,112 @@
+# cpe.yaml - Unified CPE Configuration
+version: "1.0"
+
+# MCP server definitions
+mcpServers:
+  editor:
+    command: "editor-mcp"
+    type: stdio
+    timeout: 60
+    toolFilter: whitelist
+    enabledTools:
+      - text_edit
+      - shell
+
+# Model definitions with optional generation defaults
+models:
+  - name: flash
+    id: gemini-flash-latest
+    type: gemini
+    api_key_env: GEMINI_API_KEY
+    context_window: 1048576
+    max_output: 65536
+    input_cost_per_million: 0.30
+    output_cost_per_million: 2.50
+
+  - name: kimig
+    id: moonshotai/kimi-k2-instruct-0905
+    type: openai
+    base_url: https://api.groq.com/openai/v1/
+    api_key_env: GROQ_API_KEY
+    context_window: 262144
+    max_output: 16384
+    input_cost_per_million: 1
+    output_cost_per_million: 3
+
+  - name: qwenn
+    id: qwen/qwen3-next-80b-a3b-instruct
+    type: openai
+    base_url: https://openrouter.ai/api/v1/
+    api_key_env: OPENROUTER_API_KEY
+    context_window: 262100
+    max_output: 16384
+    input_cost_per_million: 2
+    output_cost_per_million: 2
+
+  - name: qwen
+    id: qwen/qwen3-max
+    type: openai
+    base_url: https://openrouter.ai/api/v1/
+    api_key_env: OPENROUTER_API_KEY
+    context_window: 262100
+    max_output: 16384
+    input_cost_per_million: 2
+    output_cost_per_million: 2
+
+  - name: gpt5
+    id: gpt-5
+    type: responses
+    api_key_env: OPENAI_API_KEY
+    context_window: 400000
+    max_output: 128000
+    input_cost_per_million: 1.25
+    output_cost_per_million: 10
+    supports_reasoning: true
+    default_reasoning_effort: low
+
+  - name: gpt5mini
+    id: gpt-5-mini
+    type: responses
+    api_key_env: OPENAI_API_KEY
+    context_window: 400000
+    max_output: 128000
+    input_cost_per_million: 0.25
+    output_cost_per_million: 2
+    supports_reasoning: true
+    default_reasoning_effort: low
+
+  - name: gpt5nano
+    id: gpt-5-nano
+    type: responses
+    api_key_env: OPENAI_API_KEY
+    context_window: 400000
+    max_output: 128000
+    input_cost_per_million: 0.05
+    output_cost_per_million: 0.40
+    supports_reasoning: true
+    default_reasoning_effort: low
+
+  - name: opus
+    id: claude-opus-4-1-20250805
+    type: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    context_window: 200000
+    max_output: 32000
+    input_cost_per_million: 15
+    output_cost_per_million: 75
+
+  - name: sonnet
+    id: claude-sonnet-4-5-20250929
+    type: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    context_window: 200000
+    max_output: 64000
+    input_cost_per_million: 3
+    output_cost_per_million: 15
+
+# Global defaults
+defaults:
+  systemPromptPath: "./examples/agent_instructions.prompt"
+  model: "sonnet"
+  timeout: "5m"
+  noStream: false
