@@ -58,7 +58,7 @@ export CPE_CUSTOM_URL="https://your-custom-endpoint.com"  # For custom API endpo
 
 ### Configuration Setup
 
-CPE requires a configuration file to define available models. Create a `cpe.yaml` file in your current directory or at `~/.config/cpe/cpe.yaml`:
+CPE requires a configuration file to define available models. Create a `cpe.yaml` file in your current directory or in the platform-specific user configuration directory (e.g., `~/.config/cpe/cpe.yaml` on Linux, `$HOME/Library/Application Support/cpe/cpe.yaml` on macOS, or `%AppData%\cpe\cpe.yaml` on Windows):
 
 ```yaml
 version: "1.0"
@@ -203,7 +203,7 @@ cpe [flags] "Your prompt here"
 
 | Flag                   | Short | Description                                                                                            |
 |------------------------|-------|--------------------------------------------------------------------------------------------------------|
-| `--config`             |       | Path to configuration file (default: ./cpe.yaml or ~/.config/cpe/cpe.yaml)                            |
+| `--config`             |       | Path to configuration file (default: ./cpe.yaml or platform-specific user config dir/cpe.yaml)          |
 | `--model`,             | `-m`  | Specify which AI model to use                                                                          |
 | `--temperature`        | `-t`  | Control randomness (0.0-1.0)                                                                           |
 | `--max-tokens`         | `-x`  | Maximum tokens to generate                                                                             |
@@ -299,7 +299,7 @@ CPE uses a unified YAML configuration file that defines models, MCP servers, and
 
 1. Path specified with `--config` flag
 2. `./cpe.yaml` or `./cpe.yml` (current directory)
-3. `~/.config/cpe/cpe.yaml` or `~/.config/cpe/cpe.yml` (user config directory)
+3. Platform-specific user config directory (e.g., `~/.config/cpe/cpe.yaml` on Linux, `$HOME/Library/Application Support/cpe/cpe.yaml` on macOS, or `%AppData%\\cpe\\cpe.yaml` on Windows)
 
 ### Configuration File Format
 
