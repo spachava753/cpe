@@ -250,4 +250,4 @@ See `examples/` for ready-to-use templates:
 
 ## Documentation for Go Symbols
 
-When gathering context about symbols like types, global variables, constants, functions and methods, prefer to use go doc command. You may use `go doc -all github.com/example/pkg` to get a full overview of a package, but use sparingly, as it may overwhelm the context window. Alternatively, you may use `go doc github.com/example/pkg.Type` to get documentation about a specific symbol.  
+When gathering context about symbols like types, global variables, constants, functions and methods, prefer to use `go doc` command. You may use `go doc github.com/example/pkg.Type` to get documentation about a specific symbol. Avoid using `go doc -all` as it may overwhelm your context window. Instead, if you need to perform a search or fuzzy search for a symbol, feed the output of `go doc -all` into a cli like `rg`, `fzf`, etc.   
