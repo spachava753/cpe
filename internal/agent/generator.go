@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -42,7 +43,7 @@ func PrepareSystemPrompt(systemPromptPath string) (string, error) {
 	return systemPrompt, nil
 }
 
-func createOpenAIGenerator(model, baseURL, systemPrompt string, timeout time.Duration, apiKey string) (gai.Generator, error) {
+func createOpenAIGenerator(model, baseURL, systemPrompt string, timeout time.Duration, apiKey string, patchConfig *config.PatchRequestConfig) (gai.Generator, error) {
 	clientOpts := []oaiopt.RequestOption{
 		oaiopt.WithRequestTimeout(timeout),
 	}
@@ -52,12 +53,21 @@ func createOpenAIGenerator(model, baseURL, systemPrompt string, timeout time.Dur
 	if apiKey != "" {
 		clientOpts = append(clientOpts, oaiopt.WithAPIKey(apiKey))
 	}
+
+	if patchConfig != nil {
+		transport, err := BuildPatchTransportFromConfig(nil, patchConfig)
+		if err != nil {
+			return nil, fmt.Errorf("building patch transport: %w", err)
+		}
+		clientOpts = append(clientOpts, oaiopt.WithHTTPClient(&http.Client{Transport: transport}))
+	}
+
 	client := openai.NewClient(clientOpts...)
 	generator := gai.NewOpenAiGenerator(&client.Chat.Completions, model, systemPrompt)
 	return &generator, nil
 }
 
-func createAnthropicGenerator(model, baseURL, systemPrompt string, timeout time.Duration, apiKey string) (gai.Generator, error) {
+func createAnthropicGenerator(model, baseURL, systemPrompt string, timeout time.Duration, apiKey string, patchConfig *config.PatchRequestConfig) (gai.Generator, error) {
 	var client anthropic.Client
 	opts := []aopts.RequestOption{
 		aopts.WithRequestTimeout(timeout),
@@ -68,13 +78,22 @@ func createAnthropicGenerator(model, baseURL, systemPrompt string, timeout time.
 	if apiKey != "" {
 		opts = append(opts, aopts.WithAPIKey(apiKey))
 	}
+
+	if patchConfig != nil {
+		transport, err := BuildPatchTransportFromConfig(nil, patchConfig)
+		if err != nil {
+			return nil, fmt.Errorf("building patch transport: %w", err)
+		}
+		opts = append(opts, aopts.WithHTTPClient(&http.Client{Transport: transport}))
+	}
+
 	client = anthropic.NewClient(opts...)
 	svc := gai.NewAnthropicServiceWrapper(&client.Messages, gai.EnableSystemCaching, gai.EnableMultiTurnCaching)
 	generator := gai.NewAnthropicGenerator(svc, model, systemPrompt)
 	return generator, nil
 }
 
-func createGeminiGenerator(model, baseURL, systemPrompt string, timeout time.Duration, apiKey string) (gai.Generator, error) {
+func createGeminiGenerator(model, baseURL, systemPrompt string, timeout time.Duration, apiKey string, patchConfig *config.PatchRequestConfig) (gai.Generator, error) {
 	if apiKey == "" {
 		return nil, fmt.Errorf("GEMINI_API_KEY not set")
 	}
@@ -82,6 +101,15 @@ func createGeminiGenerator(model, baseURL, systemPrompt string, timeout time.Dur
 		APIKey:      apiKey,
 		HTTPOptions: genai.HTTPOptions{BaseURL: baseURL},
 	}
+
+	if patchConfig != nil {
+		transport, err := BuildPatchTransportFromConfig(nil, patchConfig)
+		if err != nil {
+			return nil, fmt.Errorf("building patch transport: %w", err)
+		}
+		cc.HTTPClient = &http.Client{Transport: transport}
+	}
+
 	ctx := context.Background()
 	client, err := genai.NewClient(ctx, &cc)
 	if err != nil {
@@ -98,7 +126,7 @@ func createGeminiGenerator(model, baseURL, systemPrompt string, timeout time.Dur
 	return gai.NewRetryGenerator(g, b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute)), nil
 }
 
-func createResponsesGenerator(model, baseURL, systemPrompt string, timeout time.Duration, apiKey string) (gai.Generator, error) {
+func createResponsesGenerator(model, baseURL, systemPrompt string, timeout time.Duration, apiKey string, patchConfig *config.PatchRequestConfig) (gai.Generator, error) {
 	clientOpts := []oaiopt.RequestOption{
 		oaiopt.WithRequestTimeout(timeout),
 	}
@@ -108,6 +136,15 @@ func createResponsesGenerator(model, baseURL, systemPrompt string, timeout time.
 	if apiKey != "" {
 		clientOpts = append(clientOpts, oaiopt.WithAPIKey(apiKey))
 	}
+
+	if patchConfig != nil {
+		transport, err := BuildPatchTransportFromConfig(nil, patchConfig)
+		if err != nil {
+			return nil, fmt.Errorf("building patch transport: %w", err)
+		}
+		clientOpts = append(clientOpts, oaiopt.WithHTTPClient(&http.Client{Transport: transport}))
+	}
+
 	client := openai.NewClient(clientOpts...)
 	generator := gai.NewResponsesGenerator(&client.Responses, model, systemPrompt)
 	return &generator, nil
@@ -133,7 +170,7 @@ func InitGeneratorFromModel(m config.Model, systemPrompt string, timeout time.Du
 		if apiKey == "" {
 			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 		}
-		return createOpenAIGenerator(m.ID, baseURL, systemPrompt, timeout, apiKey)
+		return createOpenAIGenerator(m.ID, baseURL, systemPrompt, timeout, apiKey, m.PatchRequest)
 	case "anthropic":
 		if apiEnv == "" {
 			apiEnv = "ANTHROPIC_API_KEY"
@@ -142,7 +179,7 @@ func InitGeneratorFromModel(m config.Model, systemPrompt string, timeout time.Du
 		if apiKey == "" {
 			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 		}
-		return createAnthropicGenerator(m.ID, baseURL, systemPrompt, timeout, apiKey)
+		return createAnthropicGenerator(m.ID, baseURL, systemPrompt, timeout, apiKey, m.PatchRequest)
 	case "gemini":
 		if apiEnv == "" {
 			apiEnv = "GEMINI_API_KEY"
@@ -151,7 +188,7 @@ func InitGeneratorFromModel(m config.Model, systemPrompt string, timeout time.Du
 		if apiKey == "" {
 			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 		}
-		return createGeminiGenerator(m.ID, baseURL, systemPrompt, timeout, apiKey)
+		return createGeminiGenerator(m.ID, baseURL, systemPrompt, timeout, apiKey, m.PatchRequest)
 	case "cerebras":
 		if apiEnv == "" {
 			apiEnv = "CEREBRAS_API_KEY"
@@ -169,7 +206,7 @@ func InitGeneratorFromModel(m config.Model, systemPrompt string, timeout time.Du
 		if apiKey == "" {
 			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 		}
-		return createResponsesGenerator(m.ID, baseURL, systemPrompt, timeout, apiKey)
+		return createResponsesGenerator(m.ID, baseURL, systemPrompt, timeout, apiKey, m.PatchRequest)
 	default:
 		return nil, fmt.Errorf("unsupported model type: %s", m.Type)
 	}

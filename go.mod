@@ -11,6 +11,7 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.12.0
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/gabriel-vasile/mimetype v1.4.9
 	github.com/google/go-cmp v0.7.0
 	github.com/google/jsonschema-go v0.3.0

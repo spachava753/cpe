@@ -368,6 +368,78 @@ Each model requires:
 Optional per-model settings:
 - `generationDefaults`: Default generation parameters for this model
   - `temperature`, `topP`, `topK`, `maxTokens`, etc.
+- `patchRequest`: Modify HTTP requests sent to model providers
+  - `jsonPatch`: Array of JSON Patch operations to apply to request bodies
+  - `includeHeaders`: Map of additional HTTP headers to include
+
+### Request Patching
+
+CPE supports patching HTTP requests sent to model providers, allowing you to customize API calls for providers with specific format requirements or to add custom fields. This is useful when working with proxy services like OpenRouter or custom model endpoints.
+
+#### Configuration
+
+Add `patchRequest` to any model definition:
+
+```yaml
+models:
+  - name: custom-model
+    id: provider/model-id
+    type: openai
+    base_url: https://openrouter.ai/api/v1/
+    api_key_env: OPENROUTER_API_KEY
+    context_window: 200000
+    max_output: 16384
+    patchRequest:
+      # JSON Patch operations (RFC 6902)
+      jsonPatch:
+        - op: add
+          path: /custom_field
+          value: custom_value
+        - op: replace
+          path: /max_tokens
+          value: 8192
+      # Additional HTTP headers
+      includeHeaders:
+        HTTP-Referer: https://my-app.example.com
+        X-Title: My AI App
+```
+
+#### Supported JSON Patch Operations
+
+- `add`: Add a field to the request body
+- `remove`: Remove a field from the request body
+- `replace`: Replace an existing field value
+- `move`: Move a value from one location to another
+- `copy`: Copy a value from one location to another
+- `test`: Test that a value matches (validation)
+
+#### Use Cases
+
+1. **Custom provider parameters:**
+   ```yaml
+   patchRequest:
+     jsonPatch:
+       - op: add
+         path: /provider_specific_param
+         value: some_value
+   ```
+
+2. **Provider identification headers (e.g., OpenRouter):**
+   ```yaml
+   patchRequest:
+     includeHeaders:
+       HTTP-Referer: https://myapp.com
+       X-Title: My Application
+   ```
+
+3. **Override default values:**
+   ```yaml
+   patchRequest:
+     jsonPatch:
+       - op: replace
+         path: /temperature
+         value: 0.9
+   ```
 
 ### Parameter Precedence
 

@@ -6,17 +6,24 @@ import (
 
 // Model represents an AI model configuration
 type Model struct {
-	Name                   string  `json:"name" yaml:"name"`
-	ID                     string  `json:"id" yaml:"id"`
-	Type                   string  `json:"type" yaml:"type"`
-	BaseUrl                string  `json:"base_url" yaml:"base_url"`
-	ApiKeyEnv              string  `json:"api_key_env" yaml:"api_key_env"`
-	ContextWindow          uint32  `json:"context_window" yaml:"context_window"`
-	MaxOutput              uint32  `json:"max_output" yaml:"max_output"`
-	InputCostPerMillion    float64 `json:"input_cost_per_million" yaml:"input_cost_per_million"`
-	OutputCostPerMillion   float64 `json:"output_cost_per_million" yaml:"output_cost_per_million"`
-	SupportsReasoning      bool    `json:"supports_reasoning" yaml:"supports_reasoning"`
-	DefaultReasoningEffort string  `json:"default_reasoning_effort" yaml:"default_reasoning_effort"`
+	Name                   string              `json:"name" yaml:"name"`
+	ID                     string              `json:"id" yaml:"id"`
+	Type                   string              `json:"type" yaml:"type"`
+	BaseUrl                string              `json:"base_url" yaml:"base_url"`
+	ApiKeyEnv              string              `json:"api_key_env" yaml:"api_key_env"`
+	ContextWindow          uint32              `json:"context_window" yaml:"context_window"`
+	MaxOutput              uint32              `json:"max_output" yaml:"max_output"`
+	InputCostPerMillion    float64             `json:"input_cost_per_million" yaml:"input_cost_per_million"`
+	OutputCostPerMillion   float64             `json:"output_cost_per_million" yaml:"output_cost_per_million"`
+	SupportsReasoning      bool                `json:"supports_reasoning" yaml:"supports_reasoning"`
+	DefaultReasoningEffort string              `json:"default_reasoning_effort" yaml:"default_reasoning_effort"`
+	PatchRequest           *PatchRequestConfig `json:"patchRequest,omitempty" yaml:"patchRequest,omitempty"`
+}
+
+// PatchRequestConfig holds configuration for patching HTTP requests
+type PatchRequestConfig struct {
+	JSONPatch      []map[string]interface{} `json:"jsonPatch,omitempty" yaml:"jsonPatch,omitempty"`
+	IncludeHeaders map[string]string        `json:"includeHeaders,omitempty" yaml:"includeHeaders,omitempty"`
 }
 
 // Config represents the unified configuration structure
@@ -44,14 +51,14 @@ type ModelConfig struct {
 
 // GenerationParams holds generation parameters
 type GenerationParams struct {
-	Temperature      *float64 `yaml:"temperature,omitempty" json:"temperature,omitempty"`
-	TopP            *float64 `yaml:"topP,omitempty" json:"topP,omitempty"`
-	TopK            *int     `yaml:"topK,omitempty" json:"topK,omitempty"`
-	MaxTokens       *int     `yaml:"maxTokens,omitempty" json:"maxTokens,omitempty"`
-	ThinkingBudget  *string  `yaml:"thinkingBudget,omitempty" json:"thinkingBudget,omitempty"`
-	FrequencyPenalty *float64 `yaml:"frequencyPenalty,omitempty" json:"frequencyPenalty,omitempty"`
-	PresencePenalty  *float64 `yaml:"presencePenalty,omitempty" json:"presencePenalty,omitempty"`
-	NumberOfResponses *int    `yaml:"numberOfResponses,omitempty" json:"numberOfResponses,omitempty"`
+	Temperature       *float64 `yaml:"temperature,omitempty" json:"temperature,omitempty"`
+	TopP              *float64 `yaml:"topP,omitempty" json:"topP,omitempty"`
+	TopK              *int     `yaml:"topK,omitempty" json:"topK,omitempty"`
+	MaxTokens         *int     `yaml:"maxTokens,omitempty" json:"maxTokens,omitempty"`
+	ThinkingBudget    *string  `yaml:"thinkingBudget,omitempty" json:"thinkingBudget,omitempty"`
+	FrequencyPenalty  *float64 `yaml:"frequencyPenalty,omitempty" json:"frequencyPenalty,omitempty"`
+	PresencePenalty   *float64 `yaml:"presencePenalty,omitempty" json:"presencePenalty,omitempty"`
+	NumberOfResponses *int     `yaml:"numberOfResponses,omitempty" json:"numberOfResponses,omitempty"`
 }
 
 // DefaultConfig holds global defaults

@@ -136,6 +136,10 @@ go test ./...
 ## Testing guidelines
 
 - Use go test ./...; write table-driven unit tests
+- **Preference: Use table-driven tests** - Consolidate multiple related test cases into a single table-driven test function with test cases defined in a slice. This reduces code duplication, improves maintainability, and makes it easier to add new test cases.
+  - Example: Instead of separate `TestFoo_CaseA`, `TestFoo_CaseB`, `TestFoo_CaseC` functions, use a single `TestFoo` with a test table
+  - Share common setup/validation logic through helper functions or validation callbacks
+  - Name test cases descriptively in the `name` field
 - Prefer httptest for HTTP; avoid real network calls
 - Keep tests deterministic; use short timeouts; avoid sleeping where possible
 - Isolate filesystem effects; clean up temp files; do not depend on developer-local state
@@ -240,7 +244,8 @@ See `examples/` for ready-to-use templates:
 ## Testing frameworks, conventions, and execution
 
 - Framework: standard library testing package
-- Conventions: table-driven tests; use t.Helper() where useful; keep functions pure for testability
+- Conventions: **table-driven tests preferred**; use t.Helper() where useful; keep functions pure for testability
+- When refactoring or adding tests, consolidate related test cases into table-driven tests
 - Execution: go test ./...
 
 ## Additional resources

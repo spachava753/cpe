@@ -42,6 +42,15 @@ models:
     max_output: 16384
     input_cost_per_million: 2
     output_cost_per_million: 2
+    # Example of request patching (uncomment to use)
+    # patchRequest:
+    #   jsonPatch:
+    #     - op: add
+    #       path: /custom_field
+    #       value: custom_value
+    #   includeHeaders:
+    #     HTTP-Referer: https://my-app.example.com
+    #     X-Title: My AI App
 
   - name: qwen
     id: qwen/qwen3-max
