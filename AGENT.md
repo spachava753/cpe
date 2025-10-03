@@ -248,6 +248,10 @@ See `examples/` for ready-to-use templates:
 - When refactoring or adding tests, consolidate related test cases into table-driven tests
 - Execution: go test ./...
 
+## Performance considerations
+
+CPE is a CLI tool and MCP client where execution time is dominated by network calls to AI model APIs. Performance optimizations are typically not a concern unless specifically requested by the user. Focus on correctness, maintainability, and user experience over micro-optimizations.
+
 ## Additional resources
 
 - GitHub: https://github.com/spachava753/cpe
