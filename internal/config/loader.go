@@ -206,11 +206,6 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("model %s: invalid type '%s', must be one of: openai, responses, anthropic, gemini, groq, cerebras", model.Name, model.Type)
 		}
 
-		// Validate reasoning configuration consistency
-		if !model.SupportsReasoning && model.DefaultReasoningEffort != "" {
-			return fmt.Errorf("model %s: has default_reasoning_effort but supports_reasoning is false", model.Name)
-		}
-
 		// Validate generation defaults if present
 		if model.GenerationDefaults != nil {
 			if err := validateGenerationParams(model.GenerationDefaults, fmt.Sprintf("model %s generation defaults", model.Name)); err != nil {

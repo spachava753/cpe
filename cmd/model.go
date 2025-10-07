@@ -69,8 +69,8 @@ cpe model info sonnet
 			return fmt.Errorf("model %q not found", name)
 		}
 
-		fmt.Printf("Name: %s\nType: %s\nID: %s\nContext: %d\nMaxOutput: %d\nInputCostPerMillion: %.6f\nOutputCostPerMillion: %.6f\nSupportsReasoning: %t\nDefaultReasoningEffort: %s\n",
-			model.Name, model.Type, model.ID, model.ContextWindow, model.MaxOutput, model.InputCostPerMillion, model.OutputCostPerMillion, model.SupportsReasoning, model.DefaultReasoningEffort,
+		fmt.Printf("Name: %s\nType: %s\nID: %s\nContext: %d\nMaxOutput: %d\nInputCostPerMillion: %.6f\nOutputCostPerMillion: %.6f\n",
+			model.Name, model.Type, model.ID, model.ContextWindow, model.MaxOutput, model.InputCostPerMillion, model.OutputCostPerMillion,
 		)
 
 		// Show generation defaults if present

@@ -70,8 +70,6 @@ models:
     max_output: 128000
     input_cost_per_million: 1.25
     output_cost_per_million: 10
-    supports_reasoning: true
-    default_reasoning_effort: low
 
   - name: gpt5mini
     id: gpt-5-mini
@@ -81,8 +79,6 @@ models:
     max_output: 128000
     input_cost_per_million: 0.25
     output_cost_per_million: 2
-    supports_reasoning: true
-    default_reasoning_effort: low
 
   - name: gpt5nano
     id: gpt-5-nano
@@ -92,8 +88,6 @@ models:
     max_output: 128000
     input_cost_per_million: 0.05
     output_cost_per_million: 0.40
-    supports_reasoning: true
-    default_reasoning_effort: low
 
   - name: opus
     id: claude-opus-4-1-20250805

@@ -15,8 +15,6 @@ type Model struct {
 	MaxOutput              uint32              `json:"max_output" yaml:"max_output"`
 	InputCostPerMillion    float64             `json:"input_cost_per_million" yaml:"input_cost_per_million"`
 	OutputCostPerMillion   float64             `json:"output_cost_per_million" yaml:"output_cost_per_million"`
-	SupportsReasoning      bool                `json:"supports_reasoning" yaml:"supports_reasoning"`
-	DefaultReasoningEffort string              `json:"default_reasoning_effort" yaml:"default_reasoning_effort"`
 	PatchRequest           *PatchRequestConfig `json:"patchRequest,omitempty" yaml:"patchRequest,omitempty"`
 }
 

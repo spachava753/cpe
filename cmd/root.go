@@ -309,9 +309,6 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		}
 
 		// Handle reasoning/thinking budget
-		if selectedModel.Model.SupportsReasoning {
-			opts.ThinkingBudget = selectedModel.Model.DefaultReasoningEffort
-		}
 		if effective.ThinkingBudget != nil {
 			opts.ThinkingBudget = *effective.ThinkingBudget
 		}

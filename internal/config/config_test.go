@@ -196,24 +196,6 @@ func TestConfig_Validate(t *testing.T) {
 			expectError:   true,
 			errorContains: "duplicate model name: test",
 		},
-		{
-			name: "invalid reasoning configuration",
-			config: Config{
-				Models: []ModelConfig{
-					{
-						Model: Model{
-							Name:                   "test",
-							ID:                     "test-id",
-							Type:                   "openai",
-							SupportsReasoning:      false,
-							DefaultReasoningEffort: "medium", // invalid: has reasoning effort but supports_reasoning is false
-						},
-					},
-				},
-			},
-			expectError:   true,
-			errorContains: "has default_reasoning_effort but supports_reasoning is false",
-		},
 	}
 
 	for _, tt := range tests {
