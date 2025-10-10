@@ -6,16 +6,16 @@ import (
 
 // Model represents an AI model configuration
 type Model struct {
-	Name                   string              `json:"name" yaml:"name"`
-	ID                     string              `json:"id" yaml:"id"`
-	Type                   string              `json:"type" yaml:"type"`
-	BaseUrl                string              `json:"base_url" yaml:"base_url"`
-	ApiKeyEnv              string              `json:"api_key_env" yaml:"api_key_env"`
-	ContextWindow          uint32              `json:"context_window" yaml:"context_window"`
-	MaxOutput              uint32              `json:"max_output" yaml:"max_output"`
-	InputCostPerMillion    float64             `json:"input_cost_per_million" yaml:"input_cost_per_million"`
-	OutputCostPerMillion   float64             `json:"output_cost_per_million" yaml:"output_cost_per_million"`
-	PatchRequest           *PatchRequestConfig `json:"patchRequest,omitempty" yaml:"patchRequest,omitempty"`
+	Name                 string              `json:"name" yaml:"name"`
+	ID                   string              `json:"id" yaml:"id"`
+	Type                 string              `json:"type" yaml:"type"`
+	BaseUrl              string              `json:"base_url" yaml:"base_url"`
+	ApiKeyEnv            string              `json:"api_key_env" yaml:"api_key_env"`
+	ContextWindow        uint32              `json:"context_window" yaml:"context_window"`
+	MaxOutput            uint32              `json:"max_output" yaml:"max_output"`
+	InputCostPerMillion  float64             `json:"input_cost_per_million" yaml:"input_cost_per_million"`
+	OutputCostPerMillion float64             `json:"output_cost_per_million" yaml:"output_cost_per_million"`
+	PatchRequest         *PatchRequestConfig `json:"patchRequest,omitempty" yaml:"patchRequest,omitempty"`
 }
 
 // PatchRequestConfig holds configuration for patching HTTP requests
@@ -42,6 +42,9 @@ type Config struct {
 // ModelConfig extends the base model with generation defaults
 type ModelConfig struct {
 	Model `yaml:",inline" json:",inline"`
+
+	// Optional override for the system prompt template path
+	SystemPromptPath string `yaml:"systemPromptPath,omitempty" json:"systemPromptPath,omitempty"`
 
 	// Generation parameter defaults for this model
 	GenerationDefaults *GenerationParams `yaml:"generationDefaults,omitempty" json:"generationDefaults,omitempty"`
@@ -95,17 +98,26 @@ func (c *Config) GetDefaultModel() string {
 	return ""
 }
 
-// GetEffectiveGenerationParams returns the effective generation parameters
-// by merging model defaults, global defaults, and CLI overrides
+// GetEffectiveSystemPromptPath resolves the system prompt path precedence.
+// Priority: explicit CLI override > model override > global default.
+func (m *ModelConfig) GetEffectiveSystemPromptPath(globalDefault, cliOverride string) string {
+	if cliOverride != "" {
+		return cliOverride
+	}
+	if m != nil && m.SystemPromptPath != "" {
+		return m.SystemPromptPath
+	}
+	return globalDefault
+}
+
+// GetEffectiveGenerationParams returns the effective generation parameters by merging model defaults, global defaults, and CLI overrides.
 func (m *ModelConfig) GetEffectiveGenerationParams(globalDefaults *GenerationParams, cliOverrides *GenerationParams) GenerationParams {
 	result := GenerationParams{}
 
-	// Apply model-specific defaults first
-	if m.GenerationDefaults != nil {
+	if m != nil && m.GenerationDefaults != nil {
 		result = *m.GenerationDefaults
 	}
 
-	// Apply global defaults for any unset values
 	if globalDefaults != nil {
 		if result.Temperature == nil && globalDefaults.Temperature != nil {
 			result.Temperature = globalDefaults.Temperature
@@ -133,7 +145,6 @@ func (m *ModelConfig) GetEffectiveGenerationParams(globalDefaults *GenerationPar
 		}
 	}
 
-	// Apply CLI overrides last (highest priority)
 	if cliOverrides != nil {
 		if cliOverrides.Temperature != nil {
 			result.Temperature = cliOverrides.Temperature

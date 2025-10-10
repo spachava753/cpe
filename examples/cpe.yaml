@@ -42,15 +42,16 @@ models:
     max_output: 16384
     input_cost_per_million: 2
     output_cost_per_million: 2
-    # Example of request patching (uncomment to use)
-    # patchRequest:
+    # Example of request patching
+    patchRequest:
+      includeHeaders:
+        HTTP-Referer: https://my-app.example.com
+        X-Title: My AI App
     #   jsonPatch:
     #     - op: add
     #       path: /custom_field
     #       value: custom_value
-    #   includeHeaders:
-    #     HTTP-Referer: https://my-app.example.com
-    #     X-Title: My AI App
+
 
   - name: qwen
     id: qwen/qwen3-max
@@ -61,6 +62,16 @@ models:
     max_output: 16384
     input_cost_per_million: 2
     output_cost_per_million: 2
+
+  - name: codex
+    id: gpt-5-codex
+    type: responses
+    api_key_env: OPENAI_API_KEY
+    context_window: 400000
+    max_output: 128000
+    input_cost_per_million: 1.25
+    output_cost_per_million: 10
+    systemPromptPath: "./codex_instructions.prompt"
 
   - name: gpt5
     id: gpt-5

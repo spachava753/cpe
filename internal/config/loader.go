@@ -140,6 +140,7 @@ func (c *Config) expandEnvironmentVariables() error {
 		model := &c.Models[i]
 		model.BaseUrl = os.ExpandEnv(model.BaseUrl)
 		model.ApiKeyEnv = os.ExpandEnv(model.ApiKeyEnv)
+		model.SystemPromptPath = os.ExpandEnv(model.SystemPromptPath)
 	}
 
 	// Expand in MCP server configurations

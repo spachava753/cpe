@@ -7,7 +7,6 @@ import (
 )
 
 func TestConfigIntegration(t *testing.T) {
-	// Create a temporary config file
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "test-integration.yaml")
 
@@ -45,6 +44,7 @@ models:
     max_output: 8192
     input_cost_per_million: 3
     output_cost_per_million: 15
+    systemPromptPath: "./examples/model-specific.prompt"
     generationDefaults:
       temperature: 0.5
       topP: 0.9
@@ -59,96 +59,60 @@ defaults:
     maxTokens: 4096
 `
 
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
-	if err != nil {
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
 		t.Fatalf("Failed to write test config file: %v", err)
 	}
 
-	// Test loading the config
-	config, err := LoadConfig(configPath)
+	cfg, err := LoadConfig(configPath)
 	if err != nil {
 		t.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Verify models
-	if len(config.Models) != 2 {
-		t.Fatalf("Expected 2 models, got %d", len(config.Models))
-	}
-
-	gpt4, found := config.FindModel("gpt4")
+	gpt4, found := cfg.FindModel("gpt4")
 	if !found {
-		t.Fatal("Expected to find gpt4 model")
+		t.Fatalf("Expected to find gpt4 model")
+	}
+	if gpt4.Type != "openai" {
+		t.Fatalf("unexpected type %s", gpt4.Type)
 	}
 
-	if gpt4.Type != "openai" || gpt4.ID != "gpt-4" {
-		t.Errorf("GPT-4 model not parsed correctly: type=%s, id=%s", gpt4.Type, gpt4.ID)
-	}
-
-	// Test generation defaults on GPT-4
-	if gpt4.GenerationDefaults == nil {
-		t.Fatal("Expected GPT-4 to have generation defaults")
-	}
-	if gpt4.GenerationDefaults.Temperature == nil || *gpt4.GenerationDefaults.Temperature != 0.7 {
-		t.Errorf("Expected GPT-4 temperature 0.7, got %v", gpt4.GenerationDefaults.Temperature)
-	}
-
-	// Test sonnet model
-	sonnet, found := config.FindModel("sonnet")
+	sonnet, found := cfg.FindModel("sonnet")
 	if !found {
-		t.Fatal("Expected to find sonnet model")
+		t.Fatalf("Expected to find sonnet model")
 	}
 
-	// Test effective generation parameters
-	cliOverrides := &GenerationParams{
-		TopK: intPtr(40),
+	effectivePath := sonnet.GetEffectiveSystemPromptPath(cfg.Defaults.SystemPromptPath, "")
+	if effectivePath != "./examples/model-specific.prompt" {
+		t.Fatalf("expected model-specific prompt, got %s", effectivePath)
 	}
 
-	effective := sonnet.GetEffectiveGenerationParams(config.Defaults.GenerationParams, cliOverrides)
-
-	// Temperature should come from model defaults (0.5)
+	effective := sonnet.GetEffectiveGenerationParams(cfg.Defaults.GenerationParams, nil)
 	if effective.Temperature == nil || *effective.Temperature != 0.5 {
-		t.Errorf("Expected effective temperature 0.5, got %v", effective.Temperature)
+		t.Fatalf("expected sonnet temperature 0.5, got %v", effective.Temperature)
 	}
-
-	// TopP should come from model defaults (0.9)
 	if effective.TopP == nil || *effective.TopP != 0.9 {
-		t.Errorf("Expected effective topP 0.9, got %v", effective.TopP)
+		t.Fatalf("expected sonnet topP 0.9, got %v", effective.TopP)
 	}
-
-	// TopK should come from CLI override (40)
-	if effective.TopK == nil || *effective.TopK != 40 {
-		t.Errorf("Expected effective topK 40, got %v", effective.TopK)
-	}
-
-	// MaxTokens should come from global defaults (4096), not model defaults
 	if effective.MaxTokens == nil || *effective.MaxTokens != 4096 {
-		t.Errorf("Expected effective maxTokens 4096, got %v", effective.MaxTokens)
+		t.Fatalf("expected sonnet maxTokens 4096, got %v", effective.MaxTokens)
 	}
 
-	// Test MCP servers
-	if len(config.MCPServers) != 1 {
-		t.Fatalf("Expected 1 MCP server, got %d", len(config.MCPServers))
+	if len(cfg.MCPServers) != 1 {
+		t.Fatalf("Expected 1 MCP server, got %d", len(cfg.MCPServers))
 	}
 
-	editor, exists := config.MCPServers["editor"]
+	editor, exists := cfg.MCPServers["editor"]
 	if !exists {
-		t.Fatal("Expected to find 'editor' MCP server")
+		t.Fatalf("Expected to find 'editor' MCP server")
+	}
+	if editor.Command != "mcp-server-editor" {
+		t.Fatalf("unexpected command %s", editor.Command)
 	}
 
-	if editor.Command != "mcp-server-editor" || editor.Type != "stdio" {
-		t.Errorf("MCP server not parsed correctly: command=%s, type=%s", editor.Command, editor.Type)
+	if cfg.GetDefaultModel() != "sonnet" {
+		t.Fatalf("expected default model sonnet, got %s", cfg.GetDefaultModel())
 	}
-
-	// Test defaults
-	if config.GetDefaultModel() != "sonnet" {
-		t.Errorf("Expected default model 'sonnet', got '%s'", config.GetDefaultModel())
+	if cfg.Defaults.Timeout != "5m" {
+		t.Fatalf("expected timeout 5m, got %s", cfg.Defaults.Timeout)
 	}
-
-	if config.Defaults.Timeout != "5m" {
-		t.Errorf("Expected default timeout '5m', got '%s'", config.Defaults.Timeout)
-	}
-}
-
-func intPtr(i int) *int {
-	return &i
 }

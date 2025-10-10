@@ -199,11 +199,11 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		return fmt.Errorf("model %q not found in configuration", modelName)
 	}
 
-	// Determine system prompt path (CLI flag overrides config default)
-	effectiveSystemPromptPath := systemPromptPath
-	if effectiveSystemPromptPath == "" && cfg.Defaults.SystemPromptPath != "" {
-		effectiveSystemPromptPath = cfg.Defaults.SystemPromptPath
-	}
+	// Determine system prompt path using precedence: CLI > model > global default
+	effectiveSystemPromptPath := selectedModel.GetEffectiveSystemPromptPath(
+		cfg.Defaults.SystemPromptPath,
+		systemPromptPath,
+	)
 
 	// Prepare system prompt
 	systemPrompt, err := agent.PrepareSystemPrompt(effectiveSystemPromptPath)

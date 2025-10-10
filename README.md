@@ -502,7 +502,14 @@ from the environment where CPE is executed:
 cpe -s path/to/custom_system_prompt.txt "Your prompt"
 ```
 
-The system prompt file supports Go template syntax, allowing you to include dynamic information. For example:
+You can set a global `systemPromptPath` in `defaults` and optionally override it per model (
+`models[n].systemPromptPath`). The path resolution order is:
+
+1. `--system-prompt-file` CLI flag
+2. Model-level `systemPromptPath`
+3. Global `defaults.systemPromptPath`
+
+Each prompt file supports Go template syntax, allowing you to include dynamic information. For example:
 
 ```
 You are an AI assistant helping with a codebase.

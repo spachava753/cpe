@@ -106,6 +106,10 @@ type(scope)!: short summary
 
 detailed breakdown (prefer full sentences/short paragraphs over lists)
 
+paragraph 2
+
+...
+
 BREAKING CHANGE: footer describing breaking change if necessary  
 ```
 

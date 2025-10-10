@@ -8,208 +8,206 @@ import (
 )
 
 func TestConfig_FindModel(t *testing.T) {
-	config := &Config{
+	cfg := &Config{
 		Models: []ModelConfig{
-			{
-				Model: Model{
-					Name: "gpt4",
-					ID:   "gpt-4",
-					Type: "openai",
-				},
-			},
-			{
-				Model: Model{
-					Name: "sonnet",
-					ID:   "claude-3-5-sonnet-20241022",
-					Type: "anthropic",
-				},
-			},
+			{Model: Model{Name: "gpt4", ID: "gpt-4", Type: "openai"}},
+			{Model: Model{Name: "sonnet", ID: "claude-sonnet", Type: "anthropic"}},
 		},
 	}
 
-	// Test finding existing model
-	model, found := config.FindModel("gpt4")
+	model, found := cfg.FindModel("gpt4")
 	if !found {
-		t.Error("Expected to find model 'gpt4'")
+		t.Fatalf("expected to find model gpt4")
 	}
 	if model.Name != "gpt4" {
-		t.Errorf("Expected model name 'gpt4', got '%s'", model.Name)
+		t.Fatalf("expected model name gpt4, got %s", model.Name)
 	}
 
-	// Test not finding non-existent model
-	_, found = config.FindModel("nonexistent")
-	if found {
-		t.Error("Expected not to find model 'nonexistent'")
+	if _, found := cfg.FindModel("missing"); found {
+		t.Fatalf("did not expect to find model missing")
 	}
 }
 
-func TestConfig_GetEffectiveGenerationParams(t *testing.T) {
-	// Create a model with specific defaults
-	temp1 := 0.5
-	topP1 := 0.8
-	model := ModelConfig{
-		GenerationDefaults: &GenerationParams{
-			Temperature: &temp1,
-			TopP:        &topP1,
+func TestModelConfig_GetEffectiveSystemPromptPath(t *testing.T) {
+	modelWithOverride := &ModelConfig{SystemPromptPath: "model.prompt"}
+	modelWithoutOverride := &ModelConfig{}
+
+	tests := []struct {
+		name          string
+		model         *ModelConfig
+		globalDefault string
+		cliOverride   string
+		expected      string
+	}{
+		{
+			name:          "cli override wins",
+			model:         modelWithOverride,
+			globalDefault: "global.prompt",
+			cliOverride:   "cli.prompt",
+			expected:      "cli.prompt",
+		},
+		{
+			name:          "model override wins",
+			model:         modelWithOverride,
+			globalDefault: "global.prompt",
+			cliOverride:   "",
+			expected:      "model.prompt",
+		},
+		{
+			name:          "fallback to global",
+			model:         modelWithoutOverride,
+			globalDefault: "global.prompt",
+			cliOverride:   "",
+			expected:      "global.prompt",
+		},
+		{
+			name:          "nil model uses global",
+			model:         nil,
+			globalDefault: "global.prompt",
+			cliOverride:   "",
+			expected:      "global.prompt",
+		},
+		{
+			name:          "cli wins even with nil model",
+			model:         nil,
+			globalDefault: "",
+			cliOverride:   "cli.prompt",
+			expected:      "cli.prompt",
+		},
+		{
+			name:          "all empty",
+			model:         nil,
+			globalDefault: "",
+			cliOverride:   "",
+			expected:      "",
 		},
 	}
 
-	// Create global defaults
-	temp2 := 0.7
-	maxTokens := 4096
-	globalDefaults := &GenerationParams{
-		Temperature: &temp2, // This should be overridden by model default
-		MaxTokens:   &maxTokens,
+	for _, tt := range tests {
+		if got := tt.model.GetEffectiveSystemPromptPath(tt.globalDefault, tt.cliOverride); got != tt.expected {
+			t.Fatalf("%s: expected %q, got %q", tt.name, tt.expected, got)
+		}
+	}
+}
+
+func TestModelConfig_GetEffectiveGenerationParams(t *testing.T) {
+	tempModel := 0.5
+	topPModel := 0.8
+	tempGlobal := 0.7
+	maxTokensGlobal := 4096
+	topPCli := 0.9
+
+	model := &ModelConfig{
+		GenerationDefaults: &GenerationParams{
+			Temperature: &tempModel,
+			TopP:        &topPModel,
+		},
 	}
 
-	// Create CLI overrides
-	topP2 := 0.9
-	cliOverrides := &GenerationParams{
-		TopP: &topP2, // This should override model default
+	global := &GenerationParams{
+		Temperature: &tempGlobal,
+		MaxTokens:   &maxTokensGlobal,
 	}
 
-	effective := model.GetEffectiveGenerationParams(globalDefaults, cliOverrides)
-
-	// Temperature should come from model defaults
-	if effective.Temperature == nil || *effective.Temperature != 0.5 {
-		t.Errorf("Expected temperature 0.5, got %v", effective.Temperature)
+	cli := &GenerationParams{
+		TopP: &topPCli,
 	}
 
-	// TopP should come from CLI override
-	if effective.TopP == nil || *effective.TopP != 0.9 {
-		t.Errorf("Expected topP 0.9, got %v", effective.TopP)
-	}
+	effective := model.GetEffectiveGenerationParams(global, cli)
 
-	// MaxTokens should come from global defaults
-	if effective.MaxTokens == nil || *effective.MaxTokens != 4096 {
-		t.Errorf("Expected maxTokens 4096, got %v", effective.MaxTokens)
+	if effective.Temperature == nil || *effective.Temperature != tempModel {
+		t.Fatalf("expected temperature %v, got %v", tempModel, effective.Temperature)
+	}
+	if effective.TopP == nil || *effective.TopP != topPCli {
+		t.Fatalf("expected topP %v, got %v", topPCli, effective.TopP)
+	}
+	if effective.MaxTokens == nil || *effective.MaxTokens != maxTokensGlobal {
+		t.Fatalf("expected max tokens %d, got %v", maxTokensGlobal, effective.MaxTokens)
 	}
 }
 
 func TestLoadConfigFromFile(t *testing.T) {
-	// Create a temporary config file
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "test.yaml")
-
-	configContent := `
+	content := `
 version: "1.0"
 models:
-  - name: "test-model"
-    id: "test-id"
+  - name: "model"
+    id: "id"
     type: "openai"
-    context_window: 8192
-    max_output: 4096
 defaults:
-  model: "test-model"
-  timeout: "5m"
+  model: "model"
 `
 
-	err := os.WriteFile(configPath, []byte(configContent), 0644)
-	if err != nil {
-		t.Fatalf("Failed to write test config file: %v", err)
+	if err := os.WriteFile(configPath, []byte(content), 0644); err != nil {
+		t.Fatalf("write config: %v", err)
 	}
 
-	// Test loading the config
 	file, err := os.Open(configPath)
 	if err != nil {
-		t.Fatalf("Failed to open config file: %v", err)
+		t.Fatalf("open config: %v", err)
 	}
-	defer file.Close()
+	t.Cleanup(func() { _ = file.Close() })
 
-	config, err := loadConfigFromFile(file)
+	cfg, err := loadConfigFromFile(file)
 	if err != nil {
-		t.Fatalf("Failed to load config: %v", err)
+		t.Fatalf("load config: %v", err)
 	}
 
-	// Verify the config was loaded correctly
-	if config.Version != "1.0" {
-		t.Errorf("Expected version '1.0', got '%s'", config.Version)
+	if cfg.Version != "1.0" {
+		t.Fatalf("expected version 1.0, got %s", cfg.Version)
 	}
-
-	if len(config.Models) != 1 {
-		t.Fatalf("Expected 1 model, got %d", len(config.Models))
+	if len(cfg.Models) != 1 {
+		t.Fatalf("expected 1 model, got %d", len(cfg.Models))
 	}
-
-	model := config.Models[0]
-	if model.Name != "test-model" {
-		t.Errorf("Expected model name 'test-model', got '%s'", model.Name)
+	if cfg.Models[0].Name != "model" {
+		t.Fatalf("expected model name 'model', got %s", cfg.Models[0].Name)
 	}
-	if model.Type != "openai" {
-		t.Errorf("Expected model type 'openai', got '%s'", model.Type)
-	}
-
-	if config.Defaults.Model != "test-model" {
-		t.Errorf("Expected default model 'test-model', got '%s'", config.Defaults.Model)
+	if cfg.Defaults.Model != "model" {
+		t.Fatalf("expected defaults.model 'model', got %s", cfg.Defaults.Model)
 	}
 }
 
 func TestConfig_Validate(t *testing.T) {
 	tests := []struct {
-		name          string
-		config        Config
-		expectError   bool
-		errorContains string
+		name         string
+		cfg          Config
+		expectErr    bool
+		errSubstring string
 	}{
 		{
-			name: "valid config",
-			config: Config{
-				Models: []ModelConfig{
-					{
-						Model: Model{
-							Name: "test",
-							ID:   "test-id",
-							Type: "openai",
-						},
-					},
-				},
-			},
-			expectError: false,
+			name: "valid",
+			cfg:  Config{Models: []ModelConfig{{Model: Model{Name: "test", ID: "id", Type: "openai"}}}},
 		},
 		{
-			name: "no models",
-			config: Config{
-				Models: []ModelConfig{},
-			},
-			expectError:   true,
-			errorContains: "must contain at least one model",
+			name:         "missing models",
+			cfg:          Config{Models: []ModelConfig{}},
+			expectErr:    true,
+			errSubstring: "at least one model",
 		},
 		{
-			name: "duplicate model names",
-			config: Config{
-				Models: []ModelConfig{
-					{
-						Model: Model{
-							Name: "test",
-							ID:   "test-id",
-							Type: "openai",
-						},
-					},
-					{
-						Model: Model{
-							Name: "test", // duplicate
-							ID:   "test-id2",
-							Type: "anthropic",
-						},
-					},
-				},
-			},
-			expectError:   true,
-			errorContains: "duplicate model name: test",
+			name: "duplicate",
+			cfg: Config{Models: []ModelConfig{
+				{Model: Model{Name: "test", ID: "id1", Type: "openai"}},
+				{Model: Model{Name: "test", ID: "id2", Type: "anthropic"}},
+			}},
+			expectErr:    true,
+			errSubstring: "duplicate model name",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.config.Validate()
-			if tt.expectError {
+			err := tt.cfg.Validate()
+			if !tt.expectErr && err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if tt.expectErr {
 				if err == nil {
-					t.Error("Expected error but got none")
-				} else if tt.errorContains != "" && !strings.Contains(err.Error(), tt.errorContains) {
-					t.Errorf("Expected error to contain '%s', got: %s", tt.errorContains, err.Error())
+					t.Fatalf("expected error")
 				}
-			} else {
-				if err != nil {
-					t.Errorf("Expected no error but got: %s", err.Error())
+				if tt.errSubstring != "" && !strings.Contains(err.Error(), tt.errSubstring) {
+					t.Fatalf("expected error containing %q, got %v", tt.errSubstring, err)
 				}
 			}
 		})
