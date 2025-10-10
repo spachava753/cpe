@@ -1,5 +1,3 @@
-# AGENTS.md
-
 ## Project Overview
 
 CPE (Chat-based Programming Editor) is a CLI that connects local developer workflows to multiple AI model providers. It analyzes, edits, and creates code via natural-language prompts, with optional MCP tool integration and persistent conversation storage. Link: https://github.com/spachava753/cpe
@@ -104,9 +102,7 @@ Use Conventional Commits format:
 ```text
 type(scope)!: short summary
 
-detailed breakdown (prefer full sentences/short paragraphs over lists)
-
-paragraph 2
+Commit body. Write a detailed breakdown and use full sentences in short paragraphs over lists
 
 ...
 
@@ -117,6 +113,7 @@ BREAKING CHANGE: footer describing breaking change if necessary
 - Imperative, present tense; no trailing period or whitespace; scope optional; add ! for breaking changes
 - Describe what changed and why, not how. Avoid describing surface level code changes; can just view the code diff. Should instead detail the reason for this commit and feature wise what changed.
 - Include body/footer when helpful; use BREAKING CHANGE: and issue refs (e.g., Closes #123)
+- Always include the body of the commit, never skip it
 
 ## Testing guidelines
 

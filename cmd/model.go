@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -97,8 +98,57 @@ cpe model info sonnet
 	},
 }
 
+var systemPromptModelCmd = &cobra.Command{
+	Use:   "system-prompt",
+	Short: "Show the rendered system prompt for a model",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.LoadConfig(configPath)
+		if err != nil {
+			return fmt.Errorf("failed to load configuration: %w", err)
+		}
+
+		modelName := model
+		if modelName == "" {
+			if cfg.GetDefaultModel() != "" {
+				modelName = cfg.GetDefaultModel()
+			} else if DefaultModel != "" {
+				modelName = DefaultModel
+			}
+		}
+
+		if modelName == "" {
+			return fmt.Errorf("no model specified. Use --model flag or set defaults.model in configuration")
+		}
+
+		selectedModel, found := cfg.FindModel(modelName)
+		if !found {
+			return fmt.Errorf("model %q not found in configuration", modelName)
+		}
+
+		effectiveSystemPromptPath := selectedModel.GetEffectiveSystemPromptPath(
+			cfg.Defaults.SystemPromptPath,
+			systemPromptPath,
+		)
+
+		if effectiveSystemPromptPath == "" {
+			fmt.Fprintf(cmd.OutOrStdout(), "Model %q does not define a system prompt.\n", modelName)
+			return nil
+		}
+
+		rendered, err := agent.PrepareSystemPrompt(effectiveSystemPromptPath)
+		if err != nil {
+			return fmt.Errorf("failed to render system prompt: %w", err)
+		}
+
+		fmt.Fprintf(cmd.OutOrStdout(), "Model: %s\nPath: %s\n\n%s\n", modelName, effectiveSystemPromptPath, rendered)
+		return nil
+	},
+}
+
 func init() {
 	modelCmd.AddCommand(listModelCmd)
 	modelCmd.AddCommand(infoModelCmd)
+	modelCmd.AddCommand(systemPromptModelCmd)
 	rootCmd.AddCommand(modelCmd)
 }
