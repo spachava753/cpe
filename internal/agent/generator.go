@@ -232,16 +232,18 @@ func CreateToolCapableGenerator(
 	var gen gai.ToolCapableGenerator
 	if streamingGen, ok := genBase.(gai.StreamingGenerator); ok && !disableStreaming {
 		streamingPrinter := NewStreamingPrinterGenerator(streamingGen)
-		adapter := &gai.StreamingAdapter{S: streamingPrinter}
-		tokenPrinter := NewTokenUsagePrinterGenerator(adapter)
-		gen = any(tokenPrinter).(gai.ToolCapableGenerator)
+		gen = &gai.StreamingAdapter{S: streamingPrinter}
 	} else {
 		// responses type generators need to be wrapped
 		if r, ok := genBase.(*gai.ResponsesGenerator); ok {
 			genBase = gai.NewResponsesToolGeneratorAdapter(*r, "")
 		}
+		// print non-streaming responses
 		gen = NewResponsePrinterGenerator(genBase.(gai.ToolCapableGenerator))
 	}
+
+	// print token usage at the end of each message
+	gen = NewTokenUsagePrinterGenerator(gen)
 
 	// Wrap non-streaming generators with a retry wrapper so Generate is retried on transient failures
 	b := backoff.NewExponentialBackOff()

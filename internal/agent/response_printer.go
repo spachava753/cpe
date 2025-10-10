@@ -107,14 +107,6 @@ func (g *ResponsePrinterGenerator) Generate(ctx context.Context, dialog gai.Dial
 		fmt.Fprintln(os.Stdout, sb.String())
 	}
 
-	// Print usage metrics if available
-	if inputTokens, ok := gai.InputTokens(response.UsageMetadata); ok {
-		if outputTokens, ok := gai.OutputTokens(response.UsageMetadata); ok {
-			tokenMsg := fmt.Sprintf("Tokens used: %v input, %v output", inputTokens, outputTokens)
-			fmt.Fprintln(os.Stderr, redStyle.Render(tokenMsg))
-		}
-	}
-
 	return response, nil
 }
 
