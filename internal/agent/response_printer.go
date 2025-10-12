@@ -11,7 +11,6 @@ import (
 
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/styles"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"github.com/spachava753/gai"
 	"golang.org/x/term"
@@ -37,13 +36,13 @@ type ResponsePrinterGenerator struct {
 	toolCallRenderer Renderer
 }
 
-var (
-	redStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
-)
-
 // NewResponsePrinterGenerator creates a new ResponsePrinterGenerator with initialized glamour renderers
 func NewResponsePrinterGenerator(wrapped gai.ToolCapableGenerator) *ResponsePrinterGenerator {
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		style := styles.NoTTYStyleConfig
+
+		style.Document.BlockPrefix = ""
+
 		contentRenderer, _ := glamour.NewTermRenderer(
 			glamour.WithStyles(styles.NoTTYStyleConfig),
 		)
@@ -65,12 +64,18 @@ func NewResponsePrinterGenerator(wrapped gai.ToolCapableGenerator) *ResponsePrin
 		style = styles.DarkStyleConfig
 	}
 
+	style.Document.BlockPrefix = ""
+
 	// we want the text of the thinking style to be a bit muted to differentiate from normal content text
 	thinkingStyle := style
 	textColor, _ := strconv.Atoi(*thinkingStyle.Document.Color)
 	textColor = textColor - 4
 	thinkingTextColor := strconv.Itoa(textColor)
 	thinkingStyle.Text.Color = &thinkingTextColor
+	thinkingStyle.Document.BlockSuffix = "\n"
+
+	toolcallStyle := style
+	toolcallStyle.Document.BlockSuffix = ""
 
 	contentRenderer, _ := glamour.NewTermRenderer(
 		glamour.WithStyles(style),
@@ -155,7 +160,7 @@ func (g *ResponsePrinterGenerator) renderToolCall(content string) string {
 	if err := json.Indent(&formattedJson, []byte(unescapeJsonString(content)), "", "  "); err != nil {
 		panic(err)
 	}
-	result := fmt.Sprintf("#### [tool call]\n```json\n%s\n```\n", formattedJson.String())
+	result := fmt.Sprintf("#### [tool call]\n```json\n%s\n```", formattedJson.String())
 
 	rendered, err := g.toolCallRenderer.Render(result)
 	if err != nil {
@@ -204,9 +209,9 @@ func (g *ResponsePrinterGenerator) Generate(ctx context.Context, dialog gai.Dial
 	}
 
 	if hasToolcalls {
-		fmt.Fprintln(os.Stderr, sb.String())
+		fmt.Fprint(os.Stderr, sb.String())
 	} else {
-		fmt.Fprintln(os.Stdout, sb.String())
+		fmt.Fprint(os.Stdout, sb.String())
 	}
 
 	return response, nil

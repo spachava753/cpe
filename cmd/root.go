@@ -114,10 +114,6 @@ func init() {
 
 // executeRootCommand handles the main functionality of the root command
 func executeRootCommand(ctx context.Context, args []string) error {
-	if incognitoMode {
-		fmt.Fprintln(os.Stderr, "WARNING: Incognito mode is enabled. This conversation will NOT be saved to storage.")
-	}
-
 	userBlocks, err := processUserInput(args)
 	if err != nil {
 		return fmt.Errorf("could not process user input: %w", err)

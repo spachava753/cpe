@@ -5,16 +5,37 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/glamour/styles"
+	"github.com/muesli/termenv"
 	"github.com/spachava753/gai"
+	"golang.org/x/term"
 )
 
 type TokenUsagePrinterGenerator struct {
-	wrapped gai.ToolCapableGenerator
+	wrapped  gai.ToolCapableGenerator
+	renderer Renderer
 }
 
 func NewTokenUsagePrinterGenerator(wrapped gai.ToolCapableGenerator) *TokenUsagePrinterGenerator {
+	var renderer Renderer
+
+	style := styles.LightStyleConfig
+	if termenv.HasDarkBackground() {
+		style = styles.DarkStyleConfig
+	}
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		style = styles.NoTTYStyleConfig
+	}
+
+	style.Document.BlockPrefix = ""
+
+	renderer, _ = glamour.NewTermRenderer(
+		glamour.WithStyles(style),
+	)
 	return &TokenUsagePrinterGenerator{
-		wrapped: wrapped,
+		wrapped:  wrapped,
+		renderer: renderer,
 	}
 }
 
@@ -26,8 +47,8 @@ func (g *TokenUsagePrinterGenerator) Generate(ctx context.Context, dialog gai.Di
 
 	if inputTokens, ok := gai.InputTokens(resp.UsageMetadata); ok {
 		if outputTokens, ok := gai.OutputTokens(resp.UsageMetadata); ok {
-			tokenMsg := fmt.Sprintf("Tokens used: %v input, %v output", inputTokens, outputTokens)
-			fmt.Fprintln(os.Stderr, redStyle.Render(tokenMsg))
+			tokenMsg, _ := g.renderer.Render(fmt.Sprintf("> input: `%v`, output: `%v`", inputTokens, outputTokens))
+			fmt.Fprint(os.Stderr, tokenMsg)
 		}
 	}
 
