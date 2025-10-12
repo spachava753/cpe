@@ -202,7 +202,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	)
 
 	// Prepare system prompt
-	systemPrompt, err := agent.PrepareSystemPrompt(effectiveSystemPromptPath)
+	systemPrompt, err := agent.PrepareSystemPrompt(effectiveSystemPromptPath, &selectedModel.Model)
 	if err != nil {
 		return fmt.Errorf("failed to prepare system prompt: %w", err)
 	}

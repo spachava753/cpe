@@ -24,7 +24,8 @@ mcpServers:
       - shell
 
 models:
-  - name: "gpt4"
+  - ref: "gpt4"
+    display_name: "GPT-4"
     id: "gpt-4"
     type: "openai"
     api_key_env: "OPENAI_API_KEY"
@@ -36,7 +37,8 @@ models:
       temperature: 0.7
       maxTokens: 2048
 
-  - name: "sonnet"
+  - ref: "sonnet"
+    display_name: "Claude Sonnet"
     id: "claude-3-5-sonnet-20241022"
     type: "anthropic"
     api_key_env: "ANTHROPIC_API_KEY"

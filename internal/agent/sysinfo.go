@@ -11,6 +11,8 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/spachava753/cpe/internal/config"
 )
 
 // SystemInfo contains information about the current system environment
@@ -32,10 +34,16 @@ type SystemInfo struct {
 	GitLatestCommit  string
 	GitCommitMessage string
 	GitHasChanges    bool
+
+	// Model information
+	ModelRef         string
+	ModelDisplayName string
+	ModelID          string
+	ModelType        string
 }
 
-// GetSystemInfo gathers current system information
-func GetSystemInfo() (*SystemInfo, error) {
+// GetSystemInfoWithModel gathers current system information with optional model information
+func GetSystemInfoWithModel(model *config.Model) (*SystemInfo, error) {
 	// Get current working directory
 	wd, err := os.Getwd()
 	if err != nil {
@@ -65,6 +73,14 @@ func GetSystemInfo() (*SystemInfo, error) {
 		WorkingDir:  wd,
 		OS:          runtime.GOOS,
 		IsGitRepo:   isGitRepo,
+	}
+
+	// Add model information if provided
+	if model != nil {
+		sysInfo.ModelRef = model.Ref
+		sysInfo.ModelDisplayName = model.DisplayName
+		sysInfo.ModelID = model.ID
+		sysInfo.ModelType = model.Type
 	}
 
 	// Try to get username

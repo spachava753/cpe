@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/spachava753/cpe/internal/agent"
+	"github.com/spachava753/cpe/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -29,8 +30,23 @@ Example:
 			return fmt.Errorf("system prompt template file not found: %s", systemPromptPath)
 		}
 
+		cfg, err := config.LoadConfig(configPath)
+		if err != nil {
+			return fmt.Errorf("failed to load configuration: %w", err)
+		}
+
+		var modelConfig *config.Model
+		if model != "" {
+			// Find the model in configuration
+			selectedModel, found := cfg.FindModel(model)
+			if !found {
+				return fmt.Errorf("model %q not found in configuration", model)
+			}
+			modelConfig = &selectedModel.Model
+		}
+
 		// Prepare the system prompt (this will execute the template)
-		systemPrompt, err := agent.PrepareSystemPrompt(systemPromptPath)
+		systemPrompt, err := agent.PrepareSystemPrompt(systemPromptPath, modelConfig)
 		if err != nil {
 			return fmt.Errorf("failed to render system prompt template: %w", err)
 		}

@@ -19,7 +19,8 @@ func TestLoadConfigFromFileFormats(t *testing.T) {
 			content: `
 version: "1.0"
 models:
-  - name: "test-yaml"
+  - ref: "test-yaml"
+    display_name: "Test YAML"
     id: "test-yaml-id"
     type: "openai"
     context_window: 8192
@@ -36,7 +37,8 @@ models:
   "version": "1.0",
   "models": [
     {
-      "name": "test-json",
+      "ref": "test-json",
+      "display_name": "Test JSON",
       "id": "test-json-id", 
       "type": "anthropic",
       "context_window": 16384,
@@ -54,7 +56,8 @@ models:
 			content: `
 version: "1.0"
 models:
-  - name: "test-yml"
+  - ref: "test-yml"
+    display_name: "Test YML"
     id: "test-yml-id"
     type: "gemini"
 `,
@@ -68,7 +71,8 @@ models:
 			content: `
 version: "1.0"
 models:
-  - name: "test-noext"
+  - ref: "test-noext"
+    display_name: "Test No Extension"
     id: "test-noext-id"
     type: "groq"
 `,
@@ -137,8 +141,8 @@ models:
 			}
 
 			model := config.Models[0]
-			if model.Name != tt.expectName {
-				t.Errorf("Expected model name %s, got %s", tt.expectName, model.Name)
+			if model.Ref != tt.expectName {
+				t.Errorf("Expected model ref %s, got %s", tt.expectName, model.Ref)
 			}
 
 			if model.Type != tt.expectType {

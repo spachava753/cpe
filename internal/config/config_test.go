@@ -10,8 +10,8 @@ import (
 func TestConfig_FindModel(t *testing.T) {
 	cfg := &Config{
 		Models: []ModelConfig{
-			{Model: Model{Name: "gpt4", ID: "gpt-4", Type: "openai"}},
-			{Model: Model{Name: "sonnet", ID: "claude-sonnet", Type: "anthropic"}},
+			{Model: Model{Ref: "gpt4", ID: "gpt-4", Type: "openai"}},
+			{Model: Model{Ref: "sonnet", ID: "claude-sonnet", Type: "anthropic"}},
 		},
 	}
 
@@ -19,8 +19,8 @@ func TestConfig_FindModel(t *testing.T) {
 	if !found {
 		t.Fatalf("expected to find model gpt4")
 	}
-	if model.Name != "gpt4" {
-		t.Fatalf("expected model name gpt4, got %s", model.Name)
+	if model.Ref != "gpt4" {
+		t.Fatalf("expected model ref gpt4, got %s", model.Ref)
 	}
 
 	if _, found := cfg.FindModel("missing"); found {
@@ -132,7 +132,8 @@ func TestLoadConfigFromFile(t *testing.T) {
 	content := `
 version: "1.0"
 models:
-  - name: "model"
+  - ref: "model"
+    display_name: "Model"
     id: "id"
     type: "openai"
 defaults:
@@ -160,8 +161,8 @@ defaults:
 	if len(cfg.Models) != 1 {
 		t.Fatalf("expected 1 model, got %d", len(cfg.Models))
 	}
-	if cfg.Models[0].Name != "model" {
-		t.Fatalf("expected model name 'model', got %s", cfg.Models[0].Name)
+	if cfg.Models[0].Ref != "model" {
+		t.Fatalf("expected model ref 'model', got %s", cfg.Models[0].Ref)
 	}
 	if cfg.Defaults.Model != "model" {
 		t.Fatalf("expected defaults.model 'model', got %s", cfg.Defaults.Model)
@@ -177,7 +178,7 @@ func TestConfig_Validate(t *testing.T) {
 	}{
 		{
 			name: "valid",
-			cfg:  Config{Models: []ModelConfig{{Model: Model{Name: "test", ID: "id", Type: "openai"}}}},
+			cfg:  Config{Models: []ModelConfig{{Model: Model{Ref: "test", DisplayName: "Test Model", ID: "id", Type: "openai"}}}},
 		},
 		{
 			name:         "missing models",
@@ -188,11 +189,11 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "duplicate",
 			cfg: Config{Models: []ModelConfig{
-				{Model: Model{Name: "test", ID: "id1", Type: "openai"}},
-				{Model: Model{Name: "test", ID: "id2", Type: "anthropic"}},
+				{Model: Model{Ref: "test", DisplayName: "Test Model 1", ID: "id1", Type: "openai"}},
+				{Model: Model{Ref: "test", DisplayName: "Test Model 2", ID: "id2", Type: "anthropic"}},
 			}},
 			expectErr:    true,
-			errSubstring: "duplicate model name",
+			errSubstring: "duplicate model ref",
 		},
 	}
 

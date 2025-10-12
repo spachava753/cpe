@@ -6,7 +6,8 @@ import (
 
 // Model represents an AI model configuration
 type Model struct {
-	Name                 string              `json:"name" yaml:"name"`
+	Ref                  string              `json:"ref" yaml:"ref"`
+	DisplayName          string              `json:"display_name" yaml:"display_name"`
 	ID                   string              `json:"id" yaml:"id"`
 	Type                 string              `json:"type" yaml:"type"`
 	BaseUrl              string              `json:"base_url" yaml:"base_url"`
@@ -80,10 +81,10 @@ type DefaultConfig struct {
 	NoStream bool `yaml:"noStream,omitempty" json:"noStream,omitempty"`
 }
 
-// FindModel searches for a model by name in the config
-func (c *Config) FindModel(name string) (*ModelConfig, bool) {
+// FindModel searches for a model by ref in the config
+func (c *Config) FindModel(ref string) (*ModelConfig, bool) {
 	for _, model := range c.Models {
-		if model.Name == name {
+		if model.Ref == ref {
 			return &model, true
 		}
 	}

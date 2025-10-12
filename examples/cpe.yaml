@@ -14,7 +14,8 @@ mcpServers:
 
 # Model definitions with optional generation defaults
 models:
-  - name: flash
+  - ref: flash
+    display_name: "Gemini Flash Latest"
     id: gemini-flash-latest
     type: gemini
     api_key_env: GEMINI_API_KEY
@@ -23,7 +24,8 @@ models:
     input_cost_per_million: 0.30
     output_cost_per_million: 2.50
 
-  - name: kimig
+  - ref: kimig
+    display_name: "Kimi K2"
     id: moonshotai/kimi-k2-instruct-0905
     type: openai
     base_url: https://api.groq.com/openai/v1/
@@ -33,7 +35,8 @@ models:
     input_cost_per_million: 1
     output_cost_per_million: 3
 
-  - name: qwenn
+  - ref: qwenn
+    display_name: "Qwen Next 80B"
     id: qwen/qwen3-next-80b-a3b-instruct
     type: openai
     base_url: https://openrouter.ai/api/v1/
@@ -53,7 +56,8 @@ models:
     #       value: custom_value
 
 
-  - name: qwen
+  - ref: qwen
+    display_name: "Qwen3 Max"
     id: qwen/qwen3-max
     type: openai
     base_url: https://openrouter.ai/api/v1/
@@ -63,7 +67,8 @@ models:
     input_cost_per_million: 2
     output_cost_per_million: 2
 
-  - name: codex
+  - ref: codex
+    display_name: "GPT-5 Codex"
     id: gpt-5-codex
     type: responses
     api_key_env: OPENAI_API_KEY
@@ -73,7 +78,8 @@ models:
     output_cost_per_million: 10
     systemPromptPath: "./codex_instructions.prompt"
 
-  - name: gpt5
+  - ref: gpt5
+    display_name: "GPT-5"
     id: gpt-5
     type: responses
     api_key_env: OPENAI_API_KEY
@@ -82,7 +88,8 @@ models:
     input_cost_per_million: 1.25
     output_cost_per_million: 10
 
-  - name: gpt5mini
+  - ref: gpt5mini
+    display_name: "GPT-5 Mini"
     id: gpt-5-mini
     type: responses
     api_key_env: OPENAI_API_KEY
@@ -91,7 +98,8 @@ models:
     input_cost_per_million: 0.25
     output_cost_per_million: 2
 
-  - name: gpt5nano
+  - ref: gpt5nano
+    display_name: "GPT-5 Nano"
     id: gpt-5-nano
     type: responses
     api_key_env: OPENAI_API_KEY
@@ -100,7 +108,8 @@ models:
     input_cost_per_million: 0.05
     output_cost_per_million: 0.40
 
-  - name: opus
+  - ref: opus
+    display_name: "Claude Opus 4.1"
     id: claude-opus-4-1-20250805
     type: anthropic
     api_key_env: ANTHROPIC_API_KEY
@@ -109,7 +118,8 @@ models:
     input_cost_per_million: 15
     output_cost_per_million: 75
 
-  - name: sonnet
+  - ref: sonnet
+    display_name: "Claude Sonnet 4.5"
     id: claude-sonnet-4-5-20250929
     type: anthropic
     api_key_env: ANTHROPIC_API_KEY

@@ -22,14 +22,14 @@ import (
 )
 
 // PrepareSystemPrompt prepares the system prompt from either a custom file or the default template
-func PrepareSystemPrompt(systemPromptPath string) (string, error) {
+func PrepareSystemPrompt(systemPromptPath string, model *config.Model) (string, error) {
 	// If no system prompt path is provided, return empty string
 	if systemPromptPath == "" {
 		return "", nil
 	}
 
 	// Get system information for template execution
-	sysInfo, err := GetSystemInfo()
+	sysInfo, err := GetSystemInfoWithModel(model)
 	if err != nil {
 		return "", fmt.Errorf("failed to get system info: %w", err)
 	}

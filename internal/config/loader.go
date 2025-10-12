@@ -179,23 +179,26 @@ func (c *Config) Validate() error {
 	}
 
 	// Validate each model
-	modelNames := make(map[string]bool)
+	modelRefs := make(map[string]bool)
 	for _, model := range c.Models {
-		// Check for duplicate model names
-		if modelNames[model.Name] {
-			return fmt.Errorf("duplicate model name: %s", model.Name)
+		// Check for duplicate model refs
+		if modelRefs[model.Ref] {
+			return fmt.Errorf("duplicate model ref: %s", model.Ref)
 		}
-		modelNames[model.Name] = true
+		modelRefs[model.Ref] = true
 
 		// Validate model fields
-		if model.Name == "" {
-			return fmt.Errorf("model name cannot be empty")
+		if model.Ref == "" {
+			return fmt.Errorf("model ref cannot be empty")
+		}
+		if model.DisplayName == "" {
+			return fmt.Errorf("model %s: display_name cannot be empty", model.Ref)
 		}
 		if model.ID == "" {
-			return fmt.Errorf("model %s: id cannot be empty", model.Name)
+			return fmt.Errorf("model %s: id cannot be empty", model.Ref)
 		}
 		if model.Type == "" {
-			return fmt.Errorf("model %s: type cannot be empty", model.Name)
+			return fmt.Errorf("model %s: type cannot be empty", model.Ref)
 		}
 
 		// Validate model type
@@ -204,12 +207,12 @@ func (c *Config) Validate() error {
 			"groq": true, "cerebras": true,
 		}
 		if !validTypes[model.Type] {
-			return fmt.Errorf("model %s: invalid type '%s', must be one of: openai, responses, anthropic, gemini, groq, cerebras", model.Name, model.Type)
+			return fmt.Errorf("model %s: invalid type '%s', must be one of: openai, responses, anthropic, gemini, groq, cerebras", model.Ref, model.Type)
 		}
 
 		// Validate generation defaults if present
 		if model.GenerationDefaults != nil {
-			if err := validateGenerationParams(model.GenerationDefaults, fmt.Sprintf("model %s generation defaults", model.Name)); err != nil {
+			if err := validateGenerationParams(model.GenerationDefaults, fmt.Sprintf("model %s generation defaults", model.Ref)); err != nil {
 				return err
 			}
 		}
@@ -217,7 +220,7 @@ func (c *Config) Validate() error {
 
 	// Validate default model if specified
 	if c.Defaults.Model != "" {
-		if !modelNames[c.Defaults.Model] {
+		if !modelRefs[c.Defaults.Model] {
 			return fmt.Errorf("defaults.model '%s' not found in models list", c.Defaults.Model)
 		}
 	}

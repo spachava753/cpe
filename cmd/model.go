@@ -32,8 +32,8 @@ var listModelCmd = &cobra.Command{
 		}
 
 		for _, model := range cfg.Models {
-			line := model.Name
-			if defaultModel != "" && model.Name == defaultModel {
+			line := model.Ref
+			if defaultModel != "" && model.Ref == defaultModel {
 				line += " (default)"
 			}
 			fmt.Println(line)
@@ -70,8 +70,8 @@ cpe model info sonnet
 			return fmt.Errorf("model %q not found", name)
 		}
 
-		fmt.Printf("Name: %s\nType: %s\nID: %s\nContext: %d\nMaxOutput: %d\nInputCostPerMillion: %.6f\nOutputCostPerMillion: %.6f\n",
-			model.Name, model.Type, model.ID, model.ContextWindow, model.MaxOutput, model.InputCostPerMillion, model.OutputCostPerMillion,
+		fmt.Printf("Ref: %s\nDisplay Name: %s\nType: %s\nID: %s\nContext: %d\nMaxOutput: %d\nInputCostPerMillion: %.6f\nOutputCostPerMillion: %.6f\n",
+			model.Ref, model.DisplayName, model.Type, model.ID, model.ContextWindow, model.MaxOutput, model.InputCostPerMillion, model.OutputCostPerMillion,
 		)
 
 		// Show generation defaults if present
@@ -136,7 +136,7 @@ var systemPromptModelCmd = &cobra.Command{
 			return nil
 		}
 
-		rendered, err := agent.PrepareSystemPrompt(effectiveSystemPromptPath)
+		rendered, err := agent.PrepareSystemPrompt(effectiveSystemPromptPath, &selectedModel.Model)
 		if err != nil {
 			return fmt.Errorf("failed to render system prompt: %w", err)
 		}
