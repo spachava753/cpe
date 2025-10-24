@@ -83,6 +83,16 @@ go vet ./...
 go test ./...
 ```
 
+Schema and configuration:
+
+```bash
+# Generate JSON Schema for config
+go generate ./internal/config/
+
+# Validate configuration
+./cpe config lint ./examples/cpe.yaml
+```
+
 ## Code style and conventions
 
 - Language: Go 1.24.0
