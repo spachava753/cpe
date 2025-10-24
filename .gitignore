@@ -27,5 +27,8 @@
 !docs/
 !docs/**
 
+!schema/
+!schema/**
+
 # ...even if they are in subdirectories
 !*/

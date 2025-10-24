@@ -301,6 +301,43 @@ CPE uses a unified YAML configuration file that defines models, MCP servers, and
 2. `./cpe.yaml` or `./cpe.yml` (current directory)
 3. Platform-specific user config directory (e.g., `~/.config/cpe/cpe.yaml` on Linux, `$HOME/Library/Application Support/cpe/cpe.yaml` on macOS, or `%AppData%\\cpe\\cpe.yaml` on Windows)
 
+### Configuration Validation
+
+You can validate your configuration file using the `config lint` command:
+
+```bash
+# Validate default configuration location
+cpe config lint
+
+# Validate specific configuration file
+cpe config lint ./path/to/cpe.yaml
+```
+
+This command checks for configuration errors without executing other operations, making it useful for CI/CD pipelines and development workflows.
+
+### IDE Integration with JSON Schema
+
+CPE provides a JSON Schema (`schema/cpe-config-schema.json`) for IDE autocompletion and validation. To enable schema support in your editor:
+
+**VS Code**: Create `.vscode/settings.json` in your project:
+```json
+{
+  "yaml.schemas": {
+    "https://raw.githubusercontent.com/spachava753/cpe/refs/heads/main/schema/cpe-config-schema.json": ["cpe.yaml", "cpe.yml", "**/cpe.yaml", "**/cpe.yml"]
+  }
+}
+```
+
+**Add to YAML file**: Add this comment at the top of your `cpe.yaml`:
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/spachava753/cpe/refs/heads/main/schema/cpe-config-schema.json
+version: "1.0"
+```
+
+**Neovim** (with yaml-language-server): The schema is automatically detected when the file is named `cpe.yaml` or `cpe.yml`.
+
+**IntelliJ/GoLand**: The schema is automatically used when editing `cpe.yaml` files with the YAML plugin enabled.
+
 ### Configuration File Format
 
 Create a `cpe.yaml` file with the following structure:

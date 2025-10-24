@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/spachava753/cpe/refs/heads/main/schema/cpe-config-schema.json",
+  "$ref": "#/$defs/Config",
+  "$defs": {
+    "Config": {
+      "properties": {
+        "mcpServers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ServerConfig"
+          },
+          "type": "object"
+        },
+        "models": {
+          "items": {
+            "$ref": "#/$defs/ModelConfig"
+          },
+          "type": "array"
+        },
+        "defaults": {
+          "$ref": "#/$defs/DefaultConfig"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "DefaultConfig": {
+      "properties": {
+        "systemPromptPath": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "generationParams": {
+          "$ref": "#/$defs/GenerationParams"
+        },
+        "timeout": {
+          "type": "string"
+        },
+        "noStream": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "GenerationParams": {
+      "properties": {
+        "temperature": {
+          "type": "number"
+        },
+        "topP": {
+          "type": "number"
+        },
+        "topK": {
+          "type": "integer"
+        },
+        "maxTokens": {
+          "type": "integer"
+        },
+        "thinkingBudget": {
+          "type": "string"
+        },
+        "frequencyPenalty": {
+          "type": "number"
+        },
+        "presencePenalty": {
+          "type": "number"
+        },
+        "numberOfResponses": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "ModelConfig": {
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "base_url": {
+          "type": "string"
+        },
+        "api_key_env": {
+          "type": "string"
+        },
+        "context_window": {
+          "type": "integer"
+        },
+        "max_output": {
+          "type": "integer"
+        },
+        "input_cost_per_million": {
+          "type": "number"
+        },
+        "output_cost_per_million": {
+          "type": "number"
+        },
+        "patchRequest": {
+          "$ref": "#/$defs/PatchRequestConfig"
+        },
+        "systemPromptPath": {
+          "type": "string"
+        },
+        "generationDefaults": {
+          "$ref": "#/$defs/GenerationParams"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "PatchRequestConfig": {
+      "properties": {
+        "jsonPatch": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "includeHeaders": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "ServerConfig": {
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "type": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "timeout": {
+          "type": "integer"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "enabledTools": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "disabledTools": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "toolFilter": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    }
+  },
+  "title": "CPE Configuration Schema",
+  "description": "JSON Schema for CPE (Chat-based Programming Editor) configuration files"
+}
