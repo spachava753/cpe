@@ -10,8 +10,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/google/jsonschema-go/jsonschema"
-	invopopjsonschema "github.com/invopop/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/cpe/internal/version"
 	"github.com/spachava753/gai"
@@ -69,27 +67,6 @@ func FilterMcpTools(tools []*mcp.Tool, config ServerConfig) ([]*mcp.Tool, []stri
 	}
 
 	return filteredTools, filteredOut
-}
-
-// convertSchema converts an MCP jsonschema.Schema to a gai jsonschema.Schema
-func convertSchema(input *jsonschema.Schema) *invopopjsonschema.Schema {
-	if input == nil {
-		return nil
-	}
-
-	// Marshal the input schema to JSON
-	data, err := json.Marshal(input)
-	if err != nil {
-		return nil
-	}
-
-	// Unmarshal into the target schema type
-	var output invopopjsonschema.Schema
-	if err := json.Unmarshal(data, &output); err != nil {
-		return nil
-	}
-
-	return &output
 }
 
 // ToolCallback implements the gai.ToolCallback interface for MCP tools
@@ -273,7 +250,7 @@ func RegisterMCPServerTools(ctx context.Context, client *mcp.Client, mcpConfig C
 				Name:        mcpTool.Name,
 				Description: mcpTool.Description,
 				// Convert InputSchema from mcp jsonschema to gai jsonschema
-				InputSchema: convertSchema(mcpTool.InputSchema),
+				InputSchema: mcpTool.InputSchema,
 			}
 
 			// Register the tool with the callback

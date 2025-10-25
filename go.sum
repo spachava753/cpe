@@ -136,8 +136,8 @@ github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/shopspring/decimal v1.4.0 h1:bxl37RwXBklmTi0C79JfXCEBD1cqqHt0bbgBAGFp81k=
 github.com/shopspring/decimal v1.4.0/go.mod h1:gawqmDU56v4yIKSwfBSFip1HdCCXN8/+DMd9qYNcwME=
-github.com/spachava753/gai v0.16.0 h1:9WBEVYzZQA/0IUPhIYgAJfAX7ePM8CAhXYNBKEZ+iEQ=
-github.com/spachava753/gai v0.16.0/go.mod h1:MAczsYZDDNNKt0iUo6ztXaAMlGajjrU+K3mSu/ScA9k=
+github.com/spachava753/gai v0.18.0 h1:WUO5fFs+bFG/mRZfMgsJunplgdPAjQN5ZIjwsASpo/0=
+github.com/spachava753/gai v0.18.0/go.mod h1:Iz81Un3xqP+wBrwxkqQyuWjPMexYCQ2o5V2R/VTTVJM=
 github.com/spf13/cast v1.7.0 h1:ntdiHjuueXFgm5nzDRdOS4yfT43P5Fnud6DH50rz/7w=
 github.com/spf13/cast v1.7.0/go.mod h1:ancEpBxwJDODSW/UG4rDrAqiKolqNNh2DX3mk86cAdo=
 github.com/spf13/cobra v1.9.1 h1:CXSaggrXdbHK9CF+8ywj8Amf7PBRmPCOJugH954Nnlo=
