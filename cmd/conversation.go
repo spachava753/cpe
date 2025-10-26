@@ -1,12 +1,19 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
+
+	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/glamour/styles"
+	"github.com/muesli/termenv"
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/gai"
 	"github.com/spf13/cobra"
-	"os"
-	"strings"
+	"golang.org/x/term"
 )
 
 // convoCmd represents the conversation management command
@@ -137,12 +144,14 @@ func printDialog(dialog gai.Dialog) {
 		return
 	}
 
-	fmt.Println("\n=== Conversation History ===")
+	// Build markdown document
+	var md strings.Builder
+	md.WriteString("# Conversation History\n\n")
 
 	for i, message := range dialog {
-		// Print a separator between messages
+		// Add separator between messages
 		if i > 0 {
-			fmt.Println("\n" + strings.Repeat("-", 80))
+			md.WriteString("\n---\n\n")
 		}
 
 		// Format based on role
@@ -162,22 +171,149 @@ func printDialog(dialog gai.Dialog) {
 			roleLabel = fmt.Sprintf("UNKNOWN ROLE (%d)", message.Role)
 		}
 
-		fmt.Printf("\n%s\n\n", roleLabel)
+		md.WriteString(fmt.Sprintf("## %s\n\n", roleLabel))
 
 		// Print each block in the message
 		for _, block := range message.Blocks {
-			// Only print text content directly
-			if block.ModalityType == gai.Text {
-				fmt.Println(block.Content.String())
-			} else {
-				fmt.Printf("[%s content, type: %s]\n",
+			switch block.ModalityType {
+			case gai.Text:
+				content := block.Content.String()
+				
+				// Handle different block types
+				switch block.BlockType {
+				case gai.ToolCall:
+					// Pretty-print tool call JSON
+					md.WriteString(formatToolCallMarkdown(content))
+				case gai.Thinking:
+					// Render thinking as a quote
+					md.WriteString("> **Thinking:**\n>\n")
+					for _, line := range strings.Split(content, "\n") {
+						md.WriteString(fmt.Sprintf("> %s\n", line))
+					}
+					md.WriteString("\n")
+				default:
+					// For tool results, check if content is JSON and format it
+					if message.Role == gai.ToolResult && isJSON(content) {
+						md.WriteString(formatJSONMarkdown(content))
+					} else {
+						// Regular text content
+						md.WriteString(content)
+						md.WriteString("\n\n")
+					}
+				}
+			default:
+				// Non-text modality
+				md.WriteString(fmt.Sprintf("*[%s content, type: %s]*\n\n",
 					formatModality(block.ModalityType),
-					block.MimeType)
+					block.MimeType))
 			}
 		}
 	}
 
-	fmt.Println("\n" + strings.Repeat("=", 80))
+	// Render the markdown with glamour
+	renderer := createGlamourRenderer()
+	rendered, err := renderer.Render(md.String())
+	if err != nil {
+		// Fallback to plain markdown if rendering fails
+		fmt.Print(md.String())
+		return
+	}
+
+	fmt.Print(rendered)
+}
+
+// createGlamourRenderer creates a glamour renderer with appropriate styling
+func createGlamourRenderer() *glamour.TermRenderer {
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		style := styles.NoTTYStyleConfig
+		style.Document.BlockPrefix = ""
+		renderer, _ := glamour.NewTermRenderer(
+			glamour.WithStyles(style),
+			glamour.WithWordWrap(120),
+		)
+		return renderer
+	}
+
+	style := styles.LightStyleConfig
+	if termenv.HasDarkBackground() {
+		style = styles.DarkStyleConfig
+	}
+
+	style.Document.BlockPrefix = ""
+	renderer, _ := glamour.NewTermRenderer(
+		glamour.WithStyles(style),
+		glamour.WithWordWrap(120),
+	)
+	return renderer
+}
+
+// formatToolCallMarkdown formats a tool call JSON string as a markdown code block
+func formatToolCallMarkdown(content string) string {
+	var buf bytes.Buffer
+	if err := json.Indent(&buf, []byte(unescapeJSONString(content)), "", "  "); err != nil {
+		// If indent fails, return as-is
+		return fmt.Sprintf("```json\n%s\n```\n\n", content)
+	}
+	return fmt.Sprintf("**Tool Call:**\n\n```json\n%s\n```\n\n", buf.String())
+}
+
+// formatJSONMarkdown formats a JSON string as a markdown code block
+func formatJSONMarkdown(content string) string {
+	var buf bytes.Buffer
+	if err := json.Indent(&buf, []byte(content), "", "  "); err != nil {
+		// If indent fails, return as-is
+		return fmt.Sprintf("```json\n%s\n```\n\n", content)
+	}
+	return fmt.Sprintf("```json\n%s\n```\n\n", buf.String())
+}
+
+// isJSON checks if a string is valid JSON
+func isJSON(str string) bool {
+	str = strings.TrimSpace(str)
+	if len(str) == 0 {
+		return false
+	}
+	var js interface{}
+	return json.Unmarshal([]byte(str), &js) == nil
+}
+
+// unescapeJSONString unescapes special characters in JSON content
+func unescapeJSONString(s string) string {
+	var result strings.Builder
+	i := 0
+	for i < len(s) {
+		if i+5 < len(s) && s[i:i+2] == "\\u" {
+			hex := s[i+2 : i+6]
+			var code int
+			_, err := fmt.Sscanf(hex, "%04x", &code)
+			if err == nil {
+				r := rune(code)
+				switch r {
+				case '"':
+					result.WriteString(`\"`)
+				case '\\':
+					result.WriteString(`\\`)
+				case '\b':
+					result.WriteString(`\b`)
+				case '\f':
+					result.WriteString(`\f`)
+				case '\n':
+					result.WriteString(`\n`)
+				case '\r':
+					result.WriteString(`\r`)
+				case '\t':
+					result.WriteString(`\t`)
+				default:
+					result.WriteRune(r)
+				}
+				i += 6
+				continue
+			}
+		}
+		result.WriteByte(s[i])
+		i++
+	}
+	return result.String()
 }
 
 // formatModality converts a modality constant to a user-friendly string
