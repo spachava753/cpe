@@ -240,24 +240,22 @@ var mcpListToolsCmd = &cobra.Command{
 		client := mcpinternal.NewClient()
 
 		var allTools []*mcp.Tool
-		for _, server := range config.MCPServers {
-			transport, err := mcpinternal.CreateTransport(server)
+		transport, err := mcpinternal.CreateTransport(serverConfig)
+		if err != nil {
+			return err
+		}
+		cs, err := client.Connect(cmd.Context(), transport, nil)
+		if err != nil {
+			return err
+		}
+		for tool, err := range cs.Tools(cmd.Context(), nil) {
 			if err != nil {
 				return err
 			}
-			cs, err := client.Connect(cmd.Context(), transport, nil)
-			if err != nil {
-				return err
-			}
-			for tool, err := range cs.Tools(cmd.Context(), nil) {
-				if err != nil {
-					return err
-				}
-				allTools = append(allTools, tool)
-			}
-			if err := cs.Close(); err != nil {
-				return err
-			}
+			allTools = append(allTools, tool)
+		}
+		if err := cs.Close(); err != nil {
+			return err
 		}
 
 		// Get flags
