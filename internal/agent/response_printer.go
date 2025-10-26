@@ -44,11 +44,13 @@ func NewResponsePrinterGenerator(wrapped gai.ToolCapableGenerator) *ResponsePrin
 		style.Document.BlockPrefix = ""
 
 		contentRenderer, _ := glamour.NewTermRenderer(
-			glamour.WithStyles(styles.NoTTYStyleConfig),
+			glamour.WithStyles(style),
+			glamour.WithWordWrap(120),
 		)
 
 		thinkingRenderer, _ := glamour.NewTermRenderer(
-			glamour.WithStyles(styles.NoTTYStyleConfig),
+			glamour.WithStyles(style),
+			glamour.WithWordWrap(120),
 		)
 
 		return &ResponsePrinterGenerator{
@@ -79,10 +81,12 @@ func NewResponsePrinterGenerator(wrapped gai.ToolCapableGenerator) *ResponsePrin
 
 	contentRenderer, _ := glamour.NewTermRenderer(
 		glamour.WithStyles(style),
+		glamour.WithWordWrap(120),
 	)
 
 	thinkingRenderer, _ := glamour.NewTermRenderer(
 		glamour.WithStyles(thinkingStyle),
+		glamour.WithWordWrap(120),
 	)
 
 	return &ResponsePrinterGenerator{
