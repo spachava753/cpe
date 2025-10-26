@@ -1,12 +1,15 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/glamour"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/cpe/internal/config"
 	mcpinternal "github.com/spachava753/cpe/internal/mcp"
@@ -18,6 +21,13 @@ var (
 	mcpToolName   string
 	mcpToolArgs   string
 )
+
+func getGlamourRenderer() (*glamour.TermRenderer, error) {
+	return glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(120),
+	)
+}
 
 // getMCPConfig loads the unified configuration and returns the MCP configuration
 func getMCPConfig() (*mcpinternal.Config, error) {
@@ -280,57 +290,78 @@ var mcpListToolsCmd = &cobra.Command{
 			title = fmt.Sprintf("Available tools on server '%s'", serverName)
 		}
 
-		// Show filtering information
+		// Build markdown content
+		var markdownBuilder strings.Builder
+
+		// Header
+		markdownBuilder.WriteString(fmt.Sprintf("# %s\n\n", title))
+
+		// Filter information
 		toolFilter := serverConfig.ToolFilter
 		if toolFilter == "" {
 			toolFilter = "all"
 		}
 
-		fmt.Printf("%s:\n", title)
-		fmt.Printf("Filter mode: %s\n", toolFilter)
+		markdownBuilder.WriteString("**Filter mode:** `" + toolFilter + "`")
+
 		if toolFilter == "whitelist" && len(serverConfig.EnabledTools) > 0 {
-			fmt.Printf("Enabled tools: %s\n", strings.Join(serverConfig.EnabledTools, ", "))
+			markdownBuilder.WriteString(" | **Enabled tools:** `" + strings.Join(serverConfig.EnabledTools, "`, `") + "`")
 		}
 		if toolFilter == "blacklist" && len(serverConfig.DisabledTools) > 0 {
-			fmt.Printf("Disabled tools: %s\n", strings.Join(serverConfig.DisabledTools, ", "))
+			markdownBuilder.WriteString(" | **Disabled tools:** `" + strings.Join(serverConfig.DisabledTools, "`, `") + "`")
 		}
-		fmt.Printf("Total tools: %d, Available: %d, Filtered out: %d\n\n", len(allTools), len(filteredTools), len(filteredOut))
+
+		markdownBuilder.WriteString("\n**Total tools:** " + strconv.Itoa(len(allTools)) +
+			" | **Available:** " + strconv.Itoa(len(filteredTools)) +
+			" | **Filtered out:** " + strconv.Itoa(len(filteredOut)) + "\n\n")
 
 		if len(toolsToShow) == 0 {
-			fmt.Println("No tools to display.")
-			return nil
-		}
+			markdownBuilder.WriteString("*No tools to display.*\n")
+		} else {
+			for _, tool := range toolsToShow {
+				// Mark filtered tools with a badge
+				filteredBadge := ""
+				if showAll {
+					for _, filteredName := range filteredOut {
+						if tool.Name == filteredName {
+							filteredBadge = " 🚫 *filtered*"
+							break
+						}
+					}
+				}
 
-		for _, tool := range toolsToShow {
-			// Mark filtered tools with a prefix
-			prefix := ""
-			if showAll {
-				for _, filteredName := range filteredOut {
-					if tool.Name == filteredName {
-						prefix = "[FILTERED] "
-						break
+				markdownBuilder.WriteString(fmt.Sprintf("### `%s`%s\n", tool.Name, filteredBadge))
+				markdownBuilder.WriteString(tool.Description + "\n\n")
+
+				// Add input schema
+				if tool.InputSchema != nil {
+					markdownBuilder.WriteString("**Input Schema:**\n\n")
+
+					// Create a proper JSON code block with indentation
+					var schemaJSON bytes.Buffer
+					encoder := json.NewEncoder(&schemaJSON)
+					encoder.SetIndent("", "  ")
+					if err := encoder.Encode(tool.InputSchema); err != nil {
+						markdownBuilder.WriteString("```json\n" + "Error encoding schema: " + err.Error() + "\n```\n\n")
+					} else {
+						markdownBuilder.WriteString("```json\n" + schemaJSON.String() + "\n```\n\n")
 					}
 				}
 			}
-
-			fmt.Printf("- %s%s: %s\n", prefix, tool.Name, tool.Description)
-
-			// Print input schema
-			if tool.InputSchema != nil {
-				fmt.Println("  Input Schema:")
-
-				// Display JSON schema
-				schemaBytes, err := json.MarshalIndent(tool.InputSchema, "  ", "  ")
-				if err != nil {
-					fmt.Printf("    Error marshaling schema: %v\n", err)
-				} else {
-					fmt.Println("  " + string(schemaBytes))
-				}
-			}
-
-			fmt.Println() // Add a blank line between tools for better readability
 		}
 
+		// Render with glamour
+		renderer, err := getGlamourRenderer()
+		if err != nil {
+			return fmt.Errorf("failed to create glamour renderer: %w", err)
+		}
+
+		rendered, err := renderer.Render(markdownBuilder.String())
+		if err != nil {
+			return fmt.Errorf("failed to render markdown: %w", err)
+		}
+
+		fmt.Print(rendered)
 		return nil
 	},
 }
