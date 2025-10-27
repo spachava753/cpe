@@ -256,11 +256,11 @@ func (s *DialogStorage) GetMessage(ctx context.Context, messageID string) (gai.M
 	}, parentID, nil
 }
 
-// GetMostRecentUserMessageId retrieves the most recently created user message
-func (s *DialogStorage) GetMostRecentUserMessageId(ctx context.Context) (string, error) {
-	msg, err := s.q.GetMostRecentUserMessage(ctx)
+// GetMostRecentAssistantMessageId retrieves the most recently created assistant message
+func (s *DialogStorage) GetMostRecentAssistantMessageId(ctx context.Context) (string, error) {
+	msg, err := s.q.GetMostRecentAssistantMessage(ctx)
 	if err != nil {
-		return "", fmt.Errorf("failed to get most recent user message: %w", err)
+		return "", fmt.Errorf("failed to get most recent assistant message: %w", err)
 	}
 
 	return msg.ID, nil

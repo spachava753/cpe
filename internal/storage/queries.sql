@@ -10,10 +10,10 @@ SELECT *
 FROM messages
 WHERE id = ?;
 
--- name: GetMostRecentUserMessage :one
+-- name: GetMostRecentAssistantMessage :one
 SELECT *
 FROM messages
-WHERE role = 'user'
+WHERE role = 'assistant'
 ORDER BY created_at DESC
 LIMIT 1;
 

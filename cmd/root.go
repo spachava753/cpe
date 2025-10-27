@@ -136,7 +136,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 
 	// Get most recent message
 	if continueID == "" && !newConversation {
-		continueID, err = dialogStorage.GetMostRecentUserMessageId(ctx)
+		continueID, err = dialogStorage.GetMostRecentAssistantMessageId(ctx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return nil
@@ -388,8 +388,8 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	// Print the last message's ID to stderr before exiting
 	lastID := currentParentId
 	if lastID == "" {
-		// Fallback: if we somehow didn't save any message, try most recent user message id
-		if id, err := dialogStorage.GetMostRecentUserMessageId(ctx); err == nil {
+		// Fallback: if we somehow didn't save any message, try most recent assistant message id
+		if id, err := dialogStorage.GetMostRecentAssistantMessageId(ctx); err == nil {
 			lastID = id
 		}
 	}

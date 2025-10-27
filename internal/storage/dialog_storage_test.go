@@ -130,7 +130,7 @@ func TestGetLatestMessage(t *testing.T) {
 	// Create messages with a small delay between them
 	msg1 := createTextMessage(gai.User, "First message")
 	msg2 := createTextMessage(gai.Assistant, "Second message")
-	msg3 := createTextMessage(gai.User, "Third message")
+	msg3 := createTextMessage(gai.Assistant, "Third message")
 
 	_, err := storage.SaveMessage(ctx, msg1, "", "Test Conversation")
 	require.NoError(t, err, "Failed to save first message")
@@ -143,7 +143,7 @@ func TestGetLatestMessage(t *testing.T) {
 	require.NoError(t, err, "Failed to save third message")
 
 	// Get the latest message ID
-	latestID, err := storage.GetMostRecentUserMessageId(ctx)
+	latestID, err := storage.GetMostRecentAssistantMessageId(ctx)
 	require.NoError(t, err, "Failed to get latest message ID")
 
 	// Get the message using the ID
