@@ -204,10 +204,10 @@ func (c *Config) Validate() error {
 		// Validate model type
 		validTypes := map[string]bool{
 			"openai": true, "anthropic": true, "gemini": true, "responses": true,
-			"groq": true, "cerebras": true,
+			"groq": true, "cerebras": true, "openrouter": true,
 		}
 		if !validTypes[model.Type] {
-			return fmt.Errorf("model %s: invalid type '%s', must be one of: openai, responses, anthropic, gemini, groq, cerebras", model.Ref, model.Type)
+			return fmt.Errorf("model %s: invalid type '%s', must be one of: openai, responses, anthropic, gemini, groq, cerebras, openrouter", model.Ref, model.Type)
 		}
 
 		// Validate generation defaults if present

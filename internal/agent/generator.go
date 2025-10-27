@@ -150,6 +150,30 @@ func createResponsesGenerator(model, baseURL, systemPrompt string, timeout time.
 	return &generator, nil
 }
 
+func createOpenRouterGenerator(model, baseURL, systemPrompt string, timeout time.Duration, apiKey string, patchConfig *config.PatchRequestConfig) (gai.Generator, error) {
+	clientOpts := []oaiopt.RequestOption{
+		oaiopt.WithRequestTimeout(timeout),
+	}
+	if baseURL != "" {
+		clientOpts = append(clientOpts, oaiopt.WithBaseURL(baseURL))
+	}
+	if apiKey != "" {
+		clientOpts = append(clientOpts, oaiopt.WithAPIKey(apiKey))
+	}
+
+	if patchConfig != nil {
+		transport, err := BuildPatchTransportFromConfig(nil, patchConfig)
+		if err != nil {
+			return nil, fmt.Errorf("building patch transport: %w", err)
+		}
+		clientOpts = append(clientOpts, oaiopt.WithHTTPClient(&http.Client{Transport: transport}))
+	}
+
+	client := openai.NewClient(clientOpts...)
+	generator := gai.NewOpenRouterGenerator(&client.Chat.Completions, model, systemPrompt)
+	return generator, nil
+}
+
 type ToolRegisterer interface {
 	Register(tool gai.Tool, callback gai.ToolCallback) error
 }
@@ -207,6 +231,15 @@ func InitGeneratorFromModel(m config.Model, systemPrompt string, timeout time.Du
 			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 		}
 		return createResponsesGenerator(m.ID, baseURL, systemPrompt, timeout, apiKey, m.PatchRequest)
+	case "openrouter":
+		if apiEnv == "" {
+			apiEnv = "OPENROUTER_API_KEY"
+		}
+		apiKey := os.Getenv(apiEnv)
+		if apiKey == "" {
+			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
+		}
+		return createOpenRouterGenerator(m.ID, baseURL, systemPrompt, timeout, apiKey, m.PatchRequest)
 	default:
 		return nil, fmt.Errorf("unsupported model type: %s", m.Type)
 	}

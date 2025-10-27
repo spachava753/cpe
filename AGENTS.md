@@ -141,6 +141,20 @@ BREAKING CHANGE: footer describing breaking change if necessary
 
 CPE is a CLI tool and MCP client where execution time is dominated by network calls to AI model APIs. Performance optimizations are typically not a concern unless specifically requested by the user. Focus on correctness, maintainability, and user experience over micro-optimizations.
 
+## Adding new generator types
+
+When adding support for a new generator type (e.g., after upgrading github.com/spachava753/gai):
+
+1. **Generator initialization** (`internal/agent/generator.go`):
+   - Create a `createXGenerator` function following the existing pattern (takes model, baseURL, systemPrompt, timeout, apiKey, patchConfig)
+   - Add a new case to the switch statement in `InitGeneratorFromModel` with appropriate API key environment variable handling
+
+2. **Config validation** (`internal/config/loader.go`):
+   - Add the new type to the `validTypes` map in the `Validate()` function
+   - Update the error message listing valid types to include the new generator
+   
+**IMPORTANT**: Remember to update BOTH the generator init logic AND the config validation. The config validation must be updated in `internal/config/loader.go` in the `Validate()` method's `validTypes` map and error message.
+
 ## Documentation for Go Symbols
 
 When gathering context about symbols like types, global variables, constants, functions and methods, prefer to use
