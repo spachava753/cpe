@@ -119,49 +119,10 @@ func (g *ResponsePrinterGenerator) renderThinking(content string) string {
 	return rendered
 }
 
-// unescapeJsonString unescapes special characters in json content that can returned by some models in tool calls
-func unescapeJsonString(s string) string {
-	var result strings.Builder
-	i := 0
-	for i < len(s) {
-		if i+5 < len(s) && s[i:i+2] == "\\u" {
-			hex := s[i+2 : i+6]
-			var code int
-			_, err := fmt.Sscanf(hex, "%04x", &code)
-			if err == nil {
-				r := rune(code)
-				switch r {
-				case '"':
-					result.WriteString(`\"`)
-				case '\\':
-					result.WriteString(`\\`)
-				case '\b':
-					result.WriteString(`\b`)
-				case '\f':
-					result.WriteString(`\f`)
-				case '\n':
-					result.WriteString(`\n`)
-				case '\r':
-					result.WriteString(`\r`)
-				case '\t':
-					result.WriteString(`\t`)
-				default:
-					result.WriteRune(r)
-				}
-				i += 6
-				continue
-			}
-		}
-		result.WriteByte(s[i])
-		i++
-	}
-	return result.String()
-}
-
 // renderToolCall renders a toolcall block with a glamour style
 func (g *ResponsePrinterGenerator) renderToolCall(content string) string {
 	var formattedJson bytes.Buffer
-	if err := json.Indent(&formattedJson, []byte(unescapeJsonString(content)), "", "  "); err != nil {
+	if err := json.Indent(&formattedJson, []byte(content), "", "  "); err != nil {
 		panic(err)
 	}
 	result := fmt.Sprintf("#### [tool call]\n```json\n%s\n```", formattedJson.String())
