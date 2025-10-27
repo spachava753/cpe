@@ -266,8 +266,8 @@ func (s *DialogStorage) GetMostRecentUserMessageId(ctx context.Context) (string,
 	return msg.ID, nil
 }
 
-// GetDialogForMessage reconstructs a dialog starting given a message and traversing up to the root.
-// Based on the message, we traverse up and down a conversation list of messages to fetch a complete dialog.
+// GetDialogForMessage reconstructs a dialog up to and including the given message by traversing up to the root.
+// It returns the dialog path from root to the specified message, without including any children of that message.
 func (s *DialogStorage) GetDialogForMessage(ctx context.Context, messageID string) (gai.Dialog, []string, error) {
 
 	var dialog gai.Dialog
@@ -296,83 +296,6 @@ func (s *DialogStorage) GetDialogForMessage(ctx context.Context, messageID strin
 	// Reverse the order so now the message is last
 	slices.Reverse(dialog)
 	slices.Reverse(msgIds)
-
-	// Then get any leftover children messages
-	children, err := s.q.GetMessageChildrenId(ctx, sql.NullString{
-		String: messageID,
-		Valid:  true,
-	})
-	if err != nil {
-		return gai.Dialog{}, msgIds, err
-	}
-
-	// If there are no children, this was the last message, so we can return the dialog as is.
-	// If there are more than one child, then this was the last message in an assistant turn,
-	// so we can return the dialog as is
-	if len(children) == 0 || len(children) > 1 {
-		return dialog, msgIds, nil
-	}
-
-	childMsg, err := s.q.GetMessage(ctx, children[0])
-	if err != nil {
-		return gai.Dialog{}, msgIds, err
-	}
-
-	// If the single child is a user message, we should stop and return the dialog up until the current point
-	if childMsg.Role == "user" {
-		return dialog, msgIds, nil
-	}
-
-	msg, _, err = s.GetMessage(ctx, childMsg.ID)
-	if err != nil {
-		return gai.Dialog{}, msgIds, err
-	}
-
-	dialog = append(dialog, msg)
-	msgIds = append(msgIds, childMsg.ID)
-
-	// Now, we keep getting the children of each message to get the chain of assistant messages
-	// that belong to this user-ai turn of conversation. We know we have reached the end of the turn when
-	// 1. There are no more children for an assistant message
-	// 2. The children are user messages (branching occurs after the end of the last assistant message)
-	//
-	// Example:
-	// ┌ User Message: Hi! How many files do I have?
-	// ├ Assistant Message: Sure let me help with that
-	// ├ Assistant Message: Tool call -> file overview
-	// ├ Assistant Message: You have 3 files
-	// ├──────────(BRANCHING)─────────┐
-	// ├ User Message: Delete a file  ├ User Message: add a file
-
-	assistantMsgId := childMsg.ID
-	for {
-		children, err = s.q.GetMessageChildrenId(ctx, sql.NullString{
-			String: assistantMsgId,
-			Valid:  true,
-		})
-		if err != nil {
-			return gai.Dialog{}, msgIds, err
-		}
-
-		if len(children) == 0 || len(children) > 1 {
-			break
-		}
-
-		assistantMsgId = children[0]
-
-		msg, _, err = s.GetMessage(ctx, assistantMsgId)
-		if err != nil {
-			return gai.Dialog{}, msgIds, err
-		}
-
-		// Check if the child is a user message - if so, stop here
-		if msg.Role == gai.User {
-			break
-		}
-
-		dialog = append(dialog, msg)
-		msgIds = append(msgIds, assistantMsgId)
-	}
 
 	return dialog, msgIds, nil
 }

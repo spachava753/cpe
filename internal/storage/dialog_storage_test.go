@@ -320,7 +320,7 @@ func TestBranchingDialogs(t *testing.T) {
 	require.NoError(t, err, "Failed to save branch 1 message")
 
 	branch1Reply := createTextMessage(gai.Assistant, "Cats are wonderful pets...")
-	branch1ReplyID, err := storage.SaveMessage(ctx, branch1Reply, branch1ID, "")
+	_, err = storage.SaveMessage(ctx, branch1Reply, branch1ID, "")
 	require.NoError(t, err, "Failed to save branch 1 reply")
 
 	// Create branch 2 (from the same base reply)
@@ -329,7 +329,7 @@ func TestBranchingDialogs(t *testing.T) {
 	require.NoError(t, err, "Failed to save branch 2 message")
 
 	branch2Reply := createTextMessage(gai.Assistant, "Dogs are loyal companions...")
-	branch2ReplyID, err := storage.SaveMessage(ctx, branch2Reply, branch2ID, "")
+	_, err = storage.SaveMessage(ctx, branch2Reply, branch2ID, "")
 	require.NoError(t, err, "Failed to save branch 2 reply")
 
 	// Get the dialog from branch 1 leaf
@@ -364,7 +364,6 @@ func TestBranchingDialogs(t *testing.T) {
 		rootID,
 		baseReplyID,
 		branch1ID,
-		branch1ReplyID,
 	}
 
 	// Define expected dialog structures
@@ -402,24 +401,12 @@ func TestBranchingDialogs(t *testing.T) {
 				},
 			},
 		},
-		{
-			Role: gai.Assistant,
-			Blocks: []gai.Block{
-				{
-					BlockType:    gai.Content,
-					ModalityType: gai.Text,
-					MimeType:     "text/plain",
-					Content:      gai.Str("Cats are wonderful pets..."),
-				},
-			},
-		},
 	}
 
 	expectedMsgIdList2 := []string{
 		rootID,
 		baseReplyID,
 		branch2ID,
-		branch2ReplyID,
 	}
 
 	expectedDialog2 := gai.Dialog{
@@ -453,17 +440,6 @@ func TestBranchingDialogs(t *testing.T) {
 					ModalityType: gai.Text,
 					MimeType:     "text/plain",
 					Content:      gai.Str("Tell me about dogs."),
-				},
-			},
-		},
-		{
-			Role: gai.Assistant,
-			Blocks: []gai.Block{
-				{
-					BlockType:    gai.Content,
-					ModalityType: gai.Text,
-					MimeType:     "text/plain",
-					Content:      gai.Str("Dogs are loyal companions..."),
 				},
 			},
 		},
@@ -511,5 +487,4 @@ func TestBranchingDialogs(t *testing.T) {
 	// Verify shared path and branches
 	assert.Equal(t, dialog1[:2], dialog2[:2], "Parent messages should be identical")
 	assert.NotEqual(t, dialog1[2].Blocks[0].Content.String(), dialog2[2].Blocks[0].Content.String(), "Branch messages should differ")
-	assert.NotEqual(t, dialog1[3].Blocks[0].Content.String(), dialog2[3].Blocks[0].Content.String(), "Branch replies should differ")
 }
