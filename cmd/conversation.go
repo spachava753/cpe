@@ -127,18 +127,18 @@ var printConvoCmd = &cobra.Command{
 		}
 		defer dialogStorage.Close()
 
-		dialog, _, err := dialogStorage.GetDialogForMessage(cmd.Context(), messageID)
+		dialog, msgIds, err := dialogStorage.GetDialogForMessage(cmd.Context(), messageID)
 		if err != nil {
 			return fmt.Errorf("failed to get dialog: %v", err)
 		}
-		printDialog(dialog)
+		printDialog(dialog, msgIds)
 
 		return nil
 	},
 }
 
 // printDialog prints the full dialog to stdout in a readable format
-func printDialog(dialog gai.Dialog) {
+func printDialog(dialog gai.Dialog, msgIds []string) {
 	if len(dialog) == 0 {
 		fmt.Println("Empty conversation")
 		return
@@ -171,14 +171,21 @@ func printDialog(dialog gai.Dialog) {
 			roleLabel = fmt.Sprintf("UNKNOWN ROLE (%d)", message.Role)
 		}
 
-		md.WriteString(fmt.Sprintf("## %s\n\n", roleLabel))
+		// Add message ID if available
+		// Dialog is in oldest message first order, so map to the correct ID
+		var msgIdStr string
+		if len(msgIds) > 0 {
+			msgIdStr = fmt.Sprintf(" [`%s`]", msgIds[i])
+		}
+
+		md.WriteString(fmt.Sprintf("## %s%s\n\n", roleLabel, msgIdStr))
 
 		// Print each block in the message
 		for _, block := range message.Blocks {
 			switch block.ModalityType {
 			case gai.Text:
 				content := block.Content.String()
-				
+
 				// Handle different block types
 				switch block.BlockType {
 				case gai.ToolCall:
