@@ -365,6 +365,11 @@ func (s *DialogStorage) GetDialogForMessage(ctx context.Context, messageID strin
 			return gai.Dialog{}, msgIds, err
 		}
 
+		// Check if the child is a user message - if so, stop here
+		if msg.Role == gai.User {
+			break
+		}
+
 		dialog = append(dialog, msg)
 		msgIds = append(msgIds, assistantMsgId)
 	}
