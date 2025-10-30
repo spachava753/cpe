@@ -153,14 +153,29 @@ func TestConfigFileIO(t *testing.T) {
 	}
 	defer os.Chdir(originalDir)
 
-	// Create example config
-	if err := CreateExampleConfig(); err != nil {
-		t.Fatalf("CreateExampleConfig() error = %v", err)
-	}
-
-	// Verify config exists
-	if !ConfigExists() {
-		t.Errorf("ConfigExists() returned false, expected true")
+	// Create example config manually
+	exampleConfig := `{
+  "mcpServers": {
+    "filesystem": {
+      "command": "pnpm",
+      "args": ["dlx", "@modelcontextprotocol/server-filesystem", "."],
+      "type": "stdio",
+      "timeout": 30,
+      "toolFilter": "whitelist",
+      "enabledTools": ["read_file", "write_file"]
+    },
+    "shell": {
+      "command": "pnpm",
+      "args": ["dlx", "mcp-shell"],
+      "type": "stdio",
+      "timeout": 60,
+      "toolFilter": "blacklist",
+      "disabledTools": ["system_restart"]
+    }
+  }
+}`
+	if err := os.WriteFile(".cpemcp.json", []byte(exampleConfig), 0644); err != nil {
+		t.Fatalf("Failed to create example config: %v", err)
 	}
 
 	// Load the config

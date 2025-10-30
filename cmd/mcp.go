@@ -47,33 +47,6 @@ func getMCPConfig() (*mcpinternal.Config, error) {
 	return mcpConfig, nil
 }
 
-// mcpInitCmd represents the 'mcp init' subcommand
-var mcpInitCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Initialize MCP configuration",
-	Long:  `Create example MCP configuration files in the current directory with different formats.`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if mcpinternal.ConfigExists() {
-			return fmt.Errorf("MCP configuration file already exists")
-		}
-
-		if err := mcpinternal.CreateExampleConfig(); err != nil {
-			return fmt.Errorf("failed to create example configs: %w", err)
-		}
-
-		fmt.Println(`Created example MCP configuration files:
-- .cpemcp.json (JSON format)
-
-You can also use a YAML file. Edit only one file to configure your MCP servers.
-CPE will automatically use the first one it finds in the following order:
-1. .cpemcp.json
-2. .cpemcp.yaml
-3. .cpemcp.yml
-Note: Configuration files are only searched for in the current directory.`)
-
-		return nil
-	},
-}
 
 // mcpCmd represents the mcp command
 var mcpCmd = &cobra.Command{
@@ -106,7 +79,6 @@ var mcpListServersCmd = &cobra.Command{
 
 		if len(config.MCPServers) == 0 {
 			fmt.Println("No MCP servers configured.")
-			fmt.Println("Use 'cpe mcp init' to create an example configuration.")
 			return nil
 		}
 
@@ -168,7 +140,7 @@ var mcpInfoCmd = &cobra.Command{
 		}
 
 		if len(config.MCPServers) == 0 {
-			return fmt.Errorf("no MCP servers configured. Use 'cpe mcp init' to create an example configuration")
+			return fmt.Errorf("no MCP servers configured")
 		}
 
 		if _, exists := config.MCPServers[serverName]; !exists {
@@ -229,7 +201,7 @@ var mcpListToolsCmd = &cobra.Command{
 		}
 
 		if len(config.MCPServers) == 0 {
-			return fmt.Errorf("no MCP servers configured. Use 'cpe mcp init' to create an example configuration")
+			return fmt.Errorf("no MCP servers configured")
 		}
 
 		serverConfig, exists := config.MCPServers[serverName]
@@ -390,7 +362,7 @@ var mcpCallToolCmd = &cobra.Command{
 		}
 
 		if len(config.MCPServers) == 0 {
-			return fmt.Errorf("no MCP servers configured. Use 'cpe mcp init' to create an example configuration")
+			return fmt.Errorf("no MCP servers configured")
 		}
 
 		if _, exists := config.MCPServers[mcpServerName]; !exists {
@@ -443,7 +415,6 @@ func init() {
 	rootCmd.AddCommand(mcpCmd)
 
 	// Add subcommands to mcp command
-	mcpCmd.AddCommand(mcpInitCmd)
 	mcpCmd.AddCommand(mcpListServersCmd)
 	mcpCmd.AddCommand(mcpInfoCmd)
 	mcpCmd.AddCommand(mcpListToolsCmd)
