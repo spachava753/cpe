@@ -216,16 +216,16 @@ func (q *Queries) GetMessageChildrenId(ctx context.Context, parentID sql.NullStr
 	return items, nil
 }
 
-const getMostRecentAssistantMessage = `-- name: GetMostRecentAssistantMessage :one
+const getMostRecentMessage = `-- name: GetMostRecentMessage :one
 SELECT id, parent_id, title, role, tool_result_error, created_at
 FROM messages
-WHERE role = 'assistant'
+WHERE role IN ('assistant', 'tool_result')
 ORDER BY created_at DESC
 LIMIT 1
 `
 
-func (q *Queries) GetMostRecentAssistantMessage(ctx context.Context) (Message, error) {
-	row := q.db.QueryRowContext(ctx, getMostRecentAssistantMessage)
+func (q *Queries) GetMostRecentMessage(ctx context.Context) (Message, error) {
+	row := q.db.QueryRowContext(ctx, getMostRecentMessage)
 	var i Message
 	err := row.Scan(
 		&i.ID,
