@@ -5,9 +5,21 @@ import (
 	"os"
 
 	"github.com/spachava753/cpe/internal/agent"
+	"github.com/spachava753/cpe/internal/commands"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spf13/cobra"
 )
+
+// systemPromptRenderer implements SystemPromptRenderer using agent templates
+type systemPromptRenderer struct{}
+
+func (r *systemPromptRenderer) Render(template string, model *config.Model) (string, error) {
+	sysInfo, err := agent.GetSystemInfoWithModel(model)
+	if err != nil {
+		return "", fmt.Errorf("failed to get system info: %w", err)
+	}
+	return sysInfo.ExecuteTemplateString(template)
+}
 
 var modelCmd = &cobra.Command{
 	Use:     "model",
@@ -31,14 +43,11 @@ var listModelCmd = &cobra.Command{
 			defaultModel = DefaultModel
 		}
 
-		for _, model := range cfg.Models {
-			line := model.Ref
-			if defaultModel != "" && model.Ref == defaultModel {
-				line += " (default)"
-			}
-			fmt.Println(line)
-		}
-		return nil
+		return commands.ModelList(cmd.Context(), commands.ModelListOptions{
+			Config:       cfg,
+			DefaultModel: defaultModel,
+			Writer:       os.Stdout,
+		})
 	},
 }
 
@@ -57,44 +66,17 @@ cpe model info sonnet
 		if len(args) != 1 {
 			return cmd.Usage()
 		}
+
 		name := args[0]
 		if name == "" {
 			name = os.Getenv("CPE_MODEL")
 		}
-		if name == "" {
-			return fmt.Errorf("no model name provided")
-		}
 
-		model, found := cfg.FindModel(name)
-		if !found {
-			return fmt.Errorf("model %q not found", name)
-		}
-
-		fmt.Printf("Ref: %s\nDisplay Name: %s\nType: %s\nID: %s\nContext: %d\nMaxOutput: %d\nInputCostPerMillion: %.6f\nOutputCostPerMillion: %.6f\n",
-			model.Ref, model.DisplayName, model.Type, model.ID, model.ContextWindow, model.MaxOutput, model.InputCostPerMillion, model.OutputCostPerMillion,
-		)
-
-		// Show generation defaults if present
-		if model.GenerationDefaults != nil {
-			fmt.Printf("\nGeneration Defaults:\n")
-			if model.GenerationDefaults.Temperature != nil {
-				fmt.Printf("  Temperature: %.2f\n", *model.GenerationDefaults.Temperature)
-			}
-			if model.GenerationDefaults.TopP != nil {
-				fmt.Printf("  TopP: %.2f\n", *model.GenerationDefaults.TopP)
-			}
-			if model.GenerationDefaults.TopK != nil {
-				fmt.Printf("  TopK: %d\n", *model.GenerationDefaults.TopK)
-			}
-			if model.GenerationDefaults.MaxTokens != nil {
-				fmt.Printf("  MaxTokens: %d\n", *model.GenerationDefaults.MaxTokens)
-			}
-			if model.GenerationDefaults.ThinkingBudget != nil {
-				fmt.Printf("  ThinkingBudget: %s\n", *model.GenerationDefaults.ThinkingBudget)
-			}
-		}
-
-		return nil
+		return commands.ModelInfo(cmd.Context(), commands.ModelInfoOptions{
+			Config:    cfg,
+			ModelName: name,
+			Writer:    os.Stdout,
+		})
 	},
 }
 
@@ -121,28 +103,36 @@ var systemPromptModelCmd = &cobra.Command{
 			return fmt.Errorf("no model specified. Use --model flag or set defaults.model in configuration")
 		}
 
+		// Find the model
 		selectedModel, found := cfg.FindModel(modelName)
 		if !found {
 			return fmt.Errorf("model %q not found in configuration", modelName)
 		}
 
+		// Determine effective system prompt path
 		effectiveSystemPromptPath := selectedModel.GetEffectiveSystemPromptPath(
 			cfg.Defaults.SystemPromptPath,
 			systemPromptPath,
 		)
 
-		if effectiveSystemPromptPath == "" {
-			fmt.Fprintf(cmd.OutOrStdout(), "Model %q does not define a system prompt.\n", modelName)
-			return nil
+		// Read the template file
+		var templateContent string
+		if effectiveSystemPromptPath != "" {
+			content, err := os.ReadFile(effectiveSystemPromptPath)
+			if err != nil {
+				return fmt.Errorf("failed to read system prompt file: %w", err)
+			}
+			templateContent = string(content)
 		}
 
-		rendered, err := agent.PrepareSystemPrompt(effectiveSystemPromptPath, &selectedModel.Model)
-		if err != nil {
-			return fmt.Errorf("failed to render system prompt: %w", err)
-		}
-
-		fmt.Fprintf(cmd.OutOrStdout(), "Model: %s\nPath: %s\n\n%s\n", modelName, effectiveSystemPromptPath, rendered)
-		return nil
+		return commands.ModelSystemPrompt(cmd.Context(), commands.ModelSystemPromptOptions{
+			Config:               cfg,
+			ModelName:            modelName,
+			SystemPromptTemplate: templateContent,
+			SystemPromptPath:     effectiveSystemPromptPath,
+			Writer:               cmd.OutOrStdout(),
+			SystemPromptRenderer: &systemPromptRenderer{},
+		})
 	},
 }
 

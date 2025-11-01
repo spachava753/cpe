@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
+	"github.com/spachava753/cpe/internal/commands"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -32,22 +34,15 @@ Exit codes:
 			configPath = args[0]
 		}
 
-		// Load and validate config (automatically validates)
 		cfg, err := config.LoadConfig(configPath)
 		if err != nil {
 			return fmt.Errorf("configuration validation failed: %w", err)
 		}
 
-		fmt.Printf("✓ Configuration is valid\n")
-		fmt.Printf("  Models: %d\n", len(cfg.Models))
-		if len(cfg.MCPServers) > 0 {
-			fmt.Printf("  MCP Servers: %d\n", len(cfg.MCPServers))
-		}
-		if cfg.GetDefaultModel() != "" {
-			fmt.Printf("  Default Model: %s\n", cfg.GetDefaultModel())
-		}
-
-		return nil
+		return commands.ConfigLint(cmd.Context(), commands.ConfigLintOptions{
+			Config: cfg,
+			Writer: os.Stdout,
+		})
 	},
 }
 

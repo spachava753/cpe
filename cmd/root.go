@@ -13,14 +13,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/spachava753/cpe/internal/version"
-
 	"github.com/gabriel-vasile/mimetype"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/spachava753/cpe/internal/agent"
+	"github.com/spachava753/cpe/internal/commands"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/urlhandler"
+	"github.com/spachava753/cpe/internal/version"
 	"github.com/spachava753/gai"
 	"github.com/spf13/cobra"
 )
@@ -119,73 +119,21 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		return fmt.Errorf("could not process user input: %w", err)
 	}
 
-	// If no input was provided, print help
-	if len(userBlocks) == 0 {
-		return errors.New("empty input")
-	}
-
-	// Always use .cpeconvo as the DB path
-	dbPath := ".cpeconvo"
-
-	// Initialize or open the database through the storage package (for reading/threading)
-	dialogStorage, err := storage.InitDialogStorage(dbPath)
-	if err != nil {
-		return fmt.Errorf("failed to initialize dialog storage: %w", err)
-	}
-	defer dialogStorage.Close()
-
-	// Get most recent message
-	if continueID == "" && !newConversation {
-		continueID, err = dialogStorage.GetMostRecentAssistantMessageId(ctx)
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				return nil
-			}
-			if !strings.Contains(err.Error(), "no rows in result set") {
-				return fmt.Errorf("failed to get most recent message: %w", err)
-			}
-			newConversation = true
-		}
-	}
-
-	// Use DefaultModel from global scope (must be set by env or CLI flag only)
-	if model == "" {
-		return errors.New("no model specified. Please set the CPE_MODEL environment variable or use the --model flag")
-	}
-
-	customURL = getCustomURL(customURL)
-
 	// Load unified configuration
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
-	// Determine effective timeout (CLI flag overrides config default)
-	effectiveTimeout := timeout
-	if effectiveTimeout == "" && cfg.Defaults.Timeout != "" {
-		effectiveTimeout = cfg.Defaults.Timeout
-	}
-	if effectiveTimeout == "" {
-		effectiveTimeout = "5m" // fallback default
-	}
-
-	// Parse timeout duration
-	requestTimeout, err := time.ParseDuration(effectiveTimeout)
-	if err != nil {
-		return fmt.Errorf("invalid timeout value '%s': %w", effectiveTimeout, err)
-	}
-
 	// Determine which model to use
 	modelName := model
 	if modelName == "" {
-		// Use default from config or environment
 		if cfg.GetDefaultModel() != "" {
 			modelName = cfg.GetDefaultModel()
 		} else if DefaultModel != "" {
 			modelName = DefaultModel
 		} else {
-			return fmt.Errorf("no model specified. Use --model flag or set defaults.model in configuration")
+			return errors.New("no model specified. Please set the CPE_MODEL environment variable or use the --model flag")
 		}
 	}
 
@@ -195,7 +143,21 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		return fmt.Errorf("model %q not found in configuration", modelName)
 	}
 
-	// Determine system prompt path using precedence: CLI > model > global default
+	// Determine effective timeout
+	effectiveTimeout := timeout
+	if effectiveTimeout == "" && cfg.Defaults.Timeout != "" {
+		effectiveTimeout = cfg.Defaults.Timeout
+	}
+	if effectiveTimeout == "" {
+		effectiveTimeout = "5m"
+	}
+
+	requestTimeout, err := time.ParseDuration(effectiveTimeout)
+	if err != nil {
+		return fmt.Errorf("invalid timeout value '%s': %w", effectiveTimeout, err)
+	}
+
+	// Determine system prompt path
 	effectiveSystemPromptPath := selectedModel.GetEffectiveSystemPromptPath(
 		cfg.Defaults.SystemPromptPath,
 		systemPromptPath,
@@ -207,7 +169,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed to prepare system prompt: %w", err)
 	}
 
-	// Create the ToolCapableGenerator with all middleware configured
+	// Create the generator
 	toolGen, err := agent.CreateToolCapableGenerator(
 		ctx,
 		selectedModel.Model,
@@ -221,30 +183,18 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed to create tool capable generator: %w", err)
 	}
 
-	userMessage := gai.Message{
-		Role:   gai.User,
-		Blocks: userBlocks,
-	}
-
-	// Create full dialog with parent message if available
-	dialog := gai.Dialog{
-		userMessage,
-	}
-
-	var msgIdList []string
-
-	if !newConversation {
-		dialog, msgIdList, err = dialogStorage.GetDialogForMessage(ctx, continueID)
+	// Initialize storage unless in incognito mode
+	var dialogStorage commands.DialogStorage
+	if !incognitoMode {
+		dbPath := ".cpeconvo"
+		dialogStorage, err = storage.InitDialogStorage(dbPath)
 		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				return nil
-			}
-			return fmt.Errorf("failed to get previous dialog: %w", err)
+			return fmt.Errorf("failed to initialize dialog storage: %w", err)
 		}
-		dialog = append(dialog, userMessage)
+		defer dialogStorage.Close()
 	}
 
-	// Create CLI overrides from flags
+	// Build CLI overrides from flags
 	cliOverrides := &config.GenerationParams{}
 	if maxTokens > 0 {
 		cliOverrides.MaxTokens = &maxTokens
@@ -271,133 +221,25 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		cliOverrides.ThinkingBudget = &thinkingBudget
 	}
 
-	// Get effective generation parameters by merging model defaults, global defaults, and CLI overrides
-	effective := selectedModel.GetEffectiveGenerationParams(cfg.Defaults.GenerationParams, cliOverrides)
+	// Create a new context for save operation that can be cancelled independently
+	saveCtx, saveCancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer saveCancel()
 
-	// Create a generator function that returns generation options
-	genOptionsFunc := func(d gai.Dialog) *gai.GenOpts {
-		opts := &gai.GenOpts{}
-
-		// Set max tokens from model max_output or effective params
-		opts.MaxGenerationTokens = int(selectedModel.Model.MaxOutput)
-		if effective.MaxTokens != nil {
-			opts.MaxGenerationTokens = *effective.MaxTokens
-		}
-
-		// Apply effective parameters
-		if effective.Temperature != nil {
-			opts.Temperature = *effective.Temperature
-		}
-		if effective.TopP != nil {
-			opts.TopP = *effective.TopP
-		}
-		if effective.TopK != nil {
-			opts.TopK = uint(*effective.TopK)
-		}
-		if effective.FrequencyPenalty != nil {
-			opts.FrequencyPenalty = *effective.FrequencyPenalty
-		}
-		if effective.PresencePenalty != nil {
-			opts.PresencePenalty = *effective.PresencePenalty
-		}
-		if effective.NumberOfResponses != nil {
-			opts.N = uint(*effective.NumberOfResponses)
-		}
-
-		// Handle reasoning/thinking budget
-		if effective.ThinkingBudget != nil {
-			opts.ThinkingBudget = *effective.ThinkingBudget
-		}
-
-		return opts
-	}
-
-	// Generate the response
-	resultDialog, err := toolGen.Generate(ctx, dialog, genOptionsFunc)
-
-	// add a new line to separate the following messages printed to stderr
-	fmt.Printf("\n\n")
-
-	interrupted := errors.Is(err, context.Canceled)
-	// If we were not interrupted, print the error message, but continue to saving the returned dialog
-	if err != nil && !interrupted {
-		fmt.Fprintf(os.Stderr, "Error generating response: %v\n", err)
-	}
-
-	if incognitoMode {
-		// Don't save any conversation messages in incognito mode!
-		return nil
-	}
-
-	var parentId string
-	if len(msgIdList) != 0 {
-		parentId = msgIdList[len(msgIdList)-1]
-	}
-
-	// If we were interrupted, prepare a new context for the save operation
-	// that can also be cancelled.
-	dialogCtx := ctx
-	var saveCancel context.CancelFunc
-	if interrupted {
-		fmt.Fprintln(os.Stderr, "WARNING: Generation was interrupted. Attempting to save partial dialog.")
-	}
-	fmt.Fprintln(os.Stderr, "You can cancel this save operation by interrupting (Ctrl+C).")
-	dialogCtx, saveCancel = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer saveCancel() // Ensure this new context's cancel is called
-
-	// Determine assistant messages from the result
-	// resultDialog contains the original dialog + any new assistant messages
-	// dialog contains the original dialog sent to the model
-	assistantMsgs := resultDialog[len(dialog):]
-
-	shouldSave := len(assistantMsgs) > 0
-
-	if !shouldSave && interrupted {
-		fmt.Fprintln(os.Stderr, "No new assistant messages to save from interrupted generation. Skipping save for this turn.")
-		return nil // Do not save the user message if no assistant messages were generated during interruption
-	}
-
-	// Save user message (part of the current turn)
-	// This userMessage is the one that initiated the current turn.
-	userMsgID, err := dialogStorage.SaveMessage(dialogCtx, userMessage, parentId, "")
-	if err != nil {
-		if errors.Is(err, context.Canceled) { // User cancelled the save operation itself
-			fmt.Fprintln(os.Stderr, "Save operation cancelled by user.")
-			return nil
-		}
-		return fmt.Errorf("failed to save user message: %w", err)
-	}
-
-	// Save assistant messages (if any)
-	currentParentId := userMsgID
-	for _, assistantMsg := range assistantMsgs {
-		currentParentId, err = dialogStorage.SaveMessage(dialogCtx, assistantMsg, currentParentId, "")
-		if err != nil {
-			if errors.Is(err, context.Canceled) { // User cancelled the save operation during assistant message saving
-				fmt.Fprintln(os.Stderr, "Save operation cancelled by user during assistant message saving.")
-				return nil
-			}
-			return fmt.Errorf("failed to save assistant message: %w", err)
-		}
-	}
-
-	if interrupted && len(assistantMsgs) > 0 {
-		fmt.Fprintln(os.Stderr, "Partial dialog saved successfully.")
-	}
-
-	// Print the last message's ID to stderr before exiting
-	lastID := currentParentId
-	if lastID == "" {
-		// Fallback: if we somehow didn't save any message, try most recent assistant message id
-		if id, err := dialogStorage.GetMostRecentAssistantMessageId(ctx); err == nil {
-			lastID = id
-		}
-	}
-	if lastID != "" {
-		fmt.Fprintf(os.Stderr, "[cpe] last_message_id is %s\n", lastID)
-	}
-
-	return nil
+	// Call the business logic
+	return commands.Generate(saveCtx, commands.GenerateOptions{
+		UserBlocks:          userBlocks,
+		Config:              cfg,
+		ModelName:           modelName,
+		SystemPrompt:        systemPrompt,
+		ContinueID:          continueID,
+		NewConversation:     newConversation,
+		IncognitoMode:       incognitoMode,
+		GenerationOverrides: cliOverrides,
+		Storage:             dialogStorage,
+		Generator:           toolGen,
+		Stdout:              os.Stdout,
+		Stderr:              os.Stderr,
+	})
 }
 
 // processUserInput processes and combines user input from all available sources

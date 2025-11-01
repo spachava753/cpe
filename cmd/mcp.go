@@ -1,18 +1,14 @@
 package cmd
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
-	"strings"
+	"os"
 	"time"
 
 	"github.com/charmbracelet/glamour"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/spachava753/cpe/internal/commands"
 	"github.com/spachava753/cpe/internal/config"
-	mcpinternal "github.com/spachava753/cpe/internal/mcp"
 	"github.com/spf13/cobra"
 )
 
@@ -21,32 +17,6 @@ var (
 	mcpToolName   string
 	mcpToolArgs   string
 )
-
-func getGlamourRenderer() (*glamour.TermRenderer, error) {
-	return glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(120),
-	)
-}
-
-// getMCPConfig loads the unified configuration and returns the MCP configuration
-func getMCPConfig() (*mcpinternal.Config, error) {
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load configuration: %w", err)
-	}
-
-	mcpConfig := &mcpinternal.Config{
-		MCPServers: cfg.MCPServers,
-	}
-
-	if mcpConfig.MCPServers == nil {
-		mcpConfig.MCPServers = make(map[string]mcpinternal.ServerConfig)
-	}
-
-	return mcpConfig, nil
-}
-
 
 // mcpCmd represents the mcp command
 var mcpCmd = &cobra.Command{
@@ -66,56 +36,16 @@ var mcpListServersCmd = &cobra.Command{
 	Long:    `List all MCP servers defined in .cpemcp.json configuration file.`,
 	Aliases: []string{"ls-servers"},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		config, err := getMCPConfig()
+		cfg, err := config.LoadConfig(configPath)
 		if err != nil {
-			fmt.Printf("Warning: %v\n", err)
-			config = &mcpinternal.Config{MCPServers: make(map[string]mcpinternal.ServerConfig)}
+			fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+			cfg = &config.Config{}
 		}
 
-		if err := config.Validate(); err != nil {
-			fmt.Printf("Warning: %v\n", err)
-			config = &mcpinternal.Config{MCPServers: make(map[string]mcpinternal.ServerConfig)}
-		}
-
-		if len(config.MCPServers) == 0 {
-			fmt.Println("No MCP servers configured.")
-			return nil
-		}
-
-		fmt.Println("Configured MCP Servers:")
-		for name, server := range config.MCPServers {
-			serverType := server.Type
-			if serverType == "" {
-				serverType = "stdio"
-			}
-
-			// Show timeout (default or configured)
-			timeout := server.Timeout
-			if timeout == 0 {
-				timeout = 60 // Default timeout
-			}
-
-			fmt.Printf("- %s (Type: %s, Timeout: %ds)\n", name, serverType, timeout)
-
-			// Only show command for stdio servers
-			if serverType == "stdio" && server.Command != "" {
-				fmt.Printf("  Command: %s %s\n", server.Command, strings.Join(server.Args, " "))
-			}
-
-			if server.URL != "" {
-				fmt.Printf("  URL: %s\n", server.URL)
-			}
-
-			// Show environment variables for stdio servers
-			if (serverType == "stdio") && len(server.Env) > 0 {
-				fmt.Println("  Environment Variables:")
-				for k, v := range server.Env {
-					fmt.Printf("    %s=%s\n", k, v)
-				}
-			}
-		}
-
-		return nil
+		return commands.MCPListServers(cmd.Context(), commands.MCPListServersOptions{
+			Config: cfg,
+			Writer: os.Stdout,
+		})
 	},
 }
 
@@ -126,45 +56,17 @@ var mcpInfoCmd = &cobra.Command{
 	Long:  `Initialize connection to an MCP server and show its information.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		serverName := args[0]
-
-		config, err := getMCPConfig()
+		cfg, err := config.LoadConfig(configPath)
 		if err != nil {
-			fmt.Printf("Warning: %v\n", err)
-			config = &mcpinternal.Config{MCPServers: make(map[string]mcpinternal.ServerConfig)}
+			return fmt.Errorf("failed to load configuration: %w", err)
 		}
 
-		if err := config.Validate(); err != nil {
-			fmt.Printf("Warning: %v\n", err)
-			config = &mcpinternal.Config{MCPServers: make(map[string]mcpinternal.ServerConfig)}
-		}
-
-		if len(config.MCPServers) == 0 {
-			return fmt.Errorf("no MCP servers configured")
-		}
-
-		if _, exists := config.MCPServers[serverName]; !exists {
-			return fmt.Errorf("server '%s' not found in configuration", serverName)
-		}
-
-		client := mcpinternal.NewClient()
-
-		ctx, cancel := context.WithTimeout(cmd.Context(), 30*time.Second)
-		defer cancel()
-
-		// Get client to trigger initialization
-		transport, err := mcpinternal.CreateTransport(config.MCPServers[serverName])
-		if err != nil {
-			return err
-		}
-		cs, err := client.Connect(ctx, transport, nil)
-		if err != nil {
-			return err
-		}
-
-		fmt.Printf("Connected to server: %s\n", serverName)
-
-		return cs.Close()
+		return commands.MCPInfo(cmd.Context(), commands.MCPInfoOptions{
+			Config:     cfg,
+			ServerName: args[0],
+			Writer:     os.Stdout,
+			Timeout:    30 * time.Second,
+		})
 	},
 }
 
@@ -187,152 +89,30 @@ var mcpListToolsCmd = &cobra.Command{
 	Aliases: []string{"ls-tools"},
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		serverName := args[0]
-
-		config, err := getMCPConfig()
+		cfg, err := config.LoadConfig(configPath)
 		if err != nil {
-			fmt.Printf("Warning: %v\n", err)
-			config = &mcpinternal.Config{MCPServers: make(map[string]mcpinternal.ServerConfig)}
+			return fmt.Errorf("failed to load configuration: %w", err)
 		}
 
-		if err := config.Validate(); err != nil {
-			fmt.Printf("Warning: %v\n", err)
-			config = &mcpinternal.Config{MCPServers: make(map[string]mcpinternal.ServerConfig)}
-		}
-
-		if len(config.MCPServers) == 0 {
-			return fmt.Errorf("no MCP servers configured")
-		}
-
-		serverConfig, exists := config.MCPServers[serverName]
-		if !exists {
-			return fmt.Errorf("server '%s' not found in configuration", serverName)
-		}
-
-		client := mcpinternal.NewClient()
-
-		var allTools []*mcp.Tool
-		transport, err := mcpinternal.CreateTransport(serverConfig)
-		if err != nil {
-			return err
-		}
-		cs, err := client.Connect(cmd.Context(), transport, nil)
-		if err != nil {
-			return err
-		}
-		for tool, err := range cs.Tools(cmd.Context(), nil) {
-			if err != nil {
-				return err
-			}
-			allTools = append(allTools, tool)
-		}
-		if err := cs.Close(); err != nil {
-			return err
-		}
-
-		// Get flags
 		showAll, _ := cmd.Flags().GetBool("show-all")
 		showFiltered, _ := cmd.Flags().GetBool("show-filtered")
 
-		// Apply filtering to understand what would be filtered
-		filteredTools, filteredOut := mcpinternal.FilterMcpTools(allTools, serverConfig)
-
-		// Determine which tools to show based on flags
-		var toolsToShow []*mcp.Tool
-		var title string
-
-		if showAll {
-			toolsToShow = allTools
-			title = fmt.Sprintf("All tools on server '%s' (including filtered)", serverName)
-		} else if showFiltered {
-			// Create tool objects for filtered-out tools
-			for _, toolName := range filteredOut {
-				for _, tool := range allTools {
-					if tool.Name == toolName {
-						toolsToShow = append(toolsToShow, tool)
-						break
-					}
-				}
-			}
-			title = fmt.Sprintf("Filtered-out tools on server '%s'", serverName)
-		} else {
-			toolsToShow = filteredTools
-			title = fmt.Sprintf("Available tools on server '%s'", serverName)
-		}
-
-		// Build markdown content
-		var markdownBuilder strings.Builder
-
-		// Header
-		markdownBuilder.WriteString(fmt.Sprintf("# %s\n\n", title))
-
-		// Filter information
-		toolFilter := serverConfig.ToolFilter
-		if toolFilter == "" {
-			toolFilter = "all"
-		}
-
-		markdownBuilder.WriteString("**Filter mode:** `" + toolFilter + "`")
-
-		if toolFilter == "whitelist" && len(serverConfig.EnabledTools) > 0 {
-			markdownBuilder.WriteString(" | **Enabled tools:** `" + strings.Join(serverConfig.EnabledTools, "`, `") + "`")
-		}
-		if toolFilter == "blacklist" && len(serverConfig.DisabledTools) > 0 {
-			markdownBuilder.WriteString(" | **Disabled tools:** `" + strings.Join(serverConfig.DisabledTools, "`, `") + "`")
-		}
-
-		markdownBuilder.WriteString("\n**Total tools:** " + strconv.Itoa(len(allTools)) +
-			" | **Available:** " + strconv.Itoa(len(filteredTools)) +
-			" | **Filtered out:** " + strconv.Itoa(len(filteredOut)) + "\n\n")
-
-		if len(toolsToShow) == 0 {
-			markdownBuilder.WriteString("*No tools to display.*\n")
-		} else {
-			for _, tool := range toolsToShow {
-				// Mark filtered tools with a badge
-				filteredBadge := ""
-				if showAll {
-					for _, filteredName := range filteredOut {
-						if tool.Name == filteredName {
-							filteredBadge = " 🚫 *filtered*"
-							break
-						}
-					}
-				}
-
-				markdownBuilder.WriteString(fmt.Sprintf("### `%s`%s\n", tool.Name, filteredBadge))
-				markdownBuilder.WriteString(tool.Description + "\n\n")
-
-				// Add input schema
-				if tool.InputSchema != nil {
-					markdownBuilder.WriteString("**Input Schema:**\n\n")
-
-					// Create a proper JSON code block with indentation
-					var schemaJSON bytes.Buffer
-					encoder := json.NewEncoder(&schemaJSON)
-					encoder.SetIndent("", "  ")
-					if err := encoder.Encode(tool.InputSchema); err != nil {
-						markdownBuilder.WriteString("```json\n" + "Error encoding schema: " + err.Error() + "\n```\n\n")
-					} else {
-						markdownBuilder.WriteString("```json\n" + schemaJSON.String() + "\n```\n\n")
-					}
-				}
-			}
-		}
-
-		// Render with glamour
-		renderer, err := getGlamourRenderer()
+		renderer, err := glamour.NewTermRenderer(
+			glamour.WithAutoStyle(),
+			glamour.WithWordWrap(120),
+		)
 		if err != nil {
-			return fmt.Errorf("failed to create glamour renderer: %w", err)
+			return fmt.Errorf("failed to create markdown renderer: %w", err)
 		}
 
-		rendered, err := renderer.Render(markdownBuilder.String())
-		if err != nil {
-			return fmt.Errorf("failed to render markdown: %w", err)
-		}
-
-		fmt.Print(rendered)
-		return nil
+		return commands.MCPListTools(cmd.Context(), commands.MCPListToolsOptions{
+			Config:       cfg,
+			ServerName:   args[0],
+			Writer:       os.Stdout,
+			ShowAll:      showAll,
+			ShowFiltered: showFiltered,
+			Renderer:     renderer,
+		})
 	},
 }
 
@@ -350,28 +130,11 @@ var mcpCallToolCmd = &cobra.Command{
 			return fmt.Errorf("--tool is required")
 		}
 
-		config, err := getMCPConfig()
+		cfg, err := config.LoadConfig(configPath)
 		if err != nil {
-			fmt.Printf("Warning: %v\n", err)
-			config = &mcpinternal.Config{MCPServers: make(map[string]mcpinternal.ServerConfig)}
+			return fmt.Errorf("failed to load configuration: %w", err)
 		}
 
-		if err := config.Validate(); err != nil {
-			fmt.Printf("Warning: %v\n", err)
-			config = &mcpinternal.Config{MCPServers: make(map[string]mcpinternal.ServerConfig)}
-		}
-
-		if len(config.MCPServers) == 0 {
-			return fmt.Errorf("no MCP servers configured")
-		}
-
-		if _, exists := config.MCPServers[mcpServerName]; !exists {
-			return fmt.Errorf("server '%s' not found in configuration", mcpServerName)
-		}
-
-		client := mcpinternal.NewClient()
-
-		// Parse tool args
 		toolArgs := make(map[string]interface{})
 		if mcpToolArgs != "" {
 			if err := json.Unmarshal([]byte(mcpToolArgs), &toolArgs); err != nil {
@@ -379,35 +142,13 @@ var mcpCallToolCmd = &cobra.Command{
 			}
 		}
 
-		transport, err := mcpinternal.CreateTransport(config.MCPServers[mcpServerName])
-		if err != nil {
-			return err
-		}
-
-		cs, err := client.Connect(cmd.Context(), transport, nil)
-		if err != nil {
-			return err
-		}
-		defer cs.Close()
-
-		// Call the tool (client is already initialized in GetClient)
-		result, err := cs.CallTool(cmd.Context(), &mcp.CallToolParams{
-			Name:      mcpToolName,
-			Arguments: toolArgs,
+		return commands.MCPCallTool(cmd.Context(), commands.MCPCallToolOptions{
+			Config:     cfg,
+			ServerName: mcpServerName,
+			ToolName:   mcpToolName,
+			ToolArgs:   toolArgs,
+			Writer:     os.Stdout,
 		})
-		if err != nil {
-			return err
-		}
-
-		// Print the result - the result is a mcp.CallToolResult
-		// Extract text content from content
-		for _, content := range result.Content {
-			if textContent, ok := content.(*mcp.TextContent); ok {
-				fmt.Print(textContent.Text)
-			}
-		}
-
-		return nil
 	},
 }
 
