@@ -221,12 +221,8 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		cliOverrides.ThinkingBudget = &thinkingBudget
 	}
 
-	// Create a new context for save operation that can be cancelled independently
-	saveCtx, saveCancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer saveCancel()
-
 	// Call the business logic
-	return commands.Generate(saveCtx, commands.GenerateOptions{
+	return commands.Generate(ctx, commands.GenerateOptions{
 		UserBlocks:          userBlocks,
 		Config:              cfg,
 		ModelName:           modelName,

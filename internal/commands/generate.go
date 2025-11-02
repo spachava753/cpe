@@ -5,10 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/gai"
 )
+
+// newSignalContext creates a new context that listens for interrupt signals
+func newSignalContext() (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+}
 
 // DialogStorage is an interface for conversation storage operations
 type DialogStorage interface {
@@ -174,6 +182,11 @@ func Generate(ctx context.Context, opts GenerateOptions) error {
 	}
 	fmt.Fprintln(opts.Stderr, "You can cancel this save operation by interrupting (Ctrl+C).")
 	
+	// Create a new context for save operation that can be cancelled independently
+	// This allows the user to interrupt the save with a second Ctrl+C
+	saveCtx, saveCancel := newSignalContext()
+	defer saveCancel()
+	
 	// Determine assistant messages from result
 	assistantMsgs := resultDialog[len(dialog):]
 	
@@ -185,7 +198,7 @@ func Generate(ctx context.Context, opts GenerateOptions) error {
 	}
 	
 	// Save user message
-	userMsgID, err := opts.Storage.SaveMessage(ctx, userMessage, parentID, "")
+	userMsgID, err := opts.Storage.SaveMessage(saveCtx, userMessage, parentID, "")
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			fmt.Fprintln(opts.Stderr, "Save operation cancelled by user.")
@@ -197,7 +210,7 @@ func Generate(ctx context.Context, opts GenerateOptions) error {
 	// Save assistant messages
 	currentParentID := userMsgID
 	for _, assistantMsg := range assistantMsgs {
-		currentParentID, err = opts.Storage.SaveMessage(ctx, assistantMsg, currentParentID, "")
+		currentParentID, err = opts.Storage.SaveMessage(saveCtx, assistantMsg, currentParentID, "")
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				fmt.Fprintln(opts.Stderr, "Save operation cancelled by user during assistant message saving.")
@@ -214,7 +227,7 @@ func Generate(ctx context.Context, opts GenerateOptions) error {
 	// Print the last message's ID
 	lastID := currentParentID
 	if lastID == "" {
-		if id, err := opts.Storage.GetMostRecentAssistantMessageId(ctx); err == nil {
+		if id, err := opts.Storage.GetMostRecentAssistantMessageId(saveCtx); err == nil {
 			lastID = id
 		}
 	}
