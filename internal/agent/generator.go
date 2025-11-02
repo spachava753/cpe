@@ -64,7 +64,7 @@ func createOpenAIGenerator(model, baseURL, systemPrompt string, timeout time.Dur
 
 	client := openai.NewClient(clientOpts...)
 	generator := gai.NewOpenAiGenerator(&client.Chat.Completions, model, systemPrompt)
-	return &generator, nil
+	return NewPanicCatchingGenerator(&generator), nil
 }
 
 func createAnthropicGenerator(model, baseURL, systemPrompt string, timeout time.Duration, apiKey string, patchConfig *config.PatchRequestConfig) (gai.Generator, error) {
@@ -90,7 +90,7 @@ func createAnthropicGenerator(model, baseURL, systemPrompt string, timeout time.
 	client = anthropic.NewClient(opts...)
 	svc := gai.NewAnthropicServiceWrapper(&client.Messages, gai.EnableSystemCaching, gai.EnableMultiTurnCaching)
 	generator := gai.NewAnthropicGenerator(svc, model, systemPrompt)
-	return generator, nil
+	return NewPanicCatchingGenerator(generator), nil
 }
 
 func createGeminiGenerator(model, baseURL, systemPrompt string, timeout time.Duration, apiKey string, patchConfig *config.PatchRequestConfig) (gai.Generator, error) {
@@ -123,7 +123,8 @@ func createGeminiGenerator(model, baseURL, systemPrompt string, timeout time.Dur
 	b.InitialInterval = 500 * time.Millisecond
 	b.MaxInterval = 1 * time.Minute
 	b.Reset()
-	return gai.NewRetryGenerator(g, b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute)), nil
+	retryGen := gai.NewRetryGenerator(g, b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute))
+	return NewPanicCatchingGenerator(retryGen), nil
 }
 
 func createResponsesGenerator(model, baseURL, systemPrompt string, timeout time.Duration, apiKey string, patchConfig *config.PatchRequestConfig) (gai.Generator, error) {
@@ -147,7 +148,7 @@ func createResponsesGenerator(model, baseURL, systemPrompt string, timeout time.
 
 	client := openai.NewClient(clientOpts...)
 	generator := gai.NewResponsesGenerator(&client.Responses, model, systemPrompt)
-	return &generator, nil
+	return NewPanicCatchingGenerator(&generator), nil
 }
 
 func createOpenRouterGenerator(model, baseURL, systemPrompt string, timeout time.Duration, apiKey string, patchConfig *config.PatchRequestConfig) (gai.Generator, error) {
@@ -171,7 +172,7 @@ func createOpenRouterGenerator(model, baseURL, systemPrompt string, timeout time
 
 	client := openai.NewClient(clientOpts...)
 	generator := gai.NewOpenRouterGenerator(&client.Chat.Completions, model, systemPrompt)
-	return generator, nil
+	return NewPanicCatchingGenerator(generator), nil
 }
 
 type ToolRegisterer interface {
@@ -221,7 +222,7 @@ func InitGeneratorFromModel(m config.Model, systemPrompt string, timeout time.Du
 		if apiKey == "" {
 			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 		}
-		return gai.NewCerebrasGenerator(nil, baseURL, m.ID, systemPrompt, apiKey), nil
+		return NewPanicCatchingGenerator(gai.NewCerebrasGenerator(nil, baseURL, m.ID, systemPrompt, apiKey)), nil
 	case "responses":
 		if apiEnv == "" {
 			apiEnv = "OPENAI_API_KEY"
