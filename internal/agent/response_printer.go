@@ -108,8 +108,13 @@ func (g *ResponsePrinterGenerator) renderContent(content string) string {
 	return rendered
 }
 
-// renderThinking renders a thinking block with a muted glamour style
-func (g *ResponsePrinterGenerator) renderThinking(content string) string {
+// renderThinking renders a thinking block with a muted glamour style.
+// If the reasoning content is encrypted, it returns a message indicating encryption.
+func (g *ResponsePrinterGenerator) renderThinking(content string, reasoningType interface{}) string {
+	if reasoningType == "reasoning.encrypted" {
+		content = "[Reasoning content is encrypted]\n"
+	}
+
 	rendered, err := g.thinkingRenderer.Render(strings.TrimSpace(content))
 	if err != nil {
 		// Fallback to plain text if rendering fails
@@ -162,7 +167,8 @@ func (g *ResponsePrinterGenerator) Generate(ctx context.Context, dialog gai.Dial
 			case gai.Content:
 				content = g.renderContent(content)
 			case gai.Thinking:
-				content = g.renderThinking(content)
+				reasoningType := block.ExtraFields["reasoning_type"]
+				content = g.renderThinking(content, reasoningType)
 			case gai.ToolCall:
 				content = g.renderToolCall(content)
 			default:
