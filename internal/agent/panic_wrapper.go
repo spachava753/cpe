@@ -10,7 +10,12 @@ import (
 // PanicCatchingGenerator wraps a gai.Generator and catches any panics,
 // converting them to errors so that dialogs can be saved even if a panic occurs
 type PanicCatchingGenerator struct {
-	G gai.Generator
+	G gai.ToolCapableGenerator
+}
+
+// Register implements the gai.ToolRegister interface by delegating to the wrapped generator.
+func (p *PanicCatchingGenerator) Register(tool gai.Tool) error {
+	return p.G.Register(tool)
 }
 
 // Generate implements gai.Generator by catching panics and converting them to errors
@@ -25,6 +30,6 @@ func (p *PanicCatchingGenerator) Generate(ctx context.Context, dialog gai.Dialog
 }
 
 // NewPanicCatchingGenerator wraps a generator with panic recovery
-func NewPanicCatchingGenerator(g gai.Generator) gai.Generator {
+func NewPanicCatchingGenerator(g gai.ToolCapableGenerator) gai.ToolCapableGenerator {
 	return &PanicCatchingGenerator{G: g}
 }
