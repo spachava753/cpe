@@ -1,12 +1,7 @@
 package mcp
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
-	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 // Config represents the structure of the MCP configuration file
@@ -27,79 +22,6 @@ type ServerConfig struct {
 	ToolFilter    string            `json:"toolFilter,omitempty" yaml:"toolFilter,omitempty"`       // "whitelist", "blacklist", or "all" (default)
 }
 
-// LoadConfig loads the MCP configuration from a specified file path or from default .cpemcp files
-// If configPath is provided, it loads from that specific file
-// If configPath is empty, it falls back to searching for .cpemcp.json, .cpemcp.yaml, or .cpemcp.yml files
-// If no config file is found, it returns an empty configuration instead of an error
-// If a config file exists but has reading or parsing errors, it returns an error
-func LoadConfig(configPath string) (*Config, error) {
-	var actualConfigPath string
-
-	if configPath != "" {
-		// Load from specified path
-		actualConfigPath = configPath
-		if _, err := os.Stat(actualConfigPath); os.IsNotExist(err) {
-			return nil, fmt.Errorf("specified config file does not exist: %s", actualConfigPath)
-		}
-	} else {
-		// Define possible config file names in order of precedence
-		configFileNames := []string{".cpemcp.json", ".cpemcp.yaml", ".cpemcp.yml"}
-
-		// Look only in the current directory
-		for _, fileName := range configFileNames {
-			if _, err := os.Stat(fileName); err == nil {
-				actualConfigPath = fileName
-				break
-			}
-		}
-
-		// If no config file found, return empty config
-		if actualConfigPath == "" {
-			return &Config{MCPServers: make(map[string]ServerConfig)}, nil
-		}
-	}
-
-	// Read the config file, return error if reading fails
-	data, err := os.ReadFile(actualConfigPath)
-	if err != nil {
-		return nil, fmt.Errorf("error reading config file %s: %w", actualConfigPath, err)
-	}
-
-	// Parse the file based on its extension
-	var config Config
-	var parseErr error
-
-	if strings.HasSuffix(actualConfigPath, ".json") {
-		// Parse JSON
-		parseErr = json.Unmarshal(data, &config)
-	} else if strings.HasSuffix(actualConfigPath, ".yaml") || strings.HasSuffix(actualConfigPath, ".yml") {
-		// Parse YAML
-		parseErr = yaml.Unmarshal(data, &config)
-	} else {
-		// Try JSON first, then YAML as a fallback
-		jsonErr := json.Unmarshal(data, &config)
-		if jsonErr != nil {
-			yamlErr := yaml.Unmarshal(data, &config)
-			if yamlErr != nil {
-				// Both parsing attempts failed
-				return nil, fmt.Errorf("failed to parse %s: JSON error: %v, YAML error: %v",
-					actualConfigPath, jsonErr, yamlErr)
-			}
-		}
-	}
-
-	// If parsing failed, return error
-	if parseErr != nil {
-		return nil, fmt.Errorf("error parsing config file %s: %w", actualConfigPath, parseErr)
-	}
-
-	// Initialize the map if it's nil
-	if config.MCPServers == nil {
-		config.MCPServers = make(map[string]ServerConfig)
-	}
-
-	return &config, nil
-}
 
 // Validate checks if the configuration is valid
 func (c *Config) Validate() error {

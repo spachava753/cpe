@@ -1,7 +1,6 @@
 package mcp
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -135,92 +134,6 @@ func TestConfigValidation(t *testing.T) {
 	}
 }
 
-func TestConfigFileIO(t *testing.T) {
-	// Create a temporary directory
-	tmpDir, err := os.MkdirTemp("", "mcp-test")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Change to the temporary directory
-	originalDir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Failed to get current directory: %v", err)
-	}
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("Failed to change to temp dir: %v", err)
-	}
-	defer os.Chdir(originalDir)
-
-	// Create example config manually
-	exampleConfig := `{
-  "mcpServers": {
-    "filesystem": {
-      "command": "pnpm",
-      "args": ["dlx", "@modelcontextprotocol/server-filesystem", "."],
-      "type": "stdio",
-      "timeout": 30,
-      "toolFilter": "whitelist",
-      "enabledTools": ["read_file", "write_file"]
-    },
-    "shell": {
-      "command": "pnpm",
-      "args": ["dlx", "mcp-shell"],
-      "type": "stdio",
-      "timeout": 60,
-      "toolFilter": "blacklist",
-      "disabledTools": ["system_restart"]
-    }
-  }
-}`
-	if err := os.WriteFile(".cpemcp.json", []byte(exampleConfig), 0644); err != nil {
-		t.Fatalf("Failed to create example config: %v", err)
-	}
-
-	// Load the config
-	config, err := LoadConfig("")
-	if err != nil {
-		t.Fatalf("LoadConfig() error = %v", err)
-	}
-
-	// Verify config content - updated to match new example config
-	if len(config.MCPServers) != 2 {
-		t.Errorf("Expected 2 servers, got %d", len(config.MCPServers))
-	}
-
-	if _, ok := config.MCPServers["filesystem"]; !ok {
-		t.Errorf("Expected 'filesystem' server to exist")
-	}
-
-	if _, ok := config.MCPServers["shell"]; !ok {
-		t.Errorf("Expected 'shell' server to exist")
-	}
-
-	// Check filesystem server with whitelist filtering
-	fsServer := config.MCPServers["filesystem"]
-	if fsServer.Timeout != 30 {
-		t.Errorf("Expected filesystem timeout to be 30, got %d", fsServer.Timeout)
-	}
-
-	if fsServer.ToolFilter != "whitelist" {
-		t.Errorf("Expected filesystem toolFilter to be 'whitelist', got %s", fsServer.ToolFilter)
-	}
-
-	if len(fsServer.EnabledTools) == 0 {
-		t.Errorf("Expected filesystem server to have enabled tools")
-	}
-
-	// Check shell server with blacklist filtering
-	shellServer := config.MCPServers["shell"]
-	if shellServer.ToolFilter != "blacklist" {
-		t.Errorf("Expected shell toolFilter to be 'blacklist', got %s", shellServer.ToolFilter)
-	}
-
-	if len(shellServer.DisabledTools) == 0 {
-		t.Errorf("Expected shell server to have disabled tools")
-	}
-}
 
 func TestToolFilterValidation(t *testing.T) {
 	tests := []struct {
@@ -457,72 +370,5 @@ func TestFilterTools(t *testing.T) {
 				}
 			}
 		})
-	}
 }
-
-func TestLoadConfigWithCustomPath(t *testing.T) {
-	// Create a temporary directory
-	tmpDir := t.TempDir()
-
-	// Create a custom config file
-	customConfigPath := tmpDir + "/custom_mcp.json"
-	customConfig := `{
-  "mcpServers": {
-    "custom_server": {
-      "command": "echo",
-      "args": ["custom test"],
-      "type": "stdio",
-      "timeout": 10
-    }
-  }
-}`
-
-	if err := os.WriteFile(customConfigPath, []byte(customConfig), 0644); err != nil {
-		t.Fatalf("Failed to create custom config file: %v", err)
-	}
-
-	// Test loading from custom path
-	config, err := LoadConfig(customConfigPath)
-	if err != nil {
-		t.Fatalf("LoadConfig() with custom path error = %v", err)
-	}
-
-	if len(config.MCPServers) != 1 {
-		t.Errorf("Expected 1 server, got %d", len(config.MCPServers))
-	}
-
-	if _, ok := config.MCPServers["custom_server"]; !ok {
-		t.Errorf("Expected 'custom_server' to exist")
-	}
-
-	// Test loading from non-existent path
-	_, err = LoadConfig("/nonexistent/path.json")
-	if err == nil {
-		t.Error("Expected error when loading non-existent config file")
-	}
-}
-
-func TestLoadConfigEmptyPath(t *testing.T) {
-	// Create a temporary directory
-	tmpDir := t.TempDir()
-
-	// Change to the temporary directory
-	originalDir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Failed to get current directory: %v", err)
-	}
-	if err := os.Chdir(tmpDir); err != nil {
-		t.Fatalf("Failed to change to temp dir: %v", err)
-	}
-	defer os.Chdir(originalDir)
-
-	// Test loading with empty path (should return empty config)
-	config, err := LoadConfig("")
-	if err != nil {
-		t.Fatalf("LoadConfig() with empty path error = %v", err)
-	}
-
-	if len(config.MCPServers) != 0 {
-		t.Errorf("Expected 0 servers, got %d", len(config.MCPServers))
-	}
 }
