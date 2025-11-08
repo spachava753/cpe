@@ -28,68 +28,6 @@ func TestConfig_FindModel(t *testing.T) {
 	}
 }
 
-func TestModelConfig_GetEffectiveSystemPromptPath(t *testing.T) {
-	modelWithOverride := &ModelConfig{SystemPromptPath: "model.prompt"}
-	modelWithoutOverride := &ModelConfig{}
-
-	tests := []struct {
-		name          string
-		model         *ModelConfig
-		globalDefault string
-		cliOverride   string
-		expected      string
-	}{
-		{
-			name:          "cli override wins",
-			model:         modelWithOverride,
-			globalDefault: "global.prompt",
-			cliOverride:   "cli.prompt",
-			expected:      "cli.prompt",
-		},
-		{
-			name:          "model override wins",
-			model:         modelWithOverride,
-			globalDefault: "global.prompt",
-			cliOverride:   "",
-			expected:      "model.prompt",
-		},
-		{
-			name:          "fallback to global",
-			model:         modelWithoutOverride,
-			globalDefault: "global.prompt",
-			cliOverride:   "",
-			expected:      "global.prompt",
-		},
-		{
-			name:          "nil model uses global",
-			model:         nil,
-			globalDefault: "global.prompt",
-			cliOverride:   "",
-			expected:      "global.prompt",
-		},
-		{
-			name:          "cli wins even with nil model",
-			model:         nil,
-			globalDefault: "",
-			cliOverride:   "cli.prompt",
-			expected:      "cli.prompt",
-		},
-		{
-			name:          "all empty",
-			model:         nil,
-			globalDefault: "",
-			cliOverride:   "",
-			expected:      "",
-		},
-	}
-
-	for _, tt := range tests {
-		if got := tt.model.GetEffectiveSystemPromptPath(tt.globalDefault, tt.cliOverride); got != tt.expected {
-			t.Fatalf("%s: expected %q, got %q", tt.name, tt.expected, got)
-		}
-	}
-}
-
 func TestModelConfig_GetEffectiveGenerationParams(t *testing.T) {
 	tempModel := 0.5
 	topPModel := 0.8

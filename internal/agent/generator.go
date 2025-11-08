@@ -139,23 +139,11 @@ func CreateToolCapableGenerator(
 	// only from the initial dialog, but preserve them during tool execution
 	filterToolGen := NewBlockWhitelistFilter(toolGen, []string{gai.Content, gai.ToolCall})
 
-	// Create MCP configuration from unified config
-	mcpConfig := &mcp.Config{
-		MCPServers: mcpServers,
-	}
-
-	// Validate MCP configuration if servers exist
-	if len(mcpServers) > 0 {
-		if err := mcpConfig.Validate(); err != nil {
-			return nil, fmt.Errorf("invalid MCP configuration: %w", err)
-		}
-	}
-
 	// Create client manager
 	client := mcpinternal.NewClient()
 
 	// Register MCP server tools
-	if err = mcp.RegisterMCPServerTools(ctx, client, *mcpConfig, filterToolGen); err != nil {
+	if err = mcp.RegisterMCPServerTools(ctx, client, mcpServers, filterToolGen); err != nil {
 		return nil, fmt.Errorf("failed to register MCP tools: %v\n", err)
 	}
 

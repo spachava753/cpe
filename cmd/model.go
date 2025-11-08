@@ -26,7 +26,7 @@ var listModelCmd = &cobra.Command{
 			return fmt.Errorf("failed to load configuration: %w", err)
 		}
 
-		defaultModel := cfg.GetDefaultModel()
+		defaultModel := cfg.Defaults.Model
 		if defaultModel == "" {
 			defaultModel = DefaultModel
 		}
@@ -80,8 +80,8 @@ var systemPromptModelCmd = &cobra.Command{
 
 		modelName := model
 		if modelName == "" {
-			if cfg.GetDefaultModel() != "" {
-				modelName = cfg.GetDefaultModel()
+			if cfg.Defaults.Model != "" {
+				modelName = cfg.Defaults.Model
 			} else if DefaultModel != "" {
 				modelName = DefaultModel
 			}
@@ -91,10 +91,21 @@ var systemPromptModelCmd = &cobra.Command{
 			return fmt.Errorf("no model specified. Use --model flag or set defaults.model in configuration")
 		}
 
+		systemPromptPath := cfg.Defaults.SystemPromptPath
+		if m, ok := cfg.FindModel(modelName); ok && m.SystemPromptPath != "" {
+			systemPromptPath = m.SystemPromptPath
+		}
+
+		f, err := os.Open(systemPromptPath)
+		if err != nil {
+			return err
+		}
+
 		return commands.ModelSystemPrompt(commands.ModelSystemPromptOptions{
-			Config:    cfg,
-			ModelName: modelName,
-			Output:    cmd.OutOrStdout(),
+			Config:       cfg,
+			ModelName:    modelName,
+			Output:       cmd.OutOrStdout(),
+			SystemPrompt: f,
 		})
 	},
 }

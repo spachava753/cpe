@@ -8,14 +8,14 @@ import (
 
 // Model represents an AI model configuration
 type Model struct {
-	Ref                  string              `json:"ref" yaml:"ref"`
-	DisplayName          string              `json:"display_name" yaml:"display_name"`
-	ID                   string              `json:"id" yaml:"id"`
-	Type                 string              `json:"type" yaml:"type"`
-	BaseUrl              string              `json:"base_url" yaml:"base_url"`
-	ApiKeyEnv            string              `json:"api_key_env" yaml:"api_key_env"`
-	ContextWindow        uint32              `json:"context_window" yaml:"context_window"`
-	MaxOutput            uint32              `json:"max_output" yaml:"max_output"`
+	Ref                  string              `json:"ref" yaml:"ref" validate:"required"`
+	DisplayName          string              `json:"display_name" yaml:"display_name" validate:"required"`
+	ID                   string              `json:"id" yaml:"id" validate:"required"`
+	Type                 string              `json:"type" yaml:"type" validate:"required,one_of=openai anthropic gemini responses groq cerebras openrouter"`
+	BaseUrl              string              `json:"base_url" yaml:"base_url" validate:"https_url|http_url"`
+	ApiKeyEnv            string              `json:"api_key_env" yaml:"api_key_env" validate:"required"`
+	ContextWindow        uint32              `json:"context_window" yaml:"context_window" validate:"gt=0"`
+	MaxOutput            uint32              `json:"max_output" yaml:"max_output" validate:"gt=0"`
 	InputCostPerMillion  float64             `json:"input_cost_per_million" yaml:"input_cost_per_million"`
 	OutputCostPerMillion float64             `json:"output_cost_per_million" yaml:"output_cost_per_million"`
 	PatchRequest         *PatchRequestConfig `json:"patchRequest,omitempty" yaml:"patchRequest,omitempty"`
@@ -30,13 +30,28 @@ type PatchRequestConfig struct {
 // Config represents the unified configuration structure
 type Config struct {
 	// MCP server configurations
-	MCPServers map[string]mcp.ServerConfig `yaml:"mcpServers,omitempty" json:"mcpServers,omitempty"`
+	MCPServers map[string]mcp.ServerConfig `yaml:"mcpServers,omitempty" json:"mcpServers,omitempty" validate:"dive"`
 
 	// Model definitions
 	Models []ModelConfig `yaml:"models" json:"models"`
 
 	// Default settings
-	Defaults DefaultConfig `yaml:"defaults,omitempty" json:"defaults,omitempty"`
+	Defaults struct {
+		// Path to system prompt template file
+		SystemPromptPath string `yaml:"systemPromptPath,omitempty" json:"systemPromptPath,omitempty" validate:"omitempty,filepath"`
+
+		// Default model to use if not specified
+		Model string `yaml:"model,omitempty" json:"model,omitempty"`
+
+		// Global generation parameter defaults
+		GenerationParams *GenerationParams `yaml:"generationParams,omitempty" json:"generationParams,omitempty" validate:"omitempty"`
+
+		// Request timeout
+		Timeout string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+
+		// Disable streaming globally
+		NoStream bool `yaml:"noStream,omitempty" json:"noStream,omitempty"`
+	} `yaml:"defaults,omitempty" json:"defaults,omitempty"`
 
 	// Version for future compatibility
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`
@@ -44,73 +59,35 @@ type Config struct {
 
 // ModelConfig extends the base model with generation defaults
 type ModelConfig struct {
-	Model `yaml:",inline" json:",inline"`
+	Model `yaml:",inline" json:",inline" validate:"dive"`
 
 	// Optional override for the system prompt template path
-	SystemPromptPath string `yaml:"systemPromptPath,omitempty" json:"systemPromptPath,omitempty"`
+	SystemPromptPath string `yaml:"systemPromptPath,omitempty" json:"systemPromptPath,omitempty" validate:"filepath"`
 
 	// Generation parameter defaults for this model
-	GenerationDefaults *GenerationParams `yaml:"generationDefaults,omitempty" json:"generationDefaults,omitempty"`
+	GenerationDefaults *GenerationParams `yaml:"generationDefaults,omitempty" json:"generationDefaults,omitempty" validate:"dive"`
 }
 
 // GenerationParams holds generation parameters
 type GenerationParams struct {
-	Temperature       *float64 `yaml:"temperature,omitempty" json:"temperature,omitempty"`
+	Temperature       *float64 `yaml:"temperature,omitempty" json:"temperature,omitempty" validate:"lte=2,gte=-2"`
 	TopP              *float64 `yaml:"topP,omitempty" json:"topP,omitempty"`
 	TopK              *int     `yaml:"topK,omitempty" json:"topK,omitempty"`
-	MaxTokens         *int     `yaml:"maxTokens,omitempty" json:"maxTokens,omitempty"`
+	MaxTokens         *int     `yaml:"maxTokens,omitempty" json:"maxTokens,omitempty" validate:"omitempty,gt=0"`
 	ThinkingBudget    *string  `yaml:"thinkingBudget,omitempty" json:"thinkingBudget,omitempty"`
 	FrequencyPenalty  *float64 `yaml:"frequencyPenalty,omitempty" json:"frequencyPenalty,omitempty"`
 	PresencePenalty   *float64 `yaml:"presencePenalty,omitempty" json:"presencePenalty,omitempty"`
 	NumberOfResponses *int     `yaml:"numberOfResponses,omitempty" json:"numberOfResponses,omitempty"`
 }
 
-// DefaultConfig holds global defaults
-type DefaultConfig struct {
-	// Path to system prompt template file
-	SystemPromptPath string `yaml:"systemPromptPath,omitempty" json:"systemPromptPath,omitempty"`
-
-	// Default model to use if not specified
-	Model string `yaml:"model,omitempty" json:"model,omitempty"`
-
-	// Global generation parameter defaults
-	GenerationParams *GenerationParams `yaml:"generationParams,omitempty" json:"generationParams,omitempty"`
-
-	// Request timeout
-	Timeout string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
-
-	// Disable streaming globally
-	NoStream bool `yaml:"noStream,omitempty" json:"noStream,omitempty"`
-}
-
 // FindModel searches for a model by ref in the config
-func (c *Config) FindModel(ref string) (*ModelConfig, bool) {
+func (c *Config) FindModel(ref string) (ModelConfig, bool) {
 	for _, model := range c.Models {
 		if model.Ref == ref {
-			return &model, true
+			return model, true
 		}
 	}
-	return nil, false
-}
-
-// GetDefaultModel returns the default model name from config or environment
-func (c *Config) GetDefaultModel() string {
-	if c.Defaults.Model != "" {
-		return c.Defaults.Model
-	}
-	return ""
-}
-
-// GetEffectiveSystemPromptPath resolves the system prompt path precedence.
-// Priority: explicit CLI override > model override > global default.
-func (m *ModelConfig) GetEffectiveSystemPromptPath(globalDefault, cliOverride string) string {
-	if cliOverride != "" {
-		return cliOverride
-	}
-	if m != nil && m.SystemPromptPath != "" {
-		return m.SystemPromptPath
-	}
-	return globalDefault
+	return ModelConfig{}, false
 }
 
 // GetEffectiveGenerationParams returns the effective generation parameters by merging model defaults, global defaults, and CLI overrides.

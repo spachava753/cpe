@@ -126,8 +126,8 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	// Determine which model to use
 	modelName := model
 	if modelName == "" {
-		if cfg.GetDefaultModel() != "" {
-			modelName = cfg.GetDefaultModel()
+		if cfg.Defaults.Model != "" {
+			modelName = cfg.Defaults.Model
 		} else if DefaultModel != "" {
 			modelName = DefaultModel
 		} else {

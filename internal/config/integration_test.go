@@ -111,8 +111,8 @@ defaults:
 		t.Fatalf("unexpected command %s", editor.Command)
 	}
 
-	if cfg.GetDefaultModel() != "sonnet" {
-		t.Fatalf("expected default model sonnet, got %s", cfg.GetDefaultModel())
+	if cfg.Defaults.Model != "sonnet" {
+		t.Fatalf("expected default model sonnet, got %s", cfg.Defaults.Model)
 	}
 	if cfg.Defaults.Timeout != "5m" {
 		t.Fatalf("expected timeout 5m, got %s", cfg.Defaults.Timeout)

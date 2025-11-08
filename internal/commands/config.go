@@ -24,8 +24,8 @@ func ConfigLint(ctx context.Context, opts ConfigLintOptions) error {
 		fmt.Fprintf(opts.Writer, "  MCP Servers: %d\n", len(opts.Config.MCPServers))
 	}
 
-	if opts.Config.GetDefaultModel() != "" {
-		fmt.Fprintf(opts.Writer, "  Default Model: %s\n", opts.Config.GetDefaultModel())
+	if opts.Config.Defaults.Model != "" {
+		fmt.Fprintf(opts.Writer, "  Default Model: %s\n", opts.Config.Defaults.Model)
 	}
 
 	return nil

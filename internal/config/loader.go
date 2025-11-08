@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/go-playground/validator/v10"
 	"gopkg.in/yaml.v3"
 )
 
@@ -47,17 +48,15 @@ func LoadConfig(explicitPath string) (Config, error) {
 		return Config{}, fmt.Errorf("failed to load config from %s: %w", configPath, err)
 	}
 
-	// Validate the configuration
-	if err := config.Validate(); err != nil {
-		return Config{}, fmt.Errorf("invalid configuration: %w", err)
-	}
-
 	// Expand environment variables
 	if err := config.expandEnvironmentVariables(); err != nil {
 		return Config{}, fmt.Errorf("failed to expand environment variables: %w", err)
 	}
 
-	return config, nil
+	// Validate the configuration
+	validate := validator.New(validator.WithRequiredStructEnabled())
+
+	return config, validate.Struct(config)
 }
 
 // findConfigFile searches for configuration files in the expected locations
