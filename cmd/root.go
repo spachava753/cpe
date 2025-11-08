@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"dario.cat/mergo"
 	"github.com/gabriel-vasile/mimetype"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/spachava753/cpe/internal/agent"
@@ -198,8 +199,20 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		defer dialogStorage.Close()
 	}
 
+	var genParams config.GenerationParams
+	if cfg.Defaults.GenerationParams != nil {
+		if err := mergo.Merge(&genParams, *cfg.Defaults.GenerationParams); err != nil {
+			return err
+		}
+	}
+	if selectedModel.GenerationDefaults != nil {
+		if err := mergo.Merge(&genParams, *selectedModel.GenerationDefaults, mergo.WithOverride); err != nil {
+			return err
+		}
+	}
+
 	// Build CLI overrides from flags
-	cliOverrides := &config.GenerationParams{}
+	cliOverrides := config.GenerationParams{}
 	if maxTokens > 0 {
 		cliOverrides.MaxTokens = &maxTokens
 	}
@@ -225,20 +238,53 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		cliOverrides.ThinkingBudget = &thinkingBudget
 	}
 
+	if err := mergo.Merge(&genParams, cliOverrides, mergo.WithOverride); err != nil {
+		return err
+	}
+
+	var genOpts gai.GenOpts
+
+	// Set max tokens from model max_output or effective params
+	genOpts.MaxGenerationTokens = int(selectedModel.Model.MaxOutput)
+	if genParams.MaxTokens != nil {
+		genOpts.MaxGenerationTokens = *genParams.MaxTokens
+	}
+
+	// Convert type config.GenerationParams to gai.GenOpts
+	if genParams.Temperature != nil {
+		genOpts.Temperature = *genParams.Temperature
+	}
+	if genParams.TopP != nil {
+		genOpts.TopP = *genParams.TopP
+	}
+	if genParams.TopK != nil {
+		genOpts.TopK = uint(*genParams.TopK)
+	}
+	if genParams.FrequencyPenalty != nil {
+		genOpts.FrequencyPenalty = *genParams.FrequencyPenalty
+	}
+	if genParams.PresencePenalty != nil {
+		genOpts.PresencePenalty = *genParams.PresencePenalty
+	}
+	if genParams.NumberOfResponses != nil {
+		genOpts.N = uint(*genParams.NumberOfResponses)
+	}
+	if genParams.ThinkingBudget != nil {
+		genOpts.ThinkingBudget = *genParams.ThinkingBudget
+	}
+
 	// Call the business logic
 	return commands.Generate(ctx, commands.GenerateOptions{
-		UserBlocks:          userBlocks,
-		Config:              cfg,
-		ModelName:           modelName,
-		SystemPrompt:        systemPrompt,
-		ContinueID:          continueID,
-		NewConversation:     newConversation,
-		IncognitoMode:       incognitoMode,
-		GenerationOverrides: cliOverrides,
-		Storage:             dialogStorage,
-		Generator:           toolGen,
-		Stdout:              os.Stdout,
-		Stderr:              os.Stderr,
+		UserBlocks:      userBlocks,
+		ContinueID:      continueID,
+		NewConversation: newConversation,
+		IncognitoMode:   incognitoMode,
+		GenOptsFunc: func(dialog gai.Dialog) *gai.GenOpts {
+			return &genOpts
+		},
+		Storage:   dialogStorage,
+		Generator: toolGen,
+		Stderr:    os.Stderr,
 	})
 }
 

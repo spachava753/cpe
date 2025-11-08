@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/gai"
 )
 
@@ -36,25 +35,18 @@ type GenerateOptions struct {
 	// User input
 	UserBlocks []gai.Block
 
-	// Model and configuration
-	Config       config.Config
-	ModelName    string
-	SystemPrompt string
-
 	// Conversation state
 	ContinueID      string
 	NewConversation bool
 	IncognitoMode   bool
 
-	// Generation parameters (CLI overrides)
-	GenerationOverrides *config.GenerationParams
+	GenOptsFunc gai.GenOptsGenerator
 
 	// Dependencies
 	Storage   DialogStorage
 	Generator ToolCapableGenerator
 
 	// Output
-	Stdout io.Writer
 	Stderr io.Writer
 }
 
@@ -62,16 +54,6 @@ type GenerateOptions struct {
 func Generate(ctx context.Context, opts GenerateOptions) error {
 	if len(opts.UserBlocks) == 0 {
 		return errors.New("empty input")
-	}
-
-	if opts.ModelName == "" {
-		return errors.New("no model specified")
-	}
-
-	// Find the model in configuration
-	selectedModel, found := opts.Config.FindModel(opts.ModelName)
-	if !found {
-		return fmt.Errorf("model %q not found in configuration", opts.ModelName)
 	}
 
 	// Determine continue ID if not explicitly set
@@ -112,53 +94,8 @@ func Generate(ctx context.Context, opts GenerateOptions) error {
 		dialog = append(dialog, userMessage)
 	}
 
-	// Get effective generation parameters
-	effective := selectedModel.GetEffectiveGenerationParams(
-		opts.Config.Defaults.GenerationParams,
-		opts.GenerationOverrides,
-	)
-
-	// Create generation options function
-	genOptsGen := func(d gai.Dialog) *gai.GenOpts {
-		genOpts := &gai.GenOpts{}
-
-		// Set max tokens from model max_output or effective params
-		genOpts.MaxGenerationTokens = int(selectedModel.Model.MaxOutput)
-		if effective.MaxTokens != nil {
-			genOpts.MaxGenerationTokens = *effective.MaxTokens
-		}
-
-		// Apply effective parameters
-		if effective.Temperature != nil {
-			genOpts.Temperature = *effective.Temperature
-		}
-		if effective.TopP != nil {
-			genOpts.TopP = *effective.TopP
-		}
-		if effective.TopK != nil {
-			genOpts.TopK = uint(*effective.TopK)
-		}
-		if effective.FrequencyPenalty != nil {
-			genOpts.FrequencyPenalty = *effective.FrequencyPenalty
-		}
-		if effective.PresencePenalty != nil {
-			genOpts.PresencePenalty = *effective.PresencePenalty
-		}
-		if effective.NumberOfResponses != nil {
-			genOpts.N = uint(*effective.NumberOfResponses)
-		}
-		if effective.ThinkingBudget != nil {
-			genOpts.ThinkingBudget = *effective.ThinkingBudget
-		}
-
-		return genOpts
-	}
-
 	// Generate the response
-	resultDialog, err := opts.Generator.Generate(ctx, dialog, genOptsGen)
-
-	// Add separator
-	fmt.Fprintf(opts.Stdout, "\n\n")
+	resultDialog, err := opts.Generator.Generate(ctx, dialog, opts.GenOptsFunc)
 
 	interrupted := errors.Is(err, context.Canceled)
 	if err != nil && !interrupted {

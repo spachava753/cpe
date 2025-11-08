@@ -3,6 +3,7 @@ package config
 //go:generate go run github.com/spachava753/cpe/cmd/gen-schema
 
 import (
+	"dario.cat/mergo"
 	"github.com/spachava753/cpe/internal/mcp"
 )
 
@@ -96,62 +97,19 @@ func (c *Config) FindModel(ref string) (ModelConfig, bool) {
 func (m *ModelConfig) GetEffectiveGenerationParams(globalDefaults *GenerationParams, cliOverrides *GenerationParams) GenerationParams {
 	result := GenerationParams{}
 
+	// Merge model-specific defaults first
 	if m != nil && m.GenerationDefaults != nil {
-		result = *m.GenerationDefaults
+		_ = mergo.Merge(&result, *m.GenerationDefaults)
 	}
 
+	// Merge global defaults, only filling in nil/zero values
 	if globalDefaults != nil {
-		if result.Temperature == nil && globalDefaults.Temperature != nil {
-			result.Temperature = globalDefaults.Temperature
-		}
-		if result.TopP == nil && globalDefaults.TopP != nil {
-			result.TopP = globalDefaults.TopP
-		}
-		if result.TopK == nil && globalDefaults.TopK != nil {
-			result.TopK = globalDefaults.TopK
-		}
-		if result.MaxTokens == nil && globalDefaults.MaxTokens != nil {
-			result.MaxTokens = globalDefaults.MaxTokens
-		}
-		if result.ThinkingBudget == nil && globalDefaults.ThinkingBudget != nil {
-			result.ThinkingBudget = globalDefaults.ThinkingBudget
-		}
-		if result.FrequencyPenalty == nil && globalDefaults.FrequencyPenalty != nil {
-			result.FrequencyPenalty = globalDefaults.FrequencyPenalty
-		}
-		if result.PresencePenalty == nil && globalDefaults.PresencePenalty != nil {
-			result.PresencePenalty = globalDefaults.PresencePenalty
-		}
-		if result.NumberOfResponses == nil && globalDefaults.NumberOfResponses != nil {
-			result.NumberOfResponses = globalDefaults.NumberOfResponses
-		}
+		_ = mergo.Merge(&result, *globalDefaults)
 	}
 
+	// Merge CLI overrides with override to always take precedence
 	if cliOverrides != nil {
-		if cliOverrides.Temperature != nil {
-			result.Temperature = cliOverrides.Temperature
-		}
-		if cliOverrides.TopP != nil {
-			result.TopP = cliOverrides.TopP
-		}
-		if cliOverrides.TopK != nil {
-			result.TopK = cliOverrides.TopK
-		}
-		if cliOverrides.MaxTokens != nil {
-			result.MaxTokens = cliOverrides.MaxTokens
-		}
-		if cliOverrides.ThinkingBudget != nil {
-			result.ThinkingBudget = cliOverrides.ThinkingBudget
-		}
-		if cliOverrides.FrequencyPenalty != nil {
-			result.FrequencyPenalty = cliOverrides.FrequencyPenalty
-		}
-		if cliOverrides.PresencePenalty != nil {
-			result.PresencePenalty = cliOverrides.PresencePenalty
-		}
-		if cliOverrides.NumberOfResponses != nil {
-			result.NumberOfResponses = cliOverrides.NumberOfResponses
-		}
+		_ = mergo.Merge(&result, *cliOverrides, mergo.WithOverride)
 	}
 
 	return result

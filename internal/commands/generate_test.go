@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/gai"
 )
 
@@ -84,7 +83,6 @@ func TestGenerate(t *testing.T) {
 		wantErr            bool
 		errMsg             string
 		wantStderrContains []string
-		wantStdoutContains []string
 	}{
 		{
 			name: "successful generation with new conversation",
@@ -97,24 +95,11 @@ func TestGenerate(t *testing.T) {
 						Content:      gai.Str("test prompt"),
 					},
 				},
-				Config: config.Config{
-					Models: []config.ModelConfig{
-						{
-							Model: config.Model{
-								Ref:       "test-model",
-								MaxOutput: 1000,
-							},
-						},
-					},
-				},
-				ModelName:       "test-model",
-				SystemPrompt:    "test system prompt",
 				NewConversation: true,
 				Storage: &mockDialogStorage{
 					saveMessageID: "msg-123",
 				},
 				Generator: &mockToolCapableGenerator{},
-				Stdout:    &bytes.Buffer{},
 				Stderr:    &bytes.Buffer{},
 			},
 			wantErr: false,
@@ -126,8 +111,6 @@ func TestGenerate(t *testing.T) {
 			name: "empty input",
 			opts: GenerateOptions{
 				UserBlocks: []gai.Block{},
-				Config:     config.Config{},
-				Stdout:     &bytes.Buffer{},
 				Stderr:     &bytes.Buffer{},
 			},
 			wantErr: true,
@@ -143,10 +126,7 @@ func TestGenerate(t *testing.T) {
 						Content:      gai.Str("test"),
 					},
 				},
-				Config:    config.Config{},
-				ModelName: "",
-				Stdout:    &bytes.Buffer{},
-				Stderr:    &bytes.Buffer{},
+				Stderr: &bytes.Buffer{},
 			},
 			wantErr: true,
 			errMsg:  "no model specified",
@@ -161,12 +141,7 @@ func TestGenerate(t *testing.T) {
 						Content:      gai.Str("test"),
 					},
 				},
-				Config: config.Config{
-					Models: []config.ModelConfig{},
-				},
-				ModelName: "nonexistent",
-				Stdout:    &bytes.Buffer{},
-				Stderr:    &bytes.Buffer{},
+				Stderr: &bytes.Buffer{},
 			},
 			wantErr: true,
 			errMsg:  "not found in configuration",
@@ -181,24 +156,12 @@ func TestGenerate(t *testing.T) {
 						Content:      gai.Str("test"),
 					},
 				},
-				Config: config.Config{
-					Models: []config.ModelConfig{
-						{
-							Model: config.Model{
-								Ref:       "test-model",
-								MaxOutput: 1000,
-							},
-						},
-					},
-				},
-				ModelName:       "test-model",
 				NewConversation: true,
 				IncognitoMode:   true,
 				Storage: &mockDialogStorage{
 					saveMessageID: "should-not-save",
 				},
 				Generator: &mockToolCapableGenerator{},
-				Stdout:    &bytes.Buffer{},
 				Stderr:    &bytes.Buffer{},
 			},
 			wantErr: false,
@@ -213,23 +176,11 @@ func TestGenerate(t *testing.T) {
 						Content:      gai.Str("test"),
 					},
 				},
-				Config: config.Config{
-					Models: []config.ModelConfig{
-						{
-							Model: config.Model{
-								Ref:       "test-model",
-								MaxOutput: 1000,
-							},
-						},
-					},
-				},
-				ModelName:       "test-model",
 				NewConversation: true,
 				IncognitoMode:   true,
 				Generator: &mockToolCapableGenerator{
 					err: errors.New("generation failed"),
 				},
-				Stdout: &bytes.Buffer{},
 				Stderr: &bytes.Buffer{},
 			},
 			wantErr: false,
@@ -258,15 +209,6 @@ func TestGenerate(t *testing.T) {
 					for _, want := range tt.wantStderrContains {
 						if !strings.Contains(stderrOutput, want) {
 							t.Errorf("Generate() stderr does not contain %q\nStderr: %s", want, stderrOutput)
-						}
-					}
-				}
-
-				if stdout, ok := tt.opts.Stdout.(*bytes.Buffer); ok {
-					stdoutOutput := stdout.String()
-					for _, want := range tt.wantStdoutContains {
-						if !strings.Contains(stdoutOutput, want) {
-							t.Errorf("Generate() stdout does not contain %q\nStdout: %s", want, stdoutOutput)
 						}
 					}
 				}

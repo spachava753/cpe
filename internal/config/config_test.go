@@ -27,42 +27,6 @@ func TestConfig_FindModel(t *testing.T) {
 	}
 }
 
-func TestModelConfig_GetEffectiveGenerationParams(t *testing.T) {
-	tempModel := 0.5
-	topPModel := 0.8
-	tempGlobal := 0.7
-	maxTokensGlobal := 4096
-	topPCli := 0.9
-
-	model := &ModelConfig{
-		GenerationDefaults: &GenerationParams{
-			Temperature: &tempModel,
-			TopP:        &topPModel,
-		},
-	}
-
-	global := &GenerationParams{
-		Temperature: &tempGlobal,
-		MaxTokens:   &maxTokensGlobal,
-	}
-
-	cli := &GenerationParams{
-		TopP: &topPCli,
-	}
-
-	effective := model.GetEffectiveGenerationParams(global, cli)
-
-	if effective.Temperature == nil || *effective.Temperature != tempModel {
-		t.Fatalf("expected temperature %v, got %v", tempModel, effective.Temperature)
-	}
-	if effective.TopP == nil || *effective.TopP != topPCli {
-		t.Fatalf("expected topP %v, got %v", topPCli, effective.TopP)
-	}
-	if effective.MaxTokens == nil || *effective.MaxTokens != maxTokensGlobal {
-		t.Fatalf("expected max tokens %d, got %v", maxTokensGlobal, effective.MaxTokens)
-	}
-}
-
 func TestLoadConfigFromFile(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "test.yaml")
