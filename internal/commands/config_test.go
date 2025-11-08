@@ -36,7 +36,7 @@ func TestConfigLint(t *testing.T) {
 				Models: []config.ModelConfig{
 					{Model: config.Model{Ref: "default-model"}},
 				},
-				Defaults: config.DefaultConfig{
+				Defaults: config.Defaults{
 					Model: "default-model",
 				},
 			},
