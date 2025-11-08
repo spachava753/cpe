@@ -14,9 +14,11 @@ import (
 
 // ConversationListOptions contains parameters for listing conversations
 type ConversationListOptions struct {
-	Storage       DialogStorage
-	Writer        io.Writer
-	TreePrinter   TreePrinter
+	Storage interface {
+		ListMessages(ctx context.Context) ([]storage.MessageIdNode, error)
+	}
+	Writer      io.Writer
+	TreePrinter TreePrinter
 }
 
 // TreePrinter is an interface for printing message trees
@@ -26,15 +28,7 @@ type TreePrinter interface {
 
 // ConversationList lists all conversations in tree format
 func ConversationList(ctx context.Context, opts ConversationListOptions) error {
-	// Get storage interface
-	storageImpl, ok := opts.Storage.(interface {
-		ListMessages(ctx context.Context) ([]storage.MessageIdNode, error)
-	})
-	if !ok {
-		return fmt.Errorf("storage does not support ListMessages")
-	}
-
-	messageNodes, err := storageImpl.ListMessages(ctx)
+	messageNodes, err := opts.Storage.ListMessages(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list messages: %w", err)
 	}
@@ -50,7 +44,11 @@ func ConversationList(ctx context.Context, opts ConversationListOptions) error {
 
 // ConversationDeleteOptions contains parameters for deleting conversations
 type ConversationDeleteOptions struct {
-	Storage    DialogStorage
+	Storage interface {
+		HasChildrenByID(ctx context.Context, messageID string) (bool, error)
+		DeleteMessage(ctx context.Context, messageID string) error
+		DeleteMessageRecursive(ctx context.Context, messageID string) error
+	}
 	MessageIDs []string
 	Cascade    bool
 	Stdout     io.Writer
@@ -59,18 +57,8 @@ type ConversationDeleteOptions struct {
 
 // ConversationDelete deletes one or more messages
 func ConversationDelete(ctx context.Context, opts ConversationDeleteOptions) error {
-	// Get storage interface with delete methods
-	storageImpl, ok := opts.Storage.(interface {
-		HasChildrenByID(ctx context.Context, messageID string) (bool, error)
-		DeleteMessage(ctx context.Context, messageID string) error
-		DeleteMessageRecursive(ctx context.Context, messageID string) error
-	})
-	if !ok {
-		return fmt.Errorf("storage does not support delete operations")
-	}
-
 	for _, messageID := range opts.MessageIDs {
-		hasChildren, err := storageImpl.HasChildrenByID(ctx, messageID)
+		hasChildren, err := opts.Storage.HasChildrenByID(ctx, messageID)
 		if err != nil {
 			fmt.Fprintf(opts.Stderr, "Error checking if message %s has children: %v\n", messageID, err)
 			continue
@@ -83,9 +71,9 @@ func ConversationDelete(ctx context.Context, opts ConversationDeleteOptions) err
 
 		var delErr error
 		if opts.Cascade {
-			delErr = storageImpl.DeleteMessageRecursive(ctx, messageID)
+			delErr = opts.Storage.DeleteMessageRecursive(ctx, messageID)
 		} else {
-			delErr = storageImpl.DeleteMessage(ctx, messageID)
+			delErr = opts.Storage.DeleteMessage(ctx, messageID)
 		}
 
 		if delErr != nil {
@@ -104,7 +92,9 @@ func ConversationDelete(ctx context.Context, opts ConversationDeleteOptions) err
 
 // ConversationPrintOptions contains parameters for printing a conversation
 type ConversationPrintOptions struct {
-	Storage         DialogStorage
+	Storage interface {
+		GetDialogForMessage(ctx context.Context, messageID string) (gai.Dialog, []string, error)
+	}
 	MessageID       string
 	Writer          io.Writer
 	DialogFormatter DialogFormatter

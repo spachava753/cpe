@@ -27,7 +27,7 @@ func (m *mockTreePrinter) PrintMessageForest(w io.Writer, roots []storage.Messag
 func TestConversationList(t *testing.T) {
 	tests := []struct {
 		name               string
-		storage            DialogStorage
+		storage            *mockDialogStorageWithList
 		wantErr            bool
 		errMsg             string
 		wantOutputContains []string
@@ -94,11 +94,11 @@ func TestConversationList(t *testing.T) {
 // mockDialogStorageWithList extends mockDialogStorage with list support
 type mockDialogStorageWithList struct {
 	mockDialogStorage
-	messages      []storage.MessageIdNode
-	listErr       error
-	hasChildren   bool
+	messages       []storage.MessageIdNode
+	listErr        error
+	hasChildren    bool
 	hasChildrenErr error
-	deleteErr     error
+	deleteErr      error
 }
 
 func (m *mockDialogStorageWithList) ListMessages(ctx context.Context) ([]storage.MessageIdNode, error) {
@@ -126,7 +126,7 @@ func (m *mockDialogStorageWithList) DeleteMessageRecursive(ctx context.Context, 
 func TestConversationDelete(t *testing.T) {
 	tests := []struct {
 		name               string
-		storage            DialogStorage
+		storage            *mockDialogStorageWithList
 		messageIDs         []string
 		cascade            bool
 		wantErr            bool
@@ -224,7 +224,7 @@ func (m *mockDialogFormatter) FormatDialog(dialog gai.Dialog, msgIds []string) (
 func TestConversationPrint(t *testing.T) {
 	tests := []struct {
 		name               string
-		storage            DialogStorage
+		storage            *mockDialogStorage
 		formatter          DialogFormatter
 		messageID          string
 		wantErr            bool
