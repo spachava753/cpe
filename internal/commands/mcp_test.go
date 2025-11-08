@@ -19,22 +19,22 @@ func (m *mockRenderer) Render(markdown string) (string, error) {
 
 func TestMCPListServers(t *testing.T) {
 	tests := []struct {
-		name           string
-		config         *config.Config
-		wantErr        bool
+		name               string
+		config             config.Config
+		wantErr            bool
 		wantOutputContains []string
 	}{
 		{
 			name: "no servers configured",
-			config: &config.Config{
+			config: config.Config{
 				MCPServers: nil,
 			},
-			wantErr: false,
+			wantErr:            false,
 			wantOutputContains: []string{"No MCP servers configured."},
 		},
 		{
 			name: "single server configured",
-			config: &config.Config{
+			config: config.Config{
 				MCPServers: map[string]mcpinternal.ServerConfig{
 					"test-server": {
 						Type:    "stdio",
@@ -55,7 +55,7 @@ func TestMCPListServers(t *testing.T) {
 		},
 		{
 			name: "multiple servers with different types",
-			config: &config.Config{
+			config: config.Config{
 				MCPServers: map[string]mcpinternal.ServerConfig{
 					"stdio-server": {
 						Type:    "stdio",
@@ -104,14 +104,14 @@ func TestMCPListServers(t *testing.T) {
 func TestMCPInfo(t *testing.T) {
 	tests := []struct {
 		name       string
-		config     *config.Config
+		config     config.Config
 		serverName string
 		wantErr    bool
 		errMsg     string
 	}{
 		{
 			name: "server not found",
-			config: &config.Config{
+			config: config.Config{
 				MCPServers: map[string]mcpinternal.ServerConfig{
 					"existing-server": {
 						Type:    "stdio",
@@ -125,7 +125,7 @@ func TestMCPInfo(t *testing.T) {
 		},
 		{
 			name: "no servers configured",
-			config: &config.Config{
+			config: config.Config{
 				MCPServers: nil,
 			},
 			serverName: "any-server",

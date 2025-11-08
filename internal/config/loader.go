@@ -16,7 +16,7 @@ import (
 // 1. Explicit config path (--config flag)
 // 2. ./cpe.yaml or ./cpe.yml
 // 3. ~/.config/cpe/cpe.yaml or ~/.config/cpe/cpe.yml
-func LoadConfig(explicitPath string) (*Config, error) {
+func LoadConfig(explicitPath string) (Config, error) {
 	var configPath string
 	var err error
 
@@ -24,37 +24,37 @@ func LoadConfig(explicitPath string) (*Config, error) {
 		// Use explicit path
 		configPath = explicitPath
 		if _, err := os.Stat(configPath); os.IsNotExist(err) {
-			return nil, fmt.Errorf("specified config file does not exist: %s", configPath)
+			return Config{}, fmt.Errorf("specified config file does not exist: %s", configPath)
 		}
 	} else {
 		// Search for config file
 		configPath, err = findConfigFile()
 		if err != nil {
-			return nil, fmt.Errorf("no configuration file found: %w", err)
+			return Config{}, fmt.Errorf("no configuration file found: %w", err)
 		}
 	}
 
 	// Open and read config file
 	file, err := os.Open(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open config file %s: %w", configPath, err)
+		return Config{}, fmt.Errorf("failed to open config file %s: %w", configPath, err)
 	}
 	defer file.Close()
 
 	// Parse config file
 	config, err := loadConfigFromFile(file)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load config from %s: %w", configPath, err)
+		return Config{}, fmt.Errorf("failed to load config from %s: %w", configPath, err)
 	}
 
 	// Validate the configuration
 	if err := config.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid configuration: %w", err)
+		return Config{}, fmt.Errorf("invalid configuration: %w", err)
 	}
 
 	// Expand environment variables
 	if err := config.expandEnvironmentVariables(); err != nil {
-		return nil, fmt.Errorf("failed to expand environment variables: %w", err)
+		return Config{}, fmt.Errorf("failed to expand environment variables: %w", err)
 	}
 
 	return config, nil
@@ -93,16 +93,16 @@ func findConfigFile() (string, error) {
 // This design allows for flexible testing with in-memory files, embedded configs,
 // network sources, or any other io.Reader implementation.
 // The file extension is automatically detected from the file's stat info.
-func loadConfigFromFile(file fs.File) (*Config, error) {
+func loadConfigFromFile(file fs.File) (Config, error) {
 	data, err := io.ReadAll(file)
 	if err != nil {
-		return nil, fmt.Errorf("error reading config file: %w", err)
+		return Config{}, fmt.Errorf("error reading config file: %w", err)
 	}
 
 	// Get filename from file info for format detection
 	stat, err := file.Stat()
 	if err != nil {
-		return nil, fmt.Errorf("error getting file info: %w", err)
+		return Config{}, fmt.Errorf("error getting file info: %w", err)
 	}
 	filename := stat.Name()
 
@@ -113,11 +113,11 @@ func loadConfigFromFile(file fs.File) (*Config, error) {
 	switch ext {
 	case ".json":
 		if err := json.Unmarshal(data, &config); err != nil {
-			return nil, fmt.Errorf("error parsing JSON config: %w", err)
+			return Config{}, fmt.Errorf("error parsing JSON config: %w", err)
 		}
 	case ".yaml", ".yml":
 		if err := yaml.Unmarshal(data, &config); err != nil {
-			return nil, fmt.Errorf("error parsing YAML config: %w", err)
+			return Config{}, fmt.Errorf("error parsing YAML config: %w", err)
 		}
 	default:
 		// Try YAML first, then JSON as fallback
@@ -125,12 +125,12 @@ func loadConfigFromFile(file fs.File) (*Config, error) {
 		if yamlErr != nil {
 			jsonErr := json.Unmarshal(data, &config)
 			if jsonErr != nil {
-				return nil, fmt.Errorf("failed to parse config file: YAML error: %v, JSON error: %v", yamlErr, jsonErr)
+				return Config{}, fmt.Errorf("failed to parse config file: YAML error: %v, JSON error: %v", yamlErr, jsonErr)
 			}
 		}
 	}
 
-	return &config, nil
+	return config, nil
 }
 
 // expandEnvironmentVariables expands environment variables in configuration values

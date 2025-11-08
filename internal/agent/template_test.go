@@ -91,37 +91,3 @@ func TestExecCommand(t *testing.T) {
 		})
 	}
 }
-
-func TestTemplateFunctionIntegration(t *testing.T) {
-	tmpDir := t.TempDir()
-	testFile := filepath.Join(tmpDir, "data.txt")
-	if err := os.WriteFile(testFile, []byte("test data"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	sysInfo := &SystemInfo{
-		CurrentDate: "2024-01-01",
-		WorkingDir:  tmpDir,
-	}
-
-	templateStr := `Date: {{.CurrentDate}}
-File exists: {{fileExists "` + testFile + `"}}
-File content: {{includeFile "` + testFile + `"}}
-Command output: {{exec "echo processed"}}
-Upper sprig: {{ upper "hello" }}`
-
-	result, err := sysInfo.ExecuteTemplateString(templateStr)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	expected := `Date: 2024-01-01
-File exists: true
-File content: test data
-Command output: processed
-Upper sprig: HELLO`
-
-	if result != expected {
-		t.Errorf("Template execution mismatch\nGot:\n%s\nWant:\n%s", result, expected)
-	}
-}

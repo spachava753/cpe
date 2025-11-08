@@ -4,13 +4,15 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 
+	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/config"
 )
 
 // ModelListOptions contains parameters for listing models
 type ModelListOptions struct {
-	Config       *config.Config
+	Config       config.Config
 	DefaultModel string
 	Writer       io.Writer
 }
@@ -29,7 +31,7 @@ func ModelList(ctx context.Context, opts ModelListOptions) error {
 
 // ModelInfoOptions contains parameters for showing model details
 type ModelInfoOptions struct {
-	Config    *config.Config
+	Config    config.Config
 	ModelName string
 	Writer    io.Writer
 }
@@ -78,16 +80,14 @@ type SystemPromptRenderer interface {
 
 // ModelSystemPromptOptions contains parameters for showing system prompts
 type ModelSystemPromptOptions struct {
-	Config               *config.Config
-	ModelName            string
-	SystemPromptTemplate string
-	SystemPromptPath     string // For display purposes only
-	Writer               io.Writer
-	SystemPromptRenderer SystemPromptRenderer
+	Config       config.Config
+	ModelName    string
+	SystemPrompt fs.File
+	Output       io.Writer
 }
 
 // ModelSystemPrompt displays the rendered system prompt for a model
-func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error {
+func ModelSystemPrompt(opts ModelSystemPromptOptions) error {
 	if opts.ModelName == "" {
 		return fmt.Errorf("no model specified")
 	}
@@ -97,16 +97,29 @@ func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error
 		return fmt.Errorf("model %q not found in configuration", opts.ModelName)
 	}
 
-	if opts.SystemPromptTemplate == "" {
-		fmt.Fprintf(opts.Writer, "Model %q does not define a system prompt.\n", opts.ModelName)
+	if opts.SystemPrompt == nil {
+		fmt.Fprintf(opts.Output, "Model %q does not define a system prompt.\n", opts.ModelName)
 		return nil
 	}
 
-	rendered, err := opts.SystemPromptRenderer.Render(opts.SystemPromptTemplate, &selectedModel.Model)
+	contents, err := io.ReadAll(opts.SystemPrompt)
 	if err != nil {
-		return fmt.Errorf("failed to render system prompt: %w", err)
+		return err
 	}
 
-	fmt.Fprintf(opts.Writer, "Model: %s\nPath: %s\n\n%s\n", opts.ModelName, opts.SystemPromptPath, rendered)
-	return nil
+	systemPrompt, err := agent.SystemPromptTemplate(string(contents), agent.TemplateData{
+		Config: opts.Config,
+		Model:  selectedModel.Model,
+	})
+	if err != nil {
+		return err
+	}
+
+	systemPromptPath := selectedModel.SystemPromptPath
+	if systemPromptPath == "" {
+		systemPromptPath = opts.Config.Defaults.SystemPromptPath
+	}
+
+	_, err = fmt.Fprintf(opts.Output, "Model: %s\nPath: %s\n\n%s\n", opts.ModelName, systemPromptPath, systemPrompt)
+	return err
 }

@@ -4,22 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/commands"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spf13/cobra"
 )
-
-// systemPromptRenderer implements SystemPromptRenderer using agent templates
-type systemPromptRenderer struct{}
-
-func (r *systemPromptRenderer) Render(template string, model *config.Model) (string, error) {
-	sysInfo, err := agent.GetSystemInfoWithModel(model)
-	if err != nil {
-		return "", fmt.Errorf("failed to get system info: %w", err)
-	}
-	return sysInfo.ExecuteTemplateString(template)
-}
 
 var modelCmd = &cobra.Command{
 	Use:     "model",
@@ -103,35 +91,10 @@ var systemPromptModelCmd = &cobra.Command{
 			return fmt.Errorf("no model specified. Use --model flag or set defaults.model in configuration")
 		}
 
-		// Find the model
-		selectedModel, found := cfg.FindModel(modelName)
-		if !found {
-			return fmt.Errorf("model %q not found in configuration", modelName)
-		}
-
-		// Determine effective system prompt path
-		effectiveSystemPromptPath := selectedModel.GetEffectiveSystemPromptPath(
-			cfg.Defaults.SystemPromptPath,
-			systemPromptPath,
-		)
-
-		// Read the template file
-		var templateContent string
-		if effectiveSystemPromptPath != "" {
-			content, err := os.ReadFile(effectiveSystemPromptPath)
-			if err != nil {
-				return fmt.Errorf("failed to read system prompt file: %w", err)
-			}
-			templateContent = string(content)
-		}
-
-		return commands.ModelSystemPrompt(cmd.Context(), commands.ModelSystemPromptOptions{
-			Config:               cfg,
-			ModelName:            modelName,
-			SystemPromptTemplate: templateContent,
-			SystemPromptPath:     effectiveSystemPromptPath,
-			Writer:               cmd.OutOrStdout(),
-			SystemPromptRenderer: &systemPromptRenderer{},
+		return commands.ModelSystemPrompt(commands.ModelSystemPromptOptions{
+			Config:    cfg,
+			ModelName: modelName,
+			Output:    cmd.OutOrStdout(),
 		})
 	},
 }

@@ -13,13 +13,13 @@ import (
 func TestModelList(t *testing.T) {
 	tests := []struct {
 		name               string
-		config             *config.Config
+		config             config.Config
 		defaultModel       string
 		wantOutputContains []string
 	}{
 		{
 			name: "list models without default",
-			config: &config.Config{
+			config: config.Config{
 				Models: []config.ModelConfig{
 					{Model: config.Model{Ref: "model1"}},
 					{Model: config.Model{Ref: "model2"}},
@@ -33,7 +33,7 @@ func TestModelList(t *testing.T) {
 		},
 		{
 			name: "list models with default marked",
-			config: &config.Config{
+			config: config.Config{
 				Models: []config.ModelConfig{
 					{Model: config.Model{Ref: "model1"}},
 					{Model: config.Model{Ref: "model2"}},
@@ -47,7 +47,7 @@ func TestModelList(t *testing.T) {
 		},
 		{
 			name: "empty model list",
-			config: &config.Config{
+			config: config.Config{
 				Models: []config.ModelConfig{},
 			},
 			defaultModel:       "",
@@ -83,7 +83,7 @@ func TestModelList(t *testing.T) {
 func TestModelInfo(t *testing.T) {
 	tests := []struct {
 		name               string
-		config             *config.Config
+		config             config.Config
 		modelName          string
 		wantErr            bool
 		errMsg             string
@@ -91,7 +91,7 @@ func TestModelInfo(t *testing.T) {
 	}{
 		{
 			name: "show model info",
-			config: &config.Config{
+			config: config.Config{
 				Models: []config.ModelConfig{
 					{
 						Model: config.Model{
@@ -120,7 +120,7 @@ func TestModelInfo(t *testing.T) {
 		},
 		{
 			name: "model not found",
-			config: &config.Config{
+			config: config.Config{
 				Models: []config.ModelConfig{
 					{Model: config.Model{Ref: "existing-model"}},
 				},
@@ -131,7 +131,7 @@ func TestModelInfo(t *testing.T) {
 		},
 		{
 			name: "no model name provided",
-			config: &config.Config{
+			config: config.Config{
 				Models: []config.ModelConfig{},
 			},
 			modelName: "",
@@ -171,22 +171,10 @@ func TestModelInfo(t *testing.T) {
 	}
 }
 
-// mockSystemPromptRenderer is a test implementation of SystemPromptRenderer
-type mockSystemPromptRenderer struct {
-	renderFunc func(template string, model *config.Model) (string, error)
-}
-
-func (m *mockSystemPromptRenderer) Render(template string, model *config.Model) (string, error) {
-	if m.renderFunc != nil {
-		return m.renderFunc(template, model)
-	}
-	return "rendered prompt", nil
-}
-
 func TestModelSystemPrompt(t *testing.T) {
 	tests := []struct {
 		name               string
-		config             *config.Config
+		config             config.Config
 		modelName          string
 		template           string
 		templatePath       string
@@ -197,7 +185,7 @@ func TestModelSystemPrompt(t *testing.T) {
 	}{
 		{
 			name: "show system prompt",
-			config: &config.Config{
+			config: config.Config{
 				Models: []config.ModelConfig{
 					{
 						Model: config.Model{
@@ -221,7 +209,7 @@ func TestModelSystemPrompt(t *testing.T) {
 		},
 		{
 			name: "model without system prompt",
-			config: &config.Config{
+			config: config.Config{
 				Models: []config.ModelConfig{
 					{
 						Model: config.Model{
@@ -239,7 +227,7 @@ func TestModelSystemPrompt(t *testing.T) {
 		},
 		{
 			name: "model not found",
-			config: &config.Config{
+			config: config.Config{
 				Models: []config.ModelConfig{},
 			},
 			modelName: "nonexistent-model",
@@ -248,7 +236,7 @@ func TestModelSystemPrompt(t *testing.T) {
 		},
 		{
 			name: "no model specified",
-			config: &config.Config{
+			config: config.Config{
 				Models: []config.ModelConfig{},
 			},
 			modelName: "",
@@ -257,7 +245,7 @@ func TestModelSystemPrompt(t *testing.T) {
 		},
 		{
 			name: "render error",
-			config: &config.Config{
+			config: config.Config{
 				Models: []config.ModelConfig{
 					{
 						Model: config.Model{
@@ -281,15 +269,12 @@ func TestModelSystemPrompt(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			opts := ModelSystemPromptOptions{
-				Config:               tt.config,
-				ModelName:            tt.modelName,
-				SystemPromptTemplate: tt.template,
-				SystemPromptPath:     tt.templatePath,
-				Writer:               &buf,
-				SystemPromptRenderer: &mockSystemPromptRenderer{renderFunc: tt.renderFunc},
+				Config:    tt.config,
+				ModelName: tt.modelName,
+				Output:    &buf,
 			}
 
-			err := ModelSystemPrompt(context.Background(), opts)
+			err := ModelSystemPrompt(opts)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ModelSystemPrompt() error = %v, wantErr %v", err, tt.wantErr)
 				return

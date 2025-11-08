@@ -14,6 +14,11 @@ type mockPanicGenerator struct {
 	panicMsg string
 }
 
+func (m *mockPanicGenerator) Register(tool gai.Tool) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (m *mockPanicGenerator) Generate(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
 	panic(m.panicMsg)
 }
@@ -24,6 +29,11 @@ type mockNormalGenerator struct {
 	err      error
 }
 
+func (m *mockNormalGenerator) Register(tool gai.Tool) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (m *mockNormalGenerator) Generate(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
 	return m.response, m.err
 }
@@ -31,7 +41,7 @@ func (m *mockNormalGenerator) Generate(ctx context.Context, dialog gai.Dialog, o
 func TestPanicCatchingGenerator(t *testing.T) {
 	tests := []struct {
 		name      string
-		generator gai.Generator
+		generator gai.ToolCapableGenerator
 		wantErr   bool
 		errCheck  func(error) bool
 	}{
@@ -78,9 +88,9 @@ func TestPanicCatchingGenerator(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			wrapped := NewPanicCatchingGenerator(tt.generator)
-			
+
 			resp, err := wrapped.Generate(context.Background(), nil, nil)
-			
+
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("PanicCatchingGenerator.Generate() error = nil, wantErr %v", tt.wantErr)
@@ -101,4 +111,3 @@ func TestPanicCatchingGenerator(t *testing.T) {
 		})
 	}
 }
-

@@ -21,28 +21,6 @@ import (
 	mcpinternal "github.com/spachava753/cpe/internal/mcp"
 )
 
-// PrepareSystemPrompt prepares the system prompt from either a custom file or the default template
-func PrepareSystemPrompt(systemPromptPath string, model *config.Model) (string, error) {
-	// If no system prompt path is provided, return empty string
-	if systemPromptPath == "" {
-		return "", nil
-	}
-
-	// Get system information for template execution
-	sysInfo, err := GetSystemInfoWithModel(model)
-	if err != nil {
-		return "", fmt.Errorf("failed to get system info: %w", err)
-	}
-
-	// Execute the custom template file
-	systemPrompt, err := sysInfo.ExecuteTemplate(systemPromptPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to execute custom system prompt template: %w", err)
-	}
-
-	return systemPrompt, nil
-}
-
 func InitGeneratorFromModel(
 	ctx context.Context,
 	m config.Model,
@@ -62,7 +40,7 @@ func InitGeneratorFromModel(
 		if err != nil {
 			return nil, fmt.Errorf("building patch transport: %w", err)
 		}
-		httpClient = &http.Client{Transport: transport, Timeout: timeout}
+		httpClient = &http.Client{Transport: transport}
 	}
 
 	apiEnv := strings.TrimSpace(m.ApiKeyEnv)
@@ -75,11 +53,11 @@ func InitGeneratorFromModel(
 
 	switch t {
 	case "openai":
-		client := openai.NewClient(oaiopt.WithBaseURL(baseURL), oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient))
+		client := openai.NewClient(oaiopt.WithBaseURL(baseURL), oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout))
 		oaiGen := gai.NewOpenAiGenerator(&client.Chat.Completions, m.ID, systemPrompt)
 		gen = &oaiGen
 	case "anthropic":
-		client := anthropic.NewClient(aopts.WithBaseURL(baseURL), aopts.WithAPIKey(apiKey), aopts.WithHTTPClient(httpClient))
+		client := anthropic.NewClient(aopts.WithBaseURL(baseURL), aopts.WithAPIKey(apiKey), aopts.WithHTTPClient(httpClient), aopts.WithRequestTimeout(timeout))
 		svc := gai.NewAnthropicServiceWrapper(&client.Messages, gai.EnableSystemCaching, gai.EnableMultiTurnCaching)
 		gen = gai.NewAnthropicGenerator(svc, m.ID, systemPrompt)
 	case "gemini":
@@ -98,10 +76,10 @@ func InitGeneratorFromModel(
 	case "cerebras":
 		gen = gai.NewCerebrasGenerator(httpClient, baseURL, m.ID, systemPrompt, apiKey)
 	case "responses":
-		client := openai.NewClient(oaiopt.WithBaseURL(baseURL), oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient))
+		client := openai.NewClient(oaiopt.WithBaseURL(baseURL), oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout))
 		gen = gai.NewResponsesToolGeneratorAdapter(gai.NewResponsesGenerator(&client.Responses, m.ID, systemPrompt), "")
 	case "openrouter":
-		client := openai.NewClient(oaiopt.WithBaseURL(baseURL), oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient))
+		client := openai.NewClient(oaiopt.WithBaseURL(baseURL), oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout))
 		gen = gai.NewOpenRouterGenerator(&client.Chat.Completions, m.ID, systemPrompt)
 	default:
 		return nil, fmt.Errorf("unsupported model type: %s", m.Type)

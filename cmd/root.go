@@ -44,7 +44,6 @@ var (
 	newConversation   bool
 	continueID        string
 	incognitoMode     bool
-	systemPromptPath  string
 	timeout           string
 	disableStreaming  bool
 	skipStdin         bool
@@ -102,8 +101,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&newConversation, "new", "n", false, "Start a new conversation instead of continuing from the last one")
 	rootCmd.PersistentFlags().StringVarP(&continueID, "continue", "c", "", "Continue from a specific conversation ID")
 	rootCmd.PersistentFlags().BoolVarP(&incognitoMode, "incognito", "G", false, "Run in incognito mode (do not save conversations to storage)")
-	rootCmd.PersistentFlags().StringVarP(&systemPromptPath, "system-prompt-file", "s", "", "Specify a custom system prompt template file")
-	rootCmd.PersistentFlags().StringVarP(&timeout, "timeout", "", "5m", "Specify request timeout duration (e.g. '5m', '30s')")
+	rootCmd.PersistentFlags().StringVarP(&timeout, "timeout", "", "", "Specify request timeout duration (e.g. '5m', '30s')")
 	rootCmd.PersistentFlags().BoolVar(&disableStreaming, "no-stream", false, "Disable streaming output (show complete response after generation)")
 	rootCmd.PersistentFlags().BoolVar(&skipStdin, "skip-stdin", false, "Skip reading from stdin (useful in scripts)")
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Path to unified configuration file (default: ./cpe.yaml, ~/.config/cpe/cpe.yaml)")
@@ -144,29 +142,35 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	}
 
 	// Determine effective timeout
-	effectiveTimeout := timeout
-	if effectiveTimeout == "" && cfg.Defaults.Timeout != "" {
-		effectiveTimeout = cfg.Defaults.Timeout
-	}
-	if effectiveTimeout == "" {
-		effectiveTimeout = "5m"
+	if timeout == "" {
+		timeout = "5m"
+		if cfg.Defaults.Timeout != "" {
+			timeout = cfg.Defaults.Timeout
+		}
 	}
 
-	requestTimeout, err := time.ParseDuration(effectiveTimeout)
+	requestTimeout, err := time.ParseDuration(timeout)
 	if err != nil {
-		return fmt.Errorf("invalid timeout value '%s': %w", effectiveTimeout, err)
+		return fmt.Errorf("invalid timeout value '%s': %w", timeout, err)
 	}
 
 	// Determine system prompt path
-	effectiveSystemPromptPath := selectedModel.GetEffectiveSystemPromptPath(
-		cfg.Defaults.SystemPromptPath,
-		systemPromptPath,
-	)
+	spPath := selectedModel.SystemPromptPath
+	if spPath == "" {
+		spPath = cfg.Defaults.SystemPromptPath
+	}
 
 	// Prepare system prompt
-	systemPrompt, err := agent.PrepareSystemPrompt(effectiveSystemPromptPath, &selectedModel.Model)
+	systemPrompt, err := agent.SystemPromptTemplate(spPath, agent.TemplateData{
+		Config: cfg,
+		Model:  selectedModel.Model,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to prepare system prompt: %w", err)
+	}
+
+	if customURL == "" {
+		customURL = selectedModel.BaseUrl
 	}
 
 	// Create the generator
@@ -175,7 +179,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		selectedModel.Model,
 		systemPrompt,
 		requestTimeout,
-		getCustomURL(customURL),
+		customURL,
 		disableStreaming || cfg.Defaults.NoStream,
 		cfg.MCPServers,
 	)
@@ -374,19 +378,4 @@ func processUserInput(args []string) ([]gai.Block, error) {
 	}
 
 	return userBlocks, nil
-}
-
-// getCustomURL returns the custom URL to use based on the following precedence:
-// 1. Command-line flag (--custom-url)
-// 2. General custom URL environment variable (CPE_CUSTOM_URL)
-func getCustomURL(flagURL string) string {
-	// Start with the flag value
-	urlVal := flagURL
-
-	// Finally, check the general custom URL env var
-	if envURL := os.Getenv("CPE_CUSTOM_URL"); urlVal == "" && envURL != "" {
-		urlVal = envURL
-	}
-
-	return urlVal
 }

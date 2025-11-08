@@ -39,7 +39,7 @@ var mcpListServersCmd = &cobra.Command{
 		cfg, err := config.LoadConfig(configPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
-			cfg = &config.Config{}
+			cfg = config.Config{}
 		}
 
 		return commands.MCPListServers(cmd.Context(), commands.MCPListServersOptions{

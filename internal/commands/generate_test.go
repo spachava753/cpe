@@ -13,14 +13,14 @@ import (
 
 // mockDialogStorage is a test implementation of DialogStorage
 type mockDialogStorage struct {
-	mostRecentID     string
-	mostRecentErr    error
-	dialog           gai.Dialog
-	msgIDList        []string
-	getDialogErr     error
-	savedMessages    []gai.Message
-	saveMessageErr   error
-	saveMessageID    string
+	mostRecentID   string
+	mostRecentErr  error
+	dialog         gai.Dialog
+	msgIDList      []string
+	getDialogErr   error
+	savedMessages  []gai.Message
+	saveMessageErr error
+	saveMessageID  string
 }
 
 func (m *mockDialogStorage) GetMostRecentAssistantMessageId(ctx context.Context) (string, error) {
@@ -97,7 +97,7 @@ func TestGenerate(t *testing.T) {
 						Content:      gai.Str("test prompt"),
 					},
 				},
-				Config: &config.Config{
+				Config: config.Config{
 					Models: []config.ModelConfig{
 						{
 							Model: config.Model{
@@ -126,7 +126,7 @@ func TestGenerate(t *testing.T) {
 			name: "empty input",
 			opts: GenerateOptions{
 				UserBlocks: []gai.Block{},
-				Config:     &config.Config{},
+				Config:     config.Config{},
 				Stdout:     &bytes.Buffer{},
 				Stderr:     &bytes.Buffer{},
 			},
@@ -143,7 +143,7 @@ func TestGenerate(t *testing.T) {
 						Content:      gai.Str("test"),
 					},
 				},
-				Config:    &config.Config{},
+				Config:    config.Config{},
 				ModelName: "",
 				Stdout:    &bytes.Buffer{},
 				Stderr:    &bytes.Buffer{},
@@ -161,7 +161,7 @@ func TestGenerate(t *testing.T) {
 						Content:      gai.Str("test"),
 					},
 				},
-				Config: &config.Config{
+				Config: config.Config{
 					Models: []config.ModelConfig{},
 				},
 				ModelName: "nonexistent",
@@ -181,7 +181,7 @@ func TestGenerate(t *testing.T) {
 						Content:      gai.Str("test"),
 					},
 				},
-				Config: &config.Config{
+				Config: config.Config{
 					Models: []config.ModelConfig{
 						{
 							Model: config.Model{
@@ -213,7 +213,7 @@ func TestGenerate(t *testing.T) {
 						Content:      gai.Str("test"),
 					},
 				},
-				Config: &config.Config{
+				Config: config.Config{
 					Models: []config.ModelConfig{
 						{
 							Model: config.Model{
