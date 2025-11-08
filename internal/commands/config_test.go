@@ -12,13 +12,13 @@ import (
 func TestConfigLint(t *testing.T) {
 	tests := []struct {
 		name               string
-		config             *config.Config
+		config             config.Config
 		wantErr            bool
 		wantOutputContains []string
 	}{
 		{
 			name: "valid config with models",
-			config: &config.Config{
+			config: config.Config{
 				Models: []config.ModelConfig{
 					{Model: config.Model{Ref: "model1"}},
 					{Model: config.Model{Ref: "model2"}},
@@ -32,11 +32,11 @@ func TestConfigLint(t *testing.T) {
 		},
 		{
 			name: "valid config with default model",
-			config: &config.Config{
+			config: config.Config{
 				Models: []config.ModelConfig{
 					{Model: config.Model{Ref: "default-model"}},
 				},
-				Defaults: config.DefaultConfig{
+				Defaults: config.Defaults{
 					Model: "default-model",
 				},
 			},

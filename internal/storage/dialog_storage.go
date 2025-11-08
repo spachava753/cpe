@@ -56,14 +56,6 @@ func InitDialogStorage(dbPath string) (*DialogStorage, error) {
 	}, nil
 }
 
-// NewDialogStorage creates a new DialogStorage instance with an existing database connection
-func NewDialogStorage(db *sql.DB) (*DialogStorage, error) {
-	return &DialogStorage{
-		db:          db,
-		q:           New(db),
-		idGenerator: generateId,
-	}, nil
-}
 
 // roleToString converts a gai.Role to its string representation
 func roleToString(role gai.Role) string {

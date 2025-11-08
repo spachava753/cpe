@@ -22,7 +22,7 @@ type MarkdownRenderer interface {
 
 // MCPListServersOptions contains parameters for listing MCP servers
 type MCPListServersOptions struct {
-	Config *config.Config
+	Config config.Config
 	Writer io.Writer
 }
 
@@ -69,7 +69,7 @@ func MCPListServers(ctx context.Context, opts MCPListServersOptions) error {
 
 // MCPInfoOptions contains parameters for getting MCP server info
 type MCPInfoOptions struct {
-	Config     *config.Config
+	Config     config.Config
 	ServerName string
 	Writer     io.Writer
 	Timeout    time.Duration
@@ -114,7 +114,7 @@ func MCPInfo(ctx context.Context, opts MCPInfoOptions) error {
 
 // MCPListToolsOptions contains parameters for listing MCP server tools
 type MCPListToolsOptions struct {
-	Config       *config.Config
+	Config       config.Config
 	ServerName   string
 	Writer       io.Writer
 	ShowAll      bool
@@ -246,7 +246,7 @@ func MCPListTools(ctx context.Context, opts MCPListToolsOptions) error {
 
 // MCPCallToolOptions contains parameters for calling an MCP tool
 type MCPCallToolOptions struct {
-	Config     *config.Config
+	Config     config.Config
 	ServerName string
 	ToolName   string
 	ToolArgs   map[string]interface{}

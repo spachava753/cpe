@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"dario.cat/mergo"
 	"github.com/gabriel-vasile/mimetype"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/spachava753/cpe/internal/agent"
@@ -44,7 +45,6 @@ var (
 	newConversation   bool
 	continueID        string
 	incognitoMode     bool
-	systemPromptPath  string
 	timeout           string
 	disableStreaming  bool
 	skipStdin         bool
@@ -102,8 +102,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&newConversation, "new", "n", false, "Start a new conversation instead of continuing from the last one")
 	rootCmd.PersistentFlags().StringVarP(&continueID, "continue", "c", "", "Continue from a specific conversation ID")
 	rootCmd.PersistentFlags().BoolVarP(&incognitoMode, "incognito", "G", false, "Run in incognito mode (do not save conversations to storage)")
-	rootCmd.PersistentFlags().StringVarP(&systemPromptPath, "system-prompt-file", "s", "", "Specify a custom system prompt template file")
-	rootCmd.PersistentFlags().StringVarP(&timeout, "timeout", "", "5m", "Specify request timeout duration (e.g. '5m', '30s')")
+	rootCmd.PersistentFlags().StringVarP(&timeout, "timeout", "", "", "Specify request timeout duration (e.g. '5m', '30s')")
 	rootCmd.PersistentFlags().BoolVar(&disableStreaming, "no-stream", false, "Disable streaming output (show complete response after generation)")
 	rootCmd.PersistentFlags().BoolVar(&skipStdin, "skip-stdin", false, "Skip reading from stdin (useful in scripts)")
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Path to unified configuration file (default: ./cpe.yaml, ~/.config/cpe/cpe.yaml)")
@@ -128,8 +127,8 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	// Determine which model to use
 	modelName := model
 	if modelName == "" {
-		if cfg.GetDefaultModel() != "" {
-			modelName = cfg.GetDefaultModel()
+		if cfg.Defaults.Model != "" {
+			modelName = cfg.Defaults.Model
 		} else if DefaultModel != "" {
 			modelName = DefaultModel
 		} else {
@@ -144,29 +143,35 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	}
 
 	// Determine effective timeout
-	effectiveTimeout := timeout
-	if effectiveTimeout == "" && cfg.Defaults.Timeout != "" {
-		effectiveTimeout = cfg.Defaults.Timeout
-	}
-	if effectiveTimeout == "" {
-		effectiveTimeout = "5m"
+	if timeout == "" {
+		timeout = "5m"
+		if cfg.Defaults.Timeout != "" {
+			timeout = cfg.Defaults.Timeout
+		}
 	}
 
-	requestTimeout, err := time.ParseDuration(effectiveTimeout)
+	requestTimeout, err := time.ParseDuration(timeout)
 	if err != nil {
-		return fmt.Errorf("invalid timeout value '%s': %w", effectiveTimeout, err)
+		return fmt.Errorf("invalid timeout value '%s': %w", timeout, err)
 	}
 
 	// Determine system prompt path
-	effectiveSystemPromptPath := selectedModel.GetEffectiveSystemPromptPath(
-		cfg.Defaults.SystemPromptPath,
-		systemPromptPath,
-	)
+	spPath := selectedModel.SystemPromptPath
+	if spPath == "" {
+		spPath = cfg.Defaults.SystemPromptPath
+	}
 
 	// Prepare system prompt
-	systemPrompt, err := agent.PrepareSystemPrompt(effectiveSystemPromptPath, &selectedModel.Model)
+	systemPrompt, err := agent.SystemPromptTemplate(spPath, agent.TemplateData{
+		Config: cfg,
+		Model:  selectedModel.Model,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to prepare system prompt: %w", err)
+	}
+
+	if customURL == "" {
+		customURL = selectedModel.BaseUrl
 	}
 
 	// Create the generator
@@ -175,7 +180,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		selectedModel.Model,
 		systemPrompt,
 		requestTimeout,
-		getCustomURL(customURL),
+		customURL,
 		disableStreaming || cfg.Defaults.NoStream,
 		cfg.MCPServers,
 	)
@@ -194,8 +199,20 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		defer dialogStorage.Close()
 	}
 
+	var genParams config.GenerationParams
+	if cfg.Defaults.GenerationParams != nil {
+		if err := mergo.Merge(&genParams, *cfg.Defaults.GenerationParams); err != nil {
+			return err
+		}
+	}
+	if selectedModel.GenerationDefaults != nil {
+		if err := mergo.Merge(&genParams, *selectedModel.GenerationDefaults, mergo.WithOverride); err != nil {
+			return err
+		}
+	}
+
 	// Build CLI overrides from flags
-	cliOverrides := &config.GenerationParams{}
+	cliOverrides := config.GenerationParams{}
 	if maxTokens > 0 {
 		cliOverrides.MaxTokens = &maxTokens
 	}
@@ -221,20 +238,53 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		cliOverrides.ThinkingBudget = &thinkingBudget
 	}
 
+	if err := mergo.Merge(&genParams, cliOverrides, mergo.WithOverride); err != nil {
+		return err
+	}
+
+	var genOpts gai.GenOpts
+
+	// Set max tokens from model max_output or effective params
+	genOpts.MaxGenerationTokens = int(selectedModel.Model.MaxOutput)
+	if genParams.MaxTokens != nil {
+		genOpts.MaxGenerationTokens = *genParams.MaxTokens
+	}
+
+	// Convert type config.GenerationParams to gai.GenOpts
+	if genParams.Temperature != nil {
+		genOpts.Temperature = *genParams.Temperature
+	}
+	if genParams.TopP != nil {
+		genOpts.TopP = *genParams.TopP
+	}
+	if genParams.TopK != nil {
+		genOpts.TopK = uint(*genParams.TopK)
+	}
+	if genParams.FrequencyPenalty != nil {
+		genOpts.FrequencyPenalty = *genParams.FrequencyPenalty
+	}
+	if genParams.PresencePenalty != nil {
+		genOpts.PresencePenalty = *genParams.PresencePenalty
+	}
+	if genParams.NumberOfResponses != nil {
+		genOpts.N = uint(*genParams.NumberOfResponses)
+	}
+	if genParams.ThinkingBudget != nil {
+		genOpts.ThinkingBudget = *genParams.ThinkingBudget
+	}
+
 	// Call the business logic
 	return commands.Generate(ctx, commands.GenerateOptions{
-		UserBlocks:          userBlocks,
-		Config:              cfg,
-		ModelName:           modelName,
-		SystemPrompt:        systemPrompt,
-		ContinueID:          continueID,
-		NewConversation:     newConversation,
-		IncognitoMode:       incognitoMode,
-		GenerationOverrides: cliOverrides,
-		Storage:             dialogStorage,
-		Generator:           toolGen,
-		Stdout:              os.Stdout,
-		Stderr:              os.Stderr,
+		UserBlocks:      userBlocks,
+		ContinueID:      continueID,
+		NewConversation: newConversation,
+		IncognitoMode:   incognitoMode,
+		GenOptsFunc: func(dialog gai.Dialog) *gai.GenOpts {
+			return &genOpts
+		},
+		Storage:   dialogStorage,
+		Generator: toolGen,
+		Stderr:    os.Stderr,
 	})
 }
 
@@ -374,19 +424,4 @@ func processUserInput(args []string) ([]gai.Block, error) {
 	}
 
 	return userBlocks, nil
-}
-
-// getCustomURL returns the custom URL to use based on the following precedence:
-// 1. Command-line flag (--custom-url)
-// 2. General custom URL environment variable (CPE_CUSTOM_URL)
-func getCustomURL(flagURL string) string {
-	// Start with the flag value
-	urlVal := flagURL
-
-	// Finally, check the general custom URL env var
-	if envURL := os.Getenv("CPE_CUSTOM_URL"); urlVal == "" && envURL != "" {
-		urlVal = envURL
-	}
-
-	return urlVal
 }

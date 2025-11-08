@@ -1,13 +1,36 @@
 package agent
 
 import (
+	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"text/template"
 
-	sprig "github.com/Masterminds/sprig/v3"
+	"github.com/Masterminds/sprig/v3"
+	"github.com/spachava753/cpe/internal/config"
 )
+
+type TemplateData struct {
+	config.Config
+	config.Model
+}
+
+// SystemPromptTemplate renders a template string with system info data
+func SystemPromptTemplate(templateStr string, td TemplateData) (string, error) {
+	tmpl, err := template.New("sysinfo").Funcs(createTemplateFuncMap()).Parse(templateStr)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse template string: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, td); err != nil {
+		return "", fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	return buf.String(), nil
+}
 
 // createTemplateFuncMap returns the FuncMap for system prompt templates
 func createTemplateFuncMap() template.FuncMap {

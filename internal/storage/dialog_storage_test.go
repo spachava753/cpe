@@ -29,8 +29,11 @@ func setupTestDB(t *testing.T) (*sql.DB, *DialogStorage) {
 	require.NoError(t, err, "Failed to create schema")
 
 	// Create dialog storage
-	storage, err := NewDialogStorage(db)
-	require.NoError(t, err, "Failed to create DialogStorage")
+	storage := &DialogStorage{
+		db:          db,
+		q:           New(db),
+		idGenerator: generateId,
+	}
 
 	return db, storage
 }

@@ -15,6 +15,19 @@ import (
 	"github.com/spachava753/gai"
 )
 
+// ServerConfig represents the configuration for a single MCP server
+type ServerConfig struct {
+	Command       string            `json:"command" yaml:"command" validate:"required_if=Type stdio"`
+	Args          []string          `json:"args" yaml:"args"`
+	Type          string            `json:"type,omitempty" yaml:"type,omitempty" validate:"required,oneof=stdio sse http"`
+	URL           string            `json:"url,omitempty" yaml:"url,omitempty" validate:"excluded_if=Type stdio,required_if=Type sse,required_if=Type http,omitempty,https_url|http_url"`
+	Timeout       int               `json:"timeout,omitempty" yaml:"timeout,omitempty" validate:"gte=0"`
+	Env           map[string]string `json:"env,omitempty" yaml:"env,omitempty" validate:"excluded_unless=Type stdio"`
+	EnabledTools  []string          `json:"enabledTools,omitempty" yaml:"enabledTools,omitempty" validate:"required_if=ToolFilter whitelist,excluded_with=DisabledTools"`
+	DisabledTools []string          `json:"disabledTools,omitempty" yaml:"disabledTools,omitempty" validate:"required_if=ToolFilter blacklist,excluded_with=EnabledTools"`
+	ToolFilter    string            `json:"toolFilter,omitempty" yaml:"toolFilter,omitempty" validate:"omitempty,oneof=all whitelist blacklist"`
+}
+
 // FilterMcpTools applies tool filtering based on the server configuration
 // Returns the filtered tools and a list of filtered-out tool names for logging
 func FilterMcpTools(tools []*mcp.Tool, config ServerConfig) ([]*mcp.Tool, []string) {
@@ -174,10 +187,10 @@ func CreateTransport(config ServerConfig) (transport mcp.Transport, err error) {
 
 // RegisterMCPServerTools registers all tools from all MCP servers with the tool registerer
 // It continues registering tools even if some fail, collecting warnings along the way
-func RegisterMCPServerTools(ctx context.Context, client *mcp.Client, mcpConfig Config, toolRegisterer interface {
+func RegisterMCPServerTools(ctx context.Context, client *mcp.Client, mcpServers map[string]ServerConfig, toolRegisterer interface {
 	Register(tool gai.Tool, callback gai.ToolCallback) error
 }) error {
-	serverNames := slices.Collect(maps.Keys(mcpConfig.MCPServers))
+	serverNames := slices.Collect(maps.Keys(mcpServers))
 
 	// If no servers are configured, return early without an error
 	if len(serverNames) == 0 {
@@ -192,7 +205,7 @@ func RegisterMCPServerTools(ctx context.Context, client *mcp.Client, mcpConfig C
 	// For each server, get tools and register
 	for _, serverName := range serverNames {
 		// Get server config for filtering
-		serverConfig := mcpConfig.MCPServers[serverName]
+		serverConfig := mcpServers[serverName]
 
 		transport, err := CreateTransport(serverConfig)
 		if err != nil {
