@@ -161,8 +161,18 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		spPath = cfg.Defaults.SystemPromptPath
 	}
 
+	f, err := os.Open(spPath)
+	if err != nil {
+		return fmt.Errorf("could not open system prompt file: %w", err)
+	}
+
+	contents, err := io.ReadAll(f)
+	if err != nil {
+		return err
+	}
+
 	// Prepare system prompt
-	systemPrompt, err := agent.SystemPromptTemplate(spPath, agent.TemplateData{
+	systemPrompt, err := agent.SystemPromptTemplate(string(contents), agent.TemplateData{
 		Config: cfg,
 		Model:  selectedModel.Model,
 	})
