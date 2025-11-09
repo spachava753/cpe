@@ -77,7 +77,7 @@ type GenerationParams struct {
 	TopP              *float64 `yaml:"topP,omitempty" json:"topP,omitempty" validate:"omitempty,lte=1,gte=0"`
 	TopK              *int     `yaml:"topK,omitempty" json:"topK,omitempty" validate:"omitempty,gte=0"`
 	MaxTokens         *int     `yaml:"maxTokens,omitempty" json:"maxTokens,omitempty" validate:"omitempty,gte=0"`
-	ThinkingBudget    *string  `yaml:"thinkingBudget,omitempty" json:"thinkingBudget,omitempty" validate:"omitempty,oneof=minimal low medium high|number"`
+	ThinkingBudget    *string  `yaml:"thinkingBudget,omitempty" json:"thinkingBudget,omitempty" validate:"omitempty,oneof=minimal low medium high false|number"`
 	FrequencyPenalty  *float64 `yaml:"frequencyPenalty,omitempty" json:"frequencyPenalty,omitempty" validate:"omitempty,lte=2,gte=-2"`
 	PresencePenalty   *float64 `yaml:"presencePenalty,omitempty" json:"presencePenalty,omitempty" validate:"omitempty,lte=2,gte=-2"`
 	NumberOfResponses *int     `yaml:"numberOfResponses,omitempty" json:"numberOfResponses,omitempty" validate:"omitempty,lte=2,gte=0"`

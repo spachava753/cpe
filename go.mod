@@ -7,6 +7,7 @@ retract v0.16.10
 retract v0.22.6
 
 require (
+	dario.cat/mergo v1.0.1
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/anthropics/anthropic-sdk-go v1.13.0
 	github.com/cenkalti/backoff/v5 v5.0.3
@@ -22,7 +23,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v0.7.0
 	github.com/muesli/termenv v0.16.0
 	github.com/openai/openai-go/v2 v2.7.1
-	github.com/spachava753/gai v0.20.0
+	github.com/spachava753/gai v0.21.0
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/term v0.36.0
@@ -35,7 +36,6 @@ require (
 	cloud.google.com/go v0.123.0 // indirect
 	cloud.google.com/go/auth v0.17.0 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
-	dario.cat/mergo v1.0.1 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.3.0 // indirect
