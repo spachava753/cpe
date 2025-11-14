@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"net/http"
 	"os/exec"
 	"slices"
 	"strings"
@@ -15,6 +16,22 @@ import (
 	"github.com/spachava753/gai"
 )
 
+// headerRoundTripper adds custom headers to HTTP requests
+type headerRoundTripper struct {
+	headers map[string]string
+	next    http.RoundTripper
+}
+
+func (h *headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	for name, value := range h.headers {
+		req.Header.Set(name, value)
+	}
+	if h.next == nil {
+		h.next = http.DefaultTransport
+	}
+	return h.next.RoundTrip(req)
+}
+
 // ServerConfig represents the configuration for a single MCP server
 type ServerConfig struct {
 	Command       string            `json:"command" yaml:"command" validate:"required_if=Type stdio"`
@@ -23,6 +40,7 @@ type ServerConfig struct {
 	URL           string            `json:"url,omitempty" yaml:"url,omitempty" validate:"excluded_if=Type stdio,required_if=Type sse,required_if=Type http,omitempty,https_url|http_url"`
 	Timeout       int               `json:"timeout,omitempty" yaml:"timeout,omitempty" validate:"gte=0"`
 	Env           map[string]string `json:"env,omitempty" yaml:"env,omitempty" validate:"excluded_unless=Type stdio"`
+	Headers       map[string]string `json:"headers,omitempty" yaml:"headers,omitempty" validate:"excluded_if=Type stdio"`
 	EnabledTools  []string          `json:"enabledTools,omitempty" yaml:"enabledTools,omitempty" validate:"required_if=ToolFilter whitelist,excluded_with=DisabledTools"`
 	DisabledTools []string          `json:"disabledTools,omitempty" yaml:"disabledTools,omitempty" validate:"required_if=ToolFilter blacklist,excluded_with=EnabledTools"`
 	ToolFilter    string            `json:"toolFilter,omitempty" yaml:"toolFilter,omitempty" validate:"omitempty,oneof=all whitelist blacklist"`
@@ -163,6 +181,16 @@ func (c *ToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage,
 }
 
 func CreateTransport(config ServerConfig) (transport mcp.Transport, err error) {
+	// Create custom HTTP client with headers if specified
+	var httpClient *http.Client
+	if len(config.Headers) > 0 && (config.Type == "http" || config.Type == "sse") {
+		httpClient = &http.Client{
+			Transport: &headerRoundTripper{
+				headers: config.Headers,
+			},
+		}
+	}
+
 	switch config.Type {
 	case "stdio", "":
 		transport = &mcp.CommandTransport{
@@ -171,12 +199,12 @@ func CreateTransport(config ServerConfig) (transport mcp.Transport, err error) {
 	case "http":
 		transport = &mcp.StreamableClientTransport{
 			Endpoint:   config.URL,
-			HTTPClient: nil,
+			HTTPClient: httpClient,
 		}
 	case "sse":
 		transport = &mcp.SSEClientTransport{
 			Endpoint:   config.URL,
-			HTTPClient: nil,
+			HTTPClient: httpClient,
 		}
 	}
 	if transport == nil {

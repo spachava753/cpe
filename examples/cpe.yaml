@@ -12,6 +12,25 @@ mcpServers:
     enabledTools:
       - text_edit
       - shell
+  
+  # Example HTTP server with custom headers
+  parallel:
+    url: "https://search-mcp.parallel.ai/mcp"
+    type: http
+    timeout: 60
+    # Example of adding custom headers (supports env var expansion)
+    headers:
+      Authorization: "Bearer ${API_KEY}"
+      X-Custom-Header: "Custom value"
+  
+  # Example SSE server with custom headers
+  sse-server:
+    url: "https://example-mcp.com/sse"
+    type: sse
+    timeout: 30
+    headers:
+      X-API-Key: "${MCP_API_KEY}"
+      Accept: "text/event-stream"
 
 # Model definitions with optional generation defaults
 models:

@@ -170,6 +170,15 @@ func (c *Config) expandEnvironmentVariables() error {
 			server.Env = expandedEnv
 		}
 
+		// Expand environment variables in custom headers
+		if server.Headers != nil {
+			expandedHeaders := make(map[string]string)
+			for k, v := range server.Headers {
+				expandedHeaders[os.ExpandEnv(k)] = os.ExpandEnv(v)
+			}
+			server.Headers = expandedHeaders
+		}
+
 		// Expand command arguments
 		for i, arg := range server.Args {
 			server.Args[i] = os.ExpandEnv(arg)
