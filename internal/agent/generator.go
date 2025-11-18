@@ -21,7 +21,7 @@ import (
 	mcpinternal "github.com/spachava753/cpe/internal/mcp"
 )
 
-func InitGeneratorFromModel(
+func initGeneratorFromModel(
 	ctx context.Context,
 	m config.Model,
 	systemPrompt string,
@@ -88,12 +88,12 @@ func InitGeneratorFromModel(
 	return NewPanicCatchingGenerator(gen), nil
 }
 
-// AgentGenerator interface for generators that work with gai.Dialog
-type AgentGenerator interface {
+// Iface interface for generators that work with gai.Dialog
+type Iface interface {
 	Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error)
 }
 
-// CreateToolCapableGenerator creates a AgentGenerator with all middleware properly configured
+// CreateToolCapableGenerator creates a Iface with all middleware properly configured
 func CreateToolCapableGenerator(
 	ctx context.Context,
 	selectedModel config.Model,
@@ -102,9 +102,9 @@ func CreateToolCapableGenerator(
 	baseURLOverride string,
 	disableStreaming bool,
 	mcpServers map[string]mcp.ServerConfig,
-) (AgentGenerator, error) {
+) (Iface, error) {
 	// Create the base generator from catalog model
-	genBase, err := InitGeneratorFromModel(ctx, selectedModel, systemPrompt, requestTimeout, baseURLOverride)
+	genBase, err := initGeneratorFromModel(ctx, selectedModel, systemPrompt, requestTimeout, baseURLOverride)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create generator: %w", err)
 	}
@@ -142,9 +142,17 @@ func CreateToolCapableGenerator(
 	// Create client manager
 	client := mcpinternal.NewClient()
 
-	// Register MCP server tools
-	if err = mcp.RegisterMCPServerTools(ctx, client, mcpServers, filterToolGen); err != nil {
-		return nil, fmt.Errorf("failed to register MCP tools: %v\n", err)
+	// Fetch MCP server tools
+	toolsMap, err := mcp.FetchTools(ctx, client, mcpServers)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch MCP tools: %v\n", err)
+	}
+
+	// Register each tool with the generator
+	for toolName, toolData := range toolsMap {
+		if err := filterToolGen.Register(toolData.Tool, toolData.ToolCallback); err != nil {
+			return nil, fmt.Errorf("failed to register tool %s: %v\n", toolName, err)
+		}
 	}
 
 	return filterToolGen, nil
