@@ -213,36 +213,46 @@ func CreateTransport(config ServerConfig) (transport mcp.Transport, err error) {
 	return
 }
 
-// RegisterMCPServerTools registers all tools from all MCP servers with the tool registerer
-// It continues registering tools even if some fail, collecting warnings along the way
-func RegisterMCPServerTools(ctx context.Context, client *mcp.Client, mcpServers map[string]ServerConfig, toolRegisterer interface {
-	Register(tool gai.Tool, callback gai.ToolCallback) error
-}) error {
+// FetchTools retrieves all tools from all MCP servers and returns them with their callbacks
+// It continues fetching tools even if some fail, collecting warnings along the way
+func FetchTools(ctx context.Context, client *mcp.Client, mcpServers map[string]ServerConfig) (map[string]struct {
+	Tool         gai.Tool
+	ToolCallback gai.ToolCallback
+}, error) {
 	serverNames := slices.Collect(maps.Keys(mcpServers))
 
 	// If no servers are configured, return early without an error
 	if len(serverNames) == 0 {
-		return nil
+		return make(map[string]struct {
+			Tool         gai.Tool
+			ToolCallback gai.ToolCallback
+		}), nil
 	}
 
 	registeredTools := make(map[string]string) // Map to track tool names for duplicate detection
 	var warnings []string                      // To collect all warnings
 	registeredCount := 0                       // Count successful registrations
 	totalFilteredOut := 0                      // Count filtered-out tools
+	
+	// Map to store the tools and callbacks to be returned
+	toolsMap := make(map[string]struct {
+		Tool         gai.Tool
+		ToolCallback gai.ToolCallback
+	})
 
-	// For each server, get tools and register
+	// For each server, get tools and prepare them for registration
 	for _, serverName := range serverNames {
 		// Get server config for filtering
 		serverConfig := mcpServers[serverName]
 
 		transport, err := CreateTransport(serverConfig)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		clientSession, err := client.Connect(ctx, transport, nil)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		// List tools (client is already initialized in GetClient)
@@ -269,7 +279,7 @@ func RegisterMCPServerTools(ctx context.Context, client *mcp.Client, mcpServers 
 			slog.Info("mcp tools filtered", "server", serverName, "filter", toolFilter, "filtered_count", len(filteredOut), "filtered", strings.Join(filteredOut, ", "))
 		}
 
-		// Register each filtered tool
+		// Process each filtered tool
 		for _, mcpTool := range filteredTools {
 			// Check for duplicate tool names
 			if existingServer, exists := registeredTools[mcpTool.Name]; exists {
@@ -294,14 +304,13 @@ func RegisterMCPServerTools(ctx context.Context, client *mcp.Client, mcpServers 
 				InputSchema: mcpTool.InputSchema,
 			}
 
-			// Register the tool with the callback
-			err = toolRegisterer.Register(gaiTool, callback)
-			if err != nil {
-				warnings = append(warnings, fmt.Sprintf(
-					"failed to register MCP tool '%s' from server '%s': %v",
-					mcpTool.Name, serverName, err))
-				// Skip this tool but continue with others
-				continue
+			// Store the tool and callback in the map
+			toolsMap[mcpTool.Name] = struct {
+				Tool         gai.Tool
+				ToolCallback gai.ToolCallback
+			}{
+				Tool:         gaiTool,
+				ToolCallback: callback,
 			}
 
 			// Track this tool to detect duplicates
@@ -321,12 +330,12 @@ func RegisterMCPServerTools(ctx context.Context, client *mcp.Client, mcpServers 
 			for _, warning := range warnings {
 				slog.Warn("mcp tool registration warning", "warning", warning)
 			}
-			return nil
+			return toolsMap, nil
 		}
-		return fmt.Errorf("failed to register any MCP tools: %s", strings.Join(warnings, "; "))
+		return toolsMap, fmt.Errorf("failed to register any MCP tools: %s", strings.Join(warnings, "; "))
 	}
 
-	return nil
+	return toolsMap, nil
 }
 
 func NewClient() *mcp.Client {

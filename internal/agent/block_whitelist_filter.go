@@ -12,23 +12,23 @@ type ToolRegister interface {
 	Register(tool gai.Tool, callback gai.ToolCallback) error
 }
 
-// BlockWhitelistFilter wraps a AgentGenerator and filters blocks based on a whitelist of allowed block types.
+// BlockWhitelistFilter wraps a Iface and filters blocks based on a whitelist of allowed block types.
 // Only blocks whose BlockType is in the AllowedTypes slice will be kept.
 type BlockWhitelistFilter struct {
-	generator    AgentGenerator
+	generator    Iface
 	allowedTypes []string
 }
 
 // NewBlockWhitelistFilter creates a new BlockWhitelistFilter with the specified allowed block types.
 // If allowedTypes is empty, all blocks are filtered out (whitelist behavior).
-func NewBlockWhitelistFilter(generator AgentGenerator, allowedTypes []string) *BlockWhitelistFilter {
+func NewBlockWhitelistFilter(generator Iface, allowedTypes []string) *BlockWhitelistFilter {
 	return &BlockWhitelistFilter{
 		generator:    generator,
 		allowedTypes: allowedTypes,
 	}
 }
 
-// Generate wraps the AgentGenerator.Generate method and filters blocks based on the whitelist
+// Generate wraps the Iface.Generate method and filters blocks based on the whitelist
 func (f *BlockWhitelistFilter) Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error) {
 	// Filter blocks in each message based on whitelist
 	filteredDialog := make(gai.Dialog, 0, len(dialog))
