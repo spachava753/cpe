@@ -13,13 +13,13 @@ import (
 func TestModelList(t *testing.T) {
 	tests := []struct {
 		name               string
-		config             config.Config
+		config             *config.RawConfig
 		defaultModel       string
 		wantOutputContains []string
 	}{
 		{
 			name: "list models without default",
-			config: config.Config{
+			config: &config.RawConfig{
 				Models: []config.ModelConfig{
 					{Model: config.Model{Ref: "model1"}},
 					{Model: config.Model{Ref: "model2"}},
@@ -33,7 +33,7 @@ func TestModelList(t *testing.T) {
 		},
 		{
 			name: "list models with default marked",
-			config: config.Config{
+			config: &config.RawConfig{
 				Models: []config.ModelConfig{
 					{Model: config.Model{Ref: "model1"}},
 					{Model: config.Model{Ref: "model2"}},
@@ -47,7 +47,7 @@ func TestModelList(t *testing.T) {
 		},
 		{
 			name: "empty model list",
-			config: config.Config{
+			config: &config.RawConfig{
 				Models: []config.ModelConfig{},
 			},
 			defaultModel:       "",
@@ -83,7 +83,7 @@ func TestModelList(t *testing.T) {
 func TestModelInfo(t *testing.T) {
 	tests := []struct {
 		name               string
-		config             config.Config
+		config             *config.RawConfig
 		modelName          string
 		wantErr            bool
 		errMsg             string
@@ -91,7 +91,7 @@ func TestModelInfo(t *testing.T) {
 	}{
 		{
 			name: "show model info",
-			config: config.Config{
+			config: &config.RawConfig{
 				Models: []config.ModelConfig{
 					{
 						Model: config.Model{
@@ -120,7 +120,7 @@ func TestModelInfo(t *testing.T) {
 		},
 		{
 			name: "model not found",
-			config: config.Config{
+			config: &config.RawConfig{
 				Models: []config.ModelConfig{
 					{Model: config.Model{Ref: "existing-model"}},
 				},
@@ -131,7 +131,7 @@ func TestModelInfo(t *testing.T) {
 		},
 		{
 			name: "no model name provided",
-			config: config.Config{
+			config: &config.RawConfig{
 				Models: []config.ModelConfig{},
 			},
 			modelName: "",
@@ -174,7 +174,7 @@ func TestModelInfo(t *testing.T) {
 func TestModelSystemPrompt(t *testing.T) {
 	tests := []struct {
 		name               string
-		config             config.Config
+		config             *config.RawConfig
 		modelName          string
 		template           string
 		templatePath       string
@@ -185,7 +185,7 @@ func TestModelSystemPrompt(t *testing.T) {
 	}{
 		{
 			name: "show system prompt",
-			config: config.Config{
+			config: &config.RawConfig{
 				Models: []config.ModelConfig{
 					{
 						Model: config.Model{
@@ -209,7 +209,7 @@ func TestModelSystemPrompt(t *testing.T) {
 		},
 		{
 			name: "model without system prompt",
-			config: config.Config{
+			config: &config.RawConfig{
 				Models: []config.ModelConfig{
 					{
 						Model: config.Model{
@@ -227,7 +227,7 @@ func TestModelSystemPrompt(t *testing.T) {
 		},
 		{
 			name: "model not found",
-			config: config.Config{
+			config: &config.RawConfig{
 				Models: []config.ModelConfig{},
 			},
 			modelName: "nonexistent-model",
@@ -236,7 +236,7 @@ func TestModelSystemPrompt(t *testing.T) {
 		},
 		{
 			name: "no model specified",
-			config: config.Config{
+			config: &config.RawConfig{
 				Models: []config.ModelConfig{},
 			},
 			modelName: "",
@@ -245,7 +245,7 @@ func TestModelSystemPrompt(t *testing.T) {
 		},
 		{
 			name: "render error",
-			config: config.Config{
+			config: &config.RawConfig{
 				Models: []config.ModelConfig{
 					{
 						Model: config.Model{

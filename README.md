@@ -211,7 +211,6 @@ cpe [flags] "Your prompt here"
 | `--new`                | `-n`  | Start a new conversation                                                                               |
 | `--continue`           | `-c`  | Continue from specific conversation ID                                                                 |
 | `--incognito`          | `-G`  | Don't save conversation history                                                                        |
-| `--system-prompt-file` | `-s`  | Specify custom system prompt template                                                                  |
 | `--timeout`            |       | Request timeout (default 5m)                                                                           |
 
 #### Advanced Flags

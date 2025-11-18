@@ -5,7 +5,7 @@ import (
 	"testing/fstest"
 )
 
-func TestLoadConfigFromFileFormats(t *testing.T) {
+func TestLoadRawConfigFromFileFormats(t *testing.T) {
 	tests := []struct {
 		name       string
 		content    string
@@ -122,17 +122,17 @@ models:
 			}
 			defer file.Close()
 
-			config, err := loadConfigFromFile(file)
+			config, err := loadRawConfigFromFile(file)
 
 			if tt.wantErr {
 				if err == nil {
-					t.Errorf("loadConfigFromFile() expected error but got none")
+					t.Errorf("loadRawConfigFromFile() expected error but got none")
 				}
 				return
 			}
 
 			if err != nil {
-				t.Errorf("loadConfigFromFile() unexpected error: %v", err)
+				t.Errorf("loadRawConfigFromFile() unexpected error: %v", err)
 				return
 			}
 

@@ -12,7 +12,7 @@ import (
 
 // ModelListOptions contains parameters for listing models
 type ModelListOptions struct {
-	Config       config.Config
+	Config       *config.RawConfig
 	DefaultModel string
 	Writer       io.Writer
 }
@@ -31,7 +31,7 @@ func ModelList(ctx context.Context, opts ModelListOptions) error {
 
 // ModelInfoOptions contains parameters for showing model details
 type ModelInfoOptions struct {
-	Config    config.Config
+	Config    *config.RawConfig
 	ModelName string
 	Writer    io.Writer
 }
@@ -53,20 +53,20 @@ func ModelInfo(ctx context.Context, opts ModelInfoOptions) error {
 
 	if model.GenerationDefaults != nil {
 		fmt.Fprintln(opts.Writer, "\nGeneration Defaults:")
-		if model.GenerationDefaults.Temperature != nil {
-			fmt.Fprintf(opts.Writer, "  Temperature: %.2f\n", *model.GenerationDefaults.Temperature)
+		if model.GenerationDefaults.Temperature != 0 {
+			fmt.Fprintf(opts.Writer, "  Temperature: %.2f\n", model.GenerationDefaults.Temperature)
 		}
-		if model.GenerationDefaults.TopP != nil {
-			fmt.Fprintf(opts.Writer, "  TopP: %.2f\n", *model.GenerationDefaults.TopP)
+		if model.GenerationDefaults.TopP != 0 {
+			fmt.Fprintf(opts.Writer, "  TopP: %.2f\n", model.GenerationDefaults.TopP)
 		}
-		if model.GenerationDefaults.TopK != nil {
-			fmt.Fprintf(opts.Writer, "  TopK: %d\n", *model.GenerationDefaults.TopK)
+		if model.GenerationDefaults.TopK != 0 {
+			fmt.Fprintf(opts.Writer, "  TopK: %d\n", model.GenerationDefaults.TopK)
 		}
-		if model.GenerationDefaults.MaxTokens != nil {
-			fmt.Fprintf(opts.Writer, "  MaxTokens: %d\n", *model.GenerationDefaults.MaxTokens)
+		if model.GenerationDefaults.MaxGenerationTokens != 0 {
+			fmt.Fprintf(opts.Writer, "  MaxTokens: %d\n", model.GenerationDefaults.MaxGenerationTokens)
 		}
-		if model.GenerationDefaults.ThinkingBudget != nil {
-			fmt.Fprintf(opts.Writer, "  ThinkingBudget: %s\n", *model.GenerationDefaults.ThinkingBudget)
+		if model.GenerationDefaults.ThinkingBudget != "" {
+			fmt.Fprintf(opts.Writer, "  ThinkingBudget: %s\n", model.GenerationDefaults.ThinkingBudget)
 		}
 	}
 
@@ -80,7 +80,7 @@ type SystemPromptRenderer interface {
 
 // ModelSystemPromptOptions contains parameters for showing system prompts
 type ModelSystemPromptOptions struct {
-	Config       config.Config
+	Config       *config.RawConfig
 	ModelName    string
 	SystemPrompt fs.File
 	Output       io.Writer
@@ -107,9 +107,15 @@ func ModelSystemPrompt(opts ModelSystemPromptOptions) error {
 		return err
 	}
 
+	// Create a minimal Config for template rendering
+	templateConfig := &config.Config{
+		Model:              selectedModel.Model,
+		MCPServers:         opts.Config.MCPServers,
+		GenerationDefaults: nil,
+	}
+
 	systemPrompt, err := agent.SystemPromptTemplate(string(contents), agent.TemplateData{
-		Config: opts.Config,
-		Model:  selectedModel.Model,
+		Config: templateConfig,
 	})
 	if err != nil {
 		return err

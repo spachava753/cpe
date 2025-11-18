@@ -13,8 +13,7 @@ import (
 )
 
 type TemplateData struct {
-	config.Config
-	config.Model
+	*config.Config
 }
 
 // SystemPromptTemplate renders a template string with system info data

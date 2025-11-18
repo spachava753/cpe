@@ -3,8 +3,10 @@ package config
 //go:generate go run github.com/spachava753/cpe/cmd/gen-schema
 
 import (
-	"dario.cat/mergo"
+	"time"
+
 	"github.com/spachava753/cpe/internal/mcp"
+	"github.com/spachava753/gai"
 )
 
 // Model represents an AI model configuration
@@ -28,8 +30,8 @@ type PatchRequestConfig struct {
 	IncludeHeaders map[string]string        `json:"includeHeaders,omitempty" yaml:"includeHeaders,omitempty"`
 }
 
-// Config represents the unified configuration structure
-type Config struct {
+// RawConfig represents the configuration file structure
+type RawConfig struct {
 	// MCP server configurations
 	MCPServers map[string]mcp.ServerConfig `yaml:"mcpServers,omitempty" json:"mcpServers,omitempty" validate:"dive"`
 
@@ -51,7 +53,7 @@ type Defaults struct {
 	Model string `yaml:"model,omitempty" json:"model,omitempty" validate:"omitempty"`
 
 	// Global generation parameter defaults
-	GenerationParams *GenerationParams `yaml:"generationParams,omitempty" json:"generationParams,omitempty" validate:"omitempty"`
+	GenerationParams *gai.GenOpts `yaml:"generationParams,omitempty" json:"generationParams,omitempty" validate:"omitempty"`
 
 	// Request timeout
 	Timeout string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
@@ -68,23 +70,11 @@ type ModelConfig struct {
 	SystemPromptPath string `yaml:"systemPromptPath,omitempty" json:"systemPromptPath,omitempty" validate:"omitempty,filepath"`
 
 	// Generation parameter defaults for this model
-	GenerationDefaults *GenerationParams `yaml:"generationDefaults,omitempty" json:"generationDefaults,omitempty" validate:"omitempty"`
-}
-
-// GenerationParams holds generation parameters
-type GenerationParams struct {
-	Temperature       *float64 `yaml:"temperature,omitempty" json:"temperature,omitempty" validate:"omitempty,lte=2,gte=0"`
-	TopP              *float64 `yaml:"topP,omitempty" json:"topP,omitempty" validate:"omitempty,lte=1,gte=0"`
-	TopK              *int     `yaml:"topK,omitempty" json:"topK,omitempty" validate:"omitempty,gte=0"`
-	MaxTokens         *int     `yaml:"maxTokens,omitempty" json:"maxTokens,omitempty" validate:"omitempty,gte=0"`
-	ThinkingBudget    *string  `yaml:"thinkingBudget,omitempty" json:"thinkingBudget,omitempty" validate:"omitempty,oneof=minimal low medium high false|number"`
-	FrequencyPenalty  *float64 `yaml:"frequencyPenalty,omitempty" json:"frequencyPenalty,omitempty" validate:"omitempty,lte=2,gte=-2"`
-	PresencePenalty   *float64 `yaml:"presencePenalty,omitempty" json:"presencePenalty,omitempty" validate:"omitempty,lte=2,gte=-2"`
-	NumberOfResponses *int     `yaml:"numberOfResponses,omitempty" json:"numberOfResponses,omitempty" validate:"omitempty,lte=2,gte=0"`
+	GenerationDefaults *gai.GenOpts `yaml:"generationDefaults,omitempty" json:"generationDefaults,omitempty" validate:"omitempty"`
 }
 
 // FindModel searches for a model by ref in the config
-func (c *Config) FindModel(ref string) (ModelConfig, bool) {
+func (c *RawConfig) FindModel(ref string) (ModelConfig, bool) {
 	for _, model := range c.Models {
 		if model.Ref == ref {
 			return model, true
@@ -93,24 +83,38 @@ func (c *Config) FindModel(ref string) (ModelConfig, bool) {
 	return ModelConfig{}, false
 }
 
-// GetEffectiveGenerationParams returns the effective generation parameters by merging model defaults, global defaults, and CLI overrides.
-func (m *ModelConfig) GetEffectiveGenerationParams(globalDefaults *GenerationParams, cliOverrides *GenerationParams) GenerationParams {
-	result := GenerationParams{}
+// Config represents the effective runtime configuration for a single model
+type Config struct {
+	// MCP server configurations
+	MCPServers map[string]mcp.ServerConfig
 
-	// Merge model-specific defaults first
-	if m != nil && m.GenerationDefaults != nil {
-		_ = mergo.Merge(&result, *m.GenerationDefaults)
-	}
+	// Selected model
+	Model Model
 
-	// Merge global defaults, only filling in nil/zero values
-	if globalDefaults != nil {
-		_ = mergo.Merge(&result, *globalDefaults)
-	}
+	// Resolved system prompt path (model-specific or global default)
+	SystemPromptPath string
 
-	// Merge CLI overrides with override to always take precedence
-	if cliOverrides != nil {
-		_ = mergo.Merge(&result, *cliOverrides, mergo.WithOverride)
-	}
+	// Effective generation parameters after merging all sources
+	GenerationDefaults *gai.GenOpts
 
-	return result
+	// Effective timeout
+	Timeout time.Duration
+
+	// Whether streaming is disabled
+	NoStream bool
+}
+
+// RuntimeOptions captures runtime overrides from CLI flags and environment
+type RuntimeOptions struct {
+	// Model ref to use (from --model or CPE_MODEL)
+	ModelRef string
+
+	// Generation parameter overrides (from flags)
+	GenParams *gai.GenOpts
+
+	// Timeout override (from --timeout)
+	Timeout string
+
+	// Streaming override (from --no-stream)
+	NoStream *bool
 }
