@@ -5,30 +5,25 @@ CPE (Chat-based Programming Editor) is a CLI that connects local developer workf
 Key capabilities:
 
 - Multi-model generation via unified YAML/JSON configuration
-- Tool use (file ops, shell execution, MCP servers)
-- Streaming or non-streaming output with “thinking” filtering
+- Tool use via MCP servers
+- Streaming or prettified non-streaming output
 - Conversation persistence and branching
 
 ## Project structure and organization
 
-- cmd/
-    - root.go: main CLI entry and flow (flags, IO processing, dialog, execution)
-    - model.go: model list/info from the JSON catalog
-    - tools.go: token counting utilities
-    - system_prompt.go: system prompt template handling
-    - mcp.go, conversation.go, etc.: supporting subcommands
-- internal/
-    - agent/: generator adapters, streaming/printing, thinking filter, sysinfo
-    - config/: Unified configuration loading, validation, parameter merging, and Model struct
-    - mcp/: MCP config validation and client
-    - storage/: SQLite-backed conversation storage (.cpeconvo)
-    - token/: token counting builder and directory tree utilities
-    - urlhandler/: URL detection and safe downloading
-    - version/: version reporting
-- main.go: invokes cmd.Execute()
-- gen.go: code generation hooks (if any)
-- .github/workflows/: CI (currently empty)
-- examples/cpe.yaml: example unified configuration (YAML)
+- `cmd/`: The package which has the cobra commands that user invokes
+- `internal/`: Hosts all of the actual business logic and utilities
+    -
+    `agent/`: Package that hosts generator adapters, streaming/printing, thinking filter, system prompt generation, and agent creation to execute a user query
+    - `config/`: Package that hosts configuration loading, validation, parameter merging, and config specific types
+    - `mcp/`: Package that hosts MCP config validation and client, as well as code for connecting to MPC servers
+    - `storage/`: Package that hosts SQLite-backed conversation storage (.cpeconvo) and related persistence code
+    - `urlhandler/`: Package that hosts utility code for URL detection and safe downloading
+    - `version/`: Package that hosts CLI version reporting
+- `main.go`: invokes cmd.Execute()
+- `gen.go`: code generation hooks, like sqlc codegen
+- `examples/`: Folder that hosts examples of configuration, system prompt templates, etc.
+- `docs/`: Folder that hosts markdown files documenting various things like PRDs, specs, etc.
 
 ## Build, test, and development commands
 
@@ -57,9 +52,6 @@ Run (typical dev):
 # New conversation or continue specific one
 ./cpe --config ./examples/cpe.yaml -m sonnet -n "Start fresh"
 ./cpe --config ./examples/cpe.yaml -m sonnet -c <message_id> "Continue"
-
-# Streaming off, custom system prompt
-./cpe --config ./examples/cpe.yaml -m sonnet --no-stream -s prompt.txt "..."
 ```
 
 Model utilities:
@@ -120,20 +112,6 @@ go generate ./internal/config/
 ## Performance considerations
 
 CPE is a CLI tool and MCP client where execution time is dominated by network calls to AI model APIs. Performance optimizations are typically not a concern unless specifically requested by the user. Focus on correctness, maintainability, and user experience over micro-optimizations.
-
-## Adding new generator types
-
-When adding support for a new generator type (e.g., after upgrading github.com/spachava753/gai):
-
-1. **Generator initialization** (`internal/agent/generator.go`):
-   - Create a `createXGenerator` function following the existing pattern (takes model, baseURL, systemPrompt, timeout, apiKey, patchConfig)
-   - Add a new case to the switch statement in `InitGeneratorFromModel` with appropriate API key environment variable handling
-
-2. **Config validation** (`internal/config/loader.go`):
-   - Add the new type to the `validTypes` map in the `Validate()` function
-   - Update the error message listing valid types to include the new generator
-   
-**IMPORTANT**: Remember to update BOTH the generator init logic AND the config validation. The config validation must be updated in `internal/config/loader.go` in the `Validate()` method's `validTypes` map and error message.
 
 ## Documentation for Go Symbols
 
