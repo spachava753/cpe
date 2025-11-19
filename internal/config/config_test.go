@@ -4,8 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/spachava753/gai"
 )
 
 func TestRawConfig_FindModel(t *testing.T) {
@@ -303,7 +301,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							Temperature: 0.5,
 						},
 					},
@@ -316,7 +314,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							Temperature: 2.5,
 						},
 					},
@@ -330,7 +328,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							Temperature: -0.1,
 						},
 					},
@@ -344,7 +342,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							TopP: 0.8,
 						},
 					},
@@ -357,7 +355,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							TopP: 1.1,
 						},
 					},
@@ -371,7 +369,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							TopP: -0.1,
 						},
 					},
@@ -385,7 +383,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							TopK: 10,
 						},
 					},
@@ -398,7 +396,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							MaxGenerationTokens: 2048,
 						},
 					},
@@ -411,7 +409,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							MaxGenerationTokens: -1,
 						},
 					},
@@ -425,7 +423,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							ThinkingBudget: "minimal",
 						},
 					},
@@ -438,7 +436,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							ThinkingBudget: "low",
 						},
 					},
@@ -451,7 +449,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							ThinkingBudget: "medium",
 						},
 					},
@@ -464,7 +462,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							ThinkingBudget: "high",
 						},
 					},
@@ -477,7 +475,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "anthropic", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							ThinkingBudget: "30000",
 						},
 					},
@@ -490,7 +488,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							ThinkingBudget: "invalid",
 						},
 					},
@@ -504,7 +502,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							FrequencyPenalty: 0.5,
 						},
 					},
@@ -517,7 +515,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							FrequencyPenalty: 2.5,
 						},
 					},
@@ -531,7 +529,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							FrequencyPenalty: -2.5,
 						},
 					},
@@ -545,7 +543,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							PresencePenalty: 0.3,
 						},
 					},
@@ -558,7 +556,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							PresencePenalty: 2.5,
 						},
 					},
@@ -572,7 +570,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							PresencePenalty: -2.5,
 						},
 					},
@@ -586,7 +584,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							N: 1,
 						},
 					},
@@ -599,7 +597,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							N: 3,
 						},
 					},
@@ -613,7 +611,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &gai.GenOpts{
+						GenerationDefaults: &GenerationParams{
 							Temperature:         0.5,
 							TopP:                0.8,
 							TopK:                10,
@@ -634,7 +632,7 @@ func TestRawConfig_Validate(t *testing.T) {
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
 				},
 				Defaults: Defaults{
-					GenerationParams: &gai.GenOpts{
+					GenerationParams: &GenerationParams{
 						Temperature: 0.5,
 						TopP:        0.8,
 					},
@@ -648,7 +646,7 @@ func TestRawConfig_Validate(t *testing.T) {
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
 				},
 				Defaults: Defaults{
-					GenerationParams: &gai.GenOpts{
+					GenerationParams: &GenerationParams{
 						Temperature: 3.0,
 					},
 				},

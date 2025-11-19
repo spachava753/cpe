@@ -45,6 +45,39 @@ type RawConfig struct {
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`
 }
 
+// GenerationParams wraps gai.GenOpts with proper YAML/JSON tags for config unmarshaling
+type GenerationParams struct {
+	Temperature         float64  `yaml:"temperature,omitempty" json:"temperature,omitempty" validate:"omitempty,lte=2,gte=0"`
+	TopP                float64  `yaml:"topP,omitempty" json:"topP,omitempty" validate:"omitempty,lte=1,gte=0"`
+	TopK                uint     `yaml:"topK,omitempty" json:"topK,omitempty" validate:"omitempty,gte=0"`
+	FrequencyPenalty    float64  `yaml:"frequencyPenalty,omitempty" json:"frequencyPenalty,omitempty" validate:"omitempty,lte=2,gte=-2"`
+	PresencePenalty     float64  `yaml:"presencePenalty,omitempty" json:"presencePenalty,omitempty" validate:"omitempty,lte=2,gte=-2"`
+	N                   uint     `yaml:"n,omitempty" json:"n,omitempty" validate:"omitempty,lte=2,gte=0"`
+	MaxGenerationTokens int      `yaml:"maxGenerationTokens,omitempty" json:"maxGenerationTokens,omitempty" validate:"omitempty,gte=0"`
+	ToolChoice          string   `yaml:"toolChoice,omitempty" json:"toolChoice,omitempty"`
+	StopSequences       []string `yaml:"stopSequences,omitempty" json:"stopSequences,omitempty"`
+	ThinkingBudget      string   `yaml:"thinkingBudget,omitempty" json:"thinkingBudget,omitempty" validate:"omitempty,oneof=minimal low medium high|number"`
+}
+
+// ToGenOpts converts GenerationParams to gai.GenOpts
+func (g *GenerationParams) ToGenOpts() *gai.GenOpts {
+	if g == nil {
+		return nil
+	}
+	return &gai.GenOpts{
+		Temperature:         g.Temperature,
+		TopP:                g.TopP,
+		TopK:                g.TopK,
+		FrequencyPenalty:    g.FrequencyPenalty,
+		PresencePenalty:     g.PresencePenalty,
+		N:                   g.N,
+		MaxGenerationTokens: g.MaxGenerationTokens,
+		ToolChoice:          g.ToolChoice,
+		StopSequences:       g.StopSequences,
+		ThinkingBudget:      g.ThinkingBudget,
+	}
+}
+
 type Defaults struct {
 	// Path to system prompt template file
 	SystemPromptPath string `yaml:"systemPromptPath,omitempty" json:"systemPromptPath,omitempty" validate:"omitempty,filepath"`
@@ -53,7 +86,7 @@ type Defaults struct {
 	Model string `yaml:"model,omitempty" json:"model,omitempty" validate:"omitempty"`
 
 	// Global generation parameter defaults
-	GenerationParams *gai.GenOpts `yaml:"generationParams,omitempty" json:"generationParams,omitempty" validate:"omitempty"`
+	GenerationParams *GenerationParams `yaml:"generationParams,omitempty" json:"generationParams,omitempty" validate:"omitempty"`
 
 	// Request timeout
 	Timeout string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
@@ -70,7 +103,7 @@ type ModelConfig struct {
 	SystemPromptPath string `yaml:"systemPromptPath,omitempty" json:"systemPromptPath,omitempty" validate:"omitempty,filepath"`
 
 	// Generation parameter defaults for this model
-	GenerationDefaults *gai.GenOpts `yaml:"generationDefaults,omitempty" json:"generationDefaults,omitempty" validate:"omitempty"`
+	GenerationDefaults *GenerationParams `yaml:"generationDefaults,omitempty" json:"generationDefaults,omitempty" validate:"omitempty"`
 }
 
 // FindModel searches for a model by ref in the config

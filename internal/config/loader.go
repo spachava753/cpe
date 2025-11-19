@@ -248,14 +248,16 @@ func ResolveConfig(configPath string, opts RuntimeOptions) (*Config, error) {
 
 	// Start with global defaults
 	if rawCfg.Defaults.GenerationParams != nil {
-		if err := mergo.Merge(genParams, rawCfg.Defaults.GenerationParams, mergo.WithOverride); err != nil {
+		globalGenOpts := rawCfg.Defaults.GenerationParams.ToGenOpts()
+		if err := mergo.Merge(genParams, globalGenOpts, mergo.WithOverride); err != nil {
 			return nil, err
 		}
 	}
 
 	// Apply model-specific defaults
 	if selectedModel.GenerationDefaults != nil {
-		if err := mergo.Merge(genParams, selectedModel.GenerationDefaults, mergo.WithOverride); err != nil {
+		modelGenOpts := selectedModel.GenerationDefaults.ToGenOpts()
+		if err := mergo.Merge(genParams, modelGenOpts, mergo.WithOverride); err != nil {
 			return nil, err
 		}
 	}

@@ -23,7 +23,7 @@ func generateSchema() error {
 		RequiredFromJSONSchemaTags: true,
 	}
 
-	schema := reflector.Reflect(&config.Config{})
+	schema := reflector.Reflect(&config.RawConfig{})
 	schema.Title = "CPE Configuration Schema"
 	schema.Description = "JSON Schema for CPE (Chat-based Programming Editor) configuration files"
 	schema.Version = "https://json-schema.org/draft/2020-12/schema"
