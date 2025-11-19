@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-func TestConfig_FindModel(t *testing.T) {
-	cfg := &Config{
+func TestRawConfig_FindModel(t *testing.T) {
+	cfg := &RawConfig{
 		Models: []ModelConfig{
 			{Model: Model{Ref: "gpt4", ID: "gpt-4", Type: "openai"}},
 			{Model: Model{Ref: "sonnet", ID: "claude-sonnet", Type: "anthropic"}},
@@ -27,7 +27,7 @@ func TestConfig_FindModel(t *testing.T) {
 	}
 }
 
-func TestLoadConfigFromFile(t *testing.T) {
+func TestLoadRawConfigFromFile(t *testing.T) {
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "test.yaml")
 	content := `
@@ -37,6 +37,7 @@ models:
     display_name: "Model"
     id: "id"
     type: "openai"
+    api_key_env: "API_KEY"
 defaults:
   model: "model"
 `
@@ -51,7 +52,7 @@ defaults:
 	}
 	t.Cleanup(func() { _ = file.Close() })
 
-	cfg, err := loadConfigFromFile(file)
+	cfg, err := loadRawConfigFromFile(file)
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
@@ -70,19 +71,15 @@ defaults:
 	}
 }
 
-func ptr[T any](v T) *T {
-	return &v
-}
-
-func TestConfig_Validate(t *testing.T) {
+func TestRawConfig_Validate(t *testing.T) {
 	tests := []struct {
 		name      string
-		cfg       Config
+		cfg       RawConfig
 		expectErr bool
 	}{
 		{
 			name: "valid basic config",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{
@@ -98,12 +95,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name:      "missing models",
-			cfg:       Config{Models: []ModelConfig{}},
+			cfg:       RawConfig{Models: []ModelConfig{}},
 			expectErr: true,
 		},
 		{
 			name: "duplicate refs",
-			cfg: Config{Models: []ModelConfig{
+			cfg: RawConfig{Models: []ModelConfig{
 				{Model: Model{Ref: "test", DisplayName: "Test Model 1", ID: "id1", Type: "openai", ApiKeyEnv: "KEY1"}},
 				{Model: Model{Ref: "test", DisplayName: "Test Model 2", ID: "id2", Type: "anthropic", ApiKeyEnv: "KEY2"}},
 			}},
@@ -111,7 +108,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid default model",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "gpt4", DisplayName: "GPT-4", ID: "gpt-4", Type: "openai", ApiKeyEnv: "OPENAI_API_KEY"}},
 					{Model: Model{Ref: "sonnet", DisplayName: "Sonnet", ID: "sonnet", Type: "anthropic", ApiKeyEnv: "ANTHROPIC_API_KEY"}},
@@ -121,7 +118,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid default model",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "gpt4", DisplayName: "GPT-4", ID: "gpt-4", Type: "openai", ApiKeyEnv: "OPENAI_API_KEY"}},
 					{Model: Model{Ref: "sonnet", DisplayName: "Sonnet", ID: "sonnet", Type: "anthropic", ApiKeyEnv: "ANTHROPIC_API_KEY"}},
@@ -132,7 +129,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "empty default model is valid",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "gpt4", DisplayName: "GPT-4", ID: "gpt-4", Type: "openai", ApiKeyEnv: "OPENAI_API_KEY"}},
 				},
@@ -141,7 +138,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "missing required ref",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
 				},
@@ -150,7 +147,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "missing required display_name",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
 				},
@@ -159,7 +156,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "missing required id",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", Type: "openai", ApiKeyEnv: "KEY"}},
 				},
@@ -168,7 +165,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "missing required type",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", ApiKeyEnv: "KEY"}},
 				},
@@ -177,7 +174,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "missing required api_key_env",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai"}},
 				},
@@ -186,7 +183,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid type",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "invalid-type", ApiKeyEnv: "KEY"}},
 				},
@@ -195,7 +192,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid openai type",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
 				},
@@ -203,7 +200,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid anthropic type",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "anthropic", ApiKeyEnv: "KEY"}},
 				},
@@ -211,7 +208,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid gemini type",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "gemini", ApiKeyEnv: "KEY"}},
 				},
@@ -219,7 +216,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid groq type",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "groq", ApiKeyEnv: "KEY"}},
 				},
@@ -227,7 +224,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid cerebras type",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "cerebras", ApiKeyEnv: "KEY"}},
 				},
@@ -235,7 +232,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid openrouter type",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openrouter", ApiKeyEnv: "KEY"}},
 				},
@@ -243,7 +240,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid responses type",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "responses", ApiKeyEnv: "KEY"}},
 				},
@@ -251,7 +248,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid https base_url",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY", BaseUrl: "https://api.example.com"}},
 				},
@@ -259,7 +256,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid http base_url",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY", BaseUrl: "http://localhost:8080"}},
 				},
@@ -267,7 +264,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid base_url",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY", BaseUrl: "not-a-url"}},
 				},
@@ -276,7 +273,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid context_window",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY", ContextWindow: 8192}},
 				},
@@ -284,7 +281,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "zero context_window is valid (omitempty)",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY", ContextWindow: 0}},
 				},
@@ -292,7 +289,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid max_output",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY", MaxOutput: 4096}},
 				},
@@ -300,12 +297,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid generation params - temperature",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							Temperature: ptr(0.5),
+							Temperature: 0.5,
 						},
 					},
 				},
@@ -313,12 +310,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid temperature too high",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							Temperature: ptr(2.5),
+							Temperature: 2.5,
 						},
 					},
 				},
@@ -327,12 +324,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid temperature negative",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							Temperature: ptr(-0.1),
+							Temperature: -0.1,
 						},
 					},
 				},
@@ -341,12 +338,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid topP",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							TopP: ptr(0.8),
+							TopP: 0.8,
 						},
 					},
 				},
@@ -354,12 +351,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid topP too high",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							TopP: ptr(1.1),
+							TopP: 1.1,
 						},
 					},
 				},
@@ -368,12 +365,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid topP negative",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							TopP: ptr(-0.1),
+							TopP: -0.1,
 						},
 					},
 				},
@@ -382,52 +379,38 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid topK",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							TopK: ptr(10),
+							TopK: 10,
 						},
 					},
 				},
 			},
 		},
 		{
-			name: "invalid topK negative",
-			cfg: Config{
+			name: "valid MaxGenerationTokens",
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							TopK: ptr(-1),
-						},
-					},
-				},
-			},
-			expectErr: true,
-		},
-		{
-			name: "valid maxTokens",
-			cfg: Config{
-				Models: []ModelConfig{
-					{
-						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &GenerationParams{
-							MaxTokens: ptr(2048),
+							MaxGenerationTokens: 2048,
 						},
 					},
 				},
 			},
 		},
 		{
-			name: "invalid maxTokens negative",
-			cfg: Config{
+			name: "invalid MaxGenerationTokens negative",
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							MaxTokens: ptr(-1),
+							MaxGenerationTokens: -1,
 						},
 					},
 				},
@@ -436,12 +419,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid thinkingBudget minimal",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							ThinkingBudget: ptr("minimal"),
+							ThinkingBudget: "minimal",
 						},
 					},
 				},
@@ -449,12 +432,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid thinkingBudget low",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							ThinkingBudget: ptr("low"),
+							ThinkingBudget: "low",
 						},
 					},
 				},
@@ -462,12 +445,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid thinkingBudget medium",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							ThinkingBudget: ptr("medium"),
+							ThinkingBudget: "medium",
 						},
 					},
 				},
@@ -475,12 +458,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid thinkingBudget high",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							ThinkingBudget: ptr("high"),
+							ThinkingBudget: "high",
 						},
 					},
 				},
@@ -488,12 +471,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid thinkingBudget number",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "anthropic", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							ThinkingBudget: ptr("30000"),
+							ThinkingBudget: "30000",
 						},
 					},
 				},
@@ -501,12 +484,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid thinkingBudget",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							ThinkingBudget: ptr("invalid"),
+							ThinkingBudget: "invalid",
 						},
 					},
 				},
@@ -515,12 +498,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid frequencyPenalty",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							FrequencyPenalty: ptr(0.5),
+							FrequencyPenalty: 0.5,
 						},
 					},
 				},
@@ -528,12 +511,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid frequencyPenalty too high",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							FrequencyPenalty: ptr(2.5),
+							FrequencyPenalty: 2.5,
 						},
 					},
 				},
@@ -542,12 +525,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid frequencyPenalty too low",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							FrequencyPenalty: ptr(-2.5),
+							FrequencyPenalty: -2.5,
 						},
 					},
 				},
@@ -556,12 +539,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid presencePenalty",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							PresencePenalty: ptr(0.3),
+							PresencePenalty: 0.3,
 						},
 					},
 				},
@@ -569,12 +552,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid presencePenalty too high",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							PresencePenalty: ptr(2.5),
+							PresencePenalty: 2.5,
 						},
 					},
 				},
@@ -583,12 +566,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid presencePenalty too low",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							PresencePenalty: ptr(-2.5),
+							PresencePenalty: -2.5,
 						},
 					},
 				},
@@ -597,12 +580,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid numberOfResponses",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							NumberOfResponses: ptr(1),
+							N: 1,
 						},
 					},
 				},
@@ -610,26 +593,12 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "invalid numberOfResponses too high",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							NumberOfResponses: ptr(3),
-						},
-					},
-				},
-			},
-			expectErr: true,
-		},
-		{
-			name: "invalid numberOfResponses negative",
-			cfg: Config{
-				Models: []ModelConfig{
-					{
-						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &GenerationParams{
-							NumberOfResponses: ptr(-1),
+							N: 3,
 						},
 					},
 				},
@@ -638,19 +607,19 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "all valid generation params",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
 						GenerationDefaults: &GenerationParams{
-							Temperature:       ptr(0.5),
-							TopP:              ptr(0.8),
-							TopK:              ptr(10),
-							MaxTokens:         ptr(2048),
-							ThinkingBudget:    ptr("medium"),
-							FrequencyPenalty:  ptr(0.5),
-							PresencePenalty:   ptr(0.3),
-							NumberOfResponses: ptr(1),
+							Temperature:         0.5,
+							TopP:                0.8,
+							TopK:                10,
+							MaxGenerationTokens: 2048,
+							ThinkingBudget:      "medium",
+							FrequencyPenalty:    0.5,
+							PresencePenalty:     0.3,
+							N:                   1,
 						},
 					},
 				},
@@ -658,27 +627,27 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "defaults with valid generation params",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
 				},
 				Defaults: Defaults{
 					GenerationParams: &GenerationParams{
-						Temperature: ptr(0.5),
-						TopP:        ptr(0.8),
+						Temperature: 0.5,
+						TopP:        0.8,
 					},
 				},
 			},
 		},
 		{
 			name: "defaults with invalid temperature",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
 				},
 				Defaults: Defaults{
 					GenerationParams: &GenerationParams{
-						Temperature: ptr(3.0),
+						Temperature: 3.0,
 					},
 				},
 			},
@@ -686,7 +655,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid systemPromptPath in defaults",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
 				},
@@ -697,7 +666,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "empty systemPromptPath in defaults is valid",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
 				},
@@ -708,7 +677,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "valid systemPromptPath in model",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model:            Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
@@ -719,7 +688,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "empty systemPromptPath in model is valid",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model:            Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
@@ -730,7 +699,7 @@ func TestConfig_Validate(t *testing.T) {
 		},
 		{
 			name: "systemPromptPath in both model and defaults",
-			cfg: Config{
+			cfg: RawConfig{
 				Models: []ModelConfig{
 					{
 						Model:            Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
@@ -741,29 +710,7 @@ func TestConfig_Validate(t *testing.T) {
 					SystemPromptPath: "prompts/default.txt",
 				},
 			},
-		},
-		{
-			name: "invalid systemPromptPath in defaults",
-			cfg: Config{
-				Models: []ModelConfig{
-					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
-				},
-				Defaults: Defaults{
-					SystemPromptPath: "https://api.example.com",
-				},
-			},
-			expectErr: true,
-		},
-		{
-			name: "invalid systemPromptPath in model",
-			cfg: Config{
-				Models: []ModelConfig{
-					{
-						Model:            Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						SystemPromptPath: "https://api.example.com"},
-				},
-			},
-			expectErr: true,
+			expectErr: false,
 		},
 	}
 

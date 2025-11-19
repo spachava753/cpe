@@ -36,15 +36,14 @@ var mcpListServersCmd = &cobra.Command{
 	Long:    `List all MCP servers defined in .cpemcp.json configuration file.`,
 	Aliases: []string{"ls-servers"},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.LoadConfig(configPath)
+		cfg, err := config.ResolveConfig(configPath, config.RuntimeOptions{})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
-			cfg = config.Config{}
+			return err
 		}
 
 		return commands.MCPListServers(cmd.Context(), commands.MCPListServersOptions{
-			Config: cfg,
-			Writer: os.Stdout,
+			MCPServers: cfg.MCPServers,
+			Writer:     os.Stdout,
 		})
 	},
 }
@@ -56,13 +55,13 @@ var mcpInfoCmd = &cobra.Command{
 	Long:  `Initialize connection to an MCP server and show its information.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.LoadConfig(configPath)
+		cfg, err := config.ResolveConfig(configPath, config.RuntimeOptions{})
 		if err != nil {
-			return fmt.Errorf("failed to load configuration: %w", err)
+			return err
 		}
 
 		return commands.MCPInfo(cmd.Context(), commands.MCPInfoOptions{
-			Config:     cfg,
+			MCPServers: cfg.MCPServers,
 			ServerName: args[0],
 			Writer:     os.Stdout,
 			Timeout:    30 * time.Second,
@@ -89,9 +88,9 @@ var mcpListToolsCmd = &cobra.Command{
 	Aliases: []string{"ls-tools"},
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.LoadConfig(configPath)
+		cfg, err := config.ResolveConfig(configPath, config.RuntimeOptions{})
 		if err != nil {
-			return fmt.Errorf("failed to load configuration: %w", err)
+			return err
 		}
 
 		showAll, _ := cmd.Flags().GetBool("show-all")
@@ -106,7 +105,7 @@ var mcpListToolsCmd = &cobra.Command{
 		}
 
 		return commands.MCPListTools(cmd.Context(), commands.MCPListToolsOptions{
-			Config:       cfg,
+			MCPServers:   cfg.MCPServers,
 			ServerName:   args[0],
 			Writer:       os.Stdout,
 			ShowAll:      showAll,
@@ -130,9 +129,9 @@ var mcpCallToolCmd = &cobra.Command{
 			return fmt.Errorf("--tool is required")
 		}
 
-		cfg, err := config.LoadConfig(configPath)
+		cfg, err := config.ResolveConfig(configPath, config.RuntimeOptions{})
 		if err != nil {
-			return fmt.Errorf("failed to load configuration: %w", err)
+			return err
 		}
 
 		toolArgs := make(map[string]interface{})
@@ -143,7 +142,7 @@ var mcpCallToolCmd = &cobra.Command{
 		}
 
 		return commands.MCPCallTool(cmd.Context(), commands.MCPCallToolOptions{
-			Config:     cfg,
+			MCPServers: cfg.MCPServers,
 			ServerName: mcpServerName,
 			ToolName:   mcpToolName,
 			ToolArgs:   toolArgs,

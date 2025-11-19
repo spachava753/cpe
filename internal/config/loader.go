@@ -8,16 +8,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"dario.cat/mergo"
 	"github.com/go-playground/validator/v10"
+	"github.com/spachava753/gai"
 	"gopkg.in/yaml.v3"
 )
 
-// LoadConfig loads configuration with the following precedence:
-// 1. Explicit config path (--config flag)
-// 2. ./cpe.yaml or ./cpe.yml
-// 3. ~/.config/cpe/cpe.yaml or ~/.config/cpe/cpe.yml
-func LoadConfig(explicitPath string) (Config, error) {
+// LoadRawConfig loads raw config for commands that need to list/inspect all models
+func LoadRawConfig(explicitPath string) (*RawConfig, error) {
 	var configPath string
 	var err error
 
@@ -25,38 +25,40 @@ func LoadConfig(explicitPath string) (Config, error) {
 		// Use explicit path
 		configPath = explicitPath
 		if _, err := os.Stat(configPath); os.IsNotExist(err) {
-			return Config{}, fmt.Errorf("specified config file does not exist: %s", configPath)
+			return nil, fmt.Errorf("specified config file does not exist: %s", configPath)
 		}
 	} else {
 		// Search for config file
 		configPath, err = findConfigFile()
 		if err != nil {
-			return Config{}, fmt.Errorf("no configuration file found: %w", err)
+			return nil, fmt.Errorf("no configuration file found: %w", err)
 		}
 	}
 
 	// Open and read config file
 	file, err := os.Open(configPath)
 	if err != nil {
-		return Config{}, fmt.Errorf("failed to open config file %s: %w", configPath, err)
+		return nil, fmt.Errorf("failed to open config file %s: %w", configPath, err)
 	}
 	defer file.Close()
 
 	// Parse config file
-	config, err := loadConfigFromFile(file)
+	config, err := loadRawConfigFromFile(file)
 	if err != nil {
-		return Config{}, fmt.Errorf("failed to load config from %s: %w", configPath, err)
+		return nil, fmt.Errorf("failed to load config from %s: %w", configPath, err)
 	}
 
 	// Expand environment variables
 	if err := config.expandEnvironmentVariables(); err != nil {
-		return Config{}, fmt.Errorf("failed to expand environment variables: %w", err)
+		return nil, fmt.Errorf("failed to expand environment variables: %w", err)
 	}
 
 	// Validate the configuration
-	validate := validator.New(validator.WithRequiredStructEnabled())
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
 
-	return config, validate.Struct(config)
+	return config, nil
 }
 
 // findConfigFile searches for configuration files in the expected locations
@@ -88,35 +90,35 @@ func findConfigFile() (string, error) {
   - ~/.config/cpe/cpe.yaml (user config directory)`)
 }
 
-// loadConfigFromFile reads and parses a configuration file from any fs.File source.
+// loadRawConfigFromFile reads and parses a configuration file from any fs.File source.
 // This design allows for flexible testing with in-memory files, embedded configs,
 // network sources, or any other io.Reader implementation.
 // The file extension is automatically detected from the file's stat info.
-func loadConfigFromFile(file fs.File) (Config, error) {
+func loadRawConfigFromFile(file fs.File) (*RawConfig, error) {
 	data, err := io.ReadAll(file)
 	if err != nil {
-		return Config{}, fmt.Errorf("error reading config file: %w", err)
+		return nil, fmt.Errorf("error reading config file: %w", err)
 	}
 
 	// Get filename from file info for format detection
 	stat, err := file.Stat()
 	if err != nil {
-		return Config{}, fmt.Errorf("error getting file info: %w", err)
+		return nil, fmt.Errorf("error getting file info: %w", err)
 	}
 	filename := stat.Name()
 
-	var config Config
+	var config RawConfig
 
 	// Determine format based on filename extension
 	ext := strings.ToLower(filepath.Ext(filename))
 	switch ext {
 	case ".json":
 		if err := json.Unmarshal(data, &config); err != nil {
-			return Config{}, fmt.Errorf("error parsing JSON config: %w", err)
+			return nil, fmt.Errorf("error parsing JSON config: %w", err)
 		}
 	case ".yaml", ".yml":
 		if err := yaml.Unmarshal(data, &config); err != nil {
-			return Config{}, fmt.Errorf("error parsing YAML config: %w", err)
+			return nil, fmt.Errorf("error parsing YAML config: %w", err)
 		}
 	default:
 		// Try YAML first, then JSON as fallback
@@ -124,16 +126,16 @@ func loadConfigFromFile(file fs.File) (Config, error) {
 		if yamlErr != nil {
 			jsonErr := json.Unmarshal(data, &config)
 			if jsonErr != nil {
-				return Config{}, fmt.Errorf("failed to parse config file: YAML error: %v, JSON error: %v", yamlErr, jsonErr)
+				return nil, fmt.Errorf("failed to parse config file: YAML error: %v, JSON error: %v", yamlErr, jsonErr)
 			}
 		}
 	}
 
-	return config, nil
+	return &config, nil
 }
 
 // expandEnvironmentVariables expands environment variables in configuration values
-func (c *Config) expandEnvironmentVariables() error {
+func (c *RawConfig) expandEnvironmentVariables() error {
 	// Expand in model configurations
 	for i := range c.Models {
 		model := &c.Models[i]
@@ -194,7 +196,7 @@ func (c *Config) expandEnvironmentVariables() error {
 }
 
 // Validate checks if the configuration is valid
-func (c *Config) Validate() error {
+func (c *RawConfig) Validate() error {
 	validate := validator.New(validator.WithRequiredStructEnabled())
 	if err := validate.Struct(c); err != nil {
 		return fmt.Errorf("invalid configuration file: %w", err)
@@ -208,4 +210,95 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+// ResolveConfig loads the config file and resolves effective runtime configuration
+// for the specified model with runtime options applied
+func ResolveConfig(configPath string, opts RuntimeOptions) (*Config, error) {
+	// Load raw config from file
+	rawCfg, err := LoadRawConfig(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	// Determine which model to use
+	modelRef := opts.ModelRef
+	if modelRef == "" {
+		if rawCfg.Defaults.Model != "" {
+			modelRef = rawCfg.Defaults.Model
+		} else {
+			return nil, fmt.Errorf("no model specified. Set CPE_MODEL environment variable, use --model flag, or set defaults.model in configuration")
+		}
+	}
+
+	// Find the model in configuration
+	selectedModel, found := rawCfg.FindModel(modelRef)
+	if !found {
+		return nil, fmt.Errorf("model %q not found in configuration", modelRef)
+	}
+
+	// Resolve system prompt path with precedence: model-specific > global defaults
+	systemPromptPath := selectedModel.SystemPromptPath
+	if systemPromptPath == "" {
+		systemPromptPath = rawCfg.Defaults.SystemPromptPath
+	}
+
+	// Merge generation parameters with precedence: CLI flags > Model-specific > Global defaults
+	genParams := &gai.GenOpts{}
+
+	// Start with global defaults
+	if rawCfg.Defaults.GenerationParams != nil {
+		globalGenOpts := rawCfg.Defaults.GenerationParams.ToGenOpts()
+		if err := mergo.Merge(genParams, globalGenOpts, mergo.WithOverride); err != nil {
+			return nil, err
+		}
+	}
+
+	// Apply model-specific defaults
+	if selectedModel.GenerationDefaults != nil {
+		modelGenOpts := selectedModel.GenerationDefaults.ToGenOpts()
+		if err := mergo.Merge(genParams, modelGenOpts, mergo.WithOverride); err != nil {
+			return nil, err
+		}
+	}
+
+	// Apply CLI overrides
+	if opts.GenParams != nil {
+		if err := mergo.Merge(genParams, opts.GenParams, mergo.WithOverride); err != nil {
+			return nil, err
+		}
+	}
+
+	// Resolve timeout
+	timeout := 5 * time.Minute // default timeout
+	if opts.Timeout != "" {
+		parsedTimeout, err := time.ParseDuration(opts.Timeout)
+		if err != nil {
+			return nil, fmt.Errorf("invalid timeout value %q: %w", opts.Timeout, err)
+		}
+		timeout = parsedTimeout
+	} else if rawCfg.Defaults.Timeout != "" {
+		parsedTimeout, err := time.ParseDuration(rawCfg.Defaults.Timeout)
+		if err != nil {
+			return nil, fmt.Errorf("invalid default timeout value %q: %w", rawCfg.Defaults.Timeout, err)
+		}
+		timeout = parsedTimeout
+	}
+
+	// Resolve streaming settings
+	noStream := false
+	if opts.NoStream != nil {
+		noStream = *opts.NoStream
+	} else {
+		noStream = rawCfg.Defaults.NoStream
+	}
+
+	return &Config{
+		MCPServers:         rawCfg.MCPServers,
+		Model:              selectedModel.Model,
+		SystemPromptPath:   systemPromptPath,
+		GenerationDefaults: genParams,
+		Timeout:            timeout,
+		NoStream:           noStream,
+	}, nil
 }

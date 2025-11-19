@@ -21,7 +21,7 @@ var listModelCmd = &cobra.Command{
 	Short:   "List models from configuration",
 	Aliases: []string{"ls"},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.LoadConfig(configPath)
+		cfg, err := config.LoadRawConfig(configPath)
 		if err != nil {
 			return fmt.Errorf("failed to load configuration: %w", err)
 		}
@@ -46,7 +46,7 @@ var infoModelCmd = &cobra.Command{
 cpe model info sonnet
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.LoadConfig(configPath)
+		cfg, err := config.LoadRawConfig(configPath)
 		if err != nil {
 			return fmt.Errorf("failed to load configuration: %w", err)
 		}
@@ -73,7 +73,7 @@ var systemPromptModelCmd = &cobra.Command{
 	Short: "Show the rendered system prompt for a model",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.LoadConfig(configPath)
+		cfg, err := config.LoadRawConfig(configPath)
 		if err != nil {
 			return fmt.Errorf("failed to load configuration: %w", err)
 		}

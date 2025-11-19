@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/spachava753/cpe/internal/config"
 	mcpinternal "github.com/spachava753/cpe/internal/mcp"
 )
 
@@ -22,13 +21,13 @@ type MarkdownRenderer interface {
 
 // MCPListServersOptions contains parameters for listing MCP servers
 type MCPListServersOptions struct {
-	Config config.Config
-	Writer io.Writer
+	MCPServers map[string]mcpinternal.ServerConfig
+	Writer     io.Writer
 }
 
 // MCPListServers lists all configured MCP servers
 func MCPListServers(ctx context.Context, opts MCPListServersOptions) error {
-	mcpConfig := opts.Config.MCPServers
+	mcpConfig := opts.MCPServers
 	if len(mcpConfig) == 0 {
 		fmt.Fprintln(opts.Writer, "No MCP servers configured.")
 		return nil
@@ -69,7 +68,7 @@ func MCPListServers(ctx context.Context, opts MCPListServersOptions) error {
 
 // MCPInfoOptions contains parameters for getting MCP server info
 type MCPInfoOptions struct {
-	Config     config.Config
+	MCPServers map[string]mcpinternal.ServerConfig
 	ServerName string
 	Writer     io.Writer
 	Timeout    time.Duration
@@ -77,7 +76,7 @@ type MCPInfoOptions struct {
 
 // MCPInfo connects to an MCP server and displays its information
 func MCPInfo(ctx context.Context, opts MCPInfoOptions) error {
-	mcpConfig := opts.Config.MCPServers
+	mcpConfig := opts.MCPServers
 	if len(mcpConfig) == 0 {
 		return fmt.Errorf("no MCP servers configured")
 	}
@@ -114,7 +113,7 @@ func MCPInfo(ctx context.Context, opts MCPInfoOptions) error {
 
 // MCPListToolsOptions contains parameters for listing MCP server tools
 type MCPListToolsOptions struct {
-	Config       config.Config
+	MCPServers   map[string]mcpinternal.ServerConfig
 	ServerName   string
 	Writer       io.Writer
 	ShowAll      bool
@@ -124,7 +123,7 @@ type MCPListToolsOptions struct {
 
 // MCPListTools lists tools available on an MCP server
 func MCPListTools(ctx context.Context, opts MCPListToolsOptions) error {
-	mcpConfig := opts.Config.MCPServers
+	mcpConfig := opts.MCPServers
 	if len(mcpConfig) == 0 {
 		return fmt.Errorf("no MCP servers configured")
 	}
@@ -246,7 +245,7 @@ func MCPListTools(ctx context.Context, opts MCPListToolsOptions) error {
 
 // MCPCallToolOptions contains parameters for calling an MCP tool
 type MCPCallToolOptions struct {
-	Config     config.Config
+	MCPServers map[string]mcpinternal.ServerConfig
 	ServerName string
 	ToolName   string
 	ToolArgs   map[string]interface{}
@@ -255,7 +254,7 @@ type MCPCallToolOptions struct {
 
 // MCPCallTool calls a specific tool on an MCP server
 func MCPCallTool(ctx context.Context, opts MCPCallToolOptions) error {
-	mcpConfig := opts.Config.MCPServers
+	mcpConfig := opts.MCPServers
 	if len(mcpConfig) == 0 {
 		return fmt.Errorf("no MCP servers configured")
 	}

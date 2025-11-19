@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"dario.cat/mergo"
 	"github.com/gabriel-vasile/mimetype"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/spachava753/cpe/internal/agent"
@@ -31,24 +29,18 @@ import (
 var DefaultModel = os.Getenv("CPE_MODEL")
 
 var (
-	model             string
-	customURL         string
-	maxTokens         int
-	temperature       float64
-	topP              float64
-	topK              int
-	frequencyPenalty  float64
-	presencePenalty   float64
-	numberOfResponses int
-	thinkingBudget    string
-	input             []string
-	newConversation   bool
-	continueID        string
-	incognitoMode     bool
-	timeout           string
-	disableStreaming  bool
-	skipStdin         bool
-	configPath        string
+	model            string
+	customURL        string
+	input            []string
+	newConversation  bool
+	continueID       string
+	incognitoMode    bool
+	timeout          string
+	disableStreaming bool
+	skipStdin        bool
+	configPath       string
+
+	genParams gai.GenOpts
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -90,14 +82,14 @@ func init() {
 	// Define flags for the root command
 	rootCmd.PersistentFlags().StringVarP(&model, "model", "m", DefaultModel, "Specify the model to use")
 	rootCmd.PersistentFlags().StringVar(&customURL, "custom-url", "", "Specify a custom base URL for the model provider API")
-	rootCmd.PersistentFlags().IntVarP(&maxTokens, "max-tokens", "x", 0, "Maximum number of tokens to generate")
-	rootCmd.PersistentFlags().Float64VarP(&temperature, "temperature", "t", 0, "Sampling temperature (0.0 - 1.0)")
-	rootCmd.PersistentFlags().Float64Var(&topP, "top-p", 0, "Nucleus sampling parameter (0.0 - 1.0)")
-	rootCmd.PersistentFlags().IntVar(&topK, "top-k", 0, "Top-k sampling parameter")
-	rootCmd.PersistentFlags().Float64Var(&frequencyPenalty, "frequency-penalty", 0, "Frequency penalty (-2.0 - 2.0)")
-	rootCmd.PersistentFlags().Float64Var(&presencePenalty, "presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
-	rootCmd.PersistentFlags().IntVar(&numberOfResponses, "number-of-responses", 0, "Number of responses to generate")
-	rootCmd.PersistentFlags().StringVarP(&thinkingBudget, "thinking-budget", "b", "", "Budget for reasoning/thinking capabilities (string or numerical value)")
+	rootCmd.PersistentFlags().IntVarP(&genParams.MaxGenerationTokens, "max-tokens", "x", 0, "Maximum number of tokens to generate")
+	rootCmd.PersistentFlags().Float64VarP(&genParams.Temperature, "temperature", "t", 0, "Sampling temperature (0.0 - 1.0)")
+	rootCmd.PersistentFlags().Float64Var(&genParams.TopP, "top-p", 0, "Nucleus sampling parameter (0.0 - 1.0)")
+	rootCmd.PersistentFlags().UintVar(&genParams.TopK, "top-k", 0, "Top-k sampling parameter")
+	rootCmd.PersistentFlags().Float64Var(&genParams.FrequencyPenalty, "frequency-penalty", 0, "Frequency penalty (-2.0 - 2.0)")
+	rootCmd.PersistentFlags().Float64Var(&genParams.PresencePenalty, "presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
+	rootCmd.PersistentFlags().UintVar(&genParams.N, "number-of-responses", 0, "Number of responses to generate")
+	rootCmd.PersistentFlags().StringVarP(&genParams.ThinkingBudget, "thinking-budget", "b", "", "Budget for reasoning/thinking capabilities (string or numerical value)")
 	rootCmd.PersistentFlags().StringSliceVarP(&input, "input", "i", []string{}, "Specify input files or HTTP(S) URLs to process. Multiple inputs can be provided.")
 	rootCmd.PersistentFlags().BoolVarP(&newConversation, "new", "n", false, "Start a new conversation instead of continuing from the last one")
 	rootCmd.PersistentFlags().StringVarP(&continueID, "continue", "c", "", "Continue from a specific conversation ID")
@@ -118,81 +110,53 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		return fmt.Errorf("could not process user input: %w", err)
 	}
 
-	// Load unified configuration
-	cfg, err := config.LoadConfig(configPath)
-	if err != nil {
-		return fmt.Errorf("failed to load configuration: %w", err)
-	}
-
-	// Determine which model to use
-	modelName := model
-	if modelName == "" {
-		if cfg.Defaults.Model != "" {
-			modelName = cfg.Defaults.Model
-		} else if DefaultModel != "" {
-			modelName = DefaultModel
-		} else {
-			return errors.New("no model specified. Please set the CPE_MODEL environment variable or use the --model flag")
-		}
-	}
-
-	// Find the model in configuration
-	selectedModel, found := cfg.FindModel(modelName)
-	if !found {
-		return fmt.Errorf("model %q not found in configuration", modelName)
-	}
-
-	// Determine effective timeout
-	if timeout == "" {
-		timeout = "5m"
-		if cfg.Defaults.Timeout != "" {
-			timeout = cfg.Defaults.Timeout
-		}
-	}
-
-	requestTimeout, err := time.ParseDuration(timeout)
-	if err != nil {
-		return fmt.Errorf("invalid timeout value '%s': %w", timeout, err)
-	}
-
-	// Determine system prompt path
-	spPath := selectedModel.SystemPromptPath
-	if spPath == "" {
-		spPath = cfg.Defaults.SystemPromptPath
-	}
-
-	f, err := os.Open(spPath)
-	if err != nil {
-		return fmt.Errorf("could not open system prompt file: %w", err)
-	}
-
-	contents, err := io.ReadAll(f)
-	if err != nil {
-		return err
-	}
-
-	// Prepare system prompt
-	systemPrompt, err := agent.SystemPromptTemplate(string(contents), agent.TemplateData{
-		Config: cfg,
-		Model:  selectedModel.Model,
+	// Resolve effective config with runtime options
+	noStream := disableStreaming
+	effectiveConfig, err := config.ResolveConfig(configPath, config.RuntimeOptions{
+		ModelRef:  model,
+		GenParams: &genParams,
+		Timeout:   timeout,
+		NoStream:  &noStream,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to prepare system prompt: %w", err)
+		return fmt.Errorf("failed to resolve configuration: %w", err)
+	}
+
+	// Load and render system prompt
+	var systemPrompt string
+	if effectiveConfig.SystemPromptPath != "" {
+		f, err := os.Open(effectiveConfig.SystemPromptPath)
+		if err != nil {
+			return fmt.Errorf("could not open system prompt file: %w", err)
+		}
+		defer f.Close()
+
+		contents, err := io.ReadAll(f)
+		if err != nil {
+			return fmt.Errorf("failed to read system prompt file: %w", err)
+		}
+
+		systemPrompt, err = agent.SystemPromptTemplate(string(contents), agent.TemplateData{
+			Config: effectiveConfig,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to prepare system prompt: %w", err)
+		}
 	}
 
 	if customURL == "" {
-		customURL = selectedModel.BaseUrl
+		customURL = effectiveConfig.Model.BaseUrl
 	}
 
 	// Create the generator
 	toolGen, err := agent.CreateToolCapableGenerator(
 		ctx,
-		selectedModel.Model,
+		effectiveConfig.Model,
 		systemPrompt,
-		requestTimeout,
+		effectiveConfig.Timeout,
 		customURL,
-		disableStreaming || cfg.Defaults.NoStream,
-		cfg.MCPServers,
+		effectiveConfig.NoStream,
+		effectiveConfig.MCPServers,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create tool capable generator: %w", err)
@@ -209,79 +173,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		defer dialogStorage.Close()
 	}
 
-	var genParams config.GenerationParams
-	if cfg.Defaults.GenerationParams != nil {
-		if err := mergo.Merge(&genParams, *cfg.Defaults.GenerationParams); err != nil {
-			return err
-		}
-	}
-	if selectedModel.GenerationDefaults != nil {
-		if err := mergo.Merge(&genParams, *selectedModel.GenerationDefaults, mergo.WithOverride); err != nil {
-			return err
-		}
-	}
-
-	// Build CLI overrides from flags
-	cliOverrides := config.GenerationParams{}
-	if maxTokens > 0 {
-		cliOverrides.MaxTokens = &maxTokens
-	}
-	if temperature > 0 {
-		cliOverrides.Temperature = &temperature
-	}
-	if topP > 0 {
-		cliOverrides.TopP = &topP
-	}
-	if topK > 0 {
-		cliOverrides.TopK = &topK
-	}
-	if frequencyPenalty != 0 {
-		cliOverrides.FrequencyPenalty = &frequencyPenalty
-	}
-	if presencePenalty != 0 {
-		cliOverrides.PresencePenalty = &presencePenalty
-	}
-	if numberOfResponses > 0 {
-		cliOverrides.NumberOfResponses = &numberOfResponses
-	}
-	if thinkingBudget != "" {
-		cliOverrides.ThinkingBudget = &thinkingBudget
-	}
-
-	if err := mergo.Merge(&genParams, cliOverrides, mergo.WithOverride); err != nil {
-		return err
-	}
-
-	var genOpts gai.GenOpts
-
-	// Set max tokens from model max_output or effective params
-	genOpts.MaxGenerationTokens = int(selectedModel.Model.MaxOutput)
-	if genParams.MaxTokens != nil {
-		genOpts.MaxGenerationTokens = *genParams.MaxTokens
-	}
-
-	// Convert type config.GenerationParams to gai.GenOpts
-	if genParams.Temperature != nil {
-		genOpts.Temperature = *genParams.Temperature
-	}
-	if genParams.TopP != nil {
-		genOpts.TopP = *genParams.TopP
-	}
-	if genParams.TopK != nil {
-		genOpts.TopK = uint(*genParams.TopK)
-	}
-	if genParams.FrequencyPenalty != nil {
-		genOpts.FrequencyPenalty = *genParams.FrequencyPenalty
-	}
-	if genParams.PresencePenalty != nil {
-		genOpts.PresencePenalty = *genParams.PresencePenalty
-	}
-	if genParams.NumberOfResponses != nil {
-		genOpts.N = uint(*genParams.NumberOfResponses)
-	}
-	if genParams.ThinkingBudget != nil {
-		genOpts.ThinkingBudget = *genParams.ThinkingBudget
-	}
+	genOpts := effectiveConfig.GenerationDefaults
 
 	// Call the business logic
 	return commands.Generate(ctx, commands.GenerateOptions{
@@ -290,7 +182,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		NewConversation: newConversation,
 		IncognitoMode:   incognitoMode,
 		GenOptsFunc: func(dialog gai.Dialog) *gai.GenOpts {
-			return &genOpts
+			return genOpts
 		},
 		Storage:   dialogStorage,
 		Generator: toolGen,

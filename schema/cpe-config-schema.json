@@ -1,32 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/spachava753/cpe/refs/heads/main/schema/cpe-config-schema.json",
-  "$ref": "#/$defs/Config",
+  "$ref": "#/$defs/RawConfig",
   "$defs": {
-    "Config": {
-      "properties": {
-        "mcpServers": {
-          "additionalProperties": {
-            "$ref": "#/$defs/ServerConfig"
-          },
-          "type": "object"
-        },
-        "models": {
-          "items": {
-            "$ref": "#/$defs/ModelConfig"
-          },
-          "type": "array"
-        },
-        "defaults": {
-          "$ref": "#/$defs/Defaults"
-        },
-        "version": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object"
-    },
     "Defaults": {
       "properties": {
         "systemPromptPath": {
@@ -59,20 +35,29 @@
         "topK": {
           "type": "integer"
         },
-        "maxTokens": {
-          "type": "integer"
-        },
-        "thinkingBudget": {
-          "type": "string"
-        },
         "frequencyPenalty": {
           "type": "number"
         },
         "presencePenalty": {
           "type": "number"
         },
-        "numberOfResponses": {
+        "n": {
           "type": "integer"
+        },
+        "maxGenerationTokens": {
+          "type": "integer"
+        },
+        "toolChoice": {
+          "type": "string"
+        },
+        "stopSequences": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "thinkingBudget": {
+          "type": "string"
         }
       },
       "additionalProperties": false,
@@ -136,6 +121,30 @@
             "type": "string"
           },
           "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "RawConfig": {
+      "properties": {
+        "mcpServers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ServerConfig"
+          },
+          "type": "object"
+        },
+        "models": {
+          "items": {
+            "$ref": "#/$defs/ModelConfig"
+          },
+          "type": "array"
+        },
+        "defaults": {
+          "$ref": "#/$defs/Defaults"
+        },
+        "version": {
+          "type": "string"
         }
       },
       "additionalProperties": false,

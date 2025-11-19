@@ -10,23 +10,16 @@ import (
 	mcpinternal "github.com/spachava753/cpe/internal/mcp"
 )
 
-// mockRenderer is a simple renderer that just returns the markdown unchanged
-type mockRenderer struct{}
-
-func (m *mockRenderer) Render(markdown string) (string, error) {
-	return markdown, nil
-}
-
 func TestMCPListServers(t *testing.T) {
 	tests := []struct {
 		name               string
-		config             config.Config
+		config             *config.Config
 		wantErr            bool
 		wantOutputContains []string
 	}{
 		{
 			name: "no servers configured",
-			config: config.Config{
+			config: &config.Config{
 				MCPServers: nil,
 			},
 			wantErr:            false,
@@ -34,7 +27,7 @@ func TestMCPListServers(t *testing.T) {
 		},
 		{
 			name: "single server configured",
-			config: config.Config{
+			config: &config.Config{
 				MCPServers: map[string]mcpinternal.ServerConfig{
 					"test-server": {
 						Type:    "stdio",
@@ -55,7 +48,7 @@ func TestMCPListServers(t *testing.T) {
 		},
 		{
 			name: "multiple servers with different types",
-			config: config.Config{
+			config: &config.Config{
 				MCPServers: map[string]mcpinternal.ServerConfig{
 					"stdio-server": {
 						Type:    "stdio",
@@ -81,8 +74,8 @@ func TestMCPListServers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			opts := MCPListServersOptions{
-				Config: tt.config,
-				Writer: &buf,
+				MCPServers: tt.config.MCPServers,
+				Writer:     &buf,
 			}
 
 			err := MCPListServers(context.Background(), opts)
@@ -104,14 +97,14 @@ func TestMCPListServers(t *testing.T) {
 func TestMCPInfo(t *testing.T) {
 	tests := []struct {
 		name       string
-		config     config.Config
+		config     *config.Config
 		serverName string
 		wantErr    bool
 		errMsg     string
 	}{
 		{
 			name: "server not found",
-			config: config.Config{
+			config: &config.Config{
 				MCPServers: map[string]mcpinternal.ServerConfig{
 					"existing-server": {
 						Type:    "stdio",
@@ -125,7 +118,7 @@ func TestMCPInfo(t *testing.T) {
 		},
 		{
 			name: "no servers configured",
-			config: config.Config{
+			config: &config.Config{
 				MCPServers: nil,
 			},
 			serverName: "any-server",
@@ -138,7 +131,7 @@ func TestMCPInfo(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			opts := MCPInfoOptions{
-				Config:     tt.config,
+				MCPServers: tt.config.MCPServers,
 				ServerName: tt.serverName,
 				Writer:     &buf,
 			}
