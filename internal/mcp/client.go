@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/cpe/internal/version"
 	"github.com/spachava753/gai"
@@ -233,7 +234,7 @@ func FetchTools(ctx context.Context, client *mcp.Client, mcpServers map[string]S
 	var warnings []string                      // To collect all warnings
 	registeredCount := 0                       // Count successful registrations
 	totalFilteredOut := 0                      // Count filtered-out tools
-	
+
 	// Map to store the tools and callbacks to be returned
 	toolsMap := make(map[string]struct {
 		Tool         gai.Tool
@@ -296,12 +297,21 @@ func FetchTools(ctx context.Context, client *mcp.Client, mcpServers map[string]S
 				ToolName:      mcpTool.Name,
 			}
 
-			// Convert the MCP Tool to a gai.Tool
+			// Convert InputSchema from mcp jsonschema (map[string]interface{}) to gai jsonschema (*jsonschema.Schema)
+			inputSchemaJSON, err := json.Marshal(mcpTool.InputSchema)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal input schema for tool %s: %w", mcpTool.Name, err)
+			}
+
+			var inputSchema *jsonschema.Schema
+			if err := json.Unmarshal(inputSchemaJSON, &inputSchema); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal input schema for tool %s: %w", mcpTool.Name, err)
+			}
+
 			gaiTool := gai.Tool{
 				Name:        mcpTool.Name,
 				Description: mcpTool.Description,
-				// Convert InputSchema from mcp jsonschema to gai jsonschema
-				InputSchema: mcpTool.InputSchema,
+				InputSchema: inputSchema,
 			}
 
 			// Store the tool and callback in the map
