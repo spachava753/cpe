@@ -55,6 +55,9 @@ func Generate(ctx context.Context, opts GenerateOptions) error {
 	if len(opts.UserBlocks) == 0 {
 		return errors.New("empty input")
 	}
+	if opts.Generator == nil {
+		return errors.New("no model specified")
+	}
 
 	// Determine continue ID if not explicitly set
 	continueID := opts.ContinueID

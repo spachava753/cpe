@@ -26,8 +26,8 @@ type Model struct {
 
 // PatchRequestConfig holds configuration for patching HTTP requests
 type PatchRequestConfig struct {
-	JSONPatch      []map[string]interface{} `json:"jsonPatch,omitempty" yaml:"jsonPatch,omitempty"`
-	IncludeHeaders map[string]string        `json:"includeHeaders,omitempty" yaml:"includeHeaders,omitempty"`
+	JSONPatch      []map[string]any  `json:"jsonPatch,omitempty" yaml:"jsonPatch,omitempty"`
+	IncludeHeaders map[string]string `json:"includeHeaders,omitempty" yaml:"includeHeaders,omitempty"`
 }
 
 // RawConfig represents the configuration file structure
@@ -39,7 +39,7 @@ type RawConfig struct {
 	Models []ModelConfig `yaml:"models" json:"models" validate:"gt=0,unique=Ref,dive"`
 
 	// Default settings
-	Defaults Defaults `yaml:"defaults,omitempty" json:"defaults,omitempty"`
+	Defaults Defaults `yaml:"defaults,omitempty" json:"defaults"`
 
 	// Version for future compatibility
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`
@@ -85,6 +85,9 @@ type Defaults struct {
 	// Default model to use if not specified
 	Model string `yaml:"model,omitempty" json:"model,omitempty" validate:"omitempty"`
 
+	// Enable Code Mode globally
+	CodeMode bool `yaml:"codeMode,omitempty" json:"codeMode,omitempty"`
+
 	// Global generation parameter defaults
 	GenerationParams *GenerationParams `yaml:"generationParams,omitempty" json:"generationParams,omitempty" validate:"omitempty"`
 
@@ -104,6 +107,9 @@ type ModelConfig struct {
 
 	// Generation parameter defaults for this model
 	GenerationDefaults *GenerationParams `yaml:"generationDefaults,omitempty" json:"generationDefaults,omitempty" validate:"omitempty"`
+
+	// Enable Code Mode for this model
+	CodeMode *bool `yaml:"codeMode,omitempty" json:"codeMode,omitempty"`
 }
 
 // FindModel searches for a model by ref in the config
@@ -135,6 +141,9 @@ type Config struct {
 
 	// Whether streaming is disabled
 	NoStream bool
+
+	// Whether Code Mode is enabled
+	CodeMode bool
 }
 
 // RuntimeOptions captures runtime overrides from CLI flags and environment

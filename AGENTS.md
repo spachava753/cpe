@@ -13,13 +13,12 @@ Key capabilities:
 
 - `cmd/`: The package which has the cobra commands that user invokes
 - `internal/`: Hosts all of the actual business logic and utilities
-    -
-    `agent/`: Package that hosts generator adapters, streaming/printing, thinking filter, system prompt generation, and agent creation to execute a user query
-    - `config/`: Package that hosts configuration loading, validation, parameter merging, and config specific types
-    - `mcp/`: Package that hosts MCP config validation and client, as well as code for connecting to MPC servers
-    - `storage/`: Package that hosts SQLite-backed conversation storage (.cpeconvo) and related persistence code
-    - `urlhandler/`: Package that hosts utility code for URL detection and safe downloading
-    - `version/`: Package that hosts CLI version reporting
+  - `agent/`: Package that hosts generator adapters, streaming/printing, thinking filter, system prompt generation, and agent creation to execute a user query
+  - `config/`: Package that hosts configuration loading, validation, parameter merging, and config specific types
+  - `mcp/`: Package that hosts MCP config validation and client, as well as code for connecting to MPC servers
+  - `storage/`: Package that hosts SQLite-backed conversation storage (.cpeconvo) and related persistence code
+  - `urlhandler/`: Package that hosts utility code for URL detection and safe downloading
+  - `version/`: Package that hosts CLI version reporting
 - `main.go`: invokes cmd.Execute()
 - `gen.go`: code generation hooks, like sqlc codegen
 - `examples/`: Folder that hosts examples of configuration, system prompt templates, etc.
@@ -101,13 +100,13 @@ go generate ./internal/config/
 
 - Use go test ./...; write table-driven unit tests
 - Preference: Use table-driven tests
-    - Share common setup/validation logic through helper functions or validation callbacks
-    - Name test cases descriptively in the `name` field
+  - Share common setup/validation logic through helper functions or validation callbacks
+  - Name test cases descriptively in the `name` field
 - Prefer httptest for HTTP; avoid real network calls
 - Keep tests deterministic; use short timeouts; avoid sleeping where possible
 - Isolate filesystem effects; clean up temp files; do not depend on developer-local state
 - For dialog storage, prefer temp DB paths when adding tests
-- Name tests with _test.go; keep per-package tests close to implementation
+- Name tests with \_test.go; keep per-package tests close to implementation
 
 ## Performance considerations
 
@@ -115,8 +114,4 @@ CPE is a CLI tool and MCP client where execution time is dominated by network ca
 
 ## Documentation for Go Symbols
 
-When gathering context about symbols like types, global variables, constants, functions and methods, prefer to use
-`go doc` command. You may use
-`go doc github.com/example/pkg.Type` to get documentation about a specific symbol. Avoid using
-`go doc -all` as it may overwhelm your context window. Instead, if you need to perform a search or fuzzy search for a symbol, feed the output of
-`go doc -all` into a cli like `rg`, `fzf`, etc.   
+When gathering context about symbols like types, global variables, constants, functions and methods, prefer to use `go doc` command. You may use `go doc github.com/example/pkg.Type` to get documentation about a specific symbol. Avoid using `go doc -all` as it may overwhelm your context window. Instead, if you need to perform a search or fuzzy search for a symbol, feed the output of `go doc -all` into a cli like `rg`, `fzf`, etc.

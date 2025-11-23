@@ -156,6 +156,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		effectiveConfig.Timeout,
 		customURL,
 		effectiveConfig.NoStream,
+		effectiveConfig.CodeMode,
 		effectiveConfig.MCPServers,
 	)
 	if err != nil {

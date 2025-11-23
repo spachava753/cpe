@@ -3,9 +3,9 @@ package commands
 import (
 	"bytes"
 	"context"
-	"errors"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/spachava753/cpe/internal/config"
 )
@@ -191,20 +191,18 @@ func TestModelSystemPrompt(t *testing.T) {
 						Model: config.Model{
 							Ref: "test-model",
 						},
+						SystemPromptPath: "prompt.txt",
 					},
 				},
 			},
 			modelName:    "test-model",
 			template:     "You are a helpful assistant",
 			templatePath: "prompt.txt",
-			renderFunc: func(template string, model *config.Model) (string, error) {
-				return "Test prompt content", nil
-			},
 			wantErr: false,
 			wantOutputContains: []string{
 				"Model: test-model",
 				"Path: prompt.txt",
-				"Test prompt content",
+				"You are a helpful assistant",
 			},
 		},
 		{
@@ -255,13 +253,10 @@ func TestModelSystemPrompt(t *testing.T) {
 				},
 			},
 			modelName:    "test-model",
-			template:     "test template",
+			template:     "{{ .InvalidSyntax }",
 			templatePath: "prompt.txt",
-			renderFunc: func(template string, model *config.Model) (string, error) {
-				return "", errors.New("render failed")
-			},
 			wantErr: true,
-			errMsg:  "failed to render system prompt",
+			errMsg:  "failed to parse template string",
 		},
 	}
 
@@ -272,6 +267,18 @@ func TestModelSystemPrompt(t *testing.T) {
 				Config:    tt.config,
 				ModelName: tt.modelName,
 				Output:    &buf,
+			}
+
+			if tt.template != "" {
+				path := tt.templatePath
+				if path == "" {
+					path = "prompt.txt"
+				}
+				mapFS := fstest.MapFS{
+					path: {Data: []byte(tt.template)},
+				}
+				f, _ := mapFS.Open(path)
+				opts.SystemPrompt = f
 			}
 
 			err := ModelSystemPrompt(opts)

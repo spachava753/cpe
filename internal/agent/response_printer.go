@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -34,11 +35,27 @@ type ResponsePrinterGenerator struct {
 
 	// toolCallRenderer renders tool call blocks
 	toolCallRenderer Renderer
+
+	// codeMode indicates if we are in code mode
+	codeMode bool
+
+	// stdout is the writer for standard output
+	stdout io.Writer
+
+	// stderr is the writer for standard error
+	stderr io.Writer
 }
 
 // NewResponsePrinterGenerator creates a new ResponsePrinterGenerator with initialized glamour renderers
-func NewResponsePrinterGenerator(wrapped gai.ToolCapableGenerator) *ResponsePrinterGenerator {
-	if !term.IsTerminal(int(os.Stdout.Fd())) {
+func NewResponsePrinterGenerator(wrapped gai.ToolCapableGenerator, codeMode bool, stdout, stderr io.Writer) *ResponsePrinterGenerator {
+	if stdout == nil {
+		stdout = os.Stdout
+	}
+	if stderr == nil {
+		stderr = os.Stderr
+	}
+
+	if f, ok := stdout.(*os.File); !ok || !term.IsTerminal(int(f.Fd())) {
 		style := styles.NoTTYStyleConfig
 
 		style.Document.BlockPrefix = ""
@@ -58,6 +75,9 @@ func NewResponsePrinterGenerator(wrapped gai.ToolCapableGenerator) *ResponsePrin
 			contentRenderer:  contentRenderer,
 			thinkingRenderer: thinkingRenderer,
 			toolCallRenderer: contentRenderer,
+			codeMode:         codeMode,
+			stdout:           stdout,
+			stderr:           stderr,
 		}
 	}
 
@@ -94,6 +114,9 @@ func NewResponsePrinterGenerator(wrapped gai.ToolCapableGenerator) *ResponsePrin
 		contentRenderer:  contentRenderer,
 		thinkingRenderer: thinkingRenderer,
 		toolCallRenderer: contentRenderer,
+		codeMode:         codeMode,
+		stdout:           stdout,
+		stderr:           stderr,
 	}
 }
 
@@ -110,7 +133,7 @@ func (g *ResponsePrinterGenerator) renderContent(content string) string {
 
 // renderThinking renders a thinking block with a muted glamour style.
 // If the reasoning content is encrypted, it returns a message indicating encryption.
-func (g *ResponsePrinterGenerator) renderThinking(content string, reasoningType interface{}) string {
+func (g *ResponsePrinterGenerator) renderThinking(content string, reasoningType any) string {
 	if reasoningType == "reasoning.encrypted" {
 		content = "[Reasoning content is encrypted]\n"
 	}
@@ -125,12 +148,48 @@ func (g *ResponsePrinterGenerator) renderThinking(content string, reasoningType 
 }
 
 // renderToolCall renders a toolcall block with a glamour style
-func (g *ResponsePrinterGenerator) renderToolCall(content string) string {
-	var formattedJson bytes.Buffer
-	if err := json.Indent(&formattedJson, []byte(content), "", "  "); err != nil {
-		panic(err)
+func (g *ResponsePrinterGenerator) renderToolCall(block gai.Block) string {
+	content := block.Content.String()
+
+	var toolInput gai.ToolCallInput
+	// We attempt to unmarshal the content as a ToolCallInput.
+	// We ignore the error here because we'll fallback to treating it as raw JSON if it fails
+	// or if the structure doesn't match what we expect.
+	_ = json.Unmarshal([]byte(content), &toolInput)
+
+	// Determine the tool name
+	toolName := "tool call"
+	if toolInput.Name != "" {
+		toolName = fmt.Sprintf("tool call: %s", toolInput.Name)
 	}
-	result := fmt.Sprintf("#### [tool call]\n```json\n%s\n```", formattedJson.String())
+
+	// Handle code mode
+	if g.codeMode {
+		if code, ok := toolInput.Parameters["code"].(string); ok && code != "" {
+			result := fmt.Sprintf("#### [%s]\n```typescript\n%s\n```", toolName, code)
+			rendered, err := g.contentRenderer.Render(result)
+			if err == nil {
+				return rendered
+			}
+		}
+	}
+
+	var formattedJson bytes.Buffer
+
+	// If we parsed parameters successfully, we use those for the JSON block
+	var jsonBytes []byte
+	if len(toolInput.Parameters) > 0 {
+		jsonBytes, _ = json.Marshal(toolInput.Parameters)
+	} else {
+		jsonBytes = []byte(content)
+	}
+
+	if err := json.Indent(&formattedJson, jsonBytes, "", "  "); err != nil {
+		// Fallback to plain text if rendering/indenting fails
+		return content
+	}
+
+	result := fmt.Sprintf("#### [%s]\n```json\n%s\n```", toolName, formattedJson.String())
 
 	rendered, err := g.toolCallRenderer.Render(result)
 	if err != nil {
@@ -150,39 +209,31 @@ func (g *ResponsePrinterGenerator) Generate(ctx context.Context, dialog gai.Dial
 		return gai.Response{}, err
 	}
 
-	var sb strings.Builder
-	var hasToolcalls bool
 	// Print the response with markdown rendering
 	for _, candidate := range response.Candidates {
 		for _, block := range candidate.Blocks {
 			if block.ModalityType != gai.Text {
-				fmt.Fprintf(&sb, "Received non-text block of type: %s\n", block.ModalityType)
+				fmt.Fprintf(g.stdout, "Received non-text block of type: %s\n", block.ModalityType)
 			}
-
-			hasToolcalls = block.BlockType == gai.ToolCall || hasToolcalls
 
 			// Render content based on block type
 			content := block.Content.String()
 			switch block.BlockType {
 			case gai.Content:
 				content = g.renderContent(content)
+				fmt.Fprint(g.stdout, content)
 			case gai.Thinking:
 				reasoningType := block.ExtraFields["reasoning_type"]
 				content = g.renderThinking(content, reasoningType)
+				fmt.Fprint(g.stderr, content)
 			case gai.ToolCall:
-				content = g.renderToolCall(content)
+				content = g.renderToolCall(block)
+				fmt.Fprint(g.stderr, content)
 			default:
 				// For unknown block types, render as-is
+				fmt.Fprint(g.stdout, content)
 			}
-
-			fmt.Fprint(&sb, content)
 		}
-	}
-
-	if hasToolcalls {
-		fmt.Fprint(os.Stderr, sb.String())
-	} else {
-		fmt.Fprint(os.Stdout, sb.String())
 	}
 
 	return response, nil

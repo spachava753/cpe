@@ -293,6 +293,12 @@ func ResolveConfig(configPath string, opts RuntimeOptions) (*Config, error) {
 		noStream = rawCfg.Defaults.NoStream
 	}
 
+	// Resolve Code Mode
+	codeMode := rawCfg.Defaults.CodeMode
+	if selectedModel.CodeMode != nil {
+		codeMode = *selectedModel.CodeMode
+	}
+
 	return &Config{
 		MCPServers:         rawCfg.MCPServers,
 		Model:              selectedModel.Model,
@@ -300,5 +306,6 @@ func ResolveConfig(configPath string, opts RuntimeOptions) (*Config, error) {
 		GenerationDefaults: genParams,
 		Timeout:            timeout,
 		NoStream:           noStream,
+		CodeMode:           codeMode,
 	}, nil
 }

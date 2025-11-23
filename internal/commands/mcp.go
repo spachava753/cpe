@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -208,11 +209,8 @@ func MCPListTools(ctx context.Context, opts MCPListToolsOptions) error {
 		for _, tool := range toolsToShow {
 			filteredBadge := ""
 			if opts.ShowAll {
-				for _, filteredName := range filteredOut {
-					if tool.Name == filteredName {
-						filteredBadge = " 🚫 *filtered*"
-						break
-					}
+				if slices.Contains(filteredOut, tool.Name) {
+					filteredBadge = " 🚫 *filtered*"
 				}
 			}
 
@@ -226,6 +224,19 @@ func MCPListTools(ctx context.Context, opts MCPListToolsOptions) error {
 				encoder := json.NewEncoder(&schemaJSON)
 				encoder.SetIndent("", "  ")
 				if err := encoder.Encode(tool.InputSchema); err != nil {
+					markdownBuilder.WriteString("```json\n" + "Error encoding schema: " + err.Error() + "\n```\n\n")
+				} else {
+					markdownBuilder.WriteString("```json\n" + schemaJSON.String() + "\n```\n\n")
+				}
+			}
+
+			if tool.OutputSchema != nil {
+				markdownBuilder.WriteString("**Output Schema:**\n\n")
+
+				var schemaJSON bytes.Buffer
+				encoder := json.NewEncoder(&schemaJSON)
+				encoder.SetIndent("", "  ")
+				if err := encoder.Encode(tool.OutputSchema); err != nil {
 					markdownBuilder.WriteString("```json\n" + "Error encoding schema: " + err.Error() + "\n```\n\n")
 				} else {
 					markdownBuilder.WriteString("```json\n" + schemaJSON.String() + "\n```\n\n")
@@ -248,7 +259,7 @@ type MCPCallToolOptions struct {
 	MCPServers map[string]mcpinternal.ServerConfig
 	ServerName string
 	ToolName   string
-	ToolArgs   map[string]interface{}
+	ToolArgs   map[string]any
 	Writer     io.Writer
 }
 
