@@ -4,6 +4,7 @@ CPE (Chat-based Programming Editor) is a CLI that connects local developer workf
 
 Key capabilities:
 
+- Code Mode: Enables LLMs to execute TypeScript code via Deno to interact with MCP tools in a composable and type-safe manner.
 - Multi-model generation via unified YAML/JSON configuration
 - Tool use via MCP servers
 - Streaming or prettified non-streaming output
@@ -23,6 +24,30 @@ Key capabilities:
 - `gen.go`: code generation hooks, like sqlc codegen
 - `examples/`: Folder that hosts examples of configuration, system prompt templates, etc.
 - `docs/`: Folder that hosts markdown files documenting various things like PRDs, specs, etc.
+
+## Code Mode
+
+Code Mode allows LLMs to execute TypeScript code via Deno to interact with MCP tools in a composable and type-safe manner. Instead of discrete tool calls, the agent generates a script that calls generated TypeScript functions wrapping the MCP tools.
+
+Key components:
+- **Execute Typescript Tool**: `execute_typescript` takes a `code` string (see `internal/agent/codemode.go`).
+- **Bridge Server**: A local HTTP server proxies requests from the Deno runtime to the Go MCP client (see `internal/agent/codemode.go`).
+- **Type Generation**: TypeScript definitions are generated dynamically from MCP tool schemas.
+
+Relevant files:
+- `docs/specs/code_mode.md`: Detailed specification.
+- `internal/agent/codemode.go`: Core implementation of the tool, bridge server, and type generator.
+- `internal/agent/response_printer.go`: Visualization of code execution steps.
+
+Configuration (`cpe.yaml`):
+```yaml
+defaults:
+  codeMode: true
+
+models:
+  - ref: sonnet
+    codeMode: true
+```
 
 ## Build, test, and development commands
 
