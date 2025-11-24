@@ -150,26 +150,22 @@ func (c *ToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage,
 	// Convert the MCP CallToolResult to a gai.Message
 	blocks := make([]gai.Block, len(result.Content))
 	for i, content := range result.Content {
-		block := gai.Block{
-			ID:        toolCallID,
-			BlockType: gai.Content,
-		}
+		var block gai.Block
 
 		switch c := content.(type) {
 		case *mcp.TextContent:
-			block.ModalityType = gai.Text
-			block.MimeType = "text/plain"
-			block.Content = gai.Str(c.Text)
+			block = gai.TextBlock(c.Text)
+			block.ID = toolCallID
 		case *mcp.ImageContent:
-			block.ModalityType = gai.Image
-			block.MimeType = c.MIMEType
-			block.Content = gai.Str(c.Data)
+			// ImageContent.Data contains raw bytes (already base64-decoded by json.Unmarshal)
+			// ImageBlock will base64-encode them for us
+			block = gai.ImageBlock(c.Data, c.MIMEType)
+			block.ID = toolCallID
 		case *mcp.ResourceLink:
 			return gai.Message{}, fmt.Errorf("cannot handle resource links in tool call result")
 		default:
-			block.ModalityType = gai.Text
-			block.MimeType = "text/plain"
-			block.Content = gai.Str(fmt.Sprintf("Unknown content type: %T", content))
+			block = gai.TextBlock(fmt.Sprintf("Unknown content type: %T", content))
+			block.ID = toolCallID
 		}
 
 		blocks[i] = block
