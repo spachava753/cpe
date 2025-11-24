@@ -28,13 +28,38 @@ func setupCodeMode(ctx context.Context, toolsMap map[string]mcp.ToolData) (gai.T
 		return gai.Tool{}, nil, fmt.Errorf("failed to start bridge server: %w", err)
 	}
 
-	// 2. Generate Preamble
-	preamble, err := generatePreamble(ctx, toolsMap, port)
+	// 2. Generate Symbols
+	symbols, err := generateSymbols(ctx, toolsMap)
 	if err != nil {
-		return gai.Tool{}, nil, fmt.Errorf("failed to generate typescript preamble: %w", err)
+		return gai.Tool{}, nil, fmt.Errorf("failed to generate typescript symbols: %w", err)
 	}
 
-	// 3. Define execute_typescript tool
+	// 3. Generate Preamble
+	preamble := makePreamble(symbols, port)
+
+	// 4. Generate tool description addendum (types + function signatures)
+	var addendum strings.Builder
+	
+	// Add type definitions
+	if typeDefs, ok := symbols[symbolMapTypesKey]; ok {
+		addendum.WriteString(typeDefs)
+	}
+	
+	// Add function signatures
+	var keys []string
+	for k := range symbols {
+		if k != symbolMapTypesKey {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	
+	for _, name := range keys {
+		addendum.WriteString(symbols[name])
+		addendum.WriteString("\n")
+	}
+
+	// 5. Define execute_typescript tool
 	tool := gai.Tool{
 		Name: executeTypescriptToolName,
 		Description: fmt.Sprintf(`Execute Typescript code in a Deno runtime. 
@@ -49,7 +74,7 @@ The following definitions and functions are available in the global scope:
 
 `+"```typescript"+`
 %s
-`+"```", preamble),
+`+"```", addendum.String()),
 		InputSchema: &jsonschema.Schema{
 			Type: "object",
 			Properties: map[string]*jsonschema.Schema{
@@ -301,11 +326,15 @@ interface ToolResult<T> {
 }
 `
 
-func generatePreamble(ctx context.Context, toolsMap map[string]mcp.ToolData, port int) (string, error) {
-	var sb strings.Builder
-	sb.WriteString(tsPreambleStatic)
-	sb.WriteString(fmt.Sprintf("\nconst SERVER_PORT = %d;\n", port))
+// SymbolMap contains TypeScript type definitions and function signatures.
+// The "_types" key contains all type definitions, and each tool name key contains its function signature.
+type SymbolMap map[string]string
 
+const symbolMapTypesKey = "_types"
+
+// generateSymbols generates TypeScript type definitions and function signatures for the given tools.
+// Returns a SymbolMap with "_types" containing all type definitions and each tool's signature.
+func generateSymbols(ctx context.Context, toolsMap map[string]mcp.ToolData) (SymbolMap, error) {
 	// Prepare data for the Deno script that generates interfaces
 	type ToolInfo struct {
 		Name   string `json:"name"`
@@ -331,13 +360,13 @@ func generatePreamble(ctx context.Context, toolsMap map[string]mcp.ToolData, por
 
 	jsonData, err := json.Marshal(tools)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// Write json data to temp file
 	tmpJSON, err := os.CreateTemp("", "cpe-tools-*.json")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer os.Remove(tmpJSON.Name())
 	tmpJSON.Write(jsonData)
@@ -387,7 +416,7 @@ function normalizeName(name) {
 `
 	tmpScript, err := os.CreateTemp("", "cpe-gen-*.ts")
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer os.Remove(tmpScript.Name())
 	tmpScript.WriteString(generatorScript)
@@ -398,19 +427,55 @@ function normalizeName(name) {
 	out, err := cmd.Output()
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			return "", fmt.Errorf("failed to generate types: %v, stderr: %s", err, exitErr.Stderr)
+			return nil, fmt.Errorf("failed to generate types: %v, stderr: %s", err, exitErr.Stderr)
 		}
-		return "", fmt.Errorf("failed to generate types: %w", err)
+		return nil, fmt.Errorf("failed to generate types: %w", err)
 	}
 
-	sb.Write(out)
+	typeDefs := string(out)
+
+	// Generate symbols map
+	symbols := make(SymbolMap)
+	symbols[symbolMapTypesKey] = typeDefs
+	
+	for _, name := range keys {
+		typeName := toPascalCase(name)
+		
+		funcSig := fmt.Sprintf(`/**
+ * Call tool: %s
+ */
+async function %s(input: %sInput): Promise<Result<%sOutput>>`, name, normalizeIdentifier(name), typeName, typeName)
+		
+		symbols[name] = funcSig
+	}
+
+	return symbols, nil
+}
+
+// makePreamble generates the complete TypeScript preamble including static types,
+// server configuration, generated types, and function implementations.
+func makePreamble(symbols SymbolMap, port int) string {
+	var sb strings.Builder
+	sb.WriteString(tsPreambleStatic)
+	sb.WriteString(fmt.Sprintf("\nconst SERVER_PORT = %d;\n", port))
+
+	// Add type definitions
+	if typeDefs, ok := symbols[symbolMapTypesKey]; ok {
+		sb.WriteString(typeDefs)
+	}
+
+	// Sort tool names for deterministic output
+	var keys []string
+	for k := range symbols {
+		if k != symbolMapTypesKey {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
 
 	// Generate function wrappers
 	for _, name := range keys {
 		typeName := toPascalCase(name)
-		// But wait, function names in TS should be valid identifiers.
-		// MCP tool names can contain chars not allowed in TS identifiers?
-		// Assuming they are snake_case or compatible.
 
 		wrapper := fmt.Sprintf(`
 /**
@@ -454,7 +519,7 @@ async function %s(input: %sInput): Promise<Result<%sOutput>> {
 		sb.WriteString(wrapper)
 	}
 
-	return sb.String(), nil
+	return sb.String()
 }
 
 func capitalize(s string) string {

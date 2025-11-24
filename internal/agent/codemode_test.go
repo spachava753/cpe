@@ -11,7 +11,7 @@ import (
 	"github.com/spachava753/cpe/internal/mcp"
 )
 
-func TestGeneratePreamble(t *testing.T) {
+func TestMakePreamble(t *testing.T) {
 	// Check if deno is installed
 	if _, err := exec.LookPath("deno"); err != nil {
 		t.Skip("deno not installed, skipping test")
@@ -618,13 +618,15 @@ async function web_search_preview(input: WebSearchPreviewInput): Promise<Result<
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			got, err := generatePreamble(ctx, tt.tools, tt.port)
+			symbols, err := generateSymbols(ctx, tt.tools)
 			if err != nil {
-				t.Fatalf("generatePreamble() error = %v", err)
+				t.Fatalf("generateSymbols() error = %v", err)
 			}
 
+			got := makePreamble(symbols, tt.port)
+
 			if diff := cmp.Diff(tt.expected, got); diff != "" {
-				t.Errorf("generatePreamble() mismatch (-want +got):\n%s", diff)
+				t.Errorf("makePreamble() mismatch (-want +got):\n%s", diff)
 			}
 
 			// Verify that the generated code compiles
