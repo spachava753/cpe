@@ -33,6 +33,14 @@ func (h *headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 	return h.next.RoundTrip(req)
 }
 
+// ToolData holds all information about a fetched tool
+type ToolData struct {
+	Tool         gai.Tool
+	ToolCallback gai.ToolCallback
+	InputSchema  any
+	OutputSchema any
+}
+
 // ServerConfig represents the configuration for a single MCP server
 type ServerConfig struct {
 	Command       string            `json:"command" yaml:"command" validate:"required_if=Type stdio"`
@@ -111,7 +119,7 @@ type ToolCallback struct {
 // Call implements the gai.ToolCallback interface
 func (c *ToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage, toolCallID string) (gai.Message, error) {
 	// Parse parameters
-	var params map[string]interface{}
+	var params map[string]any
 	if err := json.Unmarshal(parametersJSON, &params); err != nil {
 		return gai.Message{
 			Role: gai.ToolResult,
@@ -212,18 +220,12 @@ func CreateTransport(config ServerConfig) (transport mcp.Transport, err error) {
 
 // FetchTools retrieves all tools from all MCP servers and returns them with their callbacks
 // It continues fetching tools even if some fail, collecting warnings along the way
-func FetchTools(ctx context.Context, client *mcp.Client, mcpServers map[string]ServerConfig) (map[string]struct {
-	Tool         gai.Tool
-	ToolCallback gai.ToolCallback
-}, error) {
+func FetchTools(ctx context.Context, client *mcp.Client, mcpServers map[string]ServerConfig) (map[string]ToolData, error) {
 	serverNames := slices.Collect(maps.Keys(mcpServers))
 
 	// If no servers are configured, return early without an error
 	if len(serverNames) == 0 {
-		return make(map[string]struct {
-			Tool         gai.Tool
-			ToolCallback gai.ToolCallback
-		}), nil
+		return make(map[string]ToolData), nil
 	}
 
 	registeredTools := make(map[string]string) // Map to track tool names for duplicate detection
@@ -232,10 +234,7 @@ func FetchTools(ctx context.Context, client *mcp.Client, mcpServers map[string]S
 	totalFilteredOut := 0                      // Count filtered-out tools
 
 	// Map to store the tools and callbacks to be returned
-	toolsMap := make(map[string]struct {
-		Tool         gai.Tool
-		ToolCallback gai.ToolCallback
-	})
+	toolsMap := make(map[string]ToolData)
 
 	// For each server, get tools and prepare them for registration
 	for _, serverName := range serverNames {
@@ -311,12 +310,11 @@ func FetchTools(ctx context.Context, client *mcp.Client, mcpServers map[string]S
 			}
 
 			// Store the tool and callback in the map
-			toolsMap[mcpTool.Name] = struct {
-				Tool         gai.Tool
-				ToolCallback gai.ToolCallback
-			}{
+			toolsMap[mcpTool.Name] = ToolData{
 				Tool:         gaiTool,
 				ToolCallback: callback,
+				InputSchema:  mcpTool.InputSchema,
+				OutputSchema: mcpTool.OutputSchema,
 			}
 
 			// Track this tool to detect duplicates

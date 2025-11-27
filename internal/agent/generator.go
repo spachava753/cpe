@@ -101,6 +101,7 @@ func CreateToolCapableGenerator(
 	requestTimeout time.Duration,
 	baseURLOverride string,
 	disableStreaming bool,
+	codeMode bool,
 	mcpServers map[string]mcp.ServerConfig,
 ) (Iface, error) {
 	// Create the base generator from catalog model
@@ -116,7 +117,7 @@ func CreateToolCapableGenerator(
 		gen = &gai.StreamingAdapter{S: streamingPrinter}
 	} else {
 		// print non-streaming responses
-		gen = NewResponsePrinterGenerator(genBase.(gai.ToolCapableGenerator))
+		gen = NewResponsePrinterGenerator(genBase.(gai.ToolCapableGenerator), codeMode, nil, nil)
 	}
 
 	// print token usage at the end of each message
@@ -148,10 +149,20 @@ func CreateToolCapableGenerator(
 		return nil, fmt.Errorf("failed to fetch MCP tools: %v\n", err)
 	}
 
-	// Register each tool with the generator
-	for toolName, toolData := range toolsMap {
-		if err := filterToolGen.Register(toolData.Tool, toolData.ToolCallback); err != nil {
-			return nil, fmt.Errorf("failed to register tool %s: %v\n", toolName, err)
+	if codeMode {
+		tool, callback, err := setupCodeMode(ctx, toolsMap)
+		if err != nil {
+			return nil, fmt.Errorf("failed to setup code mode: %v", err)
+		}
+		if err := filterToolGen.Register(tool, callback); err != nil {
+			return nil, fmt.Errorf("failed to register execute_typescript tool: %v\n", err)
+		}
+	} else {
+		// Register each tool with the generator
+		for toolName, toolData := range toolsMap {
+			if err := filterToolGen.Register(toolData.Tool, toolData.ToolCallback); err != nil {
+				return nil, fmt.Errorf("failed to register tool %s: %v\n", toolName, err)
+			}
 		}
 	}
 

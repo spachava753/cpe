@@ -4,6 +4,7 @@ CPE (Chat-based Programming Editor) is a CLI that connects local developer workf
 
 Key capabilities:
 
+- Code Mode: Enables LLMs to execute TypeScript code via Deno to interact with MCP tools in a composable and type-safe manner.
 - Multi-model generation via unified YAML/JSON configuration
 - Tool use via MCP servers
 - Streaming or prettified non-streaming output
@@ -13,17 +14,40 @@ Key capabilities:
 
 - `cmd/`: The package which has the cobra commands that user invokes
 - `internal/`: Hosts all of the actual business logic and utilities
-    -
-    `agent/`: Package that hosts generator adapters, streaming/printing, thinking filter, system prompt generation, and agent creation to execute a user query
-    - `config/`: Package that hosts configuration loading, validation, parameter merging, and config specific types
-    - `mcp/`: Package that hosts MCP config validation and client, as well as code for connecting to MPC servers
-    - `storage/`: Package that hosts SQLite-backed conversation storage (.cpeconvo) and related persistence code
-    - `urlhandler/`: Package that hosts utility code for URL detection and safe downloading
-    - `version/`: Package that hosts CLI version reporting
+  - `agent/`: Package that hosts generator adapters, streaming/printing, thinking filter, system prompt generation, and agent creation to execute a user query
+  - `config/`: Package that hosts configuration loading, validation, parameter merging, and config specific types
+  - `mcp/`: Package that hosts MCP config validation and client, as well as code for connecting to MPC servers
+  - `storage/`: Package that hosts SQLite-backed conversation storage (.cpeconvo) and related persistence code
+  - `urlhandler/`: Package that hosts utility code for URL detection and safe downloading
+  - `version/`: Package that hosts CLI version reporting
 - `main.go`: invokes cmd.Execute()
 - `gen.go`: code generation hooks, like sqlc codegen
 - `examples/`: Folder that hosts examples of configuration, system prompt templates, etc.
 - `docs/`: Folder that hosts markdown files documenting various things like PRDs, specs, etc.
+
+## Code Mode
+
+Code Mode allows LLMs to execute TypeScript code via Deno to interact with MCP tools in a composable and type-safe manner. Instead of discrete tool calls, the agent generates a script that calls generated TypeScript functions wrapping the MCP tools.
+
+Key components:
+- **Execute Typescript Tool**: `execute_typescript` takes a `code` string (see `internal/agent/codemode.go`).
+- **Bridge Server**: A local HTTP server proxies requests from the Deno runtime to the Go MCP client (see `internal/agent/codemode.go`).
+- **Type Generation**: TypeScript definitions are generated dynamically from MCP tool schemas.
+
+Relevant files:
+- `docs/specs/code_mode.md`: Detailed specification.
+- `internal/agent/codemode.go`: Core implementation of the tool, bridge server, and type generator.
+- `internal/agent/response_printer.go`: Visualization of code execution steps.
+
+Configuration (`cpe.yaml`):
+```yaml
+defaults:
+  codeMode: true
+
+models:
+  - ref: sonnet
+    codeMode: true
+```
 
 ## Build, test, and development commands
 
@@ -101,13 +125,13 @@ go generate ./internal/config/
 
 - Use go test ./...; write table-driven unit tests
 - Preference: Use table-driven tests
-    - Share common setup/validation logic through helper functions or validation callbacks
-    - Name test cases descriptively in the `name` field
+  - Share common setup/validation logic through helper functions or validation callbacks
+  - Name test cases descriptively in the `name` field
 - Prefer httptest for HTTP; avoid real network calls
 - Keep tests deterministic; use short timeouts; avoid sleeping where possible
 - Isolate filesystem effects; clean up temp files; do not depend on developer-local state
 - For dialog storage, prefer temp DB paths when adding tests
-- Name tests with _test.go; keep per-package tests close to implementation
+- Name tests with \_test.go; keep per-package tests close to implementation
 
 ## Performance considerations
 
@@ -115,8 +139,4 @@ CPE is a CLI tool and MCP client where execution time is dominated by network ca
 
 ## Documentation for Go Symbols
 
-When gathering context about symbols like types, global variables, constants, functions and methods, prefer to use
-`go doc` command. You may use
-`go doc github.com/example/pkg.Type` to get documentation about a specific symbol. Avoid using
-`go doc -all` as it may overwhelm your context window. Instead, if you need to perform a search or fuzzy search for a symbol, feed the output of
-`go doc -all` into a cli like `rg`, `fzf`, etc.   
+When gathering context about symbols like types, global variables, constants, functions and methods, prefer to use `go doc` command. You may use `go doc github.com/example/pkg.Type` to get documentation about a specific symbol. Avoid using `go doc -all` as it may overwhelm your context window. Instead, if you need to perform a search or fuzzy search for a symbol, feed the output of `go doc -all` into a cli like `rg`, `fzf`, etc.

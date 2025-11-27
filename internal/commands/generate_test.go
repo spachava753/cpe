@@ -144,7 +144,7 @@ func TestGenerate(t *testing.T) {
 				Stderr: &bytes.Buffer{},
 			},
 			wantErr: true,
-			errMsg:  "not found in configuration",
+			errMsg:  "no model specified",
 		},
 		{
 			name: "incognito mode - no saving",
