@@ -136,7 +136,7 @@ Calling Tool:
 {
   "name": "execute_go_code",
   "parameters": {
-    "code": "city, err := getCity(ctx)\nif err != nil {\n\t\treturn err\n}\n\ntemp, err := GetWeather(ctx, GetWeatherInput{\n\t\tCity: city,\n\t\tUnit: \"fahrenheit\"\n})\nif err != nil {\n\t\treturn err\n}\n\nfmt.Printf(\"Temperature: %f, City: %s\\n\", temp, city)",
+    "code": "city, err := GetCity(ctx)\nif err != nil {\n\t\treturn err\n}\n\ntemp, err := GetWeather(ctx, GetWeatherInput{\n\t\tCity: city,\n\t\tUnit: \"fahrenheit\"\n})\nif err != nil {\n\t\treturn err\n}\n\nfmt.Printf(\"Temperature: %f, City: %s\\n\", temp, city)",
     "imports": ["fmt"]
   }
 }
@@ -257,7 +257,7 @@ func main() {
 
 The error, if not nil, returned from the `Run` function, will be present in the tool result.
 
-Any packages you use in the code, you should include in the "imports" parameter.
+Any packages you use in the code, you should include in the "imports" parameter. You may also import packages with aliases or `_` for side effects e.g. `pkg2 github.com/example/pkg`, `_ github.com/example/pkg`
 ````
 
 ### Function Generation & Type Mapping
@@ -304,7 +304,15 @@ func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSes
 		fatalExit(fmt.Errorf("expected number of content parts from tool %s: %d", toolName, len(res.Content)))
 	}
 	
-	textContent := res.Content[0].(*mcp.TextContent).Text
+	var textContent string
+	
+	switch c := res.Content[0].(type) {
+	case *mcp.TextContent:
+		textContent = c.Text
+	default:
+		fatalExit(fmt.Errorf("unexpected content type returned from tool %s, cannot handle multimedia execpt text", toolName))
+	}
+	
 	var output O
 	
 	if result.IsError {
@@ -354,6 +362,12 @@ Note that the generated types and functions definitions may counter-intuitively 
 
 More often that not, due to the relatively recent addition of output schemas to the MCP specification, tools exposed by an MCP server does not have a output schema. In this case, we do not know the shape of the output returned by a tool, except for the fact that it is JSON object. In cases like this, the type for the output should be a `map[string]any`. So in the example above, `GetWeatherOutput` would be `type GetWeatherOutput map[string]any`.
 
+#### Reconnection Latency
+
+While re-connecting to servers on every execution of the `execute_go_code` tool does introduce latency, it's very **rare** that init and connect time to an MCP server outshine the benefits of code mode. Stdio and streamable servers often start up in a matter of milliseconds. On the other hand, generating a response from a model, especially from an intelligent thinking model, can often take tens of seconds. So, despite the re-connection on every execution of the `execute_go_code` tool introducing some latency, we are still saving significant time in the form of reduced turns back and forth with the model, as well as reduced input and output token generation.
+
+In addition, users of the tool can mitigate this issue completely by utilizing an MCP gateway, which will act as a proxy and persist client sessions to tools.
+
 ### Tool schema to Go types
 
 JSON Schema can be quite complex, and it can be difficult to map a schema to a Go type because:
@@ -380,43 +394,6 @@ However, many, if not most tools do not use these advanced features of JSON sche
 we will be able to convert most tool input and output schemas to Go types.
 
 In addition, I want to convert tool names and object field names in the JSON schema to be pascal case for function names and struct fields. For each tool, the tool name will be converted to a camel case e.g. `get_weather` -> `GetWeather`. The input and output types will be the pascal case tool name with the suffix of `Input` and `Output` e.g. `GetWeatherInput`, `GetWeatherOutput`. For enumerations, we will simply add a document comment on the field, listing out the allowed string values.  
-
-### Configuration
-
-"Code Mode" is controlled via the configuration file:
-```yaml
-defaults:
-  # Global default
-  codeMode:
-    enabled: true
-    excludedTools:
-      - some_tool
-      - another_tool
-
-models:
-  - ref: sonnet
-    # Global default
-    codeMode:
-      enabled: true
-      excludedTools:
-        - some_tool
-        - another_tool
-  - ref: small-model
-    # Global default
-    codeMode:
-      enabled: true
-      excludedTools:
-        - some_tool
-        - another_tool
-        - another_tool_2
-```
-
-Note that "code mode" config has the option to exclude specific tools from being called within the Go code. In this case, they are registered with LLMs as regular tools. There is multiple reasons this is desired:
-- This allows special tools from MCP servers that return multimedia content like images
-- Some servers keep state, in which case it is more beneficial to exclude the server's tools so the state is maintained through the entire agent execution run, rather than the lifetime of the execution of the `execute_go_code` tool
-- Some models have been trained excusively to use tools, or maybe finetuned on some built-in tools. In this case, it is beneficial to expose this tool as a regular tool to the LLM, rather than through code mode
-- Some MCP servers take some time to register and set up a client session. Code mode connects to MCP servers on every tool call to `execute_go_code`, which means these servers that take time to connect will actually increase latency. In this case, we will register with the MCP server regularly, which is a long-lived connection as compared to what the `execute_go_code` tool does, requiring only a signle init and connect for client session.
-  - **Note**: while re-connecting to servers on every execution of the `execute_go_code` tool does introduce latency, it's very **rare** that init and connect time to an MCP server outshine the benefits of code mode. Stdio and streamable servers often start up in a matter of milliseconds. On the other hand, generating a response from a model, especially from an intelligent thinking model, can often take tens of seconds. So, despite the re-connection on every execution of the `execute_go_code` tool introducing some latency, we are still saving significant time in the form of reduced turns back and forth with the model, as well as reduced input and output token generation
 
 ### Tool Execution
 
@@ -501,3 +478,38 @@ The above markdown will be rendered by `glamour`, the terminal markdown render p
 ### Context Cancellation
 
 The "shell" listens for a SIGTERM or SIGINTERRUPT signal, which will propogate context throughout the go program. We also want to make sure that when the parent process CPE CLI receives a signal from the user, we should also **send** a signal to the child go program that is executing for the `execute_go_code` tool, and wait for program exit, up till a point. Then we want to kill the program, and the grace period will be set to 5 seconds.
+
+### Configuration
+
+"Code Mode" is controlled via the configuration file:
+```yaml
+defaults:
+  # Global default
+  codeMode:
+    enabled: true
+    excludedTools:
+      - some_tool
+      - another_tool
+
+models:
+  - ref: sonnet
+    # Global default
+    codeMode:
+      enabled: true
+      excludedTools:
+        - some_tool
+        - another_tool
+  - ref: small-model
+    # Global default
+    codeMode:
+      enabled: true
+      excludedTools:
+        - some_tool
+        - another_tool
+        - another_tool_2
+```
+
+Note that "code mode" config has the option to exclude specific tools from being called within the Go code. In this case, they are registered with LLMs as regular tools. There is multiple reasons this is desired:
+- This allows special tools from MCP servers that return multimedia content like images
+- Some servers keep state, in which case it is more beneficial to exclude the server's tools so the state is maintained through the entire agent execution run, rather than the lifetime of the execution of the `execute_go_code` tool
+- Some models have been trained excusively to use tools, or maybe finetuned on some built-in tools. In this case, it is beneficial to expose this tool as a regular tool to the LLM, rather than through code mode
