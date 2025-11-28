@@ -689,7 +689,7 @@ The "shell" listens for a SIGTERM or SIGINTERRUPT signal, which will propogate c
 "Code Mode" is controlled via the configuration file:
 ```yaml
 defaults:
-  # Global default
+  # Global default for all models
   codeMode:
     enabled: true
     excludedTools:
@@ -698,23 +698,34 @@ defaults:
 
 models:
   - ref: sonnet
-    # Global default
-    codeMode:
-      enabled: true
-      excludedTools:
-        - some_tool
-        - another_tool
+    # No codeMode specified - inherits defaults.codeMode entirely
   - ref: small-model
-    # Global default
+    # Model-level override - COMPLETELY REPLACES defaults.codeMode (no merging)
     codeMode:
       enabled: true
       excludedTools:
         - some_tool
         - another_tool
         - another_tool_2
+  - ref: tiny-model
+    # Disable code mode for this model only
+    codeMode:
+      enabled: false
 ```
 
-Note that "code mode" config has the option to exclude specific tools from being called within the Go code. In this case, they are registered with LLMs as regular tools. There is multiple reasons this is desired:
+#### Configuration Resolution
+
+When a model is selected, the effective `codeMode` configuration is determined as follows:
+
+1. If the model specifies `codeMode`, use it **entirely** (override behavior, not merge)
+2. Otherwise, fall back to `defaults.codeMode`
+3. If neither is specified, code mode is disabled
+
+This is **override** behavior, not merging. If a model provides its own `codeMode` configuration, it completely replaces the global default rather than merging `excludedTools` lists. This design choice keeps the configuration predictable: each model's code mode settings are self-contained and explicit.
+
+For example, if `defaults.codeMode.excludedTools` contains `["tool_a", "tool_b"]` and a model specifies `codeMode.excludedTools: ["tool_c"]`, the effective excluded tools for that model is `["tool_c"]` only—not `["tool_a", "tool_b", "tool_c"]`.
+
+Note that "code mode" config has the option to exclude specific tools from being called within the Go code. In this case, they are registered with LLMs as regular tools. There are multiple reasons this is desired:
 - This allows special tools from MCP servers that return multimedia content like images
 - Some servers keep state, in which case it is more beneficial to exclude the server's tools so the state is maintained through the entire agent execution run, rather than the lifetime of the execution of the `execute_go_code` tool
 - Some models have been trained excusively to use tools, or maybe finetuned on some built-in tools. In this case, it is beneficial to expose this tool as a regular tool to the LLM, rather than through code mode
