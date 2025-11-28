@@ -174,7 +174,7 @@ When Code Mode is enabled, CPE hides the individual MCP tools from the LLM. Inst
     "properties": {
       "code": {
         "type": "string",
-        "description": "The code the execute"
+        "description": "The code to execute"
       },
       "imports": {
         "type": "array",
@@ -238,7 +238,7 @@ package main
 // generated types and function definitions
 // ...
 
-fun Run(ctx context.Context) error {
+func Run(ctx context.Context) error {
 	// setup ...
 	
 	// [GENERATED CODE GOES HERE]
@@ -294,7 +294,7 @@ var GetWeather func(ctx context.Context, input GetWeatherInput) (GetWeatherOutpu
 // End of generated types and function definitions
 
 // callMcpTool is a reusable utility function for calling a mcp tool
-func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSession, toolName string, input T) (O, error) {
+func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSession, toolName string, input I) (O, error) {
 	result, err := clientSession.CallTool(ctx, &mcp.CallToolParams{Name: toolName, Arguments: input})
 	if err != nil {
 		fatalExit(fmt.Errorf("error calling tool %s: %w", toolName, err))
@@ -435,7 +435,7 @@ import (
 // generated types and function definitions
 // ...
 
-fun Run(ctx context.Context) error {
+func Run(ctx context.Context) error {
 	// setup ...
 	
 	// generated code inlined here
