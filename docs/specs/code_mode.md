@@ -314,9 +314,15 @@ When Code Mode is enabled, CPE hides the individual MCP tools from the LLM. Inst
       "code": {
         "type": "string",
         "description": "Complete Go source file contents implementing the Run function"
+      },
+      "executionTimeout": {
+        "type": "integer",
+        "description": "Maximum execution time in seconds (1-300). Estimate based on expected runtime of the generated code.",
+        "minimum": 1,
+        "maximum": 300
       }
     },
-    "required": ["code"]
+    "required": ["code", "executionTimeout"]
   },
   "outputSchema": {
     "type": "object",
@@ -457,8 +463,19 @@ var GetWeather func(ctx context.Context, input GetWeatherInput) (GetWeatherOutpu
 
 // callMcpTool is a reusable utility function for calling a mcp tool
 func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSession, toolName string, input I) (O, error) {
+	var output O
+
+	// Check if context is already cancelled before making the call
+	if err := ctx.Err(); err != nil {
+		return output, err
+	}
+
 	result, err := clientSession.CallTool(ctx, &mcp.CallToolParams{Name: toolName, Arguments: input})
 	if err != nil {
+		// Return context cancellation/deadline errors normally
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return output, err
+		}
 		fatalExit(fmt.Errorf("error calling tool %s: %w", toolName, err))
 	}
 	
@@ -474,8 +491,6 @@ func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSes
 	default:
 		fatalExit(fmt.Errorf("unexpected content type returned from tool %s, cannot handle multimedia except text", toolName))
 	}
-	
-	var output O
 	
 	if result.IsError {
 		return output, errors.New(textContent)
@@ -615,6 +630,10 @@ Note that on error from executing `Run(ctx context.Context) error`, we actually 
 - error code of 0: successful execution, no error
 - error code of 2: happens when the go program panics
 - error code of 3: special exit code which is produced by the generated code. Means that something went wrong with the generated code, despite compiling successfully.
+
+#### Execution Timeout
+
+The `executionTimeout` field in the tool input is required and specifies the maximum time in seconds that the generated code is allowed to run. The LLM should estimate an appropriate timeout based on the expected runtime of its generated code. The value must be between 1 and 300 seconds. When the timeout expires, CPE sends a `SIGINT` signal to the child process, waits a grace period of 5 seconds for graceful shutdown, then sends `SIGKILL` if the process is still running. This prevents runaway processes from infinite loops or unexpectedly long operations.
 
 Alternatives were considered, such as the `yaegi` interpreter, or a WASM based approach using something like the Extism SDK. However, the main problem with both approaches is that the std library is not a 100% covered. In addition, other features like reflection has questionable support. Using the above approach gives us the most flexibility, as well as no "unexpected" surprises when it comes to language support.
 
