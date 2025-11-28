@@ -729,3 +729,56 @@ Note that "code mode" config has the option to exclude specific tools from being
 - This allows special tools from MCP servers that return multimedia content like images
 - Some servers keep state, in which case it is more beneficial to exclude the server's tools so the state is maintained through the entire agent execution run, rather than the lifetime of the execution of the `execute_go_code` tool
 - Some models have been trained excusively to use tools, or maybe finetuned on some built-in tools. In this case, it is beneficial to expose this tool as a regular tool to the LLM, rather than through code mode
+
+## Implementation Tasks
+
+The following tasks break down the code mode implementation into self-contained subtasks. Tasks are ordered by dependency—complete earlier tasks before dependent ones. Each task should include relevant unit tests as part of the implementation.
+
+### Phase 1: Foundation
+
+- [ ] **Task 1: Add code mode configuration types and loading**  
+  Add `CodeModeConfig` struct with `Enabled bool` and `ExcludedTools []string` fields to `internal/config/config.go`. Add `CodeMode *CodeModeConfig` field to both `Defaults` and `ModelConfig`. Update `Config` (runtime config) to include resolved `CodeModeConfig`. Implement override resolution logic per the "Configuration Resolution" section: model-level completely replaces defaults (no merging). Update config validation. Include tests for config loading and override resolution. Reference: "Configuration" section.
+
+- [ ] **Task 2: Implement JSON Schema to Go type converter**  
+  Create new package `internal/codemode/schema` with functions to convert MCP tool input/output JSON schemas to Go type definitions as strings. Support: objects, arrays, null, boolean, number, string types; description annotations; enum validation (as doc comments); nullable types (`["null", "string"]`). Generate pascal case struct names and field names. Handle missing output schema by returning `map[string]any`. Include tests for: simple types, nested objects, arrays, nullable types, enums, missing output schema. Reference: "Tool schema to Go types" section.
+
+- [ ] **Task 3: Implement tool name conversion and collision detection**  
+  Add functions to convert tool names to pascal case Go identifiers (e.g., `get_weather` → `GetWeather`). Implement collision detection: (1) check for `execute_go_code` reserved name collision, (2) check for pascal case collisions between different tool names. Return descriptive errors when collisions are detected. Include tests for pascal case conversion, reserved name collision, and pascal case collision scenarios. Reference: "Naming Collisions" section.
+
+### Phase 2: Code Generation
+
+- [ ] **Task 4: Generate Go function signatures and type definitions for tools**  
+  Using Task 2's schema converter and Task 3's name converter, create a function that takes a list of MCP tools and generates: input/output struct definitions, function variable declarations with doc comments. Output should match the format shown in the "Execute Go Code Tool" description and `main.go` example. Depends on: Tasks 2, 3.
+
+- [ ] **Task 5: Generate `main.go` template with MCP client setup**  
+  Create a function that generates the complete `main.go` file contents including: package declaration, imports, generated types and function definitions (from Task 4), `fatalExit` helper, `callMcpTool` generic function, `main()` with signal handling, MCP client initialization for each server, function variable assignments, and `Run(ctx)` call. The template must handle multiple MCP servers with their specific transport types (stdio, http, sse). Depends on: Task 4. Reference: "Generated `main.go`" example in "Function Generation & Type Mapping" section.
+
+- [ ] **Task 6: Generate `execute_go_code` tool description**  
+  Create a function that generates the tool description markdown including: Go version, available function signatures and types (from Task 4), code structure template, `main.go` shape explanation, and usage instructions. The description should match the format in "The 'Execute Go Code' Tool" section. Depends on: Task 4.
+
+### Phase 3: Execution Engine
+
+- [ ] **Task 7: Implement code execution sandbox**  
+  Create `internal/codemode/executor` package. Implement function to: create temp directory with random suffix, write `go.mod` (with MCP SDK dependency), write `main.go` (from Task 5), write `run.go` (LLM-generated code), run `go mod tidy`, execute `go run .` with timeout and capture output. Handle cleanup of temp directory after execution. Include tests for successful execution and compilation errors. Reference: "Tool Execution" section.
+
+- [ ] **Task 8: Implement execution timeout and signal handling**  
+  Extend Task 7's executor to: enforce `executionTimeout` (1-300 seconds) from tool input, send `SIGINT` on timeout, wait 5-second grace period, send `SIGKILL` if still running. Also propagate parent process signals (SIGTERM/SIGINT) to child process. Include tests for timeout scenarios. Reference: "Execution Timeout" and "Context Cancellation" sections. Depends on: Task 7.
+
+- [ ] **Task 9: Implement error classification and handling**  
+  Extend executor to classify exit codes: 0 (success), 1 (Run() returned error - recoverable), 2 (panic - recoverable), 3 (generated code error - fatal). Compilation errors should be returned as recoverable tool errors. Implement appropriate error types and return values for each case. Include tests for each exit code scenario. Reference: "Error handling" section. Depends on: Task 7.
+
+### Phase 4: Integration
+
+- [ ] **Task 10: Implement `execute_go_code` tool callback**  
+  Create `internal/codemode/tool.go` implementing `gai.ToolCallback` interface for `execute_go_code`. Parse `code` and `executionTimeout` from input JSON. Use executor (Tasks 7-9) to run the code. Return output as tool result, marking errors appropriately. Handle fatal errors (exit code 3) by returning an error that stops agent execution. Depends on: Tasks 7, 8, 9.
+
+- [ ] **Task 11: Integrate code mode into `CreateToolCapableGenerator`**  
+  Modify `internal/agent/generator.go` to: accept `CodeModeConfig` parameter, run collision detection (Task 3) at startup, partition tools into code-mode vs excluded, generate `execute_go_code` tool definition (Task 6) and register it, register excluded tools normally, skip registering code-mode tools directly. Depends on: Tasks 1, 3, 4, 5, 6, 10. Reference: "Architecture" section.
+
+- [ ] **Task 12: Update non-streaming printer for code mode rendering**  
+  Modify `internal/agent/response_printer.go` to detect `execute_go_code` tool calls and render the `code` field as a Go markdown block instead of JSON. Keep streaming printer unchanged (renders as normal JSON). Reference: "Tool call rendering" section.
+
+### Phase 5: CLI Integration
+
+- [ ] **Task 13: Wire code mode config through CLI**  
+  Update `cmd/` and `internal/commands/` to pass resolved `CodeModeConfig` from loaded config to `CreateToolCapableGenerator`. Ensure config resolution (Task 1) is applied before generator creation. Depends on: Tasks 1, 11.
