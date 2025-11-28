@@ -157,6 +157,146 @@ It is 86 degree fahrenheit in New York City.
 
 Notice how "code mode" resulted in less overall turns in the conversation, reducing latency to end result. It also is more token efficient, as there isn't much tool call arguments and tool result JSON that would feed into the LLM. Over time, in a long conversation, especially with many tools, this benefit compounds.
 
+### Advanced Example: File I/O with Loops
+
+This example demonstrates the true power of code mode's composability. Given a file `cities.txt` containing a list of cities (one per line), we want to get the weather for each city.
+
+**cities.txt:**
+```text
+New York
+Los Angeles
+Chicago
+Miami
+Seattle
+```
+
+#### Normal tool call
+
+With normal tool calling, the LLM must make a separate tool call for each city, resulting in 5 round-trips:
+
+##### User
+
+Get the weather for each city in cities.txt
+
+##### Assistant
+
+Thinking: Let me read the file first
+Calling Tool:
+```json
+{
+  "name": "read_file",
+  "parameters": {
+    "path": "cities.txt"
+  }
+}
+```
+
+##### Tool Result
+
+```text
+New York
+Los Angeles
+Chicago
+Miami
+Seattle
+```
+
+##### Assistant
+
+Thinking: I'll get the weather for New York first
+Calling Tool:
+```json
+{
+  "name": "get_weather",
+  "parameters": {
+    "city": "New York",
+    "unit": "fahrenheit"
+  }
+}
+```
+
+##### Tool Result
+
+```json
+{
+  "temperature": 72
+}
+```
+
+##### Assistant
+
+Thinking: Now Los Angeles
+Calling Tool:
+```json
+{
+  "name": "get_weather",
+  "parameters": {
+    "city": "Los Angeles",
+    "unit": "fahrenheit"
+  }
+}
+```
+
+##### Tool Result
+
+```json
+{
+  "temperature": 85
+}
+```
+
+...and so on for Chicago, Miami, and Seattle, resulting in **6 total tool calls** and **6 round-trips** to the model.
+
+#### Code Mode
+
+With code mode, the LLM handles everything in a single execution:
+
+##### User
+
+Get the weather for each city in cities.txt
+
+##### Assistant
+
+Thinking: I'll read the file and get weather for all cities in one go
+Calling Tool:
+```json
+{
+  "name": "execute_go_code",
+  "parameters": {
+    "code": "package main\n\nimport (\n\t\"bufio\"\n\t\"context\"\n\t\"fmt\"\n\t\"os\"\n\t\"strings\"\n)\n\nfunc Run(ctx context.Context) error {\n\tfile, err := os.Open(\"cities.txt\")\n\tif err != nil {\n\t\treturn err\n\t}\n\tdefer file.Close()\n\n\tvar results []string\n\tscanner := bufio.NewScanner(file)\n\tfor scanner.Scan() {\n\t\tcity := strings.TrimSpace(scanner.Text())\n\t\tif city == \"\" {\n\t\t\tcontinue\n\t\t}\n\n\t\tweather, err := GetWeather(ctx, GetWeatherInput{\n\t\t\tCity: city,\n\t\t\tUnit: \"fahrenheit\",\n\t\t})\n\t\tif err != nil {\n\t\t\treturn fmt.Errorf(\"failed to get weather for %s: %w\", city, err)\n\t\t}\n\n\t\tresults = append(results, fmt.Sprintf(\"%s: %.0f°F\", city, weather.Temperature))\n\t}\n\n\tif err := scanner.Err(); err != nil {\n\t\treturn err\n\t}\n\n\tfmt.Println(strings.Join(results, \"\\n\"))\n\treturn nil\n}"
+  }
+}
+```
+
+##### Tool Result
+
+```json
+{
+  "output": "New York: 72°F\nLos Angeles: 85°F\nChicago: 68°F\nMiami: 88°F\nSeattle: 62°F\n"
+}
+```
+
+##### Assistant
+
+Here's the weather for each city:
+- New York: 72°F
+- Los Angeles: 85°F
+- Chicago: 68°F
+- Miami: 88°F
+- Seattle: 62°F
+
+#### Why This Matters
+
+This example highlights several advantages of code mode:
+
+1. **Single round-trip**: 1 tool call vs 6, dramatically reducing latency
+2. **Native control flow**: The `for` loop iterates over cities without model intervention
+3. **Standard library access**: Direct file I/O with `os` and `bufio` packages
+4. **In-code data processing**: Results are formatted and aggregated before returning
+5. **Error handling**: Proper Go error handling without model re-prompting
+
+For N cities, normal tool calling requires N+1 round-trips (read file + N weather calls), while code mode always requires exactly 1. This O(N) vs O(1) difference becomes significant as the number of items grows.
+
 ## Architecture
 
 ### The "Execute Go Code" Tool
