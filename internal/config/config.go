@@ -30,6 +30,12 @@ type PatchRequestConfig struct {
 	IncludeHeaders map[string]string        `json:"includeHeaders,omitempty" yaml:"includeHeaders,omitempty"`
 }
 
+// CodeModeConfig controls code mode behavior for MCP tools
+type CodeModeConfig struct {
+	Enabled       bool     `yaml:"enabled" json:"enabled"`
+	ExcludedTools []string `yaml:"excludedTools,omitempty" json:"excludedTools,omitempty"`
+}
+
 // RawConfig represents the configuration file structure
 type RawConfig struct {
 	// MCP server configurations
@@ -93,6 +99,9 @@ type Defaults struct {
 
 	// Disable streaming globally
 	NoStream bool `yaml:"noStream,omitempty" json:"noStream,omitempty"`
+
+	// Code mode configuration
+	CodeMode *CodeModeConfig `yaml:"codeMode,omitempty" json:"codeMode,omitempty"`
 }
 
 // ModelConfig extends the base model with generation defaults
@@ -104,6 +113,9 @@ type ModelConfig struct {
 
 	// Generation parameter defaults for this model
 	GenerationDefaults *GenerationParams `yaml:"generationDefaults,omitempty" json:"generationDefaults,omitempty" validate:"omitempty"`
+
+	// Code mode configuration for this model (overrides global defaults)
+	CodeMode *CodeModeConfig `yaml:"codeMode,omitempty" json:"codeMode,omitempty"`
 }
 
 // FindModel searches for a model by ref in the config
@@ -135,6 +147,9 @@ type Config struct {
 
 	// Whether streaming is disabled
 	NoStream bool
+
+	// Effective code mode configuration
+	CodeMode *CodeModeConfig
 }
 
 // RuntimeOptions captures runtime overrides from CLI flags and environment

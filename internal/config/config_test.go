@@ -6,6 +6,123 @@ import (
 	"testing"
 )
 
+func TestCodeModeConfig(t *testing.T) {
+	tests := []struct {
+		name      string
+		cfg       RawConfig
+		expectErr bool
+	}{
+		{
+			name: "valid code mode enabled in defaults",
+			cfg: RawConfig{
+				Models: []ModelConfig{
+					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
+				},
+				Defaults: Defaults{
+					CodeMode: &CodeModeConfig{
+						Enabled:       true,
+						ExcludedTools: []string{"tool1", "tool2"},
+					},
+				},
+			},
+		},
+		{
+			name: "valid code mode disabled in defaults",
+			cfg: RawConfig{
+				Models: []ModelConfig{
+					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
+				},
+				Defaults: Defaults{
+					CodeMode: &CodeModeConfig{
+						Enabled:       false,
+						ExcludedTools: []string{},
+					},
+				},
+			},
+		},
+		{
+			name: "valid code mode enabled in model",
+			cfg: RawConfig{
+				Models: []ModelConfig{
+					{
+						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
+						CodeMode: &CodeModeConfig{
+							Enabled:       true,
+							ExcludedTools: []string{"tool3"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "valid code mode disabled in model",
+			cfg: RawConfig{
+				Models: []ModelConfig{
+					{
+						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
+						CodeMode: &CodeModeConfig{
+							Enabled: false,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "valid code mode in both defaults and model",
+			cfg: RawConfig{
+				Models: []ModelConfig{
+					{
+						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
+						CodeMode: &CodeModeConfig{
+							Enabled:       true,
+							ExcludedTools: []string{"model_tool"},
+						},
+					},
+				},
+				Defaults: Defaults{
+					CodeMode: &CodeModeConfig{
+						Enabled:       false,
+						ExcludedTools: []string{"default_tool"},
+					},
+				},
+			},
+		},
+		{
+			name: "valid empty excluded tools",
+			cfg: RawConfig{
+				Models: []ModelConfig{
+					{
+						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
+						CodeMode: &CodeModeConfig{
+							Enabled: true,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "valid nil code mode",
+			cfg: RawConfig{
+				Models: []ModelConfig{
+					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.Validate()
+			if !tt.expectErr && err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if tt.expectErr && err == nil {
+				t.Fatalf("expected error, got none")
+			}
+		})
+	}
+}
+
 func TestRawConfig_FindModel(t *testing.T) {
 	cfg := &RawConfig{
 		Models: []ModelConfig{

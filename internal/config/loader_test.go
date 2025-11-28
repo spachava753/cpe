@@ -550,6 +550,14 @@ func resolveConfigFromRaw(rawCfg *RawConfig, opts RuntimeOptions) (*Config, erro
 		noStream = rawCfg.Defaults.NoStream
 	}
 
+	// Resolve code mode configuration with override behavior (not merge)
+	var codeMode *CodeModeConfig
+	if selectedModel.CodeMode != nil {
+		codeMode = selectedModel.CodeMode
+	} else if rawCfg.Defaults.CodeMode != nil {
+		codeMode = rawCfg.Defaults.CodeMode
+	}
+
 	return &Config{
 		MCPServers:         rawCfg.MCPServers,
 		Model:              selectedModel.Model,
@@ -557,5 +565,491 @@ func resolveConfigFromRaw(rawCfg *RawConfig, opts RuntimeOptions) (*Config, erro
 		GenerationDefaults: genParams,
 		Timeout:            timeout,
 		NoStream:           noStream,
+		CodeMode:           codeMode,
 	}, nil
+}
+
+func TestResolveConfig_CodeMode(t *testing.T) {
+	tests := []struct {
+		name          string
+		configContent string
+		runtimeOpts   RuntimeOptions
+		validate      func(t *testing.T, cfg *Config)
+		expectErr     bool
+	}{
+		{
+			name: "global code mode enabled",
+			configContent: `
+version: "1.0"
+models:
+  - ref: "test-model"
+    display_name: "Test Model"
+    id: "test-id"
+    type: "openai"
+    api_key_env: "API_KEY"
+defaults:
+  codeMode:
+    enabled: true
+    excludedTools:
+      - tool1
+      - tool2
+`,
+			runtimeOpts: RuntimeOptions{
+				ModelRef: "test-model",
+			},
+			validate: func(t *testing.T, cfg *Config) {
+				if cfg.CodeMode == nil {
+					t.Fatal("expected CodeMode but got nil")
+				}
+				if !cfg.CodeMode.Enabled {
+					t.Error("expected code mode to be enabled")
+				}
+				if len(cfg.CodeMode.ExcludedTools) != 2 {
+					t.Errorf("expected 2 excluded tools, got %d", len(cfg.CodeMode.ExcludedTools))
+				}
+				if cfg.CodeMode.ExcludedTools[0] != "tool1" {
+					t.Errorf("expected first excluded tool to be 'tool1', got %q", cfg.CodeMode.ExcludedTools[0])
+				}
+				if cfg.CodeMode.ExcludedTools[1] != "tool2" {
+					t.Errorf("expected second excluded tool to be 'tool2', got %q", cfg.CodeMode.ExcludedTools[1])
+				}
+			},
+		},
+		{
+			name: "global code mode disabled",
+			configContent: `
+version: "1.0"
+models:
+  - ref: "test-model"
+    display_name: "Test Model"
+    id: "test-id"
+    type: "openai"
+    api_key_env: "API_KEY"
+defaults:
+  codeMode:
+    enabled: false
+`,
+			runtimeOpts: RuntimeOptions{
+				ModelRef: "test-model",
+			},
+			validate: func(t *testing.T, cfg *Config) {
+				if cfg.CodeMode == nil {
+					t.Fatal("expected CodeMode but got nil")
+				}
+				if cfg.CodeMode.Enabled {
+					t.Error("expected code mode to be disabled")
+				}
+			},
+		},
+		{
+			name: "model-specific code mode overrides global (enabled)",
+			configContent: `
+version: "1.0"
+models:
+  - ref: "test-model"
+    display_name: "Test Model"
+    id: "test-id"
+    type: "openai"
+    api_key_env: "API_KEY"
+    codeMode:
+      enabled: true
+      excludedTools:
+        - model_tool
+defaults:
+  codeMode:
+    enabled: false
+    excludedTools:
+      - default_tool
+`,
+			runtimeOpts: RuntimeOptions{
+				ModelRef: "test-model",
+			},
+			validate: func(t *testing.T, cfg *Config) {
+				if cfg.CodeMode == nil {
+					t.Fatal("expected CodeMode but got nil")
+				}
+				if !cfg.CodeMode.Enabled {
+					t.Error("expected code mode to be enabled (model override)")
+				}
+				if len(cfg.CodeMode.ExcludedTools) != 1 {
+					t.Errorf("expected 1 excluded tool, got %d", len(cfg.CodeMode.ExcludedTools))
+				}
+				if cfg.CodeMode.ExcludedTools[0] != "model_tool" {
+					t.Errorf("expected excluded tool 'model_tool', got %q", cfg.CodeMode.ExcludedTools[0])
+				}
+			},
+		},
+		{
+			name: "model-specific code mode overrides global (disabled)",
+			configContent: `
+version: "1.0"
+models:
+  - ref: "test-model"
+    display_name: "Test Model"
+    id: "test-id"
+    type: "openai"
+    api_key_env: "API_KEY"
+    codeMode:
+      enabled: false
+defaults:
+  codeMode:
+    enabled: true
+    excludedTools:
+      - default_tool1
+      - default_tool2
+`,
+			runtimeOpts: RuntimeOptions{
+				ModelRef: "test-model",
+			},
+			validate: func(t *testing.T, cfg *Config) {
+				if cfg.CodeMode == nil {
+					t.Fatal("expected CodeMode but got nil")
+				}
+				if cfg.CodeMode.Enabled {
+					t.Error("expected code mode to be disabled (model override)")
+				}
+				// ExcludedTools should be empty/nil for model override, not inherit from defaults
+				if len(cfg.CodeMode.ExcludedTools) != 0 {
+					t.Errorf("expected 0 excluded tools (model override), got %d", len(cfg.CodeMode.ExcludedTools))
+				}
+			},
+		},
+		{
+			name: "model override completely replaces global (no merging)",
+			configContent: `
+version: "1.0"
+models:
+  - ref: "test-model"
+    display_name: "Test Model"
+    id: "test-id"
+    type: "openai"
+    api_key_env: "API_KEY"
+    codeMode:
+      enabled: true
+      excludedTools:
+        - tool_c
+defaults:
+  codeMode:
+    enabled: true
+    excludedTools:
+      - tool_a
+      - tool_b
+`,
+			runtimeOpts: RuntimeOptions{
+				ModelRef: "test-model",
+			},
+			validate: func(t *testing.T, cfg *Config) {
+				if cfg.CodeMode == nil {
+					t.Fatal("expected CodeMode but got nil")
+				}
+				if !cfg.CodeMode.Enabled {
+					t.Error("expected code mode to be enabled")
+				}
+				// Should only have tool_c, not tool_a and tool_b from defaults
+				if len(cfg.CodeMode.ExcludedTools) != 1 {
+					t.Errorf("expected 1 excluded tool (override, no merge), got %d", len(cfg.CodeMode.ExcludedTools))
+				}
+				if cfg.CodeMode.ExcludedTools[0] != "tool_c" {
+					t.Errorf("expected excluded tool 'tool_c', got %q", cfg.CodeMode.ExcludedTools[0])
+				}
+			},
+		},
+		{
+			name: "no code mode specified anywhere",
+			configContent: `
+version: "1.0"
+models:
+  - ref: "test-model"
+    display_name: "Test Model"
+    id: "test-id"
+    type: "openai"
+    api_key_env: "API_KEY"
+`,
+			runtimeOpts: RuntimeOptions{
+				ModelRef: "test-model",
+			},
+			validate: func(t *testing.T, cfg *Config) {
+				if cfg.CodeMode != nil {
+					t.Error("expected CodeMode to be nil when not configured")
+				}
+			},
+		},
+		{
+			name: "empty excluded tools list",
+			configContent: `
+version: "1.0"
+models:
+  - ref: "test-model"
+    display_name: "Test Model"
+    id: "test-id"
+    type: "openai"
+    api_key_env: "API_KEY"
+    codeMode:
+      enabled: true
+      excludedTools: []
+`,
+			runtimeOpts: RuntimeOptions{
+				ModelRef: "test-model",
+			},
+			validate: func(t *testing.T, cfg *Config) {
+				if cfg.CodeMode == nil {
+					t.Fatal("expected CodeMode but got nil")
+				}
+				if !cfg.CodeMode.Enabled {
+					t.Error("expected code mode to be enabled")
+				}
+				if len(cfg.CodeMode.ExcludedTools) != 0 {
+					t.Errorf("expected 0 excluded tools, got %d", len(cfg.CodeMode.ExcludedTools))
+				}
+			},
+		},
+		{
+			name: "model with no code mode inherits from defaults",
+			configContent: `
+version: "1.0"
+models:
+  - ref: "model1"
+    display_name: "Model 1"
+    id: "model1-id"
+    type: "openai"
+    api_key_env: "API_KEY"
+  - ref: "model2"
+    display_name: "Model 2"
+    id: "model2-id"
+    type: "anthropic"
+    api_key_env: "API_KEY"
+    codeMode:
+      enabled: false
+defaults:
+  codeMode:
+    enabled: true
+    excludedTools:
+      - global_tool
+`,
+			runtimeOpts: RuntimeOptions{
+				ModelRef: "model1",
+			},
+			validate: func(t *testing.T, cfg *Config) {
+				if cfg.CodeMode == nil {
+					t.Fatal("expected CodeMode but got nil")
+				}
+				if !cfg.CodeMode.Enabled {
+					t.Error("expected code mode to be enabled (inherited from defaults)")
+				}
+				if len(cfg.CodeMode.ExcludedTools) != 1 {
+					t.Errorf("expected 1 excluded tool, got %d", len(cfg.CodeMode.ExcludedTools))
+				}
+				if cfg.CodeMode.ExcludedTools[0] != "global_tool" {
+					t.Errorf("expected excluded tool 'global_tool', got %q", cfg.CodeMode.ExcludedTools[0])
+				}
+			},
+		},
+		{
+			name: "multiple excluded tools",
+			configContent: `
+version: "1.0"
+models:
+  - ref: "test-model"
+    display_name: "Test Model"
+    id: "test-id"
+    type: "openai"
+    api_key_env: "API_KEY"
+    codeMode:
+      enabled: true
+      excludedTools:
+        - tool1
+        - tool2
+        - tool3
+        - tool4
+`,
+			runtimeOpts: RuntimeOptions{
+				ModelRef: "test-model",
+			},
+			validate: func(t *testing.T, cfg *Config) {
+				if cfg.CodeMode == nil {
+					t.Fatal("expected CodeMode but got nil")
+				}
+				if !cfg.CodeMode.Enabled {
+					t.Error("expected code mode to be enabled")
+				}
+				if len(cfg.CodeMode.ExcludedTools) != 4 {
+					t.Errorf("expected 4 excluded tools, got %d", len(cfg.CodeMode.ExcludedTools))
+				}
+				expectedTools := []string{"tool1", "tool2", "tool3", "tool4"}
+				for i, expected := range expectedTools {
+					if cfg.CodeMode.ExcludedTools[i] != expected {
+						t.Errorf("expected excluded tool %d to be %q, got %q", i, expected, cfg.CodeMode.ExcludedTools[i])
+					}
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testFS := fstest.MapFS{
+				"cpe.yaml": &fstest.MapFile{
+					Data: []byte(tt.configContent),
+				},
+			}
+
+			file, err := testFS.Open("cpe.yaml")
+			if err != nil {
+				t.Fatalf("Failed to open test file: %v", err)
+			}
+			defer file.Close()
+
+			rawCfg, err := loadRawConfigFromFile(file)
+			if err != nil {
+				t.Fatalf("Failed to load raw config: %v", err)
+			}
+
+			if err := rawCfg.Validate(); err != nil {
+				t.Fatalf("Failed to validate raw config: %v", err)
+			}
+
+			cfg, err := resolveConfigFromRaw(rawCfg, tt.runtimeOpts)
+
+			if tt.expectErr {
+				if err == nil {
+					t.Fatalf("expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if cfg == nil {
+				t.Fatal("expected config but got nil")
+			}
+
+			if tt.validate != nil {
+				tt.validate(t, cfg)
+			}
+		})
+	}
+}
+
+func TestExpandEnvironmentVariables_CodeMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      *RawConfig
+		envVars  map[string]string
+		validate func(t *testing.T, cfg *RawConfig)
+	}{
+		{
+			name: "expand environment variables in default code mode excluded tools",
+			cfg: &RawConfig{
+				Models: []ModelConfig{
+					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
+				},
+				Defaults: Defaults{
+					CodeMode: &CodeModeConfig{
+						Enabled:       true,
+						ExcludedTools: []string{"$TOOL1", "${TOOL2}"},
+					},
+				},
+			},
+			envVars: map[string]string{
+				"TOOL1": "expanded_tool_1",
+				"TOOL2": "expanded_tool_2",
+			},
+			validate: func(t *testing.T, cfg *RawConfig) {
+				if cfg.Defaults.CodeMode == nil {
+					t.Fatal("expected CodeMode but got nil")
+				}
+				if len(cfg.Defaults.CodeMode.ExcludedTools) != 2 {
+					t.Errorf("expected 2 excluded tools, got %d", len(cfg.Defaults.CodeMode.ExcludedTools))
+				}
+				if cfg.Defaults.CodeMode.ExcludedTools[0] != "expanded_tool_1" {
+					t.Errorf("expected 'expanded_tool_1', got %q", cfg.Defaults.CodeMode.ExcludedTools[0])
+				}
+				if cfg.Defaults.CodeMode.ExcludedTools[1] != "expanded_tool_2" {
+					t.Errorf("expected 'expanded_tool_2', got %q", cfg.Defaults.CodeMode.ExcludedTools[1])
+				}
+			},
+		},
+		{
+			name: "expand environment variables in model code mode excluded tools",
+			cfg: &RawConfig{
+				Models: []ModelConfig{
+					{
+						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
+						CodeMode: &CodeModeConfig{
+							Enabled:       true,
+							ExcludedTools: []string{"$MODEL_TOOL1", "${MODEL_TOOL2}"},
+						},
+					},
+				},
+			},
+			envVars: map[string]string{
+				"MODEL_TOOL1": "model_expanded_1",
+				"MODEL_TOOL2": "model_expanded_2",
+			},
+			validate: func(t *testing.T, cfg *RawConfig) {
+				if cfg.Models[0].CodeMode == nil {
+					t.Fatal("expected CodeMode but got nil")
+				}
+				if len(cfg.Models[0].CodeMode.ExcludedTools) != 2 {
+					t.Errorf("expected 2 excluded tools, got %d", len(cfg.Models[0].CodeMode.ExcludedTools))
+				}
+				if cfg.Models[0].CodeMode.ExcludedTools[0] != "model_expanded_1" {
+					t.Errorf("expected 'model_expanded_1', got %q", cfg.Models[0].CodeMode.ExcludedTools[0])
+				}
+				if cfg.Models[0].CodeMode.ExcludedTools[1] != "model_expanded_2" {
+					t.Errorf("expected 'model_expanded_2', got %q", cfg.Models[0].CodeMode.ExcludedTools[1])
+				}
+			},
+		},
+		{
+			name: "no expansion when no env vars match",
+			cfg: &RawConfig{
+				Models: []ModelConfig{
+					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
+				},
+				Defaults: Defaults{
+					CodeMode: &CodeModeConfig{
+						Enabled:       true,
+						ExcludedTools: []string{"tool1", "tool2"},
+					},
+				},
+			},
+			envVars: map[string]string{},
+			validate: func(t *testing.T, cfg *RawConfig) {
+				if cfg.Defaults.CodeMode == nil {
+					t.Fatal("expected CodeMode but got nil")
+				}
+				if len(cfg.Defaults.CodeMode.ExcludedTools) != 2 {
+					t.Errorf("expected 2 excluded tools, got %d", len(cfg.Defaults.CodeMode.ExcludedTools))
+				}
+				if cfg.Defaults.CodeMode.ExcludedTools[0] != "tool1" {
+					t.Errorf("expected 'tool1', got %q", cfg.Defaults.CodeMode.ExcludedTools[0])
+				}
+				if cfg.Defaults.CodeMode.ExcludedTools[1] != "tool2" {
+					t.Errorf("expected 'tool2', got %q", cfg.Defaults.CodeMode.ExcludedTools[1])
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set environment variables
+			for k, v := range tt.envVars {
+				t.Setenv(k, v)
+			}
+
+			// Expand environment variables
+			if err := tt.cfg.expandEnvironmentVariables(); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			// Validate
+			if tt.validate != nil {
+				tt.validate(t, tt.cfg)
+			}
+		})
+	}
 }

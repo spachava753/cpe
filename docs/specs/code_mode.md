@@ -736,7 +736,7 @@ The following tasks break down the code mode implementation into self-contained 
 
 ### Phase 1: Foundation
 
-- [ ] **Task 1: Add code mode configuration types and loading**  
+- [x] **Task 1: Add code mode configuration types and loading**  
   Add `CodeModeConfig` struct with `Enabled bool` and `ExcludedTools []string` fields to `internal/config/config.go`. Add `CodeMode *CodeModeConfig` field to both `Defaults` and `ModelConfig`. Update `Config` (runtime config) to include resolved `CodeModeConfig`. Implement override resolution logic per the "Configuration Resolution" section: model-level completely replaces defaults (no merging). Update config validation. Include tests for config loading and override resolution. Reference: "Configuration" section.
 
 - [ ] **Task 2: Implement JSON Schema to Go type converter**  
