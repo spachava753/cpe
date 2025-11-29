@@ -758,7 +758,7 @@ The following tasks break down the code mode implementation into self-contained 
 
 ### Phase 3: Execution Engine
 
-- [ ] **Task 7: Implement code execution sandbox**  
+- [x] **Task 7: Implement code execution sandbox**  
   Add executor functions to `internal/codemode`. Implement function to: create temp directory with random suffix, write `go.mod` (with MCP SDK dependency), write `main.go` (from Task 5), write `run.go` (LLM-generated code), run `go mod tidy`, execute `go run .` with timeout and capture output. Handle cleanup of temp directory after execution. Include tests for successful execution and compilation errors. Reference: "Tool Execution" section.
 
 - [ ] **Task 8: Implement execution timeout and signal handling**  
