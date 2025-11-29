@@ -750,7 +750,7 @@ The following tasks break down the code mode implementation into self-contained 
 - [x] **Task 4: Generate Go function signatures and type definitions for tools**  
   Using Task 2's schema converter and `strcase.UpperCamelCase` for tool name conversion, create a function that takes a list of MCP tools and generates: input/output struct definitions, function variable declarations with doc comments. Output should match the format shown in the "Execute Go Code Tool" description and `main.go` example. Depends on: Task 2.
 
-- [ ] **Task 5: Generate `main.go` template with MCP client setup**  
+- [x] **Task 5: Generate `main.go` template with MCP client setup**  
   Create a function that generates the complete `main.go` file contents including: package declaration, imports, generated types and function definitions (from Task 4), `fatalExit` helper, `callMcpTool` generic function, `main()` with signal handling, MCP client initialization for each server, function variable assignments, and `Run(ctx)` call. The template must handle multiple MCP servers with their specific transport types (stdio, http, sse). Depends on: Task 4. Reference: "Generated `main.go`" example in "Function Generation & Type Mapping" section.
 
 - [ ] **Task 6: Generate `execute_go_code` tool description**  
