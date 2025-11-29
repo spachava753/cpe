@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	mcpcpe "github.com/spachava753/cpe/internal/mcp"
@@ -212,6 +213,110 @@ func Run(ctx context.Context) error {
 	want := "No tools needed\n"
 	if result.Output != want {
 		t.Errorf("Output = %q, want %q", result.Output, want)
+	}
+}
+
+func TestExecuteCode_TimeoutGracefulExit(t *testing.T) {
+	ctx := context.Background()
+
+	// Code that responds to context cancellation (SIGINT triggers context.Done())
+	llmCode := `package main
+
+import (
+	"context"
+	"fmt"
+)
+
+func Run(ctx context.Context) error {
+	<-ctx.Done()
+	fmt.Println("graceful shutdown")
+	return nil
+}
+`
+
+	result, err := ExecuteCode(ctx, nil, llmCode, 1)
+	if err != nil {
+		t.Fatalf("ExecuteCode() error: %v", err)
+	}
+
+	// Process should exit cleanly after receiving SIGINT
+	if result.ExitCode != 0 {
+		t.Errorf("ExitCode = %d, want 0; output: %s", result.ExitCode, result.Output)
+	}
+
+	if !strings.Contains(result.Output, "graceful shutdown") {
+		t.Errorf("Output = %q, want to contain 'graceful shutdown'", result.Output)
+	}
+}
+
+func TestExecuteCode_TimeoutForcedKill(t *testing.T) {
+	ctx := context.Background()
+
+	// Code that ignores SIGINT and keeps running
+	llmCode := `package main
+
+import (
+	"context"
+	"os"
+	"os/signal"
+	"time"
+)
+
+func Run(ctx context.Context) error {
+	// Ignore SIGINT
+	signal.Ignore(os.Interrupt)
+	time.Sleep(30 * time.Second)
+	return nil
+}
+`
+
+	result, err := ExecuteCode(ctx, nil, llmCode, 1)
+	if err != nil {
+		t.Fatalf("ExecuteCode() error: %v", err)
+	}
+
+	// Process should be killed with SIGKILL after grace period, exit code -1 on Linux
+	if result.ExitCode == 0 {
+		t.Errorf("ExitCode = %d, want non-zero (killed); output: %s", result.ExitCode, result.Output)
+	}
+}
+
+func TestExecuteCode_ParentContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Code that waits for context cancellation
+	llmCode := `package main
+
+import (
+	"context"
+	"fmt"
+)
+
+func Run(ctx context.Context) error {
+	<-ctx.Done()
+	fmt.Println("parent cancelled")
+	return nil
+}
+`
+
+	// Cancel parent context after a short delay
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		cancel()
+	}()
+
+	result, err := ExecuteCode(ctx, nil, llmCode, 30)
+	if err != nil {
+		t.Fatalf("ExecuteCode() error: %v", err)
+	}
+
+	// Process should exit cleanly after parent context cancelled
+	if result.ExitCode != 0 {
+		t.Errorf("ExitCode = %d, want 0; output: %s", result.ExitCode, result.Output)
+	}
+
+	if !strings.Contains(result.Output, "parent cancelled") {
+		t.Errorf("Output = %q, want to contain 'parent cancelled'", result.Output)
 	}
 }
 

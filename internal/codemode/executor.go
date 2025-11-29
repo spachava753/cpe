@@ -7,10 +7,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
+	"time"
 )
 
 // mcpSDKVersion is the version of the MCP SDK to use in generated go.mod
 const mcpSDKVersion = "v1.1.0"
+
+// gracePeriod is the time to wait after sending SIGINT before sending SIGKILL
+const gracePeriod = 5 * time.Second
 
 // ExecutionResult represents the outcome of code execution
 type ExecutionResult struct {
@@ -75,13 +80,8 @@ func ExecuteCode(ctx context.Context, servers []ServerToolsInfo, llmCode string,
 		}, nil
 	}
 
-	// Execute the built binary
-	result, err := runCommand(ctx, tempDir, binaryPath)
-	if err != nil {
-		return ExecutionResult{}, fmt.Errorf("running program: %w", err)
-	}
-
-	return result, nil
+	// Execute the built binary with timeout and graceful shutdown
+	return runProgramWithTimeout(ctx, binaryPath, timeoutSecs)
 }
 
 // generateGoMod creates the go.mod file contents
@@ -115,6 +115,48 @@ func runCommand(ctx context.Context, dir string, name string, args ...string) (E
 			result.ExitCode = exitErr.ExitCode()
 		} else {
 			// Non-exit error (e.g., command not found, context cancelled)
+			return result, err
+		}
+	}
+
+	return result, nil
+}
+
+// runProgramWithTimeout executes a binary with timeout enforcement and graceful shutdown.
+// On timeout or context cancellation, it sends SIGINT and waits gracePeriod for the process
+// to exit gracefully before sending SIGKILL.
+func runProgramWithTimeout(ctx context.Context, binaryPath string, timeoutSecs int) (ExecutionResult, error) {
+	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSecs)*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(timeoutCtx, binaryPath)
+
+	// Custom cancel: send SIGINT for graceful shutdown instead of default SIGKILL.
+	// Return os.ErrProcessDone to suppress context error when process exits cleanly.
+	cmd.Cancel = func() error {
+		cmd.Process.Signal(syscall.SIGINT)
+		return os.ErrProcessDone
+	}
+
+	// Grace period: if process doesn't exit after SIGINT, Go sends SIGKILL
+	cmd.WaitDelay = gracePeriod
+
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+
+	err := cmd.Run()
+
+	result := ExecutionResult{
+		Output:   output.String(),
+		ExitCode: 0,
+	}
+
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			result.ExitCode = exitErr.ExitCode()
+		} else {
+			// Non-exit error (e.g., binary not found)
 			return result, err
 		}
 	}
