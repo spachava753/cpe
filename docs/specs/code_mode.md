@@ -640,9 +640,10 @@ Alternatives were considered, such as the `yaegi` interpreter, or a WASM based a
 ### Error handling
 
 There are different classes of errors that can be surfaced during the init and execution of the `execute_go_code` tool, some of which can be fed back to the LLM, and other errors must be propogated and require a program exit.
-- Compilation error: if the generated code fails to compile, the error from the go compiler is should be returned as an erroneous tool result, as this is something the LLM can adapt to
+- Compilation error: if the generated code fails to compile, the error from the go compiler should be returned as an erroneous tool result, as this is something the LLM can adapt to
 - Error returned: after execution, the generated program may exit with a non-zero exit code of 1. In this case, the output should be returned as an erroneous tool result, as this is something the LLM can adapt to
 - Panic: on panic, the go program will exit with a code of 2. This is also recoverable, and might be caused by a stray nil pointer referece. In this case, the output should be returned as an erroneous tool result, as this is something the LLM can adapt to
+- Timeout/Kill: if the process is killed due to timeout expiration (exit code -1 on Linux from SIGKILL), this should be returned as an erroneous tool result, as the LLM can adapt by generating faster-running code
 - Generated Code Error: in the special case of an exit code of 3, this means that the generated code ran into a runtime issue which should not occur, and is not recoverable. This is a critical error, and should reported to user, and CPE should stop further execution of the agent.
 
 ### Naming Collisions
