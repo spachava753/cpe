@@ -7,9 +7,9 @@ import (
 
 func TestCheckReservedNameCollision(t *testing.T) {
 	tests := []struct {
-		name      string
-		toolNames []string
-		wantErr   bool
+		name        string
+		toolNames   []string
+		wantErr     bool
 		errContains string
 	}{
 		{
@@ -28,21 +28,21 @@ func TestCheckReservedNameCollision(t *testing.T) {
 			wantErr:   false,
 		},
 		{
-			name:      "collision with execute_go_code",
-			toolNames: []string{"get_weather", "execute_go_code", "get_city"},
-			wantErr:   true,
+			name:        "collision with execute_go_code",
+			toolNames:   []string{"get_weather", "execute_go_code", "get_city"},
+			wantErr:     true,
 			errContains: "execute_go_code",
 		},
 		{
-			name:      "collision when execute_go_code is first",
-			toolNames: []string{"execute_go_code", "other_tool"},
-			wantErr:   true,
+			name:        "collision when execute_go_code is first",
+			toolNames:   []string{"execute_go_code", "other_tool"},
+			wantErr:     true,
 			errContains: "reserved code mode tool name",
 		},
 		{
-			name:      "collision when execute_go_code is only tool",
-			toolNames: []string{"execute_go_code"},
-			wantErr:   true,
+			name:        "collision when execute_go_code is only tool",
+			toolNames:   []string{"execute_go_code"},
+			wantErr:     true,
 			errContains: "excludedTools",
 		},
 	}
@@ -86,21 +86,21 @@ func TestCheckPascalCaseCollision(t *testing.T) {
 			wantErr:   false,
 		},
 		{
-			name:      "collision with underscore vs camelCase",
-			toolNames: []string{"get_weather", "getWeather"},
-			wantErr:   true,
+			name:        "collision with underscore vs camelCase",
+			toolNames:   []string{"get_weather", "getWeather"},
+			wantErr:     true,
 			errContains: "GetWeather",
 		},
 		{
-			name:      "collision with different case in underscore names",
-			toolNames: []string{"get_weather", "get_Weather"},
-			wantErr:   true,
+			name:        "collision with different case in underscore names",
+			toolNames:   []string{"get_weather", "get_Weather"},
+			wantErr:     true,
 			errContains: "GetWeather",
 		},
 		{
-			name:      "collision with mixed separators",
-			toolNames: []string{"get-weather", "get_weather"},
-			wantErr:   true,
+			name:        "collision with mixed separators",
+			toolNames:   []string{"get-weather", "get_weather"},
+			wantErr:     true,
 			errContains: "GetWeather",
 		},
 		{

@@ -753,7 +753,7 @@ The following tasks break down the code mode implementation into self-contained 
 - [x] **Task 5: Generate `main.go` template with MCP client setup**  
   Create a function that generates the complete `main.go` file contents including: package declaration, imports, generated types and function definitions (from Task 4), `fatalExit` helper, `callMcpTool` generic function, `main()` with signal handling, MCP client initialization for each server, function variable assignments, and `Run(ctx)` call. The template must handle multiple MCP servers with their specific transport types (stdio, http, sse). Depends on: Task 4. Reference: "Generated `main.go`" example in "Function Generation & Type Mapping" section.
 
-- [ ] **Task 6: Generate `execute_go_code` tool description**  
+- [x] **Task 6: Generate `execute_go_code` tool description**  
   Create a function that generates the tool description markdown including: Go version, available function signatures and types (from Task 4), code structure template, `main.go` shape explanation, and usage instructions. The description should match the format in "The 'Execute Go Code' Tool" section. Depends on: Task 4.
 
 ### Phase 3: Execution Engine
