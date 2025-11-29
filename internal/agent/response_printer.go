@@ -110,7 +110,7 @@ func (g *ResponsePrinterGenerator) renderContent(content string) string {
 
 // renderThinking renders a thinking block with a muted glamour style.
 // If the reasoning content is encrypted, it returns a message indicating encryption.
-func (g *ResponsePrinterGenerator) renderThinking(content string, reasoningType interface{}) string {
+func (g *ResponsePrinterGenerator) renderThinking(content string, reasoningType any) string {
 	if reasoningType == "reasoning.encrypted" {
 		content = "[Reasoning content is encrypted]\n"
 	}

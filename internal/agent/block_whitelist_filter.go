@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/spachava753/gai"
 )
@@ -63,10 +64,5 @@ func (f *BlockWhitelistFilter) Register(tool gai.Tool, callback gai.ToolCallback
 
 // isAllowed checks if a block type is in the whitelist
 func (f *BlockWhitelistFilter) isAllowed(blockType string) bool {
-	for _, allowed := range f.allowedTypes {
-		if allowed == blockType {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(f.allowedTypes, blockType)
 }

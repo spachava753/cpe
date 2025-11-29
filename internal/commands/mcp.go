@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -208,11 +209,8 @@ func MCPListTools(ctx context.Context, opts MCPListToolsOptions) error {
 		for _, tool := range toolsToShow {
 			filteredBadge := ""
 			if opts.ShowAll {
-				for _, filteredName := range filteredOut {
-					if tool.Name == filteredName {
-						filteredBadge = " 🚫 *filtered*"
-						break
-					}
+				if slices.Contains(filteredOut, tool.Name) {
+					filteredBadge = " 🚫 *filtered*"
 				}
 			}
 
@@ -248,7 +246,7 @@ type MCPCallToolOptions struct {
 	MCPServers map[string]mcpinternal.ServerConfig
 	ServerName string
 	ToolName   string
-	ToolArgs   map[string]interface{}
+	ToolArgs   map[string]any
 	Writer     io.Writer
 }
 

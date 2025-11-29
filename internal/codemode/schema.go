@@ -74,7 +74,8 @@ func generateStruct(schema *jsonschema.Schema, typeName string, nestedTypes *[]s
 
 	for _, propName := range propNames {
 		propSchema := schema.Properties[propName]
-		fieldName := FieldNameToGo(propName)
+		// Convert JSON field name to Go struct field name (pascal case)
+		fieldName := strcase.UpperCamelCase(propName)
 
 		// Generate field documentation
 		if propSchema.Description != "" {
@@ -220,9 +221,4 @@ func resolveNullableTypeWithFlag(types []string) (string, bool) {
 		return "null", hasNull
 	}
 	return nonNullType, hasNull
-}
-
-// FieldNameToGo converts a JSON field name to a Go struct field name (PascalCase).
-func FieldNameToGo(name string) string {
-	return strcase.UpperCamelCase(name)
 }

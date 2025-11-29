@@ -111,7 +111,7 @@ type ToolCallback struct {
 // Call implements the gai.ToolCallback interface
 func (c *ToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage, toolCallID string) (gai.Message, error) {
 	// Parse parameters
-	var params map[string]interface{}
+	var params map[string]any
 	if err := json.Unmarshal(parametersJSON, &params); err != nil {
 		return gai.Message{
 			Role: gai.ToolResult,

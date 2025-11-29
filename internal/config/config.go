@@ -26,8 +26,8 @@ type Model struct {
 
 // PatchRequestConfig holds configuration for patching HTTP requests
 type PatchRequestConfig struct {
-	JSONPatch      []map[string]interface{} `json:"jsonPatch,omitempty" yaml:"jsonPatch,omitempty"`
-	IncludeHeaders map[string]string        `json:"includeHeaders,omitempty" yaml:"includeHeaders,omitempty"`
+	JSONPatch      []map[string]any  `json:"jsonPatch,omitempty" yaml:"jsonPatch,omitempty"`
+	IncludeHeaders map[string]string `json:"includeHeaders,omitempty" yaml:"includeHeaders,omitempty"`
 }
 
 // CodeModeConfig controls code mode behavior for MCP tools
@@ -45,7 +45,7 @@ type RawConfig struct {
 	Models []ModelConfig `yaml:"models" json:"models" validate:"gt=0,unique=Ref,dive"`
 
 	// Default settings
-	Defaults Defaults `yaml:"defaults,omitempty" json:"defaults,omitempty"`
+	Defaults Defaults `yaml:"defaults,omitempty" json:"defaults"`
 
 	// Version for future compatibility
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`

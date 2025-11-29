@@ -56,7 +56,6 @@ func InitDialogStorage(dbPath string) (*DialogStorage, error) {
 	}, nil
 }
 
-
 // roleToString converts a gai.Role to its string representation
 func roleToString(role gai.Role) string {
 	switch role {
@@ -218,7 +217,7 @@ func (s *DialogStorage) GetMessage(ctx context.Context, messageID string) (gai.M
 			blockID = block.ID.String
 		}
 
-		var extraFields map[string]interface{}
+		var extraFields map[string]any
 		if block.ExtraFields.Valid && block.ExtraFields.String != "" {
 			if err := json.Unmarshal([]byte(block.ExtraFields.String), &extraFields); err != nil {
 				return gai.Message{}, "", fmt.Errorf("failed to unmarshal ExtraFields: %w", err)
@@ -500,7 +499,7 @@ func (s *DialogStorage) deleteMessageAndDescendants(ctx context.Context, qtx *Qu
 // generateUniqueID generates a unique ID and checks for collisions in the provided check function
 func (s *DialogStorage) generateUniqueID(ctx context.Context, collisionCheck func(context.Context, string) (bool, error)) (string, error) {
 	maxAttempts := 10
-	for i := 0; i < maxAttempts; i++ {
+	for range maxAttempts {
 		id := s.idGenerator()
 
 		// Check for collision

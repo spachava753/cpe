@@ -393,7 +393,7 @@ func sortNodesByID(nodes []MessageIdNode) []MessageIdNode {
 	copy(result, nodes)
 
 	// Sort by ID
-	for i := 0; i < len(result); i++ {
+	for i := range result {
 		for j := i + 1; j < len(result); j++ {
 			if result[i].ID > result[j].ID {
 				result[i], result[j] = result[j], result[i]

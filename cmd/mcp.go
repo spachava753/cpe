@@ -134,7 +134,7 @@ var mcpCallToolCmd = &cobra.Command{
 			return err
 		}
 
-		toolArgs := make(map[string]interface{})
+		toolArgs := make(map[string]any)
 		if mcpToolArgs != "" {
 			if err := json.Unmarshal([]byte(mcpToolArgs), &toolArgs); err != nil {
 				return fmt.Errorf("invalid tool arguments JSON: %w", err)

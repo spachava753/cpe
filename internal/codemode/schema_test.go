@@ -360,29 +360,3 @@ type DataInput struct {
 	}
 }
 
-func TestFieldNameToGo(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"city", "City"},
-		{"user_name", "UserName"},
-		{"created_at", "CreatedAt"},
-		{"ID", "Id"},
-		{"userID", "UserId"},
-		{"get_weather", "GetWeather"},
-		{"HTTPStatus", "Httpstatus"},
-		{"already_Pascal_Case", "AlreadyPascalCase"},
-		{"a", "A"},
-		{"ABC", "Abc"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			got := FieldNameToGo(tt.input)
-			if got != tt.want {
-				t.Errorf("FieldNameToGo(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
-	}
-}

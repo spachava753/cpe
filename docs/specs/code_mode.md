@@ -742,13 +742,13 @@ The following tasks break down the code mode implementation into self-contained 
 - [x] **Task 2: Implement JSON Schema to Go type converter**  
   Create `internal/codemode/schema.go` with functions to convert MCP tool input/output JSON schemas to Go type definitions as strings. Support: objects, arrays, null, boolean, number, string types; description annotations; enum validation (as doc comments); nullable types (`["null", "string"]`). Generate pascal case struct names and field names. Handle missing output schema by returning `map[string]any`. Include tests for: simple types, nested objects, arrays, nullable types, enums, missing output schema. Reference: "Tool schema to Go types" section.
 
-- [ ] **Task 3: Implement tool name collision detection**  
-  Add collision detection functions to `internal/codemode`: (1) check for `execute_go_code` reserved name collision, (2) check for pascal case collisions between different tool names (reuse `FieldNameToGo` from Task 2 for conversion). Return descriptive errors when collisions are detected. Include tests for reserved name collision and pascal case collision scenarios. Reference: "Naming Collisions" section.
+- [x] **Task 3: Implement tool name collision detection**  
+  Add collision detection functions to `internal/codemode`: (1) check for `execute_go_code` reserved name collision, (2) check for pascal case collisions between different tool names (using `strcase.UpperCamelCase` for conversion). Return descriptive errors when collisions are detected. Include tests for reserved name collision and pascal case collision scenarios. Reference: "Naming Collisions" section.
 
 ### Phase 2: Code Generation
 
 - [ ] **Task 4: Generate Go function signatures and type definitions for tools**  
-  Using Task 2's schema converter and Task 3's name converter, create a function that takes a list of MCP tools and generates: input/output struct definitions, function variable declarations with doc comments. Output should match the format shown in the "Execute Go Code Tool" description and `main.go` example. Depends on: Tasks 2, 3.
+  Using Task 2's schema converter and `strcase.UpperCamelCase` for tool name conversion, create a function that takes a list of MCP tools and generates: input/output struct definitions, function variable declarations with doc comments. Output should match the format shown in the "Execute Go Code Tool" description and `main.go` example. Depends on: Task 2.
 
 - [ ] **Task 5: Generate `main.go` template with MCP client setup**  
   Create a function that generates the complete `main.go` file contents including: package declaration, imports, generated types and function definitions (from Task 4), `fatalExit` helper, `callMcpTool` generic function, `main()` with signal handling, MCP client initialization for each server, function variable assignments, and `Run(ctx)` call. The template must handle multiple MCP servers with their specific transport types (stdio, http, sse). Depends on: Task 4. Reference: "Generated `main.go`" example in "Function Generation & Type Mapping" section.
