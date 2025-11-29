@@ -747,7 +747,7 @@ The following tasks break down the code mode implementation into self-contained 
 
 ### Phase 2: Code Generation
 
-- [ ] **Task 4: Generate Go function signatures and type definitions for tools**  
+- [x] **Task 4: Generate Go function signatures and type definitions for tools**  
   Using Task 2's schema converter and `strcase.UpperCamelCase` for tool name conversion, create a function that takes a list of MCP tools and generates: input/output struct definitions, function variable declarations with doc comments. Output should match the format shown in the "Execute Go Code Tool" description and `main.go` example. Depends on: Task 2.
 
 - [ ] **Task 5: Generate `main.go` template with MCP client setup**  
