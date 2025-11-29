@@ -739,11 +739,11 @@ The following tasks break down the code mode implementation into self-contained 
 - [x] **Task 1: Add code mode configuration types and loading**  
   Add `CodeModeConfig` struct with `Enabled bool` and `ExcludedTools []string` fields to `internal/config/config.go`. Add `CodeMode *CodeModeConfig` field to both `Defaults` and `ModelConfig`. Update `Config` (runtime config) to include resolved `CodeModeConfig`. Implement override resolution logic per the "Configuration Resolution" section: model-level completely replaces defaults (no merging). Update config validation. Include tests for config loading and override resolution. Reference: "Configuration" section.
 
-- [ ] **Task 2: Implement JSON Schema to Go type converter**  
-  Create new package `internal/codemode/schema` with functions to convert MCP tool input/output JSON schemas to Go type definitions as strings. Support: objects, arrays, null, boolean, number, string types; description annotations; enum validation (as doc comments); nullable types (`["null", "string"]`). Generate pascal case struct names and field names. Handle missing output schema by returning `map[string]any`. Include tests for: simple types, nested objects, arrays, nullable types, enums, missing output schema. Reference: "Tool schema to Go types" section.
+- [x] **Task 2: Implement JSON Schema to Go type converter**  
+  Create `internal/codemode/schema.go` with functions to convert MCP tool input/output JSON schemas to Go type definitions as strings. Support: objects, arrays, null, boolean, number, string types; description annotations; enum validation (as doc comments); nullable types (`["null", "string"]`). Generate pascal case struct names and field names. Handle missing output schema by returning `map[string]any`. Include tests for: simple types, nested objects, arrays, nullable types, enums, missing output schema. Reference: "Tool schema to Go types" section.
 
-- [ ] **Task 3: Implement tool name conversion and collision detection**  
-  Add functions to convert tool names to pascal case Go identifiers (e.g., `get_weather` → `GetWeather`). Implement collision detection: (1) check for `execute_go_code` reserved name collision, (2) check for pascal case collisions between different tool names. Return descriptive errors when collisions are detected. Include tests for pascal case conversion, reserved name collision, and pascal case collision scenarios. Reference: "Naming Collisions" section.
+- [ ] **Task 3: Implement tool name collision detection**  
+  Add collision detection functions to `internal/codemode`: (1) check for `execute_go_code` reserved name collision, (2) check for pascal case collisions between different tool names (reuse `FieldNameToGo` from Task 2 for conversion). Return descriptive errors when collisions are detected. Include tests for reserved name collision and pascal case collision scenarios. Reference: "Naming Collisions" section.
 
 ### Phase 2: Code Generation
 
@@ -759,7 +759,7 @@ The following tasks break down the code mode implementation into self-contained 
 ### Phase 3: Execution Engine
 
 - [ ] **Task 7: Implement code execution sandbox**  
-  Create `internal/codemode/executor` package. Implement function to: create temp directory with random suffix, write `go.mod` (with MCP SDK dependency), write `main.go` (from Task 5), write `run.go` (LLM-generated code), run `go mod tidy`, execute `go run .` with timeout and capture output. Handle cleanup of temp directory after execution. Include tests for successful execution and compilation errors. Reference: "Tool Execution" section.
+  Add executor functions to `internal/codemode`. Implement function to: create temp directory with random suffix, write `go.mod` (with MCP SDK dependency), write `main.go` (from Task 5), write `run.go` (LLM-generated code), run `go mod tidy`, execute `go run .` with timeout and capture output. Handle cleanup of temp directory after execution. Include tests for successful execution and compilation errors. Reference: "Tool Execution" section.
 
 - [ ] **Task 8: Implement execution timeout and signal handling**  
   Extend Task 7's executor to: enforce `executionTimeout` (1-300 seconds) from tool input, send `SIGINT` on timeout, wait 5-second grace period, send `SIGKILL` if still running. Also propagate parent process signals (SIGTERM/SIGINT) to child process. Include tests for timeout scenarios. Reference: "Execution Timeout" and "Context Cancellation" sections. Depends on: Task 7.
