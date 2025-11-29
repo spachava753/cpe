@@ -764,7 +764,7 @@ The following tasks break down the code mode implementation into self-contained 
 - [x] **Task 8: Implement execution timeout and signal handling**  
   Extend Task 7's executor to: enforce `executionTimeout` (1-300 seconds) from tool input, send `SIGINT` on timeout, wait 5-second grace period, send `SIGKILL` if still running. Also propagate parent process signals (SIGTERM/SIGINT) to child process. Include tests for timeout scenarios. Reference: "Execution Timeout" and "Context Cancellation" sections. Depends on: Task 7.
 
-- [ ] **Task 9: Implement error classification and handling**  
+- [x] **Task 9: Implement error classification and handling**  
   Extend executor to classify exit codes: 0 (success), 1 (Run() returned error - recoverable), 2 (panic - recoverable), 3 (generated code error - fatal). Compilation errors should be returned as recoverable tool errors. Implement appropriate error types and return values for each case. Include tests for each exit code scenario. Reference: "Error handling" section. Depends on: Task 7.
 
 ### Phase 4: Integration

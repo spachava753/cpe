@@ -2,6 +2,7 @@ package codemode
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,8 +20,8 @@ func TestExecuteCode(t *testing.T) {
 		llmCode       string
 		wantExitCode  int
 		wantOutput    string
-		validate      func(t *testing.T, result ExecutionResult)
-		wantErr       bool
+		wantErrType   string // "none", "recoverable", "fatal", "other"
+		validate      func(t *testing.T, result ExecutionResult, err error)
 		cancelContext bool
 	}{
 		{
@@ -39,9 +40,10 @@ func Run(ctx context.Context) error {
 `,
 			wantExitCode: 0,
 			wantOutput:   "Hello from generated code\n",
+			wantErrType:  "none",
 		},
 		{
-			name: "compilation error",
+			name: "compilation error returns RecoverableError",
 			llmCode: `package main
 
 import "context"
@@ -52,15 +54,19 @@ func Run(ctx context.Context) error {
 }
 `,
 			wantExitCode: 1,
-			validate: func(t *testing.T, result ExecutionResult) {
-				// Compilation errors include dynamic file paths, so we verify key parts
+			wantErrType:  "recoverable",
+			validate: func(t *testing.T, result ExecutionResult, err error) {
 				if !strings.Contains(result.Output, "syntax error") {
 					t.Errorf("Output = %q, want compilation error containing 'syntax error'", result.Output)
+				}
+				var recErr RecoverableError
+				if !errors.As(err, &recErr) {
+					t.Errorf("error type = %T, want RecoverableError", err)
 				}
 			},
 		},
 		{
-			name: "Run returns error",
+			name: "Run returns error (exit 1) returns RecoverableError",
 			llmCode: `package main
 
 import (
@@ -74,9 +80,19 @@ func Run(ctx context.Context) error {
 `,
 			wantExitCode: 1,
 			wantOutput:   "\nexecution error: something went wrong\n",
+			wantErrType:  "recoverable",
+			validate: func(t *testing.T, result ExecutionResult, err error) {
+				var recErr RecoverableError
+				if !errors.As(err, &recErr) {
+					t.Fatalf("error type = %T, want RecoverableError", err)
+				}
+				if recErr.ExitCode != 1 {
+					t.Errorf("RecoverableError.ExitCode = %d, want 1", recErr.ExitCode)
+				}
+			},
 		},
 		{
-			name: "panic",
+			name: "panic (exit 2) returns RecoverableError",
 			llmCode: `package main
 
 import "context"
@@ -86,10 +102,45 @@ func Run(ctx context.Context) error {
 }
 `,
 			wantExitCode: 2,
-			validate: func(t *testing.T, result ExecutionResult) {
-				// Panic output includes stack traces with dynamic addresses
+			wantErrType:  "recoverable",
+			validate: func(t *testing.T, result ExecutionResult, err error) {
 				if !strings.Contains(result.Output, "panic: intentional panic") {
 					t.Errorf("Output = %q, want panic message containing 'panic: intentional panic'", result.Output)
+				}
+				var recErr RecoverableError
+				if !errors.As(err, &recErr) {
+					t.Fatalf("error type = %T, want RecoverableError", err)
+				}
+				if recErr.ExitCode != 2 {
+					t.Errorf("RecoverableError.ExitCode = %d, want 2", recErr.ExitCode)
+				}
+			},
+		},
+		{
+			name: "fatalExit (exit 3) returns FatalExecutionError",
+			llmCode: `package main
+
+import (
+	"context"
+	"os"
+	"fmt"
+)
+
+func Run(ctx context.Context) error {
+	fmt.Println("about to fatal exit")
+	os.Exit(3)
+	return nil
+}
+`,
+			wantExitCode: 3,
+			wantErrType:  "fatal",
+			validate: func(t *testing.T, result ExecutionResult, err error) {
+				var fatalErr FatalExecutionError
+				if !errors.As(err, &fatalErr) {
+					t.Fatalf("error type = %T, want FatalExecutionError", err)
+				}
+				if !strings.Contains(fatalErr.Output, "about to fatal exit") {
+					t.Errorf("FatalExecutionError.Output = %q, want to contain 'about to fatal exit'", fatalErr.Output)
 				}
 			},
 		},
@@ -111,6 +162,7 @@ func Run(ctx context.Context) error {
 `,
 			wantExitCode: 0,
 			wantOutput:   "Line 1\nLine 2\nLine 3\n",
+			wantErrType:  "none",
 		},
 		{
 			name: "stderr and stdout captured",
@@ -130,6 +182,7 @@ func Run(ctx context.Context) error {
 `,
 			wantExitCode: 0,
 			wantOutput:   "stderr outputstdout output",
+			wantErrType:  "none",
 		},
 		{
 			name: "context cancellation",
@@ -146,7 +199,7 @@ func Run(ctx context.Context) error {
 }
 `,
 			cancelContext: true,
-			wantErr:       true,
+			wantErrType:   "other",
 		},
 	}
 
@@ -161,15 +214,27 @@ func Run(ctx context.Context) error {
 
 			result, err := ExecuteCode(ctx, nil, tt.llmCode, 30)
 
-			if tt.wantErr {
-				if err == nil {
-					t.Error("ExecuteCode() expected error, got nil")
+			// Verify error type
+			switch tt.wantErrType {
+			case "none":
+				if err != nil {
+					t.Fatalf("ExecuteCode() error = %v, want nil", err)
 				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("ExecuteCode() error: %v", err)
+			case "recoverable":
+				var recErr RecoverableError
+				if !errors.As(err, &recErr) {
+					t.Fatalf("ExecuteCode() error type = %T, want RecoverableError", err)
+				}
+			case "fatal":
+				var fatalErr FatalExecutionError
+				if !errors.As(err, &fatalErr) {
+					t.Fatalf("ExecuteCode() error type = %T, want FatalExecutionError", err)
+				}
+			case "other":
+				if err == nil {
+					t.Fatal("ExecuteCode() expected error, got nil")
+				}
+				return // Skip further checks for "other" errors
 			}
 
 			if result.ExitCode != tt.wantExitCode {
@@ -177,8 +242,8 @@ func Run(ctx context.Context) error {
 			}
 
 			if tt.validate != nil {
-				tt.validate(t, result)
-			} else if result.Output != tt.wantOutput {
+				tt.validate(t, result, err)
+			} else if tt.wantOutput != "" && result.Output != tt.wantOutput {
 				t.Errorf("Output = %q, want %q", result.Output, tt.wantOutput)
 			}
 		})
@@ -239,7 +304,7 @@ func Run(ctx context.Context) error {
 		t.Fatalf("ExecuteCode() error: %v", err)
 	}
 
-	// Process should exit cleanly after receiving SIGINT
+	// Process should exit cleanly after receiving SIGINT - no error
 	if result.ExitCode != 0 {
 		t.Errorf("ExitCode = %d, want 0; output: %s", result.ExitCode, result.Output)
 	}
@@ -271,11 +336,14 @@ func Run(ctx context.Context) error {
 `
 
 	result, err := ExecuteCode(ctx, nil, llmCode, 1)
-	if err != nil {
-		t.Fatalf("ExecuteCode() error: %v", err)
+
+	// Process killed with SIGKILL returns RecoverableError
+	var recErr RecoverableError
+	if !errors.As(err, &recErr) {
+		t.Fatalf("ExecuteCode() error type = %T, want RecoverableError", err)
 	}
 
-	// Process should be killed with SIGKILL after grace period, exit code -1 on Linux
+	// Exit code -1 on Linux when killed by SIGKILL
 	if result.ExitCode == 0 {
 		t.Errorf("ExitCode = %d, want non-zero (killed); output: %s", result.ExitCode, result.Output)
 	}
@@ -310,7 +378,7 @@ func Run(ctx context.Context) error {
 		t.Fatalf("ExecuteCode() error: %v", err)
 	}
 
-	// Process should exit cleanly after parent context cancelled
+	// Process should exit cleanly after parent context cancelled - no error
 	if result.ExitCode != 0 {
 		t.Errorf("ExitCode = %d, want 0; output: %s", result.ExitCode, result.Output)
 	}
@@ -318,6 +386,66 @@ func Run(ctx context.Context) error {
 	if !strings.Contains(result.Output, "parent cancelled") {
 		t.Errorf("Output = %q, want to contain 'parent cancelled'", result.Output)
 	}
+}
+
+func TestClassifyExitCode(t *testing.T) {
+	tests := []struct {
+		name        string
+		exitCode    int
+		wantErrType string // "none", "recoverable", "fatal"
+	}{
+		{"exit 0 success", 0, "none"},
+		{"exit 1 Run error", 1, "recoverable"},
+		{"exit 2 panic", 2, "recoverable"},
+		{"exit 3 fatal", 3, "fatal"},
+		{"exit -1 SIGKILL", -1, "recoverable"},
+		{"exit 127 command not found", 127, "recoverable"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ExecutionResult{Output: "test output", ExitCode: tt.exitCode}
+			err := classifyExitCode(result)
+
+			switch tt.wantErrType {
+			case "none":
+				if err != nil {
+					t.Errorf("classifyExitCode() = %v, want nil", err)
+				}
+			case "recoverable":
+				var recErr RecoverableError
+				if !errors.As(err, &recErr) {
+					t.Errorf("classifyExitCode() error type = %T, want RecoverableError", err)
+				}
+				if recErr.ExitCode != tt.exitCode {
+					t.Errorf("RecoverableError.ExitCode = %d, want %d", recErr.ExitCode, tt.exitCode)
+				}
+			case "fatal":
+				var fatalErr FatalExecutionError
+				if !errors.As(err, &fatalErr) {
+					t.Errorf("classifyExitCode() error type = %T, want FatalExecutionError", err)
+				}
+			}
+		})
+	}
+}
+
+func TestErrorMessages(t *testing.T) {
+	t.Run("RecoverableError", func(t *testing.T) {
+		err := RecoverableError{Output: "some output", ExitCode: 1}
+		want := "recoverable execution error (exit code 1): some output"
+		if err.Error() != want {
+			t.Errorf("Error() = %q, want %q", err.Error(), want)
+		}
+	})
+
+	t.Run("FatalExecutionError", func(t *testing.T) {
+		err := FatalExecutionError{Output: "fatal output"}
+		want := "fatal execution error: fatal output"
+		if err.Error() != want {
+			t.Errorf("Error() = %q, want %q", err.Error(), want)
+		}
+	})
 }
 
 func TestExecuteCode_ToolTypesCompile(t *testing.T) {

@@ -26,6 +26,12 @@ type ExecutionResult struct {
 // ExecuteCode creates a temporary sandbox, writes files, and executes LLM-generated Go code.
 // It returns the execution result with combined output and exit code.
 // The temp directory is cleaned up after execution.
+//
+// Error classification:
+//   - nil error with ExitCode 0: successful execution
+//   - RecoverableError: compilation errors, Run() errors (exit 1), panics (exit 2), timeouts
+//   - FatalExecutionError: exit code 3 from fatalExit() in generated code
+//   - Other errors: infrastructure failures (temp dir, file writes, etc.)
 func ExecuteCode(ctx context.Context, servers []ServerToolsInfo, llmCode string, timeoutSecs int) (ExecutionResult, error) {
 	// Create temp directory
 	tempDir, err := os.MkdirTemp("", "cpe-code-mode-*")
@@ -63,7 +69,7 @@ func ExecuteCode(ctx context.Context, servers []ServerToolsInfo, llmCode string,
 		return ExecutionResult{
 			Output:   tidyResult.Output,
 			ExitCode: tidyResult.ExitCode,
-		}, nil
+		}, RecoverableError{Output: tidyResult.Output, ExitCode: tidyResult.ExitCode}
 	}
 
 	// Build the binary to get accurate exit codes (go run masks them)
@@ -73,15 +79,19 @@ func ExecuteCode(ctx context.Context, servers []ServerToolsInfo, llmCode string,
 		return ExecutionResult{}, fmt.Errorf("running go build: %w", err)
 	}
 	if buildResult.ExitCode != 0 {
-		// Compilation error
 		return ExecutionResult{
 			Output:   buildResult.Output,
 			ExitCode: buildResult.ExitCode,
-		}, nil
+		}, RecoverableError{Output: buildResult.Output, ExitCode: buildResult.ExitCode}
 	}
 
 	// Execute the built binary with timeout and graceful shutdown
-	return runProgramWithTimeout(ctx, binaryPath, timeoutSecs)
+	result, err := runProgramWithTimeout(ctx, binaryPath, timeoutSecs)
+	if err != nil {
+		return result, err
+	}
+
+	return result, classifyExitCode(result)
 }
 
 // generateGoMod creates the go.mod file contents
@@ -162,4 +172,21 @@ func runProgramWithTimeout(ctx context.Context, binaryPath string, timeoutSecs i
 	}
 
 	return result, nil
+}
+
+// classifyExitCode returns an appropriate error based on the execution result's exit code.
+func classifyExitCode(result ExecutionResult) error {
+	switch result.ExitCode {
+	case 0:
+		return nil
+	case 1, 2:
+		// Exit 1: Run() returned error; Exit 2: panic - both recoverable
+		return RecoverableError{Output: result.Output, ExitCode: result.ExitCode}
+	case 3:
+		// Exit 3: fatalExit() called - unrecoverable
+		return FatalExecutionError{Output: result.Output}
+	default:
+		// Other non-zero codes (e.g., -1 from SIGKILL) are recoverable
+		return RecoverableError{Output: result.Output, ExitCode: result.ExitCode}
+	}
 }
