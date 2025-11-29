@@ -770,7 +770,7 @@ The following tasks break down the code mode implementation into self-contained 
 
 ### Phase 4: Integration
 
-- [ ] **Task 10: Implement `execute_go_code` tool callback**  
+- [x] **Task 10: Implement `execute_go_code` tool callback**  
   Create `internal/codemode/tool.go` implementing `gai.ToolCallback` interface for `execute_go_code`. Parse `code` and `executionTimeout` from input JSON. Use executor (Tasks 7-9) to run the code. Return output as tool result, marking errors appropriately. Handle fatal errors (exit code 3) by returning an error that stops agent execution. Depends on: Tasks 7, 8, 9.
 
 - [ ] **Task 11: Integrate code mode into `CreateToolCapableGenerator`**  
