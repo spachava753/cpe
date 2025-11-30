@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/muesli/termenv"
+	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/gai"
 	"golang.org/x/term"
 )
@@ -124,11 +125,29 @@ func (g *ResponsePrinterGenerator) renderThinking(content string, reasoningType 
 	return rendered
 }
 
-// renderToolCall renders a toolcall block with a glamour style
+// renderToolCall renders a toolcall block with a glamour style.
+// For execute_go_code tool calls, renders the code as a Go markdown block.
+// For all other tools, renders the JSON arguments.
 func (g *ResponsePrinterGenerator) renderToolCall(content string) string {
+	// Try to detect execute_go_code tool calls
+	var toolCall gai.ToolCallInput
+	if err := json.Unmarshal([]byte(content), &toolCall); err == nil {
+		if toolCall.Name == codemode.ExecuteGoCodeToolName {
+			if code, ok := toolCall.Parameters["code"].(string); ok && code != "" {
+				result := fmt.Sprintf("#### [tool call]\n```go\n%s\n```", code)
+				rendered, err := g.contentRenderer.Render(result)
+				if err == nil {
+					return rendered
+				}
+			}
+		}
+	}
+
+	// Default: render as JSON
 	var formattedJson bytes.Buffer
 	if err := json.Indent(&formattedJson, []byte(content), "", "  "); err != nil {
-		panic(err)
+		// Fallback to plain text if JSON is malformed
+		return content
 	}
 	result := fmt.Sprintf("#### [tool call]\n```json\n%s\n```", formattedJson.String())
 

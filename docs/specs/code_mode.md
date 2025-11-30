@@ -776,7 +776,7 @@ The following tasks break down the code mode implementation into self-contained 
 - [x] **Task 11: Integrate code mode into `CreateToolCapableGenerator`**  
   Modify `internal/agent/generator.go` to: accept `CodeModeConfig` parameter, run collision detection (Task 3) at startup, partition tools into code-mode vs excluded, generate `execute_go_code` tool definition (Task 6) and register it, register excluded tools normally, skip registering code-mode tools directly. Depends on: Tasks 1, 3, 4, 5, 6, 10. Reference: "Architecture" section.
 
-- [ ] **Task 12: Update non-streaming printer for code mode rendering**  
+- [x] **Task 12: Update non-streaming printer for code mode rendering**  
   Modify `internal/agent/response_printer.go` to detect `execute_go_code` tool calls and render the `code` field as a Go markdown block instead of JSON. Keep streaming printer unchanged (renders as normal JSON). Reference: "Tool call rendering" section.
 
 ### Phase 5: CLI Integration
