@@ -168,26 +168,25 @@ func CreateToolCapableGenerator(
 			return nil, err
 		}
 
-		// Generate and register execute_go_code tool if there are code-mode tools
-		if len(serverToolsInfo) > 0 {
-			// Collect all code-mode tools for tool description generation
-			var allCodeModeTools []*mcpsdk.Tool
-			for _, serverInfo := range serverToolsInfo {
-				allCodeModeTools = append(allCodeModeTools, serverInfo.Tools...)
-			}
+		// Collect all code-mode tools for tool description generation
+		var allCodeModeTools []*mcpsdk.Tool
+		for _, serverInfo := range serverToolsInfo {
+			allCodeModeTools = append(allCodeModeTools, serverInfo.Tools...)
+		}
 
-			executeGoCodeTool, err := codemode.GenerateExecuteGoCodeTool(allCodeModeTools)
-			if err != nil {
-				return nil, fmt.Errorf("failed to generate execute_go_code tool: %w", err)
-			}
+		// Always register execute_go_code when code mode is enabled, even without MCP tools.
+		// The tool provides access to the Go standard library for file I/O, etc.
+		executeGoCodeTool, err := codemode.GenerateExecuteGoCodeTool(allCodeModeTools)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate execute_go_code tool: %w", err)
+		}
 
-			callback := &codemode.ExecuteGoCodeCallback{
-				Servers: serverToolsInfo,
-			}
+		callback := &codemode.ExecuteGoCodeCallback{
+			Servers: serverToolsInfo,
+		}
 
-			if err := filterToolGen.Register(executeGoCodeTool, callback); err != nil {
-				return nil, fmt.Errorf("failed to register execute_go_code tool: %w", err)
-			}
+		if err := filterToolGen.Register(executeGoCodeTool, callback); err != nil {
+			return nil, fmt.Errorf("failed to register execute_go_code tool: %w", err)
 		}
 
 		// Register excluded tools normally
