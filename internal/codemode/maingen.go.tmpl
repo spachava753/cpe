@@ -26,6 +26,11 @@ func fatalExit(err error) {
 	fmt.Println(err)
 	os.Exit(3)
 }
+
+// ptr returns a pointer to the given value. Use this for optional fields.
+func ptr[T any](v T) *T {
+	return &v
+}
 {{- if .HasHeaders}}
 
 type headerRoundTripper struct {

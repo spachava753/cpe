@@ -19,6 +19,8 @@ func TestGenerateExecuteGoCodeDescription(t *testing.T) {
 			tools: []*mcp.Tool{},
 			want: `Execute generated Golang code. The version of Go is ` + runtime.Version() + `. You must generate a complete Go source file that implements the ` + "`Run(ctx context.Context) error`" + ` function. The file will be compiled alongside a ` + "`main.go`" + ` that calls your ` + "`Run`" + ` function.
 
+A ` + "`ptr[T any](v T) *T`" + ` helper function is available to create pointers from literals for optional fields. For example: ` + "`ptr(\"hello\")`" + ` returns ` + "`*string`" + `, ` + "`ptr(42)`" + ` returns ` + "`*int`" + `, ` + "`ptr(3.14)`" + ` returns ` + "`*float64`" + `.
+
 Your generated code should be a complete Go file with the following structure:
 ` + "```go" + `
 package main
@@ -106,12 +108,14 @@ type GetWeatherInput struct {
 }
 
 type GetWeatherOutput struct {
-	Temperature float64 ` + "`json:\"temperature\"`" + `
+	Temperature *float64 ` + "`json:\"temperature,omitempty\"`" + `
 }
 
 // GetWeather Get current weather data for a location
 var GetWeather func(ctx context.Context, input GetWeatherInput) (GetWeatherOutput, error)
 ` + "```" + `
+
+A ` + "`ptr[T any](v T) *T`" + ` helper function is available to create pointers from literals for optional fields. For example: ` + "`ptr(\"hello\")`" + ` returns ` + "`*string`" + `, ` + "`ptr(42)`" + ` returns ` + "`*int`" + `, ` + "`ptr(3.14)`" + ` returns ` + "`*float64`" + `.
 
 Your generated code should be a complete Go file with the following structure:
 ` + "```go" + `
@@ -184,7 +188,7 @@ IMPORTANT: Generate the complete file contents including package declaration and
 Keep in mind you have access to the following functions and types when generating code:
 ` + "```go" + `
 type SendMessageInput struct {
-	Text string ` + "`json:\"text\"`" + `
+	Text *string ` + "`json:\"text,omitempty\"`" + `
 }
 
 type SendMessageOutput = string
@@ -192,6 +196,8 @@ type SendMessageOutput = string
 // SendMessage Send a message
 var SendMessage func(ctx context.Context, input SendMessageInput) (SendMessageOutput, error)
 ` + "```" + `
+
+A ` + "`ptr[T any](v T) *T`" + ` helper function is available to create pointers from literals for optional fields. For example: ` + "`ptr(\"hello\")`" + ` returns ` + "`*string`" + `, ` + "`ptr(42)`" + ` returns ` + "`*int`" + `, ` + "`ptr(3.14)`" + ` returns ` + "`*float64`" + `.
 
 Your generated code should be a complete Go file with the following structure:
 ` + "```go" + `

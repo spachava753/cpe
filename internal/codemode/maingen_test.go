@@ -32,6 +32,11 @@ func fatalExit(err error) {
 	os.Exit(3)
 }
 
+// ptr returns a pointer to the given value. Use this for optional fields.
+func ptr[T any](v T) *T {
+	return &v
+}
+
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -97,6 +102,11 @@ func fatalExit(err error) {
 	os.Exit(3)
 }
 
+// ptr returns a pointer to the given value. Use this for optional fields.
+func ptr[T any](v T) *T {
+	return &v
+}
+
 // callMcpTool is a reusable utility function for calling an MCP tool
 func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSession, toolName string, input I) (O, error) {
 	var output O
@@ -153,11 +163,11 @@ func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSes
 
 type ReadFileInput struct {
 	// Path File path
-	Path string ` + "`json:\"path\"`" + `
+	Path *string ` + "`json:\"path,omitempty\"`" + `
 }
 
 type ReadFileOutput struct {
-	Content string ` + "`json:\"content\"`" + `
+	Content *string ` + "`json:\"content,omitempty\"`" + `
 }
 
 // ReadFile Read a file from disk
@@ -238,6 +248,11 @@ func fatalExit(err error) {
 	os.Exit(3)
 }
 
+// ptr returns a pointer to the given value. Use this for optional fields.
+func ptr[T any](v T) *T {
+	return &v
+}
+
 // callMcpTool is a reusable utility function for calling an MCP tool
 func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSession, toolName string, input I) (O, error) {
 	var output O
@@ -293,7 +308,7 @@ func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSes
 }
 
 type PingOutput struct {
-	Pong bool ` + "`json:\"pong\"`" + `
+	Pong *bool ` + "`json:\"pong,omitempty\"`" + `
 }
 
 // Ping Ping the server
@@ -368,6 +383,11 @@ import (
 func fatalExit(err error) {
 	fmt.Println(err)
 	os.Exit(3)
+}
+
+// ptr returns a pointer to the given value. Use this for optional fields.
+func ptr[T any](v T) *T {
+	return &v
 }
 
 type headerRoundTripper struct {
@@ -529,6 +549,11 @@ func fatalExit(err error) {
 	os.Exit(3)
 }
 
+// ptr returns a pointer to the given value. Use this for optional fields.
+func ptr[T any](v T) *T {
+	return &v
+}
+
 // callMcpTool is a reusable utility function for calling an MCP tool
 func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSession, toolName string, input I) (O, error) {
 	var output O
@@ -584,11 +609,11 @@ func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSes
 }
 
 type SubscribeInput struct {
-	Topic string ` + "`json:\"topic\"`" + `
+	Topic *string ` + "`json:\"topic,omitempty\"`" + `
 }
 
 type SubscribeOutput struct {
-	Id string ` + "`json:\"id\"`" + `
+	Id *string ` + "`json:\"id,omitempty\"`" + `
 }
 
 // Subscribe Subscribe to events
@@ -677,6 +702,11 @@ import (
 func fatalExit(err error) {
 	fmt.Println(err)
 	os.Exit(3)
+}
+
+// ptr returns a pointer to the given value. Use this for optional fields.
+func ptr[T any](v T) *T {
+	return &v
 }
 
 type headerRoundTripper struct {
@@ -842,6 +872,11 @@ import (
 func fatalExit(err error) {
 	fmt.Println(err)
 	os.Exit(3)
+}
+
+// ptr returns a pointer to the given value. Use this for optional fields.
+func ptr[T any](v T) *T {
+	return &v
 }
 
 func main() {

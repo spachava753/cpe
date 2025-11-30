@@ -22,7 +22,7 @@ func TestSchemaToGoType(t *testing.T) {
 			want:       "type GetWeatherOutput = string",
 		},
 		{
-			name: "simple object with string field",
+			name: "simple object with string field (optional)",
 			schemaJSON: `{
 				"type": "object",
 				"properties": {
@@ -32,11 +32,11 @@ func TestSchemaToGoType(t *testing.T) {
 			typeName: "GetWeatherInput",
 			want: `type GetWeatherInput struct {
 	// City The name of the city
-	City string ` + "`json:\"city\"`" + `
+	City *string ` + "`json:\"city,omitempty\"`" + `
 }`,
 		},
 		{
-			name: "object with multiple field types",
+			name: "object with multiple field types (all optional)",
 			schemaJSON: `{
 				"type": "object",
 				"properties": {
@@ -48,14 +48,14 @@ func TestSchemaToGoType(t *testing.T) {
 			}`,
 			typeName: "TestInput",
 			want: `type TestInput struct {
-	Active bool ` + "`json:\"active\"`" + `
-	Count int64 ` + "`json:\"count\"`" + `
-	Name string ` + "`json:\"name\"`" + `
-	Price float64 ` + "`json:\"price\"`" + `
+	Active *bool ` + "`json:\"active,omitempty\"`" + `
+	Count *int64 ` + "`json:\"count,omitempty\"`" + `
+	Name *string ` + "`json:\"name,omitempty\"`" + `
+	Price *float64 ` + "`json:\"price,omitempty\"`" + `
 }`,
 		},
 		{
-			name: "object with enum field",
+			name: "object with enum field (optional)",
 			schemaJSON: `{
 				"type": "object",
 				"properties": {
@@ -70,11 +70,11 @@ func TestSchemaToGoType(t *testing.T) {
 			want: `type WeatherInput struct {
 	// Unit Temperature unit
 	// Must be one of "celsius", "fahrenheit"
-	Unit string ` + "`json:\"unit\"`" + `
+	Unit *string ` + "`json:\"unit,omitempty\"`" + `
 }`,
 		},
 		{
-			name: "object with nullable string field",
+			name: "object with nullable string field (optional)",
 			schemaJSON: `{
 				"type": "object",
 				"properties": {
@@ -84,11 +84,11 @@ func TestSchemaToGoType(t *testing.T) {
 			typeName: "UserInput",
 			want: `type UserInput struct {
 	// Nickname Optional nickname
-	Nickname *string ` + "`json:\"nickname\"`" + `
+	Nickname *string ` + "`json:\"nickname,omitempty\"`" + `
 }`,
 		},
 		{
-			name: "object with array of strings",
+			name: "object with array of strings (optional)",
 			schemaJSON: `{
 				"type": "object",
 				"properties": {
@@ -97,11 +97,11 @@ func TestSchemaToGoType(t *testing.T) {
 			}`,
 			typeName: "TagInput",
 			want: `type TagInput struct {
-	Tags []string ` + "`json:\"tags\"`" + `
+	Tags []string ` + "`json:\"tags,omitempty\"`" + `
 }`,
 		},
 		{
-			name: "object with array of integers",
+			name: "object with array of integers (optional)",
 			schemaJSON: `{
 				"type": "object",
 				"properties": {
@@ -110,11 +110,11 @@ func TestSchemaToGoType(t *testing.T) {
 			}`,
 			typeName: "ScoreInput",
 			want: `type ScoreInput struct {
-	Scores []int64 ` + "`json:\"scores\"`" + `
+	Scores []int64 ` + "`json:\"scores,omitempty\"`" + `
 }`,
 		},
 		{
-			name: "nested object generates separate type",
+			name: "nested object generates separate type (all optional)",
 			schemaJSON: `{
 				"type": "object",
 				"properties": {
@@ -129,16 +129,16 @@ func TestSchemaToGoType(t *testing.T) {
 			}`,
 			typeName: "AddressInput",
 			want: `type AddressInput_Location struct {
-	City string ` + "`json:\"city\"`" + `
-	Country string ` + "`json:\"country\"`" + `
+	City *string ` + "`json:\"city,omitempty\"`" + `
+	Country *string ` + "`json:\"country,omitempty\"`" + `
 }
 
 type AddressInput struct {
-	Location AddressInput_Location ` + "`json:\"location\"`" + `
+	Location *AddressInput_Location ` + "`json:\"location,omitempty\"`" + `
 }`,
 		},
 		{
-			name: "array of objects generates item type",
+			name: "array of objects generates item type (all optional)",
 			schemaJSON: `{
 				"type": "object",
 				"properties": {
@@ -156,12 +156,12 @@ type AddressInput struct {
 			}`,
 			typeName: "ListUsersOutput",
 			want: `type ListUsersOutput_UsersItem struct {
-	Id int64 ` + "`json:\"id\"`" + `
-	Name string ` + "`json:\"name\"`" + `
+	Id *int64 ` + "`json:\"id,omitempty\"`" + `
+	Name *string ` + "`json:\"name,omitempty\"`" + `
 }
 
 type ListUsersOutput struct {
-	Users []ListUsersOutput_UsersItem ` + "`json:\"users\"`" + `
+	Users []ListUsersOutput_UsersItem ` + "`json:\"users,omitempty\"`" + `
 }`,
 		},
 		{
@@ -179,7 +179,7 @@ type ListUsersOutput struct {
 			want:       "type EmptySchema = any",
 		},
 		{
-			name: "object with description",
+			name: "object with description (optional field)",
 			schemaJSON: `{
 				"type": "object",
 				"description": "Weather data input parameters",
@@ -190,11 +190,11 @@ type ListUsersOutput struct {
 			typeName: "WeatherInput",
 			want: `// WeatherInput Weather data input parameters
 type WeatherInput struct {
-	City string ` + "`json:\"city\"`" + `
+	City *string ` + "`json:\"city,omitempty\"`" + `
 }`,
 		},
 		{
-			name: "deeply nested objects",
+			name: "deeply nested objects (all optional)",
 			schemaJSON: `{
 				"type": "object",
 				"properties": {
@@ -213,19 +213,19 @@ type WeatherInput struct {
 			}`,
 			typeName: "DeepInput",
 			want: `type DeepInput_Outer_Inner struct {
-	Value string ` + "`json:\"value\"`" + `
+	Value *string ` + "`json:\"value,omitempty\"`" + `
 }
 
 type DeepInput_Outer struct {
-	Inner DeepInput_Outer_Inner ` + "`json:\"inner\"`" + `
+	Inner *DeepInput_Outer_Inner ` + "`json:\"inner,omitempty\"`" + `
 }
 
 type DeepInput struct {
-	Outer DeepInput_Outer ` + "`json:\"outer\"`" + `
+	Outer *DeepInput_Outer ` + "`json:\"outer,omitempty\"`" + `
 }`,
 		},
 		{
-			name: "nullable nested object",
+			name: "nullable nested object (optional)",
 			schemaJSON: `{
 				"type": "object",
 				"properties": {
@@ -239,15 +239,15 @@ type DeepInput struct {
 			}`,
 			typeName: "DataInput",
 			want: `type DataInput_Metadata struct {
-	Key string ` + "`json:\"key\"`" + `
+	Key *string ` + "`json:\"key,omitempty\"`" + `
 }
 
 type DataInput struct {
-	Metadata *DataInput_Metadata ` + "`json:\"metadata\"`" + `
+	Metadata *DataInput_Metadata ` + "`json:\"metadata,omitempty\"`" + `
 }`,
 		},
 		{
-			name: "array without items schema",
+			name: "array without items schema (optional)",
 			schemaJSON: `{
 				"type": "object",
 				"properties": {
@@ -256,11 +256,11 @@ type DataInput struct {
 			}`,
 			typeName: "ArrayInput",
 			want: `type ArrayInput struct {
-	Data []any ` + "`json:\"data\"`" + `
+	Data []any ` + "`json:\"data,omitempty\"`" + `
 }`,
 		},
 		{
-			name: "field with snake_case name converts to PascalCase",
+			name: "field with snake_case name converts to PascalCase (optional)",
 			schemaJSON: `{
 				"type": "object",
 				"properties": {
@@ -270,12 +270,12 @@ type DataInput struct {
 			}`,
 			typeName: "UserData",
 			want: `type UserData struct {
-	CreatedAt string ` + "`json:\"created_at\"`" + `
-	UserName string ` + "`json:\"user_name\"`" + `
+	CreatedAt *string ` + "`json:\"created_at,omitempty\"`" + `
+	UserName *string ` + "`json:\"user_name,omitempty\"`" + `
 }`,
 		},
 		{
-			name: "mixed nullable and non-nullable types",
+			name: "mixed nullable and non-nullable types (all optional)",
 			schemaJSON: `{
 				"type": "object",
 				"properties": {
@@ -286,9 +286,9 @@ type DataInput struct {
 			}`,
 			typeName: "MixedInput",
 			want: `type MixedInput struct {
-	OptionalField *string ` + "`json:\"optional_field\"`" + `
-	OptionalNumber *float64 ` + "`json:\"optional_number\"`" + `
-	RequiredField string ` + "`json:\"required_field\"`" + `
+	OptionalField *string ` + "`json:\"optional_field,omitempty\"`" + `
+	OptionalNumber *float64 ` + "`json:\"optional_number,omitempty\"`" + `
+	RequiredField *string ` + "`json:\"required_field,omitempty\"`" + `
 }`,
 		},
 		{

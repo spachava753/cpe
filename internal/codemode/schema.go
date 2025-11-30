@@ -65,6 +65,12 @@ func generateStruct(schema *jsonschema.Schema, typeName string, nestedTypes *[]s
 
 	buf.WriteString(fmt.Sprintf("type %s struct {\n", typeName))
 
+	// Build required field set
+	required := make(map[string]bool)
+	for _, r := range schema.Required {
+		required[r] = true
+	}
+
 	// Sort property names for deterministic output
 	propNames := make([]string, 0, len(schema.Properties))
 	for name := range schema.Properties {
@@ -74,6 +80,8 @@ func generateStruct(schema *jsonschema.Schema, typeName string, nestedTypes *[]s
 
 	for _, propName := range propNames {
 		propSchema := schema.Properties[propName]
+		isRequired := required[propName]
+
 		// Convert JSON field name to Go struct field name (pascal case)
 		fieldName := strcase.UpperCamelCase(propName)
 
@@ -94,7 +102,16 @@ func generateStruct(schema *jsonschema.Schema, typeName string, nestedTypes *[]s
 		// Determine Go type for this field
 		goType := resolveFieldType(propSchema, typeName, fieldName, nestedTypes)
 
-		buf.WriteString(fmt.Sprintf("\t%s %s `json:%q`\n", fieldName, goType, propName))
+		// For optional fields: use pointer + omitempty to distinguish "not set" from "set to zero value"
+		jsonTag := propName
+		if !isRequired {
+			jsonTag = propName + ",omitempty"
+			// Add pointer for non-pointer types (don't double-pointer already nullable types)
+			if !strings.HasPrefix(goType, "*") && !strings.HasPrefix(goType, "[]") && goType != "any" && goType != "map[string]any" {
+				goType = "*" + goType
+			}
+		}
+		buf.WriteString(fmt.Sprintf("\t%s %s `json:%q`\n", fieldName, goType, jsonTag))
 	}
 
 	buf.WriteString("}")

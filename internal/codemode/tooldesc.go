@@ -37,6 +37,10 @@ func GenerateExecuteGoCodeDescription(tools []*mcp.Tool) (string, error) {
 		b.WriteString("\n```\n\n")
 	}
 
+	// Helper function documentation
+	b.WriteString("A `ptr[T any](v T) *T` helper function is available to create pointers from literals for optional fields. ")
+	b.WriteString("For example: `ptr(\"hello\")` returns `*string`, `ptr(42)` returns `*int`, `ptr(3.14)` returns `*float64`.\n\n")
+
 	// Code structure template
 	b.WriteString("Your generated code should be a complete Go file with the following structure:\n")
 	b.WriteString("```go\n")

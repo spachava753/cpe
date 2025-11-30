@@ -107,11 +107,20 @@ func ModelSystemPrompt(opts ModelSystemPromptOptions) error {
 		return err
 	}
 
+	// Resolve effective code mode config for template rendering
+	var codeMode *config.CodeModeConfig
+	if selectedModel.CodeMode != nil {
+		codeMode = selectedModel.CodeMode
+	} else if opts.Config.Defaults.CodeMode != nil {
+		codeMode = opts.Config.Defaults.CodeMode
+	}
+
 	// Create a minimal Config for template rendering
 	templateConfig := &config.Config{
 		Model:              selectedModel.Model,
 		MCPServers:         opts.Config.MCPServers,
 		GenerationDefaults: nil,
+		CodeMode:           codeMode,
 	}
 
 	systemPrompt, err := agent.SystemPromptTemplate(string(contents), agent.TemplateData{

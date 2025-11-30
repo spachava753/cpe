@@ -112,7 +112,7 @@ var GetCity func(ctx context.Context) (GetCityOutput, error)`,
 				},
 			},
 			want: `type SendMessageInput struct {
-	Text string ` + "`json:\"text\"`" + `
+	Text *string ` + "`json:\"text,omitempty\"`" + `
 }
 
 type SendMessageOutput = string
@@ -136,7 +136,7 @@ var SendMessage func(ctx context.Context, input SendMessageInput) (SendMessageOu
 				},
 			},
 			want: `type PingOutput struct {
-	Pong bool ` + "`json:\"pong\"`" + `
+	Pong *bool ` + "`json:\"pong,omitempty\"`" + `
 }
 
 var Ping func(ctx context.Context) (PingOutput, error)`,
@@ -173,15 +173,15 @@ var Ping func(ctx context.Context) (PingOutput, error)`,
 				},
 			},
 			want: `type AlphaToolInput struct {
-	A string ` + "`json:\"a\"`" + `
+	A *string ` + "`json:\"a,omitempty\"`" + `
 }
 
 type AlphaToolOutput struct {
-	Result string ` + "`json:\"result\"`" + `
+	Result *string ` + "`json:\"result,omitempty\"`" + `
 }
 
 type ZebraToolOutput struct {
-	Z string ` + "`json:\"z\"`" + `
+	Z *string ` + "`json:\"z,omitempty\"`" + `
 }
 
 // AlphaTool A tool
