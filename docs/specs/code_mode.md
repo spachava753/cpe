@@ -773,7 +773,7 @@ The following tasks break down the code mode implementation into self-contained 
 - [x] **Task 10: Implement `execute_go_code` tool callback**  
   Create `internal/codemode/tool.go` implementing `gai.ToolCallback` interface for `execute_go_code`. Parse `code` and `executionTimeout` from input JSON. Use executor (Tasks 7-9) to run the code. Return output as tool result, marking errors appropriately. Handle fatal errors (exit code 3) by returning an error that stops agent execution. Depends on: Tasks 7, 8, 9.
 
-- [ ] **Task 11: Integrate code mode into `CreateToolCapableGenerator`**  
+- [x] **Task 11: Integrate code mode into `CreateToolCapableGenerator`**  
   Modify `internal/agent/generator.go` to: accept `CodeModeConfig` parameter, run collision detection (Task 3) at startup, partition tools into code-mode vs excluded, generate `execute_go_code` tool definition (Task 6) and register it, register excluded tools normally, skip registering code-mode tools directly. Depends on: Tasks 1, 3, 4, 5, 6, 10. Reference: "Architecture" section.
 
 - [ ] **Task 12: Update non-streaming printer for code mode rendering**  
@@ -781,5 +781,5 @@ The following tasks break down the code mode implementation into self-contained 
 
 ### Phase 5: CLI Integration
 
-- [ ] **Task 13: Wire code mode config through CLI**  
+- [x] **Task 13: Wire code mode config through CLI**  
   Update `cmd/` and `internal/commands/` to pass resolved `CodeModeConfig` from loaded config to `CreateToolCapableGenerator`. Ensure config resolution (Task 1) is applied before generator creation. Depends on: Tasks 1, 11.

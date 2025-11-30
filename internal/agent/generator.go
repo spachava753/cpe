@@ -10,15 +10,16 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	aopts "github.com/anthropics/anthropic-sdk-go/option"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/openai/openai-go/v2"
 	oaiopt "github.com/openai/openai-go/v2/option"
+	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/gai"
 	"google.golang.org/genai"
 
 	"github.com/cenkalti/backoff/v5"
-	mcpinternal "github.com/spachava753/cpe/internal/mcp"
 )
 
 func initGeneratorFromModel(
@@ -102,6 +103,7 @@ func CreateToolCapableGenerator(
 	baseURLOverride string,
 	disableStreaming bool,
 	mcpServers map[string]mcp.ServerConfig,
+	codeModeConfig *config.CodeModeConfig,
 ) (Iface, error) {
 	// Create the base generator from catalog model
 	genBase, err := initGeneratorFromModel(ctx, selectedModel, systemPrompt, requestTimeout, baseURLOverride)
@@ -140,18 +142,68 @@ func CreateToolCapableGenerator(
 	filterToolGen := NewBlockWhitelistFilter(toolGen, []string{gai.Content, gai.ToolCall})
 
 	// Create client manager
-	client := mcpinternal.NewClient()
+	client := mcp.NewClient()
 
 	// Fetch MCP server tools
-	toolsMap, err := mcp.FetchTools(ctx, client, mcpServers)
+	toolsByServer, err := mcp.FetchTools(ctx, client, mcpServers)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch MCP tools: %v\n", err)
+		return nil, fmt.Errorf("failed to fetch MCP tools: %w", err)
 	}
 
-	// Register each tool with the generator
-	for toolName, toolData := range toolsMap {
-		if err := filterToolGen.Register(toolData.Tool, toolData.ToolCallback); err != nil {
-			return nil, fmt.Errorf("failed to register tool %s: %v\n", toolName, err)
+	// Check if code mode is enabled
+	codeModeEnabled := codeModeConfig != nil && codeModeConfig.Enabled
+
+	if codeModeEnabled {
+		// Partition tools into code-mode and excluded
+		var excludedToolNames []string
+		if codeModeConfig.ExcludedTools != nil {
+			excludedToolNames = codeModeConfig.ExcludedTools
+		}
+
+		serverToolsInfo, excludedTools := codemode.PartitionTools(toolsByServer, mcpServers, excludedToolNames)
+
+		// Run collision detection on code-mode tools
+		codeModeToolNames := codemode.GetCodeModeToolNames(serverToolsInfo)
+		if err := codemode.CheckToolNameCollisions(codeModeToolNames); err != nil {
+			return nil, err
+		}
+
+		// Generate and register execute_go_code tool if there are code-mode tools
+		if len(serverToolsInfo) > 0 {
+			// Collect all code-mode tools for tool description generation
+			var allCodeModeTools []*mcpsdk.Tool
+			for _, serverInfo := range serverToolsInfo {
+				allCodeModeTools = append(allCodeModeTools, serverInfo.Tools...)
+			}
+
+			executeGoCodeTool, err := codemode.GenerateExecuteGoCodeTool(allCodeModeTools)
+			if err != nil {
+				return nil, fmt.Errorf("failed to generate execute_go_code tool: %w", err)
+			}
+
+			callback := &codemode.ExecuteGoCodeCallback{
+				Servers: serverToolsInfo,
+			}
+
+			if err := filterToolGen.Register(executeGoCodeTool, callback); err != nil {
+				return nil, fmt.Errorf("failed to register execute_go_code tool: %w", err)
+			}
+		}
+
+		// Register excluded tools normally
+		for _, toolData := range excludedTools {
+			if err := filterToolGen.Register(toolData.Tool, toolData.ToolCallback); err != nil {
+				return nil, fmt.Errorf("failed to register excluded tool %s: %w", toolData.Tool.Name, err)
+			}
+		}
+	} else {
+		// Code mode disabled: register all tools normally
+		for _, tools := range toolsByServer {
+			for _, toolData := range tools {
+				if err := filterToolGen.Register(toolData.Tool, toolData.ToolCallback); err != nil {
+					return nil, fmt.Errorf("failed to register tool %s: %w", toolData.Tool.Name, err)
+				}
+			}
 		}
 	}
 
