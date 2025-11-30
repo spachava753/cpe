@@ -11,11 +11,11 @@ import (
 
 // SchemaToGoType converts a JSON Schema to Go type definition(s).
 // Returns the generated type definitions as a string (may include multiple types for nested objects).
-// For nil schemas, returns a type alias to map[string]any.
+// For nil schemas, returns a type alias to string (raw text content).
 // The typeName parameter specifies the name for the root type (e.g., "GetWeatherInput").
 func SchemaToGoType(schema *jsonschema.Schema, typeName string) (string, error) {
 	if schema == nil {
-		return fmt.Sprintf("type %s = map[string]any", typeName), nil
+		return fmt.Sprintf("type %s = string", typeName), nil
 	}
 
 	var nestedTypes []string

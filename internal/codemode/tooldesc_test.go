@@ -165,7 +165,7 @@ The error, if not nil, returned from the ` + "`Run`" + ` function, will be prese
 IMPORTANT: Generate the complete file contents including package declaration and imports. This ensures that any compilation errors report accurate line numbers that you can use for debugging.`,
 		},
 		{
-			name: "tool without output schema uses map[string]any",
+			name: "tool without output schema uses string",
 			tools: []*mcp.Tool{
 				{
 					Name:        "send_message",
@@ -187,7 +187,7 @@ type SendMessageInput struct {
 	Text string ` + "`json:\"text\"`" + `
 }
 
-type SendMessageOutput = map[string]any
+type SendMessageOutput = string
 
 // SendMessage Send a message
 var SendMessage func(ctx context.Context, input SendMessageInput) (SendMessageOutput, error)

@@ -16,10 +16,10 @@ func TestSchemaToGoType(t *testing.T) {
 		wantErr    bool
 	}{
 		{
-			name:       "nil schema returns map[string]any alias",
+			name:       "nil schema returns string alias",
 			schemaJSON: "",
 			typeName:   "GetWeatherOutput",
-			want:       "type GetWeatherOutput = map[string]any",
+			want:       "type GetWeatherOutput = string",
 		},
 		{
 			name: "simple object with string field",

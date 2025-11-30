@@ -78,6 +78,11 @@ func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSes
 		return output, errors.New(textContent)
 	}
 
+	// If O is string, return raw text content directly
+	if _, isString := any(output).(string); isString {
+		return any(textContent).(O), nil
+	}
+
 	outputJson := []byte(textContent)
 
 	if result.StructuredContent != nil {

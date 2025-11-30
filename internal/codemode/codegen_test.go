@@ -115,7 +115,7 @@ var GetCity func(ctx context.Context) (GetCityOutput, error)`,
 	Text string ` + "`json:\"text\"`" + `
 }
 
-type SendMessageOutput = map[string]any
+type SendMessageOutput = string
 
 // SendMessage Send a message
 var SendMessage func(ctx context.Context, input SendMessageInput) (SendMessageOutput, error)`,
@@ -200,7 +200,7 @@ var ZebraTool func(ctx context.Context) (ZebraToolOutput, error)`,
 					OutputSchema: nil,
 				},
 			},
-			want: `type GetTimeOutput = map[string]any
+			want: `type GetTimeOutput = string
 
 // GetTime Get current time
 var GetTime func(ctx context.Context) (GetTimeOutput, error)`,

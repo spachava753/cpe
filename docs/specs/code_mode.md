@@ -461,7 +461,8 @@ var GetWeather func(ctx context.Context, input GetWeatherInput) (GetWeatherOutpu
 
 // End of generated types and function definitions
 
-// callMcpTool is a reusable utility function for calling a mcp tool
+// callMcpTool is a reusable utility function for calling a mcp tool.
+// For tools with output schemas, O is the typed struct. For tools without, O is string.
 func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSession, toolName string, input I) (O, error) {
 	var output O
 
@@ -496,6 +497,12 @@ func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSes
 		return output, errors.New(textContent)
 	}
 	
+	// If O is string, return raw text content directly
+	if _, isString := any(output).(string); isString {
+		return any(textContent).(O), nil
+	}
+	
+	// Otherwise, try to unmarshal as JSON (prefer structured content if available)
 	outputJson := []byte(textContent)
 	
 	if result.StructuredContent != nil {
@@ -507,7 +514,7 @@ func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSes
 	}
 	
 	if err := json.Unmarshal(outputJson, &output); err != nil {
-		fatalExit(fmt.Errorf("could not unmarshal structured content json into output for tool get_weather: %w", err))
+		fatalExit(fmt.Errorf("could not unmarshal json into output for tool %s: %w", toolName, err))
 	}
 	return output, nil
 }
@@ -575,7 +582,7 @@ func Run(ctx context.Context) error {
 
 Note that the generated types and functions definitions may counter-intuitively end up consuming _more_ tokens than the original token description and input schema. However, after some turns in the conversation, for any meaningfully long conversation, code mode will always be more token efficient in the long run by virtue of processing tool results directly in the code, without taking up valuable tokens in the context window. In addition, code mode can be disabled for short conversations or for agent setups that have a small number of independent tools, so it is entirely up to the user when code mode is enabled.
 
-More often that not, due to the relatively recent addition of output schemas to the MCP specification, tools exposed by an MCP server does not have a output schema. In this case, we do not know the shape of the output returned by a tool, except for the fact that it is JSON object. In cases like this, the type for the output should be a `map[string]any`. So in the example above, `GetWeatherOutput` would be `type GetWeatherOutput map[string]any`.
+More often than not, due to the relatively recent addition of output schemas to the MCP specification, tools exposed by an MCP server do not have an output schema. In this case, we cannot make any assumptions about the format of the text content returned by a tool - it may be JSON, plain text, markdown, or any other format. For tools without an output schema, the output type should be `string`, returning the raw text content as-is. The LLM-generated code is responsible for parsing or processing this string as needed. So in the example above, if `get_weather` had no output schema, `GetWeatherOutput` would be `type GetWeatherOutput = string` and the function signature would be `var GetWeather func(ctx context.Context, input GetWeatherInput) (GetWeatherOutput, error)` (using the type alias for consistency).
 
 #### Reconnection Latency
 
@@ -741,7 +748,7 @@ The following tasks break down the code mode implementation into self-contained 
   Add `CodeModeConfig` struct with `Enabled bool` and `ExcludedTools []string` fields to `internal/config/config.go`. Add `CodeMode *CodeModeConfig` field to both `Defaults` and `ModelConfig`. Update `Config` (runtime config) to include resolved `CodeModeConfig`. Implement override resolution logic per the "Configuration Resolution" section: model-level completely replaces defaults (no merging). Update config validation. Include tests for config loading and override resolution. Reference: "Configuration" section.
 
 - [x] **Task 2: Implement JSON Schema to Go type converter**  
-  Create `internal/codemode/schema.go` with functions to convert MCP tool input/output JSON schemas to Go type definitions as strings. Support: objects, arrays, null, boolean, number, string types; description annotations; enum validation (as doc comments); nullable types (`["null", "string"]`). Generate pascal case struct names and field names. Handle missing output schema by returning `map[string]any`. Include tests for: simple types, nested objects, arrays, nullable types, enums, missing output schema. Reference: "Tool schema to Go types" section.
+  Create `internal/codemode/schema.go` with functions to convert MCP tool input/output JSON schemas to Go type definitions as strings. Support: objects, arrays, null, boolean, number, string types; description annotations; enum validation (as doc comments); nullable types (`["null", "string"]`). Generate pascal case struct names and field names. Handle missing output schema by returning `string` (raw text content). Include tests for: simple types, nested objects, arrays, nullable types, enums, missing output schema. Reference: "Tool schema to Go types" section.
 
 - [x] **Task 3: Implement tool name collision detection**  
   Add collision detection functions to `internal/codemode`: (1) check for `execute_go_code` reserved name collision, (2) check for pascal case collisions between different tool names (using `strcase.UpperCamelCase` for conversion). Return descriptive errors when collisions are detected. Include tests for reserved name collision and pascal case collision scenarios. Reference: "Naming Collisions" section.
@@ -783,3 +790,8 @@ The following tasks break down the code mode implementation into self-contained 
 
 - [x] **Task 13: Wire code mode config through CLI**  
   Update `cmd/` and `internal/commands/` to pass resolved `CodeModeConfig` from loaded config to `CreateToolCapableGenerator`. Ensure config resolution (Task 1) is applied before generator creation. Depends on: Tasks 1, 11.
+
+### Phase 6: Bug Fixes
+
+- [x] **Task 14: Handle tools without output schemas as raw string**  
+  Update `internal/codemode/schema.go` to return `string` instead of `map[string]any` for tools without output schemas. Update `internal/codemode/maingen.go.tmpl` to detect when output type is `string` and return raw text content directly instead of attempting JSON unmarshal. Update tests accordingly. This allows MCP tools that return plain text (not JSON) to work correctly in code mode. Depends on: Tasks 2, 5.

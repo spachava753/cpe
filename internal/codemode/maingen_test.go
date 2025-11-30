@@ -130,6 +130,11 @@ func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSes
 		return output, errors.New(textContent)
 	}
 
+	// If O is string, return raw text content directly
+	if _, isString := any(output).(string); isString {
+		return any(textContent).(O), nil
+	}
+
 	outputJson := []byte(textContent)
 
 	if result.StructuredContent != nil {
@@ -264,6 +269,11 @@ func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSes
 
 	if result.IsError {
 		return output, errors.New(textContent)
+	}
+
+	// If O is string, return raw text content directly
+	if _, isString := any(output).(string); isString {
+		return any(textContent).(O), nil
 	}
 
 	outputJson := []byte(textContent)
@@ -408,6 +418,11 @@ func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSes
 		return output, errors.New(textContent)
 	}
 
+	// If O is string, return raw text content directly
+	if _, isString := any(output).(string); isString {
+		return any(textContent).(O), nil
+	}
+
 	outputJson := []byte(textContent)
 
 	if result.StructuredContent != nil {
@@ -424,7 +439,7 @@ func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSes
 	return output, nil
 }
 
-type FetchDataOutput = map[string]any
+type FetchDataOutput = string
 
 // FetchData Fetch data from API
 var FetchData func(ctx context.Context) (FetchDataOutput, error)
@@ -545,6 +560,11 @@ func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSes
 
 	if result.IsError {
 		return output, errors.New(textContent)
+	}
+
+	// If O is string, return raw text content directly
+	if _, isString := any(output).(string); isString {
+		return any(textContent).(O), nil
 	}
 
 	outputJson := []byte(textContent)
@@ -707,6 +727,11 @@ func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSes
 		return output, errors.New(textContent)
 	}
 
+	// If O is string, return raw text content directly
+	if _, isString := any(output).(string); isString {
+		return any(textContent).(O), nil
+	}
+
 	outputJson := []byte(textContent)
 
 	if result.StructuredContent != nil {
@@ -723,9 +748,9 @@ func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSes
 	return output, nil
 }
 
-type ActionOneOutput = map[string]any
+type ActionOneOutput = string
 
-type ActionTwoOutput = map[string]any
+type ActionTwoOutput = string
 
 var ActionOne func(ctx context.Context) (ActionOneOutput, error)
 
