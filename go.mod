@@ -15,6 +15,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/gabriel-vasile/mimetype v1.4.11
+	github.com/go-faker/faker/v4 v4.7.0
 	github.com/go-playground/validator/v10 v10.28.0
 	github.com/google/go-cmp v0.7.0
 	github.com/google/jsonschema-go v0.3.0
@@ -26,6 +27,7 @@ require (
 	github.com/openai/openai-go/v2 v2.7.1
 	github.com/spachava753/gai v0.23.0
 	github.com/spf13/cobra v1.10.1
+	github.com/stoewer/go-strcase v1.2.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/term v0.37.0
 	google.golang.org/genai v1.36.0
@@ -103,7 +105,6 @@ require (
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/sqlc-dev/sqlc v1.28.0 // indirect
-	github.com/stoewer/go-strcase v1.2.0 // indirect
 	github.com/tetratelabs/wazero v1.8.2 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.2.0 // indirect
