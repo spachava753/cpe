@@ -229,6 +229,19 @@ func MCPListTools(ctx context.Context, opts MCPListToolsOptions) error {
 					markdownBuilder.WriteString("```json\n" + schemaJSON.String() + "\n```\n\n")
 				}
 			}
+
+			if tool.OutputSchema != nil {
+				markdownBuilder.WriteString("**Output Schema:**\n\n")
+
+				var schemaJSON bytes.Buffer
+				encoder := json.NewEncoder(&schemaJSON)
+				encoder.SetIndent("", "  ")
+				if err := encoder.Encode(tool.OutputSchema); err != nil {
+					markdownBuilder.WriteString("```json\n" + "Error encoding schema: " + err.Error() + "\n```\n\n")
+				} else {
+					markdownBuilder.WriteString("```json\n" + schemaJSON.String() + "\n```\n\n")
+				}
+			}
 		}
 	}
 
