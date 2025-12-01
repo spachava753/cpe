@@ -100,9 +100,13 @@ re := regexp.MustCompile(`pattern`)
 newContent := re.ReplaceAllString(string(content), replacement)
 ```
 
-**Backticks in strings**: Go raw strings use backticks, so to include literal backticks in output (e.g., markdown code fences), concatenate:
+**Backticks in strings**: Raw strings (delimited by backticks) cannot contain literal backticks. For strings needing backticks (markdown code fences, shell commands), use double-quoted strings with `\n`:
 ```go
-content := "# Header\n" + "```go\ncode here\n" + "```"
+// Markdown with code fence
+body := "## Title\n\n" +
+    "```go\n" +
+    "fmt.Println(\"hello\")\n" +
+    "```\n"
 ```
 
 ## Reading large files
