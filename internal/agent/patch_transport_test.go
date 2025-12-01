@@ -226,7 +226,7 @@ func TestBuildPatchTransportFromConfig(t *testing.T) {
 		{
 			name: "valid config with patches and headers",
 			patchConfig: &config.PatchRequestConfig{
-				JSONPatch: []map[string]interface{}{
+				JSONPatch: []map[string]any{
 					{"op": "add", "path": "/field", "value": "data"},
 				},
 				IncludeHeaders: map[string]string{
@@ -247,7 +247,7 @@ func TestBuildPatchTransportFromConfig(t *testing.T) {
 		{
 			name: "only patches",
 			patchConfig: &config.PatchRequestConfig{
-				JSONPatch: []map[string]interface{}{
+				JSONPatch: []map[string]any{
 					{"op": "replace", "path": "/model", "value": "custom"},
 				},
 			},
@@ -256,7 +256,7 @@ func TestBuildPatchTransportFromConfig(t *testing.T) {
 		{
 			name: "invalid patch operation",
 			patchConfig: &config.PatchRequestConfig{
-				JSONPatch: []map[string]interface{}{
+				JSONPatch: []map[string]any{
 					{"op": "invalid", "path": "/field"},
 				},
 			},
@@ -265,7 +265,7 @@ func TestBuildPatchTransportFromConfig(t *testing.T) {
 		{
 			name: "integration test with headers and patches",
 			patchConfig: &config.PatchRequestConfig{
-				JSONPatch: []map[string]interface{}{
+				JSONPatch: []map[string]any{
 					{"op": "add", "path": "/new_field", "value": "new_value"},
 				},
 				IncludeHeaders: map[string]string{

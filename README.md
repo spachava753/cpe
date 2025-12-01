@@ -20,6 +20,7 @@ conversations.
   - OpenAI models (GPT-4o, GPT-4o Mini, etc.)
   - Anthropic Claude models (Claude 3.5 Sonnet, Claude 3 Opus, etc.)
   - Google Gemini models (Gemini 1.5 Pro, Gemini 1.5 Flash, etc.)
+- **Code Mode**: Enable LLMs to generate and execute Go code for complex tool compositions, control flow, and multi-step operations in a single turn
 - **Conversation management**: Save, list, view, and continue previous conversations
 - **Model Context Protocol (MCP)**: Connect to external MCP servers for enhanced functionality
 
@@ -386,6 +387,10 @@ defaults:
   model: "sonnet"
   systemPromptPath: "./custom-prompt.txt"
   timeout: "5m"
+  codeMode:
+    enabled: true
+    excludedTools:
+      - multimedia_tool
   generationParams:
     temperature: 0.7
     maxTokens: 4096
@@ -560,6 +565,91 @@ This allows you to create contextual system prompts that adapt to the current en
 ### MCP Servers
 
 Model Context Protocol (MCP) servers are configured in the unified configuration file under the `mcpServers` section. See the [Configuration](#configuration) section above for details on configuring MCP servers in your `cpe.yaml` file.
+
+### Code Mode
+
+Code Mode is an advanced feature that allows LLMs to generate and execute Go code to interact with MCP tools. Instead of making discrete tool calls, the LLM writes complete Go programs that can:
+
+- **Compose multiple tools** in a single execution without round-trips
+- **Use control flow** like loops and conditionals for complex logic
+- **Process data** using Go's standard library (file I/O, JSON, strings, etc.)
+- **Handle errors** with proper Go error handling patterns
+
+#### Enabling Code Mode
+
+Add code mode configuration to your `cpe.yaml`:
+
+```yaml
+defaults:
+  codeMode:
+    enabled: true
+    excludedTools:
+      - multimedia_tool  # Exclude tools returning images/videos
+      - stateful_tool    # Exclude tools that maintain state
+
+models:
+  - ref: sonnet
+    # Inherits defaults.codeMode
+  
+  - ref: small-model
+    # Override for this model only
+    codeMode:
+      enabled: true
+      excludedTools:
+        - expensive_tool
+```
+
+#### How It Works
+
+When code mode is enabled, CPE exposes a special `execute_go_code` tool that:
+1. Accepts complete Go source code from the LLM
+2. Compiles it with MCP tools exposed as strongly-typed functions
+3. Executes it in a temporary sandbox with configurable timeout
+4. Returns the output (stdout/stderr) to the LLM
+
+Example LLM-generated code:
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+)
+
+func Run(ctx context.Context) error {
+    weather, err := GetWeather(ctx, GetWeatherInput{
+        City: "Seattle",
+        Unit: "fahrenheit",
+    })
+    if err != nil {
+        return err
+    }
+    
+    fmt.Printf("Temperature in Seattle: %.0f°F\n", weather.Temperature)
+    return nil
+}
+```
+
+#### When to Use Code Mode
+
+**Enable code mode when:**
+- You have multiple related tools that need to be composed
+- Your tasks involve loops, conditionals, or complex data processing
+- You want to reduce latency from multiple LLM round-trips
+- You need file I/O or standard library functionality
+
+**Exclude tools from code mode when:**
+- They return multimedia content (images, video, audio)
+- They maintain state across calls (session-based tools)
+- They're built-in tools that models are specifically trained to use
+
+#### Security Considerations
+
+Generated code runs with the same permissions as the CPE process. For production use, consider:
+- Running CPE in a containerized or sandboxed environment
+- Using restricted file permissions
+- Setting conservative execution timeouts
+- Carefully configuring which tools are exposed
 
 ## Examples
 

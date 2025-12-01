@@ -15,6 +15,7 @@ Key capabilities:
 - `internal/`: Hosts all of the actual business logic and utilities
     -
     `agent/`: Package that hosts generator adapters, streaming/printing, thinking filter, system prompt generation, and agent creation to execute a user query
+    - `codemode/`: Package that hosts code mode implementation - schema to Go type conversion, tool collision detection, code execution sandbox, and execute_go_code tool
     - `config/`: Package that hosts configuration loading, validation, parameter merging, and config specific types
     - `mcp/`: Package that hosts MCP config validation and client, as well as code for connecting to MPC servers
     - `storage/`: Package that hosts SQLite-backed conversation storage (.cpeconvo) and related persistence code
@@ -52,6 +53,12 @@ Run (typical dev):
 # New conversation or continue specific one
 ./cpe --config ./examples/cpe.yaml -m sonnet -n "Start fresh"
 ./cpe --config ./examples/cpe.yaml -m sonnet -c <message_id> "Continue"
+
+# Enable code mode (composes MCP tools as Go functions)
+./cpe --config ./examples/cpe.yaml -m sonnet "Your prompt"  # If codeMode.enabled=true in config
+
+# Disable code mode for a specific invocation (if enabled by default)
+# Note: currently requires config change, no CLI flag exists
 ```
 
 Model utilities:
@@ -103,6 +110,7 @@ go generate ./internal/config/
 - Preference: Use table-driven tests
     - Share common setup/validation logic through helper functions or validation callbacks
     - Name test cases descriptively in the `name` field
+- **Use exact matching for test assertions**: Always compare expected vs actual output exactly. Do not use `strings.Contains` or partial matching for output verification; use full expected strings in `want` fields
 - Prefer httptest for HTTP; avoid real network calls
 - Keep tests deterministic; use short timeouts; avoid sleeping where possible
 - Isolate filesystem effects; clean up temp files; do not depend on developer-local state
@@ -112,6 +120,32 @@ go generate ./internal/config/
 ## Performance considerations
 
 CPE is a CLI tool and MCP client where execution time is dominated by network calls to AI model APIs. Performance optimizations are typically not a concern unless specifically requested by the user. Focus on correctness, maintainability, and user experience over micro-optimizations.
+
+## Code Mode
+
+Code mode allows LLMs to execute Go code to interact with MCP tools, providing:
+- **Composability**: Chain multiple tool calls in a single execution
+- **Control flow**: Use loops, conditionals, and error handling
+- **Efficiency**: Reduce round-trips between LLM and tools
+- **Standard library access**: File I/O, HTTP requests, data processing
+
+Configuration:
+```yaml
+defaults:
+  codeMode:
+    enabled: true
+    excludedTools:
+      - some_tool  # Expose as regular tool instead
+```
+
+The LLM generates complete Go programs implementing a `Run(ctx context.Context) error` function. CPE compiles and executes them in a temporary sandbox with access to MCP tools as strongly-typed Go functions.
+
+Implementation notes:
+- Tool schemas are converted to Go structs using `internal/codemode/schema.go`
+- Generated programs run with `go run` in `/tmp/cpe-tmp-*` directories
+- Execution timeout enforced via SIGINT→SIGKILL with 5s grace period
+- Exit codes: 0=success, 1=recoverable error, 2=panic (recoverable), 3=fatal error
+- Non-streaming printer renders generated code as syntax-highlighted Go blocks
 
 ## Documentation for Go Symbols
 

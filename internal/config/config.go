@@ -26,8 +26,14 @@ type Model struct {
 
 // PatchRequestConfig holds configuration for patching HTTP requests
 type PatchRequestConfig struct {
-	JSONPatch      []map[string]interface{} `json:"jsonPatch,omitempty" yaml:"jsonPatch,omitempty"`
-	IncludeHeaders map[string]string        `json:"includeHeaders,omitempty" yaml:"includeHeaders,omitempty"`
+	JSONPatch      []map[string]any  `json:"jsonPatch,omitempty" yaml:"jsonPatch,omitempty"`
+	IncludeHeaders map[string]string `json:"includeHeaders,omitempty" yaml:"includeHeaders,omitempty"`
+}
+
+// CodeModeConfig controls code mode behavior for MCP tools
+type CodeModeConfig struct {
+	Enabled       bool     `yaml:"enabled" json:"enabled"`
+	ExcludedTools []string `yaml:"excludedTools,omitempty" json:"excludedTools,omitempty"`
 }
 
 // RawConfig represents the configuration file structure
@@ -39,7 +45,7 @@ type RawConfig struct {
 	Models []ModelConfig `yaml:"models" json:"models" validate:"gt=0,unique=Ref,dive"`
 
 	// Default settings
-	Defaults Defaults `yaml:"defaults,omitempty" json:"defaults,omitempty"`
+	Defaults Defaults `yaml:"defaults,omitempty" json:"defaults"`
 
 	// Version for future compatibility
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`
@@ -93,6 +99,9 @@ type Defaults struct {
 
 	// Disable streaming globally
 	NoStream bool `yaml:"noStream,omitempty" json:"noStream,omitempty"`
+
+	// Code mode configuration
+	CodeMode *CodeModeConfig `yaml:"codeMode,omitempty" json:"codeMode,omitempty"`
 }
 
 // ModelConfig extends the base model with generation defaults
@@ -104,6 +113,9 @@ type ModelConfig struct {
 
 	// Generation parameter defaults for this model
 	GenerationDefaults *GenerationParams `yaml:"generationDefaults,omitempty" json:"generationDefaults,omitempty" validate:"omitempty"`
+
+	// Code mode configuration for this model (overrides global defaults)
+	CodeMode *CodeModeConfig `yaml:"codeMode,omitempty" json:"codeMode,omitempty"`
 }
 
 // FindModel searches for a model by ref in the config
@@ -135,6 +147,9 @@ type Config struct {
 
 	// Whether streaming is disabled
 	NoStream bool
+
+	// Effective code mode configuration
+	CodeMode *CodeModeConfig
 }
 
 // RuntimeOptions captures runtime overrides from CLI flags and environment

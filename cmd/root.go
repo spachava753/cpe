@@ -157,6 +157,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		customURL,
 		effectiveConfig.NoStream,
 		effectiveConfig.MCPServers,
+		effectiveConfig.CodeMode,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create tool capable generator: %w", err)

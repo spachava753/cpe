@@ -1,0 +1,190 @@
+package main
+
+import (
+	"context"
+{{- if .HasTools}}
+	"encoding/json"
+	"errors"
+{{- end}}
+	"fmt"
+	"os"
+{{- if .HasStdio}}
+	"os/exec"
+{{- end}}
+	"os/signal"
+	"syscall"
+{{- if .HasHeaders}}
+	"net/http"
+{{- end}}
+{{- if .HasServers}}
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+{{- end}}
+)
+
+func fatalExit(err error) {
+	fmt.Println(err)
+	os.Exit(3)
+}
+
+// ptr returns a pointer to the given value. Use this for optional fields.
+func ptr[T any](v T) *T {
+	return &v
+}
+{{- if .HasHeaders}}
+
+type headerRoundTripper struct {
+	headers map[string]string
+	next    http.RoundTripper
+}
+
+func (h *headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	for name, value := range h.headers {
+		req.Header.Set(name, value)
+	}
+	if h.next == nil {
+		h.next = http.DefaultTransport
+	}
+	return h.next.RoundTrip(req)
+}
+{{- end}}
+{{- if .HasTools}}
+
+// callMcpTool is a reusable utility function for calling an MCP tool
+func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSession, toolName string, input I) (O, error) {
+	var output O
+
+	if err := ctx.Err(); err != nil {
+		return output, err
+	}
+
+	result, err := clientSession.CallTool(ctx, &mcp.CallToolParams{Name: toolName, Arguments: input})
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return output, err
+		}
+		fatalExit(fmt.Errorf("error calling tool %s: %w", toolName, err))
+	}
+
+	if len(result.Content) != 1 {
+		fatalExit(fmt.Errorf("expected 1 content part from tool %s, got %d", toolName, len(result.Content)))
+	}
+
+	var textContent string
+
+	switch c := result.Content[0].(type) {
+	case *mcp.TextContent:
+		textContent = c.Text
+	default:
+		fatalExit(fmt.Errorf("unexpected content type returned from tool %s, cannot handle multimedia except text", toolName))
+	}
+
+	if result.IsError {
+		return output, errors.New(textContent)
+	}
+
+	// If O is string, return raw text content directly
+	if _, isString := any(output).(string); isString {
+		return any(textContent).(O), nil
+	}
+
+	outputJson := []byte(textContent)
+
+	if result.StructuredContent != nil {
+		structuredContent, err := json.Marshal(result.StructuredContent)
+		if err != nil {
+			fatalExit(fmt.Errorf("could not marshal structured content: %w", err))
+		}
+		outputJson = structuredContent
+	}
+
+	if err := json.Unmarshal(outputJson, &output); err != nil {
+		fatalExit(fmt.Errorf("could not unmarshal structured content json into output for tool %s: %w", toolName, err))
+	}
+	return output, nil
+}
+
+{{.ToolDefinitions}}
+{{- end}}
+
+func main() {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+{{- if .HasServers}}
+
+	mcpClient := mcp.NewClient(&mcp.Implementation{Name: "cpe-code-mode", Version: "v1.0.0"}, nil)
+{{- range .Servers}}
+
+	// {{.ServerName}} server
+{{- if eq .Type "stdio"}}
+	{{.VarName}}Cmd := exec.Command({{quote .Command}}{{range .Args}}, {{quote .}}{{end}})
+{{- if .HasEnv}}
+	{{.VarName}}Cmd.Env = append(os.Environ(){{range $k, $v := .Env}}, {{quote $k}}+"="+{{quote $v}}{{end}})
+{{- end}}
+	{{.VarName}}Transport := &mcp.CommandTransport{Command: {{.VarName}}Cmd}
+{{- else if eq .Type "http"}}
+{{- if .HasHeaders}}
+	{{.VarName}}HttpClient := &http.Client{
+		Transport: &headerRoundTripper{
+			headers: map[string]string{
+{{- range $k, $v := .Headers}}
+				{{quote $k}}: {{quote $v}},
+{{- end}}
+			},
+		},
+	}
+	{{.VarName}}Transport := &mcp.StreamableClientTransport{
+		Endpoint:   {{quote .URL}},
+		HTTPClient: {{.VarName}}HttpClient,
+	}
+{{- else}}
+	{{.VarName}}Transport := &mcp.StreamableClientTransport{Endpoint: {{quote .URL}}}
+{{- end}}
+{{- else if eq .Type "sse"}}
+{{- if .HasHeaders}}
+	{{.VarName}}HttpClient := &http.Client{
+		Transport: &headerRoundTripper{
+			headers: map[string]string{
+{{- range $k, $v := .Headers}}
+				{{quote $k}}: {{quote $v}},
+{{- end}}
+			},
+		},
+	}
+	{{.VarName}}Transport := &mcp.SSEClientTransport{
+		Endpoint:   {{quote .URL}},
+		HTTPClient: {{.VarName}}HttpClient,
+	}
+{{- else}}
+	{{.VarName}}Transport := &mcp.SSEClientTransport{Endpoint: {{quote .URL}}}
+{{- end}}
+{{- end}}
+	{{.VarName}}, err := mcpClient.Connect(ctx, {{.VarName}}Transport, nil)
+	if err != nil {
+		fatalExit(fmt.Errorf("could not connect to {{.ServerName}} server: %w", err))
+	}
+	defer {{.VarName}}.Close()
+{{- end}}
+{{- if .HasTools}}
+
+	// Initialize tool functions
+{{- range .ToolInits}}
+{{- if .HasInput}}
+	{{.GoName}} = func(ctx context.Context, input {{.InputType}}) ({{.OutputType}}, error) {
+		return callMcpTool[{{.InputType}}, {{.OutputType}}](ctx, {{.SessionVar}}, {{quote .ToolName}}, input)
+	}
+{{- else}}
+	{{.GoName}} = func(ctx context.Context) ({{.OutputType}}, error) {
+		return callMcpTool[struct{}, {{.OutputType}}](ctx, {{.SessionVar}}, {{quote .ToolName}}, struct{}{})
+	}
+{{- end}}
+{{- end}}
+{{- end}}
+{{- end}}
+
+	err {{if .HasServers}}={{else}}:={{end}} Run(ctx)
+	if err != nil {
+		fmt.Printf("\nexecution error: %s\n", err)
+		os.Exit(1)
+	}
+}

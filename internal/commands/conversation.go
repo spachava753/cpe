@@ -173,7 +173,7 @@ func (f *MarkdownDialogFormatter) FormatDialog(dialog gai.Dialog, msgIds []strin
 					md.WriteString(formatToolCallMarkdown(content))
 				case gai.Thinking:
 					md.WriteString("> **Thinking:**\n>\n")
-					for _, line := range strings.Split(content, "\n") {
+					for line := range strings.SplitSeq(content, "\n") {
 						md.WriteString(fmt.Sprintf("> %s\n", line))
 					}
 					md.WriteString("\n")
@@ -226,7 +226,7 @@ func isJSON(str string) bool {
 	if len(str) == 0 {
 		return false
 	}
-	var js interface{}
+	var js any
 	return json.Unmarshal([]byte(str), &js) == nil
 }
 

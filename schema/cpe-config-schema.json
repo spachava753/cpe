@@ -3,6 +3,21 @@
   "$id": "https://raw.githubusercontent.com/spachava753/cpe/refs/heads/main/schema/cpe-config-schema.json",
   "$ref": "#/$defs/RawConfig",
   "$defs": {
+    "CodeModeConfig": {
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "excludedTools": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "Defaults": {
       "properties": {
         "systemPromptPath": {
@@ -19,6 +34,9 @@
         },
         "noStream": {
           "type": "boolean"
+        },
+        "codeMode": {
+          "$ref": "#/$defs/CodeModeConfig"
         }
       },
       "additionalProperties": false,
@@ -103,6 +121,9 @@
         },
         "generationDefaults": {
           "$ref": "#/$defs/GenerationParams"
+        },
+        "codeMode": {
+          "$ref": "#/$defs/CodeModeConfig"
         }
       },
       "additionalProperties": false,

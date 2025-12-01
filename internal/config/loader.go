@@ -149,6 +149,13 @@ func (c *RawConfig) expandEnvironmentVariables() error {
 			}
 			model.PatchRequest.IncludeHeaders = expandedHeaders
 		}
+		if model.CodeMode != nil && model.CodeMode.ExcludedTools != nil {
+			expandedTools := make([]string, len(model.CodeMode.ExcludedTools))
+			for j := range model.CodeMode.ExcludedTools {
+				expandedTools[j] = os.ExpandEnv(model.CodeMode.ExcludedTools[j])
+			}
+			model.CodeMode.ExcludedTools = expandedTools
+		}
 	}
 
 	// Expand in MCP server configurations
@@ -191,6 +198,13 @@ func (c *RawConfig) expandEnvironmentVariables() error {
 
 	// Expand in defaults
 	c.Defaults.SystemPromptPath = os.ExpandEnv(c.Defaults.SystemPromptPath)
+	if c.Defaults.CodeMode != nil && c.Defaults.CodeMode.ExcludedTools != nil {
+		expandedTools := make([]string, len(c.Defaults.CodeMode.ExcludedTools))
+		for i := range c.Defaults.CodeMode.ExcludedTools {
+			expandedTools[i] = os.ExpandEnv(c.Defaults.CodeMode.ExcludedTools[i])
+		}
+		c.Defaults.CodeMode.ExcludedTools = expandedTools
+	}
 
 	return nil
 }
@@ -293,6 +307,15 @@ func ResolveConfig(configPath string, opts RuntimeOptions) (*Config, error) {
 		noStream = rawCfg.Defaults.NoStream
 	}
 
+	// Resolve code mode configuration with override behavior (not merge)
+	// Model-level completely replaces defaults
+	var codeMode *CodeModeConfig
+	if selectedModel.CodeMode != nil {
+		codeMode = selectedModel.CodeMode
+	} else if rawCfg.Defaults.CodeMode != nil {
+		codeMode = rawCfg.Defaults.CodeMode
+	}
+
 	return &Config{
 		MCPServers:         rawCfg.MCPServers,
 		Model:              selectedModel.Model,
@@ -300,5 +323,6 @@ func ResolveConfig(configPath string, opts RuntimeOptions) (*Config, error) {
 		GenerationDefaults: genParams,
 		Timeout:            timeout,
 		NoStream:           noStream,
+		CodeMode:           codeMode,
 	}, nil
 }
