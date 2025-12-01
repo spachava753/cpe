@@ -71,6 +71,61 @@ func Run(ctx context.Context) error {
 
 8. **Respect context**: Pass `ctx` to all blocking operations (tool calls, HTTP requests, exec commands). Use `http.NewRequestWithContext` for HTTP.
 
+## Prefer standard library
+
+Always prefer the Go standard library over shell commands when possible:
+- File listing: `os.ReadDir` instead of `ls` or `find`
+- File I/O: `os.ReadFile`, `os.WriteFile`, `os.Create`, `os.Remove`
+- Path operations: `filepath.Walk`, `filepath.Glob`, `filepath.Join`
+- Date/time: `time.Now()`, `time.Parse` instead of `date` command
+- Environment: `os.Getenv`, `os.Setenv`
+- JSON: `encoding/json` for parsing/encoding
+
+Use shell commands when they provide clear advantages (e.g., `rg` for complex regex search, `git` for version control, `gh` for GitHub API).
+
+## File editing
+
+Prefer **surgical edits** over rewriting entire files:
+
+```go
+// Read, replace specific content, write back
+content, _ := os.ReadFile(path)
+newContent := strings.Replace(string(content), oldText, newText, 1) // single replacement
+os.WriteFile(path, []byte(newContent), 0644)
+```
+
+For complex edits, use regex:
+```go
+re := regexp.MustCompile(`pattern`)
+newContent := re.ReplaceAllString(string(content), replacement)
+```
+
+**Backticks in strings**: Go raw strings use backticks, so to include literal backticks in output (e.g., markdown code fences), concatenate:
+```go
+content := "# Header\n" + "```go\ncode here\n" + "```"
+```
+
+## Reading large files
+
+For large files, read in sections rather than loading entirely:
+- Use `rg -A N -B M pattern file` to extract context around matches
+- For line ranges, use Go's `bufio.Scanner` with line counting (do NOT use `sed`)
+- Check file size with `os.Stat` before reading; if >10KB, consider targeted extraction
+- For Go source, use `go doc pkg.Symbol` to get function/type documentation
+
+Example reading lines 50-70:
+```go
+file, _ := os.Open(path)
+defer file.Close()
+scanner := bufio.NewScanner(file)
+for i := 1; scanner.Scan(); i++ {
+    if i >= 50 && i <= 70 {
+        fmt.Printf("%d: %s\n", i, scanner.Text())
+    }
+    if i > 70 { break }
+}
+```
+
 ## Patterns
 
 ### Shell commands
@@ -223,7 +278,6 @@ assistant: true
 user: what command should I run to list files in the current directory?
 assistant: Run `ls`
 ```
-
 {{- if and .CodeMode .CodeMode.Enabled }}
 ```text
 user: write tests for new feature
@@ -241,6 +295,7 @@ Finished the refactor.
 ```text
 user: get the weather for each city in cities.txt
 assistant: [generates Go code that reads file, fans out with errgroup to call weather API for each city concurrently, prints results]
+Finished.
 ```
 {{- else }}
 ```text
