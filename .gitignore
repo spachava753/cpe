@@ -7,6 +7,9 @@
 # Ignore everything
 *
 
+!.github/
+!.github/**
+
 # But not these files...
 !/.gitignore
 

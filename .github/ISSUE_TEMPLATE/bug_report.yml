@@ -1,0 +1,119 @@
+name: Bug Report
+description: Report a bug or unexpected behavior in CPE
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the sections below to help us understand and reproduce the issue.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected Area
+      description: Which part of CPE is affected?
+      options:
+        - Model interaction (OpenAI, Anthropic, Gemini, etc.)
+        - MCP server/tools
+        - Code mode execution
+        - Conversation management
+        - Configuration/setup
+        - File/folder operations
+        - CLI flags/commands
+        - Token counting/context
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Model Provider
+      description: Which model provider type were you using?
+      options:
+        - anthropic
+        - openai
+        - gemini
+        - groq
+        - cerebras
+        - responses
+        - N/A
+    validations:
+      required: true
+
+  - type: input
+    id: model-id
+    attributes:
+      label: Model ID
+      description: The model ID from your config (the 'id' field, not the 'name')
+      placeholder: "e.g., claude-3-5-sonnet-20241022, gpt-4o, gemini-1.5-pro"
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear description of what the bug is
+      placeholder: Describe what happened
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this issue?
+      placeholder: |
+        1. Run `cpe --config ... -m ...`
+        2. Provide prompt "..."
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant Configuration
+      description: Paste relevant parts of your cpe.yaml (redact API keys!)
+      render: yaml
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error Output / Logs
+      description: Any error messages or relevant terminal output
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Please provide your environment details
+      value: |
+        - CPE version: [e.g., v0.1.0 or commit hash]
+        - Go version: [e.g., 1.24.0]
+        - OS: [e.g., Ubuntu 22.04, macOS 14.2, Windows 11]
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context, screenshots, or information
+    validations:
+      required: false

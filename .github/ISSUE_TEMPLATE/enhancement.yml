@@ -1,0 +1,87 @@
+name: Feature Request / Enhancement
+description: Suggest a new feature or improvement for CPE
+title: "[Enhancement]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement to CPE! Please describe your idea below.
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Enhancement Category
+      description: What type of enhancement is this?
+      options:
+        - New AI model support
+        - New MCP tool/server integration
+        - Code mode improvements
+        - Conversation management
+        - Configuration/setup UX
+        - CLI commands/flags
+        - Performance optimization
+        - Documentation
+        - Developer experience
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Use Case
+      description: What problem does this solve, or what workflow would it enable?
+      placeholder: |
+        I'm trying to... but currently CPE doesn't support...
+        
+        OR
+        
+        When working with [specific AI model/MCP server/codebase type], it would be helpful to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: How would you like this to work?
+      placeholder: |
+        Describe the feature, new flag, command, or behavior you'd like to see.
+        
+        Example usage:
+        ```bash
+        cpe --new-flag "prompt"
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Have you tried any workarounds or considered alternative approaches?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Impact Scope
+      description: How broadly would this benefit users?
+      options:
+        - Everyone using CPE
+        - Users of specific AI providers
+        - Users with MCP integrations
+        - Power users / advanced workflows
+        - Niche use case
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context, mockups, or examples
+    validations:
+      required: false
