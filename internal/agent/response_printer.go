@@ -69,10 +69,15 @@ func NewResponsePrinterGenerator(wrapped gai.ToolCapableGenerator) *ResponsePrin
 
 	style.Document.BlockPrefix = ""
 
-	// we want the text of the thinking style to be a bit muted to differentiate from normal content text
+	// we want the color of the text of the thinking style to be differentiated from normal content text
 	thinkingStyle := style
 	textColor, _ := strconv.Atoi(*thinkingStyle.Document.Color)
-	textColor = textColor - 4
+	if termenv.HasDarkBackground() {
+		textColor = textColor - 4
+	} else {
+		textColor = textColor + 4
+	}
+
 	thinkingTextColor := strconv.Itoa(textColor)
 	thinkingStyle.Text.Color = &thinkingTextColor
 	thinkingStyle.Document.BlockSuffix = "\n"
