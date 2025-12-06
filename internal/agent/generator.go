@@ -140,6 +140,14 @@ func CreateToolCapableGenerator(
 	// Wrap the tool generator with BlockWhitelistFilter to filter thinking blocks
 	// only from the initial dialog, but preserve them during tool execution
 	filterToolGen := NewBlockWhitelistFilter(toolGen, []string{gai.Content, gai.ToolCall})
+	
+	// Wrap with tool result printer to print tool execution results to stderr
+	// Use the same content renderer for consistent styling
+	toolResultRenderer, err := newContentRenderer()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tool result renderer: %w", err)
+	}
+	toolResultPrinter := NewToolResultPrinterWrapper(filterToolGen, toolResultRenderer)
 
 	// Create client manager
 	client := mcp.NewClient()
@@ -185,13 +193,13 @@ func CreateToolCapableGenerator(
 			Servers: serverToolsInfo,
 		}
 
-		if err := filterToolGen.Register(executeGoCodeTool, callback); err != nil {
+		if err := toolResultPrinter.Register(executeGoCodeTool, callback); err != nil {
 			return nil, fmt.Errorf("failed to register execute_go_code tool: %w", err)
 		}
 
 		// Register excluded tools normally
 		for _, toolData := range excludedTools {
-			if err := filterToolGen.Register(toolData.Tool, toolData.ToolCallback); err != nil {
+			if err := toolResultPrinter.Register(toolData.Tool, toolData.ToolCallback); err != nil {
 				return nil, fmt.Errorf("failed to register excluded tool %s: %w", toolData.Tool.Name, err)
 			}
 		}
@@ -199,12 +207,12 @@ func CreateToolCapableGenerator(
 		// Code mode disabled: register all tools normally
 		for _, tools := range toolsByServer {
 			for _, toolData := range tools {
-				if err := filterToolGen.Register(toolData.Tool, toolData.ToolCallback); err != nil {
+				if err := toolResultPrinter.Register(toolData.Tool, toolData.ToolCallback); err != nil {
 					return nil, fmt.Errorf("failed to register tool %s: %w", toolData.Tool.Name, err)
 				}
 			}
 		}
 	}
 
-	return filterToolGen, nil
+	return toolResultPrinter, nil
 }

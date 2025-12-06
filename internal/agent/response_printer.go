@@ -17,6 +17,31 @@ import (
 	"golang.org/x/term"
 )
 
+
+// newContentRenderer creates a glamour renderer for content with appropriate styling
+func newContentRenderer() (Renderer, error) {
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		style := styles.NoTTYStyleConfig
+		style.Document.BlockPrefix = ""
+
+		return glamour.NewTermRenderer(
+			glamour.WithStyles(style),
+			glamour.WithWordWrap(120),
+		)
+	}
+
+	style := styles.LightStyleConfig
+	if termenv.HasDarkBackground() {
+		style = styles.DarkStyleConfig
+	}
+	style.Document.BlockPrefix = ""
+
+	return glamour.NewTermRenderer(
+		glamour.WithStyles(style),
+		glamour.WithWordWrap(120),
+	)
+}
+
 type Renderer interface {
 	Render(in string) (string, error)
 }
