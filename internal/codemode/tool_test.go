@@ -13,7 +13,7 @@ import (
 func TestExecuteGoCodeCallback_Call(t *testing.T) {
 	tests := []struct {
 		name           string
-		input          executeGoCodeInput
+		input          ExecuteGoCodeInput
 		wantErr        bool
 		wantFatalErr   bool
 		wantOutputSub  string // substring expected in output
@@ -21,7 +21,7 @@ func TestExecuteGoCodeCallback_Call(t *testing.T) {
 	}{
 		{
 			name: "successful execution",
-			input: executeGoCodeInput{
+			input: ExecuteGoCodeInput{
 				Code: `package main
 
 import (
@@ -40,7 +40,7 @@ func Run(ctx context.Context) error {
 		},
 		{
 			name: "compilation error - syntax",
-			input: executeGoCodeInput{
+			input: ExecuteGoCodeInput{
 				Code: `package main
 
 func Run(ctx context.Context) error {
@@ -54,7 +54,7 @@ func Run(ctx context.Context) error {
 		},
 		{
 			name: "compilation error - missing import",
-			input: executeGoCodeInput{
+			input: ExecuteGoCodeInput{
 				Code: `package main
 
 func Run(ctx context.Context) error {
@@ -68,7 +68,7 @@ func Run(ctx context.Context) error {
 		},
 		{
 			name: "Run returns error - exit code 1",
-			input: executeGoCodeInput{
+			input: ExecuteGoCodeInput{
 				Code: `package main
 
 import (
@@ -86,7 +86,7 @@ func Run(ctx context.Context) error {
 		},
 		{
 			name: "panic - exit code 2",
-			input: executeGoCodeInput{
+			input: ExecuteGoCodeInput{
 				Code: `package main
 
 import "context"
@@ -101,7 +101,7 @@ func Run(ctx context.Context) error {
 		},
 		{
 			name: "fatal exit - exit code 3",
-			input: executeGoCodeInput{
+			input: ExecuteGoCodeInput{
 				Code: `package main
 
 import (
@@ -124,7 +124,7 @@ func Run(ctx context.Context) error {
 		},
 		{
 			name: "timeout exceeded",
-			input: executeGoCodeInput{
+			input: ExecuteGoCodeInput{
 				Code: `package main
 
 import (
@@ -144,7 +144,7 @@ func Run(ctx context.Context) error {
 		},
 		{
 			name: "invalid JSON parameters",
-			input: executeGoCodeInput{
+			input: ExecuteGoCodeInput{
 				Code:             "", // Will test with raw invalid JSON
 				ExecutionTimeout: 0,
 			},
@@ -238,7 +238,7 @@ func TestExecuteGoCodeCallback_ContextCancellation(t *testing.T) {
 
 	callback := &ExecuteGoCodeCallback{Servers: nil}
 
-	input := executeGoCodeInput{
+	input := ExecuteGoCodeInput{
 		Code: `package main
 
 import (

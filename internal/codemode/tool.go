@@ -9,7 +9,7 @@ import (
 )
 
 // executeGoCodeInput represents the input parameters for the execute_go_code tool
-type executeGoCodeInput struct {
+type ExecuteGoCodeInput struct {
 	Code             string `json:"code"`
 	ExecutionTimeout int    `json:"executionTimeout"`
 }
@@ -28,7 +28,7 @@ type ExecuteGoCodeCallback struct {
 //   - Infrastructure errors: error that stops agent execution
 func (c *ExecuteGoCodeCallback) Call(ctx context.Context, parametersJSON json.RawMessage, toolCallID string) (gai.Message, error) {
 	// Parse input parameters
-	var input executeGoCodeInput
+	var input ExecuteGoCodeInput
 	if err := json.Unmarshal(parametersJSON, &input); err != nil {
 		return gai.ToolResultMessage(toolCallID, gai.Text, "text/plain", gai.Str("Error parsing parameters: "+err.Error())), nil
 	}
