@@ -39,6 +39,11 @@ func TestRenderToolCall(t *testing.T) {
 		{
 			name:    "execute_go_code renders as Go block",
 			content: `{"name":"execute_go_code","parameters":{"code":"package main\n\nfunc Run() error { return nil }","executionTimeout":30}}`,
+			want:    "#### [tool call] (timeout: 30s)\n```go\npackage main\n\nfunc Run() error { return nil }\n```",
+		},
+		{
+			name:    "execute_go_code without timeout renders without timeout",
+			content: `{"name":"execute_go_code","parameters":{"code":"package main\n\nfunc Run() error { return nil }"}}`,
 			want:    "#### [tool call]\n```go\npackage main\n\nfunc Run() error { return nil }\n```",
 		},
 		{

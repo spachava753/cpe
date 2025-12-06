@@ -138,11 +138,20 @@ func (g *ResponsePrinterGenerator) renderToolCall(content string) string {
 	var toolCall gai.ToolCallInput
 	if err := json.Unmarshal([]byte(content), &toolCall); err == nil {
 		if toolCall.Name == codemode.ExecuteGoCodeToolName {
-			if code, ok := toolCall.Parameters["code"].(string); ok && code != "" {
-				result := fmt.Sprintf("#### [tool call]\n```go\n%s\n```", code)
-				rendered, err := g.contentRenderer.Render(result)
-				if err == nil {
-					return rendered
+			// Unmarshal parameters into the typed struct
+			paramsJSON, err := json.Marshal(toolCall.Parameters)
+			if err == nil {
+				var input codemode.ExecuteGoCodeInput
+				if err := json.Unmarshal(paramsJSON, &input); err == nil && input.Code != "" {
+					header := "#### [tool call]"
+					if input.ExecutionTimeout > 0 {
+						header = fmt.Sprintf("#### [tool call] (timeout: %ds)", input.ExecutionTimeout)
+					}
+					result := fmt.Sprintf("%s\n```go\n%s\n```", header, input.Code)
+					rendered, err := g.contentRenderer.Render(result)
+					if err == nil {
+						return rendered
+					}
 				}
 			}
 		}
