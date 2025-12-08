@@ -1,0 +1,82 @@
+#!/bin/bash
+set -e
+
+apt-get update
+apt-get install -y curl git
+
+# Install Go
+curl -fsSL https://go.dev/dl/go1.24.0.linux-amd64.tar.gz | tar -C /usr/local -xzf -
+export PATH="/usr/local/go/bin:/root/go/bin:$PATH"
+echo 'export PATH="/usr/local/go/bin:/root/go/bin:$PATH"' >> ~/.bashrc
+
+# Install CPE
+{% if version and version != 'latest' %}
+go install github.com/spachava753/cpe@{{ version }}
+{% else %}
+go install github.com/spachava753/cpe@latest
+{% endif %}
+
+# Create config directory
+mkdir -p ~/.config/cpe
+
+# Write CPE configuration with code mode enabled
+cat > ~/.config/cpe/cpe.yaml << 'EOF'
+version: "1.0"
+
+models:
+  - ref: sonnet
+    display_name: "Claude Sonnet 4.5"
+    id: claude-sonnet-4-5-20250929
+    type: anthropic
+    base_url: https://api.anthropic.com/
+    api_key_env: ANTHROPIC_API_KEY
+    context_window: 200000
+    max_output: 64000
+    input_cost_per_million: 3
+    output_cost_per_million: 15
+    generationDefaults:
+      temperature: 1.0
+      maxGenerationTokens: 64000
+
+  - ref: opus
+    display_name: "Claude Opus 4.5"
+    id: claude-opus-4-5-20251101
+    type: anthropic
+    base_url: https://api.anthropic.com/
+    api_key_env: ANTHROPIC_API_KEY
+    context_window: 200000
+    max_output: 64000
+    input_cost_per_million: 5
+    output_cost_per_million: 25
+    generationDefaults:
+      temperature: 1.0
+      maxGenerationTokens: 64000
+
+  - ref: haiku
+    display_name: "Claude Haiku 4.5"
+    id: claude-haiku-4-5-20251001
+    type: anthropic
+    base_url: https://api.anthropic.com/
+    api_key_env: ANTHROPIC_API_KEY
+    context_window: 200000
+    max_output: 64000
+    input_cost_per_million: 1
+    output_cost_per_million: 5
+    generationDefaults:
+      temperature: 1.0
+      maxGenerationTokens: 64000
+
+defaults:
+  systemPromptPath: "/root/.config/cpe/agent_instructions.prompt"
+  model: sonnet
+  timeout: "30m"
+  noStream: true
+  codeMode:
+    enabled: true
+EOF
+
+# Download the system prompt template from GitHub
+curl -fsSL https://raw.githubusercontent.com/spachava753/cpe/main/examples/agent_instructions.prompt \
+  -o ~/.config/cpe/agent_instructions.prompt
+
+echo "CPE installation complete"

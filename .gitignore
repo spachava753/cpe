@@ -34,5 +34,11 @@
 !schema/
 !schema/**
 
+# Harbor integration for agent evaluation
+!cpe_harbor/
+!cpe_harbor/**
+# Re-ignore pycache inside cpe_harbor
+cpe_harbor/__pycache__/
+
 # ...even if they are in subdirectories
 !*/
