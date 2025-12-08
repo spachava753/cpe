@@ -154,3 +154,22 @@ When gathering context about symbols like types, global variables, constants, fu
 `go doc github.com/example/pkg.Type` to get documentation about a specific symbol. Avoid using
 `go doc -all` as it may overwhelm your context window. Instead, if you need to perform a search or fuzzy search for a symbol, feed the output of
 `go doc -all` into a cli like `rg`, `fzf`, etc.   
+
+## Harbor Integration
+
+CPE can be evaluated using the [Harbor](https://github.com/laude-institute/harbor) agent evaluation framework. The integration files are in `cpe_harbor/`:
+
+- `cpe.py` - Installed agent class extending `BaseInstalledAgent`
+- `install-cpe.sh.j2` - Jinja2 template for container setup (installs Go, CPE, config)
+
+**Testing locally:**
+```bash
+# Harbor venv on this machine: /home/shashank/.harbor_venv
+harbor run -d "hello-world@head" -e docker --agent-import-path cpe_harbor.cpe:CPE -n 1
+```
+
+**Notes:**
+- The system prompt is fetched via curl from GitHub to avoid Jinja2/Go template syntax conflicts
+- CPE runs with `-n -G --skip-stdin` flags (new conversation, incognito, no stdin)
+- API keys are passed from host environment based on model provider
+
