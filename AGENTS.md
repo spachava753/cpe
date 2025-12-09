@@ -172,4 +172,3 @@ harbor run -d "hello-world@head" -e docker --agent-import-path cpe_harbor.cpe:CP
 - The system prompt is fetched via curl from GitHub to avoid Jinja2/Go template syntax conflicts
 - CPE runs with `-n -G --skip-stdin` flags (new conversation, incognito, no stdin)
 - API keys are passed from host environment based on model provider
-
