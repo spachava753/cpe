@@ -54,11 +54,14 @@ class CPE(BaseInstalledAgent):
             if api_key:
                 env["ANTHROPIC_API_KEY"] = api_key
 
+        # Build CPE command with optional model flag
+        model_flag = f"-m {self.model_name} " if self.model_name else ""
+        
         return [
             ExecInput(
                 command=(
                     'export PATH="/root/go/bin:/usr/local/go/bin:$PATH" && '
-                    f"cpe -n -G --skip-stdin {escaped_instruction} "
+                    f"cpe -n -G --skip-stdin {model_flag}{escaped_instruction} "
                     "2>&1 | tee /logs/agent/cpe.txt"
                 ),
                 env=env,
