@@ -523,3 +523,42 @@ func Run(ctx context.Context) error {
 		t.Fatalf("go build error: %v\n%s\n\nGenerated main.go:\n%s", err, out, mainGo)
 	}
 }
+
+
+func TestExecuteCode_AutoCorrectImports(t *testing.T) {
+	// Only run this test if goimports is installed
+	ctx := context.Background()
+	llmCode := `package main
+
+import (
+	"context"
+)
+
+func Run(ctx context.Context) error {
+	// fmt is missing, but goimports should add it
+	fmt.Println("Imports corrected")
+	return nil
+}
+`
+
+	result, err := ExecuteCode(ctx, nil, llmCode, 30)
+	if err != nil {
+		t.Fatalf("ExecuteCode() error: %v, output: %s", err, result.Output)
+	}
+
+	if result.ExitCode != 0 {
+		t.Errorf("ExitCode = %d, want 0; output: %s", result.ExitCode, result.Output)
+	}
+
+	if !strings.Contains(result.Output, "Imports in run.go were auto-corrected") {
+		t.Errorf("Output = %q, want to contain auto-correction note", result.Output)
+	}
+
+	if !strings.Contains(result.Output, "Added: fmt") {
+		t.Errorf("Output = %q, want to contain 'Added: fmt'", result.Output)
+	}
+	
+	if !strings.Contains(result.Output, "Imports corrected") {
+		t.Errorf("Output = %q, want to contain program output 'Imports corrected'", result.Output)
+	}
+}
