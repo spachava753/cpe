@@ -52,19 +52,21 @@ func Run(ctx context.Context) error {
 			},
 			wantOutputSub: "syntax error",
 		},
-		{
-			name: "compilation error - missing import",
+				{
+			name: "compilation error - undefined variable",
 			input: ExecuteGoCodeInput{
 				Code: `package main
 
+import "context"
+
 func Run(ctx context.Context) error {
-	fmt.Println("missing import")
+	_ = bar // undefined
 	return nil
 }
 `,
 				ExecutionTimeout: 30,
 			},
-			wantOutputSub: "undefined: fmt",
+			wantOutputSub: "undefined: bar",
 		},
 		{
 			name: "Run returns error - exit code 1",

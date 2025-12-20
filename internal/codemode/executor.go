@@ -60,11 +60,15 @@ func ExecuteCode(ctx context.Context, servers []ServerToolsInfo, llmCode string,
 		return ExecutionResult{}, fmt.Errorf("writing run.go: %w", err)
 	}
 
+	// Auto-correct imports
+	importNote := autoCorrectImports(ctx, tempDir, "run.go")
+
 	// Run go mod tidy
 	tidyResult, err := runCommand(ctx, tempDir, "go", "mod", "tidy")
 	if err != nil {
 		return ExecutionResult{}, fmt.Errorf("running go mod tidy: %w", err)
 	}
+	tidyResult.Output += importNote
 	if tidyResult.ExitCode != 0 {
 		return ExecutionResult{
 			Output:   tidyResult.Output,
@@ -78,6 +82,7 @@ func ExecuteCode(ctx context.Context, servers []ServerToolsInfo, llmCode string,
 	if err != nil {
 		return ExecutionResult{}, fmt.Errorf("running go build: %w", err)
 	}
+	buildResult.Output += importNote
 	if buildResult.ExitCode != 0 {
 		return ExecutionResult{
 			Output:   buildResult.Output,
@@ -87,6 +92,7 @@ func ExecuteCode(ctx context.Context, servers []ServerToolsInfo, llmCode string,
 
 	// Execute the built binary with timeout and graceful shutdown
 	result, err := runProgramWithTimeout(ctx, binaryPath, timeoutSecs)
+	result.Output += importNote
 	if err != nil {
 		return result, err
 	}
@@ -189,4 +195,34 @@ func classifyExitCode(result ExecutionResult) error {
 		// Other non-zero codes (e.g., -1 from SIGKILL) are recoverable
 		return RecoverableError{Output: result.Output, ExitCode: result.ExitCode}
 	}
+}
+
+
+// autoCorrectImports runs goimports on the file and returns a notification message if changes were made.
+func autoCorrectImports(ctx context.Context, dir, filename string) string {
+	// Check if goimports is available
+	if _, err := exec.LookPath("goimports"); err != nil {
+		return ""
+	}
+
+	filePath := filepath.Join(dir, filename)
+	orig, err := os.ReadFile(filePath)
+	if err != nil {
+		return ""
+	}
+
+	// Run goimports -w
+	cmd := exec.CommandContext(ctx, "goimports", "-w", filename)
+	cmd.Dir = dir
+	_ = cmd.Run()
+
+	newContent, err := os.ReadFile(filePath)
+	if err != nil {
+		return ""
+	}
+
+	if !bytes.Equal(orig, newContent) {
+		return fmt.Sprintf("\n\nNote: Imports in %s were auto-corrected by goimports.", filename)
+	}
+	return ""
 }
