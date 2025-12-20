@@ -114,7 +114,7 @@ func TestCodeModeTokenComparison(t *testing.T) {
 		codeModeSvc := gai.NewAnthropicServiceWrapper(&codeModeClient.Messages)
 		codeModeGen := gai.NewAnthropicGenerator(codeModeSvc, "claude-sonnet-4-20250514", "")
 
-		executeGoCodeTool, err := codemode.GenerateExecuteGoCodeTool([]*mcp.Tool{getCityTool, getWeatherTool})
+		executeGoCodeTool, err := codemode.GenerateExecuteGoCodeTool([]*mcp.Tool{getCityTool, getWeatherTool}, 300)
 		if err != nil {
 			t.Fatalf("failed to generate execute_go_code tool: %v", err)
 		}
@@ -244,7 +244,7 @@ func Run(ctx context.Context) error {
 		codeModeSvc := gai.NewAnthropicServiceWrapper(&codeModeClient.Messages)
 		codeModeGen := gai.NewAnthropicGenerator(codeModeSvc, "claude-sonnet-4-20250514", "")
 
-		executeGoCodeTool, err := codemode.GenerateExecuteGoCodeTool([]*mcp.Tool{getWeatherTool})
+		executeGoCodeTool, err := codemode.GenerateExecuteGoCodeTool([]*mcp.Tool{getWeatherTool}, 300)
 		if err != nil {
 			t.Fatalf("failed to generate execute_go_code tool: %v", err)
 		}
@@ -363,7 +363,7 @@ func Run(ctx context.Context) error {
 		codeModeSvc := gai.NewAnthropicServiceWrapper(&codeModeClient.Messages)
 		codeModeGen := gai.NewAnthropicGenerator(codeModeSvc, "claude-sonnet-4-20250514", "")
 
-		executeGoCodeTool, err := codemode.GenerateExecuteGoCodeTool([]*mcp.Tool{getCityTool, getWeatherTool})
+		executeGoCodeTool, err := codemode.GenerateExecuteGoCodeTool([]*mcp.Tool{getCityTool, getWeatherTool}, 300)
 		if err != nil {
 			t.Fatalf("failed to generate execute_go_code tool: %v", err)
 		}
@@ -462,7 +462,7 @@ func Run(ctx context.Context) error {
 		codeModeSvc := gai.NewAnthropicServiceWrapper(&codeModeClient.Messages)
 		codeModeGen := gai.NewAnthropicGenerator(codeModeSvc, "claude-sonnet-4-20250514", "")
 
-		executeGoCodeTool, err := codemode.GenerateExecuteGoCodeTool([]*mcp.Tool{})
+		executeGoCodeTool, err := codemode.GenerateExecuteGoCodeTool([]*mcp.Tool{}, 300)
 		if err != nil {
 			t.Fatalf("failed to generate execute_go_code tool: %v", err)
 		}

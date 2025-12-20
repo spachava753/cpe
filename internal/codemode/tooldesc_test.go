@@ -268,16 +268,20 @@ IMPORTANT: Generate the complete file contents including package declaration and
 
 func TestGenerateExecuteGoCodeTool(t *testing.T) {
 	tests := []struct {
-		name    string
-		tools   []*mcp.Tool
-		wantErr bool
+		name       string
+		tools      []*mcp.Tool
+		maxTimeout int
+		wantMax    float64
+		wantErr    bool
 	}{
 		{
-			name:  "empty tools",
-			tools: []*mcp.Tool{},
+			name:       "empty tools, default timeout",
+			tools:      []*mcp.Tool{},
+			maxTimeout: 0,
+			wantMax:    300,
 		},
 		{
-			name: "with tools",
+			name: "with tools, custom timeout",
 			tools: []*mcp.Tool{
 				{
 					Name:        "test_tool",
@@ -291,12 +295,14 @@ func TestGenerateExecuteGoCodeTool(t *testing.T) {
 					OutputSchema: nil,
 				},
 			},
+			maxTimeout: 600,
+			wantMax:    600,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tool, err := GenerateExecuteGoCodeTool(tt.tools)
+			tool, err := GenerateExecuteGoCodeTool(tt.tools, tt.maxTimeout)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GenerateExecuteGoCodeTool() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -347,8 +353,8 @@ func TestGenerateExecuteGoCodeTool(t *testing.T) {
 				if timeoutProp.Minimum == nil || *timeoutProp.Minimum != 1 {
 					t.Error("executionTimeout.Minimum should be 1")
 				}
-				if timeoutProp.Maximum == nil || *timeoutProp.Maximum != 300 {
-					t.Error("executionTimeout.Maximum should be 300")
+				if timeoutProp.Maximum == nil || *timeoutProp.Maximum != tt.wantMax {
+					t.Errorf("executionTimeout.Maximum = %v, want %v", *timeoutProp.Maximum, tt.wantMax)
 				}
 			}
 		})
