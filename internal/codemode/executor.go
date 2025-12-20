@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strings"
 	"syscall"
 	"time"
 
@@ -200,7 +204,7 @@ func classifyExitCode(result ExecutionResult) error {
 }
 
 // autoCorrectImports runs goimports (via golang.org/x/tools/imports) on the file 
-// and returns a notification message if changes were made.
+// and returns a notification message listing added/removed packages.
 func autoCorrectImports(ctx context.Context, dir, filename string) string {
 	filePath := filepath.Join(dir, filename)
 	orig, err := os.ReadFile(filePath)
@@ -208,19 +212,73 @@ func autoCorrectImports(ctx context.Context, dir, filename string) string {
 		return ""
 	}
 
+	origImports := extractImports(orig)
+
 	// Process the file using golang.org/x/tools/imports
-	// nil options means default (formatting + imports)
 	newContent, err := imports.Process(filePath, orig, nil)
 	if err != nil {
-		// If processing fails (e.g. syntax errors), we ignore it and let the compiler catch it
+		// If processing fails (e.g. syntax errors), let the compiler catch it
 		return ""
 	}
 
-	if !bytes.Equal(orig, newContent) {
-		if err := os.WriteFile(filePath, newContent, 0644); err != nil {
-			return ""
-		}
-		return fmt.Sprintf("\n\nNote: Imports in %s were auto-corrected.", filename)
+	if bytes.Equal(orig, newContent) {
+		return ""
 	}
-	return ""
+
+	if err := os.WriteFile(filePath, newContent, 0644); err != nil {
+		return ""
+	}
+
+	newImports := extractImports(newContent)
+	return formatImportChanges(filename, origImports, newImports)
+}
+
+// extractImports parses Go source and returns a set of import paths.
+func extractImports(src []byte) map[string]bool {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "", src, parser.ImportsOnly)
+	if err != nil {
+		return nil
+	}
+
+	imps := make(map[string]bool)
+	for _, imp := range f.Imports {
+		// Remove quotes from import path
+		path := strings.Trim(imp.Path.Value, "`\"`")
+		imps[path] = true
+	}
+	return imps
+}
+
+// formatImportChanges generates a message describing which imports were added/removed.
+func formatImportChanges(filename string, origImports, newImports map[string]bool) string {
+	var added, removed []string
+
+	for pkg := range newImports {
+		if !origImports[pkg] {
+			added = append(added, pkg)
+		}
+	}
+	for pkg := range origImports {
+		if !newImports[pkg] {
+			removed = append(removed, pkg)
+		}
+	}
+
+	if len(added) == 0 && len(removed) == 0 {
+		return ""
+	}
+
+	sort.Strings(added)
+	sort.Strings(removed)
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("\n\nNote: Imports in %s were auto-corrected.", filename))
+	if len(added) > 0 {
+		sb.WriteString(fmt.Sprintf("\n  Added: %s", strings.Join(added, ", ")))
+	}
+	if len(removed) > 0 {
+		sb.WriteString(fmt.Sprintf("\n  Removed: %s", strings.Join(removed, ", ")))
+	}
+	return sb.String()
 }
