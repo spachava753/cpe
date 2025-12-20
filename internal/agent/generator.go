@@ -59,36 +59,40 @@ func initGeneratorFromModel(
 		oaiGen := gai.NewOpenAiGenerator(&client.Chat.Completions, m.ID, systemPrompt)
 		gen = &oaiGen
 	case "anthropic":
-		// Check for OAuth authentication first
 		var client anthropic.Client
-		store, storeErr := auth.NewStore()
-		cred, credErr := func() (*auth.Credential, error) {
-			if storeErr != nil {
-				return nil, storeErr
-			}
-			return store.GetCredential("anthropic")
-		}()
+		authMethod := strings.ToLower(m.AuthMethod)
 
-		if credErr == nil && cred.Type == "oauth" {
-			// Use OAuth - inject Bearer token via custom transport
+		if authMethod == "oauth" {
+			// Use OAuth authentication
+			store, err := auth.NewStore()
+			if err != nil {
+				return nil, fmt.Errorf("initializing auth store: %w", err)
+			}
+			cred, err := store.GetCredential("anthropic")
+			if err != nil {
+				return nil, fmt.Errorf("no OAuth credential found for anthropic (run 'cpe auth login anthropic'): %w", err)
+			}
+			if cred.Type != "oauth" {
+				return nil, fmt.Errorf("stored credential is not OAuth type")
+			}
 			oauthClient := auth.NewOAuthHTTPClient(store)
-			// Use "placeholder" as API key since OAuth transport overrides authorization
 			client = anthropic.NewClient(
 				aopts.WithBaseURL(baseURL),
 				aopts.WithAPIKey("placeholder"),
 				aopts.WithHTTPClient(oauthClient),
 				aopts.WithRequestTimeout(timeout),
 			)
-		} else if apiKey != "" {
+		} else {
 			// Use API key authentication
+			if apiKey == "" {
+				return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
+			}
 			client = anthropic.NewClient(
 				aopts.WithBaseURL(baseURL),
 				aopts.WithAPIKey(apiKey),
 				aopts.WithHTTPClient(httpClient),
 				aopts.WithRequestTimeout(timeout),
 			)
-		} else {
-			return nil, fmt.Errorf("no OAuth credential found and %s not set", apiEnv)
 		}
 		svc := gai.NewAnthropicServiceWrapper(&client.Messages, gai.EnableSystemCaching, gai.EnableMultiTurnCaching)
 		gen = gai.NewAnthropicGenerator(svc, m.ID, systemPrompt)

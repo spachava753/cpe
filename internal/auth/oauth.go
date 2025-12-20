@@ -48,8 +48,6 @@ func BuildAuthURL(challenge, verifier string) string {
 	return AnthropicAuthURL + "?" + params.Encode()
 }
 
-
-
 // OpenBrowser opens the default browser to the given URL
 func OpenBrowser(url string) error {
 	var cmd *exec.Cmd

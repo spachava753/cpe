@@ -13,6 +13,9 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "maxTimeout": {
+          "type": "integer"
         }
       },
       "additionalProperties": false,
@@ -99,6 +102,9 @@
           "type": "string"
         },
         "api_key_env": {
+          "type": "string"
+        },
+        "auth_method": {
           "type": "string"
         },
         "context_window": {

@@ -223,6 +223,22 @@ func (c *RawConfig) Validate() error {
 		}
 	}
 
+	// Validate auth_method and api_key_env for each model
+	for _, m := range c.Models {
+		if err := validateModelAuth(m); err != nil {
+			return fmt.Errorf("model '%s': %w", m.Ref, err)
+		}
+	}
+
+	return nil
+}
+
+// validateModelAuth validates auth_method constraints
+func validateModelAuth(m ModelConfig) error {
+	// oauth is only valid for anthropic
+	if strings.ToLower(m.AuthMethod) == "oauth" && strings.ToLower(m.Type) != "anthropic" {
+		return fmt.Errorf("auth_method 'oauth' is only supported for anthropic provider")
+	}
 	return nil
 }
 
