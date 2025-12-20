@@ -527,10 +527,6 @@ func Run(ctx context.Context) error {
 
 func TestExecuteCode_AutoCorrectImports(t *testing.T) {
 	// Only run this test if goimports is installed
-	if _, err := exec.LookPath("goimports"); err != nil {
-		t.Skip("goimports not found, skipping auto-correct test")
-	}
-
 	ctx := context.Background()
 	llmCode := `package main
 
@@ -554,7 +550,7 @@ func Run(ctx context.Context) error {
 		t.Errorf("ExitCode = %d, want 0; output: %s", result.ExitCode, result.Output)
 	}
 
-	if !strings.Contains(result.Output, "Imports in run.go were auto-corrected by goimports") {
+	if !strings.Contains(result.Output, "Imports in run.go were auto-corrected") {
 		t.Errorf("Output = %q, want to contain auto-correction note", result.Output)
 	}
 	

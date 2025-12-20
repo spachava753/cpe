@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+
+	"golang.org/x/tools/imports"
 )
 
 // mcpSDKVersion is the version of the MCP SDK to use in generated go.mod
@@ -197,32 +199,28 @@ func classifyExitCode(result ExecutionResult) error {
 	}
 }
 
-
-// autoCorrectImports runs goimports on the file and returns a notification message if changes were made.
+// autoCorrectImports runs goimports (via golang.org/x/tools/imports) on the file 
+// and returns a notification message if changes were made.
 func autoCorrectImports(ctx context.Context, dir, filename string) string {
-	// Check if goimports is available
-	if _, err := exec.LookPath("goimports"); err != nil {
-		return ""
-	}
-
 	filePath := filepath.Join(dir, filename)
 	orig, err := os.ReadFile(filePath)
 	if err != nil {
 		return ""
 	}
 
-	// Run goimports -w
-	cmd := exec.CommandContext(ctx, "goimports", "-w", filename)
-	cmd.Dir = dir
-	_ = cmd.Run()
-
-	newContent, err := os.ReadFile(filePath)
+	// Process the file using golang.org/x/tools/imports
+	// nil options means default (formatting + imports)
+	newContent, err := imports.Process(filePath, orig, nil)
 	if err != nil {
+		// If processing fails (e.g. syntax errors), we ignore it and let the compiler catch it
 		return ""
 	}
 
 	if !bytes.Equal(orig, newContent) {
-		return fmt.Sprintf("\n\nNote: Imports in %s were auto-corrected by goimports.", filename)
+		if err := os.WriteFile(filePath, newContent, 0644); err != nil {
+			return ""
+		}
+		return fmt.Sprintf("\n\nNote: Imports in %s were auto-corrected.", filename)
 	}
 	return ""
 }
