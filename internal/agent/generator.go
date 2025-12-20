@@ -13,6 +13,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/openai/openai-go/v2"
 	oaiopt "github.com/openai/openai-go/v2/option"
+	"github.com/spachava753/cpe/internal/auth"
 	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/mcp"
@@ -46,22 +47,55 @@ func initGeneratorFromModel(
 
 	apiEnv := strings.TrimSpace(m.ApiKeyEnv)
 	apiKey := os.Getenv(apiEnv)
-	if apiKey == "" {
-		return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
-	}
 
 	var gen gai.ToolCapableGenerator
 
 	switch t {
 	case "openai":
+		if apiKey == "" {
+			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
+		}
 		client := openai.NewClient(oaiopt.WithBaseURL(baseURL), oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout))
 		oaiGen := gai.NewOpenAiGenerator(&client.Chat.Completions, m.ID, systemPrompt)
 		gen = &oaiGen
 	case "anthropic":
-		client := anthropic.NewClient(aopts.WithBaseURL(baseURL), aopts.WithAPIKey(apiKey), aopts.WithHTTPClient(httpClient), aopts.WithRequestTimeout(timeout))
+		// Check for OAuth authentication first
+		var client anthropic.Client
+		store, storeErr := auth.NewStore()
+		cred, credErr := func() (*auth.Credential, error) {
+			if storeErr != nil {
+				return nil, storeErr
+			}
+			return store.GetCredential("anthropic")
+		}()
+
+		if credErr == nil && cred.Type == "oauth" {
+			// Use OAuth - inject Bearer token via custom transport
+			oauthClient := auth.NewOAuthHTTPClient(store)
+			// Use "placeholder" as API key since OAuth transport overrides authorization
+			client = anthropic.NewClient(
+				aopts.WithBaseURL(baseURL),
+				aopts.WithAPIKey("placeholder"),
+				aopts.WithHTTPClient(oauthClient),
+				aopts.WithRequestTimeout(timeout),
+			)
+		} else if apiKey != "" {
+			// Use API key authentication
+			client = anthropic.NewClient(
+				aopts.WithBaseURL(baseURL),
+				aopts.WithAPIKey(apiKey),
+				aopts.WithHTTPClient(httpClient),
+				aopts.WithRequestTimeout(timeout),
+			)
+		} else {
+			return nil, fmt.Errorf("no OAuth credential found and %s not set", apiEnv)
+		}
 		svc := gai.NewAnthropicServiceWrapper(&client.Messages, gai.EnableSystemCaching, gai.EnableMultiTurnCaching)
 		gen = gai.NewAnthropicGenerator(svc, m.ID, systemPrompt)
 	case "gemini":
+		if apiKey == "" {
+			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
+		}
 		cc := genai.ClientConfig{
 			APIKey:      apiKey,
 			HTTPOptions: genai.HTTPOptions{BaseURL: baseURL},
@@ -75,11 +109,20 @@ func initGeneratorFromModel(
 			return nil, fmt.Errorf("failed to create Gemini generator: %w", err)
 		}
 	case "cerebras":
+		if apiKey == "" {
+			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
+		}
 		gen = gai.NewCerebrasGenerator(httpClient, baseURL, m.ID, systemPrompt, apiKey)
 	case "responses":
+		if apiKey == "" {
+			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
+		}
 		client := openai.NewClient(oaiopt.WithBaseURL(baseURL), oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout))
 		gen = gai.NewResponsesToolGeneratorAdapter(gai.NewResponsesGenerator(&client.Responses, m.ID, systemPrompt), "")
 	case "openrouter":
+		if apiKey == "" {
+			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
+		}
 		client := openai.NewClient(oaiopt.WithBaseURL(baseURL), oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout))
 		gen = gai.NewOpenRouterGenerator(&client.Chat.Completions, m.ID, systemPrompt)
 	default:
@@ -140,7 +183,7 @@ func CreateToolCapableGenerator(
 	// Wrap the tool generator with BlockWhitelistFilter to filter thinking blocks
 	// only from the initial dialog, but preserve them during tool execution
 	filterToolGen := NewBlockWhitelistFilter(toolGen, []string{gai.Content, gai.ToolCall})
-	
+
 	// Wrap with tool result printer to print tool execution results to stderr
 	// Use the same content renderer for consistent styling
 	toolResultRenderer, err := newContentRenderer()
