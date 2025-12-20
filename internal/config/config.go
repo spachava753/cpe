@@ -34,6 +34,7 @@ type PatchRequestConfig struct {
 type CodeModeConfig struct {
 	Enabled       bool     `yaml:"enabled" json:"enabled"`
 	ExcludedTools []string `yaml:"excludedTools,omitempty" json:"excludedTools,omitempty"`
+	MaxTimeout    int      `yaml:"maxTimeout,omitempty" json:"maxTimeout,omitempty" validate:"omitempty,gte=0"`
 }
 
 // RawConfig represents the configuration file structure

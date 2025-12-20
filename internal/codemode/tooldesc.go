@@ -104,17 +104,21 @@ func main() {
 
 // GenerateExecuteGoCodeTool generates the complete gai.Tool definition for the
 // execute_go_code tool, including its description and input schema.
-func GenerateExecuteGoCodeTool(tools []*mcp.Tool) (gai.Tool, error) {
+func GenerateExecuteGoCodeTool(tools []*mcp.Tool, maxTimeout int) (gai.Tool, error) {
 	description, err := GenerateExecuteGoCodeDescription(tools)
 	if err != nil {
 		return gai.Tool{}, fmt.Errorf("generating description: %w", err)
 	}
 
+	if maxTimeout <= 0 {
+		maxTimeout = 300
+	}
+
 	// Build input schema per spec:
 	// - code: string (required) - Complete Go source file contents
-	// - executionTimeout: integer (required, min 1, max 300) - Maximum execution time in seconds
+	// - executionTimeout: integer (required, min 1, max maxTimeout) - Maximum execution time in seconds
 	minTimeout := 1.0
-	maxTimeout := 300.0
+	maxTimeoutF := float64(maxTimeout)
 
 	inputSchema := &jsonschema.Schema{
 		Type: "object",
@@ -125,9 +129,9 @@ func GenerateExecuteGoCodeTool(tools []*mcp.Tool) (gai.Tool, error) {
 			},
 			"executionTimeout": {
 				Type:        "integer",
-				Description: "Maximum execution time in seconds (1-300). Estimate based on expected runtime of the generated code.",
+				Description: fmt.Sprintf("Maximum execution time in seconds (1-%d). Estimate based on expected runtime of the generated code.", maxTimeout),
 				Minimum:     &minTimeout,
-				Maximum:     &maxTimeout,
+				Maximum:     &maxTimeoutF,
 			},
 		},
 		Required: []string{"code", "executionTimeout"},

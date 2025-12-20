@@ -184,7 +184,7 @@ func CreateToolCapableGenerator(
 
 		// Always register execute_go_code when code mode is enabled, even without MCP tools.
 		// The tool provides access to the Go standard library for file I/O, etc.
-		executeGoCodeTool, err := codemode.GenerateExecuteGoCodeTool(allCodeModeTools)
+		executeGoCodeTool, err := codemode.GenerateExecuteGoCodeTool(allCodeModeTools, codeModeConfig.MaxTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate execute_go_code tool: %w", err)
 		}
