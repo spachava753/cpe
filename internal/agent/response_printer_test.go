@@ -115,18 +115,18 @@ func TestRenderToolCall(t *testing.T) {
 
 func TestRenderToolCallUsesCorrectRenderer(t *testing.T) {
 	tests := []struct {
-		name               string
-		content            string
+		name                string
+		content             string
 		wantContentRenderer bool
 	}{
 		{
-			name:               "execute_go_code uses contentRenderer",
-			content:            `{"name":"execute_go_code","parameters":{"code":"package main","executionTimeout":30}}`,
+			name:                "execute_go_code uses contentRenderer",
+			content:             `{"name":"execute_go_code","parameters":{"code":"package main","executionTimeout":30}}`,
 			wantContentRenderer: true,
 		},
 		{
-			name:               "regular tool uses toolCallRenderer",
-			content:            `{"name":"get_weather","parameters":{"city":"NYC"}}`,
+			name:                "regular tool uses toolCallRenderer",
+			content:             `{"name":"get_weather","parameters":{"city":"NYC"}}`,
 			wantContentRenderer: false,
 		},
 	}
