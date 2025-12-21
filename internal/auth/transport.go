@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -67,10 +68,40 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Clone the request to avoid modifying the original
 	clone := req.Clone(req.Context())
 
+	// Merge beta headers - preserve any existing betas and add OAuth required ones
+	existingBeta := clone.Header.Get("anthropic-beta")
+	mergedBeta := mergeBetaHeaders(existingBeta, AnthropicBetaHeader)
+
 	// Set Bearer auth and required headers
 	clone.Header.Set("Authorization", "Bearer "+cred.AccessToken)
-	clone.Header.Set("anthropic-beta", AnthropicBetaHeader)
+	clone.Header.Set("anthropic-beta", mergedBeta)
 	clone.Header.Del("x-api-key")
 
 	return t.base.RoundTrip(clone)
+}
+
+// mergeBetaHeaders combines existing and required beta headers, deduplicating
+func mergeBetaHeaders(existing, required string) string {
+	seen := make(map[string]bool)
+	var result []string
+
+	// Add required headers first
+	for _, h := range strings.Split(required, ",") {
+		h = strings.TrimSpace(h)
+		if h != "" && !seen[h] {
+			seen[h] = true
+			result = append(result, h)
+		}
+	}
+
+	// Add existing headers
+	for _, h := range strings.Split(existing, ",") {
+		h = strings.TrimSpace(h)
+		if h != "" && !seen[h] {
+			seen[h] = true
+			result = append(result, h)
+		}
+	}
+
+	return strings.Join(result, ",")
 }
