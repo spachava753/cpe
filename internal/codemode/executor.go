@@ -203,7 +203,7 @@ func classifyExitCode(result ExecutionResult) error {
 	}
 }
 
-// autoCorrectImports runs goimports (via golang.org/x/tools/imports) on the file 
+// autoCorrectImports runs goimports (via golang.org/x/tools/imports) on the file
 // and returns a notification message listing added/removed packages.
 func autoCorrectImports(ctx context.Context, dir, filename string) string {
 	filePath := filepath.Join(dir, filename)

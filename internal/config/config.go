@@ -16,7 +16,8 @@ type Model struct {
 	ID                   string              `json:"id" yaml:"id" validate:"required"`
 	Type                 string              `json:"type" yaml:"type" validate:"required,oneof=openai anthropic gemini responses groq cerebras openrouter"`
 	BaseUrl              string              `json:"base_url" yaml:"base_url" validate:"omitempty,https_url|http_url"`
-	ApiKeyEnv            string              `json:"api_key_env" yaml:"api_key_env" validate:"required"`
+	ApiKeyEnv            string              `json:"api_key_env" yaml:"api_key_env" validate:"required_unless=AuthMethod oauth"`
+	AuthMethod           string              `json:"auth_method" yaml:"auth_method" validate:"omitempty,oneof=apikey oauth"`
 	ContextWindow        uint32              `json:"context_window" yaml:"context_window" validate:"omitempty,gt=0"`
 	MaxOutput            uint32              `json:"max_output" yaml:"max_output" validate:"omitempty,gt=0"`
 	InputCostPerMillion  float64             `json:"input_cost_per_million" yaml:"input_cost_per_million"`

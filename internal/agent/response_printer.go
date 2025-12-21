@@ -17,7 +17,6 @@ import (
 	"golang.org/x/term"
 )
 
-
 // newContentRenderer creates a glamour renderer for content with appropriate styling
 func newContentRenderer() (Renderer, error) {
 	if !term.IsTerminal(int(os.Stdout.Fd())) {

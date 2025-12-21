@@ -38,10 +38,10 @@ func (p *ToolCallbackPrinter) Call(ctx context.Context, parametersJSON json.RawM
 // printResult prints the tool result to stderr with truncation and rendering
 func (p *ToolCallbackPrinter) printResult(msg gai.Message) {
 	var output strings.Builder
-	
+
 	// Determine if this is execute_go_code or a regular tool
 	isCodeMode := p.toolName == codemode.ExecuteGoCodeToolName
-	
+
 	// Collect all text content from blocks
 	var content strings.Builder
 	for _, block := range msg.Blocks {
@@ -49,17 +49,17 @@ func (p *ToolCallbackPrinter) printResult(msg gai.Message) {
 			content.WriteString(block.Content.String())
 		}
 	}
-	
+
 	contentStr := content.String()
-	
+
 	// Truncate to maxLines first
 	truncated := truncateToLines(contentStr, maxLines)
-	
+
 	// Build markdown content based on tool type
 	var markdownContent string
 	if isCodeMode {
 		// For code mode, wrap in a text code block
-		markdownContent = fmt.Sprintf("#### Code execution output:\n" + "````shell\n%s\n" + "````", truncated)
+		markdownContent = fmt.Sprintf("#### Code execution output:\n"+"````shell\n%s\n"+"````", truncated)
 	} else {
 		// For regular tools, try to format as JSON
 		var jsonData interface{}
@@ -70,13 +70,13 @@ func (p *ToolCallbackPrinter) printResult(msg gai.Message) {
 				// Truncate the formatted JSON
 				truncated = truncateToLines(string(formatted), maxLines)
 			}
-			markdownContent = fmt.Sprintf("#### Tool \"%s\" result:\n" + "```json\n%s\n" + "```", p.toolName, truncated)
+			markdownContent = fmt.Sprintf("#### Tool \"%s\" result:\n"+"```json\n%s\n"+"```", p.toolName, truncated)
 		} else {
 			// Not JSON, treat as plain text
-			markdownContent = fmt.Sprintf("#### Tool \"%s\" result:\n" + "```\n%s\n" + "```", p.toolName, truncated)
+			markdownContent = fmt.Sprintf("#### Tool \"%s\" result:\n"+"```\n%s\n"+"```", p.toolName, truncated)
 		}
 	}
-	
+
 	// Render with glamour
 	rendered, err := p.renderer.Render(markdownContent)
 	if err != nil {
@@ -88,7 +88,7 @@ func (p *ToolCallbackPrinter) printResult(msg gai.Message) {
 		output.WriteString("\n")
 		output.WriteString(rendered)
 	}
-	
+
 	// Write to stderr
 	fmt.Fprint(os.Stderr, output.String())
 }
@@ -98,17 +98,17 @@ func truncateToLines(content string, maxLines int) string {
 	scanner := bufio.NewScanner(strings.NewReader(content))
 	var lines []string
 	lineCount := 0
-	
+
 	for scanner.Scan() && lineCount < maxLines {
 		lines = append(lines, scanner.Text())
 		lineCount++
 	}
-	
+
 	// Check if there are more lines
 	if scanner.Scan() {
 		lines = append(lines, "... (truncated)")
 	}
-	
+
 	return strings.Join(lines, "\n")
 }
 
@@ -139,11 +139,11 @@ func (g *ToolResultPrinterWrapper) Register(tool gai.Tool, callback gai.ToolCall
 		toolName: tool.Name,
 		renderer: g.renderer,
 	}
-	
+
 	// Register with the wrapped generator using the local ToolRegister interface
 	if toolRegister, ok := g.wrapped.(ToolRegister); ok {
 		return toolRegister.Register(tool, wrappedCallback)
 	}
-	
+
 	return gai.ToolRegistrationErr{Tool: tool.Name, Cause: fmt.Errorf("underlying generator does not support tool registration")}
 }

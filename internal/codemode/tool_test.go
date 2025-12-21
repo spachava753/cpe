@@ -52,7 +52,7 @@ func Run(ctx context.Context) error {
 			},
 			wantOutputSub: "syntax error",
 		},
-				{
+		{
 			name: "compilation error - undefined variable",
 			input: ExecuteGoCodeInput{
 				Code: `package main

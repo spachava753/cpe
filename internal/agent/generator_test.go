@@ -42,7 +42,7 @@ func TestCodeModeToolRegistration(t *testing.T) {
 			wantTools:      []string{codemode.ExecuteGoCodeToolName},
 		},
 		{
-			name: "code mode disabled with no servers does not register execute_go_code",
+			name:           "code mode disabled with no servers does not register execute_go_code",
 			codeModeConfig: &config.CodeModeConfig{Enabled: false},
 			toolsByServer:  map[string][]mcp.ToolData{},
 			mcpServers:     map[string]mcp.ServerConfig{},

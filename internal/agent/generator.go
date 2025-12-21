@@ -8,11 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anthropics/anthropic-sdk-go"
+	a "github.com/anthropics/anthropic-sdk-go"
 	aopts "github.com/anthropics/anthropic-sdk-go/option"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/openai/openai-go/v2"
 	oaiopt "github.com/openai/openai-go/v2/option"
+	"github.com/spachava753/cpe/internal/auth"
 	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/mcp"
@@ -21,6 +22,19 @@ import (
 
 	"github.com/cenkalti/backoff/v5"
 )
+
+// prependClaudeCodeIdentifier adds the required Claude Code identifier as the first
+// system message. Anthropic requires this for OAuth tokens to work.
+func prependClaudeCodeIdentifier(_ context.Context, params *a.MessageNewParams) error {
+	claudeCodeIdentifier := a.TextBlockParam{
+		Text: "You are Claude Code, Anthropic's official CLI for Claude.",
+		CacheControl: a.CacheControlEphemeralParam{
+			Type: "ephemeral",
+		},
+	}
+	params.System = append([]a.TextBlockParam{claudeCodeIdentifier}, params.System...)
+	return nil
+}
 
 func initGeneratorFromModel(
 	ctx context.Context,
@@ -46,22 +60,69 @@ func initGeneratorFromModel(
 
 	apiEnv := strings.TrimSpace(m.ApiKeyEnv)
 	apiKey := os.Getenv(apiEnv)
-	if apiKey == "" {
-		return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
-	}
 
 	var gen gai.ToolCapableGenerator
 
 	switch t {
 	case "openai":
+		if apiKey == "" {
+			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
+		}
 		client := openai.NewClient(oaiopt.WithBaseURL(baseURL), oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout))
 		oaiGen := gai.NewOpenAiGenerator(&client.Chat.Completions, m.ID, systemPrompt)
 		gen = &oaiGen
 	case "anthropic":
-		client := anthropic.NewClient(aopts.WithBaseURL(baseURL), aopts.WithAPIKey(apiKey), aopts.WithHTTPClient(httpClient), aopts.WithRequestTimeout(timeout))
-		svc := gai.NewAnthropicServiceWrapper(&client.Messages, gai.EnableSystemCaching, gai.EnableMultiTurnCaching)
+		var client a.Client
+		authMethod := strings.ToLower(m.AuthMethod)
+
+		if authMethod == "oauth" {
+			// Use OAuth authentication
+			store, err := auth.NewStore()
+			if err != nil {
+				return nil, fmt.Errorf("initializing auth store: %w", err)
+			}
+			cred, err := store.GetCredential("anthropic")
+			if err != nil {
+				return nil, fmt.Errorf("no OAuth credential found for anthropic (run 'cpe auth login anthropic'): %w", err)
+			}
+			if cred.Type != "oauth" {
+				return nil, fmt.Errorf("stored credential is not OAuth type")
+			}
+			oauthClient := auth.NewOAuthHTTPClient(store)
+			client = a.NewClient(
+				aopts.WithBaseURL(baseURL),
+				aopts.WithAPIKey("placeholder"),
+				aopts.WithHTTPClient(oauthClient),
+				aopts.WithRequestTimeout(timeout),
+				aopts.WithHeader("anthropic-beta", auth.AnthropicBetaHeader),
+			)
+		} else {
+			// Use API key authentication
+			if apiKey == "" {
+				return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
+			}
+			client = a.NewClient(
+				aopts.WithBaseURL(baseURL),
+				aopts.WithAPIKey(apiKey),
+				aopts.WithHTTPClient(httpClient),
+				aopts.WithRequestTimeout(timeout),
+			)
+		}
+		// Build modifier list - always include caching
+		modifiers := []gai.AnthropicServiceParamModifierFunc{
+			gai.EnableSystemCaching,
+			gai.EnableMultiTurnCaching,
+		}
+		// For OAuth, prepend Claude Code identifier (required by Anthropic for OAuth tokens)
+		if authMethod == "oauth" {
+			modifiers = append([]gai.AnthropicServiceParamModifierFunc{prependClaudeCodeIdentifier}, modifiers...)
+		}
+		svc := gai.NewAnthropicServiceWrapper(&client.Messages, modifiers...)
 		gen = gai.NewAnthropicGenerator(svc, m.ID, systemPrompt)
 	case "gemini":
+		if apiKey == "" {
+			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
+		}
 		cc := genai.ClientConfig{
 			APIKey:      apiKey,
 			HTTPOptions: genai.HTTPOptions{BaseURL: baseURL},
@@ -75,11 +136,20 @@ func initGeneratorFromModel(
 			return nil, fmt.Errorf("failed to create Gemini generator: %w", err)
 		}
 	case "cerebras":
+		if apiKey == "" {
+			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
+		}
 		gen = gai.NewCerebrasGenerator(httpClient, baseURL, m.ID, systemPrompt, apiKey)
 	case "responses":
+		if apiKey == "" {
+			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
+		}
 		client := openai.NewClient(oaiopt.WithBaseURL(baseURL), oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout))
 		gen = gai.NewResponsesToolGeneratorAdapter(gai.NewResponsesGenerator(&client.Responses, m.ID, systemPrompt), "")
 	case "openrouter":
+		if apiKey == "" {
+			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
+		}
 		client := openai.NewClient(oaiopt.WithBaseURL(baseURL), oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout))
 		gen = gai.NewOpenRouterGenerator(&client.Chat.Completions, m.ID, systemPrompt)
 	default:
@@ -140,7 +210,7 @@ func CreateToolCapableGenerator(
 	// Wrap the tool generator with BlockWhitelistFilter to filter thinking blocks
 	// only from the initial dialog, but preserve them during tool execution
 	filterToolGen := NewBlockWhitelistFilter(toolGen, []string{gai.Content, gai.ToolCall})
-	
+
 	// Wrap with tool result printer to print tool execution results to stderr
 	// Use the same content renderer for consistent styling
 	toolResultRenderer, err := newContentRenderer()

@@ -524,7 +524,6 @@ func Run(ctx context.Context) error {
 	}
 }
 
-
 func TestExecuteCode_AutoCorrectImports(t *testing.T) {
 	// Only run this test if goimports is installed
 	ctx := context.Background()
@@ -557,7 +556,7 @@ func Run(ctx context.Context) error {
 	if !strings.Contains(result.Output, "Added: fmt") {
 		t.Errorf("Output = %q, want to contain 'Added: fmt'", result.Output)
 	}
-	
+
 	if !strings.Contains(result.Output, "Imports corrected") {
 		t.Errorf("Output = %q, want to contain program output 'Imports corrected'", result.Output)
 	}
