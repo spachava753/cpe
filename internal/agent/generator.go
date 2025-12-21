@@ -89,23 +89,27 @@ func initGeneratorFromModel(
 				return nil, fmt.Errorf("stored credential is not OAuth type")
 			}
 			oauthClient := auth.NewOAuthHTTPClient(store)
+			// Combine OAuth beta header with interleaved thinking and context management headers
+			betaHeaders := auth.AnthropicBetaHeader + ",interleaved-thinking-2025-05-14,context-management-2025-06-27"
 			client = a.NewClient(
 				aopts.WithBaseURL(baseURL),
 				aopts.WithAPIKey("placeholder"),
 				aopts.WithHTTPClient(oauthClient),
 				aopts.WithRequestTimeout(timeout),
-				aopts.WithHeader("anthropic-beta", auth.AnthropicBetaHeader),
+				aopts.WithHeader("anthropic-beta", betaHeaders),
 			)
 		} else {
 			// Use API key authentication
 			if apiKey == "" {
 				return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 			}
+			// Add beta headers for interleaved thinking and context management
 			client = a.NewClient(
 				aopts.WithBaseURL(baseURL),
 				aopts.WithAPIKey(apiKey),
 				aopts.WithHTTPClient(httpClient),
 				aopts.WithRequestTimeout(timeout),
+				aopts.WithHeader("anthropic-beta", "interleaved-thinking-2025-05-14,context-management-2025-06-27"),
 			)
 		}
 		// Build modifier list - always include caching
@@ -207,9 +211,16 @@ func CreateToolCapableGenerator(
 		G: gen,
 	}
 
-	// Wrap the tool generator with BlockWhitelistFilter to filter thinking blocks
-	// only from the initial dialog, but preserve them during tool execution
-	filterToolGen := NewBlockWhitelistFilter(toolGen, []string{gai.Content, gai.ToolCall})
+	// Wrap the tool generator with a filter to handle thinking blocks.
+	// For Anthropic: keep Anthropic thinking blocks but filter out thinking blocks
+	// from other providers (Gemini, OpenRouter, etc.)
+	// For other providers: filter all thinking blocks
+	var filterToolGen Iface
+	if strings.ToLower(selectedModel.Type) == "anthropic" {
+		filterToolGen = NewAnthropicThinkingBlockFilter(toolGen)
+	} else {
+		filterToolGen = NewBlockWhitelistFilter(toolGen, []string{gai.Content, gai.ToolCall})
+	}
 
 	// Wrap with tool result printer to print tool execution results to stderr
 	// Use the same content renderer for consistent styling
