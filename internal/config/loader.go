@@ -85,9 +85,13 @@ func findConfigFile() (string, error) {
 		}
 	}
 
+	userConfigPath := "~/.config/cpe/cpe.yaml"
+	if userConfigDir != "" {
+		userConfigPath = filepath.Join(userConfigDir, "cpe", "cpe.yaml")
+	}
 	return "", fmt.Errorf(`configuration file not found. Create one of:
   - ./cpe.yaml (current directory)
-  - ~/.config/cpe/cpe.yaml (user config directory)`)
+  - %s (user config directory)`, userConfigPath)
 }
 
 // loadRawConfigFromFile reads and parses a configuration file from any fs.File source.
