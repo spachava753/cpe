@@ -1,0 +1,78 @@
+name: Documentation Improvement
+description: Suggest improvements or report issues with CPE documentation
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve CPE's documentation! Please describe your suggestion below.
+
+  - type: dropdown
+    id: doc-type
+    attributes:
+      label: Documentation Type
+      description: What type of documentation is this about?
+      options:
+        - README
+        - AGENTS.md guidance
+        - Code comments
+        - CLI help text (--help)
+        - Configuration examples
+        - API/function documentation
+        - Tutorial/guide
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: issue-type
+    attributes:
+      label: Issue Type
+      description: What kind of documentation change is needed?
+      options:
+        - Missing documentation
+        - Unclear or confusing explanation
+        - Outdated information
+        - Incorrect information
+        - Typo or grammar fix
+        - New example needed
+        - Restructuring suggestion
+    validations:
+      required: true
+
+  - type: textarea
+    id: location
+    attributes:
+      label: Location
+      description: Where is the documentation issue? (file path, section, or URL)
+      placeholder: "e.g., README.md#configuration, cpe --help output"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the documentation issue or improvement
+      placeholder: |
+        What's wrong or missing? What would make it clearer?
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested Change
+      description: If you have specific wording or content in mind, share it here
+      render: markdown
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context or screenshots
+    validations:
+      required: false
