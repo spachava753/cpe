@@ -156,6 +156,12 @@ func initGeneratorFromModel(
 		}
 		client := openai.NewClient(oaiopt.WithBaseURL(baseURL), oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout))
 		gen = gai.NewOpenRouterGenerator(&client.Chat.Completions, m.ID, systemPrompt)
+	case "zai":
+		if apiKey == "" {
+			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
+		}
+		client := openai.NewClient(oaiopt.WithBaseURL(baseURL), oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout))
+		gen = gai.NewZaiGenerator(&client.Chat.Completions, m.ID, systemPrompt, apiKey)
 	default:
 		return nil, fmt.Errorf("unsupported model type: %s", m.Type)
 	}

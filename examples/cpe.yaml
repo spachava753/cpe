@@ -148,6 +148,14 @@ models:
     input_cost_per_million: 3
     output_cost_per_million: 15
 
+  - ref: glm
+    display_name: "Z.AI GLM-4"
+    id: glm-4
+    type: zai
+    api_key_env: Z_API_KEY
+    context_window: 128000
+    max_output: 4096
+
 # Global defaults
 defaults:
   systemPromptPath: "./examples/agent_instructions.prompt"

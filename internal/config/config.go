@@ -14,7 +14,7 @@ type Model struct {
 	Ref                  string              `json:"ref" yaml:"ref" validate:"required"`
 	DisplayName          string              `json:"display_name" yaml:"display_name" validate:"required"`
 	ID                   string              `json:"id" yaml:"id" validate:"required"`
-	Type                 string              `json:"type" yaml:"type" validate:"required,oneof=openai anthropic gemini responses groq cerebras openrouter"`
+	Type                 string              `json:"type" yaml:"type" validate:"required,oneof=openai anthropic gemini responses groq cerebras openrouter zai"`
 	BaseUrl              string              `json:"base_url" yaml:"base_url" validate:"omitempty,https_url|http_url"`
 	ApiKeyEnv            string              `json:"api_key_env" yaml:"api_key_env" validate:"required_unless=AuthMethod oauth"`
 	AuthMethod           string              `json:"auth_method" yaml:"auth_method" validate:"omitempty,oneof=apikey oauth"`
