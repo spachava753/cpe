@@ -18,6 +18,7 @@
 !go.sum
 !go.mod
 !go.work
+!sqlc.yaml
 
 !README.md
 !LICENSE
