@@ -2,9 +2,13 @@ package config
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
+
+	"os"
+	"path/filepath"
 
 	"dario.cat/mergo"
 	"github.com/spachava753/gai"
@@ -1049,6 +1053,208 @@ func TestExpandEnvironmentVariables_CodeMode(t *testing.T) {
 			// Validate
 			if tt.validate != nil {
 				tt.validate(t, tt.cfg)
+			}
+		})
+	}
+}
+
+
+func TestLoadSubagentConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		content     string
+		filename    string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "valid subagent config",
+			content: `
+version: "1.0"
+models:
+  - ref: "opus"
+    display_name: "Claude Opus"
+    id: "claude-opus-4-20250514"
+    type: "anthropic"
+    api_key_env: "ANTHROPIC_API_KEY"
+subagent:
+  name: "review_changes"
+  description: "Review a diff and return prioritized feedback"
+defaults:
+  model: opus
+`,
+			filename: "subagent.yaml",
+			wantErr:  false,
+		},
+		{
+			name: "subagent with code mode enabled",
+			content: `
+version: "1.0"
+models:
+  - ref: "opus"
+    display_name: "Claude Opus"
+    id: "claude-opus-4-20250514"
+    type: "anthropic"
+    api_key_env: "ANTHROPIC_API_KEY"
+subagent:
+  name: "implement_change"
+  description: "Make code changes and run tests"
+defaults:
+  model: opus
+  codeMode:
+    enabled: true
+`,
+			filename: "coder_subagent.yaml",
+			wantErr:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testFS := fstest.MapFS{
+				tt.filename: &fstest.MapFile{
+					Data: []byte(tt.content),
+				},
+			}
+
+			file, err := testFS.Open(tt.filename)
+			if err != nil {
+				t.Fatalf("Failed to open test file: %v", err)
+			}
+			defer file.Close()
+
+			config, err := loadRawConfigFromFile(file)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				} else if tt.errContains != "" && !contains(err.Error(), tt.errContains) {
+					t.Errorf("expected error containing %q, got %q", tt.errContains, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if config.Subagent == nil {
+				t.Fatal("expected subagent to be present")
+			}
+
+			if config.Subagent.Name == "" {
+				t.Error("expected subagent name to be set")
+			}
+			if config.Subagent.Description == "" {
+				t.Error("expected subagent description to be set")
+			}
+		})
+	}
+}
+
+func TestValidateSubagentOutputSchemaPath(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Create a valid JSON schema file
+	validSchemaPath := filepath.Join(tempDir, "valid_schema.json")
+	validSchemaContent := `{
+  "type": "object",
+  "properties": {
+    "summary": { "type": "string" },
+    "issues": { "type": "array" }
+  }
+}`
+	if err := os.WriteFile(validSchemaPath, []byte(validSchemaContent), 0644); err != nil {
+		t.Fatalf("failed to create valid schema file: %v", err)
+	}
+
+	// Create an invalid JSON file
+	invalidSchemaPath := filepath.Join(tempDir, "invalid_schema.json")
+	if err := os.WriteFile(invalidSchemaPath, []byte("not valid json"), 0644); err != nil {
+		t.Fatalf("failed to create invalid schema file: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		cfg         RawConfig
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "valid outputSchemaPath",
+			cfg: RawConfig{
+				Models: []ModelConfig{
+					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
+				},
+				Subagent: &SubagentConfig{
+					Name:             "test_agent",
+					Description:      "Test description",
+					OutputSchemaPath: validSchemaPath,
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "nonexistent outputSchemaPath",
+			cfg: RawConfig{
+				Models: []ModelConfig{
+					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
+				},
+				Subagent: &SubagentConfig{
+					Name:             "test_agent",
+					Description:      "Test description",
+					OutputSchemaPath: "/nonexistent/path/schema.json",
+				},
+			},
+			wantErr:     true,
+			errContains: "file does not exist",
+		},
+		{
+			name: "invalid JSON in outputSchemaPath",
+			cfg: RawConfig{
+				Models: []ModelConfig{
+					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
+				},
+				Subagent: &SubagentConfig{
+					Name:             "test_agent",
+					Description:      "Test description",
+					OutputSchemaPath: invalidSchemaPath,
+				},
+			},
+			wantErr:     true,
+			errContains: "invalid JSON schema",
+		},
+		{
+			name: "empty outputSchemaPath is valid",
+			cfg: RawConfig{
+				Models: []ModelConfig{
+					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
+				},
+				Subagent: &SubagentConfig{
+					Name:        "test_agent",
+					Description: "Test description",
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.validateSubagentConfig()
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				} else if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("expected error containing %q, got %q", tt.errContains, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
 			}
 		})
 	}

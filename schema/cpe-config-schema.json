@@ -170,6 +170,9 @@
         "defaults": {
           "$ref": "#/$defs/Defaults"
         },
+        "subagent": {
+          "$ref": "#/$defs/SubagentConfig"
+        },
         "version": {
           "type": "string"
         }
@@ -222,6 +225,21 @@
           "type": "array"
         },
         "toolFilter": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "SubagentConfig": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "outputSchemaPath": {
           "type": "string"
         }
       },
