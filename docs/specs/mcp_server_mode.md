@@ -366,9 +366,10 @@ This section defines ordered implementation tasks. Each task is a checklist item
 
 **Depends on:** Task 5
 
-**Files to modify:**
-- `internal/mcp/server.go`: Create `final_answer` tool when `subagent.outputSchemaPath` is configured
-- `internal/mcp/server.go`: Implement nil callback pattern to terminate execution
+**Files modified:**
+- `internal/commands/subagent.go`: Register `final_answer` tool with nil callback, extract parameters from dialog
+- `internal/agent/tool_result_printer.go`: Pass nil callbacks through without wrapping
+- `cmd/mcp.go`: Load and validate output schema at startup
 
 **Implementation details:**
 - When `subagent.outputSchemaPath` is set, create a `final_answer` tool where input schema = output schema from file
@@ -418,7 +419,7 @@ This section defines ordered implementation tasks. Each task is a checklist item
 
 ---
 
-### Task 8 — Implement MCP logging notifications for observability
+### Task 8 — Implement MCP logging notifications for observability (optional)
 
 - [ ] **Complete**
 
@@ -447,39 +448,11 @@ This section defines ordered implementation tasks. Each task is a checklist item
 
 ---
 
-### Task 9 — Wire up `cpe mcp serve` to run the server
+### Task 9 — End-to-end integration with parent CPE
 
 - [ ] **Complete**
 
-**Depends on:** Tasks 3, 4, 5, 6, 7, 8
-
-**Files to modify:**
-- `cmd/mcp.go`: In `mcpServeCmd.RunE`, load config, create `Server`, call `Serve(ctx)`
-
-**Implementation details:**
-- Load config with `config.LoadConfig(configPath)`
-- Validate subagent is present
-- Create `mcp.NewServer(config, opts)`
-- Call `server.Serve(ctx)` which blocks until shutdown
-- Handle errors and exit codes appropriately
-
-**Done when:**
-- `cpe mcp serve --config ./subagent.cpe.yaml` starts server successfully
-- Server accepts MCP connections and handles tool calls
-- Ctrl+C cleanly shuts down the server
-- Exit code is 0 on clean shutdown, non-zero on error
-
-**Tests:**
-- *Integration:* Full E2E test: start server, send tool call, verify response
-- *Manual:* Run with real config, use MCP client to invoke subagent
-
----
-
-### Task 10 — End-to-end integration with parent CPE
-
-- [ ] **Complete**
-
-**Depends on:** Task 9
+**Depends on:** Tasks 5, 6
 
 **Files to create:**
 - `examples/subagent/`: Example subagent configurations and prompts
@@ -503,11 +476,11 @@ This section defines ordered implementation tasks. Each task is a checklist item
 
 ---
 
-### Task 11 — Error handling, edge cases, and hardening
+### Task 10 — Error handling, edge cases, and hardening
 
 - [ ] **Complete**
 
-**Depends on:** Task 9
+**Depends on:** Tasks 5, 6
 
 **Files to modify:**
 - `internal/mcp/server.go`: Comprehensive error handling throughout
@@ -532,11 +505,11 @@ This section defines ordered implementation tasks. Each task is a checklist item
 
 ---
 
-### Task 12 — Documentation and README updates
+### Task 11 — Documentation and README updates
 
 - [ ] **Complete**
 
-**Depends on:** Task 10
+**Depends on:** Task 9
 
 **Files to modify:**
 - `README.md`: Add MCP Server Mode section with quickstart
