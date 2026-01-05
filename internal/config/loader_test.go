@@ -1128,7 +1128,7 @@ defaults:
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("expected error but got none")
-				} else if tt.errContains != "" && !contains(err.Error(), tt.errContains) {
+				} else if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
 					t.Errorf("expected error containing %q, got %q", tt.errContains, err.Error())
 				}
 				return

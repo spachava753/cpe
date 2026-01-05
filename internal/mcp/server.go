@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/cpe/internal/version"
 )
 
@@ -29,9 +29,22 @@ type MCPServerConfig struct {
 	MCPServers map[string]ServerConfig
 }
 
+// SubagentInput represents the input passed to the subagent executor
+type SubagentInput struct {
+	// Prompt is the task to execute
+	Prompt string
+	// Inputs is a list of file paths to include as context
+	Inputs []string
+}
+
+// SubagentExecutor is a function that executes a subagent with the given input.
+// It returns the result text or an error.
+type SubagentExecutor func(ctx context.Context, input SubagentInput) (string, error)
+
 // ServerOptions contains options for creating an MCP server
 type ServerOptions struct {
-	// Currently empty, reserved for future options like custom logging
+	// Executor is the function that executes the subagent (required)
+	Executor SubagentExecutor
 }
 
 // SubagentToolInput defines the input schema for the subagent tool
@@ -46,7 +59,7 @@ type SubagentToolInput struct {
 type Server struct {
 	config       MCPServerConfig
 	opts         ServerOptions
-	mcpServer    *mcp.Server
+	mcpServer    *mcpsdk.Server
 	outputSchema json.RawMessage
 }
 
@@ -58,6 +71,9 @@ func NewServer(cfg MCPServerConfig, opts ServerOptions) (*Server, error) {
 	}
 	if cfg.Subagent.Description == "" {
 		return nil, fmt.Errorf("subagent description is required")
+	}
+	if opts.Executor == nil {
+		return nil, fmt.Errorf("executor is required")
 	}
 
 	// Load and validate output schema if configured
@@ -75,8 +91,8 @@ func NewServer(cfg MCPServerConfig, opts ServerOptions) (*Server, error) {
 	}
 
 	// Create the underlying MCP server
-	mcpServer := mcp.NewServer(
-		&mcp.Implementation{
+	mcpServer := mcpsdk.NewServer(
+		&mcpsdk.Implementation{
 			Name:    "cpe",
 			Title:   "CPE MCP Server",
 			Version: version.Get(),
@@ -101,7 +117,7 @@ func NewServer(cfg MCPServerConfig, opts ServerOptions) (*Server, error) {
 
 // registerSubagentTool registers the subagent as an MCP tool
 func (s *Server) registerSubagentTool() error {
-	tool := &mcp.Tool{
+	tool := &mcpsdk.Tool{
 		Name:        s.config.Subagent.Name,
 		Description: s.config.Subagent.Description,
 	}
@@ -112,21 +128,30 @@ func (s *Server) registerSubagentTool() error {
 	}
 
 	// Register the tool with a typed handler
-	// The handler returns an error for now - actual execution will be implemented in Task 5
-	mcp.AddTool(s.mcpServer, tool, s.handleToolCall)
+	mcpsdk.AddTool(s.mcpServer, tool, s.handleToolCall)
 
 	return nil
 }
 
 // handleToolCall handles calls to the subagent tool
-// This is a placeholder that will be fully implemented in Task 5
-func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, input SubagentToolInput) (*mcp.CallToolResult, any, error) {
-	// Task 5 will implement actual subagent execution
-	return &mcp.CallToolResult{
-		Content: []mcp.Content{&mcp.TextContent{
-			Text: fmt.Sprintf("Subagent execution not yet implemented. Received prompt: %s", input.Prompt),
+func (s *Server) handleToolCall(ctx context.Context, req *mcpsdk.CallToolRequest, input SubagentToolInput) (*mcpsdk.CallToolResult, any, error) {
+	result, err := s.opts.Executor(ctx, SubagentInput{
+		Prompt: input.Prompt,
+		Inputs: input.Inputs,
+	})
+	if err != nil {
+		return &mcpsdk.CallToolResult{
+			Content: []mcpsdk.Content{&mcpsdk.TextContent{
+				Text: fmt.Sprintf("Subagent execution failed: %v", err),
+			}},
+			IsError: true,
+		}, nil, nil
+	}
+
+	return &mcpsdk.CallToolResult{
+		Content: []mcpsdk.Content{&mcpsdk.TextContent{
+			Text: result,
 		}},
-		IsError: true,
 	}, nil, nil
 }
 
@@ -135,6 +160,6 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcp.CallToolRequest, i
 func (s *Server) Serve(ctx context.Context) error {
 	// Run the server on stdio transport
 	// The MCP SDK handles graceful shutdown when context is cancelled
-	transport := &mcp.StdioTransport{}
+	transport := &mcpsdk.StdioTransport{}
 	return s.mcpServer.Run(ctx, transport)
 }

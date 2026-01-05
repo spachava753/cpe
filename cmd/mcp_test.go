@@ -11,28 +11,28 @@ func TestMCPServeCmd_RequiresConfig(t *testing.T) {
 	// Test that running without --config flag returns an error
 	// We can't easily test the full command execution without mocking,
 	// but we can verify the command is registered correctly
-	
+
 	cmd := mcpServeCmd
 	if cmd == nil {
 		t.Fatal("mcpServeCmd is nil")
 	}
-	
+
 	if cmd.Use != "serve" {
 		t.Errorf("expected Use to be 'serve', got %q", cmd.Use)
 	}
-	
+
 	if cmd.Short == "" {
 		t.Error("Short description should not be empty")
 	}
-	
+
 	if cmd.Long == "" {
 		t.Error("Long description should not be empty")
 	}
-	
+
 	if cmd.Example == "" {
 		t.Error("Example should not be empty")
 	}
-	
+
 	if cmd.RunE == nil {
 		t.Error("RunE should not be nil")
 	}
@@ -59,7 +59,7 @@ func TestMCPServeCmd_ValidConfig(t *testing.T) {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
-	
+
 	// Test cases for config validation
 	tests := []struct {
 		name        string
@@ -118,7 +118,7 @@ defaults:
 			errContains: "Name",
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Write config to temp file
@@ -126,7 +126,7 @@ defaults:
 			if err := os.WriteFile(configPath, []byte(tt.configYAML), 0644); err != nil {
 				t.Fatalf("failed to write config file: %v", err)
 			}
-			
+
 			// Note: Full integration testing of the command would require
 			// setting up the cobra command context properly. This test
 			// validates the config parsing logic works correctly.
@@ -140,21 +140,21 @@ func TestMCPServeCmd_HelpOutput(t *testing.T) {
 	var buf bytes.Buffer
 	mcpServeCmd.SetOut(&buf)
 	mcpServeCmd.SetErr(&buf)
-	
+
 	err := mcpServeCmd.Help()
 	if err != nil {
 		t.Fatalf("failed to get help: %v", err)
 	}
-	
+
 	output := buf.String()
-	
+
 	// Verify key elements are present
 	expectedPhrases := []string{
 		"MCP server",
 		"subagent",
 		"--config",
 	}
-	
+
 	for _, phrase := range expectedPhrases {
 		if !bytes.Contains([]byte(output), []byte(phrase)) {
 			t.Errorf("help output should contain %q", phrase)

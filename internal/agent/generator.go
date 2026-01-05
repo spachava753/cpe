@@ -41,13 +41,9 @@ func initGeneratorFromModel(
 	m config.Model,
 	systemPrompt string,
 	timeout time.Duration,
-	overrideBaseURL string,
 ) (gai.Generator, error) {
 	t := strings.ToLower(m.Type)
 	baseURL := m.BaseUrl
-	if overrideBaseURL != "" {
-		baseURL = overrideBaseURL
-	}
 
 	httpClient := http.DefaultClient
 	if m.PatchRequest != nil {
@@ -180,13 +176,12 @@ func CreateToolCapableGenerator(
 	selectedModel config.Model,
 	systemPrompt string,
 	requestTimeout time.Duration,
-	baseURLOverride string,
 	disableStreaming bool,
 	mcpServers map[string]mcp.ServerConfig,
 	codeModeConfig *config.CodeModeConfig,
 ) (Iface, error) {
 	// Create the base generator from catalog model
-	genBase, err := initGeneratorFromModel(ctx, selectedModel, systemPrompt, requestTimeout, baseURLOverride)
+	genBase, err := initGeneratorFromModel(ctx, selectedModel, systemPrompt, requestTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create generator: %w", err)
 	}

@@ -328,7 +328,7 @@ This section defines ordered implementation tasks. Each task is a checklist item
 
 ### Task 5 — Implement subagent execution on tool call
 
-- [ ] **Complete**
+- [x] **Complete**
 
 **Depends on:** Task 4
 

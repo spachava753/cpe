@@ -17,6 +17,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// noopExecutor is a mock executor that returns a fixed response
+func noopExecutor(_ context.Context, _ SubagentInput) (string, error) {
+	return "mock response", nil
+}
+
 func TestNewServer(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -38,20 +43,24 @@ func TestNewServer(t *testing.T) {
 			wantErr: "subagent description is required",
 		},
 		{
-			name: "valid config",
+			name: "missing executor",
 			config: MCPServerConfig{
 				Subagent: SubagentDef{
 					Name:        "test_agent",
 					Description: "A test agent",
 				},
 			},
-			wantErr: "",
+			wantErr: "executor is required",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server, err := NewServer(tt.config, ServerOptions{})
+			opts := ServerOptions{}
+			if tt.wantErr == "" || !strings.Contains(tt.wantErr, "executor") {
+				opts.Executor = noopExecutor
+			}
+			server, err := NewServer(tt.config, opts)
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)
@@ -72,7 +81,7 @@ func TestServer_Serve_ContextCancellation(t *testing.T) {
 		},
 	}
 
-	server, err := NewServer(cfg, ServerOptions{})
+	server, err := NewServer(cfg, ServerOptions{Executor: noopExecutor})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -148,7 +157,7 @@ func TestServer_StdoutClean(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	_, err := NewServer(cfg, ServerOptions{})
+	_, err := NewServer(cfg, ServerOptions{Executor: noopExecutor})
 	require.NoError(t, err)
 
 	// Close write end and read any output
@@ -275,7 +284,7 @@ func TestNewServer_OutputSchema(t *testing.T) {
 				},
 			}
 
-			server, err := NewServer(cfg, ServerOptions{})
+			server, err := NewServer(cfg, ServerOptions{Executor: noopExecutor})
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)
@@ -298,7 +307,7 @@ func TestServer_ToolRegistration(t *testing.T) {
 		},
 	}
 
-	server, err := NewServer(cfg, ServerOptions{})
+	server, err := NewServer(cfg, ServerOptions{Executor: noopExecutor})
 	require.NoError(t, err)
 	require.NotNil(t, server)
 	require.NotNil(t, server.mcpServer)
@@ -327,7 +336,7 @@ func TestServer_ToolRegistrationWithOutputSchema(t *testing.T) {
 		},
 	}
 
-	server, err := NewServer(cfg, ServerOptions{})
+	server, err := NewServer(cfg, ServerOptions{Executor: noopExecutor})
 	require.NoError(t, err)
 	require.NotNil(t, server)
 	require.NotNil(t, server.outputSchema)

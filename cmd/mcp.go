@@ -1,15 +1,19 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
 	"github.com/charmbracelet/glamour"
+	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/commands"
-	"github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/mcp"
+	"github.com/spachava753/gai"
 	"github.com/spf13/cobra"
 )
 
@@ -167,41 +171,113 @@ configuration file. The default config search behavior is disabled.`,
   cpe mcp serve --config ./coder_agent.cpe.yaml`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// For mcp serve, we require an explicit config path - don't use default search
-		// Check the root command's persistent flags to see if --config was explicitly passed
 		configFlag := cmd.Root().PersistentFlags().Lookup("config")
 		if configFlag == nil || !configFlag.Changed {
 			return fmt.Errorf("--config flag is required for mcp serve")
 		}
 
-		// Load and validate config (LoadRawConfig handles file existence check)
-		cfg, err := config.LoadRawConfig(configPath)
+		// Load raw config to check subagent is configured
+		rawCfg, err := config.LoadRawConfig(configPath)
 		if err != nil {
 			return fmt.Errorf("failed to load config: %w", err)
 		}
 
 		// Validate that subagent is configured
-		if cfg.Subagent == nil {
+		if rawCfg.Subagent == nil {
 			return fmt.Errorf("config must define a subagent for MCP server mode")
 		}
 
-		// Create server config from loaded config
+		// Create the executor using the config path
+		executor := createSubagentExecutor(configPath)
+
+		// Create server config
 		serverCfg := mcp.MCPServerConfig{
 			Subagent: mcp.SubagentDef{
-				Name:             cfg.Subagent.Name,
-				Description:      cfg.Subagent.Description,
-				OutputSchemaPath: cfg.Subagent.OutputSchemaPath,
+				Name:             rawCfg.Subagent.Name,
+				Description:      rawCfg.Subagent.Description,
+				OutputSchemaPath: rawCfg.Subagent.OutputSchemaPath,
 			},
-			MCPServers: cfg.MCPServers,
+			MCPServers: rawCfg.MCPServers,
 		}
 
 		// Create and run the MCP server
-		server, err := mcp.NewServer(serverCfg, mcp.ServerOptions{})
+		server, err := mcp.NewServer(serverCfg, mcp.ServerOptions{
+			Executor: executor,
+		})
 		if err != nil {
 			return fmt.Errorf("failed to create MCP server: %w", err)
 		}
 
 		return server.Serve(cmd.Context())
 	},
+}
+
+// createSubagentExecutor creates an executor function that runs the subagent
+func createSubagentExecutor(cfgPath string) mcp.SubagentExecutor {
+	return func(ctx context.Context, input mcp.SubagentInput) (string, error) {
+		// Resolve effective config (uses defaults.model from config)
+		effectiveConfig, err := config.ResolveConfig(cfgPath, config.RuntimeOptions{})
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve config: %w", err)
+		}
+
+		// Build user blocks from prompt and input files
+		userBlocks, err := agent.BuildUserBlocks(ctx, input.Prompt, input.Inputs)
+		if err != nil {
+			return "", fmt.Errorf("failed to build user input: %w", err)
+		}
+
+		// Load and render system prompt (same pattern as root.go)
+		var systemPrompt string
+		if effectiveConfig.SystemPromptPath != "" {
+			f, err := os.Open(effectiveConfig.SystemPromptPath)
+			if err != nil {
+				return "", fmt.Errorf("could not open system prompt file: %w", err)
+			}
+			defer f.Close()
+
+			contents, err := io.ReadAll(f)
+			if err != nil {
+				return "", fmt.Errorf("failed to read system prompt file: %w", err)
+			}
+
+			systemPrompt, err = agent.SystemPromptTemplate(string(contents), agent.TemplateData{
+				Config: effectiveConfig,
+			})
+			if err != nil {
+				return "", fmt.Errorf("failed to prepare system prompt: %w", err)
+			}
+		}
+
+		// Create the generator
+		generator, err := agent.CreateToolCapableGenerator(
+			ctx,
+			effectiveConfig.Model,
+			systemPrompt,
+			effectiveConfig.Timeout,
+			effectiveConfig.NoStream,
+			effectiveConfig.MCPServers,
+			effectiveConfig.CodeMode,
+		)
+		if err != nil {
+			return "", fmt.Errorf("failed to create generator: %w", err)
+		}
+
+		// Build generation options function
+		var genOptsFunc gai.GenOptsGenerator
+		if effectiveConfig.GenerationDefaults != nil {
+			genOptsFunc = func(_ gai.Dialog) *gai.GenOpts {
+				return effectiveConfig.GenerationDefaults
+			}
+		}
+
+		// Execute the subagent
+		return commands.ExecuteSubagent(ctx, commands.SubagentOptions{
+			UserBlocks:  userBlocks,
+			Generator:   generator,
+			GenOptsFunc: genOptsFunc,
+		})
+	}
 }
 
 func init() {
