@@ -846,7 +846,6 @@ func TestRawConfig_Validate(t *testing.T) {
 	}
 }
 
-
 func TestSubagentConfig(t *testing.T) {
 	tests := []struct {
 		name      string

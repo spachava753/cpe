@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"path/filepath"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -235,15 +235,14 @@ defaults:
 	t.Log("Successfully connected to MCP server and completed handshake")
 }
 
-
 func TestNewServer_OutputSchema(t *testing.T) {
 	// Create a temporary directory for test files
 	tmpDir := t.TempDir()
 
 	tests := []struct {
-		name       string
-		setupFunc  func() string // returns output schema path
-		wantErr    string
+		name      string
+		setupFunc func() string // returns output schema path
+		wantErr   string
 	}{
 		{
 			name: "missing output schema file",
@@ -426,7 +425,7 @@ defaults:
 	_, hasPrompt := props["prompt"]
 	assert.True(t, hasPrompt, "input schema should have 'prompt' property")
 
-	// Verify inputs property exists  
+	// Verify inputs property exists
 	_, hasInputs := props["inputs"]
 	assert.True(t, hasInputs, "input schema should have 'inputs' property")
 }

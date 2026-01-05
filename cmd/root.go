@@ -137,7 +137,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 			return fmt.Errorf("failed to prepare system prompt: %w", err)
 		}
 	}
-	
+
 	if customURL != "" {
 		effectiveConfig.Model.BaseUrl = customURL
 	}

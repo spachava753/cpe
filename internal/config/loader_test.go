@@ -1058,7 +1058,6 @@ func TestExpandEnvironmentVariables_CodeMode(t *testing.T) {
 	}
 }
 
-
 func TestLoadSubagentConfig(t *testing.T) {
 	tests := []struct {
 		name        string

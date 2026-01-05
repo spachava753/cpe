@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/glamour"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/commands"
 	"github.com/spachava753/cpe/internal/config"
@@ -187,8 +188,20 @@ configuration file. The default config search behavior is disabled.`,
 			return fmt.Errorf("config must define a subagent for MCP server mode")
 		}
 
-		// Create the executor using the config path
-		executor := createSubagentExecutor(configPath)
+		// Load and validate output schema at startup
+		var outputSchema *jsonschema.Schema
+		if rawCfg.Subagent.OutputSchemaPath != "" {
+			schemaBytes, err := os.ReadFile(rawCfg.Subagent.OutputSchemaPath)
+			if err != nil {
+				return fmt.Errorf("failed to read output schema file %q: %w", rawCfg.Subagent.OutputSchemaPath, err)
+			}
+			if err := json.Unmarshal(schemaBytes, &outputSchema); err != nil {
+				return fmt.Errorf("invalid output schema JSON in %q: %w", rawCfg.Subagent.OutputSchemaPath, err)
+			}
+		}
+
+		// Create the executor with pre-loaded schema
+		executor := createSubagentExecutor(configPath, outputSchema)
 
 		// Create server config
 		serverCfg := mcp.MCPServerConfig{
@@ -212,8 +225,9 @@ configuration file. The default config search behavior is disabled.`,
 	},
 }
 
-// createSubagentExecutor creates an executor function that runs the subagent
-func createSubagentExecutor(cfgPath string) mcp.SubagentExecutor {
+// createSubagentExecutor creates an executor function that runs the subagent.
+// The outputSchema is pre-loaded at startup and passed to each execution.
+func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema) mcp.SubagentExecutor {
 	return func(ctx context.Context, input mcp.SubagentInput) (string, error) {
 		// Resolve effective config (uses defaults.model from config)
 		effectiveConfig, err := config.ResolveConfig(cfgPath, config.RuntimeOptions{})
@@ -273,9 +287,10 @@ func createSubagentExecutor(cfgPath string) mcp.SubagentExecutor {
 
 		// Execute the subagent
 		return commands.ExecuteSubagent(ctx, commands.SubagentOptions{
-			UserBlocks:  userBlocks,
-			Generator:   generator,
-			GenOptsFunc: genOptsFunc,
+			UserBlocks:   userBlocks,
+			Generator:    generator,
+			GenOptsFunc:  genOptsFunc,
+			OutputSchema: outputSchema,
 		})
 	}
 }
