@@ -222,7 +222,7 @@ This section defines ordered implementation tasks. Each task is a checklist item
 
 ### Task 1 — Extend configuration schema with subagent definition
 
-- [ ] **Complete**
+- [x] **Complete**
 
 **Depends on:** None
 
@@ -247,7 +247,7 @@ This section defines ordered implementation tasks. Each task is a checklist item
 
 ### Task 2 — Add `cpe mcp serve` CLI command skeleton
 
-- [ ] **Complete**
+- [x] **Complete**
 
 **Depends on:** Task 1
 
@@ -269,7 +269,7 @@ This section defines ordered implementation tasks. Each task is a checklist item
 
 ### Task 3 — Implement MCP server transport layer (stdio)
 
-- [ ] **Complete**
+- [x] **Complete**
 
 **Depends on:** Task 2
 

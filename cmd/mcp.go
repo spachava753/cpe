@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/glamour"
 	"github.com/spachava753/cpe/internal/commands"
+	"github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -151,6 +152,58 @@ var mcpCallToolCmd = &cobra.Command{
 	},
 }
 
+// mcpServeCmd represents the 'mcp serve' subcommand
+var mcpServeCmd = &cobra.Command{
+	Use:   "serve",
+	Short: "Run CPE as an MCP server",
+	Long: `Start CPE as an MCP server that exposes a configured subagent as a tool.
+
+The server communicates via stdio and exposes exactly one tool based on 
+the subagent configuration in the provided config file.
+
+This command requires an explicit --config flag pointing to a subagent 
+configuration file. The default config search behavior is disabled.`,
+	Example: `  # Start the MCP server with a subagent config
+  cpe mcp serve --config ./coder_agent.cpe.yaml`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// For mcp serve, we require an explicit config path - don't use default search
+		// Check the root command's persistent flags to see if --config was explicitly passed
+		configFlag := cmd.Root().PersistentFlags().Lookup("config")
+		if configFlag == nil || !configFlag.Changed {
+			return fmt.Errorf("--config flag is required for mcp serve")
+		}
+
+		// Load and validate config (LoadRawConfig handles file existence check)
+		cfg, err := config.LoadRawConfig(configPath)
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+
+		// Validate that subagent is configured
+		if cfg.Subagent == nil {
+			return fmt.Errorf("config must define a subagent for MCP server mode")
+		}
+
+		// Create server config from loaded config
+		serverCfg := mcp.MCPServerConfig{
+			Subagent: mcp.SubagentDef{
+				Name:             cfg.Subagent.Name,
+				Description:      cfg.Subagent.Description,
+				OutputSchemaPath: cfg.Subagent.OutputSchemaPath,
+			},
+			MCPServers: cfg.MCPServers,
+		}
+
+		// Create and run the MCP server
+		server, err := mcp.NewServer(serverCfg, mcp.ServerOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to create MCP server: %w", err)
+		}
+
+		return server.Serve(cmd.Context())
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(mcpCmd)
 
@@ -159,6 +212,7 @@ func init() {
 	mcpCmd.AddCommand(mcpInfoCmd)
 	mcpCmd.AddCommand(mcpListToolsCmd)
 	mcpCmd.AddCommand(mcpCallToolCmd)
+	mcpCmd.AddCommand(mcpServeCmd)
 
 	// Add flags to mcp list-tools command
 	mcpListToolsCmd.Flags().Bool("show-all", false, "Show all tools including filtered ones")
