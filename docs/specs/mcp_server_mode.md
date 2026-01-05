@@ -397,15 +397,16 @@ This section defines ordered implementation tasks. Each task is a checklist item
 
 **Depends on:** Task 5
 
-**Files to modify:**
-- `internal/mcp/server.go`: Initialize `storage.DialogStorage` for `.cpeconvo`
-- `internal/mcp/server.go`: Pass storage to execution, annotate messages with subagent context
+**Files modified:**
+- `cmd/mcp.go`: Initialize `storage.DialogStorage` for `.cpeconvo`, generate run IDs, pass storage to executor
+- `internal/commands/subagent.go`: Add `Storage` and `SubagentLabel` fields to `SubagentOptions`, implement `saveSubagentTrace()`
 
 **Implementation details:**
-- Reuse `storage.InitDialogStorage` to open/create `.cpeconvo`
-- Each subagent invocation gets a unique run ID
-- Messages are annotated with subagent name and run ID (via label or metadata field)
-- Reuse `commands.Generate` which already handles persistence
+- Storage initialized in `cmd/mcp.go` using `storage.InitDialogStorage(".cpeconvo")`
+- Each subagent invocation generates a unique 8-character run ID via `gonanoid`
+- Messages annotated with label format `subagent:<name>:<run_id>` in the title field
+- Persistence is non-blocking: errors logged to stderr but don't fail execution
+- `saveSubagentTrace()` saves user message then chains assistant messages with parent IDs
 
 **Done when:**
 - Subagent execution creates entries in `.cpeconvo`
@@ -452,7 +453,7 @@ This section defines ordered implementation tasks. Each task is a checklist item
 
 - [ ] **Complete**
 
-**Depends on:** Tasks 5, 6
+**Depends on:** Tasks 5, 6, 7
 
 **Files to create:**
 - `examples/subagent/`: Example subagent configurations and prompts
