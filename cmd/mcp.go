@@ -10,12 +10,21 @@ import (
 
 	"github.com/charmbracelet/glamour"
 	"github.com/google/jsonschema-go/jsonschema"
+	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/commands"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/mcp"
+	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/gai"
 	"github.com/spf13/cobra"
+)
+
+const (
+	// runIDCharset is the character set for generating run IDs
+	runIDCharset = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	// runIDLength is the length of generated run IDs
+	runIDLength = 8
 )
 
 var (
@@ -200,8 +209,15 @@ configuration file. The default config search behavior is disabled.`,
 			}
 		}
 
-		// Create the executor with pre-loaded schema
-		executor := createSubagentExecutor(configPath, outputSchema)
+		// Initialize storage for persisting execution traces
+		dialogStorage, err := storage.InitDialogStorage(".cpeconvo")
+		if err != nil {
+			return fmt.Errorf("failed to initialize dialog storage: %w", err)
+		}
+		defer dialogStorage.Close()
+
+		// Create the executor with pre-loaded schema and storage
+		executor := createSubagentExecutor(configPath, outputSchema, rawCfg.Subagent.Name, dialogStorage)
 
 		// Create server config
 		serverCfg := mcp.MCPServerConfig{
@@ -225,10 +241,25 @@ configuration file. The default config search behavior is disabled.`,
 	},
 }
 
+// generateRunID generates a unique run ID for subagent invocations
+func generateRunID() string {
+	id, err := gonanoid.Generate(runIDCharset, runIDLength)
+	if err != nil {
+		// Fallback to timestamp-based ID if nanoid fails
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return id
+}
+
 // createSubagentExecutor creates an executor function that runs the subagent.
 // The outputSchema is pre-loaded at startup and passed to each execution.
-func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema) mcp.SubagentExecutor {
+// Storage and subagent name are used to persist execution traces.
+func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, subagentName string, dialogStorage commands.DialogStorage) mcp.SubagentExecutor {
 	return func(ctx context.Context, input mcp.SubagentInput) (string, error) {
+		// Generate unique run ID for this invocation
+		runID := generateRunID()
+		subagentLabel := fmt.Sprintf("subagent:%s:%s", subagentName, runID)
+
 		// Resolve effective config (uses defaults.model from config)
 		effectiveConfig, err := config.ResolveConfig(cfgPath, config.RuntimeOptions{})
 		if err != nil {
@@ -285,12 +316,14 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema) mcp
 			}
 		}
 
-		// Execute the subagent
+		// Execute the subagent with storage
 		return commands.ExecuteSubagent(ctx, commands.SubagentOptions{
-			UserBlocks:   userBlocks,
-			Generator:    generator,
-			GenOptsFunc:  genOptsFunc,
-			OutputSchema: outputSchema,
+			UserBlocks:    userBlocks,
+			Generator:     generator,
+			GenOptsFunc:   genOptsFunc,
+			OutputSchema:  outputSchema,
+			Storage:       dialogStorage,
+			SubagentLabel: subagentLabel,
 		})
 	}
 }

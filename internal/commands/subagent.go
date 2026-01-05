@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -34,6 +35,15 @@ type SubagentOptions struct {
 	// and execution terminates when the model calls final_answer.
 	// The tool call parameters are returned as the result.
 	OutputSchema *jsonschema.Schema
+
+	// Storage is the dialog storage for persisting execution traces (optional).
+	// When set, messages are saved with SubagentLabel annotation.
+	Storage DialogStorage
+
+	// SubagentLabel is the label used to annotate saved messages (optional).
+	// Typically formatted as "subagent:<name>:<run_id>" to distinguish
+	// subagent activity from parent agent entries.
+	SubagentLabel string
 }
 
 // ExecuteSubagent runs a subagent and returns the final response.
@@ -75,6 +85,14 @@ func ExecuteSubagent(ctx context.Context, opts SubagentOptions) (string, error) 
 		return "", fmt.Errorf("generation failed: %w", err)
 	}
 
+	// Persist execution trace if storage is configured
+	if opts.Storage != nil {
+		if saveErr := saveSubagentTrace(ctx, opts.Storage, userMessage, resultDialog[len(dialog):], opts.SubagentLabel); saveErr != nil {
+			// Log but don't fail - persistence is secondary to execution
+			fmt.Fprintf(os.Stderr, "warning: failed to save subagent trace: %v\n", saveErr)
+		}
+	}
+
 	// If output schema is configured, extract the final_answer parameters
 	if opts.OutputSchema != nil {
 		return extractFinalAnswerParams(resultDialog)
@@ -82,6 +100,26 @@ func ExecuteSubagent(ctx context.Context, opts SubagentOptions) (string, error) 
 
 	// Otherwise, extract the final assistant response text
 	return extractFinalResponse(resultDialog), nil
+}
+
+// saveSubagentTrace persists the subagent execution trace to storage
+func saveSubagentTrace(ctx context.Context, storage DialogStorage, userMsg gai.Message, assistantMsgs gai.Dialog, label string) error {
+	// Save user message with label
+	userMsgID, err := storage.SaveMessage(ctx, userMsg, "", label)
+	if err != nil {
+		return fmt.Errorf("failed to save user message: %w", err)
+	}
+
+	// Save assistant messages in chain
+	parentID := userMsgID
+	for _, msg := range assistantMsgs {
+		parentID, err = storage.SaveMessage(ctx, msg, parentID, label)
+		if err != nil {
+			return fmt.Errorf("failed to save assistant message: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // extractFinalAnswerParams extracts the parameters from a final_answer tool call.

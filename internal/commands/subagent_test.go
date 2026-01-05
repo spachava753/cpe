@@ -1,7 +1,9 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -238,4 +240,251 @@ func mustToolCallBlock(t *testing.T, id, toolName string, params map[string]any)
 		t.Fatalf("failed to create tool call block: %v", err)
 	}
 	return block
+}
+
+// --- Storage Persistence Tests ---
+
+// subagentMockStorage is a mock storage for subagent tests that tracks parent IDs and labels
+type subagentMockStorage struct {
+	savedEntries []subagentSavedEntry
+	idCounter    int
+}
+
+type subagentSavedEntry struct {
+	msg      gai.Message
+	parentID string
+	label    string
+	id       string
+}
+
+func (m *subagentMockStorage) GetMostRecentAssistantMessageId(ctx context.Context) (string, error) {
+	return "", nil
+}
+
+func (m *subagentMockStorage) GetDialogForMessage(ctx context.Context, messageID string) (gai.Dialog, []string, error) {
+	return nil, nil, nil
+}
+
+func (m *subagentMockStorage) SaveMessage(ctx context.Context, message gai.Message, parentID string, label string) (string, error) {
+	id := fmt.Sprintf("msg_%d", m.idCounter)
+	m.idCounter++
+	m.savedEntries = append(m.savedEntries, subagentSavedEntry{
+		msg:      message,
+		parentID: parentID,
+		label:    label,
+		id:       id,
+	})
+	return id, nil
+}
+
+func (m *subagentMockStorage) Close() error {
+	return nil
+}
+
+// subagentMockGenerator is a mock generator that returns configured responses
+type subagentMockGenerator struct {
+	responseBlocks []gai.Block
+}
+
+func (m *subagentMockGenerator) Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error) {
+	response := gai.Message{
+		Role:   gai.Assistant,
+		Blocks: m.responseBlocks,
+	}
+	return append(dialog, response), nil
+}
+
+func TestExecuteSubagent_PersistsToStorage(t *testing.T) {
+	storage := &subagentMockStorage{}
+	generator := &subagentMockGenerator{
+		responseBlocks: []gai.Block{
+			{
+				BlockType:    gai.Content,
+				ModalityType: gai.Text,
+				Content:      gai.Str("Hello from the subagent!"),
+			},
+		},
+	}
+
+	userBlocks := []gai.Block{
+		{
+			BlockType:    gai.Content,
+			ModalityType: gai.Text,
+			Content:      gai.Str("Test prompt"),
+		},
+	}
+
+	result, err := ExecuteSubagent(context.Background(), SubagentOptions{
+		UserBlocks:    userBlocks,
+		Generator:     generator,
+		Storage:       storage,
+		SubagentLabel: "subagent:test_agent:abc123",
+	})
+
+	if err != nil {
+		t.Fatalf("ExecuteSubagent failed: %v", err)
+	}
+
+	if result != "Hello from the subagent!" {
+		t.Errorf("unexpected result: %q", result)
+	}
+
+	// Verify messages were saved
+	if len(storage.savedEntries) != 2 {
+		t.Fatalf("expected 2 saved messages, got %d", len(storage.savedEntries))
+	}
+
+	// Verify user message
+	userEntry := storage.savedEntries[0]
+	if userEntry.msg.Role != gai.User {
+		t.Errorf("expected user role, got %v", userEntry.msg.Role)
+	}
+	if userEntry.parentID != "" {
+		t.Errorf("expected empty parent ID for user message, got %q", userEntry.parentID)
+	}
+	if userEntry.label != "subagent:test_agent:abc123" {
+		t.Errorf("unexpected label: %q", userEntry.label)
+	}
+
+	// Verify assistant message
+	assistantEntry := storage.savedEntries[1]
+	if assistantEntry.msg.Role != gai.Assistant {
+		t.Errorf("expected assistant role, got %v", assistantEntry.msg.Role)
+	}
+	if assistantEntry.parentID != "msg_0" {
+		t.Errorf("expected parent ID 'msg_0', got %q", assistantEntry.parentID)
+	}
+	if assistantEntry.label != "subagent:test_agent:abc123" {
+		t.Errorf("unexpected label: %q", assistantEntry.label)
+	}
+}
+
+func TestExecuteSubagent_NoStorageNoError(t *testing.T) {
+	generator := &subagentMockGenerator{
+		responseBlocks: []gai.Block{
+			{
+				BlockType:    gai.Content,
+				ModalityType: gai.Text,
+				Content:      gai.Str("Response without storage"),
+			},
+		},
+	}
+
+	userBlocks := []gai.Block{
+		{
+			BlockType:    gai.Content,
+			ModalityType: gai.Text,
+			Content:      gai.Str("Test prompt"),
+		},
+	}
+
+	// Execute without storage - should still work
+	result, err := ExecuteSubagent(context.Background(), SubagentOptions{
+		UserBlocks: userBlocks,
+		Generator:  generator,
+		// No storage set
+	})
+
+	if err != nil {
+		t.Fatalf("ExecuteSubagent failed: %v", err)
+	}
+
+	if result != "Response without storage" {
+		t.Errorf("unexpected result: %q", result)
+	}
+}
+
+func TestExecuteSubagent_MultipleAssistantMessages(t *testing.T) {
+	storage := &subagentMockStorage{}
+
+	// Simulate a generator that returns multiple assistant messages (e.g., tool call + response)
+	generator := &subagentMultiMsgGenerator{
+		responses: []gai.Message{
+			{
+				Role: gai.Assistant,
+				Blocks: []gai.Block{
+					{
+						BlockType:    gai.ToolCall,
+						ModalityType: gai.Text,
+						Content:      gai.Str(`{"name":"test_tool","parameters":{}}`),
+					},
+				},
+			},
+			{
+				Role: gai.ToolResult,
+				Blocks: []gai.Block{
+					{
+						BlockType:    gai.Content,
+						ModalityType: gai.Text,
+						Content:      gai.Str("tool result"),
+					},
+				},
+			},
+			{
+				Role: gai.Assistant,
+				Blocks: []gai.Block{
+					{
+						BlockType:    gai.Content,
+						ModalityType: gai.Text,
+						Content:      gai.Str("Final response"),
+					},
+				},
+			},
+		},
+	}
+
+	userBlocks := []gai.Block{
+		{
+			BlockType:    gai.Content,
+			ModalityType: gai.Text,
+			Content:      gai.Str("Test prompt"),
+		},
+	}
+
+	result, err := ExecuteSubagent(context.Background(), SubagentOptions{
+		UserBlocks:    userBlocks,
+		Generator:     generator,
+		Storage:       storage,
+		SubagentLabel: "subagent:multi:xyz789",
+	})
+
+	if err != nil {
+		t.Fatalf("ExecuteSubagent failed: %v", err)
+	}
+
+	if result != "Final response" {
+		t.Errorf("unexpected result: %q", result)
+	}
+
+	// Verify all messages were saved (1 user + 3 assistant/tool)
+	if len(storage.savedEntries) != 4 {
+		t.Fatalf("expected 4 saved messages, got %d", len(storage.savedEntries))
+	}
+
+	// Verify chain of parent IDs
+	for i, entry := range storage.savedEntries {
+		if i == 0 {
+			if entry.parentID != "" {
+				t.Errorf("first message should have no parent, got %q", entry.parentID)
+			}
+		} else {
+			expectedParent := fmt.Sprintf("msg_%d", i-1)
+			if entry.parentID != expectedParent {
+				t.Errorf("message %d: expected parent %q, got %q", i, expectedParent, entry.parentID)
+			}
+		}
+		// All messages should have the same label
+		if entry.label != "subagent:multi:xyz789" {
+			t.Errorf("message %d: unexpected label %q", i, entry.label)
+		}
+	}
+}
+
+// subagentMultiMsgGenerator returns multiple messages in the dialog
+type subagentMultiMsgGenerator struct {
+	responses []gai.Message
+}
+
+func (m *subagentMultiMsgGenerator) Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error) {
+	return append(dialog, m.responses...), nil
 }

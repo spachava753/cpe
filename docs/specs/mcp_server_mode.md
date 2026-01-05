@@ -393,7 +393,7 @@ This section defines ordered implementation tasks. Each task is a checklist item
 
 ### Task 7 — Persist subagent execution traces to storage
 
-- [ ] **Complete**
+- [x] **Complete**
 
 **Depends on:** Task 5
 
