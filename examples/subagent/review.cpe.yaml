@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/spachava753/cpe/refs/heads/main/schema/cpe-config-schema.json
+# review.cpe.yaml - Diff reviewer subagent
+# 
+# This subagent reviews code changes and returns structured feedback.
+# It has no filesystem access or code execution—pure analysis and reasoning.
+#
+# Usage:
+#   cpe mcp serve --config ./review.cpe.yaml
+version: "1.0"
+
+models:
+  - ref: sonnet
+    display_name: "Claude Sonnet"
+    id: claude-sonnet-4-20250514
+    type: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    context_window: 200000
+    max_output: 16384
+
+subagent:
+  name: review_changes
+  description: |
+    Review code changes (diffs, files, or descriptions) and return prioritized feedback.
+    Provide the changes via the 'prompt' field or reference files via 'inputs'.
+    Returns structured JSON with severity levels and actionable suggestions.
+  outputSchemaPath: ./review_schema.json
+
+defaults:
+  model: sonnet
+  systemPromptPath: ./review.prompt
+  codeMode:
+    enabled: false

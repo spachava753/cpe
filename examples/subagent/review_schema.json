@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["summary", "findings"],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "Brief overall assessment of the changes (1-2 sentences)"
+    },
+    "findings": {
+      "type": "array",
+      "description": "List of review findings, ordered by severity",
+      "items": {
+        "type": "object",
+        "required": ["severity", "category", "description"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "warning", "suggestion", "praise"],
+            "description": "Severity level of the finding"
+          },
+          "category": {
+            "type": "string",
+            "description": "Category (e.g., security, performance, readability, testing)"
+          },
+          "location": {
+            "type": "string",
+            "description": "File and line reference, if applicable"
+          },
+          "description": {
+            "type": "string",
+            "description": "Clear description of the finding"
+          },
+          "suggestion": {
+            "type": "string",
+            "description": "Recommended action or fix"
+          }
+        }
+      }
+    },
+    "approval": {
+      "type": "string",
+      "enum": ["approve", "request_changes", "comment"],
+      "description": "Overall review decision"
+    }
+  }
+}

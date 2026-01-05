@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/spachava753/cpe/refs/heads/main/schema/cpe-config-schema.json
+# coder.cpe.yaml - Code mode subagent
+#
+# This subagent can make code changes, run commands, and report results.
+# It has full filesystem and shell access via code mode.
+#
+# Usage:
+#   cpe mcp serve --config ./coder.cpe.yaml
+version: "1.0"
+
+models:
+  - ref: sonnet
+    display_name: "Claude Sonnet"
+    id: claude-sonnet-4-20250514
+    type: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    context_window: 200000
+    max_output: 16384
+
+subagent:
+  name: implement_change
+  description: |
+    Make code changes, run tests, and report results.
+    Describe the task in 'prompt'. Optionally reference files via 'inputs' for context.
+    The subagent can read/write files, run shell commands, and execute code.
+
+defaults:
+  model: sonnet
+  systemPromptPath: ./coder.prompt
+  codeMode:
+    enabled: true
+    maxTimeout: 300
