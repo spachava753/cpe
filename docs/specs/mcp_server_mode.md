@@ -301,7 +301,7 @@ This section defines ordered implementation tasks. Each task is a checklist item
 
 ### Task 4 — Register subagent as MCP tool
 
-- [ ] **Complete**
+- [x] **Complete**
 
 **Depends on:** Task 3
 
