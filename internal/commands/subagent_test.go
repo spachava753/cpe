@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -487,4 +488,110 @@ type subagentMultiMsgGenerator struct {
 
 func (m *subagentMultiMsgGenerator) Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error) {
 	return append(dialog, m.responses...), nil
+}
+
+// --- Context and Error Handling Tests ---
+
+// subagentContextAwareGenerator respects context cancellation
+type subagentContextAwareGenerator struct {
+	generateFunc func(ctx context.Context) (gai.Dialog, error)
+}
+
+func (m *subagentContextAwareGenerator) Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error) {
+	if m.generateFunc != nil {
+		return m.generateFunc(ctx)
+	}
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+		return dialog, nil
+	}
+}
+
+func TestExecuteSubagent_ContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	generator := &subagentContextAwareGenerator{
+		generateFunc: func(ctx context.Context) (gai.Dialog, error) {
+			return nil, ctx.Err()
+		},
+	}
+
+	userBlocks := []gai.Block{
+		{
+			BlockType:    gai.Content,
+			ModalityType: gai.Text,
+			Content:      gai.Str("Test prompt"),
+		},
+	}
+
+	_, err := ExecuteSubagent(ctx, SubagentOptions{
+		UserBlocks: userBlocks,
+		Generator:  generator,
+	})
+
+	if err == nil {
+		t.Fatal("expected error for cancelled context")
+	}
+	if !strings.Contains(err.Error(), "generation failed") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestExecuteSubagent_EmptyInput(t *testing.T) {
+	generator := &subagentMockGenerator{
+		responseBlocks: []gai.Block{
+			{
+				BlockType:    gai.Content,
+				ModalityType: gai.Text,
+				Content:      gai.Str("Response"),
+			},
+		},
+	}
+
+	_, err := ExecuteSubagent(context.Background(), SubagentOptions{
+		UserBlocks: nil, // Empty input
+		Generator:  generator,
+	})
+
+	if err == nil {
+		t.Fatal("expected error for empty input")
+	}
+	if !strings.Contains(err.Error(), "empty input") {
+		t.Errorf("expected 'empty input' error, got: %v", err)
+	}
+}
+
+func TestExecuteSubagent_GenerationError(t *testing.T) {
+	expectedErr := fmt.Errorf("API rate limit exceeded")
+	generator := &subagentContextAwareGenerator{
+		generateFunc: func(ctx context.Context) (gai.Dialog, error) {
+			return nil, expectedErr
+		},
+	}
+
+	userBlocks := []gai.Block{
+		{
+			BlockType:    gai.Content,
+			ModalityType: gai.Text,
+			Content:      gai.Str("Test prompt"),
+		},
+	}
+
+	_, err := ExecuteSubagent(context.Background(), SubagentOptions{
+		UserBlocks: userBlocks,
+		Generator:  generator,
+	})
+
+	if err == nil {
+		t.Fatal("expected error for generation failure")
+	}
+	if !strings.Contains(err.Error(), "generation failed") {
+		t.Errorf("expected 'generation failed' in error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "rate limit") {
+		t.Errorf("expected original error to be wrapped, got: %v", err)
+	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/cpe/internal/version"
@@ -133,13 +134,36 @@ func (s *Server) registerSubagentTool() error {
 	return nil
 }
 
-// handleToolCall handles calls to the subagent tool
-func (s *Server) handleToolCall(ctx context.Context, req *mcpsdk.CallToolRequest, input SubagentToolInput) (*mcpsdk.CallToolResult, any, error) {
-	result, err := s.opts.Executor(ctx, SubagentInput{
-		Prompt: input.Prompt,
-		Inputs: input.Inputs,
-	})
-	if err != nil {
+// handleToolCall handles calls to the subagent tool.
+// It includes panic recovery to ensure panics are returned as structured errors
+// rather than crashing the server process.
+func (s *Server) handleToolCall(ctx context.Context, req *mcpsdk.CallToolRequest, input SubagentToolInput) (result *mcpsdk.CallToolResult, metadata any, err error) {
+	// Recover from panics and convert to error response
+	defer func() {
+		if r := recover(); r != nil {
+			result = &mcpsdk.CallToolResult{
+				Content: []mcpsdk.Content{&mcpsdk.TextContent{
+					Text: fmt.Sprintf("Subagent execution panicked: %v", r),
+				}},
+				IsError: true,
+			}
+			metadata = nil
+			err = nil
+		}
+	}()
+
+	// Validate input
+	if strings.TrimSpace(input.Prompt) == "" {
+		return &mcpsdk.CallToolResult{
+			Content: []mcpsdk.Content{&mcpsdk.TextContent{
+				Text: "Subagent execution failed: prompt is required and cannot be empty",
+			}},
+			IsError: true,
+		}, nil, nil
+	}
+
+	// Check context before starting execution
+	if err := ctx.Err(); err != nil {
 		return &mcpsdk.CallToolResult{
 			Content: []mcpsdk.Content{&mcpsdk.TextContent{
 				Text: fmt.Sprintf("Subagent execution failed: %v", err),
@@ -148,9 +172,27 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcpsdk.CallToolRequest
 		}, nil, nil
 	}
 
+	execResult, execErr := s.opts.Executor(ctx, SubagentInput{
+		Prompt: input.Prompt,
+		Inputs: input.Inputs,
+	})
+	if execErr != nil {
+		// Provide actionable error messages based on error type
+		errMsg := execErr.Error()
+		if ctx.Err() != nil {
+			errMsg = fmt.Sprintf("execution cancelled or timed out: %v", execErr)
+		}
+		return &mcpsdk.CallToolResult{
+			Content: []mcpsdk.Content{&mcpsdk.TextContent{
+				Text: fmt.Sprintf("Subagent execution failed: %s", errMsg),
+			}},
+			IsError: true,
+		}, nil, nil
+	}
+
 	return &mcpsdk.CallToolResult{
 		Content: []mcpsdk.Content{&mcpsdk.TextContent{
-			Text: result,
+			Text: execResult,
 		}},
 	}, nil, nil
 }

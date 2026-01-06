@@ -479,7 +479,7 @@ This section defines ordered implementation tasks. Each task is a checklist item
 
 ### Task 10 — Error handling, edge cases, and hardening
 
-- [ ] **Complete**
+- [x] **Complete**
 
 **Depends on:** Tasks 5, 6
 

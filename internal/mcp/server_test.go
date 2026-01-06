@@ -3,6 +3,7 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -520,4 +521,226 @@ defaults:
 	require.True(t, ok)
 	_, hasResult := props["result"]
 	assert.True(t, hasResult, "output schema should have 'result' property")
+}
+
+// --- Error Handling Tests for Task 10 ---
+
+// panicExecutor is a mock executor that always panics
+func panicExecutor(_ context.Context, _ SubagentInput) (string, error) {
+	panic("intentional panic for testing")
+}
+
+// contextCancelledExecutor checks if context is cancelled and waits
+func contextCancelledExecutor(ctx context.Context, _ SubagentInput) (string, error) {
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+
+// errorExecutor returns a specific error
+func errorExecutor(_ context.Context, _ SubagentInput) (string, error) {
+	return "", fmt.Errorf("simulated API error: rate limit exceeded")
+}
+
+func TestServer_HandleToolCall_PanicRecovery(t *testing.T) {
+	cfg := MCPServerConfig{
+		Subagent: SubagentDef{
+			Name:        "panic_agent",
+			Description: "A test agent that panics",
+		},
+	}
+
+	server, err := NewServer(cfg, ServerOptions{Executor: panicExecutor})
+	require.NoError(t, err)
+
+	// Call the tool handler directly
+	ctx := context.Background()
+	result, _, err := server.handleToolCall(ctx, nil, SubagentToolInput{Prompt: "trigger panic"})
+
+	// Should not return an error (panic is caught)
+	assert.NoError(t, err)
+	// Result should be an error response
+	require.NotNil(t, result)
+	assert.True(t, result.IsError, "result should be marked as error")
+	// Error message should mention panic
+	require.Len(t, result.Content, 1)
+	textContent, ok := result.Content[0].(*mcp.TextContent)
+	require.True(t, ok)
+	assert.Contains(t, textContent.Text, "panicked")
+	assert.Contains(t, textContent.Text, "intentional panic")
+}
+
+func TestServer_HandleToolCall_EmptyPrompt(t *testing.T) {
+	cfg := MCPServerConfig{
+		Subagent: SubagentDef{
+			Name:        "test_agent",
+			Description: "A test agent",
+		},
+	}
+
+	server, err := NewServer(cfg, ServerOptions{Executor: noopExecutor})
+	require.NoError(t, err)
+
+	tests := []struct {
+		name        string
+		prompt      string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:        "empty prompt",
+			prompt:      "",
+			wantErr:     true,
+			errContains: "prompt is required",
+		},
+		{
+			name:        "whitespace only prompt",
+			prompt:      "   \t\n  ",
+			wantErr:     true,
+			errContains: "prompt is required",
+		},
+		{
+			name:    "valid prompt",
+			prompt:  "Hello, agent!",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			result, _, err := server.handleToolCall(ctx, nil, SubagentToolInput{Prompt: tt.prompt})
+
+			// The handler should never return a Go error - errors are in the result
+			assert.NoError(t, err)
+			require.NotNil(t, result)
+
+			if tt.wantErr {
+				assert.True(t, result.IsError, "result should be marked as error")
+				require.Len(t, result.Content, 1)
+				textContent, ok := result.Content[0].(*mcp.TextContent)
+				require.True(t, ok)
+				assert.Contains(t, textContent.Text, tt.errContains)
+			} else {
+				assert.False(t, result.IsError, "result should not be an error")
+			}
+		})
+	}
+}
+
+func TestServer_HandleToolCall_ContextCancellation(t *testing.T) {
+	cfg := MCPServerConfig{
+		Subagent: SubagentDef{
+			Name:        "test_agent",
+			Description: "A test agent",
+		},
+	}
+
+	server, err := NewServer(cfg, ServerOptions{Executor: contextCancelledExecutor})
+	require.NoError(t, err)
+
+	// Pre-cancelled context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	result, _, err := server.handleToolCall(ctx, nil, SubagentToolInput{Prompt: "test"})
+
+	assert.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.IsError)
+	require.Len(t, result.Content, 1)
+	textContent, ok := result.Content[0].(*mcp.TextContent)
+	require.True(t, ok)
+	assert.Contains(t, textContent.Text, "cancel")
+}
+
+func TestServer_HandleToolCall_ExecutorError(t *testing.T) {
+	cfg := MCPServerConfig{
+		Subagent: SubagentDef{
+			Name:        "test_agent",
+			Description: "A test agent",
+		},
+	}
+
+	server, err := NewServer(cfg, ServerOptions{Executor: errorExecutor})
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	result, _, err := server.handleToolCall(ctx, nil, SubagentToolInput{Prompt: "test"})
+
+	// The handler should not return a Go error
+	assert.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.IsError)
+	require.Len(t, result.Content, 1)
+	textContent, ok := result.Content[0].(*mcp.TextContent)
+	require.True(t, ok)
+	// Error message should contain the original error
+	assert.Contains(t, textContent.Text, "rate limit exceeded")
+	assert.Contains(t, textContent.Text, "Subagent execution failed")
+}
+
+func TestServer_HandleToolCall_ContextDeadlineExceeded(t *testing.T) {
+	cfg := MCPServerConfig{
+		Subagent: SubagentDef{
+			Name:        "test_agent",
+			Description: "A test agent",
+		},
+	}
+
+	// Executor that returns context.DeadlineExceeded
+	deadlineExecutor := func(ctx context.Context, _ SubagentInput) (string, error) {
+		return "", context.DeadlineExceeded
+	}
+
+	server, err := NewServer(cfg, ServerOptions{Executor: deadlineExecutor})
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	result, _, err := server.handleToolCall(ctx, nil, SubagentToolInput{Prompt: "test"})
+
+	assert.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.IsError)
+	require.Len(t, result.Content, 1)
+	textContent, ok := result.Content[0].(*mcp.TextContent)
+	require.True(t, ok)
+	assert.Contains(t, textContent.Text, "deadline exceeded")
+}
+
+func TestServer_HandleToolCall_ValidInput(t *testing.T) {
+	cfg := MCPServerConfig{
+		Subagent: SubagentDef{
+			Name:        "test_agent",
+			Description: "A test agent",
+		},
+	}
+
+	expectedResponse := "execution successful"
+	successExecutor := func(_ context.Context, input SubagentInput) (string, error) {
+		// Verify input is passed correctly
+		if input.Prompt != "test prompt" {
+			return "", fmt.Errorf("unexpected prompt: %s", input.Prompt)
+		}
+		if len(input.Inputs) != 2 || input.Inputs[0] != "file1.txt" || input.Inputs[1] != "file2.txt" {
+			return "", fmt.Errorf("unexpected inputs: %v", input.Inputs)
+		}
+		return expectedResponse, nil
+	}
+
+	server, err := NewServer(cfg, ServerOptions{Executor: successExecutor})
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	result, _, err := server.handleToolCall(ctx, nil, SubagentToolInput{
+		Prompt: "test prompt",
+		Inputs: []string{"file1.txt", "file2.txt"},
+	})
+
+	assert.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.IsError)
+	require.Len(t, result.Content, 1)
+	textContent, ok := result.Content[0].(*mcp.TextContent)
+	require.True(t, ok)
+	assert.Equal(t, expectedResponse, textContent.Text)
 }

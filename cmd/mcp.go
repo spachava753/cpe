@@ -256,6 +256,11 @@ func generateRunID() string {
 // Storage and subagent name are used to persist execution traces.
 func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, subagentName string, dialogStorage commands.DialogStorage) mcp.SubagentExecutor {
 	return func(ctx context.Context, input mcp.SubagentInput) (string, error) {
+		// Check context before starting
+		if err := ctx.Err(); err != nil {
+			return "", fmt.Errorf("execution cancelled before start: %w", err)
+		}
+
 		// Generate unique run ID for this invocation
 		runID := generateRunID()
 		subagentLabel := fmt.Sprintf("subagent:%s:%s", subagentName, runID)
@@ -263,12 +268,16 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 		// Resolve effective config (uses defaults.model from config)
 		effectiveConfig, err := config.ResolveConfig(cfgPath, config.RuntimeOptions{})
 		if err != nil {
-			return "", fmt.Errorf("failed to resolve config: %w", err)
+			return "", fmt.Errorf("failed to resolve config %q: %w", cfgPath, err)
 		}
 
 		// Build user blocks from prompt and input files
 		userBlocks, err := agent.BuildUserBlocks(ctx, input.Prompt, input.Inputs)
 		if err != nil {
+			// Provide actionable error for input file issues
+			if len(input.Inputs) > 0 {
+				return "", fmt.Errorf("failed to read input files %v: %w", input.Inputs, err)
+			}
 			return "", fmt.Errorf("failed to build user input: %w", err)
 		}
 
@@ -277,13 +286,13 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 		if effectiveConfig.SystemPromptPath != "" {
 			f, err := os.Open(effectiveConfig.SystemPromptPath)
 			if err != nil {
-				return "", fmt.Errorf("could not open system prompt file: %w", err)
+				return "", fmt.Errorf("could not open system prompt file %q: %w", effectiveConfig.SystemPromptPath, err)
 			}
 			defer f.Close()
 
 			contents, err := io.ReadAll(f)
 			if err != nil {
-				return "", fmt.Errorf("failed to read system prompt file: %w", err)
+				return "", fmt.Errorf("failed to read system prompt file %q: %w", effectiveConfig.SystemPromptPath, err)
 			}
 
 			systemPrompt, err = agent.SystemPromptTemplate(string(contents), agent.TemplateData{
@@ -292,6 +301,11 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 			if err != nil {
 				return "", fmt.Errorf("failed to prepare system prompt: %w", err)
 			}
+		}
+
+		// Check context before creating generator (can involve network calls)
+		if err := ctx.Err(); err != nil {
+			return "", fmt.Errorf("execution cancelled during setup: %w", err)
 		}
 
 		// Create the generator
@@ -305,7 +319,7 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 			effectiveConfig.CodeMode,
 		)
 		if err != nil {
-			return "", fmt.Errorf("failed to create generator: %w", err)
+			return "", fmt.Errorf("failed to create generator for model %q: %w", effectiveConfig.Model.Ref, err)
 		}
 
 		// Build generation options function
@@ -317,7 +331,7 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 		}
 
 		// Execute the subagent with storage
-		return commands.ExecuteSubagent(ctx, commands.SubagentOptions{
+		result, err := commands.ExecuteSubagent(ctx, commands.SubagentOptions{
 			UserBlocks:    userBlocks,
 			Generator:     generator,
 			GenOptsFunc:   genOptsFunc,
@@ -325,6 +339,14 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 			Storage:       dialogStorage,
 			SubagentLabel: subagentLabel,
 		})
+		if err != nil {
+			// Annotate context cancellation errors
+			if ctx.Err() != nil {
+				return "", fmt.Errorf("subagent %q execution timed out or cancelled: %w", subagentName, err)
+			}
+			return "", fmt.Errorf("subagent %q execution failed: %w", subagentName, err)
+		}
+		return result, nil
 	}
 }
 
