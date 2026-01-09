@@ -149,6 +149,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		systemPrompt,
 		effectiveConfig.Timeout,
 		effectiveConfig.NoStream,
+		false, // disablePrinting - keep response printing for interactive use
 		effectiveConfig.MCPServers,
 		effectiveConfig.CodeMode,
 	)

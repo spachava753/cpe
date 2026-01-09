@@ -110,9 +110,16 @@ func convertSchema(schema any) (*jsonschema.Schema, error) {
 func generateFuncDecl(goName, description, inputTypeName, outputTypeName string, hasInput bool) string {
 	var buf strings.Builder
 
-	// Add doc comment if description is present
+	// Add doc comment if description is present, handling multiline descriptions
 	if description != "" {
-		buf.WriteString(fmt.Sprintf("// %s %s\n", goName, description))
+		lines := strings.Split(description, "\n")
+		for i, line := range lines {
+			if i == 0 {
+				buf.WriteString(fmt.Sprintf("// %s %s\n", goName, line))
+			} else {
+				buf.WriteString(fmt.Sprintf("// %s\n", line))
+			}
+		}
 	}
 
 	// Generate function signature

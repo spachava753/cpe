@@ -651,6 +651,80 @@ Generated code runs with the same permissions as the CPE process. For production
 - Setting conservative execution timeouts
 - Carefully configuring which tools are exposed
 
+### MCP Server Mode
+
+MCP Server Mode allows CPE to be exposed as an MCP server, enabling composition of AI agents as tools within other MCP-compliant environments. This is useful for:
+
+- **Context management**: Subagents work with shorter context windows, improving quality
+- **Parallel execution**: Multiple subagents can run concurrently via code mode
+- **Task specialization**: Different subagents for different workflows (testing, reviewing, etc.)
+
+#### Creating a Subagent
+
+Create a dedicated config file for your subagent:
+
+```yaml
+# review_agent.cpe.yaml
+version: "1.0"
+
+models:
+  - ref: opus
+    display_name: "Claude Opus"
+    id: claude-opus-4-20250514
+    type: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+
+subagent:
+  name: review_changes
+  description: Review a diff and return prioritized feedback.
+  outputSchemaPath: ./schemas/review.json  # optional, for structured output
+
+defaults:
+  model: opus
+  systemPromptPath: ./prompts/review.prompt
+```
+
+#### Running the Server
+
+```bash
+cpe mcp serve --config ./review_agent.cpe.yaml
+```
+
+#### Using from a Parent Agent
+
+Configure the subagent as an MCP server in your parent config:
+
+```yaml
+# parent.cpe.yaml
+mcpServers:
+  reviewer:
+    command: cpe
+    args: ["mcp", "serve", "--config", "./review_agent.cpe.yaml"]
+    type: stdio
+```
+
+The parent can then invoke the `review_changes` tool with a prompt:
+
+```json
+{
+  "prompt": "Review this diff for potential issues",
+  "inputs": ["changes.diff"]
+}
+```
+
+#### Subagent Configuration
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Tool name exposed to the parent agent |
+| `description` | Yes | Tool description shown to the parent agent |
+| `outputSchemaPath` | No | Path to JSON schema for structured output |
+
+Subagents inherit the server's CWD and environment. They can use code mode and MCP servers defined in the config.
+
+See [docs/specs/mcp_server_mode.md](docs/specs/mcp_server_mode.md) for the complete specification.
+
+
 ## Examples
 
 ### Code Creation

@@ -191,6 +191,31 @@ var AlphaTool func(ctx context.Context, input AlphaToolInput) (AlphaToolOutput, 
 var ZebraTool func(ctx context.Context) (ZebraToolOutput, error)`,
 		},
 		{
+			name: "tool with multiline description",
+			tools: []*mcp.Tool{
+				{
+					Name:        "multi_line_tool",
+					Description: "First line of description.\nSecond line of description.\nThird line of description.",
+					InputSchema: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"param": map[string]any{"type": "string"},
+						},
+					},
+				},
+			},
+			want: `type MultiLineToolInput struct {
+	Param *string ` + "`" + `json:"param,omitempty"` + "`" + `
+}
+
+type MultiLineToolOutput = string
+
+// MultiLineTool First line of description.
+// Second line of description.
+// Third line of description.
+var MultiLineTool func(ctx context.Context, input MultiLineToolInput) (MultiLineToolOutput, error)`,
+		},
+		{
 			name: "tool with nil input schema",
 			tools: []*mcp.Tool{
 				{

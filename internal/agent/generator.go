@@ -177,6 +177,7 @@ func CreateToolCapableGenerator(
 	systemPrompt string,
 	requestTimeout time.Duration,
 	disableStreaming bool,
+	disablePrinting bool,
 	mcpServers map[string]mcp.ServerConfig,
 	codeModeConfig *config.CodeModeConfig,
 ) (Iface, error) {
@@ -189,11 +190,14 @@ func CreateToolCapableGenerator(
 	// Check if the generator supports streaming and if streaming is enabled
 	var gen gai.ToolCapableGenerator
 	if streamingGen, ok := genBase.(gai.StreamingGenerator); ok && !disableStreaming {
-		streamingPrinter := NewStreamingPrinterGenerator(streamingGen)
-		gen = &gai.StreamingAdapter{S: streamingPrinter}
+		gen = &gai.StreamingAdapter{S: streamingGen}
 	} else {
-		// print non-streaming responses
-		gen = NewResponsePrinterGenerator(genBase.(gai.ToolCapableGenerator))
+		gen = genBase.(gai.ToolCapableGenerator)
+	}
+
+	// Wrap with response printer unless disabled (e.g., for subagents in MCP server mode)
+	if !disablePrinting {
+		gen = NewResponsePrinterGenerator(gen)
 	}
 
 	// print token usage at the end of each message

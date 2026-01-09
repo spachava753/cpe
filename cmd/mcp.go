@@ -315,6 +315,7 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 			systemPrompt,
 			effectiveConfig.Timeout,
 			effectiveConfig.NoStream,
+			true, // disablePrinting - MCP server mode must not write to stdout
 			effectiveConfig.MCPServers,
 			effectiveConfig.CodeMode,
 		)
