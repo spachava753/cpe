@@ -1,7 +1,5 @@
 package config
 
-//go:generate go run github.com/spachava753/cpe/cmd/gen-schema
-
 import (
 	"time"
 

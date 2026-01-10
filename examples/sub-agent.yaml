@@ -1,0 +1,83 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/spachava753/cpe/refs/heads/main/schema/cpe-config-schema.json
+# sub-agent.yaml - Configuration for CPE subagent execution
+# Use this configuration when spawning subagents for parallel task execution
+version: "1.0"
+
+# Subagent configuration
+# This marks this config as a subagent and provides metadata for the orchestrator
+subagent:
+  name: "general-purpose-subagent"
+  description: "A general-purpose subagent for delegated task execution. Capable of file operations, code editing, shell commands, and tool usage within a scoped task boundary."
+  # outputSchemaPath: "./schemas/subagent-output.json"  # Optional: enforce structured output
+
+# MCP server definitions
+mcpServers:
+  editor:
+    command: "editor-mcp"
+    type: stdio
+    timeout: 60
+    toolFilter: whitelist
+    enabledTools:
+      - text_edit
+      - shell
+
+# Model definitions optimized for subagent workloads
+# Subagents typically benefit from faster, cost-effective models since they handle
+# focused, well-scoped tasks rather than complex multi-turn conversations
+models:
+  - ref: sonnet
+    display_name: "Claude Sonnet 4.5"
+    id: claude-sonnet-4-5-20250929
+    type: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    context_window: 200000
+    max_output: 64000
+    input_cost_per_million: 3
+    output_cost_per_million: 15
+
+  - ref: opus
+    display_name: "Claude Opus 4.1"
+    id: claude-opus-4-1-20250805
+    type: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    context_window: 200000
+    max_output: 32000
+    input_cost_per_million: 15
+    output_cost_per_million: 75
+
+  - ref: flash
+    display_name: "Gemini Flash Latest"
+    id: gemini-flash-latest
+    type: gemini
+    api_key_env: GEMINI_API_KEY
+    context_window: 1048576
+    max_output: 65536
+    input_cost_per_million: 0.30
+    output_cost_per_million: 2.50
+
+  - ref: gpt5mini
+    display_name: "GPT-5 Mini"
+    id: gpt-5-mini
+    type: responses
+    api_key_env: OPENAI_API_KEY
+    context_window: 400000
+    max_output: 128000
+    input_cost_per_million: 0.25
+    output_cost_per_million: 2
+
+  - ref: gpt5nano
+    display_name: "GPT-5 Nano"
+    id: gpt-5-nano
+    type: responses
+    api_key_env: OPENAI_API_KEY
+    context_window: 400000
+    max_output: 128000
+    input_cost_per_million: 0.05
+    output_cost_per_million: 0.40
+
+# Global defaults for subagent execution
+defaults:
+  systemPromptPath: "./examples/subagent_instructions.md"
+  model: "sonnet"
+  timeout: "5m"
+  noStream: false
