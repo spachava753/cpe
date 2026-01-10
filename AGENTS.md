@@ -228,3 +228,29 @@ harbor run -d "hello-world@head" -e docker --agent-import-path cpe_harbor.cpe:CP
 - The system prompt is fetched via curl from GitHub to avoid Jinja2/Go template syntax conflicts
 - CPE runs with `-n -G --skip-stdin` flags (new conversation, incognito, no stdin)
 - API keys are passed from host environment based on model provider
+
+
+## Scripts
+
+The `scripts/` folder contains development utility scripts managed via [Goyek](https://github.com/goyek/goyek), a Go-based task runner. Tasks are defined as Go functions and invoked with flags.
+
+**Available tasks:**
+
+- `debug-proxy` - HTTP reverse proxy that logs all requests/responses (useful for debugging API calls)
+- `mcp-debug-proxy` - Stdio proxy that logs MCP protocol messages to a file
+
+**Usage:**
+
+```bash
+# HTTP debug proxy
+go run ./scripts -target=https://api.anthropic.com -port=8080 debug-proxy
+
+# MCP debug proxy
+go run ./scripts -log=debug.log -cmd='go run main.go mcp serve' mcp-debug-proxy
+```
+
+**Adding new tasks:**
+
+1. Create a new `*_task.go` file in `scripts/`
+2. Define flags in `main.go` if the task needs arguments
+3. Use `goyek.Define(goyek.Task{...})` to register the task
