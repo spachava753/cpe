@@ -149,6 +149,58 @@ Implementation notes:
 - Exit codes: 0=success, 1=recoverable error, 2=panic (recoverable), 3=fatal error
 - Non-streaming printer renders generated code as syntax-highlighted Go blocks
 
+## MCP Server Mode
+
+MCP Server Mode exposes CPE as an MCP server, enabling subagent composition within other MCP clients. Each subagent is defined in its own config file and exposed as a single tool.
+
+**Running a subagent server:**
+
+```bash
+./cpe mcp serve --config ./subagent.cpe.yaml
+```
+
+**Subagent configuration:**
+
+```yaml
+version: "1.0"
+
+models:
+  - ref: opus
+    id: claude-opus-4-20250514
+    type: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+
+subagent:
+  name: task_name # Tool name exposed to parent
+  description: "..." # Tool description
+  outputSchemaPath: ./out.json # Optional structured output
+
+defaults:
+  model: opus
+  systemPromptPath: ./prompt.md
+  codeMode:
+    enabled: true # Subagent can use code mode
+```
+
+**Using from parent config:**
+
+```yaml
+mcpServers:
+  my_subagent:
+    command: cpe
+    args: ["mcp", "serve", "--config", "./subagent.cpe.yaml"]
+    type: stdio
+```
+
+Implementation notes:
+
+- Server uses stdio transport only; stdout is reserved for MCP protocol
+- Subagent inherits CWD and environment from server process
+- If `outputSchemaPath` is set, a `final_answer` tool extracts structured output
+- Execution traces are saved to `.cpeconvo` with `subagent:<name>:<run_id>` labels
+- No retries on failure; errors propagate directly to caller
+- Key files: `cmd/mcp.go`, `internal/mcp/server.go`, `internal/commands/subagent.go`
+
 ## Documentation for Go Symbols
 
 When gathering context about symbols like types, global variables, constants, functions and methods, prefer to use

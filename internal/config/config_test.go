@@ -845,3 +845,80 @@ func TestRawConfig_Validate(t *testing.T) {
 		})
 	}
 }
+
+func TestSubagentConfig(t *testing.T) {
+	tests := []struct {
+		name      string
+		cfg       RawConfig
+		expectErr bool
+	}{
+		{
+			name: "valid subagent with name and description",
+			cfg: RawConfig{
+				Models: []ModelConfig{
+					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
+				},
+				Subagent: &SubagentConfig{
+					Name:        "review_changes",
+					Description: "Review a diff and return feedback",
+				},
+			},
+		},
+		{
+			name: "valid subagent with name and description only",
+			cfg: RawConfig{
+				Models: []ModelConfig{
+					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
+				},
+				Subagent: &SubagentConfig{
+					Name:        "implement_change",
+					Description: "Make code changes and run tests",
+				},
+			},
+		},
+		{
+			name: "invalid subagent missing name",
+			cfg: RawConfig{
+				Models: []ModelConfig{
+					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
+				},
+				Subagent: &SubagentConfig{
+					Description: "Some description",
+				},
+			},
+			expectErr: true,
+		},
+		{
+			name: "invalid subagent missing description",
+			cfg: RawConfig{
+				Models: []ModelConfig{
+					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
+				},
+				Subagent: &SubagentConfig{
+					Name: "some_name",
+				},
+			},
+			expectErr: true,
+		},
+		{
+			name: "valid config without subagent",
+			cfg: RawConfig{
+				Models: []ModelConfig{
+					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cfg.Validate()
+			if !tt.expectErr && err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if tt.expectErr && err == nil {
+				t.Fatalf("expected error, got none")
+			}
+		})
+	}
+}

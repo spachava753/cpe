@@ -200,6 +200,11 @@ func (c *RawConfig) expandEnvironmentVariables() error {
 		c.MCPServers[name] = server
 	}
 
+	// Expand in subagent configuration
+	if c.Subagent != nil {
+		c.Subagent.OutputSchemaPath = os.ExpandEnv(c.Subagent.OutputSchemaPath)
+	}
+
 	// Expand in defaults
 	c.Defaults.SystemPromptPath = os.ExpandEnv(c.Defaults.SystemPromptPath)
 	if c.Defaults.CodeMode != nil && c.Defaults.CodeMode.ExcludedTools != nil {
@@ -227,6 +232,13 @@ func (c *RawConfig) Validate() error {
 		}
 	}
 
+	// Validate subagent configuration if present
+	if c.Subagent != nil {
+		if err := c.validateSubagentConfig(); err != nil {
+			return err
+		}
+	}
+
 	// Validate auth_method and api_key_env for each model
 	for _, m := range c.Models {
 		if err := validateModelAuth(m); err != nil {
@@ -242,6 +254,29 @@ func validateModelAuth(m ModelConfig) error {
 	// oauth is only valid for anthropic
 	if strings.ToLower(m.AuthMethod) == "oauth" && strings.ToLower(m.Type) != "anthropic" {
 		return fmt.Errorf("auth_method 'oauth' is only supported for anthropic provider")
+	}
+	return nil
+}
+
+// validateSubagentConfig validates the subagent configuration
+func (c *RawConfig) validateSubagentConfig() error {
+	// If outputSchemaPath is set, verify the file exists and is valid JSON
+	if c.Subagent.OutputSchemaPath != "" {
+		if _, err := os.Stat(c.Subagent.OutputSchemaPath); os.IsNotExist(err) {
+			return fmt.Errorf("subagent.outputSchemaPath: file does not exist: %s", c.Subagent.OutputSchemaPath)
+		} else if err != nil {
+			return fmt.Errorf("subagent.outputSchemaPath: error checking file: %w", err)
+		}
+
+		// Verify it's valid JSON
+		data, err := os.ReadFile(c.Subagent.OutputSchemaPath)
+		if err != nil {
+			return fmt.Errorf("subagent.outputSchemaPath: error reading file: %w", err)
+		}
+		var schema map[string]any
+		if err := json.Unmarshal(data, &schema); err != nil {
+			return fmt.Errorf("subagent.outputSchemaPath: invalid JSON schema: %w", err)
+		}
 	}
 	return nil
 }

@@ -41,13 +41,9 @@ func initGeneratorFromModel(
 	m config.Model,
 	systemPrompt string,
 	timeout time.Duration,
-	overrideBaseURL string,
 ) (gai.Generator, error) {
 	t := strings.ToLower(m.Type)
 	baseURL := m.BaseUrl
-	if overrideBaseURL != "" {
-		baseURL = overrideBaseURL
-	}
 
 	httpClient := http.DefaultClient
 	if m.PatchRequest != nil {
@@ -180,13 +176,13 @@ func CreateToolCapableGenerator(
 	selectedModel config.Model,
 	systemPrompt string,
 	requestTimeout time.Duration,
-	baseURLOverride string,
 	disableStreaming bool,
+	disablePrinting bool,
 	mcpServers map[string]mcp.ServerConfig,
 	codeModeConfig *config.CodeModeConfig,
 ) (Iface, error) {
 	// Create the base generator from catalog model
-	genBase, err := initGeneratorFromModel(ctx, selectedModel, systemPrompt, requestTimeout, baseURLOverride)
+	genBase, err := initGeneratorFromModel(ctx, selectedModel, systemPrompt, requestTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create generator: %w", err)
 	}
@@ -194,11 +190,14 @@ func CreateToolCapableGenerator(
 	// Check if the generator supports streaming and if streaming is enabled
 	var gen gai.ToolCapableGenerator
 	if streamingGen, ok := genBase.(gai.StreamingGenerator); ok && !disableStreaming {
-		streamingPrinter := NewStreamingPrinterGenerator(streamingGen)
-		gen = &gai.StreamingAdapter{S: streamingPrinter}
+		gen = &gai.StreamingAdapter{S: streamingGen}
 	} else {
-		// print non-streaming responses
-		gen = NewResponsePrinterGenerator(genBase.(gai.ToolCapableGenerator))
+		gen = genBase.(gai.ToolCapableGenerator)
+	}
+
+	// Wrap with response printer unless disabled (e.g., for subagents in MCP server mode)
+	if !disablePrinting {
+		gen = NewResponsePrinterGenerator(gen)
 	}
 
 	// print token usage at the end of each message

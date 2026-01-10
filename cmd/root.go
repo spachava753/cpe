@@ -2,23 +2,17 @@ package cmd
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strings"
 	"syscall"
-	"time"
 
-	"github.com/gabriel-vasile/mimetype"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/commands"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
-	"github.com/spachava753/cpe/internal/urlhandler"
 	"github.com/spachava753/cpe/internal/version"
 	"github.com/spachava753/gai"
 	"github.com/spf13/cobra"
@@ -144,8 +138,8 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		}
 	}
 
-	if customURL == "" {
-		customURL = effectiveConfig.Model.BaseUrl
+	if customURL != "" {
+		effectiveConfig.Model.BaseUrl = customURL
 	}
 
 	// Create the generator
@@ -154,8 +148,8 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		effectiveConfig.Model,
 		systemPrompt,
 		effectiveConfig.Timeout,
-		customURL,
 		effectiveConfig.NoStream,
+		false, // disablePrinting - keep response printing for interactive use
 		effectiveConfig.MCPServers,
 		effectiveConfig.CodeMode,
 	)
@@ -201,7 +195,7 @@ func processUserInput(args []string) ([]gai.Block, error) {
 		return nil, fmt.Errorf("failed to check stdin: %w", err)
 	}
 
-	// If stdin has data, read it
+	// If stdin has data, read it as a text block
 	if (stdinStat.Mode()&os.ModeCharDevice) == 0 && !skipStdin {
 		stdinBytes, err := io.ReadAll(os.Stdin)
 		if err != nil {
@@ -217,114 +211,21 @@ func processUserInput(args []string) ([]gai.Block, error) {
 		}
 	}
 
-	// Process input files and URLs and add them as blocks
-	for _, inputPath := range input {
-		var content []byte
-		var filename string
-		var contentType string
-
-		// Check if input is a URL or file path
-		if urlhandler.IsURL(inputPath) {
-			// Handle URL input
-			fmt.Fprintf(os.Stderr, "Downloading: %s\n", inputPath)
-
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-
-			downloaded, err := urlhandler.DownloadContent(ctx, inputPath, nil)
-			if err != nil {
-				return nil, fmt.Errorf("failed to download content from URL %s: %w", inputPath, err)
-			}
-
-			content = downloaded.Data
-			filename = filepath.Base(inputPath) // Extract filename from URL path
-			contentType = downloaded.ContentType
-
-			fmt.Fprintf(os.Stderr, "Downloaded %d bytes from %s\n", len(content), inputPath)
-		} else {
-			// Handle local file input
-			// Validate file exists
-			if _, err := os.Stat(inputPath); os.IsNotExist(err) {
-				return nil, fmt.Errorf("input file does not exist: %s", inputPath)
-			}
-
-			// Read file content
-			var err error
-			content, err = os.ReadFile(inputPath)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read input file %s: %w", inputPath, err)
-			}
-
-			filename = filepath.Base(inputPath)
-		}
-
-		// Apply size limits to prevent memory issues
-		if len(content) > 50*1024*1024 { // 50MB limit
-			return nil, fmt.Errorf("input content from %s exceeds maximum size limit (50MB)", inputPath)
-		}
-
-		// Detect input type (text, image, etc.)
-		modality, err := agent.DetectInputType(content)
-		if err != nil {
-			return nil, fmt.Errorf("failed to detect input type for %s: %w", inputPath, err)
-		}
-
-		// Determine MIME type
-		var mime string
-		if contentType != "" {
-			// Use Content-Type from HTTP response if available
-			mime = strings.Split(contentType, ";")[0] // Remove charset and other parameters
-		} else {
-			// Fall back to content-based detection
-			mime = mimetype.Detect(content).String()
-		}
-
-		// Create block based on modality
-		var block gai.Block
-		switch modality {
-		case gai.Text:
-			block = gai.Block{
-				BlockType:    gai.Content,
-				ModalityType: gai.Text,
-				MimeType:     "text/plain",
-				Content:      gai.Str(content),
-			}
-		case gai.Video:
-			contentStr := base64.StdEncoding.EncodeToString(content)
-			block = gai.Block{
-				BlockType:    gai.Content,
-				ModalityType: modality,
-				MimeType:     mime,
-				Content:      gai.Str(contentStr),
-			}
-		case gai.Audio:
-			block = gai.AudioBlock(content, mime)
-		case gai.Image:
-			if mime == "application/pdf" {
-				block = gai.PDFBlock(content, filename)
-			} else {
-				block = gai.ImageBlock(content, mime)
-			}
-		default:
-			return nil, fmt.Errorf("unsupported input type for %s", inputPath)
-		}
-
-		userBlocks = append(userBlocks, block)
-	}
-
-	// Add positional arguments if provided
+	// Extract prompt from positional arguments
+	var prompt string
 	if len(args) > 0 {
 		if len(args) != 1 {
 			return nil, fmt.Errorf("too many arguments to process")
 		}
-
-		userBlocks = append(userBlocks, gai.Block{
-			BlockType:    gai.Content,
-			ModalityType: gai.Text,
-			MimeType:     "text/plain",
-			Content:      gai.Str(args[0]),
-		})
+		prompt = args[0]
 	}
 
+	// Build blocks from prompt and resource paths (files/URLs)
+	blocks, err := agent.BuildUserBlocks(context.Background(), prompt, input)
+	if err != nil {
+		return nil, err
+	}
+
+	userBlocks = append(userBlocks, blocks...)
 	return userBlocks, nil
 }

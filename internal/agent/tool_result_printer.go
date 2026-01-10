@@ -131,19 +131,23 @@ func (g *ToolResultPrinterWrapper) Generate(ctx context.Context, dialog gai.Dial
 	return g.wrapped.Generate(ctx, dialog, optsGen)
 }
 
-// Register wraps the callback with a printer and registers it with the wrapped generator
+// Register wraps the callback with a printer and registers it with the wrapped generator.
+// If callback is nil, it is passed through without wrapping (nil callbacks terminate
+// execution immediately in gai.ToolGenerator).
 func (g *ToolResultPrinterWrapper) Register(tool gai.Tool, callback gai.ToolCallback) error {
-	// Wrap the callback with our printer
-	wrappedCallback := &ToolCallbackPrinter{
-		wrapped:  callback,
-		toolName: tool.Name,
-		renderer: g.renderer,
-	}
-
 	// Register with the wrapped generator using the local ToolRegister interface
-	if toolRegister, ok := g.wrapped.(ToolRegister); ok {
+	if toolRegister, ok := g.wrapped.(ToolRegister); !ok {
+		return gai.ToolRegistrationErr{Tool: tool.Name, Cause: fmt.Errorf("underlying generator does not support tool registration")}
+	} else if callback == nil {
+		// Pass through nil callbacks without wrapping
+		return toolRegister.Register(tool, nil)
+	} else {
+		// Wrap the callback with our printer
+		wrappedCallback := &ToolCallbackPrinter{
+			wrapped:  callback,
+			toolName: tool.Name,
+			renderer: g.renderer,
+		}
 		return toolRegister.Register(tool, wrappedCallback)
 	}
-
-	return gai.ToolRegistrationErr{Tool: tool.Name, Cause: fmt.Errorf("underlying generator does not support tool registration")}
 }
