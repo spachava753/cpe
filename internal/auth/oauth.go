@@ -20,7 +20,7 @@ const (
 	AnthropicTokenURL    = "https://console.anthropic.com/v1/oauth/token"
 	AnthropicRedirectURI = "https://console.anthropic.com/oauth/code/callback"
 	AnthropicScopes      = "org:create_api_key user:profile user:inference"
-	AnthropicBetaHeader  = "oauth-2025-04-20,claude-code-20250219"
+	AnthropicAuthBetaHeader  = "oauth-2025-04-20,claude-code-20250219"
 )
 
 // TokenResponse represents the OAuth token response from Anthropic

@@ -16,18 +16,23 @@ type OAuthTransport struct {
 	mu    sync.RWMutex
 }
 
-// NewOAuthTransport creates a new OAuth transport wrapper
-func NewOAuthTransport(store *Store) *OAuthTransport {
+// NewOAuthTransport creates a new OAuth transport wrapper.
+// If base is nil, http.DefaultTransport is used.
+func NewOAuthTransport(base http.RoundTripper, store *Store) *OAuthTransport {
+	if base == nil {
+		base = http.DefaultTransport
+	}
 	return &OAuthTransport{
-		base:  http.DefaultTransport,
+		base:  base,
 		store: store,
 	}
 }
 
-// NewOAuthHTTPClient creates an HTTP client configured for OAuth authentication
-func NewOAuthHTTPClient(store *Store) *http.Client {
+// NewOAuthHTTPClient creates an HTTP client configured for OAuth authentication.
+// If base is nil, http.DefaultTransport is used as the underlying transport.
+func NewOAuthHTTPClient(base http.RoundTripper, store *Store) *http.Client {
 	return &http.Client{
-		Transport: NewOAuthTransport(store),
+		Transport: NewOAuthTransport(base, store),
 		Timeout:   5 * time.Minute,
 	}
 }
@@ -70,7 +75,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	// Merge beta headers - preserve any existing betas and add OAuth required ones
 	existingBeta := clone.Header.Get("anthropic-beta")
-	mergedBeta := mergeBetaHeaders(existingBeta, AnthropicBetaHeader)
+	mergedBeta := mergeBetaHeaders(existingBeta, AnthropicAuthBetaHeader)
 
 	// Set Bearer auth and required headers
 	clone.Header.Set("Authorization", "Bearer "+cred.AccessToken)
@@ -86,7 +91,7 @@ func mergeBetaHeaders(existing, required string) string {
 	var result []string
 
 	// Add required headers first
-	for _, h := range strings.Split(required, ",") {
+	for h := range strings.SplitSeq(required, ",") {
 		h = strings.TrimSpace(h)
 		if h != "" && !seen[h] {
 			seen[h] = true
@@ -95,7 +100,7 @@ func mergeBetaHeaders(existing, required string) string {
 	}
 
 	// Add existing headers
-	for _, h := range strings.Split(existing, ",") {
+	for h := range strings.SplitSeq(existing, ",") {
 		h = strings.TrimSpace(h)
 		if h != "" && !seen[h] {
 			seen[h] = true

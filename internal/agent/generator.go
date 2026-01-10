@@ -84,15 +84,24 @@ func initGeneratorFromModel(
 			if cred.Type != "oauth" {
 				return nil, fmt.Errorf("stored credential is not OAuth type")
 			}
-			oauthClient := auth.NewOAuthHTTPClient(store)
-			// Combine OAuth beta header with interleaved thinking and context management headers
-			betaHeaders := auth.AnthropicBetaHeader + ",interleaved-thinking-2025-05-14,context-management-2025-06-27"
+			// Build transport chain: PatchTransport -> OAuthTransport -> DefaultTransport
+			// This order ensures OAuthTransport merges its headers with any headers
+			// set by PatchTransport, rather than PatchTransport overwriting OAuth headers.
+			oauthTransport := auth.NewOAuthTransport(nil, store)
+			var finalTransport http.RoundTripper = oauthTransport
+			if m.PatchRequest != nil {
+				// Wrap OAuthTransport with PatchTransport
+				finalTransport, err = BuildPatchTransportFromConfig(oauthTransport, m.PatchRequest)
+				if err != nil {
+					return nil, fmt.Errorf("building patch transport for OAuth: %w", err)
+				}
+			}
+			oauthClient := &http.Client{Transport: finalTransport, Timeout: 5 * time.Minute}
 			client = a.NewClient(
 				aopts.WithBaseURL(baseURL),
 				aopts.WithAPIKey("placeholder"),
 				aopts.WithHTTPClient(oauthClient),
 				aopts.WithRequestTimeout(timeout),
-				aopts.WithHeader("anthropic-beta", betaHeaders),
 			)
 		} else {
 			// Use API key authentication
