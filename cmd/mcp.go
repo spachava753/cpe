@@ -297,7 +297,7 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 
 			systemPrompt, err = agent.SystemPromptTemplate(string(contents), agent.TemplateData{
 				Config: effectiveConfig,
-			})
+			}, os.Stderr)
 			if err != nil {
 				return "", fmt.Errorf("failed to prepare system prompt: %w", err)
 			}

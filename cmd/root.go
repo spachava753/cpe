@@ -132,7 +132,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 
 		systemPrompt, err = agent.SystemPromptTemplate(string(contents), agent.TemplateData{
 			Config: effectiveConfig,
-		})
+		}, os.Stderr)
 		if err != nil {
 			return fmt.Errorf("failed to prepare system prompt: %w", err)
 		}
