@@ -7,8 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/codemode"
 )
 
 // mockToolCallback is a mock implementation of gai.ToolCallback for testing

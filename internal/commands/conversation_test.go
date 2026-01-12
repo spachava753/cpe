@@ -8,8 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/storage"
 )
 
 // mockTreePrinter is a test implementation of TreePrinter

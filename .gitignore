@@ -19,6 +19,7 @@
 !go.mod
 !go.work
 !sqlc.yaml
+!.golangci.yml
 
 !README.md
 !LICENSE

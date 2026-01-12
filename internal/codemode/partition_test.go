@@ -4,8 +4,9 @@ import (
 	"testing"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/mcp"
 )
 
 func TestPartitionTools(t *testing.T) {

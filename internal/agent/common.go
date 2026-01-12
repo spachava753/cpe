@@ -2,9 +2,10 @@ package agent
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/spachava753/gai"
-	"strings"
 )
 
 // DetectInputType detects the type of input from a file

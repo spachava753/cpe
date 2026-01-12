@@ -79,6 +79,12 @@ Formatting, vetting, testing:
 go fmt ./...
 go vet ./...
 go test ./...
+
+# Lint (via golangci-lint)
+go run ./scripts lint
+
+# Lint with auto-fix for formatting issues
+go run ./scripts -lint-fix lint
 ```
 
 Schema and configuration:
@@ -236,12 +242,19 @@ The `scripts/` folder contains development utility scripts managed via [Goyek](h
 
 **Available tasks:**
 
+- `lint` - Run golangci-lint with bug-focused linters (staticcheck, govet, bodyclose, nilerr, contextcheck, etc.)
 - `debug-proxy` - HTTP reverse proxy that logs all requests/responses (useful for debugging API calls)
 - `mcp-debug-proxy` - Stdio proxy that logs MCP protocol messages to a file
 
 **Usage:**
 
 ```bash
+# Lint the codebase
+go run ./scripts lint
+
+# Lint with auto-fix for formatting issues
+go run ./scripts -lint-fix lint
+
 # HTTP debug proxy
 go run ./scripts -target=https://api.anthropic.com -port=8080 debug-proxy
 

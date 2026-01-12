@@ -13,12 +13,13 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/openai/openai-go/v2"
 	oaiopt "github.com/openai/openai-go/v2/option"
+	"github.com/spachava753/gai"
+	"google.golang.org/genai"
+
 	"github.com/spachava753/cpe/internal/auth"
 	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/mcp"
-	"github.com/spachava753/gai"
-	"google.golang.org/genai"
 
 	"github.com/cenkalti/backoff/v5"
 )

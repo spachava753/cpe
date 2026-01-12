@@ -12,9 +12,10 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/muesli/termenv"
-	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/gai"
 	"golang.org/x/term"
+
+	"github.com/spachava753/cpe/internal/codemode"
 )
 
 // newContentRenderer creates a glamour renderer for content with appropriate styling

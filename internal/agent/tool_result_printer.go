@@ -8,8 +8,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/codemode"
 )
 
 const maxLines = 20

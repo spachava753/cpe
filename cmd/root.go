@@ -9,13 +9,14 @@ import (
 	"syscall"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/spachava753/gai"
+	"github.com/spf13/cobra"
+
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/commands"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/version"
-	"github.com/spachava753/gai"
-	"github.com/spf13/cobra"
 )
 
 // DefaultModel holds the global default LLM model for the CLI.

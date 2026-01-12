@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/matoous/go-nanoid/v2"
+	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/spachava753/gai"
 )
 

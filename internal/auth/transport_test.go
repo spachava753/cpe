@@ -17,10 +17,10 @@ import (
 // newTestStore creates a Store with credentials at a temp path for testing
 func newTestStore(t *testing.T, cred *Credential) *Store {
 	t.Helper()
-	
+
 	tmpDir := t.TempDir()
 	authPath := filepath.Join(tmpDir, "auth.json")
-	
+
 	creds := map[string]*Credential{
 		cred.Provider: cred,
 	}
@@ -28,11 +28,11 @@ func newTestStore(t *testing.T, cred *Credential) *Store {
 	if err != nil {
 		t.Fatalf("marshaling test credentials: %v", err)
 	}
-	
+
 	if err := os.WriteFile(authPath, data, 0600); err != nil {
 		t.Fatalf("writing test auth file: %v", err)
 	}
-	
+
 	return &Store{path: authPath}
 }
 
@@ -41,24 +41,24 @@ func newTestStore(t *testing.T, cred *Credential) *Store {
 // This is the fix for GitHub issue #127.
 func TestOAuthTransportWithPatchedBase(t *testing.T) {
 	tests := []struct {
-		name           string
-		patchJSON      string
-		patchHeaders   map[string]string
-		requestBody    string
-		wantBody       string
-		wantHeaders    map[string]string
+		name         string
+		patchJSON    string
+		patchHeaders map[string]string
+		requestBody  string
+		wantBody     string
+		wantHeaders  map[string]string
 	}{
 		{
-			name:        "OAuth with custom headers",
-			patchJSON:   "",
+			name:      "OAuth with custom headers",
+			patchJSON: "",
 			patchHeaders: map[string]string{
 				"X-Custom-Header": "custom-value",
 			},
 			requestBody: `{"model":"claude-3"}`,
 			wantBody:    `{"model":"claude-3"}`,
 			wantHeaders: map[string]string{
-				"Authorization":    "Bearer test-access-token",
-				"X-Custom-Header":  "custom-value",
+				"Authorization":   "Bearer test-access-token",
+				"X-Custom-Header": "custom-value",
 			},
 		},
 		{
@@ -89,9 +89,9 @@ func TestOAuthTransportWithPatchedBase(t *testing.T) {
 			requestBody: `{"original":"data"}`,
 			wantBody:    `{"original":"data","patched":true}`,
 			wantHeaders: map[string]string{
-				"Authorization":     "Bearer test-access-token",
-				"X-Patched-Header":  "patched-value",
-				"X-Another":         "another-value",
+				"Authorization":    "Bearer test-access-token",
+				"X-Patched-Header": "patched-value",
+				"X-Another":        "another-value",
 			},
 		},
 	}

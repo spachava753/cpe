@@ -8,10 +8,11 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/muesli/termenv"
-	"github.com/spachava753/cpe/internal/commands"
-	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
+
+	"github.com/spachava753/cpe/internal/commands"
+	"github.com/spachava753/cpe/internal/storage"
 )
 
 // treePrinterAdapter adapts the PrintMessageForest function

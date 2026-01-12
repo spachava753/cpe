@@ -311,7 +311,6 @@ Body
 	}
 }
 
-
 func TestParseSkill(t *testing.T) {
 	tmpDir := t.TempDir()
 

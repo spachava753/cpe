@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/invopop/jsonschema"
+
 	"github.com/spachava753/cpe/internal/config"
 )
 

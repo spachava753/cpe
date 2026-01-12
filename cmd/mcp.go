@@ -11,13 +11,14 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/google/jsonschema-go/jsonschema"
 	gonanoid "github.com/matoous/go-nanoid/v2"
+	"github.com/spachava753/gai"
+	"github.com/spf13/cobra"
+
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/commands"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/storage"
-	"github.com/spachava753/gai"
-	"github.com/spf13/cobra"
 )
 
 const (
