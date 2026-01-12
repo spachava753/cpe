@@ -7,8 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spachava753/cpe/internal/auth"
 	"github.com/spf13/cobra"
+
+	"github.com/spachava753/cpe/internal/auth"
 )
 
 var authCmd = &cobra.Command{

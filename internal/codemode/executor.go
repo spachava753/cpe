@@ -79,7 +79,7 @@ func ExecuteCode(ctx context.Context, servers []ServerToolsInfo, llmCode string,
 		return ExecutionResult{
 			Output:   tidyResult.Output,
 			ExitCode: tidyResult.ExitCode,
-		}, RecoverableError{Output: tidyResult.Output, ExitCode: tidyResult.ExitCode}
+		}, RecoverableError(tidyResult)
 	}
 
 	// Build the binary to get accurate exit codes (go run masks them)
@@ -93,7 +93,7 @@ func ExecuteCode(ctx context.Context, servers []ServerToolsInfo, llmCode string,
 		return ExecutionResult{
 			Output:   buildResult.Output,
 			ExitCode: buildResult.ExitCode,
-		}, RecoverableError{Output: buildResult.Output, ExitCode: buildResult.ExitCode}
+		}, RecoverableError(buildResult)
 	}
 
 	// Execute the built binary with timeout and graceful shutdown
@@ -193,13 +193,13 @@ func classifyExitCode(result ExecutionResult) error {
 		return nil
 	case 1, 2:
 		// Exit 1: Run() returned error; Exit 2: panic - both recoverable
-		return RecoverableError{Output: result.Output, ExitCode: result.ExitCode}
+		return RecoverableError(result)
 	case 3:
 		// Exit 3: fatalExit() called - unrecoverable
 		return FatalExecutionError{Output: result.Output}
 	default:
 		// Other non-zero codes (e.g., -1 from SIGKILL) are recoverable
-		return RecoverableError{Output: result.Output, ExitCode: result.ExitCode}
+		return RecoverableError(result)
 	}
 }
 

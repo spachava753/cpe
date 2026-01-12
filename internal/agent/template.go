@@ -12,8 +12,9 @@ import (
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
-	"github.com/spachava753/cpe/internal/config"
 	"gopkg.in/yaml.v3"
+
+	"github.com/spachava753/cpe/internal/config"
 )
 
 type TemplateData struct {
@@ -211,4 +212,3 @@ func isValidSkillName(name string) bool {
 	re := regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 	return re.MatchString(name)
 }
-

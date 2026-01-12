@@ -1,0 +1,61 @@
+# golangci-lint configuration v2
+# Focus: bug detection, correctness - minimal false positives
+
+version: "2"
+
+linters:
+  default: none
+  enable:
+    # Core bug detection
+    - govet          # Reports suspicious constructs
+    - staticcheck    # Comprehensive static analysis
+    - ineffassign    # Detects ineffective assignments
+    - unused         # Unused code detection
+
+    # Error handling patterns
+    - nilerr         # Returns nil even if error is non-nil
+
+    # Resource management
+    - bodyclose      # HTTP response body not closed
+    - sqlclosecheck  # SQL rows/stmt not closed
+    - rowserrcheck   # Rows.Err() not checked
+
+    # Context usage
+    - noctx          # HTTP requests and exec without context
+    - contextcheck   # Context misuse detection
+
+    # Concurrency safety
+    - copyloopvar    # Loop variable capture issues
+
+    # Memory/performance bugs
+    - durationcheck  # time.Duration multiplication issues
+    - makezero       # Append to slice initialized with non-zero len
+    - wastedassign   # Useless assignment statements
+
+    # Type safety
+    - forcetypeassert # Unchecked type assertions
+
+issues:
+  max-issues-per-linter: 50
+  max-same-issues: 10
+
+  exclude-rules:
+    # Test files: more lenient requirements
+    - path: _test\.go$
+      linters:
+        - forcetypeassert
+        - unused
+        - wastedassign
+        - bodyclose
+        - noctx
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes:
+        - github.com/spachava753/cpe

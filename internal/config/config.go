@@ -3,8 +3,9 @@ package config
 import (
 	"time"
 
-	"github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/mcp"
 )
 
 // Model represents an AI model configuration

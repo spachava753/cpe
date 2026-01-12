@@ -9,8 +9,9 @@ import (
 	"text/template"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	mcpcpe "github.com/spachava753/cpe/internal/mcp"
 	"github.com/stoewer/go-strcase"
+
+	mcpcpe "github.com/spachava753/cpe/internal/mcp"
 )
 
 //go:embed maingen.go.tmpl

@@ -2,9 +2,10 @@ package cmd
 
 import (
 	"bytes"
-	"github.com/google/go-cmp/cmp"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/spachava753/cpe/internal/storage"
 )

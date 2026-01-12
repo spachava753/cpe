@@ -8,8 +8,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/storage"
 )
 
 // ConversationListOptions contains parameters for listing conversations

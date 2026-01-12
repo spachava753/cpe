@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	
+
 	"github.com/goyek/goyek/v2"
 )
 
@@ -16,6 +16,12 @@ var (
 var (
 	logFile = flag.String("log", "", "Log file path (for mcp-debug-proxy)")
 	mcpCmd  = flag.String("cmd", "", "MCP command to run (for mcp-debug-proxy)")
+)
+
+// Flags for lint task
+var (
+	lintFix     = flag.Bool("lint-fix", false, "Auto-fix linting issues")
+	lintVerbose = flag.Bool("lint-verbose", false, "Verbose linting output")
 )
 
 func main() {
@@ -34,3 +40,9 @@ func GetLogFile() string { return *logFile }
 
 // GetMCPCmd returns the MCP command flag value
 func GetMCPCmd() string { return *mcpCmd }
+
+// GetLintFix returns the lint-fix flag value
+func GetLintFix() bool { return *lintFix }
+
+// GetLintVerbose returns the lint-verbose flag value
+func GetLintVerbose() bool { return *lintVerbose }

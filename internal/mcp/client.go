@@ -13,8 +13,9 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/spachava753/cpe/internal/version"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/version"
 )
 
 // headerRoundTripper adds custom headers to HTTP requests

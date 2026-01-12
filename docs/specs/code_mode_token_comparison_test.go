@@ -10,8 +10,9 @@ import (
 	"github.com/go-faker/faker/v4"
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/codemode"
 )
 
 // TestCodeModeTokenComparison compares token usage between code mode and normal tool calling

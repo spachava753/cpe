@@ -10,8 +10,9 @@ import (
 	"time"
 
 	"github.com/gabriel-vasile/mimetype"
-	"github.com/spachava753/cpe/internal/urlhandler"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/urlhandler"
 )
 
 // BuildUserBlocks creates gai.Block slice from a text prompt and resource paths.

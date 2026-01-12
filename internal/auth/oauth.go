@@ -15,12 +15,12 @@ import (
 
 // OAuth constants for Anthropic
 const (
-	AnthropicClientID    = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-	AnthropicAuthURL     = "https://claude.ai/oauth/authorize"
-	AnthropicTokenURL    = "https://console.anthropic.com/v1/oauth/token"
-	AnthropicRedirectURI = "https://console.anthropic.com/oauth/code/callback"
-	AnthropicScopes      = "org:create_api_key user:profile user:inference"
-	AnthropicAuthBetaHeader  = "oauth-2025-04-20,claude-code-20250219"
+	AnthropicClientID       = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+	AnthropicAuthURL        = "https://claude.ai/oauth/authorize"
+	AnthropicTokenURL       = "https://console.anthropic.com/v1/oauth/token"
+	AnthropicRedirectURI    = "https://console.anthropic.com/oauth/code/callback"
+	AnthropicScopes         = "org:create_api_key user:profile user:inference"
+	AnthropicAuthBetaHeader = "oauth-2025-04-20,claude-code-20250219"
 )
 
 // TokenResponse represents the OAuth token response from Anthropic
