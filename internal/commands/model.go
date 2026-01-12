@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/config"
@@ -125,7 +126,7 @@ func ModelSystemPrompt(opts ModelSystemPromptOptions) error {
 
 	systemPrompt, err := agent.SystemPromptTemplate(string(contents), agent.TemplateData{
 		Config: templateConfig,
-	})
+	}, os.Stderr)
 	if err != nil {
 		return err
 	}

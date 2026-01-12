@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,8 +21,8 @@ type TemplateData struct {
 }
 
 // SystemPromptTemplate renders a template string with system info data
-func SystemPromptTemplate(templateStr string, td TemplateData) (string, error) {
-	tmpl, err := template.New("sysinfo").Funcs(createTemplateFuncMap()).Parse(templateStr)
+func SystemPromptTemplate(templateStr string, td TemplateData, w io.Writer) (string, error) {
+	tmpl, err := template.New("sysinfo").Funcs(createTemplateFuncMap(w)).Parse(templateStr)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template string: %w", err)
 	}
@@ -35,14 +36,16 @@ func SystemPromptTemplate(templateStr string, td TemplateData) (string, error) {
 }
 
 // createTemplateFuncMap returns the FuncMap for system prompt templates
-func createTemplateFuncMap() template.FuncMap {
+func createTemplateFuncMap(w io.Writer) template.FuncMap {
 	// Start with sprig's rich set of template functions
 	fm := sprig.TxtFuncMap()
 	// Add/override with our custom helpers
 	fm["fileExists"] = fileExists
 	fm["includeFile"] = includeFile
 	fm["exec"] = execCommand
-	fm["skills"] = skills
+	fm["skills"] = func(paths ...string) string {
+		return skills(w, paths...)
+	}
 	return fm
 }
 
@@ -87,7 +90,7 @@ type Skill struct {
 // skills scans the provided directories for valid skill folders and returns
 // XML-formatted skill metadata for inclusion in the system prompt.
 // Each skill folder must contain a SKILL.md file with valid YAML frontmatter.
-func skills(paths ...string) string {
+func skills(w io.Writer, paths ...string) string {
 	var allSkills []Skill
 
 	for _, basePath := range paths {
@@ -127,6 +130,7 @@ func skills(paths ...string) string {
 			// Parse the skill
 			skill, err := parseSkill(skillMdPath, skillDir)
 			if err != nil {
+				fmt.Fprintf(w, "warning: failed to load skill %q: %v\n", entry.Name(), err)
 				continue
 			}
 

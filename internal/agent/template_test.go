@@ -3,6 +3,7 @@ package agent
 import (
 	"os"
 	"path/filepath"
+	"io"
 	"strings"
 	"testing"
 )
@@ -151,7 +152,7 @@ description: Missing name field
 	}
 
 	t.Run("single valid skills directory", func(t *testing.T) {
-		result := skills(tmpDir)
+		result := skills(io.Discard, tmpDir)
 		if !strings.Contains(result, "<skills>") {
 			t.Error("expected <skills> tag in output")
 		}
@@ -170,7 +171,7 @@ description: Missing name field
 	})
 
 	t.Run("non-existent directory", func(t *testing.T) {
-		result := skills("/nonexistent/path")
+		result := skills(io.Discard, "/nonexistent/path")
 		if result != "" {
 			t.Errorf("expected empty string for non-existent path, got %q", result)
 		}
@@ -181,7 +182,7 @@ description: Missing name field
 		if err := os.MkdirAll(emptyDir, 0755); err != nil {
 			t.Fatal(err)
 		}
-		result := skills(emptyDir)
+		result := skills(io.Discard, emptyDir)
 		if result != "" {
 			t.Errorf("expected empty string for empty directory, got %q", result)
 		}
@@ -202,7 +203,7 @@ description: Another skill.
 			t.Fatal(err)
 		}
 
-		result := skills(tmpDir, anotherDir)
+		result := skills(io.Discard, tmpDir, anotherDir)
 		if !strings.Contains(result, `<skill name="pdf-processing">`) {
 			t.Error("expected pdf-processing skill in output")
 		}
@@ -388,4 +389,39 @@ description: Has invalid name.
 			t.Error("expected error for invalid name format")
 		}
 	})
+}
+
+
+func TestSkillsReportsYAMLSyntaxErrors(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a skill with invalid YAML syntax
+	yamlErrorSkillDir := filepath.Join(tmpDir, "yaml-error-skill")
+	if err := os.MkdirAll(yamlErrorSkillDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Invalid YAML: bad indentation and missing quotes
+	yamlErrorSkillMd := `---
+name: yaml-error-skill
+description: This has
+  bad: indentation: and: colons
+---
+# YAML Error Skill
+`
+	if err := os.WriteFile(filepath.Join(yamlErrorSkillDir, "SKILL.md"), []byte(yamlErrorSkillMd), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Capture output using a buffer
+	var buf strings.Builder
+	_ = skills(&buf, tmpDir)
+	stderr := buf.String()
+
+	// Verify warning was printed
+	if !strings.Contains(stderr, "warning: failed to load skill") {
+		t.Errorf("expected warning about failed skill, got: %q", stderr)
+	}
+	if !strings.Contains(stderr, "yaml-error-skill") {
+		t.Errorf("expected skill name in warning, got: %q", stderr)
+	}
 }
