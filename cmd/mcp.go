@@ -8,7 +8,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/charmbracelet/glamour"
 	"github.com/google/jsonschema-go/jsonschema"
 	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/spachava753/gai"
@@ -112,13 +111,7 @@ var mcpListToolsCmd = &cobra.Command{
 		showAll, _ := cmd.Flags().GetBool("show-all")
 		showFiltered, _ := cmd.Flags().GetBool("show-filtered")
 
-		renderer, err := glamour.NewTermRenderer(
-			glamour.WithAutoStyle(),
-			glamour.WithWordWrap(120),
-		)
-		if err != nil {
-			return fmt.Errorf("failed to create markdown renderer: %w", err)
-		}
+		renderer := agent.NewRenderer()
 
 		return commands.MCPListTools(cmd.Context(), commands.MCPListToolsOptions{
 			MCPServers:   cfg.MCPServers,

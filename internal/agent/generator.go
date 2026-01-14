@@ -207,11 +207,12 @@ func CreateToolCapableGenerator(
 
 	// Wrap with response printer unless disabled (e.g., for subagents in MCP server mode)
 	if !disablePrinting {
-		gen = NewResponsePrinterGenerator(gen)
+		renderers := NewResponsePrinterRenderers()
+		gen = NewResponsePrinterGenerator(gen, renderers.Content, renderers.Thinking, renderers.ToolCall, os.Stdout, os.Stderr)
 	}
 
 	// print token usage at the end of each message
-	gen = NewTokenUsagePrinterGenerator(gen)
+	gen = NewTokenUsagePrinterGenerator(gen, os.Stderr)
 
 	// Wrap non-streaming generators with a retry wrapper so Generate is retried on transient failures
 	b := backoff.NewExponentialBackOff()
@@ -239,10 +240,7 @@ func CreateToolCapableGenerator(
 
 	// Wrap with tool result printer to print tool execution results to stderr
 	// Use the same content renderer for consistent styling
-	toolResultRenderer, err := newContentRenderer()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create tool result renderer: %w", err)
-	}
+	toolResultRenderer := NewRenderer()
 	toolResultPrinter := NewToolResultPrinterWrapper(filterToolGen, toolResultRenderer)
 
 	// Create client manager
