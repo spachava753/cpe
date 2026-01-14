@@ -5,12 +5,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/charmbracelet/glamour"
-	"github.com/charmbracelet/glamour/styles"
-	"github.com/muesli/termenv"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 
+	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/commands"
 	"github.com/spachava753/cpe/internal/storage"
 )
@@ -20,23 +17,6 @@ type treePrinterAdapter struct{}
 
 func (t *treePrinterAdapter) PrintMessageForest(w io.Writer, roots []storage.MessageIdNode) {
 	PrintMessageForest(w, roots)
-}
-
-// createDialogFormatter creates a dialog formatter with glamour rendering
-func createDialogFormatter() commands.DialogFormatter {
-	renderer := createGlamourRenderer()
-	return &commands.MarkdownDialogFormatter{
-		Renderer: &glamourRendererAdapter{renderer: renderer},
-	}
-}
-
-// glamourRendererAdapter adapts glamour.TermRenderer to MarkdownRenderer
-type glamourRendererAdapter struct {
-	renderer *glamour.TermRenderer
-}
-
-func (g *glamourRendererAdapter) Render(markdown string) (string, error) {
-	return g.renderer.Render(markdown)
 }
 
 // convoCmd represents the conversation management command
@@ -115,34 +95,9 @@ var printConvoCmd = &cobra.Command{
 			Storage:         dialogStorage,
 			MessageID:       args[0],
 			Writer:          os.Stdout,
-			DialogFormatter: createDialogFormatter(),
+			DialogFormatter: &commands.MarkdownDialogFormatter{Renderer: agent.NewRenderer()},
 		})
 	},
-}
-
-// createGlamourRenderer creates a glamour renderer with appropriate styling
-func createGlamourRenderer() *glamour.TermRenderer {
-	if !term.IsTerminal(int(os.Stdout.Fd())) {
-		style := styles.NoTTYStyleConfig
-		style.Document.BlockPrefix = ""
-		renderer, _ := glamour.NewTermRenderer(
-			glamour.WithStyles(style),
-			glamour.WithWordWrap(120),
-		)
-		return renderer
-	}
-
-	style := styles.LightStyleConfig
-	if termenv.HasDarkBackground() {
-		style = styles.DarkStyleConfig
-	}
-
-	style.Document.BlockPrefix = ""
-	renderer, _ := glamour.NewTermRenderer(
-		glamour.WithStyles(style),
-		glamour.WithWordWrap(120),
-	)
-	return renderer
 }
 
 func init() {
@@ -151,6 +106,5 @@ func init() {
 	convoCmd.AddCommand(deleteConvoCmd)
 	convoCmd.AddCommand(printConvoCmd)
 
-	// Add cascade flag to delete command
 	deleteConvoCmd.Flags().Bool("cascade", false, "Cascade delete all child messages too")
 }
