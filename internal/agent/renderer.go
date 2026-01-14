@@ -17,7 +17,7 @@ type Renderer interface {
 }
 
 // PlainTextRenderer is a renderer that returns content as-is without formatting.
-// Used for non-TTY contexts where ANSI codes should not be present.
+// Used as a fallback when glamour rendering fails.
 type PlainTextRenderer struct{}
 
 // Render returns the input unchanged
@@ -40,6 +40,14 @@ func getBaseStyle() ansi.StyleConfig {
 	return style
 }
 
+// getASCIIStyle returns the ASCII style with no document margin.
+func getASCIIStyle() ansi.StyleConfig {
+	style := styles.ASCIIStyleConfig
+	style.Document.BlockPrefix = ""
+	style.Document.Margin = nil
+	return style
+}
+
 // NewGlamourRenderer creates a glamour renderer with appropriate styling for TTY contexts.
 func NewGlamourRenderer() (*glamour.TermRenderer, error) {
 	style := getBaseStyle()
@@ -50,11 +58,23 @@ func NewGlamourRenderer() (*glamour.TermRenderer, error) {
 	)
 }
 
+// newASCIIRenderer creates a glamour renderer with ASCII styling for non-TTY contexts.
+func newASCIIRenderer() (*glamour.TermRenderer, error) {
+	return glamour.NewTermRenderer(
+		glamour.WithStyles(getASCIIStyle()),
+		glamour.WithWordWrap(120),
+	)
+}
+
 // NewRenderer creates a renderer appropriate for the current context.
-// Returns a glamour renderer for TTY contexts, or a plain text renderer otherwise.
+// Returns a glamour renderer for TTY contexts, or an ASCII renderer otherwise.
 func NewRenderer() Renderer {
 	if !IsTTY() {
-		return &PlainTextRenderer{}
+		renderer, err := newASCIIRenderer()
+		if err != nil {
+			return &PlainTextRenderer{}
+		}
+		return renderer
 	}
 
 	renderer, err := NewGlamourRenderer()
@@ -73,14 +93,18 @@ type ResponsePrinterRenderers struct {
 
 // NewResponsePrinterRenderers creates the appropriate renderers for ResponsePrinterGenerator.
 // For TTY contexts, creates styled glamour renderers (with distinct thinking style).
-// For non-TTY contexts, returns plain text renderers.
+// For non-TTY contexts, returns ASCII renderers.
 func NewResponsePrinterRenderers() ResponsePrinterRenderers {
 	if !IsTTY() {
-		plain := &PlainTextRenderer{}
+		renderer, err := newASCIIRenderer()
+		if err != nil {
+			plain := &PlainTextRenderer{}
+			return ResponsePrinterRenderers{Content: plain, Thinking: plain, ToolCall: plain}
+		}
 		return ResponsePrinterRenderers{
-			Content:  plain,
-			Thinking: plain,
-			ToolCall: plain,
+			Content:  renderer,
+			Thinking: renderer,
+			ToolCall: renderer,
 		}
 	}
 
