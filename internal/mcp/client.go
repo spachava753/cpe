@@ -178,7 +178,7 @@ func (c *ToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage,
 	}, nil
 }
 
-func CreateTransport(config ServerConfig) (transport mcp.Transport, err error) {
+func CreateTransport(ctx context.Context, config ServerConfig) (transport mcp.Transport, err error) {
 	// Create custom HTTP client with headers if specified
 	var httpClient *http.Client
 	if len(config.Headers) > 0 && (config.Type == "http" || config.Type == "sse") {
@@ -192,7 +192,7 @@ func CreateTransport(config ServerConfig) (transport mcp.Transport, err error) {
 	switch config.Type {
 	case "stdio", "":
 		transport = &mcp.CommandTransport{
-			Command: exec.Command(config.Command, config.Args...),
+			Command: exec.CommandContext(ctx, config.Command, config.Args...),
 		}
 	case "http":
 		transport = &mcp.StreamableClientTransport{
@@ -242,7 +242,7 @@ func FetchTools(ctx context.Context, client *mcp.Client, mcpServers map[string]S
 		// Get server config for filtering
 		serverConfig := mcpServers[serverName]
 
-		transport, err := CreateTransport(serverConfig)
+		transport, err := CreateTransport(ctx, serverConfig)
 		if err != nil {
 			return nil, err
 		}

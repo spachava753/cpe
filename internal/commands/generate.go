@@ -12,11 +12,6 @@ import (
 	"github.com/spachava753/gai"
 )
 
-// newSignalContext creates a new context that listens for interrupt signals
-func newSignalContext() (context.Context, context.CancelFunc) {
-	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-}
-
 // DialogStorage is an interface for conversation storage operations
 type DialogStorage interface {
 	GetMostRecentAssistantMessageId(ctx context.Context) (string, error)
@@ -94,6 +89,11 @@ func Generate(ctx context.Context, opts GenerateOptions) error {
 		dialog = append(dialog, userMessage)
 	}
 
+	// Validate that Generator is provided
+	if opts.Generator == nil {
+		return errors.New("no model specified")
+	}
+
 	// Generate the response
 	resultDialog, err := opts.Generator.Generate(ctx, dialog, opts.GenOptsFunc)
 
@@ -121,7 +121,8 @@ func Generate(ctx context.Context, opts GenerateOptions) error {
 
 	// Create a new context for save operation that can be cancelled independently
 	// This allows the user to interrupt the save with a second Ctrl+C
-	saveCtx, saveCancel := newSignalContext()
+	//nolint:contextcheck // Intentional: save operations should complete even if parent context is cancelled
+	saveCtx, saveCancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer saveCancel()
 
 	// Determine assistant messages from result
@@ -135,7 +136,7 @@ func Generate(ctx context.Context, opts GenerateOptions) error {
 	}
 
 	// Save user message
-	userMsgID, err := opts.Storage.SaveMessage(saveCtx, userMessage, parentID, "")
+	userMsgID, err := opts.Storage.SaveMessage(saveCtx, userMessage, parentID, "") //nolint:contextcheck // Intentional: save operations should complete even if parent context is cancelled
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			fmt.Fprintln(opts.Stderr, "Save operation cancelled by user.")
@@ -147,7 +148,7 @@ func Generate(ctx context.Context, opts GenerateOptions) error {
 	// Save assistant messages
 	currentParentID := userMsgID
 	for _, assistantMsg := range assistantMsgs {
-		currentParentID, err = opts.Storage.SaveMessage(saveCtx, assistantMsg, currentParentID, "")
+		currentParentID, err = opts.Storage.SaveMessage(saveCtx, assistantMsg, currentParentID, "") //nolint:contextcheck // Intentional: save operations should complete even if parent context is cancelled
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				fmt.Fprintln(opts.Stderr, "Save operation cancelled by user during assistant message saving.")
@@ -164,7 +165,7 @@ func Generate(ctx context.Context, opts GenerateOptions) error {
 	// Print the last message's ID
 	lastID := currentParentID
 	if lastID == "" {
-		if id, err := opts.Storage.GetMostRecentAssistantMessageId(saveCtx); err == nil {
+		if id, err := opts.Storage.GetMostRecentAssistantMessageId(saveCtx); err == nil { //nolint:contextcheck // Intentional: save operations should complete even if parent context is cancelled
 			lastID = id
 		}
 	}

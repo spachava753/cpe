@@ -88,7 +88,7 @@ type ModelSystemPromptOptions struct {
 }
 
 // ModelSystemPrompt displays the rendered system prompt for a model
-func ModelSystemPrompt(opts ModelSystemPromptOptions) error {
+func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error {
 	if opts.ModelName == "" {
 		return fmt.Errorf("no model specified")
 	}
@@ -124,7 +124,7 @@ func ModelSystemPrompt(opts ModelSystemPromptOptions) error {
 		CodeMode:           codeMode,
 	}
 
-	systemPrompt, err := agent.SystemPromptTemplate(string(contents), agent.TemplateData{
+	systemPrompt, err := agent.SystemPromptTemplate(ctx, string(contents), agent.TemplateData{
 		Config: templateConfig,
 	}, os.Stderr)
 	if err != nil {

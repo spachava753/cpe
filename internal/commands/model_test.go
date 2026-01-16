@@ -3,9 +3,11 @@ package commands
 import (
 	"bytes"
 	"context"
-	"errors"
+	"io"
+	"io/fs"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spachava753/cpe/internal/config"
 )
@@ -171,14 +173,48 @@ func TestModelInfo(t *testing.T) {
 	}
 }
 
+// mockFile implements fs.File for testing purposes
+type mockFile struct {
+	reader io.Reader
+	name   string
+}
+
+func newMockFile(content, name string) *mockFile {
+	return &mockFile{
+		reader: strings.NewReader(content),
+		name:   name,
+	}
+}
+
+func (m *mockFile) Read(p []byte) (n int, err error) {
+	return m.reader.Read(p)
+}
+
+func (m *mockFile) Close() error {
+	return nil
+}
+
+func (m *mockFile) Stat() (fs.FileInfo, error) {
+	return &mockFileInfo{name: m.name}, nil
+}
+
+type mockFileInfo struct {
+	name string
+}
+
+func (m *mockFileInfo) Name() string       { return m.name }
+func (m *mockFileInfo) Size() int64        { return 0 }
+func (m *mockFileInfo) Mode() fs.FileMode  { return 0 }
+func (m *mockFileInfo) ModTime() time.Time { return time.Time{} }
+func (m *mockFileInfo) IsDir() bool        { return false }
+func (m *mockFileInfo) Sys() any           { return nil }
+
 func TestModelSystemPrompt(t *testing.T) {
 	tests := []struct {
 		name               string
 		config             *config.RawConfig
 		modelName          string
-		template           string
-		templatePath       string
-		renderFunc         func(template string, model *config.Model) (string, error)
+		systemPrompt       fs.File
 		wantErr            bool
 		errMsg             string
 		wantOutputContains []string
@@ -188,19 +224,14 @@ func TestModelSystemPrompt(t *testing.T) {
 			config: &config.RawConfig{
 				Models: []config.ModelConfig{
 					{
-						Model: config.Model{
-							Ref: "test-model",
-						},
+						Model:            config.Model{Ref: "test-model"},
+						SystemPromptPath: "prompt.txt",
 					},
 				},
 			},
 			modelName:    "test-model",
-			template:     "You are a helpful assistant",
-			templatePath: "prompt.txt",
-			renderFunc: func(template string, model *config.Model) (string, error) {
-				return "Test prompt content", nil
-			},
-			wantErr: false,
+			systemPrompt: newMockFile("Test prompt content", "prompt.txt"),
+			wantErr:      false,
 			wantOutputContains: []string{
 				"Model: test-model",
 				"Path: prompt.txt",
@@ -218,9 +249,9 @@ func TestModelSystemPrompt(t *testing.T) {
 					},
 				},
 			},
-			modelName: "test-model",
-			template:  "",
-			wantErr:   false,
+			modelName:    "test-model",
+			systemPrompt: nil,
+			wantErr:      false,
 			wantOutputContains: []string{
 				"does not define a system prompt",
 			},
@@ -248,20 +279,15 @@ func TestModelSystemPrompt(t *testing.T) {
 			config: &config.RawConfig{
 				Models: []config.ModelConfig{
 					{
-						Model: config.Model{
-							Ref: "test-model",
-						},
+						Model:            config.Model{Ref: "test-model"},
+						SystemPromptPath: "prompt.txt",
 					},
 				},
 			},
 			modelName:    "test-model",
-			template:     "test template",
-			templatePath: "prompt.txt",
-			renderFunc: func(template string, model *config.Model) (string, error) {
-				return "", errors.New("render failed")
-			},
-			wantErr: true,
-			errMsg:  "failed to render system prompt",
+			systemPrompt: newMockFile("{{ invalid template syntax", "prompt.txt"),
+			wantErr:      true,
+			errMsg:       "failed to parse template",
 		},
 	}
 
@@ -269,12 +295,13 @@ func TestModelSystemPrompt(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
 			opts := ModelSystemPromptOptions{
-				Config:    tt.config,
-				ModelName: tt.modelName,
-				Output:    &buf,
+				Config:       tt.config,
+				ModelName:    tt.modelName,
+				SystemPrompt: tt.systemPrompt,
+				Output:       &buf,
 			}
 
-			err := ModelSystemPrompt(opts)
+			err := ModelSystemPrompt(context.Background(), opts)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ModelSystemPrompt() error = %v, wantErr %v", err, tt.wantErr)
 				return

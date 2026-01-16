@@ -355,7 +355,7 @@ func ResolveConfig(configPath string, opts RuntimeOptions) (*Config, error) {
 	}
 
 	// Resolve streaming settings
-	noStream := false
+	var noStream bool
 	if opts.NoStream != nil {
 		noStream = *opts.NoStream
 	} else {

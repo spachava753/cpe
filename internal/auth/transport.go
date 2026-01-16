@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -55,7 +54,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		if time.Now().Unix() >= cred.ExpiresAt-60 {
-			tokenResp, err := RefreshAccessToken(context.Background(), cred.RefreshToken)
+			tokenResp, err := RefreshAccessToken(req.Context(), cred.RefreshToken)
 			if err != nil {
 				t.mu.Unlock()
 				return nil, fmt.Errorf("refreshing token: %w", err)

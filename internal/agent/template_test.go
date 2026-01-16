@@ -1,9 +1,10 @@
 package agent
 
 import (
+	"context"
+	"io"
 	"os"
 	"path/filepath"
-	"io"
 	"strings"
 	"testing"
 )
@@ -86,7 +87,7 @@ func TestExecCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := execCommand(tt.command)
+			result := execCommand(context.Background(), tt.command)
 			if result != tt.expected {
 				t.Errorf("execCommand(%q) = %q, want %q", tt.command, result, tt.expected)
 			}
@@ -389,7 +390,6 @@ description: Has invalid name.
 		}
 	})
 }
-
 
 func TestSkillsReportsYAMLSyntaxErrors(t *testing.T) {
 	tmpDir := t.TempDir()

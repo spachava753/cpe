@@ -166,7 +166,11 @@ func Run(ctx context.Context) error {
 				if msg.Role != gai.ToolResult {
 					t.Errorf("expected ToolResult role, got %v", msg.Role)
 				}
-				output := string(msg.Blocks[0].Content.(gai.Str))
+				contentStr, ok := msg.Blocks[0].Content.(gai.Str)
+				if !ok {
+					t.Fatalf("expected Content to be gai.Str, got %T", msg.Blocks[0].Content)
+				}
+				output := string(contentStr)
 				if !strings.Contains(output, "Error parsing parameters") {
 					t.Errorf("expected error parsing message, got: %s", output)
 				}
@@ -225,7 +229,11 @@ func Run(ctx context.Context) error {
 				t.Errorf("expected Text modality, got %v", block.ModalityType)
 			}
 
-			output := string(block.Content.(gai.Str))
+			contentStr, ok := block.Content.(gai.Str)
+			if !ok {
+				t.Fatalf("expected Content to be gai.Str, got %T", block.Content)
+			}
+			output := string(contentStr)
 			if tt.wantOutputSub != "" && !strings.Contains(output, tt.wantOutputSub) {
 				t.Errorf("expected output to contain %q, got: %s", tt.wantOutputSub, output)
 			}

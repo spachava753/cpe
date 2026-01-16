@@ -2,6 +2,7 @@ package auth
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -157,7 +158,7 @@ func TestOAuthTransportWithPatchedBase(t *testing.T) {
 			client := &http.Client{Transport: oauthTransport}
 
 			// Make request
-			req, err := http.NewRequest("POST", server.URL, strings.NewReader(tt.requestBody))
+			req, err := http.NewRequestWithContext(context.Background(), "POST", server.URL, strings.NewReader(tt.requestBody))
 			if err != nil {
 				t.Fatalf("creating request: %v", err)
 			}
@@ -267,7 +268,7 @@ func TestOAuthTransportPreservesExistingBetaHeaders(t *testing.T) {
 	transport := NewOAuthTransport(nil, store)
 	client := &http.Client{Transport: transport}
 
-	req, _ := http.NewRequest("GET", server.URL, nil)
+	req, _ := http.NewRequestWithContext(context.Background(), "GET", server.URL, nil)
 	req.Header.Set("anthropic-beta", "custom-beta-feature")
 
 	resp, err := client.Do(req)

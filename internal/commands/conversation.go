@@ -194,13 +194,11 @@ func (f *MarkdownDialogFormatter) FormatDialog(dialog gai.Dialog, msgIds []strin
 		}
 	}
 
-	rendered, err := f.Renderer.Render(md.String())
-	if err != nil {
-		// Fallback to plain markdown if rendering fails
-		return md.String(), nil
+	if rendered, err := f.Renderer.Render(md.String()); err == nil {
+		return rendered, nil
 	}
-
-	return rendered, nil
+	// Fallback to plain markdown if rendering fails
+	return md.String(), nil
 }
 
 // formatToolCallMarkdown formats a tool call JSON string as a markdown code block

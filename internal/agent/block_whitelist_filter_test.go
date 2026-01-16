@@ -127,8 +127,7 @@ func TestBlockWhitelistFilter(t *testing.T) {
 
 // mockToolGenerator is a mock implementation of ToolGenerator for testing
 type mockToolGenerator struct {
-	response       gai.Dialog // Used when not capturing input
-	capturedDialog gai.Dialog // Captured input dialog when captureInput is true
+	capturedDialog gai.Dialog // Captured input dialog
 }
 
 func (m *mockToolGenerator) Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error) {

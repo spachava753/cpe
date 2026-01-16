@@ -102,7 +102,7 @@ var systemPromptModelCmd = &cobra.Command{
 			return err
 		}
 
-		return commands.ModelSystemPrompt(commands.ModelSystemPromptOptions{
+		return commands.ModelSystemPrompt(cmd.Context(), commands.ModelSystemPromptOptions{
 			Config:       cfg,
 			ModelName:    modelName,
 			Output:       cmd.OutOrStdout(),

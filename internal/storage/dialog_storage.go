@@ -30,12 +30,11 @@ type DialogStorage struct {
 	db          *sql.DB
 	q           *Queries
 	idGenerator func() string
-	genIds      []string // Used only for testing to track generated IDs
 }
 
 // InitDialogStorage initializes and returns a new DialogStorage instance
 // This function opens or creates the database and initializes the schema
-func InitDialogStorage(dbPath string) (*DialogStorage, error) {
+func InitDialogStorage(ctx context.Context, dbPath string) (*DialogStorage, error) {
 	// Open or create the database
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
@@ -43,7 +42,7 @@ func InitDialogStorage(dbPath string) (*DialogStorage, error) {
 	}
 
 	// Initialize schema from embedded SQL file
-	_, err = db.Exec(schemaSQL)
+	_, err = db.ExecContext(ctx, schemaSQL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize schema: %w", err)
 	}

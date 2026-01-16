@@ -1,6 +1,7 @@
 package codemode
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -120,13 +121,13 @@ func Run(ctx context.Context) error {
 				t.Fatalf("WriteFile(run.go) error: %v", err)
 			}
 
-			cmd := exec.Command("go", "mod", "tidy")
+			cmd := exec.CommandContext(context.Background(), "go", "mod", "tidy")
 			cmd.Dir = tmpDir
 			if out, err := cmd.CombinedOutput(); err != nil {
 				t.Fatalf("go mod tidy error: %v\n%s", err, out)
 			}
 
-			cmd = exec.Command("go", "build", ".")
+			cmd = exec.CommandContext(context.Background(), "go", "build", ".")
 			cmd.Dir = tmpDir
 			if out, err := cmd.CombinedOutput(); err != nil {
 				t.Fatalf("go build error: %v\n%s\n\nGenerated main.go:\n%s", err, out, mainGo)

@@ -547,7 +547,7 @@ func resolveConfigFromRaw(rawCfg *RawConfig, opts RuntimeOptions) (*Config, erro
 		timeout = parsedTimeout
 	}
 
-	noStream := false
+	var noStream bool
 	if opts.NoStream != nil {
 		noStream = *opts.NoStream
 	} else {

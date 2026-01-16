@@ -190,7 +190,10 @@ func TestPatchTransport(t *testing.T) {
 				req = httptest.NewRequest(tt.reqMethod, "http://example.com", nil)
 			}
 
-			_, err := transport.RoundTrip(req)
+			resp, err := transport.RoundTrip(req)
+			if resp != nil && resp.Body != nil {
+				resp.Body.Close()
+			}
 
 			if tt.expectError {
 				if err == nil {
@@ -315,7 +318,10 @@ func TestBuildPatchTransportFromConfig(t *testing.T) {
 				req := httptest.NewRequest("POST", "http://example.com", strings.NewReader(tt.reqBody))
 				req.Header.Set("Content-Type", "application/json")
 
-				_, err = transport.RoundTrip(req)
+				resp, err := transport.RoundTrip(req)
+				if resp != nil && resp.Body != nil {
+					resp.Body.Close()
+				}
 				if err != nil {
 					t.Fatalf("RoundTrip failed: %v", err)
 				}
