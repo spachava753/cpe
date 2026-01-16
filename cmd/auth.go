@@ -133,7 +133,7 @@ func loginAnthropic(cmd *cobra.Command) error {
 	fmt.Println()
 
 	// Try to open browser
-	if err := auth.OpenBrowser(authURL); err != nil {
+	if err := auth.OpenBrowser(cmd.Context(), authURL); err != nil {
 		fmt.Println("Note: Could not open browser automatically")
 	}
 

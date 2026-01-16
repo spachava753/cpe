@@ -182,7 +182,7 @@ func TestServer_IntegrationInitialize(t *testing.T) {
 
 	// Build the cpe binary first
 	binPath := "test_cpe_" + t.Name()
-	cmd := exec.Command("go", "build", "-o", binPath, "../../.")
+	cmd := exec.CommandContext(context.Background(), "go", "build", "-o", binPath, "../../.")
 	cmd.Dir = "."
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed to build cpe: %v\n%s", err, out)
@@ -222,7 +222,7 @@ defaults:
 	defer cancel()
 
 	transport := &mcp.CommandTransport{
-		Command: exec.Command("./"+binPath, "mcp", "serve", "--config", configPath),
+		Command: exec.CommandContext(context.Background(), "./"+binPath, "mcp", "serve", "--config", configPath),
 	}
 
 	session, err := client.Connect(ctx, transport, nil)
@@ -353,7 +353,7 @@ func TestServer_IntegrationToolsList(t *testing.T) {
 
 	// Build the cpe binary first
 	binPath := "test_cpe_" + t.Name()
-	cmd := exec.Command("go", "build", "-o", binPath, "../../.")
+	cmd := exec.CommandContext(context.Background(), "go", "build", "-o", binPath, "../../.")
 	cmd.Dir = "."
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed to build cpe: %v\n%s", err, out)
@@ -393,7 +393,7 @@ defaults:
 	defer cancel()
 
 	transport := &mcp.CommandTransport{
-		Command: exec.Command("./"+binPath, "mcp", "serve", "--config", configPath),
+		Command: exec.CommandContext(context.Background(), "./"+binPath, "mcp", "serve", "--config", configPath),
 	}
 
 	session, err := client.Connect(ctx, transport, nil)
@@ -439,7 +439,7 @@ func TestServer_IntegrationToolsListWithOutputSchema(t *testing.T) {
 
 	// Build the cpe binary first
 	binPath := "test_cpe_" + t.Name()
-	cmd := exec.Command("go", "build", "-o", binPath, "../../.")
+	cmd := exec.CommandContext(context.Background(), "go", "build", "-o", binPath, "../../.")
 	cmd.Dir = "."
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("failed to build cpe: %v\n%s", err, out)
@@ -493,7 +493,7 @@ defaults:
 	defer cancel()
 
 	transport := &mcp.CommandTransport{
-		Command: exec.Command("./"+binPath, "mcp", "serve", "--config", configPath),
+		Command: exec.CommandContext(context.Background(), "./"+binPath, "mcp", "serve", "--config", configPath),
 	}
 
 	session, err := client.Connect(ctx, transport, nil)

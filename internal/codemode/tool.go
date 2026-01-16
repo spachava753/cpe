@@ -30,6 +30,8 @@ func (c *ExecuteGoCodeCallback) Call(ctx context.Context, parametersJSON json.Ra
 	// Parse input parameters
 	var input ExecuteGoCodeInput
 	if err := json.Unmarshal(parametersJSON, &input); err != nil {
+		// Return error as tool result so LLM can adapt, not as Go error that stops execution
+		//nolint:nilerr // Intentional: user/tool errors return results with nil error to allow agent recovery
 		return gai.ToolResultMessage(toolCallID, gai.Text, "text/plain", gai.Str("Error parsing parameters: "+err.Error())), nil
 	}
 

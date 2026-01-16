@@ -244,7 +244,7 @@ func extractImports(src []byte) map[string]bool {
 	imps := make(map[string]bool)
 	for _, imp := range f.Imports {
 		// Remove quotes from import path
-		path := strings.Trim(imp.Path.Value, "`\"`")
+		path := strings.Trim(imp.Path.Value, "`\"")
 		imps[path] = true
 	}
 	return imps

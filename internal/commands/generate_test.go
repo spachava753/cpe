@@ -141,10 +141,17 @@ func TestGenerate(t *testing.T) {
 						Content:      gai.Str("test"),
 					},
 				},
+				NewConversation: true,
+				IncognitoMode:   true,
+				Generator: &mockToolCapableGenerator{
+					err: errors.New("model xyz not found in configuration"),
+				},
 				Stderr: &bytes.Buffer{},
 			},
-			wantErr: true,
-			errMsg:  "not found in configuration",
+			wantErr: false,
+			wantStderrContains: []string{
+				"not found in configuration",
+			},
 		},
 		{
 			name: "incognito mode - no saving",

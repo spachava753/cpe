@@ -204,7 +204,7 @@ configuration file. The default config search behavior is disabled.`,
 		}
 
 		// Initialize storage for persisting execution traces
-		dialogStorage, err := storage.InitDialogStorage(".cpeconvo")
+		dialogStorage, err := storage.InitDialogStorage(cmd.Context(), ".cpeconvo")
 		if err != nil {
 			return fmt.Errorf("failed to initialize dialog storage: %w", err)
 		}
@@ -289,7 +289,7 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 				return "", fmt.Errorf("failed to read system prompt file %q: %w", effectiveConfig.SystemPromptPath, err)
 			}
 
-			systemPrompt, err = agent.SystemPromptTemplate(string(contents), agent.TemplateData{
+			systemPrompt, err = agent.SystemPromptTemplate(ctx, string(contents), agent.TemplateData{
 				Config: effectiveConfig,
 			}, os.Stderr)
 			if err != nil {

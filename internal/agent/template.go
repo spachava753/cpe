@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -22,8 +23,8 @@ type TemplateData struct {
 }
 
 // SystemPromptTemplate renders a template string with system info data
-func SystemPromptTemplate(templateStr string, td TemplateData, w io.Writer) (string, error) {
-	tmpl, err := template.New("sysinfo").Funcs(createTemplateFuncMap(w)).Parse(templateStr)
+func SystemPromptTemplate(ctx context.Context, templateStr string, td TemplateData, w io.Writer) (string, error) {
+	tmpl, err := template.New("sysinfo").Funcs(createTemplateFuncMap(ctx, w)).Parse(templateStr)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template string: %w", err)
 	}
@@ -37,13 +38,15 @@ func SystemPromptTemplate(templateStr string, td TemplateData, w io.Writer) (str
 }
 
 // createTemplateFuncMap returns the FuncMap for system prompt templates
-func createTemplateFuncMap(w io.Writer) template.FuncMap {
+func createTemplateFuncMap(ctx context.Context, w io.Writer) template.FuncMap {
 	// Start with sprig's rich set of template functions
 	fm := sprig.TxtFuncMap()
 	// Add/override with our custom helpers
 	fm["fileExists"] = fileExists
 	fm["includeFile"] = includeFile
-	fm["exec"] = execCommand
+	fm["exec"] = func(command string) string {
+		return execCommand(ctx, command)
+	}
 	fm["skills"] = func(paths ...string) string {
 		return skills(w, paths...)
 	}
@@ -66,8 +69,8 @@ func includeFile(path string) string {
 }
 
 // execCommand executes a bash command and returns stdout
-func execCommand(command string) string {
-	cmd := exec.Command("bash", "-c", command)
+func execCommand(ctx context.Context, command string) string {
+	cmd := exec.CommandContext(ctx, "bash", "-c", command)
 	output, err := cmd.Output()
 	if err != nil {
 		return ""

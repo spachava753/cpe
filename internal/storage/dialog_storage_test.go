@@ -21,11 +21,11 @@ func setupTestDB(t *testing.T) (*sql.DB, *DialogStorage) {
 	require.NoError(t, err, "Failed to open in-memory database")
 
 	// Execute schema - enable foreign keys
-	_, err = db.Exec("PRAGMA foreign_keys = ON;")
+	_, err = db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON;")
 	require.NoError(t, err, "Failed to enable foreign keys")
 
 	// Execute schema - create tables
-	_, err = db.Exec(schemaSQL)
+	_, err = db.ExecContext(context.Background(), schemaSQL)
 	require.NoError(t, err, "Failed to create schema")
 
 	// Create dialog storage

@@ -100,7 +100,7 @@ func init() {
 
 // executeRootCommand handles the main functionality of the root command
 func executeRootCommand(ctx context.Context, args []string) error {
-	userBlocks, err := processUserInput(args)
+	userBlocks, err := processUserInput(ctx, args)
 	if err != nil {
 		return fmt.Errorf("could not process user input: %w", err)
 	}
@@ -131,7 +131,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 			return fmt.Errorf("failed to read system prompt file: %w", err)
 		}
 
-		systemPrompt, err = agent.SystemPromptTemplate(string(contents), agent.TemplateData{
+		systemPrompt, err = agent.SystemPromptTemplate(ctx, string(contents), agent.TemplateData{
 			Config: effectiveConfig,
 		}, os.Stderr)
 		if err != nil {
@@ -162,7 +162,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	var dialogStorage commands.DialogStorage
 	if !incognitoMode {
 		dbPath := ".cpeconvo"
-		dialogStorage, err = storage.InitDialogStorage(dbPath)
+		dialogStorage, err = storage.InitDialogStorage(ctx, dbPath)
 		if err != nil {
 			return fmt.Errorf("failed to initialize dialog storage: %w", err)
 		}
@@ -187,7 +187,7 @@ func executeRootCommand(ctx context.Context, args []string) error {
 }
 
 // processUserInput processes and combines user input from all available sources
-func processUserInput(args []string) ([]gai.Block, error) {
+func processUserInput(ctx context.Context, args []string) ([]gai.Block, error) {
 	var userBlocks []gai.Block
 
 	// Get input from stdin if available (non-blocking)
@@ -222,7 +222,7 @@ func processUserInput(args []string) ([]gai.Block, error) {
 	}
 
 	// Build blocks from prompt and resource paths (files/URLs)
-	blocks, err := agent.BuildUserBlocks(context.Background(), prompt, input)
+	blocks, err := agent.BuildUserBlocks(ctx, prompt, input)
 	if err != nil {
 		return nil, err
 	}

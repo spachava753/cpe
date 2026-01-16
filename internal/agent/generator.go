@@ -202,7 +202,11 @@ func CreateToolCapableGenerator(
 	if streamingGen, ok := genBase.(gai.StreamingGenerator); ok && !disableStreaming {
 		gen = &gai.StreamingAdapter{S: streamingGen}
 	} else {
-		gen = genBase.(gai.ToolCapableGenerator)
+		toolCapGen, ok := genBase.(gai.ToolCapableGenerator)
+		if !ok {
+			return nil, fmt.Errorf("generator does not implement ToolCapableGenerator interface")
+		}
+		gen = toolCapGen
 	}
 
 	// Wrap with response printer unless disabled (e.g., for subagents in MCP server mode)

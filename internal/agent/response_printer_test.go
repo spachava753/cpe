@@ -359,7 +359,6 @@ func TestResponsePrinterGenerateIORouting(t *testing.T) {
 			rOut, wOut, _ := os.Pipe()
 			rErr, wErr, _ := os.Pipe()
 
-
 			// Create a generator with plain text renderers for predictable output
 			plainRenderer := &PlainTextRenderer{}
 			mockGen := &mockGenerator{
