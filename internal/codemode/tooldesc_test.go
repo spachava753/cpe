@@ -2,6 +2,7 @@ package codemode
 
 import (
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -17,7 +18,7 @@ func TestGenerateExecuteGoCodeDescription(t *testing.T) {
 		{
 			name:  "empty tools list",
 			tools: []*mcp.Tool{},
-			want: `Execute generated Golang code. The version of Go is ` + runtime.Version() + `. You must generate a complete Go source file that implements the ` + "`Run(ctx context.Context) error`" + ` function. The file will be compiled alongside a ` + "`main.go`" + ` that calls your ` + "`Run`" + ` function.
+			want: `Execute generated Golang code. The version of Go is ` + runtime.Version() + `. You must generate a complete Go source file that implements the ` + "`Run(ctx context.Context) ([]mcp.Content, error)`" + ` function. The file will be compiled alongside a ` + "`main.go`" + ` that calls your ` + "`Run`" + ` function.
 
 A ` + "`ptr[T any](v T) *T`" + ` helper function is available to create pointers from literals for optional fields. For example: ` + "`ptr(\"hello\")`" + ` returns ` + "`*string`" + `, ` + "`ptr(42)`" + ` returns ` + "`*int`" + `, ` + "`ptr(3.14)`" + ` returns ` + "`*float64`" + `.
 
@@ -29,11 +30,13 @@ import (
 	"context"
 	"fmt"
 	// add other imports as needed
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func Run(ctx context.Context) error {
+func Run(ctx context.Context) ([]mcp.Content, error) {
 	// your implementation here
-	return nil
+	return nil, nil
 }
 ` + "```" + `
 
@@ -60,15 +63,39 @@ func main() {
 	// setup code that initializes the generated functions
 	// ...
 	
-	err := Run(ctx)
+	content, err := Run(ctx)
 	if err != nil {
 		fmt.Printf("\nexecution error: %s\n", err)
 		os.Exit(1)
 	}
+	
+	// content is serialized to a file for the parent process to read
 }
 ` + "```" + `
 
 The error, if not nil, returned from the ` + "`Run`" + ` function, will be present in the tool result.
+
+The ` + "`Run`" + ` function can optionally return ` + "`[]mcp.Content`" + ` to include multimedia content in the tool result. Supported content types:
+- ` + "`&mcp.TextContent{Text: \"...\"}`" + ` - text content
+- ` + "`&mcp.ImageContent{Data: []byte{...}, MIMEType: \"image/png\"}`" + ` - images (PNG, JPEG, GIF, WebP) and PDFs (use MIMEType "application/pdf")
+- ` + "`&mcp.AudioContent{Data: []byte{...}, MIMEType: \"audio/wav\"}`" + ` - audio
+
+Example - returning an image for the model to analyze:
+` + "```go" + `
+func Run(ctx context.Context) ([]mcp.Content, error) {
+	imgData, err := os.ReadFile("photo.jpg")
+	if err != nil {
+		return nil, err
+	}
+	return []mcp.Content{
+		&mcp.ImageContent{Data: imgData, MIMEType: "image/jpeg"},
+	}, nil
+}
+` + "```" + `
+
+Note: ` + "`Data`" + ` is ` + "`[]byte`" + ` - pass the raw bytes from ` + "`os.ReadFile`" + ` directly (no base64 encoding needed).
+
+If you need to return multimedia (images, audio, etc.), return the content. Otherwise, return ` + "`nil, nil`" + ` and use ` + "`fmt.Println`" + ` for text output.
 
 IMPORTANT: Generate the complete file contents including package declaration and imports. This ensures that any compilation errors report accurate line numbers that you can use for debugging.`,
 		},
@@ -98,7 +125,7 @@ IMPORTANT: Generate the complete file contents including package declaration and
 					},
 				},
 			},
-			want: `Execute generated Golang code. The version of Go is ` + runtime.Version() + `. You must generate a complete Go source file that implements the ` + "`Run(ctx context.Context) error`" + ` function. The file will be compiled alongside a ` + "`main.go`" + ` that calls your ` + "`Run`" + ` function.
+			want: `Execute generated Golang code. The version of Go is ` + runtime.Version() + `. You must generate a complete Go source file that implements the ` + "`Run(ctx context.Context) ([]mcp.Content, error)`" + ` function. The file will be compiled alongside a ` + "`main.go`" + ` that calls your ` + "`Run`" + ` function.
 
 Keep in mind you have access to the following functions and types when generating code:
 ` + "```go" + `
@@ -125,11 +152,13 @@ import (
 	"context"
 	"fmt"
 	// add other imports as needed
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func Run(ctx context.Context) error {
+func Run(ctx context.Context) ([]mcp.Content, error) {
 	// your implementation here
-	return nil
+	return nil, nil
 }
 ` + "```" + `
 
@@ -156,15 +185,39 @@ func main() {
 	// setup code that initializes the generated functions
 	// ...
 	
-	err := Run(ctx)
+	content, err := Run(ctx)
 	if err != nil {
 		fmt.Printf("\nexecution error: %s\n", err)
 		os.Exit(1)
 	}
+	
+	// content is serialized to a file for the parent process to read
 }
 ` + "```" + `
 
 The error, if not nil, returned from the ` + "`Run`" + ` function, will be present in the tool result.
+
+The ` + "`Run`" + ` function can optionally return ` + "`[]mcp.Content`" + ` to include multimedia content in the tool result. Supported content types:
+- ` + "`&mcp.TextContent{Text: \"...\"}`" + ` - text content
+- ` + "`&mcp.ImageContent{Data: []byte{...}, MIMEType: \"image/png\"}`" + ` - images (PNG, JPEG, GIF, WebP) and PDFs (use MIMEType "application/pdf")
+- ` + "`&mcp.AudioContent{Data: []byte{...}, MIMEType: \"audio/wav\"}`" + ` - audio
+
+Example - returning an image for the model to analyze:
+` + "```go" + `
+func Run(ctx context.Context) ([]mcp.Content, error) {
+	imgData, err := os.ReadFile("photo.jpg")
+	if err != nil {
+		return nil, err
+	}
+	return []mcp.Content{
+		&mcp.ImageContent{Data: imgData, MIMEType: "image/jpeg"},
+	}, nil
+}
+` + "```" + `
+
+Note: ` + "`Data`" + ` is ` + "`[]byte`" + ` - pass the raw bytes from ` + "`os.ReadFile`" + ` directly (no base64 encoding needed).
+
+If you need to return multimedia (images, audio, etc.), return the content. Otherwise, return ` + "`nil, nil`" + ` and use ` + "`fmt.Println`" + ` for text output.
 
 IMPORTANT: Generate the complete file contents including package declaration and imports. This ensures that any compilation errors report accurate line numbers that you can use for debugging.`,
 		},
@@ -183,7 +236,7 @@ IMPORTANT: Generate the complete file contents including package declaration and
 					OutputSchema: nil,
 				},
 			},
-			want: `Execute generated Golang code. The version of Go is ` + runtime.Version() + `. You must generate a complete Go source file that implements the ` + "`Run(ctx context.Context) error`" + ` function. The file will be compiled alongside a ` + "`main.go`" + ` that calls your ` + "`Run`" + ` function.
+			want: `Execute generated Golang code. The version of Go is ` + runtime.Version() + `. You must generate a complete Go source file that implements the ` + "`Run(ctx context.Context) ([]mcp.Content, error)`" + ` function. The file will be compiled alongside a ` + "`main.go`" + ` that calls your ` + "`Run`" + ` function.
 
 Keep in mind you have access to the following functions and types when generating code:
 ` + "```go" + `
@@ -207,11 +260,13 @@ import (
 	"context"
 	"fmt"
 	// add other imports as needed
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func Run(ctx context.Context) error {
+func Run(ctx context.Context) ([]mcp.Content, error) {
 	// your implementation here
-	return nil
+	return nil, nil
 }
 ` + "```" + `
 
@@ -238,15 +293,39 @@ func main() {
 	// setup code that initializes the generated functions
 	// ...
 	
-	err := Run(ctx)
+	content, err := Run(ctx)
 	if err != nil {
 		fmt.Printf("\nexecution error: %s\n", err)
 		os.Exit(1)
 	}
+	
+	// content is serialized to a file for the parent process to read
 }
 ` + "```" + `
 
 The error, if not nil, returned from the ` + "`Run`" + ` function, will be present in the tool result.
+
+The ` + "`Run`" + ` function can optionally return ` + "`[]mcp.Content`" + ` to include multimedia content in the tool result. Supported content types:
+- ` + "`&mcp.TextContent{Text: \"...\"}`" + ` - text content
+- ` + "`&mcp.ImageContent{Data: []byte{...}, MIMEType: \"image/png\"}`" + ` - images (PNG, JPEG, GIF, WebP) and PDFs (use MIMEType "application/pdf")
+- ` + "`&mcp.AudioContent{Data: []byte{...}, MIMEType: \"audio/wav\"}`" + ` - audio
+
+Example - returning an image for the model to analyze:
+` + "```go" + `
+func Run(ctx context.Context) ([]mcp.Content, error) {
+	imgData, err := os.ReadFile("photo.jpg")
+	if err != nil {
+		return nil, err
+	}
+	return []mcp.Content{
+		&mcp.ImageContent{Data: imgData, MIMEType: "image/jpeg"},
+	}, nil
+}
+` + "```" + `
+
+Note: ` + "`Data`" + ` is ` + "`[]byte`" + ` - pass the raw bytes from ` + "`os.ReadFile`" + ` directly (no base64 encoding needed).
+
+If you need to return multimedia (images, audio, etc.), return the content. Otherwise, return ` + "`nil, nil`" + ` and use ` + "`fmt.Println`" + ` for text output.
 
 IMPORTANT: Generate the complete file contents including package declaration and imports. This ensures that any compilation errors report accurate line numbers that you can use for debugging.`,
 		},
@@ -263,6 +342,39 @@ IMPORTANT: Generate the complete file contents including package declaration and
 				t.Errorf("GenerateExecuteGoCodeDescription() mismatch\ngot:\n%s\n\nwant:\n%s", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestGenerateExecuteGoCodeDescription_MultimediaDocumentation(t *testing.T) {
+	got, err := GenerateExecuteGoCodeDescription([]*mcp.Tool{})
+	if err != nil {
+		t.Fatalf("GenerateExecuteGoCodeDescription() error = %v", err)
+	}
+
+	// Verify Run signature shows ([]mcp.Content, error)
+	if !strings.Contains(got, "Run(ctx context.Context) ([]mcp.Content, error)") {
+		t.Error("Description should document Run signature with ([]mcp.Content, error) return type")
+	}
+
+	// Verify main.go example shows content, err := Run(ctx)
+	if !strings.Contains(got, "content, err := Run(ctx)") {
+		t.Error("Description should show content, err := Run(ctx) in main.go example")
+	}
+
+	// Verify multimedia content types are documented
+	if !strings.Contains(got, "&mcp.TextContent{Text:") {
+		t.Error("Description should document TextContent type")
+	}
+	if !strings.Contains(got, "&mcp.ImageContent{Data:") {
+		t.Error("Description should document ImageContent type")
+	}
+	if !strings.Contains(got, "&mcp.AudioContent{Data:") {
+		t.Error("Description should document AudioContent type")
+	}
+
+	// Verify nil, nil pattern is documented
+	if !strings.Contains(got, "`nil, nil`") {
+		t.Error("Description should document nil, nil return pattern")
 	}
 }
 

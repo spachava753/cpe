@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/gai"
 )
 
@@ -18,6 +19,23 @@ type ExecuteGoCodeInput struct {
 // It executes LLM-generated Go code in a sandbox environment with MCP tool access.
 type ExecuteGoCodeCallback struct {
 	Servers []ServerToolsInfo
+}
+
+// contentToBlocks converts MCP content types to gai blocks.
+// It handles TextContent, ImageContent (including PDFs), and AudioContent.
+func contentToBlocks(content []mcp.Content) []gai.Block {
+	blocks := make([]gai.Block, 0, len(content))
+	for _, c := range content {
+		switch v := c.(type) {
+		case *mcp.TextContent:
+			blocks = append(blocks, gai.TextBlock(v.Text))
+		case *mcp.ImageContent:
+			blocks = append(blocks, gai.ImageBlock(v.Data, v.MIMEType))
+		case *mcp.AudioContent:
+			blocks = append(blocks, gai.AudioBlock(v.Data, v.MIMEType))
+		}
+	}
+	return blocks
 }
 
 // Call executes the generated Go code and returns the result.
@@ -55,6 +73,29 @@ func (c *ExecuteGoCodeCallback) Call(ctx context.Context, parametersJSON json.Ra
 		}
 	}
 
-	// Successful execution
-	return gai.ToolResultMessage(toolCallID, gai.Text, "text/plain", gai.Str(result.Output)), nil
+	// Successful execution - build response with content blocks
+	var blocks []gai.Block
+
+	// Prepend stdout/stderr output as text block if present
+	if result.Output != "" {
+		blocks = append(blocks, gai.TextBlock(result.Output))
+	}
+
+	// Add multimedia content blocks
+	blocks = append(blocks, contentToBlocks(result.Content)...)
+
+	// If no blocks at all, add an empty text block to satisfy message requirements
+	if len(blocks) == 0 {
+		blocks = append(blocks, gai.TextBlock(""))
+	}
+
+	// Set the tool call ID on all blocks to associate with the tool call
+	for i := range blocks {
+		blocks[i].ID = toolCallID
+	}
+
+	return gai.Message{
+		Role:   gai.ToolResult,
+		Blocks: blocks,
+	}, nil
 }

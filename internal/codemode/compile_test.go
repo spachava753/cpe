@@ -86,7 +86,7 @@ func TestGenerateMainGo_Compiles(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			mainGo, err := GenerateMainGo(tc.servers)
+			mainGo, err := GenerateMainGo(tc.servers, "/tmp/content.json")
 			if err != nil {
 				t.Fatalf("GenerateMainGo() error: %v", err)
 			}
@@ -111,10 +111,14 @@ require github.com/modelcontextprotocol/go-sdk v1.1.0
 
 			runGo := `package main
 
-import "context"
+import (
+	"context"
 
-func Run(ctx context.Context) error {
-	return nil
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func Run(ctx context.Context) ([]mcp.Content, error) {
+	return nil, nil
 }
 `
 			if err := os.WriteFile(filepath.Join(tmpDir, "run.go"), []byte(runGo), 0644); err != nil {

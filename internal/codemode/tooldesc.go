@@ -26,7 +26,7 @@ func GenerateExecuteGoCodeDescription(tools []*mcp.Tool) (string, error) {
 
 	// Opening paragraph with Go version
 	b.WriteString(fmt.Sprintf("Execute generated Golang code. The version of Go is %s. ", goVersion))
-	b.WriteString("You must generate a complete Go source file that implements the `Run(ctx context.Context) error` function. ")
+	b.WriteString("You must generate a complete Go source file that implements the `Run(ctx context.Context) ([]mcp.Content, error)` function. ")
 	b.WriteString("The file will be compiled alongside a `main.go` that calls your `Run` function.\n\n")
 
 	// Available functions and types section (only if tools exist)
@@ -50,11 +50,13 @@ import (
 	"context"
 	"fmt"
 	// add other imports as needed
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func Run(ctx context.Context) error {
+func Run(ctx context.Context) ([]mcp.Content, error) {
 	// your implementation here
-	return nil
+	return nil, nil
 }
 `)
 	b.WriteString("```\n\n")
@@ -83,17 +85,39 @@ func main() {
 	// setup code that initializes the generated functions
 	// ...
 	
-	err := Run(ctx)
+	content, err := Run(ctx)
 	if err != nil {
 		fmt.Printf("\nexecution error: %s\n", err)
 		os.Exit(1)
 	}
+	
+	// content is serialized to a file for the parent process to read
 }
 `)
 	b.WriteString("```\n\n")
 
 	// Error handling note
 	b.WriteString("The error, if not nil, returned from the `Run` function, will be present in the tool result.\n\n")
+
+	// Multimedia content documentation
+	b.WriteString("The `Run` function can optionally return `[]mcp.Content` to include multimedia content in the tool result. Supported content types:\n")
+	b.WriteString("- `&mcp.TextContent{Text: \"...\"}` - text content\n")
+	b.WriteString("- `&mcp.ImageContent{Data: []byte{...}, MIMEType: \"image/png\"}` - images (PNG, JPEG, GIF, WebP) and PDFs (use MIMEType \"application/pdf\")\n")
+	b.WriteString("- `&mcp.AudioContent{Data: []byte{...}, MIMEType: \"audio/wav\"}` - audio\n\n")
+	b.WriteString("Example - returning an image for the model to analyze:\n")
+	b.WriteString("```go\n")
+	b.WriteString("func Run(ctx context.Context) ([]mcp.Content, error) {\n")
+	b.WriteString("\timgData, err := os.ReadFile(\"photo.jpg\")\n")
+	b.WriteString("\tif err != nil {\n")
+	b.WriteString("\t\treturn nil, err\n")
+	b.WriteString("\t}\n")
+	b.WriteString("\treturn []mcp.Content{\n")
+	b.WriteString("\t\t&mcp.ImageContent{Data: imgData, MIMEType: \"image/jpeg\"},\n")
+	b.WriteString("\t}, nil\n")
+	b.WriteString("}\n")
+	b.WriteString("```\n\n")
+	b.WriteString("Note: `Data` is `[]byte` - pass the raw bytes from `os.ReadFile` directly (no base64 encoding needed).\n\n")
+	b.WriteString("If you need to return multimedia (images, audio, etc.), return the content. Otherwise, return `nil, nil` and use `fmt.Println` for text output.\n\n")
 
 	// Important note about complete file generation
 	b.WriteString("IMPORTANT: Generate the complete file contents including package declaration and imports. ")

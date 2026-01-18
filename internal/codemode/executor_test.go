@@ -32,11 +32,13 @@ func TestExecuteCode(t *testing.T) {
 import (
 	"context"
 	"fmt"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func Run(ctx context.Context) error {
+func Run(ctx context.Context) ([]mcp.Content, error) {
 	fmt.Println("Hello from generated code")
-	return nil
+	return nil, nil
 }
 `,
 			wantExitCode: 0,
@@ -47,11 +49,15 @@ func Run(ctx context.Context) error {
 			name: "compilation error returns RecoverableError",
 			llmCode: `package main
 
-import "context"
+import (
+	"context"
 
-func Run(ctx context.Context) error {
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func Run(ctx context.Context) ([]mcp.Content, error) {
 	this is not valid go code
-	return nil
+	return nil, nil
 }
 `,
 			wantExitCode: 1,
@@ -73,10 +79,12 @@ func Run(ctx context.Context) error {
 import (
 	"context"
 	"errors"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func Run(ctx context.Context) error {
-	return errors.New("something went wrong")
+func Run(ctx context.Context) ([]mcp.Content, error) {
+	return nil, errors.New("something went wrong")
 }
 `,
 			wantExitCode: 1,
@@ -96,9 +104,13 @@ func Run(ctx context.Context) error {
 			name: "panic (exit 2) returns RecoverableError",
 			llmCode: `package main
 
-import "context"
+import (
+	"context"
 
-func Run(ctx context.Context) error {
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func Run(ctx context.Context) ([]mcp.Content, error) {
 	panic("intentional panic")
 }
 `,
@@ -125,12 +137,14 @@ import (
 	"context"
 	"os"
 	"fmt"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func Run(ctx context.Context) error {
+func Run(ctx context.Context) ([]mcp.Content, error) {
 	fmt.Println("about to fatal exit")
 	os.Exit(3)
-	return nil
+	return nil, nil
 }
 `,
 			wantExitCode: 3,
@@ -152,13 +166,15 @@ func Run(ctx context.Context) error {
 import (
 	"context"
 	"fmt"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func Run(ctx context.Context) error {
+func Run(ctx context.Context) ([]mcp.Content, error) {
 	fmt.Println("Line 1")
 	fmt.Println("Line 2")
 	fmt.Println("Line 3")
-	return nil
+	return nil, nil
 }
 `,
 			wantExitCode: 0,
@@ -173,12 +189,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func Run(ctx context.Context) error {
+func Run(ctx context.Context) ([]mcp.Content, error) {
 	fmt.Fprint(os.Stderr, "stderr output")
 	fmt.Print("stdout output")
-	return nil
+	return nil, nil
 }
 `,
 			wantExitCode: 0,
@@ -192,11 +210,13 @@ func Run(ctx context.Context) error {
 import (
 	"context"
 	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func Run(ctx context.Context) error {
+func Run(ctx context.Context) ([]mcp.Content, error) {
 	time.Sleep(10 * time.Second)
-	return nil
+	return nil, nil
 }
 `,
 			cancelContext: true,
@@ -259,11 +279,13 @@ func TestExecuteCode_EmptyServers(t *testing.T) {
 import (
 	"context"
 	"fmt"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func Run(ctx context.Context) error {
+func Run(ctx context.Context) ([]mcp.Content, error) {
 	fmt.Println("No tools needed")
-	return nil
+	return nil, nil
 }
 `
 
@@ -291,12 +313,14 @@ func TestExecuteCode_TimeoutGracefulExit(t *testing.T) {
 import (
 	"context"
 	"fmt"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func Run(ctx context.Context) error {
+func Run(ctx context.Context) ([]mcp.Content, error) {
 	<-ctx.Done()
 	fmt.Println("graceful shutdown")
-	return nil
+	return nil, nil
 }
 `
 
@@ -326,13 +350,15 @@ import (
 	"os"
 	"os/signal"
 	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func Run(ctx context.Context) error {
+func Run(ctx context.Context) ([]mcp.Content, error) {
 	// Ignore SIGINT
 	signal.Ignore(os.Interrupt)
 	time.Sleep(30 * time.Second)
-	return nil
+	return nil, nil
 }
 `
 
@@ -359,12 +385,14 @@ func TestExecuteCode_ParentContextCancellation(t *testing.T) {
 import (
 	"context"
 	"fmt"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func Run(ctx context.Context) error {
+func Run(ctx context.Context) ([]mcp.Content, error) {
 	<-ctx.Done()
 	fmt.Println("parent cancelled")
-	return nil
+	return nil, nil
 }
 `
 
@@ -475,7 +503,7 @@ func TestExecuteCode_ToolTypesCompile(t *testing.T) {
 		},
 	}
 
-	mainGo, err := GenerateMainGo(servers)
+	mainGo, err := GenerateMainGo(servers, "/tmp/content.json")
 	if err != nil {
 		t.Fatalf("GenerateMainGo() error: %v", err)
 	}
@@ -500,12 +528,16 @@ require github.com/modelcontextprotocol/go-sdk v1.1.0
 
 	runGo := `package main
 
-import "context"
+import (
+	"context"
 
-func Run(ctx context.Context) error {
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func Run(ctx context.Context) ([]mcp.Content, error) {
 	var _ GetWeatherInput
 	var _ GetWeatherOutput
-	return nil
+	return nil, nil
 }
 `
 	if err := os.WriteFile(filepath.Join(tempDir, "run.go"), []byte(runGo), 0644); err != nil {
@@ -532,12 +564,14 @@ func TestExecuteCode_AutoCorrectImports(t *testing.T) {
 
 import (
 	"context"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func Run(ctx context.Context) error {
+func Run(ctx context.Context) ([]mcp.Content, error) {
 	// fmt is missing, but goimports should add it
 	fmt.Println("Imports corrected")
-	return nil
+	return nil, nil
 }
 `
 
@@ -560,5 +594,336 @@ func Run(ctx context.Context) error {
 
 	if !strings.Contains(result.Output, "Imports corrected") {
 		t.Errorf("Output = %q, want to contain program output 'Imports corrected'", result.Output)
+	}
+}
+
+func TestUnmarshalContent(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		wantLen     int
+		wantErr     bool
+		errContains string
+		validate    func(t *testing.T, content []mcp.Content)
+	}{
+		{
+			name:    "empty array",
+			input:   "[]",
+			wantLen: 0,
+			wantErr: false,
+		},
+		{
+			name:    "single text content",
+			input:   `[{"type":"text","text":"Hello, world!"}]`,
+			wantLen: 1,
+			wantErr: false,
+			validate: func(t *testing.T, content []mcp.Content) {
+				tc, ok := content[0].(*mcp.TextContent)
+				if !ok {
+					t.Fatalf("expected *mcp.TextContent, got %T", content[0])
+				}
+				if tc.Text != "Hello, world!" {
+					t.Errorf("Text = %q, want %q", tc.Text, "Hello, world!")
+				}
+			},
+		},
+		{
+			name:    "single image content",
+			input:   `[{"type":"image","data":"aGVsbG8=","mimeType":"image/png"}]`,
+			wantLen: 1,
+			wantErr: false,
+			validate: func(t *testing.T, content []mcp.Content) {
+				ic, ok := content[0].(*mcp.ImageContent)
+				if !ok {
+					t.Fatalf("expected *mcp.ImageContent, got %T", content[0])
+				}
+				if ic.MIMEType != "image/png" {
+					t.Errorf("MIMEType = %q, want %q", ic.MIMEType, "image/png")
+				}
+				if string(ic.Data) != "hello" {
+					t.Errorf("Data = %q, want %q", string(ic.Data), "hello")
+				}
+			},
+		},
+		{
+			name:    "single audio content",
+			input:   `[{"type":"audio","data":"d29ybGQ=","mimeType":"audio/wav"}]`,
+			wantLen: 1,
+			wantErr: false,
+			validate: func(t *testing.T, content []mcp.Content) {
+				ac, ok := content[0].(*mcp.AudioContent)
+				if !ok {
+					t.Fatalf("expected *mcp.AudioContent, got %T", content[0])
+				}
+				if ac.MIMEType != "audio/wav" {
+					t.Errorf("MIMEType = %q, want %q", ac.MIMEType, "audio/wav")
+				}
+				if string(ac.Data) != "world" {
+					t.Errorf("Data = %q, want %q", string(ac.Data), "world")
+				}
+			},
+		},
+		{
+			name:    "mixed content types",
+			input:   `[{"type":"text","text":"Description"},{"type":"image","data":"aW1n","mimeType":"image/jpeg"}]`,
+			wantLen: 2,
+			wantErr: false,
+			validate: func(t *testing.T, content []mcp.Content) {
+				tc, ok := content[0].(*mcp.TextContent)
+				if !ok {
+					t.Fatalf("content[0]: expected *mcp.TextContent, got %T", content[0])
+				}
+				if tc.Text != "Description" {
+					t.Errorf("content[0].Text = %q, want %q", tc.Text, "Description")
+				}
+				ic, ok := content[1].(*mcp.ImageContent)
+				if !ok {
+					t.Fatalf("content[1]: expected *mcp.ImageContent, got %T", content[1])
+				}
+				if ic.MIMEType != "image/jpeg" {
+					t.Errorf("content[1].MIMEType = %q, want %q", ic.MIMEType, "image/jpeg")
+				}
+			},
+		},
+		{
+			name:        "malformed JSON",
+			input:       "not valid json",
+			wantErr:     true,
+			errContains: "unmarshaling content array",
+		},
+		{
+			name:        "invalid JSON in array",
+			input:       `[{"type":"text",broken}]`,
+			wantErr:     true,
+			errContains: "unmarshaling content array",
+		},
+		{
+			name:        "unknown content type",
+			input:       `[{"type":"video","data":"abc"}]`,
+			wantErr:     true,
+			errContains: `unknown content type "video" at index 0`,
+		},
+		{
+			name:        "missing type field",
+			input:       `[{"text":"hello"}]`,
+			wantErr:     true,
+			errContains: `unknown content type ""`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content, err := unmarshalContent([]byte(tt.input))
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("unmarshalContent() expected error, got nil")
+				}
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("error = %q, want to contain %q", err.Error(), tt.errContains)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unmarshalContent() error = %v", err)
+			}
+
+			if len(content) != tt.wantLen {
+				t.Errorf("len(content) = %d, want %d", len(content), tt.wantLen)
+			}
+
+			if tt.validate != nil {
+				tt.validate(t, content)
+			}
+		})
+	}
+}
+
+func TestExecuteCode_WithContent(t *testing.T) {
+	ctx := context.Background()
+
+	// Code that returns text content
+	llmCode := `package main
+
+import (
+	"context"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func Run(ctx context.Context) ([]mcp.Content, error) {
+	return []mcp.Content{
+		&mcp.TextContent{Text: "Generated text content"},
+	}, nil
+}
+`
+
+	result, err := ExecuteCode(ctx, nil, llmCode, 30)
+	if err != nil {
+		t.Fatalf("ExecuteCode() error: %v, output: %s", err, result.Output)
+	}
+
+	if result.ExitCode != 0 {
+		t.Errorf("ExitCode = %d, want 0; output: %s", result.ExitCode, result.Output)
+	}
+
+	if len(result.Content) != 1 {
+		t.Fatalf("len(Content) = %d, want 1", len(result.Content))
+	}
+
+	tc, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("Content[0] type = %T, want *mcp.TextContent", result.Content[0])
+	}
+
+	if tc.Text != "Generated text content" {
+		t.Errorf("Content[0].Text = %q, want %q", tc.Text, "Generated text content")
+	}
+}
+
+func TestExecuteCode_WithImageContent(t *testing.T) {
+	ctx := context.Background()
+
+	// Code that returns image content with base64 encoded data
+	llmCode := `package main
+
+import (
+	"context"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func Run(ctx context.Context) ([]mcp.Content, error) {
+	return []mcp.Content{
+		&mcp.ImageContent{
+			Data:     []byte("fake image data"),
+			MIMEType: "image/png",
+		},
+	}, nil
+}
+`
+
+	result, err := ExecuteCode(ctx, nil, llmCode, 30)
+	if err != nil {
+		t.Fatalf("ExecuteCode() error: %v, output: %s", err, result.Output)
+	}
+
+	if result.ExitCode != 0 {
+		t.Errorf("ExitCode = %d, want 0; output: %s", result.ExitCode, result.Output)
+	}
+
+	if len(result.Content) != 1 {
+		t.Fatalf("len(Content) = %d, want 1", len(result.Content))
+	}
+
+	ic, ok := result.Content[0].(*mcp.ImageContent)
+	if !ok {
+		t.Fatalf("Content[0] type = %T, want *mcp.ImageContent", result.Content[0])
+	}
+
+	if ic.MIMEType != "image/png" {
+		t.Errorf("Content[0].MIMEType = %q, want %q", ic.MIMEType, "image/png")
+	}
+
+	if string(ic.Data) != "fake image data" {
+		t.Errorf("Content[0].Data = %q, want %q", string(ic.Data), "fake image data")
+	}
+}
+
+func TestExecuteCode_WithMixedContent(t *testing.T) {
+	ctx := context.Background()
+
+	// Code that returns mixed content and also prints to stdout
+	llmCode := `package main
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func Run(ctx context.Context) ([]mcp.Content, error) {
+	fmt.Println("stdout output")
+	return []mcp.Content{
+		&mcp.TextContent{Text: "Text part"},
+		&mcp.ImageContent{Data: []byte("img"), MIMEType: "image/jpeg"},
+	}, nil
+}
+`
+
+	result, err := ExecuteCode(ctx, nil, llmCode, 30)
+	if err != nil {
+		t.Fatalf("ExecuteCode() error: %v, output: %s", err, result.Output)
+	}
+
+	if result.ExitCode != 0 {
+		t.Errorf("ExitCode = %d, want 0; output: %s", result.ExitCode, result.Output)
+	}
+
+	// Verify stdout was captured
+	if !strings.Contains(result.Output, "stdout output") {
+		t.Errorf("Output = %q, want to contain 'stdout output'", result.Output)
+	}
+
+	// Verify content
+	if len(result.Content) != 2 {
+		t.Fatalf("len(Content) = %d, want 2", len(result.Content))
+	}
+
+	tc, ok := result.Content[0].(*mcp.TextContent)
+	if !ok {
+		t.Fatalf("Content[0] type = %T, want *mcp.TextContent", result.Content[0])
+	}
+	if tc.Text != "Text part" {
+		t.Errorf("Content[0].Text = %q, want %q", tc.Text, "Text part")
+	}
+
+	ic, ok := result.Content[1].(*mcp.ImageContent)
+	if !ok {
+		t.Fatalf("Content[1] type = %T, want *mcp.ImageContent", result.Content[1])
+	}
+	if ic.MIMEType != "image/jpeg" {
+		t.Errorf("Content[1].MIMEType = %q, want %q", ic.MIMEType, "image/jpeg")
+	}
+}
+
+func TestExecuteCode_NoContent(t *testing.T) {
+	ctx := context.Background()
+
+	// Code that returns nil content
+	llmCode := `package main
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func Run(ctx context.Context) ([]mcp.Content, error) {
+	fmt.Println("text only output")
+	return nil, nil
+}
+`
+
+	result, err := ExecuteCode(ctx, nil, llmCode, 30)
+	if err != nil {
+		t.Fatalf("ExecuteCode() error: %v, output: %s", err, result.Output)
+	}
+
+	if result.ExitCode != 0 {
+		t.Errorf("ExitCode = %d, want 0; output: %s", result.ExitCode, result.Output)
+	}
+
+	// Content should be nil/empty
+	if len(result.Content) != 0 {
+		t.Errorf("len(Content) = %d, want 0", len(result.Content))
+	}
+
+	// But stdout should still be captured
+	if !strings.Contains(result.Output, "text only output") {
+		t.Errorf("Output = %q, want to contain 'text only output'", result.Output)
 	}
 }

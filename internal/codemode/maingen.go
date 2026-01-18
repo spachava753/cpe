@@ -26,7 +26,8 @@ type ServerToolsInfo struct {
 
 // GenerateMainGo generates the complete main.go file contents for code mode execution.
 // It includes MCP client setup, type definitions, function declarations, and the main entry point.
-func GenerateMainGo(servers []ServerToolsInfo) (string, error) {
+// contentOutputPath specifies where content.json will be written for multimedia output.
+func GenerateMainGo(servers []ServerToolsInfo, contentOutputPath string) (string, error) {
 	// Collect all tools for type/function generation
 	var allTools []*mcp.Tool
 	for _, server := range servers {
@@ -40,7 +41,7 @@ func GenerateMainGo(servers []ServerToolsInfo) (string, error) {
 	}
 
 	// Build template data
-	data := buildTemplateData(servers, toolDefs)
+	data := buildTemplateData(servers, toolDefs, contentOutputPath)
 
 	// Parse and execute template
 	tmpl, err := template.New("main.go").Funcs(template.FuncMap{
@@ -62,15 +63,16 @@ func GenerateMainGo(servers []ServerToolsInfo) (string, error) {
 
 // templateData holds all data needed by the main.go template
 type templateData struct {
-	HasHeaders      bool
-	HasStdio        bool
-	HasHTTP         bool
-	HasSSE          bool
-	HasTools        bool
-	HasServers      bool
-	ToolDefinitions string
-	Servers         []serverTemplateData
-	ToolInits       []toolInitData
+	HasHeaders        bool
+	HasStdio          bool
+	HasHTTP           bool
+	HasSSE            bool
+	HasTools          bool
+	HasServers        bool
+	ToolDefinitions   string
+	Servers           []serverTemplateData
+	ToolInits         []toolInitData
+	ContentOutputPath string
 }
 
 // serverTemplateData holds per-server template data
@@ -97,7 +99,7 @@ type toolInitData struct {
 	OutputType string
 }
 
-func buildTemplateData(servers []ServerToolsInfo, toolDefs string) templateData {
+func buildTemplateData(servers []ServerToolsInfo, toolDefs string, contentOutputPath string) templateData {
 	// Sort servers by name for deterministic output
 	sortedServers := make([]ServerToolsInfo, len(servers))
 	copy(sortedServers, servers)
@@ -106,9 +108,10 @@ func buildTemplateData(servers []ServerToolsInfo, toolDefs string) templateData 
 	})
 
 	data := templateData{
-		ToolDefinitions: toolDefs,
-		HasTools:        toolDefs != "",
-		HasServers:      len(servers) > 0,
+		ToolDefinitions:   toolDefs,
+		HasTools:          toolDefs != "",
+		HasServers:        len(servers) > 0,
+		ContentOutputPath: contentOutputPath,
 	}
 
 	// Build server data and check for features

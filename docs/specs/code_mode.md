@@ -297,6 +297,279 @@ This example highlights several advantages of code mode:
 
 For N cities, normal tool calling requires N+1 round-trips (read file + N weather calls), while code mode always requires exactly 1. This O(N) vs O(1) difference becomes significant as the number of items grows.
 
+## Multimedia Content Support
+
+Modern LLMs (Claude, GPT-4o, Gemini) support multi-modal inputs in tool results, allowing tools to return images, PDFs, audio, and other rich content types that the model can directly interpret. Code mode supports returning multimedia content alongside text output.
+
+### The Problem
+
+The basic code mode implementation captures output from stdout as plain text:
+
+```go
+func Run(ctx context.Context) error {
+    // All output must go through fmt.Println/fmt.Printf to stdout
+    fmt.Println("result text here")
+    return nil
+}
+```
+
+This limits code mode because:
+1. **Image generation/processing**: Generated or downloaded images can only be returned as file paths or base64 text, not actual image data the model can "see"
+2. **PDF analysis**: Cannot return PDF pages as images for model analysis
+3. **Audio processing**: Cannot return audio data for models that support audio inputs
+4. **Charts/visualization**: Cannot render and return visualizations directly
+
+### Solution: MCP Content Types
+
+Code mode reuses the MCP SDK content types already available in the harness. The `Run` function signature changes to:
+
+```go
+func Run(ctx context.Context) ([]mcp.Content, error) {
+    // Return structured multimedia content
+    imageData, _ := os.ReadFile("generated-chart.png")
+    return []mcp.Content{
+        &mcp.TextContent{Text: "Here's the analysis:"},
+        &mcp.ImageContent{Data: imageData, MIMEType: "image/png"},
+    }, nil
+}
+```
+
+Supported content types from the MCP SDK:
+- `*mcp.TextContent` - text content
+- `*mcp.ImageContent` - images (JPEG, PNG, GIF, WebP)
+- `*mcp.AudioContent` - audio data
+
+**Not supported:**
+- `*mcp.EmbeddedResource` - While technically serializable, embedded resources add complexity with nested resource contents and are rarely needed for code mode output
+- `*mcp.ResourceLink` - Just a URI reference with no actual content; the client would need to call `resources/read` to fetch the content
+
+### Implementation: Inter-Process Communication
+
+Since code mode execution runs as a separate compiled binary, structured content is passed back via a temporary JSON file rather than stdout (which remains for debugging/logging).
+
+#### Mechanism
+
+1. CPE generates a content output path (`content.json`) in the temp directory
+2. The path is injected into the generated `main.go` as a constant via template data
+3. The generated `main.go` captures the `[]mcp.Content` return value from `Run()`
+4. If content is returned, it is JSON-serialized to the content output file using the MCP SDK's `MarshalJSON` methods
+5. After execution, CPE reads the file and deserializes it back to `[]mcp.Content`, then converts to `[]gai.Block` for the tool result
+6. stdout/stderr is still captured and prepended as a text block if non-empty
+
+#### JSON Serialization Format
+
+The MCP SDK's content types implement `MarshalJSON()` which includes a `type` discriminator field. When serializing `[]mcp.Content`, each item includes its type:
+
+```json
+[
+  {"type": "text", "text": "Here's the analysis:"},
+  {"type": "image", "data": "base64-encoded-data...", "mimeType": "image/png"}
+]
+```
+
+The type values are:
+- `"text"` for `*mcp.TextContent`
+- `"image"` for `*mcp.ImageContent`
+- `"audio"` for `*mcp.AudioContent`
+
+**Note:** The `Data` field in `ImageContent` and `AudioContent` is a `[]byte` that gets base64-encoded during JSON marshaling.
+
+#### Deserialization
+
+To deserialize the polymorphic `[]mcp.Content`, CPE uses a two-phase approach:
+
+1. First, unmarshal into a slice of `json.RawMessage` to get the raw JSON for each item
+2. For each item, peek at the `type` field to determine the concrete type
+3. Unmarshal into the appropriate concrete struct (`TextContent`, `ImageContent`, or `AudioContent`)
+
+```go
+// Wrapper struct to peek at the type field
+type contentTypeWrapper struct {
+    Type string `json:"type"`
+}
+
+func unmarshalContent(data []byte) ([]mcp.Content, error) {
+    var rawItems []json.RawMessage
+    if err := json.Unmarshal(data, &rawItems); err != nil {
+        return nil, err
+    }
+    
+    var result []mcp.Content
+    for _, raw := range rawItems {
+        var wrapper contentTypeWrapper
+        if err := json.Unmarshal(raw, &wrapper); err != nil {
+            return nil, err
+        }
+        
+        switch wrapper.Type {
+        case "text":
+            var tc mcp.TextContent
+            if err := json.Unmarshal(raw, &tc); err != nil {
+                return nil, err
+            }
+            result = append(result, &tc)
+        case "image":
+            var ic mcp.ImageContent
+            if err := json.Unmarshal(raw, &ic); err != nil {
+                return nil, err
+            }
+            result = append(result, &ic)
+        case "audio":
+            var ac mcp.AudioContent
+            if err := json.Unmarshal(raw, &ac); err != nil {
+                return nil, err
+            }
+            result = append(result, &ac)
+        default:
+            return nil, fmt.Errorf("unknown content type: %s", wrapper.Type)
+        }
+    }
+    return result, nil
+}
+```
+
+#### Template Data Injection
+
+The `main.go` template receives the content output path via the existing template data structure:
+
+```go
+// Template data passed to GenerateMainGo
+type MainGoTemplateData struct {
+    // ... existing fields ...
+    ContentOutputPath string  // Path where content.json will be written
+}
+```
+
+The generated `main.go` uses this constant:
+
+```go
+// In generated main.go
+const contentOutputPath = "{{.ContentOutputPath}}"  // e.g., "/tmp/cpe-code-mode-xxx/content.json"
+
+func main() {
+    // ... setup code ...
+    
+    content, err := Run(ctx)
+    if err != nil {
+        fmt.Printf("\nexecution error: %s\n", err)
+        os.Exit(1)
+    }
+    
+    // Write content to file if any was returned
+    if len(content) > 0 {
+        data, err := json.Marshal(content)
+        if err != nil {
+            fmt.Printf("\ncontent marshal error: %s\n", err)
+            os.Exit(1)
+        }
+        if err := os.WriteFile(contentOutputPath, data, 0644); err != nil {
+            fmt.Printf("\ncontent write error: %s\n", err)
+            os.Exit(1)
+        }
+    }
+}
+```
+
+#### Content to Block Conversion
+
+CPE reads the JSON file after execution and converts to internal `gai.Block` types:
+
+| MCP Content Type | gai.Block Conversion |
+|------------------|----------------------|
+| `*mcp.TextContent` | `gai.TextBlock(c.Text)` |
+| `*mcp.ImageContent` | `gai.ImageBlock(c.Data, c.MIMEType)` |
+| `*mcp.AudioContent` | `gai.AudioBlock(c.Data, c.MIMEType)` |
+
+For PDF support (`application/pdf` MIME type in `ImageContent`), the conversion uses `gai.PDFBlock(c.Data, "document.pdf")` with a default filename.
+
+#### Preserving stdout/stderr Output
+
+When building the tool result message, stdout/stderr content is prepended as a text block if non-empty:
+
+```go
+func buildToolResult(toolCallID string, result ExecutionResult) gai.Message {
+    var blocks []gai.Block
+    
+    // Prepend stdout/stderr if present
+    if result.Output != "" {
+        blocks = append(blocks, gai.TextBlock(result.Output))
+    }
+    
+    // Add multimedia content blocks
+    for _, content := range result.Content {
+        switch c := content.(type) {
+        case *mcp.TextContent:
+            blocks = append(blocks, gai.TextBlock(c.Text))
+        case *mcp.ImageContent:
+            if c.MIMEType == "application/pdf" {
+                blocks = append(blocks, gai.PDFBlock(c.Data, "document.pdf"))
+            } else {
+                blocks = append(blocks, gai.ImageBlock(c.Data, c.MIMEType))
+            }
+        case *mcp.AudioContent:
+            blocks = append(blocks, gai.AudioBlock(c.Data, c.MIMEType))
+        }
+    }
+    
+    // Build message with all blocks
+    return gai.Message{
+        Role:   gai.ToolResult,
+        Blocks: blocks,
+    }
+}
+```
+
+### Example: Returning an Image
+
+```go
+package main
+
+import (
+    "context"
+    "os"
+    
+    "github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func Run(ctx context.Context) ([]mcp.Content, error) {
+    // Generate or download an image
+    imageData, err := os.ReadFile("chart.png")
+    if err != nil {
+        return nil, err
+    }
+    
+    return []mcp.Content{
+        &mcp.TextContent{Text: "Generated sales chart:"},
+        &mcp.ImageContent{
+            Data:     imageData,
+            MIMEType: "image/png",
+        },
+    }, nil
+}
+```
+
+### Changes Required
+
+1. **`maingen.go.tmpl`**: 
+   - Add `ContentOutputPath` field to template data
+   - Update `Run` function call to capture `[]mcp.Content` return value
+   - Serialize returned content to the output file using `json.Marshal`
+   - Keep existing error handling (exit code 1 on Run error)
+
+2. **`executor.go`**: 
+   - Generate content output path (`content.json`) in temp directory
+   - Pass path to `GenerateMainGo` via template data
+   - Read and deserialize content file after successful execution (exit code 0)
+   - Add `Content []mcp.Content` field to `ExecutionResult`
+
+3. **`tool.go`**: 
+   - Convert `[]mcp.Content` to `[]gai.Block` for tool result message
+   - Prepend stdout/stderr as text block if non-empty
+   - Return multi-block `gai.Message` instead of single text block
+
+4. **Tool description**: Update to document the new return signature and available content types
+
+
 ## Architecture
 
 ### The "Execute Go Code" Tool
@@ -372,9 +645,9 @@ import (
 	// add other imports as needed
 )
 
-func Run(ctx context.Context) error {
+func Run(ctx context.Context) ([]mcp.Content, error) {
 	// your implementation here
-	return nil
+	return nil, nil
 }
 ```
 
@@ -401,15 +674,24 @@ func main() {
 	// setup code that initializes the generated functions
 	// ...
 	
-	err := Run(ctx)
+	content, err := Run(ctx)
 	if err != nil {
 		fmt.Printf("\nexecution error: %s\n", err)
 		os.Exit(1)
 	}
+	
+	// content is serialized to a file for the parent process to read
 }
 ```
 
 The error, if not nil, returned from the `Run` function, will be present in the tool result.
+
+The `Run` function can optionally return `[]mcp.Content` to include multimedia content in the tool result. Supported content types:
+- `&mcp.TextContent{Text: "..."}` - text content
+- `&mcp.ImageContent{Data: []byte{...}, MIMEType: "image/png"}` - images (PNG, JPEG, GIF, WebP)
+- `&mcp.AudioContent{Data: []byte{...}, MIMEType: "audio/wav"}` - audio
+
+If you need to return multimedia (images, audio, etc.), return the content. Otherwise, return `nil, nil` and use `fmt.Println` for text output.
 
 IMPORTANT: Generate the complete file contents including package declaration and imports. This ensures that any compilation errors report accurate line numbers that you can use for debugging.
 ````
@@ -560,7 +842,7 @@ func main() {
 
 **LLM-generated `run.go`:**
 
-The LLM generates a complete Go source file that implements the `Run` function:
+The LLM generates a complete Go source file that implements the `Run` function. For text-only output, the LLM can use stdout and return `nil, nil`:
 
 ```go
 package main
@@ -568,12 +850,14 @@ package main
 import (
 	"context"
 	"fmt"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func Run(ctx context.Context) error {
+func Run(ctx context.Context) ([]mcp.Content, error) {
 	city, err := GetCity(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	temp, err := GetWeather(ctx, GetWeatherInput{
@@ -581,11 +865,11 @@ func Run(ctx context.Context) error {
 		Unit: "fahrenheit",
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	fmt.Printf("Temperature: %f, City: %s\n", temp, city)
-	return nil
+	return nil, nil  // stdout captured; no multimedia content
 }
 ```
 
@@ -686,11 +970,13 @@ package main
 import (
 	"context"
 	"fmt"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-func Run(ctx context.Context) error {
+func Run(ctx context.Context) ([]mcp.Content, error) {
 	fmt.Println("hello from generated code")
-	return nil
+	return nil, nil
 }
 ```
 ````
@@ -804,3 +1090,41 @@ The following tasks break down the code mode implementation into self-contained 
 
 - [x] **Task 14: Handle tools without output schemas as raw string**  
   Update `internal/codemode/schema.go` to return `string` instead of `map[string]any` for tools without output schemas. Update `internal/codemode/maingen.go.tmpl` to detect when output type is `string` and return raw text content directly instead of attempting JSON unmarshal. Update tests accordingly. This allows MCP tools that return plain text (not JSON) to work correctly in code mode. Depends on: Tasks 2, 5.
+
+### Phase 7: Multimedia Content Support
+
+- [ ] **Task 15: Update Run function signature and main.go template**  
+  Update `maingen.go.tmpl` to:
+  - Add `ContentOutputPath` to template data struct
+  - Generate a `const contentOutputPath` in the output using the injected path
+  - Change `Run` call from `err := Run(ctx)` to `content, err := Run(ctx)`
+  - After successful execution, if `len(content) > 0`, serialize content to the output file using `json.Marshal`
+  - The MCP SDK's `MarshalJSON` methods will include the `type` discriminator field automatically
+  Reference: "Multimedia Content Support" section.
+
+- [ ] **Task 16: Update executor to handle content output file**  
+  Modify `executor.go` to:
+  - Generate content output path as `filepath.Join(tempDir, "content.json")`
+  - Pass path to `GenerateMainGo` via template data (add `ContentOutputPath` field to data struct)
+  - After successful execution (exit code 0), check if `content.json` exists
+  - If it exists, read and deserialize using the two-phase approach: unmarshal to `[]json.RawMessage`, peek at `type` field, then unmarshal to concrete types (`TextContent`, `ImageContent`, `AudioContent`)
+  - Add `Content []mcp.Content` field to `ExecutionResult`
+  - Include tests for: content file exists, content file doesn't exist, malformed JSON, unknown type field
+  Depends on: Task 15.
+
+- [ ] **Task 17: Convert mcp.Content to gai.Block in tool callback**  
+  Update `tool.go` to:
+  - Add a `contentToBlocks` helper function that converts `[]mcp.Content` to `[]gai.Block`
+  - Handle each content type: `TextContent` → `gai.TextBlock`, `ImageContent` → `gai.ImageBlock` (or `PDFBlock` for PDF MIME type), `AudioContent` → `gai.AudioBlock`
+  - If stdout/stderr output is non-empty, prepend it as a text block
+  - Build `gai.Message` with all blocks instead of using `gai.ToolResultMessage` helper
+  - Include tests for: text-only conversion, image conversion, audio conversion, PDF conversion, mixed content, prepending stdout
+  Depends on: Task 16.
+
+- [ ] **Task 18: Update tool description with multimedia documentation**  
+  Update the `execute_go_code` tool description generation (in `tooldesc.go` or equivalent) to:
+  - Document the new `func Run(ctx context.Context) ([]mcp.Content, error)` signature
+  - List available content types: `&mcp.TextContent{Text: "..."}`, `&mcp.ImageContent{Data: []byte{...}, MIMEType: "..."}`, `&mcp.AudioContent{Data: []byte{...}, MIMEType: "..."}`
+  - Include a brief example of returning an image
+  - Note that returning `nil, nil` for text-only output (using stdout) is still supported
+  Depends on: Tasks 15, 16, 17.

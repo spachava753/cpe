@@ -3,6 +3,7 @@ package codemode
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"go/parser"
 	"go/token"
@@ -14,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/imports"
 )
 
@@ -25,8 +27,9 @@ const gracePeriod = 5 * time.Second
 
 // ExecutionResult represents the outcome of code execution
 type ExecutionResult struct {
-	Output   string // Combined stdout/stderr
-	ExitCode int    // Exit code from the process
+	Output   string        // Combined stdout/stderr
+	ExitCode int           // Exit code from the process
+	Content  []mcp.Content // Multimedia content returned from Run()
 }
 
 // ExecuteCode creates a temporary sandbox, writes files, and executes LLM-generated Go code.
@@ -53,7 +56,7 @@ func ExecuteCode(ctx context.Context, servers []ServerToolsInfo, llmCode string,
 	}
 
 	// Generate and write main.go
-	mainGo, err := GenerateMainGo(servers)
+	mainGo, err := GenerateMainGo(servers, filepath.Join(tempDir, "content.json"))
 	if err != nil {
 		return ExecutionResult{}, fmt.Errorf("generating main.go: %w", err)
 	}
@@ -79,7 +82,7 @@ func ExecuteCode(ctx context.Context, servers []ServerToolsInfo, llmCode string,
 		return ExecutionResult{
 			Output:   tidyResult.Output,
 			ExitCode: tidyResult.ExitCode,
-		}, RecoverableError(tidyResult)
+		}, RecoverableError{Output: tidyResult.Output, ExitCode: tidyResult.ExitCode}
 	}
 
 	// Build the binary to get accurate exit codes (go run masks them)
@@ -93,7 +96,7 @@ func ExecuteCode(ctx context.Context, servers []ServerToolsInfo, llmCode string,
 		return ExecutionResult{
 			Output:   buildResult.Output,
 			ExitCode: buildResult.ExitCode,
-		}, RecoverableError(buildResult)
+		}, RecoverableError{Output: buildResult.Output, ExitCode: buildResult.ExitCode}
 	}
 
 	// Execute the built binary with timeout and graceful shutdown
@@ -101,6 +104,22 @@ func ExecuteCode(ctx context.Context, servers []ServerToolsInfo, llmCode string,
 	result.Output += importNote
 	if err != nil {
 		return result, err
+	}
+
+	// Read content.json on successful execution (exit code 0)
+	if result.ExitCode == 0 {
+		contentPath := filepath.Join(tempDir, "content.json")
+		if _, err := os.Stat(contentPath); err == nil {
+			data, err := os.ReadFile(contentPath)
+			if err != nil {
+				return result, fmt.Errorf("reading content file: %w", err)
+			}
+			content, err := unmarshalContent(data)
+			if err != nil {
+				return result, fmt.Errorf("deserializing content: %w", err)
+			}
+			result.Content = content
+		}
 	}
 
 	return result, classifyExitCode(result)
@@ -193,13 +212,13 @@ func classifyExitCode(result ExecutionResult) error {
 		return nil
 	case 1, 2:
 		// Exit 1: Run() returned error; Exit 2: panic - both recoverable
-		return RecoverableError(result)
+		return RecoverableError{Output: result.Output, ExitCode: result.ExitCode}
 	case 3:
 		// Exit 3: fatalExit() called - unrecoverable
 		return FatalExecutionError{Output: result.Output}
 	default:
 		// Other non-zero codes (e.g., -1 from SIGKILL) are recoverable
-		return RecoverableError(result)
+		return RecoverableError{Output: result.Output, ExitCode: result.ExitCode}
 	}
 }
 
@@ -248,6 +267,55 @@ func extractImports(src []byte) map[string]bool {
 		imps[path] = true
 	}
 	return imps
+}
+
+// contentTypeWrapper is used to peek at the type field during deserialization
+type contentTypeWrapper struct {
+	Type string `json:"type"`
+}
+
+// unmarshalContent deserializes a JSON array of MCP content items.
+// It uses a two-phase approach: first peek at the type field, then unmarshal to the concrete type.
+func unmarshalContent(data []byte) ([]mcp.Content, error) {
+	var rawItems []json.RawMessage
+	if err := json.Unmarshal(data, &rawItems); err != nil {
+		return nil, fmt.Errorf("unmarshaling content array: %w", err)
+	}
+
+	result := make([]mcp.Content, 0, len(rawItems))
+	for i, raw := range rawItems {
+		var wrapper contentTypeWrapper
+		if err := json.Unmarshal(raw, &wrapper); err != nil {
+			return nil, fmt.Errorf("peeking type for item %d: %w", i, err)
+		}
+
+		var content mcp.Content
+		switch wrapper.Type {
+		case "text":
+			var tc mcp.TextContent
+			if err := json.Unmarshal(raw, &tc); err != nil {
+				return nil, fmt.Errorf("unmarshaling text content at index %d: %w", i, err)
+			}
+			content = &tc
+		case "image":
+			var ic mcp.ImageContent
+			if err := json.Unmarshal(raw, &ic); err != nil {
+				return nil, fmt.Errorf("unmarshaling image content at index %d: %w", i, err)
+			}
+			content = &ic
+		case "audio":
+			var ac mcp.AudioContent
+			if err := json.Unmarshal(raw, &ac); err != nil {
+				return nil, fmt.Errorf("unmarshaling audio content at index %d: %w", i, err)
+			}
+			content = &ac
+		default:
+			return nil, fmt.Errorf("unknown content type %q at index %d", wrapper.Type, i)
+		}
+		result = append(result, content)
+	}
+
+	return result, nil
 }
 
 // formatImportChanges generates a message describing which imports were added/removed.
