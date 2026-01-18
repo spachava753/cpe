@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
-{{- if .HasTools}}
 	"encoding/json"
+{{- if .HasTools}}
 	"errors"
 {{- end}}
 	"fmt"
@@ -21,6 +21,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 {{- end}}
 )
+
+const contentOutputPath = {{quote .ContentOutputPath}}
 
 func fatalExit(err error) {
 	fmt.Println(err)
@@ -182,9 +184,22 @@ func main() {
 {{- end}}
 {{- end}}
 
-	err {{if .HasServers}}={{else}}:={{end}} Run(ctx)
+	content, err := Run(ctx)
 	if err != nil {
 		fmt.Printf("\nexecution error: %s\n", err)
 		os.Exit(1)
+	}
+
+	// Write content to file if any was returned
+	if len(content) > 0 {
+		data, err := json.Marshal(content)
+		if err != nil {
+			fmt.Printf("\ncontent marshal error: %s\n", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(contentOutputPath, data, 0644); err != nil {
+			fmt.Printf("\ncontent write error: %s\n", err)
+			os.Exit(1)
+		}
 	}
 }

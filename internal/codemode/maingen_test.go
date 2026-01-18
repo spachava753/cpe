@@ -22,11 +22,14 @@ func TestGenerateMainGo(t *testing.T) {
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 )
+
+const contentOutputPath = "/tmp/content.json"
 
 func fatalExit(err error) {
 	fmt.Println(err)
@@ -42,10 +45,23 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	err := Run(ctx)
+	content, err := Run(ctx)
 	if err != nil {
 		fmt.Printf("\nexecution error: %s\n", err)
 		os.Exit(1)
+	}
+
+	// Write content to file if any was returned
+	if len(content) > 0 {
+		data, err := json.Marshal(content)
+		if err != nil {
+			fmt.Printf("\ncontent marshal error: %s\n", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(contentOutputPath, data, 0644); err != nil {
+			fmt.Printf("\ncontent write error: %s\n", err)
+			os.Exit(1)
+		}
 	}
 }
 `,
@@ -97,6 +113,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+const contentOutputPath = "/tmp/content.json"
 
 func fatalExit(err error) {
 	fmt.Println(err)
@@ -194,10 +212,23 @@ func main() {
 		return callMcpTool[ReadFileInput, ReadFileOutput](ctx, editorSession, "read_file", input)
 	}
 
-	err = Run(ctx)
+	content, err := Run(ctx)
 	if err != nil {
 		fmt.Printf("\nexecution error: %s\n", err)
 		os.Exit(1)
+	}
+
+	// Write content to file if any was returned
+	if len(content) > 0 {
+		data, err := json.Marshal(content)
+		if err != nil {
+			fmt.Printf("\ncontent marshal error: %s\n", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(contentOutputPath, data, 0644); err != nil {
+			fmt.Printf("\ncontent write error: %s\n", err)
+			os.Exit(1)
+		}
 	}
 }
 `,
@@ -243,6 +274,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+const contentOutputPath = "/tmp/content.json"
 
 func fatalExit(err error) {
 	fmt.Println(err)
@@ -336,10 +369,23 @@ func main() {
 		return callMcpTool[struct{}, PingOutput](ctx, myServerSession, "ping", struct{}{})
 	}
 
-	err = Run(ctx)
+	content, err := Run(ctx)
 	if err != nil {
 		fmt.Printf("\nexecution error: %s\n", err)
 		os.Exit(1)
+	}
+
+	// Write content to file if any was returned
+	if len(content) > 0 {
+		data, err := json.Marshal(content)
+		if err != nil {
+			fmt.Printf("\ncontent marshal error: %s\n", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(contentOutputPath, data, 0644); err != nil {
+			fmt.Printf("\ncontent write error: %s\n", err)
+			os.Exit(1)
+		}
 	}
 }
 `,
@@ -380,6 +426,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+const contentOutputPath = "/tmp/content.json"
 
 func fatalExit(err error) {
 	fmt.Println(err)
@@ -494,10 +542,23 @@ func main() {
 		return callMcpTool[struct{}, FetchDataOutput](ctx, apiSession, "fetch_data", struct{}{})
 	}
 
-	err = Run(ctx)
+	content, err := Run(ctx)
 	if err != nil {
 		fmt.Printf("\nexecution error: %s\n", err)
 		os.Exit(1)
+	}
+
+	// Write content to file if any was returned
+	if len(content) > 0 {
+		data, err := json.Marshal(content)
+		if err != nil {
+			fmt.Printf("\ncontent marshal error: %s\n", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(contentOutputPath, data, 0644); err != nil {
+			fmt.Printf("\ncontent write error: %s\n", err)
+			os.Exit(1)
+		}
 	}
 }
 `,
@@ -544,6 +605,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+const contentOutputPath = "/tmp/content.json"
 
 func fatalExit(err error) {
 	fmt.Println(err)
@@ -639,10 +702,23 @@ func main() {
 		return callMcpTool[SubscribeInput, SubscribeOutput](ctx, eventsSession, "subscribe", input)
 	}
 
-	err = Run(ctx)
+	content, err := Run(ctx)
 	if err != nil {
 		fmt.Printf("\nexecution error: %s\n", err)
 		os.Exit(1)
+	}
+
+	// Write content to file if any was returned
+	if len(content) > 0 {
+		data, err := json.Marshal(content)
+		if err != nil {
+			fmt.Printf("\ncontent marshal error: %s\n", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(contentOutputPath, data, 0644); err != nil {
+			fmt.Printf("\ncontent write error: %s\n", err)
+			os.Exit(1)
+		}
 	}
 }
 `,
@@ -699,6 +775,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+const contentOutputPath = "/tmp/content.json"
 
 func fatalExit(err error) {
 	fmt.Println(err)
@@ -837,10 +915,23 @@ func main() {
 		return callMcpTool[struct{}, ActionTwoOutput](ctx, apiTwoSession, "action_two", struct{}{})
 	}
 
-	err = Run(ctx)
+	content, err := Run(ctx)
 	if err != nil {
 		fmt.Printf("\nexecution error: %s\n", err)
 		os.Exit(1)
+	}
+
+	// Write content to file if any was returned
+	if len(content) > 0 {
+		data, err := json.Marshal(content)
+		if err != nil {
+			fmt.Printf("\ncontent marshal error: %s\n", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(contentOutputPath, data, 0644); err != nil {
+			fmt.Printf("\ncontent write error: %s\n", err)
+			os.Exit(1)
+		}
 	}
 }
 `,
@@ -861,6 +952,7 @@ func main() {
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -869,6 +961,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+const contentOutputPath = "/tmp/content.json"
 
 func fatalExit(err error) {
 	fmt.Println(err)
@@ -895,10 +989,23 @@ func main() {
 	}
 	defer emptySession.Close()
 
-	err = Run(ctx)
+	content, err := Run(ctx)
 	if err != nil {
 		fmt.Printf("\nexecution error: %s\n", err)
 		os.Exit(1)
+	}
+
+	// Write content to file if any was returned
+	if len(content) > 0 {
+		data, err := json.Marshal(content)
+		if err != nil {
+			fmt.Printf("\ncontent marshal error: %s\n", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(contentOutputPath, data, 0644); err != nil {
+			fmt.Printf("\ncontent write error: %s\n", err)
+			os.Exit(1)
+		}
 	}
 }
 `,
@@ -907,7 +1014,7 @@ func main() {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := GenerateMainGo(tt.servers)
+			got, err := GenerateMainGo(tt.servers, "/tmp/content.json")
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GenerateMainGo() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -951,13 +1058,13 @@ func TestGenerateMainGo_DeterministicOutput(t *testing.T) {
 		},
 	}
 
-	first, err := GenerateMainGo(servers)
+	first, err := GenerateMainGo(servers, "/tmp/content.json")
 	if err != nil {
 		t.Fatalf("GenerateMainGo() error = %v", err)
 	}
 
 	for i := 0; i < 5; i++ {
-		got, err := GenerateMainGo(servers)
+		got, err := GenerateMainGo(servers, "/tmp/content.json")
 		if err != nil {
 			t.Fatalf("GenerateMainGo() iteration %d error = %v", i, err)
 		}
