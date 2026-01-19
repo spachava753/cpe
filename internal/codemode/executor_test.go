@@ -927,3 +927,126 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 		t.Errorf("Output = %q, want to contain 'text only output'", result.Output)
 	}
 }
+
+func TestEnsureMCPImport(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		wantImport bool
+	}{
+		{
+			name: "adds import when no imports exist",
+			input: `package main
+
+func Run() error {
+	return nil
+}
+`,
+			wantImport: true,
+		},
+		{
+			name: "adds import to existing import block",
+			input: `package main
+
+import "fmt"
+
+func Run() error {
+	fmt.Println("hello")
+	return nil
+}
+`,
+			wantImport: true,
+		},
+		{
+			name: "import already present",
+			input: `package main
+
+import (
+	"context"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func Run(ctx context.Context) ([]mcp.Content, error) {
+	return nil, nil
+}
+`,
+			wantImport: true,
+		},
+		{
+			name: "adds to multi-import block",
+			input: `package main
+
+import (
+	"context"
+	"os"
+)
+
+func Run(ctx context.Context) ([]mcp.Content, error) {
+	data, _ := os.ReadFile("image.png")
+	return []mcp.Content{
+		&mcp.ImageContent{Data: data, MIMEType: "image/png"},
+	}, nil
+}
+`,
+			wantImport: true,
+		},
+		{
+			name: "syntax error - returns unchanged",
+			input: `package main
+
+import (
+	"context"
+
+func Run( { // syntax error
+`,
+			wantImport: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ensureMCPImport([]byte(tt.input))
+			hasImport := strings.Contains(string(result), "github.com/modelcontextprotocol/go-sdk/mcp")
+			if hasImport != tt.wantImport {
+				t.Errorf("hasImport = %v, want %v\nresult:\n%s", hasImport, tt.wantImport, string(result))
+			}
+		})
+	}
+}
+
+func TestEnsureMCPImport_Integration(t *testing.T) {
+	code := `package main
+
+import (
+	"context"
+	"os"
+)
+
+func Run(ctx context.Context) ([]mcp.Content, error) {
+	data, _ := os.ReadFile("test.png")
+	return []mcp.Content{
+		&mcp.ImageContent{Data: data, MIMEType: "image/png"},
+	}, nil
+}
+`
+
+	result := ensureMCPImport([]byte(code))
+	if !strings.Contains(string(result), "github.com/modelcontextprotocol/go-sdk/mcp") {
+		t.Fatal("expected mcp import to be added")
+	}
+
+	ctx := context.Background()
+	execResult, err := ExecuteCode(ctx, nil, string(result), 30)
+	if err != nil {
+		if strings.Contains(execResult.Output, "undefined: mcp") {
+			t.Errorf("mcp import was not properly added:\n%s", execResult.Output)
+		}
+		// Other errors are acceptable (e.g., file not found at runtime)
+	}
+	// Verify compilation succeeded (exit code 0 or 1 for runtime error is fine)
+	if execResult.ExitCode != 0 && execResult.ExitCode != 1 {
+		if strings.Contains(execResult.Output, "undefined:") {
+			t.Errorf("compilation failed with undefined symbol:\n%s", execResult.Output)
+		}
+	}
+}
