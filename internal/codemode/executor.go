@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/parser"
+	"go/printer"
 	"go/token"
 	"os"
 	"os/exec"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/imports"
 )
 
@@ -24,6 +26,9 @@ const mcpSDKVersion = "v1.1.0"
 
 // gracePeriod is the time to wait after sending SIGINT before sending SIGKILL
 const gracePeriod = 5 * time.Second
+
+// mcpSDKImport is the import path for the MCP SDK package
+const mcpSDKImport = "github.com/modelcontextprotocol/go-sdk/mcp"
 
 // ExecutionResult represents the outcome of code execution
 type ExecutionResult struct {
@@ -231,10 +236,12 @@ func autoCorrectImports(ctx context.Context, dir, filename string) string {
 		return ""
 	}
 
+	// Ensure correct mcp import before goimports to prevent wrong package resolution
+	preprocessed := ensureMCPImport(orig)
 	origImports := extractImports(orig)
 
 	// Process the file using golang.org/x/tools/imports
-	newContent, err := imports.Process(filePath, orig, nil)
+	newContent, err := imports.Process(filePath, preprocessed, nil)
 	if err != nil {
 		// If processing fails (e.g. syntax errors), let the compiler catch it
 		return ""
@@ -316,6 +323,26 @@ func unmarshalContent(data []byte) ([]mcp.Content, error) {
 	}
 
 	return result, nil
+}
+
+// ensureMCPImport adds the MCP SDK import if not already present.
+// This prevents goimports from resolving mcp to the wrong package.
+// The import will be removed by goimports if not actually used.
+func ensureMCPImport(src []byte) []byte {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "", src, parser.ParseComments)
+	if err != nil {
+		return src
+	}
+
+	astutil.AddImport(fset, f, mcpSDKImport)
+
+	var buf bytes.Buffer
+	if err := printer.Fprint(&buf, fset, f); err != nil {
+		return src
+	}
+
+	return buf.Bytes()
 }
 
 // formatImportChanges generates a message describing which imports were added/removed.
