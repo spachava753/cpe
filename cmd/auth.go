@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"strings"
@@ -10,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/spachava753/cpe/internal/auth"
+	"github.com/spachava753/cpe/internal/commands"
 )
 
 var authCmd = &cobra.Command{
@@ -26,6 +26,16 @@ var authLoginCmd = &cobra.Command{
 Currently supported providers:
   - anthropic: Authenticate with Claude Pro/Max subscription
 
+Environment variables for Anthropic OAuth configuration:
+  CPE_ANTHROPIC_CLIENT_ID    - OAuth client ID
+  CPE_ANTHROPIC_AUTH_URL     - Authorization URL (default: https://claude.ai/oauth/authorize)
+  CPE_ANTHROPIC_TOKEN_URL    - Token exchange URL (default: https://console.anthropic.com/v1/oauth/token)
+  CPE_ANTHROPIC_REDIRECT_URI - Redirect URI (default: https://console.anthropic.com/oauth/code/callback)
+  CPE_ANTHROPIC_SCOPES       - OAuth scopes (default: org:create_api_key user:profile user:inference)
+
+These environment variables allow overriding the default OAuth endpoints, which can be
+useful for testing or when using alternative authentication servers.
+
 Example:
   cpe auth login anthropic
 `,
@@ -34,7 +44,11 @@ Example:
 		provider := strings.ToLower(args[0])
 		switch provider {
 		case "anthropic":
-			return loginAnthropic(cmd)
+			return commands.AuthLoginAnthropic(cmd.Context(), commands.AuthLoginAnthropicOptions{
+				Output:      os.Stdout,
+				Input:       os.Stdin,
+				OpenBrowser: true,
+			})
 		default:
 			return fmt.Errorf("unsupported provider %q (supported: anthropic)", provider)
 		}
@@ -64,6 +78,31 @@ Example:
 
 		fmt.Printf("Successfully logged out from %s\n", provider)
 		return nil
+	},
+}
+
+var authRefreshCmd = &cobra.Command{
+	Use:   "refresh [provider]",
+	Short: "Refresh OAuth tokens for a provider",
+	Long: `Force refresh OAuth tokens for an AI provider, even if the current token hasn't expired.
+
+This is useful when you want to proactively refresh tokens before they expire,
+or if you suspect the current token may be invalid.
+
+Example:
+  cpe auth refresh anthropic
+`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		provider := strings.ToLower(args[0])
+		switch provider {
+		case "anthropic":
+			return commands.AuthRefreshAnthropic(cmd.Context(), commands.AuthRefreshAnthropicOptions{
+				Output: os.Stdout,
+			})
+		default:
+			return fmt.Errorf("unsupported provider %q (supported: anthropic)", provider)
+		}
 	},
 }
 
@@ -116,76 +155,10 @@ Example:
 	},
 }
 
-func loginAnthropic(cmd *cobra.Command) error {
-	// Generate PKCE challenge
-	verifier, challenge, err := auth.GeneratePKCE()
-	if err != nil {
-		return fmt.Errorf("generating PKCE challenge: %w", err)
-	}
-
-	// Build authorization URL (state is set to verifier per Anthropic's OAuth)
-	authURL := auth.BuildAuthURL(challenge, verifier)
-
-	fmt.Println("Opening browser to authenticate with Anthropic...")
-	fmt.Println()
-	fmt.Println("If the browser doesn't open, visit this URL manually:")
-	fmt.Println(authURL)
-	fmt.Println()
-
-	// Try to open browser
-	if err := auth.OpenBrowser(cmd.Context(), authURL); err != nil {
-		fmt.Println("Note: Could not open browser automatically")
-	}
-
-	fmt.Println("After authorizing, you'll see a page with an authorization code.")
-	fmt.Print("Paste the authorization code here: ")
-
-	// Read the authorization code from stdin
-	reader := bufio.NewReader(os.Stdin)
-	code, err := reader.ReadString('\n')
-	if err != nil {
-		return fmt.Errorf("reading authorization code: %w", err)
-	}
-	code = strings.TrimSpace(code)
-
-	if code == "" {
-		return fmt.Errorf("authorization code cannot be empty")
-	}
-
-	// Pass the full code#state to ExchangeCode which will parse it
-
-	fmt.Println()
-	fmt.Println("Exchanging code for tokens...")
-
-	// Exchange the code for tokens
-	tokenResp, err := auth.ExchangeCode(cmd.Context(), code, verifier)
-	if err != nil {
-		return fmt.Errorf("exchanging code for tokens: %w", err)
-	}
-
-	// Store the credential
-	store, err := auth.NewStore()
-	if err != nil {
-		return fmt.Errorf("initializing auth store: %w", err)
-	}
-
-	cred := auth.TokenToCredential(tokenResp)
-	if err := store.SaveCredential(cred); err != nil {
-		return fmt.Errorf("saving credential: %w", err)
-	}
-
-	fmt.Println()
-	fmt.Println("✓ Successfully authenticated with Anthropic!")
-	fmt.Println()
-	fmt.Println("You can now use your Claude Pro/Max subscription with CPE.")
-	fmt.Println("OAuth credentials will be used automatically when no API key is configured.")
-
-	return nil
-}
-
 func init() {
 	authCmd.AddCommand(authLoginCmd)
 	authCmd.AddCommand(authLogoutCmd)
+	authCmd.AddCommand(authRefreshCmd)
 	authCmd.AddCommand(authStatusCmd)
 	rootCmd.AddCommand(authCmd)
 }

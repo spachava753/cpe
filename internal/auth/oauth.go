@@ -7,21 +7,65 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"time"
 )
 
-// OAuth constants for Anthropic
+// Default OAuth constants for Anthropic
 const (
-	AnthropicClientID       = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-	AnthropicAuthURL        = "https://claude.ai/oauth/authorize"
-	AnthropicTokenURL       = "https://console.anthropic.com/v1/oauth/token"
-	AnthropicRedirectURI    = "https://console.anthropic.com/oauth/code/callback"
-	AnthropicScopes         = "org:create_api_key user:profile user:inference"
+	defaultAnthropicClientID    = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+	defaultAnthropicAuthURL     = "https://claude.ai/oauth/authorize"
+	defaultAnthropicTokenURL    = "https://console.anthropic.com/v1/oauth/token"
+	defaultAnthropicRedirectURI = "https://console.anthropic.com/oauth/code/callback"
+	defaultAnthropicScopes      = "org:create_api_key user:profile user:inference"
+
 	AnthropicAuthBetaHeader = "oauth-2025-04-20,claude-code-20250219"
 )
+
+// Environment variable names for OAuth configuration
+const (
+	EnvAnthropicClientID    = "CPE_ANTHROPIC_CLIENT_ID"
+	EnvAnthropicAuthURL     = "CPE_ANTHROPIC_AUTH_URL"
+	EnvAnthropicTokenURL    = "CPE_ANTHROPIC_TOKEN_URL"
+	EnvAnthropicRedirectURI = "CPE_ANTHROPIC_REDIRECT_URI"
+	EnvAnthropicScopes      = "CPE_ANTHROPIC_SCOPES"
+)
+
+// getEnvOrDefault returns the environment variable value or the default if not set
+func getEnvOrDefault(envVar, defaultVal string) string {
+	if val := os.Getenv(envVar); val != "" {
+		return val
+	}
+	return defaultVal
+}
+
+// GetAnthropicClientID returns the OAuth client ID from env var or default
+func GetAnthropicClientID() string {
+	return getEnvOrDefault(EnvAnthropicClientID, defaultAnthropicClientID)
+}
+
+// GetAnthropicAuthURL returns the OAuth authorization URL from env var or default
+func GetAnthropicAuthURL() string {
+	return getEnvOrDefault(EnvAnthropicAuthURL, defaultAnthropicAuthURL)
+}
+
+// GetAnthropicTokenURL returns the OAuth token URL from env var or default
+func GetAnthropicTokenURL() string {
+	return getEnvOrDefault(EnvAnthropicTokenURL, defaultAnthropicTokenURL)
+}
+
+// GetAnthropicRedirectURI returns the OAuth redirect URI from env var or default
+func GetAnthropicRedirectURI() string {
+	return getEnvOrDefault(EnvAnthropicRedirectURI, defaultAnthropicRedirectURI)
+}
+
+// GetAnthropicScopes returns the OAuth scopes from env var or default
+func GetAnthropicScopes() string {
+	return getEnvOrDefault(EnvAnthropicScopes, defaultAnthropicScopes)
+}
 
 // TokenResponse represents the OAuth token response from Anthropic
 type TokenResponse struct {
@@ -37,15 +81,15 @@ type TokenResponse struct {
 func BuildAuthURL(challenge, verifier string) string {
 	params := url.Values{
 		"code":                  {"true"},
-		"client_id":             {AnthropicClientID},
+		"client_id":             {GetAnthropicClientID()},
 		"response_type":         {"code"},
-		"redirect_uri":          {AnthropicRedirectURI},
-		"scope":                 {AnthropicScopes},
+		"redirect_uri":          {GetAnthropicRedirectURI()},
+		"scope":                 {GetAnthropicScopes()},
 		"code_challenge":        {challenge},
 		"code_challenge_method": {"S256"},
 		"state":                 {verifier},
 	}
-	return AnthropicAuthURL + "?" + params.Encode()
+	return GetAnthropicAuthURL() + "?" + params.Encode()
 }
 
 // OpenBrowser opens the default browser to the given URL
@@ -79,8 +123,8 @@ func ExchangeCode(ctx context.Context, code, verifier string) (*TokenResponse, e
 		"code":          authCode,
 		"state":         state,
 		"grant_type":    "authorization_code",
-		"client_id":     AnthropicClientID,
-		"redirect_uri":  AnthropicRedirectURI,
+		"client_id":     GetAnthropicClientID(),
+		"redirect_uri":  GetAnthropicRedirectURI(),
 		"code_verifier": verifier,
 	}
 
@@ -89,7 +133,7 @@ func ExchangeCode(ctx context.Context, code, verifier string) (*TokenResponse, e
 		return nil, fmt.Errorf("marshaling token request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", AnthropicTokenURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", GetAnthropicTokenURL(), bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("creating token request: %w", err)
 	}
@@ -119,7 +163,7 @@ func ExchangeCode(ctx context.Context, code, verifier string) (*TokenResponse, e
 func RefreshAccessToken(ctx context.Context, refreshToken string) (*TokenResponse, error) {
 	payload := map[string]string{
 		"grant_type":    "refresh_token",
-		"client_id":     AnthropicClientID,
+		"client_id":     GetAnthropicClientID(),
 		"refresh_token": refreshToken,
 	}
 
@@ -128,7 +172,7 @@ func RefreshAccessToken(ctx context.Context, refreshToken string) (*TokenRespons
 		return nil, fmt.Errorf("marshaling refresh request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", AnthropicTokenURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", GetAnthropicTokenURL(), bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("creating refresh request: %w", err)
 	}
