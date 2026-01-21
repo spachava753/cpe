@@ -547,12 +547,6 @@ func resolveConfigFromRaw(rawCfg *RawConfig, opts RuntimeOptions) (*Config, erro
 		timeout = parsedTimeout
 	}
 
-	var noStream bool
-	if opts.NoStream != nil {
-		noStream = *opts.NoStream
-	} else {
-		noStream = rawCfg.Defaults.NoStream
-	}
 
 	// Resolve code mode configuration with override behavior (not merge)
 	var codeMode *CodeModeConfig
@@ -568,7 +562,6 @@ func resolveConfigFromRaw(rawCfg *RawConfig, opts RuntimeOptions) (*Config, erro
 		SystemPromptPath:   systemPromptPath,
 		GenerationDefaults: genParams,
 		Timeout:            timeout,
-		NoStream:           noStream,
 		CodeMode:           codeMode,
 	}, nil
 }

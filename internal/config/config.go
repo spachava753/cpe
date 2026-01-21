@@ -111,8 +111,6 @@ type Defaults struct {
 	// Request timeout
 	Timeout string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
 
-	// Disable streaming globally
-	NoStream bool `yaml:"noStream,omitempty" json:"noStream,omitempty"`
 
 	// Code mode configuration
 	CodeMode *CodeModeConfig `yaml:"codeMode,omitempty" json:"codeMode,omitempty"`
@@ -159,8 +157,6 @@ type Config struct {
 	// Effective timeout
 	Timeout time.Duration
 
-	// Whether streaming is disabled
-	NoStream bool
 
 	// Effective code mode configuration
 	CodeMode *CodeModeConfig
@@ -177,6 +173,4 @@ type RuntimeOptions struct {
 	// Timeout override (from --timeout)
 	Timeout string
 
-	// Streaming override (from --no-stream)
-	NoStream *bool
 }
