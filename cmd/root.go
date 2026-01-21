@@ -31,7 +31,6 @@ var (
 	continueID       string
 	incognitoMode    bool
 	timeout          string
-	disableStreaming bool
 	skipStdin        bool
 	configPath       string
 
@@ -90,7 +89,6 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&continueID, "continue", "c", "", "Continue from a specific conversation ID")
 	rootCmd.PersistentFlags().BoolVarP(&incognitoMode, "incognito", "G", false, "Run in incognito mode (do not save conversations to storage)")
 	rootCmd.PersistentFlags().StringVarP(&timeout, "timeout", "", "", "Specify request timeout duration (e.g. '5m', '30s')")
-	rootCmd.PersistentFlags().BoolVar(&disableStreaming, "no-stream", false, "Disable streaming output (show complete response after generation)")
 	rootCmd.PersistentFlags().BoolVar(&skipStdin, "skip-stdin", false, "Skip reading from stdin (useful in scripts)")
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Path to unified configuration file (default: ./cpe.yaml, ~/.config/cpe/cpe.yaml)")
 
@@ -106,12 +104,10 @@ func executeRootCommand(ctx context.Context, args []string) error {
 	}
 
 	// Resolve effective config with runtime options
-	noStream := disableStreaming
 	effectiveConfig, err := config.ResolveConfig(configPath, config.RuntimeOptions{
 		ModelRef:  model,
 		GenParams: &genParams,
 		Timeout:   timeout,
-		NoStream:  &noStream,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to resolve configuration: %w", err)
@@ -149,7 +145,6 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		effectiveConfig.Model,
 		systemPrompt,
 		effectiveConfig.Timeout,
-		effectiveConfig.NoStream,
 		false, // disablePrinting - keep response printing for interactive use
 		effectiveConfig.MCPServers,
 		effectiveConfig.CodeMode,

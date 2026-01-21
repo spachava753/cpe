@@ -354,13 +354,6 @@ func ResolveConfig(configPath string, opts RuntimeOptions) (*Config, error) {
 		timeout = parsedTimeout
 	}
 
-	// Resolve streaming settings
-	var noStream bool
-	if opts.NoStream != nil {
-		noStream = *opts.NoStream
-	} else {
-		noStream = rawCfg.Defaults.NoStream
-	}
 
 	// Resolve code mode configuration with override behavior (not merge)
 	// Model-level completely replaces defaults
@@ -377,7 +370,6 @@ func ResolveConfig(configPath string, opts RuntimeOptions) (*Config, error) {
 		SystemPromptPath:   systemPromptPath,
 		GenerationDefaults: genParams,
 		Timeout:            timeout,
-		NoStream:           noStream,
 		CodeMode:           codeMode,
 	}, nil
 }

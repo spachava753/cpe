@@ -186,7 +186,6 @@ func CreateToolCapableGenerator(
 	selectedModel config.Model,
 	systemPrompt string,
 	requestTimeout time.Duration,
-	disableStreaming bool,
 	disablePrinting bool,
 	mcpServers map[string]mcp.ServerConfig,
 	codeModeConfig *config.CodeModeConfig,
@@ -197,16 +196,10 @@ func CreateToolCapableGenerator(
 		return nil, fmt.Errorf("failed to create generator: %w", err)
 	}
 
-	// Check if the generator supports streaming and if streaming is enabled
-	var gen gai.ToolCapableGenerator
-	if streamingGen, ok := genBase.(gai.StreamingGenerator); ok && !disableStreaming {
-		gen = &gai.StreamingAdapter{S: streamingGen}
-	} else {
-		toolCapGen, ok := genBase.(gai.ToolCapableGenerator)
-		if !ok {
-			return nil, fmt.Errorf("generator does not implement ToolCapableGenerator interface")
-		}
-		gen = toolCapGen
+	// Cast to ToolCapableGenerator
+	gen, ok := genBase.(gai.ToolCapableGenerator)
+	if !ok {
+		return nil, fmt.Errorf("generator does not implement ToolCapableGenerator interface")
 	}
 
 	// Wrap with response printer unless disabled (e.g., for subagents in MCP server mode)
@@ -218,7 +211,7 @@ func CreateToolCapableGenerator(
 	// print token usage at the end of each message
 	gen = NewTokenUsagePrinterGenerator(gen, os.Stderr)
 
-	// Wrap non-streaming generators with a retry wrapper so Generate is retried on transient failures
+	// Wrap with retry wrapper so Generate is retried on transient failures
 	b := backoff.NewExponentialBackOff()
 	b.InitialInterval = 500 * time.Millisecond
 	b.MaxInterval = 1 * time.Minute
