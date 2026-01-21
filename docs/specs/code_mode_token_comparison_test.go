@@ -1,6 +1,7 @@
 package specs
 
 import (
+	_ "embed"
 	"context"
 	"fmt"
 	"os"
@@ -19,6 +20,13 @@ import (
 // using the examples from docs/specs/code_mode.md.
 //
 // This test requires ANTHROPIC_API_KEY environment variable to be set.
+//go:embed testdata/virtual_tool_sample_code.txt
+var virtualToolSampleCode string
+
+//go:embed testdata/virtual_tool_call_example.txt
+var virtualToolCallExample string
+
+
 func TestCodeModeTokenComparison(t *testing.T) {
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
 	if apiKey == "" {
@@ -543,6 +551,95 @@ func Run(ctx context.Context) error {
 			t.Logf("sending its contents through the LLM context.")
 		} else {
 			t.Errorf("Expected code mode to save tokens with massive file, but it used %d more", codeModeTokens-normalTokens)
+		}
+	})
+
+	t.Run("traditional_vs_virtual_tool_calling", func(t *testing.T) {
+		// This test compares token efficiency between:
+		// 1. Traditional tool calling: code is passed as a JSON string parameter
+		// 2. Virtual tool calling: code is wrapped in XML tags as plain text
+		//
+		// Both use the same tool description for fair comparison.
+
+		// Generate the tool description (same for both modes)
+		executeGoCodeTool, err := codemode.GenerateExecuteGoCodeTool([]*mcp.Tool{getWeatherTool, getCityTool}, 300)
+		if err != nil {
+			t.Fatalf("failed to generate execute_go_code tool: %v", err)
+		}
+
+		// === Traditional tool calling ===
+		client := anthropic.NewClient()
+		svc := gai.NewAnthropicServiceWrapper(&client.Messages)
+		gen := gai.NewAnthropicGenerator(svc, "claude-sonnet-4-20250514", "")
+
+		if err := gen.Register(executeGoCodeTool); err != nil {
+			t.Fatalf("failed to register execute_go_code tool: %v", err)
+		}
+
+		traditionalDialog := gai.Dialog{
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("Get the weather for each city in cities.txt")}},
+			{Role: gai.Assistant, Blocks: []gai.Block{
+				gai.TextBlock("I'll write code to read the file and get weather for all cities."),
+				mustToolCallBlock(t, "tool_1", "execute_go_code", map[string]any{
+					"code":             virtualToolSampleCode,
+					"executionTimeout": 60,
+				}),
+			}},
+			gai.TextToolResultMessage("tool_1", "Weather Report\n==============\nNew York: 72°F\nLos Angeles: 85°F\nChicago: 68°F\n"),
+			{Role: gai.Assistant, Blocks: []gai.Block{
+				gai.TextBlock("Here's the weather report for all cities."),
+			}},
+		}
+
+		traditionalTokens, err := gen.Count(ctx, traditionalDialog)
+		if err != nil {
+			t.Fatalf("failed to count traditional mode tokens: %v", err)
+		}
+
+		// === Virtual tool calling ===
+		// Uses the same tool description but in the system prompt instead of as a registered tool
+		virtualClient := anthropic.NewClient()
+		virtualSvc := gai.NewAnthropicServiceWrapper(&virtualClient.Messages)
+		virtualGen := gai.NewAnthropicGenerator(virtualSvc, "claude-sonnet-4-20250514", executeGoCodeTool.Description)
+
+		virtualDialog := gai.Dialog{
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("Get the weather for each city in cities.txt")}},
+			{Role: gai.Assistant, Blocks: []gai.Block{
+				gai.TextBlock(virtualToolCallExample),
+			}},
+			{Role: gai.User, Blocks: []gai.Block{
+				gai.TextBlock("<tool_result>\nWeather Report\n==============\nNew York: 72°F\nLos Angeles: 85°F\nChicago: 68°F\n</tool_result>"),
+			}},
+			{Role: gai.Assistant, Blocks: []gai.Block{
+				gai.TextBlock("Here's the weather report for all cities."),
+			}},
+		}
+
+		virtualTokens, err := virtualGen.Count(ctx, virtualDialog)
+		if err != nil {
+			t.Fatalf("failed to count virtual mode tokens: %v", err)
+		}
+
+		t.Logf("")
+		t.Logf("=== Traditional vs Virtual Tool Calling ===")
+		t.Logf("  Traditional (JSON tool call): %d tokens", traditionalTokens)
+		t.Logf("  Virtual (XML-delimited text): %d tokens", virtualTokens)
+		t.Logf("  Difference:                   %d tokens", int(traditionalTokens)-int(virtualTokens))
+
+		if virtualTokens < traditionalTokens {
+			savings := float64(traditionalTokens-virtualTokens) / float64(traditionalTokens) * 100
+			t.Logf("  Savings:                      %.1f%% (virtual is more efficient)", savings)
+			t.Logf("")
+			t.Logf("Virtual tool calling saves tokens by avoiding JSON escaping overhead")
+			t.Logf("(newlines, quotes, special characters don't need escaping in XML/text).")
+		} else if virtualTokens > traditionalTokens {
+			overhead := float64(virtualTokens-traditionalTokens) / float64(traditionalTokens) * 100
+			t.Logf("  Overhead:                     %.1f%% (traditional is more efficient)", overhead)
+			t.Logf("")
+			t.Logf("Traditional tool calling is more efficient in this case.")
+		} else {
+			t.Logf("")
+			t.Logf("Both approaches use the same number of tokens.")
 		}
 	})
 }
