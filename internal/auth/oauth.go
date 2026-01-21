@@ -164,6 +164,7 @@ func RefreshAccessToken(ctx context.Context, refreshToken string) (*TokenRespons
 	payload := map[string]string{
 		"grant_type":    "refresh_token",
 		"client_id":     GetAnthropicClientID(),
+		"redirect_uri":  GetAnthropicRedirectURI(),
 		"refresh_token": refreshToken,
 	}
 

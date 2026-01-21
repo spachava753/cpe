@@ -89,6 +89,11 @@ var authRefreshCmd = &cobra.Command{
 This is useful when you want to proactively refresh tokens before they expire,
 or if you suspect the current token may be invalid.
 
+Environment variables for Anthropic OAuth configuration:
+  CPE_ANTHROPIC_CLIENT_ID    - OAuth client ID
+  CPE_ANTHROPIC_TOKEN_URL    - Token exchange URL (default: https://console.anthropic.com/v1/oauth/token)
+  CPE_ANTHROPIC_REDIRECT_URI - Redirect URI (default: https://console.anthropic.com/oauth/code/callback)
+
 Example:
   cpe auth refresh anthropic
 `,
