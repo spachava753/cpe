@@ -1,8 +1,8 @@
 package specs
 
 import (
-	_ "embed"
 	"context"
+	_ "embed"
 	"fmt"
 	"os"
 	"testing"
@@ -20,12 +20,12 @@ import (
 // using the examples from docs/specs/code_mode.md.
 //
 // This test requires ANTHROPIC_API_KEY environment variable to be set.
+//
 //go:embed testdata/virtual_tool_sample_code.txt
 var virtualToolSampleCode string
 
 //go:embed testdata/virtual_tool_call_example.txt
 var virtualToolCallExample string
-
 
 func TestCodeModeTokenComparison(t *testing.T) {
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")

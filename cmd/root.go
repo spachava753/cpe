@@ -24,15 +24,15 @@ import (
 var DefaultModel = os.Getenv("CPE_MODEL")
 
 var (
-	model            string
-	customURL        string
-	input            []string
-	newConversation  bool
-	continueID       string
-	incognitoMode    bool
-	timeout          string
-	skipStdin        bool
-	configPath       string
+	model           string
+	customURL       string
+	input           []string
+	newConversation bool
+	continueID      string
+	incognitoMode   bool
+	timeout         string
+	skipStdin       bool
+	configPath      string
 
 	genParams gai.GenOpts
 )
