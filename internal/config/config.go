@@ -14,13 +14,13 @@ type Model struct {
 	DisplayName          string              `json:"display_name" yaml:"display_name" validate:"required"`
 	ID                   string              `json:"id" yaml:"id" validate:"required"`
 	Type                 string              `json:"type" yaml:"type" validate:"required,oneof=openai anthropic gemini responses groq cerebras openrouter zai"`
-	BaseUrl              string              `json:"base_url" yaml:"base_url" validate:"omitempty,https_url|http_url"`
+	BaseUrl              string              `json:"base_url" yaml:"base_url,omitempty" validate:"omitempty,https_url|http_url"`
 	ApiKeyEnv            string              `json:"api_key_env" yaml:"api_key_env" validate:"required_unless=AuthMethod oauth"`
-	AuthMethod           string              `json:"auth_method" yaml:"auth_method" validate:"omitempty,oneof=apikey oauth"`
-	ContextWindow        uint32              `json:"context_window" yaml:"context_window" validate:"omitempty,gt=0"`
-	MaxOutput            uint32              `json:"max_output" yaml:"max_output" validate:"omitempty,gt=0"`
-	InputCostPerMillion  float64             `json:"input_cost_per_million" yaml:"input_cost_per_million"`
-	OutputCostPerMillion float64             `json:"output_cost_per_million" yaml:"output_cost_per_million"`
+	AuthMethod           string              `json:"auth_method" yaml:"auth_method,omitempty" validate:"omitempty,oneof=apikey oauth"`
+	ContextWindow        uint32              `json:"context_window" yaml:"context_window,omitempty" validate:"omitempty,gt=0"`
+	MaxOutput            uint32              `json:"max_output" yaml:"max_output,omitempty" validate:"omitempty,gt=0"`
+	InputCostPerMillion  float64             `json:"input_cost_per_million" yaml:"input_cost_per_million,omitempty"`
+	OutputCostPerMillion float64             `json:"output_cost_per_million" yaml:"output_cost_per_million,omitempty"`
 	PatchRequest         *PatchRequestConfig `json:"patchRequest,omitempty" yaml:"patchRequest,omitempty"`
 }
 
@@ -111,7 +111,6 @@ type Defaults struct {
 	// Request timeout
 	Timeout string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
 
-
 	// Code mode configuration
 	CodeMode *CodeModeConfig `yaml:"codeMode,omitempty" json:"codeMode,omitempty"`
 }
@@ -157,7 +156,6 @@ type Config struct {
 	// Effective timeout
 	Timeout time.Duration
 
-
 	// Effective code mode configuration
 	CodeMode *CodeModeConfig
 }
@@ -172,5 +170,4 @@ type RuntimeOptions struct {
 
 	// Timeout override (from --timeout)
 	Timeout string
-
 }

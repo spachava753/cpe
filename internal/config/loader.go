@@ -354,7 +354,6 @@ func ResolveConfig(configPath string, opts RuntimeOptions) (*Config, error) {
 		timeout = parsedTimeout
 	}
 
-
 	// Resolve code mode configuration with override behavior (not merge)
 	// Model-level completely replaces defaults
 	var codeMode *CodeModeConfig

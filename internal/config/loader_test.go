@@ -547,7 +547,6 @@ func resolveConfigFromRaw(rawCfg *RawConfig, opts RuntimeOptions) (*Config, erro
 		timeout = parsedTimeout
 	}
 
-
 	// Resolve code mode configuration with override behavior (not merge)
 	var codeMode *CodeModeConfig
 	if selectedModel.CodeMode != nil {
