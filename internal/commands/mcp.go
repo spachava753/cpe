@@ -186,17 +186,23 @@ func MCPListTools(ctx context.Context, opts MCPListToolsOptions) error {
 
 	markdownBuilder.WriteString(fmt.Sprintf("# %s\n\n", title))
 
-	toolFilter := serverConfig.ToolFilter
-	if toolFilter == "" {
-		toolFilter = "all"
+	// Infer filter mode from which list is populated
+	var filterMode string
+	switch {
+	case len(serverConfig.EnabledTools) > 0:
+		filterMode = "whitelist"
+	case len(serverConfig.DisabledTools) > 0:
+		filterMode = "blacklist"
+	default:
+		filterMode = "all"
 	}
 
-	markdownBuilder.WriteString("**Filter mode:** `" + toolFilter + "`")
+	markdownBuilder.WriteString("**Filter mode:** `" + filterMode + "`")
 
-	if toolFilter == "whitelist" && len(serverConfig.EnabledTools) > 0 {
+	if len(serverConfig.EnabledTools) > 0 {
 		markdownBuilder.WriteString(" | **Enabled tools:** `" + strings.Join(serverConfig.EnabledTools, "`, `") + "`")
 	}
-	if toolFilter == "blacklist" && len(serverConfig.DisabledTools) > 0 {
+	if len(serverConfig.DisabledTools) > 0 {
 		markdownBuilder.WriteString(" | **Disabled tools:** `" + strings.Join(serverConfig.DisabledTools, "`, `") + "`")
 	}
 

@@ -43,37 +43,28 @@ type ServerConfig struct {
 	Timeout       int               `json:"timeout,omitempty" yaml:"timeout,omitempty" validate:"gte=0"`
 	Env           map[string]string `json:"env,omitempty" yaml:"env,omitempty" validate:"excluded_unless=Type stdio"`
 	Headers       map[string]string `json:"headers,omitempty" yaml:"headers,omitempty" validate:"excluded_if=Type stdio"`
-	EnabledTools  []string          `json:"enabledTools,omitempty" yaml:"enabledTools,omitempty" validate:"required_if=ToolFilter whitelist,excluded_with=DisabledTools"`
-	DisabledTools []string          `json:"disabledTools,omitempty" yaml:"disabledTools,omitempty" validate:"required_if=ToolFilter blacklist,excluded_with=EnabledTools"`
-	ToolFilter    string            `json:"toolFilter,omitempty" yaml:"toolFilter,omitempty" validate:"omitempty,oneof=all whitelist blacklist"`
+	EnabledTools  []string          `json:"enabledTools,omitempty" yaml:"enabledTools,omitempty" validate:"omitempty,min=1,excluded_with=DisabledTools"`
+	DisabledTools []string          `json:"disabledTools,omitempty" yaml:"disabledTools,omitempty" validate:"omitempty,min=1,excluded_with=EnabledTools"`
 }
 
-// FilterMcpTools applies tool filtering based on the server configuration
-// Returns the filtered tools and a list of filtered-out tool names for logging
+// FilterMcpTools applies tool filtering based on the server configuration.
+// The filtering mode is inferred from which list is populated:
+//   - If EnabledTools is non-empty: whitelist mode (only those tools)
+//   - If DisabledTools is non-empty: blacklist mode (exclude those tools)
+//   - If both are empty: allow all tools
+//
+// Returns the filtered tools and a list of filtered-out tool names for logging.
 func FilterMcpTools(tools []*mcp.Tool, config ServerConfig) ([]*mcp.Tool, []string) {
-	// Normalize tool filter value
-	toolFilter := config.ToolFilter
-	if toolFilter == "" {
-		toolFilter = "all" // Default value
-	}
-
-	// If "all" mode, return all tools without filtering
-	if toolFilter == "all" {
-		return tools, nil
-	}
-
-	var filteredTools []*mcp.Tool
-	var filteredOut []string
-
-	switch toolFilter {
-	case "whitelist":
-		// Create a set of enabled tools for fast lookup
+	// Infer filtering mode from which list is populated
+	if len(config.EnabledTools) > 0 {
+		// Whitelist mode: only include tools in EnabledTools
 		enabledSet := make(map[string]bool)
 		for _, toolName := range config.EnabledTools {
 			enabledSet[toolName] = true
 		}
 
-		// Filter tools: only include those in the enabled set
+		var filteredTools []*mcp.Tool
+		var filteredOut []string
 		for _, tool := range tools {
 			if enabledSet[tool.Name] {
 				filteredTools = append(filteredTools, tool)
@@ -81,15 +72,18 @@ func FilterMcpTools(tools []*mcp.Tool, config ServerConfig) ([]*mcp.Tool, []stri
 				filteredOut = append(filteredOut, tool.Name)
 			}
 		}
+		return filteredTools, filteredOut
+	}
 
-	case "blacklist":
-		// Create a set of disabled tools for fast lookup
+	if len(config.DisabledTools) > 0 {
+		// Blacklist mode: exclude tools in DisabledTools
 		disabledSet := make(map[string]bool)
 		for _, toolName := range config.DisabledTools {
 			disabledSet[toolName] = true
 		}
 
-		// Filter tools: exclude those in the disabled set
+		var filteredTools []*mcp.Tool
+		var filteredOut []string
 		for _, tool := range tools {
 			if !disabledSet[tool.Name] {
 				filteredTools = append(filteredTools, tool)
@@ -97,9 +91,11 @@ func FilterMcpTools(tools []*mcp.Tool, config ServerConfig) ([]*mcp.Tool, []stri
 				filteredOut = append(filteredOut, tool.Name)
 			}
 		}
+		return filteredTools, filteredOut
 	}
 
-	return filteredTools, filteredOut
+	// No filtering: return all tools
+	return tools, nil
 }
 
 // ToolCallback implements the gai.ToolCallback interface for MCP tools
@@ -269,11 +265,11 @@ func FetchTools(ctx context.Context, client *mcp.Client, mcpServers map[string]S
 
 		// Log filtering information if tools were filtered
 		if len(filteredOut) > 0 {
-			toolFilter := serverConfig.ToolFilter
-			if toolFilter == "" {
-				toolFilter = "all"
+			filterMode := "whitelist"
+			if len(serverConfig.DisabledTools) > 0 {
+				filterMode = "blacklist"
 			}
-			slog.Info("mcp tools filtered", "server", serverName, "filter", toolFilter, "filtered_count", len(filteredOut), "filtered", strings.Join(filteredOut, ", "))
+			slog.Info("mcp tools filtered", "server", serverName, "filter", filterMode, "filtered_count", len(filteredOut), "filtered", strings.Join(filteredOut, ", "))
 		}
 
 		// Process each filtered tool
