@@ -112,42 +112,48 @@ func TestServerConfigValidation(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "Invalid tool filter",
-			config: ServerConfig{
-				Type:       "stdio",
-				Command:    "editor-mcp",
-				ToolFilter: "greylist",
-			},
-			wantErr: true,
-		},
-		{
-			name: "Tool filter blacklist",
+			name: "Blacklist mode with DisabledTools",
 			config: ServerConfig{
 				Type:          "stdio",
 				Command:       "editor-mcp",
-				ToolFilter:    "blacklist",
 				DisabledTools: []string{"shell"},
 			},
 			wantErr: false,
 		},
 		{
-			name: "Tool filter whitelist",
+			name: "Whitelist mode with EnabledTools",
 			config: ServerConfig{
 				Type:         "stdio",
 				Command:      "editor-mcp",
-				ToolFilter:   "whitelist",
 				EnabledTools: []string{"shell"},
 			},
 			wantErr: false,
 		},
 		{
-			name: "Tool filter whitelist and blacklist",
+			name: "EnabledTools and DisabledTools mutually exclusive",
 			config: ServerConfig{
 				Type:          "stdio",
 				Command:       "editor-mcp",
-				ToolFilter:    "whitelist",
 				EnabledTools:  []string{"shell"},
 				DisabledTools: []string{"str_replace"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "Empty EnabledTools rejected",
+			config: ServerConfig{
+				Type:         "stdio",
+				Command:      "editor-mcp",
+				EnabledTools: []string{},
+			},
+			wantErr: true,
+		},
+		{
+			name: "Empty DisabledTools rejected",
+			config: ServerConfig{
+				Type:          "stdio",
+				Command:       "editor-mcp",
+				DisabledTools: []string{},
 			},
 			wantErr: true,
 		},
