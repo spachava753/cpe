@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -53,14 +52,11 @@ func (p *ToolCallbackPrinter) printResult(msg gai.Message) {
 
 	contentStr := content.String()
 
-	// Truncate to maxLines first
-	truncated := truncateToLines(contentStr, maxLines)
-
 	// Build markdown content based on tool type
 	var markdownContent string
 	if isCodeMode {
-		// For code mode, wrap in a text code block
-		markdownContent = fmt.Sprintf("#### Code execution output:\n"+"````shell\n%s\n"+"````", truncated)
+		// Use shared formatting function for code mode
+		markdownContent = FormatExecuteGoCodeResultMarkdown(contentStr, maxLines)
 	} else {
 		// For regular tools, try to format as JSON
 		var jsonData interface{}
@@ -68,13 +64,14 @@ func (p *ToolCallbackPrinter) printResult(msg gai.Message) {
 			// Valid JSON, pretty print it
 			formatted, err := json.MarshalIndent(jsonData, "", "  ")
 			if err == nil {
-				// Truncate the formatted JSON
-				truncated = truncateToLines(string(formatted), maxLines)
+				contentStr = string(formatted)
 			}
-			markdownContent = fmt.Sprintf("#### Tool \"%s\" result:\n"+"```json\n%s\n"+"```", p.toolName, truncated)
+			truncated := truncateToMaxLines(contentStr, maxLines)
+			markdownContent = fmt.Sprintf("#### Tool \"%s\" result:\n```json\n%s\n```", p.toolName, truncated)
 		} else {
 			// Not JSON, treat as plain text
-			markdownContent = fmt.Sprintf("#### Tool \"%s\" result:\n"+"```\n%s\n"+"```", p.toolName, truncated)
+			truncated := truncateToMaxLines(contentStr, maxLines)
+			markdownContent = fmt.Sprintf("#### Tool \"%s\" result:\n```\n%s\n```", p.toolName, truncated)
 		}
 	}
 
@@ -92,25 +89,6 @@ func (p *ToolCallbackPrinter) printResult(msg gai.Message) {
 
 	// Write to stderr
 	fmt.Fprint(os.Stderr, output.String())
-}
-
-// truncateToLines truncates content to the specified number of lines
-func truncateToLines(content string, maxLines int) string {
-	scanner := bufio.NewScanner(strings.NewReader(content))
-	var lines []string
-	lineCount := 0
-
-	for scanner.Scan() && lineCount < maxLines {
-		lines = append(lines, scanner.Text())
-		lineCount++
-	}
-
-	// Check if there are more lines
-	if scanner.Scan() {
-		lines = append(lines, "... (truncated)")
-	}
-
-	return strings.Join(lines, "\n")
 }
 
 // ToolResultPrinterWrapper wraps an Iface and prints tool execution results

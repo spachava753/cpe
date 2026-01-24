@@ -10,6 +10,7 @@ import (
 
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/storage"
 )
 
@@ -179,8 +180,16 @@ func (f *MarkdownDialogFormatter) FormatDialog(dialog gai.Dialog, msgIds []strin
 					}
 					md.WriteString("\n")
 				default:
-					if message.Role == gai.ToolResult && isJSON(content) {
-						md.WriteString(formatJSONMarkdown(content))
+					if message.Role == gai.ToolResult {
+						// Check if this is an execute_go_code result
+						if isCodeModeResult(dialog, i) {
+							md.WriteString(formatCodeModeResultMarkdown(content))
+						} else if isJSON(content) {
+							md.WriteString(formatJSONMarkdown(content))
+						} else {
+							md.WriteString(content)
+							md.WriteString("\n\n")
+						}
 					} else {
 						md.WriteString(content)
 						md.WriteString("\n\n")
@@ -201,11 +210,59 @@ func (f *MarkdownDialogFormatter) FormatDialog(dialog gai.Dialog, msgIds []strin
 	return md.String(), nil
 }
 
-// formatToolCallMarkdown formats a tool call JSON string as a markdown code block
+// isCodeModeResult checks if a tool result at the given index is from an execute_go_code tool call.
+// It matches the tool result's ID with the corresponding tool call in the previous assistant message.
+func isCodeModeResult(dialog gai.Dialog, toolResultIndex int) bool {
+	if toolResultIndex <= 0 {
+		return false
+	}
+
+	// Get the tool result message and its tool call ID from the first block
+	resultMsg := dialog[toolResultIndex]
+	if len(resultMsg.Blocks) == 0 {
+		return false
+	}
+	toolCallID := resultMsg.Blocks[0].ID
+
+	// Look at the previous message for tool calls
+	prevMsg := dialog[toolResultIndex-1]
+	if prevMsg.Role != gai.Assistant {
+		return false
+	}
+
+	// Find the matching tool call block by ID
+	for _, block := range prevMsg.Blocks {
+		if block.BlockType == gai.ToolCall && block.ModalityType == gai.Text && block.ID == toolCallID {
+			content := block.Content.String()
+			if _, ok := agent.ParseExecuteGoCodeToolCall(content); ok {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// formatCodeModeResultMarkdown formats an execute_go_code tool result as markdown.
+// Uses the shared formatting function with no truncation for conversation history viewing.
+func formatCodeModeResultMarkdown(content string) string {
+	return agent.FormatExecuteGoCodeResultMarkdown(content, 0) + "\n\n"
+}
+
+// formatToolCallMarkdown formats a tool call JSON string as a markdown code block.
+// For execute_go_code tool calls, displays the Go code with syntax highlighting.
 func formatToolCallMarkdown(content string) string {
+	unescaped := unescapeJSONString(content)
+
+	// Check if this is an execute_go_code tool call
+	if input, ok := agent.ParseExecuteGoCodeToolCall(unescaped); ok {
+		return agent.FormatExecuteGoCodeToolCallMarkdown(input) + "\n\n"
+	}
+
+	// Generic tool call formatting
 	var buf bytes.Buffer
-	if err := json.Indent(&buf, []byte(unescapeJSONString(content)), "", "  "); err != nil {
-		return fmt.Sprintf("```json\n%s\n```\n\n", content)
+	if err := json.Indent(&buf, []byte(unescaped), "", "  "); err != nil {
+		return fmt.Sprintf("**Tool Call:**\n\n```json\n%s\n```\n\n", content)
 	}
 	return fmt.Sprintf("**Tool Call:**\n\n```json\n%s\n```\n\n", buf.String())
 }
