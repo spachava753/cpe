@@ -303,3 +303,209 @@ func TestConversationPrint(t *testing.T) {
 		})
 	}
 }
+
+// plainRenderer is a simple renderer for testing that returns input as-is
+type plainRenderer struct{}
+
+func (p *plainRenderer) Render(in string) (string, error) {
+	return in, nil
+}
+
+func TestIsCodeModeResult(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialog   gai.Dialog
+		index    int
+		expected bool
+	}{
+		{
+			name:     "empty dialog",
+			dialog:   gai.Dialog{},
+			index:    0,
+			expected: false,
+		},
+		{
+			name:     "index 0 always returns false",
+			dialog:   gai.Dialog{{Role: gai.ToolResult}},
+			index:    0,
+			expected: false,
+		},
+		{
+			name: "single execute_go_code tool call with matching result",
+			dialog: gai.Dialog{
+				{
+					Role: gai.User,
+					Blocks: []gai.Block{
+						{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("test")},
+					},
+				},
+				{
+					Role: gai.Assistant,
+					Blocks: []gai.Block{
+						{
+							ID:           "tool-1",
+							BlockType:    gai.ToolCall,
+							ModalityType: gai.Text,
+							Content:      gai.Str(`{"name":"execute_go_code","parameters":{"code":"package main"}}`),
+						},
+					},
+				},
+				{
+					Role: gai.ToolResult,
+					Blocks: []gai.Block{
+						{ID: "tool-1", BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("output")},
+					},
+				},
+			},
+			index:    2,
+			expected: true,
+		},
+		{
+			name: "non-execute_go_code tool call",
+			dialog: gai.Dialog{
+				{
+					Role: gai.User,
+					Blocks: []gai.Block{
+						{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("test")},
+					},
+				},
+				{
+					Role: gai.Assistant,
+					Blocks: []gai.Block{
+						{
+							ID:           "tool-1",
+							BlockType:    gai.ToolCall,
+							ModalityType: gai.Text,
+							Content:      gai.Str(`{"name":"get_weather","parameters":{"city":"NYC"}}`),
+						},
+					},
+				},
+				{
+					Role: gai.ToolResult,
+					Blocks: []gai.Block{
+						{ID: "tool-1", BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("sunny")},
+					},
+				},
+			},
+			index:    2,
+			expected: false,
+		},
+		{
+			name: "multiple tool calls - matching ID is execute_go_code",
+			dialog: gai.Dialog{
+				{Role: gai.User, Blocks: []gai.Block{{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("test")}}},
+				{
+					Role: gai.Assistant,
+					Blocks: []gai.Block{
+						{ID: "tool-1", BlockType: gai.ToolCall, ModalityType: gai.Text, Content: gai.Str(`{"name":"get_weather","parameters":{}}`)},
+						{ID: "tool-2", BlockType: gai.ToolCall, ModalityType: gai.Text, Content: gai.Str(`{"name":"execute_go_code","parameters":{"code":"pkg"}}`)},
+					},
+				},
+				{
+					Role:   gai.ToolResult,
+					Blocks: []gai.Block{{ID: "tool-2", BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("output")}},
+				},
+			},
+			index:    2,
+			expected: true,
+		},
+		{
+			name: "multiple tool calls - matching ID is NOT execute_go_code",
+			dialog: gai.Dialog{
+				{Role: gai.User, Blocks: []gai.Block{{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("test")}}},
+				{
+					Role: gai.Assistant,
+					Blocks: []gai.Block{
+						{ID: "tool-1", BlockType: gai.ToolCall, ModalityType: gai.Text, Content: gai.Str(`{"name":"get_weather","parameters":{}}`)},
+						{ID: "tool-2", BlockType: gai.ToolCall, ModalityType: gai.Text, Content: gai.Str(`{"name":"execute_go_code","parameters":{"code":"pkg"}}`)},
+					},
+				},
+				{
+					Role:   gai.ToolResult,
+					Blocks: []gai.Block{{ID: "tool-1", BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("sunny")}},
+				},
+			},
+			index:    2,
+			expected: false,
+		},
+		{
+			name: "previous message is not assistant",
+			dialog: gai.Dialog{
+				{Role: gai.User, Blocks: []gai.Block{{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("test")}}},
+				{
+					Role:   gai.ToolResult,
+					Blocks: []gai.Block{{ID: "tool-1", BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("output")}},
+				},
+			},
+			index:    1,
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isCodeModeResult(tt.dialog, tt.index)
+			if got != tt.expected {
+				t.Errorf("isCodeModeResult() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFormatCodeModeResultMarkdown(t *testing.T) {
+	result := formatCodeModeResultMarkdown("Hello, World!")
+
+	// Should contain shell code block formatting
+	if !strings.Contains(result, "shell") {
+		t.Error("expected shell code block")
+	}
+	if !strings.Contains(result, "Hello, World!") {
+		t.Error("expected content to be preserved")
+	}
+}
+
+func TestMarkdownDialogFormatterWithExecuteGoCode(t *testing.T) {
+	renderer := &plainRenderer{}
+	formatter := &MarkdownDialogFormatter{Renderer: renderer}
+
+	dialog := gai.Dialog{
+		{
+			Role: gai.User,
+			Blocks: []gai.Block{
+				{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("Run some code")},
+			},
+		},
+		{
+			Role: gai.Assistant,
+			Blocks: []gai.Block{
+				{
+					ID:           "tool-1",
+					BlockType:    gai.ToolCall,
+					ModalityType: gai.Text,
+					Content:      gai.Str(`{"name":"execute_go_code","parameters":{"code":"package main\\n\\nfunc Run() {}"}}`),
+				},
+			},
+		},
+		{
+			Role: gai.ToolResult,
+			Blocks: []gai.Block{
+				{ID: "tool-1", BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("Code executed successfully")},
+			},
+		},
+	}
+
+	output, err := formatter.FormatDialog(dialog, []string{"msg-1", "msg-2", "msg-3"})
+	if err != nil {
+		t.Fatalf("FormatDialog() error = %v", err)
+	}
+
+	// Should format execute_go_code tool call with Go code block
+	if !strings.Contains(output, "```go") {
+		t.Error("expected Go code block for execute_go_code tool call")
+	}
+
+	// Should format tool result with shell code block
+	if !strings.Contains(output, "````shell") {
+		t.Error("expected shell code block for execute_go_code result")
+	}
+}

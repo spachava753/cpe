@@ -1,16 +1,12 @@
 package agent
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/spachava753/gai"
-
-	"github.com/spachava753/cpe/internal/codemode"
 )
 
 // ResponsePrinterGenerator is a wrapper around another generator that prints out
@@ -63,32 +59,22 @@ func (g *ResponsePrinterGenerator) renderThinking(content string, reasoningType 
 }
 
 func (g *ResponsePrinterGenerator) renderToolCall(content string) string {
-	var toolCall gai.ToolCallInput
-	if err := json.Unmarshal([]byte(content), &toolCall); err == nil {
-		if toolCall.Name == codemode.ExecuteGoCodeToolName {
-			paramsJSON, err := json.Marshal(toolCall.Parameters)
-			if err == nil {
-				var input codemode.ExecuteGoCodeInput
-				if err := json.Unmarshal(paramsJSON, &input); err == nil && input.Code != "" {
-					header := "#### [tool call]"
-					if input.ExecutionTimeout > 0 {
-						header = fmt.Sprintf("#### [tool call] (timeout: %ds)", input.ExecutionTimeout)
-					}
-					result := fmt.Sprintf("%s\n```go\n%s\n```", header, input.Code)
-					if rendered, err := g.contentRenderer.Render(result); err == nil {
-						return rendered
-					}
-				}
-			}
+	// Check if this is an execute_go_code tool call
+	if input, ok := ParseExecuteGoCodeToolCall(content); ok {
+		result := FormatExecuteGoCodeToolCallMarkdown(input)
+		if rendered, err := g.contentRenderer.Render(result); err == nil {
+			return rendered
 		}
+		// Return unrendered markdown if rendering fails, don't fall through to generic formatting
+		return result
 	}
 
-	var formattedJson bytes.Buffer
-	if err := json.Indent(&formattedJson, []byte(content), "", "  "); err != nil {
+	// Generic tool call formatting
+	result, ok := FormatGenericToolCallMarkdown(content)
+	if !ok {
+		// JSON parsing failed, return original content
 		return content
 	}
-	result := fmt.Sprintf("#### [tool call]\n```json\n%s\n```", formattedJson.String())
-
 	if rendered, err := g.toolCallRenderer.Render(result); err == nil {
 		return rendered
 	}
