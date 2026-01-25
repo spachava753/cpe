@@ -1,0 +1,7 @@
+{"subagentName":"test","subagentRunId":"run-1","timestamp":"2026-01-24T12:00:00Z","type":"tool_call"}
+(map[string]interface {}) (len=4) {
+  (string) (len=12) "subagentName": (string) (len=4) "test",
+  (string) (len=13) "subagentRunId": (string) (len=5) "run-1",
+  (string) (len=9) "timestamp": (string) (len=20) "2026-01-24T12:00:00Z",
+  (string) (len=4) "type": (string) (len=9) "tool_call"
+}

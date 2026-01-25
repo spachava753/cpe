@@ -1,0 +1,18 @@
+(*gai.GenOpts)({
+  Temperature: (float64) 0.6,
+  TopP: (float64) 0.85,
+  TopK: (uint) 40,
+  FrequencyPenalty: (float64) 0.5,
+  PresencePenalty: (float64) 0.2,
+  N: (uint) 1,
+  MaxGenerationTokens: (int) 4096,
+  ToolChoice: (string) "",
+  StopSequences: ([]string) <nil>,
+  OutputModalities: ([]gai.Modality) <nil>,
+  AudioConfig: (gai.AudioConfig) {
+    VoiceName: (string) "",
+    Format: (string) ""
+  },
+  ThinkingBudget: (string) (len=4) "high",
+  ExtraArgs: (map[string]interface {}) <nil>
+})

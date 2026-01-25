@@ -1,0 +1,12 @@
+(subagentlog.Event) {
+  SubagentName: (string) (len=8) "my-agent",
+  SubagentRunID: (string) (len=7) "run-abc",
+  Timestamp: (time.Time) 2025-01-15 10:30:00 +0000 UTC,
+  Type: (string) (len=11) "tool_result",
+  ToolName: (string) (len=12) "execute_code",
+  ToolCallID: (string) (len=8) "call-xyz",
+  Payload: (string) (len=21) "{\"result\": \"success\"}",
+  ExecutionTimeoutSeconds: (int) 30,
+  ReasoningType: (string) "",
+  TokenUsage: (*subagentlog.TokenUsage)(<nil>)
+}

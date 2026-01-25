@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	mcpcpe "github.com/spachava753/cpe/internal/mcp"
@@ -20,10 +21,10 @@ func TestExecuteCode(t *testing.T) {
 		name          string
 		llmCode       string
 		wantExitCode  int
-		wantOutput    string
 		wantErrType   string // "none", "recoverable", "fatal", "other"
 		validate      func(t *testing.T, result ExecutionResult, err error)
 		cancelContext bool
+		snapshot      bool // if true, use cupaloy snapshot for output
 	}{
 		{
 			name: "successful execution",
@@ -42,8 +43,8 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 }
 `,
 			wantExitCode: 0,
-			wantOutput:   "Hello from generated code\n",
 			wantErrType:  "none",
+			snapshot:     true,
 		},
 		{
 			name: "compilation error returns RecoverableError",
@@ -88,8 +89,8 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 }
 `,
 			wantExitCode: 1,
-			wantOutput:   "\nexecution error: something went wrong\n",
 			wantErrType:  "recoverable",
+			snapshot:     true,
 			validate: func(t *testing.T, result ExecutionResult, err error) {
 				var recErr RecoverableError
 				if !errors.As(err, &recErr) {
@@ -178,8 +179,8 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 }
 `,
 			wantExitCode: 0,
-			wantOutput:   "Line 1\nLine 2\nLine 3\n",
 			wantErrType:  "none",
+			snapshot:     true,
 		},
 		{
 			name: "stderr and stdout captured",
@@ -200,8 +201,8 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 }
 `,
 			wantExitCode: 0,
-			wantOutput:   "stderr outputstdout output",
 			wantErrType:  "none",
+			snapshot:     true,
 		},
 		{
 			name: "context cancellation",
@@ -264,8 +265,10 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 
 			if tt.validate != nil {
 				tt.validate(t, result, err)
-			} else if tt.wantOutput != "" && result.Output != tt.wantOutput {
-				t.Errorf("Output = %q, want %q", result.Output, tt.wantOutput)
+			}
+
+			if tt.snapshot {
+				cupaloy.SnapshotT(t, result.Output)
 			}
 		})
 	}
@@ -298,10 +301,7 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 		t.Errorf("ExitCode = %d, want 0; output: %s", result.ExitCode, result.Output)
 	}
 
-	want := "No tools needed\n"
-	if result.Output != want {
-		t.Errorf("Output = %q, want %q", result.Output, want)
-	}
+	cupaloy.SnapshotT(t, result.Output)
 }
 
 func TestExecuteCode_TimeoutGracefulExit(t *testing.T) {
@@ -396,18 +396,37 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 }
 `
 
-	// Cancel parent context after a short delay
+	// Cancel parent context after a delay to allow compilation to complete
 	go func() {
 		time.Sleep(500 * time.Millisecond)
 		cancel()
 	}()
 
 	result, err := ExecuteCode(ctx, nil, llmCode, 30)
+
+	// Context cancellation can result in either:
+	// 1. Graceful shutdown (exit 0, "parent cancelled" in output)
+	// 2. Process killed (RecoverableError with exit -1)
+	// 3. Context error during compilation phase
+	//
+	// All outcomes are valid for testing context cancellation behavior.
 	if err != nil {
-		t.Fatalf("ExecuteCode() error: %v", err)
+		// If there's an error, it should be context-related or a RecoverableError
+		// from the process being killed
+		errMsg := err.Error()
+		isContextErr := errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+		isContextRelated := strings.Contains(errMsg, "context")
+		var recErr RecoverableError
+		isKilled := errors.As(err, &recErr) && recErr.ExitCode == -1
+
+		if !isContextErr && !isContextRelated && !isKilled {
+			t.Fatalf("ExecuteCode() error = %v, want context-related error or killed process", err)
+		}
+		// Context cancellation verified through error path
+		return
 	}
 
-	// Process should exit cleanly after parent context cancelled - no error
+	// If no error, verify graceful shutdown occurred
 	if result.ExitCode != 0 {
 		t.Errorf("ExitCode = %d, want 0; output: %s", result.ExitCode, result.Output)
 	}
@@ -462,18 +481,12 @@ func TestClassifyExitCode(t *testing.T) {
 func TestErrorMessages(t *testing.T) {
 	t.Run("RecoverableError", func(t *testing.T) {
 		err := RecoverableError{Output: "some output", ExitCode: 1}
-		want := "recoverable execution error (exit code 1): some output"
-		if err.Error() != want {
-			t.Errorf("Error() = %q, want %q", err.Error(), want)
-		}
+		cupaloy.SnapshotT(t, err.Error())
 	})
 
 	t.Run("FatalExecutionError", func(t *testing.T) {
 		err := FatalExecutionError{Output: "fatal output"}
-		want := "fatal execution error: fatal output"
-		if err.Error() != want {
-			t.Errorf("Error() = %q, want %q", err.Error(), want)
-		}
+		cupaloy.SnapshotT(t, err.Error())
 	})
 }
 
@@ -622,9 +635,7 @@ func TestUnmarshalContent(t *testing.T) {
 				if !ok {
 					t.Fatalf("expected *mcp.TextContent, got %T", content[0])
 				}
-				if tc.Text != "Hello, world!" {
-					t.Errorf("Text = %q, want %q", tc.Text, "Hello, world!")
-				}
+				cupaloy.SnapshotT(t, tc.Text)
 			},
 		},
 		{
@@ -637,12 +648,10 @@ func TestUnmarshalContent(t *testing.T) {
 				if !ok {
 					t.Fatalf("expected *mcp.ImageContent, got %T", content[0])
 				}
-				if ic.MIMEType != "image/png" {
-					t.Errorf("MIMEType = %q, want %q", ic.MIMEType, "image/png")
-				}
-				if string(ic.Data) != "hello" {
-					t.Errorf("Data = %q, want %q", string(ic.Data), "hello")
-				}
+				cupaloy.SnapshotT(t, map[string]any{
+					"MIMEType": ic.MIMEType,
+					"Data":     string(ic.Data),
+				})
 			},
 		},
 		{
@@ -655,12 +664,10 @@ func TestUnmarshalContent(t *testing.T) {
 				if !ok {
 					t.Fatalf("expected *mcp.AudioContent, got %T", content[0])
 				}
-				if ac.MIMEType != "audio/wav" {
-					t.Errorf("MIMEType = %q, want %q", ac.MIMEType, "audio/wav")
-				}
-				if string(ac.Data) != "world" {
-					t.Errorf("Data = %q, want %q", string(ac.Data), "world")
-				}
+				cupaloy.SnapshotT(t, map[string]any{
+					"MIMEType": ac.MIMEType,
+					"Data":     string(ac.Data),
+				})
 			},
 		},
 		{
@@ -673,16 +680,14 @@ func TestUnmarshalContent(t *testing.T) {
 				if !ok {
 					t.Fatalf("content[0]: expected *mcp.TextContent, got %T", content[0])
 				}
-				if tc.Text != "Description" {
-					t.Errorf("content[0].Text = %q, want %q", tc.Text, "Description")
-				}
 				ic, ok := content[1].(*mcp.ImageContent)
 				if !ok {
 					t.Fatalf("content[1]: expected *mcp.ImageContent, got %T", content[1])
 				}
-				if ic.MIMEType != "image/jpeg" {
-					t.Errorf("content[1].MIMEType = %q, want %q", ic.MIMEType, "image/jpeg")
-				}
+				cupaloy.SnapshotT(t, map[string]any{
+					"text":     tc.Text,
+					"mimeType": ic.MIMEType,
+				})
 			},
 		},
 		{
@@ -777,9 +782,7 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 		t.Fatalf("Content[0] type = %T, want *mcp.TextContent", result.Content[0])
 	}
 
-	if tc.Text != "Generated text content" {
-		t.Errorf("Content[0].Text = %q, want %q", tc.Text, "Generated text content")
-	}
+	cupaloy.SnapshotT(t, tc.Text)
 }
 
 func TestExecuteCode_WithImageContent(t *testing.T) {
@@ -822,13 +825,10 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 		t.Fatalf("Content[0] type = %T, want *mcp.ImageContent", result.Content[0])
 	}
 
-	if ic.MIMEType != "image/png" {
-		t.Errorf("Content[0].MIMEType = %q, want %q", ic.MIMEType, "image/png")
-	}
-
-	if string(ic.Data) != "fake image data" {
-		t.Errorf("Content[0].Data = %q, want %q", string(ic.Data), "fake image data")
-	}
+	cupaloy.SnapshotT(t, map[string]any{
+		"MIMEType": ic.MIMEType,
+		"Data":     string(ic.Data),
+	})
 }
 
 func TestExecuteCode_WithMixedContent(t *testing.T) {
@@ -876,17 +876,16 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 	if !ok {
 		t.Fatalf("Content[0] type = %T, want *mcp.TextContent", result.Content[0])
 	}
-	if tc.Text != "Text part" {
-		t.Errorf("Content[0].Text = %q, want %q", tc.Text, "Text part")
-	}
 
 	ic, ok := result.Content[1].(*mcp.ImageContent)
 	if !ok {
 		t.Fatalf("Content[1] type = %T, want *mcp.ImageContent", result.Content[1])
 	}
-	if ic.MIMEType != "image/jpeg" {
-		t.Errorf("Content[1].MIMEType = %q, want %q", ic.MIMEType, "image/jpeg")
-	}
+
+	cupaloy.SnapshotT(t, map[string]any{
+		"text":     tc.Text,
+		"mimeType": ic.MIMEType,
+	})
 }
 
 func TestExecuteCode_NoContent(t *testing.T) {

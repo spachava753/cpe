@@ -1,0 +1,19 @@
+{"subagentName":"code_reviewer","subagentRunId":"run-end-001","timestamp":"2026-01-24T12:00:00Z","type":"subagent_end","payload":"{\"status\":\"completed\"}","tokenUsage":{"totalTokens":500}}
+(subagentlog.Event) {
+  SubagentName: (string) (len=13) "code_reviewer",
+  SubagentRunID: (string) (len=11) "run-end-001",
+  Timestamp: (time.Time) 2026-01-24 12:00:00 +0000 UTC,
+  Type: (string) (len=12) "subagent_end",
+  ToolName: (string) "",
+  ToolCallID: (string) "",
+  Payload: (string) (len=22) "{\"status\":\"completed\"}",
+  ExecutionTimeoutSeconds: (int) 0,
+  ReasoningType: (string) "",
+  TokenUsage: (*subagentlog.TokenUsage)({
+    InputTokens: (*int)(<nil>),
+    OutputTokens: (*int)(<nil>),
+    TotalTokens: (*int)(500),
+    CacheReadTokens: (*int)(<nil>),
+    CacheWriteTokens: (*int)(<nil>)
+  })
+}

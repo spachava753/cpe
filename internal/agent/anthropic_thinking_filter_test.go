@@ -4,14 +4,14 @@ import (
 	"context"
 	"testing"
 
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/spachava753/gai"
 )
 
 func TestAnthropicThinkingBlockFilter(t *testing.T) {
 	tests := []struct {
-		name           string
-		inputDialog    gai.Dialog
-		expectedBlocks int // expected total blocks across all messages after filtering
+		name        string
+		inputDialog gai.Dialog
 	}{
 		{
 			name: "keeps Anthropic thinking blocks",
@@ -28,7 +28,6 @@ func TestAnthropicThinkingBlockFilter(t *testing.T) {
 					},
 				},
 			},
-			expectedBlocks: 2,
 		},
 		{
 			name: "filters out Gemini thinking blocks",
@@ -45,7 +44,6 @@ func TestAnthropicThinkingBlockFilter(t *testing.T) {
 					},
 				},
 			},
-			expectedBlocks: 1,
 		},
 		{
 			name: "filters out thinking blocks without any signature",
@@ -58,7 +56,6 @@ func TestAnthropicThinkingBlockFilter(t *testing.T) {
 					},
 				},
 			},
-			expectedBlocks: 1,
 		},
 		{
 			name: "filters out thinking blocks with nil ExtraFields",
@@ -71,7 +68,6 @@ func TestAnthropicThinkingBlockFilter(t *testing.T) {
 					},
 				},
 			},
-			expectedBlocks: 1,
 		},
 		{
 			name: "preserves Content and ToolCall blocks unchanged",
@@ -84,7 +80,6 @@ func TestAnthropicThinkingBlockFilter(t *testing.T) {
 					},
 				},
 			},
-			expectedBlocks: 2,
 		},
 		{
 			name: "handles mixed conversation from multiple providers",
@@ -120,12 +115,10 @@ func TestAnthropicThinkingBlockFilter(t *testing.T) {
 					},
 				},
 			},
-			expectedBlocks: 4, // gemini: 1 content, user: 1 content, anthropic: 2 blocks
 		},
 		{
-			name:           "handles empty dialog",
-			inputDialog:    gai.Dialog{},
-			expectedBlocks: 0,
+			name:        "handles empty dialog",
+			inputDialog: gai.Dialog{},
 		},
 		{
 			name: "handles message with no blocks",
@@ -135,7 +128,6 @@ func TestAnthropicThinkingBlockFilter(t *testing.T) {
 					Blocks: []gai.Block{},
 				},
 			},
-			expectedBlocks: 0,
 		},
 	}
 
@@ -151,15 +143,7 @@ func TestAnthropicThinkingBlockFilter(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			// Count total blocks across all messages
-			totalBlocks := 0
-			for _, msg := range mockGenerator.capturedDialog {
-				totalBlocks += len(msg.Blocks)
-			}
-
-			if totalBlocks != tt.expectedBlocks {
-				t.Errorf("expected %d blocks, got %d", tt.expectedBlocks, totalBlocks)
-			}
+			cupaloy.SnapshotT(t, mockGenerator.capturedDialog)
 		})
 	}
 }
@@ -185,13 +169,7 @@ func TestAnthropicThinkingBlockFilter_PreservesToolResultError(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(mockGenerator.capturedDialog) != 1 {
-		t.Fatalf("expected 1 message, got %d", len(mockGenerator.capturedDialog))
-	}
-
-	if !mockGenerator.capturedDialog[0].ToolResultError {
-		t.Error("expected ToolResultError to be preserved as true")
-	}
+	cupaloy.SnapshotT(t, mockGenerator.capturedDialog)
 }
 
 func TestAnthropicThinkingBlockFilter_Register(t *testing.T) {
@@ -232,13 +210,5 @@ func TestAnthropicThinkingBlockFilter_FiltersOpenRouterThinking(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Should only have 1 block (content), the OpenRouter thinking should be filtered
-	totalBlocks := 0
-	for _, msg := range mockGenerator.capturedDialog {
-		totalBlocks += len(msg.Blocks)
-	}
-
-	if totalBlocks != 1 {
-		t.Errorf("expected 1 block (OpenRouter thinking should be filtered), got %d", totalBlocks)
-	}
+	cupaloy.SnapshotT(t, mockGenerator.capturedDialog)
 }

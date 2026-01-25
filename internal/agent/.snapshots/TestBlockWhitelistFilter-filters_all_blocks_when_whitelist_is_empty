@@ -1,0 +1,8 @@
+(gai.Dialog) (len=1) {
+  (gai.Message) {
+    Role: (gai.Role) assistant,
+    Blocks: ([]gai.Block) {
+    },
+    ToolResultError: (bool) false
+  }
+}

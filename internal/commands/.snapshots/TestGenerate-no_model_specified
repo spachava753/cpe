@@ -1,0 +1,4 @@
+(commands.generateTestResult) {
+  Error: (string) (len=18) "no model specified",
+  Stderr: (string) ""
+}

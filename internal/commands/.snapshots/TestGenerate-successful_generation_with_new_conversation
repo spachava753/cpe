@@ -1,0 +1,4 @@
+(commands.generateTestResult) {
+  Error: (string) "",
+  Stderr: (string) (len=94) "You can cancel this save operation by interrupting (Ctrl+C).\n[cpe] last_message_id is msg-123\n"
+}

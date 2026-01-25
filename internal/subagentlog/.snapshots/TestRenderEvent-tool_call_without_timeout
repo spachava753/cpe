@@ -1,0 +1,6 @@
+#### research_agent [run-123] [tool call]
+```json
+{
+  "query": "golang tutorials"
+}
+```

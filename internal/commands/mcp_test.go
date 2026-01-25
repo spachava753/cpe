@@ -6,24 +6,23 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/spachava753/cpe/internal/config"
 	mcpinternal "github.com/spachava753/cpe/internal/mcp"
 )
 
 func TestMCPListServers(t *testing.T) {
 	tests := []struct {
-		name               string
-		config             *config.Config
-		wantErr            bool
-		wantOutputContains []string
+		name    string
+		config  *config.Config
+		wantErr bool
 	}{
 		{
 			name: "no servers configured",
 			config: &config.Config{
 				MCPServers: nil,
 			},
-			wantErr:            false,
-			wantOutputContains: []string{"No MCP servers configured."},
+			wantErr: false,
 		},
 		{
 			name: "single server configured",
@@ -38,13 +37,6 @@ func TestMCPListServers(t *testing.T) {
 				},
 			},
 			wantErr: false,
-			wantOutputContains: []string{
-				"Configured MCP Servers:",
-				"test-server",
-				"Type: stdio",
-				"Timeout: 30s",
-				"Command: node server.js",
-			},
 		},
 		{
 			name: "multiple servers with different types",
@@ -62,11 +54,6 @@ func TestMCPListServers(t *testing.T) {
 				},
 			},
 			wantErr: false,
-			wantOutputContains: []string{
-				"Configured MCP Servers:",
-				"stdio-server",
-				"sse-server",
-			},
 		},
 	}
 
@@ -84,12 +71,7 @@ func TestMCPListServers(t *testing.T) {
 				return
 			}
 
-			output := buf.String()
-			for _, want := range tt.wantOutputContains {
-				if !strings.Contains(output, want) {
-					t.Errorf("MCPListServers() output does not contain %q\nOutput: %s", want, output)
-				}
-			}
+			cupaloy.SnapshotT(t, buf.String())
 		})
 	}
 }

@@ -1,0 +1,8 @@
+type SendMessageInput struct {
+	Text *string `json:"text,omitempty"`
+}
+
+type SendMessageOutput = string
+
+// SendMessage Send a message
+var SendMessage func(ctx context.Context, input SendMessageInput) (SendMessageOutput, error)

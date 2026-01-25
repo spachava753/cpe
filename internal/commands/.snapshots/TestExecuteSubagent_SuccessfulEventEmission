@@ -1,0 +1,15 @@
+(map[string]interface {}) (len=2) {
+  (string) (len=6) "events": ([]commands.eventSnapshot) (len=2) {
+    (commands.eventSnapshot) {
+      Type: (string) (len=14) "subagent_start",
+      SubagentName: (string) (len=13) "test_subagent",
+      SubagentRunID: (string) (len=7) "run_123"
+    },
+    (commands.eventSnapshot) {
+      Type: (string) (len=12) "subagent_end",
+      SubagentName: (string) (len=13) "test_subagent",
+      SubagentRunID: (string) (len=7) "run_123"
+    }
+  },
+  (string) (len=6) "result": (string) (len=6) "Hello!"
+}

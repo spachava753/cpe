@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/storage"
@@ -27,11 +28,10 @@ func (m *mockTreePrinter) PrintMessageForest(w io.Writer, roots []storage.Messag
 
 func TestConversationList(t *testing.T) {
 	tests := []struct {
-		name               string
-		storage            *mockDialogStorageWithList
-		wantErr            bool
-		errMsg             string
-		wantOutputContains []string
+		name    string
+		storage *mockDialogStorageWithList
+		wantErr bool
+		errMsg  string
 	}{
 		{
 			name: "list messages successfully",
@@ -43,10 +43,6 @@ func TestConversationList(t *testing.T) {
 				},
 			},
 			wantErr: false,
-			wantOutputContains: []string{
-				"msg-1",
-				"msg-2",
-			},
 		},
 		{
 			name: "no messages found",
@@ -55,9 +51,6 @@ func TestConversationList(t *testing.T) {
 				messages:          []storage.MessageIdNode{},
 			},
 			wantErr: false,
-			wantOutputContains: []string{
-				"No messages found",
-			},
 		},
 	}
 
@@ -76,17 +69,8 @@ func TestConversationList(t *testing.T) {
 				return
 			}
 
-			if tt.wantErr && err != nil && !strings.Contains(err.Error(), tt.errMsg) {
-				t.Errorf("ConversationList() error = %v, want error containing %q", err, tt.errMsg)
-			}
-
 			if !tt.wantErr {
-				output := buf.String()
-				for _, want := range tt.wantOutputContains {
-					if !strings.Contains(output, want) {
-						t.Errorf("ConversationList() output does not contain %q\nOutput: %s", want, output)
-					}
-				}
+				cupaloy.SnapshotT(t, buf.String())
 			}
 		})
 	}
@@ -126,13 +110,11 @@ func (m *mockDialogStorageWithList) DeleteMessageRecursive(ctx context.Context, 
 
 func TestConversationDelete(t *testing.T) {
 	tests := []struct {
-		name               string
-		storage            *mockDialogStorageWithList
-		messageIDs         []string
-		cascade            bool
-		wantErr            bool
-		wantStdoutContains []string
-		wantStderrContains []string
+		name       string
+		storage    *mockDialogStorageWithList
+		messageIDs []string
+		cascade    bool
+		wantErr    bool
 	}{
 		{
 			name: "delete single message without children",
@@ -143,9 +125,6 @@ func TestConversationDelete(t *testing.T) {
 			messageIDs: []string{"msg-1"},
 			cascade:    false,
 			wantErr:    false,
-			wantStdoutContains: []string{
-				"Successfully deleted message msg-1",
-			},
 		},
 		{
 			name: "delete message with children requires cascade",
@@ -156,9 +135,6 @@ func TestConversationDelete(t *testing.T) {
 			messageIDs: []string{"msg-1"},
 			cascade:    false,
 			wantErr:    false,
-			wantStderrContains: []string{
-				"message msg-1 has children",
-			},
 		},
 		{
 			name: "delete message with cascade",
@@ -169,9 +145,6 @@ func TestConversationDelete(t *testing.T) {
 			messageIDs: []string{"msg-1"},
 			cascade:    true,
 			wantErr:    false,
-			wantStdoutContains: []string{
-				"Successfully deleted message msg-1 and all its descendants",
-			},
 		},
 	}
 
@@ -192,19 +165,10 @@ func TestConversationDelete(t *testing.T) {
 				return
 			}
 
-			stdoutStr := stdout.String()
-			for _, want := range tt.wantStdoutContains {
-				if !strings.Contains(stdoutStr, want) {
-					t.Errorf("ConversationDelete() stdout does not contain %q\nStdout: %s", want, stdoutStr)
-				}
-			}
-
-			stderrStr := stderr.String()
-			for _, want := range tt.wantStderrContains {
-				if !strings.Contains(stderrStr, want) {
-					t.Errorf("ConversationDelete() stderr does not contain %q\nStderr: %s", want, stderrStr)
-				}
-			}
+			cupaloy.SnapshotT(t, map[string]string{
+				"stdout": stdout.String(),
+				"stderr": stderr.String(),
+			})
 		})
 	}
 }
@@ -224,13 +188,12 @@ func (m *mockDialogFormatter) FormatDialog(dialog gai.Dialog, msgIds []string) (
 
 func TestConversationPrint(t *testing.T) {
 	tests := []struct {
-		name               string
-		storage            *mockDialogStorage
-		formatter          DialogFormatter
-		messageID          string
-		wantErr            bool
-		errMsg             string
-		wantOutputContains []string
+		name      string
+		storage   *mockDialogStorage
+		formatter DialogFormatter
+		messageID string
+		wantErr   bool
+		errMsg    string
 	}{
 		{
 			name: "print conversation successfully",
@@ -254,9 +217,6 @@ func TestConversationPrint(t *testing.T) {
 			},
 			messageID: "msg-1",
 			wantErr:   false,
-			wantOutputContains: []string{
-				"Formatted conversation",
-			},
 		},
 		{
 			name: "formatter error",
@@ -288,18 +248,14 @@ func TestConversationPrint(t *testing.T) {
 				return
 			}
 
-			if tt.wantErr && err != nil && !strings.Contains(err.Error(), tt.errMsg) {
-				t.Errorf("ConversationPrint() error = %v, want error containing %q", err, tt.errMsg)
+			if tt.wantErr && err != nil {
+				if tt.errMsg != "" && !strings.Contains(err.Error(), tt.errMsg) {
+					t.Errorf("ConversationPrint() error = %v, want error containing %q", err, tt.errMsg)
+				}
+				return
 			}
 
-			if !tt.wantErr {
-				output := buf.String()
-				for _, want := range tt.wantOutputContains {
-					if !strings.Contains(output, want) {
-						t.Errorf("ConversationPrint() output does not contain %q\nOutput: %s", want, output)
-					}
-				}
-			}
+			cupaloy.SnapshotT(t, buf.String())
 		})
 	}
 }
@@ -454,14 +410,7 @@ func TestIsCodeModeResult(t *testing.T) {
 
 func TestFormatCodeModeResultMarkdown(t *testing.T) {
 	result := formatCodeModeResultMarkdown("Hello, World!")
-
-	// Should contain shell code block formatting
-	if !strings.Contains(result, "shell") {
-		t.Error("expected shell code block")
-	}
-	if !strings.Contains(result, "Hello, World!") {
-		t.Error("expected content to be preserved")
-	}
+	cupaloy.SnapshotT(t, result)
 }
 
 func TestMarkdownDialogFormatterWithExecuteGoCode(t *testing.T) {
@@ -499,13 +448,5 @@ func TestMarkdownDialogFormatterWithExecuteGoCode(t *testing.T) {
 		t.Fatalf("FormatDialog() error = %v", err)
 	}
 
-	// Should format execute_go_code tool call with Go code block
-	if !strings.Contains(output, "```go") {
-		t.Error("expected Go code block for execute_go_code tool call")
-	}
-
-	// Should format tool result with shell code block
-	if !strings.Contains(output, "````shell") {
-		t.Error("expected shell code block for execute_go_code result")
-	}
+	cupaloy.SnapshotT(t, output)
 }

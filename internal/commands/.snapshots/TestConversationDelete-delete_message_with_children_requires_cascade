@@ -1,0 +1,4 @@
+(map[string]string) (len=2) {
+  (string) (len=6) "stderr": (string) (len=87) "Error: message msg-1 has children. Use --cascade to delete it and all its descendants.\n",
+  (string) (len=6) "stdout": (string) ""
+}

@@ -1,0 +1,150 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+	"net/http"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+const contentOutputPath = "/tmp/content.json"
+
+func fatalExit(err error) {
+	fmt.Println(err)
+	os.Exit(3)
+}
+
+// ptr returns a pointer to the given value. Use this for optional fields.
+func ptr[T any](v T) *T {
+	return &v
+}
+
+type headerRoundTripper struct {
+	headers map[string]string
+	next    http.RoundTripper
+}
+
+func (h *headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	for name, value := range h.headers {
+		req.Header.Set(name, value)
+	}
+	if h.next == nil {
+		h.next = http.DefaultTransport
+	}
+	return h.next.RoundTrip(req)
+}
+
+// callMcpTool is a reusable utility function for calling an MCP tool
+func callMcpTool[I any, O any](ctx context.Context, clientSession *mcp.ClientSession, toolName string, input I) (O, error) {
+	var output O
+
+	if err := ctx.Err(); err != nil {
+		return output, err
+	}
+
+	result, err := clientSession.CallTool(ctx, &mcp.CallToolParams{Name: toolName, Arguments: input})
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return output, err
+		}
+		fatalExit(fmt.Errorf("error calling tool %s: %w", toolName, err))
+	}
+
+	if len(result.Content) != 1 {
+		fatalExit(fmt.Errorf("expected 1 content part from tool %s, got %d", toolName, len(result.Content)))
+	}
+
+	var textContent string
+
+	switch c := result.Content[0].(type) {
+	case *mcp.TextContent:
+		textContent = c.Text
+	default:
+		fatalExit(fmt.Errorf("unexpected content type returned from tool %s, cannot handle multimedia except text", toolName))
+	}
+
+	if result.IsError {
+		return output, errors.New(textContent)
+	}
+
+	// If O is string, return raw text content directly
+	if _, isString := any(output).(string); isString {
+		return any(textContent).(O), nil
+	}
+
+	outputJson := []byte(textContent)
+
+	if result.StructuredContent != nil {
+		structuredContent, err := json.Marshal(result.StructuredContent)
+		if err != nil {
+			fatalExit(fmt.Errorf("could not marshal structured content: %w", err))
+		}
+		outputJson = structuredContent
+	}
+
+	if err := json.Unmarshal(outputJson, &output); err != nil {
+		fatalExit(fmt.Errorf("could not unmarshal structured content json into output for tool %s: %w", toolName, err))
+	}
+	return output, nil
+}
+
+type FetchDataOutput = string
+
+// FetchData Fetch data from API
+var FetchData func(ctx context.Context) (FetchDataOutput, error)
+
+func main() {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	mcpClient := mcp.NewClient(&mcp.Implementation{Name: "cpe-code-mode", Version: "v1.0.0"}, nil)
+
+	// api server
+	apiSessionHttpClient := &http.Client{
+		Transport: &headerRoundTripper{
+			headers: map[string]string{
+				"Authorization": "Bearer token123",
+			},
+		},
+	}
+	apiSessionTransport := &mcp.StreamableClientTransport{
+		Endpoint:   "https://api.example.com/mcp",
+		HTTPClient: apiSessionHttpClient,
+	}
+	apiSession, err := mcpClient.Connect(ctx, apiSessionTransport, nil)
+	if err != nil {
+		fatalExit(fmt.Errorf("could not connect to api server: %w", err))
+	}
+	defer apiSession.Close()
+
+	// Initialize tool functions
+	FetchData = func(ctx context.Context) (FetchDataOutput, error) {
+		return callMcpTool[struct{}, FetchDataOutput](ctx, apiSession, "fetch_data", struct{}{})
+	}
+
+	content, err := Run(ctx)
+	if err != nil {
+		fmt.Printf("\nexecution error: %s\n", err)
+		os.Exit(1)
+	}
+
+	// Write content to file if any was returned
+	if len(content) > 0 {
+		data, err := json.Marshal(content)
+		if err != nil {
+			fmt.Printf("\ncontent marshal error: %s\n", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(contentOutputPath, data, 0644); err != nil {
+			fmt.Printf("\ncontent write error: %s\n", err)
+			os.Exit(1)
+		}
+	}
+}
+

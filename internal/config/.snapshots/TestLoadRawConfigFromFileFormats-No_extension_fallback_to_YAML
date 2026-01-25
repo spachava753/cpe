@@ -1,0 +1,19 @@
+(config.ModelConfig) {
+  Model: (config.Model) {
+    Ref: (string) (len=10) "test-noext",
+    DisplayName: (string) (len=17) "Test No Extension",
+    ID: (string) (len=13) "test-noext-id",
+    Type: (string) (len=4) "groq",
+    BaseUrl: (string) "",
+    ApiKeyEnv: (string) "",
+    AuthMethod: (string) "",
+    ContextWindow: (uint32) 0,
+    MaxOutput: (uint32) 0,
+    InputCostPerMillion: (float64) 0,
+    OutputCostPerMillion: (float64) 0,
+    PatchRequest: (*config.PatchRequestConfig)(<nil>)
+  },
+  SystemPromptPath: (string) "",
+  GenerationDefaults: (*config.GenerationParams)(<nil>),
+  CodeMode: (*config.CodeModeConfig)(<nil>)
+}

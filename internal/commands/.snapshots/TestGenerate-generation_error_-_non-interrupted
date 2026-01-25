@@ -1,0 +1,4 @@
+(commands.generateTestResult) {
+  Error: (string) "",
+  Stderr: (string) (len=45) "Error generating response: generation failed\n"
+}

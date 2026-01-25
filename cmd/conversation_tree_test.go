@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
+	"github.com/bradleyjkemp/cupaloy/v2"
 
 	"github.com/spachava753/cpe/internal/storage"
 )
@@ -44,17 +44,5 @@ func TestPrintMessageForest_SimpleTree(t *testing.T) {
 	var buf bytes.Buffer
 	PrintMessageForest(&buf, forest)
 
-	actual := buf.String()
-	expected := `A (2025-04-15 14:00) [] 
-    B (2025-04-15 14:01) [] 
-    C (2025-04-15 14:02) [] 
-    ------
-    D (2025-04-15 14:03) [] 
-    ------
-E (2025-04-15 14:04) [] 
-`
-
-	if diff := cmp.Diff(expected, actual); diff != "" {
-		t.Errorf("Tree output mismatch.\n%s", diff)
-	}
+	cupaloy.SnapshotT(t, buf.String())
 }

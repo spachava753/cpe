@@ -1,0 +1,29 @@
+(map[string]interface {}) (len=2) {
+  (string) (len=6) "result": (string) (len=14) "Final response",
+  (string) (len=14) "storageEntries": ([]commands.storageSnapshot) (len=4) {
+    (commands.storageSnapshot) {
+      Role: (string) (len=4) "user",
+      ParentID: (string) "",
+      Label: (string) (len=21) "subagent:multi:xyz789",
+      ID: (string) (len=5) "msg_0"
+    },
+    (commands.storageSnapshot) {
+      Role: (string) (len=9) "assistant",
+      ParentID: (string) (len=5) "msg_0",
+      Label: (string) (len=21) "subagent:multi:xyz789",
+      ID: (string) (len=5) "msg_1"
+    },
+    (commands.storageSnapshot) {
+      Role: (string) (len=11) "tool result",
+      ParentID: (string) (len=5) "msg_1",
+      Label: (string) (len=21) "subagent:multi:xyz789",
+      ID: (string) (len=5) "msg_2"
+    },
+    (commands.storageSnapshot) {
+      Role: (string) (len=9) "assistant",
+      ParentID: (string) (len=5) "msg_2",
+      Label: (string) (len=21) "subagent:multi:xyz789",
+      ID: (string) (len=5) "msg_3"
+    }
+  }
+}

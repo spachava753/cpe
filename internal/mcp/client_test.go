@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -44,6 +45,9 @@ func TestCreateTransport_StdioWithLoggingAddress(t *testing.T) {
 }
 
 func TestCreateTransport_StdioWithEmptyLoggingAddress(t *testing.T) {
+	// Ensure the logging address env var is not inherited from the parent environment
+	os.Unsetenv(subagentLoggingAddressEnv)
+
 	ctx := context.Background()
 	config := ServerConfig{
 		Command: "echo",
@@ -178,7 +182,7 @@ func TestCreateTransport_StdioWithConfigEnv(t *testing.T) {
 		t.Fatalf("expected *mcp.CommandTransport, got %T", transport)
 	}
 
-	// Verify custom env vars from config are set
+	// Extract env vars from command environment
 	envMap := make(map[string]string)
 	for _, env := range cmdTransport.Command.Env {
 		parts := strings.SplitN(env, "=", 2)
@@ -187,18 +191,20 @@ func TestCreateTransport_StdioWithConfigEnv(t *testing.T) {
 		}
 	}
 
-	if envMap["CUSTOM_VAR"] != "custom_value" {
-		t.Errorf("expected CUSTOM_VAR=custom_value, got %q", envMap["CUSTOM_VAR"])
+	// Filter to only the relevant env vars for snapshot comparison
+	relevantEnvs := map[string]string{
+		"CUSTOM_VAR":              envMap["CUSTOM_VAR"],
+		"ANOTHER_VAR":             envMap["ANOTHER_VAR"],
+		subagentLoggingAddressEnv: envMap[subagentLoggingAddressEnv],
 	}
-	if envMap["ANOTHER_VAR"] != "another_value" {
-		t.Errorf("expected ANOTHER_VAR=another_value, got %q", envMap["ANOTHER_VAR"])
-	}
-	if envMap[subagentLoggingAddressEnv] != loggingAddress {
-		t.Errorf("expected %s=%s, got %q", subagentLoggingAddressEnv, loggingAddress, envMap[subagentLoggingAddressEnv])
-	}
+
+	cupaloy.SnapshotT(t, relevantEnvs)
 }
 
 func TestCreateTransport_StdioConfigEnvWithoutLoggingAddress(t *testing.T) {
+	// Ensure the logging address env var is not inherited from the parent environment
+	os.Unsetenv(subagentLoggingAddressEnv)
+
 	ctx := context.Background()
 	config := ServerConfig{
 		Command: "echo",
@@ -219,7 +225,7 @@ func TestCreateTransport_StdioConfigEnvWithoutLoggingAddress(t *testing.T) {
 		t.Fatalf("expected *mcp.CommandTransport, got %T", transport)
 	}
 
-	// Verify custom env var is set even without logging address
+	// Extract env vars from command environment
 	envMap := make(map[string]string)
 	for _, env := range cmdTransport.Command.Env {
 		parts := strings.SplitN(env, "=", 2)
@@ -228,13 +234,14 @@ func TestCreateTransport_StdioConfigEnvWithoutLoggingAddress(t *testing.T) {
 		}
 	}
 
-	if envMap["MY_API_KEY"] != "secret123" {
-		t.Errorf("expected MY_API_KEY=secret123, got %q", envMap["MY_API_KEY"])
+	// Filter to only the relevant env vars for snapshot comparison
+	// Include the logging address key to verify it's empty/not set
+	loggingAddrValue, loggingAddrSet := envMap[subagentLoggingAddressEnv]
+	relevantEnvs := map[string]any{
+		"MY_API_KEY":                         envMap["MY_API_KEY"],
+		subagentLoggingAddressEnv + "_set":   loggingAddrSet,
+		subagentLoggingAddressEnv + "_value": loggingAddrValue,
 	}
-	
-	// Verify logging address is NOT set
-	if _, ok := envMap[subagentLoggingAddressEnv]; ok {
-		t.Errorf("expected %s to NOT be set when loggingAddress is empty", subagentLoggingAddressEnv)
-	}
-}
 
+	cupaloy.SnapshotT(t, relevantEnvs)
+}

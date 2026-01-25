@@ -1,0 +1,22 @@
+([]subagentlog.normalizedEvent) (len=2) {
+  (subagentlog.normalizedEvent) {
+    Type: (string) (len=9) "tool_call",
+    SubagentName: (string) (len=13) "test_subagent",
+    SubagentRunID: (string) (len=7) "run_123",
+    ToolName: (string) (len=9) "test_tool",
+    ToolCallID: (string) (len=8) "call_xyz",
+    Payload: (string) (len=2) "{}",
+    ReasoningType: (string) "",
+    ExecutionTimeoutSeconds: (int) 0
+  },
+  (subagentlog.normalizedEvent) {
+    Type: (string) (len=11) "tool_result",
+    SubagentName: (string) (len=13) "test_subagent",
+    SubagentRunID: (string) (len=7) "run_123",
+    ToolName: (string) (len=9) "test_tool",
+    ToolCallID: (string) (len=8) "call_xyz",
+    Payload: (string) (len=11) "mock result",
+    ReasoningType: (string) "",
+    ExecutionTimeoutSeconds: (int) 0
+  }
+}

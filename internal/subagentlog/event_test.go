@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/bradleyjkemp/cupaloy/v2"
 )
 
 func ptr[T any](v T) *T {
@@ -125,111 +127,22 @@ func TestEventJSONRoundTrip(t *testing.T) {
 				t.Fatalf("Unmarshal failed: %v", err)
 			}
 
-			// Compare fields
-			if got.SubagentName != tt.event.SubagentName {
-				t.Errorf("SubagentName: got %q, want %q", got.SubagentName, tt.event.SubagentName)
-			}
-			if got.SubagentRunID != tt.event.SubagentRunID {
-				t.Errorf("SubagentRunID: got %q, want %q", got.SubagentRunID, tt.event.SubagentRunID)
-			}
-			if !got.Timestamp.Equal(tt.event.Timestamp) {
-				t.Errorf("Timestamp: got %v, want %v", got.Timestamp, tt.event.Timestamp)
-			}
-			if got.Type != tt.event.Type {
-				t.Errorf("Type: got %q, want %q", got.Type, tt.event.Type)
-			}
-			if got.ToolName != tt.event.ToolName {
-				t.Errorf("ToolName: got %q, want %q", got.ToolName, tt.event.ToolName)
-			}
-			if got.ToolCallID != tt.event.ToolCallID {
-				t.Errorf("ToolCallID: got %q, want %q", got.ToolCallID, tt.event.ToolCallID)
-			}
-			if got.Payload != tt.event.Payload {
-				t.Errorf("Payload: got %q, want %q", got.Payload, tt.event.Payload)
-			}
-			if got.ExecutionTimeoutSeconds != tt.event.ExecutionTimeoutSeconds {
-				t.Errorf("ExecutionTimeoutSeconds: got %d, want %d", got.ExecutionTimeoutSeconds, tt.event.ExecutionTimeoutSeconds)
-			}
-			if got.ReasoningType != tt.event.ReasoningType {
-				t.Errorf("ReasoningType: got %q, want %q", got.ReasoningType, tt.event.ReasoningType)
-			}
-
-			// Compare TokenUsage
-			if tt.event.TokenUsage == nil {
-				if got.TokenUsage != nil {
-					t.Errorf("TokenUsage: got %v, want nil", got.TokenUsage)
-				}
-			} else {
-				if got.TokenUsage == nil {
-					t.Fatalf("TokenUsage: got nil, want %v", tt.event.TokenUsage)
-				}
-				compareIntPtr(t, "InputTokens", got.TokenUsage.InputTokens, tt.event.TokenUsage.InputTokens)
-				compareIntPtr(t, "OutputTokens", got.TokenUsage.OutputTokens, tt.event.TokenUsage.OutputTokens)
-				compareIntPtr(t, "TotalTokens", got.TokenUsage.TotalTokens, tt.event.TokenUsage.TotalTokens)
-				compareIntPtr(t, "CacheReadTokens", got.TokenUsage.CacheReadTokens, tt.event.TokenUsage.CacheReadTokens)
-				compareIntPtr(t, "CacheWriteTokens", got.TokenUsage.CacheWriteTokens, tt.event.TokenUsage.CacheWriteTokens)
-			}
+			// Use cupaloy to snapshot the JSON output and the round-tripped event
+			cupaloy.SnapshotT(t, string(data), got)
 		})
-	}
-}
-
-func compareIntPtr(t *testing.T, name string, got, want *int) {
-	t.Helper()
-	if want == nil {
-		if got != nil {
-			t.Errorf("%s: got %v, want nil", name, *got)
-		}
-		return
-	}
-	if got == nil {
-		t.Errorf("%s: got nil, want %d", name, *want)
-		return
-	}
-	if *got != *want {
-		t.Errorf("%s: got %d, want %d", name, *got, *want)
 	}
 }
 
 func TestEventTypeConstants(t *testing.T) {
-	tests := []struct {
-		name     string
-		constant string
-		want     string
-	}{
-		{
-			name:     "EventTypeToolCall",
-			constant: EventTypeToolCall,
-			want:     "tool_call",
-		},
-		{
-			name:     "EventTypeToolResult",
-			constant: EventTypeToolResult,
-			want:     "tool_result",
-		},
-		{
-			name:     "EventTypeThoughtTrace",
-			constant: EventTypeThoughtTrace,
-			want:     "thought_trace",
-		},
-		{
-			name:     "EventTypeSubagentStart",
-			constant: EventTypeSubagentStart,
-			want:     "subagent_start",
-		},
-		{
-			name:     "EventTypeSubagentEnd",
-			constant: EventTypeSubagentEnd,
-			want:     "subagent_end",
-		},
+	// Snapshot all event type constants together
+	constants := map[string]string{
+		"EventTypeToolCall":      EventTypeToolCall,
+		"EventTypeToolResult":    EventTypeToolResult,
+		"EventTypeThoughtTrace":  EventTypeThoughtTrace,
+		"EventTypeSubagentStart": EventTypeSubagentStart,
+		"EventTypeSubagentEnd":   EventTypeSubagentEnd,
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if tt.constant != tt.want {
-				t.Errorf("got %q, want %q", tt.constant, tt.want)
-			}
-		})
-	}
+	cupaloy.SnapshotT(t, constants)
 }
 
 func TestTokenUsageJSONOmitsEmpty(t *testing.T) {
@@ -244,11 +157,7 @@ func TestTokenUsageJSONOmitsEmpty(t *testing.T) {
 		t.Fatalf("Marshal failed: %v", err)
 	}
 
-	// Should only contain inputTokens
-	expected := `{"inputTokens":100}`
-	if string(data) != expected {
-		t.Errorf("got %s, want %s", string(data), expected)
-	}
+	cupaloy.SnapshotT(t, string(data))
 }
 
 func TestEventJSONOmitsEmpty(t *testing.T) {
@@ -273,19 +182,6 @@ func TestEventJSONOmitsEmpty(t *testing.T) {
 		t.Fatalf("Unmarshal to map failed: %v", err)
 	}
 
-	// Required fields should be present
-	requiredFields := []string{"subagentName", "subagentRunId", "timestamp", "type"}
-	for _, f := range requiredFields {
-		if _, ok := m[f]; !ok {
-			t.Errorf("required field %q missing from JSON", f)
-		}
-	}
-
-	// Optional fields should be absent
-	optionalFields := []string{"toolName", "toolCallId", "payload", "executionTimeoutSeconds", "reasoningType", "tokenUsage"}
-	for _, f := range optionalFields {
-		if _, ok := m[f]; ok {
-			t.Errorf("optional field %q should be omitted when empty, but was present", f)
-		}
-	}
+	// Snapshot the JSON output and the map of present fields
+	cupaloy.SnapshotT(t, string(data), m)
 }

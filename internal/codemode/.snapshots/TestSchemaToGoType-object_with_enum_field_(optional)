@@ -1,0 +1,5 @@
+type WeatherInput struct {
+	// Unit Temperature unit
+	// Must be one of "celsius", "fahrenheit"
+	Unit *string `json:"unit,omitempty"`
+}

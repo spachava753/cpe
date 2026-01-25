@@ -3,6 +3,8 @@ package subagentlog
 import (
 	"testing"
 	"time"
+
+	"github.com/bradleyjkemp/cupaloy/v2"
 )
 
 // mockRenderer is a simple renderer that returns content as-is for testing
@@ -19,7 +21,6 @@ func TestRenderEvent(t *testing.T) {
 	tests := []struct {
 		name  string
 		event Event
-		want  string
 	}{
 		{
 			name: "tool call without timeout",
@@ -32,10 +33,6 @@ func TestRenderEvent(t *testing.T) {
 				ToolCallID:    "call-1",
 				Payload:       `{"query":"golang tutorials"}`,
 			},
-			want: "#### research_agent [run-123] [tool call]\n" +
-				"```json\n" +
-				"{\n  \"query\": \"golang tutorials\"\n}" +
-				"\n```",
 		},
 		{
 			name: "tool call with timeout",
@@ -49,10 +46,6 @@ func TestRenderEvent(t *testing.T) {
 				Payload:                 `{"query":"test"}`,
 				ExecutionTimeoutSeconds: 30,
 			},
-			want: "#### research_agent [run-123] [tool call] (timeout: 30s)\n" +
-				"```json\n" +
-				"{\n  \"query\": \"test\"\n}" +
-				"\n```",
 		},
 		{
 			name: "execute_go_code tool call",
@@ -66,10 +59,6 @@ func TestRenderEvent(t *testing.T) {
 				Payload:                 "fmt.Println(\"hello\")",
 				ExecutionTimeoutSeconds: 60,
 			},
-			want: "#### code_agent [run-456] [tool call] (timeout: 60s)\n" +
-				"```go\n" +
-				"fmt.Println(\"hello\")" +
-				"\n```",
 		},
 		{
 			name: "execute_go_code tool call without explicit timeout shows 0",
@@ -82,10 +71,6 @@ func TestRenderEvent(t *testing.T) {
 				ToolCallID:    "call-2",
 				Payload:       "fmt.Println(\"test\")",
 			},
-			want: "#### code_agent [run-456] [tool call] (timeout: 0s)\n" +
-				"```go\n" +
-				"fmt.Println(\"test\")" +
-				"\n```",
 		},
 		{
 			name: "final_answer tool call is skipped",
@@ -98,7 +83,6 @@ func TestRenderEvent(t *testing.T) {
 				ToolCallID:    "call-3",
 				Payload:       `{"result":"done"}`,
 			},
-			want: "",
 		},
 		{
 			name: "final_answer tool result is skipped",
@@ -111,7 +95,6 @@ func TestRenderEvent(t *testing.T) {
 				ToolCallID:    "call-3",
 				Payload:       "The final answer output",
 			},
-			want: "",
 		},
 		{
 			name: "tool result",
@@ -124,10 +107,6 @@ func TestRenderEvent(t *testing.T) {
 				ToolCallID:    "call-1",
 				Payload:       "Search completed successfully",
 			},
-			want: "#### research_agent [run-123] Tool \"web_search\" result:\n" +
-				"```shell\n" +
-				"Search completed successfully" +
-				"\n```",
 		},
 		{
 			name: "code execution output",
@@ -140,10 +119,6 @@ func TestRenderEvent(t *testing.T) {
 				ToolCallID:    "call-2",
 				Payload:       "hello\nworld",
 			},
-			want: "#### code_agent [run-456] Code execution output:\n" +
-				"```shell\n" +
-				"hello\nworld" +
-				"\n```",
 		},
 		{
 			name: "thought trace",
@@ -154,8 +129,6 @@ func TestRenderEvent(t *testing.T) {
 				Type:          EventTypeThoughtTrace,
 				Payload:       "Let me analyze this problem step by step...",
 			},
-			want: "#### thinking_agent [run-789] thought trace\n" +
-				"Let me analyze this problem step by step...",
 		},
 		{
 			name: "subagent start is skipped",
@@ -165,7 +138,6 @@ func TestRenderEvent(t *testing.T) {
 				Timestamp:     baseTime,
 				Type:          EventTypeSubagentStart,
 			},
-			want: "",
 		},
 		{
 			name: "subagent end is skipped",
@@ -175,7 +147,6 @@ func TestRenderEvent(t *testing.T) {
 				Timestamp:     baseTime,
 				Type:          EventTypeSubagentEnd,
 			},
-			want: "",
 		},
 		{
 			name: "unknown event type is skipped",
@@ -186,7 +157,6 @@ func TestRenderEvent(t *testing.T) {
 				Type:          "unknown_type",
 				Payload:       "some payload",
 			},
-			want: "",
 		},
 		{
 			name: "tool call with invalid JSON payload",
@@ -198,19 +168,13 @@ func TestRenderEvent(t *testing.T) {
 				ToolName:      "some_tool",
 				Payload:       "not valid json",
 			},
-			want: "#### agent [run-123] [tool call]\n" +
-				"```json\n" +
-				"not valid json" +
-				"\n```",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := renderer.RenderEvent(tt.event)
-			if got != tt.want {
-				t.Errorf("RenderEvent() =\n%q\nwant:\n%q", got, tt.want)
-			}
+			cupaloy.SnapshotT(t, got)
 		})
 	}
 }
@@ -230,36 +194,29 @@ func TestFormatJSON(t *testing.T) {
 	tests := []struct {
 		name    string
 		payload string
-		want    string
 	}{
 		{
 			name:    "valid JSON object",
 			payload: `{"key":"value","num":42}`,
-			want:    "{\n  \"key\": \"value\",\n  \"num\": 42\n}",
 		},
 		{
 			name:    "valid JSON array",
 			payload: `[1,2,3]`,
-			want:    "[\n  1,\n  2,\n  3\n]",
 		},
 		{
 			name:    "invalid JSON returns original",
 			payload: "not json",
-			want:    "not json",
 		},
 		{
 			name:    "empty string returns original",
 			payload: "",
-			want:    "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := formatJSON(tt.payload)
-			if got != tt.want {
-				t.Errorf("formatJSON() = %q, want %q", got, tt.want)
-			}
+			cupaloy.SnapshotT(t, got)
 		})
 	}
 }

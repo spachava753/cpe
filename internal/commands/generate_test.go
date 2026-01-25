@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/spachava753/gai"
 )
 
@@ -76,13 +76,17 @@ func (m *mockToolCapableGenerator) Generate(ctx context.Context, dialog gai.Dial
 	return result, nil
 }
 
+// generateTestResult captures the outputs from Generate for snapshot testing
+type generateTestResult struct {
+	Error  string
+	Stderr string
+}
+
 func TestGenerate(t *testing.T) {
 	tests := []struct {
-		name               string
-		opts               GenerateOptions
-		wantErr            bool
-		errMsg             string
-		wantStderrContains []string
+		name    string
+		opts    GenerateOptions
+		wantErr bool
 	}{
 		{
 			name: "successful generation with new conversation",
@@ -103,9 +107,6 @@ func TestGenerate(t *testing.T) {
 				Stderr:    &bytes.Buffer{},
 			},
 			wantErr: false,
-			wantStderrContains: []string{
-				"last_message_id is msg-123",
-			},
 		},
 		{
 			name: "empty input",
@@ -114,7 +115,6 @@ func TestGenerate(t *testing.T) {
 				Stderr:     &bytes.Buffer{},
 			},
 			wantErr: true,
-			errMsg:  "empty input",
 		},
 		{
 			name: "no model specified",
@@ -129,7 +129,6 @@ func TestGenerate(t *testing.T) {
 				Stderr: &bytes.Buffer{},
 			},
 			wantErr: true,
-			errMsg:  "no model specified",
 		},
 		{
 			name: "model not found",
@@ -149,9 +148,6 @@ func TestGenerate(t *testing.T) {
 				Stderr: &bytes.Buffer{},
 			},
 			wantErr: false,
-			wantStderrContains: []string{
-				"not found in configuration",
-			},
 		},
 		{
 			name: "incognito mode - no saving",
@@ -191,9 +187,6 @@ func TestGenerate(t *testing.T) {
 				Stderr: &bytes.Buffer{},
 			},
 			wantErr: false,
-			wantStderrContains: []string{
-				"Error generating response",
-			},
 		},
 	}
 
@@ -206,20 +199,16 @@ func TestGenerate(t *testing.T) {
 				return
 			}
 
-			if tt.wantErr && err != nil && !strings.Contains(err.Error(), tt.errMsg) {
-				t.Errorf("Generate() error = %v, want error containing %q", err, tt.errMsg)
+			// Capture results for snapshot
+			result := generateTestResult{}
+			if err != nil {
+				result.Error = err.Error()
+			}
+			if stderr, ok := tt.opts.Stderr.(*bytes.Buffer); ok {
+				result.Stderr = stderr.String()
 			}
 
-			if !tt.wantErr {
-				if stderr, ok := tt.opts.Stderr.(*bytes.Buffer); ok {
-					stderrOutput := stderr.String()
-					for _, want := range tt.wantStderrContains {
-						if !strings.Contains(stderrOutput, want) {
-							t.Errorf("Generate() stderr does not contain %q\nStderr: %s", want, stderrOutput)
-						}
-					}
-				}
-			}
+			cupaloy.SnapshotT(t, result)
 		})
 	}
 }

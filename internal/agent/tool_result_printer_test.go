@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/codemode"
@@ -38,52 +39,30 @@ func TestToolCallbackPrinter(t *testing.T) {
 		toolName         string
 		callbackResponse string
 		expectedBlocks   int
-		validateContent  func(t *testing.T, content string)
 	}{
 		{
 			name:             "prints JSON for regular tool",
 			toolName:         "get_weather",
 			callbackResponse: `{"temperature": 72, "condition": "sunny"}`,
 			expectedBlocks:   1,
-			validateContent: func(t *testing.T, content string) {
-				if content != `{"temperature": 72, "condition": "sunny"}` {
-					t.Errorf("unexpected content: %s", content)
-				}
-			},
 		},
 		{
 			name:             "prints text for code mode",
 			toolName:         codemode.ExecuteGoCodeToolName,
 			callbackResponse: "The weather is sunny and 72 degrees",
 			expectedBlocks:   1,
-			validateContent: func(t *testing.T, content string) {
-				if content != "The weather is sunny and 72 degrees" {
-					t.Errorf("unexpected content: %s", content)
-				}
-			},
 		},
 		{
 			name:             "truncates long output",
 			toolName:         "test_tool",
 			callbackResponse: strings.Join(makeLines(25), "\n"),
 			expectedBlocks:   1,
-			validateContent: func(t *testing.T, content string) {
-				expected := strings.Join(makeLines(25), "\n")
-				if content != expected {
-					t.Errorf("message content was modified, should not be")
-				}
-			},
 		},
 		{
 			name:             "handles empty response",
 			toolName:         "empty_tool",
 			callbackResponse: "",
 			expectedBlocks:   1,
-			validateContent: func(t *testing.T, content string) {
-				if content != "" {
-					t.Errorf("expected empty content, got: %s", content)
-				}
-			},
 		},
 	}
 
@@ -112,9 +91,7 @@ func TestToolCallbackPrinter(t *testing.T) {
 				t.Fatalf("expected %d block(s), got %d", tt.expectedBlocks, len(msg.Blocks))
 			}
 
-			if tt.validateContent != nil {
-				tt.validateContent(t, msg.Blocks[0].Content.String())
-			}
+			cupaloy.SnapshotT(t, msg.Blocks[0].Content.String())
 		})
 	}
 }
@@ -124,46 +101,38 @@ func TestTruncateToLines(t *testing.T) {
 		name     string
 		content  string
 		maxLines int
-		want     string
 	}{
 		{
 			name:     "content shorter than max",
 			content:  "line1\nline2\nline3",
 			maxLines: 5,
-			want:     "line1\nline2\nline3",
 		},
 		{
 			name:     "content exactly at max",
 			content:  "line1\nline2\nline3",
 			maxLines: 3,
-			want:     "line1\nline2\nline3",
 		},
 		{
 			name:     "content longer than max",
 			content:  "line1\nline2\nline3\nline4\nline5",
 			maxLines: 3,
-			want:     "line1\nline2\nline3\n... (truncated)",
 		},
 		{
 			name:     "single line",
 			content:  "single line",
 			maxLines: 20,
-			want:     "single line",
 		},
 		{
 			name:     "empty content",
 			content:  "",
 			maxLines: 20,
-			want:     "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := truncateToMaxLines(tt.content, tt.maxLines)
-			if got != tt.want {
-				t.Errorf("truncateToMaxLines() = %q, want %q", got, tt.want)
-			}
+			cupaloy.SnapshotT(t, got)
 		})
 	}
 }

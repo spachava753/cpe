@@ -1,0 +1,5 @@
+type PingOutput struct {
+	Pong *bool `json:"pong,omitempty"`
+}
+
+var Ping func(ctx context.Context) (PingOutput, error)

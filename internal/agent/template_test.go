@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bradleyjkemp/cupaloy/v2"
 )
 
 func TestFileExists(t *testing.T) {
@@ -18,21 +20,18 @@ func TestFileExists(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		path     string
-		expected bool
+		name string
+		path string
 	}{
-		{"existing file", testFile, true},
-		{"non-existent file", filepath.Join(tmpDir, "missing.txt"), false},
-		{"directory", tmpDir, true},
+		{"existing file", testFile},
+		{"non-existent file", filepath.Join(tmpDir, "missing.txt")},
+		{"directory", tmpDir},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := fileExists(tt.path)
-			if result != tt.expected {
-				t.Errorf("fileExists(%q) = %v, want %v", tt.path, result, tt.expected)
-			}
+			cupaloy.SnapshotT(t, result)
 		})
 	}
 }
@@ -53,44 +52,38 @@ func TestIncludeFile(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		path     string
-		expected string
+		name string
+		path string
 	}{
-		{"existing file", testFile, testContent},
-		{"empty file", emptyFile, ""},
-		{"non-existent file", filepath.Join(tmpDir, "missing.txt"), ""},
+		{"existing file", testFile},
+		{"empty file", emptyFile},
+		{"non-existent file", filepath.Join(tmpDir, "missing.txt")},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := includeFile(tt.path)
-			if result != tt.expected {
-				t.Errorf("includeFile(%q) = %q, want %q", tt.path, result, tt.expected)
-			}
+			cupaloy.SnapshotT(t, result)
 		})
 	}
 }
 
 func TestExecCommand(t *testing.T) {
 	tests := []struct {
-		name     string
-		command  string
-		expected string
+		name    string
+		command string
 	}{
-		{"simple echo", "echo hello", "hello"},
-		{"echo with spaces", "echo 'hello world'", "hello world"},
-		{"command with pipe", "echo test | wc -c", "5"},
-		{"failing command", "false", ""},
-		{"non-existent command", "nonexistentcommand123", ""},
+		{"simple echo", "echo hello"},
+		{"echo with spaces", "echo 'hello world'"},
+		{"command with pipe", "echo test | wc -c"},
+		{"failing command", "false"},
+		{"non-existent command", "nonexistentcommand123"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := execCommand(context.Background(), tt.command)
-			if result != tt.expected {
-				t.Errorf("execCommand(%q) = %q, want %q", tt.command, result, tt.expected)
-			}
+			cupaloy.SnapshotT(t, result)
 		})
 	}
 }
@@ -173,9 +166,7 @@ description: Missing name field
 
 	t.Run("non-existent directory", func(t *testing.T) {
 		result := skills(io.Discard, "/nonexistent/path")
-		if result != "" {
-			t.Errorf("expected empty string for non-existent path, got %q", result)
-		}
+		cupaloy.SnapshotT(t, result)
 	})
 
 	t.Run("empty directory", func(t *testing.T) {
@@ -184,9 +175,7 @@ description: Missing name field
 			t.Fatal(err)
 		}
 		result := skills(io.Discard, emptyDir)
-		if result != "" {
-			t.Errorf("expected empty string for empty directory, got %q", result)
-		}
+		cupaloy.SnapshotT(t, result)
 	})
 
 	t.Run("multiple directories", func(t *testing.T) {
@@ -216,32 +205,29 @@ description: Another skill.
 
 func TestIsValidSkillName(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		expected bool
+		name  string
+		input string
 	}{
-		{"simple lowercase", "myskill", true},
-		{"with hyphen", "my-skill", true},
-		{"with numbers", "skill123", true},
-		{"complex valid", "my-skill-v2", true},
-		{"uppercase", "MySkill", false},
-		{"underscore", "my_skill", false},
-		{"starts with hyphen", "-skill", false},
-		{"ends with hyphen", "skill-", false},
-		{"double hyphen", "my--skill", false},
-		{"empty", "", false},
-		{"too long", strings.Repeat("a", 65), false},
-		{"max length", strings.Repeat("a", 64), true},
-		{"special chars", "skill@name", false},
-		{"spaces", "my skill", false},
+		{"simple lowercase", "myskill"},
+		{"with hyphen", "my-skill"},
+		{"with numbers", "skill123"},
+		{"complex valid", "my-skill-v2"},
+		{"uppercase", "MySkill"},
+		{"underscore", "my_skill"},
+		{"starts with hyphen", "-skill"},
+		{"ends with hyphen", "skill-"},
+		{"double hyphen", "my--skill"},
+		{"empty", ""},
+		{"too long", strings.Repeat("a", 65)},
+		{"max length", strings.Repeat("a", 64)},
+		{"special chars", "skill@name"},
+		{"spaces", "my skill"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := isValidSkillName(tt.input)
-			if result != tt.expected {
-				t.Errorf("isValidSkillName(%q) = %v, want %v", tt.input, result, tt.expected)
-			}
+			cupaloy.SnapshotT(t, result)
 		})
 	}
 }
@@ -250,7 +236,6 @@ func TestExtractFrontmatter(t *testing.T) {
 	tests := []struct {
 		name        string
 		content     string
-		expected    string
 		expectError bool
 	}{
 		{
@@ -261,7 +246,6 @@ description: A test skill
 ---
 # Content
 `,
-			expected: "name: test\ndescription: A test skill",
 		},
 		{
 			name:        "no frontmatter",
@@ -284,12 +268,10 @@ metadata:
 ---
 Body
 `,
-			expected: "name: skill\ndescription: desc\nlicense: MIT\nmetadata:\n  author: test",
 		},
 		{
-			name:     "frontmatter with CRLF line endings",
-			content:  "---\r\nname: skill\r\ndescription: desc\r\n---\r\nBody",
-			expected: "name: skill\r\ndescription: desc",
+			name:    "frontmatter with CRLF line endings",
+			content: "---\r\nname: skill\r\ndescription: desc\r\n---\r\nBody",
 		},
 	}
 
@@ -306,9 +288,7 @@ Body
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
-			if result != tt.expected {
-				t.Errorf("extractFrontmatter() = %q, want %q", result, tt.expected)
-			}
+			cupaloy.SnapshotT(t, result)
 		})
 	}
 }
@@ -336,15 +316,11 @@ description: A valid skill for testing.
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if skill.Name != "valid-skill" {
-			t.Errorf("Name = %q, want %q", skill.Name, "valid-skill")
-		}
-		if skill.Description != "A valid skill for testing." {
-			t.Errorf("Description = %q, want %q", skill.Description, "A valid skill for testing.")
-		}
-		if skill.Path != skillDir {
-			t.Errorf("Path = %q, want %q", skill.Path, skillDir)
-		}
+		// Snapshot name and description (path is dynamic)
+		cupaloy.SnapshotT(t, map[string]string{
+			"Name":        skill.Name,
+			"Description": skill.Description,
+		})
 	})
 
 	t.Run("missing name", func(t *testing.T) {

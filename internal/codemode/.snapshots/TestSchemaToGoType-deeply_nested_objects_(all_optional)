@@ -1,0 +1,11 @@
+type DeepInput_Outer_Inner struct {
+	Value *string `json:"value,omitempty"`
+}
+
+type DeepInput_Outer struct {
+	Inner *DeepInput_Outer_Inner `json:"inner,omitempty"`
+}
+
+type DeepInput struct {
+	Outer *DeepInput_Outer `json:"outer,omitempty"`
+}

@@ -1,0 +1,36 @@
+(*mcp.Tool)({
+  Meta: (mcp.Meta) <nil>,
+  Annotations: (*mcp.ToolAnnotations)(<nil>),
+  Description: (string) (len=34) "A subagent that processes requests",
+  InputSchema: (map[string]interface {}) (len=4) {
+    (string) (len=20) "additionalProperties": (bool) false,
+    (string) (len=10) "properties": (map[string]interface {}) (len=3) {
+      (string) (len=6) "inputs": (map[string]interface {}) (len=3) {
+        (string) (len=11) "description": (string) (len=66) "Optional list of file paths to include as context for the subagent",
+        (string) (len=5) "items": (map[string]interface {}) (len=1) {
+          (string) (len=4) "type": (string) (len=6) "string"
+        },
+        (string) (len=4) "type": ([]interface {}) (len=2) {
+          (string) (len=4) "null",
+          (string) (len=5) "array"
+        }
+      },
+      (string) (len=6) "prompt": (map[string]interface {}) (len=2) {
+        (string) (len=11) "description": (string) (len=51) "The task or instruction for the subagent to execute",
+        (string) (len=4) "type": (string) (len=6) "string"
+      },
+      (string) (len=5) "runId": (map[string]interface {}) (len=2) {
+        (string) (len=11) "description": (string) (len=81) "required,A unique identifier for correlating events across the subagent execution",
+        (string) (len=4) "type": (string) (len=6) "string"
+      }
+    },
+    (string) (len=8) "required": ([]interface {}) (len=2) {
+      (string) (len=6) "prompt",
+      (string) (len=5) "runId"
+    },
+    (string) (len=4) "type": (string) (len=6) "object"
+  },
+  Name: (string) (len=16) "my_subagent_tool",
+  OutputSchema: (interface {}) <nil>,
+  Title: (string) ""
+})

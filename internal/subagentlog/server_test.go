@@ -9,15 +9,15 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/bradleyjkemp/cupaloy/v2"
 )
 
 func TestServer(t *testing.T) {
 	tests := []struct {
-		name           string
-		method         string
-		body           any
-		wantStatusCode int
-		wantEvent      bool
+		name   string
+		method string
+		body   any
 	}{
 		{
 			name:   "valid POST with event",
@@ -29,8 +29,6 @@ func TestServer(t *testing.T) {
 				Type:          EventTypeToolCall,
 				ToolName:      "test-tool",
 			},
-			wantStatusCode: http.StatusOK,
-			wantEvent:      true,
 		},
 		{
 			name:   "valid POST with minimal event",
@@ -40,36 +38,26 @@ func TestServer(t *testing.T) {
 				SubagentRunID: "run-456",
 				Type:          EventTypeSubagentStart,
 			},
-			wantStatusCode: http.StatusOK,
-			wantEvent:      true,
 		},
 		{
-			name:           "invalid JSON",
-			method:         http.MethodPost,
-			body:           "not valid json",
-			wantStatusCode: http.StatusBadRequest,
-			wantEvent:      false,
+			name:   "invalid JSON",
+			method: http.MethodPost,
+			body:   "not valid json",
 		},
 		{
-			name:           "GET method not allowed",
-			method:         http.MethodGet,
-			body:           nil,
-			wantStatusCode: http.StatusMethodNotAllowed,
-			wantEvent:      false,
+			name:   "GET method not allowed",
+			method: http.MethodGet,
+			body:   nil,
 		},
 		{
-			name:           "PUT method not allowed",
-			method:         http.MethodPut,
-			body:           Event{SubagentName: "test"},
-			wantStatusCode: http.StatusMethodNotAllowed,
-			wantEvent:      false,
+			name:   "PUT method not allowed",
+			method: http.MethodPut,
+			body:   Event{SubagentName: "test"},
 		},
 		{
-			name:           "DELETE method not allowed",
-			method:         http.MethodDelete,
-			body:           nil,
-			wantStatusCode: http.StatusMethodNotAllowed,
-			wantEvent:      false,
+			name:   "DELETE method not allowed",
+			method: http.MethodDelete,
+			body:   nil,
 		},
 	}
 
@@ -114,17 +102,18 @@ func TestServer(t *testing.T) {
 			}
 			defer resp.Body.Close()
 
-			if resp.StatusCode != tt.wantStatusCode {
-				t.Errorf("status code = %d, want %d", resp.StatusCode, tt.wantStatusCode)
-			}
-
 			mu.Lock()
 			gotEvent := receivedEvent != nil
 			mu.Unlock()
 
-			if gotEvent != tt.wantEvent {
-				t.Errorf("event received = %v, want %v", gotEvent, tt.wantEvent)
+			result := struct {
+				StatusCode    int
+				EventReceived bool
+			}{
+				StatusCode:    resp.StatusCode,
+				EventReceived: gotEvent,
 			}
+			cupaloy.SnapshotT(t, result)
 		})
 	}
 }
@@ -233,30 +222,7 @@ func TestServerEventHandlerReceivesCorrectData(t *testing.T) {
 
 	wg.Wait()
 
-	if receivedEvent.SubagentName != expectedEvent.SubagentName {
-		t.Errorf("SubagentName = %q, want %q", receivedEvent.SubagentName, expectedEvent.SubagentName)
-	}
-	if receivedEvent.SubagentRunID != expectedEvent.SubagentRunID {
-		t.Errorf("SubagentRunID = %q, want %q", receivedEvent.SubagentRunID, expectedEvent.SubagentRunID)
-	}
-	if receivedEvent.Type != expectedEvent.Type {
-		t.Errorf("Type = %q, want %q", receivedEvent.Type, expectedEvent.Type)
-	}
-	if receivedEvent.ToolName != expectedEvent.ToolName {
-		t.Errorf("ToolName = %q, want %q", receivedEvent.ToolName, expectedEvent.ToolName)
-	}
-	if receivedEvent.ToolCallID != expectedEvent.ToolCallID {
-		t.Errorf("ToolCallID = %q, want %q", receivedEvent.ToolCallID, expectedEvent.ToolCallID)
-	}
-	if receivedEvent.Payload != expectedEvent.Payload {
-		t.Errorf("Payload = %q, want %q", receivedEvent.Payload, expectedEvent.Payload)
-	}
-	if receivedEvent.ExecutionTimeoutSeconds != expectedEvent.ExecutionTimeoutSeconds {
-		t.Errorf("ExecutionTimeoutSeconds = %d, want %d", receivedEvent.ExecutionTimeoutSeconds, expectedEvent.ExecutionTimeoutSeconds)
-	}
-	if !receivedEvent.Timestamp.Equal(expectedEvent.Timestamp) {
-		t.Errorf("Timestamp = %v, want %v", receivedEvent.Timestamp, expectedEvent.Timestamp)
-	}
+	cupaloy.SnapshotT(t, receivedEvent)
 }
 
 func TestServerNilHandler(t *testing.T) {

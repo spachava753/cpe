@@ -1,8 +1,10 @@
 package codemode
 
 import (
+	"sort"
 	"testing"
 
+	"github.com/bradleyjkemp/cupaloy/v2"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/gai"
 
@@ -11,22 +13,16 @@ import (
 
 func TestPartitionTools(t *testing.T) {
 	tests := []struct {
-		name                    string
-		toolsByServer           map[string][]mcp.ToolData
-		mcpServers              map[string]mcp.ServerConfig
-		excludedToolNames       []string
-		wantCodeModeServerCount int
-		wantCodeModeToolCount   int
-		wantExcludedToolCount   int
+		name              string
+		toolsByServer     map[string][]mcp.ToolData
+		mcpServers        map[string]mcp.ServerConfig
+		excludedToolNames []string
 	}{
 		{
-			name:                    "empty input",
-			toolsByServer:           map[string][]mcp.ToolData{},
-			mcpServers:              map[string]mcp.ServerConfig{},
-			excludedToolNames:       nil,
-			wantCodeModeServerCount: 0,
-			wantCodeModeToolCount:   0,
-			wantExcludedToolCount:   0,
+			name:              "empty input",
+			toolsByServer:     map[string][]mcp.ToolData{},
+			mcpServers:        map[string]mcp.ServerConfig{},
+			excludedToolNames: nil,
 		},
 		{
 			name: "all tools in code mode (no exclusions)",
@@ -36,11 +32,8 @@ func TestPartitionTools(t *testing.T) {
 					{Tool: gai.Tool{Name: "tool2"}, MCPTool: &mcpsdk.Tool{Name: "tool2"}},
 				},
 			},
-			mcpServers:              map[string]mcp.ServerConfig{"server1": {Type: "stdio", Command: "test"}},
-			excludedToolNames:       nil,
-			wantCodeModeServerCount: 1,
-			wantCodeModeToolCount:   2,
-			wantExcludedToolCount:   0,
+			mcpServers:        map[string]mcp.ServerConfig{"server1": {Type: "stdio", Command: "test"}},
+			excludedToolNames: nil,
 		},
 		{
 			name: "all tools excluded",
@@ -50,11 +43,8 @@ func TestPartitionTools(t *testing.T) {
 					{Tool: gai.Tool{Name: "tool2"}, MCPTool: &mcpsdk.Tool{Name: "tool2"}},
 				},
 			},
-			mcpServers:              map[string]mcp.ServerConfig{"server1": {Type: "stdio", Command: "test"}},
-			excludedToolNames:       []string{"tool1", "tool2"},
-			wantCodeModeServerCount: 0,
-			wantCodeModeToolCount:   0,
-			wantExcludedToolCount:   2,
+			mcpServers:        map[string]mcp.ServerConfig{"server1": {Type: "stdio", Command: "test"}},
+			excludedToolNames: []string{"tool1", "tool2"},
 		},
 		{
 			name: "mixed: some excluded, some in code mode",
@@ -65,11 +55,8 @@ func TestPartitionTools(t *testing.T) {
 					{Tool: gai.Tool{Name: "tool3"}, MCPTool: &mcpsdk.Tool{Name: "tool3"}},
 				},
 			},
-			mcpServers:              map[string]mcp.ServerConfig{"server1": {Type: "stdio", Command: "test"}},
-			excludedToolNames:       []string{"tool2"},
-			wantCodeModeServerCount: 1,
-			wantCodeModeToolCount:   2,
-			wantExcludedToolCount:   1,
+			mcpServers:        map[string]mcp.ServerConfig{"server1": {Type: "stdio", Command: "test"}},
+			excludedToolNames: []string{"tool2"},
 		},
 		{
 			name: "multiple servers",
@@ -86,10 +73,7 @@ func TestPartitionTools(t *testing.T) {
 				"server1": {Type: "stdio", Command: "test1"},
 				"server2": {Type: "http", URL: "http://test"},
 			},
-			excludedToolNames:       []string{"tool2"},
-			wantCodeModeServerCount: 2,
-			wantCodeModeToolCount:   2,
-			wantExcludedToolCount:   1,
+			excludedToolNames: []string{"tool2"},
 		},
 		{
 			name: "server with all tools excluded is not included",
@@ -105,10 +89,7 @@ func TestPartitionTools(t *testing.T) {
 				"server1": {Type: "stdio", Command: "test1"},
 				"server2": {Type: "stdio", Command: "test2"},
 			},
-			excludedToolNames:       []string{"tool2"},
-			wantCodeModeServerCount: 1,
-			wantCodeModeToolCount:   1,
-			wantExcludedToolCount:   1,
+			excludedToolNames: []string{"tool2"},
 		},
 		{
 			name: "exclusion list with non-existent tool name",
@@ -117,11 +98,8 @@ func TestPartitionTools(t *testing.T) {
 					{Tool: gai.Tool{Name: "tool1"}, MCPTool: &mcpsdk.Tool{Name: "tool1"}},
 				},
 			},
-			mcpServers:              map[string]mcp.ServerConfig{"server1": {Type: "stdio", Command: "test"}},
-			excludedToolNames:       []string{"nonexistent"},
-			wantCodeModeServerCount: 1,
-			wantCodeModeToolCount:   1,
-			wantExcludedToolCount:   0,
+			mcpServers:        map[string]mcp.ServerConfig{"server1": {Type: "stdio", Command: "test"}},
+			excludedToolNames: []string{"nonexistent"},
 		},
 	}
 
@@ -129,21 +107,20 @@ func TestPartitionTools(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			serverToolsInfo, excludedTools := PartitionTools(tt.toolsByServer, tt.mcpServers, tt.excludedToolNames)
 
-			if len(serverToolsInfo) != tt.wantCodeModeServerCount {
-				t.Errorf("got %d code mode servers, want %d", len(serverToolsInfo), tt.wantCodeModeServerCount)
+			// Sort for deterministic snapshots
+			sort.Slice(serverToolsInfo, func(i, j int) bool {
+				return serverToolsInfo[i].ServerName < serverToolsInfo[j].ServerName
+			})
+			for i := range serverToolsInfo {
+				sort.Slice(serverToolsInfo[i].Tools, func(a, b int) bool {
+					return serverToolsInfo[i].Tools[a].Name < serverToolsInfo[i].Tools[b].Name
+				})
 			}
+			sort.Slice(excludedTools, func(i, j int) bool {
+				return excludedTools[i].Tool.Name < excludedTools[j].Tool.Name
+			})
 
-			var totalCodeModeTools int
-			for _, server := range serverToolsInfo {
-				totalCodeModeTools += len(server.Tools)
-			}
-			if totalCodeModeTools != tt.wantCodeModeToolCount {
-				t.Errorf("got %d code mode tools, want %d", totalCodeModeTools, tt.wantCodeModeToolCount)
-			}
-
-			if len(excludedTools) != tt.wantExcludedToolCount {
-				t.Errorf("got %d excluded tools, want %d", len(excludedTools), tt.wantExcludedToolCount)
-			}
+			cupaloy.SnapshotT(t, serverToolsInfo, excludedTools)
 		})
 	}
 }
@@ -152,12 +129,10 @@ func TestGetCodeModeToolNames(t *testing.T) {
 	tests := []struct {
 		name            string
 		serverToolsInfo []ServerToolsInfo
-		wantNames       []string
 	}{
 		{
 			name:            "empty",
 			serverToolsInfo: nil,
-			wantNames:       nil,
 		},
 		{
 			name: "single server with tools",
@@ -170,7 +145,6 @@ func TestGetCodeModeToolNames(t *testing.T) {
 					},
 				},
 			},
-			wantNames: []string{"tool1", "tool2"},
 		},
 		{
 			name: "multiple servers",
@@ -184,7 +158,6 @@ func TestGetCodeModeToolNames(t *testing.T) {
 					Tools:      []*mcpsdk.Tool{{Name: "tool2"}, {Name: "tool3"}},
 				},
 			},
-			wantNames: []string{"tool1", "tool2", "tool3"},
 		},
 	}
 
@@ -192,22 +165,10 @@ func TestGetCodeModeToolNames(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			names := GetCodeModeToolNames(tt.serverToolsInfo)
 
-			if len(names) != len(tt.wantNames) {
-				t.Errorf("got %d names, want %d", len(names), len(tt.wantNames))
-				return
-			}
+			// Sort for deterministic snapshots
+			sort.Strings(names)
 
-			// Create a set of expected names for checking
-			wantSet := make(map[string]bool)
-			for _, n := range tt.wantNames {
-				wantSet[n] = true
-			}
-
-			for _, name := range names {
-				if !wantSet[name] {
-					t.Errorf("unexpected tool name %q", name)
-				}
-			}
+			cupaloy.SnapshotT(t, names)
 		})
 	}
 }

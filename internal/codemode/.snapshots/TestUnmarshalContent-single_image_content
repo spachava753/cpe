@@ -1,0 +1,4 @@
+(map[string]interface {}) (len=2) {
+  (string) (len=4) "Data": (string) (len=5) "hello",
+  (string) (len=8) "MIMEType": (string) (len=9) "image/png"
+}

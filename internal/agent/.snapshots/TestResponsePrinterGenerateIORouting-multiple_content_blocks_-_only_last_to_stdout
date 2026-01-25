@@ -1,0 +1,4 @@
+(agent.ioRoutingResult) {
+  Stdout: (string) (len=11) "Second part",
+  Stderr: (string) (len=10) "First part"
+}

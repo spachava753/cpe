@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/gai"
 )
@@ -311,31 +312,38 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 	}
 }
 
+// blockSnapshot is a snapshot-friendly representation of gai.Block
+type blockSnapshot struct {
+	ModalityType string
+	MimeType     string
+	Content      string
+}
+
+func blocksToSnapshots(blocks []gai.Block) []blockSnapshot {
+	result := make([]blockSnapshot, len(blocks))
+	for i, b := range blocks {
+		result[i] = blockSnapshot{
+			ModalityType: b.ModalityType.String(),
+			MimeType:     b.MimeType,
+			Content:      b.Content.String(),
+		}
+	}
+	return result
+}
+
 func TestContentToBlocks(t *testing.T) {
 	tests := []struct {
-		name     string
-		content  []mcp.Content
-		wantLen  int
-		validate func(t *testing.T, blocks []gai.Block)
+		name    string
+		content []mcp.Content
 	}{
 		{
 			name:    "empty content",
 			content: nil,
-			wantLen: 0,
 		},
 		{
 			name: "text content only",
 			content: []mcp.Content{
 				&mcp.TextContent{Text: "hello world"},
-			},
-			wantLen: 1,
-			validate: func(t *testing.T, blocks []gai.Block) {
-				if blocks[0].ModalityType != gai.Text {
-					t.Errorf("expected Text modality, got %v", blocks[0].ModalityType)
-				}
-				if blocks[0].Content.String() != "hello world" {
-					t.Errorf("expected 'hello world', got %q", blocks[0].Content.String())
-				}
 			},
 		},
 		{
@@ -343,44 +351,17 @@ func TestContentToBlocks(t *testing.T) {
 			content: []mcp.Content{
 				&mcp.ImageContent{Data: []byte("fake-image-data"), MIMEType: "image/png"},
 			},
-			wantLen: 1,
-			validate: func(t *testing.T, blocks []gai.Block) {
-				if blocks[0].ModalityType != gai.Image {
-					t.Errorf("expected Image modality, got %v", blocks[0].ModalityType)
-				}
-				if blocks[0].MimeType != "image/png" {
-					t.Errorf("expected image/png, got %q", blocks[0].MimeType)
-				}
-			},
 		},
 		{
 			name: "audio content",
 			content: []mcp.Content{
 				&mcp.AudioContent{Data: []byte("fake-audio-data"), MIMEType: "audio/wav"},
 			},
-			wantLen: 1,
-			validate: func(t *testing.T, blocks []gai.Block) {
-				if blocks[0].ModalityType != gai.Audio {
-					t.Errorf("expected Audio modality, got %v", blocks[0].ModalityType)
-				}
-				if blocks[0].MimeType != "audio/wav" {
-					t.Errorf("expected audio/wav, got %q", blocks[0].MimeType)
-				}
-			},
 		},
 		{
 			name: "PDF content returns image block",
 			content: []mcp.Content{
 				&mcp.ImageContent{Data: []byte("fake-pdf-data"), MIMEType: "application/pdf"},
-			},
-			wantLen: 1,
-			validate: func(t *testing.T, blocks []gai.Block) {
-				if blocks[0].ModalityType != gai.Image {
-					t.Errorf("expected Image modality for PDF, got %v", blocks[0].ModalityType)
-				}
-				if blocks[0].MimeType != "application/pdf" {
-					t.Errorf("expected application/pdf, got %q", blocks[0].MimeType)
-				}
 			},
 		},
 		{
@@ -390,32 +371,43 @@ func TestContentToBlocks(t *testing.T) {
 				&mcp.ImageContent{Data: []byte("image"), MIMEType: "image/jpeg"},
 				&mcp.AudioContent{Data: []byte("audio"), MIMEType: "audio/mp3"},
 			},
-			wantLen: 3,
-			validate: func(t *testing.T, blocks []gai.Block) {
-				if blocks[0].ModalityType != gai.Text {
-					t.Errorf("block 0: expected Text, got %v", blocks[0].ModalityType)
-				}
-				if blocks[1].ModalityType != gai.Image {
-					t.Errorf("block 1: expected Image, got %v", blocks[1].ModalityType)
-				}
-				if blocks[2].ModalityType != gai.Audio {
-					t.Errorf("block 2: expected Audio, got %v", blocks[2].ModalityType)
-				}
-			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			blocks := contentToBlocks(tt.content)
-			if len(blocks) != tt.wantLen {
-				t.Errorf("expected %d blocks, got %d", tt.wantLen, len(blocks))
-				return
-			}
-			if tt.validate != nil {
-				tt.validate(t, blocks)
-			}
+			cupaloy.SnapshotT(t, blocksToSnapshots(blocks))
 		})
+	}
+}
+
+// messageSnapshot is a snapshot-friendly representation of gai.Message
+type messageSnapshot struct {
+	Role   string
+	Blocks []msgBlockSnapshot
+}
+
+type msgBlockSnapshot struct {
+	ID           string
+	ModalityType string
+	MimeType     string
+	Content      string
+}
+
+func messageToSnapshot(msg gai.Message) messageSnapshot {
+	blocks := make([]msgBlockSnapshot, len(msg.Blocks))
+	for i, b := range msg.Blocks {
+		blocks[i] = msgBlockSnapshot{
+			ID:           b.ID,
+			ModalityType: b.ModalityType.String(),
+			MimeType:     b.MimeType,
+			Content:      b.Content.String(),
+		}
+	}
+	return messageSnapshot{
+		Role:   msg.Role.String(),
+		Blocks: blocks,
 	}
 }
 
@@ -425,10 +417,8 @@ func TestExecuteGoCodeCallback_MultimediaContent(t *testing.T) {
 	}
 
 	tests := []struct {
-		name           string
-		code           string
-		wantBlockCount int
-		validate       func(t *testing.T, msg gai.Message)
+		name string
+		code string
 	}{
 		{
 			name: "content only - no stdout",
@@ -446,15 +436,6 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 	}, nil
 }
 `,
-			wantBlockCount: 1,
-			validate: func(t *testing.T, msg gai.Message) {
-				if msg.Blocks[0].ID != "test-id" {
-					t.Errorf("expected first block ID to be test-id, got %q", msg.Blocks[0].ID)
-				}
-				if msg.Blocks[0].Content.String() != "content text" {
-					t.Errorf("expected 'content text', got %q", msg.Blocks[0].Content.String())
-				}
-			},
 		},
 		{
 			name: "stdout and content - mixed",
@@ -474,21 +455,6 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 	}, nil
 }
 `,
-			wantBlockCount: 2, // stdout block + content block
-			validate: func(t *testing.T, msg gai.Message) {
-				// First block should be stdout
-				if !strings.Contains(msg.Blocks[0].Content.String(), "stdout output") {
-					t.Errorf("expected first block to contain stdout, got %q", msg.Blocks[0].Content.String())
-				}
-				// Second block should be content
-				if msg.Blocks[1].Content.String() != "content text" {
-					t.Errorf("expected second block to be content, got %q", msg.Blocks[1].Content.String())
-				}
-				// Tool call ID should be on first block
-				if msg.Blocks[0].ID != "test-id" {
-					t.Errorf("expected first block ID to be test-id, got %q", msg.Blocks[0].ID)
-				}
-			},
 		},
 		{
 			name: "empty result - no stdout no content",
@@ -504,15 +470,6 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 	return nil, nil
 }
 `,
-			wantBlockCount: 1, // empty text block
-			validate: func(t *testing.T, msg gai.Message) {
-				if msg.Blocks[0].Content.String() != "" {
-					t.Errorf("expected empty string, got %q", msg.Blocks[0].Content.String())
-				}
-				if msg.Blocks[0].ID != "test-id" {
-					t.Errorf("expected first block ID to be test-id, got %q", msg.Blocks[0].ID)
-				}
-			},
 		},
 		{
 			name: "image content",
@@ -530,15 +487,6 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 	}, nil
 }
 `,
-			wantBlockCount: 1,
-			validate: func(t *testing.T, msg gai.Message) {
-				if msg.Blocks[0].ModalityType != gai.Image {
-					t.Errorf("expected Image modality, got %v", msg.Blocks[0].ModalityType)
-				}
-				if msg.Blocks[0].MimeType != "image/png" {
-					t.Errorf("expected image/png, got %q", msg.Blocks[0].MimeType)
-				}
-			},
 		},
 		{
 			name: "audio content",
@@ -556,15 +504,6 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 	}, nil
 }
 `,
-			wantBlockCount: 1,
-			validate: func(t *testing.T, msg gai.Message) {
-				if msg.Blocks[0].ModalityType != gai.Audio {
-					t.Errorf("expected Audio modality, got %v", msg.Blocks[0].ModalityType)
-				}
-				if msg.Blocks[0].MimeType != "audio/wav" {
-					t.Errorf("expected audio/wav, got %q", msg.Blocks[0].MimeType)
-				}
-			},
 		},
 		{
 			name: "PDF content returns image block",
@@ -582,15 +521,6 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 	}, nil
 }
 `,
-			wantBlockCount: 1,
-			validate: func(t *testing.T, msg gai.Message) {
-				if msg.Blocks[0].ModalityType != gai.Image {
-					t.Errorf("expected Image modality for PDF, got %v", msg.Blocks[0].ModalityType)
-				}
-				if msg.Blocks[0].MimeType != "application/pdf" {
-					t.Errorf("expected application/pdf, got %q", msg.Blocks[0].MimeType)
-				}
-			},
 		},
 	}
 
@@ -613,18 +543,7 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			if msg.Role != gai.ToolResult {
-				t.Errorf("expected ToolResult role, got %v", msg.Role)
-			}
-
-			if len(msg.Blocks) != tt.wantBlockCount {
-				t.Errorf("expected %d blocks, got %d", tt.wantBlockCount, len(msg.Blocks))
-				return
-			}
-
-			if tt.validate != nil {
-				tt.validate(t, msg)
-			}
+			cupaloy.SnapshotT(t, messageToSnapshot(msg))
 		})
 	}
 }

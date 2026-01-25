@@ -9,15 +9,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/spachava753/cpe/internal/config"
 )
 
 func TestModelList(t *testing.T) {
 	tests := []struct {
-		name               string
-		config             *config.RawConfig
-		defaultModel       string
-		wantOutputContains []string
+		name         string
+		config       *config.RawConfig
+		defaultModel string
 	}{
 		{
 			name: "list models without default",
@@ -28,10 +28,6 @@ func TestModelList(t *testing.T) {
 				},
 			},
 			defaultModel: "",
-			wantOutputContains: []string{
-				"model1",
-				"model2",
-			},
 		},
 		{
 			name: "list models with default marked",
@@ -42,18 +38,13 @@ func TestModelList(t *testing.T) {
 				},
 			},
 			defaultModel: "model1",
-			wantOutputContains: []string{
-				"model1 (default)",
-				"model2",
-			},
 		},
 		{
 			name: "empty model list",
 			config: &config.RawConfig{
 				Models: []config.ModelConfig{},
 			},
-			defaultModel:       "",
-			wantOutputContains: []string{},
+			defaultModel: "",
 		},
 	}
 
@@ -72,24 +63,18 @@ func TestModelList(t *testing.T) {
 				return
 			}
 
-			output := buf.String()
-			for _, want := range tt.wantOutputContains {
-				if !strings.Contains(output, want) {
-					t.Errorf("ModelList() output does not contain %q\nOutput: %s", want, output)
-				}
-			}
+			cupaloy.SnapshotT(t, buf.String())
 		})
 	}
 }
 
 func TestModelInfo(t *testing.T) {
 	tests := []struct {
-		name               string
-		config             *config.RawConfig
-		modelName          string
-		wantErr            bool
-		errMsg             string
-		wantOutputContains []string
+		name      string
+		config    *config.RawConfig
+		modelName string
+		wantErr   bool
+		errMsg    string
 	}{
 		{
 			name: "show model info",
@@ -111,14 +96,6 @@ func TestModelInfo(t *testing.T) {
 			},
 			modelName: "test-model",
 			wantErr:   false,
-			wantOutputContains: []string{
-				"Ref: test-model",
-				"Display Name: Test Model",
-				"Type: openai",
-				"ID: gpt-4",
-				"Context: 8192",
-				"MaxOutput: 4096",
-			},
 		},
 		{
 			name: "model not found",
@@ -162,12 +139,7 @@ func TestModelInfo(t *testing.T) {
 			}
 
 			if !tt.wantErr {
-				output := buf.String()
-				for _, want := range tt.wantOutputContains {
-					if !strings.Contains(output, want) {
-						t.Errorf("ModelInfo() output does not contain %q\nOutput: %s", want, output)
-					}
-				}
+				cupaloy.SnapshotT(t, buf.String())
 			}
 		})
 	}
@@ -211,13 +183,12 @@ func (m *mockFileInfo) Sys() any           { return nil }
 
 func TestModelSystemPrompt(t *testing.T) {
 	tests := []struct {
-		name               string
-		config             *config.RawConfig
-		modelName          string
-		systemPrompt       fs.File
-		wantErr            bool
-		errMsg             string
-		wantOutputContains []string
+		name         string
+		config       *config.RawConfig
+		modelName    string
+		systemPrompt fs.File
+		wantErr      bool
+		errMsg       string
 	}{
 		{
 			name: "show system prompt",
@@ -232,11 +203,6 @@ func TestModelSystemPrompt(t *testing.T) {
 			modelName:    "test-model",
 			systemPrompt: newMockFile("Test prompt content", "prompt.txt"),
 			wantErr:      false,
-			wantOutputContains: []string{
-				"Model: test-model",
-				"Path: prompt.txt",
-				"Test prompt content",
-			},
 		},
 		{
 			name: "model without system prompt",
@@ -252,9 +218,6 @@ func TestModelSystemPrompt(t *testing.T) {
 			modelName:    "test-model",
 			systemPrompt: nil,
 			wantErr:      false,
-			wantOutputContains: []string{
-				"does not define a system prompt",
-			},
 		},
 		{
 			name: "model not found",
@@ -312,12 +275,7 @@ func TestModelSystemPrompt(t *testing.T) {
 			}
 
 			if !tt.wantErr {
-				output := buf.String()
-				for _, want := range tt.wantOutputContains {
-					if !strings.Contains(output, want) {
-						t.Errorf("ModelSystemPrompt() output does not contain %q\nOutput: %s", want, output)
-					}
-				}
+				cupaloy.SnapshotT(t, buf.String())
 			}
 		})
 	}

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/bradleyjkemp/cupaloy/v2"
 )
 
 func TestMCPServeCmd_RequiresConfig(t *testing.T) {
@@ -17,25 +19,17 @@ func TestMCPServeCmd_RequiresConfig(t *testing.T) {
 		t.Fatal("mcpServeCmd is nil")
 	}
 
-	if cmd.Use != "serve" {
-		t.Errorf("expected Use to be 'serve', got %q", cmd.Use)
-	}
-
-	if cmd.Short == "" {
-		t.Error("Short description should not be empty")
-	}
-
-	if cmd.Long == "" {
-		t.Error("Long description should not be empty")
-	}
-
-	if cmd.Example == "" {
-		t.Error("Example should not be empty")
-	}
-
 	if cmd.RunE == nil {
 		t.Error("RunE should not be nil")
 	}
+
+	// Snapshot the command metadata
+	cupaloy.SnapshotT(t, map[string]string{
+		"Use":     cmd.Use,
+		"Short":   cmd.Short,
+		"Long":    cmd.Long,
+		"Example": cmd.Example,
+	})
 }
 
 func TestMCPServeCmd_RegisteredUnderMCP(t *testing.T) {
@@ -148,16 +142,6 @@ func TestMCPServeCmd_HelpOutput(t *testing.T) {
 
 	output := buf.String()
 
-	// Verify key elements are present
-	expectedPhrases := []string{
-		"MCP server",
-		"subagent",
-		"--config",
-	}
-
-	for _, phrase := range expectedPhrases {
-		if !bytes.Contains([]byte(output), []byte(phrase)) {
-			t.Errorf("help output should contain %q", phrase)
-		}
-	}
+	// Snapshot the entire help output
+	cupaloy.SnapshotT(t, output)
 }

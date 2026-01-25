@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/spachava753/gai"
 )
 
@@ -40,10 +41,12 @@ func (m *mockNormalGenerator) Generate(ctx context.Context, dialog gai.Dialog, o
 
 func TestPanicCatchingGenerator(t *testing.T) {
 	tests := []struct {
-		name      string
-		generator gai.ToolCapableGenerator
-		wantErr   bool
-		errCheck  func(error) bool
+		name         string
+		generator    gai.ToolCapableGenerator
+		wantErr      bool
+		errCheck     func(error) bool // used for panic cases with non-deterministic stack traces
+		snapshotErr  bool             // if true, snapshot the error message
+		snapshotResp bool             // if true, snapshot the response
 	}{
 		{
 			name:      "catches string panic",
@@ -71,17 +74,16 @@ func TestPanicCatchingGenerator(t *testing.T) {
 					},
 				},
 			},
-			wantErr: false,
+			wantErr:      false,
+			snapshotResp: true,
 		},
 		{
 			name: "normal error passes through",
 			generator: &mockNormalGenerator{
 				err: errors.New("normal error"),
 			},
-			wantErr: true,
-			errCheck: func(err error) bool {
-				return err.Error() == "normal error"
-			},
+			wantErr:     true,
+			snapshotErr: true,
 		},
 	}
 
@@ -96,7 +98,9 @@ func TestPanicCatchingGenerator(t *testing.T) {
 					t.Errorf("PanicCatchingGenerator.Generate() error = nil, wantErr %v", tt.wantErr)
 					return
 				}
-				if tt.errCheck != nil && !tt.errCheck(err) {
+				if tt.snapshotErr {
+					cupaloy.SnapshotT(t, err.Error())
+				} else if tt.errCheck != nil && !tt.errCheck(err) {
 					t.Errorf("PanicCatchingGenerator.Generate() error = %v, failed error check", err)
 				}
 			} else {
@@ -104,8 +108,8 @@ func TestPanicCatchingGenerator(t *testing.T) {
 					t.Errorf("PanicCatchingGenerator.Generate() unexpected error = %v", err)
 					return
 				}
-				if len(resp.Candidates) != 1 {
-					t.Errorf("PanicCatchingGenerator.Generate() got %d candidates, want 1", len(resp.Candidates))
+				if tt.snapshotResp {
+					cupaloy.SnapshotT(t, resp)
 				}
 			}
 		})

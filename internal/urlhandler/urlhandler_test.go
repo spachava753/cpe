@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/bradleyjkemp/cupaloy/v2"
 )
 
 // testConfig returns a configuration suitable for testing with localhost access
@@ -24,73 +26,68 @@ func TestIsURL(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
-		want  bool
 	}{
 		{
 			name:  "valid HTTP URL",
 			input: "http://example.com/file.txt",
-			want:  true,
 		},
 		{
 			name:  "valid HTTPS URL",
 			input: "https://example.com/file.txt",
-			want:  true,
 		},
 		{
 			name:  "URL with path and query",
 			input: "https://api.github.com/repos/user/repo/contents/README.md?ref=main",
-			want:  true,
 		},
 		{
 			name:  "local file path",
 			input: "./local/file.txt",
-			want:  false,
 		},
 		{
 			name:  "absolute file path",
 			input: "/home/user/file.txt",
-			want:  false,
 		},
 		{
 			name:  "file URL",
 			input: "file:///home/user/file.txt",
-			want:  false,
 		},
 		{
 			name:  "FTP URL",
 			input: "ftp://ftp.example.com/file.txt",
-			want:  false,
 		},
 		{
 			name:  "malformed URL",
 			input: "not-a-url",
-			want:  false,
 		},
 		{
 			name:  "empty string",
 			input: "",
-			want:  false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsURL(tt.input); got != tt.want {
-				t.Errorf("IsURL(%q) = %v, want %v", tt.input, got, tt.want)
-			}
+			got := IsURL(tt.input)
+			cupaloy.SnapshotT(t, got)
 		})
 	}
 }
 
+// downloadResultSnapshot is a snapshot-friendly representation of DownloadResult
+// that excludes dynamic fields like URL (which contains the test server address)
+type downloadResultSnapshot struct {
+	Data        string
+	ContentType string
+	Size        int64
+}
+
 func TestDownloadContent(t *testing.T) {
 	tests := []struct {
-		name           string
-		serverHandler  http.HandlerFunc
-		config         *DownloadConfig
-		wantErr        bool
-		errMsg         string
-		expectContent  string
-		expectMimeType string
+		name          string
+		serverHandler http.HandlerFunc
+		config        *DownloadConfig
+		wantErr       bool
+		errMsg        string
 	}{
 		{
 			name: "successful download",
@@ -99,10 +96,8 @@ func TestDownloadContent(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte("Hello, World!"))
 			}),
-			config:         testConfig(),
-			wantErr:        false,
-			expectContent:  "Hello, World!",
-			expectMimeType: "text/plain",
+			config:  testConfig(),
+			wantErr: false,
 		},
 		{
 			name: "404 not found",
@@ -151,10 +146,8 @@ func TestDownloadContent(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte(`{"message": "hello"}`))
 			}),
-			config:         testConfig(),
-			wantErr:        false,
-			expectContent:  `{"message": "hello"}`,
-			expectMimeType: "application/json",
+			config:  testConfig(),
+			wantErr: false,
 		},
 	}
 
@@ -184,21 +177,13 @@ func TestDownloadContent(t *testing.T) {
 					return
 				}
 
-				if string(result.Data) != tt.expectContent {
-					t.Errorf("DownloadContent() content = %q, want %q", string(result.Data), tt.expectContent)
+				// Snapshot the result (excluding dynamic URL)
+				snapshot := downloadResultSnapshot{
+					Data:        string(result.Data),
+					ContentType: result.ContentType,
+					Size:        result.Size,
 				}
-
-				if result.ContentType != tt.expectMimeType {
-					t.Errorf("DownloadContent() content type = %q, want %q", result.ContentType, tt.expectMimeType)
-				}
-
-				if result.URL != server.URL {
-					t.Errorf("DownloadContent() URL = %q, want %q", result.URL, server.URL)
-				}
-
-				if result.Size != int64(len(tt.expectContent)) {
-					t.Errorf("DownloadContent() size = %d, want %d", result.Size, len(tt.expectContent))
-				}
+				cupaloy.SnapshotT(t, snapshot)
 			}
 		})
 	}

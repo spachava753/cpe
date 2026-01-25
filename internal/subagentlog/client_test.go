@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/bradleyjkemp/cupaloy/v2"
 )
 
 func TestClient_Emit(t *testing.T) {
@@ -32,20 +34,23 @@ func TestClient_Emit(t *testing.T) {
 		{
 			name: "successful emission",
 			handler: func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != http.MethodPost {
-					t.Errorf("expected POST method, got %s", r.Method)
-				}
-				if r.Header.Get("Content-Type") != "application/json" {
-					t.Errorf("expected application/json content type, got %s", r.Header.Get("Content-Type"))
-				}
-
 				var received Event
 				if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
 					t.Errorf("failed to decode event: %v", err)
+					return
 				}
-				if received.SubagentName != testEvent.SubagentName {
-					t.Errorf("expected subagent name %s, got %s", testEvent.SubagentName, received.SubagentName)
-				}
+
+				// Snapshot request details and received event (excluding timestamp which varies)
+				cupaloy.SnapshotT(t, map[string]any{
+					"Method":        r.Method,
+					"ContentType":   r.Header.Get("Content-Type"),
+					"SubagentName":  received.SubagentName,
+					"SubagentRunID": received.SubagentRunID,
+					"Type":          received.Type,
+					"ToolName":      received.ToolName,
+					"ToolCallID":    received.ToolCallID,
+					"Payload":       received.Payload,
+				})
 
 				w.WriteHeader(http.StatusOK)
 			},
@@ -206,7 +211,5 @@ func TestClient_Reusable(t *testing.T) {
 		}
 	}
 
-	if callCount != 3 {
-		t.Errorf("expected 3 calls, got %d", callCount)
-	}
+	cupaloy.SnapshotT(t, callCount)
 }

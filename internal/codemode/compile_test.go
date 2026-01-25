@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	mcpcpe "github.com/spachava753/cpe/internal/mcp"
@@ -91,6 +92,10 @@ func TestGenerateMainGo_Compiles(t *testing.T) {
 				t.Fatalf("GenerateMainGo() error: %v", err)
 			}
 
+			// Snapshot the generated code
+			cupaloy.SnapshotT(t, mainGo)
+
+			// Verify the generated code compiles
 			tmpDir, err := os.MkdirTemp("", "cpe-compile-test-*")
 			if err != nil {
 				t.Fatalf("MkdirTemp() error: %v", err)

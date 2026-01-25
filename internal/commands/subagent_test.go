@@ -9,17 +9,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
-	"github.com/spachava753/gai"
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/spachava753/cpe/internal/subagentlog"
+	"github.com/spachava753/gai"
 )
 
 func TestExtractFinalAnswerParams(t *testing.T) {
 	tests := []struct {
-		name       string
-		dialog     gai.Dialog
-		wantResult string
-		wantErr    bool
+		name    string
+		dialog  gai.Dialog
+		wantErr bool
 	}{
 		{
 			name: "final_answer called with simple params",
@@ -40,8 +39,7 @@ func TestExtractFinalAnswerParams(t *testing.T) {
 					},
 				},
 			},
-			wantResult: `{"score":42,"summary":"This is the analysis result"}`,
-			wantErr:    false,
+			wantErr: false,
 		},
 		{
 			name: "final_answer with nested object",
@@ -64,8 +62,7 @@ func TestExtractFinalAnswerParams(t *testing.T) {
 					},
 				},
 			},
-			wantResult: `{"review":{"comment":"Great!","rating":5}}`,
-			wantErr:    false,
+			wantErr: false,
 		},
 		{
 			name: "final_answer after other tool calls",
@@ -97,8 +94,7 @@ func TestExtractFinalAnswerParams(t *testing.T) {
 					},
 				},
 			},
-			wantResult: `{"done":true}`,
-			wantErr:    false,
+			wantErr: false,
 		},
 		{
 			name: "no final_answer called",
@@ -116,8 +112,7 @@ func TestExtractFinalAnswerParams(t *testing.T) {
 					},
 				},
 			},
-			wantResult: "",
-			wantErr:    true,
+			wantErr: true,
 		},
 		{
 			name: "only other tool calls, no final_answer",
@@ -135,8 +130,7 @@ func TestExtractFinalAnswerParams(t *testing.T) {
 					},
 				},
 			},
-			wantResult: "",
-			wantErr:    true,
+			wantErr: true,
 		},
 	}
 
@@ -148,17 +142,12 @@ func TestExtractFinalAnswerParams(t *testing.T) {
 				return
 			}
 			if !tt.wantErr {
-				// Parse both as JSON and compare (to ignore key ordering differences)
-				var gotMap, wantMap map[string]any
+				// Parse JSON for consistent ordering in snapshots
+				var gotMap map[string]any
 				if err := json.Unmarshal([]byte(got), &gotMap); err != nil {
 					t.Fatalf("failed to parse got result as JSON: %v", err)
 				}
-				if err := json.Unmarshal([]byte(tt.wantResult), &wantMap); err != nil {
-					t.Fatalf("failed to parse want result as JSON: %v", err)
-				}
-				if diff := cmp.Diff(wantMap, gotMap); diff != "" {
-					t.Errorf("extractFinalAnswerParams() mismatch (-want +got):\n%s", diff)
-				}
+				cupaloy.SnapshotT(t, gotMap)
 			}
 		})
 	}
@@ -166,9 +155,8 @@ func TestExtractFinalAnswerParams(t *testing.T) {
 
 func TestExtractFinalResponse(t *testing.T) {
 	tests := []struct {
-		name       string
-		dialog     gai.Dialog
-		wantResult string
+		name   string
+		dialog gai.Dialog
 	}{
 		{
 			name: "simple text response",
@@ -186,7 +174,6 @@ func TestExtractFinalResponse(t *testing.T) {
 					},
 				},
 			},
-			wantResult: "Hello! How can I help?",
 		},
 		{
 			name: "multiple text blocks",
@@ -205,12 +192,10 @@ func TestExtractFinalResponse(t *testing.T) {
 					},
 				},
 			},
-			wantResult: "First part\nSecond part",
 		},
 		{
-			name:       "empty dialog",
-			dialog:     gai.Dialog{},
-			wantResult: "",
+			name:   "empty dialog",
+			dialog: gai.Dialog{},
 		},
 		{
 			name: "no assistant message",
@@ -222,16 +207,13 @@ func TestExtractFinalResponse(t *testing.T) {
 					},
 				},
 			},
-			wantResult: "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := extractFinalResponse(tt.dialog)
-			if got != tt.wantResult {
-				t.Errorf("extractFinalResponse() = %q, want %q", got, tt.wantResult)
-			}
+			cupaloy.SnapshotT(t, got)
 		})
 	}
 }
@@ -298,6 +280,27 @@ func (m *subagentMockGenerator) Generate(ctx context.Context, dialog gai.Dialog,
 	return append(dialog, response), nil
 }
 
+// storageSnapshot captures storage entries in a snapshot-friendly format
+type storageSnapshot struct {
+	Role     string `json:"role"`
+	ParentID string `json:"parentID"`
+	Label    string `json:"label"`
+	ID       string `json:"id"`
+}
+
+func toStorageSnapshots(entries []subagentSavedEntry) []storageSnapshot {
+	result := make([]storageSnapshot, len(entries))
+	for i, e := range entries {
+		result[i] = storageSnapshot{
+			Role:     e.msg.Role.String(),
+			ParentID: e.parentID,
+			Label:    e.label,
+			ID:       e.id,
+		}
+	}
+	return result
+}
+
 func TestExecuteSubagent_PersistsToStorage(t *testing.T) {
 	storage := &subagentMockStorage{}
 	generator := &subagentMockGenerator{
@@ -329,38 +332,10 @@ func TestExecuteSubagent_PersistsToStorage(t *testing.T) {
 		t.Fatalf("ExecuteSubagent failed: %v", err)
 	}
 
-	if result != "Hello from the subagent!" {
-		t.Errorf("unexpected result: %q", result)
-	}
-
-	// Verify messages were saved
-	if len(storage.savedEntries) != 2 {
-		t.Fatalf("expected 2 saved messages, got %d", len(storage.savedEntries))
-	}
-
-	// Verify user message
-	userEntry := storage.savedEntries[0]
-	if userEntry.msg.Role != gai.User {
-		t.Errorf("expected user role, got %v", userEntry.msg.Role)
-	}
-	if userEntry.parentID != "" {
-		t.Errorf("expected empty parent ID for user message, got %q", userEntry.parentID)
-	}
-	if userEntry.label != "subagent:test_agent:abc123" {
-		t.Errorf("unexpected label: %q", userEntry.label)
-	}
-
-	// Verify assistant message
-	assistantEntry := storage.savedEntries[1]
-	if assistantEntry.msg.Role != gai.Assistant {
-		t.Errorf("expected assistant role, got %v", assistantEntry.msg.Role)
-	}
-	if assistantEntry.parentID != "msg_0" {
-		t.Errorf("expected parent ID 'msg_0', got %q", assistantEntry.parentID)
-	}
-	if assistantEntry.label != "subagent:test_agent:abc123" {
-		t.Errorf("unexpected label: %q", assistantEntry.label)
-	}
+	cupaloy.SnapshotT(t, map[string]any{
+		"result":         result,
+		"storageEntries": toStorageSnapshots(storage.savedEntries),
+	})
 }
 
 func TestExecuteSubagent_NoStorageNoError(t *testing.T) {
@@ -393,9 +368,7 @@ func TestExecuteSubagent_NoStorageNoError(t *testing.T) {
 		t.Fatalf("ExecuteSubagent failed: %v", err)
 	}
 
-	if result != "Response without storage" {
-		t.Errorf("unexpected result: %q", result)
-	}
+	cupaloy.SnapshotT(t, result)
 }
 
 func TestExecuteSubagent_MultipleAssistantMessages(t *testing.T) {
@@ -456,32 +429,10 @@ func TestExecuteSubagent_MultipleAssistantMessages(t *testing.T) {
 		t.Fatalf("ExecuteSubagent failed: %v", err)
 	}
 
-	if result != "Final response" {
-		t.Errorf("unexpected result: %q", result)
-	}
-
-	// Verify all messages were saved (1 user + 3 assistant/tool)
-	if len(storage.savedEntries) != 4 {
-		t.Fatalf("expected 4 saved messages, got %d", len(storage.savedEntries))
-	}
-
-	// Verify chain of parent IDs
-	for i, entry := range storage.savedEntries {
-		if i == 0 {
-			if entry.parentID != "" {
-				t.Errorf("first message should have no parent, got %q", entry.parentID)
-			}
-		} else {
-			expectedParent := fmt.Sprintf("msg_%d", i-1)
-			if entry.parentID != expectedParent {
-				t.Errorf("message %d: expected parent %q, got %q", i, expectedParent, entry.parentID)
-			}
-		}
-		// All messages should have the same label
-		if entry.label != "subagent:multi:xyz789" {
-			t.Errorf("message %d: unexpected label %q", i, entry.label)
-		}
-	}
+	cupaloy.SnapshotT(t, map[string]any{
+		"result":         result,
+		"storageEntries": toStorageSnapshots(storage.savedEntries),
+	})
 }
 
 // subagentMultiMsgGenerator returns multiple messages in the dialog
@@ -598,7 +549,6 @@ func TestExecuteSubagent_GenerationError(t *testing.T) {
 		t.Errorf("expected original error to be wrapped, got: %v", err)
 	}
 }
-
 
 // --- Event Emission Error Handling Tests ---
 
@@ -761,6 +711,25 @@ func TestExecuteSubagent_EventEmissionDuringGenerationAbortsExecution(t *testing
 	}
 }
 
+// eventSnapshot captures event data in a snapshot-friendly format
+type eventSnapshot struct {
+	Type          string `json:"type"`
+	SubagentName  string `json:"subagentName"`
+	SubagentRunID string `json:"subagentRunID"`
+}
+
+func toEventSnapshots(events []subagentlog.Event) []eventSnapshot {
+	result := make([]eventSnapshot, len(events))
+	for i, e := range events {
+		result[i] = eventSnapshot{
+			Type:          string(e.Type),
+			SubagentName:  e.SubagentName,
+			SubagentRunID: e.SubagentRunID,
+		}
+	}
+	return result
+}
+
 func TestExecuteSubagent_SuccessfulEventEmission(t *testing.T) {
 	// Track received events
 	var receivedEvents []subagentlog.Event
@@ -801,29 +770,8 @@ func TestExecuteSubagent_SuccessfulEventEmission(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result != "Hello!" {
-		t.Errorf("unexpected result: %q", result)
-	}
-
-	// Verify we received start and end events
-	if len(receivedEvents) < 2 {
-		t.Fatalf("expected at least 2 events (start, end), got %d", len(receivedEvents))
-	}
-
-	// First event should be subagent_start
-	if receivedEvents[0].Type != subagentlog.EventTypeSubagentStart {
-		t.Errorf("expected first event to be subagent_start, got %s", receivedEvents[0].Type)
-	}
-	if receivedEvents[0].SubagentName != "test_subagent" {
-		t.Errorf("expected subagent name 'test_subagent', got %s", receivedEvents[0].SubagentName)
-	}
-	if receivedEvents[0].SubagentRunID != "run_123" {
-		t.Errorf("expected run ID 'run_123', got %s", receivedEvents[0].SubagentRunID)
-	}
-
-	// Last event should be subagent_end
-	lastEvent := receivedEvents[len(receivedEvents)-1]
-	if lastEvent.Type != subagentlog.EventTypeSubagentEnd {
-		t.Errorf("expected last event to be subagent_end, got %s", lastEvent.Type)
-	}
+	cupaloy.SnapshotT(t, map[string]any{
+		"result": result,
+		"events": toEventSnapshots(receivedEvents),
+	})
 }

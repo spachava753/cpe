@@ -1,0 +1,13 @@
+(config.snapshotData) {
+  DefaultsCodeMode: (*config.CodeModeConfig)({
+    Enabled: (bool) true,
+    ExcludedTools: ([]string) (len=2) {
+      (string) (len=15) "expanded_tool_1",
+      (string) (len=15) "expanded_tool_2"
+    },
+    MaxTimeout: (int) 0
+  }),
+  ModelsCodeMode: ([]*config.CodeModeConfig) (len=1) {
+    (*config.CodeModeConfig)(<nil>)
+  }
+}

@@ -1,0 +1,71 @@
+([]codemode.ServerToolsInfo) (len=2) {
+  (codemode.ServerToolsInfo) {
+    ServerName: (string) (len=7) "server1",
+    Config: (mcp.ServerConfig) {
+      Command: (string) (len=5) "test1",
+      Args: ([]string) <nil>,
+      Type: (string) (len=5) "stdio",
+      URL: (string) "",
+      Timeout: (int) 0,
+      Env: (map[string]string) <nil>,
+      Headers: (map[string]string) <nil>,
+      EnabledTools: ([]string) <nil>,
+      DisabledTools: ([]string) <nil>
+    },
+    Tools: ([]*mcp.Tool) (len=1) {
+      (*mcp.Tool)({
+        Meta: (mcp.Meta) <nil>,
+        Annotations: (*mcp.ToolAnnotations)(<nil>),
+        Description: (string) "",
+        InputSchema: (interface {}) <nil>,
+        Name: (string) (len=5) "tool1",
+        OutputSchema: (interface {}) <nil>,
+        Title: (string) ""
+      })
+    }
+  },
+  (codemode.ServerToolsInfo) {
+    ServerName: (string) (len=7) "server2",
+    Config: (mcp.ServerConfig) {
+      Command: (string) "",
+      Args: ([]string) <nil>,
+      Type: (string) (len=4) "http",
+      URL: (string) (len=11) "http://test",
+      Timeout: (int) 0,
+      Env: (map[string]string) <nil>,
+      Headers: (map[string]string) <nil>,
+      EnabledTools: ([]string) <nil>,
+      DisabledTools: ([]string) <nil>
+    },
+    Tools: ([]*mcp.Tool) (len=1) {
+      (*mcp.Tool)({
+        Meta: (mcp.Meta) <nil>,
+        Annotations: (*mcp.ToolAnnotations)(<nil>),
+        Description: (string) "",
+        InputSchema: (interface {}) <nil>,
+        Name: (string) (len=5) "tool3",
+        OutputSchema: (interface {}) <nil>,
+        Title: (string) ""
+      })
+    }
+  }
+}
+([]mcp.ToolData) (len=1) {
+  (mcp.ToolData) {
+    Tool: (gai.Tool) {
+      Name: (string) (len=5) "tool2",
+      Description: (string) "",
+      InputSchema: (*jsonschema.Schema)(<nil>)
+    },
+    MCPTool: (*mcp.Tool)({
+      Meta: (mcp.Meta) <nil>,
+      Annotations: (*mcp.ToolAnnotations)(<nil>),
+      Description: (string) "",
+      InputSchema: (interface {}) <nil>,
+      Name: (string) (len=5) "tool2",
+      OutputSchema: (interface {}) <nil>,
+      Title: (string) ""
+    }),
+    ToolCallback: (gai.ToolCallback) <nil>
+  }
+}

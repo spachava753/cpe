@@ -9,9 +9,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
+	"github.com/bradleyjkemp/cupaloy/v2"
 	jsonpatch "github.com/evanphx/json-patch/v5"
 )
 
@@ -37,17 +39,22 @@ func newTestStore(t *testing.T, cred *Credential) *Store {
 	return &Store{path: authPath}
 }
 
+// transportTestResult captures the result of an OAuth transport test for snapshot comparison
+type transportTestResult struct {
+	Headers map[string]string `json:"headers"`
+	Body    any               `json:"body"`
+}
+
 // TestOAuthTransportWithPatchedBase verifies that when OAuthTransport wraps a
 // PatchTransport, both OAuth headers and JSON patches are correctly applied.
 // This is the fix for GitHub issue #127.
 func TestOAuthTransportWithPatchedBase(t *testing.T) {
 	tests := []struct {
-		name         string
-		patchJSON    string
-		patchHeaders map[string]string
-		requestBody  string
-		wantBody     string
-		wantHeaders  map[string]string
+		name           string
+		patchJSON      string
+		patchHeaders   map[string]string
+		requestBody    string
+		headersToCheck []string
 	}{
 		{
 			name:      "OAuth with custom headers",
@@ -55,30 +62,20 @@ func TestOAuthTransportWithPatchedBase(t *testing.T) {
 			patchHeaders: map[string]string{
 				"X-Custom-Header": "custom-value",
 			},
-			requestBody: `{"model":"claude-3"}`,
-			wantBody:    `{"model":"claude-3"}`,
-			wantHeaders: map[string]string{
-				"Authorization":   "Bearer test-access-token",
-				"X-Custom-Header": "custom-value",
-			},
+			requestBody:    `{"model":"claude-3"}`,
+			headersToCheck: []string{"Authorization", "X-Custom-Header"},
 		},
 		{
-			name:        "OAuth with JSON patch to modify model",
-			patchJSON:   `[{"op": "replace", "path": "/model", "value": "custom-model"}]`,
-			requestBody: `{"model":"original-model","stream":true}`,
-			wantBody:    `{"model":"custom-model","stream":true}`,
-			wantHeaders: map[string]string{
-				"Authorization": "Bearer test-access-token",
-			},
+			name:           "OAuth with JSON patch to modify model",
+			patchJSON:      `[{"op": "replace", "path": "/model", "value": "custom-model"}]`,
+			requestBody:    `{"model":"original-model","stream":true}`,
+			headersToCheck: []string{"Authorization"},
 		},
 		{
-			name:        "OAuth with JSON patch to add field",
-			patchJSON:   `[{"op": "add", "path": "/custom_field", "value": "injected"}]`,
-			requestBody: `{"model":"claude-3"}`,
-			wantBody:    `{"custom_field":"injected","model":"claude-3"}`,
-			wantHeaders: map[string]string{
-				"Authorization": "Bearer test-access-token",
-			},
+			name:           "OAuth with JSON patch to add field",
+			patchJSON:      `[{"op": "add", "path": "/custom_field", "value": "injected"}]`,
+			requestBody:    `{"model":"claude-3"}`,
+			headersToCheck: []string{"Authorization"},
 		},
 		{
 			name:      "OAuth with both headers and JSON patch",
@@ -87,13 +84,8 @@ func TestOAuthTransportWithPatchedBase(t *testing.T) {
 				"X-Patched-Header": "patched-value",
 				"X-Another":        "another-value",
 			},
-			requestBody: `{"original":"data"}`,
-			wantBody:    `{"original":"data","patched":true}`,
-			wantHeaders: map[string]string{
-				"Authorization":    "Bearer test-access-token",
-				"X-Patched-Header": "patched-value",
-				"X-Another":        "another-value",
-			},
+			requestBody:    `{"original":"data"}`,
+			headersToCheck: []string{"Authorization", "X-Patched-Header", "X-Another"},
 		},
 	}
 
@@ -106,7 +98,7 @@ func TestOAuthTransportWithPatchedBase(t *testing.T) {
 			// Create test server
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// Capture headers
-				for key := range tt.wantHeaders {
+				for _, key := range tt.headersToCheck {
 					receivedHeaders[key] = r.Header.Get(key)
 				}
 
@@ -170,30 +162,31 @@ func TestOAuthTransportWithPatchedBase(t *testing.T) {
 			}
 			defer resp.Body.Close()
 
-			// Verify headers
-			for key, want := range tt.wantHeaders {
-				got := receivedHeaders[key]
-				if got != want {
-					t.Errorf("header %q = %q, want %q", key, got, want)
-				}
-			}
-
-			// Verify body (handle JSON key ordering)
-			if tt.wantBody != "" {
-				var gotJSON, wantJSON map[string]any
-				if err := json.Unmarshal([]byte(receivedBody), &gotJSON); err != nil {
+			// Parse body as JSON for consistent ordering in snapshot
+			var bodyJSON any
+			if receivedBody != "" {
+				if err := json.Unmarshal([]byte(receivedBody), &bodyJSON); err != nil {
 					t.Fatalf("parsing received body: %v (body was: %q)", err, receivedBody)
 				}
-				if err := json.Unmarshal([]byte(tt.wantBody), &wantJSON); err != nil {
-					t.Fatalf("parsing expected body: %v", err)
-				}
-
-				gotBytes, _ := json.Marshal(gotJSON)
-				wantBytes, _ := json.Marshal(wantJSON)
-				if string(gotBytes) != string(wantBytes) {
-					t.Errorf("body = %s, want %s", gotBytes, wantBytes)
-				}
 			}
+
+			// Sort header keys for consistent snapshot output
+			sortedHeaders := make(map[string]string)
+			keys := make([]string, 0, len(receivedHeaders))
+			for k := range receivedHeaders {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				sortedHeaders[k] = receivedHeaders[k]
+			}
+
+			result := transportTestResult{
+				Headers: sortedHeaders,
+				Body:    bodyJSON,
+			}
+
+			cupaloy.SnapshotT(t, result)
 		})
 	}
 }

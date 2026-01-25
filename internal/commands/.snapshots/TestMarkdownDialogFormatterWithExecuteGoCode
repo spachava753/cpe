@@ -1,0 +1,27 @@
+# Conversation History
+
+## 🧑 USER [`msg-1`]
+
+Run some code
+
+
+---
+
+## 🤖 ASSISTANT [`msg-2`]
+
+#### [tool call]
+```go
+package main\n\nfunc Run() {}
+```
+
+
+---
+
+## 🔧 TOOL RESULT ✓ [`msg-3`]
+
+#### Code execution output:
+````shell
+Code executed successfully
+````
+
+

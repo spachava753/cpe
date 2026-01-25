@@ -1,0 +1,4 @@
+type GetWeatherInput struct {
+	// City The name of the city
+	City *string `json:"city,omitempty"`
+}

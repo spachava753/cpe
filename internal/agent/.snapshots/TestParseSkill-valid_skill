@@ -1,0 +1,4 @@
+(map[string]string) (len=2) {
+  (string) (len=11) "Description": (string) (len=26) "A valid skill for testing.",
+  (string) (len=4) "Name": (string) (len=11) "valid-skill"
+}

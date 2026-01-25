@@ -1,0 +1,6 @@
+(map[string]interface {}) (len=1) {
+  (string) (len=7) "headers": (map[string]string) (len=2) {
+    (string) (len=9) "X-Another": (string) (len=13) "another-value",
+    (string) (len=15) "X-Custom-Header": (string) (len=12) "custom-value"
+  }
+}

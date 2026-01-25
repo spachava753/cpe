@@ -1,0 +1,13 @@
+{"subagentName":"minimal_agent","subagentRunId":"run-min","timestamp":"2026-01-24T12:00:00Z","type":"tool_call"}
+(subagentlog.Event) {
+  SubagentName: (string) (len=13) "minimal_agent",
+  SubagentRunID: (string) (len=7) "run-min",
+  Timestamp: (time.Time) 2026-01-24 12:00:00 +0000 UTC,
+  Type: (string) (len=9) "tool_call",
+  ToolName: (string) "",
+  ToolCallID: (string) "",
+  Payload: (string) "",
+  ExecutionTimeoutSeconds: (int) 0,
+  ReasoningType: (string) "",
+  TokenUsage: (*subagentlog.TokenUsage)(<nil>)
+}

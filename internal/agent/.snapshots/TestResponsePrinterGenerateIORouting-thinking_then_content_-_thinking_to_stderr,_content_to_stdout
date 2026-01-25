@@ -1,0 +1,4 @@
+(agent.ioRoutingResult) {
+  Stdout: (string) (len=16) "The answer is 42",
+  Stderr: (string) (len=15) "Let me think..."
+}

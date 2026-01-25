@@ -1,0 +1,9 @@
+Ref: test-model
+Display Name: Test Model
+Type: openai
+ID: gpt-4
+Context: 8192
+MaxOutput: 4096
+InputCostPerMillion: 1.500000
+OutputCostPerMillion: 2.500000
+

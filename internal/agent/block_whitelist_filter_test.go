@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/spachava753/gai"
 )
 
@@ -12,7 +13,6 @@ func TestBlockWhitelistFilter(t *testing.T) {
 		name         string
 		allowedTypes []string
 		inputDialog  gai.Dialog
-		expected     int // expected number of blocks in first message after filtering
 	}{
 		{
 			name:         "filters out thinking blocks when not in whitelist",
@@ -27,7 +27,6 @@ func TestBlockWhitelistFilter(t *testing.T) {
 					},
 				},
 			},
-			expected: 2, // Only content blocks should remain after filtering
 		},
 		{
 			name:         "keeps only whitelisted blocks",
@@ -42,7 +41,6 @@ func TestBlockWhitelistFilter(t *testing.T) {
 					},
 				},
 			},
-			expected: 2, // Only content blocks should remain after filtering
 		},
 		{
 			name:         "filters all blocks when whitelist is empty",
@@ -57,7 +55,6 @@ func TestBlockWhitelistFilter(t *testing.T) {
 					},
 				},
 			},
-			expected: 0, // No blocks should remain when whitelist is empty
 		},
 		{
 			name:         "allows multiple block types",
@@ -73,13 +70,11 @@ func TestBlockWhitelistFilter(t *testing.T) {
 					},
 				},
 			},
-			expected: 3, // content and tool blocks should remain
 		},
 		{
 			name:         "handles empty input dialog",
 			allowedTypes: []string{"content"},
 			inputDialog:  gai.Dialog{},
-			expected:     0, // No messages in empty dialog
 		},
 		{
 			name:         "handles message with no blocks",
@@ -90,7 +85,6 @@ func TestBlockWhitelistFilter(t *testing.T) {
 					Blocks: []gai.Block{},
 				},
 			},
-			expected: 0, // No blocks in message
 		},
 	}
 
@@ -110,17 +104,7 @@ func TestBlockWhitelistFilter(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			// For empty input dialog, verify that empty dialog was passed to generator
-			if len(tt.inputDialog) == 0 {
-				if len(mockGenerator.capturedDialog) != 0 {
-					t.Errorf("expected empty captured dialog for empty input, got %d messages", len(mockGenerator.capturedDialog))
-				}
-				return // Skip further checks for empty dialog case
-			}
-
-			if len(mockGenerator.capturedDialog[0].Blocks) != tt.expected {
-				t.Errorf("expected %d blocks in filtered input, got %d", tt.expected, len(mockGenerator.capturedDialog[0].Blocks))
-			}
+			cupaloy.SnapshotT(t, mockGenerator.capturedDialog)
 		})
 	}
 }

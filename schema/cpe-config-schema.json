@@ -35,9 +35,6 @@
         "timeout": {
           "type": "string"
         },
-        "noStream": {
-          "type": "boolean"
-        },
         "codeMode": {
           "$ref": "#/$defs/CodeModeConfig"
         }
@@ -223,9 +220,6 @@
             "type": "string"
           },
           "type": "array"
-        },
-        "toolFilter": {
-          "type": "string"
         }
       },
       "additionalProperties": false,

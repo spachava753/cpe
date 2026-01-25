@@ -11,17 +11,16 @@ import (
 	"path/filepath"
 
 	"dario.cat/mergo"
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/spachava753/gai"
 )
 
 func TestLoadRawConfigFromFileFormats(t *testing.T) {
 	tests := []struct {
-		name       string
-		content    string
-		filename   string
-		expectName string
-		expectType string
-		wantErr    bool
+		name     string
+		content  string
+		filename string
+		wantErr  bool
 	}{
 		{
 			name: "YAML config",
@@ -35,10 +34,8 @@ models:
     context_window: 8192
     max_output: 4096
 `,
-			filename:   "config.yaml",
-			expectName: "test-yaml",
-			expectType: "openai",
-			wantErr:    false,
+			filename: "config.yaml",
+			wantErr:  false,
 		},
 		{
 			name: "JSON config",
@@ -55,10 +52,8 @@ models:
     }
   ]
 }`,
-			filename:   "config.json",
-			expectName: "test-json",
-			expectType: "anthropic",
-			wantErr:    false,
+			filename: "config.json",
+			wantErr:  false,
 		},
 		{
 			name: "YML extension",
@@ -70,10 +65,8 @@ models:
     id: "test-yml-id"
     type: "gemini"
 `,
-			filename:   "config.yml",
-			expectName: "test-yml",
-			expectType: "gemini",
-			wantErr:    false,
+			filename: "config.yml",
+			wantErr:  false,
 		},
 		{
 			name: "No extension fallback to YAML",
@@ -85,10 +78,8 @@ models:
     id: "test-noext-id"
     type: "groq"
 `,
-			filename:   "config",
-			expectName: "test-noext",
-			expectType: "groq",
-			wantErr:    false,
+			filename: "config",
+			wantErr:  false,
 		},
 		{
 			name: "Invalid JSON",
@@ -149,14 +140,7 @@ models:
 				t.Fatal("Expected at least one model")
 			}
 
-			model := config.Models[0]
-			if model.Ref != tt.expectName {
-				t.Errorf("Expected model ref %s, got %s", tt.expectName, model.Ref)
-			}
-
-			if model.Type != tt.expectType {
-				t.Errorf("Expected model type %s, got %s", tt.expectType, model.Type)
-			}
+			cupaloy.SnapshotT(t, config.Models[0])
 		})
 	}
 }
@@ -166,7 +150,6 @@ func TestResolveConfig_GenerationDefaultsMerging(t *testing.T) {
 		name             string
 		configContent    string
 		runtimeOpts      RuntimeOptions
-		validate         func(t *testing.T, cfg *Config)
 		expectErr        bool
 		expectErrMessage string
 	}{
@@ -188,17 +171,6 @@ models:
 			runtimeOpts: RuntimeOptions{
 				ModelRef: "test-model",
 			},
-			validate: func(t *testing.T, cfg *Config) {
-				if cfg.GenerationDefaults.Temperature != 0.7 {
-					t.Errorf("expected temperature 0.7, got %f", cfg.GenerationDefaults.Temperature)
-				}
-				if cfg.GenerationDefaults.TopP != 0.9 {
-					t.Errorf("expected topP 0.9, got %f", cfg.GenerationDefaults.TopP)
-				}
-				if cfg.GenerationDefaults.MaxGenerationTokens != 2048 {
-					t.Errorf("expected maxGenerationTokens 2048, got %d", cfg.GenerationDefaults.MaxGenerationTokens)
-				}
-			},
 		},
 		{
 			name: "global defaults loaded when no model-specific defaults",
@@ -218,17 +190,6 @@ defaults:
 `,
 			runtimeOpts: RuntimeOptions{
 				ModelRef: "test-model",
-			},
-			validate: func(t *testing.T, cfg *Config) {
-				if cfg.GenerationDefaults.Temperature != 0.5 {
-					t.Errorf("expected temperature 0.5, got %f", cfg.GenerationDefaults.Temperature)
-				}
-				if cfg.GenerationDefaults.TopK != 20 {
-					t.Errorf("expected topK 20, got %d", cfg.GenerationDefaults.TopK)
-				}
-				if cfg.GenerationDefaults.FrequencyPenalty != 0.3 {
-					t.Errorf("expected frequencyPenalty 0.3, got %f", cfg.GenerationDefaults.FrequencyPenalty)
-				}
 			},
 		},
 		{
@@ -252,17 +213,6 @@ defaults:
 `,
 			runtimeOpts: RuntimeOptions{
 				ModelRef: "test-model",
-			},
-			validate: func(t *testing.T, cfg *Config) {
-				if cfg.GenerationDefaults.Temperature != 0.8 {
-					t.Errorf("expected temperature 0.8 (model override), got %f", cfg.GenerationDefaults.Temperature)
-				}
-				if cfg.GenerationDefaults.TopP != 0.95 {
-					t.Errorf("expected topP 0.95 (model override), got %f", cfg.GenerationDefaults.TopP)
-				}
-				if cfg.GenerationDefaults.TopK != 10 {
-					t.Errorf("expected topK 10 (from global), got %d", cfg.GenerationDefaults.TopK)
-				}
 			},
 		},
 		{
@@ -288,17 +238,6 @@ defaults:
 				GenParams: &gai.GenOpts{
 					Temperature: 0.9,
 				},
-			},
-			validate: func(t *testing.T, cfg *Config) {
-				if cfg.GenerationDefaults.Temperature != 0.9 {
-					t.Errorf("expected temperature 0.9 (CLI override), got %f", cfg.GenerationDefaults.Temperature)
-				}
-				if cfg.GenerationDefaults.TopP != 0.9 {
-					t.Errorf("expected topP 0.9 (model default), got %f", cfg.GenerationDefaults.TopP)
-				}
-				if cfg.GenerationDefaults.MaxGenerationTokens != 1024 {
-					t.Errorf("expected maxGenerationTokens 1024 (global default), got %d", cfg.GenerationDefaults.MaxGenerationTokens)
-				}
 			},
 		},
 		{
@@ -329,23 +268,6 @@ defaults:
 					TopK:        25,
 				},
 			},
-			validate: func(t *testing.T, cfg *Config) {
-				if cfg.GenerationDefaults.Temperature != 0.95 {
-					t.Errorf("expected temperature 0.95 (CLI override), got %f", cfg.GenerationDefaults.Temperature)
-				}
-				if cfg.GenerationDefaults.TopP != 0.9 {
-					t.Errorf("expected topP 0.9 (model default), got %f", cfg.GenerationDefaults.TopP)
-				}
-				if cfg.GenerationDefaults.TopK != 25 {
-					t.Errorf("expected topK 25 (CLI override), got %d", cfg.GenerationDefaults.TopK)
-				}
-				if cfg.GenerationDefaults.MaxGenerationTokens != 2048 {
-					t.Errorf("expected maxGenerationTokens 2048 (global default), got %d", cfg.GenerationDefaults.MaxGenerationTokens)
-				}
-				if cfg.GenerationDefaults.ThinkingBudget != "medium" {
-					t.Errorf("expected thinkingBudget 'medium' (global default), got %s", cfg.GenerationDefaults.ThinkingBudget)
-				}
-			},
 		},
 		{
 			name: "empty generation defaults result in zero values",
@@ -360,17 +282,6 @@ models:
 `,
 			runtimeOpts: RuntimeOptions{
 				ModelRef: "test-model",
-			},
-			validate: func(t *testing.T, cfg *Config) {
-				if cfg.GenerationDefaults.Temperature != 0 {
-					t.Errorf("expected temperature 0 (zero value), got %f", cfg.GenerationDefaults.Temperature)
-				}
-				if cfg.GenerationDefaults.TopP != 0 {
-					t.Errorf("expected topP 0 (zero value), got %f", cfg.GenerationDefaults.TopP)
-				}
-				if cfg.GenerationDefaults.MaxGenerationTokens != 0 {
-					t.Errorf("expected maxGenerationTokens 0 (zero value), got %d", cfg.GenerationDefaults.MaxGenerationTokens)
-				}
 			},
 		},
 		{
@@ -395,42 +306,6 @@ models:
 `,
 			runtimeOpts: RuntimeOptions{
 				ModelRef: "test-model",
-			},
-			validate: func(t *testing.T, cfg *Config) {
-				expected := &gai.GenOpts{
-					Temperature:         0.6,
-					TopP:                0.85,
-					TopK:                40,
-					MaxGenerationTokens: 4096,
-					FrequencyPenalty:    0.5,
-					PresencePenalty:     0.2,
-					N:                   1,
-					ThinkingBudget:      "high",
-				}
-				if cfg.GenerationDefaults.Temperature != expected.Temperature {
-					t.Errorf("expected temperature %f, got %f", expected.Temperature, cfg.GenerationDefaults.Temperature)
-				}
-				if cfg.GenerationDefaults.TopP != expected.TopP {
-					t.Errorf("expected topP %f, got %f", expected.TopP, cfg.GenerationDefaults.TopP)
-				}
-				if cfg.GenerationDefaults.TopK != expected.TopK {
-					t.Errorf("expected topK %d, got %d", expected.TopK, cfg.GenerationDefaults.TopK)
-				}
-				if cfg.GenerationDefaults.MaxGenerationTokens != expected.MaxGenerationTokens {
-					t.Errorf("expected maxGenerationTokens %d, got %d", expected.MaxGenerationTokens, cfg.GenerationDefaults.MaxGenerationTokens)
-				}
-				if cfg.GenerationDefaults.FrequencyPenalty != expected.FrequencyPenalty {
-					t.Errorf("expected frequencyPenalty %f, got %f", expected.FrequencyPenalty, cfg.GenerationDefaults.FrequencyPenalty)
-				}
-				if cfg.GenerationDefaults.PresencePenalty != expected.PresencePenalty {
-					t.Errorf("expected presencePenalty %f, got %f", expected.PresencePenalty, cfg.GenerationDefaults.PresencePenalty)
-				}
-				if cfg.GenerationDefaults.N != expected.N {
-					t.Errorf("expected n %d, got %d", expected.N, cfg.GenerationDefaults.N)
-				}
-				if cfg.GenerationDefaults.ThinkingBudget != expected.ThinkingBudget {
-					t.Errorf("expected thinkingBudget %s, got %s", expected.ThinkingBudget, cfg.GenerationDefaults.ThinkingBudget)
-				}
 			},
 		},
 	}
@@ -482,9 +357,7 @@ models:
 				t.Fatal("expected GenerationDefaults but got nil")
 			}
 
-			if tt.validate != nil {
-				tt.validate(t, cfg)
-			}
+			cupaloy.SnapshotT(t, cfg.GenerationDefaults)
 		})
 	}
 }
@@ -570,7 +443,6 @@ func TestResolveConfig_CodeMode(t *testing.T) {
 		name          string
 		configContent string
 		runtimeOpts   RuntimeOptions
-		validate      func(t *testing.T, cfg *Config)
 		expectErr     bool
 	}{
 		{
@@ -593,23 +465,6 @@ defaults:
 			runtimeOpts: RuntimeOptions{
 				ModelRef: "test-model",
 			},
-			validate: func(t *testing.T, cfg *Config) {
-				if cfg.CodeMode == nil {
-					t.Fatal("expected CodeMode but got nil")
-				}
-				if !cfg.CodeMode.Enabled {
-					t.Error("expected code mode to be enabled")
-				}
-				if len(cfg.CodeMode.ExcludedTools) != 2 {
-					t.Errorf("expected 2 excluded tools, got %d", len(cfg.CodeMode.ExcludedTools))
-				}
-				if cfg.CodeMode.ExcludedTools[0] != "tool1" {
-					t.Errorf("expected first excluded tool to be 'tool1', got %q", cfg.CodeMode.ExcludedTools[0])
-				}
-				if cfg.CodeMode.ExcludedTools[1] != "tool2" {
-					t.Errorf("expected second excluded tool to be 'tool2', got %q", cfg.CodeMode.ExcludedTools[1])
-				}
-			},
 		},
 		{
 			name: "global code mode disabled",
@@ -627,14 +482,6 @@ defaults:
 `,
 			runtimeOpts: RuntimeOptions{
 				ModelRef: "test-model",
-			},
-			validate: func(t *testing.T, cfg *Config) {
-				if cfg.CodeMode == nil {
-					t.Fatal("expected CodeMode but got nil")
-				}
-				if cfg.CodeMode.Enabled {
-					t.Error("expected code mode to be disabled")
-				}
 			},
 		},
 		{
@@ -660,20 +507,6 @@ defaults:
 			runtimeOpts: RuntimeOptions{
 				ModelRef: "test-model",
 			},
-			validate: func(t *testing.T, cfg *Config) {
-				if cfg.CodeMode == nil {
-					t.Fatal("expected CodeMode but got nil")
-				}
-				if !cfg.CodeMode.Enabled {
-					t.Error("expected code mode to be enabled (model override)")
-				}
-				if len(cfg.CodeMode.ExcludedTools) != 1 {
-					t.Errorf("expected 1 excluded tool, got %d", len(cfg.CodeMode.ExcludedTools))
-				}
-				if cfg.CodeMode.ExcludedTools[0] != "model_tool" {
-					t.Errorf("expected excluded tool 'model_tool', got %q", cfg.CodeMode.ExcludedTools[0])
-				}
-			},
 		},
 		{
 			name: "model-specific code mode overrides global (disabled)",
@@ -696,18 +529,6 @@ defaults:
 `,
 			runtimeOpts: RuntimeOptions{
 				ModelRef: "test-model",
-			},
-			validate: func(t *testing.T, cfg *Config) {
-				if cfg.CodeMode == nil {
-					t.Fatal("expected CodeMode but got nil")
-				}
-				if cfg.CodeMode.Enabled {
-					t.Error("expected code mode to be disabled (model override)")
-				}
-				// ExcludedTools should be empty/nil for model override, not inherit from defaults
-				if len(cfg.CodeMode.ExcludedTools) != 0 {
-					t.Errorf("expected 0 excluded tools (model override), got %d", len(cfg.CodeMode.ExcludedTools))
-				}
 			},
 		},
 		{
@@ -734,21 +555,6 @@ defaults:
 			runtimeOpts: RuntimeOptions{
 				ModelRef: "test-model",
 			},
-			validate: func(t *testing.T, cfg *Config) {
-				if cfg.CodeMode == nil {
-					t.Fatal("expected CodeMode but got nil")
-				}
-				if !cfg.CodeMode.Enabled {
-					t.Error("expected code mode to be enabled")
-				}
-				// Should only have tool_c, not tool_a and tool_b from defaults
-				if len(cfg.CodeMode.ExcludedTools) != 1 {
-					t.Errorf("expected 1 excluded tool (override, no merge), got %d", len(cfg.CodeMode.ExcludedTools))
-				}
-				if cfg.CodeMode.ExcludedTools[0] != "tool_c" {
-					t.Errorf("expected excluded tool 'tool_c', got %q", cfg.CodeMode.ExcludedTools[0])
-				}
-			},
 		},
 		{
 			name: "no code mode specified anywhere",
@@ -763,11 +569,6 @@ models:
 `,
 			runtimeOpts: RuntimeOptions{
 				ModelRef: "test-model",
-			},
-			validate: func(t *testing.T, cfg *Config) {
-				if cfg.CodeMode != nil {
-					t.Error("expected CodeMode to be nil when not configured")
-				}
 			},
 		},
 		{
@@ -786,17 +587,6 @@ models:
 `,
 			runtimeOpts: RuntimeOptions{
 				ModelRef: "test-model",
-			},
-			validate: func(t *testing.T, cfg *Config) {
-				if cfg.CodeMode == nil {
-					t.Fatal("expected CodeMode but got nil")
-				}
-				if !cfg.CodeMode.Enabled {
-					t.Error("expected code mode to be enabled")
-				}
-				if len(cfg.CodeMode.ExcludedTools) != 0 {
-					t.Errorf("expected 0 excluded tools, got %d", len(cfg.CodeMode.ExcludedTools))
-				}
 			},
 		},
 		{
@@ -825,20 +615,6 @@ defaults:
 			runtimeOpts: RuntimeOptions{
 				ModelRef: "model1",
 			},
-			validate: func(t *testing.T, cfg *Config) {
-				if cfg.CodeMode == nil {
-					t.Fatal("expected CodeMode but got nil")
-				}
-				if !cfg.CodeMode.Enabled {
-					t.Error("expected code mode to be enabled (inherited from defaults)")
-				}
-				if len(cfg.CodeMode.ExcludedTools) != 1 {
-					t.Errorf("expected 1 excluded tool, got %d", len(cfg.CodeMode.ExcludedTools))
-				}
-				if cfg.CodeMode.ExcludedTools[0] != "global_tool" {
-					t.Errorf("expected excluded tool 'global_tool', got %q", cfg.CodeMode.ExcludedTools[0])
-				}
-			},
 		},
 		{
 			name: "multiple excluded tools",
@@ -860,23 +636,6 @@ models:
 `,
 			runtimeOpts: RuntimeOptions{
 				ModelRef: "test-model",
-			},
-			validate: func(t *testing.T, cfg *Config) {
-				if cfg.CodeMode == nil {
-					t.Fatal("expected CodeMode but got nil")
-				}
-				if !cfg.CodeMode.Enabled {
-					t.Error("expected code mode to be enabled")
-				}
-				if len(cfg.CodeMode.ExcludedTools) != 4 {
-					t.Errorf("expected 4 excluded tools, got %d", len(cfg.CodeMode.ExcludedTools))
-				}
-				expectedTools := []string{"tool1", "tool2", "tool3", "tool4"}
-				for i, expected := range expectedTools {
-					if cfg.CodeMode.ExcludedTools[i] != expected {
-						t.Errorf("expected excluded tool %d to be %q, got %q", i, expected, cfg.CodeMode.ExcludedTools[i])
-					}
-				}
 			},
 		},
 	}
@@ -921,19 +680,16 @@ models:
 				t.Fatal("expected config but got nil")
 			}
 
-			if tt.validate != nil {
-				tt.validate(t, cfg)
-			}
+			cupaloy.SnapshotT(t, cfg.CodeMode)
 		})
 	}
 }
 
 func TestExpandEnvironmentVariables_CodeMode(t *testing.T) {
 	tests := []struct {
-		name     string
-		cfg      *RawConfig
-		envVars  map[string]string
-		validate func(t *testing.T, cfg *RawConfig)
+		name    string
+		cfg     *RawConfig
+		envVars map[string]string
 	}{
 		{
 			name: "expand environment variables in default code mode excluded tools",
@@ -951,20 +707,6 @@ func TestExpandEnvironmentVariables_CodeMode(t *testing.T) {
 			envVars: map[string]string{
 				"TOOL1": "expanded_tool_1",
 				"TOOL2": "expanded_tool_2",
-			},
-			validate: func(t *testing.T, cfg *RawConfig) {
-				if cfg.Defaults.CodeMode == nil {
-					t.Fatal("expected CodeMode but got nil")
-				}
-				if len(cfg.Defaults.CodeMode.ExcludedTools) != 2 {
-					t.Errorf("expected 2 excluded tools, got %d", len(cfg.Defaults.CodeMode.ExcludedTools))
-				}
-				if cfg.Defaults.CodeMode.ExcludedTools[0] != "expanded_tool_1" {
-					t.Errorf("expected 'expanded_tool_1', got %q", cfg.Defaults.CodeMode.ExcludedTools[0])
-				}
-				if cfg.Defaults.CodeMode.ExcludedTools[1] != "expanded_tool_2" {
-					t.Errorf("expected 'expanded_tool_2', got %q", cfg.Defaults.CodeMode.ExcludedTools[1])
-				}
 			},
 		},
 		{
@@ -984,20 +726,6 @@ func TestExpandEnvironmentVariables_CodeMode(t *testing.T) {
 				"MODEL_TOOL1": "model_expanded_1",
 				"MODEL_TOOL2": "model_expanded_2",
 			},
-			validate: func(t *testing.T, cfg *RawConfig) {
-				if cfg.Models[0].CodeMode == nil {
-					t.Fatal("expected CodeMode but got nil")
-				}
-				if len(cfg.Models[0].CodeMode.ExcludedTools) != 2 {
-					t.Errorf("expected 2 excluded tools, got %d", len(cfg.Models[0].CodeMode.ExcludedTools))
-				}
-				if cfg.Models[0].CodeMode.ExcludedTools[0] != "model_expanded_1" {
-					t.Errorf("expected 'model_expanded_1', got %q", cfg.Models[0].CodeMode.ExcludedTools[0])
-				}
-				if cfg.Models[0].CodeMode.ExcludedTools[1] != "model_expanded_2" {
-					t.Errorf("expected 'model_expanded_2', got %q", cfg.Models[0].CodeMode.ExcludedTools[1])
-				}
-			},
 		},
 		{
 			name: "no expansion when no env vars match",
@@ -1013,20 +741,6 @@ func TestExpandEnvironmentVariables_CodeMode(t *testing.T) {
 				},
 			},
 			envVars: map[string]string{},
-			validate: func(t *testing.T, cfg *RawConfig) {
-				if cfg.Defaults.CodeMode == nil {
-					t.Fatal("expected CodeMode but got nil")
-				}
-				if len(cfg.Defaults.CodeMode.ExcludedTools) != 2 {
-					t.Errorf("expected 2 excluded tools, got %d", len(cfg.Defaults.CodeMode.ExcludedTools))
-				}
-				if cfg.Defaults.CodeMode.ExcludedTools[0] != "tool1" {
-					t.Errorf("expected 'tool1', got %q", cfg.Defaults.CodeMode.ExcludedTools[0])
-				}
-				if cfg.Defaults.CodeMode.ExcludedTools[1] != "tool2" {
-					t.Errorf("expected 'tool2', got %q", cfg.Defaults.CodeMode.ExcludedTools[1])
-				}
-			},
 		},
 	}
 
@@ -1042,10 +756,18 @@ func TestExpandEnvironmentVariables_CodeMode(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			// Validate
-			if tt.validate != nil {
-				tt.validate(t, tt.cfg)
+			// Snapshot the relevant config parts after expansion
+			type snapshotData struct {
+				DefaultsCodeMode *CodeModeConfig
+				ModelsCodeMode   []*CodeModeConfig
 			}
+			data := snapshotData{
+				DefaultsCodeMode: tt.cfg.Defaults.CodeMode,
+			}
+			for _, m := range tt.cfg.Models {
+				data.ModelsCodeMode = append(data.ModelsCodeMode, m.CodeMode)
+			}
+			cupaloy.SnapshotT(t, data)
 		})
 	}
 }
@@ -1134,12 +856,7 @@ defaults:
 				t.Fatal("expected subagent to be present")
 			}
 
-			if config.Subagent.Name == "" {
-				t.Error("expected subagent name to be set")
-			}
-			if config.Subagent.Description == "" {
-				t.Error("expected subagent description to be set")
-			}
+			cupaloy.SnapshotT(t, config.Subagent)
 		})
 	}
 }

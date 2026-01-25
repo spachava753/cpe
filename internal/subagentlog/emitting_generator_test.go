@@ -3,14 +3,15 @@ package subagentlog
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/gai"
 )
@@ -56,6 +57,36 @@ func (m *mockToolCallback) Call(ctx context.Context, parametersJSON json.RawMess
 			},
 		},
 	}, nil
+}
+
+// normalizedEvent is a copy of Event with the Timestamp field zeroed for snapshot testing
+type normalizedEvent struct {
+	Type                    string
+	SubagentName            string
+	SubagentRunID           string
+	ToolName                string
+	ToolCallID              string
+	Payload                 string
+	ReasoningType           string
+	ExecutionTimeoutSeconds int
+}
+
+// normalizeEvents creates a copy of events with timestamps zeroed for deterministic snapshots
+func normalizeEvents(events []Event) []normalizedEvent {
+	normalized := make([]normalizedEvent, len(events))
+	for i, e := range events {
+		normalized[i] = normalizedEvent{
+			Type:                    e.Type,
+			SubagentName:            e.SubagentName,
+			SubagentRunID:           e.SubagentRunID,
+			ToolName:                e.ToolName,
+			ToolCallID:              e.ToolCallID,
+			Payload:                 e.Payload,
+			ReasoningType:           e.ReasoningType,
+			ExecutionTimeoutSeconds: e.ExecutionTimeoutSeconds,
+		}
+	}
+	return normalized
 }
 
 // createTestServer creates a test HTTP server that records events
@@ -122,47 +153,11 @@ func TestEmittingToolCallback_ToolCallAndResultEvents(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// Expect 2 events: tool_call followed by tool_result
 	if len(*events) != 2 {
 		t.Fatalf("expected 2 events (tool_call + tool_result), got %d", len(*events))
 	}
 
-	// First event should be tool_call
-	toolCallEvent := (*events)[0]
-	if toolCallEvent.Type != EventTypeToolCall {
-		t.Errorf("expected first event type %q, got %q", EventTypeToolCall, toolCallEvent.Type)
-	}
-	if toolCallEvent.ToolName != "my_tool" {
-		t.Errorf("expected tool name %q, got %q", "my_tool", toolCallEvent.ToolName)
-	}
-	if toolCallEvent.ToolCallID != "call_abc" {
-		t.Errorf("expected tool call ID %q, got %q", "call_abc", toolCallEvent.ToolCallID)
-	}
-	if toolCallEvent.SubagentName != "test_subagent" {
-		t.Errorf("expected subagent name %q, got %q", "test_subagent", toolCallEvent.SubagentName)
-	}
-	if toolCallEvent.SubagentRunID != "run_789" {
-		t.Errorf("expected run ID %q, got %q", "run_789", toolCallEvent.SubagentRunID)
-	}
-	// Payload should be the raw JSON parameters
-	if toolCallEvent.Payload != `{"key":"value"}` {
-		t.Errorf("expected payload %q, got %q", `{"key":"value"}`, toolCallEvent.Payload)
-	}
-
-	// Second event should be tool_result
-	toolResultEvent := (*events)[1]
-	if toolResultEvent.Type != EventTypeToolResult {
-		t.Errorf("expected second event type %q, got %q", EventTypeToolResult, toolResultEvent.Type)
-	}
-	if toolResultEvent.ToolName != "my_tool" {
-		t.Errorf("expected tool name %q, got %q", "my_tool", toolResultEvent.ToolName)
-	}
-	if toolResultEvent.ToolCallID != "call_abc" {
-		t.Errorf("expected tool call ID %q, got %q", "call_abc", toolResultEvent.ToolCallID)
-	}
-	if toolResultEvent.Payload != "tool execution result" {
-		t.Errorf("expected payload %q, got %q", "tool execution result", toolResultEvent.Payload)
-	}
+	cupaloy.SnapshotT(t, normalizeEvents(*events))
 }
 
 // TestEmittingToolCallback_ExecuteGoCodeToolCallEvent tests special handling of execute_go_code
@@ -217,22 +212,7 @@ func main() {
 		t.Fatalf("expected 2 events, got %d", len(*events))
 	}
 
-	// Check tool_call event
-	toolCallEvent := (*events)[0]
-	if toolCallEvent.Type != EventTypeToolCall {
-		t.Errorf("expected event type %q, got %q", EventTypeToolCall, toolCallEvent.Type)
-	}
-	if toolCallEvent.ToolName != codemode.ExecuteGoCodeToolName {
-		t.Errorf("expected tool name %q, got %q", codemode.ExecuteGoCodeToolName, toolCallEvent.ToolName)
-	}
-	// Payload should be the raw code string, not JSON
-	if toolCallEvent.Payload != goCode {
-		t.Errorf("expected payload to be raw code string, got %q", toolCallEvent.Payload)
-	}
-	// ExecutionTimeoutSeconds should be populated
-	if toolCallEvent.ExecutionTimeoutSeconds != 120 {
-		t.Errorf("expected ExecutionTimeoutSeconds %d, got %d", 120, toolCallEvent.ExecutionTimeoutSeconds)
-	}
+	cupaloy.SnapshotT(t, normalizeEvents(*events))
 }
 
 func TestEmittingGenerator_FinalAnswerToolCallSkipped(t *testing.T) {
@@ -285,12 +265,7 @@ func TestEmittingGenerator_FinalAnswerToolCallSkipped(t *testing.T) {
 	defer mu.Unlock()
 
 	// No events should be emitted for final_answer tool calls
-	if len(*events) != 0 {
-		t.Errorf("expected 0 events for final_answer tool call, got %d", len(*events))
-		for i, e := range *events {
-			t.Errorf("  event %d: type=%q toolName=%q", i, e.Type, e.ToolName)
-		}
-	}
+	cupaloy.SnapshotT(t, normalizeEvents(*events))
 }
 
 func TestEmittingToolCallback_FinalAnswerSkipped(t *testing.T) {
@@ -328,9 +303,7 @@ func TestEmittingToolCallback_FinalAnswerSkipped(t *testing.T) {
 	defer mu.Unlock()
 
 	// No events should be emitted for final_answer
-	if len(*events) != 0 {
-		t.Errorf("expected 0 events for final_answer, got %d", len(*events))
-	}
+	cupaloy.SnapshotT(t, normalizeEvents(*events))
 }
 
 func TestEmittingGenerator_ThoughtTraceEvent(t *testing.T) {
@@ -381,16 +354,7 @@ func TestEmittingGenerator_ThoughtTraceEvent(t *testing.T) {
 		t.Fatalf("expected 1 event, got %d", len(*events))
 	}
 
-	event := (*events)[0]
-	if event.Type != EventTypeThoughtTrace {
-		t.Errorf("expected event type %q, got %q", EventTypeThoughtTrace, event.Type)
-	}
-	if event.Payload != "thinking about the problem..." {
-		t.Errorf("expected payload %q, got %q", "thinking about the problem...", event.Payload)
-	}
-	if event.ReasoningType != "reasoning.text" {
-		t.Errorf("expected reasoning type %q, got %q", "reasoning.text", event.ReasoningType)
-	}
+	cupaloy.SnapshotT(t, normalizeEvents(*events))
 }
 
 func TestEmittingGenerator_EmissionFailureAbortsExecution(t *testing.T) {
@@ -503,17 +467,11 @@ func TestEmittingGenerator_Register(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// Now expect 2 events: tool_call + tool_result
 	if len(*events) != 2 {
 		t.Fatalf("expected 2 events (tool_call + tool_result), got %d", len(*events))
 	}
 
-	if (*events)[0].Type != EventTypeToolCall {
-		t.Errorf("expected first event type %q, got %q", EventTypeToolCall, (*events)[0].Type)
-	}
-	if (*events)[1].Type != EventTypeToolResult {
-		t.Errorf("expected second event type %q, got %q", EventTypeToolResult, (*events)[1].Type)
-	}
+	cupaloy.SnapshotT(t, normalizeEvents(*events))
 }
 
 func TestEmittingGenerator_RegisterNilCallback(t *testing.T) {
@@ -777,20 +735,13 @@ func TestEventOrdering(t *testing.T) {
 		t.Fatalf("expected 2 events, got %d", len(*events))
 	}
 
-	// Verify ordering: tool_call must come before tool_result
-	if (*events)[0].Type != EventTypeToolCall {
-		t.Errorf("first event should be tool_call, got %s", (*events)[0].Type)
-	}
-	if (*events)[1].Type != EventTypeToolResult {
-		t.Errorf("second event should be tool_result, got %s", (*events)[1].Type)
-	}
-
-	// Verify timestamps are in order
+	// Verify timestamps are in order (keep this check since it's about ordering, not values)
 	if (*events)[1].Timestamp.Before((*events)[0].Timestamp) {
 		t.Error("tool_result timestamp should not be before tool_call timestamp")
 	}
-}
 
+	cupaloy.SnapshotT(t, normalizeEvents(*events))
+}
 
 // mockToolCapableGenerator implements gai.ToolCapableGenerator for testing the inner wrapper
 type mockToolCapableGenerator struct {
@@ -970,13 +921,11 @@ func TestEmittingGenerator_ThinkingBeforeToolCall(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// We should have: thought_trace, tool_call, tool_result
-	// (in that order, because thinking is emitted immediately after inner generate)
 	if len(*events) < 3 {
 		t.Fatalf("expected at least 3 events, got %d: %v", len(*events), *events)
 	}
 
-	// Find the indices of different event types
+	// Find the indices of different event types to verify ordering
 	var thoughtIdx, toolCallIdx, toolResultIdx int = -1, -1, -1
 	for i, e := range *events {
 		switch e.Type {
@@ -995,7 +944,7 @@ func TestEmittingGenerator_ThinkingBeforeToolCall(t *testing.T) {
 		}
 	}
 
-	// Verify the correct ordering: thought_trace < tool_call < tool_result
+	// Keep ordering verification since it's about relative ordering
 	if thoughtIdx == -1 {
 		t.Error("thought_trace event not found")
 	}
@@ -1019,4 +968,6 @@ func TestEmittingGenerator_ThinkingBeforeToolCall(t *testing.T) {
 			t.Error("tool_call timestamp should not be before thought_trace timestamp")
 		}
 	}
+
+	cupaloy.SnapshotT(t, normalizeEvents(*events))
 }

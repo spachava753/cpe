@@ -1,0 +1,10 @@
+(map[string]interface {}) (len=8) {
+  (string) (len=11) "ContentType": (string) (len=16) "application/json",
+  (string) (len=6) "Method": (string) (len=4) "POST",
+  (string) (len=7) "Payload": (string) (len=12) "test payload",
+  (string) (len=12) "SubagentName": (string) (len=10) "test-agent",
+  (string) (len=13) "SubagentRunID": (string) (len=7) "run-123",
+  (string) (len=10) "ToolCallID": (string) (len=8) "call-456",
+  (string) (len=8) "ToolName": (string) (len=9) "test_tool",
+  (string) (len=4) "Type": (string) (len=9) "tool_call"
+}

@@ -1,0 +1,4 @@
+// WeatherInput Weather data input parameters
+type WeatherInput struct {
+	City *string `json:"city,omitempty"`
+}
