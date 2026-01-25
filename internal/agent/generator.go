@@ -180,7 +180,15 @@ type Iface interface {
 	Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error)
 }
 
-// CreateToolCapableGenerator creates a Iface with all middleware properly configured
+// ToolCallbackWrapper is a function that wraps a tool callback.
+// It receives the tool name and the original callback, and returns a wrapped callback.
+// This is used for adding behavior like event emission to tool callbacks.
+type ToolCallbackWrapper func(toolName string, callback gai.ToolCallback) gai.ToolCallback
+
+// CreateToolCapableGenerator creates a Iface with all middleware properly configured.
+// The subagentLoggingAddress parameter specifies the HTTP endpoint where subagent events
+// should be sent. If non-empty, it will be injected into child MCP server processes
+// via the CPE_SUBAGENT_LOGGING_ADDRESS environment variable.
 func CreateToolCapableGenerator(
 	ctx context.Context,
 	selectedModel config.Model,
@@ -189,6 +197,8 @@ func CreateToolCapableGenerator(
 	disablePrinting bool,
 	mcpServers map[string]mcp.ServerConfig,
 	codeModeConfig *config.CodeModeConfig,
+	subagentLoggingAddress string,
+	callbackWrapper ToolCallbackWrapper,
 ) (Iface, error) {
 	// Create the base generator from catalog model
 	genBase, err := initGeneratorFromModel(ctx, selectedModel, systemPrompt, requestTimeout)
@@ -244,7 +254,7 @@ func CreateToolCapableGenerator(
 	client := mcp.NewClient()
 
 	// Fetch MCP server tools
-	toolsByServer, err := mcp.FetchTools(ctx, client, mcpServers)
+	toolsByServer, err := mcp.FetchTools(ctx, client, mcpServers, subagentLoggingAddress)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch MCP tools: %w", err)
 	}
@@ -284,13 +294,21 @@ func CreateToolCapableGenerator(
 			Servers: serverToolsInfo,
 		}
 
-		if err := toolResultPrinter.Register(executeGoCodeTool, callback); err != nil {
+		finalCallback := gai.ToolCallback(callback)
+		if callbackWrapper != nil {
+			finalCallback = callbackWrapper(executeGoCodeTool.Name, callback)
+		}
+		if err := toolResultPrinter.Register(executeGoCodeTool, finalCallback); err != nil {
 			return nil, fmt.Errorf("failed to register execute_go_code tool: %w", err)
 		}
 
 		// Register excluded tools normally
 		for _, toolData := range excludedTools {
-			if err := toolResultPrinter.Register(toolData.Tool, toolData.ToolCallback); err != nil {
+			cb := toolData.ToolCallback
+			if callbackWrapper != nil {
+				cb = callbackWrapper(toolData.Tool.Name, toolData.ToolCallback)
+			}
+			if err := toolResultPrinter.Register(toolData.Tool, cb); err != nil {
 				return nil, fmt.Errorf("failed to register excluded tool %s: %w", toolData.Tool.Name, err)
 			}
 		}
@@ -298,7 +316,11 @@ func CreateToolCapableGenerator(
 		// Code mode disabled: register all tools normally
 		for _, tools := range toolsByServer {
 			for _, toolData := range tools {
-				if err := toolResultPrinter.Register(toolData.Tool, toolData.ToolCallback); err != nil {
+				cb := toolData.ToolCallback
+				if callbackWrapper != nil {
+					cb = callbackWrapper(toolData.Tool.Name, toolData.ToolCallback)
+				}
+				if err := toolResultPrinter.Register(toolData.Tool, cb); err != nil {
 					return nil, fmt.Errorf("failed to register tool %s: %w", toolData.Tool.Name, err)
 				}
 			}

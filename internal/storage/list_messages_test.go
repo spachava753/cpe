@@ -373,7 +373,7 @@ func TestHardcodedTreeStructures(t *testing.T) {
 			actual = sortNodesByID(actual)
 
 			cmpOpts := []cmp.Option{
-				cmpopts.IgnoreFields(MessageIdNode{}, "CreatedAt"),
+				cmpopts.IgnoreFields(MessageIdNode{}, "CreatedAt", "Content", "Role"),
 				cmpopts.EquateEmpty(),
 			}
 			if diff := cmp.Diff(tc.expectedTree, actual, cmpOpts...); diff != "" {

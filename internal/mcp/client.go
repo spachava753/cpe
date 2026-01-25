@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -17,6 +18,10 @@ import (
 
 	"github.com/spachava753/cpe/internal/version"
 )
+// subagentLoggingAddressEnv mirrors subagentlog.SubagentLoggingAddressEnv.
+// Defined locally to avoid import cycle (subagentlog imports agent which imports mcp).
+const subagentLoggingAddressEnv = "CPE_SUBAGENT_LOGGING_ADDRESS"
+
 
 // headerRoundTripper adds custom headers to HTTP requests
 type headerRoundTripper struct {
@@ -174,7 +179,7 @@ func (c *ToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage,
 	}, nil
 }
 
-func CreateTransport(ctx context.Context, config ServerConfig) (transport mcp.Transport, err error) {
+func CreateTransport(ctx context.Context, config ServerConfig, loggingAddress string) (transport mcp.Transport, err error) {
 	// Create custom HTTP client with headers if specified
 	var httpClient *http.Client
 	if len(config.Headers) > 0 && (config.Type == "http" || config.Type == "sse") {
@@ -187,8 +192,21 @@ func CreateTransport(ctx context.Context, config ServerConfig) (transport mcp.Tr
 
 	switch config.Type {
 	case "stdio", "":
+		cmd := exec.CommandContext(ctx, config.Command, config.Args...)
+		// Forward stderr to parent so subagent debug/event output is visible
+		cmd.Stderr = os.Stderr
+		// Always set cmd.Env to ensure we control the environment
+		cmd.Env = os.Environ()
+		// Add custom environment variables from config
+		for k, v := range config.Env {
+			cmd.Env = append(cmd.Env, k+"="+v)
+		}
+		// Inject subagent logging address
+		if loggingAddress != "" {
+			cmd.Env = append(cmd.Env, subagentLoggingAddressEnv+"="+loggingAddress)
+		}
 		transport = &mcp.CommandTransport{
-			Command: exec.CommandContext(ctx, config.Command, config.Args...),
+			Command: cmd,
 		}
 	case "http":
 		transport = &mcp.StreamableClientTransport{
@@ -217,7 +235,7 @@ type ToolData struct {
 // FetchTools retrieves all tools from all MCP servers and returns them with their callbacks.
 // Returns a map keyed by server name, where each value is a slice of tools from that server.
 // It continues fetching tools even if some fail, collecting warnings along the way.
-func FetchTools(ctx context.Context, client *mcp.Client, mcpServers map[string]ServerConfig) (map[string][]ToolData, error) {
+func FetchTools(ctx context.Context, client *mcp.Client, mcpServers map[string]ServerConfig, loggingAddress string) (map[string][]ToolData, error) {
 	serverNames := slices.Collect(maps.Keys(mcpServers))
 
 	// If no servers are configured, return early without an error
@@ -238,7 +256,7 @@ func FetchTools(ctx context.Context, client *mcp.Client, mcpServers map[string]S
 		// Get server config for filtering
 		serverConfig := mcpServers[serverName]
 
-		transport, err := CreateTransport(ctx, serverConfig)
+		transport, err := CreateTransport(ctx, serverConfig, loggingAddress)
 		if err != nil {
 			return nil, err
 		}

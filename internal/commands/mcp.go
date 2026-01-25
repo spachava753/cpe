@@ -98,7 +98,7 @@ func MCPInfo(ctx context.Context, opts MCPInfoOptions) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	transport, err := mcpinternal.CreateTransport(ctx, serverConfig)
+	transport, err := mcpinternal.CreateTransport(ctx, serverConfig, "")
 	if err != nil {
 		return err
 	}
@@ -138,7 +138,7 @@ func MCPListTools(ctx context.Context, opts MCPListToolsOptions) error {
 	client := mcpinternal.NewClient()
 
 	var allTools []*mcp.Tool
-	transport, err := mcpinternal.CreateTransport(ctx, serverConfig)
+	transport, err := mcpinternal.CreateTransport(ctx, serverConfig, "")
 	if err != nil {
 		return err
 	}
@@ -284,7 +284,7 @@ func MCPCallTool(ctx context.Context, opts MCPCallToolOptions) error {
 
 	client := mcpinternal.NewClient()
 
-	transport, err := mcpinternal.CreateTransport(ctx, serverConfig)
+	transport, err := mcpinternal.CreateTransport(ctx, serverConfig, "")
 	if err != nil {
 		return err
 	}

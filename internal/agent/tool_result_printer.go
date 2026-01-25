@@ -130,3 +130,8 @@ func (g *ToolResultPrinterWrapper) Register(tool gai.Tool, callback gai.ToolCall
 		return toolRegister.Register(tool, wrappedCallback)
 	}
 }
+
+// Inner returns the wrapped generator, implementing the InnerGenerator interface
+func (g *ToolResultPrinterWrapper) Inner() Iface {
+	return g.wrapped
+}

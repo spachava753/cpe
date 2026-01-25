@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/subagentlog"
 )
 
 // FinalAnswerToolName is the name of the tool used for structured output
@@ -44,6 +47,16 @@ type SubagentOptions struct {
 	// Typically formatted as "subagent:<name>:<run_id>" to distinguish
 	// subagent activity from parent agent entries.
 	SubagentLabel string
+
+	// EventClient is the client for emitting subagent events (optional).
+	// When set, events are emitted for lifecycle, tool calls, and thinking.
+	EventClient *subagentlog.Client
+
+	// SubagentName is the name of the subagent (required when EventClient is set)
+	SubagentName string
+
+	// RunID is the correlation ID for event tracking (required when EventClient is set)
+	RunID string
 }
 
 // ExecuteSubagent runs a subagent and returns the final response.
@@ -54,9 +67,53 @@ func ExecuteSubagent(ctx context.Context, opts SubagentOptions) (string, error) 
 		return "", fmt.Errorf("empty input")
 	}
 
+	// Emit subagent_start event if event client is configured
+	if opts.EventClient != nil {
+		event := subagentlog.Event{
+			SubagentName:  opts.SubagentName,
+			SubagentRunID: opts.RunID,
+			Timestamp:     time.Now(),
+			Type:          subagentlog.EventTypeSubagentStart,
+		}
+		if err := opts.EventClient.Emit(ctx, event); err != nil {
+			return "", fmt.Errorf("failed to emit subagent_start event: %w", err)
+		}
+	}
+
+	// Execute the subagent and track any error for the end event
+	result, execErr := executeSubagentCore(ctx, opts)
+
+	// Emit subagent_end event if event client is configured
+	if opts.EventClient != nil {
+		event := subagentlog.Event{
+			SubagentName:  opts.SubagentName,
+			SubagentRunID: opts.RunID,
+			Timestamp:     time.Now(),
+			Type:          subagentlog.EventTypeSubagentEnd,
+		}
+		if execErr != nil {
+			event.Payload = execErr.Error()
+		}
+		if err := opts.EventClient.Emit(ctx, event); err != nil {
+			// Log but don't override the original error
+			fmt.Fprintf(os.Stderr, "warning: failed to emit subagent_end event: %v\n", err)
+		}
+	}
+
+	return result, execErr
+}
+
+// executeSubagentCore contains the core subagent execution logic
+func executeSubagentCore(ctx context.Context, opts SubagentOptions) (string, error) {
+	// Determine the generator to use - wrap with EmittingGenerator if event client is set
+	generator := opts.Generator
+	if opts.EventClient != nil {
+		generator = subagentlog.NewEmittingGenerator(opts.Generator, opts.EventClient, opts.SubagentName, opts.RunID)
+	}
+
 	// If output schema is configured, register the final_answer tool
 	if opts.OutputSchema != nil {
-		registrar, ok := opts.Generator.(ToolRegistrar)
+		registrar, ok := generator.(ToolRegistrar)
 		if !ok {
 			return "", fmt.Errorf("generator does not support tool registration")
 		}
@@ -80,7 +137,7 @@ func ExecuteSubagent(ctx context.Context, opts SubagentOptions) (string, error) 
 	dialog := gai.Dialog{userMessage}
 
 	// Generate response
-	resultDialog, err := opts.Generator.Generate(ctx, dialog, opts.GenOptsFunc)
+	resultDialog, err := generator.Generate(ctx, dialog, opts.GenOptsFunc)
 	if err != nil {
 		return "", fmt.Errorf("generation failed: %w", err)
 	}

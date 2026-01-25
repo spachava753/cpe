@@ -16,6 +16,7 @@ import (
 	"github.com/spachava753/cpe/internal/commands"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
+	"github.com/spachava753/cpe/internal/subagentlog"
 	"github.com/spachava753/cpe/internal/version"
 )
 
@@ -139,6 +140,30 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		effectiveConfig.Model.BaseUrl = customURL
 	}
 
+	// Start the subagent event server if we're the root process.
+	// When CPE_SUBAGENT_LOGGING_ADDRESS is set, we're running as a subagent
+	// and should not start another server.
+	var subagentLoggingAddress string
+	if os.Getenv(subagentlog.SubagentLoggingAddressEnv) == "" {
+		renderer := subagentlog.NewRenderer(agent.NewRenderer())
+		stderrWriter := subagentlog.NewSyncWriter(os.Stderr)
+		eventServer := subagentlog.NewServer(func(event subagentlog.Event) {
+			rendered := renderer.RenderEvent(event)
+			if rendered != "" {
+				stderrWriter.WriteString(rendered)
+			}
+		})
+
+		var err error
+		subagentLoggingAddress, err = eventServer.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to start subagent event server: %w", err)
+		}
+
+		// Set the env var so code mode subprocesses inherit it
+		os.Setenv(subagentlog.SubagentLoggingAddressEnv, subagentLoggingAddress)
+	}
+
 	// Create the generator
 	toolGen, err := agent.CreateToolCapableGenerator(
 		ctx,
@@ -148,6 +173,8 @@ func executeRootCommand(ctx context.Context, args []string) error {
 		false, // disablePrinting - keep response printing for interactive use
 		effectiveConfig.MCPServers,
 		effectiveConfig.CodeMode,
+		subagentLoggingAddress,
+		nil, // callbackWrapper - not needed for interactive mode
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create tool capable generator: %w", err)

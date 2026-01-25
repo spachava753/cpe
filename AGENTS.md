@@ -207,6 +207,19 @@ Implementation notes:
 - No retries on failure; errors propagate directly to caller
 - Key files: `cmd/mcp.go`, `internal/mcp/server.go`, `internal/commands/subagent.go`
 
+## Subagent Logging
+
+When a subagent runs, events stream to the root CPE process for real-time visibility. The root process starts a localhost HTTP server and injects `CPE_SUBAGENT_LOGGING_ADDRESS` into child environments. Subagents POST events to this address, which are printed to stderr with name-prefixed headers:
+
+- Tool calls: `#### <subagentName> [tool call] (timeout: Xs)`
+- Tool results: `#### <subagentName> Tool "X" result:`
+- Code execution: `#### <subagentName> Code execution output:`
+- Thought traces: `#### <subagentName> thought trace`
+
+Events are printed to **stderr** to avoid corrupting MCP protocol on stdout. If event emission fails (connection refused, non-2xx, timeout), the subagent aborts immediately—observability is considered essential.
+
+See `docs/specs/subagent_logging.md` for full specification.
+
 ## Documentation for Go Symbols
 
 When gathering context about symbols like types, global variables, constants, functions and methods, prefer to use
