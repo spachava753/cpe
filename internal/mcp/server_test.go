@@ -554,7 +554,7 @@ func TestServer_HandleToolCall_PanicRecovery(t *testing.T) {
 
 	// Call the tool handler directly
 	ctx := context.Background()
-	result, _, err := server.handleToolCall(ctx, nil, SubagentToolInput{Prompt: "trigger panic"})
+	result, _, err := server.handleToolCall(ctx, nil, SubagentToolInput{Prompt: "trigger panic", RunID: "test-run-id"})
 
 	// Should not return an error (panic is caught)
 	assert.NoError(t, err)
@@ -608,7 +608,7 @@ func TestServer_HandleToolCall_EmptyPrompt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			result, _, err := server.handleToolCall(ctx, nil, SubagentToolInput{Prompt: tt.prompt})
+			result, _, err := server.handleToolCall(ctx, nil, SubagentToolInput{Prompt: tt.prompt, RunID: "test-run-id"})
 
 			// The handler should never return a Go error - errors are in the result
 			assert.NoError(t, err)
@@ -642,7 +642,7 @@ func TestServer_HandleToolCall_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	result, _, err := server.handleToolCall(ctx, nil, SubagentToolInput{Prompt: "test"})
+	result, _, err := server.handleToolCall(ctx, nil, SubagentToolInput{Prompt: "test", RunID: "test-run-id"})
 
 	assert.NoError(t, err)
 	require.NotNil(t, result)
@@ -665,7 +665,7 @@ func TestServer_HandleToolCall_ExecutorError(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	result, _, err := server.handleToolCall(ctx, nil, SubagentToolInput{Prompt: "test"})
+	result, _, err := server.handleToolCall(ctx, nil, SubagentToolInput{Prompt: "test", RunID: "test-run-id"})
 
 	// The handler should not return a Go error
 	assert.NoError(t, err)
@@ -696,7 +696,7 @@ func TestServer_HandleToolCall_ContextDeadlineExceeded(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	result, _, err := server.handleToolCall(ctx, nil, SubagentToolInput{Prompt: "test"})
+	result, _, err := server.handleToolCall(ctx, nil, SubagentToolInput{Prompt: "test", RunID: "test-run-id"})
 
 	assert.NoError(t, err)
 	require.NotNil(t, result)
@@ -734,6 +734,7 @@ func TestServer_HandleToolCall_ValidInput(t *testing.T) {
 	result, _, err := server.handleToolCall(ctx, nil, SubagentToolInput{
 		Prompt: "test prompt",
 		Inputs: []string{"file1.txt", "file2.txt"},
+		RunID:  "test-run-id",
 	})
 
 	assert.NoError(t, err)
@@ -743,4 +744,109 @@ func TestServer_HandleToolCall_ValidInput(t *testing.T) {
 	textContent, ok := result.Content[0].(*mcp.TextContent)
 	require.True(t, ok)
 	assert.Equal(t, expectedResponse, textContent.Text)
+}
+
+
+// --- RunID Validation Tests ---
+
+func TestServer_HandleToolCall_RunIDValidation(t *testing.T) {
+	cfg := MCPServerConfig{
+		Subagent: SubagentDef{
+			Name:        "test_agent",
+			Description: "A test agent",
+		},
+	}
+
+	server, err := NewServer(cfg, ServerOptions{Executor: noopExecutor})
+	require.NoError(t, err)
+
+	tests := []struct {
+		name        string
+		input       SubagentToolInput
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "missing runId returns error",
+			input: SubagentToolInput{
+				Prompt: "test prompt",
+				RunID:  "",
+			},
+			wantErr:     true,
+			errContains: "runId is required",
+		},
+		{
+			name: "whitespace-only runId returns error",
+			input: SubagentToolInput{
+				Prompt: "test prompt",
+				RunID:  "   ",
+			},
+			wantErr:     true,
+			errContains: "runId is required",
+		},
+		{
+			name: "valid runId succeeds",
+			input: SubagentToolInput{
+				Prompt: "test prompt",
+				RunID:  "run-123",
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			result, _, err := server.handleToolCall(ctx, nil, tt.input)
+
+			assert.NoError(t, err)
+			require.NotNil(t, result)
+
+			if tt.wantErr {
+				assert.True(t, result.IsError, "result should be marked as error")
+				require.Len(t, result.Content, 1)
+				textContent, ok := result.Content[0].(*mcp.TextContent)
+				require.True(t, ok)
+				assert.Contains(t, textContent.Text, tt.errContains)
+			} else {
+				assert.False(t, result.IsError, "result should not be an error")
+			}
+		})
+	}
+}
+
+func TestServer_HandleToolCall_RunIDPassedToExecutor(t *testing.T) {
+	var capturedInput SubagentInput
+	captureExecutor := func(_ context.Context, input SubagentInput) (string, error) {
+		capturedInput = input
+		return "success", nil
+	}
+
+	cfg := MCPServerConfig{
+		Subagent: SubagentDef{
+			Name:        "test_agent",
+			Description: "A test agent",
+		},
+	}
+
+	server, err := NewServer(cfg, ServerOptions{Executor: captureExecutor})
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	input := SubagentToolInput{
+		Prompt: "test prompt",
+		RunID:  "unique-run-id-456",
+		Inputs: []string{"file1.txt", "file2.txt"},
+	}
+
+	result, _, err := server.handleToolCall(ctx, nil, input)
+
+	assert.NoError(t, err)
+	require.NotNil(t, result)
+	assert.False(t, result.IsError, "result should not be an error")
+
+	// Verify RunID was passed correctly to executor
+	assert.Equal(t, "unique-run-id-456", capturedInput.RunID, "RunID should be passed to executor")
+	assert.Equal(t, "test prompt", capturedInput.Prompt, "Prompt should be passed to executor")
+	assert.Equal(t, []string{"file1.txt", "file2.txt"}, capturedInput.Inputs, "Inputs should be passed to executor")
 }

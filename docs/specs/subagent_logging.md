@@ -1,7 +1,7 @@
 # Subagent Logging Specification
 
 ## Status
-Draft
+Implemented
 
 ## Motivation
 CPE supports **subagents** via MCP server mode (`cpe mcp serve`). Today, when a parent CPE session invokes a subagent (which is exposed to the parent as an MCP tool), the parent does **not** receive real-time visibility into what the subagent is doing.

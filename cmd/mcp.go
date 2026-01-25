@@ -18,6 +18,8 @@ import (
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/storage"
+	"github.com/spachava753/cpe/internal/subagentlog"
+	"strings"
 )
 
 const (
@@ -25,6 +27,8 @@ const (
 	runIDCharset = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	// runIDLength is the length of generated run IDs
 	runIDLength = 8
+	// subagentLoggingAddressEnv is the environment variable for the logging address
+	subagentLoggingAddressEnv = "CPE_SUBAGENT_LOGGING_ADDRESS"
 )
 
 var (
@@ -210,8 +214,20 @@ configuration file. The default config search behavior is disabled.`,
 		}
 		defer dialogStorage.Close()
 
-		// Create the executor with pre-loaded schema and storage
-		executor := createSubagentExecutor(configPath, outputSchema, rawCfg.Subagent.Name, dialogStorage)
+		// Check for subagent logging address from environment
+		loggingAddress := os.Getenv(subagentLoggingAddressEnv)
+		var eventClient *subagentlog.Client
+		if loggingAddress != "" {
+			eventClient = subagentlog.NewClient(loggingAddress)
+		}
+
+		// Create the executor with pre-loaded schema, storage, and event client
+		// Derive display name by stripping "-subagent" suffix for cleaner event output
+		displayName := rawCfg.Subagent.Name
+		if strings.HasSuffix(displayName, "-subagent") {
+			displayName = strings.TrimSuffix(displayName, "-subagent")
+		}
+		executor := createSubagentExecutor(configPath, outputSchema, displayName, dialogStorage, eventClient)
 
 		// Create server config
 		serverCfg := mcp.MCPServerConfig{
@@ -248,15 +264,19 @@ func generateRunID() string {
 // createSubagentExecutor creates an executor function that runs the subagent.
 // The outputSchema is pre-loaded at startup and passed to each execution.
 // Storage and subagent name are used to persist execution traces.
-func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, subagentName string, dialogStorage commands.DialogStorage) mcp.SubagentExecutor {
+// EventClient is optional and enables event emission when set.
+func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, subagentName string, dialogStorage commands.DialogStorage, eventClient *subagentlog.Client) mcp.SubagentExecutor {
 	return func(ctx context.Context, input mcp.SubagentInput) (string, error) {
 		// Check context before starting
 		if err := ctx.Err(); err != nil {
 			return "", fmt.Errorf("execution cancelled before start: %w", err)
 		}
 
-		// Generate unique run ID for this invocation
-		runID := generateRunID()
+		// Use the RunID from input if provided, otherwise generate one
+		runID := input.RunID
+		if runID == "" {
+			runID = generateRunID()
+		}
 		subagentLabel := fmt.Sprintf("subagent:%s:%s", subagentName, runID)
 
 		// Resolve effective config (uses defaults.model from config)
@@ -302,6 +322,14 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 			return "", fmt.Errorf("execution cancelled during setup: %w", err)
 		}
 
+		// Create a callback wrapper for event emission if event client is configured
+		var callbackWrapper agent.ToolCallbackWrapper
+		if eventClient != nil {
+			callbackWrapper = func(toolName string, callback gai.ToolCallback) gai.ToolCallback {
+				return subagentlog.NewEmittingToolCallback(callback, eventClient, subagentName, runID, toolName)
+			}
+		}
+
 		// Create the generator
 		generator, err := agent.CreateToolCapableGenerator(
 			ctx,
@@ -311,6 +339,8 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 			true, // disablePrinting - MCP server mode must not write to stdout
 			effectiveConfig.MCPServers,
 			effectiveConfig.CodeMode,
+			"", // subagentLoggingAddress - inherited from env in MCP server mode
+			callbackWrapper,
 		)
 		if err != nil {
 			return "", fmt.Errorf("failed to create generator for model %q: %w", effectiveConfig.Model.Ref, err)
@@ -324,7 +354,7 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 			}
 		}
 
-		// Execute the subagent with storage
+		// Execute the subagent with storage and event client
 		result, err := commands.ExecuteSubagent(ctx, commands.SubagentOptions{
 			UserBlocks:    userBlocks,
 			Generator:     generator,
@@ -332,6 +362,9 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 			OutputSchema:  outputSchema,
 			Storage:       dialogStorage,
 			SubagentLabel: subagentLabel,
+			EventClient:   eventClient,
+			SubagentName:  subagentName,
+			RunID:         runID,
 		})
 		if err != nil {
 			// Annotate context cancellation errors

@@ -56,3 +56,8 @@ func (f *AnthropicThinkingBlockFilter) Register(tool gai.Tool, callback gai.Tool
 	}
 	return gai.ToolRegistrationErr{Tool: tool.Name, Cause: fmt.Errorf("underlying generator does not support tool registration")}
 }
+
+// Inner returns the wrapped generator, implementing the InnerGenerator interface
+func (f *AnthropicThinkingBlockFilter) Inner() Iface {
+	return f.generator
+}

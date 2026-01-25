@@ -37,6 +37,8 @@ type SubagentInput struct {
 	Prompt string
 	// Inputs is a list of file paths to include as context
 	Inputs []string
+	// RunID is a unique identifier for event correlation
+	RunID string
 }
 
 // SubagentExecutor is a function that executes a subagent with the given input.
@@ -55,6 +57,8 @@ type SubagentToolInput struct {
 	Prompt string `json:"prompt" jsonschema:"The task or instruction for the subagent to execute"`
 	// Inputs is an optional list of file paths to include as context
 	Inputs []string `json:"inputs,omitempty" jsonschema:"Optional list of file paths to include as context for the subagent"`
+	// RunID is a unique identifier for event correlation (required)
+	RunID string `json:"runId" jsonschema:"required,A unique identifier for correlating events across the subagent execution"`
 }
 
 // Server wraps an MCP server that exposes a subagent as a tool
@@ -163,6 +167,15 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcpsdk.CallToolRequest
 		}, nil, nil
 	}
 
+	if strings.TrimSpace(input.RunID) == "" {
+		return &mcpsdk.CallToolResult{
+			Content: []mcpsdk.Content{&mcpsdk.TextContent{
+				Text: "Subagent execution failed: runId is required and cannot be empty",
+			}},
+			IsError: true,
+		}, nil, nil
+	}
+
 	// Check context before starting execution
 	if err := ctx.Err(); err != nil {
 		return &mcpsdk.CallToolResult{
@@ -173,7 +186,11 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcpsdk.CallToolRequest
 		}, nil, nil
 	}
 
-	execResult, execErr := s.opts.Executor(ctx, SubagentInput(input))
+	execResult, execErr := s.opts.Executor(ctx, SubagentInput{
+		Prompt: input.Prompt,
+		Inputs: input.Inputs,
+		RunID:  input.RunID,
+	})
 	if execErr != nil {
 		// Provide actionable error messages based on error type
 		errMsg := execErr.Error()

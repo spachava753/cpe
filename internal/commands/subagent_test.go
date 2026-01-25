@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/spachava753/gai"
+	"github.com/spachava753/cpe/internal/subagentlog"
 )
 
 func TestExtractFinalAnswerParams(t *testing.T) {
@@ -593,5 +596,234 @@ func TestExecuteSubagent_GenerationError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "rate limit") {
 		t.Errorf("expected original error to be wrapped, got: %v", err)
+	}
+}
+
+
+// --- Event Emission Error Handling Tests ---
+
+func TestExecuteSubagent_SubagentStartEmissionFailureAbortsImmediately(t *testing.T) {
+	// Create a server that always returns 500 error
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	eventClient := subagentlog.NewClient(server.URL)
+
+	// Use a generator that should NOT be called if start emission fails
+	generatorCalled := false
+	generator := &subagentContextAwareGenerator{
+		generateFunc: func(ctx context.Context) (gai.Dialog, error) {
+			generatorCalled = true
+			return gai.Dialog{
+				{
+					Role: gai.Assistant,
+					Blocks: []gai.Block{
+						{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("response")},
+					},
+				},
+			}, nil
+		},
+	}
+
+	userBlocks := []gai.Block{
+		{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("Test prompt")},
+	}
+
+	_, err := ExecuteSubagent(context.Background(), SubagentOptions{
+		UserBlocks:   userBlocks,
+		Generator:    generator,
+		EventClient:  eventClient,
+		SubagentName: "test_subagent",
+		RunID:        "run_123",
+	})
+
+	if err == nil {
+		t.Fatal("expected error when subagent_start emission fails, got nil")
+	}
+
+	// Verify error message is descriptive
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "subagent_start") {
+		t.Errorf("error message should mention 'subagent_start', got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "500") {
+		t.Errorf("error message should mention status code 500, got: %s", errMsg)
+	}
+
+	// Verify generator was NOT called (fail-fast)
+	if generatorCalled {
+		t.Error("generator should not be called when subagent_start emission fails")
+	}
+}
+
+func TestExecuteSubagent_ConnectionRefusedAbortsImmediately(t *testing.T) {
+	// Use an address that will definitely refuse connection
+	eventClient := subagentlog.NewClient("http://127.0.0.1:1")
+
+	generatorCalled := false
+	generator := &subagentContextAwareGenerator{
+		generateFunc: func(ctx context.Context) (gai.Dialog, error) {
+			generatorCalled = true
+			return gai.Dialog{
+				{
+					Role: gai.Assistant,
+					Blocks: []gai.Block{
+						{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("response")},
+					},
+				},
+			}, nil
+		},
+	}
+
+	userBlocks := []gai.Block{
+		{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("Test prompt")},
+	}
+
+	_, err := ExecuteSubagent(context.Background(), SubagentOptions{
+		UserBlocks:   userBlocks,
+		Generator:    generator,
+		EventClient:  eventClient,
+		SubagentName: "test_subagent",
+		RunID:        "run_123",
+	})
+
+	if err == nil {
+		t.Fatal("expected error when connection refused, got nil")
+	}
+
+	// Verify error message mentions connection failure
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "subagent_start") {
+		t.Errorf("error message should mention 'subagent_start', got: %s", errMsg)
+	}
+
+	// Verify generator was NOT called (fail-fast)
+	if generatorCalled {
+		t.Error("generator should not be called when event emission connection fails")
+	}
+}
+
+func TestExecuteSubagent_EventEmissionDuringGenerationAbortsExecution(t *testing.T) {
+	// Track requests to alternate behavior
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		if requestCount == 1 {
+			// Allow subagent_start to succeed
+			w.WriteHeader(http.StatusOK)
+		} else {
+			// Fail subsequent events (thinking/tool_call during generation)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer server.Close()
+
+	eventClient := subagentlog.NewClient(server.URL)
+
+	// Generator that produces a thinking block (which triggers emission)
+	generator := &subagentMockGenerator{
+		responseBlocks: []gai.Block{
+			{
+				BlockType:    gai.Thinking,
+				ModalityType: gai.Text,
+				Content:      gai.Str("thinking about the problem..."),
+			},
+			{
+				BlockType:    gai.Content,
+				ModalityType: gai.Text,
+				Content:      gai.Str("response"),
+			},
+		},
+	}
+
+	userBlocks := []gai.Block{
+		{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("Test prompt")},
+	}
+
+	_, err := ExecuteSubagent(context.Background(), SubagentOptions{
+		UserBlocks:   userBlocks,
+		Generator:    generator,
+		EventClient:  eventClient,
+		SubagentName: "test_subagent",
+		RunID:        "run_123",
+	})
+
+	if err == nil {
+		t.Fatal("expected error when event emission during generation fails, got nil")
+	}
+
+	// Verify error message mentions emission failure
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "generation failed") || !strings.Contains(errMsg, "emit") {
+		t.Errorf("error message should mention generation failure and emit, got: %s", errMsg)
+	}
+}
+
+func TestExecuteSubagent_SuccessfulEventEmission(t *testing.T) {
+	// Track received events
+	var receivedEvents []subagentlog.Event
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var event subagentlog.Event
+		if err := json.NewDecoder(r.Body).Decode(&event); err == nil {
+			receivedEvents = append(receivedEvents, event)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	eventClient := subagentlog.NewClient(server.URL)
+
+	generator := &subagentMockGenerator{
+		responseBlocks: []gai.Block{
+			{
+				BlockType:    gai.Content,
+				ModalityType: gai.Text,
+				Content:      gai.Str("Hello!"),
+			},
+		},
+	}
+
+	userBlocks := []gai.Block{
+		{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("Test prompt")},
+	}
+
+	result, err := ExecuteSubagent(context.Background(), SubagentOptions{
+		UserBlocks:   userBlocks,
+		Generator:    generator,
+		EventClient:  eventClient,
+		SubagentName: "test_subagent",
+		RunID:        "run_123",
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result != "Hello!" {
+		t.Errorf("unexpected result: %q", result)
+	}
+
+	// Verify we received start and end events
+	if len(receivedEvents) < 2 {
+		t.Fatalf("expected at least 2 events (start, end), got %d", len(receivedEvents))
+	}
+
+	// First event should be subagent_start
+	if receivedEvents[0].Type != subagentlog.EventTypeSubagentStart {
+		t.Errorf("expected first event to be subagent_start, got %s", receivedEvents[0].Type)
+	}
+	if receivedEvents[0].SubagentName != "test_subagent" {
+		t.Errorf("expected subagent name 'test_subagent', got %s", receivedEvents[0].SubagentName)
+	}
+	if receivedEvents[0].SubagentRunID != "run_123" {
+		t.Errorf("expected run ID 'run_123', got %s", receivedEvents[0].SubagentRunID)
+	}
+
+	// Last event should be subagent_end
+	lastEvent := receivedEvents[len(receivedEvents)-1]
+	if lastEvent.Type != subagentlog.EventTypeSubagentEnd {
+		t.Errorf("expected last event to be subagent_end, got %s", lastEvent.Type)
 	}
 }
