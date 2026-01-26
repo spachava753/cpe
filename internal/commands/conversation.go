@@ -12,6 +12,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/storage"
+	"github.com/spachava753/cpe/internal/types"
 )
 
 // ConversationListOptions contains parameters for listing conversations
@@ -125,7 +126,7 @@ func ConversationPrint(ctx context.Context, opts ConversationPrintOptions) error
 
 // MarkdownDialogFormatter formats dialogs as markdown with glamour rendering
 type MarkdownDialogFormatter struct {
-	Renderer MarkdownRenderer
+	Renderer types.Renderer
 }
 
 // FormatDialog implements DialogFormatter

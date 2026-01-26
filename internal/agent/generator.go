@@ -19,6 +19,7 @@ import (
 	"github.com/spachava753/cpe/internal/auth"
 	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/types"
 	"github.com/spachava753/cpe/internal/mcp"
 
 	"github.com/cenkalti/backoff/v5"
@@ -175,17 +176,12 @@ func initGeneratorFromModel(
 	return NewPanicCatchingGenerator(gen), nil
 }
 
-// Iface interface for generators that work with gai.Dialog
-type Iface interface {
-	Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error)
-}
-
 // ToolCallbackWrapper is a function that wraps a tool callback.
 // It receives the tool name and the original callback, and returns a wrapped callback.
 // This is used for adding behavior like event emission to tool callbacks.
 type ToolCallbackWrapper func(toolName string, callback gai.ToolCallback) gai.ToolCallback
 
-// CreateToolCapableGenerator creates a Iface with all middleware properly configured.
+// CreateToolCapableGenerator creates a types.Generator with all middleware properly configured.
 // The subagentLoggingAddress parameter specifies the HTTP endpoint where subagent events
 // should be sent. If non-empty, it will be injected into child MCP server processes
 // via the CPE_SUBAGENT_LOGGING_ADDRESS environment variable.
@@ -199,7 +195,7 @@ func CreateToolCapableGenerator(
 	codeModeConfig *config.CodeModeConfig,
 	subagentLoggingAddress string,
 	callbackWrapper ToolCallbackWrapper,
-) (Iface, error) {
+) (types.Generator, error) {
 	// Create the base generator from catalog model
 	genBase, err := initGeneratorFromModel(ctx, selectedModel, systemPrompt, requestTimeout)
 	if err != nil {
@@ -238,7 +234,7 @@ func CreateToolCapableGenerator(
 	// For Anthropic: keep Anthropic thinking blocks but filter out thinking blocks
 	// from other providers (Gemini, OpenRouter, etc.)
 	// For other providers: filter all thinking blocks
-	var filterToolGen Iface
+	var filterToolGen types.Generator
 	if strings.ToLower(selectedModel.Type) == "anthropic" {
 		filterToolGen = NewAnthropicThinkingBlockFilter(toolGen)
 	} else {

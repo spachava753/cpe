@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/spachava753/cpe/internal/types"
 	"github.com/spachava753/gai"
 )
 
@@ -13,10 +14,10 @@ const anthropicThinkingSignatureKey = "anthropic_thinking_signature"
 // that originated from Anthropic (identified by the anthropic_thinking_signature key).
 // This ensures cross-provider compatibility when resuming conversations.
 type AnthropicThinkingBlockFilter struct {
-	generator Iface
+	generator types.Generator
 }
 
-func NewAnthropicThinkingBlockFilter(generator Iface) *AnthropicThinkingBlockFilter {
+func NewAnthropicThinkingBlockFilter(generator types.Generator) *AnthropicThinkingBlockFilter {
 	return &AnthropicThinkingBlockFilter{generator: generator}
 }
 
@@ -51,13 +52,13 @@ func (f *AnthropicThinkingBlockFilter) Generate(ctx context.Context, dialog gai.
 
 // Register delegates to the underlying generator if it supports tool registration
 func (f *AnthropicThinkingBlockFilter) Register(tool gai.Tool, callback gai.ToolCallback) error {
-	if toolRegister, ok := f.generator.(ToolRegister); ok {
+	if toolRegister, ok := f.generator.(types.ToolRegistrar); ok {
 		return toolRegister.Register(tool, callback)
 	}
 	return gai.ToolRegistrationErr{Tool: tool.Name, Cause: fmt.Errorf("underlying generator does not support tool registration")}
 }
 
 // Inner returns the wrapped generator, implementing the InnerGenerator interface
-func (f *AnthropicThinkingBlockFilter) Inner() Iface {
+func (f *AnthropicThinkingBlockFilter) Inner() types.Generator {
 	return f.generator
 }

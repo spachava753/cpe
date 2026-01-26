@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/spachava753/cpe/internal/types"
 	"github.com/spachava753/gai"
 )
 
@@ -13,9 +14,9 @@ import (
 // the response returned from the wrapped generator with styled markdown rendering.
 type ResponsePrinterGenerator struct {
 	wrapped          gai.ToolCapableGenerator
-	contentRenderer  Renderer
-	thinkingRenderer Renderer
-	toolCallRenderer Renderer
+	contentRenderer  types.Renderer
+	thinkingRenderer types.Renderer
+	toolCallRenderer types.Renderer
 	stdout           io.Writer
 	stderr           io.Writer
 }
@@ -23,9 +24,9 @@ type ResponsePrinterGenerator struct {
 // NewResponsePrinterGenerator creates a new ResponsePrinterGenerator with the provided renderers and writers.
 func NewResponsePrinterGenerator(
 	wrapped gai.ToolCapableGenerator,
-	contentRenderer Renderer,
-	thinkingRenderer Renderer,
-	toolCallRenderer Renderer,
+	contentRenderer types.Renderer,
+	thinkingRenderer types.Renderer,
+	toolCallRenderer types.Renderer,
 	stdout io.Writer,
 	stderr io.Writer,
 ) *ResponsePrinterGenerator {

@@ -5,17 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/codemode"
+	"github.com/spachava753/cpe/internal/types"
 )
 
 // Renderer formats subagent events for printing to stderr
 type Renderer struct {
-	markdownRenderer agent.Renderer
+	markdownRenderer types.Renderer
 }
 
 // NewRenderer creates a new Renderer using the provided markdown renderer
-func NewRenderer(markdownRenderer agent.Renderer) *Renderer {
+func NewRenderer(markdownRenderer types.Renderer) *Renderer {
 	return &Renderer{
 		markdownRenderer: markdownRenderer,
 	}

@@ -7,34 +7,24 @@ import (
 	"time"
 
 	"github.com/spachava753/cpe/internal/codemode"
-	"github.com/spachava753/cpe/internal/agent"
+	"github.com/spachava753/cpe/internal/types"
 	"github.com/spachava753/gai"
 )
 
 // EmittingGenerator wraps a generator to emit events for thinking blocks and tool calls
 type EmittingGenerator struct {
-	base               generator
+	base               types.Generator
 	client             *Client
 	subagentName       string
 	runID              string
 	hasWrappedInnerGen bool // true if we successfully wrapped the inner generator
 }
 
-// generator is the interface for generators that emit events
-type generator interface {
-	Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error)
-}
-
-// toolRegistrar is the interface for generators that support tool registration
-type toolRegistrar interface {
-	Register(tool gai.Tool, callback gai.ToolCallback) error
-}
-
 // NewEmittingGenerator creates a new EmittingGenerator that wraps the base generator.
 // If the base contains a *gai.ToolGenerator (possibly wrapped by other generators),
 // it unwraps the chain and wraps the inner ToolCapableGenerator to emit thinking
 // events immediately when they are received (before tool execution).
-func NewEmittingGenerator(base generator, client *Client, subagentName, runID string) *EmittingGenerator {
+func NewEmittingGenerator(base types.Generator, client *Client, subagentName, runID string) *EmittingGenerator {
 	hasWrappedInnerGen := false
 
 	// Unwrap the generator chain to find the underlying *gai.ToolGenerator
@@ -66,8 +56,8 @@ func findToolGenerator(gen interface{}) *gai.ToolGenerator {
 	if tg, ok := gen.(*gai.ToolGenerator); ok {
 		return tg
 	}
-	// Check if it has an Inner() method that returns agent.Iface
-	if wrapper, ok := gen.(interface{ Inner() agent.Iface }); ok {
+	// Check if it has an Inner() method that returns types.Generator
+	if wrapper, ok := gen.(interface{ Inner() types.Generator }); ok {
 		return findToolGenerator(wrapper.Inner())
 	}
 	return nil
@@ -176,7 +166,7 @@ func (g *EmittingGenerator) Generate(ctx context.Context, dialog gai.Dialog, opt
 
 // Register wraps the callback with EmittingToolCallback and delegates to the base generator
 func (g *EmittingGenerator) Register(tool gai.Tool, callback gai.ToolCallback) error {
-	registrar, ok := g.base.(toolRegistrar)
+	registrar, ok := g.base.(types.ToolRegistrar)
 	if !ok {
 		return gai.ToolRegistrationErr{Tool: tool.Name, Cause: fmt.Errorf("underlying generator does not support tool registration")}
 	}

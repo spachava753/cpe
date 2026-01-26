@@ -14,12 +14,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	mcpinternal "github.com/spachava753/cpe/internal/mcp"
+	"github.com/spachava753/cpe/internal/types"
 )
-
-// MarkdownRenderer renders markdown to formatted output
-type MarkdownRenderer interface {
-	Render(markdown string) (string, error)
-}
 
 // MCPListServersOptions contains parameters for listing MCP servers
 type MCPListServersOptions struct {
@@ -120,7 +116,7 @@ type MCPListToolsOptions struct {
 	Writer       io.Writer
 	ShowAll      bool
 	ShowFiltered bool
-	Renderer     MarkdownRenderer
+	Renderer     types.Renderer
 }
 
 // MCPListTools lists tools available on an MCP server

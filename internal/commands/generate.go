@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/spachava753/cpe/internal/types"
 	"github.com/spachava753/gai"
 )
 
@@ -18,11 +19,6 @@ type DialogStorage interface {
 	GetDialogForMessage(ctx context.Context, messageID string) (gai.Dialog, []string, error)
 	SaveMessage(ctx context.Context, message gai.Message, parentID string, label string) (string, error)
 	Close() error
-}
-
-// ToolCapableGenerator is an interface for AI generation with tool support
-type ToolCapableGenerator interface {
-	Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error)
 }
 
 // GenerateOptions contains all parameters for the generate command
@@ -39,7 +35,7 @@ type GenerateOptions struct {
 
 	// Dependencies
 	Storage   DialogStorage
-	Generator ToolCapableGenerator
+	Generator types.Generator
 
 	// Output
 	Stderr io.Writer

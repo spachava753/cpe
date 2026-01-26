@@ -5,31 +5,27 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/spachava753/cpe/internal/types"
 	"github.com/spachava753/gai"
 )
 
-// ToolRegister interface for registering tools
-type ToolRegister interface {
-	Register(tool gai.Tool, callback gai.ToolCallback) error
-}
-
-// BlockWhitelistFilter wraps a Iface and filters blocks based on a whitelist of allowed block types.
+// BlockWhitelistFilter wraps a types.Generator and filters blocks based on a whitelist of allowed block types.
 // Only blocks whose BlockType is in the AllowedTypes slice will be kept.
 type BlockWhitelistFilter struct {
-	generator    Iface
+	generator    types.Generator
 	allowedTypes []string
 }
 
 // NewBlockWhitelistFilter creates a new BlockWhitelistFilter with the specified allowed block types.
 // If allowedTypes is empty, all blocks are filtered out (whitelist behavior).
-func NewBlockWhitelistFilter(generator Iface, allowedTypes []string) *BlockWhitelistFilter {
+func NewBlockWhitelistFilter(generator types.Generator, allowedTypes []string) *BlockWhitelistFilter {
 	return &BlockWhitelistFilter{
 		generator:    generator,
 		allowedTypes: allowedTypes,
 	}
 }
 
-// Generate wraps the Iface.Generate method and filters blocks based on the whitelist
+// Generate wraps the types.Generator.Generate method and filters blocks based on the whitelist
 func (f *BlockWhitelistFilter) Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error) {
 	// Filter blocks in each message based on whitelist
 	filteredDialog := make(gai.Dialog, 0, len(dialog))
@@ -56,7 +52,7 @@ func (f *BlockWhitelistFilter) Generate(ctx context.Context, dialog gai.Dialog, 
 
 // Register delegates to the underlying generator if it supports tool registration
 func (f *BlockWhitelistFilter) Register(tool gai.Tool, callback gai.ToolCallback) error {
-	if toolRegister, ok := f.generator.(ToolRegister); ok {
+	if toolRegister, ok := f.generator.(types.ToolRegistrar); ok {
 		return toolRegister.Register(tool, callback)
 	}
 	return gai.ToolRegistrationErr{Tool: tool.Name, Cause: fmt.Errorf("underlying generator does not support tool registration")}

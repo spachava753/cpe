@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/spachava753/cpe/internal/types"
 	"github.com/spachava753/gai"
 )
 
 type TokenUsagePrinterGenerator struct {
 	wrapped  gai.ToolCapableGenerator
-	renderer Renderer
+	renderer types.Renderer
 	writer   io.Writer
 }
 

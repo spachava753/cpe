@@ -10,6 +10,7 @@ import (
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/codemode"
+	"github.com/spachava753/cpe/internal/types"
 )
 
 const maxLines = 20
@@ -18,7 +19,7 @@ const maxLines = 20
 type ToolCallbackPrinter struct {
 	wrapped  gai.ToolCallback
 	toolName string
-	renderer Renderer
+	renderer types.Renderer
 }
 
 // Call executes the wrapped callback and prints the result
@@ -91,14 +92,14 @@ func (p *ToolCallbackPrinter) printResult(msg gai.Message) {
 	fmt.Fprint(os.Stderr, output.String())
 }
 
-// ToolResultPrinterWrapper wraps an Iface and prints tool execution results
+// ToolResultPrinterWrapper wraps a types.Generator and prints tool execution results
 type ToolResultPrinterWrapper struct {
-	wrapped  Iface
-	renderer Renderer
+	wrapped  types.Generator
+	renderer types.Renderer
 }
 
 // NewToolResultPrinterWrapper creates a new ToolResultPrinterWrapper with a glamour renderer
-func NewToolResultPrinterWrapper(wrapped Iface, renderer Renderer) *ToolResultPrinterWrapper {
+func NewToolResultPrinterWrapper(wrapped types.Generator, renderer types.Renderer) *ToolResultPrinterWrapper {
 	return &ToolResultPrinterWrapper{
 		wrapped:  wrapped,
 		renderer: renderer,
@@ -114,8 +115,8 @@ func (g *ToolResultPrinterWrapper) Generate(ctx context.Context, dialog gai.Dial
 // If callback is nil, it is passed through without wrapping (nil callbacks terminate
 // execution immediately in gai.ToolGenerator).
 func (g *ToolResultPrinterWrapper) Register(tool gai.Tool, callback gai.ToolCallback) error {
-	// Register with the wrapped generator using the local ToolRegister interface
-	if toolRegister, ok := g.wrapped.(ToolRegister); !ok {
+	// Register with the wrapped generator
+	if toolRegister, ok := g.wrapped.(types.ToolRegistrar); !ok {
 		return gai.ToolRegistrationErr{Tool: tool.Name, Cause: fmt.Errorf("underlying generator does not support tool registration")}
 	} else if callback == nil {
 		// Pass through nil callbacks without wrapping
@@ -132,6 +133,6 @@ func (g *ToolResultPrinterWrapper) Register(tool gai.Tool, callback gai.ToolCall
 }
 
 // Inner returns the wrapped generator, implementing the InnerGenerator interface
-func (g *ToolResultPrinterWrapper) Inner() Iface {
+func (g *ToolResultPrinterWrapper) Inner() types.Generator {
 	return g.wrapped
 }
