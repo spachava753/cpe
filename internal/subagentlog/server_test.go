@@ -90,7 +90,7 @@ func TestServer(t *testing.T) {
 				}
 			}
 
-			req, err := http.NewRequest(tt.method, address+"/subagent-events", bytes.NewReader(bodyBytes))
+			req, err := http.NewRequestWithContext(ctx, tt.method, address+"/subagent-events", bytes.NewReader(bodyBytes))
 			if err != nil {
 				t.Fatalf("failed to create request: %v", err)
 			}
@@ -138,7 +138,11 @@ func TestServerStartReturnsValidAddress(t *testing.T) {
 	}
 
 	// Verify server is reachable
-	resp, err := http.Get(address + "/subagent-events")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address+"/subagent-events", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("server not reachable: %v", err)
 	}
@@ -159,7 +163,11 @@ func TestServerGracefulShutdown(t *testing.T) {
 	}
 
 	// Verify server is running
-	resp, err := http.Get(address + "/subagent-events")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address+"/subagent-events", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("server not reachable before shutdown: %v", err)
 	}
@@ -173,8 +181,12 @@ func TestServerGracefulShutdown(t *testing.T) {
 
 	// Server should no longer be reachable
 	client := &http.Client{Timeout: 100 * time.Millisecond}
-	_, err = client.Get(address + "/subagent-events")
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer shutdownCancel()
+	req, _ = http.NewRequestWithContext(shutdownCtx, http.MethodGet, address+"/subagent-events", nil)
+	resp, err = client.Do(req)
 	if err == nil {
+		resp.Body.Close()
 		t.Error("server should not be reachable after shutdown")
 	}
 }
@@ -210,7 +222,12 @@ func TestServerEventHandlerReceivesCorrectData(t *testing.T) {
 	}
 
 	bodyBytes, _ := json.Marshal(expectedEvent)
-	resp, err := http.Post(address+"/subagent-events", "application/json", bytes.NewReader(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, address+"/subagent-events", bytes.NewReader(bodyBytes))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("failed to post event: %v", err)
 	}
@@ -242,7 +259,12 @@ func TestServerNilHandler(t *testing.T) {
 		Type:          EventTypeSubagentStart,
 	}
 	bodyBytes, _ := json.Marshal(event)
-	resp, err := http.Post(address+"/subagent-events", "application/json", bytes.NewReader(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, address+"/subagent-events", bytes.NewReader(bodyBytes))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("failed to post event: %v", err)
 	}
@@ -292,7 +314,13 @@ func TestServerConcurrentEventsNoInterleaving(t *testing.T) {
 					Payload:       fmt.Sprintf("payload from goroutine %d, event %d", goroutineID, i),
 				}
 				bodyBytes, _ := json.Marshal(event)
-				resp, err := http.Post(address+"/subagent-events", "application/json", bytes.NewReader(bodyBytes))
+				req, err := http.NewRequestWithContext(ctx, http.MethodPost, address+"/subagent-events", bytes.NewReader(bodyBytes))
+				if err != nil {
+					errChan <- fmt.Errorf("goroutine %d event %d create request: %w", goroutineID, i, err)
+					continue
+				}
+				req.Header.Set("Content-Type", "application/json")
+				resp, err := http.DefaultClient.Do(req)
 				if err != nil {
 					errChan <- fmt.Errorf("goroutine %d event %d: %w", goroutineID, i, err)
 					continue

@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/spachava753/cpe/internal/types"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/types"
 )
 
 // BlockWhitelistFilter wraps a types.Generator and filters blocks based on a whitelist of allowed block types.

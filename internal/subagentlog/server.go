@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"time"
 )
 
 // EventHandler is a callback function for processing received events
@@ -29,7 +30,8 @@ func NewServer(handler EventHandler) *Server {
 // It returns the full address (e.g., "http://127.0.0.1:12345") once the server is ready.
 // The server shuts down when ctx is cancelled.
 func (s *Server) Start(ctx context.Context) (string, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	listener, err := lc.Listen(ctx, "tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", fmt.Errorf("failed to create listener: %w", err)
 	}
@@ -56,7 +58,9 @@ func (s *Server) Start(ctx context.Context) (string, error) {
 	// Handle graceful shutdown on context cancellation
 	go func() {
 		<-ctx.Done()
-		s.httpServer.Shutdown(context.Background())
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		s.httpServer.Shutdown(shutdownCtx) //nolint:contextcheck // Using Background() is correct for graceful shutdown since parent ctx is cancelled
 	}()
 
 	return address, nil

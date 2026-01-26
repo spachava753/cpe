@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/spachava753/gai"
+
 	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/types"
-	"github.com/spachava753/gai"
 )
 
 // EmittingGenerator wraps a generator to emit events for thinking blocks and tool calls

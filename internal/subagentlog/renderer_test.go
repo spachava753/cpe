@@ -183,7 +183,7 @@ func TestNewRenderer(t *testing.T) {
 	mock := &mockRenderer{}
 	r := NewRenderer(mock)
 	if r == nil {
-		t.Error("NewRenderer returned nil")
+		t.Fatal("NewRenderer returned nil")
 	}
 	if r.markdownRenderer != mock {
 		t.Error("NewRenderer did not set markdownRenderer correctly")

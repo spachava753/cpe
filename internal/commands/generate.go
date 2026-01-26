@@ -9,8 +9,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/spachava753/cpe/internal/types"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/types"
 )
 
 // DialogStorage is an interface for conversation storage operations

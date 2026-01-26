@@ -6,8 +6,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/spachava753/cpe/internal/types"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/types"
 )
 
 // ResponsePrinterGenerator is a wrapper around another generator that prints out

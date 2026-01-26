@@ -12,8 +12,9 @@ import (
 	"testing"
 
 	"github.com/bradleyjkemp/cupaloy/v2"
-	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/codemode"
 )
 
 // mockGenerator implements the generator interface for testing
@@ -926,7 +927,7 @@ func TestEmittingGenerator_ThinkingBeforeToolCall(t *testing.T) {
 	}
 
 	// Find the indices of different event types to verify ordering
-	var thoughtIdx, toolCallIdx, toolResultIdx int = -1, -1, -1
+	var thoughtIdx, toolCallIdx, toolResultIdx = -1, -1, -1
 	for i, e := range *events {
 		switch e.Type {
 		case EventTypeThoughtTrace:

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/bradleyjkemp/cupaloy/v2"
+
 	"github.com/spachava753/cpe/internal/mcp"
 )
 

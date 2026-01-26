@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/spachava753/cpe/internal/types"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/types"
 )
 
 const anthropicThinkingSignatureKey = "anthropic_thinking_signature"

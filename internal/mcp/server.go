@@ -186,11 +186,7 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcpsdk.CallToolRequest
 		}, nil, nil
 	}
 
-	execResult, execErr := s.opts.Executor(ctx, SubagentInput{
-		Prompt: input.Prompt,
-		Inputs: input.Inputs,
-		RunID:  input.RunID,
-	})
+	execResult, execErr := s.opts.Executor(ctx, SubagentInput(input))
 	if execErr != nil {
 		// Provide actionable error messages based on error type
 		errMsg := execErr.Error()

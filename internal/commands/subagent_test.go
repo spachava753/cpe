@@ -10,8 +10,9 @@ import (
 	"testing"
 
 	"github.com/bradleyjkemp/cupaloy/v2"
-	"github.com/spachava753/cpe/internal/subagentlog"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/subagentlog"
 )
 
 func TestExtractFinalAnswerParams(t *testing.T) {

@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/spachava753/cpe/internal/types"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/types"
 )
 
 type TokenUsagePrinterGenerator struct {

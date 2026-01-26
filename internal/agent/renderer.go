@@ -3,8 +3,9 @@ package agent
 import (
 	"os"
 
-	"github.com/spachava753/cpe/internal/types"
 	"strconv"
+
+	"github.com/spachava753/cpe/internal/types"
 
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/ansi"
