@@ -6,14 +6,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/google/jsonschema-go/jsonschema"
+	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/agent"
+	"github.com/spachava753/cpe/internal/config"
 	mcpinternal "github.com/spachava753/cpe/internal/mcp"
+	"github.com/spachava753/cpe/internal/storage"
+	"github.com/spachava753/cpe/internal/subagentlog"
 	"github.com/spachava753/cpe/internal/types"
 )
 
@@ -306,4 +314,191 @@ func MCPCallTool(ctx context.Context, opts MCPCallToolOptions) error {
 	}
 
 	return nil
+}
+
+// generateRunID generates a unique run ID for subagent invocations
+func generateRunID() string {
+	const charset = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	const length = 8
+
+	id, err := gonanoid.Generate(charset, length)
+	if err != nil {
+		// Fallback to timestamp-based ID if nanoid fails
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return id
+}
+
+// MCPServeOptions contains parameters for running the MCP server
+type MCPServeOptions struct {
+	// ConfigPath is the path to the subagent configuration file
+	ConfigPath string
+}
+
+// MCPServe runs CPE as an MCP server exposing a subagent as a tool
+func MCPServe(ctx context.Context, opts MCPServeOptions) error {
+	// Load raw config to check subagent is configured
+	rawCfg, err := config.LoadRawConfig(opts.ConfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Validate that subagent is configured
+	if rawCfg.Subagent == nil {
+		return fmt.Errorf("config must define a subagent for MCP server mode")
+	}
+
+	// Load and validate output schema at startup
+	var outputSchema *jsonschema.Schema
+	if rawCfg.Subagent.OutputSchemaPath != "" {
+		schemaBytes, err := os.ReadFile(rawCfg.Subagent.OutputSchemaPath)
+		if err != nil {
+			return fmt.Errorf("failed to read output schema file %q: %w", rawCfg.Subagent.OutputSchemaPath, err)
+		}
+		if err := json.Unmarshal(schemaBytes, &outputSchema); err != nil {
+			return fmt.Errorf("invalid output schema JSON in %q: %w", rawCfg.Subagent.OutputSchemaPath, err)
+		}
+	}
+
+	// Initialize storage for persisting execution traces
+	dialogStorage, err := storage.InitDialogStorage(ctx, ".cpeconvo")
+	if err != nil {
+		return fmt.Errorf("failed to initialize dialog storage: %w", err)
+	}
+	defer dialogStorage.Close()
+
+	// Check for subagent logging address from environment
+	loggingAddress := os.Getenv(subagentlog.SubagentLoggingAddressEnv)
+	var eventClient *subagentlog.Client
+	if loggingAddress != "" {
+		eventClient = subagentlog.NewClient(loggingAddress)
+	}
+
+	// Derive display name by stripping "-subagent" suffix for cleaner event output
+	displayName := rawCfg.Subagent.Name
+	displayName = strings.TrimSuffix(displayName, "-subagent")
+
+	// Create the executor
+	executor := createSubagentExecutor(opts.ConfigPath, outputSchema, displayName, dialogStorage, eventClient)
+
+	// Create server config
+	serverCfg := mcpinternal.MCPServerConfig{
+		Subagent: mcpinternal.SubagentDef{
+			Name:             rawCfg.Subagent.Name,
+			Description:      rawCfg.Subagent.Description,
+			OutputSchemaPath: rawCfg.Subagent.OutputSchemaPath,
+		},
+		MCPServers: rawCfg.MCPServers,
+	}
+
+	// Create and run the MCP server
+	server, err := mcpinternal.NewServer(serverCfg, mcpinternal.ServerOptions{
+		Executor: executor,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create MCP server: %w", err)
+	}
+
+	return server.Serve(ctx)
+}
+
+// createSubagentExecutor creates an executor function that runs the subagent.
+func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, subagentName string, dialogStorage DialogStorage, eventClient *subagentlog.Client) mcpinternal.SubagentExecutor {
+	return func(ctx context.Context, input mcpinternal.SubagentInput) (string, error) {
+		// Check context before starting
+		if err := ctx.Err(); err != nil {
+			return "", fmt.Errorf("execution cancelled before start: %w", err)
+		}
+
+		// Use the RunID from input if provided, otherwise generate one
+		runID := input.RunID
+		if runID == "" {
+			runID = generateRunID()
+		}
+		subagentLabel := fmt.Sprintf("subagent:%s:%s", subagentName, runID)
+
+		// Resolve effective config (uses defaults.model from config)
+		effectiveConfig, err := config.ResolveConfig(cfgPath, config.RuntimeOptions{})
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve config %q: %w", cfgPath, err)
+		}
+
+		// Build user blocks from prompt and input files
+		userBlocks, err := agent.BuildUserBlocks(ctx, input.Prompt, input.Inputs)
+		if err != nil {
+			// Provide actionable error for input file issues
+			if len(input.Inputs) > 0 {
+				return "", fmt.Errorf("failed to read input files %v: %w", input.Inputs, err)
+			}
+			return "", fmt.Errorf("failed to build user input: %w", err)
+		}
+
+		// Load and render system prompt
+		systemPrompt, err := LoadSystemPrompt(ctx, LoadSystemPromptOptions{
+			SystemPromptPath: effectiveConfig.SystemPromptPath,
+			Config:           effectiveConfig,
+			Stderr:           os.Stderr,
+		})
+		if err != nil {
+			return "", err
+		}
+
+		// Check context before creating generator
+		if err := ctx.Err(); err != nil {
+			return "", fmt.Errorf("execution cancelled during setup: %w", err)
+		}
+
+		// Create a callback wrapper for event emission if event client is configured
+		var callbackWrapper agent.ToolCallbackWrapper
+		if eventClient != nil {
+			callbackWrapper = func(toolName string, callback gai.ToolCallback) gai.ToolCallback {
+				return subagentlog.NewEmittingToolCallback(callback, eventClient, subagentName, runID, toolName)
+			}
+		}
+
+		// Create the generator
+		generator, err := agent.CreateToolCapableGenerator(
+			ctx,
+			effectiveConfig.Model,
+			systemPrompt,
+			effectiveConfig.Timeout,
+			true, // disablePrinting - MCP server mode must not write to stdout
+			effectiveConfig.MCPServers,
+			effectiveConfig.CodeMode,
+			"", // subagentLoggingAddress - inherited from env in MCP server mode
+			callbackWrapper,
+		)
+		if err != nil {
+			return "", fmt.Errorf("failed to create generator for model %q: %w", effectiveConfig.Model.Ref, err)
+		}
+
+		// Build generation options function
+		var genOptsFunc gai.GenOptsGenerator
+		if effectiveConfig.GenerationDefaults != nil {
+			genOptsFunc = func(_ gai.Dialog) *gai.GenOpts {
+				return effectiveConfig.GenerationDefaults
+			}
+		}
+
+		// Execute the subagent with storage and event client
+		result, err := ExecuteSubagent(ctx, SubagentOptions{
+			UserBlocks:    userBlocks,
+			Generator:     generator,
+			GenOptsFunc:   genOptsFunc,
+			OutputSchema:  outputSchema,
+			Storage:       dialogStorage,
+			SubagentLabel: subagentLabel,
+			EventClient:   eventClient,
+			SubagentName:  subagentName,
+			RunID:         runID,
+		})
+		if err != nil {
+			// Annotate context cancellation errors
+			if ctx.Err() != nil {
+				return "", fmt.Errorf("subagent %q execution timed out or cancelled: %w", subagentName, err)
+			}
+			return "", fmt.Errorf("subagent %q execution failed: %w", subagentName, err)
+		}
+		return result, nil
+	}
 }

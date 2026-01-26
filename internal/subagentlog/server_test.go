@@ -253,7 +253,6 @@ func TestServerNilHandler(t *testing.T) {
 	}
 }
 
-
 func TestServerConcurrentEventsNoInterleaving(t *testing.T) {
 	const numGoroutines = 10
 	const eventsPerGoroutine = 20

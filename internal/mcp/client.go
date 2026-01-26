@@ -18,10 +18,10 @@ import (
 
 	"github.com/spachava753/cpe/internal/version"
 )
+
 // subagentLoggingAddressEnv mirrors subagentlog.SubagentLoggingAddressEnv.
 // Defined locally to avoid import cycle (subagentlog imports agent which imports mcp).
 const subagentLoggingAddressEnv = "CPE_SUBAGENT_LOGGING_ADDRESS"
-
 
 // headerRoundTripper adds custom headers to HTTP requests
 type headerRoundTripper struct {

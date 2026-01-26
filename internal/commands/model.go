@@ -74,38 +74,73 @@ func ModelInfo(ctx context.Context, opts ModelInfoOptions) error {
 	return nil
 }
 
-// SystemPromptRenderer renders system prompts with template evaluation
-type SystemPromptRenderer interface {
-	Render(template string, model *config.Model) (string, error)
-}
-
 // ModelSystemPromptOptions contains parameters for showing system prompts
 type ModelSystemPromptOptions struct {
 	Config       *config.RawConfig
 	ModelName    string
-	SystemPrompt fs.File
+	DefaultModel string // Fallback model name from env var
 	Output       io.Writer
+	// SystemPrompt is an optional override for testing - if provided, this file
+	// is used instead of opening the file from the path in config
+	SystemPrompt fs.File
 }
 
 // ModelSystemPrompt displays the rendered system prompt for a model
 func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error {
-	if opts.ModelName == "" {
-		return fmt.Errorf("no model specified")
+	// Determine the model to use
+	modelName := opts.ModelName
+	if modelName == "" {
+		if opts.Config.Defaults.Model != "" {
+			modelName = opts.Config.Defaults.Model
+		} else if opts.DefaultModel != "" {
+			modelName = opts.DefaultModel
+		}
 	}
 
-	selectedModel, found := opts.Config.FindModel(opts.ModelName)
+	if modelName == "" {
+		return fmt.Errorf("no model specified. Use --model flag or set defaults.model in configuration")
+	}
+
+	selectedModel, found := opts.Config.FindModel(modelName)
 	if !found {
-		return fmt.Errorf("model %q not found in configuration", opts.ModelName)
+		return fmt.Errorf("model %q not found in configuration", modelName)
 	}
 
-	if opts.SystemPrompt == nil {
-		fmt.Fprintf(opts.Output, "Model %q does not define a system prompt.\n", opts.ModelName)
+	// Determine system prompt path
+	systemPromptPath := opts.Config.Defaults.SystemPromptPath
+	if selectedModel.SystemPromptPath != "" {
+		systemPromptPath = selectedModel.SystemPromptPath
+	}
+
+	// Determine the file to read from
+	var promptFile fs.File
+	var shouldClose bool
+	if opts.SystemPrompt != nil {
+		// Use provided file (for testing)
+		promptFile = opts.SystemPrompt
+		shouldClose = false
+	} else if systemPromptPath != "" {
+		// Open file from path
+		f, err := os.Open(systemPromptPath)
+		if err != nil {
+			return fmt.Errorf("could not open system prompt file %q: %w", systemPromptPath, err)
+		}
+		promptFile = f
+		shouldClose = true
+	}
+
+	if promptFile == nil {
+		fmt.Fprintf(opts.Output, "Model %q does not define a system prompt.\n", modelName)
 		return nil
 	}
 
-	contents, err := io.ReadAll(opts.SystemPrompt)
+	if shouldClose {
+		defer promptFile.Close()
+	}
+
+	contents, err := io.ReadAll(promptFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read system prompt file: %w", err)
 	}
 
 	// Resolve effective code mode config for template rendering
@@ -128,14 +163,9 @@ func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error
 		Config: templateConfig,
 	}, os.Stderr)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to render system prompt: %w", err)
 	}
 
-	systemPromptPath := selectedModel.SystemPromptPath
-	if systemPromptPath == "" {
-		systemPromptPath = opts.Config.Defaults.SystemPromptPath
-	}
-
-	_, err = fmt.Fprintf(opts.Output, "Model: %s\nPath: %s\n\n%s\n", opts.ModelName, systemPromptPath, systemPrompt)
+	_, err = fmt.Fprintf(opts.Output, "Model: %s\nPath: %s\n\n%s\n", modelName, systemPromptPath, systemPrompt)
 	return err
 }

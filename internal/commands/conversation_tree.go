@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"fmt"
@@ -23,30 +23,11 @@ var (
 const endOfBranch = "------"
 const indent = "    "
 
-// MostRecentTimestamp returns the latest CreatedAt timestamp anywhere in the tree
-func mostRecentTimestamp(node storage.MessageIdNode) time.Time {
-	maxT := node.CreatedAt
-	for _, child := range node.Children {
-		childMax := mostRecentTimestamp(child)
-		if childMax.After(maxT) {
-			maxT = childMax
-		}
-	}
-	return maxT
-}
-
-// Recursively sort children by their max descendant timestamp (oldest-to-newest)
-func sortTreeRecursively(node *storage.MessageIdNode) {
-	for i := range node.Children {
-		sortTreeRecursively(&node.Children[i])
-	}
-	sort.Slice(node.Children, func(i, j int) bool {
-		return mostRecentTimestamp(node.Children[i]).Before(mostRecentTimestamp(node.Children[j]))
-	})
-}
+// DefaultTreePrinter implements TreePrinter with styling
+type DefaultTreePrinter struct{}
 
 // PrintMessageForest prints a forest of trees with proper connectors, including Role and Content.
-func PrintMessageForest(w io.Writer, roots []storage.MessageIdNode) {
+func (p *DefaultTreePrinter) PrintMessageForest(w io.Writer, roots []storage.MessageIdNode) {
 	type treeWithMax struct {
 		node    storage.MessageIdNode
 		maxTime time.Time
@@ -79,6 +60,28 @@ func PrintMessageForest(w io.Writer, roots []storage.MessageIdNode) {
 			printSubTree(w, child, prefix)
 		}
 	}
+}
+
+// mostRecentTimestamp returns the latest CreatedAt timestamp anywhere in the tree
+func mostRecentTimestamp(node storage.MessageIdNode) time.Time {
+	maxT := node.CreatedAt
+	for _, child := range node.Children {
+		childMax := mostRecentTimestamp(child)
+		if childMax.After(maxT) {
+			maxT = childMax
+		}
+	}
+	return maxT
+}
+
+// sortTreeRecursively sorts children by their max descendant timestamp (oldest-to-newest)
+func sortTreeRecursively(node *storage.MessageIdNode) {
+	for i := range node.Children {
+		sortTreeRecursively(&node.Children[i])
+	}
+	sort.Slice(node.Children, func(i, j int) bool {
+		return mostRecentTimestamp(node.Children[i]).Before(mostRecentTimestamp(node.Children[j]))
+	})
 }
 
 func prettifyRole(role string) string {

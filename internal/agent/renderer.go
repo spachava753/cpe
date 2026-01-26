@@ -13,8 +13,6 @@ import (
 	"golang.org/x/term"
 )
 
-
-
 // PlainTextRenderer is a renderer that returns content as-is without formatting.
 // Used as a fallback when glamour rendering fails.
 type PlainTextRenderer struct{}

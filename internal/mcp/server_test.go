@@ -722,7 +722,6 @@ func TestServer_HandleToolCall_ValidInput(t *testing.T) {
 	cupaloy.SnapshotT(t, textContent.Text)
 }
 
-
 // --- RunID Validation Tests ---
 
 func TestServer_HandleToolCall_RunIDValidation(t *testing.T) {

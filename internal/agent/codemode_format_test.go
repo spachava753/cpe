@@ -8,9 +8,9 @@ import (
 
 func TestParseExecuteGoCodeToolCall(t *testing.T) {
 	tests := []struct {
-		name        string
-		content     string
-		wantOk      bool
+		name    string
+		content string
+		wantOk  bool
 	}{
 		{
 			name:    "valid execute_go_code tool call",

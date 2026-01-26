@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -11,13 +10,6 @@ import (
 	"github.com/spachava753/cpe/internal/commands"
 	"github.com/spachava753/cpe/internal/storage"
 )
-
-// treePrinterAdapter adapts the PrintMessageForest function
-type treePrinterAdapter struct{}
-
-func (t *treePrinterAdapter) PrintMessageForest(w io.Writer, roots []storage.MessageIdNode) {
-	PrintMessageForest(w, roots)
-}
 
 // convoCmd represents the conversation management command
 var convoCmd = &cobra.Command{
@@ -37,14 +29,14 @@ var listConvoCmd = &cobra.Command{
 		dbPath := ".cpeconvo"
 		dialogStorage, err := storage.InitDialogStorage(cmd.Context(), dbPath)
 		if err != nil {
-			return fmt.Errorf("failed to initialize dialog storage: %v", err)
+			return fmt.Errorf("failed to initialize dialog storage: %w", err)
 		}
 		defer dialogStorage.Close()
 
 		return commands.ConversationList(cmd.Context(), commands.ConversationListOptions{
 			Storage:     dialogStorage,
 			Writer:      os.Stdout,
-			TreePrinter: &treePrinterAdapter{},
+			TreePrinter: &commands.DefaultTreePrinter{},
 		})
 	},
 }
@@ -62,7 +54,7 @@ var deleteConvoCmd = &cobra.Command{
 		dbPath := ".cpeconvo"
 		dialogStorage, err := storage.InitDialogStorage(cmd.Context(), dbPath)
 		if err != nil {
-			return fmt.Errorf("failed to initialize dialog storage: %v", err)
+			return fmt.Errorf("failed to initialize dialog storage: %w", err)
 		}
 		defer dialogStorage.Close()
 
@@ -87,7 +79,7 @@ var printConvoCmd = &cobra.Command{
 		dbPath := ".cpeconvo"
 		dialogStorage, err := storage.InitDialogStorage(cmd.Context(), dbPath)
 		if err != nil {
-			return fmt.Errorf("failed to initialize dialog storage: %v", err)
+			return fmt.Errorf("failed to initialize dialog storage: %w", err)
 		}
 		defer dialogStorage.Close()
 

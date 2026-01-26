@@ -1,4 +1,4 @@
-package cmd
+package commands
 
 import (
 	"bytes"
@@ -42,7 +42,8 @@ func TestPrintMessageForest_SimpleTree(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	PrintMessageForest(&buf, forest)
+	printer := &DefaultTreePrinter{}
+	printer.PrintMessageForest(&buf, forest)
 
 	cupaloy.SnapshotT(t, buf.String())
 }

@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,11 +11,7 @@ import (
 	"github.com/spachava753/gai"
 	"github.com/spf13/cobra"
 
-	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/commands"
-	"github.com/spachava753/cpe/internal/config"
-	"github.com/spachava753/cpe/internal/storage"
-	"github.com/spachava753/cpe/internal/subagentlog"
 	"github.com/spachava753/cpe/internal/version"
 )
 
@@ -54,8 +49,22 @@ through natural language interactions.`,
 			return nil
 		}
 
-		// Initialize the executor and run the main functionality
-		return executeRootCommand(cmd.Context(), args)
+		// Delegate to business logic
+		return commands.ExecuteRoot(cmd.Context(), commands.ExecuteRootOptions{
+			Args:            args,
+			InputPaths:      input,
+			Stdin:           os.Stdin,
+			SkipStdin:       skipStdin,
+			ConfigPath:      configPath,
+			ModelRef:        model,
+			CustomURL:       customURL,
+			GenParams:       &genParams,
+			Timeout:         timeout,
+			ContinueID:      continueID,
+			NewConversation: newConversation,
+			IncognitoMode:   incognitoMode,
+			Stderr:          os.Stderr,
+		})
 	},
 }
 
@@ -95,160 +104,4 @@ func init() {
 
 	// Add version flag
 	rootCmd.Flags().BoolP("version", "v", false, "Print the version number and exit")
-}
-
-// executeRootCommand handles the main functionality of the root command
-func executeRootCommand(ctx context.Context, args []string) error {
-	userBlocks, err := processUserInput(ctx, args)
-	if err != nil {
-		return fmt.Errorf("could not process user input: %w", err)
-	}
-
-	// Resolve effective config with runtime options
-	effectiveConfig, err := config.ResolveConfig(configPath, config.RuntimeOptions{
-		ModelRef:  model,
-		GenParams: &genParams,
-		Timeout:   timeout,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to resolve configuration: %w", err)
-	}
-
-	// Load and render system prompt
-	var systemPrompt string
-	if effectiveConfig.SystemPromptPath != "" {
-		f, err := os.Open(effectiveConfig.SystemPromptPath)
-		if err != nil {
-			return fmt.Errorf("could not open system prompt file: %w", err)
-		}
-		defer f.Close()
-
-		contents, err := io.ReadAll(f)
-		if err != nil {
-			return fmt.Errorf("failed to read system prompt file: %w", err)
-		}
-
-		systemPrompt, err = agent.SystemPromptTemplate(ctx, string(contents), agent.TemplateData{
-			Config: effectiveConfig,
-		}, os.Stderr)
-		if err != nil {
-			return fmt.Errorf("failed to prepare system prompt: %w", err)
-		}
-	}
-
-	if customURL != "" {
-		effectiveConfig.Model.BaseUrl = customURL
-	}
-
-	// Start the subagent event server if we're the root process.
-	// When CPE_SUBAGENT_LOGGING_ADDRESS is set, we're running as a subagent
-	// and should not start another server.
-	var subagentLoggingAddress string
-	if os.Getenv(subagentlog.SubagentLoggingAddressEnv) == "" {
-		renderer := subagentlog.NewRenderer(agent.NewRenderer())
-		stderrWriter := subagentlog.NewSyncWriter(os.Stderr)
-		eventServer := subagentlog.NewServer(func(event subagentlog.Event) {
-			rendered := renderer.RenderEvent(event)
-			if rendered != "" {
-				stderrWriter.WriteString(rendered)
-			}
-		})
-
-		var err error
-		subagentLoggingAddress, err = eventServer.Start(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to start subagent event server: %w", err)
-		}
-
-		// Set the env var so code mode subprocesses inherit it
-		os.Setenv(subagentlog.SubagentLoggingAddressEnv, subagentLoggingAddress)
-	}
-
-	// Create the generator
-	toolGen, err := agent.CreateToolCapableGenerator(
-		ctx,
-		effectiveConfig.Model,
-		systemPrompt,
-		effectiveConfig.Timeout,
-		false, // disablePrinting - keep response printing for interactive use
-		effectiveConfig.MCPServers,
-		effectiveConfig.CodeMode,
-		subagentLoggingAddress,
-		nil, // callbackWrapper - not needed for interactive mode
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create tool capable generator: %w", err)
-	}
-
-	// Initialize storage unless in incognito mode
-	var dialogStorage commands.DialogStorage
-	if !incognitoMode {
-		dbPath := ".cpeconvo"
-		dialogStorage, err = storage.InitDialogStorage(ctx, dbPath)
-		if err != nil {
-			return fmt.Errorf("failed to initialize dialog storage: %w", err)
-		}
-		defer dialogStorage.Close()
-	}
-
-	genOpts := effectiveConfig.GenerationDefaults
-
-	// Call the business logic
-	return commands.Generate(ctx, commands.GenerateOptions{
-		UserBlocks:      userBlocks,
-		ContinueID:      continueID,
-		NewConversation: newConversation,
-		IncognitoMode:   incognitoMode,
-		GenOptsFunc: func(dialog gai.Dialog) *gai.GenOpts {
-			return genOpts
-		},
-		Storage:   dialogStorage,
-		Generator: toolGen,
-		Stderr:    os.Stderr,
-	})
-}
-
-// processUserInput processes and combines user input from all available sources
-func processUserInput(ctx context.Context, args []string) ([]gai.Block, error) {
-	var userBlocks []gai.Block
-
-	// Get input from stdin if available (non-blocking)
-	stdinStat, err := os.Stdin.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("failed to check stdin: %w", err)
-	}
-
-	// If stdin has data, read it as a text block
-	if (stdinStat.Mode()&os.ModeCharDevice) == 0 && !skipStdin {
-		stdinBytes, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read from stdin: %w", err)
-		}
-		if len(stdinBytes) > 0 {
-			userBlocks = append(userBlocks, gai.Block{
-				BlockType:    gai.Content,
-				ModalityType: gai.Text,
-				MimeType:     "text/plain",
-				Content:      gai.Str(stdinBytes),
-			})
-		}
-	}
-
-	// Extract prompt from positional arguments
-	var prompt string
-	if len(args) > 0 {
-		if len(args) != 1 {
-			return nil, fmt.Errorf("too many arguments to process")
-		}
-		prompt = args[0]
-	}
-
-	// Build blocks from prompt and resource paths (files/URLs)
-	blocks, err := agent.BuildUserBlocks(ctx, prompt, input)
-	if err != nil {
-		return nil, err
-	}
-
-	userBlocks = append(userBlocks, blocks...)
-	return userBlocks, nil
 }
