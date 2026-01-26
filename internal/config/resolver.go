@@ -1,0 +1,132 @@
+package config
+
+import (
+	"fmt"
+	"time"
+
+	"dario.cat/mergo"
+	"github.com/spachava753/gai"
+)
+
+// DefaultTimeout is the default request timeout when not specified in config or CLI
+const DefaultTimeout = 5 * time.Minute
+
+// ResolveConfig loads the config file and resolves effective runtime configuration
+// for the specified model with runtime options applied
+func ResolveConfig(configPath string, opts RuntimeOptions) (*Config, error) {
+	rawCfg, err := LoadRawConfig(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return ResolveFromRaw(rawCfg, opts)
+}
+
+// ResolveFromRaw resolves configuration from an already-loaded RawConfig.
+// This is useful for testing without file I/O.
+func ResolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions) (*Config, error) {
+	modelRef := opts.ModelRef
+	if modelRef == "" {
+		if rawCfg.Defaults.Model != "" {
+			modelRef = rawCfg.Defaults.Model
+		} else {
+			return nil, fmt.Errorf("no model specified. Set CPE_MODEL environment variable, use --model flag, or set defaults.model in configuration")
+		}
+	}
+
+	selectedModel, found := rawCfg.FindModel(modelRef)
+	if !found {
+		return nil, fmt.Errorf("model %q not found in configuration", modelRef)
+	}
+
+	systemPromptPath := resolveSystemPromptPath(selectedModel, rawCfg.Defaults)
+	genParams, err := resolveGenerationParams(selectedModel, rawCfg.Defaults, opts)
+	if err != nil {
+		return nil, err
+	}
+	timeout, err := resolveTimeout(rawCfg.Defaults, opts)
+	if err != nil {
+		return nil, err
+	}
+	codeMode := resolveCodeMode(selectedModel, rawCfg.Defaults)
+
+	return &Config{
+		MCPServers:         rawCfg.MCPServers,
+		Model:              selectedModel.Model,
+		SystemPromptPath:   systemPromptPath,
+		GenerationDefaults: genParams,
+		Timeout:            timeout,
+		CodeMode:           codeMode,
+	}, nil
+}
+
+// resolveSystemPromptPath resolves system prompt path with precedence:
+// model-specific > global defaults
+func resolveSystemPromptPath(model ModelConfig, defaults Defaults) string {
+	if model.SystemPromptPath != "" {
+		return model.SystemPromptPath
+	}
+	return defaults.SystemPromptPath
+}
+
+// resolveGenerationParams merges generation parameters with precedence:
+// CLI flags > Model-specific > Global defaults
+func resolveGenerationParams(model ModelConfig, defaults Defaults, opts RuntimeOptions) (*gai.GenOpts, error) {
+	genParams := &gai.GenOpts{}
+
+	// Start with global defaults
+	if defaults.GenerationParams != nil {
+		globalGenOpts := defaults.GenerationParams.ToGenOpts()
+		if err := mergo.Merge(genParams, globalGenOpts, mergo.WithOverride); err != nil {
+			return nil, fmt.Errorf("merging global generation defaults: %w", err)
+		}
+	}
+
+	// Apply model-specific defaults
+	if model.GenerationDefaults != nil {
+		modelGenOpts := model.GenerationDefaults.ToGenOpts()
+		if err := mergo.Merge(genParams, modelGenOpts, mergo.WithOverride); err != nil {
+			return nil, fmt.Errorf("merging model generation defaults: %w", err)
+		}
+	}
+
+	// Apply CLI overrides
+	if opts.GenParams != nil {
+		if err := mergo.Merge(genParams, opts.GenParams, mergo.WithOverride); err != nil {
+			return nil, fmt.Errorf("merging CLI generation overrides: %w", err)
+		}
+	}
+
+	return genParams, nil
+}
+
+// resolveTimeout resolves timeout with precedence:
+// CLI flag > Global defaults > DefaultTimeout
+func resolveTimeout(defaults Defaults, opts RuntimeOptions) (time.Duration, error) {
+	timeout := DefaultTimeout
+
+	if opts.Timeout != "" {
+		parsedTimeout, err := time.ParseDuration(opts.Timeout)
+		if err != nil {
+			return 0, fmt.Errorf("invalid timeout value %q: %w", opts.Timeout, err)
+		}
+		timeout = parsedTimeout
+	} else if defaults.Timeout != "" {
+		parsedTimeout, err := time.ParseDuration(defaults.Timeout)
+		if err != nil {
+			return 0, fmt.Errorf("invalid default timeout value %q: %w", defaults.Timeout, err)
+		}
+		timeout = parsedTimeout
+	}
+
+	return timeout, nil
+}
+
+// resolveCodeMode resolves code mode configuration with override behavior (not merge).
+// Model-level completely replaces defaults.
+func resolveCodeMode(model ModelConfig, defaults Defaults) *CodeModeConfig {
+	if model.CodeMode != nil {
+		return model.CodeMode
+	}
+	return defaults.CodeMode
+}

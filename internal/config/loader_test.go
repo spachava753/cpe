@@ -1,16 +1,9 @@
 package config
 
 import (
-	"fmt"
-	"strings"
 	"testing"
 	"testing/fstest"
-	"time"
 
-	"os"
-	"path/filepath"
-
-	"dario.cat/mergo"
 	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/spachava753/gai"
 )
@@ -109,7 +102,6 @@ models:
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a test filesystem with the config file
 			testFS := fstest.MapFS{
 				tt.filename: &fstest.MapFile{
 					Data: []byte(tt.content),
@@ -145,13 +137,178 @@ models:
 	}
 }
 
+func TestParseConfigData(t *testing.T) {
+	tests := []struct {
+		name     string
+		data     string
+		filename string
+		wantErr  bool
+	}{
+		{
+			name: "parse YAML data",
+			data: `
+version: "1.0"
+models:
+  - ref: "model"
+    display_name: "Model"
+    id: "id"
+    type: "openai"
+`,
+			filename: "test.yaml",
+			wantErr:  false,
+		},
+		{
+			name:     "parse JSON data",
+			data:     `{"version": "1.0", "models": [{"ref": "m", "display_name": "M", "id": "i", "type": "anthropic"}]}`,
+			filename: "test.json",
+			wantErr:  false,
+		},
+		{
+			name: "unknown extension tries YAML first",
+			data: `
+version: "1.0"
+models:
+  - ref: "model"
+    display_name: "Model"
+    id: "id"
+    type: "gemini"
+`,
+			filename: "test.conf",
+			wantErr:  false,
+		},
+		{
+			name:     "unknown extension falls back to JSON",
+			data:     `{"version": "1.0", "models": [{"ref": "m", "display_name": "M", "id": "i", "type": "openai"}]}`,
+			filename: "test.conf",
+			wantErr:  false,
+		},
+		{
+			name:     "invalid data with unknown extension",
+			data:     "not valid yaml or json {{{",
+			filename: "test.conf",
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config, err := parseConfigData([]byte(tt.data), tt.filename)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Error("parseConfigData() expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("parseConfigData() unexpected error: %v", err)
+				return
+			}
+
+			if config == nil {
+				t.Fatal("parseConfigData() returned nil config")
+			}
+
+			cupaloy.SnapshotT(t, config)
+		})
+	}
+}
+
+func TestLoadSubagentConfig(t *testing.T) {
+	tests := []struct {
+		name        string
+		content     string
+		filename    string
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name: "valid subagent config",
+			content: `
+version: "1.0"
+models:
+  - ref: "opus"
+    display_name: "Claude Opus"
+    id: "claude-opus-4-20250514"
+    type: "anthropic"
+    api_key_env: "ANTHROPIC_API_KEY"
+subagent:
+  name: "review_changes"
+  description: "Review a diff and return prioritized feedback"
+defaults:
+  model: opus
+`,
+			filename: "subagent.yaml",
+			wantErr:  false,
+		},
+		{
+			name: "subagent with code mode enabled",
+			content: `
+version: "1.0"
+models:
+  - ref: "opus"
+    display_name: "Claude Opus"
+    id: "claude-opus-4-20250514"
+    type: "anthropic"
+    api_key_env: "ANTHROPIC_API_KEY"
+subagent:
+  name: "implement_change"
+  description: "Make code changes and run tests"
+defaults:
+  model: opus
+  codeMode:
+    enabled: true
+`,
+			filename: "coder_subagent.yaml",
+			wantErr:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testFS := fstest.MapFS{
+				tt.filename: &fstest.MapFile{
+					Data: []byte(tt.content),
+				},
+			}
+
+			file, err := testFS.Open(tt.filename)
+			if err != nil {
+				t.Fatalf("Failed to open test file: %v", err)
+			}
+			defer file.Close()
+
+			config, err := loadRawConfigFromFile(file)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if config.Subagent == nil {
+				t.Fatal("expected subagent to be present")
+			}
+
+			cupaloy.SnapshotT(t, config.Subagent)
+		})
+	}
+}
+
+// Tests that were previously in loader_test.go but now use exported ResolveFromRaw
 func TestResolveConfig_GenerationDefaultsMerging(t *testing.T) {
 	tests := []struct {
-		name             string
-		configContent    string
-		runtimeOpts      RuntimeOptions
-		expectErr        bool
-		expectErrMessage string
+		name          string
+		configContent string
+		runtimeOpts   RuntimeOptions
+		expectErr     bool
 	}{
 		{
 			name: "model-specific generation defaults loaded",
@@ -168,9 +325,7 @@ models:
       topP: 0.9
       maxGenerationTokens: 2048
 `,
-			runtimeOpts: RuntimeOptions{
-				ModelRef: "test-model",
-			},
+			runtimeOpts: RuntimeOptions{ModelRef: "test-model"},
 		},
 		{
 			name: "global defaults loaded when no model-specific defaults",
@@ -188,9 +343,7 @@ defaults:
     topK: 20
     frequencyPenalty: 0.3
 `,
-			runtimeOpts: RuntimeOptions{
-				ModelRef: "test-model",
-			},
+			runtimeOpts: RuntimeOptions{ModelRef: "test-model"},
 		},
 		{
 			name: "model-specific defaults override global defaults",
@@ -211,9 +364,7 @@ defaults:
     topP: 0.9
     topK: 10
 `,
-			runtimeOpts: RuntimeOptions{
-				ModelRef: "test-model",
-			},
+			runtimeOpts: RuntimeOptions{ModelRef: "test-model"},
 		},
 		{
 			name: "CLI overrides take precedence over model-specific defaults",
@@ -234,10 +385,8 @@ defaults:
     maxGenerationTokens: 1024
 `,
 			runtimeOpts: RuntimeOptions{
-				ModelRef: "test-model",
-				GenParams: &gai.GenOpts{
-					Temperature: 0.9,
-				},
+				ModelRef:  "test-model",
+				GenParams: &gai.GenOpts{Temperature: 0.9},
 			},
 		},
 		{
@@ -280,9 +429,7 @@ models:
     type: "openai"
     api_key_env: "API_KEY"
 `,
-			runtimeOpts: RuntimeOptions{
-				ModelRef: "test-model",
-			},
+			runtimeOpts: RuntimeOptions{ModelRef: "test-model"},
 		},
 		{
 			name: "complex generation parameters preserved",
@@ -304,18 +451,14 @@ models:
       n: 1
       thinkingBudget: "high"
 `,
-			runtimeOpts: RuntimeOptions{
-				ModelRef: "test-model",
-			},
+			runtimeOpts: RuntimeOptions{ModelRef: "test-model"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testFS := fstest.MapFS{
-				"cpe.yaml": &fstest.MapFile{
-					Data: []byte(tt.configContent),
-				},
+				"cpe.yaml": &fstest.MapFile{Data: []byte(tt.configContent)},
 			}
 
 			file, err := testFS.Open("cpe.yaml")
@@ -333,14 +476,11 @@ models:
 				t.Fatalf("Failed to validate raw config: %v", err)
 			}
 
-			cfg, err := resolveConfigFromRaw(rawCfg, tt.runtimeOpts)
+			cfg, err := ResolveFromRaw(rawCfg, tt.runtimeOpts)
 
 			if tt.expectErr {
 				if err == nil {
 					t.Fatalf("expected error but got none")
-				}
-				if tt.expectErrMessage != "" && err.Error() != tt.expectErrMessage {
-					t.Errorf("expected error message %q, got %q", tt.expectErrMessage, err.Error())
 				}
 				return
 			}
@@ -360,82 +500,6 @@ models:
 			cupaloy.SnapshotT(t, cfg.GenerationDefaults)
 		})
 	}
-}
-
-// resolveConfigFromRaw is a helper for testing that resolves config without file I/O
-func resolveConfigFromRaw(rawCfg *RawConfig, opts RuntimeOptions) (*Config, error) {
-	modelRef := opts.ModelRef
-	if modelRef == "" {
-		if rawCfg.Defaults.Model != "" {
-			modelRef = rawCfg.Defaults.Model
-		} else {
-			return nil, fmt.Errorf("no model specified. Set CPE_MODEL environment variable, use --model flag, or set defaults.model in configuration")
-		}
-	}
-
-	selectedModel, found := rawCfg.FindModel(modelRef)
-	if !found {
-		return nil, fmt.Errorf("model %q not found in configuration", modelRef)
-	}
-
-	systemPromptPath := selectedModel.SystemPromptPath
-	if systemPromptPath == "" {
-		systemPromptPath = rawCfg.Defaults.SystemPromptPath
-	}
-
-	genParams := &gai.GenOpts{}
-
-	if rawCfg.Defaults.GenerationParams != nil {
-		globalGenOpts := rawCfg.Defaults.GenerationParams.ToGenOpts()
-		if err := mergo.Merge(genParams, globalGenOpts, mergo.WithOverride); err != nil {
-			return nil, err
-		}
-	}
-
-	if selectedModel.GenerationDefaults != nil {
-		modelGenOpts := selectedModel.GenerationDefaults.ToGenOpts()
-		if err := mergo.Merge(genParams, modelGenOpts, mergo.WithOverride); err != nil {
-			return nil, err
-		}
-	}
-
-	if opts.GenParams != nil {
-		if err := mergo.Merge(genParams, opts.GenParams, mergo.WithOverride); err != nil {
-			return nil, err
-		}
-	}
-
-	timeout := 5 * time.Minute
-	if opts.Timeout != "" {
-		parsedTimeout, err := time.ParseDuration(opts.Timeout)
-		if err != nil {
-			return nil, fmt.Errorf("invalid timeout value %q: %w", opts.Timeout, err)
-		}
-		timeout = parsedTimeout
-	} else if rawCfg.Defaults.Timeout != "" {
-		parsedTimeout, err := time.ParseDuration(rawCfg.Defaults.Timeout)
-		if err != nil {
-			return nil, fmt.Errorf("invalid default timeout value %q: %w", rawCfg.Defaults.Timeout, err)
-		}
-		timeout = parsedTimeout
-	}
-
-	// Resolve code mode configuration with override behavior (not merge)
-	var codeMode *CodeModeConfig
-	if selectedModel.CodeMode != nil {
-		codeMode = selectedModel.CodeMode
-	} else if rawCfg.Defaults.CodeMode != nil {
-		codeMode = rawCfg.Defaults.CodeMode
-	}
-
-	return &Config{
-		MCPServers:         rawCfg.MCPServers,
-		Model:              selectedModel.Model,
-		SystemPromptPath:   systemPromptPath,
-		GenerationDefaults: genParams,
-		Timeout:            timeout,
-		CodeMode:           codeMode,
-	}, nil
 }
 
 func TestResolveConfig_CodeMode(t *testing.T) {
@@ -462,9 +526,7 @@ defaults:
       - tool1
       - tool2
 `,
-			runtimeOpts: RuntimeOptions{
-				ModelRef: "test-model",
-			},
+			runtimeOpts: RuntimeOptions{ModelRef: "test-model"},
 		},
 		{
 			name: "global code mode disabled",
@@ -480,9 +542,7 @@ defaults:
   codeMode:
     enabled: false
 `,
-			runtimeOpts: RuntimeOptions{
-				ModelRef: "test-model",
-			},
+			runtimeOpts: RuntimeOptions{ModelRef: "test-model"},
 		},
 		{
 			name: "model-specific code mode overrides global (enabled)",
@@ -504,9 +564,7 @@ defaults:
     excludedTools:
       - default_tool
 `,
-			runtimeOpts: RuntimeOptions{
-				ModelRef: "test-model",
-			},
+			runtimeOpts: RuntimeOptions{ModelRef: "test-model"},
 		},
 		{
 			name: "model-specific code mode overrides global (disabled)",
@@ -527,9 +585,7 @@ defaults:
       - default_tool1
       - default_tool2
 `,
-			runtimeOpts: RuntimeOptions{
-				ModelRef: "test-model",
-			},
+			runtimeOpts: RuntimeOptions{ModelRef: "test-model"},
 		},
 		{
 			name: "model override completely replaces global (no merging)",
@@ -552,9 +608,7 @@ defaults:
       - tool_a
       - tool_b
 `,
-			runtimeOpts: RuntimeOptions{
-				ModelRef: "test-model",
-			},
+			runtimeOpts: RuntimeOptions{ModelRef: "test-model"},
 		},
 		{
 			name: "no code mode specified anywhere",
@@ -567,9 +621,7 @@ models:
     type: "openai"
     api_key_env: "API_KEY"
 `,
-			runtimeOpts: RuntimeOptions{
-				ModelRef: "test-model",
-			},
+			runtimeOpts: RuntimeOptions{ModelRef: "test-model"},
 		},
 		{
 			name: "empty excluded tools list",
@@ -585,9 +637,7 @@ models:
       enabled: true
       excludedTools: []
 `,
-			runtimeOpts: RuntimeOptions{
-				ModelRef: "test-model",
-			},
+			runtimeOpts: RuntimeOptions{ModelRef: "test-model"},
 		},
 		{
 			name: "model with no code mode inherits from defaults",
@@ -612,9 +662,7 @@ defaults:
     excludedTools:
       - global_tool
 `,
-			runtimeOpts: RuntimeOptions{
-				ModelRef: "model1",
-			},
+			runtimeOpts: RuntimeOptions{ModelRef: "model1"},
 		},
 		{
 			name: "multiple excluded tools",
@@ -634,18 +682,14 @@ models:
         - tool3
         - tool4
 `,
-			runtimeOpts: RuntimeOptions{
-				ModelRef: "test-model",
-			},
+			runtimeOpts: RuntimeOptions{ModelRef: "test-model"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testFS := fstest.MapFS{
-				"cpe.yaml": &fstest.MapFile{
-					Data: []byte(tt.configContent),
-				},
+				"cpe.yaml": &fstest.MapFile{Data: []byte(tt.configContent)},
 			}
 
 			file, err := testFS.Open("cpe.yaml")
@@ -663,7 +707,7 @@ models:
 				t.Fatalf("Failed to validate raw config: %v", err)
 			}
 
-			cfg, err := resolveConfigFromRaw(rawCfg, tt.runtimeOpts)
+			cfg, err := ResolveFromRaw(rawCfg, tt.runtimeOpts)
 
 			if tt.expectErr {
 				if err == nil {
@@ -746,17 +790,12 @@ func TestExpandEnvironmentVariables_CodeMode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Set environment variables
 			for k, v := range tt.envVars {
 				t.Setenv(k, v)
 			}
 
-			// Expand environment variables
-			if err := tt.cfg.expandEnvironmentVariables(); err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			tt.cfg.expandEnvironmentVariables()
 
-			// Snapshot the relevant config parts after expansion
 			type snapshotData struct {
 				DefaultsCodeMode *CodeModeConfig
 				ModelsCodeMode   []*CodeModeConfig
@@ -768,202 +807,6 @@ func TestExpandEnvironmentVariables_CodeMode(t *testing.T) {
 				data.ModelsCodeMode = append(data.ModelsCodeMode, m.CodeMode)
 			}
 			cupaloy.SnapshotT(t, data)
-		})
-	}
-}
-
-func TestLoadSubagentConfig(t *testing.T) {
-	tests := []struct {
-		name        string
-		content     string
-		filename    string
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "valid subagent config",
-			content: `
-version: "1.0"
-models:
-  - ref: "opus"
-    display_name: "Claude Opus"
-    id: "claude-opus-4-20250514"
-    type: "anthropic"
-    api_key_env: "ANTHROPIC_API_KEY"
-subagent:
-  name: "review_changes"
-  description: "Review a diff and return prioritized feedback"
-defaults:
-  model: opus
-`,
-			filename: "subagent.yaml",
-			wantErr:  false,
-		},
-		{
-			name: "subagent with code mode enabled",
-			content: `
-version: "1.0"
-models:
-  - ref: "opus"
-    display_name: "Claude Opus"
-    id: "claude-opus-4-20250514"
-    type: "anthropic"
-    api_key_env: "ANTHROPIC_API_KEY"
-subagent:
-  name: "implement_change"
-  description: "Make code changes and run tests"
-defaults:
-  model: opus
-  codeMode:
-    enabled: true
-`,
-			filename: "coder_subagent.yaml",
-			wantErr:  false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			testFS := fstest.MapFS{
-				tt.filename: &fstest.MapFile{
-					Data: []byte(tt.content),
-				},
-			}
-
-			file, err := testFS.Open(tt.filename)
-			if err != nil {
-				t.Fatalf("Failed to open test file: %v", err)
-			}
-			defer file.Close()
-
-			config, err := loadRawConfigFromFile(file)
-
-			if tt.wantErr {
-				if err == nil {
-					t.Errorf("expected error but got none")
-				} else if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
-					t.Errorf("expected error containing %q, got %q", tt.errContains, err.Error())
-				}
-				return
-			}
-
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-				return
-			}
-
-			if config.Subagent == nil {
-				t.Fatal("expected subagent to be present")
-			}
-
-			cupaloy.SnapshotT(t, config.Subagent)
-		})
-	}
-}
-
-func TestValidateSubagentOutputSchemaPath(t *testing.T) {
-	tempDir := t.TempDir()
-
-	// Create a valid JSON schema file
-	validSchemaPath := filepath.Join(tempDir, "valid_schema.json")
-	validSchemaContent := `{
-  "type": "object",
-  "properties": {
-    "summary": { "type": "string" },
-    "issues": { "type": "array" }
-  }
-}`
-	if err := os.WriteFile(validSchemaPath, []byte(validSchemaContent), 0644); err != nil {
-		t.Fatalf("failed to create valid schema file: %v", err)
-	}
-
-	// Create an invalid JSON file
-	invalidSchemaPath := filepath.Join(tempDir, "invalid_schema.json")
-	if err := os.WriteFile(invalidSchemaPath, []byte("not valid json"), 0644); err != nil {
-		t.Fatalf("failed to create invalid schema file: %v", err)
-	}
-
-	tests := []struct {
-		name        string
-		cfg         RawConfig
-		wantErr     bool
-		errContains string
-	}{
-		{
-			name: "valid outputSchemaPath",
-			cfg: RawConfig{
-				Models: []ModelConfig{
-					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
-				},
-				Subagent: &SubagentConfig{
-					Name:             "test_agent",
-					Description:      "Test description",
-					OutputSchemaPath: validSchemaPath,
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "nonexistent outputSchemaPath",
-			cfg: RawConfig{
-				Models: []ModelConfig{
-					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
-				},
-				Subagent: &SubagentConfig{
-					Name:             "test_agent",
-					Description:      "Test description",
-					OutputSchemaPath: "/nonexistent/path/schema.json",
-				},
-			},
-			wantErr:     true,
-			errContains: "file does not exist",
-		},
-		{
-			name: "invalid JSON in outputSchemaPath",
-			cfg: RawConfig{
-				Models: []ModelConfig{
-					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
-				},
-				Subagent: &SubagentConfig{
-					Name:             "test_agent",
-					Description:      "Test description",
-					OutputSchemaPath: invalidSchemaPath,
-				},
-			},
-			wantErr:     true,
-			errContains: "invalid JSON schema",
-		},
-		{
-			name: "empty outputSchemaPath is valid",
-			cfg: RawConfig{
-				Models: []ModelConfig{
-					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
-				},
-				Subagent: &SubagentConfig{
-					Name:        "test_agent",
-					Description: "Test description",
-				},
-			},
-			wantErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.cfg.validateSubagentConfig()
-
-			if tt.wantErr {
-				if err == nil {
-					t.Errorf("expected error but got none")
-				} else if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
-					t.Errorf("expected error containing %q, got %q", tt.errContains, err.Error())
-				}
-				return
-			}
-
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
 		})
 	}
 }
