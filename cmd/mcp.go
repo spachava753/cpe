@@ -169,6 +169,38 @@ configuration file. The default config search behavior is disabled.`,
 	},
 }
 
+// mcpCodeDescCmd represents the 'mcp code-desc' subcommand
+var mcpCodeDescCmd = &cobra.Command{
+	Use:   "code-desc",
+	Short: "Print the execute_go_code tool description",
+	Long: `Generate and print the description for the execute_go_code tool.
+
+This shows exactly what description would be provided to the LLM when code mode 
+is enabled, including all MCP tools converted to Go functions. The output 
+respects the codeMode.excludedTools configuration - excluded tools will not 
+appear in the generated Go function definitions.`,
+	Example: `  # Print code mode description with default model's settings
+  cpe mcp code-desc
+
+  # Print code mode description for a specific model
+  cpe mcp code-desc --model sonnet`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.ResolveConfig(configPath, config.RuntimeOptions{
+			ModelRef: model,
+		})
+		if err != nil {
+			return err
+		}
+
+		return commands.MCPCodeDesc(cmd.Context(), commands.MCPCodeDescOptions{
+			MCPServers: cfg.MCPServers,
+			CodeMode:   cfg.CodeMode,
+			Writer:     os.Stdout,
+			Renderer:   agent.NewRenderer(),
+		})
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(mcpCmd)
 
@@ -178,6 +210,7 @@ func init() {
 	mcpCmd.AddCommand(mcpListToolsCmd)
 	mcpCmd.AddCommand(mcpCallToolCmd)
 	mcpCmd.AddCommand(mcpServeCmd)
+	mcpCmd.AddCommand(mcpCodeDescCmd)
 
 	// Add flags to mcp list-tools command
 	mcpListToolsCmd.Flags().Bool("show-all", false, "Show all tools including filtered ones")

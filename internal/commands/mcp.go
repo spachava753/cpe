@@ -18,6 +18,7 @@ import (
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/agent"
+	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
 	mcpinternal "github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/storage"
@@ -315,6 +316,70 @@ func MCPCallTool(ctx context.Context, opts MCPCallToolOptions) error {
 		}
 	}
 
+	return nil
+}
+
+// MCPCodeDescOptions contains parameters for generating code mode description
+type MCPCodeDescOptions struct {
+	MCPServers map[string]mcpinternal.ServerConfig
+	CodeMode   *config.CodeModeConfig
+	Writer     io.Writer
+	Renderer   types.Renderer
+}
+
+// MCPCodeDesc generates and prints the execute_go_code tool description
+func MCPCodeDesc(ctx context.Context, opts MCPCodeDescOptions) error {
+	client := mcpinternal.NewClient()
+
+	// Fetch tools from all MCP servers
+	toolsByServer, err := mcpinternal.FetchTools(ctx, client, opts.MCPServers, "")
+	if err != nil {
+		return fmt.Errorf("failed to fetch MCP tools: %w", err)
+	}
+
+	// Get excluded tool names from code mode config
+	var excludedToolNames []string
+	if opts.CodeMode != nil && opts.CodeMode.ExcludedTools != nil {
+		excludedToolNames = opts.CodeMode.ExcludedTools
+	}
+
+	// Partition tools - only code mode tools will be included in the description
+	serverToolsInfo, _ := codemode.PartitionTools(toolsByServer, opts.MCPServers, excludedToolNames)
+
+	// Collect all code mode tools
+	var allCodeModeTools []*mcp.Tool
+	for _, serverInfo := range serverToolsInfo {
+		allCodeModeTools = append(allCodeModeTools, serverInfo.Tools...)
+	}
+
+	// Generate the description
+	description, err := codemode.GenerateExecuteGoCodeDescription(allCodeModeTools)
+	if err != nil {
+		return fmt.Errorf("failed to generate description: %w", err)
+	}
+
+	// Format as markdown for rendering
+	var markdownBuilder strings.Builder
+	markdownBuilder.WriteString("# execute_go_code Tool Description\n\n")
+
+	if opts.CodeMode == nil || !opts.CodeMode.Enabled {
+		markdownBuilder.WriteString("> **Note:** Code mode is not enabled in current configuration.\n\n")
+	}
+
+	if len(excludedToolNames) > 0 {
+		markdownBuilder.WriteString("**Excluded tools:** `" + strings.Join(excludedToolNames, "`, `") + "`\n\n")
+	}
+
+	markdownBuilder.WriteString("**Code mode tools:** " + strconv.Itoa(len(allCodeModeTools)) + "\n\n")
+	markdownBuilder.WriteString("---\n\n")
+	markdownBuilder.WriteString(description)
+
+	rendered, err := opts.Renderer.Render(markdownBuilder.String())
+	if err != nil {
+		return fmt.Errorf("failed to render markdown: %w", err)
+	}
+
+	fmt.Fprintln(opts.Writer, rendered)
 	return nil
 }
 
