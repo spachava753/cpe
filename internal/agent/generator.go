@@ -217,11 +217,14 @@ func CreateToolCapableGenerator(
 	b.Reset()
 
 	var wrappers []gai.WrapperFunc
+	// TokenUsagePrinting must come BEFORE ResponsePrinting in the slice
+	// because gai.Wrap applies wrappers in reverse order.
+	// We want TokenUsagePrinting to be OUTERMOST so it prints AFTER response content.
+	wrappers = append(wrappers, WithTokenUsagePrinting(os.Stderr))
 	if !disablePrinting {
 		renderers := NewResponsePrinterRenderers()
 		wrappers = append(wrappers, WithResponsePrinting(renderers.Content, renderers.Thinking, renderers.ToolCall, os.Stdout, os.Stderr))
 	}
-	wrappers = append(wrappers, WithTokenUsagePrinting(os.Stderr))
 
 	// Add block filter based on model type:
 	// For Anthropic: keep Anthropic thinking blocks but filter out thinking blocks from other providers
