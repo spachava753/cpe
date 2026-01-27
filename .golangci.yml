@@ -27,6 +27,9 @@ linters:
     # Concurrency safety
     - copyloopvar    # Loop variable capture issues
 
+    # Code quality
+    - goconst        # Repeated strings that could be constants
+
     # Memory/performance bugs
     - durationcheck  # time.Duration multiplication issues
     - makezero       # Append to slice initialized with non-zero len

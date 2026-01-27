@@ -11,6 +11,8 @@ import (
 	"github.com/spachava753/cpe/internal/storage"
 )
 
+const defaultDBPath = ".cpeconvo"
+
 // convoCmd represents the conversation management command
 var convoCmd = &cobra.Command{
 	Use:     "conversation",
@@ -26,7 +28,7 @@ var listConvoCmd = &cobra.Command{
 	Long:    `Display all messages in the database with parent-child relationships in a git commit graph style.`,
 	Aliases: []string{"ls"},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dbPath := ".cpeconvo"
+		dbPath := defaultDBPath
 		dialogStorage, err := storage.InitDialogStorage(cmd.Context(), dbPath)
 		if err != nil {
 			return fmt.Errorf("failed to initialize dialog storage: %w", err)
@@ -51,7 +53,7 @@ var deleteConvoCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cascade, _ := cmd.Flags().GetBool("cascade")
 
-		dbPath := ".cpeconvo"
+		dbPath := defaultDBPath
 		dialogStorage, err := storage.InitDialogStorage(cmd.Context(), dbPath)
 		if err != nil {
 			return fmt.Errorf("failed to initialize dialog storage: %w", err)
@@ -76,7 +78,7 @@ var printConvoCmd = &cobra.Command{
 	Aliases: []string{"show", "view"},
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dbPath := ".cpeconvo"
+		dbPath := defaultDBPath
 		dialogStorage, err := storage.InitDialogStorage(cmd.Context(), dbPath)
 		if err != nil {
 			return fmt.Errorf("failed to initialize dialog storage: %w", err)

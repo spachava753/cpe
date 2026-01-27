@@ -12,6 +12,8 @@ import (
 	"github.com/spachava753/cpe/internal/types"
 )
 
+const finalAnswerToolName = "final_answer"
+
 // EmittingGenerator wraps a generator to emit events for thinking blocks and tool calls
 type EmittingGenerator struct {
 	base               types.Generator
@@ -205,7 +207,7 @@ func NewEmittingToolCallback(base gai.ToolCallback, client *Client, subagentName
 // Call emits tool_call event, executes the wrapped callback, and emits tool_result event
 func (c *EmittingToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage, toolCallID string) (gai.Message, error) {
 	// Skip emitting events for final_answer tool to avoid duplicate output
-	if c.toolName == "final_answer" {
+	if c.toolName == finalAnswerToolName {
 		return c.base.Call(ctx, parametersJSON, toolCallID)
 	}
 

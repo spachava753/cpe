@@ -56,7 +56,7 @@ func FormatExecuteGoCodeToolCallMarkdown(input ExecuteGoCodeFormatInput) string 
 // The output includes a header and a shell code block.
 func FormatExecuteGoCodeResultMarkdown(content string, maxLines int) string {
 	truncated := truncateToMaxLines(content, maxLines)
-	return fmt.Sprintf("#### Code execution output:\n%s\n", truncated)
+	return fmt.Sprintf("#### Code execution output:\n````shell\n%s\n````", truncated)
 }
 
 // IsExecuteGoCodeToolCall checks if a tool call JSON is for the execute_go_code tool.

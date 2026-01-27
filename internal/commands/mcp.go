@@ -25,6 +25,8 @@ import (
 	"github.com/spachava753/cpe/internal/types"
 )
 
+const serverTypeStdio = "stdio"
+
 // MCPListServersOptions contains parameters for listing MCP servers
 type MCPListServersOptions struct {
 	MCPServers map[string]mcpinternal.ServerConfig
@@ -43,7 +45,7 @@ func MCPListServers(ctx context.Context, opts MCPListServersOptions) error {
 	for name, server := range mcpConfig {
 		serverType := server.Type
 		if serverType == "" {
-			serverType = "stdio"
+			serverType = serverTypeStdio
 		}
 
 		timeout := server.Timeout
@@ -53,7 +55,7 @@ func MCPListServers(ctx context.Context, opts MCPListServersOptions) error {
 
 		fmt.Fprintf(opts.Writer, "- %s (Type: %s, Timeout: %ds)\n", name, serverType, timeout)
 
-		if serverType == "stdio" && server.Command != "" {
+		if serverType == serverTypeStdio && server.Command != "" {
 			fmt.Fprintf(opts.Writer, "  Command: %s %s\n", server.Command, strings.Join(server.Args, " "))
 		}
 
@@ -61,7 +63,7 @@ func MCPListServers(ctx context.Context, opts MCPListServersOptions) error {
 			fmt.Fprintf(opts.Writer, "  URL: %s\n", server.URL)
 		}
 
-		if serverType == "stdio" && len(server.Env) > 0 {
+		if serverType == serverTypeStdio && len(server.Env) > 0 {
 			fmt.Fprintln(opts.Writer, "  Environment Variables:")
 			for k, v := range server.Env {
 				fmt.Fprintf(opts.Writer, "    %s=%s\n", k, v)

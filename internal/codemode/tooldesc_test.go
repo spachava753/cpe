@@ -8,6 +8,12 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+const (
+	schemaTypeObject  = "object"
+	schemaTypeString  = "string"
+	schemaTypeInteger = "integer"
+)
+
 func TestGenerateExecuteGoCodeDescription(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -165,7 +171,7 @@ func TestGenerateExecuteGoCodeTool(t *testing.T) {
 				t.Fatal("tool.InputSchema is nil")
 			}
 
-			if tool.InputSchema.Type != "object" {
+			if tool.InputSchema.Type != schemaTypeObject {
 				t.Errorf("InputSchema.Type = %q, want \"object\"", tool.InputSchema.Type)
 			}
 
@@ -179,7 +185,7 @@ func TestGenerateExecuteGoCodeTool(t *testing.T) {
 			if !ok {
 				t.Error("InputSchema.Properties missing 'code'")
 			} else {
-				if codeProp.Type != "string" {
+				if codeProp.Type != schemaTypeString {
 					t.Errorf("code property type = %q, want \"string\"", codeProp.Type)
 				}
 			}
@@ -189,7 +195,7 @@ func TestGenerateExecuteGoCodeTool(t *testing.T) {
 			if !ok {
 				t.Error("InputSchema.Properties missing 'executionTimeout'")
 			} else {
-				if timeoutProp.Type != "integer" {
+				if timeoutProp.Type != schemaTypeInteger {
 					t.Errorf("executionTimeout property type = %q, want \"integer\"", timeoutProp.Type)
 				}
 				if timeoutProp.Minimum == nil || *timeoutProp.Minimum != 1 {

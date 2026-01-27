@@ -9,6 +9,13 @@ import (
 	"github.com/stoewer/go-strcase"
 )
 
+const (
+	goTypeAny      = "any"
+	goTypeMapAny   = "map[string]any"
+	jsonTypeNull   = "null"
+	jsonTypeObject = "object"
+)
+
 // SchemaToGoType converts a JSON Schema to Go type definition(s).
 // Returns the generated type definitions as a string (may include multiple types for nested objects).
 // For nil schemas, returns a type alias to string (raw text content).
@@ -45,7 +52,7 @@ func schemaToGoTypeInternal(schema *jsonschema.Schema, typeName string, nestedTy
 	}
 
 	// Handle object type with properties -> generate struct
-	if schemaType == "object" && len(schema.Properties) > 0 {
+	if schemaType == jsonTypeObject && len(schema.Properties) > 0 {
 		return generateStruct(schema, typeName, nestedTypes)
 	}
 
@@ -107,7 +114,7 @@ func generateStruct(schema *jsonschema.Schema, typeName string, nestedTypes *[]s
 		if !isRequired {
 			jsonTag = propName + ",omitempty"
 			// Add pointer for non-pointer types (don't double-pointer already nullable types)
-			if !strings.HasPrefix(goType, "*") && !strings.HasPrefix(goType, "[]") && goType != "any" && goType != "map[string]any" {
+			if !strings.HasPrefix(goType, "*") && !strings.HasPrefix(goType, "[]") && goType != goTypeAny && goType != goTypeMapAny {
 				goType = "*" + goType
 			}
 		}
@@ -122,7 +129,7 @@ func generateStruct(schema *jsonschema.Schema, typeName string, nestedTypes *[]s
 // resolveFieldType determines the Go type for a schema property.
 func resolveFieldType(schema *jsonschema.Schema, parentTypeName, fieldName string, nestedTypes *[]string) string {
 	if schema == nil {
-		return "any"
+		return goTypeAny
 	}
 
 	// Check for nullable type first
@@ -133,7 +140,7 @@ func resolveFieldType(schema *jsonschema.Schema, parentTypeName, fieldName strin
 	}
 
 	// Handle nested object with properties -> generate named nested struct
-	if schemaType == "object" && len(schema.Properties) > 0 {
+	if schemaType == jsonTypeObject && len(schema.Properties) > 0 {
 		nestedTypeName := fmt.Sprintf("%s_%s", parentTypeName, fieldName)
 		nestedDef, _ := generateStruct(schema, nestedTypeName, nestedTypes)
 		*nestedTypes = append(*nestedTypes, nestedDef)
@@ -155,7 +162,7 @@ func resolveFieldType(schema *jsonschema.Schema, parentTypeName, fieldName strin
 	}
 
 	goType := jsonTypeToGo(schemaType, schema, parentTypeName+"_"+fieldName, nestedTypes)
-	if isNullable && goType != "any" && goType != "map[string]any" {
+	if isNullable && goType != goTypeAny && goType != goTypeMapAny {
 		return "*" + goType
 	}
 	return goType
@@ -164,7 +171,7 @@ func resolveFieldType(schema *jsonschema.Schema, parentTypeName, fieldName strin
 // resolveArrayItemType determines the Go type for array items.
 func resolveArrayItemType(schema *jsonschema.Schema, parentTypeName, fieldName string, nestedTypes *[]string) string {
 	if schema.Items == nil {
-		return "any"
+		return goTypeAny
 	}
 
 	itemSchema := schema.Items
@@ -174,7 +181,7 @@ func resolveArrayItemType(schema *jsonschema.Schema, parentTypeName, fieldName s
 	}
 
 	// Handle array of objects
-	if itemType == "object" && len(itemSchema.Properties) > 0 {
+	if itemType == jsonTypeObject && len(itemSchema.Properties) > 0 {
 		nestedTypeName := fmt.Sprintf("%s_%sItem", parentTypeName, fieldName)
 		nestedDef, _ := generateStruct(itemSchema, nestedTypeName, nestedTypes)
 		*nestedTypes = append(*nestedTypes, nestedDef)
@@ -203,22 +210,22 @@ func jsonTypeToGo(jsonType string, schema *jsonschema.Schema, typeName string, n
 		return "[]any"
 	case "object":
 		// Object without properties
-		return "map[string]any"
-	case "null":
-		return "any"
+		return goTypeMapAny
+	case jsonTypeNull:
+		return goTypeAny
 	default:
-		return "any"
+		return goTypeAny
 	}
 }
 
 // resolveNullableType handles type arrays like ["null", "string"] and returns the non-null type.
 func resolveNullableType(types []string) string {
 	for _, t := range types {
-		if t != "null" {
+		if t != jsonTypeNull {
 			return t
 		}
 	}
-	return "null"
+	return jsonTypeNull
 }
 
 // resolveNullableTypeWithFlag returns the non-null type and whether the type is nullable.
@@ -227,7 +234,7 @@ func resolveNullableTypeWithFlag(types []string) (string, bool) {
 	var nonNullType string
 
 	for _, t := range types {
-		if t == "null" {
+		if t == jsonTypeNull {
 			hasNull = true
 		} else {
 			nonNullType = t
@@ -235,7 +242,7 @@ func resolveNullableTypeWithFlag(types []string) (string, bool) {
 	}
 
 	if nonNullType == "" {
-		return "null", hasNull
+		return jsonTypeNull, hasNull
 	}
 	return nonNullType, hasNull
 }

@@ -11,6 +11,8 @@ import (
 	"github.com/stoewer/go-strcase"
 )
 
+const jsonNull = "null"
+
 // GenerateToolDefinitions generates Go type definitions and function signatures
 // for a list of MCP tools. Returns a single string with all types followed by
 // all function declarations.
@@ -94,7 +96,7 @@ func convertSchema(schema any) (*jsonschema.Schema, error) {
 	}
 
 	// Check for empty object
-	if string(schemaJSON) == "{}" || string(schemaJSON) == "null" {
+	if string(schemaJSON) == "{}" || string(schemaJSON) == jsonNull {
 		return nil, nil
 	}
 

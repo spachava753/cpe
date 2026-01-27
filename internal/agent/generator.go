@@ -25,6 +25,8 @@ import (
 	"github.com/cenkalti/backoff/v5"
 )
 
+const authMethodOAuth = "oauth"
+
 // prependClaudeCodeIdentifier adds the required Claude Code identifier as the first
 // system message. Anthropic requires this for OAuth tokens to work.
 func prependClaudeCodeIdentifier(_ context.Context, params *a.MessageNewParams) error {
@@ -73,7 +75,7 @@ func initGeneratorFromModel(
 		var client a.Client
 		authMethod := strings.ToLower(m.AuthMethod)
 
-		if authMethod == "oauth" {
+		if authMethod == authMethodOAuth {
 			// Use OAuth authentication
 			store, err := auth.NewStore()
 			if err != nil {
@@ -125,7 +127,7 @@ func initGeneratorFromModel(
 			gai.EnableMultiTurnCaching,
 		}
 		// For OAuth, prepend Claude Code identifier (required by Anthropic for OAuth tokens)
-		if authMethod == "oauth" {
+		if authMethod == authMethodOAuth {
 			modifiers = append([]gai.AnthropicServiceParamModifierFunc{prependClaudeCodeIdentifier}, modifiers...)
 		}
 		svc := gai.NewAnthropicServiceWrapper(&client.Messages, modifiers...)
@@ -231,10 +233,10 @@ func CreateToolCapableGenerator(
 	}
 
 	wrappers = append(wrappers, gai.WithRetry(b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute)))
-	
+
 	toolResultRenderer := NewRenderer()
 	wrappers = append(wrappers, WithToolResultPrinterWrapper(toolResultRenderer))
-	
+
 	gen = gai.Wrap(gen, wrappers...).(gai.ToolCapableGenerator)
 
 	// Create the tool generator using the wrapped generator
