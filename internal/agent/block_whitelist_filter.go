@@ -2,43 +2,43 @@ package agent
 
 import (
 	"context"
-	"fmt"
 	"slices"
 
 	"github.com/spachava753/gai"
-
-	"github.com/spachava753/cpe/internal/types"
 )
 
-// BlockWhitelistFilter wraps a types.Generator and filters blocks based on a whitelist of allowed block types.
-// Only blocks whose BlockType is in the AllowedTypes slice will be kept.
+// BlockWhitelistFilter wraps a generator and filters blocks from the input dialog
+// based on a whitelist of allowed block types.
 type BlockWhitelistFilter struct {
-	generator    types.Generator
+	gai.GeneratorWrapper
 	allowedTypes []string
 }
 
 // NewBlockWhitelistFilter creates a new BlockWhitelistFilter with the specified allowed block types.
-// If allowedTypes is empty, all blocks are filtered out (whitelist behavior).
-func NewBlockWhitelistFilter(generator types.Generator, allowedTypes []string) *BlockWhitelistFilter {
+func NewBlockWhitelistFilter(generator gai.Generator, allowedTypes []string) *BlockWhitelistFilter {
 	return &BlockWhitelistFilter{
-		generator:    generator,
-		allowedTypes: allowedTypes,
+		GeneratorWrapper: gai.GeneratorWrapper{Inner: generator},
+		allowedTypes:     allowedTypes,
 	}
 }
 
-// Generate wraps the types.Generator.Generate method and filters blocks based on the whitelist
-func (f *BlockWhitelistFilter) Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error) {
-	// Filter blocks in each message based on whitelist
+// WithBlockWhitelist returns a WrapperFunc for use with gai.Wrap
+func WithBlockWhitelist(allowedTypes []string) gai.WrapperFunc {
+	return func(g gai.Generator) gai.Generator {
+		return NewBlockWhitelistFilter(g, allowedTypes)
+	}
+}
+
+// Generate filters blocks in the input dialog based on the whitelist, then delegates to the inner generator
+func (f *BlockWhitelistFilter) Generate(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
 	filteredDialog := make(gai.Dialog, 0, len(dialog))
 	for _, message := range dialog {
 		filteredBlocks := make([]gai.Block, 0)
 		for _, block := range message.Blocks {
-			if f.isAllowed(block.BlockType) {
+			if slices.Contains(f.allowedTypes, block.BlockType) {
 				filteredBlocks = append(filteredBlocks, block)
 			}
 		}
-
-		// Create a new message with filtered blocks
 		filteredMessage := gai.Message{
 			Role:            message.Role,
 			Blocks:          filteredBlocks,
@@ -46,20 +46,5 @@ func (f *BlockWhitelistFilter) Generate(ctx context.Context, dialog gai.Dialog, 
 		}
 		filteredDialog = append(filteredDialog, filteredMessage)
 	}
-
-	// Call the wrapped generator
-	return f.generator.Generate(ctx, filteredDialog, optsGen)
-}
-
-// Register delegates to the underlying generator if it supports tool registration
-func (f *BlockWhitelistFilter) Register(tool gai.Tool, callback gai.ToolCallback) error {
-	if toolRegister, ok := f.generator.(types.ToolRegistrar); ok {
-		return toolRegister.Register(tool, callback)
-	}
-	return gai.ToolRegistrationErr{Tool: tool.Name, Cause: fmt.Errorf("underlying generator does not support tool registration")}
-}
-
-// isAllowed checks if a block type is in the whitelist
-func (f *BlockWhitelistFilter) isAllowed(blockType string) bool {
-	return slices.Contains(f.allowedTypes, blockType)
+	return f.GeneratorWrapper.Generate(ctx, filteredDialog, options)
 }

@@ -90,16 +90,10 @@ func TestBlockWhitelistFilter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create a mock generator that captures and returns the filtered input
-			mockGenerator := &mockToolGenerator{}
-
-			// Create the filter
+			mockGenerator := &mockGaiGenerator{}
 			filter := NewBlockWhitelistFilter(mockGenerator, tt.allowedTypes)
 
-			// Generate - this will filter the input dialog and pass it to the mock generator
-			_, err := filter.Generate(context.Background(), tt.inputDialog, func(d gai.Dialog) *gai.GenOpts {
-				return &gai.GenOpts{}
-			})
+			_, err := filter.Generate(context.Background(), tt.inputDialog, nil)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -109,12 +103,12 @@ func TestBlockWhitelistFilter(t *testing.T) {
 	}
 }
 
-// mockToolGenerator is a mock implementation of ToolGenerator for testing
-type mockToolGenerator struct {
-	capturedDialog gai.Dialog // Captured input dialog
+// mockGaiGenerator implements gai.Generator for testing filters at the gai.Generator level
+type mockGaiGenerator struct {
+	capturedDialog gai.Dialog
 }
 
-func (m *mockToolGenerator) Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error) {
+func (m *mockGaiGenerator) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
 	m.capturedDialog = dialog
-	return nil, nil
+	return gai.Response{}, nil
 }

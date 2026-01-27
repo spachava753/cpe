@@ -26,7 +26,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.1.0
 	github.com/muesli/termenv v0.16.0
 	github.com/openai/openai-go/v2 v2.7.1
-	github.com/spachava753/gai v0.26.0
+	github.com/spachava753/gai v0.27.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stoewer/go-strcase v1.2.0
 	github.com/stretchr/testify v1.11.1

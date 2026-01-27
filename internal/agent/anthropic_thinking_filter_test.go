@@ -87,7 +87,6 @@ func TestAnthropicThinkingBlockFilter(t *testing.T) {
 				{
 					Role: gai.Assistant,
 					Blocks: []gai.Block{
-						// Gemini thinking - should be filtered
 						{
 							BlockType:   gai.Thinking,
 							Content:     gai.Str("gemini thinking"),
@@ -105,7 +104,6 @@ func TestAnthropicThinkingBlockFilter(t *testing.T) {
 				{
 					Role: gai.Assistant,
 					Blocks: []gai.Block{
-						// Anthropic thinking - should be kept
 						{
 							BlockType:   gai.Thinking,
 							Content:     gai.Str("anthropic thinking"),
@@ -133,12 +131,10 @@ func TestAnthropicThinkingBlockFilter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockGenerator := &mockToolGenerator{}
+			mockGenerator := &mockGaiGenerator{}
 			filter := NewAnthropicThinkingBlockFilter(mockGenerator)
 
-			_, err := filter.Generate(context.Background(), tt.inputDialog, func(d gai.Dialog) *gai.GenOpts {
-				return &gai.GenOpts{}
-			})
+			_, err := filter.Generate(context.Background(), tt.inputDialog, nil)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -149,7 +145,7 @@ func TestAnthropicThinkingBlockFilter(t *testing.T) {
 }
 
 func TestAnthropicThinkingBlockFilter_PreservesToolResultError(t *testing.T) {
-	mockGenerator := &mockToolGenerator{}
+	mockGenerator := &mockGaiGenerator{}
 	filter := NewAnthropicThinkingBlockFilter(mockGenerator)
 
 	inputDialog := gai.Dialog{
@@ -162,9 +158,7 @@ func TestAnthropicThinkingBlockFilter_PreservesToolResultError(t *testing.T) {
 		},
 	}
 
-	_, err := filter.Generate(context.Background(), inputDialog, func(d gai.Dialog) *gai.GenOpts {
-		return &gai.GenOpts{}
-	})
+	_, err := filter.Generate(context.Background(), inputDialog, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -173,20 +167,20 @@ func TestAnthropicThinkingBlockFilter_PreservesToolResultError(t *testing.T) {
 }
 
 func TestAnthropicThinkingBlockFilter_Register(t *testing.T) {
-	mockGenerator := &mockToolGenerator{}
+	mockGenerator := &mockGaiGenerator{}
 	filter := NewAnthropicThinkingBlockFilter(mockGenerator)
 
 	tool := gai.Tool{Name: "test_tool"}
 
-	// mockToolGenerator doesn't implement ToolRegister, so this should return an error
-	err := filter.Register(tool, nil)
+	// mockGaiGenerator doesn't implement ToolRegister, so this should return an error
+	err := filter.Register(tool)
 	if err == nil {
 		t.Error("expected error when underlying generator doesn't support tool registration")
 	}
 }
 
 func TestAnthropicThinkingBlockFilter_FiltersOpenRouterThinking(t *testing.T) {
-	mockGenerator := &mockToolGenerator{}
+	mockGenerator := &mockGaiGenerator{}
 	filter := NewAnthropicThinkingBlockFilter(mockGenerator)
 
 	inputDialog := gai.Dialog{
@@ -203,9 +197,7 @@ func TestAnthropicThinkingBlockFilter_FiltersOpenRouterThinking(t *testing.T) {
 		},
 	}
 
-	_, err := filter.Generate(context.Background(), inputDialog, func(d gai.Dialog) *gai.GenOpts {
-		return &gai.GenOpts{}
-	})
+	_, err := filter.Generate(context.Background(), inputDialog, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

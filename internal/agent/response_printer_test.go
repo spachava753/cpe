@@ -321,7 +321,7 @@ func TestResponsePrinterGenerateIORouting(t *testing.T) {
 			}
 
 			gen := &ResponsePrinterGenerator{
-				wrapped:          mockGen,
+			GeneratorWrapper: gai.GeneratorWrapper{Inner: mockGen},
 				contentRenderer:  plainRenderer,
 				thinkingRenderer: plainRenderer,
 				toolCallRenderer: plainRenderer,

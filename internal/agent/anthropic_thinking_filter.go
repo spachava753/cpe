@@ -2,27 +2,34 @@ package agent
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/spachava753/gai"
-
-	"github.com/spachava753/cpe/internal/types"
 )
 
 const anthropicThinkingSignatureKey = "anthropic_thinking_signature"
 
-// AnthropicThinkingBlockFilter filters thinking blocks, keeping only those
-// that originated from Anthropic (identified by the anthropic_thinking_signature key).
-// This ensures cross-provider compatibility when resuming conversations.
+// AnthropicThinkingBlockFilter filters thinking blocks from the input dialog,
+// keeping only those that originated from Anthropic (identified by the
+// anthropic_thinking_signature key). This ensures cross-provider compatibility
+// when resuming conversations.
 type AnthropicThinkingBlockFilter struct {
-	generator types.Generator
+	gai.GeneratorWrapper
 }
 
-func NewAnthropicThinkingBlockFilter(generator types.Generator) *AnthropicThinkingBlockFilter {
-	return &AnthropicThinkingBlockFilter{generator: generator}
+func NewAnthropicThinkingBlockFilter(generator gai.Generator) *AnthropicThinkingBlockFilter {
+	return &AnthropicThinkingBlockFilter{
+		GeneratorWrapper: gai.GeneratorWrapper{Inner: generator},
+	}
 }
 
-func (f *AnthropicThinkingBlockFilter) Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error) {
+// WithAnthropicThinkingFilter returns a WrapperFunc for use with gai.Wrap
+func WithAnthropicThinkingFilter() gai.WrapperFunc {
+	return func(g gai.Generator) gai.Generator {
+		return NewAnthropicThinkingBlockFilter(g)
+	}
+}
+
+func (f *AnthropicThinkingBlockFilter) Generate(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
 	filteredDialog := make(gai.Dialog, 0, len(dialog))
 	for _, message := range dialog {
 		filteredBlocks := make([]gai.Block, 0, len(message.Blocks))
@@ -48,18 +55,5 @@ func (f *AnthropicThinkingBlockFilter) Generate(ctx context.Context, dialog gai.
 		}
 		filteredDialog = append(filteredDialog, filteredMessage)
 	}
-	return f.generator.Generate(ctx, filteredDialog, optsGen)
-}
-
-// Register delegates to the underlying generator if it supports tool registration
-func (f *AnthropicThinkingBlockFilter) Register(tool gai.Tool, callback gai.ToolCallback) error {
-	if toolRegister, ok := f.generator.(types.ToolRegistrar); ok {
-		return toolRegister.Register(tool, callback)
-	}
-	return gai.ToolRegistrationErr{Tool: tool.Name, Cause: fmt.Errorf("underlying generator does not support tool registration")}
-}
-
-// Inner returns the wrapped generator, implementing the InnerGenerator interface
-func (f *AnthropicThinkingBlockFilter) Inner() types.Generator {
-	return f.generator
+	return f.GeneratorWrapper.Generate(ctx, filteredDialog, options)
 }

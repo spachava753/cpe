@@ -208,43 +208,39 @@ func CreateToolCapableGenerator(
 		return nil, fmt.Errorf("generator does not implement ToolCapableGenerator interface")
 	}
 
-	// Wrap with response printer unless disabled (e.g., for subagents in MCP server mode)
-	if !disablePrinting {
-		renderers := NewResponsePrinterRenderers()
-		gen = NewResponsePrinterGenerator(gen, renderers.Content, renderers.Thinking, renderers.ToolCall, os.Stdout, os.Stderr)
-	}
-
-	// print token usage at the end of each message
-	gen = NewTokenUsagePrinterGenerator(gen, os.Stderr)
-
-	// Wrap with retry wrapper so Generate is retried on transient failures
+	// Build middleware stack using gai.Wrap
 	b := backoff.NewExponentialBackOff()
 	b.InitialInterval = 500 * time.Millisecond
 	b.MaxInterval = 1 * time.Minute
 	b.Reset()
 
-	gen = gai.NewRetryGenerator(gen, b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute))
+	var wrappers []gai.WrapperFunc
+	if !disablePrinting {
+		renderers := NewResponsePrinterRenderers()
+		wrappers = append(wrappers, WithResponsePrinting(renderers.Content, renderers.Thinking, renderers.ToolCall, os.Stdout, os.Stderr))
+	}
+	wrappers = append(wrappers, WithTokenUsagePrinting(os.Stderr))
 
-	// Create the tool generator using the printing-enabled generator
+	// Add block filter based on model type:
+	// For Anthropic: keep Anthropic thinking blocks but filter out thinking blocks from other providers
+	// For other providers: filter all thinking blocks, keep only content and tool calls
+	if strings.ToLower(selectedModel.Type) == "anthropic" {
+		wrappers = append(wrappers, WithAnthropicThinkingFilter())
+	} else {
+		wrappers = append(wrappers, WithBlockWhitelist([]string{gai.Content, gai.ToolCall}))
+	}
+
+	wrappers = append(wrappers, gai.WithRetry(b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute)))
+	
+	toolResultRenderer := NewRenderer()
+	wrappers = append(wrappers, WithToolResultPrinterWrapper(toolResultRenderer))
+	
+	gen = gai.Wrap(gen, wrappers...).(gai.ToolCapableGenerator)
+
+	// Create the tool generator using the wrapped generator
 	toolGen := &gai.ToolGenerator{
 		G: gen,
 	}
-
-	// Wrap the tool generator with a filter to handle thinking blocks.
-	// For Anthropic: keep Anthropic thinking blocks but filter out thinking blocks
-	// from other providers (Gemini, OpenRouter, etc.)
-	// For other providers: filter all thinking blocks
-	var filterToolGen types.Generator
-	if strings.ToLower(selectedModel.Type) == "anthropic" {
-		filterToolGen = NewAnthropicThinkingBlockFilter(toolGen)
-	} else {
-		filterToolGen = NewBlockWhitelistFilter(toolGen, []string{gai.Content, gai.ToolCall})
-	}
-
-	// Wrap with tool result printer to print tool execution results to stderr
-	// Use the same content renderer for consistent styling
-	toolResultRenderer := NewRenderer()
-	toolResultPrinter := NewToolResultPrinterWrapper(filterToolGen, toolResultRenderer)
 
 	// Create client manager
 	client := mcp.NewClient()
@@ -294,7 +290,7 @@ func CreateToolCapableGenerator(
 		if callbackWrapper != nil {
 			finalCallback = callbackWrapper(executeGoCodeTool.Name, callback)
 		}
-		if err := toolResultPrinter.Register(executeGoCodeTool, finalCallback); err != nil {
+		if err := toolGen.Register(executeGoCodeTool, finalCallback); err != nil {
 			return nil, fmt.Errorf("failed to register execute_go_code tool: %w", err)
 		}
 
@@ -304,7 +300,7 @@ func CreateToolCapableGenerator(
 			if callbackWrapper != nil {
 				cb = callbackWrapper(toolData.Tool.Name, toolData.ToolCallback)
 			}
-			if err := toolResultPrinter.Register(toolData.Tool, cb); err != nil {
+			if err := toolGen.Register(toolData.Tool, cb); err != nil {
 				return nil, fmt.Errorf("failed to register excluded tool %s: %w", toolData.Tool.Name, err)
 			}
 		}
@@ -316,12 +312,12 @@ func CreateToolCapableGenerator(
 				if callbackWrapper != nil {
 					cb = callbackWrapper(toolData.Tool.Name, toolData.ToolCallback)
 				}
-				if err := toolResultPrinter.Register(toolData.Tool, cb); err != nil {
+				if err := toolGen.Register(toolData.Tool, cb); err != nil {
 					return nil, fmt.Errorf("failed to register tool %s: %w", toolData.Tool.Name, err)
 				}
 			}
 		}
 	}
 
-	return toolResultPrinter, nil
+	return toolGen, nil
 }
