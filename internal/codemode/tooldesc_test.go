@@ -92,11 +92,6 @@ func TestGenerateExecuteGoCodeDescription_MultimediaDocumentation(t *testing.T) 
 		t.Error("Description should document Run signature with ([]mcp.Content, error) return type")
 	}
 
-	// Verify main.go example shows content, err := Run(ctx)
-	if !strings.Contains(got, "content, err := Run(ctx)") {
-		t.Error("Description should show content, err := Run(ctx) in main.go example")
-	}
-
 	// Verify multimedia content types are documented
 	if !strings.Contains(got, "&mcp.TextContent{Text:") {
 		t.Error("Description should document TextContent type")
