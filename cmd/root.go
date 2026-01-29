@@ -29,6 +29,7 @@ var (
 	timeout         string
 	skipStdin       bool
 	configPath      string
+	verboseSubagent bool
 
 	genParams gai.GenOpts
 )
@@ -64,6 +65,7 @@ through natural language interactions.`,
 			NewConversation: newConversation,
 			IncognitoMode:   incognitoMode,
 			Stderr:          os.Stderr,
+			VerboseSubagent: verboseSubagent,
 		})
 	},
 }
@@ -101,6 +103,10 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&timeout, "timeout", "", "", "Specify request timeout duration (e.g. '5m', '30s')")
 	rootCmd.PersistentFlags().BoolVar(&skipStdin, "skip-stdin", false, "Skip reading from stdin (useful in scripts)")
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Path to unified configuration file (default: ./cpe.yaml, ~/.config/cpe/cpe.yaml)")
+
+	// Verbose subagent flag with env var fallback
+	defaultVerbose := os.Getenv("CPE_VERBOSE_SUBAGENT") == "true" || os.Getenv("CPE_VERBOSE_SUBAGENT") == "1"
+	rootCmd.PersistentFlags().BoolVar(&verboseSubagent, "verbose-subagent", defaultVerbose, "Show verbose subagent output including full tool payloads and results")
 
 	// Add version flag
 	rootCmd.Flags().BoolP("version", "v", false, "Print the version number and exit")

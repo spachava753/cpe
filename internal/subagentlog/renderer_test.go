@@ -15,7 +15,7 @@ func (m *mockRenderer) Render(in string) (string, error) {
 }
 
 func TestRenderEvent(t *testing.T) {
-	renderer := NewRenderer(&mockRenderer{})
+	renderer := NewRenderer(&mockRenderer{}, RenderModeVerbose)
 	baseTime := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 
 	tests := []struct {
@@ -181,12 +181,15 @@ func TestRenderEvent(t *testing.T) {
 
 func TestNewRenderer(t *testing.T) {
 	mock := &mockRenderer{}
-	r := NewRenderer(mock)
+	r := NewRenderer(mock, RenderModeVerbose)
 	if r == nil {
 		t.Fatal("NewRenderer returned nil")
 	}
 	if r.markdownRenderer != mock {
 		t.Error("NewRenderer did not set markdownRenderer correctly")
+	}
+	if r.mode != RenderModeVerbose {
+		t.Error("NewRenderer did not set mode correctly")
 	}
 }
 
@@ -219,4 +222,77 @@ func TestFormatJSON(t *testing.T) {
 			cupaloy.SnapshotT(t, got)
 		})
 	}
+}
+
+func TestRenderEvent_Concise(t *testing.T) {
+	mockRenderer := &mockRenderer{}
+	r := NewRenderer(mockRenderer, RenderModeConcise)
+
+	// Test: tool_result shows success indicator
+	t.Run("tool_result_success", func(t *testing.T) {
+		event := Event{
+			Type:          EventTypeToolResult,
+			SubagentName:  "test-agent",
+			SubagentRunID: "run-123",
+			ToolName:      "some_tool",
+			Payload:       "result content",
+		}
+		result := r.RenderEvent(event)
+		cupaloy.SnapshotT(t, result)
+	})
+
+	// Test: tool_call shows only name
+	t.Run("tool_call_name_only", func(t *testing.T) {
+		event := Event{
+			Type:          EventTypeToolCall,
+			SubagentName:  "test-agent",
+			SubagentRunID: "run-123",
+			ToolName:      "execute_go_code",
+			Payload:       "lots of code here...",
+		}
+		result := r.RenderEvent(event)
+		cupaloy.SnapshotT(t, result)
+	})
+
+	// Test: thought_trace is truncated to 2 lines
+	t.Run("thought_trace_truncated", func(t *testing.T) {
+		event := Event{
+			Type:          EventTypeThoughtTrace,
+			SubagentName:  "test-agent",
+			SubagentRunID: "run-123",
+			Payload:       "Line 1\nLine 2\nLine 3\nLine 4",
+		}
+		result := r.RenderEvent(event)
+		cupaloy.SnapshotT(t, result)
+	})
+
+	// Test: final_answer tool call is still skipped
+	t.Run("final_answer_tool_call_skipped", func(t *testing.T) {
+		event := Event{
+			Type:          EventTypeToolCall,
+			SubagentName:  "test-agent",
+			SubagentRunID: "run-123",
+			ToolName:      "final_answer",
+			Payload:       "{}",
+		}
+		result := r.RenderEvent(event)
+		if result != "" {
+			t.Errorf("expected empty string, got %q", result)
+		}
+	})
+
+	// Test: final_answer tool result is still skipped
+	t.Run("final_answer_tool_result_skipped", func(t *testing.T) {
+		event := Event{
+			Type:          EventTypeToolResult,
+			SubagentName:  "test-agent",
+			SubagentRunID: "run-123",
+			ToolName:      "final_answer",
+			Payload:       "the answer",
+		}
+		result := r.RenderEvent(event)
+		if result != "" {
+			t.Errorf("expected empty string, got %q", result)
+		}
+	})
 }

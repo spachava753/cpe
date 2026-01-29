@@ -45,6 +45,8 @@ type ExecuteRootOptions struct {
 
 	// Stderr is where to write status messages
 	Stderr io.Writer
+	// VerboseSubagent enables verbose subagent output
+	VerboseSubagent bool
 }
 
 // ExecuteRoot runs the main CPE generation flow
@@ -90,7 +92,12 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 	// and should not start another server.
 	var subagentLoggingAddress string
 	if os.Getenv(subagentlog.SubagentLoggingAddressEnv) == "" {
-		renderer := subagentlog.NewRenderer(agent.NewRenderer())
+		// Determine render mode for subagent events
+		renderMode := subagentlog.RenderModeConcise
+		if opts.VerboseSubagent {
+			renderMode = subagentlog.RenderModeVerbose
+		}
+		renderer := subagentlog.NewRenderer(agent.NewRenderer(), renderMode)
 		stderrWriter := subagentlog.NewSyncWriter(opts.Stderr)
 		eventServer := subagentlog.NewServer(func(event subagentlog.Event) {
 			rendered := renderer.RenderEvent(event)
