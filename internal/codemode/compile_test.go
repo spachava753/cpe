@@ -8,27 +8,27 @@ import (
 	"testing"
 
 	"github.com/bradleyjkemp/cupaloy/v2"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	mcpcpe "github.com/spachava753/cpe/internal/mcp"
+	"github.com/spachava753/cpe/internal/mcp"
 )
 
 func TestGenerateMainGo_Compiles(t *testing.T) {
 	testCases := []struct {
 		name    string
-		servers []ServerToolsInfo
+		servers []*mcp.MCPConn
 	}{
 		{
 			name:    "empty",
-			servers: []ServerToolsInfo{},
+			servers: []*mcp.MCPConn{},
 		},
 		{
 			name: "stdio_with_tools",
-			servers: []ServerToolsInfo{
+			servers: []*mcp.MCPConn{
 				{
 					ServerName: "editor",
-					Config:     mcpcpe.ServerConfig{Type: "stdio", Command: "editor-mcp"},
-					Tools: []*mcp.Tool{
+					Config:     mcp.ServerConfig{Type: "stdio", Command: "editor-mcp"},
+					Tools: []*mcpsdk.Tool{
 						{
 							Name:         "read_file",
 							InputSchema:  map[string]any{"type": "object", "properties": map[string]any{"path": map[string]any{"type": "string"}}},
@@ -40,11 +40,11 @@ func TestGenerateMainGo_Compiles(t *testing.T) {
 		},
 		{
 			name: "http_with_headers",
-			servers: []ServerToolsInfo{
+			servers: []*mcp.MCPConn{
 				{
 					ServerName: "api",
-					Config:     mcpcpe.ServerConfig{Type: "http", URL: "https://api.example.com", Headers: map[string]string{"Authorization": "Bearer token"}},
-					Tools: []*mcp.Tool{
+					Config:     mcp.ServerConfig{Type: "http", URL: "https://api.example.com", Headers: map[string]string{"Authorization": "Bearer token"}},
+					Tools: []*mcpsdk.Tool{
 						{
 							Name:         "fetch",
 							InputSchema:  map[string]any{},
@@ -56,28 +56,28 @@ func TestGenerateMainGo_Compiles(t *testing.T) {
 		},
 		{
 			name: "server_no_tools",
-			servers: []ServerToolsInfo{
+			servers: []*mcp.MCPConn{
 				{
 					ServerName: "empty",
-					Config:     mcpcpe.ServerConfig{Type: "stdio", Command: "empty-mcp"},
-					Tools:      []*mcp.Tool{},
+					Config:     mcp.ServerConfig{Type: "stdio", Command: "empty-mcp"},
+					Tools:      []*mcpsdk.Tool{},
 				},
 			},
 		},
 		{
 			name: "multiple_servers_different_headers",
-			servers: []ServerToolsInfo{
+			servers: []*mcp.MCPConn{
 				{
 					ServerName: "api-one",
-					Config:     mcpcpe.ServerConfig{Type: "http", URL: "https://one.example.com", Headers: map[string]string{"X-Key": "one"}},
-					Tools: []*mcp.Tool{
+					Config:     mcp.ServerConfig{Type: "http", URL: "https://one.example.com", Headers: map[string]string{"X-Key": "one"}},
+					Tools: []*mcpsdk.Tool{
 						{Name: "one", InputSchema: map[string]any{}, OutputSchema: nil},
 					},
 				},
 				{
 					ServerName: "api-two",
-					Config:     mcpcpe.ServerConfig{Type: "http", URL: "https://two.example.com", Headers: map[string]string{"X-Key": "two"}},
-					Tools: []*mcp.Tool{
+					Config:     mcp.ServerConfig{Type: "http", URL: "https://two.example.com", Headers: map[string]string{"X-Key": "two"}},
+					Tools: []*mcpsdk.Tool{
 						{Name: "two", InputSchema: map[string]any{}, OutputSchema: nil},
 					},
 				},

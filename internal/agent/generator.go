@@ -184,18 +184,15 @@ func initGeneratorFromModel(
 type ToolCallbackWrapper func(toolName string, callback gai.ToolCallback) gai.ToolCallback
 
 // CreateToolCapableGenerator creates a types.Generator with all middleware properly configured.
-// The subagentLoggingAddress parameter specifies the HTTP endpoint where subagent events
-// should be sent. If non-empty, it will be injected into child MCP server processes
-// via the CPE_SUBAGENT_LOGGING_ADDRESS environment variable.
+// It expects an already-initialized MCPState with connections and filtered tools.
 func CreateToolCapableGenerator(
 	ctx context.Context,
 	selectedModel config.Model,
 	systemPrompt string,
 	requestTimeout time.Duration,
 	disablePrinting bool,
-	mcpServers map[string]mcp.ServerConfig,
+	mcpState *mcp.MCPState,
 	codeModeConfig *config.CodeModeConfig,
-	subagentLoggingAddress string,
 	callbackWrapper ToolCallbackWrapper,
 ) (types.Generator, error) {
 	// Create the base generator from catalog model
@@ -247,15 +244,6 @@ func CreateToolCapableGenerator(
 		G: gen,
 	}
 
-	// Create client manager
-	client := mcp.NewClient()
-
-	// Fetch MCP server tools
-	toolsByServer, err := mcp.FetchTools(ctx, client, mcpServers, subagentLoggingAddress)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch MCP tools: %w", err)
-	}
-
 	// Check if code mode is enabled
 	codeModeEnabled := codeModeConfig != nil && codeModeConfig.Enabled
 
@@ -266,17 +254,17 @@ func CreateToolCapableGenerator(
 			excludedToolNames = codeModeConfig.ExcludedTools
 		}
 
-		serverToolsInfo, excludedTools := codemode.PartitionTools(toolsByServer, mcpServers, excludedToolNames)
+		codeModeServers, excludedByServer := codemode.PartitionTools(mcpState, excludedToolNames)
 
 		// Run collision detection on code-mode tools
-		codeModeToolNames := codemode.GetCodeModeToolNames(serverToolsInfo)
+		codeModeToolNames := codemode.GetCodeModeToolNames(codeModeServers)
 		if err := codemode.CheckToolNameCollisions(codeModeToolNames); err != nil {
 			return nil, err
 		}
 
 		// Collect all code-mode tools for tool description generation
 		var allCodeModeTools []*mcpsdk.Tool
-		for _, serverInfo := range serverToolsInfo {
+		for _, serverInfo := range codeModeServers {
 			allCodeModeTools = append(allCodeModeTools, serverInfo.Tools...)
 		}
 
@@ -288,7 +276,7 @@ func CreateToolCapableGenerator(
 		}
 
 		callback := &codemode.ExecuteGoCodeCallback{
-			Servers: serverToolsInfo,
+			Servers: codeModeServers,
 		}
 
 		finalCallback := gai.ToolCallback(callback)
@@ -300,25 +288,36 @@ func CreateToolCapableGenerator(
 		}
 
 		// Register excluded tools normally
-		for _, toolData := range excludedTools {
-			cb := toolData.ToolCallback
-			if callbackWrapper != nil {
-				cb = callbackWrapper(toolData.Tool.Name, toolData.ToolCallback)
-			}
-			if err := toolGen.Register(toolData.Tool, cb); err != nil {
-				return nil, fmt.Errorf("failed to register excluded tool %s: %w", toolData.Tool.Name, err)
+		for serverName, tools := range excludedByServer {
+			conn := mcpState.Connections[serverName]
+			for _, mcpTool := range tools {
+				gaiTool, err := mcp.ToGaiTool(mcpTool)
+				if err != nil {
+					return nil, fmt.Errorf("converting tool %s: %w", mcpTool.Name, err)
+				}
+				cb := gai.ToolCallback(mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name))
+				if callbackWrapper != nil {
+					cb = callbackWrapper(mcpTool.Name, cb)
+				}
+				if err := toolGen.Register(gaiTool, cb); err != nil {
+					return nil, fmt.Errorf("failed to register excluded tool %s: %w", mcpTool.Name, err)
+				}
 			}
 		}
 	} else {
 		// Code mode disabled: register all tools normally
-		for _, tools := range toolsByServer {
-			for _, toolData := range tools {
-				cb := toolData.ToolCallback
-				if callbackWrapper != nil {
-					cb = callbackWrapper(toolData.Tool.Name, toolData.ToolCallback)
+		for serverName, conn := range mcpState.Connections {
+			for _, mcpTool := range conn.Tools {
+				gaiTool, err := mcp.ToGaiTool(mcpTool)
+				if err != nil {
+					return nil, fmt.Errorf("converting tool %s: %w", mcpTool.Name, err)
 				}
-				if err := toolGen.Register(toolData.Tool, cb); err != nil {
-					return nil, fmt.Errorf("failed to register tool %s: %w", toolData.Tool.Name, err)
+				cb := gai.ToolCallback(mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name))
+				if callbackWrapper != nil {
+					cb = callbackWrapper(mcpTool.Name, cb)
+				}
+				if err := toolGen.Register(gaiTool, cb); err != nil {
+					return nil, fmt.Errorf("failed to register tool %s: %w", mcpTool.Name, err)
 				}
 			}
 		}

@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/bradleyjkemp/cupaloy/v2"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	mcpcpe "github.com/spachava753/cpe/internal/mcp"
+	"github.com/spachava753/cpe/internal/mcp"
 )
 
 func TestExecuteCode(t *testing.T) {
@@ -292,7 +292,7 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 }
 `
 
-	result, err := ExecuteCode(ctx, []ServerToolsInfo{}, llmCode, 30)
+	result, err := ExecuteCode(ctx, []*mcp.MCPConn{}, llmCode, 30)
 	if err != nil {
 		t.Fatalf("ExecuteCode() error: %v", err)
 	}
@@ -491,11 +491,11 @@ func TestErrorMessages(t *testing.T) {
 }
 
 func TestExecuteCode_ToolTypesCompile(t *testing.T) {
-	servers := []ServerToolsInfo{
+	servers := []*mcp.MCPConn{
 		{
 			ServerName: "test-server",
-			Config:     mcpcpe.ServerConfig{Type: "stdio", Command: "test-cmd"},
-			Tools: []*mcp.Tool{
+			Config:     mcp.ServerConfig{Type: "stdio", Command: "test-cmd"},
+			Tools: []*mcpsdk.Tool{
 				{
 					Name:        "get_weather",
 					Description: "Get weather for a city",
@@ -617,7 +617,7 @@ func TestUnmarshalContent(t *testing.T) {
 		wantLen     int
 		wantErr     bool
 		errContains string
-		validate    func(t *testing.T, content []mcp.Content)
+		validate    func(t *testing.T, content []mcpsdk.Content)
 	}{
 		{
 			name:    "empty array",
@@ -630,10 +630,10 @@ func TestUnmarshalContent(t *testing.T) {
 			input:   `[{"type":"text","text":"Hello, world!"}]`,
 			wantLen: 1,
 			wantErr: false,
-			validate: func(t *testing.T, content []mcp.Content) {
-				tc, ok := content[0].(*mcp.TextContent)
+			validate: func(t *testing.T, content []mcpsdk.Content) {
+				tc, ok := content[0].(*mcpsdk.TextContent)
 				if !ok {
-					t.Fatalf("expected *mcp.TextContent, got %T", content[0])
+					t.Fatalf("expected *mcpsdk.TextContent, got %T", content[0])
 				}
 				cupaloy.SnapshotT(t, tc.Text)
 			},
@@ -643,10 +643,10 @@ func TestUnmarshalContent(t *testing.T) {
 			input:   `[{"type":"image","data":"aGVsbG8=","mimeType":"image/png"}]`,
 			wantLen: 1,
 			wantErr: false,
-			validate: func(t *testing.T, content []mcp.Content) {
-				ic, ok := content[0].(*mcp.ImageContent)
+			validate: func(t *testing.T, content []mcpsdk.Content) {
+				ic, ok := content[0].(*mcpsdk.ImageContent)
 				if !ok {
-					t.Fatalf("expected *mcp.ImageContent, got %T", content[0])
+					t.Fatalf("expected *mcpsdk.ImageContent, got %T", content[0])
 				}
 				cupaloy.SnapshotT(t, map[string]any{
 					"MIMEType": ic.MIMEType,
@@ -659,10 +659,10 @@ func TestUnmarshalContent(t *testing.T) {
 			input:   `[{"type":"audio","data":"d29ybGQ=","mimeType":"audio/wav"}]`,
 			wantLen: 1,
 			wantErr: false,
-			validate: func(t *testing.T, content []mcp.Content) {
-				ac, ok := content[0].(*mcp.AudioContent)
+			validate: func(t *testing.T, content []mcpsdk.Content) {
+				ac, ok := content[0].(*mcpsdk.AudioContent)
 				if !ok {
-					t.Fatalf("expected *mcp.AudioContent, got %T", content[0])
+					t.Fatalf("expected *mcpsdk.AudioContent, got %T", content[0])
 				}
 				cupaloy.SnapshotT(t, map[string]any{
 					"MIMEType": ac.MIMEType,
@@ -675,14 +675,14 @@ func TestUnmarshalContent(t *testing.T) {
 			input:   `[{"type":"text","text":"Description"},{"type":"image","data":"aW1n","mimeType":"image/jpeg"}]`,
 			wantLen: 2,
 			wantErr: false,
-			validate: func(t *testing.T, content []mcp.Content) {
-				tc, ok := content[0].(*mcp.TextContent)
+			validate: func(t *testing.T, content []mcpsdk.Content) {
+				tc, ok := content[0].(*mcpsdk.TextContent)
 				if !ok {
-					t.Fatalf("content[0]: expected *mcp.TextContent, got %T", content[0])
+					t.Fatalf("content[0]: expected *mcpsdk.TextContent, got %T", content[0])
 				}
-				ic, ok := content[1].(*mcp.ImageContent)
+				ic, ok := content[1].(*mcpsdk.ImageContent)
 				if !ok {
-					t.Fatalf("content[1]: expected *mcp.ImageContent, got %T", content[1])
+					t.Fatalf("content[1]: expected *mcpsdk.ImageContent, got %T", content[1])
 				}
 				cupaloy.SnapshotT(t, map[string]any{
 					"text":     tc.Text,
@@ -777,9 +777,9 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 		t.Fatalf("len(Content) = %d, want 1", len(result.Content))
 	}
 
-	tc, ok := result.Content[0].(*mcp.TextContent)
+	tc, ok := result.Content[0].(*mcpsdk.TextContent)
 	if !ok {
-		t.Fatalf("Content[0] type = %T, want *mcp.TextContent", result.Content[0])
+		t.Fatalf("Content[0] type = %T, want *mcpsdk.TextContent", result.Content[0])
 	}
 
 	cupaloy.SnapshotT(t, tc.Text)
@@ -820,9 +820,9 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 		t.Fatalf("len(Content) = %d, want 1", len(result.Content))
 	}
 
-	ic, ok := result.Content[0].(*mcp.ImageContent)
+	ic, ok := result.Content[0].(*mcpsdk.ImageContent)
 	if !ok {
-		t.Fatalf("Content[0] type = %T, want *mcp.ImageContent", result.Content[0])
+		t.Fatalf("Content[0] type = %T, want *mcpsdk.ImageContent", result.Content[0])
 	}
 
 	cupaloy.SnapshotT(t, map[string]any{
@@ -872,14 +872,14 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 		t.Fatalf("len(Content) = %d, want 2", len(result.Content))
 	}
 
-	tc, ok := result.Content[0].(*mcp.TextContent)
+	tc, ok := result.Content[0].(*mcpsdk.TextContent)
 	if !ok {
-		t.Fatalf("Content[0] type = %T, want *mcp.TextContent", result.Content[0])
+		t.Fatalf("Content[0] type = %T, want *mcpsdk.TextContent", result.Content[0])
 	}
 
-	ic, ok := result.Content[1].(*mcp.ImageContent)
+	ic, ok := result.Content[1].(*mcpsdk.ImageContent)
 	if !ok {
-		t.Fatalf("Content[1] type = %T, want *mcp.ImageContent", result.Content[1])
+		t.Fatalf("Content[1] type = %T, want *mcpsdk.ImageContent", result.Content[1])
 	}
 
 	cupaloy.SnapshotT(t, map[string]any{

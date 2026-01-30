@@ -1,37 +1,5 @@
-([]codemode.ServerToolsInfo) <nil>
-([]mcp.ToolData) (len=2) {
-  (mcp.ToolData) {
-    Tool: (gai.Tool) {
-      Name: (string) (len=5) "tool1",
-      Description: (string) "",
-      InputSchema: (*jsonschema.Schema)(<nil>)
-    },
-    MCPTool: (*mcp.Tool)({
-      Meta: (mcp.Meta) <nil>,
-      Annotations: (*mcp.ToolAnnotations)(<nil>),
-      Description: (string) "",
-      InputSchema: (interface {}) <nil>,
-      Name: (string) (len=5) "tool1",
-      OutputSchema: (interface {}) <nil>,
-      Title: (string) ""
-    }),
-    ToolCallback: (gai.ToolCallback) <nil>
-  },
-  (mcp.ToolData) {
-    Tool: (gai.Tool) {
-      Name: (string) (len=5) "tool2",
-      Description: (string) "",
-      InputSchema: (*jsonschema.Schema)(<nil>)
-    },
-    MCPTool: (*mcp.Tool)({
-      Meta: (mcp.Meta) <nil>,
-      Annotations: (*mcp.ToolAnnotations)(<nil>),
-      Description: (string) "",
-      InputSchema: (interface {}) <nil>,
-      Name: (string) (len=5) "tool2",
-      OutputSchema: (interface {}) <nil>,
-      Title: (string) ""
-    }),
-    ToolCallback: (gai.ToolCallback) <nil>
-  }
+([]*mcp.MCPConn) <nil>
+([]string) (len=2) {
+  (string) (len=13) "server1/tool1",
+  (string) (len=13) "server1/tool2"
 }

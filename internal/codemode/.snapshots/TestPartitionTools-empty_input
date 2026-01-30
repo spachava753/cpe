@@ -1,2 +1,2 @@
-([]codemode.ServerToolsInfo) <nil>
-([]mcp.ToolData) <nil>
+([]*mcp.MCPConn) <nil>
+([]string) <nil>

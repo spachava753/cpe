@@ -31,4 +31,5 @@ Global Flags:
       --timeout string             Specify request timeout duration (e.g. '5m', '30s')
       --top-k uint                 Top-k sampling parameter
       --top-p float                Nucleus sampling parameter (0.0 - 1.0)
+      --verbose-subagent           Show verbose subagent output including full tool payloads and results
 

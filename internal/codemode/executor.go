@@ -16,9 +16,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/imports"
+
+	"github.com/spachava753/cpe/internal/mcp"
 )
 
 // mcpSDKVersion is the version of the MCP SDK to use in generated go.mod
@@ -32,9 +34,9 @@ const mcpSDKImport = "github.com/modelcontextprotocol/go-sdk/mcp"
 
 // ExecutionResult represents the outcome of code execution
 type ExecutionResult struct {
-	Output   string        // Combined stdout/stderr
-	ExitCode int           // Exit code from the process
-	Content  []mcp.Content // Multimedia content returned from Run()
+	Output   string           // Combined stdout/stderr
+	ExitCode int              // Exit code from the process
+	Content  []mcpsdk.Content // Multimedia content returned from Run()
 }
 
 // ExecuteCode creates a temporary sandbox, writes files, and executes LLM-generated Go code.
@@ -46,7 +48,7 @@ type ExecutionResult struct {
 //   - RecoverableError: compilation errors, Run() errors (exit 1), panics (exit 2), timeouts
 //   - FatalExecutionError: exit code 3 from fatalExit() in generated code
 //   - Other errors: infrastructure failures (temp dir, file writes, etc.)
-func ExecuteCode(ctx context.Context, servers []ServerToolsInfo, llmCode string, timeoutSecs int) (ExecutionResult, error) {
+func ExecuteCode(ctx context.Context, servers []*mcp.MCPConn, llmCode string, timeoutSecs int) (ExecutionResult, error) {
 	// Create temp directory
 	tempDir, err := os.MkdirTemp("", "cpe-code-mode-*")
 	if err != nil {
@@ -283,35 +285,35 @@ type contentTypeWrapper struct {
 
 // unmarshalContent deserializes a JSON array of MCP content items.
 // It uses a two-phase approach: first peek at the type field, then unmarshal to the concrete type.
-func unmarshalContent(data []byte) ([]mcp.Content, error) {
+func unmarshalContent(data []byte) ([]mcpsdk.Content, error) {
 	var rawItems []json.RawMessage
 	if err := json.Unmarshal(data, &rawItems); err != nil {
 		return nil, fmt.Errorf("unmarshaling content array: %w", err)
 	}
 
-	result := make([]mcp.Content, 0, len(rawItems))
+	result := make([]mcpsdk.Content, 0, len(rawItems))
 	for i, raw := range rawItems {
 		var wrapper contentTypeWrapper
 		if err := json.Unmarshal(raw, &wrapper); err != nil {
 			return nil, fmt.Errorf("peeking type for item %d: %w", i, err)
 		}
 
-		var content mcp.Content
+		var content mcpsdk.Content
 		switch wrapper.Type {
 		case "text":
-			var tc mcp.TextContent
+			var tc mcpsdk.TextContent
 			if err := json.Unmarshal(raw, &tc); err != nil {
 				return nil, fmt.Errorf("unmarshaling text content at index %d: %w", i, err)
 			}
 			content = &tc
 		case "image":
-			var ic mcp.ImageContent
+			var ic mcpsdk.ImageContent
 			if err := json.Unmarshal(raw, &ic); err != nil {
 				return nil, fmt.Errorf("unmarshaling image content at index %d: %w", i, err)
 			}
 			content = &ic
 		case "audio":
-			var ac mcp.AudioContent
+			var ac mcpsdk.AudioContent
 			if err := json.Unmarshal(raw, &ac); err != nil {
 				return nil, fmt.Errorf("unmarshaling audio content at index %d: %w", i, err)
 			}

@@ -1,5 +1,5 @@
-([]codemode.ServerToolsInfo) (len=2) {
-  (codemode.ServerToolsInfo) {
+([]*mcp.MCPConn) (len=2) {
+  (*mcp.MCPConn)({
     ServerName: (string) (len=7) "server1",
     Config: (mcp.ServerConfig) {
       Command: (string) (len=5) "test1",
@@ -12,6 +12,7 @@
       EnabledTools: ([]string) <nil>,
       DisabledTools: ([]string) <nil>
     },
+    ClientSession: (*mcp.ClientSession)(<nil>),
     Tools: ([]*mcp.Tool) (len=1) {
       (*mcp.Tool)({
         Meta: (mcp.Meta) <nil>,
@@ -23,8 +24,8 @@
         Title: (string) ""
       })
     }
-  },
-  (codemode.ServerToolsInfo) {
+  }),
+  (*mcp.MCPConn)({
     ServerName: (string) (len=7) "server2",
     Config: (mcp.ServerConfig) {
       Command: (string) "",
@@ -37,6 +38,7 @@
       EnabledTools: ([]string) <nil>,
       DisabledTools: ([]string) <nil>
     },
+    ClientSession: (*mcp.ClientSession)(<nil>),
     Tools: ([]*mcp.Tool) (len=1) {
       (*mcp.Tool)({
         Meta: (mcp.Meta) <nil>,
@@ -48,24 +50,8 @@
         Title: (string) ""
       })
     }
-  }
+  })
 }
-([]mcp.ToolData) (len=1) {
-  (mcp.ToolData) {
-    Tool: (gai.Tool) {
-      Name: (string) (len=5) "tool2",
-      Description: (string) "",
-      InputSchema: (*jsonschema.Schema)(<nil>)
-    },
-    MCPTool: (*mcp.Tool)({
-      Meta: (mcp.Meta) <nil>,
-      Annotations: (*mcp.ToolAnnotations)(<nil>),
-      Description: (string) "",
-      InputSchema: (interface {}) <nil>,
-      Name: (string) (len=5) "tool2",
-      OutputSchema: (interface {}) <nil>,
-      Title: (string) ""
-    }),
-    ToolCallback: (gai.ToolCallback) <nil>
-  }
+([]string) (len=1) {
+  (string) (len=13) "server2/tool2"
 }

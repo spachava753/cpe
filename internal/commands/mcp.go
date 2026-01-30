@@ -329,13 +329,12 @@ type MCPCodeDescOptions struct {
 
 // MCPCodeDesc generates and prints the execute_go_code tool description
 func MCPCodeDesc(ctx context.Context, opts MCPCodeDescOptions) error {
-	client := mcpinternal.NewClient()
-
-	// Fetch tools from all MCP servers
-	toolsByServer, err := mcpinternal.FetchTools(ctx, client, opts.MCPServers, "")
+	// Use InitializeConnections instead of FetchTools
+	mcpState, err := mcpinternal.InitializeConnections(ctx, opts.MCPServers, "")
 	if err != nil {
-		return fmt.Errorf("failed to fetch MCP tools: %w", err)
+		return fmt.Errorf("failed to initialize MCP connections: %w", err)
 	}
+	defer mcpState.Close()
 
 	// Get excluded tool names from code mode config
 	var excludedToolNames []string
@@ -344,11 +343,11 @@ func MCPCodeDesc(ctx context.Context, opts MCPCodeDescOptions) error {
 	}
 
 	// Partition tools - only code mode tools will be included in the description
-	serverToolsInfo, _ := codemode.PartitionTools(toolsByServer, opts.MCPServers, excludedToolNames)
+	codeModeServers, _ := codemode.PartitionTools(mcpState, excludedToolNames)
 
 	// Collect all code mode tools
 	var allCodeModeTools []*mcp.Tool
-	for _, serverInfo := range serverToolsInfo {
+	for _, serverInfo := range codeModeServers {
 		allCodeModeTools = append(allCodeModeTools, serverInfo.Tools...)
 	}
 
@@ -515,6 +514,13 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 			return "", fmt.Errorf("execution cancelled during setup: %w", err)
 		}
 
+		// Initialize MCP connections for this execution
+		mcpState, err := mcpinternal.InitializeConnections(ctx, effectiveConfig.MCPServers, "")
+		if err != nil {
+			return "", fmt.Errorf("failed to initialize MCP: %w", err)
+		}
+		defer mcpState.Close()
+
 		// Create a callback wrapper for event emission if event client is configured
 		var callbackWrapper agent.ToolCallbackWrapper
 		if eventClient != nil {
@@ -530,9 +536,8 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 			systemPrompt,
 			effectiveConfig.Timeout,
 			true, // disablePrinting - MCP server mode must not write to stdout
-			effectiveConfig.MCPServers,
+			mcpState,
 			effectiveConfig.CodeMode,
-			"", // subagentLoggingAddress - inherited from env in MCP server mode
 			callbackWrapper,
 		)
 		if err != nil {

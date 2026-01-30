@@ -10,6 +10,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/subagentlog"
 )
@@ -115,6 +116,13 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 		os.Setenv(subagentlog.SubagentLoggingAddressEnv, subagentLoggingAddress)
 	}
 
+	// Initialize MCP connections (fails fast on any error)
+	mcpState, err := mcp.InitializeConnections(ctx, effectiveConfig.MCPServers, subagentLoggingAddress)
+	if err != nil {
+		return fmt.Errorf("failed to initialize MCP connections: %w", err)
+	}
+	defer mcpState.Close()
+
 	// Create the generator
 	toolGen, err := agent.CreateToolCapableGenerator(
 		ctx,
@@ -122,9 +130,8 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 		systemPrompt,
 		effectiveConfig.Timeout,
 		false, // disablePrinting - keep response printing for interactive use
-		effectiveConfig.MCPServers,
+		mcpState,
 		effectiveConfig.CodeMode,
-		subagentLoggingAddress,
 		nil, // callbackWrapper - not needed for interactive mode
 	)
 	if err != nil {

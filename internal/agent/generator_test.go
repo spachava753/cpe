@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/bradleyjkemp/cupaloy/v2"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
@@ -14,38 +15,33 @@ func TestCodeModeToolRegistration(t *testing.T) {
 	tests := []struct {
 		name           string
 		codeModeConfig *config.CodeModeConfig
-		toolsByServer  map[string][]mcp.ToolData
-		mcpServers     map[string]mcp.ServerConfig
+		mcpState       *mcp.MCPState
 	}{
 		{
 			name:           "code mode disabled with no servers",
 			codeModeConfig: nil,
-			toolsByServer:  map[string][]mcp.ToolData{},
-			mcpServers:     map[string]mcp.ServerConfig{},
+			mcpState:       mcp.NewMCPState(),
 		},
 		{
 			name:           "code mode enabled with no servers registers execute_go_code",
 			codeModeConfig: &config.CodeModeConfig{Enabled: true},
-			toolsByServer:  map[string][]mcp.ToolData{},
-			mcpServers:     map[string]mcp.ServerConfig{},
+			mcpState:       mcp.NewMCPState(),
 		},
 		{
 			name:           "code mode enabled with empty excluded tools registers execute_go_code",
 			codeModeConfig: &config.CodeModeConfig{Enabled: true, ExcludedTools: []string{}},
-			toolsByServer:  map[string][]mcp.ToolData{},
-			mcpServers:     map[string]mcp.ServerConfig{},
+			mcpState:       mcp.NewMCPState(),
 		},
 		{
 			name:           "code mode disabled with no servers does not register execute_go_code",
 			codeModeConfig: &config.CodeModeConfig{Enabled: false},
-			toolsByServer:  map[string][]mcp.ToolData{},
-			mcpServers:     map[string]mcp.ServerConfig{},
+			mcpState:       mcp.NewMCPState(),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tools := computeToolsToRegister(tt.codeModeConfig, tt.toolsByServer, tt.mcpServers)
+			tools := computeToolsToRegister(tt.codeModeConfig, tt.mcpState)
 			cupaloy.SnapshotT(t, tools)
 		})
 	}
@@ -55,8 +51,7 @@ func TestCodeModeToolRegistration(t *testing.T) {
 // and returns the names of tools that would be registered.
 func computeToolsToRegister(
 	codeModeConfig *config.CodeModeConfig,
-	toolsByServer map[string][]mcp.ToolData,
-	mcpServers map[string]mcp.ServerConfig,
+	mcpState *mcp.MCPState,
 ) []string {
 	var registeredTools []string
 
@@ -68,23 +63,39 @@ func computeToolsToRegister(
 			excludedToolNames = codeModeConfig.ExcludedTools
 		}
 
-		_, excludedTools := codemode.PartitionTools(toolsByServer, mcpServers, excludedToolNames)
+		_, excludedByServer := codemode.PartitionTools(mcpState, excludedToolNames)
 
 		// execute_go_code is always registered when code mode is enabled
 		registeredTools = append(registeredTools, codemode.ExecuteGoCodeToolName)
 
 		// Add excluded tools
-		for _, toolData := range excludedTools {
-			registeredTools = append(registeredTools, toolData.Tool.Name)
+		for _, tools := range excludedByServer {
+			for _, tool := range tools {
+				registeredTools = append(registeredTools, tool.Name)
+			}
 		}
 	} else {
 		// Code mode disabled: register all tools normally
-		for _, tools := range toolsByServer {
-			for _, toolData := range tools {
-				registeredTools = append(registeredTools, toolData.Tool.Name)
+		for _, conn := range mcpState.Connections {
+			for _, tool := range conn.Tools {
+				registeredTools = append(registeredTools, tool.Name)
 			}
 		}
 	}
 
 	return registeredTools
+}
+
+// Helper function to create an MCPState for testing
+func newTestMCPState(connections map[string][]*mcpsdk.Tool) *mcp.MCPState {
+	state := mcp.NewMCPState()
+	for serverName, tools := range connections {
+		state.Connections[serverName] = &mcp.MCPConn{
+			ServerName:    serverName,
+			Config:        mcp.ServerConfig{Type: "stdio", Command: "test"},
+			ClientSession: nil, // Not needed for tests that don't call tools
+			Tools:         tools,
+		}
+	}
+	return state
 }

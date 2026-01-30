@@ -7,55 +7,54 @@ import (
 )
 
 // PartitionTools separates tools into code-mode and excluded categories.
-// Tools in the excludedToolNames list will be returned as excludedTools for normal registration.
-// All other tools will be grouped by server in serverToolsInfo for code mode access.
+// Tools in the excludedToolNames list will be returned as excludedByServer for normal registration.
+// All other tools will be grouped by server in codeModeServers for code mode access.
 //
 // Returns:
-//   - serverToolsInfo: tools to be accessed via code mode, grouped by server
-//   - excludedTools: tools to be registered normally (flat list)
+//   - codeModeServers: MCPConn entries for code mode (used by maingen.go, ignores ClientSession)
+//   - excludedByServer: Excluded tools grouped by server name (caller creates callbacks)
+//
+// Note: Servers with zero code-mode tools after partitioning are excluded from codeModeServers.
 func PartitionTools(
-	toolsByServer map[string][]mcp.ToolData,
-	mcpServers map[string]mcp.ServerConfig,
+	mcpState *mcp.MCPState,
 	excludedToolNames []string,
-) ([]ServerToolsInfo, []mcp.ToolData) {
+) (codeModeServers []*mcp.MCPConn, excludedByServer map[string][]*mcpsdk.Tool) {
 	// Build a set of excluded tool names for fast lookup
 	excludedSet := make(map[string]bool, len(excludedToolNames))
 	for _, name := range excludedToolNames {
 		excludedSet[name] = true
 	}
 
-	var serverToolsInfo []ServerToolsInfo
-	var excludedTools []mcp.ToolData
+	excludedByServer = make(map[string][]*mcpsdk.Tool)
 
-	for serverName, tools := range toolsByServer {
-		serverConfig := mcpServers[serverName]
-
+	for serverName, conn := range mcpState.Connections {
 		var codeModeTools []*mcpsdk.Tool
-		for _, toolData := range tools {
-			if excludedSet[toolData.Tool.Name] {
-				excludedTools = append(excludedTools, toolData)
+		for _, tool := range conn.Tools {
+			if excludedSet[tool.Name] {
+				excludedByServer[serverName] = append(excludedByServer[serverName], tool)
 			} else {
-				codeModeTools = append(codeModeTools, toolData.MCPTool)
+				codeModeTools = append(codeModeTools, tool)
 			}
 		}
 
 		// Only add server to code mode if it has tools for code mode
 		if len(codeModeTools) > 0 {
-			serverToolsInfo = append(serverToolsInfo, ServerToolsInfo{
-				ServerName: serverName,
-				Config:     serverConfig,
-				Tools:      codeModeTools,
+			codeModeServers = append(codeModeServers, &mcp.MCPConn{
+				ServerName:    serverName,
+				Config:        conn.Config,
+				ClientSession: conn.ClientSession,
+				Tools:         codeModeTools,
 			})
 		}
 	}
 
-	return serverToolsInfo, excludedTools
+	return codeModeServers, excludedByServer
 }
 
-// GetCodeModeToolNames extracts tool names from ServerToolsInfo for collision detection.
-func GetCodeModeToolNames(serverToolsInfo []ServerToolsInfo) []string {
+// GetCodeModeToolNames extracts tool names from MCPConn entries for collision detection.
+func GetCodeModeToolNames(servers []*mcp.MCPConn) []string {
 	var names []string
-	for _, server := range serverToolsInfo {
+	for _, server := range servers {
 		for _, tool := range server.Tools {
 			names = append(names, tool.Name)
 		}

@@ -8,28 +8,21 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stoewer/go-strcase"
 
-	mcpcpe "github.com/spachava753/cpe/internal/mcp"
+	"github.com/spachava753/cpe/internal/mcp"
 )
 
 //go:embed maingen.go.tmpl
 var mainTemplateSource string
 
-// ServerToolsInfo groups tools with their server configuration for main.go generation
-type ServerToolsInfo struct {
-	ServerName string
-	Config     mcpcpe.ServerConfig
-	Tools      []*mcp.Tool
-}
-
 // GenerateMainGo generates the complete main.go file contents for code mode execution.
 // It includes MCP client setup, type definitions, function declarations, and the main entry point.
 // contentOutputPath specifies where content.json will be written for multimedia output.
-func GenerateMainGo(servers []ServerToolsInfo, contentOutputPath string) (string, error) {
+func GenerateMainGo(servers []*mcp.MCPConn, contentOutputPath string) (string, error) {
 	// Collect all tools for type/function generation
-	var allTools []*mcp.Tool
+	var allTools []*mcpsdk.Tool
 	for _, server := range servers {
 		allTools = append(allTools, server.Tools...)
 	}
@@ -99,11 +92,11 @@ type toolInitData struct {
 	OutputType string
 }
 
-func buildTemplateData(servers []ServerToolsInfo, toolDefs string, contentOutputPath string) templateData {
+func buildTemplateData(servers []*mcp.MCPConn, toolDefs string, contentOutputPath string) templateData {
 	// Sort servers by name for deterministic output
-	sortedServers := make([]ServerToolsInfo, len(servers))
+	sortedServers := make([]*mcp.MCPConn, len(servers))
 	copy(sortedServers, servers)
-	slices.SortFunc(sortedServers, func(a, b ServerToolsInfo) int {
+	slices.SortFunc(sortedServers, func(a, b *mcp.MCPConn) int {
 		return strings.Compare(a.ServerName, b.ServerName)
 	})
 
@@ -178,7 +171,7 @@ func buildTemplateData(servers []ServerToolsInfo, toolDefs string, contentOutput
 }
 
 // hasInputSchema checks if a tool has a non-empty input schema
-func hasInputSchema(tool *mcp.Tool) bool {
+func hasInputSchema(tool *mcpsdk.Tool) bool {
 	if tool.InputSchema == nil {
 		return false
 	}

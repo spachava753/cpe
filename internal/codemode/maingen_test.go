@@ -4,32 +4,32 @@ import (
 	"testing"
 
 	"github.com/bradleyjkemp/cupaloy/v2"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	mcpcpe "github.com/spachava753/cpe/internal/mcp"
+	"github.com/spachava753/cpe/internal/mcp"
 )
 
 func TestGenerateMainGo(t *testing.T) {
 	tests := []struct {
 		name    string
-		servers []ServerToolsInfo
+		servers []*mcp.MCPConn
 		wantErr bool
 	}{
 		{
 			name:    "empty servers list",
-			servers: []ServerToolsInfo{},
+			servers: []*mcp.MCPConn{},
 		},
 		{
 			name: "single stdio server with one tool",
-			servers: []ServerToolsInfo{
+			servers: []*mcp.MCPConn{
 				{
 					ServerName: "editor",
-					Config: mcpcpe.ServerConfig{
+					Config: mcp.ServerConfig{
 						Type:    "stdio",
 						Command: "editor-mcp",
 						Args:    []string{"--verbose"},
 					},
-					Tools: []*mcp.Tool{
+					Tools: []*mcpsdk.Tool{
 						{
 							Name:        "read_file",
 							Description: "Read a file from disk",
@@ -55,17 +55,17 @@ func TestGenerateMainGo(t *testing.T) {
 		},
 		{
 			name: "stdio server with environment variables",
-			servers: []ServerToolsInfo{
+			servers: []*mcp.MCPConn{
 				{
 					ServerName: "my-server",
-					Config: mcpcpe.ServerConfig{
+					Config: mcp.ServerConfig{
 						Type:    "stdio",
 						Command: "my-mcp",
 						Env: map[string]string{
 							"API_KEY": "secret123",
 						},
 					},
-					Tools: []*mcp.Tool{
+					Tools: []*mcpsdk.Tool{
 						{
 							Name:        "ping",
 							Description: "Ping the server",
@@ -83,17 +83,17 @@ func TestGenerateMainGo(t *testing.T) {
 		},
 		{
 			name: "http server with headers",
-			servers: []ServerToolsInfo{
+			servers: []*mcp.MCPConn{
 				{
 					ServerName: "api",
-					Config: mcpcpe.ServerConfig{
+					Config: mcp.ServerConfig{
 						Type: "http",
 						URL:  "https://api.example.com/mcp",
 						Headers: map[string]string{
 							"Authorization": "Bearer token123",
 						},
 					},
-					Tools: []*mcp.Tool{
+					Tools: []*mcpsdk.Tool{
 						{
 							Name:         "fetch_data",
 							Description:  "Fetch data from API",
@@ -106,14 +106,14 @@ func TestGenerateMainGo(t *testing.T) {
 		},
 		{
 			name: "sse server without headers",
-			servers: []ServerToolsInfo{
+			servers: []*mcp.MCPConn{
 				{
 					ServerName: "events",
-					Config: mcpcpe.ServerConfig{
+					Config: mcp.ServerConfig{
 						Type: "sse",
 						URL:  "https://events.example.com/sse",
 					},
-					Tools: []*mcp.Tool{
+					Tools: []*mcpsdk.Tool{
 						{
 							Name:        "subscribe",
 							Description: "Subscribe to events",
@@ -136,17 +136,17 @@ func TestGenerateMainGo(t *testing.T) {
 		},
 		{
 			name: "multiple http servers with different headers",
-			servers: []ServerToolsInfo{
+			servers: []*mcp.MCPConn{
 				{
 					ServerName: "api-one",
-					Config: mcpcpe.ServerConfig{
+					Config: mcp.ServerConfig{
 						Type: "http",
 						URL:  "https://one.example.com/mcp",
 						Headers: map[string]string{
 							"X-Api-Key": "key-one",
 						},
 					},
-					Tools: []*mcp.Tool{
+					Tools: []*mcpsdk.Tool{
 						{
 							Name:         "action_one",
 							InputSchema:  map[string]any{},
@@ -156,14 +156,14 @@ func TestGenerateMainGo(t *testing.T) {
 				},
 				{
 					ServerName: "api-two",
-					Config: mcpcpe.ServerConfig{
+					Config: mcp.ServerConfig{
 						Type: "http",
 						URL:  "https://two.example.com/mcp",
 						Headers: map[string]string{
 							"Authorization": "Bearer token-two",
 						},
 					},
-					Tools: []*mcp.Tool{
+					Tools: []*mcpsdk.Tool{
 						{
 							Name:         "action_two",
 							InputSchema:  map[string]any{},
@@ -175,14 +175,14 @@ func TestGenerateMainGo(t *testing.T) {
 		},
 		{
 			name: "server with no tools",
-			servers: []ServerToolsInfo{
+			servers: []*mcp.MCPConn{
 				{
 					ServerName: "empty",
-					Config: mcpcpe.ServerConfig{
+					Config: mcp.ServerConfig{
 						Type:    "stdio",
 						Command: "empty-mcp",
 					},
-					Tools: []*mcp.Tool{},
+					Tools: []*mcpsdk.Tool{},
 				},
 			},
 		},
@@ -201,14 +201,14 @@ func TestGenerateMainGo(t *testing.T) {
 }
 
 func TestGenerateMainGo_DeterministicOutput(t *testing.T) {
-	servers := []ServerToolsInfo{
+	servers := []*mcp.MCPConn{
 		{
 			ServerName: "zebra",
-			Config: mcpcpe.ServerConfig{
+			Config: mcp.ServerConfig{
 				Type:    "stdio",
 				Command: "zebra-mcp",
 			},
-			Tools: []*mcp.Tool{
+			Tools: []*mcpsdk.Tool{
 				{
 					Name:         "z_tool",
 					InputSchema:  map[string]any{},
@@ -218,11 +218,11 @@ func TestGenerateMainGo_DeterministicOutput(t *testing.T) {
 		},
 		{
 			ServerName: "alpha",
-			Config: mcpcpe.ServerConfig{
+			Config: mcp.ServerConfig{
 				Type:    "stdio",
 				Command: "alpha-mcp",
 			},
-			Tools: []*mcp.Tool{
+			Tools: []*mcpsdk.Tool{
 				{
 					Name:         "a_tool",
 					InputSchema:  map[string]any{},
@@ -251,22 +251,22 @@ func TestGenerateMainGo_DeterministicOutput(t *testing.T) {
 func TestHasInputSchema(t *testing.T) {
 	tests := []struct {
 		name     string
-		tool     *mcp.Tool
+		tool     *mcpsdk.Tool
 		expected bool
 	}{
 		{
 			name:     "nil input schema",
-			tool:     &mcp.Tool{InputSchema: nil},
+			tool:     &mcpsdk.Tool{InputSchema: nil},
 			expected: false,
 		},
 		{
 			name:     "empty map input schema",
-			tool:     &mcp.Tool{InputSchema: map[string]any{}},
+			tool:     &mcpsdk.Tool{InputSchema: map[string]any{}},
 			expected: false,
 		},
 		{
 			name: "empty properties",
-			tool: &mcp.Tool{
+			tool: &mcpsdk.Tool{
 				InputSchema: map[string]any{
 					"type":       "object",
 					"properties": map[string]any{},
@@ -276,7 +276,7 @@ func TestHasInputSchema(t *testing.T) {
 		},
 		{
 			name: "with properties",
-			tool: &mcp.Tool{
+			tool: &mcpsdk.Tool{
 				InputSchema: map[string]any{
 					"type": "object",
 					"properties": map[string]any{
