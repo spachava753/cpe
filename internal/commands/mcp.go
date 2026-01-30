@@ -532,12 +532,10 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 		// Create the generator
 		generator, err := agent.CreateToolCapableGenerator(
 			ctx,
-			effectiveConfig.Model,
+			effectiveConfig,
 			systemPrompt,
-			effectiveConfig.Timeout,
 			true, // disablePrinting - MCP server mode must not write to stdout
 			mcpState,
-			effectiveConfig.CodeMode,
 			callbackWrapper,
 		)
 		if err != nil {

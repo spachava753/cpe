@@ -126,12 +126,10 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 	// Create the generator
 	toolGen, err := agent.CreateToolCapableGenerator(
 		ctx,
-		effectiveConfig.Model,
+		effectiveConfig,
 		systemPrompt,
-		effectiveConfig.Timeout,
 		false, // disablePrinting - keep response printing for interactive use
 		mcpState,
-		effectiveConfig.CodeMode,
 		nil, // callbackWrapper - not needed for interactive mode
 	)
 	if err != nil {

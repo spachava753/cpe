@@ -187,16 +187,14 @@ type ToolCallbackWrapper func(toolName string, callback gai.ToolCallback) gai.To
 // It expects an already-initialized MCPState with connections and filtered tools.
 func CreateToolCapableGenerator(
 	ctx context.Context,
-	selectedModel config.Model,
+	cfg *config.Config,
 	systemPrompt string,
-	requestTimeout time.Duration,
 	disablePrinting bool,
 	mcpState *mcp.MCPState,
-	codeModeConfig *config.CodeModeConfig,
 	callbackWrapper ToolCallbackWrapper,
 ) (types.Generator, error) {
 	// Create the base generator from catalog model
-	genBase, err := initGeneratorFromModel(ctx, selectedModel, systemPrompt, requestTimeout)
+	genBase, err := initGeneratorFromModel(ctx, cfg.Model, systemPrompt, cfg.Timeout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create generator: %w", err)
 	}
@@ -226,7 +224,7 @@ func CreateToolCapableGenerator(
 	// Add block filter based on model type:
 	// For Anthropic: keep Anthropic thinking blocks but filter out thinking blocks from other providers
 	// For other providers: filter all thinking blocks, keep only content and tool calls
-	if strings.ToLower(selectedModel.Type) == "anthropic" {
+	if strings.ToLower(cfg.Model.Type) == "anthropic" {
 		wrappers = append(wrappers, WithAnthropicThinkingFilter())
 	} else {
 		wrappers = append(wrappers, WithBlockWhitelist([]string{gai.Content, gai.ToolCall}))
@@ -245,13 +243,13 @@ func CreateToolCapableGenerator(
 	}
 
 	// Check if code mode is enabled
-	codeModeEnabled := codeModeConfig != nil && codeModeConfig.Enabled
+	codeModeEnabled := cfg.CodeMode != nil && cfg.CodeMode.Enabled
 
 	if codeModeEnabled {
 		// Partition tools into code-mode and excluded
 		var excludedToolNames []string
-		if codeModeConfig.ExcludedTools != nil {
-			excludedToolNames = codeModeConfig.ExcludedTools
+		if cfg.CodeMode.ExcludedTools != nil {
+			excludedToolNames = cfg.CodeMode.ExcludedTools
 		}
 
 		codeModeServers, excludedByServer := codemode.PartitionTools(mcpState, excludedToolNames)
@@ -270,7 +268,7 @@ func CreateToolCapableGenerator(
 
 		// Always register execute_go_code when code mode is enabled, even without MCP tools.
 		// The tool provides access to the Go standard library for file I/O, etc.
-		executeGoCodeTool, err := codemode.GenerateExecuteGoCodeTool(allCodeModeTools, codeModeConfig.MaxTimeout)
+		executeGoCodeTool, err := codemode.GenerateExecuteGoCodeTool(allCodeModeTools, cfg.CodeMode.MaxTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate execute_go_code tool: %w", err)
 		}
