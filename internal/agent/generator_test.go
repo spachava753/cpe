@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/bradleyjkemp/cupaloy/v2"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
@@ -84,18 +83,4 @@ func computeToolsToRegister(
 	}
 
 	return registeredTools
-}
-
-// Helper function to create an MCPState for testing
-func newTestMCPState(connections map[string][]*mcpsdk.Tool) *mcp.MCPState {
-	state := mcp.NewMCPState()
-	for serverName, tools := range connections {
-		state.Connections[serverName] = &mcp.MCPConn{
-			ServerName:    serverName,
-			Config:        mcp.ServerConfig{Type: "stdio", Command: "test"},
-			ClientSession: nil, // Not needed for tests that don't call tools
-			Tools:         tools,
-		}
-	}
-	return state
 }

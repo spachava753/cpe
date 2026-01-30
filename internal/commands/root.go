@@ -124,13 +124,12 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 	defer mcpState.Close()
 
 	// Create the generator
-	toolGen, err := agent.CreateToolCapableGenerator(
+	toolGen, err := agent.NewGenerator(
 		ctx,
 		effectiveConfig,
 		systemPrompt,
-		false, // disablePrinting - keep response printing for interactive use
 		mcpState,
-		nil, // callbackWrapper - not needed for interactive mode
+		// No options needed for interactive mode - printing enabled by default
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create tool capable generator: %w", err)

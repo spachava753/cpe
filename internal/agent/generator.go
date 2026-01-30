@@ -183,26 +183,92 @@ func initGeneratorFromModel(
 // This is used for adding behavior like event emission to tool callbacks.
 type ToolCallbackWrapper func(toolName string, callback gai.ToolCallback) gai.ToolCallback
 
-// CreateToolCapableGenerator creates a types.Generator with all middleware properly configured.
+// generatorOptions holds optional configuration for generator creation.
+type generatorOptions struct {
+	disablePrinting bool
+	callbackWrapper ToolCallbackWrapper
+	middleware      []gai.WrapperFunc
+	baseGenerator   gai.ToolCapableGenerator
+}
+
+// GeneratorOption is a functional option for configuring generator creation.
+type GeneratorOption func(*generatorOptions)
+
+// WithDisablePrinting disables response printing to stdout.
+// Use this for non-interactive modes like MCP server mode.
+func WithDisablePrinting() GeneratorOption {
+	return func(o *generatorOptions) {
+		o.disablePrinting = true
+	}
+}
+
+// WithCallbackWrapper sets a wrapper function for tool callbacks.
+// This is used for adding behavior like event emission to tool callbacks.
+func WithCallbackWrapper(w ToolCallbackWrapper) GeneratorOption {
+	return func(o *generatorOptions) {
+		o.callbackWrapper = w
+	}
+}
+
+// WithMiddleware adds custom middleware to the generator's middleware stack.
+// Custom middleware is applied after the default middleware (retry, printing, etc.).
+func WithMiddleware(m ...gai.WrapperFunc) GeneratorOption {
+	return func(o *generatorOptions) {
+		o.middleware = append(o.middleware, m...)
+	}
+}
+
+// WithBaseGenerator sets a custom base generator instead of using the default
+// model-based initialization. This is useful for testing or for injecting
+// custom generator implementations.
+func WithBaseGenerator(g gai.ToolCapableGenerator) GeneratorOption {
+	return func(o *generatorOptions) {
+		o.baseGenerator = g
+	}
+}
+
+// NewGenerator creates a types.Generator with all middleware properly configured.
 // It expects an already-initialized MCPState with connections and filtered tools.
-func CreateToolCapableGenerator(
+//
+// Required parameters:
+//   - ctx: Context for initialization
+//   - cfg: Configuration containing model, timeout, and code mode settings
+//   - systemPrompt: The system prompt for the generator
+//   - mcpState: Initialized MCP state with connections and tools
+//
+// Optional parameters (via functional options):
+//   - WithDisablePrinting(): Disable response printing
+//   - WithCallbackWrapper(w): Set a tool callback wrapper
+//   - WithMiddleware(m...): Add custom middleware
+//   - WithBaseGenerator(g): Use a custom base generator instead of model-based initialization
+func NewGenerator(
 	ctx context.Context,
 	cfg *config.Config,
 	systemPrompt string,
-	disablePrinting bool,
 	mcpState *mcp.MCPState,
-	callbackWrapper ToolCallbackWrapper,
+	opts ...GeneratorOption,
 ) (types.Generator, error) {
-	// Create the base generator from catalog model
-	genBase, err := initGeneratorFromModel(ctx, cfg.Model, systemPrompt, cfg.Timeout)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create generator: %w", err)
+	// Apply options
+	o := &generatorOptions{}
+	for _, opt := range opts {
+		opt(o)
 	}
 
-	// Cast to ToolCapableGenerator
-	gen, ok := genBase.(gai.ToolCapableGenerator)
-	if !ok {
-		return nil, fmt.Errorf("generator does not implement ToolCapableGenerator interface")
+	// Use custom base generator if provided, otherwise create from model config
+	var gen gai.ToolCapableGenerator
+	if o.baseGenerator != nil {
+		gen = o.baseGenerator
+	} else {
+		genBase, err := initGeneratorFromModel(ctx, cfg.Model, systemPrompt, cfg.Timeout)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create generator: %w", err)
+		}
+
+		var ok bool
+		gen, ok = genBase.(gai.ToolCapableGenerator)
+		if !ok {
+			return nil, fmt.Errorf("generator does not implement ToolCapableGenerator interface")
+		}
 	}
 
 	// Build middleware stack using gai.Wrap
@@ -216,7 +282,7 @@ func CreateToolCapableGenerator(
 	// because gai.Wrap applies wrappers in reverse order.
 	// We want TokenUsagePrinting to be OUTERMOST so it prints AFTER response content.
 	wrappers = append(wrappers, WithTokenUsagePrinting(os.Stderr))
-	if !disablePrinting {
+	if !o.disablePrinting {
 		renderers := NewResponsePrinterRenderers()
 		wrappers = append(wrappers, WithResponsePrinting(renderers.Content, renderers.Thinking, renderers.ToolCall, os.Stdout, os.Stderr))
 	}
@@ -235,7 +301,14 @@ func CreateToolCapableGenerator(
 	toolResultRenderer := NewRenderer()
 	wrappers = append(wrappers, WithToolResultPrinterWrapper(toolResultRenderer))
 
-	gen = gai.Wrap(gen, wrappers...).(gai.ToolCapableGenerator)
+	// Add custom middleware after default middleware
+	wrappers = append(wrappers, o.middleware...)
+
+	wrapped := gai.Wrap(gen, wrappers...)
+	gen, ok := wrapped.(gai.ToolCapableGenerator)
+	if !ok {
+		return nil, fmt.Errorf("wrapped generator does not implement ToolCapableGenerator interface")
+	}
 
 	// Create the tool generator using the wrapped generator
 	toolGen := &gai.ToolGenerator{
@@ -278,8 +351,8 @@ func CreateToolCapableGenerator(
 		}
 
 		finalCallback := gai.ToolCallback(callback)
-		if callbackWrapper != nil {
-			finalCallback = callbackWrapper(executeGoCodeTool.Name, callback)
+		if o.callbackWrapper != nil {
+			finalCallback = o.callbackWrapper(executeGoCodeTool.Name, callback)
 		}
 		if err := toolGen.Register(executeGoCodeTool, finalCallback); err != nil {
 			return nil, fmt.Errorf("failed to register execute_go_code tool: %w", err)
@@ -294,8 +367,8 @@ func CreateToolCapableGenerator(
 					return nil, fmt.Errorf("converting tool %s: %w", mcpTool.Name, err)
 				}
 				cb := gai.ToolCallback(mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name))
-				if callbackWrapper != nil {
-					cb = callbackWrapper(mcpTool.Name, cb)
+				if o.callbackWrapper != nil {
+					cb = o.callbackWrapper(mcpTool.Name, cb)
 				}
 				if err := toolGen.Register(gaiTool, cb); err != nil {
 					return nil, fmt.Errorf("failed to register excluded tool %s: %w", mcpTool.Name, err)
@@ -311,8 +384,8 @@ func CreateToolCapableGenerator(
 					return nil, fmt.Errorf("converting tool %s: %w", mcpTool.Name, err)
 				}
 				cb := gai.ToolCallback(mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name))
-				if callbackWrapper != nil {
-					cb = callbackWrapper(mcpTool.Name, cb)
+				if o.callbackWrapper != nil {
+					cb = o.callbackWrapper(mcpTool.Name, cb)
 				}
 				if err := toolGen.Register(gaiTool, cb); err != nil {
 					return nil, fmt.Errorf("failed to register tool %s: %w", mcpTool.Name, err)
