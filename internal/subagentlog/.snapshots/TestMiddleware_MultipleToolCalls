@@ -1,0 +1,42 @@
+([]subagentlog.normalizedEvent) (len=4) {
+  (subagentlog.normalizedEvent) {
+    Type: (string) (len=9) "tool_call",
+    SubagentName: (string) (len=13) "test_subagent",
+    SubagentRunID: (string) (len=9) "run_multi",
+    ToolName: (string) (len=6) "tool_a",
+    ToolCallID: (string) (len=6) "call_a",
+    Payload: (string) (len=7) "{\"x\":1}",
+    ReasoningType: (string) "",
+    ExecutionTimeoutSeconds: (int) 0
+  },
+  (subagentlog.normalizedEvent) {
+    Type: (string) (len=9) "tool_call",
+    SubagentName: (string) (len=13) "test_subagent",
+    SubagentRunID: (string) (len=9) "run_multi",
+    ToolName: (string) (len=6) "tool_b",
+    ToolCallID: (string) (len=6) "call_b",
+    Payload: (string) (len=7) "{\"y\":2}",
+    ReasoningType: (string) "",
+    ExecutionTimeoutSeconds: (int) 0
+  },
+  (subagentlog.normalizedEvent) {
+    Type: (string) (len=11) "tool_result",
+    SubagentName: (string) (len=13) "test_subagent",
+    SubagentRunID: (string) (len=9) "run_multi",
+    ToolName: (string) (len=6) "tool_a",
+    ToolCallID: (string) (len=6) "call_a",
+    Payload: (string) (len=8) "result_a",
+    ReasoningType: (string) "",
+    ExecutionTimeoutSeconds: (int) 0
+  },
+  (subagentlog.normalizedEvent) {
+    Type: (string) (len=11) "tool_result",
+    SubagentName: (string) (len=13) "test_subagent",
+    SubagentRunID: (string) (len=9) "run_multi",
+    ToolName: (string) (len=6) "tool_b",
+    ToolCallID: (string) (len=6) "call_b",
+    Payload: (string) (len=8) "result_b",
+    ReasoningType: (string) "",
+    ExecutionTimeoutSeconds: (int) 0
+  }
+}

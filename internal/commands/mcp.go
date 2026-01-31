@@ -521,18 +521,8 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 		}
 		defer mcpState.Close()
 
-		// Build generator options
 		generatorOpts := []agent.GeneratorOption{
-			agent.WithDisablePrinting(), // MCP server mode must not write to stdout
-		}
-
-		// Add callback wrapper for event emission if event client is configured
-		if eventClient != nil {
-			generatorOpts = append(generatorOpts, agent.WithCallbackWrapper(
-				func(toolName string, callback gai.ToolCallback) gai.ToolCallback {
-					return subagentlog.NewEmittingToolCallback(callback, eventClient, subagentName, runID, toolName)
-				},
-			))
+			agent.WithDisablePrinting(),
 		}
 
 		// Create the generator
