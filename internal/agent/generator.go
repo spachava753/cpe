@@ -11,8 +11,8 @@ import (
 	a "github.com/anthropics/anthropic-sdk-go"
 	aopts "github.com/anthropics/anthropic-sdk-go/option"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/openai/openai-go/v2"
-	oaiopt "github.com/openai/openai-go/v2/option"
+	"github.com/openai/openai-go/v3"
+	oaiopt "github.com/openai/openai-go/v3/option"
 	"github.com/spachava753/gai"
 	"google.golang.org/genai"
 

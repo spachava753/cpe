@@ -100,7 +100,7 @@ func TestCodeModeTokenComparison(t *testing.T) {
 				gai.TextBlock("Let me get the current location and then the temperature"),
 				mustToolCallBlock(t, "tool_1", "get_city", map[string]any{}),
 			}},
-			gai.TextToolResultMessage("tool_1", `{"city": "New York"}`),
+			gai.ToolResultMessage("tool_1", gai.TextBlock(`{"city": "New York"}`)),
 			{Role: gai.Assistant, Blocks: []gai.Block{
 				gai.TextBlock("I have the city, now I will get the temperature"),
 				mustToolCallBlock(t, "tool_2", "get_weather", map[string]any{
@@ -108,7 +108,7 @@ func TestCodeModeTokenComparison(t *testing.T) {
 					"unit": "fahrenheit",
 				}),
 			}},
-			gai.TextToolResultMessage("tool_2", `{"temperature": 86}`),
+			gai.ToolResultMessage("tool_2", gai.TextBlock(`{"temperature": 86}`)),
 			{Role: gai.Assistant, Blocks: []gai.Block{
 				gai.TextBlock("It is 86 degree fahrenheit in New York City."),
 			}},
@@ -166,7 +166,7 @@ func Run(ctx context.Context) error {
 					"executionTimeout": 30,
 				}),
 			}},
-			gai.TextToolResultMessage("tool_1", "Temperature: 86.000000, City: New York\n"),
+			gai.ToolResultMessage("tool_1", gai.TextBlock("Temperature: 86.000000, City: New York\n")),
 			{Role: gai.Assistant, Blocks: []gai.Block{
 				gai.TextBlock("It is 86 degree fahrenheit in New York City."),
 			}},
@@ -213,32 +213,32 @@ func Run(ctx context.Context) error {
 				gai.TextBlock("Let me read the file first"),
 				mustToolCallBlock(t, "tool_1", "read_file", map[string]any{"path": "cities.txt"}),
 			}},
-			gai.TextToolResultMessage("tool_1", "New York\nLos Angeles\nChicago\nMiami\nSeattle"),
+			gai.ToolResultMessage("tool_1", gai.TextBlock("New York\nLos Angeles\nChicago\nMiami\nSeattle")),
 			{Role: gai.Assistant, Blocks: []gai.Block{
 				gai.TextBlock("I'll get the weather for New York first"),
 				mustToolCallBlock(t, "tool_2", "get_weather", map[string]any{"city": "New York", "unit": "fahrenheit"}),
 			}},
-			gai.TextToolResultMessage("tool_2", `{"temperature": 72}`),
+			gai.ToolResultMessage("tool_2", gai.TextBlock(`{"temperature": 72}`)),
 			{Role: gai.Assistant, Blocks: []gai.Block{
 				gai.TextBlock("Now Los Angeles"),
 				mustToolCallBlock(t, "tool_3", "get_weather", map[string]any{"city": "Los Angeles", "unit": "fahrenheit"}),
 			}},
-			gai.TextToolResultMessage("tool_3", `{"temperature": 85}`),
+			gai.ToolResultMessage("tool_3", gai.TextBlock(`{"temperature": 85}`)),
 			{Role: gai.Assistant, Blocks: []gai.Block{
 				gai.TextBlock("Now Chicago"),
 				mustToolCallBlock(t, "tool_4", "get_weather", map[string]any{"city": "Chicago", "unit": "fahrenheit"}),
 			}},
-			gai.TextToolResultMessage("tool_4", `{"temperature": 68}`),
+			gai.ToolResultMessage("tool_4", gai.TextBlock(`{"temperature": 68}`)),
 			{Role: gai.Assistant, Blocks: []gai.Block{
 				gai.TextBlock("Now Miami"),
 				mustToolCallBlock(t, "tool_5", "get_weather", map[string]any{"city": "Miami", "unit": "fahrenheit"}),
 			}},
-			gai.TextToolResultMessage("tool_5", `{"temperature": 88}`),
+			gai.ToolResultMessage("tool_5", gai.TextBlock(`{"temperature": 88}`)),
 			{Role: gai.Assistant, Blocks: []gai.Block{
 				gai.TextBlock("Finally Seattle"),
 				mustToolCallBlock(t, "tool_6", "get_weather", map[string]any{"city": "Seattle", "unit": "fahrenheit"}),
 			}},
-			gai.TextToolResultMessage("tool_6", `{"temperature": 62}`),
+			gai.ToolResultMessage("tool_6", gai.TextBlock(`{"temperature": 62}`)),
 			{Role: gai.Assistant, Blocks: []gai.Block{
 				gai.TextBlock("Here's the weather for each city:\n- New York: 72°F\n- Los Angeles: 85°F\n- Chicago: 68°F\n- Miami: 88°F\n- Seattle: 62°F"),
 			}},
@@ -315,7 +315,7 @@ func Run(ctx context.Context) error {
 					"executionTimeout": 60,
 				}),
 			}},
-			gai.TextToolResultMessage("tool_1", "New York: 72°F\nLos Angeles: 85°F\nChicago: 68°F\nMiami: 88°F\nSeattle: 62°F\n"),
+			gai.ToolResultMessage("tool_1", gai.TextBlock("New York: 72°F\nLos Angeles: 85°F\nChicago: 68°F\nMiami: 88°F\nSeattle: 62°F\n")),
 			{Role: gai.Assistant, Blocks: []gai.Block{
 				gai.TextBlock("Here's the weather for each city:\n- New York: 72°F\n- Los Angeles: 85°F\n- Chicago: 68°F\n- Miami: 88°F\n- Seattle: 62°F"),
 			}},
@@ -456,7 +456,7 @@ func Run(ctx context.Context) error {
 				gai.TextBlock("Let me read the file to check"),
 				mustToolCallBlock(t, "tool_1", "read_file", map[string]any{"path": tmpFile.Name()}),
 			}},
-			gai.TextToolResultMessage("tool_1", fileContentStr),
+			gai.ToolResultMessage("tool_1", gai.TextBlock(fileContentStr)),
 			{Role: gai.Assistant, Blocks: []gai.Block{
 				gai.TextBlock(fmt.Sprintf("Yes, '%s' exists in the file.", targetName)),
 			}},
@@ -524,7 +524,7 @@ func Run(ctx context.Context) error {
 					"executionTimeout": 30,
 				}),
 			}},
-			gai.TextToolResultMessage("tool_1", "Yes\n"),
+			gai.ToolResultMessage("tool_1", gai.TextBlock("Yes\n")),
 			{Role: gai.Assistant, Blocks: []gai.Block{
 				gai.TextBlock(fmt.Sprintf("Yes, '%s' exists in the file.", targetName)),
 			}},
@@ -585,7 +585,7 @@ func Run(ctx context.Context) error {
 					"executionTimeout": 60,
 				}),
 			}},
-			gai.TextToolResultMessage("tool_1", "Weather Report\n==============\nNew York: 72°F\nLos Angeles: 85°F\nChicago: 68°F\n"),
+			gai.ToolResultMessage("tool_1", gai.TextBlock("Weather Report\n==============\nNew York: 72°F\nLos Angeles: 85°F\nChicago: 68°F\n")),
 			{Role: gai.Assistant, Blocks: []gai.Block{
 				gai.TextBlock("Here's the weather report for all cities."),
 			}},
@@ -722,3 +722,4 @@ func mustToolCallBlock(t *testing.T, id, name string, params map[string]any) gai
 	}
 	return block
 }
+
