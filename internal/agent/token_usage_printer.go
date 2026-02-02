@@ -39,7 +39,20 @@ func (g *TokenUsagePrinterGenerator) Generate(ctx context.Context, dialog gai.Di
 
 	if inputTokens, ok := gai.InputTokens(resp.UsageMetadata); ok {
 		if outputTokens, ok := gai.OutputTokens(resp.UsageMetadata); ok {
-			tokenMsg, _ := g.renderer.Render(fmt.Sprintf("> input: `%v`, output: `%v`", inputTokens, outputTokens))
+			// Build the token usage message with optional cache metrics
+			msg := fmt.Sprintf("> input: `%v`, output: `%v`", inputTokens, outputTokens)
+
+			// Add cache read tokens if present
+			if cacheRead, ok := gai.CacheReadTokens(resp.UsageMetadata); ok {
+				msg += fmt.Sprintf(", cache read: `%v`", cacheRead)
+			}
+
+			// Add cache write tokens if present
+			if cacheWrite, ok := gai.CacheWriteTokens(resp.UsageMetadata); ok {
+				msg += fmt.Sprintf(", cache write: `%v`", cacheWrite)
+			}
+
+			tokenMsg, _ := g.renderer.Render(msg)
 			fmt.Fprint(g.writer, tokenMsg)
 		}
 	}
