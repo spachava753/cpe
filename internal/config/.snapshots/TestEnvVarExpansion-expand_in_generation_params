@@ -1,30 +1,11 @@
 (*config.RawConfig)({
-  MCPServers: (map[string]mcp.ServerConfig) (len=1) {
-    (string) (len=7) "server1": (mcp.ServerConfig) {
-      Command: (string) (len=15) "/usr/bin/server",
-      Args: ([]string) (len=2) {
-        (string) (len=7) "arg-one",
-        (string) (len=7) "arg-two"
-      },
-      Type: (string) "",
-      URL: (string) (len=23) "https://mcp.example.com",
-      Timeout: (int) 0,
-      Env: (map[string]string) (len=1) {
-        (string) (len=10) "ACTUAL_KEY": (string) (len=12) "actual_value"
-      },
-      Headers: (map[string]string) (len=1) {
-        (string) (len=13) "Authorization": (string) (len=19) "Bearer secret-token"
-      },
-      EnabledTools: ([]string) <nil>,
-      DisabledTools: ([]string) <nil>
-    }
-  },
+  MCPServers: (map[string]mcp.ServerConfig) <nil>,
   Models: ([]config.ModelConfig) (len=1) {
     (config.ModelConfig) {
       Model: (config.Model) {
         Ref: (string) (len=4) "test",
         DisplayName: (string) (len=4) "Test",
-        ID: (string) (len=2) "id",
+        ID: (string) (len=7) "test-id",
         Type: (string) (len=6) "openai",
         BaseUrl: (string) "",
         ApiKeyEnv: (string) (len=3) "KEY",
@@ -36,7 +17,21 @@
         PatchRequest: (*config.PatchRequestConfig)(<nil>)
       },
       SystemPromptPath: (string) "",
-      GenerationDefaults: (*config.GenerationParams)(<nil>),
+      GenerationDefaults: (*config.GenerationParams)({
+        Temperature: (float64) 0,
+        TopP: (float64) 0,
+        TopK: (uint) 0,
+        FrequencyPenalty: (float64) 0,
+        PresencePenalty: (float64) 0,
+        N: (uint) 0,
+        MaxGenerationTokens: (int) 0,
+        ToolChoice: (string) (len=4) "auto",
+        StopSequences: ([]string) (len=2) {
+          (string) (len=3) "END",
+          (string) (len=4) "STOP"
+        },
+        ThinkingBudget: (string) ""
+      }),
       CodeMode: (*config.CodeModeConfig)(<nil>)
     }
   },

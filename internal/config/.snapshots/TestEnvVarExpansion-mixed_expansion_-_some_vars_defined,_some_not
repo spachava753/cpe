@@ -1,0 +1,33 @@
+(*config.RawConfig)({
+  MCPServers: (map[string]mcp.ServerConfig) <nil>,
+  Models: ([]config.ModelConfig) (len=1) {
+    (config.ModelConfig) {
+      Model: (config.Model) {
+        Ref: (string) (len=4) "test",
+        DisplayName: (string) (len=4) "Test",
+        ID: (string) (len=7) "test-id",
+        Type: (string) (len=6) "openai",
+        BaseUrl: (string) (len=27) "https://defined.example.com",
+        ApiKeyEnv: (string) "",
+        AuthMethod: (string) "",
+        ContextWindow: (uint32) 0,
+        MaxOutput: (uint32) 0,
+        InputCostPerMillion: (float64) 0,
+        OutputCostPerMillion: (float64) 0,
+        PatchRequest: (*config.PatchRequestConfig)(<nil>)
+      },
+      SystemPromptPath: (string) "",
+      GenerationDefaults: (*config.GenerationParams)(<nil>),
+      CodeMode: (*config.CodeModeConfig)(<nil>)
+    }
+  },
+  Defaults: (config.Defaults) {
+    SystemPromptPath: (string) "",
+    Model: (string) "",
+    GenerationParams: (*config.GenerationParams)(<nil>),
+    Timeout: (string) "",
+    CodeMode: (*config.CodeModeConfig)(<nil>)
+  },
+  Subagent: (*config.SubagentConfig)(<nil>),
+  Version: (string) ""
+})

@@ -43,8 +43,6 @@ func LoadRawConfig(explicitPath string) (*RawConfig, error) {
 		return nil, fmt.Errorf("failed to load config from %s: %w", configPath, err)
 	}
 
-	config.expandEnvironmentVariables()
-
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
@@ -103,35 +101,48 @@ func loadRawConfigFromFile(file fs.File) (*RawConfig, error) {
 	return parseConfigData(data, filename)
 }
 
-// parseConfigData parses config data based on the filename extension
+// parseConfigData parses config data based on the filename extension.
+// Environment variables are expanded in the raw content before parsing,
+// supporting both $VAR and ${VAR} syntax throughout the entire config.
 func parseConfigData(data []byte, filename string) (*RawConfig, error) {
+	// Expand environment variables in the raw content before parsing
+	expandedData := os.ExpandEnv(string(data))
+
+	// Helper to add expansion hint to error messages
+	addExpansionHint := func(parseErr error) error {
+		if strings.Contains(string(data), "$") {
+			return fmt.Errorf("%w (hint: environment variable expansion may have introduced invalid syntax if values contain special characters)", parseErr)
+		}
+		return parseErr
+	}
+
 	ext := strings.ToLower(filepath.Ext(filename))
 	switch ext {
 	case ".json":
 		var config RawConfig
-		if err := json.Unmarshal(data, &config); err != nil {
-			return nil, fmt.Errorf("error parsing JSON config: %w", err)
+		if err := json.Unmarshal([]byte(expandedData), &config); err != nil {
+			return nil, addExpansionHint(fmt.Errorf("error parsing JSON config: %w", err))
 		}
 		return &config, nil
 	case ".yaml", ".yml":
 		var config RawConfig
-		if err := yaml.Unmarshal(data, &config); err != nil {
-			return nil, fmt.Errorf("error parsing YAML config: %w", err)
+		if err := yaml.Unmarshal([]byte(expandedData), &config); err != nil {
+			return nil, addExpansionHint(fmt.Errorf("error parsing YAML config: %w", err))
 		}
 		return &config, nil
 	default:
 		// Try YAML first, then JSON as fallback
 		// Use separate structs to avoid partial corruption if one parser partially succeeds
 		var yamlConfig RawConfig
-		yamlErr := yaml.Unmarshal(data, &yamlConfig)
+		yamlErr := yaml.Unmarshal([]byte(expandedData), &yamlConfig)
 		if yamlErr == nil {
 			return &yamlConfig, nil
 		}
 		var jsonConfig RawConfig
-		jsonErr := json.Unmarshal(data, &jsonConfig)
+		jsonErr := json.Unmarshal([]byte(expandedData), &jsonConfig)
 		if jsonErr == nil {
 			return &jsonConfig, nil
 		}
-		return nil, fmt.Errorf("failed to parse config file: YAML error: %v, JSON error: %v", yamlErr, jsonErr)
+		return nil, addExpansionHint(fmt.Errorf("failed to parse config file: YAML error: %v, JSON error: %v", yamlErr, jsonErr))
 	}
 }
