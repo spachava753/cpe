@@ -5,7 +5,7 @@
       Model: (config.Model) {
         Ref: (string) (len=4) "test",
         DisplayName: (string) (len=4) "Test",
-        ID: (string) (len=2) "id",
+        ID: (string) (len=7) "test-id",
         Type: (string) (len=6) "openai",
         BaseUrl: (string) "",
         ApiKeyEnv: (string) (len=3) "KEY",
@@ -14,12 +14,7 @@
         MaxOutput: (uint32) 0,
         InputCostPerMillion: (float64) 0,
         OutputCostPerMillion: (float64) 0,
-        PatchRequest: (*config.PatchRequestConfig)({
-          JSONPatch: ([]map[string]interface {}) <nil>,
-          IncludeHeaders: (map[string]string) (len=1) {
-            (string) (len=15) "X-Custom-Header": (string) (len=12) "custom-value"
-          }
-        })
+        PatchRequest: (*config.PatchRequestConfig)(<nil>)
       },
       SystemPromptPath: (string) "",
       GenerationDefaults: (*config.GenerationParams)(<nil>),
@@ -33,6 +28,10 @@
     Timeout: (string) "",
     CodeMode: (*config.CodeModeConfig)(<nil>)
   },
-  Subagent: (*config.SubagentConfig)(<nil>),
+  Subagent: (*config.SubagentConfig)({
+    Name: (string) (len=5) "agent",
+    Description: (string) (len=4) "desc",
+    OutputSchemaPath: (string) (len=20) "/path/to/schema.json"
+  }),
   Version: (string) ""
 })

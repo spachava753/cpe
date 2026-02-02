@@ -5,7 +5,7 @@
       Model: (config.Model) {
         Ref: (string) (len=4) "test",
         DisplayName: (string) (len=4) "Test",
-        ID: (string) (len=2) "id",
+        ID: (string) (len=7) "test-id",
         Type: (string) (len=6) "openai",
         BaseUrl: (string) "",
         ApiKeyEnv: (string) (len=3) "KEY",
@@ -22,18 +22,11 @@
     }
   },
   Defaults: (config.Defaults) {
-    SystemPromptPath: (string) (len=18) "/prompts/system.md",
+    SystemPromptPath: (string) (len=12) "literal_path",
     Model: (string) "",
     GenerationParams: (*config.GenerationParams)(<nil>),
     Timeout: (string) "",
-    CodeMode: (*config.CodeModeConfig)({
-      Enabled: (bool) true,
-      ExcludedTools: ([]string) (len=2) {
-        (string) (len=15) "expanded_tool_1",
-        (string) (len=15) "expanded_tool_2"
-      },
-      MaxTimeout: (int) 0
-    })
+    CodeMode: (*config.CodeModeConfig)(<nil>)
   },
   Subagent: (*config.SubagentConfig)(<nil>),
   Version: (string) ""

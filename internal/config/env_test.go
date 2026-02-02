@@ -1,35 +1,29 @@
 package config
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/bradleyjkemp/cupaloy/v2"
-
-	"github.com/spachava753/cpe/internal/mcp"
 )
 
-func TestExpandEnvironmentVariables(t *testing.T) {
+func TestEnvVarExpansion(t *testing.T) {
 	tests := []struct {
 		name    string
-		cfg     *RawConfig
+		yaml    string
 		envVars map[string]string
 	}{
 		{
 			name: "expand in model base_url and api_key_env",
-			cfg: &RawConfig{
-				Models: []ModelConfig{
-					{
-						Model: Model{
-							Ref:         "test",
-							DisplayName: "Test",
-							ID:          "id",
-							Type:        "openai",
-							BaseUrl:     "$BASE_URL",
-							ApiKeyEnv:   "${API_KEY_VAR}",
-						},
-					},
-				},
-			},
+			yaml: `
+models:
+  - ref: test
+    display_name: Test
+    id: test-id
+    type: openai
+    base_url: $BASE_URL
+    api_key_env: ${API_KEY_VAR}
+`,
 			envVars: map[string]string{
 				"BASE_URL":    "https://api.example.com",
 				"API_KEY_VAR": "ACTUAL_API_KEY",
@@ -37,60 +31,87 @@ func TestExpandEnvironmentVariables(t *testing.T) {
 		},
 		{
 			name: "expand in MCP server configuration",
-			cfg: &RawConfig{
-				Models: []ModelConfig{
-					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
-				},
-				MCPServers: map[string]mcp.ServerConfig{
-					"server1": {
-						Command: "$MCP_COMMAND",
-						Args:    []string{"$ARG1", "${ARG2}"},
-						URL:     "$MCP_URL",
-						Env:     map[string]string{"$ENV_KEY": "$ENV_VAL"},
-						Headers: map[string]string{"Authorization": "Bearer $TOKEN"},
-					},
-				},
-			},
+			yaml: `
+models:
+  - ref: test
+    display_name: Test
+    id: test-id
+    type: openai
+    api_key_env: KEY
+mcpServers:
+  server1:
+    type: stdio
+    command: $MCP_COMMAND
+    args:
+      - $ARG1
+      - ${ARG2}
+    env:
+      $ENV_KEY: $ENV_VAL
+`,
 			envVars: map[string]string{
 				"MCP_COMMAND": "/usr/bin/server",
 				"ARG1":        "arg-one",
 				"ARG2":        "arg-two",
-				"MCP_URL":     "https://mcp.example.com",
 				"ENV_KEY":     "ACTUAL_KEY",
 				"ENV_VAL":     "actual_value",
-				"TOKEN":       "secret-token",
+			},
+		},
+		{
+			name: "expand in MCP server URL and headers",
+			yaml: `
+models:
+  - ref: test
+    display_name: Test
+    id: test-id
+    type: openai
+    api_key_env: KEY
+mcpServers:
+  server1:
+    type: sse
+    url: $MCP_URL
+    headers:
+      Authorization: Bearer $TOKEN
+`,
+			envVars: map[string]string{
+				"MCP_URL": "https://mcp.example.com",
+				"TOKEN":   "secret-token",
 			},
 		},
 		{
 			name: "expand in subagent configuration",
-			cfg: &RawConfig{
-				Models: []ModelConfig{
-					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
-				},
-				Subagent: &SubagentConfig{
-					Name:             "agent",
-					Description:      "desc",
-					OutputSchemaPath: "$SCHEMA_PATH",
-				},
-			},
+			yaml: `
+models:
+  - ref: test
+    display_name: Test
+    id: test-id
+    type: openai
+    api_key_env: KEY
+subagent:
+  name: agent
+  description: desc
+  outputSchemaPath: $SCHEMA_PATH
+`,
 			envVars: map[string]string{
 				"SCHEMA_PATH": "/path/to/schema.json",
 			},
 		},
 		{
 			name: "expand in defaults",
-			cfg: &RawConfig{
-				Models: []ModelConfig{
-					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
-				},
-				Defaults: Defaults{
-					SystemPromptPath: "$PROMPT_PATH",
-					CodeMode: &CodeModeConfig{
-						Enabled:       true,
-						ExcludedTools: []string{"$TOOL1", "${TOOL2}"},
-					},
-				},
-			},
+			yaml: `
+models:
+  - ref: test
+    display_name: Test
+    id: test-id
+    type: openai
+    api_key_env: KEY
+defaults:
+  systemPromptPath: $PROMPT_PATH
+  codeMode:
+    enabled: true
+    excludedTools:
+      - $TOOL1
+      - ${TOOL2}
+`,
 			envVars: map[string]string{
 				"PROMPT_PATH": "/prompts/system.md",
 				"TOOL1":       "expanded_tool_1",
@@ -99,41 +120,35 @@ func TestExpandEnvironmentVariables(t *testing.T) {
 		},
 		{
 			name: "expand in model code mode",
-			cfg: &RawConfig{
-				Models: []ModelConfig{
-					{
-						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						CodeMode: &CodeModeConfig{
-							Enabled:       true,
-							ExcludedTools: []string{"$MODEL_TOOL"},
-						},
-					},
-				},
-			},
+			yaml: `
+models:
+  - ref: test
+    display_name: Test
+    id: test-id
+    type: openai
+    api_key_env: KEY
+    codeMode:
+      enabled: true
+      excludedTools:
+        - $MODEL_TOOL
+`,
 			envVars: map[string]string{
 				"MODEL_TOOL": "model_expanded_tool",
 			},
 		},
 		{
 			name: "expand in patch request config",
-			cfg: &RawConfig{
-				Models: []ModelConfig{
-					{
-						Model: Model{
-							Ref:         "test",
-							DisplayName: "Test",
-							ID:          "id",
-							Type:        "openai",
-							ApiKeyEnv:   "KEY",
-							PatchRequest: &PatchRequestConfig{
-								IncludeHeaders: map[string]string{
-									"$HEADER_KEY": "$HEADER_VAL",
-								},
-							},
-						},
-					},
-				},
-			},
+			yaml: `
+models:
+  - ref: test
+    display_name: Test
+    id: test-id
+    type: openai
+    api_key_env: KEY
+    patchRequest:
+      includeHeaders:
+        $HEADER_KEY: $HEADER_VAL
+`,
 			envVars: map[string]string{
 				"HEADER_KEY": "X-Custom-Header",
 				"HEADER_VAL": "custom-value",
@@ -141,15 +156,69 @@ func TestExpandEnvironmentVariables(t *testing.T) {
 		},
 		{
 			name: "no expansion when no env vars match",
-			cfg: &RawConfig{
-				Models: []ModelConfig{
-					{Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"}},
-				},
-				Defaults: Defaults{
-					SystemPromptPath: "literal_path",
-				},
+			yaml: `
+models:
+  - ref: test
+    display_name: Test
+    id: test-id
+    type: openai
+    api_key_env: KEY
+defaults:
+  systemPromptPath: literal_path
+`,
+			envVars: map[string]string{},
+		},
+		{
+			name: "expand in generation params",
+			yaml: `
+models:
+  - ref: test
+    display_name: Test
+    id: test-id
+    type: openai
+    api_key_env: KEY
+    generationDefaults:
+      toolChoice: $TOOL_CHOICE
+      stopSequences:
+        - $STOP1
+        - ${STOP2}
+`,
+			envVars: map[string]string{
+				"TOOL_CHOICE": "auto",
+				"STOP1":       "END",
+				"STOP2":       "STOP",
 			},
-			envVars: map[string]string{},
+		},
+		{
+			name: "mixed expansion - some vars defined, some not",
+			yaml: `
+models:
+  - ref: test
+    display_name: Test
+    id: test-id
+    type: openai
+    base_url: $DEFINED_URL
+    api_key_env: $UNDEFINED_VAR
+`,
+			envVars: map[string]string{
+				"DEFINED_URL": "https://defined.example.com",
+				// UNDEFINED_VAR is not set, should expand to empty string
+			},
+		},
+		{
+			name: "expand with prefix and suffix",
+			yaml: `
+models:
+  - ref: test
+    display_name: Test
+    id: test-id
+    type: openai
+    api_key_env: KEY
+    base_url: https://${DOMAIN}/v1
+`,
+			envVars: map[string]string{
+				"DOMAIN": "api.example.com",
+			},
 		},
 	}
 
@@ -159,140 +228,101 @@ func TestExpandEnvironmentVariables(t *testing.T) {
 				t.Setenv(k, v)
 			}
 
-			tt.cfg.expandEnvironmentVariables()
+			cfg, err := parseConfigData([]byte(tt.yaml), "test.yaml")
+			if err != nil {
+				t.Fatalf("parseConfigData() error = %v", err)
+			}
 
-			cupaloy.SnapshotT(t, tt.cfg)
+			cupaloy.SnapshotT(t, cfg)
 		})
 	}
 }
 
-func TestExpandStringSlice(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   []string
-		envVars map[string]string
-		want    []string
-	}{
-		{
-			name:    "nil input returns nil",
-			input:   nil,
-			envVars: map[string]string{},
-			want:    nil,
-		},
-		{
-			name:    "empty slice returns empty slice",
-			input:   []string{},
-			envVars: map[string]string{},
-			want:    []string{},
-		},
-		{
-			name:    "expands environment variables",
-			input:   []string{"$VAR1", "${VAR2}", "literal"},
-			envVars: map[string]string{"VAR1": "value1", "VAR2": "value2"},
-			want:    []string{"value1", "value2", "literal"},
-		},
-	}
+func TestEnvVarExpansionJSON(t *testing.T) {
+	t.Run("expand in JSON config", func(t *testing.T) {
+		t.Setenv("JSON_URL", "https://json.example.com")
+		t.Setenv("JSON_KEY", "JSON_API_KEY")
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			for k, v := range tt.envVars {
-				t.Setenv(k, v)
-			}
+		jsonConfig := `{
+  "models": [
+    {
+      "ref": "test",
+      "display_name": "Test",
+      "id": "test-id",
+      "type": "openai",
+      "base_url": "$JSON_URL",
+      "api_key_env": "${JSON_KEY}"
+    }
+  ]
+}`
 
-			got := expandStringSlice(tt.input)
+		cfg, err := parseConfigData([]byte(jsonConfig), "test.json")
+		if err != nil {
+			t.Fatalf("parseConfigData() error = %v", err)
+		}
 
-			if tt.want == nil {
-				if got != nil {
-					t.Errorf("expandStringSlice() = %v, want nil", got)
-				}
-				return
-			}
-
-			if len(got) != len(tt.want) {
-				t.Errorf("expandStringSlice() len = %d, want %d", len(got), len(tt.want))
-				return
-			}
-
-			for i := range tt.want {
-				if got[i] != tt.want[i] {
-					t.Errorf("expandStringSlice()[%d] = %q, want %q", i, got[i], tt.want[i])
-				}
-			}
-		})
-	}
+		cupaloy.SnapshotT(t, cfg)
+	})
 }
 
-func TestExpandStringMap(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   map[string]string
-		envVars map[string]string
-		want    map[string]string
-	}{
-		{
-			name:    "nil input returns nil",
-			input:   nil,
-			envVars: map[string]string{},
-			want:    nil,
-		},
-		{
-			name:    "empty map returns empty map",
-			input:   map[string]string{},
-			envVars: map[string]string{},
-			want:    map[string]string{},
-		},
-		{
-			name:    "expands both keys and values",
-			input:   map[string]string{"$KEY": "$VALUE"},
-			envVars: map[string]string{"KEY": "expanded_key", "VALUE": "expanded_value"},
-			want:    map[string]string{"expanded_key": "expanded_value"},
-		},
-		{
-			name:    "key collision on expansion - last write wins",
-			input:   map[string]string{"$KEY1": "val1", "$KEY2": "val2"},
-			envVars: map[string]string{"KEY1": "same", "KEY2": "same"},
-			// When keys collide, one value overwrites the other (map iteration order dependent)
-			// We just verify the key exists with some value
-			want: nil, // Special case: verify key exists
-		},
-	}
+func TestEnvVarExpansionEdgeCases(t *testing.T) {
+	t.Run("special chars in env var with quotes are safe", func(t *testing.T) {
+		// When the YAML value is quoted, special characters in env vars are safe
+		t.Setenv("SPECIAL_VALUE", "value:with:colons")
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			for k, v := range tt.envVars {
-				t.Setenv(k, v)
+		yaml := `
+models:
+  - ref: test
+    display_name: "$SPECIAL_VALUE"
+    id: test-id
+    type: openai
+    api_key_env: KEY
+`
+		cfg, err := parseConfigData([]byte(yaml), "test.yaml")
+		if err != nil {
+			t.Fatalf("parseConfigData() error = %v", err)
+		}
+
+		if cfg.Models[0].DisplayName != "value:with:colons" {
+			t.Errorf("expected display_name to be 'value:with:colons', got %q", cfg.Models[0].DisplayName)
+		}
+	})
+
+	t.Run("special chars in unquoted env var may cause parse error", func(t *testing.T) {
+		// Unquoted values with YAML special characters can break parsing
+		t.Setenv("SPECIAL_VALUE", "value: with colon")
+
+		yaml := `
+models:
+  - ref: test
+    display_name: $SPECIAL_VALUE
+    id: test-id
+    type: openai
+    api_key_env: KEY
+`
+		_, err := parseConfigData([]byte(yaml), "test.yaml")
+		// This may or may not error depending on the YAML parser's handling,
+		// but we document that unquoted values with special chars are risky
+		if err != nil {
+			// Error is expected - verify it contains the hint
+			if !strings.Contains(err.Error(), "hint") {
+				t.Errorf("expected error to contain expansion hint, got: %v", err)
 			}
+		}
+	})
 
-			got := expandStringMap(tt.input)
+	t.Run("error message contains expansion hint when parsing fails", func(t *testing.T) {
+		t.Setenv("BAD_JSON", `"broken`)
 
-			// Special case for key collision test
-			if tt.name == "key collision on expansion - last write wins" {
-				if len(got) != 1 {
-					t.Errorf("expandStringMap() len = %d, want 1 (collision should result in single key)", len(got))
-				}
-				if _, ok := got["same"]; !ok {
-					t.Error("expandStringMap() expected key 'same' after collision")
-				}
-				return
-			}
+		jsonConfig := `{"models": [{"ref": $BAD_JSON}]}`
 
-			if tt.want == nil {
-				if got != nil {
-					t.Errorf("expandStringMap() = %v, want nil", got)
-				}
-				return
-			}
+		_, err := parseConfigData([]byte(jsonConfig), "test.json")
+		if err == nil {
+			t.Fatal("expected error but got nil")
+		}
 
-			if len(got) != len(tt.want) {
-				t.Errorf("expandStringMap() len = %d, want %d", len(got), len(tt.want))
-				return
-			}
-
-			for k, wantV := range tt.want {
-				if gotV, ok := got[k]; !ok || gotV != wantV {
-					t.Errorf("expandStringMap()[%q] = %q, want %q", k, gotV, wantV)
-				}
-			}
-		})
-	}
+		if !strings.Contains(err.Error(), "hint") || !strings.Contains(err.Error(), "environment variable") {
+			t.Errorf("expected error to contain expansion hint, got: %v", err)
+		}
+	})
 }

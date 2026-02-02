@@ -5,7 +5,7 @@
       Model: (config.Model) {
         Ref: (string) (len=4) "test",
         DisplayName: (string) (len=4) "Test",
-        ID: (string) (len=2) "id",
+        ID: (string) (len=7) "test-id",
         Type: (string) (len=6) "openai",
         BaseUrl: (string) "",
         ApiKeyEnv: (string) (len=3) "KEY",

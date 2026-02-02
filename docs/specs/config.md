@@ -232,24 +232,66 @@ mergo.Merge(&mergedParams, model.generationDefaults, mergo.WithOverride)
 
 ## Environment Variable Expansion
 
-All string values in the configuration support environment variable expansion using `${VAR}` syntax:
+Environment variable expansion is supported **everywhere** in the configuration file using `$VAR` or `${VAR}` syntax. The entire config file content is processed through `os.ExpandEnv()` before YAML/JSON parsing, enabling maximum flexibility.
+
+### Supported Syntax
+
+| Syntax | Description |
+|--------|-------------|
+| `$VAR` | Simple variable reference |
+| `${VAR}` | Braced variable reference (useful when followed by other characters) |
+
+### Examples
 
 ```yaml
 models:
   - ref: claude
     type: anthropic
-    api_key_env: ANTHROPIC_API_KEY  # Just the var name, not expanded
-    base_url: ${ANTHROPIC_BASE_URL:-https://api.anthropic.com}  # With default
+    api_key_env: $API_KEY_VAR_NAME  # Expands to the variable name stored in API_KEY_VAR_NAME
+    base_url: https://${API_DOMAIN}/v1  # Mixed with other text
+    display_name: $MODEL_NAME
 
 mcpServers:
   api:
     type: http
-    url: https://api.example.com
+    url: $MCP_SERVER_URL
     headers:
       Authorization: "Bearer ${API_TOKEN}"
+      $HEADER_NAME: $HEADER_VALUE  # Both key and value are expanded
+    env:
+      $ENV_KEY: $ENV_VALUE  # Map keys and values are expanded
+
+defaults:
+  systemPromptPath: $HOME/.config/cpe/prompt.md
+  model: $DEFAULT_MODEL
+  codeMode:
+    excludedTools:
+      - $EXCLUDED_TOOL_1
+      - ${EXCLUDED_TOOL_2}
 ```
 
-Expansion is performed via `os.ExpandEnv()` during config loading.
+### Behavior Notes
+
+1. **Undefined variables**: Expand to empty strings (standard `os.ExpandEnv` behavior)
+2. **Map keys**: Both keys and values in maps are expanded
+3. **Arrays**: All elements in arrays are expanded
+4. **Nested values**: All nested string values are expanded
+5. **Non-string values**: Numbers, booleans, etc. are not affected by expansion (they're parsed after expansion)
+
+### Caveats
+
+1. **Special characters in values**: If an environment variable contains YAML special characters (`:`, `#`, `[`, `]`, `{`, `}`) or JSON special characters (`"`, `\`), the config may fail to parse. Use quoted values to mitigate:
+   ```yaml
+   # Safer - quotes protect against special characters
+   password: "$DB_PASSWORD"
+   
+   # Risky - if DB_PASSWORD contains ":" it will break YAML parsing
+   password: $DB_PASSWORD
+   ```
+
+2. **No escape syntax**: There is no way to include a literal `$` followed by a variable-like name. The `$$` sequence does not escape to a single `$` (it expands `$` as a variable name).
+
+3. **Empty values on undefined**: Undefined environment variables silently become empty strings, which may cause confusing validation errors. Always ensure required environment variables are set before running CPE.
 
 ## Validation
 
@@ -318,7 +360,6 @@ go run ./scripts gen-schema
 | `internal/config/loader.go` | Config file discovery, parsing, and environment expansion |
 | `internal/config/resolver.go` | Resolution from `RawConfig` to runtime `Config` |
 | `internal/config/validator.go` | Validation logic using `go-playground/validator` |
-| `internal/config/env.go` | Environment variable expansion utilities |
 | `internal/config/writer.go` | Config file writing utilities |
 | `internal/config/registry.go` | models.dev integration for importing model catalogs |
 | `internal/mcp/client.go` | `ServerConfig` type definition |
