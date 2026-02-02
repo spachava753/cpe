@@ -4,20 +4,33 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
 
-	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/codemode"
+	"github.com/spachava753/cpe/internal/types"
+)
+
+// RenderMode controls the verbosity of rendered subagent events.
+// Note: The zero value (RenderModeConcise) is the default, meaning a Renderer{}
+// created without explicit mode will use concise rendering.
+type RenderMode int
+
+const (
+	RenderModeConcise RenderMode = iota // Default: truncated thinking, tool names only, no results
+	RenderModeVerbose                   // Full thinking, full tool calls, full results
 )
 
 // Renderer formats subagent events for printing to stderr
 type Renderer struct {
-	markdownRenderer agent.Renderer
+	markdownRenderer types.Renderer
+	mode             RenderMode
 }
 
 // NewRenderer creates a new Renderer using the provided markdown renderer
-func NewRenderer(markdownRenderer agent.Renderer) *Renderer {
+func NewRenderer(markdownRenderer types.Renderer, mode RenderMode) *Renderer {
 	return &Renderer{
 		markdownRenderer: markdownRenderer,
+		mode:             mode,
 	}
 }
 
@@ -28,10 +41,19 @@ func (r *Renderer) RenderEvent(event Event) string {
 	case EventTypeSubagentStart, EventTypeSubagentEnd:
 		return ""
 	case EventTypeToolCall:
+		if r.mode == RenderModeConcise {
+			return r.renderToolCallConcise(event)
+		}
 		return r.renderToolCall(event)
 	case EventTypeToolResult:
+		if r.mode == RenderModeConcise {
+			return r.renderToolResultConcise(event)
+		}
 		return r.renderToolResult(event)
 	case EventTypeThoughtTrace:
+		if r.mode == RenderModeConcise {
+			return r.renderThoughtTraceConcise(event)
+		}
 		return r.renderThoughtTrace(event)
 	default:
 		return ""
@@ -89,6 +111,39 @@ func (r *Renderer) renderToolResult(event Event) string {
 func (r *Renderer) renderThoughtTrace(event Event) string {
 	header := fmt.Sprintf("#### %s [%s] thought trace", event.SubagentName, event.SubagentRunID)
 	body := header + "\n" + event.Payload
+	return r.render(body)
+}
+
+func (r *Renderer) renderToolCallConcise(event Event) string {
+	// Skip final_answer tool calls (consistent with verbose mode)
+	if event.ToolName == "final_answer" {
+		return ""
+	}
+	// Just show: "#### subagent [runId] → tool_name"
+	header := fmt.Sprintf("#### %s [%s] → %s", event.SubagentName, event.SubagentRunID, event.ToolName)
+	return r.render(header)
+}
+
+func (r *Renderer) renderToolResultConcise(event Event) string {
+	// Skip final_answer tool results (consistent with verbose mode)
+	if event.ToolName == "final_answer" {
+		return ""
+	}
+	// Tool results are only emitted on success, so show checkmark
+	// Format: "#### subagent [runId] ✓ tool_name"
+	header := fmt.Sprintf("#### %s [%s] ✓ %s", event.SubagentName, event.SubagentRunID, event.ToolName)
+	return r.render(header)
+}
+
+func (r *Renderer) renderThoughtTraceConcise(event Event) string {
+	header := fmt.Sprintf("#### %s [%s] thought trace", event.SubagentName, event.SubagentRunID)
+	// Truncate payload to 2 lines
+	lines := strings.SplitN(event.Payload, "\n", 3)
+	truncated := strings.Join(lines[:min(2, len(lines))], "\n")
+	if len(lines) > 2 {
+		truncated += "..."
+	}
+	body := header + "\n" + truncated
 	return r.render(body)
 }
 

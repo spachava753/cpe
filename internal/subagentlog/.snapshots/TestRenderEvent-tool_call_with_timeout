@@ -1,0 +1,6 @@
+#### research_agent [run-123] [tool call] (timeout: 30s)
+```json
+{
+  "query": "test"
+}
+```

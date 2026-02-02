@@ -1,0 +1,5 @@
+(urlhandler.downloadResultSnapshot) {
+  Data: (string) (len=13) "Hello, World!",
+  ContentType: (string) (len=10) "text/plain",
+  Size: (int64) 13
+}

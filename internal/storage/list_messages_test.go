@@ -5,8 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/spachava753/gai"
 	"github.com/stretchr/testify/require"
 )
@@ -14,16 +13,14 @@ import (
 // TestHardcodedTreeStructures tests ListMessages with hardcoded test expectations
 func TestHardcodedTreeStructures(t *testing.T) {
 	testCases := []struct {
-		name         string
-		setupFunc    func(ctx context.Context, storage *DialogStorage)
-		expectedTree []MessageIdNode
+		name      string
+		setupFunc func(ctx context.Context, storage *DialogStorage)
 	}{
 		{
 			name: "Empty database",
 			setupFunc: func(ctx context.Context, storage *DialogStorage) {
 				// Do nothing - empty database
 			},
-			expectedTree: []MessageIdNode{},
 		},
 		{
 			name: "Single root message",
@@ -34,14 +31,6 @@ func TestHardcodedTreeStructures(t *testing.T) {
 
 				msg := createTextMessage(gai.User, "Single root message")
 				storage.SaveMessage(ctx, msg, "", "Single")
-			},
-			expectedTree: []MessageIdNode{
-				{
-					ID:        "root1",
-					ParentID:  "",
-					CreatedAt: time.Time{}, // Timestamp unchecked in test
-					Children:  []MessageIdNode{},
-				},
 			},
 		},
 		{
@@ -65,29 +54,6 @@ func TestHardcodedTreeStructures(t *testing.T) {
 					childMsg := createTextMessage(gai.Assistant, "Child message")
 					storage.SaveMessage(ctx, childMsg, rootID, "")
 				}
-			},
-			expectedTree: []MessageIdNode{
-				{
-					ID:       "root1",
-					ParentID: "",
-					Children: []MessageIdNode{
-						{
-							ID:       "child1",
-							ParentID: "root1",
-							Children: []MessageIdNode{},
-						},
-						{
-							ID:       "child2",
-							ParentID: "root1",
-							Children: []MessageIdNode{},
-						},
-						{
-							ID:       "child3",
-							ParentID: "root1",
-							Children: []MessageIdNode{},
-						},
-					},
-				},
 			},
 		},
 		{
@@ -115,30 +81,6 @@ func TestHardcodedTreeStructures(t *testing.T) {
 					grandchildMsg := createTextMessage(gai.User, "Grandchild message")
 					storage.SaveMessage(ctx, grandchildMsg, childID, "")
 				}
-			},
-			expectedTree: []MessageIdNode{
-				{
-					ID:       "root1",
-					ParentID: "",
-					Children: []MessageIdNode{
-						{
-							ID:       "child1",
-							ParentID: "root1",
-							Children: []MessageIdNode{
-								{
-									ID:       "grandchild1",
-									ParentID: "child1",
-									Children: []MessageIdNode{},
-								},
-								{
-									ID:       "grandchild2",
-									ParentID: "child1",
-									Children: []MessageIdNode{},
-								},
-							},
-						},
-					},
-				},
 			},
 		},
 		{
@@ -177,41 +119,6 @@ func TestHardcodedTreeStructures(t *testing.T) {
 				grandchild2Msg := createTextMessage(gai.User, "Grandchild 2 message")
 				storage.SaveMessage(ctx, grandchild2Msg, child2ID, "")
 			},
-			expectedTree: []MessageIdNode{
-				{
-					ID:       "root1",
-					ParentID: "",
-					Children: []MessageIdNode{
-						{
-							ID:       "child1",
-							ParentID: "root1",
-							Children: []MessageIdNode{},
-						},
-						{
-							ID:       "child2",
-							ParentID: "root1",
-							Children: []MessageIdNode{
-								{
-									ID:       "grandchild1",
-									ParentID: "child2",
-									Children: []MessageIdNode{
-										{
-											ID:       "greatgrandchild1",
-											ParentID: "grandchild1",
-											Children: []MessageIdNode{},
-										},
-									},
-								},
-								{
-									ID:       "grandchild2",
-									ParentID: "child2",
-									Children: []MessageIdNode{},
-								},
-							},
-						},
-					},
-				},
-			},
 		},
 		{
 			name: "Multiple roots",
@@ -244,36 +151,6 @@ func TestHardcodedTreeStructures(t *testing.T) {
 				// Grandchild for second root
 				grandchildMsg := createTextMessage(gai.User, "Grandchild of Root 2")
 				storage.SaveMessage(ctx, grandchildMsg, child2ID, "")
-			},
-			expectedTree: []MessageIdNode{
-				{
-					ID:       "root1",
-					ParentID: "",
-					Children: []MessageIdNode{
-						{
-							ID:       "child1",
-							ParentID: "root1",
-							Children: []MessageIdNode{},
-						},
-					},
-				},
-				{
-					ID:       "root2",
-					ParentID: "",
-					Children: []MessageIdNode{
-						{
-							ID:       "child2",
-							ParentID: "root2",
-							Children: []MessageIdNode{
-								{
-									ID:       "grandchild1",
-									ParentID: "child2",
-									Children: []MessageIdNode{},
-								},
-							},
-						},
-					},
-				},
 			},
 		},
 		{
@@ -308,52 +185,9 @@ func TestHardcodedTreeStructures(t *testing.T) {
 				storage.SaveMessage(ctx, gc3Msg, child2ID, "")
 				storage.SaveMessage(ctx, gc4Msg, child2ID, "")
 			},
-			expectedTree: []MessageIdNode{
-				{
-					ID:       "root1",
-					ParentID: "",
-					Children: []MessageIdNode{
-						{
-							ID:       "child1",
-							ParentID: "root1",
-							Children: []MessageIdNode{
-								{
-									ID:       "grandchild1",
-									ParentID: "child1",
-									Children: []MessageIdNode{},
-								},
-								{
-									ID:       "grandchild2",
-									ParentID: "child1",
-									Children: []MessageIdNode{},
-								},
-							},
-						},
-						{
-							ID:       "child2",
-							ParentID: "root1",
-							Children: []MessageIdNode{
-								{
-									ID:       "grandchild3",
-									ParentID: "child2",
-									Children: []MessageIdNode{},
-								},
-								{
-									ID:       "grandchild4",
-									ParentID: "child2",
-									Children: []MessageIdNode{},
-								},
-							},
-						},
-					},
-				},
-			},
 		},
 	}
 
-	// (Other cases omitted for brevity)
-
-	// Update matching in test to ignore CreatedAt field for now
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Setup fresh database for each test
@@ -372,15 +206,30 @@ func TestHardcodedTreeStructures(t *testing.T) {
 			// Sort roots for consistent ordering
 			actual = sortNodesByID(actual)
 
-			cmpOpts := []cmp.Option{
-				cmpopts.IgnoreFields(MessageIdNode{}, "CreatedAt", "Content", "Role"),
-				cmpopts.EquateEmpty(),
-			}
-			if diff := cmp.Diff(tc.expectedTree, actual, cmpOpts...); diff != "" {
-				t.Errorf("Tree structures don't match (-expected +actual):\n%s", diff)
-			}
+			// Normalize nodes to remove variable fields for stable snapshots
+			normalized := normalizeNodes(actual)
+
+			cupaloy.SnapshotT(t, normalized)
 		})
 	}
+}
+
+// normalizeNodes removes variable fields (CreatedAt, Content, Role) for stable snapshots
+func normalizeNodes(nodes []MessageIdNode) []MessageIdNode {
+	if len(nodes) == 0 {
+		return []MessageIdNode{}
+	}
+
+	result := make([]MessageIdNode, len(nodes))
+	for i, node := range nodes {
+		result[i] = MessageIdNode{
+			ID:        node.ID,
+			ParentID:  node.ParentID,
+			CreatedAt: time.Time{},
+			Children:  normalizeNodes(node.Children),
+		}
+	}
+	return result
 }
 
 // sortNodesByID sorts nodes by ID for deterministic comparison

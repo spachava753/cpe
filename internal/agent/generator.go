@@ -11,8 +11,8 @@ import (
 	a "github.com/anthropics/anthropic-sdk-go"
 	aopts "github.com/anthropics/anthropic-sdk-go/option"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/openai/openai-go/v2"
-	oaiopt "github.com/openai/openai-go/v2/option"
+	"github.com/openai/openai-go/v3"
+	oaiopt "github.com/openai/openai-go/v3/option"
 	"github.com/spachava753/gai"
 	"google.golang.org/genai"
 
@@ -20,9 +20,12 @@ import (
 	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/mcp"
+	"github.com/spachava753/cpe/internal/types"
 
 	"github.com/cenkalti/backoff/v5"
 )
+
+const authMethodOAuth = "oauth"
 
 // prependClaudeCodeIdentifier adds the required Claude Code identifier as the first
 // system message. Anthropic requires this for OAuth tokens to work.
@@ -72,7 +75,7 @@ func initGeneratorFromModel(
 		var client a.Client
 		authMethod := strings.ToLower(m.AuthMethod)
 
-		if authMethod == "oauth" {
+		if authMethod == authMethodOAuth {
 			// Use OAuth authentication
 			store, err := auth.NewStore()
 			if err != nil {
@@ -124,7 +127,7 @@ func initGeneratorFromModel(
 			gai.EnableMultiTurnCaching,
 		}
 		// For OAuth, prepend Claude Code identifier (required by Anthropic for OAuth tokens)
-		if authMethod == "oauth" {
+		if authMethod == authMethodOAuth {
 			modifiers = append([]gai.AnthropicServiceParamModifierFunc{prependClaudeCodeIdentifier}, modifiers...)
 		}
 		svc := gai.NewAnthropicServiceWrapper(&client.Messages, modifiers...)
@@ -175,157 +178,221 @@ func initGeneratorFromModel(
 	return NewPanicCatchingGenerator(gen), nil
 }
 
-// Iface interface for generators that work with gai.Dialog
-type Iface interface {
-	Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error)
-}
-
 // ToolCallbackWrapper is a function that wraps a tool callback.
 // It receives the tool name and the original callback, and returns a wrapped callback.
 // This is used for adding behavior like event emission to tool callbacks.
 type ToolCallbackWrapper func(toolName string, callback gai.ToolCallback) gai.ToolCallback
 
-// CreateToolCapableGenerator creates a Iface with all middleware properly configured.
-// The subagentLoggingAddress parameter specifies the HTTP endpoint where subagent events
-// should be sent. If non-empty, it will be injected into child MCP server processes
-// via the CPE_SUBAGENT_LOGGING_ADDRESS environment variable.
-func CreateToolCapableGenerator(
+// generatorOptions holds optional configuration for generator creation.
+type generatorOptions struct {
+	disablePrinting bool
+	callbackWrapper ToolCallbackWrapper
+	middleware      []gai.WrapperFunc
+	baseGenerator   gai.ToolCapableGenerator
+}
+
+// GeneratorOption is a functional option for configuring generator creation.
+type GeneratorOption func(*generatorOptions)
+
+// WithDisablePrinting disables response printing to stdout.
+// Use this for non-interactive modes like MCP server mode.
+func WithDisablePrinting() GeneratorOption {
+	return func(o *generatorOptions) {
+		o.disablePrinting = true
+	}
+}
+
+// WithCallbackWrapper sets a wrapper function for tool callbacks.
+// This is used for adding behavior like event emission to tool callbacks.
+func WithCallbackWrapper(w ToolCallbackWrapper) GeneratorOption {
+	return func(o *generatorOptions) {
+		o.callbackWrapper = w
+	}
+}
+
+// WithMiddleware adds custom middleware to the generator's middleware stack.
+// Custom middleware is applied after the default middleware (retry, printing, etc.).
+func WithMiddleware(m ...gai.WrapperFunc) GeneratorOption {
+	return func(o *generatorOptions) {
+		o.middleware = append(o.middleware, m...)
+	}
+}
+
+// WithBaseGenerator sets a custom base generator instead of using the default
+// model-based initialization. This is useful for testing or for injecting
+// custom generator implementations.
+func WithBaseGenerator(g gai.ToolCapableGenerator) GeneratorOption {
+	return func(o *generatorOptions) {
+		o.baseGenerator = g
+	}
+}
+
+// NewGenerator creates a types.Generator with all middleware properly configured.
+// It expects an already-initialized MCPState with connections and filtered tools.
+//
+// Required parameters:
+//   - ctx: Context for initialization
+//   - cfg: Configuration containing model, timeout, and code mode settings
+//   - systemPrompt: The system prompt for the generator
+//   - mcpState: Initialized MCP state with connections and tools
+//
+// Optional parameters (via functional options):
+//   - WithDisablePrinting(): Disable response printing
+//   - WithCallbackWrapper(w): Set a tool callback wrapper
+//   - WithMiddleware(m...): Add custom middleware
+//   - WithBaseGenerator(g): Use a custom base generator instead of model-based initialization
+func NewGenerator(
 	ctx context.Context,
-	selectedModel config.Model,
+	cfg *config.Config,
 	systemPrompt string,
-	requestTimeout time.Duration,
-	disablePrinting bool,
-	mcpServers map[string]mcp.ServerConfig,
-	codeModeConfig *config.CodeModeConfig,
-	subagentLoggingAddress string,
-	callbackWrapper ToolCallbackWrapper,
-) (Iface, error) {
-	// Create the base generator from catalog model
-	genBase, err := initGeneratorFromModel(ctx, selectedModel, systemPrompt, requestTimeout)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create generator: %w", err)
+	mcpState *mcp.MCPState,
+	opts ...GeneratorOption,
+) (types.Generator, error) {
+	// Apply options
+	o := &generatorOptions{}
+	for _, opt := range opts {
+		opt(o)
 	}
 
-	// Cast to ToolCapableGenerator
-	gen, ok := genBase.(gai.ToolCapableGenerator)
-	if !ok {
-		return nil, fmt.Errorf("generator does not implement ToolCapableGenerator interface")
+	// Use custom base generator if provided, otherwise create from model config
+	var gen gai.ToolCapableGenerator
+	if o.baseGenerator != nil {
+		gen = o.baseGenerator
+	} else {
+		genBase, err := initGeneratorFromModel(ctx, cfg.Model, systemPrompt, cfg.Timeout)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create generator: %w", err)
+		}
+
+		var ok bool
+		gen, ok = genBase.(gai.ToolCapableGenerator)
+		if !ok {
+			return nil, fmt.Errorf("generator does not implement ToolCapableGenerator interface")
+		}
 	}
 
-	// Wrap with response printer unless disabled (e.g., for subagents in MCP server mode)
-	if !disablePrinting {
-		renderers := NewResponsePrinterRenderers()
-		gen = NewResponsePrinterGenerator(gen, renderers.Content, renderers.Thinking, renderers.ToolCall, os.Stdout, os.Stderr)
-	}
-
-	// print token usage at the end of each message
-	gen = NewTokenUsagePrinterGenerator(gen, os.Stderr)
-
-	// Wrap with retry wrapper so Generate is retried on transient failures
+	// Build middleware stack using gai.Wrap
 	b := backoff.NewExponentialBackOff()
 	b.InitialInterval = 500 * time.Millisecond
 	b.MaxInterval = 1 * time.Minute
 	b.Reset()
 
-	gen = gai.NewRetryGenerator(gen, b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute))
+	var wrappers []gai.WrapperFunc
+	// TokenUsagePrinting must come BEFORE ResponsePrinting in the slice
+	// because gai.Wrap applies wrappers in reverse order.
+	// We want TokenUsagePrinting to be OUTERMOST so it prints AFTER response content.
+	wrappers = append(wrappers, WithTokenUsagePrinting(os.Stderr))
+	if !o.disablePrinting {
+		renderers := NewResponsePrinterRenderers()
+		wrappers = append(wrappers, WithResponsePrinting(renderers.Content, renderers.Thinking, renderers.ToolCall, os.Stdout, os.Stderr))
+	}
 
-	// Create the tool generator using the printing-enabled generator
+	// Add block filter based on model type:
+	// For Anthropic: keep Anthropic thinking blocks but filter out thinking blocks from other providers
+	// For other providers: filter all thinking blocks, keep only content and tool calls
+	if strings.ToLower(cfg.Model.Type) == "anthropic" {
+		wrappers = append(wrappers, WithAnthropicThinkingFilter())
+	} else {
+		wrappers = append(wrappers, WithBlockWhitelist([]string{gai.Content, gai.ToolCall}))
+	}
+
+	wrappers = append(wrappers, gai.WithRetry(b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute)))
+
+	toolResultRenderer := NewRenderer()
+	wrappers = append(wrappers, WithToolResultPrinterWrapper(toolResultRenderer))
+
+	// Add custom middleware after default middleware
+	wrappers = append(wrappers, o.middleware...)
+
+	wrapped := gai.Wrap(gen, wrappers...)
+	gen, ok := wrapped.(gai.ToolCapableGenerator)
+	if !ok {
+		return nil, fmt.Errorf("wrapped generator does not implement ToolCapableGenerator interface")
+	}
+
+	// Create the tool generator using the wrapped generator
 	toolGen := &gai.ToolGenerator{
 		G: gen,
 	}
 
-	// Wrap the tool generator with a filter to handle thinking blocks.
-	// For Anthropic: keep Anthropic thinking blocks but filter out thinking blocks
-	// from other providers (Gemini, OpenRouter, etc.)
-	// For other providers: filter all thinking blocks
-	var filterToolGen Iface
-	if strings.ToLower(selectedModel.Type) == "anthropic" {
-		filterToolGen = NewAnthropicThinkingBlockFilter(toolGen)
-	} else {
-		filterToolGen = NewBlockWhitelistFilter(toolGen, []string{gai.Content, gai.ToolCall})
-	}
-
-	// Wrap with tool result printer to print tool execution results to stderr
-	// Use the same content renderer for consistent styling
-	toolResultRenderer := NewRenderer()
-	toolResultPrinter := NewToolResultPrinterWrapper(filterToolGen, toolResultRenderer)
-
-	// Create client manager
-	client := mcp.NewClient()
-
-	// Fetch MCP server tools
-	toolsByServer, err := mcp.FetchTools(ctx, client, mcpServers, subagentLoggingAddress)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch MCP tools: %w", err)
-	}
-
 	// Check if code mode is enabled
-	codeModeEnabled := codeModeConfig != nil && codeModeConfig.Enabled
+	codeModeEnabled := cfg.CodeMode != nil && cfg.CodeMode.Enabled
 
 	if codeModeEnabled {
 		// Partition tools into code-mode and excluded
 		var excludedToolNames []string
-		if codeModeConfig.ExcludedTools != nil {
-			excludedToolNames = codeModeConfig.ExcludedTools
+		if cfg.CodeMode.ExcludedTools != nil {
+			excludedToolNames = cfg.CodeMode.ExcludedTools
 		}
 
-		serverToolsInfo, excludedTools := codemode.PartitionTools(toolsByServer, mcpServers, excludedToolNames)
+		codeModeServers, excludedByServer := codemode.PartitionTools(mcpState, excludedToolNames)
 
 		// Run collision detection on code-mode tools
-		codeModeToolNames := codemode.GetCodeModeToolNames(serverToolsInfo)
+		codeModeToolNames := codemode.GetCodeModeToolNames(codeModeServers)
 		if err := codemode.CheckToolNameCollisions(codeModeToolNames); err != nil {
 			return nil, err
 		}
 
 		// Collect all code-mode tools for tool description generation
 		var allCodeModeTools []*mcpsdk.Tool
-		for _, serverInfo := range serverToolsInfo {
+		for _, serverInfo := range codeModeServers {
 			allCodeModeTools = append(allCodeModeTools, serverInfo.Tools...)
 		}
 
 		// Always register execute_go_code when code mode is enabled, even without MCP tools.
 		// The tool provides access to the Go standard library for file I/O, etc.
-		executeGoCodeTool, err := codemode.GenerateExecuteGoCodeTool(allCodeModeTools, codeModeConfig.MaxTimeout)
+		executeGoCodeTool, err := codemode.GenerateExecuteGoCodeTool(allCodeModeTools, cfg.CodeMode.MaxTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate execute_go_code tool: %w", err)
 		}
 
 		callback := &codemode.ExecuteGoCodeCallback{
-			Servers: serverToolsInfo,
+			Servers: codeModeServers,
 		}
 
 		finalCallback := gai.ToolCallback(callback)
-		if callbackWrapper != nil {
-			finalCallback = callbackWrapper(executeGoCodeTool.Name, callback)
+		if o.callbackWrapper != nil {
+			finalCallback = o.callbackWrapper(executeGoCodeTool.Name, callback)
 		}
-		if err := toolResultPrinter.Register(executeGoCodeTool, finalCallback); err != nil {
+		if err := toolGen.Register(executeGoCodeTool, finalCallback); err != nil {
 			return nil, fmt.Errorf("failed to register execute_go_code tool: %w", err)
 		}
 
 		// Register excluded tools normally
-		for _, toolData := range excludedTools {
-			cb := toolData.ToolCallback
-			if callbackWrapper != nil {
-				cb = callbackWrapper(toolData.Tool.Name, toolData.ToolCallback)
-			}
-			if err := toolResultPrinter.Register(toolData.Tool, cb); err != nil {
-				return nil, fmt.Errorf("failed to register excluded tool %s: %w", toolData.Tool.Name, err)
+		for serverName, tools := range excludedByServer {
+			conn := mcpState.Connections[serverName]
+			for _, mcpTool := range tools {
+				gaiTool, err := mcp.ToGaiTool(mcpTool)
+				if err != nil {
+					return nil, fmt.Errorf("converting tool %s: %w", mcpTool.Name, err)
+				}
+				cb := gai.ToolCallback(mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name))
+				if o.callbackWrapper != nil {
+					cb = o.callbackWrapper(mcpTool.Name, cb)
+				}
+				if err := toolGen.Register(gaiTool, cb); err != nil {
+					return nil, fmt.Errorf("failed to register excluded tool %s: %w", mcpTool.Name, err)
+				}
 			}
 		}
 	} else {
 		// Code mode disabled: register all tools normally
-		for _, tools := range toolsByServer {
-			for _, toolData := range tools {
-				cb := toolData.ToolCallback
-				if callbackWrapper != nil {
-					cb = callbackWrapper(toolData.Tool.Name, toolData.ToolCallback)
+		for serverName, conn := range mcpState.Connections {
+			for _, mcpTool := range conn.Tools {
+				gaiTool, err := mcp.ToGaiTool(mcpTool)
+				if err != nil {
+					return nil, fmt.Errorf("converting tool %s: %w", mcpTool.Name, err)
 				}
-				if err := toolResultPrinter.Register(toolData.Tool, cb); err != nil {
-					return nil, fmt.Errorf("failed to register tool %s: %w", toolData.Tool.Name, err)
+				cb := gai.ToolCallback(mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name))
+				if o.callbackWrapper != nil {
+					cb = o.callbackWrapper(mcpTool.Name, cb)
+				}
+				if err := toolGen.Register(gaiTool, cb); err != nil {
+					return nil, fmt.Errorf("failed to register tool %s: %w", mcpTool.Name, err)
 				}
 			}
 		}
 	}
 
-	return toolResultPrinter, nil
+	return toolGen, nil
 }

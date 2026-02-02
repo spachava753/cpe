@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp" // always import this package
 	"github.com/spachava753/gai"
 )
 

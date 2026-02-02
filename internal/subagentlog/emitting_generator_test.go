@@ -4,18 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 
-	"github.com/spachava753/cpe/internal/codemode"
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/codemode"
 )
 
-// mockGenerator implements the generator interface for testing
+// mockGenerator implements the generator interface for testing (non-ToolGenerator path)
 type mockGenerator struct {
 	generateFunc func(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error)
 	registerFunc func(tool gai.Tool, callback gai.ToolCallback) error
@@ -58,6 +59,36 @@ func (m *mockToolCallback) Call(ctx context.Context, parametersJSON json.RawMess
 	}, nil
 }
 
+// normalizedEvent is a copy of Event with the Timestamp field zeroed for snapshot testing
+type normalizedEvent struct {
+	Type                    string
+	SubagentName            string
+	SubagentRunID           string
+	ToolName                string
+	ToolCallID              string
+	Payload                 string
+	ReasoningType           string
+	ExecutionTimeoutSeconds int
+}
+
+// normalizeEvents creates a copy of events with timestamps zeroed for deterministic snapshots
+func normalizeEvents(events []Event) []normalizedEvent {
+	normalized := make([]normalizedEvent, len(events))
+	for i, e := range events {
+		normalized[i] = normalizedEvent{
+			Type:                    e.Type,
+			SubagentName:            e.SubagentName,
+			SubagentRunID:           e.SubagentRunID,
+			ToolName:                e.ToolName,
+			ToolCallID:              e.ToolCallID,
+			Payload:                 e.Payload,
+			ReasoningType:           e.ReasoningType,
+			ExecutionTimeoutSeconds: e.ExecutionTimeoutSeconds,
+		}
+	}
+	return normalized
+}
+
 // createTestServer creates a test HTTP server that records events
 func createTestServer(t *testing.T) (*httptest.Server, *[]Event, *sync.Mutex) {
 	t.Helper()
@@ -88,14 +119,89 @@ func createTestServer(t *testing.T) (*httptest.Server, *[]Event, *sync.Mutex) {
 	return server, &events, &mu
 }
 
-// TestEmittingToolCallback_ToolCallAndResultEvents tests that tool_call is emitted before tool_result
-func TestEmittingToolCallback_ToolCallAndResultEvents(t *testing.T) {
+// mockToolCapableGenerator implements gai.ToolCapableGenerator for testing the middleware
+type mockToolCapableGenerator struct {
+	generateFunc func(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error)
+	registerFunc func(tool gai.Tool) error
+}
+
+func (m *mockToolCapableGenerator) Generate(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
+	if m.generateFunc != nil {
+		return m.generateFunc(ctx, dialog, options)
+	}
+	return gai.Response{}, nil
+}
+
+func (m *mockToolCapableGenerator) Register(tool gai.Tool) error {
+	if m.registerFunc != nil {
+		return m.registerFunc(tool)
+	}
+	return nil
+}
+
+// TestMiddleware_ToolCallAndResultEvents tests that tool_call and tool_result events
+// are emitted via the middleware when using a ToolGenerator
+func TestMiddleware_ToolCallAndResultEvents(t *testing.T) {
 	server, events, mu := createTestServer(t)
 	defer server.Close()
 
 	client := NewClient(server.URL)
 
-	baseCallback := &mockToolCallback{
+	callCount := 0
+	mockInner := &mockToolCapableGenerator{
+		generateFunc: func(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
+			callCount++
+
+			if callCount == 1 {
+				// First call: return a tool call
+				toolCallInput := gai.ToolCallInput{
+					Name:       "my_tool",
+					Parameters: map[string]any{"key": "value"},
+				}
+				toolCallJSON, _ := json.Marshal(toolCallInput)
+
+				return gai.Response{
+					Candidates: []gai.Message{
+						{
+							Role: gai.Assistant,
+							Blocks: []gai.Block{
+								{
+									ID:           "call_abc",
+									BlockType:    gai.ToolCall,
+									ModalityType: gai.Text,
+									Content:      gai.Str(string(toolCallJSON)),
+								},
+							},
+						},
+					},
+					FinishReason: gai.ToolUse,
+				}, nil
+			}
+
+			// Second call: return final response
+			return gai.Response{
+				Candidates: []gai.Message{
+					{
+						Role: gai.Assistant,
+						Blocks: []gai.Block{
+							{
+								BlockType:    gai.Content,
+								ModalityType: gai.Text,
+								Content:      gai.Str("Done!"),
+							},
+						},
+					},
+				},
+				FinishReason: gai.EndTurn,
+			}, nil
+		},
+	}
+
+	toolGen := &gai.ToolGenerator{G: mockInner}
+	emittingGen := NewEmittingGenerator(toolGen, client, "test_subagent", "run_789")
+
+	// Register the tool
+	callback := &mockToolCallback{
 		callFunc: func(ctx context.Context, parametersJSON json.RawMessage, toolCallID string) (gai.Message, error) {
 			return gai.Message{
 				Role: gai.ToolResult,
@@ -111,62 +217,34 @@ func TestEmittingToolCallback_ToolCallAndResultEvents(t *testing.T) {
 			}, nil
 		},
 	}
+	if err := emittingGen.Register(gai.Tool{Name: "my_tool"}, callback); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
 
-	emittingCallback := NewEmittingToolCallback(baseCallback, client, "test_subagent", "run_789", "my_tool")
+	dialog := gai.Dialog{
+		{
+			Role:   gai.User,
+			Blocks: []gai.Block{{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("test")}},
+		},
+	}
 
-	_, err := emittingCallback.Call(context.Background(), json.RawMessage(`{"key":"value"}`), "call_abc")
+	_, err := emittingGen.Generate(context.Background(), dialog, nil)
 	if err != nil {
-		t.Fatalf("Call failed: %v", err)
+		t.Fatalf("Generate failed: %v", err)
 	}
 
 	mu.Lock()
 	defer mu.Unlock()
 
-	// Expect 2 events: tool_call followed by tool_result
 	if len(*events) != 2 {
 		t.Fatalf("expected 2 events (tool_call + tool_result), got %d", len(*events))
 	}
 
-	// First event should be tool_call
-	toolCallEvent := (*events)[0]
-	if toolCallEvent.Type != EventTypeToolCall {
-		t.Errorf("expected first event type %q, got %q", EventTypeToolCall, toolCallEvent.Type)
-	}
-	if toolCallEvent.ToolName != "my_tool" {
-		t.Errorf("expected tool name %q, got %q", "my_tool", toolCallEvent.ToolName)
-	}
-	if toolCallEvent.ToolCallID != "call_abc" {
-		t.Errorf("expected tool call ID %q, got %q", "call_abc", toolCallEvent.ToolCallID)
-	}
-	if toolCallEvent.SubagentName != "test_subagent" {
-		t.Errorf("expected subagent name %q, got %q", "test_subagent", toolCallEvent.SubagentName)
-	}
-	if toolCallEvent.SubagentRunID != "run_789" {
-		t.Errorf("expected run ID %q, got %q", "run_789", toolCallEvent.SubagentRunID)
-	}
-	// Payload should be the raw JSON parameters
-	if toolCallEvent.Payload != `{"key":"value"}` {
-		t.Errorf("expected payload %q, got %q", `{"key":"value"}`, toolCallEvent.Payload)
-	}
-
-	// Second event should be tool_result
-	toolResultEvent := (*events)[1]
-	if toolResultEvent.Type != EventTypeToolResult {
-		t.Errorf("expected second event type %q, got %q", EventTypeToolResult, toolResultEvent.Type)
-	}
-	if toolResultEvent.ToolName != "my_tool" {
-		t.Errorf("expected tool name %q, got %q", "my_tool", toolResultEvent.ToolName)
-	}
-	if toolResultEvent.ToolCallID != "call_abc" {
-		t.Errorf("expected tool call ID %q, got %q", "call_abc", toolResultEvent.ToolCallID)
-	}
-	if toolResultEvent.Payload != "tool execution result" {
-		t.Errorf("expected payload %q, got %q", "tool execution result", toolResultEvent.Payload)
-	}
+	cupaloy.SnapshotT(t, normalizeEvents(*events))
 }
 
-// TestEmittingToolCallback_ExecuteGoCodeToolCallEvent tests special handling of execute_go_code
-func TestEmittingToolCallback_ExecuteGoCodeToolCallEvent(t *testing.T) {
+// TestMiddleware_ExecuteGoCodeToolCallEvent tests special handling of execute_go_code
+func TestMiddleware_ExecuteGoCodeToolCallEvent(t *testing.T) {
 	server, events, mu := createTestServer(t)
 	defer server.Close()
 
@@ -180,13 +258,55 @@ func main() {
 	fmt.Println("Hello, World!")
 }`
 
-	params := map[string]any{
-		"code":             goCode,
-		"executionTimeout": float64(120),
-	}
-	paramsJSON, _ := json.Marshal(params)
+	callCount := 0
+	mockInner := &mockToolCapableGenerator{
+		generateFunc: func(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
+			callCount++
 
-	baseCallback := &mockToolCallback{
+			if callCount == 1 {
+				toolCallInput := gai.ToolCallInput{
+					Name: codemode.ExecuteGoCodeToolName,
+					Parameters: map[string]any{
+						"code":             goCode,
+						"executionTimeout": float64(120),
+					},
+				}
+				toolCallJSON, _ := json.Marshal(toolCallInput)
+
+				return gai.Response{
+					Candidates: []gai.Message{
+						{
+							Role: gai.Assistant,
+							Blocks: []gai.Block{
+								{
+									ID:           "call_code",
+									BlockType:    gai.ToolCall,
+									ModalityType: gai.Text,
+									Content:      gai.Str(string(toolCallJSON)),
+								},
+							},
+						},
+					},
+					FinishReason: gai.ToolUse,
+				}, nil
+			}
+
+			return gai.Response{
+				Candidates: []gai.Message{
+					{
+						Role:   gai.Assistant,
+						Blocks: []gai.Block{{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("Done!")}},
+					},
+				},
+				FinishReason: gai.EndTurn,
+			}, nil
+		},
+	}
+
+	toolGen := &gai.ToolGenerator{G: mockInner}
+	emittingGen := NewEmittingGenerator(toolGen, client, "test_subagent", "run_code")
+
+	callback := &mockToolCallback{
 		callFunc: func(ctx context.Context, parametersJSON json.RawMessage, toolCallID string) (gai.Message, error) {
 			return gai.Message{
 				Role: gai.ToolResult,
@@ -202,12 +322,20 @@ func main() {
 			}, nil
 		},
 	}
+	if err := emittingGen.Register(gai.Tool{Name: codemode.ExecuteGoCodeToolName}, callback); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
 
-	emittingCallback := NewEmittingToolCallback(baseCallback, client, "test_subagent", "run_code", codemode.ExecuteGoCodeToolName)
+	dialog := gai.Dialog{
+		{
+			Role:   gai.User,
+			Blocks: []gai.Block{{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("test")}},
+		},
+	}
 
-	_, err := emittingCallback.Call(context.Background(), paramsJSON, "call_code")
+	_, err := emittingGen.Generate(context.Background(), dialog, nil)
 	if err != nil {
-		t.Fatalf("Call failed: %v", err)
+		t.Fatalf("Generate failed: %v", err)
 	}
 
 	mu.Lock()
@@ -217,22 +345,7 @@ func main() {
 		t.Fatalf("expected 2 events, got %d", len(*events))
 	}
 
-	// Check tool_call event
-	toolCallEvent := (*events)[0]
-	if toolCallEvent.Type != EventTypeToolCall {
-		t.Errorf("expected event type %q, got %q", EventTypeToolCall, toolCallEvent.Type)
-	}
-	if toolCallEvent.ToolName != codemode.ExecuteGoCodeToolName {
-		t.Errorf("expected tool name %q, got %q", codemode.ExecuteGoCodeToolName, toolCallEvent.ToolName)
-	}
-	// Payload should be the raw code string, not JSON
-	if toolCallEvent.Payload != goCode {
-		t.Errorf("expected payload to be raw code string, got %q", toolCallEvent.Payload)
-	}
-	// ExecutionTimeoutSeconds should be populated
-	if toolCallEvent.ExecutionTimeoutSeconds != 120 {
-		t.Errorf("expected ExecutionTimeoutSeconds %d, got %d", 120, toolCallEvent.ExecutionTimeoutSeconds)
-	}
+	cupaloy.SnapshotT(t, normalizeEvents(*events))
 }
 
 func TestEmittingGenerator_FinalAnswerToolCallSkipped(t *testing.T) {
@@ -285,52 +398,83 @@ func TestEmittingGenerator_FinalAnswerToolCallSkipped(t *testing.T) {
 	defer mu.Unlock()
 
 	// No events should be emitted for final_answer tool calls
-	if len(*events) != 0 {
-		t.Errorf("expected 0 events for final_answer tool call, got %d", len(*events))
-		for i, e := range *events {
-			t.Errorf("  event %d: type=%q toolName=%q", i, e.Type, e.ToolName)
-		}
-	}
+	cupaloy.SnapshotT(t, normalizeEvents(*events))
 }
 
-func TestEmittingToolCallback_FinalAnswerSkipped(t *testing.T) {
+// TestMiddleware_FinalAnswerSkipped tests that final_answer tool results are also skipped
+func TestMiddleware_FinalAnswerSkipped(t *testing.T) {
 	server, events, mu := createTestServer(t)
 	defer server.Close()
 
 	client := NewClient(server.URL)
 
-	baseCallback := &mockToolCallback{
-		callFunc: func(ctx context.Context, parametersJSON json.RawMessage, toolCallID string) (gai.Message, error) {
-			return gai.Message{
-				Role: gai.ToolResult,
-				Blocks: []gai.Block{
+	callCount := 0
+	mockInner := &mockToolCapableGenerator{
+		generateFunc: func(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
+			callCount++
+
+			if callCount == 1 {
+				toolCallInput := gai.ToolCallInput{
+					Name:       "final_answer",
+					Parameters: map[string]any{"result": "done"},
+				}
+				toolCallJSON, _ := json.Marshal(toolCallInput)
+
+				return gai.Response{
+					Candidates: []gai.Message{
+						{
+							Role: gai.Assistant,
+							Blocks: []gai.Block{
+								{
+									ID:           "call_final",
+									BlockType:    gai.ToolCall,
+									ModalityType: gai.Text,
+									Content:      gai.Str(string(toolCallJSON)),
+								},
+							},
+						},
+					},
+					FinishReason: gai.ToolUse,
+				}, nil
+			}
+
+			return gai.Response{
+				Candidates: []gai.Message{
 					{
-						ID:           toolCallID,
-						BlockType:    gai.Content,
-						ModalityType: gai.Text,
-						MimeType:     "text/plain",
-						Content:      gai.Str("final result"),
+						Role:   gai.Assistant,
+						Blocks: []gai.Block{{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("Done!")}},
 					},
 				},
+				FinishReason: gai.EndTurn,
 			}, nil
 		},
 	}
 
-	// Create callback for final_answer tool
-	emittingCallback := NewEmittingToolCallback(baseCallback, client, "test_subagent", "run_123", "final_answer")
+	toolGen := &gai.ToolGenerator{G: mockInner}
+	emittingGen := NewEmittingGenerator(toolGen, client, "test_subagent", "run_123")
 
-	_, err := emittingCallback.Call(context.Background(), json.RawMessage(`{"result":"done"}`), "call_final")
+	// Register final_answer with nil callback (terminates execution)
+	if err := emittingGen.Register(gai.Tool{Name: "final_answer"}, nil); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+
+	dialog := gai.Dialog{
+		{
+			Role:   gai.User,
+			Blocks: []gai.Block{{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("test")}},
+		},
+	}
+
+	_, err := emittingGen.Generate(context.Background(), dialog, nil)
 	if err != nil {
-		t.Fatalf("Call failed: %v", err)
+		t.Fatalf("Generate failed: %v", err)
 	}
 
 	mu.Lock()
 	defer mu.Unlock()
 
 	// No events should be emitted for final_answer
-	if len(*events) != 0 {
-		t.Errorf("expected 0 events for final_answer, got %d", len(*events))
-	}
+	cupaloy.SnapshotT(t, normalizeEvents(*events))
 }
 
 func TestEmittingGenerator_ThoughtTraceEvent(t *testing.T) {
@@ -381,16 +525,7 @@ func TestEmittingGenerator_ThoughtTraceEvent(t *testing.T) {
 		t.Fatalf("expected 1 event, got %d", len(*events))
 	}
 
-	event := (*events)[0]
-	if event.Type != EventTypeThoughtTrace {
-		t.Errorf("expected event type %q, got %q", EventTypeThoughtTrace, event.Type)
-	}
-	if event.Payload != "thinking about the problem..." {
-		t.Errorf("expected payload %q, got %q", "thinking about the problem...", event.Payload)
-	}
-	if event.ReasoningType != "reasoning.text" {
-		t.Errorf("expected reasoning type %q, got %q", "reasoning.text", event.ReasoningType)
-	}
+	cupaloy.SnapshotT(t, normalizeEvents(*events))
 }
 
 func TestEmittingGenerator_EmissionFailureAbortsExecution(t *testing.T) {
@@ -433,35 +568,14 @@ func TestEmittingGenerator_EmissionFailureAbortsExecution(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when emission fails, got nil")
 	}
-	if !errors.Is(err, nil) {
-		// Just check that the error message mentions event emission
-		if err.Error() == "" {
-			t.Error("expected non-empty error message")
-		}
-	}
-}
-
-func TestEmittingToolCallback_EmissionFailureAbortsExecution(t *testing.T) {
-	// Create a server that always returns an error
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer server.Close()
-
-	client := NewClient(server.URL)
-
-	baseCallback := &mockToolCallback{}
-
-	emittingCallback := NewEmittingToolCallback(baseCallback, client, "test_subagent", "run_123", "my_tool")
-
-	_, err := emittingCallback.Call(context.Background(), json.RawMessage(`{}`), "call_123")
-	if err == nil {
-		t.Fatal("expected error when emission fails, got nil")
+	// Just check that the error message mentions event emission
+	if err.Error() == "" {
+		t.Error("expected non-empty error message")
 	}
 }
 
 func TestEmittingGenerator_Register(t *testing.T) {
-	server, events, mu := createTestServer(t)
+	server, _, _ := createTestServer(t)
 	defer server.Close()
 
 	client := NewClient(server.URL)
@@ -483,36 +597,14 @@ func TestEmittingGenerator_Register(t *testing.T) {
 		t.Fatalf("Register failed: %v", err)
 	}
 
-	// Verify the callback was wrapped
+	// Verify the callback was passed through (NOT wrapped - middleware handles events)
 	if registeredCallback == nil {
 		t.Fatal("expected callback to be registered")
 	}
 
-	// The registered callback should be an EmittingToolCallback
-	_, ok := registeredCallback.(*EmittingToolCallback)
-	if !ok {
-		t.Error("expected callback to be wrapped with EmittingToolCallback")
-	}
-
-	// Call the registered callback and verify events are emitted
-	_, err = registeredCallback.Call(context.Background(), json.RawMessage(`{}`), "call_xyz")
-	if err != nil {
-		t.Fatalf("Call failed: %v", err)
-	}
-
-	mu.Lock()
-	defer mu.Unlock()
-
-	// Now expect 2 events: tool_call + tool_result
-	if len(*events) != 2 {
-		t.Fatalf("expected 2 events (tool_call + tool_result), got %d", len(*events))
-	}
-
-	if (*events)[0].Type != EventTypeToolCall {
-		t.Errorf("expected first event type %q, got %q", EventTypeToolCall, (*events)[0].Type)
-	}
-	if (*events)[1].Type != EventTypeToolResult {
-		t.Errorf("expected second event type %q, got %q", EventTypeToolResult, (*events)[1].Type)
+	// The registered callback should be the ORIGINAL callback, not wrapped
+	if registeredCallback != originalCallback {
+		t.Error("expected callback to be passed through without wrapping")
 	}
 }
 
@@ -544,7 +636,7 @@ func TestEmittingGenerator_RegisterNilCallback(t *testing.T) {
 	}
 }
 
-func TestEmittingToolCallback_ToolCallEmissionFailureAbortsExecution(t *testing.T) {
+func TestMiddleware_ToolCallEmissionFailureAbortsExecution(t *testing.T) {
 	// Create a server that always returns 500 error
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -553,11 +645,48 @@ func TestEmittingToolCallback_ToolCallEmissionFailureAbortsExecution(t *testing.
 
 	client := NewClient(server.URL)
 
-	baseCallback := &mockToolCallback{}
+	mockInner := &mockToolCapableGenerator{
+		generateFunc: func(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
+			toolCallInput := gai.ToolCallInput{
+				Name:       "test_tool",
+				Parameters: map[string]any{"param1": "value1"},
+			}
+			toolCallJSON, _ := json.Marshal(toolCallInput)
 
-	emittingCallback := NewEmittingToolCallback(baseCallback, client, "test_subagent", "run_123", "test_tool")
+			return gai.Response{
+				Candidates: []gai.Message{
+					{
+						Role: gai.Assistant,
+						Blocks: []gai.Block{
+							{
+								ID:           "call_123",
+								BlockType:    gai.ToolCall,
+								ModalityType: gai.Text,
+								Content:      gai.Str(string(toolCallJSON)),
+							},
+						},
+					},
+				},
+				FinishReason: gai.ToolUse,
+			}, nil
+		},
+	}
 
-	_, err := emittingCallback.Call(context.Background(), json.RawMessage(`{"param1":"value1"}`), "call_123")
+	toolGen := &gai.ToolGenerator{G: mockInner}
+	emittingGen := NewEmittingGenerator(toolGen, client, "test_subagent", "run_123")
+
+	if err := emittingGen.Register(gai.Tool{Name: "test_tool"}, &mockToolCallback{}); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+
+	dialog := gai.Dialog{
+		{
+			Role:   gai.User,
+			Blocks: []gai.Block{{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("test")}},
+		},
+	}
+
+	_, err := emittingGen.Generate(context.Background(), dialog, nil)
 	if err == nil {
 		t.Fatal("expected error when tool_call emission fails, got nil")
 	}
@@ -667,7 +796,7 @@ func TestEmittingGenerator_ConnectionRefusedAbortsExecution(t *testing.T) {
 	}
 }
 
-func TestEmittingToolCallback_ToolResultEmissionFailureHasDescriptiveError(t *testing.T) {
+func TestMiddleware_ToolResultEmissionFailureHasDescriptiveError(t *testing.T) {
 	// Create a server that succeeds for tool_call but fails for tool_result
 	callCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -684,7 +813,52 @@ func TestEmittingToolCallback_ToolResultEmissionFailureHasDescriptiveError(t *te
 
 	client := NewClient(server.URL)
 
-	baseCallback := &mockToolCallback{
+	generateCallCount := 0
+	mockInner := &mockToolCapableGenerator{
+		generateFunc: func(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
+			generateCallCount++
+
+			if generateCallCount == 1 {
+				toolCallInput := gai.ToolCallInput{
+					Name:       "my_tool",
+					Parameters: map[string]any{},
+				}
+				toolCallJSON, _ := json.Marshal(toolCallInput)
+
+				return gai.Response{
+					Candidates: []gai.Message{
+						{
+							Role: gai.Assistant,
+							Blocks: []gai.Block{
+								{
+									ID:           "call_123",
+									BlockType:    gai.ToolCall,
+									ModalityType: gai.Text,
+									Content:      gai.Str(string(toolCallJSON)),
+								},
+							},
+						},
+					},
+					FinishReason: gai.ToolUse,
+				}, nil
+			}
+
+			return gai.Response{
+				Candidates: []gai.Message{
+					{
+						Role:   gai.Assistant,
+						Blocks: []gai.Block{{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("Done!")}},
+					},
+				},
+				FinishReason: gai.EndTurn,
+			}, nil
+		},
+	}
+
+	toolGen := &gai.ToolGenerator{G: mockInner}
+	emittingGen := NewEmittingGenerator(toolGen, client, "test_subagent", "run_123")
+
+	callback := &mockToolCallback{
 		callFunc: func(ctx context.Context, parametersJSON json.RawMessage, toolCallID string) (gai.Message, error) {
 			return gai.Message{
 				Role: gai.ToolResult,
@@ -700,10 +874,18 @@ func TestEmittingToolCallback_ToolResultEmissionFailureHasDescriptiveError(t *te
 			}, nil
 		},
 	}
+	if err := emittingGen.Register(gai.Tool{Name: "my_tool"}, callback); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
 
-	emittingCallback := NewEmittingToolCallback(baseCallback, client, "test_subagent", "run_123", "my_tool")
+	dialog := gai.Dialog{
+		{
+			Role:   gai.User,
+			Blocks: []gai.Block{{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("test")}},
+		},
+	}
 
-	_, err := emittingCallback.Call(context.Background(), json.RawMessage(`{}`), "call_123")
+	_, err := emittingGen.Generate(context.Background(), dialog, nil)
 	if err == nil {
 		t.Fatal("expected error when emission fails, got nil")
 	}
@@ -718,15 +900,52 @@ func TestEmittingToolCallback_ToolResultEmissionFailureHasDescriptiveError(t *te
 	}
 }
 
-func TestEmittingToolCallback_ConnectionRefusedAbortsExecution(t *testing.T) {
+func TestMiddleware_ConnectionRefusedAbortsExecution(t *testing.T) {
 	// Use an address that will definitely refuse connection
 	client := NewClient("http://127.0.0.1:1")
 
-	baseCallback := &mockToolCallback{}
+	mockInner := &mockToolCapableGenerator{
+		generateFunc: func(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
+			toolCallInput := gai.ToolCallInput{
+				Name:       "my_tool",
+				Parameters: map[string]any{},
+			}
+			toolCallJSON, _ := json.Marshal(toolCallInput)
 
-	emittingCallback := NewEmittingToolCallback(baseCallback, client, "test_subagent", "run_123", "my_tool")
+			return gai.Response{
+				Candidates: []gai.Message{
+					{
+						Role: gai.Assistant,
+						Blocks: []gai.Block{
+							{
+								ID:           "call_123",
+								BlockType:    gai.ToolCall,
+								ModalityType: gai.Text,
+								Content:      gai.Str(string(toolCallJSON)),
+							},
+						},
+					},
+				},
+				FinishReason: gai.ToolUse,
+			}, nil
+		},
+	}
 
-	_, err := emittingCallback.Call(context.Background(), json.RawMessage(`{}`), "call_123")
+	toolGen := &gai.ToolGenerator{G: mockInner}
+	emittingGen := NewEmittingGenerator(toolGen, client, "test_subagent", "run_123")
+
+	if err := emittingGen.Register(gai.Tool{Name: "my_tool"}, &mockToolCallback{}); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+
+	dialog := gai.Dialog{
+		{
+			Role:   gai.User,
+			Blocks: []gai.Block{{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("test")}},
+		},
+	}
+
+	_, err := emittingGen.Generate(context.Background(), dialog, nil)
 	if err == nil {
 		t.Fatal("expected error when connection refused, got nil")
 	}
@@ -738,14 +957,60 @@ func TestEmittingToolCallback_ConnectionRefusedAbortsExecution(t *testing.T) {
 	}
 }
 
-// TestEventOrdering verifies that tool_call events are emitted before tool_result events
+// TestEventOrdering verifies that events are emitted in correct chronological order
+// via the middleware (thought_trace -> tool_call -> tool_result)
 func TestEventOrdering(t *testing.T) {
 	server, events, mu := createTestServer(t)
 	defer server.Close()
 
 	client := NewClient(server.URL)
 
-	baseCallback := &mockToolCallback{
+	callCount := 0
+	mockInner := &mockToolCapableGenerator{
+		generateFunc: func(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
+			callCount++
+
+			if callCount == 1 {
+				toolCallInput := gai.ToolCallInput{
+					Name:       "tool",
+					Parameters: map[string]any{"arg": "val"},
+				}
+				toolCallJSON, _ := json.Marshal(toolCallInput)
+
+				return gai.Response{
+					Candidates: []gai.Message{
+						{
+							Role: gai.Assistant,
+							Blocks: []gai.Block{
+								{
+									ID:           "call_1",
+									BlockType:    gai.ToolCall,
+									ModalityType: gai.Text,
+									Content:      gai.Str(string(toolCallJSON)),
+								},
+							},
+						},
+					},
+					FinishReason: gai.ToolUse,
+				}, nil
+			}
+
+			return gai.Response{
+				Candidates: []gai.Message{
+					{
+						Role:   gai.Assistant,
+						Blocks: []gai.Block{{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("Done!")}},
+					},
+				},
+				FinishReason: gai.EndTurn,
+			}, nil
+		},
+	}
+
+	toolGen := &gai.ToolGenerator{G: mockInner}
+	emittingGen := NewEmittingGenerator(toolGen, client, "test", "run")
+
+	callback := &mockToolCallback{
 		callFunc: func(ctx context.Context, parametersJSON json.RawMessage, toolCallID string) (gai.Message, error) {
 			return gai.Message{
 				Role: gai.ToolResult,
@@ -761,13 +1026,20 @@ func TestEventOrdering(t *testing.T) {
 			}, nil
 		},
 	}
+	if err := emittingGen.Register(gai.Tool{Name: "tool"}, callback); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
 
-	emittingCallback := NewEmittingToolCallback(baseCallback, client, "test", "run", "tool")
+	dialog := gai.Dialog{
+		{
+			Role:   gai.User,
+			Blocks: []gai.Block{{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("test")}},
+		},
+	}
 
-	// Call the callback
-	_, err := emittingCallback.Call(context.Background(), json.RawMessage(`{"arg":"val"}`), "call_1")
+	_, err := emittingGen.Generate(context.Background(), dialog, nil)
 	if err != nil {
-		t.Fatalf("Call failed: %v", err)
+		t.Fatalf("Generate failed: %v", err)
 	}
 
 	mu.Lock()
@@ -777,39 +1049,20 @@ func TestEventOrdering(t *testing.T) {
 		t.Fatalf("expected 2 events, got %d", len(*events))
 	}
 
-	// Verify ordering: tool_call must come before tool_result
+	// Verify tool_call comes before tool_result
 	if (*events)[0].Type != EventTypeToolCall {
-		t.Errorf("first event should be tool_call, got %s", (*events)[0].Type)
+		t.Errorf("expected first event to be tool_call, got %s", (*events)[0].Type)
 	}
 	if (*events)[1].Type != EventTypeToolResult {
-		t.Errorf("second event should be tool_result, got %s", (*events)[1].Type)
+		t.Errorf("expected second event to be tool_result, got %s", (*events)[1].Type)
 	}
 
 	// Verify timestamps are in order
 	if (*events)[1].Timestamp.Before((*events)[0].Timestamp) {
 		t.Error("tool_result timestamp should not be before tool_call timestamp")
 	}
-}
 
-
-// mockToolCapableGenerator implements gai.ToolCapableGenerator for testing the inner wrapper
-type mockToolCapableGenerator struct {
-	generateFunc func(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error)
-	registerFunc func(tool gai.Tool) error
-}
-
-func (m *mockToolCapableGenerator) Generate(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
-	if m.generateFunc != nil {
-		return m.generateFunc(ctx, dialog, options)
-	}
-	return gai.Response{}, nil
-}
-
-func (m *mockToolCapableGenerator) Register(tool gai.Tool) error {
-	if m.registerFunc != nil {
-		return m.registerFunc(tool)
-	}
-	return nil
+	cupaloy.SnapshotT(t, normalizeEvents(*events))
 }
 
 // TestEmittingGenerator_ThinkingBeforeToolCall verifies that when using a *gai.ToolGenerator,
@@ -824,39 +1077,61 @@ func TestEmittingGenerator_ThinkingBeforeToolCall(t *testing.T) {
 	var callOrder []string
 	var callMu sync.Mutex
 
-	// Create a mock inner generator that returns thinking + tool call
+	callCount := 0
 	mockInner := &mockToolCapableGenerator{
 		generateFunc: func(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
 			callMu.Lock()
-			callOrder = append(callOrder, "generate_called")
+			callCount++
+			count := callCount
+			callOrder = append(callOrder, fmt.Sprintf("generate_called_%d", count))
 			callMu.Unlock()
 
-			toolCallInput := gai.ToolCallInput{
-				Name:       "test_tool",
-				Parameters: map[string]any{"arg": "value"},
-			}
-			toolCallJSON, _ := json.Marshal(toolCallInput)
+			if count == 1 {
+				// First call: return thinking + tool call
+				toolCallInput := gai.ToolCallInput{
+					Name:       "test_tool",
+					Parameters: map[string]any{"arg": "value"},
+				}
+				toolCallJSON, _ := json.Marshal(toolCallInput)
 
+				return gai.Response{
+					Candidates: []gai.Message{
+						{
+							Role: gai.Assistant,
+							Blocks: []gai.Block{
+								{
+									BlockType:    gai.Thinking,
+									ModalityType: gai.Text,
+									Content:      gai.Str("Let me think about this..."),
+								},
+								{
+									ID:           "call_123",
+									BlockType:    gai.ToolCall,
+									ModalityType: gai.Text,
+									Content:      gai.Str(string(toolCallJSON)),
+								},
+							},
+						},
+					},
+					FinishReason: gai.ToolUse,
+				}, nil
+			}
+
+			// Second call: return final response (end turn)
 			return gai.Response{
 				Candidates: []gai.Message{
 					{
 						Role: gai.Assistant,
 						Blocks: []gai.Block{
 							{
-								BlockType:    gai.Thinking,
+								BlockType:    gai.Content,
 								ModalityType: gai.Text,
-								Content:      gai.Str("Let me think about this..."),
-							},
-							{
-								ID:           "call_123",
-								BlockType:    gai.ToolCall,
-								ModalityType: gai.Text,
-								Content:      gai.Str(string(toolCallJSON)),
+								Content:      gai.Str("Done!"),
 							},
 						},
 					},
 				},
-				FinishReason: gai.ToolUse,
+				FinishReason: gai.EndTurn,
 			}, nil
 		},
 	}
@@ -895,64 +1170,6 @@ func TestEmittingGenerator_ThinkingBeforeToolCall(t *testing.T) {
 		t.Fatalf("Register failed: %v", err)
 	}
 
-	// Set up the mock to return end turn after tool result
-	callCount := 0
-	mockInner.generateFunc = func(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
-		callMu.Lock()
-		callCount++
-		count := callCount
-		callOrder = append(callOrder, fmt.Sprintf("generate_called_%d", count))
-		callMu.Unlock()
-
-		if count == 1 {
-			// First call: return thinking + tool call
-			toolCallInput := gai.ToolCallInput{
-				Name:       "test_tool",
-				Parameters: map[string]any{"arg": "value"},
-			}
-			toolCallJSON, _ := json.Marshal(toolCallInput)
-
-			return gai.Response{
-				Candidates: []gai.Message{
-					{
-						Role: gai.Assistant,
-						Blocks: []gai.Block{
-							{
-								BlockType:    gai.Thinking,
-								ModalityType: gai.Text,
-								Content:      gai.Str("Let me think about this..."),
-							},
-							{
-								ID:           "call_123",
-								BlockType:    gai.ToolCall,
-								ModalityType: gai.Text,
-								Content:      gai.Str(string(toolCallJSON)),
-							},
-						},
-					},
-				},
-				FinishReason: gai.ToolUse,
-			}, nil
-		}
-
-		// Second call: return final response (end turn)
-		return gai.Response{
-			Candidates: []gai.Message{
-				{
-					Role: gai.Assistant,
-					Blocks: []gai.Block{
-						{
-							BlockType:    gai.Content,
-							ModalityType: gai.Text,
-							Content:      gai.Str("Done!"),
-						},
-					},
-				},
-			},
-			FinishReason: gai.EndTurn,
-		}, nil
-	}
-
 	dialog := gai.Dialog{
 		{
 			Role: gai.User,
@@ -970,14 +1187,12 @@ func TestEmittingGenerator_ThinkingBeforeToolCall(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// We should have: thought_trace, tool_call, tool_result
-	// (in that order, because thinking is emitted immediately after inner generate)
 	if len(*events) < 3 {
 		t.Fatalf("expected at least 3 events, got %d: %v", len(*events), *events)
 	}
 
-	// Find the indices of different event types
-	var thoughtIdx, toolCallIdx, toolResultIdx int = -1, -1, -1
+	// Find the indices of different event types to verify ordering
+	var thoughtIdx, toolCallIdx, toolResultIdx = -1, -1, -1
 	for i, e := range *events {
 		switch e.Type {
 		case EventTypeThoughtTrace:
@@ -995,7 +1210,7 @@ func TestEmittingGenerator_ThinkingBeforeToolCall(t *testing.T) {
 		}
 	}
 
-	// Verify the correct ordering: thought_trace < tool_call < tool_result
+	// Keep ordering verification since it's about relative ordering
 	if thoughtIdx == -1 {
 		t.Error("thought_trace event not found")
 	}
@@ -1019,4 +1234,105 @@ func TestEmittingGenerator_ThinkingBeforeToolCall(t *testing.T) {
 			t.Error("tool_call timestamp should not be before thought_trace timestamp")
 		}
 	}
+
+	cupaloy.SnapshotT(t, normalizeEvents(*events))
+}
+
+// TestMiddleware_MultipleToolCalls verifies that multiple tool calls and results are handled correctly
+func TestMiddleware_MultipleToolCalls(t *testing.T) {
+	server, events, mu := createTestServer(t)
+	defer server.Close()
+
+	client := NewClient(server.URL)
+
+	callCount := 0
+	mockInner := &mockToolCapableGenerator{
+		generateFunc: func(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
+			callCount++
+
+			if callCount == 1 {
+				// First call: return two tool calls
+				toolCall1 := gai.ToolCallInput{Name: "tool_a", Parameters: map[string]any{"x": 1}}
+				toolCall2 := gai.ToolCallInput{Name: "tool_b", Parameters: map[string]any{"y": 2}}
+				tc1JSON, _ := json.Marshal(toolCall1)
+				tc2JSON, _ := json.Marshal(toolCall2)
+
+				return gai.Response{
+					Candidates: []gai.Message{
+						{
+							Role: gai.Assistant,
+							Blocks: []gai.Block{
+								{ID: "call_a", BlockType: gai.ToolCall, ModalityType: gai.Text, Content: gai.Str(string(tc1JSON))},
+								{ID: "call_b", BlockType: gai.ToolCall, ModalityType: gai.Text, Content: gai.Str(string(tc2JSON))},
+							},
+						},
+					},
+					FinishReason: gai.ToolUse,
+				}, nil
+			}
+
+			return gai.Response{
+				Candidates: []gai.Message{
+					{
+						Role:   gai.Assistant,
+						Blocks: []gai.Block{{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("Done!")}},
+					},
+				},
+				FinishReason: gai.EndTurn,
+			}, nil
+		},
+	}
+
+	toolGen := &gai.ToolGenerator{G: mockInner}
+	emittingGen := NewEmittingGenerator(toolGen, client, "test_subagent", "run_multi")
+
+	makeCallback := func(result string) *mockToolCallback {
+		return &mockToolCallback{
+			callFunc: func(ctx context.Context, parametersJSON json.RawMessage, toolCallID string) (gai.Message, error) {
+				return gai.Message{
+					Role: gai.ToolResult,
+					Blocks: []gai.Block{
+						{ID: toolCallID, BlockType: gai.Content, ModalityType: gai.Text, MimeType: "text/plain", Content: gai.Str(result)},
+					},
+				}, nil
+			},
+		}
+	}
+
+	if err := emittingGen.Register(gai.Tool{Name: "tool_a"}, makeCallback("result_a")); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+	if err := emittingGen.Register(gai.Tool{Name: "tool_b"}, makeCallback("result_b")); err != nil {
+		t.Fatalf("Register failed: %v", err)
+	}
+
+	dialog := gai.Dialog{
+		{
+			Role:   gai.User,
+			Blocks: []gai.Block{{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("test")}},
+		},
+	}
+
+	_, err := emittingGen.Generate(context.Background(), dialog, nil)
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Should have 4 events: 2 tool_call + 2 tool_result
+	if len(*events) != 4 {
+		t.Fatalf("expected 4 events, got %d", len(*events))
+	}
+
+	// Verify event types
+	expectedTypes := []string{EventTypeToolCall, EventTypeToolCall, EventTypeToolResult, EventTypeToolResult}
+	for i, expected := range expectedTypes {
+		if (*events)[i].Type != expected {
+			t.Errorf("event %d: expected type %s, got %s", i, expected, (*events)[i].Type)
+		}
+	}
+
+	cupaloy.SnapshotT(t, normalizeEvents(*events))
 }

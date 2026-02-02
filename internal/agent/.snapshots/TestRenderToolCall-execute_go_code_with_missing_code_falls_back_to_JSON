@@ -1,0 +1,9 @@
+#### [tool call]
+```json
+{
+  "name": "execute_go_code",
+  "parameters": {
+    "executionTimeout": 30
+  }
+}
+```

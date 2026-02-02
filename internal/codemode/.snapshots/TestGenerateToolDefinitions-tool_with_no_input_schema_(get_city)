@@ -1,0 +1,7 @@
+type GetCityOutput struct {
+	// City Current city location
+	City string `json:"city"`
+}
+
+// GetCity Get current city location
+var GetCity func(ctx context.Context) (GetCityOutput, error)

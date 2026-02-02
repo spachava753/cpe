@@ -6,24 +6,33 @@ import (
 	"io"
 
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/types"
 )
 
 type TokenUsagePrinterGenerator struct {
-	wrapped  gai.ToolCapableGenerator
-	renderer Renderer
+	gai.GeneratorWrapper
+	renderer types.Renderer
 	writer   io.Writer
 }
 
-func NewTokenUsagePrinterGenerator(wrapped gai.ToolCapableGenerator, writer io.Writer) *TokenUsagePrinterGenerator {
+func NewTokenUsagePrinterGenerator(wrapped gai.Generator, writer io.Writer) *TokenUsagePrinterGenerator {
 	return &TokenUsagePrinterGenerator{
-		wrapped:  wrapped,
-		renderer: NewRenderer(),
-		writer:   writer,
+		GeneratorWrapper: gai.GeneratorWrapper{Inner: wrapped},
+		renderer:         NewRenderer(),
+		writer:           writer,
+	}
+}
+
+// WithTokenUsagePrinting returns a WrapperFunc for use with gai.Wrap
+func WithTokenUsagePrinting(writer io.Writer) gai.WrapperFunc {
+	return func(g gai.Generator) gai.Generator {
+		return NewTokenUsagePrinterGenerator(g, writer)
 	}
 }
 
 func (g *TokenUsagePrinterGenerator) Generate(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
-	resp, err := g.wrapped.Generate(ctx, dialog, options)
+	resp, err := g.GeneratorWrapper.Generate(ctx, dialog, options)
 	if err != nil {
 		return gai.Response{}, err
 	}
@@ -36,8 +45,4 @@ func (g *TokenUsagePrinterGenerator) Generate(ctx context.Context, dialog gai.Di
 	}
 
 	return resp, nil
-}
-
-func (g *TokenUsagePrinterGenerator) Register(tool gai.Tool) error {
-	return g.wrapped.Register(tool)
 }

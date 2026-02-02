@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/spachava753/cpe/internal/auth"
 	"github.com/spachava753/cpe/internal/commands"
 )
 
@@ -66,18 +64,10 @@ Example:
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		provider := strings.ToLower(args[0])
-
-		store, err := auth.NewStore()
-		if err != nil {
-			return fmt.Errorf("initializing auth store: %w", err)
-		}
-
-		if err := store.DeleteCredential(provider); err != nil {
-			return fmt.Errorf("removing credential: %w", err)
-		}
-
-		fmt.Printf("Successfully logged out from %s\n", provider)
-		return nil
+		return commands.AuthLogout(cmd.Context(), commands.AuthLogoutOptions{
+			Provider: provider,
+			Output:   os.Stdout,
+		})
 	},
 }
 
@@ -120,43 +110,9 @@ Example:
   cpe auth status
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		store, err := auth.NewStore()
-		if err != nil {
-			return fmt.Errorf("initializing auth store: %w", err)
-		}
-
-		providers, err := store.ListCredentials()
-		if err != nil {
-			return fmt.Errorf("listing credentials: %w", err)
-		}
-
-		if len(providers) == 0 {
-			fmt.Println("No providers authenticated")
-			fmt.Println("\nTo authenticate with Anthropic:")
-			fmt.Println("  cpe auth login anthropic")
-			return nil
-		}
-
-		fmt.Println("Authenticated providers:")
-		for _, p := range providers {
-			cred, err := store.GetCredential(p)
-			if err != nil {
-				fmt.Printf("  %s: error reading credential\n", p)
-				continue
-			}
-
-			status := "valid"
-			if cred.IsExpired() {
-				status = "expired (will refresh on next use)"
-			} else if cred.ExpiresAt > 0 {
-				remaining := time.Until(time.Unix(cred.ExpiresAt, 0))
-				status = fmt.Sprintf("valid (expires in %s)", remaining.Round(time.Minute))
-			}
-
-			fmt.Printf("  %s: %s\n", p, status)
-		}
-
-		return nil
+		return commands.AuthStatus(cmd.Context(), commands.AuthStatusOptions{
+			Output: os.Stdout,
+		})
 	},
 }
 

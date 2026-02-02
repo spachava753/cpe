@@ -1,0 +1,9 @@
+#### [tool call]
+```json
+{
+  "name": "get_weather",
+  "parameters": {
+    "city": "NYC"
+  }
+}
+```

@@ -41,4 +41,9 @@
 !cpe_harbor/**.j2
 cpe_harbor/__pycache__/
 
+# Cupaloy snapshot test files
+!.snapshots/
+!**/.snapshots/
+!**/.snapshots/**
+
 !*/

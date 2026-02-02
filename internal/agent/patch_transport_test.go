@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bradleyjkemp/cupaloy/v2"
 	jsonpatch "github.com/evanphx/json-patch/v5"
 
 	"github.com/spachava753/cpe/internal/config"
@@ -19,17 +20,16 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
-type validateFunc func(t *testing.T, req *http.Request)
-
 func TestPatchTransport(t *testing.T) {
 	tests := []struct {
-		name        string
-		patchJSON   string
-		headers     map[string]string
-		reqBody     string
-		reqMethod   string
-		expectError bool
-		validate    validateFunc
+		name           string
+		patchJSON      string
+		headers        map[string]string
+		reqBody        string
+		reqMethod      string
+		expectError    bool
+		captureHeaders []string // headers to capture for snapshot
+		captureBody    bool     // whether to capture body for snapshot
 	}{
 		{
 			name:      "headers only",
@@ -38,64 +38,30 @@ func TestPatchTransport(t *testing.T) {
 				"X-Custom-Header": "custom-value",
 				"X-Another":       "another-value",
 			},
-			reqBody:   "",
-			reqMethod: "GET",
-			validate: func(t *testing.T, req *http.Request) {
-				if got := req.Header.Get("X-Custom-Header"); got != "custom-value" {
-					t.Errorf("X-Custom-Header = %q, want %q", got, "custom-value")
-				}
-				if got := req.Header.Get("X-Another"); got != "another-value" {
-					t.Errorf("X-Another = %q, want %q", got, "another-value")
-				}
-			},
+			reqBody:        "",
+			reqMethod:      "GET",
+			captureHeaders: []string{"X-Another", "X-Custom-Header"},
 		},
 		{
-			name:      "JSON patch add",
-			patchJSON: `[{"op": "add", "path": "/new_field", "value": "new_value"}]`,
-			reqBody:   `{"existing":"value"}`,
-			reqMethod: "POST",
-			validate: func(t *testing.T, req *http.Request) {
-				body, err := io.ReadAll(req.Body)
-				if err != nil {
-					t.Fatalf("failed to read body: %v", err)
-				}
-				expected := `{"existing":"value","new_field":"new_value"}`
-				if string(body) != expected {
-					t.Errorf("body = %q, want %q", string(body), expected)
-				}
-			},
+			name:        "JSON patch add",
+			patchJSON:   `[{"op": "add", "path": "/new_field", "value": "new_value"}]`,
+			reqBody:     `{"existing":"value"}`,
+			reqMethod:   "POST",
+			captureBody: true,
 		},
 		{
-			name:      "JSON patch replace",
-			patchJSON: `[{"op": "replace", "path": "/model", "value": "custom-model"}]`,
-			reqBody:   `{"model":"original-model"}`,
-			reqMethod: "POST",
-			validate: func(t *testing.T, req *http.Request) {
-				body, err := io.ReadAll(req.Body)
-				if err != nil {
-					t.Fatalf("failed to read body: %v", err)
-				}
-				expected := `{"model":"custom-model"}`
-				if string(body) != expected {
-					t.Errorf("body = %q, want %q", string(body), expected)
-				}
-			},
+			name:        "JSON patch replace",
+			patchJSON:   `[{"op": "replace", "path": "/model", "value": "custom-model"}]`,
+			reqBody:     `{"model":"original-model"}`,
+			reqMethod:   "POST",
+			captureBody: true,
 		},
 		{
-			name:      "JSON patch remove",
-			patchJSON: `[{"op": "remove", "path": "/unwanted"}]`,
-			reqBody:   `{"keep":"this","unwanted":"remove"}`,
-			reqMethod: "POST",
-			validate: func(t *testing.T, req *http.Request) {
-				body, err := io.ReadAll(req.Body)
-				if err != nil {
-					t.Fatalf("failed to read body: %v", err)
-				}
-				expected := `{"keep":"this"}`
-				if string(body) != expected {
-					t.Errorf("body = %q, want %q", string(body), expected)
-				}
-			},
+			name:        "JSON patch remove",
+			patchJSON:   `[{"op": "remove", "path": "/unwanted"}]`,
+			reqBody:     `{"keep":"this","unwanted":"remove"}`,
+			reqMethod:   "POST",
+			captureBody: true,
 		},
 		{
 			name: "multiple patches",
@@ -103,26 +69,15 @@ func TestPatchTransport(t *testing.T) {
 				{"op": "add", "path": "/new_field", "value": "new_value"},
 				{"op": "replace", "path": "/existing", "value": "modified"}
 			]`,
-			reqBody:   `{"existing":"original"}`,
-			reqMethod: "POST",
-			validate: func(t *testing.T, req *http.Request) {
-				body, err := io.ReadAll(req.Body)
-				if err != nil {
-					t.Fatalf("failed to read body: %v", err)
-				}
-				expected := `{"existing":"modified","new_field":"new_value"}`
-				if string(body) != expected {
-					t.Errorf("body = %q, want %q", string(body), expected)
-				}
-			},
+			reqBody:     `{"existing":"original"}`,
+			reqMethod:   "POST",
+			captureBody: true,
 		},
 		{
 			name:      "no body with patches",
 			patchJSON: `[{"op": "add", "path": "/new_field", "value": "new_value"}]`,
 			reqBody:   "",
 			reqMethod: "GET",
-			validate: func(t *testing.T, req *http.Request) {
-			},
 		},
 		{
 			name:        "invalid patch",
@@ -137,22 +92,10 @@ func TestPatchTransport(t *testing.T) {
 			headers: map[string]string{
 				"X-Custom": "value",
 			},
-			reqBody:   `{"original":"data"}`,
-			reqMethod: "POST",
-			validate: func(t *testing.T, req *http.Request) {
-				if got := req.Header.Get("X-Custom"); got != "value" {
-					t.Errorf("X-Custom = %q, want %q", got, "value")
-				}
-
-				body, err := io.ReadAll(req.Body)
-				if err != nil {
-					t.Fatalf("failed to read body: %v", err)
-				}
-				bodyStr := string(body)
-				if bodyStr != `{"original":"data","field":"data"}` && bodyStr != `{"field":"data","original":"data"}` {
-					t.Errorf("body = %q, want either order of field and original", bodyStr)
-				}
-			},
+			reqBody:        `{"original":"data"}`,
+			reqMethod:      "POST",
+			captureHeaders: []string{"X-Custom"},
+			captureBody:    true,
 		},
 	}
 
@@ -206,8 +149,26 @@ func TestPatchTransport(t *testing.T) {
 				t.Fatalf("RoundTrip failed: %v", err)
 			}
 
-			if tt.validate != nil && capturedReq != nil {
-				tt.validate(t, capturedReq)
+			if capturedReq != nil && (len(tt.captureHeaders) > 0 || tt.captureBody) {
+				snapshot := make(map[string]any)
+
+				if len(tt.captureHeaders) > 0 {
+					headers := make(map[string]string)
+					for _, h := range tt.captureHeaders {
+						headers[h] = capturedReq.Header.Get(h)
+					}
+					snapshot["headers"] = headers
+				}
+
+				if tt.captureBody {
+					body, err := io.ReadAll(capturedReq.Body)
+					if err != nil {
+						t.Fatalf("failed to read body: %v", err)
+					}
+					snapshot["body"] = string(body)
+				}
+
+				cupaloy.SnapshotT(t, snapshot)
 			}
 		})
 	}
@@ -220,7 +181,8 @@ func TestBuildPatchTransportFromConfig(t *testing.T) {
 		expectError     bool
 		testIntegration bool
 		reqBody         string
-		validate        validateFunc
+		captureHeaders  []string
+		captureBody     bool
 	}{
 		{
 			name:        "nil config",
@@ -279,21 +241,8 @@ func TestBuildPatchTransportFromConfig(t *testing.T) {
 			expectError:     false,
 			testIntegration: true,
 			reqBody:         `{"original":"data"}`,
-			validate: func(t *testing.T, req *http.Request) {
-				if got := req.Header.Get("X-Test-Header"); got != "test-value" {
-					t.Errorf("X-Test-Header = %q, want %q", got, "test-value")
-				}
-
-				body, err := io.ReadAll(req.Body)
-				if err != nil {
-					t.Fatalf("failed to read body: %v", err)
-				}
-
-				bodyStr := string(body)
-				if bodyStr != `{"original":"data","new_field":"new_value"}` && bodyStr != `{"new_field":"new_value","original":"data"}` {
-					t.Errorf("unexpected body: %q", bodyStr)
-				}
-			},
+			captureHeaders:  []string{"X-Test-Header"},
+			captureBody:     true,
 		},
 	}
 
@@ -326,8 +275,26 @@ func TestBuildPatchTransportFromConfig(t *testing.T) {
 					t.Fatalf("RoundTrip failed: %v", err)
 				}
 
-				if tt.validate != nil && capturedReq != nil {
-					tt.validate(t, capturedReq)
+				if capturedReq != nil && (len(tt.captureHeaders) > 0 || tt.captureBody) {
+					snapshot := make(map[string]any)
+
+					if len(tt.captureHeaders) > 0 {
+						headers := make(map[string]string)
+						for _, h := range tt.captureHeaders {
+							headers[h] = capturedReq.Header.Get(h)
+						}
+						snapshot["headers"] = headers
+					}
+
+					if tt.captureBody {
+						body, err := io.ReadAll(capturedReq.Body)
+						if err != nil {
+							t.Fatalf("failed to read body: %v", err)
+						}
+						snapshot["body"] = string(body)
+					}
+
+					cupaloy.SnapshotT(t, snapshot)
 				}
 				return
 			}

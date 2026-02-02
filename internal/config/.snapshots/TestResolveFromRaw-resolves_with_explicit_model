@@ -1,0 +1,38 @@
+(*config.Config)({
+  MCPServers: (map[string]mcp.ServerConfig) <nil>,
+  Model: (config.Model) {
+    Ref: (string) (len=10) "test-model",
+    DisplayName: (string) (len=10) "Test Model",
+    ID: (string) (len=7) "test-id",
+    Type: (string) (len=6) "openai",
+    BaseUrl: (string) "",
+    ApiKeyEnv: (string) (len=7) "API_KEY",
+    AuthMethod: (string) "",
+    ContextWindow: (uint32) 0,
+    MaxOutput: (uint32) 0,
+    InputCostPerMillion: (float64) 0,
+    OutputCostPerMillion: (float64) 0,
+    PatchRequest: (*config.PatchRequestConfig)(<nil>)
+  },
+  SystemPromptPath: (string) "",
+  GenerationDefaults: (*gai.GenOpts)({
+    Temperature: (float64) 0,
+    TopP: (float64) 0,
+    TopK: (uint) 0,
+    FrequencyPenalty: (float64) 0,
+    PresencePenalty: (float64) 0,
+    N: (uint) 0,
+    MaxGenerationTokens: (int) 0,
+    ToolChoice: (string) "",
+    StopSequences: ([]string) <nil>,
+    OutputModalities: ([]gai.Modality) <nil>,
+    AudioConfig: (gai.AudioConfig) {
+      VoiceName: (string) "",
+      Format: (string) ""
+    },
+    ThinkingBudget: (string) "",
+    ExtraArgs: (map[string]interface {}) <nil>
+  }),
+  Timeout: (time.Duration) 5m0s,
+  CodeMode: (*config.CodeModeConfig)(<nil>)
+})

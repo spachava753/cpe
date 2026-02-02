@@ -1,0 +1,11 @@
+(codemode.messageSnapshot) {
+  Role: (string) (len=11) "tool result",
+  Blocks: ([]codemode.msgBlockSnapshot) (len=1) {
+    (codemode.msgBlockSnapshot) {
+      ID: (string) (len=7) "test-id",
+      ModalityType: (string) (len=4) "text",
+      MimeType: (string) (len=10) "text/plain",
+      Content: (string) (len=12) "content text"
+    }
+  }
+}

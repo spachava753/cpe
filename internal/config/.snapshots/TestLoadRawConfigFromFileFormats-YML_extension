@@ -1,0 +1,19 @@
+(config.ModelConfig) {
+  Model: (config.Model) {
+    Ref: (string) (len=8) "test-yml",
+    DisplayName: (string) (len=8) "Test YML",
+    ID: (string) (len=11) "test-yml-id",
+    Type: (string) (len=6) "gemini",
+    BaseUrl: (string) "",
+    ApiKeyEnv: (string) "",
+    AuthMethod: (string) "",
+    ContextWindow: (uint32) 0,
+    MaxOutput: (uint32) 0,
+    InputCostPerMillion: (float64) 0,
+    OutputCostPerMillion: (float64) 0,
+    PatchRequest: (*config.PatchRequestConfig)(<nil>)
+  },
+  SystemPromptPath: (string) "",
+  GenerationDefaults: (*config.GenerationParams)(<nil>),
+  CodeMode: (*config.CodeModeConfig)(<nil>)
+}

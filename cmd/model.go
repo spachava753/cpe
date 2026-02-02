@@ -41,19 +41,16 @@ var listModelCmd = &cobra.Command{
 }
 
 var infoModelCmd = &cobra.Command{
-	Use:   "info",
+	Use:   "info <model-name>",
 	Short: "Show model details by name",
 	Example: `# Show model details by name
 cpe model info sonnet
 `,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.LoadRawConfig(configPath)
 		if err != nil {
 			return fmt.Errorf("failed to load configuration: %w", err)
-		}
-
-		if len(args) != 1 {
-			return cmd.Usage()
 		}
 
 		name := args[0]
@@ -79,34 +76,11 @@ var systemPromptModelCmd = &cobra.Command{
 			return fmt.Errorf("failed to load configuration: %w", err)
 		}
 
-		modelName := model
-		if modelName == "" {
-			if cfg.Defaults.Model != "" {
-				modelName = cfg.Defaults.Model
-			} else if DefaultModel != "" {
-				modelName = DefaultModel
-			}
-		}
-
-		if modelName == "" {
-			return fmt.Errorf("no model specified. Use --model flag or set defaults.model in configuration")
-		}
-
-		systemPromptPath := cfg.Defaults.SystemPromptPath
-		if m, ok := cfg.FindModel(modelName); ok && m.SystemPromptPath != "" {
-			systemPromptPath = m.SystemPromptPath
-		}
-
-		f, err := os.Open(systemPromptPath)
-		if err != nil {
-			return err
-		}
-
 		return commands.ModelSystemPrompt(cmd.Context(), commands.ModelSystemPromptOptions{
 			Config:       cfg,
-			ModelName:    modelName,
+			ModelName:    model,
+			DefaultModel: DefaultModel,
 			Output:       cmd.OutOrStdout(),
-			SystemPrompt: f,
 		})
 	},
 }

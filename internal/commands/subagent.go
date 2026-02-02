@@ -12,15 +12,11 @@ import (
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/subagentlog"
+	"github.com/spachava753/cpe/internal/types"
 )
 
 // FinalAnswerToolName is the name of the tool used for structured output
 const FinalAnswerToolName = "final_answer"
-
-// ToolRegistrar is an interface for registering tools
-type ToolRegistrar interface {
-	Register(tool gai.Tool, callback gai.ToolCallback) error
-}
 
 // SubagentOptions contains parameters for subagent execution
 type SubagentOptions struct {
@@ -28,7 +24,7 @@ type SubagentOptions struct {
 	UserBlocks []gai.Block
 
 	// Generator is the tool-capable generator to use
-	Generator ToolCapableGenerator
+	Generator types.Generator
 
 	// GenOptsFunc returns generation options (optional)
 	GenOptsFunc gai.GenOptsGenerator
@@ -113,7 +109,7 @@ func executeSubagentCore(ctx context.Context, opts SubagentOptions) (string, err
 
 	// If output schema is configured, register the final_answer tool
 	if opts.OutputSchema != nil {
-		registrar, ok := generator.(ToolRegistrar)
+		registrar, ok := generator.(types.ToolRegistrar)
 		if !ok {
 			return "", fmt.Errorf("generator does not support tool registration")
 		}

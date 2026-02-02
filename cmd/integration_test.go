@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/bradleyjkemp/cupaloy/v2"
 
 	"github.com/spachava753/cpe/internal/urlhandler"
 )
@@ -38,36 +39,35 @@ func TestProcessUserInputWithURL(t *testing.T) {
 		t.Fatalf("DownloadContent failed: %v", err)
 	}
 
-	if !strings.Contains(string(result.Data), "Hello from test server!") {
-		t.Errorf("Expected content to contain 'Hello from test server!', got: %s", string(result.Data))
-	}
-
-	if result.ContentType != "text/plain" {
-		t.Errorf("Expected content type 'text/plain', got: %s", result.ContentType)
-	}
+	// Use cupaloy to snapshot the content and content type
+	// We snapshot a struct with deterministic fields (excluding URL which has dynamic port)
+	cupaloy.SnapshotT(t, struct {
+		Data        string
+		ContentType string
+	}{
+		Data:        string(result.Data),
+		ContentType: result.ContentType,
+	})
 }
 
 // TestProcessUserInputWithMixedInputs tests URL detection logic
 func TestProcessUserInputWithMixedInputs(t *testing.T) {
 	// Test URL detection
 	tests := []struct {
-		name     string
-		input    string
-		expected bool
+		name  string
+		input string
 	}{
-		{"HTTP URL", "http://example.com/file.txt", true},
-		{"HTTPS URL", "https://github.com/user/repo/blob/main/README.md", true},
-		{"Local file", "./local-file.txt", false},
-		{"Absolute path", "/home/user/file.txt", false},
-		{"Relative path", "../file.txt", false},
+		{"HTTP URL", "http://example.com/file.txt"},
+		{"HTTPS URL", "https://github.com/user/repo/blob/main/README.md"},
+		{"Local file", "./local-file.txt"},
+		{"Absolute path", "/home/user/file.txt"},
+		{"Relative path", "../file.txt"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := urlhandler.IsURL(tt.input)
-			if result != tt.expected {
-				t.Errorf("IsURL(%q) = %v, expected %v", tt.input, result, tt.expected)
-			}
+			cupaloy.SnapshotT(t, result)
 		})
 	}
 }

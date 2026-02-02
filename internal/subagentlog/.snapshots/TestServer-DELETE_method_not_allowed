@@ -1,0 +1,4 @@
+(struct { StatusCode int; EventReceived bool }) {
+  StatusCode: (int) 405,
+  EventReceived: (bool) false
+}

@@ -1,0 +1,4 @@
+(commands.generateTestResult) {
+  Error: (string) "",
+  Stderr: (string) (len=64) "Error generating response: model xyz not found in configuration\n"
+}

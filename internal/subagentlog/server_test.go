@@ -9,15 +9,15 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/bradleyjkemp/cupaloy/v2"
 )
 
 func TestServer(t *testing.T) {
 	tests := []struct {
-		name           string
-		method         string
-		body           any
-		wantStatusCode int
-		wantEvent      bool
+		name   string
+		method string
+		body   any
 	}{
 		{
 			name:   "valid POST with event",
@@ -29,8 +29,6 @@ func TestServer(t *testing.T) {
 				Type:          EventTypeToolCall,
 				ToolName:      "test-tool",
 			},
-			wantStatusCode: http.StatusOK,
-			wantEvent:      true,
 		},
 		{
 			name:   "valid POST with minimal event",
@@ -40,36 +38,26 @@ func TestServer(t *testing.T) {
 				SubagentRunID: "run-456",
 				Type:          EventTypeSubagentStart,
 			},
-			wantStatusCode: http.StatusOK,
-			wantEvent:      true,
 		},
 		{
-			name:           "invalid JSON",
-			method:         http.MethodPost,
-			body:           "not valid json",
-			wantStatusCode: http.StatusBadRequest,
-			wantEvent:      false,
+			name:   "invalid JSON",
+			method: http.MethodPost,
+			body:   "not valid json",
 		},
 		{
-			name:           "GET method not allowed",
-			method:         http.MethodGet,
-			body:           nil,
-			wantStatusCode: http.StatusMethodNotAllowed,
-			wantEvent:      false,
+			name:   "GET method not allowed",
+			method: http.MethodGet,
+			body:   nil,
 		},
 		{
-			name:           "PUT method not allowed",
-			method:         http.MethodPut,
-			body:           Event{SubagentName: "test"},
-			wantStatusCode: http.StatusMethodNotAllowed,
-			wantEvent:      false,
+			name:   "PUT method not allowed",
+			method: http.MethodPut,
+			body:   Event{SubagentName: "test"},
 		},
 		{
-			name:           "DELETE method not allowed",
-			method:         http.MethodDelete,
-			body:           nil,
-			wantStatusCode: http.StatusMethodNotAllowed,
-			wantEvent:      false,
+			name:   "DELETE method not allowed",
+			method: http.MethodDelete,
+			body:   nil,
 		},
 	}
 
@@ -102,7 +90,7 @@ func TestServer(t *testing.T) {
 				}
 			}
 
-			req, err := http.NewRequest(tt.method, address+"/subagent-events", bytes.NewReader(bodyBytes))
+			req, err := http.NewRequestWithContext(ctx, tt.method, address+"/subagent-events", bytes.NewReader(bodyBytes))
 			if err != nil {
 				t.Fatalf("failed to create request: %v", err)
 			}
@@ -114,17 +102,18 @@ func TestServer(t *testing.T) {
 			}
 			defer resp.Body.Close()
 
-			if resp.StatusCode != tt.wantStatusCode {
-				t.Errorf("status code = %d, want %d", resp.StatusCode, tt.wantStatusCode)
-			}
-
 			mu.Lock()
 			gotEvent := receivedEvent != nil
 			mu.Unlock()
 
-			if gotEvent != tt.wantEvent {
-				t.Errorf("event received = %v, want %v", gotEvent, tt.wantEvent)
+			result := struct {
+				StatusCode    int
+				EventReceived bool
+			}{
+				StatusCode:    resp.StatusCode,
+				EventReceived: gotEvent,
 			}
+			cupaloy.SnapshotT(t, result)
 		})
 	}
 }
@@ -149,7 +138,11 @@ func TestServerStartReturnsValidAddress(t *testing.T) {
 	}
 
 	// Verify server is reachable
-	resp, err := http.Get(address + "/subagent-events")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address+"/subagent-events", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("server not reachable: %v", err)
 	}
@@ -170,7 +163,11 @@ func TestServerGracefulShutdown(t *testing.T) {
 	}
 
 	// Verify server is running
-	resp, err := http.Get(address + "/subagent-events")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address+"/subagent-events", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("server not reachable before shutdown: %v", err)
 	}
@@ -184,8 +181,12 @@ func TestServerGracefulShutdown(t *testing.T) {
 
 	// Server should no longer be reachable
 	client := &http.Client{Timeout: 100 * time.Millisecond}
-	_, err = client.Get(address + "/subagent-events")
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer shutdownCancel()
+	req, _ = http.NewRequestWithContext(shutdownCtx, http.MethodGet, address+"/subagent-events", nil)
+	resp, err = client.Do(req)
 	if err == nil {
+		resp.Body.Close()
 		t.Error("server should not be reachable after shutdown")
 	}
 }
@@ -221,7 +222,12 @@ func TestServerEventHandlerReceivesCorrectData(t *testing.T) {
 	}
 
 	bodyBytes, _ := json.Marshal(expectedEvent)
-	resp, err := http.Post(address+"/subagent-events", "application/json", bytes.NewReader(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, address+"/subagent-events", bytes.NewReader(bodyBytes))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("failed to post event: %v", err)
 	}
@@ -233,30 +239,7 @@ func TestServerEventHandlerReceivesCorrectData(t *testing.T) {
 
 	wg.Wait()
 
-	if receivedEvent.SubagentName != expectedEvent.SubagentName {
-		t.Errorf("SubagentName = %q, want %q", receivedEvent.SubagentName, expectedEvent.SubagentName)
-	}
-	if receivedEvent.SubagentRunID != expectedEvent.SubagentRunID {
-		t.Errorf("SubagentRunID = %q, want %q", receivedEvent.SubagentRunID, expectedEvent.SubagentRunID)
-	}
-	if receivedEvent.Type != expectedEvent.Type {
-		t.Errorf("Type = %q, want %q", receivedEvent.Type, expectedEvent.Type)
-	}
-	if receivedEvent.ToolName != expectedEvent.ToolName {
-		t.Errorf("ToolName = %q, want %q", receivedEvent.ToolName, expectedEvent.ToolName)
-	}
-	if receivedEvent.ToolCallID != expectedEvent.ToolCallID {
-		t.Errorf("ToolCallID = %q, want %q", receivedEvent.ToolCallID, expectedEvent.ToolCallID)
-	}
-	if receivedEvent.Payload != expectedEvent.Payload {
-		t.Errorf("Payload = %q, want %q", receivedEvent.Payload, expectedEvent.Payload)
-	}
-	if receivedEvent.ExecutionTimeoutSeconds != expectedEvent.ExecutionTimeoutSeconds {
-		t.Errorf("ExecutionTimeoutSeconds = %d, want %d", receivedEvent.ExecutionTimeoutSeconds, expectedEvent.ExecutionTimeoutSeconds)
-	}
-	if !receivedEvent.Timestamp.Equal(expectedEvent.Timestamp) {
-		t.Errorf("Timestamp = %v, want %v", receivedEvent.Timestamp, expectedEvent.Timestamp)
-	}
+	cupaloy.SnapshotT(t, receivedEvent)
 }
 
 func TestServerNilHandler(t *testing.T) {
@@ -276,7 +259,12 @@ func TestServerNilHandler(t *testing.T) {
 		Type:          EventTypeSubagentStart,
 	}
 	bodyBytes, _ := json.Marshal(event)
-	resp, err := http.Post(address+"/subagent-events", "application/json", bytes.NewReader(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, address+"/subagent-events", bytes.NewReader(bodyBytes))
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("failed to post event: %v", err)
 	}
@@ -286,7 +274,6 @@ func TestServerNilHandler(t *testing.T) {
 		t.Errorf("expected 200 OK with nil handler, got %d", resp.StatusCode)
 	}
 }
-
 
 func TestServerConcurrentEventsNoInterleaving(t *testing.T) {
 	const numGoroutines = 10
@@ -327,7 +314,13 @@ func TestServerConcurrentEventsNoInterleaving(t *testing.T) {
 					Payload:       fmt.Sprintf("payload from goroutine %d, event %d", goroutineID, i),
 				}
 				bodyBytes, _ := json.Marshal(event)
-				resp, err := http.Post(address+"/subagent-events", "application/json", bytes.NewReader(bodyBytes))
+				req, err := http.NewRequestWithContext(ctx, http.MethodPost, address+"/subagent-events", bytes.NewReader(bodyBytes))
+				if err != nil {
+					errChan <- fmt.Errorf("goroutine %d event %d create request: %w", goroutineID, i, err)
+					continue
+				}
+				req.Header.Set("Content-Type", "application/json")
+				resp, err := http.DefaultClient.Do(req)
 				if err != nil {
 					errChan <- fmt.Errorf("goroutine %d event %d: %w", goroutineID, i, err)
 					continue

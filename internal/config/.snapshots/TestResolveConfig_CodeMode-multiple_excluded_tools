@@ -1,0 +1,10 @@
+(*config.CodeModeConfig)({
+  Enabled: (bool) true,
+  ExcludedTools: ([]string) (len=4) {
+    (string) (len=5) "tool1",
+    (string) (len=5) "tool2",
+    (string) (len=5) "tool3",
+    (string) (len=5) "tool4"
+  },
+  MaxTimeout: (int) 0
+})

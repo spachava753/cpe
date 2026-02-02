@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
+	"github.com/bradleyjkemp/cupaloy/v2"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/spachava753/gai"
 	"github.com/stretchr/testify/assert"
@@ -38,38 +38,33 @@ func setupTestDB(t *testing.T) (*sql.DB, *DialogStorage) {
 	return db, storage
 }
 
-// Define a custom comparer for messages that ignores IDs
-var messageComparer = cmp.Comparer(func(a, b gai.Message) bool {
-	// Compare roles
-	if a.Role != b.Role {
-		return false
+// normalizeMessage returns a copy of the message with IDs cleared for snapshot comparison
+func normalizeMessage(msg gai.Message) gai.Message {
+	normalized := gai.Message{
+		Role:            msg.Role,
+		ToolResultError: msg.ToolResultError,
 	}
-
-	// Compare tool result error
-	if a.ToolResultError != b.ToolResultError {
-		return false
-	}
-
-	// Compare blocks (ignoring IDs)
-	if len(a.Blocks) != len(b.Blocks) {
-		return false
-	}
-
-	for i := range a.Blocks {
-		blockA := a.Blocks[i]
-		blockB := b.Blocks[i]
-
-		// Compare all fields except ID
-		if blockA.BlockType != blockB.BlockType ||
-			blockA.ModalityType != blockB.ModalityType ||
-			blockA.MimeType != blockB.MimeType ||
-			blockA.Content.String() != blockB.Content.String() {
-			return false
+	normalized.Blocks = make([]gai.Block, len(msg.Blocks))
+	for i, block := range msg.Blocks {
+		normalized.Blocks[i] = gai.Block{
+			ID:           "", // Clear the ID
+			BlockType:    block.BlockType,
+			ModalityType: block.ModalityType,
+			MimeType:     block.MimeType,
+			Content:      block.Content,
 		}
 	}
+	return normalized
+}
 
-	return true
-})
+// normalizeDialog returns a copy of the dialog with IDs cleared for snapshot comparison
+func normalizeDialog(dialog gai.Dialog) gai.Dialog {
+	result := make(gai.Dialog, len(dialog))
+	for i, msg := range dialog {
+		result[i] = normalizeMessage(msg)
+	}
+	return result
+}
 
 // createTextMessage is a helper function to create a simple text message
 func createTextMessage(role gai.Role, content string) gai.Message {
@@ -113,14 +108,8 @@ func TestStoreAndRetrieveMessages(t *testing.T) {
 	// Check parent ID
 	assert.Equal(t, userID, parentID, "Assistant message parent ID should match user ID")
 
-	// Verify individual messages using go-cmp with custom comparer
-	if diff := cmp.Diff(userMsg, retrievedUserMsg, messageComparer); diff != "" {
-		t.Errorf("User message mismatch (-want +got):\n%s", diff)
-	}
-
-	if diff := cmp.Diff(assistantMsg, retrievedAssistantMsg, messageComparer); diff != "" {
-		t.Errorf("Assistant message mismatch (-want +got):\n%s", diff)
-	}
+	// Verify individual messages using snapshots
+	cupaloy.SnapshotT(t, normalizeMessage(retrievedUserMsg), normalizeMessage(retrievedAssistantMsg))
 }
 
 // TestGetLatestMessage tests retrieving the most recent message
@@ -153,18 +142,8 @@ func TestGetLatestMessage(t *testing.T) {
 	latestMsg, _, err := storage.GetMessage(ctx, latestID)
 	require.NoError(t, err, "Failed to get message by ID")
 
-	// Verify it's the third message using go-cmp
-	if diff := cmp.Diff(msg3, latestMsg, messageComparer); diff != "" {
-		t.Errorf("Latest message mismatch (-want +got):\n%s", diff)
-	}
-
-	// Verify we can retrieve it by ID
-	retrievedMsg, _, err := storage.GetMessage(ctx, latestID)
-	require.NoError(t, err, "Failed to get message by ID")
-
-	if diff := cmp.Diff(msg3, retrievedMsg, messageComparer); diff != "" {
-		t.Errorf("Retrieved message mismatch (-want +got):\n%s", diff)
-	}
+	// Verify it's the third message using snapshot
+	cupaloy.SnapshotT(t, normalizeMessage(latestMsg))
 }
 
 // TestDeleteMessageWithoutChildren tests deletion of a leaf message
@@ -363,129 +342,21 @@ func TestBranchingDialogs(t *testing.T) {
 		fmt.Printf("  %d. Role: %v, Content: %s\n", i, msg.Role, content)
 	}
 
-	expectedMsgIdList1 := []string{
-		rootID,
-		baseReplyID,
-		branch1ID,
-	}
+	// Verify dialogs using snapshots
+	cupaloy.SnapshotT(t, normalizeDialog(dialog1), normalizeDialog(dialog2))
 
-	// Define expected dialog structures
-	expectedDialog1 := gai.Dialog{
-		{
-			Role: gai.User,
-			Blocks: []gai.Block{
-				{
-					BlockType:    gai.Content,
-					ModalityType: gai.Text,
-					MimeType:     "text/plain",
-					Content:      gai.Str("Hello, AI!"),
-				},
-			},
-		},
-		{
-			Role: gai.Assistant,
-			Blocks: []gai.Block{
-				{
-					BlockType:    gai.Content,
-					ModalityType: gai.Text,
-					MimeType:     "text/plain",
-					Content:      gai.Str("Hello! How can I help you today?"),
-				},
-			},
-		},
-		{
-			Role: gai.User,
-			Blocks: []gai.Block{
-				{
-					BlockType:    gai.Content,
-					ModalityType: gai.Text,
-					MimeType:     "text/plain",
-					Content:      gai.Str("Tell me about cats."),
-				},
-			},
-		},
-	}
+	// Verify message list lengths match expected
+	assert.Len(t, msgList1, 3, "Branch 1 should have 3 messages in path")
+	assert.Len(t, msgList2, 3, "Branch 2 should have 3 messages in path")
 
-	expectedMsgIdList2 := []string{
-		rootID,
-		baseReplyID,
-		branch2ID,
-	}
+	// Verify the message lists contain the expected IDs
+	assert.Equal(t, rootID, msgList1[0], "First message in branch 1 should be root")
+	assert.Equal(t, baseReplyID, msgList1[1], "Second message in branch 1 should be base reply")
+	assert.Equal(t, branch1ID, msgList1[2], "Third message in branch 1 should be branch1")
 
-	expectedDialog2 := gai.Dialog{
-		{
-			Role: gai.User,
-			Blocks: []gai.Block{
-				{
-					BlockType:    gai.Content,
-					ModalityType: gai.Text,
-					MimeType:     "text/plain",
-					Content:      gai.Str("Hello, AI!"),
-				},
-			},
-		},
-		{
-			Role: gai.Assistant,
-			Blocks: []gai.Block{
-				{
-					BlockType:    gai.Content,
-					ModalityType: gai.Text,
-					MimeType:     "text/plain",
-					Content:      gai.Str("Hello! How can I help you today?"),
-				},
-			},
-		},
-		{
-			Role: gai.User,
-			Blocks: []gai.Block{
-				{
-					BlockType:    gai.Content,
-					ModalityType: gai.Text,
-					MimeType:     "text/plain",
-					Content:      gai.Str("Tell me about dogs."),
-				},
-			},
-		},
-	}
-
-	// Define a custom comparer for dialogs that ignores IDs
-	dialogComparer := cmp.Transformer("IgnoreIDs", func(in gai.Dialog) gai.Dialog {
-		result := make(gai.Dialog, len(in))
-		for i, msg := range in {
-			// Copy the message
-			newMsg := msg
-
-			// Create new blocks without IDs
-			newBlocks := make([]gai.Block, len(msg.Blocks))
-			for j, block := range msg.Blocks {
-				newBlock := block
-				newBlock.ID = "" // Clear the ID
-				newBlocks[j] = newBlock
-			}
-
-			newMsg.Blocks = newBlocks
-			result[i] = newMsg
-		}
-		return result
-	})
-
-	// Compare dialogs using go-cmp with custom transformer
-	if diff := cmp.Diff(expectedDialog1, dialog1, dialogComparer); diff != "" {
-		t.Errorf("Dialog 1 mismatch (-want +got):\n%s", diff)
-	}
-
-	if diff := cmp.Diff(expectedDialog2, dialog2, dialogComparer); diff != "" {
-		t.Errorf("Dialog 2 mismatch (-want +got):\n%s", diff)
-	}
-
-	// Compare message lists
-	if diff := cmp.Diff(expectedMsgIdList1, msgList1); diff != "" {
-		t.Errorf("Message ID list 1 mismatch (-want +got):\n%s", diff)
-	}
-
-	if diff := cmp.Diff(expectedMsgIdList2, msgList2); diff != "" {
-		t.Errorf("Message ID list 2 mismatch (-want +got):\n%s", diff)
-	}
+	assert.Equal(t, rootID, msgList2[0], "First message in branch 2 should be root")
+	assert.Equal(t, baseReplyID, msgList2[1], "Second message in branch 2 should be base reply")
+	assert.Equal(t, branch2ID, msgList2[2], "Third message in branch 2 should be branch2")
 
 	// Verify shared path and branches
 	assert.Equal(t, dialog1[:2], dialog2[:2], "Parent messages should be identical")

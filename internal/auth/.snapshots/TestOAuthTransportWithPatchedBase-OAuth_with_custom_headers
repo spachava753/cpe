@@ -1,0 +1,9 @@
+(auth.transportTestResult) {
+  Headers: (map[string]string) (len=2) {
+    (string) (len=13) "Authorization": (string) (len=24) "Bearer test-access-token",
+    (string) (len=15) "X-Custom-Header": (string) (len=12) "custom-value"
+  },
+  Body: (map[string]interface {}) (len=1) {
+    (string) (len=5) "model": (string) (len=8) "claude-3"
+  }
+}

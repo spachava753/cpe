@@ -1,0 +1,10 @@
+type MultiLineToolInput struct {
+	Param *string `json:"param,omitempty"`
+}
+
+type MultiLineToolOutput = string
+
+// MultiLineTool First line of description.
+// Second line of description.
+// Third line of description.
+var MultiLineTool func(ctx context.Context, input MultiLineToolInput) (MultiLineToolOutput, error)

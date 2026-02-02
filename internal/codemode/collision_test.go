@@ -1,16 +1,16 @@
 package codemode
 
 import (
-	"strings"
 	"testing"
+
+	"github.com/bradleyjkemp/cupaloy/v2"
 )
 
 func TestCheckReservedNameCollision(t *testing.T) {
 	tests := []struct {
-		name        string
-		toolNames   []string
-		wantErr     bool
-		errContains string
+		name      string
+		toolNames []string
+		wantErr   bool
 	}{
 		{
 			name:      "no collision with empty list",
@@ -28,22 +28,19 @@ func TestCheckReservedNameCollision(t *testing.T) {
 			wantErr:   false,
 		},
 		{
-			name:        "collision with execute_go_code",
-			toolNames:   []string{"get_weather", "execute_go_code", "get_city"},
-			wantErr:     true,
-			errContains: "execute_go_code",
+			name:      "collision with execute_go_code",
+			toolNames: []string{"get_weather", "execute_go_code", "get_city"},
+			wantErr:   true,
 		},
 		{
-			name:        "collision when execute_go_code is first",
-			toolNames:   []string{"execute_go_code", "other_tool"},
-			wantErr:     true,
-			errContains: "reserved code mode tool name",
+			name:      "collision when execute_go_code is first",
+			toolNames: []string{"execute_go_code", "other_tool"},
+			wantErr:   true,
 		},
 		{
-			name:        "collision when execute_go_code is only tool",
-			toolNames:   []string{"execute_go_code"},
-			wantErr:     true,
-			errContains: "excludedTools",
+			name:      "collision when execute_go_code is only tool",
+			toolNames: []string{"execute_go_code"},
+			wantErr:   true,
 		},
 	}
 
@@ -54,10 +51,8 @@ func TestCheckReservedNameCollision(t *testing.T) {
 				t.Errorf("CheckReservedNameCollision() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if err != nil && tt.errContains != "" {
-				if !strings.Contains(err.Error(), tt.errContains) {
-					t.Errorf("CheckReservedNameCollision() error = %v, want error containing %q", err, tt.errContains)
-				}
+			if err != nil {
+				cupaloy.SnapshotT(t, err.Error())
 			}
 		})
 	}
@@ -65,10 +60,9 @@ func TestCheckReservedNameCollision(t *testing.T) {
 
 func TestCheckPascalCaseCollision(t *testing.T) {
 	tests := []struct {
-		name        string
-		toolNames   []string
-		wantErr     bool
-		errContains string
+		name      string
+		toolNames []string
+		wantErr   bool
 	}{
 		{
 			name:      "no collision with empty list",
@@ -86,22 +80,19 @@ func TestCheckPascalCaseCollision(t *testing.T) {
 			wantErr:   false,
 		},
 		{
-			name:        "collision with underscore vs camelCase",
-			toolNames:   []string{"get_weather", "getWeather"},
-			wantErr:     true,
-			errContains: "GetWeather",
+			name:      "collision with underscore vs camelCase",
+			toolNames: []string{"get_weather", "getWeather"},
+			wantErr:   true,
 		},
 		{
-			name:        "collision with different case in underscore names",
-			toolNames:   []string{"get_weather", "get_Weather"},
-			wantErr:     true,
-			errContains: "GetWeather",
+			name:      "collision with different case in underscore names",
+			toolNames: []string{"get_weather", "get_Weather"},
+			wantErr:   true,
 		},
 		{
-			name:        "collision with mixed separators",
-			toolNames:   []string{"get-weather", "get_weather"},
-			wantErr:     true,
-			errContains: "GetWeather",
+			name:      "collision with mixed separators",
+			toolNames: []string{"get-weather", "get_weather"},
+			wantErr:   true,
 		},
 		{
 			name:      "no collision with similar but different names",
@@ -109,10 +100,9 @@ func TestCheckPascalCaseCollision(t *testing.T) {
 			wantErr:   false,
 		},
 		{
-			name:        "error message contains both tool names",
-			toolNames:   []string{"foo_bar", "fooBar"},
-			wantErr:     true,
-			errContains: "foo_bar",
+			name:      "error message contains both tool names",
+			toolNames: []string{"foo_bar", "fooBar"},
+			wantErr:   true,
 		},
 	}
 
@@ -123,10 +113,8 @@ func TestCheckPascalCaseCollision(t *testing.T) {
 				t.Errorf("CheckPascalCaseCollision() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if err != nil && tt.errContains != "" {
-				if !strings.Contains(err.Error(), tt.errContains) {
-					t.Errorf("CheckPascalCaseCollision() error = %v, want error containing %q", err, tt.errContains)
-				}
+			if err != nil {
+				cupaloy.SnapshotT(t, err.Error())
 			}
 		})
 	}
@@ -134,10 +122,9 @@ func TestCheckPascalCaseCollision(t *testing.T) {
 
 func TestCheckToolNameCollisions(t *testing.T) {
 	tests := []struct {
-		name        string
-		toolNames   []string
-		wantErr     bool
-		errContains string
+		name      string
+		toolNames []string
+		wantErr   bool
 	}{
 		{
 			name:      "no collisions",
@@ -145,16 +132,14 @@ func TestCheckToolNameCollisions(t *testing.T) {
 			wantErr:   false,
 		},
 		{
-			name:        "reserved name collision is caught first",
-			toolNames:   []string{"execute_go_code", "getWeather", "get_weather"},
-			wantErr:     true,
-			errContains: "reserved code mode tool name",
+			name:      "reserved name collision is caught first",
+			toolNames: []string{"execute_go_code", "getWeather", "get_weather"},
+			wantErr:   true,
 		},
 		{
-			name:        "pascal case collision when no reserved collision",
-			toolNames:   []string{"get_weather", "getWeather"},
-			wantErr:     true,
-			errContains: "GetWeather",
+			name:      "pascal case collision when no reserved collision",
+			toolNames: []string{"get_weather", "getWeather"},
+			wantErr:   true,
 		},
 		{
 			name:      "empty list passes",
@@ -170,10 +155,8 @@ func TestCheckToolNameCollisions(t *testing.T) {
 				t.Errorf("CheckToolNameCollisions() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if err != nil && tt.errContains != "" {
-				if !strings.Contains(err.Error(), tt.errContains) {
-					t.Errorf("CheckToolNameCollisions() error = %v, want error containing %q", err, tt.errContains)
-				}
+			if err != nil {
+				cupaloy.SnapshotT(t, err.Error())
 			}
 		})
 	}

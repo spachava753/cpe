@@ -1,0 +1,31 @@
+([]*mcp.MCPConn) (len=1) {
+  (*mcp.MCPConn)({
+    ServerName: (string) (len=7) "server1",
+    Config: (mcp.ServerConfig) {
+      Command: (string) (len=5) "test1",
+      Args: ([]string) <nil>,
+      Type: (string) (len=5) "stdio",
+      URL: (string) "",
+      Timeout: (int) 0,
+      Env: (map[string]string) <nil>,
+      Headers: (map[string]string) <nil>,
+      EnabledTools: ([]string) <nil>,
+      DisabledTools: ([]string) <nil>
+    },
+    ClientSession: (*mcp.ClientSession)(<nil>),
+    Tools: ([]*mcp.Tool) (len=1) {
+      (*mcp.Tool)({
+        Meta: (mcp.Meta) <nil>,
+        Annotations: (*mcp.ToolAnnotations)(<nil>),
+        Description: (string) "",
+        InputSchema: (interface {}) <nil>,
+        Name: (string) (len=5) "tool1",
+        OutputSchema: (interface {}) <nil>,
+        Title: (string) ""
+      })
+    }
+  })
+}
+([]string) (len=1) {
+  (string) (len=13) "server2/tool2"
+}

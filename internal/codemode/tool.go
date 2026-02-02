@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/mcp"
 )
 
 // executeGoCodeInput represents the input parameters for the execute_go_code tool
@@ -18,20 +20,20 @@ type ExecuteGoCodeInput struct {
 // ExecuteGoCodeCallback implements gai.ToolCallback for the execute_go_code tool.
 // It executes LLM-generated Go code in a sandbox environment with MCP tool access.
 type ExecuteGoCodeCallback struct {
-	Servers []ServerToolsInfo
+	Servers []*mcp.MCPConn
 }
 
 // contentToBlocks converts MCP content types to gai blocks.
 // It handles TextContent, ImageContent (including PDFs), and AudioContent.
-func contentToBlocks(content []mcp.Content) []gai.Block {
+func contentToBlocks(content []mcpsdk.Content) []gai.Block {
 	blocks := make([]gai.Block, 0, len(content))
 	for _, c := range content {
 		switch v := c.(type) {
-		case *mcp.TextContent:
+		case *mcpsdk.TextContent:
 			blocks = append(blocks, gai.TextBlock(v.Text))
-		case *mcp.ImageContent:
+		case *mcpsdk.ImageContent:
 			blocks = append(blocks, gai.ImageBlock(v.Data, v.MIMEType))
-		case *mcp.AudioContent:
+		case *mcpsdk.AudioContent:
 			blocks = append(blocks, gai.AudioBlock(v.Data, v.MIMEType))
 		}
 	}
@@ -50,7 +52,7 @@ func (c *ExecuteGoCodeCallback) Call(ctx context.Context, parametersJSON json.Ra
 	if err := json.Unmarshal(parametersJSON, &input); err != nil {
 		// Return error as tool result so LLM can adapt, not as Go error that stops execution
 		//nolint:nilerr // Intentional: user/tool errors return results with nil error to allow agent recovery
-		return gai.ToolResultMessage(toolCallID, gai.Text, "text/plain", gai.Str("Error parsing parameters: "+err.Error())), nil
+		return gai.ToolResultMessage(toolCallID, gai.TextBlock("Error parsing parameters: "+err.Error())), nil
 	}
 
 	// Execute the code
@@ -63,7 +65,7 @@ func (c *ExecuteGoCodeCallback) Call(ctx context.Context, parametersJSON json.Ra
 		switch {
 		case errors.As(err, &recoverable):
 			// Recoverable errors are returned as tool results so LLM can adapt
-			return gai.ToolResultMessage(toolCallID, gai.Text, "text/plain", gai.Str(recoverable.Output)), nil
+			return gai.ToolResultMessage(toolCallID, gai.TextBlock(recoverable.Output)), nil
 		case errors.As(err, &fatal):
 			// Fatal errors stop agent execution
 			return gai.Message{}, err

@@ -4,24 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
-	"maps"
 	"net/http"
 	"os"
 	"os/exec"
-	"slices"
-	"strings"
 
-	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/version"
 )
+
 // subagentLoggingAddressEnv mirrors subagentlog.SubagentLoggingAddressEnv.
 // Defined locally to avoid import cycle (subagentlog imports agent which imports mcp).
 const subagentLoggingAddressEnv = "CPE_SUBAGENT_LOGGING_ADDRESS"
-
 
 // headerRoundTripper adds custom headers to HTTP requests
 type headerRoundTripper struct {
@@ -223,137 +218,6 @@ func CreateTransport(ctx context.Context, config ServerConfig, loggingAddress st
 		err = fmt.Errorf("transport not supported")
 	}
 	return
-}
-
-// ToolData holds tool information with its callback and original MCP tool
-type ToolData struct {
-	Tool         gai.Tool
-	MCPTool      *mcp.Tool
-	ToolCallback gai.ToolCallback
-}
-
-// FetchTools retrieves all tools from all MCP servers and returns them with their callbacks.
-// Returns a map keyed by server name, where each value is a slice of tools from that server.
-// It continues fetching tools even if some fail, collecting warnings along the way.
-func FetchTools(ctx context.Context, client *mcp.Client, mcpServers map[string]ServerConfig, loggingAddress string) (map[string][]ToolData, error) {
-	serverNames := slices.Collect(maps.Keys(mcpServers))
-
-	// If no servers are configured, return early without an error
-	if len(serverNames) == 0 {
-		return make(map[string][]ToolData), nil
-	}
-
-	registeredTools := make(map[string]string) // Map to track tool names for duplicate detection
-	var warnings []string                      // To collect all warnings
-	registeredCount := 0                       // Count successful registrations
-	totalFilteredOut := 0                      // Count filtered-out tools
-
-	// Map to store the tools by server name
-	toolsByServer := make(map[string][]ToolData)
-
-	// For each server, get tools and prepare them for registration
-	for _, serverName := range serverNames {
-		// Get server config for filtering
-		serverConfig := mcpServers[serverName]
-
-		transport, err := CreateTransport(ctx, serverConfig, loggingAddress)
-		if err != nil {
-			return nil, err
-		}
-
-		clientSession, err := client.Connect(ctx, transport, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		// List tools (client is already initialized in GetClient)
-		var tools []*mcp.Tool
-		for tool, err := range clientSession.Tools(ctx, nil) {
-			if err != nil {
-				warnings = append(warnings, fmt.Sprintf("failed to list MCP tools for server %s: %v", serverName, err))
-				// Skip this server but continue with others
-				continue
-			}
-			tools = append(tools, tool)
-		}
-
-		// Apply tool filtering
-		filteredTools, filteredOut := FilterMcpTools(tools, serverConfig)
-		totalFilteredOut += len(filteredOut)
-
-		// Log filtering information if tools were filtered
-		if len(filteredOut) > 0 {
-			filterMode := "whitelist"
-			if len(serverConfig.DisabledTools) > 0 {
-				filterMode = "blacklist"
-			}
-			slog.Info("mcp tools filtered", "server", serverName, "filter", filterMode, "filtered_count", len(filteredOut), "filtered", strings.Join(filteredOut, ", "))
-		}
-
-		// Process each filtered tool
-		for _, mcpTool := range filteredTools {
-			// Check for duplicate tool names
-			if existingServer, exists := registeredTools[mcpTool.Name]; exists {
-				warnings = append(warnings, fmt.Sprintf(
-					"skipping duplicate tool name '%s' in server '%s' (already registered from server '%s')",
-					mcpTool.Name, serverName, existingServer))
-				continue
-			}
-
-			// Create a callback for this tool
-			callback := &ToolCallback{
-				ClientSession: clientSession,
-				ServerName:    serverName,
-				ToolName:      mcpTool.Name,
-			}
-
-			// Convert InputSchema from mcp jsonschema (map[string]interface{}) to gai jsonschema (*jsonschema.Schema)
-			inputSchemaJSON, err := json.Marshal(mcpTool.InputSchema)
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal input schema for tool %s: %w", mcpTool.Name, err)
-			}
-
-			var inputSchema *jsonschema.Schema
-			if err := json.Unmarshal(inputSchemaJSON, &inputSchema); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal input schema for tool %s: %w", mcpTool.Name, err)
-			}
-
-			gaiTool := gai.Tool{
-				Name:        mcpTool.Name,
-				Description: mcpTool.Description,
-				InputSchema: inputSchema,
-			}
-
-			// Store the tool data in the server's slice
-			toolsByServer[serverName] = append(toolsByServer[serverName], ToolData{
-				Tool:         gaiTool,
-				MCPTool:      mcpTool,
-				ToolCallback: callback,
-			})
-
-			// Track this tool to detect duplicates
-			registeredTools[mcpTool.Name] = serverName
-			registeredCount++
-		}
-	}
-
-	// Enhanced logging with filtering information
-	if registeredCount > 0 || totalFilteredOut > 0 {
-		slog.Info("mcp tools summary", "registered", registeredCount, "filtered_out", totalFilteredOut, "warnings", len(warnings))
-	}
-
-	// If we have warnings but also registered at least one tool, print warnings only
-	if len(warnings) > 0 {
-		if registeredCount > 0 {
-			for _, warning := range warnings {
-				slog.Warn("mcp tool registration warning", "warning", warning)
-			}
-			return toolsByServer, nil
-		}
-		return toolsByServer, fmt.Errorf("failed to register any MCP tools: %s", strings.Join(warnings, "; "))
-	}
-
-	return toolsByServer, nil
 }
 
 func NewClient() *mcp.Client {

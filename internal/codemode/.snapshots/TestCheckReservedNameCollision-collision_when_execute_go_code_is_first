@@ -1,0 +1,1 @@
+code mode collision: tool "execute_go_code" conflicts with reserved code mode tool name; either exclude this tool using 'excludedTools' configuration or remove the MCP server providing it

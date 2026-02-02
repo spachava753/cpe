@@ -1,0 +1,1 @@
+code mode collision: tools "foo_bar" and "fooBar" both convert to Go function name "FooBar"; exclude one using 'excludedTools' configuration or remove one of the MCP servers providing them

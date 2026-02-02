@@ -1,0 +1,4 @@
+(struct { StatusCode int; EventReceived bool }) {
+  StatusCode: (int) 200,
+  EventReceived: (bool) true
+}

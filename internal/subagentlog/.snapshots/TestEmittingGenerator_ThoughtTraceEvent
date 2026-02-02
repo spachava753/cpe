@@ -1,0 +1,12 @@
+([]subagentlog.normalizedEvent) (len=1) {
+  (subagentlog.normalizedEvent) {
+    Type: (string) (len=13) "thought_trace",
+    SubagentName: (string) (len=13) "test_subagent",
+    SubagentRunID: (string) (len=7) "run_456",
+    ToolName: (string) "",
+    ToolCallID: (string) "",
+    Payload: (string) (len=29) "thinking about the problem...",
+    ReasoningType: (string) (len=14) "reasoning.text",
+    ExecutionTimeoutSeconds: (int) 0
+  }
+}

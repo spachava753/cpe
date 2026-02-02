@@ -1,0 +1,5 @@
+(map[string]interface {}) (len=3) {
+  (string) (len=32) "CPE_SUBAGENT_LOGGING_ADDRESS_set": (bool) false,
+  (string) (len=34) "CPE_SUBAGENT_LOGGING_ADDRESS_value": (string) "",
+  (string) (len=10) "MY_API_KEY": (string) (len=9) "secret123"
+}

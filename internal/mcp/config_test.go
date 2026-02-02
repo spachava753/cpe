@@ -3,14 +3,14 @@ package mcp
 import (
 	"testing"
 
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/go-playground/validator/v10"
 )
 
 func TestServerConfigValidation(t *testing.T) {
 	tests := []struct {
-		name    string
-		config  ServerConfig
-		wantErr bool
+		name   string
+		config ServerConfig
 	}{
 		{
 			name: "Valid stdio config",
@@ -19,7 +19,6 @@ func TestServerConfigValidation(t *testing.T) {
 				Command: "npx",
 				Args:    []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"},
 			},
-			wantErr: false,
 		},
 		{
 			name: "Url with stdio",
@@ -29,7 +28,6 @@ func TestServerConfigValidation(t *testing.T) {
 				Command: "npx",
 				Args:    []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"},
 			},
-			wantErr: true,
 		},
 		{
 			name: "Valid sse config",
@@ -37,7 +35,6 @@ func TestServerConfigValidation(t *testing.T) {
 				Type: "sse",
 				URL:  "http://localhost:3000",
 			},
-			wantErr: false,
 		},
 		{
 			name: "Valid http config",
@@ -45,7 +42,6 @@ func TestServerConfigValidation(t *testing.T) {
 				Type: "http",
 				URL:  "http://localhost:3000",
 			},
-			wantErr: false,
 		},
 		{
 			name: "Invalid url",
@@ -53,7 +49,6 @@ func TestServerConfigValidation(t *testing.T) {
 				Type: "sse",
 				URL:  "s3://test/file",
 			},
-			wantErr: true,
 		},
 		{
 			name: "Valid with timeout and env",
@@ -66,14 +61,12 @@ func TestServerConfigValidation(t *testing.T) {
 					"NODE_ENV": "production",
 				},
 			},
-			wantErr: false,
 		},
 		{
 			name: "Missing URL for sse",
 			config: ServerConfig{
 				Type: "sse",
 			},
-			wantErr: true,
 		},
 		{
 			name: "Missing command for stdio",
@@ -81,7 +74,6 @@ func TestServerConfigValidation(t *testing.T) {
 				Type: "stdio",
 				Args: []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"},
 			},
-			wantErr: true,
 		},
 		{
 			name: "Invalid type",
@@ -89,7 +81,6 @@ func TestServerConfigValidation(t *testing.T) {
 				Type:    "invalid",
 				Command: "npx",
 			},
-			wantErr: true,
 		},
 		{
 			name: "Negative timeout",
@@ -98,7 +89,6 @@ func TestServerConfigValidation(t *testing.T) {
 				Command: "npx",
 				Timeout: -10,
 			},
-			wantErr: true,
 		},
 		{
 			name: "Env vars on non-stdio server",
@@ -109,7 +99,6 @@ func TestServerConfigValidation(t *testing.T) {
 					"NODE_ENV": "production",
 				},
 			},
-			wantErr: true,
 		},
 		{
 			name: "Blacklist mode with DisabledTools",
@@ -118,7 +107,6 @@ func TestServerConfigValidation(t *testing.T) {
 				Command:       "editor-mcp",
 				DisabledTools: []string{"shell"},
 			},
-			wantErr: false,
 		},
 		{
 			name: "Whitelist mode with EnabledTools",
@@ -127,7 +115,6 @@ func TestServerConfigValidation(t *testing.T) {
 				Command:      "editor-mcp",
 				EnabledTools: []string{"shell"},
 			},
-			wantErr: false,
 		},
 		{
 			name: "EnabledTools and DisabledTools mutually exclusive",
@@ -137,7 +124,6 @@ func TestServerConfigValidation(t *testing.T) {
 				EnabledTools:  []string{"shell"},
 				DisabledTools: []string{"str_replace"},
 			},
-			wantErr: true,
 		},
 		{
 			name: "Empty EnabledTools rejected",
@@ -146,7 +132,6 @@ func TestServerConfigValidation(t *testing.T) {
 				Command:      "editor-mcp",
 				EnabledTools: []string{},
 			},
-			wantErr: true,
 		},
 		{
 			name: "Empty DisabledTools rejected",
@@ -155,7 +140,6 @@ func TestServerConfigValidation(t *testing.T) {
 				Command:       "editor-mcp",
 				DisabledTools: []string{},
 			},
-			wantErr: true,
 		},
 	}
 
@@ -164,9 +148,13 @@ func TestServerConfigValidation(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			err := validate.Struct(tc.config)
-			if (err != nil) != tc.wantErr {
-				t.Errorf("Validate() error = %v, wantErr %v", err, tc.wantErr)
+			var result string
+			if err != nil {
+				result = err.Error()
+			} else {
+				result = "<nil>"
 			}
+			cupaloy.SnapshotT(t, result)
 		})
 	}
 }

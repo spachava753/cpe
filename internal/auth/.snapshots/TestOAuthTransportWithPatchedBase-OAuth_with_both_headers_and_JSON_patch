@@ -1,0 +1,11 @@
+(auth.transportTestResult) {
+  Headers: (map[string]string) (len=3) {
+    (string) (len=13) "Authorization": (string) (len=24) "Bearer test-access-token",
+    (string) (len=9) "X-Another": (string) (len=13) "another-value",
+    (string) (len=16) "X-Patched-Header": (string) (len=13) "patched-value"
+  },
+  Body: (map[string]interface {}) (len=2) {
+    (string) (len=8) "original": (string) (len=4) "data",
+    (string) (len=7) "patched": (bool) true
+  }
+}

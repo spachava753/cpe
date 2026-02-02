@@ -1,0 +1,7 @@
+([]codemode.blockSnapshot) (len=1) {
+  (codemode.blockSnapshot) {
+    ModalityType: (string) (len=4) "text",
+    MimeType: (string) (len=10) "text/plain",
+    Content: (string) (len=11) "hello world"
+  }
+}

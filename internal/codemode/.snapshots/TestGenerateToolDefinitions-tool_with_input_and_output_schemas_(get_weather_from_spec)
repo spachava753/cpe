@@ -1,0 +1,15 @@
+type GetWeatherInput struct {
+	// City The name of the city to get weather for
+	City string `json:"city"`
+	// Unit Temperature unit for the weather response
+	// Must be one of "celsius", "fahrenheit"
+	Unit string `json:"unit"`
+}
+
+type GetWeatherOutput struct {
+	// Temperature Temperature in celsius
+	Temperature float64 `json:"temperature"`
+}
+
+// GetWeather Get current weather data for a location
+var GetWeather func(ctx context.Context, input GetWeatherInput) (GetWeatherOutput, error)

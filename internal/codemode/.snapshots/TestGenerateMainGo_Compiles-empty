@@ -1,0 +1,47 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+)
+
+const contentOutputPath = "/tmp/content.json"
+
+func fatalExit(err error) {
+	fmt.Println(err)
+	os.Exit(3)
+}
+
+// ptr returns a pointer to the given value. Use this for optional fields.
+func ptr[T any](v T) *T {
+	return &v
+}
+
+func main() {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	content, err := Run(ctx)
+	if err != nil {
+		fmt.Printf("\nexecution error: %s\n", err)
+		os.Exit(1)
+	}
+
+	// Write content to file if any was returned
+	if len(content) > 0 {
+		data, err := json.Marshal(content)
+		if err != nil {
+			fmt.Printf("\ncontent marshal error: %s\n", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(contentOutputPath, data, 0644); err != nil {
+			fmt.Printf("\ncontent write error: %s\n", err)
+			os.Exit(1)
+		}
+	}
+}
+

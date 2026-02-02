@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,12 +28,12 @@ func TestNewServer(t *testing.T) {
 	tests := []struct {
 		name    string
 		config  MCPServerConfig
-		wantErr string
+		wantErr bool
 	}{
 		{
 			name:    "missing subagent name",
 			config:  MCPServerConfig{},
-			wantErr: "subagent name is required",
+			wantErr: true,
 		},
 		{
 			name: "missing subagent description",
@@ -41,7 +42,7 @@ func TestNewServer(t *testing.T) {
 					Name: "test_agent",
 				},
 			},
-			wantErr: "subagent description is required",
+			wantErr: true,
 		},
 		{
 			name: "missing executor",
@@ -51,20 +52,20 @@ func TestNewServer(t *testing.T) {
 					Description: "A test agent",
 				},
 			},
-			wantErr: "executor is required",
+			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			opts := ServerOptions{}
-			if tt.wantErr == "" || !strings.Contains(tt.wantErr, "executor") {
+			if !tt.wantErr || tt.name != "missing executor" {
 				opts.Executor = noopExecutor
 			}
 			server, err := NewServer(tt.config, opts)
-			if tt.wantErr != "" {
+			if tt.wantErr {
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.wantErr)
+				cupaloy.SnapshotT(t, err.Error())
 				assert.Nil(t, server)
 			} else {
 				require.NoError(t, err)
@@ -170,7 +171,7 @@ func TestServer_StdoutClean(t *testing.T) {
 	r.Close()
 
 	// Verify no output was written during server creation
-	assert.Empty(t, buf.String(), "NewServer should not write to stdout")
+	cupaloy.SnapshotT(t, buf.String())
 }
 
 // TestServer_IntegrationInitialize tests that the server responds correctly to
@@ -241,16 +242,18 @@ func TestNewServer_OutputSchema(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	tests := []struct {
-		name      string
-		setupFunc func() string // returns output schema path
-		wantErr   string
+		name           string
+		setupFunc      func() string // returns output schema path
+		wantErr        bool
+		errMsgContains string // substring to check in error message (for error cases)
 	}{
 		{
 			name: "missing output schema file",
 			setupFunc: func() string {
 				return filepath.Join(tmpDir, "nonexistent.json")
 			},
-			wantErr: "failed to read output schema file",
+			wantErr:        true,
+			errMsgContains: "no such file or directory",
 		},
 		{
 			name: "invalid JSON in output schema",
@@ -259,7 +262,8 @@ func TestNewServer_OutputSchema(t *testing.T) {
 				os.WriteFile(path, []byte("not valid json {"), 0644)
 				return path
 			},
-			wantErr: "contains invalid JSON",
+			wantErr:        true,
+			errMsgContains: "contains invalid JSON",
 		},
 		{
 			name: "valid output schema",
@@ -269,7 +273,7 @@ func TestNewServer_OutputSchema(t *testing.T) {
 				os.WriteFile(path, []byte(schema), 0644)
 				return path
 			},
-			wantErr: "",
+			wantErr: false,
 		},
 	}
 
@@ -285,9 +289,9 @@ func TestNewServer_OutputSchema(t *testing.T) {
 			}
 
 			server, err := NewServer(cfg, ServerOptions{Executor: noopExecutor})
-			if tt.wantErr != "" {
+			if tt.wantErr {
 				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.wantErr)
+				assert.Contains(t, err.Error(), tt.errMsgContains, "error message should contain expected substring")
 				assert.Nil(t, server)
 			} else {
 				require.NoError(t, err)
@@ -342,7 +346,7 @@ func TestServer_ToolRegistrationWithOutputSchema(t *testing.T) {
 	require.NotNil(t, server.outputSchema)
 
 	// Verify the schema was loaded correctly
-	assert.JSONEq(t, schema, string(server.outputSchema))
+	cupaloy.SnapshotT(t, string(server.outputSchema))
 }
 
 // TestServer_IntegrationToolsList verifies that tools/list returns the registered tool
@@ -411,24 +415,7 @@ defaults:
 	require.Len(t, tools, 1, "expected exactly one tool")
 
 	tool := tools[0]
-	assert.Equal(t, "my_subagent_tool", tool.Name)
-	assert.Equal(t, "A subagent that processes requests", tool.Description)
-
-	// Verify input schema has the expected structure
-	inputSchema, ok := tool.InputSchema.(map[string]any)
-	require.True(t, ok, "input schema should be a map")
-	assert.Equal(t, "object", inputSchema["type"])
-
-	props, ok := inputSchema["properties"].(map[string]any)
-	require.True(t, ok, "properties should be a map")
-
-	// Verify prompt property exists
-	_, hasPrompt := props["prompt"]
-	assert.True(t, hasPrompt, "input schema should have 'prompt' property")
-
-	// Verify inputs property exists
-	_, hasInputs := props["inputs"]
-	assert.True(t, hasInputs, "input schema should have 'inputs' property")
+	cupaloy.SnapshotT(t, tool)
 }
 
 // TestServer_IntegrationToolsListWithOutputSchema verifies output schema is included
@@ -512,15 +499,7 @@ defaults:
 
 	// Verify output schema is present
 	require.NotNil(t, tool.OutputSchema, "tool should have output schema")
-
-	outputSchemaMap, ok := tool.OutputSchema.(map[string]any)
-	require.True(t, ok, "output schema should be a map")
-	assert.Equal(t, "object", outputSchemaMap["type"])
-
-	props, ok := outputSchemaMap["properties"].(map[string]any)
-	require.True(t, ok)
-	_, hasResult := props["result"]
-	assert.True(t, hasResult, "output schema should have 'result' property")
+	cupaloy.SnapshotT(t, tool)
 }
 
 // --- Error Handling Tests for Task 10 ---
@@ -561,12 +540,10 @@ func TestServer_HandleToolCall_PanicRecovery(t *testing.T) {
 	// Result should be an error response
 	require.NotNil(t, result)
 	assert.True(t, result.IsError, "result should be marked as error")
-	// Error message should mention panic
 	require.Len(t, result.Content, 1)
 	textContent, ok := result.Content[0].(*mcp.TextContent)
 	require.True(t, ok)
-	assert.Contains(t, textContent.Text, "panicked")
-	assert.Contains(t, textContent.Text, "intentional panic")
+	cupaloy.SnapshotT(t, textContent.Text)
 }
 
 func TestServer_HandleToolCall_EmptyPrompt(t *testing.T) {
@@ -581,22 +558,19 @@ func TestServer_HandleToolCall_EmptyPrompt(t *testing.T) {
 	require.NoError(t, err)
 
 	tests := []struct {
-		name        string
-		prompt      string
-		wantErr     bool
-		errContains string
+		name    string
+		prompt  string
+		wantErr bool
 	}{
 		{
-			name:        "empty prompt",
-			prompt:      "",
-			wantErr:     true,
-			errContains: "prompt is required",
+			name:    "empty prompt",
+			prompt:  "",
+			wantErr: true,
 		},
 		{
-			name:        "whitespace only prompt",
-			prompt:      "   \t\n  ",
-			wantErr:     true,
-			errContains: "prompt is required",
+			name:    "whitespace only prompt",
+			prompt:  "   \t\n  ",
+			wantErr: true,
 		},
 		{
 			name:    "valid prompt",
@@ -619,9 +593,13 @@ func TestServer_HandleToolCall_EmptyPrompt(t *testing.T) {
 				require.Len(t, result.Content, 1)
 				textContent, ok := result.Content[0].(*mcp.TextContent)
 				require.True(t, ok)
-				assert.Contains(t, textContent.Text, tt.errContains)
+				cupaloy.SnapshotT(t, textContent.Text)
 			} else {
 				assert.False(t, result.IsError, "result should not be an error")
+				require.Len(t, result.Content, 1)
+				textContent, ok := result.Content[0].(*mcp.TextContent)
+				require.True(t, ok)
+				cupaloy.SnapshotT(t, textContent.Text)
 			}
 		})
 	}
@@ -650,7 +628,7 @@ func TestServer_HandleToolCall_ContextCancellation(t *testing.T) {
 	require.Len(t, result.Content, 1)
 	textContent, ok := result.Content[0].(*mcp.TextContent)
 	require.True(t, ok)
-	assert.Contains(t, textContent.Text, "cancel")
+	cupaloy.SnapshotT(t, textContent.Text)
 }
 
 func TestServer_HandleToolCall_ExecutorError(t *testing.T) {
@@ -674,9 +652,7 @@ func TestServer_HandleToolCall_ExecutorError(t *testing.T) {
 	require.Len(t, result.Content, 1)
 	textContent, ok := result.Content[0].(*mcp.TextContent)
 	require.True(t, ok)
-	// Error message should contain the original error
-	assert.Contains(t, textContent.Text, "rate limit exceeded")
-	assert.Contains(t, textContent.Text, "Subagent execution failed")
+	cupaloy.SnapshotT(t, textContent.Text)
 }
 
 func TestServer_HandleToolCall_ContextDeadlineExceeded(t *testing.T) {
@@ -704,7 +680,7 @@ func TestServer_HandleToolCall_ContextDeadlineExceeded(t *testing.T) {
 	require.Len(t, result.Content, 1)
 	textContent, ok := result.Content[0].(*mcp.TextContent)
 	require.True(t, ok)
-	assert.Contains(t, textContent.Text, "deadline exceeded")
+	cupaloy.SnapshotT(t, textContent.Text)
 }
 
 func TestServer_HandleToolCall_ValidInput(t *testing.T) {
@@ -743,9 +719,8 @@ func TestServer_HandleToolCall_ValidInput(t *testing.T) {
 	require.Len(t, result.Content, 1)
 	textContent, ok := result.Content[0].(*mcp.TextContent)
 	require.True(t, ok)
-	assert.Equal(t, expectedResponse, textContent.Text)
+	cupaloy.SnapshotT(t, textContent.Text)
 }
-
 
 // --- RunID Validation Tests ---
 
@@ -761,10 +736,9 @@ func TestServer_HandleToolCall_RunIDValidation(t *testing.T) {
 	require.NoError(t, err)
 
 	tests := []struct {
-		name        string
-		input       SubagentToolInput
-		wantErr     bool
-		errContains string
+		name    string
+		input   SubagentToolInput
+		wantErr bool
 	}{
 		{
 			name: "missing runId returns error",
@@ -772,8 +746,7 @@ func TestServer_HandleToolCall_RunIDValidation(t *testing.T) {
 				Prompt: "test prompt",
 				RunID:  "",
 			},
-			wantErr:     true,
-			errContains: "runId is required",
+			wantErr: true,
 		},
 		{
 			name: "whitespace-only runId returns error",
@@ -781,8 +754,7 @@ func TestServer_HandleToolCall_RunIDValidation(t *testing.T) {
 				Prompt: "test prompt",
 				RunID:  "   ",
 			},
-			wantErr:     true,
-			errContains: "runId is required",
+			wantErr: true,
 		},
 		{
 			name: "valid runId succeeds",
@@ -807,9 +779,13 @@ func TestServer_HandleToolCall_RunIDValidation(t *testing.T) {
 				require.Len(t, result.Content, 1)
 				textContent, ok := result.Content[0].(*mcp.TextContent)
 				require.True(t, ok)
-				assert.Contains(t, textContent.Text, tt.errContains)
+				cupaloy.SnapshotT(t, textContent.Text)
 			} else {
 				assert.False(t, result.IsError, "result should not be an error")
+				require.Len(t, result.Content, 1)
+				textContent, ok := result.Content[0].(*mcp.TextContent)
+				require.True(t, ok)
+				cupaloy.SnapshotT(t, textContent.Text)
 			}
 		})
 	}
@@ -845,8 +821,6 @@ func TestServer_HandleToolCall_RunIDPassedToExecutor(t *testing.T) {
 	require.NotNil(t, result)
 	assert.False(t, result.IsError, "result should not be an error")
 
-	// Verify RunID was passed correctly to executor
-	assert.Equal(t, "unique-run-id-456", capturedInput.RunID, "RunID should be passed to executor")
-	assert.Equal(t, "test prompt", capturedInput.Prompt, "Prompt should be passed to executor")
-	assert.Equal(t, []string{"file1.txt", "file2.txt"}, capturedInput.Inputs, "Inputs should be passed to executor")
+	// Snapshot the captured input to verify all fields were passed correctly
+	cupaloy.SnapshotT(t, capturedInput)
 }

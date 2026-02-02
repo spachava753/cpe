@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/bradleyjkemp/cupaloy/v2"
 )
 
 func TestCodeModeConfig(t *testing.T) {
@@ -131,17 +133,20 @@ func TestRawConfig_FindModel(t *testing.T) {
 		},
 	}
 
-	model, found := cfg.FindModel("gpt4")
-	if !found {
-		t.Fatalf("expected to find model gpt4")
-	}
-	if model.Ref != "gpt4" {
-		t.Fatalf("expected model ref gpt4, got %s", model.Ref)
-	}
+	t.Run("find existing model", func(t *testing.T) {
+		model, found := cfg.FindModel("gpt4")
+		if !found {
+			t.Fatalf("expected to find model gpt4")
+		}
+		cupaloy.SnapshotT(t, model)
+	})
 
-	if _, found := cfg.FindModel("missing"); found {
-		t.Fatalf("did not expect to find model missing")
-	}
+	t.Run("find missing model", func(t *testing.T) {
+		_, found := cfg.FindModel("missing")
+		if found {
+			t.Fatalf("did not expect to find model missing")
+		}
+	})
 }
 
 func TestLoadRawConfigFromFile(t *testing.T) {
@@ -174,18 +179,7 @@ defaults:
 		t.Fatalf("load config: %v", err)
 	}
 
-	if cfg.Version != "1.0" {
-		t.Fatalf("expected version 1.0, got %s", cfg.Version)
-	}
-	if len(cfg.Models) != 1 {
-		t.Fatalf("expected 1 model, got %d", len(cfg.Models))
-	}
-	if cfg.Models[0].Ref != "model" {
-		t.Fatalf("expected model ref 'model', got %s", cfg.Models[0].Ref)
-	}
-	if cfg.Defaults.Model != "model" {
-		t.Fatalf("expected defaults.model 'model', got %s", cfg.Defaults.Model)
-	}
+	cupaloy.SnapshotT(t, cfg)
 }
 
 func TestRawConfig_Validate(t *testing.T) {

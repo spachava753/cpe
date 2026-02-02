@@ -2,7 +2,10 @@ package agent
 
 import (
 	"os"
+
 	"strconv"
+
+	"github.com/spachava753/cpe/internal/types"
 
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/ansi"
@@ -10,11 +13,6 @@ import (
 	"github.com/muesli/termenv"
 	"golang.org/x/term"
 )
-
-// Renderer is an interface for rendering markdown content
-type Renderer interface {
-	Render(in string) (string, error)
-}
 
 // PlainTextRenderer is a renderer that returns content as-is without formatting.
 // Used as a fallback when glamour rendering fails.
@@ -68,7 +66,7 @@ func newASCIIRenderer() (*glamour.TermRenderer, error) {
 
 // NewRenderer creates a renderer appropriate for the current context.
 // Returns a glamour renderer for TTY contexts, or an ASCII renderer otherwise.
-func NewRenderer() Renderer {
+func NewRenderer() types.Renderer {
 	if !IsTTY() {
 		renderer, err := newASCIIRenderer()
 		if err != nil {
@@ -86,9 +84,9 @@ func NewRenderer() Renderer {
 
 // ResponsePrinterRenderers holds the three renderers used by ResponsePrinterGenerator.
 type ResponsePrinterRenderers struct {
-	Content  Renderer
-	Thinking Renderer
-	ToolCall Renderer
+	Content  types.Renderer
+	Thinking types.Renderer
+	ToolCall types.Renderer
 }
 
 // NewResponsePrinterRenderers creates the appropriate renderers for ResponsePrinterGenerator.

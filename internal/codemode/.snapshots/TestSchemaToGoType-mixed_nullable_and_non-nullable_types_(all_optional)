@@ -1,0 +1,5 @@
+type MixedInput struct {
+	OptionalField *string `json:"optional_field,omitempty"`
+	OptionalNumber *float64 `json:"optional_number,omitempty"`
+	RequiredField *string `json:"required_field,omitempty"`
+}

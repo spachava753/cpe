@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/spachava753/gai"
 )
 
@@ -41,85 +42,41 @@ func TestRenderToolCall(t *testing.T) {
 	tests := []struct {
 		name    string
 		content string
-		want    string
 	}{
 		{
 			name:    "execute_go_code renders as Go block",
 			content: `{"name":"execute_go_code","parameters":{"code":"package main\n\nfunc Run() error { return nil }","executionTimeout":30}}`,
-			want:    "#### [tool call] (timeout: 30s)\n```go\npackage main\n\nfunc Run() error { return nil }\n```",
 		},
 		{
 			name:    "execute_go_code without timeout renders without timeout",
 			content: `{"name":"execute_go_code","parameters":{"code":"package main\n\nfunc Run() error { return nil }"}}`,
-			want:    "#### [tool call]\n```go\npackage main\n\nfunc Run() error { return nil }\n```",
 		},
 		{
 			name:    "regular tool renders as JSON block",
 			content: `{"name":"get_weather","parameters":{"city":"New York"}}`,
-			want: "#### [tool call]\n" +
-				"```json\n" +
-				"{\n" +
-				"  \"name\": \"get_weather\",\n" +
-				"  \"parameters\": {\n" +
-				"    \"city\": \"New York\"\n" +
-				"  }\n" +
-				"}\n" +
-				"```",
 		},
 		{
 			name:    "execute_go_code with empty code falls back to JSON",
 			content: `{"name":"execute_go_code","parameters":{"code":"","executionTimeout":30}}`,
-			want: "#### [tool call]\n" +
-				"```json\n" +
-				"{\n" +
-				"  \"name\": \"execute_go_code\",\n" +
-				"  \"parameters\": {\n" +
-				"    \"code\": \"\",\n" +
-				"    \"executionTimeout\": 30\n" +
-				"  }\n" +
-				"}\n" +
-				"```",
 		},
 		{
 			name:    "execute_go_code with missing code falls back to JSON",
 			content: `{"name":"execute_go_code","parameters":{"executionTimeout":30}}`,
-			want: "#### [tool call]\n" +
-				"```json\n" +
-				"{\n" +
-				"  \"name\": \"execute_go_code\",\n" +
-				"  \"parameters\": {\n" +
-				"    \"executionTimeout\": 30\n" +
-				"  }\n" +
-				"}\n" +
-				"```",
 		},
 		{
 			name:    "execute_go_code with non-string code falls back to JSON",
 			content: `{"name":"execute_go_code","parameters":{"code":123,"executionTimeout":30}}`,
-			want: "#### [tool call]\n" +
-				"```json\n" +
-				"{\n" +
-				"  \"name\": \"execute_go_code\",\n" +
-				"  \"parameters\": {\n" +
-				"    \"code\": 123,\n" +
-				"    \"executionTimeout\": 30\n" +
-				"  }\n" +
-				"}\n" +
-				"```",
 		},
 		{
 			name:    "malformed JSON falls back to plain text",
 			content: `{invalid json`,
-			want:    `{invalid json`,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := g.renderToolCall(tt.content)
-			if got != tt.want {
-				t.Errorf("renderToolCall() =\n%q\nwant:\n%q", got, tt.want)
-			}
+			cupaloy.SnapshotT(t, got)
 		})
 	}
 }
@@ -191,9 +148,7 @@ func TestPlainTextRenderer(t *testing.T) {
 		t.Errorf("expected no error, got %v", err)
 	}
 
-	if output != input {
-		t.Errorf("expected output to be unchanged, got %q", output)
-	}
+	cupaloy.SnapshotT(t, output)
 }
 
 func TestFindLastContentBlockIndex(t *testing.T) {
@@ -312,20 +267,22 @@ func (m *mockGenerator) Register(tool gai.Tool) error {
 	return nil
 }
 
+// ioRoutingResult captures both stdout and stderr for snapshot comparison
+type ioRoutingResult struct {
+	Stdout string
+	Stderr string
+}
+
 func TestResponsePrinterGenerateIORouting(t *testing.T) {
 	tests := []struct {
-		name           string
-		blocks         []gai.Block
-		expectedStdout string
-		expectedStderr string
+		name   string
+		blocks []gai.Block
 	}{
 		{
 			name: "single content block goes to stdout",
 			blocks: []gai.Block{
 				{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("Hello world")},
 			},
-			expectedStdout: "Hello world",
-			expectedStderr: "",
 		},
 		{
 			name: "thinking then content - thinking to stderr, content to stdout",
@@ -333,8 +290,6 @@ func TestResponsePrinterGenerateIORouting(t *testing.T) {
 				{BlockType: gai.Thinking, ModalityType: gai.Text, Content: gai.Str("Let me think...")},
 				{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("The answer is 42")},
 			},
-			expectedStdout: "The answer is 42",
-			expectedStderr: "Let me think...",
 		},
 		{
 			name: "multiple content blocks - only last to stdout",
@@ -342,14 +297,10 @@ func TestResponsePrinterGenerateIORouting(t *testing.T) {
 				{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("First part")},
 				{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("Second part")},
 			},
-			expectedStdout: "Second part",
-			expectedStderr: "First part",
 		},
 		{
-			name:           "empty response - nothing to either stream",
-			blocks:         []gai.Block{},
-			expectedStdout: "",
-			expectedStderr: "",
+			name:   "empty response - nothing to either stream",
+			blocks: []gai.Block{},
 		},
 	}
 
@@ -370,7 +321,7 @@ func TestResponsePrinterGenerateIORouting(t *testing.T) {
 			}
 
 			gen := &ResponsePrinterGenerator{
-				wrapped:          mockGen,
+				GeneratorWrapper: gai.GeneratorWrapper{Inner: mockGen},
 				contentRenderer:  plainRenderer,
 				thinkingRenderer: plainRenderer,
 				toolCallRenderer: plainRenderer,
@@ -390,16 +341,12 @@ func TestResponsePrinterGenerateIORouting(t *testing.T) {
 			io.Copy(&stdoutBuf, rOut)
 			io.Copy(&stderrBuf, rErr)
 
-			gotStdout := strings.TrimSpace(stdoutBuf.String())
-			gotStderr := strings.TrimSpace(stderrBuf.String())
-
-			if gotStdout != tt.expectedStdout {
-				t.Errorf("stdout mismatch:\ngot:  %q\nwant: %q", gotStdout, tt.expectedStdout)
+			result := ioRoutingResult{
+				Stdout: strings.TrimSpace(stdoutBuf.String()),
+				Stderr: strings.TrimSpace(stderrBuf.String()),
 			}
 
-			if gotStderr != tt.expectedStderr {
-				t.Errorf("stderr mismatch:\ngot:  %q\nwant: %q", gotStderr, tt.expectedStderr)
-			}
+			cupaloy.SnapshotT(t, result)
 		})
 	}
 }

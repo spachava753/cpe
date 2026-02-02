@@ -1,0 +1,24 @@
+(gai.Dialog) (len=1) {
+  (gai.Message) {
+    Role: (gai.Role) assistant,
+    Blocks: ([]gai.Block) (len=2) {
+      (gai.Block) {
+        ID: (string) "",
+        BlockType: (string) (len=7) "content",
+        ModalityType: (gai.Modality) text,
+        MimeType: (string) "",
+        Content: (gai.Str) (len=4) text,
+        ExtraFields: (map[string]interface {}) <nil>
+      },
+      (gai.Block) {
+        ID: (string) (len=8) "call_123",
+        BlockType: (string) (len=9) "tool_call",
+        ModalityType: (gai.Modality) text,
+        MimeType: (string) "",
+        Content: (gai.Str) (len=4) tool,
+        ExtraFields: (map[string]interface {}) <nil>
+      }
+    },
+    ToolResultError: (bool) false
+  }
+}

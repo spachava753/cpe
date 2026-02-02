@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 
+	"strings"
+	"time"
+
 	"github.com/spachava753/cpe/internal/auth"
 )
 
@@ -119,5 +122,98 @@ func AuthRefreshAnthropic(ctx context.Context, opts AuthRefreshAnthropicOptions)
 	}
 
 	fmt.Fprintln(opts.Output, "✓ Successfully refreshed Anthropic OAuth token!")
+	return nil
+}
+
+// AuthLogoutOptions contains parameters for logging out from a provider
+type AuthLogoutOptions struct {
+	// Provider is the provider to log out from
+	Provider string
+	// Output is where to write status messages
+	Output io.Writer
+}
+
+// SupportedProviders is the list of providers that support OAuth authentication
+var SupportedProviders = []string{"anthropic"}
+
+// AuthLogout removes stored credentials for a provider
+func AuthLogout(ctx context.Context, opts AuthLogoutOptions) error {
+	// Validate provider
+	supported := false
+	for _, p := range SupportedProviders {
+		if opts.Provider == p {
+			supported = true
+			break
+		}
+	}
+	if !supported {
+		return fmt.Errorf("unsupported provider %q (supported: %s)", opts.Provider, strings.Join(SupportedProviders, ", "))
+	}
+
+	store, err := auth.NewStore()
+	if err != nil {
+		return fmt.Errorf("initializing auth store: %w", err)
+	}
+
+	if err := store.DeleteCredential(opts.Provider); err != nil {
+		return fmt.Errorf("removing credential: %w", err)
+	}
+
+	fmt.Fprintf(opts.Output, "Successfully logged out from %s\n", opts.Provider)
+	return nil
+}
+
+// AuthStatusOptions contains parameters for showing auth status
+type AuthStatusOptions struct {
+	// Output is where to write status messages
+	Output io.Writer
+}
+
+// ProviderStatus represents the authentication status for a provider
+type ProviderStatus struct {
+	Provider string
+	Status   string
+	Error    error
+}
+
+// AuthStatus returns the authentication status for all providers
+func AuthStatus(ctx context.Context, opts AuthStatusOptions) error {
+	store, err := auth.NewStore()
+	if err != nil {
+		return fmt.Errorf("initializing auth store: %w", err)
+	}
+
+	providers, err := store.ListCredentials()
+	if err != nil {
+		return fmt.Errorf("listing credentials: %w", err)
+	}
+
+	if len(providers) == 0 {
+		fmt.Fprintln(opts.Output, "No providers authenticated")
+		fmt.Fprintln(opts.Output)
+		fmt.Fprintln(opts.Output, "To authenticate with Anthropic:")
+		fmt.Fprintln(opts.Output, "  cpe auth login anthropic")
+		return nil
+	}
+
+	fmt.Fprintln(opts.Output, "Authenticated providers:")
+	for _, p := range providers {
+		cred, err := store.GetCredential(p)
+		if err != nil {
+			fmt.Fprintf(opts.Output, "  %s: error reading credential\n", p)
+			continue
+		}
+
+		status := "valid"
+		if cred.IsExpired() {
+			status = "expired (will refresh on next use)"
+		} else if cred.ExpiresAt > 0 {
+			remaining := time.Until(time.Unix(cred.ExpiresAt, 0))
+			status = fmt.Sprintf("valid (expires in %s)", remaining.Round(time.Minute))
+		}
+
+		fmt.Fprintf(opts.Output, "  %s: %s\n", p, status)
+	}
+
 	return nil
 }

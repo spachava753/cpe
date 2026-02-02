@@ -1,0 +1,7 @@
+([]codemode.blockSnapshot) (len=1) {
+  (codemode.blockSnapshot) {
+    ModalityType: (string) (len=5) "image",
+    MimeType: (string) (len=15) "application/pdf",
+    Content: (string) (len=20) "ZmFrZS1wZGYtZGF0YQ=="
+  }
+}

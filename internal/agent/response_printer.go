@@ -7,35 +7,50 @@ import (
 	"strings"
 
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/types"
 )
 
 // ResponsePrinterGenerator is a wrapper around another generator that prints out
 // the response returned from the wrapped generator with styled markdown rendering.
 type ResponsePrinterGenerator struct {
-	wrapped          gai.ToolCapableGenerator
-	contentRenderer  Renderer
-	thinkingRenderer Renderer
-	toolCallRenderer Renderer
+	gai.GeneratorWrapper
+	contentRenderer  types.Renderer
+	thinkingRenderer types.Renderer
+	toolCallRenderer types.Renderer
 	stdout           io.Writer
 	stderr           io.Writer
 }
 
 // NewResponsePrinterGenerator creates a new ResponsePrinterGenerator with the provided renderers and writers.
 func NewResponsePrinterGenerator(
-	wrapped gai.ToolCapableGenerator,
-	contentRenderer Renderer,
-	thinkingRenderer Renderer,
-	toolCallRenderer Renderer,
+	wrapped gai.Generator,
+	contentRenderer types.Renderer,
+	thinkingRenderer types.Renderer,
+	toolCallRenderer types.Renderer,
 	stdout io.Writer,
 	stderr io.Writer,
 ) *ResponsePrinterGenerator {
 	return &ResponsePrinterGenerator{
-		wrapped:          wrapped,
+		GeneratorWrapper: gai.GeneratorWrapper{Inner: wrapped},
 		contentRenderer:  contentRenderer,
 		thinkingRenderer: thinkingRenderer,
 		toolCallRenderer: toolCallRenderer,
 		stdout:           stdout,
 		stderr:           stderr,
+	}
+}
+
+// WithResponsePrinting returns a WrapperFunc for use with gai.Wrap
+func WithResponsePrinting(
+	contentRenderer types.Renderer,
+	thinkingRenderer types.Renderer,
+	toolCallRenderer types.Renderer,
+	stdout io.Writer,
+	stderr io.Writer,
+) gai.WrapperFunc {
+	return func(g gai.Generator) gai.Generator {
+		return NewResponsePrinterGenerator(g, contentRenderer, thinkingRenderer, toolCallRenderer, stdout, stderr)
 	}
 }
 
@@ -87,7 +102,7 @@ type blockContent struct {
 }
 
 func (g *ResponsePrinterGenerator) Generate(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
-	response, err := g.wrapped.Generate(ctx, dialog, options)
+	response, err := g.GeneratorWrapper.Generate(ctx, dialog, options)
 	if err != nil {
 		return gai.Response{}, err
 	}
@@ -140,8 +155,4 @@ func (g *ResponsePrinterGenerator) Generate(ctx context.Context, dialog gai.Dial
 	}
 
 	return response, nil
-}
-
-func (g *ResponsePrinterGenerator) Register(tool gai.Tool) error {
-	return g.wrapped.Register(tool)
 }
