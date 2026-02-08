@@ -1,765 +1,659 @@
-# CPE (Chat-based Programming Editor)
+# CPE – Chat-based Programming Editor
 
-CPE is a powerful command-line tool that enables developers to leverage AI for codebase analysis, modification, and
-software development through natural language interactions in your terminal.
+<p align="center">
+  <strong>A powerful CLI that brings AI directly to your terminal for code analysis, editing, and automation.</strong>
+</p>
 
-## Overview
+<p align="center">
+  <a href="#installation">Installation</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#features">Features</a> •
+  <a href="#configuration">Configuration</a> •
+  <a href="#troubleshooting">Troubleshooting</a>
+</p>
 
-CPE serves as an intelligent agent to assist with day-to-day software development tasks by connecting multiple AI
-models (OpenAI, Anthropic, Google) to your local environment through a simple CLI interface. It helps you analyze
-codebases, make code modifications, debug issues, and perform various programming tasks through natural language
-conversations.
+---
 
-## Features
+CPE connects your local development workflow to multiple AI providers through a single, unified interface. Write natural language prompts, and CPE handles the rest—whether you're analyzing code, making edits, or automating complex tasks.
 
-- **AI-powered code assistance**: Interact with advanced AI models through natural language to analyze and modify code
-- **Codebase understanding**: Process and analyze codebases of any size
-- **File & folder operations**: Create, view, edit, move, and delete files and folders with AI guidance
-- **Shell command execution**: Run bash commands directly through the AI
-- **Multiple AI model support**:
-  - OpenAI models (GPT-4o, GPT-4o Mini, etc.)
-  - Anthropic Claude models (Claude 3.5 Sonnet, Claude 3 Opus, etc.)
-  - Google Gemini models (Gemini 1.5 Pro, Gemini 1.5 Flash, etc.)
-- **Code Mode**: Enable LLMs to generate and execute Go code for complex tool compositions, control flow, and multi-step operations in a single turn
-- **Conversation management**: Save, list, view, and continue previous conversations
-- **Model Context Protocol (MCP)**: Connect to external MCP servers for enhanced functionality
+## ✨ Why CPE?
 
-## Installation
+- **One tool, many models**: Switch between Claude, GPT, Gemini, and more with a simple flag
+- **Tool integration**: Connect to MCP servers for file editing, shell commands, web search, and more
+- **Conversation memory**: Resume previous conversations or branch off in new directions
+- **Code Mode**: Let the AI write and execute Go code to accomplish complex multi-step tasks
+- **Privacy-first**: Your data stays local; incognito mode for sensitive work
 
-### Prerequisites
+## 🚀 Installation
 
-- Go 1.23+
-- API key for at least one supported AI model provider:
-  - OpenAI: https://platform.openai.com/
-  - Anthropic: https://console.anthropic.com/
-  - Google AI (Gemini): https://ai.google.dev/
-
-### Install from source
+### Using Go (recommended)
 
 ```bash
 go install github.com/spachava753/cpe@latest
 ```
 
-### Environment Variables
-
-Configure at least one of these API keys:
+### From source
 
 ```bash
-# Required (at least one)
-export ANTHROPIC_API_KEY="your_anthropic_api_key"
-export OPENAI_API_KEY="your_openai_api_key"
-export GEMINI_API_KEY="your_gemini_api_key"
-
-# Optional
-export CPE_MODEL="claude-3-5-sonnet"  # Default model to use if not specified with --model
-export CPE_CUSTOM_URL="https://your-custom-endpoint.com"  # For custom API endpoints
+git clone https://github.com/spachava753/cpe.git
+cd cpe
+go build -o cpe .
 ```
 
-## Quick Start
+### Shell Completion
 
-### Configuration Setup
+CPE supports shell autocompletion for faster command entry:
 
-CPE requires a configuration file to define available models. Create a `cpe.yaml` file in your current directory or in the platform-specific user configuration directory (e.g., `~/.config/cpe/cpe.yaml` on Linux, `$HOME/Library/Application Support/cpe/cpe.yaml` on macOS, or `%AppData%\cpe\cpe.yaml` on Windows):
+```bash
+# Bash (add to ~/.bashrc)
+source <(cpe completion bash)
+
+# Zsh (add to ~/.zshrc)
+source <(cpe completion zsh)
+
+# Fish
+cpe completion fish | source
+
+# PowerShell
+cpe completion powershell | Out-String | Invoke-Expression
+```
+
+## ⚡ Quick Start
+
+> **Note**: CPE requires a configuration file to define which models and tools to use. There's no zero-config mode—you'll need to set up at least one model before getting started.
+
+### 1. Create a configuration file
+
+Create a `cpe.yaml` in your project directory or in your user config directory:
+- **macOS**: `~/Library/Application Support/cpe/cpe.yaml`
+- **Linux**: `~/.config/cpe/cpe.yaml`
+- **Windows**: `%AppData%\cpe\cpe.yaml`
 
 ```yaml
 version: "1.0"
 
 models:
-  - name: "sonnet"
-    id: "claude-3-5-sonnet-20241022"
-    type: "anthropic"
-    api_key_env: "ANTHROPIC_API_KEY"
+  - ref: sonnet
+    display_name: "Claude Sonnet"
+    id: claude-sonnet-4-5-20250929
+    type: anthropic
+    api_key_env: ANTHROPIC_API_KEY  # You choose the env var name
     context_window: 200000
-    max_output: 8192
+    max_output: 64000
 
 defaults:
-  model: "sonnet"
+  model: sonnet
+  timeout: 5m
 ```
 
-See the [Configuration](#configuration) section for a complete example with multiple models and advanced settings.
+> **Tip**: You can quickly add models from the [models.dev](https://models.dev) registry:
+> ```bash
+> # Add a model from the registry
+> cpe config add anthropic/claude-sonnet-4-20250514 --ref sonnet
+> ```
 
-### Basic Usage
+### 2. Set your API key
 
 ```bash
-# Ask a simple question
-cpe "What is a fibonacci sequence?"
-
-# Start a coding task
-cpe "Create a simple REST API server in Go with one endpoint to return the current time"
-
-# Analyze a specific file
-cpe "Analyze this code and suggest improvements" -i path/to/your/file.js
-
-# Analyze multiple files (either approach works)
-cpe "Check these files for bugs" -i file1.js -i file2.js
-cpe "Check these files for bugs" -i file1.js,file2.js
-
-# Start a new conversation (instead of continuing the last one)
-cpe -n "Let's start a new project"
-
-# Continue a specific conversation by ID
-cpe -c abc123 "Could you explain more about the previous solution?"
+# Use whatever env var name you specified in api_key_env
+export ANTHROPIC_API_KEY="your-api-key"
 ```
 
-### Working with AI tools
-
-CPE provides a set of tools that the AI can use to help you:
-
-- **Codebase analysis**: Understanding your codebase structure
-- **File operations**: Creating, editing, viewing, and deleting files
-- **Folder operations**: Creating, moving, and deleting directories
-- **Shell integration**: Running commands directly in your environment
-- **Multimedia input support**: Process images, audio, and video files with the `-i` flag
-
-Just ask the AI naturally, and it will use the appropriate tools to help you:
+### 3. Start chatting
 
 ```bash
-cpe "Create a basic React component that fetches data from an API"
-cpe "Fix the bug in my app.js file that's causing the navbar to disappear"
-cpe "Write a unit test for the getUserData function in users.js"
-cpe -i screenshot.png "What's wrong with this UI layout?"
-cpe -i audio_recording.mp3 "Transcribe this meeting and summarize the key points"
+# Ask a question
+cpe "Explain what this project does"
+
+# Analyze specific files
+cpe -i main.go -i README.md "What are the main entry points?"
+
+# Use a different model
+cpe -m gpt4 "Help me refactor this function"
 ```
 
-### Combining Multiple Input Sources
+## 🎯 Features
 
-CPE can accept input from multiple sources simultaneously:
+### Multi-Model Support
 
+CPE works with all major AI providers:
+
+| Provider | Type | Example Models |
+|----------|------|----------------|
+| Anthropic | `anthropic` | Claude Opus, Sonnet, Haiku |
+| OpenAI | `openai`, `responses` | GPT-4o, GPT-5, o1 |
+| Google | `gemini` | Gemini Pro, Flash |
+| Groq | `groq` | Llama, Mixtral (fast inference) |
+| Z.AI (ZhipuAI) | `zai` | GLM-4 |
+| Cerebras | `cerebras` | Llama (fast inference) |
+| OpenRouter | `openrouter` or `openai` (with base_url) | Any OpenRouter model |
+
+Switch models on the fly:
 ```bash
-# Combine stdin, file input, and command-line argument
-cat error_log.txt | cpe -i screenshot.png "Debug this error and explain what's happening in the screenshot"
-
-# Process multiple files of different types
-cpe -i api_spec.yaml -i current_implementation.js "Update this code to match the API spec"
-
-# Feed complex text with special characters via a file rather than command line
-cpe -i complex_query.txt "Use this as a reference for the task"
+cpe -m sonnet "Write a test for this function"
+cpe -m flash "Quick question about Go syntax"
 ```
 
-## Conversation Management
+### Conversation Persistence
 
-One of CPE's most powerful features is its sophisticated conversation management system:
-
-### Persistent Conversations
-
-All conversations are automatically saved to a local SQLite database (`.cpeconvo`), allowing you to:
+CPE remembers your conversations, stored locally in `.cpeconvo`:
 
 ```bash
-# Continue your most recent conversation without any special flags
-cpe "Can you explain that last part in more detail?"
+# Continue your last conversation
+cpe "Now add error handling to that code"
 
-# Start a new conversation thread
-cpe -n "I want to start working on a different project"
+# Start fresh
+cpe -n "Let's work on a new feature"
 
-# Continue from a specific conversation by ID
-cpe -c abc123 "Let's continue with the database schema design"
+# Continue from a specific point
+cpe -c abc123 "Actually, let's try a different approach"
 
-# View previous conversations
-cpe conversation list
+# View conversation history (aliases: convo, conv)
+cpe conversation list       # alias: ls
 
-# See the full dialog from a specific conversation
+# Print a specific conversation (aliases: show, view)
 cpe conversation print abc123
+
+# Delete a conversation (aliases: rm, remove)
+cpe conversation delete abc123
+
+# Delete with cascade (removes children too)
+cpe conversation delete abc123 --cascade
 ```
 
-### Conversation Branching
+### Input Files & URLs
 
-You can create branches from any point in your conversation history:
+Feed context directly to CPE:
 
 ```bash
-# Start a new branch from an earlier conversation point
-cpe -c abc123 "What if we used MongoDB instead of PostgreSQL?"
+# Include files
+cpe -i src/main.go -i src/utils.go "Find any bugs"
 
-# This creates a new branch while preserving the original conversation path
+# Include URLs
+cpe -i https://example.com/docs.md "Summarize this documentation"
+
+# Mix files and stdin
+echo "Additional context" | cpe -i config.yaml "Help me configure this"
 ```
 
-### Interruption Recovery
+### MCP Tool Integration
 
-If you interrupt the model during generation (Ctrl+C):
+Connect external tools via the [Model Context Protocol](https://modelcontextprotocol.io/). CPE supports three transport types:
 
-- The partial response and all actions performed up to that point are automatically saved
-- You can continue from that interrupted state without losing context
-- The AI will pick up where it left off
-
-### Privacy Mode
-
-For sensitive or temporary inquiries:
-
-```bash
-# Use incognito mode to prevent saving the conversation
-cpe -G "How do I fix this security vulnerability?"
-```
-
-This powerful conversation system allows you to maintain context across multiple sessions, explore alternative solutions
-through branching, and never lose your work even if interrupted.
-
-## Command Reference
-
-### Main command
-
-```bash
-cpe [flags] "Your prompt here"
-```
-
-#### Common Flags
-
-| Flag                   | Short | Description                                                                                            |
-|------------------------|-------|--------------------------------------------------------------------------------------------------------|
-| `--config`             |       | Path to configuration file (default: ./cpe.yaml or platform-specific user config dir/cpe.yaml)          |
-| `--model`,             | `-m`  | Specify which AI model to use                                                                          |
-| `--temperature`        | `-t`  | Control randomness (0.0-1.0)                                                                           |
-| `--max-tokens`         | `-x`  | Maximum tokens to generate                                                                             |
-| `--input`              | `-i`  | Input file(s) of any type (text, images, audio, video) to process (can be repeated or comma-separated) |
-| `--new`                | `-n`  | Start a new conversation                                                                               |
-| `--continue`           | `-c`  | Continue from specific conversation ID                                                                 |
-| `--incognito`          | `-G`  | Don't save conversation history                                                                        |
-| `--timeout`            |       | Request timeout (default 5m)                                                                           |
-
-#### Advanced Flags
-
-| Flag                    | Description                                 |
-|-------------------------|---------------------------------------------|
-| `--top-p`               | Nucleus sampling parameter (0.0-1.0)        |
-| `--top-k`               | Top-k sampling parameter                    |  
-| `--frequency-penalty`   | Penalize repeated tokens (-2.0-2.0)         |
-| `--presence-penalty`    | Penalize tokens already present (-2.0-2.0)  |
-| `--number-of-responses` | Number of alternative responses to generate |
-| `--thinking-budget`     | Budget for reasoning/thinking capabilities  |
-
-### Model Commands
-
-```bash
-# List all configured models
-cpe model list   # or cpe models list
-
-# View model details
-cpe model info sonnet
-
-# Use custom config file
-cpe --config ./my-config.yaml model list
-```
-
-### Conversation Management
-
-```bash
-# List all conversations
-cpe conversation list
-
-# View a specific conversation
-cpe conversation print <id>
-
-# Delete a specific conversation
-cpe conversation delete <id>
-
-# Delete with all child messages
-cpe conversation delete <id> --cascade
-```
-
-Note: Conversations are stored in a local SQLite database file named `.cpeconvo` in your current working directory. You
-can back up this file or remove it to clear all stored conversations. See
-the [Conversation Management](#conversation-management) section for more details.
-
-### Debug Tools
-
-```bash
-# Get an overview of files in a directory
-cpe tools overview [path]
-
-# Find files related to specific input files
-cpe tools related-files file1.go,file2.go
-
-# Count tokens in code files
-cpe tools token-count [path]
-
-# List all text files in directory
-cpe tools list-files
-```
-
-### MCP Tools
-
-```bash
-# Initialize a new MCP configuration
-cpe mcp init
-
-# List configured MCP servers
-cpe mcp list-servers
-
-# Get information about a specific MCP server
-cpe mcp info <server_name>
-
-# List tools available from an MCP server
-cpe mcp list-tools server_name
-
-# Directly call an MCP tool
-cpe mcp call-tool --server server_name --tool tool_name --args '{"param": "value"}'
-```
-
-## Configuration
-
-CPE uses a unified YAML configuration file that defines models, MCP servers, and default settings. The configuration file is automatically detected from:
-
-1. Path specified with `--config` flag
-2. `./cpe.yaml` or `./cpe.yml` (current directory)
-3. Platform-specific user config directory (e.g., `~/.config/cpe/cpe.yaml` on Linux, `$HOME/Library/Application Support/cpe/cpe.yaml` on macOS, or `%AppData%\\cpe\\cpe.yaml` on Windows)
-
-### Configuration Validation
-
-You can validate your configuration file using the `config lint` command:
-
-```bash
-# Validate default configuration location
-cpe config lint
-
-# Validate specific configuration file
-cpe config lint ./path/to/cpe.yaml
-```
-
-This command checks for configuration errors without executing other operations, making it useful for CI/CD pipelines and development workflows.
-
-### IDE Integration with JSON Schema
-
-CPE provides a JSON Schema (`schema/cpe-config-schema.json`) for IDE autocompletion and validation. To enable schema support in your editor:
-
-**VS Code**: Create `.vscode/settings.json` in your project:
-```json
-{
-  "yaml.schemas": {
-    "https://raw.githubusercontent.com/spachava753/cpe/refs/heads/main/schema/cpe-config-schema.json": ["cpe.yaml", "cpe.yml", "**/cpe.yaml", "**/cpe.yml"]
-  }
-}
-```
-
-**Add to YAML file**: Add this comment at the top of your `cpe.yaml`:
-```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/spachava753/cpe/refs/heads/main/schema/cpe-config-schema.json
-version: "1.0"
-```
-
-**Neovim** (with yaml-language-server): The schema is automatically detected when the file is named `cpe.yaml` or `cpe.yml`.
-
-**IntelliJ/GoLand**: The schema is automatically used when editing `cpe.yaml` files with the YAML plugin enabled.
-
-### Configuration File Format
-
-Create a `cpe.yaml` file with the following structure:
+| Type | Description | Use Case |
+|------|-------------|----------|
+| `stdio` | Local process via stdin/stdout | Local tools, CLIs |
+| `http` | HTTP/HTTPS endpoint | Remote APIs, cloud services |
+| `sse` | Server-Sent Events | Streaming, real-time tools |
 
 ```yaml
-version: "1.0"
-
-# Model definitions
-models:
-  - name: "gpt4"
-    id: "gpt-4"
-    type: "openai"
-    api_key_env: "OPENAI_API_KEY"
-    context_window: 128000
-    max_output: 4096
-    input_cost_per_million: 30
-    output_cost_per_million: 60
-    generationDefaults:
-      temperature: 0.7
-      maxTokens: 2048
-
-  - name: "sonnet"
-    id: "claude-3-5-sonnet-20241022"
-    type: "anthropic"
-    api_key_env: "ANTHROPIC_API_KEY"
-    context_window: 200000
-    max_output: 8192
-    input_cost_per_million: 3
-    output_cost_per_million: 15
-    generationDefaults:
-      temperature: 0.5
-      maxTokens: 8192
-
-# MCP server definitions (optional)
+# cpe.yaml
 mcpServers:
+  # Local tool via stdio
   editor:
-    command: "mcp-server-editor"
+    command: "editor-mcp"
     type: stdio
     timeout: 60
-    toolFilter: whitelist
     enabledTools:
       - text_edit
       - shell
 
-# Global defaults (optional)
-defaults:
-  model: "sonnet"
-  systemPromptPath: "./custom-prompt.txt"
-  timeout: "5m"
-  codeMode:
-    enabled: true
-    excludedTools:
-      - multimedia_tool
-  generationParams:
-    temperature: 0.7
-    maxTokens: 4096
+  # Remote tool via HTTP
+  search:
+    url: "https://search.example.com/mcp"
+    type: http
+    headers:
+      Authorization: "Bearer ${API_KEY}"
+
+  # SSE-based server
+  streaming:
+    url: "https://streaming.example.com/sse"
+    type: sse
+    headers:
+      X-API-Key: "${MCP_API_KEY}"
 ```
 
-### Model Configuration
+**Tool Filtering**: Control which tools are exposed to the AI:
+- `enabledTools`: Whitelist—only these tools are available
+- `disabledTools`: Blacklist—all tools except these are available
 
-Each model requires:
-- `name`: Unique identifier used with `-m` flag
-- `id`: Model ID used by the provider
-- `type`: Provider type (`openai`, `anthropic`, `gemini`, `groq`, `cerebras`, `responses`)
-- `api_key_env`: Environment variable containing the API key
-- `context_window`: Maximum context size
-- `max_output`: Maximum output tokens
+Now the AI can edit files, run commands, and search the web!
 
-Optional per-model settings:
-- `generationDefaults`: Default generation parameters for this model
-  - `temperature`, `topP`, `topK`, `maxTokens`, etc.
-- `patchRequest`: Modify HTTP requests sent to model providers
-  - `jsonPatch`: Array of JSON Patch operations to apply to request bodies
-  - `includeHeaders`: Map of additional HTTP headers to include
+#### Debugging MCP Integrations
 
-### Request Patching
-
-CPE supports patching HTTP requests sent to model providers, allowing you to customize API calls for providers with specific format requirements or to add custom fields. This is useful when working with proxy services like OpenRouter or custom model endpoints.
-
-#### Configuration
-
-Add `patchRequest` to any model definition:
-
-```yaml
-models:
-  - name: custom-model
-    id: provider/model-id
-    type: openai
-    base_url: https://openrouter.ai/api/v1/
-    api_key_env: OPENROUTER_API_KEY
-    context_window: 200000
-    max_output: 16384
-    patchRequest:
-      # JSON Patch operations (RFC 6902)
-      jsonPatch:
-        - op: add
-          path: /custom_field
-          value: custom_value
-        - op: replace
-          path: /max_tokens
-          value: 8192
-      # Additional HTTP headers
-      includeHeaders:
-        HTTP-Referer: https://my-app.example.com
-        X-Title: My AI App
-```
-
-#### Supported JSON Patch Operations
-
-- `add`: Add a field to the request body
-- `remove`: Remove a field from the request body
-- `replace`: Replace an existing field value
-- `move`: Move a value from one location to another
-- `copy`: Copy a value from one location to another
-- `test`: Test that a value matches (validation)
-
-#### Use Cases
-
-1. **Custom provider parameters:**
-   ```yaml
-   patchRequest:
-     jsonPatch:
-       - op: add
-         path: /provider_specific_param
-         value: some_value
-   ```
-
-2. **Provider identification headers (e.g., OpenRouter):**
-   ```yaml
-   patchRequest:
-     includeHeaders:
-       HTTP-Referer: https://myapp.com
-       X-Title: My Application
-   ```
-
-3. **Override default values:**
-   ```yaml
-   patchRequest:
-     jsonPatch:
-       - op: replace
-         path: /temperature
-         value: 0.9
-   ```
-
-### Parameter Precedence
-
-Generation parameters are merged with this priority (highest to lowest):
-1. CLI flags (e.g., `--temperature 0.9`)
-2. Model-specific defaults (`generationDefaults` in config)
-3. Global defaults (`defaults.generationParams` in config)
-4. Built-in defaults
-
-### Example Configuration
-
-See `examples/cpe.yaml` for a complete example with all supported models and MCP servers.
-
-### Using the Configuration
+CPE provides commands to help debug MCP server connections:
 
 ```bash
-# Use default config location (./cpe.yaml or ~/.config/cpe/cpe.yaml)
-cpe -m sonnet "Your prompt"
+# List all configured MCP servers (alias: ls-servers)
+cpe mcp list-servers
 
-# Specify explicit config file
-cpe --config ./my-config.yaml -m gpt4 "Your prompt"
+# List tools available from a specific server (alias: ls-tools)
+cpe mcp list-tools editor
 
-# List models from config
-cpe model list
+# Show all tools including filtered ones
+cpe mcp list-tools editor --show-all
 
-# View model details
-cpe model info sonnet
+# Show only filtered-out tools
+cpe mcp list-tools editor --show-filtered
+
+# Get detailed info about a server
+cpe mcp info editor
+
+# Call a tool directly for testing
+cpe mcp call-tool --server editor --tool text_edit --args '{"path": "test.txt", "text": "hello"}'
+
+# View the execute_go_code tool description (for code mode)
+cpe mcp code-desc
 ```
-
-## Customization
-
-### Customizing CPE
-
-#### .cpeignore
-
-Create a `.cpeignore` file to exclude certain paths from code analysis. It supports all standard Git-ignore syntax
-including globs, negation with `!`, and comments:
-
-```
-# Ignore build artifacts
-node_modules/
-*.log
-build/
-dist/
-
-# But don't ignore specific files
-!build/important.js
-
-# Ignore big data files
-**/*.csv
-**/*.json
-```
-
-#### Custom System Prompt
-
-You can customize the AI's system instructions with a template file. This is a Go template that will be filled with data
-from the environment where CPE is executed:
-
-```bash
-cpe -s path/to/custom_system_prompt.txt "Your prompt"
-```
-
-You can set a global `systemPromptPath` in `defaults` and optionally override it per model (
-`models[n].systemPromptPath`). The path resolution order is:
-
-1. `--system-prompt-file` CLI flag
-2. Model-level `systemPromptPath`
-3. Global `defaults.systemPromptPath`
-
-Each prompt file supports Go template syntax, allowing you to include dynamic information. For example:
-
-```
-You are an AI assistant helping with a codebase.
-Current working directory: {{.WorkingDirectory}}
-Git branch: {{.GitBranch}}
-User: {{.Username}}
-Operating System: {{.OperatingSystem}}
-```
-
-This allows you to create contextual system prompts that adapt to the current environment.
-
-### MCP Servers
-
-Model Context Protocol (MCP) servers are configured in the unified configuration file under the `mcpServers` section. See the [Configuration](#configuration) section above for details on configuring MCP servers in your `cpe.yaml` file.
 
 ### Code Mode
 
-Code Mode is an advanced feature that allows LLMs to generate and execute Go code to interact with MCP tools. Instead of making discrete tool calls, the LLM writes complete Go programs that can:
-
-- **Compose multiple tools** in a single execution without round-trips
-- **Use control flow** like loops and conditionals for complex logic
-- **Process data** using Go's standard library (file I/O, JSON, strings, etc.)
-- **Handle errors** with proper Go error handling patterns
-
-#### Enabling Code Mode
-
-Add code mode configuration to your `cpe.yaml`:
+Code Mode lets the AI write and execute Go code to accomplish complex tasks in a single step:
 
 ```yaml
 defaults:
   codeMode:
     enabled: true
-    excludedTools:
-      - multimedia_tool  # Exclude tools returning images/videos
-      - stateful_tool    # Exclude tools that maintain state
-
-models:
-  - ref: sonnet
-    # Inherits defaults.codeMode
-  
-  - ref: small-model
-    # Override for this model only
-    codeMode:
-      enabled: true
-      excludedTools:
-        - expensive_tool
 ```
 
-#### How It Works
+With Code Mode, the AI can:
+- Chain multiple tool calls together
+- Use loops and conditionals
+- Process data in parallel
+- Access Go's standard library
 
-When code mode is enabled, CPE exposes a special `execute_go_code` tool that:
-1. Accepts complete Go source code from the LLM
-2. Compiles it with MCP tools exposed as strongly-typed functions
-3. Executes it in a temporary sandbox with configurable timeout
-4. Returns the output (stdout/stderr) to the LLM
+Example: "Find all TODO comments, group them by file, and create a summary report" becomes a single Go program that the AI writes and CPE executes.
 
-Example LLM-generated code:
-```go
-package main
+### OAuth Authentication
 
-import (
-    "context"
-    "fmt"
-)
+Use your Claude Pro/Max subscription directly:
 
-func Run(ctx context.Context) error {
-    weather, err := GetWeather(ctx, GetWeatherInput{
-        City: "Seattle",
-        Unit: "fahrenheit",
-    })
-    if err != nil {
-        return err
-    }
-    
-    fmt.Printf("Temperature in Seattle: %.0f°F\n", weather.Temperature)
-    return nil
-}
+```bash
+# Authenticate with Anthropic
+cpe auth login anthropic
+
+# Check status
+cpe auth status
+
+# Refresh OAuth tokens
+cpe auth refresh anthropic
+
+# Logout
+cpe auth logout anthropic
 ```
 
-#### When to Use Code Mode
+### Request Patching
 
-**Enable code mode when:**
-- You have multiple related tools that need to be composed
-- Your tasks involve loops, conditionals, or complex data processing
-- You want to reduce latency from multiple LLM round-trips
-- You need file I/O or standard library functionality
-
-**Exclude tools from code mode when:**
-- They return multimedia content (images, video, audio)
-- They maintain state across calls (session-based tools)
-- They're built-in tools that models are specifically trained to use
-
-#### Security Considerations
-
-Generated code runs with the same permissions as the CPE process. For production use, consider:
-- Running CPE in a containerized or sandboxed environment
-- Using restricted file permissions
-- Setting conservative execution timeouts
-- Carefully configuring which tools are exposed
-
-### MCP Server Mode
-
-MCP Server Mode allows CPE to be exposed as an MCP server, enabling composition of AI agents as tools within other MCP-compliant environments. This is useful for:
-
-- **Context management**: Subagents work with shorter context windows, improving quality
-- **Parallel execution**: Multiple subagents can run concurrently via code mode
-- **Task specialization**: Different subagents for different workflows (testing, reviewing, etc.)
-
-#### Creating a Subagent
-
-Create a dedicated config file for your subagent:
+For advanced use cases, you can patch API requests with custom headers or JSON modifications. This is useful for:
+- OpenRouter's required `HTTP-Referer` header
+- Custom authentication schemes
+- Adding provider-specific metadata
 
 ```yaml
-# review_agent.cpe.yaml
+models:
+  - ref: qwen
+    id: qwen/qwen3-max
+    type: openai
+    base_url: https://openrouter.ai/api/v1/
+    api_key_env: OPENROUTER_API_KEY
+    patchRequest:
+      includeHeaders:
+        HTTP-Referer: https://my-app.example.com
+        X-Title: My AI App
+      # Optional: JSON Patch operations
+      # jsonPatch:
+      #   - op: add
+      #     path: /custom_field
+      #     value: custom_value
+```
+
+## ⚙️ Configuration
+
+### Configuration File Locations
+
+CPE searches for configuration in this order:
+1. `--config` flag (explicit path)
+2. `./cpe.yaml` (current directory)
+3. User config directory:
+   - **macOS**: `~/Library/Application Support/cpe/cpe.yaml`
+   - **Linux**: `~/.config/cpe/cpe.yaml`
+   - **Windows**: `%AppData%\cpe\cpe.yaml`
+
+### Full Configuration Example
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/spachava753/cpe/refs/heads/main/schema/cpe-config-schema.json
 version: "1.0"
 
+# MCP servers for tool access
+mcpServers:
+  editor:
+    command: "editor-mcp"
+    type: stdio
+    timeout: 60
+    enabledTools:
+      - text_edit
+      - shell
+
+# Define your models
 models:
-  - ref: opus
-    display_name: "Claude Opus"
-    id: claude-opus-4-20250514
+  - ref: sonnet
+    display_name: "Claude Sonnet"
+    id: claude-sonnet-4-5-20250929
     type: anthropic
     api_key_env: ANTHROPIC_API_KEY
+    context_window: 200000
+    max_output: 64000
+    input_cost_per_million: 3
+    output_cost_per_million: 15
 
-subagent:
-  name: review_changes
-  description: Review a diff and return prioritized feedback.
-  outputSchemaPath: ./schemas/review.json  # optional, for structured output
+  - ref: flash
+    display_name: "Gemini Flash"
+    id: gemini-flash-latest
+    type: gemini
+    api_key_env: GEMINI_API_KEY
+    context_window: 1048576
+    max_output: 65536
 
+  - ref: gpt4
+    display_name: "GPT-4o"
+    id: gpt-4o
+    type: openai
+    api_key_env: OPENAI_API_KEY
+
+  - ref: glm
+    display_name: "Z.AI GLM-4"
+    id: glm-4
+    type: zai
+    api_key_env: Z_API_KEY
+    context_window: 128000
+    max_output: 4096
+
+# Global defaults
 defaults:
-  model: opus
-  systemPromptPath: ./prompts/review.prompt
+  model: sonnet
+  systemPromptPath: "./prompts/agent.md"
+  timeout: 5m
+  codeMode:
+    enabled: true
+  # Generation parameters control LLM behavior
+  generationParams:
+    temperature: 0.7      # Controls randomness (0.0 = deterministic, 1.0 = creative)
+    # topP: 0.9           # Nucleus sampling threshold
+    # topK: 40            # Top-k sampling parameter
+    # frequencyPenalty: 0 # Penalize repeated tokens (-2.0 to 2.0)
+    # presencePenalty: 0  # Penalize tokens already in context (-2.0 to 2.0)
 ```
 
-#### Running the Server
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `CPE_MODEL` | Default model to use (overridden by `-m` flag) |
+| `CPE_VERBOSE_SUBAGENT` | Show detailed subagent output |
+
+> **Note**: API keys are configured per-model via the `api_key_env` field. You choose the environment variable name—there are no hardcoded defaults. For example, you could use `MY_ANTHROPIC_KEY`, `OPENAI_API_KEY`, or any name you prefer.
+
+### Model Management
 
 ```bash
-cpe mcp serve --config ./review_agent.cpe.yaml
+# List configured models (aliases: models, ls)
+cpe model list
+
+# Show model details
+cpe model info sonnet
+
+# View the rendered system prompt for a model (uses -m flag)
+cpe model system-prompt -m sonnet
+
+# Add a model from models.dev registry
+cpe config add anthropic/claude-sonnet-4-20250514
+
+# Add with custom ref
+cpe config add anthropic/claude-sonnet-4-20250514 --ref claude
+
+# Remove a model
+cpe config remove claude
 ```
 
-#### Using from a Parent Agent
+## 📚 Examples
 
-Configure the subagent as an MCP server in your parent config:
-
-```yaml
-# parent.cpe.yaml
-mcpServers:
-  reviewer:
-    command: cpe
-    args: ["mcp", "serve", "--config", "./review_agent.cpe.yaml"]
-    type: stdio
-```
-
-The parent can then invoke the `review_changes` tool with a prompt:
-
-```json
-{
-  "prompt": "Review this diff for potential issues",
-  "inputs": ["changes.diff"]
-}
-```
-
-#### Subagent Configuration
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `name` | Yes | Tool name exposed to the parent agent |
-| `description` | Yes | Tool description shown to the parent agent |
-| `outputSchemaPath` | No | Path to JSON schema for structured output |
-
-Subagents inherit the server's CWD and environment. They can use code mode and MCP servers defined in the config.
-
-See [docs/specs/mcp_server_mode.md](docs/specs/mcp_server_mode.md) for the complete specification.
-
-
-## Examples
-
-### Code Creation
+### Code Review
 
 ```bash
-cpe "Create a Python script that reads a CSV file, calculates statistics, and generates a report"
+cpe -i main.go -i utils.go "Review this code for potential bugs and suggest improvements"
 ```
 
-### Code Improvement
+### Refactoring
 
 ```bash
-cpe -i path/to/slow_function.js "This function is slow. Can you optimize it?"
+cpe -i legacy_module.py "Refactor this to use modern Python patterns. Update the file directly."
 ```
 
-### Project Setup
+### Documentation
 
 ```bash
-cpe "Set up a new TypeScript project with Express and MongoDB integration"
+cpe -i api.go -i handlers.go "Generate comprehensive documentation for all public functions"
 ```
 
 ### Debugging
 
 ```bash
-cpe "I'm getting this error when running my app: [error message]. What might be causing it?"
+cpe -i error.log -i src/handler.go "Why is this error happening? Suggest a fix."
 ```
 
-## Known Limitations
+### Quick Tasks
 
-- Very large codebases might exceed token limits
-- Some complex refactoring operations may require multiple steps
-- File overview tool may omit some code details to stay within token limits
-- Code analysis primarily supports common languages (Go, JavaScript/TypeScript, Python, Java) using Tree-sitter parsers
-- Specialized or less common languages may have limited analysis capabilities
-- Performance varies based on the selected AI model
+```bash
+# Generate a .gitignore
+cpe "Create a .gitignore for a Go project"
 
-## License
+# Explain code
+cpe -i complex_algorithm.go "Explain what this does step by step"
 
-MIT
+# Convert formats
+echo '{"name": "test"}' | cpe "Convert this JSON to YAML"
+```
+
+## 🧩 Skills System
+
+CPE can be extended with **skills**—reusable, composable capabilities that provide specialized knowledge and workflows.
+
+### What Are Skills?
+
+A skill is a directory containing a `SKILL.md` file with YAML frontmatter (name and description) followed by instructions, examples, or reference material. Skills are discovered and rendered into the system prompt.
+
+### Configuring Skills
+
+Skills locations are **user-defined** in your system prompt template using the `{{ skills }}` function. There are no hardcoded defaults—you specify exactly which directories to scan:
+
+```markdown
+<!-- In your agent_instructions.md template -->
+{{ skills "./skills" "~/my-custom-skills" "/shared/team-skills" }}
+```
+
+The `skills` function:
+- Accepts any number of directory paths
+- Scans each for subdirectories containing `SKILL.md`
+- Renders skill metadata (name, description, path) into the prompt
+
+### Example Skill Structure
+
+```
+skills/
+└── github-issue/
+    └── SKILL.md
+```
+
+```markdown
+---
+name: github-issue
+description: Create and manage GitHub issues with proper templates
+---
+
+# GitHub Issue Skill
+
+Instructions for creating well-formatted GitHub issues...
+```
+
+### Creating Your Own Skills
+
+Create a directory with a `SKILL.md` file anywhere you like, then reference that path in your system prompt template:
+
+```markdown
+{{ skills "./my-project-skills" "~/my-global-skills" }}
+```
+
+For examples of well-structured skills, see the `skills/` directory in the CPE repository—these are skills used for CPE's own development but serve as good templates for creating your own.
+
+## 🔧 CLI Reference
+
+```
+cpe [flags] [prompt]
+
+Core Flags:
+  -m, --model string           Specify the model to use
+  -i, --input strings          Input files or URLs to process
+  -n, --new                    Start a new conversation
+  -c, --continue string        Continue from a specific conversation ID
+  -G, --incognito              Don't save conversation to storage
+      --config string          Path to configuration file
+      --skip-stdin             Skip reading from stdin
+  -v, --version                Print version and exit
+
+Generation Parameters:
+  -t, --temperature float      Sampling temperature (0.0 - 1.0)
+  -x, --max-tokens int         Maximum tokens to generate
+  -b, --thinking-budget string Budget for reasoning capabilities
+      --top-p float            Nucleus sampling parameter (0.0 - 1.0)
+      --top-k uint             Top-k sampling parameter
+      --frequency-penalty float Frequency penalty (-2.0 - 2.0)
+      --presence-penalty float  Presence penalty (-2.0 - 2.0)
+      --number-of-responses uint Number of responses to generate
+      --timeout string         Request timeout (e.g., '5m', '30s')
+
+Advanced:
+      --custom-url string      Custom base URL for the model provider API
+      --verbose-subagent       Show verbose subagent output including full tool payloads
+
+Commands:
+  auth          Manage OAuth authentication (login, logout, status, refresh)
+  config        Manage configuration (add, remove models)
+  conversation  Manage conversation history [aliases: convo, conv]
+                ├─ list    List conversations [alias: ls]
+                ├─ print   Print a conversation [aliases: show, view]
+                └─ delete  Delete conversations [aliases: rm, remove]
+  model         List and inspect models [alias: models]
+                ├─ list          List models [alias: ls]
+                ├─ info          Show model details
+                └─ system-prompt Show rendered system prompt
+  mcp           MCP tools
+                ├─ serve        Run CPE as MCP server
+                ├─ list-servers List servers [alias: ls-servers]
+                ├─ list-tools   List tools [alias: ls-tools]
+                ├─ call-tool    Call a tool
+                ├─ info         Server info
+                └─ code-desc    Show code mode description
+  completion    Generate shell autocompletion scripts (bash, zsh, fish, powershell)
+```
+
+## 🤖 Subagent Mode
+
+CPE can run as an MCP server, enabling powerful agent composition patterns:
+
+```yaml
+# subagent.yaml
+version: "1.0"
+
+subagent:
+  name: "code_reviewer"
+  description: "Reviews code and provides detailed feedback"
+
+models:
+  - ref: sonnet
+    id: claude-sonnet-4-5-20250929
+    type: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+
+defaults:
+  model: sonnet
+  systemPromptPath: ./reviewer_prompt.md
+```
+
+Run the subagent:
+```bash
+cpe mcp serve --config ./subagent.yaml
+```
+
+Use it from a parent CPE instance:
+```yaml
+mcpServers:
+  code_reviewer:
+    command: cpe
+    args: ["mcp", "serve", "--config", "./subagent.yaml"]
+    type: stdio
+```
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+**"API key missing: ANTHROPIC_API_KEY not set"**
+- Ensure the environment variable specified in `api_key_env` is exported in your shell
+- Check for typos in the variable name in both your shell and `cpe.yaml`
+- For OAuth authentication, run `cpe auth login anthropic` instead of using API keys
+
+**"no configuration file found"**
+- Create a `cpe.yaml` in the current directory or your user config directory (see [Configuration File Locations](#configuration-file-locations))
+- Use `--config /path/to/cpe.yaml` to specify an explicit path
+
+**"model not found: xyz"**
+- Run `cpe model list` to see available models
+- Check that the `ref` in your `cpe.yaml` matches what you're requesting with `-m`
+
+**MCP server fails to start**
+- Check that the command exists and is executable
+- For stdio servers, ensure the `command` path is correct
+- Use `cpe mcp list-tools <server>` to debug tool availability
+- Check server logs with `cpe mcp info <server>`
+
+**"context length exceeded"**
+- Use fewer input files or truncate large files
+- Check `context_window` in your model config matches the provider's limits
+- Start a new conversation with `-n` to clear history
+
+**Timeout errors**
+- Increase `timeout` in `defaults` or use `--timeout 10m`
+- For MCP servers, adjust the per-server `timeout` value
+
+### Debug Tips
+
+```bash
+# Check which model is being used
+cpe model info <ref>
+
+# View the system prompt being sent (uses -m flag for model selection)
+cpe model system-prompt -m <ref>
+
+# Test MCP server connectivity
+cpe mcp list-tools <server-name>
+
+# Enable verbose output for subagents
+cpe --verbose-subagent "your prompt"
+```
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+See [AGENTS.md](./AGENTS.md) for detailed development guidelines, code style, and testing practices.
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).
