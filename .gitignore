@@ -25,6 +25,9 @@
 !LICENSE
 !AGENTS.md
 
+!skills/
+!skills/**
+
 !*.prompt
 
 !examples/
