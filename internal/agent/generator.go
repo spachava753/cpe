@@ -287,12 +287,28 @@ func NewGenerator(
 		wrappers = append(wrappers, WithResponsePrinting(renderers.Content, renderers.Thinking, renderers.ToolCall, os.Stdout, os.Stderr))
 	}
 
-	// Add block filter based on model type:
-	// For Anthropic: keep Anthropic thinking blocks but filter out thinking blocks from other providers
-	// For other providers: filter all thinking blocks, keep only content and tool calls
-	if strings.ToLower(cfg.Model.Type) == "anthropic" {
+	// Add thinking block filter based on model type.
+	// Each provider keeps thinking blocks from its own generator type, filtering out
+	// thinking blocks from other providers. This enables cross-model conversation resumption
+	// while preserving thinking context when switching back to earlier used models.
+	switch strings.ToLower(cfg.Model.Type) {
+	case "anthropic":
 		wrappers = append(wrappers, WithAnthropicThinkingFilter())
-	} else {
+	case "gemini":
+		wrappers = append(wrappers, WithGeminiThinkingFilter())
+	case "openrouter":
+		wrappers = append(wrappers, WithOpenRouterThinkingFilter())
+	case "responses":
+		wrappers = append(wrappers, WithResponsesThinkingFilter())
+	case "cerebras":
+		wrappers = append(wrappers, WithCerebrasThinkingFilter())
+	case "zai":
+		wrappers = append(wrappers, WithZaiThinkingFilter())
+	case "openai":
+		// OpenAI (non-responses) doesn't produce thinking blocks, filter all
+		wrappers = append(wrappers, WithBlockWhitelist([]string{gai.Content, gai.ToolCall}))
+	default:
+		// For unknown providers, filter all thinking blocks
 		wrappers = append(wrappers, WithBlockWhitelist([]string{gai.Content, gai.ToolCall}))
 	}
 

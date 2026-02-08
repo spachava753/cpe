@@ -1,0 +1,54 @@
+(gai.Dialog) (len=3) {
+  (gai.Message) {
+    Role: (gai.Role) assistant,
+    Blocks: ([]gai.Block) (len=1) {
+      (gai.Block) {
+        ID: (string) "",
+        BlockType: (string) (len=7) "content",
+        ModalityType: (gai.Modality) text,
+        MimeType: (string) "",
+        Content: (gai.Str) (len=15) gemini response,
+        ExtraFields: (map[string]interface {}) <nil>
+      }
+    },
+    ToolResultError: (bool) false
+  },
+  (gai.Message) {
+    Role: (gai.Role) user,
+    Blocks: ([]gai.Block) (len=1) {
+      (gai.Block) {
+        ID: (string) "",
+        BlockType: (string) (len=7) "content",
+        ModalityType: (gai.Modality) text,
+        MimeType: (string) "",
+        Content: (gai.Str) (len=12) user message,
+        ExtraFields: (map[string]interface {}) <nil>
+      }
+    },
+    ToolResultError: (bool) false
+  },
+  (gai.Message) {
+    Role: (gai.Role) assistant,
+    Blocks: ([]gai.Block) (len=2) {
+      (gai.Block) {
+        ID: (string) "",
+        BlockType: (string) (len=8) "thinking",
+        ModalityType: (gai.Modality) text,
+        MimeType: (string) "",
+        Content: (gai.Str) (len=18) anthropic thinking,
+        ExtraFields: (map[string]interface {}) (len=1) {
+          (string) (len=18) "thinking_generator": (string) (len=9) "anthropic"
+        }
+      },
+      (gai.Block) {
+        ID: (string) "",
+        BlockType: (string) (len=7) "content",
+        ModalityType: (gai.Modality) text,
+        MimeType: (string) "",
+        Content: (gai.Str) (len=18) anthropic response,
+        ExtraFields: (map[string]interface {}) <nil>
+      }
+    },
+    ToolResultError: (bool) false
+  }
+}

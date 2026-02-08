@@ -7,9 +7,9 @@
         BlockType: (string) (len=8) "thinking",
         ModalityType: (gai.Modality) text,
         MimeType: (string) "",
-        Content: (gai.Str) (len=11) thinking...,
+        Content: (gai.Str) (len=28) openai responses thinking...,
         ExtraFields: (map[string]interface {}) (len=1) {
-          (string) (len=28) "anthropic_thinking_signature": (string) (len=6) "sig123"
+          (string) (len=18) "thinking_generator": (string) (len=9) "responses"
         }
       },
       (gai.Block) {

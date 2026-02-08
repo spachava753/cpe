@@ -1,0 +1,26 @@
+(gai.Dialog) (len=1) {
+  (gai.Message) {
+    Role: (gai.Role) assistant,
+    Blocks: ([]gai.Block) (len=2) {
+      (gai.Block) {
+        ID: (string) "",
+        BlockType: (string) (len=8) "thinking",
+        ModalityType: (gai.Modality) text,
+        MimeType: (string) "",
+        Content: (gai.Str) (len=21) anthropic thinking...,
+        ExtraFields: (map[string]interface {}) (len=1) {
+          (string) (len=18) "thinking_generator": (string) (len=9) "anthropic"
+        }
+      },
+      (gai.Block) {
+        ID: (string) "",
+        BlockType: (string) (len=7) "content",
+        ModalityType: (gai.Modality) text,
+        MimeType: (string) "",
+        Content: (gai.Str) (len=8) response,
+        ExtraFields: (map[string]interface {}) <nil>
+      }
+    },
+    ToolResultError: (bool) false
+  }
+}
