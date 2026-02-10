@@ -11,7 +11,8 @@
         ExtraFields: (map[string]interface {}) <nil>
       }
     },
-    ToolResultError: (bool) false
+    ToolResultError: (bool) false,
+    ExtraFields: (map[string]interface {}) <nil>
   },
   (gai.Message) {
     Role: (gai.Role) assistant,
@@ -25,7 +26,8 @@
         ExtraFields: (map[string]interface {}) <nil>
       }
     },
-    ToolResultError: (bool) false
+    ToolResultError: (bool) false,
+    ExtraFields: (map[string]interface {}) <nil>
   },
   (gai.Message) {
     Role: (gai.Role) user,
@@ -39,7 +41,8 @@
         ExtraFields: (map[string]interface {}) <nil>
       }
     },
-    ToolResultError: (bool) false
+    ToolResultError: (bool) false,
+    ExtraFields: (map[string]interface {}) <nil>
   }
 }
 (gai.Dialog) (len=3) {
@@ -55,7 +58,8 @@
         ExtraFields: (map[string]interface {}) <nil>
       }
     },
-    ToolResultError: (bool) false
+    ToolResultError: (bool) false,
+    ExtraFields: (map[string]interface {}) <nil>
   },
   (gai.Message) {
     Role: (gai.Role) assistant,
@@ -69,7 +73,8 @@
         ExtraFields: (map[string]interface {}) <nil>
       }
     },
-    ToolResultError: (bool) false
+    ToolResultError: (bool) false,
+    ExtraFields: (map[string]interface {}) <nil>
   },
   (gai.Message) {
     Role: (gai.Role) user,
@@ -83,6 +88,7 @@
         ExtraFields: (map[string]interface {}) <nil>
       }
     },
-    ToolResultError: (bool) false
+    ToolResultError: (bool) false,
+    ExtraFields: (map[string]interface {}) <nil>
   }
 }

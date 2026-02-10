@@ -189,6 +189,7 @@ type generatorOptions struct {
 	callbackWrapper ToolCallbackWrapper
 	middleware      []gai.WrapperFunc
 	baseGenerator   gai.ToolCapableGenerator
+	dialogSaver     types.DialogSaver
 }
 
 // GeneratorOption is a functional option for configuring generator creation.
@@ -224,6 +225,15 @@ func WithMiddleware(m ...gai.WrapperFunc) GeneratorOption {
 func WithBaseGenerator(g gai.ToolCapableGenerator) GeneratorOption {
 	return func(o *generatorOptions) {
 		o.baseGenerator = g
+	}
+}
+
+// WithDialogSaver enables incremental dialog saving via the SavingMiddleware.
+// When provided, messages are saved as they flow through the generation pipeline.
+// If not provided (nil), no saving occurs (incognito mode).
+func WithDialogSaver(storage types.DialogSaver) GeneratorOption {
+	return func(o *generatorOptions) {
+		o.dialogSaver = storage
 	}
 }
 
@@ -310,6 +320,18 @@ func NewGenerator(
 	default:
 		// For unknown providers, filter all thinking blocks
 		wrappers = append(wrappers, WithBlockWhitelist([]string{gai.Content, gai.ToolCall}))
+	}
+
+	// Add saving middleware if storage is provided.
+	// Saving must be OUTSIDE Retry so that messages are saved once, not on each retry attempt.
+	// 
+	// Wrapper ordering (gai.Wrap applies in reverse, so later = inner):
+	// - ResponsePrinting (outer): prints response WITH ID after Saving sets it
+	// - Saving: BEFORE saves new messages; AFTER saves response, sets ID
+	// - Retry: retries transient failures (inside Saving, so saves happen once)
+	// - ToolResultPrinting (inner): prints tool results WITH ID
+	if o.dialogSaver != nil {
+		wrappers = append(wrappers, WithSaving(o.dialogSaver))
 	}
 
 	wrappers = append(wrappers, gai.WithRetry(b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute)))

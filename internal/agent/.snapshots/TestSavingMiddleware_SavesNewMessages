@@ -1,0 +1,38 @@
+([]agent.savedMessage) (len=2) {
+  (agent.savedMessage) {
+    message: (gai.Message) {
+      Role: (gai.Role) user,
+      Blocks: ([]gai.Block) (len=1) {
+        (gai.Block) {
+          ID: (string) "",
+          BlockType: (string) (len=7) "content",
+          ModalityType: (gai.Modality) text,
+          MimeType: (string) "",
+          Content: (gai.Str) (len=8) Hi there,
+          ExtraFields: (map[string]interface {}) <nil>
+        }
+      },
+      ToolResultError: (bool) false,
+      ExtraFields: (map[string]interface {}) <nil>
+    },
+    parentID: (string) ""
+  },
+  (agent.savedMessage) {
+    message: (gai.Message) {
+      Role: (gai.Role) assistant,
+      Blocks: ([]gai.Block) (len=1) {
+        (gai.Block) {
+          ID: (string) "",
+          BlockType: (string) (len=7) "content",
+          ModalityType: (gai.Modality) text,
+          MimeType: (string) "",
+          Content: (gai.Str) (len=6) Hello!,
+          ExtraFields: (map[string]interface {}) <nil>
+        }
+      },
+      ToolResultError: (bool) false,
+      ExtraFields: (map[string]interface {}) <nil>
+    },
+    parentID: (string) (len=5) "msg-1"
+  }
+}

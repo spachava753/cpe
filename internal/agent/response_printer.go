@@ -154,5 +154,13 @@ func (g *ResponsePrinterGenerator) Generate(ctx context.Context, dialog gai.Dial
 		fmt.Fprint(writer, block.content)
 	}
 
+	// Print message ID if available (format matches token usage printer style)
+	if len(response.Candidates) > 0 {
+		if messageID := GetMessageID(response.Candidates[0]); messageID != "" {
+			idMsg, _ := g.contentRenderer.Render(fmt.Sprintf("> message_id: `%s`", messageID))
+			fmt.Fprint(g.stderr, idMsg)
+		}
+	}
+
 	return response, nil
 }

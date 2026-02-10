@@ -10,16 +10,37 @@ import (
 	"github.com/spachava753/gai"
 )
 
-// mockDialogStorage is a test implementation of DialogStorage
+// mockDialogLoader is a test implementation of DialogLoader
+type mockDialogLoader struct {
+	mostRecentID  string
+	mostRecentErr error
+	dialog        gai.Dialog
+	msgIDList     []string
+	getDialogErr  error
+}
+
+func (m *mockDialogLoader) GetMostRecentAssistantMessageId(ctx context.Context) (string, error) {
+	if m.mostRecentErr != nil {
+		return "", m.mostRecentErr
+	}
+	return m.mostRecentID, nil
+}
+
+func (m *mockDialogLoader) GetDialogForMessage(ctx context.Context, messageID string) (gai.Dialog, []string, error) {
+	if m.getDialogErr != nil {
+		return nil, nil, m.getDialogErr
+	}
+	return m.dialog, m.msgIDList, nil
+}
+
+// mockDialogStorage is a test implementation used by conversation_test.go
+// It implements both DialogLoader methods and additional methods for conversation commands
 type mockDialogStorage struct {
-	mostRecentID   string
-	mostRecentErr  error
-	dialog         gai.Dialog
-	msgIDList      []string
-	getDialogErr   error
-	savedMessages  []gai.Message
-	saveMessageErr error
-	saveMessageID  string
+	mostRecentID  string
+	mostRecentErr error
+	dialog        gai.Dialog
+	msgIDList     []string
+	getDialogErr  error
 }
 
 func (m *mockDialogStorage) GetMostRecentAssistantMessageId(ctx context.Context) (string, error) {
@@ -34,21 +55,6 @@ func (m *mockDialogStorage) GetDialogForMessage(ctx context.Context, messageID s
 		return nil, nil, m.getDialogErr
 	}
 	return m.dialog, m.msgIDList, nil
-}
-
-func (m *mockDialogStorage) SaveMessage(ctx context.Context, message gai.Message, parentID string, label string) (string, error) {
-	if m.saveMessageErr != nil {
-		return "", m.saveMessageErr
-	}
-	m.savedMessages = append(m.savedMessages, message)
-	if m.saveMessageID == "" {
-		return "msg-" + string(rune(len(m.savedMessages))), nil
-	}
-	return m.saveMessageID, nil
-}
-
-func (m *mockDialogStorage) Close() error {
-	return nil
 }
 
 // mockToolCapableGenerator is a test implementation of ToolCapableGenerator
@@ -100,11 +106,9 @@ func TestGenerate(t *testing.T) {
 					},
 				},
 				NewConversation: true,
-				Storage: &mockDialogStorage{
-					saveMessageID: "msg-123",
-				},
-				Generator: &mockToolCapableGenerator{},
-				Stderr:    &bytes.Buffer{},
+				DialogLoader:    &mockDialogLoader{},
+				Generator:       &mockToolCapableGenerator{},
+				Stderr:          &bytes.Buffer{},
 			},
 			wantErr: false,
 		},
@@ -141,7 +145,6 @@ func TestGenerate(t *testing.T) {
 					},
 				},
 				NewConversation: true,
-				IncognitoMode:   true,
 				Generator: &mockToolCapableGenerator{
 					err: errors.New("model xyz not found in configuration"),
 				},
@@ -150,7 +153,7 @@ func TestGenerate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "incognito mode - no saving",
+			name: "generation without storage - succeeds",
 			opts: GenerateOptions{
 				UserBlocks: []gai.Block{
 					{
@@ -160,12 +163,8 @@ func TestGenerate(t *testing.T) {
 					},
 				},
 				NewConversation: true,
-				IncognitoMode:   true,
-				Storage: &mockDialogStorage{
-					saveMessageID: "should-not-save",
-				},
-				Generator: &mockToolCapableGenerator{},
-				Stderr:    &bytes.Buffer{},
+				Generator:       &mockToolCapableGenerator{},
+				Stderr:          &bytes.Buffer{},
 			},
 			wantErr: false,
 		},
@@ -180,7 +179,6 @@ func TestGenerate(t *testing.T) {
 					},
 				},
 				NewConversation: true,
-				IncognitoMode:   true,
 				Generator: &mockToolCapableGenerator{
 					err: errors.New("generation failed"),
 				},

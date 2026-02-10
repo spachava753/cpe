@@ -12,7 +12,8 @@
           ExtraFields: (map[string]interface {}) <nil>
         }
       },
-      ToolResultError: (bool) false
+      ToolResultError: (bool) false,
+      ExtraFields: (map[string]interface {}) <nil>
     }
   },
   FinishReason: (gai.FinishReason) 0,

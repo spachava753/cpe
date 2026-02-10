@@ -11,6 +11,7 @@
         ExtraFields: (map[string]interface {}) <nil>
       }
     },
-    ToolResultError: (bool) true
+    ToolResultError: (bool) true,
+    ExtraFields: (map[string]interface {}) <nil>
   }
 }

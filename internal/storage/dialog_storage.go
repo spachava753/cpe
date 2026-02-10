@@ -12,6 +12,8 @@ import (
 
 	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/types"
 )
 
 const idCharset = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -239,10 +241,18 @@ func (s *DialogStorage) GetMessage(ctx context.Context, messageID string) (gai.M
 		parentID = msg.ParentID.String
 	}
 
+	// Set the message ID in ExtraFields so the saving middleware knows this message is already saved.
+	// Note: Message-level ExtraFields are not persisted to the database (only block-level ExtraFields are),
+	// so we create a fresh map here. This is intentional - message ExtraFields are runtime metadata only.
+	msgExtraFields := map[string]any{
+		types.MessageIDKey: messageID,
+	}
+
 	return gai.Message{
 		Role:            role,
 		Blocks:          gaiBlocks,
 		ToolResultError: msg.ToolResultError,
+		ExtraFields:     msgExtraFields,
 	}, parentID, nil
 }
 

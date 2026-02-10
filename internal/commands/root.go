@@ -123,20 +123,8 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 	}
 	defer mcpState.Close()
 
-	// Create the generator
-	toolGen, err := agent.NewGenerator(
-		ctx,
-		effectiveConfig,
-		systemPrompt,
-		mcpState,
-		// No options needed for interactive mode - printing enabled by default
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create tool capable generator: %w", err)
-	}
-
 	// Initialize storage unless in incognito mode
-	var dialogStorage DialogStorage
+	var dialogStorage *storage.DialogStorage
 	if !opts.IncognitoMode {
 		dbPath := ".cpeconvo"
 		dialogStorage, err = storage.InitDialogStorage(ctx, dbPath)
@@ -146,19 +134,38 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 		defer dialogStorage.Close()
 	}
 
+	// Build generator options
+	generatorOpts := []agent.GeneratorOption{}
+	// Enable saving middleware if storage is available (not incognito mode)
+	if dialogStorage != nil {
+		generatorOpts = append(generatorOpts, agent.WithDialogSaver(dialogStorage))
+	}
+
+	// Create the generator with optional saving middleware
+	toolGen, err := agent.NewGenerator(
+		ctx,
+		effectiveConfig,
+		systemPrompt,
+		mcpState,
+		generatorOpts...,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create tool capable generator: %w", err)
+	}
+
 	genOpts := effectiveConfig.GenerationDefaults
 
 	// Call the generation logic
+	// Saving is handled by the SavingMiddleware in the generator pipeline when not in incognito mode.
 	return Generate(ctx, GenerateOptions{
 		UserBlocks:      userBlocks,
 		ContinueID:      opts.ContinueID,
 		NewConversation: opts.NewConversation,
-		IncognitoMode:   opts.IncognitoMode,
 		GenOptsFunc: func(dialog gai.Dialog) *gai.GenOpts {
 			return genOpts
 		},
-		Storage:   dialogStorage,
-		Generator: toolGen,
-		Stderr:    opts.Stderr,
+		DialogLoader: dialogStorage,
+		Generator:    toolGen,
+		Stderr:       opts.Stderr,
 	})
 }

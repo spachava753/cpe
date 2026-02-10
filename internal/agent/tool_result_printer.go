@@ -61,10 +61,13 @@ func (g *ToolResultPrinterWrapper) printToolResult(dialog gai.Dialog, toolResult
 	// Find the tool name by looking at the previous assistant message's tool calls
 	toolName := g.findToolName(dialog, toolResultMsg)
 
+	// Get message ID if available
+	messageID := GetMessageID(toolResultMsg)
+
 	// Print the first block (gai ensures single tool result per message)
 	if len(toolResultMsg.Blocks) > 0 {
 		block := toolResultMsg.Blocks[0]
-		g.printResult(toolName, block)
+		g.printResult(toolName, block, messageID)
 	}
 }
 
@@ -93,7 +96,7 @@ func (g *ToolResultPrinterWrapper) findToolName(dialog gai.Dialog, toolResultMsg
 }
 
 // printResult prints a tool result block to the output with truncation and rendering.
-func (g *ToolResultPrinterWrapper) printResult(toolName string, block gai.Block) {
+func (g *ToolResultPrinterWrapper) printResult(toolName string, block gai.Block, messageID string) {
 	var markdownContent string
 
 	// Handle non-text modalities by just showing the mimetype
@@ -130,5 +133,11 @@ func (g *ToolResultPrinterWrapper) printResult(toolName string, block gai.Block)
 		fmt.Fprint(g.output, "\n"+markdownContent+"\n")
 	} else {
 		fmt.Fprint(g.output, "\n"+rendered)
+	}
+
+	// Print message ID if available (format matches token usage printer style)
+	if messageID != "" {
+		idMsg, _ := g.renderer.Render(fmt.Sprintf("> message_id: `%s`", messageID))
+		fmt.Fprint(g.output, idMsg)
 	}
 }

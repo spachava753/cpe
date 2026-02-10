@@ -3,6 +3,7 @@
     Role: (gai.Role) assistant,
     Blocks: ([]gai.Block) {
     },
-    ToolResultError: (bool) false
+    ToolResultError: (bool) false,
+    ExtraFields: (map[string]interface {}) <nil>
   }
 }
