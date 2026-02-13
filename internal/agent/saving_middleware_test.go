@@ -12,6 +12,8 @@ import (
 	"github.com/spachava753/cpe/internal/types"
 )
 
+const testMsgID1 = "msg-1"
+
 // mockDialogSaver is a test implementation of DialogSaver
 type mockDialogSaver struct {
 	savedMessages []savedMessage
@@ -107,8 +109,8 @@ func TestSavingMiddleware_SavesNewMessages(t *testing.T) {
 	}
 
 	// Check the assistant message was saved with user message as parent
-	if saver.savedMessages[1].parentID != "msg-1" {
-		t.Errorf("Expected parent 'msg-1' for assistant message, got %q", saver.savedMessages[1].parentID)
+	if saver.savedMessages[1].parentID != testMsgID1 {
+		t.Errorf("Expected parent %q for assistant message, got %q", testMsgID1, saver.savedMessages[1].parentID)
 	}
 
 	// Check that the response candidate has the message ID set
@@ -246,7 +248,7 @@ func TestSavingMiddleware_ContextCancellation(t *testing.T) {
 				if err := ctx.Err(); err != nil {
 					return "", err
 				}
-				return "msg-1", nil
+				return testMsgID1, nil
 			},
 		}
 
@@ -321,7 +323,7 @@ func TestSavingMiddleware_HandlesSaveErrorOnAssistantResponse(t *testing.T) {
 			callCount++
 			if callCount == 1 {
 				// First call (user message) succeeds
-				return "msg-1", nil
+				return testMsgID1, nil
 			}
 			// Second call (assistant response) fails
 			return "", saveErr

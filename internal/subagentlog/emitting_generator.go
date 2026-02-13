@@ -209,9 +209,9 @@ func (m *emittingMiddleware) emitThinkingEvent(ctx context.Context, block gai.Bl
 // emitToolCallEvent emits a tool_call event for a tool call block.
 func (m *emittingMiddleware) emitToolCallEvent(ctx context.Context, block gai.Block) error {
 	var toolCall gai.ToolCallInput
+	// Skip malformed tool calls - this is a recoverable error
 	if err := json.Unmarshal([]byte(block.Content.String()), &toolCall); err != nil {
-		// Skip malformed tool calls - this is a recoverable error
-		return nil
+		return nil //nolint:nilerr // intentionally ignoring unmarshal errors for malformed tool calls
 	}
 
 	if toolCall.Name == finalAnswerToolName {

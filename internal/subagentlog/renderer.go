@@ -62,7 +62,7 @@ func (r *Renderer) RenderEvent(event Event) string {
 
 func (r *Renderer) renderToolCall(event Event) string {
 	// Skip final_answer tool calls
-	if event.ToolName == "final_answer" {
+	if event.ToolName == finalAnswerToolName {
 		return ""
 	}
 
@@ -92,7 +92,7 @@ func (r *Renderer) renderToolCall(event Event) string {
 
 func (r *Renderer) renderToolResult(event Event) string {
 	// Skip final_answer tool results to avoid duplicate output
-	if event.ToolName == "final_answer" {
+	if event.ToolName == finalAnswerToolName {
 		return ""
 	}
 
@@ -116,7 +116,7 @@ func (r *Renderer) renderThoughtTrace(event Event) string {
 
 func (r *Renderer) renderToolCallConcise(event Event) string {
 	// Skip final_answer tool calls (consistent with verbose mode)
-	if event.ToolName == "final_answer" {
+	if event.ToolName == finalAnswerToolName {
 		return ""
 	}
 	// Just show: "#### subagent [runId] → tool_name"
@@ -126,7 +126,7 @@ func (r *Renderer) renderToolCallConcise(event Event) string {
 
 func (r *Renderer) renderToolResultConcise(event Event) string {
 	// Skip final_answer tool results (consistent with verbose mode)
-	if event.ToolName == "final_answer" {
+	if event.ToolName == finalAnswerToolName {
 		return ""
 	}
 	// Tool results are only emitted on success, so show checkmark
