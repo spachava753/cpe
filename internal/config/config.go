@@ -76,7 +76,7 @@ type GenerationParams struct {
 	MaxGenerationTokens int      `yaml:"maxGenerationTokens,omitempty" json:"maxGenerationTokens,omitempty" validate:"omitempty,gte=0"`
 	ToolChoice          string   `yaml:"toolChoice,omitempty" json:"toolChoice,omitempty"`
 	StopSequences       []string `yaml:"stopSequences,omitempty" json:"stopSequences,omitempty"`
-	ThinkingBudget      string   `yaml:"thinkingBudget,omitempty" json:"thinkingBudget,omitempty" validate:"omitempty,oneof=minimal low medium high|number"`
+	ThinkingBudget      string   `yaml:"thinkingBudget,omitempty" json:"thinkingBudget,omitempty"`
 }
 
 // ToGenOpts converts GenerationParams to gai.GenOpts

@@ -324,7 +324,7 @@ func NewGenerator(
 
 	// Add saving middleware if storage is provided.
 	// Saving must be OUTSIDE Retry so that messages are saved once, not on each retry attempt.
-	// 
+	//
 	// Wrapper ordering (gai.Wrap applies in reverse, so later = inner):
 	// - ResponsePrinting (outer): prints response WITH ID after Saving sets it
 	// - Saving: BEFORE saves new messages; AFTER saves response, sets ID

@@ -722,4 +722,3 @@ func mustToolCallBlock(t *testing.T, id, name string, params map[string]any) gai
 	}
 	return block
 }
-

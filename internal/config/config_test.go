@@ -593,20 +593,7 @@ func TestRawConfig_Validate(t *testing.T) {
 				},
 			},
 		},
-		{
-			name: "invalid thinkingBudget",
-			cfg: RawConfig{
-				Models: []ModelConfig{
-					{
-						Model: Model{Ref: "test", DisplayName: "Test", ID: "id", Type: "openai", ApiKeyEnv: "KEY"},
-						GenerationDefaults: &GenerationParams{
-							ThinkingBudget: "invalid",
-						},
-					},
-				},
-			},
-			expectErr: true,
-		},
+
 		{
 			name: "valid frequencyPenalty",
 			cfg: RawConfig{
