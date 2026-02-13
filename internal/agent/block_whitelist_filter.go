@@ -43,6 +43,7 @@ func (f *BlockWhitelistFilter) Generate(ctx context.Context, dialog gai.Dialog, 
 			Role:            message.Role,
 			Blocks:          filteredBlocks,
 			ToolResultError: message.ToolResultError,
+			ExtraFields:     message.ExtraFields,
 		}
 		filteredDialog = append(filteredDialog, filteredMessage)
 	}

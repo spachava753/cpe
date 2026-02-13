@@ -106,6 +106,7 @@ func (f *ThinkingBlockFilter) Generate(ctx context.Context, dialog gai.Dialog, o
 			Role:            message.Role,
 			Blocks:          filteredBlocks,
 			ToolResultError: message.ToolResultError,
+			ExtraFields:     message.ExtraFields,
 		}
 		filteredDialog = append(filteredDialog, filteredMessage)
 	}

@@ -297,6 +297,26 @@ func NewGenerator(
 		wrappers = append(wrappers, WithResponsePrinting(renderers.Content, renderers.Thinking, renderers.ToolCall, os.Stdout, os.Stderr))
 	}
 
+	// Add saving middleware if storage is provided.
+	// Saving must be:
+	// - OUTSIDE ThinkingFilter so that SetMessageID mutates the original dialog
+	//   messages from ToolGenerator.currentDialog. If ThinkingFilter were between
+	//   ToolGenerator and Saving, it would create new message structs, and the IDs
+	//   set by Saving would not propagate back — causing double saves on the next
+	//   tool-use loop iteration.
+	// - OUTSIDE Retry so that messages are saved once, not on each retry attempt.
+	//
+	// Wrapper ordering (gai.Wrap applies in order, first = outermost):
+	// - TokenUsagePrinting (outermost): prints usage AFTER everything
+	// - ResponsePrinting: prints response WITH ID after Saving sets it
+	// - Saving: BEFORE saves new messages; AFTER saves response, sets ID
+	// - ThinkingFilter: filters thinking blocks for the provider
+	// - Retry: retries transient failures
+	// - ToolResultPrinting (innermost): prints tool results WITH ID
+	if o.dialogSaver != nil {
+		wrappers = append(wrappers, WithSaving(o.dialogSaver))
+	}
+
 	// Add thinking block filter based on model type.
 	// Each provider keeps thinking blocks from its own generator type, filtering out
 	// thinking blocks from other providers. This enables cross-model conversation resumption
@@ -320,18 +340,6 @@ func NewGenerator(
 	default:
 		// For unknown providers, filter all thinking blocks
 		wrappers = append(wrappers, WithBlockWhitelist([]string{gai.Content, gai.ToolCall}))
-	}
-
-	// Add saving middleware if storage is provided.
-	// Saving must be OUTSIDE Retry so that messages are saved once, not on each retry attempt.
-	//
-	// Wrapper ordering (gai.Wrap applies in reverse, so later = inner):
-	// - ResponsePrinting (outer): prints response WITH ID after Saving sets it
-	// - Saving: BEFORE saves new messages; AFTER saves response, sets ID
-	// - Retry: retries transient failures (inside Saving, so saves happen once)
-	// - ToolResultPrinting (inner): prints tool results WITH ID
-	if o.dialogSaver != nil {
-		wrappers = append(wrappers, WithSaving(o.dialogSaver))
 	}
 
 	wrappers = append(wrappers, gai.WithRetry(b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute)))

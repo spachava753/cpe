@@ -289,6 +289,56 @@ func TestThinkingBlockFilter(t *testing.T) {
 	}
 }
 
+func TestThinkingBlockFilter_PreservesExtraFields(t *testing.T) {
+	mockGenerator := &mockGaiGenerator{}
+	filter := NewThinkingBlockFilter(mockGenerator, []string{gai.ThinkingGeneratorAnthropic})
+
+	inputDialog := gai.Dialog{
+		{
+			Role: gai.User,
+			Blocks: []gai.Block{
+				{BlockType: gai.Content, Content: gai.Str("hello")},
+			},
+			ExtraFields: map[string]interface{}{"cpe_message_id": "msg_abc123"},
+		},
+		{
+			Role: gai.Assistant,
+			Blocks: []gai.Block{
+				{
+					BlockType:   gai.Thinking,
+					Content:     gai.Str("thinking..."),
+					ExtraFields: map[string]interface{}{gai.ThinkingExtraFieldGeneratorKey: gai.ThinkingGeneratorAnthropic},
+				},
+				{BlockType: gai.Content, Content: gai.Str("response")},
+			},
+			ExtraFields: map[string]interface{}{"cpe_message_id": "msg_def456"},
+		},
+	}
+
+	_, err := filter.Generate(context.Background(), inputDialog, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for i, msg := range mockGenerator.capturedDialog {
+		if msg.ExtraFields == nil {
+			t.Errorf("message %d: ExtraFields is nil, expected it to be preserved", i)
+			continue
+		}
+		id, ok := msg.ExtraFields["cpe_message_id"].(string)
+		if !ok || id == "" {
+			t.Errorf("message %d: expected cpe_message_id to be preserved, got %v", i, msg.ExtraFields)
+		}
+	}
+
+	if id := mockGenerator.capturedDialog[0].ExtraFields["cpe_message_id"]; id != "msg_abc123" {
+		t.Errorf("message 0: expected cpe_message_id 'msg_abc123', got %v", id)
+	}
+	if id := mockGenerator.capturedDialog[1].ExtraFields["cpe_message_id"]; id != "msg_def456" {
+		t.Errorf("message 1: expected cpe_message_id 'msg_def456', got %v", id)
+	}
+}
+
 func TestThinkingBlockFilter_PreservesToolResultError(t *testing.T) {
 	mockGenerator := &mockGaiGenerator{}
 	filter := NewThinkingBlockFilter(mockGenerator, []string{gai.ThinkingGeneratorAnthropic})
