@@ -66,7 +66,7 @@ func TestPartitionTools(t *testing.T) {
 			excludedToolNames: []string{"tool1", "tool2"},
 		},
 		{
-			name: "mixed: some excluded, some in code mode",
+			name: "mixed_some_excluded_some_in_code_mode",
 			mcpState: newTestMCPState(
 				map[string][]*mcpsdk.Tool{
 					"server1": {
