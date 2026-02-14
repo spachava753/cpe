@@ -1,4 +1,0 @@
-(map[string]interface {}) (len=2) {
-  (string) (len=4) "Data": (string) (len=15) "fake image data",
-  (string) (len=8) "MIMEType": (string) (len=9) "image/png"
-}

@@ -1,7 +1,0 @@
-type DataInput_Metadata struct {
-	Key *string `json:"key,omitempty"`
-}
-
-type DataInput struct {
-	Metadata *DataInput_Metadata `json:"metadata,omitempty"`
-}

@@ -1,5 +1,0 @@
-(*config.CodeModeConfig)({
-  Enabled: (bool) false,
-  ExcludedTools: ([]string) <nil>,
-  MaxTimeout: (int) 0
-})

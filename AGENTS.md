@@ -111,11 +111,14 @@ go generate ./internal/config/
 
 ## Testing guidelines
 
+Tests are currently being rewritten. The previous snapshot-based testing (cupaloy) has been removed. When adding new tests:
+
 - Use go test ./...; write table-driven unit tests
 - Preference: Use table-driven tests
   - Share common setup/validation logic through helper functions or validation callbacks
   - Name test cases descriptively in the `name` field
 - **Use exact matching for test assertions**: Always compare expected vs actual output exactly. Do not use `strings.Contains` or partial matching for output verification; use full expected strings in `want` fields
+- **No snapshot testing**: Do not use cupaloy or similar snapshot-based testing libraries
 - Prefer httptest for HTTP; avoid real network calls
 - Keep tests deterministic; use short timeouts; avoid sleeping where possible
 - Isolate filesystem effects; clean up temp files; do not depend on developer-local state

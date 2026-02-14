@@ -1,8 +1,0 @@
-(mcp.SubagentInput) {
-  Prompt: (string) (len=11) "test prompt",
-  Inputs: ([]string) (len=2) {
-    (string) (len=9) "file1.txt",
-    (string) (len=9) "file2.txt"
-  },
-  RunID: (string) (len=17) "unique-run-id-456"
-}

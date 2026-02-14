@@ -1,4 +1,0 @@
-type UserInput struct {
-	// Nickname Optional nickname
-	Nickname *string `json:"nickname,omitempty"`
-}

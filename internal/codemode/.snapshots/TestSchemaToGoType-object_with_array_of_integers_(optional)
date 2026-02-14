@@ -1,3 +1,0 @@
-type ScoreInput struct {
-	Scores []int64 `json:"scores,omitempty"`
-}

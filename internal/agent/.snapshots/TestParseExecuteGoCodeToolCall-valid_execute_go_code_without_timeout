@@ -1,4 +1,0 @@
-(agent.ExecuteGoCodeFormatInput) {
-  Code: (string) (len=12) "package main",
-  ExecutionTimeout: (int) 0
-}

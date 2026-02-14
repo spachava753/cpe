@@ -1,5 +1,0 @@
-(*config.SubagentConfig)({
-  Name: (string) (len=14) "review_changes",
-  Description: (string) (len=45) "Review a diff and return prioritized feedback",
-  OutputSchemaPath: (string) ""
-})

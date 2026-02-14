@@ -1,6 +1,0 @@
-Configured MCP Servers:
-- sse-server (Type: sse, Timeout: 60s)
-  URL: http://localhost:8080
-- stdio-server (Type: stdio, Timeout: 60s)
-  Command: python server.py
-

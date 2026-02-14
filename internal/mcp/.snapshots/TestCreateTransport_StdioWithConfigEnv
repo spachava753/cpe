@@ -1,5 +1,0 @@
-(map[string]string) (len=3) {
-  (string) (len=11) "ANOTHER_VAR": (string) (len=13) "another_value",
-  (string) (len=28) "CPE_SUBAGENT_LOGGING_ADDRESS": (string) (len=21) "http://127.0.0.1:8080",
-  (string) (len=10) "CUSTOM_VAR": (string) (len=12) "custom_value"
-}

@@ -1,7 +1,0 @@
-(map[string]string) (len=5) {
-  (string) (len=20) "EventTypeSubagentEnd": (string) (len=12) "subagent_end",
-  (string) (len=22) "EventTypeSubagentStart": (string) (len=14) "subagent_start",
-  (string) (len=21) "EventTypeThoughtTrace": (string) (len=13) "thought_trace",
-  (string) (len=17) "EventTypeToolCall": (string) (len=9) "tool_call",
-  (string) (len=19) "EventTypeToolResult": (string) (len=11) "tool_result"
-}

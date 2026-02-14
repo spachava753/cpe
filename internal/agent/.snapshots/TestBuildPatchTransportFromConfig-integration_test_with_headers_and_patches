@@ -1,6 +1,0 @@
-(map[string]interface {}) (len=2) {
-  (string) (len=4) "body": (string) (len=43) "{\"original\":\"data\",\"new_field\":\"new_value\"}",
-  (string) (len=7) "headers": (map[string]string) (len=1) {
-    (string) (len=13) "X-Test-Header": (string) (len=10) "test-value"
-  }
-}

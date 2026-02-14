@@ -1,5 +1,0 @@
-([]string) (len=3) {
-  (string) (len=5) "tool1",
-  (string) (len=5) "tool2",
-  (string) (len=5) "tool3"
-}

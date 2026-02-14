@@ -1,6 +1,0 @@
-(map[string]interface {}) (len=1) {
-  (string) (len=6) "review": (map[string]interface {}) (len=2) {
-    (string) (len=7) "comment": (string) (len=6) "Great!",
-    (string) (len=6) "rating": (float64) 5
-  }
-}

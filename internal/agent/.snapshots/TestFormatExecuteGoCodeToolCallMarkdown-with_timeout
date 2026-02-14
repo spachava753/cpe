@@ -1,6 +1,0 @@
-#### [tool call] (timeout: 30s)
-```go
-package main
-
-func Run() {}
-```

@@ -1,3 +1,0 @@
-(map[string]interface {}) (len=1) {
-  (string) (len=4) "body": (string) (len=47) "{\"existing\":\"modified\",\"new_field\":\"new_value\"}"
-}

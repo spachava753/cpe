@@ -1,5 +1,0 @@
-(*config.SubagentConfig)({
-  Name: (string) (len=16) "implement_change",
-  Description: (string) (len=31) "Make code changes and run tests",
-  OutputSchemaPath: (string) ""
-})

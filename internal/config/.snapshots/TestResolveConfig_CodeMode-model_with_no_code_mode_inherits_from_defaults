@@ -1,7 +1,0 @@
-(*config.CodeModeConfig)({
-  Enabled: (bool) true,
-  ExcludedTools: ([]string) (len=1) {
-    (string) (len=11) "global_tool"
-  },
-  MaxTimeout: (int) 0
-})

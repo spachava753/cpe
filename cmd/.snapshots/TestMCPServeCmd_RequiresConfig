@@ -1,6 +1,0 @@
-(map[string]string) (len=4) {
-  (string) (len=7) "Example": (string) (len=95) "  # Start the MCP server with a subagent config\n  cpe mcp serve --config ./coder_agent.cpe.yaml",
-  (string) (len=4) "Long": (string) (len=343) "Start CPE as an MCP server that exposes a configured subagent as a tool.\n\nThe server communicates via stdio and exposes exactly one tool based on \nthe subagent configuration in the provided config file.\n\nThis command requires an explicit --config flag pointing to a subagent \nconfiguration file. The default config search behavior is disabled.",
-  (string) (len=5) "Short": (string) (len=24) "Run CPE as an MCP server",
-  (string) (len=3) "Use": (string) (len=5) "serve"
-}
