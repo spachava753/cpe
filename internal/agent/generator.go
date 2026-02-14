@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -190,6 +191,7 @@ type generatorOptions struct {
 	middleware      []gai.WrapperFunc
 	baseGenerator   gai.ToolCapableGenerator
 	dialogSaver     types.DialogSaver
+	stdout          io.Writer
 }
 
 // GeneratorOption is a functional option for configuring generator creation.
@@ -234,6 +236,14 @@ func WithBaseGenerator(g gai.ToolCapableGenerator) GeneratorOption {
 func WithDialogSaver(storage types.DialogSaver) GeneratorOption {
 	return func(o *generatorOptions) {
 		o.dialogSaver = storage
+	}
+}
+
+// WithStdout sets the writer for model response output.
+// If not provided (nil), defaults to os.Stdout.
+func WithStdout(w io.Writer) GeneratorOption {
+	return func(o *generatorOptions) {
+		o.stdout = w
 	}
 }
 
@@ -291,10 +301,15 @@ func NewGenerator(
 	// TokenUsagePrinting must come BEFORE ResponsePrinting in the slice
 	// because gai.Wrap applies wrappers in reverse order.
 	// We want TokenUsagePrinting to be OUTERMOST so it prints AFTER response content.
+	stdoutW := o.stdout
+	if stdoutW == nil {
+		stdoutW = os.Stdout
+	}
+
 	wrappers = append(wrappers, WithTokenUsagePrinting(os.Stderr))
 	if !o.disablePrinting {
 		renderers := NewResponsePrinterRenderers()
-		wrappers = append(wrappers, WithResponsePrinting(renderers.Content, renderers.Thinking, renderers.ToolCall, os.Stdout, os.Stderr))
+		wrappers = append(wrappers, WithResponsePrinting(renderers.Content, renderers.Thinking, renderers.ToolCall, stdoutW, os.Stderr))
 	}
 
 	// Add saving middleware if storage is provided.

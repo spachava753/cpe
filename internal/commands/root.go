@@ -44,6 +44,9 @@ type ExecuteRootOptions struct {
 	// IncognitoMode disables conversation storage
 	IncognitoMode bool
 
+	// Stdout is where model responses are written.
+	// If nil, defaults to os.Stdout.
+	Stdout io.Writer
 	// Stderr is where to write status messages
 	Stderr io.Writer
 	// VerboseSubagent enables verbose subagent output
@@ -52,6 +55,11 @@ type ExecuteRootOptions struct {
 
 // ExecuteRoot runs the main CPE generation flow
 func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
+	stdout := opts.Stdout
+	if stdout == nil {
+		stdout = os.Stdout
+	}
+
 	// Process user input
 	userBlocks, err := ProcessUserInput(ctx, ProcessUserInputOptions{
 		Args:       opts.Args,
@@ -135,7 +143,9 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 	}
 
 	// Build generator options
-	generatorOpts := []agent.GeneratorOption{}
+	generatorOpts := []agent.GeneratorOption{
+		agent.WithStdout(stdout),
+	}
 	// Enable saving middleware if storage is available (not incognito mode)
 	if dialogStorage != nil {
 		generatorOpts = append(generatorOpts, agent.WithDialogSaver(dialogStorage))
