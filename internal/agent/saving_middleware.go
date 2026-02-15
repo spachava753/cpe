@@ -6,7 +6,7 @@ import (
 
 	"github.com/spachava753/gai"
 
-	"github.com/spachava753/cpe/internal/types"
+	"github.com/spachava753/cpe/internal/storage"
 )
 
 // SavingMiddleware is a stateless generator middleware that incrementally saves
@@ -25,11 +25,11 @@ import (
 // 3. Full transactional atomicity would require significant complexity
 type SavingMiddleware struct {
 	gai.GeneratorWrapper
-	storage types.DialogSaver
+	storage storage.MessagesSaver
 }
 
 // NewSavingMiddleware creates a new SavingMiddleware.
-func NewSavingMiddleware(g gai.Generator, storage types.DialogSaver) *SavingMiddleware {
+func NewSavingMiddleware(g gai.Generator, storage storage.MessagesSaver) *SavingMiddleware {
 	return &SavingMiddleware{
 		GeneratorWrapper: gai.GeneratorWrapper{Inner: g},
 		storage:          storage,
@@ -37,7 +37,7 @@ func NewSavingMiddleware(g gai.Generator, storage types.DialogSaver) *SavingMidd
 }
 
 // WithSaving returns a WrapperFunc for use with gai.Wrap.
-func WithSaving(storage types.DialogSaver) gai.WrapperFunc {
+func WithSaving(storage storage.MessagesSaver) gai.WrapperFunc {
 	return func(g gai.Generator) gai.Generator {
 		return NewSavingMiddleware(g, storage)
 	}
@@ -47,7 +47,7 @@ func WithSaving(storage types.DialogSaver) gai.WrapperFunc {
 // It saves unsaved messages before calling the inner generator and saves
 // the assistant response after.
 //
-// The label parameter passed to SaveMessage is always empty string for normal
+// The label parameter passed to SaveMessages is always empty string for normal
 // interactive usage. Labels are used by subagent execution to annotate saved
 // messages with subagent identity (e.g., "subagent:name:run_id").
 func (m *SavingMiddleware) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
@@ -59,12 +59,16 @@ func (m *SavingMiddleware) Generate(ctx context.Context, dialog gai.Dialog, opts
 			continue
 		}
 		// No ID - save it (label is empty for interactive usage)
-		id, err := m.storage.SaveMessage(ctx, dialog[i], lastID, "")
+		ids, err := m.storage.SaveMessages(ctx, []storage.SaveMessageOptions{
+			{Message: dialog[i], ParentID: lastID, Title: ""},
+		})
 		if err != nil {
 			return gai.Response{}, fmt.Errorf("failed to save message: %w", err)
 		}
-		SetMessageID(&dialog[i], id)
-		lastID = id
+		for id := range ids {
+			SetMessageID(&dialog[i], id)
+			lastID = id
+		}
 	}
 
 	resp, err := m.GeneratorWrapper.Generate(ctx, dialog, opts)
@@ -74,11 +78,15 @@ func (m *SavingMiddleware) Generate(ctx context.Context, dialog gai.Dialog, opts
 
 	// AFTER: Save assistant response (label is empty for interactive usage)
 	if len(resp.Candidates) > 0 {
-		id, err := m.storage.SaveMessage(ctx, resp.Candidates[0], lastID, "")
+		ids, err := m.storage.SaveMessages(ctx, []storage.SaveMessageOptions{
+			{Message: resp.Candidates[0], ParentID: lastID, Title: ""},
+		})
 		if err != nil {
 			return gai.Response{}, fmt.Errorf("failed to save assistant message: %w", err)
 		}
-		SetMessageID(&resp.Candidates[0], id)
+		for id := range ids {
+			SetMessageID(&resp.Candidates[0], id)
+		}
 	}
 
 	return resp, nil
@@ -90,7 +98,7 @@ func GetMessageID(msg gai.Message) string {
 	if msg.ExtraFields == nil {
 		return ""
 	}
-	id, _ := msg.ExtraFields[types.MessageIDKey].(string)
+	id, _ := msg.ExtraFields[storage.MessageIDKey].(string)
 	return id
 }
 
@@ -101,5 +109,5 @@ func SetMessageID(msg *gai.Message, id string) {
 	if msg.ExtraFields == nil {
 		msg.ExtraFields = make(map[string]any)
 	}
-	msg.ExtraFields[types.MessageIDKey] = id
+	msg.ExtraFields[storage.MessageIDKey] = id
 }

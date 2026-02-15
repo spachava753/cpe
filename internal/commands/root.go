@@ -174,8 +174,8 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 		GenOptsFunc: func(dialog gai.Dialog) *gai.GenOpts {
 			return genOpts
 		},
-		DialogLoader: dialogStorage,
-		Generator:    toolGen,
-		Stderr:       opts.Stderr,
+		MessageDB: dialogStorage,
+		Generator: toolGen,
+		Stderr:    opts.Stderr,
 	})
 }

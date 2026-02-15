@@ -79,6 +79,11 @@ defaults:
 	}
 }
 
+const (
+	roleUser      = "user"
+	roleAssistant = "assistant"
+)
+
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite3", ".cpeconvo")
@@ -89,10 +94,10 @@ func openTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
-func countMessages(t *testing.T, db *sql.DB) int {
+func countMessages(ctx context.Context, t *testing.T, db *sql.DB) int {
 	t.Helper()
 	var count int
-	if err := db.QueryRow("SELECT COUNT(*) FROM messages").Scan(&count); err != nil {
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM messages").Scan(&count); err != nil {
 		t.Fatalf("failed to count messages: %v", err)
 	}
 	return count
@@ -104,9 +109,9 @@ type testMessage struct {
 	Role     string
 }
 
-func queryMessages(t *testing.T, db *sql.DB) []testMessage {
+func queryMessages(ctx context.Context, t *testing.T, db *sql.DB) []testMessage {
 	t.Helper()
-	rows, err := db.Query("SELECT id, parent_id, role FROM messages ORDER BY created_at")
+	rows, err := db.QueryContext(ctx, "SELECT id, parent_id, role FROM messages ORDER BY created_at")
 	if err != nil {
 		t.Fatalf("failed to query messages: %v", err)
 	}
@@ -152,20 +157,20 @@ func TestExecuteRoot_ConversationFlow(t *testing.T) {
 			t.Fatalf("ExecuteRoot returned error: %v", err)
 		}
 
-		count := countMessages(t, db)
+		count := countMessages(ctx, t, db)
 		if count != 2 {
 			t.Fatalf("expected 2 messages, got %d", count)
 		}
 
-		msgs := queryMessages(t, db)
-		if msgs[0].Role != "user" {
-			t.Errorf("expected first message role 'user', got %q", msgs[0].Role)
+		msgs := queryMessages(ctx, t, db)
+		if msgs[0].Role != roleUser {
+			t.Errorf("expected first message role %q, got %q", roleUser, msgs[0].Role)
 		}
 		if msgs[0].ParentID.Valid {
 			t.Errorf("expected first message to have no parent, got %q", msgs[0].ParentID.String)
 		}
-		if msgs[1].Role != "assistant" {
-			t.Errorf("expected second message role 'assistant', got %q", msgs[1].Role)
+		if msgs[1].Role != roleAssistant {
+			t.Errorf("expected second message role %q, got %q", roleAssistant, msgs[1].Role)
 		}
 		if !msgs[1].ParentID.Valid || msgs[1].ParentID.String != msgs[0].ID {
 			t.Errorf("expected second message parent to be %q, got %v", msgs[0].ID, msgs[1].ParentID)
@@ -188,15 +193,15 @@ func TestExecuteRoot_ConversationFlow(t *testing.T) {
 			t.Fatalf("ExecuteRoot returned error: %v", err)
 		}
 
-		count := countMessages(t, db)
+		count := countMessages(ctx, t, db)
 		if count != 4 {
 			t.Fatalf("expected 4 messages, got %d", count)
 		}
 
-		msgs := queryMessages(t, db)
+		msgs := queryMessages(ctx, t, db)
 
 		// Verify linear chain: user1 (no parent) → assistant1 → user2 → assistant2
-		if msgs[0].Role != "user" || msgs[0].ParentID.Valid {
+		if msgs[0].Role != roleUser || msgs[0].ParentID.Valid {
 			t.Errorf("msg[0]: expected user with no parent, got role=%q parent=%v", msgs[0].Role, msgs[0].ParentID)
 		}
 		for i := 1; i < len(msgs); i++ {
@@ -204,14 +209,14 @@ func TestExecuteRoot_ConversationFlow(t *testing.T) {
 				t.Errorf("msg[%d]: expected parent %q, got %v", i, msgs[i-1].ID, msgs[i].ParentID)
 			}
 		}
-		if msgs[1].Role != "assistant" {
-			t.Errorf("msg[1]: expected role 'assistant', got %q", msgs[1].Role)
+		if msgs[1].Role != roleAssistant {
+			t.Errorf("msg[1]: expected role %q, got %q", roleAssistant, msgs[1].Role)
 		}
-		if msgs[2].Role != "user" {
-			t.Errorf("msg[2]: expected role 'user', got %q", msgs[2].Role)
+		if msgs[2].Role != roleUser {
+			t.Errorf("msg[2]: expected role %q, got %q", roleUser, msgs[2].Role)
 		}
-		if msgs[3].Role != "assistant" {
-			t.Errorf("msg[3]: expected role 'assistant', got %q", msgs[3].Role)
+		if msgs[3].Role != roleAssistant {
+			t.Errorf("msg[3]: expected role %q, got %q", roleAssistant, msgs[3].Role)
 		}
 	})
 
@@ -238,18 +243,18 @@ func TestExecuteRoot_ConversationFlow(t *testing.T) {
 		// We now have 6 messages total:
 		// Original chain: user1 → assistant1 → user2 → assistant2
 		// Forked branch:  assistant1 → user3 → assistant3
-		count := countMessages(t, db)
+		count := countMessages(ctx, t, db)
 		if count != 6 {
 			t.Fatalf("expected 6 messages, got %d", count)
 		}
 
-		msgs := queryMessages(t, db)
+		msgs := queryMessages(ctx, t, db)
 
 		// Find the forked messages: user and assistant whose parent chain
 		// goes back to firstAssistantID but are not part of the original chain.
 		var forkedUser, forkedAssistant *testMessage
 		for i := range msgs {
-			if msgs[i].Role == "user" && msgs[i].ParentID.Valid && msgs[i].ParentID.String == firstAssistantID {
+			if msgs[i].Role == roleUser && msgs[i].ParentID.Valid && msgs[i].ParentID.String == firstAssistantID {
 				// Could be the original user2 or the forked user3.
 				// The original user2 is msgs[2] from the linear chain.
 				// Check if this is a different message by looking at the next one.
@@ -263,7 +268,7 @@ func TestExecuteRoot_ConversationFlow(t *testing.T) {
 			// that is NOT the third message in the original chain.
 			originalUser2ID := msgs[2].ID
 			for i := range msgs {
-				if msgs[i].Role == "user" && msgs[i].ParentID.Valid &&
+				if msgs[i].Role == roleUser && msgs[i].ParentID.Valid &&
 					msgs[i].ParentID.String == firstAssistantID && msgs[i].ID != originalUser2ID {
 					forkedUser = &msgs[i]
 					break
@@ -276,7 +281,7 @@ func TestExecuteRoot_ConversationFlow(t *testing.T) {
 
 		// Find the forked assistant (child of forkedUser)
 		for i := range msgs {
-			if msgs[i].Role == "assistant" && msgs[i].ParentID.Valid &&
+			if msgs[i].Role == roleAssistant && msgs[i].ParentID.Valid &&
 				msgs[i].ParentID.String == forkedUser.ID {
 				forkedAssistant = &msgs[i]
 				break
@@ -288,7 +293,7 @@ func TestExecuteRoot_ConversationFlow(t *testing.T) {
 
 		// Verify the forked assistant has content blocks
 		var blockCount int
-		err = db.QueryRow(
+		err = db.QueryRowContext(ctx,
 			"SELECT COUNT(*) FROM blocks WHERE message_id = ? AND block_type = 'content'",
 			forkedAssistant.ID,
 		).Scan(&blockCount)
@@ -321,7 +326,7 @@ func TestExecuteRoot_ContextCancellation(t *testing.T) {
 	// Error is acceptable (context.Canceled or context.DeadlineExceeded) — don't check it
 
 	db := openTestDB(t)
-	count := countMessages(t, db)
+	count := countMessages(ctx, t, db)
 	if count < 1 {
 		t.Fatalf("expected at least 1 message (user), got %d", count)
 	}

@@ -17,41 +17,41 @@ import (
 
 // ConversationListOptions contains parameters for listing conversations
 type ConversationListOptions struct {
-	Storage interface {
-		ListMessages(ctx context.Context) ([]storage.MessageIdNode, error)
-	}
+	Storage     storage.MessagesLister
 	Writer      io.Writer
 	TreePrinter TreePrinter
 }
 
 // TreePrinter is an interface for printing message trees
 type TreePrinter interface {
-	PrintMessageForest(w io.Writer, roots []storage.MessageIdNode)
+	PrintMessageForest(w io.Writer, roots []MessageIdNode)
 }
 
 // ConversationList lists all conversations in tree format
 func ConversationList(ctx context.Context, opts ConversationListOptions) error {
-	messageNodes, err := opts.Storage.ListMessages(ctx)
+	msgs, err := opts.Storage.ListMessages(ctx, storage.ListMessagesOptions{AscendingOrder: true})
 	if err != nil {
 		return fmt.Errorf("failed to list messages: %w", err)
 	}
 
-	if len(messageNodes) == 0 {
+	var allMsgs []gai.Message
+	for msg := range msgs {
+		allMsgs = append(allMsgs, msg)
+	}
+
+	if len(allMsgs) == 0 {
 		fmt.Fprintln(opts.Writer, "No messages found.")
 		return nil
 	}
 
-	opts.TreePrinter.PrintMessageForest(opts.Writer, messageNodes)
+	forest := buildMessageForest(allMsgs)
+	opts.TreePrinter.PrintMessageForest(opts.Writer, forest)
 	return nil
 }
 
 // ConversationDeleteOptions contains parameters for deleting conversations
 type ConversationDeleteOptions struct {
-	Storage interface {
-		HasChildrenByID(ctx context.Context, messageID string) (bool, error)
-		DeleteMessage(ctx context.Context, messageID string) error
-		DeleteMessageRecursive(ctx context.Context, messageID string) error
-	}
+	Storage    storage.MessagesDeleter
 	MessageIDs []string
 	Cascade    bool
 	Stdout     io.Writer
@@ -61,29 +61,16 @@ type ConversationDeleteOptions struct {
 // ConversationDelete deletes one or more messages
 func ConversationDelete(ctx context.Context, opts ConversationDeleteOptions) error {
 	for _, messageID := range opts.MessageIDs {
-		hasChildren, err := opts.Storage.HasChildrenByID(ctx, messageID)
-		if err != nil {
-			fmt.Fprintf(opts.Stderr, "Error checking if message %s has children: %v\n", messageID, err)
-			continue
-		}
-
-		if hasChildren && !opts.Cascade {
-			fmt.Fprintf(opts.Stderr, "Error: message %s has children. Use --cascade to delete it and all its descendants.\n", messageID)
-			continue
-		}
-
-		var delErr error
-		if opts.Cascade {
-			delErr = opts.Storage.DeleteMessageRecursive(ctx, messageID)
-		} else {
-			delErr = opts.Storage.DeleteMessage(ctx, messageID)
-		}
+		delErr := opts.Storage.DeleteMessages(ctx, storage.DeleteMessagesOptions{
+			MessageIDs: []string{messageID},
+			Recursive:  opts.Cascade,
+		})
 
 		if delErr != nil {
 			fmt.Fprintf(opts.Stderr, "Error deleting message %s: %v\n", messageID, delErr)
 		} else {
 			fmt.Fprintf(opts.Stdout, "Successfully deleted message %s", messageID)
-			if opts.Cascade && hasChildren {
+			if opts.Cascade {
 				fmt.Fprint(opts.Stdout, " and all its descendants")
 			}
 			fmt.Fprintln(opts.Stdout)
@@ -95,9 +82,7 @@ func ConversationDelete(ctx context.Context, opts ConversationDeleteOptions) err
 
 // ConversationPrintOptions contains parameters for printing a conversation
 type ConversationPrintOptions struct {
-	Storage interface {
-		GetDialogForMessage(ctx context.Context, messageID string) (gai.Dialog, []string, error)
-	}
+	Storage         storage.MessagesGetter
 	MessageID       string
 	Writer          io.Writer
 	DialogFormatter DialogFormatter
@@ -110,9 +95,17 @@ type DialogFormatter interface {
 
 // ConversationPrint prints a conversation thread
 func ConversationPrint(ctx context.Context, opts ConversationPrintOptions) error {
-	dialog, msgIds, err := opts.Storage.GetDialogForMessage(ctx, opts.MessageID)
+	dialog, err := storage.GetDialogForMessage(ctx, opts.Storage, opts.MessageID)
 	if err != nil {
 		return fmt.Errorf("failed to get dialog: %w", err)
+	}
+
+	// Extract message IDs from ExtraFields
+	msgIds := make([]string, len(dialog))
+	for i, msg := range dialog {
+		if id, ok := msg.ExtraFields[storage.MessageIDKey].(string); ok {
+			msgIds[i] = id
+		}
 	}
 
 	formatted, err := opts.DialogFormatter.FormatDialog(dialog, msgIds)

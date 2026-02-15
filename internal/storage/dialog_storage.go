@@ -6,14 +6,10 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"slices"
-	"strings"
-	"time"
+	"iter"
 
 	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/spachava753/gai"
-
-	"github.com/spachava753/cpe/internal/types"
 )
 
 const idCharset = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -85,41 +81,18 @@ func stringToRole(s string) (gai.Role, error) {
 	}
 }
 
-// GetBlocksByMessage retrieves all blocks associated with a message ID
-func (s *DialogStorage) GetBlocksByMessage(ctx context.Context, messageID string) ([]Block, error) {
-	return s.q.GetBlocksByMessage(ctx, messageID)
-}
-
-// HasChildrenByID checks if a message has any children
-func (s *DialogStorage) HasChildrenByID(ctx context.Context, messageID string) (bool, error) {
-	hasChildren, err := s.q.HasChildren(ctx, sql.NullString{String: messageID, Valid: true})
-	if err != nil {
-		return false, err
-	}
-	return hasChildren > 0, nil
-}
-
 // Close closes the underlying db connection
 func (s *DialogStorage) Close() error {
 	return s.db.Close()
 }
 
-// SaveMessage saves a single message and its blocks to the database
-func (s *DialogStorage) SaveMessage(ctx context.Context, message gai.Message, parentID string, title string) (string, error) {
+// saveMessageInTx saves a single message and its blocks within an existing transaction
+func (s *DialogStorage) saveMessageInTx(ctx context.Context, qtx *Queries, message gai.Message, parentID string, title string) (string, error) {
 	// Generate a unique message ID
 	messageID, err := s.generateUniqueID(ctx, s.checkMessageIDExists)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate message ID: %w", err)
 	}
-
-	// Begin transaction
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	qtx := s.q.WithTx(tx)
 
 	// Prepare parent ID parameter
 	var parentIDParam sql.NullString
@@ -150,7 +123,6 @@ func (s *DialogStorage) SaveMessage(ctx context.Context, message gai.Message, pa
 		// If the block already has an ID, use it; otherwise leave it as NULL
 		var blockID sql.NullString
 		if block.ID != "" {
-			// Use the existing block ID
 			blockID = sql.NullString{
 				String: block.ID,
 				Valid:  true,
@@ -185,17 +157,47 @@ func (s *DialogStorage) SaveMessage(ctx context.Context, message gai.Message, pa
 		}
 	}
 
-	// Commit the transaction
-	if err := tx.Commit(); err != nil {
-		return "", fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
 	return messageID, nil
 }
 
-// GetMessage retrieves a message by its ID
+// SaveMessages saves one or more messages and returns their generated IDs.
+// All messages in a single call are saved atomically.
+func (s *DialogStorage) SaveMessages(ctx context.Context, opts []SaveMessageOptions) (iter.Seq[string], error) {
+	// Begin transaction
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	qtx := s.q.WithTx(tx)
+
+	ids := make([]string, 0, len(opts))
+	for _, opt := range opts {
+		id, err := s.saveMessageInTx(ctx, qtx, opt.Message, opt.ParentID, opt.Title)
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return func(yield func(string) bool) {
+		for _, id := range ids {
+			if !yield(id) {
+				return
+			}
+		}
+	}, nil
+}
+
+// getMessage retrieves a message by its ID
 // Returns the message, the parent ID (empty string if no parent), and an error
-func (s *DialogStorage) GetMessage(ctx context.Context, messageID string) (gai.Message, string, error) {
+func (s *DialogStorage) getMessage(ctx context.Context, messageID string) (gai.Message, string, error) {
 	msg, err := s.q.GetMessage(ctx, messageID)
 	if err != nil {
 		return gai.Message{}, "", fmt.Errorf("failed to get message: %w", err)
@@ -241,11 +243,15 @@ func (s *DialogStorage) GetMessage(ctx context.Context, messageID string) (gai.M
 		parentID = msg.ParentID.String
 	}
 
-	// Set the message ID in ExtraFields so the saving middleware knows this message is already saved.
+	// Set the message ID and other metadata in ExtraFields so consumers can access them.
 	// Note: Message-level ExtraFields are not persisted to the database (only block-level ExtraFields are),
 	// so we create a fresh map here. This is intentional - message ExtraFields are runtime metadata only.
 	msgExtraFields := map[string]any{
-		types.MessageIDKey: messageID,
+		MessageIDKey:        messageID,
+		MessageCreatedAtKey: msg.CreatedAt,
+	}
+	if parentID != "" {
+		msgExtraFields[MessageParentIDKey] = parentID
 	}
 
 	return gai.Message{
@@ -256,210 +262,60 @@ func (s *DialogStorage) GetMessage(ctx context.Context, messageID string) (gai.M
 	}, parentID, nil
 }
 
-// GetMostRecentAssistantMessageId retrieves the most recently created message (assistant or tool_result)
-func (s *DialogStorage) GetMostRecentAssistantMessageId(ctx context.Context) (string, error) {
-	msg, err := s.q.GetMostRecentMessage(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get most recent message: %w", err)
-	}
-
-	return msg.ID, nil
-}
-
-// GetDialogForMessage reconstructs a dialog up to and including the given message by traversing up to the root.
-// It returns the dialog path from root to the specified message, without including any children of that message.
-func (s *DialogStorage) GetDialogForMessage(ctx context.Context, messageID string) (gai.Dialog, []string, error) {
-
-	var dialog gai.Dialog
-	var msgIds []string
-
-	// get user message first
-	msg, parentId, err := s.GetMessage(ctx, messageID)
-	if err != nil {
-		return gai.Dialog{}, msgIds, fmt.Errorf("failed to get dialog: %w", err)
-	}
-	dialog = append(dialog, msg)
-	msgIds = append(msgIds, messageID)
-
-	// Then keep querying parent messages until we reach root message
-	for parentId != "" {
-		var newParentID string
-		msg, newParentID, err = s.GetMessage(ctx, parentId)
-		if err != nil {
-			return gai.Dialog{}, msgIds, fmt.Errorf("failed to get dialog: %w", err)
-		}
-		dialog = append(dialog, msg)
-		msgIds = append(msgIds, parentId)
-		parentId = newParentID
-	}
-
-	// Reverse the order so now the message is last
-	slices.Reverse(dialog)
-	slices.Reverse(msgIds)
-
-	return dialog, msgIds, nil
-}
-
-// MessageIdNode represents a message and its relationship with its parent and children
-// CreatedAt is the creation timestamp of the message.
-type MessageIdNode struct {
-	ID        string          `json:"id"`
-	ParentID  string          `json:"parent_id"`
-	CreatedAt time.Time       `json:"created_at"`
-	Content   string          `json:"content"` // Short snippet or modality type
-	Role      string          `json:"role"`    // user, assistant, or tool_result
-	Children  []MessageIdNode `json:"children"`
-}
-
-// ListMessages returns a hierarchical representation of messages as a forest of trees.
-// Each tree represents a conversation thread, starting with a root message (a message with no parent).
-// The returned slice contains the root messages, with their children accessible via the Children field.
-func (s *DialogStorage) ListMessages(ctx context.Context) ([]MessageIdNode, error) {
-	// First, get all root messages (messages with no parent)
-	rootMessageIDs, err := s.q.ListRootMessages(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list root messages: %w", err)
-	}
-
-	// Create a map to store all messages for quick lookup
-	allMessages := make(map[string]Message)
-
-	// Get all messages
-	allMessageIDs, err := s.q.ListMessages(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list all messages: %w", err)
-	}
-
-	// Fetch all messages and store them in the map
-	for _, id := range allMessageIDs {
-		msg, err := s.q.GetMessage(ctx, id)
+// GetMessages retrieves messages by their IDs.
+func (s *DialogStorage) GetMessages(ctx context.Context, messageIDs []string) (iter.Seq[gai.Message], error) {
+	messages := make([]gai.Message, 0, len(messageIDs))
+	for _, id := range messageIDs {
+		msg, _, err := s.getMessage(ctx, id)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get message %s: %w", id, err)
 		}
-		allMessages[id] = msg
+		messages = append(messages, msg)
 	}
 
-	// Construct parent-child relationships
-	childrenMap := make(map[string][]string)
-	for id, msg := range allMessages {
-		if msg.ParentID.Valid {
-			parentID := msg.ParentID.String
-			childrenMap[parentID] = append(childrenMap[parentID], id)
+	return func(yield func(gai.Message) bool) {
+		for _, msg := range messages {
+			if !yield(msg) {
+				return
+			}
 		}
+	}, nil
+}
+
+// ListMessages returns messages ordered by creation timestamp.
+func (s *DialogStorage) ListMessages(ctx context.Context, opts ListMessagesOptions) (iter.Seq[gai.Message], error) {
+	var rows []Message
+	var err error
+	if opts.AscendingOrder {
+		rows, err = s.q.ListMessagesAscending(ctx, int64(opts.Offset))
+	} else {
+		rows, err = s.q.ListMessagesDescending(ctx, int64(opts.Offset))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to list messages: %w", err)
 	}
 
-	// Build the forest starting with root nodes
-	var forest []MessageIdNode
-	for _, rootID := range rootMessageIDs {
-		node, err := s.buildMessageTree(ctx, rootID, childrenMap)
+	// For each row, load blocks and build gai.Message
+	messages := make([]gai.Message, 0, len(rows))
+	for _, row := range rows {
+		msg, _, err := s.getMessage(ctx, row.ID)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to get message %s: %w", row.ID, err)
 		}
-		forest = append(forest, node)
+		messages = append(messages, msg)
 	}
 
-	return forest, nil
-}
-
-// buildMessageTree recursively builds a message tree starting from the given node ID
-func (s *DialogStorage) buildMessageTree(ctx context.Context, nodeID string, childrenMap map[string][]string) (MessageIdNode, error) {
-	// Get the message from the database to get its parent ID and created_at/role
-	msg, err := s.q.GetMessage(ctx, nodeID)
-	if err != nil {
-		return MessageIdNode{}, fmt.Errorf("failed to get message %s: %w", nodeID, err)
-	}
-
-	// Retrieve all blocks for Content extraction
-	blocks, err := s.q.GetBlocksByMessage(ctx, nodeID)
-	if err != nil {
-		return MessageIdNode{}, fmt.Errorf("failed to get blocks for message %s: %w", nodeID, err)
-	}
-
-	escapeNewlines := func(s string) string {
-		// Replace both literal \n and actual newlines
-		s = strings.ReplaceAll(s, "\n", " ")
-		s = strings.ReplaceAll(s, "\r", " ")
-		return s
-	}
-
-	content := ""
-	modalityTypeName := func(mType int64) string {
-		switch mType {
-		case 0:
-			return "Text"
-		case 1:
-			return "Image"
-		case 2:
-			return "Audio"
-		case 3:
-			return "Video"
-		default:
-			return fmt.Sprintf("Unknown(%d)", mType)
-		}
-	}
-
-	foundText := false
-	for _, blk := range blocks {
-		if blk.ModalityType == 0 { // gai.Text
-			// Truncate to first 50 chars, replacing newlines
-			snippet := blk.Content
-			snippet = escapeNewlines(snippet)
-			if len(snippet) > 50 {
-				snippet = snippet[:50]
+	return func(yield func(gai.Message) bool) {
+		for _, msg := range messages {
+			if !yield(msg) {
+				return
 			}
-			content = snippet
-			foundText = true
-			break
 		}
-	}
-	if !foundText && len(blocks) > 0 {
-		content = modalityTypeName(blocks[0].ModalityType)
-	}
-
-	role := msg.Role
-
-	node := MessageIdNode{
-		ID:        nodeID,
-		ParentID:  "",
-		CreatedAt: msg.CreatedAt,
-		Content:   content,
-		Role:      role,
-	}
-	if msg.ParentID.Valid {
-		node.ParentID = msg.ParentID.String
-	}
-
-	children, exists := childrenMap[nodeID]
-	if exists {
-		for _, childID := range children {
-			childNode, err := s.buildMessageTree(ctx, childID, childrenMap)
-			if err != nil {
-				return MessageIdNode{}, err
-			}
-			node.Children = append(node.Children, childNode)
-		}
-	}
-	return node, nil
+	}, nil
 }
 
-// DeleteMessage deletes a message if it has no children
-func (s *DialogStorage) DeleteMessage(ctx context.Context, messageID string) error {
-	// Check if the message has children
-	hasChildren, err := s.q.HasChildren(ctx, sql.NullString{String: messageID, Valid: true})
-	if err != nil {
-		return fmt.Errorf("failed to check for children: %w", err)
-	}
-
-	if hasChildren > 0 {
-		return fmt.Errorf("cannot delete message with ID %s: message has children", messageID)
-	}
-
-	// Delete the message (this will also delete associated blocks due to CASCADE)
-	return s.q.DeleteMessage(ctx, messageID)
-}
-
-// DeleteMessageRecursive deletes a message and all of its children recursively
-func (s *DialogStorage) DeleteMessageRecursive(ctx context.Context, messageID string) error {
+// DeleteMessages deletes the specified messages.
+func (s *DialogStorage) DeleteMessages(ctx context.Context, opts DeleteMessagesOptions) error {
 	// Begin transaction
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -469,9 +325,24 @@ func (s *DialogStorage) DeleteMessageRecursive(ctx context.Context, messageID st
 
 	qtx := s.q.WithTx(tx)
 
-	// Delete recursively using existing queries
-	if err := s.deleteMessageAndDescendants(ctx, qtx, messageID); err != nil {
-		return err
+	for _, id := range opts.MessageIDs {
+		if opts.Recursive {
+			if err := s.deleteMessageAndDescendantsInTx(ctx, qtx, id); err != nil {
+				return err
+			}
+		} else {
+			// Check if the message has children
+			hasChildren, err := qtx.HasChildren(ctx, sql.NullString{String: id, Valid: true})
+			if err != nil {
+				return fmt.Errorf("failed to check for children: %w", err)
+			}
+			if hasChildren > 0 {
+				return fmt.Errorf("cannot delete message with ID %s: message has children", id)
+			}
+			if err := qtx.DeleteMessage(ctx, id); err != nil {
+				return fmt.Errorf("failed to delete message %s: %w", id, err)
+			}
+		}
 	}
 
 	// Commit the transaction
@@ -482,8 +353,8 @@ func (s *DialogStorage) DeleteMessageRecursive(ctx context.Context, messageID st
 	return nil
 }
 
-// deleteMessageAndDescendants recursively deletes a message and all its descendants
-func (s *DialogStorage) deleteMessageAndDescendants(ctx context.Context, qtx *Queries, messageID string) error {
+// deleteMessageAndDescendantsInTx recursively deletes a message and all its descendants within a transaction
+func (s *DialogStorage) deleteMessageAndDescendantsInTx(ctx context.Context, qtx *Queries, messageID string) error {
 	// Get all children of this message
 	children, err := qtx.ListMessagesByParent(ctx, sql.NullString{String: messageID, Valid: true})
 	if err != nil {
@@ -492,7 +363,7 @@ func (s *DialogStorage) deleteMessageAndDescendants(ctx context.Context, qtx *Qu
 
 	// Recursively delete all children first
 	for _, child := range children {
-		if err := s.deleteMessageAndDescendants(ctx, qtx, child.ID); err != nil {
+		if err := s.deleteMessageAndDescendantsInTx(ctx, qtx, child.ID); err != nil {
 			return err
 		}
 	}

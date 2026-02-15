@@ -8,18 +8,9 @@ import (
 
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/types"
 )
-
-// DialogLoader is an interface for loading conversation history
-type DialogLoader interface {
-	GetMostRecentAssistantMessageId(ctx context.Context) (string, error)
-	GetDialogForMessage(ctx context.Context, messageID string) (gai.Dialog, []string, error)
-}
-
-// DialogStorage is a type alias for types.DialogSaver.
-// Used by subagent execution to persist execution traces.
-type DialogStorage = types.DialogSaver
 
 // GenerateOptions contains all parameters for the generate command
 type GenerateOptions struct {
@@ -33,8 +24,8 @@ type GenerateOptions struct {
 	GenOptsFunc gai.GenOptsGenerator
 
 	// Dependencies
-	DialogLoader DialogLoader
-	Generator    types.Generator
+	MessageDB storage.MessageDB
+	Generator types.Generator
 
 	// Output
 	Stderr io.Writer
@@ -51,15 +42,30 @@ func Generate(ctx context.Context, opts GenerateOptions) error {
 	continueID := opts.ContinueID
 	newConversation := opts.NewConversation
 
-	if continueID == "" && !newConversation && opts.DialogLoader != nil {
-		var err error
-		continueID, err = opts.DialogLoader.GetMostRecentAssistantMessageId(ctx)
+	if continueID == "" && !newConversation && opts.MessageDB != nil {
+		// List messages in descending order (newest first) and find the first
+		// assistant or tool_result message
+		msgs, err := opts.MessageDB.ListMessages(ctx, storage.ListMessagesOptions{})
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return nil
 			}
 			// No previous conversation found - start new
 			newConversation = true
+		} else {
+			found := false
+			for msg := range msgs {
+				if msg.Role == gai.Assistant || msg.Role == gai.ToolResult {
+					if id, ok := msg.ExtraFields[storage.MessageIDKey].(string); ok && id != "" {
+						continueID = id
+						found = true
+						break
+					}
+				}
+			}
+			if !found {
+				newConversation = true
+			}
 		}
 	}
 
@@ -72,9 +78,9 @@ func Generate(ctx context.Context, opts GenerateOptions) error {
 	// Create dialog
 	dialog := gai.Dialog{userMessage}
 
-	if !newConversation && opts.DialogLoader != nil {
+	if !newConversation && opts.MessageDB != nil {
 		var err error
-		dialog, _, err = opts.DialogLoader.GetDialogForMessage(ctx, continueID)
+		dialog, err = storage.GetDialogForMessage(ctx, opts.MessageDB, continueID)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				return nil

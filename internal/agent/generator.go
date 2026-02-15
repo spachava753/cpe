@@ -21,6 +21,7 @@ import (
 	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/mcp"
+	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/types"
 
 	"github.com/cenkalti/backoff/v5"
@@ -190,7 +191,7 @@ type generatorOptions struct {
 	callbackWrapper ToolCallbackWrapper
 	middleware      []gai.WrapperFunc
 	baseGenerator   gai.ToolCapableGenerator
-	dialogSaver     types.DialogSaver
+	dialogSaver     storage.MessagesSaver
 	stdout          io.Writer
 }
 
@@ -233,9 +234,9 @@ func WithBaseGenerator(g gai.ToolCapableGenerator) GeneratorOption {
 // WithDialogSaver enables incremental dialog saving via the SavingMiddleware.
 // When provided, messages are saved as they flow through the generation pipeline.
 // If not provided (nil), no saving occurs (incognito mode).
-func WithDialogSaver(storage types.DialogSaver) GeneratorOption {
+func WithDialogSaver(saver storage.MessagesSaver) GeneratorOption {
 	return func(o *generatorOptions) {
-		o.dialogSaver = storage
+		o.dialogSaver = saver
 	}
 }
 

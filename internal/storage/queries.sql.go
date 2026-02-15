@@ -278,6 +278,43 @@ func (q *Queries) ListMessages(ctx context.Context) ([]string, error) {
 	return items, nil
 }
 
+const listMessagesAscending = `-- name: ListMessagesAscending :many
+SELECT id, parent_id, title, role, tool_result_error, created_at
+FROM messages
+ORDER BY created_at ASC
+LIMIT -1 OFFSET ?
+`
+
+func (q *Queries) ListMessagesAscending(ctx context.Context, offset int64) ([]Message, error) {
+	rows, err := q.db.QueryContext(ctx, listMessagesAscending, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Message{}
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.ID,
+			&i.ParentID,
+			&i.Title,
+			&i.Role,
+			&i.ToolResultError,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMessagesByParent = `-- name: ListMessagesByParent :many
 SELECT id, parent_id, title, role, tool_result_error, created_at
 FROM messages
@@ -287,6 +324,43 @@ ORDER BY created_at
 
 func (q *Queries) ListMessagesByParent(ctx context.Context, parentID sql.NullString) ([]Message, error) {
 	rows, err := q.db.QueryContext(ctx, listMessagesByParent, parentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Message{}
+	for rows.Next() {
+		var i Message
+		if err := rows.Scan(
+			&i.ID,
+			&i.ParentID,
+			&i.Title,
+			&i.Role,
+			&i.ToolResultError,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMessagesDescending = `-- name: ListMessagesDescending :many
+SELECT id, parent_id, title, role, tool_result_error, created_at
+FROM messages
+ORDER BY created_at DESC
+LIMIT -1 OFFSET ?
+`
+
+func (q *Queries) ListMessagesDescending(ctx context.Context, offset int64) ([]Message, error) {
+	rows, err := q.db.QueryContext(ctx, listMessagesDescending, offset)
 	if err != nil {
 		return nil, err
 	}

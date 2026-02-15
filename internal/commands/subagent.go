@@ -11,6 +11,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/subagentlog"
 	"github.com/spachava753/cpe/internal/types"
 )
@@ -35,9 +36,9 @@ type SubagentOptions struct {
 	// The tool call parameters are returned as the result.
 	OutputSchema *jsonschema.Schema
 
-	// Storage is the dialog storage for persisting execution traces (optional).
+	// Storage is the message saver for persisting execution traces (optional).
 	// When set, messages are saved with SubagentLabel annotation.
-	Storage DialogStorage
+	Storage storage.MessagesSaver
 
 	// SubagentLabel is the label used to annotate saved messages (optional).
 	// Typically formatted as "subagent:<name>:<run_id>" to distinguish
@@ -156,19 +157,29 @@ func executeSubagentCore(ctx context.Context, opts SubagentOptions) (string, err
 }
 
 // saveSubagentTrace persists the subagent execution trace to storage
-func saveSubagentTrace(ctx context.Context, storage DialogStorage, userMsg gai.Message, assistantMsgs gai.Dialog, label string) error {
+func saveSubagentTrace(ctx context.Context, saver storage.MessagesSaver, userMsg gai.Message, assistantMsgs gai.Dialog, label string) error {
 	// Save user message with label
-	userMsgID, err := storage.SaveMessage(ctx, userMsg, "", label)
+	ids, err := saver.SaveMessages(ctx, []storage.SaveMessageOptions{
+		{Message: userMsg, ParentID: "", Title: label},
+	})
 	if err != nil {
 		return fmt.Errorf("failed to save user message: %w", err)
 	}
+	var parentID string
+	for id := range ids {
+		parentID = id
+	}
 
 	// Save assistant messages in chain
-	parentID := userMsgID
 	for _, msg := range assistantMsgs {
-		parentID, err = storage.SaveMessage(ctx, msg, parentID, label)
+		ids, err = saver.SaveMessages(ctx, []storage.SaveMessageOptions{
+			{Message: msg, ParentID: parentID, Title: label},
+		})
 		if err != nil {
 			return fmt.Errorf("failed to save assistant message: %w", err)
+		}
+		for id := range ids {
+			parentID = id
 		}
 	}
 

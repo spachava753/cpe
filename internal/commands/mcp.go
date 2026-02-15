@@ -469,7 +469,7 @@ func MCPServe(ctx context.Context, opts MCPServeOptions) error {
 }
 
 // createSubagentExecutor creates an executor function that runs the subagent.
-func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, subagentName string, dialogStorage DialogStorage, eventClient *subagentlog.Client) mcpinternal.SubagentExecutor {
+func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, subagentName string, dialogStorage storage.MessagesSaver, eventClient *subagentlog.Client) mcpinternal.SubagentExecutor {
 	return func(ctx context.Context, input mcpinternal.SubagentInput) (string, error) {
 		// Check context before starting
 		if err := ctx.Err(); err != nil {

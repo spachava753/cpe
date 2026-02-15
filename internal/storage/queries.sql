@@ -53,6 +53,18 @@ FROM messages
 WHERE parent_id = ?
 ORDER BY created_at DESC;
 
+-- name: ListMessagesDescending :many
+SELECT *
+FROM messages
+ORDER BY created_at DESC
+LIMIT -1 OFFSET ?;
+
+-- name: ListMessagesAscending :many
+SELECT *
+FROM messages
+ORDER BY created_at ASC
+LIMIT -1 OFFSET ?;
+
 -- Block queries
 -- name: CreateBlock :exec
 INSERT INTO blocks (id, message_id, block_type, modality_type, mime_type, content, extra_fields, sequence_order)
