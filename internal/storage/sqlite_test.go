@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -13,11 +14,16 @@ import (
 func newTestDB(t *testing.T) *Sqlite {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	ds, err := NewSqlite(context.Background(), dbPath)
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
-		t.Fatalf("InitDialogStorage: %v", err)
+		t.Fatalf("sql.Open: %v", err)
 	}
-	t.Cleanup(func() { ds.Close() })
+	t.Cleanup(func() { db.Close() })
+
+	ds, err := NewSqlite(context.Background(), db)
+	if err != nil {
+		t.Fatalf("NewSqlite: %v", err)
+	}
 	return ds
 }
 

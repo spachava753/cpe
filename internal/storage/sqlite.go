@@ -12,6 +12,18 @@ import (
 	"github.com/spachava753/gai"
 )
 
+// DB is the interface accepted by NewSqlite. It abstracts the database
+// operations needed by Sqlite so that callers can supply a real *sql.DB or a
+// wrapper that injects faults, records calls, etc.
+type DB interface {
+	DBTX
+	// ExecContext executes a query without returning any rows. It is used to
+	// initialise the database schema.
+	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+	// BeginTx starts a transaction.
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}
+
 const idCharset = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 func generateId() string {
@@ -25,22 +37,17 @@ var schemaSQL string
 // It serves as an abstraction over the implementation details of how messages
 // are actually stored. Do not access its internal database directly.
 type Sqlite struct {
-	db          *sql.DB
+	db          DB
 	q           *Queries
 	idGenerator func() string
 }
 
-// NewSqlite initializes and returns a new DialogStorage instance
-// This function opens or creates the database and initializes the schema
-func NewSqlite(ctx context.Context, dbPath string) (*Sqlite, error) {
-	// Open or create the database
-	db, err := sql.Open("sqlite3", dbPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
-	}
-
+// NewSqlite initializes and returns a new Sqlite instance backed by the given
+// DB. It runs the embedded schema DDL against db before returning. The caller
+// is responsible for opening and closing the underlying database connection.
+func NewSqlite(ctx context.Context, db DB) (*Sqlite, error) {
 	// Initialize schema from embedded SQL file
-	_, err = db.ExecContext(ctx, schemaSQL)
+	_, err := db.ExecContext(ctx, schemaSQL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize schema: %w", err)
 	}
@@ -79,11 +86,6 @@ func stringToRole(s string) (gai.Role, error) {
 	default:
 		return 0, fmt.Errorf("invalid role: %s", s)
 	}
-}
-
-// Close closes the underlying db connection
-func (s *Sqlite) Close() error {
-	return s.db.Close()
 }
 
 // saveMessageInTx saves a single message and its blocks within a transaction.

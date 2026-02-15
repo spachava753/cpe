@@ -2,10 +2,12 @@ package commands
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"os"
 
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/agent"
@@ -134,12 +136,16 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 	// Initialize storage unless in incognito mode
 	var dialogStorage *storage.Sqlite
 	if !opts.IncognitoMode {
-		dbPath := ".cpeconvo"
-		dialogStorage, err = storage.NewSqlite(ctx, dbPath)
+		storageDB, dbErr := sql.Open("sqlite3", ".cpeconvo")
+		if dbErr != nil {
+			return fmt.Errorf("failed to open database: %w", dbErr)
+		}
+		defer storageDB.Close()
+
+		dialogStorage, err = storage.NewSqlite(ctx, storageDB)
 		if err != nil {
 			return fmt.Errorf("failed to initialize dialog storage: %w", err)
 		}
-		defer dialogStorage.Close()
 	}
 
 	// Build generator options
