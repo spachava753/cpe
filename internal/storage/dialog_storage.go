@@ -398,25 +398,9 @@ func (s *DialogStorage) generateUniqueID(ctx context.Context, collisionCheck fun
 
 // checkMessageIDExists checks if a message ID already exists
 func (s *DialogStorage) checkMessageIDExists(ctx context.Context, id string) (bool, error) {
-	// First check if the messages table exists
-	var tableExists bool
-	err := s.db.QueryRowContext(ctx, "SELECT EXISTS (SELECT name FROM sqlite_master WHERE name = 'messages')").Scan(&tableExists)
+	exists, err := s.q.CheckMessageIDExists(ctx, id)
 	if err != nil {
 		return false, err
 	}
-
-	// If the table doesn't exist yet, then the ID definitely doesn't exist
-	if !tableExists {
-		return false, nil
-	}
-
-	// Otherwise, check if the ID exists in the table
-	_, err = s.q.GetMessage(ctx, id)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
+	return exists == 1, nil
 }

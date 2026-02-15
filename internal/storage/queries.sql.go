@@ -10,6 +10,17 @@ import (
 	"database/sql"
 )
 
+const checkMessageIDExists = `-- name: CheckMessageIDExists :one
+SELECT EXISTS(SELECT 1 FROM messages WHERE id = ?) as "exists"
+`
+
+func (q *Queries) CheckMessageIDExists(ctx context.Context, id string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, checkMessageIDExists, id)
+	var exists int64
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const createBlock = `-- name: CreateBlock :exec
 INSERT INTO blocks (id, message_id, block_type, modality_type, mime_type, content, extra_fields, sequence_order)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -65,17 +76,6 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) er
 		arg.Role,
 		arg.ToolResultError,
 	)
-	return err
-}
-
-const deleteBlock = `-- name: DeleteBlock :exec
-DELETE
-FROM blocks
-WHERE id = ?
-`
-
-func (q *Queries) DeleteBlock(ctx context.Context, id sql.NullString) error {
-	_, err := q.db.ExecContext(ctx, deleteBlock, id)
 	return err
 }
 
@@ -153,19 +153,6 @@ func (q *Queries) GetBlocksByMessage(ctx context.Context, messageID string) ([]B
 	return items, nil
 }
 
-const getChildrenCount = `-- name: GetChildrenCount :one
-SELECT COUNT(*) as count
-FROM messages
-WHERE parent_id = ?
-`
-
-func (q *Queries) GetChildrenCount(ctx context.Context, parentID sql.NullString) (int64, error) {
-	row := q.db.QueryRowContext(ctx, getChildrenCount, parentID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const getMessage = `-- name: GetMessage :one
 SELECT id, parent_id, title, role, tool_result_error, created_at
 FROM messages
@@ -174,58 +161,6 @@ WHERE id = ?
 
 func (q *Queries) GetMessage(ctx context.Context, id string) (Message, error) {
 	row := q.db.QueryRowContext(ctx, getMessage, id)
-	var i Message
-	err := row.Scan(
-		&i.ID,
-		&i.ParentID,
-		&i.Title,
-		&i.Role,
-		&i.ToolResultError,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const getMessageChildrenId = `-- name: GetMessageChildrenId :many
-SELECT id
-FROM messages
-WHERE parent_id = ?
-ORDER BY created_at DESC
-`
-
-func (q *Queries) GetMessageChildrenId(ctx context.Context, parentID sql.NullString) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, getMessageChildrenId, parentID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getMostRecentMessage = `-- name: GetMostRecentMessage :one
-SELECT id, parent_id, title, role, tool_result_error, created_at
-FROM messages
-WHERE role IN ('assistant', 'tool_result')
-ORDER BY created_at DESC
-LIMIT 1
-`
-
-func (q *Queries) GetMostRecentMessage(ctx context.Context) (Message, error) {
-	row := q.db.QueryRowContext(ctx, getMostRecentMessage)
 	var i Message
 	err := row.Scan(
 		&i.ID,
@@ -379,36 +314,6 @@ func (q *Queries) ListMessagesDescending(ctx context.Context, offset int64) ([]M
 			return nil, err
 		}
 		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listRootMessages = `-- name: ListRootMessages :many
-SELECT id
-FROM messages
-WHERE parent_id IS NULL
-ORDER BY created_at
-`
-
-func (q *Queries) ListRootMessages(ctx context.Context) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, listRootMessages)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
