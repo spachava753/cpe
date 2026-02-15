@@ -20,30 +20,28 @@ var MCPDebugProxy = goyek.Define(goyek.Task{
 	Name:  "mcp-debug-proxy",
 	Usage: "MCP stdio debug proxy. Use -log=FILE -cmd='command args'",
 	Action: func(a *goyek.A) {
-		logPath := GetLogFile()
-		if logPath == "" {
-			a.Fatal("Usage: go run ./scripts -log=<file> -cmd='<command>' mcp-debug-proxy")
+		if *logFile == "" {
+			a.Fatal("Usage: go run ./build -log=<file> -cmd='<command>' mcp-debug-proxy")
 		}
 
-		mcpCmd := GetMCPCmd()
-		if mcpCmd == "" {
-			a.Fatal("Usage: go run ./scripts -log=<file> -cmd='<command>' mcp-debug-proxy")
+		if *mcpCmd == "" {
+			a.Fatal("Usage: go run ./build -log=<file> -cmd='<command>' mcp-debug-proxy")
 		}
 
-		cmdArgs := strings.Fields(mcpCmd)
+		cmdArgs := strings.Fields(*mcpCmd)
 		if len(cmdArgs) == 0 {
 			a.Fatal("-cmd cannot be empty")
 		}
 
-		logFile, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		lf, err := os.OpenFile(*logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			a.Fatalf("Failed to open log file: %v", err)
 		}
-		defer logFile.Close()
+		defer lf.Close()
 
-		fmt.Fprintf(logFile, "=== MCP Debug Proxy Started at %s ===\n", time.Now().Format(time.RFC3339))
-		fmt.Fprintf(logFile, "Command: %s\n", strings.Join(cmdArgs, " "))
-		fmt.Fprintf(logFile, "=========================================\n\n")
+		fmt.Fprintf(lf, "=== MCP Debug Proxy Started at %s ===\n", time.Now().Format(time.RFC3339))
+		fmt.Fprintf(lf, "Command: %s\n", strings.Join(cmdArgs, " "))
+		fmt.Fprintf(lf, "=========================================\n\n")
 
 		cmd := exec.Command(cmdArgs[0], cmdArgs[1:]...)
 
@@ -68,8 +66,8 @@ var MCPDebugProxy = goyek.Define(goyek.Task{
 
 		go func() {
 			sig := <-sigChan
-			fmt.Fprintf(logFile, "[%s] Received signal: %v, propagating to child...\n", mcpTimestamp(), sig)
-			logFile.Sync()
+			fmt.Fprintf(lf, "[%s] Received signal: %v, propagating to child...\n", mcpTimestamp(), sig)
+			lf.Sync()
 			if cmd.Process != nil {
 				cmd.Process.Signal(sig)
 			}
@@ -86,12 +84,12 @@ var MCPDebugProxy = goyek.Define(goyek.Task{
 				line, err := reader.ReadBytes('\n')
 				if err != nil {
 					if err != io.EOF {
-						fmt.Fprintf(logFile, "[%s] STDIN ERROR: %v\n", mcpTimestamp(), err)
+						fmt.Fprintf(lf, "[%s] STDIN ERROR: %v\n", mcpTimestamp(), err)
 					}
 					return
 				}
-				fmt.Fprintf(logFile, "[%s] --> %s", mcpTimestamp(), line)
-				logFile.Sync()
+				fmt.Fprintf(lf, "[%s] --> %s", mcpTimestamp(), line)
+				lf.Sync()
 				stdinPipe.Write(line)
 			}
 		}()
@@ -103,23 +101,23 @@ var MCPDebugProxy = goyek.Define(goyek.Task{
 				line, err := reader.ReadBytes('\n')
 				if err != nil {
 					if err != io.EOF {
-						fmt.Fprintf(logFile, "[%s] STDOUT ERROR: %v\n", mcpTimestamp(), err)
+						fmt.Fprintf(lf, "[%s] STDOUT ERROR: %v\n", mcpTimestamp(), err)
 					}
 					return
 				}
-				fmt.Fprintf(logFile, "[%s] <-- %s", mcpTimestamp(), line)
-				logFile.Sync()
+				fmt.Fprintf(lf, "[%s] <-- %s", mcpTimestamp(), line)
+				lf.Sync()
 				os.Stdout.Write(line)
 			}
 		}()
 
 		err = cmd.Wait()
-		fmt.Fprintf(logFile, "[%s] Child process exited: %v\n", mcpTimestamp(), err)
-		logFile.Sync()
+		fmt.Fprintf(lf, "[%s] Child process exited: %v\n", mcpTimestamp(), err)
+		lf.Sync()
 
 		wg.Wait()
 
-		fmt.Fprintf(logFile, "[%s] === MCP Debug Proxy Shutdown ===\n", mcpTimestamp())
+		fmt.Fprintf(lf, "[%s] === MCP Debug Proxy Shutdown ===\n", mcpTimestamp())
 	},
 })
 

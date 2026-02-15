@@ -20,17 +20,14 @@ var DebugProxy = goyek.Define(goyek.Task{
 	Name:  "debug-proxy",
 	Usage: "HTTP debug proxy. Use -target=URL [-port=8080]",
 	Action: func(a *goyek.A) {
-		targetURL := GetTargetURL()
-		if targetURL == "" {
-			a.Fatal("Usage: go run ./scripts -target=<url> [-port=8080] debug-proxy")
+		if *targetURL == "" {
+			a.Fatal("Usage: go run ./build -target=<url> [-port=8080] debug-proxy")
 		}
 
-		target, err := url.Parse(targetURL)
+		target, err := url.Parse(*targetURL)
 		if err != nil {
 			a.Fatalf("Invalid target URL: %v", err)
 		}
-
-		port := GetPort()
 
 		proxy := &httputil.ReverseProxy{
 			Director: func(req *http.Request) {
@@ -106,11 +103,11 @@ var DebugProxy = goyek.Define(goyek.Task{
 			proxy.ServeHTTP(w, r)
 		})
 
-		fmt.Printf("\n🔍 Debug proxy listening on http://localhost:%s\n", port)
+		fmt.Printf("\n🔍 Debug proxy listening on http://localhost:%s\n", *port)
 		fmt.Printf("   Proxying to: %s\n", target.String())
-		fmt.Printf("   Set your base_url to: http://localhost:%s\n\n", port)
+		fmt.Printf("   Set your base_url to: http://localhost:%s\n\n", *port)
 
-		if err := http.ListenAndServe(":"+port, nil); err != nil {
+		if err := http.ListenAndServe(":"+*port, nil); err != nil {
 			a.Fatalf("Server error: %v", err)
 		}
 	},

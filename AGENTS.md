@@ -81,10 +81,10 @@ go vet ./...
 go test ./...
 
 # Lint (via golangci-lint)
-go run ./scripts lint
+go run ./build lint
 
 # Lint with auto-fix for formatting issues
-go run ./scripts -lint-fix lint
+go run ./build -lint-fix lint
 ```
 
 Schema and configuration:
@@ -254,10 +254,11 @@ harbor run -d "hello-world@head" -e docker --agent-import-path cpe_harbor.cpe:CP
 
 ## Scripts
 
-The `scripts/` folder contains development utility scripts managed via [Goyek](https://github.com/goyek/goyek), a Go-based task runner. Tasks are defined as Go functions and invoked with flags.
+The `build/` folder contains development utility scripts managed via [Goyek](https://github.com/goyek/goyek), a Go-based task runner. Tasks are defined as Go functions and invoked with flags. Running with no arguments defaults to the `list` task, which prints all available tasks.
 
 **Available tasks:**
 
+- `list` - List all available tasks (default when no task is specified)
 - `lint` - Run golangci-lint with bug-focused linters (staticcheck, govet, bodyclose, nilerr, contextcheck, etc.)
 - `debug-proxy` - HTTP reverse proxy that logs all requests/responses (useful for debugging API calls)
 - `mcp-debug-proxy` - Stdio proxy that logs MCP protocol messages to a file
@@ -265,21 +266,24 @@ The `scripts/` folder contains development utility scripts managed via [Goyek](h
 **Usage:**
 
 ```bash
+# List all available tasks (default)
+go run ./build
+
 # Lint the codebase
-go run ./scripts lint
+go run ./build lint
 
 # Lint with auto-fix for formatting issues
-go run ./scripts -lint-fix lint
+go run ./build -lint-fix lint
 
 # HTTP debug proxy
-go run ./scripts -target=https://api.anthropic.com -port=8080 debug-proxy
+go run ./build -target=https://api.anthropic.com -port=8080 debug-proxy
 
 # MCP debug proxy
-go run ./scripts -log=debug.log -cmd='go run main.go mcp serve' mcp-debug-proxy
+go run ./build -log=debug.log -cmd='go run main.go mcp serve' mcp-debug-proxy
 ```
 
 **Adding new tasks:**
 
-1. Create a new `*_task.go` file in `scripts/`
+1. Create a new `*_task.go` file in `build/`
 2. Define flags in `main.go` if the task needs arguments
 3. Use `goyek.Define(goyek.Task{...})` to register the task

@@ -21,11 +21,11 @@ var Lint = goyek.Define(goyek.Task{
 		// Run golangci-lint
 		args := []string{"tool", "golangci-lint", "run"}
 
-		if GetLintFix() {
+		if *lintFix {
 			args = append(args, "--fix")
 		}
 
-		if GetLintVerbose() {
+		if *lintVerbose {
 			args = append(args, "-v")
 		}
 

@@ -26,23 +26,9 @@ var (
 
 func main() {
 	flag.Parse()
-	goyek.Main(flag.Args())
+	args := flag.Args()
+	if len(args) == 0 {
+		args = []string{"list"}
+	}
+	goyek.Main(args)
 }
-
-// GetTargetURL returns the target URL flag value
-func GetTargetURL() string { return *targetURL }
-
-// GetPort returns the port flag value
-func GetPort() string { return *port }
-
-// GetLogFile returns the log file flag value
-func GetLogFile() string { return *logFile }
-
-// GetMCPCmd returns the MCP command flag value
-func GetMCPCmd() string { return *mcpCmd }
-
-// GetLintFix returns the lint-fix flag value
-func GetLintFix() bool { return *lintFix }
-
-// GetLintVerbose returns the lint-verbose flag value
-func GetLintVerbose() bool { return *lintVerbose }
