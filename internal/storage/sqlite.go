@@ -10,13 +10,15 @@ import (
 
 	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/storage/sqlcgen"
 )
 
 // DB is the interface accepted by NewSqlite. It abstracts the database
 // operations needed by Sqlite so that callers can supply a real *sql.DB or a
 // wrapper that injects faults, records calls, etc.
 type DB interface {
-	DBTX
+	sqlcgen.DBTX
 	// ExecContext executes a query without returning any rows. It is used to
 	// initialise the database schema.
 	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
@@ -38,7 +40,7 @@ var schemaSQL string
 // are actually stored. Do not access its internal database directly.
 type Sqlite struct {
 	db          DB
-	q           *Queries
+	q           *sqlcgen.Queries
 	idGenerator func() string
 }
 
@@ -55,7 +57,7 @@ func NewSqlite(ctx context.Context, db DB) (*Sqlite, error) {
 	// Create and return the dialog storage
 	return &Sqlite{
 		db:          db,
-		q:           New(db),
+		q:           sqlcgen.New(db),
 		idGenerator: generateId,
 	}, nil
 }
@@ -89,7 +91,7 @@ func stringToRole(s string) (gai.Role, error) {
 }
 
 // saveMessageInTx saves a single message and its blocks within a transaction.
-func (s *Sqlite) saveMessageInTx(ctx context.Context, qtx *Queries, message gai.Message, parentID string, title string) (string, error) {
+func (s *Sqlite) saveMessageInTx(ctx context.Context, qtx *sqlcgen.Queries, message gai.Message, parentID string, title string) (string, error) {
 	// Generate a unique message ID
 	messageID, err := s.generateUniqueIDInTx(ctx, qtx)
 	if err != nil {
@@ -109,7 +111,7 @@ func (s *Sqlite) saveMessageInTx(ctx context.Context, qtx *Queries, message gai.
 	}
 
 	// Create the message
-	err = qtx.CreateMessage(ctx, CreateMessageParams{
+	err = qtx.CreateMessage(ctx, sqlcgen.CreateMessageParams{
 		ID:              messageID,
 		ParentID:        parentIDParam,
 		Title:           titleParam,
@@ -144,7 +146,7 @@ func (s *Sqlite) saveMessageInTx(ctx context.Context, qtx *Queries, message gai.
 			}
 		}
 
-		err = qtx.CreateBlock(ctx, CreateBlockParams{
+		err = qtx.CreateBlock(ctx, sqlcgen.CreateBlockParams{
 			ID:            blockID,
 			MessageID:     messageID,
 			BlockType:     block.BlockType,
@@ -172,7 +174,7 @@ func getExtraFieldString(m map[string]any, key string) string {
 }
 
 // generateUniqueIDInTx generates a unique ID checking for collisions within a transaction.
-func (s *Sqlite) generateUniqueIDInTx(ctx context.Context, qtx *Queries) (string, error) {
+func (s *Sqlite) generateUniqueIDInTx(ctx context.Context, qtx *sqlcgen.Queries) (string, error) {
 	maxAttempts := 10
 	for range maxAttempts {
 		id := s.idGenerator()
@@ -347,14 +349,18 @@ func (s *Sqlite) getMessage(ctx context.Context, messageID string) (gai.Message,
 	}
 
 	// Set the message ID and other metadata in ExtraFields so consumers can access them.
-	// Note: Message-level ExtraFields are not persisted to the database (only block-level ExtraFields are),
-	// so we create a fresh map here. This is intentional - message ExtraFields are runtime metadata only.
+	// Note: Arbitrary message-level ExtraFields are not persisted to the database
+	// (only block-level ExtraFields are). We create a fresh map here and populate it
+	// with the known keys that are stored as dedicated columns.
 	msgExtraFields := map[string]any{
 		MessageIDKey:        messageID,
 		MessageCreatedAtKey: msg.CreatedAt,
 	}
 	if parentID != "" {
 		msgExtraFields[MessageParentIDKey] = parentID
+	}
+	if msg.Title.Valid {
+		msgExtraFields[MessageTitleKey] = msg.Title.String
 	}
 
 	return gai.Message{
@@ -387,7 +393,7 @@ func (s *Sqlite) GetMessages(ctx context.Context, messageIDs []string) (iter.Seq
 
 // ListMessages returns messages ordered by creation timestamp.
 func (s *Sqlite) ListMessages(ctx context.Context, opts ListMessagesOptions) (iter.Seq[gai.Message], error) {
-	var rows []Message
+	var rows []sqlcgen.Message
 	var err error
 	if opts.AscendingOrder {
 		rows, err = s.q.ListMessagesAscending(ctx, int64(opts.Offset))
@@ -457,7 +463,7 @@ func (s *Sqlite) DeleteMessages(ctx context.Context, opts DeleteMessagesOptions)
 }
 
 // deleteMessageAndDescendantsInTx recursively deletes a message and all its descendants within a transaction
-func (s *Sqlite) deleteMessageAndDescendantsInTx(ctx context.Context, qtx *Queries, messageID string) error {
+func (s *Sqlite) deleteMessageAndDescendantsInTx(ctx context.Context, qtx *sqlcgen.Queries, messageID string) error {
 	// Get all children of this message
 	children, err := qtx.ListMessagesByParent(ctx, sql.NullString{String: messageID, Valid: true})
 	if err != nil {
