@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -156,29 +157,31 @@ func executeSubagentCore(ctx context.Context, opts SubagentOptions) (string, err
 	return extractFinalResponse(resultDialog), nil
 }
 
-// saveSubagentTrace persists the subagent execution trace to storage
+// saveSubagentTrace persists the subagent execution trace to storage.
+// Messages are saved individually and chained by parent ID.
 func saveSubagentTrace(ctx context.Context, saver storage.MessagesSaver, userMsg gai.Message, assistantMsgs gai.Dialog, label string) error {
-	// Save user message with label
-	ids, err := saver.SaveMessages(ctx, []storage.SaveMessageOptions{
-		{Message: userMsg, ParentID: "", Title: label},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to save user message: %w", err)
-	}
+	// Build an iterator that yields the user message first, then assistant messages,
+	// chaining each to the previous via ParentID set after each save.
 	var parentID string
-	for id := range ids {
+
+	// Save user message with label
+	for id, err := range saver.SaveMessages(ctx, slices.Values([]storage.SaveMessageOptions{
+		{Message: userMsg, ParentID: "", Title: label},
+	})) {
+		if err != nil {
+			return fmt.Errorf("failed to save user message: %w", err)
+		}
 		parentID = id
 	}
 
 	// Save assistant messages in chain
 	for _, msg := range assistantMsgs {
-		ids, err = saver.SaveMessages(ctx, []storage.SaveMessageOptions{
+		for id, err := range saver.SaveMessages(ctx, slices.Values([]storage.SaveMessageOptions{
 			{Message: msg, ParentID: parentID, Title: label},
-		})
-		if err != nil {
-			return fmt.Errorf("failed to save assistant message: %w", err)
-		}
-		for id := range ids {
+		})) {
+			if err != nil {
+				return fmt.Errorf("failed to save assistant message: %w", err)
+			}
 			parentID = id
 		}
 	}

@@ -51,12 +51,14 @@ type SaveMessageOptions struct {
 
 // MessagesSaver persists messages to storage.
 type MessagesSaver interface {
-	// SaveMessages saves one or more messages and returns their generated IDs.
-	// The returned iter.Seq yields IDs in the same order as the input opts slice.
-	// All messages in a single call are saved atomically — either all succeed or
-	// none are persisted. Each message is assigned a unique ID by the
-	// implementation; callers do not provide IDs.
-	SaveMessages(ctx context.Context, opts []SaveMessageOptions) (iter.Seq[string], error)
+	// SaveMessages saves messages by pulling from the input iterator one at a
+	// time. Each message is persisted independently (not in a shared
+	// transaction). The returned iter.Seq2 yields (messageID, error) pairs in
+	// the same order as the input iterator. On the first error the iterator
+	// stops; callers must consume the iterator to trigger persistence. Each
+	// message is assigned a unique ID by the implementation; callers do not
+	// provide IDs.
+	SaveMessages(ctx context.Context, opts iter.Seq[SaveMessageOptions]) iter.Seq2[string, error]
 }
 
 // DeleteMessagesOptions configures a message deletion operation.

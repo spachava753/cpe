@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -34,19 +35,34 @@ func makeTextMessage(role gai.Role, text string) gai.Message {
 	}
 }
 
+// saveOne is a test helper that saves a single message and returns its ID.
+func saveOne(t *testing.T, db *DialogStorage, ctx context.Context, opt SaveMessageOptions) string {
+	t.Helper()
+	var id string
+	for gotID, err := range db.SaveMessages(ctx, slices.Values([]SaveMessageOptions{opt})) {
+		if err != nil {
+			t.Fatalf("SaveMessages: %v", err)
+		}
+		id = gotID
+	}
+	if id == "" {
+		t.Fatal("expected non-empty ID")
+	}
+	return id
+}
+
 func TestSaveMessages(t *testing.T) {
 	t.Run("single root message", func(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		ids, err := db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: makeTextMessage(gai.User, "hello"), ParentID: "", Title: ""},
-		})
-		if err != nil {
-			t.Fatalf("SaveMessages: %v", err)
-		}
 		var gotID string
-		for id := range ids {
+		for id, err := range db.SaveMessages(ctx, slices.Values([]SaveMessageOptions{
+			{Message: makeTextMessage(gai.User, "hello"), ParentID: "", Title: ""},
+		})) {
+			if err != nil {
+				t.Fatalf("SaveMessages: %v", err)
+			}
 			gotID = id
 		}
 		if gotID == "" {
@@ -63,12 +79,11 @@ func TestSaveMessages(t *testing.T) {
 			{Message: makeTextMessage(gai.User, "msg2"), ParentID: ""},
 			{Message: makeTextMessage(gai.User, "msg3"), ParentID: ""},
 		}
-		ids, err := db.SaveMessages(ctx, opts)
-		if err != nil {
-			t.Fatalf("SaveMessages: %v", err)
-		}
 		var gotIDs []string
-		for id := range ids {
+		for id, err := range db.SaveMessages(ctx, slices.Values(opts)) {
+			if err != nil {
+				t.Fatalf("SaveMessages: %v", err)
+			}
 			gotIDs = append(gotIDs, id)
 		}
 		if len(gotIDs) != 3 {
@@ -92,28 +107,14 @@ func TestSaveMessages(t *testing.T) {
 		ctx := context.Background()
 
 		// Save parent
-		ids, err := db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: makeTextMessage(gai.User, "parent"), ParentID: ""},
+		parentID := saveOne(t, db, ctx, SaveMessageOptions{
+			Message: makeTextMessage(gai.User, "parent"), ParentID: "",
 		})
-		if err != nil {
-			t.Fatalf("SaveMessages (parent): %v", err)
-		}
-		var parentID string
-		for id := range ids {
-			parentID = id
-		}
 
 		// Save child
-		ids, err = db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: makeTextMessage(gai.Assistant, "child"), ParentID: parentID},
+		childID := saveOne(t, db, ctx, SaveMessageOptions{
+			Message: makeTextMessage(gai.Assistant, "child"), ParentID: parentID,
 		})
-		if err != nil {
-			t.Fatalf("SaveMessages (child): %v", err)
-		}
-		var childID string
-		for id := range ids {
-			childID = id
-		}
 		if childID == "" {
 			t.Fatal("expected non-empty child ID")
 		}
@@ -143,16 +144,7 @@ func TestSaveMessages(t *testing.T) {
 			},
 		}
 
-		ids, err := db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: msg, ParentID: ""},
-		})
-		if err != nil {
-			t.Fatalf("SaveMessages: %v", err)
-		}
-		var savedID string
-		for id := range ids {
-			savedID = id
-		}
+		savedID := saveOne(t, db, ctx, SaveMessageOptions{Message: msg, ParentID: ""})
 
 		// Verify blocks are persisted by retrieving
 		msgs, err := db.GetMessages(ctx, []string{savedID})
@@ -172,36 +164,28 @@ func TestSaveMessages(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		ids, err := db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: makeTextMessage(gai.User, "titled"), ParentID: "", Title: "subagent:test:run1"},
+		gotID := saveOne(t, db, ctx, SaveMessageOptions{
+			Message: makeTextMessage(gai.User, "titled"), ParentID: "", Title: "subagent:test:run1",
 		})
-		if err != nil {
-			t.Fatalf("SaveMessages: %v", err)
-		}
-		var gotID string
-		for id := range ids {
-			gotID = id
-		}
 		if gotID == "" {
 			t.Fatal("expected non-empty ID")
 		}
 	})
 
-	t.Run("atomicity positive case", func(t *testing.T) {
+	t.Run("multiple messages individually saved and retrievable", func(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
 		opts := []SaveMessageOptions{
-			{Message: makeTextMessage(gai.User, "atom1"), ParentID: ""},
-			{Message: makeTextMessage(gai.User, "atom2"), ParentID: ""},
-			{Message: makeTextMessage(gai.User, "atom3"), ParentID: ""},
-		}
-		ids, err := db.SaveMessages(ctx, opts)
-		if err != nil {
-			t.Fatalf("SaveMessages: %v", err)
+			{Message: makeTextMessage(gai.User, "ind1"), ParentID: ""},
+			{Message: makeTextMessage(gai.User, "ind2"), ParentID: ""},
+			{Message: makeTextMessage(gai.User, "ind3"), ParentID: ""},
 		}
 		var savedIDs []string
-		for id := range ids {
+		for id, err := range db.SaveMessages(ctx, slices.Values(opts)) {
+			if err != nil {
+				t.Fatalf("SaveMessages: %v", err)
+			}
 			savedIDs = append(savedIDs, id)
 		}
 
@@ -218,6 +202,86 @@ func TestSaveMessages(t *testing.T) {
 			t.Fatalf("expected 3 messages, got %d", count)
 		}
 	})
+
+	t.Run("iterator pipeline chains saves", func(t *testing.T) {
+		db := newTestDB(t)
+		ctx := context.Background()
+
+		// Build a pipeline: save messages one at a time via the iterator,
+		// feeding each ID as the next message's parent.
+		var parentID string
+		msgs := []gai.Message{
+			makeTextMessage(gai.User, "first"),
+			makeTextMessage(gai.Assistant, "second"),
+			makeTextMessage(gai.User, "third"),
+		}
+		var savedIDs []string
+		for _, msg := range msgs {
+			for id, err := range db.SaveMessages(ctx, slices.Values([]SaveMessageOptions{
+				{Message: msg, ParentID: parentID},
+			})) {
+				if err != nil {
+					t.Fatalf("SaveMessages: %v", err)
+				}
+				savedIDs = append(savedIDs, id)
+				parentID = id
+			}
+		}
+
+		if len(savedIDs) != 3 {
+			t.Fatalf("expected 3 saved IDs, got %d", len(savedIDs))
+		}
+
+		// Verify the chain by retrieving the dialog from the last message
+		dialog, err := GetDialogForMessage(ctx, db, savedIDs[2])
+		if err != nil {
+			t.Fatalf("GetDialogForMessage: %v", err)
+		}
+		if len(dialog) != 3 {
+			t.Fatalf("expected 3 messages in dialog chain, got %d", len(dialog))
+		}
+	})
+
+	t.Run("early break stops iteration", func(t *testing.T) {
+		db := newTestDB(t)
+		ctx := context.Background()
+
+		// Track how many options the input iterator yields
+		yieldCount := 0
+		inputIter := func(yield func(SaveMessageOptions) bool) {
+			for i := 0; i < 5; i++ {
+				yieldCount++
+				if !yield(SaveMessageOptions{
+					Message:  makeTextMessage(gai.User, "msg"),
+					ParentID: "",
+				}) {
+					return
+				}
+			}
+		}
+
+		// Only consume the first 2 results
+		consumed := 0
+		for _, err := range db.SaveMessages(ctx, inputIter) {
+			if err != nil {
+				t.Fatalf("SaveMessages: %v", err)
+			}
+			consumed++
+			if consumed == 2 {
+				break
+			}
+		}
+
+		if consumed != 2 {
+			t.Fatalf("expected to consume 2, got %d", consumed)
+		}
+		// The input iterator should have been called at most 3 times
+		// (2 consumed + 1 that may be pulled before break takes effect, depending on implementation)
+		// but definitely not all 5
+		if yieldCount > 3 {
+			t.Fatalf("expected input iterator to yield at most 3 times, got %d", yieldCount)
+		}
+	})
 }
 
 func TestGetMessages(t *testing.T) {
@@ -225,16 +289,9 @@ func TestGetMessages(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		ids, err := db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: makeTextMessage(gai.User, "hello"), ParentID: ""},
+		savedID := saveOne(t, db, ctx, SaveMessageOptions{
+			Message: makeTextMessage(gai.User, "hello"), ParentID: "",
 		})
-		if err != nil {
-			t.Fatalf("SaveMessages: %v", err)
-		}
-		var savedID string
-		for id := range ids {
-			savedID = id
-		}
 
 		msgs, err := db.GetMessages(ctx, []string{savedID})
 		if err != nil {
@@ -255,28 +312,14 @@ func TestGetMessages(t *testing.T) {
 		ctx := context.Background()
 
 		// Save parent
-		ids, err := db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: makeTextMessage(gai.User, "parent"), ParentID: ""},
+		parentID := saveOne(t, db, ctx, SaveMessageOptions{
+			Message: makeTextMessage(gai.User, "parent"), ParentID: "",
 		})
-		if err != nil {
-			t.Fatalf("SaveMessages (parent): %v", err)
-		}
-		var parentID string
-		for id := range ids {
-			parentID = id
-		}
 
 		// Save child
-		ids, err = db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: makeTextMessage(gai.Assistant, "child"), ParentID: parentID},
+		childID := saveOne(t, db, ctx, SaveMessageOptions{
+			Message: makeTextMessage(gai.Assistant, "child"), ParentID: parentID,
 		})
-		if err != nil {
-			t.Fatalf("SaveMessages (child): %v", err)
-		}
-		var childID string
-		for id := range ids {
-			childID = id
-		}
 
 		// Retrieve parent — should not have MessageParentIDKey
 		msgs, err := db.GetMessages(ctx, []string{parentID})
@@ -319,16 +362,7 @@ func TestGetMessages(t *testing.T) {
 				},
 			},
 		}
-		ids, err := db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: msg, ParentID: ""},
-		})
-		if err != nil {
-			t.Fatalf("SaveMessages: %v", err)
-		}
-		var savedID string
-		for id := range ids {
-			savedID = id
-		}
+		savedID := saveOne(t, db, ctx, SaveMessageOptions{Message: msg, ParentID: ""})
 
 		msgs, err := db.GetMessages(ctx, []string{savedID})
 		if err != nil {
@@ -371,16 +405,7 @@ func TestGetMessages(t *testing.T) {
 				},
 			},
 		}
-		ids, err := db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: msg, ParentID: ""},
-		})
-		if err != nil {
-			t.Fatalf("SaveMessages: %v", err)
-		}
-		var savedID string
-		for id := range ids {
-			savedID = id
-		}
+		savedID := saveOne(t, db, ctx, SaveMessageOptions{Message: msg, ParentID: ""})
 
 		msgs, err := db.GetMessages(ctx, []string{savedID})
 		if err != nil {
@@ -412,15 +437,9 @@ func TestListMessages(t *testing.T) {
 		// Save messages sequentially (each gets a later created_at)
 		var savedIDs []string
 		for i := 0; i < 3; i++ {
-			ids, err := db.SaveMessages(ctx, []SaveMessageOptions{
-				{Message: makeTextMessage(gai.User, "msg"), ParentID: ""},
-			})
-			if err != nil {
-				t.Fatalf("SaveMessages: %v", err)
-			}
-			for id := range ids {
-				savedIDs = append(savedIDs, id)
-			}
+			savedIDs = append(savedIDs, saveOne(t, db, ctx, SaveMessageOptions{
+				Message: makeTextMessage(gai.User, "msg"), ParentID: "",
+			}))
 		}
 
 		msgs, err := db.ListMessages(ctx, ListMessagesOptions{})
@@ -450,15 +469,9 @@ func TestListMessages(t *testing.T) {
 
 		var savedIDs []string
 		for i := 0; i < 3; i++ {
-			ids, err := db.SaveMessages(ctx, []SaveMessageOptions{
-				{Message: makeTextMessage(gai.User, "msg"), ParentID: ""},
-			})
-			if err != nil {
-				t.Fatalf("SaveMessages: %v", err)
-			}
-			for id := range ids {
-				savedIDs = append(savedIDs, id)
-			}
+			savedIDs = append(savedIDs, saveOne(t, db, ctx, SaveMessageOptions{
+				Message: makeTextMessage(gai.User, "msg"), ParentID: "",
+			}))
 		}
 
 		msgs, err := db.ListMessages(ctx, ListMessagesOptions{AscendingOrder: true})
@@ -487,12 +500,9 @@ func TestListMessages(t *testing.T) {
 		ctx := context.Background()
 
 		for i := 0; i < 5; i++ {
-			_, err := db.SaveMessages(ctx, []SaveMessageOptions{
-				{Message: makeTextMessage(gai.User, "msg"), ParentID: ""},
+			saveOne(t, db, ctx, SaveMessageOptions{
+				Message: makeTextMessage(gai.User, "msg"), ParentID: "",
 			})
-			if err != nil {
-				t.Fatalf("SaveMessages: %v", err)
-			}
 		}
 
 		msgs, err := db.ListMessages(ctx, ListMessagesOptions{Offset: 3})
@@ -513,24 +523,14 @@ func TestListMessages(t *testing.T) {
 		ctx := context.Background()
 
 		// Save parent
-		ids, err := db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: makeTextMessage(gai.User, "parent"), ParentID: ""},
+		parentID := saveOne(t, db, ctx, SaveMessageOptions{
+			Message: makeTextMessage(gai.User, "parent"), ParentID: "",
 		})
-		if err != nil {
-			t.Fatalf("SaveMessages: %v", err)
-		}
-		var parentID string
-		for id := range ids {
-			parentID = id
-		}
 
 		// Save child
-		_, err = db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: makeTextMessage(gai.Assistant, "child"), ParentID: parentID},
+		saveOne(t, db, ctx, SaveMessageOptions{
+			Message: makeTextMessage(gai.Assistant, "child"), ParentID: parentID,
 		})
-		if err != nil {
-			t.Fatalf("SaveMessages: %v", err)
-		}
 
 		msgs, err := db.ListMessages(ctx, ListMessagesOptions{AscendingOrder: true})
 		if err != nil {
@@ -569,18 +569,11 @@ func TestDeleteMessages(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		ids, err := db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: makeTextMessage(gai.User, "leaf"), ParentID: ""},
+		leafID := saveOne(t, db, ctx, SaveMessageOptions{
+			Message: makeTextMessage(gai.User, "leaf"), ParentID: "",
 		})
-		if err != nil {
-			t.Fatalf("SaveMessages: %v", err)
-		}
-		var leafID string
-		for id := range ids {
-			leafID = id
-		}
 
-		err = db.DeleteMessages(ctx, DeleteMessagesOptions{
+		err := db.DeleteMessages(ctx, DeleteMessagesOptions{
 			MessageIDs: []string{leafID},
 			Recursive:  false,
 		})
@@ -599,29 +592,15 @@ func TestDeleteMessages(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		ids, err := db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: makeTextMessage(gai.User, "parent"), ParentID: ""},
+		parentID := saveOne(t, db, ctx, SaveMessageOptions{
+			Message: makeTextMessage(gai.User, "parent"), ParentID: "",
 		})
-		if err != nil {
-			t.Fatalf("SaveMessages (parent): %v", err)
-		}
-		var parentID string
-		for id := range ids {
-			parentID = id
-		}
 
-		ids, err = db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: makeTextMessage(gai.Assistant, "child"), ParentID: parentID},
+		childID := saveOne(t, db, ctx, SaveMessageOptions{
+			Message: makeTextMessage(gai.Assistant, "child"), ParentID: parentID,
 		})
-		if err != nil {
-			t.Fatalf("SaveMessages (child): %v", err)
-		}
-		var childID string
-		for id := range ids {
-			childID = id
-		}
 
-		err = db.DeleteMessages(ctx, DeleteMessagesOptions{
+		err := db.DeleteMessages(ctx, DeleteMessagesOptions{
 			MessageIDs: []string{parentID},
 			Recursive:  false,
 		})
@@ -640,29 +619,15 @@ func TestDeleteMessages(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		ids, err := db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: makeTextMessage(gai.User, "parent"), ParentID: ""},
+		parentID := saveOne(t, db, ctx, SaveMessageOptions{
+			Message: makeTextMessage(gai.User, "parent"), ParentID: "",
 		})
-		if err != nil {
-			t.Fatalf("SaveMessages (parent): %v", err)
-		}
-		var parentID string
-		for id := range ids {
-			parentID = id
-		}
 
-		ids, err = db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: makeTextMessage(gai.Assistant, "child"), ParentID: parentID},
+		childID := saveOne(t, db, ctx, SaveMessageOptions{
+			Message: makeTextMessage(gai.Assistant, "child"), ParentID: parentID,
 		})
-		if err != nil {
-			t.Fatalf("SaveMessages (child): %v", err)
-		}
-		var childID string
-		for id := range ids {
-			childID = id
-		}
 
-		err = db.DeleteMessages(ctx, DeleteMessagesOptions{
+		err := db.DeleteMessages(ctx, DeleteMessagesOptions{
 			MessageIDs: []string{parentID},
 			Recursive:  true,
 		})
@@ -686,40 +651,19 @@ func TestDeleteMessages(t *testing.T) {
 		ctx := context.Background()
 
 		// root → child → grandchild
-		ids, err := db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: makeTextMessage(gai.User, "root"), ParentID: ""},
+		rootID := saveOne(t, db, ctx, SaveMessageOptions{
+			Message: makeTextMessage(gai.User, "root"), ParentID: "",
 		})
-		if err != nil {
-			t.Fatalf("SaveMessages (root): %v", err)
-		}
-		var rootID string
-		for id := range ids {
-			rootID = id
-		}
 
-		ids, err = db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: makeTextMessage(gai.Assistant, "child"), ParentID: rootID},
+		childID := saveOne(t, db, ctx, SaveMessageOptions{
+			Message: makeTextMessage(gai.Assistant, "child"), ParentID: rootID,
 		})
-		if err != nil {
-			t.Fatalf("SaveMessages (child): %v", err)
-		}
-		var childID string
-		for id := range ids {
-			childID = id
-		}
 
-		ids, err = db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: makeTextMessage(gai.User, "grandchild"), ParentID: childID},
+		grandchildID := saveOne(t, db, ctx, SaveMessageOptions{
+			Message: makeTextMessage(gai.User, "grandchild"), ParentID: childID,
 		})
-		if err != nil {
-			t.Fatalf("SaveMessages (grandchild): %v", err)
-		}
-		var grandchildID string
-		for id := range ids {
-			grandchildID = id
-		}
 
-		err = db.DeleteMessages(ctx, DeleteMessagesOptions{
+		err := db.DeleteMessages(ctx, DeleteMessagesOptions{
 			MessageIDs: []string{rootID},
 			Recursive:  true,
 		})
@@ -760,16 +704,11 @@ func TestGetDialogForMessage(t *testing.T) {
 		texts := []string{"root", "msg1", "msg2", "msg3"}
 
 		for i := 0; i < 4; i++ {
-			ids, err := db.SaveMessages(ctx, []SaveMessageOptions{
-				{Message: makeTextMessage(roles[i], texts[i]), ParentID: prevID},
+			id := saveOne(t, db, ctx, SaveMessageOptions{
+				Message: makeTextMessage(roles[i], texts[i]), ParentID: prevID,
 			})
-			if err != nil {
-				t.Fatalf("SaveMessages %d: %v", i, err)
-			}
-			for id := range ids {
-				allIDs = append(allIDs, id)
-				prevID = id
-			}
+			allIDs = append(allIDs, id)
+			prevID = id
 		}
 
 		// Get dialog from the last message
@@ -798,16 +737,11 @@ func TestGetDialogForMessage(t *testing.T) {
 		var prevID string
 		var allIDs []string
 		for i := 0; i < 3; i++ {
-			ids, err := db.SaveMessages(ctx, []SaveMessageOptions{
-				{Message: makeTextMessage(gai.User, "msg"), ParentID: prevID},
+			id := saveOne(t, db, ctx, SaveMessageOptions{
+				Message: makeTextMessage(gai.User, "msg"), ParentID: prevID,
 			})
-			if err != nil {
-				t.Fatalf("SaveMessages %d: %v", i, err)
-			}
-			for id := range ids {
-				allIDs = append(allIDs, id)
-				prevID = id
-			}
+			allIDs = append(allIDs, id)
+			prevID = id
 		}
 
 		dialog, err := GetDialogForMessage(ctx, db, allIDs[2])
@@ -833,16 +767,9 @@ func TestGetDialogForMessage(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		ids, err := db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: makeTextMessage(gai.User, "root"), ParentID: ""},
+		rootID := saveOne(t, db, ctx, SaveMessageOptions{
+			Message: makeTextMessage(gai.User, "root"), ParentID: "",
 		})
-		if err != nil {
-			t.Fatalf("SaveMessages: %v", err)
-		}
-		var rootID string
-		for id := range ids {
-			rootID = id
-		}
 
 		dialog, err := GetDialogForMessage(ctx, db, rootID)
 		if err != nil {
@@ -898,16 +825,7 @@ func TestSaveAndGetRoundTrip(t *testing.T) {
 			},
 		}
 
-		ids, err := db.SaveMessages(ctx, []SaveMessageOptions{
-			{Message: msg, ParentID: ""},
-		})
-		if err != nil {
-			t.Fatalf("SaveMessages: %v", err)
-		}
-		var savedID string
-		for id := range ids {
-			savedID = id
-		}
+		savedID := saveOne(t, db, ctx, SaveMessageOptions{Message: msg, ParentID: ""})
 
 		msgs, err := db.GetMessages(ctx, []string{savedID})
 		if err != nil {

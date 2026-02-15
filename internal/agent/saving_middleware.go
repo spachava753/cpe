@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/spachava753/gai"
 
@@ -59,13 +60,12 @@ func (m *SavingMiddleware) Generate(ctx context.Context, dialog gai.Dialog, opts
 			continue
 		}
 		// No ID - save it (label is empty for interactive usage)
-		ids, err := m.storage.SaveMessages(ctx, []storage.SaveMessageOptions{
+		for id, err := range m.storage.SaveMessages(ctx, slices.Values([]storage.SaveMessageOptions{
 			{Message: dialog[i], ParentID: lastID, Title: ""},
-		})
-		if err != nil {
-			return gai.Response{}, fmt.Errorf("failed to save message: %w", err)
-		}
-		for id := range ids {
+		})) {
+			if err != nil {
+				return gai.Response{}, fmt.Errorf("failed to save message: %w", err)
+			}
 			SetMessageID(&dialog[i], id)
 			lastID = id
 		}
@@ -78,13 +78,12 @@ func (m *SavingMiddleware) Generate(ctx context.Context, dialog gai.Dialog, opts
 
 	// AFTER: Save assistant response (label is empty for interactive usage)
 	if len(resp.Candidates) > 0 {
-		ids, err := m.storage.SaveMessages(ctx, []storage.SaveMessageOptions{
+		for id, err := range m.storage.SaveMessages(ctx, slices.Values([]storage.SaveMessageOptions{
 			{Message: resp.Candidates[0], ParentID: lastID, Title: ""},
-		})
-		if err != nil {
-			return gai.Response{}, fmt.Errorf("failed to save assistant message: %w", err)
-		}
-		for id := range ids {
+		})) {
+			if err != nil {
+				return gai.Response{}, fmt.Errorf("failed to save assistant message: %w", err)
+			}
 			SetMessageID(&resp.Candidates[0], id)
 		}
 	}

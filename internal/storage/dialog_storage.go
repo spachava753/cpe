@@ -86,8 +86,8 @@ func (s *DialogStorage) Close() error {
 	return s.db.Close()
 }
 
-// saveMessageInTx saves a single message and its blocks within an existing transaction
-func (s *DialogStorage) saveMessageInTx(ctx context.Context, qtx *Queries, message gai.Message, parentID string, title string) (string, error) {
+// saveMessage saves a single message and its blocks.
+func (s *DialogStorage) saveMessage(ctx context.Context, message gai.Message, parentID string, title string) (string, error) {
 	// Generate a unique message ID
 	messageID, err := s.generateUniqueID(ctx, s.checkMessageIDExists)
 	if err != nil {
@@ -107,7 +107,7 @@ func (s *DialogStorage) saveMessageInTx(ctx context.Context, qtx *Queries, messa
 	}
 
 	// Create the message
-	err = qtx.CreateMessage(ctx, CreateMessageParams{
+	err = s.q.CreateMessage(ctx, CreateMessageParams{
 		ID:              messageID,
 		ParentID:        parentIDParam,
 		Title:           titleParam,
@@ -142,7 +142,7 @@ func (s *DialogStorage) saveMessageInTx(ctx context.Context, qtx *Queries, messa
 			}
 		}
 
-		err = qtx.CreateBlock(ctx, CreateBlockParams{
+		err = s.q.CreateBlock(ctx, CreateBlockParams{
 			ID:            blockID,
 			MessageID:     messageID,
 			BlockType:     block.BlockType,
@@ -160,39 +160,23 @@ func (s *DialogStorage) saveMessageInTx(ctx context.Context, qtx *Queries, messa
 	return messageID, nil
 }
 
-// SaveMessages saves one or more messages and returns their generated IDs.
-// All messages in a single call are saved atomically.
-func (s *DialogStorage) SaveMessages(ctx context.Context, opts []SaveMessageOptions) (iter.Seq[string], error) {
-	// Begin transaction
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	qtx := s.q.WithTx(tx)
-
-	ids := make([]string, 0, len(opts))
-	for _, opt := range opts {
-		id, err := s.saveMessageInTx(ctx, qtx, opt.Message, opt.ParentID, opt.Title)
-		if err != nil {
-			return nil, err
-		}
-		ids = append(ids, id)
-	}
-
-	// Commit the transaction
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("failed to commit transaction: %w", err)
-	}
-
-	return func(yield func(string) bool) {
-		for _, id := range ids {
-			if !yield(id) {
+// SaveMessages saves messages by pulling from the input iterator one at a
+// time. Each message is persisted independently (not in a shared
+// transaction). The returned iter.Seq2 yields (messageID, error) pairs in
+// the same order as the input iterator. On the first error the iterator
+// stops.
+func (s *DialogStorage) SaveMessages(ctx context.Context, opts iter.Seq[SaveMessageOptions]) iter.Seq2[string, error] {
+	return func(yield func(string, error) bool) {
+		for opt := range opts {
+			id, err := s.saveMessage(ctx, opt.Message, opt.ParentID, opt.Title)
+			if !yield(id, err) {
+				return
+			}
+			if err != nil {
 				return
 			}
 		}
-	}, nil
+	}
 }
 
 // getMessage retrieves a message by its ID
