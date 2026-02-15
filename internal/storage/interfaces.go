@@ -29,36 +29,83 @@ const (
 	// gai.Message values (GetMessages, ListMessages, GetDialogForMessage) always
 	// populate this field.
 	MessageCreatedAtKey = "cpe_message_created_at"
+
+	// MessageTitleKey is the key used in gai.Message.ExtraFields to store an
+	// optional label for a message. Typically used to annotate subagent
+	// execution traces (e.g., "subagent:<name>:<run_id>"). When saving a
+	// dialog, any message with this key set will have its title persisted.
+	// Messages without this key have no title.
+	MessageTitleKey = "cpe_message_title"
 )
 
-// SaveMessageOptions describes a single message to be persisted.
-type SaveMessageOptions struct {
-	// Message is the gai.Message to save. Its Blocks are persisted alongside
-	// the message row. The Role field determines the stored role (user,
-	// assistant, tool_result).
-	Message gai.Message
-
-	// ParentID is the ID of the parent message in the conversation tree.
-	// An empty string indicates this is a root message (start of a new
-	// conversation thread).
-	ParentID string
-
-	// Title is an optional label for the conversation branch starting at this
-	// message. Typically used to annotate subagent execution traces (e.g.,
-	// "subagent:<name>:<run_id>"). Empty string means no title.
-	Title string
-}
-
-// MessagesSaver persists messages to storage.
-type MessagesSaver interface {
-	// SaveMessages saves messages by pulling from the input iterator one at a
-	// time. Each message is persisted independently (not in a shared
-	// transaction). The returned iter.Seq2 yields (messageID, error) pairs in
-	// the same order as the input iterator. On the first error the iterator
-	// stops; callers must consume the iterator to trigger persistence. Each
-	// message is assigned a unique ID by the implementation; callers do not
-	// provide IDs.
-	SaveMessages(ctx context.Context, opts iter.Seq[SaveMessageOptions]) iter.Seq2[string, error]
+// DialogSaver persists a dialog (a sequence of related messages) to storage.
+type DialogSaver interface {
+	// SaveDialog saves a dialog — a sequence of related messages that form a
+	// single conversation thread. The input iterator yields messages in order
+	// from root to leaf. The entire operation is performed in a single
+	// transaction; if saving any message fails, all changes are rolled back.
+	//
+	// For each message in the iterator:
+	//   - If the message has ExtraFields[MessageIDKey] set, it is treated as
+	//     already persisted. The implementation verifies the message exists in
+	//     storage. The first message must be a root message (no parent in
+	//     storage). For subsequent messages, it verifies that the stored parent
+	//     ID matches the previous message's ID. No data is written for
+	//     existing messages.
+	//   - If the message does not have ExtraFields[MessageIDKey] set, it is
+	//     saved to storage. The implementation assigns a unique ID, sets
+	//     ExtraFields[MessageIDKey] and ExtraFields[MessageParentIDKey]
+	//     (for non-root messages) on the message, and persists it.
+	//   - If the message has ExtraFields[MessageTitleKey] set, the title is
+	//     persisted with the message.
+	//
+	// The returned iter.Seq2 yields (gai.Message, error) pairs in the same
+	// order as the input. Each yielded message has its ExtraFields populated
+	// with at least MessageIDKey (and MessageParentIDKey for non-root messages).
+	// On the first error the iterator stops and the transaction is rolled back.
+	// Callers must consume the iterator (or break early) to trigger persistence;
+	// the transaction is committed when the iterator completes or when the
+	// consumer breaks out of the range loop. An empty input iterator results
+	// in a no-op (empty transaction committed).
+	//
+	// Example — saving a brand-new dialog:
+	//
+	//	dialog := []gai.Message{userMsg, assistantMsg}
+	//	idx := 0
+	//	for saved, err := range saver.SaveDialog(ctx, slices.Values(dialog)) {
+	//		if err != nil {
+	//			return err
+	//		}
+	//		dialog[idx] = saved
+	//		idx++
+	//	}
+	//
+	// Example — appending to a previously saved dialog. Messages that
+	// already have ExtraFields[MessageIDKey] are verified but not re-saved;
+	// only the new message at the end is persisted:
+	//
+	//	// previousDialog was returned by an earlier SaveDialog call,
+	//	// so every message already has MessageIDKey set.
+	//	fullDialog := append(previousDialog, newAssistantMsg)
+	//	for saved, err := range saver.SaveDialog(ctx, slices.Values(fullDialog)) {
+	//		if err != nil {
+	//			return err
+	//		}
+	//		fullDialog[i] = saved // keep ExtraFields in sync
+	//	}
+	//
+	// Example — annotating messages with a title (e.g. for subagent traces):
+	//
+	//	msg := gai.Message{Role: gai.User, Blocks: blocks}
+	//	msg.ExtraFields = map[string]any{
+	//		MessageTitleKey: "subagent:researcher:run_abc",
+	//	}
+	//	for _, err := range saver.SaveDialog(ctx, slices.Values([]gai.Message{msg})) {
+	//		if err != nil {
+	//			return err
+	//		}
+	//	}
+	SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter.Seq2[gai.Message, error]
 }
 
 // DeleteMessagesOptions configures a message deletion operation.
@@ -121,7 +168,7 @@ type MessagesGetter interface {
 // subset (e.g., only saving or only reading) can depend on the narrower
 // interface.
 type MessageDB interface {
-	MessagesSaver
+	DialogSaver
 	MessagesDeleter
 	MessagesLister
 	MessagesGetter

@@ -35,88 +35,90 @@ func makeTextMessage(role gai.Role, text string) gai.Message {
 	}
 }
 
-// saveOne is a test helper that saves a single message and returns its ID.
-func saveOne(t *testing.T, db *DialogStorage, ctx context.Context, opt SaveMessageOptions) string {
+// saveDialog is a test helper that saves a dialog and returns the saved messages.
+func saveDialog(t *testing.T, db *DialogStorage, ctx context.Context, msgs []gai.Message) []gai.Message {
 	t.Helper()
-	var id string
-	for gotID, err := range db.SaveMessages(ctx, slices.Values([]SaveMessageOptions{opt})) {
+	var saved []gai.Message
+	for msg, err := range db.SaveDialog(ctx, slices.Values(msgs)) {
 		if err != nil {
-			t.Fatalf("SaveMessages: %v", err)
+			t.Fatalf("SaveDialog: %v", err)
 		}
-		id = gotID
+		saved = append(saved, msg)
 	}
+	if len(saved) != len(msgs) {
+		t.Fatalf("expected %d saved messages, got %d", len(msgs), len(saved))
+	}
+	return saved
+}
+
+// saveOne is a test helper that saves a single message as a root dialog and returns its ID.
+func saveOne(t *testing.T, db *DialogStorage, ctx context.Context, msg gai.Message) string {
+	t.Helper()
+	saved := saveDialog(t, db, ctx, []gai.Message{msg})
+	id := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
 	if id == "" {
 		t.Fatal("expected non-empty ID")
 	}
 	return id
 }
 
-func TestSaveMessages(t *testing.T) {
+func TestSaveDialog(t *testing.T) {
 	t.Run("single root message", func(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		var gotID string
-		for id, err := range db.SaveMessages(ctx, slices.Values([]SaveMessageOptions{
-			{Message: makeTextMessage(gai.User, "hello"), ParentID: "", Title: ""},
-		})) {
-			if err != nil {
-				t.Fatalf("SaveMessages: %v", err)
-			}
-			gotID = id
-		}
+		saved := saveDialog(t, db, ctx, []gai.Message{
+			makeTextMessage(gai.User, "hello"),
+		})
+
+		gotID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
 		if gotID == "" {
 			t.Fatal("expected non-empty ID")
 		}
-	})
-
-	t.Run("multiple messages in one call", func(t *testing.T) {
-		db := newTestDB(t)
-		ctx := context.Background()
-
-		opts := []SaveMessageOptions{
-			{Message: makeTextMessage(gai.User, "msg1"), ParentID: ""},
-			{Message: makeTextMessage(gai.User, "msg2"), ParentID: ""},
-			{Message: makeTextMessage(gai.User, "msg3"), ParentID: ""},
-		}
-		var gotIDs []string
-		for id, err := range db.SaveMessages(ctx, slices.Values(opts)) {
-			if err != nil {
-				t.Fatalf("SaveMessages: %v", err)
-			}
-			gotIDs = append(gotIDs, id)
-		}
-		if len(gotIDs) != 3 {
-			t.Fatalf("expected 3 IDs, got %d", len(gotIDs))
-		}
-		// Verify all IDs are unique
-		seen := make(map[string]bool)
-		for _, id := range gotIDs {
-			if id == "" {
-				t.Fatal("expected non-empty ID")
-			}
-			if seen[id] {
-				t.Fatalf("duplicate ID: %s", id)
-			}
-			seen[id] = true
+		// Root should not have parent ID
+		if parentID := getExtraFieldString(saved[0].ExtraFields, MessageParentIDKey); parentID != "" {
+			t.Errorf("root message should not have parent ID, got %q", parentID)
 		}
 	})
 
-	t.Run("message with parent", func(t *testing.T) {
+	t.Run("dialog chain sets parent IDs correctly", func(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		// Save parent
-		parentID := saveOne(t, db, ctx, SaveMessageOptions{
-			Message: makeTextMessage(gai.User, "parent"), ParentID: "",
-		})
+		msgs := []gai.Message{
+			makeTextMessage(gai.User, "msg1"),
+			makeTextMessage(gai.Assistant, "msg2"),
+			makeTextMessage(gai.User, "msg3"),
+		}
+		saved := saveDialog(t, db, ctx, msgs)
 
-		// Save child
-		childID := saveOne(t, db, ctx, SaveMessageOptions{
-			Message: makeTextMessage(gai.Assistant, "child"), ParentID: parentID,
-		})
-		if childID == "" {
-			t.Fatal("expected non-empty child ID")
+		if len(saved) != 3 {
+			t.Fatalf("expected 3 saved, got %d", len(saved))
+		}
+
+		// All IDs should be unique and non-empty
+		ids := make([]string, 3)
+		for i, s := range saved {
+			ids[i] = getExtraFieldString(s.ExtraFields, MessageIDKey)
+			if ids[i] == "" {
+				t.Fatalf("saved[%d]: expected non-empty ID", i)
+			}
+		}
+		if ids[0] == ids[1] || ids[1] == ids[2] || ids[0] == ids[2] {
+			t.Fatalf("IDs should be unique: %v", ids)
+		}
+
+		// First message should have no parent
+		if p := getExtraFieldString(saved[0].ExtraFields, MessageParentIDKey); p != "" {
+			t.Errorf("first message should have no parent, got %q", p)
+		}
+		// Second message parent should be first
+		if p := getExtraFieldString(saved[1].ExtraFields, MessageParentIDKey); p != ids[0] {
+			t.Errorf("second message parent: expected %q, got %q", ids[0], p)
+		}
+		// Third message parent should be second
+		if p := getExtraFieldString(saved[2].ExtraFields, MessageParentIDKey); p != ids[1] {
+			t.Errorf("third message parent: expected %q, got %q", ids[1], p)
 		}
 	})
 
@@ -144,7 +146,8 @@ func TestSaveMessages(t *testing.T) {
 			},
 		}
 
-		savedID := saveOne(t, db, ctx, SaveMessageOptions{Message: msg, ParentID: ""})
+		saved := saveDialog(t, db, ctx, []gai.Message{msg})
+		savedID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
 
 		// Verify blocks are persisted by retrieving
 		msgs, err := db.GetMessages(ctx, []string{savedID})
@@ -160,80 +163,141 @@ func TestSaveMessages(t *testing.T) {
 		}
 	})
 
-	t.Run("message with title", func(t *testing.T) {
+	t.Run("message with title via ExtraFields", func(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		gotID := saveOne(t, db, ctx, SaveMessageOptions{
-			Message: makeTextMessage(gai.User, "titled"), ParentID: "", Title: "subagent:test:run1",
-		})
+		msg := makeTextMessage(gai.User, "titled")
+		msg.ExtraFields = map[string]any{MessageTitleKey: "subagent:test:run1"}
+
+		saved := saveDialog(t, db, ctx, []gai.Message{msg})
+		gotID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
 		if gotID == "" {
 			t.Fatal("expected non-empty ID")
 		}
 	})
 
-	t.Run("multiple messages individually saved and retrievable", func(t *testing.T) {
+	t.Run("existing messages are verified not re-saved", func(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		opts := []SaveMessageOptions{
-			{Message: makeTextMessage(gai.User, "ind1"), ParentID: ""},
-			{Message: makeTextMessage(gai.User, "ind2"), ParentID: ""},
-			{Message: makeTextMessage(gai.User, "ind3"), ParentID: ""},
+		// First save a dialog
+		msgs := []gai.Message{
+			makeTextMessage(gai.User, "root"),
+			makeTextMessage(gai.Assistant, "reply"),
 		}
-		var savedIDs []string
-		for id, err := range db.SaveMessages(ctx, slices.Values(opts)) {
-			if err != nil {
-				t.Fatalf("SaveMessages: %v", err)
-			}
-			savedIDs = append(savedIDs, id)
+		saved := saveDialog(t, db, ctx, msgs)
+
+		// Now save a new dialog that includes the existing messages plus a new one
+		newMsg := makeTextMessage(gai.User, "follow-up")
+		fullDialog := append(saved, newMsg)
+
+		saved2 := saveDialog(t, db, ctx, fullDialog)
+
+		if len(saved2) != 3 {
+			t.Fatalf("expected 3 messages, got %d", len(saved2))
 		}
 
-		// Verify all 3 can be retrieved
-		msgs, err := db.GetMessages(ctx, savedIDs)
-		if err != nil {
-			t.Fatalf("GetMessages: %v", err)
+		// First two should have the same IDs as before
+		for i := 0; i < 2; i++ {
+			origID := getExtraFieldString(saved[i].ExtraFields, MessageIDKey)
+			newID := getExtraFieldString(saved2[i].ExtraFields, MessageIDKey)
+			if origID != newID {
+				t.Errorf("message %d: expected same ID %q, got %q", i, origID, newID)
+			}
 		}
-		count := 0
-		for range msgs {
-			count++
+
+		// Third should be new
+		thirdID := getExtraFieldString(saved2[2].ExtraFields, MessageIDKey)
+		if thirdID == "" {
+			t.Fatal("expected non-empty ID for new message")
 		}
-		if count != 3 {
-			t.Fatalf("expected 3 messages, got %d", count)
+		// Parent should be second message's ID
+		thirdParent := getExtraFieldString(saved2[2].ExtraFields, MessageParentIDKey)
+		secondID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
+		if thirdParent != secondID {
+			t.Errorf("third message parent: expected %q, got %q", secondID, thirdParent)
 		}
 	})
 
-	t.Run("iterator pipeline chains saves", func(t *testing.T) {
+	t.Run("first existing message with parent returns error", func(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		// Build a pipeline: save messages one at a time via the iterator,
-		// feeding each ID as the next message's parent.
-		var parentID string
+		// Save a dialog with a parent-child chain
+		saved := saveDialog(t, db, ctx, []gai.Message{
+			makeTextMessage(gai.User, "root"),
+			makeTextMessage(gai.Assistant, "child"),
+		})
+
+		// Try to use the child (which has a parent in DB) as the first message
+		// in a new SaveDialog call — should fail because first message must be root
+		var gotErr error
+		for _, err := range db.SaveDialog(ctx, slices.Values([]gai.Message{saved[1]})) {
+			if err != nil {
+				gotErr = err
+				break
+			}
+		}
+		if gotErr == nil {
+			t.Fatal("expected error when first message has a parent in storage")
+		}
+	})
+
+	t.Run("wrong parent chain for existing message returns error", func(t *testing.T) {
+		db := newTestDB(t)
+		ctx := context.Background()
+
+		// Save two separate root dialogs
+		saved1 := saveDialog(t, db, ctx, []gai.Message{makeTextMessage(gai.User, "root1")})
+		saved2 := saveDialog(t, db, ctx, []gai.Message{makeTextMessage(gai.User, "root2")})
+
+		// Try to save a dialog where root2 follows root1 — parent chain mismatch
+		dialog := []gai.Message{saved1[0], saved2[0]}
+		var gotErr error
+		for _, err := range db.SaveDialog(ctx, slices.Values(dialog)) {
+			if err != nil {
+				gotErr = err
+				break
+			}
+		}
+		if gotErr == nil {
+			t.Fatal("expected error for parent chain mismatch")
+		}
+	})
+
+	t.Run("non-existent ID in dialog returns error", func(t *testing.T) {
+		db := newTestDB(t)
+		ctx := context.Background()
+
+		msg := makeTextMessage(gai.User, "ghost")
+		msg.ExtraFields = map[string]any{MessageIDKey: "nonexistent"}
+
+		var gotErr error
+		for _, err := range db.SaveDialog(ctx, slices.Values([]gai.Message{msg})) {
+			if err != nil {
+				gotErr = err
+				break
+			}
+		}
+		if gotErr == nil {
+			t.Fatal("expected error for non-existent message ID")
+		}
+	})
+
+	t.Run("dialog retrievable via GetDialogForMessage", func(t *testing.T) {
+		db := newTestDB(t)
+		ctx := context.Background()
+
 		msgs := []gai.Message{
 			makeTextMessage(gai.User, "first"),
 			makeTextMessage(gai.Assistant, "second"),
 			makeTextMessage(gai.User, "third"),
 		}
-		var savedIDs []string
-		for _, msg := range msgs {
-			for id, err := range db.SaveMessages(ctx, slices.Values([]SaveMessageOptions{
-				{Message: msg, ParentID: parentID},
-			})) {
-				if err != nil {
-					t.Fatalf("SaveMessages: %v", err)
-				}
-				savedIDs = append(savedIDs, id)
-				parentID = id
-			}
-		}
+		saved := saveDialog(t, db, ctx, msgs)
 
-		if len(savedIDs) != 3 {
-			t.Fatalf("expected 3 saved IDs, got %d", len(savedIDs))
-		}
-
-		// Verify the chain by retrieving the dialog from the last message
-		dialog, err := GetDialogForMessage(ctx, db, savedIDs[2])
+		lastID := getExtraFieldString(saved[2].ExtraFields, MessageIDKey)
+		dialog, err := GetDialogForMessage(ctx, db, lastID)
 		if err != nil {
 			t.Fatalf("GetDialogForMessage: %v", err)
 		}
@@ -242,29 +306,29 @@ func TestSaveMessages(t *testing.T) {
 		}
 	})
 
-	t.Run("early break stops iteration", func(t *testing.T) {
+	t.Run("early break commits saved messages", func(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		// Track how many options the input iterator yields
-		yieldCount := 0
-		inputIter := func(yield func(SaveMessageOptions) bool) {
-			for i := 0; i < 5; i++ {
-				yieldCount++
-				if !yield(SaveMessageOptions{
-					Message:  makeTextMessage(gai.User, "msg"),
-					ParentID: "",
-				}) {
-					return
-				}
-			}
+		msgs := []gai.Message{
+			makeTextMessage(gai.User, "msg1"),
+			makeTextMessage(gai.Assistant, "msg2"),
+			makeTextMessage(gai.User, "msg3"),
 		}
 
 		// Only consume the first 2 results
 		consumed := 0
-		for _, err := range db.SaveMessages(ctx, inputIter) {
+		var firstID, secondID string
+		for msg, err := range db.SaveDialog(ctx, slices.Values(msgs)) {
 			if err != nil {
-				t.Fatalf("SaveMessages: %v", err)
+				t.Fatalf("SaveDialog: %v", err)
+			}
+			id := getExtraFieldString(msg.ExtraFields, MessageIDKey)
+			switch consumed {
+			case 0:
+				firstID = id
+			case 1:
+				secondID = id
 			}
 			consumed++
 			if consumed == 2 {
@@ -275,11 +339,88 @@ func TestSaveMessages(t *testing.T) {
 		if consumed != 2 {
 			t.Fatalf("expected to consume 2, got %d", consumed)
 		}
-		// The input iterator should have been called at most 3 times
-		// (2 consumed + 1 that may be pulled before break takes effect, depending on implementation)
-		// but definitely not all 5
-		if yieldCount > 3 {
-			t.Fatalf("expected input iterator to yield at most 3 times, got %d", yieldCount)
+
+		// Both consumed messages should be retrievable (transaction committed on break)
+		_, err := db.GetMessages(ctx, []string{firstID})
+		if err != nil {
+			t.Fatalf("first message should be retrievable: %v", err)
+		}
+		_, err = db.GetMessages(ctx, []string{secondID})
+		if err != nil {
+			t.Fatalf("second message should be retrievable: %v", err)
+		}
+
+		// Third message (never processed) should NOT exist — verify total count
+		allMsgs, err := db.ListMessages(ctx, ListMessagesOptions{})
+		if err != nil {
+			t.Fatalf("ListMessages: %v", err)
+		}
+		count := 0
+		for range allMsgs {
+			count++
+		}
+		if count != 2 {
+			t.Fatalf("expected exactly 2 messages in DB, got %d", count)
+		}
+	})
+
+	t.Run("empty iterator is a no-op", func(t *testing.T) {
+		db := newTestDB(t)
+		ctx := context.Background()
+
+		var count int
+		for _, err := range db.SaveDialog(ctx, slices.Values([]gai.Message{})) {
+			if err != nil {
+				t.Fatalf("SaveDialog: %v", err)
+			}
+			count++
+		}
+		if count != 0 {
+			t.Fatalf("expected 0 messages yielded, got %d", count)
+		}
+
+		// Verify no messages were saved
+		msgs, err := db.ListMessages(ctx, ListMessagesOptions{})
+		if err != nil {
+			t.Fatalf("ListMessages: %v", err)
+		}
+		for range msgs {
+			t.Fatal("expected no messages in DB")
+		}
+	})
+
+	t.Run("transaction rolls back on save error", func(t *testing.T) {
+		db := newTestDB(t)
+		ctx := context.Background()
+
+		// Override idGenerator to cause collision after first message
+		callCount := 0
+		db.idGenerator = func() string {
+			callCount++
+			// Always return the same ID to cause collision
+			return "fixed_id"
+		}
+
+		msgs := []gai.Message{
+			makeTextMessage(gai.User, "msg1"),
+			makeTextMessage(gai.Assistant, "msg2"),
+		}
+
+		var gotErr error
+		for _, err := range db.SaveDialog(ctx, slices.Values(msgs)) {
+			if err != nil {
+				gotErr = err
+				break
+			}
+		}
+		if gotErr == nil {
+			t.Fatal("expected error from ID collision")
+		}
+
+		// First message should NOT be retrievable (transaction rolled back)
+		_, err := db.GetMessages(ctx, []string{"fixed_id"})
+		if err == nil {
+			t.Fatal("message should not exist after rollback")
 		}
 	})
 }
@@ -289,9 +430,7 @@ func TestGetMessages(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		savedID := saveOne(t, db, ctx, SaveMessageOptions{
-			Message: makeTextMessage(gai.User, "hello"), ParentID: "",
-		})
+		savedID := saveOne(t, db, ctx, makeTextMessage(gai.User, "hello"))
 
 		msgs, err := db.GetMessages(ctx, []string{savedID})
 		if err != nil {
@@ -311,15 +450,13 @@ func TestGetMessages(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		// Save parent
-		parentID := saveOne(t, db, ctx, SaveMessageOptions{
-			Message: makeTextMessage(gai.User, "parent"), ParentID: "",
+		// Save parent and child as a dialog
+		saved := saveDialog(t, db, ctx, []gai.Message{
+			makeTextMessage(gai.User, "parent"),
+			makeTextMessage(gai.Assistant, "child"),
 		})
-
-		// Save child
-		childID := saveOne(t, db, ctx, SaveMessageOptions{
-			Message: makeTextMessage(gai.Assistant, "child"), ParentID: parentID,
-		})
+		parentID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
+		childID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
 
 		// Retrieve parent — should not have MessageParentIDKey
 		msgs, err := db.GetMessages(ctx, []string{parentID})
@@ -362,7 +499,7 @@ func TestGetMessages(t *testing.T) {
 				},
 			},
 		}
-		savedID := saveOne(t, db, ctx, SaveMessageOptions{Message: msg, ParentID: ""})
+		savedID := saveOne(t, db, ctx, msg)
 
 		msgs, err := db.GetMessages(ctx, []string{savedID})
 		if err != nil {
@@ -405,7 +542,7 @@ func TestGetMessages(t *testing.T) {
 				},
 			},
 		}
-		savedID := saveOne(t, db, ctx, SaveMessageOptions{Message: msg, ParentID: ""})
+		savedID := saveOne(t, db, ctx, msg)
 
 		msgs, err := db.GetMessages(ctx, []string{savedID})
 		if err != nil {
@@ -434,12 +571,11 @@ func TestListMessages(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		// Save messages sequentially (each gets a later created_at)
+		// Save messages as separate root dialogs (each gets a later created_at)
 		var savedIDs []string
 		for i := 0; i < 3; i++ {
-			savedIDs = append(savedIDs, saveOne(t, db, ctx, SaveMessageOptions{
-				Message: makeTextMessage(gai.User, "msg"), ParentID: "",
-			}))
+			id := saveOne(t, db, ctx, makeTextMessage(gai.User, "msg"))
+			savedIDs = append(savedIDs, id)
 		}
 
 		msgs, err := db.ListMessages(ctx, ListMessagesOptions{})
@@ -469,9 +605,8 @@ func TestListMessages(t *testing.T) {
 
 		var savedIDs []string
 		for i := 0; i < 3; i++ {
-			savedIDs = append(savedIDs, saveOne(t, db, ctx, SaveMessageOptions{
-				Message: makeTextMessage(gai.User, "msg"), ParentID: "",
-			}))
+			id := saveOne(t, db, ctx, makeTextMessage(gai.User, "msg"))
+			savedIDs = append(savedIDs, id)
 		}
 
 		msgs, err := db.ListMessages(ctx, ListMessagesOptions{AscendingOrder: true})
@@ -500,9 +635,7 @@ func TestListMessages(t *testing.T) {
 		ctx := context.Background()
 
 		for i := 0; i < 5; i++ {
-			saveOne(t, db, ctx, SaveMessageOptions{
-				Message: makeTextMessage(gai.User, "msg"), ParentID: "",
-			})
+			saveOne(t, db, ctx, makeTextMessage(gai.User, "msg"))
 		}
 
 		msgs, err := db.ListMessages(ctx, ListMessagesOptions{Offset: 3})
@@ -522,15 +655,12 @@ func TestListMessages(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		// Save parent
-		parentID := saveOne(t, db, ctx, SaveMessageOptions{
-			Message: makeTextMessage(gai.User, "parent"), ParentID: "",
+		// Save parent and child as a dialog
+		saved := saveDialog(t, db, ctx, []gai.Message{
+			makeTextMessage(gai.User, "parent"),
+			makeTextMessage(gai.Assistant, "child"),
 		})
-
-		// Save child
-		saveOne(t, db, ctx, SaveMessageOptions{
-			Message: makeTextMessage(gai.Assistant, "child"), ParentID: parentID,
-		})
+		parentID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
 
 		msgs, err := db.ListMessages(ctx, ListMessagesOptions{AscendingOrder: true})
 		if err != nil {
@@ -569,9 +699,7 @@ func TestDeleteMessages(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		leafID := saveOne(t, db, ctx, SaveMessageOptions{
-			Message: makeTextMessage(gai.User, "leaf"), ParentID: "",
-		})
+		leafID := saveOne(t, db, ctx, makeTextMessage(gai.User, "leaf"))
 
 		err := db.DeleteMessages(ctx, DeleteMessagesOptions{
 			MessageIDs: []string{leafID},
@@ -592,13 +720,12 @@ func TestDeleteMessages(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		parentID := saveOne(t, db, ctx, SaveMessageOptions{
-			Message: makeTextMessage(gai.User, "parent"), ParentID: "",
+		saved := saveDialog(t, db, ctx, []gai.Message{
+			makeTextMessage(gai.User, "parent"),
+			makeTextMessage(gai.Assistant, "child"),
 		})
-
-		childID := saveOne(t, db, ctx, SaveMessageOptions{
-			Message: makeTextMessage(gai.Assistant, "child"), ParentID: parentID,
-		})
+		parentID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
+		childID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
 
 		err := db.DeleteMessages(ctx, DeleteMessagesOptions{
 			MessageIDs: []string{parentID},
@@ -619,13 +746,12 @@ func TestDeleteMessages(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		parentID := saveOne(t, db, ctx, SaveMessageOptions{
-			Message: makeTextMessage(gai.User, "parent"), ParentID: "",
+		saved := saveDialog(t, db, ctx, []gai.Message{
+			makeTextMessage(gai.User, "parent"),
+			makeTextMessage(gai.Assistant, "child"),
 		})
-
-		childID := saveOne(t, db, ctx, SaveMessageOptions{
-			Message: makeTextMessage(gai.Assistant, "child"), ParentID: parentID,
-		})
+		parentID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
+		childID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
 
 		err := db.DeleteMessages(ctx, DeleteMessagesOptions{
 			MessageIDs: []string{parentID},
@@ -651,17 +777,14 @@ func TestDeleteMessages(t *testing.T) {
 		ctx := context.Background()
 
 		// root → child → grandchild
-		rootID := saveOne(t, db, ctx, SaveMessageOptions{
-			Message: makeTextMessage(gai.User, "root"), ParentID: "",
+		saved := saveDialog(t, db, ctx, []gai.Message{
+			makeTextMessage(gai.User, "root"),
+			makeTextMessage(gai.Assistant, "child"),
+			makeTextMessage(gai.User, "grandchild"),
 		})
-
-		childID := saveOne(t, db, ctx, SaveMessageOptions{
-			Message: makeTextMessage(gai.Assistant, "child"), ParentID: rootID,
-		})
-
-		grandchildID := saveOne(t, db, ctx, SaveMessageOptions{
-			Message: makeTextMessage(gai.User, "grandchild"), ParentID: childID,
-		})
+		rootID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
+		childID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
+		grandchildID := getExtraFieldString(saved[2].ExtraFields, MessageIDKey)
 
 		err := db.DeleteMessages(ctx, DeleteMessagesOptions{
 			MessageIDs: []string{rootID},
@@ -698,17 +821,17 @@ func TestGetDialogForMessage(t *testing.T) {
 		ctx := context.Background()
 
 		// Save chain: root → msg1 → msg2 → msg3
-		var prevID string
-		var allIDs []string
-		roles := []gai.Role{gai.User, gai.Assistant, gai.User, gai.Assistant}
-		texts := []string{"root", "msg1", "msg2", "msg3"}
+		msgs := []gai.Message{
+			makeTextMessage(gai.User, "root"),
+			makeTextMessage(gai.Assistant, "msg1"),
+			makeTextMessage(gai.User, "msg2"),
+			makeTextMessage(gai.Assistant, "msg3"),
+		}
+		saved := saveDialog(t, db, ctx, msgs)
 
-		for i := 0; i < 4; i++ {
-			id := saveOne(t, db, ctx, SaveMessageOptions{
-				Message: makeTextMessage(roles[i], texts[i]), ParentID: prevID,
-			})
-			allIDs = append(allIDs, id)
-			prevID = id
+		var allIDs []string
+		for _, s := range saved {
+			allIDs = append(allIDs, getExtraFieldString(s.ExtraFields, MessageIDKey))
 		}
 
 		// Get dialog from the last message
@@ -734,14 +857,16 @@ func TestGetDialogForMessage(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		var prevID string
+		msgs := []gai.Message{
+			makeTextMessage(gai.User, "msg0"),
+			makeTextMessage(gai.Assistant, "msg1"),
+			makeTextMessage(gai.User, "msg2"),
+		}
+		saved := saveDialog(t, db, ctx, msgs)
+
 		var allIDs []string
-		for i := 0; i < 3; i++ {
-			id := saveOne(t, db, ctx, SaveMessageOptions{
-				Message: makeTextMessage(gai.User, "msg"), ParentID: prevID,
-			})
-			allIDs = append(allIDs, id)
-			prevID = id
+		for _, s := range saved {
+			allIDs = append(allIDs, getExtraFieldString(s.ExtraFields, MessageIDKey))
 		}
 
 		dialog, err := GetDialogForMessage(ctx, db, allIDs[2])
@@ -767,9 +892,7 @@ func TestGetDialogForMessage(t *testing.T) {
 		db := newTestDB(t)
 		ctx := context.Background()
 
-		rootID := saveOne(t, db, ctx, SaveMessageOptions{
-			Message: makeTextMessage(gai.User, "root"), ParentID: "",
-		})
+		rootID := saveOne(t, db, ctx, makeTextMessage(gai.User, "root"))
 
 		dialog, err := GetDialogForMessage(ctx, db, rootID)
 		if err != nil {
@@ -825,7 +948,7 @@ func TestSaveAndGetRoundTrip(t *testing.T) {
 			},
 		}
 
-		savedID := saveOne(t, db, ctx, SaveMessageOptions{Message: msg, ParentID: ""})
+		savedID := saveOne(t, db, ctx, msg)
 
 		msgs, err := db.GetMessages(ctx, []string{savedID})
 		if err != nil {

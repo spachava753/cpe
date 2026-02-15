@@ -191,7 +191,7 @@ type generatorOptions struct {
 	callbackWrapper ToolCallbackWrapper
 	middleware      []gai.WrapperFunc
 	baseGenerator   gai.ToolCapableGenerator
-	dialogSaver     storage.MessagesSaver
+	dialogSaver     storage.DialogSaver
 	stdout          io.Writer
 }
 
@@ -234,7 +234,7 @@ func WithBaseGenerator(g gai.ToolCapableGenerator) GeneratorOption {
 // WithDialogSaver enables incremental dialog saving via the SavingMiddleware.
 // When provided, messages are saved as they flow through the generation pipeline.
 // If not provided (nil), no saving occurs (incognito mode).
-func WithDialogSaver(saver storage.MessagesSaver) GeneratorOption {
+func WithDialogSaver(saver storage.DialogSaver) GeneratorOption {
 	return func(o *generatorOptions) {
 		o.dialogSaver = saver
 	}

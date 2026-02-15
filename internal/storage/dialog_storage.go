@@ -86,10 +86,10 @@ func (s *DialogStorage) Close() error {
 	return s.db.Close()
 }
 
-// saveMessage saves a single message and its blocks.
-func (s *DialogStorage) saveMessage(ctx context.Context, message gai.Message, parentID string, title string) (string, error) {
+// saveMessageInTx saves a single message and its blocks within a transaction.
+func (s *DialogStorage) saveMessageInTx(ctx context.Context, qtx *Queries, message gai.Message, parentID string, title string) (string, error) {
 	// Generate a unique message ID
-	messageID, err := s.generateUniqueID(ctx, s.checkMessageIDExists)
+	messageID, err := s.generateUniqueIDInTx(ctx, qtx)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate message ID: %w", err)
 	}
@@ -107,7 +107,7 @@ func (s *DialogStorage) saveMessage(ctx context.Context, message gai.Message, pa
 	}
 
 	// Create the message
-	err = s.q.CreateMessage(ctx, CreateMessageParams{
+	err = qtx.CreateMessage(ctx, CreateMessageParams{
 		ID:              messageID,
 		ParentID:        parentIDParam,
 		Title:           titleParam,
@@ -142,7 +142,7 @@ func (s *DialogStorage) saveMessage(ctx context.Context, message gai.Message, pa
 			}
 		}
 
-		err = s.q.CreateBlock(ctx, CreateBlockParams{
+		err = qtx.CreateBlock(ctx, CreateBlockParams{
 			ID:            blockID,
 			MessageID:     messageID,
 			BlockType:     block.BlockType,
@@ -160,22 +160,139 @@ func (s *DialogStorage) saveMessage(ctx context.Context, message gai.Message, pa
 	return messageID, nil
 }
 
-// SaveMessages saves messages by pulling from the input iterator one at a
-// time. Each message is persisted independently (not in a shared
-// transaction). The returned iter.Seq2 yields (messageID, error) pairs in
-// the same order as the input iterator. On the first error the iterator
-// stops.
-func (s *DialogStorage) SaveMessages(ctx context.Context, opts iter.Seq[SaveMessageOptions]) iter.Seq2[string, error] {
-	return func(yield func(string, error) bool) {
-		for opt := range opts {
-			id, err := s.saveMessage(ctx, opt.Message, opt.ParentID, opt.Title)
-			if !yield(id, err) {
+// getExtraFieldString safely extracts a string value from an ExtraFields map.
+func getExtraFieldString(m map[string]any, key string) string {
+	if m == nil {
+		return ""
+	}
+	v, _ := m[key].(string)
+	return v
+}
+
+// generateUniqueIDInTx generates a unique ID checking for collisions within a transaction.
+func (s *DialogStorage) generateUniqueIDInTx(ctx context.Context, qtx *Queries) (string, error) {
+	maxAttempts := 10
+	for range maxAttempts {
+		id := s.idGenerator()
+
+		exists, err := qtx.CheckMessageIDExists(ctx, id)
+		if err != nil {
+			return "", fmt.Errorf("failed to check ID collision: %w", err)
+		}
+
+		if exists == 0 {
+			return id, nil
+		}
+	}
+
+	return "", fmt.Errorf("failed to generate unique ID after %d attempts", maxAttempts)
+}
+
+// SaveDialog saves a dialog — a sequence of related messages that form a
+// single conversation thread. The input iterator yields messages in order
+// from root to leaf. The entire operation is performed in a single
+// transaction; if saving any message fails, all changes are rolled back.
+//
+// See the DialogSaver interface documentation for full semantics.
+func (s *DialogStorage) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter.Seq2[gai.Message, error] {
+	return func(yield func(gai.Message, error) bool) {
+		tx, err := s.db.BeginTx(ctx, nil)
+		if err != nil {
+			yield(gai.Message{}, fmt.Errorf("failed to begin transaction: %w", err))
+			return
+		}
+		committed := false
+		defer func() {
+			if !committed {
+				tx.Rollback()
+			}
+		}()
+
+		qtx := s.q.WithTx(tx)
+
+		var prevID string
+		first := true
+		consumerStopped := false
+
+		for msg := range msgs {
+			existingID := getExtraFieldString(msg.ExtraFields, MessageIDKey)
+
+			if existingID != "" {
+				// Message claims to be already persisted — verify it exists
+				// and has the correct parent.
+				dbMsg, dbErr := qtx.GetMessage(ctx, existingID)
+				if dbErr != nil {
+					yield(gai.Message{}, fmt.Errorf("failed to verify message %s exists: %w", existingID, dbErr))
+					return
+				}
+
+				// Verify parent chain
+				dbParent := ""
+				if dbMsg.ParentID.Valid {
+					dbParent = dbMsg.ParentID.String
+				}
+				if first {
+					// First message must be a root (no parent in storage)
+					if dbParent != "" {
+						yield(gai.Message{}, fmt.Errorf("first message %s must be a root message but has parent %q in storage", existingID, dbParent))
+						return
+					}
+				} else {
+					if dbParent != prevID {
+						yield(gai.Message{}, fmt.Errorf("message %s has parent %q in storage but expected %q", existingID, dbParent, prevID))
+						return
+					}
+				}
+
+				prevID = existingID
+				first = false
+
+				// Yield the message as-is (it's already persisted)
+				if !yield(msg, nil) {
+					consumerStopped = true
+					break
+				}
+				continue
+			}
+
+			// Message needs to be saved
+			title := getExtraFieldString(msg.ExtraFields, MessageTitleKey)
+			parentID := prevID
+
+			savedID, saveErr := s.saveMessageInTx(ctx, qtx, msg, parentID, title)
+			if saveErr != nil {
+				yield(gai.Message{}, fmt.Errorf("failed to save message: %w", saveErr))
 				return
 			}
-			if err != nil {
-				return
+
+			// Set ExtraFields on the message
+			if msg.ExtraFields == nil {
+				msg.ExtraFields = make(map[string]any)
+			}
+			msg.ExtraFields[MessageIDKey] = savedID
+			if parentID != "" {
+				msg.ExtraFields[MessageParentIDKey] = parentID
+			}
+
+			prevID = savedID
+			first = false
+
+			if !yield(msg, nil) {
+				consumerStopped = true
+				break
 			}
 		}
+
+		if err := tx.Commit(); err != nil {
+			if !consumerStopped {
+				// Consumer is still active; propagate the error.
+				yield(gai.Message{}, fmt.Errorf("failed to commit transaction: %w", err))
+			}
+			// If consumer stopped (break/return), we cannot call yield again.
+			// The deferred Rollback will clean up.
+			return
+		}
+		committed = true
 	}
 }
 
@@ -358,33 +475,4 @@ func (s *DialogStorage) deleteMessageAndDescendantsInTx(ctx context.Context, qtx
 	}
 
 	return nil
-}
-
-// generateUniqueID generates a unique ID and checks for collisions in the provided check function
-func (s *DialogStorage) generateUniqueID(ctx context.Context, collisionCheck func(context.Context, string) (bool, error)) (string, error) {
-	maxAttempts := 10
-	for range maxAttempts {
-		id := s.idGenerator()
-
-		// Check for collision
-		exists, err := collisionCheck(ctx, id)
-		if err != nil {
-			return "", fmt.Errorf("failed to check ID collision: %w", err)
-		}
-
-		if !exists {
-			return id, nil
-		}
-	}
-
-	return "", fmt.Errorf("failed to generate unique ID after %d attempts", maxAttempts)
-}
-
-// checkMessageIDExists checks if a message ID already exists
-func (s *DialogStorage) checkMessageIDExists(ctx context.Context, id string) (bool, error) {
-	exists, err := s.q.CheckMessageIDExists(ctx, id)
-	if err != nil {
-		return false, err
-	}
-	return exists == 1, nil
 }
