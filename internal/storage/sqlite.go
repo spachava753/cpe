@@ -21,18 +21,18 @@ func generateId() string {
 //go:embed schema.sql
 var schemaSQL string
 
-// DialogStorage provides operations for storing and retrieving gai.Dialog objects.
+// Sqlite provides operations for storing and retrieving gai.Dialog objects.
 // It serves as an abstraction over the implementation details of how messages
 // are actually stored. Do not access its internal database directly.
-type DialogStorage struct {
+type Sqlite struct {
 	db          *sql.DB
 	q           *Queries
 	idGenerator func() string
 }
 
-// InitDialogStorage initializes and returns a new DialogStorage instance
+// NewSqlite initializes and returns a new DialogStorage instance
 // This function opens or creates the database and initializes the schema
-func InitDialogStorage(ctx context.Context, dbPath string) (*DialogStorage, error) {
+func NewSqlite(ctx context.Context, dbPath string) (*Sqlite, error) {
 	// Open or create the database
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
@@ -46,7 +46,7 @@ func InitDialogStorage(ctx context.Context, dbPath string) (*DialogStorage, erro
 	}
 
 	// Create and return the dialog storage
-	return &DialogStorage{
+	return &Sqlite{
 		db:          db,
 		q:           New(db),
 		idGenerator: generateId,
@@ -82,12 +82,12 @@ func stringToRole(s string) (gai.Role, error) {
 }
 
 // Close closes the underlying db connection
-func (s *DialogStorage) Close() error {
+func (s *Sqlite) Close() error {
 	return s.db.Close()
 }
 
 // saveMessageInTx saves a single message and its blocks within a transaction.
-func (s *DialogStorage) saveMessageInTx(ctx context.Context, qtx *Queries, message gai.Message, parentID string, title string) (string, error) {
+func (s *Sqlite) saveMessageInTx(ctx context.Context, qtx *Queries, message gai.Message, parentID string, title string) (string, error) {
 	// Generate a unique message ID
 	messageID, err := s.generateUniqueIDInTx(ctx, qtx)
 	if err != nil {
@@ -170,7 +170,7 @@ func getExtraFieldString(m map[string]any, key string) string {
 }
 
 // generateUniqueIDInTx generates a unique ID checking for collisions within a transaction.
-func (s *DialogStorage) generateUniqueIDInTx(ctx context.Context, qtx *Queries) (string, error) {
+func (s *Sqlite) generateUniqueIDInTx(ctx context.Context, qtx *Queries) (string, error) {
 	maxAttempts := 10
 	for range maxAttempts {
 		id := s.idGenerator()
@@ -194,7 +194,7 @@ func (s *DialogStorage) generateUniqueIDInTx(ctx context.Context, qtx *Queries) 
 // transaction; if saving any message fails, all changes are rolled back.
 //
 // See the DialogSaver interface documentation for full semantics.
-func (s *DialogStorage) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter.Seq2[gai.Message, error] {
+func (s *Sqlite) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter.Seq2[gai.Message, error] {
 	return func(yield func(gai.Message, error) bool) {
 		tx, err := s.db.BeginTx(ctx, nil)
 		if err != nil {
@@ -298,7 +298,7 @@ func (s *DialogStorage) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Messag
 
 // getMessage retrieves a message by its ID
 // Returns the message, the parent ID (empty string if no parent), and an error
-func (s *DialogStorage) getMessage(ctx context.Context, messageID string) (gai.Message, string, error) {
+func (s *Sqlite) getMessage(ctx context.Context, messageID string) (gai.Message, string, error) {
 	msg, err := s.q.GetMessage(ctx, messageID)
 	if err != nil {
 		return gai.Message{}, "", fmt.Errorf("failed to get message: %w", err)
@@ -364,7 +364,7 @@ func (s *DialogStorage) getMessage(ctx context.Context, messageID string) (gai.M
 }
 
 // GetMessages retrieves messages by their IDs.
-func (s *DialogStorage) GetMessages(ctx context.Context, messageIDs []string) (iter.Seq[gai.Message], error) {
+func (s *Sqlite) GetMessages(ctx context.Context, messageIDs []string) (iter.Seq[gai.Message], error) {
 	messages := make([]gai.Message, 0, len(messageIDs))
 	for _, id := range messageIDs {
 		msg, _, err := s.getMessage(ctx, id)
@@ -384,7 +384,7 @@ func (s *DialogStorage) GetMessages(ctx context.Context, messageIDs []string) (i
 }
 
 // ListMessages returns messages ordered by creation timestamp.
-func (s *DialogStorage) ListMessages(ctx context.Context, opts ListMessagesOptions) (iter.Seq[gai.Message], error) {
+func (s *Sqlite) ListMessages(ctx context.Context, opts ListMessagesOptions) (iter.Seq[gai.Message], error) {
 	var rows []Message
 	var err error
 	if opts.AscendingOrder {
@@ -416,7 +416,7 @@ func (s *DialogStorage) ListMessages(ctx context.Context, opts ListMessagesOptio
 }
 
 // DeleteMessages deletes the specified messages.
-func (s *DialogStorage) DeleteMessages(ctx context.Context, opts DeleteMessagesOptions) error {
+func (s *Sqlite) DeleteMessages(ctx context.Context, opts DeleteMessagesOptions) error {
 	// Begin transaction
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -455,7 +455,7 @@ func (s *DialogStorage) DeleteMessages(ctx context.Context, opts DeleteMessagesO
 }
 
 // deleteMessageAndDescendantsInTx recursively deletes a message and all its descendants within a transaction
-func (s *DialogStorage) deleteMessageAndDescendantsInTx(ctx context.Context, qtx *Queries, messageID string) error {
+func (s *Sqlite) deleteMessageAndDescendantsInTx(ctx context.Context, qtx *Queries, messageID string) error {
 	// Get all children of this message
 	children, err := qtx.ListMessagesByParent(ctx, sql.NullString{String: messageID, Valid: true})
 	if err != nil {

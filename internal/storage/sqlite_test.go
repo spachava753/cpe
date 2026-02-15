@@ -10,10 +10,10 @@ import (
 	"github.com/spachava753/gai"
 )
 
-func newTestDB(t *testing.T) *DialogStorage {
+func newTestDB(t *testing.T) *Sqlite {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	ds, err := InitDialogStorage(context.Background(), dbPath)
+	ds, err := NewSqlite(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("InitDialogStorage: %v", err)
 	}
@@ -36,7 +36,7 @@ func makeTextMessage(role gai.Role, text string) gai.Message {
 }
 
 // saveDialog is a test helper that saves a dialog and returns the saved messages.
-func saveDialog(t *testing.T, db *DialogStorage, ctx context.Context, msgs []gai.Message) []gai.Message {
+func saveDialog(t *testing.T, db *Sqlite, ctx context.Context, msgs []gai.Message) []gai.Message {
 	t.Helper()
 	var saved []gai.Message
 	for msg, err := range db.SaveDialog(ctx, slices.Values(msgs)) {
@@ -52,7 +52,7 @@ func saveDialog(t *testing.T, db *DialogStorage, ctx context.Context, msgs []gai
 }
 
 // saveOne is a test helper that saves a single message as a root dialog and returns its ID.
-func saveOne(t *testing.T, db *DialogStorage, ctx context.Context, msg gai.Message) string {
+func saveOne(t *testing.T, db *Sqlite, ctx context.Context, msg gai.Message) string {
 	t.Helper()
 	saved := saveDialog(t, db, ctx, []gai.Message{msg})
 	id := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)

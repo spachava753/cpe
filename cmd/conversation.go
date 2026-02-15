@@ -29,7 +29,7 @@ var listConvoCmd = &cobra.Command{
 	Aliases: []string{"ls"},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dbPath := defaultDBPath
-		dialogStorage, err := storage.InitDialogStorage(cmd.Context(), dbPath)
+		dialogStorage, err := storage.NewSqlite(cmd.Context(), dbPath)
 		if err != nil {
 			return fmt.Errorf("failed to initialize dialog storage: %w", err)
 		}
@@ -54,7 +54,7 @@ var deleteConvoCmd = &cobra.Command{
 		cascade, _ := cmd.Flags().GetBool("cascade")
 
 		dbPath := defaultDBPath
-		dialogStorage, err := storage.InitDialogStorage(cmd.Context(), dbPath)
+		dialogStorage, err := storage.NewSqlite(cmd.Context(), dbPath)
 		if err != nil {
 			return fmt.Errorf("failed to initialize dialog storage: %w", err)
 		}
@@ -79,7 +79,7 @@ var printConvoCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dbPath := defaultDBPath
-		dialogStorage, err := storage.InitDialogStorage(cmd.Context(), dbPath)
+		dialogStorage, err := storage.NewSqlite(cmd.Context(), dbPath)
 		if err != nil {
 			return fmt.Errorf("failed to initialize dialog storage: %w", err)
 		}

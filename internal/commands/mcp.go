@@ -427,7 +427,7 @@ func MCPServe(ctx context.Context, opts MCPServeOptions) error {
 	}
 
 	// Initialize storage for persisting execution traces
-	dialogStorage, err := storage.InitDialogStorage(ctx, ".cpeconvo")
+	dialogStorage, err := storage.NewSqlite(ctx, ".cpeconvo")
 	if err != nil {
 		return fmt.Errorf("failed to initialize dialog storage: %w", err)
 	}

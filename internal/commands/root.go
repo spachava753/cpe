@@ -132,10 +132,10 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 	defer mcpState.Close()
 
 	// Initialize storage unless in incognito mode
-	var dialogStorage *storage.DialogStorage
+	var dialogStorage *storage.Sqlite
 	if !opts.IncognitoMode {
 		dbPath := ".cpeconvo"
-		dialogStorage, err = storage.InitDialogStorage(ctx, dbPath)
+		dialogStorage, err = storage.NewSqlite(ctx, dbPath)
 		if err != nil {
 			return fmt.Errorf("failed to initialize dialog storage: %w", err)
 		}
