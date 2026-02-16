@@ -74,7 +74,7 @@ func DownloadContent(ctx context.Context, urlStr string, config *DownloadConfig)
 
 	// Implement retry logic with exponential backoff
 	operation := func() (*DownloadedContent, error) {
-		return downloadWithRetry(ctx, urlStr, config)
+		return download(ctx, urlStr, config)
 	}
 
 	// Use the new backoff v5 API
@@ -90,8 +90,8 @@ func DownloadContent(ctx context.Context, urlStr string, config *DownloadConfig)
 	return result, nil
 }
 
-// downloadWithRetry performs a single download attempt
-func downloadWithRetry(ctx context.Context, urlStr string, config *DownloadConfig) (*DownloadedContent, error) {
+// download performs a single download attempt
+func download(ctx context.Context, urlStr string, config *DownloadConfig) (*DownloadedContent, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
