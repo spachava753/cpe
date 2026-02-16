@@ -4,13 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"testing"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+
+	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/storage"
 )
 
 func requireAPIKey(t *testing.T, envVar string) {
@@ -20,7 +22,7 @@ func requireAPIKey(t *testing.T, envVar string) {
 	}
 }
 
-func writeTestConfig(t *testing.T, modelType string) {
+func resolveTestConfig(t *testing.T, modelType string, modelRef string) *config.Config {
 	t.Helper()
 
 	var ref, id, apiKeyEnv string
@@ -37,46 +39,77 @@ func writeTestConfig(t *testing.T, modelType string) {
 		t.Fatalf("unsupported model type: %s", modelType)
 	}
 
-	cfg := fmt.Sprintf(`version: "1.0"
-models:
-  - ref: %s
-    display_name: "Test Model"
-    id: %s
-    type: %s
-    api_key_env: %s
-defaults:
-  model: "%s"
-  timeout: "30s"
-`, ref, id, modelType, apiKeyEnv, ref)
-
-	if err := os.WriteFile("cpe.yaml", []byte(cfg), 0644); err != nil {
-		t.Fatalf("failed to write test config: %v", err)
+	rawCfg := &config.RawConfig{
+		Version: "1.0",
+		Models: []config.ModelConfig{
+			{
+				Model: config.Model{
+					Ref:         ref,
+					DisplayName: "Test Model",
+					ID:          id,
+					Type:        modelType,
+					ApiKeyEnv:   apiKeyEnv,
+				},
+			},
+		},
+		Defaults: config.Defaults{
+			Model:   ref,
+			Timeout: "30s",
+		},
 	}
+
+	effectiveRef := modelRef
+	if effectiveRef == "" {
+		effectiveRef = ref
+	}
+
+	cfg, err := config.ResolveFromRaw(rawCfg, config.RuntimeOptions{
+		ModelRef: effectiveRef,
+	})
+	if err != nil {
+		t.Fatalf("failed to resolve test config: %v", err)
+	}
+	return cfg
 }
 
-func writeCrossProviderConfig(t *testing.T) {
+func resolveCrossProviderConfig(t *testing.T, modelRef string) *config.Config {
 	t.Helper()
 
-	cfg := `version: "1.0"
-models:
-  - ref: test-anthropic
-    display_name: "Test Anthropic"
-    id: claude-sonnet-4-20250514
-    type: anthropic
-    api_key_env: ANTHROPIC_API_KEY
-  - ref: test-gemini
-    display_name: "Test Gemini"
-    id: gemini-2.0-flash
-    type: gemini
-    api_key_env: GEMINI_API_KEY
-defaults:
-  model: "test-anthropic"
-  timeout: "30s"
-`
-
-	if err := os.WriteFile("cpe.yaml", []byte(cfg), 0644); err != nil {
-		t.Fatalf("failed to write cross-provider config: %v", err)
+	rawCfg := &config.RawConfig{
+		Version: "1.0",
+		Models: []config.ModelConfig{
+			{
+				Model: config.Model{
+					Ref:         "test-anthropic",
+					DisplayName: "Test Anthropic",
+					ID:          "claude-sonnet-4-20250514",
+					Type:        "anthropic",
+					ApiKeyEnv:   "ANTHROPIC_API_KEY",
+				},
+			},
+			{
+				Model: config.Model{
+					Ref:         "test-gemini",
+					DisplayName: "Test Gemini",
+					ID:          "gemini-2.0-flash",
+					Type:        "gemini",
+					ApiKeyEnv:   "GEMINI_API_KEY",
+				},
+			},
+		},
+		Defaults: config.Defaults{
+			Model:   "test-anthropic",
+			Timeout: "30s",
+		},
 	}
+
+	cfg, err := config.ResolveFromRaw(rawCfg, config.RuntimeOptions{
+		ModelRef: modelRef,
+	})
+	if err != nil {
+		t.Fatalf("failed to resolve cross-provider config: %v", err)
+	}
+	return cfg
 }
 
 const (
@@ -131,14 +164,24 @@ func queryMessages(ctx context.Context, t *testing.T, db *sql.DB) []testMessage 
 	return msgs
 }
 
+func newTestSqliteDB(t *testing.T, ctx context.Context) storage.MessageDB {
+	t.Helper()
+	db := openTestDB(t)
+	sqliteStorage, err := storage.NewSqlite(ctx, db)
+	if err != nil {
+		t.Fatalf("failed to initialize dialog storage: %v", err)
+	}
+	return sqliteStorage
+}
+
 func TestExecuteRoot_ConversationFlow(t *testing.T) {
 	requireAPIKey(t, "ANTHROPIC_API_KEY")
 	requireAPIKey(t, "GEMINI_API_KEY")
 	t.Chdir(t.TempDir())
-	writeCrossProviderConfig(t)
 
 	ctx := context.Background()
 	db := openTestDB(t)
+	messageDB := newTestSqliteDB(t, ctx)
 
 	// Track the first assistant message ID for the fork test later.
 	var firstAssistantID string
@@ -146,12 +189,12 @@ func TestExecuteRoot_ConversationFlow(t *testing.T) {
 	t.Run("NewConversation", func(t *testing.T) {
 		err := ExecuteRoot(ctx, ExecuteRootOptions{
 			Args:            []string{"Reply with exactly one word: hello"},
-			ModelRef:        "test-anthropic",
 			NewConversation: true,
 			SkipStdin:       true,
 			Stdout:          io.Discard,
 			Stderr:          io.Discard,
-			ConfigPath:      "cpe.yaml",
+			Config:          resolveCrossProviderConfig(t, "test-anthropic"),
+			MessageDB:       messageDB,
 		})
 		if err != nil {
 			t.Fatalf("ExecuteRoot returned error: %v", err)
@@ -182,12 +225,12 @@ func TestExecuteRoot_ConversationFlow(t *testing.T) {
 	t.Run("ContinueConversation", func(t *testing.T) {
 		// Auto-continues from the most recent assistant message.
 		err := ExecuteRoot(ctx, ExecuteRootOptions{
-			Args:       []string{"Reply with exactly one word: goodbye"},
-			ModelRef:   "test-anthropic",
-			SkipStdin:  true,
-			Stdout:     io.Discard,
-			Stderr:     io.Discard,
-			ConfigPath: "cpe.yaml",
+			Args:      []string{"Reply with exactly one word: goodbye"},
+			SkipStdin: true,
+			Stdout:    io.Discard,
+			Stderr:    io.Discard,
+			Config:    resolveCrossProviderConfig(t, "test-anthropic"),
+			MessageDB: messageDB,
 		})
 		if err != nil {
 			t.Fatalf("ExecuteRoot returned error: %v", err)
@@ -229,12 +272,12 @@ func TestExecuteRoot_ConversationFlow(t *testing.T) {
 
 		err := ExecuteRoot(ctx, ExecuteRootOptions{
 			Args:       []string{"Reply with exactly one word: world"},
-			ModelRef:   "test-gemini",
 			ContinueID: firstAssistantID,
 			SkipStdin:  true,
 			Stdout:     io.Discard,
 			Stderr:     io.Discard,
-			ConfigPath: "cpe.yaml",
+			Config:     resolveCrossProviderConfig(t, "test-gemini"),
+			MessageDB:  messageDB,
 		})
 		if err != nil {
 			t.Fatalf("ExecuteRoot returned error: %v", err)
@@ -309,10 +352,11 @@ func TestExecuteRoot_ConversationFlow(t *testing.T) {
 func TestExecuteRoot_ContextCancellation(t *testing.T) {
 	requireAPIKey(t, "ANTHROPIC_API_KEY")
 	t.Chdir(t.TempDir())
-	writeTestConfig(t, "anthropic")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
+
+	messageDB := newTestSqliteDB(t, ctx)
 
 	// Use a prompt designed to produce a long response
 	_ = ExecuteRoot(ctx, ExecuteRootOptions{
@@ -321,7 +365,8 @@ func TestExecuteRoot_ContextCancellation(t *testing.T) {
 		SkipStdin:       true,
 		Stdout:          io.Discard,
 		Stderr:          io.Discard,
-		ConfigPath:      "cpe.yaml",
+		Config:          resolveTestConfig(t, "anthropic", ""),
+		MessageDB:       messageDB,
 	})
 	// Error is acceptable (context.Canceled or context.DeadlineExceeded) — don't check it
 
@@ -335,17 +380,16 @@ func TestExecuteRoot_ContextCancellation(t *testing.T) {
 func TestExecuteRoot_IncognitoMode(t *testing.T) {
 	requireAPIKey(t, "ANTHROPIC_API_KEY")
 	t.Chdir(t.TempDir())
-	writeTestConfig(t, "anthropic")
 
 	ctx := context.Background()
 	err := ExecuteRoot(ctx, ExecuteRootOptions{
 		Args:            []string{"Reply with exactly one word: hello"},
 		NewConversation: true,
-		IncognitoMode:   true,
 		SkipStdin:       true,
 		Stdout:          io.Discard,
 		Stderr:          io.Discard,
-		ConfigPath:      "cpe.yaml",
+		Config:          resolveTestConfig(t, "anthropic", ""),
+		// MessageDB is nil — no storage (incognito mode)
 	})
 	if err != nil {
 		t.Fatalf("ExecuteRoot returned error: %v", err)

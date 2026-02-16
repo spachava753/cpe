@@ -2,12 +2,10 @@ package commands
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"io"
 	"os"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/agent"
@@ -28,28 +26,27 @@ type ExecuteRootOptions struct {
 	// SkipStdin disables reading from stdin
 	SkipStdin bool
 
-	// ConfigPath is the path to the config file
-	ConfigPath string
-	// ModelRef is the model reference from --model flag
-	ModelRef string
+	// Config is the resolved effective configuration.
+	// The caller is responsible for loading and resolving the config.
+	Config *config.Config
 	// CustomURL overrides the model's base URL
 	CustomURL string
-	// GenParams are generation parameters from flags
-	GenParams *gai.GenOpts
-	// Timeout is the request timeout string
-	Timeout string
+
+	// MessageDB is the storage backend for conversation persistence.
+	// When nil, no conversations are saved (incognito mode).
+	// The caller is responsible for initializing and closing the underlying store.
+	MessageDB storage.MessageDB
 
 	// ContinueID is the message ID to continue from
 	ContinueID string
 	// NewConversation starts a new conversation
 	NewConversation bool
-	// IncognitoMode disables conversation storage
-	IncognitoMode bool
 
 	// Stdout is where model responses are written.
 	// If nil, defaults to os.Stdout.
 	Stdout io.Writer
-	// Stderr is where to write status messages
+	// Stderr is where to write status messages.
+	// If nil, defaults to os.Stderr.
 	Stderr io.Writer
 	// VerboseSubagent enables verbose subagent output
 	VerboseSubagent bool
@@ -62,6 +59,13 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 		stdout = os.Stdout
 	}
 
+	stderr := opts.Stderr
+	if stderr == nil {
+		stderr = os.Stderr
+	}
+
+	effectiveConfig := opts.Config
+
 	// Process user input
 	userBlocks, err := ProcessUserInput(ctx, ProcessUserInputOptions{
 		Args:       opts.Args,
@@ -73,21 +77,11 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 		return fmt.Errorf("could not process user input: %w", err)
 	}
 
-	// Resolve effective config with runtime options
-	effectiveConfig, err := config.ResolveConfig(opts.ConfigPath, config.RuntimeOptions{
-		ModelRef:  opts.ModelRef,
-		GenParams: opts.GenParams,
-		Timeout:   opts.Timeout,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to resolve configuration: %w", err)
-	}
-
 	// Load and render system prompt
 	systemPrompt, err := LoadSystemPrompt(ctx, LoadSystemPromptOptions{
 		SystemPromptPath: effectiveConfig.SystemPromptPath,
 		Config:           effectiveConfig,
-		Stderr:           opts.Stderr,
+		Stderr:           stderr,
 	})
 	if err != nil {
 		return err
@@ -109,7 +103,7 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 			renderMode = subagentlog.RenderModeVerbose
 		}
 		renderer := subagentlog.NewRenderer(agent.NewRenderer(), renderMode)
-		stderrWriter := subagentlog.NewSyncWriter(opts.Stderr)
+		stderrWriter := subagentlog.NewSyncWriter(stderr)
 		eventServer := subagentlog.NewServer(func(event subagentlog.Event) {
 			rendered := renderer.RenderEvent(event)
 			if rendered != "" {
@@ -133,28 +127,13 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 	}
 	defer mcpState.Close()
 
-	// Initialize storage unless in incognito mode
-	var dialogStorage *storage.Sqlite
-	if !opts.IncognitoMode {
-		storageDB, dbErr := sql.Open("sqlite3", ".cpeconvo")
-		if dbErr != nil {
-			return fmt.Errorf("failed to open database: %w", dbErr)
-		}
-		defer storageDB.Close()
-
-		dialogStorage, err = storage.NewSqlite(ctx, storageDB)
-		if err != nil {
-			return fmt.Errorf("failed to initialize dialog storage: %w", err)
-		}
-	}
-
 	// Build generator options
 	generatorOpts := []agent.GeneratorOption{
 		agent.WithStdout(stdout),
 	}
 	// Enable saving middleware if storage is available (not incognito mode)
-	if dialogStorage != nil {
-		generatorOpts = append(generatorOpts, agent.WithDialogSaver(dialogStorage))
+	if opts.MessageDB != nil {
+		generatorOpts = append(generatorOpts, agent.WithDialogSaver(opts.MessageDB))
 	}
 
 	// Create the generator with optional saving middleware
@@ -180,8 +159,8 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 		GenOptsFunc: func(dialog gai.Dialog) *gai.GenOpts {
 			return genOpts
 		},
-		MessageDB: dialogStorage,
+		MessageDB: opts.MessageDB,
 		Generator: toolGen,
-		Stderr:    opts.Stderr,
+		Stderr:    stderr,
 	})
 }
