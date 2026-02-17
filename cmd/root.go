@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"os/signal"
@@ -12,6 +13,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/spachava753/cpe/internal/commands"
+	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/version"
 )
 
@@ -50,20 +53,43 @@ through natural language interactions.`,
 			return nil
 		}
 
+		// Resolve effective config with runtime options
+		effectiveConfig, err := config.ResolveConfig(configPath, config.RuntimeOptions{
+			ModelRef:  model,
+			GenParams: &genParams,
+			Timeout:   timeout,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to resolve configuration: %w", err)
+		}
+
+		// Initialize storage unless in incognito mode
+		var messageDB storage.MessageDB
+		if !incognitoMode {
+			storageDB, dbErr := sql.Open("sqlite3", ".cpeconvo")
+			if dbErr != nil {
+				return fmt.Errorf("failed to open database: %w", dbErr)
+			}
+			defer storageDB.Close()
+
+			sqliteStorage, initErr := storage.NewSqlite(cmd.Context(), storageDB)
+			if initErr != nil {
+				return fmt.Errorf("failed to initialize dialog storage: %w", initErr)
+			}
+			messageDB = sqliteStorage
+		}
+
 		// Delegate to business logic
 		return commands.ExecuteRoot(cmd.Context(), commands.ExecuteRootOptions{
 			Args:            args,
 			InputPaths:      input,
 			Stdin:           os.Stdin,
 			SkipStdin:       skipStdin,
-			ConfigPath:      configPath,
-			ModelRef:        model,
+			Config:          effectiveConfig,
 			CustomURL:       customURL,
-			GenParams:       &genParams,
-			Timeout:         timeout,
+			MessageDB:       messageDB,
 			ContinueID:      continueID,
 			NewConversation: newConversation,
-			IncognitoMode:   incognitoMode,
 			Stderr:          os.Stderr,
 			VerboseSubagent: verboseSubagent,
 		})

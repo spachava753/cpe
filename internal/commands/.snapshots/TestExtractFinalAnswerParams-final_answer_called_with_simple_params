@@ -1,4 +1,0 @@
-(map[string]interface {}) (len=2) {
-  (string) (len=5) "score": (float64) 42,
-  (string) (len=7) "summary": (string) (len=27) "This is the analysis result"
-}

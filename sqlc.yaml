@@ -5,8 +5,8 @@ sql:
     schema: "internal/storage/schema.sql"
     gen:
       go:
-        package: "storage"
-        out: "internal/storage"
+        package: "sqlcgen"
+        out: "internal/storage/sqlcgen"
         emit_json_tags: true
         emit_exact_table_names: false
         emit_empty_slices: true

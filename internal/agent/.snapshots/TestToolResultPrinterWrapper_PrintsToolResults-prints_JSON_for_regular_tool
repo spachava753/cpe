@@ -1,8 +1,0 @@
-
-#### Tool "get_weather" result:
-```json
-{
-  "condition": "sunny",
-  "temperature": 72
-}
-```

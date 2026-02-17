@@ -1,4 +1,0 @@
-type UserData struct {
-	CreatedAt *string `json:"created_at,omitempty"`
-	UserName *string `json:"user_name,omitempty"`
-}

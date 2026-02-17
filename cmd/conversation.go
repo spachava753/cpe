@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/spf13/cobra"
 
 	"github.com/spachava753/cpe/internal/agent"
@@ -28,12 +30,16 @@ var listConvoCmd = &cobra.Command{
 	Long:    `Display all messages in the database with parent-child relationships in a git commit graph style.`,
 	Aliases: []string{"ls"},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dbPath := defaultDBPath
-		dialogStorage, err := storage.InitDialogStorage(cmd.Context(), dbPath)
+		db, err := sql.Open("sqlite3", defaultDBPath)
+		if err != nil {
+			return fmt.Errorf("failed to open database: %w", err)
+		}
+		defer db.Close()
+
+		dialogStorage, err := storage.NewSqlite(cmd.Context(), db)
 		if err != nil {
 			return fmt.Errorf("failed to initialize dialog storage: %w", err)
 		}
-		defer dialogStorage.Close()
 
 		return commands.ConversationList(cmd.Context(), commands.ConversationListOptions{
 			Storage:     dialogStorage,
@@ -53,12 +59,16 @@ var deleteConvoCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cascade, _ := cmd.Flags().GetBool("cascade")
 
-		dbPath := defaultDBPath
-		dialogStorage, err := storage.InitDialogStorage(cmd.Context(), dbPath)
+		db, err := sql.Open("sqlite3", defaultDBPath)
+		if err != nil {
+			return fmt.Errorf("failed to open database: %w", err)
+		}
+		defer db.Close()
+
+		dialogStorage, err := storage.NewSqlite(cmd.Context(), db)
 		if err != nil {
 			return fmt.Errorf("failed to initialize dialog storage: %w", err)
 		}
-		defer dialogStorage.Close()
 
 		return commands.ConversationDelete(cmd.Context(), commands.ConversationDeleteOptions{
 			Storage:    dialogStorage,
@@ -78,12 +88,16 @@ var printConvoCmd = &cobra.Command{
 	Aliases: []string{"show", "view"},
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dbPath := defaultDBPath
-		dialogStorage, err := storage.InitDialogStorage(cmd.Context(), dbPath)
+		db, err := sql.Open("sqlite3", defaultDBPath)
+		if err != nil {
+			return fmt.Errorf("failed to open database: %w", err)
+		}
+		defer db.Close()
+
+		dialogStorage, err := storage.NewSqlite(cmd.Context(), db)
 		if err != nil {
 			return fmt.Errorf("failed to initialize dialog storage: %w", err)
 		}
-		defer dialogStorage.Close()
 
 		return commands.ConversationPrint(cmd.Context(), commands.ConversationPrintOptions{
 			Storage:         dialogStorage,

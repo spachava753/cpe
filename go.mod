@@ -10,13 +10,11 @@ require (
 	dario.cat/mergo v1.0.2
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/anthropics/anthropic-sdk-go v1.20.0
-	github.com/bradleyjkemp/cupaloy/v2 v2.8.0
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/charmbracelet/glamour v0.10.0
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/gabriel-vasile/mimetype v1.4.11
-	github.com/go-faker/faker/v4 v4.7.0
 	github.com/go-playground/validator/v10 v10.28.0
 	github.com/google/jsonschema-go v0.4.2
 	github.com/goyek/goyek/v2 v2.3.0
@@ -29,7 +27,6 @@ require (
 	github.com/spachava753/gai v0.32.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stoewer/go-strcase v1.2.0
-	github.com/stretchr/testify v1.11.1
 	golang.org/x/term v0.39.0
 	golang.org/x/tools v0.40.0
 	google.golang.org/genai v1.44.0
@@ -256,6 +253,7 @@ require (
 	github.com/ssgreg/nlreturn/v2 v2.2.1 // indirect
 	github.com/stbenjam/no-sprintf-host-port v0.3.1 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
+	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/subosito/gotenv v1.4.1 // indirect
 	github.com/tetafro/godot v1.5.4 // indirect
 	github.com/tetratelabs/wazero v1.9.0 // indirect

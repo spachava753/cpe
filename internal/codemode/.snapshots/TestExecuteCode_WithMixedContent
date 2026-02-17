@@ -1,4 +1,0 @@
-(map[string]interface {}) (len=2) {
-  (string) (len=8) "mimeType": (string) (len=10) "image/jpeg",
-  (string) (len=4) "text": (string) (len=9) "Text part"
-}

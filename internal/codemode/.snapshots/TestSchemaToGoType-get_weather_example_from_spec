@@ -1,7 +1,0 @@
-type GetWeatherInput struct {
-	// City The name of the city to get weather for
-	City string `json:"city"`
-	// Unit Temperature unit for the weather response
-	// Must be one of "celsius", "fahrenheit"
-	Unit string `json:"unit"`
-}

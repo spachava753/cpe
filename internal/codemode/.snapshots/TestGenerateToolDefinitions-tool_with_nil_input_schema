@@ -1,4 +1,0 @@
-type GetTimeOutput = string
-
-// GetTime Get current time
-var GetTime func(ctx context.Context) (GetTimeOutput, error)

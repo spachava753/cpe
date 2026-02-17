@@ -1,5 +1,0 @@
-([]*mcp.MCPConn) <nil>
-([]string) (len=2) {
-  (string) (len=13) "server1/tool1",
-  (string) (len=13) "server1/tool2"
-}

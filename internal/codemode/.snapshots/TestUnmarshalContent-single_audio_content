@@ -1,4 +1,0 @@
-(map[string]interface {}) (len=2) {
-  (string) (len=4) "Data": (string) (len=5) "world",
-  (string) (len=8) "MIMEType": (string) (len=9) "audio/wav"
-}

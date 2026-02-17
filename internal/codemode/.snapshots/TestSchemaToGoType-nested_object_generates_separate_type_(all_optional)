@@ -1,8 +1,0 @@
-type AddressInput_Location struct {
-	City *string `json:"city,omitempty"`
-	Country *string `json:"country,omitempty"`
-}
-
-type AddressInput struct {
-	Location *AddressInput_Location `json:"location,omitempty"`
-}

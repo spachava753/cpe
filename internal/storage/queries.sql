@@ -10,28 +10,10 @@ SELECT *
 FROM messages
 WHERE id = ?;
 
--- name: GetMostRecentMessage :one
-SELECT *
-FROM messages
-WHERE role IN ('assistant', 'tool_result')
-ORDER BY created_at DESC
-LIMIT 1;
-
--- name: GetChildrenCount :one
-SELECT COUNT(*) as count
-FROM messages
-WHERE parent_id = ?;
-
 -- name: ListMessages :many
 SELECT id
 FROM messages
 ORDER BY created_at DESC;
-
--- name: ListRootMessages :many
-SELECT id
-FROM messages
-WHERE parent_id IS NULL
-ORDER BY created_at;
 
 -- name: ListMessagesByParent :many
 SELECT *
@@ -44,14 +26,23 @@ DELETE
 FROM messages
 WHERE id = ?;
 
+-- name: CheckMessageIDExists :one
+SELECT EXISTS(SELECT 1 FROM messages WHERE id = ?) as "exists";
+
 -- name: HasChildren :one
 SELECT EXISTS(SELECT 1 FROM messages WHERE parent_id = ?) as has_children;
 
--- name: GetMessageChildrenId :many
-SELECT id
+-- name: ListMessagesDescending :many
+SELECT *
 FROM messages
-WHERE parent_id = ?
-ORDER BY created_at DESC;
+ORDER BY created_at DESC
+LIMIT -1 OFFSET ?;
+
+-- name: ListMessagesAscending :many
+SELECT *
+FROM messages
+ORDER BY created_at ASC
+LIMIT -1 OFFSET ?;
 
 -- Block queries
 -- name: CreateBlock :exec
@@ -68,8 +59,3 @@ SELECT *
 FROM blocks
 WHERE message_id = ?
 ORDER BY sequence_order;
-
--- name: DeleteBlock :exec
-DELETE
-FROM blocks
-WHERE id = ?;

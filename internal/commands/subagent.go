@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/subagentlog"
 	"github.com/spachava753/cpe/internal/types"
 )
@@ -35,9 +37,9 @@ type SubagentOptions struct {
 	// The tool call parameters are returned as the result.
 	OutputSchema *jsonschema.Schema
 
-	// Storage is the dialog storage for persisting execution traces (optional).
+	// Storage is the dialog saver for persisting execution traces (optional).
 	// When set, messages are saved with SubagentLabel annotation.
-	Storage DialogStorage
+	Storage storage.DialogSaver
 
 	// SubagentLabel is the label used to annotate saved messages (optional).
 	// Typically formatted as "subagent:<name>:<run_id>" to distinguish
@@ -155,20 +157,36 @@ func executeSubagentCore(ctx context.Context, opts SubagentOptions) (string, err
 	return extractFinalResponse(resultDialog), nil
 }
 
-// saveSubagentTrace persists the subagent execution trace to storage
-func saveSubagentTrace(ctx context.Context, storage DialogStorage, userMsg gai.Message, assistantMsgs gai.Dialog, label string) error {
-	// Save user message with label
-	userMsgID, err := storage.SaveMessage(ctx, userMsg, "", label)
-	if err != nil {
-		return fmt.Errorf("failed to save user message: %w", err)
+// saveSubagentTrace persists the subagent execution trace to storage.
+// Messages are saved as a single dialog (user message followed by assistant messages).
+func saveSubagentTrace(ctx context.Context, saver storage.DialogSaver, userMsg gai.Message, assistantMsgs gai.Dialog, label string) error {
+	// Build the full dialog: user message first, then all assistant messages
+	allMsgs := make([]gai.Message, 0, len(assistantMsgs)+1)
+
+	// Set the title on the user message (first message in the dialog)
+	if label != "" {
+		if userMsg.ExtraFields == nil {
+			userMsg.ExtraFields = make(map[string]any)
+		}
+		userMsg.ExtraFields[storage.MessageTitleKey] = label
+	}
+	allMsgs = append(allMsgs, userMsg)
+
+	// Add assistant messages with title labels
+	for _, msg := range assistantMsgs {
+		if label != "" {
+			if msg.ExtraFields == nil {
+				msg.ExtraFields = make(map[string]any)
+			}
+			msg.ExtraFields[storage.MessageTitleKey] = label
+		}
+		allMsgs = append(allMsgs, msg)
 	}
 
-	// Save assistant messages in chain
-	parentID := userMsgID
-	for _, msg := range assistantMsgs {
-		parentID, err = storage.SaveMessage(ctx, msg, parentID, label)
+	// Save the entire dialog in one call
+	for _, err := range saver.SaveDialog(ctx, slices.Values(allMsgs)) {
 		if err != nil {
-			return fmt.Errorf("failed to save assistant message: %w", err)
+			return fmt.Errorf("failed to save subagent trace: %w", err)
 		}
 	}
 

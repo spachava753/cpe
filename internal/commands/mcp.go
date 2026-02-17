@@ -3,6 +3,7 @@ package commands
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 	gonanoid "github.com/matoous/go-nanoid/v2"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/gai"
 
@@ -427,11 +429,16 @@ func MCPServe(ctx context.Context, opts MCPServeOptions) error {
 	}
 
 	// Initialize storage for persisting execution traces
-	dialogStorage, err := storage.InitDialogStorage(ctx, ".cpeconvo")
+	storageDB, err := sql.Open("sqlite3", ".cpeconvo")
+	if err != nil {
+		return fmt.Errorf("failed to open database: %w", err)
+	}
+	defer storageDB.Close()
+
+	dialogStorage, err := storage.NewSqlite(ctx, storageDB)
 	if err != nil {
 		return fmt.Errorf("failed to initialize dialog storage: %w", err)
 	}
-	defer dialogStorage.Close()
 
 	// Check for subagent logging address from environment
 	loggingAddress := os.Getenv(subagentlog.SubagentLoggingAddressEnv)
@@ -469,7 +476,7 @@ func MCPServe(ctx context.Context, opts MCPServeOptions) error {
 }
 
 // createSubagentExecutor creates an executor function that runs the subagent.
-func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, subagentName string, dialogStorage DialogStorage, eventClient *subagentlog.Client) mcpinternal.SubagentExecutor {
+func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, subagentName string, dialogStorage storage.DialogSaver, eventClient *subagentlog.Client) mcpinternal.SubagentExecutor {
 	return func(ctx context.Context, input mcpinternal.SubagentInput) (string, error) {
 		// Check context before starting
 		if err := ctx.Err(); err != nil {

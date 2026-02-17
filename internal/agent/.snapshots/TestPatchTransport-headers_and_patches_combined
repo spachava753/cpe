@@ -1,6 +1,0 @@
-(map[string]interface {}) (len=2) {
-  (string) (len=4) "body": (string) (len=34) "{\"original\":\"data\",\"field\":\"data\"}",
-  (string) (len=7) "headers": (map[string]string) (len=1) {
-    (string) (len=8) "X-Custom": (string) (len=5) "value"
-  }
-}

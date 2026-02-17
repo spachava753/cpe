@@ -1,1 +1,0 @@
-code mode collision: tools "get-weather" and "get_weather" both convert to Go function name "GetWeather"; exclude one using 'excludedTools' configuration or remove one of the MCP servers providing them

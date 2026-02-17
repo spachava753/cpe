@@ -1,4 +1,0 @@
-(map[string]string) (len=2) {
-  (string) (len=6) "stderr": (string) "",
-  (string) (len=6) "stdout": (string) (len=59) "Successfully deleted message msg-1 and all its descendants\n"
-}

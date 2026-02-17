@@ -1,4 +1,0 @@
-(struct { Data string; ContentType string }) {
-  Data: (string) (len=23) "Hello from test server!",
-  ContentType: (string) (len=10) "text/plain"
-}

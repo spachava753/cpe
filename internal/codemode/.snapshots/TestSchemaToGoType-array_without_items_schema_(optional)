@@ -1,3 +1,0 @@
-type ArrayInput struct {
-	Data []any `json:"data,omitempty"`
-}

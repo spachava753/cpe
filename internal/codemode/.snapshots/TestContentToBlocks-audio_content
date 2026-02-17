@@ -1,7 +1,0 @@
-([]codemode.blockSnapshot) (len=1) {
-  (codemode.blockSnapshot) {
-    ModalityType: (string) (len=5) "audio",
-    MimeType: (string) (len=9) "audio/wav",
-    Content: (string) (len=20) "ZmFrZS1hdWRpby1kYXRh"
-  }
-}

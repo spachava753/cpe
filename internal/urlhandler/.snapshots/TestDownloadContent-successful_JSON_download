@@ -1,5 +1,0 @@
-(urlhandler.downloadResultSnapshot) {
-  Data: (string) (len=20) "{\"message\": \"hello\"}",
-  ContentType: (string) (len=16) "application/json",
-  Size: (int64) 20
-}

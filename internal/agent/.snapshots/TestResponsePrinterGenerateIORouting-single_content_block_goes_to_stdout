@@ -1,4 +1,0 @@
-(agent.ioRoutingResult) {
-  Stdout: (string) (len=11) "Hello world",
-  Stderr: (string) ""
-}

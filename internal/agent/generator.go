@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/mcp"
+	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/types"
 
 	"github.com/cenkalti/backoff/v5"
@@ -189,7 +191,8 @@ type generatorOptions struct {
 	callbackWrapper ToolCallbackWrapper
 	middleware      []gai.WrapperFunc
 	baseGenerator   gai.ToolCapableGenerator
-	dialogSaver     types.DialogSaver
+	dialogSaver     storage.DialogSaver
+	stdout          io.Writer
 }
 
 // GeneratorOption is a functional option for configuring generator creation.
@@ -231,9 +234,17 @@ func WithBaseGenerator(g gai.ToolCapableGenerator) GeneratorOption {
 // WithDialogSaver enables incremental dialog saving via the SavingMiddleware.
 // When provided, messages are saved as they flow through the generation pipeline.
 // If not provided (nil), no saving occurs (incognito mode).
-func WithDialogSaver(storage types.DialogSaver) GeneratorOption {
+func WithDialogSaver(saver storage.DialogSaver) GeneratorOption {
 	return func(o *generatorOptions) {
-		o.dialogSaver = storage
+		o.dialogSaver = saver
+	}
+}
+
+// WithStdout sets the writer for model response output.
+// If not provided (nil), defaults to os.Stdout.
+func WithStdout(w io.Writer) GeneratorOption {
+	return func(o *generatorOptions) {
+		o.stdout = w
 	}
 }
 
@@ -291,10 +302,15 @@ func NewGenerator(
 	// TokenUsagePrinting must come BEFORE ResponsePrinting in the slice
 	// because gai.Wrap applies wrappers in reverse order.
 	// We want TokenUsagePrinting to be OUTERMOST so it prints AFTER response content.
+	stdoutW := o.stdout
+	if stdoutW == nil {
+		stdoutW = os.Stdout
+	}
+
 	wrappers = append(wrappers, WithTokenUsagePrinting(os.Stderr))
 	if !o.disablePrinting {
 		renderers := NewResponsePrinterRenderers()
-		wrappers = append(wrappers, WithResponsePrinting(renderers.Content, renderers.Thinking, renderers.ToolCall, os.Stdout, os.Stderr))
+		wrappers = append(wrappers, WithResponsePrinting(renderers.Content, renderers.Thinking, renderers.ToolCall, stdoutW, os.Stderr))
 	}
 
 	// Add saving middleware if storage is provided.

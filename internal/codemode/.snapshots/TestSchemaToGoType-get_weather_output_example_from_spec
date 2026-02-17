@@ -1,4 +1,0 @@
-type GetWeatherOutput struct {
-	// Temperature Temperature in celsius
-	Temperature float64 `json:"temperature"`
-}

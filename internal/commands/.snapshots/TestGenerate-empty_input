@@ -1,4 +1,0 @@
-(commands.generateTestResult) {
-  Error: (string) (len=11) "empty input",
-  Stderr: (string) ""
-}

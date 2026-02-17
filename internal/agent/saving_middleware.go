@@ -3,33 +3,35 @@ package agent
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/spachava753/gai"
 
-	"github.com/spachava753/cpe/internal/types"
+	"github.com/spachava753/cpe/internal/storage"
 )
 
 // SavingMiddleware is a stateless generator middleware that incrementally saves
 // messages as they flow through the generation pipeline.
 //
-// BEFORE Generate: Walks the dialog and saves any messages without an ID,
-// deriving the parent chain from the dialog structure.
+// BEFORE Generate: Saves the entire dialog (including any unsaved messages)
+// via SaveDialog, which handles the parent chain automatically.
 //
-// AFTER Generate: Saves the assistant response with the correct parent.
+// AFTER Generate: Saves the full dialog including the new assistant response.
 //
-// Note on atomicity: The user message is saved before calling the inner generator,
-// and the assistant response is saved after. If the assistant save fails, the user
-// message remains saved but without a linked response. This is acceptable because:
+// Note on atomicity: The dialog is saved before calling the inner generator,
+// and the dialog plus assistant response is saved after. If the assistant save
+// fails, the user messages remain saved but without a linked response. This is
+// acceptable because:
 // 1. Save failures are treated as unrecoverable errors that terminate execution
 // 2. The database remains consistent (just an incomplete conversation)
-// 3. Full transactional atomicity would require significant complexity
+// 3. SaveDialog uses transactions internally for each call
 type SavingMiddleware struct {
 	gai.GeneratorWrapper
-	storage types.DialogSaver
+	storage storage.DialogSaver
 }
 
 // NewSavingMiddleware creates a new SavingMiddleware.
-func NewSavingMiddleware(g gai.Generator, storage types.DialogSaver) *SavingMiddleware {
+func NewSavingMiddleware(g gai.Generator, storage storage.DialogSaver) *SavingMiddleware {
 	return &SavingMiddleware{
 		GeneratorWrapper: gai.GeneratorWrapper{Inner: g},
 		storage:          storage,
@@ -37,7 +39,7 @@ func NewSavingMiddleware(g gai.Generator, storage types.DialogSaver) *SavingMidd
 }
 
 // WithSaving returns a WrapperFunc for use with gai.Wrap.
-func WithSaving(storage types.DialogSaver) gai.WrapperFunc {
+func WithSaving(storage storage.DialogSaver) gai.WrapperFunc {
 	return func(g gai.Generator) gai.Generator {
 		return NewSavingMiddleware(g, storage)
 	}
@@ -46,25 +48,16 @@ func WithSaving(storage types.DialogSaver) gai.WrapperFunc {
 // Generate implements the gai.Generator interface.
 // It saves unsaved messages before calling the inner generator and saves
 // the assistant response after.
-//
-// The label parameter passed to SaveMessage is always empty string for normal
-// interactive usage. Labels are used by subagent execution to annotate saved
-// messages with subagent identity (e.g., "subagent:name:run_id").
 func (m *SavingMiddleware) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
-	// BEFORE: Walk dialog, save messages without IDs, derive parent chain
-	var lastID string
-	for i := range dialog {
-		if id := GetMessageID(dialog[i]); id != "" {
-			lastID = id
-			continue
-		}
-		// No ID - save it (label is empty for interactive usage)
-		id, err := m.storage.SaveMessage(ctx, dialog[i], lastID, "")
+	// BEFORE: Save the entire dialog. Already-persisted messages (those with
+	// MessageIDKey set) are verified but not re-saved. New messages get IDs assigned.
+	idx := 0
+	for saved, err := range m.storage.SaveDialog(ctx, slices.Values(dialog)) {
 		if err != nil {
-			return gai.Response{}, fmt.Errorf("failed to save message: %w", err)
+			return gai.Response{}, fmt.Errorf("failed to save dialog: %w", err)
 		}
-		SetMessageID(&dialog[i], id)
-		lastID = id
+		dialog[idx] = saved
+		idx++
 	}
 
 	resp, err := m.GeneratorWrapper.Generate(ctx, dialog, opts)
@@ -72,13 +65,21 @@ func (m *SavingMiddleware) Generate(ctx context.Context, dialog gai.Dialog, opts
 		return resp, err
 	}
 
-	// AFTER: Save assistant response (label is empty for interactive usage)
+	// AFTER: Save the full dialog including the new assistant response.
 	if len(resp.Candidates) > 0 {
-		id, err := m.storage.SaveMessage(ctx, resp.Candidates[0], lastID, "")
-		if err != nil {
-			return gai.Response{}, fmt.Errorf("failed to save assistant message: %w", err)
+		fullDialog := append(dialog, resp.Candidates[0])
+		idx = 0
+		for saved, err := range m.storage.SaveDialog(ctx, slices.Values(fullDialog)) {
+			if err != nil {
+				return gai.Response{}, fmt.Errorf("failed to save assistant message: %w", err)
+			}
+			fullDialog[idx] = saved
+			idx++
 		}
-		SetMessageID(&resp.Candidates[0], id)
+		// Write the saved assistant message (with MessageIDKey populated) back
+		// into resp.Candidates so outer middlewares (e.g. ResponsePrinter) can
+		// read the ID.
+		resp.Candidates[0] = fullDialog[len(fullDialog)-1]
 	}
 
 	return resp, nil
@@ -90,7 +91,7 @@ func GetMessageID(msg gai.Message) string {
 	if msg.ExtraFields == nil {
 		return ""
 	}
-	id, _ := msg.ExtraFields[types.MessageIDKey].(string)
+	id, _ := msg.ExtraFields[storage.MessageIDKey].(string)
 	return id
 }
 
@@ -101,5 +102,5 @@ func SetMessageID(msg *gai.Message, id string) {
 	if msg.ExtraFields == nil {
 		msg.ExtraFields = make(map[string]any)
 	}
-	msg.ExtraFields[types.MessageIDKey] = id
+	msg.ExtraFields[storage.MessageIDKey] = id
 }

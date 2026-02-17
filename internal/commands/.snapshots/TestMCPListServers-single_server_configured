@@ -1,4 +1,0 @@
-Configured MCP Servers:
-- test-server (Type: stdio, Timeout: 30s)
-  Command: node server.js
-

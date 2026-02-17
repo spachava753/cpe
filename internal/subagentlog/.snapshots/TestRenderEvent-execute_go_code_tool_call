@@ -1,4 +1,0 @@
-#### code_agent [run-456] [tool call] (timeout: 60s)
-```go
-fmt.Println("hello")
-```
