@@ -14,6 +14,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/openai/openai-go/v3"
 	oaiopt "github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/responses"
 	"github.com/spachava753/gai"
 	"google.golang.org/genai"
 
@@ -28,6 +29,32 @@ import (
 )
 
 const authMethodOAuth = "oauth"
+
+// ModelTypeResponses is the model type identifier for the OpenAI Responses API.
+const ModelTypeResponses = "responses"
+
+// ApplyResponsesThinkingSummary ensures that when using the OpenAI Responses API
+// with a thinking budget, the reasoning summary detail parameter is set to "detailed".
+//
+// The Responses API requires an explicit `reasoning.summary` parameter to return
+// thinking/reasoning blocks in the response. Without it, the model reasons internally
+// but does not include reasoning content in the output. This function sets the default
+// to "detailed" so thinking blocks are visible, unless the user has explicitly
+// configured a different value.
+//
+// This must be called with the correct openai SDK type (responses.ReasoningSummaryDetailed)
+// because the gai library performs a type assertion on the ExtraArgs value.
+func ApplyResponsesThinkingSummary(opts *gai.GenOpts) {
+	if opts == nil || opts.ThinkingBudget == "" {
+		return
+	}
+	if opts.ExtraArgs == nil {
+		opts.ExtraArgs = make(map[string]any)
+	}
+	if _, exists := opts.ExtraArgs[gai.ResponsesThoughtSummaryDetailParam]; !exists {
+		opts.ExtraArgs[gai.ResponsesThoughtSummaryDetailParam] = responses.ReasoningSummaryDetailed
+	}
+}
 
 // prependClaudeCodeIdentifier adds the required Claude Code identifier as the first
 // system message. Anthropic requires this for OAuth tokens to work.
@@ -174,7 +201,8 @@ func initGeneratorFromModel(
 			respOpts = append(respOpts, oaiopt.WithBaseURL(baseURL))
 		}
 		client := openai.NewClient(respOpts...)
-		gen = gai.NewResponsesToolGeneratorAdapter(gai.NewResponsesGenerator(&client.Responses, m.ID, systemPrompt), "")
+		respGen := gai.NewResponsesGenerator(&client.Responses, m.ID, systemPrompt)
+		gen = &respGen
 	case "openrouter":
 		if apiKey == "" {
 			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)

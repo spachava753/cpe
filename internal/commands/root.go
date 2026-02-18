@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/spachava753/gai"
 
@@ -149,7 +150,15 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 		return fmt.Errorf("failed to create tool capable generator: %w", err)
 	}
 
+	// GenerationDefaults is always non-nil (guaranteed by config resolver).
 	genOpts := effectiveConfig.GenerationDefaults
+
+	// Apply model-type-specific defaults to generation options.
+	// For the Responses API, this ensures reasoning summaries are returned
+	// when a thinking budget is configured.
+	if strings.EqualFold(effectiveConfig.Model.Type, agent.ModelTypeResponses) {
+		agent.ApplyResponsesThinkingSummary(genOpts)
+	}
 
 	// Call the generation logic
 	// Saving is handled by the SavingMiddleware in the generator pipeline when not in incognito mode.

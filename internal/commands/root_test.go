@@ -37,6 +37,10 @@ func resolveTestConfig(t *testing.T, modelType string, modelRef string) *config.
 		ref = "test-gemini"
 		id = "gemini-2.0-flash"
 		apiKeyEnv = "GEMINI_API_KEY"
+	case "responses":
+		ref = "test-responses"
+		id = "gpt-5.2-2025-12-11"
+		apiKeyEnv = "OPENAI_API_KEY"
 	default:
 		t.Fatalf("unsupported model type: %s", modelType)
 	}
@@ -70,6 +74,54 @@ func resolveTestConfig(t *testing.T, modelType string, modelRef string) *config.
 
 	cfg, err := config.ResolveFromRaw(rawCfg, config.RuntimeOptions{
 		ModelRef: effectiveRef,
+	})
+	if err != nil {
+		t.Fatalf("failed to resolve test config: %v", err)
+	}
+	return cfg
+}
+
+// resolveTestConfigWithThinking creates a test config with thinking budget enabled.
+func resolveTestConfigWithThinking(t *testing.T, modelType, thinkingBudget string) *config.Config {
+	t.Helper()
+
+	var ref, id, apiKeyEnv string
+	switch modelType {
+	case "responses":
+		ref = "test-responses"
+		id = "gpt-5.2-2025-12-11"
+		apiKeyEnv = "OPENAI_API_KEY"
+	default:
+		t.Fatalf("unsupported model type for thinking test: %s", modelType)
+	}
+
+	rawCfg := &config.RawConfig{
+		Version: "1.0",
+		Models: []config.ModelConfig{
+			{
+				Model: config.Model{
+					Ref:         ref,
+					DisplayName: "Test Model",
+					ID:          id,
+					Type:        modelType,
+					ApiKeyEnv:   apiKeyEnv,
+				},
+				GenerationDefaults: &config.GenerationParams{
+					ThinkingBudget: thinkingBudget,
+				},
+			},
+		},
+		Defaults: config.Defaults{
+			Model:   ref,
+			Timeout: "120s",
+			GenerationParams: &config.GenerationParams{
+				MaxGenerationTokens: ptr(2048),
+			},
+		},
+	}
+
+	cfg, err := config.ResolveFromRaw(rawCfg, config.RuntimeOptions{
+		ModelRef: ref,
 	})
 	if err != nil {
 		t.Fatalf("failed to resolve test config: %v", err)
@@ -372,4 +424,178 @@ func TestExecuteRoot_IncognitoMode(t *testing.T) {
 	if !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("expected .cpeconvo to not exist, but got err: %v", statErr)
 	}
+}
+
+func TestExecuteRoot_ResponsesThinkingBlocks(t *testing.T) {
+	requireAPIKey(t, "OPENAI_API_KEY")
+
+	ctx := context.Background()
+	memDB := storage.NewMemDB()
+
+	t.Run("ThinkingBlocksPresent", func(t *testing.T) {
+		cfg := resolveTestConfigWithThinking(t, "responses", "high")
+
+		err := ExecuteRoot(ctx, ExecuteRootOptions{
+			Args:        []string{"What is 17 * 23? Think step by step and show your work."},
+			SkipStdin:   true,
+			Stdout:      io.Discard,
+			Stderr:      io.Discard,
+			Config:      cfg,
+			DialogSaver: memDB,
+		})
+		if err != nil {
+			t.Fatalf("ExecuteRoot returned error: %v", err)
+		}
+
+		nodes := sortedNodes(memDB)
+		if len(nodes) < 2 {
+			t.Fatalf("expected at least 2 messages (user + assistant), got %d", len(nodes))
+		}
+
+		// Find the assistant message and check for thinking blocks
+		var hasThinking, hasContent bool
+		var thinkingBlockCount int
+		for _, node := range nodes {
+			if node.Role != gai.Assistant {
+				continue
+			}
+			for _, block := range node.Blocks {
+				t.Logf("Block: type=%s modality=%s content_len=%d extra=%v",
+					block.BlockType, block.ModalityType, len(block.Content.String()), block.ExtraFields)
+				switch block.BlockType {
+				case gai.Thinking:
+					hasThinking = true
+					thinkingBlockCount++
+					if block.ExtraFields == nil {
+						t.Error("thinking block has nil ExtraFields")
+					} else if gen, ok := block.ExtraFields[gai.ThinkingExtraFieldGeneratorKey]; !ok {
+						t.Errorf("thinking block missing %s in ExtraFields", gai.ThinkingExtraFieldGeneratorKey)
+					} else if gen != gai.ThinkingGeneratorResponses {
+						t.Errorf("thinking block generator = %v, want %q", gen, gai.ThinkingGeneratorResponses)
+					}
+					content := block.Content.String()
+					if content == "" {
+						t.Error("thinking block has empty content")
+					} else {
+						// Log a truncated version
+						preview := content
+						if len(preview) > 200 {
+							preview = preview[:200] + "..."
+						}
+						t.Logf("Thinking content preview: %s", preview)
+					}
+				case gai.Content:
+					hasContent = true
+				}
+			}
+		}
+
+		if !hasThinking {
+			t.Error("expected at least one thinking block in assistant response, found none")
+		}
+		if !hasContent {
+			t.Error("expected at least one content block in assistant response, found none")
+		}
+		t.Logf("Found %d thinking block(s) in response", thinkingBlockCount)
+	})
+
+	t.Run("ContinuationPreservesThinkingInDialog", func(t *testing.T) {
+		cfg := resolveTestConfigWithThinking(t, "responses", "high")
+
+		// Load dialog from previous test
+		initialDialog := loadDialogFromMemDB(ctx, t, memDB)
+
+		// Verify the initial dialog contains thinking blocks from the previous turn
+		var dialogHasThinking bool
+		for _, msg := range initialDialog {
+			for _, block := range msg.Blocks {
+				if block.BlockType == gai.Thinking {
+					dialogHasThinking = true
+					break
+				}
+			}
+			if dialogHasThinking {
+				break
+			}
+		}
+		if !dialogHasThinking {
+			t.Error("initial dialog does not contain thinking blocks from previous turn - thinking blocks not preserved in storage")
+		}
+
+		// Continue the conversation
+		prevNodeCount := len(memDB.Nodes())
+
+		err := ExecuteRoot(ctx, ExecuteRootOptions{
+			Args:          []string{"Now explain your reasoning for that calculation in detail, step by step, showing all intermediate values."},
+			SkipStdin:     true,
+			Stdout:        io.Discard,
+			Stderr:        io.Discard,
+			Config:        cfg,
+			DialogSaver:   memDB,
+			InitialDialog: initialDialog,
+		})
+		if err != nil {
+			t.Fatalf("ExecuteRoot returned error: %v", err)
+		}
+
+		nodes := sortedNodes(memDB)
+		if len(nodes) <= prevNodeCount {
+			t.Fatalf("expected new messages after continuation, but count unchanged: %d", len(nodes))
+		}
+
+		// Verify the new assistant message has content blocks.
+		// Thinking blocks may or may not appear depending on the model's decision —
+		// the model can choose not to reason for simpler follow-ups.
+		var newAssistantHasContent bool
+		var newAssistantHasThinking bool
+		for _, node := range nodes[prevNodeCount:] {
+			if node.Role != gai.Assistant {
+				continue
+			}
+			for _, block := range node.Blocks {
+				switch block.BlockType {
+				case gai.Thinking:
+					newAssistantHasThinking = true
+				case gai.Content:
+					newAssistantHasContent = true
+				}
+			}
+		}
+
+		if !newAssistantHasContent {
+			t.Error("expected content blocks in continuation assistant response, found none")
+		}
+		t.Logf("Continuation response has thinking blocks: %v", newAssistantHasThinking)
+	})
+
+	t.Run("ResponseIDPreservedInBlocks", func(t *testing.T) {
+		// Verify that the response ID is stored in block ExtraFields
+		nodes := sortedNodes(memDB)
+
+		var foundResponseID bool
+		for _, node := range nodes {
+			if node.Role != gai.Assistant {
+				continue
+			}
+			for _, block := range node.Blocks {
+				if block.ExtraFields == nil {
+					continue
+				}
+				if respID, ok := block.ExtraFields[gai.ResponsesPrevRespId]; ok {
+					if id, ok := respID.(string); ok && id != "" {
+						foundResponseID = true
+						t.Logf("Found response ID in block ExtraFields: %s", id)
+						break
+					}
+				}
+			}
+			if foundResponseID {
+				break
+			}
+		}
+
+		if !foundResponseID {
+			t.Error("expected response ID in assistant block ExtraFields, found none")
+		}
+	})
 }

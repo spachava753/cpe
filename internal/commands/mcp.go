@@ -547,6 +547,10 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 		// Build generation options function
 		var genOptsFunc gai.GenOptsGenerator
 		if effectiveConfig.GenerationDefaults != nil {
+			// Apply model-type-specific defaults (e.g., reasoning summary for Responses API)
+			if strings.EqualFold(effectiveConfig.Model.Type, agent.ModelTypeResponses) {
+				agent.ApplyResponsesThinkingSummary(effectiveConfig.GenerationDefaults)
+			}
 			genOptsFunc = func(_ gai.Dialog) *gai.GenOpts {
 				return effectiveConfig.GenerationDefaults
 			}
