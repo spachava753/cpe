@@ -32,15 +32,16 @@ type ExecuteRootOptions struct {
 	// CustomURL overrides the model's base URL
 	CustomURL string
 
-	// MessageDB is the storage backend for conversation persistence.
+	// DialogSaver is the storage backend for conversation persistence.
 	// When nil, no conversations are saved (incognito mode).
 	// The caller is responsible for initializing and closing the underlying store.
-	MessageDB storage.MessageDB
+	DialogSaver storage.DialogSaver
 
-	// ContinueID is the message ID to continue from
-	ContinueID string
-	// NewConversation starts a new conversation
-	NewConversation bool
+	// InitialDialog is the pre-loaded conversation history to continue from.
+	// When non-empty, the new user message is appended to this dialog.
+	// The caller is responsible for loading the dialog (e.g. via
+	// storage.GetDialogForMessage). When empty, a new conversation is started.
+	InitialDialog gai.Dialog
 
 	// Stdout is where model responses are written.
 	// If nil, defaults to os.Stdout.
@@ -132,8 +133,8 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 		agent.WithStdout(stdout),
 	}
 	// Enable saving middleware if storage is available (not incognito mode)
-	if opts.MessageDB != nil {
-		generatorOpts = append(generatorOpts, agent.WithDialogSaver(opts.MessageDB))
+	if opts.DialogSaver != nil {
+		generatorOpts = append(generatorOpts, agent.WithDialogSaver(opts.DialogSaver))
 	}
 
 	// Create the generator with optional saving middleware
@@ -153,13 +154,11 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 	// Call the generation logic
 	// Saving is handled by the SavingMiddleware in the generator pipeline when not in incognito mode.
 	return Generate(ctx, GenerateOptions{
-		UserBlocks:      userBlocks,
-		ContinueID:      opts.ContinueID,
-		NewConversation: opts.NewConversation,
+		UserBlocks:    userBlocks,
+		InitialDialog: opts.InitialDialog,
 		GenOptsFunc: func(dialog gai.Dialog) *gai.GenOpts {
 			return genOpts
 		},
-		MessageDB: opts.MessageDB,
 		Generator: toolGen,
 		Stderr:    stderr,
 	})

@@ -2,14 +2,14 @@ package commands
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"io"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
@@ -112,154 +112,135 @@ func resolveCrossProviderConfig(t *testing.T, modelRef string) *config.Config {
 	return cfg
 }
 
-const (
-	roleUser      = "user"
-	roleAssistant = "assistant"
-)
+// sortedNodes returns the MemDB nodes sorted by creation time (ascending).
+func sortedNodes(memDB *storage.MemDB) []storage.MemNode {
+	nodes := memDB.Nodes()
+	slices.SortFunc(nodes, func(a, b storage.MemNode) int {
+		return a.CreatedAt.Compare(b.CreatedAt)
+	})
+	return nodes
+}
 
-func openTestDB(t *testing.T) *sql.DB {
+// loadDialogFromMemDB loads a conversation dialog from MemDB for continuation.
+// It finds the most recent assistant message and reconstructs the dialog.
+func loadDialogFromMemDB(ctx context.Context, t *testing.T, memDB *storage.MemDB) gai.Dialog {
 	t.Helper()
-	db, err := sql.Open("sqlite3", ".cpeconvo")
+	msgs, err := memDB.ListMessages(ctx, storage.ListMessagesOptions{})
 	if err != nil {
-		t.Fatalf("failed to open test db: %v", err)
+		t.Fatalf("failed to list messages: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
-	return db
-}
-
-func countMessages(ctx context.Context, t *testing.T, db *sql.DB) int {
-	t.Helper()
-	var count int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM messages").Scan(&count); err != nil {
-		t.Fatalf("failed to count messages: %v", err)
-	}
-	return count
-}
-
-type testMessage struct {
-	ID       string
-	ParentID sql.NullString
-	Role     string
-}
-
-func queryMessages(ctx context.Context, t *testing.T, db *sql.DB) []testMessage {
-	t.Helper()
-	rows, err := db.QueryContext(ctx, "SELECT id, parent_id, role FROM messages ORDER BY created_at")
-	if err != nil {
-		t.Fatalf("failed to query messages: %v", err)
-	}
-	defer rows.Close()
-
-	var msgs []testMessage
-	for rows.Next() {
-		var m testMessage
-		if err := rows.Scan(&m.ID, &m.ParentID, &m.Role); err != nil {
-			t.Fatalf("failed to scan message: %v", err)
+	var continueID string
+	for msg := range msgs {
+		if msg.Role == gai.Assistant || msg.Role == gai.ToolResult {
+			if id, ok := msg.ExtraFields[storage.MessageIDKey].(string); ok && id != "" {
+				continueID = id
+				break
+			}
 		}
-		msgs = append(msgs, m)
 	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("rows iteration error: %v", err)
+	if continueID == "" {
+		t.Fatal("no assistant message found to continue from")
 	}
-	return msgs
+	dialog, err := storage.GetDialogForMessage(ctx, memDB, continueID)
+	if err != nil {
+		t.Fatalf("failed to get dialog for message %s: %v", continueID, err)
+	}
+	return dialog
 }
 
-func newTestSqliteDB(t *testing.T, ctx context.Context) storage.MessageDB {
+// loadDialogFromMemDBForID loads a conversation dialog from MemDB for a specific message ID.
+func loadDialogFromMemDBForID(ctx context.Context, t *testing.T, memDB *storage.MemDB, messageID string) gai.Dialog {
 	t.Helper()
-	db := openTestDB(t)
-	sqliteStorage, err := storage.NewSqlite(ctx, db)
+	dialog, err := storage.GetDialogForMessage(ctx, memDB, messageID)
 	if err != nil {
-		t.Fatalf("failed to initialize dialog storage: %v", err)
+		t.Fatalf("failed to get dialog for message %s: %v", messageID, err)
 	}
-	return sqliteStorage
+	return dialog
 }
 
 func TestExecuteRoot_ConversationFlow(t *testing.T) {
 	requireAPIKey(t, "ANTHROPIC_API_KEY")
 	requireAPIKey(t, "GEMINI_API_KEY")
-	t.Chdir(t.TempDir())
 
 	ctx := context.Background()
-	db := openTestDB(t)
-	messageDB := newTestSqliteDB(t, ctx)
+	memDB := storage.NewMemDB()
 
 	// Track the first assistant message ID for the fork test later.
 	var firstAssistantID string
 
 	t.Run("NewConversation", func(t *testing.T) {
 		err := ExecuteRoot(ctx, ExecuteRootOptions{
-			Args:            []string{"Reply with exactly one word: hello"},
-			NewConversation: true,
-			SkipStdin:       true,
-			Stdout:          io.Discard,
-			Stderr:          io.Discard,
-			Config:          resolveCrossProviderConfig(t, "test-anthropic"),
-			MessageDB:       messageDB,
+			Args:        []string{"Reply with exactly one word: hello"},
+			SkipStdin:   true,
+			Stdout:      io.Discard,
+			Stderr:      io.Discard,
+			Config:      resolveCrossProviderConfig(t, "test-anthropic"),
+			DialogSaver: memDB,
 		})
 		if err != nil {
 			t.Fatalf("ExecuteRoot returned error: %v", err)
 		}
 
-		count := countMessages(ctx, t, db)
-		if count != 2 {
-			t.Fatalf("expected 2 messages, got %d", count)
+		nodes := sortedNodes(memDB)
+		if len(nodes) != 2 {
+			t.Fatalf("expected 2 messages, got %d", len(nodes))
 		}
 
-		msgs := queryMessages(ctx, t, db)
-		if msgs[0].Role != roleUser {
-			t.Errorf("expected first message role %q, got %q", roleUser, msgs[0].Role)
+		if nodes[0].Role != gai.User {
+			t.Errorf("expected first message role %q, got %q", gai.User, nodes[0].Role)
 		}
-		if msgs[0].ParentID.Valid {
-			t.Errorf("expected first message to have no parent, got %q", msgs[0].ParentID.String)
+		if nodes[0].ParentID != "" {
+			t.Errorf("expected first message to have no parent, got %q", nodes[0].ParentID)
 		}
-		if msgs[1].Role != roleAssistant {
-			t.Errorf("expected second message role %q, got %q", roleAssistant, msgs[1].Role)
+		if nodes[1].Role != gai.Assistant {
+			t.Errorf("expected second message role %q, got %q", gai.Assistant, nodes[1].Role)
 		}
-		if !msgs[1].ParentID.Valid || msgs[1].ParentID.String != msgs[0].ID {
-			t.Errorf("expected second message parent to be %q, got %v", msgs[0].ID, msgs[1].ParentID)
+		if nodes[1].ParentID != nodes[0].ID {
+			t.Errorf("expected second message parent to be %q, got %q", nodes[0].ID, nodes[1].ParentID)
 		}
 
-		firstAssistantID = msgs[1].ID
+		firstAssistantID = nodes[1].ID
 	})
 
 	t.Run("ContinueConversation", func(t *testing.T) {
-		// Auto-continues from the most recent assistant message.
+		// Load conversation history from MemDB (auto-continue equivalent)
+		initialDialog := loadDialogFromMemDB(ctx, t, memDB)
+
 		err := ExecuteRoot(ctx, ExecuteRootOptions{
-			Args:      []string{"Reply with exactly one word: goodbye"},
-			SkipStdin: true,
-			Stdout:    io.Discard,
-			Stderr:    io.Discard,
-			Config:    resolveCrossProviderConfig(t, "test-anthropic"),
-			MessageDB: messageDB,
+			Args:          []string{"Reply with exactly one word: goodbye"},
+			SkipStdin:     true,
+			Stdout:        io.Discard,
+			Stderr:        io.Discard,
+			Config:        resolveCrossProviderConfig(t, "test-anthropic"),
+			DialogSaver:   memDB,
+			InitialDialog: initialDialog,
 		})
 		if err != nil {
 			t.Fatalf("ExecuteRoot returned error: %v", err)
 		}
 
-		count := countMessages(ctx, t, db)
-		if count != 4 {
-			t.Fatalf("expected 4 messages, got %d", count)
+		nodes := sortedNodes(memDB)
+		if len(nodes) != 4 {
+			t.Fatalf("expected 4 messages, got %d", len(nodes))
 		}
-
-		msgs := queryMessages(ctx, t, db)
 
 		// Verify linear chain: user1 (no parent) → assistant1 → user2 → assistant2
-		if msgs[0].Role != roleUser || msgs[0].ParentID.Valid {
-			t.Errorf("msg[0]: expected user with no parent, got role=%q parent=%v", msgs[0].Role, msgs[0].ParentID)
+		if nodes[0].Role != gai.User || nodes[0].ParentID != "" {
+			t.Errorf("msg[0]: expected user with no parent, got role=%q parent=%q", nodes[0].Role, nodes[0].ParentID)
 		}
-		for i := 1; i < len(msgs); i++ {
-			if !msgs[i].ParentID.Valid || msgs[i].ParentID.String != msgs[i-1].ID {
-				t.Errorf("msg[%d]: expected parent %q, got %v", i, msgs[i-1].ID, msgs[i].ParentID)
+		for i := 1; i < len(nodes); i++ {
+			if nodes[i].ParentID != nodes[i-1].ID {
+				t.Errorf("msg[%d]: expected parent %q, got %q", i, nodes[i-1].ID, nodes[i].ParentID)
 			}
 		}
-		if msgs[1].Role != roleAssistant {
-			t.Errorf("msg[1]: expected role %q, got %q", roleAssistant, msgs[1].Role)
+		if nodes[1].Role != gai.Assistant {
+			t.Errorf("msg[1]: expected role %q, got %q", gai.Assistant, nodes[1].Role)
 		}
-		if msgs[2].Role != roleUser {
-			t.Errorf("msg[2]: expected role %q, got %q", roleUser, msgs[2].Role)
+		if nodes[2].Role != gai.User {
+			t.Errorf("msg[2]: expected role %q, got %q", gai.User, nodes[2].Role)
 		}
-		if msgs[3].Role != roleAssistant {
-			t.Errorf("msg[3]: expected role %q, got %q", roleAssistant, msgs[3].Role)
+		if nodes[3].Role != gai.Assistant {
+			t.Errorf("msg[3]: expected role %q, got %q", gai.Assistant, nodes[3].Role)
 		}
 	})
 
@@ -270,14 +251,17 @@ func TestExecuteRoot_ConversationFlow(t *testing.T) {
 			t.Fatal("firstAssistantID not set — NewConversation subtest must have failed")
 		}
 
+		// Load dialog up to the first assistant message
+		initialDialog := loadDialogFromMemDBForID(ctx, t, memDB, firstAssistantID)
+
 		err := ExecuteRoot(ctx, ExecuteRootOptions{
-			Args:       []string{"Reply with exactly one word: world"},
-			ContinueID: firstAssistantID,
-			SkipStdin:  true,
-			Stdout:     io.Discard,
-			Stderr:     io.Discard,
-			Config:     resolveCrossProviderConfig(t, "test-gemini"),
-			MessageDB:  messageDB,
+			Args:          []string{"Reply with exactly one word: world"},
+			SkipStdin:     true,
+			Stdout:        io.Discard,
+			Stderr:        io.Discard,
+			Config:        resolveCrossProviderConfig(t, "test-gemini"),
+			DialogSaver:   memDB,
+			InitialDialog: initialDialog,
 		})
 		if err != nil {
 			t.Fatalf("ExecuteRoot returned error: %v", err)
@@ -286,36 +270,20 @@ func TestExecuteRoot_ConversationFlow(t *testing.T) {
 		// We now have 6 messages total:
 		// Original chain: user1 → assistant1 → user2 → assistant2
 		// Forked branch:  assistant1 → user3 → assistant3
-		count := countMessages(ctx, t, db)
-		if count != 6 {
-			t.Fatalf("expected 6 messages, got %d", count)
+		nodes := sortedNodes(memDB)
+		if len(nodes) != 6 {
+			t.Fatalf("expected 6 messages, got %d", len(nodes))
 		}
-
-		msgs := queryMessages(ctx, t, db)
 
 		// Find the forked messages: user and assistant whose parent chain
 		// goes back to firstAssistantID but are not part of the original chain.
-		var forkedUser, forkedAssistant *testMessage
-		for i := range msgs {
-			if msgs[i].Role == roleUser && msgs[i].ParentID.Valid && msgs[i].ParentID.String == firstAssistantID {
-				// Could be the original user2 or the forked user3.
-				// The original user2 is msgs[2] from the linear chain.
-				// Check if this is a different message by looking at the next one.
-				if i >= 4 {
-					forkedUser = &msgs[i]
-				}
-			}
-		}
-		if forkedUser == nil {
-			// Try another approach: the forked user is the one with parent=firstAssistantID
-			// that is NOT the third message in the original chain.
-			originalUser2ID := msgs[2].ID
-			for i := range msgs {
-				if msgs[i].Role == roleUser && msgs[i].ParentID.Valid &&
-					msgs[i].ParentID.String == firstAssistantID && msgs[i].ID != originalUser2ID {
-					forkedUser = &msgs[i]
-					break
-				}
+		var forkedUser, forkedAssistant *storage.MemNode
+		// The original user2 is the one at index 2 in sorted order.
+		originalUser2ID := nodes[2].ID
+		for i := range nodes {
+			if nodes[i].Role == gai.User && nodes[i].ParentID == firstAssistantID && nodes[i].ID != originalUser2ID {
+				forkedUser = &nodes[i]
+				break
 			}
 		}
 		if forkedUser == nil {
@@ -323,10 +291,9 @@ func TestExecuteRoot_ConversationFlow(t *testing.T) {
 		}
 
 		// Find the forked assistant (child of forkedUser)
-		for i := range msgs {
-			if msgs[i].Role == roleAssistant && msgs[i].ParentID.Valid &&
-				msgs[i].ParentID.String == forkedUser.ID {
-				forkedAssistant = &msgs[i]
+		for i := range nodes {
+			if nodes[i].Role == gai.Assistant && nodes[i].ParentID == forkedUser.ID {
+				forkedAssistant = &nodes[i]
 				break
 			}
 		}
@@ -335,45 +302,44 @@ func TestExecuteRoot_ConversationFlow(t *testing.T) {
 		}
 
 		// Verify the forked assistant has content blocks
-		var blockCount int
-		err = db.QueryRowContext(ctx,
-			"SELECT COUNT(*) FROM blocks WHERE message_id = ? AND block_type = 'content'",
-			forkedAssistant.ID,
-		).Scan(&blockCount)
-		if err != nil {
-			t.Fatalf("failed to count blocks for forked assistant: %v", err)
+		if len(forkedAssistant.Blocks) == 0 {
+			t.Errorf("forked assistant: expected at least one block, got 0")
 		}
-		if blockCount == 0 {
-			t.Errorf("forked assistant: expected at least one content block, got 0")
+		hasContent := false
+		for _, block := range forkedAssistant.Blocks {
+			if block.BlockType == gai.Content {
+				hasContent = true
+				break
+			}
+		}
+		if !hasContent {
+			t.Errorf("forked assistant: expected at least one content block")
 		}
 	})
 }
 
 func TestExecuteRoot_ContextCancellation(t *testing.T) {
 	requireAPIKey(t, "ANTHROPIC_API_KEY")
-	t.Chdir(t.TempDir())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	messageDB := newTestSqliteDB(t, ctx)
+	memDB := storage.NewMemDB()
 
 	// Use a prompt designed to produce a long response
 	_ = ExecuteRoot(ctx, ExecuteRootOptions{
-		Args:            []string{"Write a 2000 word essay about the history of computing"},
-		NewConversation: true,
-		SkipStdin:       true,
-		Stdout:          io.Discard,
-		Stderr:          io.Discard,
-		Config:          resolveTestConfig(t, "anthropic", ""),
-		MessageDB:       messageDB,
+		Args:        []string{"Write a 2000 word essay about the history of computing"},
+		SkipStdin:   true,
+		Stdout:      io.Discard,
+		Stderr:      io.Discard,
+		Config:      resolveTestConfig(t, "anthropic", ""),
+		DialogSaver: memDB,
 	})
 	// Error is acceptable (context.Canceled or context.DeadlineExceeded) — don't check it
 
-	db := openTestDB(t)
-	count := countMessages(ctx, t, db)
-	if count < 1 {
-		t.Fatalf("expected at least 1 message (user), got %d", count)
+	nodes := memDB.Nodes()
+	if len(nodes) < 1 {
+		t.Fatalf("expected at least 1 message (user), got %d", len(nodes))
 	}
 }
 
@@ -383,13 +349,12 @@ func TestExecuteRoot_IncognitoMode(t *testing.T) {
 
 	ctx := context.Background()
 	err := ExecuteRoot(ctx, ExecuteRootOptions{
-		Args:            []string{"Reply with exactly one word: hello"},
-		NewConversation: true,
-		SkipStdin:       true,
-		Stdout:          io.Discard,
-		Stderr:          io.Discard,
-		Config:          resolveTestConfig(t, "anthropic", ""),
-		// MessageDB is nil — no storage (incognito mode)
+		Args:      []string{"Reply with exactly one word: hello"},
+		SkipStdin: true,
+		Stdout:    io.Discard,
+		Stderr:    io.Discard,
+		Config:    resolveTestConfig(t, "anthropic", ""),
+		// DialogSaver is nil — no storage (incognito mode)
 	})
 	if err != nil {
 		t.Fatalf("ExecuteRoot returned error: %v", err)

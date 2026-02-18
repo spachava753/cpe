@@ -63,8 +63,9 @@ through natural language interactions.`,
 			return fmt.Errorf("failed to resolve configuration: %w", err)
 		}
 
-		// Initialize storage unless in incognito mode
-		var messageDB storage.MessageDB
+		// Initialize storage and resolve conversation history unless in incognito mode
+		var dialogSaver storage.DialogSaver
+		var initialDialog gai.Dialog
 		if !incognitoMode {
 			storageDB, dbErr := sql.Open("sqlite3", ".cpeconvo")
 			if dbErr != nil {
@@ -76,7 +77,13 @@ through natural language interactions.`,
 			if initErr != nil {
 				return fmt.Errorf("failed to initialize dialog storage: %w", initErr)
 			}
-			messageDB = sqliteStorage
+			dialogSaver = sqliteStorage
+
+			// Resolve conversation history for continuation
+			initialDialog, err = commands.ResolveInitialDialog(cmd.Context(), sqliteStorage, continueID, newConversation)
+			if err != nil {
+				return fmt.Errorf("failed to resolve conversation history: %w", err)
+			}
 		}
 
 		// Delegate to business logic
@@ -87,9 +94,8 @@ through natural language interactions.`,
 			SkipStdin:       skipStdin,
 			Config:          effectiveConfig,
 			CustomURL:       customURL,
-			MessageDB:       messageDB,
-			ContinueID:      continueID,
-			NewConversation: newConversation,
+			DialogSaver:     dialogSaver,
+			InitialDialog:   initialDialog,
 			Stderr:          os.Stderr,
 			VerboseSubagent: verboseSubagent,
 		})
