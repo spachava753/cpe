@@ -70,7 +70,11 @@ func initGeneratorFromModel(
 		if apiKey == "" {
 			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 		}
-		client := openai.NewClient(oaiopt.WithBaseURL(baseURL), oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout))
+		oaiOpts := []oaiopt.RequestOption{oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout)}
+		if baseURL != "" {
+			oaiOpts = append(oaiOpts, oaiopt.WithBaseURL(baseURL))
+		}
+		client := openai.NewClient(oaiOpts...)
 		oaiGen := gai.NewOpenAiGenerator(&client.Chat.Completions, m.ID, systemPrompt)
 		gen = &oaiGen
 	case "anthropic":
@@ -103,25 +107,31 @@ func initGeneratorFromModel(
 				}
 			}
 			oauthClient := &http.Client{Transport: finalTransport, Timeout: 5 * time.Minute}
-			client = a.NewClient(
-				aopts.WithBaseURL(baseURL),
+			anthOpts := []aopts.RequestOption{
 				aopts.WithAPIKey("placeholder"),
 				aopts.WithHTTPClient(oauthClient),
 				aopts.WithRequestTimeout(timeout),
-			)
+			}
+			if baseURL != "" {
+				anthOpts = append(anthOpts, aopts.WithBaseURL(baseURL))
+			}
+			client = a.NewClient(anthOpts...)
 		} else {
 			// Use API key authentication
 			if apiKey == "" {
 				return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 			}
 			// Add beta headers for interleaved thinking and context management
-			client = a.NewClient(
-				aopts.WithBaseURL(baseURL),
+			anthOpts := []aopts.RequestOption{
 				aopts.WithAPIKey(apiKey),
 				aopts.WithHTTPClient(httpClient),
 				aopts.WithRequestTimeout(timeout),
 				aopts.WithHeader("anthropic-beta", "interleaved-thinking-2025-05-14,context-management-2025-06-27"),
-			)
+			}
+			if baseURL != "" {
+				anthOpts = append(anthOpts, aopts.WithBaseURL(baseURL))
+			}
+			client = a.NewClient(anthOpts...)
 		}
 		// Build modifier list - always include caching
 		modifiers := []gai.AnthropicServiceParamModifierFunc{
@@ -159,19 +169,31 @@ func initGeneratorFromModel(
 		if apiKey == "" {
 			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 		}
-		client := openai.NewClient(oaiopt.WithBaseURL(baseURL), oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout))
+		respOpts := []oaiopt.RequestOption{oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout)}
+		if baseURL != "" {
+			respOpts = append(respOpts, oaiopt.WithBaseURL(baseURL))
+		}
+		client := openai.NewClient(respOpts...)
 		gen = gai.NewResponsesToolGeneratorAdapter(gai.NewResponsesGenerator(&client.Responses, m.ID, systemPrompt), "")
 	case "openrouter":
 		if apiKey == "" {
 			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 		}
-		client := openai.NewClient(oaiopt.WithBaseURL(baseURL), oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout))
+		orOpts := []oaiopt.RequestOption{oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout)}
+		if baseURL != "" {
+			orOpts = append(orOpts, oaiopt.WithBaseURL(baseURL))
+		}
+		client := openai.NewClient(orOpts...)
 		gen = gai.NewOpenRouterGenerator(&client.Chat.Completions, m.ID, systemPrompt)
 	case "zai":
 		if apiKey == "" {
 			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 		}
-		client := openai.NewClient(oaiopt.WithBaseURL(baseURL), oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout))
+		zaiOpts := []oaiopt.RequestOption{oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout)}
+		if baseURL != "" {
+			zaiOpts = append(zaiOpts, oaiopt.WithBaseURL(baseURL))
+		}
+		client := openai.NewClient(zaiOpts...)
 		gen = gai.NewZaiGenerator(&client.Chat.Completions, m.ID, systemPrompt, apiKey)
 	default:
 		return nil, fmt.Errorf("unsupported model type: %s", m.Type)

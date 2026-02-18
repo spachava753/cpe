@@ -55,6 +55,9 @@ func resolveTestConfig(t *testing.T, modelType string, modelRef string) *config.
 		Defaults: config.Defaults{
 			Model:   ref,
 			Timeout: "30s",
+			GenerationParams: &config.GenerationParams{
+				MaxGenerationTokens: 1024,
+			},
 		},
 	}
 
@@ -100,6 +103,9 @@ func resolveCrossProviderConfig(t *testing.T, modelRef string) *config.Config {
 		Defaults: config.Defaults{
 			Model:   "test-anthropic",
 			Timeout: "30s",
+			GenerationParams: &config.GenerationParams{
+				MaxGenerationTokens: 1024,
+			},
 		},
 	}
 

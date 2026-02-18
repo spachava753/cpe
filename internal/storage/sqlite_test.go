@@ -379,8 +379,8 @@ func TestSaveDialog(t *testing.T) {
 		}
 	})
 
-		// Verifies that breaking out of the SaveDialog iterator early commits the
-		// transaction for messages already yielded, rather than rolling back.
+	// Verifies that breaking out of the SaveDialog iterator early commits the
+	// transaction for messages already yielded, rather than rolling back.
 	t.Run("early break commits saved messages", func(t *testing.T) {
 		db, _ := newTestDB(t)
 		ctx := context.Background()
@@ -398,9 +398,10 @@ func TestSaveDialog(t *testing.T) {
 				t.Fatalf("SaveDialog: %v", err)
 			}
 			id := getExtraFieldString(msg.ExtraFields, MessageIDKey)
-			if consumed == 0 {
+			switch consumed {
+			case 0:
 				firstID = id
-			} else if consumed == 1 {
+			case 1:
 				secondID = id
 			}
 			consumed++
