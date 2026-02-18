@@ -34,7 +34,17 @@ var (
 	configPath      string
 	verboseSubagent bool
 
-	genParams gai.GenOpts
+	// CLI flag variables for generation parameters (intermediate storage).
+	// These are bound to cobra flags; values are only promoted to *gai.GenOpts
+	// when the corresponding flag was explicitly set by the user.
+	flagMaxTokens        int
+	flagTemperature      float64
+	flagTopP             float64
+	flagTopK             uint
+	flagFrequencyPenalty float64
+	flagPresencePenalty  float64
+	flagN                uint
+	flagThinkingBudget   string
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -53,10 +63,22 @@ through natural language interactions.`,
 			return nil
 		}
 
+		// Build GenOpts from only the flags that were explicitly set
+		genParams := commands.BuildGenOptsFromFlags(cmd.Flags(), commands.GenParamFlags{
+			MaxTokens:        &flagMaxTokens,
+			Temperature:      &flagTemperature,
+			TopP:             &flagTopP,
+			TopK:             &flagTopK,
+			FrequencyPenalty: &flagFrequencyPenalty,
+			PresencePenalty:  &flagPresencePenalty,
+			N:                &flagN,
+			ThinkingBudget:   flagThinkingBudget,
+		})
+
 		// Resolve effective config with runtime options
 		effectiveConfig, err := config.ResolveConfig(configPath, config.RuntimeOptions{
 			ModelRef:  model,
-			GenParams: &genParams,
+			GenParams: genParams,
 			Timeout:   timeout,
 		})
 		if err != nil {
@@ -120,14 +142,14 @@ func init() {
 	// Define flags for the root command
 	rootCmd.PersistentFlags().StringVarP(&model, "model", "m", DefaultModel, "Specify the model to use")
 	rootCmd.PersistentFlags().StringVar(&customURL, "custom-url", "", "Specify a custom base URL for the model provider API")
-	rootCmd.PersistentFlags().IntVarP(&genParams.MaxGenerationTokens, "max-tokens", "x", 0, "Maximum number of tokens to generate")
-	rootCmd.PersistentFlags().Float64VarP(&genParams.Temperature, "temperature", "t", 0, "Sampling temperature (0.0 - 1.0)")
-	rootCmd.PersistentFlags().Float64Var(&genParams.TopP, "top-p", 0, "Nucleus sampling parameter (0.0 - 1.0)")
-	rootCmd.PersistentFlags().UintVar(&genParams.TopK, "top-k", 0, "Top-k sampling parameter")
-	rootCmd.PersistentFlags().Float64Var(&genParams.FrequencyPenalty, "frequency-penalty", 0, "Frequency penalty (-2.0 - 2.0)")
-	rootCmd.PersistentFlags().Float64Var(&genParams.PresencePenalty, "presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
-	rootCmd.PersistentFlags().UintVar(&genParams.N, "number-of-responses", 0, "Number of responses to generate")
-	rootCmd.PersistentFlags().StringVarP(&genParams.ThinkingBudget, "thinking-budget", "b", "", "Budget for reasoning/thinking capabilities (string or numerical value)")
+	rootCmd.PersistentFlags().IntVarP(&flagMaxTokens, "max-tokens", "x", 0, "Maximum number of tokens to generate")
+	rootCmd.PersistentFlags().Float64VarP(&flagTemperature, "temperature", "t", 0, "Sampling temperature (0.0 - 1.0)")
+	rootCmd.PersistentFlags().Float64Var(&flagTopP, "top-p", 0, "Nucleus sampling parameter (0.0 - 1.0)")
+	rootCmd.PersistentFlags().UintVar(&flagTopK, "top-k", 0, "Top-k sampling parameter")
+	rootCmd.PersistentFlags().Float64Var(&flagFrequencyPenalty, "frequency-penalty", 0, "Frequency penalty (-2.0 - 2.0)")
+	rootCmd.PersistentFlags().Float64Var(&flagPresencePenalty, "presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
+	rootCmd.PersistentFlags().UintVar(&flagN, "number-of-responses", 0, "Number of responses to generate")
+	rootCmd.PersistentFlags().StringVarP(&flagThinkingBudget, "thinking-budget", "b", "", "Budget for reasoning/thinking capabilities (string or numerical value)")
 	rootCmd.PersistentFlags().StringSliceVarP(&input, "input", "i", []string{}, "Specify input files or HTTP(S) URLs to process. Multiple inputs can be provided.")
 	rootCmd.PersistentFlags().BoolVarP(&newConversation, "new", "n", false, "Start a new conversation instead of continuing from the last one")
 	rootCmd.PersistentFlags().StringVarP(&continueID, "continue", "c", "", "Continue from a specific conversation ID")

@@ -15,6 +15,8 @@ import (
 	"github.com/spachava753/cpe/internal/storage"
 )
 
+func ptr[T any](v T) *T { return &v }
+
 func requireAPIKey(t *testing.T, envVar string) {
 	t.Helper()
 	if os.Getenv(envVar) == "" {
@@ -56,7 +58,7 @@ func resolveTestConfig(t *testing.T, modelType string, modelRef string) *config.
 			Model:   ref,
 			Timeout: "30s",
 			GenerationParams: &config.GenerationParams{
-				MaxGenerationTokens: 1024,
+				MaxGenerationTokens: ptr(1024),
 			},
 		},
 	}
@@ -104,7 +106,7 @@ func resolveCrossProviderConfig(t *testing.T, modelRef string) *config.Config {
 			Model:   "test-anthropic",
 			Timeout: "30s",
 			GenerationParams: &config.GenerationParams{
-				MaxGenerationTokens: 1024,
+				MaxGenerationTokens: ptr(1024),
 			},
 		},
 	}

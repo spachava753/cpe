@@ -54,17 +54,17 @@ func ModelInfo(ctx context.Context, opts ModelInfoOptions) error {
 
 	if model.GenerationDefaults != nil {
 		fmt.Fprintln(opts.Writer, "\nGeneration Defaults:")
-		if model.GenerationDefaults.Temperature != 0 {
-			fmt.Fprintf(opts.Writer, "  Temperature: %.2f\n", model.GenerationDefaults.Temperature)
+		if model.GenerationDefaults.Temperature != nil {
+			fmt.Fprintf(opts.Writer, "  Temperature: %.2f\n", *model.GenerationDefaults.Temperature)
 		}
-		if model.GenerationDefaults.TopP != 0 {
-			fmt.Fprintf(opts.Writer, "  TopP: %.2f\n", model.GenerationDefaults.TopP)
+		if model.GenerationDefaults.TopP != nil {
+			fmt.Fprintf(opts.Writer, "  TopP: %.2f\n", *model.GenerationDefaults.TopP)
 		}
-		if model.GenerationDefaults.TopK != 0 {
-			fmt.Fprintf(opts.Writer, "  TopK: %d\n", model.GenerationDefaults.TopK)
+		if model.GenerationDefaults.TopK != nil {
+			fmt.Fprintf(opts.Writer, "  TopK: %d\n", *model.GenerationDefaults.TopK)
 		}
-		if model.GenerationDefaults.MaxGenerationTokens != 0 {
-			fmt.Fprintf(opts.Writer, "  MaxTokens: %d\n", model.GenerationDefaults.MaxGenerationTokens)
+		if model.GenerationDefaults.MaxGenerationTokens != nil {
+			fmt.Fprintf(opts.Writer, "  MaxTokens: %d\n", *model.GenerationDefaults.MaxGenerationTokens)
 		}
 		if model.GenerationDefaults.ThinkingBudget != "" {
 			fmt.Fprintf(opts.Writer, "  ThinkingBudget: %s\n", model.GenerationDefaults.ThinkingBudget)

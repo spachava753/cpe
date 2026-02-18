@@ -65,15 +65,17 @@ type RawConfig struct {
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`
 }
 
-// GenerationParams wraps gai.GenOpts with proper YAML/JSON tags for config unmarshaling
+// GenerationParams wraps gai.GenOpts with camelCase YAML/JSON tags for config unmarshaling.
+// This adapter exists because gai.GenOpts uses snake_case tags (matching API conventions)
+// while CPE config files use camelCase (matching Go/YAML conventions).
 type GenerationParams struct {
-	Temperature         float64  `yaml:"temperature,omitempty" json:"temperature,omitempty" validate:"omitempty,lte=2,gte=0"`
-	TopP                float64  `yaml:"topP,omitempty" json:"topP,omitempty" validate:"omitempty,lte=1,gte=0"`
-	TopK                uint     `yaml:"topK,omitempty" json:"topK,omitempty" validate:"omitempty,gte=0"`
-	FrequencyPenalty    float64  `yaml:"frequencyPenalty,omitempty" json:"frequencyPenalty,omitempty" validate:"omitempty,lte=2,gte=-2"`
-	PresencePenalty     float64  `yaml:"presencePenalty,omitempty" json:"presencePenalty,omitempty" validate:"omitempty,lte=2,gte=-2"`
-	N                   uint     `yaml:"n,omitempty" json:"n,omitempty" validate:"omitempty,lte=2,gte=0"`
-	MaxGenerationTokens int      `yaml:"maxGenerationTokens,omitempty" json:"maxGenerationTokens,omitempty" validate:"omitempty,gte=0"`
+	Temperature         *float64 `yaml:"temperature,omitempty" json:"temperature,omitempty" validate:"omitempty,lte=2,gte=0"`
+	TopP                *float64 `yaml:"topP,omitempty" json:"topP,omitempty" validate:"omitempty,lte=1,gte=0"`
+	TopK                *uint    `yaml:"topK,omitempty" json:"topK,omitempty" validate:"omitempty,gte=0"`
+	FrequencyPenalty    *float64 `yaml:"frequencyPenalty,omitempty" json:"frequencyPenalty,omitempty" validate:"omitempty,lte=2,gte=-2"`
+	PresencePenalty     *float64 `yaml:"presencePenalty,omitempty" json:"presencePenalty,omitempty" validate:"omitempty,lte=2,gte=-2"`
+	N                   *uint    `yaml:"n,omitempty" json:"n,omitempty" validate:"omitempty,lte=2,gte=0"`
+	MaxGenerationTokens *int     `yaml:"maxGenerationTokens,omitempty" json:"maxGenerationTokens,omitempty" validate:"omitempty,gte=0"`
 	ToolChoice          string   `yaml:"toolChoice,omitempty" json:"toolChoice,omitempty"`
 	StopSequences       []string `yaml:"stopSequences,omitempty" json:"stopSequences,omitempty"`
 	ThinkingBudget      string   `yaml:"thinkingBudget,omitempty" json:"thinkingBudget,omitempty"`

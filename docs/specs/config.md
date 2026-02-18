@@ -221,12 +221,12 @@ Configuration is resolved from `RawConfig` (file structure) to `Config` (runtime
 3. **Validate**: Validate struct tags and custom rules
 4. **Resolve**: Apply precedence rules to create `Config`
 
-Generation parameters are merged using `mergo.Merge` with `WithOverride`:
+Generation parameters are merged using pointer-aware field-level overrides. A non-nil pointer in a higher-precedence source overrides the destination, while nil (unset) leaves it unchanged:
 
 ```go
 // CLI flags override model-specific, which override global defaults
 mergedParams := defaults.generationParams
-mergo.Merge(&mergedParams, model.generationDefaults, mergo.WithOverride)
+mergeGenOpts(&mergedParams, model.generationDefaults)
 // Then apply CLI flag overrides
 ```
 

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"dario.cat/mergo"
 	"github.com/spachava753/gai"
 )
 
@@ -76,28 +75,70 @@ func resolveGenerationParams(model ModelConfig, defaults Defaults, opts RuntimeO
 
 	// Start with global defaults
 	if defaults.GenerationParams != nil {
-		globalGenOpts := defaults.GenerationParams.ToGenOpts()
-		if err := mergo.Merge(genParams, globalGenOpts, mergo.WithOverride); err != nil {
-			return nil, fmt.Errorf("merging global generation defaults: %w", err)
-		}
+		mergeGenOpts(genParams, defaults.GenerationParams.ToGenOpts())
 	}
 
 	// Apply model-specific defaults
 	if model.GenerationDefaults != nil {
-		modelGenOpts := model.GenerationDefaults.ToGenOpts()
-		if err := mergo.Merge(genParams, modelGenOpts, mergo.WithOverride); err != nil {
-			return nil, fmt.Errorf("merging model generation defaults: %w", err)
-		}
+		mergeGenOpts(genParams, model.GenerationDefaults.ToGenOpts())
 	}
 
 	// Apply CLI overrides
 	if opts.GenParams != nil {
-		if err := mergo.Merge(genParams, opts.GenParams, mergo.WithOverride); err != nil {
-			return nil, fmt.Errorf("merging CLI generation overrides: %w", err)
-		}
+		mergeGenOpts(genParams, opts.GenParams)
 	}
 
 	return genParams, nil
+}
+
+// mergeGenOpts applies non-nil fields from src onto dst.
+// A nil pointer in src means "not set" and leaves dst unchanged.
+// A non-nil pointer in src (even pointing to zero) overrides dst.
+// This is necessary to correctly distinguish "not set" (nil) from
+// "explicitly set to zero" (non-nil pointer to zero value).
+func mergeGenOpts(dst, src *gai.GenOpts) {
+	if src == nil {
+		return
+	}
+	if src.Temperature != nil {
+		dst.Temperature = src.Temperature
+	}
+	if src.TopP != nil {
+		dst.TopP = src.TopP
+	}
+	if src.TopK != nil {
+		dst.TopK = src.TopK
+	}
+	if src.FrequencyPenalty != nil {
+		dst.FrequencyPenalty = src.FrequencyPenalty
+	}
+	if src.PresencePenalty != nil {
+		dst.PresencePenalty = src.PresencePenalty
+	}
+	if src.N != nil {
+		dst.N = src.N
+	}
+	if src.MaxGenerationTokens != nil {
+		dst.MaxGenerationTokens = src.MaxGenerationTokens
+	}
+	if src.ToolChoice != "" {
+		dst.ToolChoice = src.ToolChoice
+	}
+	if src.StopSequences != nil {
+		dst.StopSequences = src.StopSequences
+	}
+	if src.ThinkingBudget != "" {
+		dst.ThinkingBudget = src.ThinkingBudget
+	}
+	if len(src.OutputModalities) > 0 {
+		dst.OutputModalities = src.OutputModalities
+	}
+	if src.AudioConfig != (gai.AudioConfig{}) {
+		dst.AudioConfig = src.AudioConfig
+	}
+	if src.ExtraArgs != nil {
+		dst.ExtraArgs = src.ExtraArgs
+	}
 }
 
 // resolveTimeout resolves timeout with precedence:
