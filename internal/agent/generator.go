@@ -193,16 +193,67 @@ func initGeneratorFromModel(
 		}
 		gen = gai.NewCerebrasGenerator(httpClient, baseURL, m.ID, systemPrompt, apiKey)
 	case "responses":
-		if apiKey == "" {
-			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
+		authMethod := strings.ToLower(m.AuthMethod)
+
+		if authMethod == authMethodOAuth {
+			// Use OAuth authentication for OpenAI (ChatGPT subscription)
+			store, err := auth.NewStore()
+			if err != nil {
+				return nil, fmt.Errorf("initializing auth store: %w", err)
+			}
+			cred, err := store.GetCredential("openai")
+			if err != nil {
+				return nil, fmt.Errorf("no OAuth credential found for openai (run 'cpe auth login openai'): %w", err)
+			}
+			if cred.Type != "oauth" {
+				return nil, fmt.Errorf("stored credential is not OAuth type")
+			}
+			// Build transport chain: PatchTransport -> OpenAIOAuthTransport -> DefaultTransport
+			oauthTransport := auth.NewOpenAIOAuthTransport(nil, store)
+			var finalTransport http.RoundTripper = oauthTransport
+			if m.PatchRequest != nil {
+				finalTransport, err = BuildPatchTransportFromConfig(oauthTransport, m.PatchRequest)
+				if err != nil {
+					return nil, fmt.Errorf("building patch transport for OAuth: %w", err)
+				}
+			}
+			oauthClient := &http.Client{Transport: finalTransport, Timeout: 5 * time.Minute}
+
+			// For OAuth, use the ChatGPT backend API URL unless explicitly overridden
+			oauthBaseURL := auth.OpenAICodexBaseURL
+			if baseURL != "" {
+				oauthBaseURL = baseURL
+			}
+
+			// The ChatGPT backend API requires the "instructions" field to be present
+			// in every request. Ensure a non-empty system prompt.
+			oauthSystemPrompt := systemPrompt
+			if oauthSystemPrompt == "" {
+				oauthSystemPrompt = "You are a helpful assistant."
+			}
+
+			respOpts := []oaiopt.RequestOption{
+				oaiopt.WithAPIKey("placeholder"),
+				oaiopt.WithHTTPClient(oauthClient),
+				oaiopt.WithRequestTimeout(timeout),
+				oaiopt.WithBaseURL(oauthBaseURL),
+			}
+			client := openai.NewClient(respOpts...)
+			respGen := gai.NewResponsesGenerator(&client.Responses, m.ID, oauthSystemPrompt)
+			gen = &respGen
+		} else {
+			// Use API key authentication
+			if apiKey == "" {
+				return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
+			}
+			respOpts := []oaiopt.RequestOption{oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout)}
+			if baseURL != "" {
+				respOpts = append(respOpts, oaiopt.WithBaseURL(baseURL))
+			}
+			client := openai.NewClient(respOpts...)
+			respGen := gai.NewResponsesGenerator(&client.Responses, m.ID, systemPrompt)
+			gen = &respGen
 		}
-		respOpts := []oaiopt.RequestOption{oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout)}
-		if baseURL != "" {
-			respOpts = append(respOpts, oaiopt.WithBaseURL(baseURL))
-		}
-		client := openai.NewClient(respOpts...)
-		respGen := gai.NewResponsesGenerator(&client.Responses, m.ID, systemPrompt)
-		gen = &respGen
 	case "openrouter":
 		if apiKey == "" {
 			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)

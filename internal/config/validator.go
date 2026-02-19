@@ -42,8 +42,11 @@ func (c *RawConfig) Validate() error {
 
 // validateModelAuth validates auth_method constraints
 func validateModelAuth(m ModelConfig) error {
-	if strings.ToLower(m.AuthMethod) == "oauth" && strings.ToLower(m.Type) != "anthropic" {
-		return fmt.Errorf("auth_method 'oauth' is only supported for anthropic provider")
+	if strings.ToLower(m.AuthMethod) == "oauth" {
+		modelType := strings.ToLower(m.Type)
+		if modelType != "anthropic" && modelType != "responses" {
+			return fmt.Errorf("auth_method 'oauth' is only supported for anthropic and responses providers")
+		}
 	}
 	return nil
 }

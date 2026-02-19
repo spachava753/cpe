@@ -1,21 +1,24 @@
 package auth
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 )
 
-// OAuthTransport wraps an http.RoundTripper to inject OAuth bearer tokens
+// OAuthTransport wraps an http.RoundTripper to inject OAuth bearer tokens (Anthropic)
 type OAuthTransport struct {
 	base  http.RoundTripper
 	store *Store
 	mu    sync.RWMutex
 }
 
-// NewOAuthTransport creates a new OAuth transport wrapper.
+// NewOAuthTransport creates a new Anthropic OAuth transport wrapper.
 // If base is nil, http.DefaultTransport is used.
 func NewOAuthTransport(base http.RoundTripper, store *Store) *OAuthTransport {
 	if base == nil {
@@ -60,7 +63,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 				return nil, fmt.Errorf("refreshing token: %w", err)
 			}
 
-			cred = TokenToCredential(tokenResp)
+			cred = TokenToCredential("anthropic", tokenResp)
 			if err := t.store.SaveCredential(cred); err != nil {
 				t.mu.Unlock()
 				return nil, fmt.Errorf("saving refreshed credential: %w", err)
@@ -80,6 +83,88 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	clone.Header.Set("Authorization", "Bearer "+cred.AccessToken)
 	clone.Header.Set("anthropic-beta", mergedBeta)
 	clone.Header.Del("x-api-key")
+
+	return t.base.RoundTrip(clone)
+}
+
+// OpenAIOAuthTransport wraps an http.RoundTripper to inject OpenAI OAuth bearer tokens.
+// It handles automatic token refresh and sets required headers for the ChatGPT backend API.
+type OpenAIOAuthTransport struct {
+	base  http.RoundTripper
+	store *Store
+	mu    sync.RWMutex
+}
+
+// NewOpenAIOAuthTransport creates a new OpenAI OAuth transport wrapper.
+// If base is nil, http.DefaultTransport is used.
+func NewOpenAIOAuthTransport(base http.RoundTripper, store *Store) *OpenAIOAuthTransport {
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return &OpenAIOAuthTransport{
+		base:  base,
+		store: store,
+	}
+}
+
+// RoundTrip implements http.RoundTripper for OpenAI OAuth
+func (t *OpenAIOAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	cred, err := t.store.GetCredential("openai")
+	if err != nil {
+		return nil, fmt.Errorf("getting openai credential: %w", err)
+	}
+
+	// Check if token needs refresh (with 60 second buffer)
+	if cred.ExpiresAt > 0 && time.Now().Unix() >= cred.ExpiresAt-60 {
+		t.mu.Lock()
+		// Double-check after acquiring lock
+		cred, err = t.store.GetCredential("openai")
+		if err != nil {
+			t.mu.Unlock()
+			return nil, fmt.Errorf("getting openai credential: %w", err)
+		}
+
+		if time.Now().Unix() >= cred.ExpiresAt-60 {
+			tokenResp, err := RefreshAccessTokenOpenAI(req.Context(), cred.RefreshToken)
+			if err != nil {
+				t.mu.Unlock()
+				return nil, fmt.Errorf("refreshing openai token: %w", err)
+			}
+
+			cred = TokenToCredential("openai", tokenResp)
+			if err := t.store.SaveCredential(cred); err != nil {
+				t.mu.Unlock()
+				return nil, fmt.Errorf("saving refreshed openai credential: %w", err)
+			}
+		}
+		t.mu.Unlock()
+	}
+
+	// Clone the request to avoid modifying the original
+	clone := req.Clone(req.Context())
+
+	// Set Bearer auth
+	clone.Header.Set("Authorization", "Bearer "+cred.AccessToken)
+	// Remove any x-api-key header that the SDK may have set
+	clone.Header.Del("x-api-key")
+
+	// Extract and set the ChatGPT account ID from the JWT
+	accountID, err := ExtractChatGPTAccountID(cred.AccessToken)
+	if err == nil && accountID != "" {
+		clone.Header.Set("chatgpt-account-id", accountID)
+	}
+
+	// Set required headers for the ChatGPT backend API
+	clone.Header.Set("originator", "codex_cli_rs")
+
+	// Patch the request body to set store=false (required by ChatGPT backend)
+	if clone.Body != nil && clone.Method == "POST" {
+		patchedBody, newLen, patchErr := patchJSONBody(clone.Body, map[string]any{"store": false})
+		if patchErr == nil {
+			clone.Body = patchedBody
+			clone.ContentLength = newLen
+		}
+	}
 
 	return t.base.RoundTrip(clone)
 }
@@ -108,4 +193,33 @@ func mergeBetaHeaders(existing, required string) string {
 	}
 
 	return strings.Join(result, ",")
+}
+
+// patchJSONBody reads a request body, merges the given fields into the top-level
+// JSON object, and returns a new ReadCloser with the patched content.
+func patchJSONBody(body io.ReadCloser, fields map[string]any) (io.ReadCloser, int64, error) {
+	data, err := io.ReadAll(body)
+	body.Close()
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var obj map[string]any
+	if err := json.Unmarshal(data, &obj); err != nil {
+		// Not JSON or not an object — return original body untouched.
+		// This is intentionally not returning err because we want the request
+		// to proceed with the original body when it's not patchable JSON.
+		return io.NopCloser(bytes.NewReader(data)), int64(len(data)), nil //nolint:nilerr
+	}
+
+	for k, v := range fields {
+		obj[k] = v
+	}
+
+	patched, err := json.Marshal(obj)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return io.NopCloser(bytes.NewReader(patched)), int64(len(patched)), nil
 }

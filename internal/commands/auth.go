@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-
 	"strings"
 	"time"
 
@@ -73,7 +72,7 @@ func AuthLoginAnthropic(ctx context.Context, opts AuthLoginAnthropicOptions) err
 		return fmt.Errorf("initializing auth store: %w", err)
 	}
 
-	cred := auth.TokenToCredential(tokenResp)
+	cred := auth.TokenToCredential("anthropic", tokenResp)
 	if err := store.SaveCredential(cred); err != nil {
 		return fmt.Errorf("saving credential: %w", err)
 	}
@@ -116,7 +115,7 @@ func AuthRefreshAnthropic(ctx context.Context, opts AuthRefreshAnthropicOptions)
 		return fmt.Errorf("refreshing token: %w", err)
 	}
 
-	newCred := auth.TokenToCredential(tokenResp)
+	newCred := auth.TokenToCredential("anthropic", tokenResp)
 	if err := store.SaveCredential(newCred); err != nil {
 		return fmt.Errorf("saving credential: %w", err)
 	}
@@ -133,8 +132,136 @@ type AuthLogoutOptions struct {
 	Output io.Writer
 }
 
+// AuthLoginOpenAIOptions contains parameters for OpenAI OAuth login
+type AuthLoginOpenAIOptions struct {
+	// Output is where to write status messages
+	Output io.Writer
+	// OpenBrowser controls whether to attempt opening the browser
+	OpenBrowser bool
+}
+
+// AuthLoginOpenAI performs the OAuth login flow for OpenAI using a local callback server.
+// It starts a local HTTP server on port 1455 to receive the OAuth callback.
+func AuthLoginOpenAI(ctx context.Context, opts AuthLoginOpenAIOptions) error {
+	// Generate PKCE challenge
+	verifier, challenge, err := auth.GeneratePKCE()
+	if err != nil {
+		return fmt.Errorf("generating PKCE challenge: %w", err)
+	}
+
+	// Generate state parameter
+	state, err := auth.GenerateState()
+	if err != nil {
+		return fmt.Errorf("generating state: %w", err)
+	}
+
+	// Start local callback server
+	callbackCtx, callbackCancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer callbackCancel()
+
+	resultCh, err := auth.StartCallbackServer(callbackCtx, 1455, state)
+	if err != nil {
+		return fmt.Errorf("starting callback server: %w", err)
+	}
+
+	// Build authorization URL
+	authURL := auth.BuildOpenAIAuthURL(challenge, state)
+
+	fmt.Fprintln(opts.Output, "Opening browser to authenticate with OpenAI...")
+	fmt.Fprintln(opts.Output)
+	fmt.Fprintln(opts.Output, "If the browser doesn't open, visit this URL manually:")
+	fmt.Fprintln(opts.Output, authURL)
+	fmt.Fprintln(opts.Output)
+
+	// Try to open browser
+	if opts.OpenBrowser {
+		if err := auth.OpenBrowser(ctx, authURL); err != nil {
+			fmt.Fprintln(opts.Output, "Note: Could not open browser automatically")
+		}
+	}
+
+	fmt.Fprintln(opts.Output, "Waiting for authentication callback...")
+
+	// Wait for callback
+	select {
+	case result := <-resultCh:
+		if result.Error != "" {
+			return fmt.Errorf("authentication failed: %s", result.Error)
+		}
+
+		fmt.Fprintln(opts.Output)
+		fmt.Fprintln(opts.Output, "Exchanging code for tokens...")
+
+		// Exchange the code for tokens
+		tokenResp, err := auth.ExchangeCodeOpenAI(ctx, result.Code, verifier)
+		if err != nil {
+			return fmt.Errorf("exchanging code for tokens: %w", err)
+		}
+
+		// Store the credential
+		store, err := auth.NewStore()
+		if err != nil {
+			return fmt.Errorf("initializing auth store: %w", err)
+		}
+
+		cred := auth.TokenToCredential("openai", tokenResp)
+		if err := store.SaveCredential(cred); err != nil {
+			return fmt.Errorf("saving credential: %w", err)
+		}
+
+		fmt.Fprintln(opts.Output)
+		fmt.Fprintln(opts.Output, "✓ Successfully authenticated with OpenAI!")
+		fmt.Fprintln(opts.Output)
+		fmt.Fprintln(opts.Output, "You can now use your ChatGPT subscription with CPE.")
+		fmt.Fprintln(opts.Output, "Configure a model with type: responses and auth_method: oauth to use it.")
+
+		return nil
+
+	case <-callbackCtx.Done():
+		return fmt.Errorf("authentication timed out (5 minute limit)")
+	}
+}
+
+// AuthRefreshOpenAIOptions contains parameters for OpenAI token refresh
+type AuthRefreshOpenAIOptions struct {
+	// Output is where to write status messages
+	Output io.Writer
+}
+
+// AuthRefreshOpenAI refreshes the OAuth token for OpenAI
+func AuthRefreshOpenAI(ctx context.Context, opts AuthRefreshOpenAIOptions) error {
+	store, err := auth.NewStore()
+	if err != nil {
+		return fmt.Errorf("initializing auth store: %w", err)
+	}
+
+	cred, err := store.GetCredential("openai")
+	if err != nil {
+		return fmt.Errorf("getting credential: %w", err)
+	}
+
+	if cred.RefreshToken == "" {
+		return fmt.Errorf("no refresh token available; please run 'cpe auth login openai' to re-authenticate")
+	}
+
+	fmt.Fprintln(opts.Output, "Refreshing OpenAI OAuth token...")
+
+	tokenResp, err := auth.RefreshAccessTokenOpenAI(ctx, cred.RefreshToken)
+	if err != nil {
+		return fmt.Errorf("refreshing token: %w", err)
+	}
+
+	newCred := auth.TokenToCredential("openai", tokenResp)
+	if err := store.SaveCredential(newCred); err != nil {
+		return fmt.Errorf("saving credential: %w", err)
+	}
+
+	fmt.Fprintln(opts.Output, "✓ Successfully refreshed OpenAI OAuth token!")
+	return nil
+}
+
 // SupportedProviders is the list of providers that support OAuth authentication
-var SupportedProviders = []string{"anthropic"}
+var SupportedProviders = []string{"anthropic", "openai"}
 
 // AuthLogout removes stored credentials for a provider
 func AuthLogout(ctx context.Context, opts AuthLogoutOptions) error {

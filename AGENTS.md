@@ -14,6 +14,7 @@ Key capabilities:
 - `cmd/`: The package which has the cobra commands that user invokes
 - `internal/`: Hosts all of the actual business logic and utilities
   - `agent/`: Package that hosts generator adapters, streaming/printing, thinking filter, system prompt generation, and agent creation to execute a user query
+  - `auth/`: Package that hosts OAuth authentication for AI providers (Anthropic, OpenAI), including credential storage, token refresh, PKCE flow, and HTTP transport wrappers
   - `codemode/`: Package that hosts code mode implementation - schema to Go type conversion, tool collision detection, code execution sandbox, and execute_go_code tool
   - `config/`: Package that hosts configuration loading, validation, parameter merging, and config specific types
   - `mcp/`: Package that hosts MCP config validation and client, as well as code for connecting to MPC servers

@@ -23,6 +23,7 @@ var authLoginCmd = &cobra.Command{
 
 Currently supported providers:
   - anthropic: Authenticate with Claude Pro/Max subscription
+  - openai:    Authenticate with ChatGPT Plus/Pro/Team subscription
 
 Environment variables for Anthropic OAuth configuration:
   CPE_ANTHROPIC_CLIENT_ID    - OAuth client ID
@@ -31,11 +32,19 @@ Environment variables for Anthropic OAuth configuration:
   CPE_ANTHROPIC_REDIRECT_URI - Redirect URI (default: https://console.anthropic.com/oauth/code/callback)
   CPE_ANTHROPIC_SCOPES       - OAuth scopes (default: org:create_api_key user:profile user:inference)
 
+Environment variables for OpenAI OAuth configuration:
+  CPE_OPENAI_CLIENT_ID    - OAuth client ID
+  CPE_OPENAI_AUTH_URL     - Authorization URL (default: https://auth.openai.com/oauth/authorize)
+  CPE_OPENAI_TOKEN_URL    - Token exchange URL (default: https://auth.openai.com/oauth/token)
+  CPE_OPENAI_REDIRECT_URI - Redirect URI (default: http://localhost:1455/auth/callback)
+  CPE_OPENAI_SCOPES       - OAuth scopes (default: openid profile email offline_access)
+
 These environment variables allow overriding the default OAuth endpoints, which can be
 useful for testing or when using alternative authentication servers.
 
 Example:
   cpe auth login anthropic
+  cpe auth login openai
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -47,8 +56,13 @@ Example:
 				Input:       os.Stdin,
 				OpenBrowser: true,
 			})
+		case "openai":
+			return commands.AuthLoginOpenAI(cmd.Context(), commands.AuthLoginOpenAIOptions{
+				Output:      os.Stdout,
+				OpenBrowser: true,
+			})
 		default:
-			return fmt.Errorf("unsupported provider %q (supported: anthropic)", provider)
+			return fmt.Errorf("unsupported provider %q (supported: anthropic, openai)", provider)
 		}
 	},
 }
@@ -84,8 +98,14 @@ Environment variables for Anthropic OAuth configuration:
   CPE_ANTHROPIC_TOKEN_URL    - Token exchange URL (default: https://console.anthropic.com/v1/oauth/token)
   CPE_ANTHROPIC_REDIRECT_URI - Redirect URI (default: https://console.anthropic.com/oauth/code/callback)
 
+Environment variables for OpenAI OAuth configuration:
+  CPE_OPENAI_CLIENT_ID    - OAuth client ID
+  CPE_OPENAI_TOKEN_URL    - Token exchange URL (default: https://auth.openai.com/oauth/token)
+  CPE_OPENAI_REDIRECT_URI - Redirect URI (default: http://localhost:1455/auth/callback)
+
 Example:
   cpe auth refresh anthropic
+  cpe auth refresh openai
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -95,8 +115,12 @@ Example:
 			return commands.AuthRefreshAnthropic(cmd.Context(), commands.AuthRefreshAnthropicOptions{
 				Output: os.Stdout,
 			})
+		case "openai":
+			return commands.AuthRefreshOpenAI(cmd.Context(), commands.AuthRefreshOpenAIOptions{
+				Output: os.Stdout,
+			})
 		default:
-			return fmt.Errorf("unsupported provider %q (supported: anthropic)", provider)
+			return fmt.Errorf("unsupported provider %q (supported: anthropic, openai)", provider)
 		}
 	},
 }
