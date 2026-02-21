@@ -568,34 +568,36 @@ func TestExecuteRoot_ResponsesThinkingBlocks(t *testing.T) {
 		t.Logf("Continuation response has thinking blocks: %v", newAssistantHasThinking)
 	})
 
-	t.Run("ResponseIDPreservedInBlocks", func(t *testing.T) {
-		// Verify that the response ID is stored in block ExtraFields
+	t.Run("EncryptedReasoningPreservedInBlocks", func(t *testing.T) {
+		// Verify that encrypted reasoning content is stored in thinking block ExtraFields.
+		// The stateless Responses API returns encrypted reasoning tokens that must be
+		// preserved for multi-turn function-calling conversations.
 		nodes := sortedNodes(memDB)
 
-		var foundResponseID bool
+		var foundEncryptedContent bool
 		for _, node := range nodes {
 			if node.Role != gai.Assistant {
 				continue
 			}
 			for _, block := range node.Blocks {
-				if block.ExtraFields == nil {
+				if block.BlockType != gai.Thinking || block.ExtraFields == nil {
 					continue
 				}
-				if respID, ok := block.ExtraFields[gai.ResponsesPrevRespId]; ok {
-					if id, ok := respID.(string); ok && id != "" {
-						foundResponseID = true
-						t.Logf("Found response ID in block ExtraFields: %s", id)
+				if enc, ok := block.ExtraFields[gai.ResponsesExtraFieldEncryptedContent]; ok {
+					if s, ok := enc.(string); ok && s != "" {
+						foundEncryptedContent = true
+						t.Logf("Found encrypted reasoning content in thinking block ExtraFields (len=%d)", len(s))
 						break
 					}
 				}
 			}
-			if foundResponseID {
+			if foundEncryptedContent {
 				break
 			}
 		}
 
-		if !foundResponseID {
-			t.Error("expected response ID in assistant block ExtraFields, found none")
+		if !foundEncryptedContent {
+			t.Error("expected encrypted reasoning content in thinking block ExtraFields, found none")
 		}
 	})
 }

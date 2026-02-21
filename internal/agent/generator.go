@@ -283,19 +283,7 @@ func initGeneratorFromModel(
 	// long-running generations) while converting the streamed response back
 	// into a standard Response for the rest of the middleware stack.
 	if sg, ok := gen.(gai.StreamingGenerator); ok {
-		switch t {
-		case ModelTypeResponses:
-			// The Responses API stores ResponsesPrevRespId in every block's
-			// ExtraFields via its non-streaming Generate, but the streaming
-			// path only puts it in the metadata block. Use a wrapper that
-			// propagates it from UsageMetadata to block ExtraFields.
-			gen = &streamingAdapterWithMetadataPropagate{
-				StreamingAdapter: gai.StreamingAdapter{S: sg},
-				propagateKeys:    []string{gai.ResponsesPrevRespId},
-			}
-		default:
-			gen = &gai.StreamingAdapter{S: sg}
-		}
+		gen = &gai.StreamingAdapter{S: sg}
 	}
 
 	return NewPanicCatchingGenerator(gen), nil

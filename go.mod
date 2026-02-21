@@ -8,7 +8,7 @@ retract v0.22.6
 
 require (
 	github.com/Masterminds/sprig/v3 v3.3.0
-	github.com/anthropics/anthropic-sdk-go v1.23.0
+	github.com/anthropics/anthropic-sdk-go v1.26.0
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/charmbracelet/glamour v0.10.0
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
@@ -23,13 +23,13 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.3.0
 	github.com/muesli/termenv v0.16.0
 	github.com/openai/openai-go/v3 v3.22.0
-	github.com/spachava753/gai v0.34.0
+	github.com/spachava753/gai v0.35.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stoewer/go-strcase v1.3.1
 	golang.org/x/term v0.40.0
 	golang.org/x/tools v0.42.0
-	google.golang.org/genai v1.46.0
+	google.golang.org/genai v1.47.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
