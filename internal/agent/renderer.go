@@ -2,16 +2,15 @@ package agent
 
 import (
 	"os"
-
 	"strconv"
-
-	"github.com/spachava753/cpe/internal/types"
 
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/glamour/ansi"
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/muesli/termenv"
 	"golang.org/x/term"
+
+	"github.com/spachava753/cpe/internal/types"
 )
 
 // PlainTextRenderer is a renderer that returns content as-is without formatting.
@@ -38,14 +37,6 @@ func getBaseStyle() ansi.StyleConfig {
 	return style
 }
 
-// getASCIIStyle returns the ASCII style with no document margin.
-func getASCIIStyle() ansi.StyleConfig {
-	style := styles.ASCIIStyleConfig
-	style.Document.BlockPrefix = ""
-	style.Document.Margin = nil
-	return style
-}
-
 // NewGlamourRenderer creates a glamour renderer with appropriate styling for TTY contexts.
 func NewGlamourRenderer() (*glamour.TermRenderer, error) {
 	style := getBaseStyle()
@@ -56,23 +47,9 @@ func NewGlamourRenderer() (*glamour.TermRenderer, error) {
 	)
 }
 
-// newASCIIRenderer creates a glamour renderer with ASCII styling for non-TTY contexts.
-func newASCIIRenderer() (*glamour.TermRenderer, error) {
-	return glamour.NewTermRenderer(
-		glamour.WithStyles(getASCIIStyle()),
-		glamour.WithWordWrap(120),
-	)
-}
-
-// NewRenderer creates a renderer appropriate for the current context.
-// Returns a glamour renderer for TTY contexts, or an ASCII renderer otherwise.
-func NewRenderer() types.Renderer {
-	if !IsTTY() {
-		renderer, err := newASCIIRenderer()
-		if err != nil {
-			return &PlainTextRenderer{}
-		}
-		return renderer
+func newRendererForTTY(isTTY bool) types.Renderer {
+	if !isTTY {
+		return &PlainTextRenderer{}
 	}
 
 	renderer, err := NewGlamourRenderer()
@@ -82,6 +59,12 @@ func NewRenderer() types.Renderer {
 	return renderer
 }
 
+// NewRenderer creates a renderer appropriate for the current context.
+// Returns a glamour renderer for TTY contexts, or plain text passthrough otherwise.
+func NewRenderer() types.Renderer {
+	return newRendererForTTY(IsTTY())
+}
+
 // ResponsePrinterRenderers holds the three renderers used by ResponsePrinterGenerator.
 type ResponsePrinterRenderers struct {
 	Content  types.Renderer
@@ -89,21 +72,10 @@ type ResponsePrinterRenderers struct {
 	ToolCall types.Renderer
 }
 
-// NewResponsePrinterRenderers creates the appropriate renderers for ResponsePrinterGenerator.
-// For TTY contexts, creates styled glamour renderers (with distinct thinking style).
-// For non-TTY contexts, returns ASCII renderers.
-func NewResponsePrinterRenderers() ResponsePrinterRenderers {
-	if !IsTTY() {
-		renderer, err := newASCIIRenderer()
-		if err != nil {
-			plain := &PlainTextRenderer{}
-			return ResponsePrinterRenderers{Content: plain, Thinking: plain, ToolCall: plain}
-		}
-		return ResponsePrinterRenderers{
-			Content:  renderer,
-			Thinking: renderer,
-			ToolCall: renderer,
-		}
+func newResponsePrinterRenderersForTTY(isTTY bool) ResponsePrinterRenderers {
+	if !isTTY {
+		plain := &PlainTextRenderer{}
+		return ResponsePrinterRenderers{Content: plain, Thinking: plain, ToolCall: plain}
 	}
 
 	style := getBaseStyle()
@@ -147,4 +119,11 @@ func NewResponsePrinterRenderers() ResponsePrinterRenderers {
 		Thinking: thinkingRenderer,
 		ToolCall: contentRenderer,
 	}
+}
+
+// NewResponsePrinterRenderers creates the appropriate renderers for ResponsePrinterGenerator.
+// For TTY contexts, creates styled glamour renderers (with distinct thinking style).
+// For non-TTY contexts, returns plain text passthrough renderers.
+func NewResponsePrinterRenderers() ResponsePrinterRenderers {
+	return newResponsePrinterRenderersForTTY(IsTTY())
 }
