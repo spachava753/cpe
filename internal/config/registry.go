@@ -137,10 +137,11 @@ func BuildModelFromRegistry(provider *ModelsDevProvider, model *ModelsDevModel, 
 		},
 	}
 
-	if model.Limit != nil {
-		cfg.ContextWindow = uint32(model.Limit.Context)
-		cfg.MaxOutput = uint32(model.Limit.Output)
+	if model.Limit == nil || model.Limit.Context <= 0 || model.Limit.Output <= 0 {
+		return nil, fmt.Errorf("model %q from provider %q does not include required context/output limits in models.dev", model.ID, provider.ID)
 	}
+	cfg.ContextWindow = uint32(model.Limit.Context)
+	cfg.MaxOutput = uint32(model.Limit.Output)
 	if model.Cost != nil {
 		cfg.InputCostPerMillion = model.Cost.Input
 		cfg.OutputCostPerMillion = model.Cost.Output

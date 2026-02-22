@@ -17,8 +17,8 @@ type Model struct {
 	BaseUrl              string              `json:"base_url" yaml:"base_url,omitempty" validate:"omitempty,https_url|http_url"`
 	ApiKeyEnv            string              `json:"api_key_env" yaml:"api_key_env" validate:"required_unless=AuthMethod oauth"`
 	AuthMethod           string              `json:"auth_method" yaml:"auth_method,omitempty" validate:"omitempty,oneof=apikey oauth"`
-	ContextWindow        uint32              `json:"context_window" yaml:"context_window,omitempty" validate:"omitempty,gt=0"`
-	MaxOutput            uint32              `json:"max_output" yaml:"max_output,omitempty" validate:"omitempty,gt=0"`
+	ContextWindow        uint32              `json:"context_window" yaml:"context_window,omitempty" validate:"required,gt=0"`
+	MaxOutput            uint32              `json:"max_output" yaml:"max_output,omitempty" validate:"required,gt=0"`
 	InputCostPerMillion  float64             `json:"input_cost_per_million" yaml:"input_cost_per_million,omitempty"`
 	OutputCostPerMillion float64             `json:"output_cost_per_million" yaml:"output_cost_per_million,omitempty"`
 	PatchRequest         *PatchRequestConfig `json:"patchRequest,omitempty" yaml:"patchRequest,omitempty"`
@@ -32,9 +32,10 @@ type PatchRequestConfig struct {
 
 // CodeModeConfig controls code mode behavior for MCP tools
 type CodeModeConfig struct {
-	Enabled       bool     `yaml:"enabled" json:"enabled"`
-	ExcludedTools []string `yaml:"excludedTools,omitempty" json:"excludedTools,omitempty"`
-	MaxTimeout    int      `yaml:"maxTimeout,omitempty" json:"maxTimeout,omitempty" validate:"omitempty,gte=0"`
+	Enabled              bool     `yaml:"enabled" json:"enabled"`
+	ExcludedTools        []string `yaml:"excludedTools,omitempty" json:"excludedTools,omitempty"`
+	MaxTimeout           int      `yaml:"maxTimeout,omitempty" json:"maxTimeout,omitempty" validate:"omitempty,gte=0"`
+	LargeOutputCharLimit int      `yaml:"largeOutputCharLimit,omitempty" json:"largeOutputCharLimit,omitempty" validate:"omitempty,gte=0"`
 }
 
 // SubagentConfig defines a subagent for MCP server mode

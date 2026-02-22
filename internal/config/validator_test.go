@@ -126,3 +126,43 @@ func TestValidateModelAuth(t *testing.T) {
 		})
 	}
 }
+
+func TestRawConfigValidate_RequiresContextWindowAndMaxOutput(t *testing.T) {
+	t.Parallel()
+
+	base := RawConfig{
+		Version: "1.0",
+		Models: []ModelConfig{
+			{
+				Model: Model{
+					Ref:           "test-model",
+					DisplayName:   "Test Model",
+					ID:            "test-id",
+					Type:          "openai",
+					ApiKeyEnv:     "OPENAI_API_KEY",
+					ContextWindow: 200000,
+					MaxOutput:     64000,
+				},
+			},
+		},
+		Defaults: Defaults{Model: "test-model"},
+	}
+
+	if err := base.Validate(); err != nil {
+		t.Fatalf("expected valid config, got error: %v", err)
+	}
+
+	missingContext := base
+	missingContext.Models = append([]ModelConfig(nil), base.Models...)
+	missingContext.Models[0].ContextWindow = 0
+	if err := missingContext.Validate(); err == nil {
+		t.Fatal("expected validation error for missing context_window")
+	}
+
+	missingMaxOutput := base
+	missingMaxOutput.Models = append([]ModelConfig(nil), base.Models...)
+	missingMaxOutput.Models[0].MaxOutput = 0
+	if err := missingMaxOutput.Validate(); err == nil {
+		t.Fatal("expected validation error for missing max_output")
+	}
+}

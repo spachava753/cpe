@@ -518,7 +518,8 @@ func NewGenerator(
 		}
 
 		callback := &codemode.ExecuteGoCodeCallback{
-			Servers: codeModeServers,
+			Servers:              codeModeServers,
+			LargeOutputCharLimit: codemode.ResolveLargeOutputCharLimit(cfg.CodeMode.LargeOutputCharLimit, cfg.Model.ContextWindow),
 		}
 
 		finalCallback := gai.ToolCallback(callback)

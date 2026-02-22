@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -83,11 +84,76 @@ func main() {
 		t.Fatalf("writing test source: %v", err)
 	}
 
-	cmd := exec.Command("go", "build", "-o", binaryPath, sourcePath)
+	cmd := exec.CommandContext(context.Background(), "go", "build", "-o", binaryPath, sourcePath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("building test binary: %v\n%s", err, string(output))
 	}
 
 	return binaryPath
+}
+
+func TestMaybeSpillLargeOutput_SpillsToDisk(t *testing.T) {
+	t.Parallel()
+
+	original := "abcdefghijklmnopqrstuvwxyz"
+	result := maybeSpillLargeOutput(ExecutionResult{Output: original}, 10)
+
+	spillPath := extractSpillPath(t, result.Output)
+	t.Cleanup(func() { _ = os.Remove(spillPath) })
+
+	wantOutput := formatSpilledOutputMessage(len([]rune(original)), 10, "abcdefghij", spillPath, nil)
+	if result.Output != wantOutput {
+		t.Fatalf("output mismatch:\n got: %q\nwant: %q", result.Output, wantOutput)
+	}
+
+	data, err := os.ReadFile(spillPath)
+	if err != nil {
+		t.Fatalf("reading spill file: %v", err)
+	}
+	if string(data) != original {
+		t.Fatalf("spill file content mismatch: got %q, want %q", string(data), original)
+	}
+}
+
+func TestMaybeSpillLargeOutput_NoSpillWhenWithinLimit(t *testing.T) {
+	t.Parallel()
+
+	original := "small output"
+	result := maybeSpillLargeOutput(ExecutionResult{Output: original}, 100)
+
+	if result.Output != original {
+		t.Fatalf("output mismatch: got %q, want %q", result.Output, original)
+	}
+}
+
+func TestMaybeSpillLargeOutput_PreviewsByCharactersForSingleLineOutput(t *testing.T) {
+	t.Parallel()
+
+	original := "0123456789abcdefghijklmnopqrstuvwxyz"
+	result := maybeSpillLargeOutput(ExecutionResult{Output: original}, 8)
+
+	spillPath := extractSpillPath(t, result.Output)
+	t.Cleanup(func() { _ = os.Remove(spillPath) })
+
+	want := formatSpilledOutputMessage(len([]rune(original)), 8, "01234567", spillPath, nil)
+	if result.Output != want {
+		t.Fatalf("output mismatch:\n got: %q\nwant: %q", result.Output, want)
+	}
+}
+
+func extractSpillPath(t *testing.T, output string) string {
+	t.Helper()
+	for _, line := range strings.Split(output, "\n") {
+		const prefix = "Full output stored at: "
+		if strings.HasPrefix(line, prefix) {
+			path := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+			if path == "" {
+				t.Fatal("spill path was empty")
+			}
+			return path
+		}
+	}
+	t.Fatalf("spill path not found in output: %q", output)
+	return ""
 }

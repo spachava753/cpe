@@ -20,7 +20,8 @@ type ExecuteGoCodeInput struct {
 // ExecuteGoCodeCallback implements gai.ToolCallback for the execute_go_code tool.
 // It executes LLM-generated Go code in a sandbox environment with MCP tool access.
 type ExecuteGoCodeCallback struct {
-	Servers []*mcp.MCPConn
+	Servers              []*mcp.MCPConn
+	LargeOutputCharLimit int
 }
 
 // contentToBlocks converts MCP content types to gai blocks.
@@ -56,7 +57,13 @@ func (c *ExecuteGoCodeCallback) Call(ctx context.Context, parametersJSON json.Ra
 	}
 
 	// Execute the code
-	result, err := ExecuteCode(ctx, c.Servers, input.Code, input.ExecutionTimeout)
+	result, err := ExecuteCode(
+		ctx,
+		c.Servers,
+		input.Code,
+		input.ExecutionTimeout,
+		c.LargeOutputCharLimit,
+	)
 	if err != nil {
 		// Check error type to determine how to handle it
 		var recoverable RecoverableError

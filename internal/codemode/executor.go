@@ -16,6 +16,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/tools/go/ast/astutil"
@@ -36,6 +37,8 @@ const timeoutCancellationNoteTemplate = "execution timed out after %d seconds; c
 // mcpSDKImport is the import path for the MCP SDK package
 const mcpSDKImport = "github.com/modelcontextprotocol/go-sdk/mcp"
 
+const spilledOutputFilePattern = "cpe-code-output-*.txt"
+
 // ExecutionResult represents the outcome of code execution
 type ExecutionResult struct {
 	Output   string           // Combined stdout/stderr
@@ -52,7 +55,7 @@ type ExecutionResult struct {
 //   - RecoverableError: compilation errors, Run() errors (exit 1), panics (exit 2), timeouts
 //   - FatalExecutionError: exit code 3 from fatalExit() in generated code
 //   - Other errors: infrastructure failures (temp dir, file writes, etc.)
-func ExecuteCode(ctx context.Context, servers []*mcp.MCPConn, llmCode string, timeoutSecs int) (ExecutionResult, error) {
+func ExecuteCode(ctx context.Context, servers []*mcp.MCPConn, llmCode string, timeoutSecs int, largeOutputCharLimit int) (ExecutionResult, error) {
 	// Create temp directory
 	tempDir, err := os.MkdirTemp("", "cpe-code-mode-*")
 	if err != nil {
@@ -89,6 +92,7 @@ func ExecuteCode(ctx context.Context, servers []*mcp.MCPConn, llmCode string, ti
 		return ExecutionResult{}, fmt.Errorf("running go mod tidy: %w", err)
 	}
 	tidyResult.Output += importNote
+	tidyResult = maybeSpillLargeOutput(tidyResult, largeOutputCharLimit)
 	if tidyResult.ExitCode != 0 {
 		return ExecutionResult{
 			Output:   tidyResult.Output,
@@ -103,6 +107,7 @@ func ExecuteCode(ctx context.Context, servers []*mcp.MCPConn, llmCode string, ti
 		return ExecutionResult{}, fmt.Errorf("running go build: %w", err)
 	}
 	buildResult.Output += importNote
+	buildResult = maybeSpillLargeOutput(buildResult, largeOutputCharLimit)
 	if buildResult.ExitCode != 0 {
 		return ExecutionResult{
 			Output:   buildResult.Output,
@@ -113,6 +118,7 @@ func ExecuteCode(ctx context.Context, servers []*mcp.MCPConn, llmCode string, ti
 	// Execute the built binary with timeout and graceful shutdown
 	result, err := runProgramWithTimeout(ctx, binaryPath, timeoutSecs)
 	result.Output += importNote
+	result = maybeSpillLargeOutput(result, largeOutputCharLimit)
 	if err != nil {
 		return result, err
 	}
@@ -229,6 +235,73 @@ func appendTimeoutCancellationNote(output string, timeoutSecs int) string {
 		return output + note
 	}
 	return output + "\n" + note
+}
+
+func maybeSpillLargeOutput(result ExecutionResult, charLimit int) ExecutionResult {
+	if charLimit <= 0 || result.Output == "" {
+		return result
+	}
+
+	outputChars := utf8.RuneCountInString(result.Output)
+	if outputChars <= charLimit {
+		return result
+	}
+
+	preview := firstNChars(result.Output, charLimit)
+	spillPath, spillErr := spillOutputToDisk(result.Output)
+	result.Output = formatSpilledOutputMessage(outputChars, charLimit, preview, spillPath, spillErr)
+	return result
+}
+
+func spillOutputToDisk(output string) (string, error) {
+	f, err := os.CreateTemp("", spilledOutputFilePattern)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	if _, err := f.WriteString(output); err != nil {
+		return "", err
+	}
+
+	return f.Name(), nil
+}
+
+func firstNChars(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n])
+}
+
+func formatSpilledOutputMessage(totalChars, charLimit int, preview, spillPath string, spillErr error) string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("WARNING: tool result exceeded character limit (%d characters > %d).\n", totalChars, charLimit))
+
+	if spillErr != nil {
+		b.WriteString(fmt.Sprintf("Failed to persist full output to disk: %v\n", spillErr))
+	} else {
+		b.WriteString(fmt.Sprintf("Full output stored at: %s\n", spillPath))
+	}
+
+	b.WriteString(fmt.Sprintf("\nPreview (first %d characters):\n", charLimit))
+	b.WriteString("---\n")
+	b.WriteString(preview)
+	if preview != "" && !strings.HasSuffix(preview, "\n") {
+		b.WriteString("\n")
+	}
+	b.WriteString("---\n")
+
+	if spillErr == nil {
+		b.WriteString("\nThe preview is truncated at the configured character limit. Read the file above for the remaining output.")
+	} else {
+		b.WriteString("\nThe preview is truncated at the configured character limit. Full output could not be persisted; re-run with more focused output.")
+	}
+
+	return b.String()
 }
 
 // classifyExitCode returns an appropriate error based on the execution result's exit code.
