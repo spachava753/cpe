@@ -385,13 +385,23 @@ If the user defines a preference, tells you to remember something, or you found 
 
 Skills are reusable modules of instructions, scripts, and resources that extend your capabilities for specialized tasks. They follow the Agent Skills specification (agentskills.io).
 
-{{ skills "./skills" "~/.cpe/skills" }}
+{{- $skills := skills "./skills" "~/.cpe/skills" -}}
+{{- if $skills }}
+<skills>
+{{- range $skill := $skills }}
+  <skill name={{ printf "%q" $skill.Name }}>
+    <description>{{ $skill.Description }}</description>
+    <path>{{ $skill.Path }}</path>
+  </skill>
+{{- end }}
+</skills>
+{{- end }}
 
-When skills are available, you will see them listed above in XML format with their name, description, and path. To use a skill:
+When skills are available, the list above includes each skill name, description, and path. To use a skill:
 
-1. Read the skill's SKILL.md file at the indicated path to load the full instructions
-2. Follow the instructions and use any scripts or references provided in the skill directory
-3. Skills may contain subdirectories like `scripts/`, `references/`, and `assets/` with additional resources
+1. Locate the skill's `SKILL.md` in one of the configured roots (typically `<root>/<skill-name>/SKILL.md`)
+2. Read the full `SKILL.md` instructions before using that skill
+3. Follow the instructions and use any scripts or references provided in the skill directory
 
 Only load a skill's full instructions when the task is relevant to that skill's description.
 

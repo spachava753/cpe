@@ -469,13 +469,23 @@ Skills locations are **user-defined** in your system prompt template using the `
 
 ```markdown
 <!-- In your agent_instructions.md template -->
-{{ skills "./skills" "~/my-custom-skills" "/shared/team-skills" }}
+{{- $skills := skills "./skills" "~/my-custom-skills" "/shared/team-skills" -}}
+{{- if $skills }}
+<skills>
+{{- range $skill := $skills }}
+  <skill name={{ printf "%q" $skill.Name }}>
+    <description>{{ $skill.Description }}</description>
+    <path>{{ $skill.Path }}</path>
+  </skill>
+{{- end }}
+</skills>
+{{- end }}
 ```
 
 The `skills` function:
 - Accepts any number of directory paths
 - Scans each for subdirectories containing `SKILL.md`
-- Renders skill metadata (name, description, path) into the prompt
+- Returns a list of skill objects (`name`, `description`, `path`) so your template controls the output format (XML, JSON, CSV, etc.)
 
 ### Example Skill Structure
 
@@ -501,7 +511,8 @@ Instructions for creating well-formatted GitHub issues...
 Create a directory with a `SKILL.md` file anywhere you like, then reference that path in your system prompt template:
 
 ```markdown
-{{ skills "./my-project-skills" "~/my-global-skills" }}
+{{- $skills := skills "./my-project-skills" "~/my-global-skills" -}}
+{{/* format $skills however you want */}}
 ```
 
 For examples of well-structured skills, see the `skills/` directory in the CPE repository—these are skills used for CPE's own development but serve as good templates for creating your own.

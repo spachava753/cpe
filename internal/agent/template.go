@@ -47,7 +47,7 @@ func createTemplateFuncMap(ctx context.Context, w io.Writer) template.FuncMap {
 	fm["exec"] = func(command string) string {
 		return execCommand(ctx, command)
 	}
-	fm["skills"] = func(paths ...string) string {
+	fm["skills"] = func(paths ...string) []Skill {
 		return skills(w, paths...)
 	}
 	return fm
@@ -78,13 +78,18 @@ func execCommand(ctx context.Context, command string) string {
 	return strings.TrimSpace(string(output))
 }
 
+var (
+	frontmatterRegexp = regexp.MustCompile(`(?s)^---\r?\n(.+?)\r?\n---`)
+	skillNameRegexp   = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+)
+
 // SkillMetadata represents the YAML frontmatter of a SKILL.md file
 type SkillMetadata struct {
 	Name        string `yaml:"name"`
 	Description string `yaml:"description"`
 }
 
-// Skill represents a parsed skill with its metadata and path
+// Skill represents a parsed skill with the metadata exposed to templates.
 type Skill struct {
 	Name        string
 	Description string
@@ -92,9 +97,9 @@ type Skill struct {
 }
 
 // skills scans the provided directories for valid skill folders and returns
-// XML-formatted skill metadata for inclusion in the system prompt.
+// a list of parsed skills for template-level formatting.
 // Each skill folder must contain a SKILL.md file with valid YAML frontmatter.
-func skills(w io.Writer, paths ...string) string {
+func skills(w io.Writer, paths ...string) []Skill {
 	var allSkills []Skill
 
 	for _, basePath := range paths {
@@ -123,8 +128,7 @@ func skills(w io.Writer, paths ...string) string {
 				continue
 			}
 
-			skillDir := filepath.Join(basePath, entry.Name())
-			skillMdPath := filepath.Join(skillDir, "SKILL.md")
+			skillMdPath := filepath.Join(basePath, entry.Name(), "SKILL.md")
 
 			// Check if SKILL.md exists
 			if _, err := os.Stat(skillMdPath); err != nil {
@@ -132,7 +136,7 @@ func skills(w io.Writer, paths ...string) string {
 			}
 
 			// Parse the skill
-			skill, err := parseSkill(skillMdPath, skillDir)
+			skill, err := parseSkill(skillMdPath)
 			if err != nil {
 				fmt.Fprintf(w, "warning: failed to load skill %q: %v\n", entry.Name(), err)
 				continue
@@ -142,26 +146,11 @@ func skills(w io.Writer, paths ...string) string {
 		}
 	}
 
-	if len(allSkills) == 0 {
-		return ""
-	}
-
-	// Build XML output
-	var buf bytes.Buffer
-	buf.WriteString("<skills>\n")
-	for _, s := range allSkills {
-		buf.WriteString(fmt.Sprintf("  <skill name=%q>\n", s.Name))
-		buf.WriteString(fmt.Sprintf("    <description>%s</description>\n", s.Description))
-		buf.WriteString(fmt.Sprintf("    <path>%s</path>\n", s.Path))
-		buf.WriteString("  </skill>\n")
-	}
-	buf.WriteString("</skills>")
-
-	return buf.String()
+	return allSkills
 }
 
 // parseSkill reads a SKILL.md file and extracts the metadata
-func parseSkill(skillMdPath, skillDir string) (Skill, error) {
+func parseSkill(skillMdPath string) (Skill, error) {
 	content, err := os.ReadFile(skillMdPath)
 	if err != nil {
 		return Skill{}, err
@@ -191,15 +180,14 @@ func parseSkill(skillMdPath, skillDir string) (Skill, error) {
 	return Skill{
 		Name:        meta.Name,
 		Description: meta.Description,
-		Path:        skillDir,
+		Path:        filepath.Dir(skillMdPath),
 	}, nil
 }
 
 // extractFrontmatter extracts YAML frontmatter from markdown content
 func extractFrontmatter(content string) (string, error) {
 	// Match YAML frontmatter between --- delimiters
-	re := regexp.MustCompile(`(?s)^---\r?\n(.+?)\r?\n---`)
-	matches := re.FindStringSubmatch(content)
+	matches := frontmatterRegexp.FindStringSubmatch(content)
 	if len(matches) < 2 {
 		return "", fmt.Errorf("no frontmatter found")
 	}
@@ -212,6 +200,5 @@ func isValidSkillName(name string) bool {
 	if len(name) > 64 || len(name) == 0 {
 		return false
 	}
-	re := regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
-	return re.MatchString(name)
+	return skillNameRegexp.MatchString(name)
 }
