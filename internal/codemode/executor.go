@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/parser"
 	"go/printer"
@@ -28,6 +29,9 @@ const mcpSDKVersion = "v1.1.0"
 
 // gracePeriod is the time to wait after sending SIGINT before sending SIGKILL
 const gracePeriod = 5 * time.Second
+
+// timeoutCancellationNoteTemplate is appended to output when executionTimeout triggers cancellation.
+const timeoutCancellationNoteTemplate = "execution timed out after %d seconds; context was canceled because executionTimeout was reached."
 
 // mcpSDKImport is the import path for the MCP SDK package
 const mcpSDKImport = "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -209,7 +213,22 @@ func runProgramWithTimeout(ctx context.Context, binaryPath string, timeoutSecs i
 		}
 	}
 
+	if errors.Is(timeoutCtx.Err(), context.DeadlineExceeded) {
+		result.Output = appendTimeoutCancellationNote(result.Output, timeoutSecs)
+	}
+
 	return result, nil
+}
+
+func appendTimeoutCancellationNote(output string, timeoutSecs int) string {
+	note := fmt.Sprintf(timeoutCancellationNoteTemplate, timeoutSecs)
+	if output == "" {
+		return note
+	}
+	if strings.HasSuffix(output, "\n") {
+		return output + note
+	}
+	return output + "\n" + note
 }
 
 // classifyExitCode returns an appropriate error based on the execution result's exit code.
