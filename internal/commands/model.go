@@ -48,8 +48,17 @@ func ModelInfo(ctx context.Context, opts ModelInfoOptions) error {
 		return fmt.Errorf("model %q not found", opts.ModelName)
 	}
 
-	fmt.Fprintf(opts.Writer, "Ref: %s\nDisplay Name: %s\nType: %s\nID: %s\nContext: %d\nMaxOutput: %d\nInputCostPerMillion: %.6f\nOutputCostPerMillion: %.6f\n",
-		model.Ref, model.DisplayName, model.Type, model.ID, model.ContextWindow, model.MaxOutput, model.InputCostPerMillion, model.OutputCostPerMillion,
+	fmt.Fprintf(opts.Writer, "Ref: %s\nDisplay Name: %s\nType: %s\nID: %s\nContext: %d\nMaxOutput: %d\nInputCostPerMillion: %s\nOutputCostPerMillion: %s\nCacheReadCostPerMillion: %s\nCacheWriteCostPerMillion: %s\n",
+		model.Ref,
+		model.DisplayName,
+		model.Type,
+		model.ID,
+		model.ContextWindow,
+		model.MaxOutput,
+		formatCostPerMillion(model.InputCostPerMillion),
+		formatCostPerMillion(model.OutputCostPerMillion),
+		formatCostPerMillion(model.CacheReadCostPerMillion),
+		formatCostPerMillion(model.CacheWriteCostPerMillion),
 	)
 
 	if model.GenerationDefaults != nil {
@@ -72,6 +81,13 @@ func ModelInfo(ctx context.Context, opts ModelInfoOptions) error {
 	}
 
 	return nil
+}
+
+func formatCostPerMillion(cost *float64) string {
+	if cost == nil {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.6f", *cost)
 }
 
 // ModelSystemPromptOptions contains parameters for showing system prompts

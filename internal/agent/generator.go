@@ -416,7 +416,7 @@ func NewGenerator(
 		stdoutW = os.Stdout
 	}
 
-	wrappers = append(wrappers, WithTokenUsagePrinting(os.Stderr))
+	wrappers = append(wrappers, WithTokenUsagePrinting(os.Stderr, cfg.Model))
 	if !o.disablePrinting {
 		renderers := NewResponsePrinterRenderers()
 		wrappers = append(wrappers, WithResponsePrinting(renderers.Content, renderers.Thinking, renderers.ToolCall, stdoutW, os.Stderr))
@@ -461,6 +461,9 @@ func NewGenerator(
 		wrappers = append(wrappers, WithZaiThinkingFilter())
 	case "openai":
 		// OpenAI (non-responses) doesn't produce thinking blocks, filter all
+		wrappers = append(wrappers, WithBlockWhitelist([]string{gai.Content, gai.ToolCall}))
+	case "groq":
+		// Groq currently does not emit thinking blocks in this flow.
 		wrappers = append(wrappers, WithBlockWhitelist([]string{gai.Content, gai.ToolCall}))
 	default:
 		// For unknown providers, filter all thinking blocks

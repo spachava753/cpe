@@ -10,18 +10,20 @@ import (
 
 // Model represents an AI model configuration
 type Model struct {
-	Ref                  string              `json:"ref" yaml:"ref" validate:"required"`
-	DisplayName          string              `json:"display_name" yaml:"display_name" validate:"required"`
-	ID                   string              `json:"id" yaml:"id" validate:"required"`
-	Type                 string              `json:"type" yaml:"type" validate:"required,oneof=openai anthropic gemini responses groq cerebras openrouter zai"`
-	BaseUrl              string              `json:"base_url" yaml:"base_url,omitempty" validate:"omitempty,https_url|http_url"`
-	ApiKeyEnv            string              `json:"api_key_env" yaml:"api_key_env" validate:"required_unless=AuthMethod oauth"`
-	AuthMethod           string              `json:"auth_method" yaml:"auth_method,omitempty" validate:"omitempty,oneof=apikey oauth"`
-	ContextWindow        uint32              `json:"context_window" yaml:"context_window,omitempty" validate:"required,gt=0"`
-	MaxOutput            uint32              `json:"max_output" yaml:"max_output,omitempty" validate:"required,gt=0"`
-	InputCostPerMillion  float64             `json:"input_cost_per_million" yaml:"input_cost_per_million,omitempty"`
-	OutputCostPerMillion float64             `json:"output_cost_per_million" yaml:"output_cost_per_million,omitempty"`
-	PatchRequest         *PatchRequestConfig `json:"patchRequest,omitempty" yaml:"patchRequest,omitempty"`
+	Ref                      string              `json:"ref" yaml:"ref" validate:"required"`
+	DisplayName              string              `json:"display_name" yaml:"display_name" validate:"required"`
+	ID                       string              `json:"id" yaml:"id" validate:"required"`
+	Type                     string              `json:"type" yaml:"type" validate:"required,oneof=openai anthropic gemini responses groq cerebras openrouter zai"`
+	BaseUrl                  string              `json:"base_url" yaml:"base_url,omitempty" validate:"omitempty,https_url|http_url"`
+	ApiKeyEnv                string              `json:"api_key_env" yaml:"api_key_env" validate:"required_unless=AuthMethod oauth"`
+	AuthMethod               string              `json:"auth_method" yaml:"auth_method,omitempty" validate:"omitempty,oneof=apikey oauth"`
+	ContextWindow            uint32              `json:"context_window" yaml:"context_window,omitempty" validate:"required,gt=0"`
+	MaxOutput                uint32              `json:"max_output" yaml:"max_output,omitempty" validate:"required,gt=0"`
+	InputCostPerMillion      *float64            `json:"input_cost_per_million,omitempty" yaml:"input_cost_per_million,omitempty"`
+	OutputCostPerMillion     *float64            `json:"output_cost_per_million,omitempty" yaml:"output_cost_per_million,omitempty"`
+	CacheReadCostPerMillion  *float64            `json:"cache_read_cost_per_million,omitempty" yaml:"cache_read_cost_per_million,omitempty"`
+	CacheWriteCostPerMillion *float64            `json:"cache_write_cost_per_million,omitempty" yaml:"cache_write_cost_per_million,omitempty"`
+	PatchRequest             *PatchRequestConfig `json:"patchRequest,omitempty" yaml:"patchRequest,omitempty"`
 }
 
 // PatchRequestConfig holds configuration for patching HTTP requests

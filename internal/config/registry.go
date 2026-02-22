@@ -35,10 +35,13 @@ type ModelsDevLimit struct {
 	Output  int `json:"output"`
 }
 
-// ModelsDevCost represents cost per million tokens
+// ModelsDevCost represents cost per million tokens.
+// Fields are pointers to distinguish "not provided" from an explicit zero cost.
 type ModelsDevCost struct {
-	Input  float64 `json:"input"`
-	Output float64 `json:"output"`
+	Input      *float64 `json:"input,omitempty"`
+	Output     *float64 `json:"output,omitempty"`
+	CacheRead  *float64 `json:"cache_read,omitempty"`
+	CacheWrite *float64 `json:"cache_write,omitempty"`
 }
 
 // providerTypeMap maps models.dev provider IDs to CPE types
@@ -143,11 +146,21 @@ func BuildModelFromRegistry(provider *ModelsDevProvider, model *ModelsDevModel, 
 	cfg.ContextWindow = uint32(model.Limit.Context)
 	cfg.MaxOutput = uint32(model.Limit.Output)
 	if model.Cost != nil {
-		cfg.InputCostPerMillion = model.Cost.Input
-		cfg.OutputCostPerMillion = model.Cost.Output
+		cfg.InputCostPerMillion = cloneFloatPtr(model.Cost.Input)
+		cfg.OutputCostPerMillion = cloneFloatPtr(model.Cost.Output)
+		cfg.CacheReadCostPerMillion = cloneFloatPtr(model.Cost.CacheRead)
+		cfg.CacheWriteCostPerMillion = cloneFloatPtr(model.Cost.CacheWrite)
 	}
 
 	return cfg, nil
+}
+
+func cloneFloatPtr(v *float64) *float64 {
+	if v == nil {
+		return nil
+	}
+	copied := *v
+	return &copied
 }
 
 // sanitizeRef creates a reasonable ref from a model ID
