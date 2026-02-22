@@ -11,19 +11,23 @@ import (
 const DefaultTimeout = 5 * time.Minute
 
 // ResolveConfig loads the config file and resolves effective runtime configuration
-// for the specified model with runtime options applied
+// for the specified model with runtime options applied.
 func ResolveConfig(configPath string, opts RuntimeOptions) (*Config, error) {
-	rawCfg, err := LoadRawConfig(configPath)
+	rawCfg, resolvedConfigPath, err := LoadRawConfigWithPath(configPath)
 	if err != nil {
 		return nil, err
 	}
 
-	return ResolveFromRaw(rawCfg, opts)
+	return resolveFromRaw(rawCfg, opts, resolvedConfigPath)
 }
 
 // ResolveFromRaw resolves configuration from an already-loaded RawConfig.
 // This is useful for testing without file I/O.
 func ResolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions) (*Config, error) {
+	return resolveFromRaw(rawCfg, opts, "")
+}
+
+func resolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions, resolvedConfigPath string) (*Config, error) {
 	modelRef := opts.ModelRef
 	if modelRef == "" {
 		if rawCfg.Defaults.Model != "" {
@@ -47,15 +51,20 @@ func ResolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	conversationStoragePath, err := ResolveConversationStoragePath(rawCfg.Defaults, resolvedConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid defaults.conversationStoragePath: %w", err)
+	}
 	codeMode := resolveCodeMode(selectedModel, rawCfg.Defaults)
 
 	return &Config{
-		MCPServers:         rawCfg.MCPServers,
-		Model:              selectedModel.Model,
-		SystemPromptPath:   systemPromptPath,
-		GenerationDefaults: genParams,
-		Timeout:            timeout,
-		CodeMode:           codeMode,
+		MCPServers:              rawCfg.MCPServers,
+		Model:                   selectedModel.Model,
+		SystemPromptPath:        systemPromptPath,
+		GenerationDefaults:      genParams,
+		Timeout:                 timeout,
+		ConversationStoragePath: conversationStoragePath,
+		CodeMode:                codeMode,
 	}, nil
 }
 

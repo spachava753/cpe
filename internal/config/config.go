@@ -50,7 +50,10 @@ type SubagentConfig struct {
 	OutputSchemaPath string `yaml:"outputSchemaPath,omitempty" json:"outputSchemaPath,omitempty"`
 }
 
-// RawConfig represents the configuration file structure
+// RawConfig represents the configuration file structure.
+// NOTE: If you change schema-facing fields/tags in config structs, regenerate
+// schema/cpe-config-schema.json with: go run ./build gen-schema
+// (or go generate ./...).
 type RawConfig struct {
 	// MCP server configurations
 	MCPServers map[string]mcp.ServerConfig `yaml:"mcpServers,omitempty" json:"mcpServers,omitempty" validate:"dive"`
@@ -116,6 +119,10 @@ type Defaults struct {
 	// Request timeout
 	Timeout string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
 
+	// Path to conversation storage database.
+	// Absolute paths are used as-is; relative paths are resolved from the config file directory.
+	ConversationStoragePath string `yaml:"conversationStoragePath,omitempty" json:"conversationStoragePath,omitempty"`
+
 	// Code mode configuration
 	CodeMode *CodeModeConfig `yaml:"codeMode,omitempty" json:"codeMode,omitempty"`
 }
@@ -160,6 +167,9 @@ type Config struct {
 
 	// Effective timeout
 	Timeout time.Duration
+
+	// Effective path to conversation storage database.
+	ConversationStoragePath string
 
 	// Effective code mode configuration
 	CodeMode *CodeModeConfig

@@ -98,6 +98,9 @@ go generate ./internal/config/
 ./cpe config lint ./examples/cpe.yaml
 ```
 
+Conversation storage path can be configured via `defaults.conversationStoragePath` in `cpe.yaml`.
+If omitted, CPE uses `.cpeconvo` in the current working directory.
+
 ## Code style and conventions
 
 - Language: Go 1.24.0

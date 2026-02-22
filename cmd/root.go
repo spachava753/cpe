@@ -89,7 +89,7 @@ through natural language interactions.`,
 		var dialogSaver storage.DialogSaver
 		var initialDialog gai.Dialog
 		if !incognitoMode {
-			storageDB, dbErr := sql.Open("sqlite3", ".cpeconvo")
+			storageDB, dbErr := sql.Open("sqlite3", effectiveConfig.ConversationStoragePath)
 			if dbErr != nil {
 				return fmt.Errorf("failed to open database: %w", dbErr)
 			}

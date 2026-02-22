@@ -406,7 +406,7 @@ type MCPServeOptions struct {
 // MCPServe runs CPE as an MCP server exposing a subagent as a tool
 func MCPServe(ctx context.Context, opts MCPServeOptions) error {
 	// Load raw config to check subagent is configured
-	rawCfg, err := config.LoadRawConfig(opts.ConfigPath)
+	rawCfg, resolvedConfigPath, err := config.LoadRawConfigWithPath(opts.ConfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -429,7 +429,11 @@ func MCPServe(ctx context.Context, opts MCPServeOptions) error {
 	}
 
 	// Initialize storage for persisting execution traces
-	storageDB, err := sql.Open("sqlite3", ".cpeconvo")
+	dbPath, err := config.ResolveConversationStoragePath(rawCfg.Defaults, resolvedConfigPath)
+	if err != nil {
+		return fmt.Errorf("invalid defaults.conversationStoragePath: %w", err)
+	}
+	storageDB, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}

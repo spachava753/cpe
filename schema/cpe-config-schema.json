@@ -38,6 +38,9 @@
         "timeout": {
           "type": "string"
         },
+        "conversationStoragePath": {
+          "type": "string"
+        },
         "codeMode": {
           "$ref": "#/$defs/CodeModeConfig"
         }

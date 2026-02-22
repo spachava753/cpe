@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -12,8 +13,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// LoadRawConfig loads raw config for commands that need to list/inspect all models
+// ErrConfigNotFound indicates no config file was found in the standard search locations.
+var ErrConfigNotFound = errors.New("configuration file not found")
+
+// LoadRawConfig loads raw config for commands that need to list/inspect all models.
 func LoadRawConfig(explicitPath string) (*RawConfig, error) {
+	cfg, _, err := LoadRawConfigWithPath(explicitPath)
+	if err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+// LoadRawConfigWithPath loads raw config and returns the resolved config file path.
+func LoadRawConfigWithPath(explicitPath string) (*RawConfig, string, error) {
 	var configPath string
 	var err error
 
@@ -21,33 +34,33 @@ func LoadRawConfig(explicitPath string) (*RawConfig, error) {
 		configPath = explicitPath
 		if _, err := os.Stat(configPath); err != nil {
 			if os.IsNotExist(err) {
-				return nil, fmt.Errorf("specified config file does not exist: %s", configPath)
+				return nil, "", fmt.Errorf("specified config file does not exist: %s", configPath)
 			}
-			return nil, fmt.Errorf("cannot access config file %s: %w", configPath, err)
+			return nil, "", fmt.Errorf("cannot access config file %s: %w", configPath, err)
 		}
 	} else {
 		configPath, err = findConfigFile()
 		if err != nil {
-			return nil, fmt.Errorf("no configuration file found: %w", err)
+			return nil, "", fmt.Errorf("%w: %w", ErrConfigNotFound, err)
 		}
 	}
 
 	file, err := os.Open(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open config file %s: %w", configPath, err)
+		return nil, "", fmt.Errorf("failed to open config file %s: %w", configPath, err)
 	}
 	defer file.Close()
 
 	config, err := loadRawConfigFromFile(file)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load config from %s: %w", configPath, err)
+		return nil, "", fmt.Errorf("failed to load config from %s: %w", configPath, err)
 	}
 
 	if err := config.Validate(); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	return config, nil
+	return config, configPath, nil
 }
 
 // findConfigFile searches for configuration files in the expected locations
