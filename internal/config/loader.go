@@ -56,7 +56,7 @@ func LoadRawConfigWithPath(explicitPath string) (*RawConfig, string, error) {
 		return nil, "", fmt.Errorf("failed to load config from %s: %w", configPath, err)
 	}
 
-	if err := config.Validate(); err != nil {
+	if err := config.ValidateWithConfigPath(configPath); err != nil {
 		return nil, "", err
 	}
 

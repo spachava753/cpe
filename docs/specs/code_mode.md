@@ -336,7 +336,7 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 
 Supported content types from the MCP SDK:
 - `*mcp.TextContent` - text content
-- `*mcp.ImageContent` - images (JPEG, PNG, GIF, WebP)
+- `*mcp.ImageContent` - images (JPEG, PNG, GIF, WebP) and PDFs (`application/pdf`, `application/x-pdf`)
 - `*mcp.AudioContent` - audio data
 
 **Not supported:**
@@ -998,6 +998,9 @@ defaults:
     excludedTools:
       - some_tool
       - another_tool
+    localModulePaths:
+      - ../my-go-helpers
+      - /Users/me/dev/shared-go-utils
 
 models:
   - ref: sonnet
@@ -1010,6 +1013,8 @@ models:
         - some_tool
         - another_tool
         - another_tool_2
+      localModulePaths:
+        - ./model-specific-module
   - ref: tiny-model
     # Disable code mode for this model only
     codeMode:
@@ -1024,7 +1029,12 @@ When a model is selected, the effective `codeMode` configuration is determined a
 2. Otherwise, fall back to `defaults.codeMode`
 3. If neither is specified, code mode is disabled
 
-This is **override** behavior, not merging. If a model provides its own `codeMode` configuration, it completely replaces the global default rather than merging `excludedTools` lists. This design choice keeps the configuration predictable: each model's code mode settings are self-contained and explicit.
+This is **override** behavior, not merging. If a model provides its own `codeMode` configuration, it completely replaces the global default rather than merging any fields (for example `excludedTools` or `localModulePaths`). This design choice keeps each model's code mode settings self-contained and explicit.
+
+Path handling for `localModulePaths`:
+- Absolute paths are used as-is.
+- Relative paths resolve against the config file directory.
+- Effective runtime config stores absolute normalized paths.
 
 For example, if `defaults.codeMode.excludedTools` contains `["tool_a", "tool_b"]` and a model specifies `codeMode.excludedTools: ["tool_c"]`, the effective excluded tools for that model is `["tool_c"]` only—not `["tool_a", "tool_b", "tool_c"]`.
 

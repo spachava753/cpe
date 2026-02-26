@@ -36,6 +36,7 @@ type PatchRequestConfig struct {
 type CodeModeConfig struct {
 	Enabled              bool     `yaml:"enabled" json:"enabled"`
 	ExcludedTools        []string `yaml:"excludedTools,omitempty" json:"excludedTools,omitempty"`
+	LocalModulePaths     []string `yaml:"localModulePaths,omitempty" json:"localModulePaths,omitempty"`
 	MaxTimeout           int      `yaml:"maxTimeout,omitempty" json:"maxTimeout,omitempty" validate:"omitempty,gte=0"`
 	LargeOutputCharLimit int      `yaml:"largeOutputCharLimit,omitempty" json:"largeOutputCharLimit,omitempty" validate:"omitempty,gte=0"`
 }

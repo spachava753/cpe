@@ -254,6 +254,9 @@ Code Mode lets the AI write and execute Go code to accomplish complex tasks in a
 defaults:
   codeMode:
     enabled: true
+    localModulePaths:
+      - ../my-go-helpers
+      - /Users/me/dev/shared-go-utils
 ```
 
 With Code Mode, the AI can:
@@ -261,6 +264,8 @@ With Code Mode, the AI can:
 - Use loops and conditionals
 - Process data in parallel
 - Access Go's standard library
+
+When `localModulePaths` is configured, generated code runs inside an ephemeral Go workspace. This lets `go mod tidy`, `go build`, and import auto-correction resolve local modules without per-run manual setup.
 
 Example: "Find all TODO comments, group them by file, and create a summary report" becomes a single Go program that the AI writes and CPE executes.
 
@@ -376,6 +381,9 @@ defaults:
   timeout: 5m
   codeMode:
     enabled: true
+    maxTimeout: 3600
+    localModulePaths:
+      - ../my-go-helpers
   # Generation parameters control LLM behavior
   generationParams:
     temperature: 0.7      # Controls randomness (0.0 = deterministic, 1.0 = creative)

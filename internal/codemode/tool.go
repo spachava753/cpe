@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/gai"
@@ -21,7 +22,9 @@ type ExecuteGoCodeInput struct {
 // It executes LLM-generated Go code in a sandbox environment with MCP tool access.
 type ExecuteGoCodeCallback struct {
 	Servers              []*mcp.MCPConn
+	MaxTimeout           int
 	LargeOutputCharLimit int
+	LocalModulePaths     []string
 }
 
 // contentToBlocks converts MCP content types to gai blocks.
@@ -33,7 +36,11 @@ func contentToBlocks(content []mcpsdk.Content) []gai.Block {
 		case *mcpsdk.TextContent:
 			blocks = append(blocks, gai.TextBlock(v.Text))
 		case *mcpsdk.ImageContent:
-			blocks = append(blocks, gai.ImageBlock(v.Data, v.MIMEType))
+			if v.MIMEType == "application/pdf" || v.MIMEType == "application/x-pdf" {
+				blocks = append(blocks, gai.PDFBlock(v.Data, "document.pdf"))
+			} else {
+				blocks = append(blocks, gai.ImageBlock(v.Data, v.MIMEType))
+			}
 		case *mcpsdk.AudioContent:
 			blocks = append(blocks, gai.AudioBlock(v.Data, v.MIMEType))
 		}
@@ -56,13 +63,27 @@ func (c *ExecuteGoCodeCallback) Call(ctx context.Context, parametersJSON json.Ra
 		return gai.ToolResultMessage(toolCallID, gai.TextBlock("Error parsing parameters: "+err.Error())), nil
 	}
 
+	if input.ExecutionTimeout < 1 {
+		return gai.ToolResultMessage(toolCallID, gai.TextBlock("executionTimeout must be at least 1 second")), nil
+	}
+	maxAllowedTimeout := c.MaxTimeout
+	if maxAllowedTimeout <= 0 {
+		maxAllowedTimeout = 300
+	}
+	if input.ExecutionTimeout > maxAllowedTimeout {
+		return gai.ToolResultMessage(toolCallID, gai.TextBlock(fmt.Sprintf("executionTimeout exceeds maximum allowed (%d seconds)", maxAllowedTimeout))), nil
+	}
+
 	// Execute the code
 	result, err := ExecuteCode(
 		ctx,
 		c.Servers,
 		input.Code,
-		input.ExecutionTimeout,
-		c.LargeOutputCharLimit,
+		ExecuteCodeOptions{
+			TimeoutSeconds:       input.ExecutionTimeout,
+			LargeOutputCharLimit: c.LargeOutputCharLimit,
+			LocalModulePaths:     c.LocalModulePaths,
+		},
 	)
 	if err != nil {
 		// Check error type to determine how to handle it

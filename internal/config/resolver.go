@@ -55,7 +55,10 @@ func resolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions, resolvedConfigPath s
 	if err != nil {
 		return nil, fmt.Errorf("invalid defaults.conversationStoragePath: %w", err)
 	}
-	codeMode := resolveCodeMode(selectedModel, rawCfg.Defaults)
+	codeMode, err := resolveCodeMode(selectedModel, rawCfg.Defaults, resolvedConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid codeMode configuration: %w", err)
+	}
 
 	return &Config{
 		MCPServers:              rawCfg.MCPServers,
@@ -174,9 +177,9 @@ func resolveTimeout(defaults Defaults, opts RuntimeOptions) (time.Duration, erro
 
 // resolveCodeMode resolves code mode configuration with override behavior (not merge).
 // Model-level completely replaces defaults.
-func resolveCodeMode(model ModelConfig, defaults Defaults) *CodeModeConfig {
+func resolveCodeMode(model ModelConfig, defaults Defaults, configFilePath string) (*CodeModeConfig, error) {
 	if model.CodeMode != nil {
-		return model.CodeMode
+		return normalizeCodeModeConfigPaths(model.CodeMode, configFilePath)
 	}
-	return defaults.CodeMode
+	return normalizeCodeModeConfigPaths(defaults.CodeMode, configFilePath)
 }

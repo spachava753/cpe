@@ -72,6 +72,8 @@ defaults:
   codeMode:
     enabled: true
     maxTimeout: 3600
+    localModulePaths:
+      - ../my-go-helpers
 
 subagent:
   name: code-reviewer
@@ -171,7 +173,14 @@ Code mode enables LLMs to execute Go code for composable tool operations.
 |-------|------|-------------|
 | `enabled` | bool | Enable code mode |
 | `excludedTools` | []string | Tools to exclude from code mode (called normally) |
+| `localModulePaths` | []string | Local module directories to add to the execution workspace (`go.mod` required in each directory) |
 | `maxTimeout` | int | Maximum execution timeout in seconds |
+| `largeOutputCharLimit` | int | Max characters before tool output is spilled to disk preview |
+
+Path semantics:
+- `localModulePaths` may be absolute or relative.
+- Relative paths resolve against the config file directory.
+- Paths are normalized to absolute paths in effective runtime config.
 
 **Important**: Code mode configuration does NOT merge between defaults and model-specific settings. Model `codeMode` completely replaces `defaults.codeMode`.
 

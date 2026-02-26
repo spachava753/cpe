@@ -14,11 +14,13 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unicode/utf8"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/imports"
 
@@ -46,6 +48,20 @@ type ExecutionResult struct {
 	Content  []mcpsdk.Content // Multimedia content returned from Run()
 }
 
+// ExecuteCodeOptions controls sandbox execution behavior.
+type ExecuteCodeOptions struct {
+	TimeoutSeconds       int
+	LargeOutputCharLimit int
+	LocalModulePaths     []string
+}
+
+type workspaceModule struct {
+	ModulePath string
+	Dir        string
+}
+
+var importsProcessMu sync.Mutex
+
 // ExecuteCode creates a temporary sandbox, writes files, and executes LLM-generated Go code.
 // It returns the execution result with combined output and exit code.
 // The temp directory is cleaned up after execution.
@@ -55,18 +71,35 @@ type ExecutionResult struct {
 //   - RecoverableError: compilation errors, Run() errors (exit 1), panics (exit 2), timeouts
 //   - FatalExecutionError: exit code 3 from fatalExit() in generated code
 //   - Other errors: infrastructure failures (temp dir, file writes, etc.)
-func ExecuteCode(ctx context.Context, servers []*mcp.MCPConn, llmCode string, timeoutSecs int, largeOutputCharLimit int) (ExecutionResult, error) {
+func ExecuteCode(ctx context.Context, servers []*mcp.MCPConn, llmCode string, opts ExecuteCodeOptions) (ExecutionResult, error) {
 	// Create temp directory
 	tempDir, err := os.MkdirTemp("", "cpe-code-mode-*")
 	if err != nil {
 		return ExecutionResult{}, fmt.Errorf("creating temp directory: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	cleanupDir := tempDir
+	if realTempDir, err := filepath.EvalSymlinks(tempDir); err == nil {
+		tempDir = realTempDir
+	}
+	defer os.RemoveAll(cleanupDir)
 
 	// Generate and write go.mod
 	goMod := generateGoMod()
-	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte(goMod), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte(goMod), 0o644); err != nil {
 		return ExecutionResult{}, fmt.Errorf("writing go.mod: %w", err)
+	}
+
+	workspacePath, workspaceModules, err := prepareWorkspaceFile(tempDir, opts)
+	if err != nil {
+		return ExecutionResult{}, fmt.Errorf("preparing go workspace: %w", err)
+	}
+	if realWorkspacePath, err := filepath.EvalSymlinks(workspacePath); err == nil {
+		workspacePath = realWorkspacePath
+	}
+	envOverrides := map[string]string{"GOWORK": workspacePath}
+
+	if err := applyWorkspaceModuleReplacements(ctx, tempDir, envOverrides, workspaceModules); err != nil {
+		return ExecutionResult{}, fmt.Errorf("configuring workspace module replacements: %w", err)
 	}
 
 	// Generate and write main.go
@@ -74,25 +107,25 @@ func ExecuteCode(ctx context.Context, servers []*mcp.MCPConn, llmCode string, ti
 	if err != nil {
 		return ExecutionResult{}, fmt.Errorf("generating main.go: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(tempDir, "main.go"), []byte(mainGo), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tempDir, "main.go"), []byte(mainGo), 0o644); err != nil {
 		return ExecutionResult{}, fmt.Errorf("writing main.go: %w", err)
 	}
 
 	// Write run.go (LLM-generated code)
-	if err := os.WriteFile(filepath.Join(tempDir, "run.go"), []byte(llmCode), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(tempDir, "run.go"), []byte(llmCode), 0o644); err != nil {
 		return ExecutionResult{}, fmt.Errorf("writing run.go: %w", err)
 	}
 
 	// Auto-correct imports
-	importNote := autoCorrectImports(ctx, tempDir, "run.go")
+	importNote := autoCorrectImports(ctx, tempDir, "run.go", envOverrides)
 
 	// Run go mod tidy
-	tidyResult, err := runCommand(ctx, tempDir, "go", "mod", "tidy")
+	tidyResult, err := runCommand(ctx, tempDir, envOverrides, "go", "mod", "tidy")
 	if err != nil {
 		return ExecutionResult{}, fmt.Errorf("running go mod tidy: %w", err)
 	}
 	tidyResult.Output += importNote
-	tidyResult = maybeSpillLargeOutput(tidyResult, largeOutputCharLimit)
+	tidyResult = maybeSpillLargeOutput(tidyResult, opts.LargeOutputCharLimit)
 	if tidyResult.ExitCode != 0 {
 		return ExecutionResult{
 			Output:   tidyResult.Output,
@@ -102,12 +135,12 @@ func ExecuteCode(ctx context.Context, servers []*mcp.MCPConn, llmCode string, ti
 
 	// Build the binary to get accurate exit codes (go run masks them)
 	binaryPath := filepath.Join(tempDir, "program")
-	buildResult, err := runCommand(ctx, tempDir, "go", "build", "-o", binaryPath, ".")
+	buildResult, err := runCommand(ctx, tempDir, envOverrides, "go", "build", "-o", binaryPath, ".")
 	if err != nil {
 		return ExecutionResult{}, fmt.Errorf("running go build: %w", err)
 	}
 	buildResult.Output += importNote
-	buildResult = maybeSpillLargeOutput(buildResult, largeOutputCharLimit)
+	buildResult = maybeSpillLargeOutput(buildResult, opts.LargeOutputCharLimit)
 	if buildResult.ExitCode != 0 {
 		return ExecutionResult{
 			Output:   buildResult.Output,
@@ -116,9 +149,9 @@ func ExecuteCode(ctx context.Context, servers []*mcp.MCPConn, llmCode string, ti
 	}
 
 	// Execute the built binary with timeout and graceful shutdown
-	result, err := runProgramWithTimeout(ctx, binaryPath, timeoutSecs)
+	result, err := runProgramWithTimeout(ctx, binaryPath, opts.TimeoutSeconds, envOverrides)
 	result.Output += importNote
-	result = maybeSpillLargeOutput(result, largeOutputCharLimit)
+	result = maybeSpillLargeOutput(result, opts.LargeOutputCharLimit)
 	if err != nil {
 		return result, err
 	}
@@ -152,10 +185,177 @@ require github.com/modelcontextprotocol/go-sdk %s
 `, mcpSDKVersion)
 }
 
-// runCommand executes a command in the given directory and returns the result
-func runCommand(ctx context.Context, dir string, name string, args ...string) (ExecutionResult, error) {
+func prepareWorkspaceFile(tempModuleDir string, opts ExecuteCodeOptions) (string, []workspaceModule, error) {
+	workspaceModulePaths := append([]string{tempModuleDir}, opts.LocalModulePaths...)
+
+	normalizedPaths, err := normalizeWorkspaceModulePaths(workspaceModulePaths)
+	if err != nil {
+		return "", nil, err
+	}
+
+	modules := make([]workspaceModule, 0, len(normalizedPaths))
+	for _, modulePath := range normalizedPaths {
+		if modulePath == normalizedPaths[0] {
+			continue // temp module generated in this execution always has go.mod
+		}
+		if err := validateWorkspaceModulePath(modulePath); err != nil {
+			return "", nil, err
+		}
+
+		moduleName, err := readModulePath(modulePath)
+		if err != nil {
+			return "", nil, err
+		}
+		modules = append(modules, workspaceModule{ModulePath: moduleName, Dir: modulePath})
+	}
+
+	workspaceFile := &modfile.WorkFile{Syntax: &modfile.FileSyntax{Name: "go.work"}}
+	if err := workspaceFile.AddGoStmt("1.24"); err != nil {
+		return "", nil, fmt.Errorf("adding go directive to workspace: %w", err)
+	}
+	for _, modulePath := range normalizedPaths {
+		if err := workspaceFile.AddUse(modulePath, ""); err != nil {
+			return "", nil, fmt.Errorf("adding workspace use path %q: %w", modulePath, err)
+		}
+	}
+	workspaceFile.SortBlocks()
+	workspaceFile.Cleanup()
+
+	workspacePath := filepath.Join(tempModuleDir, "go.work")
+	if err := os.WriteFile(workspacePath, modfile.Format(workspaceFile.Syntax), 0o644); err != nil {
+		return "", nil, fmt.Errorf("writing workspace file: %w", err)
+	}
+
+	return workspacePath, modules, nil
+}
+
+// normalizeWorkspaceModulePaths resolves, cleans, and deduplicates module paths.
+// Unlike config validation (which errors on duplicates), this function silently
+// deduplicates because it merges multiple sources: the temp module and
+// user-configured localModulePaths.
+func normalizeWorkspaceModulePaths(paths []string) ([]string, error) {
+	normalized := make([]string, 0, len(paths))
+	seen := make(map[string]struct{}, len(paths))
+
+	for i, rawPath := range paths {
+		trimmed := strings.TrimSpace(rawPath)
+		if trimmed == "" {
+			return nil, fmt.Errorf("workspace module path at index %d must not be empty", i)
+		}
+
+		absPath, err := filepath.Abs(trimmed)
+		if err != nil {
+			return nil, fmt.Errorf("resolving absolute path for workspace module %q: %w", trimmed, err)
+		}
+		cleanPath := filepath.Clean(absPath)
+		if realPath, err := filepath.EvalSymlinks(cleanPath); err == nil {
+			cleanPath = filepath.Clean(realPath)
+		}
+
+		if _, exists := seen[cleanPath]; exists {
+			continue
+		}
+		seen[cleanPath] = struct{}{}
+		normalized = append(normalized, cleanPath)
+	}
+
+	return normalized, nil
+}
+
+func validateWorkspaceModulePath(modulePath string) error {
+	moduleStat, err := os.Stat(modulePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("workspace module path does not exist: %s", modulePath)
+		}
+		return fmt.Errorf("checking workspace module path %q: %w", modulePath, err)
+	}
+	if !moduleStat.IsDir() {
+		return fmt.Errorf("workspace module path is not a directory: %s", modulePath)
+	}
+
+	goModPath := filepath.Join(modulePath, "go.mod")
+	goModStat, err := os.Stat(goModPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("workspace module path is missing go.mod: %s", modulePath)
+		}
+		return fmt.Errorf("checking go.mod for workspace module %q: %w", modulePath, err)
+	}
+	if goModStat.IsDir() {
+		return fmt.Errorf("workspace module has directory instead of go.mod file: %s", goModPath)
+	}
+
+	return nil
+}
+
+func readModulePath(moduleDir string) (string, error) {
+	goModPath := filepath.Join(moduleDir, "go.mod")
+	data, err := os.ReadFile(goModPath)
+	if err != nil {
+		return "", fmt.Errorf("reading go.mod for workspace module %q: %w", moduleDir, err)
+	}
+
+	parsed, err := modfile.Parse(goModPath, data, nil)
+	if err != nil {
+		return "", fmt.Errorf("parsing go.mod for workspace module %q: %w", moduleDir, err)
+	}
+	if parsed.Module == nil || strings.TrimSpace(parsed.Module.Mod.Path) == "" {
+		return "", fmt.Errorf("workspace module %q has no module directive in go.mod", moduleDir)
+	}
+
+	return parsed.Module.Mod.Path, nil
+}
+
+func applyWorkspaceModuleReplacements(ctx context.Context, dir string, envOverrides map[string]string, modules []workspaceModule) error {
+	if len(modules) == 0 {
+		return nil
+	}
+
+	for _, module := range modules {
+		editArg := fmt.Sprintf("%s=%s", module.ModulePath, module.Dir)
+		result, err := runCommand(ctx, dir, envOverrides, "go", "mod", "edit", "-replace", editArg)
+		if err != nil {
+			return fmt.Errorf("running go mod edit for %q: %w", module.ModulePath, err)
+		}
+		if result.ExitCode != 0 {
+			return fmt.Errorf("go mod edit -replace %s failed: %s", editArg, strings.TrimSpace(result.Output))
+		}
+	}
+
+	return nil
+}
+
+func mergeEnv(base []string, overrides map[string]string) []string {
+	if len(overrides) == 0 {
+		return base
+	}
+
+	merged := make(map[string]string, len(base)+len(overrides))
+	for _, entry := range base {
+		parts := strings.SplitN(entry, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		merged[parts[0]] = parts[1]
+	}
+	for key, value := range overrides {
+		merged[key] = value
+	}
+
+	result := make([]string, 0, len(merged))
+	for key, value := range merged {
+		result = append(result, key+"="+value)
+	}
+	sort.Strings(result)
+	return result
+}
+
+// runCommand executes a command in the given directory and returns the result.
+func runCommand(ctx context.Context, dir string, envOverrides map[string]string, name string, args ...string) (ExecutionResult, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
+	cmd.Env = mergeEnv(os.Environ(), envOverrides)
 
 	var output bytes.Buffer
 	cmd.Stdout = &output
@@ -183,11 +383,12 @@ func runCommand(ctx context.Context, dir string, name string, args ...string) (E
 // runProgramWithTimeout executes a binary with timeout enforcement and graceful shutdown.
 // On timeout or context cancellation, it sends SIGINT and waits gracePeriod for the process
 // to exit gracefully before sending SIGKILL.
-func runProgramWithTimeout(ctx context.Context, binaryPath string, timeoutSecs int) (ExecutionResult, error) {
+func runProgramWithTimeout(ctx context.Context, binaryPath string, timeoutSecs int, envOverrides map[string]string) (ExecutionResult, error) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSecs)*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(timeoutCtx, binaryPath)
+	cmd.Env = mergeEnv(os.Environ(), envOverrides)
 
 	// Custom cancel: send SIGINT for graceful shutdown instead of default SIGKILL.
 	// Return os.ErrProcessDone to suppress context error when process exits cleanly.
@@ -323,7 +524,8 @@ func classifyExitCode(result ExecutionResult) error {
 
 // autoCorrectImports runs goimports (via golang.org/x/tools/imports) on the file
 // and returns a notification message listing added/removed packages.
-func autoCorrectImports(ctx context.Context, dir, filename string) string {
+func autoCorrectImports(ctx context.Context, dir, filename string, envOverrides map[string]string) string {
+	_ = ctx
 	filePath := filepath.Join(dir, filename)
 	orig, err := os.ReadFile(filePath)
 	if err != nil {
@@ -334,7 +536,10 @@ func autoCorrectImports(ctx context.Context, dir, filename string) string {
 	preprocessed := ensureMCPImport(orig)
 	origImports := extractImports(orig)
 
-	// Process the file using golang.org/x/tools/imports
+	importsProcessMu.Lock()
+	defer importsProcessMu.Unlock()
+	restoreEnv := applyEnvOverrides(envOverrides)
+	defer restoreEnv()
 	newContent, err := imports.Process(filePath, preprocessed, nil)
 	if err != nil {
 		// If processing fails (e.g. syntax errors), let the compiler catch it
@@ -345,12 +550,40 @@ func autoCorrectImports(ctx context.Context, dir, filename string) string {
 		return ""
 	}
 
-	if err := os.WriteFile(filePath, newContent, 0644); err != nil {
+	if err := os.WriteFile(filePath, newContent, 0o644); err != nil {
 		return ""
 	}
 
 	newImports := extractImports(newContent)
 	return formatImportChanges(filename, origImports, newImports)
+}
+
+func applyEnvOverrides(overrides map[string]string) func() {
+	if len(overrides) == 0 {
+		return func() {}
+	}
+
+	type envValue struct {
+		value  string
+		exists bool
+	}
+	previous := make(map[string]envValue, len(overrides))
+
+	for key, value := range overrides {
+		current, exists := os.LookupEnv(key)
+		previous[key] = envValue{value: current, exists: exists}
+		_ = os.Setenv(key, value)
+	}
+
+	return func() {
+		for key, prev := range previous {
+			if prev.exists {
+				_ = os.Setenv(key, prev.value)
+				continue
+			}
+			_ = os.Unsetenv(key)
+		}
+	}
 }
 
 // extractImports parses Go source and returns a set of import paths.

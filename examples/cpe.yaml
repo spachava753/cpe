@@ -158,7 +158,11 @@ models:
 
 # Global defaults
 defaults:
-  systemPromptPath: "./examples/agent_instructions.prompt"
+  systemPromptPath: "./agent_instructions.md"
   model: "sonnet"
   timeout: "5m"
-  noStream: false
+  codeMode:
+    enabled: true
+    maxTimeout: 3600
+    localModulePaths:
+      - ../my-go-helpers

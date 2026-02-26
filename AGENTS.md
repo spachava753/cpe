@@ -150,9 +150,11 @@ defaults:
     enabled: true
     excludedTools:
       - some_tool # Expose as regular tool instead
+    localModulePaths:
+      - ../my-go-helpers
 ```
 
-The LLM generates complete Go programs implementing a `Run(ctx context.Context) error` function. CPE compiles and executes them in a temporary sandbox with access to MCP tools as strongly-typed Go functions.
+The LLM generates complete Go programs implementing a `Run(ctx context.Context) ([]mcp.Content, error)` function. CPE compiles and executes them in a temporary sandbox with access to MCP tools as strongly-typed Go functions.
 
 Implementation notes:
 

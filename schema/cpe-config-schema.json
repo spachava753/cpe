@@ -14,6 +14,12 @@
           },
           "type": "array"
         },
+        "localModulePaths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "maxTimeout": {
           "type": "integer"
         },

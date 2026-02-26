@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/spachava753/gai"
@@ -133,4 +135,169 @@ func checkPtr[T comparable](t *testing.T, name string, got, want *T) {
 	if *got != *want {
 		t.Errorf("%s: expected %v, got %v", name, *want, *got)
 	}
+}
+
+func TestResolveCodeMode_ResolvesRelativePathsAgainstConfigFile(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	moduleDir := filepath.Join(root, "helpers")
+	if err := os.MkdirAll(moduleDir, 0o755); err != nil {
+		t.Fatalf("creating module directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte("module example.com/helpers\n\ngo 1.24\n"), 0o644); err != nil {
+		t.Fatalf("writing module go.mod: %v", err)
+	}
+
+	cfgPath := filepath.Join(root, "cpe.yaml")
+	rawCfg := &RawConfig{
+		Version: "1.0",
+		Models: []ModelConfig{{
+			Model: Model{
+				Ref:           "test-model",
+				DisplayName:   "Test",
+				ID:            "gpt-4o-mini",
+				Type:          "openai",
+				ApiKeyEnv:     "OPENAI_API_KEY",
+				ContextWindow: 128000,
+				MaxOutput:     16384,
+			},
+		}},
+		Defaults: Defaults{
+			Model: "test-model",
+			CodeMode: &CodeModeConfig{
+				Enabled:          true,
+				LocalModulePaths: []string{"./helpers"},
+			},
+		},
+	}
+
+	cfg, err := resolveFromRaw(rawCfg, RuntimeOptions{}, cfgPath)
+	if err != nil {
+		t.Fatalf("resolveFromRaw returned error: %v", err)
+	}
+
+	if cfg.CodeMode == nil {
+		t.Fatal("expected code mode config, got nil")
+	}
+	if len(cfg.CodeMode.LocalModulePaths) != 1 {
+		t.Fatalf("expected 1 local module path, got %d", len(cfg.CodeMode.LocalModulePaths))
+	}
+
+	wantModulePath := canonicalPath(moduleDir)
+	if cfg.CodeMode.LocalModulePaths[0] != wantModulePath {
+		t.Fatalf("unexpected local module path: got %q want %q", cfg.CodeMode.LocalModulePaths[0], wantModulePath)
+	}
+}
+
+func TestResolveCodeMode_DuplicateLocalModulePathsError(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	moduleDir := filepath.Join(root, "helpers")
+	if err := os.MkdirAll(moduleDir, 0o755); err != nil {
+		t.Fatalf("creating module directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte("module example.com/helpers\n\ngo 1.24\n"), 0o644); err != nil {
+		t.Fatalf("writing module go.mod: %v", err)
+	}
+
+	rawCfg := &RawConfig{
+		Version: "1.0",
+		Models: []ModelConfig{{
+			Model: Model{
+				Ref:           "test-model",
+				DisplayName:   "Test",
+				ID:            "gpt-4o-mini",
+				Type:          "openai",
+				ApiKeyEnv:     "OPENAI_API_KEY",
+				ContextWindow: 128000,
+				MaxOutput:     16384,
+			},
+		}},
+		Defaults: Defaults{
+			Model: "test-model",
+			CodeMode: &CodeModeConfig{
+				Enabled:          true,
+				LocalModulePaths: []string{"./helpers", moduleDir},
+			},
+		},
+	}
+
+	_, err := resolveFromRaw(rawCfg, RuntimeOptions{}, filepath.Join(root, "cpe.yaml"))
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	want := "invalid codeMode configuration: localModulePaths contains duplicate path: " + canonicalPath(moduleDir)
+	if err.Error() != want {
+		t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
+	}
+}
+
+func TestResolveCodeMode_ModelCodeModeOverridesDefaults(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	defaultsModuleDir := filepath.Join(root, "defaults-module")
+	modelModuleDir := filepath.Join(root, "model-module")
+	for _, moduleDir := range []string{defaultsModuleDir, modelModuleDir} {
+		if err := os.MkdirAll(moduleDir, 0o755); err != nil {
+			t.Fatalf("creating module directory: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte("module example.com/"+filepath.Base(moduleDir)+"\n\ngo 1.24\n"), 0o644); err != nil {
+			t.Fatalf("writing module go.mod: %v", err)
+		}
+	}
+
+	cfgPath := filepath.Join(root, "cpe.yaml")
+	rawCfg := &RawConfig{
+		Version: "1.0",
+		Models: []ModelConfig{{
+			Model: Model{
+				Ref:           "test-model",
+				DisplayName:   "Test",
+				ID:            "gpt-4o-mini",
+				Type:          "openai",
+				ApiKeyEnv:     "OPENAI_API_KEY",
+				ContextWindow: 128000,
+				MaxOutput:     16384,
+			},
+			CodeMode: &CodeModeConfig{
+				Enabled:          true,
+				LocalModulePaths: []string{"./model-module"},
+			},
+		}},
+		Defaults: Defaults{
+			Model: "test-model",
+			CodeMode: &CodeModeConfig{
+				Enabled:          true,
+				LocalModulePaths: []string{"./defaults-module"},
+			},
+		},
+	}
+
+	cfg, err := resolveFromRaw(rawCfg, RuntimeOptions{}, cfgPath)
+	if err != nil {
+		t.Fatalf("resolveFromRaw returned error: %v", err)
+	}
+	if cfg.CodeMode == nil {
+		t.Fatal("expected code mode config, got nil")
+	}
+	if len(cfg.CodeMode.LocalModulePaths) != 1 {
+		t.Fatalf("expected exactly 1 localModulePath, got %d", len(cfg.CodeMode.LocalModulePaths))
+	}
+
+	want := canonicalPath(modelModuleDir)
+	if cfg.CodeMode.LocalModulePaths[0] != want {
+		t.Fatalf("unexpected local module path: got %q want %q", cfg.CodeMode.LocalModulePaths[0], want)
+	}
+}
+
+func canonicalPath(path string) string {
+	cleaned := filepath.Clean(path)
+	if realPath, err := filepath.EvalSymlinks(cleaned); err == nil {
+		return filepath.Clean(realPath)
+	}
+	return cleaned
 }

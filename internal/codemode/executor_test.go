@@ -15,7 +15,7 @@ func TestRunProgramWithTimeout_AppendsTimeoutCancellationNote(t *testing.T) {
 
 	binaryPath := buildInterruptAwareBinary(t)
 
-	result, err := runProgramWithTimeout(context.Background(), binaryPath, 1)
+	result, err := runProgramWithTimeout(context.Background(), binaryPath, 1, nil)
 	if err != nil {
 		t.Fatalf("runProgramWithTimeout returned error: %v", err)
 	}
@@ -39,7 +39,7 @@ func TestRunProgramWithTimeout_DoesNotAppendTimeoutCancellationNoteWhenParentCon
 	defer timer.Stop()
 	defer cancel()
 
-	result, err := runProgramWithTimeout(ctx, binaryPath, 10)
+	result, err := runProgramWithTimeout(ctx, binaryPath, 10, nil)
 	if err != nil {
 		t.Fatalf("runProgramWithTimeout returned error: %v", err)
 	}
@@ -156,4 +156,99 @@ func extractSpillPath(t *testing.T, output string) string {
 	}
 	t.Fatalf("spill path not found in output: %q", output)
 	return ""
+}
+
+func TestExecuteCode_LocalModulePathsSupportsAutoImport(t *testing.T) {
+	t.Parallel()
+
+	helperModuleDir := createLocalModule(t, t.TempDir(), "helpermod", "example.com/helpermod", `package helpermod
+
+func Message() string {
+	return "ok"
+}
+`)
+
+	llmCode := `package main
+
+import (
+	"context"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func Run(ctx context.Context) ([]mcp.Content, error) {
+	_ = helpermod.Message()
+	return nil, nil
+}
+`
+
+	result, err := ExecuteCode(context.Background(), nil, llmCode, ExecuteCodeOptions{
+		TimeoutSeconds:   30,
+		LocalModulePaths: []string{helperModuleDir},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteCode returned error: %v", err)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("exit code mismatch: got %d, want 0", result.ExitCode)
+	}
+}
+
+func TestExecuteCode_InvalidLocalModulePathFails(t *testing.T) {
+	t.Parallel()
+
+	notModuleDir := filepath.Join(t.TempDir(), "not-module")
+	if err := os.MkdirAll(notModuleDir, 0o755); err != nil {
+		t.Fatalf("creating non-module dir: %v", err)
+	}
+
+	llmCode := `package main
+
+import (
+	"context"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func Run(ctx context.Context) ([]mcp.Content, error) {
+	return nil, nil
+}
+`
+
+	_, err := ExecuteCode(context.Background(), nil, llmCode, ExecuteCodeOptions{
+		TimeoutSeconds:   30,
+		LocalModulePaths: []string{notModuleDir},
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	wantPath := notModuleDir
+	if realPath, realErr := filepath.EvalSymlinks(notModuleDir); realErr == nil {
+		wantPath = realPath
+	}
+	want := "preparing go workspace: workspace module path is missing go.mod: " + wantPath
+	if err.Error() != want {
+		t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
+	}
+}
+
+func createLocalModule(t *testing.T, root, dirName, modulePath, source string) string {
+	t.Helper()
+
+	moduleDir := filepath.Join(root, dirName)
+	if err := os.MkdirAll(moduleDir, 0o755); err != nil {
+		t.Fatalf("creating module dir: %v", err)
+	}
+
+	goMod := "module " + modulePath + "\n\ngo 1.24\n"
+	if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatalf("writing go.mod: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(moduleDir, "module.go"), []byte(source), 0o644); err != nil {
+		t.Fatalf("writing module source: %v", err)
+	}
+
+	return moduleDir
 }
