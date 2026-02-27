@@ -9,6 +9,7 @@ import (
 	"go/parser"
 	"go/printer"
 	"go/token"
+	goversion "go/version"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -83,15 +84,20 @@ func ExecuteCode(ctx context.Context, servers []*mcp.MCPConn, llmCode string, op
 	}
 	defer os.RemoveAll(cleanupDir)
 
-	// Generate and write go.mod
-	goMod := generateGoMod()
-	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte(goMod), 0o644); err != nil {
-		return ExecutionResult{}, fmt.Errorf("writing go.mod: %w", err)
+	baseGoVersion, err := detectGoToolchainVersion(ctx)
+	if err != nil {
+		return ExecutionResult{}, fmt.Errorf("detecting go toolchain version: %w", err)
 	}
 
-	workspacePath, workspaceModules, err := prepareWorkspaceFile(tempDir, opts)
+	workspacePath, workspaceModules, workspaceGoVersion, err := prepareWorkspaceFile(tempDir, opts, baseGoVersion)
 	if err != nil {
 		return ExecutionResult{}, fmt.Errorf("preparing go workspace: %w", err)
+	}
+
+	// Generate and write go.mod using the resolved workspace go version.
+	goMod := generateGoMod(workspaceGoVersion)
+	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte(goMod), 0o644); err != nil {
+		return ExecutionResult{}, fmt.Errorf("writing go.mod: %w", err)
 	}
 	if realWorkspacePath, err := filepath.EvalSymlinks(workspacePath); err == nil {
 		workspacePath = realWorkspacePath
@@ -175,22 +181,27 @@ func ExecuteCode(ctx context.Context, servers []*mcp.MCPConn, llmCode string, op
 	return result, classifyExitCode(result)
 }
 
-// generateGoMod creates the go.mod file contents
-func generateGoMod() string {
+// generateGoMod creates the go.mod file contents.
+func generateGoMod(goVersion string) string {
 	return fmt.Sprintf(`module cpe-code-execution
 
-go 1.24
+go %s
 
 require github.com/modelcontextprotocol/go-sdk %s
-`, mcpSDKVersion)
+`, goVersion, mcpSDKVersion)
 }
 
-func prepareWorkspaceFile(tempModuleDir string, opts ExecuteCodeOptions) (string, []workspaceModule, error) {
+func prepareWorkspaceFile(tempModuleDir string, opts ExecuteCodeOptions, defaultGoVersion string) (string, []workspaceModule, string, error) {
 	workspaceModulePaths := append([]string{tempModuleDir}, opts.LocalModulePaths...)
 
 	normalizedPaths, err := normalizeWorkspaceModulePaths(workspaceModulePaths)
 	if err != nil {
-		return "", nil, err
+		return "", nil, "", err
+	}
+
+	workspaceGoVersion, err := normalizeGoDirectiveVersion(defaultGoVersion)
+	if err != nil {
+		return "", nil, "", fmt.Errorf("normalizing default workspace go version: %w", err)
 	}
 
 	modules := make([]workspaceModule, 0, len(normalizedPaths))
@@ -199,23 +210,26 @@ func prepareWorkspaceFile(tempModuleDir string, opts ExecuteCodeOptions) (string
 			continue // temp module generated in this execution always has go.mod
 		}
 		if err := validateWorkspaceModulePath(modulePath); err != nil {
-			return "", nil, err
+			return "", nil, "", err
 		}
 
-		moduleName, err := readModulePath(modulePath)
+		moduleName, moduleGoVersion, err := readWorkspaceModuleInfo(modulePath)
 		if err != nil {
-			return "", nil, err
+			return "", nil, "", err
+		}
+		if moduleGoVersion != "" && compareGoDirectiveVersions(moduleGoVersion, workspaceGoVersion) > 0 {
+			workspaceGoVersion = moduleGoVersion
 		}
 		modules = append(modules, workspaceModule{ModulePath: moduleName, Dir: modulePath})
 	}
 
 	workspaceFile := &modfile.WorkFile{Syntax: &modfile.FileSyntax{Name: "go.work"}}
-	if err := workspaceFile.AddGoStmt("1.24"); err != nil {
-		return "", nil, fmt.Errorf("adding go directive to workspace: %w", err)
+	if err := workspaceFile.AddGoStmt(workspaceGoVersion); err != nil {
+		return "", nil, "", fmt.Errorf("adding go directive to workspace: %w", err)
 	}
 	for _, modulePath := range normalizedPaths {
 		if err := workspaceFile.AddUse(modulePath, ""); err != nil {
-			return "", nil, fmt.Errorf("adding workspace use path %q: %w", modulePath, err)
+			return "", nil, "", fmt.Errorf("adding workspace use path %q: %w", modulePath, err)
 		}
 	}
 	workspaceFile.SortBlocks()
@@ -223,10 +237,10 @@ func prepareWorkspaceFile(tempModuleDir string, opts ExecuteCodeOptions) (string
 
 	workspacePath := filepath.Join(tempModuleDir, "go.work")
 	if err := os.WriteFile(workspacePath, modfile.Format(workspaceFile.Syntax), 0o644); err != nil {
-		return "", nil, fmt.Errorf("writing workspace file: %w", err)
+		return "", nil, "", fmt.Errorf("writing workspace file: %w", err)
 	}
 
-	return workspacePath, modules, nil
+	return workspacePath, modules, workspaceGoVersion, nil
 }
 
 // normalizeWorkspaceModulePaths resolves, cleans, and deduplicates module paths.
@@ -289,22 +303,70 @@ func validateWorkspaceModulePath(modulePath string) error {
 	return nil
 }
 
-func readModulePath(moduleDir string) (string, error) {
+func readWorkspaceModuleInfo(moduleDir string) (modulePath, goVersion string, err error) {
 	goModPath := filepath.Join(moduleDir, "go.mod")
 	data, err := os.ReadFile(goModPath)
 	if err != nil {
-		return "", fmt.Errorf("reading go.mod for workspace module %q: %w", moduleDir, err)
+		return "", "", fmt.Errorf("reading go.mod for workspace module %q: %w", moduleDir, err)
 	}
 
 	parsed, err := modfile.Parse(goModPath, data, nil)
 	if err != nil {
-		return "", fmt.Errorf("parsing go.mod for workspace module %q: %w", moduleDir, err)
+		return "", "", fmt.Errorf("parsing go.mod for workspace module %q: %w", moduleDir, err)
 	}
 	if parsed.Module == nil || strings.TrimSpace(parsed.Module.Mod.Path) == "" {
-		return "", fmt.Errorf("workspace module %q has no module directive in go.mod", moduleDir)
+		return "", "", fmt.Errorf("workspace module %q has no module directive in go.mod", moduleDir)
 	}
 
-	return parsed.Module.Mod.Path, nil
+	moduleGoVersion := ""
+	if parsed.Go != nil {
+		moduleGoVersion, err = normalizeGoDirectiveVersion(parsed.Go.Version)
+		if err != nil {
+			return "", "", fmt.Errorf("parsing go directive for workspace module %q: %w", moduleDir, err)
+		}
+	}
+
+	return parsed.Module.Mod.Path, moduleGoVersion, nil
+}
+
+func normalizeGoDirectiveVersion(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", fmt.Errorf("go version must not be empty")
+	}
+	if strings.HasPrefix(trimmed, "go") {
+		trimmed = strings.TrimPrefix(trimmed, "go")
+	}
+	if strings.HasPrefix(trimmed, "v") {
+		trimmed = strings.TrimPrefix(trimmed, "v")
+	}
+
+	prefixed := "go" + trimmed
+	if !goversion.IsValid(prefixed) {
+		return "", fmt.Errorf("invalid go version %q", raw)
+	}
+
+	return strings.TrimPrefix(prefixed, "go"), nil
+}
+
+func compareGoDirectiveVersions(left, right string) int {
+	return goversion.Compare("go"+left, "go"+right)
+}
+
+func detectGoToolchainVersion(ctx context.Context) (string, error) {
+	result, err := runCommand(ctx, "", nil, "go", "env", "GOVERSION")
+	if err != nil {
+		return "", err
+	}
+	if result.ExitCode != 0 {
+		return "", errors.New(strings.TrimSpace(result.Output))
+	}
+
+	version, err := normalizeGoDirectiveVersion(result.Output)
+	if err != nil {
+		return "", err
+	}
+	return version, nil
 }
 
 func applyWorkspaceModuleReplacements(ctx context.Context, dir string, envOverrides map[string]string, modules []workspaceModule) error {

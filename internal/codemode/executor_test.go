@@ -233,7 +233,75 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 	}
 }
 
+func TestPrepareWorkspaceFile_UsesHighestGoDirective(t *testing.T) {
+	t.Parallel()
+
+	tempModuleDir := t.TempDir()
+	helperModuleDir := createLocalModuleWithGoVersion(t, t.TempDir(), "helpermod", "example.com/helpermod", "1.25", `package helpermod
+
+func Message() string {
+	return "ok"
+}
+`)
+
+	workspacePath, _, workspaceGoVersion, err := prepareWorkspaceFile(tempModuleDir, ExecuteCodeOptions{
+		LocalModulePaths: []string{helperModuleDir},
+	}, "1.24")
+	if err != nil {
+		t.Fatalf("prepareWorkspaceFile returned error: %v", err)
+	}
+	if workspaceGoVersion != "1.25" {
+		t.Fatalf("workspace go version mismatch: got %q, want %q", workspaceGoVersion, "1.25")
+	}
+
+	data, err := os.ReadFile(workspacePath)
+	if err != nil {
+		t.Fatalf("reading go.work: %v", err)
+	}
+	if !strings.Contains(string(data), "go 1.25") {
+		t.Fatalf("go.work missing expected go version:\n%s", string(data))
+	}
+}
+
+func TestNormalizeGoDirectiveVersion(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{name: "go prefixed", input: "go1.25.5", want: "1.25.5"},
+		{name: "plain", input: "1.24", want: "1.24"},
+		{name: "v prefixed", input: "v1.26.0", want: "1.26.0"},
+		{name: "invalid", input: "abc", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeGoDirectiveVersion(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("normalizeGoDirectiveVersion returned error: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("version mismatch: got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func createLocalModule(t *testing.T, root, dirName, modulePath, source string) string {
+	return createLocalModuleWithGoVersion(t, root, dirName, modulePath, "1.24", source)
+}
+
+func createLocalModuleWithGoVersion(t *testing.T, root, dirName, modulePath, goVersion, source string) string {
 	t.Helper()
 
 	moduleDir := filepath.Join(root, dirName)
@@ -241,7 +309,7 @@ func createLocalModule(t *testing.T, root, dirName, modulePath, source string) s
 		t.Fatalf("creating module dir: %v", err)
 	}
 
-	goMod := "module " + modulePath + "\n\ngo 1.24\n"
+	goMod := "module " + modulePath + "\n\ngo " + goVersion + "\n"
 	if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte(goMod), 0o644); err != nil {
 		t.Fatalf("writing go.mod: %v", err)
 	}
