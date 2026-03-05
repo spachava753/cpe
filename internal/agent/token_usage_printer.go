@@ -12,6 +12,8 @@ import (
 	"github.com/spachava753/cpe/internal/types"
 )
 
+// TokenUsagePrinterGenerator wraps a generator and prints token usage,
+// context utilization, and estimated per-request/cumulative cost.
 type TokenUsagePrinterGenerator struct {
 	gai.GeneratorWrapper
 	renderer          types.Renderer
@@ -40,6 +42,8 @@ type usageCostBreakdown struct {
 	HasAnyCost bool
 }
 
+// NewTokenUsagePrinterGenerator creates a token-usage printing wrapper around
+// the provided generator.
 func NewTokenUsagePrinterGenerator(wrapped gai.Generator, writer io.Writer, model config.Model) *TokenUsagePrinterGenerator {
 	return &TokenUsagePrinterGenerator{
 		GeneratorWrapper: gai.GeneratorWrapper{Inner: wrapped},

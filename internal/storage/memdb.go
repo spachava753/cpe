@@ -24,14 +24,12 @@ type memNode struct {
 	children   []*memNode
 }
 
-// MemDB is an in-memory implementation of MessageDB backed by a tree
-// structure. It is intended for use in tests as a drop-in replacement for
-// the SQLite-backed store.
+// MemDB is an in-memory MessageDB implementation used primarily in tests.
 //
-// The underlying data structure is a forest (slice of root nodes). Each root
-// node represents the start of a conversation, and child nodes represent
-// subsequent messages. This mirrors the parent-child relationship used by
-// the SQLite implementation.
+// It mirrors SQLite semantics for parent-chain validation, dialog persistence,
+// and metadata population while storing data in a mutex-protected forest.
+// Each root node represents a conversation start; descendants represent
+// continued turns.
 type MemDB struct {
 	mu    sync.Mutex
 	roots []*memNode
@@ -55,8 +53,15 @@ func (m *MemDB) generateID() string {
 	return fmt.Sprintf("mem_%d", m.nextID)
 }
 
-// SaveDialog saves a dialog — a sequence of related messages forming a
-// conversation thread. See the DialogSaver interface for full semantics.
+// SaveDialog validates and persists a root-to-leaf chain in memory.
+//
+// It mirrors the DialogSaver contract used by Sqlite:
+//   - Existing message IDs are validated for existence and parent continuity.
+//   - New messages are linked to the previously processed message.
+//   - Validation/write errors roll back writes from this call.
+//
+// If the consumer stops iteration early, already processed messages remain
+// persisted and the remaining input is not read.
 func (m *MemDB) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter.Seq2[gai.Message, error] {
 	return func(yield func(gai.Message, error) bool) {
 		m.mu.Lock()
@@ -171,9 +176,10 @@ func (m *MemDB) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter
 	}
 }
 
-// DeleteMessages deletes the specified messages. The entire operation is
-// atomic: if any message cannot be deleted, no changes are made. See
-// MessagesDeleter for full semantics.
+// DeleteMessages removes messages according to DeleteMessagesOptions.
+//
+// The operation is atomic across opts.MessageIDs: it first validates every
+// target, then performs deletions. Non-existent IDs are ignored.
 func (m *MemDB) DeleteMessages(ctx context.Context, opts DeleteMessagesOptions) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -225,8 +231,10 @@ func (m *MemDB) deleteNode(node *memNode, recursive bool) {
 	delete(m.byID, node.id)
 }
 
-// ListMessages returns messages ordered by creation timestamp. See
-// MessagesLister for full semantics.
+// ListMessages returns a snapshot of messages ordered by createdAt.
+//
+// When timestamps tie, insertion sequence is used as a deterministic
+// tie-breaker so tests do not rely on map iteration order.
 func (m *MemDB) ListMessages(ctx context.Context, opts ListMessagesOptions) (iter.Seq[gai.Message], error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -280,8 +288,10 @@ func (m *MemDB) ListMessages(ctx context.Context, opts ListMessagesOptions) (ite
 	return slices.Values(msgs), nil
 }
 
-// GetMessages retrieves messages by their IDs. See MessagesGetter for full
-// semantics.
+// GetMessages retrieves a snapshot for each requested ID.
+//
+// The call fails if any ID is missing. Returned messages include cloned blocks
+// and storage metadata keys in ExtraFields.
 func (m *MemDB) GetMessages(ctx context.Context, messageIDs []string) (iter.Seq[gai.Message], error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -321,7 +331,10 @@ func cloneBlocks(blocks []gai.Block) []gai.Block {
 	return cloned
 }
 
-// nodeToMessage converts a memNode to a gai.Message with ExtraFields populated.
+// nodeToMessage converts a node to an immutable-ish read snapshot.
+//
+// It clones block data and replaces message-level ExtraFields with storage
+// metadata keys so callers observe the same shape as Sqlite reads.
 func (m *MemDB) nodeToMessage(node *memNode) gai.Message {
 	msg := node.message
 	msg.Blocks = cloneBlocks(msg.Blocks)
@@ -338,8 +351,10 @@ func (m *MemDB) nodeToMessage(node *memNode) gai.Message {
 	return msg
 }
 
-// Nodes returns all nodes in the tree for test assertions. Each returned
-// MemNode is a snapshot — mutations do not affect the MemDB.
+// Nodes returns test snapshots of all currently stored nodes.
+//
+// Result order is unspecified. Each MemNode is detached from internal state;
+// mutating the returned slice or entries does not affect MemDB.
 func (m *MemDB) Nodes() []MemNode {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -363,13 +378,20 @@ func (m *MemDB) Nodes() []MemNode {
 	return result
 }
 
-// MemNode is a test-visible snapshot of a node in the MemDB tree.
+// MemNode is a test-visible snapshot of one stored message node.
 type MemNode struct {
-	ID         string
-	ParentID   string
-	Role       gai.Role
-	Blocks     []gai.Block
+	// ID is the message identifier.
+	ID string
+	// ParentID is the parent message ID, or "" for roots.
+	ParentID string
+	// Role is the gai role stored for this message.
+	Role gai.Role
+	// Blocks is a cloned copy of the stored blocks.
+	Blocks []gai.Block
+	// IsSubagent reports whether the message was marked as subagent-originated.
 	IsSubagent bool
-	CreatedAt  time.Time
-	ChildIDs   []string
+	// CreatedAt is the node creation timestamp used for list ordering.
+	CreatedAt time.Time
+	// ChildIDs contains direct-child message IDs.
+	ChildIDs []string
 }

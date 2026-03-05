@@ -10,8 +10,18 @@ import (
 // DefaultTimeout is the default request timeout when not specified in config or CLI
 const DefaultTimeout = 5 * time.Minute
 
-// ResolveConfig loads the config file and resolves effective runtime configuration
-// for the specified model with runtime options applied.
+// ResolveConfig loads and resolves the effective runtime configuration for one model.
+//
+// Resolution contract:
+//   - Config source: explicit configPath when provided, otherwise standard discovery.
+//   - Model selection: opts.ModelRef > defaults.model (error when both are empty).
+//   - System prompt path: model.systemPromptPath > defaults.systemPromptPath.
+//   - Generation parameters: CLI/runtime opts > model.generation_defaults > defaults.generation_params.
+//   - Timeout: CLI/runtime timeout > defaults.timeout > DefaultTimeout.
+//   - Code mode: model.codeMode fully overrides defaults.codeMode (no field-level merge).
+//   - Conversation storage path: defaults.conversationStoragePath, resolved relative to config file location when needed.
+//
+// The returned Config always has a non-nil GenerationDefaults pointer.
 func ResolveConfig(configPath string, opts RuntimeOptions) (*Config, error) {
 	rawCfg, resolvedConfigPath, err := LoadRawConfigWithPath(configPath)
 	if err != nil {
@@ -22,11 +32,20 @@ func ResolveConfig(configPath string, opts RuntimeOptions) (*Config, error) {
 }
 
 // ResolveFromRaw resolves configuration from an already-loaded RawConfig.
-// This is useful for testing without file I/O.
+// It applies the same precedence rules as ResolveConfig but does not perform
+// config file discovery or loading.
+//
+// Because no config file path is available, relative paths that depend on the
+// config location (for example defaults.conversationStoragePath and codeMode
+// localModulePaths) are resolved relative to the current process working
+// directory via filepath.Abs semantics.
 func ResolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions) (*Config, error) {
 	return resolveFromRaw(rawCfg, opts, "")
 }
 
+// resolveFromRaw orchestrates effective-config construction from a validated
+// RawConfig and runtime overrides. It performs no I/O and returns deterministic
+// output for the same inputs.
 func resolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions, resolvedConfigPath string) (*Config, error) {
 	modelRef := opts.ModelRef
 	if modelRef == "" {
@@ -71,8 +90,9 @@ func resolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions, resolvedConfigPath s
 	}, nil
 }
 
-// resolveSystemPromptPath resolves system prompt path with precedence:
-// model-specific > global defaults
+// resolveSystemPromptPath returns the effective system prompt path using
+// model-level override first, then global defaults. It may return an empty
+// string when neither source configures a prompt.
 func resolveSystemPromptPath(model ModelConfig, defaults Defaults) string {
 	if model.SystemPromptPath != "" {
 		return model.SystemPromptPath
@@ -80,8 +100,11 @@ func resolveSystemPromptPath(model ModelConfig, defaults Defaults) string {
 	return defaults.SystemPromptPath
 }
 
-// resolveGenerationParams merges generation parameters with precedence:
-// CLI flags > Model-specific > Global defaults
+// resolveGenerationParams builds the effective generation options by layering
+// defaults in precedence order: global defaults, then model defaults, then
+// runtime/CLI overrides.
+//
+// The returned *gai.GenOpts is always non-nil.
 func resolveGenerationParams(model ModelConfig, defaults Defaults, opts RuntimeOptions) (*gai.GenOpts, error) {
 	genParams := &gai.GenOpts{}
 
@@ -153,8 +176,9 @@ func mergeGenOpts(dst, src *gai.GenOpts) {
 	}
 }
 
-// resolveTimeout resolves timeout with precedence:
-// CLI flag > Global defaults > DefaultTimeout
+// resolveTimeout parses and resolves request timeout with precedence:
+// runtime/CLI override > defaults.timeout > DefaultTimeout.
+// Any invalid duration string fails resolution with a contextual error.
 func resolveTimeout(defaults Defaults, opts RuntimeOptions) (time.Duration, error) {
 	timeout := DefaultTimeout
 
@@ -175,8 +199,10 @@ func resolveTimeout(defaults Defaults, opts RuntimeOptions) (time.Duration, erro
 	return timeout, nil
 }
 
-// resolveCodeMode resolves code mode configuration with override behavior (not merge).
-// Model-level completely replaces defaults.
+// resolveCodeMode resolves and normalizes effective code mode config.
+//
+// Contract: model.codeMode, when present, replaces defaults.codeMode entirely.
+// There is no field-level merge between model and global scopes.
 func resolveCodeMode(model ModelConfig, defaults Defaults, configFilePath string) (*CodeModeConfig, error) {
 	if model.CodeMode != nil {
 		return normalizeCodeModeConfigPaths(model.CodeMode, configFilePath)

@@ -18,6 +18,9 @@ import (
 	"github.com/spachava753/cpe/internal/config"
 )
 
+// TemplateData is the input object exposed to system prompt templates.
+// It embeds the resolved runtime configuration so templates can reference
+// model and MCP settings.
 type TemplateData struct {
 	*config.Config
 }

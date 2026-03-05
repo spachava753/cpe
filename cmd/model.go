@@ -10,6 +10,8 @@ import (
 	"github.com/spachava753/cpe/internal/config"
 )
 
+// modelCmd is the CLI group for model inspection commands. It performs config
+// loading and delegates output logic to internal/commands.
 var modelCmd = &cobra.Command{
 	Use:     "model",
 	Short:   "Manage LLM models",
@@ -17,6 +19,8 @@ var modelCmd = &cobra.Command{
 	Aliases: []string{"models"},
 }
 
+// listModelCmd resolves raw config and delegates formatted listing to
+// commands.ModelList.
 var listModelCmd = &cobra.Command{
 	Use:     "list",
 	Short:   "List models from configuration",
@@ -40,6 +44,8 @@ var listModelCmd = &cobra.Command{
 	},
 }
 
+// infoModelCmd resolves raw config and delegates model detail rendering to
+// commands.ModelInfo.
 var infoModelCmd = &cobra.Command{
 	Use:   "info <model-name>",
 	Short: "Show model details by name",
@@ -66,6 +72,8 @@ cpe model info sonnet
 	},
 }
 
+// systemPromptModelCmd resolves raw config and delegates system prompt
+// selection/rendering rules to commands.ModelSystemPrompt.
 var systemPromptModelCmd = &cobra.Command{
 	Use:   "system-prompt",
 	Short: "Show the rendered system prompt for a model",

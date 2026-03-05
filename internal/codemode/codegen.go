@@ -13,9 +13,9 @@ import (
 
 const jsonNull = "null"
 
-// GenerateToolDefinitions generates Go type definitions and function signatures
-// for a list of MCP tools. Returns a single string with all types followed by
-// all function declarations.
+// GenerateToolDefinitions converts MCP tool schemas into Go declarations used by
+// generated sandbox code. Output is deterministic (sorted by tool name) and grouped
+// as type definitions first, then function variable declarations.
 func GenerateToolDefinitions(tools []*mcp.Tool) (string, error) {
 	if len(tools) == 0 {
 		return "", nil
@@ -83,8 +83,8 @@ func GenerateToolDefinitions(tools []*mcp.Tool) (string, error) {
 	return result.String(), nil
 }
 
-// convertSchema converts an MCP schema (any) to *jsonschema.Schema via JSON round-trip.
-// Returns nil if the input is nil or empty.
+// convertSchema normalizes MCP schema values into jsonschema.Schema via JSON round-trip.
+// It returns nil for nil, null, or empty-object schemas to model optional/no-structure cases.
 func convertSchema(schema any) (*jsonschema.Schema, error) {
 	if schema == nil {
 		return nil, nil
@@ -108,7 +108,8 @@ func convertSchema(schema any) (*jsonschema.Schema, error) {
 	return &result, nil
 }
 
-// generateFuncDecl generates a function variable declaration for a tool.
+// generateFuncDecl emits the function variable declaration assigned at runtime in main.go.
+// Tool descriptions are copied into Go doc comments so generated symbols remain self-describing.
 func generateFuncDecl(goName, description, inputTypeName, outputTypeName string, hasInput bool) string {
 	var buf strings.Builder
 

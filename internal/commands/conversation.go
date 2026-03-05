@@ -15,19 +15,27 @@ import (
 	"github.com/spachava753/cpe/internal/types"
 )
 
-// ConversationListOptions contains parameters for listing conversations
+// ConversationListOptions configures ConversationList.
 type ConversationListOptions struct {
-	Storage     storage.MessagesLister
-	Writer      io.Writer
+	// Storage provides message listing and must return storage metadata keys
+	// (MessageIDKey and MessageParentIDKey) required for tree reconstruction.
+	Storage storage.MessagesLister
+	// Writer receives the rendered conversation tree.
+	Writer io.Writer
+	// TreePrinter formats the reconstructed message forest.
 	TreePrinter TreePrinter
 }
 
-// TreePrinter is an interface for printing message trees
+// TreePrinter renders a forest of message-ID nodes.
 type TreePrinter interface {
+	// PrintMessageForest writes a complete rendering of roots to w.
 	PrintMessageForest(w io.Writer, roots []MessageIdNode)
 }
 
-// ConversationList lists all conversations in tree format
+// ConversationList lists all stored conversations as a message forest.
+//
+// It requests ascending-order messages so parent nodes are encountered before
+// descendants when building the forest.
 func ConversationList(ctx context.Context, opts ConversationListOptions) error {
 	msgs, err := opts.Storage.ListMessages(ctx, storage.ListMessagesOptions{AscendingOrder: true})
 	if err != nil {
@@ -49,16 +57,24 @@ func ConversationList(ctx context.Context, opts ConversationListOptions) error {
 	return nil
 }
 
-// ConversationDeleteOptions contains parameters for deleting conversations
+// ConversationDeleteOptions configures ConversationDelete.
 type ConversationDeleteOptions struct {
-	Storage    storage.MessagesDeleter
+	// Storage performs actual message deletion.
+	Storage storage.MessagesDeleter
+	// MessageIDs are deleted one-by-one in the provided order.
 	MessageIDs []string
-	Cascade    bool
-	Stdout     io.Writer
-	Stderr     io.Writer
+	// Cascade maps to storage.DeleteMessagesOptions.Recursive.
+	Cascade bool
+	// Stdout receives per-ID success messages.
+	Stdout io.Writer
+	// Stderr receives per-ID failure messages.
+	Stderr io.Writer
 }
 
-// ConversationDelete deletes one or more messages
+// ConversationDelete deletes requested message IDs with best-effort reporting.
+//
+// Deletions are attempted independently per ID: a failure for one ID is
+// written to stderr and does not stop processing subsequent IDs.
 func ConversationDelete(ctx context.Context, opts ConversationDeleteOptions) error {
 	for _, messageID := range opts.MessageIDs {
 		delErr := opts.Storage.DeleteMessages(ctx, storage.DeleteMessagesOptions{
@@ -80,20 +96,30 @@ func ConversationDelete(ctx context.Context, opts ConversationDeleteOptions) err
 	return nil
 }
 
-// ConversationPrintOptions contains parameters for printing a conversation
+// ConversationPrintOptions configures ConversationPrint.
 type ConversationPrintOptions struct {
-	Storage         storage.MessagesGetter
-	MessageID       string
-	Writer          io.Writer
+	// Storage fetches messages used to reconstruct the ancestor chain.
+	Storage storage.MessagesGetter
+	// MessageID is the leaf (or intermediate) message whose full chain is printed.
+	MessageID string
+	// Writer receives formatted output.
+	Writer io.Writer
+	// DialogFormatter controls markdown/text rendering.
 	DialogFormatter DialogFormatter
 }
 
-// DialogFormatter formats a dialog for display
+// DialogFormatter formats a dialog for display.
 type DialogFormatter interface {
+	// FormatDialog receives messages in root-to-leaf order and optional message
+	// IDs aligned by index with dialog.
 	FormatDialog(dialog gai.Dialog, msgIds []string) (string, error)
 }
 
-// ConversationPrint prints a conversation thread
+// ConversationPrint loads and prints the root-to-leaf thread ending at
+// opts.MessageID.
+//
+// Message IDs are extracted from ExtraFields[storage.MessageIDKey] and passed
+// to the formatter as index-aligned metadata. Missing IDs are left empty.
 func ConversationPrint(ctx context.Context, opts ConversationPrintOptions) error {
 	dialog, err := storage.GetDialogForMessage(ctx, opts.Storage, opts.MessageID)
 	if err != nil {
@@ -117,12 +143,19 @@ func ConversationPrint(ctx context.Context, opts ConversationPrintOptions) error
 	return nil
 }
 
-// MarkdownDialogFormatter formats dialogs as markdown with glamour rendering
+// MarkdownDialogFormatter formats dialogs into markdown and optionally renders
+// them for terminal display.
 type MarkdownDialogFormatter struct {
 	Renderer types.Renderer
 }
 
-// FormatDialog implements DialogFormatter
+// FormatDialog implements DialogFormatter.
+//
+// Formatting assumptions:
+//   - dialog is ordered root-to-leaf.
+//   - msgIds, when provided, is index-aligned with dialog.
+//   - Tool-result code-mode detection relies on a tool_result message carrying
+//     the originating tool-call block ID in its first block.
 func (f *MarkdownDialogFormatter) FormatDialog(dialog gai.Dialog, msgIds []string) (string, error) {
 	if len(dialog) == 0 {
 		return "Empty conversation\n", nil
@@ -204,8 +237,11 @@ func (f *MarkdownDialogFormatter) FormatDialog(dialog gai.Dialog, msgIds []strin
 	return md.String(), nil
 }
 
-// isCodeModeResult checks if a tool result at the given index is from an execute_go_code tool call.
-// It matches the tool result's ID with the corresponding tool call in the previous assistant message.
+// isCodeModeResult reports whether dialog[toolResultIndex] is an
+// execute_go_code tool result.
+//
+// It assumes the result message's first block ID matches the originating
+// assistant tool-call block ID in the immediately preceding message.
 func isCodeModeResult(dialog gai.Dialog, toolResultIndex int) bool {
 	if toolResultIndex <= 0 {
 		return false
@@ -243,8 +279,10 @@ func formatCodeModeResultMarkdown(content string) string {
 	return agent.FormatExecuteGoCodeResultMarkdown(content, 0) + "\n\n"
 }
 
-// formatToolCallMarkdown formats a tool call JSON string as a markdown code block.
-// For execute_go_code tool calls, displays the Go code with syntax highlighting.
+// formatToolCallMarkdown formats serialized tool-call payloads as markdown.
+//
+// For execute_go_code payloads, it renders extracted Go input; otherwise it
+// pretty-prints JSON when possible and falls back to raw content.
 func formatToolCallMarkdown(content string) string {
 	unescaped := unescapeJSONString(content)
 

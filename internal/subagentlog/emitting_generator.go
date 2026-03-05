@@ -12,11 +12,20 @@ import (
 	"github.com/spachava753/cpe/internal/types"
 )
 
+// finalAnswerToolName is filtered from streamed events because it is a terminal
+// structured-output mechanism, not user-facing intermediate progress.
 const finalAnswerToolName = "final_answer"
 
-// EmittingGenerator wraps a generator to emit subagent events via a generator middleware.
-// All events (thought_trace, tool_call, tool_result) are emitted by wrapping the inner
-// ToolCapableGenerator's Generate method, eliminating the need for callback wrapping.
+// EmittingGenerator wraps a generator to emit subagent logging events.
+//
+// Primary contract:
+//   - Emit thought_trace, tool_call, and tool_result events during generation.
+//   - Preserve chronological event ordering across tool-use iterations.
+//   - Treat emission failures as fatal (return error) so runs do not continue silently.
+//   - Suppress final_answer tool call/result events to avoid duplicate terminal output.
+//
+// The preferred path wraps an inner *gai.ToolGenerator so events are emitted at each
+// Generate boundary. A fallback path exists for non-ToolGenerator implementations.
 type EmittingGenerator struct {
 	base               types.Generator
 	client             *Client
@@ -25,10 +34,13 @@ type EmittingGenerator struct {
 	hasWrappedInnerGen bool // true if we successfully wrapped the inner generator
 }
 
-// NewEmittingGenerator creates a new EmittingGenerator that wraps the base generator.
-// If the base contains a *gai.ToolGenerator (possibly wrapped by other generators),
-// it unwraps the chain and wraps the inner ToolCapableGenerator with a middleware
-// that emits all subagent events (thought_trace, tool_call, tool_result).
+// NewEmittingGenerator creates an emitting wrapper around base.
+//
+// It recursively unwraps decorator generators to find an underlying
+// *gai.ToolGenerator. When found, the inner ToolCapableGenerator is wrapped so
+// event emission happens at per-iteration boundaries (correct ordering). If no
+// ToolGenerator is found, the returned EmittingGenerator still works using a
+// fallback post-generation scan path.
 func NewEmittingGenerator(base types.Generator, client *Client, subagentName, runID string) *EmittingGenerator {
 	hasWrappedInnerGen := false
 
@@ -53,7 +65,8 @@ func NewEmittingGenerator(base types.Generator, client *Client, subagentName, ru
 	}
 }
 
-// findToolGenerator recursively unwraps generator wrappers to find a *gai.ToolGenerator.
+// findToolGenerator recursively unwraps generators exposing Inner() until it
+// locates a *gai.ToolGenerator, or returns nil when no such node exists.
 func findToolGenerator(gen interface{}) *gai.ToolGenerator {
 	if tg, ok := gen.(*gai.ToolGenerator); ok {
 		return tg
@@ -64,14 +77,16 @@ func findToolGenerator(gen interface{}) *gai.ToolGenerator {
 	return nil
 }
 
-// emittingMiddleware wraps a gai.ToolCapableGenerator to emit all subagent events.
-// It emits events by inspecting the dialog and response at the Generate boundary:
-//   - tool_result events: emitted BEFORE calling inner Generate, for tool results in the dialog
-//   - thought_trace events: emitted AFTER inner Generate returns, for thinking blocks in response
-//   - tool_call events: emitted AFTER inner Generate returns, for tool call blocks in response
+// emittingMiddleware emits all non-lifecycle subagent events around each
+// ToolCapableGenerator.Generate call.
 //
-// This approach consolidates all event emission into a single middleware, eliminating
-// the need for callback wrapping.
+// Ordering contract per iteration:
+//   - BEFORE inner Generate: emit tool_result events now present in dialog.
+//   - AFTER inner Generate: emit thought_trace events from response blocks.
+//   - AFTER thought traces: emit tool_call events from response blocks.
+//
+// Any emission failure aborts generation and is returned to the caller so subagent
+// execution stops rather than silently losing observability.
 type emittingMiddleware struct {
 	base         gai.ToolCapableGenerator
 	client       *Client
@@ -79,12 +94,15 @@ type emittingMiddleware struct {
 	runID        string
 }
 
-// Generate implements the middleware pattern for event emission.
-// Event emission order ensures correct chronological sequence:
-// 1. Emit tool_result for any new tool results in the dialog (from previous iteration)
-// 2. Call inner generator
-// 3. Emit thought_trace for thinking blocks in response
-// 4. Emit tool_call for tool call blocks in response
+// Generate wraps one model iteration with ordered event emission.
+//
+// Sequence:
+//  1. Emit tool_result events for newly appended tool-result messages.
+//  2. Call the wrapped generator.
+//  3. Emit thought_trace events from returned thinking blocks.
+//  4. Emit tool_call events from returned tool-call blocks.
+//
+// If any emit step fails, generation stops immediately and the error is returned.
 func (m *emittingMiddleware) Generate(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
 	// BEFORE: Emit tool_result events for tool results after the last assistant message.
 	// These are the "new" tool results from the previous iteration's tool execution.
@@ -106,7 +124,11 @@ func (m *emittingMiddleware) Generate(ctx context.Context, dialog gai.Dialog, op
 	return resp, nil
 }
 
-// emitToolResultEvents emits tool_result events for tool results after the last assistant message.
+// emitToolResultEvents emits tool_result events for tool-result messages that
+// appear after the most recent assistant message.
+//
+// This maps to "results from the previous iteration" in tool-use loops. Results
+// for final_answer are intentionally skipped.
 func (m *emittingMiddleware) emitToolResultEvents(ctx context.Context, dialog gai.Dialog) error {
 	lastAssistantIdx := -1
 	for i := len(dialog) - 1; i >= 0; i-- {
@@ -164,7 +186,8 @@ func (m *emittingMiddleware) emitToolResultEvents(ctx context.Context, dialog ga
 	return nil
 }
 
-// emitResponseEvents emits thought_trace and tool_call events for blocks in the response.
+// emitResponseEvents emits post-generation events from response blocks in order:
+// thought_trace first, then tool_call, preserving the per-candidate block sequence.
 func (m *emittingMiddleware) emitResponseEvents(ctx context.Context, resp gai.Response) error {
 	for _, candidate := range resp.Candidates {
 		for _, block := range candidate.Blocks {
@@ -183,7 +206,8 @@ func (m *emittingMiddleware) emitResponseEvents(ctx context.Context, resp gai.Re
 	return nil
 }
 
-// emitThinkingEvent emits a thought_trace event for a thinking block.
+// emitThinkingEvent emits a thought_trace event for one thinking block,
+// copying provider-specific reasoning_type metadata when present.
 func (m *emittingMiddleware) emitThinkingEvent(ctx context.Context, block gai.Block) error {
 	event := Event{
 		SubagentName:  m.subagentName,
@@ -206,7 +230,11 @@ func (m *emittingMiddleware) emitThinkingEvent(ctx context.Context, block gai.Bl
 	return nil
 }
 
-// emitToolCallEvent emits a tool_call event for a tool call block.
+// emitToolCallEvent emits a tool_call event for one tool call block.
+//
+// Malformed tool-call JSON is treated as recoverable and skipped. final_answer is
+// intentionally filtered out. execute_go_code emits raw Go source + timeout,
+// while other tools emit JSON-serialized parameters.
 func (m *emittingMiddleware) emitToolCallEvent(ctx context.Context, block gai.Block) error {
 	var toolCall gai.ToolCallInput
 	// Skip malformed tool calls - this is a recoverable error
@@ -252,7 +280,9 @@ func (m *emittingMiddleware) emitToolCallEvent(ctx context.Context, block gai.Bl
 	return nil
 }
 
-// findToolNameByCallID finds the tool name from an assistant message's tool calls by call ID.
+// findToolNameByCallID resolves a tool call ID to a tool name using the
+// assistant tool-call blocks from the preceding assistant message.
+// Returns "unknown" when parsing or lookup fails.
 func (m *emittingMiddleware) findToolNameByCallID(assistantMsg gai.Message, toolCallID string) string {
 	for _, block := range assistantMsg.Blocks {
 		if block.BlockType != gai.ToolCall || block.ID != toolCallID {
@@ -267,15 +297,20 @@ func (m *emittingMiddleware) findToolNameByCallID(assistantMsg gai.Message, tool
 	return "unknown"
 }
 
-// Register implements gai.ToolRegister by delegating to the base generator.
+// Register passes tool registration through unchanged; emission is handled at
+// Generate boundaries, not by callback wrapping.
 func (m *emittingMiddleware) Register(tool gai.Tool) error {
 	return m.base.Register(tool)
 }
 
-// Generate delegates to the base generator.
-// If the inner generator was wrapped (for *gai.ToolGenerator), events are already
-// emitted at the right time by the emittingMiddleware.
-// Otherwise, this provides a fallback for non-ToolGenerator bases (e.g., in tests).
+// Generate delegates to the wrapped generator while preventing duplicate events.
+//
+// If NewEmittingGenerator successfully wrapped an inner *gai.ToolGenerator,
+// middleware emission has already occurred in correct chronological order and this
+// method simply returns the generated dialog.
+//
+// Otherwise, this fallback path scans newly appended messages and emits events
+// after generation (used by non-ToolGenerator implementations, including tests).
 func (g *EmittingGenerator) Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error) {
 	originalLen := len(dialog)
 
@@ -395,8 +430,10 @@ func (g *EmittingGenerator) Generate(ctx context.Context, dialog gai.Dialog, opt
 	return resultDialog, nil
 }
 
-// Register delegates tool registration to the base generator without wrapping callbacks.
-// Event emission is handled entirely by the middleware wrapping Generate().
+// Register forwards tool registration without callback interception.
+//
+// Contract: callbacks are passed through exactly as provided; event logging stays
+// centralized in Generate/middleware to preserve ordering and avoid double emission.
 func (g *EmittingGenerator) Register(tool gai.Tool, callback gai.ToolCallback) error {
 	registrar, ok := g.base.(types.ToolRegistrar)
 	if !ok {

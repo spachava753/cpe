@@ -18,12 +18,13 @@ import (
 // Defined locally to avoid import cycle (subagentlog imports agent which imports mcp).
 const subagentLoggingAddressEnv = "CPE_SUBAGENT_LOGGING_ADDRESS"
 
-// headerRoundTripper adds custom headers to HTTP requests
+// headerRoundTripper injects configured static headers into each outgoing request.
 type headerRoundTripper struct {
 	headers map[string]string
 	next    http.RoundTripper
 }
 
+// RoundTrip applies headers then delegates to the wrapped transport.
 func (h *headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	for name, value := range h.headers {
 		req.Header.Set(name, value)
@@ -34,7 +35,8 @@ func (h *headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 	return h.next.RoundTrip(req)
 }
 
-// ServerConfig represents the configuration for a single MCP server
+// ServerConfig declares how CPE connects to one MCP server and filters its tools.
+// Validation tags enforce transport-specific required/excluded fields.
 type ServerConfig struct {
 	Command       string            `json:"command" yaml:"command" validate:"required_if=Type stdio"`
 	Args          []string          `json:"args" yaml:"args"`
@@ -47,13 +49,11 @@ type ServerConfig struct {
 	DisabledTools []string          `json:"disabledTools,omitempty" yaml:"disabledTools,omitempty" validate:"omitempty,min=1,excluded_with=EnabledTools"`
 }
 
-// FilterMcpTools applies tool filtering based on the server configuration.
-// The filtering mode is inferred from which list is populated:
-//   - If EnabledTools is non-empty: whitelist mode (only those tools)
-//   - If DisabledTools is non-empty: blacklist mode (exclude those tools)
-//   - If both are empty: allow all tools
+// FilterMcpTools applies per-server enabledTools/disabledTools policy.
+// Mode is inferred from config: enabledTools (allowlist), disabledTools (blocklist),
+// or pass-through when neither list is set. Input order is preserved.
 //
-// Returns the filtered tools and a list of filtered-out tool names for logging.
+// Returns the kept tools and names filtered out for observability logging.
 func FilterMcpTools(tools []*mcp.Tool, config ServerConfig) ([]*mcp.Tool, []string) {
 	// Infer filtering mode from which list is populated
 	if len(config.EnabledTools) > 0 {
@@ -98,14 +98,17 @@ func FilterMcpTools(tools []*mcp.Tool, config ServerConfig) ([]*mcp.Tool, []stri
 	return tools, nil
 }
 
-// ToolCallback implements the gai.ToolCallback interface for MCP tools
+// ToolCallback adapts one MCP tool into gai.ToolCallback invocation semantics.
+// It is bound to a specific server session and tool name.
 type ToolCallback struct {
 	ClientSession *mcp.ClientSession
 	ToolName      string
 	ServerName    string
 }
 
-// Call implements the gai.ToolCallback interface
+// Call executes the bound MCP tool and converts MCP content into gai blocks.
+// Parameter/tool-call failures are returned as ToolResult text (nil error) so the
+// model can recover; unsupported content types return a hard error.
 func (c *ToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage, toolCallID string) (gai.Message, error) {
 	// Parse parameters
 	var params map[string]any
@@ -174,6 +177,12 @@ func (c *ToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage,
 	}, nil
 }
 
+// CreateTransport builds the transport used during client.Connect.
+//
+// - stdio: spawns the configured command, forwards stderr, and injects env/logging hooks
+// - http/sse: builds endpoint transports with optional request headers
+//
+// Session lifecycle (connect/close) is managed by callers after transport creation.
 func CreateTransport(ctx context.Context, config ServerConfig, loggingAddress string) (transport mcp.Transport, err error) {
 	// Create custom HTTP client with headers if specified
 	var httpClient *http.Client
@@ -220,6 +229,8 @@ func CreateTransport(ctx context.Context, config ServerConfig, loggingAddress st
 	return
 }
 
+// NewClient constructs the MCP client identity announced during initialize.
+// Version is sourced from the running CPE build metadata.
 func NewClient() *mcp.Client {
 	return mcp.NewClient(
 		&mcp.Implementation{

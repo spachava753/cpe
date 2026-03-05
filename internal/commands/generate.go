@@ -12,29 +12,35 @@ import (
 	"github.com/spachava753/cpe/internal/types"
 )
 
-// GenerateOptions contains all parameters for the generate command
+// GenerateOptions contains all parameters for Generate.
 type GenerateOptions struct {
-	// User input
+	// UserBlocks is the new user turn content. It must be non-empty.
 	UserBlocks []gai.Block
 
-	// InitialDialog is the pre-loaded conversation history to continue from.
+	// InitialDialog is the existing root-to-leaf history to continue from.
 	// When non-empty, the new user message is appended to this dialog.
-	// The caller is responsible for loading the dialog (e.g. via
-	// storage.GetDialogForMessage or auto-continue detection).
-	// When empty, a new conversation is started with just the user message.
+	// Callers typically populate this via ResolveInitialDialog.
 	InitialDialog gai.Dialog
 
+	// GenOptsFunc provides per-request generator options.
 	GenOptsFunc gai.GenOptsGenerator
 
-	// Dependencies
+	// Generator performs model inference and middleware execution.
 	Generator types.Generator
 
-	// Output
+	// Stderr receives non-fatal generation errors.
 	Stderr io.Writer
 }
 
-// Generate executes the main generation logic.
-// Saving is handled by the SavingMiddleware in the generator pipeline.
+// Generate appends the new user message to opts.InitialDialog and runs the
+// generation pipeline.
+//
+// Persistence is delegated to middleware (SavingMiddleware) attached to
+// opts.Generator. This function does not call storage directly.
+//
+// Contract note: input validation errors are returned, but model-generation
+// failures are reported to opts.Stderr and the function still returns nil
+// (except context cancellation, which is treated as silent termination).
 func Generate(ctx context.Context, opts GenerateOptions) error {
 	if len(opts.UserBlocks) == 0 {
 		return errors.New("empty input")
@@ -70,19 +76,25 @@ func Generate(ctx context.Context, opts GenerateOptions) error {
 	return nil
 }
 
-// DialogResolver provides the read operations needed to resolve conversation
-// history for continuation. It is a subset of storage.MessageDB containing
-// only the interfaces required by ResolveInitialDialog.
+// DialogResolver provides the read operations ResolveInitialDialog needs.
+//
+// ResolveInitialDialog depends on ListMessages default ordering semantics
+// (newest-first) for auto-continue selection.
 type DialogResolver interface {
 	storage.MessagesLister
 	storage.MessagesGetter
 }
 
-// ResolveInitialDialog determines the conversation history to continue from.
-// If continueID is set, it loads that specific conversation. If neither
-// continueID nor newConversation is set, it auto-detects the most recent
-// assistant/tool_result message and loads its conversation history.
-// Returns nil when a new conversation should be started.
+// ResolveInitialDialog selects the history prefix for a generate request.
+//
+// Selection precedence:
+//   - If newConversation is true, returns nil (force fresh conversation).
+//   - Else if continueID is provided, loads the chain ending at that ID.
+//   - Else auto-continue: scans ListMessages (default newest-first) and picks
+//     the first non-subagent assistant/tool_result message.
+//
+// Auto-continue requires MessageIDKey and MessageIsSubagentKey metadata on
+// listed messages. If no eligible message exists, returns nil to start fresh.
 func ResolveInitialDialog(ctx context.Context, resolver DialogResolver, continueID string, newConversation bool) (gai.Dialog, error) {
 	if newConversation {
 		return nil, nil

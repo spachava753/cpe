@@ -107,6 +107,8 @@ func (g *GenerationParams) ToGenOpts() *gai.GenOpts {
 	}
 }
 
+// Defaults defines global settings that apply when model-specific or CLI
+// overrides are not provided.
 type Defaults struct {
 	// Path to system prompt template file
 	SystemPromptPath string `yaml:"systemPromptPath,omitempty" json:"systemPromptPath,omitempty" validate:"omitempty,filepath"`

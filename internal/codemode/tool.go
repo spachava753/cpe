@@ -12,14 +12,15 @@ import (
 	"github.com/spachava753/cpe/internal/mcp"
 )
 
-// executeGoCodeInput represents the input parameters for the execute_go_code tool
+// ExecuteGoCodeInput is the execute_go_code payload expected from the model.
+// ExecutionTimeout is validated against callback-level limits before execution starts.
 type ExecuteGoCodeInput struct {
 	Code             string `json:"code"`
 	ExecutionTimeout int    `json:"executionTimeout"`
 }
 
-// ExecuteGoCodeCallback implements gai.ToolCallback for the execute_go_code tool.
-// It executes LLM-generated Go code in a sandbox environment with MCP tool access.
+// ExecuteGoCodeCallback implements gai.ToolCallback for execute_go_code.
+// It enforces timeout/output policy and delegates execution to the sandbox pipeline.
 type ExecuteGoCodeCallback struct {
 	Servers              []*mcp.MCPConn
 	MaxTimeout           int
@@ -27,8 +28,8 @@ type ExecuteGoCodeCallback struct {
 	LocalModulePaths     []string
 }
 
-// contentToBlocks converts MCP content types to gai blocks.
-// It handles TextContent, ImageContent (including PDFs), and AudioContent.
+// contentToBlocks adapts MCP multimodal content into gai blocks.
+// Unsupported content variants are ignored so tool output remains renderable.
 func contentToBlocks(content []mcpsdk.Content) []gai.Block {
 	blocks := make([]gai.Block, 0, len(content))
 	for _, c := range content {
@@ -48,12 +49,9 @@ func contentToBlocks(content []mcpsdk.Content) []gai.Block {
 	return blocks
 }
 
-// Call executes the generated Go code and returns the result.
-// Returns:
-//   - Successful execution: tool result with output
-//   - RecoverableError (compilation, Run() error, panic, timeout): tool result with error output
-//   - FatalExecutionError (exit code 3): error that stops agent execution
-//   - Infrastructure errors: error that stops agent execution
+// Call validates input, runs generated code, and maps failures into agent control flow.
+// Recoverable execution failures are returned as ToolResult text so the model can iterate;
+// fatal/infrastructure failures are returned as Go errors to stop the run.
 func (c *ExecuteGoCodeCallback) Call(ctx context.Context, parametersJSON json.RawMessage, toolCallID string) (gai.Message, error) {
 	// Parse input parameters
 	var input ExecuteGoCodeInput

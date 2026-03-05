@@ -14,15 +14,17 @@ import (
 	"github.com/spachava753/cpe/internal/storage/sqlcgen"
 )
 
-// DB is the interface accepted by NewSqlite. It abstracts the database
-// operations needed by Sqlite so that callers can supply a real *sql.DB or a
-// wrapper that injects faults, records calls, etc.
+// DB is the database contract required by NewSqlite.
+//
+// It is intentionally narrow so callers can pass either *sql.DB or a test
+// double. SaveDialog and DeleteMessages rely on BeginTx providing real SQL
+// transaction semantics (commit or rollback boundaries).
 type DB interface {
 	sqlcgen.DBTX
-	// ExecContext executes a query without returning any rows. It is used to
-	// initialise the database schema.
+	// ExecContext executes a statement that does not return rows. NewSqlite uses
+	// it for PRAGMA setup and schema initialization/migrations.
 	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
-	// BeginTx starts a transaction.
+	// BeginTx starts a transaction used for atomic write operations.
 	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
 }
 
@@ -35,18 +37,22 @@ func generateId() string {
 //go:embed schema.sql
 var schemaSQL string
 
-// Sqlite provides operations for storing and retrieving gai.Dialog objects.
-// It serves as an abstraction over the implementation details of how messages
-// are actually stored. Do not access its internal database directly.
+// Sqlite is the SQLite-backed MessageDB implementation.
+//
+// It stores messages as a parent-linked tree and reconstructs gai.Message
+// values (including metadata keys in ExtraFields) on reads.
 type Sqlite struct {
 	db          DB
 	q           *sqlcgen.Queries
 	idGenerator func() string
 }
 
-// NewSqlite initializes and returns a new Sqlite instance backed by the given
-// DB. It runs the embedded schema DDL against db before returning. The caller
-// is responsible for opening and closing the underlying database connection.
+// NewSqlite initializes a SQLite-backed message store.
+//
+// It enables foreign-key enforcement, applies lightweight compatibility
+// migrations, and executes the embedded schema SQL before returning.
+//
+// The caller owns the lifecycle of db (open/close).
 func NewSqlite(ctx context.Context, db DB) (*Sqlite, error) {
 	if err := enableForeignKeys(ctx, db); err != nil {
 		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
@@ -276,12 +282,19 @@ func (s *Sqlite) generateUniqueIDInTx(ctx context.Context, qtx *sqlcgen.Queries)
 	return "", fmt.Errorf("failed to generate unique ID after %d attempts", maxAttempts)
 }
 
-// SaveDialog saves a dialog — a sequence of related messages that form a
-// single conversation thread. The input iterator yields messages in order
-// from root to leaf. The entire operation is performed in a single
-// transaction; if saving any message fails, all changes are rolled back.
+// SaveDialog validates and persists a root-to-leaf chain in one SQL
+// transaction.
 //
-// See the DialogSaver interface documentation for full semantics.
+// Existing messages (MessageIDKey already present) are verified against stored
+// parent links. New messages are inserted with parent IDs pointing to the
+// previously processed message.
+//
+// Commit/rollback boundary: when iteration starts, a transaction is opened.
+// Any validation or insert failure rolls back writes from this call. If the
+// consumer stops iteration early, the processed prefix is still committed when
+// possible; remaining input is not read.
+//
+// See DialogSaver for cross-implementation contract details.
 func (s *Sqlite) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter.Seq2[gai.Message, error] {
 	return func(yield func(gai.Message, error) bool) {
 		tx, err := s.db.BeginTx(ctx, nil)
@@ -384,8 +397,12 @@ func (s *Sqlite) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) ite
 	}
 }
 
-// getMessage retrieves a message by its ID
-// Returns the message, the parent ID (empty string if no parent), and an error
+// getMessage loads one message and all of its blocks, then reconstructs a
+// gai.Message with storage metadata in ExtraFields.
+//
+// It returns the reconstructed message, the parent ID ("" for roots), and an
+// error. Message-level arbitrary ExtraFields are not persisted; only known
+// metadata keys are populated on read.
 func (s *Sqlite) getMessage(ctx context.Context, messageID string) (gai.Message, string, error) {
 	msg, err := s.q.GetMessage(ctx, messageID)
 	if err != nil {
@@ -453,7 +470,10 @@ func (s *Sqlite) getMessage(ctx context.Context, messageID string) (gai.Message,
 	}, parentID, nil
 }
 
-// GetMessages retrieves messages by their IDs.
+// GetMessages returns fully populated messages for the requested IDs.
+//
+// The method fails if any ID cannot be loaded. Returned messages include all
+// blocks plus storage metadata keys in ExtraFields.
 func (s *Sqlite) GetMessages(ctx context.Context, messageIDs []string) (iter.Seq[gai.Message], error) {
 	messages := make([]gai.Message, 0, len(messageIDs))
 	for _, id := range messageIDs {
@@ -473,7 +493,11 @@ func (s *Sqlite) GetMessages(ctx context.Context, messageIDs []string) (iter.Seq
 	}, nil
 }
 
-// ListMessages returns messages ordered by creation timestamp.
+// ListMessages returns a materialized snapshot of messages ordered by
+// created_at with optional ascending order and offset.
+//
+// Each yielded message includes all blocks and storage metadata keys in
+// ExtraFields.
 func (s *Sqlite) ListMessages(ctx context.Context, opts ListMessagesOptions) (iter.Seq[gai.Message], error) {
 	var rows []sqlcgen.Message
 	var err error
@@ -505,7 +529,12 @@ func (s *Sqlite) ListMessages(ctx context.Context, opts ListMessagesOptions) (it
 	}, nil
 }
 
-// DeleteMessages deletes the specified messages.
+// DeleteMessages deletes the requested messages in a single transaction.
+//
+// With opts.Recursive=true, each message's descendant subtree is removed.
+// With opts.Recursive=false, deletion fails if any target has children.
+//
+// The operation is atomic across all IDs in opts.MessageIDs.
 func (s *Sqlite) DeleteMessages(ctx context.Context, opts DeleteMessagesOptions) error {
 	// Begin transaction
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -544,7 +573,8 @@ func (s *Sqlite) DeleteMessages(ctx context.Context, opts DeleteMessagesOptions)
 	return nil
 }
 
-// deleteMessageAndDescendantsInTx recursively deletes a message and all its descendants within a transaction
+// deleteMessageAndDescendantsInTx performs depth-first subtree deletion inside
+// the caller's transaction.
 func (s *Sqlite) deleteMessageAndDescendantsInTx(ctx context.Context, qtx *sqlcgen.Queries, messageID string) error {
 	// Get all children of this message
 	children, err := qtx.ListMessagesByParent(ctx, sql.NullString{String: messageID, Valid: true})

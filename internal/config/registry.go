@@ -44,7 +44,8 @@ type ModelsDevCost struct {
 	CacheWrite *float64 `json:"cache_write,omitempty"`
 }
 
-// providerTypeMap maps models.dev provider IDs to CPE types
+// providerTypeMap maps models.dev provider IDs to CPE provider types.
+// Missing entries are treated as unsupported providers in BuildModelFromRegistry.
 var providerTypeMap = map[string]string{
 	"anthropic":           "anthropic",
 	"openai":              "openai",
@@ -57,7 +58,10 @@ var providerTypeMap = map[string]string{
 	"minimax-coding-plan": "anthropic",
 }
 
-// SupportedRegistryProviders returns the list of supported provider IDs from models.dev
+// SupportedRegistryProviders returns provider IDs from models.dev that CPE can
+// map into local provider types.
+//
+// The returned order is unspecified.
 func SupportedRegistryProviders() []string {
 	providers := make([]string, 0, len(providerTypeMap))
 	for p := range providerTypeMap {
@@ -66,7 +70,8 @@ func SupportedRegistryProviders() []string {
 	return providers
 }
 
-// FetchModelsDevRegistry fetches the models.dev registry
+// FetchModelsDevRegistry fetches and decodes the public models.dev registry.
+// Network cancellation/timeouts are controlled by the provided context.
 func FetchModelsDevRegistry(ctx context.Context) (map[string]ModelsDevProvider, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", ModelsDevAPI, nil)
 	if err != nil {
@@ -91,7 +96,11 @@ func FetchModelsDevRegistry(ctx context.Context) (map[string]ModelsDevProvider, 
 	return registry, nil
 }
 
-// LookupRegistryModel looks up a provider and model in the registry
+// LookupRegistryModel resolves providerID/modelID from a decoded registry map.
+// It returns helpful errors when either key is missing.
+//
+// Returned pointers reference copies of map values; mutating them does not
+// mutate the input registry map.
 func LookupRegistryModel(registry map[string]ModelsDevProvider, providerID, modelID string) (*ModelsDevProvider, *ModelsDevModel, error) {
 	provider, ok := registry[providerID]
 	if !ok {
@@ -110,7 +119,14 @@ func LookupRegistryModel(registry map[string]ModelsDevProvider, providerID, mode
 	return &provider, &model, nil
 }
 
-// BuildModelFromRegistry creates a ModelConfig from registry data
+// BuildModelFromRegistry converts models.dev provider/model entries into a
+// CPE ModelConfig.
+//
+// Contract:
+//   - provider.ID must be mapped in providerTypeMap.
+//   - model.limit.context and model.limit.output must be present and > 0.
+//   - ref is optional; when empty it is derived from model.ID via sanitizeRef.
+//   - cost fields are copied when present; absent values remain nil.
 func BuildModelFromRegistry(provider *ModelsDevProvider, model *ModelsDevModel, ref string) (*ModelConfig, error) {
 	cpeType, ok := providerTypeMap[provider.ID]
 	if !ok {
@@ -155,6 +171,8 @@ func BuildModelFromRegistry(provider *ModelsDevProvider, model *ModelsDevModel, 
 	return cfg, nil
 }
 
+// cloneFloatPtr copies a float pointer value to avoid sharing mutable pointers
+// from decoded registry payload structs.
 func cloneFloatPtr(v *float64) *float64 {
 	if v == nil {
 		return nil
@@ -163,7 +181,8 @@ func cloneFloatPtr(v *float64) *float64 {
 	return &copied
 }
 
-// sanitizeRef creates a reasonable ref from a model ID
+// sanitizeRef derives a CLI-friendly model ref from a model ID by replacing
+// common separators with '-' and collapsing duplicate dashes.
 func sanitizeRef(modelID string) string {
 	ref := modelID
 	ref = strings.ReplaceAll(ref, "/", "-")

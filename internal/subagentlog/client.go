@@ -9,13 +9,19 @@ import (
 	"time"
 )
 
-// Client sends events to the event server via HTTP POST requests
+// Client emits subagent logging events to the local parent-process HTTP server.
+// It is intentionally fail-fast: callers treat emission errors as fatal for
+// observability-sensitive events.
 type Client struct {
 	address string
 	client  *http.Client
 }
 
-// NewClient creates a new event client that sends events to the given address
+// NewClient creates an event client for the given base address
+// (for example, "http://127.0.0.1:12345").
+//
+// Requests use a fixed 5-second HTTP timeout so connection failures, refused
+// connections, and hung handlers surface quickly and can abort subagent runs.
 func NewClient(address string) *Client {
 	return &Client{
 		address: address,
@@ -25,9 +31,15 @@ func NewClient(address string) *Client {
 	}
 }
 
-// Emit sends an event to the server. It returns an error on connection failure,
-// non-2xx response, or timeout. Per spec, failures are fatal and the caller
-// should abort the subagent on emission failure.
+// Emit posts one Event to /subagent-events as JSON.
+//
+// Contract:
+//   - Any marshal/request/transport error is returned.
+//   - Any non-2xx status is returned as an error.
+//   - No retries are performed by this client.
+//
+// Per subagent-logging spec, callers should treat a returned error as fatal for
+// in-flight execution and abort rather than continue without observability.
 func (c *Client) Emit(ctx context.Context, event Event) error {
 	body, err := json.Marshal(event)
 	if err != nil {

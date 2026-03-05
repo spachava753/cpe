@@ -12,7 +12,9 @@ import (
 	"github.com/spachava753/cpe/internal/config"
 )
 
-// GenSchema generates the JSON schema for CPE configuration
+// GenSchema reflects config.RawConfig into a JSON Schema document and writes it to
+// schema/cpe-config-schema.json at the module root.
+// Module root resolution prefers GOMOD and falls back to an upward go.mod search.
 var GenSchema = goyek.Define(goyek.Task{
 	Name:  "gen-schema",
 	Usage: "Generate JSON schema for CPE configuration files",
@@ -60,6 +62,8 @@ var GenSchema = goyek.Define(goyek.Task{
 	},
 })
 
+// findModuleRoot walks parent directories from start until it finds go.mod.
+// If none is found, it returns the filesystem root reached by the search.
 func findModuleRoot(start string) string {
 	current := start
 	for {

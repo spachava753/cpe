@@ -9,7 +9,8 @@ import (
 	"github.com/spachava753/cpe/internal/config"
 )
 
-// ConfigAddOptions contains options for the config add command
+// ConfigAddOptions contains dependencies and user inputs for ConfigAdd.
+// The CLI layer maps flags/args into this struct.
 type ConfigAddOptions struct {
 	ModelSpec  string    // provider/model-id format
 	ConfigPath string    // path to config file (empty for default)
@@ -17,7 +18,8 @@ type ConfigAddOptions struct {
 	Writer     io.Writer // output writer
 }
 
-// ConfigAdd adds a model from the models.dev registry to the config
+// ConfigAdd resolves a provider/model spec through models.dev and persists the
+// resulting model entry into the target config file.
 func ConfigAdd(ctx context.Context, opts ConfigAddOptions) error {
 	// Parse provider/model-id
 	parts := strings.SplitN(opts.ModelSpec, "/", 2)
@@ -70,14 +72,15 @@ func ConfigAdd(ctx context.Context, opts ConfigAddOptions) error {
 	return nil
 }
 
-// ConfigRemoveOptions contains options for the config remove command
+// ConfigRemoveOptions contains dependencies and user inputs for ConfigRemove.
 type ConfigRemoveOptions struct {
 	Ref        string    // model ref to remove
 	ConfigPath string    // path to config file (empty for default)
 	Writer     io.Writer // output writer
 }
 
-// ConfigRemove removes a model from the config by ref
+// ConfigRemove removes one model reference from the target config file and
+// writes the updated config back to disk.
 func ConfigRemove(ctx context.Context, opts ConfigRemoveOptions) error {
 	// Determine config path
 	configPath := opts.ConfigPath

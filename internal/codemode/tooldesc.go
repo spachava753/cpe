@@ -10,9 +10,9 @@ import (
 	"github.com/spachava753/gai"
 )
 
-// GenerateExecuteGoCodeDescription generates the markdown description for the
-// execute_go_code tool. It includes the Go version, available function signatures
-// and types, code structure template, and usage instructions.
+// GenerateExecuteGoCodeDescription builds the authoritative prompt shown in the
+// execute_go_code tool schema. It documents runtime constraints, available MCP
+// function bindings, and the required Run(ctx) file contract.
 func GenerateExecuteGoCodeDescription(tools []*mcp.Tool) (string, error) {
 	goVersion := runtime.Version()
 
@@ -126,8 +126,8 @@ func main() {
 	return b.String(), nil
 }
 
-// GenerateExecuteGoCodeTool generates the complete gai.Tool definition for the
-// execute_go_code tool, including its description and input schema.
+// GenerateExecuteGoCodeTool returns the execute_go_code tool definition consumed
+// by the agent runtime, including bounded timeout validation in its input schema.
 func GenerateExecuteGoCodeTool(tools []*mcp.Tool, maxTimeout int) (gai.Tool, error) {
 	description, err := GenerateExecuteGoCodeDescription(tools)
 	if err != nil {

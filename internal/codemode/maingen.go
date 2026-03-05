@@ -17,9 +17,9 @@ import (
 //go:embed maingen.go.tmpl
 var mainTemplateSource string
 
-// GenerateMainGo generates the complete main.go file contents for code mode execution.
-// It includes MCP client setup, type definitions, function declarations, and the main entry point.
-// contentOutputPath specifies where content.json will be written for multimedia output.
+// GenerateMainGo renders the sandbox runner used to execute model-authored run.go.
+// The generated source wires MCP transports, binds tool functions, and serializes
+// optional Run() multimedia output to contentOutputPath.
 func GenerateMainGo(servers []*mcp.MCPConn, contentOutputPath string) (string, error) {
 	// Collect all tools for type/function generation
 	var allTools []*mcpsdk.Tool
@@ -54,7 +54,8 @@ func GenerateMainGo(servers []*mcp.MCPConn, contentOutputPath string) (string, e
 	return buf.String(), nil
 }
 
-// templateData holds all data needed by the main.go template
+// templateData is the fully-resolved input for maingen.go.tmpl.
+// Feature booleans control conditional imports to keep generated code compilable.
 type templateData struct {
 	HasHeaders        bool
 	HasStdio          bool
@@ -68,7 +69,7 @@ type templateData struct {
 	ContentOutputPath string
 }
 
-// serverTemplateData holds per-server template data
+// serverTemplateData captures per-server transport config emitted into generated main.go.
 type serverTemplateData struct {
 	VarName    string
 	ServerName string
@@ -82,7 +83,7 @@ type serverTemplateData struct {
 	HasEnv     bool
 }
 
-// toolInitData holds per-tool initialization data
+// toolInitData describes one generated function variable binding to an MCP session.
 type toolInitData struct {
 	GoName     string
 	ToolName   string
@@ -92,6 +93,7 @@ type toolInitData struct {
 	OutputType string
 }
 
+// buildTemplateData normalizes server/tool metadata and sorts it for deterministic codegen.
 func buildTemplateData(servers []*mcp.MCPConn, toolDefs string, contentOutputPath string) templateData {
 	// Sort servers by name for deterministic output
 	sortedServers := make([]*mcp.MCPConn, len(servers))
@@ -170,7 +172,8 @@ func buildTemplateData(servers []*mcp.MCPConn, toolDefs string, contentOutputPat
 	return data
 }
 
-// hasInputSchema checks if a tool has a non-empty input schema
+// hasInputSchema reports whether a tool requires an input struct in generated code.
+// Empty object schemas are treated as no-input tools.
 func hasInputSchema(tool *mcpsdk.Tool) bool {
 	if tool.InputSchema == nil {
 		return false

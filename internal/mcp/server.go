@@ -12,56 +12,62 @@ import (
 	"github.com/spachava753/cpe/internal/version"
 )
 
-// SubagentDef defines a subagent for MCP server mode.
+// SubagentDef describes the single tool exposed by CPE MCP server mode.
 type SubagentDef struct {
-	// Name is the tool name exposed via MCP (required)
+	// Name is the MCP tool name advertised to parent clients (required).
 	Name string
-	// Description is the tool description exposed via MCP (required)
+	// Description is the MCP tool description shown to parent clients (required).
 	Description string
-	// OutputSchemaPath is an optional path to a JSON schema file for structured output
+	// OutputSchemaPath optionally points to a JSON schema file. When provided,
+	// the schema is loaded at startup and published as the MCP tool output schema.
 	OutputSchemaPath string
 }
 
-// MCPServerConfig holds the configuration needed to run an MCP server.
+// MCPServerConfig contains configuration required to expose one subagent tool.
 type MCPServerConfig struct {
-	// Subagent is the subagent configuration (required)
+	// Subagent defines the tool identity and optional output schema (required).
 	Subagent SubagentDef
 
-	// MCPServers are the MCP server configurations available to the subagent
+	// MCPServers holds downstream MCP server definitions available during subagent
+	// execution. It is passed through to executor-level setup.
 	MCPServers map[string]ServerConfig
 }
 
-// SubagentInput represents the input passed to the subagent executor
+// SubagentInput is the normalized tool input passed to SubagentExecutor.
 type SubagentInput struct {
-	// Prompt is the task to execute
+	// Prompt is the task text to execute.
 	Prompt string
-	// Inputs is a list of file paths to include as context
+	// Inputs is an optional list of file paths to provide as additional context.
 	Inputs []string
-	// RunID is a unique identifier for event correlation
+	// RunID correlates lifecycle/tool events for this invocation.
 	RunID string
 }
 
-// SubagentExecutor is a function that executes a subagent with the given input.
-// It returns the result text or an error.
+// SubagentExecutor executes one subagent invocation and returns terminal text.
+//
+// MCP server mode calls the executor once per tool invocation and does not retry
+// on failure; errors are surfaced directly to the MCP client as tool errors.
 type SubagentExecutor func(ctx context.Context, input SubagentInput) (string, error)
 
-// ServerOptions contains options for creating an MCP server
+// ServerOptions provides required runtime dependencies for MCP Server.
 type ServerOptions struct {
-	// Executor is the function that executes the subagent (required)
+	// Executor runs the underlying subagent for each MCP tool call (required).
 	Executor SubagentExecutor
 }
 
-// SubagentToolInput defines the input schema for the subagent tool
+// SubagentToolInput is the JSON schema exposed to MCP clients for the single
+// subagent tool.
 type SubagentToolInput struct {
-	// Prompt is the task to execute (required)
+	// Prompt is required and must be non-empty after trimming whitespace.
 	Prompt string `json:"prompt" jsonschema:"The task or instruction for the subagent to execute"`
-	// Inputs is an optional list of file paths to include as context
+	// Inputs is an optional list of context file paths.
 	Inputs []string `json:"inputs,omitempty" jsonschema:"Optional list of file paths to include as context for the subagent"`
-	// RunID is a unique identifier for event correlation (required)
+	// RunID is required for event correlation across start/tool/result/end events.
 	RunID string `json:"runId" jsonschema:"required,A unique identifier for correlating events across the subagent execution"`
 }
 
-// Server wraps an MCP server that exposes a subagent as a tool
+// Server wraps the MCP SDK server and exposes exactly one subagent tool.
+// Transport is stdio-only; stdout is reserved for MCP protocol frames.
 type Server struct {
 	config       MCPServerConfig
 	opts         ServerOptions
@@ -69,8 +75,11 @@ type Server struct {
 	outputSchema json.RawMessage
 }
 
-// NewServer creates a new MCP server from the given configuration.
-// The config must have a valid Subagent configuration.
+// NewServer validates configuration, preloads optional output schema JSON, and
+// registers the configured subagent tool on a new MCP SDK server.
+//
+// Startup fails fast when required subagent metadata is missing, executor is nil,
+// or the output schema file cannot be read/parsed as valid JSON.
 func NewServer(cfg MCPServerConfig, opts ServerOptions) (*Server, error) {
 	if cfg.Subagent.Name == "" {
 		return nil, fmt.Errorf("subagent name is required")
@@ -121,7 +130,9 @@ func NewServer(cfg MCPServerConfig, opts ServerOptions) (*Server, error) {
 	return server, nil
 }
 
-// registerSubagentTool registers the subagent as an MCP tool
+// registerSubagentTool installs the single subagent tool and typed input handler.
+// OutputSchema is attached when configured so callers can rely on structured
+// output expectations at the protocol level.
 func (s *Server) registerSubagentTool() error {
 	tool := &mcpsdk.Tool{
 		Name:        s.config.Subagent.Name,
@@ -139,9 +150,14 @@ func (s *Server) registerSubagentTool() error {
 	return nil
 }
 
-// handleToolCall handles calls to the subagent tool.
-// It includes panic recovery to ensure panics are returned as structured errors
-// rather than crashing the server process.
+// handleToolCall validates request input, executes the subagent once, and maps
+// outcomes to MCP CallToolResult values.
+//
+// Failure semantics:
+//   - Panics are recovered and converted to IsError=true tool results.
+//   - Validation/context/executor failures return IsError=true tool results.
+//   - Method-level error return is reserved for transport/framework failures, so
+//     normal execution failures are represented in result content instead.
 func (s *Server) handleToolCall(ctx context.Context, req *mcpsdk.CallToolRequest, input SubagentToolInput) (result *mcpsdk.CallToolResult, metadata any, err error) {
 	// Recover from panics and convert to error response
 	defer func() {
@@ -208,8 +224,11 @@ func (s *Server) handleToolCall(ctx context.Context, req *mcpsdk.CallToolRequest
 	}, nil, nil
 }
 
-// Serve starts the MCP server and blocks until the context is cancelled
-// or the connection is closed. The server communicates via stdio.
+// Serve runs the MCP server on stdio transport until ctx is cancelled or the
+// stdio connection closes.
+//
+// Stdio discipline: stdout is protocol-only in server mode. Human-readable logs
+// must use stderr to avoid corrupting MCP framing.
 func (s *Server) Serve(ctx context.Context) error {
 	// Run the server on stdio transport
 	// The MCP SDK handles graceful shutdown when context is cancelled

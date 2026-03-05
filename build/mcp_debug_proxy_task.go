@@ -15,7 +15,10 @@ import (
 	"github.com/goyek/goyek/v2"
 )
 
-// MCPDebugProxy starts an MCP stdio debug proxy
+// MCPDebugProxy runs an MCP stdio command behind a timestamped logging proxy.
+// It requires -log and -cmd, forwards stdin/stdout transparently, and mirrors
+// each line to the log file with direction markers. SIGINT/SIGTERM are propagated
+// to the child process so shutdown behavior matches direct execution.
 var MCPDebugProxy = goyek.Define(goyek.Task{
 	Name:  "mcp-debug-proxy",
 	Usage: "MCP stdio debug proxy. Use -log=FILE -cmd='command args'",
@@ -121,6 +124,7 @@ var MCPDebugProxy = goyek.Define(goyek.Task{
 	},
 })
 
+// mcpTimestamp returns wall-clock time with millisecond precision for log lines.
 func mcpTimestamp() string {
 	return time.Now().Format("15:04:05.000")
 }

@@ -10,63 +10,67 @@ import (
 )
 
 const (
-	// MessageIDKey is the key used in gai.Message.ExtraFields to store a message's
-	// unique identifier. Methods that return gai.Message values (GetMessages,
-	// ListMessages, GetDialogForMessage) always populate this field. The saving
-	// middleware also uses this key to track which messages have already been
-	// persisted, and printers read it to display message IDs to the user.
+	// MessageIDKey is the gai.Message.ExtraFields key for the storage-assigned
+	// message identifier.
+	//
+	// The value is a string. Read APIs (GetMessages, ListMessages,
+	// GetDialogForMessage) populate it on every returned message. SaveDialog
+	// treats a message carrying this key as already persisted and validates it
+	// instead of inserting a duplicate row.
 	MessageIDKey = "cpe_message_id"
 
-	// MessageParentIDKey is the key used in gai.Message.ExtraFields to store the
-	// ID of a message's parent in the conversation tree. Root messages (those with
-	// no parent) will not have this key set in their ExtraFields map. Methods that
-	// return gai.Message values (GetMessages, ListMessages, GetDialogForMessage)
-	// populate this field when the message has a parent.
+	// MessageParentIDKey is the gai.Message.ExtraFields key for a message's
+	// parent ID in the conversation tree.
+	//
+	// The value is a string. Root messages omit this key. Read APIs populate it
+	// for non-root messages, and SaveDialog uses parent IDs to validate that an
+	// appended chain is contiguous.
 	MessageParentIDKey = "cpe_message_parent_id"
 
-	// MessageCreatedAtKey is the key used in gai.Message.ExtraFields to store
-	// the message's creation timestamp as a time.Time value. Methods that return
-	// gai.Message values (GetMessages, ListMessages, GetDialogForMessage) always
-	// populate this field.
+	// MessageCreatedAtKey is the gai.Message.ExtraFields key for the message
+	// creation timestamp.
+	//
+	// The value is a time.Time and is populated by read APIs.
 	MessageCreatedAtKey = "cpe_message_created_at"
 
-	// MessageIsSubagentKey is the key used in gai.Message.ExtraFields to store
-	// whether a message belongs to a subagent execution trace. When saving a
-	// dialog, any message with this key set to true is persisted as
-	// is_subagent=1. Messages without this key (or with false) are persisted as
-	// non-subagent messages.
+	// MessageIsSubagentKey is the gai.Message.ExtraFields key that marks
+	// subagent-originated messages.
+	//
+	// The value is a bool. SaveDialog persists true values to storage, and
+	// continuation logic uses this marker to skip subagent traces when
+	// auto-selecting a conversation to continue.
 	MessageIsSubagentKey = "cpe_message_is_subagent"
 )
 
 // DialogSaver persists a dialog (a sequence of related messages) to storage.
 type DialogSaver interface {
-	// SaveDialog saves a dialog — a sequence of related messages that form a
-	// single conversation thread. The input iterator yields messages in order
-	// from root to leaf. The entire operation is performed in a single
-	// transaction; if saving any message fails, all changes are rolled back.
+	// SaveDialog validates and persists a root-to-leaf dialog chain.
 	//
-	// For each message in the iterator:
-	//   - If the message has ExtraFields[MessageIDKey] set, it is treated as
-	//     already persisted. The implementation verifies the message exists in
-	//     storage. The first message must be a root message (no parent in
-	//     storage). For subsequent messages, it verifies that the stored parent
-	//     ID matches the previous message's ID. No data is written for
-	//     existing messages.
-	//   - If the message does not have ExtraFields[MessageIDKey] set, it is
-	//     saved to storage. The implementation assigns a unique ID, sets
-	//     ExtraFields[MessageIDKey] and ExtraFields[MessageParentIDKey]
-	//     (for non-root messages) on the message, and persists it.
-	//   - If the message has ExtraFields[MessageIsSubagentKey] set to true,
-	//     the message is marked as subagent-originated in storage.
+	// The input iterator must yield messages in parent order (root first, then
+	// descendants). For each message:
+	//   - If ExtraFields[MessageIDKey] is present, the message is treated as
+	//     already persisted. The implementation verifies that the stored message
+	//     exists and that its stored parent matches the previous message in this
+	//     SaveDialog call. The first message must be a root in storage.
+	//   - If ExtraFields[MessageIDKey] is absent, the message is inserted as a
+	//     new row whose parent is the previous message from this call. The
+	//     returned message includes MessageIDKey and, for non-root messages,
+	//     MessageParentIDKey.
+	//   - ExtraFields[MessageIsSubagentKey] == true marks the inserted message as
+	//     subagent-originated.
 	//
-	// The returned iter.Seq2 yields (gai.Message, error) pairs in the same
-	// order as the input. Each yielded message has its ExtraFields populated
-	// with at least MessageIDKey (and MessageParentIDKey for non-root messages).
-	// On the first error the iterator stops and the transaction is rolled back.
-	// Callers must consume the iterator (or break early) to trigger persistence;
-	// the transaction is committed when the iterator completes or when the
-	// consumer breaks out of the range loop. An empty input iterator results
-	// in a no-op (empty transaction committed).
+	// Atomicity boundary:
+	//   - All writes performed while consuming a single SaveDialog iterator are
+	//     part of one transaction.
+	//   - Validation, insert, or commit failures roll back writes from this call.
+	//   - If the consumer stops iteration early (yield returns false), the
+	//     processed prefix may still be committed; unconsumed input is ignored.
+	//
+	// Iterator contract:
+	//   - Outputs are yielded in the same order as processed input.
+	//   - On error, the iterator yields one non-nil error and then stops.
+	//   - Existing messages are yielded without rewriting their content; newly
+	//     inserted messages are yielded with storage IDs populated in ExtraFields.
 	//
 	// Example — saving a brand-new dialog:
 	//
@@ -80,18 +84,20 @@ type DialogSaver interface {
 	//		idx++
 	//	}
 	//
-	// Example — appending to a previously saved dialog. Messages that
-	// already have ExtraFields[MessageIDKey] are verified but not re-saved;
-	// only the new message at the end is persisted:
+	// Example — appending to a previously saved dialog. Messages that already
+	// have ExtraFields[MessageIDKey] are validated but not re-saved; only new
+	// trailing messages are inserted:
 	//
 	//	// previousDialog was returned by an earlier SaveDialog call,
 	//	// so every message already has MessageIDKey set.
 	//	fullDialog := append(previousDialog, newAssistantMsg)
+	//	idx := 0
 	//	for saved, err := range saver.SaveDialog(ctx, slices.Values(fullDialog)) {
 	//		if err != nil {
 	//			return err
 	//		}
-	//		fullDialog[i] = saved // keep ExtraFields in sync
+	//		fullDialog[idx] = saved // keep ExtraFields in sync
+	//		idx++
 	//	}
 	//
 	// Example — marking a message as subagent-generated:
@@ -143,25 +149,33 @@ type ListMessagesOptions struct {
 
 // MessagesLister lists messages from storage with ordering and pagination.
 type MessagesLister interface {
-	// ListMessages returns messages ordered by creation timestamp. The default
-	// order is descending (newest first). Each yielded gai.Message has its ID
-	// stored in ExtraFields[MessageIDKey], creation time in
-	// ExtraFields[MessageCreatedAtKey], subagent marker in
-	// ExtraFields[MessageIsSubagentKey], and, if the message has a parent, its
-	// parent ID stored in ExtraFields[MessageParentIDKey]. The message's Blocks
-	// are fully populated.
+	// ListMessages returns a snapshot of stored messages ordered by creation time.
+	//
+	// Ordering is descending by default (newest first) or ascending when
+	// opts.AscendingOrder is true. opts.Offset is applied after ordering.
+	//
+	// Every yielded message has fully populated Blocks and storage metadata in
+	// ExtraFields:
+	//   - MessageIDKey (always)
+	//   - MessageCreatedAtKey (always)
+	//   - MessageIsSubagentKey (always)
+	//   - MessageParentIDKey (only for non-root messages)
 	ListMessages(ctx context.Context, opts ListMessagesOptions) (iter.Seq[gai.Message], error)
 }
 
 // MessagesGetter fetches specific messages by ID.
 type MessagesGetter interface {
-	// GetMessages retrieves messages by their IDs. The returned iter.Seq is not
-	// guaranteed to yield messages in the same order as the input IDs. Each
-	// yielded gai.Message has its ID stored in ExtraFields[MessageIDKey],
-	// creation time in ExtraFields[MessageCreatedAtKey], subagent marker in
-	// ExtraFields[MessageIsSubagentKey], and, if the message has a parent, its
-	// parent ID stored in ExtraFields[MessageParentIDKey]. If any requested ID
-	// does not exist, an error is returned.
+	// GetMessages retrieves specific messages by ID.
+	//
+	// If any requested ID is missing, the call returns an error and no iterator.
+	// The returned iter.Seq is not guaranteed to preserve the input ID order.
+	//
+	// Every yielded message has fully populated Blocks and storage metadata in
+	// ExtraFields:
+	//   - MessageIDKey (always)
+	//   - MessageCreatedAtKey (always)
+	//   - MessageIsSubagentKey (always)
+	//   - MessageParentIDKey (only for non-root messages)
 	GetMessages(ctx context.Context, messageIDs []string) (iter.Seq[gai.Message], error)
 }
 
@@ -177,14 +191,14 @@ type MessageDB interface {
 	MessagesGetter
 }
 
-// GetDialogForMessage is a utility function that reconstructs the full
-// conversation history leading up to the given message ID. It works by
-// fetching the message via getter, reading its parent ID from
-// ExtraFields[MessageParentIDKey], and repeating until a root message (one
-// with no parent) is reached. The returned gai.Dialog is ordered from root
-// to the target message. Each message in the dialog has MessageIDKey,
-// MessageCreatedAtKey, MessageIsSubagentKey, and (where applicable)
-// MessageParentIDKey set in its ExtraFields.
+// GetDialogForMessage reconstructs the ancestor chain for messageID.
+//
+// It repeatedly calls getter.GetMessages for one ID at a time, follows
+// ExtraFields[MessageParentIDKey], and stops at the first root (message with
+// no parent key). The returned dialog is ordered root-to-leaf and includes the
+// target message as the last element.
+//
+// If any message in the chain cannot be loaded, an error is returned.
 func GetDialogForMessage(ctx context.Context, getter MessagesGetter, messageID string) (gai.Dialog, error) {
 	// Collect messages from the target up to the root (leaf-to-root order)
 	collected, err := collectAncestorMessages(ctx, getter, messageID)
@@ -198,8 +212,8 @@ func GetDialogForMessage(ctx context.Context, getter MessagesGetter, messageID s
 	return gai.Dialog(collected), nil
 }
 
-// collectAncestorMessages walks up the parent chain from messageID to the root,
-// returning the messages in leaf-to-root order.
+// collectAncestorMessages walks from messageID to the root by following
+// MessageParentIDKey, returning messages in leaf-to-root order.
 func collectAncestorMessages(ctx context.Context, getter MessagesGetter, messageID string) ([]gai.Message, error) {
 	var result []gai.Message
 	currentID := messageID

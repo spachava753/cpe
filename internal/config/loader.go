@@ -16,7 +16,9 @@ import (
 // ErrConfigNotFound indicates no config file was found in the standard search locations.
 var ErrConfigNotFound = errors.New("configuration file not found")
 
-// LoadRawConfig loads raw config for commands that need to list/inspect all models.
+// LoadRawConfig loads and validates configuration, returning only the parsed
+// RawConfig. It is a convenience wrapper for callers that do not need the
+// resolved config file path.
 func LoadRawConfig(explicitPath string) (*RawConfig, error) {
 	cfg, _, err := LoadRawConfigWithPath(explicitPath)
 	if err != nil {
@@ -25,7 +27,15 @@ func LoadRawConfig(explicitPath string) (*RawConfig, error) {
 	return cfg, nil
 }
 
-// LoadRawConfigWithPath loads raw config and returns the resolved config file path.
+// LoadRawConfigWithPath loads, parses, and validates configuration, returning
+// both RawConfig and the concrete file path used.
+//
+// Path resolution contract:
+//   - explicitPath: used as-is and must exist/readable.
+//   - empty explicitPath: discover via findConfigFile search order.
+//
+// Validation is always executed with ValidateWithConfigPath so path-based config
+// fields can be interpreted relative to the actual config file location.
 func LoadRawConfigWithPath(explicitPath string) (*RawConfig, string, error) {
 	var configPath string
 	var err error
@@ -63,7 +73,8 @@ func LoadRawConfigWithPath(explicitPath string) (*RawConfig, string, error) {
 	return config, configPath, nil
 }
 
-// findConfigFile searches for configuration files in the expected locations
+// findConfigFile searches for configuration in deterministic precedence order:
+// current working directory first, then the user config directory.
 func findConfigFile() (string, error) {
 	configNames := []string{"cpe.yaml", "cpe.yml"}
 
@@ -95,10 +106,10 @@ func findConfigFile() (string, error) {
   - %s (user config directory)`, userConfigPath)
 }
 
-// loadRawConfigFromFile reads and parses a configuration file from any fs.File source.
-// This design allows for flexible testing with in-memory files, embedded configs,
-// network sources, or any other io.Reader implementation.
-// The file extension is automatically detected from the file's stat info.
+// loadRawConfigFromFile reads and parses config from any fs.File.
+//
+// The parser selection hint comes from file.Stat().Name() extension; when no
+// supported extension is present, parseConfigData attempts YAML then JSON.
 func loadRawConfigFromFile(file fs.File) (*RawConfig, error) {
 	data, err := io.ReadAll(file)
 	if err != nil {
@@ -114,9 +125,12 @@ func loadRawConfigFromFile(file fs.File) (*RawConfig, error) {
 	return parseConfigData(data, filename)
 }
 
-// parseConfigData parses config data based on the filename extension.
-// Environment variables are expanded in the raw content before parsing,
-// supporting both $VAR and ${VAR} syntax throughout the entire config.
+// parseConfigData expands environment variables and parses configuration data.
+//
+// Parsing contract:
+//   - $VAR and ${VAR} are expanded on raw bytes before decoding.
+//   - Known extensions select parser directly (.yaml/.yml or .json).
+//   - Unknown/missing extension falls back to YAML first, then JSON.
 func parseConfigData(data []byte, filename string) (*RawConfig, error) {
 	// Expand environment variables in the raw content before parsing
 	expandedData := os.ExpandEnv(string(data))

@@ -7,11 +7,12 @@ import (
 	"github.com/stoewer/go-strcase"
 )
 
-// ExecuteGoCodeToolName is the reserved tool name for code mode
+// ExecuteGoCodeToolName is the reserved synthetic tool exposed by code mode.
+// MCP servers must not provide a tool with this exact name.
 const ExecuteGoCodeToolName = "execute_go_code"
 
-// CheckReservedNameCollision checks if any tool name collides with "execute_go_code".
-// Returns an error if a collision is found, nil otherwise.
+// CheckReservedNameCollision rejects MCP tool sets that shadow execute_go_code,
+// which would break registration of the sandbox executor tool.
 func CheckReservedNameCollision(toolNames []string) error {
 	if slices.Contains(toolNames, ExecuteGoCodeToolName) {
 		return fmt.Errorf(
@@ -23,8 +24,8 @@ func CheckReservedNameCollision(toolNames []string) error {
 	return nil
 }
 
-// CheckPascalCaseCollision checks if any tool names produce duplicate Go function names
-// when converted to pascal case. Returns an error describing the collision if found, nil otherwise.
+// CheckPascalCaseCollision ensures tool names map to unique generated Go identifiers.
+// Conversion uses strcase.UpperCamelCase and validates the shared function-var namespace.
 func CheckPascalCaseCollision(toolNames []string) error {
 	// Map of pascal case name to list of original tool names that produce it
 	pascalToOriginal := make(map[string][]string)
@@ -49,8 +50,8 @@ func CheckPascalCaseCollision(toolNames []string) error {
 	return nil
 }
 
-// CheckToolNameCollisions runs both collision checks (reserved name and pascal case),
-// failing fast on the first error encountered.
+// CheckToolNameCollisions runs reserved-name validation first, then identifier-collision
+// validation, returning the first conflict found.
 func CheckToolNameCollisions(toolNames []string) error {
 	if err := CheckReservedNameCollision(toolNames); err != nil {
 		return err

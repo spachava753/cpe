@@ -6,7 +6,8 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// MCPConn represents a connection to a single MCP server with its filtered tools
+// MCPConn holds runtime state for a single initialized MCP server.
+// Tools are already filtered according to ServerConfig enabled/disabled rules.
 type MCPConn struct {
 	ServerName string
 	Config     ServerConfig
@@ -16,19 +17,19 @@ type MCPConn struct {
 	Tools         []*mcpsdk.Tool // Already filtered per server config
 }
 
-// MCPState holds all MCP connections
+// MCPState tracks all active MCP connections keyed by configured server name.
 type MCPState struct {
 	Connections map[string]*MCPConn // Exported, keyed by server name
 }
 
-// NewMCPState creates an empty MCPState
+// NewMCPState creates an empty MCPState ready for incremental connection setup.
 func NewMCPState() *MCPState {
 	return &MCPState{
 		Connections: make(map[string]*MCPConn),
 	}
 }
 
-// Close closes all MCP connections
+// Close best-effort closes every non-nil client session and aggregates close errors.
 func (s *MCPState) Close() error {
 	var errs []error
 	for name, conn := range s.Connections {

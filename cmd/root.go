@@ -18,8 +18,9 @@ import (
 	"github.com/spachava753/cpe/internal/version"
 )
 
-// DefaultModel holds the global default LLM model for the CLI.
-// It is set at process startup from CPE_MODEL env var (or empty if unset).
+// DefaultModel is the process-start snapshot of CPE_MODEL.
+// It is used as the default value for the --model flag; final model resolution
+// still follows config.ResolveConfig precedence rules.
 var DefaultModel = os.Getenv("CPE_MODEL")
 
 var (
@@ -47,7 +48,12 @@ var (
 	flagThinkingBudget   string
 )
 
-// rootCmd represents the base command when called without any subcommands
+// rootCmd is the CLI entrypoint for prompt execution.
+//
+// Responsibility split:
+//   - cmd package: parse flags/env, resolve config, initialize optional
+//     persistence, and wire dependencies.
+//   - internal/commands: execute business logic without Cobra coupling.
 var rootCmd = &cobra.Command{
 	Use:   "cpe [flags] [prompt]",
 	Short: "Chat-based Programming Editor",
@@ -56,6 +62,8 @@ developers to leverage AI for codebase analysis, modification, and improvement
 through natural language interactions.`,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Root flow boundary: this layer performs input/config/storage wiring, then
+		// hands off all generation orchestration to commands.ExecuteRoot.
 		// Check if version flag is set
 		versionFlag, _ := cmd.Flags().GetBool("version")
 		if versionFlag {
@@ -124,8 +132,9 @@ through natural language interactions.`,
 	},
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
+// Execute runs the Cobra command tree with process-level signal cancellation.
+// It is the top-level boundary between OS process lifecycle handling and command
+// execution, and exits with status 1 when command execution returns an error.
 func Execute() {
 	// Listen for cancellation
 	// - in shells for user-initiated interruption SIGINT

@@ -10,23 +10,30 @@ import (
 	"github.com/spachava753/cpe/internal/types"
 )
 
-// RenderMode controls the verbosity of rendered subagent events.
-// Note: The zero value (RenderModeConcise) is the default, meaning a Renderer{}
-// created without explicit mode will use concise rendering.
+// RenderMode controls how much event detail is printed for subagent logs.
+//
+// The zero value is RenderModeConcise, so Renderer{} defaults to compact output.
 type RenderMode int
 
 const (
-	RenderModeConcise RenderMode = iota // Default: truncated thinking, tool names only, no results
-	RenderModeVerbose                   // Full thinking, full tool calls, full results
+	// RenderModeConcise prints progress-only lines suitable for frequent updates:
+	// tool starts, successful tool completions, and abbreviated thought traces.
+	RenderModeConcise RenderMode = iota
+	// RenderModeVerbose prints full payloads (tool inputs/results and full thoughts).
+	RenderModeVerbose
 )
 
-// Renderer formats subagent events for printing to stderr
+// Renderer converts Event values into markdown-like log blocks intended for
+// stderr rendering in the parent CPE process.
+//
+// Lifecycle events (subagent_start/subagent_end) are intentionally suppressed
+// here; the renderer focuses on streaming progress details.
 type Renderer struct {
 	markdownRenderer types.Renderer
 	mode             RenderMode
 }
 
-// NewRenderer creates a new Renderer using the provided markdown renderer
+// NewRenderer creates a renderer with the provided markdown renderer and mode.
 func NewRenderer(markdownRenderer types.Renderer, mode RenderMode) *Renderer {
 	return &Renderer{
 		markdownRenderer: markdownRenderer,
@@ -34,8 +41,13 @@ func NewRenderer(markdownRenderer types.Renderer, mode RenderMode) *Renderer {
 	}
 }
 
-// RenderEvent formats an event with the subagent name prefix and returns
-// the rendered string. Returns empty string for events that should be skipped.
+// RenderEvent renders one event according to mode-specific conventions.
+//
+// Rendering contract:
+//   - subagent_start/subagent_end are skipped (empty string).
+//   - final_answer tool call/result events are skipped to avoid duplicate final output.
+//   - execute_go_code calls/results use specialized headers and fenced code formatting.
+//   - Unknown event types are ignored (empty string).
 func (r *Renderer) RenderEvent(event Event) string {
 	switch event.Type {
 	case EventTypeSubagentStart, EventTypeSubagentEnd:
@@ -80,9 +92,10 @@ func (r *Renderer) renderToolCall(event Event) string {
 	// Build body with appropriate code block
 	var body string
 	if event.ToolName == codemode.ExecuteGoCodeToolName {
+		// execute_go_code payloads are rendered as Go source for readability.
 		body = header + "\n" + "```go\n" + event.Payload + "\n```"
 	} else {
-		// Format JSON payload
+		// Non-code tool inputs are expected to be JSON object parameters.
 		formattedPayload := formatJSON(event.Payload)
 		body = header + "\n" + "```json\n" + formattedPayload + "\n```"
 	}
@@ -103,6 +116,7 @@ func (r *Renderer) renderToolResult(event Event) string {
 		header = fmt.Sprintf("#### %s [%s] Tool \"%s\" result:", event.SubagentName, event.SubagentRunID, event.ToolName)
 	}
 
+	// Tool results are rendered in a shell fence to preserve raw command/tool output.
 	body := header + "\n" + "```shell\n" + event.Payload + "\n```"
 
 	return r.render(body)
@@ -119,7 +133,7 @@ func (r *Renderer) renderToolCallConcise(event Event) string {
 	if event.ToolName == finalAnswerToolName {
 		return ""
 	}
-	// Just show: "#### subagent [runId] → tool_name"
+	// Concise format: "#### subagent [runId] → tool_name"
 	header := fmt.Sprintf("#### %s [%s] → %s", event.SubagentName, event.SubagentRunID, event.ToolName)
 	return r.render(header)
 }
@@ -129,15 +143,15 @@ func (r *Renderer) renderToolResultConcise(event Event) string {
 	if event.ToolName == finalAnswerToolName {
 		return ""
 	}
-	// Tool results are only emitted on success, so show checkmark
-	// Format: "#### subagent [runId] ✓ tool_name"
+	// Tool results are emitted only after successful completion, so concise mode uses
+	// a success checkmark: "#### subagent [runId] ✓ tool_name".
 	header := fmt.Sprintf("#### %s [%s] ✓ %s", event.SubagentName, event.SubagentRunID, event.ToolName)
 	return r.render(header)
 }
 
 func (r *Renderer) renderThoughtTraceConcise(event Event) string {
 	header := fmt.Sprintf("#### %s [%s] thought trace", event.SubagentName, event.SubagentRunID)
-	// Truncate payload to 2 lines
+	// Truncate payload to at most two lines for compact progress output.
 	lines := strings.SplitN(event.Payload, "\n", 3)
 	truncated := strings.Join(lines[:min(2, len(lines))], "\n")
 	if len(lines) > 2 {
@@ -155,8 +169,8 @@ func (r *Renderer) render(content string) string {
 	return rendered
 }
 
-// formatJSON attempts to format JSON payload for readability.
-// Returns the original string if parsing fails.
+// formatJSON pretty-prints tool parameter payloads when they are valid JSON.
+// Invalid JSON is returned unchanged so rendering remains lossless.
 func formatJSON(payload string) string {
 	var data interface{}
 	if err := json.Unmarshal([]byte(payload), &data); err != nil {

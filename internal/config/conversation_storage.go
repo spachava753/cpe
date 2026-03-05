@@ -10,8 +10,18 @@ import (
 // DefaultConversationStoragePath is used when defaults.conversationStoragePath is not set.
 const DefaultConversationStoragePath = ".cpeconvo"
 
-// ResolveConversationStoragePath resolves defaults.conversationStoragePath into an effective db path.
-// Absolute paths are used directly. Relative paths are resolved against the config file directory.
+// ResolveConversationStoragePath resolves defaults.conversationStoragePath into
+// the effective SQLite path used at runtime.
+//
+// Resolution contract:
+//   - empty value => DefaultConversationStoragePath
+//   - supports ~ and ~/... home expansion
+//   - absolute paths are cleaned and used directly
+//   - relative paths are resolved against config file directory when known;
+//     otherwise they remain relative to the current working directory
+//
+// This function only resolves/normalizes paths and does not create directories
+// or check filesystem permissions.
 func ResolveConversationStoragePath(defaults Defaults, configFilePath string) (string, error) {
 	rawPath := defaults.ConversationStoragePath
 	if rawPath == "" {
@@ -34,6 +44,9 @@ func ResolveConversationStoragePath(defaults Defaults, configFilePath string) (s
 	return filepath.Clean(filepath.Join(filepath.Dir(configFilePath), path)), nil
 }
 
+// expandHomePath expands ~ prefixes for the current user.
+// Supported forms are "~" and "~/..." (including "~\\..." on Windows-style input).
+// User-qualified forms such as "~otheruser/..." are rejected.
 func expandHomePath(path string) (string, error) {
 	if path == "~" || strings.HasPrefix(path, "~/") || strings.HasPrefix(path, `~\`) {
 		home, err := os.UserHomeDir()

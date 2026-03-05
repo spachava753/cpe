@@ -6,6 +6,11 @@ import (
 	"strings"
 )
 
+// normalizeCodeModeConfigPaths returns a normalized copy of codeMode where each
+// localModulePaths entry is trimmed, resolved to an absolute canonical path, and
+// deduplicated after resolution.
+//
+// The input config object is never mutated.
 func normalizeCodeModeConfigPaths(codeMode *CodeModeConfig, configFilePath string) (*CodeModeConfig, error) {
 	if codeMode == nil {
 		return nil, nil
@@ -37,6 +42,12 @@ func normalizeCodeModeConfigPaths(codeMode *CodeModeConfig, configFilePath strin
 	return &normalized, nil
 }
 
+// resolveCodeModePath resolves one codeMode path using the following rules:
+//   - expand ~ via expandHomePath
+//   - if still relative and configFilePath is known, resolve relative to config dir
+//   - convert to absolute path, clean it, then best-effort symlink evaluation
+//
+// The returned path is suitable for duplicate detection and filesystem checks.
 func resolveCodeModePath(path, configFilePath string) (string, error) {
 	expandedPath, err := expandHomePath(path)
 	if err != nil {

@@ -17,44 +17,60 @@ import (
 	"github.com/spachava753/cpe/internal/types"
 )
 
-// FinalAnswerToolName is the name of the tool used for structured output
+// FinalAnswerToolName is the reserved terminal tool for structured subagent output.
+// When OutputSchema is configured, the model must call this tool exactly when it is
+// ready to return its final schema-shaped answer.
 const FinalAnswerToolName = "final_answer"
 
-// SubagentOptions contains parameters for subagent execution
+// SubagentOptions defines execution-time dependencies for one subagent run.
+//
+// OutputSchema, Storage, and EventClient are optional extensions layered on top
+// of core generation. When EventClient is set, SubagentName and RunID must also
+// be set so emitted events can be attributed and correlated.
 type SubagentOptions struct {
-	// UserBlocks is the input to the subagent
+	// UserBlocks is the user message content for the run; must be non-empty.
 	UserBlocks []gai.Block
 
-	// Generator is the tool-capable generator to use
+	// Generator executes the dialog. If OutputSchema is set, it must implement
+	// types.ToolRegistrar so final_answer can be registered.
 	Generator types.Generator
 
-	// GenOptsFunc returns generation options (optional)
+	// GenOptsFunc lazily derives generation options per dialog turn (optional).
 	GenOptsFunc gai.GenOptsGenerator
 
-	// OutputSchema is the JSON schema for structured output (optional).
-	// When set, a final_answer tool is registered with this schema as input,
-	// and execution terminates when the model calls final_answer.
-	// The tool call parameters are returned as the result.
+	// OutputSchema enables structured terminal output (optional).
+	// When non-nil, final_answer is registered with this schema as input. The run
+	// is considered successful only if the model calls final_answer; the call's
+	// parameters are returned as JSON text.
 	OutputSchema *jsonschema.Schema
 
-	// Storage is the dialog saver for persisting execution traces (optional).
-	// When set, persisted messages are marked as subagent-originated.
+	// Storage persists execution traces (optional). Saved messages are tagged with
+	// storage.MessageIsSubagentKey=true for downstream filtering.
 	Storage storage.DialogSaver
 
-	// EventClient is the client for emitting subagent events (optional).
-	// When set, events are emitted for lifecycle, tool calls, and thinking.
+	// EventClient streams lifecycle/tool/thinking events to the parent process
+	// (optional). See ExecuteSubagent for emission failure semantics.
 	EventClient *subagentlog.Client
 
-	// SubagentName is the name of the subagent (required when EventClient is set)
+	// SubagentName labels emitted events (required when EventClient is set).
 	SubagentName string
 
-	// RunID is the correlation ID for event tracking (required when EventClient is set)
+	// RunID correlates all emitted events for this invocation
+	// (required when EventClient is set).
 	RunID string
 }
 
-// ExecuteSubagent runs a subagent and returns the final response.
-// If OutputSchema is set, the subagent must call final_answer with structured data,
-// and that data is returned as JSON. Otherwise, the final text response is returned.
+// ExecuteSubagent runs one subagent invocation and returns its terminal output.
+//
+// Output contract:
+//   - With OutputSchema: returns JSON-encoded final_answer parameters.
+//   - Without OutputSchema: returns final assistant text content.
+//
+// Lifecycle event contract when EventClient is set:
+//   - subagent_start is emitted before execution; failure is fatal and aborts run.
+//   - subagent_end is emitted after execution (success or failure).
+//   - subagent_end emission failure is logged as warning and does not mask the
+//     original execution result.
 func ExecuteSubagent(ctx context.Context, opts SubagentOptions) (string, error) {
 	if len(opts.UserBlocks) == 0 {
 		return "", fmt.Errorf("empty input")
@@ -96,15 +112,18 @@ func ExecuteSubagent(ctx context.Context, opts SubagentOptions) (string, error) 
 	return result, execErr
 }
 
-// executeSubagentCore contains the core subagent execution logic
+// executeSubagentCore performs generation, optional trace persistence, and
+// terminal-output extraction without lifecycle-event boilerplate.
 func executeSubagentCore(ctx context.Context, opts SubagentOptions) (string, error) {
-	// Determine the generator to use - wrap with EmittingGenerator if event client is set
+	// Wrap generator when event streaming is enabled so tool/thinking events follow
+	// subagentlog ordering and failure semantics.
 	generator := opts.Generator
 	if opts.EventClient != nil {
 		generator = subagentlog.NewEmittingGenerator(opts.Generator, opts.EventClient, opts.SubagentName, opts.RunID)
 	}
 
-	// If output schema is configured, register the final_answer tool
+	// If structured output is configured, expose final_answer so the model can
+	// terminate with schema-shaped data.
 	if opts.OutputSchema != nil {
 		registrar, ok := generator.(types.ToolRegistrar)
 		if !ok {
@@ -116,7 +135,8 @@ func executeSubagentCore(ctx context.Context, opts SubagentOptions) (string, err
 			Description: "Submit the final structured answer. Call this tool when you have completed the task and are ready to return the result.",
 			InputSchema: opts.OutputSchema,
 		}
-		// Register with nil callback to terminate execution when called
+		// Register with nil callback: tool use itself is the termination signal,
+		// and parameters are later extracted from the dialog.
 		if err := registrar.Register(finalAnswerTool, nil); err != nil {
 			return "", fmt.Errorf("failed to register final_answer tool: %w", err)
 		}
@@ -157,8 +177,11 @@ func executeSubagentCore(ctx context.Context, opts SubagentOptions) (string, err
 	return extractFinalResponse(resultDialog), nil
 }
 
-// saveSubagentTrace persists the subagent execution trace to storage.
-// Messages are saved as a single dialog (user message followed by assistant messages).
+// saveSubagentTrace persists one subagent run as a single dialog in message order:
+// user message first, then generated assistant/tool messages.
+//
+// Every saved message is tagged as subagent-originated for filtering in storage
+// and UI surfaces.
 func saveSubagentTrace(ctx context.Context, saver storage.DialogSaver, userMsg gai.Message, assistantMsgs gai.Dialog) error {
 	// Build the full dialog: user message first, then all assistant messages
 	allMsgs := make([]gai.Message, 0, len(assistantMsgs)+1)
@@ -187,9 +210,11 @@ func saveSubagentTrace(ctx context.Context, saver storage.DialogSaver, userMsg g
 	return nil
 }
 
-// extractFinalAnswerParams extracts the parameters from a final_answer tool call.
-// It searches the dialog for a ToolCall block with name "final_answer" and returns
-// its parameters as JSON.
+// extractFinalAnswerParams finds the most recent final_answer tool call and
+// returns its parameters as compact JSON text.
+//
+// The search runs from the end of the dialog to honor the latest terminal tool
+// invocation. If no final_answer call exists, an error is returned.
 func extractFinalAnswerParams(dialog gai.Dialog) (string, error) {
 	// Search from the end of the dialog for the final_answer tool call
 	for i := len(dialog) - 1; i >= 0; i-- {
@@ -219,7 +244,8 @@ func extractFinalAnswerParams(dialog gai.Dialog) (string, error) {
 	return "", fmt.Errorf("subagent did not call final_answer tool")
 }
 
-// extractFinalResponse extracts the final text response from the dialog
+// extractFinalResponse returns text blocks from the last assistant message.
+// Non-text modalities and non-content blocks are ignored.
 func extractFinalResponse(dialog gai.Dialog) string {
 	// Find the last assistant message
 	for i := len(dialog) - 1; i >= 0; i-- {

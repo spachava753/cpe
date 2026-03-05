@@ -10,14 +10,25 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
-// Validate checks if the configuration is valid.
-// Relative paths in codeMode are validated relative to the current working directory.
+// Validate enforces schema and semantic invariants for RawConfig.
+//
+// It is equivalent to ValidateWithConfigPath(""): path-based fields are
+// interpreted relative to the current working directory.
 func (c *RawConfig) Validate() error {
 	return c.ValidateWithConfigPath("")
 }
 
-// ValidateWithConfigPath checks if the configuration is valid.
-// Relative codeMode paths are validated relative to configFilePath when provided.
+// ValidateWithConfigPath enforces both structural validation tags and
+// cross-field invariants that require lookup or filesystem checks.
+//
+// Invariants validated here include:
+//   - defaults.model references an existing entry in models.
+//   - auth_method provider constraints for each model.
+//   - defaults.codeMode and model.codeMode path normalization + module checks.
+//   - optional subagent.outputSchemaPath exists and contains valid JSON.
+//
+// When configFilePath is provided, relative codeMode paths are interpreted from
+// that config file directory before existence checks.
 func (c *RawConfig) ValidateWithConfigPath(configFilePath string) error {
 	validate := validator.New(validator.WithRequiredStructEnabled())
 	if err := validate.Struct(c); err != nil {
@@ -56,6 +67,9 @@ func (c *RawConfig) ValidateWithConfigPath(configFilePath string) error {
 	return nil
 }
 
+// validateCodeModeConfig validates normalized localModulePaths and enforces
+// module directory invariants (existing directory with a go.mod file).
+// fieldPrefix is used to produce location-aware validation errors.
 func validateCodeModeConfig(codeMode *CodeModeConfig, configFilePath, fieldPrefix string) error {
 	normalized, err := normalizeCodeModeConfigPaths(codeMode, configFilePath)
 	if err != nil {
@@ -94,7 +108,8 @@ func validateCodeModeConfig(codeMode *CodeModeConfig, configFilePath, fieldPrefi
 	return nil
 }
 
-// validateModelAuth validates auth_method constraints
+// validateModelAuth validates provider-specific auth_method constraints.
+// Currently, auth_method=oauth is restricted to anthropic and responses types.
 func validateModelAuth(m ModelConfig) error {
 	if strings.ToLower(m.AuthMethod) == "oauth" {
 		modelType := strings.ToLower(m.Type)
@@ -105,7 +120,8 @@ func validateModelAuth(m ModelConfig) error {
 	return nil
 }
 
-// validateSubagentConfig validates the subagent configuration
+// validateSubagentConfig validates optional subagent output schema wiring.
+// When outputSchemaPath is set, the target file must exist and parse as JSON.
 func (c *RawConfig) validateSubagentConfig() error {
 	if c.Subagent.OutputSchemaPath == "" {
 		return nil

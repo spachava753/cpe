@@ -143,7 +143,9 @@ var mcpCallToolCmd = &cobra.Command{
 	},
 }
 
-// mcpServeCmd represents the 'mcp serve' subcommand
+// mcpServeCmd starts MCP server mode (single subagent tool over stdio).
+// In this mode stdout is reserved for MCP protocol traffic, so diagnostics must
+// flow through stderr from lower layers.
 var mcpServeCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Run CPE as an MCP server",
@@ -157,7 +159,8 @@ configuration file. The default config search behavior is disabled.`,
 	Example: `  # Start the MCP server with a subagent config
   cpe mcp serve --config ./coder_agent.cpe.yaml`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// For mcp serve, we require an explicit config path - don't use default search
+		// Server mode requires an explicit config to guarantee deterministic tool
+		// name/description/schema exposure; default config search is disabled.
 		configFlag := cmd.Root().PersistentFlags().Lookup("config")
 		if configFlag == nil || !configFlag.Changed {
 			return fmt.Errorf("--config flag is required for mcp serve")

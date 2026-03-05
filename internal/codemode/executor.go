@@ -42,7 +42,9 @@ const mcpSDKImport = "github.com/modelcontextprotocol/go-sdk/mcp"
 
 const spilledOutputFilePattern = "cpe-code-output-*.txt"
 
-// ExecutionResult represents the outcome of code execution
+// ExecutionResult captures process output and exit metadata from sandboxed code execution.
+// Output is combined stdout/stderr and may contain truncation metadata when large-output
+// spilling is enabled.
 type ExecutionResult struct {
 	Output   string           // Combined stdout/stderr
 	ExitCode int              // Exit code from the process
@@ -50,28 +52,35 @@ type ExecutionResult struct {
 }
 
 // ExecuteCodeOptions controls sandbox execution behavior.
+// LargeOutputCharLimit <= 0 disables output spilling and preview truncation.
 type ExecuteCodeOptions struct {
 	TimeoutSeconds       int
 	LargeOutputCharLimit int
 	LocalModulePaths     []string
 }
 
+// workspaceModule links a module path from go.mod to its local directory in the go.work file.
 type workspaceModule struct {
 	ModulePath string
 	Dir        string
 }
 
+// importsProcessMu serializes goimports execution while temporary environment overrides are set.
 var importsProcessMu sync.Mutex
 
-// ExecuteCode creates a temporary sandbox, writes files, and executes LLM-generated Go code.
-// It returns the execution result with combined output and exit code.
-// The temp directory is cleaned up after execution.
+// ExecuteCode runs generated Go code in an isolated temporary module.
+//
+// Pipeline:
+//   - create a temp module with generated main.go/run.go
+//   - create go.mod/go.work and optional local module replacements
+//   - run go mod tidy, go build, then execute the compiled binary
+//   - deserialize content.json into Result.Content when execution succeeds
 //
 // Error classification:
 //   - nil error with ExitCode 0: successful execution
-//   - RecoverableError: compilation errors, Run() errors (exit 1), panics (exit 2), timeouts
+//   - RecoverableError: compile failures, Run() errors (exit 1), panics (exit 2), timeouts, other non-fatal exits
 //   - FatalExecutionError: exit code 3 from fatalExit() in generated code
-//   - Other errors: infrastructure failures (temp dir, file writes, etc.)
+//   - Other errors: infrastructure failures (temp dir, file writes, command launch failures)
 func ExecuteCode(ctx context.Context, servers []*mcp.MCPConn, llmCode string, opts ExecuteCodeOptions) (ExecutionResult, error) {
 	// Create temp directory
 	tempDir, err := os.MkdirTemp("", "cpe-code-mode-*")
@@ -191,6 +200,10 @@ require github.com/modelcontextprotocol/go-sdk %s
 `, goVersion, mcpSDKVersion)
 }
 
+// prepareWorkspaceFile creates go.work for the sandbox and returns:
+//   - workspace file path
+//   - non-temp modules that need go mod -replace entries
+//   - highest go directive version required across workspace modules
 func prepareWorkspaceFile(tempModuleDir string, opts ExecuteCodeOptions, defaultGoVersion string) (string, []workspaceModule, string, error) {
 	workspaceModulePaths := append([]string{tempModuleDir}, opts.LocalModulePaths...)
 
@@ -276,6 +289,7 @@ func normalizeWorkspaceModulePaths(paths []string) ([]string, error) {
 	return normalized, nil
 }
 
+// validateWorkspaceModulePath ensures the path is a directory with a regular go.mod file.
 func validateWorkspaceModulePath(modulePath string) error {
 	moduleStat, err := os.Stat(modulePath)
 	if err != nil {
@@ -303,6 +317,7 @@ func validateWorkspaceModulePath(modulePath string) error {
 	return nil
 }
 
+// readWorkspaceModuleInfo reads module path and normalized go directive from go.mod.
 func readWorkspaceModuleInfo(moduleDir string) (modulePath, goVersion string, err error) {
 	goModPath := filepath.Join(moduleDir, "go.mod")
 	data, err := os.ReadFile(goModPath)
@@ -329,6 +344,8 @@ func readWorkspaceModuleInfo(moduleDir string) (modulePath, goVersion string, er
 	return parsed.Module.Mod.Path, moduleGoVersion, nil
 }
 
+// normalizeGoDirectiveVersion accepts values like "go1.24", "v1.24", or "1.24"
+// and returns the canonical go directive form without the "go" prefix.
 func normalizeGoDirectiveVersion(raw string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -349,10 +366,13 @@ func normalizeGoDirectiveVersion(raw string) (string, error) {
 	return strings.TrimPrefix(prefixed, "go"), nil
 }
 
+// compareGoDirectiveVersions compares normalized go directive versions.
 func compareGoDirectiveVersions(left, right string) int {
 	return goversion.Compare("go"+left, "go"+right)
 }
 
+// detectGoToolchainVersion reads GOVERSION from the active toolchain and normalizes
+// it to a go.mod/go.work-compatible directive version.
 func detectGoToolchainVersion(ctx context.Context) (string, error) {
 	result, err := runCommand(ctx, "", nil, "go", "env", "GOVERSION")
 	if err != nil {
@@ -369,6 +389,8 @@ func detectGoToolchainVersion(ctx context.Context) (string, error) {
 	return version, nil
 }
 
+// applyWorkspaceModuleReplacements writes go.mod replace directives for local workspace
+// modules so generated code imports resolve to the caller's checked-out sources.
 func applyWorkspaceModuleReplacements(ctx context.Context, dir string, envOverrides map[string]string, modules []workspaceModule) error {
 	if len(modules) == 0 {
 		return nil
@@ -388,6 +410,8 @@ func applyWorkspaceModuleReplacements(ctx context.Context, dir string, envOverri
 	return nil
 }
 
+// mergeEnv applies KEY=VALUE overrides on top of base environment entries and
+// returns a sorted environment slice for deterministic command invocation.
 func mergeEnv(base []string, overrides map[string]string) []string {
 	if len(overrides) == 0 {
 		return base
@@ -413,7 +437,8 @@ func mergeEnv(base []string, overrides map[string]string) []string {
 	return result
 }
 
-// runCommand executes a command in the given directory and returns the result.
+// runCommand executes a command in dir with merged environment overrides.
+// Exit errors are encoded in ExecutionResult.ExitCode; launch/context errors are returned directly.
 func runCommand(ctx context.Context, dir string, envOverrides map[string]string, name string, args ...string) (ExecutionResult, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
@@ -442,9 +467,9 @@ func runCommand(ctx context.Context, dir string, envOverrides map[string]string,
 	return result, nil
 }
 
-// runProgramWithTimeout executes a binary with timeout enforcement and graceful shutdown.
-// On timeout or context cancellation, it sends SIGINT and waits gracePeriod for the process
-// to exit gracefully before sending SIGKILL.
+// runProgramWithTimeout executes the compiled binary under executionTimeout semantics.
+// On cancellation, it sends SIGINT first, allows gracePeriod for cleanup, then SIGKILL if needed.
+// When timeoutCtx hits its deadline, a cancellation note is appended to stdout/stderr output.
 func runProgramWithTimeout(ctx context.Context, binaryPath string, timeoutSecs int, envOverrides map[string]string) (ExecutionResult, error) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSecs)*time.Second)
 	defer cancel()
@@ -489,6 +514,8 @@ func runProgramWithTimeout(ctx context.Context, binaryPath string, timeoutSecs i
 	return result, nil
 }
 
+// appendTimeoutCancellationNote appends a stable timeout hint used by the agent loop
+// to explain why execution stopped.
 func appendTimeoutCancellationNote(output string, timeoutSecs int) string {
 	note := fmt.Sprintf(timeoutCancellationNoteTemplate, timeoutSecs)
 	if output == "" {
@@ -500,6 +527,8 @@ func appendTimeoutCancellationNote(output string, timeoutSecs int) string {
 	return output + "\n" + note
 }
 
+// maybeSpillLargeOutput truncates oversized output to a preview and persists full output
+// to a temp file so model context stays bounded while preserving debuggability.
 func maybeSpillLargeOutput(result ExecutionResult, charLimit int) ExecutionResult {
 	if charLimit <= 0 || result.Output == "" {
 		return result
@@ -516,6 +545,7 @@ func maybeSpillLargeOutput(result ExecutionResult, charLimit int) ExecutionResul
 	return result
 }
 
+// spillOutputToDisk writes full tool output to a temp file and returns the file path.
 func spillOutputToDisk(output string) (string, error) {
 	f, err := os.CreateTemp("", spilledOutputFilePattern)
 	if err != nil {
@@ -530,6 +560,7 @@ func spillOutputToDisk(output string) (string, error) {
 	return f.Name(), nil
 }
 
+// firstNChars returns a rune-safe prefix used for previewing truncated output.
 func firstNChars(s string, n int) string {
 	if n <= 0 {
 		return ""
@@ -540,6 +571,7 @@ func firstNChars(s string, n int) string {
 	return string([]rune(s)[:n])
 }
 
+// formatSpilledOutputMessage builds the warning shown to the model when output was truncated.
 func formatSpilledOutputMessage(totalChars, charLimit int, preview, spillPath string, spillErr error) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("WARNING: tool result exceeded character limit (%d characters > %d).\n", totalChars, charLimit))
@@ -567,7 +599,8 @@ func formatSpilledOutputMessage(totalChars, charLimit int, preview, spillPath st
 	return b.String()
 }
 
-// classifyExitCode returns an appropriate error based on the execution result's exit code.
+// classifyExitCode maps sandbox process exits to agent-facing error classes.
+// The mapping matches exit codes emitted by generated main.go wrapper code.
 func classifyExitCode(result ExecutionResult) error {
 	switch result.ExitCode {
 	case 0:
@@ -620,6 +653,8 @@ func autoCorrectImports(ctx context.Context, dir, filename string, envOverrides 
 	return formatImportChanges(filename, origImports, newImports)
 }
 
+// applyEnvOverrides temporarily mutates process env for libraries (like goimports)
+// that read environment variables globally, and returns a restore function.
 func applyEnvOverrides(overrides map[string]string) func() {
 	if len(overrides) == 0 {
 		return func() {}

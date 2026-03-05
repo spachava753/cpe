@@ -6,15 +6,14 @@ import (
 	"github.com/spachava753/cpe/internal/mcp"
 )
 
-// PartitionTools separates tools into code-mode and excluded categories.
-// Tools in the excludedToolNames list will be returned as excludedByServer for normal registration.
-// All other tools will be grouped by server in codeModeServers for code mode access.
+// PartitionTools splits MCP tools into code-mode exposure and regular callback exposure.
+// Name matching is exact against excludedToolNames across all servers.
 //
 // Returns:
-//   - codeModeServers: MCPConn entries for code mode (used by maingen.go, ignores ClientSession)
-//   - excludedByServer: Excluded tools grouped by server name (caller creates callbacks)
+//   - codeModeServers: per-server tool lists used for generated code bindings
+//   - excludedByServer: tools removed from code mode so callers can register normal callbacks
 //
-// Note: Servers with zero code-mode tools after partitioning are excluded from codeModeServers.
+// Servers with zero remaining code-mode tools are omitted from codeModeServers.
 func PartitionTools(
 	mcpState *mcp.MCPState,
 	excludedToolNames []string,
@@ -51,7 +50,8 @@ func PartitionTools(
 	return codeModeServers, excludedByServer
 }
 
-// GetCodeModeToolNames extracts tool names from MCPConn entries for collision detection.
+// GetCodeModeToolNames flattens code-mode tool names for collision checks.
+// Duplicate names are intentionally preserved so validators can detect conflicts.
 func GetCodeModeToolNames(servers []*mcp.MCPConn) []string {
 	var names []string
 	for _, server := range servers {

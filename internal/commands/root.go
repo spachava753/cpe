@@ -16,7 +16,9 @@ import (
 	"github.com/spachava753/cpe/internal/subagentlog"
 )
 
-// ExecuteRootOptions contains all parameters for the root command execution
+// ExecuteRootOptions contains pre-resolved dependencies and inputs for
+// ExecuteRoot. The CLI layer is responsible for populating this struct from
+// flags/environment/config and for initializing optional persistence.
 type ExecuteRootOptions struct {
 	// Args are the command line arguments (prompt)
 	Args []string
@@ -54,7 +56,13 @@ type ExecuteRootOptions struct {
 	VerboseSubagent bool
 }
 
-// ExecuteRoot runs the main CPE generation flow
+// ExecuteRoot runs the core generation orchestration.
+//
+// Boundary contract:
+//   - Does: process input blocks, render system prompt, initialize MCP,
+//     construct generator, and execute generation.
+//   - Does not: parse CLI flags, load/resolve config files, or open/close
+//     storage databases (except using the provided DialogSaver abstraction).
 func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 	stdout := opts.Stdout
 	if stdout == nil {
@@ -66,6 +74,8 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 		stderr = os.Stderr
 	}
 
+	// effectiveConfig aliases opts.Config; field updates below intentionally apply
+	// to the runtime config for this invocation.
 	effectiveConfig := opts.Config
 
 	// Process user input

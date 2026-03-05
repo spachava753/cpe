@@ -9,7 +9,7 @@ import (
 	"github.com/spachava753/gai"
 )
 
-// NewToolCallback creates a ToolCallback for an MCP tool
+// NewToolCallback binds an MCP session/server/tool triple into a reusable callback.
 func NewToolCallback(session *mcpsdk.ClientSession, serverName, toolName string) *ToolCallback {
 	return &ToolCallback{
 		ClientSession: session,
@@ -18,7 +18,8 @@ func NewToolCallback(session *mcpsdk.ClientSession, serverName, toolName string)
 	}
 }
 
-// ToGaiTool converts an MCP tool to a gai.Tool
+// ToGaiTool adapts MCP tool metadata into gai.Tool format used by providers.
+// InputSchema is normalized via JSON marshal/unmarshal into jsonschema.Schema.
 func ToGaiTool(mcpTool *mcpsdk.Tool) (gai.Tool, error) {
 	// Convert InputSchema from map[string]any to *jsonschema.Schema
 	inputSchemaJSON, err := json.Marshal(mcpTool.InputSchema)

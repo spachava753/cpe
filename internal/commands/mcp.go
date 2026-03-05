@@ -385,7 +385,8 @@ func MCPCodeDesc(ctx context.Context, opts MCPCodeDescOptions) error {
 	return nil
 }
 
-// generateRunID generates a unique run ID for subagent invocations
+// generateRunID produces a short correlation ID for subagent event streams when
+// callers do not provide runId explicitly.
 func generateRunID() string {
 	const charset = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 	const length = 8
@@ -398,13 +399,21 @@ func generateRunID() string {
 	return id
 }
 
-// MCPServeOptions contains parameters for running the MCP server
+// MCPServeOptions configures `cpe mcp serve` execution.
 type MCPServeOptions struct {
-	// ConfigPath is the path to the subagent configuration file
+	// ConfigPath is the explicit subagent config path required for server mode.
 	ConfigPath string
 }
 
-// MCPServe runs CPE as an MCP server exposing a subagent as a tool
+// MCPServe runs CPE in MCP server mode, exposing exactly one configured
+// subagent tool over stdio transport.
+//
+// Startup contract:
+//   - Subagent configuration must be present.
+//   - Optional output schema is loaded and validated up front.
+//   - Conversation storage is initialized for trace persistence.
+//   - If CPE_SUBAGENT_LOGGING_ADDRESS is set, lifecycle/tool/thinking events are
+//     emitted to that parent logging endpoint.
 func MCPServe(ctx context.Context, opts MCPServeOptions) error {
 	// Load raw config to check subagent is configured
 	rawCfg, resolvedConfigPath, err := config.LoadRawConfigWithPath(opts.ConfigPath)
@@ -450,7 +459,8 @@ func MCPServe(ctx context.Context, opts MCPServeOptions) error {
 		return fmt.Errorf("failed to initialize dialog storage: %w", err)
 	}
 
-	// Check for subagent logging address from environment
+	// Parent processes inject this address to enable real-time stderr event
+	// streaming. When unset, subagent execution proceeds without event emission.
 	loggingAddress := os.Getenv(subagentlog.SubagentLoggingAddressEnv)
 	var eventClient *subagentlog.Client
 	if loggingAddress != "" {
@@ -461,7 +471,8 @@ func MCPServe(ctx context.Context, opts MCPServeOptions) error {
 	displayName := rawCfg.Subagent.Name
 	displayName = strings.TrimSuffix(displayName, "-subagent")
 
-	// Create the executor
+	// Create the execution bridge used by internal/mcp.Server tool handler.
+	// outputSchema controls final_answer registration and structured terminal output.
 	executor := createSubagentExecutor(opts.ConfigPath, outputSchema, displayName, dialogStorage, eventClient)
 
 	// Create server config
@@ -485,7 +496,11 @@ func MCPServe(ctx context.Context, opts MCPServeOptions) error {
 	return server.Serve(ctx)
 }
 
-// createSubagentExecutor creates an executor function that runs the subagent.
+// createSubagentExecutor builds the MCP tool-call execution closure.
+//
+// Per invocation it resolves config, builds user/context blocks, creates a fresh
+// generator with MCP connections, and runs ExecuteSubagent exactly once (no retry).
+// The provided runId is propagated to lifecycle/tool/thinking events.
 func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, subagentName string, dialogStorage storage.DialogSaver, eventClient *subagentlog.Client) mcpinternal.SubagentExecutor {
 	return func(ctx context.Context, input mcpinternal.SubagentInput) (string, error) {
 		// Check context before starting
@@ -493,7 +508,8 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 			return "", fmt.Errorf("execution cancelled before start: %w", err)
 		}
 
-		// Use the RunID from input if provided, otherwise generate one
+		// runId is required by MCP input schema, but keep a fallback for defensive
+		// compatibility with direct executor tests/callers.
 		runID := input.RunID
 		if runID == "" {
 			runID = generateRunID()
@@ -565,7 +581,8 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 			}
 		}
 
-		// Execute the subagent with storage and event client
+		// ExecuteSubagent handles lifecycle event emission, tool/thinking streaming,
+		// trace persistence, and final output extraction.
 		result, err := ExecuteSubagent(ctx, SubagentOptions{
 			UserBlocks:   userBlocks,
 			Generator:    generator,

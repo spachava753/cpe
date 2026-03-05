@@ -10,12 +10,12 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// InitializeConnections connects to all configured MCP servers and fetches their tools.
-// It applies tool filtering per server configuration (enabledTools/disabledTools).
-// Returns an MCPState that must be closed when done.
+// InitializeConnections establishes sessions to all configured MCP servers,
+// lists tools, applies per-server filtering, and validates cross-server tool name
+// uniqueness after filtering.
 //
-// Fails fast: returns error immediately if any server fails to connect or if
-// duplicate tool names are detected across servers.
+// It fails fast: on any connect/list/validation error, already-open sessions are
+// closed before returning.
 func InitializeConnections(
 	ctx context.Context,
 	servers map[string]ServerConfig,
@@ -64,6 +64,8 @@ func InitializeConnections(
 	return state, nil
 }
 
+// connectToServer creates one transport/session pair, fetches tools, and applies
+// enabled/disabled filtering for that server.
 func connectToServer(
 	ctx context.Context,
 	client *mcpsdk.Client,

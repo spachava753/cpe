@@ -24,7 +24,13 @@ Key capabilities:
 - `main.go`: invokes cmd.Execute()
 - `gen.go`: code generation hooks, like sqlc codegen
 - `examples/`: Folder that hosts examples of configuration, system prompt templates, etc.
-- `docs/`: Folder that hosts markdown files documenting various things like PRDs, specs, etc.
+- `docs/`: Historical PRDs/spec notes and migration context
+
+## Documentation source of truth
+
+- Package-level `doc.go` files under `cmd/`, `internal/`, and `build/` are the canonical feature and behavior specs.
+- Exported symbols used across packages should have Go doc comments that describe behavior and contracts.
+- `docs/prds/` is treated as high-level product context; implementation behavior should be documented in code-adjacent docs first.
 
 ## Build, test, and development commands
 
@@ -227,7 +233,7 @@ When a subagent runs, events stream to the root CPE process for real-time visibi
 
 Events are printed to **stderr** to avoid corrupting MCP protocol on stdout. If event emission fails (connection refused, non-2xx, timeout), the subagent aborts immediately—observability is considered essential.
 
-See `docs/specs/subagent_logging.md` for full specification.
+See `internal/subagentlog/doc.go` and exported symbol comments in `internal/subagentlog/` for the authoritative behavioral contract.
 
 ## Documentation for Go Symbols
 

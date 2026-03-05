@@ -13,7 +13,9 @@ import (
 	"github.com/goyek/goyek/v2"
 )
 
-// Lint runs golangci-lint and custom linters on the codebase
+// Lint runs repository lint checks used by local development and CI.
+// It executes `go tool golangci-lint run ./...` (honoring -lint-fix and -lint-verbose)
+// and then enforces the cmd package wiring-only rule via lintCmdPackage.
 var Lint = goyek.Define(goyek.Task{
 	Name:  "lint",
 	Usage: "Run golangci-lint and custom linters. Use -lint-fix to auto-fix, -lint-verbose for details",
@@ -53,8 +55,8 @@ var Lint = goyek.Define(goyek.Task{
 	},
 })
 
-// lintCmdPackage ensures cmd package only has cobra setup (no business logic functions).
-// Returns a list of issues found.
+// lintCmdPackage reports cmd-package declarations that should move to ./internal.
+// The only allowed package-level functions are init and Execute.
 func lintCmdPackage() []string {
 	fset := token.NewFileSet()
 

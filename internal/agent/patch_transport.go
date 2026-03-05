@@ -12,12 +12,16 @@ import (
 	"github.com/spachava753/cpe/internal/config"
 )
 
+// PatchTransport decorates an HTTP transport by injecting configured headers
+// and applying JSON patches to JSON request bodies before forwarding requests.
 type PatchTransport struct {
 	base        http.RoundTripper
 	jsonPatches []jsonpatch.Patch
 	headers     map[string]string
 }
 
+// NewPatchTransport constructs a PatchTransport. If base is nil,
+// http.DefaultTransport is used.
 func NewPatchTransport(base http.RoundTripper, patches []jsonpatch.Patch, headers map[string]string) *PatchTransport {
 	if base == nil {
 		base = http.DefaultTransport
@@ -59,6 +63,9 @@ func (t *PatchTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.base.RoundTrip(req)
 }
 
+// BuildPatchTransportFromConfig converts model patchRequest configuration into
+// an http.RoundTripper wrapper. When no patches or headers are configured, the
+// original transport is returned unchanged.
 func BuildPatchTransportFromConfig(base http.RoundTripper, patchConfig *config.PatchRequestConfig) (http.RoundTripper, error) {
 	if patchConfig == nil {
 		return base, nil

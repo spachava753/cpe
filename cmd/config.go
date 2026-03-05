@@ -8,6 +8,8 @@ import (
 	"github.com/spachava753/cpe/internal/commands"
 )
 
+// configCmd is a CLI-only command group; subcommands delegate mutations to
+// internal/commands after Cobra argument parsing.
 var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Manage CPE configuration",
@@ -15,6 +17,8 @@ var configCmd = &cobra.Command{
 
 var configAddRef string
 
+// configAddCmd parses provider/model inputs and delegates registry + file
+// mutation logic to commands.ConfigAdd.
 var configAddCmd = &cobra.Command{
 	Use:   "add <provider>/<model-id>",
 	Short: "Add a model from the models.dev registry to your configuration",
@@ -39,6 +43,8 @@ Examples:
 	},
 }
 
+// configRemoveCmd parses ref input and delegates config mutation to
+// commands.ConfigRemove.
 var configRemoveCmd = &cobra.Command{
 	Use:   "remove <ref>",
 	Short: "Remove a model from your configuration by ref",

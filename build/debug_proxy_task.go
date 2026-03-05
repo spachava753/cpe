@@ -15,7 +15,10 @@ import (
 	"github.com/goyek/goyek/v2"
 )
 
-// DebugProxy starts an HTTP debug proxy
+// DebugProxy runs a local reverse proxy that logs HTTP requests and responses.
+// Operators provide -target for the upstream URL and optionally -port for local listen.
+// Output is terminal-focused: credential headers are partially masked and bodies are
+// pretty-printed with truncation for readability.
 var DebugProxy = goyek.Define(goyek.Task{
 	Name:  "debug-proxy",
 	Usage: "HTTP debug proxy. Use -target=URL [-port=8080]",
@@ -113,6 +116,8 @@ var DebugProxy = goyek.Define(goyek.Task{
 	},
 })
 
+// prettyPrint prints payloads as indented JSON when possible, otherwise raw text.
+// Output is capped to keep debug sessions readable in a terminal.
 func prettyPrint(data []byte) {
 	var obj interface{}
 	if err := json.Unmarshal(data, &obj); err == nil {
