@@ -15,12 +15,13 @@ import (
 // single message and references its children, forming a tree that mirrors
 // the branching conversation structure stored in SQLite.
 type memNode struct {
-	id        string
-	parentID  string
-	message   gai.Message
-	title     string
-	createdAt time.Time
-	children  []*memNode
+	id         string
+	seq        int64
+	parentID   string
+	message    gai.Message
+	isSubagent bool
+	createdAt  time.Time
+	children   []*memNode
 }
 
 // MemDB is an in-memory implementation of MessageDB backed by a tree
@@ -38,6 +39,8 @@ type MemDB struct {
 	byID map[string]*memNode
 	// nextID is a simple incrementing counter for generating unique IDs.
 	nextID int
+	// nextSeq is a monotonic insertion sequence used as a stable tie-breaker.
+	nextSeq int64
 }
 
 // NewMemDB creates a new empty in-memory message database.
@@ -126,14 +129,16 @@ func (m *MemDB) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter
 
 			// New message — save it.
 			id := m.generateID()
-			title := getExtraFieldString(msg.ExtraFields, MessageTitleKey)
+			isSubagent := getExtraFieldBool(msg.ExtraFields, MessageIsSubagentKey)
+			m.nextSeq++
 
 			node := &memNode{
-				id:        id,
-				parentID:  prevID,
-				message:   msg,
-				title:     title,
-				createdAt: time.Now(),
+				id:         id,
+				seq:        m.nextSeq,
+				parentID:   prevID,
+				message:    msg,
+				isSubagent: isSubagent,
+				createdAt:  time.Now(),
 			}
 
 			if prevID != "" {
@@ -173,11 +178,11 @@ func (m *MemDB) DeleteMessages(ctx context.Context, opts DeleteMessagesOptions) 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Validate all messages before mutating anything (atomicity).
+	// Validate all existing messages before mutating anything (atomicity).
 	for _, id := range opts.MessageIDs {
 		node, ok := m.byID[id]
 		if !ok {
-			return fmt.Errorf("message %s not found", id)
+			continue
 		}
 
 		if !opts.Recursive && len(node.children) > 0 {
@@ -232,12 +237,31 @@ func (m *MemDB) ListMessages(ctx context.Context, opts ListMessagesOptions) (ite
 		all = append(all, node)
 	}
 
-	// Sort by createdAt.
+	// Sort by createdAt with insertion-sequence tie-breakers for determinism.
 	slices.SortFunc(all, func(a, b *memNode) int {
-		if opts.AscendingOrder {
-			return a.createdAt.Compare(b.createdAt)
+		cmp := a.createdAt.Compare(b.createdAt)
+		if cmp == 0 {
+			if opts.AscendingOrder {
+				if a.seq < b.seq {
+					return -1
+				}
+				if a.seq > b.seq {
+					return 1
+				}
+				return 0
+			}
+			if a.seq > b.seq {
+				return -1
+			}
+			if a.seq < b.seq {
+				return 1
+			}
+			return 0
 		}
-		return b.createdAt.Compare(a.createdAt)
+		if opts.AscendingOrder {
+			return cmp
+		}
+		return -cmp
 	})
 
 	// Apply offset.
@@ -274,27 +298,41 @@ func (m *MemDB) GetMessages(ctx context.Context, messageIDs []string) (iter.Seq[
 	return slices.Values(msgs), nil
 }
 
+func cloneExtraFieldsMap(extra map[string]any) map[string]any {
+	if extra == nil {
+		return nil
+	}
+	cloned := make(map[string]any, len(extra))
+	for k, v := range extra {
+		cloned[k] = v
+	}
+	return cloned
+}
+
+func cloneBlocks(blocks []gai.Block) []gai.Block {
+	if len(blocks) == 0 {
+		return nil
+	}
+	cloned := make([]gai.Block, len(blocks))
+	for i := range blocks {
+		cloned[i] = blocks[i]
+		cloned[i].ExtraFields = cloneExtraFieldsMap(blocks[i].ExtraFields)
+	}
+	return cloned
+}
+
 // nodeToMessage converts a memNode to a gai.Message with ExtraFields populated.
-// Blocks are shallow-copied so callers cannot mutate stored data.
 func (m *MemDB) nodeToMessage(node *memNode) gai.Message {
 	msg := node.message
-
-	// Copy the blocks slice so mutations by callers don't affect storage.
-	if len(msg.Blocks) > 0 {
-		blocks := make([]gai.Block, len(msg.Blocks))
-		copy(blocks, msg.Blocks)
-		msg.Blocks = blocks
-	}
+	msg.Blocks = cloneBlocks(msg.Blocks)
 
 	// Create a fresh ExtraFields map with storage metadata.
 	extra := make(map[string]any)
 	extra[MessageIDKey] = node.id
 	extra[MessageCreatedAtKey] = node.createdAt
+	extra[MessageIsSubagentKey] = node.isSubagent
 	if node.parentID != "" {
 		extra[MessageParentIDKey] = node.parentID
-	}
-	if node.title != "" {
-		extra[MessageTitleKey] = node.title
 	}
 	msg.ExtraFields = extra
 	return msg
@@ -313,13 +351,13 @@ func (m *MemDB) Nodes() []MemNode {
 			childIDs[i] = c.id
 		}
 		result = append(result, MemNode{
-			ID:        node.id,
-			ParentID:  node.parentID,
-			Role:      node.message.Role,
-			Blocks:    node.message.Blocks,
-			Title:     node.title,
-			CreatedAt: node.createdAt,
-			ChildIDs:  childIDs,
+			ID:         node.id,
+			ParentID:   node.parentID,
+			Role:       node.message.Role,
+			Blocks:     cloneBlocks(node.message.Blocks),
+			IsSubagent: node.isSubagent,
+			CreatedAt:  node.createdAt,
+			ChildIDs:   childIDs,
 		})
 	}
 	return result
@@ -327,11 +365,11 @@ func (m *MemDB) Nodes() []MemNode {
 
 // MemNode is a test-visible snapshot of a node in the MemDB tree.
 type MemNode struct {
-	ID        string
-	ParentID  string
-	Role      gai.Role
-	Blocks    []gai.Block
-	Title     string
-	CreatedAt time.Time
-	ChildIDs  []string
+	ID         string
+	ParentID   string
+	Role       gai.Role
+	Blocks     []gai.Block
+	IsSubagent bool
+	CreatedAt  time.Time
+	ChildIDs   []string
 }

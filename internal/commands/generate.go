@@ -92,10 +92,12 @@ func ResolveInitialDialog(ctx context.Context, resolver DialogResolver, continue
 	if continueID == "" {
 		msgs, err := resolver.ListMessages(ctx, storage.ListMessagesOptions{})
 		if err != nil {
-			// No previous conversation found - start new
-			return nil, nil //nolint:nilerr // intentional: treat list failure as empty history
+			return nil, fmt.Errorf("failed to list messages for auto-continue: %w", err)
 		}
 		for msg := range msgs {
+			if isSubagent, ok := msg.ExtraFields[storage.MessageIsSubagentKey].(bool); ok && isSubagent {
+				continue
+			}
 			if msg.Role == gai.Assistant || msg.Role == gai.ToolResult {
 				if id, ok := msg.ExtraFields[storage.MessageIDKey].(string); ok && id != "" {
 					continueID = id

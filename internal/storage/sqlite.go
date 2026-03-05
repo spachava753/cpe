@@ -48,6 +48,13 @@ type Sqlite struct {
 // DB. It runs the embedded schema DDL against db before returning. The caller
 // is responsible for opening and closing the underlying database connection.
 func NewSqlite(ctx context.Context, db DB) (*Sqlite, error) {
+	if err := enableForeignKeys(ctx, db); err != nil {
+		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
+	}
+	if err := migrateMessagesIsSubagentColumn(ctx, db); err != nil {
+		return nil, fmt.Errorf("failed to migrate schema: %w", err)
+	}
+
 	// Initialize schema from embedded SQL file
 	_, err := db.ExecContext(ctx, schemaSQL)
 	if err != nil {
@@ -60,6 +67,80 @@ func NewSqlite(ctx context.Context, db DB) (*Sqlite, error) {
 		q:           sqlcgen.New(db),
 		idGenerator: generateId,
 	}, nil
+}
+
+func enableForeignKeys(ctx context.Context, db DB) error {
+	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys = ON;"); err != nil {
+		return fmt.Errorf("failed to set PRAGMA foreign_keys = ON: %w", err)
+	}
+
+	var enabled int
+	if err := db.QueryRowContext(ctx, "PRAGMA foreign_keys;").Scan(&enabled); err != nil {
+		return fmt.Errorf("failed to verify PRAGMA foreign_keys: %w", err)
+	}
+	if enabled != 1 {
+		return fmt.Errorf("PRAGMA foreign_keys is OFF")
+	}
+	return nil
+}
+
+func migrateMessagesIsSubagentColumn(ctx context.Context, db DB) error {
+	var tableCount int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages'").Scan(&tableCount); err != nil {
+		return fmt.Errorf("failed to inspect existing schema: %w", err)
+	}
+	if tableCount == 0 {
+		return nil
+	}
+
+	hasIsSubagent, err := hasMessagesColumn(ctx, db, "is_subagent")
+	if err != nil {
+		return err
+	}
+	if hasIsSubagent {
+		return nil
+	}
+
+	if _, err := db.ExecContext(ctx, "ALTER TABLE messages ADD COLUMN is_subagent BOOLEAN NOT NULL DEFAULT 0"); err != nil {
+		return fmt.Errorf("failed to add is_subagent column: %w", err)
+	}
+
+	hasTitle, err := hasMessagesColumn(ctx, db, "title")
+	if err != nil {
+		return err
+	}
+	if hasTitle {
+		if _, err := db.ExecContext(ctx, "UPDATE messages SET is_subagent = 1 WHERE title LIKE 'subagent:%'"); err != nil {
+			return fmt.Errorf("failed to backfill is_subagent from legacy title labels: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func hasMessagesColumn(ctx context.Context, db DB, column string) (bool, error) {
+	rows, err := db.QueryContext(ctx, "PRAGMA table_info(messages)")
+	if err != nil {
+		return false, fmt.Errorf("failed to inspect messages table columns: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, colType string
+		var notNull, pk int
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &colType, &notNull, &defaultValue, &pk); err != nil {
+			return false, fmt.Errorf("failed to read messages table metadata: %w", err)
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("failed to iterate messages table metadata: %w", err)
+	}
+	return false, nil
 }
 
 // roleToString converts a gai.Role to its string representation
@@ -91,7 +172,7 @@ func stringToRole(s string) (gai.Role, error) {
 }
 
 // saveMessageInTx saves a single message and its blocks within a transaction.
-func (s *Sqlite) saveMessageInTx(ctx context.Context, qtx *sqlcgen.Queries, message gai.Message, parentID string, title string) (string, error) {
+func (s *Sqlite) saveMessageInTx(ctx context.Context, qtx *sqlcgen.Queries, message gai.Message, parentID string, isSubagent bool) (string, error) {
 	// Generate a unique message ID
 	messageID, err := s.generateUniqueIDInTx(ctx, qtx)
 	if err != nil {
@@ -104,17 +185,11 @@ func (s *Sqlite) saveMessageInTx(ctx context.Context, qtx *sqlcgen.Queries, mess
 		parentIDParam = sql.NullString{String: parentID, Valid: true}
 	}
 
-	// Prepare title parameter
-	var titleParam sql.NullString
-	if title != "" {
-		titleParam = sql.NullString{String: title, Valid: true}
-	}
-
 	// Create the message
 	err = qtx.CreateMessage(ctx, sqlcgen.CreateMessageParams{
 		ID:              messageID,
 		ParentID:        parentIDParam,
-		Title:           titleParam,
+		IsSubagent:      isSubagent,
 		Role:            roleToString(message.Role),
 		ToolResultError: message.ToolResultError,
 	})
@@ -170,6 +245,15 @@ func getExtraFieldString(m map[string]any, key string) string {
 		return ""
 	}
 	v, _ := m[key].(string)
+	return v
+}
+
+// getExtraFieldBool safely extracts a bool value from an ExtraFields map.
+func getExtraFieldBool(m map[string]any, key string) bool {
+	if m == nil {
+		return false
+	}
+	v, _ := m[key].(bool)
 	return v
 }
 
@@ -260,10 +344,10 @@ func (s *Sqlite) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) ite
 			}
 
 			// Message needs to be saved
-			title := getExtraFieldString(msg.ExtraFields, MessageTitleKey)
+			isSubagent := getExtraFieldBool(msg.ExtraFields, MessageIsSubagentKey)
 			parentID := prevID
 
-			savedID, saveErr := s.saveMessageInTx(ctx, qtx, msg, parentID, title)
+			savedID, saveErr := s.saveMessageInTx(ctx, qtx, msg, parentID, isSubagent)
 			if saveErr != nil {
 				yield(gai.Message{}, fmt.Errorf("failed to save message: %w", saveErr))
 				return
@@ -353,14 +437,12 @@ func (s *Sqlite) getMessage(ctx context.Context, messageID string) (gai.Message,
 	// (only block-level ExtraFields are). We create a fresh map here and populate it
 	// with the known keys that are stored as dedicated columns.
 	msgExtraFields := map[string]any{
-		MessageIDKey:        messageID,
-		MessageCreatedAtKey: msg.CreatedAt,
+		MessageIDKey:         messageID,
+		MessageCreatedAtKey:  msg.CreatedAt,
+		MessageIsSubagentKey: msg.IsSubagent,
 	}
 	if parentID != "" {
 		msgExtraFields[MessageParentIDKey] = parentID
-	}
-	if msg.Title.Valid {
-		msgExtraFields[MessageTitleKey] = msg.Title.String
 	}
 
 	return gai.Message{

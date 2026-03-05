@@ -399,18 +399,18 @@ This section defines ordered implementation tasks. Each task is a checklist item
 
 **Files modified:**
 - `cmd/mcp.go`: Initialize `storage.DialogStorage` for `.cpeconvo`, generate run IDs, pass storage to executor
-- `internal/commands/subagent.go`: Add `Storage` and `SubagentLabel` fields to `SubagentOptions`, implement `saveSubagentTrace()`
+- `internal/commands/subagent.go`: Add `Storage` field to `SubagentOptions`, implement `saveSubagentTrace()` with `is_subagent` marking
 
 **Implementation details:**
 - Storage initialized in `cmd/mcp.go` using `storage.InitDialogStorage(".cpeconvo")`
 - Each subagent invocation generates a unique 8-character run ID via `gonanoid`
-- Messages annotated with label format `subagent:<name>:<run_id>` in the title field
+- Messages marked with `is_subagent=1` (run ID is retained for event correlation, not message labeling)
 - Persistence is non-blocking: errors logged to stderr but don't fail execution
 - `saveSubagentTrace()` saves user message then chains assistant messages with parent IDs
 
 **Done when:**
 - Subagent execution creates entries in `.cpeconvo`
-- Entries are distinguishable from parent agent entries (via label/metadata)
+- Entries are distinguishable from parent agent entries (via `is_subagent` metadata)
 - `cpe conversation list` and `cpe conversation print` can display subagent traces
 
 **Tests:**

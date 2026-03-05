@@ -2,24 +2,24 @@
 
 -- Message queries
 -- name: CreateMessage :exec
-INSERT INTO messages (id, parent_id, title, role, tool_result_error)
+INSERT INTO messages (id, parent_id, is_subagent, role, tool_result_error)
 VALUES (?, ?, ?, ?, ?);
 
 -- name: GetMessage :one
-SELECT *
+SELECT id, parent_id, is_subagent, role, tool_result_error, created_at
 FROM messages
 WHERE id = ?;
 
 -- name: ListMessages :many
 SELECT id
 FROM messages
-ORDER BY created_at DESC;
+ORDER BY created_at DESC, rowid DESC;
 
 -- name: ListMessagesByParent :many
-SELECT *
+SELECT id, parent_id, is_subagent, role, tool_result_error, created_at
 FROM messages
 WHERE parent_id = ?
-ORDER BY created_at;
+ORDER BY created_at, rowid;
 
 -- name: DeleteMessage :exec
 DELETE
@@ -33,15 +33,15 @@ SELECT EXISTS(SELECT 1 FROM messages WHERE id = ?) as "exists";
 SELECT EXISTS(SELECT 1 FROM messages WHERE parent_id = ?) as has_children;
 
 -- name: ListMessagesDescending :many
-SELECT *
+SELECT id, parent_id, is_subagent, role, tool_result_error, created_at
 FROM messages
-ORDER BY created_at DESC
+ORDER BY created_at DESC, rowid DESC
 LIMIT -1 OFFSET ?;
 
 -- name: ListMessagesAscending :many
-SELECT *
+SELECT id, parent_id, is_subagent, role, tool_result_error, created_at
 FROM messages
-ORDER BY created_at ASC
+ORDER BY created_at ASC, rowid ASC
 LIMIT -1 OFFSET ?;
 
 -- Block queries

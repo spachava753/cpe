@@ -30,12 +30,12 @@ const (
 	// populate this field.
 	MessageCreatedAtKey = "cpe_message_created_at"
 
-	// MessageTitleKey is the key used in gai.Message.ExtraFields to store an
-	// optional label for a message. Typically used to annotate subagent
-	// execution traces (e.g., "subagent:<name>:<run_id>"). When saving a
-	// dialog, any message with this key set will have its title persisted.
-	// Messages without this key have no title.
-	MessageTitleKey = "cpe_message_title"
+	// MessageIsSubagentKey is the key used in gai.Message.ExtraFields to store
+	// whether a message belongs to a subagent execution trace. When saving a
+	// dialog, any message with this key set to true is persisted as
+	// is_subagent=1. Messages without this key (or with false) are persisted as
+	// non-subagent messages.
+	MessageIsSubagentKey = "cpe_message_is_subagent"
 )
 
 // DialogSaver persists a dialog (a sequence of related messages) to storage.
@@ -56,8 +56,8 @@ type DialogSaver interface {
 	//     saved to storage. The implementation assigns a unique ID, sets
 	//     ExtraFields[MessageIDKey] and ExtraFields[MessageParentIDKey]
 	//     (for non-root messages) on the message, and persists it.
-	//   - If the message has ExtraFields[MessageTitleKey] set, the title is
-	//     persisted with the message.
+	//   - If the message has ExtraFields[MessageIsSubagentKey] set to true,
+	//     the message is marked as subagent-originated in storage.
 	//
 	// The returned iter.Seq2 yields (gai.Message, error) pairs in the same
 	// order as the input. Each yielded message has its ExtraFields populated
@@ -94,11 +94,11 @@ type DialogSaver interface {
 	//		fullDialog[i] = saved // keep ExtraFields in sync
 	//	}
 	//
-	// Example — annotating messages with a title (e.g. for subagent traces):
+	// Example — marking a message as subagent-generated:
 	//
 	//	msg := gai.Message{Role: gai.User, Blocks: blocks}
 	//	msg.ExtraFields = map[string]any{
-	//		MessageTitleKey: "subagent:researcher:run_abc",
+	//		MessageIsSubagentKey: true,
 	//	}
 	//	for _, err := range saver.SaveDialog(ctx, slices.Values([]gai.Message{msg})) {
 	//		if err != nil {
@@ -145,7 +145,9 @@ type ListMessagesOptions struct {
 type MessagesLister interface {
 	// ListMessages returns messages ordered by creation timestamp. The default
 	// order is descending (newest first). Each yielded gai.Message has its ID
-	// stored in ExtraFields[MessageIDKey] and, if the message has a parent, its
+	// stored in ExtraFields[MessageIDKey], creation time in
+	// ExtraFields[MessageCreatedAtKey], subagent marker in
+	// ExtraFields[MessageIsSubagentKey], and, if the message has a parent, its
 	// parent ID stored in ExtraFields[MessageParentIDKey]. The message's Blocks
 	// are fully populated.
 	ListMessages(ctx context.Context, opts ListMessagesOptions) (iter.Seq[gai.Message], error)
@@ -155,10 +157,11 @@ type MessagesLister interface {
 type MessagesGetter interface {
 	// GetMessages retrieves messages by their IDs. The returned iter.Seq is not
 	// guaranteed to yield messages in the same order as the input IDs. Each
-	// yielded gai.Message has its ID stored in ExtraFields[MessageIDKey] and, if
-	// the message has a parent, its parent ID stored in
-	// ExtraFields[MessageParentIDKey]. If any requested ID does not exist, an
-	// error is returned.
+	// yielded gai.Message has its ID stored in ExtraFields[MessageIDKey],
+	// creation time in ExtraFields[MessageCreatedAtKey], subagent marker in
+	// ExtraFields[MessageIsSubagentKey], and, if the message has a parent, its
+	// parent ID stored in ExtraFields[MessageParentIDKey]. If any requested ID
+	// does not exist, an error is returned.
 	GetMessages(ctx context.Context, messageIDs []string) (iter.Seq[gai.Message], error)
 }
 
@@ -179,8 +182,9 @@ type MessageDB interface {
 // fetching the message via getter, reading its parent ID from
 // ExtraFields[MessageParentIDKey], and repeating until a root message (one
 // with no parent) is reached. The returned gai.Dialog is ordered from root
-// to the target message. Each message in the dialog has MessageIDKey and
-// (where applicable) MessageParentIDKey set in its ExtraFields.
+// to the target message. Each message in the dialog has MessageIDKey,
+// MessageCreatedAtKey, MessageIsSubagentKey, and (where applicable)
+// MessageParentIDKey set in its ExtraFields.
 func GetDialogForMessage(ctx context.Context, getter MessagesGetter, messageID string) (gai.Dialog, error) {
 	// Collect messages from the target up to the root (leaf-to-root order)
 	collected, err := collectAncestorMessages(ctx, getter, messageID)

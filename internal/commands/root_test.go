@@ -176,7 +176,17 @@ func resolveCrossProviderConfig(t *testing.T, modelRef string) *config.Config {
 func sortedNodes(memDB *storage.MemDB) []storage.MemNode {
 	nodes := memDB.Nodes()
 	slices.SortFunc(nodes, func(a, b storage.MemNode) int {
-		return a.CreatedAt.Compare(b.CreatedAt)
+		cmp := a.CreatedAt.Compare(b.CreatedAt)
+		if cmp != 0 {
+			return cmp
+		}
+		if a.ID < b.ID {
+			return -1
+		}
+		if a.ID > b.ID {
+			return 1
+		}
+		return 0
 	})
 	return nodes
 }
@@ -191,6 +201,9 @@ func loadDialogFromMemDB(ctx context.Context, t *testing.T, memDB *storage.MemDB
 	}
 	var continueID string
 	for msg := range msgs {
+		if isSubagent, ok := msg.ExtraFields[storage.MessageIsSubagentKey].(bool); ok && isSubagent {
+			continue
+		}
 		if msg.Role == gai.Assistant || msg.Role == gai.ToolResult {
 			if id, ok := msg.ExtraFields[storage.MessageIDKey].(string); ok && id != "" {
 				continueID = id

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -419,12 +420,17 @@ func MCPServe(ctx context.Context, opts MCPServeOptions) error {
 	// Load and validate output schema at startup
 	var outputSchema *jsonschema.Schema
 	if rawCfg.Subagent.OutputSchemaPath != "" {
-		schemaBytes, err := os.ReadFile(rawCfg.Subagent.OutputSchemaPath)
+		schemaPath := rawCfg.Subagent.OutputSchemaPath
+		if !filepath.IsAbs(schemaPath) {
+			schemaPath = filepath.Join(filepath.Dir(resolvedConfigPath), schemaPath)
+		}
+
+		schemaBytes, err := os.ReadFile(schemaPath)
 		if err != nil {
-			return fmt.Errorf("failed to read output schema file %q: %w", rawCfg.Subagent.OutputSchemaPath, err)
+			return fmt.Errorf("failed to read output schema file %q: %w", schemaPath, err)
 		}
 		if err := json.Unmarshal(schemaBytes, &outputSchema); err != nil {
-			return fmt.Errorf("invalid output schema JSON in %q: %w", rawCfg.Subagent.OutputSchemaPath, err)
+			return fmt.Errorf("invalid output schema JSON in %q: %w", schemaPath, err)
 		}
 	}
 
@@ -492,7 +498,6 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 		if runID == "" {
 			runID = generateRunID()
 		}
-		subagentLabel := fmt.Sprintf("subagent:%s:%s", subagentName, runID)
 
 		// Resolve effective config (uses defaults.model from config)
 		effectiveConfig, err := config.ResolveConfig(cfgPath, config.RuntimeOptions{})
@@ -562,15 +567,14 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 
 		// Execute the subagent with storage and event client
 		result, err := ExecuteSubagent(ctx, SubagentOptions{
-			UserBlocks:    userBlocks,
-			Generator:     generator,
-			GenOptsFunc:   genOptsFunc,
-			OutputSchema:  outputSchema,
-			Storage:       dialogStorage,
-			SubagentLabel: subagentLabel,
-			EventClient:   eventClient,
-			SubagentName:  subagentName,
-			RunID:         runID,
+			UserBlocks:   userBlocks,
+			Generator:    generator,
+			GenOptsFunc:  genOptsFunc,
+			OutputSchema: outputSchema,
+			Storage:      dialogStorage,
+			EventClient:  eventClient,
+			SubagentName: subagentName,
+			RunID:        runID,
 		})
 		if err != nil {
 			// Annotate context cancellation errors

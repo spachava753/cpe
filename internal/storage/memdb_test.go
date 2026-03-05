@@ -64,6 +64,68 @@ func TestMemDB_SaveDialog_NewConversation(t *testing.T) {
 	}
 }
 
+func TestMemDB_IsSubagentExtraField(t *testing.T) {
+	db := NewMemDB()
+	ctx := context.Background()
+
+	t.Run("round trips true", func(t *testing.T) {
+		msg := makeTextMessage(gai.User, "subagent trace")
+		msg.ExtraFields = map[string]any{MessageIsSubagentKey: true}
+
+		var saved []gai.Message
+		for m, err := range db.SaveDialog(ctx, slices.Values([]gai.Message{msg})) {
+			if err != nil {
+				t.Fatalf("SaveDialog error: %v", err)
+			}
+			saved = append(saved, m)
+		}
+		if len(saved) != 1 {
+			t.Fatalf("expected 1 saved message, got %d", len(saved))
+		}
+
+		id := extraFieldString(t, saved[0], MessageIDKey)
+		msgs, err := db.GetMessages(ctx, []string{id})
+		if err != nil {
+			t.Fatalf("GetMessages error: %v", err)
+		}
+		for got := range msgs {
+			v, ok := got.ExtraFields[MessageIsSubagentKey].(bool)
+			if !ok || !v {
+				t.Fatalf("expected MessageIsSubagentKey=true, got %v", got.ExtraFields[MessageIsSubagentKey])
+			}
+		}
+	})
+
+	t.Run("defaults false when unset", func(t *testing.T) {
+		msg := makeTextMessage(gai.User, "regular message")
+		var saved []gai.Message
+		for m, err := range db.SaveDialog(ctx, slices.Values([]gai.Message{msg})) {
+			if err != nil {
+				t.Fatalf("SaveDialog error: %v", err)
+			}
+			saved = append(saved, m)
+		}
+		if len(saved) != 1 {
+			t.Fatalf("expected 1 saved message, got %d", len(saved))
+		}
+
+		id := extraFieldString(t, saved[0], MessageIDKey)
+		msgs, err := db.GetMessages(ctx, []string{id})
+		if err != nil {
+			t.Fatalf("GetMessages error: %v", err)
+		}
+		for got := range msgs {
+			v, ok := got.ExtraFields[MessageIsSubagentKey].(bool)
+			if !ok {
+				t.Fatalf("expected MessageIsSubagentKey to be bool, got %T", got.ExtraFields[MessageIsSubagentKey])
+			}
+			if v {
+				t.Fatal("expected MessageIsSubagentKey to default false")
+			}
+		}
+	})
+}
+
 func TestMemDB_SaveDialog_ContinueConversation(t *testing.T) {
 	db := NewMemDB()
 	ctx := context.Background()
@@ -351,7 +413,7 @@ func TestMemDB_SaveDialog_InvalidParentChain(t *testing.T) {
 	}
 }
 
-func TestMemDB_DeleteMessages_Atomic(t *testing.T) {
+func TestMemDB_DeleteMessages_MissingIDsAreNoOp(t *testing.T) {
 	db := NewMemDB()
 	ctx := context.Background()
 
@@ -367,19 +429,18 @@ func TestMemDB_DeleteMessages_Atomic(t *testing.T) {
 
 	userID := extraFieldString(t, saved[0], MessageIDKey)
 
-	// Try to delete [existing, nonexistent] — should fail atomically.
+	// Deleting [existing, nonexistent] should succeed and delete only existing.
 	err := db.DeleteMessages(ctx, DeleteMessagesOptions{
 		MessageIDs: []string{userID, "nonexistent"},
 		Recursive:  false,
 	})
-	if err == nil {
-		t.Fatal("expected error deleting nonexistent message, got nil")
+	if err != nil {
+		t.Fatalf("DeleteMessages error: %v", err)
 	}
 
-	// The existing message should NOT have been deleted (atomicity).
 	nodes := db.Nodes()
-	if len(nodes) != 1 {
-		t.Fatalf("expected 1 node (atomicity preserved), got %d", len(nodes))
+	if len(nodes) != 0 {
+		t.Fatalf("expected 0 nodes after deletion, got %d", len(nodes))
 	}
 }
 

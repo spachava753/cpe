@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS messages
 (
     id                TEXT PRIMARY KEY,          -- 6-character alphanumeric ID
     parent_id         TEXT,                      -- Reference to parent message (NULL for roots)
-    title             TEXT,                      -- Optional label for conversation branches
+    is_subagent       BOOLEAN NOT NULL DEFAULT 0,-- Whether message belongs to a subagent trace
     role              TEXT    NOT NULL,          -- 'user', 'assistant', or 'tool_result'
     tool_result_error BOOLEAN NOT NULL DEFAULT 0,-- Whether tool result indicates an error
     created_at        TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS messages
 -- Indexes for efficient querying
 CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages (created_at);
 CREATE INDEX IF NOT EXISTS idx_messages_parent_id ON messages (parent_id);
+CREATE INDEX IF NOT EXISTS idx_messages_is_subagent ON messages (is_subagent);
 
 -- blocks table stores message content
 CREATE TABLE IF NOT EXISTS blocks
@@ -63,6 +64,8 @@ CREATE TABLE IF NOT EXISTS blocks
     FOREIGN KEY (message_id) REFERENCES messages (id) ON DELETE CASCADE
 );
 ```
+
+> Note: On startup, storage performs a lightweight migration for legacy databases by adding `messages.is_subagent` when missing and backfilling `is_subagent=1` for rows whose legacy `title` matches `subagent:%`.
 
 ### Key Design Decisions
 
@@ -156,12 +159,12 @@ Root Message (user: "Hello")
 
 This allows conversation forking—branching from any point to explore different conversation paths.
 
-### Labels (Titles)
+### Subagent Marker
 
-The `title` field allows labeling conversation branches for identification. This is particularly useful for:
+The `is_subagent` field explicitly marks whether a message belongs to a subagent execution trace:
 
-- **Subagent traces**: Labels formatted as `subagent:<name>:<run_id>` distinguish subagent execution traces from main conversation
-- **Topic markers**: User-provided labels to mark conversation topics
+- `is_subagent = 1`: Message was persisted from subagent execution
+- `is_subagent = 0`: Regular parent-agent conversation message
 
 ## Public API
 
@@ -170,9 +173,9 @@ The `title` field allows labeling conversation branches for identification. This
 The storage package exposes a `MessageDB` interface composed of four single-method interfaces. Consumers depend on the narrowest interface they need, enabling clean dependency boundaries and easy testing.
 
 ```go
-// MessagesSaver persists messages to storage.
-type MessagesSaver interface {
-    SaveMessages(ctx context.Context, opts []SaveMessageOptions) (iter.Seq[string], error)
+// DialogSaver persists an ordered dialog chain.
+type DialogSaver interface {
+    SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter.Seq2[gai.Message, error]
 }
 
 // MessagesGetter fetches specific messages by ID.
@@ -192,21 +195,21 @@ type MessagesDeleter interface {
 
 // MessageDB is the unified interface for message persistence operations.
 type MessageDB interface {
-    MessagesSaver
+    DialogSaver
     MessagesDeleter
     MessagesLister
     MessagesGetter
 }
 ```
 
-The concrete `*DialogStorage` type implements `MessageDB`. Consumers use the subset interface they need:
+The concrete implementations are `storage.Sqlite` (production) and `storage.MemDB` (tests). Consumers use the narrowest interface they need:
 
 | Consumer | Interface Used |
 |----------|---------------|
-| `agent.SavingMiddleware` | `storage.MessagesSaver` |
-| `agent.WithDialogSaver()` | `storage.MessagesSaver` |
+| `agent.SavingMiddleware` | `storage.DialogSaver` |
+| `agent.WithDialogSaver()` | `storage.DialogSaver` |
 | `commands.GenerateOptions` | `storage.MessageDB` |
-| `commands.SubagentOptions.Storage` | `storage.MessagesSaver` |
+| `commands.SubagentOptions.Storage` | `storage.DialogSaver` |
 | `commands.ConversationListOptions` | `storage.MessagesLister` |
 | `commands.ConversationDeleteOptions` | `storage.MessagesDeleter` |
 | `commands.ConversationPrintOptions` | `storage.MessagesGetter` |
@@ -214,13 +217,6 @@ The concrete `*DialogStorage` type implements `MessageDB`. Consumers use the sub
 ### Parameter Types
 
 ```go
-// SaveMessageOptions describes a single message to be persisted.
-type SaveMessageOptions struct {
-    Message  gai.Message // The message to save (Role, Blocks, ToolResultError)
-    ParentID string      // Parent message ID (empty for root messages)
-    Title    string      // Optional label (e.g., "subagent:<name>:<run_id>")
-}
-
 // ListMessagesOptions configures message listing behavior.
 type ListMessagesOptions struct {
     Offset         uint // Number of messages to skip (pagination)
@@ -234,29 +230,23 @@ type DeleteMessagesOptions struct {
 }
 ```
 
-### Saving Messages
+### Saving Dialogs
 
 ```go
-func (s *DialogStorage) SaveMessages(
-    ctx context.Context,
-    opts []SaveMessageOptions,
-) (iter.Seq[string], error)
+for savedMsg, err := range saver.SaveDialog(ctx, slices.Values(dialog)) {
+    if err != nil {
+        return err
+    }
+    // savedMsg includes storage metadata in ExtraFields
+}
 ```
 
-Saves one or more messages atomically in a single transaction. Returns an `iter.Seq[string]` that yields generated IDs in the same order as the input slice.
-
-The function:
-1. Begins a transaction
-2. For each message: generates a unique 6-character ID, inserts the message record, inserts all blocks with sequence ordering
-3. Commits the transaction
-4. Returns an iterator over the generated IDs
-
-If any message fails to save, the entire transaction is rolled back and no messages are persisted.
+`SaveDialog` persists an ordered root-to-leaf dialog chain atomically. Existing messages (those already carrying `MessageIDKey`) are verified for parent-chain consistency and not reinserted; new messages are assigned IDs and persisted.
 
 ### Retrieving Messages
 
 ```go
-func (s *DialogStorage) GetMessages(
+func (s *Sqlite) GetMessages(
     ctx context.Context,
     messageIDs []string,
 ) (iter.Seq[gai.Message], error)
@@ -267,7 +257,7 @@ Retrieves messages by their IDs. Each returned `gai.Message` has `MessageIDKey`,
 ### Reconstructing Dialogs
 
 ```go
-// Standalone function (not a method on DialogStorage)
+// Standalone function (not a method on Sqlite/MemDB)
 func GetDialogForMessage(
     ctx context.Context,
     getter MessagesGetter,
@@ -275,29 +265,32 @@ func GetDialogForMessage(
 ) (gai.Dialog, error)
 ```
 
-Reconstructs the full conversation history leading up to the given message by traversing up the parent chain via `MessagesGetter`. Returns the dialog ordered from root to the target message. Each message has `MessageIDKey`, `MessageCreatedAtKey`, and `MessageParentIDKey` in its `ExtraFields`.
+Reconstructs the full conversation history leading up to the given message by traversing up the parent chain via `MessagesGetter`. Returns the dialog ordered from root to the target message. Each message has `MessageIDKey`, `MessageCreatedAtKey`, `MessageIsSubagentKey`, and `MessageParentIDKey` (if applicable) in its `ExtraFields`.
 
-This is a standalone function in the `storage` package, not a method on `DialogStorage`. It operates through the `MessagesGetter` interface, making it testable with any implementation.
+This is a standalone function in the `storage` package, not a method on concrete storage implementations. It operates through the `MessagesGetter` interface, making it testable with any implementation.
 
 ### Listing Messages
 
 ```go
-func (s *DialogStorage) ListMessages(
+func (s *Sqlite) ListMessages(
     ctx context.Context,
     opts ListMessagesOptions,
 ) (iter.Seq[gai.Message], error)
 ```
 
-Returns messages ordered by creation timestamp (descending by default, ascending if `AscendingOrder` is true). Supports pagination via `Offset`. Each yielded message has full blocks loaded and `MessageIDKey`, `MessageCreatedAtKey`, and `MessageParentIDKey` populated in `ExtraFields`.
+Returns messages ordered by creation timestamp (descending by default, ascending if `AscendingOrder` is true). Supports pagination via `Offset`. Each yielded message has full blocks loaded and `MessageIDKey`, `MessageCreatedAtKey`, `MessageIsSubagentKey`, and `MessageParentIDKey` (if applicable) populated in `ExtraFields`.
 
 ### Continuing Conversations
 
-There is no dedicated "get most recent message" method. Instead, callers use `ListMessages` with default options (descending order) and iterate to find the first assistant or tool_result message:
+There is no dedicated "get most recent message" method. Instead, callers use `ListMessages` with default options (descending order) and iterate to find the first non-subagent assistant/tool_result message:
 
 ```go
 msgs, err := db.ListMessages(ctx, storage.ListMessagesOptions{})
 if err != nil { ... }
 for msg := range msgs {
+    if isSubagent, ok := msg.ExtraFields[storage.MessageIsSubagentKey].(bool); ok && isSubagent {
+        continue
+    }
     if msg.Role == gai.Assistant || msg.Role == gai.ToolResult {
         continueID = msg.ExtraFields[storage.MessageIDKey].(string)
         break
@@ -308,7 +301,7 @@ for msg := range msgs {
 ### Deleting Messages
 
 ```go
-func (s *DialogStorage) DeleteMessages(
+func (s *Sqlite) DeleteMessages(
     ctx context.Context,
     opts DeleteMessagesOptions,
 ) error
@@ -381,16 +374,18 @@ The tree is constructed from the flat message list returned by `ListMessages` us
 
 | File | Description |
 |------|-------------|
-| `internal/storage/interfaces.go` | Interface definitions (`MessageDB`, subset interfaces), constants (`MessageIDKey`, etc.), `SaveMessageOptions`/`ListMessagesOptions`/`DeleteMessagesOptions` types, and `GetDialogForMessage` standalone function |
-| `internal/storage/dialog_storage.go` | `DialogStorage` implementation of `MessageDB`, including `InitDialogStorage` constructor |
-| `internal/storage/dialog_storage_test.go` | Comprehensive tests for the `MessageDB` interface |
+| `internal/storage/interfaces.go` | Interface definitions (`MessageDB`, subset interfaces), constants (`MessageIDKey`, `MessageIsSubagentKey`, etc.), options types, and `GetDialogForMessage` |
+| `internal/storage/sqlite.go` | SQLite-backed `MessageDB` implementation (`Sqlite`) |
+| `internal/storage/sqlite_test.go` | SQLite storage tests |
+| `internal/storage/memdb.go` | In-memory `MessageDB` implementation for tests (`MemDB`) |
+| `internal/storage/memdb_test.go` | MemDB behavior and parity tests |
 | `internal/storage/schema.sql` | SQLite schema definition |
 | `internal/storage/queries.sql` | SQL queries (sqlc input) |
-| `internal/storage/models.go` | Generated sqlc models |
-| `internal/storage/queries.sql.go` | Generated sqlc queries |
-| `internal/storage/db.go` | Generated sqlc database interface |
-| `internal/agent/saving_middleware.go` | Saving middleware using `storage.MessagesSaver` |
-| `internal/commands/generate.go` | Generation logic using `storage.MessageDB` |
+| `internal/storage/sqlcgen/models.go` | Generated sqlc models |
+| `internal/storage/sqlcgen/queries.sql.go` | Generated sqlc queries |
+| `internal/storage/sqlcgen/db.go` | Generated sqlc database interface |
+| `internal/agent/saving_middleware.go` | Saving middleware using `storage.DialogSaver` |
+| `internal/commands/generate.go` | Continuation selection logic using `storage.MessageDB` |
 | `internal/commands/conversation.go` | Conversation management operations using subset interfaces |
 | `internal/commands/conversation_tree.go` | `MessageIdNode` type, `buildMessageForest`, and tree display formatting |
 | `cmd/conversation.go` | CLI command definitions |
@@ -400,12 +395,12 @@ The tree is constructed from the flat message list returned by `ListMessages` us
 The `storage` package is a leaf dependency with no internal imports:
 
 ```
-storage  → (no internal deps — only stdlib, gai, go-nanoid)
-agent    → storage     (MessagesSaver, MessageIDKey)
+storage  → (no internal deps — only stdlib, gai, go-nanoid, sqlcgen)
+agent    → storage     (DialogSaver, MessageIDKey)
 agent    → types       (Renderer, Generator, ToolRegistrar)
-commands → storage     (InitDialogStorage, *DialogStorage, MessageDB interfaces, MessageIDKey, MessageParentIDKey, MessageCreatedAtKey, GetDialogForMessage)
+commands → storage     (NewSqlite, MessageDB interfaces, MessageIDKey, MessageParentIDKey, MessageCreatedAtKey, MessageIsSubagentKey, GetDialogForMessage)
 commands → types       (Generator, Renderer, ToolRegistrar)
-cmd      → storage     (InitDialogStorage, *DialogStorage)
+cmd      → storage     (NewSqlite, MessageDB interfaces)
 ```
 
 No circular imports exist. The `types` package contains only cross-cutting non-storage concerns (`Generator`, `Renderer`, `ToolRegistrar`).
@@ -441,15 +436,15 @@ go generate ./...
 Storage is initialized when the CLI runs (unless in incognito mode):
 
 ```go
-func InitDialogStorage(ctx context.Context, dbPath string) (*DialogStorage, error)
+func NewSqlite(ctx context.Context, db DB) (*Sqlite, error)
 ```
 
-This function:
-1. Opens or creates the SQLite database
-2. Executes the schema SQL (creates tables if needed)
-3. Returns a configured `*DialogStorage` instance
+Initialization flow in CLI:
+1. Open SQLite with `sql.Open("sqlite3", <path>)`
+2. Call `storage.NewSqlite(...)`
+3. `NewSqlite` executes embedded schema SQL and returns `*storage.Sqlite`
 
-The concrete `*DialogStorage` is used for lifecycle management (`Close()`), while downstream consumers receive it through the appropriate subset interface.
+The underlying `*sql.DB` lifecycle (close, connection management) remains with the CLI caller.
 
 ### Saving Middleware
 
@@ -458,36 +453,28 @@ The `SavingMiddleware` in `internal/agent/saving_middleware.go` incrementally sa
 - **Before generation**: Walks the dialog and saves any messages that don't have an ID in `ExtraFields[MessageIDKey]`, deriving the parent chain from the dialog structure.
 - **After generation**: Saves the assistant response.
 
-The middleware depends on `storage.MessagesSaver` and calls `SaveMessages` with a single-element slice per save operation. It uses `GetMessageID` and `SetMessageID` helpers to read/write `storage.MessageIDKey` in message `ExtraFields`.
+The middleware depends on `storage.DialogSaver` and incrementally persists dialog messages as they are generated. It uses `GetMessageID` and `SetMessageID` helpers to read/write `storage.MessageIDKey` in message `ExtraFields`.
 
 ## Subagent Persistence
 
-When CPE runs as an MCP server (subagent mode), execution traces are persisted with a special label format:
-
-```
-subagent:<name>:<run_id>
-```
-
-For example: `subagent:code-review:a1b2c3d4`
+When CPE runs as an MCP server (subagent mode), execution traces are persisted with `is_subagent=1`.
 
 This allows:
 - Distinguishing subagent traces from main conversation
-- Correlating all messages from a single subagent invocation
-- Querying traces by subagent name or run
+- Keeping subagent classification explicit and queryable
 
 The `saveSubagentTrace` function in `internal/commands/subagent.go` handles this:
 
 ```go
 func saveSubagentTrace(
     ctx context.Context,
-    saver storage.MessagesSaver,
+    saver storage.DialogSaver,
     userMsg gai.Message,
     assistantMsgs gai.Dialog,
-    label string,
 ) error
 ```
 
-It saves the user message first, obtains its generated ID, then saves each assistant message sequentially, chaining parent IDs so the trace forms a linear conversation branch.
+It marks all trace messages with `storage.MessageIsSubagentKey = true`, then saves the dialog as a parent-chained branch.
 
 ## Error Handling
 
@@ -517,21 +504,25 @@ If storage initialization fails, CPE reports the error and exits. If `--incognit
 Tests use temporary directories with file-backed SQLite databases for isolation:
 
 ```go
-func newTestDB(t *testing.T) *DialogStorage {
+func newTestDB(t *testing.T) (*Sqlite, *sql.DB) {
     t.Helper()
     dbPath := filepath.Join(t.TempDir(), "test.db")
-    ds, err := InitDialogStorage(context.Background(), dbPath)
+    rawDB, err := sql.Open("sqlite3", dbPath)
     if err != nil {
-        t.Fatalf("InitDialogStorage: %v", err)
+        t.Fatalf("sql.Open: %v", err)
     }
-    t.Cleanup(func() { ds.Close() })
-    return ds
+    ds, err := NewSqlite(context.Background(), rawDB)
+    if err != nil {
+        t.Fatalf("NewSqlite: %v", err)
+    }
+    t.Cleanup(func() { rawDB.Close() })
+    return ds, rawDB
 }
 ```
 
 Tests operate exclusively through the `MessageDB` interface — they do not access unexported methods or database internals. Test coverage includes:
 
-- **SaveMessages**: Single root, multiple messages, parent chaining, block persistence, title persistence, atomicity
+- **SaveDialog**: Single root, multiple messages, parent chaining, block persistence, is_subagent persistence, atomicity
 - **GetMessages**: ID retrieval, parent ID in ExtraFields, role/ToolResultError round-trip, non-existent ID errors, block ExtraFields round-trip
 - **ListMessages**: Descending order (default), ascending order, offset pagination, ExtraFields population
 - **DeleteMessages**: Leaf deletion, non-recursive parent rejection, recursive parent+child deletion, recursive tree deletion

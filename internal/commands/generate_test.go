@@ -2,9 +2,14 @@ package commands
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"iter"
+	"path/filepath"
 	"slices"
 	"testing"
 
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/storage"
@@ -26,6 +31,34 @@ func seedMemDB(t *testing.T, ctx context.Context, db *storage.MemDB, msgs []gai.
 		ids = append(ids, id)
 	}
 	return ids
+}
+
+type failingListResolver struct {
+	listErr error
+}
+
+func (r failingListResolver) ListMessages(ctx context.Context, opts storage.ListMessagesOptions) (iter.Seq[gai.Message], error) {
+	return nil, r.listErr
+}
+
+func (r failingListResolver) GetMessages(ctx context.Context, messageIDs []string) (iter.Seq[gai.Message], error) {
+	return nil, errors.New("not implemented")
+}
+
+func newTestSqliteResolver(t *testing.T) (*storage.Sqlite, *sql.DB) {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "generate-test.db")
+	rawDB, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	t.Cleanup(func() { rawDB.Close() })
+
+	sqliteDB, err := storage.NewSqlite(context.Background(), rawDB)
+	if err != nil {
+		t.Fatalf("NewSqlite: %v", err)
+	}
+	return sqliteDB, rawDB
 }
 
 func TestResolveInitialDialog(t *testing.T) {
@@ -57,6 +90,17 @@ func TestResolveInitialDialog(t *testing.T) {
 		}
 		if dialog != nil {
 			t.Fatalf("expected nil dialog for empty database, got %d messages", len(dialog))
+		}
+	})
+
+	t.Run("AutoContinueListMessagesError", func(t *testing.T) {
+		expectedErr := errors.New("list failed")
+		_, err := ResolveInitialDialog(ctx, failingListResolver{listErr: expectedErr}, "", false)
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if !errors.Is(err, expectedErr) {
+			t.Fatalf("expected wrapped list error %v, got %v", expectedErr, err)
 		}
 	})
 
@@ -98,6 +142,114 @@ func TestResolveInitialDialog(t *testing.T) {
 		}
 		if dialog[1].Role != gai.ToolResult {
 			t.Errorf("expected second message role %q, got %q", gai.ToolResult, dialog[1].Role)
+		}
+	})
+
+	t.Run("AutoContinueIgnoresSubagentMessages", func(t *testing.T) {
+		db := storage.NewMemDB()
+		regularIDs := seedMemDB(t, ctx, db, []gai.Message{
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("parent user")}},
+			{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("parent assistant")}},
+		})
+
+		_ = seedMemDB(t, ctx, db, []gai.Message{
+			{
+				Role:        gai.User,
+				Blocks:      []gai.Block{gai.TextBlock("subagent user")},
+				ExtraFields: map[string]any{storage.MessageIsSubagentKey: true},
+			},
+			{
+				Role:        gai.Assistant,
+				Blocks:      []gai.Block{gai.TextBlock("subagent assistant")},
+				ExtraFields: map[string]any{storage.MessageIsSubagentKey: true},
+			},
+		})
+
+		dialog, err := ResolveInitialDialog(ctx, db, "", false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(dialog) != 2 {
+			t.Fatalf("expected 2 messages in parent dialog, got %d", len(dialog))
+		}
+		if dialog[1].Role != gai.Assistant {
+			t.Fatalf("expected last dialog message to be assistant, got %q", dialog[1].Role)
+		}
+
+		continuedID, ok := dialog[1].ExtraFields[storage.MessageIDKey].(string)
+		if !ok || continuedID == "" {
+			t.Fatalf("expected assistant message to include ID, got %v", dialog[1].ExtraFields[storage.MessageIDKey])
+		}
+		if continuedID != regularIDs[1] {
+			t.Fatalf("expected auto-continue to pick parent assistant ID %q, got %q", regularIDs[1], continuedID)
+		}
+		if got, _ := dialog[1].ExtraFields[storage.MessageIsSubagentKey].(bool); got {
+			t.Fatal("expected continued message to not be marked as subagent")
+		}
+	})
+
+	t.Run("AutoContinueWithSqliteTieBreakAndSubagentFilter", func(t *testing.T) {
+		db, rawDB := newTestSqliteResolver(t)
+
+		// Save a regular parent conversation first.
+		regular := []gai.Message{
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("parent user")}},
+			{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("parent assistant")}},
+		}
+		var regularAssistantID string
+		for msg, err := range db.SaveDialog(ctx, slices.Values(regular)) {
+			if err != nil {
+				t.Fatalf("SaveDialog regular: %v", err)
+			}
+			if msg.Role == gai.Assistant {
+				regularAssistantID, _ = msg.ExtraFields[storage.MessageIDKey].(string)
+			}
+		}
+		if regularAssistantID == "" {
+			t.Fatal("expected regular assistant ID")
+		}
+
+		// Save a newer subagent trace that should be ignored by auto-continue.
+		subagent := []gai.Message{
+			{
+				Role:        gai.User,
+				Blocks:      []gai.Block{gai.TextBlock("subagent user")},
+				ExtraFields: map[string]any{storage.MessageIsSubagentKey: true},
+			},
+			{
+				Role:        gai.Assistant,
+				Blocks:      []gai.Block{gai.TextBlock("subagent assistant")},
+				ExtraFields: map[string]any{storage.MessageIsSubagentKey: true},
+			},
+		}
+		for _, err := range db.SaveDialog(ctx, slices.Values(subagent)) {
+			if err != nil {
+				t.Fatalf("SaveDialog subagent: %v", err)
+			}
+		}
+
+		// Force identical timestamps to exercise deterministic tie-break ordering.
+		if _, err := rawDB.ExecContext(ctx, "UPDATE messages SET created_at = '2026-01-01 00:00:00'"); err != nil {
+			t.Fatalf("UPDATE created_at: %v", err)
+		}
+
+		dialog, err := ResolveInitialDialog(ctx, db, "", false)
+		if err != nil {
+			t.Fatalf("ResolveInitialDialog: %v", err)
+		}
+		if len(dialog) != 2 {
+			t.Fatalf("expected parent dialog length 2, got %d", len(dialog))
+		}
+
+		continuedID, ok := dialog[1].ExtraFields[storage.MessageIDKey].(string)
+		if !ok || continuedID == "" {
+			t.Fatalf("expected assistant ID in dialog, got %v", dialog[1].ExtraFields[storage.MessageIDKey])
+		}
+		if continuedID != regularAssistantID {
+			t.Fatalf("expected continued ID %q, got %q", regularAssistantID, continuedID)
+		}
+		if got, _ := dialog[1].ExtraFields[storage.MessageIsSubagentKey].(bool); got {
+			t.Fatal("expected continued assistant to be non-subagent")
 		}
 	})
 

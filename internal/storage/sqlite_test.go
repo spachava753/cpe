@@ -51,6 +51,85 @@ func newTestDBWithFK(t *testing.T) (*Sqlite, *sql.DB) {
 	return ds, rawDB
 }
 
+func TestNewSqlite_MigratesLegacyMessagesSchema(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "legacy.db")
+	rawDB, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	defer rawDB.Close()
+
+	ctx := context.Background()
+
+	// Legacy schema shape before is_subagent existed.
+	if _, err := rawDB.ExecContext(ctx, `
+		CREATE TABLE messages (
+			id TEXT PRIMARY KEY,
+			parent_id TEXT,
+			title TEXT,
+			role TEXT NOT NULL,
+			tool_result_error BOOLEAN NOT NULL DEFAULT 0,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+	`); err != nil {
+		t.Fatalf("create legacy schema: %v", err)
+	}
+	if _, err := rawDB.ExecContext(ctx, `
+		INSERT INTO messages (id, parent_id, title, role, tool_result_error)
+		VALUES
+			('legacy_1', NULL, 'legacy', 'user', 0),
+			('legacy_2', NULL, 'subagent:worker:run1', 'assistant', 0);
+	`); err != nil {
+		t.Fatalf("insert legacy rows: %v", err)
+	}
+
+	ds, err := NewSqlite(ctx, rawDB)
+	if err != nil {
+		t.Fatalf("NewSqlite: %v", err)
+	}
+
+	var hasColumn int
+	if err := rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM pragma_table_info('messages')
+		WHERE name = 'is_subagent'
+	`).Scan(&hasColumn); err != nil {
+		t.Fatalf("check is_subagent column: %v", err)
+	}
+	if hasColumn != 1 {
+		t.Fatalf("expected is_subagent column to be created, got count=%d", hasColumn)
+	}
+
+	msgs, err := ds.GetMessages(ctx, []string{"legacy_1", "legacy_2"})
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+
+	expected := map[string]bool{
+		"legacy_1": false,
+		"legacy_2": true,
+	}
+	for msg := range msgs {
+		id := getExtraFieldString(msg.ExtraFields, MessageIDKey)
+		want, ok := expected[id]
+		if !ok {
+			t.Fatalf("unexpected message ID %q", id)
+		}
+		delete(expected, id)
+
+		isSubagent, ok := msg.ExtraFields[MessageIsSubagentKey].(bool)
+		if !ok {
+			t.Fatalf("expected MessageIsSubagentKey bool, got %T", msg.ExtraFields[MessageIsSubagentKey])
+		}
+		if isSubagent != want {
+			t.Fatalf("message %q: expected MessageIsSubagentKey=%t, got %t", id, want, isSubagent)
+		}
+	}
+	if len(expected) != 0 {
+		t.Fatalf("missing expected messages: %v", expected)
+	}
+}
+
 // failDB wraps a real DB and allows injecting errors at specific points.
 type failDB struct {
 	DB
@@ -256,12 +335,12 @@ func TestSaveDialog(t *testing.T) {
 		}
 	})
 
-	t.Run("message with title round-trips", func(t *testing.T) {
+	t.Run("message with is_subagent round-trips", func(t *testing.T) {
 		db, _ := newTestDB(t)
 		ctx := context.Background()
 
-		msg := makeTextMessage(gai.User, "titled")
-		msg.ExtraFields = map[string]any{MessageTitleKey: "subagent:test:run1"}
+		msg := makeTextMessage(gai.User, "subagent-trace")
+		msg.ExtraFields = map[string]any{MessageIsSubagentKey: true}
 
 		saved := saveDialog(t, db, ctx, []gai.Message{msg})
 		savedID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
@@ -269,15 +348,14 @@ func TestSaveDialog(t *testing.T) {
 			t.Fatal("expected non-empty ID")
 		}
 
-		// Verify title is retrievable
 		msgs, err := db.GetMessages(ctx, []string{savedID})
 		if err != nil {
 			t.Fatalf("GetMessages: %v", err)
 		}
 		for m := range msgs {
-			got, ok := m.ExtraFields[MessageTitleKey].(string)
-			if !ok || got != "subagent:test:run1" {
-				t.Errorf("expected title %q, got %v", "subagent:test:run1", m.ExtraFields[MessageTitleKey])
+			got, ok := m.ExtraFields[MessageIsSubagentKey].(bool)
+			if !ok || !got {
+				t.Errorf("expected MessageIsSubagentKey = true, got %v", m.ExtraFields[MessageIsSubagentKey])
 			}
 		}
 	})
@@ -1854,13 +1932,9 @@ func TestListMessages_OffsetBeyondTotal(t *testing.T) {
 	}
 }
 
-// TestDeleteMiddleMessage_OrphansChild verifies that GetDialogForMessage correctly
-// fails when traversing through a deleted parent, detecting orphaned messages.
-func TestDeleteMiddleMessage_OrphansChild(t *testing.T) {
-	// If we delete a message in the middle of a chain (using raw SQL to bypass
-	// the RESTRICT constraint since FKs are off by default), the child becomes
-	// an orphan. GetDialogForMessage should error when traversing to the
-	// missing parent.
+// TestDeleteMiddleMessage_ForeignKeyRestriction verifies that deleting a parent
+// message directly is blocked by the RESTRICT foreign key when children exist.
+func TestDeleteMiddleMessage_ForeignKeyRestriction(t *testing.T) {
 	db, rawDB := newTestDB(t)
 	ctx := context.Background()
 
@@ -1872,16 +1946,18 @@ func TestDeleteMiddleMessage_OrphansChild(t *testing.T) {
 	bID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
 	cID := getExtraFieldString(saved[2].ExtraFields, MessageIDKey)
 
-	// Delete B directly (FKs off by default, so no RESTRICT enforcement)
 	_, err := rawDB.ExecContext(ctx, "DELETE FROM messages WHERE id = ?", bID)
-	if err != nil {
-		t.Fatalf("direct delete: %v", err)
+	if err == nil {
+		t.Fatal("expected direct delete to fail with foreign key restriction")
 	}
 
-	// C still exists but its parent (B) is gone
-	_, err = GetDialogForMessage(ctx, db, cID)
-	if err == nil {
-		t.Fatal("expected error traversing to deleted parent")
+	// Child remains reachable because parent delete was rejected.
+	dialog, err := GetDialogForMessage(ctx, db, cID)
+	if err != nil {
+		t.Fatalf("GetDialogForMessage: %v", err)
+	}
+	if len(dialog) != 3 {
+		t.Fatalf("expected 3 messages in dialog, got %d", len(dialog))
 	}
 }
 
@@ -1933,20 +2009,20 @@ func TestBlockCascadeDeleteViaRawSQL(t *testing.T) {
 }
 
 // TestMessageExtraFields verifies that only known keys (id, parent_id, created_at,
-// title) stored in dedicated columns are persisted and returned; arbitrary custom
-// keys are dropped.
+// is_subagent) stored in dedicated columns are persisted and returned; arbitrary
+// custom keys are dropped.
 func TestMessageExtraFields(t *testing.T) {
 	t.Run("known keys returned, custom keys dropped", func(t *testing.T) {
 		// Arbitrary message-level ExtraFields are intentionally not persisted.
-		// Only known keys (ID, parent, created_at, title) stored as dedicated
+		// Only known keys (ID, parent, created_at, is_subagent) stored as dedicated
 		// columns are returned on retrieval.
 		db, _ := newTestDB(t)
 		ctx := context.Background()
 
 		msg := makeTextMessage(gai.User, "test")
 		msg.ExtraFields = map[string]any{
-			"custom_key":    "custom_value",
-			MessageTitleKey: "my-title",
+			"custom_key":         "custom_value",
+			MessageIsSubagentKey: true,
 		}
 
 		saved := saveDialog(t, db, ctx, []gai.Message{msg})
@@ -1963,8 +2039,8 @@ func TestMessageExtraFields(t *testing.T) {
 			if _, ok := m.ExtraFields[MessageCreatedAtKey]; !ok {
 				t.Error("expected MessageCreatedAtKey")
 			}
-			if got, ok := m.ExtraFields[MessageTitleKey].(string); !ok || got != "my-title" {
-				t.Errorf("expected MessageTitleKey = %q, got %v", "my-title", m.ExtraFields[MessageTitleKey])
+			if got, ok := m.ExtraFields[MessageIsSubagentKey].(bool); !ok || !got {
+				t.Errorf("expected MessageIsSubagentKey = true, got %v", m.ExtraFields[MessageIsSubagentKey])
 			}
 			if _, ok := m.ExtraFields["custom_key"]; ok {
 				t.Error("custom_key should not be persisted")
@@ -1972,19 +2048,23 @@ func TestMessageExtraFields(t *testing.T) {
 		}
 	})
 
-	t.Run("title absent when not set", func(t *testing.T) {
+	t.Run("is_subagent defaults to false when not set", func(t *testing.T) {
 		db, _ := newTestDB(t)
 		ctx := context.Background()
 
-		savedID := saveOne(t, db, ctx, makeTextMessage(gai.User, "no title"))
+		savedID := saveOne(t, db, ctx, makeTextMessage(gai.User, "no subagent flag"))
 
 		msgs, err := db.GetMessages(ctx, []string{savedID})
 		if err != nil {
 			t.Fatalf("GetMessages: %v", err)
 		}
 		for m := range msgs {
-			if _, ok := m.ExtraFields[MessageTitleKey]; ok {
-				t.Error("MessageTitleKey should not be present when no title was set")
+			got, ok := m.ExtraFields[MessageIsSubagentKey].(bool)
+			if !ok {
+				t.Fatalf("expected MessageIsSubagentKey to be a bool, got %T", m.ExtraFields[MessageIsSubagentKey])
+			}
+			if got {
+				t.Error("expected MessageIsSubagentKey to default to false")
 			}
 		}
 	})

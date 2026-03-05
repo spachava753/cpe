@@ -38,13 +38,8 @@ type SubagentOptions struct {
 	OutputSchema *jsonschema.Schema
 
 	// Storage is the dialog saver for persisting execution traces (optional).
-	// When set, messages are saved with SubagentLabel annotation.
+	// When set, persisted messages are marked as subagent-originated.
 	Storage storage.DialogSaver
-
-	// SubagentLabel is the label used to annotate saved messages (optional).
-	// Typically formatted as "subagent:<name>:<run_id>" to distinguish
-	// subagent activity from parent agent entries.
-	SubagentLabel string
 
 	// EventClient is the client for emitting subagent events (optional).
 	// When set, events are emitted for lifecycle, tool calls, and thinking.
@@ -140,9 +135,14 @@ func executeSubagentCore(ctx context.Context, opts SubagentOptions) (string, err
 		return "", fmt.Errorf("generation failed: %w", err)
 	}
 
+	if len(resultDialog) < len(dialog) {
+		return "", fmt.Errorf("generation returned invalid dialog length: got %d, expected at least %d", len(resultDialog), len(dialog))
+	}
+	assistantTrace := resultDialog[len(dialog):]
+
 	// Persist execution trace if storage is configured
 	if opts.Storage != nil {
-		if saveErr := saveSubagentTrace(ctx, opts.Storage, userMessage, resultDialog[len(dialog):], opts.SubagentLabel); saveErr != nil {
+		if saveErr := saveSubagentTrace(ctx, opts.Storage, userMessage, assistantTrace); saveErr != nil {
 			// Log but don't fail - persistence is secondary to execution
 			fmt.Fprintf(os.Stderr, "warning: failed to save subagent trace: %v\n", saveErr)
 		}
@@ -159,27 +159,21 @@ func executeSubagentCore(ctx context.Context, opts SubagentOptions) (string, err
 
 // saveSubagentTrace persists the subagent execution trace to storage.
 // Messages are saved as a single dialog (user message followed by assistant messages).
-func saveSubagentTrace(ctx context.Context, saver storage.DialogSaver, userMsg gai.Message, assistantMsgs gai.Dialog, label string) error {
+func saveSubagentTrace(ctx context.Context, saver storage.DialogSaver, userMsg gai.Message, assistantMsgs gai.Dialog) error {
 	// Build the full dialog: user message first, then all assistant messages
 	allMsgs := make([]gai.Message, 0, len(assistantMsgs)+1)
 
-	// Set the title on the user message (first message in the dialog)
-	if label != "" {
-		if userMsg.ExtraFields == nil {
-			userMsg.ExtraFields = make(map[string]any)
-		}
-		userMsg.ExtraFields[storage.MessageTitleKey] = label
+	if userMsg.ExtraFields == nil {
+		userMsg.ExtraFields = make(map[string]any)
 	}
+	userMsg.ExtraFields[storage.MessageIsSubagentKey] = true
 	allMsgs = append(allMsgs, userMsg)
 
-	// Add assistant messages with title labels
 	for _, msg := range assistantMsgs {
-		if label != "" {
-			if msg.ExtraFields == nil {
-				msg.ExtraFields = make(map[string]any)
-			}
-			msg.ExtraFields[storage.MessageTitleKey] = label
+		if msg.ExtraFields == nil {
+			msg.ExtraFields = make(map[string]any)
 		}
+		msg.ExtraFields[storage.MessageIsSubagentKey] = true
 		allMsgs = append(allMsgs, msg)
 	}
 

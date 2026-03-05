@@ -24,7 +24,7 @@ type Block struct {
 type Message struct {
 	ID              string         `json:"id"`
 	ParentID        sql.NullString `json:"parent_id"`
-	Title           sql.NullString `json:"title"`
+	IsSubagent      bool           `json:"is_subagent"`
 	Role            string         `json:"role"`
 	ToolResultError bool           `json:"tool_result_error"`
 	CreatedAt       time.Time      `json:"created_at"`
