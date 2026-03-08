@@ -32,10 +32,10 @@ func NewOAuthTransport(base http.RoundTripper, store *Store) *OAuthTransport {
 
 // NewOAuthHTTPClient creates an HTTP client configured for OAuth authentication.
 // If base is nil, http.DefaultTransport is used as the underlying transport.
-func NewOAuthHTTPClient(base http.RoundTripper, store *Store) *http.Client {
+func NewOAuthHTTPClient(base http.RoundTripper, store *Store, timeout time.Duration) *http.Client {
 	return &http.Client{
 		Transport: NewOAuthTransport(base, store),
-		Timeout:   5 * time.Minute,
+		Timeout:   timeout,
 	}
 }
 

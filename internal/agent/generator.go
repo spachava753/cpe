@@ -69,6 +69,13 @@ func prependClaudeCodeIdentifier(_ context.Context, params *a.MessageNewParams) 
 	return nil
 }
 
+func newHTTPClientWithTimeout(transport http.RoundTripper, timeout time.Duration) *http.Client {
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	return &http.Client{Transport: transport, Timeout: timeout}
+}
+
 func initGeneratorFromModel(
 	ctx context.Context,
 	m config.Model,
@@ -133,7 +140,7 @@ func initGeneratorFromModel(
 					return nil, fmt.Errorf("building patch transport for OAuth: %w", err)
 				}
 			}
-			oauthClient := &http.Client{Transport: finalTransport, Timeout: 5 * time.Minute}
+			oauthClient := newHTTPClientWithTimeout(finalTransport, timeout)
 			anthOpts := []aopts.RequestOption{
 				aopts.WithAPIKey("placeholder"),
 				aopts.WithHTTPClient(oauthClient),
@@ -217,7 +224,7 @@ func initGeneratorFromModel(
 					return nil, fmt.Errorf("building patch transport for OAuth: %w", err)
 				}
 			}
-			oauthClient := &http.Client{Transport: finalTransport, Timeout: 5 * time.Minute}
+			oauthClient := newHTTPClientWithTimeout(finalTransport, timeout)
 
 			// For OAuth, use the ChatGPT backend API URL unless explicitly overridden
 			oauthBaseURL := auth.OpenAICodexBaseURL

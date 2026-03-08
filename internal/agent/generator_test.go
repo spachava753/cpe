@@ -1,11 +1,50 @@
 package agent
 
 import (
+	"net/http"
 	"testing"
+	"time"
 
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/spachava753/gai"
 )
+
+func TestNewHTTPClientWithTimeout(t *testing.T) {
+	tests := []struct {
+		name        string
+		transport   http.RoundTripper
+		wantTimeout time.Duration
+	}{
+		{
+			name:        "uses provided transport and timeout",
+			transport:   http.DefaultTransport,
+			wantTimeout: time.Hour,
+		},
+		{
+			name:        "falls back to default transport when nil",
+			transport:   nil,
+			wantTimeout: 90 * time.Second,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := newHTTPClientWithTimeout(tt.transport, tt.wantTimeout)
+			if got == nil {
+				t.Fatal("expected non-nil client")
+			}
+			if got.Timeout != tt.wantTimeout {
+				t.Fatalf("client timeout = %v, want %v", got.Timeout, tt.wantTimeout)
+			}
+			if got.Transport == nil {
+				t.Fatal("expected non-nil transport")
+			}
+			if tt.transport != nil && got.Transport != tt.transport {
+				t.Fatal("client transport did not preserve provided transport")
+			}
+		})
+	}
+}
 
 func TestApplyResponsesThinkingSummary(t *testing.T) {
 	tests := []struct {
