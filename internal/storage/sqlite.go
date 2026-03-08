@@ -60,6 +60,9 @@ func NewSqlite(ctx context.Context, db DB) (*Sqlite, error) {
 	if err := migrateMessagesIsSubagentColumn(ctx, db); err != nil {
 		return nil, fmt.Errorf("failed to migrate schema: %w", err)
 	}
+	if err := migrateMessagesCompactionParentColumn(ctx, db); err != nil {
+		return nil, fmt.Errorf("failed to migrate schema: %w", err)
+	}
 
 	// Initialize schema from embedded SQL file
 	_, err := db.ExecContext(ctx, schemaSQL)
@@ -124,6 +127,29 @@ func migrateMessagesIsSubagentColumn(ctx context.Context, db DB) error {
 	return nil
 }
 
+func migrateMessagesCompactionParentColumn(ctx context.Context, db DB) error {
+	var tableCount int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages'").Scan(&tableCount); err != nil {
+		return fmt.Errorf("failed to inspect existing schema: %w", err)
+	}
+	if tableCount == 0 {
+		return nil
+	}
+
+	hasCompactionParent, err := hasMessagesColumn(ctx, db, "compaction_parent_id")
+	if err != nil {
+		return err
+	}
+	if hasCompactionParent {
+		return nil
+	}
+
+	if _, err := db.ExecContext(ctx, "ALTER TABLE messages ADD COLUMN compaction_parent_id TEXT"); err != nil {
+		return fmt.Errorf("failed to add compaction_parent_id column: %w", err)
+	}
+	return nil
+}
+
 func hasMessagesColumn(ctx context.Context, db DB, column string) (bool, error) {
 	rows, err := db.QueryContext(ctx, "PRAGMA table_info(messages)")
 	if err != nil {
@@ -178,7 +204,7 @@ func stringToRole(s string) (gai.Role, error) {
 }
 
 // saveMessageInTx saves a single message and its blocks within a transaction.
-func (s *Sqlite) saveMessageInTx(ctx context.Context, qtx *sqlcgen.Queries, message gai.Message, parentID string, isSubagent bool) (string, error) {
+func (s *Sqlite) saveMessageInTx(ctx context.Context, qtx *sqlcgen.Queries, message gai.Message, parentID, compactionParentID string, isSubagent bool) (string, error) {
 	// Generate a unique message ID
 	messageID, err := s.generateUniqueIDInTx(ctx, qtx)
 	if err != nil {
@@ -191,13 +217,20 @@ func (s *Sqlite) saveMessageInTx(ctx context.Context, qtx *sqlcgen.Queries, mess
 		parentIDParam = sql.NullString{String: parentID, Valid: true}
 	}
 
+	// Prepare compaction parent ID parameter.
+	var compactionParentIDParam sql.NullString
+	if compactionParentID != "" {
+		compactionParentIDParam = sql.NullString{String: compactionParentID, Valid: true}
+	}
+
 	// Create the message
 	err = qtx.CreateMessage(ctx, sqlcgen.CreateMessageParams{
-		ID:              messageID,
-		ParentID:        parentIDParam,
-		IsSubagent:      isSubagent,
-		Role:            roleToString(message.Role),
-		ToolResultError: message.ToolResultError,
+		ID:                 messageID,
+		ParentID:           parentIDParam,
+		CompactionParentID: compactionParentIDParam,
+		IsSubagent:         isSubagent,
+		Role:               roleToString(message.Role),
+		ToolResultError:    message.ToolResultError,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to create message: %w", err)
@@ -359,8 +392,12 @@ func (s *Sqlite) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) ite
 			// Message needs to be saved
 			isSubagent := getExtraFieldBool(msg.ExtraFields, MessageIsSubagentKey)
 			parentID := prevID
+			compactionParentID := ""
+			if parentID == "" {
+				compactionParentID = getExtraFieldString(msg.ExtraFields, MessageCompactionParentIDKey)
+			}
 
-			savedID, saveErr := s.saveMessageInTx(ctx, qtx, msg, parentID, isSubagent)
+			savedID, saveErr := s.saveMessageInTx(ctx, qtx, msg, parentID, compactionParentID, isSubagent)
 			if saveErr != nil {
 				yield(gai.Message{}, fmt.Errorf("failed to save message: %w", saveErr))
 				return
@@ -373,6 +410,9 @@ func (s *Sqlite) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) ite
 			msg.ExtraFields[MessageIDKey] = savedID
 			if parentID != "" {
 				msg.ExtraFields[MessageParentIDKey] = parentID
+				delete(msg.ExtraFields, MessageCompactionParentIDKey)
+			} else if compactionParentID != "" {
+				msg.ExtraFields[MessageCompactionParentIDKey] = compactionParentID
 			}
 
 			prevID = savedID
@@ -443,10 +483,14 @@ func (s *Sqlite) getMessage(ctx context.Context, messageID string) (gai.Message,
 		})
 	}
 
-	// Extract parent ID
+	// Extract parent IDs
 	parentID := ""
 	if msg.ParentID.Valid {
 		parentID = msg.ParentID.String
+	}
+	compactionParentID := ""
+	if msg.CompactionParentID.Valid {
+		compactionParentID = msg.CompactionParentID.String
 	}
 
 	// Set the message ID and other metadata in ExtraFields so consumers can access them.
@@ -460,6 +504,9 @@ func (s *Sqlite) getMessage(ctx context.Context, messageID string) (gai.Message,
 	}
 	if parentID != "" {
 		msgExtraFields[MessageParentIDKey] = parentID
+	}
+	if compactionParentID != "" {
+		msgExtraFields[MessageCompactionParentIDKey] = compactionParentID
 	}
 
 	return gai.Message{

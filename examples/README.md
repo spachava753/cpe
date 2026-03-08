@@ -1,1 +1,5 @@
-This folder contains example system and user prompts that you can get started with.
+This folder contains example prompts and configuration you can copy and build on.
+
+- `cpe.yaml` shows a full unified configuration with model definitions, MCP servers, code mode, and a copy-pastable compaction block.
+- `agent_instructions.md` and related prompt files provide starter system prompts.
+- `subagent/` contains example subagent configs, prompts, and an output schema.

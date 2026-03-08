@@ -22,10 +22,11 @@ type Block struct {
 }
 
 type Message struct {
-	ID              string         `json:"id"`
-	ParentID        sql.NullString `json:"parent_id"`
-	IsSubagent      bool           `json:"is_subagent"`
-	Role            string         `json:"role"`
-	ToolResultError bool           `json:"tool_result_error"`
-	CreatedAt       time.Time      `json:"created_at"`
+	ID                 string         `json:"id"`
+	ParentID           sql.NullString `json:"parent_id"`
+	CompactionParentID sql.NullString `json:"compaction_parent_id"`
+	IsSubagent         bool           `json:"is_subagent"`
+	Role               string         `json:"role"`
+	ToolResultError    bool           `json:"tool_result_error"`
+	CreatedAt          time.Time      `json:"created_at"`
 }

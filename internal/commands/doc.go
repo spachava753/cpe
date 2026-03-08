@@ -1,8 +1,10 @@
 /*
-Package commands contains CLI business logic independent of Cobra wiring.
+Package commands contains framework-agnostic command orchestration and wiring.
 
-The cmd package builds options and dependencies, then delegates command
-behavior to this package for execution and testing.
+The cmd package builds Cobra flags, resolves process-level dependencies, and
+then delegates command execution to this package for deterministic testing.
+This package keeps entrypoint flows thin and focused on composition rather than
+owning agent feature business logic.
 
 Feature areas include:
   - root generation flow orchestration;
@@ -14,6 +16,6 @@ Feature areas include:
 Cross-package contract:
 commands functions receive explicit option structs and interfaces rather than
 reading global state directly. This keeps command handlers deterministic and
-test-friendly.
+test-friendly while leaving runtime agent behavior to internal/agent.
 */
 package commands

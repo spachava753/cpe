@@ -30,6 +30,37 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "CompactionConfig": {
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "autoTriggerThreshold": {
+          "type": "number"
+        },
+        "maxAutoCompactionRestarts": {
+          "type": "integer"
+        },
+        "toolDescription": {
+          "type": "string"
+        },
+        "inputSchema": {
+          "oneOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "boolean"
+            }
+          ]
+        },
+        "initialMessageTemplate": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "Defaults": {
       "properties": {
         "systemPromptPath": {
@@ -49,6 +80,9 @@
         },
         "codeMode": {
           "$ref": "#/$defs/CodeModeConfig"
+        },
+        "compaction": {
+          "$ref": "#/$defs/CompactionConfig"
         }
       },
       "additionalProperties": false,
@@ -145,6 +179,9 @@
         },
         "codeMode": {
           "$ref": "#/$defs/CodeModeConfig"
+        },
+        "compaction": {
+          "$ref": "#/$defs/CompactionConfig"
         }
       },
       "additionalProperties": false,

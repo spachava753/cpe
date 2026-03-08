@@ -128,6 +128,9 @@ type Defaults struct {
 
 	// Code mode configuration
 	CodeMode *CodeModeConfig `yaml:"codeMode,omitempty" json:"codeMode,omitempty"`
+
+	// Conversation compaction configuration
+	Compaction *CompactionConfig `yaml:"compaction,omitempty" json:"compaction,omitempty"`
 }
 
 // ModelConfig extends the base model with generation defaults
@@ -142,6 +145,9 @@ type ModelConfig struct {
 
 	// Code mode configuration for this model (overrides global defaults)
 	CodeMode *CodeModeConfig `yaml:"codeMode,omitempty" json:"codeMode,omitempty"`
+
+	// Conversation compaction configuration for this model (overrides global defaults)
+	Compaction *CompactionConfig `yaml:"compaction,omitempty" json:"compaction,omitempty"`
 }
 
 // FindModel searches for a model by ref in the config
@@ -176,6 +182,9 @@ type Config struct {
 
 	// Effective code mode configuration
 	CodeMode *CodeModeConfig
+
+	// Effective conversation compaction configuration
+	Compaction *ResolvedCompactionConfig
 }
 
 // RuntimeOptions captures runtime overrides from CLI flags and environment

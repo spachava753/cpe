@@ -7,18 +7,18 @@ Key capabilities:
 - Multi-model generation via unified YAML/JSON configuration
 - Tool use via MCP servers
 - Streaming or prettified non-streaming output
-- Conversation persistence and branching
+- Conversation persistence, branching, and compaction lineage
 
 ## Project structure and organization
 
 - `cmd/`: The package which has the cobra commands that user invokes
 - `internal/`: Hosts all of the actual business logic and utilities
-  - `agent/`: Package that hosts generator adapters, streaming/printing, thinking filter, system prompt generation, and agent creation to execute a user query
+  - `agent/`: Package that hosts generator adapters, streaming/printing, thinking filter, system prompt generation, built-in tool registration, compaction orchestration (including configurable restart caps), and agent creation to execute a user query
   - `auth/`: Package that hosts OAuth authentication for AI providers (Anthropic, OpenAI), including credential storage, token refresh, PKCE flow, and HTTP transport wrappers
   - `codemode/`: Package that hosts code mode implementation - schema to Go type conversion, tool collision detection, code execution sandbox, and execute_go_code tool
-  - `config/`: Package that hosts configuration loading, validation, parameter merging, and config specific types
+  - `config/`: Package that hosts configuration loading, validation, parameter merging, and config specific types, including compaction config resolution
   - `mcp/`: Package that hosts MCP config validation and client, as well as code for connecting to MPC servers
-  - `storage/`: Package that hosts SQLite-backed conversation storage (.cpeconvo) and related persistence code
+  - `storage/`: Package that hosts SQLite-backed conversation storage (.cpeconvo), compaction lineage metadata, and related persistence code
   - `urlhandler/`: Package that hosts utility code for URL detection and safe downloading
   - `version/`: Package that hosts CLI version reporting
 - `main.go`: invokes cmd.Execute()

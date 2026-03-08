@@ -166,3 +166,44 @@ defaults:
     maxTimeout: 3600
     localModulePaths:
       - ../my-go-helpers
+  compaction:
+    # Set enabled to true to let the model compact long conversations into a
+    # fresh linked branch when context usage crosses the configured threshold.
+    enabled: false
+    autoTriggerThreshold: 0.8
+    maxAutoCompactionRestarts: 3
+    toolDescription: >-
+      Compact the current conversation into a fresh linked branch. Call this
+      when context usage is getting high or immediately after a tool result that
+      begins with [COMPACTION WARNING]. Preserve the important work completed so
+      the task can continue without asking the user to repeat context.
+    inputSchema:
+      type: object
+      additionalProperties: false
+      properties:
+        summary:
+          type: string
+          description: Concise summary of the work completed so far.
+        keyPoints:
+          type: array
+          items:
+            type: string
+          description: Important findings, decisions, or constraints to retain.
+        nextAction:
+          type: string
+          description: The next thing to do after restarting from the compacted branch.
+      required:
+        - summary
+        - nextAction
+    initialMessageTemplate: |-
+      A conversation compaction occurred. Continue the user's request using the
+      preserved context below.
+
+      Original user request:
+      {{.OriginalUserMessage}}
+
+      Compaction payload:
+      {{printf "%v" .ToolInput}}
+
+      Resume the task from this state without asking the user to repeat prior
+      context.

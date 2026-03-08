@@ -16,12 +16,13 @@ import (
 // MessageIdNode represents a message and its relationship with its parent and children
 // CreatedAt is the creation timestamp of the message.
 type MessageIdNode struct {
-	ID        string          `json:"id"`
-	ParentID  string          `json:"parent_id"`
-	CreatedAt time.Time       `json:"created_at"`
-	Content   string          `json:"content"` // Short snippet or modality type
-	Role      string          `json:"role"`    // user, assistant, or tool_result
-	Children  []MessageIdNode `json:"children"`
+	ID                 string          `json:"id"`
+	ParentID           string          `json:"parent_id"`
+	CompactionParentID string          `json:"compaction_parent_id,omitempty"`
+	CreatedAt          time.Time       `json:"created_at"`
+	Content            string          `json:"content"` // Short snippet or modality type
+	Role               string          `json:"role"`    // user, assistant, or tool_result
+	Children           []MessageIdNode `json:"children"`
 }
 
 // Define adaptive colors for roles
@@ -67,6 +68,7 @@ func buildMessageForest(messages []gai.Message) []MessageIdNode {
 		}
 		parentID, _ := msg.ExtraFields[storage.MessageParentIDKey].(string)
 		createdAt, _ := msg.ExtraFields[storage.MessageCreatedAtKey].(time.Time)
+		compactionParentID, _ := msg.ExtraFields[storage.MessageCompactionParentIDKey].(string)
 
 		// Extract content snippet
 		content := ""
@@ -101,11 +103,12 @@ func buildMessageForest(messages []gai.Message) []MessageIdNode {
 
 		ni := &nodeInfo{
 			node: MessageIdNode{
-				ID:        id,
-				ParentID:  parentID,
-				CreatedAt: createdAt,
-				Content:   content,
-				Role:      roleToDisplayString(msg.Role),
+				ID:                 id,
+				ParentID:           parentID,
+				CompactionParentID: compactionParentID,
+				CreatedAt:          createdAt,
+				Content:            content,
+				Role:               roleToDisplayString(msg.Role),
 			},
 			parentID: parentID,
 		}
@@ -178,7 +181,7 @@ func (p *DefaultTreePrinter) PrintMessageForest(w io.Writer, roots []MessageIdNo
 
 	for _, tr := range trees {
 		root := tr.node
-		fmt.Fprintf(w, "%s (%s) [%s] %s\n", root.ID, root.CreatedAt.Format("2006-01-02 15:04"), prettifyRole(root.Role), root.Content)
+		fmt.Fprintf(w, "%s (%s) [%s] [lineage:%s] %s\n", root.ID, root.CreatedAt.Format("2006-01-02 15:04"), prettifyRole(root.Role), lineageDisplay(root.CompactionParentID), root.Content)
 		prefix := ""
 		if len(root.Children) > 1 {
 			prefix = indent
@@ -224,9 +227,16 @@ func prettifyRole(role string) string {
 	}
 }
 
+func lineageDisplay(id string) string {
+	if id == "" {
+		return "-"
+	}
+	return id
+}
+
 // printSubTree prints a node with the appropriate tree structure prefix (recursive)
 func printSubTree(w io.Writer, node MessageIdNode, prefix string) {
-	fmt.Fprintf(w, "%s%s (%s) [%s] %s\n", prefix, node.ID, node.CreatedAt.Format("2006-01-02 15:04"), prettifyRole(node.Role), node.Content)
+	fmt.Fprintf(w, "%s%s (%s) [%s] [lineage:%s] %s\n", prefix, node.ID, node.CreatedAt.Format("2006-01-02 15:04"), prettifyRole(node.Role), lineageDisplay(node.CompactionParentID), node.Content)
 	childPrefix := prefix
 	if len(node.Children) > 1 {
 		childPrefix += indent

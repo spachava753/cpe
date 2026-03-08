@@ -27,6 +27,13 @@ const (
 	// appended chain is contiguous.
 	MessageParentIDKey = "cpe_message_parent_id"
 
+	// MessageCompactionParentIDKey is the gai.Message.ExtraFields key for the
+	// message ID from which a compacted branch was created.
+	//
+	// The value is a string. It is only set on the root message of a compacted
+	// branch and points to the last message ID of the pre-compaction branch.
+	MessageCompactionParentIDKey = "cpe_message_compaction_parent_id"
+
 	// MessageCreatedAtKey is the gai.Message.ExtraFields key for the message
 	// creation timestamp.
 	//
@@ -160,6 +167,7 @@ type MessagesLister interface {
 	//   - MessageCreatedAtKey (always)
 	//   - MessageIsSubagentKey (always)
 	//   - MessageParentIDKey (only for non-root messages)
+	//   - MessageCompactionParentIDKey (only for compacted branch roots)
 	ListMessages(ctx context.Context, opts ListMessagesOptions) (iter.Seq[gai.Message], error)
 }
 
@@ -176,6 +184,7 @@ type MessagesGetter interface {
 	//   - MessageCreatedAtKey (always)
 	//   - MessageIsSubagentKey (always)
 	//   - MessageParentIDKey (only for non-root messages)
+	//   - MessageCompactionParentIDKey (only for compacted branch roots)
 	GetMessages(ctx context.Context, messageIDs []string) (iter.Seq[gai.Message], error)
 }
 

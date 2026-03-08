@@ -15,13 +15,14 @@ import (
 // single message and references its children, forming a tree that mirrors
 // the branching conversation structure stored in SQLite.
 type memNode struct {
-	id         string
-	seq        int64
-	parentID   string
-	message    gai.Message
-	isSubagent bool
-	createdAt  time.Time
-	children   []*memNode
+	id                 string
+	seq                int64
+	parentID           string
+	compactionParentID string
+	message            gai.Message
+	isSubagent         bool
+	createdAt          time.Time
+	children           []*memNode
 }
 
 // MemDB is an in-memory MessageDB implementation used primarily in tests.
@@ -135,15 +136,20 @@ func (m *MemDB) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter
 			// New message — save it.
 			id := m.generateID()
 			isSubagent := getExtraFieldBool(msg.ExtraFields, MessageIsSubagentKey)
+			compactionParentID := ""
+			if prevID == "" {
+				compactionParentID = getExtraFieldString(msg.ExtraFields, MessageCompactionParentIDKey)
+			}
 			m.nextSeq++
 
 			node := &memNode{
-				id:         id,
-				seq:        m.nextSeq,
-				parentID:   prevID,
-				message:    msg,
-				isSubagent: isSubagent,
-				createdAt:  time.Now(),
+				id:                 id,
+				seq:                m.nextSeq,
+				parentID:           prevID,
+				compactionParentID: compactionParentID,
+				message:            msg,
+				isSubagent:         isSubagent,
+				createdAt:          time.Now(),
 			}
 
 			if prevID != "" {
@@ -164,6 +170,9 @@ func (m *MemDB) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter
 			msg.ExtraFields[MessageIDKey] = id
 			if prevID != "" {
 				msg.ExtraFields[MessageParentIDKey] = prevID
+				delete(msg.ExtraFields, MessageCompactionParentIDKey)
+			} else if compactionParentID != "" {
+				msg.ExtraFields[MessageCompactionParentIDKey] = compactionParentID
 			}
 
 			prevID = id
@@ -347,6 +356,9 @@ func (m *MemDB) nodeToMessage(node *memNode) gai.Message {
 	if node.parentID != "" {
 		extra[MessageParentIDKey] = node.parentID
 	}
+	if node.compactionParentID != "" {
+		extra[MessageCompactionParentIDKey] = node.compactionParentID
+	}
 	msg.ExtraFields = extra
 	return msg
 }
@@ -366,13 +378,14 @@ func (m *MemDB) Nodes() []MemNode {
 			childIDs[i] = c.id
 		}
 		result = append(result, MemNode{
-			ID:         node.id,
-			ParentID:   node.parentID,
-			Role:       node.message.Role,
-			Blocks:     cloneBlocks(node.message.Blocks),
-			IsSubagent: node.isSubagent,
-			CreatedAt:  node.createdAt,
-			ChildIDs:   childIDs,
+			ID:                 node.id,
+			ParentID:           node.parentID,
+			CompactionParentID: node.compactionParentID,
+			Role:               node.message.Role,
+			Blocks:             cloneBlocks(node.message.Blocks),
+			IsSubagent:         node.isSubagent,
+			CreatedAt:          node.createdAt,
+			ChildIDs:           childIDs,
 		})
 	}
 	return result
@@ -384,6 +397,8 @@ type MemNode struct {
 	ID string
 	// ParentID is the parent message ID, or "" for roots.
 	ParentID string
+	// CompactionParentID is the source message ID for a compacted root, or "".
+	CompactionParentID string
 	// Role is the gai role stored for this message.
 	Role gai.Role
 	// Blocks is a cloned copy of the stored blocks.

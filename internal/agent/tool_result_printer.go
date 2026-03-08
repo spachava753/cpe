@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/spachava753/gai"
 
@@ -55,20 +56,14 @@ func (g *ToolResultPrinterWrapper) Generate(ctx context.Context, dialog gai.Dial
 	return g.GeneratorWrapper.Generate(ctx, dialog, opts)
 }
 
-// printToolResult prints the tool result block from the message.
-// The gai package ensures there is exactly one tool result block per message.
+// printToolResult prints all tool result blocks from the message.
 func (g *ToolResultPrinterWrapper) printToolResult(dialog gai.Dialog, toolResultMsg gai.Message) {
-	// Find the tool name by looking at the previous assistant message's tool calls
 	toolName := g.findToolName(dialog, toolResultMsg)
-
-	// Get message ID if available
 	messageID := GetMessageID(toolResultMsg)
-
-	// Print the first block (gai ensures single tool result per message)
-	if len(toolResultMsg.Blocks) > 0 {
-		block := toolResultMsg.Blocks[0]
-		g.printResult(toolName, block, messageID)
+	if len(toolResultMsg.Blocks) == 0 {
+		return
 	}
+	g.printResult(toolName, toolResultMsg.Blocks, messageID)
 }
 
 // findToolName looks up the tool name from the previous assistant message by matching tool call ID.
@@ -77,8 +72,6 @@ func (g *ToolResultPrinterWrapper) findToolName(dialog gai.Dialog, toolResultMsg
 		return "unknown"
 	}
 	toolCallID := toolResultMsg.Blocks[0].ID
-
-	// Look at the previous assistant message to find the matching tool call
 	if len(dialog) >= 2 {
 		prevMsg := dialog[len(dialog)-2]
 		if prevMsg.Role == gai.Assistant {
@@ -95,38 +88,13 @@ func (g *ToolResultPrinterWrapper) findToolName(dialog gai.Dialog, toolResultMsg
 	return "unknown"
 }
 
-// printResult prints a tool result block to the output with truncation and rendering.
-func (g *ToolResultPrinterWrapper) printResult(toolName string, block gai.Block, messageID string) {
-	var markdownContent string
-
-	// Handle non-text modalities by just showing the mimetype
-	if block.ModalityType != gai.Text {
-		mimeType := block.MimeType
-		if mimeType == "" {
-			mimeType = block.ModalityType.String()
-		}
-		markdownContent = fmt.Sprintf("#### Tool \"%s\" result:\n[%s content]", toolName, mimeType)
-	} else {
-		contentStr := block.Content.String()
-		isCodeMode := toolName == codemode.ExecuteGoCodeToolName
-
-		if isCodeMode {
-			markdownContent = FormatExecuteGoCodeResultMarkdown(contentStr, maxLines)
-		} else {
-			var jsonData interface{}
-			if err := json.Unmarshal([]byte(contentStr), &jsonData); err == nil {
-				formatted, err := json.MarshalIndent(jsonData, "", "  ")
-				if err == nil {
-					contentStr = string(formatted)
-				}
-				truncated := truncateToMaxLines(contentStr, maxLines)
-				markdownContent = fmt.Sprintf("#### Tool \"%s\" result:\n```json\n%s\n```", toolName, truncated)
-			} else {
-				truncated := truncateToMaxLines(contentStr, maxLines)
-				markdownContent = fmt.Sprintf("#### Tool \"%s\" result:\n```\n%s\n```", toolName, truncated)
-			}
-		}
+// printResult prints tool result blocks to the output with truncation and rendering.
+func (g *ToolResultPrinterWrapper) printResult(toolName string, blocks []gai.Block, messageID string) {
+	sections := []string{fmt.Sprintf("#### Tool \"%s\" result:", toolName)}
+	for _, block := range blocks {
+		sections = append(sections, formatToolResultBlockMarkdown(toolName, block))
 	}
+	markdownContent := strings.Join(sections, "\n\n")
 
 	rendered, err := g.renderer.Render(markdownContent)
 	if err != nil {
@@ -135,9 +103,36 @@ func (g *ToolResultPrinterWrapper) printResult(toolName string, block gai.Block,
 		fmt.Fprint(g.output, "\n"+rendered)
 	}
 
-	// Print message ID if available (format matches token usage printer style)
 	if messageID != "" {
 		idMsg, _ := g.renderer.Render(fmt.Sprintf("> message_id: `%s`", messageID))
 		fmt.Fprint(g.output, idMsg)
 	}
+}
+
+func formatToolResultBlockMarkdown(toolName string, block gai.Block) string {
+	if block.ModalityType != gai.Text {
+		mimeType := block.MimeType
+		if mimeType == "" {
+			mimeType = block.ModalityType.String()
+		}
+		return fmt.Sprintf("[%s content]", mimeType)
+	}
+
+	contentStr := block.Content.String()
+	if toolName == codemode.ExecuteGoCodeToolName {
+		return FormatExecuteGoCodeResultMarkdown(contentStr, maxLines)
+	}
+
+	var jsonData interface{}
+	if err := json.Unmarshal([]byte(contentStr), &jsonData); err == nil {
+		formatted, err := json.MarshalIndent(jsonData, "", "  ")
+		if err == nil {
+			contentStr = string(formatted)
+		}
+		truncated := truncateToMaxLines(contentStr, maxLines)
+		return fmt.Sprintf("```json\n%s\n```", truncated)
+	}
+
+	truncated := truncateToMaxLines(contentStr, maxLines)
+	return fmt.Sprintf("```\n%s\n```", truncated)
 }

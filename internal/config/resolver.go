@@ -19,6 +19,7 @@ const DefaultTimeout = 5 * time.Minute
 //   - Generation parameters: CLI/runtime opts > model.generation_defaults > defaults.generation_params.
 //   - Timeout: CLI/runtime timeout > defaults.timeout > DefaultTimeout.
 //   - Code mode: model.codeMode fully overrides defaults.codeMode (no field-level merge).
+//   - Compaction: model.compaction fully overrides defaults.compaction (no field-level merge).
 //   - Conversation storage path: defaults.conversationStoragePath, resolved relative to config file location when needed.
 //
 // The returned Config always has a non-nil GenerationDefaults pointer.
@@ -78,6 +79,10 @@ func resolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions, resolvedConfigPath s
 	if err != nil {
 		return nil, fmt.Errorf("invalid codeMode configuration: %w", err)
 	}
+	compaction, err := resolveCompaction(selectedModel, rawCfg.Defaults)
+	if err != nil {
+		return nil, fmt.Errorf("invalid compaction configuration: %w", err)
+	}
 
 	return &Config{
 		MCPServers:              rawCfg.MCPServers,
@@ -87,6 +92,7 @@ func resolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions, resolvedConfigPath s
 		Timeout:                 timeout,
 		ConversationStoragePath: conversationStoragePath,
 		CodeMode:                codeMode,
+		Compaction:              compaction,
 	}, nil
 }
 

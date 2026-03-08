@@ -2,11 +2,11 @@
 
 -- Message queries
 -- name: CreateMessage :exec
-INSERT INTO messages (id, parent_id, is_subagent, role, tool_result_error)
-VALUES (?, ?, ?, ?, ?);
+INSERT INTO messages (id, parent_id, compaction_parent_id, is_subagent, role, tool_result_error)
+VALUES (?, ?, ?, ?, ?, ?);
 
 -- name: GetMessage :one
-SELECT id, parent_id, is_subagent, role, tool_result_error, created_at
+SELECT id, parent_id, compaction_parent_id, is_subagent, role, tool_result_error, created_at
 FROM messages
 WHERE id = ?;
 
@@ -16,7 +16,7 @@ FROM messages
 ORDER BY created_at DESC, rowid DESC;
 
 -- name: ListMessagesByParent :many
-SELECT id, parent_id, is_subagent, role, tool_result_error, created_at
+SELECT id, parent_id, compaction_parent_id, is_subagent, role, tool_result_error, created_at
 FROM messages
 WHERE parent_id = ?
 ORDER BY created_at, rowid;
@@ -33,13 +33,13 @@ SELECT EXISTS(SELECT 1 FROM messages WHERE id = ?) as "exists";
 SELECT EXISTS(SELECT 1 FROM messages WHERE parent_id = ?) as has_children;
 
 -- name: ListMessagesDescending :many
-SELECT id, parent_id, is_subagent, role, tool_result_error, created_at
+SELECT id, parent_id, compaction_parent_id, is_subagent, role, tool_result_error, created_at
 FROM messages
 ORDER BY created_at DESC, rowid DESC
 LIMIT -1 OFFSET ?;
 
 -- name: ListMessagesAscending :many
-SELECT id, parent_id, is_subagent, role, tool_result_error, created_at
+SELECT id, parent_id, compaction_parent_id, is_subagent, role, tool_result_error, created_at
 FROM messages
 ORDER BY created_at ASC, rowid ASC
 LIMIT -1 OFFSET ?;
