@@ -351,12 +351,8 @@ func normalizeGoDirectiveVersion(raw string) (string, error) {
 	if trimmed == "" {
 		return "", fmt.Errorf("go version must not be empty")
 	}
-	if strings.HasPrefix(trimmed, "go") {
-		trimmed = strings.TrimPrefix(trimmed, "go")
-	}
-	if strings.HasPrefix(trimmed, "v") {
-		trimmed = strings.TrimPrefix(trimmed, "v")
-	}
+	trimmed = strings.TrimPrefix(trimmed, "go")
+	trimmed = strings.TrimPrefix(trimmed, "v")
 
 	prefixed := "go" + trimmed
 	if !goversion.IsValid(prefixed) {

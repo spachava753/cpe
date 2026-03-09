@@ -1,19 +1,12 @@
 package cmd
 
 import (
-	"context"
-	"database/sql"
-	"errors"
-	"fmt"
 	"os"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/spf13/cobra"
 
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/commands"
-	"github.com/spachava753/cpe/internal/config"
-	"github.com/spachava753/cpe/internal/storage"
 )
 
 // convoCmd represents the conversation management command
@@ -31,7 +24,7 @@ var listConvoCmd = &cobra.Command{
 	Long:    `Display all messages in the database with parent-child relationships in a git commit graph style.`,
 	Aliases: []string{"ls"},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		db, dialogStorage, err := openConversationStorage(cmd.Context(), configPath)
+		db, dialogStorage, err := commands.OpenConversationStorage(cmd.Context(), configPath)
 		if err != nil {
 			return err
 		}
@@ -55,7 +48,7 @@ var deleteConvoCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cascade, _ := cmd.Flags().GetBool("cascade")
 
-		db, dialogStorage, err := openConversationStorage(cmd.Context(), configPath)
+		db, dialogStorage, err := commands.OpenConversationStorage(cmd.Context(), configPath)
 		if err != nil {
 			return err
 		}
@@ -79,7 +72,7 @@ var printConvoCmd = &cobra.Command{
 	Aliases: []string{"show", "view"},
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		db, dialogStorage, err := openConversationStorage(cmd.Context(), configPath)
+		db, dialogStorage, err := commands.OpenConversationStorage(cmd.Context(), configPath)
 		if err != nil {
 			return err
 		}
@@ -92,42 +85,6 @@ var printConvoCmd = &cobra.Command{
 			DialogFormatter: &commands.MarkdownDialogFormatter{Renderer: agent.NewRenderer()},
 		})
 	},
-}
-
-func resolveConversationDBPath(explicitConfigPath string) (string, error) {
-	rawCfg, resolvedConfigPath, err := config.LoadRawConfigWithPath(explicitConfigPath)
-	if err != nil {
-		if explicitConfigPath == "" && errors.Is(err, config.ErrConfigNotFound) {
-			return config.DefaultConversationStoragePath, nil
-		}
-		return "", err
-	}
-
-	dbPath, err := config.ResolveConversationStoragePath(rawCfg.Defaults, resolvedConfigPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to resolve conversation storage path: %w", err)
-	}
-	return dbPath, nil
-}
-
-func openConversationStorage(ctx context.Context, explicitConfigPath string) (*sql.DB, *storage.Sqlite, error) {
-	dbPath, err := resolveConversationDBPath(explicitConfigPath)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	db, err := sql.Open("sqlite3", dbPath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to open database: %w", err)
-	}
-
-	dialogStorage, err := storage.NewSqlite(ctx, db)
-	if err != nil {
-		db.Close()
-		return nil, nil, fmt.Errorf("failed to initialize dialog storage: %w", err)
-	}
-
-	return db, dialogStorage, nil
 }
 
 func init() {

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/spachava753/cpe/internal/commands"
 	"github.com/spachava753/cpe/internal/config"
 )
 
@@ -21,9 +22,9 @@ func TestResolveConversationDBPath_NoConfigFoundUsesDefault(t *testing.T) {
 		_ = os.Chdir(cwd)
 	})
 
-	got, err := resolveConversationDBPath("")
+	got, err := commands.ResolveConversationDBPath("")
 	if err != nil {
-		t.Fatalf("resolveConversationDBPath returned error: %v", err)
+		t.Fatalf("ResolveConversationDBPath returned error: %v", err)
 	}
 	if got != config.DefaultConversationStoragePath {
 		t.Fatalf("unexpected db path: got %q want %q", got, config.DefaultConversationStoragePath)
@@ -50,9 +51,9 @@ defaults:
 		t.Fatalf("failed to write config: %v", err)
 	}
 
-	got, err := resolveConversationDBPath(cfgPath)
+	got, err := commands.ResolveConversationDBPath(cfgPath)
 	if err != nil {
-		t.Fatalf("resolveConversationDBPath returned error: %v", err)
+		t.Fatalf("ResolveConversationDBPath returned error: %v", err)
 	}
 	want := filepath.Join(tmpDir, ".my-cpe.db")
 	if got != want {
@@ -62,7 +63,7 @@ defaults:
 
 func TestResolveConversationDBPath_ExplicitMissingConfigReturnsError(t *testing.T) {
 	missingPath := filepath.Join(t.TempDir(), "missing.yaml")
-	_, err := resolveConversationDBPath(missingPath)
+	_, err := commands.ResolveConversationDBPath(missingPath)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

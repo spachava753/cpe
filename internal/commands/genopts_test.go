@@ -35,6 +35,7 @@ func TestBuildGenOptsFromFlags(t *testing.T) {
 		})
 		if result == nil {
 			t.Fatal("expected non-nil result")
+			return
 		}
 		if result.Temperature == nil || *result.Temperature != 0.5 {
 			t.Errorf("expected Temperature=0.5, got %v", result.Temperature)
@@ -56,6 +57,7 @@ func TestBuildGenOptsFromFlags(t *testing.T) {
 		result := BuildGenOptsFromFlags(flags, GenParamFlags{Temperature: &temp})
 		if result == nil {
 			t.Fatal("expected non-nil result")
+			return
 		}
 		if result.Temperature == nil {
 			t.Fatal("expected non-nil Temperature pointer")
@@ -88,6 +90,7 @@ func TestBuildGenOptsFromFlags(t *testing.T) {
 		})
 		if result == nil {
 			t.Fatal("expected non-nil result")
+			return
 		}
 		if result.Temperature == nil || *result.Temperature != 0.8 {
 			t.Errorf("expected Temperature=0.8, got %v", result.Temperature)

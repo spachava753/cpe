@@ -361,6 +361,7 @@ func TestExecuteRoot_ConversationFlow(t *testing.T) {
 		}
 		if forkedUser == nil {
 			t.Fatal("could not find forked user message")
+			return
 		}
 
 		// Find the forked assistant (child of forkedUser)
@@ -372,6 +373,7 @@ func TestExecuteRoot_ConversationFlow(t *testing.T) {
 		}
 		if forkedAssistant == nil {
 			t.Fatal("could not find forked assistant message")
+			return
 		}
 
 		// Verify the forked assistant has content blocks

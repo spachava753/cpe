@@ -87,8 +87,10 @@ func TestMemDB_CompactionParentIDRoundTrip(t *testing.T) {
 func assertCompactionLineageRoundTrip(t *testing.T, db MessageDB) {
 	t.Helper()
 
+	const priorParentID = "prior_123"
+
 	root := makeTextMessage(gai.User, "compacted root")
-	root.ExtraFields = map[string]any{MessageCompactionParentIDKey: "prior_123"}
+	root.ExtraFields = map[string]any{MessageCompactionParentIDKey: priorParentID}
 	child := makeTextMessage(gai.Assistant, "continued reply")
 	saved := saveDialogGeneric(t, db, []gai.Message{root, child})
 	if len(saved) != 2 {
@@ -97,8 +99,8 @@ func assertCompactionLineageRoundTrip(t *testing.T, db MessageDB) {
 
 	rootID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
 	childID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
-	if got := getExtraFieldString(saved[0].ExtraFields, MessageCompactionParentIDKey); got != "prior_123" {
-		t.Fatalf("saved root compaction parent: got %q want %q", got, "prior_123")
+	if got := getExtraFieldString(saved[0].ExtraFields, MessageCompactionParentIDKey); got != priorParentID {
+		t.Fatalf("saved root compaction parent: got %q want %q", got, priorParentID)
 	}
 	if got := getExtraFieldString(saved[1].ExtraFields, MessageCompactionParentIDKey); got != "" {
 		t.Fatalf("saved child compaction parent: got %q want empty", got)
@@ -115,8 +117,8 @@ func assertCompactionLineageRoundTrip(t *testing.T, db MessageDB) {
 	if len(gotMsgs) != 2 {
 		t.Fatalf("expected 2 loaded messages, got %d", len(gotMsgs))
 	}
-	if got := getExtraFieldString(gotMsgs[0].ExtraFields, MessageCompactionParentIDKey); got != "prior_123" {
-		t.Fatalf("loaded root compaction parent: got %q want %q", got, "prior_123")
+	if got := getExtraFieldString(gotMsgs[0].ExtraFields, MessageCompactionParentIDKey); got != priorParentID {
+		t.Fatalf("loaded root compaction parent: got %q want %q", got, priorParentID)
 	}
 	if got := getExtraFieldString(gotMsgs[1].ExtraFields, MessageCompactionParentIDKey); got != "" {
 		t.Fatalf("loaded child compaction parent: got %q want empty", got)
@@ -133,8 +135,8 @@ func assertCompactionLineageRoundTrip(t *testing.T, db MessageDB) {
 	if len(listedMsgs) != 2 {
 		t.Fatalf("expected 2 listed messages, got %d", len(listedMsgs))
 	}
-	if got := getExtraFieldString(listedMsgs[0].ExtraFields, MessageCompactionParentIDKey); got != "prior_123" {
-		t.Fatalf("listed root compaction parent: got %q want %q", got, "prior_123")
+	if got := getExtraFieldString(listedMsgs[0].ExtraFields, MessageCompactionParentIDKey); got != priorParentID {
+		t.Fatalf("listed root compaction parent: got %q want %q", got, priorParentID)
 	}
 	if got := getExtraFieldString(listedMsgs[1].ExtraFields, MessageCompactionParentIDKey); got != "" {
 		t.Fatalf("listed child compaction parent: got %q want empty", got)
@@ -147,8 +149,8 @@ func assertCompactionLineageRoundTrip(t *testing.T, db MessageDB) {
 	if len(dialog) != 2 {
 		t.Fatalf("expected 2 dialog messages, got %d", len(dialog))
 	}
-	if got := getExtraFieldString(dialog[0].ExtraFields, MessageCompactionParentIDKey); got != "prior_123" {
-		t.Fatalf("dialog root compaction parent: got %q want %q", got, "prior_123")
+	if got := getExtraFieldString(dialog[0].ExtraFields, MessageCompactionParentIDKey); got != priorParentID {
+		t.Fatalf("dialog root compaction parent: got %q want %q", got, priorParentID)
 	}
 	if got := getExtraFieldString(dialog[1].ExtraFields, MessageCompactionParentIDKey); got != "" {
 		t.Fatalf("dialog child compaction parent: got %q want empty", got)

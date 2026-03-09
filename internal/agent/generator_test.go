@@ -32,6 +32,7 @@ func TestNewHTTPClientWithTimeout(t *testing.T) {
 			got := newHTTPClientWithTimeout(tt.transport, tt.wantTimeout)
 			if got == nil {
 				t.Fatal("expected non-nil client")
+				return
 			}
 			if got.Timeout != tt.wantTimeout {
 				t.Fatalf("client timeout = %v, want %v", got.Timeout, tt.wantTimeout)
