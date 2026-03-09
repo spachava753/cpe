@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/spachava753/gai"
 
@@ -70,10 +71,66 @@ func Generate(ctx context.Context, opts GenerateOptions) error {
 	// Message IDs are printed by the response/tool printers as messages are saved.
 	_, err := opts.Generator.Generate(ctx, dialog, opts.GenOptsFunc)
 	if err != nil && !errors.Is(err, context.Canceled) {
-		fmt.Fprintf(opts.Stderr, "Error generating response: %v\n", err)
+		fmt.Fprintf(opts.Stderr, "Error generating response: %s\n", formatGenerationError(err))
 	}
 
 	return nil
+}
+
+func formatGenerationError(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	var apiErr *gai.ApiErr
+	if errors.As(err, &apiErr) {
+		return appendErrorHint(apiErr.Error(), apiErrorHint(apiErr))
+	}
+
+	var contentPolicyErr gai.ContentPolicyErr
+	if errors.As(err, &contentPolicyErr) {
+		return appendErrorHint(contentPolicyErr.Error(), "Adjust the prompt or inputs to comply with the provider policy")
+	}
+
+	switch {
+	case errors.Is(err, gai.ContextLengthExceededErr):
+		return appendErrorHint(err.Error(), "Shorten the prompt, reduce attached input, or compact the conversation")
+	case errors.Is(err, gai.MaxGenerationLimitErr):
+		return appendErrorHint(err.Error(), "Increase the token limit or refine the prompt")
+	default:
+		return err.Error()
+	}
+}
+
+func apiErrorHint(apiErr *gai.ApiErr) string {
+	if apiErr == nil {
+		return ""
+	}
+
+	switch apiErr.Kind {
+	case gai.APIErrorKindAuthentication, gai.APIErrorKindPermission:
+		return "Check the configured credentials and provider access"
+	case gai.APIErrorKindRateLimit, gai.APIErrorKindTimeout, gai.APIErrorKindServer, gai.APIErrorKindServiceUnavailable, gai.APIErrorKindOverloaded:
+		return "This looks transient; retry later or try another model"
+	case gai.APIErrorKindInvalidRequest, gai.APIErrorKindRequestTooLarge:
+		return "Check the request parameters, tool inputs, and attached content size"
+	case gai.APIErrorKindNotFound:
+		return "Check the configured model ID and provider base URL"
+	case gai.APIErrorKindContentPolicy:
+		return "Adjust the prompt or inputs to comply with the provider policy"
+	default:
+		return ""
+	}
+}
+
+func appendErrorHint(message, hint string) string {
+	if hint == "" {
+		return message
+	}
+	if strings.HasSuffix(message, ".") || strings.HasSuffix(message, "!") || strings.HasSuffix(message, "?") {
+		return message + " " + hint
+	}
+	return message + ". " + hint
 }
 
 // DialogResolver provides the read operations ResolveInitialDialog needs.

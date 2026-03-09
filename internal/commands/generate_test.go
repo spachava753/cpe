@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -45,7 +46,7 @@ func (r failingListResolver) GetMessages(ctx context.Context, messageIDs []strin
 	return nil, errors.New("not implemented")
 }
 
-func newTestSqliteResolver(t *testing.T) (*storage.Sqlite, *sql.DB) {
+func newTestSqliteResolver(t *testing.T, ctx context.Context) (*storage.Sqlite, *sql.DB) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "generate-test.db")
 	rawDB, err := sql.Open("sqlite3", dbPath)
@@ -54,7 +55,7 @@ func newTestSqliteResolver(t *testing.T) (*storage.Sqlite, *sql.DB) {
 	}
 	t.Cleanup(func() { rawDB.Close() })
 
-	sqliteDB, err := storage.NewSqlite(context.Background(), rawDB)
+	sqliteDB, err := storage.NewSqlite(ctx, rawDB)
 	if err != nil {
 		t.Fatalf("NewSqlite: %v", err)
 	}
@@ -189,7 +190,7 @@ func TestResolveInitialDialog(t *testing.T) {
 	})
 
 	t.Run("AutoContinueWithSqliteTieBreakAndSubagentFilter", func(t *testing.T) {
-		db, rawDB := newTestSqliteResolver(t)
+		db, rawDB := newTestSqliteResolver(t, ctx)
 
 		// Save a regular parent conversation first.
 		regular := []gai.Message{
@@ -302,4 +303,84 @@ func TestResolveInitialDialog(t *testing.T) {
 			t.Fatalf("expected nil dialog when no assistant messages exist, got %d messages", len(dialog))
 		}
 	})
+}
+
+type stubDialogGenerator struct {
+	err error
+}
+
+func (s stubDialogGenerator) Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error) {
+	return dialog, s.err
+}
+
+func TestGenerateFormatsGeneratorErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		err     error
+		wantErr string
+	}{
+		{
+			name: "api auth error",
+			err: &gai.ApiErr{
+				Provider:   gai.ProviderOpenAI,
+				Kind:       gai.APIErrorKindAuthentication,
+				StatusCode: 401,
+				Message:    "invalid_api_key",
+			},
+			wantErr: "Error generating response: openai authentication (401): invalid_api_key. Check the configured credentials and provider access\n",
+		},
+		{
+			name:    "context length exceeded",
+			err:     gai.ContextLengthExceededErr,
+			wantErr: "Error generating response: context length exceeded. Shorten the prompt, reduce attached input, or compact the conversation\n",
+		},
+		{
+			name:    "content policy violation",
+			err:     gai.ContentPolicyErr("blocked by provider"),
+			wantErr: "Error generating response: content policy violation: blocked by provider. Adjust the prompt or inputs to comply with the provider policy\n",
+		},
+		{
+			name:    "generic error",
+			err:     errors.New("boom"),
+			wantErr: "Error generating response: boom\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			err := Generate(context.Background(), GenerateOptions{
+				UserBlocks: []gai.Block{gai.TextBlock("hello")},
+				GenOptsFunc: func(dialog gai.Dialog) *gai.GenOpts {
+					return nil
+				},
+				Generator: stubDialogGenerator{err: tt.err},
+				Stderr:    &stderr,
+			})
+			if err != nil {
+				t.Fatalf("Generate returned error: %v", err)
+			}
+			if stderr.String() != tt.wantErr {
+				t.Fatalf("stderr mismatch:\n got: %q\nwant: %q", stderr.String(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestGenerateSuppressesContextCanceled(t *testing.T) {
+	var stderr bytes.Buffer
+	err := Generate(context.Background(), GenerateOptions{
+		UserBlocks: []gai.Block{gai.TextBlock("hello")},
+		GenOptsFunc: func(dialog gai.Dialog) *gai.GenOpts {
+			return nil
+		},
+		Generator: stubDialogGenerator{err: context.Canceled},
+		Stderr:    &stderr,
+	})
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr output, got %q", stderr.String())
+	}
 }
