@@ -313,6 +313,23 @@ func (s stubDialogGenerator) Generate(ctx context.Context, dialog gai.Dialog, op
 	return dialog, s.err
 }
 
+type hintedErr struct {
+	cause error
+	hint  string
+}
+
+func (e hintedErr) Error() string {
+	return e.cause.Error()
+}
+
+func (e hintedErr) Unwrap() error {
+	return e.cause
+}
+
+func (e hintedErr) GenerationHint() string {
+	return e.hint
+}
+
 func TestGenerateFormatsGeneratorErrors(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -340,9 +357,30 @@ func TestGenerateFormatsGeneratorErrors(t *testing.T) {
 			wantErr: "Error generating response: content policy violation: blocked by provider. Adjust the prompt or inputs to comply with the provider policy\n",
 		},
 		{
+			name: "api auth error with trace hint",
+			err: hintedErr{
+				cause: &gai.ApiErr{
+					Provider:   gai.ProviderOpenAI,
+					Kind:       gai.APIErrorKindAuthentication,
+					StatusCode: 401,
+					Message:    "invalid_api_key",
+				},
+				hint: "Flight trace saved to /tmp/cpe-generator.trace",
+			},
+			wantErr: "Error generating response: openai authentication (401): invalid_api_key. Check the configured credentials and provider access. Flight trace saved to /tmp/cpe-generator.trace\n",
+		},
+		{
 			name:    "generic error",
 			err:     errors.New("boom"),
 			wantErr: "Error generating response: boom\n",
+		},
+		{
+			name: "generic error with trace hint",
+			err: hintedErr{
+				cause: errors.New("boom"),
+				hint:  "Flight trace saved to /tmp/cpe-generator.trace",
+			},
+			wantErr: "Error generating response: boom. Flight trace saved to /tmp/cpe-generator.trace\n",
 		},
 	}
 

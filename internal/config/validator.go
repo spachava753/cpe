@@ -25,6 +25,7 @@ func (c *RawConfig) Validate() error {
 //   - defaults.model references an existing entry in models.
 //   - auth_method provider constraints for each model.
 //   - defaults.codeMode and model.codeMode path normalization + module checks.
+//   - defaults.flightRecorder and model.flightRecorder duration/size validity.
 //   - optional subagent.outputSchemaPath exists and contains valid JSON.
 //
 // When configFilePath is provided, relative codeMode paths are interpreted from
@@ -52,6 +53,9 @@ func (c *RawConfig) ValidateWithConfigPath(configFilePath string) error {
 	if err := validateCodeModeConfig(c.Defaults.CodeMode, configFilePath, "defaults.codeMode"); err != nil {
 		return err
 	}
+	if err := validateFlightRecorderConfig(c.Defaults.FlightRecorder, "defaults.flightRecorder"); err != nil {
+		return err
+	}
 	if err := validateCompactionConfig(c.Defaults.Compaction, "defaults.compaction"); err != nil {
 		return err
 	}
@@ -63,6 +67,9 @@ func (c *RawConfig) ValidateWithConfigPath(configFilePath string) error {
 		}
 
 		if err := validateCodeModeConfig(m.CodeMode, configFilePath, fmt.Sprintf("models[%d].codeMode", i)); err != nil {
+			return err
+		}
+		if err := validateFlightRecorderConfig(m.FlightRecorder, fmt.Sprintf("models[%d].flightRecorder", i)); err != nil {
 			return err
 		}
 		if err := validateCompactionConfig(m.Compaction, fmt.Sprintf("models[%d].compaction", i)); err != nil {

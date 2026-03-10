@@ -449,6 +449,7 @@ func NewGenerator(
 	// - ResponsePrinting: prints response WITH ID after Saving sets it
 	// - Saving: BEFORE saves new messages; AFTER saves response, sets ID
 	// - ThinkingFilter: filters thinking blocks for the provider
+	// - FlightRecorder (when enabled): snapshots a runtime trace when retries still end in error
 	// - Retry: retries transient failures
 	// - ToolResultPrinting (innermost): prints tool results WITH ID
 	if o.dialogSaver != nil {
@@ -483,6 +484,9 @@ func NewGenerator(
 		wrappers = append(wrappers, WithBlockWhitelist([]string{gai.Content, gai.ToolCall}))
 	}
 
+	if cfg.FlightRecorder != nil && cfg.FlightRecorder.Enabled {
+		wrappers = append(wrappers, WithFlightRecorder(cfg.Model, cfg.FlightRecorder))
+	}
 	wrappers = append(wrappers, gai.WithRetry(b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute)))
 
 	toolResultRenderer := NewRenderer()

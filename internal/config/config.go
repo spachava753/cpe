@@ -41,6 +41,14 @@ type CodeModeConfig struct {
 	LargeOutputCharLimit int      `yaml:"largeOutputCharLimit,omitempty" json:"largeOutputCharLimit,omitempty" validate:"omitempty,gte=0"`
 }
 
+// FlightRecorderConfig controls runtime/trace flight recorder capture for
+// terminal generator errors.
+type FlightRecorderConfig struct {
+	Enabled  bool    `yaml:"enabled" json:"enabled"`
+	MinAge   string  `yaml:"minAge,omitempty" json:"minAge,omitempty"`
+	MaxBytes *uint64 `yaml:"maxBytes,omitempty" json:"maxBytes,omitempty" validate:"omitempty,gte=0"`
+}
+
 // SubagentConfig defines a subagent for MCP server mode
 type SubagentConfig struct {
 	// Name is the tool name exposed via MCP (required)
@@ -129,6 +137,9 @@ type Defaults struct {
 	// Code mode configuration
 	CodeMode *CodeModeConfig `yaml:"codeMode,omitempty" json:"codeMode,omitempty"`
 
+	// Flight recorder configuration for terminal generator errors
+	FlightRecorder *FlightRecorderConfig `yaml:"flightRecorder,omitempty" json:"flightRecorder,omitempty" validate:"omitempty"`
+
 	// Conversation compaction configuration
 	Compaction *CompactionConfig `yaml:"compaction,omitempty" json:"compaction,omitempty"`
 }
@@ -145,6 +156,9 @@ type ModelConfig struct {
 
 	// Code mode configuration for this model (overrides global defaults)
 	CodeMode *CodeModeConfig `yaml:"codeMode,omitempty" json:"codeMode,omitempty"`
+
+	// Flight recorder configuration for this model (overrides global defaults)
+	FlightRecorder *FlightRecorderConfig `yaml:"flightRecorder,omitempty" json:"flightRecorder,omitempty" validate:"omitempty"`
 
 	// Conversation compaction configuration for this model (overrides global defaults)
 	Compaction *CompactionConfig `yaml:"compaction,omitempty" json:"compaction,omitempty"`
@@ -182,6 +196,9 @@ type Config struct {
 
 	// Effective code mode configuration
 	CodeMode *CodeModeConfig
+
+	// Effective flight recorder configuration
+	FlightRecorder *ResolvedFlightRecorderConfig
 
 	// Effective conversation compaction configuration
 	Compaction *ResolvedCompactionConfig

@@ -82,24 +82,41 @@ func formatGenerationError(err error) string {
 		return ""
 	}
 
+	var message string
+
 	var apiErr *gai.ApiErr
 	if errors.As(err, &apiErr) {
-		return appendErrorHint(apiErr.Error(), apiErrorHint(apiErr))
+		message = appendErrorHint(apiErr.Error(), apiErrorHint(apiErr))
+		return appendErrorHint(message, generationHint(err))
 	}
 
 	var contentPolicyErr gai.ContentPolicyErr
 	if errors.As(err, &contentPolicyErr) {
-		return appendErrorHint(contentPolicyErr.Error(), "Adjust the prompt or inputs to comply with the provider policy")
+		message = appendErrorHint(contentPolicyErr.Error(), "Adjust the prompt or inputs to comply with the provider policy")
+		return appendErrorHint(message, generationHint(err))
 	}
 
 	switch {
 	case errors.Is(err, gai.ContextLengthExceededErr):
-		return appendErrorHint(err.Error(), "Shorten the prompt, reduce attached input, or compact the conversation")
+		message = appendErrorHint(err.Error(), "Shorten the prompt, reduce attached input, or compact the conversation")
 	case errors.Is(err, gai.MaxGenerationLimitErr):
-		return appendErrorHint(err.Error(), "Increase the token limit or refine the prompt")
+		message = appendErrorHint(err.Error(), "Increase the token limit or refine the prompt")
 	default:
-		return err.Error()
+		message = err.Error()
 	}
+	return appendErrorHint(message, generationHint(err))
+}
+
+type generationHintProvider interface {
+	GenerationHint() string
+}
+
+func generationHint(err error) string {
+	var hintProvider generationHintProvider
+	if errors.As(err, &hintProvider) {
+		return hintProvider.GenerationHint()
+	}
+	return ""
 }
 
 func apiErrorHint(apiErr *gai.ApiErr) string {

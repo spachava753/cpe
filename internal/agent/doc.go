@@ -8,7 +8,8 @@ Major responsibilities:
   - construct provider-specific generators (OpenAI, Anthropic, Gemini, etc.)
     with API key or OAuth authentication;
   - apply middleware wrappers for panic recovery, persistence, block filtering,
-    tool-result printing, response printing, and token/cost reporting;
+    flight-recorder trace capture on terminal generation errors, tool-result
+    printing, response printing, and token/cost reporting;
   - transform user inputs (prompt text, local files, URLs) into gai blocks;
   - render system prompt templates with helper functions for file inclusion,
     command execution, and skill discovery;

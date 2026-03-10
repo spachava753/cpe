@@ -84,6 +84,10 @@ models:
 defaults:
   model: sonnet
   timeout: 5m
+  flightRecorder:
+    enabled: true
+    minAge: 10s
+    maxBytes: 8388608
 ```
 
 > **Tip**: You can quickly add models from the [models.dev](https://models.dev) registry:
@@ -379,6 +383,10 @@ defaults:
   model: sonnet
   systemPromptPath: "./prompts/agent.md"
   timeout: 5m
+  flightRecorder:
+    enabled: true
+    minAge: 10s
+    maxBytes: 8388608
   codeMode:
     enabled: true
     maxTimeout: 3600
@@ -660,6 +668,34 @@ cpe mcp list-tools <server-name>
 # Enable verbose output for subagents
 cpe --verbose-subagent "your prompt"
 ```
+
+### Flight Recorder Traces
+
+CPE can capture a Go runtime flight-recorder trace when generation still fails after retries. This keeps a rolling in-memory trace window during generation and only writes a trace file when a terminal error occurs.
+
+Configure it in `cpe.yaml`:
+
+```yaml
+defaults:
+  flightRecorder:
+    enabled: true
+    minAge: 10s
+    maxBytes: 8388608
+```
+
+Notes:
+- `minAge` controls how much recent trace history CPE tries to retain before the error.
+- `maxBytes` bounds the in-memory trace window size.
+- When a trace is captured, the CLI error includes the saved file path, usually under your system temp directory such as `/tmp` on Unix-like systems.
+- Traces are written only after retry handling is exhausted, so transient errors that succeed on retry do not leave trace files behind.
+
+Inspect a saved trace with:
+
+```bash
+go tool trace /tmp/cpe-generator-123456.trace
+```
+
+`go tool trace` prints a local URL; open it in your browser to inspect goroutines, blocking, scheduler activity, and runtime events leading up to the failure.
 
 ## 🤝 Contributing
 
