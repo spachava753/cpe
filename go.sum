@@ -689,6 +689,8 @@ github.com/sourcegraph/go-diff v0.7.0 h1:9uLlrd5T46OXs5qpp8L/MTltk0zikUGi0sNNyCp
 github.com/sourcegraph/go-diff v0.7.0/go.mod h1:iBszgVvyxdc8SFZ7gm69go2KDdt3ag071iBaWPF6cjs=
 github.com/spachava753/gai v0.37.0 h1:Fir5Km0NzmNs/PZ3V0pKV/pHCdSZW5tJnU4hYaFQNxg=
 github.com/spachava753/gai v0.37.0/go.mod h1:lqg/Zn8TR4ewsQ+58McPtWDcIkjPx+XohsZP2WyWIjw=
+github.com/spachava753/gai v0.37.1-0.20260310041331-867304172976 h1:QAuTQ2rl/aVXEg9fPFwhfucHd0/Rly3QwGJvCdeoiVs=
+github.com/spachava753/gai v0.37.1-0.20260310041331-867304172976/go.mod h1:lqg/Zn8TR4ewsQ+58McPtWDcIkjPx+XohsZP2WyWIjw=
 github.com/spf13/afero v1.15.0 h1:b/YBCLWAJdFWJTN9cLhiXXcD7mzKn9Dm86dNnfyQw1I=
 github.com/spf13/afero v1.15.0/go.mod h1:NC2ByUVxtQs4b3sIUphxK0NioZnmxgyCrfzeuq8lxMg=
 github.com/spf13/cast v1.10.0 h1:h2x0u2shc1QuLHfxi+cTJvs30+ZAHOGRic8uyGTDWxY=

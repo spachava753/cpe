@@ -569,16 +569,10 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 			return "", fmt.Errorf("failed to create generator for model %q: %w", effectiveConfig.Model.Ref, err)
 		}
 
-		// Build generation options function
-		var genOptsFunc gai.GenOptsGenerator
-		if effectiveConfig.GenerationDefaults != nil {
-			// Apply model-type-specific defaults (e.g., reasoning summary for Responses API)
-			if strings.EqualFold(effectiveConfig.Model.Type, agent.ModelTypeResponses) {
-				agent.ApplyResponsesThinkingSummary(effectiveConfig.GenerationDefaults)
-			}
-			genOptsFunc = func(_ gai.Dialog) *gai.GenOpts {
-				return effectiveConfig.GenerationDefaults
-			}
+		// Build generation options per dialog so Responses models can derive a
+		// stable prompt cache key from the conversation prefix through the current user turn.
+		genOptsFunc := func(dialog gai.Dialog) *gai.GenOpts {
+			return agent.BuildGenOptsForDialog(effectiveConfig.Model, effectiveConfig.GenerationDefaults, dialog)
 		}
 
 		// ExecuteSubagent handles lifecycle event emission, tool/thinking streaming,
