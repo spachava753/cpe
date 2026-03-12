@@ -1,6 +1,10 @@
 package agent
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/spachava753/cpe/internal/codemode"
+)
 
 func TestPlainTextRendererRender(t *testing.T) {
 	renderer := &PlainTextRenderer{}
@@ -33,5 +37,44 @@ func TestNewResponsePrinterRenderersForTTYFalseReturnsPlainTextRenderers(t *test
 	}
 	if _, ok := renderers.ToolCall.(*PlainTextRenderer); !ok {
 		t.Fatalf("ToolCall renderer should be *PlainTextRenderer, got %T", renderers.ToolCall)
+	}
+}
+
+func TestFormatExecuteGoCodeToolCallMarkdownAddsLineNumbers(t *testing.T) {
+	t.Parallel()
+
+	input := ExecuteGoCodeFormatInput{
+		Code:             "package main\n\nfunc Run() {}",
+		ExecutionTimeout: 15,
+	}
+
+	want := "#### [tool call] (timeout: 15s)\n```go\n1  package main\n2  \n3  func Run() {}\n```"
+	got := FormatExecuteGoCodeToolCallMarkdown(input)
+	if got != want {
+		t.Fatalf("FormatExecuteGoCodeToolCallMarkdown() mismatch\nwant:\n%s\n\ngot:\n%s", want, got)
+	}
+}
+
+func TestFormatExecuteGoCodeToolCallMarkdownUsesSharedLineNumberFormatting(t *testing.T) {
+	t.Parallel()
+
+	input := ExecuteGoCodeFormatInput{Code: "package main\nfunc Run() {}"}
+	want := "#### [tool call]\n" + codemode.MarkdownFencedBlock("go", codemode.FormatDisplayCodeWithLineNumbers(input.Code))
+
+	got := FormatExecuteGoCodeToolCallMarkdown(input)
+	if got != want {
+		t.Fatalf("FormatExecuteGoCodeToolCallMarkdown() mismatch\nwant:\n%s\n\ngot:\n%s", want, got)
+	}
+}
+
+func TestFormatExecuteGoCodeResultMarkdownUsesSafeFence(t *testing.T) {
+	t.Parallel()
+
+	input := "before\n````\nafter"
+	want := "#### Code execution output:\n" + codemode.MarkdownFencedBlock("shell", input)
+
+	got := FormatExecuteGoCodeResultMarkdown(input, 0)
+	if got != want {
+		t.Fatalf("FormatExecuteGoCodeResultMarkdown() mismatch\nwant:\n%s\n\ngot:\n%s", want, got)
 	}
 }

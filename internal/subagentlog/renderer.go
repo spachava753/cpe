@@ -92,12 +92,13 @@ func (r *Renderer) renderToolCall(event Event) string {
 	// Build body with appropriate code block
 	var body string
 	if event.ToolName == codemode.ExecuteGoCodeToolName {
-		// execute_go_code payloads are rendered as Go source for readability.
-		body = header + "\n" + "```go\n" + event.Payload + "\n```"
+		// execute_go_code payloads are rendered as line-numbered Go source so
+		// compiler diagnostics can be mapped directly to the displayed run.go.
+		body = header + "\n" + codemode.MarkdownFencedBlock("go", codemode.FormatDisplayCodeWithLineNumbers(event.Payload))
 	} else {
 		// Non-code tool inputs are expected to be JSON object parameters.
 		formattedPayload := formatJSON(event.Payload)
-		body = header + "\n" + "```json\n" + formattedPayload + "\n```"
+		body = header + "\n" + codemode.MarkdownFencedBlock("json", formattedPayload)
 	}
 
 	return r.render(body)
@@ -117,7 +118,7 @@ func (r *Renderer) renderToolResult(event Event) string {
 	}
 
 	// Tool results are rendered in a shell fence to preserve raw command/tool output.
-	body := header + "\n" + "```shell\n" + event.Payload + "\n```"
+	body := header + "\n" + codemode.MarkdownFencedBlock("shell", event.Payload)
 
 	return r.render(body)
 }
@@ -143,9 +144,9 @@ func (r *Renderer) renderToolResultConcise(event Event) string {
 	if event.ToolName == finalAnswerToolName {
 		return ""
 	}
-	// Tool results are emitted only after successful completion, so concise mode uses
-	// a success checkmark: "#### subagent [runId] ✓ tool_name".
-	header := fmt.Sprintf("#### %s [%s] ✓ %s", event.SubagentName, event.SubagentRunID, event.ToolName)
+	// Tool results may represent either success or recoverable failure, so concise
+	// mode uses a neutral result marker instead of a success checkmark.
+	header := fmt.Sprintf("#### %s [%s] ← %s", event.SubagentName, event.SubagentRunID, event.ToolName)
 	return r.render(header)
 }
 
@@ -162,6 +163,9 @@ func (r *Renderer) renderThoughtTraceConcise(event Event) string {
 }
 
 func (r *Renderer) render(content string) string {
+	if r.markdownRenderer == nil {
+		return content
+	}
 	rendered, err := r.markdownRenderer.Render(content)
 	if err != nil {
 		return content

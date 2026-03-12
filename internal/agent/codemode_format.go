@@ -49,14 +49,14 @@ func FormatExecuteGoCodeToolCallMarkdown(input ExecuteGoCodeFormatInput) string 
 	if input.ExecutionTimeout > 0 {
 		header = fmt.Sprintf("#### [tool call] (timeout: %ds)", input.ExecutionTimeout)
 	}
-	return fmt.Sprintf("%s\n```go\n%s\n```", header, input.Code)
+	return fmt.Sprintf("%s\n%s", header, codemode.MarkdownFencedBlock("go", codemode.FormatDisplayCodeWithLineNumbers(input.Code)))
 }
 
 // FormatExecuteGoCodeResultMarkdown formats an execute_go_code result as markdown.
 // The output includes a header and a shell code block.
 func FormatExecuteGoCodeResultMarkdown(content string, maxLines int) string {
 	truncated := truncateToMaxLines(content, maxLines)
-	return fmt.Sprintf("#### Code execution output:\n````shell\n%s\n````", truncated)
+	return fmt.Sprintf("#### Code execution output:\n%s", codemode.MarkdownFencedBlock("shell", truncated))
 }
 
 // IsExecuteGoCodeToolCall checks if a tool call JSON is for the execute_go_code tool.
@@ -74,7 +74,7 @@ func FormatGenericToolCallMarkdown(content string) (string, bool) {
 	if err := json.Indent(&formattedJson, []byte(content), "", "  "); err != nil {
 		return content, false
 	}
-	return fmt.Sprintf("#### [tool call]\n```json\n%s\n```", formattedJson.String()), true
+	return fmt.Sprintf("#### [tool call]\n%s", codemode.MarkdownFencedBlock("json", formattedJson.String())), true
 }
 
 // truncateToMaxLines truncates content to the specified number of lines.
@@ -83,11 +83,20 @@ func truncateToMaxLines(content string, maxLines int) string {
 	if maxLines <= 0 {
 		return content
 	}
+	if content == "" {
+		return content
+	}
 
-	lines := strings.Split(content, "\n")
+	trailingNewline := strings.HasSuffix(content, "\n")
+	trimmed := strings.TrimSuffix(content, "\n")
+	lines := strings.Split(trimmed, "\n")
 	if len(lines) <= maxLines {
 		return content
 	}
 
-	return strings.Join(lines[:maxLines], "\n") + "\n... (truncated)"
+	truncated := strings.Join(lines[:maxLines], "\n")
+	if trailingNewline {
+		truncated += "\n"
+	}
+	return truncated + "... (truncated)"
 }

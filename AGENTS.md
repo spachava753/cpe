@@ -168,7 +168,7 @@ Implementation notes:
 - Generated programs run with `go run` in `/tmp/cpe-tmp-*` directories
 - Execution timeout enforced via SIGINT→SIGKILL with 5s grace period
 - Exit codes: 0=success, 1=recoverable error, 2=panic (recoverable), 3=fatal error
-- Non-streaming printer renders generated code as syntax-highlighted Go blocks
+- Non-streaming printer renders generated code as syntax-highlighted Go blocks with line numbers
 
 ## MCP Server Mode
 
