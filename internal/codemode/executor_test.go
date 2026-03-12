@@ -194,6 +194,73 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 	}
 }
 
+func TestExecuteCode_RuntimeDoesNotInheritWorkspaceForNestedGoCommands(t *testing.T) {
+	t.Parallel()
+
+	helperModuleDir := createLocalModule(t, t.TempDir(), "helpermod", "example.com/helpermod", `package helpermod
+
+func Message() string {
+	return "ok"
+}
+`)
+
+	llmCode := `package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func Run(ctx context.Context) ([]mcp.Content, error) {
+	root, err := os.MkdirTemp("", "nested-go-test-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(root)
+
+	goMod := []byte("module example.com/unrelated\n\ngo 1.24\n")
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), goMod, 0o644); err != nil {
+		return nil, err
+	}
+	goTest := []byte("package unrelated\n\nimport \"testing\"\n\nfunc TestOK(t *testing.T) {}\n")
+	if err := os.WriteFile(filepath.Join(root, "unrelated_test.go"), goTest, 0o644); err != nil {
+		return nil, err
+	}
+
+	cmd := exec.CommandContext(ctx, "go", "test", "./...")
+	cmd.Dir = root
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("nested go test failed: %w\n%s", err, string(output))
+	}
+
+	fmt.Printf("helper=%s\ngo-test=ok\n", helpermod.Message())
+	return nil, nil
+}
+`
+
+	result, err := ExecuteCode(context.Background(), nil, llmCode, ExecuteCodeOptions{
+		TimeoutSeconds:   30,
+		LocalModulePaths: []string{helperModuleDir},
+	})
+	if err != nil {
+		t.Fatalf("ExecuteCode returned error: %v", err)
+	}
+	if result.ExitCode != 0 {
+		t.Fatalf("exit code mismatch: got %d, want 0", result.ExitCode)
+	}
+
+	wantOutput := "helper=ok\ngo-test=ok\n\n\nNote: Imports in run.go were auto-corrected.\n  Added: example.com/helpermod"
+	if result.Output != wantOutput {
+		t.Fatalf("output mismatch:\n got: %q\nwant: %q", result.Output, wantOutput)
+	}
+}
+
 func TestExecuteCode_InvalidLocalModulePathFails(t *testing.T) {
 	t.Parallel()
 

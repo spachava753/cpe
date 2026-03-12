@@ -111,9 +111,9 @@ func ExecuteCode(ctx context.Context, servers []*mcp.MCPConn, llmCode string, op
 	if realWorkspacePath, err := filepath.EvalSymlinks(workspacePath); err == nil {
 		workspacePath = realWorkspacePath
 	}
-	envOverrides := map[string]string{"GOWORK": workspacePath}
+	buildEnvOverrides := map[string]string{"GOWORK": workspacePath}
 
-	if err := applyWorkspaceModuleReplacements(ctx, tempDir, envOverrides, workspaceModules); err != nil {
+	if err := applyWorkspaceModuleReplacements(ctx, tempDir, buildEnvOverrides, workspaceModules); err != nil {
 		return ExecutionResult{}, fmt.Errorf("configuring workspace module replacements: %w", err)
 	}
 
@@ -132,10 +132,10 @@ func ExecuteCode(ctx context.Context, servers []*mcp.MCPConn, llmCode string, op
 	}
 
 	// Auto-correct imports
-	importNote := autoCorrectImports(ctx, tempDir, "run.go", envOverrides)
+	importNote := autoCorrectImports(ctx, tempDir, "run.go", buildEnvOverrides)
 
 	// Run go mod tidy
-	tidyResult, err := runCommand(ctx, tempDir, envOverrides, "go", "mod", "tidy")
+	tidyResult, err := runCommand(ctx, tempDir, buildEnvOverrides, "go", "mod", "tidy")
 	if err != nil {
 		return ExecutionResult{}, fmt.Errorf("running go mod tidy: %w", err)
 	}
@@ -150,7 +150,7 @@ func ExecuteCode(ctx context.Context, servers []*mcp.MCPConn, llmCode string, op
 
 	// Build the binary to get accurate exit codes (go run masks them)
 	binaryPath := filepath.Join(tempDir, "program")
-	buildResult, err := runCommand(ctx, tempDir, envOverrides, "go", "build", "-o", binaryPath, ".")
+	buildResult, err := runCommand(ctx, tempDir, buildEnvOverrides, "go", "build", "-o", binaryPath, ".")
 	if err != nil {
 		return ExecutionResult{}, fmt.Errorf("running go build: %w", err)
 	}
@@ -163,8 +163,10 @@ func ExecuteCode(ctx context.Context, servers []*mcp.MCPConn, llmCode string, op
 		}, RecoverableError{Output: buildResult.Output, ExitCode: buildResult.ExitCode}
 	}
 
-	// Execute the built binary with timeout and graceful shutdown
-	result, err := runProgramWithTimeout(ctx, binaryPath, opts.TimeoutSeconds, envOverrides)
+	// Execute the built binary with timeout and graceful shutdown.
+	// Only build-time steps use the temporary workspace. The generated program
+	// itself runs with the normal inherited environment.
+	result, err := runProgramWithTimeout(ctx, binaryPath, opts.TimeoutSeconds, nil)
 	result.Output += importNote
 	result = maybeSpillLargeOutput(result, opts.LargeOutputCharLimit)
 	if err != nil {
