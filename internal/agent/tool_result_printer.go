@@ -66,24 +66,35 @@ func (g *ToolResultPrinterWrapper) printToolResult(dialog gai.Dialog, toolResult
 	g.printResult(toolName, toolResultMsg.Blocks, messageID)
 }
 
-// findToolName looks up the tool name from the previous assistant message by matching tool call ID.
+// findToolName looks up the tool name by matching the tool call ID against the
+// nearest preceding assistant message. This handles multiple consecutive tool
+// results from a single assistant turn without accidentally reusing stale tool
+// calls from older turns.
 func (g *ToolResultPrinterWrapper) findToolName(dialog gai.Dialog, toolResultMsg gai.Message) string {
 	if len(toolResultMsg.Blocks) == 0 {
 		return "unknown"
 	}
 	toolCallID := toolResultMsg.Blocks[0].ID
-	if len(dialog) >= 2 {
-		prevMsg := dialog[len(dialog)-2]
-		if prevMsg.Role == gai.Assistant {
-			for _, block := range prevMsg.Blocks {
-				if block.BlockType == gai.ToolCall && block.ID == toolCallID {
-					var toolCall gai.ToolCallInput
-					if err := json.Unmarshal([]byte(block.Content.String()), &toolCall); err == nil {
-						return toolCall.Name
-					}
-				}
-			}
+	if toolCallID == "" {
+		return "unknown"
+	}
+
+	for i := len(dialog) - 2; i >= 0; i-- {
+		msg := dialog[i]
+		if msg.Role != gai.Assistant {
+			continue
 		}
+		for _, block := range msg.Blocks {
+			if block.BlockType != gai.ToolCall || block.ID != toolCallID {
+				continue
+			}
+			var toolCall gai.ToolCallInput
+			if err := json.Unmarshal([]byte(block.Content.String()), &toolCall); err == nil && toolCall.Name != "" {
+				return toolCall.Name
+			}
+			return "unknown"
+		}
+		return "unknown"
 	}
 	return "unknown"
 }
