@@ -8,6 +8,7 @@ owning agent feature business logic.
 
 Feature areas include:
   - root generation flow orchestration;
+  - account authentication and usage management commands;
   - model and configuration management commands;
   - conversation persistence operations (list, print, delete);
   - MCP client commands (inspect servers/tools, call tools, code mode help);

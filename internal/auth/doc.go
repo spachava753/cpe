@@ -7,7 +7,8 @@ It provides:
   - callback handling for browser-based login flows;
   - token exchange and refresh functions;
   - credential persistence in a per-user config file;
-  - HTTP round trippers that inject bearer tokens and refresh automatically.
+  - HTTP round trippers that inject bearer tokens and refresh automatically;
+  - provider-specific account usage helpers such as the OpenAI ChatGPT usage API.
 
 Credential storage contract:
 credentials are stored under the user's config directory in a JSON file with

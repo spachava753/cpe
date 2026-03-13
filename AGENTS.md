@@ -14,7 +14,7 @@ Key capabilities:
 - `cmd/`: The package which has the cobra commands that user invokes
 - `internal/`: Hosts all of the actual business logic and utilities
   - `agent/`: Package that hosts generator adapters, streaming/printing, thinking filter, flight-recorder trace capture for terminal generation errors, system prompt generation, built-in tool registration, compaction orchestration (including configurable restart caps), and agent creation to execute a user query. Effective provider request timeouts come from resolved config/CLI timeout settings; avoid introducing shorter hardcoded HTTP client timeouts in generator wiring, especially for OAuth-backed clients.
-  - `auth/`: Package that hosts OAuth authentication for AI providers (Anthropic, OpenAI), including credential storage, token refresh, PKCE flow, and HTTP transport wrappers
+  - `auth/`: Package that hosts OAuth authentication for AI providers (Anthropic, OpenAI), including credential storage, token refresh, PKCE flow, HTTP transport wrappers, and account usage helpers such as the OpenAI ChatGPT usage endpoint
   - `codemode/`: Package that hosts code mode implementation - schema to Go type conversion, tool collision detection, code execution sandbox, and execute_go_code tool
   - `config/`: Package that hosts configuration loading, validation, parameter merging, and config specific types, including compaction and flight-recorder config resolution
   - `mcp/`: Package that hosts MCP config validation and client, as well as code for connecting to MPC servers
@@ -106,6 +106,11 @@ go generate ./internal/config/
 
 Conversation storage path can be configured via `defaults.conversationStoragePath` in `cpe.yaml`.
 If omitted, CPE uses `.cpeconvo` in the current working directory.
+
+## Agent preferences
+
+- This is personal software with a single primary user. Do not preserve backward compatibility by default unless explicitly requested.
+- Prefer the simplest command structure and UX that best serves the current codebase and user workflows, even if that means changing or removing existing CLI surfaces.
 
 ## Code style and conventions
 

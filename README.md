@@ -273,23 +273,24 @@ When `localModulePaths` is configured, generated code runs inside an ephemeral G
 
 Example: "Find all TODO comments, group them by file, and create a summary report" becomes a single Go program that the AI writes and CPE executes.
 
-### OAuth Authentication
+### Account Authentication
 
-Use your Claude Pro/Max subscription directly:
+Use your Claude Pro/Max or ChatGPT subscription directly:
 
 ```bash
-# Authenticate with Anthropic
-cpe auth login anthropic
+# Authenticate with Anthropic or OpenAI
+cpe account login anthropic
+cpe account login openai
 
-# Check status
-cpe auth status
-
-# Refresh OAuth tokens
-cpe auth refresh anthropic
+# Show OpenAI subscription usage
+cpe account usage openai
 
 # Logout
-cpe auth logout anthropic
+cpe account logout anthropic
+cpe account logout openai
 ```
+
+
 
 ### Request Patching
 
@@ -564,7 +565,7 @@ Advanced:
       --verbose-subagent       Show verbose subagent output including full tool payloads
 
 Commands:
-  auth          Manage OAuth authentication (login, logout, status, refresh)
+  account       Manage AI provider accounts (login, logout, usage)
   config        Manage configuration (add, remove models)
   conversation  Manage conversation history [aliases: convo, conv]
                 ├─ list    List conversations [alias: ls]
@@ -628,7 +629,7 @@ mcpServers:
 **"API key missing: ANTHROPIC_API_KEY not set"**
 - Ensure the environment variable specified in `api_key_env` is exported in your shell
 - Check for typos in the variable name in both your shell and `cpe.yaml`
-- For OAuth authentication, run `cpe auth login anthropic` instead of using API keys
+- For OAuth authentication, run `cpe account login anthropic` instead of using API keys
 
 **"no configuration file found"**
 - Create a `cpe.yaml` in the current directory or your user config directory (see [Configuration File Locations](#configuration-file-locations))

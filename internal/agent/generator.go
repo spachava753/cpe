@@ -123,7 +123,7 @@ func initGeneratorFromModel(
 			}
 			cred, err := store.GetCredential("anthropic")
 			if err != nil {
-				return nil, fmt.Errorf("no OAuth credential found for anthropic (run 'cpe auth login anthropic'): %w", err)
+				return nil, fmt.Errorf("no OAuth credential found for anthropic (run 'cpe account login anthropic'): %w", err)
 			}
 			if cred.Type != "oauth" {
 				return nil, fmt.Errorf("stored credential is not OAuth type")
@@ -210,7 +210,7 @@ func initGeneratorFromModel(
 			}
 			cred, err := store.GetCredential("openai")
 			if err != nil {
-				return nil, fmt.Errorf("no OAuth credential found for openai (run 'cpe auth login openai'): %w", err)
+				return nil, fmt.Errorf("no OAuth credential found for openai (run 'cpe account login openai'): %w", err)
 			}
 			if cred.Type != "oauth" {
 				return nil, fmt.Errorf("stored credential is not OAuth type")
