@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 	"unicode/utf8"
@@ -23,7 +22,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/imports"
 
 	"github.com/spachava753/cpe/internal/mcp"
 )
@@ -39,6 +37,9 @@ const timeoutCancellationNoteTemplate = "execution timed out after %d seconds; c
 
 // mcpSDKImport is the import path for the MCP SDK package
 const mcpSDKImport = "github.com/modelcontextprotocol/go-sdk/mcp"
+
+// goimportsModuleVersion must stay aligned with the golang.org/x/tools version in go.mod.
+const goimportsModuleVersion = "v0.42.0"
 
 const spilledOutputFilePattern = "cpe-code-output-*.txt"
 
@@ -65,8 +66,9 @@ type workspaceModule struct {
 	Dir        string
 }
 
-// importsProcessMu serializes goimports execution while temporary environment overrides are set.
-var importsProcessMu sync.Mutex
+var goimportsCommand = func() (string, []string) {
+	return "go", []string{"run", "golang.org/x/tools/cmd/goimports@" + goimportsModuleVersion}
+}
 
 // ExecuteCode runs generated Go code in an isolated temporary module.
 //
@@ -467,29 +469,42 @@ func runCommand(ctx context.Context, dir string, envOverrides map[string]string,
 
 // runProgramWithTimeout executes the compiled binary under executionTimeout semantics.
 // On cancellation, it sends SIGINT first, allows gracePeriod for cleanup, then SIGKILL if needed.
-// When timeoutCtx hits its deadline, a cancellation note is appended to stdout/stderr output.
+// When executionTimeout triggers cancellation, a cancellation note is appended to stdout/stderr output.
 func runProgramWithTimeout(ctx context.Context, binaryPath string, timeoutSecs int, envOverrides map[string]string) (ExecutionResult, error) {
-	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSecs)*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(timeoutCtx, binaryPath)
-	cmd.Env = mergeEnv(os.Environ(), envOverrides)
-
-	// Custom cancel: send SIGINT for graceful shutdown instead of default SIGKILL.
-	// Return os.ErrProcessDone to suppress context error when process exits cleanly.
-	cmd.Cancel = func() error {
-		cmd.Process.Signal(syscall.SIGINT)
-		return os.ErrProcessDone
+	if err := ctx.Err(); err != nil {
+		return ExecutionResult{}, err
 	}
 
-	// Grace period: if process doesn't exit after SIGINT, Go sends SIGKILL
-	cmd.WaitDelay = gracePeriod
+	cmd := exec.CommandContext(context.WithoutCancel(ctx), binaryPath)
+	cmd.Env = mergeEnv(os.Environ(), envOverrides)
 
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
 
-	err := cmd.Run()
+	if err := cmd.Start(); err != nil {
+		return ExecutionResult{}, err
+	}
+
+	waitCh := make(chan error, 1)
+	go func() {
+		waitCh <- cmd.Wait()
+	}()
+
+	timer := time.NewTimer(time.Duration(timeoutSecs) * time.Second)
+	defer timer.Stop()
+
+	timedOut := false
+	var err error
+
+	select {
+	case err = <-waitCh:
+	case <-timer.C:
+		timedOut = true
+		err = interruptThenWait(cmd, waitCh)
+	case <-ctx.Done():
+		err = interruptThenWait(cmd, waitCh)
+	}
 
 	result := ExecutionResult{
 		Output:   output.String(),
@@ -500,16 +515,43 @@ func runProgramWithTimeout(ctx context.Context, binaryPath string, timeoutSecs i
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			result.ExitCode = exitErr.ExitCode()
 		} else {
-			// Non-exit error (e.g., binary not found)
+			// Non-exit error (e.g., binary not found, signaling failure)
 			return result, err
 		}
 	}
 
-	if errors.Is(timeoutCtx.Err(), context.DeadlineExceeded) {
+	if timedOut {
 		result.Output = appendTimeoutCancellationNote(result.Output, timeoutSecs)
 	}
 
 	return result, nil
+}
+
+func interruptThenWait(cmd *exec.Cmd, waitCh <-chan error) error {
+	if cmd.Process == nil {
+		return <-waitCh
+	}
+
+	if err := cmd.Process.Signal(syscall.SIGINT); err != nil && !isProcessDoneError(err) {
+		return err
+	}
+
+	graceTimer := time.NewTimer(gracePeriod)
+	defer graceTimer.Stop()
+
+	select {
+	case err := <-waitCh:
+		return err
+	case <-graceTimer.C:
+		if err := cmd.Process.Kill(); err != nil && !isProcessDoneError(err) {
+			return err
+		}
+		return <-waitCh
+	}
+}
+
+func isProcessDoneError(err error) bool {
+	return errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH)
 }
 
 // appendTimeoutCancellationNote appends a stable timeout hint used by the agent loop
@@ -615,34 +657,46 @@ func classifyExitCode(result ExecutionResult) error {
 	}
 }
 
-// autoCorrectImports runs goimports (via golang.org/x/tools/imports) on the file
-// and returns a notification message listing added/removed packages.
+// autoCorrectImports runs goimports in a separate child process so workspace-
+// specific env overrides stay isolated to that process.
 func autoCorrectImports(ctx context.Context, dir, filename string, envOverrides map[string]string) string {
-	_ = ctx
 	filePath := filepath.Join(dir, filename)
 	orig, err := os.ReadFile(filePath)
 	if err != nil {
 		return ""
 	}
 
-	// Ensure correct mcp import before goimports to prevent wrong package resolution
+	// Ensure correct mcp import before goimports to prevent wrong package resolution.
 	preprocessed := ensureMCPImport(orig)
 	origImports := extractImports(orig)
 
-	importsProcessMu.Lock()
-	defer importsProcessMu.Unlock()
-	restoreEnv := applyEnvOverrides(envOverrides)
-	defer restoreEnv()
-	newContent, err := imports.Process(filePath, preprocessed, nil)
+	tempFile, err := os.CreateTemp(dir, "cpe-goimports-*.go")
 	if err != nil {
-		// If processing fails (e.g. syntax errors), let the compiler catch it
+		return ""
+	}
+	tempPath := tempFile.Name()
+	defer os.Remove(tempPath)
+
+	if _, err := tempFile.Write(preprocessed); err != nil {
+		_ = tempFile.Close()
+		return ""
+	}
+	if err := tempFile.Close(); err != nil {
 		return ""
 	}
 
+	if err := runGoimportsProcess(ctx, dir, envOverrides, tempPath); err != nil {
+		// If processing fails (e.g. syntax errors), let the compiler catch it.
+		return ""
+	}
+
+	newContent, err := os.ReadFile(tempPath)
+	if err != nil {
+		return ""
+	}
 	if bytes.Equal(orig, newContent) {
 		return ""
 	}
-
 	if err := os.WriteFile(filePath, newContent, 0o644); err != nil {
 		return ""
 	}
@@ -651,34 +705,18 @@ func autoCorrectImports(ctx context.Context, dir, filename string, envOverrides 
 	return formatImportChanges(filename, origImports, newImports)
 }
 
-// applyEnvOverrides temporarily mutates process env for libraries (like goimports)
-// that read environment variables globally, and returns a restore function.
-func applyEnvOverrides(overrides map[string]string) func() {
-	if len(overrides) == 0 {
-		return func() {}
-	}
+func runGoimportsProcess(ctx context.Context, dir string, envOverrides map[string]string, filePath string) error {
+	name, args := goimportsCommand()
+	args = append(args, "-w", filePath)
 
-	type envValue struct {
-		value  string
-		exists bool
+	result, err := runCommand(ctx, dir, envOverrides, name, args...)
+	if err != nil {
+		return err
 	}
-	previous := make(map[string]envValue, len(overrides))
-
-	for key, value := range overrides {
-		current, exists := os.LookupEnv(key)
-		previous[key] = envValue{value: current, exists: exists}
-		_ = os.Setenv(key, value)
+	if result.ExitCode != 0 {
+		return fmt.Errorf("goimports exited with code %d: %s", result.ExitCode, strings.TrimSpace(result.Output))
 	}
-
-	return func() {
-		for key, prev := range previous {
-			if prev.exists {
-				_ = os.Setenv(key, prev.value)
-				continue
-			}
-			_ = os.Unsetenv(key)
-		}
-	}
+	return nil
 }
 
 // extractImports parses Go source and returns a set of import paths.
