@@ -289,3 +289,45 @@ func TestTokenToCredential(t *testing.T) {
 		})
 	}
 }
+
+func TestTokenToCredentialPreserveRefresh(t *testing.T) {
+	tests := []struct {
+		name                 string
+		tokenRefreshToken    string
+		existingRefreshToken string
+		wantRefreshToken     string
+	}{
+		{
+			name:                 "prefer token refresh token when present",
+			tokenRefreshToken:    "new-refresh-token",
+			existingRefreshToken: "old-refresh-token",
+			wantRefreshToken:     "new-refresh-token",
+		},
+		{
+			name:                 "preserve existing refresh token when omitted",
+			tokenRefreshToken:    "",
+			existingRefreshToken: "old-refresh-token",
+			wantRefreshToken:     "old-refresh-token",
+		},
+		{
+			name:                 "empty when neither token nor existing refresh token provided",
+			tokenRefreshToken:    "",
+			existingRefreshToken: "",
+			wantRefreshToken:     "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cred := TokenToCredentialPreserveRefresh("openai", &TokenResponse{
+				AccessToken:  "access-token-123",
+				RefreshToken: tt.tokenRefreshToken,
+				ExpiresIn:    3600,
+			}, tt.existingRefreshToken)
+
+			if cred.RefreshToken != tt.wantRefreshToken {
+				t.Fatalf("RefreshToken = %q, want %q", cred.RefreshToken, tt.wantRefreshToken)
+			}
+		})
+	}
+}

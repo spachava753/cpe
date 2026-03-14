@@ -63,7 +63,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 				return nil, fmt.Errorf("refreshing token: %w", err)
 			}
 
-			cred = TokenToCredential("anthropic", tokenResp)
+			cred = TokenToCredentialPreserveRefresh("anthropic", tokenResp, cred.RefreshToken)
 			if err := t.store.SaveCredential(cred); err != nil {
 				t.mu.Unlock()
 				return nil, fmt.Errorf("saving refreshed credential: %w", err)
@@ -131,7 +131,7 @@ func (t *OpenAIOAuthTransport) RoundTrip(req *http.Request) (*http.Response, err
 				return nil, fmt.Errorf("refreshing openai token: %w", err)
 			}
 
-			cred = TokenToCredential("openai", tokenResp)
+			cred = TokenToCredentialPreserveRefresh("openai", tokenResp, cred.RefreshToken)
 			if err := t.store.SaveCredential(cred); err != nil {
 				t.mu.Unlock()
 				return nil, fmt.Errorf("saving refreshed openai credential: %w", err)

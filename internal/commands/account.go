@@ -2,10 +2,8 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"strings"
 	"time"
 
@@ -38,6 +36,8 @@ type AccountLogoutOptions struct {
 type AccountUsageOptions struct {
 	Provider string
 	Output   io.Writer
+	Raw      bool
+	Watch    bool
 }
 
 func normalizeAccountProvider(provider string) (string, error) {
@@ -92,15 +92,25 @@ func AccountUsage(ctx context.Context, opts AccountUsageOptions) error {
 	if err != nil {
 		return err
 	}
+	if err := validateAccountUsageOptions(opts); err != nil {
+		return err
+	}
 
 	switch provider {
 	case ProviderOpenAI:
-		return printOpenAIAccountUsage(ctx, opts.Output)
+		return runOpenAIAccountUsage(ctx, opts)
 	case ProviderAnthropic:
 		return fmt.Errorf("usage is not yet supported for %s accounts", provider)
 	default:
 		return fmt.Errorf("unsupported provider %q (supported: %s)", provider, strings.Join(SupportedAccountProviders, ", "))
 	}
+}
+
+func validateAccountUsageOptions(opts AccountUsageOptions) error {
+	if opts.Raw && opts.Watch {
+		return fmt.Errorf("--raw and --watch cannot be used together")
+	}
+	return nil
 }
 
 func loginAnthropicAccount(ctx context.Context, opts AccountLoginOptions) error {
@@ -228,53 +238,4 @@ func loginOpenAIAccount(ctx context.Context, opts AccountLoginOptions) error {
 	case <-callbackCtx.Done():
 		return fmt.Errorf("authentication timed out (5 minute limit)")
 	}
-}
-
-func printOpenAIAccountUsage(ctx context.Context, output io.Writer) error {
-	store, err := auth.NewStore()
-	if err != nil {
-		return fmt.Errorf("initializing auth store: %w", err)
-	}
-
-	cred, err := ensureFreshOpenAIAccountCredential(ctx, store)
-	if err != nil {
-		return err
-	}
-
-	usage, err := auth.FetchOpenAIUsage(ctx, http.DefaultClient, auth.OpenAIUsageURL, cred.AccessToken)
-	if err != nil {
-		return fmt.Errorf("retrieving openai account usage: %w", err)
-	}
-
-	enc := json.NewEncoder(output)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(usage); err != nil {
-		return fmt.Errorf("writing usage output: %w", err)
-	}
-	return nil
-}
-
-func ensureFreshOpenAIAccountCredential(ctx context.Context, store *auth.Store) (*auth.Credential, error) {
-	cred, err := store.GetCredential(ProviderOpenAI)
-	if err != nil {
-		return nil, fmt.Errorf("getting credential: %w", err)
-	}
-
-	if cred.ExpiresAt == 0 || time.Now().Unix() < cred.ExpiresAt-60 {
-		return cred, nil
-	}
-	if cred.RefreshToken == "" {
-		return nil, fmt.Errorf("openai account token is expired and no refresh token is available; please run 'cpe account login openai' to re-authenticate")
-	}
-
-	tokenResp, err := auth.RefreshAccessTokenOpenAI(ctx, cred.RefreshToken)
-	if err != nil {
-		return nil, fmt.Errorf("refreshing openai token: %w", err)
-	}
-
-	cred = auth.TokenToCredential(ProviderOpenAI, tokenResp)
-	if err := store.SaveCredential(cred); err != nil {
-		return nil, fmt.Errorf("saving refreshed openai credential: %w", err)
-	}
-	return cred, nil
 }

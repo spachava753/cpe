@@ -364,13 +364,24 @@ func RefreshAccessTokenOpenAI(ctx context.Context, refreshToken string) (*TokenR
 	return &tokenResp, nil
 }
 
-// TokenToCredential converts a token response to a credential for the given provider
+// TokenToCredential converts a token response to a credential for the given provider.
 func TokenToCredential(provider string, token *TokenResponse) *Credential {
+	return TokenToCredentialPreserveRefresh(provider, token, "")
+}
+
+// TokenToCredentialPreserveRefresh converts a token response to a credential for
+// the given provider, preserving the existing refresh token when the token
+// response omits a new one.
+func TokenToCredentialPreserveRefresh(provider string, token *TokenResponse, existingRefreshToken string) *Credential {
+	refreshToken := token.RefreshToken
+	if refreshToken == "" {
+		refreshToken = existingRefreshToken
+	}
 	return &Credential{
 		Type:         "oauth",
 		Provider:     provider,
 		AccessToken:  token.AccessToken,
-		RefreshToken: token.RefreshToken,
+		RefreshToken: refreshToken,
 		ExpiresAt:    time.Now().Unix() + int64(token.ExpiresIn),
 	}
 }

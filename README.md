@@ -285,6 +285,12 @@ cpe account login openai
 # Show OpenAI subscription usage
 cpe account usage openai
 
+# Watch usage live
+cpe account usage openai --watch
+
+# Get the raw JSON response for scripts
+cpe account usage openai --raw
+
 # Logout
 cpe account logout anthropic
 cpe account logout openai

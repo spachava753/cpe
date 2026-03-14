@@ -9,6 +9,11 @@ import (
 	"github.com/spachava753/cpe/internal/commands"
 )
 
+var (
+	accountUsageRaw   bool
+	accountUsageWatch bool
+)
+
 var accountCmd = &cobra.Command{
 	Use:   "account",
 	Short: "Manage AI provider accounts",
@@ -79,22 +84,33 @@ var accountUsageCmd = &cobra.Command{
 	Short: "Show account usage for a provider",
 	Long: `Show account usage information for an AI provider.
 
+By default, CPE renders a compact usage view with the primary 5-hour and
+secondary weekly windows. Use --watch to keep refreshing the display live, or
+--raw to print the original JSON response for scripts and analytics.
+
 Currently supported providers:
   - openai: Usage and rate-limit information from the ChatGPT account backend
 
-Example:
+Examples:
   cpe account usage openai
+  cpe account usage openai --watch
+  cpe account usage openai --raw
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return commands.AccountUsage(cmd.Context(), commands.AccountUsageOptions{
 			Provider: strings.ToLower(args[0]),
 			Output:   os.Stdout,
+			Raw:      accountUsageRaw,
+			Watch:    accountUsageWatch,
 		})
 	},
 }
 
 func init() {
+	accountUsageCmd.Flags().BoolVar(&accountUsageRaw, "raw", false, "Print the raw JSON usage response")
+	accountUsageCmd.Flags().BoolVarP(&accountUsageWatch, "watch", "W", false, "Refresh and watch usage live")
+
 	accountCmd.AddCommand(accountLoginCmd)
 	accountCmd.AddCommand(accountLogoutCmd)
 	accountCmd.AddCommand(accountUsageCmd)
