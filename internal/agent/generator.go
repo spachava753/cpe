@@ -450,8 +450,8 @@ func NewGenerator(
 	// - Saving: BEFORE saves new messages; AFTER saves response, sets ID
 	// - ThinkingFilter: filters thinking blocks for the provider
 	// - FlightRecorder (when enabled): snapshots a runtime trace when retries still end in error
-	// - Retry: retries transient failures
-	// - ToolResultPrinting (innermost): prints tool results WITH ID
+	// - ToolResultPrinting: prints tool results WITH ID once per logical turn before any retry attempts
+	// - Retry (innermost): retries transient failures without duplicating printed tool results
 	if o.dialogSaver != nil {
 		wrappers = append(wrappers, WithSaving(o.dialogSaver))
 	}
@@ -487,10 +487,10 @@ func NewGenerator(
 	if cfg.FlightRecorder != nil && cfg.FlightRecorder.Enabled {
 		wrappers = append(wrappers, WithFlightRecorder(cfg.Model, cfg.FlightRecorder))
 	}
-	wrappers = append(wrappers, gai.WithRetry(b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute)))
 
 	toolResultRenderer := NewRenderer()
 	wrappers = append(wrappers, WithToolResultPrinterWrapper(toolResultRenderer))
+	wrappers = append(wrappers, gai.WithRetry(b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute)))
 
 	// Add custom middleware after default middleware
 	wrappers = append(wrappers, o.middleware...)

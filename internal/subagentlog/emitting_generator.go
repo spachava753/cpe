@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spachava753/gai"
@@ -46,13 +47,18 @@ func NewEmittingGenerator(base types.Generator, client *Client, subagentName, ru
 
 	// Unwrap the generator chain to find the underlying *gai.ToolGenerator
 	if toolGen := findToolGenerator(base); toolGen != nil {
-		wrappedG := &emittingMiddleware{
-			base:         toolGen.G,
-			client:       client,
-			subagentName: subagentName,
-			runID:        runID,
+		if wrappedG, ok := toolGen.G.(*emittingMiddleware); ok {
+			wrappedG.client = client
+			wrappedG.subagentName = subagentName
+			wrappedG.runID = runID
+		} else {
+			toolGen.G = &emittingMiddleware{
+				base:         toolGen.G,
+				client:       client,
+				subagentName: subagentName,
+				runID:        runID,
+			}
 		}
-		toolGen.G = wrappedG
 		hasWrappedInnerGen = true
 	}
 
@@ -163,10 +169,7 @@ func (m *emittingMiddleware) emitToolResultEvents(ctx context.Context, dialog ga
 			continue
 		}
 
-		var resultText string
-		if block.ModalityType == gai.Text {
-			resultText = block.Content.String()
-		}
+		resultText := formatToolResultPayload(msg.Blocks)
 
 		event := Event{
 			SubagentName:  m.subagentName,
@@ -284,17 +287,52 @@ func (m *emittingMiddleware) emitToolCallEvent(ctx context.Context, block gai.Bl
 // assistant tool-call blocks from the preceding assistant message.
 // Returns "unknown" when parsing or lookup fails.
 func (m *emittingMiddleware) findToolNameByCallID(assistantMsg gai.Message, toolCallID string) string {
+	return findToolNameByCallID(assistantMsg, toolCallID)
+}
+
+func findToolNameByCallID(assistantMsg gai.Message, toolCallID string) string {
 	for _, block := range assistantMsg.Blocks {
 		if block.BlockType != gai.ToolCall || block.ID != toolCallID {
 			continue
 		}
 
 		var toolCall gai.ToolCallInput
-		if err := json.Unmarshal([]byte(block.Content.String()), &toolCall); err == nil {
+		if err := json.Unmarshal([]byte(block.Content.String()), &toolCall); err == nil && toolCall.Name != "" {
 			return toolCall.Name
 		}
+		return "unknown"
 	}
 	return "unknown"
+}
+
+func findNearestPrecedingAssistant(dialog gai.Dialog, before int) (gai.Message, bool) {
+	for i := before - 1; i >= 0; i-- {
+		if dialog[i].Role == gai.Assistant {
+			return dialog[i], true
+		}
+	}
+	return gai.Message{}, false
+}
+
+func formatToolResultPayload(blocks []gai.Block) string {
+	if len(blocks) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		if block.ModalityType == gai.Text {
+			parts = append(parts, block.Content.String())
+			continue
+		}
+
+		mimeType := block.MimeType
+		if mimeType == "" {
+			mimeType = block.ModalityType.String()
+		}
+		parts = append(parts, fmt.Sprintf("[%s content]", mimeType))
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 // Register passes tool registration through unchanged; emission is handled at
@@ -327,7 +365,7 @@ func (g *EmittingGenerator) Generate(ctx context.Context, dialog gai.Dialog, opt
 
 	// Fallback: emit events here (after full generation, for non-ToolGenerator bases)
 	// This is used when the base is not a *gai.ToolGenerator (e.g., in tests with mockGenerator)
-	for _, msg := range resultDialog[originalLen:] {
+	for offset, msg := range resultDialog[originalLen:] {
 		if msg.Role == gai.Assistant {
 			for _, block := range msg.Blocks {
 				switch block.BlockType {
@@ -386,32 +424,18 @@ func (g *EmittingGenerator) Generate(ctx context.Context, dialog gai.Dialog, opt
 				}
 			}
 		} else if msg.Role == gai.ToolResult {
-			// Find tool name from previous assistant message
+			if len(msg.Blocks) == 0 {
+				continue
+			}
+
 			toolName := "unknown"
-			if len(msg.Blocks) > 0 {
-				toolCallID := msg.Blocks[0].ID
-				for i := len(resultDialog) - 1; i >= 0; i-- {
-					if resultDialog[i].Role == gai.Assistant {
-						for _, b := range resultDialog[i].Blocks {
-							if b.BlockType == gai.ToolCall && b.ID == toolCallID {
-								var tc gai.ToolCallInput
-								if err := json.Unmarshal([]byte(b.Content.String()), &tc); err == nil {
-									toolName = tc.Name
-								}
-								break
-							}
-						}
-						break
-					}
-				}
+			if assistantMsg, ok := findNearestPrecedingAssistant(resultDialog, originalLen+offset); ok {
+				toolName = findToolNameByCallID(assistantMsg, msg.Blocks[0].ID)
 			}
 			if toolName == finalAnswerToolName {
 				continue
 			}
-			var resultText string
-			if len(msg.Blocks) > 0 && msg.Blocks[0].ModalityType == gai.Text {
-				resultText = msg.Blocks[0].Content.String()
-			}
+			resultText := formatToolResultPayload(msg.Blocks)
 			event := Event{
 				SubagentName:  g.subagentName,
 				SubagentRunID: g.runID,

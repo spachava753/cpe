@@ -45,15 +45,38 @@ func WithToolResultPrinterWrapper(renderer types.Renderer) gai.WrapperFunc {
 	}
 }
 
-// Generate checks if the last message is a tool result and prints it before delegating.
+// Generate checks if the dialog ends with tool results and prints each result
+// from the most recent assistant tool-call turn before delegating.
 func (g *ToolResultPrinterWrapper) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
-	if len(dialog) > 0 {
-		lastMsg := dialog[len(dialog)-1]
-		if lastMsg.Role == gai.ToolResult {
-			g.printToolResult(dialog, lastMsg)
-		}
+	for _, toolResultMsg := range g.trailingToolResults(dialog) {
+		g.printToolResult(dialog, toolResultMsg)
 	}
 	return g.GeneratorWrapper.Generate(ctx, dialog, opts)
+}
+
+func (g *ToolResultPrinterWrapper) trailingToolResults(dialog gai.Dialog) []gai.Message {
+	if len(dialog) == 0 || dialog[len(dialog)-1].Role != gai.ToolResult {
+		return nil
+	}
+
+	lastAssistantIdx := -1
+	for i := len(dialog) - 1; i >= 0; i-- {
+		if dialog[i].Role == gai.Assistant {
+			lastAssistantIdx = i
+			break
+		}
+	}
+	if lastAssistantIdx < 0 {
+		return nil
+	}
+
+	var results []gai.Message
+	for i := lastAssistantIdx + 1; i < len(dialog); i++ {
+		if dialog[i].Role == gai.ToolResult {
+			results = append(results, dialog[i])
+		}
+	}
+	return results
 }
 
 // printToolResult prints all tool result blocks from the message.
