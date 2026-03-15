@@ -1,90 +1,17 @@
 ## Project Overview
 
-CPE (Chat-based Programming Editor) is a CLI that connects local developer workflows to multiple AI model providers. It analyzes, edits, and creates code via natural-language prompts, with optional MCP tool integration and persistent conversation storage. Link: https://github.com/spachava753/cpe
+CPE (Chat-based Programming Editor) is a CLI that connects local developer workflows to multiple AI model providers. It analyzes, edits, and creates code via natural-language prompts, with optional MCP tool integration and persistent conversation storage. Link: https://github.com/spachava753/cpe. To learn more, read the README.md
 
-Key capabilities:
-
-- Multi-model generation via unified YAML/JSON configuration
-- Tool use via MCP servers
-- Streaming or prettified non-streaming output
-- Conversation persistence, branching, and compaction lineage
-
-## Project structure and organization
-
-- `cmd/`: The package which has the cobra commands that user invokes
-- `internal/`: Hosts all of the actual business logic and utilities
-  - `agent/`: Package that hosts generator adapters, generator middleware, flight-recorder trace capture for terminal generation errors, built-in tool registration, compaction orchestration (including configurable restart caps), and agent creation to execute a user query. Effective provider request timeouts come from resolved config/CLI timeout settings; avoid introducing shorter hardcoded HTTP client timeouts in generator wiring, especially for OAuth-backed clients.
-  - `auth/`: Package that hosts OAuth authentication for AI providers (Anthropic, OpenAI), including credential storage, token refresh, PKCE flow, HTTP transport wrappers, and account usage helpers such as the OpenAI ChatGPT usage endpoint
-  - `codemode/`: Package that hosts code mode implementation - schema to Go type conversion, tool collision detection, code execution sandbox, and execute_go_code tool
-  - `config/`: Package that hosts configuration loading, validation, parameter merging, and config specific types, including compaction and flight-recorder config resolution
-  - `input/`: Package that hosts prompt/file/URL input loading and block construction for model requests
-  - `mcpconfig/`: Package that hosts shared MCP server configuration schema types used by both config loading and MCP runtime code
-  - `mcp/`: Package that hosts MCP client/server runtime integration and connection logic
-  - `prompt/`: Package that hosts system prompt template rendering and skill discovery helpers
-  - `render/`: Package that hosts markdown/plain-text renderer construction and terminal styling helpers
-  - `ports/`: Package that hosts small shared interfaces used to decouple generators, tool registration, and rendering contracts
-  - `storage/`: Package that hosts SQLite-backed conversation storage (.cpeconvo), compaction lineage metadata, and related persistence code
-  - `urlhandler/`: Package that hosts utility code for URL detection and safe downloading
-  - `version/`: Package that hosts CLI version reporting
-- `main.go`: invokes cmd.Execute()
-- `gen.go`: code generation hooks, like sqlc codegen
-- `examples/`: Folder that hosts examples of configuration, system prompt templates, etc.
-- `docs/`: Historical PRDs/spec notes and migration context
-
-## Documentation source of truth
+## Documentation
 
 - Package-level `doc.go` files under `cmd/`, `internal/`, and `build/` are the canonical feature and behavior specs.
-- `ARCHITECTURE.md` is the repo-level architectural map: intended dependency direction, package responsibilities, and structural rationale.
+- `design.md` defines codebase design decisions, goals and non-goals, and project structure. It is required to read the design doc before starting to implement any code.
 - Exported symbols used across packages should have Go doc comments that describe behavior and contracts.
-- `docs/prds/` is treated as high-level product context; implementation behavior should be documented in code-adjacent docs first.
+- `examples/` is a folder that holds example yaml configuration for configuring CPE, as well example system prompt templates
 
-## Build, test, and development commands
+## Teck stack
 
-Build/install:
-
-```bash
-# Build local binary
-go build -o cpe .
-
-# Install to GOPATH/bin
-go install ./...
-```
-
-Run (typical dev):
-
-```bash
-# Required: provide a unified configuration with models defined
-./cpe --config ./examples/cpe.yaml -m sonnet "Your prompt"
-
-# With inputs
-./cpe --config ./examples/cpe.yaml -m sonnet -i path/to/file "Task"
-
-# Auto-detect config from current directory or user config
-./cpe -m sonnet "Your prompt"  # Uses ./cpe.yaml or ~/.config/cpe/cpe.yaml
-
-# New conversation or continue specific one
-./cpe --config ./examples/cpe.yaml -m sonnet -n "Start fresh"
-./cpe --config ./examples/cpe.yaml -m sonnet -c <message_id> "Continue"
-
-# Enable code mode (composes MCP tools as Go functions)
-./cpe --config ./examples/cpe.yaml -m sonnet "Your prompt"  # If codeMode.enabled=true in config
-
-# Disable code mode for a specific invocation (if enabled by default)
-# Note: currently requires config change, no CLI flag exists
-```
-
-Model utilities:
-
-```bash
-./cpe model list --config ./examples/cpe.yaml
-./cpe model info sonnet --config ./examples/cpe.yaml
-```
-
-Token tools:
-
-```bash
-./cpe tools token-count . --config ./examples/cpe.yaml -m sonnet
-```
+Golang, see go.mod for specific version.
 
 Formatting, vetting, testing:
 
@@ -110,141 +37,9 @@ go generate ./internal/config/
 ./cpe config lint ./examples/cpe.yaml
 ```
 
-Conversation storage path can be configured via `defaults.conversationStoragePath` in `cpe.yaml`.
-If omitted, CPE uses `.cpeconvo` in the current working directory.
-
-## Agent preferences
-
-- This is personal software with a single primary user. Do not preserve backward compatibility by default unless explicitly requested.
-- Prefer the simplest command structure and UX that best serves the current codebase and user workflows, even if that means changing or removing existing CLI surfaces.
-
-## Code style and conventions
-
-- Language: Go 1.24.0
-- Formatting: go fmt; keep imports tidy; idiomatic Go naming
-- Errors: wrap with fmt.Errorf("...: %w", err); prefer contextual errors
-- Context: pass context.Context where IO, network, or cancellation applies
-- CLI: Cobra for flags/commands; minimize side effects in init(); validate flags early
-- Packages: keep public surface minimal; prefer internal/ for non-exported APIs
-- Concurrency: prefer small, bounded goroutine pools; configurable limits in token tools
-- I/O: guard large inputs; processUserInput caps at 50MB per input; detect MIME when needed
-- **String literals**: Use raw strings (``) for multi-line strings instead of multiple fmt.Println calls
-
-## Testing guidelines
-
-Tests are currently being rewritten. The previous snapshot-based testing (cupaloy) has been removed. When adding new tests:
-
-- Use go test ./...; write table-driven unit tests
-- Preference: Use table-driven tests
-  - Share common setup/validation logic through helper functions or validation callbacks
-  - Name test cases descriptively in the `name` field
-- **Use exact matching for test assertions**: Always compare expected vs actual output exactly. Do not use `strings.Contains` or partial matching for output verification; use full expected strings in `want` fields
-- **No snapshot testing**: Do not use cupaloy or similar snapshot-based testing libraries
-- Prefer httptest for HTTP; avoid real network calls
-- Keep tests deterministic; use short timeouts; avoid sleeping where possible
-- Isolate filesystem effects; clean up temp files; do not depend on developer-local state
-- For dialog storage, prefer temp DB paths when adding tests
-- Name tests with \_test.go; keep per-package tests close to implementation
-
 ## Performance considerations
 
-CPE is a CLI tool and MCP client where execution time is dominated by network calls to AI model APIs. Performance optimizations are typically not a concern unless specifically requested by the user. Focus on correctness, maintainability, and user experience over micro-optimizations.
-
-## Code Mode
-
-Code mode allows LLMs to execute Go code to interact with MCP tools, providing:
-
-- **Composability**: Chain multiple tool calls in a single execution
-- **Control flow**: Use loops, conditionals, and error handling
-- **Efficiency**: Reduce round-trips between LLM and tools
-- **Standard library access**: File I/O, HTTP requests, data processing
-
-Configuration:
-
-```yaml
-defaults:
-  codeMode:
-    enabled: true
-    excludedTools:
-      - some_tool # Expose as regular tool instead
-    localModulePaths:
-      - ../my-go-helpers
-```
-
-The LLM generates complete Go programs implementing a `Run(ctx context.Context) ([]mcp.Content, error)` function. CPE compiles and executes them in a temporary sandbox with access to MCP tools as strongly-typed Go functions.
-
-Implementation notes:
-
-- Tool schemas are converted to Go structs using `internal/codemode/schema.go`
-- Generated programs run with `go run` in `/tmp/cpe-tmp-*` directories
-- Execution timeout enforced via SIGINT→SIGKILL with 5s grace period
-- Exit codes: 0=success, 1=recoverable error, 2=panic (recoverable), 3=fatal error
-- Non-streaming printer renders generated code as syntax-highlighted Go blocks with line numbers
-
-## MCP Server Mode
-
-MCP Server Mode exposes CPE as an MCP server, enabling subagent composition within other MCP clients. Each subagent is defined in its own config file and exposed as a single tool.
-
-**Running a subagent server:**
-
-```bash
-./cpe mcp serve --config ./subagent.cpe.yaml
-```
-
-**Subagent configuration:**
-
-```yaml
-version: "1.0"
-
-models:
-  - ref: opus
-    id: claude-opus-4-20250514
-    type: anthropic
-    api_key_env: ANTHROPIC_API_KEY
-
-subagent:
-  name: task_name # Tool name exposed to parent
-  description: "..." # Tool description
-  outputSchemaPath: ./out.json # Optional structured output
-
-defaults:
-  model: opus
-  systemPromptPath: ./prompt.md
-  codeMode:
-    enabled: true # Subagent can use code mode
-```
-
-**Using from parent config:**
-
-```yaml
-mcpServers:
-  my_subagent:
-    command: cpe
-    args: ["mcp", "serve", "--config", "./subagent.cpe.yaml"]
-    type: stdio
-```
-
-Implementation notes:
-
-- Server uses stdio transport only; stdout is reserved for MCP protocol
-- Subagent inherits CWD and environment from server process
-- If `outputSchemaPath` is set, a `final_answer` tool extracts structured output
-- Execution traces are saved to `.cpeconvo` with `subagent:<name>:<run_id>` labels
-- No retries on failure; errors propagate directly to caller
-- Key files: `cmd/mcp.go`, `internal/mcp/server.go`, `internal/commands/subagent.go`
-
-## Subagent Logging
-
-When a subagent runs, events stream to the root CPE process for real-time visibility. The root process starts a localhost HTTP server and injects `CPE_SUBAGENT_LOGGING_ADDRESS` into child environments. Subagents POST events to this address, which are printed to stderr with name-prefixed headers:
-
-- Tool calls: `#### <subagentName> [tool call] (timeout: Xs)`
-- Tool results: `#### <subagentName> Tool "X" result:`
-- Code execution: `#### <subagentName> Code execution output:`
-- Thought traces: `#### <subagentName> thought trace`
-
-Events are printed to **stderr** to avoid corrupting MCP protocol on stdout. If event emission fails (connection refused, non-2xx, timeout), the subagent aborts immediately—observability is considered essential.
-
-See `internal/subagentlog/doc.go` and exported symbol comments in `internal/subagentlog/` for the authoritative behavioral contract.
+CPE is a CLI tool and MCP client where execution time is dominated by network calls to AI model APIs. Performance optimizations are typically not a concern unless specifically requested by the user. Focus on correctness, maintainability, iodmatic Golang, and user experience over micro-optimizations.
 
 ## Documentation for Go Symbols
 
@@ -254,58 +49,11 @@ When gathering context about symbols like types, global variables, constants, fu
 `go doc -all` as it may overwhelm your context window. Instead, if you need to perform a search or fuzzy search for a symbol, feed the output of
 `go doc -all` into a cli like `rg`, `fzf`, etc.
 
-## Harbor Integration
-
-CPE can be evaluated using the [Harbor](https://github.com/laude-institute/harbor) agent evaluation framework. The integration files are in `cpe_harbor/`:
-
-- `cpe.py` - Installed agent class extending `BaseInstalledAgent`
-- `install-cpe.sh.j2` - Jinja2 template for container setup (installs Go, CPE, config)
-
-**Testing locally:**
-
-```bash
-# Harbor venv on this machine: /home/shashank/.harbor_venv
-harbor run -d "hello-world@head" -e docker --agent-import-path cpe_harbor.cpe:CPE -n 1
-```
-
-**Notes:**
-
-- The system prompt is fetched via curl from GitHub to avoid Jinja2/Go template syntax conflicts
-- CPE runs with `-n -G --skip-stdin` flags (new conversation, incognito, no stdin)
-- API keys are passed from host environment based on model provider
-
-
 ## Scripts
 
 The `build/` folder contains development utility scripts managed via [Goyek](https://github.com/goyek/goyek), a Go-based task runner. Tasks are defined as Go functions and invoked with flags. Running with no arguments defaults to the `list` task, which prints all available tasks.
 
-**Available tasks:**
-
-- `list` - List all available tasks (default when no task is specified)
-- `lint` - Run golangci-lint with bug-focused linters plus repo-specific architecture checks (for example, cmd import boundaries and framework leakage into internal/commands)
-- `debug-proxy` - HTTP reverse proxy that logs all requests/responses (useful for debugging API calls)
-- `mcp-debug-proxy` - Stdio proxy that logs MCP protocol messages to a file
-
-**Usage:**
-
-```bash
-# List all available tasks (default)
-go run ./build
-
-# Lint the codebase
-go run ./build lint
-
-# Lint with auto-fix for formatting issues
-go run ./build -lint-fix lint
-
-# HTTP debug proxy
-go run ./build -target=https://api.anthropic.com -port=8080 debug-proxy
-
-# MCP debug proxy
-go run ./build -log=debug.log -cmd='go run main.go mcp serve' mcp-debug-proxy
-```
-
-**Adding new tasks:**
+Adding new tasks:
 
 1. Create a new `*_task.go` file in `build/`
 2. Define flags in `main.go` if the task needs arguments
