@@ -191,7 +191,7 @@ func resolveArrayItemType(schema *jsonschema.Schema, parentTypeName, fieldName s
 	return jsonTypeToGo(itemType, itemSchema, parentTypeName+"_"+fieldName, nestedTypes)
 }
 
-// jsonTypeToGo maps JSON schema types to Go types.
+// jsonTypeToGo maps JSON schema types to Go ports.
 func jsonTypeToGo(jsonType string, schema *jsonschema.Schema, typeName string, nestedTypes *[]string) string {
 	switch jsonType {
 	case "string":

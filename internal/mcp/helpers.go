@@ -7,14 +7,17 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/mcpconfig"
 )
 
 // NewToolCallback binds an MCP session/server/tool triple into a reusable callback.
-func NewToolCallback(session *mcpsdk.ClientSession, serverName, toolName string) *ToolCallback {
+func NewToolCallback(session *mcpsdk.ClientSession, serverName, toolName string, serverConfig mcpconfig.ServerConfig) *ToolCallback {
 	return &ToolCallback{
 		ClientSession: session,
 		ServerName:    serverName,
 		ToolName:      toolName,
+		ServerConfig:  serverConfig,
 	}
 }
 

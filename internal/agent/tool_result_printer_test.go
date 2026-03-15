@@ -8,6 +8,8 @@ import (
 
 	"github.com/cenkalti/backoff/v5"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/render"
 )
 
 func TestToolResultPrinterFindToolNameSearchesEarlierAssistantMessages(t *testing.T) {
@@ -49,7 +51,7 @@ func TestToolResultPrinterFindToolNameReturnsUnknownWhenNoMatchExists(t *testing
 	}
 
 	got := printer.findToolName(dialog, toolResult)
-	want := "unknown"
+	want := unknownToolName
 	if got != want {
 		t.Fatalf("findToolName() = %q, want %q", got, want)
 	}
@@ -70,7 +72,7 @@ func TestToolResultPrinterFindToolNameDoesNotReuseStaleToolCallIDs(t *testing.T)
 	}
 
 	got := printer.findToolName(dialog, toolResult)
-	want := "unknown"
+	want := unknownToolName
 	if got != want {
 		t.Fatalf("findToolName() = %q, want %q", got, want)
 	}
@@ -94,7 +96,7 @@ func TestToolResultPrinterFindToolNameReturnsUnknownForEmptyDecodedName(t *testi
 	}
 
 	got := printer.findToolName(dialog, toolResult)
-	want := "unknown"
+	want := unknownToolName
 	if got != want {
 		t.Fatalf("findToolName() = %q, want %q", got, want)
 	}
@@ -106,7 +108,7 @@ func TestToolResultPrinterGeneratePrintsAllTrailingToolResults(t *testing.T) {
 	var output bytes.Buffer
 	printer := &ToolResultPrinterWrapper{
 		GeneratorWrapper: gai.GeneratorWrapper{Inner: staticGenerator{}},
-		renderer:         &PlainTextRenderer{},
+		renderer:         &render.PlainTextRenderer{},
 		output:           &output,
 	}
 	assistantMsg := gai.Message{
@@ -146,7 +148,7 @@ func TestToolResultPrinterOutsideRetryPrintsOnce(t *testing.T) {
 		func(g gai.Generator) gai.Generator {
 			return &ToolResultPrinterWrapper{
 				GeneratorWrapper: gai.GeneratorWrapper{Inner: g},
-				renderer:         &PlainTextRenderer{},
+				renderer:         &render.PlainTextRenderer{},
 				output:           &output,
 			}
 		},

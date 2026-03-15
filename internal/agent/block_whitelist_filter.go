@@ -8,13 +8,13 @@ import (
 )
 
 // BlockWhitelistFilter wraps a generator and filters blocks from the input dialog
-// based on a whitelist of allowed block types.
+// based on a whitelist of allowed block ports.
 type BlockWhitelistFilter struct {
 	gai.GeneratorWrapper
 	allowedTypes []string
 }
 
-// NewBlockWhitelistFilter creates a new BlockWhitelistFilter with the specified allowed block types.
+// NewBlockWhitelistFilter creates a new BlockWhitelistFilter with the specified allowed block ports.
 func NewBlockWhitelistFilter(generator gai.Generator, allowedTypes []string) *BlockWhitelistFilter {
 	return &BlockWhitelistFilter{
 		GeneratorWrapper: gai.GeneratorWrapper{Inner: generator},
@@ -38,6 +38,9 @@ func (f *BlockWhitelistFilter) Generate(ctx context.Context, dialog gai.Dialog, 
 			if slices.Contains(f.allowedTypes, block.BlockType) {
 				filteredBlocks = append(filteredBlocks, block)
 			}
+		}
+		if len(filteredBlocks) == 0 && message.Role != gai.ToolResult {
+			continue
 		}
 		filteredMessage := gai.Message{
 			Role:            message.Role,

@@ -490,7 +490,10 @@ func TestExecuteRoot_ResponsesThinkingBlocks(t *testing.T) {
 					}
 					content := block.Content.String()
 					if content == "" {
-						t.Error("thinking block has empty content")
+						encrypted, ok := block.ExtraFields[gai.ResponsesExtraFieldEncryptedContent].(string)
+						if !ok || encrypted == "" {
+							t.Error("thinking block has neither plaintext nor encrypted content")
+						}
 					} else {
 						// Log a truncated version
 						preview := content

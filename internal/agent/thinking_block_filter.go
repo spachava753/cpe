@@ -8,7 +8,7 @@ import (
 )
 
 // ThinkingBlockFilter filters thinking blocks from the input dialog,
-// keeping only those that originated from the specified generator types.
+// keeping only those that originated from the specified generator ports.
 // This enables cross-model conversation resumption while preserving thinking
 // blocks when switching back to earlier used models in the conversation.
 //
@@ -21,7 +21,7 @@ type ThinkingBlockFilter struct {
 }
 
 // NewThinkingBlockFilter creates a new ThinkingBlockFilter that keeps thinking
-// blocks from the specified generator types. All non-thinking blocks are preserved.
+// blocks from the specified generator ports. All non-thinking blocks are preserved.
 //
 // Parameters:
 //   - generator: The underlying generator to wrap
@@ -35,7 +35,7 @@ func NewThinkingBlockFilter(generator gai.Generator, keepGeneratorTypes []string
 }
 
 // WithThinkingBlockFilter returns a WrapperFunc that filters thinking blocks,
-// keeping only those from the specified generator types.
+// keeping only those from the specified generator ports.
 //
 // Example usage:
 //
@@ -101,6 +101,9 @@ func (f *ThinkingBlockFilter) Generate(ctx context.Context, dialog gai.Dialog, o
 				// Keep all other block types (Content, ToolCall, etc.)
 				filteredBlocks = append(filteredBlocks, block)
 			}
+		}
+		if len(filteredBlocks) == 0 && message.Role != gai.ToolResult {
+			continue
 		}
 		filteredMessage := gai.Message{
 			Role:            message.Role,

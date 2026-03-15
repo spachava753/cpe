@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/mcpconfig"
 	"github.com/spachava753/cpe/internal/version"
 )
 
@@ -35,18 +37,27 @@ func (h *headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 	return h.next.RoundTrip(req)
 }
 
-// ServerConfig declares how CPE connects to one MCP server and filters its tools.
-// Validation tags enforce transport-specific required/excluded fields.
-type ServerConfig struct {
-	Command       string            `json:"command" yaml:"command" validate:"required_if=Type stdio"`
-	Args          []string          `json:"args" yaml:"args"`
-	Type          string            `json:"type,omitempty" yaml:"type,omitempty" validate:"required,oneof=stdio sse http"`
-	URL           string            `json:"url,omitempty" yaml:"url,omitempty" validate:"excluded_if=Type stdio,required_if=Type sse,required_if=Type http,omitempty,https_url|http_url"`
-	Timeout       int               `json:"timeout,omitempty" yaml:"timeout,omitempty" validate:"gte=0"`
-	Env           map[string]string `json:"env,omitempty" yaml:"env,omitempty" validate:"excluded_unless=Type stdio"`
-	Headers       map[string]string `json:"headers,omitempty" yaml:"headers,omitempty" validate:"excluded_if=Type stdio"`
-	EnabledTools  []string          `json:"enabledTools,omitempty" yaml:"enabledTools,omitempty" validate:"omitempty,min=1,excluded_with=DisabledTools"`
-	DisabledTools []string          `json:"disabledTools,omitempty" yaml:"disabledTools,omitempty" validate:"omitempty,min=1,excluded_with=EnabledTools"`
+const defaultServerTimeout = 60 * time.Second
+
+// EffectiveServerType returns the runtime transport type, defaulting empty to stdio.
+func EffectiveServerType(config mcpconfig.ServerConfig) string {
+	if config.Type == "" {
+		return "stdio"
+	}
+	return config.Type
+}
+
+// EffectiveServerTimeout returns the per-server operation timeout, defaulting to 60s.
+func EffectiveServerTimeout(config mcpconfig.ServerConfig) time.Duration {
+	if config.Timeout <= 0 {
+		return defaultServerTimeout
+	}
+	return time.Duration(config.Timeout) * time.Second
+}
+
+// WithServerTimeout derives an operation-scoped timeout context from ctx.
+func WithServerTimeout(ctx context.Context, config mcpconfig.ServerConfig) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, EffectiveServerTimeout(config))
 }
 
 // FilterMcpTools applies per-server enabledTools/disabledTools policy.
@@ -54,7 +65,7 @@ type ServerConfig struct {
 // or pass-through when neither list is set. Input order is preserved.
 //
 // Returns the kept tools and names filtered out for observability logging.
-func FilterMcpTools(tools []*mcp.Tool, config ServerConfig) ([]*mcp.Tool, []string) {
+func FilterMcpTools(tools []*mcp.Tool, config mcpconfig.ServerConfig) ([]*mcp.Tool, []string) {
 	// Infer filtering mode from which list is populated
 	if len(config.EnabledTools) > 0 {
 		// Whitelist mode: only include tools in EnabledTools
@@ -104,6 +115,7 @@ type ToolCallback struct {
 	ClientSession *mcp.ClientSession
 	ToolName      string
 	ServerName    string
+	ServerConfig  mcpconfig.ServerConfig
 }
 
 // Call executes the bound MCP tool and converts MCP content into gai blocks.
@@ -128,7 +140,10 @@ func (c *ToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage,
 	}
 
 	// Call the tool
-	result, err := c.ClientSession.CallTool(ctx, &mcp.CallToolParams{
+	callCtx, cancel := WithServerTimeout(ctx, c.ServerConfig)
+	defer cancel()
+
+	result, err := c.ClientSession.CallTool(callCtx, &mcp.CallToolParams{
 		Name:      c.ToolName,
 		Arguments: params,
 	})
@@ -148,27 +163,32 @@ func (c *ToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage,
 	}
 
 	// Convert the MCP CallToolResult to a gai.Message
-	blocks := make([]gai.Block, len(result.Content))
-	for i, content := range result.Content {
+	blocks := make([]gai.Block, 0, len(result.Content))
+	for _, content := range result.Content {
 		var block gai.Block
 
 		switch c := content.(type) {
 		case *mcp.TextContent:
 			block = gai.TextBlock(c.Text)
-			block.ID = toolCallID
 		case *mcp.ImageContent:
-			// ImageContent.Data contains raw bytes (already base64-decoded by json.Unmarshal)
-			// ImageBlock will base64-encode them for us
-			block = gai.ImageBlock(c.Data, c.MIMEType)
-			block.ID = toolCallID
+			// ImageContent.Data contains raw bytes (already base64-decoded by json.Unmarshal).
+			if c.MIMEType == "application/pdf" || c.MIMEType == "application/x-pdf" {
+				block = gai.PDFBlock(c.Data, "document.pdf")
+			} else {
+				block = gai.ImageBlock(c.Data, c.MIMEType)
+			}
+		case *mcp.AudioContent:
+			block = gai.AudioBlock(c.Data, c.MIMEType)
 		case *mcp.ResourceLink:
 			return gai.Message{}, fmt.Errorf("cannot handle resource links in tool call result")
+		case *mcp.EmbeddedResource:
+			return gai.Message{}, fmt.Errorf("cannot handle embedded resources in tool call result")
 		default:
-			block = gai.TextBlock(fmt.Sprintf("Unknown content type: %T", content))
-			block.ID = toolCallID
+			return gai.Message{}, fmt.Errorf("cannot handle tool call result content type %T", content)
 		}
 
-		blocks[i] = block
+		block.ID = toolCallID
+		blocks = append(blocks, block)
 	}
 
 	return gai.Message{
@@ -183,19 +203,22 @@ func (c *ToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage,
 // - http/sse: builds endpoint transports with optional request headers
 //
 // Session lifecycle (connect/close) is managed by callers after transport creation.
-func CreateTransport(ctx context.Context, config ServerConfig, loggingAddress string) (transport mcp.Transport, err error) {
-	// Create custom HTTP client with headers if specified
+func CreateTransport(ctx context.Context, config mcpconfig.ServerConfig, loggingAddress string) (transport mcp.Transport, err error) {
+	serverType := EffectiveServerType(config)
+
+	// Create a custom HTTP client only for static header injection.
+	// Per-operation timeouts are enforced via context deadlines so long-lived
+	// HTTP/SSE sessions are not terminated by http.Client.Timeout.
 	var httpClient *http.Client
-	if len(config.Headers) > 0 && (config.Type == "http" || config.Type == "sse") {
-		httpClient = &http.Client{
-			Transport: &headerRoundTripper{
-				headers: config.Headers,
-			},
+	if serverType == "http" || serverType == "sse" {
+		httpClient = &http.Client{}
+		if len(config.Headers) > 0 {
+			httpClient.Transport = &headerRoundTripper{headers: config.Headers}
 		}
 	}
 
-	switch config.Type {
-	case "stdio", "":
+	switch serverType {
+	case "stdio":
 		cmd := exec.CommandContext(ctx, config.Command, config.Args...)
 		// Forward stderr to parent so subagent debug/event output is visible
 		cmd.Stderr = os.Stderr

@@ -5,7 +5,7 @@ import (
 
 	"github.com/spachava753/gai"
 
-	"github.com/spachava753/cpe/internal/mcp"
+	"github.com/spachava753/cpe/internal/mcpconfig"
 )
 
 // Model represents an AI model configuration
@@ -65,7 +65,7 @@ type SubagentConfig struct {
 // (or go generate ./...).
 type RawConfig struct {
 	// MCP server configurations
-	MCPServers map[string]mcp.ServerConfig `yaml:"mcpServers,omitempty" json:"mcpServers,omitempty" validate:"dive"`
+	MCPServers map[string]mcpconfig.ServerConfig `yaml:"mcpServers,omitempty" json:"mcpServers,omitempty" validate:"dive"`
 
 	// Model definitions
 	Models []ModelConfig `yaml:"models" json:"models" validate:"gt=0,unique=Ref,dive"`
@@ -177,7 +177,7 @@ func (c *RawConfig) FindModel(ref string) (ModelConfig, bool) {
 // Config represents the effective runtime configuration for a single model
 type Config struct {
 	// MCP server configurations
-	MCPServers map[string]mcp.ServerConfig
+	MCPServers map[string]mcpconfig.ServerConfig
 
 	// Selected model
 	Model Model

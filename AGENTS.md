@@ -13,11 +13,16 @@ Key capabilities:
 
 - `cmd/`: The package which has the cobra commands that user invokes
 - `internal/`: Hosts all of the actual business logic and utilities
-  - `agent/`: Package that hosts generator adapters, streaming/printing, thinking filter, flight-recorder trace capture for terminal generation errors, system prompt generation, built-in tool registration, compaction orchestration (including configurable restart caps), and agent creation to execute a user query. Effective provider request timeouts come from resolved config/CLI timeout settings; avoid introducing shorter hardcoded HTTP client timeouts in generator wiring, especially for OAuth-backed clients.
+  - `agent/`: Package that hosts generator adapters, generator middleware, flight-recorder trace capture for terminal generation errors, built-in tool registration, compaction orchestration (including configurable restart caps), and agent creation to execute a user query. Effective provider request timeouts come from resolved config/CLI timeout settings; avoid introducing shorter hardcoded HTTP client timeouts in generator wiring, especially for OAuth-backed clients.
   - `auth/`: Package that hosts OAuth authentication for AI providers (Anthropic, OpenAI), including credential storage, token refresh, PKCE flow, HTTP transport wrappers, and account usage helpers such as the OpenAI ChatGPT usage endpoint
   - `codemode/`: Package that hosts code mode implementation - schema to Go type conversion, tool collision detection, code execution sandbox, and execute_go_code tool
   - `config/`: Package that hosts configuration loading, validation, parameter merging, and config specific types, including compaction and flight-recorder config resolution
-  - `mcp/`: Package that hosts MCP config validation and client, as well as code for connecting to MPC servers
+  - `input/`: Package that hosts prompt/file/URL input loading and block construction for model requests
+  - `mcpconfig/`: Package that hosts shared MCP server configuration schema types used by both config loading and MCP runtime code
+  - `mcp/`: Package that hosts MCP client/server runtime integration and connection logic
+  - `prompt/`: Package that hosts system prompt template rendering and skill discovery helpers
+  - `render/`: Package that hosts markdown/plain-text renderer construction and terminal styling helpers
+  - `ports/`: Package that hosts small shared interfaces used to decouple generators, tool registration, and rendering contracts
   - `storage/`: Package that hosts SQLite-backed conversation storage (.cpeconvo), compaction lineage metadata, and related persistence code
   - `urlhandler/`: Package that hosts utility code for URL detection and safe downloading
   - `version/`: Package that hosts CLI version reporting
@@ -29,6 +34,7 @@ Key capabilities:
 ## Documentation source of truth
 
 - Package-level `doc.go` files under `cmd/`, `internal/`, and `build/` are the canonical feature and behavior specs.
+- `ARCHITECTURE.md` is the repo-level architectural map: intended dependency direction, package responsibilities, and structural rationale.
 - Exported symbols used across packages should have Go doc comments that describe behavior and contracts.
 - `docs/prds/` is treated as high-level product context; implementation behavior should be documented in code-adjacent docs first.
 
@@ -87,7 +93,7 @@ go fmt ./...
 go vet ./...
 go test ./...
 
-# Lint (via golangci-lint)
+# Lint (golangci-lint plus repo-specific architecture linters)
 go run ./build lint
 
 # Lint with auto-fix for formatting issues
@@ -276,7 +282,7 @@ The `build/` folder contains development utility scripts managed via [Goyek](htt
 **Available tasks:**
 
 - `list` - List all available tasks (default when no task is specified)
-- `lint` - Run golangci-lint with bug-focused linters (staticcheck, govet, bodyclose, nilerr, contextcheck, etc.)
+- `lint` - Run golangci-lint with bug-focused linters plus repo-specific architecture checks (for example, cmd import boundaries and framework leakage into internal/commands)
 - `debug-proxy` - HTTP reverse proxy that logs all requests/responses (useful for debugging API calls)
 - `mcp-debug-proxy` - Stdio proxy that logs MCP protocol messages to a file
 

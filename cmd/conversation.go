@@ -1,11 +1,8 @@
 package cmd
 
 import (
-	"os"
-
 	"github.com/spf13/cobra"
 
-	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/commands"
 )
 
@@ -24,16 +21,9 @@ var listConvoCmd = &cobra.Command{
 	Long:    `Display all messages in the database with parent-child relationships in a git commit graph style.`,
 	Aliases: []string{"ls"},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		db, dialogStorage, err := commands.OpenConversationStorage(cmd.Context(), configPath)
-		if err != nil {
-			return err
-		}
-		defer db.Close()
-
-		return commands.ConversationList(cmd.Context(), commands.ConversationListOptions{
-			Storage:     dialogStorage,
-			Writer:      os.Stdout,
-			TreePrinter: &commands.DefaultTreePrinter{},
+		return commands.ConversationListFromConfig(cmd.Context(), commands.ConversationListFromConfigOptions{
+			ConfigPath: configPath,
+			Writer:     cmd.OutOrStdout(),
 		})
 	},
 }
@@ -48,18 +38,12 @@ var deleteConvoCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cascade, _ := cmd.Flags().GetBool("cascade")
 
-		db, dialogStorage, err := commands.OpenConversationStorage(cmd.Context(), configPath)
-		if err != nil {
-			return err
-		}
-		defer db.Close()
-
-		return commands.ConversationDelete(cmd.Context(), commands.ConversationDeleteOptions{
-			Storage:    dialogStorage,
+		return commands.ConversationDeleteFromConfig(cmd.Context(), commands.ConversationDeleteFromConfigOptions{
+			ConfigPath: configPath,
 			MessageIDs: args,
 			Cascade:    cascade,
-			Stdout:     os.Stdout,
-			Stderr:     os.Stderr,
+			Stdout:     cmd.OutOrStdout(),
+			Stderr:     cmd.ErrOrStderr(),
 		})
 	},
 }
@@ -72,17 +56,10 @@ var printConvoCmd = &cobra.Command{
 	Aliases: []string{"show", "view"},
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		db, dialogStorage, err := commands.OpenConversationStorage(cmd.Context(), configPath)
-		if err != nil {
-			return err
-		}
-		defer db.Close()
-
-		return commands.ConversationPrint(cmd.Context(), commands.ConversationPrintOptions{
-			Storage:         dialogStorage,
-			MessageID:       args[0],
-			Writer:          os.Stdout,
-			DialogFormatter: &commands.MarkdownDialogFormatter{Renderer: agent.NewRenderer()},
+		return commands.ConversationPrintFromConfig(cmd.Context(), commands.ConversationPrintFromConfigOptions{
+			ConfigPath: configPath,
+			MessageID:  args[0],
+			Writer:     cmd.OutOrStdout(),
 		})
 	},
 }

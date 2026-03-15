@@ -9,8 +9,8 @@ import (
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/ports"
 	"github.com/spachava753/cpe/internal/storage"
-	"github.com/spachava753/cpe/internal/types"
 )
 
 const (
@@ -39,8 +39,8 @@ type compactionUsageTrackingGenerator struct {
 }
 
 type compactionAwareGenerator struct {
-	base          types.Generator
-	registrar     types.ToolRegistrar
+	base          ports.Generator
+	registrar     ports.ToolRegistrar
 	cfg           *config.ResolvedCompactionConfig
 	contextWindow uint32
 }
@@ -124,7 +124,7 @@ func (g *compactionUsageTrackingGenerator) Generate(ctx context.Context, dialog 
 	return resp, nil
 }
 
-func newCompactionAwareGenerator(base types.Generator, registrar types.ToolRegistrar, cfg *config.ResolvedCompactionConfig, contextWindow uint32) *compactionAwareGenerator {
+func newCompactionAwareGenerator(base ports.Generator, registrar ports.ToolRegistrar, cfg *config.ResolvedCompactionConfig, contextWindow uint32) *compactionAwareGenerator {
 	return &compactionAwareGenerator{
 		base:          base,
 		registrar:     registrar,
@@ -168,7 +168,7 @@ func (g *compactionAwareGenerator) Register(tool gai.Tool, callback gai.ToolCall
 	return g.registrar.Register(tool, callback)
 }
 
-func (g *compactionAwareGenerator) Inner() types.Generator {
+func (g *compactionAwareGenerator) Inner() ports.Generator {
 	return g.base
 }
 

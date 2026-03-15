@@ -9,8 +9,8 @@ import (
 
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/ports"
 	"github.com/spachava753/cpe/internal/storage"
-	"github.com/spachava753/cpe/internal/types"
 )
 
 // GenerateOptions contains all parameters for Generate.
@@ -27,7 +27,7 @@ type GenerateOptions struct {
 	GenOptsFunc gai.GenOptsGenerator
 
 	// Generator performs model inference and middleware execution.
-	Generator types.Generator
+	Generator ports.Generator
 
 	// Stderr receives non-fatal generation errors.
 	Stderr io.Writer

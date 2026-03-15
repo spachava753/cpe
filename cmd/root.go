@@ -2,19 +2,15 @@ package cmd
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
-	_ "github.com/mattn/go-sqlite3"
-	"github.com/spachava753/gai"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/spachava753/cpe/internal/commands"
-	"github.com/spachava753/cpe/internal/config"
-	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/version"
 )
 
@@ -51,9 +47,9 @@ var (
 // rootCmd is the CLI entrypoint for prompt execution.
 //
 // Responsibility split:
-//   - cmd package: parse flags/env, resolve config, initialize optional
-//     persistence, and wire dependencies.
-//   - internal/commands: execute business logic without Cobra coupling.
+//   - cmd package: parse flags/env and map Cobra state into plain option structs.
+//   - internal/commands: resolve runtime dependencies and execute business logic
+//     without Cobra coupling.
 var rootCmd = &cobra.Command{
 	Use:   "cpe [flags] [prompt]",
 	Short: "Chat-based Programming Editor",
@@ -62,17 +58,35 @@ developers to leverage AI for codebase analysis, modification, and improvement
 through natural language interactions.`,
 	Args: cobra.ArbitraryArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Root flow boundary: this layer performs input/config/storage wiring, then
-		// hands off all generation orchestration to commands.ExecuteRoot.
-		// Check if version flag is set
 		versionFlag, _ := cmd.Flags().GetBool("version")
 		if versionFlag {
-			fmt.Printf("cpe version %s\n", version.Get())
+			fmt.Fprintf(cmd.OutOrStdout(), "cpe version %s\n", version.Get())
 			return nil
 		}
 
-		// Build GenOpts from only the flags that were explicitly set
-		genParams := commands.BuildGenOptsFromFlags(cmd.Flags(), commands.GenParamFlags{
+		var changed commands.GenParamChanges
+		cmd.Flags().Visit(func(f *pflag.Flag) {
+			switch f.Name {
+			case "max-tokens":
+				changed.MaxTokens = true
+			case "temperature":
+				changed.Temperature = true
+			case "top-p":
+				changed.TopP = true
+			case "top-k":
+				changed.TopK = true
+			case "frequency-penalty":
+				changed.FrequencyPenalty = true
+			case "presence-penalty":
+				changed.PresencePenalty = true
+			case "number-of-responses":
+				changed.N = true
+			case "thinking-budget":
+				changed.ThinkingBudget = true
+			}
+		})
+
+		genParams := commands.BuildGenOpts(commands.GenParamValues{
 			MaxTokens:        &flagMaxTokens,
 			Temperature:      &flagTemperature,
 			TopP:             &flagTopP,
@@ -81,52 +95,23 @@ through natural language interactions.`,
 			PresencePenalty:  &flagPresencePenalty,
 			N:                &flagN,
 			ThinkingBudget:   flagThinkingBudget,
-		})
+		}, changed)
 
-		// Resolve effective config with runtime options
-		effectiveConfig, err := config.ResolveConfig(configPath, config.RuntimeOptions{
-			ModelRef:  model,
-			GenParams: genParams,
-			Timeout:   timeout,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to resolve configuration: %w", err)
-		}
-
-		// Initialize storage and resolve conversation history unless in incognito mode
-		var dialogSaver storage.DialogSaver
-		var initialDialog gai.Dialog
-		if !incognitoMode {
-			storageDB, dbErr := sql.Open("sqlite3", effectiveConfig.ConversationStoragePath)
-			if dbErr != nil {
-				return fmt.Errorf("failed to open database: %w", dbErr)
-			}
-			defer storageDB.Close()
-
-			sqliteStorage, initErr := storage.NewSqlite(cmd.Context(), storageDB)
-			if initErr != nil {
-				return fmt.Errorf("failed to initialize dialog storage: %w", initErr)
-			}
-			dialogSaver = sqliteStorage
-
-			// Resolve conversation history for continuation
-			initialDialog, err = commands.ResolveInitialDialog(cmd.Context(), sqliteStorage, continueID, newConversation)
-			if err != nil {
-				return fmt.Errorf("failed to resolve conversation history: %w", err)
-			}
-		}
-
-		// Delegate to business logic
-		return commands.ExecuteRoot(cmd.Context(), commands.ExecuteRootOptions{
+		return commands.ExecuteRootCLI(cmd.Context(), commands.ExecuteRootCLIOptions{
 			Args:            args,
 			InputPaths:      input,
-			Stdin:           os.Stdin,
+			Stdin:           cmd.InOrStdin(),
 			SkipStdin:       skipStdin,
-			Config:          effectiveConfig,
+			ConfigPath:      configPath,
+			ModelRef:        model,
+			GenParams:       genParams,
+			Timeout:         timeout,
 			CustomURL:       customURL,
-			DialogSaver:     dialogSaver,
-			InitialDialog:   initialDialog,
-			Stderr:          os.Stderr,
+			ContinueID:      continueID,
+			NewConversation: newConversation,
+			IncognitoMode:   incognitoMode,
+			Stdout:          cmd.OutOrStdout(),
+			Stderr:          cmd.ErrOrStderr(),
 			VerboseSubagent: verboseSubagent,
 		})
 	},

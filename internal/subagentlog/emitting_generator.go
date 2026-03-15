@@ -10,12 +10,15 @@ import (
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/codemode"
-	"github.com/spachava753/cpe/internal/types"
+	"github.com/spachava753/cpe/internal/ports"
 )
 
 // finalAnswerToolName is filtered from streamed events because it is a terminal
 // structured-output mechanism, not user-facing intermediate progress.
-const finalAnswerToolName = "final_answer"
+const (
+	finalAnswerToolName = "final_answer"
+	unknownToolName     = "unknown"
+)
 
 // EmittingGenerator wraps a generator to emit subagent logging events.
 //
@@ -28,7 +31,7 @@ const finalAnswerToolName = "final_answer"
 // The preferred path wraps an inner *gai.ToolGenerator so events are emitted at each
 // Generate boundary. A fallback path exists for non-ToolGenerator implementations.
 type EmittingGenerator struct {
-	base               types.Generator
+	base               ports.Generator
 	client             *Client
 	subagentName       string
 	runID              string
@@ -42,7 +45,7 @@ type EmittingGenerator struct {
 // event emission happens at per-iteration boundaries (correct ordering). If no
 // ToolGenerator is found, the returned EmittingGenerator still works using a
 // fallback post-generation scan path.
-func NewEmittingGenerator(base types.Generator, client *Client, subagentName, runID string) *EmittingGenerator {
+func NewEmittingGenerator(base ports.Generator, client *Client, subagentName, runID string) *EmittingGenerator {
 	hasWrappedInnerGen := false
 
 	// Unwrap the generator chain to find the underlying *gai.ToolGenerator
@@ -77,7 +80,7 @@ func findToolGenerator(gen interface{}) *gai.ToolGenerator {
 	if tg, ok := gen.(*gai.ToolGenerator); ok {
 		return tg
 	}
-	if wrapper, ok := gen.(interface{ Inner() types.Generator }); ok {
+	if wrapper, ok := gen.(interface{ Inner() ports.Generator }); ok {
 		return findToolGenerator(wrapper.Inner())
 	}
 	return nil
@@ -300,9 +303,9 @@ func findToolNameByCallID(assistantMsg gai.Message, toolCallID string) string {
 		if err := json.Unmarshal([]byte(block.Content.String()), &toolCall); err == nil && toolCall.Name != "" {
 			return toolCall.Name
 		}
-		return "unknown"
+		return unknownToolName
 	}
-	return "unknown"
+	return unknownToolName
 }
 
 func findNearestPrecedingAssistant(dialog gai.Dialog, before int) (gai.Message, bool) {
@@ -459,7 +462,7 @@ func (g *EmittingGenerator) Generate(ctx context.Context, dialog gai.Dialog, opt
 // Contract: callbacks are passed through exactly as provided; event logging stays
 // centralized in Generate/middleware to preserve ordering and avoid double emission.
 func (g *EmittingGenerator) Register(tool gai.Tool, callback gai.ToolCallback) error {
-	registrar, ok := g.base.(types.ToolRegistrar)
+	registrar, ok := g.base.(ports.ToolRegistrar)
 	if !ok {
 		return gai.ToolRegistrationErr{Tool: tool.Name, Cause: fmt.Errorf("underlying generator does not support tool registration")}
 	}

@@ -6,8 +6,8 @@ import (
 	"io"
 	"os"
 
-	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/prompt"
 )
 
 // LoadSystemPromptOptions contains parameters for loading a system prompt
@@ -43,7 +43,7 @@ func LoadSystemPrompt(ctx context.Context, opts LoadSystemPromptOptions) (string
 		stderr = os.Stderr
 	}
 
-	rendered, err := agent.SystemPromptTemplate(ctx, string(contents), agent.TemplateData{
+	rendered, err := prompt.SystemPromptTemplate(ctx, string(contents), prompt.TemplateData{
 		Config: opts.Config,
 	}, stderr)
 	if err != nil {

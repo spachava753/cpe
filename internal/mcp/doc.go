@@ -18,5 +18,9 @@ Server-side responsibilities:
 Subagent logging integration:
 when a logging address is supplied, stdio child transports receive
 CPE_SUBAGENT_LOGGING_ADDRESS so nested runs can stream observability events.
+
+Connection schema note:
+shared MCP server configuration structs live in `internal/mcpconfig` so this
+runtime package does not need to be imported by config loading code.
 */
 package mcp

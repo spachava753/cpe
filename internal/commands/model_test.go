@@ -3,6 +3,8 @@ package commands
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/spachava753/cpe/internal/config"
@@ -99,6 +101,51 @@ func TestModelInfo_PrintsNAWhenPricingUnavailable(t *testing.T) {
 	got := out.String()
 	if got != want {
 		t.Fatalf("ModelInfo() output mismatch\nwant:\n%s\n\ngot:\n%s", want, got)
+	}
+}
+
+func TestModelSystemPrompt_ResolvesPathRelativeToConfigFile(t *testing.T) {
+	t.Parallel()
+
+	configDir := t.TempDir()
+	configPath := filepath.Join(configDir, "cpe.yaml")
+	promptPath := filepath.Join(configDir, "prompt.md")
+	if err := os.WriteFile(promptPath, []byte("Be helpful."), 0o644); err != nil {
+		t.Fatalf("write prompt: %v", err)
+	}
+
+	rawCfg := &config.RawConfig{
+		Models: []config.ModelConfig{{
+			Model: config.Model{
+				Ref:           "test-model",
+				DisplayName:   "Test Model",
+				Type:          "openai",
+				ID:            "gpt-4.1",
+				ApiKeyEnv:     "OPENAI_API_KEY",
+				ContextWindow: 128000,
+				MaxOutput:     8192,
+			},
+		}},
+		Defaults: config.Defaults{
+			Model:            "test-model",
+			SystemPromptPath: "./prompt.md",
+		},
+	}
+
+	var out bytes.Buffer
+	err := ModelSystemPrompt(context.Background(), ModelSystemPromptOptions{
+		Config:         rawCfg,
+		ConfigFilePath: configPath,
+		ModelName:      "test-model",
+		Output:         &out,
+	})
+	if err != nil {
+		t.Fatalf("ModelSystemPrompt() error = %v", err)
+	}
+
+	want := "Model: test-model\nPath: " + promptPath + "\n\nBe helpful.\n"
+	if got := out.String(); got != want {
+		t.Fatalf("ModelSystemPrompt() output mismatch\nwant:\n%s\n\ngot:\n%s", want, got)
 	}
 }
 

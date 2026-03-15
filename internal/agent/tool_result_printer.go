@@ -11,21 +11,24 @@ import (
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/codemode"
-	"github.com/spachava753/cpe/internal/types"
+	"github.com/spachava753/cpe/internal/ports"
 )
 
-const maxLines = 20
+const (
+	maxLines        = 20
+	unknownToolName = "unknown"
+)
 
 // ToolResultPrinterWrapper wraps a Generator and prints tool execution results
 // when Generate is called with a dialog containing a tool result as the last message.
 type ToolResultPrinterWrapper struct {
 	gai.GeneratorWrapper
-	renderer types.Renderer
+	renderer ports.Renderer
 	output   io.Writer
 }
 
 // NewToolResultPrinterWrapper creates a new ToolResultPrinterWrapper that writes to stderr.
-func NewToolResultPrinterWrapper(g gai.Generator, renderer types.Renderer) *ToolResultPrinterWrapper {
+func NewToolResultPrinterWrapper(g gai.Generator, renderer ports.Renderer) *ToolResultPrinterWrapper {
 	return &ToolResultPrinterWrapper{
 		GeneratorWrapper: gai.GeneratorWrapper{Inner: g},
 		renderer:         renderer,
@@ -35,7 +38,7 @@ func NewToolResultPrinterWrapper(g gai.Generator, renderer types.Renderer) *Tool
 
 // WithToolResultPrinterWrapper returns a WrapperFunc for use with gai.Wrap.
 // Output is written to stderr.
-func WithToolResultPrinterWrapper(renderer types.Renderer) gai.WrapperFunc {
+func WithToolResultPrinterWrapper(renderer ports.Renderer) gai.WrapperFunc {
 	return func(g gai.Generator) gai.Generator {
 		return &ToolResultPrinterWrapper{
 			GeneratorWrapper: gai.GeneratorWrapper{Inner: g},
@@ -95,11 +98,11 @@ func (g *ToolResultPrinterWrapper) printToolResult(dialog gai.Dialog, toolResult
 // calls from older turns.
 func (g *ToolResultPrinterWrapper) findToolName(dialog gai.Dialog, toolResultMsg gai.Message) string {
 	if len(toolResultMsg.Blocks) == 0 {
-		return "unknown"
+		return unknownToolName
 	}
 	toolCallID := toolResultMsg.Blocks[0].ID
 	if toolCallID == "" {
-		return "unknown"
+		return unknownToolName
 	}
 
 	for i := len(dialog) - 2; i >= 0; i-- {
@@ -115,11 +118,11 @@ func (g *ToolResultPrinterWrapper) findToolName(dialog gai.Dialog, toolResultMsg
 			if err := json.Unmarshal([]byte(block.Content.String()), &toolCall); err == nil && toolCall.Name != "" {
 				return toolCall.Name
 			}
-			return "unknown"
+			return unknownToolName
 		}
-		return "unknown"
+		return unknownToolName
 	}
-	return "unknown"
+	return unknownToolName
 }
 
 // printResult prints tool result blocks to the output with truncation and rendering.
@@ -154,7 +157,7 @@ func formatToolResultBlockMarkdown(toolName string, block gai.Block) string {
 
 	contentStr := block.Content.String()
 	if toolName == codemode.ExecuteGoCodeToolName {
-		return FormatExecuteGoCodeResultMarkdown(contentStr, maxLines)
+		return codemode.FormatResultMarkdown(contentStr, maxLines)
 	}
 
 	var jsonData interface{}
@@ -163,10 +166,32 @@ func formatToolResultBlockMarkdown(toolName string, block gai.Block) string {
 		if err == nil {
 			contentStr = string(formatted)
 		}
-		truncated := truncateToMaxLines(contentStr, maxLines)
+		truncated := truncateToolResultToMaxLines(contentStr, maxLines)
 		return fmt.Sprintf("```json\n%s\n```", truncated)
 	}
 
-	truncated := truncateToMaxLines(contentStr, maxLines)
+	truncated := truncateToolResultToMaxLines(contentStr, maxLines)
 	return fmt.Sprintf("```\n%s\n```", truncated)
+}
+
+func truncateToolResultToMaxLines(content string, maxLines int) string {
+	if maxLines <= 0 {
+		return content
+	}
+	if content == "" {
+		return content
+	}
+
+	trailingNewline := strings.HasSuffix(content, "\n")
+	trimmed := strings.TrimSuffix(content, "\n")
+	lines := strings.Split(trimmed, "\n")
+	if len(lines) <= maxLines {
+		return content
+	}
+
+	truncated := strings.Join(lines[:maxLines], "\n")
+	if trailingNewline {
+		truncated += "\n"
+	}
+	return truncated + "... (truncated)"
 }

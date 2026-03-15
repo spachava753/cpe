@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/spachava753/cpe/internal/mcpconfig"
 )
 
 func TestValidateModelAuth(t *testing.T) {
@@ -256,6 +258,174 @@ func canonicalPathForValidator(path string) string {
 		return filepath.Clean(realPath)
 	}
 	return cleaned
+}
+
+func TestValidateWithConfigPath_SubagentOutputSchemaPathRelativeToConfig(t *testing.T) {
+	t.Parallel()
+
+	configDir := t.TempDir()
+	configPath := filepath.Join(configDir, "cpe.yaml")
+	schemaPath := filepath.Join(configDir, "schema.json")
+	if err := os.WriteFile(schemaPath, []byte(`{"type":"object"}`), 0o644); err != nil {
+		t.Fatalf("writing schema: %v", err)
+	}
+
+	cfg := RawConfig{
+		Version: "1.0",
+		Models: []ModelConfig{{
+			Model: Model{
+				Ref:           "test-model",
+				DisplayName:   "Test Model",
+				ID:            "test-id",
+				Type:          "openai",
+				ApiKeyEnv:     "OPENAI_API_KEY",
+				ContextWindow: 200000,
+				MaxOutput:     64000,
+			},
+		}},
+		Defaults: Defaults{Model: "test-model"},
+		Subagent: &SubagentConfig{
+			Name:             "test-subagent",
+			Description:      "test",
+			OutputSchemaPath: "./schema.json",
+		},
+	}
+
+	if err := cfg.ValidateWithConfigPath(configPath); err != nil {
+		t.Fatalf("expected valid config, got error: %v", err)
+	}
+}
+
+func TestValidateWithConfigPath_SubagentOutputSchemaPathAcceptsBooleanSchema(t *testing.T) {
+	t.Parallel()
+
+	configDir := t.TempDir()
+	configPath := filepath.Join(configDir, "cpe.yaml")
+	schemaPath := filepath.Join(configDir, "schema.json")
+	if err := os.WriteFile(schemaPath, []byte(`true`), 0o644); err != nil {
+		t.Fatalf("writing schema: %v", err)
+	}
+
+	cfg := RawConfig{
+		Version: "1.0",
+		Models: []ModelConfig{{
+			Model: Model{
+				Ref:           "test-model",
+				DisplayName:   "Test Model",
+				ID:            "test-id",
+				Type:          "openai",
+				ApiKeyEnv:     "OPENAI_API_KEY",
+				ContextWindow: 200000,
+				MaxOutput:     64000,
+			},
+		}},
+		Defaults: Defaults{Model: "test-model"},
+		Subagent: &SubagentConfig{
+			Name:             "test-subagent",
+			Description:      "test",
+			OutputSchemaPath: "./schema.json",
+		},
+	}
+
+	if err := cfg.ValidateWithConfigPath(configPath); err != nil {
+		t.Fatalf("expected valid config, got error: %v", err)
+	}
+}
+
+func TestValidateWithConfigPath_MCPServerURLRequiresExplicitType(t *testing.T) {
+	t.Parallel()
+
+	cfg := RawConfig{
+		Version: "1.0",
+		Models: []ModelConfig{{
+			Model: Model{
+				Ref:           "test-model",
+				DisplayName:   "Test Model",
+				ID:            "test-id",
+				Type:          "openai",
+				ApiKeyEnv:     "OPENAI_API_KEY",
+				ContextWindow: 200000,
+				MaxOutput:     64000,
+			},
+		}},
+		Defaults: Defaults{Model: "test-model"},
+		MCPServers: map[string]mcpconfig.ServerConfig{
+			"remote": {URL: "http://example.com/mcp"},
+		},
+	}
+
+	err := cfg.ValidateWithConfigPath("")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	want := "mcpServers.remote.type: required when url is set; use \"http\" or \"sse\""
+	if err.Error() != want {
+		t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
+	}
+}
+
+func TestValidateWithConfigPath_MCPServerHeadersRequireRemoteTransportType(t *testing.T) {
+	t.Parallel()
+
+	cfg := RawConfig{
+		Version: "1.0",
+		Models: []ModelConfig{{
+			Model: Model{
+				Ref:           "test-model",
+				DisplayName:   "Test Model",
+				ID:            "test-id",
+				Type:          "openai",
+				ApiKeyEnv:     "OPENAI_API_KEY",
+				ContextWindow: 200000,
+				MaxOutput:     64000,
+			},
+		}},
+		Defaults: Defaults{Model: "test-model"},
+		MCPServers: map[string]mcpconfig.ServerConfig{
+			"local": {Command: "echo", Headers: map[string]string{"X-Test": "1"}},
+		},
+	}
+
+	err := cfg.ValidateWithConfigPath("")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	want := "mcpServers.local.headers: only supported for type \"http\" or \"sse\""
+	if err.Error() != want {
+		t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
+	}
+}
+
+func TestValidateWithConfigPath_RemoteMCPServerRejectsCommandAndArgs(t *testing.T) {
+	t.Parallel()
+
+	cfg := RawConfig{
+		Version: "1.0",
+		Models: []ModelConfig{{
+			Model: Model{
+				Ref:           "test-model",
+				DisplayName:   "Test Model",
+				ID:            "test-id",
+				Type:          "openai",
+				ApiKeyEnv:     "OPENAI_API_KEY",
+				ContextWindow: 200000,
+				MaxOutput:     64000,
+			},
+		}},
+		Defaults: Defaults{Model: "test-model"},
+		MCPServers: map[string]mcpconfig.ServerConfig{
+			"remote": {Type: "http", URL: "http://example.com/mcp", Command: "echo", Args: []string{"hello"}},
+		},
+	}
+
+	err := cfg.ValidateWithConfigPath("")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	want := "mcpServers.remote.command: only supported for type \"stdio\""
+	if err.Error() != want {
+		t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
+	}
 }
 
 func rawConfigWithCodeMode(codeMode CodeModeConfig) RawConfig {

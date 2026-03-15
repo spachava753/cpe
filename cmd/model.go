@@ -1,13 +1,11 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/spachava753/cpe/internal/commands"
-	"github.com/spachava753/cpe/internal/config"
 )
 
 // modelCmd is the CLI group for model inspection commands. It performs config
@@ -26,20 +24,10 @@ var listModelCmd = &cobra.Command{
 	Short:   "List models from configuration",
 	Aliases: []string{"ls"},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.LoadRawConfig(configPath)
-		if err != nil {
-			return fmt.Errorf("failed to load configuration: %w", err)
-		}
-
-		defaultModel := cfg.Defaults.Model
-		if defaultModel == "" {
-			defaultModel = DefaultModel
-		}
-
-		return commands.ModelList(cmd.Context(), commands.ModelListOptions{
-			Config:       cfg,
-			DefaultModel: defaultModel,
-			Writer:       os.Stdout,
+		return commands.ModelListFromConfig(cmd.Context(), commands.ModelListFromConfigOptions{
+			ConfigPath:   configPath,
+			DefaultModel: model,
+			Writer:       cmd.OutOrStdout(),
 		})
 	},
 }
@@ -54,20 +42,15 @@ cpe model info sonnet
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.LoadRawConfig(configPath)
-		if err != nil {
-			return fmt.Errorf("failed to load configuration: %w", err)
-		}
-
 		name := args[0]
 		if name == "" {
 			name = os.Getenv("CPE_MODEL")
 		}
 
-		return commands.ModelInfo(cmd.Context(), commands.ModelInfoOptions{
-			Config:    cfg,
-			ModelName: name,
-			Writer:    os.Stdout,
+		return commands.ModelInfoFromConfig(cmd.Context(), commands.ModelInfoFromConfigOptions{
+			ConfigPath: configPath,
+			ModelName:  name,
+			Writer:     cmd.OutOrStdout(),
 		})
 	},
 }
@@ -79,16 +62,12 @@ var systemPromptModelCmd = &cobra.Command{
 	Short: "Show the rendered system prompt for a model",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.LoadRawConfig(configPath)
-		if err != nil {
-			return fmt.Errorf("failed to load configuration: %w", err)
-		}
-
-		return commands.ModelSystemPrompt(cmd.Context(), commands.ModelSystemPromptOptions{
-			Config:       cfg,
+		return commands.ModelSystemPromptFromConfig(cmd.Context(), commands.ModelSystemPromptFromConfigOptions{
+			ConfigPath:   configPath,
 			ModelName:    model,
 			DefaultModel: DefaultModel,
 			Output:       cmd.OutOrStdout(),
+			Stderr:       cmd.ErrOrStderr(),
 		})
 	},
 }

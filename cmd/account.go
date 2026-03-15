@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -54,8 +53,8 @@ Example:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return commands.AccountLogin(cmd.Context(), commands.AccountLoginOptions{
 			Provider:    strings.ToLower(args[0]),
-			Output:      os.Stdout,
-			Input:       os.Stdin,
+			Output:      cmd.OutOrStdout(),
+			Input:       cmd.InOrStdin(),
 			OpenBrowser: true,
 		})
 	},
@@ -74,7 +73,7 @@ Example:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return commands.AccountLogout(cmd.Context(), commands.AccountLogoutOptions{
 			Provider: strings.ToLower(args[0]),
-			Output:   os.Stdout,
+			Output:   cmd.OutOrStdout(),
 		})
 	},
 }
@@ -100,7 +99,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return commands.AccountUsage(cmd.Context(), commands.AccountUsageOptions{
 			Provider: strings.ToLower(args[0]),
-			Output:   os.Stdout,
+			Output:   cmd.OutOrStdout(),
 			Raw:      accountUsageRaw,
 			Watch:    accountUsageWatch,
 		})

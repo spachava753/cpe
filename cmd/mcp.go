@@ -3,14 +3,10 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/commands"
-	"github.com/spachava753/cpe/internal/config"
 )
 
 var (
@@ -36,14 +32,9 @@ var mcpListServersCmd = &cobra.Command{
 	Long:    `List all MCP servers defined in .cpemcp.json configuration file.`,
 	Aliases: []string{"ls-servers"},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.ResolveConfig(configPath, config.RuntimeOptions{})
-		if err != nil {
-			return err
-		}
-
-		return commands.MCPListServers(cmd.Context(), commands.MCPListServersOptions{
-			MCPServers: cfg.MCPServers,
-			Writer:     os.Stdout,
+		return commands.MCPListServersFromConfig(cmd.Context(), commands.MCPListServersFromConfigOptions{
+			ConfigPath: configPath,
+			Writer:     cmd.OutOrStdout(),
 		})
 	},
 }
@@ -55,16 +46,10 @@ var mcpInfoCmd = &cobra.Command{
 	Long:  `Initialize connection to an MCP server and show its information.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.ResolveConfig(configPath, config.RuntimeOptions{})
-		if err != nil {
-			return err
-		}
-
-		return commands.MCPInfo(cmd.Context(), commands.MCPInfoOptions{
-			MCPServers: cfg.MCPServers,
+		return commands.MCPInfoFromConfig(cmd.Context(), commands.MCPInfoFromConfigOptions{
+			ConfigPath: configPath,
 			ServerName: args[0],
-			Writer:     os.Stdout,
-			Timeout:    30 * time.Second,
+			Writer:     cmd.OutOrStdout(),
 		})
 	},
 }
@@ -88,21 +73,15 @@ var mcpListToolsCmd = &cobra.Command{
 	Aliases: []string{"ls-tools"},
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.ResolveConfig(configPath, config.RuntimeOptions{})
-		if err != nil {
-			return err
-		}
-
 		showAll, _ := cmd.Flags().GetBool("show-all")
 		showFiltered, _ := cmd.Flags().GetBool("show-filtered")
 
-		return commands.MCPListTools(cmd.Context(), commands.MCPListToolsOptions{
-			MCPServers:   cfg.MCPServers,
+		return commands.MCPListToolsFromConfig(cmd.Context(), commands.MCPListToolsFromConfigOptions{
+			ConfigPath:   configPath,
 			ServerName:   args[0],
-			Writer:       os.Stdout,
+			Writer:       cmd.OutOrStdout(),
 			ShowAll:      showAll,
 			ShowFiltered: showFiltered,
-			Renderer:     agent.NewRenderer(),
 		})
 	},
 }
@@ -121,11 +100,6 @@ var mcpCallToolCmd = &cobra.Command{
 			return fmt.Errorf("--tool is required")
 		}
 
-		cfg, err := config.ResolveConfig(configPath, config.RuntimeOptions{})
-		if err != nil {
-			return err
-		}
-
 		toolArgs := make(map[string]any)
 		if mcpToolArgs != "" {
 			if err := json.Unmarshal([]byte(mcpToolArgs), &toolArgs); err != nil {
@@ -133,12 +107,12 @@ var mcpCallToolCmd = &cobra.Command{
 			}
 		}
 
-		return commands.MCPCallTool(cmd.Context(), commands.MCPCallToolOptions{
-			MCPServers: cfg.MCPServers,
+		return commands.MCPCallToolFromConfig(cmd.Context(), commands.MCPCallToolFromConfigOptions{
+			ConfigPath: configPath,
 			ServerName: mcpServerName,
 			ToolName:   mcpToolName,
 			ToolArgs:   toolArgs,
-			Writer:     os.Stdout,
+			Writer:     cmd.OutOrStdout(),
 		})
 	},
 }
@@ -188,18 +162,10 @@ appear in the generated Go function definitions.`,
   # Print code mode description for a specific model
   cpe mcp code-desc --model sonnet`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.ResolveConfig(configPath, config.RuntimeOptions{
-			ModelRef: model,
-		})
-		if err != nil {
-			return err
-		}
-
-		return commands.MCPCodeDesc(cmd.Context(), commands.MCPCodeDescOptions{
-			MCPServers: cfg.MCPServers,
-			CodeMode:   cfg.CodeMode,
-			Writer:     os.Stdout,
-			Renderer:   agent.NewRenderer(),
+		return commands.MCPCodeDescFromConfig(cmd.Context(), commands.MCPCodeDescFromConfigOptions{
+			ConfigPath: configPath,
+			ModelRef:   model,
+			Writer:     cmd.OutOrStdout(),
 		})
 	},
 }

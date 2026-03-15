@@ -6,9 +6,10 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 
-	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/prompt"
 )
 
 // ModelListOptions contains dependencies for ModelList.
@@ -97,10 +98,13 @@ func formatCostPerMillion(cost *float64) string {
 // ModelSystemPromptOptions contains dependencies for ModelSystemPrompt.
 // The caller provides raw config and optional model selection hints.
 type ModelSystemPromptOptions struct {
-	Config       *config.RawConfig
-	ModelName    string
-	DefaultModel string // Fallback model name from env var
-	Output       io.Writer
+	Config          *config.RawConfig
+	EffectiveConfig *config.Config
+	ConfigFilePath  string
+	ModelName       string
+	DefaultModel    string // Fallback model name from env var
+	Output          io.Writer
+	Stderr          io.Writer
 	// SystemPrompt is an optional override for testing - if provided, this file
 	// is used instead of opening the file from the path in config
 	SystemPrompt fs.File
@@ -143,6 +147,11 @@ func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error
 		systemPromptPath = selectedModel.SystemPromptPath
 	}
 
+	resolvedSystemPromptPath := systemPromptPath
+	if resolvedSystemPromptPath != "" && !filepath.IsAbs(resolvedSystemPromptPath) && opts.ConfigFilePath != "" {
+		resolvedSystemPromptPath = filepath.Join(filepath.Dir(opts.ConfigFilePath), resolvedSystemPromptPath)
+	}
+
 	// Determine the file to read from
 	var promptFile fs.File
 	var shouldClose bool
@@ -150,11 +159,11 @@ func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error
 		// Use provided file (for testing)
 		promptFile = opts.SystemPrompt
 		shouldClose = false
-	} else if systemPromptPath != "" {
+	} else if resolvedSystemPromptPath != "" {
 		// Open file from path
-		f, err := os.Open(systemPromptPath)
+		f, err := os.Open(resolvedSystemPromptPath)
 		if err != nil {
-			return fmt.Errorf("could not open system prompt file %q: %w", systemPromptPath, err)
+			return fmt.Errorf("could not open system prompt file %q: %w", resolvedSystemPromptPath, err)
 		}
 		promptFile = f
 		shouldClose = true
@@ -174,29 +183,38 @@ func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error
 		return fmt.Errorf("failed to read system prompt file: %w", err)
 	}
 
-	// Resolve effective code mode config for template rendering
-	var codeMode *config.CodeModeConfig
-	if selectedModel.CodeMode != nil {
-		codeMode = selectedModel.CodeMode
-	} else if opts.Config.Defaults.CodeMode != nil {
-		codeMode = opts.Config.Defaults.CodeMode
+	templateConfig := opts.EffectiveConfig
+	if templateConfig == nil {
+		// Resolve effective code mode config for template rendering when the caller
+		// did not supply a fully resolved runtime config.
+		var codeMode *config.CodeModeConfig
+		if selectedModel.CodeMode != nil {
+			codeMode = selectedModel.CodeMode
+		} else if opts.Config.Defaults.CodeMode != nil {
+			codeMode = opts.Config.Defaults.CodeMode
+		}
+
+		// Create a minimal Config for template rendering.
+		templateConfig = &config.Config{
+			Model:              selectedModel.Model,
+			MCPServers:         opts.Config.MCPServers,
+			GenerationDefaults: nil,
+			CodeMode:           codeMode,
+		}
 	}
 
-	// Create a minimal Config for template rendering
-	templateConfig := &config.Config{
-		Model:              selectedModel.Model,
-		MCPServers:         opts.Config.MCPServers,
-		GenerationDefaults: nil,
-		CodeMode:           codeMode,
+	stderr := opts.Stderr
+	if stderr == nil {
+		stderr = os.Stderr
 	}
 
-	systemPrompt, err := agent.SystemPromptTemplate(ctx, string(contents), agent.TemplateData{
+	systemPrompt, err := prompt.SystemPromptTemplate(ctx, string(contents), prompt.TemplateData{
 		Config: templateConfig,
-	}, os.Stderr)
+	}, stderr)
 	if err != nil {
 		return fmt.Errorf("failed to render system prompt: %w", err)
 	}
 
-	_, err = fmt.Fprintf(opts.Output, "Model: %s\nPath: %s\n\n%s\n", modelName, systemPromptPath, systemPrompt)
+	_, err = fmt.Fprintf(opts.Output, "Model: %s\nPath: %s\n\n%s\n", modelName, resolvedSystemPromptPath, systemPrompt)
 	return err
 }

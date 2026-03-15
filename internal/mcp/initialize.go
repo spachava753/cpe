@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/spachava753/cpe/internal/mcpconfig"
 )
 
 // InitializeConnections establishes sessions to all configured MCP servers,
@@ -18,7 +20,7 @@ import (
 // closed before returning.
 func InitializeConnections(
 	ctx context.Context,
-	servers map[string]ServerConfig,
+	servers map[string]mcpconfig.ServerConfig,
 	loggingAddress string,
 ) (*MCPState, error) {
 	if len(servers) == 0 {
@@ -50,6 +52,7 @@ func InitializeConnections(
 		// Check for duplicate tool names
 		for _, tool := range conn.Tools {
 			if existingServer, exists := toolOwners[tool.Name]; exists {
+				_ = conn.ClientSession.Close()
 				state.Close()
 				return nil, fmt.Errorf("duplicate tool name %q: found in both %q and %q",
 					tool.Name, existingServer, serverName)
@@ -70,7 +73,7 @@ func connectToServer(
 	ctx context.Context,
 	client *mcpsdk.Client,
 	serverName string,
-	config ServerConfig,
+	config mcpconfig.ServerConfig,
 	loggingAddress string,
 ) (*MCPConn, error) {
 	transport, err := CreateTransport(ctx, config, loggingAddress)
@@ -78,14 +81,17 @@ func connectToServer(
 		return nil, fmt.Errorf("creating transport: %w", err)
 	}
 
-	session, err := client.Connect(ctx, transport, nil)
+	operationCtx, cancel := WithServerTimeout(ctx, config)
+	defer cancel()
+
+	session, err := client.Connect(operationCtx, transport, nil)
 	if err != nil {
 		return nil, fmt.Errorf("connecting: %w", err)
 	}
 
 	// Fetch tools
 	var allTools []*mcpsdk.Tool
-	for tool, err := range session.Tools(ctx, nil) {
+	for tool, err := range session.Tools(operationCtx, nil) {
 		if err != nil {
 			session.Close()
 			return nil, fmt.Errorf("listing tools: %w", err)

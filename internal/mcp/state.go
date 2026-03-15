@@ -4,13 +4,15 @@ import (
 	"fmt"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/spachava753/cpe/internal/mcpconfig"
 )
 
 // MCPConn holds runtime state for a single initialized MCP server.
 // Tools are already filtered according to ServerConfig enabled/disabled rules.
 type MCPConn struct {
 	ServerName string
-	Config     ServerConfig
+	Config     mcpconfig.ServerConfig
 	// ClientSession is the active MCP session. May be nil in test mocks
 	// that don't invoke tool callbacks.
 	ClientSession *mcpsdk.ClientSession

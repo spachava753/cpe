@@ -3,12 +3,12 @@ package agent
 import (
 	"bytes"
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/render"
 )
 
 type stubUsageGenerator struct {
@@ -56,7 +56,7 @@ func TestTokenUsagePrinterGenerator_PrintsContextAndCostsWithCumulativeTracking(
 
 	var out bytes.Buffer
 	printer := NewTokenUsagePrinterGenerator(gen, &out, model)
-	printer.renderer = &PlainTextRenderer{}
+	printer.renderer = &render.PlainTextRenderer{}
 
 	if _, err := printer.Generate(context.Background(), nil, nil); err != nil {
 		t.Fatalf("Generate() first call error = %v", err)
@@ -95,7 +95,7 @@ func TestTokenUsagePrinterGenerator_UsesOnlyUncachedInputForInputPricing(t *test
 
 	var out bytes.Buffer
 	printer := NewTokenUsagePrinterGenerator(gen, &out, model)
-	printer.renderer = &PlainTextRenderer{}
+	printer.renderer = &render.PlainTextRenderer{}
 
 	if _, err := printer.Generate(context.Background(), nil, nil); err != nil {
 		t.Fatalf("Generate() error = %v", err)
@@ -128,7 +128,7 @@ func TestTokenUsagePrinterGenerator_FallsBackToInputPricingWhenCacheWritePricing
 
 	var out bytes.Buffer
 	printer := NewTokenUsagePrinterGenerator(gen, &out, model)
-	printer.renderer = &PlainTextRenderer{}
+	printer.renderer = &render.PlainTextRenderer{}
 
 	if _, err := printer.Generate(context.Background(), nil, nil); err != nil {
 		t.Fatalf("Generate() error = %v", err)
@@ -143,7 +143,7 @@ func TestTokenUsagePrinterGenerator_FallsBackToInputPricingWhenCacheWritePricing
 	}
 }
 
-func TestCalculateUsageCosts_PanicsWhenBillableInputTokensNegative(t *testing.T) {
+func TestCalculateUsageCosts_ClampsNegativeBillableInputTokensToZero(t *testing.T) {
 	t.Parallel()
 
 	metrics := tokenUsageMetrics{
@@ -154,21 +154,19 @@ func TestCalculateUsageCosts_PanicsWhenBillableInputTokensNegative(t *testing.T)
 	}
 	model := config.Model{InputCostPerMillion: float64Ptr(3)}
 
-	defer func() {
-		r := recover()
-		if r == nil {
-			t.Fatal("expected panic, got nil")
-		}
-		msg, ok := r.(string)
-		if !ok {
-			t.Fatalf("expected panic string, got %T", r)
-		}
-		if !strings.Contains(msg, "invalid token usage metrics") {
-			t.Fatalf("unexpected panic message: %q", msg)
-		}
-	}()
-
-	_ = calculateUsageCosts(metrics, model)
+	costs := calculateUsageCosts(metrics, model)
+	if costs.Input == nil {
+		t.Fatal("expected input cost, got nil")
+	}
+	if got := *costs.Input; got != 0 {
+		t.Fatalf("input cost = %v, want 0", got)
+	}
+	if !costs.HasAnyCost {
+		t.Fatal("expected HasAnyCost to be true")
+	}
+	if costs.Total != 0 {
+		t.Fatalf("total cost = %v, want 0", costs.Total)
+	}
 }
 
 func TestTokenUsagePrinterGenerator_SkipsCostWhenPricingMissing(t *testing.T) {
@@ -184,7 +182,7 @@ func TestTokenUsagePrinterGenerator_SkipsCostWhenPricingMissing(t *testing.T) {
 
 	var out bytes.Buffer
 	printer := NewTokenUsagePrinterGenerator(gen, &out, model)
-	printer.renderer = &PlainTextRenderer{}
+	printer.renderer = &render.PlainTextRenderer{}
 
 	if _, err := printer.Generate(context.Background(), nil, nil); err != nil {
 		t.Fatalf("Generate() error = %v", err)
@@ -210,7 +208,7 @@ func TestTokenUsagePrinterGenerator_SkipsContextLineWhenContextWindowUnknown(t *
 
 	var out bytes.Buffer
 	printer := NewTokenUsagePrinterGenerator(gen, &out, model)
-	printer.renderer = &PlainTextRenderer{}
+	printer.renderer = &render.PlainTextRenderer{}
 
 	if _, err := printer.Generate(context.Background(), nil, nil); err != nil {
 		t.Fatalf("Generate() error = %v", err)
@@ -231,7 +229,7 @@ func TestTokenUsagePrinterGenerator_SkipsPrintingWhenUsageMetadataEmpty(t *testi
 
 	var out bytes.Buffer
 	printer := NewTokenUsagePrinterGenerator(gen, &out, model)
-	printer.renderer = &PlainTextRenderer{}
+	printer.renderer = &render.PlainTextRenderer{}
 
 	if _, err := printer.Generate(context.Background(), nil, nil); err != nil {
 		t.Fatalf("Generate() error = %v", err)

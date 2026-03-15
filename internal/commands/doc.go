@@ -1,10 +1,10 @@
 /*
 Package commands contains framework-agnostic command orchestration and wiring.
 
-The cmd package builds Cobra flags, resolves process-level dependencies, and
-then delegates command execution to this package for deterministic testing.
-This package keeps entrypoint flows thin and focused on composition rather than
-owning agent feature business logic.
+The cmd package builds Cobra flags and delegates command execution to this
+package for deterministic testing. This package owns CLI-facing use-case
+orchestration, including runtime dependency resolution that should remain
+framework-agnostic and easy to unit test.
 
 Feature areas include:
   - root generation flow orchestration;

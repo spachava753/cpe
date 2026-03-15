@@ -11,6 +11,7 @@ import (
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/mcp"
+	"github.com/spachava753/cpe/internal/render"
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/subagentlog"
 )
@@ -113,7 +114,7 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 		if opts.VerboseSubagent {
 			renderMode = subagentlog.RenderModeVerbose
 		}
-		renderer := subagentlog.NewRenderer(agent.NewRenderer(), renderMode)
+		renderer := subagentlog.NewRenderer(render.NewRenderer(), renderMode)
 		stderrWriter := subagentlog.NewSyncWriter(stderr)
 		eventServer := subagentlog.NewServer(func(event subagentlog.Event) {
 			rendered := renderer.RenderEvent(event)

@@ -23,17 +23,19 @@ import (
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
+	inputpkg "github.com/spachava753/cpe/internal/input"
 	mcpinternal "github.com/spachava753/cpe/internal/mcp"
+	"github.com/spachava753/cpe/internal/mcpconfig"
+	"github.com/spachava753/cpe/internal/ports"
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/subagentlog"
-	"github.com/spachava753/cpe/internal/types"
 )
 
 const serverTypeStdio = "stdio"
 
 // MCPListServersOptions contains parameters for listing MCP servers
 type MCPListServersOptions struct {
-	MCPServers map[string]mcpinternal.ServerConfig
+	MCPServers map[string]mcpconfig.ServerConfig
 	Writer     io.Writer
 }
 
@@ -47,15 +49,8 @@ func MCPListServers(ctx context.Context, opts MCPListServersOptions) error {
 
 	fmt.Fprintln(opts.Writer, "Configured MCP Servers:")
 	for name, server := range mcpConfig {
-		serverType := server.Type
-		if serverType == "" {
-			serverType = serverTypeStdio
-		}
-
-		timeout := server.Timeout
-		if timeout == 0 {
-			timeout = 60
-		}
+		serverType := mcpinternal.EffectiveServerType(server)
+		timeout := int(mcpinternal.EffectiveServerTimeout(server).Seconds())
 
 		fmt.Fprintf(opts.Writer, "- %s (Type: %s, Timeout: %ds)\n", name, serverType, timeout)
 
@@ -80,7 +75,7 @@ func MCPListServers(ctx context.Context, opts MCPListServersOptions) error {
 
 // MCPInfoOptions contains parameters for getting MCP server info
 type MCPInfoOptions struct {
-	MCPServers map[string]mcpinternal.ServerConfig
+	MCPServers map[string]mcpconfig.ServerConfig
 	ServerName string
 	Writer     io.Writer
 	Timeout    time.Duration
@@ -100,20 +95,21 @@ func MCPInfo(ctx context.Context, opts MCPInfoOptions) error {
 
 	client := mcpinternal.NewClient()
 
-	timeout := opts.Timeout
-	if timeout == 0 {
-		timeout = 30 * time.Second
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
 	transport, err := mcpinternal.CreateTransport(ctx, serverConfig, "")
 	if err != nil {
 		return err
 	}
 
-	cs, err := client.Connect(ctx, transport, nil)
+	var operationCtx context.Context
+	var cancel context.CancelFunc
+	if opts.Timeout > 0 {
+		operationCtx, cancel = context.WithTimeout(ctx, opts.Timeout)
+	} else {
+		operationCtx, cancel = mcpinternal.WithServerTimeout(ctx, serverConfig)
+	}
+	defer cancel()
+
+	cs, err := client.Connect(operationCtx, transport, nil)
 	if err != nil {
 		return err
 	}
@@ -125,12 +121,12 @@ func MCPInfo(ctx context.Context, opts MCPInfoOptions) error {
 
 // MCPListToolsOptions contains parameters for listing MCP server tools
 type MCPListToolsOptions struct {
-	MCPServers   map[string]mcpinternal.ServerConfig
+	MCPServers   map[string]mcpconfig.ServerConfig
 	ServerName   string
 	Writer       io.Writer
 	ShowAll      bool
 	ShowFiltered bool
-	Renderer     types.Renderer
+	Renderer     ports.Renderer
 }
 
 // MCPListTools lists tools available on an MCP server
@@ -153,20 +149,20 @@ func MCPListTools(ctx context.Context, opts MCPListToolsOptions) error {
 		return err
 	}
 
-	cs, err := client.Connect(ctx, transport, nil)
+	operationCtx, cancel := mcpinternal.WithServerTimeout(ctx, serverConfig)
+	defer cancel()
+
+	cs, err := client.Connect(operationCtx, transport, nil)
 	if err != nil {
 		return err
 	}
+	defer cs.Close()
 
-	for tool, err := range cs.Tools(ctx, nil) {
+	for tool, err := range cs.Tools(operationCtx, nil) {
 		if err != nil {
 			return err
 		}
 		allTools = append(allTools, tool)
-	}
-
-	if err := cs.Close(); err != nil {
-		return err
 	}
 
 	filteredTools, filteredOut := mcpinternal.FilterMcpTools(allTools, serverConfig)
@@ -273,7 +269,7 @@ func MCPListTools(ctx context.Context, opts MCPListToolsOptions) error {
 
 // MCPCallToolOptions contains parameters for calling an MCP tool
 type MCPCallToolOptions struct {
-	MCPServers map[string]mcpinternal.ServerConfig
+	MCPServers map[string]mcpconfig.ServerConfig
 	ServerName string
 	ToolName   string
 	ToolArgs   map[string]any
@@ -299,13 +295,16 @@ func MCPCallTool(ctx context.Context, opts MCPCallToolOptions) error {
 		return err
 	}
 
-	cs, err := client.Connect(ctx, transport, nil)
+	operationCtx, cancel := mcpinternal.WithServerTimeout(ctx, serverConfig)
+	defer cancel()
+
+	cs, err := client.Connect(operationCtx, transport, nil)
 	if err != nil {
 		return err
 	}
 	defer cs.Close()
 
-	result, err := cs.CallTool(ctx, &mcp.CallToolParams{
+	result, err := cs.CallTool(operationCtx, &mcp.CallToolParams{
 		Name:      opts.ToolName,
 		Arguments: opts.ToolArgs,
 	})
@@ -318,16 +317,19 @@ func MCPCallTool(ctx context.Context, opts MCPCallToolOptions) error {
 			fmt.Fprint(opts.Writer, textContent.Text)
 		}
 	}
+	if result.IsError {
+		return result.GetError()
+	}
 
 	return nil
 }
 
 // MCPCodeDescOptions contains parameters for generating code mode description
 type MCPCodeDescOptions struct {
-	MCPServers map[string]mcpinternal.ServerConfig
+	MCPServers map[string]mcpconfig.ServerConfig
 	CodeMode   *config.CodeModeConfig
 	Writer     io.Writer
-	Renderer   types.Renderer
+	Renderer   ports.Renderer
 }
 
 // MCPCodeDesc generates and prints the execute_go_code tool description
@@ -428,18 +430,18 @@ func MCPServe(ctx context.Context, opts MCPServeOptions) error {
 
 	// Load and validate output schema at startup
 	var outputSchema *jsonschema.Schema
-	if rawCfg.Subagent.OutputSchemaPath != "" {
-		schemaPath := rawCfg.Subagent.OutputSchemaPath
-		if !filepath.IsAbs(schemaPath) {
-			schemaPath = filepath.Join(filepath.Dir(resolvedConfigPath), schemaPath)
+	resolvedOutputSchemaPath := rawCfg.Subagent.OutputSchemaPath
+	if resolvedOutputSchemaPath != "" {
+		if !filepath.IsAbs(resolvedOutputSchemaPath) {
+			resolvedOutputSchemaPath = filepath.Join(filepath.Dir(resolvedConfigPath), resolvedOutputSchemaPath)
 		}
 
-		schemaBytes, err := os.ReadFile(schemaPath)
+		schemaBytes, err := os.ReadFile(resolvedOutputSchemaPath)
 		if err != nil {
-			return fmt.Errorf("failed to read output schema file %q: %w", schemaPath, err)
+			return fmt.Errorf("failed to read output schema file %q: %w", resolvedOutputSchemaPath, err)
 		}
 		if err := json.Unmarshal(schemaBytes, &outputSchema); err != nil {
-			return fmt.Errorf("invalid output schema JSON in %q: %w", schemaPath, err)
+			return fmt.Errorf("invalid output schema JSON in %q: %w", resolvedOutputSchemaPath, err)
 		}
 	}
 
@@ -480,7 +482,7 @@ func MCPServe(ctx context.Context, opts MCPServeOptions) error {
 		Subagent: mcpinternal.SubagentDef{
 			Name:             rawCfg.Subagent.Name,
 			Description:      rawCfg.Subagent.Description,
-			OutputSchemaPath: rawCfg.Subagent.OutputSchemaPath,
+			OutputSchemaPath: resolvedOutputSchemaPath,
 		},
 		MCPServers: rawCfg.MCPServers,
 	}
@@ -522,7 +524,7 @@ func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, sub
 		}
 
 		// Build user blocks from prompt and input files
-		userBlocks, err := agent.BuildUserBlocks(ctx, input.Prompt, input.Inputs)
+		userBlocks, err := inputpkg.BuildUserBlocks(ctx, input.Prompt, input.Inputs)
 		if err != nil {
 			// Provide actionable error for input file issues
 			if len(input.Inputs) > 0 {

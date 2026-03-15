@@ -22,8 +22,9 @@ import (
 	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/mcp"
+	"github.com/spachava753/cpe/internal/ports"
+	"github.com/spachava753/cpe/internal/render"
 	"github.com/spachava753/cpe/internal/storage"
-	"github.com/spachava753/cpe/internal/types"
 
 	"github.com/cenkalti/backoff/v5"
 )
@@ -364,7 +365,7 @@ func WithStdout(w io.Writer) GeneratorOption {
 	}
 }
 
-// NewGenerator creates a types.Generator with all middleware properly configured.
+// NewGenerator creates a ports.Generator with all middleware properly configured.
 // It expects an already-initialized MCPState with connections and filtered tools.
 //
 // Required parameters:
@@ -384,7 +385,7 @@ func NewGenerator(
 	systemPrompt string,
 	mcpState *mcp.MCPState,
 	opts ...GeneratorOption,
-) (types.Generator, error) {
+) (ports.Generator, error) {
 	// Apply options
 	o := &generatorOptions{}
 	for _, opt := range opts {
@@ -431,7 +432,7 @@ func NewGenerator(
 
 	wrappers = append(wrappers, WithTokenUsagePrinting(os.Stderr, cfg.Model))
 	if !o.disablePrinting {
-		renderers := NewResponsePrinterRenderers()
+		renderers := render.NewResponsePrinterRenderersForWriters(stdoutW, os.Stderr)
 		wrappers = append(wrappers, WithResponsePrinting(renderers.Content, renderers.Thinking, renderers.ToolCall, stdoutW, os.Stderr))
 	}
 
@@ -488,7 +489,7 @@ func NewGenerator(
 		wrappers = append(wrappers, WithFlightRecorder(cfg.Model, cfg.FlightRecorder))
 	}
 
-	toolResultRenderer := NewRenderer()
+	toolResultRenderer := render.NewRendererForWriter(os.Stderr)
 	wrappers = append(wrappers, WithToolResultPrinterWrapper(toolResultRenderer))
 	wrappers = append(wrappers, gai.WithRetry(b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute)))
 
@@ -575,7 +576,7 @@ func NewGenerator(
 				if err != nil {
 					return nil, fmt.Errorf("converting tool %s: %w", mcpTool.Name, err)
 				}
-				cb := gai.ToolCallback(mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name))
+				cb := gai.ToolCallback(mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name, conn.Config))
 				if callbackWrapper != nil {
 					cb = callbackWrapper(mcpTool.Name, cb)
 				}
@@ -592,7 +593,7 @@ func NewGenerator(
 				if err != nil {
 					return nil, fmt.Errorf("converting tool %s: %w", mcpTool.Name, err)
 				}
-				cb := gai.ToolCallback(mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name))
+				cb := gai.ToolCallback(mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name, conn.Config))
 				if callbackWrapper != nil {
 					cb = callbackWrapper(mcpTool.Name, cb)
 				}

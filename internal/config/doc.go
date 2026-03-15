@@ -20,5 +20,9 @@ constraints, subagent/output schema checks, codeMode path normalization,
 flightRecorder duration/size validity, and compaction
 schema/template/restart-limit validity) and resolves filesystem-relative paths
 such as conversation storage and codeMode.localModulePaths.
+
+MCP server connection settings are represented via the dependency-neutral
+`internal/mcpconfig` schema package so config loading does not depend on MCP
+runtime implementation packages.
 */
 package config

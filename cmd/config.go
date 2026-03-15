@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"os"
-
 	"github.com/spf13/cobra"
 
 	"github.com/spachava753/cpe/internal/commands"
@@ -38,7 +36,7 @@ Examples:
 			ModelSpec:  args[0],
 			ConfigPath: configPath,
 			Ref:        configAddRef,
-			Writer:     os.Stdout,
+			Writer:     cmd.OutOrStdout(),
 		})
 	},
 }
@@ -54,7 +52,7 @@ var configRemoveCmd = &cobra.Command{
 		return commands.ConfigRemove(cmd.Context(), commands.ConfigRemoveOptions{
 			Ref:        args[0],
 			ConfigPath: configPath,
-			Writer:     os.Stdout,
+			Writer:     cmd.OutOrStdout(),
 		})
 	},
 }

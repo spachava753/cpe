@@ -3,14 +3,14 @@ package subagentlog
 import (
 	"testing"
 
-	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/codemode"
+	"github.com/spachava753/cpe/internal/render"
 )
 
 func TestRendererRenderEventExecuteGoCodeToolCallAddsLineNumbers(t *testing.T) {
 	t.Parallel()
 
-	renderer := NewRenderer(&agent.PlainTextRenderer{}, RenderModeVerbose)
+	renderer := NewRenderer(&render.PlainTextRenderer{}, RenderModeVerbose)
 	event := Event{
 		Type:                    EventTypeToolCall,
 		SubagentName:            "worker",
@@ -30,7 +30,7 @@ func TestRendererRenderEventExecuteGoCodeToolCallAddsLineNumbers(t *testing.T) {
 func TestRendererRenderEventToolResultUsesSafeFence(t *testing.T) {
 	t.Parallel()
 
-	renderer := NewRenderer(&agent.PlainTextRenderer{}, RenderModeVerbose)
+	renderer := NewRenderer(&render.PlainTextRenderer{}, RenderModeVerbose)
 	event := Event{
 		Type:          EventTypeToolResult,
 		SubagentName:  "worker",
@@ -49,7 +49,7 @@ func TestRendererRenderEventToolResultUsesSafeFence(t *testing.T) {
 func TestRendererRenderEventToolResultConciseUsesNeutralMarker(t *testing.T) {
 	t.Parallel()
 
-	renderer := NewRenderer(&agent.PlainTextRenderer{}, RenderModeConcise)
+	renderer := NewRenderer(&render.PlainTextRenderer{}, RenderModeConcise)
 	event := Event{
 		Type:          EventTypeToolResult,
 		SubagentName:  "worker",

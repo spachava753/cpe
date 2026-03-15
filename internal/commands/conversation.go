@@ -4,15 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/spachava753/gai"
 
-	"github.com/spachava753/cpe/internal/agent"
+	"github.com/spachava753/cpe/internal/codemode"
+	"github.com/spachava753/cpe/internal/ports"
 	"github.com/spachava753/cpe/internal/storage"
-	"github.com/spachava753/cpe/internal/types"
 )
 
 // ConversationListOptions configures ConversationList.
@@ -76,6 +77,8 @@ type ConversationDeleteOptions struct {
 // Deletions are attempted independently per ID: a failure for one ID is
 // written to stderr and does not stop processing subsequent IDs.
 func ConversationDelete(ctx context.Context, opts ConversationDeleteOptions) error {
+	var errs []error
+
 	for _, messageID := range opts.MessageIDs {
 		delErr := opts.Storage.DeleteMessages(ctx, storage.DeleteMessagesOptions{
 			MessageIDs: []string{messageID},
@@ -84,6 +87,7 @@ func ConversationDelete(ctx context.Context, opts ConversationDeleteOptions) err
 
 		if delErr != nil {
 			fmt.Fprintf(opts.Stderr, "Error deleting message %s: %v\n", messageID, delErr)
+			errs = append(errs, fmt.Errorf("delete message %s: %w", messageID, delErr))
 		} else {
 			fmt.Fprintf(opts.Stdout, "Successfully deleted message %s", messageID)
 			if opts.Cascade {
@@ -93,7 +97,7 @@ func ConversationDelete(ctx context.Context, opts ConversationDeleteOptions) err
 		}
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 // ConversationPrintOptions configures ConversationPrint.
@@ -146,7 +150,7 @@ func ConversationPrint(ctx context.Context, opts ConversationPrintOptions) error
 // MarkdownDialogFormatter formats dialogs into markdown and optionally renders
 // them for terminal display.
 type MarkdownDialogFormatter struct {
-	Renderer types.Renderer
+	Renderer ports.Renderer
 }
 
 // FormatDialog implements DialogFormatter.
@@ -264,7 +268,7 @@ func isCodeModeResult(dialog gai.Dialog, toolResultIndex int) bool {
 	for _, block := range prevMsg.Blocks {
 		if block.BlockType == gai.ToolCall && block.ModalityType == gai.Text && block.ID == toolCallID {
 			content := block.Content.String()
-			if _, ok := agent.ParseExecuteGoCodeToolCall(content); ok {
+			if _, ok := codemode.ParseToolCall(content); ok {
 				return true
 			}
 		}
@@ -276,7 +280,7 @@ func isCodeModeResult(dialog gai.Dialog, toolResultIndex int) bool {
 // formatCodeModeResultMarkdown formats an execute_go_code tool result as markdown.
 // Uses the shared formatting function with no truncation for conversation history viewing.
 func formatCodeModeResultMarkdown(content string) string {
-	return agent.FormatExecuteGoCodeResultMarkdown(content, 0) + "\n\n"
+	return codemode.FormatResultMarkdown(content, 0) + "\n\n"
 }
 
 // formatToolCallMarkdown formats serialized tool-call payloads as markdown.
@@ -287,8 +291,8 @@ func formatToolCallMarkdown(content string) string {
 	unescaped := unescapeJSONString(content)
 
 	// Check if this is an execute_go_code tool call
-	if input, ok := agent.ParseExecuteGoCodeToolCall(unescaped); ok {
-		return agent.FormatExecuteGoCodeToolCallMarkdown(input) + "\n\n"
+	if input, ok := codemode.ParseToolCall(unescaped); ok {
+		return codemode.FormatToolCallMarkdown(input) + "\n\n"
 	}
 
 	// Generic tool call formatting

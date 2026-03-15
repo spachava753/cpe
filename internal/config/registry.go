@@ -44,7 +44,7 @@ type ModelsDevCost struct {
 	CacheWrite *float64 `json:"cache_write,omitempty"`
 }
 
-// providerTypeMap maps models.dev provider IDs to CPE provider types.
+// providerTypeMap maps models.dev provider IDs to CPE provider ports.
 // Missing entries are treated as unsupported providers in BuildModelFromRegistry.
 var providerTypeMap = map[string]string{
 	"anthropic":           "anthropic",
@@ -59,7 +59,7 @@ var providerTypeMap = map[string]string{
 }
 
 // SupportedRegistryProviders returns provider IDs from models.dev that CPE can
-// map into local provider types.
+// map into local provider ports.
 //
 // The returned order is unspecified.
 func SupportedRegistryProviders() []string {

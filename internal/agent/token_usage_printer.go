@@ -9,14 +9,15 @@ import (
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/config"
-	"github.com/spachava753/cpe/internal/types"
+	"github.com/spachava753/cpe/internal/ports"
+	"github.com/spachava753/cpe/internal/render"
 )
 
 // TokenUsagePrinterGenerator wraps a generator and prints token usage,
 // context utilization, and estimated per-request/cumulative cost.
 type TokenUsagePrinterGenerator struct {
 	gai.GeneratorWrapper
-	renderer          types.Renderer
+	renderer          ports.Renderer
 	writer            io.Writer
 	model             config.Model
 	cumulativeCostUSD float64
@@ -47,7 +48,7 @@ type usageCostBreakdown struct {
 func NewTokenUsagePrinterGenerator(wrapped gai.Generator, writer io.Writer, model config.Model) *TokenUsagePrinterGenerator {
 	return &TokenUsagePrinterGenerator{
 		GeneratorWrapper: gai.GeneratorWrapper{Inner: wrapped},
-		renderer:         NewRenderer(),
+		renderer:         render.NewRendererForWriter(writer),
 		writer:           writer,
 		model:            model,
 	}
@@ -62,13 +63,10 @@ func WithTokenUsagePrinting(writer io.Writer, model config.Model) gai.WrapperFun
 
 func (g *TokenUsagePrinterGenerator) Generate(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
 	resp, err := g.GeneratorWrapper.Generate(ctx, dialog, options)
-	if err != nil {
-		return gai.Response{}, err
-	}
 
 	metrics := extractTokenUsageMetrics(resp.UsageMetadata)
 	if !metrics.hasAnyTokens() {
-		return resp, nil
+		return resp, err
 	}
 
 	var lines []string
@@ -87,7 +85,7 @@ func (g *TokenUsagePrinterGenerator) Generate(ctx context.Context, dialog gai.Di
 	tokenMsg, _ := g.renderer.Render(strings.Join(lines, "\n"))
 	fmt.Fprintln(g.writer, tokenMsg)
 
-	return resp, nil
+	return resp, err
 }
 
 func extractTokenUsageMetrics(metadata gai.Metadata) tokenUsageMetrics {
@@ -170,12 +168,7 @@ func calculateUsageCosts(metrics tokenUsageMetrics, model config.Model) usageCos
 			billableInputTokens -= metrics.CacheWriteTokens
 		}
 		if billableInputTokens < 0 {
-			panic(fmt.Sprintf("invalid token usage metrics: billable input tokens negative (input=%d cache_read=%d cache_write=%d has_cache_write_price=%t)",
-				metrics.InputTokens,
-				metrics.CacheReadTokens,
-				metrics.CacheWriteTokens,
-				model.CacheWriteCostPerMillion != nil,
-			))
+			billableInputTokens = 0
 		}
 		breakdown.Input = calculateComponentCost(billableInputTokens, model.InputCostPerMillion)
 	}

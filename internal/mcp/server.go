@@ -9,6 +9,7 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/spachava753/cpe/internal/mcpconfig"
 	"github.com/spachava753/cpe/internal/version"
 )
 
@@ -30,7 +31,7 @@ type MCPServerConfig struct {
 
 	// MCPServers holds downstream MCP server definitions available during subagent
 	// execution. It is passed through to executor-level setup.
-	MCPServers map[string]ServerConfig
+	MCPServers map[string]mcpconfig.ServerConfig
 }
 
 // SubagentInput is the normalized tool input passed to SubagentExecutor.

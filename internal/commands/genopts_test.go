@@ -1,41 +1,28 @@
 package commands
 
-import (
-	"testing"
+import "testing"
 
-	"github.com/spf13/pflag"
-)
-
-func TestBuildGenOptsFromFlags(t *testing.T) {
-	t.Run("no flags set returns nil", func(t *testing.T) {
-		flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
-		var temp float64
-		flags.Float64Var(&temp, "temperature", 0, "")
-
-		result := BuildGenOptsFromFlags(flags, GenParamFlags{Temperature: &temp})
+func TestBuildGenOpts(t *testing.T) {
+	t.Run("no changes returns nil", func(t *testing.T) {
+		temp := 0.0
+		result := BuildGenOpts(GenParamValues{Temperature: &temp}, GenParamChanges{})
 		if result != nil {
 			t.Errorf("expected nil, got %+v", result)
 		}
 	})
 
-	t.Run("one flag set populates only that field", func(t *testing.T) {
-		flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
-		var temp float64
-		var maxTokens int
-		flags.Float64Var(&temp, "temperature", 0, "")
-		flags.IntVar(&maxTokens, "max-tokens", 0, "")
-
-		if err := flags.Parse([]string{"--temperature", "0.5"}); err != nil {
-			t.Fatal(err)
-		}
-
-		result := BuildGenOptsFromFlags(flags, GenParamFlags{
-			Temperature: &temp,
-			MaxTokens:   &maxTokens,
-		})
+	t.Run("one changed field populates only that field", func(t *testing.T) {
+		temp := 0.5
+		maxTokens := 0
+		result := BuildGenOpts(
+			GenParamValues{
+				Temperature: &temp,
+				MaxTokens:   &maxTokens,
+			},
+			GenParamChanges{Temperature: true},
+		)
 		if result == nil {
 			t.Fatal("expected non-nil result")
-			return
 		}
 		if result.Temperature == nil || *result.Temperature != 0.5 {
 			t.Errorf("expected Temperature=0.5, got %v", result.Temperature)
@@ -45,19 +32,14 @@ func TestBuildGenOptsFromFlags(t *testing.T) {
 		}
 	})
 
-	t.Run("flag set to zero returns non-nil pointer to zero", func(t *testing.T) {
-		flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
-		var temp float64
-		flags.Float64Var(&temp, "temperature", 0, "")
-
-		if err := flags.Parse([]string{"--temperature", "0"}); err != nil {
-			t.Fatal(err)
-		}
-
-		result := BuildGenOptsFromFlags(flags, GenParamFlags{Temperature: &temp})
+	t.Run("changed field preserves explicit zero values", func(t *testing.T) {
+		temp := 0.0
+		result := BuildGenOpts(
+			GenParamValues{Temperature: &temp},
+			GenParamChanges{Temperature: true},
+		)
 		if result == nil {
 			t.Fatal("expected non-nil result")
-			return
 		}
 		if result.Temperature == nil {
 			t.Fatal("expected non-nil Temperature pointer")
@@ -67,30 +49,25 @@ func TestBuildGenOptsFromFlags(t *testing.T) {
 		}
 	})
 
-	t.Run("multiple flags set", func(t *testing.T) {
-		flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
-		var temp float64
-		var maxTokens int
-		var topK uint
-		var thinkingBudget string
-		flags.Float64Var(&temp, "temperature", 0, "")
-		flags.IntVar(&maxTokens, "max-tokens", 0, "")
-		flags.UintVar(&topK, "top-k", 0, "")
-		flags.StringVar(&thinkingBudget, "thinking-budget", "", "")
-
-		if err := flags.Parse([]string{"--temperature", "0.8", "--max-tokens", "4096", "--thinking-budget", "high"}); err != nil {
-			t.Fatal(err)
-		}
-
-		result := BuildGenOptsFromFlags(flags, GenParamFlags{
-			Temperature:    &temp,
-			MaxTokens:      &maxTokens,
-			TopK:           &topK,
-			ThinkingBudget: thinkingBudget,
-		})
+	t.Run("multiple changed fields", func(t *testing.T) {
+		temp := 0.8
+		maxTokens := 4096
+		topK := uint(0)
+		result := BuildGenOpts(
+			GenParamValues{
+				Temperature:    &temp,
+				MaxTokens:      &maxTokens,
+				TopK:           &topK,
+				ThinkingBudget: "high",
+			},
+			GenParamChanges{
+				Temperature:    true,
+				MaxTokens:      true,
+				ThinkingBudget: true,
+			},
+		)
 		if result == nil {
 			t.Fatal("expected non-nil result")
-			return
 		}
 		if result.Temperature == nil || *result.Temperature != 0.8 {
 			t.Errorf("expected Temperature=0.8, got %v", result.Temperature)
@@ -99,7 +76,7 @@ func TestBuildGenOptsFromFlags(t *testing.T) {
 			t.Errorf("expected MaxGenerationTokens=4096, got %v", result.MaxGenerationTokens)
 		}
 		if result.TopK != nil {
-			t.Errorf("expected TopK=nil (not set), got %v", *result.TopK)
+			t.Errorf("expected TopK=nil (not changed), got %v", *result.TopK)
 		}
 		if result.ThinkingBudget != "high" {
 			t.Errorf("expected ThinkingBudget=high, got %q", result.ThinkingBudget)

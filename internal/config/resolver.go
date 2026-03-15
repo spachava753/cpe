@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/spachava753/gai"
@@ -64,7 +65,7 @@ func resolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions, resolvedConfigPath s
 		return nil, fmt.Errorf("model %q not found in configuration", modelRef)
 	}
 
-	systemPromptPath := resolveSystemPromptPath(selectedModel, rawCfg.Defaults)
+	systemPromptPath := resolveSystemPromptPath(selectedModel, rawCfg.Defaults, resolvedConfigPath)
 	genParams, err := resolveGenerationParams(selectedModel, rawCfg.Defaults, opts)
 	if err != nil {
 		return nil, err
@@ -104,13 +105,21 @@ func resolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions, resolvedConfigPath s
 }
 
 // resolveSystemPromptPath returns the effective system prompt path using
-// model-level override first, then global defaults. It may return an empty
+// model-level override first, then global defaults. Relative paths are resolved
+// against the config file location when available. It may return an empty
 // string when neither source configures a prompt.
-func resolveSystemPromptPath(model ModelConfig, defaults Defaults) string {
+func resolveSystemPromptPath(model ModelConfig, defaults Defaults, configFilePath string) string {
+	path := defaults.SystemPromptPath
 	if model.SystemPromptPath != "" {
-		return model.SystemPromptPath
+		path = model.SystemPromptPath
 	}
-	return defaults.SystemPromptPath
+	if path == "" {
+		return ""
+	}
+	if filepath.IsAbs(path) || configFilePath == "" {
+		return path
+	}
+	return filepath.Join(filepath.Dir(configFilePath), path)
 }
 
 // resolveGenerationParams builds the effective generation options by layering

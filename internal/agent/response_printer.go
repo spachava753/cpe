@@ -8,16 +8,17 @@ import (
 
 	"github.com/spachava753/gai"
 
-	"github.com/spachava753/cpe/internal/types"
+	"github.com/spachava753/cpe/internal/codemode"
+	"github.com/spachava753/cpe/internal/ports"
 )
 
 // ResponsePrinterGenerator is a wrapper around another generator that prints out
 // the response returned from the wrapped generator with styled markdown rendering.
 type ResponsePrinterGenerator struct {
 	gai.GeneratorWrapper
-	contentRenderer  types.Renderer
-	thinkingRenderer types.Renderer
-	toolCallRenderer types.Renderer
+	contentRenderer  ports.Renderer
+	thinkingRenderer ports.Renderer
+	toolCallRenderer ports.Renderer
 	stdout           io.Writer
 	stderr           io.Writer
 }
@@ -25,9 +26,9 @@ type ResponsePrinterGenerator struct {
 // NewResponsePrinterGenerator creates a new ResponsePrinterGenerator with the provided renderers and writers.
 func NewResponsePrinterGenerator(
 	wrapped gai.Generator,
-	contentRenderer types.Renderer,
-	thinkingRenderer types.Renderer,
-	toolCallRenderer types.Renderer,
+	contentRenderer ports.Renderer,
+	thinkingRenderer ports.Renderer,
+	toolCallRenderer ports.Renderer,
 	stdout io.Writer,
 	stderr io.Writer,
 ) *ResponsePrinterGenerator {
@@ -43,9 +44,9 @@ func NewResponsePrinterGenerator(
 
 // WithResponsePrinting returns a WrapperFunc for use with gai.Wrap
 func WithResponsePrinting(
-	contentRenderer types.Renderer,
-	thinkingRenderer types.Renderer,
-	toolCallRenderer types.Renderer,
+	contentRenderer ports.Renderer,
+	thinkingRenderer ports.Renderer,
+	toolCallRenderer ports.Renderer,
 	stdout io.Writer,
 	stderr io.Writer,
 ) gai.WrapperFunc {
@@ -75,9 +76,9 @@ func (g *ResponsePrinterGenerator) renderThinking(content string, reasoningType 
 
 func (g *ResponsePrinterGenerator) renderToolCall(content string) string {
 	// Check if this is an execute_go_code tool call
-	if input, ok := ParseExecuteGoCodeToolCall(content); ok {
-		result := FormatExecuteGoCodeToolCallMarkdown(input)
-		if rendered, err := g.contentRenderer.Render(result); err == nil {
+	if input, ok := codemode.ParseToolCall(content); ok {
+		result := codemode.FormatToolCallMarkdown(input)
+		if rendered, err := g.toolCallRenderer.Render(result); err == nil {
 			return rendered
 		}
 		// Return unrendered markdown if rendering fails, don't fall through to generic formatting
@@ -85,7 +86,7 @@ func (g *ResponsePrinterGenerator) renderToolCall(content string) string {
 	}
 
 	// Generic tool call formatting
-	result, ok := FormatGenericToolCallMarkdown(content)
+	result, ok := codemode.FormatGenericToolCallMarkdown(content)
 	if !ok {
 		// JSON parsing failed, return original content
 		return content
@@ -103,9 +104,6 @@ type blockContent struct {
 
 func (g *ResponsePrinterGenerator) Generate(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
 	response, err := g.GeneratorWrapper.Generate(ctx, dialog, options)
-	if err != nil {
-		return gai.Response{}, err
-	}
 
 	var blocks []blockContent
 
@@ -136,19 +134,10 @@ func (g *ResponsePrinterGenerator) Generate(ctx context.Context, dialog gai.Dial
 		}
 	}
 
-	// Find last content block index
-	lastContentIdx := -1
-	for i := len(blocks) - 1; i >= 0; i-- {
-		if blocks[i].blockType == gai.Content {
-			lastContentIdx = i
-			break
-		}
-	}
-
-	// Route: last content block to stdout, everything else to stderr
-	for i, block := range blocks {
+	// Route user-visible content blocks to stdout and everything else to stderr.
+	for _, block := range blocks {
 		writer := g.stderr
-		if i == lastContentIdx && lastContentIdx != -1 {
+		if block.blockType == gai.Content {
 			writer = g.stdout
 		}
 		fmt.Fprint(writer, block.content)
@@ -157,10 +146,13 @@ func (g *ResponsePrinterGenerator) Generate(ctx context.Context, dialog gai.Dial
 	// Print message ID if available (format matches token usage printer style)
 	if len(response.Candidates) > 0 {
 		if messageID := GetMessageID(response.Candidates[0]); messageID != "" {
-			idMsg, _ := g.contentRenderer.Render(fmt.Sprintf("> message_id: `%s`", messageID))
+			idMsg, renderErr := g.toolCallRenderer.Render(fmt.Sprintf("> message_id: `%s`", messageID))
+			if renderErr != nil {
+				idMsg = fmt.Sprintf("> message_id: `%s`", messageID)
+			}
 			fmt.Fprint(g.stderr, idMsg)
 		}
 	}
 
-	return response, nil
+	return response, err
 }

@@ -12,9 +12,9 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/ports"
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/subagentlog"
-	"github.com/spachava753/cpe/internal/types"
 )
 
 // FinalAnswerToolName is the reserved terminal tool for structured subagent output.
@@ -32,8 +32,8 @@ type SubagentOptions struct {
 	UserBlocks []gai.Block
 
 	// Generator executes the dialog. If OutputSchema is set, it must implement
-	// types.ToolRegistrar so final_answer can be registered.
-	Generator types.Generator
+	// ports.ToolRegistrar so final_answer can be registered.
+	Generator ports.Generator
 
 	// GenOptsFunc lazily derives generation options per dialog turn (optional).
 	GenOptsFunc gai.GenOptsGenerator
@@ -125,7 +125,7 @@ func executeSubagentCore(ctx context.Context, opts SubagentOptions) (string, err
 	// If structured output is configured, expose final_answer so the model can
 	// terminate with schema-shaped data.
 	if opts.OutputSchema != nil {
-		registrar, ok := generator.(types.ToolRegistrar)
+		registrar, ok := generator.(ports.ToolRegistrar)
 		if !ok {
 			return "", fmt.Errorf("generator does not support tool registration")
 		}

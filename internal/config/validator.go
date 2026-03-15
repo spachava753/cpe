@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/go-playground/validator/v10"
+
+	"github.com/spachava753/cpe/internal/mcpconfig"
 )
 
 // Validate enforces schema and semantic invariants for RawConfig.
@@ -27,9 +29,10 @@ func (c *RawConfig) Validate() error {
 //   - defaults.codeMode and model.codeMode path normalization + module checks.
 //   - defaults.flightRecorder and model.flightRecorder duration/size validity.
 //   - optional subagent.outputSchemaPath exists and contains valid JSON.
+//   - MCP server transport defaults and transport-specific field constraints.
 //
-// When configFilePath is provided, relative codeMode paths are interpreted from
-// that config file directory before existence checks.
+// When configFilePath is provided, relative codeMode paths and subagent schema
+// paths are interpreted from that config file directory before existence checks.
 func (c *RawConfig) ValidateWithConfigPath(configFilePath string) error {
 	validate := validator.New(validator.WithRequiredStructEnabled())
 	if err := validate.Struct(c); err != nil {
@@ -43,9 +46,13 @@ func (c *RawConfig) ValidateWithConfigPath(configFilePath string) error {
 		}
 	}
 
+	if err := validateMCPServerConfigs(c.MCPServers); err != nil {
+		return err
+	}
+
 	// Validate subagent configuration if present
 	if c.Subagent != nil {
-		if err := c.validateSubagentConfig(); err != nil {
+		if err := c.validateSubagentConfig(configFilePath); err != nil {
 			return err
 		}
 	}
@@ -122,7 +129,7 @@ func validateCodeModeConfig(codeMode *CodeModeConfig, configFilePath, fieldPrefi
 }
 
 // validateModelAuth validates provider-specific auth_method constraints.
-// Currently, auth_method=oauth is restricted to anthropic and responses types.
+// Currently, auth_method=oauth is restricted to anthropic and responses ports.
 func validateModelAuth(m ModelConfig) error {
 	if strings.ToLower(m.AuthMethod) == "oauth" {
 		modelType := strings.ToLower(m.Type)
@@ -133,24 +140,52 @@ func validateModelAuth(m ModelConfig) error {
 	return nil
 }
 
+func validateMCPServerConfigs(servers map[string]mcpconfig.ServerConfig) error {
+	for name, server := range servers {
+		if server.Type == "" {
+			if server.URL != "" {
+				return fmt.Errorf("mcpServers.%s.type: required when url is set; use \"http\" or \"sse\"", name)
+			}
+			if len(server.Headers) > 0 {
+				return fmt.Errorf("mcpServers.%s.headers: only supported for type \"http\" or \"sse\"", name)
+			}
+			continue
+		}
+
+		if server.Type == "http" || server.Type == "sse" {
+			if server.Command != "" {
+				return fmt.Errorf("mcpServers.%s.command: only supported for type \"stdio\"", name)
+			}
+			if len(server.Args) > 0 {
+				return fmt.Errorf("mcpServers.%s.args: only supported for type \"stdio\"", name)
+			}
+		}
+	}
+	return nil
+}
+
 // validateSubagentConfig validates optional subagent output schema wiring.
 // When outputSchemaPath is set, the target file must exist and parse as JSON.
-func (c *RawConfig) validateSubagentConfig() error {
+func (c *RawConfig) validateSubagentConfig(configFilePath string) error {
 	if c.Subagent.OutputSchemaPath == "" {
 		return nil
 	}
 
-	// Read the file directly - os.ReadFile returns a clear error if file doesn't exist
-	data, err := os.ReadFile(c.Subagent.OutputSchemaPath)
+	schemaPath := c.Subagent.OutputSchemaPath
+	if configFilePath != "" && !filepath.IsAbs(schemaPath) {
+		schemaPath = filepath.Join(filepath.Dir(configFilePath), schemaPath)
+	}
+
+	data, err := os.ReadFile(schemaPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("subagent.outputSchemaPath: file does not exist: %s", c.Subagent.OutputSchemaPath)
+			return fmt.Errorf("subagent.outputSchemaPath: file does not exist: %s", schemaPath)
 		}
 		return fmt.Errorf("subagent.outputSchemaPath: error reading file: %w", err)
 	}
 
-	// Verify it's valid JSON
-	var schema map[string]any
+	// Verify it's valid JSON. JSON Schema may be either an object or a boolean.
+	var schema any
 	if err := json.Unmarshal(data, &schema); err != nil {
 		return fmt.Errorf("subagent.outputSchemaPath: invalid JSON schema: %w", err)
 	}

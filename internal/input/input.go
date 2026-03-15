@@ -1,4 +1,4 @@
-package agent
+package input
 
 import (
 	"context"
@@ -15,13 +15,31 @@ import (
 	"github.com/spachava753/cpe/internal/urlhandler"
 )
 
-// BuildUserBlocks creates gai.Block slice from a text prompt and resource paths.
-// The prompt is added as the first text block if non-empty.
-// Resource paths can be local file paths or URLs.
+const maxInputBytes = 50 * 1024 * 1024
+
+// DetectInputType detects the input modality from raw content bytes.
+func DetectInputType(content []byte) (gai.Modality, error) {
+	mime := mimetype.Detect(content)
+	switch {
+	case strings.HasPrefix(mime.String(), "text/"):
+		return gai.Text, nil
+	case strings.HasPrefix(mime.String(), "image/"), mime.String() == "application/pdf":
+		return gai.Image, nil
+	case strings.HasPrefix(mime.String(), "video/"):
+		return gai.Video, nil
+	case strings.HasPrefix(mime.String(), "audio/"):
+		return gai.Audio, nil
+	default:
+		return 0, fmt.Errorf("unsupported file type: %s", mime.String())
+	}
+}
+
+// BuildUserBlocks creates a gai.Block slice from a text prompt and resource paths.
+// The prompt is added as the first text block if non-empty. Resource paths can be
+// local file paths or URLs.
 func BuildUserBlocks(ctx context.Context, prompt string, resourcePaths []string) ([]gai.Block, error) {
 	var blocks []gai.Block
 
-	// Add the prompt as a text block if provided
 	if prompt != "" {
 		blocks = append(blocks, gai.Block{
 			BlockType:    gai.Content,
@@ -31,7 +49,6 @@ func BuildUserBlocks(ctx context.Context, prompt string, resourcePaths []string)
 		})
 	}
 
-	// Process each resource path (file or URL)
 	for _, resourcePath := range resourcePaths {
 		block, err := loadResource(ctx, resourcePath)
 		if err != nil {
@@ -43,15 +60,12 @@ func BuildUserBlocks(ctx context.Context, prompt string, resourcePaths []string)
 	return blocks, nil
 }
 
-// loadResource loads a resource from a file path or URL and returns it as a gai.Block
 func loadResource(ctx context.Context, resourcePath string) (gai.Block, error) {
 	var content []byte
 	var filename string
 	var contentType string
 
-	// Check if input is a URL or file path
 	if urlhandler.IsURL(resourcePath) {
-		// Handle URL input
 		downloadCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 
@@ -64,7 +78,6 @@ func loadResource(ctx context.Context, resourcePath string) (gai.Block, error) {
 		filename = filepath.Base(resourcePath)
 		contentType = downloaded.ContentType
 	} else {
-		// Handle local file input
 		if _, err := os.Stat(resourcePath); os.IsNotExist(err) {
 			return gai.Block{}, fmt.Errorf("input file does not exist: %s", resourcePath)
 		}
@@ -78,28 +91,22 @@ func loadResource(ctx context.Context, resourcePath string) (gai.Block, error) {
 		filename = filepath.Base(resourcePath)
 	}
 
-	// Apply size limits to prevent memory issues
-	if len(content) > 50*1024*1024 { // 50MB limit
+	if len(content) > maxInputBytes {
 		return gai.Block{}, fmt.Errorf("input content from %s exceeds maximum size limit (50MB)", resourcePath)
 	}
 
-	// Detect input type (text, image, etc.)
 	modality, err := DetectInputType(content)
 	if err != nil {
 		return gai.Block{}, fmt.Errorf("failed to detect input type for %s: %w", resourcePath, err)
 	}
 
-	// Determine MIME type
 	var mime string
 	if contentType != "" {
-		// Use Content-Type from HTTP response if available
-		mime = strings.Split(contentType, ";")[0] // Remove charset and other parameters
+		mime = strings.Split(contentType, ";")[0]
 	} else {
-		// Fall back to content-based detection
 		mime = mimetype.Detect(content).String()
 	}
 
-	// Create block based on modality
 	switch modality {
 	case gai.Text:
 		return gai.Block{

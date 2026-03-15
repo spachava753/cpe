@@ -1,5 +1,5 @@
-// Package types provides shared interface definitions used across the codebase.
-package types
+// Package ports provides shared interface definitions used across the codebase.
+package ports
 
 import (
 	"context"
