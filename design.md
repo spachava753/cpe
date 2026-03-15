@@ -13,10 +13,12 @@ Many Go CLIs built on Cobra place most runtime logic directly in `cmd/` packages
 In CPE:
 
 - `main` is only the executable entry point.
-- `cmd` owns Cobra structure, flags, help text, and `RunE` wiring.
+- `internal/cmd` owns Cobra structure, flags, help text, and `RunE` wiring.
 - `internal/commands` owns framework-agnostic command orchestration.
 - `internal/agent` owns model runtime assembly and execution.
 - support packages (`config`, `mcp`, `storage`, `codemode`, `render`, `prompt`, `input`, etc.) implement focused pieces of the system.
+
+The package is still named `cmd`, but it intentionally lives under `internal/` because its Cobra wiring is process-private implementation detail, not supported module API.
 
 This extra layer is not free. It adds packages and more explicit option structs. We keep it because CPE benefits from it in three ways:
 
@@ -61,16 +63,16 @@ The sections below describe the intended architecture of the codebase as it exis
 The intended top-level dependency flow is:
 
 ```text
-main -> cmd -> internal/commands -> internal/agent -> support packages
+main -> internal/cmd -> internal/commands -> internal/agent -> support packages
 ```
 
-There is one deliberate exception: `cmd` may also import `internal/version` for process-level version reporting.
+There is one deliberate exception: `internal/cmd` may also import `internal/version` for process-level version reporting.
 
 This is the central architectural rule of the codebase.
 
 Its purpose is not aesthetic. It encodes two important ideas:
 
-- **framework details stay at the edge**: Cobra belongs in `cmd`, not in use-case logic.
+- **framework details stay at the edge**: Cobra belongs in `internal/cmd`, not in use-case logic.
 - **runtime policy lives below the CLI**: command behavior, dependency resolution, and orchestration belong in `internal/commands` and below.
 
 The supporting package roles are intentionally narrow:
@@ -99,7 +101,7 @@ CPE uses architecture linting to keep these boundaries from regressing.
 
 The current enforced rules include:
 
-- `cmd` may import only `internal/commands` and `internal/version` from this module.
+- `internal/cmd` may import only `internal/commands` and `internal/version` from this module.
 - `internal/commands` may not import Cobra or pflag.
 - `internal/config` may not import `internal/mcp`.
 - `internal/commands` may import `internal/agent` only from the runtime orchestration files that actually assemble generation behavior.
@@ -114,17 +116,17 @@ A clean architecture requires distinguishing dependency direction from runtime d
 Dependencies point inward:
 
 ```text
-cmd depends on commands
+internal/cmd depends on commands
 commands depends on agent
 agent depends on config/mcp/storage/render/etc.
 ```
 
 Runtime data often moves the other way:
 
-- CLI flags and stdin enter through `cmd`.
+- CLI flags and stdin enter through `internal/cmd`.
 - `internal/commands` resolves config, storage, and inputs.
 - `internal/agent` consumes those resolved dependencies to execute generation.
-- responses, tool outputs, and persisted messages flow back outward to `commands`, then to `cmd`, then to the terminal.
+- responses, tool outputs, and persisted messages flow back outward to `internal/commands`, then to `internal/cmd`, then to the terminal.
 
 CPE is designed so the outer layers know about the inner layers, but the inner layers do not know about Cobra, process-global flags, or terminal command trees.
 
@@ -165,16 +167,16 @@ The main interactive execution path is intentionally split between layers.
 
 `main` is responsible only for process entry and top-level lifecycle concerns such as signal-aware context setup.
 
-### `cmd`
+### `internal/cmd`
 
-`cmd` owns:
+`internal/cmd` owns:
 
 - Cobra command structure;
 - flag registration and parsing;
 - help text and command hierarchy;
 - mapping Cobra inputs to explicit option structs.
 
-`cmd` should not own business logic or runtime assembly.
+`internal/cmd` should not own business logic or runtime assembly.
 
 ### `internal/commands`
 
@@ -455,7 +457,7 @@ This makes it practical to test:
 
 This section records alternatives that are plausible for a system like CPE, but that are not the preferred design today.
 
-### Putting business logic directly in `cmd`
+### Putting business logic directly in `internal/cmd`
 
 A smaller CLI could reasonably keep most execution logic in Cobra handlers. CPE does not do that because command behavior here is substantial: config resolution, storage, MCP inspection, subagent serving, account flows, and runtime model assembly all benefit from framework-independent orchestration and better testability.
 
@@ -495,7 +497,7 @@ Best-effort observability would make subagent execution more permissive, but it 
 
 The current design makes several conscious trade-offs.
 
-### Thin `cmd`, richer `internal/commands`
+### Thin `internal/cmd`, richer `internal/commands`
 
 This adds an extra orchestration layer, but it preserves framework independence and testability.
 
@@ -532,7 +534,7 @@ CPE is personal software with a single primary user. The design therefore favors
 The current architecture should preserve the following invariants unless there is a deliberate design change:
 
 - `main` stays a thin executable boundary.
-- `cmd` owns Cobra and only Cobra-facing concerns.
+- `internal/cmd` owns Cobra and only Cobra-facing concerns.
 - `internal/commands` owns framework-agnostic command orchestration.
 - `internal/agent` owns generator/runtime assembly.
 - `internal/config` does not depend on MCP runtime packages.
@@ -545,7 +547,7 @@ The current architecture should preserve the following invariants unless there i
 
 This design resolves the major architectural shape of the codebase, but some questions remain intentionally open:
 
-- **how far to push framework-independence beyond the CLI edge**: today the main goal is keeping `cmd` replaceable. It is still an open design question how much additional abstraction is useful below that layer before the abstractions become heavier than the problem.
+- **how far to push framework-independence beyond the CLI edge**: today the main goal is keeping `internal/cmd` replaceable. It is still an open design question how much additional abstraction is useful below that layer before the abstractions become heavier than the problem.
 - **how broad provider parity should be**: CPE presents a unified runtime model, but provider APIs continue to diverge. The long-term balance between provider-specific features and a shared core remains an ongoing design question.
 - **how opinionated code mode should remain**: Go-based code mode is intentionally strong and specific. Future changes may revisit how much of the execution model should remain fixed versus configurable.
 - **how much policy should be enforced structurally versus by lint**: some boundaries are encoded in package structure, while others are guarded by architecture lint. The right division between those approaches may evolve.

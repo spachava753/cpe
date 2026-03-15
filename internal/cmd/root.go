@@ -47,7 +47,8 @@ var (
 // rootCmd is the CLI entrypoint for prompt execution.
 //
 // Responsibility split:
-//   - cmd package: parse flags/env and map Cobra state into plain option structs.
+//   - internal/cmd: parse flags/env and map Cobra state into plain option
+//     structs.
 //   - internal/commands: resolve runtime dependencies and execute business logic
 //     without Cobra coupling.
 var rootCmd = &cobra.Command{

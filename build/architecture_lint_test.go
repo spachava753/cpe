@@ -8,10 +8,10 @@ import (
 )
 
 func TestLintImportBoundariesAt(t *testing.T) {
-	t.Run("allows cmd imports of commands and version only", func(t *testing.T) {
+	t.Run("allows internal cmd imports of commands and version only", func(t *testing.T) {
 		root := t.TempDir()
 		writeTestFile(t, root, "go.mod", "module example.com/project\n\ngo 1.25.0\n")
-		writeTestFile(t, root, "cmd/root.go", "package cmd\n\nimport (\n\t\"example.com/project/internal/commands\"\n\t\"example.com/project/internal/version\"\n)\n")
+		writeTestFile(t, root, "internal/cmd/root.go", "package cmd\n\nimport (\n\t\"example.com/project/internal/commands\"\n\t\"example.com/project/internal/version\"\n)\n")
 		writeTestFile(t, root, "internal/commands/root.go", "package commands\n")
 		writeTestFile(t, root, "internal/version/version.go", "package version\n")
 
@@ -21,10 +21,10 @@ func TestLintImportBoundariesAt(t *testing.T) {
 		}
 	})
 
-	t.Run("rejects extra module-local cmd imports", func(t *testing.T) {
+	t.Run("rejects extra module-local internal cmd imports", func(t *testing.T) {
 		root := t.TempDir()
 		writeTestFile(t, root, "go.mod", "module example.com/project\n\ngo 1.25.0\n")
-		writeTestFile(t, root, "cmd/root.go", "package cmd\n\nimport (\n\t\"example.com/project/internal/commands\"\n\t\"example.com/project/internal/config\"\n)\n")
+		writeTestFile(t, root, "internal/cmd/root.go", "package cmd\n\nimport (\n\t\"example.com/project/internal/commands\"\n\t\"example.com/project/internal/config\"\n)\n")
 		writeTestFile(t, root, "internal/commands/root.go", "package commands\n")
 		writeTestFile(t, root, "internal/config/config.go", "package config\n")
 
@@ -32,7 +32,7 @@ func TestLintImportBoundariesAt(t *testing.T) {
 		if len(issues) != 1 {
 			t.Fatalf("expected 1 issue, got %v", issues)
 		}
-		want := "cmd/root.go"
+		want := "internal/cmd/root.go"
 		if got := issues[0]; got == "" || !contains(got, want) || !contains(got, "internal/config") {
 			t.Fatalf("expected issue mentioning %q and internal/config, got %q", want, got)
 		}
@@ -41,7 +41,7 @@ func TestLintImportBoundariesAt(t *testing.T) {
 	t.Run("rejects cobra and pflag inside internal commands", func(t *testing.T) {
 		root := t.TempDir()
 		writeTestFile(t, root, "go.mod", "module example.com/project\n\ngo 1.25.0\n")
-		writeTestFile(t, root, "cmd/root.go", "package cmd\n")
+		writeTestFile(t, root, "internal/cmd/root.go", "package cmd\n")
 		writeTestFile(t, root, "internal/commands/root.go", "package commands\n\nimport (\n\t\"github.com/spf13/cobra\"\n\t\"github.com/spf13/pflag\"\n)\n\nvar _ = cobra.Command{}\nvar _ *pflag.FlagSet\n")
 
 		issues := lintImportBoundariesAt(root)
@@ -56,7 +56,7 @@ func TestLintImportBoundariesAt(t *testing.T) {
 	t.Run("rejects internal config importing internal mcp", func(t *testing.T) {
 		root := t.TempDir()
 		writeTestFile(t, root, "go.mod", "module example.com/project\n\ngo 1.25.0\n")
-		writeTestFile(t, root, "cmd/root.go", "package cmd\n")
+		writeTestFile(t, root, "internal/cmd/root.go", "package cmd\n")
 		writeTestFile(t, root, "internal/config/config.go", "package config\n\nimport \"example.com/project/internal/mcp\"\n\nvar _ mcp.MCPState\n")
 		writeTestFile(t, root, "internal/mcp/state.go", "package mcp\n\ntype MCPState struct{}\n")
 
@@ -140,17 +140,30 @@ func TestLintImportBoundariesAt(t *testing.T) {
 	})
 }
 
-func TestLintCmdPackageAt(t *testing.T) {
-	root := t.TempDir()
-	writeTestFile(t, root, "cmd/root.go", "package cmd\n\nfunc Execute() {}\nfunc init() {}\nfunc helper() {}\n")
+func TestLintInternalCmdPackageAt(t *testing.T) {
+	t.Run("allows init and Execute only", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestFile(t, root, "internal/cmd/root.go", "package cmd\n\nfunc Execute() {}\nfunc init() {}\n")
 
-	issues := lintCmdPackageAt(root)
-	if len(issues) != 1 {
-		t.Fatalf("expected 1 issue, got %v", issues)
-	}
-	if got := issues[0]; !contains(got, "function \"helper\"") {
-		t.Fatalf("unexpected issue: %q", got)
-	}
+		issues := lintInternalCmdPackageAt(root)
+		if len(issues) != 0 {
+			t.Fatalf("expected no issues, got %v", issues)
+		}
+	})
+
+	t.Run("rejects extra helper functions in internal cmd", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestFile(t, root, "internal/cmd/root.go", "package cmd\n\nfunc Execute() {}\nfunc init() {}\nfunc helper() {}\n")
+
+		issues := lintInternalCmdPackageAt(root)
+		if len(issues) != 1 {
+			t.Fatalf("expected 1 issue, got %v", issues)
+		}
+		if got := issues[0]; !contains(got, "function \"helper\"") {
+			t.Fatalf("unexpected issue: %q", got)
+		}
+	})
+
 }
 
 func writeTestFile(t *testing.T, root, rel, content string) {

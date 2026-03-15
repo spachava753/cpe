@@ -15,7 +15,8 @@ import (
 
 // ExecuteRootCLIOptions contains CLI-facing inputs for one root command run.
 // Unlike ExecuteRootOptions, this struct carries unresolved config/storage
-// inputs so the commands package remains the orchestration hub beneath cmd.
+// inputs so the commands package remains the orchestration hub beneath
+// internal/cmd.
 type ExecuteRootCLIOptions struct {
 	Args            []string
 	InputPaths      []string

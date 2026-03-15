@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/spachava753/cpe/cmd"
+	"github.com/spachava753/cpe/internal/cmd"
 )
 
 func main() {

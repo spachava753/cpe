@@ -1,8 +1,8 @@
 /*
 Package commands contains framework-agnostic command orchestration and wiring.
 
-The cmd package builds Cobra flags and delegates command execution to this
-package for deterministic testing. This package owns CLI-facing use-case
+The internal/cmd package builds Cobra flags and delegates command execution to
+this package for deterministic testing. This package owns CLI-facing use-case
 orchestration, including runtime dependency resolution that should remain
 framework-agnostic and easy to unit test.
 

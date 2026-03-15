@@ -3,7 +3,8 @@ package commands
 import "github.com/spachava753/gai"
 
 // GenParamValues holds the resolved flag values for generation parameters.
-// The cmd package binds and populates these values before calling BuildGenOpts.
+// The internal/cmd package binds and populates these values before calling
+// BuildGenOpts.
 type GenParamValues struct {
 	MaxTokens        *int
 	Temperature      *float64
@@ -16,8 +17,9 @@ type GenParamValues struct {
 }
 
 // GenParamChanges records which generation parameters were explicitly set by the
-// CLI layer. This keeps commands framework-agnostic: the cmd package determines
-// whether a flag changed, then passes those facts here as plain booleans.
+// CLI layer. This keeps commands framework-agnostic: the internal/cmd package
+// determines whether a flag changed, then passes those facts here as plain
+// booleans.
 type GenParamChanges struct {
 	MaxTokens        bool
 	Temperature      bool

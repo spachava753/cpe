@@ -1,5 +1,8 @@
 // Package cmd defines CPE's Cobra command tree.
 //
+// It intentionally lives at the import path internal/cmd because this wiring is
+// process-private and not part of CPE's public import surface.
+//
 // This package is intentionally thin: it binds flags, validates CLI-level
 // arguments, and delegates feature logic to internal packages, primarily
 // internal/commands (with internal/version as the one process-level exception).

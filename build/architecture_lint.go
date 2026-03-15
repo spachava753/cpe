@@ -13,20 +13,21 @@ import (
 )
 
 const (
-	commandsImportRuleReason      = "cmd may only import internal/commands and internal/version from this module"
+	cliImportRuleReason           = "internal/cmd may only import internal/commands and internal/version from this module"
 	configImportRuleReason        = "internal/config must not depend on internal/mcp; share schema via a neutral package instead"
 	commandsAgentImportRuleReason = "internal/commands should depend on internal/agent only from root.go and mcp.go runtime orchestration files"
 	agentOwnershipRuleReason      = "internal/agent must not own input or prompt concerns; use internal/input and internal/prompt instead"
 )
 
-// lintCmdPackageAt reports cmd-package declarations that should move to ./internal.
-// The only allowed package-level functions are init and Execute.
-func lintCmdPackageAt(root string) []string {
+// lintInternalCmdPackageAt reports internal/cmd declarations that grow beyond
+// thin Cobra wiring. The only allowed package-level functions are init and
+// Execute.
+func lintInternalCmdPackageAt(root string) []string {
 	fset := token.NewFileSet()
-	cmdDir := filepath.Join(root, "cmd")
+	cliDir := filepath.Join(root, "internal", "cmd")
 
 	var issues []string
-	err := walkGoFiles(cmdDir, func(path string) {
+	err := walkGoFiles(cliDir, func(path string) {
 		file, err := parser.ParseFile(fset, path, nil, parser.ParseComments)
 		if err != nil {
 			issues = append(issues, fmt.Sprintf("failed to parse %s: %v", path, err))
@@ -44,17 +45,17 @@ func lintCmdPackageAt(root string) []string {
 
 			pos := fset.Position(fn.Pos())
 			if fn.Recv != nil {
-				issues = append(issues, fmt.Sprintf("%s:%d: method %q: business logic should be in ./internal packages, not ./cmd", pos.Filename, pos.Line, fn.Name.Name))
+				issues = append(issues, fmt.Sprintf("%s:%d: method %q: business logic should be in deeper internal packages, not internal/cmd", pos.Filename, pos.Line, fn.Name.Name))
 			} else {
-				issues = append(issues, fmt.Sprintf("%s:%d: function %q: business logic should be in ./internal packages, not ./cmd", pos.Filename, pos.Line, fn.Name.Name))
+				issues = append(issues, fmt.Sprintf("%s:%d: function %q: business logic should be in deeper internal packages, not internal/cmd", pos.Filename, pos.Line, fn.Name.Name))
 			}
 		}
 	})
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return issues
 		}
-		return []string{fmt.Sprintf("failed to walk %s: %v", cmdDir, err)}
+		return append(issues, fmt.Sprintf("failed to walk %s: %v", cliDir, err))
 	}
 
 	return issues
@@ -66,8 +67,8 @@ type importBoundaryRule struct {
 	disallowedImports     map[string]string
 }
 
-// lintImportBoundariesAt enforces package import boundaries that keep cmd thin
-// and keep internal/commands free of Cobra/pflag coupling.
+// lintImportBoundariesAt enforces package import boundaries that keep
+// internal/cmd thin and keep internal/commands free of Cobra/pflag coupling.
 func lintImportBoundariesAt(root string) []string {
 	modulePath, err := modulePathFromGoMod(root)
 	if err != nil {
@@ -76,7 +77,7 @@ func lintImportBoundariesAt(root string) []string {
 
 	rules := []importBoundaryRule{
 		{
-			packageDir: filepath.Join("cmd"),
+			packageDir: filepath.Join("internal", "cmd"),
 			allowedInternalImport: map[string]bool{
 				modulePath + "/internal/commands": true,
 				modulePath + "/internal/version":  true,
@@ -85,8 +86,8 @@ func lintImportBoundariesAt(root string) []string {
 		{
 			packageDir: filepath.Join("internal", "commands"),
 			disallowedImports: map[string]string{
-				"github.com/spf13/cobra": "Cobra belongs in cmd; internal/commands must stay framework-agnostic",
-				"github.com/spf13/pflag": "pflag belongs in cmd; internal/commands must stay framework-agnostic",
+				"github.com/spf13/cobra": "Cobra belongs in internal/cmd; internal/commands must stay framework-agnostic",
+				"github.com/spf13/pflag": "pflag belongs in internal/cmd; internal/commands must stay framework-agnostic",
 			},
 		},
 		{
@@ -134,7 +135,7 @@ func lintImportBoundaryRule(root, modulePath string, rule importBoundaryRule) []
 				continue
 			}
 			if !rule.allowedInternalImport[importPath] {
-				issues = append(issues, fmt.Sprintf("%s:%d: import %q: %s", pos.Filename, pos.Line, importPath, commandsImportRuleReason))
+				issues = append(issues, fmt.Sprintf("%s:%d: import %q: %s", pos.Filename, pos.Line, importPath, cliImportRuleReason))
 			}
 		}
 	})

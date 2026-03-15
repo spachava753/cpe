@@ -4,7 +4,7 @@ CPE (Chat-based Programming Editor) is a CLI that connects local developer workf
 
 ## Documentation
 
-- Package-level `doc.go` files under `cmd/`, `internal/`, and `build/` are the canonical feature and behavior specs.
+- Package-level `doc.go` files under the relevant `internal/` subpackages, and `build/` are the canonical feature and behavior specs.
 - `design.md` defines codebase design decisions, goals and non-goals, and project structure. It is required to read the design doc before starting to implement any code.
 - Exported symbols used across packages should have Go doc comments that describe behavior and contracts.
 - `examples/` is a folder that holds example yaml configuration for configuring CPE, as well example system prompt templates

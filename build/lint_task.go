@@ -35,7 +35,7 @@ var Lint = goyek.Define(goyek.Task{
 			}
 		}
 
-		issues := append([]string{}, lintCmdPackageAt(".")...)
+		issues := append([]string{}, lintInternalCmdPackageAt(".")...)
 		issues = append(issues, lintImportBoundariesAt(".")...)
 		if len(issues) > 0 {
 			for _, issue := range issues {
