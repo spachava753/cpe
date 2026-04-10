@@ -13,15 +13,15 @@ import (
 
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
+	"github.com/spachava753/cpe/internal/testutil/testgate"
 )
 
 func ptr[T any](v T) *T { return &v }
 
 func requireAPIKey(t *testing.T, envVar string) {
 	t.Helper()
-	if os.Getenv(envVar) == "" {
-		t.Fatalf("required environment variable %s is not set", envVar)
-	}
+	testgate.RequireLive(t)
+	testgate.RequireEnv(t, envVar)
 }
 
 func resolveTestConfig(t *testing.T, modelType string, modelRef string) *config.Config {

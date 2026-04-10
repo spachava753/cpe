@@ -5,9 +5,12 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/spachava753/cpe/internal/testutil/testgate"
 )
 
 func TestGetProviderOAuthConfig(t *testing.T) {
+	testgate.RequireLive(t)
 	tests := []struct {
 		name     string
 		provider string
