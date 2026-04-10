@@ -8,8 +8,7 @@ Major responsibilities:
   - construct provider-specific generators (OpenAI, Anthropic, Gemini, etc.)
     with API key or OAuth authentication;
   - apply middleware wrappers for panic recovery, persistence, block filtering,
-    flight-recorder trace capture on terminal generation errors, tool-result
-    printing, response printing, and token/cost reporting;
+    tool-result printing, response printing, and token/cost reporting;
   - register built-in and MCP tools, including code-mode integration via
     execute_go_code and conversation compaction tooling;
   - orchestrate generator lifecycle concerns such as dialog restart into fresh

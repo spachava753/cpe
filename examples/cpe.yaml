@@ -161,12 +161,6 @@ defaults:
   systemPromptPath: "./agent_instructions.md"
   model: "sonnet"
   timeout: "5m"
-  flightRecorder:
-    # Flight recorder snapshots the last few seconds of Go runtime trace data
-    # when generation still fails after retries. Set enabled: false to disable.
-    enabled: true
-    minAge: "10s"
-    maxBytes: 8388608
   codeMode:
     enabled: true
     maxTimeout: 3600

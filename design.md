@@ -153,7 +153,7 @@ Resolution precedence is intentionally simple and explicit:
 - generation options: runtime overrides, then model defaults, then global defaults;
 - system prompt path: model override, then global default;
 - timeout: runtime override, then config default, then built-in default;
-- `codeMode`, `flightRecorder`, and `compaction` use whole-object model overrides rather than field-level deep merges.
+- `codeMode` and `compaction` use whole-object model overrides rather than field-level deep merges.
 
 The last choice is important. Deep merging nested config objects is flexible, but it becomes difficult to explain and easy to misread. CPE prefers object replacement for these advanced runtime features because it is easier to reason about and simpler to document.
 
@@ -202,7 +202,6 @@ This layer exists so the command behavior is testable and not coupled to Cobra.
 - code-mode tool registration;
 - persistence middleware;
 - output printing and token usage reporting;
-- flight-recorder capture on terminal errors;
 - compaction orchestration and restart caps.
 
 This package is intentionally the deepest orchestrator in the normal CLI path. It should know how to run the model runtime, but not how Cobra parsed the request.
@@ -254,7 +253,6 @@ The design uses middleware-style wrappers because CPE needs to layer behavior or
 - tool-result printing;
 - token usage reporting;
 - thinking-block filtering across providers;
-- flight recorder capture;
 - retries;
 - compaction-related logic.
 
@@ -479,7 +477,7 @@ A dedicated stored-message type would be more explicit, but it would also push p
 
 ### Deep-merging nested configuration objects
 
-Deep merge behavior can be flexible, but it is harder to explain and easier to misread. CPE prefers whole-object replacement for advanced nested runtime features such as `codeMode`, `flightRecorder`, and `compaction`.
+Deep merge behavior can be flexible, but it is harder to explain and easier to misread. CPE prefers whole-object replacement for advanced nested runtime features such as `codeMode` and `compaction`.
 
 ### Exposing all MCP tools directly and uniformly
 

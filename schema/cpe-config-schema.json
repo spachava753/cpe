@@ -81,26 +81,8 @@
         "codeMode": {
           "$ref": "#/$defs/CodeModeConfig"
         },
-        "flightRecorder": {
-          "$ref": "#/$defs/FlightRecorderConfig"
-        },
         "compaction": {
           "$ref": "#/$defs/CompactionConfig"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object"
-    },
-    "FlightRecorderConfig": {
-      "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
-        "minAge": {
-          "type": "string"
-        },
-        "maxBytes": {
-          "type": "integer"
         }
       },
       "additionalProperties": false,
@@ -197,9 +179,6 @@
         },
         "codeMode": {
           "$ref": "#/$defs/CodeModeConfig"
-        },
-        "flightRecorder": {
-          "$ref": "#/$defs/FlightRecorderConfig"
         },
         "compaction": {
           "$ref": "#/$defs/CompactionConfig"

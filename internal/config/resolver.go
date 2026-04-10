@@ -20,8 +20,6 @@ const DefaultTimeout = 5 * time.Minute
 //   - Generation parameters: CLI/runtime opts > model.generation_defaults > defaults.generation_params.
 //   - Timeout: CLI/runtime timeout > defaults.timeout > DefaultTimeout.
 //   - Code mode: model.codeMode fully overrides defaults.codeMode (no field-level merge).
-//   - Flight recorder: model.flightRecorder fully overrides defaults.flightRecorder (no field-level merge).
-//     When neither is configured, built-in flight recorder defaults are used.
 //   - Compaction: model.compaction fully overrides defaults.compaction (no field-level merge).
 //   - Conversation storage path: defaults.conversationStoragePath, resolved relative to config file location when needed.
 //
@@ -82,10 +80,6 @@ func resolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions, resolvedConfigPath s
 	if err != nil {
 		return nil, fmt.Errorf("invalid codeMode configuration: %w", err)
 	}
-	flightRecorder, err := resolveFlightRecorder(selectedModel, rawCfg.Defaults)
-	if err != nil {
-		return nil, fmt.Errorf("invalid flightRecorder configuration: %w", err)
-	}
 	compaction, err := resolveCompaction(selectedModel, rawCfg.Defaults)
 	if err != nil {
 		return nil, fmt.Errorf("invalid compaction configuration: %w", err)
@@ -99,7 +93,6 @@ func resolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions, resolvedConfigPath s
 		Timeout:                 timeout,
 		ConversationStoragePath: conversationStoragePath,
 		CodeMode:                codeMode,
-		FlightRecorder:          flightRecorder,
 		Compaction:              compaction,
 	}, nil
 }
