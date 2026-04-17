@@ -245,18 +245,15 @@ This design is intentionally strict because privacy features should fail closed 
 
 The model runtime is assembled as a decorated generator pipeline.
 
-The design uses middleware-style wrappers because CPE needs to layer behavior orthogonally:
+The design uses middleware-style wrappers because CPE needs to layer behavior, but not every layer is independent. The current runtime keeps a few broad phases explicit:
 
-- panic recovery;
-- persistence;
-- response printing;
-- tool-result printing;
-- token usage reporting;
-- thinking-block filtering across providers;
-- retries;
+- panic recovery around provider-specific generator implementations;
+- one turn-lifecycle layer that groups persistence, tool-result rendering, assistant response rendering, and token/cost reporting in the order they must occur;
+- provider-specific input block filtering across model boundaries;
+- retries for transient provider failures;
 - compaction-related logic.
 
-A monolithic generator implementation would quickly become difficult to reason about. Wrappers allow these concerns to stay separate while still composing into a single runtime pipeline.
+A monolithic generator implementation would quickly become difficult to reason about, but overly fine-grained wrappers can hide real ordering dependencies. CPE therefore prefers a small number of middleware phases when their responsibilities are tightly coupled, while still keeping the overall runtime pipeline composable.
 
 ### Middleware ordering
 

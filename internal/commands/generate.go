@@ -36,8 +36,8 @@ type GenerateOptions struct {
 // Generate appends the new user message to opts.InitialDialog and runs the
 // generation pipeline.
 //
-// Persistence is delegated to middleware (SavingMiddleware) attached to
-// opts.Generator. This function does not call storage directly.
+// Persistence is delegated to the generator pipeline's turn-lifecycle middleware.
+// This function does not call storage directly.
 //
 // Contract note: input validation errors are returned, but model-generation
 // failures are reported to opts.Stderr and the function still returns nil
@@ -66,9 +66,9 @@ func Generate(ctx context.Context, opts GenerateOptions) error {
 		return errors.New("no model specified")
 	}
 
-	// Generate the response
-	// Saving is handled incrementally by the SavingMiddleware in the pipeline.
-	// Message IDs are printed by the response/tool printers as messages are saved.
+	// Generate the response.
+	// Saving and user-facing output are handled by the turn-lifecycle middleware
+	// in the generator pipeline as messages are processed.
 	_, err := opts.Generator.Generate(ctx, dialog, opts.GenOptsFunc)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintf(opts.Stderr, "Error generating response: %s\n", formatGenerationError(err))

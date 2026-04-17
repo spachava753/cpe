@@ -143,12 +143,12 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 	generatorOpts := []agent.GeneratorOption{
 		agent.WithStdout(stdout),
 	}
-	// Enable saving middleware if storage is available (not incognito mode)
+	// Enable turn-lifecycle persistence if storage is available (not incognito mode).
 	if opts.DialogSaver != nil {
 		generatorOpts = append(generatorOpts, agent.WithDialogSaver(opts.DialogSaver))
 	}
 
-	// Create the generator with optional saving middleware
+	// Create the generator with optional turn-lifecycle persistence.
 	toolGen, err := agent.NewGenerator(
 		ctx,
 		effectiveConfig,
@@ -161,7 +161,7 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 	}
 
 	// Call the generation logic.
-	// Saving is handled by the SavingMiddleware in the generator pipeline when not in incognito mode.
+	// Persistence and user-facing output are handled by the turn-lifecycle middleware when not in incognito mode.
 	return Generate(ctx, GenerateOptions{
 		UserBlocks:    userBlocks,
 		InitialDialog: opts.InitialDialog,

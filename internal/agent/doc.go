@@ -7,8 +7,9 @@ providers, MCP tools, dialog mutation, and user-facing output rendering.
 Major responsibilities:
   - construct provider-specific generators (OpenAI, Anthropic, Gemini, etc.)
     with API key or OAuth authentication;
-  - apply middleware wrappers for panic recovery, persistence, block filtering,
-    tool-result printing, response printing, and token/cost reporting;
+  - assemble the generator pipeline, including panic recovery, turn-lifecycle
+    side effects, provider-specific block filtering, retries, and compaction
+    support;
   - register built-in and MCP tools, including code-mode integration via
     execute_go_code and conversation compaction tooling;
   - orchestrate generator lifecycle concerns such as dialog restart into fresh
@@ -21,10 +22,10 @@ Related packages:
   - internal/render handles terminal markdown/plain-text renderer setup.
 
 Behavioral notes:
-  - saving middleware persists dialogs incrementally so message IDs are
-    available to printers during execution;
-  - thinking filters preserve only provider-compatible thinking blocks when a
-    conversation crosses model providers;
+  - the turn-lifecycle middleware persists dialogs incrementally so message IDs
+    are available before tool-result and response output is rendered;
+  - provider block filtering preserves only provider-compatible thinking blocks
+    when a conversation crosses model providers;
   - execute_go_code formatting helpers live in internal/codemode so both agent
     runtime printers and command-side conversation formatting can share them.
 */

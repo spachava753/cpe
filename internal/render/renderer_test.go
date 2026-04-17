@@ -22,8 +22,8 @@ func TestNewRendererForTTYFalseReturnsPlainTextRenderer(t *testing.T) {
 	}
 }
 
-func TestNewResponsePrinterRenderersForTTYFalseReturnsPlainTextRenderers(t *testing.T) {
-	renderers := newResponsePrinterRenderersForTTY(false)
+func TestNewTurnLifecycleRenderersForTTYFalseReturnsPlainTextRenderers(t *testing.T) {
+	renderers := newTurnLifecycleRenderersForTTY(false)
 
 	if _, ok := renderers.Content.(*PlainTextRenderer); !ok {
 		t.Fatalf("Content renderer should be *PlainTextRenderer, got %T", renderers.Content)

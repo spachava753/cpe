@@ -37,9 +37,9 @@ func IsTTYWriter(w io.Writer) bool {
 	return term.IsTerminal(int(f.Fd()))
 }
 
-// ResponsePrinterRenderers holds the three renderers used by
-// agent.ResponsePrinterGenerator.
-type ResponsePrinterRenderers struct {
+// TurnLifecycleRenderers holds the three renderers used by
+// agent.TurnLifecycleMiddleware.
+type TurnLifecycleRenderers struct {
 	Content  ports.Renderer
 	Thinking ports.Renderer
 	ToolCall ports.Renderer
@@ -116,30 +116,30 @@ func NewRendererForWriter(w io.Writer) ports.Renderer {
 	return newRendererForTTY(IsTTYWriter(w))
 }
 
-func newResponsePrinterRenderers(contentTTY, auxiliaryTTY bool) ResponsePrinterRenderers {
+func newTurnLifecycleRenderers(contentTTY, auxiliaryTTY bool) TurnLifecycleRenderers {
 	contentRenderer := newRendererForTTY(contentTTY)
 	thinkingRenderer := newThinkingRendererForTTY(auxiliaryTTY)
 	toolCallRenderer := newRendererForTTY(auxiliaryTTY)
-	return ResponsePrinterRenderers{
+	return TurnLifecycleRenderers{
 		Content:  contentRenderer,
 		Thinking: thinkingRenderer,
 		ToolCall: toolCallRenderer,
 	}
 }
 
-func newResponsePrinterRenderersForTTY(isTTY bool) ResponsePrinterRenderers {
-	return newResponsePrinterRenderers(isTTY, isTTY)
+func newTurnLifecycleRenderersForTTY(isTTY bool) TurnLifecycleRenderers {
+	return newTurnLifecycleRenderers(isTTY, isTTY)
 }
 
-// NewResponsePrinterRenderers creates the appropriate renderers for response printing.
+// NewTurnLifecycleRenderers creates the appropriate renderers for turn-lifecycle output.
 // For TTY contexts, creates styled glamour renderers with a distinct thinking style.
 // For non-TTY contexts, returns plain text passthrough renderers.
-func NewResponsePrinterRenderers() ResponsePrinterRenderers {
-	return NewResponsePrinterRenderersForWriters(os.Stdout, os.Stderr)
+func NewTurnLifecycleRenderers() TurnLifecycleRenderers {
+	return NewTurnLifecycleRenderersForWriters(os.Stdout, os.Stderr)
 }
 
-// NewResponsePrinterRenderersForWriters creates response-printer renderers tuned
+// NewTurnLifecycleRenderersForWriters creates turn-lifecycle renderers tuned
 // to the streams they will be written to.
-func NewResponsePrinterRenderersForWriters(stdout io.Writer, stderr io.Writer) ResponsePrinterRenderers {
-	return newResponsePrinterRenderers(IsTTYWriter(stdout), IsTTYWriter(stderr))
+func NewTurnLifecycleRenderersForWriters(stdout io.Writer, stderr io.Writer) TurnLifecycleRenderers {
+	return newTurnLifecycleRenderers(IsTTYWriter(stdout), IsTTYWriter(stderr))
 }

@@ -23,7 +23,6 @@ import (
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/ports"
-	"github.com/spachava753/cpe/internal/render"
 	"github.com/spachava753/cpe/internal/storage"
 
 	"github.com/cenkalti/backoff/v5"
@@ -348,7 +347,7 @@ func WithBaseGenerator(g gai.ToolCapableGenerator) GeneratorOption {
 	}
 }
 
-// WithDialogSaver enables incremental dialog saving via the SavingMiddleware.
+// WithDialogSaver enables incremental dialog saving in the turn-lifecycle middleware.
 // When provided, messages are saved as they flow through the generation pipeline.
 // If not provided (nil), no saving occurs (incognito mode).
 func WithDialogSaver(saver storage.DialogSaver) GeneratorOption {
@@ -422,47 +421,28 @@ func NewGenerator(
 	b.Reset()
 
 	var wrappers []gai.WrapperFunc
-	// TokenUsagePrinting must come BEFORE ResponsePrinting in the slice
-	// because gai.Wrap applies wrappers in reverse order.
-	// We want TokenUsagePrinting to be OUTERMOST so it prints AFTER response content.
 	stdoutW := o.stdout
 	if stdoutW == nil {
 		stdoutW = os.Stdout
 	}
 
-	wrappers = append(wrappers, WithTokenUsagePrinting(os.Stderr, cfg.Model))
-	if !o.disablePrinting {
-		renderers := render.NewResponsePrinterRenderersForWriters(stdoutW, os.Stderr)
-		wrappers = append(wrappers, WithResponsePrinting(renderers.Content, renderers.Thinking, renderers.ToolCall, stdoutW, os.Stderr))
-	}
-
-	// Add saving middleware if storage is provided.
-	// Saving must be:
-	// - OUTSIDE the provider block filter so that SetMessageID mutates the original dialog
-	//   messages from ToolGenerator.currentDialog. If the filter were between
-	//   ToolGenerator and Saving, it would create new message structs, and the IDs
-	//   set by Saving would not propagate back — causing double saves on the next
-	//   tool-use loop iteration.
-	// - OUTSIDE Retry so that messages are saved once, not on each retry attempt.
+	// Turn lifecycle middleware must stay OUTSIDE both the provider block filter
+	// and retry because it performs side effects that must happen once per logical
+	// turn on the original dialog objects:
+	// - BEFORE inner Generate: save unsaved messages and print trailing tool results
+	// - AFTER inner Generate: save the assistant response, then print response + usage
 	//
 	// Wrapper ordering (gai.Wrap applies in order, first = outermost):
-	// - TokenUsagePrinting (outermost): prints usage AFTER everything
-	// - ResponsePrinting: prints response WITH ID after Saving sets it
-	// - Saving: BEFORE saves new messages; AFTER saves response, sets ID
+	// - TurnLifecycle (outermost): save/print around one logical turn
 	// - ProviderBlockFilter: keeps only provider-compatible input blocks
-	// - ToolResultPrinting: prints tool results WITH ID once per logical turn before any retry attempts
-	// - Retry (innermost): retries transient failures without duplicating printed tool results
-	if o.dialogSaver != nil {
-		wrappers = append(wrappers, WithSaving(o.dialogSaver))
-	}
+	// - Retry (innermost): retries transient failures without duplicating side effects
+	wrappers = append(wrappers, WithTurnLifecycle(cfg.Model, o.dialogSaver, stdoutW, os.Stderr, o.disablePrinting))
 
 	// Add provider-specific block filtering based on model type.
 	// Providers that support thinking keep only their own thinking blocks.
 	// Providers without thinking support keep only content/tool-call input blocks.
 	wrappers = append(wrappers, WithProviderBlockFilter(cfg.Model.Type))
 
-	toolResultRenderer := render.NewRendererForWriter(os.Stderr)
-	wrappers = append(wrappers, WithToolResultPrinterWrapper(toolResultRenderer))
 	wrappers = append(wrappers, gai.WithRetry(b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute)))
 
 	// Add custom middleware after default middleware

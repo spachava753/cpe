@@ -8,7 +8,6 @@ import (
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/config"
-	"github.com/spachava753/cpe/internal/render"
 )
 
 type stubUsageGenerator struct {
@@ -26,7 +25,7 @@ func (s *stubUsageGenerator) Generate(ctx context.Context, dialog gai.Dialog, op
 	return resp, nil
 }
 
-func TestTokenUsagePrinterGenerator_PrintsContextAndCostsWithCumulativeTracking(t *testing.T) {
+func TestTurnLifecycleMiddleware_PrintsContextAndCostsWithCumulativeTracking(t *testing.T) {
 	t.Parallel()
 
 	model := config.Model{
@@ -55,13 +54,12 @@ func TestTokenUsagePrinterGenerator_PrintsContextAndCostsWithCumulativeTracking(
 	}}
 
 	var out bytes.Buffer
-	printer := NewTokenUsagePrinterGenerator(gen, &out, model)
-	printer.renderer = &render.PlainTextRenderer{}
+	middleware := newPlainTurnLifecycleMiddleware(gen, ioDiscard{}, &out, model, nil, true)
 
-	if _, err := printer.Generate(context.Background(), nil, nil); err != nil {
+	if _, err := middleware.Generate(context.Background(), nil, nil); err != nil {
 		t.Fatalf("Generate() first call error = %v", err)
 	}
-	if _, err := printer.Generate(context.Background(), nil, nil); err != nil {
+	if _, err := middleware.Generate(context.Background(), nil, nil); err != nil {
 		t.Fatalf("Generate() second call error = %v", err)
 	}
 
@@ -78,7 +76,7 @@ func TestTokenUsagePrinterGenerator_PrintsContextAndCostsWithCumulativeTracking(
 	}
 }
 
-func TestTokenUsagePrinterGenerator_UsesOnlyUncachedInputForInputPricing(t *testing.T) {
+func TestTurnLifecycleMiddleware_UsesOnlyUncachedInputForInputPricing(t *testing.T) {
 	t.Parallel()
 
 	model := config.Model{
@@ -94,10 +92,9 @@ func TestTokenUsagePrinterGenerator_UsesOnlyUncachedInputForInputPricing(t *test
 	}}}
 
 	var out bytes.Buffer
-	printer := NewTokenUsagePrinterGenerator(gen, &out, model)
-	printer.renderer = &render.PlainTextRenderer{}
+	middleware := newPlainTurnLifecycleMiddleware(gen, ioDiscard{}, &out, model, nil, true)
 
-	if _, err := printer.Generate(context.Background(), nil, nil); err != nil {
+	if _, err := middleware.Generate(context.Background(), nil, nil); err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
 
@@ -110,7 +107,7 @@ func TestTokenUsagePrinterGenerator_UsesOnlyUncachedInputForInputPricing(t *test
 	}
 }
 
-func TestTokenUsagePrinterGenerator_FallsBackToInputPricingWhenCacheWritePricingMissing(t *testing.T) {
+func TestTurnLifecycleMiddleware_FallsBackToInputPricingWhenCacheWritePricingMissing(t *testing.T) {
 	t.Parallel()
 
 	model := config.Model{
@@ -127,10 +124,9 @@ func TestTokenUsagePrinterGenerator_FallsBackToInputPricingWhenCacheWritePricing
 	}}}
 
 	var out bytes.Buffer
-	printer := NewTokenUsagePrinterGenerator(gen, &out, model)
-	printer.renderer = &render.PlainTextRenderer{}
+	middleware := newPlainTurnLifecycleMiddleware(gen, ioDiscard{}, &out, model, nil, true)
 
-	if _, err := printer.Generate(context.Background(), nil, nil); err != nil {
+	if _, err := middleware.Generate(context.Background(), nil, nil); err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
 
@@ -169,7 +165,7 @@ func TestCalculateUsageCosts_ClampsNegativeBillableInputTokensToZero(t *testing.
 	}
 }
 
-func TestTokenUsagePrinterGenerator_SkipsCostWhenPricingMissing(t *testing.T) {
+func TestTurnLifecycleMiddleware_SkipsCostWhenPricingMissing(t *testing.T) {
 	t.Parallel()
 
 	model := config.Model{ContextWindow: 1000}
@@ -181,10 +177,9 @@ func TestTokenUsagePrinterGenerator_SkipsCostWhenPricingMissing(t *testing.T) {
 	}}}
 
 	var out bytes.Buffer
-	printer := NewTokenUsagePrinterGenerator(gen, &out, model)
-	printer.renderer = &render.PlainTextRenderer{}
+	middleware := newPlainTurnLifecycleMiddleware(gen, ioDiscard{}, &out, model, nil, true)
 
-	if _, err := printer.Generate(context.Background(), nil, nil); err != nil {
+	if _, err := middleware.Generate(context.Background(), nil, nil); err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
 
@@ -195,7 +190,7 @@ func TestTokenUsagePrinterGenerator_SkipsCostWhenPricingMissing(t *testing.T) {
 	}
 }
 
-func TestTokenUsagePrinterGenerator_SkipsContextLineWhenContextWindowUnknown(t *testing.T) {
+func TestTurnLifecycleMiddleware_SkipsContextLineWhenContextWindowUnknown(t *testing.T) {
 	t.Parallel()
 
 	model := config.Model{ContextWindow: 0}
@@ -207,10 +202,9 @@ func TestTokenUsagePrinterGenerator_SkipsContextLineWhenContextWindowUnknown(t *
 	}}}
 
 	var out bytes.Buffer
-	printer := NewTokenUsagePrinterGenerator(gen, &out, model)
-	printer.renderer = &render.PlainTextRenderer{}
+	middleware := newPlainTurnLifecycleMiddleware(gen, ioDiscard{}, &out, model, nil, true)
 
-	if _, err := printer.Generate(context.Background(), nil, nil); err != nil {
+	if _, err := middleware.Generate(context.Background(), nil, nil); err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
 
@@ -221,17 +215,16 @@ func TestTokenUsagePrinterGenerator_SkipsContextLineWhenContextWindowUnknown(t *
 	}
 }
 
-func TestTokenUsagePrinterGenerator_SkipsPrintingWhenUsageMetadataEmpty(t *testing.T) {
+func TestTurnLifecycleMiddleware_SkipsPrintingWhenUsageMetadataEmpty(t *testing.T) {
 	t.Parallel()
 
 	model := config.Model{ContextWindow: 1000}
 	gen := &stubUsageGenerator{responses: []gai.Response{{}}}
 
 	var out bytes.Buffer
-	printer := NewTokenUsagePrinterGenerator(gen, &out, model)
-	printer.renderer = &render.PlainTextRenderer{}
+	middleware := newPlainTurnLifecycleMiddleware(gen, ioDiscard{}, &out, model, nil, true)
 
-	if _, err := printer.Generate(context.Background(), nil, nil); err != nil {
+	if _, err := middleware.Generate(context.Background(), nil, nil); err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
 
