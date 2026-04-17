@@ -438,8 +438,8 @@ func NewGenerator(
 
 	// Add saving middleware if storage is provided.
 	// Saving must be:
-	// - OUTSIDE ThinkingFilter so that SetMessageID mutates the original dialog
-	//   messages from ToolGenerator.currentDialog. If ThinkingFilter were between
+	// - OUTSIDE the provider block filter so that SetMessageID mutates the original dialog
+	//   messages from ToolGenerator.currentDialog. If the filter were between
 	//   ToolGenerator and Saving, it would create new message structs, and the IDs
 	//   set by Saving would not propagate back — causing double saves on the next
 	//   tool-use loop iteration.
@@ -449,40 +449,17 @@ func NewGenerator(
 	// - TokenUsagePrinting (outermost): prints usage AFTER everything
 	// - ResponsePrinting: prints response WITH ID after Saving sets it
 	// - Saving: BEFORE saves new messages; AFTER saves response, sets ID
-	// - ThinkingFilter: filters thinking blocks for the provider
+	// - ProviderBlockFilter: keeps only provider-compatible input blocks
 	// - ToolResultPrinting: prints tool results WITH ID once per logical turn before any retry attempts
 	// - Retry (innermost): retries transient failures without duplicating printed tool results
 	if o.dialogSaver != nil {
 		wrappers = append(wrappers, WithSaving(o.dialogSaver))
 	}
 
-	// Add thinking block filter based on model type.
-	// Each provider keeps thinking blocks from its own generator type, filtering out
-	// thinking blocks from other providers. This enables cross-model conversation resumption
-	// while preserving thinking context when switching back to earlier used models.
-	switch strings.ToLower(cfg.Model.Type) {
-	case "anthropic":
-		wrappers = append(wrappers, WithAnthropicThinkingFilter())
-	case "gemini":
-		wrappers = append(wrappers, WithGeminiThinkingFilter())
-	case "openrouter":
-		wrappers = append(wrappers, WithOpenRouterThinkingFilter())
-	case "responses":
-		wrappers = append(wrappers, WithResponsesThinkingFilter())
-	case "cerebras":
-		wrappers = append(wrappers, WithCerebrasThinkingFilter())
-	case "zai":
-		wrappers = append(wrappers, WithZaiThinkingFilter())
-	case "openai":
-		// OpenAI (non-responses) doesn't produce thinking blocks, filter all
-		wrappers = append(wrappers, WithBlockWhitelist([]string{gai.Content, gai.ToolCall}))
-	case "groq":
-		// Groq currently does not emit thinking blocks in this flow.
-		wrappers = append(wrappers, WithBlockWhitelist([]string{gai.Content, gai.ToolCall}))
-	default:
-		// For unknown providers, filter all thinking blocks
-		wrappers = append(wrappers, WithBlockWhitelist([]string{gai.Content, gai.ToolCall}))
-	}
+	// Add provider-specific block filtering based on model type.
+	// Providers that support thinking keep only their own thinking blocks.
+	// Providers without thinking support keep only content/tool-call input blocks.
+	wrappers = append(wrappers, WithProviderBlockFilter(cfg.Model.Type))
 
 	toolResultRenderer := render.NewRendererForWriter(os.Stderr)
 	wrappers = append(wrappers, WithToolResultPrinterWrapper(toolResultRenderer))
