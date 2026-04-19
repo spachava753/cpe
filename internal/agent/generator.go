@@ -301,6 +301,13 @@ func initGeneratorFromModel(
 // This is used for adding behavior like event emission to tool callbacks.
 type ToolCallbackWrapper func(toolName string, callback gai.ToolCallback) gai.ToolCallback
 
+func applyToolCallbackWrapper(toolName string, callback gai.ToolCallback, wrapper ToolCallbackWrapper) gai.ToolCallback {
+	if wrapper == nil {
+		return callback
+	}
+	return wrapper(toolName, callback)
+}
+
 // generatorOptions holds optional configuration for generator creation.
 type generatorOptions struct {
 	disablePrinting bool
@@ -391,7 +398,7 @@ func NewGenerator(
 		opt(o)
 	}
 
-	compactionEnabled := cfg.Compaction != nil && cfg.Compaction.Enabled
+	compactionRuntime := newCompactionRuntime(cfg)
 
 	// Use custom base generator if provided, otherwise create from model config
 	var gen gai.ToolCapableGenerator
@@ -410,8 +417,8 @@ func NewGenerator(
 		}
 	}
 
-	if compactionEnabled {
-		gen = newCompactionUsageTrackingGenerator(gen)
+	if compactionRuntime != nil {
+		gen = compactionRuntime.wrapToolCapableGenerator(gen)
 	}
 
 	// Build middleware stack using gai.Wrap
@@ -460,16 +467,9 @@ func NewGenerator(
 	}
 
 	callbackWrapper := o.callbackWrapper
-	if compactionEnabled {
-		baseWrapper := callbackWrapper
-		callbackWrapper = func(toolName string, callback gai.ToolCallback) gai.ToolCallback {
-			wrapped := callback
-			if baseWrapper != nil {
-				wrapped = baseWrapper(toolName, wrapped)
-			}
-			return wrapToolCallbackWithCompactionWarning(wrapped)
-		}
-		if err := toolGen.Register(compactionTool(cfg.Compaction), nil); err != nil {
+	if compactionRuntime != nil {
+		callbackWrapper = compactionRuntime.wrapToolCallbackWrapper(callbackWrapper)
+		if err := compactionRuntime.registerTool(toolGen); err != nil {
 			return nil, fmt.Errorf("failed to register compact_conversation tool: %w", err)
 		}
 	}
@@ -512,10 +512,7 @@ func NewGenerator(
 			LocalModulePaths:     cfg.CodeMode.LocalModulePaths,
 		}
 
-		finalCallback := gai.ToolCallback(callback)
-		if callbackWrapper != nil {
-			finalCallback = callbackWrapper(executeGoCodeTool.Name, callback)
-		}
+		finalCallback := applyToolCallbackWrapper(executeGoCodeTool.Name, callback, callbackWrapper)
 		if err := toolGen.Register(executeGoCodeTool, finalCallback); err != nil {
 			return nil, fmt.Errorf("failed to register execute_go_code tool: %w", err)
 		}
@@ -528,10 +525,7 @@ func NewGenerator(
 				if err != nil {
 					return nil, fmt.Errorf("converting tool %s: %w", mcpTool.Name, err)
 				}
-				cb := gai.ToolCallback(mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name, conn.Config))
-				if callbackWrapper != nil {
-					cb = callbackWrapper(mcpTool.Name, cb)
-				}
+				cb := applyToolCallbackWrapper(mcpTool.Name, mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name, conn.Config), callbackWrapper)
 				if err := toolGen.Register(gaiTool, cb); err != nil {
 					return nil, fmt.Errorf("failed to register excluded tool %s: %w", mcpTool.Name, err)
 				}
@@ -545,10 +539,7 @@ func NewGenerator(
 				if err != nil {
 					return nil, fmt.Errorf("converting tool %s: %w", mcpTool.Name, err)
 				}
-				cb := gai.ToolCallback(mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name, conn.Config))
-				if callbackWrapper != nil {
-					cb = callbackWrapper(mcpTool.Name, cb)
-				}
+				cb := applyToolCallbackWrapper(mcpTool.Name, mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name, conn.Config), callbackWrapper)
 				if err := toolGen.Register(gaiTool, cb); err != nil {
 					return nil, fmt.Errorf("failed to register tool %s: %w", mcpTool.Name, err)
 				}
@@ -556,9 +547,8 @@ func NewGenerator(
 		}
 	}
 
-	if compactionEnabled {
-		return newCompactionAwareGenerator(toolGen, toolGen, cfg.Compaction, cfg.Model.ContextWindow), nil
+	if compactionRuntime != nil {
+		return compactionRuntime.wrapGenerator(toolGen, toolGen), nil
 	}
-
 	return toolGen, nil
 }

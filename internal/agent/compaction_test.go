@@ -132,7 +132,7 @@ func TestCompactionUsageTrackingGenerator_FlipsThresholdState(t *testing.T) {
 			gai.UsageMetricGenerationTokens: 40,
 		},
 	}}}
-	state := newCompactionRunState(200, 0.5)
+	state := &compactionRunState{contextWindow: 200, threshold: 0.5}
 	wrapped := newCompactionUsageTrackingGenerator(base)
 
 	if _, err := wrapped.Generate(withCompactionRunState(context.Background(), state), nil, nil); err != nil {
@@ -150,7 +150,7 @@ func TestCompactionUsageTrackingGenerator_FlipsThresholdState(t *testing.T) {
 }
 
 func TestWrapToolCallbackWithCompactionWarning_PrependsWarning(t *testing.T) {
-	state := newCompactionRunState(200, 0.75)
+	state := &compactionRunState{contextWindow: 200, threshold: 0.75}
 	state.latestUsedTokens = 160
 	state.latestUtilization = 0.8
 	state.thresholdExceeded = true
@@ -183,6 +183,77 @@ func TestWrapToolCallbackWithCompactionWarning_PrependsWarning(t *testing.T) {
 	}
 	if got := msg.Blocks[1].Content.String(); got != "original result" {
 		t.Fatalf("unexpected original block content: got %q want %q", got, "original result")
+	}
+}
+
+func TestCompactionRuntime_WrapToolCallbackWrapper_ComposesBaseWrapperAndWarning(t *testing.T) {
+	cfg := mustResolvedConfig(t, &config.CompactionConfig{
+		Enabled:                true,
+		AutoTriggerThreshold:   0.75,
+		ToolDescription:        "Compact the conversation.",
+		InputSchema:            map[string]any{"type": "object"},
+		InitialMessageTemplate: "{{.OriginalUserMessage}}",
+	})
+	runtime := newCompactionRuntime(cfg)
+	if runtime == nil {
+		t.Fatal("expected compaction runtime, got nil")
+	}
+
+	state := &compactionRunState{contextWindow: 200, threshold: 0.75}
+	state.latestUsedTokens = 160
+	state.latestUtilization = 0.8
+	state.thresholdExceeded = true
+
+	baseWrapperCalled := false
+	baseWrapper := func(toolName string, callback gai.ToolCallback) gai.ToolCallback {
+		if toolName != "test_tool" {
+			t.Fatalf("toolName = %q, want %q", toolName, "test_tool")
+		}
+		return toolCallbackFunc(func(ctx context.Context, parametersJSON json.RawMessage, toolCallID string) (gai.Message, error) {
+			baseWrapperCalled = true
+			msg, err := callback.Call(ctx, parametersJSON, toolCallID)
+			if err != nil {
+				return msg, err
+			}
+			msg.Blocks = append(msg.Blocks, gai.TextBlock("wrapped result"))
+			return msg, nil
+		})
+	}
+
+	callback := toolCallbackFunc(func(ctx context.Context, parametersJSON json.RawMessage, toolCallID string) (gai.Message, error) {
+		_ = ctx
+		_ = parametersJSON
+		return gai.Message{
+			Role: gai.ToolResult,
+			Blocks: []gai.Block{{
+				ID:           toolCallID,
+				BlockType:    gai.Content,
+				ModalityType: gai.Text,
+				MimeType:     "text/plain",
+				Content:      gai.Str("original result"),
+			}},
+		}, nil
+	})
+
+	wrappedCallback := runtime.wrapToolCallbackWrapper(baseWrapper)("test_tool", callback)
+	msg, err := wrappedCallback.Call(withCompactionRunState(context.Background(), state), json.RawMessage(`{}`), "tool_1")
+	if err != nil {
+		t.Fatalf("Call returned error: %v", err)
+	}
+	if !baseWrapperCalled {
+		t.Fatal("expected base wrapper to be called")
+	}
+	if len(msg.Blocks) != 3 {
+		t.Fatalf("expected 3 blocks, got %d", len(msg.Blocks))
+	}
+	if got := msg.Blocks[0].Content.String(); got != state.warningText() {
+		t.Fatalf("unexpected warning block: got %q want %q", got, state.warningText())
+	}
+	if got := msg.Blocks[1].Content.String(); got != "original result" {
+		t.Fatalf("unexpected original block content: got %q want %q", got, "original result")
+	}
+	if got := msg.Blocks[2].Content.String(); got != "wrapped result" {
+		t.Fatalf("unexpected wrapped block content: got %q want %q", got, "wrapped result")
 	}
 }
 
