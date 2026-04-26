@@ -31,7 +31,7 @@ type ExecuteRootOptions struct {
 
 	// Config is the resolved effective configuration.
 	// The caller is responsible for loading and resolving the config.
-	Config *config.Config
+	Config config.Config
 	// CustomURL overrides the model's base URL
 	CustomURL string
 
@@ -114,7 +114,10 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 		if opts.VerboseSubagent {
 			renderMode = subagentlog.RenderModeVerbose
 		}
-		renderer := subagentlog.NewRenderer(render.NewRenderer(), renderMode)
+		renderer := subagentlog.NewRenderer(&render.PlainTextRenderer{}, renderMode)
+		if render.IsTTYWriter(opts.Stderr) && render.IsTTYWriter(opts.Stdout) {
+			renderer = subagentlog.NewRenderer(render.NewGlamourRenderer(), renderMode)
+		}
 		stderrWriter := subagentlog.NewSyncWriter(stderr)
 		eventServer := subagentlog.NewServer(func(event subagentlog.Event) {
 			rendered := renderer.RenderEvent(event)

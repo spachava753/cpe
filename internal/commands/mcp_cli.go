@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/spachava753/cpe/internal/config"
-	"github.com/spachava753/cpe/internal/ports"
 	"github.com/spachava753/cpe/internal/render"
 )
 
@@ -71,7 +70,7 @@ type MCPListToolsFromConfigOptions struct {
 	Writer       io.Writer
 	ShowAll      bool
 	ShowFiltered bool
-	Renderer     ports.Renderer
+	Renderer     render.Iface
 }
 
 // MCPListToolsFromConfig resolves config and lists tools on one server.
@@ -87,7 +86,10 @@ func MCPListToolsFromConfig(ctx context.Context, opts MCPListToolsFromConfigOpti
 	}
 	renderer := opts.Renderer
 	if renderer == nil {
-		renderer = render.NewRenderer()
+		renderer = &render.PlainTextRenderer{}
+		if render.IsTTYWriter(writer) {
+			renderer = render.NewGlamourRenderer()
+		}
 	}
 
 	return MCPListTools(ctx, MCPListToolsOptions{
@@ -136,7 +138,7 @@ type MCPCodeDescFromConfigOptions struct {
 	ConfigPath string
 	ModelRef   string
 	Writer     io.Writer
-	Renderer   ports.Renderer
+	Renderer   render.Iface
 }
 
 // MCPCodeDescFromConfig resolves config and prints the code mode description.
@@ -152,7 +154,10 @@ func MCPCodeDescFromConfig(ctx context.Context, opts MCPCodeDescFromConfigOption
 	}
 	renderer := opts.Renderer
 	if renderer == nil {
-		renderer = render.NewRenderer()
+		renderer = &render.PlainTextRenderer{}
+		if render.IsTTYWriter(writer) {
+			renderer = render.NewGlamourRenderer()
+		}
 	}
 
 	return MCPCodeDesc(ctx, MCPCodeDescOptions{

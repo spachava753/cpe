@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/spachava753/cpe/internal/codemode"
-	"github.com/spachava753/cpe/internal/ports"
+	"github.com/spachava753/cpe/internal/render"
 )
 
 // RenderMode controls how much event detail is printed for subagent logs.
@@ -29,12 +29,12 @@ const (
 // Lifecycle events (subagent_start/subagent_end) are intentionally suppressed
 // here; the renderer focuses on streaming progress details.
 type Renderer struct {
-	markdownRenderer ports.Renderer
+	markdownRenderer render.Iface
 	mode             RenderMode
 }
 
 // NewRenderer creates a renderer with the provided markdown renderer and mode.
-func NewRenderer(markdownRenderer ports.Renderer, mode RenderMode) *Renderer {
+func NewRenderer(markdownRenderer render.Iface, mode RenderMode) *Renderer {
 	return &Renderer{
 		markdownRenderer: markdownRenderer,
 		mode:             mode,

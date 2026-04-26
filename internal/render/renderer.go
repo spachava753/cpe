@@ -10,9 +10,12 @@ import (
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/muesli/termenv"
 	"golang.org/x/term"
-
-	"github.com/spachava753/cpe/internal/ports"
 )
+
+// Renderer is an interface for rendering content (e.g., markdown to formatted output).
+type Iface interface {
+	Render(in string) (string, error)
+}
 
 // PlainTextRenderer is a renderer that returns content as-is without formatting.
 // Used as a fallback when glamour rendering fails.
@@ -23,11 +26,6 @@ func (p *PlainTextRenderer) Render(in string) (string, error) {
 	return in, nil
 }
 
-// IsTTY returns true if stdout is connected to a terminal.
-func IsTTY() bool {
-	return IsTTYWriter(os.Stdout)
-}
-
 // IsTTYWriter returns true when w is backed by a terminal file descriptor.
 func IsTTYWriter(w io.Writer) bool {
 	f, ok := w.(*os.File)
@@ -35,14 +33,6 @@ func IsTTYWriter(w io.Writer) bool {
 		return false
 	}
 	return term.IsTerminal(int(f.Fd()))
-}
-
-// TurnLifecycleRenderers holds the three renderers used by
-// agent.TurnLifecycleMiddleware.
-type TurnLifecycleRenderers struct {
-	Content  ports.Renderer
-	Thinking ports.Renderer
-	ToolCall ports.Renderer
 }
 
 func getBaseStyle() ansi.StyleConfig {
@@ -55,36 +45,26 @@ func getBaseStyle() ansi.StyleConfig {
 }
 
 // NewGlamourRenderer creates a glamour renderer with appropriate styling for TTY contexts.
-func NewGlamourRenderer() (*glamour.TermRenderer, error) {
+func NewGlamourRenderer() *glamour.TermRenderer {
 	style := getBaseStyle()
 
-	return glamour.NewTermRenderer(
+	r, err := glamour.NewTermRenderer(
 		glamour.WithStyles(style),
 		glamour.WithWordWrap(120),
 	)
-}
 
-func newRendererForTTY(isTTY bool) ports.Renderer {
-	if !isTTY {
-		return &PlainTextRenderer{}
-	}
-
-	renderer, err := NewGlamourRenderer()
 	if err != nil {
-		return &PlainTextRenderer{}
+		panic(err.Error())
 	}
-	return renderer
+
+	return r
 }
 
-func newThinkingRendererForTTY(isTTY bool) ports.Renderer {
-	if !isTTY {
-		return &PlainTextRenderer{}
-	}
-
+func NewThinkingRenderer() *glamour.TermRenderer {
 	style := getBaseStyle()
 	textColor, err := strconv.Atoi(*style.Document.Color)
 	if err != nil {
-		return newRendererForTTY(isTTY)
+		panic(err.Error())
 	}
 	if termenv.HasDarkBackground() {
 		textColor -= 4
@@ -100,46 +80,7 @@ func newThinkingRendererForTTY(isTTY bool) ports.Renderer {
 		glamour.WithWordWrap(120),
 	)
 	if err != nil {
-		return &PlainTextRenderer{}
+		panic(err.Error())
 	}
 	return renderer
-}
-
-// NewRenderer creates a renderer appropriate for the current context.
-// Returns a glamour renderer for TTY contexts, or plain text passthrough otherwise.
-func NewRenderer() ports.Renderer {
-	return NewRendererForWriter(os.Stdout)
-}
-
-// NewRendererForWriter creates a renderer appropriate for the target writer.
-func NewRendererForWriter(w io.Writer) ports.Renderer {
-	return newRendererForTTY(IsTTYWriter(w))
-}
-
-func newTurnLifecycleRenderers(contentTTY, auxiliaryTTY bool) TurnLifecycleRenderers {
-	contentRenderer := newRendererForTTY(contentTTY)
-	thinkingRenderer := newThinkingRendererForTTY(auxiliaryTTY)
-	toolCallRenderer := newRendererForTTY(auxiliaryTTY)
-	return TurnLifecycleRenderers{
-		Content:  contentRenderer,
-		Thinking: thinkingRenderer,
-		ToolCall: toolCallRenderer,
-	}
-}
-
-func newTurnLifecycleRenderersForTTY(isTTY bool) TurnLifecycleRenderers {
-	return newTurnLifecycleRenderers(isTTY, isTTY)
-}
-
-// NewTurnLifecycleRenderers creates the appropriate renderers for turn-lifecycle output.
-// For TTY contexts, creates styled glamour renderers with a distinct thinking style.
-// For non-TTY contexts, returns plain text passthrough renderers.
-func NewTurnLifecycleRenderers() TurnLifecycleRenderers {
-	return NewTurnLifecycleRenderersForWriters(os.Stdout, os.Stderr)
-}
-
-// NewTurnLifecycleRenderersForWriters creates turn-lifecycle renderers tuned
-// to the streams they will be written to.
-func NewTurnLifecycleRenderersForWriters(stdout io.Writer, stderr io.Writer) TurnLifecycleRenderers {
-	return newTurnLifecycleRenderers(IsTTYWriter(stdout), IsTTYWriter(stderr))
 }

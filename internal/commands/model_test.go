@@ -134,7 +134,7 @@ func TestModelSystemPrompt_ResolvesPathRelativeToConfigFile(t *testing.T) {
 
 	var out bytes.Buffer
 	err := ModelSystemPrompt(context.Background(), ModelSystemPromptOptions{
-		Config:         rawCfg,
+		RawConfig:      rawCfg,
 		ConfigFilePath: configPath,
 		ModelName:      "test-model",
 		Output:         &out,

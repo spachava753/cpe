@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/spachava753/gai"
 )
 
@@ -291,6 +292,82 @@ func TestResolveCodeMode_ModelCodeModeOverridesDefaults(t *testing.T) {
 	want := canonicalPath(modelModuleDir)
 	if cfg.CodeMode.LocalModulePaths[0] != want {
 		t.Fatalf("unexpected local module path: got %q want %q", cfg.CodeMode.LocalModulePaths[0], want)
+	}
+}
+
+func TestResolveCompactionDefaultsAndModelOverride(t *testing.T) {
+	t.Parallel()
+
+	rawCfg := &RawConfig{
+		Models: []ModelConfig{{
+			Model: Model{
+				Ref:           "test-model",
+				DisplayName:   "Test",
+				ID:            "gpt-5",
+				Type:          "openai",
+				ApiKeyEnv:     "OPENAI_API_KEY",
+				ContextWindow: 1000,
+				MaxOutput:     100,
+			},
+			Compaction: &RawCompactionConfig{
+				AutoTriggerThreshold:      0.25,
+				MaxAutoCompactionRestarts: 2,
+				ToolDescription:           "model compact",
+				InputSchema:               jsonschema.Schema{Type: "object"},
+				InitialMessageTemplate:    "model {{ .ToolArgumentsJSON }}",
+			},
+		}},
+		Defaults: Defaults{
+			Model: "test-model",
+			Compaction: &RawCompactionConfig{
+				AutoTriggerThreshold:      0.75,
+				MaxAutoCompactionRestarts: 5,
+				ToolDescription:           "default compact",
+				InputSchema:               jsonschema.Schema{Type: "object"},
+				InitialMessageTemplate:    "default",
+			},
+		},
+	}
+
+	cfg, err := resolveFromRaw(rawCfg, RuntimeOptions{}, "")
+	if err != nil {
+		t.Fatalf("resolveFromRaw returned error: %v", err)
+	}
+	if cfg.Compaction == nil {
+		t.Fatal("expected compaction config")
+	}
+	if cfg.Compaction.TokenThreshold != 250 {
+		t.Fatalf("TokenThreshold = %d, want 250", cfg.Compaction.TokenThreshold)
+	}
+	if cfg.Compaction.MaxCompactions != 2 {
+		t.Fatalf("MaxCompactions = %d, want 2", cfg.Compaction.MaxCompactions)
+	}
+	if cfg.Compaction.Tool.Name != CompactionToolName {
+		t.Fatalf("tool name = %q, want %q", cfg.Compaction.Tool.Name, CompactionToolName)
+	}
+	if cfg.Compaction.Tool.Description != "model compact" {
+		t.Fatalf("tool description = %q", cfg.Compaction.Tool.Description)
+	}
+}
+
+func TestResolveCompactionInvalidTemplateFails(t *testing.T) {
+	t.Parallel()
+
+	rawCfg := &RawConfig{
+		Models: []ModelConfig{{Model: Model{
+			Ref: "test-model", DisplayName: "Test", ID: "gpt-5", Type: "openai", ApiKeyEnv: "OPENAI_API_KEY", ContextWindow: 1000, MaxOutput: 100,
+		}}},
+		Defaults: Defaults{
+			Model: "test-model",
+			Compaction: &RawCompactionConfig{
+				AutoTriggerThreshold: 0.5, MaxAutoCompactionRestarts: 1, ToolDescription: "compact", InputSchema: jsonschema.Schema{Type: "object"}, InitialMessageTemplate: "{{",
+			},
+		},
+	}
+
+	_, err := resolveFromRaw(rawCfg, RuntimeOptions{}, "")
+	if err == nil {
+		t.Fatal("expected invalid template error")
 	}
 }
 

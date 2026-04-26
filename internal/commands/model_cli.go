@@ -104,12 +104,12 @@ func ModelSystemPromptFromConfig(ctx context.Context, opts ModelSystemPromptFrom
 	}
 
 	return ModelSystemPrompt(ctx, ModelSystemPromptOptions{
-		Config:          cfg,
-		EffectiveConfig: effectiveConfig,
-		ConfigFilePath:  resolvedConfigPath,
-		ModelName:       modelName,
-		DefaultModel:    opts.DefaultModel,
-		Output:          output,
-		Stderr:          opts.Stderr,
+		RawConfig:      cfg,
+		Config:         effectiveConfig,
+		ConfigFilePath: resolvedConfigPath,
+		ModelName:      modelName,
+		DefaultModel:   opts.DefaultModel,
+		Output:         output,
+		Stderr:         opts.Stderr,
 	})
 }

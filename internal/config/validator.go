@@ -59,9 +59,6 @@ func (c *RawConfig) ValidateWithConfigPath(configFilePath string) error {
 	if err := validateCodeModeConfig(c.Defaults.CodeMode, configFilePath, "defaults.codeMode"); err != nil {
 		return err
 	}
-	if err := validateCompactionConfig(c.Defaults.Compaction, "defaults.compaction"); err != nil {
-		return err
-	}
 
 	// Validate auth_method and api_key_env for each model and model-level codeMode.
 	for i, m := range c.Models {
@@ -70,9 +67,6 @@ func (c *RawConfig) ValidateWithConfigPath(configFilePath string) error {
 		}
 
 		if err := validateCodeModeConfig(m.CodeMode, configFilePath, fmt.Sprintf("models[%d].codeMode", i)); err != nil {
-			return err
-		}
-		if err := validateCompactionConfig(m.Compaction, fmt.Sprintf("models[%d].compaction", i)); err != nil {
 			return err
 		}
 	}

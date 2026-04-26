@@ -22,7 +22,7 @@ func TestDialogBlockFilter_PreservesEmptyToolResultMessages(t *testing.T) {
 	t.Parallel()
 
 	inner := &captureDialogGenerator{}
-	filter := newDialogBlockFilter(inner, whitelistBlockKeepFunc([]string{gai.Content}))
+	filter := NewBlockFilterWrapper(inner, whitelistBlockKeepFunc([]string{gai.Content}))
 
 	_, err := filter.Generate(context.Background(), gai.Dialog{{
 		Role:   gai.ToolResult,
@@ -47,7 +47,7 @@ func TestProviderBlockFilter_ResponsesKeepsOnlyCompatibleThinkingBlocks(t *testi
 	t.Parallel()
 
 	inner := &captureDialogGenerator{}
-	filter := WithProviderBlockFilter("responses")(inner)
+	filter := WithBlockFilter("responses")(inner)
 
 	dialog := gai.Dialog{{
 		Role: gai.User,
@@ -81,7 +81,7 @@ func TestProviderBlockFilter_OpenAIKeepsOnlyContentAndToolCalls(t *testing.T) {
 	t.Parallel()
 
 	inner := &captureDialogGenerator{}
-	filter := WithProviderBlockFilter("openai")(inner)
+	filter := WithBlockFilter("openai")(inner)
 
 	dialog := gai.Dialog{{
 		Role: gai.User,

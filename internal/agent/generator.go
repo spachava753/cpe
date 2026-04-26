@@ -69,13 +69,6 @@ func prependClaudeCodeIdentifier(_ context.Context, params *a.MessageNewParams) 
 	return nil
 }
 
-func newHTTPClientWithTimeout(transport http.RoundTripper, timeout time.Duration) *http.Client {
-	if transport == nil {
-		transport = http.DefaultTransport
-	}
-	return &http.Client{Transport: transport, Timeout: timeout}
-}
-
 func initGeneratorFromModel(
 	ctx context.Context,
 	m config.Model,
@@ -140,7 +133,7 @@ func initGeneratorFromModel(
 					return nil, fmt.Errorf("building patch transport for OAuth: %w", err)
 				}
 			}
-			oauthClient := newHTTPClientWithTimeout(finalTransport, timeout)
+			oauthClient := &http.Client{Transport: finalTransport, Timeout: timeout}
 			anthOpts := []aopts.RequestOption{
 				aopts.WithAPIKey("placeholder"),
 				aopts.WithHTTPClient(oauthClient),
@@ -224,7 +217,7 @@ func initGeneratorFromModel(
 					return nil, fmt.Errorf("building patch transport for OAuth: %w", err)
 				}
 			}
-			oauthClient := newHTTPClientWithTimeout(finalTransport, timeout)
+			oauthClient := &http.Client{Transport: finalTransport, Timeout: timeout}
 
 			// For OAuth, use the ChatGPT backend API URL unless explicitly overridden
 			oauthBaseURL := auth.OpenAICodexBaseURL
@@ -293,25 +286,12 @@ func initGeneratorFromModel(
 		gen = &gai.StreamingAdapter{S: sg}
 	}
 
-	return NewPanicCatchingGenerator(gen), nil
-}
-
-// ToolCallbackWrapper is a function that wraps a tool callback.
-// It receives the tool name and the original callback, and returns a wrapped callback.
-// This is used for adding behavior like event emission to tool callbacks.
-type ToolCallbackWrapper func(toolName string, callback gai.ToolCallback) gai.ToolCallback
-
-func applyToolCallbackWrapper(toolName string, callback gai.ToolCallback, wrapper ToolCallbackWrapper) gai.ToolCallback {
-	if wrapper == nil {
-		return callback
-	}
-	return wrapper(toolName, callback)
+	return gen, nil
 }
 
 // generatorOptions holds optional configuration for generator creation.
 type generatorOptions struct {
 	disablePrinting bool
-	callbackWrapper ToolCallbackWrapper
 	middleware      []gai.WrapperFunc
 	baseGenerator   gai.ToolCapableGenerator
 	dialogSaver     storage.DialogSaver
@@ -321,19 +301,11 @@ type generatorOptions struct {
 // GeneratorOption is a functional option for configuring generator creation.
 type GeneratorOption func(*generatorOptions)
 
-// WithDisablePrinting disables response printing to stdout.
+// WithDisablePrinting disables all loop printing.
 // Use this for non-interactive modes like MCP server mode.
 func WithDisablePrinting() GeneratorOption {
 	return func(o *generatorOptions) {
 		o.disablePrinting = true
-	}
-}
-
-// WithCallbackWrapper sets a wrapper function for tool callbacks.
-// This is used for adding behavior like event emission to tool callbacks.
-func WithCallbackWrapper(w ToolCallbackWrapper) GeneratorOption {
-	return func(o *generatorOptions) {
-		o.callbackWrapper = w
 	}
 }
 
@@ -381,13 +353,14 @@ func WithStdout(w io.Writer) GeneratorOption {
 //   - mcpState: Initialized MCP state with connections and tools
 //
 // Optional parameters (via functional options):
-//   - WithDisablePrinting(): Disable response printing
-//   - WithCallbackWrapper(w): Set a tool callback wrapper
+//   - WithDisablePrinting(): Disable all loop printing
 //   - WithMiddleware(m...): Add custom middleware
 //   - WithBaseGenerator(g): Use a custom base generator instead of model-based initialization
+//   - WithDialogSaver(s): Save dialog messages as they flow through generation
+//   - WithStdout(w): Write model response output to a custom destination
 func NewGenerator(
 	ctx context.Context,
-	cfg *config.Config,
+	cfg config.Config,
 	systemPrompt string,
 	mcpState *mcp.MCPState,
 	opts ...GeneratorOption,
@@ -397,8 +370,6 @@ func NewGenerator(
 	for _, opt := range opts {
 		opt(o)
 	}
-
-	compactionRuntime := newCompactionRuntime(cfg)
 
 	// Use custom base generator if provided, otherwise create from model config
 	var gen gai.ToolCapableGenerator
@@ -417,42 +388,17 @@ func NewGenerator(
 		}
 	}
 
-	if compactionRuntime != nil {
-		gen = compactionRuntime.wrapToolCapableGenerator(gen)
-	}
-
-	// Build middleware stack using gai.Wrap
+	// Build the single-turn provider stack. Runtime owns persistence,
+	// rendering, tool callbacks, and the dialog loop outside retry.
 	b := backoff.NewExponentialBackOff()
 	b.InitialInterval = 500 * time.Millisecond
 	b.MaxInterval = 1 * time.Minute
 	b.Reset()
 
-	var wrappers []gai.WrapperFunc
-	stdoutW := o.stdout
-	if stdoutW == nil {
-		stdoutW = os.Stdout
+	wrappers := []gai.WrapperFunc{
+		WithBlockFilter(cfg.Model.Type),
+		gai.WithRetry(b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute)),
 	}
-
-	// Turn lifecycle middleware must stay OUTSIDE both the provider block filter
-	// and retry because it performs side effects that must happen once per logical
-	// turn on the original dialog objects:
-	// - BEFORE inner Generate: save unsaved messages and print trailing tool results
-	// - AFTER inner Generate: save the assistant response, then print response + usage
-	//
-	// Wrapper ordering (gai.Wrap applies in order, first = outermost):
-	// - TurnLifecycle (outermost): save/print around one logical turn
-	// - ProviderBlockFilter: keeps only provider-compatible input blocks
-	// - Retry (innermost): retries transient failures without duplicating side effects
-	wrappers = append(wrappers, WithTurnLifecycle(cfg.Model, o.dialogSaver, stdoutW, os.Stderr, o.disablePrinting))
-
-	// Add provider-specific block filtering based on model type.
-	// Providers that support thinking keep only their own thinking blocks.
-	// Providers without thinking support keep only content/tool-call input blocks.
-	wrappers = append(wrappers, WithProviderBlockFilter(cfg.Model.Type))
-
-	wrappers = append(wrappers, gai.WithRetry(b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute)))
-
-	// Add custom middleware after default middleware
 	wrappers = append(wrappers, o.middleware...)
 
 	wrapped := gai.Wrap(gen, wrappers...)
@@ -461,18 +407,11 @@ func NewGenerator(
 		return nil, fmt.Errorf("wrapped generator does not implement ToolCapableGenerator interface")
 	}
 
-	// Create the tool generator using the wrapped generator
-	toolGen := &gai.ToolGenerator{
-		G: gen,
+	stdoutW := o.stdout
+	if stdoutW == nil {
+		stdoutW = os.Stdout
 	}
-
-	callbackWrapper := o.callbackWrapper
-	if compactionRuntime != nil {
-		callbackWrapper = compactionRuntime.wrapToolCallbackWrapper(callbackWrapper)
-		if err := compactionRuntime.registerTool(toolGen); err != nil {
-			return nil, fmt.Errorf("failed to register compact_conversation tool: %w", err)
-		}
-	}
+	runtime := NewRuntime(gen, cfg, o.dialogSaver, stdoutW, os.Stderr, o.disablePrinting)
 
 	// Check if code mode is enabled
 	codeModeEnabled := cfg.CodeMode != nil && cfg.CodeMode.Enabled
@@ -512,8 +451,7 @@ func NewGenerator(
 			LocalModulePaths:     cfg.CodeMode.LocalModulePaths,
 		}
 
-		finalCallback := applyToolCallbackWrapper(executeGoCodeTool.Name, callback, callbackWrapper)
-		if err := toolGen.Register(executeGoCodeTool, finalCallback); err != nil {
+		if err := runtime.Register(executeGoCodeTool, callback); err != nil {
 			return nil, fmt.Errorf("failed to register execute_go_code tool: %w", err)
 		}
 
@@ -525,8 +463,7 @@ func NewGenerator(
 				if err != nil {
 					return nil, fmt.Errorf("converting tool %s: %w", mcpTool.Name, err)
 				}
-				cb := applyToolCallbackWrapper(mcpTool.Name, mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name, conn.Config), callbackWrapper)
-				if err := toolGen.Register(gaiTool, cb); err != nil {
+				if err := runtime.Register(gaiTool, mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name, conn.Config)); err != nil {
 					return nil, fmt.Errorf("failed to register excluded tool %s: %w", mcpTool.Name, err)
 				}
 			}
@@ -539,16 +476,18 @@ func NewGenerator(
 				if err != nil {
 					return nil, fmt.Errorf("converting tool %s: %w", mcpTool.Name, err)
 				}
-				cb := applyToolCallbackWrapper(mcpTool.Name, mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name, conn.Config), callbackWrapper)
-				if err := toolGen.Register(gaiTool, cb); err != nil {
+				if err := runtime.Register(gaiTool, mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name, conn.Config)); err != nil {
 					return nil, fmt.Errorf("failed to register tool %s: %w", mcpTool.Name, err)
 				}
 			}
 		}
 	}
 
-	if compactionRuntime != nil {
-		return compactionRuntime.wrapGenerator(toolGen, toolGen), nil
+	if cfg.Compaction != nil {
+		if err := runtime.Register(cfg.Compaction.Tool, nil); err != nil {
+			return nil, fmt.Errorf("failed to register compaction tool: %w", err)
+		}
 	}
-	return toolGen, nil
+
+	return runtime, nil
 }

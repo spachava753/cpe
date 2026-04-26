@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/ports"
 )
 
 func TestFindToolNameByCallIDReturnsUnknownForEmptyDecodedName(t *testing.T) {
@@ -89,35 +91,34 @@ func TestEmittingGeneratorFallbackIncludesAllToolResultBlocksInPayload(t *testin
 	}
 }
 
-func TestNewEmittingGeneratorDoesNotStackMiddlewareWhenReused(t *testing.T) {
+func TestNewEmittingGeneratorReplacesRuntimeObserverWhenReused(t *testing.T) {
 	t.Parallel()
 
-	toolGen := &gai.ToolGenerator{G: staticToolCapableGenerator{}}
+	base := &observerRecordingGenerator{}
 	firstCollector := newEventCollectorServer(t)
 	secondCollector := newEventCollectorServer(t)
 
-	NewEmittingGenerator(toolGen, NewClient(firstCollector.server.URL), "first", "run-1")
-	wrapped, ok := toolGen.G.(*emittingMiddleware)
-	if !ok {
-		t.Fatalf("toolGen.G type = %T, want *emittingMiddleware", toolGen.G)
+	first := NewEmittingGenerator(base, NewClient(firstCollector.server.URL), "first", "run-1")
+	if !first.observed {
+		t.Fatal("expected runtime observer path")
 	}
-	if _, ok := wrapped.base.(staticToolCapableGenerator); !ok {
-		t.Fatalf("wrapped.base type = %T, want staticToolCapableGenerator", wrapped.base)
+	firstObserver := base.observer
+	if firstObserver == nil {
+		t.Fatal("expected first observer")
 	}
 
-	NewEmittingGenerator(toolGen, NewClient(secondCollector.server.URL), "second", "run-2")
-	wrapped, ok = toolGen.G.(*emittingMiddleware)
-	if !ok {
-		t.Fatalf("toolGen.G type after second wrap = %T, want *emittingMiddleware", toolGen.G)
+	second := NewEmittingGenerator(base, NewClient(secondCollector.server.URL), "second", "run-2")
+	if !second.observed {
+		t.Fatal("expected runtime observer path for second wrapper")
 	}
-	if _, ok := wrapped.base.(staticToolCapableGenerator); !ok {
-		t.Fatalf("wrapped.base type after second wrap = %T, want staticToolCapableGenerator", wrapped.base)
+	if base.observer == nil {
+		t.Fatal("expected replacement observer")
 	}
-	if got, want := wrapped.subagentName, "second"; got != want {
-		t.Fatalf("wrapped.subagentName = %q, want %q", got, want)
+	if base.setCount != 2 {
+		t.Fatalf("set count = %d, want 2", base.setCount)
 	}
-	if got, want := wrapped.runID, "run-2"; got != want {
-		t.Fatalf("wrapped.runID = %q, want %q", got, want)
+	if firstObserver == base.observer {
+		t.Fatal("expected observer to be replaced, not reused")
 	}
 }
 
@@ -129,14 +130,18 @@ func (m mockDialogGenerator) Generate(context.Context, gai.Dialog, gai.GenOptsGe
 	return m.dialog, nil
 }
 
-type staticToolCapableGenerator struct{}
-
-func (staticToolCapableGenerator) Generate(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
-	return gai.Response{}, nil
+type observerRecordingGenerator struct {
+	observer ports.RuntimeObserver
+	setCount int
 }
 
-func (staticToolCapableGenerator) Register(gai.Tool) error {
-	return nil
+func (g *observerRecordingGenerator) Generate(context.Context, gai.Dialog, gai.GenOptsGenerator) (gai.Dialog, error) {
+	return nil, nil
+}
+
+func (g *observerRecordingGenerator) SetRuntimeObserver(observer ports.RuntimeObserver) {
+	g.observer = observer
+	g.setCount++
 }
 
 type eventCollectorServer struct {

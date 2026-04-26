@@ -3,7 +3,10 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/google/jsonschema-go/jsonschema"
 
 	"github.com/spachava753/cpe/internal/mcpconfig"
 )
@@ -167,6 +170,131 @@ func TestRawConfigValidate_RequiresContextWindowAndMaxOutput(t *testing.T) {
 	missingMaxOutput.Models[0].MaxOutput = 0
 	if err := missingMaxOutput.Validate(); err == nil {
 		t.Fatal("expected validation error for missing max_output")
+	}
+}
+
+func TestRawConfigValidate_CompactionStructTags(t *testing.T) {
+	t.Parallel()
+
+	locations := []struct {
+		name        string
+		apply       func(*RawConfig, *RawCompactionConfig)
+		fieldPrefix string
+	}{
+		{
+			name: "defaults compaction",
+			apply: func(cfg *RawConfig, compaction *RawCompactionConfig) {
+				cfg.Defaults.Compaction = compaction
+			},
+			fieldPrefix: "RawConfig.Defaults.Compaction",
+		},
+		{
+			name: "model compaction",
+			apply: func(cfg *RawConfig, compaction *RawCompactionConfig) {
+				cfg.Models[0].Compaction = compaction
+			},
+			fieldPrefix: "RawConfig.Models[0].Compaction",
+		},
+	}
+
+	cases := []struct {
+		name      string
+		mutate    func(*RawCompactionConfig)
+		fieldName string
+		wantTag   string
+	}{
+		{
+			name: "requires auto trigger threshold",
+			mutate: func(compaction *RawCompactionConfig) {
+				compaction.AutoTriggerThreshold = 0
+			},
+			fieldName: "AutoTriggerThreshold",
+			wantTag:   "required",
+		},
+		{
+			name: "caps auto trigger threshold at one",
+			mutate: func(compaction *RawCompactionConfig) {
+				compaction.AutoTriggerThreshold = 1.2
+			},
+			fieldName: "AutoTriggerThreshold",
+			wantTag:   "max",
+		},
+		{
+			name: "requires positive max auto compaction restarts",
+			mutate: func(compaction *RawCompactionConfig) {
+				compaction.MaxAutoCompactionRestarts = -1
+			},
+			fieldName: "MaxAutoCompactionRestarts",
+			wantTag:   "min",
+		},
+		{
+			name: "requires tool description",
+			mutate: func(compaction *RawCompactionConfig) {
+				compaction.ToolDescription = ""
+			},
+			fieldName: "ToolDescription",
+			wantTag:   "required",
+		},
+		{
+			name: "requires input schema",
+			mutate: func(compaction *RawCompactionConfig) {
+				compaction.InputSchema = jsonschema.Schema{}
+			},
+			fieldName: "InputSchema",
+			wantTag:   "required",
+		},
+		{
+			name: "requires initial message template",
+			mutate: func(compaction *RawCompactionConfig) {
+				compaction.InitialMessageTemplate = ""
+			},
+			fieldName: "InitialMessageTemplate",
+			wantTag:   "required",
+		},
+	}
+
+	for _, location := range locations {
+
+		for _, tc := range cases {
+
+			t.Run(location.name+"/"+tc.name, func(t *testing.T) {
+				cfg := rawConfigWithCompaction(*validCompactionConfig())
+				compaction := validCompactionConfig()
+				tc.mutate(compaction)
+				location.apply(&cfg, compaction)
+
+				err := cfg.Validate()
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+
+				assertValidationError(t, err, location.fieldPrefix+"."+tc.fieldName, tc.wantTag)
+			})
+		}
+	}
+}
+
+func TestRawConfigValidate_CompactionStructTags_AcceptsValidConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := rawConfigWithCompaction(*validCompactionConfig())
+	cfg.Models[0].Compaction = validCompactionConfig()
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected valid config, got error: %v", err)
+	}
+}
+
+func TestRawConfigValidate_CompactionStructTags_OmittedInDefaultsAndModel(t *testing.T) {
+	t.Parallel()
+
+	cfg := rawConfigWithCodeMode(CodeModeConfig{})
+	cfg.Defaults.CodeMode = nil
+	cfg.Defaults.Compaction = nil
+	cfg.Models[0].Compaction = nil
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected omitted compaction config to be valid, got error: %v", err)
 	}
 }
 
@@ -426,6 +554,44 @@ func TestValidateWithConfigPath_RemoteMCPServerRejectsCommandAndArgs(t *testing.
 	if err.Error() != want {
 		t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
 	}
+}
+
+func assertValidationError(t *testing.T, err error, wantField, wantTag string) {
+	t.Helper()
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	msg := err.Error()
+	if !strings.Contains(msg, "invalid configuration file:") {
+		t.Fatalf("expected validator error wrapper, got %q", msg)
+	}
+	if !strings.Contains(msg, wantField) {
+		t.Fatalf("expected error to mention %q, got %q", wantField, msg)
+	}
+	if !strings.Contains(msg, "failed on the '"+wantTag+"' tag") {
+		t.Fatalf("expected error to mention tag %q, got %q", wantTag, msg)
+	}
+}
+
+func validCompactionConfig() *RawCompactionConfig {
+	return &RawCompactionConfig{
+		AutoTriggerThreshold:      0.8,
+		MaxAutoCompactionRestarts: 3,
+		ToolDescription:           "Compact the conversation into a fresh branch.",
+		InputSchema: jsonschema.Schema{
+			Type: "object",
+		},
+		InitialMessageTemplate: "Original: {{.OriginalUserMessage}}",
+	}
+}
+
+func rawConfigWithCompaction(compaction RawCompactionConfig) RawConfig {
+	cfg := rawConfigWithCodeMode(CodeModeConfig{})
+	cfg.Defaults.CodeMode = nil
+	cfg.Defaults.Compaction = &compaction
+	return cfg
 }
 
 func rawConfigWithCodeMode(codeMode CodeModeConfig) RawConfig {

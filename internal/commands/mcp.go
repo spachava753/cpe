@@ -26,7 +26,7 @@ import (
 	inputpkg "github.com/spachava753/cpe/internal/input"
 	mcpinternal "github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/mcpconfig"
-	"github.com/spachava753/cpe/internal/ports"
+	"github.com/spachava753/cpe/internal/render"
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/subagentlog"
 )
@@ -126,7 +126,7 @@ type MCPListToolsOptions struct {
 	Writer       io.Writer
 	ShowAll      bool
 	ShowFiltered bool
-	Renderer     ports.Renderer
+	Renderer     render.Iface
 }
 
 // MCPListTools lists tools available on an MCP server
@@ -329,7 +329,7 @@ type MCPCodeDescOptions struct {
 	MCPServers map[string]mcpconfig.ServerConfig
 	CodeMode   *config.CodeModeConfig
 	Writer     io.Writer
-	Renderer   ports.Renderer
+	Renderer   render.Iface
 }
 
 // MCPCodeDesc generates and prints the execute_go_code tool description

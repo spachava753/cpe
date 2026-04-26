@@ -1,8 +1,10 @@
 package config
 
 import (
+	"text/template"
 	"time"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/mcpconfig"
@@ -49,6 +51,15 @@ type SubagentConfig struct {
 	Description string `yaml:"description" json:"description" validate:"required"`
 	// OutputSchemaPath is an optional path to a JSON schema file for structured output
 	OutputSchemaPath string `yaml:"outputSchemaPath,omitempty" json:"outputSchemaPath,omitempty"`
+}
+
+// RawCompactionConfig controls manual and threshold-driven conversation compaction.
+type RawCompactionConfig struct {
+	AutoTriggerThreshold      float64           `yaml:"autoTriggerThreshold,omitempty" json:"autoTriggerThreshold,omitempty" validate:"required,gt=0,max=1"`
+	MaxAutoCompactionRestarts int               `yaml:"maxAutoCompactionRestarts,omitempty" json:"maxAutoCompactionRestarts,omitempty" validate:"required,min=1"`
+	ToolDescription           string            `yaml:"toolDescription,omitempty" json:"toolDescription,omitempty" validate:"required"`
+	InputSchema               jsonschema.Schema `yaml:"inputSchema,omitempty" json:"inputSchema,omitempty" jsonschema:"oneof_type=object;boolean" validate:"required"`
+	InitialMessageTemplate    string            `yaml:"initialMessageTemplate,omitempty" json:"initialMessageTemplate,omitempty" validate:"required"`
 }
 
 // RawConfig represents the configuration file structure.
@@ -130,7 +141,7 @@ type Defaults struct {
 	CodeMode *CodeModeConfig `yaml:"codeMode,omitempty" json:"codeMode,omitempty"`
 
 	// Conversation compaction configuration
-	Compaction *CompactionConfig `yaml:"compaction,omitempty" json:"compaction,omitempty"`
+	Compaction *RawCompactionConfig `yaml:"compaction,omitempty" json:"compaction,omitempty" validate:"omitempty"`
 }
 
 // ModelConfig extends the base model with generation defaults
@@ -147,7 +158,7 @@ type ModelConfig struct {
 	CodeMode *CodeModeConfig `yaml:"codeMode,omitempty" json:"codeMode,omitempty"`
 
 	// Conversation compaction configuration for this model (overrides global defaults)
-	Compaction *CompactionConfig `yaml:"compaction,omitempty" json:"compaction,omitempty"`
+	Compaction *RawCompactionConfig `yaml:"compaction,omitempty" json:"compaction,omitempty" validate:"omitempty"`
 }
 
 // FindModel searches for a model by ref in the config
@@ -158,6 +169,25 @@ func (c *RawConfig) FindModel(ref string) (ModelConfig, bool) {
 		}
 	}
 	return ModelConfig{}, false
+}
+
+const CompactionToolName = "compact_conversation"
+
+// CompactionTemplateData is the data available to the compaction initial-message template.
+type CompactionTemplateData struct {
+	PreviousLeafID     string
+	Dialog             gai.Dialog
+	ToolArguments      map[string]any
+	ToolArgumentsJSON  string
+	CompactionToolName string
+}
+
+// CompactionConfig controls effective runtime conversation compaction behavior.
+type CompactionConfig struct {
+	TokenThreshold         uint
+	MaxCompactions         uint
+	Tool                   gai.Tool
+	InitialMessageTemplate *template.Template
 }
 
 // Config represents the effective runtime configuration for a single model
@@ -184,7 +214,7 @@ type Config struct {
 	CodeMode *CodeModeConfig
 
 	// Effective conversation compaction configuration
-	Compaction *ResolvedCompactionConfig
+	Compaction *CompactionConfig
 }
 
 // RuntimeOptions captures runtime overrides from CLI flags and environment

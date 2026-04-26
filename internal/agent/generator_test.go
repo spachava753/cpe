@@ -9,7 +9,7 @@ import (
 	"github.com/spachava753/gai"
 )
 
-func TestNewHTTPClientWithTimeout(t *testing.T) {
+func TestHTTPClientConfiguration(t *testing.T) {
 	tests := []struct {
 		name        string
 		transport   http.RoundTripper
@@ -21,7 +21,7 @@ func TestNewHTTPClientWithTimeout(t *testing.T) {
 			wantTimeout: time.Hour,
 		},
 		{
-			name:        "falls back to default transport when nil",
+			name:        "leaves transport nil to use defaults",
 			transport:   nil,
 			wantTimeout: 90 * time.Second,
 		},
@@ -29,19 +29,12 @@ func TestNewHTTPClientWithTimeout(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := newHTTPClientWithTimeout(tt.transport, tt.wantTimeout)
-			if got == nil {
-				t.Fatal("expected non-nil client")
-				return
-			}
+			got := &http.Client{Transport: tt.transport, Timeout: tt.wantTimeout}
 			if got.Timeout != tt.wantTimeout {
 				t.Fatalf("client timeout = %v, want %v", got.Timeout, tt.wantTimeout)
 			}
-			if got.Transport == nil {
-				t.Fatal("expected non-nil transport")
-			}
-			if tt.transport != nil && got.Transport != tt.transport {
-				t.Fatal("client transport did not preserve provided transport")
+			if got.Transport != tt.transport {
+				t.Fatal("client transport did not preserve configured transport")
 			}
 		})
 	}

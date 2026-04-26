@@ -15,7 +15,7 @@ type LoadSystemPromptOptions struct {
 	// SystemPromptPath is the path to the system prompt file
 	SystemPromptPath string
 	// Config is the effective configuration for template rendering
-	Config *config.Config
+	Config config.Config
 	// Stderr is where template warnings are written
 	Stderr io.Writer
 }

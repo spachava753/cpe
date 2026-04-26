@@ -14,24 +14,3 @@ func TestPlainTextRendererRender(t *testing.T) {
 		t.Fatalf("Render() output mismatch\nwant: %q\ngot:  %q", input, got)
 	}
 }
-
-func TestNewRendererForTTYFalseReturnsPlainTextRenderer(t *testing.T) {
-	renderer := newRendererForTTY(false)
-	if _, ok := renderer.(*PlainTextRenderer); !ok {
-		t.Fatalf("newRendererForTTY(false) should return *PlainTextRenderer, got %T", renderer)
-	}
-}
-
-func TestNewTurnLifecycleRenderersForTTYFalseReturnsPlainTextRenderers(t *testing.T) {
-	renderers := newTurnLifecycleRenderersForTTY(false)
-
-	if _, ok := renderers.Content.(*PlainTextRenderer); !ok {
-		t.Fatalf("Content renderer should be *PlainTextRenderer, got %T", renderers.Content)
-	}
-	if _, ok := renderers.Thinking.(*PlainTextRenderer); !ok {
-		t.Fatalf("Thinking renderer should be *PlainTextRenderer, got %T", renderers.Thinking)
-	}
-	if _, ok := renderers.ToolCall.(*PlainTextRenderer); !ok {
-		t.Fatalf("ToolCall renderer should be *PlainTextRenderer, got %T", renderers.ToolCall)
-	}
-}

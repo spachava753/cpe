@@ -22,7 +22,7 @@ import (
 // It embeds the resolved runtime configuration so templates can reference
 // model and MCP settings.
 type TemplateData struct {
-	*config.Config
+	config.Config
 }
 
 // SkillMetadata represents the YAML frontmatter of a SKILL.md file.

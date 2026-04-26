@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"strings"
 
@@ -13,7 +12,6 @@ import (
 
 	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
-	"github.com/spachava753/cpe/internal/ports"
 	"github.com/spachava753/cpe/internal/render"
 	"github.com/spachava753/cpe/internal/storage"
 )
@@ -23,107 +21,22 @@ const (
 	unknownToolName    = "unknown"
 )
 
-// TurnLifecycleMiddleware wraps one logical generator turn with the side effects
-// that must happen in a specific order:
-//   - save the incoming dialog so message IDs exist for printers
-//   - print trailing tool results once per logical turn
-//   - call the inner generator (which may itself retry)
-//   - save the assistant response and propagate its message ID
-//   - print the assistant response and message ID
-//   - print token usage and estimated cost summary
-//
-// These steps are coupled and intentionally live in one middleware so their
-// ordering is explicit in code rather than distributed across separate wrappers.
-type TurnLifecycleMiddleware struct {
-	gai.GeneratorWrapper
-	dialogSaver             storage.DialogSaver
-	contentRenderer         ports.Renderer
-	thinkingRenderer        ports.Renderer
-	toolCallRenderer        ports.Renderer
-	metadataRenderer        ports.Renderer
-	stdout                  io.Writer
-	stderr                  io.Writer
-	model                   config.Model
-	disableResponsePrinting bool
-	cumulativeCostUSD       float64
-}
+func (r *Runtime) configureOutput(disablePrinting bool) {
+	normalRenderer := render.Iface(&render.PlainTextRenderer{})
+	thinkingRenderer := render.Iface(&render.PlainTextRenderer{})
 
-// NewTurnLifecycleMiddleware creates a middleware that performs saving,
-// printing, and usage reporting for one logical generator turn.
-func NewTurnLifecycleMiddleware(
-	wrapped gai.Generator,
-	model config.Model,
-	dialogSaver storage.DialogSaver,
-	stdout io.Writer,
-	stderr io.Writer,
-	disableResponsePrinting bool,
-) *TurnLifecycleMiddleware {
-	if stdout == nil {
-		stdout = os.Stdout
-	}
-	if stderr == nil {
-		stderr = os.Stderr
+	if disablePrinting {
+		r.stdout = io.Discard
+		r.stderr = io.Discard
+	} else if render.IsTTYWriter(r.stderr) && render.IsTTYWriter(r.stdout) {
+		normalRenderer = render.NewGlamourRenderer()
+		thinkingRenderer = render.NewThinkingRenderer()
 	}
 
-	middleware := &TurnLifecycleMiddleware{
-		GeneratorWrapper:        gai.GeneratorWrapper{Inner: wrapped},
-		dialogSaver:             dialogSaver,
-		metadataRenderer:        render.NewRendererForWriter(stderr),
-		stdout:                  stdout,
-		stderr:                  stderr,
-		model:                   model,
-		disableResponsePrinting: disableResponsePrinting,
-	}
-	if !disableResponsePrinting {
-		renderers := render.NewTurnLifecycleRenderersForWriters(stdout, stderr)
-		middleware.contentRenderer = renderers.Content
-		middleware.thinkingRenderer = renderers.Thinking
-		middleware.toolCallRenderer = renderers.ToolCall
-	}
-	return middleware
-}
-
-// WithTurnLifecycle returns a WrapperFunc for use with gai.Wrap.
-func WithTurnLifecycle(
-	model config.Model,
-	dialogSaver storage.DialogSaver,
-	stdout io.Writer,
-	stderr io.Writer,
-	disableResponsePrinting bool,
-) gai.WrapperFunc {
-	return func(g gai.Generator) gai.Generator {
-		return NewTurnLifecycleMiddleware(g, model, dialogSaver, stdout, stderr, disableResponsePrinting)
-	}
-}
-
-func (m *TurnLifecycleMiddleware) Generate(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
-	if m.dialogSaver != nil {
-		savedDialog, err := saveDialog(ctx, m.dialogSaver, dialog)
-		if err != nil {
-			return gai.Response{}, fmt.Errorf("failed to save dialog: %w", err)
-		}
-		dialog = savedDialog
-	}
-
-	for _, toolResultMsg := range trailingToolResults(dialog) {
-		m.printToolResult(dialog, toolResultMsg)
-	}
-
-	resp, err := m.GeneratorWrapper.Generate(ctx, dialog, options)
-	if err == nil && m.dialogSaver != nil {
-		savedResp, saveErr := saveAssistantResponse(ctx, m.dialogSaver, dialog, resp)
-		if saveErr != nil {
-			return gai.Response{}, fmt.Errorf("failed to save assistant message: %w", saveErr)
-		}
-		resp = savedResp
-	}
-
-	if !m.disableResponsePrinting {
-		m.printResponse(resp)
-	}
-	m.printTokenUsage(resp.UsageMetadata)
-
-	return resp, err
+	r.contentRenderer = normalRenderer
+	r.toolCallRenderer = normalRenderer
+	r.metadataRenderer = normalRenderer
+	r.thinkingRenderer = thinkingRenderer
 }
 
 func saveDialog(ctx context.Context, saver storage.DialogSaver, dialog gai.Dialog) (gai.Dialog, error) {
@@ -156,29 +69,29 @@ func saveAssistantResponse(ctx context.Context, saver storage.DialogSaver, dialo
 	return resp, nil
 }
 
-func (m *TurnLifecycleMiddleware) renderContent(content string) string {
-	rendered, err := m.contentRenderer.Render(strings.TrimSpace(content))
+func (r *Runtime) renderContent(content string) string {
+	rendered, err := r.contentRenderer.Render(strings.TrimSpace(content))
 	if err != nil {
 		return content
 	}
 	return rendered
 }
 
-func (m *TurnLifecycleMiddleware) renderThinking(content string, reasoningType any) string {
+func (r *Runtime) renderThinking(content string, reasoningType any) string {
 	if reasoningType == "reasoning.encrypted" {
 		content = "[Reasoning content is encrypted]\n"
 	}
-	rendered, err := m.thinkingRenderer.Render(strings.TrimSpace(content))
+	rendered, err := r.thinkingRenderer.Render(strings.TrimSpace(content))
 	if err != nil {
 		return content
 	}
 	return rendered
 }
 
-func (m *TurnLifecycleMiddleware) renderToolCall(content string) string {
+func (r *Runtime) renderToolCall(content string) string {
 	if input, ok := codemode.ParseToolCall(content); ok {
 		result := codemode.FormatToolCallMarkdown(input)
-		if rendered, err := m.toolCallRenderer.Render(result); err == nil {
+		if rendered, err := r.toolCallRenderer.Render(result); err == nil {
 			return rendered
 		}
 		return result
@@ -188,7 +101,7 @@ func (m *TurnLifecycleMiddleware) renderToolCall(content string) string {
 	if !ok {
 		return content
 	}
-	if rendered, err := m.toolCallRenderer.Render(result); err == nil {
+	if rendered, err := r.toolCallRenderer.Render(result); err == nil {
 		return rendered
 	}
 	return content
@@ -199,7 +112,7 @@ type blockContent struct {
 	content   string
 }
 
-func (m *TurnLifecycleMiddleware) printResponse(response gai.Response) {
+func (r *Runtime) printResponse(response gai.Response) {
 	var blocks []blockContent
 	for _, candidate := range response.Candidates {
 		for _, block := range candidate.Blocks {
@@ -214,11 +127,11 @@ func (m *TurnLifecycleMiddleware) printResponse(response gai.Response) {
 			content := block.Content.String()
 			switch block.BlockType {
 			case gai.Content:
-				content = m.renderContent(content)
+				content = r.renderContent(content)
 			case gai.Thinking:
-				content = m.renderThinking(content, block.ExtraFields["reasoning_type"])
+				content = r.renderThinking(content, block.ExtraFields["reasoning_type"])
 			case gai.ToolCall:
-				content = m.renderToolCall(content)
+				content = r.renderToolCall(content)
 			}
 
 			blocks = append(blocks, blockContent{
@@ -229,16 +142,16 @@ func (m *TurnLifecycleMiddleware) printResponse(response gai.Response) {
 	}
 
 	for _, block := range blocks {
-		writer := m.stderr
+		writer := r.stderr
 		if block.blockType == gai.Content {
-			writer = m.stdout
+			writer = r.stdout
 		}
 		fmt.Fprint(writer, block.content)
 	}
 
 	if len(response.Candidates) > 0 {
 		if messageID := GetMessageID(response.Candidates[0]); messageID != "" {
-			fmt.Fprint(m.stderr, renderMetadataLine(m.metadataRenderer, fmt.Sprintf("> message_id: `%s`", messageID)))
+			fmt.Fprint(r.stderr, renderMetadataLine(r.metadataRenderer, fmt.Sprintf("> message_id: `%s`", messageID)))
 		}
 	}
 }
@@ -268,7 +181,7 @@ func trailingToolResults(dialog gai.Dialog) []gai.Message {
 	return results
 }
 
-func (m *TurnLifecycleMiddleware) printToolResult(dialog gai.Dialog, toolResultMsg gai.Message) {
+func (r *Runtime) printToolResult(dialog gai.Dialog, toolResultMsg gai.Message) {
 	toolName := findToolName(dialog, toolResultMsg)
 	messageID := GetMessageID(toolResultMsg)
 	if len(toolResultMsg.Blocks) == 0 {
@@ -281,15 +194,15 @@ func (m *TurnLifecycleMiddleware) printToolResult(dialog gai.Dialog, toolResultM
 	}
 	markdownContent := strings.Join(sections, "\n\n")
 
-	rendered, err := m.metadataRenderer.Render(markdownContent)
+	rendered, err := r.metadataRenderer.Render(markdownContent)
 	if err != nil {
-		fmt.Fprint(m.stderr, "\n"+markdownContent+"\n")
+		fmt.Fprint(r.stderr, "\n"+markdownContent+"\n")
 	} else {
-		fmt.Fprint(m.stderr, "\n"+rendered)
+		fmt.Fprint(r.stderr, "\n"+rendered)
 	}
 
 	if messageID != "" {
-		fmt.Fprint(m.stderr, renderMetadataLine(m.metadataRenderer, fmt.Sprintf("> message_id: `%s`", messageID)))
+		fmt.Fprint(r.stderr, renderMetadataLine(r.metadataRenderer, fmt.Sprintf("> message_id: `%s`", messageID)))
 	}
 }
 
@@ -372,7 +285,7 @@ func truncateToolResultToMaxLines(content string, maxLines int) string {
 	return truncated + "... (truncated)"
 }
 
-func (m *TurnLifecycleMiddleware) printTokenUsage(metadata gai.Metadata) {
+func (r *Runtime) printTokenUsage(metadata gai.Metadata) {
 	metrics := extractTokenUsageMetrics(metadata)
 	if !metrics.hasAnyTokens() {
 		return
@@ -380,20 +293,20 @@ func (m *TurnLifecycleMiddleware) printTokenUsage(metadata gai.Metadata) {
 
 	var lines []string
 	lines = append(lines, formatUsageLine(metrics))
-	if contextLine, ok := formatContextUtilizationLine(metrics, m.model.ContextWindow); ok {
+	if contextLine, ok := formatContextUtilizationLine(metrics, r.cfg.Model.ContextWindow); ok {
 		lines = append(lines, contextLine)
 	}
 
-	costs := calculateUsageCosts(metrics, m.model)
+	costs := calculateUsageCosts(metrics, r.cfg.Model)
 	if costs.HasAnyCost {
-		m.cumulativeCostUSD += costs.Total
-		lines = append(lines, formatCostLine(costs, m.cumulativeCostUSD))
+		r.cumulativeCostUSD += costs.Total
+		lines = append(lines, formatCostLine(costs, r.cumulativeCostUSD))
 	}
 
-	fmt.Fprintln(m.stderr, renderMetadataLine(m.metadataRenderer, strings.Join(lines, "\n")))
+	fmt.Fprintln(r.stderr, renderMetadataLine(r.metadataRenderer, strings.Join(lines, "\n")))
 }
 
-func renderMetadataLine(renderer ports.Renderer, raw string) string {
+func renderMetadataLine(renderer render.Iface, raw string) string {
 	rendered, err := renderer.Render(raw)
 	if err != nil {
 		return raw

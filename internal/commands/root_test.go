@@ -24,7 +24,7 @@ func requireAPIKey(t *testing.T, envVar string) {
 	testgate.RequireEnv(t, envVar)
 }
 
-func resolveTestConfig(t *testing.T, modelType string, modelRef string) *config.Config {
+func resolveTestConfig(t *testing.T, modelType string, modelRef string) config.Config {
 	t.Helper()
 
 	var ref, id, apiKeyEnv string
@@ -82,7 +82,7 @@ func resolveTestConfig(t *testing.T, modelType string, modelRef string) *config.
 }
 
 // resolveTestConfigWithThinking creates a test config with thinking budget enabled.
-func resolveTestConfigWithThinking(t *testing.T, modelType, thinkingBudget string) *config.Config {
+func resolveTestConfigWithThinking(t *testing.T, modelType, thinkingBudget string) config.Config {
 	t.Helper()
 
 	var ref, id, apiKeyEnv string
@@ -129,7 +129,7 @@ func resolveTestConfigWithThinking(t *testing.T, modelType, thinkingBudget strin
 	return cfg
 }
 
-func resolveCrossProviderConfig(t *testing.T, modelRef string) *config.Config {
+func resolveCrossProviderConfig(t *testing.T, modelRef string) config.Config {
 	t.Helper()
 
 	rawCfg := &config.RawConfig{

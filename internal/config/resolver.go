@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"path/filepath"
+	"text/template"
 	"time"
 
 	"github.com/spachava753/gai"
@@ -24,10 +25,10 @@ const DefaultTimeout = 5 * time.Minute
 //   - Conversation storage path: defaults.conversationStoragePath, resolved relative to config file location when needed.
 //
 // The returned Config always has a non-nil GenerationDefaults pointer.
-func ResolveConfig(configPath string, opts RuntimeOptions) (*Config, error) {
+func ResolveConfig(configPath string, opts RuntimeOptions) (Config, error) {
 	rawCfg, resolvedConfigPath, err := LoadRawConfigWithPath(configPath)
 	if err != nil {
-		return nil, err
+		return Config{}, err
 	}
 
 	return resolveFromRaw(rawCfg, opts, resolvedConfigPath)
@@ -41,51 +42,51 @@ func ResolveConfig(configPath string, opts RuntimeOptions) (*Config, error) {
 // config location (for example defaults.conversationStoragePath and codeMode
 // localModulePaths) are resolved relative to the current process working
 // directory via filepath.Abs semantics.
-func ResolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions) (*Config, error) {
+func ResolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions) (Config, error) {
 	return resolveFromRaw(rawCfg, opts, "")
 }
 
 // resolveFromRaw orchestrates effective-config construction from a validated
 // RawConfig and runtime overrides. It performs no I/O and returns deterministic
 // output for the same inputs.
-func resolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions, resolvedConfigPath string) (*Config, error) {
+func resolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions, resolvedConfigPath string) (Config, error) {
 	modelRef := opts.ModelRef
 	if modelRef == "" {
 		if rawCfg.Defaults.Model != "" {
 			modelRef = rawCfg.Defaults.Model
 		} else {
-			return nil, fmt.Errorf("no model specified. Set CPE_MODEL environment variable, use --model flag, or set defaults.model in configuration")
+			return Config{}, fmt.Errorf("no model specified. Set CPE_MODEL environment variable, use --model flag, or set defaults.model in configuration")
 		}
 	}
 
 	selectedModel, found := rawCfg.FindModel(modelRef)
 	if !found {
-		return nil, fmt.Errorf("model %q not found in configuration", modelRef)
+		return Config{}, fmt.Errorf("model %q not found in configuration", modelRef)
 	}
 
 	systemPromptPath := resolveSystemPromptPath(selectedModel, rawCfg.Defaults, resolvedConfigPath)
 	genParams, err := resolveGenerationParams(selectedModel, rawCfg.Defaults, opts)
 	if err != nil {
-		return nil, err
+		return Config{}, err
 	}
 	timeout, err := resolveTimeout(rawCfg.Defaults, opts)
 	if err != nil {
-		return nil, err
+		return Config{}, err
 	}
 	conversationStoragePath, err := ResolveConversationStoragePath(rawCfg.Defaults, resolvedConfigPath)
 	if err != nil {
-		return nil, fmt.Errorf("invalid defaults.conversationStoragePath: %w", err)
+		return Config{}, fmt.Errorf("invalid defaults.conversationStoragePath: %w", err)
 	}
 	codeMode, err := resolveCodeMode(selectedModel, rawCfg.Defaults, resolvedConfigPath)
 	if err != nil {
-		return nil, fmt.Errorf("invalid codeMode configuration: %w", err)
+		return Config{}, fmt.Errorf("invalid codeMode configuration: %w", err)
 	}
 	compaction, err := resolveCompaction(selectedModel, rawCfg.Defaults)
 	if err != nil {
-		return nil, fmt.Errorf("invalid compaction configuration: %w", err)
+		return Config{}, fmt.Errorf("invalid compaction configuration: %w", err)
 	}
 
-	return &Config{
+	return Config{
 		MCPServers:              rawCfg.MCPServers,
 		Model:                   selectedModel.Model,
 		SystemPromptPath:        systemPromptPath,
@@ -223,4 +224,30 @@ func resolveCodeMode(model ModelConfig, defaults Defaults, configFilePath string
 		return normalizeCodeModeConfigPaths(model.CodeMode, configFilePath)
 	}
 	return normalizeCodeModeConfigPaths(defaults.CodeMode, configFilePath)
+}
+
+func resolveCompaction(model ModelConfig, defaults Defaults) (*CompactionConfig, error) {
+	raw := defaults.Compaction
+	if model.Compaction != nil {
+		raw = model.Compaction
+	}
+	if raw == nil {
+		return nil, nil
+	}
+
+	tmpl, err := template.New("compaction_initial_message").Parse(raw.InitialMessageTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("initialMessageTemplate: %w", err)
+	}
+
+	return &CompactionConfig{
+		TokenThreshold: uint(float64(model.ContextWindow) * raw.AutoTriggerThreshold),
+		MaxCompactions: uint(raw.MaxAutoCompactionRestarts),
+		Tool: gai.Tool{
+			Name:        CompactionToolName,
+			Description: raw.ToolDescription,
+			InputSchema: &raw.InputSchema,
+		},
+		InitialMessageTemplate: tmpl,
+	}, nil
 }

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/prompt"
@@ -98,13 +99,13 @@ func formatCostPerMillion(cost *float64) string {
 // ModelSystemPromptOptions contains dependencies for ModelSystemPrompt.
 // The caller provides raw config and optional model selection hints.
 type ModelSystemPromptOptions struct {
-	Config          *config.RawConfig
-	EffectiveConfig *config.Config
-	ConfigFilePath  string
-	ModelName       string
-	DefaultModel    string // Fallback model name from env var
-	Output          io.Writer
-	Stderr          io.Writer
+	RawConfig      *config.RawConfig
+	Config         config.Config
+	ConfigFilePath string
+	ModelName      string
+	DefaultModel   string // Fallback model name from env var
+	Output         io.Writer
+	Stderr         io.Writer
 	// SystemPrompt is an optional override for testing - if provided, this file
 	// is used instead of opening the file from the path in config
 	SystemPrompt fs.File
@@ -125,8 +126,8 @@ func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error
 	// Determine the model to use
 	modelName := opts.ModelName
 	if modelName == "" {
-		if opts.Config.Defaults.Model != "" {
-			modelName = opts.Config.Defaults.Model
+		if opts.RawConfig.Defaults.Model != "" {
+			modelName = opts.RawConfig.Defaults.Model
 		} else if opts.DefaultModel != "" {
 			modelName = opts.DefaultModel
 		}
@@ -136,13 +137,13 @@ func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error
 		return fmt.Errorf("no model specified. Use --model flag or set defaults.model in configuration")
 	}
 
-	selectedModel, found := opts.Config.FindModel(modelName)
+	selectedModel, found := opts.RawConfig.FindModel(modelName)
 	if !found {
 		return fmt.Errorf("model %q not found in configuration", modelName)
 	}
 
 	// Determine system prompt path
-	systemPromptPath := opts.Config.Defaults.SystemPromptPath
+	systemPromptPath := opts.RawConfig.Defaults.SystemPromptPath
 	if selectedModel.SystemPromptPath != "" {
 		systemPromptPath = selectedModel.SystemPromptPath
 	}
@@ -183,21 +184,21 @@ func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error
 		return fmt.Errorf("failed to read system prompt file: %w", err)
 	}
 
-	templateConfig := opts.EffectiveConfig
-	if templateConfig == nil {
+	templateConfig := opts.Config
+	if reflect.ValueOf(templateConfig).IsZero() {
 		// Resolve effective code mode config for template rendering when the caller
 		// did not supply a fully resolved runtime config.
 		var codeMode *config.CodeModeConfig
 		if selectedModel.CodeMode != nil {
 			codeMode = selectedModel.CodeMode
-		} else if opts.Config.Defaults.CodeMode != nil {
-			codeMode = opts.Config.Defaults.CodeMode
+		} else if opts.RawConfig.Defaults.CodeMode != nil {
+			codeMode = opts.RawConfig.Defaults.CodeMode
 		}
 
 		// Create a minimal Config for template rendering.
-		templateConfig = &config.Config{
+		templateConfig = config.Config{
 			Model:              selectedModel.Model,
-			MCPServers:         opts.Config.MCPServers,
+			MCPServers:         opts.RawConfig.MCPServers,
 			GenerationDefaults: nil,
 			CodeMode:           codeMode,
 		}

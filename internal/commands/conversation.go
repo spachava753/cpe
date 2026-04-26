@@ -12,7 +12,7 @@ import (
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/codemode"
-	"github.com/spachava753/cpe/internal/ports"
+	"github.com/spachava753/cpe/internal/render"
 	"github.com/spachava753/cpe/internal/storage"
 )
 
@@ -150,7 +150,7 @@ func ConversationPrint(ctx context.Context, opts ConversationPrintOptions) error
 // MarkdownDialogFormatter formats dialogs into markdown and optionally renders
 // them for terminal display.
 type MarkdownDialogFormatter struct {
-	Renderer ports.Renderer
+	Renderer render.Iface
 }
 
 // FormatDialog implements DialogFormatter.
