@@ -12,7 +12,6 @@ import (
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/config"
-	"github.com/spachava753/cpe/internal/ports"
 	"github.com/spachava753/cpe/internal/render"
 	"github.com/spachava753/cpe/internal/storage"
 )
@@ -43,21 +42,11 @@ type Runtime struct {
 	stderr            io.Writer
 	cfg               config.Config
 	cumulativeCostUSD float64
-	observers         []ports.RuntimeObserver
 	compaction        compactionState
 }
 
 // RuntimeOption configures Runtime construction.
 type RuntimeOption func(*Runtime)
-
-// WithRuntimeObserver registers an observer for runtime events.
-func WithRuntimeObserver(observer ports.RuntimeObserver) RuntimeOption {
-	return func(r *Runtime) {
-		if observer != nil {
-			r.observers = append(r.observers, observer)
-		}
-	}
-}
 
 // NewRuntime creates a CPE-owned runtime around a single-turn model generator.
 func NewRuntime(model gai.ToolCapableGenerator, cfg config.Config, saver storage.DialogSaver, stdout, stderr io.Writer, disablePrinting bool, opts ...RuntimeOption) *Runtime {
@@ -80,15 +69,6 @@ func NewRuntime(model gai.ToolCapableGenerator, cfg config.Config, saver storage
 		opt(r)
 	}
 	return r
-}
-
-// SetRuntimeObserver replaces the runtime observer used for subsequent events.
-func (r *Runtime) SetRuntimeObserver(observer ports.RuntimeObserver) {
-	if observer == nil {
-		r.observers = nil
-		return
-	}
-	r.observers = []ports.RuntimeObserver{observer}
 }
 
 // Register registers a tool with the provider model and stores its callback.
@@ -159,9 +139,6 @@ func (r *Runtime) Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.G
 
 		r.printResponse(resp)
 		r.printTokenUsage(resp.UsageMetadata)
-		if err := r.emitResponseEvents(ctx, current, resp.Candidates[0]); err != nil {
-			return current, err
-		}
 		r.updateCompactionWarning(resp.UsageMetadata)
 
 		if resp.FinishReason != gai.ToolUse {
@@ -206,9 +183,6 @@ func (r *Runtime) Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.G
 				injectedWarning = true
 			}
 			current = append(current, result)
-			if err := r.emitToolResult(ctx, current, result, call.Block); err != nil {
-				return current, err
-			}
 		}
 	}
 }
@@ -395,35 +369,4 @@ func lastMessageID(dialog gai.Dialog) string {
 		}
 	}
 	return ""
-}
-
-func (r *Runtime) emitResponseEvents(ctx context.Context, dialog gai.Dialog, msg gai.Message) error {
-	for _, block := range msg.Blocks {
-		if block.BlockType == gai.Thinking {
-			for _, observer := range r.observers {
-				if err := observer.ThoughtTrace(ctx, dialog, block); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	for _, block := range msg.Blocks {
-		if block.BlockType == gai.ToolCall {
-			for _, observer := range r.observers {
-				if err := observer.ToolCall(ctx, dialog, block); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func (r *Runtime) emitToolResult(ctx context.Context, dialog gai.Dialog, msg gai.Message, call gai.Block) error {
-	for _, observer := range r.observers {
-		if err := observer.ToolResult(ctx, dialog, msg, call); err != nil {
-			return err
-		}
-	}
-	return nil
 }
