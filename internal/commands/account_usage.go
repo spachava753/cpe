@@ -19,16 +19,16 @@ const accountUsageRefreshInterval = time.Second
 
 func runOpenAIAccountUsage(ctx context.Context, opts AccountUsageOptions) error {
 	if opts.Raw {
-		return printOpenAIAccountUsageRaw(ctx, opts.Output)
+		return printOpenAIAccountUsageRaw(ctx, opts.Output, opts.BaseURL)
 	}
 	if opts.Watch {
-		return watchOpenAIAccountUsage(ctx, opts.Output)
+		return watchOpenAIAccountUsage(ctx, opts.Output, opts.BaseURL)
 	}
-	return printOpenAIAccountUsageSnapshot(ctx, opts.Output)
+	return printOpenAIAccountUsageSnapshot(ctx, opts.Output, opts.BaseURL)
 }
 
-func printOpenAIAccountUsageRaw(ctx context.Context, output io.Writer) error {
-	usage, err := fetchOpenAIAccountUsage(ctx)
+func printOpenAIAccountUsageRaw(ctx context.Context, output io.Writer, baseURL string) error {
+	usage, err := fetchOpenAIAccountUsage(ctx, baseURL)
 	if err != nil {
 		return err
 	}
@@ -41,8 +41,8 @@ func printOpenAIAccountUsageRaw(ctx context.Context, output io.Writer) error {
 	return nil
 }
 
-func printOpenAIAccountUsageSnapshot(ctx context.Context, output io.Writer) error {
-	usage, err := fetchOpenAIAccountUsage(ctx)
+func printOpenAIAccountUsageSnapshot(ctx context.Context, output io.Writer, baseURL string) error {
+	usage, err := fetchOpenAIAccountUsage(ctx, baseURL)
 	if err != nil {
 		return err
 	}
@@ -58,8 +58,8 @@ func printOpenAIAccountUsageSnapshot(ctx context.Context, output io.Writer) erro
 	return err
 }
 
-func watchOpenAIAccountUsage(ctx context.Context, output io.Writer) error {
-	model := newOpenAIUsageWatchModel(ctx)
+func watchOpenAIAccountUsage(ctx context.Context, output io.Writer, baseURL string) error {
+	model := newOpenAIUsageWatchModel(ctx, baseURL)
 	program := tea.NewProgram(model, tea.WithContext(ctx), tea.WithOutput(output))
 	if _, err := program.Run(); err != nil {
 		return fmt.Errorf("running usage watch UI: %w", err)
@@ -67,7 +67,7 @@ func watchOpenAIAccountUsage(ctx context.Context, output io.Writer) error {
 	return nil
 }
 
-func fetchOpenAIAccountUsage(ctx context.Context) (*auth.OpenAIUsageResponse, error) {
+func fetchOpenAIAccountUsage(ctx context.Context, baseURL string) (*auth.OpenAIUsageResponse, error) {
 	store, err := auth.NewStore()
 	if err != nil {
 		return nil, fmt.Errorf("initializing auth store: %w", err)
@@ -78,7 +78,7 @@ func fetchOpenAIAccountUsage(ctx context.Context) (*auth.OpenAIUsageResponse, er
 		return nil, err
 	}
 
-	usage, err := auth.FetchOpenAIUsage(ctx, http.DefaultClient, auth.OpenAIUsageURL, cred.AccessToken)
+	usage, err := auth.FetchOpenAIUsage(ctx, http.DefaultClient, baseURL, cred.AccessToken)
 	if err != nil {
 		return nil, fmt.Errorf("retrieving openai account usage: %w", err)
 	}

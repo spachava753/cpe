@@ -8,6 +8,42 @@ import (
 	"testing"
 )
 
+func TestOpenAIUsageURLForBase(t *testing.T) {
+	tests := []struct {
+		name string
+		base string
+		want string
+	}{
+		{
+			name: "default",
+			want: "https://chatgpt.com/backend-api/wham/usage",
+		},
+		{
+			name: "backend base",
+			base: "https://proxy.example.com/backend-api",
+			want: "https://proxy.example.com/backend-api/wham/usage",
+		},
+		{
+			name: "usage endpoint",
+			base: "https://proxy.example.com/backend-api/wham/usage",
+			want: "https://proxy.example.com/backend-api/wham/usage",
+		},
+		{
+			name: "trailing slash",
+			base: "https://proxy.example.com/backend-api/",
+			want: "https://proxy.example.com/backend-api/wham/usage",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := OpenAIUsageURLForBase(tt.base); got != tt.want {
+				t.Fatalf("OpenAIUsageURLForBase() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFetchOpenAIUsage(t *testing.T) {
 	tests := []struct {
 		name           string

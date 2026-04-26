@@ -9,8 +9,9 @@ import (
 )
 
 var (
-	accountUsageRaw   bool
-	accountUsageWatch bool
+	accountUsageRaw     bool
+	accountUsageWatch   bool
+	accountUsageBaseURL string
 )
 
 var accountCmd = &cobra.Command{
@@ -87,6 +88,8 @@ By default, CPE renders a compact usage view with the primary 5-hour and
 secondary weekly windows. Use --watch to keep refreshing the display live, or
 --raw to print the original JSON response for scripts and analytics.
 
+For OpenAI, override the ChatGPT backend base URL with --base-url.
+
 Currently supported providers:
   - openai: Usage and rate-limit information from the ChatGPT account backend
 
@@ -94,6 +97,7 @@ Examples:
   cpe account usage openai
   cpe account usage openai --watch
   cpe account usage openai --raw
+  cpe account usage openai --base-url https://chatgpt.com/backend-api
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -102,6 +106,7 @@ Examples:
 			Output:   cmd.OutOrStdout(),
 			Raw:      accountUsageRaw,
 			Watch:    accountUsageWatch,
+			BaseURL:  accountUsageBaseURL,
 		})
 	},
 }
@@ -109,6 +114,7 @@ Examples:
 func init() {
 	accountUsageCmd.Flags().BoolVar(&accountUsageRaw, "raw", false, "Print the raw JSON usage response")
 	accountUsageCmd.Flags().BoolVarP(&accountUsageWatch, "watch", "W", false, "Refresh and watch usage live")
+	accountUsageCmd.Flags().StringVar(&accountUsageBaseURL, "base-url", "", "Override the provider account usage base URL")
 
 	accountCmd.AddCommand(accountLoginCmd)
 	accountCmd.AddCommand(accountLogoutCmd)

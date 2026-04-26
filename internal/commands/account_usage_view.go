@@ -32,6 +32,7 @@ type openAIUsageRefreshMsg time.Time
 
 type openAIUsageWatchModel struct {
 	ctx         context.Context
+	baseURL     string
 	width       int
 	usage       *auth.OpenAIUsageResponse
 	lastUpdated time.Time
@@ -39,16 +40,17 @@ type openAIUsageWatchModel struct {
 	statusErr   error
 }
 
-func newOpenAIUsageWatchModel(ctx context.Context) openAIUsageWatchModel {
+func newOpenAIUsageWatchModel(ctx context.Context, baseURL string) openAIUsageWatchModel {
 	return openAIUsageWatchModel{
 		ctx:     ctx,
+		baseURL: baseURL,
 		width:   80,
 		loading: true,
 	}
 }
 
 func (m openAIUsageWatchModel) Init() tea.Cmd {
-	return fetchOpenAIUsageCmd(m.ctx)
+	return fetchOpenAIUsageCmd(m.ctx, m.baseURL)
 }
 
 func (m openAIUsageWatchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -65,7 +67,7 @@ func (m openAIUsageWatchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case openAIUsageRefreshMsg:
 		m.loading = true
-		return m, fetchOpenAIUsageCmd(m.ctx)
+		return m, fetchOpenAIUsageCmd(m.ctx, m.baseURL)
 	case openAIUsageResultMsg:
 		m.loading = false
 		if msg.fetchError != nil {
@@ -91,9 +93,9 @@ func (m openAIUsageWatchModel) View() string {
 	})
 }
 
-func fetchOpenAIUsageCmd(ctx context.Context) tea.Cmd {
+func fetchOpenAIUsageCmd(ctx context.Context, baseURL string) tea.Cmd {
 	return func() tea.Msg {
-		usage, err := fetchOpenAIAccountUsage(ctx)
+		usage, err := fetchOpenAIAccountUsage(ctx, baseURL)
 		return openAIUsageResultMsg{
 			usage:      usage,
 			fetchedAt:  time.Now(),

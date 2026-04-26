@@ -287,6 +287,9 @@ cpe account usage openai --watch
 # Get the raw JSON response for scripts
 cpe account usage openai --raw
 
+# Override the ChatGPT usage backend base URL
+cpe account usage openai --base-url https://chatgpt.com/backend-api
+
 # Logout
 cpe account logout anthropic
 cpe account logout openai

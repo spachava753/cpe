@@ -5,13 +5,32 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 const (
-	// OpenAIUsageURL is the ChatGPT backend endpoint that returns subscription
-	// usage and rate-limit information for the authenticated account.
-	OpenAIUsageURL = "https://chatgpt.com/backend-api/wham/usage"
+	// OpenAIUsageBaseURL is the default ChatGPT backend base URL for account
+	// usage lookups.
+	OpenAIUsageBaseURL = "https://chatgpt.com/backend-api"
+
+	// OpenAIUsageURL is the default ChatGPT backend endpoint that returns
+	// subscription usage and rate-limit information for the authenticated account.
+	OpenAIUsageURL = OpenAIUsageBaseURL + "/wham/usage"
 )
+
+// OpenAIUsageURLForBase returns the usage endpoint for a ChatGPT backend base URL.
+func OpenAIUsageURLForBase(baseURL string) string {
+	baseURL = normalizeOpenAIUsageBaseURL(baseURL)
+	return strings.TrimRight(baseURL, "/") + "/wham/usage"
+}
+
+func normalizeOpenAIUsageBaseURL(baseURL string) string {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		return OpenAIUsageBaseURL
+	}
+	return strings.TrimSuffix(baseURL, "/wham/usage")
+}
 
 // OpenAIUsageWindow represents a rate-limit window in the ChatGPT usage API.
 type OpenAIUsageWindow struct {
@@ -60,17 +79,15 @@ type OpenAIUsageResponse struct {
 
 // FetchOpenAIUsage retrieves subscription usage information from the ChatGPT
 // backend usage endpoint using an OAuth bearer token.
-func FetchOpenAIUsage(ctx context.Context, client *http.Client, usageURL, accessToken string) (*OpenAIUsageResponse, error) {
+func FetchOpenAIUsage(ctx context.Context, client *http.Client, baseURL, accessToken string) (*OpenAIUsageResponse, error) {
 	if accessToken == "" {
 		return nil, fmt.Errorf("access token is required")
-	}
-	if usageURL == "" {
-		usageURL = OpenAIUsageURL
 	}
 	if client == nil {
 		client = http.DefaultClient
 	}
 
+	usageURL := OpenAIUsageURLForBase(baseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, usageURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating usage request: %w", err)

@@ -39,6 +39,7 @@ type AccountUsageOptions struct {
 	Output   io.Writer
 	Raw      bool
 	Watch    bool
+	BaseURL  string
 }
 
 func normalizeAccountProvider(provider string) (string, error) {
