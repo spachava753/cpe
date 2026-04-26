@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -106,10 +105,7 @@ func findConfigFile() (string, error) {
   - %s (user config directory)`, userConfigPath)
 }
 
-// loadRawConfigFromFile reads and parses config from any fs.File.
-//
-// The parser selection hint comes from file.Stat().Name() extension; when no
-// supported extension is present, parseConfigData attempts YAML then JSON.
+// loadRawConfigFromFile reads and parses YAML config from any fs.File.
 func loadRawConfigFromFile(file fs.File) (*RawConfig, error) {
 	data, err := io.ReadAll(file)
 	if err != nil {
@@ -125,51 +121,27 @@ func loadRawConfigFromFile(file fs.File) (*RawConfig, error) {
 	return parseConfigData(data, filename)
 }
 
-// parseConfigData expands environment variables and parses configuration data.
+// parseConfigData expands environment variables and parses YAML configuration data.
 //
 // Parsing contract:
 //   - $VAR and ${VAR} are expanded on raw bytes before decoding.
-//   - Known extensions select parser directly (.yaml/.yml or .json).
-//   - Unknown/missing extension falls back to YAML first, then JSON.
+//   - .json files are rejected; CPE config is YAML-only.
 func parseConfigData(data []byte, filename string) (*RawConfig, error) {
-	// Expand environment variables in the raw content before parsing
-	expandedData := os.ExpandEnv(string(data))
-
-	// Helper to add expansion hint to error messages
-	addExpansionHint := func(parseErr error) error {
-		if strings.Contains(string(data), "$") {
-			return fmt.Errorf("%w (hint: environment variable expansion may have introduced invalid syntax if values contain special characters)", parseErr)
-		}
-		return parseErr
-	}
-
 	ext := strings.ToLower(filepath.Ext(filename))
-	switch ext {
-	case ".json":
-		var config RawConfig
-		if err := json.Unmarshal([]byte(expandedData), &config); err != nil {
-			return nil, addExpansionHint(fmt.Errorf("error parsing JSON config: %w", err))
-		}
-		return &config, nil
-	case ".yaml", ".yml":
-		var config RawConfig
-		if err := yaml.Unmarshal([]byte(expandedData), &config); err != nil {
-			return nil, addExpansionHint(fmt.Errorf("error parsing YAML config: %w", err))
-		}
-		return &config, nil
-	default:
-		// Try YAML first, then JSON as fallback
-		// Use separate structs to avoid partial corruption if one parser partially succeeds
-		var yamlConfig RawConfig
-		yamlErr := yaml.Unmarshal([]byte(expandedData), &yamlConfig)
-		if yamlErr == nil {
-			return &yamlConfig, nil
-		}
-		var jsonConfig RawConfig
-		jsonErr := json.Unmarshal([]byte(expandedData), &jsonConfig)
-		if jsonErr == nil {
-			return &jsonConfig, nil
-		}
-		return nil, addExpansionHint(fmt.Errorf("failed to parse config file: YAML error: %v, JSON error: %v", yamlErr, jsonErr))
+	if ext == ".json" {
+		return nil, fmt.Errorf("JSON config files are no longer supported; use YAML (.yaml or .yml)")
 	}
+
+	expandedData := os.ExpandEnv(string(data))
+	var config RawConfig
+	decoder := yaml.NewDecoder(strings.NewReader(expandedData))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&config); err != nil {
+		parseErr := fmt.Errorf("error parsing YAML config: %w", err)
+		if strings.Contains(string(data), "$") {
+			parseErr = fmt.Errorf("%w (hint: environment variable expansion may have introduced invalid syntax if values contain special characters)", parseErr)
+		}
+		return nil, parseErr
+	}
+	return &config, nil
 }

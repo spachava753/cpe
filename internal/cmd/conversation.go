@@ -22,8 +22,8 @@ var listConvoCmd = &cobra.Command{
 	Aliases: []string{"ls"},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return commands.ConversationListFromConfig(cmd.Context(), commands.ConversationListFromConfigOptions{
-			ConfigPath: configPath,
-			Writer:     cmd.OutOrStdout(),
+			ConversationStoragePath: conversationStoragePath,
+			Writer:                  cmd.OutOrStdout(),
 		})
 	},
 }
@@ -39,11 +39,11 @@ var deleteConvoCmd = &cobra.Command{
 		cascade, _ := cmd.Flags().GetBool("cascade")
 
 		return commands.ConversationDeleteFromConfig(cmd.Context(), commands.ConversationDeleteFromConfigOptions{
-			ConfigPath: configPath,
-			MessageIDs: args,
-			Cascade:    cascade,
-			Stdout:     cmd.OutOrStdout(),
-			Stderr:     cmd.ErrOrStderr(),
+			ConversationStoragePath: conversationStoragePath,
+			MessageIDs:              args,
+			Cascade:                 cascade,
+			Stdout:                  cmd.OutOrStdout(),
+			Stderr:                  cmd.ErrOrStderr(),
 		})
 	},
 }
@@ -57,9 +57,9 @@ var printConvoCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return commands.ConversationPrintFromConfig(cmd.Context(), commands.ConversationPrintFromConfigOptions{
-			ConfigPath: configPath,
-			MessageID:  args[0],
-			Writer:     cmd.OutOrStdout(),
+			ConversationStoragePath: conversationStoragePath,
+			MessageID:               args[0],
+			Writer:                  cmd.OutOrStdout(),
 		})
 	},
 }

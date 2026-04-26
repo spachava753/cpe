@@ -11,63 +11,44 @@ import (
 	"github.com/spachava753/cpe/internal/mcpconfig"
 )
 
-// Validate enforces schema and semantic invariants for RawConfig.
-//
-// It is equivalent to ValidateWithConfigPath(""): path-based fields are
-// interpreted relative to the current working directory.
+// Validate enforces structural schema and semantic invariants for RawConfig.
 func (c *RawConfig) Validate() error {
 	return c.ValidateWithConfigPath("")
 }
 
-// ValidateWithConfigPath enforces both structural validation tags and
-// cross-field invariants that require lookup or filesystem checks.
-//
-// Invariants validated here include:
-//   - defaults.model references an existing entry in models.
-//   - auth_method provider constraints for each model.
-//   - defaults.codeMode and model.codeMode path normalization + module checks.
-//   - MCP server transport defaults and transport-specific field constraints.
-//
-// When configFilePath is provided, relative codeMode paths are interpreted from
-// that config file directory before existence checks.
+// ValidateWithConfigPath enforces file-level validation that must hold for the
+// whole config regardless of which model profile is selected. Runtime checks for
+// selected-profile MCP transport constraints and codeMode filesystem paths are
+// performed during resolution.
 func (c *RawConfig) ValidateWithConfigPath(configFilePath string) error {
+	_ = configFilePath
+
 	validate := validator.New(validator.WithRequiredStructEnabled())
 	if err := validate.Struct(c); err != nil {
 		return fmt.Errorf("invalid configuration file: %w", err)
 	}
 
-	// Validate default model if specified
-	if c.Defaults.Model != "" {
-		if _, found := c.FindModel(c.Defaults.Model); !found {
-			return fmt.Errorf("defaults.model '%s' not found in models list", c.Defaults.Model)
-		}
-	}
-
-	if err := validateMCPServerConfigs(c.MCPServers); err != nil {
-		return err
-	}
-
-	if err := validateCodeModeConfig(c.Defaults.CodeMode, configFilePath, "defaults.codeMode"); err != nil {
-		return err
-	}
-
-	// Validate auth_method and api_key_env for each model and model-level codeMode.
-	for i, m := range c.Models {
+	for _, m := range c.Models {
 		if err := validateModelAuth(m); err != nil {
-			return fmt.Errorf("model '%s': %w", m.Ref, err)
-		}
-
-		if err := validateCodeModeConfig(m.CodeMode, configFilePath, fmt.Sprintf("models[%d].codeMode", i)); err != nil {
-			return err
+			return fmt.Errorf("model %q: %w", m.Ref, err)
 		}
 	}
 
 	return nil
 }
 
+func validateSelectedProfile(model ModelConfig, configFilePath string) error {
+	if err := validateMCPServerConfigs(model.MCPServers, "mcpServers"); err != nil {
+		return err
+	}
+	if err := validateCodeModeConfig(model.CodeMode, configFilePath, "codeMode"); err != nil {
+		return err
+	}
+	return nil
+}
+
 // validateCodeModeConfig validates normalized localModulePaths and enforces
 // module directory invariants (existing directory with a go.mod file).
-// fieldPrefix is used to produce location-aware validation errors.
 func validateCodeModeConfig(codeMode *CodeModeConfig, configFilePath, fieldPrefix string) error {
 	normalized, err := normalizeCodeModeConfigPaths(codeMode, configFilePath)
 	if err != nil {
@@ -118,24 +99,25 @@ func validateModelAuth(m ModelConfig) error {
 	return nil
 }
 
-func validateMCPServerConfigs(servers map[string]mcpconfig.ServerConfig) error {
+func validateMCPServerConfigs(servers map[string]mcpconfig.ServerConfig, fieldPrefix string) error {
 	for name, server := range servers {
+		field := fieldPrefix + "." + name
 		if server.Type == "" {
 			if server.URL != "" {
-				return fmt.Errorf("mcpServers.%s.type: required when url is set; use \"http\" or \"sse\"", name)
+				return fmt.Errorf("%s.type: required when url is set; use \"http\" or \"sse\"", field)
 			}
 			if len(server.Headers) > 0 {
-				return fmt.Errorf("mcpServers.%s.headers: only supported for type \"http\" or \"sse\"", name)
+				return fmt.Errorf("%s.headers: only supported for type \"http\" or \"sse\"", field)
 			}
 			continue
 		}
 
 		if server.Type == "http" || server.Type == "sse" {
 			if server.Command != "" {
-				return fmt.Errorf("mcpServers.%s.command: only supported for type \"stdio\"", name)
+				return fmt.Errorf("%s.command: only supported for type \"stdio\"", field)
 			}
 			if len(server.Args) > 0 {
-				return fmt.Errorf("mcpServers.%s.args: only supported for type \"stdio\"", name)
+				return fmt.Errorf("%s.args: only supported for type \"stdio\"", field)
 			}
 		}
 	}

@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -12,18 +11,9 @@ import (
 	"github.com/spachava753/cpe/internal/storage"
 )
 
-// ResolveConversationDBPath resolves the configured conversation storage path,
-// falling back to the default local database when no config file is found.
-func ResolveConversationDBPath(explicitConfigPath string) (string, error) {
-	rawCfg, resolvedConfigPath, err := config.LoadRawConfigWithPath(explicitConfigPath)
-	if err != nil {
-		if explicitConfigPath == "" && errors.Is(err, config.ErrConfigNotFound) {
-			return config.DefaultConversationStoragePath, nil
-		}
-		return "", err
-	}
-
-	dbPath, err := config.ResolveConversationStoragePath(rawCfg.Defaults, resolvedConfigPath)
+// ResolveConversationDBPath resolves the conversation storage path from a CLI flag or environment value.
+func ResolveConversationDBPath(rawPath string) (string, error) {
+	dbPath, err := config.ResolveConversationStoragePath(rawPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve conversation storage path: %w", err)
 	}
@@ -32,8 +22,8 @@ func ResolveConversationDBPath(explicitConfigPath string) (string, error) {
 
 // OpenConversationStorage opens the configured conversation database and
 // initializes the sqlite-backed dialog storage wrapper.
-func OpenConversationStorage(ctx context.Context, explicitConfigPath string) (*sql.DB, *storage.Sqlite, error) {
-	dbPath, err := ResolveConversationDBPath(explicitConfigPath)
+func OpenConversationStorage(ctx context.Context, rawPath string) (*sql.DB, *storage.Sqlite, error) {
+	dbPath, err := ResolveConversationDBPath(rawPath)
 	if err != nil {
 		return nil, nil, err
 	}

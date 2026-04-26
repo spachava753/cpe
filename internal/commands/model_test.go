@@ -125,11 +125,8 @@ func TestModelSystemPrompt_ResolvesPathRelativeToConfigFile(t *testing.T) {
 				ContextWindow: 128000,
 				MaxOutput:     8192,
 			},
-		}},
-		Defaults: config.Defaults{
-			Model:            "test-model",
 			SystemPromptPath: "./prompt.md",
-		},
+		}},
 	}
 
 	var out bytes.Buffer

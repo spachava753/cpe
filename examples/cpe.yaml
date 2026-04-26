@@ -1,38 +1,9 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/spachava753/cpe/refs/heads/main/schema/cpe-config-schema.json
-# cpe.yaml - Unified CPE Configuration
+# cpe.yaml - CPE model profiles. Select one with --model or CPE_MODEL.
 version: "1.0"
 
-# MCP server definitions
-mcpServers:
-  editor:
-    command: "editor-mcp"
-    type: stdio
-    timeout: 60
-    toolFilter: whitelist
-    enabledTools:
-      - text_edit
-      - shell
-  
-  # Example HTTP server with custom headers
-  parallel:
-    url: "https://search-mcp.parallel.ai/mcp"
-    type: http
-    timeout: 60
-    # Example of adding custom headers (supports env var expansion)
-    headers:
-      Authorization: "Bearer ${API_KEY}"
-      X-Custom-Header: "Custom value"
-  
-  # Example SSE server with custom headers
-  sse-server:
-    url: "https://example-mcp.com/sse"
-    type: sse
-    timeout: 30
-    headers:
-      X-API-Key: "${MCP_API_KEY}"
-      Accept: "text/event-stream"
-
-# Model definitions with optional generation defaults
+# Each model is a complete runtime profile. Use YAML anchors to share repeated
+# generation, MCP, codeMode, or compaction blocks across profiles.
 models:
   - ref: flash
     display_name: "Gemini Flash Latest"
@@ -147,6 +118,24 @@ models:
     max_output: 64000
     input_cost_per_million: 3
     output_cost_per_million: 15
+    systemPromptPath: &standardPrompt "./agent_instructions.md"
+    timeout: &standardTimeout "5m"
+    generationParams: &balancedGeneration
+      temperature: 0.2
+      maxGenerationTokens: 4096
+    mcpServers: &standardMCPServers
+      editor:
+        command: "editor-mcp"
+        type: stdio
+        timeout: 60
+        enabledTools:
+          - text_edit
+    codeMode: &goCodeMode
+      enabled: true
+      maxTimeout: 3600
+      # Uncomment and point at local Go modules that contain helper packages.
+      # localModulePaths:
+      #   - ../my-go-helpers
 
   - ref: glm
     display_name: "Z.AI GLM-4"
@@ -155,55 +144,11 @@ models:
     api_key_env: Z_API_KEY
     context_window: 128000
     max_output: 4096
+    systemPromptPath: *standardPrompt
+    timeout: *standardTimeout
+    generationParams: *balancedGeneration
+    mcpServers: *standardMCPServers
+    codeMode: *goCodeMode
 
-# Global defaults
-defaults:
-  systemPromptPath: "./agent_instructions.md"
-  model: "sonnet"
-  timeout: "5m"
-  codeMode:
-    enabled: true
-    maxTimeout: 3600
-    localModulePaths:
-      - ../my-go-helpers
-  compaction:
-    # Set enabled to true to let the model compact long conversations into a
-    # fresh linked branch when context usage crosses the configured threshold.
-    enabled: false
-    autoTriggerThreshold: 0.8
-    maxAutoCompactionRestarts: 3
-    toolDescription: >-
-      Compact the current conversation into a fresh linked branch. Call this
-      when context usage is getting high or immediately after a tool result that
-      begins with [COMPACTION WARNING]. Preserve the important work completed so
-      the task can continue without asking the user to repeat context.
-    inputSchema:
-      type: object
-      additionalProperties: false
-      properties:
-        summary:
-          type: string
-          description: Concise summary of the work completed so far.
-        keyPoints:
-          type: array
-          items:
-            type: string
-          description: Important findings, decisions, or constraints to retain.
-        nextAction:
-          type: string
-          description: The next thing to do after restarting from the compacted branch.
-      required:
-        - summary
-        - nextAction
-    initialMessageTemplate: |-
-      A conversation compaction occurred. Continue the user's request using the
-      preserved context below.
-
-      Original user request:
-      {{.OriginalUserMessage}}
-
-      Compaction payload:
-      {{printf "%v" .ToolInput}}
-
-      Resume the task from this state without asking the user to repeat prior
-      context.
+# Conversation storage is intentionally not configured in YAML. Use
+# --db-path or CPE_DB_PATH when needed.

@@ -151,7 +151,6 @@ func TestRawConfigValidate_RequiresContextWindowAndMaxOutput(t *testing.T) {
 				},
 			},
 		},
-		Defaults: Defaults{Model: "test-model"},
 	}
 
 	if err := base.Validate(); err != nil {
@@ -181,13 +180,6 @@ func TestRawConfigValidate_CompactionStructTags(t *testing.T) {
 		apply       func(*RawConfig, *RawCompactionConfig)
 		fieldPrefix string
 	}{
-		{
-			name: "defaults compaction",
-			apply: func(cfg *RawConfig, compaction *RawCompactionConfig) {
-				cfg.Defaults.Compaction = compaction
-			},
-			fieldPrefix: "RawConfig.Defaults.Compaction",
-		},
 		{
 			name: "model compaction",
 			apply: func(cfg *RawConfig, compaction *RawCompactionConfig) {
@@ -285,12 +277,11 @@ func TestRawConfigValidate_CompactionStructTags_AcceptsValidConfig(t *testing.T)
 	}
 }
 
-func TestRawConfigValidate_CompactionStructTags_OmittedInDefaultsAndModel(t *testing.T) {
+func TestRawConfigValidate_CompactionStructTags_OmittedInModel(t *testing.T) {
 	t.Parallel()
 
 	cfg := rawConfigWithCodeMode(CodeModeConfig{})
-	cfg.Defaults.CodeMode = nil
-	cfg.Defaults.Compaction = nil
+	cfg.Models[0].CodeMode = nil
 	cfg.Models[0].Compaction = nil
 
 	if err := cfg.Validate(); err != nil {
@@ -318,8 +309,8 @@ func TestValidateWithConfigPath_CodeModePaths(t *testing.T) {
 			LocalModulePaths: []string{"./helpers"},
 		})
 
-		if err := cfg.ValidateWithConfigPath(configPath); err != nil {
-			t.Fatalf("expected valid config, got error: %v", err)
+		if err := validateSelectedProfile(cfg.Models[0], configPath); err != nil {
+			t.Fatalf("expected valid selected profile, got error: %v", err)
 		}
 	})
 
@@ -334,12 +325,12 @@ func TestValidateWithConfigPath_CodeModePaths(t *testing.T) {
 			LocalModulePaths: []string{"./no-mod"},
 		})
 
-		err := cfg.ValidateWithConfigPath(configPath)
+		err := validateSelectedProfile(cfg.Models[0], configPath)
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
 
-		want := "defaults.codeMode.localModulePaths[0]: missing go.mod in module directory: " + filepath.Join(canonicalPathForValidator(noModDir), "go.mod")
+		want := "codeMode.localModulePaths[0]: missing go.mod in module directory: " + filepath.Join(canonicalPathForValidator(noModDir), "go.mod")
 		if err.Error() != want {
 			t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
 		}
@@ -351,12 +342,12 @@ func TestValidateWithConfigPath_CodeModePaths(t *testing.T) {
 			LocalModulePaths: []string{"   "},
 		})
 
-		err := cfg.ValidateWithConfigPath(configPath)
+		err := validateSelectedProfile(cfg.Models[0], configPath)
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
 
-		want := "defaults.codeMode: localModulePaths[0] must not be empty"
+		want := "codeMode: localModulePaths[0] must not be empty"
 		if err.Error() != want {
 			t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
 		}
@@ -368,12 +359,12 @@ func TestValidateWithConfigPath_CodeModePaths(t *testing.T) {
 			LocalModulePaths: []string{"./helpers", moduleDir},
 		})
 
-		err := cfg.ValidateWithConfigPath(configPath)
+		err := validateSelectedProfile(cfg.Models[0], configPath)
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
 
-		want := "defaults.codeMode: localModulePaths contains duplicate path: " + canonicalPathForValidator(moduleDir)
+		want := "codeMode: localModulePaths contains duplicate path: " + canonicalPathForValidator(moduleDir)
 		if err.Error() != want {
 			t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
 		}
@@ -403,14 +394,13 @@ func TestValidateWithConfigPath_MCPServerURLRequiresExplicitType(t *testing.T) {
 				ContextWindow: 200000,
 				MaxOutput:     64000,
 			},
+			MCPServers: map[string]mcpconfig.ServerConfig{
+				"remote": {URL: "http://example.com/mcp"},
+			},
 		}},
-		Defaults: Defaults{Model: "test-model"},
-		MCPServers: map[string]mcpconfig.ServerConfig{
-			"remote": {URL: "http://example.com/mcp"},
-		},
 	}
 
-	err := cfg.ValidateWithConfigPath("")
+	err := validateSelectedProfile(cfg.Models[0], "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -435,14 +425,13 @@ func TestValidateWithConfigPath_MCPServerHeadersRequireRemoteTransportType(t *te
 				ContextWindow: 200000,
 				MaxOutput:     64000,
 			},
+			MCPServers: map[string]mcpconfig.ServerConfig{
+				"local": {Command: "echo", Headers: map[string]string{"X-Test": "1"}},
+			},
 		}},
-		Defaults: Defaults{Model: "test-model"},
-		MCPServers: map[string]mcpconfig.ServerConfig{
-			"local": {Command: "echo", Headers: map[string]string{"X-Test": "1"}},
-		},
 	}
 
-	err := cfg.ValidateWithConfigPath("")
+	err := validateSelectedProfile(cfg.Models[0], "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -467,14 +456,13 @@ func TestValidateWithConfigPath_RemoteMCPServerRejectsCommandAndArgs(t *testing.
 				ContextWindow: 200000,
 				MaxOutput:     64000,
 			},
+			MCPServers: map[string]mcpconfig.ServerConfig{
+				"remote": {Type: "http", URL: "http://example.com/mcp", Command: "echo", Args: []string{"hello"}},
+			},
 		}},
-		Defaults: Defaults{Model: "test-model"},
-		MCPServers: map[string]mcpconfig.ServerConfig{
-			"remote": {Type: "http", URL: "http://example.com/mcp", Command: "echo", Args: []string{"hello"}},
-		},
 	}
 
-	err := cfg.ValidateWithConfigPath("")
+	err := validateSelectedProfile(cfg.Models[0], "")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -517,8 +505,8 @@ func validCompactionConfig() *RawCompactionConfig {
 
 func rawConfigWithCompaction(compaction RawCompactionConfig) RawConfig {
 	cfg := rawConfigWithCodeMode(CodeModeConfig{})
-	cfg.Defaults.CodeMode = nil
-	cfg.Defaults.Compaction = &compaction
+	cfg.Models[0].CodeMode = nil
+	cfg.Models[0].Compaction = &compaction
 	return cfg
 }
 
@@ -535,10 +523,7 @@ func rawConfigWithCodeMode(codeMode CodeModeConfig) RawConfig {
 				ContextWindow: 200000,
 				MaxOutput:     64000,
 			},
-		}},
-		Defaults: Defaults{
-			Model:    "test-model",
 			CodeMode: &codeMode,
-		},
+		}},
 	}
 }

@@ -15,20 +15,20 @@ import (
 )
 
 // DefaultModel is the process-start snapshot of CPE_MODEL.
-// It is used as the default value for the --model flag; final model resolution
-// still follows config.ResolveConfig precedence rules.
+// It is used as the default value for the --model flag; a selected model is required.
 var DefaultModel = os.Getenv("CPE_MODEL")
 
 var (
-	model           string
-	customURL       string
-	input           []string
-	newConversation bool
-	continueID      string
-	incognitoMode   bool
-	timeout         string
-	skipStdin       bool
-	configPath      string
+	model                   string
+	customURL               string
+	input                   []string
+	newConversation         bool
+	continueID              string
+	incognitoMode           bool
+	timeout                 string
+	skipStdin               bool
+	conversationStoragePath string
+	configPath              string
 
 	// CLI flag variables for generation parameters (intermediate storage).
 	// These are bound to cobra flags; values are only promoted to *gai.GenOpts
@@ -98,20 +98,21 @@ through natural language interactions.`,
 		}, changed)
 
 		return commands.ExecuteRootCLI(cmd.Context(), commands.ExecuteRootCLIOptions{
-			Args:            args,
-			InputPaths:      input,
-			Stdin:           cmd.InOrStdin(),
-			SkipStdin:       skipStdin,
-			ConfigPath:      configPath,
-			ModelRef:        model,
-			GenParams:       genParams,
-			Timeout:         timeout,
-			CustomURL:       customURL,
-			ContinueID:      continueID,
-			NewConversation: newConversation,
-			IncognitoMode:   incognitoMode,
-			Stdout:          cmd.OutOrStdout(),
-			Stderr:          cmd.ErrOrStderr(),
+			Args:                    args,
+			InputPaths:              input,
+			Stdin:                   cmd.InOrStdin(),
+			SkipStdin:               skipStdin,
+			ConfigPath:              configPath,
+			ModelRef:                model,
+			GenParams:               genParams,
+			Timeout:                 timeout,
+			ConversationStoragePath: conversationStoragePath,
+			CustomURL:               customURL,
+			ContinueID:              continueID,
+			NewConversation:         newConversation,
+			IncognitoMode:           incognitoMode,
+			Stdout:                  cmd.OutOrStdout(),
+			Stderr:                  cmd.ErrOrStderr(),
 		})
 	},
 }
@@ -133,7 +134,7 @@ func Execute() {
 
 func init() {
 	// Define flags for the root command
-	rootCmd.PersistentFlags().StringVarP(&model, "model", "m", DefaultModel, "Specify the model to use")
+	rootCmd.PersistentFlags().StringVarP(&model, "model", "m", DefaultModel, "Specify the model to use (required unless CPE_MODEL is set)")
 	rootCmd.PersistentFlags().StringVar(&customURL, "custom-url", "", "Specify a custom base URL for the model provider API")
 	rootCmd.PersistentFlags().IntVarP(&flagMaxTokens, "max-tokens", "x", 0, "Maximum number of tokens to generate")
 	rootCmd.PersistentFlags().Float64VarP(&flagTemperature, "temperature", "t", 0, "Sampling temperature (0.0 - 1.0)")
@@ -149,7 +150,8 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&incognitoMode, "incognito", "G", false, "Run in incognito mode (do not save conversations to storage)")
 	rootCmd.PersistentFlags().StringVarP(&timeout, "timeout", "", "", "Specify request timeout duration (e.g. '5m', '30s')")
 	rootCmd.PersistentFlags().BoolVar(&skipStdin, "skip-stdin", false, "Skip reading from stdin (useful in scripts)")
-	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Path to unified configuration file (default: ./cpe.yaml, ~/.config/cpe/cpe.yaml)")
+	rootCmd.PersistentFlags().StringVar(&conversationStoragePath, "db-path", os.Getenv("CPE_DB_PATH"), "Path to conversation SQLite database (default: ./.cpeconvo, env: CPE_DB_PATH)")
+	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Path to YAML configuration file (default: ./cpe.yaml, ~/.config/cpe/cpe.yaml)")
 
 	// Add version flag
 	rootCmd.Flags().BoolP("version", "v", false, "Print the version number and exit")

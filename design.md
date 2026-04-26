@@ -133,7 +133,7 @@ CPE is designed so the outer layers know about the inner layers, but the inner l
 
 CPE separates configuration into two layers:
 
-- `RawConfig`: the file-level YAML/JSON schema.
+- `RawConfig`: the file-level YAML schema.
 - `Config`: the effective runtime configuration for one selected model execution.
 
 This split exists because loading a config file and running a model are not the same operation.
@@ -143,20 +143,19 @@ This split exists because loading a config file and running a model are not the 
 This separation makes several design choices explicit:
 
 - model selection is a runtime concern, not a file-loading concern;
+- every `models` entry is a complete runtime profile, not an overlay on global defaults;
 - path normalization belongs in config resolution;
-- commands that do not need a model should not be forced through model resolution.
+- commands that inspect runtime model capabilities, including MCP commands, resolve the selected model profile.
 
-Resolution precedence is intentionally simple and explicit:
+Resolution precedence is intentionally narrow:
 
-- model selection: runtime override, then `defaults.model`;
-- generation options: runtime overrides, then model defaults, then global defaults;
-- system prompt path: model override, then global default;
-- timeout: runtime override, then config default, then built-in default;
-- `codeMode` and `compaction` use whole-object model overrides rather than field-level deep merges.
+- model selection: `--model` or `CPE_MODEL` is required;
+- generation options: runtime overrides win over the selected profile's generation parameters;
+- timeout: runtime override, then selected profile timeout, then built-in default.
 
-The last choice is important. Deep merging nested config objects is flexible, but it becomes difficult to explain and easy to misread. CPE prefers object replacement for these advanced runtime features because it is easier to reason about and simpler to document.
+CPE intentionally avoids global defaults and deep merging in config resolution. YAML anchors and aliases are the supported way to reduce duplication in hand-written config while keeping runtime semantics simple: after YAML parsing, CPE sees a fully materialized model profile.
 
-Relative filesystem paths are interpreted relative to the config file location when possible. This applies to important user-facing settings such as system prompt paths, conversation storage paths, and local module paths for code mode.
+Relative filesystem paths are interpreted relative to the config file location when possible. This applies to important user-facing settings such as system prompt paths and local module paths for code mode. Conversation storage is not part of the YAML config; use `--db-path` or `CPE_DB_PATH`.
 
 ## Root CLI execution
 

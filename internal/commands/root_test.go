@@ -56,13 +56,10 @@ func resolveTestConfig(t *testing.T, modelType string, modelRef string) config.C
 					Type:        modelType,
 					ApiKeyEnv:   apiKeyEnv,
 				},
-			},
-		},
-		Defaults: config.Defaults{
-			Model:   ref,
-			Timeout: "30s",
-			GenerationParams: &config.GenerationParams{
-				MaxGenerationTokens: ptr(1024),
+				Timeout: "30s",
+				GenerationParams: &config.GenerationParams{
+					MaxGenerationTokens: ptr(1024),
+				},
 			},
 		},
 	}
@@ -106,16 +103,11 @@ func resolveTestConfigWithThinking(t *testing.T, modelType, thinkingBudget strin
 					Type:        modelType,
 					ApiKeyEnv:   apiKeyEnv,
 				},
-				GenerationDefaults: &config.GenerationParams{
-					ThinkingBudget: thinkingBudget,
+				Timeout: "120s",
+				GenerationParams: &config.GenerationParams{
+					ThinkingBudget:      thinkingBudget,
+					MaxGenerationTokens: ptr(2048),
 				},
-			},
-		},
-		Defaults: config.Defaults{
-			Model:   ref,
-			Timeout: "120s",
-			GenerationParams: &config.GenerationParams{
-				MaxGenerationTokens: ptr(2048),
 			},
 		},
 	}
@@ -143,6 +135,10 @@ func resolveCrossProviderConfig(t *testing.T, modelRef string) config.Config {
 					Type:        "anthropic",
 					ApiKeyEnv:   "ANTHROPIC_API_KEY",
 				},
+				Timeout: "30s",
+				GenerationParams: &config.GenerationParams{
+					MaxGenerationTokens: ptr(1024),
+				},
 			},
 			{
 				Model: config.Model{
@@ -152,13 +148,10 @@ func resolveCrossProviderConfig(t *testing.T, modelRef string) config.Config {
 					Type:        "gemini",
 					ApiKeyEnv:   "GEMINI_API_KEY",
 				},
-			},
-		},
-		Defaults: config.Defaults{
-			Model:   "test-anthropic",
-			Timeout: "30s",
-			GenerationParams: &config.GenerationParams{
-				MaxGenerationTokens: ptr(1024),
+				Timeout: "30s",
+				GenerationParams: &config.GenerationParams{
+					MaxGenerationTokens: ptr(1024),
+				},
 			},
 		},
 	}

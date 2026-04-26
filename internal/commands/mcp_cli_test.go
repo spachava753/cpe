@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestMCPListServersFromConfig_DoesNotRequireDefaultModel(t *testing.T) {
+func TestMCPListServersFromConfig_UsesSelectedModelProfile(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -22,9 +22,9 @@ models:
     api_key_env: ANTHROPIC_API_KEY
     context_window: 200000
     max_output: 64000
-mcpServers:
-  local:
-    command: echo
+    mcpServers:
+      local:
+        command: echo
 `
 	if err := os.WriteFile(configPath, []byte(configYAML), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -33,6 +33,7 @@ mcpServers:
 	var out bytes.Buffer
 	err := MCPListServersFromConfig(context.Background(), MCPListServersFromConfigOptions{
 		ConfigPath: configPath,
+		ModelRef:   "sonnet",
 		Writer:     &out,
 	})
 	if err != nil {

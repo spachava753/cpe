@@ -28,14 +28,9 @@ func ModelListFromConfig(ctx context.Context, opts ModelListFromConfigOptions) e
 		writer = os.Stdout
 	}
 
-	defaultModel := opts.DefaultModel
-	if defaultModel == "" {
-		defaultModel = cfg.Defaults.Model
-	}
-
 	return ModelList(ctx, ModelListOptions{
 		Config:       cfg,
-		DefaultModel: defaultModel,
+		DefaultModel: opts.DefaultModel,
 		Writer:       writer,
 	})
 }
@@ -86,11 +81,7 @@ func ModelSystemPromptFromConfig(ctx context.Context, opts ModelSystemPromptFrom
 
 	modelName := opts.ModelName
 	if modelName == "" {
-		if cfg.Defaults.Model != "" {
-			modelName = cfg.Defaults.Model
-		} else {
-			modelName = opts.DefaultModel
-		}
+		modelName = opts.DefaultModel
 	}
 
 	effectiveConfig, err := config.ResolveConfig(opts.ConfigPath, config.RuntimeOptions{ModelRef: modelName})

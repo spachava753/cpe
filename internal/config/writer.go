@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -26,8 +27,20 @@ func FindDefaultConfigPath() string {
 	return filepath.Join(configDir, "cpe", "cpe.yaml")
 }
 
-// LoadOrCreateRawConfig loads an existing config or returns an empty one
+// ValidateConfigPathForWrite rejects config paths that cannot be loaded by CPE.
+func ValidateConfigPathForWrite(path string) error {
+	if strings.EqualFold(filepath.Ext(path), ".json") {
+		return fmt.Errorf("JSON config files are no longer supported; use YAML (.yaml or .yml)")
+	}
+	return nil
+}
+
+// LoadOrCreateRawConfig loads an existing config or returns an empty one.
 func LoadOrCreateRawConfig(path string) (*RawConfig, error) {
+	if err := ValidateConfigPathForWrite(path); err != nil {
+		return nil, err
+	}
+
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return &RawConfig{
@@ -40,15 +53,21 @@ func LoadOrCreateRawConfig(path string) (*RawConfig, error) {
 	}
 
 	var cfg RawConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	decoder := yaml.NewDecoder(strings.NewReader(string(data)))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 
 	return &cfg, nil
 }
 
-// WriteRawConfig writes the config to a file
+// WriteRawConfig writes the config to a YAML file.
 func WriteRawConfig(path string, cfg *RawConfig) error {
+	if err := ValidateConfigPathForWrite(path); err != nil {
+		return err
+	}
+
 	// Ensure parent directory exists
 	dir := filepath.Dir(path)
 	if dir != "" && dir != "." {

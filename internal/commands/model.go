@@ -42,8 +42,7 @@ type ModelInfoOptions struct {
 }
 
 // ModelInfo prints details for one configured model ref.
-// It reports exactly what is configured and does not apply runtime resolution
-// merges from defaults/CLI flags.
+// It reports exactly what is configured and does not apply CLI runtime overrides.
 func ModelInfo(ctx context.Context, opts ModelInfoOptions) error {
 	if opts.ModelName == "" {
 		return fmt.Errorf("no model name provided")
@@ -67,22 +66,22 @@ func ModelInfo(ctx context.Context, opts ModelInfoOptions) error {
 		formatCostPerMillion(model.CacheWriteCostPerMillion),
 	)
 
-	if model.GenerationDefaults != nil {
-		fmt.Fprintln(opts.Writer, "\nGeneration Defaults:")
-		if model.GenerationDefaults.Temperature != nil {
-			fmt.Fprintf(opts.Writer, "  Temperature: %.2f\n", *model.GenerationDefaults.Temperature)
+	if model.GenerationParams != nil {
+		fmt.Fprintln(opts.Writer, "\nGeneration Params:")
+		if model.GenerationParams.Temperature != nil {
+			fmt.Fprintf(opts.Writer, "  Temperature: %.2f\n", *model.GenerationParams.Temperature)
 		}
-		if model.GenerationDefaults.TopP != nil {
-			fmt.Fprintf(opts.Writer, "  TopP: %.2f\n", *model.GenerationDefaults.TopP)
+		if model.GenerationParams.TopP != nil {
+			fmt.Fprintf(opts.Writer, "  TopP: %.2f\n", *model.GenerationParams.TopP)
 		}
-		if model.GenerationDefaults.TopK != nil {
-			fmt.Fprintf(opts.Writer, "  TopK: %d\n", *model.GenerationDefaults.TopK)
+		if model.GenerationParams.TopK != nil {
+			fmt.Fprintf(opts.Writer, "  TopK: %d\n", *model.GenerationParams.TopK)
 		}
-		if model.GenerationDefaults.MaxGenerationTokens != nil {
-			fmt.Fprintf(opts.Writer, "  MaxTokens: %d\n", *model.GenerationDefaults.MaxGenerationTokens)
+		if model.GenerationParams.MaxGenerationTokens != nil {
+			fmt.Fprintf(opts.Writer, "  MaxTokens: %d\n", *model.GenerationParams.MaxGenerationTokens)
 		}
-		if model.GenerationDefaults.ThinkingBudget != "" {
-			fmt.Fprintf(opts.Writer, "  ThinkingBudget: %s\n", model.GenerationDefaults.ThinkingBudget)
+		if model.GenerationParams.ThinkingBudget != "" {
+			fmt.Fprintf(opts.Writer, "  ThinkingBudget: %s\n", model.GenerationParams.ThinkingBudget)
 		}
 	}
 
@@ -111,30 +110,14 @@ type ModelSystemPromptOptions struct {
 	SystemPrompt fs.File
 }
 
-// ModelSystemPrompt resolves and renders the effective system prompt for one
-// model.
-//
-// Model selection precedence:
-//   - opts.ModelName
-//   - config defaults.model
-//   - opts.DefaultModel (typically CPE_MODEL)
-//
-// System prompt path precedence:
-//   - model.systemPromptPath
-//   - defaults.systemPromptPath
+// ModelSystemPrompt renders the selected model profile's effective system prompt.
 func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error {
-	// Determine the model to use
 	modelName := opts.ModelName
 	if modelName == "" {
-		if opts.RawConfig.Defaults.Model != "" {
-			modelName = opts.RawConfig.Defaults.Model
-		} else if opts.DefaultModel != "" {
-			modelName = opts.DefaultModel
-		}
+		modelName = opts.DefaultModel
 	}
-
 	if modelName == "" {
-		return fmt.Errorf("no model specified. Use --model flag or set defaults.model in configuration")
+		return fmt.Errorf("no model specified. Set CPE_MODEL or pass --model")
 	}
 
 	selectedModel, found := opts.RawConfig.FindModel(modelName)
@@ -142,26 +125,19 @@ func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error
 		return fmt.Errorf("model %q not found in configuration", modelName)
 	}
 
-	// Determine system prompt path
-	systemPromptPath := opts.RawConfig.Defaults.SystemPromptPath
-	if selectedModel.SystemPromptPath != "" {
-		systemPromptPath = selectedModel.SystemPromptPath
+	resolvedSystemPromptPath := opts.Config.SystemPromptPath
+	if resolvedSystemPromptPath == "" && selectedModel.SystemPromptPath != "" {
+		resolvedSystemPromptPath = selectedModel.SystemPromptPath
+		if !filepath.IsAbs(resolvedSystemPromptPath) && opts.ConfigFilePath != "" {
+			resolvedSystemPromptPath = filepath.Join(filepath.Dir(opts.ConfigFilePath), resolvedSystemPromptPath)
+		}
 	}
 
-	resolvedSystemPromptPath := systemPromptPath
-	if resolvedSystemPromptPath != "" && !filepath.IsAbs(resolvedSystemPromptPath) && opts.ConfigFilePath != "" {
-		resolvedSystemPromptPath = filepath.Join(filepath.Dir(opts.ConfigFilePath), resolvedSystemPromptPath)
-	}
-
-	// Determine the file to read from
 	var promptFile fs.File
 	var shouldClose bool
 	if opts.SystemPrompt != nil {
-		// Use provided file (for testing)
 		promptFile = opts.SystemPrompt
-		shouldClose = false
 	} else if resolvedSystemPromptPath != "" {
-		// Open file from path
 		f, err := os.Open(resolvedSystemPromptPath)
 		if err != nil {
 			return fmt.Errorf("could not open system prompt file %q: %w", resolvedSystemPromptPath, err)
@@ -174,7 +150,6 @@ func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error
 		fmt.Fprintf(opts.Output, "Model %q does not define a system prompt.\n", modelName)
 		return nil
 	}
-
 	if shouldClose {
 		defer promptFile.Close()
 	}
@@ -186,21 +161,11 @@ func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error
 
 	templateConfig := opts.Config
 	if reflect.ValueOf(templateConfig).IsZero() {
-		// Resolve effective code mode config for template rendering when the caller
-		// did not supply a fully resolved runtime config.
-		var codeMode *config.CodeModeConfig
-		if selectedModel.CodeMode != nil {
-			codeMode = selectedModel.CodeMode
-		} else if opts.RawConfig.Defaults.CodeMode != nil {
-			codeMode = opts.RawConfig.Defaults.CodeMode
-		}
-
-		// Create a minimal Config for template rendering.
 		templateConfig = config.Config{
-			Model:              selectedModel.Model,
-			MCPServers:         opts.RawConfig.MCPServers,
-			GenerationDefaults: nil,
-			CodeMode:           codeMode,
+			Model:            selectedModel.Model,
+			MCPServers:       selectedModel.MCPServers,
+			GenerationParams: nil,
+			CodeMode:         selectedModel.CodeMode,
 		}
 	}
 

@@ -30,33 +30,6 @@
       "additionalProperties": false,
       "type": "object"
     },
-    "Defaults": {
-      "properties": {
-        "systemPromptPath": {
-          "type": "string"
-        },
-        "model": {
-          "type": "string"
-        },
-        "generationParams": {
-          "$ref": "#/$defs/GenerationParams"
-        },
-        "timeout": {
-          "type": "string"
-        },
-        "conversationStoragePath": {
-          "type": "string"
-        },
-        "codeMode": {
-          "$ref": "#/$defs/CodeModeConfig"
-        },
-        "compaction": {
-          "$ref": "#/$defs/RawCompactionConfig"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object"
-    },
     "GenerationParams": {
       "properties": {
         "temperature": {
@@ -140,11 +113,20 @@
         "patchRequest": {
           "$ref": "#/$defs/PatchRequestConfig"
         },
+        "mcpServers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ServerConfig"
+          },
+          "type": "object"
+        },
         "systemPromptPath": {
           "type": "string"
         },
-        "generationDefaults": {
+        "generationParams": {
           "$ref": "#/$defs/GenerationParams"
+        },
+        "timeout": {
+          "type": "string"
         },
         "codeMode": {
           "$ref": "#/$defs/CodeModeConfig"
@@ -154,7 +136,15 @@
         }
       },
       "additionalProperties": false,
-      "type": "object"
+      "type": "object",
+      "required": [
+        "ref",
+        "display_name",
+        "id",
+        "type",
+        "context_window",
+        "max_output"
+      ]
     },
     "PatchRequestConfig": {
       "properties": {
@@ -201,31 +191,32 @@
         }
       },
       "additionalProperties": false,
-      "type": "object"
+      "type": "object",
+      "required": [
+        "autoTriggerThreshold",
+        "maxAutoCompactionRestarts",
+        "toolDescription",
+        "inputSchema",
+        "initialMessageTemplate"
+      ]
     },
     "RawConfig": {
       "properties": {
-        "mcpServers": {
-          "additionalProperties": {
-            "$ref": "#/$defs/ServerConfig"
-          },
-          "type": "object"
-        },
         "models": {
           "items": {
             "$ref": "#/$defs/ModelConfig"
           },
           "type": "array"
         },
-        "defaults": {
-          "$ref": "#/$defs/Defaults"
-        },
         "version": {
           "type": "string"
         }
       },
       "additionalProperties": false,
-      "type": "object"
+      "type": "object",
+      "required": [
+        "models"
+      ]
     },
     "Schema": {
       "properties": {

@@ -134,7 +134,7 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 		UserBlocks:    userBlocks,
 		InitialDialog: opts.InitialDialog,
 		GenOptsFunc: func(dialog gai.Dialog) *gai.GenOpts {
-			return agent.BuildGenOptsForDialog(effectiveConfig.Model, effectiveConfig.GenerationDefaults, dialog)
+			return agent.BuildGenOptsForDialog(effectiveConfig.Model, effectiveConfig.GenerationParams, dialog)
 		},
 		Generator: toolGen,
 		Stderr:    stderr,

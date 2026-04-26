@@ -29,8 +29,7 @@ models:
     api_key_env: ANTHROPIC_API_KEY
     context_window: 200000
     max_output: 64000
-defaults:
-  model: sonnet
+# model selection is runtime-only
 `
 	if err := os.WriteFile(configPath, []byte(configYAML), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)

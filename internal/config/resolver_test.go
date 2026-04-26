@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/spachava753/gai"
@@ -11,113 +12,162 @@ import (
 
 func ptr[T any](v T) *T { return &v }
 
-func TestResolveGenerationParams(t *testing.T) {
-	tests := []struct {
-		name               string
-		globalDefaults     *GenerationParams
-		modelDefaults      *GenerationParams
-		cliOverrides       *gai.GenOpts
-		wantTemp           *float64
-		wantMaxTokens      *int
-		wantTopP           *float64
-		wantStopSequences  []string
-		wantThinkingBudget string
-	}{
-		{
-			name:           "global defaults only",
-			globalDefaults: &GenerationParams{Temperature: ptr(0.7), MaxGenerationTokens: ptr(1024)},
-			wantTemp:       ptr(0.7),
-			wantMaxTokens:  ptr(1024),
-		},
-		{
-			name:           "model overrides global",
-			globalDefaults: &GenerationParams{Temperature: ptr(0.7), MaxGenerationTokens: ptr(1024)},
-			modelDefaults:  &GenerationParams{Temperature: ptr(0.3)},
-			wantTemp:       ptr(0.3),
-			wantMaxTokens:  ptr(1024), // inherited from global
-		},
-		{
-			name:           "CLI overrides model",
-			globalDefaults: &GenerationParams{Temperature: ptr(0.9)},
-			modelDefaults:  &GenerationParams{Temperature: ptr(0.7)},
-			cliOverrides:   &gai.GenOpts{Temperature: ptr(0.5)},
-			wantTemp:       ptr(0.5),
-		},
-		{
-			name:          "CLI sets temperature to zero overrides non-zero",
-			modelDefaults: &GenerationParams{Temperature: ptr(0.7)},
-			cliOverrides:  &gai.GenOpts{Temperature: ptr(0.0)},
-			wantTemp:      ptr(0.0),
-		},
-		{
-			name:          "CLI nil does not override model default",
-			modelDefaults: &GenerationParams{Temperature: ptr(0.7)},
-			cliOverrides:  &gai.GenOpts{Temperature: nil, MaxGenerationTokens: ptr(2048)},
-			wantTemp:      ptr(0.7),
-			wantMaxTokens: ptr(2048),
-		},
-		{
-			name:          "all nil sources",
-			wantTemp:      nil,
-			wantMaxTokens: nil,
-		},
-		{
-			name:           "model sets field to zero overrides global",
-			globalDefaults: &GenerationParams{TopP: ptr(0.9)},
-			modelDefaults:  &GenerationParams{TopP: ptr(0.0)},
-			wantTopP:       ptr(0.0),
-		},
-		{
-			name:              "StopSequences CLI overrides model",
-			modelDefaults:     &GenerationParams{StopSequences: []string{"stop1"}},
-			cliOverrides:      &gai.GenOpts{StopSequences: []string{"stop2", "stop3"}},
-			wantStopSequences: []string{"stop2", "stop3"},
-		},
-		{
-			name:              "StopSequences nil CLI preserves model default",
-			modelDefaults:     &GenerationParams{StopSequences: []string{"stop1"}},
-			cliOverrides:      &gai.GenOpts{},
-			wantStopSequences: []string{"stop1"},
-		},
-		{
-			name:               "ThinkingBudget model overrides global",
-			globalDefaults:     &GenerationParams{ThinkingBudget: "low"},
-			modelDefaults:      &GenerationParams{ThinkingBudget: "high"},
-			wantThinkingBudget: "high",
-		},
+func TestResolveConfigRequiresModel(t *testing.T) {
+	_, err := ResolveFromRaw(&RawConfig{Models: []ModelConfig{testModelProfile()}}, RuntimeOptions{})
+	if err == nil {
+		t.Fatal("expected missing model error")
+	}
+	want := "no model specified. Set CPE_MODEL or pass --model"
+	if err.Error() != want {
+		t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
+	}
+}
+
+func TestResolveGenerationParamsUsesModelProfileAndCLIOnly(t *testing.T) {
+	model := testModelProfile()
+	model.GenerationParams = &GenerationParams{
+		Temperature:         ptr(0.7),
+		MaxGenerationTokens: ptr(1024),
+		StopSequences:       []string{"model-stop"},
+	}
+	result := resolveGenerationParams(model, RuntimeOptions{GenParams: &gai.GenOpts{
+		Temperature:   ptr(0.2),
+		StopSequences: []string{"cli-stop"},
+	}})
+
+	checkPtr(t, "Temperature", result.Temperature, ptr(0.2))
+	checkPtr(t, "MaxGenerationTokens", result.MaxGenerationTokens, ptr(1024))
+	if got, want := result.StopSequences, []string{"cli-stop"}; len(got) != len(want) || got[0] != want[0] {
+		t.Fatalf("StopSequences = %v, want %v", got, want)
+	}
+}
+
+func TestResolveTimeoutUsesModelProfileAndCLI(t *testing.T) {
+	model := testModelProfile()
+	model.Timeout = "30s"
+	got, err := resolveTimeout(model, RuntimeOptions{})
+	if err != nil {
+		t.Fatalf("resolveTimeout returned error: %v", err)
+	}
+	if got != 30*time.Second {
+		t.Fatalf("timeout = %s, want 30s", got)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			defaults := Defaults{GenerationParams: tt.globalDefaults}
-			model := ModelConfig{GenerationDefaults: tt.modelDefaults}
-			opts := RuntimeOptions{GenParams: tt.cliOverrides}
+	got, err = resolveTimeout(model, RuntimeOptions{Timeout: "2m"})
+	if err != nil {
+		t.Fatalf("resolveTimeout override returned error: %v", err)
+	}
+	if got != 2*time.Minute {
+		t.Fatalf("timeout = %s, want 2m", got)
+	}
+}
 
-			result, err := resolveGenerationParams(model, defaults, opts)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
+func TestResolveCodeMode_ResolvesRelativePathsAgainstConfigFile(t *testing.T) {
+	t.Parallel()
 
-			checkPtr(t, "Temperature", result.Temperature, tt.wantTemp)
-			checkPtr(t, "MaxGenerationTokens", result.MaxGenerationTokens, tt.wantMaxTokens)
-			checkPtr(t, "TopP", result.TopP, tt.wantTopP)
+	root := t.TempDir()
+	moduleDir := makeGoModule(t, root, "helpers")
 
-			if tt.wantStopSequences != nil {
-				if len(result.StopSequences) != len(tt.wantStopSequences) {
-					t.Errorf("StopSequences: expected %v, got %v", tt.wantStopSequences, result.StopSequences)
-				} else {
-					for i, want := range tt.wantStopSequences {
-						if result.StopSequences[i] != want {
-							t.Errorf("StopSequences[%d]: expected %q, got %q", i, want, result.StopSequences[i])
-						}
-					}
-				}
-			}
+	model := testModelProfile()
+	model.CodeMode = &CodeModeConfig{Enabled: true, LocalModulePaths: []string{"./helpers"}}
+	rawCfg := &RawConfig{Version: "1.0", Models: []ModelConfig{model}}
 
-			if tt.wantThinkingBudget != "" && result.ThinkingBudget != tt.wantThinkingBudget {
-				t.Errorf("ThinkingBudget: expected %q, got %q", tt.wantThinkingBudget, result.ThinkingBudget)
-			}
-		})
+	cfg, err := resolveFromRaw(rawCfg, RuntimeOptions{ModelRef: "test-model"}, filepath.Join(root, "cpe.yaml"))
+	if err != nil {
+		t.Fatalf("resolveFromRaw returned error: %v", err)
+	}
+	if cfg.CodeMode == nil || len(cfg.CodeMode.LocalModulePaths) != 1 {
+		t.Fatalf("expected one local module path, got %#v", cfg.CodeMode)
+	}
+	if got, want := cfg.CodeMode.LocalModulePaths[0], canonicalPath(moduleDir); got != want {
+		t.Fatalf("unexpected local module path: got %q want %q", got, want)
+	}
+}
+
+func TestResolveCodeMode_DuplicateLocalModulePathsError(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	moduleDir := makeGoModule(t, root, "helpers")
+	model := testModelProfile()
+	model.CodeMode = &CodeModeConfig{Enabled: true, LocalModulePaths: []string{"./helpers", moduleDir}}
+
+	_, err := resolveFromRaw(&RawConfig{Models: []ModelConfig{model}}, RuntimeOptions{ModelRef: "test-model"}, filepath.Join(root, "cpe.yaml"))
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	want := "invalid selected model profile \"test-model\": codeMode: localModulePaths contains duplicate path: " + canonicalPath(moduleDir)
+	if err.Error() != want {
+		t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
+	}
+}
+
+func TestResolveIgnoresUnselectedProfileRuntimeValidation(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	goodModuleDir := makeGoModule(t, root, "helpers")
+	selected := testModelProfile()
+	selected.CodeMode = &CodeModeConfig{Enabled: true, LocalModulePaths: []string{"./helpers"}}
+
+	unselected := testModelProfile()
+	unselected.Ref = "broken-profile"
+	unselected.CodeMode = &CodeModeConfig{Enabled: true, LocalModulePaths: []string{"./missing"}}
+
+	cfg, err := resolveFromRaw(&RawConfig{Models: []ModelConfig{selected, unselected}}, RuntimeOptions{ModelRef: "test-model"}, filepath.Join(root, "cpe.yaml"))
+	if err != nil {
+		t.Fatalf("resolveFromRaw returned error: %v", err)
+	}
+	if cfg.CodeMode == nil || len(cfg.CodeMode.LocalModulePaths) != 1 {
+		t.Fatalf("expected selected codeMode path, got %#v", cfg.CodeMode)
+	}
+	if got, want := cfg.CodeMode.LocalModulePaths[0], canonicalPath(goodModuleDir); got != want {
+		t.Fatalf("selected localModulePath = %q, want %q", got, want)
+	}
+}
+
+func TestResolveCompactionFromModelProfile(t *testing.T) {
+	t.Parallel()
+
+	model := testModelProfile()
+	model.ContextWindow = 1000
+	model.Compaction = &RawCompactionConfig{
+		AutoTriggerThreshold:      0.25,
+		MaxAutoCompactionRestarts: 2,
+		ToolDescription:           "model compact",
+		InputSchema:               jsonschema.Schema{Type: "object"},
+		InitialMessageTemplate:    "model {{ .ToolArgumentsJSON }}",
+	}
+
+	cfg, err := resolveFromRaw(&RawConfig{Models: []ModelConfig{model}}, RuntimeOptions{ModelRef: "test-model"}, "")
+	if err != nil {
+		t.Fatalf("resolveFromRaw returned error: %v", err)
+	}
+	if cfg.Compaction == nil {
+		t.Fatal("expected compaction config")
+	}
+	if cfg.Compaction.TokenThreshold != 250 {
+		t.Fatalf("TokenThreshold = %d, want 250", cfg.Compaction.TokenThreshold)
+	}
+	if cfg.Compaction.MaxCompactions != 2 {
+		t.Fatalf("MaxCompactions = %d, want 2", cfg.Compaction.MaxCompactions)
+	}
+	if cfg.Compaction.Tool.Description != "model compact" {
+		t.Fatalf("tool description = %q", cfg.Compaction.Tool.Description)
+	}
+}
+
+func TestResolveCompactionInvalidTemplateFails(t *testing.T) {
+	t.Parallel()
+
+	model := testModelProfile()
+	model.Compaction = &RawCompactionConfig{
+		AutoTriggerThreshold: 0.5, MaxAutoCompactionRestarts: 1, ToolDescription: "compact", InputSchema: jsonschema.Schema{Type: "object"}, InitialMessageTemplate: "{{",
+	}
+
+	_, err := resolveFromRaw(&RawConfig{Models: []ModelConfig{model}}, RuntimeOptions{ModelRef: "test-model"}, "")
+	if err == nil {
+		t.Fatal("expected invalid template error")
 	}
 }
 
@@ -138,237 +188,28 @@ func checkPtr[T comparable](t *testing.T, name string, got, want *T) {
 	}
 }
 
-func TestResolveCodeMode_ResolvesRelativePathsAgainstConfigFile(t *testing.T) {
-	t.Parallel()
+func testModelProfile() ModelConfig {
+	return ModelConfig{Model: Model{
+		Ref:           "test-model",
+		DisplayName:   "Test Model",
+		ID:            "test-id",
+		Type:          "openai",
+		ApiKeyEnv:     "OPENAI_API_KEY",
+		ContextWindow: 200000,
+		MaxOutput:     64000,
+	}}
+}
 
-	root := t.TempDir()
-	moduleDir := filepath.Join(root, "helpers")
+func makeGoModule(t *testing.T, root, name string) string {
+	t.Helper()
+	moduleDir := filepath.Join(root, name)
 	if err := os.MkdirAll(moduleDir, 0o755); err != nil {
 		t.Fatalf("creating module directory: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte("module example.com/helpers\n\ngo 1.24\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte("module example.com/"+name+"\n\ngo 1.24\n"), 0o644); err != nil {
 		t.Fatalf("writing module go.mod: %v", err)
 	}
-
-	cfgPath := filepath.Join(root, "cpe.yaml")
-	rawCfg := &RawConfig{
-		Version: "1.0",
-		Models: []ModelConfig{{
-			Model: Model{
-				Ref:           "test-model",
-				DisplayName:   "Test",
-				ID:            "gpt-4o-mini",
-				Type:          "openai",
-				ApiKeyEnv:     "OPENAI_API_KEY",
-				ContextWindow: 128000,
-				MaxOutput:     16384,
-			},
-		}},
-		Defaults: Defaults{
-			Model: "test-model",
-			CodeMode: &CodeModeConfig{
-				Enabled:          true,
-				LocalModulePaths: []string{"./helpers"},
-			},
-		},
-	}
-
-	cfg, err := resolveFromRaw(rawCfg, RuntimeOptions{}, cfgPath)
-	if err != nil {
-		t.Fatalf("resolveFromRaw returned error: %v", err)
-	}
-
-	if cfg.CodeMode == nil {
-		t.Fatal("expected code mode config, got nil")
-	}
-	if len(cfg.CodeMode.LocalModulePaths) != 1 {
-		t.Fatalf("expected 1 local module path, got %d", len(cfg.CodeMode.LocalModulePaths))
-	}
-
-	wantModulePath := canonicalPath(moduleDir)
-	if cfg.CodeMode.LocalModulePaths[0] != wantModulePath {
-		t.Fatalf("unexpected local module path: got %q want %q", cfg.CodeMode.LocalModulePaths[0], wantModulePath)
-	}
-}
-
-func TestResolveCodeMode_DuplicateLocalModulePathsError(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	moduleDir := filepath.Join(root, "helpers")
-	if err := os.MkdirAll(moduleDir, 0o755); err != nil {
-		t.Fatalf("creating module directory: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte("module example.com/helpers\n\ngo 1.24\n"), 0o644); err != nil {
-		t.Fatalf("writing module go.mod: %v", err)
-	}
-
-	rawCfg := &RawConfig{
-		Version: "1.0",
-		Models: []ModelConfig{{
-			Model: Model{
-				Ref:           "test-model",
-				DisplayName:   "Test",
-				ID:            "gpt-4o-mini",
-				Type:          "openai",
-				ApiKeyEnv:     "OPENAI_API_KEY",
-				ContextWindow: 128000,
-				MaxOutput:     16384,
-			},
-		}},
-		Defaults: Defaults{
-			Model: "test-model",
-			CodeMode: &CodeModeConfig{
-				Enabled:          true,
-				LocalModulePaths: []string{"./helpers", moduleDir},
-			},
-		},
-	}
-
-	_, err := resolveFromRaw(rawCfg, RuntimeOptions{}, filepath.Join(root, "cpe.yaml"))
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-
-	want := "invalid codeMode configuration: localModulePaths contains duplicate path: " + canonicalPath(moduleDir)
-	if err.Error() != want {
-		t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
-	}
-}
-
-func TestResolveCodeMode_ModelCodeModeOverridesDefaults(t *testing.T) {
-	t.Parallel()
-
-	root := t.TempDir()
-	defaultsModuleDir := filepath.Join(root, "defaults-module")
-	modelModuleDir := filepath.Join(root, "model-module")
-	for _, moduleDir := range []string{defaultsModuleDir, modelModuleDir} {
-		if err := os.MkdirAll(moduleDir, 0o755); err != nil {
-			t.Fatalf("creating module directory: %v", err)
-		}
-		if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte("module example.com/"+filepath.Base(moduleDir)+"\n\ngo 1.24\n"), 0o644); err != nil {
-			t.Fatalf("writing module go.mod: %v", err)
-		}
-	}
-
-	cfgPath := filepath.Join(root, "cpe.yaml")
-	rawCfg := &RawConfig{
-		Version: "1.0",
-		Models: []ModelConfig{{
-			Model: Model{
-				Ref:           "test-model",
-				DisplayName:   "Test",
-				ID:            "gpt-4o-mini",
-				Type:          "openai",
-				ApiKeyEnv:     "OPENAI_API_KEY",
-				ContextWindow: 128000,
-				MaxOutput:     16384,
-			},
-			CodeMode: &CodeModeConfig{
-				Enabled:          true,
-				LocalModulePaths: []string{"./model-module"},
-			},
-		}},
-		Defaults: Defaults{
-			Model: "test-model",
-			CodeMode: &CodeModeConfig{
-				Enabled:          true,
-				LocalModulePaths: []string{"./defaults-module"},
-			},
-		},
-	}
-
-	cfg, err := resolveFromRaw(rawCfg, RuntimeOptions{}, cfgPath)
-	if err != nil {
-		t.Fatalf("resolveFromRaw returned error: %v", err)
-	}
-	if cfg.CodeMode == nil {
-		t.Fatal("expected code mode config, got nil")
-	}
-	if len(cfg.CodeMode.LocalModulePaths) != 1 {
-		t.Fatalf("expected exactly 1 localModulePath, got %d", len(cfg.CodeMode.LocalModulePaths))
-	}
-
-	want := canonicalPath(modelModuleDir)
-	if cfg.CodeMode.LocalModulePaths[0] != want {
-		t.Fatalf("unexpected local module path: got %q want %q", cfg.CodeMode.LocalModulePaths[0], want)
-	}
-}
-
-func TestResolveCompactionDefaultsAndModelOverride(t *testing.T) {
-	t.Parallel()
-
-	rawCfg := &RawConfig{
-		Models: []ModelConfig{{
-			Model: Model{
-				Ref:           "test-model",
-				DisplayName:   "Test",
-				ID:            "gpt-5",
-				Type:          "openai",
-				ApiKeyEnv:     "OPENAI_API_KEY",
-				ContextWindow: 1000,
-				MaxOutput:     100,
-			},
-			Compaction: &RawCompactionConfig{
-				AutoTriggerThreshold:      0.25,
-				MaxAutoCompactionRestarts: 2,
-				ToolDescription:           "model compact",
-				InputSchema:               jsonschema.Schema{Type: "object"},
-				InitialMessageTemplate:    "model {{ .ToolArgumentsJSON }}",
-			},
-		}},
-		Defaults: Defaults{
-			Model: "test-model",
-			Compaction: &RawCompactionConfig{
-				AutoTriggerThreshold:      0.75,
-				MaxAutoCompactionRestarts: 5,
-				ToolDescription:           "default compact",
-				InputSchema:               jsonschema.Schema{Type: "object"},
-				InitialMessageTemplate:    "default",
-			},
-		},
-	}
-
-	cfg, err := resolveFromRaw(rawCfg, RuntimeOptions{}, "")
-	if err != nil {
-		t.Fatalf("resolveFromRaw returned error: %v", err)
-	}
-	if cfg.Compaction == nil {
-		t.Fatal("expected compaction config")
-	}
-	if cfg.Compaction.TokenThreshold != 250 {
-		t.Fatalf("TokenThreshold = %d, want 250", cfg.Compaction.TokenThreshold)
-	}
-	if cfg.Compaction.MaxCompactions != 2 {
-		t.Fatalf("MaxCompactions = %d, want 2", cfg.Compaction.MaxCompactions)
-	}
-	if cfg.Compaction.Tool.Name != CompactionToolName {
-		t.Fatalf("tool name = %q, want %q", cfg.Compaction.Tool.Name, CompactionToolName)
-	}
-	if cfg.Compaction.Tool.Description != "model compact" {
-		t.Fatalf("tool description = %q", cfg.Compaction.Tool.Description)
-	}
-}
-
-func TestResolveCompactionInvalidTemplateFails(t *testing.T) {
-	t.Parallel()
-
-	rawCfg := &RawConfig{
-		Models: []ModelConfig{{Model: Model{
-			Ref: "test-model", DisplayName: "Test", ID: "gpt-5", Type: "openai", ApiKeyEnv: "OPENAI_API_KEY", ContextWindow: 1000, MaxOutput: 100,
-		}}},
-		Defaults: Defaults{
-			Model: "test-model",
-			Compaction: &RawCompactionConfig{
-				AutoTriggerThreshold: 0.5, MaxAutoCompactionRestarts: 1, ToolDescription: "compact", InputSchema: jsonschema.Schema{Type: "object"}, InitialMessageTemplate: "{{",
-			},
-		},
-	}
-
-	_, err := resolveFromRaw(rawCfg, RuntimeOptions{}, "")
-	if err == nil {
-		t.Fatal("expected invalid template error")
-	}
+	return moduleDir
 }
 
 func canonicalPath(path string) string {

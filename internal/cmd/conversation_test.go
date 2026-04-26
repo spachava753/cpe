@@ -31,43 +31,23 @@ func TestResolveConversationDBPath_NoConfigFoundUsesDefault(t *testing.T) {
 	}
 }
 
-func TestResolveConversationDBPath_UsesConfiguredRelativePath(t *testing.T) {
-	tmpDir := t.TempDir()
-	cfgPath := filepath.Join(tmpDir, "cpe.yaml")
-	cfgData := `version: "1.0"
-models:
-  - ref: test-model
-    display_name: Test Model
-    id: gpt-4o-mini
-    type: openai
-    api_key_env: OPENAI_API_KEY
-    context_window: 128000
-    max_output: 16384
-defaults:
-  model: test-model
-  conversationStoragePath: .my-cpe.db
-`
-	if err := os.WriteFile(cfgPath, []byte(cfgData), 0o644); err != nil {
-		t.Fatalf("failed to write config: %v", err)
-	}
-
-	got, err := commands.ResolveConversationDBPath(cfgPath)
+func TestResolveConversationDBPath_UsesExplicitRelativePath(t *testing.T) {
+	got, err := commands.ResolveConversationDBPath(".my-cpe.db")
 	if err != nil {
 		t.Fatalf("ResolveConversationDBPath returned error: %v", err)
 	}
-	want := filepath.Join(tmpDir, ".my-cpe.db")
+	want := filepath.Clean(".my-cpe.db")
 	if got != want {
 		t.Fatalf("unexpected db path: got %q want %q", got, want)
 	}
 }
 
-func TestResolveConversationDBPath_ExplicitMissingConfigReturnsError(t *testing.T) {
-	missingPath := filepath.Join(t.TempDir(), "missing.yaml")
-	_, err := commands.ResolveConversationDBPath(missingPath)
+func TestResolveConversationDBPath_InvalidPathReturnsError(t *testing.T) {
+	_, err := commands.ResolveConversationDBPath("~other/path.db")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	wantErr := "specified config file does not exist: " + missingPath
+	wantErr := "failed to resolve conversation storage path: unsupported home path format \"~other/path.db\" (use ~/...)"
 	if err.Error() != wantErr {
 		t.Fatalf("unexpected error: got %q want %q", err.Error(), wantErr)
 	}

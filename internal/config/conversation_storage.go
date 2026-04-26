@@ -7,23 +7,22 @@ import (
 	"strings"
 )
 
-// DefaultConversationStoragePath is used when defaults.conversationStoragePath is not set.
+// DefaultConversationStoragePath is used when no conversation storage path flag or environment variable is set.
 const DefaultConversationStoragePath = ".cpeconvo"
 
-// ResolveConversationStoragePath resolves defaults.conversationStoragePath into
-// the effective SQLite path used at runtime.
+// ConversationStorageEnvVar is the environment variable used for conversation database path selection.
+const ConversationStorageEnvVar = "CPE_DB_PATH"
+
+// ResolveConversationStoragePath resolves a CLI/env conversation storage path into the effective SQLite path.
 //
 // Resolution contract:
 //   - empty value => DefaultConversationStoragePath
 //   - supports ~ and ~/... home expansion
 //   - absolute paths are cleaned and used directly
-//   - relative paths are resolved against config file directory when known;
-//     otherwise they remain relative to the current working directory
+//   - relative paths remain relative to the current working directory
 //
-// This function only resolves/normalizes paths and does not create directories
-// or check filesystem permissions.
-func ResolveConversationStoragePath(defaults Defaults, configFilePath string) (string, error) {
-	rawPath := defaults.ConversationStoragePath
+// This function only resolves/normalizes paths and does not create directories or check filesystem permissions.
+func ResolveConversationStoragePath(rawPath string) (string, error) {
 	if rawPath == "" {
 		return DefaultConversationStoragePath, nil
 	}
@@ -33,15 +32,7 @@ func ResolveConversationStoragePath(defaults Defaults, configFilePath string) (s
 		return "", err
 	}
 
-	if filepath.IsAbs(path) {
-		return filepath.Clean(path), nil
-	}
-
-	if configFilePath == "" {
-		return filepath.Clean(path), nil
-	}
-
-	return filepath.Clean(filepath.Join(filepath.Dir(configFilePath), path)), nil
+	return filepath.Clean(path), nil
 }
 
 // expandHomePath expands ~ prefixes for the current user.

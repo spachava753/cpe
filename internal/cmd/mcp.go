@@ -29,11 +29,12 @@ var mcpCmd = &cobra.Command{
 var mcpListServersCmd = &cobra.Command{
 	Use:     "list-servers",
 	Short:   "List configured MCP servers",
-	Long:    `List all MCP servers defined in .cpemcp.json configuration file.`,
+	Long:    `List MCP servers defined by the selected model profile in cpe.yaml.`,
 	Aliases: []string{"ls-servers"},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return commands.MCPListServersFromConfig(cmd.Context(), commands.MCPListServersFromConfigOptions{
 			ConfigPath: configPath,
+			ModelRef:   model,
 			Writer:     cmd.OutOrStdout(),
 		})
 	},
@@ -48,6 +49,7 @@ var mcpInfoCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return commands.MCPInfoFromConfig(cmd.Context(), commands.MCPInfoFromConfigOptions{
 			ConfigPath: configPath,
+			ModelRef:   model,
 			ServerName: args[0],
 			Writer:     cmd.OutOrStdout(),
 		})
@@ -78,6 +80,7 @@ var mcpListToolsCmd = &cobra.Command{
 
 		return commands.MCPListToolsFromConfig(cmd.Context(), commands.MCPListToolsFromConfigOptions{
 			ConfigPath:   configPath,
+			ModelRef:     model,
 			ServerName:   args[0],
 			Writer:       cmd.OutOrStdout(),
 			ShowAll:      showAll,
@@ -109,6 +112,7 @@ var mcpCallToolCmd = &cobra.Command{
 
 		return commands.MCPCallToolFromConfig(cmd.Context(), commands.MCPCallToolFromConfigOptions{
 			ConfigPath: configPath,
+			ModelRef:   model,
 			ServerName: mcpServerName,
 			ToolName:   mcpToolName,
 			ToolArgs:   toolArgs,

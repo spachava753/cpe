@@ -23,7 +23,7 @@ var configAddCmd = &cobra.Command{
 	Long: `Add a model from the models.dev registry to your CPE configuration.
 
 The command fetches model information from https://models.dev/api.json and adds
-the model to your configuration file with appropriate defaults.
+the model to your YAML configuration file.
 
 Examples:
   cpe config add anthropic/claude-sonnet-4-20250514

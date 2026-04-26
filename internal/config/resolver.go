@@ -9,22 +9,19 @@ import (
 	"github.com/spachava753/gai"
 )
 
-// DefaultTimeout is the default request timeout when not specified in config or CLI
+// DefaultTimeout is the request timeout when neither a model profile nor CLI sets one.
 const DefaultTimeout = 5 * time.Minute
 
-// ResolveConfig loads and resolves the effective runtime configuration for one model.
+// ResolveConfig loads and resolves the effective runtime configuration for one model profile.
 //
 // Resolution contract:
 //   - Config source: explicit configPath when provided, otherwise standard discovery.
-//   - Model selection: opts.ModelRef > defaults.model (error when both are empty).
-//   - System prompt path: model.systemPromptPath > defaults.systemPromptPath.
-//   - Generation parameters: CLI/runtime opts > model.generation_defaults > defaults.generation_params.
-//   - Timeout: CLI/runtime timeout > defaults.timeout > DefaultTimeout.
-//   - Code mode: model.codeMode fully overrides defaults.codeMode (no field-level merge).
-//   - Compaction: model.compaction fully overrides defaults.compaction (no field-level merge).
-//   - Conversation storage path: defaults.conversationStoragePath, resolved relative to config file location when needed.
+//   - Model selection: opts.ModelRef is required; callers normally populate it
+//     from --model or CPE_MODEL.
+//   - Model profile fields are complete and are not merged with any global defaults.
+//   - CLI/runtime generation and timeout flags override the selected model profile.
 //
-// The returned Config always has a non-nil GenerationDefaults pointer.
+// The returned Config always has a non-nil GenerationParams pointer.
 func ResolveConfig(configPath string, opts RuntimeOptions) (Config, error) {
 	rawCfg, resolvedConfigPath, err := LoadRawConfigWithPath(configPath)
 	if err != nil {
@@ -35,78 +32,54 @@ func ResolveConfig(configPath string, opts RuntimeOptions) (Config, error) {
 }
 
 // ResolveFromRaw resolves configuration from an already-loaded RawConfig.
-// It applies the same precedence rules as ResolveConfig but does not perform
-// config file discovery or loading.
-//
-// Because no config file path is available, relative paths that depend on the
-// config location (for example defaults.conversationStoragePath and codeMode
-// localModulePaths) are resolved relative to the current process working
-// directory via filepath.Abs semantics.
+// It applies the same rules as ResolveConfig but does not perform config file discovery or loading.
 func ResolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions) (Config, error) {
 	return resolveFromRaw(rawCfg, opts, "")
 }
 
-// resolveFromRaw orchestrates effective-config construction from a validated
-// RawConfig and runtime overrides. It performs no I/O and returns deterministic
-// output for the same inputs.
+// resolveFromRaw constructs the effective runtime config for the selected model profile.
 func resolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions, resolvedConfigPath string) (Config, error) {
-	modelRef := opts.ModelRef
-	if modelRef == "" {
-		if rawCfg.Defaults.Model != "" {
-			modelRef = rawCfg.Defaults.Model
-		} else {
-			return Config{}, fmt.Errorf("no model specified. Set CPE_MODEL environment variable, use --model flag, or set defaults.model in configuration")
-		}
+	if opts.ModelRef == "" {
+		return Config{}, fmt.Errorf("no model specified. Set CPE_MODEL or pass --model")
 	}
 
-	selectedModel, found := rawCfg.FindModel(modelRef)
+	selectedModel, found := rawCfg.FindModel(opts.ModelRef)
 	if !found {
-		return Config{}, fmt.Errorf("model %q not found in configuration", modelRef)
+		return Config{}, fmt.Errorf("model %q not found in configuration", opts.ModelRef)
+	}
+	if err := validateSelectedProfile(selectedModel, resolvedConfigPath); err != nil {
+		return Config{}, fmt.Errorf("invalid selected model profile %q: %w", opts.ModelRef, err)
 	}
 
-	systemPromptPath := resolveSystemPromptPath(selectedModel, rawCfg.Defaults, resolvedConfigPath)
-	genParams, err := resolveGenerationParams(selectedModel, rawCfg.Defaults, opts)
+	systemPromptPath := resolveSystemPromptPath(selectedModel, resolvedConfigPath)
+	genParams := resolveGenerationParams(selectedModel, opts)
+	timeout, err := resolveTimeout(selectedModel, opts)
 	if err != nil {
 		return Config{}, err
 	}
-	timeout, err := resolveTimeout(rawCfg.Defaults, opts)
-	if err != nil {
-		return Config{}, err
-	}
-	conversationStoragePath, err := ResolveConversationStoragePath(rawCfg.Defaults, resolvedConfigPath)
-	if err != nil {
-		return Config{}, fmt.Errorf("invalid defaults.conversationStoragePath: %w", err)
-	}
-	codeMode, err := resolveCodeMode(selectedModel, rawCfg.Defaults, resolvedConfigPath)
+	codeMode, err := resolveCodeMode(selectedModel, resolvedConfigPath)
 	if err != nil {
 		return Config{}, fmt.Errorf("invalid codeMode configuration: %w", err)
 	}
-	compaction, err := resolveCompaction(selectedModel, rawCfg.Defaults)
+	compaction, err := resolveCompaction(selectedModel)
 	if err != nil {
 		return Config{}, fmt.Errorf("invalid compaction configuration: %w", err)
 	}
 
 	return Config{
-		MCPServers:              rawCfg.MCPServers,
-		Model:                   selectedModel.Model,
-		SystemPromptPath:        systemPromptPath,
-		GenerationDefaults:      genParams,
-		Timeout:                 timeout,
-		ConversationStoragePath: conversationStoragePath,
-		CodeMode:                codeMode,
-		Compaction:              compaction,
+		MCPServers:       selectedModel.MCPServers,
+		Model:            selectedModel.Model,
+		SystemPromptPath: systemPromptPath,
+		GenerationParams: genParams,
+		Timeout:          timeout,
+		CodeMode:         codeMode,
+		Compaction:       compaction,
 	}, nil
 }
 
-// resolveSystemPromptPath returns the effective system prompt path using
-// model-level override first, then global defaults. Relative paths are resolved
-// against the config file location when available. It may return an empty
-// string when neither source configures a prompt.
-func resolveSystemPromptPath(model ModelConfig, defaults Defaults, configFilePath string) string {
-	path := defaults.SystemPromptPath
-	if model.SystemPromptPath != "" {
-		path = model.SystemPromptPath
-	}
+// resolveSystemPromptPath returns the model profile's prompt path, resolving relative paths from the config file directory when available.
+func resolveSystemPromptPath(model ModelConfig, configFilePath string) string {
+	path := model.SystemPromptPath
 	if path == "" {
 		return ""
 	}
@@ -116,37 +89,20 @@ func resolveSystemPromptPath(model ModelConfig, defaults Defaults, configFilePat
 	return filepath.Join(filepath.Dir(configFilePath), path)
 }
 
-// resolveGenerationParams builds the effective generation options by layering
-// defaults in precedence order: global defaults, then model defaults, then
-// runtime/CLI overrides.
-//
-// The returned *gai.GenOpts is always non-nil.
-func resolveGenerationParams(model ModelConfig, defaults Defaults, opts RuntimeOptions) (*gai.GenOpts, error) {
+// resolveGenerationParams returns the model profile's generation parameters with CLI overrides applied.
+func resolveGenerationParams(model ModelConfig, opts RuntimeOptions) *gai.GenOpts {
 	genParams := &gai.GenOpts{}
-
-	// Start with global defaults
-	if defaults.GenerationParams != nil {
-		mergeGenOpts(genParams, defaults.GenerationParams.ToGenOpts())
+	if model.GenerationParams != nil {
+		mergeGenOpts(genParams, model.GenerationParams.ToGenOpts())
 	}
-
-	// Apply model-specific defaults
-	if model.GenerationDefaults != nil {
-		mergeGenOpts(genParams, model.GenerationDefaults.ToGenOpts())
-	}
-
-	// Apply CLI overrides
 	if opts.GenParams != nil {
 		mergeGenOpts(genParams, opts.GenParams)
 	}
-
-	return genParams, nil
+	return genParams
 }
 
-// mergeGenOpts applies non-nil fields from src onto dst.
-// A nil pointer in src means "not set" and leaves dst unchanged.
-// A non-nil pointer in src (even pointing to zero) overrides dst.
-// This is necessary to correctly distinguish "not set" (nil) from
-// "explicitly set to zero" (non-nil pointer to zero value).
+// mergeGenOpts applies non-zero presence fields from src onto dst.
+// Pointer fields use nil to mean "not set"; a non-nil pointer to a zero value still overrides.
 func mergeGenOpts(dst, src *gai.GenOpts) {
 	if src == nil {
 		return
@@ -192,45 +148,28 @@ func mergeGenOpts(dst, src *gai.GenOpts) {
 	}
 }
 
-// resolveTimeout parses and resolves request timeout with precedence:
-// runtime/CLI override > defaults.timeout > DefaultTimeout.
-// Any invalid duration string fails resolution with a contextual error.
-func resolveTimeout(defaults Defaults, opts RuntimeOptions) (time.Duration, error) {
-	timeout := DefaultTimeout
-
+// resolveTimeout parses the timeout with precedence: CLI/runtime override > model profile timeout > DefaultTimeout.
+func resolveTimeout(model ModelConfig, opts RuntimeOptions) (time.Duration, error) {
+	rawTimeout := model.Timeout
 	if opts.Timeout != "" {
-		parsedTimeout, err := time.ParseDuration(opts.Timeout)
-		if err != nil {
-			return 0, fmt.Errorf("invalid timeout value %q: %w", opts.Timeout, err)
-		}
-		timeout = parsedTimeout
-	} else if defaults.Timeout != "" {
-		parsedTimeout, err := time.ParseDuration(defaults.Timeout)
-		if err != nil {
-			return 0, fmt.Errorf("invalid default timeout value %q: %w", defaults.Timeout, err)
-		}
-		timeout = parsedTimeout
+		rawTimeout = opts.Timeout
 	}
-
-	return timeout, nil
+	if rawTimeout == "" {
+		return DefaultTimeout, nil
+	}
+	parsedTimeout, err := time.ParseDuration(rawTimeout)
+	if err != nil {
+		return 0, fmt.Errorf("invalid timeout value %q: %w", rawTimeout, err)
+	}
+	return parsedTimeout, nil
 }
 
-// resolveCodeMode resolves and normalizes effective code mode config.
-//
-// Contract: model.codeMode, when present, replaces defaults.codeMode entirely.
-// There is no field-level merge between model and global scopes.
-func resolveCodeMode(model ModelConfig, defaults Defaults, configFilePath string) (*CodeModeConfig, error) {
-	if model.CodeMode != nil {
-		return normalizeCodeModeConfigPaths(model.CodeMode, configFilePath)
-	}
-	return normalizeCodeModeConfigPaths(defaults.CodeMode, configFilePath)
+func resolveCodeMode(model ModelConfig, configFilePath string) (*CodeModeConfig, error) {
+	return normalizeCodeModeConfigPaths(model.CodeMode, configFilePath)
 }
 
-func resolveCompaction(model ModelConfig, defaults Defaults) (*CompactionConfig, error) {
-	raw := defaults.Compaction
-	if model.Compaction != nil {
-		raw = model.Compaction
-	}
+func resolveCompaction(model ModelConfig) (*CompactionConfig, error) {
+	raw := model.Compaction
 	if raw == nil {
 		return nil, nil
 	}

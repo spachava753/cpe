@@ -14,12 +14,13 @@ import (
 // servers from resolved config.
 type MCPListServersFromConfigOptions struct {
 	ConfigPath string
+	ModelRef   string
 	Writer     io.Writer
 }
 
 // MCPListServersFromConfig resolves config and lists configured MCP servers.
 func MCPListServersFromConfig(ctx context.Context, opts MCPListServersFromConfigOptions) error {
-	cfg, err := config.LoadRawConfig(opts.ConfigPath)
+	cfg, err := config.ResolveConfig(opts.ConfigPath, config.RuntimeOptions{ModelRef: opts.ModelRef})
 	if err != nil {
 		return err
 	}
@@ -38,6 +39,7 @@ func MCPListServersFromConfig(ctx context.Context, opts MCPListServersFromConfig
 // MCPInfoFromConfigOptions contains CLI-facing inputs for MCP server info.
 type MCPInfoFromConfigOptions struct {
 	ConfigPath string
+	ModelRef   string
 	ServerName string
 	Writer     io.Writer
 	Timeout    time.Duration
@@ -45,7 +47,7 @@ type MCPInfoFromConfigOptions struct {
 
 // MCPInfoFromConfig resolves config and displays server info.
 func MCPInfoFromConfig(ctx context.Context, opts MCPInfoFromConfigOptions) error {
-	cfg, err := config.LoadRawConfig(opts.ConfigPath)
+	cfg, err := config.ResolveConfig(opts.ConfigPath, config.RuntimeOptions{ModelRef: opts.ModelRef})
 	if err != nil {
 		return err
 	}
@@ -66,6 +68,7 @@ func MCPInfoFromConfig(ctx context.Context, opts MCPInfoFromConfigOptions) error
 // MCPListToolsFromConfigOptions contains CLI-facing inputs for listing tools.
 type MCPListToolsFromConfigOptions struct {
 	ConfigPath   string
+	ModelRef     string
 	ServerName   string
 	Writer       io.Writer
 	ShowAll      bool
@@ -75,7 +78,7 @@ type MCPListToolsFromConfigOptions struct {
 
 // MCPListToolsFromConfig resolves config and lists tools on one server.
 func MCPListToolsFromConfig(ctx context.Context, opts MCPListToolsFromConfigOptions) error {
-	cfg, err := config.LoadRawConfig(opts.ConfigPath)
+	cfg, err := config.ResolveConfig(opts.ConfigPath, config.RuntimeOptions{ModelRef: opts.ModelRef})
 	if err != nil {
 		return err
 	}
@@ -105,6 +108,7 @@ func MCPListToolsFromConfig(ctx context.Context, opts MCPListToolsFromConfigOpti
 // MCPCallToolFromConfigOptions contains CLI-facing inputs for tool execution.
 type MCPCallToolFromConfigOptions struct {
 	ConfigPath string
+	ModelRef   string
 	ServerName string
 	ToolName   string
 	ToolArgs   map[string]any
@@ -113,7 +117,7 @@ type MCPCallToolFromConfigOptions struct {
 
 // MCPCallToolFromConfig resolves config and calls one MCP tool.
 func MCPCallToolFromConfig(ctx context.Context, opts MCPCallToolFromConfigOptions) error {
-	cfg, err := config.LoadRawConfig(opts.ConfigPath)
+	cfg, err := config.ResolveConfig(opts.ConfigPath, config.RuntimeOptions{ModelRef: opts.ModelRef})
 	if err != nil {
 		return err
 	}

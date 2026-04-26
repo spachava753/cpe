@@ -18,20 +18,21 @@ import (
 // inputs so the commands package remains the orchestration hub beneath
 // internal/cmd.
 type ExecuteRootCLIOptions struct {
-	Args            []string
-	InputPaths      []string
-	Stdin           io.Reader
-	SkipStdin       bool
-	ConfigPath      string
-	ModelRef        string
-	GenParams       *gai.GenOpts
-	Timeout         string
-	CustomURL       string
-	ContinueID      string
-	NewConversation bool
-	IncognitoMode   bool
-	Stdout          io.Writer
-	Stderr          io.Writer
+	Args                    []string
+	InputPaths              []string
+	Stdin                   io.Reader
+	SkipStdin               bool
+	ConfigPath              string
+	ModelRef                string
+	GenParams               *gai.GenOpts
+	Timeout                 string
+	ConversationStoragePath string
+	CustomURL               string
+	ContinueID              string
+	NewConversation         bool
+	IncognitoMode           bool
+	Stdout                  io.Writer
+	Stderr                  io.Writer
 }
 
 // ExecuteRootCLI resolves CLI/runtime dependencies and delegates generation
@@ -54,7 +55,12 @@ func ExecuteRootCLI(ctx context.Context, opts ExecuteRootCLIOptions) error {
 			return fmt.Errorf("--continue cannot be used with --incognito")
 		}
 	} else {
-		storageDB, err := sql.Open("sqlite3", effectiveConfig.ConversationStoragePath)
+		conversationDBPath, err := config.ResolveConversationStoragePath(opts.ConversationStoragePath)
+		if err != nil {
+			return fmt.Errorf("invalid conversation storage path: %w", err)
+		}
+
+		storageDB, err := sql.Open("sqlite3", conversationDBPath)
 		if err != nil {
 			return fmt.Errorf("failed to open database: %w", err)
 		}

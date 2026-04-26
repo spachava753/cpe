@@ -1,24 +1,26 @@
 /*
-Package config defines CPE's unified configuration schema and runtime
-resolution pipeline.
+Package config defines CPE's YAML configuration schema and runtime resolution pipeline.
 
 It separates two layers:
-  - RawConfig: file-level representation loaded from YAML/JSON.
-  - Config: effective runtime settings for one selected model.
+  - RawConfig: file-level representation loaded from YAML.
+  - Config: effective runtime settings for one selected model profile.
 
-Resolution precedence:
-  - model selection: CLI --model -> defaults.model;
-  - generation options: CLI overrides -> model generationDefaults ->
-    defaults.generationParams;
-  - system prompt path: model override -> defaults.systemPromptPath;
-  - timeout: CLI --timeout -> defaults.timeout -> built-in default;
-  - tool-oriented features such as codeMode and compaction use whole-object
-    model overrides instead of field-level merging.
+The config file intentionally has no global defaults layer. Each models entry is
+a complete runtime profile containing model provider settings plus optional MCP
+servers, generation parameters, system prompt path, timeout, codeMode, and
+compaction settings. Users can reduce YAML duplication with anchors and aliases;
+CPE resolves only the selected profile and does not merge profile fields with any
+global config block.
+
+Resolution precedence is limited to runtime selection and explicit CLI overrides:
+  - model selection: --model or CPE_MODEL is required;
+  - generation options: CLI/runtime opts override the selected profile fields;
+  - timeout: CLI/runtime timeout overrides the selected profile timeout, then
+    falls back to the built-in default.
 
 The package also validates custom invariants (model references, auth method
-constraints, codeMode path normalization, and compaction schema/template/
-restart-limit validity) and resolves
-filesystem-relative paths such as conversation storage and
+constraints, MCP server transport constraints, codeMode path normalization, and
+compaction schema/template/restart-limit validity) and resolves filesystem-relative
 codeMode.localModulePaths.
 
 MCP server connection settings are represented via the dependency-neutral

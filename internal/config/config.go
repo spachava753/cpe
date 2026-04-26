@@ -10,17 +10,17 @@ import (
 	"github.com/spachava753/cpe/internal/mcpconfig"
 )
 
-// Model represents an AI model configuration
+// Model represents an AI model provider and capability configuration.
 type Model struct {
-	Ref                      string              `json:"ref" yaml:"ref" validate:"required"`
-	DisplayName              string              `json:"display_name" yaml:"display_name" validate:"required"`
-	ID                       string              `json:"id" yaml:"id" validate:"required"`
-	Type                     string              `json:"type" yaml:"type" validate:"required,oneof=openai anthropic gemini responses groq cerebras openrouter zai"`
+	Ref                      string              `json:"ref" yaml:"ref" validate:"required" jsonschema:"required"`
+	DisplayName              string              `json:"display_name" yaml:"display_name" validate:"required" jsonschema:"required"`
+	ID                       string              `json:"id" yaml:"id" validate:"required" jsonschema:"required"`
+	Type                     string              `json:"type" yaml:"type" validate:"required,oneof=openai anthropic gemini responses groq cerebras openrouter zai" jsonschema:"required"`
 	BaseUrl                  string              `json:"base_url" yaml:"base_url,omitempty" validate:"omitempty,https_url|http_url"`
 	ApiKeyEnv                string              `json:"api_key_env" yaml:"api_key_env" validate:"required_unless=AuthMethod oauth"`
 	AuthMethod               string              `json:"auth_method" yaml:"auth_method,omitempty" validate:"omitempty,oneof=apikey oauth"`
-	ContextWindow            uint32              `json:"context_window" yaml:"context_window,omitempty" validate:"required,gt=0"`
-	MaxOutput                uint32              `json:"max_output" yaml:"max_output,omitempty" validate:"required,gt=0"`
+	ContextWindow            uint32              `json:"context_window" yaml:"context_window,omitempty" validate:"required,gt=0" jsonschema:"required"`
+	MaxOutput                uint32              `json:"max_output" yaml:"max_output,omitempty" validate:"required,gt=0" jsonschema:"required"`
 	InputCostPerMillion      *float64            `json:"input_cost_per_million,omitempty" yaml:"input_cost_per_million,omitempty"`
 	OutputCostPerMillion     *float64            `json:"output_cost_per_million,omitempty" yaml:"output_cost_per_million,omitempty"`
 	CacheReadCostPerMillion  *float64            `json:"cache_read_cost_per_million,omitempty" yaml:"cache_read_cost_per_million,omitempty"`
@@ -28,13 +28,13 @@ type Model struct {
 	PatchRequest             *PatchRequestConfig `json:"patchRequest,omitempty" yaml:"patchRequest,omitempty"`
 }
 
-// PatchRequestConfig holds configuration for patching HTTP requests
+// PatchRequestConfig holds configuration for patching HTTP requests.
 type PatchRequestConfig struct {
 	JSONPatch      []map[string]any  `json:"jsonPatch,omitempty" yaml:"jsonPatch,omitempty"`
 	IncludeHeaders map[string]string `json:"includeHeaders,omitempty" yaml:"includeHeaders,omitempty"`
 }
 
-// CodeModeConfig controls code mode behavior for MCP tools
+// CodeModeConfig controls code mode behavior for MCP tools.
 type CodeModeConfig struct {
 	Enabled              bool     `yaml:"enabled" json:"enabled"`
 	ExcludedTools        []string `yaml:"excludedTools,omitempty" json:"excludedTools,omitempty"`
@@ -45,34 +45,28 @@ type CodeModeConfig struct {
 
 // RawCompactionConfig controls manual and threshold-driven conversation compaction.
 type RawCompactionConfig struct {
-	AutoTriggerThreshold      float64           `yaml:"autoTriggerThreshold,omitempty" json:"autoTriggerThreshold,omitempty" validate:"required,gt=0,max=1"`
-	MaxAutoCompactionRestarts int               `yaml:"maxAutoCompactionRestarts,omitempty" json:"maxAutoCompactionRestarts,omitempty" validate:"required,min=1"`
-	ToolDescription           string            `yaml:"toolDescription,omitempty" json:"toolDescription,omitempty" validate:"required"`
-	InputSchema               jsonschema.Schema `yaml:"inputSchema,omitempty" json:"inputSchema" jsonschema:"oneof_type=object;boolean" validate:"required"`
-	InitialMessageTemplate    string            `yaml:"initialMessageTemplate,omitempty" json:"initialMessageTemplate,omitempty" validate:"required"`
+	AutoTriggerThreshold      float64           `yaml:"autoTriggerThreshold,omitempty" json:"autoTriggerThreshold,omitempty" validate:"required,gt=0,max=1" jsonschema:"required"`
+	MaxAutoCompactionRestarts int               `yaml:"maxAutoCompactionRestarts,omitempty" json:"maxAutoCompactionRestarts,omitempty" validate:"required,min=1" jsonschema:"required"`
+	ToolDescription           string            `yaml:"toolDescription,omitempty" json:"toolDescription,omitempty" validate:"required" jsonschema:"required"`
+	InputSchema               jsonschema.Schema `yaml:"inputSchema,omitempty" json:"inputSchema" jsonschema:"required,oneof_type=object;boolean" validate:"required"`
+	InitialMessageTemplate    string            `yaml:"initialMessageTemplate,omitempty" json:"initialMessageTemplate,omitempty" validate:"required" jsonschema:"required"`
 }
 
-// RawConfig represents the configuration file structure.
+// RawConfig represents the YAML configuration file structure.
 // NOTE: If you change schema-facing fields/tags in config structs, regenerate
 // schema/cpe-config-schema.json with: go run ./build gen-schema
 // (or go generate ./...).
 type RawConfig struct {
-	// MCP server configurations
-	MCPServers map[string]mcpconfig.ServerConfig `yaml:"mcpServers,omitempty" json:"mcpServers,omitempty" validate:"dive"`
+	// Model profiles. Each entry is a complete runtime profile; there is no
+	// defaults layer or field-level merging between models.
+	Models []ModelConfig `yaml:"models" json:"models" validate:"gt=0,unique=Ref,dive" jsonschema:"required"`
 
-	// Model definitions
-	Models []ModelConfig `yaml:"models" json:"models" validate:"gt=0,unique=Ref,dive"`
-
-	// Default settings
-	Defaults Defaults `yaml:"defaults,omitempty" json:"defaults"`
-
-	// Version for future compatibility
+	// Version for future compatibility.
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`
 }
 
-// GenerationParams wraps gai.GenOpts with camelCase YAML/JSON tags for config unmarshaling.
-// This adapter exists because gai.GenOpts uses snake_case tags (matching API conventions)
-// while CPE config files use camelCase (matching Go/YAML conventions).
+// GenerationParams wraps gai.GenOpts with camelCase YAML tags for config unmarshaling.
+// This adapter exists because gai.GenOpts uses snake_case tags matching API conventions.
 type GenerationParams struct {
 	Temperature         *float64 `yaml:"temperature,omitempty" json:"temperature,omitempty" validate:"omitempty,lte=2,gte=0"`
 	TopP                *float64 `yaml:"topP,omitempty" json:"topP,omitempty" validate:"omitempty,lte=1,gte=0"`
@@ -86,7 +80,7 @@ type GenerationParams struct {
 	ThinkingBudget      string   `yaml:"thinkingBudget,omitempty" json:"thinkingBudget,omitempty"`
 }
 
-// ToGenOpts converts GenerationParams to gai.GenOpts
+// ToGenOpts converts GenerationParams to gai.GenOpts.
 func (g *GenerationParams) ToGenOpts() *gai.GenOpts {
 	if g == nil {
 		return nil
@@ -105,50 +99,30 @@ func (g *GenerationParams) ToGenOpts() *gai.GenOpts {
 	}
 }
 
-// Defaults defines global settings that apply when model-specific or CLI
-// overrides are not provided.
-type Defaults struct {
-	// Path to system prompt template file
-	SystemPromptPath string `yaml:"systemPromptPath,omitempty" json:"systemPromptPath,omitempty" validate:"omitempty,filepath"`
-
-	// Default model to use if not specified
-	Model string `yaml:"model,omitempty" json:"model,omitempty" validate:"omitempty"`
-
-	// Global generation parameter defaults
-	GenerationParams *GenerationParams `yaml:"generationParams,omitempty" json:"generationParams,omitempty" validate:"omitempty"`
-
-	// Request timeout
-	Timeout string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
-
-	// Path to conversation storage database.
-	// Absolute paths are used as-is; relative paths are resolved from the config file directory.
-	ConversationStoragePath string `yaml:"conversationStoragePath,omitempty" json:"conversationStoragePath,omitempty"`
-
-	// Code mode configuration
-	CodeMode *CodeModeConfig `yaml:"codeMode,omitempty" json:"codeMode,omitempty"`
-
-	// Conversation compaction configuration
-	Compaction *RawCompactionConfig `yaml:"compaction,omitempty" json:"compaction,omitempty" validate:"omitempty"`
-}
-
-// ModelConfig extends the base model with generation defaults
+// ModelConfig is a complete runtime profile selected by --model or CPE_MODEL.
 type ModelConfig struct {
 	Model `yaml:",inline" json:",inline"`
 
-	// Optional override for the system prompt template path
+	// MCP server configurations available when this model profile is selected.
+	MCPServers map[string]mcpconfig.ServerConfig `yaml:"mcpServers,omitempty" json:"mcpServers,omitempty" validate:"dive"`
+
+	// Optional system prompt template path. Relative paths resolve from the config file directory.
 	SystemPromptPath string `yaml:"systemPromptPath,omitempty" json:"systemPromptPath,omitempty" validate:"omitempty,filepath"`
 
-	// Generation parameter defaults for this model
-	GenerationDefaults *GenerationParams `yaml:"generationDefaults,omitempty" json:"generationDefaults,omitempty" validate:"omitempty"`
+	// Generation parameters for this model profile.
+	GenerationParams *GenerationParams `yaml:"generationParams,omitempty" json:"generationParams,omitempty" validate:"omitempty"`
 
-	// Code mode configuration for this model (overrides global defaults)
+	// Request timeout for this model profile.
+	Timeout string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+
+	// Code mode configuration for this model profile.
 	CodeMode *CodeModeConfig `yaml:"codeMode,omitempty" json:"codeMode,omitempty"`
 
-	// Conversation compaction configuration for this model (overrides global defaults)
+	// Conversation compaction configuration for this model profile.
 	Compaction *RawCompactionConfig `yaml:"compaction,omitempty" json:"compaction,omitempty" validate:"omitempty"`
 }
 
-// FindModel searches for a model by ref in the config
+// FindModel searches for a model profile by ref in the config.
 func (c *RawConfig) FindModel(ref string) (ModelConfig, bool) {
 	for _, model := range c.Models {
 		if model.Ref == ref {
@@ -177,41 +151,38 @@ type CompactionConfig struct {
 	InitialMessageTemplate *template.Template
 }
 
-// Config represents the effective runtime configuration for a single model
+// Config represents the effective runtime configuration for one selected model profile.
 type Config struct {
-	// MCP server configurations
+	// MCP server configurations for the selected model profile.
 	MCPServers map[string]mcpconfig.ServerConfig
 
-	// Selected model
+	// Selected model provider and capability settings.
 	Model Model
 
-	// Resolved system prompt path (model-specific or global default)
+	// Resolved system prompt path for the selected model profile.
 	SystemPromptPath string
 
-	// Effective generation parameters after merging all sources
-	GenerationDefaults *gai.GenOpts
+	// Effective generation parameters for the selected model profile and CLI overrides.
+	GenerationParams *gai.GenOpts
 
-	// Effective timeout
+	// Effective timeout.
 	Timeout time.Duration
 
-	// Effective path to conversation storage database.
-	ConversationStoragePath string
-
-	// Effective code mode configuration
+	// Effective code mode configuration.
 	CodeMode *CodeModeConfig
 
-	// Effective conversation compaction configuration
+	// Effective conversation compaction configuration.
 	Compaction *CompactionConfig
 }
 
-// RuntimeOptions captures runtime overrides from CLI flags and environment
+// RuntimeOptions captures runtime overrides from CLI flags and environment.
 type RuntimeOptions struct {
-	// Model ref to use (from --model or CPE_MODEL)
+	// Model ref to use from --model or CPE_MODEL. Required.
 	ModelRef string
 
-	// Generation parameter overrides (from flags)
+	// Generation parameter overrides from flags.
 	GenParams *gai.GenOpts
 
-	// Timeout override (from --timeout)
+	// Timeout override from --timeout.
 	Timeout string
 }

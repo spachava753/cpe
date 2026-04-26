@@ -80,10 +80,9 @@ models:
     api_key_env: ANTHROPIC_API_KEY  # You choose the env var name
     context_window: 200000
     max_output: 64000
-
-defaults:
-  model: sonnet
-  timeout: 5m
+    timeout: 5m
+    generationParams:
+      temperature: 0.2
 ```
 
 > **Tip**: You can quickly add models from the [models.dev](https://models.dev) registry:
@@ -102,8 +101,8 @@ export ANTHROPIC_API_KEY="your-api-key"
 ### 3. Start chatting
 
 ```bash
-# Ask a question
-cpe "Explain what this project does"
+# Ask a question (or set CPE_MODEL=sonnet once in your shell)
+cpe --model sonnet "Explain what this project does"
 
 # Analyze specific files
 cpe -i main.go -i README.md "What are the main entry points?"
@@ -188,29 +187,37 @@ Connect external tools via the [Model Context Protocol](https://modelcontextprot
 
 ```yaml
 # cpe.yaml
-mcpServers:
-  # Local tool via stdio
-  editor:
-    command: "editor-mcp"
-    type: stdio
-    timeout: 60
-    enabledTools:
-      - text_edit
-      - shell
+models:
+  - ref: sonnet
+    display_name: "Claude Sonnet"
+    id: claude-sonnet-4-5-20250929
+    type: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    context_window: 200000
+    max_output: 64000
+    mcpServers:
+      # Local tool via stdio
+      editor:
+        command: "editor-mcp"
+        type: stdio
+        timeout: 60
+        enabledTools:
+          - text_edit
+          - shell
 
-  # Remote tool via HTTP
-  search:
-    url: "https://search.example.com/mcp"
-    type: http
-    headers:
-      Authorization: "Bearer ${API_KEY}"
+      # Remote tool via HTTP
+      search:
+        url: "https://search.example.com/mcp"
+        type: http
+        headers:
+          Authorization: "Bearer ${API_KEY}"
 
-  # SSE-based server
-  streaming:
-    url: "https://streaming.example.com/sse"
-    type: sse
-    headers:
-      X-API-Key: "${MCP_API_KEY}"
+      # SSE-based server
+      streaming:
+        url: "https://streaming.example.com/sse"
+        type: sse
+        headers:
+          X-API-Key: "${MCP_API_KEY}"
 ```
 
 **Tool Filtering**: Control which tools are exposed to the AI:
@@ -224,26 +231,26 @@ Now the AI can edit files, run commands, and search the web!
 CPE provides commands to help debug MCP server connections:
 
 ```bash
-# List all configured MCP servers (alias: ls-servers)
-cpe mcp list-servers
+# List MCP servers for the selected model profile (alias: ls-servers)
+cpe --model sonnet mcp list-servers
 
 # List tools available from a specific server (alias: ls-tools)
-cpe mcp list-tools editor
+cpe --model sonnet mcp list-tools editor
 
 # Show all tools including filtered ones
-cpe mcp list-tools editor --show-all
+cpe --model sonnet mcp list-tools editor --show-all
 
 # Show only filtered-out tools
-cpe mcp list-tools editor --show-filtered
+cpe --model sonnet mcp list-tools editor --show-filtered
 
 # Get detailed info about a server
-cpe mcp info editor
+cpe --model sonnet mcp info editor
 
 # Call a tool directly for testing
-cpe mcp call-tool --server editor --tool text_edit --args '{"path": "test.txt", "text": "hello"}'
+cpe --model sonnet mcp call-tool --server editor --tool text_edit --args '{"path": "test.txt", "text": "hello"}'
 
 # View the execute_go_code tool description (for code mode)
-cpe mcp code-desc
+cpe --model sonnet mcp code-desc
 ```
 
 ### Code Mode
@@ -251,12 +258,14 @@ cpe mcp code-desc
 Code Mode lets the AI write and execute Go code to accomplish complex tasks in a single step:
 
 ```yaml
-defaults:
-  codeMode:
-    enabled: true
-    localModulePaths:
-      - ../my-go-helpers
-      - /Users/me/dev/shared-go-utils
+models:
+  - ref: sonnet
+    # ...model provider fields...
+    codeMode:
+      enabled: true
+      localModulePaths:
+        - ../my-go-helpers
+        - /Users/me/dev/shared-go-utils
 ```
 
 With Code Mode, the AI can:
@@ -340,17 +349,7 @@ CPE searches for configuration in this order:
 # yaml-language-server: $schema=https://raw.githubusercontent.com/spachava753/cpe/refs/heads/main/schema/cpe-config-schema.json
 version: "1.0"
 
-# MCP servers for tool access
-mcpServers:
-  editor:
-    command: "editor-mcp"
-    type: stdio
-    timeout: 60
-    enabledTools:
-      - text_edit
-      - shell
-
-# Define your models
+# Define complete model profiles. Use YAML anchors to avoid duplication.
 models:
   - ref: sonnet
     display_name: "Claude Sonnet"
@@ -361,6 +360,14 @@ models:
     max_output: 64000
     input_cost_per_million: 3
     output_cost_per_million: 15
+    mcpServers: &standardMCPServers
+      editor:
+        command: "editor-mcp"
+        type: stdio
+        timeout: 60
+        enabledTools:
+          - text_edit
+          - shell
 
   - ref: flash
     display_name: "Gemini Flash"
@@ -375,6 +382,8 @@ models:
     id: gpt-4o
     type: openai
     api_key_env: OPENAI_API_KEY
+    context_window: 128000
+    max_output: 16384
 
   - ref: glm
     display_name: "Z.AI GLM-4"
@@ -384,30 +393,28 @@ models:
     context_window: 128000
     max_output: 4096
 
-# Global defaults
-defaults:
-  model: sonnet
-  systemPromptPath: "./prompts/agent.md"
-  timeout: 5m
-  codeMode:
-    enabled: true
-    maxTimeout: 3600
-    localModulePaths:
-      - ../my-go-helpers
-  # Generation parameters control LLM behavior
-  generationParams:
-    temperature: 0.7      # Controls randomness (0.0 = deterministic, 1.0 = creative)
-    # topP: 0.9           # Nucleus sampling threshold
-    # topK: 40            # Top-k sampling parameter
-    # frequencyPenalty: 0 # Penalize repeated tokens (-2.0 to 2.0)
-    # presencePenalty: 0  # Penalize tokens already in context (-2.0 to 2.0)
+    systemPromptPath: "./prompts/agent.md"
+    timeout: 5m
+    codeMode:
+      enabled: true
+      maxTimeout: 3600
+      localModulePaths:
+        - ../my-go-helpers
+    # Generation parameters control LLM behavior for this profile.
+    generationParams:
+      temperature: 0.7      # Controls randomness (0.0 = deterministic, 1.0 = creative)
+      # topP: 0.9           # Nucleus sampling threshold
+      # topK: 40            # Top-k sampling parameter
+      # frequencyPenalty: 0 # Penalize repeated tokens (-2.0 to 2.0)
+      # presencePenalty: 0  # Penalize tokens already in context (-2.0 to 2.0)
 ```
 
 ### Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `CPE_MODEL` | Default model to use (overridden by `-m` flag) |
+| `CPE_MODEL` | Model profile to use when `--model` is not passed |
+| `CPE_DB_PATH` | Conversation SQLite database path when `--db-path` is not passed |
 
 > **Note**: API keys are configured per-model via the `api_key_env` field. You choose the environment variable name—there are no hardcoded defaults. For example, you could use `MY_ANTHROPIC_KEY`, `OPENAI_API_KEY`, or any name you prefer.
 
@@ -540,12 +547,13 @@ For examples of well-structured skills, see the `skills/` directory in the CPE r
 cpe [flags] [prompt]
 
 Core Flags:
-  -m, --model string           Specify the model to use
+  -m, --model string           Specify the model profile to use (required unless CPE_MODEL is set)
   -i, --input strings          Input files or URLs to process
   -n, --new                    Start a new conversation
   -c, --continue string        Continue from a specific conversation ID
   -G, --incognito              Don't save conversation to storage
-      --config string          Path to configuration file
+      --config string          Path to YAML configuration file
+      --db-path string         Path to conversation SQLite database
       --skip-stdin             Skip reading from stdin
   -v, --version                Print version and exit
 
@@ -603,8 +611,8 @@ Commands:
 **MCP server fails to start**
 - Check that the command exists and is executable
 - For stdio servers, ensure the `command` path is correct
-- Use `cpe mcp list-tools <server>` to debug tool availability
-- Check server logs with `cpe mcp info <server>`
+- Use `cpe --model <model> mcp list-tools <server>` to debug tool availability
+- Check server logs with `cpe --model <model> mcp info <server>`
 
 **"context length exceeded"**
 - Use fewer input files or truncate large files
@@ -612,7 +620,7 @@ Commands:
 - Start a new conversation with `-n` to clear history
 
 **Timeout errors**
-- Increase `timeout` in `defaults` or use `--timeout 10m`
+- Increase the selected model profile's `timeout` or use `--timeout 10m`
 - For MCP servers, adjust the per-server `timeout` value
 
 ### Debug Tips
@@ -625,7 +633,7 @@ cpe model info <ref>
 cpe model system-prompt -m <ref>
 
 # Test MCP server connectivity
-cpe mcp list-tools <server-name>
+cpe --model <model> mcp list-tools <server-name>
 ```
 
 
