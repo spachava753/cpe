@@ -36,7 +36,6 @@ func TestNewSqlite_MigratesLegacyCompactionParentColumn(t *testing.T) {
 		CREATE TABLE messages (
 			id TEXT PRIMARY KEY,
 			parent_id TEXT,
-			is_subagent BOOLEAN NOT NULL DEFAULT 0,
 			role TEXT NOT NULL,
 			tool_result_error BOOLEAN NOT NULL DEFAULT 0,
 			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP

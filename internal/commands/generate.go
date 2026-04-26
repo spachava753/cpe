@@ -165,10 +165,10 @@ type DialogResolver interface {
 //   - If newConversation is true, returns nil (force fresh conversation).
 //   - Else if continueID is provided, loads the chain ending at that ID.
 //   - Else auto-continue: scans ListMessages (default newest-first) and picks
-//     the first non-subagent assistant/tool_result message.
+//     the first assistant/tool_result message.
 //
-// Auto-continue requires MessageIDKey and MessageIsSubagentKey metadata on
-// listed messages. If no eligible message exists, returns nil to start fresh.
+// Auto-continue requires MessageIDKey metadata on listed messages. If no
+// eligible message exists, returns nil to start fresh.
 func ResolveInitialDialog(ctx context.Context, resolver DialogResolver, continueID string, newConversation bool) (gai.Dialog, error) {
 	if newConversation {
 		return nil, nil
@@ -181,9 +181,6 @@ func ResolveInitialDialog(ctx context.Context, resolver DialogResolver, continue
 			return nil, fmt.Errorf("failed to list messages for auto-continue: %w", err)
 		}
 		for msg := range msgs {
-			if isSubagent, ok := msg.ExtraFields[storage.MessageIsSubagentKey].(bool); ok && isSubagent {
-				continue
-			}
 			if msg.Role == gai.Assistant || msg.Role == gai.ToolResult {
 				if id, ok := msg.ExtraFields[storage.MessageIDKey].(string); ok && id != "" {
 					continueID = id

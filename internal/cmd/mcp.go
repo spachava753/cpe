@@ -117,35 +117,6 @@ var mcpCallToolCmd = &cobra.Command{
 	},
 }
 
-// mcpServeCmd starts MCP server mode (single subagent tool over stdio).
-// In this mode stdout is reserved for MCP protocol traffic, so diagnostics must
-// flow through stderr from lower layers.
-var mcpServeCmd = &cobra.Command{
-	Use:   "serve",
-	Short: "Run CPE as an MCP server",
-	Long: `Start CPE as an MCP server that exposes a configured subagent as a tool.
-
-The server communicates via stdio and exposes exactly one tool based on 
-the subagent configuration in the provided config file.
-
-This command requires an explicit --config flag pointing to a subagent 
-configuration file. The default config search behavior is disabled.`,
-	Example: `  # Start the MCP server with a subagent config
-  cpe mcp serve --config ./coder_agent.cpe.yaml`,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		// Server mode requires an explicit config to guarantee deterministic tool
-		// name/description/schema exposure; default config search is disabled.
-		configFlag := cmd.Root().PersistentFlags().Lookup("config")
-		if configFlag == nil || !configFlag.Changed {
-			return fmt.Errorf("--config flag is required for mcp serve")
-		}
-
-		return commands.MCPServe(cmd.Context(), commands.MCPServeOptions{
-			ConfigPath: configPath,
-		})
-	},
-}
-
 // mcpCodeDescCmd represents the 'mcp code-desc' subcommand
 var mcpCodeDescCmd = &cobra.Command{
 	Use:   "code-desc",
@@ -178,7 +149,6 @@ func init() {
 	mcpCmd.AddCommand(mcpInfoCmd)
 	mcpCmd.AddCommand(mcpListToolsCmd)
 	mcpCmd.AddCommand(mcpCallToolCmd)
-	mcpCmd.AddCommand(mcpServeCmd)
 	mcpCmd.AddCommand(mcpCodeDescCmd)
 
 	// Add flags to mcp list-tools command

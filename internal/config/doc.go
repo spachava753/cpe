@@ -16,8 +16,8 @@ Resolution precedence:
     model overrides instead of field-level merging.
 
 The package also validates custom invariants (model references, auth method
-constraints, subagent/output schema checks, codeMode path normalization, and
-compaction schema/template/restart-limit validity) and resolves
+constraints, codeMode path normalization, and compaction schema/template/
+restart-limit validity) and resolves
 filesystem-relative paths such as conversation storage and
 codeMode.localModulePaths.
 

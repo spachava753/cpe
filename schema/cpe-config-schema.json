@@ -30,37 +30,6 @@
       "additionalProperties": false,
       "type": "object"
     },
-    "CompactionConfig": {
-      "properties": {
-        "enabled": {
-          "type": "boolean"
-        },
-        "autoTriggerThreshold": {
-          "type": "number"
-        },
-        "maxAutoCompactionRestarts": {
-          "type": "integer"
-        },
-        "toolDescription": {
-          "type": "string"
-        },
-        "inputSchema": {
-          "oneOf": [
-            {
-              "type": "object"
-            },
-            {
-              "type": "boolean"
-            }
-          ]
-        },
-        "initialMessageTemplate": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object"
-    },
     "Defaults": {
       "properties": {
         "systemPromptPath": {
@@ -82,7 +51,7 @@
           "$ref": "#/$defs/CodeModeConfig"
         },
         "compaction": {
-          "$ref": "#/$defs/CompactionConfig"
+          "$ref": "#/$defs/RawCompactionConfig"
         }
       },
       "additionalProperties": false,
@@ -181,7 +150,7 @@
           "$ref": "#/$defs/CodeModeConfig"
         },
         "compaction": {
-          "$ref": "#/$defs/CompactionConfig"
+          "$ref": "#/$defs/RawCompactionConfig"
         }
       },
       "additionalProperties": false,
@@ -205,6 +174,35 @@
       "additionalProperties": false,
       "type": "object"
     },
+    "RawCompactionConfig": {
+      "properties": {
+        "autoTriggerThreshold": {
+          "type": "number"
+        },
+        "maxAutoCompactionRestarts": {
+          "type": "integer"
+        },
+        "toolDescription": {
+          "type": "string"
+        },
+        "inputSchema": {
+          "$ref": "#/$defs/Schema",
+          "oneOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "boolean"
+            }
+          ]
+        },
+        "initialMessageTemplate": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
     "RawConfig": {
       "properties": {
         "mcpServers": {
@@ -222,10 +220,221 @@
         "defaults": {
           "$ref": "#/$defs/Defaults"
         },
-        "subagent": {
-          "$ref": "#/$defs/SubagentConfig"
-        },
         "version": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "Schema": {
+      "properties": {
+        "$id": {
+          "type": "string"
+        },
+        "$schema": {
+          "type": "string"
+        },
+        "$ref": {
+          "type": "string"
+        },
+        "$comment": {
+          "type": "string"
+        },
+        "$defs": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Schema"
+          },
+          "type": "object"
+        },
+        "definitions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Schema"
+          },
+          "type": "object"
+        },
+        "$anchor": {
+          "type": "string"
+        },
+        "$dynamicAnchor": {
+          "type": "string"
+        },
+        "$dynamicRef": {
+          "type": "string"
+        },
+        "$vocabulary": {
+          "additionalProperties": {
+            "type": "boolean"
+          },
+          "type": "object"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "default": true,
+        "deprecated": {
+          "type": "boolean"
+        },
+        "readOnly": {
+          "type": "boolean"
+        },
+        "writeOnly": {
+          "type": "boolean"
+        },
+        "examples": {
+          "items": true,
+          "type": "array"
+        },
+        "enum": {
+          "items": true,
+          "type": "array"
+        },
+        "const": true,
+        "multipleOf": {
+          "type": "number"
+        },
+        "minimum": {
+          "type": "number"
+        },
+        "maximum": {
+          "type": "number"
+        },
+        "exclusiveMinimum": {
+          "type": "number"
+        },
+        "exclusiveMaximum": {
+          "type": "number"
+        },
+        "minLength": {
+          "type": "integer"
+        },
+        "maxLength": {
+          "type": "integer"
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "prefixItems": {
+          "items": {
+            "$ref": "#/$defs/Schema"
+          },
+          "type": "array"
+        },
+        "minItems": {
+          "type": "integer"
+        },
+        "maxItems": {
+          "type": "integer"
+        },
+        "additionalItems": {
+          "$ref": "#/$defs/Schema"
+        },
+        "uniqueItems": {
+          "type": "boolean"
+        },
+        "contains": {
+          "$ref": "#/$defs/Schema"
+        },
+        "minContains": {
+          "type": "integer"
+        },
+        "maxContains": {
+          "type": "integer"
+        },
+        "unevaluatedItems": {
+          "$ref": "#/$defs/Schema"
+        },
+        "minProperties": {
+          "type": "integer"
+        },
+        "maxProperties": {
+          "type": "integer"
+        },
+        "required": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "dependentRequired": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": "object"
+        },
+        "properties": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Schema"
+          },
+          "type": "object"
+        },
+        "patternProperties": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Schema"
+          },
+          "type": "object"
+        },
+        "additionalProperties": {
+          "$ref": "#/$defs/Schema"
+        },
+        "propertyNames": {
+          "$ref": "#/$defs/Schema"
+        },
+        "unevaluatedProperties": {
+          "$ref": "#/$defs/Schema"
+        },
+        "allOf": {
+          "items": {
+            "$ref": "#/$defs/Schema"
+          },
+          "type": "array"
+        },
+        "anyOf": {
+          "items": {
+            "$ref": "#/$defs/Schema"
+          },
+          "type": "array"
+        },
+        "oneOf": {
+          "items": {
+            "$ref": "#/$defs/Schema"
+          },
+          "type": "array"
+        },
+        "not": {
+          "$ref": "#/$defs/Schema"
+        },
+        "if": {
+          "$ref": "#/$defs/Schema"
+        },
+        "then": {
+          "$ref": "#/$defs/Schema"
+        },
+        "else": {
+          "$ref": "#/$defs/Schema"
+        },
+        "dependentSchemas": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Schema"
+          },
+          "type": "object"
+        },
+        "contentEncoding": {
+          "type": "string"
+        },
+        "contentMediaType": {
+          "type": "string"
+        },
+        "contentSchema": {
+          "$ref": "#/$defs/Schema"
+        },
+        "format": {
           "type": "string"
         }
       },
@@ -275,21 +484,6 @@
             "type": "string"
           },
           "type": "array"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object"
-    },
-    "SubagentConfig": {
-      "properties": {
-        "name": {
-          "type": "string"
-        },
-        "description": {
-          "type": "string"
-        },
-        "outputSchemaPath": {
-          "type": "string"
         }
       },
       "additionalProperties": false,

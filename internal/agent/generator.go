@@ -302,7 +302,7 @@ type generatorOptions struct {
 type GeneratorOption func(*generatorOptions)
 
 // WithDisablePrinting disables all loop printing.
-// Use this for non-interactive modes like MCP server mode.
+// Use this for non-interactive callers that need to handle output themselves.
 func WithDisablePrinting() GeneratorOption {
 	return func(o *generatorOptions) {
 		o.disablePrinting = true

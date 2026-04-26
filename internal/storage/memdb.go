@@ -20,7 +20,6 @@ type memNode struct {
 	parentID           string
 	compactionParentID string
 	message            gai.Message
-	isSubagent         bool
 	createdAt          time.Time
 	children           []*memNode
 }
@@ -135,7 +134,6 @@ func (m *MemDB) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter
 
 			// New message — save it.
 			id := m.generateID()
-			isSubagent := getExtraFieldBool(msg.ExtraFields, MessageIsSubagentKey)
 			compactionParentID := ""
 			if prevID == "" {
 				compactionParentID = getExtraFieldString(msg.ExtraFields, MessageCompactionParentIDKey)
@@ -148,7 +146,6 @@ func (m *MemDB) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter
 				parentID:           prevID,
 				compactionParentID: compactionParentID,
 				message:            msg,
-				isSubagent:         isSubagent,
 				createdAt:          time.Now(),
 			}
 
@@ -352,7 +349,6 @@ func (m *MemDB) nodeToMessage(node *memNode) gai.Message {
 	extra := make(map[string]any)
 	extra[MessageIDKey] = node.id
 	extra[MessageCreatedAtKey] = node.createdAt
-	extra[MessageIsSubagentKey] = node.isSubagent
 	if node.parentID != "" {
 		extra[MessageParentIDKey] = node.parentID
 	}
@@ -383,7 +379,6 @@ func (m *MemDB) Nodes() []MemNode {
 			CompactionParentID: node.compactionParentID,
 			Role:               node.message.Role,
 			Blocks:             cloneBlocks(node.message.Blocks),
-			IsSubagent:         node.isSubagent,
 			CreatedAt:          node.createdAt,
 			ChildIDs:           childIDs,
 		})
@@ -403,8 +398,6 @@ type MemNode struct {
 	Role gai.Role
 	// Blocks is a cloned copy of the stored blocks.
 	Blocks []gai.Block
-	// IsSubagent reports whether the message was marked as subagent-originated.
-	IsSubagent bool
 	// CreatedAt is the node creation timestamp used for list ordering.
 	CreatedAt time.Time
 	// ChildIDs contains direct-child message IDs.

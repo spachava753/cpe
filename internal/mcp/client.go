@@ -16,10 +16,6 @@ import (
 	"github.com/spachava753/cpe/internal/version"
 )
 
-// subagentLoggingAddressEnv mirrors subagentlog.SubagentLoggingAddressEnv.
-// Defined locally to avoid import cycle (subagentlog imports agent which imports mcp).
-const subagentLoggingAddressEnv = "CPE_SUBAGENT_LOGGING_ADDRESS"
-
 // headerRoundTripper injects configured static headers into each outgoing request.
 type headerRoundTripper struct {
 	headers map[string]string
@@ -199,11 +195,11 @@ func (c *ToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage,
 
 // CreateTransport builds the transport used during client.Connect.
 //
-// - stdio: spawns the configured command, forwards stderr, and injects env/logging hooks
+// - stdio: spawns the configured command, forwards stderr, and injects configured env
 // - http/sse: builds endpoint transports with optional request headers
 //
 // Session lifecycle (connect/close) is managed by callers after transport creation.
-func CreateTransport(ctx context.Context, config mcpconfig.ServerConfig, loggingAddress string) (transport mcp.Transport, err error) {
+func CreateTransport(ctx context.Context, config mcpconfig.ServerConfig) (transport mcp.Transport, err error) {
 	serverType := EffectiveServerType(config)
 
 	// Create a custom HTTP client only for static header injection.
@@ -220,17 +216,13 @@ func CreateTransport(ctx context.Context, config mcpconfig.ServerConfig, logging
 	switch serverType {
 	case "stdio":
 		cmd := exec.CommandContext(ctx, config.Command, config.Args...)
-		// Forward stderr to parent so subagent debug/event output is visible
+		// Forward stderr so server diagnostics remain visible.
 		cmd.Stderr = os.Stderr
 		// Always set cmd.Env to ensure we control the environment
 		cmd.Env = os.Environ()
 		// Add custom environment variables from config
 		for k, v := range config.Env {
 			cmd.Env = append(cmd.Env, k+"="+v)
-		}
-		// Inject subagent logging address
-		if loggingAddress != "" {
-			cmd.Env = append(cmd.Env, subagentLoggingAddressEnv+"="+loggingAddress)
 		}
 		transport = &mcp.CommandTransport{
 			Command: cmd,

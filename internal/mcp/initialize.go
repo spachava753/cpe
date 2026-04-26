@@ -21,7 +21,6 @@ import (
 func InitializeConnections(
 	ctx context.Context,
 	servers map[string]mcpconfig.ServerConfig,
-	loggingAddress string,
 ) (*MCPState, error) {
 	if len(servers) == 0 {
 		return NewMCPState(), nil
@@ -42,7 +41,7 @@ func InitializeConnections(
 
 	for _, serverName := range serverNames {
 		serverConfig := servers[serverName]
-		conn, err := connectToServer(ctx, client, serverName, serverConfig, loggingAddress)
+		conn, err := connectToServer(ctx, client, serverName, serverConfig)
 		if err != nil {
 			// Fail fast: close any connections we've made so far
 			state.Close()
@@ -74,9 +73,8 @@ func connectToServer(
 	client *mcpsdk.Client,
 	serverName string,
 	config mcpconfig.ServerConfig,
-	loggingAddress string,
 ) (*MCPConn, error) {
-	transport, err := CreateTransport(ctx, config, loggingAddress)
+	transport, err := CreateTransport(ctx, config)
 	if err != nil {
 		return nil, fmt.Errorf("creating transport: %w", err)
 	}

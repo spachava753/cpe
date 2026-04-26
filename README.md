@@ -405,7 +405,6 @@ defaults:
 | Variable | Description |
 |----------|-------------|
 | `CPE_MODEL` | Default model to use (overridden by `-m` flag) |
-| `CPE_VERBOSE_SUBAGENT` | Show detailed subagent output |
 
 > **Note**: API keys are configured per-model via the `api_key_env` field. You choose the environment variable name—there are no hardcoded defaults. For example, you could use `MY_ANTHROPIC_KEY`, `OPENAI_API_KEY`, or any name you prefer.
 
@@ -560,7 +559,6 @@ Generation Parameters:
 
 Advanced:
       --custom-url string      Custom base URL for the model provider API
-      --verbose-subagent       Show verbose subagent output including full tool payloads
 
 Commands:
   account       Manage AI provider accounts (login, logout, usage)
@@ -574,50 +572,12 @@ Commands:
                 ├─ info          Show model details
                 └─ system-prompt Show rendered system prompt
   mcp           MCP tools
-                ├─ serve        Run CPE as MCP server
                 ├─ list-servers List servers [alias: ls-servers]
                 ├─ list-tools   List tools [alias: ls-tools]
                 ├─ call-tool    Call a tool
                 ├─ info         Server info
                 └─ code-desc    Show code mode description
   completion    Generate shell autocompletion scripts (bash, zsh, fish, powershell)
-```
-
-## 🤖 Subagent Mode
-
-CPE can run as an MCP server, enabling powerful agent composition patterns:
-
-```yaml
-# subagent.yaml
-version: "1.0"
-
-subagent:
-  name: "code_reviewer"
-  description: "Reviews code and provides detailed feedback"
-
-models:
-  - ref: sonnet
-    id: claude-sonnet-4-5-20250929
-    type: anthropic
-    api_key_env: ANTHROPIC_API_KEY
-
-defaults:
-  model: sonnet
-  systemPromptPath: ./reviewer_prompt.md
-```
-
-Run the subagent:
-```bash
-cpe mcp serve --config ./subagent.yaml
-```
-
-Use it from a parent CPE instance:
-```yaml
-mcpServers:
-  code_reviewer:
-    command: cpe
-    args: ["mcp", "serve", "--config", "./subagent.yaml"]
-    type: stdio
 ```
 
 ## 🔧 Troubleshooting
@@ -663,9 +623,6 @@ cpe model system-prompt -m <ref>
 
 # Test MCP server connectivity
 cpe mcp list-tools <server-name>
-
-# Enable verbose output for subagents
-cpe --verbose-subagent "your prompt"
 ```
 
 

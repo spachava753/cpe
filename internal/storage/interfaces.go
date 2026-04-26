@@ -39,14 +39,6 @@ const (
 	//
 	// The value is a time.Time and is populated by read APIs.
 	MessageCreatedAtKey = "cpe_message_created_at"
-
-	// MessageIsSubagentKey is the gai.Message.ExtraFields key that marks
-	// subagent-originated messages.
-	//
-	// The value is a bool. SaveDialog persists true values to storage, and
-	// continuation logic uses this marker to skip subagent traces when
-	// auto-selecting a conversation to continue.
-	MessageIsSubagentKey = "cpe_message_is_subagent"
 )
 
 // DialogSaver persists a dialog (a sequence of related messages) to storage.
@@ -63,8 +55,6 @@ type DialogSaver interface {
 	//     new row whose parent is the previous message from this call. The
 	//     returned message includes MessageIDKey and, for non-root messages,
 	//     MessageParentIDKey.
-	//   - ExtraFields[MessageIsSubagentKey] == true marks the inserted message as
-	//     subagent-originated.
 	//
 	// Atomicity boundary:
 	//   - All writes performed while consuming a single SaveDialog iterator are
@@ -107,17 +97,6 @@ type DialogSaver interface {
 	//		idx++
 	//	}
 	//
-	// Example — marking a message as subagent-generated:
-	//
-	//	msg := gai.Message{Role: gai.User, Blocks: blocks}
-	//	msg.ExtraFields = map[string]any{
-	//		MessageIsSubagentKey: true,
-	//	}
-	//	for _, err := range saver.SaveDialog(ctx, slices.Values([]gai.Message{msg})) {
-	//		if err != nil {
-	//			return err
-	//		}
-	//	}
 	SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter.Seq2[gai.Message, error]
 }
 
@@ -165,7 +144,6 @@ type MessagesLister interface {
 	// ExtraFields:
 	//   - MessageIDKey (always)
 	//   - MessageCreatedAtKey (always)
-	//   - MessageIsSubagentKey (always)
 	//   - MessageParentIDKey (only for non-root messages)
 	//   - MessageCompactionParentIDKey (only for compacted branch roots)
 	ListMessages(ctx context.Context, opts ListMessagesOptions) (iter.Seq[gai.Message], error)
@@ -182,7 +160,6 @@ type MessagesGetter interface {
 	// ExtraFields:
 	//   - MessageIDKey (always)
 	//   - MessageCreatedAtKey (always)
-	//   - MessageIsSubagentKey (always)
 	//   - MessageParentIDKey (only for non-root messages)
 	//   - MessageCompactionParentIDKey (only for compacted branch roots)
 	GetMessages(ctx context.Context, messageIDs []string) (iter.Seq[gai.Message], error)

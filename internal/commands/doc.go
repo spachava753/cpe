@@ -12,7 +12,6 @@ Feature areas include:
   - model and configuration management commands;
   - conversation persistence operations (list, print, delete);
   - MCP client commands (inspect servers/tools, call tools, code mode help);
-  - MCP server mode and subagent execution.
 
 Cross-package contract:
 commands functions receive explicit option structs and interfaces rather than

@@ -32,7 +32,6 @@ type ExecuteRootCLIOptions struct {
 	IncognitoMode   bool
 	Stdout          io.Writer
 	Stderr          io.Writer
-	VerboseSubagent bool
 }
 
 // ExecuteRootCLI resolves CLI/runtime dependencies and delegates generation
@@ -74,16 +73,15 @@ func ExecuteRootCLI(ctx context.Context, opts ExecuteRootCLIOptions) error {
 	}
 
 	return ExecuteRoot(ctx, ExecuteRootOptions{
-		Args:            opts.Args,
-		InputPaths:      opts.InputPaths,
-		Stdin:           opts.Stdin,
-		SkipStdin:       opts.SkipStdin,
-		Config:          effectiveConfig,
-		CustomURL:       opts.CustomURL,
-		DialogSaver:     dialogSaver,
-		InitialDialog:   initialDialog,
-		Stdout:          opts.Stdout,
-		Stderr:          opts.Stderr,
-		VerboseSubagent: opts.VerboseSubagent,
+		Args:          opts.Args,
+		InputPaths:    opts.InputPaths,
+		Stdin:         opts.Stdin,
+		SkipStdin:     opts.SkipStdin,
+		Config:        effectiveConfig,
+		CustomURL:     opts.CustomURL,
+		DialogSaver:   dialogSaver,
+		InitialDialog: initialDialog,
+		Stdout:        opts.Stdout,
+		Stderr:        opts.Stderr,
 	})
 }

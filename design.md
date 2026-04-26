@@ -33,11 +33,11 @@ CPE should aim to be:
 - **CLI-first**: the primary UX is a local terminal tool used interactively and in scripts.
 - **layered**: package boundaries should reflect ownership and keep dependencies flowing inward toward runtime policy rather than outward toward framework details.
 - **provider-agnostic**: support for model providers should share a common runtime model where possible.
-- **tool-composable**: MCP tools and built-in tools should be usable both directly and through higher-level compositions such as code mode and subagents.
+- **tool-composable**: MCP tools and built-in tools should be usable both directly and through higher-level compositions such as code mode.
 - **local-first**: conversation storage, configuration, and most execution state should remain local by default.
 - **privacy-conscious**: users must be able to run without persistence when needed.
 - **testable**: command orchestration and runtime assembly should be testable with narrow interfaces and explicit dependencies.
-- **observable**: failures in complex flows, especially subagents and model/tool interactions, should be diagnosable.
+- **observable**: failures in complex flows, especially model/tool interactions, should be diagnosable.
 - **maintainable**: new features should have an obvious home rather than being bolted onto whichever package is nearby.
 - **simple by default**: when forced to choose, prefer clearer and smaller architecture over backward-compatibility shims or speculative abstraction.
 
@@ -48,7 +48,7 @@ This design intentionally does not optimize for the following:
 - **framework neutrality at every layer**: only the CLI edge is kept framework-specific. Internally, CPE is free to use whatever implementation patterns best fit the runtime.
 - **backward compatibility by default**: CPE prefers a clearer structure over preserving old package shapes, shims, or command internals unless compatibility is itself the explicit goal.
 - **perfect abstraction of provider differences**: the system aims for a common runtime model, not for pretending all provider capabilities and quirks are identical.
-- **deeply generic plugin architecture**: CPE supports extension through MCP, code mode, and subagents, but does not attempt to turn every internal behavior into a general-purpose extension point.
+- **deeply generic plugin architecture**: CPE supports extension through MCP and code mode, but does not attempt to turn every internal behavior into a general-purpose extension point.
 - **maximal configurability of every policy**: some choices are intentionally opinionated because the maintenance cost of making every behavior configurable would outweigh the benefit.
 - **transporting persistence-specific types through the whole runtime**: the design favors a small set of shared runtime types, even when that means using metadata fields rather than introducing richer storage-specific wrapper objects everywhere.
 
@@ -79,14 +79,13 @@ The supporting package roles are intentionally narrow:
 
 - `internal/config`: file schema plus effective runtime configuration resolution.
 - `internal/mcpconfig`: dependency-neutral MCP server config schema shared by config loading and runtime code.
-- `internal/mcp`: MCP client/server runtime integration.
+- `internal/mcp`: MCP client runtime integration.
 - `internal/storage`: conversation persistence contracts plus SQLite and in-memory implementations.
 - `internal/codemode`: execute-go-code prompt generation, harness wiring, and execution.
 - `internal/input`: prompt/file/URL input loading into model blocks.
 - `internal/prompt`: system prompt templating and skill discovery helpers.
 - `internal/render`: TTY-aware markdown/plain-text rendering.
 - `internal/auth`: OAuth and credential transport helpers.
-- `internal/subagentlog`: subagent event streaming and rendering.
 - `internal/ports`: small shared interfaces used to decouple packages.
 
 Several of these packages exist to keep ownership clear and package responsibilities narrow:
@@ -157,7 +156,7 @@ Resolution precedence is intentionally simple and explicit:
 
 The last choice is important. Deep merging nested config objects is flexible, but it becomes difficult to explain and easy to misread. CPE prefers object replacement for these advanced runtime features because it is easier to reason about and simpler to document.
 
-Relative filesystem paths are interpreted relative to the config file location when possible. This applies to important user-facing settings such as system prompt paths, conversation storage paths, local module paths for code mode, and subagent output schema paths.
+Relative filesystem paths are interpreted relative to the config file location when possible. This applies to important user-facing settings such as system prompt paths, conversation storage paths, and local module paths for code mode.
 
 ## Root CLI execution
 
@@ -187,7 +186,6 @@ The main interactive execution path is intentionally split between layers.
 - resolving continuation history;
 - loading user input blocks from prompt, files, URLs, and stdin;
 - loading and rendering the system prompt;
-- creating any subagent logging bridge needed for child runs;
 - delegating to `internal/agent` for actual model execution.
 
 This layer exists so the command behavior is testable and not coupled to Cobra.
@@ -215,7 +213,7 @@ That choice supports the actual CLI UX:
 - continue from the latest point;
 - continue from an arbitrary historical message;
 - branch a conversation from an earlier point;
-- preserve lineage during compaction and subagent traces.
+- preserve lineage during compaction.
 
 A linear append-only transcript would be simpler, but it would not fit the branching behavior the CLI exposes.
 
@@ -227,7 +225,7 @@ This keeps consumers from depending directly on SQLite details and allows tests 
 
 ### SQLite plus metadata in messages
 
-The production storage backend is SQLite. Returned `gai.Message` values include storage metadata in `ExtraFields`, such as message ID, parent ID, creation time, compaction parent, and subagent markers.
+The production storage backend is SQLite. Returned `gai.Message` values include storage metadata in `ExtraFields`, such as message ID, parent ID, creation time, and compaction parent.
 
 This is a deliberate trade-off.
 
@@ -301,7 +299,7 @@ This is a practical control surface rather than a sophisticated policy engine. T
 
 CPE rejects duplicate tool names across servers after filtering.
 
-This is intentionally strict. Silent shadowing or last-wins behavior would make tool behavior ambiguous and difficult to debug, especially once code mode and subagents are involved.
+This is intentionally strict. Silent shadowing or last-wins behavior would make tool behavior ambiguous and difficult to debug, especially once code mode is involved.
 
 ## Code mode
 
@@ -340,38 +338,6 @@ This distinction exists because code mode is meant to be iterative rather than a
 Not every MCP tool should become a code-mode function. CPE partitions tools into code-mode and normal tools using configuration such as `excludedTools`.
 
 This preserves a small, intentional code execution surface and prevents code mode from becoming a grab bag of every tool in the system.
-
-## MCP server mode and subagents
-
-CPE can also act as an MCP server. In this mode, one config file exposes one subagent as one MCP tool over stdio.
-
-This is intentionally constrained.
-
-A more general server mode could expose many tools or many agents from one process, but the one-subagent-per-config design keeps the model simple:
-
-- each config describes one tool identity;
-- each subagent has one prompt, one model policy, and optional one output schema;
-- parent agents compose subagents explicitly rather than implicitly.
-
-### Why stdout is reserved
-
-In MCP server mode, stdout is reserved for protocol traffic. Human-visible diagnostics and streaming observability must therefore go to stderr.
-
-This separation is fundamental to reliable stdio-based protocol behavior.
-
-### Subagent observability
-
-Subagents emit structured events back to the root process through `internal/subagentlog` when a logging address is supplied.
-
-Event emission failure aborts the subagent run.
-
-This is a strong choice, but it is deliberate: silent observability failure makes nested agent execution too hard to diagnose. CPE treats subagent visibility as part of correctness, not as an optional accessory.
-
-### Output schemas
-
-Subagent output schemas are loaded and validated at startup rather than on first call.
-
-This front-loads failure and ensures the exported MCP tool contract is stable for the lifetime of the server.
 
 ## Rendering and terminal output
 
@@ -437,7 +403,7 @@ Key techniques include:
 
 - explicit option structs for command functions;
 - narrow interfaces for storage and related dependencies;
-- `MemDB` for fast conversation and subagent tests;
+- `MemDB` for fast conversation tests;
 - command orchestration placed below Cobra;
 - architecture lint rules that prevent boundary regressions.
 
@@ -454,7 +420,7 @@ This section records alternatives that are plausible for a system like CPE, but 
 
 ### Putting business logic directly in `internal/cmd`
 
-A smaller CLI could reasonably keep most execution logic in Cobra handlers. CPE does not do that because command behavior here is substantial: config resolution, storage, MCP inspection, subagent serving, account flows, and runtime model assembly all benefit from framework-independent orchestration and better testability.
+A smaller CLI could reasonably keep most execution logic in Cobra handlers. CPE does not do that because command behavior here is substantial: config resolution, storage, MCP inspection, account flows, and runtime model assembly all benefit from framework-independent orchestration and better testability.
 
 ### Flattening `internal/commands` into `internal/agent`
 
@@ -484,10 +450,6 @@ CPE instead distinguishes between normal tool exposure, filtered tool exposure, 
 
 A scripting language would reduce compile latency, but CPE values static typing, straightforward schema-to-code generation, standard library access, and predictable execution structure. Because CPE is already implemented in Go, Go is also the lowest-friction language for the harness and generated bindings.
 
-### Treating subagent logging as best-effort
-
-Best-effort observability would make subagent execution more permissive, but it would also make nested-agent failures much harder to diagnose. CPE treats observability failures as execution failures because visibility is part of the contract for subagent composition.
-
 ## Trade-offs
 
 The current design makes several conscious trade-offs.
@@ -516,10 +478,6 @@ This is less forgiving than permissive best-effort behavior, but it avoids ambig
 
 This adds harness complexity and a compile step, but it gives the model a real programming language with strong typing and standard-library access.
 
-### Fail-closed observability for subagents
-
-Aborting on logging failure is harsh, but nested agent systems are hard enough to debug already. CPE chooses visibility over silent degradation here.
-
 ### Simplicity over compatibility
 
 CPE is personal software with a single primary user. The design therefore favors simplification and clearer structure over preserving old shapes by default.
@@ -546,7 +504,6 @@ This design resolves the major architectural shape of the codebase, but some que
 - **how broad provider parity should be**: CPE presents a unified runtime model, but provider APIs continue to diverge. The long-term balance between provider-specific features and a shared core remains an ongoing design question.
 - **how opinionated code mode should remain**: Go-based code mode is intentionally strong and specific. Future changes may revisit how much of the execution model should remain fixed versus configurable.
 - **how much policy should be enforced structurally versus by lint**: some boundaries are encoded in package structure, while others are guarded by architecture lint. The right division between those approaches may evolve.
-- **how much subagent execution should share policy with root execution**: CPE already shares substantial runtime behavior between the two, but the exact degree of coupling between root runs and subagent runs remains a place where future design decisions may matter.
 
 ## Future evolution
 

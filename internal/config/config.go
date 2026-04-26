@@ -43,16 +43,6 @@ type CodeModeConfig struct {
 	LargeOutputCharLimit int      `yaml:"largeOutputCharLimit,omitempty" json:"largeOutputCharLimit,omitempty" validate:"omitempty,gte=0"`
 }
 
-// SubagentConfig defines a subagent for MCP server mode
-type SubagentConfig struct {
-	// Name is the tool name exposed via MCP (required)
-	Name string `yaml:"name" json:"name" validate:"required"`
-	// Description is the tool description exposed via MCP (required)
-	Description string `yaml:"description" json:"description" validate:"required"`
-	// OutputSchemaPath is an optional path to a JSON schema file for structured output
-	OutputSchemaPath string `yaml:"outputSchemaPath,omitempty" json:"outputSchemaPath,omitempty"`
-}
-
 // RawCompactionConfig controls manual and threshold-driven conversation compaction.
 type RawCompactionConfig struct {
 	AutoTriggerThreshold      float64           `yaml:"autoTriggerThreshold,omitempty" json:"autoTriggerThreshold,omitempty" validate:"required,gt=0,max=1"`
@@ -75,9 +65,6 @@ type RawConfig struct {
 
 	// Default settings
 	Defaults Defaults `yaml:"defaults,omitempty" json:"defaults"`
-
-	// Subagent configuration for MCP server mode
-	Subagent *SubagentConfig `yaml:"subagent,omitempty" json:"subagent,omitempty" validate:"omitempty"`
 
 	// Version for future compatibility
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`

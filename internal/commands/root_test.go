@@ -201,9 +201,6 @@ func loadDialogFromMemDB(ctx context.Context, t *testing.T, memDB *storage.MemDB
 	}
 	var continueID string
 	for msg := range msgs {
-		if isSubagent, ok := msg.ExtraFields[storage.MessageIsSubagentKey].(bool); ok && isSubagent {
-			continue
-		}
 		if msg.Role == gai.Assistant || msg.Role == gai.ToolResult {
 			if id, ok := msg.ExtraFields[storage.MessageIDKey].(string); ok && id != "" {
 				continueID = id

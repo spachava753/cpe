@@ -3,32 +3,21 @@ package commands
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/google/jsonschema-go/jsonschema"
-	gonanoid "github.com/matoous/go-nanoid/v2"
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/spachava753/gai"
 
-	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
-	inputpkg "github.com/spachava753/cpe/internal/input"
 	mcpinternal "github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/mcpconfig"
 	"github.com/spachava753/cpe/internal/render"
-	"github.com/spachava753/cpe/internal/storage"
-	"github.com/spachava753/cpe/internal/subagentlog"
 )
 
 const serverTypeStdio = "stdio"
@@ -95,7 +84,7 @@ func MCPInfo(ctx context.Context, opts MCPInfoOptions) error {
 
 	client := mcpinternal.NewClient()
 
-	transport, err := mcpinternal.CreateTransport(ctx, serverConfig, "")
+	transport, err := mcpinternal.CreateTransport(ctx, serverConfig)
 	if err != nil {
 		return err
 	}
@@ -144,7 +133,7 @@ func MCPListTools(ctx context.Context, opts MCPListToolsOptions) error {
 	client := mcpinternal.NewClient()
 
 	var allTools []*mcp.Tool
-	transport, err := mcpinternal.CreateTransport(ctx, serverConfig, "")
+	transport, err := mcpinternal.CreateTransport(ctx, serverConfig)
 	if err != nil {
 		return err
 	}
@@ -290,7 +279,7 @@ func MCPCallTool(ctx context.Context, opts MCPCallToolOptions) error {
 
 	client := mcpinternal.NewClient()
 
-	transport, err := mcpinternal.CreateTransport(ctx, serverConfig, "")
+	transport, err := mcpinternal.CreateTransport(ctx, serverConfig)
 	if err != nil {
 		return err
 	}
@@ -335,7 +324,7 @@ type MCPCodeDescOptions struct {
 // MCPCodeDesc generates and prints the execute_go_code tool description
 func MCPCodeDesc(ctx context.Context, opts MCPCodeDescOptions) error {
 	// Use InitializeConnections instead of FetchTools
-	mcpState, err := mcpinternal.InitializeConnections(ctx, opts.MCPServers, "")
+	mcpState, err := mcpinternal.InitializeConnections(ctx, opts.MCPServers)
 	if err != nil {
 		return fmt.Errorf("failed to initialize MCP connections: %w", err)
 	}
@@ -385,217 +374,4 @@ func MCPCodeDesc(ctx context.Context, opts MCPCodeDescOptions) error {
 
 	fmt.Fprintln(opts.Writer, rendered)
 	return nil
-}
-
-// generateRunID produces a short correlation ID for subagent event streams when
-// callers do not provide runId explicitly.
-func generateRunID() string {
-	const charset = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	const length = 8
-
-	id, err := gonanoid.Generate(charset, length)
-	if err != nil {
-		// Fallback to timestamp-based ID if nanoid fails
-		return fmt.Sprintf("%d", time.Now().UnixNano())
-	}
-	return id
-}
-
-// MCPServeOptions configures `cpe mcp serve` execution.
-type MCPServeOptions struct {
-	// ConfigPath is the explicit subagent config path required for server mode.
-	ConfigPath string
-}
-
-// MCPServe runs CPE in MCP server mode, exposing exactly one configured
-// subagent tool over stdio transport.
-//
-// Startup contract:
-//   - Subagent configuration must be present.
-//   - Optional output schema is loaded and validated up front.
-//   - Conversation storage is initialized for trace persistence.
-//   - If CPE_SUBAGENT_LOGGING_ADDRESS is set, lifecycle/tool/thinking events are
-//     emitted to that parent logging endpoint.
-func MCPServe(ctx context.Context, opts MCPServeOptions) error {
-	// Load raw config to check subagent is configured
-	rawCfg, resolvedConfigPath, err := config.LoadRawConfigWithPath(opts.ConfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
-	// Validate that subagent is configured
-	if rawCfg.Subagent == nil {
-		return fmt.Errorf("config must define a subagent for MCP server mode")
-	}
-
-	// Load and validate output schema at startup
-	var outputSchema *jsonschema.Schema
-	resolvedOutputSchemaPath := rawCfg.Subagent.OutputSchemaPath
-	if resolvedOutputSchemaPath != "" {
-		if !filepath.IsAbs(resolvedOutputSchemaPath) {
-			resolvedOutputSchemaPath = filepath.Join(filepath.Dir(resolvedConfigPath), resolvedOutputSchemaPath)
-		}
-
-		schemaBytes, err := os.ReadFile(resolvedOutputSchemaPath)
-		if err != nil {
-			return fmt.Errorf("failed to read output schema file %q: %w", resolvedOutputSchemaPath, err)
-		}
-		if err := json.Unmarshal(schemaBytes, &outputSchema); err != nil {
-			return fmt.Errorf("invalid output schema JSON in %q: %w", resolvedOutputSchemaPath, err)
-		}
-	}
-
-	// Initialize storage for persisting execution traces
-	dbPath, err := config.ResolveConversationStoragePath(rawCfg.Defaults, resolvedConfigPath)
-	if err != nil {
-		return fmt.Errorf("invalid defaults.conversationStoragePath: %w", err)
-	}
-	storageDB, err := sql.Open("sqlite3", dbPath)
-	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
-	}
-	defer storageDB.Close()
-
-	dialogStorage, err := storage.NewSqlite(ctx, storageDB)
-	if err != nil {
-		return fmt.Errorf("failed to initialize dialog storage: %w", err)
-	}
-
-	// Parent processes inject this address to enable real-time stderr event
-	// streaming. When unset, subagent execution proceeds without event emission.
-	loggingAddress := os.Getenv(subagentlog.SubagentLoggingAddressEnv)
-	var eventClient *subagentlog.Client
-	if loggingAddress != "" {
-		eventClient = subagentlog.NewClient(loggingAddress)
-	}
-
-	// Derive display name by stripping "-subagent" suffix for cleaner event output
-	displayName := rawCfg.Subagent.Name
-	displayName = strings.TrimSuffix(displayName, "-subagent")
-
-	// Create the execution bridge used by internal/mcp.Server tool handler.
-	// outputSchema controls final_answer registration and structured terminal output.
-	executor := createSubagentExecutor(opts.ConfigPath, outputSchema, displayName, dialogStorage, eventClient)
-
-	// Create server config
-	serverCfg := mcpinternal.MCPServerConfig{
-		Subagent: mcpinternal.SubagentDef{
-			Name:             rawCfg.Subagent.Name,
-			Description:      rawCfg.Subagent.Description,
-			OutputSchemaPath: resolvedOutputSchemaPath,
-		},
-		MCPServers: rawCfg.MCPServers,
-	}
-
-	// Create and run the MCP server
-	server, err := mcpinternal.NewServer(serverCfg, mcpinternal.ServerOptions{
-		Executor: executor,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create MCP server: %w", err)
-	}
-
-	return server.Serve(ctx)
-}
-
-// createSubagentExecutor builds the MCP tool-call execution closure.
-//
-// Per invocation it resolves config, builds user/context blocks, creates a fresh
-// generator with MCP connections, and runs ExecuteSubagent exactly once (no retry).
-// The provided runId is propagated to lifecycle/tool/thinking events.
-func createSubagentExecutor(cfgPath string, outputSchema *jsonschema.Schema, subagentName string, dialogStorage storage.DialogSaver, eventClient *subagentlog.Client) mcpinternal.SubagentExecutor {
-	return func(ctx context.Context, input mcpinternal.SubagentInput) (string, error) {
-		// Check context before starting
-		if err := ctx.Err(); err != nil {
-			return "", fmt.Errorf("execution cancelled before start: %w", err)
-		}
-
-		// runId is required by MCP input schema, but keep a fallback for defensive
-		// compatibility with direct executor tests/callers.
-		runID := input.RunID
-		if runID == "" {
-			runID = generateRunID()
-		}
-
-		// Resolve effective config (uses defaults.model from config)
-		effectiveConfig, err := config.ResolveConfig(cfgPath, config.RuntimeOptions{})
-		if err != nil {
-			return "", fmt.Errorf("failed to resolve config %q: %w", cfgPath, err)
-		}
-
-		// Build user blocks from prompt and input files
-		userBlocks, err := inputpkg.BuildUserBlocks(ctx, input.Prompt, input.Inputs)
-		if err != nil {
-			// Provide actionable error for input file issues
-			if len(input.Inputs) > 0 {
-				return "", fmt.Errorf("failed to read input files %v: %w", input.Inputs, err)
-			}
-			return "", fmt.Errorf("failed to build user input: %w", err)
-		}
-
-		// Load and render system prompt
-		systemPrompt, err := LoadSystemPrompt(ctx, LoadSystemPromptOptions{
-			SystemPromptPath: effectiveConfig.SystemPromptPath,
-			Config:           effectiveConfig,
-			Stderr:           os.Stderr,
-		})
-		if err != nil {
-			return "", err
-		}
-
-		// Check context before creating generator
-		if err := ctx.Err(); err != nil {
-			return "", fmt.Errorf("execution cancelled during setup: %w", err)
-		}
-
-		// Initialize MCP connections for this execution
-		mcpState, err := mcpinternal.InitializeConnections(ctx, effectiveConfig.MCPServers, "")
-		if err != nil {
-			return "", fmt.Errorf("failed to initialize MCP: %w", err)
-		}
-		defer mcpState.Close()
-
-		generatorOpts := []agent.GeneratorOption{
-			agent.WithDisablePrinting(),
-		}
-
-		// Create the generator
-		generator, err := agent.NewGenerator(
-			ctx,
-			effectiveConfig,
-			systemPrompt,
-			mcpState,
-			generatorOpts...,
-		)
-		if err != nil {
-			return "", fmt.Errorf("failed to create generator for model %q: %w", effectiveConfig.Model.Ref, err)
-		}
-
-		// Build generation options per dialog so Responses models can derive a
-		// stable prompt cache key from the conversation prefix through the current user turn.
-		genOptsFunc := func(dialog gai.Dialog) *gai.GenOpts {
-			return agent.BuildGenOptsForDialog(effectiveConfig.Model, effectiveConfig.GenerationDefaults, dialog)
-		}
-
-		// ExecuteSubagent handles lifecycle event emission, tool/thinking streaming,
-		// trace persistence, and final output extraction.
-		result, err := ExecuteSubagent(ctx, SubagentOptions{
-			UserBlocks:   userBlocks,
-			Generator:    generator,
-			GenOptsFunc:  genOptsFunc,
-			OutputSchema: outputSchema,
-			Storage:      dialogStorage,
-			EventClient:  eventClient,
-			SubagentName: subagentName,
-			RunID:        runID,
-		})
-		if err != nil {
-			// Annotate context cancellation errors
-			if ctx.Err() != nil {
-				return "", fmt.Errorf("subagent %q execution timed out or cancelled: %w", subagentName, err)
-			}
-			return "", fmt.Errorf("subagent %q execution failed: %w", subagentName, err)
-		}
-		return result, nil
-	}
 }

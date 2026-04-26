@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
+	"strings"
 
 	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/spachava753/gai"
@@ -57,7 +58,7 @@ func NewSqlite(ctx context.Context, db DB) (*Sqlite, error) {
 	if err := enableForeignKeys(ctx, db); err != nil {
 		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
 	}
-	if err := migrateMessagesIsSubagentColumn(ctx, db); err != nil {
+	if err := migrateDeleteLegacySubagentMessages(ctx, db); err != nil {
 		return nil, fmt.Errorf("failed to migrate schema: %w", err)
 	}
 	if err := migrateMessagesCompactionParentColumn(ctx, db); err != nil {
@@ -93,46 +94,90 @@ func enableForeignKeys(ctx context.Context, db DB) error {
 	return nil
 }
 
-func migrateMessagesIsSubagentColumn(ctx context.Context, db DB) error {
-	var tableCount int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages'").Scan(&tableCount); err != nil {
-		return fmt.Errorf("failed to inspect existing schema: %w", err)
-	}
-	if tableCount == 0 {
-		return nil
-	}
-
-	hasIsSubagent, err := hasMessagesColumn(ctx, db, "is_subagent")
+func migrateDeleteLegacySubagentMessages(ctx context.Context, db DB) error {
+	hasMessages, err := hasMessagesTable(ctx, db)
 	if err != nil {
 		return err
 	}
-	if hasIsSubagent {
+	if !hasMessages {
 		return nil
 	}
 
-	if _, err := db.ExecContext(ctx, "ALTER TABLE messages ADD COLUMN is_subagent BOOLEAN NOT NULL DEFAULT 0"); err != nil {
-		return fmt.Errorf("failed to add is_subagent column: %w", err)
+	hasSubagent, err := hasMessagesColumn(ctx, db, "is_subagent")
+	if err != nil {
+		return err
 	}
-
 	hasTitle, err := hasMessagesColumn(ctx, db, "title")
 	if err != nil {
 		return err
 	}
+	if !hasSubagent && !hasTitle {
+		return nil
+	}
+
+	predicates := make([]string, 0, 2)
+	if hasSubagent {
+		predicates = append(predicates, "is_subagent = 1")
+	}
 	if hasTitle {
-		if _, err := db.ExecContext(ctx, "UPDATE messages SET is_subagent = 1 WHERE title LIKE 'subagent:%'"); err != nil {
-			return fmt.Errorf("failed to backfill is_subagent from legacy title labels: %w", err)
+		predicates = append(predicates, "title LIKE 'subagent:%'")
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin legacy subagent cleanup transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	query := fmt.Sprintf(`
+		WITH RECURSIVE subagent_subtree(id, depth) AS (
+			SELECT id, 0 FROM messages WHERE %s
+			UNION ALL
+			SELECT messages.id, subagent_subtree.depth + 1
+			FROM messages
+			JOIN subagent_subtree ON messages.parent_id = subagent_subtree.id
+		)
+		SELECT id
+		FROM subagent_subtree
+		GROUP BY id
+		ORDER BY max(depth) DESC
+	`, strings.Join(predicates, " OR "))
+	rows, err := tx.QueryContext(ctx, query)
+	if err != nil {
+		return fmt.Errorf("failed to list legacy subagent messages: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return fmt.Errorf("failed to scan legacy subagent message ID: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("failed to iterate legacy subagent message IDs: %w", err)
+	}
+
+	for _, id := range ids {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM messages WHERE id = ?", id); err != nil {
+			return fmt.Errorf("failed to delete legacy subagent message %s: %w", id, err)
 		}
 	}
 
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit legacy subagent cleanup: %w", err)
+	}
 	return nil
 }
 
 func migrateMessagesCompactionParentColumn(ctx context.Context, db DB) error {
-	var tableCount int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages'").Scan(&tableCount); err != nil {
-		return fmt.Errorf("failed to inspect existing schema: %w", err)
+	hasMessages, err := hasMessagesTable(ctx, db)
+	if err != nil {
+		return err
 	}
-	if tableCount == 0 {
+	if !hasMessages {
 		return nil
 	}
 
@@ -148,6 +193,14 @@ func migrateMessagesCompactionParentColumn(ctx context.Context, db DB) error {
 		return fmt.Errorf("failed to add compaction_parent_id column: %w", err)
 	}
 	return nil
+}
+
+func hasMessagesTable(ctx context.Context, db DB) (bool, error) {
+	var tableCount int
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages'").Scan(&tableCount); err != nil {
+		return false, fmt.Errorf("failed to inspect existing schema: %w", err)
+	}
+	return tableCount > 0, nil
 }
 
 func hasMessagesColumn(ctx context.Context, db DB, column string) (bool, error) {
@@ -204,7 +257,7 @@ func stringToRole(s string) (gai.Role, error) {
 }
 
 // saveMessageInTx saves a single message and its blocks within a transaction.
-func (s *Sqlite) saveMessageInTx(ctx context.Context, qtx *sqlcgen.Queries, message gai.Message, parentID, compactionParentID string, isSubagent bool) (string, error) {
+func (s *Sqlite) saveMessageInTx(ctx context.Context, qtx *sqlcgen.Queries, message gai.Message, parentID, compactionParentID string) (string, error) {
 	// Generate a unique message ID
 	messageID, err := s.generateUniqueIDInTx(ctx, qtx)
 	if err != nil {
@@ -228,7 +281,6 @@ func (s *Sqlite) saveMessageInTx(ctx context.Context, qtx *sqlcgen.Queries, mess
 		ID:                 messageID,
 		ParentID:           parentIDParam,
 		CompactionParentID: compactionParentIDParam,
-		IsSubagent:         isSubagent,
 		Role:               roleToString(message.Role),
 		ToolResultError:    message.ToolResultError,
 	})
@@ -284,15 +336,6 @@ func getExtraFieldString(m map[string]any, key string) string {
 		return ""
 	}
 	v, _ := m[key].(string)
-	return v
-}
-
-// getExtraFieldBool safely extracts a bool value from an ExtraFields map.
-func getExtraFieldBool(m map[string]any, key string) bool {
-	if m == nil {
-		return false
-	}
-	v, _ := m[key].(bool)
 	return v
 }
 
@@ -390,14 +433,13 @@ func (s *Sqlite) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) ite
 			}
 
 			// Message needs to be saved
-			isSubagent := getExtraFieldBool(msg.ExtraFields, MessageIsSubagentKey)
 			parentID := prevID
 			compactionParentID := ""
 			if parentID == "" {
 				compactionParentID = getExtraFieldString(msg.ExtraFields, MessageCompactionParentIDKey)
 			}
 
-			savedID, saveErr := s.saveMessageInTx(ctx, qtx, msg, parentID, compactionParentID, isSubagent)
+			savedID, saveErr := s.saveMessageInTx(ctx, qtx, msg, parentID, compactionParentID)
 			if saveErr != nil {
 				yield(gai.Message{}, fmt.Errorf("failed to save message: %w", saveErr))
 				return
@@ -498,9 +540,8 @@ func (s *Sqlite) getMessage(ctx context.Context, messageID string) (gai.Message,
 	// (only block-level ExtraFields are). We create a fresh map here and populate it
 	// with the known keys that are stored as dedicated columns.
 	msgExtraFields := map[string]any{
-		MessageIDKey:         messageID,
-		MessageCreatedAtKey:  msg.CreatedAt,
-		MessageIsSubagentKey: msg.IsSubagent,
+		MessageIDKey:        messageID,
+		MessageCreatedAtKey: msg.CreatedAt,
 	}
 	if parentID != "" {
 		msgExtraFields[MessageParentIDKey] = parentID

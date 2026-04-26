@@ -4,7 +4,6 @@ CREATE TABLE IF NOT EXISTS messages
     id                   TEXT PRIMARY KEY,
     parent_id            TEXT,
     compaction_parent_id TEXT,
-    is_subagent          BOOLEAN NOT NULL DEFAULT 0, -- Whether this message belongs to a subagent trace
     role                 TEXT    NOT NULL,
     tool_result_error    BOOLEAN NOT NULL DEFAULT 0,
     created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -19,9 +18,6 @@ CREATE INDEX IF NOT EXISTS idx_messages_parent_id ON messages (parent_id);
 
 -- Create an index on compaction_parent_id for compaction lineage lookups
 CREATE INDEX IF NOT EXISTS idx_messages_compaction_parent_id ON messages (compaction_parent_id);
-
--- Create an index on is_subagent for filtering subagent traces
-CREATE INDEX IF NOT EXISTS idx_messages_is_subagent ON messages (is_subagent);
 
 CREATE TABLE IF NOT EXISTS blocks
 (

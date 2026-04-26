@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -27,11 +26,10 @@ func (c *RawConfig) Validate() error {
 //   - defaults.model references an existing entry in models.
 //   - auth_method provider constraints for each model.
 //   - defaults.codeMode and model.codeMode path normalization + module checks.
-//   - optional subagent.outputSchemaPath exists and contains valid JSON.
 //   - MCP server transport defaults and transport-specific field constraints.
 //
-// When configFilePath is provided, relative codeMode paths and subagent schema
-// paths are interpreted from that config file directory before existence checks.
+// When configFilePath is provided, relative codeMode paths are interpreted from
+// that config file directory before existence checks.
 func (c *RawConfig) ValidateWithConfigPath(configFilePath string) error {
 	validate := validator.New(validator.WithRequiredStructEnabled())
 	if err := validate.Struct(c); err != nil {
@@ -47,13 +45,6 @@ func (c *RawConfig) ValidateWithConfigPath(configFilePath string) error {
 
 	if err := validateMCPServerConfigs(c.MCPServers); err != nil {
 		return err
-	}
-
-	// Validate subagent configuration if present
-	if c.Subagent != nil {
-		if err := c.validateSubagentConfig(configFilePath); err != nil {
-			return err
-		}
 	}
 
 	if err := validateCodeModeConfig(c.Defaults.CodeMode, configFilePath, "defaults.codeMode"); err != nil {
@@ -147,34 +138,6 @@ func validateMCPServerConfigs(servers map[string]mcpconfig.ServerConfig) error {
 				return fmt.Errorf("mcpServers.%s.args: only supported for type \"stdio\"", name)
 			}
 		}
-	}
-	return nil
-}
-
-// validateSubagentConfig validates optional subagent output schema wiring.
-// When outputSchemaPath is set, the target file must exist and parse as JSON.
-func (c *RawConfig) validateSubagentConfig(configFilePath string) error {
-	if c.Subagent.OutputSchemaPath == "" {
-		return nil
-	}
-
-	schemaPath := c.Subagent.OutputSchemaPath
-	if configFilePath != "" && !filepath.IsAbs(schemaPath) {
-		schemaPath = filepath.Join(filepath.Dir(configFilePath), schemaPath)
-	}
-
-	data, err := os.ReadFile(schemaPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("subagent.outputSchemaPath: file does not exist: %s", schemaPath)
-		}
-		return fmt.Errorf("subagent.outputSchemaPath: error reading file: %w", err)
-	}
-
-	// Verify it's valid JSON. JSON Schema may be either an object or a boolean.
-	var schema any
-	if err := json.Unmarshal(data, &schema); err != nil {
-		return fmt.Errorf("subagent.outputSchemaPath: invalid JSON schema: %w", err)
 	}
 	return nil
 }

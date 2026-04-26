@@ -51,85 +51,6 @@ func newTestDBWithFK(t *testing.T) (*Sqlite, *sql.DB) {
 	return ds, rawDB
 }
 
-func TestNewSqlite_MigratesLegacyMessagesSchema(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "legacy.db")
-	rawDB, err := sql.Open("sqlite3", dbPath)
-	if err != nil {
-		t.Fatalf("sql.Open: %v", err)
-	}
-	defer rawDB.Close()
-
-	ctx := context.Background()
-
-	// Legacy schema shape before is_subagent existed.
-	if _, err := rawDB.ExecContext(ctx, `
-		CREATE TABLE messages (
-			id TEXT PRIMARY KEY,
-			parent_id TEXT,
-			title TEXT,
-			role TEXT NOT NULL,
-			tool_result_error BOOLEAN NOT NULL DEFAULT 0,
-			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-		);
-	`); err != nil {
-		t.Fatalf("create legacy schema: %v", err)
-	}
-	if _, err := rawDB.ExecContext(ctx, `
-		INSERT INTO messages (id, parent_id, title, role, tool_result_error)
-		VALUES
-			('legacy_1', NULL, 'legacy', 'user', 0),
-			('legacy_2', NULL, 'subagent:worker:run1', 'assistant', 0);
-	`); err != nil {
-		t.Fatalf("insert legacy rows: %v", err)
-	}
-
-	ds, err := NewSqlite(ctx, rawDB)
-	if err != nil {
-		t.Fatalf("NewSqlite: %v", err)
-	}
-
-	var hasColumn int
-	if err := rawDB.QueryRowContext(ctx, `
-		SELECT COUNT(*)
-		FROM pragma_table_info('messages')
-		WHERE name = 'is_subagent'
-	`).Scan(&hasColumn); err != nil {
-		t.Fatalf("check is_subagent column: %v", err)
-	}
-	if hasColumn != 1 {
-		t.Fatalf("expected is_subagent column to be created, got count=%d", hasColumn)
-	}
-
-	msgs, err := ds.GetMessages(ctx, []string{"legacy_1", "legacy_2"})
-	if err != nil {
-		t.Fatalf("GetMessages: %v", err)
-	}
-
-	expected := map[string]bool{
-		"legacy_1": false,
-		"legacy_2": true,
-	}
-	for msg := range msgs {
-		id := getExtraFieldString(msg.ExtraFields, MessageIDKey)
-		want, ok := expected[id]
-		if !ok {
-			t.Fatalf("unexpected message ID %q", id)
-		}
-		delete(expected, id)
-
-		isSubagent, ok := msg.ExtraFields[MessageIsSubagentKey].(bool)
-		if !ok {
-			t.Fatalf("expected MessageIsSubagentKey bool, got %T", msg.ExtraFields[MessageIsSubagentKey])
-		}
-		if isSubagent != want {
-			t.Fatalf("message %q: expected MessageIsSubagentKey=%t, got %t", id, want, isSubagent)
-		}
-	}
-	if len(expected) != 0 {
-		t.Fatalf("missing expected messages: %v", expected)
-	}
-}
-
 // failDB wraps a real DB and allows injecting errors at specific points.
 type failDB struct {
 	DB
@@ -226,6 +147,15 @@ func saveOne(t *testing.T, db *Sqlite, ctx context.Context, msg gai.Message) str
 	return id
 }
 
+func countRows(t *testing.T, db *sql.DB, query string, args ...any) int {
+	t.Helper()
+	var count int
+	if err := db.QueryRowContext(context.Background(), query, args...).Scan(&count); err != nil {
+		t.Fatalf("count rows: %v", err)
+	}
+	return count
+}
+
 // expectSaveDialogError runs SaveDialog and expects it to return an error.
 func expectSaveDialogError(t *testing.T, db *Sqlite, ctx context.Context, msgs []gai.Message) {
 	t.Helper()
@@ -238,6 +168,108 @@ func expectSaveDialogError(t *testing.T, db *Sqlite, ctx context.Context, msgs [
 	}
 	if gotErr == nil {
 		t.Fatal("expected SaveDialog error, got nil")
+	}
+}
+
+func TestNewSqlite_DeletesLegacySubagentMessages(t *testing.T) {
+	tests := []struct {
+		name           string
+		messageColumns string
+		messageValues  string
+	}{
+		{
+			name:           "is_subagent marker",
+			messageColumns: "id, parent_id, is_subagent, role, tool_result_error",
+			messageValues: `
+				('normal-root', NULL, 0, 'user', 0),
+				('legacy-subagent', 'normal-root', 1, 'assistant', 0),
+				('legacy-descendant', 'legacy-subagent', 0, 'tool_result', 0),
+				('normal-independent', NULL, 0, 'assistant', 0)`,
+		},
+		{
+			name:           "title marker",
+			messageColumns: "id, parent_id, title, role, tool_result_error",
+			messageValues: `
+				('normal-root', NULL, 'normal', 'user', 0),
+				('legacy-subagent', 'normal-root', 'subagent:worker:run1', 'assistant', 0),
+				('legacy-descendant', 'legacy-subagent', 'normal-child', 'tool_result', 0),
+				('normal-independent', NULL, 'normal', 'assistant', 0)`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dbPath := filepath.Join(t.TempDir(), "legacy.db")
+			rawDB, err := sql.Open("sqlite3", dbPath)
+			if err != nil {
+				t.Fatalf("sql.Open: %v", err)
+			}
+			defer rawDB.Close()
+
+			ctx := context.Background()
+			_, err = rawDB.ExecContext(ctx, fmt.Sprintf(`
+				CREATE TABLE messages (
+					id TEXT PRIMARY KEY,
+					parent_id TEXT,
+					compaction_parent_id TEXT,
+					is_subagent BOOLEAN NOT NULL DEFAULT 0,
+					title TEXT,
+					role TEXT NOT NULL,
+					tool_result_error BOOLEAN NOT NULL DEFAULT 0,
+					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					FOREIGN KEY (parent_id) REFERENCES messages (id) ON DELETE RESTRICT
+				);
+				CREATE TABLE blocks (
+					id TEXT,
+					message_id TEXT NOT NULL,
+					block_type TEXT NOT NULL,
+					modality_type INTEGER NOT NULL,
+					mime_type TEXT NOT NULL,
+					content TEXT NOT NULL,
+					extra_fields TEXT,
+					sequence_order INTEGER NOT NULL,
+					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					PRIMARY KEY (message_id, sequence_order),
+					FOREIGN KEY (message_id) REFERENCES messages (id) ON DELETE CASCADE
+				);
+				INSERT INTO messages (%s) VALUES %s;
+				INSERT INTO blocks (message_id, block_type, modality_type, mime_type, content, sequence_order) VALUES
+					('legacy-subagent', 'content', 0, 'text/plain', 'subagent block', 0),
+					('legacy-descendant', 'content', 0, 'text/plain', 'descendant block', 0),
+					('normal-independent', 'content', 0, 'text/plain', 'normal block', 0);
+			`, tt.messageColumns, tt.messageValues))
+			if err != nil {
+				t.Fatalf("create legacy schema: %v", err)
+			}
+
+			ds, err := NewSqlite(ctx, rawDB)
+			if err != nil {
+				t.Fatalf("NewSqlite: %v", err)
+			}
+
+			if got := countRows(t, rawDB, "SELECT COUNT(*) FROM messages"); got != 2 {
+				t.Fatalf("expected 2 remaining messages, got %d", got)
+			}
+			if got := countRows(t, rawDB, "SELECT COUNT(*) FROM messages WHERE id IN ('legacy-subagent', 'legacy-descendant')"); got != 0 {
+				t.Fatalf("expected legacy subagent subtree to be deleted, got %d rows", got)
+			}
+			if got := countRows(t, rawDB, "SELECT COUNT(*) FROM blocks WHERE message_id IN ('legacy-subagent', 'legacy-descendant')"); got != 0 {
+				t.Fatalf("expected legacy subagent blocks to be cascade-deleted, got %d rows", got)
+			}
+
+			msgs, err := ds.ListMessages(ctx, ListMessagesOptions{})
+			if err != nil {
+				t.Fatalf("ListMessages: %v", err)
+			}
+			var ids []string
+			for msg := range msgs {
+				ids = append(ids, getExtraFieldString(msg.ExtraFields, MessageIDKey))
+			}
+			slices.Sort(ids)
+			if !slices.Equal(ids, []string{"normal-independent", "normal-root"}) {
+				t.Fatalf("unexpected remaining message IDs: %v", ids)
+			}
+		})
 	}
 }
 
@@ -332,31 +364,6 @@ func TestSaveDialog(t *testing.T) {
 		}
 		if len(retrieved.Blocks) != 2 {
 			t.Fatalf("expected 2 blocks, got %d", len(retrieved.Blocks))
-		}
-	})
-
-	t.Run("message with is_subagent round-trips", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		msg := makeTextMessage(gai.User, "subagent-trace")
-		msg.ExtraFields = map[string]any{MessageIsSubagentKey: true}
-
-		saved := saveDialog(t, db, ctx, []gai.Message{msg})
-		savedID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
-		if savedID == "" {
-			t.Fatal("expected non-empty ID")
-		}
-
-		msgs, err := db.GetMessages(ctx, []string{savedID})
-		if err != nil {
-			t.Fatalf("GetMessages: %v", err)
-		}
-		for m := range msgs {
-			got, ok := m.ExtraFields[MessageIsSubagentKey].(bool)
-			if !ok || !got {
-				t.Errorf("expected MessageIsSubagentKey = true, got %v", m.ExtraFields[MessageIsSubagentKey])
-			}
 		}
 	})
 
@@ -2008,21 +2015,18 @@ func TestBlockCascadeDeleteViaRawSQL(t *testing.T) {
 	}
 }
 
-// TestMessageExtraFields verifies that only known keys (id, parent_id, created_at,
-// is_subagent) stored in dedicated columns are persisted and returned; arbitrary
-// custom keys are dropped.
+// TestMessageExtraFields verifies that only known keys stored in dedicated
+// columns are persisted and returned; arbitrary custom keys are dropped.
 func TestMessageExtraFields(t *testing.T) {
 	t.Run("known keys returned, custom keys dropped", func(t *testing.T) {
 		// Arbitrary message-level ExtraFields are intentionally not persisted.
-		// Only known keys (ID, parent, created_at, is_subagent) stored as dedicated
-		// columns are returned on retrieval.
+		// Only known keys stored as dedicated columns are returned on retrieval.
 		db, _ := newTestDB(t)
 		ctx := context.Background()
 
 		msg := makeTextMessage(gai.User, "test")
 		msg.ExtraFields = map[string]any{
-			"custom_key":         "custom_value",
-			MessageIsSubagentKey: true,
+			"custom_key": "custom_value",
 		}
 
 		saved := saveDialog(t, db, ctx, []gai.Message{msg})
@@ -2039,35 +2043,12 @@ func TestMessageExtraFields(t *testing.T) {
 			if _, ok := m.ExtraFields[MessageCreatedAtKey]; !ok {
 				t.Error("expected MessageCreatedAtKey")
 			}
-			if got, ok := m.ExtraFields[MessageIsSubagentKey].(bool); !ok || !got {
-				t.Errorf("expected MessageIsSubagentKey = true, got %v", m.ExtraFields[MessageIsSubagentKey])
-			}
 			if _, ok := m.ExtraFields["custom_key"]; ok {
 				t.Error("custom_key should not be persisted")
 			}
 		}
 	})
 
-	t.Run("is_subagent defaults to false when not set", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		savedID := saveOne(t, db, ctx, makeTextMessage(gai.User, "no subagent flag"))
-
-		msgs, err := db.GetMessages(ctx, []string{savedID})
-		if err != nil {
-			t.Fatalf("GetMessages: %v", err)
-		}
-		for m := range msgs {
-			got, ok := m.ExtraFields[MessageIsSubagentKey].(bool)
-			if !ok {
-				t.Fatalf("expected MessageIsSubagentKey to be a bool, got %T", m.ExtraFields[MessageIsSubagentKey])
-			}
-			if got {
-				t.Error("expected MessageIsSubagentKey to default to false")
-			}
-		}
-	})
 }
 
 // TestSaveDialog_InterleavedExistingAndNew verifies that SaveDialog detects parent

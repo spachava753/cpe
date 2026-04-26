@@ -54,15 +54,14 @@ func (q *Queries) CreateBlock(ctx context.Context, arg CreateBlockParams) error 
 
 const createMessage = `-- name: CreateMessage :exec
 
-INSERT INTO messages (id, parent_id, compaction_parent_id, is_subagent, role, tool_result_error)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO messages (id, parent_id, compaction_parent_id, role, tool_result_error)
+VALUES (?, ?, ?, ?, ?)
 `
 
 type CreateMessageParams struct {
 	ID                 string         `json:"id"`
 	ParentID           sql.NullString `json:"parent_id"`
 	CompactionParentID sql.NullString `json:"compaction_parent_id"`
-	IsSubagent         bool           `json:"is_subagent"`
 	Role               string         `json:"role"`
 	ToolResultError    bool           `json:"tool_result_error"`
 }
@@ -74,7 +73,6 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) er
 		arg.ID,
 		arg.ParentID,
 		arg.CompactionParentID,
-		arg.IsSubagent,
 		arg.Role,
 		arg.ToolResultError,
 	)
@@ -156,7 +154,7 @@ func (q *Queries) GetBlocksByMessage(ctx context.Context, messageID string) ([]B
 }
 
 const getMessage = `-- name: GetMessage :one
-SELECT id, parent_id, compaction_parent_id, is_subagent, role, tool_result_error, created_at
+SELECT id, parent_id, compaction_parent_id, role, tool_result_error, created_at
 FROM messages
 WHERE id = ?
 `
@@ -168,7 +166,6 @@ func (q *Queries) GetMessage(ctx context.Context, id string) (Message, error) {
 		&i.ID,
 		&i.ParentID,
 		&i.CompactionParentID,
-		&i.IsSubagent,
 		&i.Role,
 		&i.ToolResultError,
 		&i.CreatedAt,
@@ -217,7 +214,7 @@ func (q *Queries) ListMessages(ctx context.Context) ([]string, error) {
 }
 
 const listMessagesAscending = `-- name: ListMessagesAscending :many
-SELECT id, parent_id, compaction_parent_id, is_subagent, role, tool_result_error, created_at
+SELECT id, parent_id, compaction_parent_id, role, tool_result_error, created_at
 FROM messages
 ORDER BY created_at ASC, rowid ASC
 LIMIT -1 OFFSET ?
@@ -236,7 +233,6 @@ func (q *Queries) ListMessagesAscending(ctx context.Context, offset int64) ([]Me
 			&i.ID,
 			&i.ParentID,
 			&i.CompactionParentID,
-			&i.IsSubagent,
 			&i.Role,
 			&i.ToolResultError,
 			&i.CreatedAt,
@@ -255,7 +251,7 @@ func (q *Queries) ListMessagesAscending(ctx context.Context, offset int64) ([]Me
 }
 
 const listMessagesByParent = `-- name: ListMessagesByParent :many
-SELECT id, parent_id, compaction_parent_id, is_subagent, role, tool_result_error, created_at
+SELECT id, parent_id, compaction_parent_id, role, tool_result_error, created_at
 FROM messages
 WHERE parent_id = ?
 ORDER BY created_at, rowid
@@ -274,7 +270,6 @@ func (q *Queries) ListMessagesByParent(ctx context.Context, parentID sql.NullStr
 			&i.ID,
 			&i.ParentID,
 			&i.CompactionParentID,
-			&i.IsSubagent,
 			&i.Role,
 			&i.ToolResultError,
 			&i.CreatedAt,
@@ -293,7 +288,7 @@ func (q *Queries) ListMessagesByParent(ctx context.Context, parentID sql.NullStr
 }
 
 const listMessagesDescending = `-- name: ListMessagesDescending :many
-SELECT id, parent_id, compaction_parent_id, is_subagent, role, tool_result_error, created_at
+SELECT id, parent_id, compaction_parent_id, role, tool_result_error, created_at
 FROM messages
 ORDER BY created_at DESC, rowid DESC
 LIMIT -1 OFFSET ?
@@ -312,7 +307,6 @@ func (q *Queries) ListMessagesDescending(ctx context.Context, offset int64) ([]M
 			&i.ID,
 			&i.ParentID,
 			&i.CompactionParentID,
-			&i.IsSubagent,
 			&i.Role,
 			&i.ToolResultError,
 			&i.CreatedAt,

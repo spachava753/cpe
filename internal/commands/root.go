@@ -11,9 +11,7 @@ import (
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/mcp"
-	"github.com/spachava753/cpe/internal/render"
 	"github.com/spachava753/cpe/internal/storage"
-	"github.com/spachava753/cpe/internal/subagentlog"
 )
 
 // ExecuteRootOptions contains pre-resolved dependencies and inputs for
@@ -52,8 +50,6 @@ type ExecuteRootOptions struct {
 	// Stderr is where to write status messages.
 	// If nil, defaults to os.Stderr.
 	Stderr io.Writer
-	// VerboseSubagent enables verbose subagent output
-	VerboseSubagent bool
 }
 
 // ExecuteRoot runs the core generation orchestration.
@@ -104,39 +100,8 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 		effectiveConfig.Model.BaseUrl = opts.CustomURL
 	}
 
-	// Start the subagent event server if we're the root process.
-	// When CPE_SUBAGENT_LOGGING_ADDRESS is set, we're running as a subagent
-	// and should not start another server.
-	var subagentLoggingAddress string
-	if os.Getenv(subagentlog.SubagentLoggingAddressEnv) == "" {
-		// Determine render mode for subagent events
-		renderMode := subagentlog.RenderModeConcise
-		if opts.VerboseSubagent {
-			renderMode = subagentlog.RenderModeVerbose
-		}
-		renderer := subagentlog.NewRenderer(&render.PlainTextRenderer{}, renderMode)
-		if render.IsTTYWriter(opts.Stderr) && render.IsTTYWriter(opts.Stdout) {
-			renderer = subagentlog.NewRenderer(render.NewGlamourRenderer(), renderMode)
-		}
-		stderrWriter := subagentlog.NewSyncWriter(stderr)
-		eventServer := subagentlog.NewServer(func(event subagentlog.Event) {
-			rendered := renderer.RenderEvent(event)
-			if rendered != "" {
-				stderrWriter.WriteString(rendered)
-			}
-		})
-
-		subagentLoggingAddress, err = eventServer.Start(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to start subagent event server: %w", err)
-		}
-
-		// Set the env var so code mode subprocesses inherit it
-		os.Setenv(subagentlog.SubagentLoggingAddressEnv, subagentLoggingAddress)
-	}
-
 	// Initialize MCP connections (fails fast on any error)
-	mcpState, err := mcp.InitializeConnections(ctx, effectiveConfig.MCPServers, subagentLoggingAddress)
+	mcpState, err := mcp.InitializeConnections(ctx, effectiveConfig.MCPServers)
 	if err != nil {
 		return fmt.Errorf("failed to initialize MCP connections: %w", err)
 	}
