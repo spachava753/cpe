@@ -58,7 +58,7 @@ type failDB struct {
 	failBeginTx bool
 }
 
-func (f *failDB) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+func (f *failDB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	if f.failExec {
 		return nil, fmt.Errorf("injected ExecContext error")
 	}
@@ -383,7 +383,7 @@ func TestSaveDialog(t *testing.T) {
 		if len(saved2) != 3 {
 			t.Fatalf("expected 3 messages, got %d", len(saved2))
 		}
-		for i := 0; i < 2; i++ {
+		for i := range 2 {
 			origID := getExtraFieldString(saved[i].ExtraFields, MessageIDKey)
 			newID := getExtraFieldString(saved2[i].ExtraFields, MessageIDKey)
 			if origID != newID {
@@ -715,7 +715,7 @@ func TestListMessages(t *testing.T) {
 				ctx := context.Background()
 
 				var savedIDs []string
-				for i := 0; i < 3; i++ {
+				for range 3 {
 					id := saveOne(t, db, ctx, makeTextMessage(gai.User, "msg"))
 					savedIDs = append(savedIDs, id)
 				}
@@ -746,7 +746,7 @@ func TestListMessages(t *testing.T) {
 		db, _ := newTestDB(t)
 		ctx := context.Background()
 
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			saveOne(t, db, ctx, makeTextMessage(gai.User, "msg"))
 		}
 
@@ -1255,7 +1255,7 @@ func TestIteratorEarlyBreak(t *testing.T) {
 		{
 			name: "ListMessages",
 			setup: func(t *testing.T, db *Sqlite, ctx context.Context) {
-				for i := 0; i < 3; i++ {
+				for i := range 3 {
 					saveOne(t, db, ctx, makeTextMessage(gai.User, fmt.Sprintf("msg%d", i)))
 				}
 			},
@@ -1922,7 +1922,7 @@ func TestListMessages_OffsetBeyondTotal(t *testing.T) {
 	db, _ := newTestDB(t)
 	ctx := context.Background()
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		saveOne(t, db, ctx, makeTextMessage(gai.User, "msg"))
 	}
 
@@ -2122,7 +2122,7 @@ func TestListMessages_CreatedAtOrdering(t *testing.T) {
 	db, _ := newTestDB(t)
 	ctx := context.Background()
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		saveOne(t, db, ctx, makeTextMessage(gai.User, fmt.Sprintf("msg-%d", i)))
 	}
 

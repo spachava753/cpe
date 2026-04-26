@@ -119,7 +119,7 @@ var DebugProxy = goyek.Define(goyek.Task{
 // prettyPrint prints payloads as indented JSON when possible, otherwise raw text.
 // Output is capped to keep debug sessions readable in a terminal.
 func prettyPrint(data []byte) {
-	var obj interface{}
+	var obj any
 	if err := json.Unmarshal(data, &obj); err == nil {
 		pretty, _ := json.MarshalIndent(obj, "  ", "  ")
 		s := string(pretty)

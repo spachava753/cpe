@@ -207,9 +207,9 @@ func ExchangeCode(ctx context.Context, code, verifier string) (*TokenResponse, e
 	// Split code#state format
 	authCode := code
 	state := ""
-	if idx := strings.Index(code, "#"); idx != -1 {
-		authCode = code[:idx]
-		state = code[idx+1:]
+	if before, after, ok := strings.Cut(code, "#"); ok {
+		authCode = before
+		state = after
 	}
 
 	payload := map[string]string{

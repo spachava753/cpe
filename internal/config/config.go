@@ -48,7 +48,7 @@ type RawCompactionConfig struct {
 	AutoTriggerThreshold      float64           `yaml:"autoTriggerThreshold,omitempty" json:"autoTriggerThreshold,omitempty" validate:"required,gt=0,max=1"`
 	MaxAutoCompactionRestarts int               `yaml:"maxAutoCompactionRestarts,omitempty" json:"maxAutoCompactionRestarts,omitempty" validate:"required,min=1"`
 	ToolDescription           string            `yaml:"toolDescription,omitempty" json:"toolDescription,omitempty" validate:"required"`
-	InputSchema               jsonschema.Schema `yaml:"inputSchema,omitempty" json:"inputSchema,omitempty" jsonschema:"oneof_type=object;boolean" validate:"required"`
+	InputSchema               jsonschema.Schema `yaml:"inputSchema,omitempty" json:"inputSchema" jsonschema:"oneof_type=object;boolean" validate:"required"`
 	InitialMessageTemplate    string            `yaml:"initialMessageTemplate,omitempty" json:"initialMessageTemplate,omitempty" validate:"required"`
 }
 

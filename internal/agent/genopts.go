@@ -104,7 +104,7 @@ func responsesPromptCacheKey(modelID string, dialog gai.Dialog) string {
 
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
-		payloadJSON = []byte(fmt.Sprintf("%#v", payload))
+		payloadJSON = fmt.Appendf(nil, "%#v", payload)
 	}
 
 	hash := sha256.Sum256(payloadJSON)

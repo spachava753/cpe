@@ -402,10 +402,10 @@ func TestMaybeSpillLargeOutput_PreviewsByCharactersForSingleLineOutput(t *testin
 
 func extractSpillPath(t *testing.T, output string) string {
 	t.Helper()
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		const prefix = "Full output stored at: "
-		if strings.HasPrefix(line, prefix) {
-			path := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+		if after, ok := strings.CutPrefix(line, prefix); ok {
+			path := strings.TrimSpace(after)
 			if path == "" {
 				t.Fatal("spill path was empty")
 			}

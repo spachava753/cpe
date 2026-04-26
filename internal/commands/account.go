@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -42,10 +43,8 @@ type AccountUsageOptions struct {
 
 func normalizeAccountProvider(provider string) (string, error) {
 	provider = strings.ToLower(strings.TrimSpace(provider))
-	for _, supported := range SupportedAccountProviders {
-		if provider == supported {
-			return provider, nil
-		}
+	if slices.Contains(SupportedAccountProviders, provider) {
+		return provider, nil
 	}
 	return "", fmt.Errorf("unsupported provider %q (supported: %s)", provider, strings.Join(SupportedAccountProviders, ", "))
 }

@@ -333,4 +333,5 @@ tool (
 	github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 	github.com/sqlc-dev/sqlc/cmd/sqlc
 	golang.org/x/tools/cmd/deadcode
+	golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize
 )

@@ -24,7 +24,7 @@ type DB interface {
 	sqlcgen.DBTX
 	// ExecContext executes a statement that does not return rows. NewSqlite uses
 	// it for PRAGMA setup and schema initialization/migrations.
-	ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error)
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 	// BeginTx starts a transaction used for atomic write operations.
 	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
 }

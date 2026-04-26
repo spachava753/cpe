@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"strings"
 	"sync"
@@ -203,9 +204,7 @@ func patchJSONBody(body io.ReadCloser, fields map[string]any) (io.ReadCloser, in
 		return io.NopCloser(bytes.NewReader(data)), int64(len(data)), nil //nolint:nilerr
 	}
 
-	for k, v := range fields {
-		obj[k] = v
-	}
+	maps.Copy(obj, fields)
 
 	patched, err := json.Marshal(obj)
 	if err != nil {

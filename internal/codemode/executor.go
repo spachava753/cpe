@@ -10,6 +10,7 @@ import (
 	"go/printer"
 	"go/token"
 	goversion "go/version"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -425,9 +426,7 @@ func mergeEnv(base []string, overrides map[string]string) []string {
 		}
 		merged[parts[0]] = parts[1]
 	}
-	for key, value := range overrides {
-		merged[key] = value
-	}
+	maps.Copy(merged, overrides)
 
 	result := make([]string, 0, len(merged))
 	for key, value := range merged {

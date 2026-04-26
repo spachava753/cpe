@@ -225,7 +225,7 @@ func TestDownloadContent(t *testing.T) {
 				t.Fatal("expected http.Flusher")
 			}
 			// Write data in chunks so Content-Length is not set
-			for i := 0; i < 20; i++ {
+			for range 20 {
 				w.Write([]byte(strings.Repeat("x", 10)))
 				flusher.Flush()
 			}

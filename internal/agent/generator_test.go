@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"maps"
 	"net/http"
 	"testing"
 	"time"
@@ -112,9 +113,7 @@ func TestApplyResponsesThinkingSummary(t *testing.T) {
 			var originalKeys map[string]any
 			if tt.opts != nil && tt.opts.ExtraArgs != nil {
 				originalKeys = make(map[string]any, len(tt.opts.ExtraArgs))
-				for k, v := range tt.opts.ExtraArgs {
-					originalKeys[k] = v
-				}
+				maps.Copy(originalKeys, tt.opts.ExtraArgs)
 			}
 
 			ApplyResponsesThinkingSummary(tt.opts)

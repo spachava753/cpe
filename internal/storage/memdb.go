@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -279,10 +280,7 @@ func (m *MemDB) ListMessages(ctx context.Context, opts ListMessagesOptions) (ite
 	})
 
 	// Apply offset.
-	offset := int(opts.Offset)
-	if offset > len(all) {
-		offset = len(all)
-	}
+	offset := min(int(opts.Offset), len(all))
 	all = all[offset:]
 
 	// Build messages.
@@ -319,9 +317,7 @@ func cloneExtraFieldsMap(extra map[string]any) map[string]any {
 		return nil
 	}
 	cloned := make(map[string]any, len(extra))
-	for k, v := range extra {
-		cloned[k] = v
-	}
+	maps.Copy(cloned, extra)
 	return cloned
 }
 
