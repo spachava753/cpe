@@ -65,12 +65,6 @@ func FormatResultMarkdown(content string, maxLines int) string {
 	return fmt.Sprintf("#### Code execution output:\n%s", MarkdownFencedBlock("shell", truncated))
 }
 
-// IsToolCall checks if a tool call JSON is for the execute_go_code tool.
-func IsToolCall(content string) bool {
-	_, ok := ParseToolCall(content)
-	return ok
-}
-
 // FormatGenericToolCallMarkdown formats a generic tool call JSON as markdown.
 // Returns the formatted content and true if formatting succeeded,
 // or the original content and false if JSON parsing failed.

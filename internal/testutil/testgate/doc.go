@@ -18,13 +18,13 @@ Typical usage:
 
 	func TestLiveOpenAIFlow(t *testing.T) {
 		testgate.RequireLive(t)
-		testgate.RequireInteractive(t)
+		testgate.Require(t, testgate.Interactive)
 		testgate.RequireEnv(t, "OPENAI_API_KEY")
 		// ... run the live browser-backed flow ...
 	}
 
 If a test only needs to branch on enablement instead of skipping immediately,
-use Enabled or the category-specific helpers such as LiveEnabled.
+use Enabled.
 
 Prefer fakes, `httptest`, and local fixtures for ordinary tests. Reach for this
 package only when the real integration itself is what needs verification.

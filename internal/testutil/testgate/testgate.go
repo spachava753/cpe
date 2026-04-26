@@ -55,21 +55,6 @@ func Enabled(kind Kind) bool {
 	return truthyEnv(envVar)
 }
 
-// IntegrationEnabled reports whether integration tests are enabled.
-func IntegrationEnabled() bool {
-	return Enabled(Integration)
-}
-
-// LiveEnabled reports whether live tests are enabled.
-func LiveEnabled() bool {
-	return Enabled(Live)
-}
-
-// InteractiveEnabled reports whether interactive tests are enabled.
-func InteractiveEnabled() bool {
-	return Enabled(Interactive)
-}
-
 // Require skips the current test unless the given opt-in test kind is enabled.
 func Require(t testing.TB, kind Kind) {
 	t.Helper()
@@ -83,21 +68,9 @@ func Require(t testing.TB, kind Kind) {
 	t.Skipf("skipping %s test; set %s=1 to enable", kind, envVar)
 }
 
-// RequireIntegration skips the current test unless integration tests are
-// enabled.
-func RequireIntegration(t testing.TB) {
-	Require(t, Integration)
-}
-
 // RequireLive skips the current test unless live tests are enabled.
 func RequireLive(t testing.TB) {
 	Require(t, Live)
-}
-
-// RequireInteractive skips the current test unless interactive tests are
-// enabled.
-func RequireInteractive(t testing.TB) {
-	Require(t, Interactive)
 }
 
 // RequireEnv skips the current test when any required environment variable is

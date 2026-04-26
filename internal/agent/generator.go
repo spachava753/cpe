@@ -291,40 +291,12 @@ func initGeneratorFromModel(
 
 // generatorOptions holds optional configuration for generator creation.
 type generatorOptions struct {
-	disablePrinting bool
-	middleware      []gai.WrapperFunc
-	baseGenerator   gai.ToolCapableGenerator
-	dialogSaver     storage.DialogSaver
-	stdout          io.Writer
+	dialogSaver storage.DialogSaver
+	stdout      io.Writer
 }
 
 // GeneratorOption is a functional option for configuring generator creation.
 type GeneratorOption func(*generatorOptions)
-
-// WithDisablePrinting disables all loop printing.
-// Use this for non-interactive callers that need to handle output themselves.
-func WithDisablePrinting() GeneratorOption {
-	return func(o *generatorOptions) {
-		o.disablePrinting = true
-	}
-}
-
-// WithMiddleware adds custom middleware to the generator's middleware stack.
-// Custom middleware is applied after the default middleware (retry, printing, etc.).
-func WithMiddleware(m ...gai.WrapperFunc) GeneratorOption {
-	return func(o *generatorOptions) {
-		o.middleware = append(o.middleware, m...)
-	}
-}
-
-// WithBaseGenerator sets a custom base generator instead of using the default
-// model-based initialization. This is useful for testing or for injecting
-// custom generator implementations.
-func WithBaseGenerator(g gai.ToolCapableGenerator) GeneratorOption {
-	return func(o *generatorOptions) {
-		o.baseGenerator = g
-	}
-}
 
 // WithDialogSaver enables incremental dialog saving in the turn-lifecycle middleware.
 // When provided, messages are saved as they flow through the generation pipeline.
@@ -353,9 +325,6 @@ func WithStdout(w io.Writer) GeneratorOption {
 //   - mcpState: Initialized MCP state with connections and tools
 //
 // Optional parameters (via functional options):
-//   - WithDisablePrinting(): Disable all loop printing
-//   - WithMiddleware(m...): Add custom middleware
-//   - WithBaseGenerator(g): Use a custom base generator instead of model-based initialization
 //   - WithDialogSaver(s): Save dialog messages as they flow through generation
 //   - WithStdout(w): Write model response output to a custom destination
 func NewGenerator(
@@ -371,21 +340,14 @@ func NewGenerator(
 		opt(o)
 	}
 
-	// Use custom base generator if provided, otherwise create from model config
-	var gen gai.ToolCapableGenerator
-	if o.baseGenerator != nil {
-		gen = o.baseGenerator
-	} else {
-		genBase, err := initGeneratorFromModel(ctx, cfg.Model, systemPrompt, cfg.Timeout)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create generator: %w", err)
-		}
+	genBase, err := initGeneratorFromModel(ctx, cfg.Model, systemPrompt, cfg.Timeout)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create generator: %w", err)
+	}
 
-		var ok bool
-		gen, ok = genBase.(gai.ToolCapableGenerator)
-		if !ok {
-			return nil, fmt.Errorf("generator does not implement ToolCapableGenerator interface")
-		}
+	gen, ok := genBase.(gai.ToolCapableGenerator)
+	if !ok {
+		return nil, fmt.Errorf("generator does not implement ToolCapableGenerator interface")
 	}
 
 	// Build the single-turn provider stack. Runtime owns persistence,
@@ -399,10 +361,9 @@ func NewGenerator(
 		WithBlockFilter(cfg.Model.Type),
 		gai.WithRetry(b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute)),
 	}
-	wrappers = append(wrappers, o.middleware...)
 
 	wrapped := gai.Wrap(gen, wrappers...)
-	gen, ok := wrapped.(gai.ToolCapableGenerator)
+	gen, ok = wrapped.(gai.ToolCapableGenerator)
 	if !ok {
 		return nil, fmt.Errorf("wrapped generator does not implement ToolCapableGenerator interface")
 	}
@@ -411,7 +372,7 @@ func NewGenerator(
 	if stdoutW == nil {
 		stdoutW = os.Stdout
 	}
-	runtime := NewRuntime(gen, cfg, o.dialogSaver, stdoutW, os.Stderr, o.disablePrinting)
+	runtime := NewRuntime(gen, cfg, o.dialogSaver, stdoutW, os.Stderr, false)
 
 	// Check if code mode is enabled
 	codeModeEnabled := cfg.CodeMode != nil && cfg.CodeMode.Enabled

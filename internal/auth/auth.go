@@ -147,12 +147,3 @@ func (s *Store) ListCredentials() ([]string, error) {
 	}
 	return providers, nil
 }
-
-// GetCredential is a convenience function that creates a store and retrieves a credential
-func GetCredential(provider string) (*Credential, error) {
-	store, err := NewStore()
-	if err != nil {
-		return nil, err
-	}
-	return store.GetCredential(provider)
-}
