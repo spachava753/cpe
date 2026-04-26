@@ -1,6 +1,9 @@
 package codemode
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestFormatToolCallMarkdownIncludesTimeout(t *testing.T) {
 	t.Parallel()
@@ -38,6 +41,32 @@ func TestFormatToolCallMarkdownFallsBackForInvalidGo(t *testing.T) {
 	got := FormatToolCallMarkdown(input)
 	if got != want {
 		t.Fatalf("FormatToolCallMarkdown() mismatch\nwant:\n%s\n\ngot:\n%s", want, got)
+	}
+}
+
+func TestFormatToolCallMarkdownExpandsLeadingTabsForTerminalDisplay(t *testing.T) {
+	t.Parallel()
+
+	input := FormatInput{Code: "package main\nfunc Run(){\nif true {\nprintln(\"hi\")\n}\n}"}
+	got := FormatToolCallMarkdown(input)
+	if strings.Contains(got, "\n\t") {
+		t.Fatalf("FormatToolCallMarkdown() contains leading tabs: %q", got)
+	}
+	if !strings.Contains(got, "        println") {
+		t.Fatalf("FormatToolCallMarkdown() did not preserve nested indentation with spaces:\n%s", got)
+	}
+}
+
+func TestFormatToolCallMarkdownPreservesLiteralTabs(t *testing.T) {
+	t.Parallel()
+
+	input := FormatInput{Code: "package main\n\nfunc Run() {\n\tprintln(\"a\\tb\")\n\tprintln(`c\td`)\n}\n"}
+	got := FormatToolCallMarkdown(input)
+	if !strings.Contains(got, "\"a\\tb\"") {
+		t.Fatalf("FormatToolCallMarkdown() did not preserve escaped tab literal:\n%s", got)
+	}
+	if !strings.Contains(got, "`c\td`") {
+		t.Fatalf("FormatToolCallMarkdown() did not preserve raw string tab literal:\n%s", got)
 	}
 }
 

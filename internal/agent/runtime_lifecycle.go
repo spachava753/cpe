@@ -25,17 +25,26 @@ func (r *Runtime) configureOutput(disablePrinting bool) {
 	normalRenderer := render.Iface(&render.PlainTextRenderer{})
 	thinkingRenderer := render.Iface(&render.PlainTextRenderer{})
 
+	toolCallRenderer := normalRenderer
+	metadataRenderer := normalRenderer
+
 	if disablePrinting {
 		r.stdout = io.Discard
 		r.stderr = io.Discard
-	} else if render.IsTTYWriter(r.stderr) && render.IsTTYWriter(r.stdout) {
-		normalRenderer = render.NewGlamourRenderer()
-		thinkingRenderer = render.NewThinkingRenderer()
+	} else {
+		if render.IsTTYWriter(r.stdout) {
+			normalRenderer = render.NewGlamourRendererForWriter(r.stdout)
+		}
+		if render.IsTTYWriter(r.stderr) {
+			toolCallRenderer = render.NewGlamourRendererForWriter(r.stderr)
+			metadataRenderer = toolCallRenderer
+			thinkingRenderer = render.NewThinkingRendererForWriter(r.stderr)
+		}
 	}
 
 	r.contentRenderer = normalRenderer
-	r.toolCallRenderer = normalRenderer
-	r.metadataRenderer = normalRenderer
+	r.toolCallRenderer = toolCallRenderer
+	r.metadataRenderer = metadataRenderer
 	r.thinkingRenderer = thinkingRenderer
 }
 

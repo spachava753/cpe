@@ -37,7 +37,7 @@ func ParseToolCall(content string) (FormatInput, bool) {
 }
 
 // FormatToolCallMarkdown formats an execute_go_code tool call as markdown.
-// The displayed source is reflowed for readability, so compiler diagnostic line
+// The displayed source is formatted for readability, so compiler diagnostic line
 // numbers in later tool results may not correspond exactly to the printed code.
 // That is acceptable because the model still receives diagnostics for the exact
 // generated source it executed; this display is primarily for users to understand
@@ -54,9 +54,25 @@ func FormatToolCallMarkdown(input FormatInput) string {
 func formatGoCodeForDisplay(code string) string {
 	formatted, err := goformat.Source([]byte(code))
 	if err != nil {
-		return code
+		return expandLeadingIndentTabs(code)
 	}
-	return string(formatted)
+	return expandLeadingIndentTabs(string(formatted))
+}
+
+func expandLeadingIndentTabs(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+
+	atLineStart := true
+	for _, r := range s {
+		if atLineStart && r == '\t' {
+			b.WriteString("    ")
+			continue
+		}
+		b.WriteRune(r)
+		atLineStart = r == '\n'
+	}
+	return b.String()
 }
 
 // FormatResultMarkdown formats an execute_go_code result as markdown.
