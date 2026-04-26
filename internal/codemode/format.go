@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	goformat "go/format"
 	"strings"
 )
 
@@ -36,12 +37,26 @@ func ParseToolCall(content string) (FormatInput, bool) {
 }
 
 // FormatToolCallMarkdown formats an execute_go_code tool call as markdown.
+// The displayed source is reflowed for readability, so compiler diagnostic line
+// numbers in later tool results may not correspond exactly to the printed code.
+// That is acceptable because the model still receives diagnostics for the exact
+// generated source it executed; this display is primarily for users to understand
+// what the model is doing.
 func FormatToolCallMarkdown(input FormatInput) string {
 	header := "#### [tool call]"
 	if input.ExecutionTimeout > 0 {
 		header = fmt.Sprintf("#### [tool call] (timeout: %ds)", input.ExecutionTimeout)
 	}
-	return fmt.Sprintf("%s\n%s", header, MarkdownFencedBlock("go", FormatDisplayCodeWithLineNumbers(input.Code)))
+	displayCode := formatGoCodeForDisplay(input.Code)
+	return fmt.Sprintf("%s\n%s", header, MarkdownFencedBlock("go", displayCode))
+}
+
+func formatGoCodeForDisplay(code string) string {
+	formatted, err := goformat.Source([]byte(code))
+	if err != nil {
+		return code
+	}
+	return string(formatted)
 }
 
 // FormatResultMarkdown formats an execute_go_code result as markdown.

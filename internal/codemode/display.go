@@ -2,28 +2,8 @@ package codemode
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 )
-
-// FormatDisplayCodeWithLineNumbers normalizes source text and prefixes each line
-// with a 1-based line number so compiler diagnostics can be mapped back to the
-// generated run.go shown in the CLI.
-func FormatDisplayCodeWithLineNumbers(code string) string {
-	normalized := strings.ReplaceAll(code, "\r\n", "\n")
-	if normalized == "" {
-		return ""
-	}
-	normalized = strings.TrimSuffix(normalized, "\n")
-
-	lines := strings.Split(normalized, "\n")
-	width := len(strconv.Itoa(len(lines)))
-	for i, line := range lines {
-		lines[i] = fmt.Sprintf("%*d  %s", width, i+1, line)
-	}
-
-	return strings.Join(lines, "\n")
-}
 
 // MarkdownFencedBlock returns content wrapped in a markdown code fence that is
 // guaranteed not to be prematurely closed by backtick runs contained in content.

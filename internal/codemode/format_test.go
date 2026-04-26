@@ -2,7 +2,7 @@ package codemode
 
 import "testing"
 
-func TestFormatToolCallMarkdownAddsLineNumbers(t *testing.T) {
+func TestFormatToolCallMarkdownIncludesTimeout(t *testing.T) {
 	t.Parallel()
 
 	input := FormatInput{
@@ -10,18 +10,30 @@ func TestFormatToolCallMarkdownAddsLineNumbers(t *testing.T) {
 		ExecutionTimeout: 15,
 	}
 
-	want := "#### [tool call] (timeout: 15s)\n```go\n1  package main\n2  \n3  func Run() {}\n```"
+	want := "#### [tool call] (timeout: 15s)\n```go\npackage main\n\nfunc Run() {}\n\n```"
 	got := FormatToolCallMarkdown(input)
 	if got != want {
 		t.Fatalf("FormatToolCallMarkdown() mismatch\nwant:\n%s\n\ngot:\n%s", want, got)
 	}
 }
 
-func TestFormatToolCallMarkdownUsesSharedLineNumberFormatting(t *testing.T) {
+func TestFormatToolCallMarkdownFormatsGoCodeForDisplay(t *testing.T) {
 	t.Parallel()
 
-	input := FormatInput{Code: "package main\nfunc Run() {}"}
-	want := "#### [tool call]\n" + MarkdownFencedBlock("go", FormatDisplayCodeWithLineNumbers(input.Code))
+	input := FormatInput{Code: "package main\nimport \"fmt\"\nfunc Run(){fmt.Println(\"hi\")}"}
+	want := "#### [tool call]\n```go\npackage main\n\nimport \"fmt\"\n\nfunc Run() { fmt.Println(\"hi\") }\n\n```"
+
+	got := FormatToolCallMarkdown(input)
+	if got != want {
+		t.Fatalf("FormatToolCallMarkdown() mismatch\nwant:\n%s\n\ngot:\n%s", want, got)
+	}
+}
+
+func TestFormatToolCallMarkdownFallsBackForInvalidGo(t *testing.T) {
+	t.Parallel()
+
+	input := FormatInput{Code: "package main\nfunc Run() {"}
+	want := "#### [tool call]\n" + MarkdownFencedBlock("go", input.Code)
 
 	got := FormatToolCallMarkdown(input)
 	if got != want {
