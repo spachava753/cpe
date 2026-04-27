@@ -131,7 +131,7 @@ class CPE(BaseInstalledAgent):
         return model
 
     def _run_env(self) -> dict[str, str]:
-        z_api_key = os.environ.get("Z_API_KEY")
+        z_api_key = self._extra_env.get("Z_API_KEY") or os.environ.get("Z_API_KEY")
         if not z_api_key:
             raise ValueError("Z_API_KEY must be set to run CPE with the Z.ai profile")
         return {"Z_API_KEY": z_api_key}
@@ -149,9 +149,11 @@ class CPE(BaseInstalledAgent):
         await self.exec_as_agent(
             environment,
             command=(
-                'export PATH="$HOME/go/bin:/usr/local/go/bin:$PATH"; '
+                "mkdir -p /logs/agent/command-0 && "
+                'export PATH="$HOME/go/bin:/usr/local/go/bin:$PATH" && '
                 f"cpe -n -G --skip-stdin -m {model_ref} {escaped_instruction} "
-                f"2>&1 | stdbuf -oL tee /logs/agent/{self._OUTPUT_FILENAME}"
+                "2>&1 </dev/null | stdbuf -oL tee "
+                f"/logs/agent/{self._OUTPUT_FILENAME} /logs/agent/command-0/stdout.txt"
             ),
             env=self._run_env(),
         )
