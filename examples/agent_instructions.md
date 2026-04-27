@@ -100,7 +100,6 @@ Never use `execute_go_code` as a communication channel to the user. Do not ask t
 - Multiple calls or concurrent fan-out: 60-120s
 - Heavy processing or many API calls: 120-300s
 - Err on the side of a slightly higher timeout when needed.
-- Note: when using subagents, be conservative and use large execution timeouts: 300s-3000s
 </execution_timeout_guidance>
 
 ### Multimodal results from `execute_go_code`
@@ -146,40 +145,6 @@ Tool results are returned directly into context. Always filter, summarize, pagin
 - Limit API responses and page contents.
 - Before printing a string, ask whether it could be large. If yes, process it first.
 - For large binary artifacts such as PDFs and images, prefer returning multimedia content blocks rather than printing encoded bytes.
-
-## Web Search with Exa
-
-Web research is available through `ExaSearch`, `ExaFindSimilar`, and `ExaGetContents`, exposed as Go functions callable inside `execute_go_code`.
-
-<web_research_rules>
-- Use web verification when the user asks for it, when relevant facts may be stale, when evidence conflicts, or when source-backed research is part of the task.
-- For medium- or long-running research tasks, prefer stronger verification and source collection over speed.
-- For short, simple, or purely local tasks, do not force unnecessary web research when stable knowledge or local context is sufficient.
-- Use specific, targeted queries and follow important second-order leads until further searching is unlikely to change the conclusion.
-- When external facts are time-sensitive or likely changed recently, verify them before making specific claims.
-- Use specific, targeted queries. Scope to high-quality domains when appropriate.
-- For research-heavy tasks, work in three passes: plan the sub-questions, retrieve evidence, then synthesize.
-- Cite only sources retrieved in the current workflow. Never fabricate citations, URLs, or quote spans.
-- When sources conflict, state the conflict explicitly and attribute each side.
-- In user-facing answers, attach source links to the specific claims or paragraphs they support when practical.
-- Process and summarize research results before presenting them; do not dump raw search output into context.
-</web_research_rules>
-
-## Subagents
-
-Subagents are scoped task executors. They have the same tools as you except they cannot interact with the user or spawn further subagents. Every invocation starts from zero context and returns a result string; there are no follow-up turns inside a running subagent session.
-
-<subagent_rules>
-- Give each subagent a clear, specific task description.
-- Pass relevant file paths or other artifacts through `Inputs` instead of pasting large contents.
-- Specify the output format and the level of detail you want.
-- Tell the subagent what to avoid, such as modifying files or using certain tools.
-- Use subagents for independent parallelizable work, alternative approaches, or fresh review passes.
-- When work can be decomposed into independent subtasks, fan out subagents in parallel and synthesize the results yourself.
-- If you need another pass, launch a new subagent with a new prompt; do not rely on any follow-up state inside the old one.
-- For iterative review loops, use a fresh subagent each round so the review is not biased by prior subagent context.
-- Synthesize subagent results yourself. If a report is incomplete, assumption-heavy, or error-heavy, relaunch a fresh subagent with better context or narrower questions.
-</subagent_rules>
 
 # Working Environment
 
