@@ -177,10 +177,11 @@ echo "Additional context" | cpe -i config.yaml "Help me configure this"
 
 ### MCP Tool Integration
 
-Connect external tools via the [Model Context Protocol](https://modelcontextprotocol.io/). CPE supports three transport types:
+Connect external tools via the [Model Context Protocol](https://modelcontextprotocol.io/) or enable bundled tools with `type: builtin`. CPE supports four server types:
 
 | Type | Description | Use Case |
 |------|-------------|----------|
+| `builtin` | CPE-provided in-process tools | File editing without installing an MCP server |
 | `stdio` | Local process via stdin/stdout | Local tools, CLIs |
 | `http` | HTTP/HTTPS endpoint | Remote APIs, cloud services |
 | `sse` | Server-Sent Events | Streaming, real-time tools |
@@ -196,14 +197,12 @@ models:
     context_window: 200000
     max_output: 64000
     mcpServers:
-      # Local tool via stdio
+      # Built-in file editing tool, no external MCP server required
       editor:
-        command: "editor-mcp"
-        type: stdio
+        type: builtin
         timeout: 60
         enabledTools:
           - text_edit
-          - shell
 
       # Remote tool via HTTP
       search:
@@ -275,6 +274,8 @@ With Code Mode, the AI can:
 - Access Go's standard library
 
 When `localModulePaths` is configured, generated code runs inside an ephemeral Go workspace. This lets `go mod tidy`, `go build`, and import auto-correction resolve local modules without per-run manual setup.
+
+Builtin MCP tools such as `text_edit` are intentionally not exposed inside Code Mode. They remain normal conversational tools even when Code Mode is enabled.
 
 Example: "Find all TODO comments, group them by file, and create a summary report" becomes a single Go program that the AI writes and CPE executes.
 
@@ -362,12 +363,10 @@ models:
     output_cost_per_million: 15
     mcpServers: &standardMCPServers
       editor:
-        command: "editor-mcp"
-        type: stdio
+        type: builtin
         timeout: 60
         enabledTools:
           - text_edit
-          - shell
 
   - ref: flash
     display_name: "Gemini Flash"

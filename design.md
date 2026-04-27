@@ -33,7 +33,7 @@ CPE should aim to be:
 - **CLI-first**: the primary UX is a local terminal tool used interactively and in scripts.
 - **layered**: package boundaries should reflect ownership and keep dependencies flowing inward toward runtime policy rather than outward toward framework details.
 - **provider-agnostic**: support for model providers should share a common runtime model where possible.
-- **tool-composable**: MCP tools and built-in tools should be usable both directly and through higher-level compositions such as code mode.
+- **tool-composable**: MCP tools should be usable directly and through higher-level compositions such as code mode, while built-in tools may stay on the direct conversational path when their behavior should not be embedded into generated code.
 - **local-first**: conversation storage, configuration, and most execution state should remain local by default.
 - **privacy-conscious**: users must be able to run without persistence when needed.
 - **testable**: command orchestration and runtime assembly should be testable with narrow interfaces and explicit dependencies.
@@ -275,6 +275,7 @@ CPE acts as an MCP client during normal runs.
 The client integration is responsible for:
 
 - creating transports for `stdio`, `http`, and `sse` servers;
+- starting CPE-provided `builtin` servers in-process;
 - applying per-server timeouts;
 - applying static headers or environment variables where appropriate;
 - connecting to configured servers;
@@ -287,6 +288,12 @@ The client integration is responsible for:
 MCP server configuration is shared by config loading and MCP runtime code. Those are different concerns.
 
 If `internal/config` imported `internal/mcp`, the config layer would depend on runtime transport implementation details. That was part of the original architectural muddiness. `internal/mcpconfig` exists to keep the shared schema neutral while allowing `internal/mcp` to own actual transport behavior.
+
+### Builtin servers
+
+`type: builtin` servers are implemented by CPE and connected through the same MCP client path as external servers. The initial builtin server exposes `text_edit`, so users can create and modify files without installing an editor MCP server.
+
+Builtin tools are normal conversational tools. They are intentionally excluded from code mode and are registered directly even when code mode is enabled.
 
 ### Tool filtering
 

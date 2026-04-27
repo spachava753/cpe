@@ -379,6 +379,72 @@ func canonicalPathForValidator(path string) string {
 	return cleaned
 }
 
+func TestValidateWithConfigPath_BuiltinMCPServerAllowsToolFilters(t *testing.T) {
+	t.Parallel()
+
+	cfg := rawConfigWithCodeMode(CodeModeConfig{})
+	cfg.Models[0].CodeMode = nil
+	cfg.Models[0].MCPServers = map[string]mcpconfig.ServerConfig{
+		"editor": {Type: "builtin", Timeout: 30, EnabledTools: []string{"text_edit"}},
+	}
+
+	if err := validateSelectedProfile(cfg.Models[0], ""); err != nil {
+		t.Fatalf("expected valid builtin server, got error: %v", err)
+	}
+}
+
+func TestValidateWithConfigPath_BuiltinMCPServerRejectsExternalFields(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		server mcpconfig.ServerConfig
+		want   string
+	}{
+		{
+			name:   "command",
+			server: mcpconfig.ServerConfig{Type: "builtin", Command: "editor-mcp"},
+			want:   "mcpServers.editor.command: not supported for type \"builtin\"",
+		},
+		{
+			name:   "args",
+			server: mcpconfig.ServerConfig{Type: "builtin", Args: []string{"--flag"}},
+			want:   "mcpServers.editor.args: not supported for type \"builtin\"",
+		},
+		{
+			name:   "url",
+			server: mcpconfig.ServerConfig{Type: "builtin", URL: "http://example.com/mcp"},
+			want:   "mcpServers.editor.url: not supported for type \"builtin\"",
+		},
+		{
+			name:   "headers",
+			server: mcpconfig.ServerConfig{Type: "builtin", Headers: map[string]string{"X-Test": "1"}},
+			want:   "mcpServers.editor.headers: not supported for type \"builtin\"",
+		},
+		{
+			name:   "env",
+			server: mcpconfig.ServerConfig{Type: "builtin", Env: map[string]string{"KEY": "value"}},
+			want:   "mcpServers.editor.env: not supported for type \"builtin\"",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := rawConfigWithCodeMode(CodeModeConfig{})
+			cfg.Models[0].CodeMode = nil
+			cfg.Models[0].MCPServers = map[string]mcpconfig.ServerConfig{"editor": tt.server}
+
+			err := validateSelectedProfile(cfg.Models[0], "")
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if err.Error() != tt.want {
+				t.Fatalf("unexpected error: got %q want %q", err.Error(), tt.want)
+			}
+		})
+	}
+}
+
 func TestValidateWithConfigPath_MCPServerURLRequiresExplicitType(t *testing.T) {
 	t.Parallel()
 

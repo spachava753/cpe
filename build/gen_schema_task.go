@@ -29,6 +29,7 @@ var GenSchema = goyek.Define(goyek.Task{
 		schema.Description = "JSON Schema for CPE (Chat-based Programming Editor) configuration files"
 		schema.Version = "https://json-schema.org/draft/2020-12/schema"
 		schema.ID = "https://raw.githubusercontent.com/spachava753/cpe/refs/heads/main/schema/cpe-config-schema.json"
+		addServerConfigSemanticSchema(schema)
 
 		schemaJSON, err := json.MarshalIndent(schema, "", "  ")
 		if err != nil {
@@ -61,6 +62,60 @@ var GenSchema = goyek.Define(goyek.Task{
 		fmt.Printf("Generated schema: %s\n", schemaPath)
 	},
 })
+
+func addServerConfigSemanticSchema(schema *jsonschema.Schema) {
+	serverConfig := schema.Definitions["ServerConfig"]
+	if serverConfig == nil {
+		return
+	}
+
+	builtinType := jsonschema.NewProperties()
+	builtinType.Set("type", &jsonschema.Schema{Const: "builtin"})
+
+	serverConfig.AllOf = append(serverConfig.AllOf, &jsonschema.Schema{
+		If: &jsonschema.Schema{
+			Properties: builtinType,
+			Required:   []string{"type"},
+		},
+		Then: &jsonschema.Schema{
+			Not: &jsonschema.Schema{
+				AnyOf: nonEmptyExternalMCPFields(),
+			},
+		},
+	})
+}
+
+func nonEmptyExternalMCPFields() []*jsonschema.Schema {
+	return []*jsonschema.Schema{
+		nonEmptyStringProperty("command"),
+		nonEmptyArrayProperty("args"),
+		nonEmptyStringProperty("url"),
+		nonEmptyObjectProperty("headers"),
+		nonEmptyObjectProperty("env"),
+	}
+}
+
+func nonEmptyStringProperty(field string) *jsonschema.Schema {
+	properties := jsonschema.NewProperties()
+	properties.Set(field, &jsonschema.Schema{MinLength: uint64Ptr(1)})
+	return &jsonschema.Schema{Required: []string{field}, Properties: properties}
+}
+
+func nonEmptyArrayProperty(field string) *jsonschema.Schema {
+	properties := jsonschema.NewProperties()
+	properties.Set(field, &jsonschema.Schema{MinItems: uint64Ptr(1)})
+	return &jsonschema.Schema{Required: []string{field}, Properties: properties}
+}
+
+func nonEmptyObjectProperty(field string) *jsonschema.Schema {
+	properties := jsonschema.NewProperties()
+	properties.Set(field, &jsonschema.Schema{MinProperties: uint64Ptr(1)})
+	return &jsonschema.Schema{Required: []string{field}, Properties: properties}
+}
+
+func uint64Ptr(v uint64) *uint64 {
+	return &v
+}
 
 // findModuleRoot walks parent directories from start until it finds go.mod.
 // If none is found, it returns the filesystem root reached by the search.

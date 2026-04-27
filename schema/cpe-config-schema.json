@@ -433,6 +433,76 @@
       "type": "object"
     },
     "ServerConfig": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "builtin"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "command": {
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "command"
+                  ]
+                },
+                {
+                  "properties": {
+                    "args": {
+                      "minItems": 1
+                    }
+                  },
+                  "required": [
+                    "args"
+                  ]
+                },
+                {
+                  "properties": {
+                    "url": {
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "url"
+                  ]
+                },
+                {
+                  "properties": {
+                    "headers": {
+                      "minProperties": 1
+                    }
+                  },
+                  "required": [
+                    "headers"
+                  ]
+                },
+                {
+                  "properties": {
+                    "env": {
+                      "minProperties": 1
+                    }
+                  },
+                  "required": [
+                    "env"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ],
       "properties": {
         "command": {
           "type": "string"
@@ -444,7 +514,13 @@
           "type": "array"
         },
         "type": {
-          "type": "string"
+          "type": "string",
+          "enum": [
+            "stdio",
+            "sse",
+            "http",
+            "builtin"
+          ]
         },
         "url": {
           "type": "string"

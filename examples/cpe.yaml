@@ -125,8 +125,7 @@ models:
       maxGenerationTokens: 4096
     mcpServers: &standardMCPServers
       editor:
-        command: "editor-mcp"
-        type: stdio
+        type: builtin
         timeout: 60
         enabledTools:
           - text_edit

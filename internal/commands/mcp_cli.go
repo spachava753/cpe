@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"os"
-	"time"
 
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/render"
@@ -42,7 +41,6 @@ type MCPInfoFromConfigOptions struct {
 	ModelRef   string
 	ServerName string
 	Writer     io.Writer
-	Timeout    time.Duration
 }
 
 // MCPInfoFromConfig resolves config and displays server info.
@@ -61,7 +59,6 @@ func MCPInfoFromConfig(ctx context.Context, opts MCPInfoFromConfigOptions) error
 		MCPServers: cfg.MCPServers,
 		ServerName: opts.ServerName,
 		Writer:     writer,
-		Timeout:    opts.Timeout,
 	})
 }
 

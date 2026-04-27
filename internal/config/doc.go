@@ -25,6 +25,7 @@ codeMode.localModulePaths.
 
 MCP server connection settings are represented via the dependency-neutral
 `internal/mcpconfig` schema package so config loading does not depend on MCP
-runtime implementation packages.
+runtime implementation packages. `type: builtin` selects a CPE-provided server
+while preserving the same per-profile MCP filtering and duplicate-name rules.
 */
 package config

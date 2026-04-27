@@ -102,22 +102,43 @@ func validateModelAuth(m ModelConfig) error {
 func validateMCPServerConfigs(servers map[string]mcpconfig.ServerConfig, fieldPrefix string) error {
 	for name, server := range servers {
 		field := fieldPrefix + "." + name
-		if server.Type == "" {
+		switch server.Type {
+		case "":
 			if server.URL != "" {
 				return fmt.Errorf("%s.type: required when url is set; use \"http\" or \"sse\"", field)
+			}
+			if server.Command == "" {
+				return fmt.Errorf("%s.command: required for type \"stdio\"", field)
 			}
 			if len(server.Headers) > 0 {
 				return fmt.Errorf("%s.headers: only supported for type \"http\" or \"sse\"", field)
 			}
-			continue
-		}
-
-		if server.Type == "http" || server.Type == "sse" {
+		case "stdio":
+			if server.Command == "" {
+				return fmt.Errorf("%s.command: required for type \"stdio\"", field)
+			}
+		case "http", "sse":
 			if server.Command != "" {
 				return fmt.Errorf("%s.command: only supported for type \"stdio\"", field)
 			}
 			if len(server.Args) > 0 {
 				return fmt.Errorf("%s.args: only supported for type \"stdio\"", field)
+			}
+		case "builtin":
+			if server.Command != "" {
+				return fmt.Errorf("%s.command: not supported for type \"builtin\"", field)
+			}
+			if len(server.Args) > 0 {
+				return fmt.Errorf("%s.args: not supported for type \"builtin\"", field)
+			}
+			if server.URL != "" {
+				return fmt.Errorf("%s.url: not supported for type \"builtin\"", field)
+			}
+			if len(server.Headers) > 0 {
+				return fmt.Errorf("%s.headers: not supported for type \"builtin\"", field)
+			}
+			if len(server.Env) > 0 {
+				return fmt.Errorf("%s.env: not supported for type \"builtin\"", field)
 			}
 		}
 	}

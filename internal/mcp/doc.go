@@ -3,6 +3,7 @@ Package mcp provides MCP client integration for CPE runs.
 
 Responsibilities:
   - build transports (stdio/http/sse) from configuration;
+  - start CPE-provided builtin servers in-process;
   - connect to configured servers and fetch tool catalogs;
   - apply per-server tool filtering (enabledTools/disabledTools);
   - detect duplicate tool names across servers;

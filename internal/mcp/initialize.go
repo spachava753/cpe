@@ -12,6 +12,21 @@ import (
 	"github.com/spachava753/cpe/internal/mcpconfig"
 )
 
+// ConnectServer establishes one MCP connection using the configured transport or
+// builtin-server implementation. It does not list tools. The returned connection
+// must be closed by the caller.
+func ConnectServer(ctx context.Context, serverName string, config mcpconfig.ServerConfig) (*MCPConn, error) {
+	client := NewClient()
+	return connectServerSession(ctx, client, serverName, config)
+}
+
+// ConnectAndListServer establishes one MCP connection, lists its tools, and
+// applies per-server filtering. The returned connection must be closed by the caller.
+func ConnectAndListServer(ctx context.Context, serverName string, config mcpconfig.ServerConfig) (*MCPConn, error) {
+	client := NewClient()
+	return connectToServer(ctx, client, serverName, config)
+}
+
 // InitializeConnections establishes sessions to all configured MCP servers,
 // lists tools, applies per-server filtering, and validates cross-server tool name
 // uniqueness after filtering.
@@ -52,6 +67,9 @@ func InitializeConnections(
 		for _, tool := range conn.Tools {
 			if existingServer, exists := toolOwners[tool.Name]; exists {
 				_ = conn.ClientSession.Close()
+				if conn.close != nil {
+					_ = conn.close()
+				}
 				state.Close()
 				return nil, fmt.Errorf("duplicate tool name %q: found in both %q and %q",
 					tool.Name, existingServer, serverName)
@@ -66,7 +84,7 @@ func InitializeConnections(
 	return state, nil
 }
 
-// connectToServer creates one transport/session pair, fetches tools, and applies
+// connectToServer creates one connection, fetches tools, and applies
 // enabled/disabled filtering for that server.
 func connectToServer(
 	ctx context.Context,
@@ -74,6 +92,27 @@ func connectToServer(
 	serverName string,
 	config mcpconfig.ServerConfig,
 ) (*MCPConn, error) {
+	conn, err := connectServerSession(ctx, client, serverName, config)
+	if err != nil {
+		return nil, err
+	}
+	if err := populateConnectionTools(ctx, conn); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return conn, nil
+}
+
+func connectServerSession(
+	ctx context.Context,
+	client *mcpsdk.Client,
+	serverName string,
+	config mcpconfig.ServerConfig,
+) (*MCPConn, error) {
+	if EffectiveServerType(config) == builtinServerType {
+		return connectBuiltinServerSession(ctx, client, serverName, config)
+	}
+
 	transport, err := CreateTransport(ctx, config)
 	if err != nil {
 		return nil, fmt.Errorf("creating transport: %w", err)
@@ -87,29 +126,35 @@ func connectToServer(
 		return nil, fmt.Errorf("connecting: %w", err)
 	}
 
-	// Fetch tools
-	var allTools []*mcpsdk.Tool
-	for tool, err := range session.Tools(operationCtx, nil) {
-		if err != nil {
-			session.Close()
-			return nil, fmt.Errorf("listing tools: %w", err)
-		}
-		allTools = append(allTools, tool)
-	}
-
-	// Apply filtering
-	filteredTools, filteredOut := FilterMcpTools(allTools, config)
-	if len(filteredOut) > 0 {
-		slog.Info("MCP tools filtered",
-			"server", serverName,
-			"filtered_count", len(filteredOut),
-			"filtered", strings.Join(filteredOut, ", "))
-	}
-
 	return &MCPConn{
 		ServerName:    serverName,
 		Config:        config,
 		ClientSession: session,
-		Tools:         filteredTools,
 	}, nil
+}
+
+func populateConnectionTools(ctx context.Context, conn *MCPConn) error {
+	operationCtx, cancel := WithServerTimeout(ctx, conn.Config)
+	defer cancel()
+
+	var allTools []*mcpsdk.Tool
+	for tool, err := range conn.ClientSession.Tools(operationCtx, nil) {
+		if err != nil {
+			return fmt.Errorf("listing tools: %w", err)
+		}
+		allTools = append(allTools, tool)
+	}
+
+	filteredTools, filteredOut := FilterMcpTools(allTools, conn.Config)
+	if len(filteredOut) > 0 {
+		slog.Info("MCP tools filtered",
+			"server", conn.ServerName,
+			"filtered_count", len(filteredOut),
+			"filtered", strings.Join(filteredOut, ", "))
+	}
+
+	conn.Tools = filteredTools
+	conn.AllTools = allTools
+	conn.FilteredOut = filteredOut
+	return nil
 }
