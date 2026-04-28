@@ -39,6 +39,38 @@ const (
 	//
 	// The value is a time.Time and is populated by read APIs.
 	MessageCreatedAtKey = "cpe_message_created_at"
+
+	// AgentMetadataModelRefKey is the gai.Message.ExtraFields key for the CPE
+	// model profile reference used to generate an assistant message.
+	AgentMetadataModelRefKey = "cpe_agent_model_ref"
+
+	// AgentMetadataModelIDKey is the gai.Message.ExtraFields key for the provider
+	// model identifier used to generate an assistant message.
+	AgentMetadataModelIDKey = "cpe_agent_model_id"
+
+	// AgentMetadataModelTypeKey is the gai.Message.ExtraFields key for the model
+	// provider/type used to generate an assistant message.
+	AgentMetadataModelTypeKey = "cpe_agent_model_type"
+
+	// AgentMetadataModelDisplayNameKey is the gai.Message.ExtraFields key for the
+	// configured display name of the model used to generate an assistant message.
+	AgentMetadataModelDisplayNameKey = "cpe_agent_model_display_name"
+
+	// AgentMetadataInputTokensKey is the gai.Message.ExtraFields key for prompt
+	// tokens reported by the model provider for an assistant message.
+	AgentMetadataInputTokensKey = "cpe_agent_input_tokens"
+
+	// AgentMetadataOutputTokensKey is the gai.Message.ExtraFields key for
+	// completion tokens reported by the model provider for an assistant message.
+	AgentMetadataOutputTokensKey = "cpe_agent_output_tokens"
+
+	// AgentMetadataCacheReadTokensKey is the gai.Message.ExtraFields key for cache
+	// read tokens reported by the model provider for an assistant message.
+	AgentMetadataCacheReadTokensKey = "cpe_agent_cache_read_tokens"
+
+	// AgentMetadataCacheWriteTokensKey is the gai.Message.ExtraFields key for
+	// cache write tokens reported by the model provider for an assistant message.
+	AgentMetadataCacheWriteTokensKey = "cpe_agent_cache_write_tokens"
 )
 
 // DialogSaver persists a dialog (a sequence of related messages) to storage.
@@ -68,6 +100,9 @@ type DialogSaver interface {
 	//   - On error, the iterator yields one non-nil error and then stops.
 	//   - Existing messages are yielded without rewriting their content; newly
 	//     inserted messages are yielded with storage IDs populated in ExtraFields.
+	//   - JSON-compatible message-level ExtraFields are persisted for newly
+	//     inserted messages; storage-owned keys are reconstructed from dedicated
+	//     columns on reads.
 	//
 	// Example — saving a brand-new dialog:
 	//

@@ -11,6 +11,7 @@ from harbor.models.agent.context import AgentContext
 from harbor.models.trajectories import (
     Agent,
     FinalMetrics,
+    Metrics,
     Observation,
     ObservationResult,
     Step,
@@ -151,10 +152,14 @@ class CPE(BaseInstalledAgent):
             self.logger.debug(f"Failed to write trajectory file {trajectory_path}: {exc}")
 
         if trajectory.final_metrics:
-            context.n_input_tokens = trajectory.final_metrics.total_prompt_tokens
-            context.n_cache_tokens = trajectory.final_metrics.total_cached_tokens
-            context.n_output_tokens = trajectory.final_metrics.total_completion_tokens
-            context.cost_usd = trajectory.final_metrics.total_cost_usd
+            if trajectory.final_metrics.total_prompt_tokens is not None:
+                context.n_input_tokens = trajectory.final_metrics.total_prompt_tokens
+            if trajectory.final_metrics.total_cached_tokens is not None:
+                context.n_cache_tokens = trajectory.final_metrics.total_cached_tokens
+            if trajectory.final_metrics.total_completion_tokens is not None:
+                context.n_output_tokens = trajectory.final_metrics.total_completion_tokens
+            if trajectory.final_metrics.total_cost_usd is not None:
+                context.cost_usd = trajectory.final_metrics.total_cost_usd
 
     def _convert_conversation_db_to_trajectory(self, db_path: Path) -> Trajectory | None:
         messages = self._read_cpe_messages(db_path)
@@ -218,27 +223,53 @@ class CPE(BaseInstalledAgent):
                 model_name=self.model_name,
             ),
             steps=steps,
-            final_metrics=FinalMetrics(total_steps=len(steps)),
+            final_metrics=self._final_metrics_from_steps(steps),
         )
 
     def _read_cpe_messages(self, db_path: Path) -> list[dict[str, Any]]:
         rows: list[sqlite3.Row]
         with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
             conn.row_factory = sqlite3.Row
+            message_columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(messages)").fetchall()
+            }
+            select_exprs = [
+                "m.id AS message_id",
+                "m.role",
+                "m.tool_result_error",
+                "m.created_at AS message_created_at",
+            ]
+            for column in (
+                "message_extra_fields",
+                "model_ref",
+                "model_id",
+                "model_type",
+                "model_display_name",
+                "input_tokens",
+                "output_tokens",
+                "cache_read_tokens",
+                "cache_write_tokens",
+            ):
+                if column in message_columns:
+                    select_exprs.append(f"m.{column} AS {column}")
+                else:
+                    select_exprs.append(f"NULL AS {column}")
+            select_exprs.extend(
+                [
+                    "b.id AS block_id",
+                    "b.block_type",
+                    "b.modality_type",
+                    "b.mime_type",
+                    "b.content",
+                    "b.extra_fields",
+                    "b.sequence_order",
+                ]
+            )
             rows = conn.execute(
-                """
+                f"""
                 SELECT
-                    m.id AS message_id,
-                    m.role,
-                    m.tool_result_error,
-                    m.created_at AS message_created_at,
-                    b.id AS block_id,
-                    b.block_type,
-                    b.modality_type,
-                    b.mime_type,
-                    b.content,
-                    b.extra_fields,
-                    b.sequence_order
+                    {", ".join(select_exprs)}
                 FROM messages m
                 LEFT JOIN blocks b ON b.message_id = m.id
                 ORDER BY m.created_at ASC, m.rowid ASC, b.sequence_order ASC
@@ -256,6 +287,15 @@ class CPE(BaseInstalledAgent):
                     "role": row["role"],
                     "created_at": self._normalize_timestamp(row["message_created_at"]),
                     "tool_result_error": bool(row["tool_result_error"]),
+                    "extra_fields": self._decode_extra_fields(row["message_extra_fields"]),
+                    "model_ref": row["model_ref"],
+                    "model_id": row["model_id"],
+                    "model_type": row["model_type"],
+                    "model_display_name": row["model_display_name"],
+                    "input_tokens": self._int_or_none(row["input_tokens"]),
+                    "output_tokens": self._int_or_none(row["output_tokens"]),
+                    "cache_read_tokens": self._int_or_none(row["cache_read_tokens"]),
+                    "cache_write_tokens": self._int_or_none(row["cache_write_tokens"]),
                     "blocks": [],
                 }
                 by_id[message_id] = message
@@ -300,6 +340,15 @@ class CPE(BaseInstalledAgent):
         return decoded if isinstance(decoded, dict) else {"value": decoded}
 
     @staticmethod
+    def _int_or_none(value: Any) -> int | None:
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
     def _block_text(block: dict[str, Any]) -> str:
         content = str(block.get("content") or "")
         if block.get("block_type") == "tool_call":
@@ -322,6 +371,9 @@ class CPE(BaseInstalledAgent):
         reasoning_parts: list[str] = []
         tool_calls: list[ToolCall] = []
         extra: dict[str, Any] = {"cpe_message_id": message["id"]}
+        for key in ("model_ref", "model_type", "model_display_name"):
+            if message.get(key):
+                extra[key] = message[key]
 
         for block in blocks:
             block_type = block.get("block_type")
@@ -341,13 +393,82 @@ class CPE(BaseInstalledAgent):
             step_id=step_id,
             timestamp=timestamp,
             source="agent",
-            model_name=self.model_name,
+            model_name=message.get("model_id") or self.model_name,
             message="\n".join(text_parts).strip() or "(tool use)",
             reasoning_content="\n\n".join(reasoning_parts).strip() or None,
             tool_calls=tool_calls or None,
+            metrics=self._metrics_from_message(message),
             extra=extra,
         )
         return step
+
+    @staticmethod
+    def _metrics_from_message(message: dict[str, Any]) -> Metrics | None:
+        prompt_tokens = message.get("input_tokens")
+        completion_tokens = message.get("output_tokens")
+        cached_tokens = message.get("cache_read_tokens")
+        cache_write_tokens = message.get("cache_write_tokens")
+        if all(
+            value is None
+            for value in (
+                prompt_tokens,
+                completion_tokens,
+                cached_tokens,
+                cache_write_tokens,
+            )
+        ):
+            return None
+
+        extra = None
+        if cache_write_tokens is not None:
+            extra = {"cache_write_tokens": cache_write_tokens}
+        return Metrics(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            cached_tokens=cached_tokens,
+            extra=extra,
+        )
+
+    @staticmethod
+    def _final_metrics_from_steps(steps: list[Step]) -> FinalMetrics:
+        total_prompt_tokens = 0
+        total_completion_tokens = 0
+        total_cached_tokens = 0
+        total_cache_write_tokens = 0
+        saw_prompt_tokens = False
+        saw_completion_tokens = False
+        saw_cached_tokens = False
+        saw_cache_write_tokens = False
+
+        for step in steps:
+            if step.metrics is None:
+                continue
+            if step.metrics.prompt_tokens is not None:
+                total_prompt_tokens += step.metrics.prompt_tokens
+                saw_prompt_tokens = True
+            if step.metrics.completion_tokens is not None:
+                total_completion_tokens += step.metrics.completion_tokens
+                saw_completion_tokens = True
+            if step.metrics.cached_tokens is not None:
+                total_cached_tokens += step.metrics.cached_tokens
+                saw_cached_tokens = True
+            if step.metrics.extra and step.metrics.extra.get("cache_write_tokens") is not None:
+                total_cache_write_tokens += int(step.metrics.extra["cache_write_tokens"])
+                saw_cache_write_tokens = True
+
+        extra = None
+        if saw_cache_write_tokens:
+            extra = {"total_cache_write_tokens": total_cache_write_tokens}
+
+        return FinalMetrics(
+            total_prompt_tokens=total_prompt_tokens if saw_prompt_tokens else None,
+            total_completion_tokens=(
+                total_completion_tokens if saw_completion_tokens else None
+            ),
+            total_cached_tokens=total_cached_tokens if saw_cached_tokens else None,
+            total_steps=len(steps),
+            extra=extra,
+        )
 
     @staticmethod
     def _tool_call_from_block(block: dict[str, Any]) -> ToolCall | None:

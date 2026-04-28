@@ -134,6 +134,13 @@ func (m *MemDB) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter
 			}
 
 			// New message — save it.
+			normalizedMsg, normalizeErr := normalizeMessageExtraFieldsForMemDB(msg)
+			if normalizeErr != nil {
+				rollback()
+				yield(gai.Message{}, normalizeErr)
+				return
+			}
+
 			id := m.generateID()
 			compactionParentID := ""
 			if prevID == "" {
@@ -146,7 +153,7 @@ func (m *MemDB) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter
 				seq:                m.nextSeq,
 				parentID:           prevID,
 				compactionParentID: compactionParentID,
-				message:            msg,
+				message:            normalizedMsg,
 				createdAt:          time.Now(),
 			}
 
@@ -321,6 +328,24 @@ func cloneExtraFieldsMap(extra map[string]any) map[string]any {
 	return cloned
 }
 
+func normalizeMessageExtraFieldsForMemDB(msg gai.Message) (gai.Message, error) {
+	encoded, err := encodeMessageExtraFields(msg.ExtraFields)
+	if err != nil {
+		return gai.Message{}, err
+	}
+	normalized, err := decodeMessageExtraFields(encoded)
+	if err != nil {
+		return gai.Message{}, err
+	}
+	for key, value := range msg.ExtraFields {
+		if _, ok := messageColumnExtraFieldKeys[key]; ok {
+			normalized[key] = value
+		}
+	}
+	msg.ExtraFields = normalized
+	return msg, nil
+}
+
 func cloneBlocks(blocks []gai.Block) []gai.Block {
 	if len(blocks) == 0 {
 		return nil
@@ -341,8 +366,15 @@ func (m *MemDB) nodeToMessage(node *memNode) gai.Message {
 	msg := node.message
 	msg.Blocks = cloneBlocks(msg.Blocks)
 
-	// Create a fresh ExtraFields map with storage metadata.
-	extra := make(map[string]any)
+	// Start with caller-supplied message metadata, then overlay storage-owned keys.
+	extra := cloneExtraFieldsMap(node.message.ExtraFields)
+	if extra == nil {
+		extra = make(map[string]any)
+	}
+	delete(extra, MessageIDKey)
+	delete(extra, MessageParentIDKey)
+	delete(extra, MessageCompactionParentIDKey)
+	delete(extra, MessageCreatedAtKey)
 	extra[MessageIDKey] = node.id
 	extra[MessageCreatedAtKey] = node.createdAt
 	if node.parentID != "" {

@@ -333,6 +333,38 @@ func GetMessageID(msg gai.Message) string {
 	return id
 }
 
+func (r *Runtime) attachAgentMetadata(msg *gai.Message, metadata gai.Metadata) {
+	if msg.ExtraFields == nil {
+		msg.ExtraFields = make(map[string]any)
+	}
+	if r.cfg.Model.Ref != "" {
+		msg.ExtraFields[storage.AgentMetadataModelRefKey] = r.cfg.Model.Ref
+	}
+	if r.cfg.Model.ID != "" {
+		msg.ExtraFields[storage.AgentMetadataModelIDKey] = r.cfg.Model.ID
+	}
+	if r.cfg.Model.Type != "" {
+		msg.ExtraFields[storage.AgentMetadataModelTypeKey] = r.cfg.Model.Type
+	}
+	if r.cfg.Model.DisplayName != "" {
+		msg.ExtraFields[storage.AgentMetadataModelDisplayNameKey] = r.cfg.Model.DisplayName
+	}
+
+	metrics := extractTokenUsageMetrics(metadata)
+	if metrics.HasInputTokens {
+		msg.ExtraFields[storage.AgentMetadataInputTokensKey] = int64(metrics.InputTokens)
+	}
+	if metrics.HasOutputTokens {
+		msg.ExtraFields[storage.AgentMetadataOutputTokensKey] = int64(metrics.OutputTokens)
+	}
+	if metrics.HasCacheRead {
+		msg.ExtraFields[storage.AgentMetadataCacheReadTokensKey] = int64(metrics.CacheReadTokens)
+	}
+	if metrics.HasCacheWrite {
+		msg.ExtraFields[storage.AgentMetadataCacheWriteTokensKey] = int64(metrics.CacheWriteTokens)
+	}
+}
+
 type tokenUsageMetrics struct {
 	InputTokens      int
 	HasInputTokens   bool

@@ -16,6 +16,8 @@ Message metadata contract:
 returned gai.Message values include storage metadata in ExtraFields using
 MessageIDKey, MessageParentIDKey, MessageCompactionParentIDKey, and
 MessageCreatedAtKey to keep persistence details available without leaking
-DB-specific ports.
+DB-specific ports. JSON-compatible message-level ExtraFields are persisted
+across save/load; known agent metadata keys are also stored in typed SQLite
+columns for lightweight analysis.
 */
 package storage

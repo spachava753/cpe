@@ -6,6 +6,15 @@ CREATE TABLE IF NOT EXISTS messages
     compaction_parent_id TEXT,
     role                 TEXT    NOT NULL,
     tool_result_error    BOOLEAN NOT NULL DEFAULT 0,
+    message_extra_fields TEXT,
+    model_ref            TEXT,
+    model_id             TEXT,
+    model_type           TEXT,
+    model_display_name   TEXT,
+    input_tokens         INTEGER,
+    output_tokens        INTEGER,
+    cache_read_tokens    INTEGER,
+    cache_write_tokens   INTEGER,
     created_at           TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (parent_id) REFERENCES messages (id) ON DELETE RESTRICT
 );

@@ -2015,22 +2015,49 @@ func TestBlockCascadeDeleteViaRawSQL(t *testing.T) {
 	}
 }
 
-// TestMessageExtraFields verifies that only known keys stored in dedicated
-// columns are persisted and returned; arbitrary custom keys are dropped.
+// TestMessageExtraFields verifies that message-level ExtraFields round-trip and
+// that known runtime metadata fields are also written to typed message columns.
 func TestMessageExtraFields(t *testing.T) {
-	t.Run("known keys returned, custom keys dropped", func(t *testing.T) {
-		// Arbitrary message-level ExtraFields are intentionally not persisted.
-		// Only known keys stored as dedicated columns are returned on retrieval.
-		db, _ := newTestDB(t)
+	t.Run("custom and agent metadata round trip", func(t *testing.T) {
+		db, rawDB := newTestDB(t)
 		ctx := context.Background()
 
-		msg := makeTextMessage(gai.User, "test")
+		msg := makeTextMessage(gai.Assistant, "test")
 		msg.ExtraFields = map[string]any{
-			"custom_key": "custom_value",
+			"custom_key":                     "custom_value",
+			"custom_number":                  42,
+			AgentMetadataModelRefKey:         "glm",
+			AgentMetadataModelIDKey:          "glm-5.1",
+			AgentMetadataModelTypeKey:        "zai",
+			AgentMetadataModelDisplayNameKey: "GLM 5.1",
+			AgentMetadataInputTokensKey:      int64(11),
+			AgentMetadataOutputTokensKey:     7,
+			AgentMetadataCacheReadTokensKey:  uint(3),
+			AgentMetadataCacheWriteTokensKey: float64(2),
 		}
 
 		saved := saveDialog(t, db, ctx, []gai.Message{msg})
 		savedID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
+
+		var modelRef string
+		var inputTokens int64
+		var messageExtraFields sql.NullString
+		if err := rawDB.QueryRowContext(ctx, `
+			SELECT model_ref, input_tokens, message_extra_fields
+			FROM messages
+			WHERE id = ?
+		`, savedID).Scan(&modelRef, &inputTokens, &messageExtraFields); err != nil {
+			t.Fatalf("query message metadata columns: %v", err)
+		}
+		if modelRef != "glm" {
+			t.Fatalf("model_ref = %q, want glm", modelRef)
+		}
+		if inputTokens != 11 {
+			t.Fatalf("input_tokens = %d, want 11", inputTokens)
+		}
+		if !messageExtraFields.Valid || messageExtraFields.String == "" {
+			t.Fatal("expected custom message ExtraFields JSON to be stored")
+		}
 
 		msgs, err := db.GetMessages(ctx, []string{savedID})
 		if err != nil {
@@ -2043,12 +2070,53 @@ func TestMessageExtraFields(t *testing.T) {
 			if _, ok := m.ExtraFields[MessageCreatedAtKey]; !ok {
 				t.Error("expected MessageCreatedAtKey")
 			}
-			if _, ok := m.ExtraFields["custom_key"]; ok {
-				t.Error("custom_key should not be persisted")
+			if got := m.ExtraFields["custom_key"]; got != "custom_value" {
+				t.Fatalf("custom_key = %#v, want custom_value", got)
+			}
+			if got := m.ExtraFields["custom_number"]; got != float64(42) {
+				t.Fatalf("custom_number = %#v, want 42 as JSON number", got)
+			}
+			if got := m.ExtraFields[AgentMetadataModelIDKey]; got != "glm-5.1" {
+				t.Fatalf("model id = %#v, want glm-5.1", got)
+			}
+			if got := m.ExtraFields[AgentMetadataInputTokensKey]; got != int64(11) {
+				t.Fatalf("input tokens = %#v, want 11", got)
+			}
+			if got := m.ExtraFields[AgentMetadataOutputTokensKey]; got != int64(7) {
+				t.Fatalf("output tokens = %#v, want 7", got)
+			}
+			if got := m.ExtraFields[AgentMetadataCacheReadTokensKey]; got != int64(3) {
+				t.Fatalf("cache read tokens = %#v, want 3", got)
+			}
+			if got := m.ExtraFields[AgentMetadataCacheWriteTokensKey]; got != int64(2) {
+				t.Fatalf("cache write tokens = %#v, want 2", got)
 			}
 		}
 	})
 
+	t.Run("invalid agent metadata is rejected", func(t *testing.T) {
+		db, _ := newTestDB(t)
+		ctx := context.Background()
+
+		msg := makeTextMessage(gai.Assistant, "test")
+		msg.ExtraFields = map[string]any{
+			AgentMetadataInputTokensKey: "not an integer",
+		}
+
+		expectSaveDialogError(t, db, ctx, []gai.Message{msg})
+	})
+
+	t.Run("non JSON message ExtraFields are rejected", func(t *testing.T) {
+		db, _ := newTestDB(t)
+		ctx := context.Background()
+
+		msg := makeTextMessage(gai.Assistant, "test")
+		msg.ExtraFields = map[string]any{
+			"custom_key": make(chan int),
+		}
+
+		expectSaveDialogError(t, db, ctx, []gai.Message{msg})
+	})
 }
 
 // TestSaveDialog_InterleavedExistingAndNew verifies that SaveDialog detects parent

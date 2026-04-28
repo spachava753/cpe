@@ -27,5 +27,14 @@ type Message struct {
 	CompactionParentID sql.NullString `json:"compaction_parent_id"`
 	Role               string         `json:"role"`
 	ToolResultError    bool           `json:"tool_result_error"`
+	MessageExtraFields sql.NullString `json:"message_extra_fields"`
+	ModelRef           sql.NullString `json:"model_ref"`
+	ModelID            sql.NullString `json:"model_id"`
+	ModelType          sql.NullString `json:"model_type"`
+	ModelDisplayName   sql.NullString `json:"model_display_name"`
+	InputTokens        sql.NullInt64  `json:"input_tokens"`
+	OutputTokens       sql.NullInt64  `json:"output_tokens"`
+	CacheReadTokens    sql.NullInt64  `json:"cache_read_tokens"`
+	CacheWriteTokens   sql.NullInt64  `json:"cache_write_tokens"`
 	CreatedAt          time.Time      `json:"created_at"`
 }

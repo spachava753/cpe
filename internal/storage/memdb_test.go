@@ -19,6 +19,72 @@ func extraFieldString(t *testing.T, msg gai.Message, key string) string {
 	return v
 }
 
+func TestMemDB_MessageExtraFieldsRoundTrip(t *testing.T) {
+	db := NewMemDB()
+	ctx := context.Background()
+
+	msg := makeTextMessage(gai.Assistant, "hello")
+	msg.ExtraFields = map[string]any{
+		"custom_key":                    "custom_value",
+		"custom_number":                 42,
+		AgentMetadataModelIDKey:         "glm-5.1",
+		AgentMetadataInputTokensKey:     int64(11),
+		AgentMetadataCacheReadTokensKey: int64(3),
+	}
+
+	var saved []gai.Message
+	for msg, err := range db.SaveDialog(ctx, slices.Values([]gai.Message{msg})) {
+		if err != nil {
+			t.Fatalf("SaveDialog error: %v", err)
+		}
+		saved = append(saved, msg)
+	}
+	id := extraFieldString(t, saved[0], MessageIDKey)
+
+	msgs, err := db.GetMessages(ctx, []string{id})
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	var got gai.Message
+	for msg := range msgs {
+		got = msg
+	}
+	if got.ExtraFields["custom_key"] != "custom_value" {
+		t.Fatalf("custom_key = %#v, want custom_value", got.ExtraFields["custom_key"])
+	}
+	if got.ExtraFields["custom_number"] != float64(42) {
+		t.Fatalf("custom_number = %#v, want 42 as JSON number", got.ExtraFields["custom_number"])
+	}
+	if got.ExtraFields[AgentMetadataModelIDKey] != "glm-5.1" {
+		t.Fatalf("model id = %#v, want glm-5.1", got.ExtraFields[AgentMetadataModelIDKey])
+	}
+	if got.ExtraFields[AgentMetadataInputTokensKey] != int64(11) {
+		t.Fatalf("input tokens = %#v, want 11", got.ExtraFields[AgentMetadataInputTokensKey])
+	}
+	if got.ExtraFields[AgentMetadataCacheReadTokensKey] != int64(3) {
+		t.Fatalf("cache read tokens = %#v, want 3", got.ExtraFields[AgentMetadataCacheReadTokensKey])
+	}
+}
+
+func TestMemDB_MessageExtraFieldsRejectNonJSON(t *testing.T) {
+	db := NewMemDB()
+	ctx := context.Background()
+
+	msg := makeTextMessage(gai.Assistant, "hello")
+	msg.ExtraFields = map[string]any{"custom_key": make(chan int)}
+
+	var gotErr error
+	for _, err := range db.SaveDialog(ctx, slices.Values([]gai.Message{msg})) {
+		if err != nil {
+			gotErr = err
+			break
+		}
+	}
+	if gotErr == nil {
+		t.Fatal("expected SaveDialog error for non-JSON message ExtraFields")
+	}
+}
+
 func TestMemDB_SaveDialog_NewConversation(t *testing.T) {
 	db := NewMemDB()
 	ctx := context.Background()

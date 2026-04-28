@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
+	"math"
 	"strings"
 
 	gonanoid "github.com/matoous/go-nanoid/v2"
@@ -62,6 +63,9 @@ func NewSqlite(ctx context.Context, db DB) (*Sqlite, error) {
 		return nil, fmt.Errorf("failed to migrate schema: %w", err)
 	}
 	if err := migrateMessagesCompactionParentColumn(ctx, db); err != nil {
+		return nil, fmt.Errorf("failed to migrate schema: %w", err)
+	}
+	if err := migrateMessagesMetadataColumns(ctx, db); err != nil {
 		return nil, fmt.Errorf("failed to migrate schema: %w", err)
 	}
 
@@ -195,6 +199,45 @@ func migrateMessagesCompactionParentColumn(ctx context.Context, db DB) error {
 	return nil
 }
 
+func migrateMessagesMetadataColumns(ctx context.Context, db DB) error {
+	hasMessages, err := hasMessagesTable(ctx, db)
+	if err != nil {
+		return err
+	}
+	if !hasMessages {
+		return nil
+	}
+
+	columns := []struct {
+		name       string
+		definition string
+	}{
+		{"message_extra_fields", "TEXT"},
+		{"model_ref", "TEXT"},
+		{"model_id", "TEXT"},
+		{"model_type", "TEXT"},
+		{"model_display_name", "TEXT"},
+		{"input_tokens", "INTEGER"},
+		{"output_tokens", "INTEGER"},
+		{"cache_read_tokens", "INTEGER"},
+		{"cache_write_tokens", "INTEGER"},
+	}
+	for _, column := range columns {
+		exists, err := hasMessagesColumn(ctx, db, column.name)
+		if err != nil {
+			return err
+		}
+		if exists {
+			continue
+		}
+		query := fmt.Sprintf("ALTER TABLE messages ADD COLUMN %s %s", column.name, column.definition)
+		if _, err := db.ExecContext(ctx, query); err != nil {
+			return fmt.Errorf("failed to add %s column: %w", column.name, err)
+		}
+	}
+	return nil
+}
+
 func hasMessagesTable(ctx context.Context, db DB) (bool, error) {
 	var tableCount int
 	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages'").Scan(&tableCount); err != nil {
@@ -276,6 +319,43 @@ func (s *Sqlite) saveMessageInTx(ctx context.Context, qtx *sqlcgen.Queries, mess
 		compactionParentIDParam = sql.NullString{String: compactionParentID, Valid: true}
 	}
 
+	messageExtraFields, err := encodeMessageExtraFields(message.ExtraFields)
+	if err != nil {
+		return "", err
+	}
+	modelRef, err := messageMetadataString(message.ExtraFields, AgentMetadataModelRefKey)
+	if err != nil {
+		return "", err
+	}
+	modelID, err := messageMetadataString(message.ExtraFields, AgentMetadataModelIDKey)
+	if err != nil {
+		return "", err
+	}
+	modelType, err := messageMetadataString(message.ExtraFields, AgentMetadataModelTypeKey)
+	if err != nil {
+		return "", err
+	}
+	modelDisplayName, err := messageMetadataString(message.ExtraFields, AgentMetadataModelDisplayNameKey)
+	if err != nil {
+		return "", err
+	}
+	inputTokens, err := messageMetadataInt64(message.ExtraFields, AgentMetadataInputTokensKey)
+	if err != nil {
+		return "", err
+	}
+	outputTokens, err := messageMetadataInt64(message.ExtraFields, AgentMetadataOutputTokensKey)
+	if err != nil {
+		return "", err
+	}
+	cacheReadTokens, err := messageMetadataInt64(message.ExtraFields, AgentMetadataCacheReadTokensKey)
+	if err != nil {
+		return "", err
+	}
+	cacheWriteTokens, err := messageMetadataInt64(message.ExtraFields, AgentMetadataCacheWriteTokensKey)
+	if err != nil {
+		return "", err
+	}
+
 	// Create the message
 	err = qtx.CreateMessage(ctx, sqlcgen.CreateMessageParams{
 		ID:                 messageID,
@@ -283,6 +363,15 @@ func (s *Sqlite) saveMessageInTx(ctx context.Context, qtx *sqlcgen.Queries, mess
 		CompactionParentID: compactionParentIDParam,
 		Role:               roleToString(message.Role),
 		ToolResultError:    message.ToolResultError,
+		MessageExtraFields: messageExtraFields,
+		ModelRef:           modelRef,
+		ModelID:            modelID,
+		ModelType:          modelType,
+		ModelDisplayName:   modelDisplayName,
+		InputTokens:        inputTokens,
+		OutputTokens:       outputTokens,
+		CacheReadTokens:    cacheReadTokens,
+		CacheWriteTokens:   cacheWriteTokens,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to create message: %w", err)
@@ -337,6 +426,137 @@ func getExtraFieldString(m map[string]any, key string) string {
 	}
 	v, _ := m[key].(string)
 	return v
+}
+
+var messageColumnExtraFieldKeys = map[string]struct{}{
+	MessageIDKey:                     {},
+	MessageParentIDKey:               {},
+	MessageCompactionParentIDKey:     {},
+	MessageCreatedAtKey:              {},
+	AgentMetadataModelRefKey:         {},
+	AgentMetadataModelIDKey:          {},
+	AgentMetadataModelTypeKey:        {},
+	AgentMetadataModelDisplayNameKey: {},
+	AgentMetadataInputTokensKey:      {},
+	AgentMetadataOutputTokensKey:     {},
+	AgentMetadataCacheReadTokensKey:  {},
+	AgentMetadataCacheWriteTokensKey: {},
+}
+
+func encodeMessageExtraFields(extra map[string]any) (sql.NullString, error) {
+	if len(extra) == 0 {
+		return sql.NullString{}, nil
+	}
+	filtered := make(map[string]any, len(extra))
+	for key, value := range extra {
+		if _, ok := messageColumnExtraFieldKeys[key]; ok {
+			continue
+		}
+		filtered[key] = value
+	}
+	if len(filtered) == 0 {
+		return sql.NullString{}, nil
+	}
+
+	extraFieldsJSON, err := json.Marshal(filtered)
+	if err != nil {
+		return sql.NullString{}, fmt.Errorf("failed to marshal message ExtraFields to JSON: %w", err)
+	}
+	return sql.NullString{String: string(extraFieldsJSON), Valid: true}, nil
+}
+
+func messageMetadataString(extra map[string]any, key string) (sql.NullString, error) {
+	if extra == nil {
+		return sql.NullString{}, nil
+	}
+	value, ok := extra[key]
+	if !ok || value == nil {
+		return sql.NullString{}, nil
+	}
+	str, ok := value.(string)
+	if !ok {
+		return sql.NullString{}, fmt.Errorf("message ExtraFields[%q] must be a string, got %T", key, value)
+	}
+	return sql.NullString{String: str, Valid: true}, nil
+}
+
+func messageMetadataInt64(extra map[string]any, key string) (sql.NullInt64, error) {
+	if extra == nil {
+		return sql.NullInt64{}, nil
+	}
+	value, ok := extra[key]
+	if !ok || value == nil {
+		return sql.NullInt64{}, nil
+	}
+	intValue, err := extraFieldInt64(value)
+	if err != nil {
+		return sql.NullInt64{}, fmt.Errorf("message ExtraFields[%q] must be an integer: %w", key, err)
+	}
+	return sql.NullInt64{Int64: intValue, Valid: true}, nil
+}
+
+func extraFieldInt64(value any) (int64, error) {
+	switch v := value.(type) {
+	case int:
+		return int64(v), nil
+	case int8:
+		return int64(v), nil
+	case int16:
+		return int64(v), nil
+	case int32:
+		return int64(v), nil
+	case int64:
+		return v, nil
+	case uint:
+		if uint64(v) > math.MaxInt64 {
+			return 0, fmt.Errorf("%d overflows int64", v)
+		}
+		return int64(v), nil
+	case uint8:
+		return int64(v), nil
+	case uint16:
+		return int64(v), nil
+	case uint32:
+		return int64(v), nil
+	case uint64:
+		if v > math.MaxInt64 {
+			return 0, fmt.Errorf("%d overflows int64", v)
+		}
+		return int64(v), nil
+	case float64:
+		if math.Trunc(v) != v || v < math.MinInt64 || v > math.MaxInt64 {
+			return 0, fmt.Errorf("%v is not an int64", v)
+		}
+		return int64(v), nil
+	default:
+		return 0, fmt.Errorf("got %T", value)
+	}
+}
+
+func decodeMessageExtraFields(encoded sql.NullString) (map[string]any, error) {
+	if !encoded.Valid || encoded.String == "" {
+		return map[string]any{}, nil
+	}
+	var extra map[string]any
+	if err := json.Unmarshal([]byte(encoded.String), &extra); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal message ExtraFields: %w", err)
+	}
+	if extra == nil {
+		return map[string]any{}, nil
+	}
+	return extra, nil
+}
+
+func putNullString(extra map[string]any, key string, value sql.NullString) {
+	if value.Valid {
+		extra[key] = value.String
+	}
+}
+
+func putNullInt64(extra map[string]any, key string, value sql.NullInt64) {
+	if value.Valid {
+		extra[key] = value.Int64
+	}
 }
 
 // generateUniqueIDInTx generates a unique ID checking for collisions within a transaction.
@@ -535,14 +755,22 @@ func (s *Sqlite) getMessage(ctx context.Context, messageID string) (gai.Message,
 		compactionParentID = msg.CompactionParentID.String
 	}
 
-	// Set the message ID and other metadata in ExtraFields so consumers can access them.
-	// Note: Arbitrary message-level ExtraFields are not persisted to the database
-	// (only block-level ExtraFields are). We create a fresh map here and populate it
-	// with the known keys that are stored as dedicated columns.
-	msgExtraFields := map[string]any{
-		MessageIDKey:        messageID,
-		MessageCreatedAtKey: msg.CreatedAt,
+	// Set storage-owned and typed runtime metadata in ExtraFields so consumers can
+	// access a complete message snapshot without knowing the physical schema.
+	msgExtraFields, err := decodeMessageExtraFields(msg.MessageExtraFields)
+	if err != nil {
+		return gai.Message{}, "", err
 	}
+	msgExtraFields[MessageIDKey] = messageID
+	msgExtraFields[MessageCreatedAtKey] = msg.CreatedAt
+	putNullString(msgExtraFields, AgentMetadataModelRefKey, msg.ModelRef)
+	putNullString(msgExtraFields, AgentMetadataModelIDKey, msg.ModelID)
+	putNullString(msgExtraFields, AgentMetadataModelTypeKey, msg.ModelType)
+	putNullString(msgExtraFields, AgentMetadataModelDisplayNameKey, msg.ModelDisplayName)
+	putNullInt64(msgExtraFields, AgentMetadataInputTokensKey, msg.InputTokens)
+	putNullInt64(msgExtraFields, AgentMetadataOutputTokensKey, msg.OutputTokens)
+	putNullInt64(msgExtraFields, AgentMetadataCacheReadTokensKey, msg.CacheReadTokens)
+	putNullInt64(msgExtraFields, AgentMetadataCacheWriteTokensKey, msg.CacheWriteTokens)
 	if parentID != "" {
 		msgExtraFields[MessageParentIDKey] = parentID
 	}

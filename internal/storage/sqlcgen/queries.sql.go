@@ -54,8 +54,23 @@ func (q *Queries) CreateBlock(ctx context.Context, arg CreateBlockParams) error 
 
 const createMessage = `-- name: CreateMessage :exec
 
-INSERT INTO messages (id, parent_id, compaction_parent_id, role, tool_result_error)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO messages (
+    id,
+    parent_id,
+    compaction_parent_id,
+    role,
+    tool_result_error,
+    message_extra_fields,
+    model_ref,
+    model_id,
+    model_type,
+    model_display_name,
+    input_tokens,
+    output_tokens,
+    cache_read_tokens,
+    cache_write_tokens
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateMessageParams struct {
@@ -64,6 +79,15 @@ type CreateMessageParams struct {
 	CompactionParentID sql.NullString `json:"compaction_parent_id"`
 	Role               string         `json:"role"`
 	ToolResultError    bool           `json:"tool_result_error"`
+	MessageExtraFields sql.NullString `json:"message_extra_fields"`
+	ModelRef           sql.NullString `json:"model_ref"`
+	ModelID            sql.NullString `json:"model_id"`
+	ModelType          sql.NullString `json:"model_type"`
+	ModelDisplayName   sql.NullString `json:"model_display_name"`
+	InputTokens        sql.NullInt64  `json:"input_tokens"`
+	OutputTokens       sql.NullInt64  `json:"output_tokens"`
+	CacheReadTokens    sql.NullInt64  `json:"cache_read_tokens"`
+	CacheWriteTokens   sql.NullInt64  `json:"cache_write_tokens"`
 }
 
 // queries.sql
@@ -75,6 +99,15 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) er
 		arg.CompactionParentID,
 		arg.Role,
 		arg.ToolResultError,
+		arg.MessageExtraFields,
+		arg.ModelRef,
+		arg.ModelID,
+		arg.ModelType,
+		arg.ModelDisplayName,
+		arg.InputTokens,
+		arg.OutputTokens,
+		arg.CacheReadTokens,
+		arg.CacheWriteTokens,
 	)
 	return err
 }
@@ -154,7 +187,21 @@ func (q *Queries) GetBlocksByMessage(ctx context.Context, messageID string) ([]B
 }
 
 const getMessage = `-- name: GetMessage :one
-SELECT id, parent_id, compaction_parent_id, role, tool_result_error, created_at
+SELECT id,
+       parent_id,
+       compaction_parent_id,
+       role,
+       tool_result_error,
+       message_extra_fields,
+       model_ref,
+       model_id,
+       model_type,
+       model_display_name,
+       input_tokens,
+       output_tokens,
+       cache_read_tokens,
+       cache_write_tokens,
+       created_at
 FROM messages
 WHERE id = ?
 `
@@ -168,6 +215,15 @@ func (q *Queries) GetMessage(ctx context.Context, id string) (Message, error) {
 		&i.CompactionParentID,
 		&i.Role,
 		&i.ToolResultError,
+		&i.MessageExtraFields,
+		&i.ModelRef,
+		&i.ModelID,
+		&i.ModelType,
+		&i.ModelDisplayName,
+		&i.InputTokens,
+		&i.OutputTokens,
+		&i.CacheReadTokens,
+		&i.CacheWriteTokens,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -214,7 +270,21 @@ func (q *Queries) ListMessages(ctx context.Context) ([]string, error) {
 }
 
 const listMessagesAscending = `-- name: ListMessagesAscending :many
-SELECT id, parent_id, compaction_parent_id, role, tool_result_error, created_at
+SELECT id,
+       parent_id,
+       compaction_parent_id,
+       role,
+       tool_result_error,
+       message_extra_fields,
+       model_ref,
+       model_id,
+       model_type,
+       model_display_name,
+       input_tokens,
+       output_tokens,
+       cache_read_tokens,
+       cache_write_tokens,
+       created_at
 FROM messages
 ORDER BY created_at ASC, rowid ASC
 LIMIT -1 OFFSET ?
@@ -235,6 +305,15 @@ func (q *Queries) ListMessagesAscending(ctx context.Context, offset int64) ([]Me
 			&i.CompactionParentID,
 			&i.Role,
 			&i.ToolResultError,
+			&i.MessageExtraFields,
+			&i.ModelRef,
+			&i.ModelID,
+			&i.ModelType,
+			&i.ModelDisplayName,
+			&i.InputTokens,
+			&i.OutputTokens,
+			&i.CacheReadTokens,
+			&i.CacheWriteTokens,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -251,7 +330,21 @@ func (q *Queries) ListMessagesAscending(ctx context.Context, offset int64) ([]Me
 }
 
 const listMessagesByParent = `-- name: ListMessagesByParent :many
-SELECT id, parent_id, compaction_parent_id, role, tool_result_error, created_at
+SELECT id,
+       parent_id,
+       compaction_parent_id,
+       role,
+       tool_result_error,
+       message_extra_fields,
+       model_ref,
+       model_id,
+       model_type,
+       model_display_name,
+       input_tokens,
+       output_tokens,
+       cache_read_tokens,
+       cache_write_tokens,
+       created_at
 FROM messages
 WHERE parent_id = ?
 ORDER BY created_at, rowid
@@ -272,6 +365,15 @@ func (q *Queries) ListMessagesByParent(ctx context.Context, parentID sql.NullStr
 			&i.CompactionParentID,
 			&i.Role,
 			&i.ToolResultError,
+			&i.MessageExtraFields,
+			&i.ModelRef,
+			&i.ModelID,
+			&i.ModelType,
+			&i.ModelDisplayName,
+			&i.InputTokens,
+			&i.OutputTokens,
+			&i.CacheReadTokens,
+			&i.CacheWriteTokens,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -288,7 +390,21 @@ func (q *Queries) ListMessagesByParent(ctx context.Context, parentID sql.NullStr
 }
 
 const listMessagesDescending = `-- name: ListMessagesDescending :many
-SELECT id, parent_id, compaction_parent_id, role, tool_result_error, created_at
+SELECT id,
+       parent_id,
+       compaction_parent_id,
+       role,
+       tool_result_error,
+       message_extra_fields,
+       model_ref,
+       model_id,
+       model_type,
+       model_display_name,
+       input_tokens,
+       output_tokens,
+       cache_read_tokens,
+       cache_write_tokens,
+       created_at
 FROM messages
 ORDER BY created_at DESC, rowid DESC
 LIMIT -1 OFFSET ?
@@ -309,6 +425,15 @@ func (q *Queries) ListMessagesDescending(ctx context.Context, offset int64) ([]M
 			&i.CompactionParentID,
 			&i.Role,
 			&i.ToolResultError,
+			&i.MessageExtraFields,
+			&i.ModelRef,
+			&i.ModelID,
+			&i.ModelType,
+			&i.ModelDisplayName,
+			&i.InputTokens,
+			&i.OutputTokens,
+			&i.CacheReadTokens,
+			&i.CacheWriteTokens,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

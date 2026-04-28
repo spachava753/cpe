@@ -128,6 +128,7 @@ func (r *Runtime) Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.G
 			return current, fmt.Errorf("expected assistant role in response, got: %v", resp.Candidates[0].Role)
 		}
 
+		r.attachAgentMetadata(&resp.Candidates[0], resp.UsageMetadata)
 		current = append(current, resp.Candidates[0])
 		if r.dialogSaver != nil {
 			resp, err = saveAssistantResponse(ctx, r.dialogSaver, current[:len(current)-1], resp)

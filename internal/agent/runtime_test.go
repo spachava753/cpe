@@ -102,6 +102,59 @@ func TestRuntimeFinalAssistantResponseIsAppended(t *testing.T) {
 	}
 }
 
+func TestRuntimeAttachesAgentMetadata(t *testing.T) {
+	t.Parallel()
+
+	model := &scriptedToolModel{responses: []gai.Response{{
+		FinishReason: gai.EndTurn,
+		Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("done")}}},
+		UsageMetadata: gai.Metadata{
+			gai.UsageMetricInputTokens:      11,
+			gai.UsageMetricGenerationTokens: 7,
+			gai.UsageMetricCacheReadTokens:  3,
+			gai.UsageMetricCacheWriteTokens: 2,
+		},
+	}}}
+	const wantModelType = "zai"
+	cfg := config.Config{Model: config.Model{
+		Ref:         "glm",
+		ID:          "glm-5.1",
+		Type:        wantModelType,
+		DisplayName: "GLM 5.1",
+	}}
+	runtime := NewRuntime(model, cfg, nil, nil, nil, true)
+
+	dialog, err := runtime.Generate(context.Background(), gai.Dialog{{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("hi")}}}, nil)
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	metadata := dialog[1].ExtraFields
+	if metadata[storage.AgentMetadataModelRefKey] != "glm" {
+		t.Fatalf("model ref = %#v, want glm", metadata[storage.AgentMetadataModelRefKey])
+	}
+	if metadata[storage.AgentMetadataModelIDKey] != "glm-5.1" {
+		t.Fatalf("model id = %#v, want glm-5.1", metadata[storage.AgentMetadataModelIDKey])
+	}
+	if metadata[storage.AgentMetadataModelTypeKey] != wantModelType {
+		t.Fatalf("model type = %#v, want %s", metadata[storage.AgentMetadataModelTypeKey], wantModelType)
+	}
+	if metadata[storage.AgentMetadataModelDisplayNameKey] != "GLM 5.1" {
+		t.Fatalf("model display name = %#v, want GLM 5.1", metadata[storage.AgentMetadataModelDisplayNameKey])
+	}
+	if metadata[storage.AgentMetadataInputTokensKey] != int64(11) {
+		t.Fatalf("input tokens = %#v, want 11", metadata[storage.AgentMetadataInputTokensKey])
+	}
+	if metadata[storage.AgentMetadataOutputTokensKey] != int64(7) {
+		t.Fatalf("output tokens = %#v, want 7", metadata[storage.AgentMetadataOutputTokensKey])
+	}
+	if metadata[storage.AgentMetadataCacheReadTokensKey] != int64(3) {
+		t.Fatalf("cache read tokens = %#v, want 3", metadata[storage.AgentMetadataCacheReadTokensKey])
+	}
+	if metadata[storage.AgentMetadataCacheWriteTokensKey] != int64(2) {
+		t.Fatalf("cache write tokens = %#v, want 2", metadata[storage.AgentMetadataCacheWriteTokensKey])
+	}
+}
+
 func TestRuntimeToolCallbackExecutesAndContinues(t *testing.T) {
 	t.Parallel()
 
