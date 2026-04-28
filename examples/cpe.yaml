@@ -46,7 +46,6 @@ models:
     #       path: /custom_field
     #       value: custom_value
 
-
   - ref: qwen
     display_name: "Qwen3 Max"
     id: qwen/qwen3-max
