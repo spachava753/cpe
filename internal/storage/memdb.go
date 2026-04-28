@@ -360,8 +360,8 @@ func cloneBlocks(blocks []gai.Block) []gai.Block {
 
 // nodeToMessage converts a node to an immutable-ish read snapshot.
 //
-// It clones block data and replaces message-level ExtraFields with storage
-// metadata keys so callers observe the same shape as Sqlite reads.
+// It clones block data and preserves message-level ExtraFields, then overlays
+// storage metadata keys so callers observe the same shape as Sqlite reads.
 func (m *MemDB) nodeToMessage(node *memNode) gai.Message {
 	msg := node.message
 	msg.Blocks = cloneBlocks(msg.Blocks)

@@ -703,8 +703,8 @@ func (s *Sqlite) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) ite
 // gai.Message with storage metadata in ExtraFields.
 //
 // It returns the reconstructed message, the parent ID ("" for roots), and an
-// error. Message-level arbitrary ExtraFields are not persisted; only known
-// metadata keys are populated on read.
+// error. JSON-compatible message-level ExtraFields are restored from storage,
+// with storage-owned and typed runtime metadata overlaid from dedicated columns.
 func (s *Sqlite) getMessage(ctx context.Context, messageID string) (gai.Message, string, error) {
 	msg, err := s.q.GetMessage(ctx, messageID)
 	if err != nil {

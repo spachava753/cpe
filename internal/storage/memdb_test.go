@@ -66,6 +66,40 @@ func TestMemDB_MessageExtraFieldsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestMemDB_ResponsesPhaseSurvivesDialogReload(t *testing.T) {
+	db := NewMemDB()
+	ctx := context.Background()
+
+	assistant := makeTextMessage(gai.Assistant, "answer")
+	assistant.ExtraFields = map[string]any{
+		gai.ResponsesMessageExtraFieldPhase: gai.ResponsesMessagePhaseCommentary,
+	}
+
+	var saved []gai.Message
+	for msg, err := range db.SaveDialog(ctx, slices.Values([]gai.Message{
+		makeTextMessage(gai.User, "question"),
+		assistant,
+	})) {
+		if err != nil {
+			t.Fatalf("SaveDialog error: %v", err)
+		}
+		saved = append(saved, msg)
+	}
+	leafID := extraFieldString(t, saved[1], MessageIDKey)
+
+	dialog, err := GetDialogForMessage(ctx, db, leafID)
+	if err != nil {
+		t.Fatalf("GetDialogForMessage: %v", err)
+	}
+	if len(dialog) != 2 {
+		t.Fatalf("dialog length = %d, want 2", len(dialog))
+	}
+	got, ok := dialog[1].ExtraFields[gai.ResponsesMessageExtraFieldPhase].(string)
+	if !ok || got != gai.ResponsesMessagePhaseCommentary {
+		t.Fatalf("responses phase = %#v, want %q", got, gai.ResponsesMessagePhaseCommentary)
+	}
+}
+
 func TestMemDB_MessageExtraFieldsRejectNonJSON(t *testing.T) {
 	db := NewMemDB()
 	ctx := context.Background()

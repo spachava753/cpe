@@ -2094,6 +2094,33 @@ func TestMessageExtraFields(t *testing.T) {
 		}
 	})
 
+	t.Run("responses phase survives dialog reload", func(t *testing.T) {
+		db, _ := newTestDB(t)
+		ctx := context.Background()
+
+		assistant := makeTextMessage(gai.Assistant, "answer")
+		assistant.ExtraFields = map[string]any{
+			gai.ResponsesMessageExtraFieldPhase: gai.ResponsesMessagePhaseFinalAnswer,
+		}
+		saved := saveDialog(t, db, ctx, []gai.Message{
+			makeTextMessage(gai.User, "question"),
+			assistant,
+		})
+		leafID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
+
+		dialog, err := GetDialogForMessage(ctx, db, leafID)
+		if err != nil {
+			t.Fatalf("GetDialogForMessage: %v", err)
+		}
+		if len(dialog) != 2 {
+			t.Fatalf("dialog length = %d, want 2", len(dialog))
+		}
+		got, ok := dialog[1].ExtraFields[gai.ResponsesMessageExtraFieldPhase].(string)
+		if !ok || got != gai.ResponsesMessagePhaseFinalAnswer {
+			t.Fatalf("responses phase = %#v, want %q", got, gai.ResponsesMessagePhaseFinalAnswer)
+		}
+	})
+
 	t.Run("invalid agent metadata is rejected", func(t *testing.T) {
 		db, _ := newTestDB(t)
 		ctx := context.Background()
