@@ -1,8 +1,23 @@
+import json
 import os
 import shlex
+import sqlite3
+from pathlib import Path
+from typing import Any
+
 from harbor.agents.installed.base import BaseInstalledAgent, with_prompt_template
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
+from harbor.models.trajectories import (
+    Agent,
+    FinalMetrics,
+    Observation,
+    ObservationResult,
+    Step,
+    ToolCall,
+    Trajectory,
+)
+from harbor.utils.trajectory_utils import format_trajectory_json
 
 
 class CPE(BaseInstalledAgent):
@@ -12,8 +27,11 @@ class CPE(BaseInstalledAgent):
     code via natural-language prompts, with optional MCP tool integration.
     """
 
+    SUPPORTS_ATIF: bool = True
+
     _GO_VERSION = "1.25.5"
     _OUTPUT_FILENAME = "cpe.txt"
+    _CONVERSATION_DB_FILENAME = ".cpeconvo"
 
     @staticmethod
     def name() -> str:
@@ -109,8 +127,269 @@ class CPE(BaseInstalledAgent):
         )
 
     def populate_context_post_run(self, context: AgentContext) -> None:
-        # CPE does not currently produce a structured trajectory file.
-        pass
+        db_path = self.logs_dir / self._CONVERSATION_DB_FILENAME
+        if not db_path.exists():
+            self.logger.debug(f"No CPE conversation database found at {db_path}")
+            return
+
+        try:
+            trajectory = self._convert_conversation_db_to_trajectory(db_path)
+        except Exception:
+            self.logger.exception("Failed to convert CPE conversation to trajectory")
+            return
+
+        if not trajectory:
+            return
+
+        trajectory_path = self.logs_dir / "trajectory.json"
+        try:
+            trajectory_path.write_text(
+                format_trajectory_json(trajectory.to_json_dict()), encoding="utf-8"
+            )
+            self.logger.debug(f"Wrote CPE trajectory to {trajectory_path}")
+        except OSError as exc:
+            self.logger.debug(f"Failed to write trajectory file {trajectory_path}: {exc}")
+
+        if trajectory.final_metrics:
+            context.n_input_tokens = trajectory.final_metrics.total_prompt_tokens
+            context.n_cache_tokens = trajectory.final_metrics.total_cached_tokens
+            context.n_output_tokens = trajectory.final_metrics.total_completion_tokens
+            context.cost_usd = trajectory.final_metrics.total_cost_usd
+
+    def _convert_conversation_db_to_trajectory(self, db_path: Path) -> Trajectory | None:
+        messages = self._read_cpe_messages(db_path)
+        if not messages:
+            self.logger.debug("No CPE messages found for trajectory conversion")
+            return None
+
+        steps: list[Step] = []
+        last_agent_step: Step | None = None
+        session_id = str(messages[0]["id"])
+
+        for message in messages:
+            role = message["role"]
+            timestamp = message.get("created_at")
+            blocks = message["blocks"]
+
+            if role == "tool_result":
+                if last_agent_step is not None:
+                    self._attach_tool_result(last_agent_step, blocks)
+                else:
+                    steps.append(
+                        Step(
+                            step_id=len(steps) + 1,
+                            timestamp=timestamp,
+                            source="system",
+                            message=self._blocks_to_text(blocks) or "Tool result",
+                        )
+                    )
+                continue
+
+            if role == "assistant":
+                step = self._assistant_message_to_step(
+                    message=message,
+                    step_id=len(steps) + 1,
+                    timestamp=timestamp,
+                )
+                steps.append(step)
+                last_agent_step = step
+                continue
+
+            source = "user" if role == "user" else "system"
+            steps.append(
+                Step(
+                    step_id=len(steps) + 1,
+                    timestamp=timestamp,
+                    source=source,
+                    message=self._blocks_to_text(blocks) or "(empty message)",
+                )
+            )
+            last_agent_step = None
+
+        if not steps:
+            return None
+
+        return Trajectory(
+            schema_version="ATIF-v1.6",
+            session_id=session_id,
+            agent=Agent(
+                name="cpe",
+                version=self.version() or "unknown",
+                model_name=self.model_name,
+            ),
+            steps=steps,
+            final_metrics=FinalMetrics(total_steps=len(steps)),
+        )
+
+    def _read_cpe_messages(self, db_path: Path) -> list[dict[str, Any]]:
+        rows: list[sqlite3.Row]
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT
+                    m.id AS message_id,
+                    m.role,
+                    m.tool_result_error,
+                    m.created_at AS message_created_at,
+                    b.id AS block_id,
+                    b.block_type,
+                    b.modality_type,
+                    b.mime_type,
+                    b.content,
+                    b.extra_fields,
+                    b.sequence_order
+                FROM messages m
+                LEFT JOIN blocks b ON b.message_id = m.id
+                ORDER BY m.created_at ASC, m.rowid ASC, b.sequence_order ASC
+                """
+            ).fetchall()
+
+        messages: list[dict[str, Any]] = []
+        by_id: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            message_id = row["message_id"]
+            message = by_id.get(message_id)
+            if message is None:
+                message = {
+                    "id": message_id,
+                    "role": row["role"],
+                    "created_at": self._normalize_timestamp(row["message_created_at"]),
+                    "tool_result_error": bool(row["tool_result_error"]),
+                    "blocks": [],
+                }
+                by_id[message_id] = message
+                messages.append(message)
+
+            if row["block_type"] is None:
+                continue
+
+            message["blocks"].append(
+                {
+                    "id": row["block_id"] or "",
+                    "block_type": row["block_type"],
+                    "modality_type": row["modality_type"],
+                    "mime_type": row["mime_type"],
+                    "content": row["content"] or "",
+                    "extra_fields": self._decode_extra_fields(row["extra_fields"]),
+                    "sequence_order": row["sequence_order"],
+                }
+            )
+
+        return messages
+
+    @staticmethod
+    def _normalize_timestamp(value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        if "T" not in text and " " in text:
+            text = text.replace(" ", "T", 1)
+        return text
+
+    @staticmethod
+    def _decode_extra_fields(raw: str | None) -> dict[str, Any] | None:
+        if not raw:
+            return None
+        try:
+            decoded = json.loads(raw)
+        except json.JSONDecodeError:
+            return {"raw_extra_fields": raw}
+        return decoded if isinstance(decoded, dict) else {"value": decoded}
+
+    @staticmethod
+    def _block_text(block: dict[str, Any]) -> str:
+        content = str(block.get("content") or "")
+        if block.get("block_type") == "tool_call":
+            return ""
+        return content
+
+    def _blocks_to_text(self, blocks: list[dict[str, Any]]) -> str:
+        parts = [self._block_text(block) for block in blocks]
+        return "\n".join(part for part in parts if part).strip()
+
+    def _assistant_message_to_step(
+        self,
+        *,
+        message: dict[str, Any],
+        step_id: int,
+        timestamp: str | None,
+    ) -> Step:
+        blocks = message["blocks"]
+        text_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        tool_calls: list[ToolCall] = []
+        extra: dict[str, Any] = {"cpe_message_id": message["id"]}
+
+        for block in blocks:
+            block_type = block.get("block_type")
+            content = str(block.get("content") or "")
+            if block_type == "thinking":
+                if content:
+                    reasoning_parts.append(content)
+            elif block_type == "tool_call":
+                tool_call = self._tool_call_from_block(block)
+                if tool_call is not None:
+                    tool_calls.append(tool_call)
+            else:
+                if content:
+                    text_parts.append(content)
+
+        step = Step(
+            step_id=step_id,
+            timestamp=timestamp,
+            source="agent",
+            model_name=self.model_name,
+            message="\n".join(text_parts).strip() or "(tool use)",
+            reasoning_content="\n\n".join(reasoning_parts).strip() or None,
+            tool_calls=tool_calls or None,
+            extra=extra,
+        )
+        return step
+
+    @staticmethod
+    def _tool_call_from_block(block: dict[str, Any]) -> ToolCall | None:
+        try:
+            payload = json.loads(str(block.get("content") or "{}"))
+        except json.JSONDecodeError:
+            payload = {}
+
+        if not isinstance(payload, dict):
+            payload = {}
+
+        name = payload.get("name") or payload.get("tool_name") or "unknown_tool"
+        args = payload.get("parameters") or payload.get("arguments") or {}
+        if not isinstance(args, dict):
+            args = {"value": args}
+
+        call_id = str(block.get("id") or payload.get("id") or f"{name}-unknown")
+        return ToolCall(tool_call_id=call_id, function_name=str(name), arguments=args)
+
+    def _attach_tool_result(self, step: Step, blocks: list[dict[str, Any]]) -> None:
+        if not step.tool_calls:
+            return
+
+        valid_call_ids = {tool_call.tool_call_id for tool_call in step.tool_calls}
+        results: list[ObservationResult] = []
+        for block in blocks:
+            call_id = str(block.get("id") or "")
+            if call_id not in valid_call_ids:
+                continue
+            results.append(
+                ObservationResult(
+                    source_call_id=call_id,
+                    content=self._block_text(block),
+                )
+            )
+
+        if not results:
+            return
+
+        if step.observation is None:
+            step.observation = Observation(results=[])
+        step.observation.results.extend(results)
 
     def _cpe_model_ref(self) -> str:
         if not self.model_name:
@@ -145,13 +424,15 @@ class CPE(BaseInstalledAgent):
     ) -> None:
         escaped_instruction = shlex.quote(instruction)
         model_ref = shlex.quote(self._cpe_model_ref())
+        db_path = f"/logs/agent/{self._CONVERSATION_DB_FILENAME}"
 
         await self.exec_as_agent(
             environment,
             command=(
                 "mkdir -p /logs/agent/command-0 && "
                 'export PATH="$HOME/go/bin:/usr/local/go/bin:$PATH" && '
-                f"cpe -n -G --skip-stdin -m {model_ref} {escaped_instruction} "
+                f"cpe -n --skip-stdin --db-path {shlex.quote(db_path)} "
+                f"-m {model_ref} {escaped_instruction} "
                 "2>&1 </dev/null | stdbuf -oL tee "
                 f"/logs/agent/{self._OUTPUT_FILENAME} /logs/agent/command-0/stdout.txt"
             ),
