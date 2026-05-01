@@ -20,8 +20,9 @@ type MessageIdNode struct {
 	ParentID           string          `json:"parent_id"`
 	CompactionParentID string          `json:"compaction_parent_id,omitempty"`
 	CreatedAt          time.Time       `json:"created_at"`
-	Content            string          `json:"content"` // Short snippet or modality type
-	Role               string          `json:"role"`    // user, assistant, or tool_result
+	Content            string          `json:"content"`  // Short snippet or modality type
+	Role               string          `json:"role"`     // user, assistant, or tool_result
+	Metadata           string          `json:"metadata"` // Model and token summary, when available
 	Children           []MessageIdNode `json:"children"`
 }
 
@@ -109,6 +110,7 @@ func buildMessageForest(messages []gai.Message) []MessageIdNode {
 				CreatedAt:          createdAt,
 				Content:            content,
 				Role:               roleToDisplayString(msg.Role),
+				Metadata:           messageMetadataInline(msg),
 			},
 			parentID: parentID,
 		}
@@ -181,7 +183,7 @@ func (p *DefaultTreePrinter) PrintMessageForest(w io.Writer, roots []MessageIdNo
 
 	for _, tr := range trees {
 		root := tr.node
-		fmt.Fprintf(w, "%s (%s) [%s] [lineage:%s] %s\n", root.ID, root.CreatedAt.Format("2006-01-02 15:04"), prettifyRole(root.Role), lineageDisplay(root.CompactionParentID), root.Content)
+		fmt.Fprintf(w, "%s (%s) [%s] [lineage:%s]%s %s\n", root.ID, root.CreatedAt.Format("2006-01-02 15:04"), prettifyRole(root.Role), lineageDisplay(root.CompactionParentID), root.Metadata, root.Content)
 		prefix := ""
 		if len(root.Children) > 1 {
 			prefix = indent
@@ -236,7 +238,7 @@ func lineageDisplay(id string) string {
 
 // printSubTree prints a node with the appropriate tree structure prefix (recursive)
 func printSubTree(w io.Writer, node MessageIdNode, prefix string) {
-	fmt.Fprintf(w, "%s%s (%s) [%s] [lineage:%s] %s\n", prefix, node.ID, node.CreatedAt.Format("2006-01-02 15:04"), prettifyRole(node.Role), lineageDisplay(node.CompactionParentID), node.Content)
+	fmt.Fprintf(w, "%s%s (%s) [%s] [lineage:%s]%s %s\n", prefix, node.ID, node.CreatedAt.Format("2006-01-02 15:04"), prettifyRole(node.Role), lineageDisplay(node.CompactionParentID), node.Metadata, node.Content)
 	childPrefix := prefix
 	if len(node.Children) > 1 {
 		childPrefix += indent

@@ -195,6 +195,7 @@ func (f *MarkdownDialogFormatter) FormatDialog(dialog gai.Dialog, msgIds []strin
 		}
 
 		md.WriteString(fmt.Sprintf("## %s%s\n\n", roleLabel, msgIdStr))
+		metadataBlock := messageMetadataMarkdown(message)
 
 		for _, block := range message.Blocks {
 			switch block.ModalityType {
@@ -232,6 +233,7 @@ func (f *MarkdownDialogFormatter) FormatDialog(dialog gai.Dialog, msgIds []strin
 					block.MimeType))
 			}
 		}
+		md.WriteString(metadataBlock)
 	}
 
 	if rendered, err := f.Renderer.Render(md.String()); err == nil {
