@@ -1,6 +1,10 @@
 package auth
 
 import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
@@ -80,6 +84,28 @@ func TestGetOpenAIDefaults(t *testing.T) {
 	}
 	if got := GetOpenAIScopes(); got != "openid profile email offline_access" {
 		t.Errorf("GetOpenAIScopes() = %q, want %q", got, "openid profile email offline_access")
+	}
+}
+
+func TestExchangeCodeDoesNotRetryHTTPErrorStatus(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprint(w, "upstream exploded")
+	}))
+	defer server.Close()
+	t.Setenv(EnvAnthropicTokenURL, server.URL)
+
+	_, err := ExchangeCode(context.Background(), "auth-code#state", "verifier")
+	if err == nil {
+		t.Fatal("expected token exchange error")
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts)
+	}
+	if !strings.Contains(err.Error(), "status 503") || !strings.Contains(err.Error(), "upstream exploded") {
+		t.Fatalf("error = %q, want status and response body", err.Error())
 	}
 }
 

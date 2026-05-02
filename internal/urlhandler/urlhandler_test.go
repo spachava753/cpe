@@ -384,8 +384,68 @@ func TestDownloadContent(t *testing.T) {
 		}
 	})
 
-	t.Run("read body error", func(t *testing.T) {
+	t.Run("retries retryable server error status", func(t *testing.T) {
+		attempts := 0
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			attempts++
+			if attempts == 1 {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "text/plain")
+			fmt.Fprint(w, "recovered")
+		}))
+		defer server.Close()
+
+		config := &DownloadConfig{
+			Timeout:       5 * time.Second,
+			MaxSize:       1024,
+			UserAgent:     "test-agent",
+			RetryAttempts: 3,
+			Client:        server.Client(),
+		}
+
+		result, err := DownloadContent(context.Background(), server.URL, config)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if attempts != 2 {
+			t.Fatalf("attempts = %d, want 2", attempts)
+		}
+		if string(result.Data) != "recovered" {
+			t.Fatalf("Data = %q, want %q", string(result.Data), "recovered")
+		}
+	})
+
+	t.Run("does not retry non-retryable client error status", func(t *testing.T) {
+		attempts := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			attempts++
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		config := &DownloadConfig{
+			Timeout:       5 * time.Second,
+			MaxSize:       1024,
+			UserAgent:     "test-agent",
+			RetryAttempts: 3,
+			Client:        server.Client(),
+		}
+
+		_, err := DownloadContent(context.Background(), server.URL, config)
+		if err == nil {
+			t.Fatal("expected error for 404 status")
+		}
+		if attempts != 1 {
+			t.Fatalf("attempts = %d, want 1", attempts)
+		}
+	})
+
+	t.Run("read body error is not retried", func(t *testing.T) {
+		attempts := 0
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			attempts++
 			w.Header().Set("Content-Type", "text/plain")
 			w.Header().Set("Content-Length", "1000") // Claim 1000 bytes
 			w.WriteHeader(http.StatusOK)
@@ -403,13 +463,16 @@ func TestDownloadContent(t *testing.T) {
 			Timeout:       5 * time.Second,
 			MaxSize:       2000,
 			UserAgent:     "test-agent",
-			RetryAttempts: 1,
+			RetryAttempts: 3,
 			Client:        server.Client(),
 		}
 
 		_, err := DownloadContent(context.Background(), server.URL, config)
 		if err == nil {
 			t.Fatal("expected error for truncated body")
+		}
+		if attempts != 1 {
+			t.Fatalf("attempts = %d, want 1", attempts)
 		}
 	})
 

@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"bytes"
+	"io"
 	"maps"
 	"net/http"
 	"testing"
@@ -9,6 +11,12 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/spachava753/gai"
 )
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 func TestHTTPClientConfiguration(t *testing.T) {
 	tests := []struct {
@@ -38,6 +46,53 @@ func TestHTTPClientConfiguration(t *testing.T) {
 				t.Fatal("client transport did not preserve configured transport")
 			}
 		})
+	}
+}
+
+func TestModelRoundTripperRetriesRetryableResponseAndReplaysBody(t *testing.T) {
+	const payload = `{"input":"hello"}`
+	attempts := 0
+	var bodies []string
+
+	base := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		attempts++
+		body, err := io.ReadAll(req.Body)
+		if err != nil {
+			return nil, err
+		}
+		bodies = append(bodies, string(body))
+		status := http.StatusOK
+		if attempts == 1 {
+			status = http.StatusInternalServerError
+		}
+		return &http.Response{
+			StatusCode: status,
+			Status:     http.StatusText(status),
+			Body:       io.NopCloser(bytes.NewBufferString("{}")),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})
+	client := &http.Client{Transport: newModelRoundTripper(base)}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://example.test/v1/messages", bytes.NewBufferString(payload))
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+	if len(bodies) != 2 || bodies[0] != payload || bodies[1] != payload {
+		t.Fatalf("bodies = %#v, want payload replayed twice", bodies)
 	}
 }
 

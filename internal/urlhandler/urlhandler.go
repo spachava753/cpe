@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cenkalti/backoff/v5"
+	"github.com/spachava753/cpe/internal/httpclient"
 )
 
 const (
@@ -43,6 +43,16 @@ func DefaultConfig() *DownloadConfig {
 	}
 }
 
+func downloadHTTPClient(config *DownloadConfig) *http.Client {
+	return httpclient.New(
+		httpclient.WithBaseClient(config.Client),
+		httpclient.WithBackoff(200*time.Millisecond, 3*time.Second),
+		httpclient.WithJitterFactor(0.2),
+		httpclient.WithMaxRetries(config.RetryAttempts-1),
+		httpclient.WithDefaultTimeout(config.Timeout),
+	)
+}
+
 // DownloadedContent represents content downloaded from a URL
 type DownloadedContent struct {
 	Data        []byte
@@ -66,27 +76,18 @@ func IsURL(input string) bool {
 	return parsed.Scheme != "" && parsed.Host != ""
 }
 
-// DownloadContent downloads content from a URL with retry logic and size limits
+// DownloadContent downloads content from a URL with size limits. It retries
+// request failures and retryable HTTP statuses; errors while reading a
+// successful response body are returned immediately and are not retried.
 func DownloadContent(ctx context.Context, urlStr string, config *DownloadConfig) (*DownloadedContent, error) {
 	if config == nil {
 		config = DefaultConfig()
 	}
 
-	// Implement retry logic with exponential backoff
-	operation := func() (*DownloadedContent, error) {
-		return download(ctx, urlStr, config)
-	}
-
-	// Use the new backoff v5 API
-	result, err := backoff.Retry(ctx, operation,
-		backoff.WithMaxTries(uint(config.RetryAttempts)),
-		backoff.WithMaxElapsedTime(config.Timeout),
-	)
-
+	result, err := download(ctx, urlStr, config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to download content after retries: %w", err)
+		return nil, fmt.Errorf("failed to download content: %w", err)
 	}
-
 	return result, nil
 }
 
@@ -101,7 +102,7 @@ func download(ctx context.Context, urlStr string, config *DownloadConfig) (*Down
 	req.Header.Set("User-Agent", config.UserAgent)
 
 	// Make the request
-	resp, err := config.Client.Do(req)
+	resp, err := downloadHTTPClient(config).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}

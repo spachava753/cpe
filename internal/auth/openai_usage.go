@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
+
+	"github.com/spachava753/cpe/internal/httpclient"
 )
 
 const (
@@ -77,6 +80,15 @@ type OpenAIUsageResponse struct {
 	Promo                any                         `json:"promo"`
 }
 
+func newOpenAIUsageHTTPClient() *http.Client {
+	return httpclient.New(
+		httpclient.WithBackoff(200*time.Millisecond, 3*time.Second),
+		httpclient.WithJitterFactor(0.2),
+		httpclient.WithMaxRetries(2),
+		httpclient.WithTimeout(15*time.Second),
+	)
+}
+
 // FetchOpenAIUsage retrieves subscription usage information from the ChatGPT
 // backend usage endpoint using an OAuth bearer token.
 func FetchOpenAIUsage(ctx context.Context, client *http.Client, baseURL, accessToken string) (*OpenAIUsageResponse, error) {
@@ -84,7 +96,7 @@ func FetchOpenAIUsage(ctx context.Context, client *http.Client, baseURL, accessT
 		return nil, fmt.Errorf("access token is required")
 	}
 	if client == nil {
-		client = http.DefaultClient
+		client = newOpenAIUsageHTTPClient()
 	}
 
 	usageURL := OpenAIUsageURLForBase(baseURL)

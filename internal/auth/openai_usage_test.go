@@ -124,6 +124,33 @@ func TestFetchOpenAIUsage(t *testing.T) {
 	}
 }
 
+func TestFetchOpenAIUsageWithDefaultClientRetriesRetryableStatus(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.Header().Set("Content-Type", "application/json")
+		if attempts == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprint(w, `{"error":"temporarily unavailable"}`)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, `{"user_id":"user_123","account_id":"acct_123","email":"user@example.com","plan_type":"pro","rate_limit":{"allowed":true,"limit_reached":false,"primary_window":{}},"code_review_rate_limit":{"allowed":true,"limit_reached":false,"primary_window":{}},"credits":{"balance":"0","has_credits":false,"unlimited":false},"promo":null}`)
+	}))
+	defer server.Close()
+
+	usage, err := FetchOpenAIUsage(context.Background(), nil, server.URL, "test-token")
+	if err != nil {
+		t.Fatalf("FetchOpenAIUsage() error = %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+	if usage.PlanType != "pro" {
+		t.Fatalf("PlanType = %q, want pro", usage.PlanType)
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(substr) == 0 || len(s) >= len(substr) && (s == substr || index(s, substr) >= 0)
 }

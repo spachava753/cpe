@@ -12,6 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/httpclient"
 	"github.com/spachava753/cpe/internal/mcpconfig"
 	"github.com/spachava753/cpe/internal/version"
 )
@@ -34,6 +35,16 @@ func (h *headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 }
 
 const defaultServerTimeout = 60 * time.Second
+
+func newMCPRoundTripper(base http.RoundTripper) http.RoundTripper {
+	return httpclient.Transport(
+		httpclient.WithBaseTransport(base),
+		httpclient.WithRetryStatuses(false),
+		httpclient.WithBackoff(200*time.Millisecond, 5*time.Second),
+		httpclient.WithJitterFactor(0.2),
+		httpclient.WithMaxRetries(2),
+	)
+}
 
 // EffectiveServerType returns the runtime transport type, defaulting empty to stdio.
 func EffectiveServerType(config mcpconfig.ServerConfig) string {
@@ -207,10 +218,11 @@ func CreateTransport(ctx context.Context, config mcpconfig.ServerConfig) (transp
 	// HTTP/SSE sessions are not terminated by http.Client.Timeout.
 	var httpClient *http.Client
 	if serverType == "http" || serverType == "sse" {
-		httpClient = &http.Client{}
+		transport := newMCPRoundTripper(nil)
 		if len(config.Headers) > 0 {
-			httpClient.Transport = &headerRoundTripper{headers: config.Headers}
+			transport = &headerRoundTripper{headers: config.Headers, next: transport}
 		}
+		httpClient = &http.Client{Transport: transport}
 	}
 
 	switch serverType {

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -13,6 +14,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/spachava753/cpe/internal/httpclient"
 )
 
 // Default OAuth constants for Anthropic
@@ -201,6 +204,25 @@ func OpenBrowser(ctx context.Context, url string) error {
 	return cmd.Start()
 }
 
+func newOAuthHTTPClient(maxRetries int) *http.Client {
+	return httpclient.New(
+		httpclient.WithRetryStatuses(false),
+		httpclient.WithBackoff(200*time.Millisecond, 2*time.Second),
+		httpclient.WithJitterFactor(0.2),
+		httpclient.WithMaxRetries(maxRetries),
+		httpclient.WithTimeout(30*time.Second),
+	)
+}
+
+func oauthResponseError(action string, resp *http.Response) error {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	bodyText := strings.TrimSpace(string(body))
+	if bodyText == "" {
+		return fmt.Errorf("%s failed (status %d)", action, resp.StatusCode)
+	}
+	return fmt.Errorf("%s failed (status %d): %s", action, resp.StatusCode, bodyText)
+}
+
 // ExchangeCode exchanges an authorization code for tokens (Anthropic provider)
 // The code parameter should be in the format "code#state" as returned by the callback
 func ExchangeCode(ctx context.Context, code, verifier string) (*TokenResponse, error) {
@@ -232,16 +254,14 @@ func ExchangeCode(ctx context.Context, code, verifier string) (*TokenResponse, e
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := newOAuthHTTPClient(1).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("token exchange request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		var errBody map[string]any
-		json.NewDecoder(resp.Body).Decode(&errBody)
-		return nil, fmt.Errorf("token exchange failed (status %d): %v", resp.StatusCode, errBody)
+		return nil, oauthResponseError("token exchange", resp)
 	}
 
 	var tokenResp TokenResponse
@@ -269,16 +289,14 @@ func ExchangeCodeOpenAI(ctx context.Context, code, verifier string) (*TokenRespo
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := newOAuthHTTPClient(1).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("token exchange request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		var errBody map[string]any
-		json.NewDecoder(resp.Body).Decode(&errBody)
-		return nil, fmt.Errorf("token exchange failed (status %d): %v", resp.StatusCode, errBody)
+		return nil, oauthResponseError("token exchange", resp)
 	}
 
 	var tokenResp TokenResponse
@@ -309,16 +327,14 @@ func RefreshAccessToken(ctx context.Context, refreshToken string) (*TokenRespons
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := newOAuthHTTPClient(2).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("refresh token request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		var errBody map[string]any
-		json.NewDecoder(resp.Body).Decode(&errBody)
-		return nil, fmt.Errorf("token refresh failed (status %d): %v", resp.StatusCode, errBody)
+		return nil, oauthResponseError("token refresh", resp)
 	}
 
 	var tokenResp TokenResponse
@@ -344,16 +360,14 @@ func RefreshAccessTokenOpenAI(ctx context.Context, refreshToken string) (*TokenR
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := newOAuthHTTPClient(2).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("refresh token request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		var errBody map[string]any
-		json.NewDecoder(resp.Body).Decode(&errBody)
-		return nil, fmt.Errorf("token refresh failed (status %d): %v", resp.StatusCode, errBody)
+		return nil, oauthResponseError("token refresh", resp)
 	}
 
 	var tokenResp TokenResponse

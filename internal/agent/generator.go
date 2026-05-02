@@ -21,17 +21,56 @@ import (
 	"github.com/spachava753/cpe/internal/auth"
 	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/httpclient"
 	"github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/ports"
 	"github.com/spachava753/cpe/internal/storage"
-
-	"github.com/cenkalti/backoff/v5"
 )
 
 const authMethodOAuth = "oauth"
 
 // ModelTypeResponses is the model type identifier for the OpenAI Responses API.
 const ModelTypeResponses = "responses"
+
+func newModelHTTPClient(timeout time.Duration) *http.Client {
+	return httpclient.New(modelHTTPClientOptions(timeout)...)
+}
+
+func newModelRoundTripper(base http.RoundTripper) http.RoundTripper {
+	opts := modelHTTPClientOptions(0)
+	opts = append(opts, httpclient.WithBaseTransport(base))
+	return httpclient.Transport(opts...)
+}
+
+func modelHTTPClientOptions(timeout time.Duration) []httpclient.Option {
+	opts := []httpclient.Option{
+		httpclient.WithBackoff(500*time.Millisecond, 30*time.Second),
+		httpclient.WithJitterFactor(0.2),
+		httpclient.WithMaxRetries(3),
+	}
+	if timeout > 0 {
+		opts = append(opts, httpclient.WithTimeout(timeout))
+	}
+	return opts
+}
+
+func openAIRequestOptions(apiKey string, httpClient *http.Client, timeout time.Duration) []oaiopt.RequestOption {
+	return []oaiopt.RequestOption{
+		oaiopt.WithAPIKey(apiKey),
+		oaiopt.WithHTTPClient(httpClient),
+		oaiopt.WithRequestTimeout(timeout),
+		oaiopt.WithMaxRetries(0),
+	}
+}
+
+func anthropicRequestOptions(apiKey string, httpClient *http.Client, timeout time.Duration) []aopts.RequestOption {
+	return []aopts.RequestOption{
+		aopts.WithAPIKey(apiKey),
+		aopts.WithHTTPClient(httpClient),
+		aopts.WithRequestTimeout(timeout),
+		aopts.WithMaxRetries(0),
+	}
+}
 
 // ApplyResponsesThinkingSummary ensures that when using the OpenAI Responses API
 // with a thinking budget, the reasoning summary detail parameter is set to "detailed".
@@ -78,13 +117,13 @@ func initGeneratorFromModel(
 	t := strings.ToLower(m.Type)
 	baseURL := m.BaseUrl
 
-	httpClient := http.DefaultClient
+	httpClient := newModelHTTPClient(timeout)
 	if m.PatchRequest != nil {
-		transport, err := BuildPatchTransportFromConfig(nil, m.PatchRequest)
+		transport, err := BuildPatchTransportFromConfig(httpClient.Transport, m.PatchRequest)
 		if err != nil {
 			return nil, fmt.Errorf("building patch transport: %w", err)
 		}
-		httpClient = &http.Client{Transport: transport}
+		httpClient = &http.Client{Transport: transport, Timeout: timeout}
 	}
 
 	apiEnv := strings.TrimSpace(m.ApiKeyEnv)
@@ -97,7 +136,7 @@ func initGeneratorFromModel(
 		if apiKey == "" {
 			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 		}
-		oaiOpts := []oaiopt.RequestOption{oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout)}
+		oaiOpts := openAIRequestOptions(apiKey, httpClient, timeout)
 		if baseURL != "" {
 			oaiOpts = append(oaiOpts, oaiopt.WithBaseURL(baseURL))
 		}
@@ -121,10 +160,10 @@ func initGeneratorFromModel(
 			if cred.Type != "oauth" {
 				return nil, fmt.Errorf("stored credential is not OAuth type")
 			}
-			// Build transport chain: PatchTransport -> OAuthTransport -> DefaultTransport
+			// Build transport chain: PatchTransport -> OAuthTransport -> failsafe -> DefaultTransport.
 			// This order ensures OAuthTransport merges its headers with any headers
 			// set by PatchTransport, rather than PatchTransport overwriting OAuth headers.
-			oauthTransport := auth.NewOAuthTransport(nil, store)
+			oauthTransport := auth.NewOAuthTransport(newModelRoundTripper(nil), store)
 			var finalTransport http.RoundTripper = oauthTransport
 			if m.PatchRequest != nil {
 				// Wrap OAuthTransport with PatchTransport
@@ -134,11 +173,7 @@ func initGeneratorFromModel(
 				}
 			}
 			oauthClient := &http.Client{Transport: finalTransport, Timeout: timeout}
-			anthOpts := []aopts.RequestOption{
-				aopts.WithAPIKey("placeholder"),
-				aopts.WithHTTPClient(oauthClient),
-				aopts.WithRequestTimeout(timeout),
-			}
+			anthOpts := anthropicRequestOptions("placeholder", oauthClient, timeout)
 			if baseURL != "" {
 				anthOpts = append(anthOpts, aopts.WithBaseURL(baseURL))
 			}
@@ -149,12 +184,9 @@ func initGeneratorFromModel(
 				return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 			}
 			// Add beta headers for interleaved thinking and context management
-			anthOpts := []aopts.RequestOption{
-				aopts.WithAPIKey(apiKey),
-				aopts.WithHTTPClient(httpClient),
-				aopts.WithRequestTimeout(timeout),
+			anthOpts := append(anthropicRequestOptions(apiKey, httpClient, timeout),
 				aopts.WithHeader("anthropic-beta", "interleaved-thinking-2025-05-14,context-management-2025-06-27"),
-			}
+			)
 			if baseURL != "" {
 				anthOpts = append(anthOpts, aopts.WithBaseURL(baseURL))
 			}
@@ -175,9 +207,14 @@ func initGeneratorFromModel(
 		if apiKey == "" {
 			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 		}
+		httpOptions := genai.HTTPOptions{BaseURL: baseURL}
+		if timeout > 0 {
+			httpOptions.Timeout = &timeout
+		}
 		cc := genai.ClientConfig{
 			APIKey:      apiKey,
-			HTTPOptions: genai.HTTPOptions{BaseURL: baseURL},
+			HTTPClient:  httpClient,
+			HTTPOptions: httpOptions,
 		}
 		client, err := genai.NewClient(ctx, &cc)
 		if err != nil {
@@ -208,8 +245,8 @@ func initGeneratorFromModel(
 			if cred.Type != "oauth" {
 				return nil, fmt.Errorf("stored credential is not OAuth type")
 			}
-			// Build transport chain: PatchTransport -> OpenAIOAuthTransport -> DefaultTransport
-			oauthTransport := auth.NewOpenAIOAuthTransport(nil, store)
+			// Build transport chain: PatchTransport -> OpenAIOAuthTransport -> failsafe -> DefaultTransport.
+			oauthTransport := auth.NewOpenAIOAuthTransport(newModelRoundTripper(nil), store)
 			var finalTransport http.RoundTripper = oauthTransport
 			if m.PatchRequest != nil {
 				finalTransport, err = BuildPatchTransportFromConfig(oauthTransport, m.PatchRequest)
@@ -232,12 +269,9 @@ func initGeneratorFromModel(
 				oauthSystemPrompt = "You are a helpful assistant."
 			}
 
-			respOpts := []oaiopt.RequestOption{
-				oaiopt.WithAPIKey("placeholder"),
-				oaiopt.WithHTTPClient(oauthClient),
-				oaiopt.WithRequestTimeout(timeout),
+			respOpts := append(openAIRequestOptions("placeholder", oauthClient, timeout),
 				oaiopt.WithBaseURL(oauthBaseURL),
-			}
+			)
 			client := openai.NewClient(respOpts...)
 			respGen := gai.NewResponsesGenerator(&client.Responses, m.ID, oauthSystemPrompt)
 			gen = &respGen
@@ -246,7 +280,7 @@ func initGeneratorFromModel(
 			if apiKey == "" {
 				return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 			}
-			respOpts := []oaiopt.RequestOption{oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout)}
+			respOpts := openAIRequestOptions(apiKey, httpClient, timeout)
 			if baseURL != "" {
 				respOpts = append(respOpts, oaiopt.WithBaseURL(baseURL))
 			}
@@ -258,7 +292,7 @@ func initGeneratorFromModel(
 		if apiKey == "" {
 			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 		}
-		orOpts := []oaiopt.RequestOption{oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout)}
+		orOpts := openAIRequestOptions(apiKey, httpClient, timeout)
 		if baseURL != "" {
 			orOpts = append(orOpts, oaiopt.WithBaseURL(baseURL))
 		}
@@ -268,7 +302,7 @@ func initGeneratorFromModel(
 		if apiKey == "" {
 			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 		}
-		zaiOpts := []oaiopt.RequestOption{oaiopt.WithAPIKey(apiKey), oaiopt.WithHTTPClient(httpClient), oaiopt.WithRequestTimeout(timeout)}
+		zaiOpts := openAIRequestOptions(apiKey, httpClient, timeout)
 		if baseURL != "" {
 			zaiOpts = append(zaiOpts, oaiopt.WithBaseURL(baseURL))
 		}
@@ -351,15 +385,9 @@ func NewGenerator(
 	}
 
 	// Build the single-turn provider stack. Runtime owns persistence,
-	// rendering, tool callbacks, and the dialog loop outside retry.
-	b := backoff.NewExponentialBackOff()
-	b.InitialInterval = 500 * time.Millisecond
-	b.MaxInterval = 1 * time.Minute
-	b.Reset()
-
+	// rendering, tool callbacks, and the dialog loop.
 	wrappers := []gai.WrapperFunc{
 		WithBlockFilter(cfg.Model.Type),
-		gai.WithRetry(b, backoff.WithMaxTries(3), backoff.WithMaxElapsedTime(5*time.Minute)),
 	}
 
 	wrapped := gai.Wrap(gen, wrappers...)

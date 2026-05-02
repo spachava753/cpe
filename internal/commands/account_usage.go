@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"time"
 
@@ -78,7 +77,7 @@ func fetchOpenAIAccountUsage(ctx context.Context, baseURL string) (*auth.OpenAIU
 		return nil, err
 	}
 
-	usage, err := auth.FetchOpenAIUsage(ctx, http.DefaultClient, baseURL, cred.AccessToken)
+	usage, err := auth.FetchOpenAIUsage(ctx, nil, baseURL, cred.AccessToken)
 	if err != nil {
 		return nil, fmt.Errorf("retrieving openai account usage: %w", err)
 	}

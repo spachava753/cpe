@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
+
+	"github.com/spachava753/cpe/internal/httpclient"
 )
 
 // ModelsDevAPI is the URL for the models.dev registry
@@ -70,15 +73,25 @@ func SupportedRegistryProviders() []string {
 	return providers
 }
 
+func newRegistryHTTPClient() *http.Client {
+	return httpclient.New(
+		httpclient.WithBackoff(200*time.Millisecond, 3*time.Second),
+		httpclient.WithJitterFactor(0.2),
+		httpclient.WithMaxRetries(3),
+		httpclient.WithTimeout(15*time.Second),
+	)
+}
+
 // FetchModelsDevRegistry fetches and decodes the public models.dev registry.
-// Network cancellation/timeouts are controlled by the provided context.
+// Cancellation is controlled by the provided context; request timeout is capped
+// by the registry HTTP client's fixed timeout.
 func FetchModelsDevRegistry(ctx context.Context) (map[string]ModelsDevProvider, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", ModelsDevAPI, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := newRegistryHTTPClient().Do(req)
 	if err != nil {
 		return nil, err
 	}
