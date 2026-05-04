@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/gai"
 
@@ -211,6 +212,14 @@ func (c *ToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage,
 //
 // Session lifecycle (connect/close) is managed by callers after transport creation.
 func CreateTransport(ctx context.Context, config mcpconfig.ServerConfig) (transport mcp.Transport, err error) {
+	return createTransport(ctx, config, nil)
+}
+
+func createTransport(
+	ctx context.Context,
+	config mcpconfig.ServerConfig,
+	authorizationCodeFetcher auth.AuthorizationCodeFetcher,
+) (transport mcp.Transport, err error) {
 	serverType := EffectiveServerType(config)
 
 	// Create a custom HTTP client only for static header injection.
@@ -240,9 +249,18 @@ func CreateTransport(ctx context.Context, config mcpconfig.ServerConfig) (transp
 			Command: cmd,
 		}
 	case "http":
+		if authorizationCodeFetcher == nil {
+			redirectURL := mcpOAuthRedirectURL()
+			authorizationCodeFetcher = newCodeReceiver(redirectURL).getAuthorizationCode
+		}
+		authHandler, err := newMCPAuthorizationCodeHandler(httpClient, authorizationCodeFetcher)
+		if err != nil {
+			return nil, err
+		}
 		transport = &mcp.StreamableClientTransport{
-			Endpoint:   config.URL,
-			HTTPClient: httpClient,
+			Endpoint:     config.URL,
+			HTTPClient:   httpClient,
+			OAuthHandler: authHandler,
 		}
 	case "sse":
 		transport = &mcp.SSEClientTransport{
