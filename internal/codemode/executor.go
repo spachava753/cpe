@@ -40,7 +40,7 @@ const timeoutCancellationNoteTemplate = "execution timed out after %d seconds; c
 const mcpSDKImport = "github.com/modelcontextprotocol/go-sdk/mcp"
 
 // goimportsModuleVersion must stay aligned with the golang.org/x/tools version in go.mod.
-const goimportsModuleVersion = "v0.42.0"
+const goimportsModuleVersion = "v0.44.0"
 
 const spilledOutputFilePattern = "cpe-code-output-*.txt"
 
