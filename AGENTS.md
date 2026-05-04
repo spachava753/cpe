@@ -59,3 +59,9 @@ Adding new tasks:
 1. Create a new `*_task.go` file in `build/`
 2. Define flags in `main.go` if the task needs arguments
 3. Use `goyek.Define(goyek.Task{...})` to register the task
+
+## Git
+
+The tracked files commited in this repo are controlled by the `.gitignore`, which is configured more as an allowlist. By default, all files are not tracked or commited, unless explicitly allowed by the `.gitignore`. Never modify `.gitignore`, unless explicitly asked by the user. If you find that a file you are working on is not being tracked, you can ask the user as to whether this file should be tracked or not.
+
+`PLAN.md` files should never be tracked, they are transient files that will be deleted after implementation completion.
