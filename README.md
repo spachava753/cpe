@@ -26,7 +26,15 @@ CPE connects your local development workflow to multiple AI providers through a 
 
 ## 🚀 Installation
 
-### Using Go (recommended)
+### Using release binaries
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/spachava753/cpe/main/install.sh | sh
+```
+
+The installer downloads the latest release for macOS or Linux and installs `cpe` to `~/.local/bin` by default. Set `CPE_INSTALL_DIR=/usr/local/bin` or `CPE_INSTALL_VERSION=vX.Y.Z` to customize the install.
+
+### Using Go
 
 ```bash
 go install github.com/spachava753/cpe@latest

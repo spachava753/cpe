@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/ncruces/go-sqlite3/driver"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/config"

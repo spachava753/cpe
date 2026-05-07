@@ -9,7 +9,7 @@ import (
 	"slices"
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/ncruces/go-sqlite3/driver"
 	"github.com/spachava753/gai"
 )
 
@@ -38,7 +38,7 @@ func newTestDB(t *testing.T) (*Sqlite, *sql.DB) {
 func newTestDBWithFK(t *testing.T) (*Sqlite, *sql.DB) {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "test.db")
-	rawDB, err := sql.Open("sqlite3", dbPath+"?_foreign_keys=on")
+	rawDB, err := sql.Open("sqlite3", dbPath+"?_pragma=foreign_keys(1)")
 	if err != nil {
 		t.Fatalf("sql.Open: %v", err)
 	}
