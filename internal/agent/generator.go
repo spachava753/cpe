@@ -319,6 +319,9 @@ func initGeneratorFromModel(
 	if sg, ok := gen.(gai.StreamingGenerator); ok {
 		gen = &gai.StreamingAdapter{S: sg}
 	}
+	if t == ModelTypeResponses {
+		gen = newResponsesPhaseRetryGenerator(gen)
+	}
 
 	return gen, nil
 }

@@ -10,6 +10,8 @@ import (
 
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/config"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -93,6 +95,34 @@ func TestModelRoundTripperRetriesRetryableResponseAndReplaysBody(t *testing.T) {
 	}
 	if len(bodies) != 2 || bodies[0] != payload || bodies[1] != payload {
 		t.Fatalf("bodies = %#v, want payload replayed twice", bodies)
+	}
+}
+
+func TestInitGeneratorFromModel_WrapsOnlyResponsesWithPhaseRetry(t *testing.T) {
+	t.Setenv("TEST_OPENAI_API_KEY", "test-key")
+
+	responsesGen, err := initGeneratorFromModel(t.Context(), config.Model{
+		ID:        "gpt-5",
+		Type:      ModelTypeResponses,
+		ApiKeyEnv: "TEST_OPENAI_API_KEY",
+	}, "", time.Minute)
+	if err != nil {
+		t.Fatalf("initGeneratorFromModel responses error = %v", err)
+	}
+	if _, ok := responsesGen.(*responsesPhaseRetryGenerator); !ok {
+		t.Fatalf("responses generator type = %T, want *responsesPhaseRetryGenerator", responsesGen)
+	}
+
+	openAIGen, err := initGeneratorFromModel(t.Context(), config.Model{
+		ID:        "gpt-4o",
+		Type:      "openai",
+		ApiKeyEnv: "TEST_OPENAI_API_KEY",
+	}, "", time.Minute)
+	if err != nil {
+		t.Fatalf("initGeneratorFromModel openai error = %v", err)
+	}
+	if _, ok := openAIGen.(*responsesPhaseRetryGenerator); ok {
+		t.Fatalf("openai generator type = %T, did not want *responsesPhaseRetryGenerator", openAIGen)
 	}
 }
 
