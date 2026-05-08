@@ -115,8 +115,8 @@ func dialogPrefixThroughLastUser(dialog gai.Dialog) gai.Dialog {
 	if len(dialog) == 0 {
 		return nil
 	}
-	for i := len(dialog) - 1; i >= 0; i-- {
-		if dialog[i].Role == gai.User {
+	for i, msg := range slices.Backward(dialog) {
+		if msg.Role == gai.User {
 			return dialog[:i+1]
 		}
 	}

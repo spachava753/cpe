@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/spachava753/gai"
@@ -364,8 +365,8 @@ func (r *Runtime) restartCompacted(ctx context.Context, current gai.Dialog, call
 }
 
 func lastMessageID(dialog gai.Dialog) string {
-	for i := len(dialog) - 1; i >= 0; i-- {
-		if id := GetMessageID(dialog[i]); id != "" {
+	for _, msg := range slices.Backward(dialog) {
+		if id := GetMessageID(msg); id != "" {
 			return id
 		}
 	}

@@ -221,7 +221,7 @@ func TestGenerateFormatsGeneratorErrors(t *testing.T) {
 		},
 		{
 			name:    "context length exceeded",
-			err:     gai.ContextLengthExceededErr,
+			err:     gai.ErrContextLengthExceeded,
 			wantErr: "Error generating response: context length exceeded. Shorten the prompt, reduce attached input, or compact the conversation\n",
 		},
 		{

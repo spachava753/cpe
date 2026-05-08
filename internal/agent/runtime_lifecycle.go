@@ -171,8 +171,8 @@ func trailingToolResults(dialog gai.Dialog) []gai.Message {
 	}
 
 	lastAssistantIdx := -1
-	for i := len(dialog) - 1; i >= 0; i-- {
-		if dialog[i].Role == gai.Assistant {
+	for i, msg := range slices.Backward(dialog) {
+		if msg.Role == gai.Assistant {
 			lastAssistantIdx = i
 			break
 		}

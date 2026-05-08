@@ -97,9 +97,9 @@ func formatGenerationError(err error) string {
 	}
 
 	switch {
-	case errors.Is(err, gai.ContextLengthExceededErr):
+	case errors.Is(err, gai.ErrContextLengthExceeded):
 		message = appendErrorHint(err.Error(), "Shorten the prompt, reduce attached input, or compact the conversation")
-	case errors.Is(err, gai.MaxGenerationLimitErr):
+	case errors.Is(err, gai.ErrMaxGenerationLimit):
 		message = appendErrorHint(err.Error(), "Increase the token limit or refine the prompt")
 	default:
 		message = err.Error()
