@@ -87,7 +87,7 @@ class CPE(BaseInstalledAgent):
             command=(
                 "set -euo pipefail; "
                 "apt-get update && "
-                "apt-get install -y ca-certificates curl gzip tar"
+                "apt-get install -y ca-certificates curl golang-go gzip tar"
             ),
             env={"DEBIAN_FRONTEND": "noninteractive"},
         )
