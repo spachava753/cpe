@@ -48,6 +48,18 @@ class CPETrajectoryConversionTest(unittest.TestCase):
         self.assertIsNone(trajectory.final_metrics.extra)
         self.assertEqual(trajectory.final_metrics.total_steps, 2)
 
+    def test_install_version_accepts_release_tag_forms(self) -> None:
+        agent = self._agent()
+
+        agent._version = "latest"
+        self.assertEqual(agent._install_version(), "latest")
+
+        agent._version = "v0.41.0"
+        self.assertEqual(agent._install_version(), "v0.41.0")
+
+        agent._version = "0.41.0"
+        self.assertEqual(agent._install_version(), "v0.41.0")
+
     @staticmethod
     def _agent() -> CPE:
         agent = object.__new__(CPE)

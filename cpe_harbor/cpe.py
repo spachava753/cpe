@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shlex
 import sqlite3
 from pathlib import Path
@@ -30,7 +31,7 @@ class CPE(BaseInstalledAgent):
 
     SUPPORTS_ATIF: bool = True
 
-    _GO_VERSION = "1.25.5"
+    _INSTALLER_URL = "https://raw.githubusercontent.com/spachava753/cpe/main/install.sh"
     _OUTPUT_FILENAME = "cpe.txt"
     _CONVERSATION_DB_FILENAME = ".cpeconvo"
 
@@ -42,7 +43,7 @@ class CPE(BaseInstalledAgent):
         return self._version or "latest"
 
     def get_version_command(self) -> str | None:
-        return 'export PATH="$HOME/go/bin:/usr/local/go/bin:$PATH"; cpe --version'
+        return 'export PATH="$HOME/.local/bin:$PATH"; cpe --version'
 
     def parse_version(self, stdout: str) -> str:
         text = stdout.strip()
@@ -52,40 +53,38 @@ class CPE(BaseInstalledAgent):
                 return line.removeprefix("cpe version").strip()
         return text
 
+    def _install_version(self) -> str:
+        version = self.version() or "latest"
+        if version == "latest":
+            return version
+        if re.fullmatch(r"v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", version):
+            return version
+        if re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", version):
+            return f"v{version}"
+        return version
+
     async def install(self, environment: BaseEnvironment) -> None:
         await self.exec_as_root(
             environment,
             command=(
                 "set -euo pipefail; "
                 "apt-get update && "
-                "apt-get install -y ca-certificates curl git gzip tar && "
-                "arch=\"$(uname -m)\"; "
-                "case \"$arch\" in "
-                "x86_64|amd64) go_arch=amd64 ;; "
-                "aarch64|arm64) go_arch=arm64 ;; "
-                "*) echo \"unsupported architecture: $arch\" >&2; exit 1 ;; "
-                "esac; "
-                f"curl -fsSL https://go.dev/dl/go{self._GO_VERSION}.linux-${{go_arch}}.tar.gz "
-                "-o /tmp/go.tgz && "
-                "rm -rf /usr/local/go && "
-                "tar -C /usr/local -xzf /tmp/go.tgz && "
-                "ln -sf /usr/local/go/bin/go /usr/local/bin/go && "
-                "ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt"
+                "apt-get install -y ca-certificates curl gzip tar"
             ),
             env={"DEBIAN_FRONTEND": "noninteractive"},
         )
 
-        module_spec = "github.com/spachava753/cpe@latest"
-        if self._version and self._version != "latest":
-            module_spec = f"github.com/spachava753/cpe@{self._version}"
-
+        install_version = shlex.quote(self._install_version())
         await self.exec_as_agent(
             environment,
             command=(
                 "set -euo pipefail; "
-                'export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"; '
-                f"go install {shlex.quote(module_spec)} && "
-                "cpe --version"
+                "mkdir -p \"$HOME/.local/bin\" && "
+                "curl -fsSL "
+                f"{shlex.quote(self._INSTALLER_URL)} | "
+                f"CPE_INSTALL_VERSION={install_version} "
+                "CPE_INSTALL_DIR=\"$HOME/.local/bin\" sh && "
+                "\"$HOME/.local/bin/cpe\" --version"
             ),
         )
 
@@ -551,7 +550,7 @@ class CPE(BaseInstalledAgent):
             environment,
             command=(
                 "mkdir -p /logs/agent/command-0 && "
-                'export PATH="$HOME/go/bin:/usr/local/go/bin:$PATH" && '
+                'export PATH="$HOME/.local/bin:$PATH" && '
                 f"cpe -n --skip-stdin --db-path {shlex.quote(db_path)} "
                 f"-m {model_ref} {escaped_instruction} "
                 "2>&1 </dev/null | stdbuf -oL tee "
