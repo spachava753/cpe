@@ -1,3 +1,4 @@
+import shlex
 import sqlite3
 import tempfile
 import unittest
@@ -59,6 +60,71 @@ class CPETrajectoryConversionTest(unittest.TestCase):
 
         agent._version = "0.41.0"
         self.assertEqual(agent._install_version(), "v0.41.0")
+
+    def test_constructor_requires_config_url(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaisesRegex(ValueError, "config_url agent kwarg is required"):
+                CPE(
+                    Path(tmpdir),
+                    model_name="zai/glm-5.1",
+                    system_prompt_url="https://example.com/prompt.md",
+                )
+
+    def test_constructor_requires_system_prompt_url(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaisesRegex(
+                ValueError, "system_prompt_url agent kwarg is required"
+            ):
+                CPE(
+                    Path(tmpdir),
+                    model_name="zai/glm-5.1",
+                    config_url="https://example.com/cpe.yaml",
+                )
+
+    def test_install_config_command_downloads_required_artifacts(self) -> None:
+        agent = self._agent()
+        agent._config_url = "https://example.com/config.yaml?token=it's-real"
+        agent._system_prompt_url = "https://example.com/prompt.md?token=it's-real"
+
+        command = agent._install_config_command()
+
+        self.assertIn("mkdir -p \"$HOME/.config/cpe\"", command)
+        self.assertIn(
+            f"curl -fsSL {shlex.quote(agent._config_url)} "
+            "-o \"$HOME/.config/cpe/cpe.yaml\"",
+            command,
+        )
+        self.assertIn(
+            f"curl -fsSL {shlex.quote(agent._system_prompt_url)} "
+            "-o \"$HOME/.config/cpe/agent_instructions.md\"",
+            command,
+        )
+
+    def test_execute_go_code_prompt_does_not_name_text_editor_tool(self) -> None:
+        prompt_path = (
+            Path(__file__).parent
+            / "configs"
+            / "execute_go_code_edits"
+            / "agent_instructions.md"
+        )
+        prompt = prompt_path.read_text(encoding="utf-8").lower()
+
+        self.assertNotIn("text_edit", prompt)
+        self.assertNotIn("text edit", prompt)
+
+    def test_experiment_configs_select_expected_editing_tools(self) -> None:
+        configs_dir = Path(__file__).parent / "configs"
+        text_edit_config = (configs_dir / "text_edit" / "cpe.yaml").read_text(
+            encoding="utf-8"
+        )
+        execute_go_config = (
+            configs_dir / "execute_go_code_edits" / "cpe.yaml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("type: builtin", text_edit_config)
+        self.assertIn("- text_edit", text_edit_config)
+        self.assertNotIn("mcpServers:", execute_go_config)
+        self.assertIn("codeMode:", execute_go_config)
 
     @staticmethod
     def _agent() -> CPE:

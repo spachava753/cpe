@@ -34,6 +34,24 @@ class CPE(BaseInstalledAgent):
     _INSTALLER_URL = "https://raw.githubusercontent.com/spachava753/cpe/main/install.sh"
     _OUTPUT_FILENAME = "cpe.txt"
     _CONVERSATION_DB_FILENAME = ".cpeconvo"
+    _CONFIG_FILENAME = "cpe.yaml"
+    _SYSTEM_PROMPT_FILENAME = "agent_instructions.md"
+
+    def __init__(
+        self,
+        *args: Any,
+        config_url: str | None = None,
+        system_prompt_url: str | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if not config_url:
+            raise ValueError("config_url agent kwarg is required")
+        if not system_prompt_url:
+            raise ValueError("system_prompt_url agent kwarg is required")
+
+        self._config_url = config_url
+        self._system_prompt_url = system_prompt_url
+        super().__init__(*args, **kwargs)
 
     @staticmethod
     def name() -> str:
@@ -90,40 +108,19 @@ class CPE(BaseInstalledAgent):
 
         await self.exec_as_agent(
             environment,
-            command=(
-                "set -euo pipefail; "
-                "mkdir -p \"$HOME/.config/cpe\" && "
-                "cat > \"$HOME/.config/cpe/cpe.yaml\" <<'CPE_CONFIG'\n"
-                "version: \"1.0\"\n"
-                "models:\n"
-                "  - ref: glm\n"
-                "    display_name: \"GLM 5.1\"\n"
-                "    id: glm-5.1\n"
-                "    type: zai\n"
-                "    base_url: https://api.z.ai/api/coding/paas/v4\n"
-                "    api_key_env: Z_API_KEY\n"
-                "    context_window: 202752\n"
-                "    max_output: 131072\n"
-                "    input_cost_per_million: 1\n"
-                "    output_cost_per_million: 3.2\n"
-                "    systemPromptPath: \"$HOME/.config/cpe/agent_instructions.md\"\n"
-                "    timeout: 1h\n"
-                "    generationParams:\n"
-                "      temperature: 1\n"
-                "    mcpServers:\n"
-                "      editor:\n"
-                "        type: builtin\n"
-                "        enabledTools:\n"
-                "          - text_edit\n"
-                "    codeMode:\n"
-                "      enabled: true\n"
-                "      largeOutputCharLimit: 150000\n"
-                "      maxTimeout: 3600\n"
-                "CPE_CONFIG\n"
-                "curl -fsSL "
-                "https://raw.githubusercontent.com/spachava753/cpe/main/examples/agent_instructions.md "
-                "-o \"$HOME/.config/cpe/agent_instructions.md\""
-            ),
+            command=self._install_config_command(),
+        )
+
+    def _install_config_command(self) -> str:
+        config_url = shlex.quote(self._config_url)
+        system_prompt_url = shlex.quote(self._system_prompt_url)
+        config_path = f"$HOME/.config/cpe/{self._CONFIG_FILENAME}"
+        system_prompt_path = f"$HOME/.config/cpe/{self._SYSTEM_PROMPT_FILENAME}"
+        return (
+            "set -euo pipefail; "
+            "mkdir -p \"$HOME/.config/cpe\" && "
+            f"curl -fsSL {config_url} -o \"{config_path}\" && "
+            f"curl -fsSL {system_prompt_url} -o \"{system_prompt_path}\""
         )
 
     def populate_context_post_run(self, context: AgentContext) -> None:
