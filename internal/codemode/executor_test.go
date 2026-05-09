@@ -597,9 +597,10 @@ func TestNormalizeGoDirectiveVersion(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{name: "go prefixed", input: "go1.25.5", want: "1.25.5"},
+		{name: "go prefixed patch", input: "go1.25.5", want: "1.25"},
 		{name: "plain", input: "1.24", want: "1.24"},
-		{name: "v prefixed", input: "v1.26.0", want: "1.26.0"},
+		{name: "v prefixed patch", input: "v1.26.0", want: "1.26"},
+		{name: "old toolchain patch", input: "go1.19.8", want: "1.19"},
 		{name: "invalid", input: "abc", wantErr: true},
 	}
 

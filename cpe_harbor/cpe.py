@@ -36,6 +36,7 @@ class CPE(BaseInstalledAgent):
     _CONVERSATION_DB_FILENAME = ".cpeconvo"
     _CONFIG_FILENAME = "cpe.yaml"
     _SYSTEM_PROMPT_FILENAME = "agent_instructions.md"
+    _GO_VERSION = "1.25.5"
 
     def __init__(
         self,
@@ -87,9 +88,14 @@ class CPE(BaseInstalledAgent):
             command=(
                 "set -euo pipefail; "
                 "apt-get update && "
-                "apt-get install -y ca-certificates curl golang-go gzip tar"
+                "apt-get install -y ca-certificates curl gzip tar"
             ),
             env={"DEBIAN_FRONTEND": "noninteractive"},
+        )
+
+        await self.exec_as_root(
+            environment,
+            command=self._install_go_command(),
         )
 
         install_version = shlex.quote(self._install_version())
@@ -109,6 +115,27 @@ class CPE(BaseInstalledAgent):
         await self.exec_as_agent(
             environment,
             command=self._install_config_command(),
+        )
+
+    def _install_go_command(self) -> str:
+        go_version = shlex.quote(self._GO_VERSION)
+        return (
+            "set -euo pipefail; "
+            "arch=$(uname -m); "
+            "case \"$arch\" in "
+            "x86_64|amd64) go_arch=amd64 ;; "
+            "arm64|aarch64) go_arch=arm64 ;; "
+            "*) echo \"unsupported Go architecture: $arch\" >&2; exit 1 ;; "
+            "esac; "
+            "tmp=$(mktemp -d); "
+            "trap 'rm -rf \"$tmp\"' EXIT INT TERM; "
+            f"curl -fsSL https://go.dev/dl/go{go_version}.linux-${{go_arch}}.tar.gz "
+            "-o \"$tmp/go.tgz\" && "
+            "rm -rf /usr/local/go && "
+            "tar -C /usr/local -xzf \"$tmp/go.tgz\" && "
+            "ln -sf /usr/local/go/bin/go /usr/local/bin/go && "
+            "ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt && "
+            "go version"
         )
 
     def _install_config_command(self) -> str:

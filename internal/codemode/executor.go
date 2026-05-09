@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"syscall"
@@ -43,6 +44,8 @@ const mcpSDKImport = "github.com/modelcontextprotocol/go-sdk/mcp"
 const goimportsModuleVersion = "v0.44.0"
 
 const spilledOutputFilePattern = "cpe-code-output-*.txt"
+
+var goDirectiveVersionPattern = regexp.MustCompile(`^(\d+)\.(\d+)(?:\.\d+)?$`)
 
 // ExecutionResult captures process output and exit metadata from sandboxed code execution.
 // Output is combined stdout/stderr and may contain truncation metadata when large-output
@@ -349,8 +352,9 @@ func readWorkspaceModuleInfo(moduleDir string) (modulePath, goVersion string, er
 	return parsed.Module.Mod.Path, moduleGoVersion, nil
 }
 
-// normalizeGoDirectiveVersion accepts values like "go1.24", "v1.24", or "1.24"
-// and returns the canonical go directive form without the "go" prefix.
+// normalizeGoDirectiveVersion accepts values like "go1.24.5", "v1.24", or
+// "1.24" and returns the major.minor form accepted by all supported go.mod and
+// go.work parsers.
 func normalizeGoDirectiveVersion(raw string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -364,7 +368,11 @@ func normalizeGoDirectiveVersion(raw string) (string, error) {
 		return "", fmt.Errorf("invalid go version %q", raw)
 	}
 
-	return strings.TrimPrefix(prefixed, "go"), nil
+	matches := goDirectiveVersionPattern.FindStringSubmatch(trimmed)
+	if matches == nil {
+		return "", fmt.Errorf("invalid go directive version %q", raw)
+	}
+	return matches[1] + "." + matches[2], nil
 }
 
 // compareGoDirectiveVersions compares normalized go directive versions.

@@ -100,6 +100,15 @@ class CPETrajectoryConversionTest(unittest.TestCase):
             command,
         )
 
+    def test_install_go_command_downloads_official_toolchain(self) -> None:
+        agent = self._agent()
+
+        command = agent._install_go_command()
+
+        self.assertIn("go1.25.5.linux-${go_arch}.tar.gz", command)
+        self.assertIn("ln -sf /usr/local/go/bin/go /usr/local/bin/go", command)
+        self.assertIn("go version", command)
+
     def test_execute_go_code_prompt_does_not_name_text_editor_tool(self) -> None:
         prompt_path = (
             Path(__file__).parent
