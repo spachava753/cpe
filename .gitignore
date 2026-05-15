@@ -38,6 +38,9 @@
 !docs/
 !docs/**
 
+!experiments/
+!experiments/**
+
 !schema/
 !schema/**
 
