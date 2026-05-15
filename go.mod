@@ -25,7 +25,7 @@ require (
 	github.com/muesli/termenv v0.16.0
 	github.com/ncruces/go-sqlite3 v0.34.0
 	github.com/openai/openai-go/v3 v3.32.0
-	github.com/spachava753/gai v0.39.0
+	github.com/spachava753/gai v0.41.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stoewer/go-strcase v1.3.1
