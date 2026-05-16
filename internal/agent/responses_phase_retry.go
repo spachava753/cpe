@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/spachava753/gai"
@@ -24,22 +25,25 @@ func newResponsesPhaseRetryGenerator(inner gai.ToolCapableGenerator) *responsesP
 }
 
 func (g *responsesPhaseRetryGenerator) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
-	maxRetries := max(g.maxRetries, 0)
+	maxAttempts := max(g.maxRetries, 0) + 1
 
 	var resp gai.Response
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if err := ctx.Err(); err != nil {
-			return resp, err
+	var err error
+	for range maxAttempts {
+		if ctx.Err() != nil {
+			return resp, ctx.Err()
 		}
 
-		var err error
 		resp, err = g.GeneratorWrapper.Generate(ctx, dialog, opts)
-		if err == nil || !isResponsesPhaseConflictError(err) || attempt == maxRetries {
+		if err == nil {
+			return resp, err
+		}
+		if !isResponsesPhaseConflictError(err) {
 			return resp, err
 		}
 	}
 
-	return resp, nil
+	return resp, fmt.Errorf("%d generation attempts: %w", maxAttempts, err)
 }
 
 func isResponsesPhaseConflictError(err error) bool {

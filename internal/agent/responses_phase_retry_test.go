@@ -40,74 +40,77 @@ func (g *scriptedPhaseRetryGenerator) Register(tool gai.Tool) error {
 	return nil
 }
 
-func TestResponsesPhaseRetryGenerator_RetriesPhaseConflictAndSucceeds(t *testing.T) {
-	inner := &scriptedPhaseRetryGenerator{
-		responses: []gai.Response{{}, successfulAssistantResponse("ok")},
-		errors: []error{
-			errors.New(`responses output contained multiple assistant message phases ("commentary", "final_answer")`),
-			nil,
+func TestResponsesPhaseRetryGenerator_Generate(t *testing.T) {
+	phaseErr := errors.New(`responses output contained multiple assistant message phases ("commentary", "final_answer")`)
+	otherErr := errors.New("responses prompt cache key must be a string")
+
+	tests := []struct {
+		name      string
+		responses []gai.Response
+		errors    []error
+		setup     func(*testing.T, *scriptedPhaseRetryGenerator) context.Context
+		wantErr   error
+		wantCalls int
+		wantText  string
+	}{
+		{
+			name:      "retries phase conflict and succeeds",
+			responses: []gai.Response{{}, successfulAssistantResponse("ok")},
+			errors:    []error{phaseErr, nil},
+			wantCalls: 2,
+			wantText:  "ok",
+		},
+		{
+			name:      "exhausts phase conflict retries",
+			errors:    []error{phaseErr, phaseErr, phaseErr, phaseErr, phaseErr, phaseErr},
+			wantErr:   phaseErr,
+			wantCalls: 6,
+		},
+		{
+			name:      "does not retry other errors",
+			errors:    []error{otherErr},
+			wantErr:   otherErr,
+			wantCalls: 1,
+		},
+		{
+			name:   "context cancellation stops retry loop",
+			errors: []error{phaseErr},
+			setup: func(t *testing.T, inner *scriptedPhaseRetryGenerator) context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				t.Cleanup(cancel)
+				inner.onCall = cancel
+				return ctx
+			},
+			wantErr:   context.Canceled,
+			wantCalls: 1,
 		},
 	}
-	gen := newResponsesPhaseRetryGenerator(inner)
 
-	resp, err := gen.Generate(t.Context(), singleUserDialog(), nil)
-	if err != nil {
-		t.Fatalf("Generate() error = %v", err)
-	}
-	if inner.calls != 2 {
-		t.Fatalf("calls = %d, want 2", inner.calls)
-	}
-	if got := resp.Candidates[0].Blocks[0].Content.String(); got != "ok" {
-		t.Fatalf("response content = %q, want ok", got)
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inner := &scriptedPhaseRetryGenerator{
+				responses: tt.responses,
+				errors:    tt.errors,
+			}
+			ctx := t.Context()
+			if tt.setup != nil {
+				ctx = tt.setup(t, inner)
+			}
+			gen := newResponsesPhaseRetryGenerator(inner)
 
-func TestResponsesPhaseRetryGenerator_ExhaustsPhaseConflictRetries(t *testing.T) {
-	phaseErr := errors.New(`responses output contained multiple assistant message phases ("commentary", "final_answer")`)
-	inner := &scriptedPhaseRetryGenerator{
-		errors: []error{phaseErr, phaseErr, phaseErr, phaseErr, phaseErr, phaseErr},
-	}
-	gen := newResponsesPhaseRetryGenerator(inner)
-
-	_, err := gen.Generate(t.Context(), singleUserDialog(), nil)
-	if !errors.Is(err, phaseErr) {
-		t.Fatalf("Generate() error = %v, want final phase error", err)
-	}
-	if inner.calls != 6 {
-		t.Fatalf("calls = %d, want 6", inner.calls)
-	}
-}
-
-func TestResponsesPhaseRetryGenerator_DoesNotRetryOtherErrors(t *testing.T) {
-	wantErr := errors.New("responses prompt cache key must be a string")
-	inner := &scriptedPhaseRetryGenerator{errors: []error{wantErr}}
-	gen := newResponsesPhaseRetryGenerator(inner)
-
-	_, err := gen.Generate(t.Context(), singleUserDialog(), nil)
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("Generate() error = %v, want %v", err, wantErr)
-	}
-	if inner.calls != 1 {
-		t.Fatalf("calls = %d, want 1", inner.calls)
-	}
-}
-
-func TestResponsesPhaseRetryGenerator_ContextCancellationStopsRetryLoop(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	inner := &scriptedPhaseRetryGenerator{
-		errors: []error{errors.New(`responses output contained multiple assistant message phases ("commentary", "final_answer")`)},
-		onCall: cancel,
-	}
-	gen := newResponsesPhaseRetryGenerator(inner)
-
-	_, err := gen.Generate(ctx, singleUserDialog(), nil)
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("Generate() error = %v, want context.Canceled", err)
-	}
-	if inner.calls != 1 {
-		t.Fatalf("calls = %d, want 1", inner.calls)
+			resp, err := gen.Generate(ctx, singleUserDialog(), nil)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Generate() error = %v, want %v", err, tt.wantErr)
+			}
+			if inner.calls != tt.wantCalls {
+				t.Fatalf("calls = %d, want %d", inner.calls, tt.wantCalls)
+			}
+			if tt.wantText != "" {
+				if got := resp.Candidates[0].Blocks[0].Content.String(); got != tt.wantText {
+					t.Fatalf("response content = %q, want %q", got, tt.wantText)
+				}
+			}
+		})
 	}
 }
 
