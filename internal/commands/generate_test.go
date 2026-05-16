@@ -182,7 +182,8 @@ type stubDialogGenerator struct {
 	err error
 }
 
-func (s stubDialogGenerator) Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error) {
+func (s stubDialogGenerator) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
+	_ = opts
 	return dialog, s.err
 }
 
@@ -262,11 +263,8 @@ func TestGenerateFormatsGeneratorErrors(t *testing.T) {
 			var stderr bytes.Buffer
 			err := Generate(context.Background(), GenerateOptions{
 				UserBlocks: []gai.Block{gai.TextBlock("hello")},
-				GenOptsFunc: func(dialog gai.Dialog) *gai.GenOpts {
-					return nil
-				},
-				Generator: stubDialogGenerator{err: tt.err},
-				Stderr:    &stderr,
+				Generator:  stubDialogGenerator{err: tt.err},
+				Stderr:     &stderr,
 			})
 			if err != nil {
 				t.Fatalf("Generate returned error: %v", err)
@@ -282,11 +280,8 @@ func TestGenerateSuppressesContextCanceled(t *testing.T) {
 	var stderr bytes.Buffer
 	err := Generate(context.Background(), GenerateOptions{
 		UserBlocks: []gai.Block{gai.TextBlock("hello")},
-		GenOptsFunc: func(dialog gai.Dialog) *gai.GenOpts {
-			return nil
-		},
-		Generator: stubDialogGenerator{err: context.Canceled},
-		Stderr:    &stderr,
+		Generator:  stubDialogGenerator{err: context.Canceled},
+		Stderr:     &stderr,
 	})
 	if err != nil {
 		t.Fatalf("Generate returned error: %v", err)

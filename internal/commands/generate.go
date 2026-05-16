@@ -23,8 +23,8 @@ type GenerateOptions struct {
 	// Callers typically populate this via ResolveInitialDialog.
 	InitialDialog gai.Dialog
 
-	// GenOptsFunc provides per-request generator options.
-	GenOptsFunc gai.GenOptsGenerator
+	// GenOpts provides generation options for the request.
+	GenOpts *gai.GenOpts
 
 	// Generator performs model inference and middleware execution.
 	Generator ports.Generator
@@ -69,7 +69,7 @@ func Generate(ctx context.Context, opts GenerateOptions) error {
 	// Generate the response.
 	// Saving and user-facing output are handled by the turn-lifecycle middleware
 	// in the generator pipeline as messages are processed.
-	_, err := opts.Generator.Generate(ctx, dialog, opts.GenOptsFunc)
+	_, err := opts.Generator.Generate(ctx, dialog, opts.GenOpts)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintf(opts.Stderr, "Error generating response: %s\n", formatGenerationError(err))
 	}

@@ -130,13 +130,14 @@ func ExecuteRoot(ctx context.Context, opts ExecuteRootOptions) error {
 
 	// Call the generation logic.
 	// Persistence and user-facing output are handled by the turn-lifecycle middleware when not in incognito mode.
+	dialogForOpts := append(gai.Dialog(nil), opts.InitialDialog...)
+	dialogForOpts = append(dialogForOpts, gai.Message{Role: gai.User, Blocks: userBlocks})
+
 	return Generate(ctx, GenerateOptions{
 		UserBlocks:    userBlocks,
 		InitialDialog: opts.InitialDialog,
-		GenOptsFunc: func(dialog gai.Dialog) *gai.GenOpts {
-			return agent.BuildGenOptsForDialog(effectiveConfig.Model, effectiveConfig.GenerationParams, dialog)
-		},
-		Generator: toolGen,
-		Stderr:    stderr,
+		GenOpts:       agent.BuildGenOptsForDialog(effectiveConfig.Model, effectiveConfig.GenerationParams, dialogForOpts),
+		Generator:     toolGen,
+		Stderr:        stderr,
 	})
 }

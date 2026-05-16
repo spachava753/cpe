@@ -92,11 +92,8 @@ func (r *Runtime) Register(tool gai.Tool, callback gai.ToolCallback) error {
 
 // Generate runs the dialog until a terminal assistant response, nil-callback
 // terminal tool, callback error, or compaction restart limit is reached.
-func (r *Runtime) Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error) {
+func (r *Runtime) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 	current := append(gai.Dialog(nil), dialog...)
-	if optsGen == nil {
-		optsGen = func(gai.Dialog) *gai.GenOpts { return nil }
-	}
 
 	for {
 		select {
@@ -111,7 +108,6 @@ func (r *Runtime) Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.G
 			return current, err
 		}
 
-		opts := optsGen(current)
 		if err := r.validateToolChoice(opts); err != nil {
 			return current, err
 		}

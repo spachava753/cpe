@@ -14,5 +14,5 @@ type ToolRegistrar interface {
 
 // Generator is an interface for AI generators that work with gai.Dialog.
 type Generator interface {
-	Generate(ctx context.Context, dialog gai.Dialog, optsGen gai.GenOptsGenerator) (gai.Dialog, error)
+	Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error)
 }

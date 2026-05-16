@@ -23,6 +23,7 @@ require (
 	github.com/matoous/go-nanoid/v2 v2.1.0
 	github.com/modelcontextprotocol/go-sdk v1.6.0
 	github.com/muesli/termenv v0.16.0
+	github.com/nalgeon/be v0.3.0
 	github.com/ncruces/go-sqlite3 v0.34.0
 	github.com/openai/openai-go/v3 v3.32.0
 	github.com/spachava753/gai v0.41.1-0.20260516143927-e4123abc53fd
