@@ -154,6 +154,10 @@ func mustToolCallBlock(t *testing.T, id, name string, params map[string]any) gai
 	return block
 }
 
+// TODO: Extend this behavior scaffold with scenarios for callback errors,
+// model errors before and after tool results, continuation/fork persistence,
+// compaction warning injection, compaction branch restart, max compaction
+// limits, direct GenOpts handling, and Responses prompt-cache/reasoning opts.
 func TestAgentLoopScenarios(t *testing.T) {
 	tests := []agentLoopScenario{
 		{
