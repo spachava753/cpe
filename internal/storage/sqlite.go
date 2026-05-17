@@ -39,6 +39,24 @@ func generateId() string {
 //go:embed schema.sql
 var schemaSQL string
 
+// SqliteOption configures a SQLite-backed message store.
+type SqliteOption func(*Sqlite)
+
+// WithIDGenerator overrides the message ID generator used for newly persisted
+// messages.
+//
+// This is primarily useful for deterministic tests. The generator must return
+// unique IDs often enough for SaveDialog's collision retry limit; duplicate IDs
+// are retried and eventually fail the save. A nil generator leaves the default
+// random generator in place.
+func WithIDGenerator(idGenerator func() string) SqliteOption {
+	return func(s *Sqlite) {
+		if idGenerator != nil {
+			s.idGenerator = idGenerator
+		}
+	}
+}
+
 // Sqlite is the SQLite-backed MessageDB implementation.
 //
 // It stores messages as a parent-linked tree and reconstructs gai.Message
@@ -55,7 +73,7 @@ type Sqlite struct {
 // migrations, and executes the embedded schema SQL before returning.
 //
 // The caller owns the lifecycle of db (open/close).
-func NewSqlite(ctx context.Context, db DB) (*Sqlite, error) {
+func NewSqlite(ctx context.Context, db DB, opts ...SqliteOption) (*Sqlite, error) {
 	if err := enableForeignKeys(ctx, db); err != nil {
 		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
 	}
@@ -75,12 +93,15 @@ func NewSqlite(ctx context.Context, db DB) (*Sqlite, error) {
 		return nil, fmt.Errorf("failed to initialize schema: %w", err)
 	}
 
-	// Create and return the dialog storage
-	return &Sqlite{
+	store := &Sqlite{
 		db:          db,
 		q:           sqlcgen.New(db),
 		idGenerator: generateId,
-	}, nil
+	}
+	for _, opt := range opts {
+		opt(store)
+	}
+	return store, nil
 }
 
 func enableForeignKeys(ctx context.Context, db DB) error {

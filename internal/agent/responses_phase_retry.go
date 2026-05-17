@@ -36,7 +36,7 @@ func (g *responsesPhaseRetryGenerator) Generate(ctx context.Context, dialog gai.
 
 		resp, err = g.GeneratorWrapper.Generate(ctx, dialog, opts)
 		if err == nil {
-			return resp, err
+			return resp, nil
 		}
 		if !isResponsesPhaseConflictError(err) {
 			return resp, err

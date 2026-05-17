@@ -1,0 +1,13 @@
+stdout: "final answer"
+stderr: "#### [tool call]\n```json\n{\n  \"name\": \"lookup\",\n  \"parameters\": {\n    \"q\": \"docs\"\n  }\n}\n```> message_id: `msg_002`\n#### Tool \"lookup\" result:\n\n```\nlookup result\n```> message_id: `msg_003`> message_id: `msg_004`"
+sqlite:
+messages:
+- id="msg_001" parent_id=NULL compaction_parent_id=NULL role="user" tool_result_error=false message_extra_fields=NULL model_ref=NULL model_id=NULL model_type=NULL model_display_name=NULL input_tokens=NULL output_tokens=NULL cache_read_tokens=NULL cache_write_tokens=NULL
+- id="msg_002" parent_id="msg_001" compaction_parent_id=NULL role="assistant" tool_result_error=false message_extra_fields=NULL model_ref=NULL model_id=NULL model_type=NULL model_display_name=NULL input_tokens=NULL output_tokens=NULL cache_read_tokens=NULL cache_write_tokens=NULL
+- id="msg_003" parent_id="msg_002" compaction_parent_id=NULL role="tool_result" tool_result_error=false message_extra_fields=NULL model_ref=NULL model_id=NULL model_type=NULL model_display_name=NULL input_tokens=NULL output_tokens=NULL cache_read_tokens=NULL cache_write_tokens=NULL
+- id="msg_004" parent_id="msg_003" compaction_parent_id=NULL role="assistant" tool_result_error=false message_extra_fields=NULL model_ref=NULL model_id=NULL model_type=NULL model_display_name=NULL input_tokens=NULL output_tokens=NULL cache_read_tokens=NULL cache_write_tokens=NULL
+blocks:
+- id=NULL message_id="msg_001" block_type="content" modality_type=0 mime_type="text/plain" content="use lookup" extra_fields=NULL sequence_order=0
+- id="call_1" message_id="msg_002" block_type="tool_call" modality_type=0 mime_type="text/plain" content="{\"name\":\"lookup\",\"parameters\":{\"q\":\"docs\"}}" extra_fields=NULL sequence_order=0
+- id="call_1" message_id="msg_003" block_type="content" modality_type=0 mime_type="text/plain" content="lookup result" extra_fields=NULL sequence_order=0
+- id=NULL message_id="msg_004" block_type="content" modality_type=0 mime_type="text/plain" content="final answer" extra_fields=NULL sequence_order=0
