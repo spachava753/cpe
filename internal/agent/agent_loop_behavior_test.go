@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"maps"
 	"slices"
@@ -24,6 +25,7 @@ type agentLoopScenario struct {
 	cfg            config.Config
 	initialDialog  gai.Dialog
 	script         []agentLoopScriptedGeneration
+	newTools       func(t *testing.T) []agentLoopToolFixture
 	newDialogSaver func(t *testing.T) (*storage.Sqlite, storage.DialogSaver)
 	check          func(t *testing.T, result agentLoopScenarioResult)
 }
@@ -34,12 +36,13 @@ type agentLoopScriptedGeneration struct {
 }
 
 type agentLoopScenarioResult struct {
-	dialog gai.Dialog
-	err    error
-	model  *agentLoopScriptedModel
-	store  *storage.Sqlite
-	stdout *bytes.Buffer
-	stderr *bytes.Buffer
+	dialog       gai.Dialog
+	err          error
+	model        *agentLoopScriptedModel
+	toolRecorder *agentLoopToolRecorder
+	store        *storage.Sqlite
+	stdout       *bytes.Buffer
+	stderr       *bytes.Buffer
 }
 
 type agentLoopScriptedModel struct {
@@ -70,6 +73,85 @@ func (m *agentLoopScriptedModel) Generate(ctx context.Context, dialog gai.Dialog
 func (m *agentLoopScriptedModel) Register(tool gai.Tool) error {
 	m.tools = append(m.tools, tool)
 	return nil
+}
+
+type agentLoopToolFixture struct {
+	tool     gai.Tool
+	callback gai.ToolCallback
+}
+
+type agentLoopToolRecorder struct {
+	calls []agentLoopToolInvocation
+}
+
+type agentLoopToolInvocation struct {
+	name       string
+	id         string
+	paramsJSON string
+}
+
+type recordingToolCallback struct {
+	name        string
+	resultTexts []string
+	err         error
+	onCall      func(ctx context.Context, params json.RawMessage, id string, index int) (gai.Message, error)
+	calls       int
+	recorder    *agentLoopToolRecorder
+}
+
+func newRecordingToolCallback(resultTexts ...string) *recordingToolCallback {
+	return &recordingToolCallback{resultTexts: resultTexts}
+}
+
+func (c *recordingToolCallback) Call(ctx context.Context, params json.RawMessage, id string) (gai.Message, error) {
+	index := c.calls
+	c.calls++
+	if c.recorder != nil {
+		c.recorder.calls = append(c.recorder.calls, agentLoopToolInvocation{
+			name:       c.name,
+			id:         id,
+			paramsJSON: string(params),
+		})
+	}
+	if c.onCall != nil {
+		return c.onCall(ctx, params, id, index)
+	}
+	if c.err != nil {
+		return gai.Message{}, c.err
+	}
+	if index >= len(c.resultTexts) {
+		return gai.ToolResultMessage(id, gai.TextBlock("")), nil
+	}
+	return gai.ToolResultMessage(id, gai.TextBlock(c.resultTexts[index])), nil
+}
+
+func assistantText(text string) agentLoopScriptedGeneration {
+	return agentLoopScriptedGeneration{
+		response: gai.Response{
+			FinishReason: gai.EndTurn,
+			Candidates: []gai.Message{
+				{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock(text)}},
+			},
+		},
+	}
+}
+
+func assistantToolUse(blocks ...gai.Block) agentLoopScriptedGeneration {
+	return agentLoopScriptedGeneration{
+		response: gai.Response{
+			FinishReason: gai.ToolUse,
+			Candidates: []gai.Message{
+				{Role: gai.Assistant, Blocks: blocks},
+			},
+		},
+	}
+}
+
+func mustToolCallBlock(t *testing.T, id, name string, params map[string]any) gai.Block {
+	t.Helper()
+	block, err := gai.ToolCallBlock(id, name, params)
+	be.Err(t, err, nil)
+	return block
 }
 
 func TestAgentLoopScenarios(t *testing.T) {
@@ -134,6 +216,168 @@ func TestAgentLoopScenarios(t *testing.T) {
 				requireDialogRoles(t, result.model.calls[0].dialog, gai.User)
 			},
 		},
+		{
+			name: "tool callback executes and continues",
+			initialDialog: gai.Dialog{
+				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("use lookup")}},
+			},
+			script: []agentLoopScriptedGeneration{
+				assistantToolUse(mustToolCallBlock(t, "call_1", "lookup", map[string]any{"q": "docs"})),
+				assistantText("final answer"),
+			},
+			newTools: func(t *testing.T) []agentLoopToolFixture {
+				t.Helper()
+				return []agentLoopToolFixture{{
+					tool:     gai.Tool{Name: "lookup"},
+					callback: newRecordingToolCallback("lookup result"),
+				}}
+			},
+			newDialogSaver: newSQLiteAgentLoopDialogSaver,
+			check: func(t *testing.T, result agentLoopScenarioResult) {
+				t.Helper()
+				be.Err(t, result.err, nil)
+				requireDialogRoles(t, result.dialog, gai.User, gai.Assistant, gai.ToolResult, gai.Assistant)
+				requireMessageText(t, result.dialog[2], "lookup result")
+				requireMessageText(t, result.dialog[3], "final answer")
+				requirePersistedRoles(t, result.store, gai.User, gai.Assistant, gai.ToolResult, gai.Assistant)
+				requireToolInvocations(t, result.toolRecorder, []agentLoopToolInvocation{{
+					name:       "lookup",
+					id:         "call_1",
+					paramsJSON: `{"q":"docs"}`,
+				}})
+				be.Equal(t, result.stdout.String(), "final answer")
+				be.True(t, strings.Contains(result.stderr.String(), `Tool "lookup" result`))
+				be.Equal(t, len(result.model.calls), 2)
+				requireDialogRoles(t, result.model.calls[1].dialog, gai.User, gai.Assistant, gai.ToolResult)
+			},
+		},
+		{
+			name: "multiple tool callbacks execute in order",
+			initialDialog: gai.Dialog{
+				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("use tools")}},
+			},
+			script: []agentLoopScriptedGeneration{
+				assistantToolUse(
+					mustToolCallBlock(t, "call_1", "lookup", map[string]any{"q": "docs"}),
+					mustToolCallBlock(t, "call_2", "read", map[string]any{"path": "README.md"}),
+				),
+				assistantText("combined answer"),
+			},
+			newTools: func(t *testing.T) []agentLoopToolFixture {
+				t.Helper()
+				return []agentLoopToolFixture{
+					{tool: gai.Tool{Name: "lookup"}, callback: newRecordingToolCallback("lookup result")},
+					{tool: gai.Tool{Name: "read"}, callback: newRecordingToolCallback("read result")},
+				}
+			},
+			newDialogSaver: newSQLiteAgentLoopDialogSaver,
+			check: func(t *testing.T, result agentLoopScenarioResult) {
+				t.Helper()
+				be.Err(t, result.err, nil)
+				requireDialogRoles(t, result.dialog, gai.User, gai.Assistant, gai.ToolResult, gai.ToolResult, gai.Assistant)
+				requireMessageText(t, result.dialog[2], "lookup result")
+				requireMessageText(t, result.dialog[3], "read result")
+				requireMessageText(t, result.dialog[4], "combined answer")
+				requirePersistedRoles(t, result.store, gai.User, gai.Assistant, gai.ToolResult, gai.ToolResult, gai.Assistant)
+				requireToolInvocations(t, result.toolRecorder, []agentLoopToolInvocation{
+					{name: "lookup", id: "call_1", paramsJSON: `{"q":"docs"}`},
+					{name: "read", id: "call_2", paramsJSON: `{"path":"README.md"}`},
+				})
+				be.Equal(t, result.stdout.String(), "combined answer")
+				be.Equal(t, len(result.model.calls), 2)
+				requireDialogRoles(t, result.model.calls[1].dialog, gai.User, gai.Assistant, gai.ToolResult, gai.ToolResult)
+			},
+		},
+		{
+			name: "unknown tool returns an error after persisting tool call",
+			initialDialog: gai.Dialog{
+				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("use missing tool")}},
+			},
+			script: []agentLoopScriptedGeneration{
+				assistantToolUse(mustToolCallBlock(t, "call_1", "missing", map[string]any{})),
+			},
+			newDialogSaver: newSQLiteAgentLoopDialogSaver,
+			check: func(t *testing.T, result agentLoopScenarioResult) {
+				t.Helper()
+				be.Err(t, result.err, `tool 'missing' not found`)
+				requireDialogRoles(t, result.dialog, gai.User, gai.Assistant)
+				requirePersistedRoles(t, result.store, gai.User, gai.Assistant)
+				be.Equal(t, result.stdout.String(), "")
+				be.True(t, strings.Contains(result.stderr.String(), "missing"))
+				be.Equal(t, len(result.model.calls), 1)
+			},
+		},
+		{
+			name: "nil callback terminates after tool call",
+			initialDialog: gai.Dialog{
+				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("finish")}},
+			},
+			script: []agentLoopScriptedGeneration{
+				assistantToolUse(mustToolCallBlock(t, "call_1", "finish", map[string]any{})),
+			},
+			newTools: func(t *testing.T) []agentLoopToolFixture {
+				t.Helper()
+				return []agentLoopToolFixture{{tool: gai.Tool{Name: "finish"}, callback: nil}}
+			},
+			newDialogSaver: newSQLiteAgentLoopDialogSaver,
+			check: func(t *testing.T, result agentLoopScenarioResult) {
+				t.Helper()
+				be.Err(t, result.err, nil)
+				requireDialogRoles(t, result.dialog, gai.User, gai.Assistant)
+				requirePersistedRoles(t, result.store, gai.User, gai.Assistant)
+				requireToolInvocations(t, result.toolRecorder, nil)
+				be.Equal(t, result.stdout.String(), "")
+				be.True(t, strings.Contains(result.stderr.String(), "finish"))
+				be.Equal(t, len(result.model.calls), 1)
+			},
+		},
+		{
+			name: "invalid tool parameters are returned as tool result",
+			initialDialog: gai.Dialog{
+				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("lookup with bad params")}},
+			},
+			script: []agentLoopScriptedGeneration{
+				assistantToolUse(mustToolCallBlock(t, "call_1", "lookup", map[string]any{"q": 123})),
+				assistantText("asked for correction"),
+			},
+			newTools: func(t *testing.T) []agentLoopToolFixture {
+				t.Helper()
+				callback := newRecordingToolCallback()
+				callback.onCall = func(ctx context.Context, params json.RawMessage, id string, index int) (gai.Message, error) {
+					_ = ctx
+					_ = index
+					var input struct {
+						Q string `json:"q"`
+					}
+					if err := json.Unmarshal(params, &input); err != nil || input.Q == "" {
+						return gai.ToolResultMessage(id, gai.TextBlock("invalid parameters")), nil
+					}
+					return gai.ToolResultMessage(id, gai.TextBlock("lookup result")), nil
+				}
+				return []agentLoopToolFixture{{
+					tool:     gai.Tool{Name: "lookup"},
+					callback: callback,
+				}}
+			},
+			newDialogSaver: newSQLiteAgentLoopDialogSaver,
+			check: func(t *testing.T, result agentLoopScenarioResult) {
+				t.Helper()
+				be.Err(t, result.err, nil)
+				requireDialogRoles(t, result.dialog, gai.User, gai.Assistant, gai.ToolResult, gai.Assistant)
+				requireMessageText(t, result.dialog[2], "invalid parameters")
+				requireMessageText(t, result.dialog[3], "asked for correction")
+				requirePersistedRoles(t, result.store, gai.User, gai.Assistant, gai.ToolResult, gai.Assistant)
+				requireToolInvocations(t, result.toolRecorder, []agentLoopToolInvocation{{
+					name:       "lookup",
+					id:         "call_1",
+					paramsJSON: `{"q":123}`,
+				}})
+				be.Equal(t, result.stdout.String(), "asked for correction")
+				be.True(t, strings.Contains(result.stderr.String(), "invalid parameters"))
+				be.Equal(t, len(result.model.calls), 2)
+				requireDialogRoles(t, result.model.calls[1].dialog, gai.User, gai.Assistant, gai.ToolResult)
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -148,15 +392,26 @@ func TestAgentLoopScenarios(t *testing.T) {
 			stderr := &bytes.Buffer{}
 
 			loop := agent.NewRuntime(model, tt.cfg, saver, stdout, stderr, false)
+			toolRecorder := &agentLoopToolRecorder{}
+			if tt.newTools != nil {
+				for _, fixture := range tt.newTools(t) {
+					if callback, ok := fixture.callback.(*recordingToolCallback); ok {
+						callback.name = fixture.tool.Name
+						callback.recorder = toolRecorder
+					}
+					be.Err(t, loop.Register(fixture.tool, fixture.callback), nil)
+				}
+			}
 			dialog, err := loop.Generate(context.Background(), cloneDialogForAgentLoopTest(tt.initialDialog), nil)
 
 			result := agentLoopScenarioResult{
-				dialog: dialog,
-				err:    err,
-				model:  model,
-				store:  store,
-				stdout: stdout,
-				stderr: stderr,
+				dialog:       dialog,
+				err:          err,
+				model:        model,
+				toolRecorder: toolRecorder,
+				store:        store,
+				stdout:       stdout,
+				stderr:       stderr,
 			}
 			if tt.check != nil {
 				tt.check(t, result)
@@ -205,6 +460,9 @@ func cloneGenOptsForAgentLoopTest(opts *gai.GenOpts) *gai.GenOpts {
 func requireDialogRoles(t *testing.T, dialog gai.Dialog, roles ...gai.Role) {
 	t.Helper()
 	be.Equal(t, len(dialog), len(roles))
+	if len(dialog) != len(roles) {
+		return
+	}
 	for i, role := range roles {
 		be.Equal(t, dialog[i].Role, role)
 	}
@@ -213,6 +471,9 @@ func requireDialogRoles(t *testing.T, dialog gai.Dialog, roles ...gai.Role) {
 func requireMessageText(t *testing.T, msg gai.Message, want string) {
 	t.Helper()
 	be.Equal(t, len(msg.Blocks), 1)
+	if len(msg.Blocks) != 1 {
+		return
+	}
 	be.Equal(t, msg.Blocks[0].ModalityType, gai.Text)
 	be.Equal(t, msg.Blocks[0].Content.String(), want)
 }
@@ -224,7 +485,35 @@ type persistedMessageExpectation struct {
 
 func requirePersistedMessages(t *testing.T, store *storage.Sqlite, want []persistedMessageExpectation) {
 	t.Helper()
+	got := persistedMessages(t, store)
+	be.Equal(t, len(got), len(want))
+	if len(got) != len(want) {
+		return
+	}
+	for i, expectation := range want {
+		be.Equal(t, got[i].Role, expectation.role)
+		requireMessageText(t, got[i], expectation.text)
+	}
+}
+
+func requirePersistedRoles(t *testing.T, store *storage.Sqlite, roles ...gai.Role) {
+	t.Helper()
+	got := persistedMessages(t, store)
+	be.Equal(t, len(got), len(roles))
+	if len(got) != len(roles) {
+		return
+	}
+	for i, role := range roles {
+		be.Equal(t, got[i].Role, role)
+	}
+}
+
+func persistedMessages(t *testing.T, store *storage.Sqlite) []gai.Message {
+	t.Helper()
 	be.True(t, store != nil)
+	if store == nil {
+		return nil
+	}
 
 	msgs, err := store.ListMessages(context.Background(), storage.ListMessagesOptions{AscendingOrder: true})
 	be.Err(t, err, nil)
@@ -233,9 +522,20 @@ func requirePersistedMessages(t *testing.T, store *storage.Sqlite, want []persis
 	for msg := range msgs {
 		got = append(got, msg)
 	}
-	be.Equal(t, len(got), len(want))
-	for i, expectation := range want {
-		be.Equal(t, got[i].Role, expectation.role)
-		requireMessageText(t, got[i], expectation.text)
+	return got
+}
+
+func requireToolInvocations(t *testing.T, recorder *agentLoopToolRecorder, want []agentLoopToolInvocation) {
+	t.Helper()
+	be.True(t, recorder != nil)
+	if recorder == nil {
+		return
+	}
+	be.Equal(t, len(recorder.calls), len(want))
+	if len(recorder.calls) != len(want) {
+		return
+	}
+	for i, invocation := range want {
+		be.Equal(t, recorder.calls[i], invocation)
 	}
 }
