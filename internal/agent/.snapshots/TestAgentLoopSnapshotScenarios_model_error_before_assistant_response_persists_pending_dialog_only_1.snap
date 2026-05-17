@@ -1,7 +1,0 @@
-stdout: ""
-stderr: ""
-sqlite:
-messages:
-- id="msg_001" parent_id=NULL compaction_parent_id=NULL role="user" tool_result_error=false message_extra_fields=NULL model_ref=NULL model_id=NULL model_type=NULL model_display_name=NULL input_tokens=NULL output_tokens=NULL cache_read_tokens=NULL cache_write_tokens=NULL
-blocks:
-- id=NULL message_id="msg_001" block_type="content" modality_type=0 mime_type="text/plain" content="model fails" extra_fields=NULL sequence_order=0

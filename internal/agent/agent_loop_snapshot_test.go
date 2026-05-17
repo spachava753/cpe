@@ -17,6 +17,9 @@ import (
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/nalgeon/be"
 	_ "github.com/ncruces/go-sqlite3/driver"
+	"github.com/olekukonko/tablewriter"
+	"github.com/olekukonko/tablewriter/renderer"
+	"github.com/olekukonko/tablewriter/tw"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/agent"
@@ -25,7 +28,7 @@ import (
 )
 
 // Update with: UPDATE_SNAPS=true go test ./internal/agent
-var agentLoopSnapshots = snaps.WithConfig(snaps.Dir(".snapshots"), snaps.Raw())
+var agentLoopSnapshots = snaps.WithConfig(snaps.Dir(".snapshots"), snaps.Ext(".md"), snaps.Raw())
 
 func TestMain(m *testing.M) {
 	code := m.Run()
@@ -535,25 +538,31 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			}
 
 			var snapshot strings.Builder
-			fmt.Fprintf(&snapshot, "stdout: %q\n", stdout.String())
-			fmt.Fprintf(&snapshot, "stderr: %q\n", stderr.String())
-			snapshot.WriteString("sqlite:\n")
-			if db == nil {
-				snapshot.WriteString("<disabled>\n")
-			} else {
-				snapshot.WriteString(dumpSQLite(t, db))
-			}
+			writeShellSection(&snapshot, "stdout", stdout.String())
+			writeShellSection(&snapshot, "stderr", stderr.String())
+			dumpSQLite(t, db, &snapshot)
 			agentLoopSnapshots.MatchStandaloneSnapshot(t, snapshot.String())
 		})
 	}
 }
 
-func dumpSQLite(t *testing.T, db *sql.DB) string {
+func writeShellSection(snapshot *strings.Builder, title, content string) {
+	fmt.Fprintf(snapshot, "### %s\n\n````shell\n", title)
+	snapshot.WriteString(content)
+	if !strings.HasSuffix(content, "\n") {
+		snapshot.WriteByte('\n')
+	}
+	snapshot.WriteString("````\n\n")
+}
+
+func dumpSQLite(t *testing.T, db *sql.DB, snapshot *strings.Builder) {
 	t.Helper()
 
 	const nullValue = "NULL"
 
-	quote := strconv.Quote
+	quote := func(value string) string {
+		return markdownTableCell(strconv.Quote(value))
+	}
 	nullString := func(value sql.NullString) string {
 		if !value.Valid {
 			return nullValue
@@ -583,95 +592,170 @@ func dumpSQLite(t *testing.T, db *sql.DB) string {
 		return quote(string(data))
 	}
 
-	var snapshot strings.Builder
-	snapshot.WriteString("messages:\n")
-	messageRows, err := db.QueryContext(t.Context(), `
-		SELECT id,
-		       parent_id,
-		       compaction_parent_id,
-		       role,
-		       tool_result_error,
-		       message_extra_fields,
-		       model_ref,
-		       model_id,
-		       model_type,
-		       model_display_name,
-		       input_tokens,
-		       output_tokens,
-		       cache_read_tokens,
-		       cache_write_tokens
-		FROM messages
-		ORDER BY rowid
-	`)
-	be.Err(t, err, nil)
-	if err != nil {
-		return snapshot.String()
-	}
-	defer messageRows.Close()
-	for messageRows.Next() {
-		var id, role string
-		var toolResultError bool
-		var parentID, compactionParentID, extraFields sql.NullString
-		var modelRef, modelID, modelType, modelDisplayName sql.NullString
-		var inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens sql.NullInt64
-		if err := messageRows.Scan(
-			&id,
-			&parentID,
-			&compactionParentID,
-			&role,
-			&toolResultError,
-			&extraFields,
-			&modelRef,
-			&modelID,
-			&modelType,
-			&modelDisplayName,
-			&inputTokens,
-			&outputTokens,
-			&cacheReadTokens,
-			&cacheWriteTokens,
-		); err != nil {
-			t.Fatalf("scan messages snapshot row: %v", err)
+	messageTable := writeMarkdownTable(snapshot, "messages", []string{
+		"id",
+		"parent_id",
+		"compaction_parent_id",
+		"role",
+		"tool_result_error",
+		"message_extra_fields",
+		"model_ref",
+		"model_id",
+		"model_type",
+		"model_display_name",
+		"input_tokens",
+		"output_tokens",
+		"cache_read_tokens",
+		"cache_write_tokens",
+	})
+	if db != nil {
+		messageRows, err := db.QueryContext(t.Context(), `
+			SELECT id,
+			       parent_id,
+			       compaction_parent_id,
+			       role,
+			       tool_result_error,
+			       message_extra_fields,
+			       model_ref,
+			       model_id,
+			       model_type,
+			       model_display_name,
+			       input_tokens,
+			       output_tokens,
+			       cache_read_tokens,
+			       cache_write_tokens
+			FROM messages
+			ORDER BY rowid
+		`)
+		be.Err(t, err, nil)
+		if err == nil {
+			defer messageRows.Close()
+			for messageRows.Next() {
+				var id, role string
+				var toolResultError bool
+				var parentID, compactionParentID, extraFields sql.NullString
+				var modelRef, modelID, modelType, modelDisplayName sql.NullString
+				var inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens sql.NullInt64
+				if err := messageRows.Scan(
+					&id,
+					&parentID,
+					&compactionParentID,
+					&role,
+					&toolResultError,
+					&extraFields,
+					&modelRef,
+					&modelID,
+					&modelType,
+					&modelDisplayName,
+					&inputTokens,
+					&outputTokens,
+					&cacheReadTokens,
+					&cacheWriteTokens,
+				); err != nil {
+					t.Fatalf("scan messages snapshot row: %v", err)
+				}
+				be.Err(t, messageTable.Append([]string{
+					quote(id),
+					nullString(parentID),
+					nullString(compactionParentID),
+					quote(role),
+					fmt.Sprint(toolResultError),
+					nullJSON(extraFields),
+					nullString(modelRef),
+					nullString(modelID),
+					nullString(modelType),
+					nullString(modelDisplayName),
+					nullInt(inputTokens),
+					nullInt(outputTokens),
+					nullInt(cacheReadTokens),
+					nullInt(cacheWriteTokens),
+				}), nil)
+			}
+			be.Err(t, messageRows.Err(), nil)
 		}
-		fmt.Fprintf(
-			&snapshot,
-			"- id=%s parent_id=%s compaction_parent_id=%s role=%s tool_result_error=%t message_extra_fields=%s model_ref=%s model_id=%s model_type=%s model_display_name=%s input_tokens=%s output_tokens=%s cache_read_tokens=%s cache_write_tokens=%s\n",
-			quote(id), nullString(parentID), nullString(compactionParentID), quote(role), toolResultError, nullJSON(extraFields), nullString(modelRef), nullString(modelID), nullString(modelType), nullString(modelDisplayName), nullInt(inputTokens), nullInt(outputTokens), nullInt(cacheReadTokens), nullInt(cacheWriteTokens),
-		)
 	}
-	be.Err(t, messageRows.Err(), nil)
+	renderMarkdownTable(t, messageTable, snapshot)
 
-	snapshot.WriteString("blocks:\n")
-	blockRows, err := db.QueryContext(t.Context(), `
-		SELECT blocks.id,
-		       blocks.message_id,
-		       blocks.block_type,
-		       blocks.modality_type,
-		       blocks.mime_type,
-		       blocks.content,
-		       blocks.extra_fields,
-		       blocks.sequence_order
-		FROM blocks
-		JOIN messages ON messages.id = blocks.message_id
-		ORDER BY messages.rowid, blocks.sequence_order
-	`)
-	be.Err(t, err, nil)
-	if err != nil {
-		return snapshot.String()
-	}
-	defer blockRows.Close()
-	for blockRows.Next() {
-		var id, extraFields sql.NullString
-		var messageID, blockType, mimeType, content string
-		var modalityType, sequenceOrder int64
-		if err := blockRows.Scan(&id, &messageID, &blockType, &modalityType, &mimeType, &content, &extraFields, &sequenceOrder); err != nil {
-			t.Fatalf("scan blocks snapshot row: %v", err)
+	blockTable := writeMarkdownTable(snapshot, "blocks", []string{
+		"id",
+		"message_id",
+		"block_type",
+		"modality_type",
+		"mime_type",
+		"content",
+		"extra_fields",
+		"sequence_order",
+	})
+	if db != nil {
+		blockRows, err := db.QueryContext(t.Context(), `
+			SELECT blocks.id,
+			       blocks.message_id,
+			       blocks.block_type,
+			       blocks.modality_type,
+			       blocks.mime_type,
+			       blocks.content,
+			       blocks.extra_fields,
+			       blocks.sequence_order
+			FROM blocks
+			JOIN messages ON messages.id = blocks.message_id
+			ORDER BY messages.rowid, blocks.sequence_order
+		`)
+		be.Err(t, err, nil)
+		if err == nil {
+			defer blockRows.Close()
+			for blockRows.Next() {
+				var id, extraFields sql.NullString
+				var messageID, blockType, mimeType, content string
+				var modalityType, sequenceOrder int64
+				if err := blockRows.Scan(&id, &messageID, &blockType, &modalityType, &mimeType, &content, &extraFields, &sequenceOrder); err != nil {
+					t.Fatalf("scan blocks snapshot row: %v", err)
+				}
+				be.Err(t, blockTable.Append([]string{
+					nullString(id),
+					quote(messageID),
+					quote(blockType),
+					fmt.Sprint(modalityType),
+					quote(mimeType),
+					quote(content),
+					nullJSON(extraFields),
+					fmt.Sprint(sequenceOrder),
+				}), nil)
+			}
+			be.Err(t, blockRows.Err(), nil)
 		}
-		fmt.Fprintf(
-			&snapshot,
-			"- id=%s message_id=%s block_type=%s modality_type=%d mime_type=%s content=%s extra_fields=%s sequence_order=%d\n",
-			nullString(id), quote(messageID), quote(blockType), modalityType, quote(mimeType), quote(content), nullJSON(extraFields), sequenceOrder,
-		)
 	}
-	be.Err(t, blockRows.Err(), nil)
-	return snapshot.String()
+	renderMarkdownTable(t, blockTable, snapshot)
+}
+
+func writeMarkdownTable(snapshot *strings.Builder, title string, headers []string) *tablewriter.Table {
+	fmt.Fprintf(snapshot, "### %s\n\n", title)
+	table := tablewriter.NewTable(snapshot,
+		tablewriter.WithRenderer(renderer.NewMarkdown()),
+		tablewriter.WithHeaderAutoFormat(tw.Off),
+		tablewriter.WithRowAutoFormat(tw.Off),
+		tablewriter.WithHeaderAlignment(tw.AlignLeft),
+		tablewriter.WithRowAlignment(tw.AlignLeft),
+	)
+	table.Header(stringAnySlice(headers)...)
+	return table
+}
+
+func renderMarkdownTable(t *testing.T, table *tablewriter.Table, snapshot *strings.Builder) {
+	t.Helper()
+	be.Err(t, table.Render(), nil)
+	snapshot.WriteByte('\n')
+}
+
+func stringAnySlice(values []string) []any {
+	cells := make([]any, len(values))
+	for i, value := range values {
+		cells[i] = value
+	}
+	return cells
+}
+
+func markdownTableCell(value string) string {
+	value = strings.ReplaceAll(value, "\r\n", `\n`)
+	value = strings.ReplaceAll(value, "\n", `\n`)
+	return strings.ReplaceAll(value, "|", `\|`)
 }

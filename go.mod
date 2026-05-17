@@ -26,6 +26,7 @@ require (
 	github.com/muesli/termenv v0.16.0
 	github.com/nalgeon/be v0.3.0
 	github.com/ncruces/go-sqlite3 v0.34.0
+	github.com/olekukonko/tablewriter v1.1.4
 	github.com/openai/openai-go/v3 v3.32.0
 	github.com/spachava753/gai v0.41.1-0.20260516143927-e4123abc53fd
 	github.com/spf13/cobra v1.10.2
@@ -230,6 +231,9 @@ require (
 	github.com/nishanths/exhaustive v0.12.0 // indirect
 	github.com/nishanths/predeclared v0.2.2 // indirect
 	github.com/nunnatsa/ginkgolinter v0.21.2 // indirect
+	github.com/olekukonko/cat v0.0.0-20250911104152-50322a0618f6 // indirect
+	github.com/olekukonko/errors v1.2.0 // indirect
+	github.com/olekukonko/ll v0.1.6 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pganalyze/pg_query_go/v6 v6.1.0 // indirect
