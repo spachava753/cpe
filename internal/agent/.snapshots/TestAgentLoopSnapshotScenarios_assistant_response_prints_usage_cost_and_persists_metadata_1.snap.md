@@ -1,15 +1,22 @@
 ### stdout
 
 ````shell
-usage tracked
+  usage tracked
+
 ````
 
 ### stderr
 
 ````shell
-> message_id: `msg_002`> input: `10`, output: `13`, cache read: `5`, cache write: `3`
-> context: `23 / 100` (`23.00%`)
-> estimated cost: input: `$0.000004`, output: `$0.000052`, cache read: `$0.000003`, cache write: `$0.000003`, total: `$0.000062`, cumulative: `$0.000062`
+  
+  | message_id: msg_002
+
+  
+  | input: 10, output: 13, cache read: 5, cache write: 3
+  | context: 23 / 100 (23.00%)
+  | estimated cost: input: $0.000004, output: $0.000052, cache read: $0.000003, cache write: $0.000003, total: $0.000062, cumulative: $0.000062
+
+
 ````
 
 ### generation options

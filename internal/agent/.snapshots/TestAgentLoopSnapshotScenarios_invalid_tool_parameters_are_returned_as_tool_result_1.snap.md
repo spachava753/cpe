@@ -1,27 +1,44 @@
 ### stdout
 
 ````shell
-asked for correction
+  asked for correction
+
 ````
 
 ### stderr
 
 ````shell
-#### [tool call]
-```json
-{
-  "name": "lookup",
-  "parameters": {
-    "q": 123
-  }
-}
-```> message_id: `msg_002`> input: `22`, output: `40`
+  #### [tool call]
+  
+    {
+      "name": "lookup",
+      "parameters": {
+        "q": 123
+      }
+    }
 
-#### Tool "lookup" result:
+  
+  | message_id: msg_002
 
-```
-invalid parameters
-```> message_id: `msg_003`> message_id: `msg_004`> input: `80`, output: `20`
+  
+  | input: 22, output: 40
+
+
+
+  #### Tool "lookup" result:
+  
+    invalid parameters
+
+  
+  | message_id: msg_003
+
+  
+  | message_id: msg_004
+
+  
+  | input: 80, output: 20
+
+
 ````
 
 ### generation options

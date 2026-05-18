@@ -22,7 +22,7 @@ func TestMCPListToolsSupportsBuiltinServer(t *testing.T) {
 		},
 		ServerName: "editor",
 		Writer:     &out,
-		Renderer:   &render.PlainTextRenderer{},
+		Renderer:   render.NewPlainTextRenderer(),
 	})
 	if err != nil {
 		t.Fatalf("MCPListTools returned error: %v", err)

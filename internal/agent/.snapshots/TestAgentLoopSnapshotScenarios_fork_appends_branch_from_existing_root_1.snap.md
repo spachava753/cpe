@@ -1,13 +1,20 @@
 ### stdout
 
 ````shell
-alternate answer
+  alternate answer
+
 ````
 
 ### stderr
 
 ````shell
-> message_id: `msg_004`> input: `29`, output: `16`
+  
+  | message_id: msg_004
+
+  
+  | input: 29, output: 16
+
+
 ````
 
 ### generation options

@@ -102,11 +102,10 @@ func ConversationPrintFromConfig(ctx context.Context, opts ConversationPrintFrom
 
 	formatter := opts.DialogFormatter
 	if formatter == nil {
-		formatter = &MarkdownDialogFormatter{Renderer: &render.PlainTextRenderer{}}
+		formatter = &MarkdownDialogFormatter{Renderer: render.NewPlainTextRenderer()}
 		if render.IsTTYWriter(writer) {
 			formatter = &MarkdownDialogFormatter{Renderer: render.NewGlamourRendererForWriter(writer)}
 		}
-
 	}
 
 	return ConversationPrint(ctx, ConversationPrintOptions{

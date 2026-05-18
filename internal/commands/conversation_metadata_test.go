@@ -6,7 +6,6 @@ import (
 
 	"github.com/spachava753/gai"
 
-	"github.com/spachava753/cpe/internal/render"
 	"github.com/spachava753/cpe/internal/storage"
 )
 
@@ -37,8 +36,14 @@ func TestMessageMetadataInline_OmitsMissingFields(t *testing.T) {
 	}
 }
 
+type identityRenderer struct{}
+
+func (identityRenderer) Render(in string) (string, error) {
+	return in, nil
+}
+
 func TestMarkdownDialogFormatterIncludesMessageMetadata(t *testing.T) {
-	formatter := &MarkdownDialogFormatter{Renderer: &render.PlainTextRenderer{}}
+	formatter := &MarkdownDialogFormatter{Renderer: identityRenderer{}}
 	dialog := gai.Dialog{{
 		Role:   gai.Assistant,
 		Blocks: []gai.Block{gai.TextBlock("answer")},
@@ -71,7 +76,7 @@ func TestMarkdownDialogFormatterIncludesMessageMetadata(t *testing.T) {
 }
 
 func TestMarkdownDialogFormatterOmitsMissingMetadata(t *testing.T) {
-	formatter := &MarkdownDialogFormatter{Renderer: &render.PlainTextRenderer{}}
+	formatter := &MarkdownDialogFormatter{Renderer: identityRenderer{}}
 	dialog := gai.Dialog{{
 		Role:   gai.Assistant,
 		Blocks: []gai.Block{gai.TextBlock("answer")},

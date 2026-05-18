@@ -22,8 +22,8 @@ const (
 )
 
 func (r *Runtime) configureOutput(disablePrinting bool) {
-	normalRenderer := render.Iface(&render.PlainTextRenderer{})
-	thinkingRenderer := render.Iface(&render.PlainTextRenderer{})
+	var normalRenderer render.Iface = render.NewPlainTextRenderer()
+	var thinkingRenderer render.Iface = render.NewPlainTextRenderer()
 
 	toolCallRenderer := normalRenderer
 	metadataRenderer := normalRenderer

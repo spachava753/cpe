@@ -1,13 +1,20 @@
 ### stdout
 
 ````shell
-hi there
+  hi there
+
 ````
 
 ### stderr
 
 ````shell
-> message_id: `msg_002`> input: `5`, output: `8`
+  
+  | message_id: msg_002
+
+  
+  | input: 5, output: 8
+
+
 ````
 
 ### generation options

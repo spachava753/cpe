@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	defaultWordWrapWidth = 120
-	wordWrapGutter       = 4
+	defaultWordWrapWidth  = 120
+	disabledWordWrapWidth = 0
+	wordWrapGutter        = 4
 )
 
 // Renderer is an interface for rendering content (e.g., markdown to formatted output).
@@ -26,13 +27,23 @@ type Iface interface {
 	Render(in string) (string, error)
 }
 
-// PlainTextRenderer is a renderer that returns content as-is without formatting.
-// Used as a fallback when glamour rendering fails.
-type PlainTextRenderer struct{}
+// PlainTextRenderer renders markdown with Glamour's ASCII style and no width-based wrapping.
+type PlainTextRenderer struct {
+	renderer *GlamourRenderer
+}
 
-// Render returns the input unchanged.
+// NewPlainTextRenderer creates a renderer for non-TTY/plain terminal output.
+func NewPlainTextRenderer() *PlainTextRenderer {
+	return &PlainTextRenderer{renderer: newTermRenderer(
+		glamour.WithStyles(plainTextStyle()),
+		glamour.WithColorProfile(termenv.Ascii),
+		glamour.WithWordWrap(disabledWordWrapWidth),
+	)}
+}
+
+// Render renders markdown for plain terminal display without ANSI styling or wrapping.
 func (p *PlainTextRenderer) Render(in string) (string, error) {
-	return in, nil
+	return p.renderer.Render(in)
 }
 
 // GlamourRenderer renders markdown through glamour after normalizing terminal-sensitive code blocks.
@@ -54,11 +65,19 @@ func IsTTYWriter(w io.Writer) bool {
 	return term.IsTerminal(int(f.Fd()))
 }
 
-func getBaseStyle() ansi.StyleConfig {
+func baseStyle() ansi.StyleConfig {
 	style := styles.LightStyleConfig
 	if termenv.HasDarkBackground() {
 		style = styles.DarkStyleConfig
 	}
+	return withoutLeadingDocumentBlock(style)
+}
+
+func plainTextStyle() ansi.StyleConfig {
+	return withoutLeadingDocumentBlock(styles.ASCIIStyleConfig)
+}
+
+func withoutLeadingDocumentBlock(style ansi.StyleConfig) ansi.StyleConfig {
 	style.Document.BlockPrefix = ""
 	return style
 }
@@ -142,11 +161,8 @@ func expandTabsToSpaces(s string) string {
 	return b.String()
 }
 
-func newTermRenderer(style ansi.StyleConfig, wordWrapWidth int) *GlamourRenderer {
-	renderer, err := glamour.NewTermRenderer(
-		glamour.WithStyles(style),
-		glamour.WithWordWrap(wordWrapWidth),
-	)
+func newTermRenderer(options ...glamour.TermRendererOption) *GlamourRenderer {
+	renderer, err := glamour.NewTermRenderer(options...)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -155,12 +171,22 @@ func newTermRenderer(style ansi.StyleConfig, wordWrapWidth int) *GlamourRenderer
 
 // NewGlamourRendererForWriter creates a glamour renderer sized to the terminal backing w.
 func NewGlamourRendererForWriter(w io.Writer) *GlamourRenderer {
-	return newTermRenderer(getBaseStyle(), writerWordWrapWidth(w))
+	return newTermRenderer(
+		glamour.WithStyles(baseStyle()),
+		glamour.WithWordWrap(writerWordWrapWidth(w)),
+	)
 }
 
 // NewThinkingRendererForWriter creates a thinking renderer sized to the terminal backing w.
 func NewThinkingRendererForWriter(w io.Writer) *GlamourRenderer {
-	style := getBaseStyle()
+	return newTermRenderer(
+		glamour.WithStyles(thinkingStyle()),
+		glamour.WithWordWrap(writerWordWrapWidth(w)),
+	)
+}
+
+func thinkingStyle() ansi.StyleConfig {
+	style := baseStyle()
 	textColor, err := strconv.Atoi(*style.Document.Color)
 	if err != nil {
 		panic(err.Error())
@@ -173,6 +199,5 @@ func NewThinkingRendererForWriter(w io.Writer) *GlamourRenderer {
 	thinkingTextColor := strconv.Itoa(textColor)
 	style.Text.Color = &thinkingTextColor
 	style.Document.BlockSuffix = "\n"
-
-	return newTermRenderer(style, writerWordWrapWidth(w))
+	return style
 }

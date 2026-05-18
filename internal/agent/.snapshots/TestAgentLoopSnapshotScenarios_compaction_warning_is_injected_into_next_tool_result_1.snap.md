@@ -1,30 +1,45 @@
 ### stdout
 
 ````shell
-used warned result
+  used warned result
+
 ````
 
 ### stderr
 
 ````shell
-#### [tool call]
-```json
-{
-  "name": "lookup",
-  "parameters": {}
-}
-```> message_id: `msg_002`> input: `18`, output: `33`
+  #### [tool call]
+  
+    {
+      "name": "lookup",
+      "parameters": {}
+    }
 
-#### Tool "lookup" result:
+  
+  | message_id: msg_002
 
-```
-[COMPACTION WARNING]
-The conversation has exceeded the configured compaction threshold. Before continuing much further, call the compact_conversation tool with a compact but complete summary of the conversation state needed to continue. This warning will continue to appear until compaction is performed.
-```
+  
+  | input: 18, output: 33
 
-```
-lookup result
-```> message_id: `msg_003`> message_id: `msg_004`> input: `368`, output: `18`
+
+
+  #### Tool "lookup" result:
+  
+    [COMPACTION WARNING]
+    The conversation has exceeded the configured compaction threshold. Before continuing much further, call the compact_conversation tool with a compact but complete summary of the conversation state needed to continue. This warning will continue to appear until compaction is performed.
+  
+    lookup result
+
+  
+  | message_id: msg_003
+
+  
+  | message_id: msg_004
+
+  
+  | input: 368, output: 18
+
+
 ````
 
 ### generation options

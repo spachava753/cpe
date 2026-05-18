@@ -1,86 +1,124 @@
 ### stdout
 
 ````shell
-Project status is verified and the next-step plan is ready.
+  Project status is verified and the next-step plan is ready.
+
 ````
 
 ### stderr
 
 ````shell
-#### [tool call]
-```json
-{
-  "name": "lookup",
-  "parameters": {
-    "q": "project status"
-  }
-}
-```#### [tool call]
-```json
-{
-  "name": "read",
-  "parameters": {
-    "path": "PLAN.md"
-  }
-}
-```> message_id: `msg_002`> input: `69`, output: `100`
+  #### [tool call]
+  
+    {
+      "name": "lookup",
+      "parameters": {
+        "q": "project status"
+      }
+    }
 
-#### Tool "lookup" result:
+  #### [tool call]
+  
+    {
+      "name": "read",
+      "parameters": {
+        "path": "PLAN.md"
+      }
+    }
 
-```
-[COMPACTION WARNING]
-The conversation has exceeded the configured compaction threshold. Before continuing much further, call the compact_conversation tool with a compact but complete summary of the conversation state needed to continue. This warning will continue to appear until compaction is performed.
-```
+  
+  | message_id: msg_002
 
-```
-status: implementation in progress
-```> message_id: `msg_003`
-#### Tool "read" result:
+  
+  | input: 69, output: 100
 
-```
-PLAN.md: finish compaction scenario coverage
-```> message_id: `msg_004`#### [tool call]
-```json
-{
-  "name": "compact_conversation",
-  "parameters": {
-    "summary": "User asked for project status and a next-step plan. Lookup and PLAN.md were checked; continue with verification and final synthesis."
-  }
-}
-```> message_id: `msg_005`> input: `551`, output: `191`
-#### [tool call]
-```json
-{
-  "name": "verify",
-  "parameters": {
-    "target": "project status"
-  }
-}
-```#### [tool call]
-```json
-{
-  "name": "write_notes",
-  "parameters": {
-    "topic": "next steps"
-  }
-}
-```> message_id: `msg_007`> input: `181`, output: `116`
 
-#### Tool "verify" result:
 
-```
-[COMPACTION WARNING]
-The conversation has exceeded the configured compaction threshold. Before continuing much further, call the compact_conversation tool with a compact but complete summary of the conversation state needed to continue. This warning will continue to appear until compaction is performed.
-```
+  #### Tool "lookup" result:
+  
+    [COMPACTION WARNING]
+    The conversation has exceeded the configured compaction threshold. Before continuing much further, call the compact_conversation tool with a compact but complete summary of the conversation state needed to continue. This warning will continue to appear until compaction is performed.
+  
+    status: implementation in progress
 
-```
-verification passed
-```> message_id: `msg_008`
-#### Tool "write_notes" result:
+  
+  | message_id: msg_003
 
-```
-notes written
-```> message_id: `msg_009`> message_id: `msg_010`> input: `633`, output: `59`
+
+  #### Tool "read" result:
+  
+    PLAN.md: finish compaction scenario coverage
+
+  
+  | message_id: msg_004
+
+  #### [tool call]
+  
+    {
+      "name": "compact_conversation",
+      "parameters": {
+        "summary": "User asked for project status and a next-step plan. Lookup and PLAN.md were checked; continue with verification and final synthesis."
+      }
+    }
+
+  
+  | message_id: msg_005
+
+  
+  | input: 551, output: 191
+
+
+  #### [tool call]
+  
+    {
+      "name": "verify",
+      "parameters": {
+        "target": "project status"
+      }
+    }
+
+  #### [tool call]
+  
+    {
+      "name": "write_notes",
+      "parameters": {
+        "topic": "next steps"
+      }
+    }
+
+  
+  | message_id: msg_007
+
+  
+  | input: 181, output: 116
+
+
+
+  #### Tool "verify" result:
+  
+    [COMPACTION WARNING]
+    The conversation has exceeded the configured compaction threshold. Before continuing much further, call the compact_conversation tool with a compact but complete summary of the conversation state needed to continue. This warning will continue to appear until compaction is performed.
+  
+    verification passed
+
+  
+  | message_id: msg_008
+
+
+  #### Tool "write_notes" result:
+  
+    notes written
+
+  
+  | message_id: msg_009
+
+  
+  | message_id: msg_010
+
+  
+  | input: 633, output: 59
+
+
 ````
 
 ### generation options

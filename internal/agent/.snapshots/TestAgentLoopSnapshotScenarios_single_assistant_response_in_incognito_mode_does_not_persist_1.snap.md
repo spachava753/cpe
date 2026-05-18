@@ -1,13 +1,17 @@
 ### stdout
 
 ````shell
-hi there
+  hi there
+
 ````
 
 ### stderr
 
 ````shell
-> input: `5`, output: `8`
+  
+  | input: 5, output: 8
+
+
 ````
 
 ### generation options

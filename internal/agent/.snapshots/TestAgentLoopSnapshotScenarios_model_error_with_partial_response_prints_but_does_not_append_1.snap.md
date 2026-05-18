@@ -1,13 +1,17 @@
 ### stdout
 
 ````shell
-partial output
+  partial output
+
 ````
 
 ### stderr
 
 ````shell
-> input: `12`, output: `14`
+  
+  | input: 12, output: 14
+
+
 ````
 
 ### generation options

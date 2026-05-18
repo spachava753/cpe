@@ -1,40 +1,61 @@
 ### stdout
 
 ````shell
-combined answer
+  combined answer
+
 ````
 
 ### stderr
 
 ````shell
-#### [tool call]
-```json
-{
-  "name": "lookup",
-  "parameters": {
-    "q": "docs"
-  }
-}
-```#### [tool call]
-```json
-{
-  "name": "read",
-  "parameters": {
-    "path": "README.md"
-  }
-}
-```> message_id: `msg_002`> input: `9`, output: `92`
+  #### [tool call]
+  
+    {
+      "name": "lookup",
+      "parameters": {
+        "q": "docs"
+      }
+    }
 
-#### Tool "lookup" result:
+  #### [tool call]
+  
+    {
+      "name": "read",
+      "parameters": {
+        "path": "README.md"
+      }
+    }
 
-```
-lookup result
-```> message_id: `msg_003`
-#### Tool "read" result:
+  
+  | message_id: msg_002
 
-```
-read result
-```> message_id: `msg_004`> message_id: `msg_005`> input: `125`, output: `15`
+  
+  | input: 9, output: 92
+
+
+
+  #### Tool "lookup" result:
+  
+    lookup result
+
+  
+  | message_id: msg_003
+
+
+  #### Tool "read" result:
+  
+    read result
+
+  
+  | message_id: msg_004
+
+  
+  | message_id: msg_005
+
+  
+  | input: 125, output: 15
+
+
 ````
 
 ### generation options

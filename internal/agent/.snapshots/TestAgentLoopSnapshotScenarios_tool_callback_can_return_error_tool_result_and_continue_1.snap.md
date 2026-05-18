@@ -1,25 +1,42 @@
 ### stdout
 
 ````shell
-recovered from tool error
+  recovered from tool error
+
 ````
 
 ### stderr
 
 ````shell
-#### [tool call]
-```json
-{
-  "name": "fragile",
-  "parameters": {}
-}
-```> message_id: `msg_002`> input: `16`, output: `34`
+  #### [tool call]
+  
+    {
+      "name": "fragile",
+      "parameters": {}
+    }
 
-#### Tool "fragile" result:
+  
+  | message_id: msg_002
 
-```
-recoverable tool failure
-```> message_id: `msg_003`> message_id: `msg_004`> input: `74`, output: `25`
+  
+  | input: 16, output: 34
+
+
+
+  #### Tool "fragile" result:
+  
+    recoverable tool failure
+
+  
+  | message_id: msg_003
+
+  
+  | message_id: msg_004
+
+  
+  | input: 74, output: 25
+
+
 ````
 
 ### generation options

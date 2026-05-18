@@ -7,24 +7,38 @@
 ### stderr
 
 ````shell
-#### [tool call]
-```json
-{
-  "name": "compact_conversation",
-  "parameters": {
-    "summary": "first"
-  }
-}
-```> message_id: `msg_002`> input: `18`, output: `64`
-#### [tool call]
-```json
-{
-  "name": "compact_conversation",
-  "parameters": {
-    "summary": "second"
-  }
-}
-```> message_id: `msg_004`> input: `54`, output: `65`
+  #### [tool call]
+  
+    {
+      "name": "compact_conversation",
+      "parameters": {
+        "summary": "first"
+      }
+    }
+
+  
+  | message_id: msg_002
+
+  
+  | input: 18, output: 64
+
+
+  #### [tool call]
+  
+    {
+      "name": "compact_conversation",
+      "parameters": {
+        "summary": "second"
+      }
+    }
+
+  
+  | message_id: msg_004
+
+  
+  | input: 54, output: 65
+
+
 ````
 
 ### generation options

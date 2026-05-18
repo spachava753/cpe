@@ -7,19 +7,28 @@
 ### stderr
 
 ````shell
-#### [tool call]
-```json
-{
-  "name": "lookup",
-  "parameters": {}
-}
-```> message_id: `msg_002`> input: `21`, output: `33`
+  #### [tool call]
+  
+    {
+      "name": "lookup",
+      "parameters": {}
+    }
 
-#### Tool "lookup" result:
+  
+  | message_id: msg_002
 
-```
-lookup result
-```> message_id: `msg_003`
+  
+  | input: 21, output: 33
+
+
+
+  #### Tool "lookup" result:
+  
+    lookup result
+
+  
+  | message_id: msg_003
+
 ````
 
 ### generation options

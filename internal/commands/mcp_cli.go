@@ -86,7 +86,7 @@ func MCPListToolsFromConfig(ctx context.Context, opts MCPListToolsFromConfigOpti
 	}
 	renderer := opts.Renderer
 	if renderer == nil {
-		renderer = &render.PlainTextRenderer{}
+		renderer = render.NewPlainTextRenderer()
 		if render.IsTTYWriter(writer) {
 			renderer = render.NewGlamourRendererForWriter(writer)
 		}
@@ -155,7 +155,7 @@ func MCPCodeDescFromConfig(ctx context.Context, opts MCPCodeDescFromConfigOption
 	}
 	renderer := opts.Renderer
 	if renderer == nil {
-		renderer = &render.PlainTextRenderer{}
+		renderer = render.NewPlainTextRenderer()
 		if render.IsTTYWriter(writer) {
 			renderer = render.NewGlamourRendererForWriter(writer)
 		}

@@ -7,13 +7,20 @@
 ### stderr
 
 ````shell
-#### [tool call]
-```json
-{
-  "name": "finish",
-  "parameters": {}
-}
-```> message_id: `msg_002`> input: `6`, output: `33`
+  #### [tool call]
+  
+    {
+      "name": "finish",
+      "parameters": {}
+    }
+
+  
+  | message_id: msg_002
+
+  
+  | input: 6, output: 33
+
+
 ````
 
 ### generation options

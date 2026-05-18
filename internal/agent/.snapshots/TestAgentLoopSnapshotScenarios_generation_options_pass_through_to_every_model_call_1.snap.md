@@ -1,27 +1,44 @@
 ### stdout
 
 ````shell
-configured answer
+  configured answer
+
 ````
 
 ### stderr
 
 ````shell
-#### [tool call]
-```json
-{
-  "name": "lookup",
-  "parameters": {
-    "q": "generation parameters"
-  }
-}
-```> message_id: `msg_002`> input: `57`, output: `60`
+  #### [tool call]
+  
+    {
+      "name": "lookup",
+      "parameters": {
+        "q": "generation parameters"
+      }
+    }
 
-#### Tool "lookup" result:
+  
+  | message_id: msg_002
 
-```
-lookup result
-```> message_id: `msg_003`> message_id: `msg_004`> input: `130`, output: `17`
+  
+  | input: 57, output: 60
+
+
+
+  #### Tool "lookup" result:
+  
+    lookup result
+
+  
+  | message_id: msg_003
+
+  
+  | message_id: msg_004
+
+  
+  | input: 130, output: 17
+
+
 ````
 
 ### generation options
