@@ -49,16 +49,23 @@ func TestMain(m *testing.M) {
 	os.Exit(0)
 }
 
-type agentLoopScriptedGeneration struct {
+type scriptedResponse struct {
 	response gai.Response
 	err      error
 }
 
-type agentLoopScriptedModel struct {
-	script []agentLoopScriptedGeneration
+type scriptedModelCall struct {
+	genOpts *gai.GenOpts
 }
 
-func (m *agentLoopScriptedModel) Generate(_ context.Context, dialog gai.Dialog, _ *gai.GenOpts) (gai.Response, error) {
+type scriptedGenerator struct {
+	script []scriptedResponse
+	calls  []scriptedModelCall
+}
+
+func (m *scriptedGenerator) Generate(_ context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+	m.calls = append(m.calls, scriptedModelCall{genOpts: cloneGenOpts(opts)})
+
 	if len(m.script) == 0 {
 		return gai.Response{}, errors.New("no scripted generation response")
 	}
@@ -100,11 +107,11 @@ func (m *agentLoopScriptedModel) Generate(_ context.Context, dialog gai.Dialog, 
 	return resp, step.err
 }
 
-func (*agentLoopScriptedModel) Register(gai.Tool) error {
+func (*scriptedGenerator) Register(gai.Tool) error {
 	return nil
 }
 
-type agentLoopToolFixture struct {
+type toolFixture struct {
 	tool     gai.Tool
 	callback gai.ToolCallback
 }
@@ -121,8 +128,8 @@ func toolResultCallback(text string) gai.ToolCallback {
 	})
 }
 
-func assistantText(text string) agentLoopScriptedGeneration {
-	return agentLoopScriptedGeneration{
+func assistantText(text string) scriptedResponse {
+	return scriptedResponse{
 		response: gai.Response{
 			FinishReason: gai.EndTurn,
 			Candidates: []gai.Message{
@@ -132,8 +139,8 @@ func assistantText(text string) agentLoopScriptedGeneration {
 	}
 }
 
-func assistantToolUse(blocks ...gai.Block) agentLoopScriptedGeneration {
-	return agentLoopScriptedGeneration{
+func assistantToolUse(blocks ...gai.Block) scriptedResponse {
+	return scriptedResponse{
 		response: gai.Response{
 			FinishReason: gai.ToolUse,
 			Candidates: []gai.Message{
@@ -150,9 +157,21 @@ func mustToolCallBlock(t *testing.T, id, name string, params map[string]any) gai
 	return block
 }
 
-// TODO: Add or expand snapshot scenarios that dump scripted model calls so the
-// snapshots cover successful GenOpts pass-through, including non-default scalar
-// fields, stop sequences, output modalities, extra args, and valid ToolChoice.
+func ptr[T any](v T) *T {
+	return &v
+}
+
+func cloneGenOpts(opts *gai.GenOpts) *gai.GenOpts {
+	if opts == nil {
+		return nil
+	}
+	clone := *opts
+	clone.StopSequences = slices.Clone(opts.StopSequences)
+	clone.OutputModalities = slices.Clone(opts.OutputModalities)
+	clone.ExtraArgs = maps.Clone(opts.ExtraArgs)
+	return &clone
+}
+
 // TODO: Add an agent-loop snapshot path for Responses models that exercises the
 // prompt-cache key and reasoning-summary opts injected for each model call. The
 // focused unit coverage lives in genopts_test.go and generator_test.go today,
@@ -203,8 +222,8 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 		initialDialog   gai.Dialog
 		prepare         func(t *testing.T, saver storage.DialogSaver) gai.Dialog
 		genOpts         *gai.GenOpts
-		script          []agentLoopScriptedGeneration
-		tools           []agentLoopToolFixture
+		script          []scriptedResponse
+		tools           []toolFixture
 		persist         bool
 		wantErrContains string
 	}{
@@ -213,7 +232,7 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			initialDialog: gai.Dialog{
 				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("hello")}},
 			},
-			script: []agentLoopScriptedGeneration{
+			script: []scriptedResponse{
 				assistantText("hi there"),
 			},
 			persist: true,
@@ -223,7 +242,7 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			initialDialog: gai.Dialog{
 				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("hello")}},
 			},
-			script: []agentLoopScriptedGeneration{
+			script: []scriptedResponse{
 				assistantText("hi there"),
 			},
 		},
@@ -243,7 +262,7 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			initialDialog: gai.Dialog{
 				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("show usage")}},
 			},
-			script: []agentLoopScriptedGeneration{{
+			script: []scriptedResponse{{
 				response: gai.Response{
 					FinishReason: gai.EndTurn,
 					Candidates: []gai.Message{
@@ -262,11 +281,11 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			initialDialog: gai.Dialog{
 				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("use lookup")}},
 			},
-			script: []agentLoopScriptedGeneration{
+			script: []scriptedResponse{
 				assistantToolUse(mustToolCallBlock(t, "call_1", "lookup", map[string]any{"q": "docs"})),
 				assistantText("final answer"),
 			},
-			tools:   []agentLoopToolFixture{{tool: gai.Tool{Name: "lookup"}, callback: toolResultCallback("lookup result")}},
+			tools:   []toolFixture{{tool: gai.Tool{Name: "lookup"}, callback: toolResultCallback("lookup result")}},
 			persist: true,
 		},
 		{
@@ -274,14 +293,14 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			initialDialog: gai.Dialog{
 				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("use tools")}},
 			},
-			script: []agentLoopScriptedGeneration{
+			script: []scriptedResponse{
 				assistantToolUse(
 					mustToolCallBlock(t, "call_1", "lookup", map[string]any{"q": "docs"}),
 					mustToolCallBlock(t, "call_2", "read", map[string]any{"path": "README.md"}),
 				),
 				assistantText("combined answer"),
 			},
-			tools: []agentLoopToolFixture{
+			tools: []toolFixture{
 				{tool: gai.Tool{Name: "lookup"}, callback: toolResultCallback("lookup result")},
 				{tool: gai.Tool{Name: "read"}, callback: toolResultCallback("read result")},
 			},
@@ -292,11 +311,11 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			initialDialog: gai.Dialog{
 				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("use fragile tool")}},
 			},
-			script: []agentLoopScriptedGeneration{
+			script: []scriptedResponse{
 				assistantToolUse(mustToolCallBlock(t, "call_1", "fragile", map[string]any{})),
 				assistantText("recovered from tool error"),
 			},
-			tools: []agentLoopToolFixture{{
+			tools: []toolFixture{{
 				tool: gai.Tool{Name: "fragile"},
 				callback: toolCallbackFunc(func(_ context.Context, _ json.RawMessage, id string) (gai.Message, error) {
 					msg := gai.ToolResultMessage(id, gai.TextBlock("recoverable tool failure"))
@@ -311,7 +330,7 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			initialDialog: gai.Dialog{
 				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("use missing tool")}},
 			},
-			script: []agentLoopScriptedGeneration{
+			script: []scriptedResponse{
 				assistantToolUse(mustToolCallBlock(t, "call_1", "missing", map[string]any{})),
 			},
 			persist:         true,
@@ -322,10 +341,10 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			initialDialog: gai.Dialog{
 				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("finish")}},
 			},
-			script: []agentLoopScriptedGeneration{
+			script: []scriptedResponse{
 				assistantToolUse(mustToolCallBlock(t, "call_1", "finish", map[string]any{})),
 			},
-			tools:   []agentLoopToolFixture{{tool: gai.Tool{Name: "finish"}, callback: nil}},
+			tools:   []toolFixture{{tool: gai.Tool{Name: "finish"}, callback: nil}},
 			persist: true,
 		},
 		{
@@ -333,11 +352,11 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			initialDialog: gai.Dialog{
 				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("lookup with bad params")}},
 			},
-			script: []agentLoopScriptedGeneration{
+			script: []scriptedResponse{
 				assistantToolUse(mustToolCallBlock(t, "call_1", "lookup", map[string]any{"q": 123})),
 				assistantText("asked for correction"),
 			},
-			tools: []agentLoopToolFixture{{
+			tools: []toolFixture{{
 				tool: gai.Tool{Name: "lookup"},
 				callback: toolCallbackFunc(func(_ context.Context, params json.RawMessage, id string) (gai.Message, error) {
 					var input struct {
@@ -357,10 +376,10 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			initialDialog: gai.Dialog{
 				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("lookup fails")}},
 			},
-			script: []agentLoopScriptedGeneration{
+			script: []scriptedResponse{
 				assistantToolUse(mustToolCallBlock(t, "call_1", "lookup", map[string]any{"q": "docs"})),
 			},
-			tools: []agentLoopToolFixture{{
+			tools: []toolFixture{{
 				tool: gai.Tool{Name: "lookup"},
 				callback: toolCallbackFunc(func(context.Context, json.RawMessage, string) (gai.Message, error) {
 					return gai.Message{}, errors.New("lookup failed")
@@ -374,10 +393,10 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			initialDialog: gai.Dialog{
 				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("tool returns wrong id")}},
 			},
-			script: []agentLoopScriptedGeneration{
+			script: []scriptedResponse{
 				assistantToolUse(mustToolCallBlock(t, "call_1", "lookup", map[string]any{})),
 			},
-			tools: []agentLoopToolFixture{{
+			tools: []toolFixture{{
 				tool: gai.Tool{Name: "lookup"},
 				callback: toolCallbackFunc(func(context.Context, json.RawMessage, string) (gai.Message, error) {
 					return gai.ToolResultMessage("other_call", gai.TextBlock("wrong id")), nil
@@ -391,7 +410,7 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			initialDialog: gai.Dialog{
 				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("model fails")}},
 			},
-			script: []agentLoopScriptedGeneration{
+			script: []scriptedResponse{
 				{err: errors.New("provider unavailable")},
 			},
 			persist:         true,
@@ -402,7 +421,7 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			initialDialog: gai.Dialog{
 				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("stream fails")}},
 			},
-			script: []agentLoopScriptedGeneration{{
+			script: []scriptedResponse{{
 				response: gai.Response{
 					FinishReason: gai.EndTurn,
 					Candidates: []gai.Message{
@@ -419,11 +438,11 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			initialDialog: gai.Dialog{
 				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("tool then model fails")}},
 			},
-			script: []agentLoopScriptedGeneration{
+			script: []scriptedResponse{
 				assistantToolUse(mustToolCallBlock(t, "call_1", "lookup", map[string]any{})),
 				{err: errors.New("provider failed after tool")},
 			},
-			tools:           []agentLoopToolFixture{{tool: gai.Tool{Name: "lookup"}, callback: toolResultCallback("lookup result")}},
+			tools:           []toolFixture{{tool: gai.Tool{Name: "lookup"}, callback: toolResultCallback("lookup result")}},
 			persist:         true,
 			wantErrContains: "provider failed after tool",
 		},
@@ -432,7 +451,7 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			initialDialog: gai.Dialog{
 				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("bad candidates")}},
 			},
-			script: []agentLoopScriptedGeneration{
+			script: []scriptedResponse{
 				{response: gai.Response{FinishReason: gai.EndTurn}},
 			},
 			persist:         true,
@@ -448,6 +467,36 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			wantErrContains: "tool 'missing' not found",
 		},
 		{
+			name: "generation options pass through to every model call",
+			initialDialog: gai.Dialog{
+				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("answer with configured generation parameters after lookup")}},
+			},
+			genOpts: &gai.GenOpts{
+				Temperature:         ptr(0.37),
+				TopP:                ptr(0.81),
+				TopK:                ptr(uint(40)),
+				FrequencyPenalty:    ptr(0.2),
+				PresencePenalty:     ptr(0.4),
+				N:                   ptr(uint(2)),
+				MaxGenerationTokens: ptr(512),
+				ToolChoice:          "lookup",
+				StopSequences:       []string{"END", "STOP"},
+				OutputModalities:    []gai.Modality{gai.Text, gai.Audio},
+				AudioConfig:         gai.AudioConfig{VoiceName: "alloy", Format: "wav"},
+				ThinkingBudget:      "medium",
+				ExtraArgs: map[string]any{
+					"provider_flag": true,
+					"provider_mode": "strict",
+				},
+			},
+			script: []scriptedResponse{
+				assistantToolUse(mustToolCallBlock(t, "call_1", "lookup", map[string]any{"q": "generation parameters"})),
+				assistantText("configured answer"),
+			},
+			tools:   []toolFixture{{tool: gai.Tool{Name: "lookup"}, callback: toolResultCallback("lookup result")}},
+			persist: true,
+		},
+		{
 			name: "continuation appends to existing persisted dialog",
 			prepare: func(t *testing.T, saver storage.DialogSaver) gai.Dialog {
 				t.Helper()
@@ -460,7 +509,7 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 				})
 				return append(saved, gai.Message{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow up")}})
 			},
-			script: []agentLoopScriptedGeneration{
+			script: []scriptedResponse{
 				assistantText("continued answer"),
 			},
 		},
@@ -480,7 +529,7 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 					{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("alternate branch")}},
 				}
 			},
-			script: []agentLoopScriptedGeneration{
+			script: []scriptedResponse{
 				assistantText("alternate answer"),
 			},
 		},
@@ -490,7 +539,7 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			initialDialog: gai.Dialog{
 				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("large conversation")}},
 			},
-			script: []agentLoopScriptedGeneration{{
+			script: []scriptedResponse{{
 				response: gai.Response{
 					FinishReason: gai.ToolUse,
 					Candidates: []gai.Message{{
@@ -499,7 +548,7 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 					}},
 				},
 			}, assistantText("used warned result")},
-			tools: []agentLoopToolFixture{
+			tools: []toolFixture{
 				{tool: gai.Tool{Name: "lookup"}, callback: toolResultCallback("lookup result")},
 				{tool: gai.Tool{Name: config.CompactionToolName}, callback: nil},
 			},
@@ -511,7 +560,7 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			initialDialog: gai.Dialog{
 				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("Find the current project status and prepare a concise next-step plan.")}},
 			},
-			script: []agentLoopScriptedGeneration{
+			script: []scriptedResponse{
 				{
 					response: gai.Response{
 						FinishReason: gai.ToolUse,
@@ -530,7 +579,7 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 				),
 				assistantText("Project status is verified and the next-step plan is ready."),
 			},
-			tools: []agentLoopToolFixture{
+			tools: []toolFixture{
 				{tool: gai.Tool{Name: "lookup"}, callback: toolResultCallback("status: implementation in progress")},
 				{tool: gai.Tool{Name: "read"}, callback: toolResultCallback("PLAN.md: finish compaction scenario coverage")},
 				{tool: gai.Tool{Name: "verify"}, callback: toolResultCallback("verification passed")},
@@ -545,11 +594,11 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			initialDialog: gai.Dialog{
 				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("compact repeatedly")}},
 			},
-			script: []agentLoopScriptedGeneration{
+			script: []scriptedResponse{
 				assistantToolUse(mustToolCallBlock(t, "call_1", config.CompactionToolName, map[string]any{"summary": "first"})),
 				assistantToolUse(mustToolCallBlock(t, "call_2", config.CompactionToolName, map[string]any{"summary": "second"})),
 			},
-			tools:           []agentLoopToolFixture{{tool: gai.Tool{Name: config.CompactionToolName}, callback: nil}},
+			tools:           []toolFixture{{tool: gai.Tool{Name: config.CompactionToolName}, callback: nil}},
 			persist:         true,
 			wantErrContains: "maximum compaction restarts exceeded",
 		},
@@ -577,7 +626,7 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 
 			stdout := &bytes.Buffer{}
 			stderr := &bytes.Buffer{}
-			model := &agentLoopScriptedModel{script: tt.script}
+			model := &scriptedGenerator{script: tt.script}
 			runtime := agent.NewRuntime(model, tt.cfg, saver, stdout, stderr, false)
 			for _, fixture := range tt.tools {
 				be.Err(t, runtime.Register(fixture.tool, fixture.callback), nil)
@@ -597,6 +646,7 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			var snapshot strings.Builder
 			writeShellSection(&snapshot, "stdout", stdout.String())
 			writeShellSection(&snapshot, "stderr", stderr.String())
+			dumpGenerationOptions(t, model.calls, &snapshot)
 			dumpSQLite(t, db, &snapshot)
 			agentLoopSnapshots.MatchStandaloneSnapshot(t, snapshot.String())
 		})
@@ -610,6 +660,128 @@ func writeShellSection(snapshot *strings.Builder, title, content string) {
 		snapshot.WriteByte('\n')
 	}
 	snapshot.WriteString("````\n\n")
+}
+
+func dumpGenerationOptions(t *testing.T, calls []scriptedModelCall, snapshot *strings.Builder) {
+	t.Helper()
+
+	const nullValue = "NULL"
+
+	floatPtr := func(value *float64) string {
+		if value == nil {
+			return nullValue
+		}
+		return strconv.FormatFloat(*value, 'g', -1, 64)
+	}
+	uintPtr := func(value *uint) string {
+		if value == nil {
+			return nullValue
+		}
+		return strconv.FormatUint(uint64(*value), 10)
+	}
+	intPtr := func(value *int) string {
+		if value == nil {
+			return nullValue
+		}
+		return strconv.Itoa(*value)
+	}
+	stringField := func(value string) string {
+		if value == "" {
+			return nullValue
+		}
+		return markdownTableCell(strconv.Quote(value))
+	}
+	jsonField := func(value any) string {
+		data, err := json.Marshal(value)
+		if err != nil {
+			return markdownTableCell(strconv.Quote(fmt.Sprint(value)))
+		}
+		return markdownTableCell(string(data))
+	}
+	stringsField := func(values []string) string {
+		if len(values) == 0 {
+			return nullValue
+		}
+		return jsonField(values)
+	}
+	modalitiesField := func(values []gai.Modality) string {
+		if len(values) == 0 {
+			return nullValue
+		}
+		names := make([]string, len(values))
+		for i, value := range values {
+			names[i] = value.String()
+		}
+		return jsonField(names)
+	}
+	audioConfigField := func(value gai.AudioConfig) string {
+		if value.VoiceName == "" && value.Format == "" {
+			return nullValue
+		}
+		return jsonField(value)
+	}
+	extraArgsField := func(value map[string]any) string {
+		if len(value) == 0 {
+			return nullValue
+		}
+		return jsonField(value)
+	}
+
+	table := writeMarkdownTable(snapshot, "generation options", []string{
+		"call",
+		"temperature",
+		"top_p",
+		"top_k",
+		"frequency_penalty",
+		"presence_penalty",
+		"n",
+		"max_generation_tokens",
+		"tool_choice",
+		"stop_sequences",
+		"output_modalities",
+		"audio_config",
+		"thinking_budget",
+		"extra_args",
+	})
+	for i, call := range calls {
+		if call.genOpts == nil {
+			be.Err(t, table.Append([]string{
+				strconv.Itoa(i + 1),
+				nullValue,
+				nullValue,
+				nullValue,
+				nullValue,
+				nullValue,
+				nullValue,
+				nullValue,
+				nullValue,
+				nullValue,
+				nullValue,
+				nullValue,
+				nullValue,
+				nullValue,
+			}), nil)
+			continue
+		}
+		opts := call.genOpts
+		be.Err(t, table.Append([]string{
+			strconv.Itoa(i + 1),
+			floatPtr(opts.Temperature),
+			floatPtr(opts.TopP),
+			uintPtr(opts.TopK),
+			floatPtr(opts.FrequencyPenalty),
+			floatPtr(opts.PresencePenalty),
+			uintPtr(opts.N),
+			intPtr(opts.MaxGenerationTokens),
+			stringField(opts.ToolChoice),
+			stringsField(opts.StopSequences),
+			modalitiesField(opts.OutputModalities),
+			audioConfigField(opts.AudioConfig),
+			stringField(opts.ThinkingBudget),
+			extraArgsField(opts.ExtraArgs),
+		}), nil)
+	}
+	renderMarkdownTable(t, table, snapshot)
 }
 
 func dumpSQLite(t *testing.T, db *sql.DB, snapshot *strings.Builder) {
