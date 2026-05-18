@@ -7,7 +7,7 @@ partial output
 ### stderr
 
 ````shell
-> input: `5`, output: `2`
+> input: `12`, output: `14`
 ````
 
 ### messages

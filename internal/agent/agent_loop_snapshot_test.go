@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"strconv"
@@ -57,13 +58,46 @@ type agentLoopScriptedModel struct {
 	script []agentLoopScriptedGeneration
 }
 
-func (m *agentLoopScriptedModel) Generate(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
+func (m *agentLoopScriptedModel) Generate(_ context.Context, dialog gai.Dialog, _ *gai.GenOpts) (gai.Response, error) {
 	if len(m.script) == 0 {
 		return gai.Response{}, errors.New("no scripted generation response")
 	}
 	step := m.script[0]
 	m.script = m.script[1:]
-	return step.response, step.err
+
+	resp := step.response
+	inputTokens := 0
+	for _, msg := range dialog {
+		for _, block := range msg.Blocks {
+			if block.Content != nil {
+				inputTokens += len([]rune(block.Content.String()))
+			}
+		}
+	}
+
+	var hasAssistant bool
+	outputTokens := 0
+	for _, candidate := range resp.Candidates {
+		if candidate.Role != gai.Assistant {
+			continue
+		}
+		hasAssistant = true
+		for _, block := range candidate.Blocks {
+			if block.Content != nil {
+				outputTokens += len([]rune(block.Content.String()))
+			}
+		}
+	}
+	if hasAssistant {
+		resp.UsageMetadata = maps.Clone(resp.UsageMetadata)
+		if resp.UsageMetadata == nil {
+			resp.UsageMetadata = gai.Metadata{}
+		}
+		resp.UsageMetadata[gai.UsageMetricInputTokens] = inputTokens
+		resp.UsageMetadata[gai.UsageMetricGenerationTokens] = outputTokens
+	}
+
+	return resp, step.err
 }
 
 func (*agentLoopScriptedModel) Register(gai.Tool) error {
@@ -216,8 +250,6 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 						{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("usage tracked")}},
 					},
 					UsageMetadata: gai.Metadata{
-						gai.UsageMetricInputTokens:      40,
-						gai.UsageMetricGenerationTokens: 10,
 						gai.UsageMetricCacheReadTokens:  5,
 						gai.UsageMetricCacheWriteTokens: 3,
 					},
@@ -376,7 +408,6 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 					Candidates: []gai.Message{
 						{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("partial output")}},
 					},
-					UsageMetadata: gai.Metadata{gai.UsageMetricInputTokens: 5, gai.UsageMetricGenerationTokens: 2},
 				},
 				err: errors.New("stream interrupted"),
 			}},
@@ -422,7 +453,10 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 				t.Helper()
 				saved := saveDialog(t, saver, gai.Dialog{
 					{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("original question")}},
-					{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("original answer")}},
+					{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("original answer")}, ExtraFields: map[string]any{
+						storage.AgentMetadataInputTokensKey:  int64(len([]rune("original question"))),
+						storage.AgentMetadataOutputTokensKey: int64(len([]rune("original answer"))),
+					}},
 				})
 				return append(saved, gai.Message{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow up")}})
 			},
@@ -436,7 +470,10 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 				t.Helper()
 				saved := saveDialog(t, saver, gai.Dialog{
 					{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("root question")}},
-					{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("first branch answer")}},
+					{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("first branch answer")}, ExtraFields: map[string]any{
+						storage.AgentMetadataInputTokensKey:  int64(len([]rune("root question"))),
+						storage.AgentMetadataOutputTokensKey: int64(len([]rune("first branch answer"))),
+					}},
 				})
 				return gai.Dialog{
 					saved[0],
@@ -460,7 +497,6 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 						Role:   gai.Assistant,
 						Blocks: []gai.Block{mustToolCallBlock(t, "call_1", "lookup", map[string]any{})},
 					}},
-					UsageMetadata: gai.Metadata{gai.UsageMetricInputTokens: 9, gai.UsageMetricGenerationTokens: 2},
 				},
 			}, assistantText("used warned result")},
 			tools: []agentLoopToolFixture{
@@ -471,15 +507,36 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 		},
 		{
 			name: "compaction tool restarts into compacted branch",
-			cfg:  compactCfg(0, 1),
+			cfg:  compactCfg(10, 1),
 			initialDialog: gai.Dialog{
-				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("start before compact")}},
+				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("Find the current project status and prepare a concise next-step plan.")}},
 			},
 			script: []agentLoopScriptedGeneration{
-				assistantToolUse(mustToolCallBlock(t, "call_1", config.CompactionToolName, map[string]any{"summary": "condensed"})),
-				assistantText("after compact"),
+				{
+					response: gai.Response{
+						FinishReason: gai.ToolUse,
+						Candidates: []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{
+							mustToolCallBlock(t, "call_1", "lookup", map[string]any{"q": "project status"}),
+							mustToolCallBlock(t, "call_2", "read", map[string]any{"path": "PLAN.md"}),
+						}}},
+					},
+				},
+				assistantToolUse(mustToolCallBlock(t, "call_3", config.CompactionToolName, map[string]any{
+					"summary": "User asked for project status and a next-step plan. Lookup and PLAN.md were checked; continue with verification and final synthesis.",
+				})),
+				assistantToolUse(
+					mustToolCallBlock(t, "call_4", "verify", map[string]any{"target": "project status"}),
+					mustToolCallBlock(t, "call_5", "write_notes", map[string]any{"topic": "next steps"}),
+				),
+				assistantText("Project status is verified and the next-step plan is ready."),
 			},
-			tools:   []agentLoopToolFixture{{tool: gai.Tool{Name: config.CompactionToolName}, callback: nil}},
+			tools: []agentLoopToolFixture{
+				{tool: gai.Tool{Name: "lookup"}, callback: toolResultCallback("status: implementation in progress")},
+				{tool: gai.Tool{Name: "read"}, callback: toolResultCallback("PLAN.md: finish compaction scenario coverage")},
+				{tool: gai.Tool{Name: "verify"}, callback: toolResultCallback("verification passed")},
+				{tool: gai.Tool{Name: "write_notes"}, callback: toolResultCallback("notes written")},
+				{tool: gai.Tool{Name: config.CompactionToolName}, callback: nil},
+			},
 			persist: true,
 		},
 		{

@@ -7,7 +7,7 @@ hi there
 ### stderr
 
 ````shell
-
+> input: `5`, output: `8`
 ````
 
 ### messages
