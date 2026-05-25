@@ -827,15 +827,16 @@ func (s *Sqlite) getMessage(ctx context.Context, messageID string) (gai.Message,
 }
 
 // CreateACPSession persists ACP session metadata.
-func (s *Sqlite) CreateACPSession(ctx context.Context, session acp.SessionInfo, lastMessageID string) error {
+func (s *Sqlite) CreateACPSession(ctx context.Context, params CreateACPSessionParams) error {
 	err := s.q.CreateSession(ctx, sqlcgen.CreateSessionParams{
-		ID:            string(session.SessionId),
-		LastMessageID: lastMessageID,
-		Cwd:           session.Cwd,
-		Title:         acpSessionTitle(session),
+		ID:            string(params.Session.SessionId),
+		LastMessageID: params.LastMessageID,
+		Cwd:           params.Session.Cwd,
+		Title:         acpSessionTitle(params.Session),
+		ModelRef:      params.ModelRef,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create ACP session %s: %w", session.SessionId, err)
+		return fmt.Errorf("failed to create ACP session %s: %w", params.Session.SessionId, err)
 	}
 	return nil
 }
@@ -876,6 +877,7 @@ func (s *Sqlite) GetACPSession(ctx context.Context, sessionID acp.SessionId) (Ge
 	return GetACPSessionResponse{
 		Session:       acpSessionInfo(row.ID, row.Cwd, row.Title, row.UpdatedAt),
 		LastMessageID: row.LastMessageID,
+		ModelRef:      row.ModelRef,
 	}, nil
 }
 

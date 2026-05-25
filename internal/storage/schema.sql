@@ -45,10 +45,11 @@ CREATE TABLE IF NOT EXISTS blocks
 
 CREATE TABLE IF NOT EXISTS acp_sessions
 (
-    id        TEXT PRIMARY KEY,
-    last_message_id     TEXT      NOT NULL,
-    cwd     TEXT      NOT NULL,
-    title  TEXT      NOT NULL,
-    created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id              TEXT PRIMARY KEY,
+    last_message_id TEXT      NOT NULL,
+    cwd             TEXT      NOT NULL,
+    title           TEXT      NOT NULL,
+    model_ref       TEXT      NOT NULL,
+    created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (last_message_id) REFERENCES messages (id) ON DELETE CASCADE
 );

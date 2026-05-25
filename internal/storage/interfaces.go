@@ -206,13 +206,25 @@ type MessagesGetter interface {
 type GetACPSessionResponse struct {
 	Session       acp.SessionInfo
 	LastMessageID string
+	ModelRef      string
+}
+
+// CreateACPSessionParams configures ACP session creation.
+type CreateACPSessionParams struct {
+	// Session is the ACP protocol metadata to persist.
+	Session acp.SessionInfo
+
+	// LastMessageID is the session's current latest persisted message.
+	LastMessageID string
+
+	// ModelRef is the selected CPE model profile reference for the session.
+	ModelRef string
 }
 
 // ACPSessionCreator creates ACP session metadata.
 type ACPSessionCreator interface {
-	// CreateACPSession persists session metadata with lastMessageID as the
-	// session's current last message.
-	CreateACPSession(ctx context.Context, session acp.SessionInfo, lastMessageID string) error
+	// CreateACPSession persists ACP session metadata.
+	CreateACPSession(ctx context.Context, params CreateACPSessionParams) error
 }
 
 // ACPSessionMessageAdder updates an ACP session's latest message pointer.
@@ -226,8 +238,8 @@ type ACPSessionMessageAdder interface {
 
 // ACPSessionGetter fetches ACP session metadata by session ID.
 type ACPSessionGetter interface {
-	// GetACPSession returns ACP session metadata and the latest persisted message
-	// ID for sessionID.
+	// GetACPSession returns ACP session metadata, the latest persisted message ID,
+	// and the selected model profile reference for sessionID.
 	//
 	// The returned SessionInfo.UpdatedAt is an ISO 8601 timestamp derived from the
 	// session's last message creation time.

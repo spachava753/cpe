@@ -133,8 +133,8 @@ ORDER BY sequence_order;
 
 -- ACP queries
 -- name: CreateSession :exec
-INSERT INTO acp_sessions (id, last_message_id, cwd, title)
-VALUES (?, ?, ?, ?);
+INSERT INTO acp_sessions (id, last_message_id, cwd, title, model_ref)
+VALUES (?, ?, ?, ?, ?);
 
 -- name: AddSessionMessage :execrows
 UPDATE acp_sessions
@@ -146,6 +146,7 @@ SELECT acp_sessions.id,
        acp_sessions.last_message_id,
        acp_sessions.cwd,
        acp_sessions.title,
+       acp_sessions.model_ref,
        messages.created_at AS updated_at
 FROM acp_sessions
 JOIN messages ON messages.id = acp_sessions.last_message_id
@@ -155,6 +156,7 @@ WHERE acp_sessions.id = ?;
 SELECT acp_sessions.id,
        acp_sessions.cwd,
        acp_sessions.title,
+       acp_sessions.model_ref,
        messages.created_at AS updated_at
 FROM acp_sessions
 JOIN messages ON messages.id = acp_sessions.last_message_id

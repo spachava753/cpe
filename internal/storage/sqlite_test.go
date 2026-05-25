@@ -197,20 +197,28 @@ func TestACPSessions(t *testing.T) {
 		}
 	}
 
-	err := db.CreateACPSession(ctx, acp.SessionInfo{
-		Cwd:       "/tmp/older",
-		SessionId: acp.SessionId("older-session"),
-		Title:     new("Older title"),
-	}, olderMessageID)
+	err := db.CreateACPSession(ctx, CreateACPSessionParams{
+		Session: acp.SessionInfo{
+			Cwd:       "/tmp/older",
+			SessionId: acp.SessionId("older-session"),
+			Title:     new("Older title"),
+		},
+		LastMessageID: olderMessageID,
+		ModelRef:      "claude-opus",
+	})
 	if err != nil {
 		t.Fatalf("CreateACPSession older: %v", err)
 	}
 
-	err = db.CreateACPSession(ctx, acp.SessionInfo{
-		Cwd:       "/tmp/newer",
-		SessionId: acp.SessionId("newer-session"),
-		Title:     new("Newer title"),
-	}, newerMessageID)
+	err = db.CreateACPSession(ctx, CreateACPSessionParams{
+		Session: acp.SessionInfo{
+			Cwd:       "/tmp/newer",
+			SessionId: acp.SessionId("newer-session"),
+			Title:     new("Newer title"),
+		},
+		LastMessageID: newerMessageID,
+		ModelRef:      "gpt-5.5",
+	})
 	if err != nil {
 		t.Fatalf("CreateACPSession newer: %v", err)
 	}
@@ -233,6 +241,9 @@ func TestACPSessions(t *testing.T) {
 	}
 	if resp.LastMessageID != olderMessageID {
 		t.Fatalf("LastMessageID: got %q", resp.LastMessageID)
+	}
+	if resp.ModelRef != "claude-opus" {
+		t.Fatalf("ModelRef: got %q", resp.ModelRef)
 	}
 
 	sessions, err := db.ListACPSessions(ctx)
@@ -263,6 +274,9 @@ func TestACPSessions(t *testing.T) {
 	}
 	if resp.LastMessageID != latestMessageID {
 		t.Fatalf("LastMessageID after add: got %q", resp.LastMessageID)
+	}
+	if resp.ModelRef != "claude-opus" {
+		t.Fatalf("ModelRef after add: got %q", resp.ModelRef)
 	}
 
 	sessions, err = db.ListACPSessions(ctx)

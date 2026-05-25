@@ -133,8 +133,8 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) er
 }
 
 const createSession = `-- name: CreateSession :exec
-INSERT INTO acp_sessions (id, last_message_id, cwd, title)
-VALUES (?, ?, ?, ?)
+INSERT INTO acp_sessions (id, last_message_id, cwd, title, model_ref)
+VALUES (?, ?, ?, ?, ?)
 `
 
 type CreateSessionParams struct {
@@ -142,6 +142,7 @@ type CreateSessionParams struct {
 	LastMessageID string `json:"last_message_id"`
 	Cwd           string `json:"cwd"`
 	Title         string `json:"title"`
+	ModelRef      string `json:"model_ref"`
 }
 
 // ACP queries
@@ -151,6 +152,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 		arg.LastMessageID,
 		arg.Cwd,
 		arg.Title,
+		arg.ModelRef,
 	)
 	return err
 }
@@ -277,6 +279,7 @@ SELECT acp_sessions.id,
        acp_sessions.last_message_id,
        acp_sessions.cwd,
        acp_sessions.title,
+       acp_sessions.model_ref,
        messages.created_at AS updated_at
 FROM acp_sessions
 JOIN messages ON messages.id = acp_sessions.last_message_id
@@ -288,6 +291,7 @@ type GetSessionRow struct {
 	LastMessageID string    `json:"last_message_id"`
 	Cwd           string    `json:"cwd"`
 	Title         string    `json:"title"`
+	ModelRef      string    `json:"model_ref"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
@@ -299,6 +303,7 @@ func (q *Queries) GetSession(ctx context.Context, id string) (GetSessionRow, err
 		&i.LastMessageID,
 		&i.Cwd,
 		&i.Title,
+		&i.ModelRef,
 		&i.UpdatedAt,
 	)
 	return i, err
@@ -528,6 +533,7 @@ const listSessions = `-- name: ListSessions :many
 SELECT acp_sessions.id,
        acp_sessions.cwd,
        acp_sessions.title,
+       acp_sessions.model_ref,
        messages.created_at AS updated_at
 FROM acp_sessions
 JOIN messages ON messages.id = acp_sessions.last_message_id
@@ -538,6 +544,7 @@ type ListSessionsRow struct {
 	ID        string    `json:"id"`
 	Cwd       string    `json:"cwd"`
 	Title     string    `json:"title"`
+	ModelRef  string    `json:"model_ref"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
@@ -554,6 +561,7 @@ func (q *Queries) ListSessions(ctx context.Context) ([]ListSessionsRow, error) {
 			&i.ID,
 			&i.Cwd,
 			&i.Title,
+			&i.ModelRef,
 			&i.UpdatedAt,
 		); err != nil {
 			return nil, err

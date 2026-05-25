@@ -14,6 +14,7 @@ type AcpSession struct {
 	LastMessageID string    `json:"last_message_id"`
 	Cwd           string    `json:"cwd"`
 	Title         string    `json:"title"`
+	ModelRef      string    `json:"model_ref"`
 	CreatedAt     time.Time `json:"created_at"`
 }
 
