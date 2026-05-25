@@ -623,7 +623,7 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			stdout := &bytes.Buffer{}
 			stderr := &bytes.Buffer{}
 			model := &scriptedGenerator{script: tt.script}
-			runtime := agent.NewRuntime(model, tt.cfg, saver, stdout, stderr, false)
+			runtime := &agent.Runtime{G: model, Cfg: tt.cfg, DialogSaver: saver, Stdout: stdout, Stderr: stderr}
 			for _, fixture := range tt.tools {
 				be.Err(t, runtime.Register(fixture.tool, fixture.callback), nil)
 			}

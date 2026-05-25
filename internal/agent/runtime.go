@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"strings"
 
@@ -32,48 +31,27 @@ type compactionState struct {
 
 // Runtime owns CPE's full agentic loop around a single-turn tool-capable model.
 type Runtime struct {
-	model             gai.ToolCapableGenerator
+	G                gai.ToolCapableGenerator
+	DialogSaver      storage.DialogSaver
+	ContentRenderer  render.Iface
+	ThinkingRenderer render.Iface
+	ToolCallRenderer render.Iface
+	MetadataRenderer render.Iface
+	Stdout           io.Writer
+	Stderr           io.Writer
+	Cfg              config.Config
+
+	// internal state
 	tools             map[string]registeredTool
-	dialogSaver       storage.DialogSaver
-	contentRenderer   render.Iface
-	thinkingRenderer  render.Iface
-	toolCallRenderer  render.Iface
-	metadataRenderer  render.Iface
-	stdout            io.Writer
-	stderr            io.Writer
-	cfg               config.Config
 	cumulativeCostUSD float64
 	compaction        compactionState
 }
 
-// RuntimeOption configures Runtime construction.
-type RuntimeOption func(*Runtime)
-
-// NewRuntime creates a CPE-owned runtime around a single-turn model generator.
-func NewRuntime(model gai.ToolCapableGenerator, cfg config.Config, saver storage.DialogSaver, stdout, stderr io.Writer, disablePrinting bool, opts ...RuntimeOption) *Runtime {
-	if stdout == nil {
-		stdout = os.Stdout
-	}
-	if stderr == nil {
-		stderr = os.Stderr
-	}
-	r := &Runtime{
-		model:       model,
-		tools:       make(map[string]registeredTool),
-		dialogSaver: saver,
-		stdout:      stdout,
-		stderr:      stderr,
-		cfg:         cfg,
-	}
-	r.configureOutput(disablePrinting)
-	for _, opt := range opts {
-		opt(r)
-	}
-	return r
-}
-
 // Register registers a tool with the provider model and stores its callback.
 func (r *Runtime) Register(tool gai.Tool, callback gai.ToolCallback) error {
+	if r.tools == nil {
+		r.tools = make(map[string]registeredTool)
+	}
 	if tool.Name == "" {
 		return gai.ToolRegistrationErr{Tool: tool.Name, Cause: fmt.Errorf("tool name cannot be empty")}
 	}
@@ -83,7 +61,7 @@ func (r *Runtime) Register(tool gai.Tool, callback gai.ToolCallback) error {
 	if _, exists := r.tools[tool.Name]; exists {
 		return gai.ToolRegistrationErr{Tool: tool.Name, Cause: fmt.Errorf("tool already registered")}
 	}
-	if err := r.model.Register(tool); err != nil {
+	if err := r.G.Register(tool); err != nil {
 		return err
 	}
 	r.tools[tool.Name] = registeredTool{tool: tool, callback: callback}
@@ -94,6 +72,14 @@ func (r *Runtime) Register(tool gai.Tool, callback gai.ToolCallback) error {
 // terminal tool, callback error, or compaction restart limit is reached.
 func (r *Runtime) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 	current := append(gai.Dialog(nil), dialog...)
+
+	if err := r.validateToolChoice(opts); err != nil {
+		return current, err
+	}
+
+	if r.ThinkingRenderer == nil || r.ContentRenderer == nil || r.ToolCallRenderer == nil {
+		r.configureOutput()
+	}
 
 	for {
 		select {
@@ -108,11 +94,7 @@ func (r *Runtime) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.Gen
 			return current, err
 		}
 
-		if err := r.validateToolChoice(opts); err != nil {
-			return current, err
-		}
-
-		resp, err := r.model.Generate(ctx, current, opts)
+		resp, err := r.G.Generate(ctx, current, opts)
 		if err != nil {
 			r.printResponse(resp)
 			r.printTokenUsage(resp.UsageMetadata)
@@ -127,8 +109,8 @@ func (r *Runtime) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.Gen
 
 		r.attachAgentMetadata(&resp.Candidates[0], resp.UsageMetadata)
 		current = append(current, resp.Candidates[0])
-		if r.dialogSaver != nil {
-			resp, err = saveAssistantResponse(ctx, r.dialogSaver, current[:len(current)-1], resp)
+		if r.DialogSaver != nil {
+			resp, err = saveAssistantResponse(ctx, r.DialogSaver, current[:len(current)-1], resp)
 			if err != nil {
 				return current, fmt.Errorf("failed to save assistant message: %w", err)
 			}
@@ -186,8 +168,8 @@ func (r *Runtime) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.Gen
 }
 
 func (r *Runtime) saveAndPrintPending(ctx context.Context, dialog gai.Dialog) (gai.Dialog, error) {
-	if r.dialogSaver != nil {
-		saved, err := saveDialog(ctx, r.dialogSaver, dialog)
+	if r.DialogSaver != nil {
+		saved, err := saveDialog(ctx, r.DialogSaver, dialog)
 		if err != nil {
 			return dialog, fmt.Errorf("failed to save dialog: %w", err)
 		}
@@ -292,7 +274,7 @@ func validateToolResultMessage(message *gai.Message, toolCallID string) error {
 }
 
 func (r *Runtime) updateCompactionWarning(metadata gai.Metadata) {
-	if r.cfg.Compaction == nil || r.cfg.Compaction.TokenThreshold == 0 {
+	if r.Cfg.Compaction == nil || r.Cfg.Compaction.TokenThreshold == 0 {
 		return
 	}
 	metrics := extractTokenUsageMetrics(metadata)
@@ -300,7 +282,7 @@ func (r *Runtime) updateCompactionWarning(metadata gai.Metadata) {
 		return
 	}
 	used := metrics.InputTokens + metrics.OutputTokens
-	if uint(used) >= r.cfg.Compaction.TokenThreshold {
+	if uint(used) >= r.Cfg.Compaction.TokenThreshold {
 		r.compaction.warningActive = true
 	}
 }
@@ -313,7 +295,7 @@ func prependCompactionWarning(msg gai.Message, warning, toolCallID string) gai.M
 }
 
 func (r *Runtime) isCompactionTool(name string) bool {
-	return r.cfg.Compaction != nil && r.cfg.Compaction.Tool.Name == name
+	return r.Cfg.Compaction != nil && r.Cfg.Compaction.Tool.Name == name
 }
 
 func (r *Runtime) firstCompactionCall(calls []toolCall) (toolCall, bool) {
@@ -326,10 +308,10 @@ func (r *Runtime) firstCompactionCall(calls []toolCall) (toolCall, bool) {
 }
 
 func (r *Runtime) restartCompacted(ctx context.Context, current gai.Dialog, call toolCall) (gai.Dialog, error) {
-	if r.cfg.Compaction == nil {
+	if r.Cfg.Compaction == nil {
 		return current, fmt.Errorf("compaction tool called but compaction is not configured")
 	}
-	if r.compaction.restarts >= r.cfg.Compaction.MaxCompactions {
+	if r.compaction.restarts >= r.Cfg.Compaction.MaxCompactions {
 		return current, fmt.Errorf("maximum compaction restarts exceeded")
 	}
 
@@ -343,10 +325,10 @@ func (r *Runtime) restartCompacted(ctx context.Context, current gai.Dialog, call
 		Dialog:             current,
 		ToolArguments:      args,
 		ToolArgumentsJSON:  string(call.ParametersJSON),
-		CompactionToolName: r.cfg.Compaction.Tool.Name,
+		CompactionToolName: r.Cfg.Compaction.Tool.Name,
 	}
 	var rendered bytes.Buffer
-	if err := r.cfg.Compaction.InitialMessageTemplate.Execute(&rendered, data); err != nil {
+	if err := r.Cfg.Compaction.InitialMessageTemplate.Execute(&rendered, data); err != nil {
 		return current, fmt.Errorf("rendering compaction initial message: %w", err)
 	}
 

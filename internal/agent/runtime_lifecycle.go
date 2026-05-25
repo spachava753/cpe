@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"slices"
 	"strings"
 
@@ -21,31 +20,28 @@ const (
 	unknownToolName    = "unknown"
 )
 
-func (r *Runtime) configureOutput(disablePrinting bool) {
+// configureOutput sets up renderers and configures output writers. Call after
+// constructing a Runtime with a struct literal when the constructor is not used.
+func (r *Runtime) configureOutput() {
 	var normalRenderer render.Iface = render.NewPlainTextRenderer()
 	var thinkingRenderer render.Iface = render.NewPlainTextRenderer()
 
 	toolCallRenderer := normalRenderer
 	metadataRenderer := normalRenderer
 
-	if disablePrinting {
-		r.stdout = io.Discard
-		r.stderr = io.Discard
-	} else {
-		if render.IsTTYWriter(r.stdout) {
-			normalRenderer = render.NewGlamourRendererForWriter(r.stdout)
-		}
-		if render.IsTTYWriter(r.stderr) {
-			toolCallRenderer = render.NewGlamourRendererForWriter(r.stderr)
-			metadataRenderer = toolCallRenderer
-			thinkingRenderer = render.NewThinkingRendererForWriter(r.stderr)
-		}
+	if render.IsTTYWriter(r.Stdout) {
+		normalRenderer = render.NewGlamourRendererForWriter(r.Stdout)
+	}
+	if render.IsTTYWriter(r.Stderr) {
+		toolCallRenderer = render.NewGlamourRendererForWriter(r.Stderr)
+		metadataRenderer = toolCallRenderer
+		thinkingRenderer = render.NewThinkingRendererForWriter(r.Stderr)
 	}
 
-	r.contentRenderer = normalRenderer
-	r.toolCallRenderer = toolCallRenderer
-	r.metadataRenderer = metadataRenderer
-	r.thinkingRenderer = thinkingRenderer
+	r.ContentRenderer = normalRenderer
+	r.ToolCallRenderer = toolCallRenderer
+	r.MetadataRenderer = metadataRenderer
+	r.ThinkingRenderer = thinkingRenderer
 }
 
 func saveDialog(ctx context.Context, saver storage.DialogSaver, dialog gai.Dialog) (gai.Dialog, error) {
@@ -79,7 +75,7 @@ func saveAssistantResponse(ctx context.Context, saver storage.DialogSaver, dialo
 }
 
 func (r *Runtime) renderContent(content string) string {
-	rendered, err := r.contentRenderer.Render(strings.TrimSpace(content))
+	rendered, err := r.ContentRenderer.Render(strings.TrimSpace(content))
 	if err != nil {
 		return content
 	}
@@ -90,7 +86,7 @@ func (r *Runtime) renderThinking(content string, reasoningType any) string {
 	if reasoningType == "reasoning.encrypted" {
 		content = "[Reasoning content is encrypted]\n"
 	}
-	rendered, err := r.thinkingRenderer.Render(strings.TrimSpace(content))
+	rendered, err := r.ThinkingRenderer.Render(strings.TrimSpace(content))
 	if err != nil {
 		return content
 	}
@@ -100,7 +96,7 @@ func (r *Runtime) renderThinking(content string, reasoningType any) string {
 func (r *Runtime) renderToolCall(content string) string {
 	if input, ok := codemode.ParseToolCall(content); ok {
 		result := codemode.FormatToolCallMarkdown(input)
-		if rendered, err := r.toolCallRenderer.Render(result); err == nil {
+		if rendered, err := r.ToolCallRenderer.Render(result); err == nil {
 			return rendered
 		}
 		return result
@@ -110,7 +106,7 @@ func (r *Runtime) renderToolCall(content string) string {
 	if !ok {
 		return content
 	}
-	if rendered, err := r.toolCallRenderer.Render(result); err == nil {
+	if rendered, err := r.ToolCallRenderer.Render(result); err == nil {
 		return rendered
 	}
 	return content
@@ -151,16 +147,16 @@ func (r *Runtime) printResponse(response gai.Response) {
 	}
 
 	for _, block := range blocks {
-		writer := r.stderr
+		writer := r.Stderr
 		if block.blockType == gai.Content {
-			writer = r.stdout
+			writer = r.Stdout
 		}
 		fmt.Fprint(writer, block.content)
 	}
 
 	if len(response.Candidates) > 0 {
 		if messageID := GetMessageID(response.Candidates[0]); messageID != "" {
-			fmt.Fprint(r.stderr, renderMetadataLine(r.metadataRenderer, fmt.Sprintf("> message_id: `%s`", messageID)))
+			fmt.Fprint(r.Stderr, renderMetadataLine(r.MetadataRenderer, fmt.Sprintf("> message_id: `%s`", messageID)))
 		}
 	}
 }
@@ -203,15 +199,15 @@ func (r *Runtime) printToolResult(dialog gai.Dialog, toolResultMsg gai.Message) 
 	}
 	markdownContent := strings.Join(sections, "\n\n")
 
-	rendered, err := r.metadataRenderer.Render(markdownContent)
+	rendered, err := r.MetadataRenderer.Render(markdownContent)
 	if err != nil {
-		fmt.Fprint(r.stderr, "\n"+markdownContent+"\n")
+		fmt.Fprint(r.Stderr, "\n"+markdownContent+"\n")
 	} else {
-		fmt.Fprint(r.stderr, "\n"+rendered)
+		fmt.Fprint(r.Stderr, "\n"+rendered)
 	}
 
 	if messageID != "" {
-		fmt.Fprint(r.stderr, renderMetadataLine(r.metadataRenderer, fmt.Sprintf("> message_id: `%s`", messageID)))
+		fmt.Fprint(r.Stderr, renderMetadataLine(r.MetadataRenderer, fmt.Sprintf("> message_id: `%s`", messageID)))
 	}
 }
 
@@ -302,17 +298,17 @@ func (r *Runtime) printTokenUsage(metadata gai.Metadata) {
 
 	var lines []string
 	lines = append(lines, formatUsageLine(metrics))
-	if contextLine, ok := formatContextUtilizationLine(metrics, r.cfg.Model.ContextWindow); ok {
+	if contextLine, ok := formatContextUtilizationLine(metrics, r.Cfg.Model.ContextWindow); ok {
 		lines = append(lines, contextLine)
 	}
 
-	costs := calculateUsageCosts(metrics, r.cfg.Model)
+	costs := calculateUsageCosts(metrics, r.Cfg.Model)
 	if costs.HasAnyCost {
 		r.cumulativeCostUSD += costs.Total
 		lines = append(lines, formatCostLine(costs, r.cumulativeCostUSD))
 	}
 
-	fmt.Fprintln(r.stderr, renderMetadataLine(r.metadataRenderer, strings.Join(lines, "\n")))
+	fmt.Fprintln(r.Stderr, renderMetadataLine(r.MetadataRenderer, strings.Join(lines, "\n")))
 }
 
 func renderMetadataLine(renderer render.Iface, raw string) string {
@@ -337,17 +333,17 @@ func (r *Runtime) attachAgentMetadata(msg *gai.Message, metadata gai.Metadata) {
 	if msg.ExtraFields == nil {
 		msg.ExtraFields = make(map[string]any)
 	}
-	if r.cfg.Model.Ref != "" {
-		msg.ExtraFields[storage.AgentMetadataModelRefKey] = r.cfg.Model.Ref
+	if r.Cfg.Model.Ref != "" {
+		msg.ExtraFields[storage.AgentMetadataModelRefKey] = r.Cfg.Model.Ref
 	}
-	if r.cfg.Model.ID != "" {
-		msg.ExtraFields[storage.AgentMetadataModelIDKey] = r.cfg.Model.ID
+	if r.Cfg.Model.ID != "" {
+		msg.ExtraFields[storage.AgentMetadataModelIDKey] = r.Cfg.Model.ID
 	}
-	if r.cfg.Model.Type != "" {
-		msg.ExtraFields[storage.AgentMetadataModelTypeKey] = r.cfg.Model.Type
+	if r.Cfg.Model.Type != "" {
+		msg.ExtraFields[storage.AgentMetadataModelTypeKey] = r.Cfg.Model.Type
 	}
-	if r.cfg.Model.DisplayName != "" {
-		msg.ExtraFields[storage.AgentMetadataModelDisplayNameKey] = r.cfg.Model.DisplayName
+	if r.Cfg.Model.DisplayName != "" {
+		msg.ExtraFields[storage.AgentMetadataModelDisplayNameKey] = r.Cfg.Model.DisplayName
 	}
 
 	metrics := extractTokenUsageMetrics(metadata)

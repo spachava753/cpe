@@ -403,7 +403,13 @@ func NewGenerator(
 	if stdoutW == nil {
 		stdoutW = os.Stdout
 	}
-	runtime := NewRuntime(gen, cfg, o.dialogSaver, stdoutW, os.Stderr, false)
+	runtime := &Runtime{
+		G:           gen,
+		Cfg:         cfg,
+		DialogSaver: o.dialogSaver,
+		Stdout:      stdoutW,
+		Stderr:      os.Stderr,
+	}
 
 	// Check if code mode is enabled
 	codeModeEnabled := cfg.CodeMode != nil && cfg.CodeMode.Enabled
