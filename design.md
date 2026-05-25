@@ -94,19 +94,19 @@ Several of these packages exist to keep ownership clear and package responsibili
 - `internal/mcpconfig` exists so `internal/config` does not depend on MCP runtime code.
 - `internal/ports` exists as the shared place for small decoupling interfaces rather than allowing packages to depend on a vague bucket of shared concrete types.
 
-### Architectural enforcement
+### Architectural boundaries
 
-CPE uses architecture linting to keep these boundaries from regressing.
+CPE keeps package boundaries explicit through documentation, package ownership, and code review rather than custom architecture linting.
 
-The current enforced rules include:
+The intended boundaries include:
 
-- `internal/cmd` may import only `internal/commands` and `internal/version` from this module.
-- `internal/commands` may not import Cobra or pflag.
-- `internal/config` may not import `internal/mcp`.
-- `internal/commands` may import `internal/agent` only from the runtime orchestration files that actually assemble generation behavior.
-- `internal/agent` may not import `internal/input` or `internal/prompt`.
+- `internal/cmd` should stay focused on Cobra wiring and process-edge concerns.
+- `internal/commands` should avoid Cobra or pflag dependencies.
+- `internal/config` should not depend on MCP runtime code; shared schema belongs in neutral packages such as `internal/mcpconfig`.
+- `internal/commands` should import `internal/agent` only from runtime orchestration code that actually assembles generation behavior.
+- `internal/agent` should not own input or prompt concerns; those belong in `internal/input` and `internal/prompt`.
 
-This is intentionally opinionated. The goal is not to lint style; it is to protect the package map and ownership boundaries described in this document.
+These boundaries are intentionally opinionated. The goal is to protect the package map and ownership model described in this document while allowing the enforcement mechanism to remain lightweight.
 
 ### Dependency flow versus data flow
 
@@ -411,7 +411,7 @@ Key techniques include:
 - narrow interfaces for storage and related dependencies;
 - `MemDB` for fast conversation tests;
 - command orchestration placed below Cobra;
-- architecture lint rules that prevent boundary regressions.
+- documented package boundaries that make dependency regressions easier to review.
 
 This makes it practical to test:
 
@@ -509,7 +509,7 @@ This design resolves the major architectural shape of the codebase, but some que
 - **how far to push framework-independence beyond the CLI edge**: today the main goal is keeping `internal/cmd` replaceable. It is still an open design question how much additional abstraction is useful below that layer before the abstractions become heavier than the problem.
 - **how broad provider parity should be**: CPE presents a unified runtime model, but provider APIs continue to diverge. The long-term balance between provider-specific features and a shared core remains an ongoing design question.
 - **how opinionated code mode should remain**: Go-based code mode is intentionally strong and specific. Future changes may revisit how much of the execution model should remain fixed versus configurable.
-- **how much policy should be enforced structurally versus by lint**: some boundaries are encoded in package structure, while others are guarded by architecture lint. The right division between those approaches may evolve.
+- **how much policy should be enforced structurally versus by tooling**: some boundaries are encoded in package structure, while others rely on documentation and review. The right division between those approaches may evolve.
 
 ## Future evolution
 
@@ -519,6 +519,6 @@ When the architecture changes, the preferred pattern is:
 
 1. keep package-local behavior documented in package `doc.go` files and exported comments;
 2. update this document when a repo-level architectural decision changes;
-3. add or tighten architecture lint when a boundary becomes important enough to enforce mechanically.
+3. add tests or tooling when a boundary becomes important enough to enforce mechanically.
 
 The purpose of this document is to make the intended structure of the codebase explicit so that future changes can be made deliberately rather than by drift.

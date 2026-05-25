@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -44,15 +43,6 @@ var Lint = goyek.Define(goyek.Task{
 		runLintCommand(a, "modernize", modernizeArgs...)
 
 		runLintCommand(a, "deadcode", "tool", "deadcode", "-test", "./...")
-
-		issues := append([]string{}, lintInternalCmdPackageAt(".")...)
-		issues = append(issues, lintImportBoundariesAt(".")...)
-		if len(issues) > 0 {
-			for _, issue := range issues {
-				fmt.Println(issue)
-			}
-			a.Errorf("found %d architecture lint issue(s)", len(issues))
-		}
 	},
 })
 
