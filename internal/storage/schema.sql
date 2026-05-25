@@ -42,3 +42,13 @@ CREATE TABLE IF NOT EXISTS blocks
     PRIMARY KEY (message_id, sequence_order),
     FOREIGN KEY (message_id) REFERENCES messages (id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS acp_sessions
+(
+    id        TEXT PRIMARY KEY,
+    last_message_id     TEXT      NOT NULL,
+    cwd     TEXT      NOT NULL,
+    title  TEXT      NOT NULL,
+    created_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (last_message_id) REFERENCES messages (id) ON DELETE CASCADE
+);

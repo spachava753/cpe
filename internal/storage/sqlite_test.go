@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
+	acp "github.com/coder/acp-go-sdk"
 	_ "github.com/ncruces/go-sqlite3/driver"
 	"github.com/spachava753/gai"
 )
@@ -168,6 +170,70 @@ func expectSaveDialogError(t *testing.T, db *Sqlite, ctx context.Context, msgs [
 	}
 	if gotErr == nil {
 		t.Fatal("expected SaveDialog error, got nil")
+	}
+}
+
+func TestACPSessions(t *testing.T) {
+	db, rawDB := newTestDB(t)
+	ctx := context.Background()
+
+	olderMessageID := saveOne(t, db, ctx, makeTextMessage(gai.User, "older"))
+	newerMessageID := saveOne(t, db, ctx, makeTextMessage(gai.User, "newer"))
+	olderUpdatedAt := time.Date(2026, 5, 24, 10, 30, 0, 0, time.UTC)
+	newerUpdatedAt := time.Date(2026, 5, 24, 12, 45, 30, 0, time.UTC)
+
+	for _, update := range []struct {
+		messageID string
+		createdAt time.Time
+	}{
+		{olderMessageID, olderUpdatedAt},
+		{newerMessageID, newerUpdatedAt},
+	} {
+		if _, err := rawDB.ExecContext(ctx, "UPDATE messages SET created_at = ? WHERE id = ?", update.createdAt, update.messageID); err != nil {
+			t.Fatalf("update message timestamp: %v", err)
+		}
+	}
+
+	_, err := rawDB.ExecContext(ctx, `
+		INSERT INTO acp_sessions (id, last_message_id, cwd, title) VALUES
+			('older-session', ?, '/tmp/older', 'Older title'),
+			('newer-session', ?, '/tmp/newer', 'Newer title')`,
+		olderMessageID,
+		newerMessageID,
+	)
+	if err != nil {
+		t.Fatalf("insert acp sessions: %v", err)
+	}
+
+	session, err := db.GetACPSession(ctx, acp.SessionId("older-session"))
+	if err != nil {
+		t.Fatalf("GetACPSession: %v", err)
+	}
+	if session.SessionId != acp.SessionId("older-session") {
+		t.Fatalf("SessionId: got %q", session.SessionId)
+	}
+	if session.Cwd != "/tmp/older" {
+		t.Fatalf("Cwd: got %q", session.Cwd)
+	}
+	if session.Title == nil || *session.Title != "Older title" {
+		t.Fatalf("Title: got %v", session.Title)
+	}
+	if session.UpdatedAt == nil || *session.UpdatedAt != olderUpdatedAt.Format(time.RFC3339) {
+		t.Fatalf("UpdatedAt: got %v", session.UpdatedAt)
+	}
+
+	sessions, err := db.ListACPSessions(ctx)
+	if err != nil {
+		t.Fatalf("ListACPSessions: %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(sessions))
+	}
+	if sessions[0].SessionId != acp.SessionId("newer-session") || sessions[1].SessionId != acp.SessionId("older-session") {
+		t.Fatalf("unexpected session order: %q, %q", sessions[0].SessionId, sessions[1].SessionId)
+	}
+	if sessions[0].UpdatedAt == nil || *sessions[0].UpdatedAt != newerUpdatedAt.Format(time.RFC3339) {
+		t.Fatalf("newer UpdatedAt: got %v", sessions[0].UpdatedAt)
 	}
 }
 

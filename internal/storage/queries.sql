@@ -130,3 +130,22 @@ SELECT *
 FROM blocks
 WHERE message_id = ?
 ORDER BY sequence_order;
+
+-- ACP queries
+-- name: GetSession :one
+SELECT acp_sessions.id,
+       acp_sessions.cwd,
+       acp_sessions.title,
+       messages.created_at AS updated_at
+FROM acp_sessions
+JOIN messages ON messages.id = acp_sessions.last_message_id
+WHERE acp_sessions.id = ?;
+
+-- name: ListSessions :many
+SELECT acp_sessions.id,
+       acp_sessions.cwd,
+       acp_sessions.title,
+       messages.created_at AS updated_at
+FROM acp_sessions
+JOIN messages ON messages.id = acp_sessions.last_message_id
+ORDER BY messages.created_at DESC, acp_sessions.rowid DESC;

@@ -9,7 +9,9 @@ import (
 	"iter"
 	"math"
 	"strings"
+	"time"
 
+	acp "github.com/coder/acp-go-sdk"
 	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/spachava753/gai"
 
@@ -580,6 +582,16 @@ func putNullInt64(extra map[string]any, key string, value sql.NullInt64) {
 	}
 }
 
+func acpSessionInfo(id, cwd, title string, updatedAt time.Time) acp.SessionInfo {
+	updatedAtText := updatedAt.UTC().Format(time.RFC3339Nano)
+	return acp.SessionInfo{
+		Cwd:       cwd,
+		SessionId: acp.SessionId(id),
+		Title:     &title,
+		UpdatedAt: &updatedAtText,
+	}
+}
+
 // generateUniqueIDInTx generates a unique ID checking for collisions within a transaction.
 func (s *Sqlite) generateUniqueIDInTx(ctx context.Context, qtx *sqlcgen.Queries) (string, error) {
 	maxAttempts := 10
@@ -805,6 +817,35 @@ func (s *Sqlite) getMessage(ctx context.Context, messageID string) (gai.Message,
 		ToolResultError: msg.ToolResultError,
 		ExtraFields:     msgExtraFields,
 	}, parentID, nil
+}
+
+// GetACPSession returns ACP session metadata for one persisted session.
+//
+// UpdatedAt is formatted as an ISO 8601 timestamp from the session's last
+// message creation time.
+func (s *Sqlite) GetACPSession(ctx context.Context, sessionID acp.SessionId) (acp.SessionInfo, error) {
+	row, err := s.q.GetSession(ctx, string(sessionID))
+	if err != nil {
+		return acp.SessionInfo{}, fmt.Errorf("failed to get ACP session %s: %w", sessionID, err)
+	}
+	return acpSessionInfo(row.ID, row.Cwd, row.Title, row.UpdatedAt), nil
+}
+
+// ListACPSessions returns ACP session metadata ordered by last activity, newest
+// first.
+//
+// UpdatedAt is formatted as an ISO 8601 timestamp from each session's last
+// message creation time.
+func (s *Sqlite) ListACPSessions(ctx context.Context) ([]acp.SessionInfo, error) {
+	rows, err := s.q.ListSessions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list ACP sessions: %w", err)
+	}
+	sessions := make([]acp.SessionInfo, 0, len(rows))
+	for _, row := range rows {
+		sessions = append(sessions, acpSessionInfo(row.ID, row.Cwd, row.Title, row.UpdatedAt))
+	}
+	return sessions, nil
 }
 
 // GetMessages returns fully populated messages for the requested IDs.

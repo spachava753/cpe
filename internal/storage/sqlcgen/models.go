@@ -9,6 +9,14 @@ import (
 	"time"
 )
 
+type AcpSession struct {
+	ID            string    `json:"id"`
+	LastMessageID string    `json:"last_message_id"`
+	Cwd           string    `json:"cwd"`
+	Title         string    `json:"title"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
 type Block struct {
 	ID            sql.NullString `json:"id"`
 	MessageID     string         `json:"message_id"`

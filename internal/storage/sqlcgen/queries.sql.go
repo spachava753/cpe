@@ -8,6 +8,7 @@ package sqlcgen
 import (
 	"context"
 	"database/sql"
+	"time"
 )
 
 const checkMessageIDExists = `-- name: CheckMessageIDExists :one
@@ -229,6 +230,36 @@ func (q *Queries) GetMessage(ctx context.Context, id string) (Message, error) {
 	return i, err
 }
 
+const getSession = `-- name: GetSession :one
+SELECT acp_sessions.id,
+       acp_sessions.cwd,
+       acp_sessions.title,
+       messages.created_at AS updated_at
+FROM acp_sessions
+JOIN messages ON messages.id = acp_sessions.last_message_id
+WHERE acp_sessions.id = ?
+`
+
+type GetSessionRow struct {
+	ID        string    `json:"id"`
+	Cwd       string    `json:"cwd"`
+	Title     string    `json:"title"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ACP queries
+func (q *Queries) GetSession(ctx context.Context, id string) (GetSessionRow, error) {
+	row := q.db.QueryRowContext(ctx, getSession, id)
+	var i GetSessionRow
+	err := row.Scan(
+		&i.ID,
+		&i.Cwd,
+		&i.Title,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const hasChildren = `-- name: HasChildren :one
 SELECT EXISTS(SELECT 1 FROM messages WHERE parent_id = ?) as has_children
 `
@@ -435,6 +466,51 @@ func (q *Queries) ListMessagesDescending(ctx context.Context, offset int64) ([]M
 			&i.CacheReadTokens,
 			&i.CacheWriteTokens,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSessions = `-- name: ListSessions :many
+SELECT acp_sessions.id,
+       acp_sessions.cwd,
+       acp_sessions.title,
+       messages.created_at AS updated_at
+FROM acp_sessions
+JOIN messages ON messages.id = acp_sessions.last_message_id
+ORDER BY messages.created_at DESC, acp_sessions.rowid DESC
+`
+
+type ListSessionsRow struct {
+	ID        string    `json:"id"`
+	Cwd       string    `json:"cwd"`
+	Title     string    `json:"title"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (q *Queries) ListSessions(ctx context.Context) ([]ListSessionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSessions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSessionsRow{}
+	for rows.Next() {
+		var i ListSessionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Cwd,
+			&i.Title,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
