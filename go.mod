@@ -1,6 +1,6 @@
 module github.com/spachava753/cpe
 
-go 1.25.0
+go 1.26.0
 
 retract v0.16.10
 
