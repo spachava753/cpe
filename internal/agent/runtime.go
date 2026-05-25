@@ -35,7 +35,6 @@ type Runtime struct {
 	// internal state
 	toolCallbacks      map[string]gai.ToolCallback
 	compactionRestarts int
-	compactionWarning  bool
 	cumulativeCostUSD  float64
 }
 
@@ -112,7 +111,6 @@ func (r *Runtime) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.Gen
 
 		r.printResponse(resp)
 		r.printTokenUsage(resp.UsageMetadata)
-		r.updateCompactionWarning(resp.UsageMetadata)
 
 		if resp.FinishReason != gai.ToolUse {
 			return current, nil
@@ -168,7 +166,7 @@ func (r *Runtime) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.Gen
 			if err := validateToolResultMessage(&result, block.ID); err != nil {
 				return current, fmt.Errorf("invalid tool result message: %w", err)
 			}
-			if r.compactionWarning && !warningInjected {
+			if !warningInjected && r.shouldInjectCompactionWarning(resp.UsageMetadata) {
 				warningBlock := gai.TextBlock(compactionWarningText)
 				warningBlock.ID = block.ID
 				result.Blocks = append([]gai.Block{warningBlock}, result.Blocks...)
@@ -229,19 +227,17 @@ func validateToolResultMessage(message *gai.Message, toolCallID string) error {
 	return nil
 }
 
-func (r *Runtime) updateCompactionWarning(metadata gai.Metadata) {
+func (r *Runtime) shouldInjectCompactionWarning(metadata gai.Metadata) bool {
 	if r.Cfg.Compaction == nil || r.Cfg.Compaction.TokenThreshold == 0 {
-		return
+		return false
 	}
 
 	inputTokens, hasInputTokens := gai.InputTokens(metadata)
 	outputTokens, hasOutputTokens := gai.OutputTokens(metadata)
 	if !hasInputTokens && !hasOutputTokens {
-		return
+		return false
 	}
-	if uint(inputTokens+outputTokens) >= r.Cfg.Compaction.TokenThreshold {
-		r.compactionWarning = true
-	}
+	return uint(inputTokens+outputTokens) >= r.Cfg.Compaction.TokenThreshold
 }
 
 func (r *Runtime) validateToolChoice(opts *gai.GenOpts) error {
@@ -359,6 +355,5 @@ func (r *Runtime) compact(current gai.Dialog) (gai.Dialog, error) {
 		root.ExtraFields = map[string]any{storage.MessageCompactionParentIDKey: previousLeafID}
 	}
 	r.compactionRestarts++
-	r.compactionWarning = false
 	return gai.Dialog{root}, nil
 }

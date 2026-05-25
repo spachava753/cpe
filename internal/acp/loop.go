@@ -26,7 +26,6 @@ type Loop struct {
 	// internal state
 	toolCallbacks      map[string]gai.ToolCallback
 	compactionRestarts int
-	compactionWarning  bool
 }
 
 // Register registers a tool with the provider model and stores its callback.
@@ -108,7 +107,6 @@ func (r *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 		if resp.FinishReason != gai.ToolUse {
 			return current, nil
 		}
-		r.updateCompactionWarning(resp.UsageMetadata)
 
 		// compact conversation
 		current, err = r.compact(current)
@@ -157,7 +155,7 @@ func (r *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 			if err != nil {
 				return current, err
 			}
-			if r.compactionWarning && firstBlock {
+			if firstBlock && r.shouldInjectCompactionWarning(resp.UsageMetadata) {
 				warningBlock := gai.TextBlock(compactionWarningText)
 				warningBlock.ID = block.ID
 				result.Blocks = append([]gai.Block{warningBlock}, result.Blocks...)
@@ -190,19 +188,17 @@ func (r *Loop) save(ctx context.Context, dialog gai.Dialog) (gai.Dialog, error) 
 	return dialog, nil
 }
 
-func (r *Loop) updateCompactionWarning(metadata gai.Metadata) {
+func (r *Loop) shouldInjectCompactionWarning(metadata gai.Metadata) bool {
 	if r.Cfg.Compaction == nil || r.Cfg.Compaction.TokenThreshold == 0 {
-		return
+		return false
 	}
 
 	inputTokens, hasInputTokens := gai.InputTokens(metadata)
 	outputTokens, hasOutputTokens := gai.OutputTokens(metadata)
 	if !hasInputTokens && !hasOutputTokens {
-		return
+		return false
 	}
-	if uint(inputTokens+outputTokens) >= r.Cfg.Compaction.TokenThreshold {
-		r.compactionWarning = true
-	}
+	return uint(inputTokens+outputTokens) >= r.Cfg.Compaction.TokenThreshold
 }
 
 func (r *Loop) attachAgentMetadata(msg *gai.Message, metadata gai.Metadata) {
@@ -295,6 +291,5 @@ func (r *Loop) compact(current gai.Dialog) (gai.Dialog, error) {
 		root.ExtraFields = map[string]any{storage.MessageCompactionParentIDKey: previousLeafID}
 	}
 	r.compactionRestarts++
-	r.compactionWarning = false
 	return gai.Dialog{root}, nil
 }
