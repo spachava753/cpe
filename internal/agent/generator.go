@@ -129,7 +129,7 @@ func initGeneratorFromModel(
 	apiEnv := strings.TrimSpace(m.ApiKeyEnv)
 	apiKey := os.Getenv(apiEnv)
 
-	var gen gai.ToolCapableGenerator
+	var gen gai.ToolCallingGenerator
 
 	switch t {
 	case "openai":
@@ -302,12 +302,13 @@ func initGeneratorFromModel(
 		if apiKey == "" {
 			return nil, fmt.Errorf("API key missing: %s not set", apiEnv)
 		}
-		zaiOpts := openAIRequestOptions(apiKey, httpClient, timeout)
-		if baseURL != "" {
-			zaiOpts = append(zaiOpts, oaiopt.WithBaseURL(baseURL))
-		}
-		client := openai.NewClient(zaiOpts...)
-		gen = gai.NewZaiGenerator(&client.Chat.Completions, m.ID, systemPrompt, apiKey)
+		// zaiOpts := openAIRequestOptions(apiKey, httpClient, timeout)
+		// if baseURL != "" {
+		// 	zaiOpts = append(zaiOpts, oaiopt.WithBaseURL(baseURL))
+		// }
+		// client := openai.NewClient(zaiOpts...)
+		// gen = gai.NewZaiGenerator(&client.Chat.Completions, m.ID, systemPrompt, apiKey)
+		panic("zai provider unimplemented")
 	default:
 		return nil, fmt.Errorf("unsupported model type: %s", m.Type)
 	}
@@ -382,7 +383,7 @@ func NewGenerator(
 		return nil, fmt.Errorf("failed to create generator: %w", err)
 	}
 
-	gen, ok := genBase.(gai.ToolCapableGenerator)
+	gen, ok := genBase.(gai.ToolCallingGenerator)
 	if !ok {
 		return nil, fmt.Errorf("generator does not implement ToolCapableGenerator interface")
 	}
@@ -394,7 +395,7 @@ func NewGenerator(
 	}
 
 	wrapped := gai.Wrap(gen, wrappers...)
-	gen, ok = wrapped.(gai.ToolCapableGenerator)
+	gen, ok = wrapped.(gai.ToolCallingGenerator)
 	if !ok {
 		return nil, fmt.Errorf("wrapped generator does not implement ToolCapableGenerator interface")
 	}

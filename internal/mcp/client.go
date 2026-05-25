@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -128,38 +127,20 @@ type ToolCallback struct {
 // Call executes the bound MCP tool and converts MCP content into gai blocks.
 // Parameter/tool-call failures are returned as ToolResult text (nil error) so the
 // model can recover; unsupported content types return a hard error.
-func (c *ToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage, toolCallID string) (gai.Message, error) {
-	// Parse parameters
-	var params map[string]any
-	if err := json.Unmarshal(parametersJSON, &params); err != nil {
-		return gai.Message{
-			Role: gai.ToolResult,
-			Blocks: []gai.Block{
-				{
-					ID:           toolCallID,
-					BlockType:    gai.Content,
-					ModalityType: gai.Text,
-					MimeType:     "text/plain",
-					Content:      gai.Str(fmt.Sprintf("Error parsing parameters: %v", err)),
-				},
-			},
-		}, nil
-	}
-
+func (c *ToolCallback) Call(ctx context.Context, parameters map[string]any) (gai.Message, error) {
 	// Call the tool
 	callCtx, cancel := WithServerTimeout(ctx, c.ServerConfig)
 	defer cancel()
 
 	result, err := c.ClientSession.CallTool(callCtx, &mcp.CallToolParams{
 		Name:      c.ToolName,
-		Arguments: params,
+		Arguments: parameters,
 	})
 	if err != nil {
 		return gai.Message{
 			Role: gai.ToolResult,
 			Blocks: []gai.Block{
 				{
-					ID:           toolCallID,
 					BlockType:    gai.Content,
 					ModalityType: gai.Text,
 					MimeType:     "text/plain",
@@ -194,7 +175,6 @@ func (c *ToolCallback) Call(ctx context.Context, parametersJSON json.RawMessage,
 			return gai.Message{}, fmt.Errorf("cannot handle tool call result content type %T", content)
 		}
 
-		block.ID = toolCallID
 		blocks = append(blocks, block)
 	}
 

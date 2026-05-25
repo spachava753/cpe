@@ -8,6 +8,8 @@ import (
 )
 
 // SetSessionConfigOption implements [acp.Agent].
+//
+// TODO: we should probably expose more options like thinking mode, tool choice, etc. and wire up defaults from the config
 func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessionConfigOptionRequest) (acp.SetSessionConfigOptionResponse, error) {
 	s, ok := a.activeSessions.Load(params.Boolean.SessionId)
 	if !ok {

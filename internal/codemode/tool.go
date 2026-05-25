@@ -2,13 +2,13 @@ package codemode
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/mapstruct"
 	"github.com/spachava753/cpe/internal/mcp"
 )
 
@@ -52,24 +52,23 @@ func contentToBlocks(content []mcpsdk.Content) []gai.Block {
 // Call validates input, runs generated code, and maps failures into agent control flow.
 // Recoverable execution failures are returned as ToolResult text so the model can iterate;
 // fatal/infrastructure failures are returned as Go errors to stop the run.
-func (c *ExecuteGoCodeCallback) Call(ctx context.Context, parametersJSON json.RawMessage, toolCallID string) (gai.Message, error) {
-	// Parse input parameters
-	var input ExecuteGoCodeInput
-	if err := json.Unmarshal(parametersJSON, &input); err != nil {
+func (c *ExecuteGoCodeCallback) Call(ctx context.Context, params map[string]any) (gai.Message, error) {
+	input, err := mapstruct.Map2Struct[ExecuteGoCodeInput](params)
+	if err != nil {
 		// Return error as tool result so LLM can adapt, not as Go error that stops execution
 		//nolint:nilerr // Intentional: user/tool errors return results with nil error to allow agent recovery
-		return gai.ToolResultMessage(toolCallID, gai.TextBlock("Error parsing parameters: "+err.Error())), nil
+		return gai.ToolResultMessage("", gai.TextBlock("Error parsing parameters: "+err.Error())), nil
 	}
 
 	if input.ExecutionTimeout < 1 {
-		return gai.ToolResultMessage(toolCallID, gai.TextBlock("executionTimeout must be at least 1 second")), nil
+		return gai.ToolResultMessage("", gai.TextBlock("executionTimeout must be at least 1 second")), nil
 	}
 	maxAllowedTimeout := c.MaxTimeout
 	if maxAllowedTimeout <= 0 {
 		maxAllowedTimeout = 300
 	}
 	if input.ExecutionTimeout > maxAllowedTimeout {
-		return gai.ToolResultMessage(toolCallID, gai.TextBlock(fmt.Sprintf("executionTimeout exceeds maximum allowed (%d seconds)", maxAllowedTimeout))), nil
+		return gai.ToolResultMessage("", gai.TextBlock(fmt.Sprintf("executionTimeout exceeds maximum allowed (%d seconds)", maxAllowedTimeout))), nil
 	}
 
 	// Execute the code
@@ -91,7 +90,7 @@ func (c *ExecuteGoCodeCallback) Call(ctx context.Context, parametersJSON json.Ra
 		switch {
 		case errors.As(err, &recoverable):
 			// Recoverable errors are returned as tool results so LLM can adapt
-			return gai.ToolResultMessage(toolCallID, gai.TextBlock(recoverable.Output)), nil
+			return gai.ToolResultMessage("", gai.TextBlock(recoverable.Output)), nil
 		case errors.As(err, &fatal):
 			// Fatal errors stop agent execution
 			return gai.Message{}, err
@@ -115,11 +114,6 @@ func (c *ExecuteGoCodeCallback) Call(ctx context.Context, parametersJSON json.Ra
 	// If no blocks at all, add an empty text block to satisfy message requirements
 	if len(blocks) == 0 {
 		blocks = append(blocks, gai.TextBlock(""))
-	}
-
-	// Set the tool call ID on all blocks to associate with the tool call
-	for i := range blocks {
-		blocks[i].ID = toolCallID
 	}
 
 	return gai.Message{

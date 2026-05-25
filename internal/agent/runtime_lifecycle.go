@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -42,36 +41,6 @@ func (r *Runtime) configureOutput() {
 	r.ToolCallRenderer = toolCallRenderer
 	r.MetadataRenderer = metadataRenderer
 	r.ThinkingRenderer = thinkingRenderer
-}
-
-func saveDialog(ctx context.Context, saver storage.DialogSaver, dialog gai.Dialog) (gai.Dialog, error) {
-	idx := 0
-	for saved, err := range saver.SaveDialog(ctx, slices.Values(dialog)) {
-		if err != nil {
-			return nil, err
-		}
-		dialog[idx] = saved
-		idx++
-	}
-	return dialog, nil
-}
-
-func saveAssistantResponse(ctx context.Context, saver storage.DialogSaver, dialog gai.Dialog, resp gai.Response) (gai.Response, error) {
-	if len(resp.Candidates) == 0 {
-		return resp, nil
-	}
-
-	fullDialog := append(dialog, resp.Candidates[0])
-	idx := 0
-	for saved, err := range saver.SaveDialog(ctx, slices.Values(fullDialog)) {
-		if err != nil {
-			return gai.Response{}, err
-		}
-		fullDialog[idx] = saved
-		idx++
-	}
-	resp.Candidates[0] = fullDialog[len(fullDialog)-1]
-	return resp, nil
 }
 
 func (r *Runtime) renderContent(content string) string {
@@ -291,21 +260,19 @@ func truncateToolResultToMaxLines(content string, maxLines int) string {
 }
 
 func (r *Runtime) printTokenUsage(metadata gai.Metadata) {
-	metrics := extractTokenUsageMetrics(metadata)
-	if !metrics.hasAnyTokens() {
+	if !hasAnyTokenUsage(metadata) {
 		return
 	}
 
 	var lines []string
-	lines = append(lines, formatUsageLine(metrics))
-	if contextLine, ok := formatContextUtilizationLine(metrics, r.Cfg.Model.ContextWindow); ok {
+	lines = append(lines, formatUsageLine(metadata))
+	if contextLine, ok := formatContextUtilizationLine(metadata, r.Cfg.Model.ContextWindow); ok {
 		lines = append(lines, contextLine)
 	}
 
-	costs := calculateUsageCosts(metrics, r.Cfg.Model)
-	if costs.HasAnyCost {
-		r.cumulativeCostUSD += costs.Total
-		lines = append(lines, formatCostLine(costs, r.cumulativeCostUSD))
+	if costLine, total, ok := formatCostLine(metadata, r.Cfg.Model, r.cumulativeCostUSD); ok {
+		r.cumulativeCostUSD += total
+		lines = append(lines, costLine)
 	}
 
 	fmt.Fprintln(r.Stderr, renderMetadataLine(r.MetadataRenderer, strings.Join(lines, "\n")))
@@ -329,113 +296,42 @@ func GetMessageID(msg gai.Message) string {
 	return id
 }
 
-func (r *Runtime) attachAgentMetadata(msg *gai.Message, metadata gai.Metadata) {
-	if msg.ExtraFields == nil {
-		msg.ExtraFields = make(map[string]any)
-	}
-	if r.Cfg.Model.Ref != "" {
-		msg.ExtraFields[storage.AgentMetadataModelRefKey] = r.Cfg.Model.Ref
-	}
-	if r.Cfg.Model.ID != "" {
-		msg.ExtraFields[storage.AgentMetadataModelIDKey] = r.Cfg.Model.ID
-	}
-	if r.Cfg.Model.Type != "" {
-		msg.ExtraFields[storage.AgentMetadataModelTypeKey] = r.Cfg.Model.Type
-	}
-	if r.Cfg.Model.DisplayName != "" {
-		msg.ExtraFields[storage.AgentMetadataModelDisplayNameKey] = r.Cfg.Model.DisplayName
-	}
-
-	metrics := extractTokenUsageMetrics(metadata)
-	if metrics.HasInputTokens {
-		msg.ExtraFields[storage.AgentMetadataInputTokensKey] = int64(metrics.InputTokens)
-	}
-	if metrics.HasOutputTokens {
-		msg.ExtraFields[storage.AgentMetadataOutputTokensKey] = int64(metrics.OutputTokens)
-	}
-	if metrics.HasCacheRead {
-		msg.ExtraFields[storage.AgentMetadataCacheReadTokensKey] = int64(metrics.CacheReadTokens)
-	}
-	if metrics.HasCacheWrite {
-		msg.ExtraFields[storage.AgentMetadataCacheWriteTokensKey] = int64(metrics.CacheWriteTokens)
-	}
+func hasAnyTokenUsage(metadata gai.Metadata) bool {
+	_, hasInputTokens := gai.InputTokens(metadata)
+	_, hasOutputTokens := gai.OutputTokens(metadata)
+	_, hasCacheRead := gai.CacheReadTokens(metadata)
+	_, hasCacheWrite := gai.CacheWriteTokens(metadata)
+	return hasInputTokens || hasOutputTokens || hasCacheRead || hasCacheWrite
 }
 
-type tokenUsageMetrics struct {
-	InputTokens      int
-	HasInputTokens   bool
-	OutputTokens     int
-	HasOutputTokens  bool
-	CacheReadTokens  int
-	HasCacheRead     bool
-	CacheWriteTokens int
-	HasCacheWrite    bool
-}
-
-type usageCostBreakdown struct {
-	Input      *float64
-	Output     *float64
-	CacheRead  *float64
-	CacheWrite *float64
-	Total      float64
-	HasAnyCost bool
-}
-
-func extractTokenUsageMetrics(metadata gai.Metadata) tokenUsageMetrics {
-	metrics := tokenUsageMetrics{}
-
+func formatUsageLine(metadata gai.Metadata) string {
+	parts := make([]string, 0, 4)
 	if inputTokens, ok := gai.InputTokens(metadata); ok {
-		metrics.InputTokens = inputTokens
-		metrics.HasInputTokens = true
+		parts = append(parts, fmt.Sprintf("input: `%d`", inputTokens))
 	}
 	if outputTokens, ok := gai.OutputTokens(metadata); ok {
-		metrics.OutputTokens = outputTokens
-		metrics.HasOutputTokens = true
+		parts = append(parts, fmt.Sprintf("output: `%d`", outputTokens))
 	}
 	if cacheRead, ok := gai.CacheReadTokens(metadata); ok {
-		metrics.CacheReadTokens = cacheRead
-		metrics.HasCacheRead = true
+		parts = append(parts, fmt.Sprintf("cache read: `%d`", cacheRead))
 	}
 	if cacheWrite, ok := gai.CacheWriteTokens(metadata); ok {
-		metrics.CacheWriteTokens = cacheWrite
-		metrics.HasCacheWrite = true
-	}
-
-	return metrics
-}
-
-func (m tokenUsageMetrics) hasAnyTokens() bool {
-	return m.HasInputTokens || m.HasOutputTokens || m.HasCacheRead || m.HasCacheWrite
-}
-
-func formatUsageLine(metrics tokenUsageMetrics) string {
-	parts := make([]string, 0, 4)
-	if metrics.HasInputTokens {
-		parts = append(parts, fmt.Sprintf("input: `%d`", metrics.InputTokens))
-	}
-	if metrics.HasOutputTokens {
-		parts = append(parts, fmt.Sprintf("output: `%d`", metrics.OutputTokens))
-	}
-	if metrics.HasCacheRead {
-		parts = append(parts, fmt.Sprintf("cache read: `%d`", metrics.CacheReadTokens))
-	}
-	if metrics.HasCacheWrite {
-		parts = append(parts, fmt.Sprintf("cache write: `%d`", metrics.CacheWriteTokens))
+		parts = append(parts, fmt.Sprintf("cache write: `%d`", cacheWrite))
 	}
 	return "> " + strings.Join(parts, ", ")
 }
 
-func formatContextUtilizationLine(metrics tokenUsageMetrics, contextWindow uint32) (string, bool) {
+func formatContextUtilizationLine(metadata gai.Metadata, contextWindow uint32) (string, bool) {
 	if contextWindow == 0 {
 		return "", false
 	}
 
 	used := 0
-	if metrics.HasInputTokens {
-		used += metrics.InputTokens
+	if inputTokens, ok := gai.InputTokens(metadata); ok {
+		used += inputTokens
 	}
-	if metrics.HasOutputTokens {
-		used += metrics.OutputTokens
+	if outputTokens, ok := gai.OutputTokens(metadata); ok {
+		used += outputTokens
 	}
 	if used == 0 {
 		return "", false
@@ -445,66 +341,62 @@ func formatContextUtilizationLine(metrics tokenUsageMetrics, contextWindow uint3
 	return fmt.Sprintf("> context: `%d / %d` (`%.2f%%`)", used, contextWindow, pct), true
 }
 
-func calculateUsageCosts(metrics tokenUsageMetrics, model config.Model) usageCostBreakdown {
-	breakdown := usageCostBreakdown{}
+func formatCostLine(metadata gai.Metadata, model config.Model, cumulative float64) (string, float64, bool) {
+	parts := make([]string, 0, 6)
+	total := 0.0
+	hasAnyCost := false
 
-	if metrics.HasInputTokens {
-		billableInputTokens := metrics.InputTokens
-		if metrics.HasCacheRead {
-			billableInputTokens -= metrics.CacheReadTokens
+	if inputTokens, ok := gai.InputTokens(metadata); ok {
+		billableInputTokens := inputTokens
+		if cacheRead, ok := gai.CacheReadTokens(metadata); ok {
+			billableInputTokens -= cacheRead
 		}
-		if metrics.HasCacheWrite && model.CacheWriteCostPerMillion != nil {
-			billableInputTokens -= metrics.CacheWriteTokens
+		if cacheWrite, ok := gai.CacheWriteTokens(metadata); ok && model.CacheWriteCostPerMillion != nil {
+			billableInputTokens -= cacheWrite
 		}
 		if billableInputTokens < 0 {
 			billableInputTokens = 0
 		}
-		breakdown.Input = calculateComponentCost(billableInputTokens, model.InputCostPerMillion)
-	}
-	if metrics.HasOutputTokens {
-		breakdown.Output = calculateComponentCost(metrics.OutputTokens, model.OutputCostPerMillion)
-	}
-	if metrics.HasCacheRead {
-		breakdown.CacheRead = calculateComponentCost(metrics.CacheReadTokens, model.CacheReadCostPerMillion)
-	}
-	if metrics.HasCacheWrite {
-		breakdown.CacheWrite = calculateComponentCost(metrics.CacheWriteTokens, model.CacheWriteCostPerMillion)
-	}
-
-	for _, component := range []*float64{breakdown.Input, breakdown.Output, breakdown.CacheRead, breakdown.CacheWrite} {
-		if component == nil {
-			continue
+		if cost, ok := calculateComponentCost(billableInputTokens, model.InputCostPerMillion); ok {
+			parts = append(parts, fmt.Sprintf("input: `$%.6f`", cost))
+			total += cost
+			hasAnyCost = true
 		}
-		breakdown.Total += *component
-		breakdown.HasAnyCost = true
+	}
+	if outputTokens, ok := gai.OutputTokens(metadata); ok {
+		if cost, ok := calculateComponentCost(outputTokens, model.OutputCostPerMillion); ok {
+			parts = append(parts, fmt.Sprintf("output: `$%.6f`", cost))
+			total += cost
+			hasAnyCost = true
+		}
+	}
+	if cacheRead, ok := gai.CacheReadTokens(metadata); ok {
+		if cost, ok := calculateComponentCost(cacheRead, model.CacheReadCostPerMillion); ok {
+			parts = append(parts, fmt.Sprintf("cache read: `$%.6f`", cost))
+			total += cost
+			hasAnyCost = true
+		}
+	}
+	if cacheWrite, ok := gai.CacheWriteTokens(metadata); ok {
+		if cost, ok := calculateComponentCost(cacheWrite, model.CacheWriteCostPerMillion); ok {
+			parts = append(parts, fmt.Sprintf("cache write: `$%.6f`", cost))
+			total += cost
+			hasAnyCost = true
+		}
 	}
 
-	return breakdown
+	if !hasAnyCost {
+		return "", 0, false
+	}
+
+	parts = append(parts, fmt.Sprintf("total: `$%.6f`", total))
+	parts = append(parts, fmt.Sprintf("cumulative: `$%.6f`", cumulative+total))
+	return "> estimated cost: " + strings.Join(parts, ", "), total, true
 }
 
-func calculateComponentCost(tokens int, costPerMillion *float64) *float64 {
+func calculateComponentCost(tokens int, costPerMillion *float64) (float64, bool) {
 	if costPerMillion == nil {
-		return nil
+		return 0, false
 	}
-	cost := (float64(tokens) * *costPerMillion) / 1_000_000
-	return &cost
-}
-
-func formatCostLine(costs usageCostBreakdown, cumulative float64) string {
-	parts := make([]string, 0, 6)
-	if costs.Input != nil {
-		parts = append(parts, fmt.Sprintf("input: `$%.6f`", *costs.Input))
-	}
-	if costs.Output != nil {
-		parts = append(parts, fmt.Sprintf("output: `$%.6f`", *costs.Output))
-	}
-	if costs.CacheRead != nil {
-		parts = append(parts, fmt.Sprintf("cache read: `$%.6f`", *costs.CacheRead))
-	}
-	if costs.CacheWrite != nil {
-		parts = append(parts, fmt.Sprintf("cache write: `$%.6f`", *costs.CacheWrite))
-	}
-	parts = append(parts, fmt.Sprintf("total: `$%.6f`", costs.Total))
-	parts = append(parts, fmt.Sprintf("cumulative: `$%.6f`", cumulative))
-	return "> estimated cost: " + strings.Join(parts, ", ")
+	return (float64(tokens) * *costPerMillion) / 1_000_000, true
 }

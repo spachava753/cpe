@@ -1,4 +1,4 @@
-package agent
+package acp
 
 import (
 	"bytes"
@@ -6,41 +6,31 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"slices"
-	"strings"
 
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/config"
-	"github.com/spachava753/cpe/internal/render"
 	"github.com/spachava753/cpe/internal/storage"
 )
 
 const compactionWarningText = `[COMPACTION WARNING]
 The conversation has exceeded the configured compaction threshold. Before continuing much further, call the compact_conversation tool with a compact but complete summary of the conversation state needed to continue. This warning will continue to appear until compaction is performed.`
 
-// Runtime owns CPE's full agentic loop around a single-turn tool-capable model.
-type Runtime struct {
-	G                gai.ToolCallingGenerator
-	DialogSaver      storage.DialogSaver
-	ContentRenderer  render.Iface
-	ThinkingRenderer render.Iface
-	ToolCallRenderer render.Iface
-	MetadataRenderer render.Iface
-	Stdout           io.Writer
-	Stderr           io.Writer
-	Cfg              config.Config
+// Loop owns the acp full agentic loop for a prompt turn.
+type Loop struct {
+	G           gai.ToolCallingGenerator
+	DialogSaver storage.DialogSaver
+	Cfg         config.Config
 
 	// internal state
 	toolCallbacks      map[string]gai.ToolCallback
 	compactionRestarts int
 	compactionWarning  bool
-	cumulativeCostUSD  float64
 }
 
 // Register registers a tool with the provider model and stores its callback.
-func (r *Runtime) Register(tool gai.Tool, callback gai.ToolCallback) error {
+func (r *Loop) Register(tool gai.Tool, callback gai.ToolCallback) error {
 	if r.toolCallbacks == nil {
 		r.toolCallbacks = make(map[string]gai.ToolCallback)
 	}
@@ -60,17 +50,27 @@ func (r *Runtime) Register(tool gai.Tool, callback gai.ToolCallback) error {
 	return nil
 }
 
+func (r *Loop) validateToolChoice(opts *gai.GenOpts) error {
+	if opts == nil || opts.ToolChoice == "" || opts.ToolChoice == gai.ToolChoiceAuto || opts.ToolChoice == gai.ToolChoiceToolsRequired {
+		return nil
+	}
+	if _, exists := r.toolCallbacks[opts.ToolChoice]; !exists {
+		return gai.InvalidToolChoiceErr(fmt.Sprintf("tool '%s' not found", opts.ToolChoice))
+	}
+	return nil
+}
+
 // Generate runs the dialog until a terminal assistant response, nil-callback
 // terminal tool, callback error, or compaction restart limit is reached.
-func (r *Runtime) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
+func (r *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 	current := append(gai.Dialog(nil), dialog...)
 
 	if err := r.validateToolChoice(opts); err != nil {
 		return current, err
 	}
 
-	if r.ThinkingRenderer == nil || r.ContentRenderer == nil || r.ToolCallRenderer == nil {
-		r.configureOutput()
+	if r.DialogSaver == nil {
+		panic("DialogSaver not set")
 	}
 
 	for {
@@ -85,14 +85,9 @@ func (r *Runtime) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.Gen
 		if err != nil {
 			return current, err
 		}
-		for _, toolResultMsg := range trailingToolResults(current) {
-			r.printToolResult(current, toolResultMsg)
-		}
 
 		resp, err := r.G.Generate(ctx, current, opts)
 		if err != nil {
-			r.printResponse(resp)
-			r.printTokenUsage(resp.UsageMetadata)
 			return current, err
 		}
 		if len(resp.Candidates) != 1 {
@@ -105,18 +100,15 @@ func (r *Runtime) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.Gen
 		// save response
 		r.attachAgentMetadata(&resp.Candidates[0], resp.UsageMetadata)
 		current = append(current, resp.Candidates[0])
-		current, err = r.save(ctx, current)
+		current, err := r.save(ctx, current)
 		if err != nil {
 			return current, err
 		}
 
-		r.printResponse(resp)
-		r.printTokenUsage(resp.UsageMetadata)
-		r.updateCompactionWarning(resp.UsageMetadata)
-
 		if resp.FinishReason != gai.ToolUse {
 			return current, nil
 		}
+		r.updateCompactionWarning(resp.UsageMetadata)
 
 		// compact conversation
 		current, err = r.compact(current)
@@ -133,7 +125,7 @@ func (r *Runtime) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.Gen
 			continue
 		}
 
-		warningInjected := false
+		firstBlock := true
 		for _, block := range lastMsg.Blocks {
 			if block.BlockType != gai.ToolCall {
 				continue
@@ -165,14 +157,10 @@ func (r *Runtime) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.Gen
 			if err != nil {
 				return current, err
 			}
-			if err := validateToolResultMessage(&result, block.ID); err != nil {
-				return current, fmt.Errorf("invalid tool result message: %w", err)
-			}
-			if r.compactionWarning && !warningInjected {
+			if r.compactionWarning && firstBlock {
 				warningBlock := gai.TextBlock(compactionWarningText)
 				warningBlock.ID = block.ID
 				result.Blocks = append([]gai.Block{warningBlock}, result.Blocks...)
-				warningInjected = true
 			}
 
 			// ensure that all of the blocks in the tool result have the associated tool call block id
@@ -181,80 +169,13 @@ func (r *Runtime) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.Gen
 			}
 
 			current = append(current, result)
+
+			firstBlock = false
 		}
 	}
 }
 
-func validateToolResultMessage(message *gai.Message, toolCallID string) error {
-	if message.Role != gai.ToolResult {
-		return fmt.Errorf("message must have ToolResult role, got: %v", message.Role)
-	}
-	if len(message.Blocks) == 0 {
-		return fmt.Errorf("message must have at least one block")
-	}
-	for i, block := range message.Blocks {
-		if block.ID != "" && block.ID != toolCallID {
-			return fmt.Errorf("block %d has incorrect ID: expected %q or empty, got %q", i, toolCallID, block.ID)
-		}
-		if block.Content == nil {
-			return fmt.Errorf("block %d has nil content", i)
-		}
-		if block.BlockType == "" {
-			return fmt.Errorf("block %d is missing block type", i)
-		}
-		if block.MimeType == "" {
-			return fmt.Errorf("block %d is missing MIME type", i)
-		}
-		switch block.ModalityType {
-		case gai.Text:
-			if !strings.HasPrefix(block.MimeType, "text/") {
-				return fmt.Errorf("block %d has text modality but non-text MIME type: %q", i, block.MimeType)
-			}
-		case gai.Image:
-			if !strings.HasPrefix(block.MimeType, "image/") && block.MimeType != "application/pdf" {
-				return fmt.Errorf("block %d has image modality but non-image MIME type: %q", i, block.MimeType)
-			}
-		case gai.Audio:
-			if !strings.HasPrefix(block.MimeType, "audio/") {
-				return fmt.Errorf("block %d has audio modality but non-audio MIME type: %q", i, block.MimeType)
-			}
-		case gai.Video:
-			if !strings.HasPrefix(block.MimeType, "video/") {
-				return fmt.Errorf("block %d has video modality but non-video MIME type: %q", i, block.MimeType)
-			}
-		default:
-			return fmt.Errorf("block %d has invalid modality type: %v", i, block.ModalityType)
-		}
-	}
-	return nil
-}
-
-func (r *Runtime) updateCompactionWarning(metadata gai.Metadata) {
-	if r.Cfg.Compaction == nil || r.Cfg.Compaction.TokenThreshold == 0 {
-		return
-	}
-
-	inputTokens, hasInputTokens := gai.InputTokens(metadata)
-	outputTokens, hasOutputTokens := gai.OutputTokens(metadata)
-	if !hasInputTokens && !hasOutputTokens {
-		return
-	}
-	if uint(inputTokens+outputTokens) >= r.Cfg.Compaction.TokenThreshold {
-		r.compactionWarning = true
-	}
-}
-
-func (r *Runtime) validateToolChoice(opts *gai.GenOpts) error {
-	if opts == nil || opts.ToolChoice == "" || opts.ToolChoice == gai.ToolChoiceAuto || opts.ToolChoice == gai.ToolChoiceToolsRequired {
-		return nil
-	}
-	if _, exists := r.toolCallbacks[opts.ToolChoice]; !exists {
-		return gai.InvalidToolChoiceErr(fmt.Sprintf("tool '%s' not found", opts.ToolChoice))
-	}
-	return nil
-}
-
-func (r *Runtime) save(ctx context.Context, dialog gai.Dialog) (gai.Dialog, error) {
+func (r *Loop) save(ctx context.Context, dialog gai.Dialog) (gai.Dialog, error) {
 	if r.DialogSaver == nil {
 		return dialog, nil
 	}
@@ -269,7 +190,22 @@ func (r *Runtime) save(ctx context.Context, dialog gai.Dialog) (gai.Dialog, erro
 	return dialog, nil
 }
 
-func (r *Runtime) attachAgentMetadata(msg *gai.Message, metadata gai.Metadata) {
+func (r *Loop) updateCompactionWarning(metadata gai.Metadata) {
+	if r.Cfg.Compaction == nil || r.Cfg.Compaction.TokenThreshold == 0 {
+		return
+	}
+
+	inputTokens, hasInputTokens := gai.InputTokens(metadata)
+	outputTokens, hasOutputTokens := gai.OutputTokens(metadata)
+	if !hasInputTokens && !hasOutputTokens {
+		return
+	}
+	if uint(inputTokens+outputTokens) >= r.Cfg.Compaction.TokenThreshold {
+		r.compactionWarning = true
+	}
+}
+
+func (r *Loop) attachAgentMetadata(msg *gai.Message, metadata gai.Metadata) {
 	if msg.ExtraFields == nil {
 		msg.ExtraFields = make(map[string]any)
 	}
@@ -301,7 +237,7 @@ func (r *Runtime) attachAgentMetadata(msg *gai.Message, metadata gai.Metadata) {
 	}
 }
 
-func (r *Runtime) compact(current gai.Dialog) (gai.Dialog, error) {
+func (r *Loop) compact(current gai.Dialog) (gai.Dialog, error) {
 	if r.Cfg.Compaction == nil {
 		return current, nil
 	}

@@ -116,6 +116,8 @@ func (a *Agent) ResumeSession(ctx context.Context, params acp.ResumeSessionReque
 }
 
 // LoadSession implements [acp.AgentLoader].
+//
+// TODO: need to handle compaction, so when getting a dialog that can be a compaction restart branch, need to retrieve parent dialog of compaction dialog
 func (a *Agent) LoadSession(ctx context.Context, params acp.LoadSessionRequest) (acp.LoadSessionResponse, error) {
 	opts, err := a.loadActiveSession(ctx, params.SessionId)
 	if err != nil {

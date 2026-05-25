@@ -17,7 +17,7 @@ type responsesPhaseRetryGenerator struct {
 	maxRetries int
 }
 
-func newResponsesPhaseRetryGenerator(inner gai.ToolCapableGenerator) *responsesPhaseRetryGenerator {
+func newResponsesPhaseRetryGenerator(inner gai.ToolCallingGenerator) *responsesPhaseRetryGenerator {
 	return &responsesPhaseRetryGenerator{
 		GeneratorWrapper: gai.GeneratorWrapper{Inner: inner},
 		maxRetries:       defaultResponsesPhaseRetryMaxRetries,
@@ -50,4 +50,4 @@ func isResponsesPhaseConflictError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), responsesPhaseConflictErrorText)
 }
 
-var _ gai.ToolCapableGenerator = (*responsesPhaseRetryGenerator)(nil)
+var _ gai.ToolCallingGenerator = (*responsesPhaseRetryGenerator)(nil)

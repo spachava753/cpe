@@ -84,14 +84,12 @@ func formatGenerationError(err error) string {
 
 	var message string
 
-	var apiErr *gai.ApiErr
-	if errors.As(err, &apiErr) {
+	if apiErr, ok := errors.AsType[*gai.ApiErr](err); ok {
 		message = appendErrorHint(apiErr.Error(), apiErrorHint(apiErr))
 		return appendErrorHint(message, generationHint(err))
 	}
 
-	var contentPolicyErr gai.ContentPolicyErr
-	if errors.As(err, &contentPolicyErr) {
+	if contentPolicyErr, ok := errors.AsType[gai.ContentPolicyErr](err); ok {
 		message = appendErrorHint(contentPolicyErr.Error(), "Adjust the prompt or inputs to comply with the provider policy")
 		return appendErrorHint(message, generationHint(err))
 	}
@@ -108,12 +106,12 @@ func formatGenerationError(err error) string {
 }
 
 type generationHintProvider interface {
+	error
 	GenerationHint() string
 }
 
 func generationHint(err error) string {
-	var hintProvider generationHintProvider
-	if errors.As(err, &hintProvider) {
+	if hintProvider, ok := errors.AsType[generationHintProvider](err); ok {
 		return hintProvider.GenerationHint()
 	}
 	return ""

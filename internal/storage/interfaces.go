@@ -321,3 +321,13 @@ func collectAncestorMessages(ctx context.Context, getter MessagesGetter, message
 		currentID = parentID
 	}
 }
+
+// GetMessageID retrieves the message ID from a message's ExtraFields.
+// Returns an empty string if no ID is set.
+func GetMessageID(msg gai.Message) string {
+	if msg.ExtraFields == nil {
+		return ""
+	}
+	id, _ := msg.ExtraFields[MessageIDKey].(string)
+	return id
+}

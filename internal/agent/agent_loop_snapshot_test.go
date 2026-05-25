@@ -116,15 +116,15 @@ type toolFixture struct {
 	callback gai.ToolCallback
 }
 
-type toolCallbackFunc func(context.Context, json.RawMessage, string) (gai.Message, error)
+type toolCallbackFunc func(context.Context, map[string]any) (gai.Message, error)
 
-func (f toolCallbackFunc) Call(ctx context.Context, params json.RawMessage, id string) (gai.Message, error) {
-	return f(ctx, params, id)
+func (f toolCallbackFunc) Call(ctx context.Context, params map[string]any) (gai.Message, error) {
+	return f(ctx, params)
 }
 
 func toolResultCallback(text string) gai.ToolCallback {
-	return toolCallbackFunc(func(_ context.Context, _ json.RawMessage, id string) (gai.Message, error) {
-		return gai.ToolResultMessage(id, gai.TextBlock(text)), nil
+	return toolCallbackFunc(func(_ context.Context, _ map[string]any) (gai.Message, error) {
+		return gai.ToolResultMessage("", gai.TextBlock(text)), nil
 	})
 }
 
@@ -313,8 +313,8 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			},
 			tools: []toolFixture{{
 				tool: gai.Tool{Name: "fragile"},
-				callback: toolCallbackFunc(func(_ context.Context, _ json.RawMessage, id string) (gai.Message, error) {
-					msg := gai.ToolResultMessage(id, gai.TextBlock("recoverable tool failure"))
+				callback: toolCallbackFunc(func(_ context.Context, _ map[string]any) (gai.Message, error) {
+					msg := gai.ToolResultMessage("", gai.TextBlock("recoverable tool failure"))
 					msg.ToolResultError = true
 					return msg, nil
 				}),
@@ -354,15 +354,11 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			},
 			tools: []toolFixture{{
 				tool: gai.Tool{Name: "lookup"},
-				callback: toolCallbackFunc(func(_ context.Context, params json.RawMessage, id string) (gai.Message, error) {
-					var input struct {
-						Q string `json:"q"`
+				callback: toolCallbackFunc(func(_ context.Context, params map[string]any) (gai.Message, error) {
+					if q, ok := params["q"].(string); !ok || q == "" {
+						return gai.ToolResultMessage("", gai.TextBlock("invalid parameters")), nil
 					}
-					_ = json.Unmarshal(params, &input)
-					if input.Q == "" {
-						return gai.ToolResultMessage(id, gai.TextBlock("invalid parameters")), nil
-					}
-					return gai.ToolResultMessage(id, gai.TextBlock("lookup result")), nil
+					return gai.ToolResultMessage("", gai.TextBlock("lookup result")), nil
 				}),
 			}},
 			persist: true,
@@ -377,7 +373,7 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			},
 			tools: []toolFixture{{
 				tool: gai.Tool{Name: "lookup"},
-				callback: toolCallbackFunc(func(context.Context, json.RawMessage, string) (gai.Message, error) {
+				callback: toolCallbackFunc(func(context.Context, map[string]any) (gai.Message, error) {
 					return gai.Message{}, errors.New("lookup failed")
 				}),
 			}},
@@ -394,7 +390,7 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 			},
 			tools: []toolFixture{{
 				tool: gai.Tool{Name: "lookup"},
-				callback: toolCallbackFunc(func(context.Context, json.RawMessage, string) (gai.Message, error) {
+				callback: toolCallbackFunc(func(context.Context, map[string]any) (gai.Message, error) {
 					return gai.ToolResultMessage("other_call", gai.TextBlock("wrong id")), nil
 				}),
 			}},

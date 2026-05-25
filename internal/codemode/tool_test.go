@@ -2,7 +2,6 @@ package codemode
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 )
 
@@ -10,15 +9,12 @@ func TestExecuteGoCodeCallback_RejectsNonPositiveExecutionTimeout(t *testing.T) 
 	t.Parallel()
 
 	callback := &ExecuteGoCodeCallback{MaxTimeout: 300}
-	params, err := json.Marshal(ExecuteGoCodeInput{
-		Code:             "package main\n",
-		ExecutionTimeout: 0,
-	})
-	if err != nil {
-		t.Fatalf("marshal params: %v", err)
+	params := map[string]any{
+		"code":             "package main\n",
+		"executionTimeout": 0,
 	}
 
-	msg, callErr := callback.Call(context.Background(), params, "tool-call-1")
+	msg, callErr := callback.Call(context.Background(), params)
 	if callErr != nil {
 		t.Fatalf("unexpected callback error: %v", callErr)
 	}
@@ -37,15 +33,12 @@ func TestExecuteGoCodeCallback_RejectsExecutionTimeoutAboveConfiguredMax(t *test
 	t.Parallel()
 
 	callback := &ExecuteGoCodeCallback{MaxTimeout: 10}
-	params, err := json.Marshal(ExecuteGoCodeInput{
-		Code:             "package main\n",
-		ExecutionTimeout: 11,
-	})
-	if err != nil {
-		t.Fatalf("marshal params: %v", err)
+	params := map[string]any{
+		"code":             "package main\n",
+		"executionTimeout": 11,
 	}
 
-	msg, callErr := callback.Call(context.Background(), params, "tool-call-2")
+	msg, callErr := callback.Call(context.Background(), params)
 	if callErr != nil {
 		t.Fatalf("unexpected callback error: %v", callErr)
 	}
