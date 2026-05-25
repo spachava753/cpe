@@ -34,7 +34,7 @@ type DB interface {
 
 const idCharset = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-func generateId() string {
+func GenerateId() string {
 	return gonanoid.MustGenerate(idCharset, 6)
 }
 
@@ -98,7 +98,7 @@ func NewSqlite(ctx context.Context, db DB, opts ...SqliteOption) (*Sqlite, error
 	store := &Sqlite{
 		db:          db,
 		q:           sqlcgen.New(db),
-		idGenerator: generateId,
+		idGenerator: GenerateId,
 	}
 	for _, opt := range opts {
 		opt(store)

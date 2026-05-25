@@ -2,21 +2,19 @@ package acp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"iter"
 
 	"github.com/coder/acp-go-sdk"
+	"github.com/spachava753/gai"
+
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/sync"
-	"github.com/spachava753/gai"
 )
 
 type acpRuntime interface {
 	Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error)
-}
-
-type dialogDb interface {
-	storage.ACPSessionGetter
-	storage.MessagesGetter
 }
 
 // session represents an active session in ACP. Note that
@@ -67,9 +65,7 @@ func (a *Agent) ListSessions(ctx context.Context, params acp.ListSessionsRequest
 	resp := acp.ListSessionsResponse{
 		Sessions: make([]acp.SessionInfo, 0, len(sessionInfos)),
 	}
-	for _, s := range sessionInfos {
-		resp.Sessions = append(resp.Sessions, s)
-	}
+	resp.Sessions = append(resp.Sessions, sessionInfos...)
 	return resp, nil
 }
 
@@ -98,7 +94,7 @@ func (a *Agent) loadActiveSession(ctx context.Context, sessionId acp.SessionId) 
 	}
 	s := session{
 		si:      getSessionResp.Session,
-		runtime: a.runtimeGen(getSessionResp.ModelRef),
+		runtime: a.runtimeFactory(getSessionResp.ModelRef),
 	}
 	a.activeSessions.Store(sessionId, sync.NewGuard(s))
 	return []acp.SessionConfigOption{
@@ -129,16 +125,18 @@ func (a *Agent) LoadSession(ctx context.Context, params acp.LoadSessionRequest) 
 	if err != nil {
 		return acp.LoadSessionResponse{}, fmt.Errorf("could get acp session from db: %v", err)
 	}
-	dialog, err := storage.GetDialogForMessage(ctx, a.store, acpSession.LastMessageID)
+	dialog, err := storage.GetDialogForMessage(ctx, a.db, acpSession.LastMessageID)
 	if err != nil {
 		return acp.LoadSessionResponse{}, fmt.Errorf("could not get dialog from db: %v", err)
 	}
 	for _, msg := range dialog {
-		if err := a.conn.SessionUpdate(ctx, acp.SessionNotification{
-			SessionId: params.SessionId,
-			Update:    msgToSessionUpdate(msg),
-		}); err != nil {
-			return acp.LoadSessionResponse{}, fmt.Errorf("could not send session update: %v", err)
+		for update := range msgToSessionUpdate(msg) {
+			if err := a.conn.SessionUpdate(ctx, acp.SessionNotification{
+				SessionId: params.SessionId,
+				Update:    update,
+			}); err != nil {
+				return acp.LoadSessionResponse{}, fmt.Errorf("could not send session update: %v", err)
+			}
 		}
 	}
 	return acp.LoadSessionResponse{
@@ -146,8 +144,72 @@ func (a *Agent) LoadSession(ctx context.Context, params acp.LoadSessionRequest) 
 	}, nil
 }
 
-func msgToSessionUpdate(msg gai.Message) acp.SessionUpdate {
-	panic("unimplemented")
+func msgToSessionUpdate(msg gai.Message) iter.Seq[acp.SessionUpdate] {
+	return func(yield func(acp.SessionUpdate) bool) {
+		for _, b := range msg.Blocks {
+			content := b.Content.String()
+			var acpBlock acp.ContentBlock
+			switch b.ModalityType {
+			case gai.Image:
+				acpBlock = acp.ImageBlock(content, b.MimeType)
+			case gai.Audio:
+				acpBlock = acp.AudioBlock(content, b.MimeType)
+			default:
+				acpBlock = acp.TextBlock(content)
+			}
+			switch msg.Role {
+			case gai.User:
+				if !yield(acp.UpdateUserMessage(acpBlock)) {
+					return
+				}
+			case gai.Assistant:
+				switch b.BlockType {
+				case gai.Thinking:
+					if !yield(acp.UpdateAgentThought(acpBlock)) {
+						return
+					}
+				case gai.ToolCall:
+					var input gai.ToolCallInput
+					if err := json.Unmarshal([]byte(content), &input); err != nil {
+						panic(err)
+					}
+					// TODO: we should add support for diff content blocks based on calls to text_edit tool
+					// TODO: we should add support for tool kind
+					// TODO: we should add support for file locations
+					if !yield(acp.StartToolCall(
+						acp.ToolCallId(b.ID),
+						input.Name,
+						acp.WithStartStatus(acp.ToolCallStatusPending),
+						acp.WithStartRawInput(input.Parameters),
+					)) {
+						return
+					}
+				case gai.Content:
+					if !yield(acp.UpdateAgentMessage(acpBlock)) {
+						return
+					}
+				default:
+					panic(fmt.Sprintf("unknown block type: %s", b.BlockType))
+				}
+			case gai.ToolResult:
+				status := acp.ToolCallStatusCompleted
+				if msg.ToolResultError {
+					status = acp.ToolCallStatusFailed
+				}
+				if !yield(acp.UpdateToolCall(
+					acp.ToolCallId(b.ID),
+					acp.WithUpdateStatus(status),
+					acp.WithUpdateContent([]acp.ToolCallContent{
+						acp.ToolContent(acpBlock),
+					}),
+				)) {
+					return
+				}
+			default:
+				panic("unknown role")
+			}
+		}
+	}
 }
 
 // Cancel implements [acp.Agent].

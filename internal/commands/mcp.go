@@ -147,9 +147,9 @@ func MCPListTools(ctx context.Context, opts MCPListToolsOptions) error {
 		title = fmt.Sprintf("Available tools on server '%s'", opts.ServerName)
 	}
 
-	var markdownBuilder strings.Builder
+	var mdBuilder strings.Builder
 
-	markdownBuilder.WriteString(fmt.Sprintf("# %s\n\n", title))
+	fmt.Fprintf(&mdBuilder, "# %s\n\n", title)
 
 	// Infer filter mode from which list is populated
 	var filterMode string
@@ -162,21 +162,31 @@ func MCPListTools(ctx context.Context, opts MCPListToolsOptions) error {
 		filterMode = "all"
 	}
 
-	markdownBuilder.WriteString("**Filter mode:** `" + filterMode + "`")
+	mdBuilder.WriteString("**Filter mode:** `")
+	mdBuilder.WriteString(filterMode)
+	mdBuilder.WriteString("`")
 
 	if len(serverConfig.EnabledTools) > 0 {
-		markdownBuilder.WriteString(" | **Enabled tools:** `" + strings.Join(serverConfig.EnabledTools, "`, `") + "`")
+		mdBuilder.WriteString(" | **Enabled tools:** `")
+		mdBuilder.WriteString(strings.Join(serverConfig.EnabledTools, "`, `"))
+		mdBuilder.WriteString("`")
 	}
 	if len(serverConfig.DisabledTools) > 0 {
-		markdownBuilder.WriteString(" | **Disabled tools:** `" + strings.Join(serverConfig.DisabledTools, "`, `") + "`")
+		mdBuilder.WriteString(" | **Disabled tools:** `")
+		mdBuilder.WriteString(strings.Join(serverConfig.DisabledTools, "`, `"))
+		mdBuilder.WriteString("`")
 	}
 
-	markdownBuilder.WriteString("\n**Total tools:** " + strconv.Itoa(len(allTools)) +
-		" | **Available:** " + strconv.Itoa(len(filteredTools)) +
-		" | **Filtered out:** " + strconv.Itoa(len(filteredOut)) + "\n\n")
+	mdBuilder.WriteString("\n**Total tools:** ")
+	mdBuilder.WriteString(strconv.Itoa(len(allTools)))
+	mdBuilder.WriteString(" | **Available:** ")
+	mdBuilder.WriteString(strconv.Itoa(len(filteredTools)))
+	mdBuilder.WriteString(" | **Filtered out:** ")
+	mdBuilder.WriteString(strconv.Itoa(len(filteredOut)))
+	mdBuilder.WriteString("\n\n")
 
 	if len(toolsToShow) == 0 {
-		markdownBuilder.WriteString("*No tools to display.*\n")
+		mdBuilder.WriteString("*No tools to display.*\n")
 	} else {
 		for _, tool := range toolsToShow {
 			filteredBadge := ""
@@ -186,38 +196,47 @@ func MCPListTools(ctx context.Context, opts MCPListToolsOptions) error {
 				}
 			}
 
-			markdownBuilder.WriteString(fmt.Sprintf("### `%s`%s\n", tool.Name, filteredBadge))
-			markdownBuilder.WriteString(tool.Description + "\n\n")
+			fmt.Fprintf(&mdBuilder, "### `%s`%s\n", tool.Name, filteredBadge)
+			mdBuilder.WriteString(tool.Description)
+			mdBuilder.WriteString("\n\n")
 
 			if tool.InputSchema != nil {
-				markdownBuilder.WriteString("**Input Schema:**\n\n")
+				mdBuilder.WriteString("**Input Schema:**\n\n")
 
 				var schemaJSON bytes.Buffer
 				encoder := json.NewEncoder(&schemaJSON)
 				encoder.SetIndent("", "  ")
 				if err := encoder.Encode(tool.InputSchema); err != nil {
-					markdownBuilder.WriteString("```json\n" + "Error encoding schema: " + err.Error() + "\n```\n\n")
+					mdBuilder.WriteString("```json\n" + "Error encoding schema: ")
+					mdBuilder.WriteString(err.Error())
+					mdBuilder.WriteString("\n```\n\n")
 				} else {
-					markdownBuilder.WriteString("```json\n" + schemaJSON.String() + "\n```\n\n")
+					mdBuilder.WriteString("```json\n")
+					mdBuilder.WriteString(schemaJSON.String())
+					mdBuilder.WriteString("\n```\n\n")
 				}
 			}
 
 			if tool.OutputSchema != nil {
-				markdownBuilder.WriteString("**Output Schema:**\n\n")
+				mdBuilder.WriteString("**Output Schema:**\n\n")
 
 				var schemaJSON bytes.Buffer
 				encoder := json.NewEncoder(&schemaJSON)
 				encoder.SetIndent("", "  ")
 				if err := encoder.Encode(tool.OutputSchema); err != nil {
-					markdownBuilder.WriteString("```json\n" + "Error encoding schema: " + err.Error() + "\n```\n\n")
+					mdBuilder.WriteString("```json\n" + "Error encoding schema: ")
+					mdBuilder.WriteString(err.Error())
+					mdBuilder.WriteString("\n```\n\n")
 				} else {
-					markdownBuilder.WriteString("```json\n" + schemaJSON.String() + "\n```\n\n")
+					mdBuilder.WriteString("```json\n")
+					mdBuilder.WriteString(schemaJSON.String())
+					mdBuilder.WriteString("\n```\n\n")
 				}
 			}
 		}
 	}
 
-	rendered, err := opts.Renderer.Render(markdownBuilder.String())
+	rendered, err := opts.Renderer.Render(mdBuilder.String())
 	if err != nil {
 		return fmt.Errorf("failed to render markdown: %w", err)
 	}
@@ -315,22 +334,26 @@ func MCPCodeDesc(ctx context.Context, opts MCPCodeDescOptions) error {
 	}
 
 	// Format as markdown for rendering
-	var markdownBuilder strings.Builder
-	markdownBuilder.WriteString("# execute_go_code Tool Description\n\n")
+	var mdBuilder strings.Builder
+	mdBuilder.WriteString("# execute_go_code Tool Description\n\n")
 
 	if opts.CodeMode == nil || !opts.CodeMode.Enabled {
-		markdownBuilder.WriteString("> **Note:** Code mode is not enabled in current configuration.\n\n")
+		mdBuilder.WriteString("> **Note:** Code mode is not enabled in current configuration.\n\n")
 	}
 
 	if len(excludedToolNames) > 0 {
-		markdownBuilder.WriteString("**Excluded tools:** `" + strings.Join(excludedToolNames, "`, `") + "`\n\n")
+		mdBuilder.WriteString("**Excluded tools:** `")
+		mdBuilder.WriteString(strings.Join(excludedToolNames, "`, `"))
+		mdBuilder.WriteString("`\n\n")
 	}
 
-	markdownBuilder.WriteString("**Code mode tools:** " + strconv.Itoa(len(allCodeModeTools)) + "\n\n")
-	markdownBuilder.WriteString("---\n\n")
-	markdownBuilder.WriteString(description)
+	mdBuilder.WriteString("**Code mode tools:** ")
+	mdBuilder.WriteString(strconv.Itoa(len(allCodeModeTools)))
+	mdBuilder.WriteString("\n\n")
+	mdBuilder.WriteString("---\n\n")
+	mdBuilder.WriteString(description)
 
-	rendered, err := opts.Renderer.Render(markdownBuilder.String())
+	rendered, err := opts.Renderer.Render(mdBuilder.String())
 	if err != nil {
 		return fmt.Errorf("failed to render markdown: %w", err)
 	}

@@ -16,8 +16,6 @@ import (
 	"github.com/spachava753/cpe/internal/testutil/testgate"
 )
 
-func ptr[T any](v T) *T { return &v }
-
 func requireAPIKey(t *testing.T, envVar string) {
 	t.Helper()
 	testgate.RequireLive(t)
@@ -58,7 +56,7 @@ func resolveTestConfig(t *testing.T, modelType string, modelRef string) config.C
 				},
 				Timeout: "30s",
 				GenerationParams: &config.GenerationParams{
-					MaxGenerationTokens: ptr(1024),
+					MaxGenerationTokens: new(1024),
 				},
 			},
 		},
@@ -106,7 +104,7 @@ func resolveTestConfigWithThinking(t *testing.T, modelType, thinkingBudget strin
 				Timeout: "120s",
 				GenerationParams: &config.GenerationParams{
 					ThinkingBudget:      thinkingBudget,
-					MaxGenerationTokens: ptr(2048),
+					MaxGenerationTokens: new(2048),
 				},
 			},
 		},
@@ -137,7 +135,7 @@ func resolveCrossProviderConfig(t *testing.T, modelRef string) config.Config {
 				},
 				Timeout: "30s",
 				GenerationParams: &config.GenerationParams{
-					MaxGenerationTokens: ptr(1024),
+					MaxGenerationTokens: new(1024),
 				},
 			},
 			{
@@ -150,7 +148,7 @@ func resolveCrossProviderConfig(t *testing.T, modelRef string) config.Config {
 				},
 				Timeout: "30s",
 				GenerationParams: &config.GenerationParams{
-					MaxGenerationTokens: ptr(1024),
+					MaxGenerationTokens: new(1024),
 				},
 			},
 		},

@@ -10,8 +10,6 @@ import (
 	"github.com/spachava753/gai"
 )
 
-func ptr[T any](v T) *T { return &v }
-
 func TestResolveConfigRequiresModel(t *testing.T) {
 	_, err := ResolveFromRaw(&RawConfig{Models: []ModelConfig{testModelProfile()}}, RuntimeOptions{})
 	if err == nil {
@@ -26,17 +24,17 @@ func TestResolveConfigRequiresModel(t *testing.T) {
 func TestResolveGenerationParamsUsesModelProfileAndCLIOnly(t *testing.T) {
 	model := testModelProfile()
 	model.GenerationParams = &GenerationParams{
-		Temperature:         ptr(0.7),
-		MaxGenerationTokens: ptr(1024),
+		Temperature:         new(0.7),
+		MaxGenerationTokens: new(1024),
 		StopSequences:       []string{"model-stop"},
 	}
 	result := resolveGenerationParams(model, RuntimeOptions{GenParams: &gai.GenOpts{
-		Temperature:   ptr(0.2),
+		Temperature:   new(0.2),
 		StopSequences: []string{"cli-stop"},
 	}})
 
-	checkPtr(t, "Temperature", result.Temperature, ptr(0.2))
-	checkPtr(t, "MaxGenerationTokens", result.MaxGenerationTokens, ptr(1024))
+	checkPtr(t, "Temperature", result.Temperature, new(0.2))
+	checkPtr(t, "MaxGenerationTokens", result.MaxGenerationTokens, new(1024))
 	if got, want := result.StopSequences, []string{"cli-stop"}; len(got) != len(want) || got[0] != want[0] {
 		t.Fatalf("StopSequences = %v, want %v", got, want)
 	}

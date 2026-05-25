@@ -23,10 +23,10 @@ func TestModelInfo_PrintsCachePricingFields(t *testing.T) {
 					ID:                       "gpt-4.1",
 					ContextWindow:            128000,
 					MaxOutput:                8192,
-					InputCostPerMillion:      float64Ptr(3),
-					OutputCostPerMillion:     float64Ptr(15),
-					CacheReadCostPerMillion:  float64Ptr(0.3),
-					CacheWriteCostPerMillion: float64Ptr(3.75),
+					InputCostPerMillion:      new(3.0),
+					OutputCostPerMillion:     new(15.0),
+					CacheReadCostPerMillion:  new(0.3),
+					CacheWriteCostPerMillion: new(3.75),
 				},
 			},
 		},
@@ -145,5 +145,3 @@ func TestModelSystemPrompt_ResolvesPathRelativeToConfigFile(t *testing.T) {
 		t.Fatalf("ModelSystemPrompt() output mismatch\nwant:\n%s\n\ngot:\n%s", want, got)
 	}
 }
-
-func float64Ptr(v float64) *float64 { return &v }

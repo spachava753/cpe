@@ -76,10 +76,10 @@ func TestBuildModelFromRegistry_SetsPricingIncludingCacheCosts(t *testing.T) {
 			Output:  64000,
 		},
 		Cost: &ModelsDevCost{
-			Input:      float64Ptr(3),
-			Output:     float64Ptr(15),
-			CacheRead:  float64Ptr(0.3),
-			CacheWrite: float64Ptr(3.75),
+			Input:      new(3.0),
+			Output:     new(15.0),
+			CacheRead:  new(0.3),
+			CacheWrite: new(3.75),
 		},
 	}
 
@@ -114,8 +114,8 @@ func TestBuildModelFromRegistry_OmitsUnavailablePricingFields(t *testing.T) {
 			Output:  64000,
 		},
 		Cost: &ModelsDevCost{
-			Input:  float64Ptr(1.25),
-			Output: float64Ptr(10),
+			Input:  new(1.25),
+			Output: new(10.0),
 		},
 	}
 
@@ -168,5 +168,3 @@ func TestBuildModelFromRegistry_OmitsAllPricingWhenCostMissing(t *testing.T) {
 		t.Fatalf("cache write cost should be nil, got %v", *cfg.CacheWriteCostPerMillion)
 	}
 }
-
-func float64Ptr(v float64) *float64 { return &v }

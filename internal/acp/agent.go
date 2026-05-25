@@ -23,6 +23,7 @@ const (
 // that sessions may be created concurrently, and that
 // sessions may also be mutated concurrently.
 type Agent struct {
+	// conn is used to send updates to the client
 	conn *acp.AgentSideConnection
 	// activeSessions represents the active sessions for this process.
 	// Note that multiple processes can be accessing the same database, and each
@@ -31,14 +32,16 @@ type Agent struct {
 	activeSessions *sync.Map[acp.SessionId, sync.Guard[session]]
 	// genId is a factory function to create session ids
 	genId func() acp.SessionId
-	// runtimeGen is a factory function to create runtimes for session execution
-	runtimeGen func(modelRef string) acpRuntime
-	rawCfg     config.RawConfig
-	store      *storage.Sqlite
-	db         interface {
+	// runtimeFactory is a factory function to create runtimes for session execution
+	runtimeFactory func(modelRef string) acpRuntime
+	// rawCfg is the raw config loaded, used for model picking at the beginning of a new session
+	rawCfg *config.RawConfig
+	// db represents the API surface needed for persistent session management
+	db interface {
 		storage.ACPSessionCreator
 		storage.ACPSessionGetter
 		storage.ACPSessionsLister
+		storage.MessagesGetter
 	}
 
 	// client capabilities we care about
@@ -76,7 +79,6 @@ func (a *Agent) Initialize(ctx context.Context, params acp.InitializeRequest) (a
 				Image:           true,
 			},
 			SessionCapabilities: acp.SessionCapabilities{
-				Close:  &acp.SessionCloseCapabilities{},
 				List:   &acp.SessionListCapabilities{},
 				Resume: &acp.SessionResumeCapabilities{},
 			},

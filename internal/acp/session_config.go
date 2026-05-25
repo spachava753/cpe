@@ -34,6 +34,18 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessio
 func (a *Agent) configOption(configId acp.SessionConfigId, currentVal string) *acp.SessionConfigOptionSelect {
 	switch configId {
 	case modelRef:
+		opts := make(acp.SessionConfigSelectOptionsUngrouped, len(a.rawCfg.Models))
+		for i, m := range a.rawCfg.Models {
+			opts[i] = acp.SessionConfigSelectOption{
+				Description: new(fmt.Sprintf(`Type: %s
+Base Url: %s
+Context Window: %d
+Input Cost: %f
+Output Cost: %f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion, *m.OutputCostPerMillion)),
+				Name:  m.DisplayName,
+				Value: acp.SessionConfigValueId(m.Ref),
+			}
+		}
 		return &acp.SessionConfigOptionSelect{
 			Category:     new(acp.SessionConfigOptionCategoryModel),
 			CurrentValue: acp.SessionConfigValueId(currentVal),
@@ -41,13 +53,7 @@ func (a *Agent) configOption(configId acp.SessionConfigId, currentVal string) *a
 			Id:           modelRef,
 			Name:         "Model",
 			Options: acp.SessionConfigSelectOptions{
-				Ungrouped: &acp.SessionConfigSelectOptionsUngrouped{
-					{
-						Description: new(string), // TODO: need to fill out these values
-						Name:        "",
-						Value:       "",
-					},
-				},
+				Ungrouped: &opts,
 			},
 			Type: "select",
 		}

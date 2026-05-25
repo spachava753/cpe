@@ -157,10 +157,6 @@ func mustToolCallBlock(t *testing.T, id, name string, params map[string]any) gai
 	return block
 }
 
-func ptr[T any](v T) *T {
-	return &v
-}
-
 func cloneGenOpts(opts *gai.GenOpts) *gai.GenOpts {
 	if opts == nil {
 		return nil
@@ -472,13 +468,13 @@ func TestAgentLoopSnapshotScenarios(t *testing.T) {
 				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("answer with configured generation parameters after lookup")}},
 			},
 			genOpts: &gai.GenOpts{
-				Temperature:         ptr(0.37),
-				TopP:                ptr(0.81),
-				TopK:                ptr(uint(40)),
-				FrequencyPenalty:    ptr(0.2),
-				PresencePenalty:     ptr(0.4),
-				N:                   ptr(uint(2)),
-				MaxGenerationTokens: ptr(512),
+				Temperature:         new(0.37),
+				TopP:                new(0.81),
+				TopK:                new(uint(40)),
+				FrequencyPenalty:    new(0.2),
+				PresencePenalty:     new(0.4),
+				N:                   new(uint(2)),
+				MaxGenerationTokens: new(512),
 				ToolChoice:          "lookup",
 				StopSequences:       []string{"END", "STOP"},
 				OutputModalities:    []gai.Modality{gai.Text, gai.Audio},

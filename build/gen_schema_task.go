@@ -113,8 +113,9 @@ func nonEmptyObjectProperty(field string) *jsonschema.Schema {
 	return &jsonschema.Schema{Required: []string{field}, Properties: properties}
 }
 
+//go:fix inline
 func uint64Ptr(v uint64) *uint64 {
-	return &v
+	return new(v)
 }
 
 // findModuleRoot walks parent directories from start until it finds go.mod.
