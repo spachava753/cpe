@@ -132,8 +132,18 @@ WHERE message_id = ?
 ORDER BY sequence_order;
 
 -- ACP queries
+-- name: CreateSession :exec
+INSERT INTO acp_sessions (id, last_message_id, cwd, title)
+VALUES (?, ?, ?, ?);
+
+-- name: AddSessionMessage :execrows
+UPDATE acp_sessions
+SET last_message_id = ?
+WHERE id = ?;
+
 -- name: GetSession :one
 SELECT acp_sessions.id,
+       acp_sessions.last_message_id,
        acp_sessions.cwd,
        acp_sessions.title,
        messages.created_at AS updated_at

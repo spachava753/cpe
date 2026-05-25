@@ -6,6 +6,7 @@ import (
 	"iter"
 	"slices"
 
+	acp "github.com/coder/acp-go-sdk"
 	"github.com/spachava753/gai"
 )
 
@@ -198,6 +199,48 @@ type MessagesGetter interface {
 	//   - MessageParentIDKey (only for non-root messages)
 	//   - MessageCompactionParentIDKey (only for compacted branch roots)
 	GetMessages(ctx context.Context, messageIDs []string) (iter.Seq[gai.Message], error)
+}
+
+// GetACPSessionResponse is the result of loading ACP session metadata from
+// storage.
+type GetACPSessionResponse struct {
+	Session       acp.SessionInfo
+	LastMessageID string
+}
+
+// ACPSessionCreator creates ACP session metadata.
+type ACPSessionCreator interface {
+	// CreateACPSession persists session metadata with lastMessageID as the
+	// session's current last message.
+	CreateACPSession(ctx context.Context, session acp.SessionInfo, lastMessageID string) error
+}
+
+// ACPSessionMessageAdder updates an ACP session's latest message pointer.
+type ACPSessionMessageAdder interface {
+	// AddACPSessionMessage marks messageID as the latest message for sessionID.
+	//
+	// The returned SessionInfo.UpdatedAt is an ISO 8601 timestamp derived from
+	// messageID's creation time.
+	AddACPSessionMessage(ctx context.Context, sessionID acp.SessionId, messageID string) (acp.SessionInfo, error)
+}
+
+// ACPSessionGetter fetches ACP session metadata by session ID.
+type ACPSessionGetter interface {
+	// GetACPSession returns ACP session metadata and the latest persisted message
+	// ID for sessionID.
+	//
+	// The returned SessionInfo.UpdatedAt is an ISO 8601 timestamp derived from the
+	// session's last message creation time.
+	GetACPSession(ctx context.Context, sessionID acp.SessionId) (GetACPSessionResponse, error)
+}
+
+// ACPSessionsLister lists ACP session metadata.
+type ACPSessionsLister interface {
+	// ListACPSessions returns ACP sessions ordered by last activity, newest first.
+	//
+	// Each returned SessionInfo.UpdatedAt is an ISO 8601 timestamp derived from
+	// the session's last message creation time.
+	ListACPSessions(ctx context.Context) ([]acp.SessionInfo, error)
 }
 
 // MessageDB is the unified interface for message persistence operations.

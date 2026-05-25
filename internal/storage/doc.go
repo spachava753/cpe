@@ -4,8 +4,9 @@ implementations.
 
 Conversations are stored as message trees (parent-child lineage) where each
 message contains ordered content blocks. The package exposes narrow interfaces
-(DialogSaver, MessagesGetter, MessagesLister, MessagesDeleter) plus the
-composed MessageDB interface.
+(DialogSaver, MessagesGetter, MessagesLister, MessagesDeleter,
+ACPSessionCreator, ACPSessionMessageAdder, ACPSessionGetter,
+ACPSessionsLister) plus composed interfaces such as MessageDB.
 
 Implementations:
   - Sqlite: production backend backed by .cpeconvo with transactional writes,

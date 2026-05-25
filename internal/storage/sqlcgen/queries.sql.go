@@ -11,6 +11,25 @@ import (
 	"time"
 )
 
+const addSessionMessage = `-- name: AddSessionMessage :execrows
+UPDATE acp_sessions
+SET last_message_id = ?
+WHERE id = ?
+`
+
+type AddSessionMessageParams struct {
+	LastMessageID string `json:"last_message_id"`
+	ID            string `json:"id"`
+}
+
+func (q *Queries) AddSessionMessage(ctx context.Context, arg AddSessionMessageParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, addSessionMessage, arg.LastMessageID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const checkMessageIDExists = `-- name: CheckMessageIDExists :one
 SELECT EXISTS(SELECT 1 FROM messages WHERE id = ?) as "exists"
 `
@@ -109,6 +128,29 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) er
 		arg.OutputTokens,
 		arg.CacheReadTokens,
 		arg.CacheWriteTokens,
+	)
+	return err
+}
+
+const createSession = `-- name: CreateSession :exec
+INSERT INTO acp_sessions (id, last_message_id, cwd, title)
+VALUES (?, ?, ?, ?)
+`
+
+type CreateSessionParams struct {
+	ID            string `json:"id"`
+	LastMessageID string `json:"last_message_id"`
+	Cwd           string `json:"cwd"`
+	Title         string `json:"title"`
+}
+
+// ACP queries
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) error {
+	_, err := q.db.ExecContext(ctx, createSession,
+		arg.ID,
+		arg.LastMessageID,
+		arg.Cwd,
+		arg.Title,
 	)
 	return err
 }
@@ -232,6 +274,7 @@ func (q *Queries) GetMessage(ctx context.Context, id string) (Message, error) {
 
 const getSession = `-- name: GetSession :one
 SELECT acp_sessions.id,
+       acp_sessions.last_message_id,
        acp_sessions.cwd,
        acp_sessions.title,
        messages.created_at AS updated_at
@@ -241,18 +284,19 @@ WHERE acp_sessions.id = ?
 `
 
 type GetSessionRow struct {
-	ID        string    `json:"id"`
-	Cwd       string    `json:"cwd"`
-	Title     string    `json:"title"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID            string    `json:"id"`
+	LastMessageID string    `json:"last_message_id"`
+	Cwd           string    `json:"cwd"`
+	Title         string    `json:"title"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
-// ACP queries
 func (q *Queries) GetSession(ctx context.Context, id string) (GetSessionRow, error) {
 	row := q.db.QueryRowContext(ctx, getSession, id)
 	var i GetSessionRow
 	err := row.Scan(
 		&i.ID,
+		&i.LastMessageID,
 		&i.Cwd,
 		&i.Title,
 		&i.UpdatedAt,

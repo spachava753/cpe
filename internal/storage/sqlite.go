@@ -592,6 +592,13 @@ func acpSessionInfo(id, cwd, title string, updatedAt time.Time) acp.SessionInfo 
 	}
 }
 
+func acpSessionTitle(session acp.SessionInfo) string {
+	if session.Title == nil {
+		return ""
+	}
+	return *session.Title
+}
+
 // generateUniqueIDInTx generates a unique ID checking for collisions within a transaction.
 func (s *Sqlite) generateUniqueIDInTx(ctx context.Context, qtx *sqlcgen.Queries) (string, error) {
 	maxAttempts := 10
@@ -819,16 +826,57 @@ func (s *Sqlite) getMessage(ctx context.Context, messageID string) (gai.Message,
 	}, parentID, nil
 }
 
-// GetACPSession returns ACP session metadata for one persisted session.
+// CreateACPSession persists ACP session metadata.
+func (s *Sqlite) CreateACPSession(ctx context.Context, session acp.SessionInfo, lastMessageID string) error {
+	err := s.q.CreateSession(ctx, sqlcgen.CreateSessionParams{
+		ID:            string(session.SessionId),
+		LastMessageID: lastMessageID,
+		Cwd:           session.Cwd,
+		Title:         acpSessionTitle(session),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create ACP session %s: %w", session.SessionId, err)
+	}
+	return nil
+}
+
+// AddACPSessionMessage marks a persisted message as the latest message for an
+// ACP session and returns the updated session.
+//
+// UpdatedAt is formatted as an ISO 8601 timestamp from MessageID's creation
+// time.
+func (s *Sqlite) AddACPSessionMessage(ctx context.Context, sessionID acp.SessionId, messageID string) (acp.SessionInfo, error) {
+	rowsAffected, err := s.q.AddSessionMessage(ctx, sqlcgen.AddSessionMessageParams{
+		LastMessageID: messageID,
+		ID:            string(sessionID),
+	})
+	if err != nil {
+		return acp.SessionInfo{}, fmt.Errorf("failed to add message %s to ACP session %s: %w", messageID, sessionID, err)
+	}
+	if rowsAffected == 0 {
+		return acp.SessionInfo{}, fmt.Errorf("ACP session %s not found", sessionID)
+	}
+	resp, err := s.GetACPSession(ctx, sessionID)
+	if err != nil {
+		return acp.SessionInfo{}, err
+	}
+	return resp.Session, nil
+}
+
+// GetACPSession returns ACP session metadata and its latest persisted message
+// ID.
 //
 // UpdatedAt is formatted as an ISO 8601 timestamp from the session's last
 // message creation time.
-func (s *Sqlite) GetACPSession(ctx context.Context, sessionID acp.SessionId) (acp.SessionInfo, error) {
+func (s *Sqlite) GetACPSession(ctx context.Context, sessionID acp.SessionId) (GetACPSessionResponse, error) {
 	row, err := s.q.GetSession(ctx, string(sessionID))
 	if err != nil {
-		return acp.SessionInfo{}, fmt.Errorf("failed to get ACP session %s: %w", sessionID, err)
+		return GetACPSessionResponse{}, fmt.Errorf("failed to get ACP session %s: %w", sessionID, err)
 	}
-	return acpSessionInfo(row.ID, row.Cwd, row.Title, row.UpdatedAt), nil
+	return GetACPSessionResponse{
+		Session:       acpSessionInfo(row.ID, row.Cwd, row.Title, row.UpdatedAt),
+		LastMessageID: row.LastMessageID,
+	}, nil
 }
 
 // ListACPSessions returns ACP session metadata ordered by last activity, newest
