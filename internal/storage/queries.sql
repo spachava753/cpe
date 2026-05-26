@@ -152,9 +152,8 @@ SELECT acp_sessions.id,
        acp_sessions.cwd,
        acp_sessions.title,
        acp_sessions.model_ref,
-       COALESCE(messages.created_at, acp_sessions.created_at) AS updated_at
+       acp_sessions.created_at
 FROM acp_sessions
-LEFT JOIN messages ON messages.id = acp_sessions.last_message_id
 WHERE acp_sessions.id = ?;
 
 -- name: ListSessions :many
@@ -162,7 +161,7 @@ SELECT acp_sessions.id,
        acp_sessions.cwd,
        acp_sessions.title,
        acp_sessions.model_ref,
-       COALESCE(messages.created_at, acp_sessions.created_at) AS updated_at
+       acp_sessions.created_at
 FROM acp_sessions
 LEFT JOIN messages ON messages.id = acp_sessions.last_message_id
 ORDER BY COALESCE(messages.created_at, acp_sessions.created_at) DESC, acp_sessions.rowid DESC;

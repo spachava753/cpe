@@ -280,31 +280,21 @@ SELECT acp_sessions.id,
        acp_sessions.cwd,
        acp_sessions.title,
        acp_sessions.model_ref,
-       COALESCE(messages.created_at, acp_sessions.created_at) AS updated_at
+       acp_sessions.created_at
 FROM acp_sessions
-LEFT JOIN messages ON messages.id = acp_sessions.last_message_id
 WHERE acp_sessions.id = ?
 `
 
-type GetSessionRow struct {
-	ID            string         `json:"id"`
-	LastMessageID sql.NullString `json:"last_message_id"`
-	Cwd           string         `json:"cwd"`
-	Title         string         `json:"title"`
-	ModelRef      string         `json:"model_ref"`
-	UpdatedAt     time.Time      `json:"updated_at"`
-}
-
-func (q *Queries) GetSession(ctx context.Context, id string) (GetSessionRow, error) {
+func (q *Queries) GetSession(ctx context.Context, id string) (AcpSession, error) {
 	row := q.db.QueryRowContext(ctx, getSession, id)
-	var i GetSessionRow
+	var i AcpSession
 	err := row.Scan(
 		&i.ID,
 		&i.LastMessageID,
 		&i.Cwd,
 		&i.Title,
 		&i.ModelRef,
-		&i.UpdatedAt,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -534,7 +524,7 @@ SELECT acp_sessions.id,
        acp_sessions.cwd,
        acp_sessions.title,
        acp_sessions.model_ref,
-       COALESCE(messages.created_at, acp_sessions.created_at) AS updated_at
+       acp_sessions.created_at
 FROM acp_sessions
 LEFT JOIN messages ON messages.id = acp_sessions.last_message_id
 ORDER BY COALESCE(messages.created_at, acp_sessions.created_at) DESC, acp_sessions.rowid DESC
@@ -545,7 +535,7 @@ type ListSessionsRow struct {
 	Cwd       string    `json:"cwd"`
 	Title     string    `json:"title"`
 	ModelRef  string    `json:"model_ref"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func (q *Queries) ListSessions(ctx context.Context) ([]ListSessionsRow, error) {
@@ -562,7 +552,7 @@ func (q *Queries) ListSessions(ctx context.Context) ([]ListSessionsRow, error) {
 			&i.Cwd,
 			&i.Title,
 			&i.ModelRef,
-			&i.UpdatedAt,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}

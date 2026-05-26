@@ -843,9 +843,6 @@ func (s *Sqlite) CreateACPSession(ctx context.Context, params CreateACPSessionPa
 
 // AddACPSessionMessage marks a persisted message as the latest message for an
 // ACP session and returns the updated session.
-//
-// UpdatedAt is formatted as an ISO 8601 timestamp from MessageID's creation
-// time.
 func (s *Sqlite) AddACPSessionMessage(ctx context.Context, sessionID acp.SessionId, messageID string) (acp.SessionInfo, error) {
 	rowsAffected, err := s.q.AddSessionMessage(ctx, sqlcgen.AddSessionMessageParams{
 		LastMessageID: optionalString(messageID),
@@ -883,15 +880,15 @@ func (s *Sqlite) SetACPSessionModelRef(ctx context.Context, sessionID acp.Sessio
 // GetACPSession returns ACP session metadata and its latest persisted message
 // ID.
 //
-// UpdatedAt is formatted as an ISO 8601 timestamp from the session's last
-// message creation time.
+// UpdatedAt is formatted as an ISO 8601 timestamp from the session's creation
+// time.
 func (s *Sqlite) GetACPSession(ctx context.Context, sessionID acp.SessionId) (GetACPSessionResponse, error) {
 	row, err := s.q.GetSession(ctx, string(sessionID))
 	if err != nil {
 		return GetACPSessionResponse{}, fmt.Errorf("failed to get ACP session %s: %w", sessionID, err)
 	}
 	return GetACPSessionResponse{
-		Session:       acpSessionInfo(row.ID, row.Cwd, row.Title, row.UpdatedAt),
+		Session:       acpSessionInfo(row.ID, row.Cwd, row.Title, row.CreatedAt),
 		LastMessageID: row.LastMessageID.String,
 		ModelRef:      row.ModelRef,
 	}, nil
@@ -907,8 +904,8 @@ func optionalString(value string) sql.NullString {
 // ListACPSessions returns ACP session metadata ordered by last activity, newest
 // first.
 //
-// UpdatedAt is formatted as an ISO 8601 timestamp from each session's last
-// message creation time.
+// UpdatedAt is formatted as an ISO 8601 timestamp from each session's creation
+// time.
 func (s *Sqlite) ListACPSessions(ctx context.Context) ([]acp.SessionInfo, error) {
 	rows, err := s.q.ListSessions(ctx)
 	if err != nil {
@@ -916,7 +913,7 @@ func (s *Sqlite) ListACPSessions(ctx context.Context) ([]acp.SessionInfo, error)
 	}
 	sessions := make([]acp.SessionInfo, 0, len(rows))
 	for _, row := range rows {
-		sessions = append(sessions, acpSessionInfo(row.ID, row.Cwd, row.Title, row.UpdatedAt))
+		sessions = append(sessions, acpSessionInfo(row.ID, row.Cwd, row.Title, row.CreatedAt))
 	}
 	return sessions, nil
 }

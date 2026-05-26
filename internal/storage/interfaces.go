@@ -231,9 +231,6 @@ type ACPSessionCreator interface {
 // ACPSessionMessageAdder updates an ACP session's latest message pointer.
 type ACPSessionMessageAdder interface {
 	// AddACPSessionMessage marks messageID as the latest message for sessionID.
-	//
-	// The returned SessionInfo.UpdatedAt is an ISO 8601 timestamp derived from
-	// messageID's creation time.
 	AddACPSessionMessage(ctx context.Context, sessionID acp.SessionId, messageID string) (acp.SessionInfo, error)
 }
 
@@ -249,8 +246,8 @@ type ACPSessionGetter interface {
 	// GetACPSession returns ACP session metadata, the latest persisted message ID,
 	// and the selected model profile reference for sessionID.
 	//
-	// The returned SessionInfo.UpdatedAt is an ISO 8601 timestamp derived from the
-	// session's last message creation time.
+	// The returned SessionInfo.UpdatedAt is an ISO 8601 timestamp derived from
+	// the session's creation time.
 	GetACPSession(ctx context.Context, sessionID acp.SessionId) (GetACPSessionResponse, error)
 }
 
@@ -259,7 +256,7 @@ type ACPSessionsLister interface {
 	// ListACPSessions returns ACP sessions ordered by last activity, newest first.
 	//
 	// Each returned SessionInfo.UpdatedAt is an ISO 8601 timestamp derived from
-	// the session's last message creation time.
+	// the session's creation time.
 	ListACPSessions(ctx context.Context) ([]acp.SessionInfo, error)
 }
 
