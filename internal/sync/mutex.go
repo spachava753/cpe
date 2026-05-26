@@ -8,16 +8,13 @@ type Mutex = sync.Mutex
 
 // A Guard wraps a value with a mutex so callers can safely mutate it through Do.
 type Guard[T any] struct {
+	mu Mutex
 	t  T
-	mu *Mutex
 }
 
 // NewGuard returns a Guard protecting t.
-func NewGuard[T any](t T) Guard[T] {
-	return Guard[T]{
-		t:  t,
-		mu: new(Mutex),
-	}
+func NewGuard[T any](t T) *Guard[T] {
+	return &Guard[T]{t: t}
 }
 
 // Do runs f while holding g's mutex.

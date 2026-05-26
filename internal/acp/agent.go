@@ -33,7 +33,7 @@ type Agent struct {
 	// Note that multiple processes can be accessing the same database, and each
 	// process can manage its own active sessions. On creation of a new session,
 	// session resumption, or loading a session, an active session is created.
-	activeSessions *sync.Map[acp.SessionId, sync.Guard[session]]
+	activeSessions *sync.Map[acp.SessionId, *sync.Guard[session]]
 	// genId is a factory function to create session ids
 	genId func() acp.SessionId
 	// runtimeFactory is a factory function to create runtimes for session execution
@@ -87,6 +87,7 @@ func (a *Agent) Initialize(ctx context.Context, params acp.InitializeRequest) (a
 			SessionCapabilities: acp.SessionCapabilities{
 				List:   &acp.SessionListCapabilities{},
 				Resume: &acp.SessionResumeCapabilities{},
+				Close:  &acp.SessionCloseCapabilities{},
 			},
 		},
 	}, nil
@@ -101,6 +102,18 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	if !ok {
 		panic(fmt.Sprintf("unknown session: %s", params.SessionId)) // TODO: should we panic or return error?
 	}
+
+	if err := s.Do(func(t *session) error {
+		if t.runtime != nil {
+			return nil
+		}
+		var err error
+		t.runtime, err = a.runtimeFactory(a.conn, t.modelRef)
+		return err
+	}); err != nil {
+		return acp.PromptResponse{}, fmt.Errorf("failed to create runtime: %v", err)
+	}
+
 	cancelCtx, cancelFunc := context.WithCancel(ctx)
 
 	// we launch a go routine within the gaurd because we don't want to hold onto the active session the entire time we are generating. Otherwise, when [Agent.Cancel] is called, and it tries to lock the gaurd to call the cancellation function, it can't because the gaurd is held by this prompt call here

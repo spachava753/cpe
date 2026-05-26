@@ -64,7 +64,7 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 			ModelRef: modelRef,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to create acp runtime: %v", err)
+			return nil, fmt.Errorf("failed to resolve model config: %v", err)
 		}
 		// Load and render system prompt
 		systemPrompt, err := commands.LoadSystemPrompt(ctx, commands.LoadSystemPromptOptions{
@@ -73,7 +73,7 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 			Stderr:           opts.Stderr,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to create acp runtime: %v", err)
+			return nil, fmt.Errorf("failed to load system prompt: %v", err)
 		}
 
 		genBase, err := agent.InitGeneratorFromModel(ctx, cfg.Model, systemPrompt, cfg.Timeout)
@@ -203,7 +203,7 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	}
 
 	ag := Agent{
-		activeSessions: new(sync.Map[acp.SessionId, sync.Guard[session]]),
+		activeSessions: new(sync.Map[acp.SessionId, *sync.Guard[session]]),
 		rawCfg:         rawCfg,
 		db:             sqliteStorage,
 		genId: func() acp.SessionId {
