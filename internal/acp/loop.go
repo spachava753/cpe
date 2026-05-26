@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/coder/acp-go-sdk"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/config"
@@ -16,6 +17,12 @@ import (
 
 const compactionWarningText = `[COMPACTION WARNING]
 The conversation has exceeded the configured compaction threshold. Before continuing much further, call the compact_conversation tool with a compact but complete summary of the conversation state needed to continue. This warning will continue to appear until compaction is performed.`
+
+type sessionIDCtxKey struct{}
+
+func withSessionID(ctx context.Context, sessionID acp.SessionId) context.Context {
+	return context.WithValue(ctx, sessionIDCtxKey{}, sessionID)
+}
 
 // Loop owns the acp full agentic loop for a prompt turn.
 type Loop struct {
@@ -26,12 +33,13 @@ type Loop struct {
 	// internal state
 	toolCallbacks      map[string]gai.ToolCallback
 	compactionRestarts int
+	conn               *acp.AgentSideConnection
 }
 
 // Register registers a tool with the provider model and stores its callback.
-func (r *Loop) Register(tool gai.Tool, callback gai.ToolCallback) error {
-	if r.toolCallbacks == nil {
-		r.toolCallbacks = make(map[string]gai.ToolCallback)
+func (l *Loop) Register(tool gai.Tool, callback gai.ToolCallback) error {
+	if l.toolCallbacks == nil {
+		l.toolCallbacks = make(map[string]gai.ToolCallback)
 	}
 	if tool.Name == "" {
 		return gai.ToolRegistrationErr{Tool: tool.Name, Cause: fmt.Errorf("tool name cannot be empty")}
@@ -39,21 +47,21 @@ func (r *Loop) Register(tool gai.Tool, callback gai.ToolCallback) error {
 	if tool.Name == gai.ToolChoiceAuto || tool.Name == gai.ToolChoiceToolsRequired {
 		return gai.ToolRegistrationErr{Tool: tool.Name, Cause: fmt.Errorf("tool name is reserved")}
 	}
-	if _, exists := r.toolCallbacks[tool.Name]; exists {
+	if _, exists := l.toolCallbacks[tool.Name]; exists {
 		return gai.ToolRegistrationErr{Tool: tool.Name, Cause: fmt.Errorf("tool already registered")}
 	}
-	if err := r.G.Register(tool); err != nil {
+	if err := l.G.Register(tool); err != nil {
 		return err
 	}
-	r.toolCallbacks[tool.Name] = callback
+	l.toolCallbacks[tool.Name] = callback
 	return nil
 }
 
-func (r *Loop) validateToolChoice(opts *gai.GenOpts) error {
+func (l *Loop) validateToolChoice(opts *gai.GenOpts) error {
 	if opts == nil || opts.ToolChoice == "" || opts.ToolChoice == gai.ToolChoiceAuto || opts.ToolChoice == gai.ToolChoiceToolsRequired {
 		return nil
 	}
-	if _, exists := r.toolCallbacks[opts.ToolChoice]; !exists {
+	if _, exists := l.toolCallbacks[opts.ToolChoice]; !exists {
 		return gai.InvalidToolChoiceErr(fmt.Sprintf("tool '%s' not found", opts.ToolChoice))
 	}
 	return nil
@@ -61,15 +69,23 @@ func (r *Loop) validateToolChoice(opts *gai.GenOpts) error {
 
 // Generate runs the dialog until a terminal assistant response, nil-callback
 // terminal tool, callback error, or compaction restart limit is reached.
-func (r *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
+func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 	current := append(gai.Dialog(nil), dialog...)
 
-	if err := r.validateToolChoice(opts); err != nil {
+	if err := l.validateToolChoice(opts); err != nil {
 		return current, err
 	}
 
-	if r.DialogSaver == nil {
+	if l.DialogSaver == nil {
 		panic("DialogSaver not set")
+	}
+
+	sessionID, ok := ctx.Value(sessionIDCtxKey{}).(acp.SessionId)
+	if !ok || sessionID == "" {
+		return current, errors.New("missing ACP session id")
+	}
+	if l.conn == nil {
+		return current, errors.New("missing ACP session connection")
 	}
 
 	for {
@@ -80,12 +96,12 @@ func (r *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 		}
 
 		var err error
-		current, err = r.save(ctx, current)
+		current, err = l.save(ctx, current)
 		if err != nil {
 			return current, err
 		}
 
-		resp, err := r.G.Generate(ctx, current, opts)
+		resp, err := l.G.Generate(ctx, current, opts)
 		if err != nil {
 			return current, err
 		}
@@ -97,11 +113,20 @@ func (r *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 		}
 
 		// save response
-		r.attachAgentMetadata(&resp.Candidates[0], resp.UsageMetadata)
+		l.attachAgentMetadata(&resp.Candidates[0], resp.UsageMetadata)
 		current = append(current, resp.Candidates[0])
-		current, err := r.save(ctx, current)
+		current, err := l.save(ctx, current)
 		if err != nil {
 			return current, err
+		}
+
+		for update := range msgToSessionUpdate(resp.Candidates[0]) {
+			if err := l.conn.SessionUpdate(ctx, acp.SessionNotification{
+				SessionId: sessionID,
+				Update:    update,
+			}); err != nil {
+				return current, fmt.Errorf("send assistant session update: %w", err)
+			}
 		}
 
 		if resp.FinishReason != gai.ToolUse {
@@ -109,19 +134,29 @@ func (r *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 		}
 
 		// compact conversation
-		current, err = r.compact(current)
+		current, err = l.compact(current)
 		if err != nil {
 			return current, err
 		}
-		current, err = r.save(ctx, current)
+		current, err = l.save(ctx, current)
 		if err != nil {
 			return current, err
 		}
-		// if compacted, last message will be a user type message
-		lastMsg := current[len(current)-1]
-		if lastMsg.Role == gai.User {
+
+		// if compacted, len of dialog will be 1
+		if len(current) == 1 {
+			for update := range msgToSessionUpdate(current[0]) {
+				if err := l.conn.SessionUpdate(ctx, acp.SessionNotification{
+					SessionId: sessionID,
+					Update:    update,
+				}); err != nil {
+					return current, fmt.Errorf("send compaction session update: %w", err)
+				}
+			}
 			continue
 		}
+
+		lastMsg := current[len(current)-1]
 
 		firstBlock := true
 		for _, block := range lastMsg.Blocks {
@@ -138,7 +173,7 @@ func (r *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 			if tc.Name == "" {
 				return current, fmt.Errorf("missing tool name")
 			}
-			if _, exists := r.toolCallbacks[tc.Name]; !exists {
+			if _, exists := l.toolCallbacks[tc.Name]; !exists {
 				return current, fmt.Errorf("tool '%s' not found", tc.Name)
 			}
 			params := tc.Parameters
@@ -146,7 +181,7 @@ func (r *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 				params = make(map[string]any)
 			}
 
-			callback := r.toolCallbacks[tc.Name]
+			callback := l.toolCallbacks[tc.Name]
 			// TODO: what happens when there are a mix of nil tool callback and some non-nil? Should we even allow nil callback?
 			if callback == nil {
 				return current, nil
@@ -155,7 +190,7 @@ func (r *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 			if err != nil {
 				return current, err
 			}
-			if firstBlock && r.shouldInjectCompactionWarning(resp.UsageMetadata) {
+			if firstBlock && l.shouldInjectCompactionWarning(resp.UsageMetadata) {
 				warningBlock := gai.TextBlock(compactionWarningText)
 				warningBlock.ID = block.ID
 				result.Blocks = append([]gai.Block{warningBlock}, result.Blocks...)
@@ -168,17 +203,26 @@ func (r *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 
 			current = append(current, result)
 
+			for update := range msgToSessionUpdate(result) {
+				if err := l.conn.SessionUpdate(ctx, acp.SessionNotification{
+					SessionId: sessionID,
+					Update:    update,
+				}); err != nil {
+					return current, fmt.Errorf("send tool result session update: %w", err)
+				}
+			}
+
 			firstBlock = false
 		}
 	}
 }
 
-func (r *Loop) save(ctx context.Context, dialog gai.Dialog) (gai.Dialog, error) {
-	if r.DialogSaver == nil {
+func (l *Loop) save(ctx context.Context, dialog gai.Dialog) (gai.Dialog, error) {
+	if l.DialogSaver == nil {
 		return dialog, nil
 	}
 	idx := 0
-	for saved, err := range r.DialogSaver.SaveDialog(ctx, slices.Values(dialog)) {
+	for saved, err := range l.DialogSaver.SaveDialog(ctx, slices.Values(dialog)) {
 		if err != nil {
 			return nil, err
 		}
@@ -188,8 +232,8 @@ func (r *Loop) save(ctx context.Context, dialog gai.Dialog) (gai.Dialog, error) 
 	return dialog, nil
 }
 
-func (r *Loop) shouldInjectCompactionWarning(metadata gai.Metadata) bool {
-	if r.Cfg.Compaction == nil || r.Cfg.Compaction.TokenThreshold == 0 {
+func (l *Loop) shouldInjectCompactionWarning(metadata gai.Metadata) bool {
+	if l.Cfg.Compaction == nil || l.Cfg.Compaction.TokenThreshold == 0 {
 		return false
 	}
 
@@ -198,25 +242,25 @@ func (r *Loop) shouldInjectCompactionWarning(metadata gai.Metadata) bool {
 	if !hasInputTokens && !hasOutputTokens {
 		return false
 	}
-	return uint(inputTokens+outputTokens) >= r.Cfg.Compaction.TokenThreshold
+	return uint(inputTokens+outputTokens) >= l.Cfg.Compaction.TokenThreshold
 }
 
-func (r *Loop) attachAgentMetadata(msg *gai.Message, metadata gai.Metadata) {
+func (l *Loop) attachAgentMetadata(msg *gai.Message, metadata gai.Metadata) {
 	if msg.ExtraFields == nil {
 		msg.ExtraFields = make(map[string]any)
 	}
 
-	if r.Cfg.Model.Ref != "" {
-		msg.ExtraFields[storage.AgentMetadataModelRefKey] = r.Cfg.Model.Ref
+	if l.Cfg.Model.Ref != "" {
+		msg.ExtraFields[storage.AgentMetadataModelRefKey] = l.Cfg.Model.Ref
 	}
-	if r.Cfg.Model.ID != "" {
-		msg.ExtraFields[storage.AgentMetadataModelIDKey] = r.Cfg.Model.ID
+	if l.Cfg.Model.ID != "" {
+		msg.ExtraFields[storage.AgentMetadataModelIDKey] = l.Cfg.Model.ID
 	}
-	if r.Cfg.Model.Type != "" {
-		msg.ExtraFields[storage.AgentMetadataModelTypeKey] = r.Cfg.Model.Type
+	if l.Cfg.Model.Type != "" {
+		msg.ExtraFields[storage.AgentMetadataModelTypeKey] = l.Cfg.Model.Type
 	}
-	if r.Cfg.Model.DisplayName != "" {
-		msg.ExtraFields[storage.AgentMetadataModelDisplayNameKey] = r.Cfg.Model.DisplayName
+	if l.Cfg.Model.DisplayName != "" {
+		msg.ExtraFields[storage.AgentMetadataModelDisplayNameKey] = l.Cfg.Model.DisplayName
 	}
 
 	if inputTokens, ok := gai.InputTokens(metadata); ok {
@@ -233,15 +277,15 @@ func (r *Loop) attachAgentMetadata(msg *gai.Message, metadata gai.Metadata) {
 	}
 }
 
-func (r *Loop) compact(current gai.Dialog) (gai.Dialog, error) {
-	if r.Cfg.Compaction == nil {
+func (l *Loop) compact(current gai.Dialog) (gai.Dialog, error) {
+	if l.Cfg.Compaction == nil {
 		return current, nil
 	}
 
 	lastMsg := current[len(current)-1]
 
 	idx := slices.IndexFunc(lastMsg.Blocks, func(b gai.Block) bool {
-		if r.Cfg.Compaction == nil {
+		if l.Cfg.Compaction == nil {
 			return false
 		}
 
@@ -254,7 +298,7 @@ func (r *Loop) compact(current gai.Dialog) (gai.Dialog, error) {
 			panic(err)
 		}
 
-		return tci.Name == r.Cfg.Compaction.Tool.Name
+		return tci.Name == l.Cfg.Compaction.Tool.Name
 	})
 	if idx == -1 {
 		return current, nil
@@ -265,7 +309,7 @@ func (r *Loop) compact(current gai.Dialog) (gai.Dialog, error) {
 		panic(err)
 	}
 
-	if uint(r.compactionRestarts) >= r.Cfg.Compaction.MaxCompactions {
+	if uint(l.compactionRestarts) >= l.Cfg.Compaction.MaxCompactions {
 		return current, fmt.Errorf("maximum compaction restarts exceeded")
 	}
 
@@ -279,10 +323,10 @@ func (r *Loop) compact(current gai.Dialog) (gai.Dialog, error) {
 		Dialog:             current,
 		ToolArguments:      compactionTool.Parameters,
 		ToolArgumentsJSON:  string(paramJson),
-		CompactionToolName: r.Cfg.Compaction.Tool.Name,
+		CompactionToolName: l.Cfg.Compaction.Tool.Name,
 	}
 	var rendered bytes.Buffer
-	if err := r.Cfg.Compaction.InitialMessageTemplate.Execute(&rendered, data); err != nil {
+	if err := l.Cfg.Compaction.InitialMessageTemplate.Execute(&rendered, data); err != nil {
 		return current, fmt.Errorf("rendering compaction initial message: %w", err)
 	}
 
@@ -290,6 +334,6 @@ func (r *Loop) compact(current gai.Dialog) (gai.Dialog, error) {
 	if previousLeafID != "" {
 		root.ExtraFields = map[string]any{storage.MessageCompactionParentIDKey: previousLeafID}
 	}
-	r.compactionRestarts++
+	l.compactionRestarts++
 	return gai.Dialog{root}, nil
 }

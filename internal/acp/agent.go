@@ -37,7 +37,7 @@ type Agent struct {
 	// genId is a factory function to create session ids
 	genId func() acp.SessionId
 	// runtimeFactory is a factory function to create runtimes for session execution
-	runtimeFactory func(modelRef string) (acpRuntime, error)
+	runtimeFactory func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error)
 	// rawCfg is the raw config loaded, used for model picking at the beginning of a new session
 	rawCfg *config.RawConfig
 	// db represents the API surface needed for persistent session management
@@ -127,7 +127,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		}
 		dialog = append(dialog, a.promptToMessage(params.Prompt))
 		if t.runtime == nil {
-			runtime, err := a.runtimeFactory(t.modelRef)
+			runtime, err := a.runtimeFactory(a.conn, t.modelRef)
 			if err != nil {
 				return fmt.Errorf("could not create runtime: %v", err)
 			}
@@ -137,7 +137,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		inputDialog := dialog
 		t.cancelfunc = cancelFunc
 		go func() {
-			generatedDialog, err := runtime.Generate(cancelCtx, inputDialog, nil)
+			generatedDialog, err := runtime.Generate(withSessionID(cancelCtx, params.SessionId), inputDialog, nil)
 			resultChan <- generateResult{dialog: generatedDialog, err: err}
 		}()
 		return nil

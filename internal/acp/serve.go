@@ -58,7 +58,8 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		return fmt.Errorf("failed to initialize dialog storage: %w", err)
 	}
 
-	runtimeFactory := func(modelRef string) (acpRuntime, error) {
+	// TODO: we should refactor the runtime factory to be made from the session config options
+	runtimeFactory := func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error) {
 		cfg, err := config.ResolveFromRaw(rawCfg, config.RuntimeOptions{
 			ModelRef: modelRef,
 		})
@@ -99,6 +100,7 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 			DialogSaver: sqliteStorage,
 			Cfg:         cfg,
 			G:           gen,
+			conn:        conn,
 		}
 
 		ca := closerAgent{

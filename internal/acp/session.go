@@ -93,7 +93,7 @@ func (a *Agent) loadActiveSession(ctx context.Context, sessionId acp.SessionId) 
 			err,
 		)
 	}
-	runtime, err := a.runtimeFactory(getSessionResp.ModelRef)
+	runtime, err := a.runtimeFactory(a.conn, getSessionResp.ModelRef)
 	if err != nil {
 		return nil, fmt.Errorf("could not create runtime: %v", err)
 	}
