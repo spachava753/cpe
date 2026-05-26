@@ -10,12 +10,12 @@ import (
 )
 
 type AcpSession struct {
-	ID            string    `json:"id"`
-	LastMessageID string    `json:"last_message_id"`
-	Cwd           string    `json:"cwd"`
-	Title         string    `json:"title"`
-	ModelRef      string    `json:"model_ref"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID            string         `json:"id"`
+	LastMessageID sql.NullString `json:"last_message_id"`
+	Cwd           string         `json:"cwd"`
+	Title         string         `json:"title"`
+	ModelRef      string         `json:"model_ref"`
+	CreatedAt     time.Time      `json:"created_at"`
 }
 
 type Block struct {

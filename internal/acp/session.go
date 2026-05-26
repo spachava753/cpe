@@ -15,6 +15,7 @@ import (
 
 type acpRuntime interface {
 	Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error)
+	Close() error
 }
 
 // session represents an active session in ACP. Note that
@@ -73,7 +74,7 @@ func (a *Agent) ListSessions(ctx context.Context, params acp.ListSessionsRequest
 func (a *Agent) loadActiveSession(ctx context.Context, sessionId acp.SessionId) ([]acp.SessionConfigOption, error) {
 	if s, ok := a.activeSessions.Load(sessionId); ok {
 		var modelRefVal string
-		s.Do(func(t session) error {
+		s.Do(func(t *session) error {
 			modelRefVal = t.modelRef
 			return nil
 		})
@@ -92,9 +93,14 @@ func (a *Agent) loadActiveSession(ctx context.Context, sessionId acp.SessionId) 
 			err,
 		)
 	}
+	runtime, err := a.runtimeFactory(getSessionResp.ModelRef)
+	if err != nil {
+		return nil, fmt.Errorf("could not create runtime: %v", err)
+	}
 	s := session{
-		si:      getSessionResp.Session,
-		runtime: a.runtimeFactory(getSessionResp.ModelRef),
+		si:       getSessionResp.Session,
+		modelRef: getSessionResp.ModelRef,
+		runtime:  runtime,
 	}
 	a.activeSessions.Store(sessionId, sync.NewGuard(s))
 	return []acp.SessionConfigOption{
@@ -220,7 +226,7 @@ func (a *Agent) Cancel(ctx context.Context, params acp.CancelNotification) error
 	if !ok {
 		return fmt.Errorf("session %s not found", params.SessionId)
 	}
-	return s.Do(func(t session) error {
+	return s.Do(func(t *session) error {
 		if t.cancelfunc != nil {
 			t.cancelfunc()
 			t.cancelfunc = nil
@@ -231,5 +237,18 @@ func (a *Agent) Cancel(ctx context.Context, params acp.CancelNotification) error
 
 // CloseSession implements [acp.Agent].
 func (a *Agent) CloseSession(ctx context.Context, params acp.CloseSessionRequest) (acp.CloseSessionResponse, error) {
-	panic("unimplemented")
+	s, ok := a.activeSessions.Load(params.SessionId)
+	if !ok {
+		return acp.CloseSessionResponse{}, fmt.Errorf("session %s not found", params.SessionId)
+	}
+	if err := s.Do(func(t *session) error {
+		if t.runtime == nil {
+			return nil
+		}
+		return t.runtime.Close()
+	}); err != nil {
+		return acp.CloseSessionResponse{}, fmt.Errorf("could not close session %s, %v", params.SessionId, err)
+	}
+	a.activeSessions.Delete(params.SessionId)
+	return acp.CloseSessionResponse{}, nil
 }

@@ -141,15 +141,20 @@ UPDATE acp_sessions
 SET last_message_id = ?
 WHERE id = ?;
 
+-- name: SetSessionModelRef :execrows
+UPDATE acp_sessions
+SET model_ref = ?
+WHERE id = ?;
+
 -- name: GetSession :one
 SELECT acp_sessions.id,
        acp_sessions.last_message_id,
        acp_sessions.cwd,
        acp_sessions.title,
        acp_sessions.model_ref,
-       messages.created_at AS updated_at
+       COALESCE(messages.created_at, acp_sessions.created_at) AS updated_at
 FROM acp_sessions
-JOIN messages ON messages.id = acp_sessions.last_message_id
+LEFT JOIN messages ON messages.id = acp_sessions.last_message_id
 WHERE acp_sessions.id = ?;
 
 -- name: ListSessions :many
@@ -157,7 +162,7 @@ SELECT acp_sessions.id,
        acp_sessions.cwd,
        acp_sessions.title,
        acp_sessions.model_ref,
-       messages.created_at AS updated_at
+       COALESCE(messages.created_at, acp_sessions.created_at) AS updated_at
 FROM acp_sessions
-JOIN messages ON messages.id = acp_sessions.last_message_id
-ORDER BY messages.created_at DESC, acp_sessions.rowid DESC;
+LEFT JOIN messages ON messages.id = acp_sessions.last_message_id
+ORDER BY COALESCE(messages.created_at, acp_sessions.created_at) DESC, acp_sessions.rowid DESC;

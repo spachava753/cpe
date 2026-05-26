@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS blocks
 CREATE TABLE IF NOT EXISTS acp_sessions
 (
     id              TEXT PRIMARY KEY,
-    last_message_id TEXT      NOT NULL,
+    last_message_id TEXT,
     cwd             TEXT      NOT NULL,
     title           TEXT      NOT NULL,
     model_ref       TEXT      NOT NULL,

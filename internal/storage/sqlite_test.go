@@ -15,6 +15,8 @@ import (
 	"github.com/spachava753/gai"
 )
 
+const testACPModelRef = "gpt-5.5"
+
 // --- Test helpers ---
 
 // newTestDB returns a Sqlite backed by a temp SQLite file and the raw *sql.DB
@@ -217,7 +219,7 @@ func TestACPSessions(t *testing.T) {
 			Title:     new("Newer title"),
 		},
 		LastMessageID: newerMessageID,
-		ModelRef:      "gpt-5.5",
+		ModelRef:      testACPModelRef,
 	})
 	if err != nil {
 		t.Fatalf("CreateACPSession newer: %v", err)
@@ -244,6 +246,16 @@ func TestACPSessions(t *testing.T) {
 	}
 	if resp.ModelRef != "claude-opus" {
 		t.Fatalf("ModelRef: got %q", resp.ModelRef)
+	}
+	if err := db.SetACPSessionModelRef(ctx, acp.SessionId("older-session"), testACPModelRef); err != nil {
+		t.Fatalf("SetACPSessionModelRef: %v", err)
+	}
+	resp, err = db.GetACPSession(ctx, acp.SessionId("older-session"))
+	if err != nil {
+		t.Fatalf("GetACPSession after model update: %v", err)
+	}
+	if resp.ModelRef != testACPModelRef {
+		t.Fatalf("ModelRef after update: got %q", resp.ModelRef)
 	}
 
 	sessions, err := db.ListACPSessions(ctx)
@@ -275,7 +287,7 @@ func TestACPSessions(t *testing.T) {
 	if resp.LastMessageID != latestMessageID {
 		t.Fatalf("LastMessageID after add: got %q", resp.LastMessageID)
 	}
-	if resp.ModelRef != "claude-opus" {
+	if resp.ModelRef != testACPModelRef {
 		t.Fatalf("ModelRef after add: got %q", resp.ModelRef)
 	}
 
@@ -285,6 +297,50 @@ func TestACPSessions(t *testing.T) {
 	}
 	if sessions[0].SessionId != acp.SessionId("older-session") || sessions[1].SessionId != acp.SessionId("newer-session") {
 		t.Fatalf("unexpected session order after add: %q, %q", sessions[0].SessionId, sessions[1].SessionId)
+	}
+}
+
+func TestACPSessionWithoutMessages(t *testing.T) {
+	db, rawDB := newTestDB(t)
+	ctx := context.Background()
+	createdAt := time.Date(2026, 5, 25, 9, 0, 0, 0, time.UTC)
+
+	err := db.CreateACPSession(ctx, CreateACPSessionParams{
+		Session: acp.SessionInfo{
+			Cwd:       "/tmp/empty",
+			SessionId: acp.SessionId("empty-session"),
+			Title:     new("Empty title"),
+		},
+		LastMessageID: "",
+		ModelRef:      testACPModelRef,
+	})
+	if err != nil {
+		t.Fatalf("CreateACPSession: %v", err)
+	}
+	if _, err := rawDB.ExecContext(ctx, "UPDATE acp_sessions SET created_at = ? WHERE id = ?", createdAt, "empty-session"); err != nil {
+		t.Fatalf("update session timestamp: %v", err)
+	}
+
+	resp, err := db.GetACPSession(ctx, acp.SessionId("empty-session"))
+	if err != nil {
+		t.Fatalf("GetACPSession: %v", err)
+	}
+	if resp.LastMessageID != "" {
+		t.Fatalf("LastMessageID: got %q", resp.LastMessageID)
+	}
+	if resp.ModelRef != testACPModelRef {
+		t.Fatalf("ModelRef: got %q", resp.ModelRef)
+	}
+	if resp.Session.UpdatedAt == nil || *resp.Session.UpdatedAt != createdAt.Format(time.RFC3339Nano) {
+		t.Fatalf("UpdatedAt: got %v", resp.Session.UpdatedAt)
+	}
+
+	sessions, err := db.ListACPSessions(ctx)
+	if err != nil {
+		t.Fatalf("ListACPSessions: %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].SessionId != acp.SessionId("empty-session") {
+		t.Fatalf("unexpected sessions: %#v", sessions)
 	}
 }
 

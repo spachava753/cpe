@@ -101,7 +101,7 @@ func TestModelRoundTripperRetriesRetryableResponseAndReplaysBody(t *testing.T) {
 func TestInitGeneratorFromModel_WrapsOnlyResponsesWithPhaseRetry(t *testing.T) {
 	t.Setenv("TEST_OPENAI_API_KEY", "test-key")
 
-	responsesGen, err := initGeneratorFromModel(t.Context(), config.Model{
+	responsesGen, err := InitGeneratorFromModel(t.Context(), config.Model{
 		ID:        "gpt-5",
 		Type:      ModelTypeResponses,
 		ApiKeyEnv: "TEST_OPENAI_API_KEY",
@@ -113,7 +113,7 @@ func TestInitGeneratorFromModel_WrapsOnlyResponsesWithPhaseRetry(t *testing.T) {
 		t.Fatalf("responses generator type = %T, want *responsesPhaseRetryGenerator", responsesGen)
 	}
 
-	openAIGen, err := initGeneratorFromModel(t.Context(), config.Model{
+	openAIGen, err := InitGeneratorFromModel(t.Context(), config.Model{
 		ID:        "gpt-4o",
 		Type:      "openai",
 		ApiKeyEnv: "TEST_OPENAI_API_KEY",

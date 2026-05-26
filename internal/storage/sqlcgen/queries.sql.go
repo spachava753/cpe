@@ -18,8 +18,8 @@ WHERE id = ?
 `
 
 type AddSessionMessageParams struct {
-	LastMessageID string `json:"last_message_id"`
-	ID            string `json:"id"`
+	LastMessageID sql.NullString `json:"last_message_id"`
+	ID            string         `json:"id"`
 }
 
 func (q *Queries) AddSessionMessage(ctx context.Context, arg AddSessionMessageParams) (int64, error) {
@@ -138,11 +138,11 @@ VALUES (?, ?, ?, ?, ?)
 `
 
 type CreateSessionParams struct {
-	ID            string `json:"id"`
-	LastMessageID string `json:"last_message_id"`
-	Cwd           string `json:"cwd"`
-	Title         string `json:"title"`
-	ModelRef      string `json:"model_ref"`
+	ID            string         `json:"id"`
+	LastMessageID sql.NullString `json:"last_message_id"`
+	Cwd           string         `json:"cwd"`
+	Title         string         `json:"title"`
+	ModelRef      string         `json:"model_ref"`
 }
 
 // ACP queries
@@ -280,19 +280,19 @@ SELECT acp_sessions.id,
        acp_sessions.cwd,
        acp_sessions.title,
        acp_sessions.model_ref,
-       messages.created_at AS updated_at
+       COALESCE(messages.created_at, acp_sessions.created_at) AS updated_at
 FROM acp_sessions
-JOIN messages ON messages.id = acp_sessions.last_message_id
+LEFT JOIN messages ON messages.id = acp_sessions.last_message_id
 WHERE acp_sessions.id = ?
 `
 
 type GetSessionRow struct {
-	ID            string    `json:"id"`
-	LastMessageID string    `json:"last_message_id"`
-	Cwd           string    `json:"cwd"`
-	Title         string    `json:"title"`
-	ModelRef      string    `json:"model_ref"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID            string         `json:"id"`
+	LastMessageID sql.NullString `json:"last_message_id"`
+	Cwd           string         `json:"cwd"`
+	Title         string         `json:"title"`
+	ModelRef      string         `json:"model_ref"`
+	UpdatedAt     time.Time      `json:"updated_at"`
 }
 
 func (q *Queries) GetSession(ctx context.Context, id string) (GetSessionRow, error) {
@@ -534,10 +534,10 @@ SELECT acp_sessions.id,
        acp_sessions.cwd,
        acp_sessions.title,
        acp_sessions.model_ref,
-       messages.created_at AS updated_at
+       COALESCE(messages.created_at, acp_sessions.created_at) AS updated_at
 FROM acp_sessions
-JOIN messages ON messages.id = acp_sessions.last_message_id
-ORDER BY messages.created_at DESC, acp_sessions.rowid DESC
+LEFT JOIN messages ON messages.id = acp_sessions.last_message_id
+ORDER BY COALESCE(messages.created_at, acp_sessions.created_at) DESC, acp_sessions.rowid DESC
 `
 
 type ListSessionsRow struct {
@@ -575,4 +575,23 @@ func (q *Queries) ListSessions(ctx context.Context) ([]ListSessionsRow, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const setSessionModelRef = `-- name: SetSessionModelRef :execrows
+UPDATE acp_sessions
+SET model_ref = ?
+WHERE id = ?
+`
+
+type SetSessionModelRefParams struct {
+	ModelRef string `json:"model_ref"`
+	ID       string `json:"id"`
+}
+
+func (q *Queries) SetSessionModelRef(ctx context.Context, arg SetSessionModelRefParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setSessionModelRef, arg.ModelRef, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

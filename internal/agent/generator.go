@@ -108,7 +108,7 @@ func prependClaudeCodeIdentifier(_ context.Context, params *a.MessageNewParams) 
 	return nil
 }
 
-func initGeneratorFromModel(
+func InitGeneratorFromModel(
 	ctx context.Context,
 	m config.Model,
 	systemPrompt string,
@@ -378,14 +378,14 @@ func NewGenerator(
 		opt(o)
 	}
 
-	genBase, err := initGeneratorFromModel(ctx, cfg.Model, systemPrompt, cfg.Timeout)
+	genBase, err := InitGeneratorFromModel(ctx, cfg.Model, systemPrompt, cfg.Timeout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create generator: %w", err)
 	}
 
 	gen, ok := genBase.(gai.ToolCallingGenerator)
 	if !ok {
-		return nil, fmt.Errorf("generator does not implement ToolCapableGenerator interface")
+		return nil, fmt.Errorf("generator does not implement ToolCallingGenerator interface")
 	}
 
 	// Build the single-turn provider stack. Runtime owns persistence,
@@ -397,7 +397,7 @@ func NewGenerator(
 	wrapped := gai.Wrap(gen, wrappers...)
 	gen, ok = wrapped.(gai.ToolCallingGenerator)
 	if !ok {
-		return nil, fmt.Errorf("wrapped generator does not implement ToolCapableGenerator interface")
+		return nil, fmt.Errorf("wrapped generator does not implement ToolCallingGenerator interface")
 	}
 
 	stdoutW := o.stdout

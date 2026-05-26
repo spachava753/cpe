@@ -11,16 +11,31 @@ import (
 //
 // TODO: we should probably expose more options like thinking mode, tool choice, etc. and wire up defaults from the config
 func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessionConfigOptionRequest) (acp.SetSessionConfigOptionResponse, error) {
-	s, ok := a.activeSessions.Load(params.Boolean.SessionId)
+	if params.ValueId == nil {
+		return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("unsupported session config option type")
+	}
+	s, ok := a.activeSessions.Load(params.ValueId.SessionId)
 	if !ok {
-		panic(fmt.Sprintf("unknown session: %s", params.Boolean.SessionId)) // TODO: should we panic or return error?
+		panic(fmt.Sprintf("unknown session: %s", params.ValueId.SessionId)) // TODO: should we panic or return error?
 	}
 	switch params.ValueId.ConfigId {
 	case modelRef:
-		s.Do(func(t session) error {
-			t.modelRef = string(params.ValueId.Value)
+		modelRefVal := string(params.ValueId.Value)
+		if err := a.db.SetACPSessionModelRef(ctx, params.ValueId.SessionId, modelRefVal); err != nil {
+			return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("could not persist model config: %v", err)
+		}
+		if err := s.Do(func(t *session) error {
+			if t.runtime != nil {
+				if err := t.runtime.Close(); err != nil {
+					return err
+				}
+			}
+			t.modelRef = modelRefVal
+			t.runtime = nil
 			return nil
-		})
+		}); err != nil {
+			return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("could not update model config: %v", err)
+		}
 	default:
 		panic(fmt.Sprintf("unknown config id: %s", params.ValueId.ConfigId))
 	}

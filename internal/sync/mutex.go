@@ -21,8 +21,8 @@ func NewGuard[T any](t T) Guard[T] {
 }
 
 // Do runs f while holding g's mutex.
-func (g *Guard[T]) Do(f func(t T) error) error {
+func (g *Guard[T]) Do(f func(t *T) error) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return f(g.t)
+	return f(&g.t)
 }

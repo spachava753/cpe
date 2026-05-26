@@ -214,7 +214,8 @@ type CreateACPSessionParams struct {
 	// Session is the ACP protocol metadata to persist.
 	Session acp.SessionInfo
 
-	// LastMessageID is the session's current latest persisted message.
+	// LastMessageID is the session's current latest persisted message. Empty
+	// means the ACP session has no persisted messages yet.
 	LastMessageID string
 
 	// ModelRef is the selected CPE model profile reference for the session.
@@ -234,6 +235,13 @@ type ACPSessionMessageAdder interface {
 	// The returned SessionInfo.UpdatedAt is an ISO 8601 timestamp derived from
 	// messageID's creation time.
 	AddACPSessionMessage(ctx context.Context, sessionID acp.SessionId, messageID string) (acp.SessionInfo, error)
+}
+
+// ACPSessionModelSetter updates an ACP session's selected model profile.
+type ACPSessionModelSetter interface {
+	// SetACPSessionModelRef marks modelRef as the selected CPE model profile for
+	// sessionID.
+	SetACPSessionModelRef(ctx context.Context, sessionID acp.SessionId, modelRef string) error
 }
 
 // ACPSessionGetter fetches ACP session metadata by session ID.

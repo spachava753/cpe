@@ -830,7 +830,7 @@ func (s *Sqlite) getMessage(ctx context.Context, messageID string) (gai.Message,
 func (s *Sqlite) CreateACPSession(ctx context.Context, params CreateACPSessionParams) error {
 	err := s.q.CreateSession(ctx, sqlcgen.CreateSessionParams{
 		ID:            string(params.Session.SessionId),
-		LastMessageID: params.LastMessageID,
+		LastMessageID: optionalString(params.LastMessageID),
 		Cwd:           params.Session.Cwd,
 		Title:         acpSessionTitle(params.Session),
 		ModelRef:      params.ModelRef,
@@ -848,7 +848,7 @@ func (s *Sqlite) CreateACPSession(ctx context.Context, params CreateACPSessionPa
 // time.
 func (s *Sqlite) AddACPSessionMessage(ctx context.Context, sessionID acp.SessionId, messageID string) (acp.SessionInfo, error) {
 	rowsAffected, err := s.q.AddSessionMessage(ctx, sqlcgen.AddSessionMessageParams{
-		LastMessageID: messageID,
+		LastMessageID: optionalString(messageID),
 		ID:            string(sessionID),
 	})
 	if err != nil {
@@ -864,6 +864,22 @@ func (s *Sqlite) AddACPSessionMessage(ctx context.Context, sessionID acp.Session
 	return resp.Session, nil
 }
 
+// SetACPSessionModelRef marks modelRef as the selected model profile for an
+// ACP session.
+func (s *Sqlite) SetACPSessionModelRef(ctx context.Context, sessionID acp.SessionId, modelRef string) error {
+	rowsAffected, err := s.q.SetSessionModelRef(ctx, sqlcgen.SetSessionModelRefParams{
+		ModelRef: modelRef,
+		ID:       string(sessionID),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to set model ref for ACP session %s: %w", sessionID, err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("ACP session %s not found", sessionID)
+	}
+	return nil
+}
+
 // GetACPSession returns ACP session metadata and its latest persisted message
 // ID.
 //
@@ -876,9 +892,16 @@ func (s *Sqlite) GetACPSession(ctx context.Context, sessionID acp.SessionId) (Ge
 	}
 	return GetACPSessionResponse{
 		Session:       acpSessionInfo(row.ID, row.Cwd, row.Title, row.UpdatedAt),
-		LastMessageID: row.LastMessageID,
+		LastMessageID: row.LastMessageID.String,
 		ModelRef:      row.ModelRef,
 	}, nil
+}
+
+func optionalString(value string) sql.NullString {
+	return sql.NullString{
+		String: value,
+		Valid:  value != "",
+	}
 }
 
 // ListACPSessions returns ACP session metadata ordered by last activity, newest
