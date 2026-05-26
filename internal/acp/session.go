@@ -46,12 +46,14 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 	s := session{
 		si: si,
 	}
+	// set the model ref so we don't start with empty value
+	s.modelRef = a.rawCfg.Models[0].Ref
 	a.activeSessions.Store(id, sync.NewGuard(s))
 	return acp.NewSessionResponse{
 		SessionId: id,
 		ConfigOptions: []acp.SessionConfigOption{
 			{
-				Select: a.configOption(modelRef, s.modelRef),
+				Select: a.configOption(modelRefConfigId, s.modelRef),
 			},
 		},
 	}, nil
@@ -80,7 +82,7 @@ func (a *Agent) loadActiveSession(ctx context.Context, sessionId acp.SessionId) 
 		})
 		return []acp.SessionConfigOption{
 			{
-				Select: a.configOption(modelRef, modelRefVal),
+				Select: a.configOption(modelRefConfigId, modelRefVal),
 			},
 		}, nil
 	}
@@ -105,7 +107,7 @@ func (a *Agent) loadActiveSession(ctx context.Context, sessionId acp.SessionId) 
 	a.activeSessions.Store(sessionId, sync.NewGuard(s))
 	return []acp.SessionConfigOption{
 		{
-			Select: a.configOption(modelRef, getSessionResp.ModelRef),
+			Select: a.configOption(modelRefConfigId, getSessionResp.ModelRef),
 		},
 	}, nil
 }

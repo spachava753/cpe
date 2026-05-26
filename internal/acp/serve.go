@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 
 	"github.com/coder/acp-go-sdk"
@@ -37,21 +38,39 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		return errors.New("provided stderr cannot be nil")
 	}
 
+	slog.SetDefault(
+		slog.New(
+			slog.NewTextHandler(opts.Stderr, &slog.HandlerOptions{
+				AddSource: true,
+				Level:     slog.LevelDebug,
+			}),
+		),
+	)
+
 	rawCfg, err := config.LoadRawConfig(opts.ConfigPath)
 	if err != nil {
 		return fmt.Errorf("could not load config: %v", err)
 	}
 
-	conversationDBPath, err := config.ResolveConversationStoragePath(opts.DbPath)
+	slog.Debug("loaded config file", slog.String("path", opts.ConfigPath))
+
+	dbPath, err := config.ResolveConversationStoragePath(opts.DbPath)
 	if err != nil {
 		return fmt.Errorf("invalid db path: %w", err)
 	}
 
-	storageDB, err := sql.Open("sqlite3", conversationDBPath)
+	slog.Debug("loaded db", slog.String("path", dbPath))
+
+	storageDB, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
-	defer storageDB.Close()
+	defer func() {
+		slog.Debug("closing db connection")
+		if err := storageDB.Close(); err != nil {
+			slog.Error("could not close db conn", slog.String("err", err.Error()))
+		}
+	}()
 
 	sqliteStorage, err := storage.NewSqlite(ctx, storageDB)
 	if err != nil {
@@ -66,6 +85,9 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve model config: %v", err)
 		}
+
+		slog.Debug("config resolved")
+
 		// Load and render system prompt
 		systemPrompt, err := commands.LoadSystemPrompt(ctx, commands.LoadSystemPromptOptions{
 			SystemPromptPath: cfg.SystemPromptPath,
@@ -75,6 +97,8 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		if err != nil {
 			return nil, fmt.Errorf("failed to load system prompt: %v", err)
 		}
+
+		slog.Debug("system prompt loaded", slog.String("path", cfg.SystemPromptPath))
 
 		genBase, err := agent.InitGeneratorFromModel(ctx, cfg.Model, systemPrompt, cfg.Timeout)
 		if err != nil {
@@ -104,7 +128,7 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		}
 
 		ca := closerAgent{
-			Loop: l,
+			Loop: &l,
 		}
 
 		// connecting to mcps
@@ -115,8 +139,11 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		}
 		ca.mcpState = mcpState
 
+		slog.Debug("initialized mcp connections")
+
 		// Check if code mode is enabled
 		codeModeEnabled := cfg.CodeMode != nil && cfg.CodeMode.Enabled
+		slog.Debug("code mode config", slog.Bool("enabled", codeModeEnabled))
 
 		if codeModeEnabled {
 			// Partition tools into code-mode and excluded
@@ -213,13 +240,14 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	}
 	asc := acp.NewAgentSideConnection(&ag, os.Stdout, os.Stdin)
 	ag.conn = asc
+	asc.SetLogger(slog.Default())
 	<-asc.Done()
 	return nil
 }
 
 // closerAgent is a type that embeds [Loop] and implementes a close function to close the mcp connections
 type closerAgent struct {
-	Loop
+	*Loop
 	mcpState *mcp.MCPState
 }
 

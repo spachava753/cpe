@@ -16,10 +16,6 @@ import (
 	"github.com/coder/acp-go-sdk"
 )
 
-const (
-	modelRef acp.SessionConfigId = "modelRef"
-)
-
 // Agent is an implementation of an [acp.Agent]
 //
 // TODO: how should we split the functionality between

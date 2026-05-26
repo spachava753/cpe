@@ -115,7 +115,7 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 		// save response
 		l.attachAgentMetadata(&resp.Candidates[0], resp.UsageMetadata)
 		current = append(current, resp.Candidates[0])
-		current, err := l.save(ctx, current)
+		current, err = l.save(ctx, current)
 		if err != nil {
 			return current, err
 		}

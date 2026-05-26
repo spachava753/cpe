@@ -7,6 +7,10 @@ import (
 	"github.com/coder/acp-go-sdk"
 )
 
+const (
+	modelRefConfigId acp.SessionConfigId = "modelRef"
+)
+
 // SetSessionConfigOption implements [acp.Agent].
 //
 // TODO: we should probably expose more options like thinking mode, tool choice, etc. and wire up defaults from the config
@@ -19,7 +23,7 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessio
 		panic(fmt.Sprintf("unknown session: %s", params.ValueId.SessionId)) // TODO: should we panic or return error?
 	}
 	switch params.ValueId.ConfigId {
-	case modelRef:
+	case modelRefConfigId:
 		modelRefVal := string(params.ValueId.Value)
 		if err := a.db.SetACPSessionModelRef(ctx, params.ValueId.SessionId, modelRefVal); err != nil {
 			return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("could not persist model config: %v", err)
@@ -42,7 +46,7 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessio
 	return acp.SetSessionConfigOptionResponse{
 		ConfigOptions: []acp.SessionConfigOption{
 			{
-				Select: a.configOption(modelRef, string(params.ValueId.Value)),
+				Select: a.configOption(modelRefConfigId, string(params.ValueId.Value)),
 			},
 		},
 	}, nil
@@ -50,7 +54,7 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessio
 
 func (a *Agent) configOption(configId acp.SessionConfigId, currentVal string) *acp.SessionConfigOptionSelect {
 	switch configId {
-	case modelRef:
+	case modelRefConfigId:
 		opts := make(acp.SessionConfigSelectOptionsUngrouped, len(a.rawCfg.Models))
 		for i, m := range a.rawCfg.Models {
 			opts[i] = acp.SessionConfigSelectOption{
@@ -67,7 +71,7 @@ Output Cost: %f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion, *m
 			Category:     new(acp.SessionConfigOptionCategoryModel),
 			CurrentValue: acp.SessionConfigValueId(currentVal),
 			Description:  new("Choose model"),
-			Id:           modelRef,
+			Id:           modelRefConfigId,
 			Name:         "Model",
 			Options: acp.SessionConfigSelectOptions{
 				Ungrouped: &opts,
