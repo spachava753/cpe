@@ -32,6 +32,9 @@ func (c *RawConfig) ValidateWithConfigPath(configFilePath string) error {
 		if err := validateModelAuth(m); err != nil {
 			return fmt.Errorf("model %q: %w", m.Ref, err)
 		}
+		if err := validateThinkingValues(m.ThinkingValues); err != nil {
+			return fmt.Errorf("model %q: %w", m.Ref, err)
+		}
 	}
 
 	return nil
@@ -95,6 +98,24 @@ func validateModelAuth(m ModelConfig) error {
 		if modelType != "anthropic" && modelType != "responses" {
 			return fmt.Errorf("auth_method 'oauth' is only supported for anthropic and responses providers")
 		}
+	}
+	return nil
+}
+
+func validateThinkingValues(values []ThinkingValueConfig) error {
+	seen := make(map[string]struct{}, len(values))
+	for i, value := range values {
+		trimmedValue := strings.TrimSpace(value.Value)
+		if trimmedValue == "" {
+			return fmt.Errorf("thinkingValues[%d].value must not be empty", i)
+		}
+		if value.Value != trimmedValue {
+			return fmt.Errorf("thinkingValues[%d].value must not have leading or trailing whitespace", i)
+		}
+		if _, ok := seen[trimmedValue]; ok {
+			return fmt.Errorf("thinkingValues contains duplicate value: %s", trimmedValue)
+		}
+		seen[trimmedValue] = struct{}{}
 	}
 	return nil
 }

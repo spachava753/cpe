@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS acp_sessions
     cwd             TEXT      NOT NULL,
     title           TEXT      NOT NULL,
     model_ref       TEXT      NOT NULL,
+    thinking_level  TEXT      NOT NULL DEFAULT '',
     created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (last_message_id) REFERENCES messages (id) ON DELETE CASCADE
 );

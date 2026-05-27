@@ -59,6 +59,50 @@ func TestModelInfo_PrintsCachePricingFields(t *testing.T) {
 	}
 }
 
+func TestModelInfo_PrintsThinkingValues(t *testing.T) {
+	t.Parallel()
+
+	rawCfg := &config.RawConfig{Models: []config.ModelConfig{{
+		Model: config.Model{
+			Ref:           "reasoning-model",
+			DisplayName:   "Reasoning Model",
+			Type:          "responses",
+			ID:            "gpt-5",
+			ContextWindow: 400000,
+			MaxOutput:     128000,
+			ThinkingValues: []config.ThinkingValueConfig{
+				{Value: "minimal", Name: "Minimal"},
+				{Value: "xhigh", Name: "Extra High"},
+				{Value: "10000"},
+			},
+		},
+	}}}
+
+	var out bytes.Buffer
+	err := ModelInfo(context.Background(), ModelInfoOptions{Config: rawCfg, ModelName: "reasoning-model", Writer: &out})
+	if err != nil {
+		t.Fatalf("ModelInfo() error = %v", err)
+	}
+
+	want := "Ref: reasoning-model\n" +
+		"Display Name: Reasoning Model\n" +
+		"Type: responses\n" +
+		"ID: gpt-5\n" +
+		"Context: 400000\n" +
+		"MaxOutput: 128000\n" +
+		"InputCostPerMillion: n/a\n" +
+		"OutputCostPerMillion: n/a\n" +
+		"CacheReadCostPerMillion: n/a\n" +
+		"CacheWriteCostPerMillion: n/a\n" +
+		"Thinking Values:\n" +
+		"  Minimal: minimal\n" +
+		"  Extra High: xhigh\n" +
+		"  10000: 10000\n"
+	if got := out.String(); got != want {
+		t.Fatalf("ModelInfo() output mismatch\nwant:\n%s\n\ngot:\n%s", want, got)
+	}
+}
+
 func TestModelInfo_PrintsNAWhenPricingUnavailable(t *testing.T) {
 	t.Parallel()
 

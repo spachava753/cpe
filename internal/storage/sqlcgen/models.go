@@ -15,6 +15,7 @@ type AcpSession struct {
 	Cwd           string         `json:"cwd"`
 	Title         string         `json:"title"`
 	ModelRef      string         `json:"model_ref"`
+	ThinkingLevel string         `json:"thinking_level"`
 	CreatedAt     time.Time      `json:"created_at"`
 }
 

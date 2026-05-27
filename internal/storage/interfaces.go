@@ -207,6 +207,7 @@ type GetACPSessionResponse struct {
 	Session       acp.SessionInfo
 	LastMessageID string
 	ModelRef      string
+	ThinkingLevel string
 }
 
 // CreateACPSessionParams configures ACP session creation.
@@ -220,6 +221,9 @@ type CreateACPSessionParams struct {
 
 	// ModelRef is the selected CPE model profile reference for the session.
 	ModelRef string
+
+	// ThinkingLevel is the selected reasoning effort level for the session.
+	ThinkingLevel string
 }
 
 // ACPSessionCreator creates ACP session metadata.
@@ -241,10 +245,17 @@ type ACPSessionModelSetter interface {
 	SetACPSessionModelRef(ctx context.Context, sessionID acp.SessionId, modelRef string) error
 }
 
+// ACPSessionThinkingLevelSetter updates an ACP session's reasoning effort level.
+type ACPSessionThinkingLevelSetter interface {
+	// SetACPSessionThinkingLevel marks thinkingLevel as the selected reasoning
+	// effort level for sessionID.
+	SetACPSessionThinkingLevel(ctx context.Context, sessionID acp.SessionId, thinkingLevel string) error
+}
+
 // ACPSessionGetter fetches ACP session metadata by session ID.
 type ACPSessionGetter interface {
 	// GetACPSession returns ACP session metadata, the latest persisted message ID,
-	// and the selected model profile reference for sessionID.
+	// selected model profile reference, and reasoning effort level for sessionID.
 	//
 	// The returned SessionInfo.UpdatedAt is an ISO 8601 timestamp derived from
 	// the session's creation time.

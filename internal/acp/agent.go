@@ -44,6 +44,7 @@ type Agent struct {
 		storage.MessagesGetter
 		storage.ACPSessionMessageAdder
 		storage.ACPSessionModelSetter
+		storage.ACPSessionThinkingLevelSetter
 	}
 
 	// client capabilities we care about
@@ -144,9 +145,14 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		}
 		runtime := t.runtime
 		inputDialog := dialog
+		// TODO: we should set generation opts from the config, and overide with acp config options
+		var genOpts *gai.GenOpts
+		if t.thinkingLevel != "" {
+			genOpts = &gai.GenOpts{ThinkingBudget: t.thinkingLevel}
+		}
 		t.cancelfunc = cancelFunc
 		go func() {
-			generatedDialog, err := runtime.Generate(withSessionID(cancelCtx, params.SessionId), inputDialog, nil)
+			generatedDialog, err := runtime.Generate(withSessionID(cancelCtx, params.SessionId), inputDialog, genOpts)
 			resultChan <- generateResult{dialog: generatedDialog, err: err}
 		}()
 		return nil
@@ -155,6 +161,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	}
 
 	// here we wait until the result is given, which could be because the context was cancelled
+	// TODO: THIS ACTUALLY HANGS THE ENTIRE ACP SERVER, since we aren't listening for context for cancellation
 	result := <-resultChan
 
 	dialog := result.dialog

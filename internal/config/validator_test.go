@@ -133,6 +133,56 @@ func TestValidateModelAuth(t *testing.T) {
 	}
 }
 
+func TestValidateThinkingValues(t *testing.T) {
+	tests := []struct {
+		name    string
+		values  []ThinkingValueConfig
+		wantErr string
+	}{
+		{
+			name: "accepts semantic and token values",
+			values: []ThinkingValueConfig{
+				{Value: "minimal", Name: "Minimal"},
+				{Value: "xhigh", Name: "Extra High"},
+				{Value: "10000", Name: "10k tokens"},
+			},
+		},
+		{
+			name:    "rejects empty value",
+			values:  []ThinkingValueConfig{{Value: "  "}},
+			wantErr: "thinkingValues[0].value must not be empty",
+		},
+		{
+			name:    "rejects surrounding whitespace",
+			values:  []ThinkingValueConfig{{Value: " low "}},
+			wantErr: "thinkingValues[0].value must not have leading or trailing whitespace",
+		},
+		{
+			name:    "rejects duplicate value",
+			values:  []ThinkingValueConfig{{Value: "low"}, {Value: "low"}},
+			wantErr: "thinkingValues contains duplicate value: low",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateThinkingValues(tt.values)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("expected valid thinking values, got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if err.Error() != tt.wantErr {
+				t.Fatalf("unexpected error: got %q want %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestRawConfigValidate_RequiresContextWindowAndMaxOutput(t *testing.T) {
 	t.Parallel()
 

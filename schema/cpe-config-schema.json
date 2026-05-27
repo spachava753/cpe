@@ -113,6 +113,12 @@
         "patchRequest": {
           "$ref": "#/$defs/PatchRequestConfig"
         },
+        "thinkingValues": {
+          "items": {
+            "$ref": "#/$defs/ThinkingValueConfig"
+          },
+          "type": "array"
+        },
         "mcpServers": {
           "additionalProperties": {
             "$ref": "#/$defs/ServerConfig"
@@ -214,9 +220,7 @@
       },
       "additionalProperties": false,
       "type": "object",
-      "required": [
-        "models"
-      ]
+      "required": ["models"]
     },
     "Schema": {
       "properties": {
@@ -441,9 +445,7 @@
                 "const": "builtin"
               }
             },
-            "required": [
-              "type"
-            ]
+            "required": ["type"]
           },
           "then": {
             "not": {
@@ -454,9 +456,7 @@
                       "minLength": 1
                     }
                   },
-                  "required": [
-                    "command"
-                  ]
+                  "required": ["command"]
                 },
                 {
                   "properties": {
@@ -464,9 +464,7 @@
                       "minItems": 1
                     }
                   },
-                  "required": [
-                    "args"
-                  ]
+                  "required": ["args"]
                 },
                 {
                   "properties": {
@@ -474,9 +472,7 @@
                       "minLength": 1
                     }
                   },
-                  "required": [
-                    "url"
-                  ]
+                  "required": ["url"]
                 },
                 {
                   "properties": {
@@ -484,9 +480,7 @@
                       "minProperties": 1
                     }
                   },
-                  "required": [
-                    "headers"
-                  ]
+                  "required": ["headers"]
                 },
                 {
                   "properties": {
@@ -494,9 +488,7 @@
                       "minProperties": 1
                     }
                   },
-                  "required": [
-                    "env"
-                  ]
+                  "required": ["env"]
                 }
               ]
             }
@@ -515,12 +507,7 @@
         },
         "type": {
           "type": "string",
-          "enum": [
-            "stdio",
-            "sse",
-            "http",
-            "builtin"
-          ]
+          "enum": ["stdio", "sse", "http", "builtin"]
         },
         "url": {
           "type": "string"
@@ -555,6 +542,22 @@
       },
       "additionalProperties": false,
       "type": "object"
+    },
+    "ThinkingValueConfig": {
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": ["value"]
     }
   },
   "title": "CPE Configuration Schema",

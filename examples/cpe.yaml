@@ -64,6 +64,15 @@ models:
     api_key_env: OPENAI_API_KEY
     context_window: 400000
     max_output: 128000
+    thinkingValues: &openAIThinkingValues
+      - value: minimal
+        name: Minimal
+      - value: low
+        name: Low
+      - value: medium
+        name: Medium
+      - value: high
+        name: High
     input_cost_per_million: 1.25
     output_cost_per_million: 10
     systemPromptPath: "./codex_instructions.prompt"
@@ -75,6 +84,7 @@ models:
     api_key_env: OPENAI_API_KEY
     context_window: 400000
     max_output: 128000
+    thinkingValues: *openAIThinkingValues
     input_cost_per_million: 1.25
     output_cost_per_million: 10
 
@@ -85,6 +95,7 @@ models:
     api_key_env: OPENAI_API_KEY
     context_window: 400000
     max_output: 128000
+    thinkingValues: *openAIThinkingValues
     input_cost_per_million: 0.25
     output_cost_per_million: 2
 
@@ -95,6 +106,7 @@ models:
     api_key_env: OPENAI_API_KEY
     context_window: 400000
     max_output: 128000
+    thinkingValues: *openAIThinkingValues
     input_cost_per_million: 0.05
     output_cost_per_million: 0.40
 
@@ -105,6 +117,15 @@ models:
     api_key_env: ANTHROPIC_API_KEY
     context_window: 200000
     max_output: 32000
+    thinkingValues: &anthropicThinkingValues
+      - value: adaptive
+        name: Adaptive
+      - value: "4000"
+        name: 4k tokens
+      - value: "10000"
+        name: 10k tokens
+      - value: "16000"
+        name: 16k tokens
     input_cost_per_million: 15
     output_cost_per_million: 75
 
@@ -115,6 +136,7 @@ models:
     api_key_env: ANTHROPIC_API_KEY
     context_window: 200000
     max_output: 64000
+    thinkingValues: *anthropicThinkingValues
     input_cost_per_million: 3
     output_cost_per_million: 15
     systemPromptPath: &standardPrompt "./agent_instructions.md"

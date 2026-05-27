@@ -209,6 +209,7 @@ func TestACPSessions(t *testing.T) {
 		},
 		LastMessageID: olderMessageID,
 		ModelRef:      "claude-opus",
+		ThinkingLevel: "low",
 	})
 	if err != nil {
 		t.Fatalf("CreateACPSession older: %v", err)
@@ -259,6 +260,19 @@ func TestACPSessions(t *testing.T) {
 	}
 	if resp.ModelRef != "claude-opus" {
 		t.Fatalf("ModelRef: got %q", resp.ModelRef)
+	}
+	if resp.ThinkingLevel != "low" {
+		t.Fatalf("ThinkingLevel: got %q", resp.ThinkingLevel)
+	}
+	if err := db.SetACPSessionThinkingLevel(ctx, acp.SessionId("older-session"), "high"); err != nil {
+		t.Fatalf("SetACPSessionThinkingLevel: %v", err)
+	}
+	resp, err = db.GetACPSession(ctx, acp.SessionId("older-session"))
+	if err != nil {
+		t.Fatalf("GetACPSession after thinking level update: %v", err)
+	}
+	if resp.ThinkingLevel != "high" {
+		t.Fatalf("ThinkingLevel after update: got %q", resp.ThinkingLevel)
 	}
 	if err := db.SetACPSessionModelRef(ctx, acp.SessionId("older-session"), testACPModelRef); err != nil {
 		t.Fatalf("SetACPSessionModelRef: %v", err)

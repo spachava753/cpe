@@ -262,15 +262,23 @@ func migrateMessagesMetadataColumns(ctx context.Context, db DB) error {
 }
 
 func hasMessagesTable(ctx context.Context, db DB) (bool, error) {
+	return hasTable(ctx, db, "messages")
+}
+
+func hasTable(ctx context.Context, db DB, table string) (bool, error) {
 	var tableCount int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='messages'").Scan(&tableCount); err != nil {
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&tableCount); err != nil {
 		return false, fmt.Errorf("failed to inspect existing schema: %w", err)
 	}
 	return tableCount > 0, nil
 }
 
 func hasMessagesColumn(ctx context.Context, db DB, column string) (bool, error) {
-	rows, err := db.QueryContext(ctx, "PRAGMA table_info(messages)")
+	return hasColumn(ctx, db, "messages", column)
+}
+
+func hasColumn(ctx context.Context, db DB, table, column string) (bool, error) {
+	rows, err := db.QueryContext(ctx, "PRAGMA table_info("+table+")")
 	if err != nil {
 		return false, fmt.Errorf("failed to inspect messages table columns: %w", err)
 	}
@@ -834,6 +842,7 @@ func (s *Sqlite) CreateACPSession(ctx context.Context, params CreateACPSessionPa
 		Cwd:           params.Session.Cwd,
 		Title:         acpSessionTitle(params.Session),
 		ModelRef:      params.ModelRef,
+		ThinkingLevel: params.ThinkingLevel,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create ACP session %s: %w", params.Session.SessionId, err)
@@ -877,6 +886,22 @@ func (s *Sqlite) SetACPSessionModelRef(ctx context.Context, sessionID acp.Sessio
 	return nil
 }
 
+// SetACPSessionThinkingLevel marks thinkingLevel as the reasoning effort level
+// for an ACP session.
+func (s *Sqlite) SetACPSessionThinkingLevel(ctx context.Context, sessionID acp.SessionId, thinkingLevel string) error {
+	rowsAffected, err := s.q.SetSessionThinkingLevel(ctx, sqlcgen.SetSessionThinkingLevelParams{
+		ThinkingLevel: thinkingLevel,
+		ID:            string(sessionID),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to set thinking level for ACP session %s: %w", sessionID, err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("ACP session %s not found", sessionID)
+	}
+	return nil
+}
+
 // GetACPSession returns ACP session metadata and its latest persisted message
 // ID.
 //
@@ -891,6 +916,7 @@ func (s *Sqlite) GetACPSession(ctx context.Context, sessionID acp.SessionId) (Ge
 		Session:       acpSessionInfo(row.ID, row.Cwd, row.Title, row.CreatedAt),
 		LastMessageID: row.LastMessageID.String,
 		ModelRef:      row.ModelRef,
+		ThinkingLevel: row.ThinkingLevel,
 	}, nil
 }
 

@@ -133,8 +133,8 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) er
 }
 
 const createSession = `-- name: CreateSession :exec
-INSERT INTO acp_sessions (id, last_message_id, cwd, title, model_ref)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO acp_sessions (id, last_message_id, cwd, title, model_ref, thinking_level)
+VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type CreateSessionParams struct {
@@ -143,6 +143,7 @@ type CreateSessionParams struct {
 	Cwd           string         `json:"cwd"`
 	Title         string         `json:"title"`
 	ModelRef      string         `json:"model_ref"`
+	ThinkingLevel string         `json:"thinking_level"`
 }
 
 // ACP queries
@@ -153,6 +154,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 		arg.Cwd,
 		arg.Title,
 		arg.ModelRef,
+		arg.ThinkingLevel,
 	)
 	return err
 }
@@ -280,6 +282,7 @@ SELECT acp_sessions.id,
        acp_sessions.cwd,
        acp_sessions.title,
        acp_sessions.model_ref,
+       acp_sessions.thinking_level,
        acp_sessions.created_at
 FROM acp_sessions
 WHERE acp_sessions.id = ?
@@ -294,6 +297,7 @@ func (q *Queries) GetSession(ctx context.Context, id string) (AcpSession, error)
 		&i.Cwd,
 		&i.Title,
 		&i.ModelRef,
+		&i.ThinkingLevel,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -524,6 +528,7 @@ SELECT acp_sessions.id,
        acp_sessions.cwd,
        acp_sessions.title,
        acp_sessions.model_ref,
+       acp_sessions.thinking_level,
        acp_sessions.created_at
 FROM acp_sessions
 LEFT JOIN messages ON messages.id = acp_sessions.last_message_id
@@ -531,11 +536,12 @@ ORDER BY COALESCE(messages.created_at, acp_sessions.created_at) DESC, acp_sessio
 `
 
 type ListSessionsRow struct {
-	ID        string    `json:"id"`
-	Cwd       string    `json:"cwd"`
-	Title     string    `json:"title"`
-	ModelRef  string    `json:"model_ref"`
-	CreatedAt time.Time `json:"created_at"`
+	ID            string    `json:"id"`
+	Cwd           string    `json:"cwd"`
+	Title         string    `json:"title"`
+	ModelRef      string    `json:"model_ref"`
+	ThinkingLevel string    `json:"thinking_level"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 func (q *Queries) ListSessions(ctx context.Context) ([]ListSessionsRow, error) {
@@ -552,6 +558,7 @@ func (q *Queries) ListSessions(ctx context.Context) ([]ListSessionsRow, error) {
 			&i.Cwd,
 			&i.Title,
 			&i.ModelRef,
+			&i.ThinkingLevel,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -580,6 +587,25 @@ type SetSessionModelRefParams struct {
 
 func (q *Queries) SetSessionModelRef(ctx context.Context, arg SetSessionModelRefParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, setSessionModelRef, arg.ModelRef, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const setSessionThinkingLevel = `-- name: SetSessionThinkingLevel :execrows
+UPDATE acp_sessions
+SET thinking_level = ?
+WHERE id = ?
+`
+
+type SetSessionThinkingLevelParams struct {
+	ThinkingLevel string `json:"thinking_level"`
+	ID            string `json:"id"`
+}
+
+func (q *Queries) SetSessionThinkingLevel(ctx context.Context, arg SetSessionThinkingLevelParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setSessionThinkingLevel, arg.ThinkingLevel, arg.ID)
 	if err != nil {
 		return 0, err
 	}

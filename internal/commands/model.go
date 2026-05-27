@@ -53,7 +53,16 @@ func ModelInfo(ctx context.Context, opts ModelInfoOptions) error {
 		return fmt.Errorf("model %q not found", opts.ModelName)
 	}
 
-	fmt.Fprintf(opts.Writer, "Ref: %s\nDisplay Name: %s\nType: %s\nID: %s\nContext: %d\nMaxOutput: %d\nInputCostPerMillion: %s\nOutputCostPerMillion: %s\nCacheReadCostPerMillion: %s\nCacheWriteCostPerMillion: %s\n",
+	fmt.Fprintf(opts.Writer, `Ref: %s
+Display Name: %s
+Type: %s
+ID: %s
+Context: %d
+MaxOutput: %d
+InputCostPerMillion: %s
+OutputCostPerMillion: %s
+CacheReadCostPerMillion: %s
+CacheWriteCostPerMillion: %s`,
 		model.Ref,
 		model.DisplayName,
 		model.Type,
@@ -65,6 +74,17 @@ func ModelInfo(ctx context.Context, opts ModelInfoOptions) error {
 		formatCostPerMillion(model.CacheReadCostPerMillion),
 		formatCostPerMillion(model.CacheWriteCostPerMillion),
 	)
+
+	if len(model.ThinkingValues) > 0 {
+		fmt.Fprintln(opts.Writer, "\nThinking Values:")
+		for _, value := range model.ThinkingValues {
+			name := value.Name
+			if name == "" {
+				name = value.Value
+			}
+			fmt.Fprintf(opts.Writer, "  %s: %s\n", name, value.Value)
+		}
+	}
 
 	if model.GenerationParams != nil {
 		fmt.Fprintln(opts.Writer, "\nGeneration Params:")

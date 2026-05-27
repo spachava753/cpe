@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
+	"slices"
 
 	"github.com/coder/acp-go-sdk"
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/sync"
 )
@@ -22,10 +24,11 @@ type acpRuntime interface {
 // while not described in the protocol, sessions may be
 // accessed and mutated in parallel
 type session struct {
-	modelRef   string
-	runtime    acpRuntime
-	cancelfunc context.CancelFunc
-	si         acp.SessionInfo
+	modelRef      string
+	thinkingLevel string
+	runtime       acpRuntime
+	cancelfunc    context.CancelFunc
+	si            acp.SessionInfo
 }
 
 // NewSession implements [acp.Agent].
@@ -36,24 +39,35 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		Title:     new("untitled"),
 		SessionId: id,
 	}
+	modelRef := a.rawCfg.Models[0].Ref
+	var thinkingLevel string
+	// If the model declares thinking values, the first value is the default.
+	if len(a.rawCfg.Models[0].ThinkingValues) > 0 {
+		thinkingLevel = a.rawCfg.Models[0].ThinkingValues[0].Value
+	}
+	s := session{
+		si:            si,
+		modelRef:      modelRef,
+		thinkingLevel: thinkingLevel,
+	}
+
 	if err := a.db.CreateACPSession(ctx, storage.CreateACPSessionParams{
 		Session:       si,
 		LastMessageID: "",
-		ModelRef:      "",
+		ModelRef:      s.modelRef,
+		ThinkingLevel: s.thinkingLevel,
 	}); err != nil {
 		return acp.NewSessionResponse{}, fmt.Errorf("could not save created session: %v", err)
 	}
-	s := session{
-		si: si,
-	}
-	// set the model ref so we don't start with empty value
-	s.modelRef = a.rawCfg.Models[0].Ref
 	a.activeSessions.Store(id, sync.NewGuard(s))
 	return acp.NewSessionResponse{
 		SessionId: id,
 		ConfigOptions: []acp.SessionConfigOption{
 			{
-				Select: a.configOption(modelRefConfigId, s.modelRef),
+				Select: a.configOption(id, modelRefConfigId, modelRef),
+			},
+			{
+				Select: a.configOption(id, thinkingLevelConfigId, thinkingLevel),
 			},
 		},
 	}, nil
@@ -74,15 +88,20 @@ func (a *Agent) ListSessions(ctx context.Context, params acp.ListSessionsRequest
 
 // loadActiveSession loads an active session from storage
 func (a *Agent) loadActiveSession(ctx context.Context, sessionId acp.SessionId) ([]acp.SessionConfigOption, error) {
+	// TODO: should we always load from db? Maybe be better, especially since config can change
 	if s, ok := a.activeSessions.Load(sessionId); ok {
-		var modelRefVal string
+		var modelRefVal, thinkingRefVal string
 		s.Do(func(t *session) error {
 			modelRefVal = t.modelRef
+			thinkingRefVal = t.thinkingLevel
 			return nil
 		})
 		return []acp.SessionConfigOption{
 			{
-				Select: a.configOption(modelRefConfigId, modelRefVal),
+				Select: a.configOption(sessionId, modelRefConfigId, modelRefVal),
+			},
+			{
+				Select: a.configOption(sessionId, thinkingLevelConfigId, thinkingRefVal),
 			},
 		}, nil
 	}
@@ -95,19 +114,81 @@ func (a *Agent) loadActiveSession(ctx context.Context, sessionId acp.SessionId) 
 			err,
 		)
 	}
-	runtime, err := a.runtimeFactory(a.conn, getSessionResp.ModelRef)
+
+	// config options may be stale, double check them
+	modelRef := getSessionResp.ModelRef
+	thinkingLevel := getSessionResp.ThinkingLevel
+	idx := slices.IndexFunc(a.rawCfg.Models, func(m config.ModelConfig) bool {
+		return m.Ref == getSessionResp.ModelRef
+	})
+	if idx == -1 {
+		// model profile is stale, default the first one in config
+		modelRef = a.rawCfg.Models[0].Ref
+		thinkingLevel = ""
+		if len(a.rawCfg.Models[0].ThinkingValues) > 0 {
+			thinkingLevel = a.rawCfg.Models[0].ThinkingValues[0].Value
+		}
+
+		if err := a.db.SetACPSessionModelRef(ctx, sessionId, modelRef); err != nil {
+			return nil, fmt.Errorf("could not update model ref config: %v", err)
+		}
+		if err := a.db.SetACPSessionThinkingLevel(ctx, sessionId, thinkingLevel); err != nil {
+			return nil, fmt.Errorf("could not update thinking level config: %v", err)
+		}
+		runtime, err := a.runtimeFactory(a.conn, modelRef)
+		if err != nil {
+			return nil, fmt.Errorf("could not create runtime: %v", err)
+		}
+		s := session{
+			si:            getSessionResp.Session,
+			modelRef:      modelRef,
+			thinkingLevel: thinkingLevel,
+			runtime:       runtime,
+		}
+		a.activeSessions.Store(sessionId, sync.NewGuard(s))
+		return []acp.SessionConfigOption{
+			{
+				Select: a.configOption(sessionId, modelRefConfigId, modelRef),
+			},
+			{
+				Select: a.configOption(sessionId, thinkingLevelConfigId, thinkingLevel),
+			},
+		}, nil
+	}
+
+	// model ref is valid, double check thinking value
+	if !slices.ContainsFunc(
+		a.rawCfg.Models[idx].ThinkingValues,
+		func(tv config.ThinkingValueConfig) bool {
+			return tv.Value == thinkingLevel
+		}) {
+		thinkingLevel = ""
+		if len(a.rawCfg.Models[idx].ThinkingValues) > 0 {
+			thinkingLevel = a.rawCfg.Models[idx].ThinkingValues[0].Value
+		}
+		if err := a.db.SetACPSessionThinkingLevel(ctx, sessionId, thinkingLevel); err != nil {
+			return nil, fmt.Errorf("could not update thinking level config: %v", err)
+		}
+	}
+
+	runtime, err := a.runtimeFactory(a.conn, modelRef)
 	if err != nil {
 		return nil, fmt.Errorf("could not create runtime: %v", err)
 	}
+
 	s := session{
-		si:       getSessionResp.Session,
-		modelRef: getSessionResp.ModelRef,
-		runtime:  runtime,
+		si:            getSessionResp.Session,
+		modelRef:      getSessionResp.ModelRef,
+		thinkingLevel: thinkingLevel,
+		runtime:       runtime,
 	}
 	a.activeSessions.Store(sessionId, sync.NewGuard(s))
 	return []acp.SessionConfigOption{
 		{
-			Select: a.configOption(modelRefConfigId, getSessionResp.ModelRef),
+			Select: a.configOption(sessionId, modelRefConfigId, modelRef),
+		},
+		{
+			Select: a.configOption(sessionId, thinkingLevelConfigId, thinkingLevel),
 		},
 	}, nil
 }

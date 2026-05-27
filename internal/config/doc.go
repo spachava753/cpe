@@ -7,10 +7,10 @@ It separates two layers:
 
 The config file intentionally has no global defaults layer. Each models entry is
 a complete runtime profile containing model provider settings plus optional MCP
-servers, generation parameters, system prompt path, timeout, codeMode, and
-compaction settings. Users can reduce YAML duplication with anchors and aliases;
-CPE resolves only the selected profile and does not merge profile fields with any
-global config block.
+servers, generation parameters, valid thinking values, system prompt path,
+timeout, codeMode, and compaction settings. Users can reduce YAML duplication
+with anchors and aliases; CPE resolves only the selected profile and does not
+merge profile fields with any global config block.
 
 Resolution precedence is limited to runtime selection and explicit CLI overrides:
   - model selection: --model or CPE_MODEL is required;

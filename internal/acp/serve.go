@@ -242,6 +242,7 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	ag.conn = asc
 	asc.SetLogger(slog.Default())
 	<-asc.Done()
+	// TODO: we should close on connection end and clean up mcp connections
 	return nil
 }
 
