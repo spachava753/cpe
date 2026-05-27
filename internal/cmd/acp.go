@@ -24,6 +24,7 @@ var acpServeCmd = &cobra.Command{
 			ConfigPath: configPath,
 			Stdout:     cmd.OutOrStdout(),
 			Stderr:     cmd.ErrOrStderr(),
+			Stdin:      cmd.InOrStdin(),
 		})
 	},
 }

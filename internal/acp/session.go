@@ -31,6 +31,14 @@ type session struct {
 	si            acp.SessionInfo
 }
 
+func (a *Agent) activeSession(sessionID acp.SessionId) (*sync.Guard[session], error) {
+	s, ok := a.activeSessions.Load(sessionID)
+	if !ok {
+		return nil, fmt.Errorf("unknown session: %s", sessionID)
+	}
+	return s, nil
+}
+
 // NewSession implements [acp.Agent].
 func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (acp.NewSessionResponse, error) {
 	id := a.genId()
@@ -39,16 +47,8 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		Title:     new("untitled"),
 		SessionId: id,
 	}
-	modelRef := a.rawCfg.Models[0].Ref
-	var thinkingLevel string
-	// If the model declares thinking values, the first value is the default.
-	if len(a.rawCfg.Models[0].ThinkingValues) > 0 {
-		thinkingLevel = a.rawCfg.Models[0].ThinkingValues[0].Value
-	}
 	s := session{
-		si:            si,
-		modelRef:      modelRef,
-		thinkingLevel: thinkingLevel,
+		si: si,
 	}
 
 	if err := a.db.CreateACPSession(ctx, storage.CreateACPSessionParams{
@@ -61,15 +61,8 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 	}
 	a.activeSessions.Store(id, sync.NewGuard(s))
 	return acp.NewSessionResponse{
-		SessionId: id,
-		ConfigOptions: []acp.SessionConfigOption{
-			{
-				Select: a.configOption(id, modelRefConfigId, modelRef),
-			},
-			{
-				Select: a.configOption(id, thinkingLevelConfigId, thinkingLevel),
-			},
-		},
+		SessionId:     id,
+		ConfigOptions: a.configOptions(ctx, id),
 	}, nil
 }
 
@@ -90,20 +83,9 @@ func (a *Agent) ListSessions(ctx context.Context, params acp.ListSessionsRequest
 func (a *Agent) loadActiveSession(ctx context.Context, sessionId acp.SessionId) ([]acp.SessionConfigOption, error) {
 	// TODO: should we always load from db? Maybe be better, especially since config can change
 	if s, ok := a.activeSessions.Load(sessionId); ok {
-		var modelRefVal, thinkingRefVal string
-		s.Do(func(t *session) error {
-			modelRefVal = t.modelRef
-			thinkingRefVal = t.thinkingLevel
-			return nil
-		})
-		return []acp.SessionConfigOption{
-			{
-				Select: a.configOption(sessionId, modelRefConfigId, modelRefVal),
-			},
-			{
-				Select: a.configOption(sessionId, thinkingLevelConfigId, thinkingRefVal),
-			},
-		}, nil
+		// session already exists, but maybe we should reload the runtime based on stored config options?
+		_ = s
+		return a.configOptions(ctx, sessionId), nil
 	}
 
 	getSessionResp, err := a.db.GetACPSession(ctx, sessionId)
@@ -146,14 +128,7 @@ func (a *Agent) loadActiveSession(ctx context.Context, sessionId acp.SessionId) 
 			runtime:       runtime,
 		}
 		a.activeSessions.Store(sessionId, sync.NewGuard(s))
-		return []acp.SessionConfigOption{
-			{
-				Select: a.configOption(sessionId, modelRefConfigId, modelRef),
-			},
-			{
-				Select: a.configOption(sessionId, thinkingLevelConfigId, thinkingLevel),
-			},
-		}, nil
+		return a.configOptions(ctx, sessionId), nil
 	}
 
 	// model ref is valid, double check thinking value
@@ -183,14 +158,7 @@ func (a *Agent) loadActiveSession(ctx context.Context, sessionId acp.SessionId) 
 		runtime:       runtime,
 	}
 	a.activeSessions.Store(sessionId, sync.NewGuard(s))
-	return []acp.SessionConfigOption{
-		{
-			Select: a.configOption(sessionId, modelRefConfigId, modelRef),
-		},
-		{
-			Select: a.configOption(sessionId, thinkingLevelConfigId, thinkingLevel),
-		},
-	}, nil
+	return a.configOptions(ctx, sessionId), nil
 }
 
 // ResumeSession implements [acp.Agent].
@@ -320,9 +288,9 @@ func (a *Agent) Cancel(ctx context.Context, params acp.CancelNotification) error
 
 // CloseSession implements [acp.Agent].
 func (a *Agent) CloseSession(ctx context.Context, params acp.CloseSessionRequest) (acp.CloseSessionResponse, error) {
-	s, ok := a.activeSessions.Load(params.SessionId)
-	if !ok {
-		return acp.CloseSessionResponse{}, fmt.Errorf("session %s not found", params.SessionId)
+	s, err := a.activeSession(params.SessionId)
+	if err != nil {
+		return acp.CloseSessionResponse{}, err
 	}
 	if err := s.Do(func(t *session) error {
 		if t.runtime == nil {

@@ -95,9 +95,9 @@ func (a *Agent) Initialize(ctx context.Context, params acp.InitializeRequest) (a
 // TODO: add support for return usage.
 // TODO: add synctest type test for testing concurrency semantics
 func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.PromptResponse, error) {
-	s, ok := a.activeSessions.Load(params.SessionId)
-	if !ok {
-		panic(fmt.Sprintf("unknown session: %s", params.SessionId)) // TODO: should we panic or return error?
+	s, err := a.activeSession(params.SessionId)
+	if err != nil {
+		return acp.PromptResponse{}, err
 	}
 
 	if err := s.Do(func(t *session) error {
@@ -180,7 +180,7 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 	acpCtx, acpCtxCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
 	defer acpCtxCancel()
 	lastMessageID := storage.GetMessageID(dialog[len(dialog)-1])
-	_, err := a.db.AddACPSessionMessage(acpCtx, params.SessionId, lastMessageID)
+	_, err = a.db.AddACPSessionMessage(acpCtx, params.SessionId, lastMessageID)
 	if err != nil {
 		return acp.PromptResponse{}, fmt.Errorf("cannot update acp session in db: %v", err)
 	}

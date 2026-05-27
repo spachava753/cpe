@@ -1,209 +1,113 @@
-package acp
+package acp_test
 
 import (
-	"reflect"
-	"slices"
+	"context"
+	"io"
 	"testing"
 
 	acpsdk "github.com/coder/acp-go-sdk"
-	"github.com/spachava753/gai"
+	"github.com/nalgeon/be"
+	"github.com/spachava753/cpe/internal/acp"
 )
 
-func TestMsgToSessionUpdate(t *testing.T) {
-	toolCall := mustToolCallBlock(t, "call-1", "lookup", map[string]any{"query": "docs"})
+type testAcpClient struct{}
 
-	secondToolCall := mustToolCallBlock(t, "call-2", "read", map[string]any{"path": "README.md"})
-
-	tests := []struct {
-		name      string
-		msg       gai.Message
-		want      []acpsdk.SessionUpdate
-		wantPanic bool
-	}{
-		{
-			name: "user text",
-			msg: gai.Message{
-				Role:   gai.User,
-				Blocks: []gai.Block{gai.TextBlock("hello")},
-			},
-			want: []acpsdk.SessionUpdate{{UserMessageChunk: &acpsdk.SessionUpdateUserMessageChunk{
-				Content: acpsdk.TextBlock("hello"),
-			}}},
-		},
-		{
-			name: "user multiple blocks",
-			msg: gai.Message{Role: gai.User, Blocks: []gai.Block{
-				gai.TextBlock("hello"),
-				{BlockType: gai.Content, ModalityType: gai.Image, MimeType: "image/png", Content: gai.Str("iVBORw0KGgo=")},
-			}},
-			want: []acpsdk.SessionUpdate{
-				{UserMessageChunk: &acpsdk.SessionUpdateUserMessageChunk{Content: acpsdk.TextBlock("hello")}},
-				{UserMessageChunk: &acpsdk.SessionUpdateUserMessageChunk{Content: acpsdk.ImageBlock("iVBORw0KGgo=", "image/png")}},
-			},
-		},
-		{
-			name: "assistant text",
-			msg: gai.Message{
-				Role:   gai.Assistant,
-				Blocks: []gai.Block{gai.TextBlock("answer")},
-			},
-			want: []acpsdk.SessionUpdate{{AgentMessageChunk: &acpsdk.SessionUpdateAgentMessageChunk{
-				Content: acpsdk.TextBlock("answer"),
-			}}},
-		},
-		{
-			name: "assistant thought",
-			msg: gai.Message{Role: gai.Assistant, Blocks: []gai.Block{{
-				BlockType:    gai.Thinking,
-				ModalityType: gai.Text,
-				MimeType:     "text/plain",
-				Content:      gai.Str("reasoning"),
-			}}},
-			want: []acpsdk.SessionUpdate{{AgentThoughtChunk: &acpsdk.SessionUpdateAgentThoughtChunk{
-				Content: acpsdk.TextBlock("reasoning"),
-			}}},
-		},
-		{
-			name: "assistant tool call",
-			msg:  gai.Message{Role: gai.Assistant, Blocks: []gai.Block{toolCall}},
-			want: []acpsdk.SessionUpdate{{ToolCall: &acpsdk.SessionUpdateToolCall{
-				RawInput:   map[string]any{"query": "docs"},
-				Status:     acpsdk.ToolCallStatusPending,
-				Title:      "lookup",
-				ToolCallId: "call-1",
-			}}},
-		},
-		{
-			name: "assistant thinking then multiple tool calls",
-			msg: gai.Message{Role: gai.Assistant, Blocks: []gai.Block{
-				{BlockType: gai.Thinking, ModalityType: gai.Text, MimeType: "text/plain", Content: gai.Str("first thought")},
-				{BlockType: gai.Thinking, ModalityType: gai.Text, MimeType: "text/plain", Content: gai.Str("second thought")},
-				toolCall,
-				secondToolCall,
-			}},
-			want: []acpsdk.SessionUpdate{
-				{AgentThoughtChunk: &acpsdk.SessionUpdateAgentThoughtChunk{Content: acpsdk.TextBlock("first thought")}},
-				{AgentThoughtChunk: &acpsdk.SessionUpdateAgentThoughtChunk{Content: acpsdk.TextBlock("second thought")}},
-				{ToolCall: &acpsdk.SessionUpdateToolCall{
-					RawInput:   map[string]any{"query": "docs"},
-					Status:     acpsdk.ToolCallStatusPending,
-					Title:      "lookup",
-					ToolCallId: "call-1",
-				}},
-				{ToolCall: &acpsdk.SessionUpdateToolCall{
-					RawInput:   map[string]any{"path": "README.md"},
-					Status:     acpsdk.ToolCallStatusPending,
-					Title:      "read",
-					ToolCallId: "call-2",
-				}},
-			},
-		},
-		{
-			name: "malformed assistant tool call panics",
-			msg: gai.Message{Role: gai.Assistant, Blocks: []gai.Block{{
-				ID:           "call-bad",
-				BlockType:    gai.ToolCall,
-				ModalityType: gai.Text,
-				Content:      gai.Str("not-json"),
-			}}},
-			wantPanic: true,
-		},
-		{
-			name: "successful tool result with consecutive matching ids",
-			msg: gai.Message{Role: gai.ToolResult, Blocks: []gai.Block{
-				{ID: "call-2", BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("result")},
-				{ID: "call-2", BlockType: gai.Content, ModalityType: gai.Image, MimeType: "image/png", Content: gai.Str("iVBORw0KGgo=")},
-			}},
-			want: []acpsdk.SessionUpdate{
-				{ToolCallUpdate: &acpsdk.SessionToolCallUpdate{
-					Content:    []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock("result"))},
-					Status:     new(acpsdk.ToolCallStatusCompleted),
-					ToolCallId: "call-2",
-				}},
-				{ToolCallUpdate: &acpsdk.SessionToolCallUpdate{
-					Content:    []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.ImageBlock("iVBORw0KGgo=", "image/png"))},
-					Status:     new(acpsdk.ToolCallStatusCompleted),
-					ToolCallId: "call-2",
-				}},
-			},
-		},
-		{
-			name: "tool result with multiple tool call ids",
-			msg: gai.Message{Role: gai.ToolResult, Blocks: []gai.Block{
-				{ID: "call-1", BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("lookup result")},
-				{ID: "call-2", BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("read result")},
-			}},
-			want: []acpsdk.SessionUpdate{
-				{ToolCallUpdate: &acpsdk.SessionToolCallUpdate{
-					Content:    []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock("lookup result"))},
-					Status:     new(acpsdk.ToolCallStatusCompleted),
-					ToolCallId: "call-1",
-				}},
-				{ToolCallUpdate: &acpsdk.SessionToolCallUpdate{
-					Content:    []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock("read result"))},
-					Status:     new(acpsdk.ToolCallStatusCompleted),
-					ToolCallId: "call-2",
-				}},
-			},
-		},
-		{
-			name: "failed tool result",
-			msg: gai.Message{
-				Role:            gai.ToolResult,
-				Blocks:          []gai.Block{{ID: "call-3", BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("boom")}},
-				ToolResultError: true,
-			},
-			want: []acpsdk.SessionUpdate{{ToolCallUpdate: &acpsdk.SessionToolCallUpdate{
-				Content:    []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock("boom"))},
-				Status:     new(acpsdk.ToolCallStatusFailed),
-				ToolCallId: "call-3",
-			}}},
-		},
-		{
-			name: "unsupported modality becomes text",
-			msg: gai.Message{Role: gai.User, Blocks: []gai.Block{{
-				BlockType:    gai.Content,
-				ModalityType: gai.Video,
-				MimeType:     "video/mp4",
-				Content:      gai.Str("video-data"),
-			}}},
-			want: []acpsdk.SessionUpdate{{UserMessageChunk: &acpsdk.SessionUpdateUserMessageChunk{
-				Content: acpsdk.TextBlock("video-data"),
-			}}},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var got []acpsdk.SessionUpdate
-			panicked := false
-			func() {
-				defer func() {
-					if recover() != nil {
-						panicked = true
-					}
-				}()
-				got = slices.Collect(msgToSessionUpdate(tt.msg))
-			}()
-
-			if panicked != tt.wantPanic {
-				t.Fatalf("msgToSessionUpdate() panicked = %t, want %t", panicked, tt.wantPanic)
-			}
-			if tt.wantPanic {
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Fatalf("msgToSessionUpdate() = %#v, want %#v", got, tt.want)
-			}
-		})
-	}
+// CreateTerminal implements [acp.Client].
+func (t *testAcpClient) CreateTerminal(ctx context.Context, params acpsdk.CreateTerminalRequest) (acpsdk.CreateTerminalResponse, error) {
+	panic("unimplemented")
 }
 
-func mustToolCallBlock(t *testing.T, id, name string, params map[string]any) gai.Block {
-	t.Helper()
-	block, err := gai.ToolCallBlock(id, name, params)
-	if err != nil {
-		t.Fatalf("ToolCallBlock() error = %v", err)
-	}
-	return block
+// KillTerminal implements [acp.Client].
+func (t *testAcpClient) KillTerminal(ctx context.Context, params acpsdk.KillTerminalRequest) (acpsdk.KillTerminalResponse, error) {
+	panic("unimplemented")
+}
+
+// ReadTextFile implements [acp.Client].
+func (t *testAcpClient) ReadTextFile(ctx context.Context, params acpsdk.ReadTextFileRequest) (acpsdk.ReadTextFileResponse, error) {
+	panic("unimplemented")
+}
+
+// ReleaseTerminal implements [acp.Client].
+func (t *testAcpClient) ReleaseTerminal(ctx context.Context, params acpsdk.ReleaseTerminalRequest) (acpsdk.ReleaseTerminalResponse, error) {
+	panic("unimplemented")
+}
+
+// RequestPermission implements [acp.Client].
+func (t *testAcpClient) RequestPermission(ctx context.Context, params acpsdk.RequestPermissionRequest) (acpsdk.RequestPermissionResponse, error) {
+	panic("unimplemented")
+}
+
+// SessionUpdate implements [acp.Client].
+func (t *testAcpClient) SessionUpdate(ctx context.Context, params acpsdk.SessionNotification) error {
+	panic("unimplemented")
+}
+
+// TerminalOutput implements [acp.Client].
+func (t *testAcpClient) TerminalOutput(ctx context.Context, params acpsdk.TerminalOutputRequest) (acpsdk.TerminalOutputResponse, error) {
+	panic("unimplemented")
+}
+
+// WaitForTerminalExit implements [acp.Client].
+func (t *testAcpClient) WaitForTerminalExit(ctx context.Context, params acpsdk.WaitForTerminalExitRequest) (acpsdk.WaitForTerminalExitResponse, error) {
+	panic("unimplemented")
+}
+
+// WriteTextFile implements [acp.Client].
+func (t *testAcpClient) WriteTextFile(ctx context.Context, params acpsdk.WriteTextFileRequest) (acpsdk.WriteTextFileResponse, error) {
+	panic("unimplemented")
+}
+
+var _ acpsdk.Client = (*testAcpClient)(nil)
+
+func TestInit(t *testing.T) {
+	client := testAcpClient{}
+	ar, aw := io.Pipe()
+	cr, cw := io.Pipe()
+
+	go func() {
+		ctx, cancel := context.WithCancel(t.Context())
+		t.Cleanup(func() {
+			cancel()
+		})
+		if err := acp.Serve(ctx, acp.ServeOptions{
+			Stdout:     aw,
+			Stdin:      cr,
+			Stderr:     io.Discard,
+			ConfigPath: "",
+			DbPath:     "",
+		}); err != nil {
+			t.Errorf("agent returned error: %v", err)
+		}
+	}()
+	t.Log("started agent")
+
+	clientConn := acpsdk.NewClientSideConnection(&client, cw, ar)
+	t.Log("created connection")
+
+	resp, err := clientConn.Initialize(t.Context(), acpsdk.InitializeRequest{
+		ClientCapabilities: acpsdk.ClientCapabilities{
+			Fs: acpsdk.FileSystemCapabilities{
+				ReadTextFile:  false,
+				WriteTextFile: false,
+			},
+			Terminal: false,
+		},
+		ClientInfo: &acpsdk.Implementation{
+			Name:    "test-client",
+			Title:   new("test client"),
+			Version: "test",
+		},
+		ProtocolVersion: acpsdk.ProtocolVersionNumber,
+	})
+	t.Log("called init")
+	// we should not get an error on init connection
+	be.Err(t, err, nil)
+	// assert agent capabilities
+	be.True(t, resp.AgentCapabilities.LoadSession)
+	be.Equal(t, resp.AgentCapabilities.SessionCapabilities.Close, &acpsdk.SessionCloseCapabilities{})
+	be.Equal(t, resp.AgentCapabilities.SessionCapabilities.List, &acpsdk.SessionListCapabilities{})
+	be.Equal(t, resp.AgentCapabilities.SessionCapabilities.Resume, &acpsdk.SessionResumeCapabilities{})
+	be.True(t, resp.AgentCapabilities.PromptCapabilities.Audio)
+	be.True(t, resp.AgentCapabilities.PromptCapabilities.Image)
+	be.True(t, !resp.AgentCapabilities.PromptCapabilities.EmbeddedContext)
 }

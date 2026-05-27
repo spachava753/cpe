@@ -3,6 +3,7 @@ package acp
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 
 	"github.com/coder/acp-go-sdk"
@@ -24,9 +25,9 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessio
 	if params.ValueId == nil {
 		return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("unsupported session config option type")
 	}
-	s, ok := a.activeSessions.Load(params.ValueId.SessionId)
-	if !ok {
-		panic(fmt.Sprintf("unknown session: %s", params.ValueId.SessionId)) // TODO: should we panic or return error?
+	s, err := a.activeSession(params.ValueId.SessionId)
+	if err != nil {
+		return acp.SetSessionConfigOptionResponse{}, err
 	}
 	var modelRefVal, thinkingVal string
 	if err := s.Do(func(t *session) error {
@@ -75,20 +76,21 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessio
 		panic(fmt.Sprintf("unknown config id: %s", params.ValueId.ConfigId))
 	}
 	return acp.SetSessionConfigOptionResponse{
-		ConfigOptions: []acp.SessionConfigOption{
-			{
-				Select: a.configOption(params.ValueId.SessionId, modelRefConfigId, modelRefVal),
-			},
-			{
-				Select: a.configOption(params.ValueId.SessionId, thinkingLevelConfigId, thinkingVal),
-			},
-		},
+		ConfigOptions: a.configOptions(ctx, params.ValueId.SessionId),
 	}, nil
 }
 
-func (a *Agent) configOption(sessionId acp.SessionId, configId acp.SessionConfigId, currentVal string) *acp.SessionConfigOptionSelect {
-	switch configId {
-	case modelRefConfigId:
+func (a *Agent) configOptions(ctx context.Context, sessionId acp.SessionId) []acp.SessionConfigOption {
+	s, err := a.db.GetACPSession(ctx, sessionId)
+	if err != nil {
+		panic(fmt.Sprintf("error fetching session %s: %v", sessionId, err))
+	}
+	var sessionConfigs []acp.SessionConfigOption
+
+	// model not picked yet
+	if s.ModelRef == "" {
+		slog.Info("model not picked yet", slog.String("session_id", string(sessionId)))
+
 		opts := make(acp.SessionConfigSelectOptionsUngrouped, len(a.rawCfg.Models))
 		for i, m := range a.rawCfg.Models {
 			// TODO: *m.InputCostPerMillion and *m.OutputCostPerMillion can cause panic, fix with checking nil and using string builder
@@ -102,9 +104,82 @@ Output Cost: %f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion, *m
 				Value: acp.SessionConfigValueId(m.Ref),
 			}
 		}
-		return &acp.SessionConfigOptionSelect{
+
+		sessionConfigs = append(sessionConfigs, acp.SessionConfigOption{
+			Select: &acp.SessionConfigOptionSelect{
+				Category:     new(acp.SessionConfigOptionCategoryModel),
+				CurrentValue: acp.SessionConfigValueId(""),
+				Description:  new("Choose model"),
+				Id:           modelRefConfigId,
+				Name:         "Model",
+				Options: acp.SessionConfigSelectOptions{
+					Ungrouped: &opts,
+				},
+				Type: "select",
+			},
+		})
+		return sessionConfigs
+	}
+
+	// check if stale session config, if true, then just return model picker
+	if !slices.ContainsFunc(a.rawCfg.Models, func(m config.ModelConfig) bool {
+		return m.Ref == s.ModelRef
+	}) {
+		slog.Info(
+			"stale config value",
+			slog.String("session_id", string(sessionId)),
+			slog.String("config_id", string(modelRefConfigId)),
+			slog.String("value", string(s.ModelRef)),
+		)
+		opts := make(acp.SessionConfigSelectOptionsUngrouped, len(a.rawCfg.Models))
+		for i, m := range a.rawCfg.Models {
+			// TODO: *m.InputCostPerMillion and *m.OutputCostPerMillion can cause panic, fix with checking nil and using string builder
+			opts[i] = acp.SessionConfigSelectOption{
+				Description: new(fmt.Sprintf(`Type: %s
+Base Url: %s
+Context Window: %d
+Input Cost: %f
+Output Cost: %f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion, *m.OutputCostPerMillion)),
+				Name:  m.DisplayName,
+				Value: acp.SessionConfigValueId(m.Ref),
+			}
+		}
+
+		sessionConfigs = append(sessionConfigs, acp.SessionConfigOption{
+			Select: &acp.SessionConfigOptionSelect{
+				Category:     new(acp.SessionConfigOptionCategoryModel),
+				CurrentValue: acp.SessionConfigValueId(""),
+				Description:  new("Choose model"),
+				Id:           modelRefConfigId,
+				Name:         "Model",
+				Options: acp.SessionConfigSelectOptions{
+					Ungrouped: &opts,
+				},
+				Type: "select",
+			},
+		})
+		return sessionConfigs
+	}
+
+	// model was set, and is valid value
+	opts := make(acp.SessionConfigSelectOptionsUngrouped, len(a.rawCfg.Models))
+	for i, m := range a.rawCfg.Models {
+		// TODO: *m.InputCostPerMillion and *m.OutputCostPerMillion can cause panic, fix with checking nil and using string builder
+		opts[i] = acp.SessionConfigSelectOption{
+			Description: new(fmt.Sprintf(`Type: %s
+Base Url: %s
+Context Window: %d
+Input Cost: %f
+Output Cost: %f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion, *m.OutputCostPerMillion)),
+			Name:  m.DisplayName,
+			Value: acp.SessionConfigValueId(m.Ref),
+		}
+	}
+
+	sessionConfigs = append(sessionConfigs, acp.SessionConfigOption{
+		Select: &acp.SessionConfigOptionSelect{
 			Category:     new(acp.SessionConfigOptionCategoryModel),
-			CurrentValue: acp.SessionConfigValueId(currentVal),
+			CurrentValue: acp.SessionConfigValueId(s.ModelRef),
 			Description:  new("Choose model"),
 			Id:           modelRefConfigId,
 			Name:         "Model",
@@ -112,44 +187,46 @@ Output Cost: %f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion, *m
 				Ungrouped: &opts,
 			},
 			Type: "select",
-		}
-	case thinkingLevelConfigId:
-		// get modelRef first, if not set, there is an issue
-		var modelRefVal string
-		s, ok := a.activeSessions.Load(sessionId)
-		if !ok {
-			panic(fmt.Sprintf("unknown session: %s", sessionId)) // TODO: should we panic or return error?
-		}
-		if err := s.Do(func(t *session) error {
-			modelRefVal = t.modelRef
-			return nil
-		}); err != nil {
-			panic("unreachable")
-		}
+		},
+	})
 
-		if modelRefVal == "" {
-			panic("modelRefVal is empty")
-		}
+	idx := slices.IndexFunc(a.rawCfg.Models, func(m config.ModelConfig) bool {
+		return m.Ref == s.ModelRef
+	})
+	m := a.rawCfg.Models[idx]
 
-		idx := slices.IndexFunc(a.rawCfg.Models, func(m config.ModelConfig) bool {
-			return m.Ref == modelRefVal
-		})
+	// if thinking level not set and no thinking values available, not need to set thinking config option
+	if len(m.ThinkingValues) == 0 {
+		// TODO: should we update stale thinking level here?
+		return sessionConfigs
+	}
 
-		if idx == -1 {
-			panic("model not found")
-		}
+	if !slices.ContainsFunc(m.ThinkingValues, func(tv config.ThinkingValueConfig) bool {
+		return tv.Value == s.ThinkingLevel
+	}) {
+		slog.Info(
+			"stale config value",
+			slog.String("session_id", string(sessionId)),
+			slog.String("config_id", string(modelRefConfigId)),
+			slog.String("value", string(s.ModelRef)),
+		)
+		// TODO: should we update stale thinking level here?
+		s.ThinkingLevel = m.ThinkingValues[0].Value
+	}
 
-		opts := make(acp.SessionConfigSelectOptionsUngrouped, len(a.rawCfg.Models[idx].ThinkingValues))
-		for i, tv := range a.rawCfg.Models[idx].ThinkingValues {
-			opts[i] = acp.SessionConfigSelectOption{
-				Description: new(tv.Description),
-				Name:        tv.Name,
-				Value:       acp.SessionConfigValueId(tv.Value),
-			}
+	opts = make(acp.SessionConfigSelectOptionsUngrouped, len(m.ThinkingValues))
+	for i, tv := range m.ThinkingValues {
+		opts[i] = acp.SessionConfigSelectOption{
+			Description: new(tv.Description),
+			Name:        tv.Name,
+			Value:       acp.SessionConfigValueId(tv.Value),
 		}
-		return &acp.SessionConfigOptionSelect{
+	}
+
+	sessionConfigs = append(sessionConfigs, acp.SessionConfigOption{
+		Select: &acp.SessionConfigOptionSelect{
 			Category:     new(acp.SessionConfigOptionCategoryThoughtLevel),
-			CurrentValue: acp.SessionConfigValueId(currentVal),
+			CurrentValue: acp.SessionConfigValueId(s.ThinkingLevel),
 			Description:  new("Choose thinking level"),
 			Id:           thinkingLevelConfigId,
 			Name:         "Thinking level",
@@ -157,10 +234,10 @@ Output Cost: %f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion, *m
 				Ungrouped: &opts,
 			},
 			Type: "select",
-		}
-	default:
-		panic(fmt.Sprintf("unknown config id: %s", configId))
-	}
+		},
+	})
+
+	return sessionConfigs
 }
 
 // SetSessionMode implements [acp.Agent].

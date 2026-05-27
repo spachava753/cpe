@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 
 	"github.com/coder/acp-go-sdk"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -24,6 +23,7 @@ import (
 )
 
 type ServeOptions struct {
+	Stdin      io.Reader
 	Stdout     io.Writer
 	Stderr     io.Writer
 	ConfigPath string
@@ -238,10 +238,15 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		},
 		runtimeFactory: runtimeFactory,
 	}
-	asc := acp.NewAgentSideConnection(&ag, os.Stdout, os.Stdin)
+	asc := acp.NewAgentSideConnection(&ag, opts.Stdout, opts.Stdin)
 	ag.conn = asc
 	asc.SetLogger(slog.Default())
-	<-asc.Done()
+	select {
+	case <-asc.Done():
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
 	// TODO: we should close on connection end and clean up mcp connections
 	return nil
 }
