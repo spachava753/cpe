@@ -16,6 +16,14 @@ import (
 	"github.com/coder/acp-go-sdk"
 )
 
+// runtimeFactory is the type to represent a factory that will
+// construct the runtime that actually executes the agent loop
+// on call the [Agent.Prompt]
+type runtimeFactory func(
+	conn *acp.AgentSideConnection,
+	modelRef string,
+) (acpRuntime, error)
+
 // Agent is an implementation of an [acp.Agent]
 //
 // TODO: how should we split the functionality between
@@ -33,7 +41,7 @@ type Agent struct {
 	// genId is a factory function to create session ids
 	genId func() acp.SessionId
 	// runtimeFactory is a factory function to create runtimes for session execution
-	runtimeFactory func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error)
+	runtimeFactory runtimeFactory
 	// rawCfg is the raw config loaded, used for model picking at the beginning of a new session
 	rawCfg *config.RawConfig
 	// db represents the API surface needed for persistent session management
@@ -53,12 +61,18 @@ type Agent struct {
 }
 
 // Authenticate implements [acp.Agent].
-func (a *Agent) Authenticate(ctx context.Context, params acp.AuthenticateRequest) (acp.AuthenticateResponse, error) {
+func (a *Agent) Authenticate(
+	ctx context.Context,
+	params acp.AuthenticateRequest,
+) (acp.AuthenticateResponse, error) {
 	return acp.AuthenticateResponse{}, nil
 }
 
 // Initialize implements [acp.Agent].
-func (a *Agent) Initialize(ctx context.Context, params acp.InitializeRequest) (acp.InitializeResponse, error) {
+func (a *Agent) Initialize(
+	ctx context.Context,
+	params acp.InitializeRequest,
+) (acp.InitializeResponse, error) {
 	a.readFsTool = params.ClientCapabilities.Fs.ReadTextFile
 	a.writeFsTool = params.ClientCapabilities.Fs.WriteTextFile
 	return acp.InitializeResponse{
@@ -94,7 +108,10 @@ func (a *Agent) Initialize(ctx context.Context, params acp.InitializeRequest) (a
 //
 // TODO: add support for return usage.
 // TODO: add synctest type test for testing concurrency semantics
-func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.PromptResponse, error) {
+func (a *Agent) Prompt(
+	ctx context.Context,
+	params acp.PromptRequest,
+) (acp.PromptResponse, error) {
 	s, err := a.activeSession(params.SessionId)
 	if err != nil {
 		return acp.PromptResponse{}, err
@@ -113,7 +130,11 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 
 	cancelCtx, cancelFunc := context.WithCancel(ctx)
 
-	// we launch a go routine within the gaurd because we don't want to hold onto the active session the entire time we are generating. Otherwise, when [Agent.Cancel] is called, and it tries to lock the gaurd to call the cancellation function, it can't because the gaurd is held by this prompt call here
+	// we launch a go routine within the gaurd because we don't want
+	// to hold onto the active session the entire time we are generating.
+	// Otherwise, when [Agent.Cancel] is called, and it tries to lock the
+	// gaurd to call the cancellation function, it can't because the gaurd
+	// is held by this prompt call here
 	type generateResult struct {
 		dialog gai.Dialog
 		err    error
@@ -152,7 +173,11 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		}
 		t.cancelfunc = cancelFunc
 		go func() {
-			generatedDialog, err := runtime.Generate(withSessionID(cancelCtx, params.SessionId), inputDialog, genOpts)
+			generatedDialog, err := runtime.Generate(
+				withSessionID(cancelCtx, params.SessionId),
+				inputDialog,
+				genOpts,
+			)
 			resultChan <- generateResult{dialog: generatedDialog, err: err}
 		}()
 		return nil
@@ -160,8 +185,10 @@ func (a *Agent) Prompt(ctx context.Context, params acp.PromptRequest) (acp.Promp
 		return acp.PromptResponse{}, err
 	}
 
-	// here we wait until the result is given, which could be because the context was cancelled
-	// TODO: THIS ACTUALLY HANGS THE ENTIRE ACP SERVER, since we aren't listening for context for cancellation
+	// here we wait until the result is given, which could be because the
+	// context was cancelled
+	// TODO: THIS ACTUALLY HANGS THE ENTIRE ACP SERVER, since we aren't
+	// listening for context for cancellation
 	result := <-resultChan
 
 	dialog := result.dialog
