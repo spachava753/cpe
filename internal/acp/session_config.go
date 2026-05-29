@@ -98,8 +98,8 @@ func (a *Agent) configOptions(ctx context.Context, sessionId acp.SessionId) []ac
 				Description: new(fmt.Sprintf(`Type: %s
 Base Url: %s
 Context Window: %d
-Input Cost: %f
-Output Cost: %f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion, *m.OutputCostPerMillion)),
+Input Cost: %0.2f
+Output Cost: %0.2f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion, *m.OutputCostPerMillion)),
 				Name:  m.DisplayName,
 				Value: acp.SessionConfigValueId(m.Ref),
 			}
@@ -138,8 +138,8 @@ Output Cost: %f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion, *m
 				Description: new(fmt.Sprintf(`Type: %s
 Base Url: %s
 Context Window: %d
-Input Cost: %f
-Output Cost: %f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion, *m.OutputCostPerMillion)),
+Input Cost: %0.2f
+Output Cost: %0.2f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion, *m.OutputCostPerMillion)),
 				Name:  m.DisplayName,
 				Value: acp.SessionConfigValueId(m.Ref),
 			}
@@ -169,8 +169,8 @@ Output Cost: %f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion, *m
 			Description: new(fmt.Sprintf(`Type: %s
 Base Url: %s
 Context Window: %d
-Input Cost: %f
-Output Cost: %f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion, *m.OutputCostPerMillion)),
+Input Cost: %0.2f
+Output Cost: %0.2f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion, *m.OutputCostPerMillion)),
 			Name:  m.DisplayName,
 			Value: acp.SessionConfigValueId(m.Ref),
 		}

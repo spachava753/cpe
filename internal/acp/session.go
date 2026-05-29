@@ -47,8 +47,15 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		Title:     new("untitled"),
 		SessionId: id,
 	}
+	modelRef := a.rawCfg.Models[0].Ref
+	var thinkingVal string
+	if len(a.rawCfg.Models[0].ThinkingValues) > 0 {
+		thinkingVal = a.rawCfg.Models[0].ThinkingValues[0].Value
+	}
 	s := session{
-		si: si,
+		si:            si,
+		modelRef:      modelRef,
+		thinkingLevel: thinkingVal,
 	}
 
 	if err := a.db.CreateACPSession(ctx, storage.CreateACPSessionParams{
