@@ -69,6 +69,17 @@ func (l *Loop) validateToolChoice(opts *gai.GenOpts) error {
 
 // Generate runs the dialog until a terminal assistant response, nil-callback
 // terminal tool, callback error, or compaction restart limit is reached.
+//
+// TODO: we need to add support for sending session updates for streaming generators for a more real-time experience
+// TODO: acp clients, like editors like zed, might have unsaved changes, so generally speaking, it is preferable to use fs/read_text_file and fs/write_text_file tools where possible
+// TODO: text_edit tool should display file edit diff, see https://agentclientprotocol.com/protocol/tool-calls#diffs
+// TODO: support unstable feature https://agentclientprotocol.com/rfds/diff-delete
+// TODO: execute_go_code tool should display file edit diff, see https://agentclientprotocol.com/protocol/tool-calls#diffs, which would mean we would need to capture before and after we run execute go code tool, more complicated than text_edit
+// TODO: displaying the live output of the execute go code tool would be valuable, available in https://agentclientprotocol.com/protocol/terminals#embedding-in-tool-calls
+// TODO: we should add support for unstable feature https://agentclientprotocol.com/rfds/session-usage
+// TODO: we should have support MCP config passed
+// TODO: expose model capability metadata in session updates so ACP clients can adapt UI affordances
+// TODO: map ACP cancellation requests onto in-flight generator and tool execution contexts
 func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 	current := append(gai.Dialog(nil), dialog...)
 

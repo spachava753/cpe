@@ -8,3 +8,4 @@ Package-specific guidance for `internal/acp`.
 - When ACP protocol docs and current behavior disagree, prefer tests and code that match the protocol. The protocol can require behavior that is not obvious from the current implementation.
 - Prefer testing through the ACP client/server connection for RPC behavior. Direct `Agent` calls are only for branches that cannot be observed through notification/transport semantics.
 - In tests, keep setup explicit and auditable. Group scenarios with `t.Run` when they exercise the same public method, but avoid clever shared fixtures that hide what each scenario is doing.
+- For understanding the update-to-date ACP documentation, you peruse https://agentclientprotocol.com/llms.txt
