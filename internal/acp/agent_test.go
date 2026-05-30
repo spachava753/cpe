@@ -2,8 +2,6 @@ package acp
 
 import (
 	"context"
-	"errors"
-	"slices"
 	"testing"
 
 	"github.com/coder/acp-go-sdk"
@@ -23,6 +21,28 @@ func (t *promptTestClient) SessionUpdate(ctx context.Context, params acp.Session
 	t.capturedNotifications = append(t.capturedNotifications, params)
 	return nil
 }
+
+type promptTestRuntime struct {
+	*Loop
+}
+
+func (r promptTestRuntime) Close() error {
+	return nil
+}
+
+type promptTestGenerator struct {
+	response gai.Response
+}
+
+func (g promptTestGenerator) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+	return g.response, nil
+}
+
+func (g promptTestGenerator) Register(tool gai.Tool) error {
+	return nil
+}
+
+var _ gai.ToolCallingGenerator = (*promptTestGenerator)(nil)
 
 func TestPrompt(t *testing.T) {
 	var (
@@ -63,57 +83,51 @@ func TestPrompt(t *testing.T) {
 			},
 		},
 		func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error) {
-			return mockRuntime(func(ctx context.Context, input gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
-				generatedDialog := gai.Dialog{
-					{
-						Role: gai.Assistant,
-						Blocks: []gai.Block{
-							{
-								ID:           "",
-								BlockType:    gai.Thinking,
-								ModalityType: gai.Text,
-								MimeType:     "text/plain",
-								Content:      gai.Str("let me think"),
-								ExtraFields:  map[string]any{},
-							},
-							{
-								ID:           "",
-								BlockType:    gai.Content,
-								ModalityType: gai.Text,
-								MimeType:     "text/plain",
-								Content:      gai.Str("here is the answer:"),
-								ExtraFields:  map[string]any{},
-							},
+			gen := promptTestGenerator{response: gai.Response{
+				Candidates: []gai.Message{{
+					Role: gai.Assistant,
+					Blocks: []gai.Block{
+						{
+							ID:           "",
+							BlockType:    gai.Thinking,
+							ModalityType: gai.Text,
+							MimeType:     "text/plain",
+							Content:      gai.Str("let me think"),
+							ExtraFields:  map[string]any{},
 						},
-						ToolResultError: false,
-						ExtraFields:     map[string]any{},
+						{
+							ID:           "",
+							BlockType:    gai.Content,
+							ModalityType: gai.Text,
+							MimeType:     "text/plain",
+							Content:      gai.Str("here is the answer:"),
+							ExtraFields:  map[string]any{},
+						},
 					},
-				}
-
-				savedDialog := make(gai.Dialog, 0, len(generatedDialog))
-				for msg, err := range store.SaveDialog(ctx, slices.Values(generatedDialog)) {
-					if err != nil {
-						return generatedDialog, err
-					}
-					savedDialog = append(savedDialog, msg)
-				}
-
-				sessionID, ok := ctx.Value(sessionIDCtxKey{}).(acp.SessionId)
-				if !ok || sessionID == "" {
-					return generatedDialog, errors.New("missing ACP session id")
-				}
-
-				for _, m := range generatedDialog {
-					for update := range msgToSessionUpdate(m) {
-						conn.SessionUpdate(ctx, acp.SessionNotification{
-							SessionId: sessionID,
-							Update:    update,
-						})
-					}
-				}
-
-				return generatedDialog, nil
-			}), nil
+					ToolResultError: false,
+					ExtraFields:     map[string]any{},
+				}},
+				FinishReason: gai.EndTurn,
+				UsageMetadata: gai.Metadata{
+					gai.UsageMetricInputTokens:      80,
+					gai.UsageMetricGenerationTokens: 10,
+				},
+			}}
+			return promptTestRuntime{Loop: &Loop{
+				G:           gen,
+				DialogSaver: store,
+				Cfg: config.Config{Model: config.Model{
+					Ref:                  "test-model",
+					DisplayName:          "Test Model",
+					ID:                   "test-model",
+					Type:                 "responses",
+					BaseUrl:              "https://customurl.com/v1",
+					ContextWindow:        100,
+					InputCostPerMillion:  new(1.0),
+					OutputCostPerMillion: new(1.0),
+				}},
+				conn: conn,
+			}}, nil
 		},
 	)
 
@@ -226,6 +240,20 @@ Output Cost: 1.00`),
 						},
 					},
 					SessionUpdate: "agent_message_chunk",
+				},
+			},
+		},
+		{
+			SessionId: sessionId,
+			Update: acp.SessionUpdate{
+				UsageUpdate: &acp.SessionUsageUpdate{
+					Cost: &acp.Cost{
+						Amount:   0.00009,
+						Currency: "USD",
+					},
+					SessionUpdate: "usage_update",
+					Size:          100,
+					Used:          90,
 				},
 			},
 		},

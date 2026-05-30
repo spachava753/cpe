@@ -33,6 +33,7 @@ type Loop struct {
 	// internal state
 	toolCallbacks      map[string]gai.ToolCallback
 	compactionRestarts int
+	cumulativeCostUSD  float64
 	conn               *acp.AgentSideConnection
 }
 
@@ -76,7 +77,6 @@ func (l *Loop) validateToolChoice(opts *gai.GenOpts) error {
 // TODO: support unstable feature https://agentclientprotocol.com/rfds/diff-delete
 // TODO: execute_go_code tool should display file edit diff, see https://agentclientprotocol.com/protocol/tool-calls#diffs, which would mean we would need to capture before and after we run execute go code tool, more complicated than text_edit
 // TODO: displaying the live output of the execute go code tool would be valuable, available in https://agentclientprotocol.com/protocol/terminals#embedding-in-tool-calls
-// TODO: we should add support for unstable feature https://agentclientprotocol.com/rfds/session-usage
 // TODO: we should have support MCP config passed
 // TODO: expose model capability metadata in session updates so ACP clients can adapt UI affordances
 // TODO: map ACP cancellation requests onto in-flight generator and tool execution contexts
@@ -137,6 +137,14 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 				Update:    update,
 			}); err != nil {
 				return current, fmt.Errorf("send assistant session update: %w", err)
+			}
+		}
+		if update, ok := l.usageSessionUpdate(resp.UsageMetadata); ok {
+			if err := l.conn.SessionUpdate(ctx, acp.SessionNotification{
+				SessionId: sessionID,
+				Update:    update,
+			}); err != nil {
+				return current, fmt.Errorf("send usage session update: %w", err)
 			}
 		}
 
@@ -347,4 +355,88 @@ func (l *Loop) compact(current gai.Dialog) (gai.Dialog, error) {
 	}
 	l.compactionRestarts++
 	return gai.Dialog{root}, nil
+}
+
+func (l *Loop) usageSessionUpdate(metadata gai.Metadata) (acp.SessionUpdate, bool) {
+	if l.Cfg.Model.ContextWindow == 0 {
+		return acp.SessionUpdate{}, false
+	}
+
+	used, ok := contextUsedTokens(metadata)
+	if !ok {
+		return acp.SessionUpdate{}, false
+	}
+
+	usage := acp.SessionUsageUpdate{
+		Size: int(l.Cfg.Model.ContextWindow),
+		Used: used,
+	}
+	if total, ok := calculateUsageCostUSD(metadata, l.Cfg.Model); ok {
+		l.cumulativeCostUSD += total
+		usage.Cost = &acp.Cost{
+			Amount:   l.cumulativeCostUSD,
+			Currency: "USD",
+		}
+	}
+
+	return acp.SessionUpdate{UsageUpdate: &usage}, true
+}
+
+func contextUsedTokens(metadata gai.Metadata) (int, bool) {
+	inputTokens, hasInputTokens := gai.InputTokens(metadata)
+	outputTokens, hasOutputTokens := gai.OutputTokens(metadata)
+	if !hasInputTokens && !hasOutputTokens {
+		return 0, false
+	}
+
+	return inputTokens + outputTokens, true
+}
+
+func calculateUsageCostUSD(metadata gai.Metadata, model config.Model) (float64, bool) {
+	total := 0.0
+	hasAnyCost := false
+
+	if inputTokens, ok := gai.InputTokens(metadata); ok {
+		billableInputTokens := inputTokens
+		if cacheRead, ok := gai.CacheReadTokens(metadata); ok {
+			billableInputTokens -= cacheRead
+		}
+		if cacheWrite, ok := gai.CacheWriteTokens(metadata); ok && model.CacheWriteCostPerMillion != nil {
+			billableInputTokens -= cacheWrite
+		}
+		if billableInputTokens < 0 {
+			billableInputTokens = 0
+		}
+		if cost, ok := calculateComponentCost(billableInputTokens, model.InputCostPerMillion); ok {
+			total += cost
+			hasAnyCost = true
+		}
+	}
+	if outputTokens, ok := gai.OutputTokens(metadata); ok {
+		if cost, ok := calculateComponentCost(outputTokens, model.OutputCostPerMillion); ok {
+			total += cost
+			hasAnyCost = true
+		}
+	}
+	if cacheRead, ok := gai.CacheReadTokens(metadata); ok {
+		if cost, ok := calculateComponentCost(cacheRead, model.CacheReadCostPerMillion); ok {
+			total += cost
+			hasAnyCost = true
+		}
+	}
+	if cacheWrite, ok := gai.CacheWriteTokens(metadata); ok {
+		if cost, ok := calculateComponentCost(cacheWrite, model.CacheWriteCostPerMillion); ok {
+			total += cost
+			hasAnyCost = true
+		}
+	}
+
+	return total, hasAnyCost
+}
+
+func calculateComponentCost(tokens int, costPerMillion *float64) (float64, bool) {
+	if costPerMillion == nil {
+		return 0, false
+	}
+	return (float64(tokens) * *costPerMillion) / 1_000_000, true
 }
