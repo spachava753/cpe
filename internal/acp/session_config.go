@@ -18,9 +18,7 @@ const (
 
 // SetSessionConfigOption implements [acp.Agent].
 //
-// TODO: we should probably expose more options like thinking mode, tool choice, etc. and wire up defaults from the config
-// TODO: we should save after every session config option change
-// TODO: we should exclude thinking options if not configured
+// TODO: we should probably expose more options like tool choice, etc. and wire up defaults from the config
 func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessionConfigOptionRequest) (acp.SetSessionConfigOptionResponse, error) {
 	if params.ValueId == nil {
 		return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("unsupported session config option type")
@@ -40,8 +38,21 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessio
 	switch params.ValueId.ConfigId {
 	case modelRefConfigId:
 		modelRefVal = string(params.ValueId.Value)
+		idx := slices.IndexFunc(a.rawCfg.Models, func(m config.ModelConfig) bool {
+			return m.Ref == modelRefVal
+		})
+		if idx == -1 {
+			return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("invalid model config value: %s", modelRefVal)
+		}
+		thinkingVal = ""
+		if len(a.rawCfg.Models[idx].ThinkingValues) > 0 {
+			thinkingVal = a.rawCfg.Models[idx].ThinkingValues[0].Value
+		}
 		if err := a.db.SetACPSessionModelRef(ctx, params.ValueId.SessionId, modelRefVal); err != nil {
 			return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("could not persist model config: %v", err)
+		}
+		if err := a.db.SetACPSessionThinkingLevel(ctx, params.ValueId.SessionId, thinkingVal); err != nil {
+			return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("could not persist thinking config: %v", err)
 		}
 		if err := s.Do(func(t *session) error {
 			if t.runtime != nil {
@@ -50,6 +61,7 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessio
 				}
 			}
 			t.modelRef = modelRefVal
+			t.thinkingLevel = thinkingVal
 			t.runtime = nil
 			return nil
 		}); err != nil {
@@ -57,6 +69,17 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessio
 		}
 	case thinkingLevelConfigId:
 		thinkingVal = string(params.ValueId.Value)
+		idx := slices.IndexFunc(a.rawCfg.Models, func(m config.ModelConfig) bool {
+			return m.Ref == modelRefVal
+		})
+		if idx == -1 {
+			return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("could not validate thinking config for model: %s", modelRefVal)
+		}
+		if !slices.ContainsFunc(a.rawCfg.Models[idx].ThinkingValues, func(tv config.ThinkingValueConfig) bool {
+			return tv.Value == thinkingVal
+		}) {
+			return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("invalid thinking level config value: %s", thinkingVal)
+		}
 		if err := a.db.SetACPSessionThinkingLevel(ctx, params.ValueId.SessionId, thinkingVal); err != nil {
 			return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("could not persist model config: %v", err)
 		}
@@ -73,7 +96,7 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessio
 			return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("could not update model config: %v", err)
 		}
 	default:
-		panic(fmt.Sprintf("unknown config id: %s", params.ValueId.ConfigId))
+		return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("unknown config id: %s", params.ValueId.ConfigId)
 	}
 	return acp.SetSessionConfigOptionResponse{
 		ConfigOptions: a.configOptions(ctx, params.ValueId.SessionId),
@@ -162,10 +185,10 @@ Output Cost: %0.2f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion,
 	}
 
 	// model was set, and is valid value
-	opts := make(acp.SessionConfigSelectOptionsUngrouped, len(a.rawCfg.Models))
+	modelOpts := make(acp.SessionConfigSelectOptionsUngrouped, len(a.rawCfg.Models))
 	for i, m := range a.rawCfg.Models {
 		// TODO: *m.InputCostPerMillion and *m.OutputCostPerMillion can cause panic, fix with checking nil and using string builder
-		opts[i] = acp.SessionConfigSelectOption{
+		modelOpts[i] = acp.SessionConfigSelectOption{
 			Description: new(fmt.Sprintf(`Type: %s
 Base Url: %s
 Context Window: %d
@@ -184,7 +207,7 @@ Output Cost: %0.2f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion,
 			Id:           modelRefConfigId,
 			Name:         "Model",
 			Options: acp.SessionConfigSelectOptions{
-				Ungrouped: &opts,
+				Ungrouped: &modelOpts,
 			},
 			Type: "select",
 		},
@@ -214,9 +237,9 @@ Output Cost: %0.2f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion,
 		s.ThinkingLevel = m.ThinkingValues[0].Value
 	}
 
-	opts = make(acp.SessionConfigSelectOptionsUngrouped, len(m.ThinkingValues))
+	thinkingOpts := make(acp.SessionConfigSelectOptionsUngrouped, len(m.ThinkingValues))
 	for i, tv := range m.ThinkingValues {
-		opts[i] = acp.SessionConfigSelectOption{
+		thinkingOpts[i] = acp.SessionConfigSelectOption{
 			Description: new(tv.Description),
 			Name:        tv.Name,
 			Value:       acp.SessionConfigValueId(tv.Value),
@@ -231,7 +254,7 @@ Output Cost: %0.2f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion,
 			Id:           thinkingLevelConfigId,
 			Name:         "Thinking level",
 			Options: acp.SessionConfigSelectOptions{
-				Ungrouped: &opts,
+				Ungrouped: &thinkingOpts,
 			},
 			Type: "select",
 		},
