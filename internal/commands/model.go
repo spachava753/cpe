@@ -75,7 +75,9 @@ CacheWriteCostPerMillion: %s`,
 		formatCostPerMillion(model.CacheWriteCostPerMillion),
 	)
 
+	wroteSection := false
 	if len(model.ThinkingValues) > 0 {
+		wroteSection = true
 		fmt.Fprintln(opts.Writer, "\nThinking Values:")
 		for _, value := range model.ThinkingValues {
 			name := value.Name
@@ -87,6 +89,7 @@ CacheWriteCostPerMillion: %s`,
 	}
 
 	if model.GenerationParams != nil {
+		wroteSection = true
 		fmt.Fprintln(opts.Writer, "\nGeneration Params:")
 		if model.GenerationParams.Temperature != nil {
 			fmt.Fprintf(opts.Writer, "  Temperature: %.2f\n", *model.GenerationParams.Temperature)
@@ -105,6 +108,9 @@ CacheWriteCostPerMillion: %s`,
 		}
 	}
 
+	if !wroteSection {
+		fmt.Fprintln(opts.Writer)
+	}
 	return nil
 }
 
