@@ -29,7 +29,7 @@ require (
 	github.com/ncruces/go-sqlite3 v0.34.3
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/openai/openai-go/v3 v3.37.0
-	github.com/spachava753/gai v0.41.1-0.20260525233410-3e5a999fefff
+	github.com/spachava753/gai v0.41.1-0.20260530132625-76e6c6f6dc4b
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stoewer/go-strcase v1.3.1
@@ -361,5 +361,3 @@ tool (
 	golang.org/x/tools/cmd/deadcode
 	golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize
 )
-
-// replace github.com/spachava753/gai => ../gai
