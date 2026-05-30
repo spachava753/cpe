@@ -214,6 +214,7 @@ Output Cost: 1.00`),
 	})
 	be.Err(t, err, nil)
 	be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
+	be.Equal(t, promptResp.Usage, &acp.Usage{TotalTokens: 90, InputTokens: 80, OutputTokens: 10})
 	be.Equal(t, testClient.capturedNotifications, []acp.SessionNotification{
 		{
 			SessionId: sessionId,
@@ -258,4 +259,22 @@ Output Cost: 1.00`),
 			},
 		},
 	})
+
+	storedSession, err := store.GetACPSession(t.Context(), sessionId)
+	be.Err(t, err, nil)
+	storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
+	be.Err(t, err, nil)
+	// This fixture returns a single assistant message, so the final stored message
+	// is the only assistant message whose usage metadata we can assert here. A
+	// real prompt turn can persist several generated messages, including
+	// assistant tool-call messages and tool-result messages; the production
+	// expectation is that every generated assistant message has its own usage
+	// metadata attached and stored.
+	storedAssistant := storedDialog[len(storedDialog)-1]
+	inputTokens, ok := storedAssistant.ExtraFields[storage.AgentMetadataInputTokensKey].(int64)
+	be.True(t, ok)
+	be.Equal(t, inputTokens, int64(80))
+	outputTokens, ok := storedAssistant.ExtraFields[storage.AgentMetadataOutputTokensKey].(int64)
+	be.True(t, ok)
+	be.Equal(t, outputTokens, int64(10))
 }

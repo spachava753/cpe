@@ -107,7 +107,6 @@ func (a *Agent) Initialize(
 
 // Prompt implements [acp.Agent].
 //
-// TODO: add support for return usage.
 // TODO: add synctest type test for testing concurrency semantics
 func (a *Agent) Prompt(
 	ctx context.Context,
@@ -137,8 +136,9 @@ func (a *Agent) Prompt(
 	// gaurd to call the cancellation function, it can't because the gaurd
 	// is held by this prompt call here
 	type generateResult struct {
-		dialog gai.Dialog
-		err    error
+		dialog   gai.Dialog
+		inputLen int
+		err      error
 	}
 	resultChan := make(chan generateResult)
 	if err := s.Do(func(t *session) error {
@@ -167,6 +167,7 @@ func (a *Agent) Prompt(
 		}
 		runtime := t.runtime
 		inputDialog := dialog
+		inputLen := len(inputDialog)
 		// TODO: we should set generation opts from the config, and overide with acp config options
 		var genOpts *gai.GenOpts
 		if t.thinkingLevel != "" {
@@ -179,7 +180,7 @@ func (a *Agent) Prompt(
 				inputDialog,
 				genOpts,
 			)
-			resultChan <- generateResult{dialog: generatedDialog, err: err}
+			resultChan <- generateResult{dialog: generatedDialog, inputLen: inputLen, err: err}
 		}()
 		return nil
 	}); err != nil {
@@ -213,20 +214,24 @@ func (a *Agent) Prompt(
 		return acp.PromptResponse{}, fmt.Errorf("cannot update acp session in db: %v", err)
 	}
 
+	usage := promptTurnUsage(dialog[result.inputLen:])
 	if result.err != nil {
 		if errors.Is(result.err, gai.ErrMaxGenerationLimit) {
 			return acp.PromptResponse{
 				StopReason: acp.StopReasonMaxTokens,
+				Usage:      usage,
 			}, nil
 		}
 		if _, ok := errors.AsType[*gai.ContentPolicyErr](result.err); ok {
 			return acp.PromptResponse{
 				StopReason: acp.StopReasonRefusal,
+				Usage:      usage,
 			}, nil
 		}
 		if errors.Is(result.err, context.Canceled) {
 			return acp.PromptResponse{
 				StopReason: acp.StopReasonCancelled,
+				Usage:      usage,
 			}, nil
 		}
 		return acp.PromptResponse{}, fmt.Errorf("unknown error while generating: %v", result.err)
@@ -234,6 +239,7 @@ func (a *Agent) Prompt(
 
 	return acp.PromptResponse{
 		StopReason:    acp.StopReasonEndTurn,
+		Usage:         usage,
 		UserMessageId: params.MessageId,
 	}, nil
 }
