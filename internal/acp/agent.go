@@ -237,35 +237,5 @@ func (a *Agent) Prompt(
 	}, nil
 }
 
-func (a *Agent) promptToMessage(contentBlocks []acp.ContentBlock) gai.Message {
-	msg := gai.Message{
-		Role:   gai.User,
-		Blocks: make([]gai.Block, 0, len(contentBlocks)),
-	}
-	for _, contentBlock := range contentBlocks {
-		var block gai.Block
-		switch {
-		case contentBlock.Text != nil:
-			block = gai.TextBlock(contentBlock.Text.Text)
-		case contentBlock.Image != nil:
-			block = gai.ImageBlock([]byte(contentBlock.Image.Data), contentBlock.Image.MimeType)
-		case contentBlock.Audio != nil:
-			block = gai.AudioBlock([]byte(contentBlock.Audio.Data), contentBlock.Audio.MimeType)
-		case contentBlock.ResourceLink != nil: // TODO: support resource links better
-			block = gai.TextBlock(fmt.Sprintf("Resource %s: %s", contentBlock.ResourceLink.Name, contentBlock.ResourceLink.Uri))
-		case contentBlock.Resource != nil: // TODO: support embedded resources better
-			resource := contentBlock.Resource.Resource
-			if resource.TextResourceContents != nil {
-				block = gai.TextBlock(resource.TextResourceContents.Text)
-			}
-			if resource.BlobResourceContents != nil {
-				block = gai.TextBlock(fmt.Sprintf("Resource %s: %s", resource.BlobResourceContents.Uri, resource.BlobResourceContents.Blob))
-			}
-		}
-		msg.Blocks = append(msg.Blocks, block)
-	}
-	return msg
-}
-
 var _ acp.Agent = (*Agent)(nil)
 var _ acp.AgentLoader = (*Agent)(nil)

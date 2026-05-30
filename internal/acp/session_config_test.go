@@ -9,38 +9,7 @@ import (
 	"github.com/spachava753/cpe/internal/storage"
 )
 
-func TestInit(t *testing.T) {
-	clientConn, _ := setup(t, &noOpAcpClient{}, &config.RawConfig{}, unreachableRuntimeFactory)
-
-	resp, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
-		ClientCapabilities: acp.ClientCapabilities{
-			Fs: acp.FileSystemCapabilities{
-				ReadTextFile:  false,
-				WriteTextFile: false,
-			},
-			Terminal: false,
-		},
-		ClientInfo: &acp.Implementation{
-			Name:    "test-client",
-			Title:   new("test client"),
-			Version: "test",
-		},
-		ProtocolVersion: acp.ProtocolVersionNumber,
-	})
-	t.Log("called init")
-	// we should not get an error on init connection
-	be.Err(t, err, nil)
-	// assert agent capabilities
-	be.True(t, resp.AgentCapabilities.LoadSession)
-	be.Equal(t, resp.AgentCapabilities.SessionCapabilities.Close, &acp.SessionCloseCapabilities{})
-	be.Equal(t, resp.AgentCapabilities.SessionCapabilities.List, &acp.SessionListCapabilities{})
-	be.Equal(t, resp.AgentCapabilities.SessionCapabilities.Resume, &acp.SessionResumeCapabilities{})
-	be.True(t, resp.AgentCapabilities.PromptCapabilities.Audio)
-	be.True(t, resp.AgentCapabilities.PromptCapabilities.Image)
-	be.True(t, !resp.AgentCapabilities.PromptCapabilities.EmbeddedContext)
-}
-
-func TestListSessions(t *testing.T) {
+func TestSessionConfig(t *testing.T) {
 	clientConn, store := setup(t, &noOpAcpClient{}, &config.RawConfig{}, unreachableRuntimeFactory)
 
 	// seed the db
