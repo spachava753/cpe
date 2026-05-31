@@ -20,6 +20,7 @@ import (
 	"github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/sync"
+	"github.com/spachava753/cpe/internal/textedit"
 )
 
 type ServeOptions struct {
@@ -129,6 +130,13 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 
 		ca := closerAgent{
 			Loop: &l,
+		}
+
+		if !cfg.DisableEditTool {
+			textEditTool, textEditCallback := textedit.MakeTool()
+			if err := l.Register(textEditTool, textEditCallback); err != nil {
+				return nil, fmt.Errorf("failed to register text_edit tool: %w", err)
+			}
 		}
 
 		// connecting to mcps

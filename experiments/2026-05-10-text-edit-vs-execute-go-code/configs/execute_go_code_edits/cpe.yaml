@@ -10,6 +10,7 @@ models:
     max_output: 131072
     input_cost_per_million: 1
     output_cost_per_million: 3.2
+    disable_edit_tool: true
     systemPromptPath: "$HOME/.config/cpe/agent_instructions.md"
     timeout: 1h
     generationParams:

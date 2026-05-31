@@ -25,6 +25,7 @@ import (
 	"github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/ports"
 	"github.com/spachava753/cpe/internal/storage"
+	"github.com/spachava753/cpe/internal/textedit"
 )
 
 const authMethodOAuth = "oauth"
@@ -410,6 +411,13 @@ func NewGenerator(
 		DialogSaver: o.dialogSaver,
 		Stdout:      stdoutW,
 		Stderr:      os.Stderr,
+	}
+
+	if !cfg.DisableEditTool {
+		textEditTool, textEditCallback := textedit.MakeTool()
+		if err := runtime.Register(textEditTool, textEditCallback); err != nil {
+			return nil, fmt.Errorf("failed to register text_edit tool: %w", err)
+		}
 	}
 
 	// Check if code mode is enabled

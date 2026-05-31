@@ -35,7 +35,7 @@ func NewMCPState() *MCPState {
 	}
 }
 
-// Close best-effort closes the client session and any owned builtin server.
+// Close best-effort closes the client session and owned connection resources.
 func (c *MCPConn) Close() error {
 	var errs []error
 	if c.ClientSession != nil {

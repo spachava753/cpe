@@ -14,11 +14,6 @@ models:
     timeout: 1h
     generationParams:
       temperature: 1
-    mcpServers:
-      editor:
-        type: builtin
-        enabledTools:
-          - text_edit
     codeMode:
       enabled: true
       largeOutputCharLimit: 150000

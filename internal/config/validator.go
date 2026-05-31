@@ -145,22 +145,6 @@ func validateMCPServerConfigs(servers map[string]mcpconfig.ServerConfig, fieldPr
 			if len(server.Args) > 0 {
 				return fmt.Errorf("%s.args: only supported for type \"stdio\"", field)
 			}
-		case "builtin":
-			if server.Command != "" {
-				return fmt.Errorf("%s.command: not supported for type \"builtin\"", field)
-			}
-			if len(server.Args) > 0 {
-				return fmt.Errorf("%s.args: not supported for type \"builtin\"", field)
-			}
-			if server.URL != "" {
-				return fmt.Errorf("%s.url: not supported for type \"builtin\"", field)
-			}
-			if len(server.Headers) > 0 {
-				return fmt.Errorf("%s.headers: not supported for type \"builtin\"", field)
-			}
-			if len(server.Env) > 0 {
-				return fmt.Errorf("%s.env: not supported for type \"builtin\"", field)
-			}
 		}
 	}
 	return nil

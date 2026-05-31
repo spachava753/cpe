@@ -24,6 +24,25 @@ func TestParseConfigDataRejectsRemovedTopLevelFields(t *testing.T) {
 	}
 }
 
+func TestParseConfigDataSupportsDisableEditTool(t *testing.T) {
+	cfg, err := parseConfigData([]byte(`models:
+  - ref: test-model
+    display_name: Test Model
+    id: test-id
+    type: openai
+    api_key_env: TEST_API_KEY
+    context_window: 200000
+    max_output: 64000
+    disable_edit_tool: true
+`), "cpe.yaml")
+	if err != nil {
+		t.Fatalf("parseConfigData returned error: %v", err)
+	}
+	if !cfg.Models[0].DisableEditTool {
+		t.Fatal("DisableEditTool = false, want true")
+	}
+}
+
 func TestConfigWritePathRejectsJSON(t *testing.T) {
 	if err := ValidateConfigPathForWrite("cpe.json"); err == nil {
 		t.Fatal("expected JSON write path error")

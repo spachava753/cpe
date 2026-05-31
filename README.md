@@ -19,7 +19,7 @@ CPE connects your local development workflow to multiple AI providers through a 
 ## ✨ Why CPE?
 
 - **One tool, many models**: Switch between Claude, GPT, Gemini, and more with a simple flag
-- **Tool integration**: Connect to MCP servers for file editing, shell commands, web search, and more
+- **Tool integration**: Use bundled file editing and connect to MCP servers for shell commands, web search, and more
 - **Conversation memory**: Resume previous conversations or branch off in new directions
 - **Code Mode**: Let the AI write and execute Go code to accomplish complex multi-step tasks
 - **Privacy-first**: Your data stays local; incognito mode for sensitive work
@@ -185,14 +185,15 @@ echo "Additional context" | cpe -i config.yaml "Help me configure this"
 
 ### MCP Tool Integration
 
-Connect external tools via the [Model Context Protocol](https://modelcontextprotocol.io/) or enable bundled tools with `type: builtin`. CPE supports four server types:
+Connect external tools via the [Model Context Protocol](https://modelcontextprotocol.io/). CPE supports three MCP server types:
 
 | Type | Description | Use Case |
 |------|-------------|----------|
-| `builtin` | CPE-provided in-process tools | File editing without installing an MCP server |
 | `stdio` | Local process via stdin/stdout | Local tools, CLIs |
 | `http` | HTTP/HTTPS endpoint | Remote APIs, cloud services |
 | `sse` | Server-Sent Events | Streaming, real-time tools |
+
+The bundled `text_edit` file editing tool is registered directly by CPE and does not require MCP configuration. It is enabled by default; set `disable_edit_tool: true` on a model profile to omit it.
 
 ```yaml
 # cpe.yaml
@@ -204,14 +205,9 @@ models:
     api_key_env: ANTHROPIC_API_KEY
     context_window: 200000
     max_output: 64000
+    # Optional: disable CPE's bundled text_edit tool for this profile.
+    # disable_edit_tool: true
     mcpServers:
-      # Built-in file editing tool, no external MCP server required
-      editor:
-        type: builtin
-        timeout: 60
-        enabledTools:
-          - text_edit
-
       # Remote tool via HTTP
       search:
         url: "https://search.example.com/mcp"
@@ -227,7 +223,7 @@ models:
           X-API-Key: "${MCP_API_KEY}"
 ```
 
-**Tool Filtering**: Control which tools are exposed to the AI:
+**Tool Filtering**: Control which MCP tools are exposed to the AI:
 - `enabledTools`: Whitelist—only these tools are available
 - `disabledTools`: Blacklist—all tools except these are available
 
@@ -253,8 +249,8 @@ cpe --model sonnet mcp list-tools editor --show-filtered
 # Get detailed info about a server
 cpe --model sonnet mcp info editor
 
-# Call a tool directly for testing
-cpe --model sonnet mcp call-tool --server editor --tool text_edit --args '{"path": "test.txt", "new_text": "hello"}'
+# Call an MCP tool directly for testing
+cpe --model sonnet mcp call-tool --server search --tool web_search --args '{"query": "golang"}'
 
 # View the execute_go_code tool description (for code mode)
 cpe --model sonnet mcp code-desc
@@ -283,7 +279,7 @@ With Code Mode, the AI can:
 
 When `localModulePaths` is configured, generated code runs inside an ephemeral Go workspace. This lets `go mod tidy`, `go build`, and import auto-correction resolve local modules without per-run manual setup.
 
-Builtin MCP tools such as `text_edit` are intentionally not exposed inside Code Mode. They remain normal conversational tools even when Code Mode is enabled.
+Built-in tools such as `text_edit` are intentionally separate from Code Mode. They remain normal conversational tools even when Code Mode is enabled.
 
 Example: "Find all TODO comments, group them by file, and create a summary report" becomes a single Go program that the AI writes and CPE executes.
 
@@ -369,12 +365,7 @@ models:
     max_output: 64000
     input_cost_per_million: 3
     output_cost_per_million: 15
-    mcpServers: &standardMCPServers
-      editor:
-        type: builtin
-        timeout: 60
-        enabledTools:
-          - text_edit
+    mcpServers: &standardMCPServers {}
 
   - ref: flash
     display_name: "Gemini Flash"

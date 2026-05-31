@@ -7,8 +7,7 @@ import (
 )
 
 // PartitionTools splits MCP tools into code-mode exposure and regular callback exposure.
-// Builtin server tools are always excluded from code mode. Name matching is exact
-// against excludedToolNames across all non-builtin servers.
+// Name matching is exact against excludedToolNames across all servers.
 //
 // Returns:
 //   - codeModeServers: per-server tool lists used for generated code bindings
@@ -28,11 +27,6 @@ func PartitionTools(
 	excludedByServer = make(map[string][]*mcpsdk.Tool)
 
 	for serverName, conn := range mcpState.Connections {
-		if mcp.EffectiveServerType(conn.Config) == "builtin" {
-			excludedByServer[serverName] = append(excludedByServer[serverName], conn.Tools...)
-			continue
-		}
-
 		var codeModeTools []*mcpsdk.Tool
 		for _, tool := range conn.Tools {
 			if excludedSet[tool.Name] {

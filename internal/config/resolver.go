@@ -73,6 +73,7 @@ func resolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions, resolvedConfigPath s
 		GenerationParams: genParams,
 		Timeout:          timeout,
 		CodeMode:         codeMode,
+		DisableEditTool:  selectedModel.DisableEditTool,
 		Compaction:       compaction,
 	}, nil
 }

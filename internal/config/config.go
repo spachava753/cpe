@@ -131,6 +131,9 @@ type ModelConfig struct {
 	// Code mode configuration for this model profile.
 	CodeMode *CodeModeConfig `yaml:"codeMode,omitempty" json:"codeMode,omitempty"`
 
+	// DisableEditTool prevents CPE from registering the bundled text_edit tool.
+	DisableEditTool bool `yaml:"disable_edit_tool,omitempty" json:"disable_edit_tool,omitempty"`
+
 	// Conversation compaction configuration for this model profile.
 	Compaction *RawCompactionConfig `yaml:"compaction,omitempty" json:"compaction,omitempty" validate:"omitempty"`
 }
@@ -183,6 +186,9 @@ type Config struct {
 
 	// Effective code mode configuration.
 	CodeMode *CodeModeConfig
+
+	// DisableEditTool controls whether the bundled text_edit tool is registered.
+	DisableEditTool bool
 
 	// Effective conversation compaction configuration.
 	Compaction *CompactionConfig

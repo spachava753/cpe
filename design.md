@@ -275,7 +275,6 @@ CPE acts as an MCP client during normal runs.
 The client integration is responsible for:
 
 - creating transports for `stdio`, `http`, and `sse` servers;
-- starting CPE-provided `builtin` servers in-process;
 - applying per-server timeouts;
 - applying static headers or environment variables where appropriate;
 - connecting to configured servers;
@@ -289,11 +288,11 @@ MCP server configuration is shared by config loading and MCP runtime code. Those
 
 If `internal/config` imported `internal/mcp`, the config layer would depend on runtime transport implementation details. That was part of the original architectural muddiness. `internal/mcpconfig` exists to keep the shared schema neutral while allowing `internal/mcp` to own actual transport behavior.
 
-### Builtin servers
+### Builtin tools
 
-`type: builtin` servers are implemented by CPE and connected through the same MCP client path as external servers. The initial builtin server exposes `text_edit`, so users can create and modify files without installing an editor MCP server.
+CPE can register built-in tools directly in the agent runtime without routing them through MCP. The bundled `text_edit` tool is registered this way, so users can create and modify files without installing an editor MCP server.
 
-Builtin tools are normal conversational tools. They are intentionally excluded from code mode and are registered directly even when code mode is enabled.
+Builtin tools are normal conversational tools. They are intentionally separate from code mode and remain registered directly even when code mode is enabled. Model profiles may opt out of `text_edit` with `disable_edit_tool: true`, which prevents registration entirely.
 
 ### Tool filtering
 

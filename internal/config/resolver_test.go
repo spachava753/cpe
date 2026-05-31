@@ -60,6 +60,31 @@ func TestResolveTimeoutUsesModelProfileAndCLI(t *testing.T) {
 	}
 }
 
+func TestResolveDisableEditTool(t *testing.T) {
+	t.Parallel()
+
+	defaultModel := testModelProfile()
+	disabledModel := testModelProfile()
+	disabledModel.Ref = "without-edit"
+	disabledModel.DisableEditTool = true
+
+	cfg, err := ResolveFromRaw(&RawConfig{Models: []ModelConfig{defaultModel, disabledModel}}, RuntimeOptions{ModelRef: "test-model"})
+	if err != nil {
+		t.Fatalf("ResolveFromRaw default returned error: %v", err)
+	}
+	if cfg.DisableEditTool {
+		t.Fatal("DisableEditTool default = true, want false")
+	}
+
+	cfg, err = ResolveFromRaw(&RawConfig{Models: []ModelConfig{defaultModel, disabledModel}}, RuntimeOptions{ModelRef: "without-edit"})
+	if err != nil {
+		t.Fatalf("ResolveFromRaw disabled returned error: %v", err)
+	}
+	if !cfg.DisableEditTool {
+		t.Fatal("DisableEditTool = false, want true")
+	}
+}
+
 func TestResolveCodeMode_ResolvesRelativePathsAgainstConfigFile(t *testing.T) {
 	t.Parallel()
 

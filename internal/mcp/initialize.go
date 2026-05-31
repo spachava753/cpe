@@ -12,9 +12,8 @@ import (
 	"github.com/spachava753/cpe/internal/mcpconfig"
 )
 
-// ConnectServer establishes one MCP connection using the configured transport or
-// builtin-server implementation. It does not list tools. The returned connection
-// must be closed by the caller.
+// ConnectServer establishes one MCP connection using the configured transport.
+// It does not list tools. The returned connection must be closed by the caller.
 func ConnectServer(ctx context.Context, serverName string, config mcpconfig.ServerConfig) (*MCPConn, error) {
 	client := NewClient()
 	return connectServerSession(ctx, client, serverName, config)
@@ -109,10 +108,6 @@ func connectServerSession(
 	serverName string,
 	config mcpconfig.ServerConfig,
 ) (*MCPConn, error) {
-	if EffectiveServerType(config) == builtinServerType {
-		return connectBuiltinServerSession(ctx, client, serverName, config)
-	}
-
 	transport, err := CreateTransport(ctx, config)
 	if err != nil {
 		return nil, fmt.Errorf("creating transport: %w", err)

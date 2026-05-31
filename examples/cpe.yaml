@@ -139,17 +139,14 @@ models:
     thinkingValues: *anthropicThinkingValues
     input_cost_per_million: 3
     output_cost_per_million: 15
+    # Optional: disable CPE's bundled text_edit tool for this profile.
+    # disable_edit_tool: true
     systemPromptPath: &standardPrompt "./agent_instructions.md"
     timeout: &standardTimeout "5m"
     generationParams: &balancedGeneration
       temperature: 0.2
       maxGenerationTokens: 4096
-    mcpServers: &standardMCPServers
-      editor:
-        type: builtin
-        timeout: 60
-        enabledTools:
-          - text_edit
+    mcpServers: &standardMCPServers {}
     codeMode: &goCodeMode
       enabled: true
       maxTimeout: 3600
