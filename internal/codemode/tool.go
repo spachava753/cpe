@@ -83,8 +83,7 @@ func (c *ExecuteGoCodeCallback) Call(ctx context.Context, params map[string]any)
 		},
 	)
 	if err != nil {
-		var recoverable RecoverableError
-		if errors.As(err, &recoverable) {
+		if recoverable, ok := errors.AsType[RecoverableError](err); ok {
 			// Recoverable errors are returned as tool results so LLM can adapt.
 			return gai.ToolResultMessage("", gai.TextBlock(recoverable.Output)), nil
 		}
