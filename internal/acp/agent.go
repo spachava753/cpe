@@ -214,7 +214,7 @@ func (a *Agent) Prompt(
 		return acp.PromptResponse{}, fmt.Errorf("cannot update acp session in db: %v", err)
 	}
 
-	usage := promptTurnUsage(dialog[result.inputLen:])
+	usage := promptTurnUsage(promptTurnDialog(dialog, result.inputLen))
 	if result.err != nil {
 		if errors.Is(result.err, gai.ErrMaxGenerationLimit) {
 			return acp.PromptResponse{

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/coder/acp-go-sdk"
@@ -89,6 +90,76 @@ func (textEditTestCallback) Call(ctx context.Context, parameters map[string]any)
 		Role:   gai.ToolResult,
 		Blocks: []gai.Block{gai.TextBlock(output.Message())},
 	}, nil
+}
+
+func TestPromptHandlesCompactedDialogShorterThanInput(t *testing.T) {
+	var store *storage.Sqlite
+	clientConn, store := setup(
+		t,
+		&noOpAcpClient{},
+		&config.RawConfig{
+			Models: []config.ModelConfig{{
+				Model: config.Model{
+					Ref:                  "test-model",
+					DisplayName:          "Test Model",
+					ID:                   "test-model",
+					Type:                 "responses",
+					InputCostPerMillion:  new(1.0),
+					OutputCostPerMillion: new(1.0),
+				},
+			}},
+		},
+		func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error) {
+			return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
+				compacted := gai.Dialog{
+					{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("compacted history")}},
+					{
+						Role:   gai.Assistant,
+						Blocks: []gai.Block{gai.TextBlock("answer after compaction")},
+						ExtraFields: map[string]any{
+							storage.AgentMetadataInputTokensKey:  int64(5),
+							storage.AgentMetadataOutputTokensKey: int64(2),
+						},
+					},
+				}
+
+				var saved gai.Dialog
+				for msg, err := range store.SaveDialog(ctx, slices.Values(compacted)) {
+					if err != nil {
+						return nil, err
+					}
+					saved = append(saved, msg)
+				}
+				return saved, nil
+			}), nil
+		},
+	)
+
+	_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber})
+	be.Err(t, err, nil)
+	newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+	be.Err(t, err, nil)
+
+	seed := gai.Dialog{
+		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("first")}},
+		{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("second")}},
+		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("third")}},
+	}
+	var lastMessageID string
+	for msg, err := range store.SaveDialog(t.Context(), slices.Values(seed)) {
+		be.Err(t, err, nil)
+		lastMessageID = storage.GetMessageID(msg)
+	}
+	_, err = store.AddACPSessionMessage(t.Context(), newSessionResp.SessionId, lastMessageID)
+	be.Err(t, err, nil)
+
+	promptResp, err := clientConn.Prompt(t.Context(), acp.PromptRequest{
+		Prompt:    []acp.ContentBlock{acp.TextBlock("continue")},
+		SessionId: newSessionResp.SessionId,
+	})
+	be.Err(t, err, nil)
+	be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
+	be.Equal(t, promptResp.Usage, &acp.Usage{TotalTokens: 7, InputTokens: 5, OutputTokens: 2})
 }
 
 func TestPromptTextEditToolResultIncludesDiff(t *testing.T) {

@@ -108,6 +108,15 @@ func msgToSessionUpdate(msg gai.Message) iter.Seq[acp.SessionUpdate] {
 	}
 }
 
+func promptTurnDialog(dialog gai.Dialog, inputLen int) gai.Dialog {
+	// Compaction can replace the input history with a shorter rebased dialog.
+	// In that case, the returned dialog is the only safe turn boundary we have.
+	if inputLen < 0 || inputLen > len(dialog) {
+		return dialog
+	}
+	return dialog[inputLen:]
+}
+
 func promptTurnUsage(dialog gai.Dialog) *acp.Usage {
 	var usage acp.Usage
 	var hasUsage bool
