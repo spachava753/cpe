@@ -80,9 +80,7 @@ func (l *Loop) validateToolChoice(opts *gai.GenOpts) error {
 // TODO: support unstable feature https://agentclientprotocol.com/rfds/diff-delete
 // TODO: execute_go_code tool should display file edit diff, see https://agentclientprotocol.com/protocol/tool-calls#diffs, which would mean we would need to capture before and after we run execute go code tool, more complicated than text_edit
 // TODO: displaying the live output of the execute go code tool would be valuable, available in https://agentclientprotocol.com/protocol/terminals#embedding-in-tool-calls
-// TODO: we should have support MCP config passed
 // TODO: expose model capability metadata in session updates so ACP clients can adapt UI affordances
-// TODO: map ACP cancellation requests onto in-flight generator and tool execution contexts
 func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 	current := append(gai.Dialog(nil), dialog...)
 
