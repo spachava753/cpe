@@ -6,8 +6,9 @@ import (
 	"iter"
 
 	"github.com/coder/acp-go-sdk"
-	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/storage"
 )
 
 func (a *Agent) promptToMessage(contentBlocks []acp.ContentBlock) gai.Message {
@@ -69,7 +70,6 @@ func msgToSessionUpdate(msg gai.Message) iter.Seq[acp.SessionUpdate] {
 					if err := json.Unmarshal([]byte(content), &input); err != nil {
 						panic(err)
 					}
-					// TODO: we should add support for diff content blocks based on calls to text_edit tool
 					// TODO: we should add support for tool kind
 					// TODO: we should add support for file locations
 					if !yield(acp.StartToolCall(
@@ -158,5 +158,9 @@ func messageUsageInt(extra map[string]any, key string) (int, bool) {
 	if !ok {
 		return 0, false
 	}
-	return int(value.(int64)), true
+	intValue, ok := value.(int64)
+	if !ok {
+		return 0, false
+	}
+	return int(intValue), true
 }

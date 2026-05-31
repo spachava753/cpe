@@ -6,13 +6,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/coder/acp-go-sdk"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/mapstruct"
 	"github.com/spachava753/cpe/internal/storage"
+	"github.com/spachava753/cpe/internal/textedit"
 )
 
 const compactionWarningText = `[COMPACTION WARNING]
@@ -73,7 +77,6 @@ func (l *Loop) validateToolChoice(opts *gai.GenOpts) error {
 //
 // TODO: we need to add support for sending session updates for streaming generators for a more real-time experience
 // TODO: acp clients, like editors like zed, might have unsaved changes, so generally speaking, it is preferable to use fs/read_text_file and fs/write_text_file tools where possible
-// TODO: text_edit tool should display file edit diff, see https://agentclientprotocol.com/protocol/tool-calls#diffs
 // TODO: support unstable feature https://agentclientprotocol.com/rfds/diff-delete
 // TODO: execute_go_code tool should display file edit diff, see https://agentclientprotocol.com/protocol/tool-calls#diffs, which would mean we would need to capture before and after we run execute go code tool, more complicated than text_edit
 // TODO: displaying the live output of the execute go code tool would be valuable, available in https://agentclientprotocol.com/protocol/terminals#embedding-in-tool-calls
@@ -205,6 +208,7 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 			if callback == nil {
 				return current, nil
 			}
+			diffSnapshot := textEditDiff(tc.Name, params)
 			result, err := callback.Call(ctx, params)
 			if err != nil {
 				return current, err
@@ -222,7 +226,19 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 
 			current = append(current, result)
 
+			if result.ToolResultError {
+				diffSnapshot = nil
+			}
+
 			for update := range msgToSessionUpdate(result) {
+				if diffSnapshot != nil && update.ToolCallUpdate != nil {
+					// add the diff to the last content, we pretty much
+					// know it's only going to be a text content
+					update.ToolCallUpdate.Content = append(
+						update.ToolCallUpdate.Content, acp.ToolCallContent{Diff: diffSnapshot},
+					)
+					diffSnapshot = nil
+				}
 				if err := l.conn.SessionUpdate(ctx, acp.SessionNotification{
 					SessionId: sessionID,
 					Update:    update,
@@ -355,6 +371,38 @@ func (l *Loop) compact(current gai.Dialog) (gai.Dialog, error) {
 	}
 	l.compactionRestarts++
 	return gai.Dialog{root}, nil
+}
+
+// TODO: Build richer diff hunks instead of returning only the raw replacement
+// text. Prefer the smallest useful region around the change: surrounding lines,
+// the containing function, or related adjacent functions when that provides a
+// clearer review context without sending full files unnecessarily.
+func textEditDiff(toolName string, parameters map[string]any) *acp.ToolCallContentDiff {
+	if toolName != textedit.ToolName {
+		return nil
+	}
+
+	input, err := mapstruct.Map2Struct[textedit.Input](parameters)
+	if err != nil || strings.TrimSpace(input.Path) == "" {
+		return nil
+	}
+
+	path, err := filepath.Abs(input.Path)
+	if err != nil {
+		return nil
+	}
+
+	var oldText *string
+	if input.OldText != "" {
+		oldText = &input.OldText
+	}
+
+	return &acp.ToolCallContentDiff{
+		Path:    path,
+		OldText: oldText,
+		NewText: input.Text,
+		Type:    "diff",
+	}
 }
 
 func (l *Loop) usageSessionUpdate(metadata gai.Metadata) (acp.SessionUpdate, bool) {

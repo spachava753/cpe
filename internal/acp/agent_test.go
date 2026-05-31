@@ -2,13 +2,19 @@ package acp
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/coder/acp-go-sdk"
 	"github.com/nalgeon/be"
-	"github.com/spachava753/cpe/internal/config"
-	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/mapstruct"
+	"github.com/spachava753/cpe/internal/storage"
+	"github.com/spachava753/cpe/internal/textedit"
 )
 
 type promptTestClient struct {
@@ -43,6 +49,169 @@ func (g promptTestGenerator) Register(tool gai.Tool) error {
 }
 
 var _ gai.ToolCallingGenerator = (*promptTestGenerator)(nil)
+
+type scriptedPromptTestGenerator struct {
+	responses []gai.Response
+	calls     int
+}
+
+func (g *scriptedPromptTestGenerator) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+	if g.calls >= len(g.responses) {
+		return gai.Response{}, fmt.Errorf("unexpected Generate call %d", g.calls+1)
+	}
+	resp := g.responses[g.calls]
+	g.calls++
+	return resp, nil
+}
+
+func (g *scriptedPromptTestGenerator) Register(tool gai.Tool) error {
+	return nil
+}
+
+var _ gai.ToolCallingGenerator = (*scriptedPromptTestGenerator)(nil)
+
+type textEditTestCallback struct{}
+
+func (textEditTestCallback) Call(ctx context.Context, parameters map[string]any) (gai.Message, error) {
+	input, err := mapstruct.Map2Struct[textedit.Input](parameters)
+	if err != nil {
+		return gai.Message{}, err
+	}
+	output, err := textedit.Apply(input)
+	if err != nil {
+		return gai.Message{
+			Role:            gai.ToolResult,
+			ToolResultError: true,
+			Blocks:          []gai.Block{gai.TextBlock(err.Error())},
+		}, nil
+	}
+	return gai.Message{
+		Role:   gai.ToolResult,
+		Blocks: []gai.Block{gai.TextBlock(output.Message())},
+	}, nil
+}
+
+func TestPromptTextEditToolResultIncludesDiff(t *testing.T) {
+	var (
+		clientConn *acp.ClientSideConnection
+		store      *storage.Sqlite
+		cwd        = t.TempDir()
+		testClient = &promptTestClient{}
+		path       = filepath.Join(cwd, "file.txt")
+	)
+	if err := os.WriteFile(path, []byte("alpha beta gamma"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	toolCall := mustToolCallBlock(t, "call-edit", textedit.ToolName, map[string]any{
+		"path":     path,
+		"old_text": "beta",
+		"text":     "BETA",
+	})
+	clientConn, store = setup(
+		t,
+		testClient,
+		&config.RawConfig{
+			Models: []config.ModelConfig{{
+				Model: config.Model{
+					Ref:                  "test-model",
+					DisplayName:          "Test Model",
+					ID:                   "test-model",
+					Type:                 "responses",
+					InputCostPerMillion:  new(1.0),
+					OutputCostPerMillion: new(1.0),
+				},
+			}},
+		},
+		func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error) {
+			gen := &scriptedPromptTestGenerator{responses: []gai.Response{
+				{
+					Candidates:    []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{toolCall}}},
+					FinishReason:  gai.ToolUse,
+					UsageMetadata: gai.Metadata{},
+				},
+				{
+					Candidates:    []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("done")}}},
+					FinishReason:  gai.EndTurn,
+					UsageMetadata: gai.Metadata{},
+				},
+			}}
+			loop := &Loop{
+				G:           gen,
+				DialogSaver: store,
+				Cfg:         config.Config{Model: config.Model{Ref: "test-model"}},
+				conn:        conn,
+			}
+			if err := loop.Register(gai.Tool{Name: textedit.ToolName}, textEditTestCallback{}); err != nil {
+				return nil, err
+			}
+			return promptTestRuntime{Loop: loop}, nil
+		},
+	)
+
+	_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
+		ClientCapabilities: acp.ClientCapabilities{
+			Fs: acp.FileSystemCapabilities{
+				ReadTextFile:  false,
+				WriteTextFile: false,
+			},
+			Terminal: false,
+		},
+		ClientInfo: &acp.Implementation{
+			Name:    "test-client",
+			Title:   new("test client"),
+			Version: "test",
+		},
+		ProtocolVersion: acp.ProtocolVersionNumber,
+	})
+	be.Err(t, err, nil)
+
+	newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{
+		Cwd:        cwd,
+		McpServers: []acp.McpServer{},
+	})
+	be.Err(t, err, nil)
+	promptResp, err := clientConn.Prompt(t.Context(), acp.PromptRequest{
+		Prompt:    []acp.ContentBlock{acp.TextBlock("edit the file")},
+		SessionId: newSessionResp.SessionId,
+	})
+	be.Err(t, err, nil)
+	be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
+
+	gotFile, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotFile) != "alpha BETA gamma" {
+		t.Fatalf("file content = %q", string(gotFile))
+	}
+
+	var diff *acp.ToolCallContentDiff
+	for _, notification := range testClient.capturedNotifications {
+		update := notification.Update.ToolCallUpdate
+		if update == nil || update.ToolCallId != acp.ToolCallId("call-edit") {
+			continue
+		}
+		for _, content := range update.Content {
+			if content.Diff != nil {
+				diff = content.Diff
+			}
+		}
+	}
+	if diff == nil {
+		t.Fatalf("no diff content found in notifications: %#v", testClient.capturedNotifications)
+		return
+	}
+	if diff.Path != path {
+		t.Fatalf("diff path = %q, want %q", diff.Path, path)
+	}
+	if diff.OldText == nil || *diff.OldText != "beta" {
+		t.Fatalf("diff old text = %#v", diff.OldText)
+	}
+	if diff.NewText != "BETA" {
+		t.Fatalf("diff new text = %q", diff.NewText)
+	}
+}
 
 func TestPrompt(t *testing.T) {
 	var (

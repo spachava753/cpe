@@ -8,10 +8,11 @@ import (
 
 	"github.com/coder/acp-go-sdk"
 	"github.com/nalgeon/be"
+	"github.com/spachava753/gai"
+
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/sync"
-	"github.com/spachava753/gai"
 )
 
 type noOpAcpClient struct{}

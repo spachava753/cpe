@@ -6,8 +6,9 @@ import (
 	"testing"
 
 	acpsdk "github.com/coder/acp-go-sdk"
-	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/storage"
 )
 
 func TestMsgToSessionUpdate(t *testing.T) {
