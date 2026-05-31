@@ -162,9 +162,8 @@ func MCPCodeDescFromConfig(ctx context.Context, opts MCPCodeDescFromConfigOption
 	}
 
 	return MCPCodeDesc(ctx, MCPCodeDescOptions{
-		MCPServers: cfg.MCPServers,
-		CodeMode:   cfg.CodeMode,
-		Writer:     writer,
-		Renderer:   renderer,
+		CodeMode: cfg.CodeMode,
+		Writer:   writer,
+		Renderer: renderer,
 	})
 }

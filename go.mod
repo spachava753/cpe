@@ -32,7 +32,6 @@ require (
 	github.com/spachava753/gai v0.41.1-0.20260530132625-76e6c6f6dc4b
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
-	github.com/stoewer/go-strcase v1.3.1
 	github.com/yuin/goldmark v1.8.2
 	golang.org/x/mod v0.36.0
 	golang.org/x/term v0.43.0
@@ -287,6 +286,7 @@ require (
 	github.com/ssgreg/nlreturn/v2 v2.2.1 // indirect
 	github.com/standard-webhooks/standard-webhooks/libraries v0.0.1 // indirect
 	github.com/stbenjam/no-sprintf-host-port v0.3.1 // indirect
+	github.com/stoewer/go-strcase v1.3.1 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/subosito/gotenv v1.4.1 // indirect

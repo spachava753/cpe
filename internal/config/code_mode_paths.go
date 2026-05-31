@@ -17,7 +17,6 @@ func normalizeCodeModeConfigPaths(codeMode *CodeModeConfig, configFilePath strin
 	}
 
 	normalized := *codeMode
-	normalized.ExcludedTools = append([]string(nil), codeMode.ExcludedTools...)
 	normalized.LocalModulePaths = make([]string, 0, len(codeMode.LocalModulePaths))
 
 	seen := make(map[string]struct{}, len(codeMode.LocalModulePaths))

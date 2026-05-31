@@ -33,7 +33,7 @@ CPE should aim to be:
 - **CLI-first**: the primary UX is a local terminal tool used interactively and in scripts.
 - **layered**: package boundaries should reflect ownership and keep dependencies flowing inward toward runtime policy rather than outward toward framework details.
 - **provider-agnostic**: support for model providers should share a common runtime model where possible.
-- **tool-composable**: MCP tools should be usable directly and through higher-level compositions such as code mode, while built-in tools may stay on the direct conversational path when their behavior should not be embedded into generated code.
+- **tool-composable**: MCP and built-in tools should be usable as direct conversational tools, while code mode stays focused on executing model-generated programs rather than hosting tool integrations.
 - **local-first**: conversation storage, configuration, and most execution state should remain local by default.
 - **privacy-conscious**: users must be able to run without persistence when needed.
 - **testable**: command orchestration and runtime assembly should be testable with narrow interfaces and explicit dependencies.
@@ -308,27 +308,26 @@ This is intentionally strict. Silent shadowing or last-wins behavior would make 
 
 ## Code mode
 
-Code mode is CPE's answer to multi-step tool orchestration.
+Code mode is CPE's generated-code execution path.
 
-Instead of exposing every tool call as a separate conversational round trip, CPE can expose selected tools as strongly typed Go functions and ask the model to write a complete Go program implementing:
+When enabled, CPE asks the model to write a complete Go program implementing:
 
 ```go
 Run(ctx context.Context) ([]mcp.Content, error)
 ```
 
-That program is compiled and executed in a temporary sandbox module.
+That program is compiled and executed in a temporary sandbox module. Code mode does not connect to MCP servers or expose MCP tools as generated Go function bindings; MCP tools remain normal conversational tools registered by the agent runtime.
 
 ### Why Go
 
 Go was chosen because it provides:
 
-- straightforward static typing for tool schemas;
 - good support for control flow and composition;
 - easy use of the standard library for I/O, parsing, and HTTP;
 - fast enough compile/run behavior for an interactive CLI tool;
 - a runtime model that is predictable and easy to constrain.
 
-CPE is already a Go project, so using Go as the code-mode language also keeps the harness and generated bindings in one ecosystem.
+CPE is already a Go project, so using Go as the code-mode language also keeps the harness and execution contract in one ecosystem.
 
 ### Recoverable versus fatal failures
 
@@ -338,11 +337,9 @@ Recoverable failures include compile errors, runtime panics, or timeouts in gene
 
 This distinction exists because code mode is meant to be iterative rather than all-or-nothing.
 
-### Partitioning tools
+### Tool boundary
 
-Not every MCP tool should become a code-mode function. CPE partitions tools into code-mode and normal tools using configuration such as `excludedTools`.
-
-This preserves a small, intentional code execution surface and prevents code mode from becoming a grab bag of every tool in the system.
+MCP tools are intentionally kept outside code mode. This preserves a small, intentional code execution surface and prevents code mode from becoming a second tool integration layer.
 
 ## Rendering and terminal output
 

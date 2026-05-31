@@ -6,21 +6,14 @@ import (
 	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/modelcontextprotocol/go-sdk/mcp" // always import this package
 	"github.com/spachava753/gai"
 )
 
 // GenerateExecuteGoCodeDescription builds the authoritative prompt shown in the
-// execute_go_code tool schema. It documents runtime constraints, available MCP
-// function bindings, and the required Run(ctx) file contract.
-func GenerateExecuteGoCodeDescription(tools []*mcp.Tool) (string, error) {
+// execute_go_code tool schema. It documents runtime constraints and the required
+// Run(ctx) file contract.
+func GenerateExecuteGoCodeDescription() string {
 	goVersion := runtime.Version()
-
-	// Generate type definitions and function signatures
-	toolDefs, err := GenerateToolDefinitions(tools)
-	if err != nil {
-		return "", fmt.Errorf("generating tool definitions: %w", err)
-	}
 
 	var b strings.Builder
 
@@ -28,14 +21,6 @@ func GenerateExecuteGoCodeDescription(tools []*mcp.Tool) (string, error) {
 	b.WriteString(fmt.Sprintf("Execute generated Golang code. The version of Go is %s. ", goVersion))
 	b.WriteString("You must generate a complete Go source file that implements the `Run(ctx context.Context) ([]mcp.Content, error)` function. ")
 	b.WriteString("The file will be compiled alongside a `main.go` that calls your `Run` function.\n\n")
-
-	// Available functions and types section (only if tools exist)
-	if toolDefs != "" {
-		b.WriteString("Keep in mind you have access to the following functions and types when generating code:\n")
-		b.WriteString("```go\n")
-		b.WriteString(toolDefs)
-		b.WriteString("\n```\n\n")
-	}
 
 	// Helper function documentation
 	b.WriteString("A `ptr[T any](v T) *T` helper function is available to create pointers from literals for optional fields. ")
@@ -75,15 +60,9 @@ import (
 	// and other std packages
 )
 
-// generated types and function definitions
-// ...
-
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	
-	// setup code that initializes the generated functions
-	// ...
 	
 	content, err := Run(ctx)
 	if err != nil {
@@ -123,16 +102,13 @@ func main() {
 	b.WriteString("IMPORTANT: Generate the complete file contents including package declaration and imports. ")
 	b.WriteString("This ensures that any compilation errors report accurate line numbers that you can use for debugging.")
 
-	return b.String(), nil
+	return b.String()
 }
 
 // GenerateExecuteGoCodeTool returns the execute_go_code tool definition consumed
 // by the agent runtime, including bounded timeout validation in its input schema.
-func GenerateExecuteGoCodeTool(tools []*mcp.Tool, maxTimeout int) (gai.Tool, error) {
-	description, err := GenerateExecuteGoCodeDescription(tools)
-	if err != nil {
-		return gai.Tool{}, fmt.Errorf("generating description: %w", err)
-	}
+func GenerateExecuteGoCodeTool(maxTimeout int) gai.Tool {
+	description := GenerateExecuteGoCodeDescription()
 
 	if maxTimeout <= 0 {
 		maxTimeout = 300
@@ -165,5 +141,5 @@ func GenerateExecuteGoCodeTool(tools []*mcp.Tool, maxTimeout int) (gai.Tool, err
 		Name:        ExecuteGoCodeToolName,
 		Description: description,
 		InputSchema: inputSchema,
-	}, nil
+	}
 }

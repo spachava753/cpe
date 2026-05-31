@@ -9,8 +9,10 @@ import (
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/mapstruct"
-	"github.com/spachava753/cpe/internal/mcp"
 )
+
+// ExecuteGoCodeToolName is the reserved model-facing tool name for code mode.
+const ExecuteGoCodeToolName = "execute_go_code"
 
 // ExecuteGoCodeInput is the execute_go_code payload expected from the model.
 // ExecutionTimeout is validated against callback-level limits before execution starts.
@@ -22,7 +24,6 @@ type ExecuteGoCodeInput struct {
 // ExecuteGoCodeCallback implements gai.ToolCallback for execute_go_code.
 // It enforces timeout/output policy and delegates execution to the sandbox pipeline.
 type ExecuteGoCodeCallback struct {
-	Servers              []*mcp.MCPConn
 	MaxTimeout           int
 	LargeOutputCharLimit int
 	LocalModulePaths     []string
@@ -51,7 +52,7 @@ func contentToBlocks(content []mcpsdk.Content) []gai.Block {
 
 // Call validates input, runs generated code, and maps failures into agent control flow.
 // Recoverable execution failures are returned as ToolResult text so the model can iterate;
-// fatal/infrastructure failures are returned as Go errors to stop the run.
+// infrastructure failures are returned as Go errors to stop the run.
 func (c *ExecuteGoCodeCallback) Call(ctx context.Context, params map[string]any) (gai.Message, error) {
 	input, err := mapstruct.Map2Struct[ExecuteGoCodeInput](params)
 	if err != nil {
@@ -74,7 +75,6 @@ func (c *ExecuteGoCodeCallback) Call(ctx context.Context, params map[string]any)
 	// Execute the code
 	result, err := ExecuteCode(
 		ctx,
-		c.Servers,
 		input.Code,
 		ExecuteCodeOptions{
 			TimeoutSeconds:       input.ExecutionTimeout,
@@ -83,21 +83,13 @@ func (c *ExecuteGoCodeCallback) Call(ctx context.Context, params map[string]any)
 		},
 	)
 	if err != nil {
-		// Check error type to determine how to handle it
 		var recoverable RecoverableError
-		var fatal FatalExecutionError
-
-		switch {
-		case errors.As(err, &recoverable):
-			// Recoverable errors are returned as tool results so LLM can adapt
+		if errors.As(err, &recoverable) {
+			// Recoverable errors are returned as tool results so LLM can adapt.
 			return gai.ToolResultMessage("", gai.TextBlock(recoverable.Output)), nil
-		case errors.As(err, &fatal):
-			// Fatal errors stop agent execution
-			return gai.Message{}, err
-		default:
-			// Infrastructure errors (temp dir, file writes, etc.) stop agent execution
-			return gai.Message{}, err
 		}
+		// Infrastructure errors (temp dir, file writes, etc.) stop agent execution.
+		return gai.Message{}, err
 	}
 
 	// Successful execution - build response with content blocks

@@ -24,8 +24,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/ast/astutil"
-
-	"github.com/spachava753/cpe/internal/mcp"
 )
 
 // mcpSDKVersion is the version of the MCP SDK to use in generated go.mod
@@ -84,10 +82,9 @@ var goimportsCommand = func() (string, []string) {
 //
 // Error classification:
 //   - nil error with ExitCode 0: successful execution
-//   - RecoverableError: compile failures, Run() errors (exit 1), panics (exit 2), timeouts, other non-fatal exits
-//   - FatalExecutionError: exit code 3 from fatalExit() in generated code
+//   - RecoverableError: compile failures, Run() errors, panics, timeouts, and other non-zero exits
 //   - Other errors: infrastructure failures (temp dir, file writes, command launch failures)
-func ExecuteCode(ctx context.Context, servers []*mcp.MCPConn, llmCode string, opts ExecuteCodeOptions) (ExecutionResult, error) {
+func ExecuteCode(ctx context.Context, llmCode string, opts ExecuteCodeOptions) (ExecutionResult, error) {
 	// Create temp directory
 	tempDir, err := os.MkdirTemp("", "cpe-code-mode-*")
 	if err != nil {
@@ -124,7 +121,7 @@ func ExecuteCode(ctx context.Context, servers []*mcp.MCPConn, llmCode string, op
 	}
 
 	// Generate and write main.go
-	mainGo, err := GenerateMainGo(servers, filepath.Join(tempDir, "content.json"))
+	mainGo, err := GenerateMainGo(filepath.Join(tempDir, "content.json"))
 	if err != nil {
 		return ExecutionResult{}, fmt.Errorf("generating main.go: %w", err)
 	}
@@ -647,21 +644,11 @@ func formatSpilledOutputMessage(totalChars, charLimit int, preview, spillPath st
 }
 
 // classifyExitCode maps sandbox process exits to agent-facing error classes.
-// The mapping matches exit codes emitted by generated main.go wrapper code.
 func classifyExitCode(result ExecutionResult) error {
-	switch result.ExitCode {
-	case 0:
+	if result.ExitCode == 0 {
 		return nil
-	case 1, 2:
-		// Exit 1: Run() returned error; Exit 2: panic - both recoverable
-		return RecoverableError{Output: result.Output, ExitCode: result.ExitCode}
-	case 3:
-		// Exit 3: fatalExit() called - unrecoverable
-		return FatalExecutionError{Output: result.Output}
-	default:
-		// Other non-zero codes (e.g., -1 from SIGKILL) are recoverable
-		return RecoverableError{Output: result.Output, ExitCode: result.ExitCode}
 	}
+	return RecoverableError{Output: result.Output, ExitCode: result.ExitCode}
 }
 
 // autoCorrectImports runs goimports in a separate child process so workspace-

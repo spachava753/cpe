@@ -47,10 +47,9 @@ type PatchRequestConfig struct {
 	IncludeHeaders map[string]string `json:"includeHeaders,omitempty" yaml:"includeHeaders,omitempty"`
 }
 
-// CodeModeConfig controls code mode behavior for MCP tools.
+// CodeModeConfig controls generated-code execution behavior.
 type CodeModeConfig struct {
 	Enabled              bool     `yaml:"enabled" json:"enabled"`
-	ExcludedTools        []string `yaml:"excludedTools,omitempty" json:"excludedTools,omitempty"`
 	LocalModulePaths     []string `yaml:"localModulePaths,omitempty" json:"localModulePaths,omitempty"`
 	MaxTimeout           int      `yaml:"maxTimeout,omitempty" json:"maxTimeout,omitempty" validate:"omitempty,gte=0"`
 	LargeOutputCharLimit int      `yaml:"largeOutputCharLimit,omitempty" json:"largeOutputCharLimit,omitempty" validate:"omitempty,gte=0"`

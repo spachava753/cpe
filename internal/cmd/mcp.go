@@ -128,9 +128,8 @@ var mcpCodeDescCmd = &cobra.Command{
 	Long: `Generate and print the description for the execute_go_code tool.
 
 This shows exactly what description would be provided to the LLM when code mode
-is enabled, including MCP tools converted to Go functions. The output respects
-the codeMode.excludedTools configuration - excluded tools will not appear in the
-generated Go function definitions.`,
+is enabled. Code mode executes generated Go code and does not expose MCP server
+tools as generated Go function bindings.`,
 	Example: `  # Print code mode description with default model's settings
   cpe mcp code-desc
 

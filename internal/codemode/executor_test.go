@@ -440,7 +440,7 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 }
 `
 
-	result, err := ExecuteCode(context.Background(), nil, llmCode, ExecuteCodeOptions{
+	result, err := ExecuteCode(context.Background(), llmCode, ExecuteCodeOptions{
 		TimeoutSeconds:   30,
 		LocalModulePaths: []string{helperModuleDir},
 	})
@@ -502,7 +502,7 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 }
 `
 
-	result, err := ExecuteCode(context.Background(), nil, llmCode, ExecuteCodeOptions{
+	result, err := ExecuteCode(context.Background(), llmCode, ExecuteCodeOptions{
 		TimeoutSeconds:   30,
 		LocalModulePaths: []string{helperModuleDir},
 	})
@@ -540,7 +540,7 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 }
 `
 
-	_, err := ExecuteCode(context.Background(), nil, llmCode, ExecuteCodeOptions{
+	_, err := ExecuteCode(context.Background(), llmCode, ExecuteCodeOptions{
 		TimeoutSeconds:   30,
 		LocalModulePaths: []string{notModuleDir},
 	})

@@ -8,12 +8,6 @@
         "enabled": {
           "type": "boolean"
         },
-        "excludedTools": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "localModulePaths": {
           "items": {
             "type": "string"

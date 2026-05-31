@@ -11,7 +11,6 @@ import (
 
 	a "github.com/anthropics/anthropic-sdk-go"
 	aopts "github.com/anthropics/anthropic-sdk-go/option"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/openai/openai-go/v3"
 	oaiopt "github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/responses"
@@ -420,39 +419,9 @@ func NewGenerator(
 		}
 	}
 
-	// Check if code mode is enabled
-	codeModeEnabled := cfg.CodeMode != nil && cfg.CodeMode.Enabled
-
-	if codeModeEnabled {
-		// Partition tools into code-mode and excluded
-		var excludedToolNames []string
-		if cfg.CodeMode.ExcludedTools != nil {
-			excludedToolNames = cfg.CodeMode.ExcludedTools
-		}
-
-		codeModeServers, excludedByServer := codemode.PartitionTools(mcpState, excludedToolNames)
-
-		// Run collision detection on code-mode tools
-		codeModeToolNames := codemode.GetCodeModeToolNames(codeModeServers)
-		if err := codemode.CheckToolNameCollisions(codeModeToolNames); err != nil {
-			return nil, err
-		}
-
-		// Collect all code-mode tools for tool description generation
-		var allCodeModeTools []*mcpsdk.Tool
-		for _, serverInfo := range codeModeServers {
-			allCodeModeTools = append(allCodeModeTools, serverInfo.Tools...)
-		}
-
-		// Always register execute_go_code when code mode is enabled, even without MCP tools.
-		// The tool provides access to the Go standard library for file I/O, etc.
-		executeGoCodeTool, err := codemode.GenerateExecuteGoCodeTool(allCodeModeTools, cfg.CodeMode.MaxTimeout)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate execute_go_code tool: %w", err)
-		}
-
+	if cfg.CodeMode != nil && cfg.CodeMode.Enabled {
+		executeGoCodeTool := codemode.GenerateExecuteGoCodeTool(cfg.CodeMode.MaxTimeout)
 		callback := &codemode.ExecuteGoCodeCallback{
-			Servers:              codeModeServers,
 			MaxTimeout:           cfg.CodeMode.MaxTimeout,
 			LargeOutputCharLimit: codemode.ResolveLargeOutputCharLimit(cfg.CodeMode.LargeOutputCharLimit, cfg.Model.ContextWindow),
 			LocalModulePaths:     cfg.CodeMode.LocalModulePaths,
@@ -461,31 +430,16 @@ func NewGenerator(
 		if err := runtime.Register(executeGoCodeTool, callback); err != nil {
 			return nil, fmt.Errorf("failed to register execute_go_code tool: %w", err)
 		}
+	}
 
-		// Register excluded tools normally
-		for serverName, tools := range excludedByServer {
-			conn := mcpState.Connections[serverName]
-			for _, mcpTool := range tools {
-				gaiTool, err := mcp.ToGaiTool(mcpTool)
-				if err != nil {
-					return nil, fmt.Errorf("converting tool %s: %w", mcpTool.Name, err)
-				}
-				if err := runtime.Register(gaiTool, mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name, conn.Config)); err != nil {
-					return nil, fmt.Errorf("failed to register excluded tool %s: %w", mcpTool.Name, err)
-				}
+	for serverName, conn := range mcpState.Connections {
+		for _, mcpTool := range conn.Tools {
+			gaiTool, err := mcp.ToGaiTool(mcpTool)
+			if err != nil {
+				return nil, fmt.Errorf("converting tool %s: %w", mcpTool.Name, err)
 			}
-		}
-	} else {
-		// Code mode disabled: register all tools normally
-		for serverName, conn := range mcpState.Connections {
-			for _, mcpTool := range conn.Tools {
-				gaiTool, err := mcp.ToGaiTool(mcpTool)
-				if err != nil {
-					return nil, fmt.Errorf("converting tool %s: %w", mcpTool.Name, err)
-				}
-				if err := runtime.Register(gaiTool, mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name, conn.Config)); err != nil {
-					return nil, fmt.Errorf("failed to register tool %s: %w", mcpTool.Name, err)
-				}
+			if err := runtime.Register(gaiTool, mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name, conn.Config)); err != nil {
+				return nil, fmt.Errorf("failed to register tool %s: %w", mcpTool.Name, err)
 			}
 		}
 	}

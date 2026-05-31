@@ -272,14 +272,13 @@ models:
 ```
 
 With Code Mode, the AI can:
-- Chain multiple tool calls together
 - Use loops and conditionals
 - Process data in parallel
 - Access Go's standard library
+- Return text, images, PDFs, or audio from generated code
 
 When `localModulePaths` is configured, generated code runs inside an ephemeral Go workspace. This lets `go mod tidy`, `go build`, and import auto-correction resolve local modules without per-run manual setup.
 
-Built-in tools such as `text_edit` are intentionally separate from Code Mode. They remain normal conversational tools even when Code Mode is enabled.
 
 Example: "Find all TODO comments, group them by file, and create a summary report" becomes a single Go program that the AI writes and CPE executes.
 

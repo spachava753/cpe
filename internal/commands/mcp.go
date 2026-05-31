@@ -297,43 +297,15 @@ func MCPCallTool(ctx context.Context, opts MCPCallToolOptions) error {
 
 // MCPCodeDescOptions contains parameters for generating code mode description
 type MCPCodeDescOptions struct {
-	MCPServers map[string]mcpconfig.ServerConfig
-	CodeMode   *config.CodeModeConfig
-	Writer     io.Writer
-	Renderer   render.Iface
+	CodeMode *config.CodeModeConfig
+	Writer   io.Writer
+	Renderer render.Iface
 }
 
-// MCPCodeDesc generates and prints the execute_go_code tool description
+// MCPCodeDesc generates and prints the execute_go_code tool description.
 func MCPCodeDesc(ctx context.Context, opts MCPCodeDescOptions) error {
-	// Use InitializeConnections instead of FetchTools
-	mcpState, err := mcpinternal.InitializeConnections(ctx, opts.MCPServers)
-	if err != nil {
-		return fmt.Errorf("failed to initialize MCP connections: %w", err)
-	}
-	defer mcpState.Close()
+	description := codemode.GenerateExecuteGoCodeDescription()
 
-	// Get excluded tool names from code mode config
-	var excludedToolNames []string
-	if opts.CodeMode != nil && opts.CodeMode.ExcludedTools != nil {
-		excludedToolNames = opts.CodeMode.ExcludedTools
-	}
-
-	// Partition tools - only code mode tools will be included in the description
-	codeModeServers, _ := codemode.PartitionTools(mcpState, excludedToolNames)
-
-	// Collect all code mode tools
-	var allCodeModeTools []*mcp.Tool
-	for _, serverInfo := range codeModeServers {
-		allCodeModeTools = append(allCodeModeTools, serverInfo.Tools...)
-	}
-
-	// Generate the description
-	description, err := codemode.GenerateExecuteGoCodeDescription(allCodeModeTools)
-	if err != nil {
-		return fmt.Errorf("failed to generate description: %w", err)
-	}
-
-	// Format as markdown for rendering
 	var mdBuilder strings.Builder
 	mdBuilder.WriteString("# execute_go_code Tool Description\n\n")
 
@@ -341,15 +313,6 @@ func MCPCodeDesc(ctx context.Context, opts MCPCodeDescOptions) error {
 		mdBuilder.WriteString("> **Note:** Code mode is not enabled in current configuration.\n\n")
 	}
 
-	if len(excludedToolNames) > 0 {
-		mdBuilder.WriteString("**Excluded tools:** `")
-		mdBuilder.WriteString(strings.Join(excludedToolNames, "`, `"))
-		mdBuilder.WriteString("`\n\n")
-	}
-
-	mdBuilder.WriteString("**Code mode tools:** ")
-	mdBuilder.WriteString(strconv.Itoa(len(allCodeModeTools)))
-	mdBuilder.WriteString("\n\n")
 	mdBuilder.WriteString("---\n\n")
 	mdBuilder.WriteString(description)
 
