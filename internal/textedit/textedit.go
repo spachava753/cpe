@@ -16,7 +16,7 @@ const ToolName = "text_edit"
 type Input struct {
 	Path    string `json:"path" jsonschema:"Path to the file to edit or create"`
 	OldText string `json:"old_text,omitempty" jsonschema:"Exact text to find and replace. If empty, creates a new file instead"`
-	Text    string `json:"text" jsonschema:"Replacement text or content for new file"`
+	NewText string `json:"new_text" jsonschema:"Replacement text or content for new file"`
 }
 
 // Output is the structured result returned by text_edit.
@@ -50,9 +50,9 @@ func Apply(input Input) (Output, error) {
 	}
 
 	if input.OldText == "" {
-		return createFile(resolvedPath, input.Text)
+		return createFile(resolvedPath, input.NewText)
 	}
-	return replaceText(resolvedPath, input.OldText, input.Text)
+	return replaceText(resolvedPath, input.OldText, input.NewText)
 }
 
 func createFile(path, text string) (Output, error) {

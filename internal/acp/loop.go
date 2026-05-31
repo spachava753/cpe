@@ -398,7 +398,7 @@ func textEditDiff(toolName string, parameters map[string]any) *acp.ToolCallConte
 	return &acp.ToolCallContentDiff{
 		Path:    path,
 		OldText: oldText,
-		NewText: input.Text,
+		NewText: input.NewText,
 		Type:    "diff",
 	}
 }

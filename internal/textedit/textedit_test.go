@@ -11,7 +11,7 @@ func TestApplyPreservesSurroundingSpacesInPath(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), " file with spaces.txt ")
-	out, err := Apply(Input{Path: path, Text: "hello"})
+	out, err := Apply(Input{Path: path, NewText: "hello"})
 	if err != nil {
 		t.Fatalf("Apply returned error: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestApplyCreatesNewFileAndParents(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "nested", "file.txt")
-	out, err := Apply(Input{Path: path, Text: "hello"})
+	out, err := Apply(Input{Path: path, NewText: "hello"})
 	if err != nil {
 		t.Fatalf("Apply returned error: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestApplyCreateFailsWhenFileExists(t *testing.T) {
 	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := Apply(Input{Path: path, Text: "new"})
+	_, err := Apply(Input{Path: path, NewText: "new"})
 	if err == nil || !strings.Contains(err.Error(), "file already exists") {
 		t.Fatalf("expected file exists error, got %v", err)
 	}
@@ -63,7 +63,7 @@ func TestApplyReplacesExactlyOneMatchAndPreservesPermissions(t *testing.T) {
 	if err := os.WriteFile(path, []byte("alpha beta gamma"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	out, err := Apply(Input{Path: path, OldText: "beta", Text: "BETA"})
+	out, err := Apply(Input{Path: path, OldText: "beta", NewText: "BETA"})
 	if err != nil {
 		t.Fatalf("Apply returned error: %v", err)
 	}
@@ -94,12 +94,12 @@ func TestApplyReplaceRejectsMissingAndDuplicateMatches(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := Apply(Input{Path: path, OldText: "missing", Text: "x"})
+	_, err := Apply(Input{Path: path, OldText: "missing", NewText: "x"})
 	if err == nil || !strings.Contains(err.Error(), "old_text not found") {
 		t.Fatalf("expected missing old_text error, got %v", err)
 	}
 
-	_, err = Apply(Input{Path: path, OldText: "one", Text: "x"})
+	_, err = Apply(Input{Path: path, OldText: "one", NewText: "x"})
 	if err == nil || !strings.Contains(err.Error(), "appears 2 times") {
 		t.Fatalf("expected duplicate old_text error, got %v", err)
 	}
@@ -113,7 +113,7 @@ func TestApplyReplaceRejectsOverlappingDuplicateMatches(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := Apply(Input{Path: path, OldText: "aa", Text: "x"})
+	_, err := Apply(Input{Path: path, OldText: "aa", NewText: "x"})
 	if err == nil || !strings.Contains(err.Error(), "appears 2 times") {
 		t.Fatalf("expected overlapping duplicate old_text error, got %v", err)
 	}
@@ -132,7 +132,7 @@ func TestApplyReplaceRejectsSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := Apply(Input{Path: link, OldText: "old", Text: "new"})
+	_, err := Apply(Input{Path: link, OldText: "old", NewText: "new"})
 	if err == nil || !strings.Contains(err.Error(), "path is a symlink") {
 		t.Fatalf("expected symlink error, got %v", err)
 	}
@@ -156,7 +156,7 @@ func TestApplyReplaceRejectsInvalidUTF8(t *testing.T) {
 	if err := os.WriteFile(path, []byte{0xff, 0xfe}, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := Apply(Input{Path: path, OldText: "x", Text: "y"})
+	_, err := Apply(Input{Path: path, OldText: "x", NewText: "y"})
 	if err == nil || !strings.Contains(err.Error(), "not valid UTF-8") {
 		t.Fatalf("expected invalid UTF-8 error, got %v", err)
 	}

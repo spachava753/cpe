@@ -254,7 +254,7 @@ cpe --model sonnet mcp list-tools editor --show-filtered
 cpe --model sonnet mcp info editor
 
 # Call a tool directly for testing
-cpe --model sonnet mcp call-tool --server editor --tool text_edit --args '{"path": "test.txt", "text": "hello"}'
+cpe --model sonnet mcp call-tool --server editor --tool text_edit --args '{"path": "test.txt", "new_text": "hello"}'
 
 # View the execute_go_code tool description (for code mode)
 cpe --model sonnet mcp code-desc

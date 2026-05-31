@@ -44,8 +44,8 @@ func TestMCPCallToolSupportsBuiltinServer(t *testing.T) {
 		ServerName: "editor",
 		ToolName:   "text_edit",
 		ToolArgs: map[string]any{
-			"path": path,
-			"text": "hello",
+			"path":     path,
+			"new_text": "hello",
 		},
 		Writer: &out,
 	})

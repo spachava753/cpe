@@ -36,8 +36,8 @@ func TestInitializeConnectionsBuiltinTextEdit(t *testing.T) {
 	result, err := conn.ClientSession.CallTool(context.Background(), &mcpsdk.CallToolParams{
 		Name: textedit.ToolName,
 		Arguments: map[string]any{
-			"path": path,
-			"text": "hello",
+			"path":     path,
+			"new_text": "hello",
 		},
 	})
 	if err != nil {

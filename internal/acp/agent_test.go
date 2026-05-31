@@ -106,7 +106,7 @@ func TestPromptTextEditToolResultIncludesDiff(t *testing.T) {
 	toolCall := mustToolCallBlock(t, "call-edit", textedit.ToolName, map[string]any{
 		"path":     path,
 		"old_text": "beta",
-		"text":     "BETA",
+		"new_text": "BETA",
 	})
 	clientConn, store = setup(
 		t,
