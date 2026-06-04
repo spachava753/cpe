@@ -578,6 +578,160 @@ func TestLoadSession(t *testing.T) {
 	})
 }
 
+func TestLoadSessionReplaysCompactionLineage(t *testing.T) {
+	var createdModelRefs []string
+	testClient := &promptTestClient{}
+	fixture := setup(
+		t,
+		testClient,
+		&config.RawConfig{
+			Models: []config.ModelConfig{
+				{
+					Model: config.Model{
+						Ref:                  "test-model",
+						DisplayName:          "Test Model",
+						ID:                   "test-model",
+						Type:                 "responses",
+						BaseUrl:              "https://customurl.com/v1",
+						ContextWindow:        100,
+						InputCostPerMillion:  new(1.0),
+						OutputCostPerMillion: new(1.0),
+					},
+				},
+			},
+		},
+		func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error) {
+			createdModelRefs = append(createdModelRefs, modelRef)
+			return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
+				return dialog, nil
+			}), nil
+		},
+	)
+	clientConn := fixture.ClientConn
+	store := fixture.Store
+
+	prior := gai.Dialog{
+		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("original question")}},
+		{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("original answer")}},
+	}
+	var savedPrior gai.Dialog
+	for msg, err := range store.SaveDialog(t.Context(), slices.Values(prior)) {
+		be.Err(t, err, nil)
+		savedPrior = append(savedPrior, msg)
+	}
+	priorLeafID := storage.GetMessageID(savedPrior[len(savedPrior)-1])
+
+	compactedRoot := gai.Message{
+		Role:        gai.User,
+		Blocks:      []gai.Block{gai.TextBlock("compacted summary")},
+		ExtraFields: map[string]any{storage.MessageCompactionParentIDKey: priorLeafID},
+	}
+	compacted := gai.Dialog{
+		compactedRoot,
+		{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("answer after compaction")}},
+	}
+	var savedCompacted gai.Dialog
+	for msg, err := range store.SaveDialog(t.Context(), slices.Values(compacted)) {
+		be.Err(t, err, nil)
+		savedCompacted = append(savedCompacted, msg)
+	}
+	lastMessageID := storage.GetMessageID(savedCompacted[len(savedCompacted)-1])
+
+	be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
+		Session: acp.SessionInfo{
+			Cwd:       "/rando/dir",
+			SessionId: "abc123",
+		},
+		LastMessageID: lastMessageID,
+		ModelRef:      "test-model",
+		ThinkingLevel: "",
+	}), nil)
+
+	_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
+		ClientCapabilities: acp.ClientCapabilities{
+			Fs: acp.FileSystemCapabilities{
+				ReadTextFile:  false,
+				WriteTextFile: false,
+			},
+			Terminal: false,
+		},
+		ClientInfo: &acp.Implementation{
+			Name:    "test-client",
+			Title:   new("test client"),
+			Version: "test",
+		},
+		ProtocolVersion: acp.ProtocolVersionNumber,
+	})
+	t.Log("called init")
+	be.Err(t, err, nil)
+
+	_, err = clientConn.LoadSession(t.Context(), acp.LoadSessionRequest{
+		Cwd:        "/rando/dir",
+		McpServers: []acp.McpServer{},
+		SessionId:  "abc123",
+	})
+	be.Err(t, err, nil)
+	be.Equal(t, createdModelRefs, []string{"test-model"})
+	be.Equal(t, testClient.capturedNotifications, []acp.SessionNotification{
+		{
+			SessionId: "abc123",
+			Update: acp.SessionUpdate{
+				UserMessageChunk: &acp.SessionUpdateUserMessageChunk{
+					Content: acp.ContentBlock{
+						Text: &acp.ContentBlockText{
+							Text: "original question",
+							Type: "text",
+						},
+					},
+					SessionUpdate: "user_message_chunk",
+				},
+			},
+		},
+		{
+			SessionId: "abc123",
+			Update: acp.SessionUpdate{
+				AgentMessageChunk: &acp.SessionUpdateAgentMessageChunk{
+					Content: acp.ContentBlock{
+						Text: &acp.ContentBlockText{
+							Text: "original answer",
+							Type: "text",
+						},
+					},
+					SessionUpdate: "agent_message_chunk",
+				},
+			},
+		},
+		{
+			SessionId: "abc123",
+			Update: acp.SessionUpdate{
+				UserMessageChunk: &acp.SessionUpdateUserMessageChunk{
+					Content: acp.ContentBlock{
+						Text: &acp.ContentBlockText{
+							Text: "compacted summary",
+							Type: "text",
+						},
+					},
+					SessionUpdate: "user_message_chunk",
+				},
+			},
+		},
+		{
+			SessionId: "abc123",
+			Update: acp.SessionUpdate{
+				AgentMessageChunk: &acp.SessionUpdateAgentMessageChunk{
+					Content: acp.ContentBlock{
+						Text: &acp.ContentBlockText{
+							Text: "answer after compaction",
+							Type: "text",
+						},
+					},
+					SessionUpdate: "agent_message_chunk",
+				},
+			},
+		},
+	})
+}
+
 func TestCancel(t *testing.T) {
 	t.Run("active prompt", func(t *testing.T) {
 		generateStarted := make(chan struct{})

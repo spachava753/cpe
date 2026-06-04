@@ -180,8 +180,6 @@ func (a *Agent) ResumeSession(ctx context.Context, params acp.ResumeSessionReque
 }
 
 // LoadSession implements [acp.AgentLoader].
-//
-// TODO: need to handle compaction, so when getting a dialog that can be a compaction restart branch, need to retrieve parent dialog of compaction dialog
 func (a *Agent) LoadSession(ctx context.Context, params acp.LoadSessionRequest) (acp.LoadSessionResponse, error) {
 	opts, err := a.loadActiveSession(ctx, params.SessionId)
 	if err != nil {
@@ -194,6 +192,17 @@ func (a *Agent) LoadSession(ctx context.Context, params acp.LoadSessionRequest) 
 	dialog, err := storage.GetDialogForMessage(ctx, a.db, acpSession.LastMessageID)
 	if err != nil {
 		return acp.LoadSessionResponse{}, fmt.Errorf("could not get dialog from db: %v", err)
+	}
+	for len(dialog) > 0 {
+		compactionParentID, _ := dialog[0].ExtraFields[storage.MessageCompactionParentIDKey].(string)
+		if compactionParentID == "" {
+			break
+		}
+		parentDialog, err := storage.GetDialogForMessage(ctx, a.db, compactionParentID)
+		if err != nil {
+			return acp.LoadSessionResponse{}, fmt.Errorf("could not get compaction parent dialog from db: %v", err)
+		}
+		dialog = append(parentDialog, dialog...)
 	}
 	for _, msg := range dialog {
 		for update := range msgToSessionUpdate(msg) {
