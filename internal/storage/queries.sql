@@ -69,6 +69,22 @@ DELETE
 FROM messages
 WHERE id = ?;
 
+-- name: ListSessionMessageIDs :many
+WITH RECURSIVE session_messages(id, parent_id) AS (
+    SELECT messages.id,
+           messages.parent_id
+    FROM acp_sessions
+    JOIN messages ON messages.id = acp_sessions.last_message_id
+    WHERE acp_sessions.id = ?
+    UNION ALL
+    SELECT messages.id,
+           messages.parent_id
+    FROM messages
+    JOIN session_messages ON messages.id = session_messages.parent_id
+)
+SELECT id
+FROM session_messages;
+
 -- name: CheckMessageIDExists :one
 SELECT EXISTS(SELECT 1 FROM messages WHERE id = ?) as "exists";
 
@@ -139,6 +155,11 @@ VALUES (?, ?, ?, ?, ?, ?);
 -- name: AddSessionMessage :execrows
 UPDATE acp_sessions
 SET last_message_id = ?
+WHERE id = ?;
+
+-- name: DeleteSession :execrows
+DELETE
+FROM acp_sessions
 WHERE id = ?;
 
 -- name: SetSessionModelRef :execrows

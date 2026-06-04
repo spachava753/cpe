@@ -83,12 +83,19 @@ var unreachableRuntimeFactory = func(conn *acp.AgentSideConnection, modelRef str
 	panic("should not be called")
 }
 
+type testSetup struct {
+	ClientConn *acp.ClientSideConnection
+	AgentConn  *acp.AgentSideConnection
+	Store      *storage.Sqlite
+	RawDB      *sql.DB
+}
+
 func setup(
 	t *testing.T,
 	client acp.Client,
 	cfg *config.RawConfig,
 	rf runtimeFactory,
-) (*acp.ClientSideConnection, *storage.Sqlite) {
+) testSetup {
 	t.Helper()
 
 	// setup db
@@ -103,23 +110,22 @@ func setup(
 	ar, aw := io.Pipe()
 	cr, cw := io.Pipe()
 
-	var asc *acp.AgentSideConnection
+	ag := Agent{
+		activeSessions: new(sync.Map[acp.SessionId, *sync.Guard[session]]),
+		genId: func() acp.SessionId {
+			return acp.SessionId(storage.GenerateId())
+		},
+		runtimeFactory: rf,
+		rawCfg:         cfg,
+		db:             sqliteStorage,
+	}
+	asc := acp.NewAgentSideConnection(&ag, aw, cr)
+	ag.conn = asc
 	go func() {
 		ctx, cancel := context.WithCancel(t.Context())
 		t.Cleanup(func() {
 			cancel()
 		})
-		ag := Agent{
-			activeSessions: new(sync.Map[acp.SessionId, *sync.Guard[session]]),
-			genId: func() acp.SessionId {
-				return acp.SessionId(storage.GenerateId())
-			},
-			runtimeFactory: rf,
-			rawCfg:         cfg,
-			db:             sqliteStorage,
-		}
-		asc = acp.NewAgentSideConnection(&ag, aw, cr)
-		ag.conn = asc
 		select {
 		case <-asc.Done():
 		case <-ctx.Done():
@@ -129,5 +135,10 @@ func setup(
 
 	clientConn := acp.NewClientSideConnection(client, cw, ar)
 	t.Log("created connection")
-	return clientConn, sqliteStorage
+	return testSetup{
+		ClientConn: clientConn,
+		AgentConn:  asc,
+		Store:      sqliteStorage,
+		RawDB:      db,
+	}
 }

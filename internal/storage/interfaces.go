@@ -238,6 +238,13 @@ type ACPSessionMessageAdder interface {
 	AddACPSessionMessage(ctx context.Context, sessionID acp.SessionId, messageID string) (acp.SessionInfo, error)
 }
 
+// ACPSessionDeleter deletes ACP session metadata and owned message data.
+type ACPSessionDeleter interface {
+	// DeleteACPSession removes sessionID from the persisted ACP session list and
+	// deletes the message chain referenced by the session.
+	DeleteACPSession(ctx context.Context, sessionID acp.SessionId) error
+}
+
 // ACPSessionModelSetter updates an ACP session's selected model profile.
 type ACPSessionModelSetter interface {
 	// SetACPSessionModelRef marks modelRef as the selected CPE model profile for

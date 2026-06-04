@@ -242,3 +242,29 @@ func (a *Agent) CloseSession(ctx context.Context, params acp.CloseSessionRequest
 	a.activeSessions.Delete(params.SessionId)
 	return acp.CloseSessionResponse{}, nil
 }
+
+// UnstableDeleteSession implements ACP's unstable session/delete method.
+func (a *Agent) UnstableDeleteSession(
+	ctx context.Context,
+	params acp.UnstableDeleteSessionRequest,
+) (acp.UnstableDeleteSessionResponse, error) {
+	if s, ok := a.activeSessions.Load(params.SessionId); ok {
+		if err := s.Do(func(t *session) error {
+			if t.cancelfunc != nil {
+				t.cancelfunc()
+				t.cancelfunc = nil
+			}
+			if t.runtime == nil {
+				return nil
+			}
+			return t.runtime.Close()
+		}); err != nil {
+			return acp.UnstableDeleteSessionResponse{}, fmt.Errorf("could not close session %s before delete: %v", params.SessionId, err)
+		}
+	}
+	if err := a.db.DeleteACPSession(ctx, params.SessionId); err != nil {
+		return acp.UnstableDeleteSessionResponse{}, fmt.Errorf("could not delete session %s: %v", params.SessionId, err)
+	}
+	a.activeSessions.Delete(params.SessionId)
+	return acp.UnstableDeleteSessionResponse{}, nil
+}

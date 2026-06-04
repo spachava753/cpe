@@ -30,7 +30,6 @@ type runtimeFactory func(
 // Agent and session. Currently we operate under the assumption
 // that sessions may be created concurrently, and that
 // sessions may also be mutated concurrently.
-// TODO: we should support unstable feature session delete https://agentclientprotocol.com/rfds/session-delete
 type Agent struct {
 	// conn is used to send updates to the client
 	conn *acp.AgentSideConnection
@@ -48,6 +47,7 @@ type Agent struct {
 	// db represents the API surface needed for persistent session management
 	db interface {
 		storage.ACPSessionCreator
+		storage.ACPSessionDeleter
 		storage.ACPSessionGetter
 		storage.ACPSessionsLister
 		storage.MessagesGetter
@@ -105,6 +105,7 @@ func (a *Agent) Initialize(
 				List:   &acp.SessionListCapabilities{},
 				Resume: &acp.SessionResumeCapabilities{},
 				Close:  &acp.SessionCloseCapabilities{},
+				Delete: &acp.SessionDeleteCapabilities{},
 			},
 		},
 	}, nil

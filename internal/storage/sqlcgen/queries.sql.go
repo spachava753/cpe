@@ -170,6 +170,20 @@ func (q *Queries) DeleteMessage(ctx context.Context, id string) error {
 	return err
 }
 
+const deleteSession = `-- name: DeleteSession :execrows
+DELETE
+FROM acp_sessions
+WHERE id = ?
+`
+
+func (q *Queries) DeleteSession(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteSession, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const getBlock = `-- name: GetBlock :one
 SELECT id, message_id, block_type, modality_type, mime_type, content, extra_fields, sequence_order, created_at
 FROM blocks
@@ -513,6 +527,46 @@ func (q *Queries) ListMessagesDescending(ctx context.Context, offset int64) ([]M
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSessionMessageIDs = `-- name: ListSessionMessageIDs :many
+WITH RECURSIVE session_messages(id, parent_id) AS (
+    SELECT messages.id,
+           messages.parent_id
+    FROM acp_sessions
+    JOIN messages ON messages.id = acp_sessions.last_message_id
+    WHERE acp_sessions.id = ?
+    UNION ALL
+    SELECT messages.id,
+           messages.parent_id
+    FROM messages
+    JOIN session_messages ON messages.id = session_messages.parent_id
+)
+SELECT id
+FROM session_messages
+`
+
+func (q *Queries) ListSessionMessageIDs(ctx context.Context, id string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listSessionMessageIDs, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

@@ -330,6 +330,58 @@ func TestACPSessions(t *testing.T) {
 	}
 }
 
+func TestDeleteACPSessionDeletesMessagesAndBlocks(t *testing.T) {
+	db, rawDB := newTestDB(t)
+	ctx := context.Background()
+
+	savedDialog := saveDialog(t, db, ctx, []gai.Message{
+		makeTextMessage(gai.User, "hello"),
+		makeTextMessage(gai.Assistant, "answer"),
+		makeTextMessage(gai.User, "follow up"),
+	})
+	lastMessageID := GetMessageID(savedDialog[len(savedDialog)-1])
+	unrelatedMessageID := saveOne(t, db, ctx, makeTextMessage(gai.User, "unrelated"))
+
+	if err := db.CreateACPSession(ctx, CreateACPSessionParams{
+		Session: acp.SessionInfo{
+			Cwd:       "/tmp/delete",
+			SessionId: acp.SessionId("delete-session"),
+			Title:     new("Delete title"),
+		},
+		LastMessageID: lastMessageID,
+		ModelRef:      testACPModelRef,
+	}); err != nil {
+		t.Fatalf("CreateACPSession: %v", err)
+	}
+
+	if got := countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions WHERE id = ?", "delete-session"); got != 1 {
+		t.Fatalf("session count before delete: got %d", got)
+	}
+	if got := countRows(t, rawDB, "SELECT COUNT(*) FROM messages"); got != 4 {
+		t.Fatalf("message count before delete: got %d", got)
+	}
+	if got := countRows(t, rawDB, "SELECT COUNT(*) FROM blocks"); got != 4 {
+		t.Fatalf("block count before delete: got %d", got)
+	}
+
+	if err := db.DeleteACPSession(ctx, "delete-session"); err != nil {
+		t.Fatalf("DeleteACPSession: %v", err)
+	}
+
+	if got := countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions WHERE id = ?", "delete-session"); got != 0 {
+		t.Fatalf("session count after delete: got %d", got)
+	}
+	if got := countRows(t, rawDB, "SELECT COUNT(*) FROM messages"); got != 1 {
+		t.Fatalf("message count after delete: got %d", got)
+	}
+	if got := countRows(t, rawDB, "SELECT COUNT(*) FROM messages WHERE id = ?", unrelatedMessageID); got != 1 {
+		t.Fatalf("unrelated message count after delete: got %d", got)
+	}
+	if got := countRows(t, rawDB, "SELECT COUNT(*) FROM blocks"); got != 1 {
+		t.Fatalf("block count after delete: got %d", got)
+	}
+}
+
 func TestACPSessionWithoutMessages(t *testing.T) {
 	db, rawDB := newTestDB(t)
 	ctx := context.Background()

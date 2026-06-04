@@ -94,7 +94,7 @@ func (textEditTestCallback) Call(ctx context.Context, parameters map[string]any)
 
 func TestPromptHandlesCompactedDialogShorterThanInput(t *testing.T) {
 	var store *storage.Sqlite
-	clientConn, store := setup(
+	fixture := setup(
 		t,
 		&noOpAcpClient{},
 		&config.RawConfig{
@@ -134,6 +134,8 @@ func TestPromptHandlesCompactedDialogShorterThanInput(t *testing.T) {
 			}), nil
 		},
 	)
+	clientConn := fixture.ClientConn
+	store = fixture.Store
 
 	_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber})
 	be.Err(t, err, nil)
@@ -179,7 +181,7 @@ func TestPromptTextEditToolResultIncludesDiff(t *testing.T) {
 		"old_text": "beta",
 		"new_text": "BETA",
 	})
-	clientConn, store = setup(
+	fixture := setup(
 		t,
 		testClient,
 		&config.RawConfig{
@@ -219,6 +221,8 @@ func TestPromptTextEditToolResultIncludesDiff(t *testing.T) {
 			return promptTestRuntime{Loop: loop}, nil
 		},
 	)
+	clientConn = fixture.ClientConn
+	store = fixture.Store
 
 	_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
 		ClientCapabilities: acp.ClientCapabilities{
@@ -291,7 +295,7 @@ func TestPrompt(t *testing.T) {
 		cwd        = t.TempDir()
 		testClient = &promptTestClient{}
 	)
-	clientConn, store = setup(
+	fixture := setup(
 		t,
 		testClient,
 		&config.RawConfig{
@@ -370,6 +374,8 @@ func TestPrompt(t *testing.T) {
 			}}, nil
 		},
 	)
+	clientConn = fixture.ClientConn
+	store = fixture.Store
 
 	_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
 		ClientCapabilities: acp.ClientCapabilities{

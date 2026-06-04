@@ -17,7 +17,7 @@ import (
 
 func TestSessionConfigOptions(t *testing.T) {
 	t.Run("new session returns ordered defaults", func(t *testing.T) {
-		clientConn, _ := setup(
+		fixture := setup(
 			t,
 			&noOpAcpClient{},
 			&config.RawConfig{
@@ -62,6 +62,7 @@ func TestSessionConfigOptions(t *testing.T) {
 			},
 			unreachableRuntimeFactory,
 		)
+		clientConn := fixture.ClientConn
 
 		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
 			ClientCapabilities: acp.ClientCapabilities{
@@ -118,7 +119,7 @@ func TestSessionConfigOptions(t *testing.T) {
 
 func TestSetSessionConfigOption(t *testing.T) {
 	t.Run("set model returns complete dependent state", func(t *testing.T) {
-		clientConn, store := setup(
+		fixture := setup(
 			t,
 			&noOpAcpClient{},
 			&config.RawConfig{
@@ -175,6 +176,8 @@ func TestSetSessionConfigOption(t *testing.T) {
 			},
 			unreachableRuntimeFactory,
 		)
+		clientConn := fixture.ClientConn
+		store := fixture.Store
 
 		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
 			ClientCapabilities: acp.ClientCapabilities{
@@ -224,7 +227,7 @@ func TestSetSessionConfigOption(t *testing.T) {
 	})
 
 	t.Run("set thinking level returns complete state", func(t *testing.T) {
-		clientConn, store := setup(
+		fixture := setup(
 			t,
 			&noOpAcpClient{},
 			&config.RawConfig{
@@ -257,6 +260,8 @@ func TestSetSessionConfigOption(t *testing.T) {
 			},
 			unreachableRuntimeFactory,
 		)
+		clientConn := fixture.ClientConn
+		store := fixture.Store
 
 		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
 			ClientCapabilities: acp.ClientCapabilities{
@@ -303,7 +308,7 @@ func TestSetSessionConfigOption(t *testing.T) {
 	})
 
 	t.Run("rejects unknown config id", func(t *testing.T) {
-		clientConn, store := setup(
+		fixture := setup(
 			t,
 			&noOpAcpClient{},
 			&config.RawConfig{
@@ -331,6 +336,8 @@ func TestSetSessionConfigOption(t *testing.T) {
 			},
 			unreachableRuntimeFactory,
 		)
+		clientConn := fixture.ClientConn
+		store := fixture.Store
 
 		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
 			ClientCapabilities: acp.ClientCapabilities{
@@ -372,7 +379,7 @@ func TestSetSessionConfigOption(t *testing.T) {
 	})
 
 	t.Run("rejects values outside option list", func(t *testing.T) {
-		clientConn, store := setup(
+		fixture := setup(
 			t,
 			&noOpAcpClient{},
 			&config.RawConfig{
@@ -400,6 +407,8 @@ func TestSetSessionConfigOption(t *testing.T) {
 			},
 			unreachableRuntimeFactory,
 		)
+		clientConn := fixture.ClientConn
+		store := fixture.Store
 
 		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
 			ClientCapabilities: acp.ClientCapabilities{
@@ -465,7 +474,7 @@ func TestSetSessionConfigOptionDuringPrompt(t *testing.T) {
 		})
 	})
 
-	clientConn, store = setup(
+	fixture := setup(
 		t,
 		&noOpAcpClient{},
 		&config.RawConfig{
@@ -525,6 +534,8 @@ func TestSetSessionConfigOptionDuringPrompt(t *testing.T) {
 			}), nil
 		},
 	)
+	clientConn = fixture.ClientConn
+	store = fixture.Store
 
 	_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
 		ClientCapabilities: acp.ClientCapabilities{

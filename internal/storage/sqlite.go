@@ -870,6 +870,44 @@ func (s *Sqlite) AddACPSessionMessage(ctx context.Context, sessionID acp.Session
 	return resp.Session, nil
 }
 
+// DeleteACPSession removes an ACP session from the persisted session list and
+// deletes the message chain it points at.
+func (s *Sqlite) DeleteACPSession(ctx context.Context, sessionID acp.SessionId) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin ACP session delete transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback()
+		}
+	}()
+
+	qtx := s.q.WithTx(tx)
+	messageIDs, err := qtx.ListSessionMessageIDs(ctx, string(sessionID))
+	if err != nil {
+		return fmt.Errorf("failed to list messages for ACP session %s: %w", sessionID, err)
+	}
+	rowsAffected, err := qtx.DeleteSession(ctx, string(sessionID))
+	if err != nil {
+		return fmt.Errorf("failed to delete ACP session %s: %w", sessionID, err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("ACP session %s not found", sessionID)
+	}
+	for _, messageID := range messageIDs {
+		if err := qtx.DeleteMessage(ctx, messageID); err != nil {
+			return fmt.Errorf("failed to delete message %s for ACP session %s: %w", messageID, sessionID, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit ACP session %s delete: %w", sessionID, err)
+	}
+	committed = true
+	return nil
+}
+
 // SetACPSessionModelRef marks modelRef as the selected model profile for an
 // ACP session.
 func (s *Sqlite) SetACPSessionModelRef(ctx context.Context, sessionID acp.SessionId, modelRef string) error {

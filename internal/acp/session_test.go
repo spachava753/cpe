@@ -2,6 +2,7 @@ package acp
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"slices"
 	"testing"
@@ -17,13 +18,17 @@ import (
 )
 
 type closeTrackingRuntime struct {
+	generate   func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error)
 	closeCalls int
 	closeErr   error
 }
 
 // Generate implements [acpRuntime].
 func (r *closeTrackingRuntime) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
-	return dialog, nil
+	if r.generate == nil {
+		return dialog, nil
+	}
+	return r.generate(ctx, dialog, opts)
 }
 
 // Close implements [acpRuntime].
@@ -32,8 +37,18 @@ func (r *closeTrackingRuntime) Close() error {
 	return r.closeErr
 }
 
+func countRows(t *testing.T, db *sql.DB, query string, args ...any) int {
+	t.Helper()
+	var count int
+	if err := db.QueryRowContext(t.Context(), query, args...).Scan(&count); err != nil {
+		t.Fatalf("count rows: %v", err)
+	}
+	return count
+}
+
 func TestInit(t *testing.T) {
-	clientConn, _ := setup(t, &noOpAcpClient{}, &config.RawConfig{}, unreachableRuntimeFactory)
+	fixture := setup(t, &noOpAcpClient{}, &config.RawConfig{}, unreachableRuntimeFactory)
+	clientConn := fixture.ClientConn
 
 	resp, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
 		ClientCapabilities: acp.ClientCapabilities{
@@ -56,6 +71,7 @@ func TestInit(t *testing.T) {
 	// assert agent capabilities
 	be.True(t, resp.AgentCapabilities.LoadSession)
 	be.Equal(t, resp.AgentCapabilities.SessionCapabilities.Close, &acp.SessionCloseCapabilities{})
+	be.Equal(t, resp.AgentCapabilities.SessionCapabilities.Delete, &acp.SessionDeleteCapabilities{})
 	be.Equal(t, resp.AgentCapabilities.SessionCapabilities.List, &acp.SessionListCapabilities{})
 	be.Equal(t, resp.AgentCapabilities.SessionCapabilities.Resume, &acp.SessionResumeCapabilities{})
 	be.True(t, resp.AgentCapabilities.PromptCapabilities.Audio)
@@ -64,7 +80,9 @@ func TestInit(t *testing.T) {
 }
 
 func TestListSessions(t *testing.T) {
-	clientConn, store := setup(t, &noOpAcpClient{}, &config.RawConfig{}, unreachableRuntimeFactory)
+	fixture := setup(t, &noOpAcpClient{}, &config.RawConfig{}, unreachableRuntimeFactory)
+	clientConn := fixture.ClientConn
+	store := fixture.Store
 
 	// seed the db
 	sessionEntries := []storage.CreateACPSessionParams{
@@ -118,7 +136,7 @@ func TestListSessions(t *testing.T) {
 }
 
 func TestNewSession(t *testing.T) {
-	clientConn, store := setup(
+	fixture := setup(
 		t,
 		&noOpAcpClient{},
 		&config.RawConfig{
@@ -151,6 +169,8 @@ func TestNewSession(t *testing.T) {
 		},
 		unreachableRuntimeFactory,
 	)
+	clientConn := fixture.ClientConn
+	store := fixture.Store
 
 	_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
 		ClientCapabilities: acp.ClientCapabilities{
@@ -194,7 +214,7 @@ func TestNewSession(t *testing.T) {
 func TestResumeSession(t *testing.T) {
 	t.Run("existing session", func(t *testing.T) {
 		var createdModelRefs []string
-		clientConn, store := setup(
+		fixture := setup(
 			t,
 			&noOpAcpClient{},
 			&config.RawConfig{
@@ -227,6 +247,8 @@ func TestResumeSession(t *testing.T) {
 				}), nil
 			},
 		)
+		clientConn := fixture.ClientConn
+		store := fixture.Store
 
 		be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
 			Session: acp.SessionInfo{
@@ -273,7 +295,7 @@ func TestResumeSession(t *testing.T) {
 
 	t.Run("stale model ref", func(t *testing.T) {
 		var createdModelRefs []string
-		clientConn, store := setup(
+		fixture := setup(
 			t,
 			&noOpAcpClient{},
 			&config.RawConfig{
@@ -306,6 +328,8 @@ func TestResumeSession(t *testing.T) {
 				}), nil
 			},
 		)
+		clientConn := fixture.ClientConn
+		store := fixture.Store
 
 		be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
 			Session: acp.SessionInfo{
@@ -354,7 +378,7 @@ func TestResumeSession(t *testing.T) {
 
 	t.Run("stale thinking level", func(t *testing.T) {
 		var createdModelRefs []string
-		clientConn, store := setup(
+		fixture := setup(
 			t,
 			&noOpAcpClient{},
 			&config.RawConfig{
@@ -387,6 +411,8 @@ func TestResumeSession(t *testing.T) {
 				}), nil
 			},
 		)
+		clientConn := fixture.ClientConn
+		store := fixture.Store
 
 		be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
 			Session: acp.SessionInfo{
@@ -437,7 +463,7 @@ func TestResumeSession(t *testing.T) {
 func TestLoadSession(t *testing.T) {
 	var createdModelRefs []string
 	testClient := &promptTestClient{}
-	clientConn, store := setup(
+	fixture := setup(
 		t,
 		testClient,
 		&config.RawConfig{
@@ -463,6 +489,8 @@ func TestLoadSession(t *testing.T) {
 			}), nil
 		},
 	)
+	clientConn := fixture.ClientConn
+	store := fixture.Store
 
 	dialog := gai.Dialog{
 		{
@@ -555,7 +583,7 @@ func TestCancel(t *testing.T) {
 		generateStarted := make(chan struct{})
 		var clientConn *acp.ClientSideConnection
 		var store *storage.Sqlite
-		clientConn, store = setup(
+		fixture := setup(
 			t,
 			&noOpAcpClient{},
 			&config.RawConfig{
@@ -596,6 +624,8 @@ func TestCancel(t *testing.T) {
 				}), nil
 			},
 		)
+		clientConn = fixture.ClientConn
+		store = fixture.Store
 
 		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
 			ClientCapabilities: acp.ClientCapabilities{
@@ -677,10 +707,131 @@ func TestCancel(t *testing.T) {
 	})
 }
 
+func TestDeleteSession(t *testing.T) {
+	var store *storage.Sqlite
+	trackingRuntime := &closeTrackingRuntime{
+		generate: func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
+			generatedDialog := append(dialog, gai.Message{
+				Role:   gai.Assistant,
+				Blocks: []gai.Block{gai.TextBlock("assistant answer")},
+			})
+			savedDialog := make(gai.Dialog, 0, len(generatedDialog))
+			for msg, err := range store.SaveDialog(ctx, slices.Values(generatedDialog)) {
+				if err != nil {
+					return nil, err
+				}
+				savedDialog = append(savedDialog, msg)
+			}
+			return savedDialog, nil
+		},
+	}
+	var clientConn *acp.ClientSideConnection
+	var rawDB *sql.DB
+	fixture := setup(
+		t,
+		&noOpAcpClient{},
+		&config.RawConfig{
+			Models: []config.ModelConfig{
+				{
+					Model: config.Model{
+						Ref:                  "test-model",
+						DisplayName:          "Test Model",
+						ID:                   "test-model",
+						Type:                 "responses",
+						BaseUrl:              "https://customurl.com/v1",
+						ContextWindow:        100,
+						InputCostPerMillion:  new(1.0),
+						OutputCostPerMillion: new(1.0),
+					},
+				},
+			},
+		},
+		func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error) {
+			return trackingRuntime, nil
+		},
+	)
+	clientConn = fixture.ClientConn
+	store = fixture.Store
+	rawDB = fixture.RawDB
+
+	_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
+		ClientCapabilities: acp.ClientCapabilities{
+			Fs: acp.FileSystemCapabilities{
+				ReadTextFile:  false,
+				WriteTextFile: false,
+			},
+			Terminal: false,
+		},
+		ClientInfo: &acp.Implementation{
+			Name:    "test-client",
+			Title:   new("test client"),
+			Version: "test",
+		},
+		ProtocolVersion: acp.ProtocolVersionNumber,
+	})
+	t.Log("called init")
+	be.Err(t, err, nil)
+
+	newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{
+		Cwd:        "/rando/dir",
+		McpServers: []acp.McpServer{},
+	})
+	be.Err(t, err, nil)
+	be.True(t, newSessionResp.SessionId != "")
+
+	promptResp, err := clientConn.Prompt(t.Context(), acp.PromptRequest{
+		Prompt: []acp.ContentBlock{
+			{
+				Text: &acp.ContentBlockText{
+					Text: "Hello",
+					Type: "text",
+				},
+			},
+		},
+		SessionId: newSessionResp.SessionId,
+	})
+	be.Err(t, err, nil)
+	be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
+
+	storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionId)
+	be.Err(t, err, nil)
+	be.True(t, storedSession.LastMessageID != "")
+	storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
+	be.Err(t, err, nil)
+	be.Equal(t, len(storedDialog), 2)
+	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions WHERE id = ?", newSessionResp.SessionId), 1)
+	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM messages"), 2)
+	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM blocks"), 2)
+
+	_, err = clientConn.UnstableDeleteSession(t.Context(), acp.UnstableDeleteSessionRequest{
+		SessionId: newSessionResp.SessionId,
+	})
+	be.Err(t, err, nil)
+	be.Equal(t, trackingRuntime.closeCalls, 1)
+
+	listResp, err := clientConn.ListSessions(t.Context(), acp.ListSessionsRequest{})
+	be.Err(t, err, nil)
+	be.True(t, !slices.ContainsFunc(listResp.Sessions, func(si acp.SessionInfo) bool {
+		return si.SessionId == newSessionResp.SessionId
+	}))
+
+	_, err = store.GetACPSession(t.Context(), newSessionResp.SessionId)
+	be.True(t, err != nil)
+
+	_, err = clientConn.CloseSession(t.Context(), acp.CloseSessionRequest{
+		SessionId: newSessionResp.SessionId,
+	})
+	be.True(t, err != nil)
+	be.Equal(t, trackingRuntime.closeCalls, 1)
+	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions WHERE id = ?", newSessionResp.SessionId), 0)
+	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM messages"), 0)
+	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM blocks"), 0)
+}
+
 func TestCloseSession(t *testing.T) {
 	t.Run("active session", func(t *testing.T) {
 		trackingRuntime := &closeTrackingRuntime{}
-		clientConn, store := setup(
+		fixture := setup(
 			t,
 			&noOpAcpClient{},
 			&config.RawConfig{
@@ -703,6 +854,8 @@ func TestCloseSession(t *testing.T) {
 				return trackingRuntime, nil
 			},
 		)
+		clientConn := fixture.ClientConn
+		store := fixture.Store
 
 		be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
 			Session: acp.SessionInfo{
@@ -754,7 +907,7 @@ func TestCloseSession(t *testing.T) {
 
 	t.Run("runtime close error", func(t *testing.T) {
 		trackingRuntime := &closeTrackingRuntime{closeErr: errors.New("close failed")}
-		clientConn, store := setup(
+		fixture := setup(
 			t,
 			&noOpAcpClient{},
 			&config.RawConfig{
@@ -777,6 +930,8 @@ func TestCloseSession(t *testing.T) {
 				return trackingRuntime, nil
 			},
 		)
+		clientConn := fixture.ClientConn
+		store := fixture.Store
 
 		be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
 			Session: acp.SessionInfo{
