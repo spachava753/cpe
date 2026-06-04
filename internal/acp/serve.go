@@ -1,6 +1,7 @@
 package acp
 
 import (
+	"maps"
 	"context"
 	"database/sql"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	"github.com/spachava753/cpe/internal/commands"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/mcp"
+	"github.com/spachava753/cpe/internal/mcpconfig"
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/sync"
 	"github.com/spachava753/cpe/internal/textedit"
@@ -78,7 +80,11 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	}
 
 	// TODO: we should refactor the runtime factory to be made from the session config options
-	runtimeFactory := func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error) {
+	runtimeFactory := func(
+		conn *acp.AgentSideConnection,
+		modelRef string,
+		mcpServers []acp.McpServer,
+	) (acpRuntime, error) {
 		cfg, err := config.ResolveFromRaw(rawCfg, config.RuntimeOptions{
 			ModelRef: modelRef,
 		})
@@ -138,9 +144,14 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 			}
 		}
 
+		mcpServersConfig, err := mergeACPServerConfigs(cfg.MCPServers, mcpServers)
+		if err != nil {
+			return nil, err
+		}
+
 		// connecting to mcps
 		// TODO: we connect to mcp servers for each active session, we really need a way to pool connections or something
-		mcpState, err := mcp.InitializeConnections(ctx, cfg.MCPServers)
+		mcpState, err := mcp.InitializeConnections(ctx, mcpServersConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize MCP connections: %w", err)
 		}
@@ -208,6 +219,70 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 
 	// TODO: we should close on connection end and clean up mcp connections
 	return nil
+}
+
+func mergeACPServerConfigs(
+	configured map[string]mcpconfig.ServerConfig,
+	provided []acp.McpServer,
+) (map[string]mcpconfig.ServerConfig, error) {
+	merged := make(map[string]mcpconfig.ServerConfig, len(configured)+len(provided))
+	maps.Copy(merged, configured)
+
+	for i, server := range provided {
+		name, cfg, err := acpMCPServerConfig(server)
+		if err != nil {
+			return nil, fmt.Errorf("acp MCP server[%d]: %w", i, err)
+		}
+		if name == "" {
+			return nil, fmt.Errorf("acp MCP server[%d]: name is required", i)
+		}
+		if _, exists := merged[name]; exists {
+			return nil, fmt.Errorf("acp MCP server %q conflicts with an existing MCP server", name)
+		}
+		merged[name] = cfg
+	}
+
+	return merged, nil
+}
+
+func acpMCPServerConfig(server acp.McpServer) (string, mcpconfig.ServerConfig, error) {
+	switch {
+	case server.Stdio != nil:
+		env := make(map[string]string, len(server.Stdio.Env))
+		for _, variable := range server.Stdio.Env {
+			env[variable.Name] = variable.Value
+		}
+		return server.Stdio.Name, mcpconfig.ServerConfig{
+			Type:    "stdio",
+			Command: server.Stdio.Command,
+			Args:    server.Stdio.Args,
+			Env:     env,
+		}, nil
+	case server.Http != nil:
+		return server.Http.Name, mcpconfig.ServerConfig{
+			Type:    "http",
+			URL:     server.Http.Url,
+			Headers: acpHTTPHeaders(server.Http.Headers),
+		}, nil
+	case server.Sse != nil:
+		return server.Sse.Name, mcpconfig.ServerConfig{
+			Type:    "sse",
+			URL:     server.Sse.Url,
+			Headers: acpHTTPHeaders(server.Sse.Headers),
+		}, nil
+	case server.Acp != nil:
+		return server.Acp.Name, mcpconfig.ServerConfig{}, errors.New("ACP transport is not supported")
+	default:
+		return "", mcpconfig.ServerConfig{}, errors.New("transport is required")
+	}
+}
+
+func acpHTTPHeaders(headers []acp.HttpHeader) map[string]string {
+	mapped := make(map[string]string, len(headers))
+	for _, header := range headers {
+		mapped[header.Name] = header.Value
+	}
+	return mapped
 }
 
 // closerAgent is a type that embeds [Loop] and implementes a close function to close the mcp connections

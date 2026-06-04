@@ -24,6 +24,7 @@ type acpRuntime interface {
 type session struct {
 	modelRef      string
 	thinkingLevel string
+	mcpServers    []acp.McpServer
 	runtime       acpRuntime
 	cancelfunc    context.CancelFunc
 	si            acp.SessionInfo
@@ -56,6 +57,7 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		si:            si,
 		modelRef:      modelRef,
 		thinkingLevel: thinkingVal,
+		mcpServers:    params.McpServers,
 	}
 
 	if err := a.db.CreateACPSession(ctx, storage.CreateACPSessionParams{
@@ -87,7 +89,11 @@ func (a *Agent) ListSessions(ctx context.Context, params acp.ListSessionsRequest
 }
 
 // loadActiveSession loads an active session from storage
-func (a *Agent) loadActiveSession(ctx context.Context, sessionId acp.SessionId) ([]acp.SessionConfigOption, error) {
+func (a *Agent) loadActiveSession(
+	ctx context.Context,
+	sessionId acp.SessionId,
+	mcpServers []acp.McpServer,
+) ([]acp.SessionConfigOption, error) {
 	// TODO: should we always load from db? Maybe be better, especially since config can change
 	if s, ok := a.activeSessions.Load(sessionId); ok {
 		// session already exists, but maybe we should reload the runtime based on stored config options?
@@ -124,7 +130,7 @@ func (a *Agent) loadActiveSession(ctx context.Context, sessionId acp.SessionId) 
 		if err := a.db.SetACPSessionThinkingLevel(ctx, sessionId, thinkingLevel); err != nil {
 			return nil, fmt.Errorf("could not update thinking level config: %v", err)
 		}
-		runtime, err := a.runtimeFactory(a.conn, modelRef)
+		runtime, err := a.runtimeFactory(a.conn, modelRef, mcpServers)
 		if err != nil {
 			return nil, fmt.Errorf("could not create runtime: %v", err)
 		}
@@ -132,6 +138,7 @@ func (a *Agent) loadActiveSession(ctx context.Context, sessionId acp.SessionId) 
 			si:            getSessionResp.Session,
 			modelRef:      modelRef,
 			thinkingLevel: thinkingLevel,
+			mcpServers:    mcpServers,
 			runtime:       runtime,
 		}
 		a.activeSessions.Store(sessionId, sync.NewGuard(s))
@@ -153,7 +160,7 @@ func (a *Agent) loadActiveSession(ctx context.Context, sessionId acp.SessionId) 
 		}
 	}
 
-	runtime, err := a.runtimeFactory(a.conn, modelRef)
+	runtime, err := a.runtimeFactory(a.conn, modelRef, mcpServers)
 	if err != nil {
 		return nil, fmt.Errorf("could not create runtime: %v", err)
 	}
@@ -170,7 +177,7 @@ func (a *Agent) loadActiveSession(ctx context.Context, sessionId acp.SessionId) 
 
 // ResumeSession implements [acp.Agent].
 func (a *Agent) ResumeSession(ctx context.Context, params acp.ResumeSessionRequest) (acp.ResumeSessionResponse, error) {
-	opts, err := a.loadActiveSession(ctx, params.SessionId)
+	opts, err := a.loadActiveSession(ctx, params.SessionId, params.McpServers)
 	if err != nil {
 		return acp.ResumeSessionResponse{}, fmt.Errorf("could not resume session: %v", err)
 	}
@@ -181,7 +188,7 @@ func (a *Agent) ResumeSession(ctx context.Context, params acp.ResumeSessionReque
 
 // LoadSession implements [acp.AgentLoader].
 func (a *Agent) LoadSession(ctx context.Context, params acp.LoadSessionRequest) (acp.LoadSessionResponse, error) {
-	opts, err := a.loadActiveSession(ctx, params.SessionId)
+	opts, err := a.loadActiveSession(ctx, params.SessionId, params.McpServers)
 	if err != nil {
 		return acp.LoadSessionResponse{}, fmt.Errorf("could not load session: %v", err)
 	}

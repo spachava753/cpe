@@ -79,7 +79,7 @@ func (m mockRuntime) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.
 
 var _ acpRuntime = (*mockRuntime)(nil)
 
-var unreachableRuntimeFactory = func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error) {
+var unreachableRuntimeFactory = func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
 	panic("should not be called")
 }
 

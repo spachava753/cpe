@@ -240,7 +240,7 @@ func TestResumeSession(t *testing.T) {
 					},
 				},
 			},
-			func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error) {
+			func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
 				createdModelRefs = append(createdModelRefs, modelRef)
 				return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 					return dialog, nil
@@ -321,7 +321,7 @@ func TestResumeSession(t *testing.T) {
 					},
 				},
 			},
-			func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error) {
+			func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
 				createdModelRefs = append(createdModelRefs, modelRef)
 				return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 					return dialog, nil
@@ -404,7 +404,7 @@ func TestResumeSession(t *testing.T) {
 					},
 				},
 			},
-			func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error) {
+			func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
 				createdModelRefs = append(createdModelRefs, modelRef)
 				return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 					return dialog, nil
@@ -482,7 +482,7 @@ func TestLoadSession(t *testing.T) {
 				},
 			},
 		},
-		func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error) {
+		func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
 			createdModelRefs = append(createdModelRefs, modelRef)
 			return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 				return dialog, nil
@@ -600,7 +600,7 @@ func TestLoadSessionReplaysCompactionLineage(t *testing.T) {
 				},
 			},
 		},
-		func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error) {
+		func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
 			createdModelRefs = append(createdModelRefs, modelRef)
 			return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 				return dialog, nil
@@ -756,7 +756,7 @@ func TestCancel(t *testing.T) {
 					},
 				},
 			},
-			func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error) {
+			func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
 				return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 					close(generateStarted)
 					<-ctx.Done()
@@ -900,7 +900,7 @@ func TestDeleteSession(t *testing.T) {
 				},
 			},
 		},
-		func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error) {
+		func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
 			return trackingRuntime, nil
 		},
 	)
@@ -1004,7 +1004,7 @@ func TestCloseSession(t *testing.T) {
 					},
 				},
 			},
-			func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error) {
+			func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
 				return trackingRuntime, nil
 			},
 		)
@@ -1080,7 +1080,7 @@ func TestCloseSession(t *testing.T) {
 					},
 				},
 			},
-			func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error) {
+			func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
 				return trackingRuntime, nil
 			},
 		)

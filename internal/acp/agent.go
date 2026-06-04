@@ -22,6 +22,7 @@ import (
 type runtimeFactory func(
 	conn *acp.AgentSideConnection,
 	modelRef string,
+	mcpServers []acp.McpServer,
 ) (acpRuntime, error)
 
 // Agent is an implementation of an [acp.Agent]
@@ -90,11 +91,10 @@ func (a *Agent) Initialize(
 		},
 		AgentCapabilities: acp.AgentCapabilities{
 			LoadSession: true,
-			// TODO: eventually support loading mcp from acp connection
 			McpCapabilities: acp.McpCapabilities{
 				Acp:  false,
-				Http: false,
-				Sse:  false,
+				Http: true,
+				Sse:  true,
 			},
 			PromptCapabilities: acp.PromptCapabilities{
 				Audio:           true,
@@ -128,7 +128,7 @@ func (a *Agent) Prompt(
 			return nil
 		}
 		var err error
-		t.runtime, err = a.runtimeFactory(a.conn, t.modelRef)
+		t.runtime, err = a.runtimeFactory(a.conn, t.modelRef, t.mcpServers)
 		return err
 	}); err != nil {
 		return acp.PromptResponse{}, fmt.Errorf("failed to create runtime: %v", err)
@@ -165,7 +165,7 @@ func (a *Agent) Prompt(
 		}
 		dialog = append(dialog, a.promptToMessage(params.Prompt))
 		if t.runtime == nil {
-			runtime, err := a.runtimeFactory(a.conn, t.modelRef)
+			runtime, err := a.runtimeFactory(a.conn, t.modelRef, t.mcpServers)
 			if err != nil {
 				return fmt.Errorf("could not create runtime: %v", err)
 			}

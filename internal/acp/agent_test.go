@@ -109,7 +109,7 @@ func TestPromptHandlesCompactedDialogShorterThanInput(t *testing.T) {
 				},
 			}},
 		},
-		func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error) {
+		func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
 			return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 				compacted := gai.Dialog{
 					{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("compacted history")}},
@@ -196,7 +196,7 @@ func TestPromptTextEditToolResultIncludesDiff(t *testing.T) {
 				},
 			}},
 		},
-		func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error) {
+		func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
 			gen := &scriptedPromptTestGenerator{responses: []gai.Response{
 				{
 					Candidates:    []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{toolCall}}},
@@ -326,7 +326,7 @@ func TestPrompt(t *testing.T) {
 				},
 			},
 		},
-		func(conn *acp.AgentSideConnection, modelRef string) (acpRuntime, error) {
+		func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
 			gen := promptTestGenerator{response: gai.Response{
 				Candidates: []gai.Message{{
 					Role: gai.Assistant,
