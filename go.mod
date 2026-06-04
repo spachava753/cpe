@@ -13,7 +13,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/glamour v1.0.0
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
-	github.com/coder/acp-go-sdk v0.13.0
+	github.com/coder/acp-go-sdk v0.13.5
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/failsafe-go/failsafe-go v0.9.6
 	github.com/gabriel-vasile/mimetype v1.4.13

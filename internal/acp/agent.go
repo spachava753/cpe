@@ -69,6 +69,11 @@ func (a *Agent) Authenticate(
 	return acp.AuthenticateResponse{}, nil
 }
 
+// Logout implements [acp.Agent].
+func (a *Agent) Logout(ctx context.Context, params acp.LogoutRequest) (acp.LogoutResponse, error) {
+	return acp.LogoutResponse{}, nil
+}
+
 // Initialize implements [acp.Agent].
 func (a *Agent) Initialize(
 	ctx context.Context,
