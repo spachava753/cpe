@@ -1,8 +1,10 @@
 package acp
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -40,14 +42,16 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		return errors.New("provided stderr cannot be nil")
 	}
 
-	slog.SetDefault(
-		slog.New(
-			slog.NewTextHandler(opts.Stderr, &slog.HandlerOptions{
-				AddSource: true,
-				Level:     slog.LevelDebug,
-			}),
-		),
-	)
+	handlers := []slog.Handler{
+		slog.NewJSONHandler(opts.Stderr, &slog.HandlerOptions{
+			AddSource: true,
+			Level:     slog.LevelDebug,
+		}),
+	}
+	if slog.Default().Handler() != nil {
+		handlers = append(handlers, slog.Default().Handler())
+	}
+	slog.SetDefault(slog.New(slog.NewMultiHandler(handlers...)))
 
 	rawCfg, err := config.LoadRawConfig(opts.ConfigPath)
 	if err != nil {
@@ -208,7 +212,19 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		},
 		runtimeFactory: runtimeFactory,
 	}
-	asc := acp.NewAgentSideConnection(&ag, opts.Stdout, opts.Stdin)
+	// for the purposes of access logging, log all
+	// incoming and outgoing messages, to help with
+	// debugging communication between ACP client
+	// and server
+	stdin := io.TeeReader(opts.Stdin, &rpcLogger{
+		log: slog.Default(),
+		dir: "incoming",
+	})
+	stdout := io.MultiWriter(opts.Stdout, &rpcLogger{
+		log: slog.Default(),
+		dir: "outgoing",
+	})
+	asc := acp.NewAgentSideConnection(&ag, stdout, stdin)
 	ag.conn = asc
 	asc.SetLogger(slog.Default())
 	select {
@@ -219,6 +235,83 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 
 	// TODO: we should close on connection end and clean up mcp connections
 	return nil
+}
+
+type rpcLogger struct {
+	b   bytes.Buffer
+	log *slog.Logger
+	dir string
+}
+
+// Write implements [io.Writer]. It writes to its buffer, then reads
+func (r *rpcLogger) Write(p []byte) (int, error) {
+	n, err := r.b.Write(p)
+	// loop on contained JSON RPC frames,
+	// the buffer may contain multiple
+	for {
+		delim := bytes.IndexRune(r.b.Bytes(), '\n')
+		if delim < 0 {
+			return n, err
+		}
+
+		// we have a complete JSON RPC message in the buffer, flush it
+		rpcBytes := r.b.Next(delim)
+		type msg struct {
+			ID     json.RawMessage `json:"id"`
+			Method *string         `json:"method,omitempty"`
+			Params json.RawMessage `json:"params,omitempty"`
+			Result json.RawMessage `json:"result,omitempty"`
+			Error  json.RawMessage `json:"error,omitempty"`
+		}
+		var m msg
+		if err := json.Unmarshal(rpcBytes, &m); err != nil {
+			r.log.LogAttrs(
+				context.Background(),
+				slog.LevelDebug,
+				"jsonrpc frame parse error",
+				slog.String("direction", r.dir),
+				slog.String("err", err.Error()),
+				slog.String("raw", string(rpcBytes)),
+			)
+		} else {
+			attrs := []slog.Attr{
+				slog.String("direction", r.dir),
+			}
+			if len(m.ID) > 0 {
+				attrs = append(attrs, slog.Any("id", m.ID))
+			}
+			if m.Method != nil {
+				attrs = append(attrs, slog.String("method", *m.Method))
+				if len(m.Params) > 0 {
+					attrs = append(attrs, slog.Any("params", m.Params))
+				}
+				if len(m.ID) > 0 {
+					attrs = append(attrs, slog.String("type", "request"))
+				} else {
+					attrs = append(attrs, slog.String("type", "notification"))
+				}
+			} else {
+				if len(m.Result) > 0 {
+					attrs = append(attrs, slog.Any("result", m.Result))
+				}
+				if len(m.Error) > 0 {
+					attrs = append(attrs, slog.Any("error", m.Error))
+				}
+				attrs = append(attrs, slog.String("type", "response"))
+			}
+			r.log.LogAttrs(
+				context.Background(),
+				slog.LevelDebug,
+				"jsonrpc frame",
+				attrs...,
+			)
+		}
+
+		// read the newline rune
+		if r.b.Len() > 0 {
+			r.b.Next(1)
+		}
+	}
 }
 
 func mergeACPServerConfigs(

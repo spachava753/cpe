@@ -1,6 +1,8 @@
 package acp
 
 import (
+	"bytes"
+	"log/slog"
 	"testing"
 
 	"github.com/coder/acp-go-sdk"
@@ -8,6 +10,84 @@ import (
 
 	"github.com/spachava753/cpe/internal/mcpconfig"
 )
+
+func TestRPCLoggerWrite(t *testing.T) {
+	tests := []struct {
+		name       string
+		writes     []string
+		wantAfter  []string
+		wantOutput string
+	}{
+		{
+			name: "one full frame",
+			writes: []string{
+				`{"jsonrpc":"2.0","id":1,"result":{}}` + "\n",
+			},
+			wantAfter: []string{
+				`{"level":"DEBUG","msg":"jsonrpc frame","direction":"incoming","id":1,"result":{},"type":"response"}` + "\n",
+			},
+			wantOutput: `{"level":"DEBUG","msg":"jsonrpc frame","direction":"incoming","id":1,"result":{},"type":"response"}` + "\n",
+		},
+		{
+			name: "chunks of a frame",
+			writes: []string{
+				`{"jsonrpc":"2.0",`,
+				`"id":2,`,
+				`"method":"session/prompt"}`,
+				"\n",
+			},
+			wantAfter: []string{
+				"",
+				"",
+				"",
+				`{"level":"DEBUG","msg":"jsonrpc frame","direction":"incoming","id":2,"method":"session/prompt","type":"request"}` + "\n",
+			},
+			wantOutput: `{"level":"DEBUG","msg":"jsonrpc frame","direction":"incoming","id":2,"method":"session/prompt","type":"request"}` + "\n",
+		},
+		{
+			name: "multiple frames",
+			writes: []string{
+				`{"jsonrpc":"2.0","id":3,"result":{}}` + "\n" +
+					`{"jsonrpc":"2.0","method":"session/update","params":{}}` + "\n",
+			},
+			wantAfter: []string{
+				`{"level":"DEBUG","msg":"jsonrpc frame","direction":"incoming","id":3,"result":{},"type":"response"}` + "\n" +
+					`{"level":"DEBUG","msg":"jsonrpc frame","direction":"incoming","method":"session/update","params":{},"type":"notification"}` + "\n",
+			},
+			wantOutput: `{"level":"DEBUG","msg":"jsonrpc frame","direction":"incoming","id":3,"result":{},"type":"response"}` + "\n" +
+				`{"level":"DEBUG","msg":"jsonrpc frame","direction":"incoming","method":"session/update","params":{},"type":"notification"}` + "\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var b bytes.Buffer
+			h := slog.NewJSONHandler(&b, &slog.HandlerOptions{
+				AddSource: false,
+				Level:     slog.LevelDebug,
+				ReplaceAttr: func(_ []string, attr slog.Attr) slog.Attr {
+					if attr.Key == slog.TimeKey {
+						return slog.Attr{}
+					}
+					return attr
+				},
+			})
+			l := &rpcLogger{
+				log: slog.New(h),
+				dir: "incoming",
+			}
+
+			for i, write := range tt.writes {
+				n, err := l.Write([]byte(write))
+				be.Err(t, err, nil)
+				be.Equal(t, n, len(write))
+				be.Equal(t, b.String(), tt.wantAfter[i])
+			}
+
+			be.Equal(t, b.String(), tt.wantOutput)
+		})
+	}
+}
 
 func TestMergeACPServerConfigs(t *testing.T) {
 	configured := map[string]mcpconfig.ServerConfig{
