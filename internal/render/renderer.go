@@ -3,7 +3,6 @@ package render
 import (
 	"io"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/glamour"
@@ -175,29 +174,4 @@ func NewGlamourRendererForWriter(w io.Writer) *GlamourRenderer {
 		glamour.WithStyles(baseStyle()),
 		glamour.WithWordWrap(writerWordWrapWidth(w)),
 	)
-}
-
-// NewThinkingRendererForWriter creates a thinking renderer sized to the terminal backing w.
-func NewThinkingRendererForWriter(w io.Writer) *GlamourRenderer {
-	return newTermRenderer(
-		glamour.WithStyles(thinkingStyle()),
-		glamour.WithWordWrap(writerWordWrapWidth(w)),
-	)
-}
-
-func thinkingStyle() ansi.StyleConfig {
-	style := baseStyle()
-	textColor, err := strconv.Atoi(*style.Document.Color)
-	if err != nil {
-		panic(err.Error())
-	}
-	if termenv.HasDarkBackground() {
-		textColor -= 4
-	} else {
-		textColor += 4
-	}
-	thinkingTextColor := strconv.Itoa(textColor)
-	style.Text.Color = &thinkingTextColor
-	style.Document.BlockSuffix = "\n"
-	return style
 }

@@ -6,59 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"maps"
 	"slices"
 	"strings"
 
 	"github.com/spachava753/gai"
-
-	"github.com/spachava753/cpe/internal/config"
 )
 
 const responsesPromptCacheKeyVersion = "v1"
-
-// BuildGenOptsForDialog returns a fresh copy of the base generation options for
-// a specific dialog.
-//
-// For Responses models, it also applies the default reasoning-summary setting
-// and injects a stable prompt cache key unless the user already provided one.
-func BuildGenOptsForDialog(model config.Model, base *gai.GenOpts, dialog gai.Dialog) *gai.GenOpts {
-	opts := cloneGenOpts(base)
-	if !strings.EqualFold(model.Type, ModelTypeResponses) {
-		return opts
-	}
-	if opts == nil {
-		opts = &gai.GenOpts{}
-	}
-
-	ApplyResponsesThinkingSummary(opts)
-
-	if opts.ExtraArgs != nil {
-		if _, exists := opts.ExtraArgs[gai.ResponsesPromptCacheKeyParam]; exists {
-			return opts
-		}
-	} else {
-		opts.ExtraArgs = make(map[string]any)
-	}
-
-	if key := responsesPromptCacheKey(model.ID, dialog); key != "" {
-		opts.ExtraArgs[gai.ResponsesPromptCacheKeyParam] = key
-	}
-
-	return opts
-}
-
-func cloneGenOpts(base *gai.GenOpts) *gai.GenOpts {
-	if base == nil {
-		return nil
-	}
-
-	clone := *base
-	clone.StopSequences = slices.Clone(base.StopSequences)
-	clone.OutputModalities = slices.Clone(base.OutputModalities)
-	clone.ExtraArgs = maps.Clone(base.ExtraArgs)
-	return &clone
-}
 
 type promptCachePayload struct {
 	Version  string               `json:"version"`

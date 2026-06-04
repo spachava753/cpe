@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -18,13 +17,8 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/spachava753/cpe/internal/auth"
-	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/httpclient"
-	"github.com/spachava753/cpe/internal/mcp"
-	"github.com/spachava753/cpe/internal/ports"
-	"github.com/spachava753/cpe/internal/storage"
-	"github.com/spachava753/cpe/internal/textedit"
 )
 
 const authMethodOAuth = "oauth"
@@ -325,130 +319,4 @@ func InitGeneratorFromModel(
 	}
 
 	return gen, nil
-}
-
-// generatorOptions holds optional configuration for generator creation.
-type generatorOptions struct {
-	dialogSaver storage.DialogSaver
-	stdout      io.Writer
-}
-
-// GeneratorOption is a functional option for configuring generator creation.
-type GeneratorOption func(*generatorOptions)
-
-// WithDialogSaver enables incremental dialog saving in the turn-lifecycle middleware.
-// When provided, messages are saved as they flow through the generation pipeline.
-// If not provided (nil), no saving occurs (incognito mode).
-func WithDialogSaver(saver storage.DialogSaver) GeneratorOption {
-	return func(o *generatorOptions) {
-		o.dialogSaver = saver
-	}
-}
-
-// WithStdout sets the writer for model response output.
-// If not provided (nil), defaults to os.Stdout.
-func WithStdout(w io.Writer) GeneratorOption {
-	return func(o *generatorOptions) {
-		o.stdout = w
-	}
-}
-
-// NewGenerator creates a ports.Generator with all middleware properly configured.
-// It expects an already-initialized MCPState with connections and filtered tools.
-//
-// Required parameters:
-//   - ctx: Context for initialization
-//   - cfg: Configuration containing model, timeout, and code mode settings
-//   - systemPrompt: The system prompt for the generator
-//   - mcpState: Initialized MCP state with connections and tools
-//
-// Optional parameters (via functional options):
-//   - WithDialogSaver(s): Save dialog messages as they flow through generation
-//   - WithStdout(w): Write model response output to a custom destination
-func NewGenerator(
-	ctx context.Context,
-	cfg config.Config,
-	systemPrompt string,
-	mcpState *mcp.MCPState,
-	opts ...GeneratorOption,
-) (ports.Generator, error) {
-	// Apply options
-	o := &generatorOptions{}
-	for _, opt := range opts {
-		opt(o)
-	}
-
-	genBase, err := InitGeneratorFromModel(ctx, cfg.Model, systemPrompt, cfg.Timeout)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create generator: %w", err)
-	}
-
-	gen, ok := genBase.(gai.ToolCallingGenerator)
-	if !ok {
-		return nil, fmt.Errorf("generator does not implement ToolCallingGenerator interface")
-	}
-
-	// Build the single-turn provider stack. Runtime owns persistence,
-	// rendering, tool callbacks, and the dialog loop.
-	wrappers := []gai.WrapperFunc{
-		WithBlockFilter(cfg.Model.Type),
-	}
-
-	wrapped := gai.Wrap(gen, wrappers...)
-	gen, ok = wrapped.(gai.ToolCallingGenerator)
-	if !ok {
-		return nil, fmt.Errorf("wrapped generator does not implement ToolCallingGenerator interface")
-	}
-
-	stdoutW := o.stdout
-	if stdoutW == nil {
-		stdoutW = os.Stdout
-	}
-	runtime := &Runtime{
-		G:           gen,
-		Cfg:         cfg,
-		DialogSaver: o.dialogSaver,
-		Stdout:      stdoutW,
-		Stderr:      os.Stderr,
-	}
-
-	if !cfg.DisableEditTool {
-		textEditTool, textEditCallback := textedit.MakeTool()
-		if err := runtime.Register(textEditTool, textEditCallback); err != nil {
-			return nil, fmt.Errorf("failed to register text_edit tool: %w", err)
-		}
-	}
-
-	if cfg.CodeMode != nil && cfg.CodeMode.Enabled {
-		executeGoCodeTool := codemode.GenerateExecuteGoCodeTool(cfg.CodeMode.MaxTimeout)
-		callback := &codemode.ExecuteGoCodeCallback{
-			MaxTimeout:           cfg.CodeMode.MaxTimeout,
-			LargeOutputCharLimit: codemode.ResolveLargeOutputCharLimit(cfg.CodeMode.LargeOutputCharLimit, cfg.Model.ContextWindow),
-			LocalModulePaths:     cfg.CodeMode.LocalModulePaths,
-		}
-
-		if err := runtime.Register(executeGoCodeTool, callback); err != nil {
-			return nil, fmt.Errorf("failed to register execute_go_code tool: %w", err)
-		}
-	}
-
-	for serverName, conn := range mcpState.Connections {
-		for _, mcpTool := range conn.Tools {
-			gaiTool, err := mcp.ToGaiTool(mcpTool)
-			if err != nil {
-				return nil, fmt.Errorf("converting tool %s: %w", mcpTool.Name, err)
-			}
-			if err := runtime.Register(gaiTool, mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name, conn.Config)); err != nil {
-				return nil, fmt.Errorf("failed to register tool %s: %w", mcpTool.Name, err)
-			}
-		}
-	}
-
-	if cfg.Compaction != nil {
-		if err := runtime.Register(cfg.Compaction.Tool, nil); err != nil {
-			return nil, fmt.Errorf("failed to register compaction tool: %w", err)
-		}
-	}
-
-	return runtime, nil
 }

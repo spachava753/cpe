@@ -13,6 +13,7 @@ import (
 
 	acp "github.com/coder/acp-go-sdk"
 	gonanoid "github.com/matoous/go-nanoid/v2"
+	_ "github.com/ncruces/go-sqlite3/driver"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/storage/sqlcgen"
@@ -43,21 +44,6 @@ var schemaSQL string
 
 // SqliteOption configures a SQLite-backed message store.
 type SqliteOption func(*Sqlite)
-
-// WithIDGenerator overrides the message ID generator used for newly persisted
-// messages.
-//
-// This is primarily useful for deterministic tests. The generator must return
-// unique IDs often enough for SaveDialog's collision retry limit; duplicate IDs
-// are retried and eventually fail the save. A nil generator leaves the default
-// random generator in place.
-func WithIDGenerator(idGenerator func() string) SqliteOption {
-	return func(s *Sqlite) {
-		if idGenerator != nil {
-			s.idGenerator = idGenerator
-		}
-	}
-}
 
 // Sqlite is the SQLite-backed MessageDB implementation.
 //

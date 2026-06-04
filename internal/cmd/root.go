@@ -2,16 +2,11 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
-
-	"github.com/spachava753/cpe/internal/commands"
-	"github.com/spachava753/cpe/internal/version"
 )
 
 // DefaultModel is the process-start snapshot of CPE_MODEL.
@@ -20,7 +15,6 @@ var DefaultModel = os.Getenv("CPE_MODEL")
 
 var (
 	model                   string
-	customURL               string
 	input                   []string
 	newConversation         bool
 	continueID              string
@@ -29,18 +23,7 @@ var (
 	skipStdin               bool
 	conversationStoragePath string
 	configPath              string
-
-	// CLI flag variables for generation parameters (intermediate storage).
-	// These are bound to cobra flags; values are only promoted to *gai.GenOpts
-	// when the corresponding flag was explicitly set by the user.
-	flagMaxTokens        int
-	flagTemperature      float64
-	flagTopP             float64
-	flagTopK             uint
-	flagFrequencyPenalty float64
-	flagPresencePenalty  float64
-	flagN                uint
-	flagThinkingBudget   string
+	flagThinkingBudget      string
 )
 
 // rootCmd is the CLI entrypoint for prompt execution.
@@ -53,68 +36,10 @@ var (
 var rootCmd = &cobra.Command{
 	Use:   "cpe [flags] [prompt]",
 	Short: "Chat-based Programming Editor",
-	Long: `CPE (Chat-based Programming Editor) is a powerful command-line tool that enables 
-developers to leverage AI for codebase analysis, modification, and improvement 
+	Long: `CPE (Chat-based Programming Editor) is a powerful command-line tool that enables
+developers to leverage AI for codebase analysis, modification, and improvement
 through natural language interactions.`,
 	Args: cobra.ArbitraryArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		versionFlag, _ := cmd.Flags().GetBool("version")
-		if versionFlag {
-			fmt.Fprintf(cmd.OutOrStdout(), "cpe version %s\n", version.Get())
-			return nil
-		}
-
-		var changed commands.GenParamChanges
-		cmd.Flags().Visit(func(f *pflag.Flag) {
-			switch f.Name {
-			case "max-tokens":
-				changed.MaxTokens = true
-			case "temperature":
-				changed.Temperature = true
-			case "top-p":
-				changed.TopP = true
-			case "top-k":
-				changed.TopK = true
-			case "frequency-penalty":
-				changed.FrequencyPenalty = true
-			case "presence-penalty":
-				changed.PresencePenalty = true
-			case "number-of-responses":
-				changed.N = true
-			case "thinking-budget":
-				changed.ThinkingBudget = true
-			}
-		})
-
-		genParams := commands.BuildGenOpts(commands.GenParamValues{
-			MaxTokens:        &flagMaxTokens,
-			Temperature:      &flagTemperature,
-			TopP:             &flagTopP,
-			TopK:             &flagTopK,
-			FrequencyPenalty: &flagFrequencyPenalty,
-			PresencePenalty:  &flagPresencePenalty,
-			N:                &flagN,
-			ThinkingBudget:   flagThinkingBudget,
-		}, changed)
-
-		return commands.ExecuteRootCLI(cmd.Context(), commands.ExecuteRootCLIOptions{
-			Args:                    args,
-			InputPaths:              input,
-			Stdin:                   cmd.InOrStdin(),
-			SkipStdin:               skipStdin,
-			ConfigPath:              configPath,
-			ModelRef:                model,
-			GenParams:               genParams,
-			Timeout:                 timeout,
-			ConversationStoragePath: conversationStoragePath,
-			CustomURL:               customURL,
-			ContinueID:              continueID,
-			NewConversation:         newConversation,
-			IncognitoMode:           incognitoMode,
-			Stdout:                  cmd.OutOrStdout(),
-			Stderr:                  cmd.ErrOrStderr(),
-		})
-	},
 }
 
 // Execute runs the Cobra command tree with process-level signal cancellation.
@@ -135,14 +60,6 @@ func Execute() {
 func init() {
 	// Define flags for the root command
 	rootCmd.PersistentFlags().StringVarP(&model, "model", "m", DefaultModel, "Specify the model to use (required unless CPE_MODEL is set)")
-	rootCmd.PersistentFlags().StringVar(&customURL, "custom-url", "", "Specify a custom base URL for the model provider API")
-	rootCmd.PersistentFlags().IntVarP(&flagMaxTokens, "max-tokens", "x", 0, "Maximum number of tokens to generate")
-	rootCmd.PersistentFlags().Float64VarP(&flagTemperature, "temperature", "t", 0, "Sampling temperature (0.0 - 1.0)")
-	rootCmd.PersistentFlags().Float64Var(&flagTopP, "top-p", 0, "Nucleus sampling parameter (0.0 - 1.0)")
-	rootCmd.PersistentFlags().UintVar(&flagTopK, "top-k", 0, "Top-k sampling parameter")
-	rootCmd.PersistentFlags().Float64Var(&flagFrequencyPenalty, "frequency-penalty", 0, "Frequency penalty (-2.0 - 2.0)")
-	rootCmd.PersistentFlags().Float64Var(&flagPresencePenalty, "presence-penalty", 0, "Presence penalty (-2.0 - 2.0)")
-	rootCmd.PersistentFlags().UintVar(&flagN, "number-of-responses", 0, "Number of responses to generate")
 	rootCmd.PersistentFlags().StringVarP(&flagThinkingBudget, "thinking-budget", "b", "", "Budget for reasoning/thinking capabilities (string or numerical value)")
 	rootCmd.PersistentFlags().StringSliceVarP(&input, "input", "i", []string{}, "Specify input files or HTTP(S) URLs to process. Multiple inputs can be provided.")
 	rootCmd.PersistentFlags().BoolVarP(&newConversation, "new", "n", false, "Start a new conversation instead of continuing from the last one")

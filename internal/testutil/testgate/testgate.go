@@ -73,17 +73,6 @@ func RequireLive(t testing.TB) {
 	Require(t, Live)
 }
 
-// RequireEnv skips the current test when any required environment variable is
-// unset or empty.
-func RequireEnv(t testing.TB, vars ...string) {
-	t.Helper()
-	missing := missingEnv(vars...)
-	if len(missing) == 0 {
-		return
-	}
-	t.Skipf("skipping test; required environment variables are not set: %s", strings.Join(missing, ", "))
-}
-
 func missingEnv(vars ...string) []string {
 	missing := make([]string, 0, len(vars))
 	for _, envVar := range vars {

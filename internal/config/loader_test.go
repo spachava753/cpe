@@ -42,15 +42,3 @@ func TestParseConfigDataSupportsDisableEditTool(t *testing.T) {
 		t.Fatal("DisableEditTool = false, want true")
 	}
 }
-
-func TestConfigWritePathRejectsJSON(t *testing.T) {
-	if err := ValidateConfigPathForWrite("cpe.json"); err == nil {
-		t.Fatal("expected JSON write path error")
-	}
-	if _, err := LoadOrCreateRawConfig("cpe.json"); err == nil {
-		t.Fatal("expected LoadOrCreateRawConfig JSON path error")
-	}
-	if err := WriteRawConfig("cpe.json", &RawConfig{}); err == nil {
-		t.Fatal("expected WriteRawConfig JSON path error")
-	}
-}

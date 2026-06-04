@@ -4,53 +4,10 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/openai/openai-go/v3/responses"
 	"github.com/spachava753/gai"
 
-	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
 )
-
-func TestBuildGenOptsForDialog_ResponsesAddsPromptCacheKeyWithoutMutatingBase(t *testing.T) {
-	base := &gai.GenOpts{ThinkingBudget: "medium"}
-	dialog := gai.Dialog{{
-		Role:   gai.User,
-		Blocks: []gai.Block{gai.TextBlock("hello")},
-	}}
-
-	opts := BuildGenOptsForDialog(config.Model{Type: ModelTypeResponses, ID: "gpt-5"}, base, dialog)
-	if opts == nil {
-		t.Fatal("BuildGenOptsForDialog returned nil")
-	}
-	if opts == base {
-		t.Fatal("BuildGenOptsForDialog reused the base options pointer")
-	}
-	if base.ExtraArgs != nil {
-		t.Fatalf("BuildGenOptsForDialog mutated base ExtraArgs: %#v", base.ExtraArgs)
-	}
-
-	cacheKey, ok := opts.ExtraArgs[gai.ResponsesPromptCacheKeyParam].(string)
-	if !ok || cacheKey == "" {
-		t.Fatalf("missing prompt cache key: %#v", opts.ExtraArgs)
-	}
-	if got := opts.ExtraArgs[gai.ResponsesThoughtSummaryDetailParam]; got != responses.ReasoningSummaryDetailed {
-		t.Fatalf("unexpected reasoning summary detail: %#v", got)
-	}
-}
-
-func TestBuildGenOptsForDialog_PreservesExplicitPromptCacheKey(t *testing.T) {
-	base := &gai.GenOpts{
-		ExtraArgs: map[string]any{
-			gai.ResponsesPromptCacheKeyParam: "manual-key",
-		},
-	}
-	dialog := gai.Dialog{{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("hello")}}}
-
-	opts := BuildGenOptsForDialog(config.Model{Type: ModelTypeResponses, ID: "gpt-5"}, base, dialog)
-	if got := opts.ExtraArgs[gai.ResponsesPromptCacheKeyParam]; got != "manual-key" {
-		t.Fatalf("unexpected prompt cache key: %#v", got)
-	}
-}
 
 func TestResponsesPromptCacheKey_IgnoresStorageMetadataAndThinking(t *testing.T) {
 	callA := mustPromptCacheToolCallBlock(t, "call-1", "search", map[string]any{"query": "prompt caching"})
