@@ -22,9 +22,21 @@ func (a *Agent) promptToMessage(contentBlocks []acp.ContentBlock) gai.Message {
 		case contentBlock.Text != nil:
 			block = gai.TextBlock(contentBlock.Text.Text)
 		case contentBlock.Image != nil:
-			block = gai.ImageBlock([]byte(contentBlock.Image.Data), contentBlock.Image.MimeType)
+			block = gai.Block{
+				BlockType:    gai.Content,
+				ModalityType: gai.Image,
+				MimeType:     contentBlock.Image.MimeType,
+				// content comes as base64 encoded data
+				Content: gai.Str(contentBlock.Image.Data),
+			}
 		case contentBlock.Audio != nil:
-			block = gai.AudioBlock([]byte(contentBlock.Audio.Data), contentBlock.Audio.MimeType)
+			block = gai.Block{
+				BlockType:    gai.Content,
+				ModalityType: gai.Audio,
+				MimeType:     contentBlock.Audio.MimeType,
+				// content comes as base64 encoded data
+				Content: gai.Str(contentBlock.Audio.Data),
+			}
 		case contentBlock.ResourceLink != nil: // TODO: support resource links better
 			block = gai.TextBlock(fmt.Sprintf("Resource %s: %s", contentBlock.ResourceLink.Name, contentBlock.ResourceLink.Uri))
 		case contentBlock.Resource != nil: // TODO: support embedded resources better

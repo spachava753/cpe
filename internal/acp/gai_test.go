@@ -11,6 +11,42 @@ import (
 	"github.com/spachava753/cpe/internal/storage"
 )
 
+func TestPromptToMessagePreservesACPBase64Content(t *testing.T) {
+	t.Parallel()
+
+	const imageBase64 = "iVBORw0KGgo="
+	const audioBase64 = "UklGRiQAAABXQVZF"
+
+	msg := (&Agent{}).promptToMessage([]acpsdk.ContentBlock{
+		acpsdk.TextBlock("look"),
+		acpsdk.ImageBlock(imageBase64, "image/png"),
+		acpsdk.AudioBlock(audioBase64, "audio/wav"),
+	})
+
+	if msg.Role != gai.User {
+		t.Fatalf("role = %v, want %v", msg.Role, gai.User)
+	}
+	if len(msg.Blocks) != 3 {
+		t.Fatalf("blocks len = %d, want 3", len(msg.Blocks))
+	}
+
+	image := msg.Blocks[1]
+	if image.ModalityType != gai.Image || image.MimeType != "image/png" {
+		t.Fatalf("image block = %#v", image)
+	}
+	if got := image.Content.String(); got != imageBase64 {
+		t.Fatalf("image content = %q, want %q", got, imageBase64)
+	}
+
+	audio := msg.Blocks[2]
+	if audio.ModalityType != gai.Audio || audio.MimeType != "audio/wav" {
+		t.Fatalf("audio block = %#v", audio)
+	}
+	if got := audio.Content.String(); got != audioBase64 {
+		t.Fatalf("audio content = %q, want %q", got, audioBase64)
+	}
+}
+
 func TestMsgToSessionUpdate(t *testing.T) {
 	toolCall := mustToolCallBlock(t, "call-1", "lookup", map[string]any{"query": "docs"})
 

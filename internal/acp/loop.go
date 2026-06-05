@@ -178,6 +178,11 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 
 		lastMsg := current[len(current)-1]
 
+		// TODO: we want to support terminal output from command execution
+		// for execute go code. The idea is that we are able to follow the
+		// execution of the code generated from the model. Just one thing
+		// to consider: the model uses this tool not just view text content,
+		// but also images, audio and video. Does this work today?
 		firstBlock := true
 		for _, block := range lastMsg.Blocks {
 			if block.BlockType != gai.ToolCall {
