@@ -2,8 +2,6 @@ package config
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/go-playground/validator/v10"
@@ -40,53 +38,10 @@ func (c *RawConfig) ValidateWithConfigPath(configFilePath string) error {
 	return nil
 }
 
-func validateSelectedProfile(model ModelConfig, configFilePath string) error {
+func validateSelectedProfile(model ModelConfig) error {
 	if err := validateMCPServerConfigs(model.MCPServers, "mcpServers"); err != nil {
 		return err
 	}
-	if err := validateCodeModeConfig(model.CodeMode, configFilePath, "codeMode"); err != nil {
-		return err
-	}
-	return nil
-}
-
-// validateCodeModeConfig validates normalized localModulePaths and enforces
-// module directory invariants (existing directory with a go.mod file).
-func validateCodeModeConfig(codeMode *CodeModeConfig, configFilePath, fieldPrefix string) error {
-	normalized, err := normalizeCodeModeConfigPaths(codeMode, configFilePath)
-	if err != nil {
-		return fmt.Errorf("%s: %w", fieldPrefix, err)
-	}
-	if normalized == nil {
-		return nil
-	}
-
-	for i, modulePath := range normalized.LocalModulePaths {
-		field := fmt.Sprintf("%s.localModulePaths[%d]", fieldPrefix, i)
-		moduleStat, err := os.Stat(modulePath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return fmt.Errorf("%s: directory does not exist: %s", field, modulePath)
-			}
-			return fmt.Errorf("%s: %w", field, err)
-		}
-		if !moduleStat.IsDir() {
-			return fmt.Errorf("%s: expected a directory, got file: %s", field, modulePath)
-		}
-
-		goModPath := filepath.Join(modulePath, "go.mod")
-		goModStat, err := os.Stat(goModPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return fmt.Errorf("%s: missing go.mod in module directory: %s", field, goModPath)
-			}
-			return fmt.Errorf("%s: %w", field, err)
-		}
-		if goModStat.IsDir() {
-			return fmt.Errorf("%s: expected go.mod file, got directory: %s", field, goModPath)
-		}
-	}
-
 	return nil
 }
 

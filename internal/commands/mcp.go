@@ -304,7 +304,7 @@ type MCPCodeDescOptions struct {
 
 // MCPCodeDesc generates and prints the execute_go_code tool description.
 func MCPCodeDesc(ctx context.Context, opts MCPCodeDescOptions) error {
-	description := codemode.GenerateExecuteGoCodeDescription()
+	description := codemode.GenerateToolDescription()
 
 	var mdBuilder strings.Builder
 	mdBuilder.WriteString("# execute_go_code Tool Description\n\n")

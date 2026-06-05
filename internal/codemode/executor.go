@@ -22,12 +22,11 @@ import (
 	"unicode/utf8"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-	"golang.org/x/mod/modfile"
 	"golang.org/x/tools/go/ast/astutil"
 )
 
 // mcpSDKVersion is the version of the MCP SDK to use in generated go.mod
-const mcpSDKVersion = "v1.1.0"
+const mcpSDKVersion = "v1.6.1"
 
 // gracePeriod is the time to wait after sending SIGINT before sending SIGKILL
 const gracePeriod = 5 * time.Second
@@ -59,13 +58,6 @@ type ExecutionResult struct {
 type ExecuteCodeOptions struct {
 	TimeoutSeconds       int
 	LargeOutputCharLimit int
-	LocalModulePaths     []string
-}
-
-// workspaceModule links a module path from go.mod to its local directory in the go.work file.
-type workspaceModule struct {
-	ModulePath string
-	Dir        string
 }
 
 var goimportsCommand = func() (string, []string) {
@@ -96,30 +88,6 @@ func ExecuteCode(ctx context.Context, llmCode string, opts ExecuteCodeOptions) (
 	}
 	defer os.RemoveAll(cleanupDir)
 
-	baseGoVersion, err := detectGoToolchainVersion(ctx)
-	if err != nil {
-		return ExecutionResult{}, fmt.Errorf("detecting go toolchain version: %w", err)
-	}
-
-	workspacePath, workspaceModules, workspaceGoVersion, err := prepareWorkspaceFile(tempDir, opts, baseGoVersion)
-	if err != nil {
-		return ExecutionResult{}, fmt.Errorf("preparing go workspace: %w", err)
-	}
-
-	// Generate and write go.mod using the resolved workspace go version.
-	goMod := generateGoMod(workspaceGoVersion)
-	if err := os.WriteFile(filepath.Join(tempDir, "go.mod"), []byte(goMod), 0o644); err != nil {
-		return ExecutionResult{}, fmt.Errorf("writing go.mod: %w", err)
-	}
-	if realWorkspacePath, err := filepath.EvalSymlinks(workspacePath); err == nil {
-		workspacePath = realWorkspacePath
-	}
-	buildEnvOverrides := map[string]string{"GOWORK": workspacePath}
-
-	if err := applyWorkspaceModuleReplacements(ctx, tempDir, buildEnvOverrides, workspaceModules); err != nil {
-		return ExecutionResult{}, fmt.Errorf("configuring workspace module replacements: %w", err)
-	}
-
 	// Generate and write main.go
 	mainGo, err := GenerateMainGo(filepath.Join(tempDir, "content.json"))
 	if err != nil {
@@ -135,10 +103,10 @@ func ExecuteCode(ctx context.Context, llmCode string, opts ExecuteCodeOptions) (
 	}
 
 	// Auto-correct imports
-	importNote := autoCorrectImports(ctx, tempDir, "run.go", buildEnvOverrides)
+	importNote := autoCorrectImports(ctx, tempDir, "run.go")
 
 	// Run go mod tidy
-	tidyResult, err := runCommand(ctx, tempDir, buildEnvOverrides, "go", "mod", "tidy")
+	tidyResult, err := runCommand(ctx, tempDir, "go", "mod", "tidy")
 	if err != nil {
 		return ExecutionResult{}, fmt.Errorf("running go mod tidy: %w", err)
 	}
@@ -153,7 +121,7 @@ func ExecuteCode(ctx context.Context, llmCode string, opts ExecuteCodeOptions) (
 
 	// Build the binary to get accurate exit codes (go run masks them)
 	binaryPath := filepath.Join(tempDir, "program")
-	buildResult, err := runCommand(ctx, tempDir, buildEnvOverrides, "go", "build", "-o", binaryPath, ".")
+	buildResult, err := runCommand(ctx, tempDir, "go", "build", "-o", binaryPath, ".")
 	if err != nil {
 		return ExecutionResult{}, fmt.Errorf("running go build: %w", err)
 	}
@@ -205,150 +173,6 @@ require github.com/modelcontextprotocol/go-sdk %s
 `, goVersion, mcpSDKVersion)
 }
 
-// prepareWorkspaceFile creates go.work for the sandbox and returns:
-//   - workspace file path
-//   - non-temp modules that need go mod -replace entries
-//   - highest go directive version required across workspace modules
-func prepareWorkspaceFile(tempModuleDir string, opts ExecuteCodeOptions, defaultGoVersion string) (string, []workspaceModule, string, error) {
-	workspaceModulePaths := append([]string{tempModuleDir}, opts.LocalModulePaths...)
-
-	normalizedPaths, err := normalizeWorkspaceModulePaths(workspaceModulePaths)
-	if err != nil {
-		return "", nil, "", err
-	}
-
-	workspaceGoVersion, err := normalizeGoDirectiveVersion(defaultGoVersion)
-	if err != nil {
-		return "", nil, "", fmt.Errorf("normalizing default workspace go version: %w", err)
-	}
-
-	modules := make([]workspaceModule, 0, len(normalizedPaths))
-	for _, modulePath := range normalizedPaths {
-		if modulePath == normalizedPaths[0] {
-			continue // temp module generated in this execution always has go.mod
-		}
-		if err := validateWorkspaceModulePath(modulePath); err != nil {
-			return "", nil, "", err
-		}
-
-		moduleName, moduleGoVersion, err := readWorkspaceModuleInfo(modulePath)
-		if err != nil {
-			return "", nil, "", err
-		}
-		if moduleGoVersion != "" && compareGoDirectiveVersions(moduleGoVersion, workspaceGoVersion) > 0 {
-			workspaceGoVersion = moduleGoVersion
-		}
-		modules = append(modules, workspaceModule{ModulePath: moduleName, Dir: modulePath})
-	}
-
-	workspaceFile := &modfile.WorkFile{Syntax: &modfile.FileSyntax{Name: "go.work"}}
-	if err := workspaceFile.AddGoStmt(workspaceGoVersion); err != nil {
-		return "", nil, "", fmt.Errorf("adding go directive to workspace: %w", err)
-	}
-	for _, modulePath := range normalizedPaths {
-		if err := workspaceFile.AddUse(modulePath, ""); err != nil {
-			return "", nil, "", fmt.Errorf("adding workspace use path %q: %w", modulePath, err)
-		}
-	}
-	workspaceFile.SortBlocks()
-	workspaceFile.Cleanup()
-
-	workspacePath := filepath.Join(tempModuleDir, "go.work")
-	if err := os.WriteFile(workspacePath, modfile.Format(workspaceFile.Syntax), 0o644); err != nil {
-		return "", nil, "", fmt.Errorf("writing workspace file: %w", err)
-	}
-
-	return workspacePath, modules, workspaceGoVersion, nil
-}
-
-// normalizeWorkspaceModulePaths resolves, cleans, and deduplicates module paths.
-// Unlike config validation (which errors on duplicates), this function silently
-// deduplicates because it merges multiple sources: the temp module and
-// user-configured localModulePaths.
-func normalizeWorkspaceModulePaths(paths []string) ([]string, error) {
-	normalized := make([]string, 0, len(paths))
-	seen := make(map[string]struct{}, len(paths))
-
-	for i, rawPath := range paths {
-		trimmed := strings.TrimSpace(rawPath)
-		if trimmed == "" {
-			return nil, fmt.Errorf("workspace module path at index %d must not be empty", i)
-		}
-
-		absPath, err := filepath.Abs(trimmed)
-		if err != nil {
-			return nil, fmt.Errorf("resolving absolute path for workspace module %q: %w", trimmed, err)
-		}
-		cleanPath := filepath.Clean(absPath)
-		if realPath, err := filepath.EvalSymlinks(cleanPath); err == nil {
-			cleanPath = filepath.Clean(realPath)
-		}
-
-		if _, exists := seen[cleanPath]; exists {
-			continue
-		}
-		seen[cleanPath] = struct{}{}
-		normalized = append(normalized, cleanPath)
-	}
-
-	return normalized, nil
-}
-
-// validateWorkspaceModulePath ensures the path is a directory with a regular go.mod file.
-func validateWorkspaceModulePath(modulePath string) error {
-	moduleStat, err := os.Stat(modulePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("workspace module path does not exist: %s", modulePath)
-		}
-		return fmt.Errorf("checking workspace module path %q: %w", modulePath, err)
-	}
-	if !moduleStat.IsDir() {
-		return fmt.Errorf("workspace module path is not a directory: %s", modulePath)
-	}
-
-	goModPath := filepath.Join(modulePath, "go.mod")
-	goModStat, err := os.Stat(goModPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return fmt.Errorf("workspace module path is missing go.mod: %s", modulePath)
-		}
-		return fmt.Errorf("checking go.mod for workspace module %q: %w", modulePath, err)
-	}
-	if goModStat.IsDir() {
-		return fmt.Errorf("workspace module has directory instead of go.mod file: %s", goModPath)
-	}
-
-	return nil
-}
-
-// readWorkspaceModuleInfo reads module path and normalized go directive from go.mod.
-func readWorkspaceModuleInfo(moduleDir string) (modulePath, goVersion string, err error) {
-	goModPath := filepath.Join(moduleDir, "go.mod")
-	data, err := os.ReadFile(goModPath)
-	if err != nil {
-		return "", "", fmt.Errorf("reading go.mod for workspace module %q: %w", moduleDir, err)
-	}
-
-	parsed, err := modfile.Parse(goModPath, data, nil)
-	if err != nil {
-		return "", "", fmt.Errorf("parsing go.mod for workspace module %q: %w", moduleDir, err)
-	}
-	if parsed.Module == nil || strings.TrimSpace(parsed.Module.Mod.Path) == "" {
-		return "", "", fmt.Errorf("workspace module %q has no module directive in go.mod", moduleDir)
-	}
-
-	moduleGoVersion := ""
-	if parsed.Go != nil {
-		moduleGoVersion, err = normalizeGoDirectiveVersion(parsed.Go.Version)
-		if err != nil {
-			return "", "", fmt.Errorf("parsing go directive for workspace module %q: %w", moduleDir, err)
-		}
-	}
-
-	return parsed.Module.Mod.Path, moduleGoVersion, nil
-}
-
 // normalizeGoDirectiveVersion accepts values like "go1.24.5", "v1.24", or
 // "1.24" and returns the major.minor form accepted by all supported go.mod and
 // go.work parsers.
@@ -380,7 +204,7 @@ func compareGoDirectiveVersions(left, right string) int {
 // detectGoToolchainVersion reads GOVERSION from the active toolchain and normalizes
 // it to a go.mod/go.work-compatible directive version.
 func detectGoToolchainVersion(ctx context.Context) (string, error) {
-	result, err := runCommand(ctx, "", nil, "go", "env", "GOVERSION")
+	result, err := runCommand(ctx, "", "go", "env", "GOVERSION")
 	if err != nil {
 		return "", err
 	}
@@ -393,27 +217,6 @@ func detectGoToolchainVersion(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return version, nil
-}
-
-// applyWorkspaceModuleReplacements writes go.mod replace directives for local workspace
-// modules so generated code imports resolve to the caller's checked-out sources.
-func applyWorkspaceModuleReplacements(ctx context.Context, dir string, envOverrides map[string]string, modules []workspaceModule) error {
-	if len(modules) == 0 {
-		return nil
-	}
-
-	for _, module := range modules {
-		editArg := fmt.Sprintf("%s=%s", module.ModulePath, module.Dir)
-		result, err := runCommand(ctx, dir, envOverrides, "go", "mod", "edit", "-replace", editArg)
-		if err != nil {
-			return fmt.Errorf("running go mod edit for %q: %w", module.ModulePath, err)
-		}
-		if result.ExitCode != 0 {
-			return fmt.Errorf("go mod edit -replace %s failed: %s", editArg, strings.TrimSpace(result.Output))
-		}
-	}
-
-	return nil
 }
 
 // mergeEnv applies KEY=VALUE overrides on top of base environment entries and
@@ -443,10 +246,9 @@ func mergeEnv(base []string, overrides map[string]string) []string {
 
 // runCommand executes a command in dir with merged environment overrides.
 // Exit errors are encoded in ExecutionResult.ExitCode; launch/context errors are returned directly.
-func runCommand(ctx context.Context, dir string, envOverrides map[string]string, name string, args ...string) (ExecutionResult, error) {
+func runCommand(ctx context.Context, dir string, name string, args ...string) (ExecutionResult, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
-	cmd.Env = mergeEnv(os.Environ(), envOverrides)
 
 	var output bytes.Buffer
 	cmd.Stdout = &output
@@ -653,7 +455,7 @@ func classifyExitCode(result ExecutionResult) error {
 
 // autoCorrectImports runs goimports in a separate child process so workspace-
 // specific env overrides stay isolated to that process.
-func autoCorrectImports(ctx context.Context, dir, filename string, envOverrides map[string]string) string {
+func autoCorrectImports(ctx context.Context, dir, filename string) string {
 	filePath := filepath.Join(dir, filename)
 	orig, err := os.ReadFile(filePath)
 	if err != nil {
@@ -679,7 +481,7 @@ func autoCorrectImports(ctx context.Context, dir, filename string, envOverrides 
 		return ""
 	}
 
-	if err := runGoimportsProcess(ctx, dir, envOverrides, tempPath); err != nil {
+	if err := runGoimportsProcess(ctx, dir, tempPath); err != nil {
 		// If processing fails (e.g. syntax errors), let the compiler catch it.
 		return ""
 	}
@@ -699,11 +501,11 @@ func autoCorrectImports(ctx context.Context, dir, filename string, envOverrides 
 	return formatImportChanges(filename, origImports, newImports)
 }
 
-func runGoimportsProcess(ctx context.Context, dir string, envOverrides map[string]string, filePath string) error {
+func runGoimportsProcess(ctx context.Context, dir string, filePath string) error {
 	name, args := goimportsCommand()
 	args = append(args, "-w", filePath)
 
-	result, err := runCommand(ctx, dir, envOverrides, name, args...)
+	result, err := runCommand(ctx, dir, name, args...)
 	if err != nil {
 		return err
 	}

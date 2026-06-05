@@ -163,6 +163,7 @@ func buildFakeGoimportsBinary(t *testing.T) string {
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 func main() {
@@ -176,15 +177,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "getwd: %v", err)
 		os.Exit(2)
 	}
+	if realCwd, err := filepath.EvalSymlinks(cwd); err == nil {
+		cwd = realCwd
+	}
 	if expected := os.Getenv("CPE_GOIMPORTS_EXPECT_DIR"); expected != "" && cwd != expected {
 		fmt.Fprintf(os.Stderr, "cwd mismatch: got %q want %q", cwd, expected)
 		os.Exit(2)
 	}
-	if expected := os.Getenv("CPE_GOIMPORTS_EXPECT_GOWORK"); expected != "" && os.Getenv("GOWORK") != expected {
-		fmt.Fprintf(os.Stderr, "GOWORK mismatch: got %q want %q", os.Getenv("GOWORK"), expected)
-		os.Exit(2)
-	}
-
 	if content := os.Getenv("CPE_GOIMPORTS_REWRITE_CONTENT"); content != "" {
 		if err := os.WriteFile(os.Args[2], []byte(content), 0644); err != nil {
 			fmt.Fprintf(os.Stderr, "rewrite file: %v", err)
@@ -219,7 +218,7 @@ func overrideGoimportsCommandForTest(t *testing.T, name string, args ...string) 
 	})
 }
 
-func TestAutoCorrectImports_UsesChildProcessEnvAndDir(t *testing.T) {
+func TestAutoCorrectImports_UsesChildProcessDir(t *testing.T) {
 	helperPath := buildFakeGoimportsBinary(t)
 	overrideGoimportsCommandForTest(t, helperPath)
 
@@ -261,12 +260,10 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 		expectedDir = realDir
 	}
 
-	note := autoCorrectImports(context.Background(), tempDir, "run.go", map[string]string{
-		"CPE_GOIMPORTS_EXPECT_DIR":      expectedDir,
-		"CPE_GOIMPORTS_EXPECT_GOWORK":   "/tmp/cpe-test-go.work",
-		"CPE_GOIMPORTS_REWRITE_CONTENT": rewritten,
-		"GOWORK":                        "/tmp/cpe-test-go.work",
-	})
+	t.Setenv("CPE_GOIMPORTS_EXPECT_DIR", expectedDir)
+	t.Setenv("CPE_GOIMPORTS_REWRITE_CONTENT", rewritten)
+
+	note := autoCorrectImports(context.Background(), tempDir, "run.go")
 
 	wantNote := "\n\nNote: Imports in run.go were auto-corrected.\n  Added: example.com/helpermod"
 	if note != wantNote {
@@ -279,41 +276,6 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 	}
 	if string(data) != rewritten {
 		t.Fatalf("rewritten run.go mismatch:\n got: %q\nwant: %q", string(data), rewritten)
-	}
-}
-
-func TestAutoCorrectImports_DoesNotMutateProcessEnv(t *testing.T) {
-	helperPath := buildFakeGoimportsBinary(t)
-	overrideGoimportsCommandForTest(t, helperPath)
-	originalProcessGOWORK := os.Getenv("GOWORK")
-
-	tempDir := t.TempDir()
-	filePath := filepath.Join(tempDir, "run.go")
-	original := `package main
-
-import (
-	"context"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-)
-
-func Run(ctx context.Context) ([]mcp.Content, error) {
-	return nil, nil
-}
-`
-	if err := os.WriteFile(filePath, []byte(original), 0o644); err != nil {
-		t.Fatalf("writing run.go: %v", err)
-	}
-
-	note := autoCorrectImports(context.Background(), tempDir, "run.go", map[string]string{
-		"CPE_GOIMPORTS_EXPECT_GOWORK": "child-work",
-		"GOWORK":                      "child-work",
-	})
-	if note != "" {
-		t.Fatalf("expected empty note, got %q", note)
-	}
-	if got := os.Getenv("GOWORK"); got != originalProcessGOWORK {
-		t.Fatalf("process GOWORK mutated: got %q want %q", got, originalProcessGOWORK)
 	}
 }
 
@@ -416,178 +378,6 @@ func extractSpillPath(t *testing.T, output string) string {
 	return ""
 }
 
-func TestExecuteCode_LocalModulePathsSupportsAutoImport(t *testing.T) {
-	t.Parallel()
-
-	helperModuleDir := createLocalModule(t, t.TempDir(), "helpermod", "example.com/helpermod", `package helpermod
-
-func Message() string {
-	return "ok"
-}
-`)
-
-	llmCode := `package main
-
-import (
-	"context"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-)
-
-func Run(ctx context.Context) ([]mcp.Content, error) {
-	_ = helpermod.Message()
-	return nil, nil
-}
-`
-
-	result, err := ExecuteCode(context.Background(), llmCode, ExecuteCodeOptions{
-		TimeoutSeconds:   30,
-		LocalModulePaths: []string{helperModuleDir},
-	})
-	if err != nil {
-		t.Fatalf("ExecuteCode returned error: %v", err)
-	}
-	if result.ExitCode != 0 {
-		t.Fatalf("exit code mismatch: got %d, want 0", result.ExitCode)
-	}
-}
-
-func TestExecuteCode_RuntimeDoesNotInheritWorkspaceForNestedGoCommands(t *testing.T) {
-	t.Parallel()
-
-	helperModuleDir := createLocalModule(t, t.TempDir(), "helpermod", "example.com/helpermod", `package helpermod
-
-func Message() string {
-	return "ok"
-}
-`)
-
-	llmCode := `package main
-
-import (
-	"context"
-	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-)
-
-func Run(ctx context.Context) ([]mcp.Content, error) {
-	root, err := os.MkdirTemp("", "nested-go-test-*")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(root)
-
-	goMod := []byte("module example.com/unrelated\n\ngo 1.24\n")
-	if err := os.WriteFile(filepath.Join(root, "go.mod"), goMod, 0o644); err != nil {
-		return nil, err
-	}
-	goTest := []byte("package unrelated\n\nimport \"testing\"\n\nfunc TestOK(t *testing.T) {}\n")
-	if err := os.WriteFile(filepath.Join(root, "unrelated_test.go"), goTest, 0o644); err != nil {
-		return nil, err
-	}
-
-	cmd := exec.CommandContext(ctx, "go", "test", "./...")
-	cmd.Dir = root
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("nested go test failed: %w\n%s", err, string(output))
-	}
-
-	fmt.Printf("helper=%s\ngo-test=ok\n", helpermod.Message())
-	return nil, nil
-}
-`
-
-	result, err := ExecuteCode(context.Background(), llmCode, ExecuteCodeOptions{
-		TimeoutSeconds:   30,
-		LocalModulePaths: []string{helperModuleDir},
-	})
-	if err != nil {
-		t.Fatalf("ExecuteCode returned error: %v", err)
-	}
-	if result.ExitCode != 0 {
-		t.Fatalf("exit code mismatch: got %d, want 0", result.ExitCode)
-	}
-
-	wantOutput := "helper=ok\ngo-test=ok\n\n\nNote: Imports in run.go were auto-corrected.\n  Added: example.com/helpermod"
-	if result.Output != wantOutput {
-		t.Fatalf("output mismatch:\n got: %q\nwant: %q", result.Output, wantOutput)
-	}
-}
-
-func TestExecuteCode_InvalidLocalModulePathFails(t *testing.T) {
-	t.Parallel()
-
-	notModuleDir := filepath.Join(t.TempDir(), "not-module")
-	if err := os.MkdirAll(notModuleDir, 0o755); err != nil {
-		t.Fatalf("creating non-module dir: %v", err)
-	}
-
-	llmCode := `package main
-
-import (
-	"context"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-)
-
-func Run(ctx context.Context) ([]mcp.Content, error) {
-	return nil, nil
-}
-`
-
-	_, err := ExecuteCode(context.Background(), llmCode, ExecuteCodeOptions{
-		TimeoutSeconds:   30,
-		LocalModulePaths: []string{notModuleDir},
-	})
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-
-	wantPath := notModuleDir
-	if realPath, realErr := filepath.EvalSymlinks(notModuleDir); realErr == nil {
-		wantPath = realPath
-	}
-	want := "preparing go workspace: workspace module path is missing go.mod: " + wantPath
-	if err.Error() != want {
-		t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
-	}
-}
-
-func TestPrepareWorkspaceFile_UsesHighestGoDirective(t *testing.T) {
-	t.Parallel()
-
-	tempModuleDir := t.TempDir()
-	helperModuleDir := createLocalModuleWithGoVersion(t, t.TempDir(), "helpermod", "example.com/helpermod", "1.25", `package helpermod
-
-func Message() string {
-	return "ok"
-}
-`)
-
-	workspacePath, _, workspaceGoVersion, err := prepareWorkspaceFile(tempModuleDir, ExecuteCodeOptions{
-		LocalModulePaths: []string{helperModuleDir},
-	}, "1.24")
-	if err != nil {
-		t.Fatalf("prepareWorkspaceFile returned error: %v", err)
-	}
-	if workspaceGoVersion != "1.25" {
-		t.Fatalf("workspace go version mismatch: got %q, want %q", workspaceGoVersion, "1.25")
-	}
-
-	data, err := os.ReadFile(workspacePath)
-	if err != nil {
-		t.Fatalf("reading go.work: %v", err)
-	}
-	if !strings.Contains(string(data), "go 1.25") {
-		t.Fatalf("go.work missing expected go version:\n%s", string(data))
-	}
-}
-
 func TestNormalizeGoDirectiveVersion(t *testing.T) {
 	t.Parallel()
 
@@ -621,28 +411,4 @@ func TestNormalizeGoDirectiveVersion(t *testing.T) {
 			}
 		})
 	}
-}
-
-func createLocalModule(t *testing.T, root, dirName, modulePath, source string) string {
-	return createLocalModuleWithGoVersion(t, root, dirName, modulePath, "1.24", source)
-}
-
-func createLocalModuleWithGoVersion(t *testing.T, root, dirName, modulePath, goVersion, source string) string {
-	t.Helper()
-
-	moduleDir := filepath.Join(root, dirName)
-	if err := os.MkdirAll(moduleDir, 0o755); err != nil {
-		t.Fatalf("creating module dir: %v", err)
-	}
-
-	goMod := "module " + modulePath + "\n\ngo " + goVersion + "\n"
-	if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte(goMod), 0o644); err != nil {
-		t.Fatalf("writing go.mod: %v", err)
-	}
-
-	if err := os.WriteFile(filepath.Join(moduleDir, "module.go"), []byte(source), 0o644); err != nil {
-		t.Fatalf("writing module source: %v", err)
-	}
-
-	return moduleDir
 }

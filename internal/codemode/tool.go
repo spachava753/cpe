@@ -26,7 +26,6 @@ type ExecuteGoCodeInput struct {
 type ExecuteGoCodeCallback struct {
 	MaxTimeout           int
 	LargeOutputCharLimit int
-	LocalModulePaths     []string
 }
 
 // contentToBlocks adapts MCP multimodal content into gai blocks.
@@ -79,7 +78,6 @@ func (c *ExecuteGoCodeCallback) Call(ctx context.Context, params map[string]any)
 		ExecuteCodeOptions{
 			TimeoutSeconds:       input.ExecutionTimeout,
 			LargeOutputCharLimit: c.LargeOutputCharLimit,
-			LocalModulePaths:     c.LocalModulePaths,
 		},
 	)
 	if err != nil {

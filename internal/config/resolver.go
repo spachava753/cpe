@@ -47,7 +47,7 @@ func resolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions, resolvedConfigPath s
 	if !found {
 		return Config{}, fmt.Errorf("model %q not found in configuration", opts.ModelRef)
 	}
-	if err := validateSelectedProfile(selectedModel, resolvedConfigPath); err != nil {
+	if err := validateSelectedProfile(selectedModel); err != nil {
 		return Config{}, fmt.Errorf("invalid selected model profile %q: %w", opts.ModelRef, err)
 	}
 
@@ -56,10 +56,6 @@ func resolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions, resolvedConfigPath s
 	timeout, err := resolveTimeout(selectedModel, opts)
 	if err != nil {
 		return Config{}, err
-	}
-	codeMode, err := resolveCodeMode(selectedModel, resolvedConfigPath)
-	if err != nil {
-		return Config{}, fmt.Errorf("invalid codeMode configuration: %w", err)
 	}
 	compaction, err := resolveCompaction(selectedModel)
 	if err != nil {
@@ -72,7 +68,7 @@ func resolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions, resolvedConfigPath s
 		SystemPromptPath: systemPromptPath,
 		GenerationParams: genParams,
 		Timeout:          timeout,
-		CodeMode:         codeMode,
+		CodeMode:         selectedModel.CodeMode,
 		DisableEditTool:  selectedModel.DisableEditTool,
 		Compaction:       compaction,
 	}, nil
@@ -163,10 +159,6 @@ func resolveTimeout(model ModelConfig, opts RuntimeOptions) (time.Duration, erro
 		return 0, fmt.Errorf("invalid timeout value %q: %w", rawTimeout, err)
 	}
 	return parsedTimeout, nil
-}
-
-func resolveCodeMode(model ModelConfig, configFilePath string) (*CodeModeConfig, error) {
-	return normalizeCodeModeConfigPaths(model.CodeMode, configFilePath)
 }
 
 func resolveCompaction(model ModelConfig) (*CompactionConfig, error) {

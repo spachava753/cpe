@@ -164,11 +164,10 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		codeModeEnabled := cfg.CodeMode != nil && cfg.CodeMode.Enabled
 		slog.Debug("code mode config", slog.Bool("enabled", codeModeEnabled))
 		if codeModeEnabled {
-			executeGoCodeTool := codemode.GenerateExecuteGoCodeTool(cfg.CodeMode.MaxTimeout)
+			executeGoCodeTool := codemode.MakeTool(cfg.CodeMode.MaxTimeout)
 			callback := &codemode.ExecuteGoCodeCallback{
 				MaxTimeout:           cfg.CodeMode.MaxTimeout,
 				LargeOutputCharLimit: codemode.ResolveLargeOutputCharLimit(cfg.CodeMode.LargeOutputCharLimit, cfg.Model.ContextWindow),
-				LocalModulePaths:     cfg.CodeMode.LocalModulePaths,
 			}
 
 			if err := l.Register(executeGoCodeTool, callback); err != nil {

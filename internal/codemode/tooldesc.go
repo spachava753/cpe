@@ -1,114 +1,43 @@
 package codemode
 
 import (
+	"bytes"
+	_ "embed"
 	"fmt"
 	"runtime"
-	"strings"
+	"text/template"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/spachava753/gai"
 )
 
-// GenerateExecuteGoCodeDescription builds the authoritative prompt shown in the
+//go:embed tool_description.txt
+var toolDesc string
+
+var toolDescTmpl = template.Must(
+	template.New("tool_desc").Parse(toolDesc),
+)
+
+// GenerateToolDescription builds the authoritative prompt shown in the
 // execute_go_code tool schema. It documents runtime constraints and the required
 // Run(ctx) file contract.
-func GenerateExecuteGoCodeDescription() string {
-	goVersion := runtime.Version()
-
-	var b strings.Builder
-
-	// Opening paragraph with Go version
-	b.WriteString(fmt.Sprintf("Execute generated Golang code. The version of Go is %s. ", goVersion))
-	b.WriteString("You must generate a complete Go source file that implements the `Run(ctx context.Context) ([]mcp.Content, error)` function. ")
-	b.WriteString("The file will be compiled alongside a `main.go` that calls your `Run` function.\n\n")
-
-	// Helper function documentation
-	b.WriteString("A `ptr[T any](v T) *T` helper function is available to create pointers from literals for optional fields. ")
-	b.WriteString("For example: `ptr(\"hello\")` returns `*string`, `ptr(42)` returns `*int`, `ptr(3.14)` returns `*float64`.\n\n")
-
-	// Code structure template
-	b.WriteString("Your generated code should be a complete Go file with the following structure:\n")
-	b.WriteString("```go\n")
-	b.WriteString(`package main
-
-import (
-	"context"
-	"fmt"
-	// add other imports as needed
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-)
-
-func Run(ctx context.Context) ([]mcp.Content, error) {
-	// your implementation here
-	return nil, nil
-}
-`)
-	b.WriteString("```\n\n")
-
-	// main.go shape explanation
-	b.WriteString("The `main.go` file (which you don't need to generate) will have the following shape:\n")
-	b.WriteString("```go\n")
-	b.WriteString(`package main
-
-import (
-	"context"
-	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
-	// and other std packages
-)
-
-func main() {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-	
-	content, err := Run(ctx)
+func GenerateToolDescription() string {
+	var b bytes.Buffer
+	err := toolDescTmpl.Execute(&b, struct {
+		GoVersion string
+	}{
+		GoVersion: runtime.Version(),
+	})
 	if err != nil {
-		fmt.Printf("\nexecution error: %s\n", err)
-		os.Exit(1)
+		panic(fmt.Errorf("execute execute_go_code description template: %w", err))
 	}
-	
-	// content is serialized to a file for the parent process to read
-}
-`)
-	b.WriteString("```\n\n")
-
-	// Error handling note
-	b.WriteString("The error, if not nil, returned from the `Run` function, will be present in the tool result.\n\n")
-
-	// Multimedia content documentation
-	b.WriteString("The `Run` function can optionally return `[]mcp.Content` to include multimedia content in the tool result. Supported content types:\n")
-	b.WriteString("- `&mcp.TextContent{Text: \"...\"}` - text content\n")
-	b.WriteString("- `&mcp.ImageContent{Data: []byte{...}, MIMEType: \"image/png\"}` - images (PNG, JPEG, GIF, WebP) and PDFs (use MIMEType \"application/pdf\")\n")
-	b.WriteString("- `&mcp.AudioContent{Data: []byte{...}, MIMEType: \"audio/wav\"}` - audio\n\n")
-	b.WriteString("Example - returning an image for the model to analyze:\n")
-	b.WriteString("```go\n")
-	b.WriteString("func Run(ctx context.Context) ([]mcp.Content, error) {\n")
-	b.WriteString("\timgData, err := os.ReadFile(\"photo.jpg\")\n")
-	b.WriteString("\tif err != nil {\n")
-	b.WriteString("\t\treturn nil, err\n")
-	b.WriteString("\t}\n")
-	b.WriteString("\treturn []mcp.Content{\n")
-	b.WriteString("\t\t&mcp.ImageContent{Data: imgData, MIMEType: \"image/jpeg\"},\n")
-	b.WriteString("\t}, nil\n")
-	b.WriteString("}\n")
-	b.WriteString("```\n\n")
-	b.WriteString("Note: `Data` is `[]byte` - pass the raw bytes from `os.ReadFile` directly (no base64 encoding needed).\n\n")
-	b.WriteString("If you need to return multimedia (images, audio, etc.), return the content. Otherwise, return `nil, nil` and use `fmt.Println` for text output.\n\n")
-
-	// Important note about complete file generation
-	b.WriteString("IMPORTANT: Generate the complete file contents including package declaration and imports. ")
-	b.WriteString("This ensures that any compilation errors report accurate line numbers that you can use for debugging.")
-
 	return b.String()
 }
 
-// GenerateExecuteGoCodeTool returns the execute_go_code tool definition consumed
+// MakeTool returns the execute_go_code tool definition consumed
 // by the agent runtime, including bounded timeout validation in its input schema.
-func GenerateExecuteGoCodeTool(maxTimeout int) gai.Tool {
-	description := GenerateExecuteGoCodeDescription()
+func MakeTool(maxTimeout int) gai.Tool {
+	description := GenerateToolDescription()
 
 	if maxTimeout <= 0 {
 		maxTimeout = 300
