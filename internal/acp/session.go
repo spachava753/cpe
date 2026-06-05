@@ -39,8 +39,6 @@ func (a *Agent) activeSession(sessionID acp.SessionId) (*sync.Guard[session], er
 }
 
 // NewSession implements [acp.Agent].
-//
-// TODO: we should add support for mcp servers config passed in for a new session when creating a runtime
 func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (acp.NewSessionResponse, error) {
 	id := a.genId()
 	si := acp.SessionInfo{

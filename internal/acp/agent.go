@@ -63,6 +63,8 @@ type Agent struct {
 }
 
 // Authenticate implements [acp.Agent].
+//
+// Support logging into Chat GPT subscription, and other subscription accounts is possible
 func (a *Agent) Authenticate(
 	ctx context.Context,
 	params acp.AuthenticateRequest,
