@@ -4,6 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
+	"log/slog"
+	"mime"
+	"net/url"
+	"path/filepath"
+	"strings"
 
 	"github.com/coder/acp-go-sdk"
 	"github.com/spachava753/gai"
@@ -39,13 +44,68 @@ func (a *Agent) promptToMessage(contentBlocks []acp.ContentBlock) gai.Message {
 			}
 		case contentBlock.ResourceLink != nil: // TODO: support resource links better
 			block = gai.TextBlock(fmt.Sprintf("Resource %s: %s", contentBlock.ResourceLink.Name, contentBlock.ResourceLink.Uri))
-		case contentBlock.Resource != nil: // TODO: support embedded resources better
+		case contentBlock.Resource != nil:
+			// embedded context resources can be text or blobs
+			// TODO: should limit based on size of embedded resources?
 			resource := contentBlock.Resource.Resource
-			if resource.TextResourceContents != nil {
-				block = gai.TextBlock(resource.TextResourceContents.Text)
-			}
-			if resource.BlobResourceContents != nil {
-				block = gai.TextBlock(fmt.Sprintf("Resource %s: %s", resource.BlobResourceContents.Uri, resource.BlobResourceContents.Blob))
+			switch {
+			case resource.TextResourceContents != nil:
+				var sb strings.Builder
+				if _, err := fmt.Fprintf(&sb, "`%s` contents:\n```", resource.TextResourceContents.Uri); err != nil {
+					panic(err)
+				}
+				if _, err := sb.WriteString(resource.TextResourceContents.Text); err != nil {
+					panic(err)
+				}
+				if _, err := sb.WriteString("\n```\n"); err != nil {
+					panic(err)
+				}
+				block = gai.TextBlock(sb.String())
+			case resource.BlobResourceContents != nil:
+				resourcePath := resource.BlobResourceContents.Uri
+				parsed, err := url.Parse(resource.BlobResourceContents.Uri)
+				if err != nil {
+					slog.Error("failed to parse embedded resource URI", "uri", resource.BlobResourceContents.Uri, "error", err)
+					panic(err)
+				}
+				if parsed.Path != "" {
+					resourcePath = parsed.Path
+				}
+				mt := ""
+				if resource.BlobResourceContents.MimeType != nil {
+					mt = *resource.BlobResourceContents.MimeType
+				}
+				if mt == "" {
+					mt = mime.TypeByExtension(filepath.Ext(resourcePath))
+				}
+				if mt == "" {
+					msg := fmt.Sprintf("could not detect MIME type for embedded resource URI %q", resource.BlobResourceContents.Uri)
+					slog.Error(msg, "uri", resource.BlobResourceContents.Uri, "path", resourcePath)
+					panic(msg)
+				}
+				filename := filepath.Base(resourcePath)
+				if filename == "." || filename == string(filepath.Separator) {
+					filename = ""
+				}
+				block = gai.Block{
+					BlockType: gai.Content,
+					MimeType:  mt,
+					// content comes as base64 encoded data
+					Content: gai.Str(resource.BlobResourceContents.Blob),
+					ExtraFields: map[string]any{
+						gai.BlockFieldFilenameKey: filename,
+					},
+				}
+				switch {
+				case strings.HasPrefix(mt, "image/"):
+					block.ModalityType = gai.Image
+				case strings.HasPrefix(mt, "application/pdf"):
+					block.ModalityType = gai.Image
+				case strings.HasPrefix(mt, "audio/"):
+					block.ModalityType = gai.Audio
+				case strings.HasPrefix(mt, "video/"):
+					block.ModalityType = gai.Video
+				}
 			}
 		}
 		msg.Blocks = append(msg.Blocks, block)

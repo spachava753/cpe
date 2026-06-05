@@ -100,7 +100,7 @@ func (a *Agent) Initialize(
 			},
 			PromptCapabilities: acp.PromptCapabilities{
 				Audio:           true,
-				EmbeddedContext: false, // TODO: eventually support loading embedded context
+				EmbeddedContext: true,
 				Image:           true,
 			},
 			SessionCapabilities: acp.SessionCapabilities{
