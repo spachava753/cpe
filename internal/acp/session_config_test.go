@@ -505,7 +505,7 @@ func TestSetSessionConfigOptionDuringPrompt(t *testing.T) {
 				},
 			},
 		},
-		func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
+		func(opts runtimeOpts) (acpRuntime, error) {
 			return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 				if opts == nil {
 					capturedThinkingBudgets = append(capturedThinkingBudgets, "")

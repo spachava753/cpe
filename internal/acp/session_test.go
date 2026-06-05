@@ -76,7 +76,7 @@ func TestInit(t *testing.T) {
 	be.Equal(t, resp.AgentCapabilities.SessionCapabilities.Resume, &acp.SessionResumeCapabilities{})
 	be.True(t, resp.AgentCapabilities.PromptCapabilities.Audio)
 	be.True(t, resp.AgentCapabilities.PromptCapabilities.Image)
-	be.True(t, !resp.AgentCapabilities.PromptCapabilities.EmbeddedContext)
+	be.True(t, resp.AgentCapabilities.PromptCapabilities.EmbeddedContext)
 }
 
 func TestListSessions(t *testing.T) {
@@ -240,8 +240,8 @@ func TestResumeSession(t *testing.T) {
 					},
 				},
 			},
-			func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
-				createdModelRefs = append(createdModelRefs, modelRef)
+			func(opts runtimeOpts) (acpRuntime, error) {
+				createdModelRefs = append(createdModelRefs, opts.modelRef)
 				return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 					return dialog, nil
 				}), nil
@@ -321,8 +321,8 @@ func TestResumeSession(t *testing.T) {
 					},
 				},
 			},
-			func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
-				createdModelRefs = append(createdModelRefs, modelRef)
+			func(opts runtimeOpts) (acpRuntime, error) {
+				createdModelRefs = append(createdModelRefs, opts.modelRef)
 				return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 					return dialog, nil
 				}), nil
@@ -404,8 +404,8 @@ func TestResumeSession(t *testing.T) {
 					},
 				},
 			},
-			func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
-				createdModelRefs = append(createdModelRefs, modelRef)
+			func(opts runtimeOpts) (acpRuntime, error) {
+				createdModelRefs = append(createdModelRefs, opts.modelRef)
 				return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 					return dialog, nil
 				}), nil
@@ -482,8 +482,8 @@ func TestLoadSession(t *testing.T) {
 				},
 			},
 		},
-		func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
-			createdModelRefs = append(createdModelRefs, modelRef)
+		func(opts runtimeOpts) (acpRuntime, error) {
+			createdModelRefs = append(createdModelRefs, opts.modelRef)
 			return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 				return dialog, nil
 			}), nil
@@ -600,8 +600,8 @@ func TestLoadSessionReplaysCompactionLineage(t *testing.T) {
 				},
 			},
 		},
-		func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
-			createdModelRefs = append(createdModelRefs, modelRef)
+		func(opts runtimeOpts) (acpRuntime, error) {
+			createdModelRefs = append(createdModelRefs, opts.modelRef)
 			return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 				return dialog, nil
 			}), nil
@@ -756,7 +756,7 @@ func TestCancel(t *testing.T) {
 					},
 				},
 			},
-			func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
+			func(opts runtimeOpts) (acpRuntime, error) {
 				return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 					close(generateStarted)
 					<-ctx.Done()
@@ -900,7 +900,7 @@ func TestDeleteSession(t *testing.T) {
 				},
 			},
 		},
-		func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
+		func(opts runtimeOpts) (acpRuntime, error) {
 			return trackingRuntime, nil
 		},
 	)
@@ -1004,7 +1004,7 @@ func TestCloseSession(t *testing.T) {
 					},
 				},
 			},
-			func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
+			func(opts runtimeOpts) (acpRuntime, error) {
 				return trackingRuntime, nil
 			},
 		)
@@ -1080,7 +1080,7 @@ func TestCloseSession(t *testing.T) {
 					},
 				},
 			},
-			func(conn *acp.AgentSideConnection, modelRef string, mcpServers []acp.McpServer) (acpRuntime, error) {
+			func(opts runtimeOpts) (acpRuntime, error) {
 				return trackingRuntime, nil
 			},
 		)

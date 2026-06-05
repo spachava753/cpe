@@ -85,12 +85,10 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 
 	// TODO: we should refactor the runtime factory to be made from the session config options
 	runtimeFactory := func(
-		conn *acp.AgentSideConnection,
-		modelRef string,
-		mcpServers []acp.McpServer,
+		runtimeOpts runtimeOpts,
 	) (acpRuntime, error) {
 		cfg, err := config.ResolveFromRaw(rawCfg, config.RuntimeOptions{
-			ModelRef: modelRef,
+			ModelRef: runtimeOpts.modelRef,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve model config: %v", err)
@@ -134,7 +132,7 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 			DialogSaver: sqliteStorage,
 			Cfg:         cfg,
 			G:           gen,
-			conn:        conn,
+			conn:        runtimeOpts.conn,
 		}
 
 		ca := closerAgent{
@@ -148,7 +146,7 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 			}
 		}
 
-		mcpServersConfig, err := mergeACPServerConfigs(cfg.MCPServers, mcpServers)
+		mcpServersConfig, err := mergeACPServerConfigs(cfg.MCPServers, runtimeOpts.mcpServers)
 		if err != nil {
 			return nil, err
 		}

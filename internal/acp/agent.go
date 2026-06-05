@@ -16,14 +16,20 @@ import (
 	"github.com/coder/acp-go-sdk"
 )
 
+type runtimeOpts struct {
+	conn        *acp.AgentSideConnection
+	modelRef    string
+	thinkingVal string
+	mcpServers  []acp.McpServer
+	fsReadTool  bool
+	fsWriteTool bool
+	terminal    bool
+}
+
 // runtimeFactory is the type to represent a factory that will
 // construct the runtime that actually executes the agent loop
 // on call the [Agent.Prompt]
-type runtimeFactory func(
-	conn *acp.AgentSideConnection,
-	modelRef string,
-	mcpServers []acp.McpServer,
-) (acpRuntime, error)
+type runtimeFactory func(opts runtimeOpts) (acpRuntime, error)
 
 // Agent is an implementation of an [acp.Agent]
 //
@@ -60,6 +66,7 @@ type Agent struct {
 	// client capabilities we care about
 	readFsTool  bool
 	writeFsTool bool
+	terminal    bool
 }
 
 // Authenticate implements [acp.Agent].
@@ -84,6 +91,7 @@ func (a *Agent) Initialize(
 ) (acp.InitializeResponse, error) {
 	a.readFsTool = params.ClientCapabilities.Fs.ReadTextFile
 	a.writeFsTool = params.ClientCapabilities.Fs.WriteTextFile
+	a.terminal = params.ClientCapabilities.Terminal
 	return acp.InitializeResponse{
 		ProtocolVersion: acp.ProtocolVersionNumber,
 		AgentInfo: &acp.Implementation{
@@ -130,7 +138,15 @@ func (a *Agent) Prompt(
 			return nil
 		}
 		var err error
-		t.runtime, err = a.runtimeFactory(a.conn, t.modelRef, t.mcpServers)
+		t.runtime, err = a.runtimeFactory(runtimeOpts{
+			conn:        a.conn,
+			modelRef:    t.modelRef,
+			thinkingVal: t.thinkingLevel,
+			mcpServers:  t.mcpServers,
+			fsReadTool:  a.readFsTool,
+			fsWriteTool: a.writeFsTool,
+			terminal:    a.terminal,
+		})
 		return err
 	}); err != nil {
 		return acp.PromptResponse{}, fmt.Errorf("failed to create runtime: %v", err)
@@ -167,7 +183,15 @@ func (a *Agent) Prompt(
 		}
 		dialog = append(dialog, a.promptToMessage(params.Prompt))
 		if t.runtime == nil {
-			runtime, err := a.runtimeFactory(a.conn, t.modelRef, t.mcpServers)
+			runtime, err := a.runtimeFactory(runtimeOpts{
+				conn:        a.conn,
+				modelRef:    t.modelRef,
+				thinkingVal: t.thinkingLevel,
+				mcpServers:  t.mcpServers,
+				fsReadTool:  a.readFsTool,
+				fsWriteTool: a.writeFsTool,
+				terminal:    a.terminal,
+			})
 			if err != nil {
 				return fmt.Errorf("could not create runtime: %v", err)
 			}

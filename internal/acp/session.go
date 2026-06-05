@@ -128,7 +128,15 @@ func (a *Agent) loadActiveSession(
 		if err := a.db.SetACPSessionThinkingLevel(ctx, sessionId, thinkingLevel); err != nil {
 			return nil, fmt.Errorf("could not update thinking level config: %v", err)
 		}
-		runtime, err := a.runtimeFactory(a.conn, modelRef, mcpServers)
+		runtime, err := a.runtimeFactory(runtimeOpts{
+			conn:        a.conn,
+			modelRef:    modelRef,
+			thinkingVal: thinkingLevel,
+			mcpServers:  mcpServers,
+			fsReadTool:  a.readFsTool,
+			fsWriteTool: a.writeFsTool,
+			terminal:    a.terminal,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("could not create runtime: %v", err)
 		}
@@ -158,7 +166,15 @@ func (a *Agent) loadActiveSession(
 		}
 	}
 
-	runtime, err := a.runtimeFactory(a.conn, modelRef, mcpServers)
+	runtime, err := a.runtimeFactory(runtimeOpts{
+		conn:        a.conn,
+		modelRef:    modelRef,
+		thinkingVal: thinkingLevel,
+		mcpServers:  mcpServers,
+		fsReadTool:  a.readFsTool,
+		fsWriteTool: a.writeFsTool,
+		terminal:    a.terminal,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("could not create runtime: %v", err)
 	}
