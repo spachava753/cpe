@@ -16,8 +16,6 @@ require (
 	github.com/coder/acp-go-sdk v0.13.5
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/failsafe-go/failsafe-go v0.9.6
-	github.com/gabriel-vasile/mimetype v1.4.13
-	github.com/gkampitakis/go-snaps v0.5.21
 	github.com/go-playground/validator/v10 v10.30.3
 	github.com/google/jsonschema-go v0.4.3
 	github.com/goyek/goyek/v2 v2.3.0
@@ -27,11 +25,9 @@ require (
 	github.com/muesli/termenv v0.16.0
 	github.com/nalgeon/be v0.3.0
 	github.com/ncruces/go-sqlite3 v0.34.3
-	github.com/olekukonko/tablewriter v1.1.4
 	github.com/openai/openai-go/v3 v3.37.0
 	github.com/spachava753/gai v0.41.1-0.20260530132625-76e6c6f6dc4b
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.10
 	github.com/yuin/goldmark v1.8.2
 	golang.org/x/mod v0.36.0
 	golang.org/x/term v0.43.0
@@ -121,9 +117,9 @@ require (
 	github.com/firefart/nonamedreturns v1.0.6 // indirect
 	github.com/fsnotify/fsnotify v1.5.4 // indirect
 	github.com/fzipp/gocyclo v0.6.0 // indirect
+	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
 	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/ghostiam/protogetter v0.3.18 // indirect
-	github.com/gkampitakis/ciinfo v0.3.2 // indirect
 	github.com/go-critic/go-critic v0.14.3 // indirect
 	github.com/go-faster/errors v0.7.1 // indirect
 	github.com/go-faster/jx v1.2.0 // indirect
@@ -143,7 +139,6 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/go-xmlfmt/xmlfmt v1.1.3 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
-	github.com/goccy/go-yaml v1.18.0 // indirect
 	github.com/godoc-lint/godoc-lint v0.11.1 // indirect
 	github.com/gofrs/flock v0.13.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
@@ -191,8 +186,6 @@ require (
 	github.com/karamaru-alpha/copyloopvar v1.2.2 // indirect
 	github.com/kisielk/errcheck v1.9.0 // indirect
 	github.com/kkHAIKE/contextcheck v1.1.6 // indirect
-	github.com/kr/pretty v0.3.1 // indirect
-	github.com/kr/text v0.2.0 // indirect
 	github.com/kulti/thelper v0.7.1 // indirect
 	github.com/kunwardeep/paralleltest v1.0.15 // indirect
 	github.com/lasiar/canonicalheader v1.1.2 // indirect
@@ -212,7 +205,6 @@ require (
 	github.com/manuelarte/funcorder v0.5.0 // indirect
 	github.com/maratori/testableexamples v1.0.1 // indirect
 	github.com/maratori/testpackage v1.1.2 // indirect
-	github.com/maruel/natural v1.1.1 // indirect
 	github.com/matoous/godox v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
@@ -237,9 +229,6 @@ require (
 	github.com/nishanths/predeclared v0.2.2 // indirect
 	github.com/nunnatsa/ginkgolinter v0.21.2 // indirect
 	github.com/ogen-go/ogen v1.20.3 // indirect
-	github.com/olekukonko/cat v0.0.0-20250911104152-50322a0618f6 // indirect
-	github.com/olekukonko/errors v1.2.0 // indirect
-	github.com/olekukonko/ll v0.1.6 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pganalyze/pg_query_go/v6 v6.1.0 // indirect
@@ -281,6 +270,7 @@ require (
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
+	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spf13/viper v1.12.0 // indirect
 	github.com/sqlc-dev/sqlc v1.30.0 // indirect
 	github.com/ssgreg/nlreturn/v2 v2.2.1 // indirect
