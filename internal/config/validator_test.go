@@ -1,7 +1,6 @@
 package config
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -336,14 +335,6 @@ func TestRawConfigValidate_CompactionStructTags_OmittedInModel(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("expected omitted compaction config to be valid, got error: %v", err)
 	}
-}
-
-func canonicalPathForValidator(path string) string {
-	cleaned := filepath.Clean(path)
-	if realPath, err := filepath.EvalSymlinks(cleaned); err == nil {
-		return filepath.Clean(realPath)
-	}
-	return cleaned
 }
 
 func TestValidateWithConfigPath_MCPServerURLRequiresExplicitType(t *testing.T) {

@@ -49,9 +49,9 @@ type PatchRequestConfig struct {
 
 // CodeModeConfig controls generated-code execution behavior.
 type CodeModeConfig struct {
-	Enabled              bool     `yaml:"enabled" json:"enabled"`
-	MaxTimeout           int      `yaml:"maxTimeout,omitempty" json:"maxTimeout,omitempty" validate:"omitempty,gte=0"`
-	LargeOutputCharLimit int      `yaml:"largeOutputCharLimit,omitempty" json:"largeOutputCharLimit,omitempty" validate:"omitempty,gte=0"`
+	Enabled              bool `yaml:"enabled" json:"enabled"`
+	MaxTimeout           int  `yaml:"maxTimeout,omitempty" json:"maxTimeout,omitempty" validate:"omitempty,gte=0"`
+	LargeOutputCharLimit int  `yaml:"largeOutputCharLimit,omitempty" json:"largeOutputCharLimit,omitempty" validate:"omitempty,gte=0"`
 }
 
 // RawCompactionConfig controls manual and threshold-driven conversation compaction.

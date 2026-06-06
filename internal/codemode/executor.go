@@ -25,9 +25,6 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 )
 
-// mcpSDKVersion is the version of the MCP SDK to use in generated go.mod
-const mcpSDKVersion = "v1.6.1"
-
 // gracePeriod is the time to wait after sending SIGINT before sending SIGKILL
 const gracePeriod = 5 * time.Second
 
@@ -163,16 +160,6 @@ func ExecuteCode(ctx context.Context, llmCode string, opts ExecuteCodeOptions) (
 	return result, classifyExitCode(result)
 }
 
-// generateGoMod creates the go.mod file contents.
-func generateGoMod(goVersion string) string {
-	return fmt.Sprintf(`module cpe-code-execution
-
-go %s
-
-require github.com/modelcontextprotocol/go-sdk %s
-`, goVersion, mcpSDKVersion)
-}
-
 // normalizeGoDirectiveVersion accepts values like "go1.24.5", "v1.24", or
 // "1.24" and returns the major.minor form accepted by all supported go.mod and
 // go.work parsers.
@@ -194,29 +181,6 @@ func normalizeGoDirectiveVersion(raw string) (string, error) {
 		return "", fmt.Errorf("invalid go directive version %q", raw)
 	}
 	return matches[1] + "." + matches[2], nil
-}
-
-// compareGoDirectiveVersions compares normalized go directive versions.
-func compareGoDirectiveVersions(left, right string) int {
-	return goversion.Compare("go"+left, "go"+right)
-}
-
-// detectGoToolchainVersion reads GOVERSION from the active toolchain and normalizes
-// it to a go.mod/go.work-compatible directive version.
-func detectGoToolchainVersion(ctx context.Context) (string, error) {
-	result, err := runCommand(ctx, "", "go", "env", "GOVERSION")
-	if err != nil {
-		return "", err
-	}
-	if result.ExitCode != 0 {
-		return "", errors.New(strings.TrimSpace(result.Output))
-	}
-
-	version, err := normalizeGoDirectiveVersion(result.Output)
-	if err != nil {
-		return "", err
-	}
-	return version, nil
 }
 
 // mergeEnv applies KEY=VALUE overrides on top of base environment entries and

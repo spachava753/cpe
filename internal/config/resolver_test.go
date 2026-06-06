@@ -1,8 +1,6 @@
 package config
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -157,24 +155,4 @@ func testModelProfile() ModelConfig {
 		ContextWindow: 200000,
 		MaxOutput:     64000,
 	}}
-}
-
-func makeGoModule(t *testing.T, root, name string) string {
-	t.Helper()
-	moduleDir := filepath.Join(root, name)
-	if err := os.MkdirAll(moduleDir, 0o755); err != nil {
-		t.Fatalf("creating module directory: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte("module example.com/"+name+"\n\ngo 1.24\n"), 0o644); err != nil {
-		t.Fatalf("writing module go.mod: %v", err)
-	}
-	return moduleDir
-}
-
-func canonicalPath(path string) string {
-	cleaned := filepath.Clean(path)
-	if realPath, err := filepath.EvalSymlinks(cleaned); err == nil {
-		return filepath.Clean(realPath)
-	}
-	return cleaned
 }
