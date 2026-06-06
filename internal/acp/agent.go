@@ -17,13 +17,9 @@ import (
 )
 
 type runtimeOpts struct {
-	conn        *acp.AgentSideConnection
-	modelRef    string
-	thinkingVal string
-	mcpServers  []acp.McpServer
-	fsReadTool  bool
-	fsWriteTool bool
-	terminal    bool
+	conn       *acp.AgentSideConnection
+	modelRef   string
+	mcpServers []acp.McpServer
 }
 
 // runtimeFactory is the type to represent a factory that will
@@ -62,11 +58,6 @@ type Agent struct {
 		storage.ACPSessionModelSetter
 		storage.ACPSessionThinkingLevelSetter
 	}
-
-	// client capabilities we care about
-	readFsTool  bool
-	writeFsTool bool
-	terminal    bool
 }
 
 // Authenticate implements [acp.Agent].
@@ -89,9 +80,6 @@ func (a *Agent) Initialize(
 	ctx context.Context,
 	params acp.InitializeRequest,
 ) (acp.InitializeResponse, error) {
-	a.readFsTool = params.ClientCapabilities.Fs.ReadTextFile
-	a.writeFsTool = params.ClientCapabilities.Fs.WriteTextFile
-	a.terminal = params.ClientCapabilities.Terminal
 	return acp.InitializeResponse{
 		ProtocolVersion: acp.ProtocolVersionNumber,
 		AgentInfo: &acp.Implementation{
@@ -139,13 +127,9 @@ func (a *Agent) Prompt(
 		}
 		var err error
 		t.runtime, err = a.runtimeFactory(runtimeOpts{
-			conn:        a.conn,
-			modelRef:    t.modelRef,
-			thinkingVal: t.thinkingLevel,
-			mcpServers:  t.mcpServers,
-			fsReadTool:  a.readFsTool,
-			fsWriteTool: a.writeFsTool,
-			terminal:    a.terminal,
+			conn:       a.conn,
+			modelRef:   t.modelRef,
+			mcpServers: t.mcpServers,
 		})
 		return err
 	}); err != nil {
@@ -184,13 +168,9 @@ func (a *Agent) Prompt(
 		dialog = append(dialog, a.promptToMessage(params.Prompt))
 		if t.runtime == nil {
 			runtime, err := a.runtimeFactory(runtimeOpts{
-				conn:        a.conn,
-				modelRef:    t.modelRef,
-				thinkingVal: t.thinkingLevel,
-				mcpServers:  t.mcpServers,
-				fsReadTool:  a.readFsTool,
-				fsWriteTool: a.writeFsTool,
-				terminal:    a.terminal,
+				conn:       a.conn,
+				modelRef:   t.modelRef,
+				mcpServers: t.mcpServers,
 			})
 			if err != nil {
 				return fmt.Errorf("could not create runtime: %v", err)

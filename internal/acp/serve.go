@@ -168,6 +168,7 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 			callback := &codemode.ExecuteGoCodeCallback{
 				MaxTimeout:           cfg.CodeMode.MaxTimeout,
 				LargeOutputCharLimit: codemode.ResolveLargeOutputCharLimit(cfg.CodeMode.LargeOutputCharLimit, cfg.Model.ContextWindow),
+				Conn:                 runtimeOpts.conn,
 			}
 
 			if err := l.Register(executeGoCodeTool, callback); err != nil {

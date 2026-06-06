@@ -11,7 +11,7 @@ import (
 var List = goyek.Define(goyek.Task{
 	Name:  "list",
 	Usage: "List all available tasks",
-	Action: func(a *goyek.A) {
+	Action: func(_ *goyek.A) {
 		fmt.Println("Available tasks:")
 		fmt.Println()
 		for _, task := range goyek.Tasks() {

@@ -61,7 +61,7 @@ var goimportsCommand = func() (string, []string) {
 	return "go", []string{"run", "golang.org/x/tools/cmd/goimports@" + goimportsModuleVersion}
 }
 
-// ExecuteCode runs generated Go code in an isolated temporary module.
+// executeCode runs generated Go code in an isolated temporary module.
 //
 // Pipeline:
 //   - create a temp module with generated main.go/run.go
@@ -73,7 +73,7 @@ var goimportsCommand = func() (string, []string) {
 //   - nil error with ExitCode 0: successful execution
 //   - RecoverableError: compile failures, Run() errors, panics, timeouts, and other non-zero exits
 //   - Other errors: infrastructure failures (temp dir, file writes, command launch failures)
-func ExecuteCode(ctx context.Context, llmCode string, opts ExecuteCodeOptions) (ExecutionResult, error) {
+func (c *ExecuteGoCodeCallback) executeCode(ctx context.Context, llmCode string, timeout int) (ExecutionResult, error) {
 	// Create temp directory
 	tempDir, err := os.MkdirTemp("", "cpe-code-mode-*")
 	if err != nil {
@@ -108,7 +108,7 @@ func ExecuteCode(ctx context.Context, llmCode string, opts ExecuteCodeOptions) (
 		return ExecutionResult{}, fmt.Errorf("running go mod tidy: %w", err)
 	}
 	tidyResult.Output += importNote
-	tidyResult = maybeSpillLargeOutput(tidyResult, opts.LargeOutputCharLimit)
+	tidyResult = maybeSpillLargeOutput(tidyResult, c.LargeOutputCharLimit)
 	if tidyResult.ExitCode != 0 {
 		return ExecutionResult{
 			Output:   tidyResult.Output,
@@ -123,7 +123,7 @@ func ExecuteCode(ctx context.Context, llmCode string, opts ExecuteCodeOptions) (
 		return ExecutionResult{}, fmt.Errorf("running go build: %w", err)
 	}
 	buildResult.Output += importNote
-	buildResult = maybeSpillLargeOutput(buildResult, opts.LargeOutputCharLimit)
+	buildResult = maybeSpillLargeOutput(buildResult, c.LargeOutputCharLimit)
 	if buildResult.ExitCode != 0 {
 		return ExecutionResult{
 			Output:   buildResult.Output,
@@ -134,9 +134,9 @@ func ExecuteCode(ctx context.Context, llmCode string, opts ExecuteCodeOptions) (
 	// Execute the built binary with timeout and graceful shutdown.
 	// Only build-time steps use the temporary workspace. The generated program
 	// itself runs with the normal inherited environment.
-	result, err := runProgramWithTimeout(ctx, binaryPath, opts.TimeoutSeconds, nil)
+	result, err := runProgramWithTimeout(ctx, binaryPath, timeout, nil)
 	result.Output += importNote
-	result = maybeSpillLargeOutput(result, opts.LargeOutputCharLimit)
+	result = maybeSpillLargeOutput(result, c.LargeOutputCharLimit)
 	if err != nil {
 		return result, err
 	}

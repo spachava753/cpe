@@ -27,7 +27,6 @@ type session struct {
 	mcpServers    []acp.McpServer
 	runtime       acpRuntime
 	cancelfunc    context.CancelFunc
-	si            acp.SessionInfo
 }
 
 func (a *Agent) activeSession(sessionID acp.SessionId) (*sync.Guard[session], error) {
@@ -52,7 +51,6 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		thinkingVal = a.rawCfg.Models[0].ThinkingValues[0].Value
 	}
 	s := session{
-		si:            si,
 		modelRef:      modelRef,
 		thinkingLevel: thinkingVal,
 		mcpServers:    params.McpServers,
@@ -129,19 +127,14 @@ func (a *Agent) loadActiveSession(
 			return nil, fmt.Errorf("could not update thinking level config: %v", err)
 		}
 		runtime, err := a.runtimeFactory(runtimeOpts{
-			conn:        a.conn,
-			modelRef:    modelRef,
-			thinkingVal: thinkingLevel,
-			mcpServers:  mcpServers,
-			fsReadTool:  a.readFsTool,
-			fsWriteTool: a.writeFsTool,
-			terminal:    a.terminal,
+			conn:       a.conn,
+			modelRef:   modelRef,
+			mcpServers: mcpServers,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("could not create runtime: %v", err)
 		}
 		s := session{
-			si:            getSessionResp.Session,
 			modelRef:      modelRef,
 			thinkingLevel: thinkingLevel,
 			mcpServers:    mcpServers,
@@ -167,20 +160,15 @@ func (a *Agent) loadActiveSession(
 	}
 
 	runtime, err := a.runtimeFactory(runtimeOpts{
-		conn:        a.conn,
-		modelRef:    modelRef,
-		thinkingVal: thinkingLevel,
-		mcpServers:  mcpServers,
-		fsReadTool:  a.readFsTool,
-		fsWriteTool: a.writeFsTool,
-		terminal:    a.terminal,
+		conn:       a.conn,
+		modelRef:   modelRef,
+		mcpServers: mcpServers,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("could not create runtime: %v", err)
 	}
 
 	s := session{
-		si:            getSessionResp.Session,
 		modelRef:      getSessionResp.ModelRef,
 		thinkingLevel: thinkingLevel,
 		runtime:       runtime,

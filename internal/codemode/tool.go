@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/coder/acp-go-sdk"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/gai"
 
@@ -14,9 +15,9 @@ import (
 // ExecuteGoCodeToolName is the reserved model-facing tool name for code mode.
 const ExecuteGoCodeToolName = "execute_go_code"
 
-// ExecuteGoCodeInput is the execute_go_code payload expected from the model.
+// executeGoCodeInput is the execute_go_code payload expected from the model.
 // ExecutionTimeout is validated against callback-level limits before execution starts.
-type ExecuteGoCodeInput struct {
+type executeGoCodeInput struct {
 	Code             string `json:"code"`
 	ExecutionTimeout int    `json:"executionTimeout"`
 }
@@ -26,6 +27,7 @@ type ExecuteGoCodeInput struct {
 type ExecuteGoCodeCallback struct {
 	MaxTimeout           int
 	LargeOutputCharLimit int
+	Conn                 *acp.AgentSideConnection
 }
 
 // contentToBlocks adapts MCP multimodal content into gai blocks.
@@ -53,7 +55,7 @@ func contentToBlocks(content []mcpsdk.Content) []gai.Block {
 // Recoverable execution failures are returned as ToolResult text so the model can iterate;
 // infrastructure failures are returned as Go errors to stop the run.
 func (c *ExecuteGoCodeCallback) Call(ctx context.Context, params map[string]any) (gai.Message, error) {
-	input, err := mapstruct.Map2Struct[ExecuteGoCodeInput](params)
+	input, err := mapstruct.Map2Struct[executeGoCodeInput](params)
 	if err != nil {
 		// Return error as tool result so LLM can adapt, not as Go error that stops execution
 		//nolint:nilerr // Intentional: user/tool errors return results with nil error to allow agent recovery
@@ -72,13 +74,10 @@ func (c *ExecuteGoCodeCallback) Call(ctx context.Context, params map[string]any)
 	}
 
 	// Execute the code
-	result, err := ExecuteCode(
+	result, err := c.executeCode(
 		ctx,
 		input.Code,
-		ExecuteCodeOptions{
-			TimeoutSeconds:       input.ExecutionTimeout,
-			LargeOutputCharLimit: c.LargeOutputCharLimit,
-		},
+		input.ExecutionTimeout,
 	)
 	if err != nil {
 		if recoverable, ok := errors.AsType[RecoverableError](err); ok {
