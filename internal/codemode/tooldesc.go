@@ -11,7 +11,7 @@ import (
 	"github.com/spachava753/gai"
 )
 
-//go:embed tool_description.txt
+//go:embed tool_description.md
 var toolDesc string
 
 var toolDescTmpl = template.Must(

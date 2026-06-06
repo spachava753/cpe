@@ -7,12 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
-
-	"golang.org/x/mod/modfile"
 )
 
 func TestRunProgramWithTimeout_AppendsTimeoutCancellationNote(t *testing.T) {
@@ -151,173 +148,11 @@ func main() {
 	return binaryPath
 }
 
-func buildFakeGoimportsBinary(t *testing.T) string {
-	t.Helper()
-
-	tempDir := t.TempDir()
-	sourcePath := filepath.Join(tempDir, "main.go")
-	binaryPath := filepath.Join(tempDir, "goimports")
-
-	source := `package main
-
-import (
-	"fmt"
-	"os"
-	"path/filepath"
-)
-
-func main() {
-	if len(os.Args) != 3 || os.Args[1] != "-w" {
-		fmt.Fprintf(os.Stderr, "unexpected args: %v", os.Args[1:])
-		os.Exit(2)
-	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "getwd: %v", err)
-		os.Exit(2)
-	}
-	if realCwd, err := filepath.EvalSymlinks(cwd); err == nil {
-		cwd = realCwd
-	}
-	if expected := os.Getenv("CPE_GOIMPORTS_EXPECT_DIR"); expected != "" && cwd != expected {
-		fmt.Fprintf(os.Stderr, "cwd mismatch: got %q want %q", cwd, expected)
-		os.Exit(2)
-	}
-	if content := os.Getenv("CPE_GOIMPORTS_REWRITE_CONTENT"); content != "" {
-		if err := os.WriteFile(os.Args[2], []byte(content), 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "rewrite file: %v", err)
-			os.Exit(2)
-		}
-	}
-}
-`
-
-	if err := os.WriteFile(sourcePath, []byte(source), 0644); err != nil {
-		t.Fatalf("writing fake goimports source: %v", err)
-	}
-
-	cmd := exec.CommandContext(context.Background(), "go", "build", "-o", binaryPath, sourcePath)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("building fake goimports binary: %v\n%s", err, string(output))
-	}
-
-	return binaryPath
-}
-
-func overrideGoimportsCommandForTest(t *testing.T, name string, args ...string) {
-	t.Helper()
-
-	original := goimportsCommand
-	goimportsCommand = func() (string, []string) {
-		return name, append([]string(nil), args...)
-	}
-	t.Cleanup(func() {
-		goimportsCommand = original
-	})
-}
-
-func TestAutoCorrectImports_UsesChildProcessDir(t *testing.T) {
-	helperPath := buildFakeGoimportsBinary(t)
-	overrideGoimportsCommandForTest(t, helperPath)
-
-	tempDir := t.TempDir()
-	filePath := filepath.Join(tempDir, "run.go")
-	original := `package main
-
-import (
-	"context"
-
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-)
-
-func Run(ctx context.Context) ([]mcp.Content, error) {
-	_ = helpermod.Message()
-	return nil, nil
-}
-`
-	rewritten := `package main
-
-import (
-	"context"
-
-	"example.com/helpermod"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-)
-
-func Run(ctx context.Context) ([]mcp.Content, error) {
-	_ = helpermod.Message()
-	return nil, nil
-}
-`
-	if err := os.WriteFile(filePath, []byte(original), 0o644); err != nil {
-		t.Fatalf("writing run.go: %v", err)
-	}
-
-	expectedDir := tempDir
-	if realDir, err := filepath.EvalSymlinks(tempDir); err == nil {
-		expectedDir = realDir
-	}
-
-	t.Setenv("CPE_GOIMPORTS_EXPECT_DIR", expectedDir)
-	t.Setenv("CPE_GOIMPORTS_REWRITE_CONTENT", rewritten)
-
-	note := autoCorrectImports(context.Background(), tempDir, "run.go")
-
-	wantNote := "\n\nNote: Imports in run.go were auto-corrected.\n  Added: example.com/helpermod"
-	if note != wantNote {
-		t.Fatalf("note mismatch:\n got: %q\nwant: %q", note, wantNote)
-	}
-
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		t.Fatalf("reading rewritten run.go: %v", err)
-	}
-	if string(data) != rewritten {
-		t.Fatalf("rewritten run.go mismatch:\n got: %q\nwant: %q", string(data), rewritten)
-	}
-}
-
-func TestGoimportsModuleVersionMatchesGoMod(t *testing.T) {
-	t.Parallel()
-
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller failed")
-	}
-	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
-	goModPath := filepath.Join(repoRoot, "go.mod")
-
-	data, err := os.ReadFile(goModPath)
-	if err != nil {
-		t.Fatalf("reading go.mod: %v", err)
-	}
-	parsed, err := modfile.Parse(goModPath, data, nil)
-	if err != nil {
-		t.Fatalf("parsing go.mod: %v", err)
-	}
-
-	var toolsVersion string
-	for _, req := range parsed.Require {
-		if req.Mod.Path == "golang.org/x/tools" {
-			toolsVersion = req.Mod.Version
-			break
-		}
-	}
-	if toolsVersion == "" {
-		t.Fatal("golang.org/x/tools requirement not found in go.mod")
-	}
-	if toolsVersion != goimportsModuleVersion {
-		t.Fatalf("goimportsModuleVersion mismatch: got %q want %q", goimportsModuleVersion, toolsVersion)
-	}
-}
-
 func TestMaybeSpillLargeOutput_SpillsToDisk(t *testing.T) {
 	t.Parallel()
 
 	original := "abcdefghijklmnopqrstuvwxyz"
-	result := maybeSpillLargeOutput(ExecutionResult{Output: original}, 10)
+	result := maybeSpillLargeOutput(executionResult{Output: original}, 10)
 
 	spillPath := extractSpillPath(t, result.Output)
 	t.Cleanup(func() { _ = os.Remove(spillPath) })
@@ -340,7 +175,7 @@ func TestMaybeSpillLargeOutput_NoSpillWhenWithinLimit(t *testing.T) {
 	t.Parallel()
 
 	original := "small output"
-	result := maybeSpillLargeOutput(ExecutionResult{Output: original}, 100)
+	result := maybeSpillLargeOutput(executionResult{Output: original}, 100)
 
 	if result.Output != original {
 		t.Fatalf("output mismatch: got %q, want %q", result.Output, original)
@@ -351,7 +186,7 @@ func TestMaybeSpillLargeOutput_PreviewsByCharactersForSingleLineOutput(t *testin
 	t.Parallel()
 
 	original := "0123456789abcdefghijklmnopqrstuvwxyz"
-	result := maybeSpillLargeOutput(ExecutionResult{Output: original}, 8)
+	result := maybeSpillLargeOutput(executionResult{Output: original}, 8)
 
 	spillPath := extractSpillPath(t, result.Output)
 	t.Cleanup(func() { _ = os.Remove(spillPath) })
@@ -376,39 +211,4 @@ func extractSpillPath(t *testing.T, output string) string {
 	}
 	t.Fatalf("spill path not found in output: %q", output)
 	return ""
-}
-
-func TestNormalizeGoDirectiveVersion(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		input   string
-		want    string
-		wantErr bool
-	}{
-		{name: "go prefixed patch", input: "go1.25.5", want: "1.25"},
-		{name: "plain", input: "1.24", want: "1.24"},
-		{name: "v prefixed patch", input: "v1.26.0", want: "1.26"},
-		{name: "old toolchain patch", input: "go1.19.8", want: "1.19"},
-		{name: "invalid", input: "abc", wantErr: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := normalizeGoDirectiveVersion(tt.input)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("expected error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("normalizeGoDirectiveVersion returned error: %v", err)
-			}
-			if got != tt.want {
-				t.Fatalf("version mismatch: got %q, want %q", got, tt.want)
-			}
-		})
-	}
 }

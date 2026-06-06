@@ -3,62 +3,42 @@ package codemode
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"go/parser"
-	"go/printer"
-	"go/token"
-	goversion "go/version"
 	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"syscall"
+	"text/template"
 	"time"
 	"unicode/utf8"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-	"golang.org/x/tools/go/ast/astutil"
 )
 
-// gracePeriod is the time to wait after sending SIGINT before sending SIGKILL
-const gracePeriod = 5 * time.Second
+const (
+	// gracePeriod is the time to wait after sending SIGINT before sending SIGKILL
+	gracePeriod = 5 * time.Second
+	// timeoutCancellationNoteTemplate is appended to output when executionTimeout triggers cancellation.
+	timeoutCancellationNoteTemplate = "execution timed out after %d seconds; context was canceled because executionTimeout was reached."
+	spilledOutputFilePattern        = "cpe-code-output-*.txt"
+)
 
-// timeoutCancellationNoteTemplate is appended to output when executionTimeout triggers cancellation.
-const timeoutCancellationNoteTemplate = "execution timed out after %d seconds; context was canceled because executionTimeout was reached."
+//go:embed maingen.go.tmpl
+var mainTemplateSource string
 
-// mcpSDKImport is the import path for the MCP SDK package
-const mcpSDKImport = "github.com/modelcontextprotocol/go-sdk/mcp"
-
-// goimportsModuleVersion must stay aligned with the golang.org/x/tools version in go.mod.
-const goimportsModuleVersion = "v0.45.0"
-
-const spilledOutputFilePattern = "cpe-code-output-*.txt"
-
-var goDirectiveVersionPattern = regexp.MustCompile(`^(\d+)\.(\d+)(?:\.\d+)?$`)
-
-// ExecutionResult captures process output and exit metadata from sandboxed code execution.
+// executionResult captures process output and exit metadata from sandboxed code execution.
 // Output is combined stdout/stderr and may contain truncation metadata when large-output
 // spilling is enabled.
-type ExecutionResult struct {
+type executionResult struct {
 	Output   string           // Combined stdout/stderr
 	ExitCode int              // Exit code from the process
 	Content  []mcpsdk.Content // Multimedia content returned from Run()
-}
-
-// ExecuteCodeOptions controls sandbox execution behavior.
-// LargeOutputCharLimit <= 0 disables output spilling and preview truncation.
-type ExecuteCodeOptions struct {
-	TimeoutSeconds       int
-	LargeOutputCharLimit int
-}
-
-var goimportsCommand = func() (string, []string) {
-	return "go", []string{"run", "golang.org/x/tools/cmd/goimports@" + goimportsModuleVersion}
 }
 
 // executeCode runs generated Go code in an isolated temporary module.
@@ -73,44 +53,57 @@ var goimportsCommand = func() (string, []string) {
 //   - nil error with ExitCode 0: successful execution
 //   - RecoverableError: compile failures, Run() errors, panics, timeouts, and other non-zero exits
 //   - Other errors: infrastructure failures (temp dir, file writes, command launch failures)
-func (c *ExecuteGoCodeCallback) executeCode(ctx context.Context, llmCode string, timeout int) (ExecutionResult, error) {
+func (c *ExecuteGoCodeCallback) executeCode(ctx context.Context, llmCode string, timeout int) (executionResult, error) {
 	// Create temp directory
 	tempDir, err := os.MkdirTemp("", "cpe-code-mode-*")
 	if err != nil {
-		return ExecutionResult{}, fmt.Errorf("creating temp directory: %w", err)
+		return executionResult{}, fmt.Errorf("creating temp directory: %w", err)
 	}
 	cleanupDir := tempDir
+	// TODO: do we need to really need to eval symlink?
 	if realTempDir, err := filepath.EvalSymlinks(tempDir); err == nil {
 		tempDir = realTempDir
 	}
 	defer os.RemoveAll(cleanupDir)
 
 	// Generate and write main.go
-	mainGo, err := GenerateMainGo(filepath.Join(tempDir, "content.json"))
+	tmpl, err := template.New("main.go").Funcs(template.FuncMap{
+		"quote": func(s string) string {
+			return fmt.Sprintf("%q", s)
+		},
+	}).Parse(mainTemplateSource)
 	if err != nil {
-		return ExecutionResult{}, fmt.Errorf("generating main.go: %w", err)
+		return executionResult{}, fmt.Errorf("parsing template: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(tempDir, "main.go"), []byte(mainGo), 0o644); err != nil {
-		return ExecutionResult{}, fmt.Errorf("writing main.go: %w", err)
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, struct{ ContentOutputPath string }{ContentOutputPath: filepath.Join(tempDir, "content.json")}); err != nil {
+		return executionResult{}, fmt.Errorf("executing template: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(tempDir, "main.go"), buf.Bytes(), 0o644); err != nil {
+		return executionResult{}, fmt.Errorf("writing main.go: %w", err)
 	}
 
 	// Write run.go (LLM-generated code)
 	if err := os.WriteFile(filepath.Join(tempDir, "run.go"), []byte(llmCode), 0o644); err != nil {
-		return ExecutionResult{}, fmt.Errorf("writing run.go: %w", err)
+		return executionResult{}, fmt.Errorf("writing run.go: %w", err)
 	}
 
 	// Auto-correct imports
-	importNote := autoCorrectImports(ctx, tempDir, "run.go")
+	importNote, err := correctFileImports(tempDir, "run.go")
+	if err != nil {
+		return executionResult{}, fmt.Errorf("error correcting imports: %w", err)
+	}
 
 	// Run go mod tidy
 	tidyResult, err := runCommand(ctx, tempDir, "go", "mod", "tidy")
 	if err != nil {
-		return ExecutionResult{}, fmt.Errorf("running go mod tidy: %w", err)
+		return executionResult{}, fmt.Errorf("running go mod tidy: %w", err)
 	}
 	tidyResult.Output += importNote
 	tidyResult = maybeSpillLargeOutput(tidyResult, c.LargeOutputCharLimit)
 	if tidyResult.ExitCode != 0 {
-		return ExecutionResult{
+		return executionResult{
 			Output:   tidyResult.Output,
 			ExitCode: tidyResult.ExitCode,
 		}, RecoverableError{Output: tidyResult.Output, ExitCode: tidyResult.ExitCode}
@@ -120,12 +113,12 @@ func (c *ExecuteGoCodeCallback) executeCode(ctx context.Context, llmCode string,
 	binaryPath := filepath.Join(tempDir, "program")
 	buildResult, err := runCommand(ctx, tempDir, "go", "build", "-o", binaryPath, ".")
 	if err != nil {
-		return ExecutionResult{}, fmt.Errorf("running go build: %w", err)
+		return executionResult{}, fmt.Errorf("running go build: %w", err)
 	}
 	buildResult.Output += importNote
 	buildResult = maybeSpillLargeOutput(buildResult, c.LargeOutputCharLimit)
 	if buildResult.ExitCode != 0 {
-		return ExecutionResult{
+		return executionResult{
 			Output:   buildResult.Output,
 			ExitCode: buildResult.ExitCode,
 		}, RecoverableError{Output: buildResult.Output, ExitCode: buildResult.ExitCode}
@@ -160,29 +153,6 @@ func (c *ExecuteGoCodeCallback) executeCode(ctx context.Context, llmCode string,
 	return result, classifyExitCode(result)
 }
 
-// normalizeGoDirectiveVersion accepts values like "go1.24.5", "v1.24", or
-// "1.24" and returns the major.minor form accepted by all supported go.mod and
-// go.work parsers.
-func normalizeGoDirectiveVersion(raw string) (string, error) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return "", fmt.Errorf("go version must not be empty")
-	}
-	trimmed = strings.TrimPrefix(trimmed, "go")
-	trimmed = strings.TrimPrefix(trimmed, "v")
-
-	prefixed := "go" + trimmed
-	if !goversion.IsValid(prefixed) {
-		return "", fmt.Errorf("invalid go version %q", raw)
-	}
-
-	matches := goDirectiveVersionPattern.FindStringSubmatch(trimmed)
-	if matches == nil {
-		return "", fmt.Errorf("invalid go directive version %q", raw)
-	}
-	return matches[1] + "." + matches[2], nil
-}
-
 // mergeEnv applies KEY=VALUE overrides on top of base environment entries and
 // returns a sorted environment slice for deterministic command invocation.
 func mergeEnv(base []string, overrides map[string]string) []string {
@@ -210,7 +180,7 @@ func mergeEnv(base []string, overrides map[string]string) []string {
 
 // runCommand executes a command in dir with merged environment overrides.
 // Exit errors are encoded in ExecutionResult.ExitCode; launch/context errors are returned directly.
-func runCommand(ctx context.Context, dir string, name string, args ...string) (ExecutionResult, error) {
+func runCommand(ctx context.Context, dir string, name string, args ...string) (executionResult, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 
@@ -220,7 +190,7 @@ func runCommand(ctx context.Context, dir string, name string, args ...string) (E
 
 	err := cmd.Run()
 
-	result := ExecutionResult{
+	result := executionResult{
 		Output:   output.String(),
 		ExitCode: 0,
 	}
@@ -240,9 +210,9 @@ func runCommand(ctx context.Context, dir string, name string, args ...string) (E
 // runProgramWithTimeout executes the compiled binary under executionTimeout semantics.
 // On cancellation, it sends SIGINT first, allows gracePeriod for cleanup, then SIGKILL if needed.
 // When executionTimeout triggers cancellation, a cancellation note is appended to stdout/stderr output.
-func runProgramWithTimeout(ctx context.Context, binaryPath string, timeoutSecs int, envOverrides map[string]string) (ExecutionResult, error) {
+func runProgramWithTimeout(ctx context.Context, binaryPath string, timeoutSecs int, envOverrides map[string]string) (executionResult, error) {
 	if err := ctx.Err(); err != nil {
-		return ExecutionResult{}, err
+		return executionResult{}, err
 	}
 
 	cmd := exec.CommandContext(context.WithoutCancel(ctx), binaryPath)
@@ -253,7 +223,7 @@ func runProgramWithTimeout(ctx context.Context, binaryPath string, timeoutSecs i
 	cmd.Stderr = &output
 
 	if err := cmd.Start(); err != nil {
-		return ExecutionResult{}, err
+		return executionResult{}, err
 	}
 
 	waitCh := make(chan error, 1)
@@ -276,7 +246,7 @@ func runProgramWithTimeout(ctx context.Context, binaryPath string, timeoutSecs i
 		err = interruptThenWait(cmd, waitCh)
 	}
 
-	result := ExecutionResult{
+	result := executionResult{
 		Output:   output.String(),
 		ExitCode: 0,
 	}
@@ -339,7 +309,7 @@ func appendTimeoutCancellationNote(output string, timeoutSecs int) string {
 
 // maybeSpillLargeOutput truncates oversized output to a preview and persists full output
 // to a temp file so model context stays bounded while preserving debuggability.
-func maybeSpillLargeOutput(result ExecutionResult, charLimit int) ExecutionResult {
+func maybeSpillLargeOutput(result executionResult, charLimit int) executionResult {
 	if charLimit <= 0 || result.Output == "" {
 		return result
 	}
@@ -410,90 +380,11 @@ func formatSpilledOutputMessage(totalChars, charLimit int, preview, spillPath st
 }
 
 // classifyExitCode maps sandbox process exits to agent-facing error classes.
-func classifyExitCode(result ExecutionResult) error {
+func classifyExitCode(result executionResult) error {
 	if result.ExitCode == 0 {
 		return nil
 	}
 	return RecoverableError{Output: result.Output, ExitCode: result.ExitCode}
-}
-
-// autoCorrectImports runs goimports in a separate child process so workspace-
-// specific env overrides stay isolated to that process.
-func autoCorrectImports(ctx context.Context, dir, filename string) string {
-	filePath := filepath.Join(dir, filename)
-	orig, err := os.ReadFile(filePath)
-	if err != nil {
-		return ""
-	}
-
-	// Ensure correct mcp import before goimports to prevent wrong package resolution.
-	preprocessed := ensureMCPImport(orig)
-	origImports := extractImports(orig)
-
-	tempFile, err := os.CreateTemp(dir, "cpe-goimports-*.go")
-	if err != nil {
-		return ""
-	}
-	tempPath := tempFile.Name()
-	defer os.Remove(tempPath)
-
-	if _, err := tempFile.Write(preprocessed); err != nil {
-		_ = tempFile.Close()
-		return ""
-	}
-	if err := tempFile.Close(); err != nil {
-		return ""
-	}
-
-	if err := runGoimportsProcess(ctx, dir, tempPath); err != nil {
-		// If processing fails (e.g. syntax errors), let the compiler catch it.
-		return ""
-	}
-
-	newContent, err := os.ReadFile(tempPath)
-	if err != nil {
-		return ""
-	}
-	if bytes.Equal(orig, newContent) {
-		return ""
-	}
-	if err := os.WriteFile(filePath, newContent, 0o644); err != nil {
-		return ""
-	}
-
-	newImports := extractImports(newContent)
-	return formatImportChanges(filename, origImports, newImports)
-}
-
-func runGoimportsProcess(ctx context.Context, dir string, filePath string) error {
-	name, args := goimportsCommand()
-	args = append(args, "-w", filePath)
-
-	result, err := runCommand(ctx, dir, name, args...)
-	if err != nil {
-		return err
-	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("goimports exited with code %d: %s", result.ExitCode, strings.TrimSpace(result.Output))
-	}
-	return nil
-}
-
-// extractImports parses Go source and returns a set of import paths.
-func extractImports(src []byte) map[string]bool {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "", src, parser.ImportsOnly)
-	if err != nil {
-		return nil
-	}
-
-	imps := make(map[string]bool)
-	for _, imp := range f.Imports {
-		// Remove quotes from import path
-		path := strings.Trim(imp.Path.Value, "`\"")
-		imps[path] = true
-	}
-	return imps
 }
 
 // contentTypeWrapper is used to peek at the type field during deserialization
@@ -543,57 +434,4 @@ func unmarshalContent(data []byte) ([]mcpsdk.Content, error) {
 	}
 
 	return result, nil
-}
-
-// ensureMCPImport adds the MCP SDK import if not already present.
-// This prevents goimports from resolving mcp to the wrong package.
-// The import will be removed by goimports if not actually used.
-func ensureMCPImport(src []byte) []byte {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "", src, parser.ParseComments)
-	if err != nil {
-		return src
-	}
-
-	astutil.AddImport(fset, f, mcpSDKImport)
-
-	var buf bytes.Buffer
-	if err := printer.Fprint(&buf, fset, f); err != nil {
-		return src
-	}
-
-	return buf.Bytes()
-}
-
-// formatImportChanges generates a message describing which imports were added/removed.
-func formatImportChanges(filename string, origImports, newImports map[string]bool) string {
-	var added, removed []string
-
-	for pkg := range newImports {
-		if !origImports[pkg] {
-			added = append(added, pkg)
-		}
-	}
-	for pkg := range origImports {
-		if !newImports[pkg] {
-			removed = append(removed, pkg)
-		}
-	}
-
-	if len(added) == 0 && len(removed) == 0 {
-		return ""
-	}
-
-	sort.Strings(added)
-	sort.Strings(removed)
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("\n\nNote: Imports in %s were auto-corrected.", filename))
-	if len(added) > 0 {
-		sb.WriteString(fmt.Sprintf("\n  Added: %s", strings.Join(added, ", ")))
-	}
-	if len(removed) > 0 {
-		sb.WriteString(fmt.Sprintf("\n  Removed: %s", strings.Join(removed, ", ")))
-	}
-	return sb.String()
 }
