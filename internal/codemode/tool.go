@@ -27,6 +27,8 @@ type executeGoCodeInput struct {
 type ExecuteGoCodeCallback struct {
 	MaxTimeout           int
 	LargeOutputCharLimit int
+	Cwd                  string
+	SessionId            acp.SessionId
 	Conn                 *acp.AgentSideConnection
 }
 

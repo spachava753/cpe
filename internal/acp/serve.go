@@ -166,6 +166,8 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		if codeModeEnabled {
 			executeGoCodeTool := codemode.MakeTool(cfg.CodeMode.MaxTimeout)
 			callback := &codemode.ExecuteGoCodeCallback{
+				Cwd:                  runtimeOpts.cwd,
+				SessionId:            runtimeOpts.sessionId,
 				MaxTimeout:           cfg.CodeMode.MaxTimeout,
 				LargeOutputCharLimit: codemode.ResolveLargeOutputCharLimit(cfg.CodeMode.LargeOutputCharLimit, cfg.Model.ContextWindow),
 				Conn:                 runtimeOpts.conn,

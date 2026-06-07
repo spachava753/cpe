@@ -13,6 +13,7 @@ import (
 	"github.com/coder/acp-go-sdk"
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/acp/xctx"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/mapstruct"
 	"github.com/spachava753/cpe/internal/storage"
@@ -212,6 +213,7 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 				return current, nil
 			}
 			diffSnapshot := textEditDiff(tc.Name, params)
+			ctx = xctx.WithToolCallId(ctx, acp.ToolCallId(block.ID))
 			result, err := callback.Call(ctx, params)
 			if err != nil {
 				return current, err

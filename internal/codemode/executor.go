@@ -5,32 +5,31 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"maps"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
-	"syscall"
 	"text/template"
 	"time"
-	"unicode/utf8"
 
+	"github.com/coder/acp-go-sdk"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/spachava753/cpe/internal/acp/xctx"
 )
 
 const (
-	// gracePeriod is the time to wait after sending SIGINT before sending SIGKILL
-	gracePeriod = 5 * time.Second
 	// timeoutCancellationNoteTemplate is appended to output when executionTimeout triggers cancellation.
-	timeoutCancellationNoteTemplate = "execution timed out after %d seconds; context was canceled because executionTimeout was reached."
+	timeoutCancellationNoteTemplate = "execution timed out after %d seconds; context was canceled because executionTimeout was reached.\n"
 	spilledOutputFilePattern        = "cpe-code-output-*.txt"
 )
 
 //go:embed maingen.go.tmpl
 var mainTemplateSource string
+
+//go:embed go.mod.tmpl
+var goModTmplSource string
 
 // executionResult captures process output and exit metadata from sandboxed code execution.
 // Output is combined stdout/stderr and may contain truncation metadata when large-output
@@ -59,15 +58,20 @@ func (c *ExecuteGoCodeCallback) executeCode(ctx context.Context, llmCode string,
 	if err != nil {
 		return executionResult{}, fmt.Errorf("creating temp directory: %w", err)
 	}
-	cleanupDir := tempDir
-	// TODO: do we need to really need to eval symlink?
-	if realTempDir, err := filepath.EvalSymlinks(tempDir); err == nil {
-		tempDir = realTempDir
-	}
-	defer os.RemoveAll(cleanupDir)
+	defer os.RemoveAll(tempDir)
+
+	slog.DebugContext(ctx, "compilation folder", slog.String("folder", tempDir))
 
 	// Generate and write main.go
-	tmpl, err := template.New("main.go").Funcs(template.FuncMap{
+	mainFile, err := os.OpenFile(
+		filepath.Join(tempDir, "main.go"),
+		os.O_WRONLY|os.O_CREATE|os.O_EXCL,
+		0o777, // TODO: what is the right perms to use here?
+	)
+	if err != nil {
+		return executionResult{}, fmt.Errorf("could not create main.go: %w", err)
+	}
+	mainTmpl, err := template.New("main.go").Funcs(template.FuncMap{
 		"quote": func(s string) string {
 			return fmt.Sprintf("%q", s)
 		},
@@ -76,12 +80,15 @@ func (c *ExecuteGoCodeCallback) executeCode(ctx context.Context, llmCode string,
 		return executionResult{}, fmt.Errorf("parsing template: %w", err)
 	}
 
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, struct{ ContentOutputPath string }{ContentOutputPath: filepath.Join(tempDir, "content.json")}); err != nil {
+	if err := mainTmpl.Execute(
+		mainFile,
+		struct {
+			ContentOutputPath string
+		}{
+			ContentOutputPath: filepath.Join(tempDir, "content.json"),
+		},
+	); err != nil {
 		return executionResult{}, fmt.Errorf("executing template: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(tempDir, "main.go"), buf.Bytes(), 0o644); err != nil {
-		return executionResult{}, fmt.Errorf("writing main.go: %w", err)
 	}
 
 	// Write run.go (LLM-generated code)
@@ -89,19 +96,57 @@ func (c *ExecuteGoCodeCallback) executeCode(ctx context.Context, llmCode string,
 		return executionResult{}, fmt.Errorf("writing run.go: %w", err)
 	}
 
+	slog.DebugContext(ctx, "templated go code")
+
+	// Generate and write go.mod
+	goModFile, err := os.OpenFile(
+		filepath.Join(tempDir, "go.mod"),
+		os.O_WRONLY|os.O_CREATE|os.O_EXCL,
+		0o777, // TODO: what is the right perms to use here?
+	)
+	if err != nil {
+		return executionResult{}, fmt.Errorf("could not create main.go: %w", err)
+	}
+	goModTmpl, err := template.New("go.mod").Parse(goModTmplSource)
+	if err != nil {
+		return executionResult{}, fmt.Errorf("parsing template: %w", err)
+	}
+	systemGoVersion, err := c.systemGoVersion(ctx)
+	if err != nil {
+		return executionResult{}, err
+	}
+	if err := goModTmpl.Execute(
+		goModFile,
+		struct {
+			GoVersion string
+		}{
+			GoVersion: systemGoVersion,
+		}); err != nil {
+		return executionResult{}, fmt.Errorf("executing template: %w", err)
+	}
+
+	slog.DebugContext(ctx, "wrote go.mod")
+
 	// Auto-correct imports
 	importNote, err := correctFileImports(tempDir, "run.go")
 	if err != nil {
 		return executionResult{}, fmt.Errorf("error correcting imports: %w", err)
 	}
 
+	slog.DebugContext(ctx, "corrected file imports")
+
 	// Run go mod tidy
-	tidyResult, err := runCommand(ctx, tempDir, "go", "mod", "tidy")
+	tidyResult, err := c.runCommand(
+		ctx,
+		tempDir,
+		"go",
+		"mod",
+		"tidy",
+	)
 	if err != nil {
 		return executionResult{}, fmt.Errorf("running go mod tidy: %w", err)
 	}
 	tidyResult.Output += importNote
-	tidyResult = maybeSpillLargeOutput(tidyResult, c.LargeOutputCharLimit)
 	if tidyResult.ExitCode != 0 {
 		return executionResult{
 			Output:   tidyResult.Output,
@@ -109,14 +154,18 @@ func (c *ExecuteGoCodeCallback) executeCode(ctx context.Context, llmCode string,
 		}, RecoverableError{Output: tidyResult.Output, ExitCode: tidyResult.ExitCode}
 	}
 
+	slog.DebugContext(ctx, "ran go mod tidy")
+
 	// Build the binary to get accurate exit codes (go run masks them)
 	binaryPath := filepath.Join(tempDir, "program")
-	buildResult, err := runCommand(ctx, tempDir, "go", "build", "-o", binaryPath, ".")
+	buildResult, err := c.runCommand(ctx, tempDir, "go", "build", "-o", binaryPath, ".")
 	if err != nil {
 		return executionResult{}, fmt.Errorf("running go build: %w", err)
 	}
+
+	slog.DebugContext(ctx, "ran generated program")
+
 	buildResult.Output += importNote
-	buildResult = maybeSpillLargeOutput(buildResult, c.LargeOutputCharLimit)
 	if buildResult.ExitCode != 0 {
 		return executionResult{
 			Output:   buildResult.Output,
@@ -127,9 +176,8 @@ func (c *ExecuteGoCodeCallback) executeCode(ctx context.Context, llmCode string,
 	// Execute the built binary with timeout and graceful shutdown.
 	// Only build-time steps use the temporary workspace. The generated program
 	// itself runs with the normal inherited environment.
-	result, err := runProgramWithTimeout(ctx, binaryPath, timeout, nil)
-	result.Output += importNote
-	result = maybeSpillLargeOutput(result, c.LargeOutputCharLimit)
+	result, err := c.runProgramWithTimeout(ctx, binaryPath, timeout)
+	result.Output = importNote + result.Output
 	if err != nil {
 		return result, err
 	}
@@ -153,34 +201,29 @@ func (c *ExecuteGoCodeCallback) executeCode(ctx context.Context, llmCode string,
 	return result, classifyExitCode(result)
 }
 
-// mergeEnv applies KEY=VALUE overrides on top of base environment entries and
-// returns a sorted environment slice for deterministic command invocation.
-func mergeEnv(base []string, overrides map[string]string) []string {
-	if len(overrides) == 0 {
-		return base
+// systemGoVersion returns the version of the go executable resolved from PATH.
+// The returned value is normalized for go.mod directives, for example "1.26.0".
+func (c *ExecuteGoCodeCallback) systemGoVersion(ctx context.Context) (string, error) {
+	cmd := exec.CommandContext(ctx, "go", "env", "GOVERSION")
+
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("getting system go version: %w: %s", err, strings.TrimSpace(output.String()))
 	}
 
-	merged := make(map[string]string, len(base)+len(overrides))
-	for _, entry := range base {
-		parts := strings.SplitN(entry, "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		merged[parts[0]] = parts[1]
+	version := strings.TrimSpace(output.String())
+	if version == "" {
+		return "", fmt.Errorf("getting system go version: go env GOVERSION returned empty output")
 	}
-	maps.Copy(merged, overrides)
-
-	result := make([]string, 0, len(merged))
-	for key, value := range merged {
-		result = append(result, key+"="+value)
-	}
-	sort.Strings(result)
-	return result
+	return strings.TrimPrefix(version, "go"), nil
 }
 
 // runCommand executes a command in dir with merged environment overrides.
 // Exit errors are encoded in ExecutionResult.ExitCode; launch/context errors are returned directly.
-func runCommand(ctx context.Context, dir string, name string, args ...string) (executionResult, error) {
+func (c *ExecuteGoCodeCallback) runCommand(ctx context.Context, dir string, name string, args ...string) (executionResult, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 
@@ -210,173 +253,148 @@ func runCommand(ctx context.Context, dir string, name string, args ...string) (e
 // runProgramWithTimeout executes the compiled binary under executionTimeout semantics.
 // On cancellation, it sends SIGINT first, allows gracePeriod for cleanup, then SIGKILL if needed.
 // When executionTimeout triggers cancellation, a cancellation note is appended to stdout/stderr output.
-func runProgramWithTimeout(ctx context.Context, binaryPath string, timeoutSecs int, envOverrides map[string]string) (executionResult, error) {
+func (c *ExecuteGoCodeCallback) runProgramWithTimeout(
+	ctx context.Context,
+	binaryPath string,
+	timeoutSecs int,
+) (executionResult, error) {
 	if err := ctx.Err(); err != nil {
 		return executionResult{}, err
 	}
 
-	cmd := exec.CommandContext(context.WithoutCancel(ctx), binaryPath)
-	cmd.Env = mergeEnv(os.Environ(), envOverrides)
-
-	var output bytes.Buffer
-	cmd.Stdout = &output
-	cmd.Stderr = &output
-
-	if err := cmd.Start(); err != nil {
+	creatTermResp, err := c.Conn.CreateTerminal(ctx, acp.CreateTerminalRequest{
+		Command:         binaryPath,
+		Cwd:             new(c.Cwd),
+		OutputByteLimit: &c.LargeOutputCharLimit,
+		SessionId:       c.SessionId,
+	})
+	if err != nil {
 		return executionResult{}, err
 	}
 
-	waitCh := make(chan error, 1)
-	go func() {
-		waitCh <- cmd.Wait()
+	termId := creatTermResp.TerminalId
+
+	defer func() {
+		// since context *could* canceled here, we need to create
+		// a new context that isn't cancelled, but still has a
+		// deadline so release request doesn't take forever
+		// if stuck
+		rctx := context.WithoutCancel(ctx)
+		var cancel context.CancelFunc
+		rctx, cancel = context.WithTimeout(rctx, 1*time.Second)
+		_, err := c.Conn.ReleaseTerminal(rctx, acp.ReleaseTerminalRequest{
+			SessionId:  c.SessionId,
+			TerminalId: termId,
+		})
+		cancel()
+		if err != nil {
+			slog.ErrorContext(context.WithoutCancel(ctx), "could not release terminal", slog.Any("err", err))
+		}
 	}()
 
-	timer := time.NewTimer(time.Duration(timeoutSecs) * time.Second)
-	defer timer.Stop()
+	// send in progress update for toolcall
+	c.Conn.SessionUpdate(ctx, acp.SessionNotification{
+		SessionId: c.SessionId,
+		Update: acp.UpdateToolCall(
+			xctx.ToolCallIdFrom(ctx),
+			acp.WithUpdateKind(acp.ToolKindExecute),
+			acp.WithUpdateStatus(acp.ToolCallStatusInProgress),
+			acp.WithUpdateContent([]acp.ToolCallContent{
+				acp.ToolTerminalRef(termId),
+			}),
+		),
+	})
 
-	timedOut := false
-	var err error
+	errChan := make(chan error)
+	go func() {
+		_, err := c.Conn.WaitForTerminalExit(ctx, acp.WaitForTerminalExitRequest{
+			SessionId:  c.SessionId,
+			TerminalId: termId,
+		})
+		errChan <- err
+		close(errChan)
+	}()
 
+	var timedOut, killTerminal bool
 	select {
-	case err = <-waitCh:
-	case <-timer.C:
+	case <-time.After(time.Duration(timeoutSecs) * time.Second):
 		timedOut = true
-		err = interruptThenWait(cmd, waitCh)
+		killTerminal = true
+		slog.InfoContext(
+			ctx,
+			"execution timed out",
+			slog.Int("timeout", timeoutSecs),
+		)
 	case <-ctx.Done():
-		err = interruptThenWait(cmd, waitCh)
-	}
-
-	result := executionResult{
-		Output:   output.String(),
-		ExitCode: 0,
-	}
-
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			result.ExitCode = exitErr.ExitCode()
-		} else {
-			// Non-exit error (e.g., binary not found, signaling failure)
-			return result, err
+		err = ctx.Err()
+		killTerminal = true
+		slog.DebugContext(ctx, "context canceled")
+	case err = <-errChan:
+		// this is the only case where we don't need to kill
+		// the terminal, but we did get an error trying to
+		// wait for terminal to exit, unrecoverable
+		if err != nil {
+			return executionResult{}, err
 		}
 	}
+
+	// TODO: create synctest tests to test concurrency semantics here
+	if killTerminal {
+		slog.DebugContext(ctx, "killing terminal")
+		// since context *could* canceled here, we need to create
+		// a new context that isn't cancelled, but still has a
+		// deadline so kill terminal request doesn't take forever
+		// if stuck
+		kctx := context.WithoutCancel(ctx)
+		var cancel context.CancelFunc
+		kctx, cancel = context.WithTimeout(kctx, 1*time.Second)
+		_, err = c.Conn.KillTerminal(kctx, acp.KillTerminalRequest{
+			SessionId:  c.SessionId,
+			TerminalId: termId,
+		})
+		cancel()
+		if err != nil {
+			return executionResult{}, err
+		}
+
+		// because we had to forcefully kill the terminal due
+		// to context cancel or timeout, make sure that the
+		// terminal wait goroutine returns
+		if err := <-errChan; err != nil {
+			return executionResult{}, err
+		}
+	}
+
+	// since we killed the terminal, or it finished, we can get the output
+	termOutputResp, err := c.Conn.TerminalOutput(ctx, acp.TerminalOutputRequest{
+		SessionId:  c.SessionId,
+		TerminalId: termId,
+	})
+	if err != nil {
+		return executionResult{}, err
+	}
+
+	var result executionResult
+	if termOutputResp.ExitStatus != nil &&
+		termOutputResp.ExitStatus.ExitCode != nil {
+		result.ExitCode = *termOutputResp.ExitStatus.ExitCode
+	}
+
+	var sb strings.Builder
 
 	if timedOut {
-		result.Output = appendTimeoutCancellationNote(result.Output, timeoutSecs)
+		fmt.Fprintf(&sb, timeoutCancellationNoteTemplate, timeoutSecs)
+		sb.WriteRune('\n')
 	}
+	if termOutputResp.Truncated {
+		sb.WriteString("NOTE: output beginning was truncated\n\n")
+	}
+
+	sb.WriteString(termOutputResp.Output)
+
+	result.Output = sb.String()
 
 	return result, nil
-}
-
-func interruptThenWait(cmd *exec.Cmd, waitCh <-chan error) error {
-	if cmd.Process == nil {
-		return <-waitCh
-	}
-
-	if err := cmd.Process.Signal(syscall.SIGINT); err != nil && !isProcessDoneError(err) {
-		return err
-	}
-
-	graceTimer := time.NewTimer(gracePeriod)
-	defer graceTimer.Stop()
-
-	select {
-	case err := <-waitCh:
-		return err
-	case <-graceTimer.C:
-		if err := cmd.Process.Kill(); err != nil && !isProcessDoneError(err) {
-			return err
-		}
-		return <-waitCh
-	}
-}
-
-func isProcessDoneError(err error) bool {
-	return errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH)
-}
-
-// appendTimeoutCancellationNote appends a stable timeout hint used by the agent loop
-// to explain why execution stopped.
-func appendTimeoutCancellationNote(output string, timeoutSecs int) string {
-	note := fmt.Sprintf(timeoutCancellationNoteTemplate, timeoutSecs)
-	if output == "" {
-		return note
-	}
-	if strings.HasSuffix(output, "\n") {
-		return output + note
-	}
-	return output + "\n" + note
-}
-
-// maybeSpillLargeOutput truncates oversized output to a preview and persists full output
-// to a temp file so model context stays bounded while preserving debuggability.
-func maybeSpillLargeOutput(result executionResult, charLimit int) executionResult {
-	if charLimit <= 0 || result.Output == "" {
-		return result
-	}
-
-	outputChars := utf8.RuneCountInString(result.Output)
-	if outputChars <= charLimit {
-		return result
-	}
-
-	preview := firstNChars(result.Output, charLimit)
-	spillPath, spillErr := spillOutputToDisk(result.Output)
-	result.Output = formatSpilledOutputMessage(outputChars, charLimit, preview, spillPath, spillErr)
-	return result
-}
-
-// spillOutputToDisk writes full tool output to a temp file and returns the file path.
-func spillOutputToDisk(output string) (string, error) {
-	f, err := os.CreateTemp("", spilledOutputFilePattern)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	if _, err := f.WriteString(output); err != nil {
-		return "", err
-	}
-
-	return f.Name(), nil
-}
-
-// firstNChars returns a rune-safe prefix used for previewing truncated output.
-func firstNChars(s string, n int) string {
-	if n <= 0 {
-		return ""
-	}
-	if utf8.RuneCountInString(s) <= n {
-		return s
-	}
-	return string([]rune(s)[:n])
-}
-
-// formatSpilledOutputMessage builds the warning shown to the model when output was truncated.
-func formatSpilledOutputMessage(totalChars, charLimit int, preview, spillPath string, spillErr error) string {
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("WARNING: tool result exceeded character limit (%d characters > %d).\n", totalChars, charLimit))
-
-	if spillErr != nil {
-		b.WriteString(fmt.Sprintf("Failed to persist full output to disk: %v\n", spillErr))
-	} else {
-		b.WriteString(fmt.Sprintf("Full output stored at: %s\n", spillPath))
-	}
-
-	b.WriteString(fmt.Sprintf("\nPreview (first %d characters):\n", charLimit))
-	b.WriteString("---\n")
-	b.WriteString(preview)
-	if preview != "" && !strings.HasSuffix(preview, "\n") {
-		b.WriteString("\n")
-	}
-	b.WriteString("---\n")
-
-	if spillErr == nil {
-		b.WriteString("\nThe preview is truncated at the configured character limit. Read the file above for the remaining output.")
-	} else {
-		b.WriteString("\nThe preview is truncated at the configured character limit. Full output could not be persisted; re-run with more focused output.")
-	}
-
-	return b.String()
 }
 
 // classifyExitCode maps sandbox process exits to agent-facing error classes.

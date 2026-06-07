@@ -137,7 +137,12 @@ func TestPromptHandlesCompactedDialogShorterThanInput(t *testing.T) {
 	clientConn := fixture.ClientConn
 	store = fixture.Store
 
-	_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{ProtocolVersion: acp.ProtocolVersionNumber})
+	_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersionNumber,
+		ClientCapabilities: acp.ClientCapabilities{
+			Terminal: true,
+		},
+	})
 	be.Err(t, err, nil)
 	newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
 	be.Err(t, err, nil)
@@ -230,7 +235,7 @@ func TestPromptTextEditToolResultIncludesDiff(t *testing.T) {
 				ReadTextFile:  false,
 				WriteTextFile: false,
 			},
-			Terminal: false,
+			Terminal: true,
 		},
 		ClientInfo: &acp.Implementation{
 			Name:    "test-client",
@@ -383,7 +388,7 @@ func TestPrompt(t *testing.T) {
 				ReadTextFile:  false,
 				WriteTextFile: false,
 			},
-			Terminal: false,
+			Terminal: true,
 		},
 		ClientInfo: &acp.Implementation{
 			Name:    "test-client",

@@ -56,7 +56,7 @@ func TestInit(t *testing.T) {
 				ReadTextFile:  false,
 				WriteTextFile: false,
 			},
-			Terminal: false,
+			Terminal: true,
 		},
 		ClientInfo: &acp.Implementation{
 			Name:    "test-client",
@@ -115,7 +115,7 @@ func TestListSessions(t *testing.T) {
 				ReadTextFile:  false,
 				WriteTextFile: false,
 			},
-			Terminal: false,
+			Terminal: true,
 		},
 		ClientInfo: &acp.Implementation{
 			Name:    "test-client",
@@ -178,7 +178,7 @@ func TestNewSession(t *testing.T) {
 				ReadTextFile:  false,
 				WriteTextFile: false,
 			},
-			Terminal: false,
+			Terminal: true,
 		},
 		ClientInfo: &acp.Implementation{
 			Name:    "test-client",
@@ -267,7 +267,7 @@ func TestResumeSession(t *testing.T) {
 					ReadTextFile:  false,
 					WriteTextFile: false,
 				},
-				Terminal: false,
+				Terminal: true,
 			},
 			ClientInfo: &acp.Implementation{
 				Name:    "test-client",
@@ -347,7 +347,7 @@ func TestResumeSession(t *testing.T) {
 					ReadTextFile:  false,
 					WriteTextFile: false,
 				},
-				Terminal: false,
+				Terminal: true,
 			},
 			ClientInfo: &acp.Implementation{
 				Name:    "test-client",
@@ -430,7 +430,7 @@ func TestResumeSession(t *testing.T) {
 					ReadTextFile:  false,
 					WriteTextFile: false,
 				},
-				Terminal: false,
+				Terminal: true,
 			},
 			ClientInfo: &acp.Implementation{
 				Name:    "test-client",
@@ -524,7 +524,7 @@ func TestLoadSession(t *testing.T) {
 				ReadTextFile:  false,
 				WriteTextFile: false,
 			},
-			Terminal: false,
+			Terminal: true,
 		},
 		ClientInfo: &acp.Implementation{
 			Name:    "test-client",
@@ -653,7 +653,7 @@ func TestLoadSessionReplaysCompactionLineage(t *testing.T) {
 				ReadTextFile:  false,
 				WriteTextFile: false,
 			},
-			Terminal: false,
+			Terminal: true,
 		},
 		ClientInfo: &acp.Implementation{
 			Name:    "test-client",
@@ -787,7 +787,7 @@ func TestCancel(t *testing.T) {
 					ReadTextFile:  false,
 					WriteTextFile: false,
 				},
-				Terminal: false,
+				Terminal: true,
 			},
 			ClientInfo: &acp.Implementation{
 				Name:    "test-client",
@@ -914,7 +914,7 @@ func TestDeleteSession(t *testing.T) {
 				ReadTextFile:  false,
 				WriteTextFile: false,
 			},
-			Terminal: false,
+			Terminal: true,
 		},
 		ClientInfo: &acp.Implementation{
 			Name:    "test-client",
@@ -1027,7 +1027,7 @@ func TestCloseSession(t *testing.T) {
 					ReadTextFile:  false,
 					WriteTextFile: false,
 				},
-				Terminal: false,
+				Terminal: true,
 			},
 			ClientInfo: &acp.Implementation{
 				Name:    "test-client",
@@ -1103,7 +1103,7 @@ func TestCloseSession(t *testing.T) {
 					ReadTextFile:  false,
 					WriteTextFile: false,
 				},
-				Terminal: false,
+				Terminal: true,
 			},
 			ClientInfo: &acp.Implementation{
 				Name:    "test-client",

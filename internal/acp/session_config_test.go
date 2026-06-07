@@ -70,7 +70,7 @@ func TestSessionConfigOptions(t *testing.T) {
 					ReadTextFile:  false,
 					WriteTextFile: false,
 				},
-				Terminal: false,
+				Terminal: true,
 			},
 			ClientInfo: &acp.Implementation{
 				Name:    "test-client",
@@ -185,7 +185,7 @@ func TestSetSessionConfigOption(t *testing.T) {
 					ReadTextFile:  false,
 					WriteTextFile: false,
 				},
-				Terminal: false,
+				Terminal: true,
 			},
 			ClientInfo: &acp.Implementation{
 				Name:    "test-client",
@@ -269,7 +269,7 @@ func TestSetSessionConfigOption(t *testing.T) {
 					ReadTextFile:  false,
 					WriteTextFile: false,
 				},
-				Terminal: false,
+				Terminal: true,
 			},
 			ClientInfo: &acp.Implementation{
 				Name:    "test-client",
@@ -345,7 +345,7 @@ func TestSetSessionConfigOption(t *testing.T) {
 					ReadTextFile:  false,
 					WriteTextFile: false,
 				},
-				Terminal: false,
+				Terminal: true,
 			},
 			ClientInfo: &acp.Implementation{
 				Name:    "test-client",
@@ -416,7 +416,7 @@ func TestSetSessionConfigOption(t *testing.T) {
 					ReadTextFile:  false,
 					WriteTextFile: false,
 				},
-				Terminal: false,
+				Terminal: true,
 			},
 			ClientInfo: &acp.Implementation{
 				Name:    "test-client",
@@ -543,7 +543,7 @@ func TestSetSessionConfigOptionDuringPrompt(t *testing.T) {
 				ReadTextFile:  false,
 				WriteTextFile: false,
 			},
-			Terminal: false,
+			Terminal: true,
 		},
 		ClientInfo: &acp.Implementation{
 			Name:    "test-client",

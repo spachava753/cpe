@@ -18,6 +18,8 @@ import (
 
 type runtimeOpts struct {
 	conn       *acp.AgentSideConnection
+	sessionId  acp.SessionId
+	cwd        string
 	modelRef   string
 	mcpServers []acp.McpServer
 }
@@ -80,7 +82,7 @@ func (a *Agent) Initialize(
 	ctx context.Context,
 	params acp.InitializeRequest,
 ) (acp.InitializeResponse, error) {
-	return acp.InitializeResponse{
+	resp := acp.InitializeResponse{
 		ProtocolVersion: acp.ProtocolVersionNumber,
 		AgentInfo: &acp.Implementation{
 			Name:    "CPE",
@@ -106,7 +108,14 @@ func (a *Agent) Initialize(
 				Delete: &acp.SessionDeleteCapabilities{},
 			},
 		},
-	}, nil
+	}
+
+	// TODO: if client doesn't support terminal capabilities,
+	// then we should handle terminal rpc on our own
+	if !params.ClientCapabilities.Terminal {
+		return resp, errors.New("expected terminal capabilities")
+	}
+	return resp, nil
 }
 
 // Prompt implements [acp.Agent].
@@ -127,6 +136,8 @@ func (a *Agent) Prompt(
 		}
 		var err error
 		t.runtime, err = a.runtimeFactory(runtimeOpts{
+			sessionId:  params.SessionId,
+			cwd:        t.cwd,
 			conn:       a.conn,
 			modelRef:   t.modelRef,
 			mcpServers: t.mcpServers,
@@ -169,6 +180,8 @@ func (a *Agent) Prompt(
 		if t.runtime == nil {
 			runtime, err := a.runtimeFactory(runtimeOpts{
 				conn:       a.conn,
+				cwd:        t.cwd,
+				sessionId:  params.SessionId,
 				modelRef:   t.modelRef,
 				mcpServers: t.mcpServers,
 			})

@@ -22,6 +22,7 @@ type acpRuntime interface {
 // while not described in the protocol, sessions may be
 // accessed and mutated in parallel
 type session struct {
+	cwd           string
 	modelRef      string
 	thinkingLevel string
 	mcpServers    []acp.McpServer
@@ -51,6 +52,7 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		thinkingVal = a.rawCfg.Models[0].ThinkingValues[0].Value
 	}
 	s := session{
+		cwd:           params.Cwd,
 		modelRef:      modelRef,
 		thinkingLevel: thinkingVal,
 		mcpServers:    params.McpServers,
@@ -88,6 +90,7 @@ func (a *Agent) ListSessions(ctx context.Context, params acp.ListSessionsRequest
 func (a *Agent) loadActiveSession(
 	ctx context.Context,
 	sessionId acp.SessionId,
+	cwd string,
 	mcpServers []acp.McpServer,
 ) ([]acp.SessionConfigOption, error) {
 	// TODO: should we always load from db? Maybe be better, especially since config can change
@@ -135,6 +138,7 @@ func (a *Agent) loadActiveSession(
 			return nil, fmt.Errorf("could not create runtime: %v", err)
 		}
 		s := session{
+			cwd:           cwd,
 			modelRef:      modelRef,
 			thinkingLevel: thinkingLevel,
 			mcpServers:    mcpServers,
@@ -169,6 +173,7 @@ func (a *Agent) loadActiveSession(
 	}
 
 	s := session{
+		cwd:           cwd,
 		modelRef:      getSessionResp.ModelRef,
 		thinkingLevel: thinkingLevel,
 		runtime:       runtime,
@@ -179,7 +184,7 @@ func (a *Agent) loadActiveSession(
 
 // ResumeSession implements [acp.Agent].
 func (a *Agent) ResumeSession(ctx context.Context, params acp.ResumeSessionRequest) (acp.ResumeSessionResponse, error) {
-	opts, err := a.loadActiveSession(ctx, params.SessionId, params.McpServers)
+	opts, err := a.loadActiveSession(ctx, params.SessionId, params.Cwd, params.McpServers)
 	if err != nil {
 		return acp.ResumeSessionResponse{}, fmt.Errorf("could not resume session: %v", err)
 	}
@@ -190,7 +195,7 @@ func (a *Agent) ResumeSession(ctx context.Context, params acp.ResumeSessionReque
 
 // LoadSession implements [acp.AgentLoader].
 func (a *Agent) LoadSession(ctx context.Context, params acp.LoadSessionRequest) (acp.LoadSessionResponse, error) {
-	opts, err := a.loadActiveSession(ctx, params.SessionId, params.McpServers)
+	opts, err := a.loadActiveSession(ctx, params.SessionId, params.Cwd, params.McpServers)
 	if err != nil {
 		return acp.LoadSessionResponse{}, fmt.Errorf("could not load session: %v", err)
 	}

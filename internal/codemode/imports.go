@@ -91,22 +91,34 @@ func diff(a, b []string) string {
 		}
 	}
 
+	var additions, deletions []string
 	var sb strings.Builder
-	sb.WriteString("imports adjusted:\n")
+
 	// a - intersection = imports removed
 	for i := range aSet {
 		if _, ok := intersection[i]; !ok {
-			sb.WriteString(`- `)
-			sb.WriteString(i)
+			deletions = append(deletions, i)
 		}
 	}
 	// b - intersection = imports added
 	for i := range bSet {
 		if _, ok := intersection[i]; !ok {
-			sb.WriteString(`+ `)
-			sb.WriteString(i)
+			additions = append(additions, i)
 		}
 	}
+
+	if len(additions) > 0 || len(deletions) > 0 {
+		sb.WriteString("imports adjusted:\n")
+		for _, d := range deletions {
+			sb.WriteString(`- `)
+			sb.WriteString(d)
+		}
+		for _, ad := range additions {
+			sb.WriteString(`+ `)
+			sb.WriteString(ad)
+		}
+	}
+
 	return sb.String()
 }
 
