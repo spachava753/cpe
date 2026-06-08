@@ -13,7 +13,6 @@ import (
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/config"
-	"github.com/spachava753/cpe/internal/mapstruct"
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/textedit"
 )
@@ -70,27 +69,6 @@ func (g *scriptedPromptTestGenerator) Register(tool gai.Tool) error {
 }
 
 var _ gai.ToolCallingGenerator = (*scriptedPromptTestGenerator)(nil)
-
-type textEditTestCallback struct{}
-
-func (textEditTestCallback) Call(ctx context.Context, parameters map[string]any) (gai.Message, error) {
-	input, err := mapstruct.Map2Struct[textedit.Input](parameters)
-	if err != nil {
-		return gai.Message{}, err
-	}
-	output, err := textedit.Apply(input)
-	if err != nil {
-		return gai.Message{
-			Role:            gai.ToolResult,
-			ToolResultError: true,
-			Blocks:          []gai.Block{gai.TextBlock(err.Error())},
-		}, nil
-	}
-	return gai.Message{
-		Role:   gai.ToolResult,
-		Blocks: []gai.Block{gai.TextBlock(output.Message())},
-	}, nil
-}
 
 func TestPromptHandlesCompactedDialogShorterThanInput(t *testing.T) {
 	var store *storage.Sqlite
@@ -220,7 +198,8 @@ func TestPromptTextEditToolResultIncludesDiff(t *testing.T) {
 				Cfg:         config.Config{Model: config.Model{Ref: "test-model"}},
 				conn:        opts.conn,
 			}
-			if err := loop.Register(gai.Tool{Name: textedit.ToolName}, textEditTestCallback{}); err != nil {
+			tool, callback := textedit.MakeTool(opts.sessionId, opts.conn)
+			if err := loop.Register(tool, callback); err != nil {
 				return nil, err
 			}
 			return promptTestRuntime{Loop: loop}, nil

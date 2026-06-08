@@ -8,9 +8,11 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/coder/acp-go-sdk"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/acp/xctx"
 	"github.com/spachava753/cpe/internal/httpclient"
 	"github.com/spachava753/cpe/internal/mcpconfig"
 	"github.com/spachava753/cpe/internal/version"
@@ -115,9 +117,15 @@ func FilterMcpTools(tools []*mcp.Tool, config mcpconfig.ServerConfig) ([]*mcp.To
 	return tools, nil
 }
 
+type sessionUpdator interface {
+	SessionUpdate(ctx context.Context, params acp.SessionNotification) error
+}
+
 // ToolCallback adapts one MCP tool into gai.ToolCallback invocation semantics.
 // It is bound to a specific server session and tool name.
 type ToolCallback struct {
+	Conn          sessionUpdator
+	SessionId     acp.SessionId
 	ClientSession *mcp.ClientSession
 	ToolName      string
 	ServerName    string
@@ -132,11 +140,34 @@ func (c *ToolCallback) Call(ctx context.Context, parameters map[string]any) (gai
 	callCtx, cancel := WithServerTimeout(ctx, c.ServerConfig)
 	defer cancel()
 
+	_ = c.Conn.SessionUpdate(ctx, acp.SessionNotification{
+		SessionId: c.SessionId,
+		Update: acp.UpdateToolCall(
+			xctx.ToolCallIdFrom(ctx),
+			acp.WithUpdateKind(acp.ToolKindOther),
+			acp.WithUpdateStatus(acp.ToolCallStatusInProgress),
+			acp.WithUpdateRawInput(parameters),
+		),
+	})
+
+	failedUpdate := func(text string) {
+		_ = c.Conn.SessionUpdate(ctx, acp.SessionNotification{
+			SessionId: c.SessionId,
+			Update: acp.UpdateToolCall(
+				xctx.ToolCallIdFrom(ctx),
+				acp.WithUpdateStatus(acp.ToolCallStatusFailed),
+				acp.WithUpdateContent([]acp.ToolCallContent{acp.ToolContent(acp.TextBlock(text))}),
+			),
+		})
+	}
+
 	result, err := c.ClientSession.CallTool(callCtx, &mcp.CallToolParams{
 		Name:      c.ToolName,
 		Arguments: parameters,
 	})
 	if err != nil {
+		errText := fmt.Sprintf("Error calling MCP tool %s/%s: %v", c.ServerName, c.ToolName, err)
+		failedUpdate(errText)
 		return gai.Message{
 			Role: gai.ToolResult,
 			Blocks: []gai.Block{
@@ -144,7 +175,7 @@ func (c *ToolCallback) Call(ctx context.Context, parameters map[string]any) (gai
 					BlockType:    gai.Content,
 					ModalityType: gai.Text,
 					MimeType:     "text/plain",
-					Content:      gai.Str(fmt.Sprintf("Error calling MCP tool %s/%s: %v", c.ServerName, c.ToolName, err)),
+					Content:      gai.Str(errText),
 				},
 			},
 		}, nil
@@ -168,20 +199,58 @@ func (c *ToolCallback) Call(ctx context.Context, parameters map[string]any) (gai
 		case *mcp.AudioContent:
 			block = gai.AudioBlock(c.Data, c.MIMEType)
 		case *mcp.ResourceLink:
-			return gai.Message{}, fmt.Errorf("cannot handle resource links in tool call result")
+			errText := "cannot handle resource links in tool call result"
+			failedUpdate(errText)
+			return gai.Message{}, fmt.Errorf("%s", errText)
 		case *mcp.EmbeddedResource:
-			return gai.Message{}, fmt.Errorf("cannot handle embedded resources in tool call result")
+			errText := "cannot handle embedded resources in tool call result"
+			failedUpdate(errText)
+			return gai.Message{}, fmt.Errorf("%s", errText)
 		default:
-			return gai.Message{}, fmt.Errorf("cannot handle tool call result content type %T", content)
+			errText := fmt.Sprintf("cannot handle tool call result content type %T", content)
+			failedUpdate(errText)
+			return gai.Message{}, fmt.Errorf("%s", errText)
 		}
 
 		blocks = append(blocks, block)
 	}
 
-	return gai.Message{
-		Role:   gai.ToolResult,
-		Blocks: blocks,
-	}, nil
+	resultMsg := gai.Message{
+		Role:            gai.ToolResult,
+		Blocks:          blocks,
+		ToolResultError: result.IsError,
+	}
+
+	status := acp.ToolCallStatusCompleted
+	if result.IsError {
+		status = acp.ToolCallStatusFailed
+	}
+
+	acpBlocks := make([]acp.ToolCallContent, len(blocks))
+	for i, b := range blocks {
+		var contentBlock acp.ContentBlock
+		content := b.Content.String()
+		switch b.ModalityType {
+		case gai.Image:
+			contentBlock = acp.ImageBlock(content, b.MimeType)
+		case gai.Audio:
+			contentBlock = acp.AudioBlock(content, b.MimeType)
+		default:
+			contentBlock = acp.TextBlock(content)
+		}
+		acpBlocks[i] = acp.ToolContent(contentBlock)
+	}
+
+	_ = c.Conn.SessionUpdate(ctx, acp.SessionNotification{
+		SessionId: c.SessionId,
+		Update: acp.UpdateToolCall(
+			xctx.ToolCallIdFrom(ctx),
+			acp.WithUpdateStatus(status),
+			acp.WithUpdateContent(acpBlocks),
+		),
+	})
+
+	return resultMsg, nil
 }
 
 // CreateTransport builds the transport used during client.Connect.

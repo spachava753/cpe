@@ -140,7 +140,10 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		}
 
 		if !cfg.DisableEditTool {
-			textEditTool, textEditCallback := textedit.MakeTool()
+			textEditTool, textEditCallback := textedit.MakeTool(
+				runtimeOpts.sessionId,
+				runtimeOpts.conn,
+			)
 			if err := l.Register(textEditTool, textEditCallback); err != nil {
 				return nil, fmt.Errorf("failed to register text_edit tool: %w", err)
 			}
@@ -186,7 +189,14 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 					ca.Close()
 					return nil, fmt.Errorf("converting tool %s: %w", mcpTool.Name, err)
 				}
-				if err := l.Register(gaiTool, mcp.NewToolCallback(conn.ClientSession, serverName, mcpTool.Name, conn.Config)); err != nil {
+				if err := l.Register(gaiTool, mcp.NewToolCallback(
+					runtimeOpts.conn,
+					runtimeOpts.sessionId,
+					conn.ClientSession,
+					serverName,
+					mcpTool.Name,
+					conn.Config,
+				)); err != nil {
 					ca.Close()
 					return nil, fmt.Errorf("failed to register tool %s: %w", mcpTool.Name, err)
 				}

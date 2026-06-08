@@ -13,6 +13,7 @@ import (
 	"github.com/coder/acp-go-sdk"
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/acp/xacp"
 	"github.com/spachava753/cpe/internal/acp/xctx"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/mapstruct"
@@ -133,7 +134,7 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 			return current, err
 		}
 
-		for update := range msgToSessionUpdate(resp.Candidates[0]) {
+		for update := range xacp.MsgToSessionUpdate(resp.Candidates[0]) {
 			if err := l.conn.SessionUpdate(ctx, acp.SessionNotification{
 				SessionId: sessionID,
 				Update:    update,
@@ -166,7 +167,7 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 
 		// if compacted, len of dialog will be 1
 		if len(current) == 1 {
-			for update := range msgToSessionUpdate(current[0]) {
+			for update := range xacp.MsgToSessionUpdate(current[0]) {
 				if err := l.conn.SessionUpdate(ctx, acp.SessionNotification{
 					SessionId: sessionID,
 					Update:    update,
@@ -212,7 +213,6 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 			if callback == nil {
 				return current, nil
 			}
-			diffSnapshot := textEditDiff(tc.Name, params)
 			ctx = xctx.WithToolCallId(ctx, acp.ToolCallId(block.ID))
 			result, err := callback.Call(ctx, params)
 			if err != nil {
@@ -230,27 +230,6 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 			}
 
 			current = append(current, result)
-
-			if result.ToolResultError {
-				diffSnapshot = nil
-			}
-
-			for update := range msgToSessionUpdate(result) {
-				if diffSnapshot != nil && update.ToolCallUpdate != nil {
-					// add the diff to the last content, we pretty much
-					// know it's only going to be a text content
-					update.ToolCallUpdate.Content = append(
-						update.ToolCallUpdate.Content, acp.ToolCallContent{Diff: diffSnapshot},
-					)
-					diffSnapshot = nil
-				}
-				if err := l.conn.SessionUpdate(ctx, acp.SessionNotification{
-					SessionId: sessionID,
-					Update:    update,
-				}); err != nil {
-					return current, fmt.Errorf("send tool result session update: %w", err)
-				}
-			}
 
 			firstBlock = false
 		}

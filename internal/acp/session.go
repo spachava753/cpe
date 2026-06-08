@@ -8,6 +8,7 @@ import (
 	"github.com/coder/acp-go-sdk"
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/acp/xacp"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/sync"
@@ -219,7 +220,7 @@ func (a *Agent) LoadSession(ctx context.Context, params acp.LoadSessionRequest) 
 		dialog = append(parentDialog, dialog...)
 	}
 	for _, msg := range dialog {
-		for update := range msgToSessionUpdate(msg) {
+		for update := range xacp.MsgToSessionUpdate(msg) {
 			if err := a.conn.SessionUpdate(ctx, acp.SessionNotification{
 				SessionId: params.SessionId,
 				Update:    update,
