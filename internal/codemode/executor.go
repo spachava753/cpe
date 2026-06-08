@@ -5,6 +5,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -148,10 +149,11 @@ func (c *ExecuteGoCodeCallback) executeCode(ctx context.Context, llmCode string,
 	}
 	tidyResult.Output += importNote
 	if tidyResult.ExitCode != 0 {
+		slog.ErrorContext(ctx, "error running tidy", slog.String("output", tidyResult.Output), slog.Int("exit_code", tidyResult.ExitCode))
 		return executionResult{
 			Output:   tidyResult.Output,
 			ExitCode: tidyResult.ExitCode,
-		}, RecoverableError{Output: tidyResult.Output, ExitCode: tidyResult.ExitCode}
+		}, errors.New("error running go mod tidy")
 	}
 
 	slog.DebugContext(ctx, "ran go mod tidy")
@@ -167,10 +169,11 @@ func (c *ExecuteGoCodeCallback) executeCode(ctx context.Context, llmCode string,
 
 	buildResult.Output += importNote
 	if buildResult.ExitCode != 0 {
+		slog.ErrorContext(ctx, "error building", slog.String("output", buildResult.Output), slog.Int("exit_code", buildResult.ExitCode))
 		return executionResult{
 			Output:   buildResult.Output,
 			ExitCode: buildResult.ExitCode,
-		}, RecoverableError{Output: buildResult.Output, ExitCode: buildResult.ExitCode}
+		}, errors.New("could not build")
 	}
 
 	// Execute the built binary with timeout and graceful shutdown.
@@ -402,7 +405,7 @@ func classifyExitCode(result executionResult) error {
 	if result.ExitCode == 0 {
 		return nil
 	}
-	return RecoverableError{Output: result.Output, ExitCode: result.ExitCode}
+	return RecoverableError{Err: fmt.Errorf("exit code: %d", result.ExitCode)}
 }
 
 // contentTypeWrapper is used to peek at the type field during deserialization

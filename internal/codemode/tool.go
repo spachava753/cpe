@@ -22,6 +22,15 @@ type executeGoCodeInput struct {
 	ExecutionTimeout int    `json:"executionTimeout"`
 }
 
+type acpConn interface {
+	SessionUpdate(ctx context.Context, params acp.SessionNotification) error
+	CreateTerminal(ctx context.Context, params acp.CreateTerminalRequest) (acp.CreateTerminalResponse, error)
+	KillTerminal(ctx context.Context, params acp.KillTerminalRequest) (acp.KillTerminalResponse, error)
+	TerminalOutput(ctx context.Context, params acp.TerminalOutputRequest) (acp.TerminalOutputResponse, error)
+	ReleaseTerminal(ctx context.Context, params acp.ReleaseTerminalRequest) (acp.ReleaseTerminalResponse, error)
+	WaitForTerminalExit(ctx context.Context, params acp.WaitForTerminalExitRequest) (acp.WaitForTerminalExitResponse, error)
+}
+
 // ExecuteGoCodeCallback implements gai.ToolCallback for execute_go_code.
 // It enforces timeout/output policy and delegates execution to the sandbox pipeline.
 type ExecuteGoCodeCallback struct {
@@ -29,7 +38,7 @@ type ExecuteGoCodeCallback struct {
 	LargeOutputCharLimit int
 	Cwd                  string
 	SessionId            acp.SessionId
-	Conn                 *acp.AgentSideConnection
+	Conn                 acpConn
 }
 
 // contentToBlocks adapts MCP multimodal content into gai blocks.
@@ -84,7 +93,7 @@ func (c *ExecuteGoCodeCallback) Call(ctx context.Context, params map[string]any)
 	if err != nil {
 		if recoverable, ok := errors.AsType[RecoverableError](err); ok {
 			// Recoverable errors are returned as tool results so LLM can adapt.
-			return gai.ToolResultMessage("", gai.TextBlock(recoverable.Output)), nil
+			return gai.ToolResultMessage("", gai.TextBlock(recoverable.Error())), nil
 		}
 		// Infrastructure errors (temp dir, file writes, etc.) stop agent execution.
 		return gai.Message{}, err

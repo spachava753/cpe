@@ -1,6 +1,8 @@
 package codemode
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,6 +99,70 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 				}
 			}
 		})
+	}
+}
+
+func Test_correctFileImportsInvalidSyntaxIsRecoverable(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeGeneratedCodeModule(t, dir)
+	writeFile(t, filepath.Join(dir, "run.go"), `package main
+
+import (
+	"context"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func Run(ctx context.Context) ([]mcp.Content, error) {
+	this is not valid Go syntax
+	return nil, nil
+}
+`)
+
+	_, err := correctFileImports(dir, "run.go")
+	if err == nil {
+		t.Fatal("correctFileImports() succeeded unexpectedly")
+	}
+	if _, ok := errors.AsType[RecoverableError](err); !ok {
+		t.Fatalf("correctFileImports() error = %T %[1]v, want RecoverableError", err)
+	}
+	if !strings.Contains(err.Error(), "expected ';', found is") {
+		t.Fatalf("correctFileImports() error = %q, want syntax detail", err.Error())
+	}
+}
+
+func TestExecuteGoCodeCallInvalidSyntaxReturnsToolResult(t *testing.T) {
+	t.Parallel()
+
+	callback := &ExecuteGoCodeCallback{MaxTimeout: 5}
+	msg, err := callback.Call(context.Background(), map[string]any{
+		"code": `package main
+
+import (
+	"context"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func Run(ctx context.Context) ([]mcp.Content, error) {
+	this is not valid Go syntax
+	return nil, nil
+}
+`,
+		"executionTimeout": 1,
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v, want nil", err)
+	}
+	if len(msg.Blocks) != 1 || msg.Blocks[0].Content == nil {
+		t.Fatalf("Call() returned %#v, want one text block", msg.Blocks)
+	}
+	got := msg.Blocks[0].Content.String()
+	if !strings.Contains(got, "recoverable execution error") {
+		t.Fatalf("Call() tool result = %q, want recoverable error", got)
+	}
+	if !strings.Contains(got, "expected ';', found is") {
+		t.Fatalf("Call() tool result = %q, want syntax detail", got)
 	}
 }
 

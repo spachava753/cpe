@@ -2,8 +2,10 @@ package codemode
 
 import (
 	"bytes"
+	"errors"
 	"go/parser"
 	"go/printer"
+	"go/scanner"
 	"go/token"
 	"io"
 	"maps"
@@ -32,7 +34,7 @@ func correctFileImports(dir, filename string) (string, error) {
 
 	origImports, err := extractImports(orig)
 	if err != nil {
-		return "", err
+		return "", recoverableSyntaxError(err)
 	}
 	offset, err := orig.Seek(0, io.SeekStart)
 	if err != nil {
@@ -52,17 +54,19 @@ func correctFileImports(dir, filename string) (string, error) {
 		os.Remove(tempPath)
 	}()
 
-	ensureMCPImport(orig, tempFile)
+	if err := ensureMCPImport(orig, tempFile); err != nil {
+		return "", recoverableSyntaxError(err)
+	}
 
 	// imports will read the file contents on its own
 	newFile, err := imports.Process(orig.Name(), nil, nil)
 	if err != nil {
-		return "", err
+		return "", recoverableSyntaxError(err)
 	}
 
 	formattedImports, err := extractImports(bytes.NewReader(newFile))
 	if err != nil {
-		return "", err
+		return "", recoverableSyntaxError(err)
 	}
 
 	if _, err := tempFile.Write(newFile); err != nil {
@@ -70,6 +74,16 @@ func correctFileImports(dir, filename string) (string, error) {
 	}
 
 	return diff(origImports, formattedImports), nil
+}
+
+func recoverableSyntaxError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if el, ok := errors.AsType[scanner.ErrorList](err); ok {
+		return RecoverableError{Err: el.Err()}
+	}
+	return err
 }
 
 func diff(a, b []string) string {
