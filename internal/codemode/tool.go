@@ -9,6 +9,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/acp/xctx"
 	"github.com/spachava753/cpe/internal/mapstruct"
 )
 
@@ -66,14 +67,30 @@ func contentToBlocks(content []mcpsdk.Content) []gai.Block {
 // Recoverable execution failures are returned as ToolResult text so the model can iterate;
 // infrastructure failures are returned as Go errors to stop the run.
 func (c *ExecuteGoCodeCallback) Call(ctx context.Context, params map[string]any) (gai.Message, error) {
+	sendToolCallUpdate := func(status acp.ToolCallStatus) {
+		if c.Conn == nil {
+			return
+		}
+		c.Conn.SessionUpdate(ctx, acp.SessionNotification{
+			SessionId: c.SessionId,
+			Update: acp.UpdateToolCall(
+				xctx.ToolCallIdFrom(ctx),
+				acp.WithUpdateKind(acp.ToolKindExecute),
+				acp.WithUpdateStatus(status),
+			),
+		})
+	}
+
 	input, err := mapstruct.Map2Struct[executeGoCodeInput](params)
 	if err != nil {
 		// Return error as tool result so LLM can adapt, not as Go error that stops execution
 		//nolint:nilerr // Intentional: user/tool errors return results with nil error to allow agent recovery
+		sendToolCallUpdate(acp.ToolCallStatusFailed)
 		return gai.ToolResultMessage("", gai.TextBlock("Error parsing parameters: "+err.Error())), nil
 	}
 
 	if input.ExecutionTimeout < 1 {
+		sendToolCallUpdate(acp.ToolCallStatusFailed)
 		return gai.ToolResultMessage("", gai.TextBlock("executionTimeout must be at least 1 second")), nil
 	}
 	maxAllowedTimeout := c.MaxTimeout
@@ -81,8 +98,11 @@ func (c *ExecuteGoCodeCallback) Call(ctx context.Context, params map[string]any)
 		maxAllowedTimeout = 300
 	}
 	if input.ExecutionTimeout > maxAllowedTimeout {
+		sendToolCallUpdate(acp.ToolCallStatusFailed)
 		return gai.ToolResultMessage("", gai.TextBlock(fmt.Sprintf("executionTimeout exceeds maximum allowed (%d seconds)", maxAllowedTimeout))), nil
 	}
+
+	sendToolCallUpdate(acp.ToolCallStatusInProgress)
 
 	// Execute the code
 	result, err := c.executeCode(
@@ -93,13 +113,17 @@ func (c *ExecuteGoCodeCallback) Call(ctx context.Context, params map[string]any)
 	if err != nil {
 		if recoverable, ok := errors.AsType[RecoverableError](err); ok {
 			// Recoverable errors are returned as tool results so LLM can adapt.
+			sendToolCallUpdate(acp.ToolCallStatusFailed)
 			return gai.ToolResultMessage("", gai.TextBlock(recoverable.Error())), nil
 		}
 		// Infrastructure errors (temp dir, file writes, etc.) stop agent execution.
 		return gai.Message{}, err
 	}
 
-	// Successful execution - build response with content blocks
+	// Successful execution.
+	sendToolCallUpdate(acp.ToolCallStatusCompleted)
+
+	// build response with content blocks
 	var blocks []gai.Block
 
 	// Prepend stdout/stderr output as text block if present
