@@ -34,12 +34,15 @@ func withSessionID(ctx context.Context, sessionID acp.SessionId) context.Context
 type Loop struct {
 	G           gai.ToolCallingGenerator
 	DialogSaver storage.DialogSaver
-	Cfg         config.Config
+	// CostAdder persists per-generation cost into the ACP session so the
+	// reported cumulative cost survives new prompts, model switches, and
+	// process restarts.
+	CostAdder storage.ACPSessionCostAdder
+	Cfg       config.Config
 
 	// internal state
 	toolCallbacks      map[string]gai.ToolCallback
 	compactionRestarts int
-	cumulativeCostUSD  float64
 	conn               *acp.AgentSideConnection
 }
 
@@ -107,6 +110,9 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 	if l.DialogSaver == nil {
 		panic("DialogSaver not set")
 	}
+	if l.CostAdder == nil {
+		panic("CostAdder not set")
+	}
 
 	sessionID, ok := ctx.Value(sessionIDCtxKey{}).(acp.SessionId)
 	if !ok || sessionID == "" {
@@ -156,7 +162,11 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 				return current, fmt.Errorf("send assistant session update: %w", err)
 			}
 		}
-		if update, ok := l.usageSessionUpdate(resp.UsageMetadata); ok {
+		update, ok, err := l.usageSessionUpdate(ctx, sessionID, resp.UsageMetadata)
+		if err != nil {
+			return current, err
+		}
+		if ok {
 			if err := l.conn.SessionUpdate(ctx, acp.SessionNotification{
 				SessionId: sessionID,
 				Update:    update,
@@ -403,29 +413,40 @@ func textEditDiff(toolName string, parameters map[string]any) *acp.ToolCallConte
 	}
 }
 
-func (l *Loop) usageSessionUpdate(metadata gai.Metadata) (acp.SessionUpdate, bool) {
+// usageSessionUpdate persists the cost of a single generation into the ACP
+// session and builds the usage session update reporting context size and the
+// session's cumulative cost. Cost is persisted whenever the model pricing
+// allows calculating it, even if no usage update can be built (for example,
+// when the model has no configured context window).
+func (l *Loop) usageSessionUpdate(ctx context.Context, sessionID acp.SessionId, metadata gai.Metadata) (acp.SessionUpdate, bool, error) {
+	var cost *acp.Cost
+	if generationCost, ok := calculateUsageCostUSD(metadata, l.Cfg.Model); ok {
+		total, err := l.CostAdder.AddACPSessionCost(ctx, sessionID, generationCost)
+		if err != nil {
+			return acp.SessionUpdate{}, false, fmt.Errorf("persist session cost: %w", err)
+		}
+		cost = &acp.Cost{
+			Amount:   total,
+			Currency: "USD",
+		}
+	}
+
 	if l.Cfg.Model.ContextWindow == 0 {
-		return acp.SessionUpdate{}, false
+		return acp.SessionUpdate{}, false, nil
 	}
 
 	used, ok := contextUsedTokens(metadata)
 	if !ok {
-		return acp.SessionUpdate{}, false
+		return acp.SessionUpdate{}, false, nil
 	}
 
 	usage := acp.SessionUsageUpdate{
 		Size: int(l.Cfg.Model.ContextWindow),
 		Used: used,
-	}
-	if total, ok := calculateUsageCostUSD(metadata, l.Cfg.Model); ok {
-		l.cumulativeCostUSD += total
-		usage.Cost = &acp.Cost{
-			Amount:   l.cumulativeCostUSD,
-			Currency: "USD",
-		}
+		Cost: cost,
 	}
 
-	return acp.SessionUpdate{UsageUpdate: &usage}, true
+	return acp.SessionUpdate{UsageUpdate: &usage}, true, nil
 }
 
 func contextUsedTokens(metadata gai.Metadata) (int, bool) {

@@ -208,6 +208,9 @@ type GetACPSessionResponse struct {
 	LastMessageID string
 	ModelRef      string
 	ThinkingLevel string
+	// CostUSD is the cumulative cost in US dollars accrued by the session
+	// across all prompt turns, models, and process restarts.
+	CostUSD float64
 }
 
 // CreateACPSessionParams configures ACP session creation.
@@ -259,6 +262,13 @@ type ACPSessionThinkingLevelSetter interface {
 	// SetACPSessionThinkingLevel marks thinkingLevel as the selected reasoning
 	// effort level for sessionID.
 	SetACPSessionThinkingLevel(ctx context.Context, sessionID acp.SessionId, thinkingLevel string) error
+}
+
+// ACPSessionCostAdder accumulates an ACP session's cumulative cost.
+type ACPSessionCostAdder interface {
+	// AddACPSessionCost atomically adds costUSD (in US dollars) to the
+	// session's persisted cumulative cost and returns the updated total.
+	AddACPSessionCost(ctx context.Context, sessionID acp.SessionId, costUSD float64) (float64, error)
 }
 
 // ACPSessionGetter fetches ACP session metadata by session ID.

@@ -11,6 +11,25 @@ import (
 	"time"
 )
 
+const addSessionCost = `-- name: AddSessionCost :one
+UPDATE acp_sessions
+SET cost_usd = cost_usd + ?
+WHERE id = ?
+RETURNING cost_usd
+`
+
+type AddSessionCostParams struct {
+	CostUsd float64 `json:"cost_usd"`
+	ID      string  `json:"id"`
+}
+
+func (q *Queries) AddSessionCost(ctx context.Context, arg AddSessionCostParams) (float64, error) {
+	row := q.db.QueryRowContext(ctx, addSessionCost, arg.CostUsd, arg.ID)
+	var cost_usd float64
+	err := row.Scan(&cost_usd)
+	return cost_usd, err
+}
+
 const addSessionMessage = `-- name: AddSessionMessage :execrows
 UPDATE acp_sessions
 SET last_message_id = ?
@@ -297,6 +316,7 @@ SELECT acp_sessions.id,
        acp_sessions.title,
        acp_sessions.model_ref,
        acp_sessions.thinking_level,
+       acp_sessions.cost_usd,
        acp_sessions.created_at
 FROM acp_sessions
 WHERE acp_sessions.id = ?
@@ -312,6 +332,7 @@ func (q *Queries) GetSession(ctx context.Context, id string) (AcpSession, error)
 		&i.Title,
 		&i.ModelRef,
 		&i.ThinkingLevel,
+		&i.CostUsd,
 		&i.CreatedAt,
 	)
 	return i, err

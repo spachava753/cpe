@@ -239,6 +239,8 @@ func (a *Agent) LoadSession(ctx context.Context, params acp.LoadSessionRequest) 
 // The forked session shares the source session's persisted history: the new
 // session points at the same last message, so prompts on either session
 // diverge as separate branches of the message tree without copying rows.
+// The forked session's cumulative cost starts at zero; cost already accrued
+// by the source session is not inherited.
 // Stale stored config is resolved against the loaded config the same way
 // session resumption does. The forked session's runtime is created lazily on
 // the first prompt, like sessions created via session/new.

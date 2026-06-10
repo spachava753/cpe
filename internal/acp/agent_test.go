@@ -195,6 +195,7 @@ func TestPromptTextEditToolResultIncludesDiff(t *testing.T) {
 			loop := &Loop{
 				G:           gen,
 				DialogSaver: store,
+				CostAdder:   store,
 				Cfg:         config.Config{Model: config.Model{Ref: "test-model"}},
 				conn:        opts.conn,
 			}
@@ -344,6 +345,7 @@ func TestPrompt(t *testing.T) {
 			return promptTestRuntime{Loop: &Loop{
 				G:           gen,
 				DialogSaver: store,
+				CostAdder:   store,
 				Cfg: config.Config{Model: config.Model{
 					Ref:                  "test-model",
 					DisplayName:          "Test Model",

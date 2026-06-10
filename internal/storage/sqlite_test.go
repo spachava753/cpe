@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"iter"
+	"math"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -2488,5 +2489,125 @@ func TestListMessages_CreatedAtOrdering(t *testing.T) {
 			t.Errorf("timestamps not ascending: %q came after %q", ts, prev)
 		}
 		prev = ts
+	}
+}
+
+func TestAddACPSessionCost(t *testing.T) {
+	db, _ := newTestDB(t)
+	ctx := context.Background()
+
+	if err := db.CreateACPSession(ctx, CreateACPSessionParams{
+		Session: acp.SessionInfo{
+			Cwd:       "/tmp/cost",
+			SessionId: acp.SessionId("cost-session"),
+			Title:     new("Cost title"),
+		},
+		ModelRef: testACPModelRef,
+	}); err != nil {
+		t.Fatalf("CreateACPSession: %v", err)
+	}
+
+	resp, err := db.GetACPSession(ctx, acp.SessionId("cost-session"))
+	if err != nil {
+		t.Fatalf("GetACPSession: %v", err)
+	}
+	if resp.CostUSD != 0 {
+		t.Fatalf("CostUSD on new session: got %v, want 0", resp.CostUSD)
+	}
+
+	total, err := db.AddACPSessionCost(ctx, acp.SessionId("cost-session"), 0.5)
+	if err != nil {
+		t.Fatalf("AddACPSessionCost: %v", err)
+	}
+	if math.Abs(total-0.5) > 1e-12 {
+		t.Fatalf("total after first add: got %v, want 0.5", total)
+	}
+
+	total, err = db.AddACPSessionCost(ctx, acp.SessionId("cost-session"), 0.25)
+	if err != nil {
+		t.Fatalf("AddACPSessionCost second add: %v", err)
+	}
+	if math.Abs(total-0.75) > 1e-12 {
+		t.Fatalf("total after second add: got %v, want 0.75", total)
+	}
+
+	resp, err = db.GetACPSession(ctx, acp.SessionId("cost-session"))
+	if err != nil {
+		t.Fatalf("GetACPSession after adds: %v", err)
+	}
+	if math.Abs(resp.CostUSD-0.75) > 1e-12 {
+		t.Fatalf("CostUSD after adds: got %v, want 0.75", resp.CostUSD)
+	}
+
+	if _, err := db.AddACPSessionCost(ctx, acp.SessionId("missing-session"), 1.0); err == nil {
+		t.Fatal("AddACPSessionCost on unknown session: expected error, got nil")
+	}
+}
+
+func TestNewSqlite_MigratesACPSessionsCostColumn(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "legacy-cost.db")
+	rawDB, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	defer rawDB.Close()
+
+	ctx := context.Background()
+	// legacy schema before the cost_usd column existed
+	if _, err := rawDB.ExecContext(ctx, `
+		CREATE TABLE messages (
+			id TEXT PRIMARY KEY,
+			parent_id TEXT,
+			role TEXT NOT NULL,
+			tool_result_error BOOLEAN NOT NULL DEFAULT 0,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE acp_sessions (
+			id TEXT PRIMARY KEY,
+			last_message_id TEXT,
+			cwd TEXT NOT NULL,
+			title TEXT NOT NULL,
+			model_ref TEXT NOT NULL,
+			thinking_level TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (last_message_id) REFERENCES messages (id) ON DELETE CASCADE
+		);
+		INSERT INTO acp_sessions (id, cwd, title, model_ref)
+		VALUES ('legacy-session', '/tmp/legacy', 'Legacy title', 'gpt-5.5');
+	`); err != nil {
+		t.Fatalf("create legacy schema: %v", err)
+	}
+
+	ds, err := NewSqlite(ctx, rawDB)
+	if err != nil {
+		t.Fatalf("NewSqlite: %v", err)
+	}
+
+	var hasColumn int
+	if err := rawDB.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM pragma_table_info('acp_sessions')
+		WHERE name = 'cost_usd'
+	`).Scan(&hasColumn); err != nil {
+		t.Fatalf("check cost_usd column: %v", err)
+	}
+	if hasColumn != 1 {
+		t.Fatalf("expected cost_usd column to be created, got count=%d", hasColumn)
+	}
+
+	resp, err := ds.GetACPSession(ctx, acp.SessionId("legacy-session"))
+	if err != nil {
+		t.Fatalf("GetACPSession: %v", err)
+	}
+	if resp.CostUSD != 0 {
+		t.Fatalf("CostUSD on migrated session: got %v, want 0", resp.CostUSD)
+	}
+
+	total, err := ds.AddACPSessionCost(ctx, acp.SessionId("legacy-session"), 0.5)
+	if err != nil {
+		t.Fatalf("AddACPSessionCost: %v", err)
+	}
+	if math.Abs(total-0.5) > 1e-12 {
+		t.Fatalf("total after add: got %v, want 0.5", total)
 	}
 }

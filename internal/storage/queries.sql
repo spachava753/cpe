@@ -185,6 +185,12 @@ UPDATE acp_sessions
 SET thinking_level = ?
 WHERE id = ?;
 
+-- name: AddSessionCost :one
+UPDATE acp_sessions
+SET cost_usd = cost_usd + ?
+WHERE id = ?
+RETURNING cost_usd;
+
 -- name: GetSession :one
 SELECT acp_sessions.id,
        acp_sessions.last_message_id,
@@ -192,6 +198,7 @@ SELECT acp_sessions.id,
        acp_sessions.title,
        acp_sessions.model_ref,
        acp_sessions.thinking_level,
+       acp_sessions.cost_usd,
        acp_sessions.created_at
 FROM acp_sessions
 WHERE acp_sessions.id = ?;

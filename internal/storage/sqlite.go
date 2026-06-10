@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
 	"math"
@@ -72,6 +73,9 @@ func NewSqlite(ctx context.Context, db DB, opts ...SqliteOption) (*Sqlite, error
 		return nil, fmt.Errorf("failed to migrate schema: %w", err)
 	}
 	if err := migrateMessagesMetadataColumns(ctx, db); err != nil {
+		return nil, fmt.Errorf("failed to migrate schema: %w", err)
+	}
+	if err := migrateACPSessionsCostColumn(ctx, db); err != nil {
 		return nil, fmt.Errorf("failed to migrate schema: %w", err)
 	}
 
@@ -243,6 +247,29 @@ func migrateMessagesMetadataColumns(ctx context.Context, db DB) error {
 		if _, err := db.ExecContext(ctx, query); err != nil {
 			return fmt.Errorf("failed to add %s column: %w", column.name, err)
 		}
+	}
+	return nil
+}
+
+func migrateACPSessionsCostColumn(ctx context.Context, db DB) error {
+	hasSessions, err := hasTable(ctx, db, "acp_sessions")
+	if err != nil {
+		return err
+	}
+	if !hasSessions {
+		return nil
+	}
+
+	hasCost, err := hasColumn(ctx, db, "acp_sessions", "cost_usd")
+	if err != nil {
+		return err
+	}
+	if hasCost {
+		return nil
+	}
+
+	if _, err := db.ExecContext(ctx, "ALTER TABLE acp_sessions ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0"); err != nil {
+		return fmt.Errorf("failed to add cost_usd column: %w", err)
 	}
 	return nil
 }
@@ -928,6 +955,22 @@ func (s *Sqlite) SetACPSessionThinkingLevel(ctx context.Context, sessionID acp.S
 	return nil
 }
 
+// AddACPSessionCost atomically adds costUSD (in US dollars) to an ACP
+// session's persisted cumulative cost and returns the updated total.
+func (s *Sqlite) AddACPSessionCost(ctx context.Context, sessionID acp.SessionId, costUSD float64) (float64, error) {
+	total, err := s.q.AddSessionCost(ctx, sqlcgen.AddSessionCostParams{
+		CostUsd: costUSD,
+		ID:      string(sessionID),
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, fmt.Errorf("ACP session %s not found", sessionID)
+		}
+		return 0, fmt.Errorf("failed to add cost to ACP session %s: %w", sessionID, err)
+	}
+	return total, nil
+}
+
 // GetACPSession returns ACP session metadata and its latest persisted message
 // ID.
 //
@@ -943,6 +986,7 @@ func (s *Sqlite) GetACPSession(ctx context.Context, sessionID acp.SessionId) (Ge
 		LastMessageID: row.LastMessageID.String,
 		ModelRef:      row.ModelRef,
 		ThinkingLevel: row.ThinkingLevel,
+		CostUSD:       row.CostUsd,
 	}, nil
 }
 

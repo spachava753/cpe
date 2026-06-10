@@ -130,6 +130,7 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 
 		l := Loop{
 			DialogSaver: sqliteStorage,
+			CostAdder:   sqliteStorage,
 			Cfg:         cfg,
 			G:           gen,
 			conn:        runtimeOpts.conn,
