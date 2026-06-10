@@ -96,3 +96,63 @@ func TestLoopUsageSessionUpdate(t *testing.T) {
 		})
 	}
 }
+
+func TestLoopEffectiveGenOpts(t *testing.T) {
+	tests := []struct {
+		name      string
+		cfgParams *gai.GenOpts
+		override  *gai.GenOpts
+		want      *gai.GenOpts
+	}{
+		{
+			name: "both nil returns nil",
+		},
+		{
+			name:      "config params apply when no override",
+			cfgParams: &gai.GenOpts{MaxGenerationTokens: new(32000), ThinkingBudget: "low"},
+			want:      &gai.GenOpts{MaxGenerationTokens: new(32000), ThinkingBudget: "low"},
+		},
+		{
+			name:     "override applies when no config params",
+			override: &gai.GenOpts{ThinkingBudget: "high"},
+			want:     &gai.GenOpts{ThinkingBudget: "high"},
+		},
+		{
+			name:      "override wins over config without dropping config fields",
+			cfgParams: &gai.GenOpts{MaxGenerationTokens: new(32000), ThinkingBudget: "low"},
+			override:  &gai.GenOpts{ThinkingBudget: "high"},
+			want:      &gai.GenOpts{MaxGenerationTokens: new(32000), ThinkingBudget: "high"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := Loop{Cfg: config.Config{GenerationParams: tt.cfgParams}}
+			got := l.effectiveGenOpts(tt.override)
+			if tt.want == nil {
+				if got != nil {
+					t.Fatalf("effectiveGenOpts() = %#v, want nil", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatal("effectiveGenOpts() is nil")
+			}
+			if got.ThinkingBudget != tt.want.ThinkingBudget {
+				t.Fatalf("ThinkingBudget = %q, want %q", got.ThinkingBudget, tt.want.ThinkingBudget)
+			}
+			if tt.want.MaxGenerationTokens == nil {
+				if got.MaxGenerationTokens != nil {
+					t.Fatalf("MaxGenerationTokens = %d, want nil", *got.MaxGenerationTokens)
+				}
+				return
+			}
+			if got.MaxGenerationTokens == nil {
+				t.Fatal("MaxGenerationTokens is nil")
+			}
+			if *got.MaxGenerationTokens != *tt.want.MaxGenerationTokens {
+				t.Fatalf("MaxGenerationTokens = %d, want %d", *got.MaxGenerationTokens, *tt.want.MaxGenerationTokens)
+			}
+		})
+	}
+}

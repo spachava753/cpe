@@ -193,7 +193,9 @@ func (a *Agent) Prompt(
 		runtime := t.runtime
 		inputDialog := dialog
 		inputLen := len(inputDialog)
-		// TODO: we should set generation opts from the config, and overide with acp config options
+		// Per-turn opts carry only ACP session overrides (thinking level).
+		// The runtime's Loop.Generate layers these over the model profile's
+		// generation parameters from the resolved config.
 		var genOpts *gai.GenOpts
 		if t.thinkingLevel != "" {
 			genOpts = &gai.GenOpts{ThinkingBudget: t.thinkingLevel}

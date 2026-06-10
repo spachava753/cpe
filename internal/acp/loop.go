@@ -74,6 +74,19 @@ func (l *Loop) validateToolChoice(opts *gai.GenOpts) error {
 	return nil
 }
 
+// effectiveGenOpts layers per-turn overrides (such as the ACP session's
+// thinking level) over the resolved model profile generation parameters,
+// so config fields like maxGenerationTokens apply to every Generate call.
+func (l *Loop) effectiveGenOpts(override *gai.GenOpts) *gai.GenOpts {
+	if l.Cfg.GenerationParams == nil && override == nil {
+		return nil
+	}
+	merged := &gai.GenOpts{}
+	config.MergeGenOpts(merged, l.Cfg.GenerationParams)
+	config.MergeGenOpts(merged, override)
+	return merged
+}
+
 // Generate runs the dialog until a terminal assistant response, nil-callback
 // terminal tool, callback error, or compaction restart limit is reached.
 //
@@ -86,6 +99,7 @@ func (l *Loop) validateToolChoice(opts *gai.GenOpts) error {
 func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 	current := append(gai.Dialog(nil), dialog...)
 
+	opts = l.effectiveGenOpts(opts)
 	if err := l.validateToolChoice(opts); err != nil {
 		return current, err
 	}

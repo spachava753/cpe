@@ -90,17 +90,18 @@ func resolveSystemPromptPath(model ModelConfig, configFilePath string) string {
 func resolveGenerationParams(model ModelConfig, opts RuntimeOptions) *gai.GenOpts {
 	genParams := &gai.GenOpts{}
 	if model.GenerationParams != nil {
-		mergeGenOpts(genParams, model.GenerationParams.ToGenOpts())
+		MergeGenOpts(genParams, model.GenerationParams.ToGenOpts())
 	}
 	if opts.GenParams != nil {
-		mergeGenOpts(genParams, opts.GenParams)
+		MergeGenOpts(genParams, opts.GenParams)
 	}
 	return genParams
 }
 
-// mergeGenOpts applies non-zero presence fields from src onto dst.
+// MergeGenOpts applies non-zero presence fields from src onto dst.
 // Pointer fields use nil to mean "not set"; a non-nil pointer to a zero value still overrides.
-func mergeGenOpts(dst, src *gai.GenOpts) {
+// A nil src is a no-op.
+func MergeGenOpts(dst, src *gai.GenOpts) {
 	if src == nil {
 		return
 	}
