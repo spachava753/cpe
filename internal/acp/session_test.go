@@ -74,6 +74,7 @@ func TestInit(t *testing.T) {
 	be.Equal(t, resp.AgentCapabilities.SessionCapabilities.Delete, &acp.SessionDeleteCapabilities{})
 	be.Equal(t, resp.AgentCapabilities.SessionCapabilities.List, &acp.SessionListCapabilities{})
 	be.Equal(t, resp.AgentCapabilities.SessionCapabilities.Resume, &acp.SessionResumeCapabilities{})
+	be.Equal(t, resp.AgentCapabilities.SessionCapabilities.Fork, &acp.SessionForkCapabilities{})
 	be.True(t, resp.AgentCapabilities.PromptCapabilities.Audio)
 	be.True(t, resp.AgentCapabilities.PromptCapabilities.Image)
 	be.True(t, resp.AgentCapabilities.PromptCapabilities.EmbeddedContext)
@@ -980,6 +981,291 @@ func TestDeleteSession(t *testing.T) {
 	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions WHERE id = ?", newSessionResp.SessionId), 0)
 	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM messages"), 0)
 	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM blocks"), 0)
+}
+
+func TestForkSession(t *testing.T) {
+	forkTestConfig := func() *config.RawConfig {
+		return &config.RawConfig{
+			Models: []config.ModelConfig{
+				{
+					Model: config.Model{
+						Ref:                  "test-model",
+						DisplayName:          "Test Model",
+						ID:                   "test-model",
+						Type:                 "responses",
+						BaseUrl:              "https://customurl.com/v1",
+						ContextWindow:        100,
+						InputCostPerMillion:  new(1.0),
+						OutputCostPerMillion: new(1.0),
+					},
+				},
+			},
+		}
+	}
+
+	t.Run("fork shares history and diverges", func(t *testing.T) {
+		var store *storage.Sqlite
+		savingRuntime := &closeTrackingRuntime{
+			generate: func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
+				generatedDialog := append(dialog, gai.Message{
+					Role:   gai.Assistant,
+					Blocks: []gai.Block{gai.TextBlock("assistant answer")},
+				})
+				savedDialog := make(gai.Dialog, 0, len(generatedDialog))
+				for msg, err := range store.SaveDialog(ctx, slices.Values(generatedDialog)) {
+					if err != nil {
+						return nil, err
+					}
+					savedDialog = append(savedDialog, msg)
+				}
+				return savedDialog, nil
+			},
+		}
+		fixture := setup(
+			t,
+			&noOpAcpClient{},
+			forkTestConfig(),
+			func(opts runtimeOpts) (acpRuntime, error) {
+				return savingRuntime, nil
+			},
+		)
+		clientConn := fixture.ClientConn
+		store = fixture.Store
+		rawDB := fixture.RawDB
+
+		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
+			ClientCapabilities: acp.ClientCapabilities{
+				Fs: acp.FileSystemCapabilities{
+					ReadTextFile:  false,
+					WriteTextFile: false,
+				},
+				Terminal: true,
+			},
+			ClientInfo: &acp.Implementation{
+				Name:    "test-client",
+				Title:   new("test client"),
+				Version: "test",
+			},
+			ProtocolVersion: acp.ProtocolVersionNumber,
+		})
+		be.Err(t, err, nil)
+
+		newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{
+			Cwd:        "/rando/dir",
+			McpServers: []acp.McpServer{},
+		})
+		be.Err(t, err, nil)
+
+		promptResp, err := clientConn.Prompt(t.Context(), acp.PromptRequest{
+			Prompt: []acp.ContentBlock{
+				{
+					Text: &acp.ContentBlockText{
+						Text: "Hello",
+						Type: "text",
+					},
+				},
+			},
+			SessionId: newSessionResp.SessionId,
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
+		be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM messages"), 2)
+
+		forkResp, err := clientConn.UnstableForkSession(t.Context(), acp.UnstableForkSessionRequest{
+			Cwd:       "/rando/dir",
+			SessionId: newSessionResp.SessionId,
+		})
+		be.Err(t, err, nil)
+		be.True(t, forkResp.SessionId != "")
+		be.True(t, forkResp.SessionId != newSessionResp.SessionId)
+
+		// fork response surfaces the model config option with the inherited value
+		be.Equal(t, len(forkResp.ConfigOptions), 1)
+		be.True(t, forkResp.ConfigOptions[0].Select != nil)
+		be.Equal(t, forkResp.ConfigOptions[0].Select.CurrentValue, acp.SessionConfigValueId("test-model"))
+
+		// the fork shares the source's message chain without copying rows
+		srcSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionId)
+		be.Err(t, err, nil)
+		forkSession, err := store.GetACPSession(t.Context(), forkResp.SessionId)
+		be.Err(t, err, nil)
+		be.Equal(t, forkSession.LastMessageID, srcSession.LastMessageID)
+		be.Equal(t, forkSession.ModelRef, "test-model")
+		be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM messages"), 2)
+
+		listResp, err := clientConn.ListSessions(t.Context(), acp.ListSessionsRequest{})
+		be.Err(t, err, nil)
+		be.True(t, slices.ContainsFunc(listResp.Sessions, func(si acp.SessionInfo) bool {
+			return si.SessionId == forkResp.SessionId
+		}))
+
+		// prompting the fork branches off the shared chain
+		promptResp, err = clientConn.Prompt(t.Context(), acp.PromptRequest{
+			Prompt: []acp.ContentBlock{
+				{
+					Text: &acp.ContentBlockText{
+						Text: "Summarize the conversation",
+						Type: "text",
+					},
+				},
+			},
+			SessionId: forkResp.SessionId,
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
+
+		forkSession, err = store.GetACPSession(t.Context(), forkResp.SessionId)
+		be.Err(t, err, nil)
+		forkDialog, err := storage.GetDialogForMessage(t.Context(), store, forkSession.LastMessageID)
+		be.Err(t, err, nil)
+		be.Equal(t, len(forkDialog), 4)
+		be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM messages"), 4)
+
+		// the source session's history is unaffected by the fork's prompt
+		unchangedSrcSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionId)
+		be.Err(t, err, nil)
+		be.Equal(t, unchangedSrcSession.LastMessageID, srcSession.LastMessageID)
+	})
+
+	t.Run("delete source preserves fork history", func(t *testing.T) {
+		var store *storage.Sqlite
+		savingRuntime := &closeTrackingRuntime{
+			generate: func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
+				generatedDialog := append(dialog, gai.Message{
+					Role:   gai.Assistant,
+					Blocks: []gai.Block{gai.TextBlock("assistant answer")},
+				})
+				savedDialog := make(gai.Dialog, 0, len(generatedDialog))
+				for msg, err := range store.SaveDialog(ctx, slices.Values(generatedDialog)) {
+					if err != nil {
+						return nil, err
+					}
+					savedDialog = append(savedDialog, msg)
+				}
+				return savedDialog, nil
+			},
+		}
+		fixture := setup(
+			t,
+			&noOpAcpClient{},
+			forkTestConfig(),
+			func(opts runtimeOpts) (acpRuntime, error) {
+				return savingRuntime, nil
+			},
+		)
+		clientConn := fixture.ClientConn
+		store = fixture.Store
+		rawDB := fixture.RawDB
+
+		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
+			ClientCapabilities: acp.ClientCapabilities{
+				Fs: acp.FileSystemCapabilities{
+					ReadTextFile:  false,
+					WriteTextFile: false,
+				},
+				Terminal: true,
+			},
+			ClientInfo: &acp.Implementation{
+				Name:    "test-client",
+				Title:   new("test client"),
+				Version: "test",
+			},
+			ProtocolVersion: acp.ProtocolVersionNumber,
+		})
+		be.Err(t, err, nil)
+
+		newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{
+			Cwd:        "/rando/dir",
+			McpServers: []acp.McpServer{},
+		})
+		be.Err(t, err, nil)
+
+		_, err = clientConn.Prompt(t.Context(), acp.PromptRequest{
+			Prompt: []acp.ContentBlock{
+				{
+					Text: &acp.ContentBlockText{
+						Text: "Hello",
+						Type: "text",
+					},
+				},
+			},
+			SessionId: newSessionResp.SessionId,
+		})
+		be.Err(t, err, nil)
+
+		forkResp, err := clientConn.UnstableForkSession(t.Context(), acp.UnstableForkSessionRequest{
+			Cwd:       "/rando/dir",
+			SessionId: newSessionResp.SessionId,
+		})
+		be.Err(t, err, nil)
+
+		// diverge the fork so it owns a branch of its own
+		_, err = clientConn.Prompt(t.Context(), acp.PromptRequest{
+			Prompt: []acp.ContentBlock{
+				{
+					Text: &acp.ContentBlockText{
+						Text: "Summarize the conversation",
+						Type: "text",
+					},
+				},
+			},
+			SessionId: forkResp.SessionId,
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM messages"), 4)
+
+		// deleting the source only removes the source session row; the shared
+		// history is still reachable from the fork
+		_, err = clientConn.UnstableDeleteSession(t.Context(), acp.UnstableDeleteSessionRequest{
+			SessionId: newSessionResp.SessionId,
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions"), 1)
+		be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM messages"), 4)
+
+		forkSession, err := store.GetACPSession(t.Context(), forkResp.SessionId)
+		be.Err(t, err, nil)
+		forkDialog, err := storage.GetDialogForMessage(t.Context(), store, forkSession.LastMessageID)
+		be.Err(t, err, nil)
+		be.Equal(t, len(forkDialog), 4)
+
+		// deleting the fork removes the remaining chain
+		_, err = clientConn.UnstableDeleteSession(t.Context(), acp.UnstableDeleteSessionRequest{
+			SessionId: forkResp.SessionId,
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions"), 0)
+		be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM messages"), 0)
+		be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM blocks"), 0)
+	})
+
+	t.Run("unknown session", func(t *testing.T) {
+		fixture := setup(t, &noOpAcpClient{}, forkTestConfig(), unreachableRuntimeFactory)
+		clientConn := fixture.ClientConn
+
+		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
+			ClientCapabilities: acp.ClientCapabilities{
+				Fs: acp.FileSystemCapabilities{
+					ReadTextFile:  false,
+					WriteTextFile: false,
+				},
+				Terminal: true,
+			},
+			ClientInfo: &acp.Implementation{
+				Name:    "test-client",
+				Title:   new("test client"),
+				Version: "test",
+			},
+			ProtocolVersion: acp.ProtocolVersionNumber,
+		})
+		be.Err(t, err, nil)
+
+		_, err = clientConn.UnstableForkSession(t.Context(), acp.UnstableForkSessionRequest{
+			Cwd:       "/rando/dir",
+			SessionId: "does-not-exist",
+		})
+		be.True(t, err != nil)
+	})
 }
 
 func TestCloseSession(t *testing.T) {

@@ -857,7 +857,9 @@ func (s *Sqlite) AddACPSessionMessage(ctx context.Context, sessionID acp.Session
 }
 
 // DeleteACPSession removes an ACP session from the persisted session list and
-// deletes the message chain it points at.
+// deletes the messages in its chain that are not reachable from any other ACP
+// session. History shared with other sessions (for example, a fork created via
+// session/fork) is preserved.
 func (s *Sqlite) DeleteACPSession(ctx context.Context, sessionID acp.SessionId) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -871,7 +873,7 @@ func (s *Sqlite) DeleteACPSession(ctx context.Context, sessionID acp.SessionId) 
 	}()
 
 	qtx := s.q.WithTx(tx)
-	messageIDs, err := qtx.ListSessionMessageIDs(ctx, string(sessionID))
+	messageIDs, err := qtx.ListSessionExclusiveMessageIDs(ctx, string(sessionID))
 	if err != nil {
 		return fmt.Errorf("failed to list messages for ACP session %s: %w", sessionID, err)
 	}

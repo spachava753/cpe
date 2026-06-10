@@ -537,25 +537,38 @@ func (q *Queries) ListMessagesDescending(ctx context.Context, offset int64) ([]M
 	return items, nil
 }
 
-const listSessionMessageIDs = `-- name: ListSessionMessageIDs :many
+const listSessionExclusiveMessageIDs = `-- name: ListSessionExclusiveMessageIDs :many
 WITH RECURSIVE session_messages(id, parent_id) AS (
     SELECT messages.id,
            messages.parent_id
     FROM acp_sessions
     JOIN messages ON messages.id = acp_sessions.last_message_id
-    WHERE acp_sessions.id = ?
+    WHERE acp_sessions.id = ?1
     UNION ALL
     SELECT messages.id,
            messages.parent_id
     FROM messages
     JOIN session_messages ON messages.id = session_messages.parent_id
+),
+other_session_messages(id, parent_id) AS (
+    SELECT messages.id,
+           messages.parent_id
+    FROM acp_sessions
+    JOIN messages ON messages.id = acp_sessions.last_message_id
+    WHERE acp_sessions.id != ?1
+    UNION ALL
+    SELECT messages.id,
+           messages.parent_id
+    FROM messages
+    JOIN other_session_messages ON messages.id = other_session_messages.parent_id
 )
 SELECT id
 FROM session_messages
+WHERE id NOT IN (SELECT id FROM other_session_messages)
 `
 
-func (q *Queries) ListSessionMessageIDs(ctx context.Context, id string) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, listSessionMessageIDs, id)
+func (q *Queries) ListSessionExclusiveMessageIDs(ctx context.Context, sessionID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listSessionExclusiveMessageIDs, sessionID)
 	if err != nil {
 		return nil, err
 	}

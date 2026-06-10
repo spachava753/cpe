@@ -241,7 +241,9 @@ type ACPSessionMessageAdder interface {
 // ACPSessionDeleter deletes ACP session metadata and owned message data.
 type ACPSessionDeleter interface {
 	// DeleteACPSession removes sessionID from the persisted ACP session list and
-	// deletes the message chain referenced by the session.
+	// deletes the messages in its chain that are not reachable from any other
+	// ACP session. Messages shared with other sessions (such as forks created
+	// via session/fork) are preserved.
 	DeleteACPSession(ctx context.Context, sessionID acp.SessionId) error
 }
 

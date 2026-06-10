@@ -234,6 +234,123 @@ func (a *Agent) LoadSession(ctx context.Context, params acp.LoadSessionRequest) 
 	}, nil
 }
 
+// UnstableForkSession implements ACP's unstable session/fork method.
+//
+// The forked session shares the source session's persisted history: the new
+// session points at the same last message, so prompts on either session
+// diverge as separate branches of the message tree without copying rows.
+// Stale stored config is resolved against the loaded config the same way
+// session resumption does. The forked session's runtime is created lazily on
+// the first prompt, like sessions created via session/new.
+func (a *Agent) UnstableForkSession(
+	ctx context.Context,
+	params acp.UnstableForkSessionRequest,
+) (acp.UnstableForkSessionResponse, error) {
+	src, err := a.db.GetACPSession(ctx, params.SessionId)
+	if err != nil {
+		return acp.UnstableForkSessionResponse{}, fmt.Errorf(
+			"could not fetch acp session %s from storage: %v",
+			params.SessionId,
+			err,
+		)
+	}
+
+	modelRef := src.ModelRef
+	thinkingLevel := src.ThinkingLevel
+	idx := slices.IndexFunc(a.rawCfg.Models, func(m config.ModelConfig) bool {
+		return m.Ref == modelRef
+	})
+	if idx == -1 {
+		// model profile is stale, default to the first one in config
+		modelRef = a.rawCfg.Models[0].Ref
+		thinkingLevel = ""
+		if len(a.rawCfg.Models[0].ThinkingValues) > 0 {
+			thinkingLevel = a.rawCfg.Models[0].ThinkingValues[0].Value
+		}
+	} else if !slices.ContainsFunc(
+		a.rawCfg.Models[idx].ThinkingValues,
+		func(tv config.ThinkingValueConfig) bool {
+			return tv.Value == thinkingLevel
+		}) {
+		thinkingLevel = ""
+		if len(a.rawCfg.Models[idx].ThinkingValues) > 0 {
+			thinkingLevel = a.rawCfg.Models[idx].ThinkingValues[0].Value
+		}
+	}
+
+	id := a.genId()
+	title := src.Session.Title
+	if title == nil {
+		title = new("untitled")
+	}
+	if err := a.db.CreateACPSession(ctx, storage.CreateACPSessionParams{
+		Session: acp.SessionInfo{
+			Cwd:       params.Cwd,
+			Title:     title,
+			SessionId: id,
+		},
+		LastMessageID: src.LastMessageID,
+		ModelRef:      modelRef,
+		ThinkingLevel: thinkingLevel,
+	}); err != nil {
+		return acp.UnstableForkSessionResponse{}, fmt.Errorf("could not save forked session: %v", err)
+	}
+
+	a.activeSessions.Store(id, sync.NewGuard(session{
+		cwd:           params.Cwd,
+		modelRef:      modelRef,
+		thinkingLevel: thinkingLevel,
+		mcpServers:    stableMCPServers(params.McpServers),
+	}))
+
+	return acp.UnstableForkSessionResponse{
+		SessionId:     id,
+		ConfigOptions: unstableConfigOptions(a.configOptions(ctx, id)),
+	}, nil
+}
+
+// stableMCPServers converts the unstable MCP server descriptors used by
+// session/fork into their stable equivalents. The variants carry identical
+// fields; only the Go types differ.
+func stableMCPServers(servers []acp.UnstableMcpServer) []acp.McpServer {
+	if len(servers) == 0 {
+		return nil
+	}
+	converted := make([]acp.McpServer, len(servers))
+	for i, s := range servers {
+		converted[i] = acp.McpServer{
+			Http:  (*acp.McpServerHttpInline)(s.Http),
+			Sse:   (*acp.McpServerSseInline)(s.Sse),
+			Stdio: s.Stdio,
+		}
+		if s.Acp != nil {
+			converted[i].Acp = &acp.McpServerAcpInline{
+				Meta: s.Acp.Meta,
+				Id:   acp.McpServerAcpId(s.Acp.Id),
+				Name: s.Acp.Name,
+				Type: s.Acp.Type,
+			}
+		}
+	}
+	return converted
+}
+
+// unstableConfigOptions converts session config options into the unstable
+// wrapper type used by unstable session responses such as session/fork.
+func unstableConfigOptions(opts []acp.SessionConfigOption) []acp.UnstableSessionConfigOption {
+	if len(opts) == 0 {
+		return nil
+	}
+	converted := make([]acp.UnstableSessionConfigOption, len(opts))
+	for i, o := range opts {
+		converted[i] = acp.UnstableSessionConfigOption{
+			Select:  (*acp.UnstableSessionConfigOptionSelect)(o.Select),
+			Boolean: (*acp.UnstableSessionConfigOptionBoolean)(o.Boolean),
+		}
+	}
+	return converted
+}
+
 // Cancel implements [acp.Agent].
 func (a *Agent) Cancel(ctx context.Context, params acp.CancelNotification) error {
 	s, ok := a.activeSessions.Load(params.SessionId)

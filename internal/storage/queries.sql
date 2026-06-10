@@ -69,21 +69,34 @@ DELETE
 FROM messages
 WHERE id = ?;
 
--- name: ListSessionMessageIDs :many
+-- name: ListSessionExclusiveMessageIDs :many
 WITH RECURSIVE session_messages(id, parent_id) AS (
     SELECT messages.id,
            messages.parent_id
     FROM acp_sessions
     JOIN messages ON messages.id = acp_sessions.last_message_id
-    WHERE acp_sessions.id = ?
+    WHERE acp_sessions.id = sqlc.arg(session_id)
     UNION ALL
     SELECT messages.id,
            messages.parent_id
     FROM messages
     JOIN session_messages ON messages.id = session_messages.parent_id
+),
+other_session_messages(id, parent_id) AS (
+    SELECT messages.id,
+           messages.parent_id
+    FROM acp_sessions
+    JOIN messages ON messages.id = acp_sessions.last_message_id
+    WHERE acp_sessions.id != sqlc.arg(session_id)
+    UNION ALL
+    SELECT messages.id,
+           messages.parent_id
+    FROM messages
+    JOIN other_session_messages ON messages.id = other_session_messages.parent_id
 )
 SELECT id
-FROM session_messages;
+FROM session_messages
+WHERE id NOT IN (SELECT id FROM other_session_messages);
 
 -- name: CheckMessageIDExists :one
 SELECT EXISTS(SELECT 1 FROM messages WHERE id = ?) as "exists";

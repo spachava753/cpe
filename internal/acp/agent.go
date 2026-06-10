@@ -106,6 +106,7 @@ func (a *Agent) Initialize(
 				Resume: &acp.SessionResumeCapabilities{},
 				Close:  &acp.SessionCloseCapabilities{},
 				Delete: &acp.SessionDeleteCapabilities{},
+				Fork:   &acp.SessionForkCapabilities{},
 			},
 		},
 	}
