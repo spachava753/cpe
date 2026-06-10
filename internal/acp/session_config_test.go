@@ -3,6 +3,7 @@ package acp
 import (
 	"context"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -114,6 +115,57 @@ func TestSessionConfigOptions(t *testing.T) {
 		be.Equal(t, (*thinkingOption.Options.Ungrouped)[0].Name, "Low")
 		be.Equal(t, (*thinkingOption.Options.Ungrouped)[1].Value, acp.SessionConfigValueId("high"))
 		be.Equal(t, (*thinkingOption.Options.Ungrouped)[1].Name, "High")
+	})
+
+	t.Run("new session succeeds when model has no costs defined", func(t *testing.T) {
+		fixture := setup(
+			t,
+			&noOpAcpClient{},
+			&config.RawConfig{
+				Models: []config.ModelConfig{
+					{
+						Model: config.Model{
+							Ref:           "free-model",
+							DisplayName:   "Free Model",
+							ID:            "free-model",
+							Type:          "responses",
+							BaseUrl:       "https://customurl.com/v1",
+							ContextWindow: 100,
+						},
+					},
+				},
+			},
+			unreachableRuntimeFactory,
+		)
+		clientConn := fixture.ClientConn
+
+		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
+			ClientCapabilities: acp.ClientCapabilities{
+				Terminal: true,
+			},
+			ClientInfo: &acp.Implementation{
+				Name:    "test-client",
+				Title:   new("test client"),
+				Version: "test",
+			},
+			ProtocolVersion: acp.ProtocolVersionNumber,
+		})
+		be.Err(t, err, nil)
+
+		resp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{
+			Cwd:        "/rando/dir",
+			McpServers: []acp.McpServer{},
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, len(resp.ConfigOptions), 1)
+
+		modelOption := resp.ConfigOptions[0].Select
+		be.True(t, modelOption != nil)
+		be.Equal(t, len(*modelOption.Options.Ungrouped), 1)
+		desc := (*modelOption.Options.Ungrouped)[0].Description
+		be.True(t, desc != nil)
+		be.True(t, strings.Contains(*desc, "Input Cost: n/a"))
+		be.True(t, strings.Contains(*desc, "Output Cost: n/a"))
 	})
 }
 

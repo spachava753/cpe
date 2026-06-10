@@ -114,19 +114,7 @@ func (a *Agent) configOptions(ctx context.Context, sessionId acp.SessionId) []ac
 	if s.ModelRef == "" {
 		slog.Info("model not picked yet", slog.String("session_id", string(sessionId)))
 
-		opts := make(acp.SessionConfigSelectOptionsUngrouped, len(a.rawCfg.Models))
-		for i, m := range a.rawCfg.Models {
-			// TODO: *m.InputCostPerMillion and *m.OutputCostPerMillion can cause panic, fix with checking nil and using string builder
-			opts[i] = acp.SessionConfigSelectOption{
-				Description: new(fmt.Sprintf(`Type: %s
-Base Url: %s
-Context Window: %d
-Input Cost: %0.2f
-Output Cost: %0.2f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion, *m.OutputCostPerMillion)),
-				Name:  m.DisplayName,
-				Value: acp.SessionConfigValueId(m.Ref),
-			}
-		}
+		opts := a.modelSelectOptions()
 
 		sessionConfigs = append(sessionConfigs, acp.SessionConfigOption{
 			Select: &acp.SessionConfigOptionSelect{
@@ -154,19 +142,7 @@ Output Cost: %0.2f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion,
 			slog.String("config_id", string(modelRefConfigId)),
 			slog.String("value", string(s.ModelRef)),
 		)
-		opts := make(acp.SessionConfigSelectOptionsUngrouped, len(a.rawCfg.Models))
-		for i, m := range a.rawCfg.Models {
-			// TODO: *m.InputCostPerMillion and *m.OutputCostPerMillion can cause panic, fix with checking nil and using string builder
-			opts[i] = acp.SessionConfigSelectOption{
-				Description: new(fmt.Sprintf(`Type: %s
-Base Url: %s
-Context Window: %d
-Input Cost: %0.2f
-Output Cost: %0.2f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion, *m.OutputCostPerMillion)),
-				Name:  m.DisplayName,
-				Value: acp.SessionConfigValueId(m.Ref),
-			}
-		}
+		opts := a.modelSelectOptions()
 
 		sessionConfigs = append(sessionConfigs, acp.SessionConfigOption{
 			Select: &acp.SessionConfigOptionSelect{
@@ -185,19 +161,7 @@ Output Cost: %0.2f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion,
 	}
 
 	// model was set, and is valid value
-	modelOpts := make(acp.SessionConfigSelectOptionsUngrouped, len(a.rawCfg.Models))
-	for i, m := range a.rawCfg.Models {
-		// TODO: *m.InputCostPerMillion and *m.OutputCostPerMillion can cause panic, fix with checking nil and using string builder
-		modelOpts[i] = acp.SessionConfigSelectOption{
-			Description: new(fmt.Sprintf(`Type: %s
-Base Url: %s
-Context Window: %d
-Input Cost: %0.2f
-Output Cost: %0.2f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion, *m.OutputCostPerMillion)),
-			Name:  m.DisplayName,
-			Value: acp.SessionConfigValueId(m.Ref),
-		}
-	}
+	modelOpts := a.modelSelectOptions()
 
 	sessionConfigs = append(sessionConfigs, acp.SessionConfigOption{
 		Select: &acp.SessionConfigOptionSelect{
@@ -261,6 +225,32 @@ Output Cost: %0.2f`, m.Type, m.BaseUrl, m.ContextWindow, *m.InputCostPerMillion,
 	})
 
 	return sessionConfigs
+}
+
+// modelSelectOptions builds the model picker options for every configured
+// model profile. Cost fields are optional in the config, so nil costs are
+// rendered as "n/a" instead of being dereferenced.
+func (a *Agent) modelSelectOptions() acp.SessionConfigSelectOptionsUngrouped {
+	opts := make(acp.SessionConfigSelectOptionsUngrouped, len(a.rawCfg.Models))
+	for i, m := range a.rawCfg.Models {
+		opts[i] = acp.SessionConfigSelectOption{
+			Description: new(fmt.Sprintf(`Type: %s
+Base Url: %s
+Context Window: %d
+Input Cost: %s
+Output Cost: %s`, m.Type, m.BaseUrl, m.ContextWindow, formatOptionalCost(m.InputCostPerMillion), formatOptionalCost(m.OutputCostPerMillion))),
+			Name:  m.DisplayName,
+			Value: acp.SessionConfigValueId(m.Ref),
+		}
+	}
+	return opts
+}
+
+func formatOptionalCost(cost *float64) string {
+	if cost == nil {
+		return "n/a"
+	}
+	return fmt.Sprintf("%0.2f", *cost)
 }
 
 // SetSessionMode implements [acp.Agent].
