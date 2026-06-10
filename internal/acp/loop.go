@@ -6,13 +6,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
+	"strings"
 
 	"github.com/coder/acp-go-sdk"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/acp/xacp"
 	"github.com/spachava753/cpe/internal/acp/xctx"
+	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
 )
@@ -83,6 +86,12 @@ func (l *Loop) effectiveGenOpts(override *gai.GenOpts) *gai.GenOpts {
 	merged := &gai.GenOpts{}
 	config.MergeGenOpts(merged, l.Cfg.GenerationParams)
 	config.MergeGenOpts(merged, override)
+	if strings.EqualFold(l.Cfg.Model.Type, agent.ModelTypeResponses) {
+		if merged.ExtraArgs != nil {
+			merged.ExtraArgs = maps.Clone(merged.ExtraArgs)
+		}
+		agent.ApplyResponsesThinkingSummary(merged)
+	}
 	return merged
 }
 

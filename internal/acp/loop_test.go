@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/coder/acp-go-sdk"
+	"github.com/openai/openai-go/v3/responses"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/config"
@@ -178,10 +179,12 @@ func TestLoopUsageSessionUpdateCostAccumulatesAcrossLoops(t *testing.T) {
 
 func TestLoopEffectiveGenOpts(t *testing.T) {
 	tests := []struct {
-		name      string
-		cfgParams *gai.GenOpts
-		override  *gai.GenOpts
-		want      *gai.GenOpts
+		name        string
+		modelType   string
+		cfgParams   *gai.GenOpts
+		override    *gai.GenOpts
+		want        *gai.GenOpts
+		wantSummary any
 	}{
 		{
 			name: "both nil returns nil",
@@ -202,11 +205,46 @@ func TestLoopEffectiveGenOpts(t *testing.T) {
 			override:  &gai.GenOpts{ThinkingBudget: "high"},
 			want:      &gai.GenOpts{MaxGenerationTokens: new(32000), ThinkingBudget: "high"},
 		},
+		{
+			name:        "responses thinking override requests detailed summary",
+			modelType:   "responses",
+			override:    &gai.GenOpts{ThinkingBudget: "high"},
+			want:        &gai.GenOpts{ThinkingBudget: "high"},
+			wantSummary: responses.ReasoningSummaryDetailed,
+		},
+		{
+			name:        "responses thinking config requests detailed summary",
+			modelType:   "responses",
+			cfgParams:   &gai.GenOpts{ThinkingBudget: "low"},
+			want:        &gai.GenOpts{ThinkingBudget: "low"},
+			wantSummary: responses.ReasoningSummaryDetailed,
+		},
+		{
+			name:      "responses without thinking omits summary request",
+			modelType: "responses",
+			override:  &gai.GenOpts{MaxGenerationTokens: new(32000)},
+			want:      &gai.GenOpts{MaxGenerationTokens: new(32000)},
+		},
+		{
+			name:      "responses preserves explicit summary request",
+			modelType: "responses",
+			override: &gai.GenOpts{
+				ThinkingBudget: "high",
+				ExtraArgs: map[string]any{
+					gai.ResponsesThoughtSummaryDetailParam: responses.ReasoningSummaryConcise,
+				},
+			},
+			want:        &gai.GenOpts{ThinkingBudget: "high"},
+			wantSummary: responses.ReasoningSummaryConcise,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			l := Loop{Cfg: config.Config{GenerationParams: tt.cfgParams}}
+			l := Loop{Cfg: config.Config{
+				Model:            config.Model{Type: tt.modelType},
+				GenerationParams: tt.cfgParams,
+			}}
 			got := l.effectiveGenOpts(tt.override)
 			if tt.want == nil {
 				if got != nil {
@@ -224,14 +262,55 @@ func TestLoopEffectiveGenOpts(t *testing.T) {
 				if got.MaxGenerationTokens != nil {
 					t.Fatalf("MaxGenerationTokens = %d, want nil", *got.MaxGenerationTokens)
 				}
+			} else {
+				if got.MaxGenerationTokens == nil {
+					t.Fatal("MaxGenerationTokens is nil")
+				}
+				if *got.MaxGenerationTokens != *tt.want.MaxGenerationTokens {
+					t.Fatalf("MaxGenerationTokens = %d, want %d", *got.MaxGenerationTokens, *tt.want.MaxGenerationTokens)
+				}
+			}
+
+			gotSummary, gotSummaryOK := got.ExtraArgs[gai.ResponsesThoughtSummaryDetailParam]
+			if tt.wantSummary == nil {
+				if gotSummaryOK {
+					t.Fatalf("responses thought summary = %#v, want unset", gotSummary)
+				}
 				return
 			}
-			if got.MaxGenerationTokens == nil {
-				t.Fatal("MaxGenerationTokens is nil")
+			if !gotSummaryOK {
+				t.Fatalf("responses thought summary is unset, want %#v", tt.wantSummary)
 			}
-			if *got.MaxGenerationTokens != *tt.want.MaxGenerationTokens {
-				t.Fatalf("MaxGenerationTokens = %d, want %d", *got.MaxGenerationTokens, *tt.want.MaxGenerationTokens)
+			if gotSummary != tt.wantSummary {
+				t.Fatalf("responses thought summary = %#v, want %#v", gotSummary, tt.wantSummary)
 			}
 		})
+	}
+}
+
+func TestLoopEffectiveGenOptsDoesNotMutateInputExtraArgs(t *testing.T) {
+	extraArgs := map[string]any{"custom": "value"}
+	override := &gai.GenOpts{
+		ThinkingBudget: "high",
+		ExtraArgs:      extraArgs,
+	}
+	l := Loop{Cfg: config.Config{Model: config.Model{Type: "responses"}}}
+
+	got := l.effectiveGenOpts(override)
+	if got == nil {
+		t.Fatal("effectiveGenOpts() is nil")
+	}
+	if got.ExtraArgs[gai.ResponsesThoughtSummaryDetailParam] != responses.ReasoningSummaryDetailed {
+		t.Fatalf(
+			"responses thought summary = %#v, want %#v",
+			got.ExtraArgs[gai.ResponsesThoughtSummaryDetailParam],
+			responses.ReasoningSummaryDetailed,
+		)
+	}
+	if _, ok := override.ExtraArgs[gai.ResponsesThoughtSummaryDetailParam]; ok {
+		t.Fatalf("override ExtraArgs was mutated: %#v", override.ExtraArgs)
+	}
+	if override.ExtraArgs["custom"] != "value" {
+		t.Fatalf("override custom ExtraArgs = %#v, want value", override.ExtraArgs["custom"])
 	}
 }
