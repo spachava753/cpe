@@ -23,43 +23,30 @@ const (
 	mcpSDKImport = "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// correctFileImports runs goimports in a separate child process so workspace-
-// specific env overrides stay isolated to that process.
+// correctFileImports runs goimports over the generated file and atomically
+// replaces it with the formatted result.
 func correctFileImports(dir, filename string) (string, error) {
 	filePath := filepath.Join(dir, filename)
-	orig, err := os.Open(filePath)
+	orig, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", err
+	}
+	stat, err := os.Stat(filePath)
 	if err != nil {
 		return "", err
 	}
 
-	origImports, err := extractImports(orig)
+	origImports, err := extractImports(bytes.NewReader(orig))
 	if err != nil {
 		return "", recoverableSyntaxError(err)
 	}
-	offset, err := orig.Seek(0, io.SeekStart)
-	if err != nil {
-		return "", err
-	}
-	if offset != 0 {
-		panic("expected offset to be 0")
-	}
 
-	tempFile, err := os.CreateTemp(dir, "cpe-goimports-*.go")
-	if err != nil {
-		return "", err
-	}
-	tempPath := tempFile.Name()
-	defer func() {
-		tempFile.Close()
-		os.Remove(tempPath)
-	}()
-
-	if err := ensureMCPImport(orig, tempFile); err != nil {
+	var preprocessed bytes.Buffer
+	if err := ensureMCPImport(bytes.NewReader(orig), &preprocessed); err != nil {
 		return "", recoverableSyntaxError(err)
 	}
 
-	// imports will read the file contents on its own
-	newFile, err := imports.Process(orig.Name(), nil, nil)
+	newFile, err := imports.Process(filePath, preprocessed.Bytes(), nil)
 	if err != nil {
 		return "", recoverableSyntaxError(err)
 	}
@@ -69,8 +56,26 @@ func correctFileImports(dir, filename string) (string, error) {
 		return "", recoverableSyntaxError(err)
 	}
 
+	tempFile, err := os.CreateTemp(dir, "cpe-goimports-*.go")
+	if err != nil {
+		return "", err
+	}
+	tempPath := tempFile.Name()
+	defer os.Remove(tempPath)
+
 	if _, err := tempFile.Write(newFile); err != nil {
-		return "", nil
+		tempFile.Close()
+		return "", err
+	}
+	if err := tempFile.Chmod(stat.Mode().Perm()); err != nil {
+		tempFile.Close()
+		return "", err
+	}
+	if err := tempFile.Close(); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tempPath, filePath); err != nil {
+		return "", err
 	}
 
 	return diff(origImports, formattedImports), nil

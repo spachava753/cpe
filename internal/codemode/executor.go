@@ -173,7 +173,7 @@ func (c *ExecuteGoCodeCallback) executeCode(ctx context.Context, llmCode string,
 		return executionResult{
 			Output:   buildResult.Output,
 			ExitCode: buildResult.ExitCode,
-		}, errors.New("could not build")
+		}, RecoverableError{Err: fmt.Errorf("could not build, output: %s", buildResult.Output)}
 	}
 
 	// Execute the built binary with timeout and graceful shutdown.

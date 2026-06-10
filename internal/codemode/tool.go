@@ -114,7 +114,11 @@ func (c *ExecuteGoCodeCallback) Call(ctx context.Context, params map[string]any)
 		if recoverable, ok := errors.AsType[RecoverableError](err); ok {
 			// Recoverable errors are returned as tool results so LLM can adapt.
 			sendToolCallUpdate(acp.ToolCallStatusFailed)
-			return gai.ToolResultMessage("", gai.TextBlock(recoverable.Error())), nil
+			text := recoverable.Error()
+			if result.Output != "" {
+				text += "\n\n" + result.Output
+			}
+			return gai.ToolResultMessage("", gai.TextBlock(text)), nil
 		}
 		// Infrastructure errors (temp dir, file writes, etc.) stop agent execution.
 		return gai.Message{}, err

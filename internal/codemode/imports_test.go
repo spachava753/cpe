@@ -166,6 +166,45 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 	}
 }
 
+func TestExecuteGoCodeCallBuildFailureReturnsCompilerOutput(t *testing.T) {
+	t.Parallel()
+
+	callback := &ExecuteGoCodeCallback{MaxTimeout: 5}
+	msg, err := callback.Call(context.Background(), map[string]any{
+		"code": `package main
+
+import (
+	"context"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func Run(ctx context.Context) ([]mcp.Content, error) {
+	var s string = 1
+	_ = s
+	return nil, nil
+}
+`,
+		"executionTimeout": 1,
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v, want nil", err)
+	}
+	if len(msg.Blocks) != 1 || msg.Blocks[0].Content == nil {
+		t.Fatalf("Call() returned %#v, want one text block", msg.Blocks)
+	}
+	got := msg.Blocks[0].Content.String()
+	for _, want := range []string{
+		"recoverable execution error",
+		"could not build",
+		"cannot use 1",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("Call() tool result = %q, want %q", got, want)
+		}
+	}
+}
+
 func writeGeneratedCodeModule(t *testing.T, dir string) {
 	t.Helper()
 
