@@ -13,9 +13,6 @@ func WithToolCallId(ctx context.Context, toolId acp.ToolCallId) context.Context 
 }
 
 func ToolCallIdFrom(ctx context.Context) acp.ToolCallId {
-	val := ctx.Value(toolCallIdKey{})
-	if val == nil {
-		return ""
-	}
-	return val.(acp.ToolCallId)
+	id, _ := ctx.Value(toolCallIdKey{}).(acp.ToolCallId)
+	return id
 }

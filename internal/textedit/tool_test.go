@@ -71,6 +71,9 @@ func TestMakeToolReturnsTextEditTool(t *testing.T) {
 	}
 }
 
+// wantContent is the file body written and asserted across edit tests.
+const wantContent = "hello"
+
 func TestMakeToolCallbackAppliesTextEdit(t *testing.T) {
 	t.Parallel()
 
@@ -80,7 +83,7 @@ func TestMakeToolCallbackAppliesTextEdit(t *testing.T) {
 
 	msg, err := callback.Call(xctx.WithToolCallId(t.Context(), toolCallID), map[string]any{
 		"path":     path,
-		"new_text": "hello",
+		"new_text": wantContent,
 	})
 	if err != nil {
 		t.Fatalf("callback returned error: %v", err)
@@ -96,7 +99,7 @@ func TestMakeToolCallbackAppliesTextEdit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading created file: %v", err)
 	}
-	if string(got) != "hello" {
+	if string(got) != wantContent {
 		t.Fatalf("content = %q, want hello", string(got))
 	}
 
@@ -116,7 +119,7 @@ func TestMakeToolCallbackAppliesTextEdit(t *testing.T) {
 		t.Fatalf("completed content = %#v, want one diff", completed.Content)
 	}
 	diff := completed.Content[0].Diff
-	if diff.Path != path || diff.NewText != "hello" {
+	if diff.Path != path || diff.NewText != wantContent {
 		t.Fatalf("diff = %#v, want path %q and new text hello", diff, path)
 	}
 }

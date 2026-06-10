@@ -17,6 +17,7 @@ import (
 
 	"github.com/coder/acp-go-sdk"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/spachava753/cpe/internal/acp/xctx"
 )
 
@@ -329,7 +330,6 @@ func (c *ExecuteGoCodeCallback) runProgramWithTimeout(
 			slog.Int("timeout", timeoutSecs),
 		)
 	case <-ctx.Done():
-		err = ctx.Err()
 		killTerminal = true
 		slog.DebugContext(ctx, "context canceled")
 	case err = <-errChan:

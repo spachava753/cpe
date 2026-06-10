@@ -83,10 +83,9 @@ func (c *ExecuteGoCodeCallback) Call(ctx context.Context, params map[string]any)
 
 	input, err := mapstruct.Map2Struct[executeGoCodeInput](params)
 	if err != nil {
-		// Return error as tool result so LLM can adapt, not as Go error that stops execution
-		//nolint:nilerr // Intentional: user/tool errors return results with nil error to allow agent recovery
 		sendToolCallUpdate(acp.ToolCallStatusFailed)
-		return gai.ToolResultMessage("", gai.TextBlock("Error parsing parameters: "+err.Error())), nil
+		// Return error as tool result so LLM can adapt, not as Go error that stops execution
+		return gai.ToolResultMessage("", gai.TextBlock("Error parsing parameters: "+err.Error())), nil //nolint:nilerr // user/tool errors return results with nil error to allow agent recovery
 	}
 
 	if input.ExecutionTimeout < 1 {

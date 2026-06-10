@@ -6,9 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/coder/acp-go-sdk"
 	"github.com/spachava753/gai"
@@ -16,9 +14,7 @@ import (
 	"github.com/spachava753/cpe/internal/acp/xacp"
 	"github.com/spachava753/cpe/internal/acp/xctx"
 	"github.com/spachava753/cpe/internal/config"
-	"github.com/spachava753/cpe/internal/mapstruct"
 	"github.com/spachava753/cpe/internal/storage"
-	"github.com/spachava753/cpe/internal/textedit"
 )
 
 const compactionWarningText = `[COMPACTION WARNING]
@@ -381,37 +377,11 @@ func (l *Loop) compact(current gai.Dialog) (gai.Dialog, error) {
 	return gai.Dialog{root}, nil
 }
 
-// TODO: Build richer diff hunks instead of returning only the raw replacement
-// text. Prefer the smallest useful region around the change: surrounding lines,
-// the containing function, or related adjacent functions when that provides a
-// clearer review context without sending full files unnecessarily.
-func textEditDiff(toolName string, parameters map[string]any) *acp.ToolCallContentDiff {
-	if toolName != textedit.ToolName {
-		return nil
-	}
-
-	input, err := mapstruct.Map2Struct[textedit.Input](parameters)
-	if err != nil || strings.TrimSpace(input.Path) == "" {
-		return nil
-	}
-
-	path, err := filepath.Abs(input.Path)
-	if err != nil {
-		return nil
-	}
-
-	var oldText *string
-	if input.OldText != "" {
-		oldText = &input.OldText
-	}
-
-	return &acp.ToolCallContentDiff{
-		Path:    path,
-		OldText: oldText,
-		NewText: input.NewText,
-		Type:    "diff",
-	}
-}
+// TODO: Build richer diff hunks for text edit tool calls instead of reporting
+// only the raw replacement text. Prefer the smallest useful region around the
+// change: surrounding lines, the containing function, or related adjacent
+// functions when that provides a clearer review context without sending full
+// files unnecessarily.
 
 // usageSessionUpdate persists the cost of a single generation into the ACP
 // session and builds the usage session update reporting context size and the

@@ -9,6 +9,9 @@ import (
 	"testing"
 )
 
+// runFilename is the generated file name used by every test fixture.
+const runFilename = "run.go"
+
 func Test_correctFileImports(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -23,7 +26,7 @@ func Test_correctFileImports(t *testing.T) {
 
 				dir := t.TempDir()
 				writeGeneratedCodeModule(t, dir)
-				writeFile(t, filepath.Join(dir, "run.go"), `package main
+				writeFile(t, filepath.Join(dir, runFilename), `package main
 
 func Run(ctx context.Context) ([]mcp.Content, error) {
 	fmt.Println("hello")
@@ -31,7 +34,7 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 }
 `)
 
-				return dir, "run.go"
+				return dir, runFilename
 			},
 			wantDiff: []string{
 				"+ context",
@@ -46,7 +49,7 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 
 				dir := t.TempDir()
 				writeGeneratedCodeModule(t, dir)
-				writeFile(t, filepath.Join(dir, "run.go"), `package main
+				writeFile(t, filepath.Join(dir, runFilename), `package main
 
 import (
 	"context"
@@ -60,7 +63,7 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 }
 `)
 
-				return dir, "run.go"
+				return dir, runFilename
 			},
 			wantDiff: []string{
 				"- fmt",
@@ -74,7 +77,7 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 				dir := t.TempDir()
 				writeGeneratedCodeModule(t, dir)
 
-				return dir, "run.go"
+				return dir, runFilename
 			},
 			wantErr: true,
 		},
@@ -107,7 +110,7 @@ func Test_correctFileImportsInvalidSyntaxIsRecoverable(t *testing.T) {
 
 	dir := t.TempDir()
 	writeGeneratedCodeModule(t, dir)
-	writeFile(t, filepath.Join(dir, "run.go"), `package main
+	writeFile(t, filepath.Join(dir, runFilename), `package main
 
 import (
 	"context"
@@ -120,7 +123,7 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 }
 `)
 
-	_, err := correctFileImports(dir, "run.go")
+	_, err := correctFileImports(dir, runFilename)
 	if err == nil {
 		t.Fatal("correctFileImports() succeeded unexpectedly")
 	}
