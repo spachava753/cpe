@@ -102,7 +102,6 @@ func (l *Loop) effectiveGenOpts(override *gai.GenOpts) *gai.GenOpts {
 // TODO: acp clients, like editors like zed, might have unsaved changes, so generally speaking, it is preferable to use fs/read_text_file and fs/write_text_file tools where possible
 // TODO: support unstable feature https://agentclientprotocol.com/rfds/diff-delete
 // TODO: execute_go_code tool should display file edit diff, see https://agentclientprotocol.com/protocol/tool-calls#diffs, which would mean we would need to capture before and after we run execute go code tool, more complicated than text_edit
-// TODO: displaying the live output of the execute go code tool would be valuable, available in https://agentclientprotocol.com/protocol/terminals#embedding-in-tool-calls
 // TODO: expose model capability metadata in session updates so ACP clients can adapt UI affordances
 func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 	current := append(gai.Dialog(nil), dialog...)
@@ -208,12 +207,6 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 		}
 
 		lastMsg := current[len(current)-1]
-
-		// TODO: we want to support terminal output from command execution
-		// for execute go code. The idea is that we are able to follow the
-		// execution of the code generated from the model. Just one thing
-		// to consider: the model uses this tool not just view text content,
-		// but also images, audio and video. Does this work today?
 		firstBlock := true
 		for _, block := range lastMsg.Blocks {
 			if block.BlockType != gai.ToolCall {
@@ -385,12 +378,6 @@ func (l *Loop) compact(current gai.Dialog) (gai.Dialog, error) {
 	l.compactionRestarts++
 	return gai.Dialog{root}, nil
 }
-
-// TODO: Build richer diff hunks for text edit tool calls instead of reporting
-// only the raw replacement text. Prefer the smallest useful region around the
-// change: surrounding lines, the containing function, or related adjacent
-// functions when that provides a clearer review context without sending full
-// files unnecessarily.
 
 // usageSessionUpdate persists the cost of a single generation into the ACP
 // session and builds the usage session update reporting context size and the

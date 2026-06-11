@@ -255,7 +255,8 @@ func formatOptionalCost(cost *float64) string {
 
 // SetSessionMode implements [acp.Agent].
 //
-// TODO: maybe we should have a read-only mode?
+// Modes are being superseded by session config options.
+// We just provide a default response for older clients.
 func (a *Agent) SetSessionMode(ctx context.Context, params acp.SetSessionModeRequest) (acp.SetSessionModeResponse, error) {
 	return acp.SetSessionModeResponse{}, nil
 }
