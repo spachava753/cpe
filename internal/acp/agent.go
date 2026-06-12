@@ -180,7 +180,7 @@ func (a *Agent) Prompt(
 				return fmt.Errorf("could not get dialog from db: %v", err)
 			}
 		}
-		dialog = append(dialog, a.promptToMessage(params.Prompt))
+		dialog = append(dialog, xacp.PromptToMessage(params.Prompt))
 		if t.runtime == nil {
 			runtime, err := a.runtimeFactory.Create(cancelCtx, runtimeOpts{
 				conn:       a.conn,
@@ -245,7 +245,13 @@ func (a *Agent) Prompt(
 		return acp.PromptResponse{}, fmt.Errorf("cannot update acp session in db: %v", err)
 	}
 
-	usage := xacp.PromptTurnUsage(promptTurnDialog(dialog, result.inputLen))
+	// Compaction can replace the input history with a shorter rebased dialog.
+	// In that case, the returned dialog is the only safe turn boundary we have.
+	usageDialog := dialog
+	if result.inputLen >= 0 && result.inputLen <= len(dialog) {
+		usageDialog = dialog[result.inputLen:]
+	}
+	usage := xacp.PromptTurnUsage(usageDialog)
 	if result.err != nil {
 		if errors.Is(result.err, gai.ErrMaxGenerationLimit) {
 			return acp.PromptResponse{

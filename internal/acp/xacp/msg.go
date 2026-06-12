@@ -1,4 +1,4 @@
-package acp
+package xacp
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ import (
 	"github.com/spachava753/gai"
 )
 
-func (a *Agent) promptToMessage(contentBlocks []acp.ContentBlock) gai.Message {
+func PromptToMessage(contentBlocks []acp.ContentBlock) gai.Message {
 	msg := gai.Message{
 		Role:   gai.User,
 		Blocks: make([]gai.Block, 0, len(contentBlocks)),
@@ -107,13 +107,4 @@ func (a *Agent) promptToMessage(contentBlocks []acp.ContentBlock) gai.Message {
 		msg.Blocks = append(msg.Blocks, block)
 	}
 	return msg
-}
-
-func promptTurnDialog(dialog gai.Dialog, inputLen int) gai.Dialog {
-	// Compaction can replace the input history with a shorter rebased dialog.
-	// In that case, the returned dialog is the only safe turn boundary we have.
-	if inputLen < 0 || inputLen > len(dialog) {
-		return dialog
-	}
-	return dialog[inputLen:]
 }

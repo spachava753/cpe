@@ -1,4 +1,4 @@
-package acp
+package xacp
 
 import (
 	"testing"
@@ -13,7 +13,7 @@ func TestPromptToMessagePreservesACPBase64Content(t *testing.T) {
 	const imageBase64 = "iVBORw0KGgo="
 	const audioBase64 = "UklGRiQAAABXQVZF"
 
-	msg := (&Agent{}).promptToMessage([]acpsdk.ContentBlock{
+	msg := PromptToMessage([]acpsdk.ContentBlock{
 		acpsdk.TextBlock("look"),
 		acpsdk.ImageBlock(imageBase64, "image/png"),
 		acpsdk.AudioBlock(audioBase64, "audio/wav"),
@@ -47,7 +47,7 @@ func TestPromptToMessageEmbeddedResources(t *testing.T) {
 	t.Parallel()
 
 	t.Run("text and inferred image blob", func(t *testing.T) {
-		msg := (&Agent{}).promptToMessage([]acpsdk.ContentBlock{
+		msg := PromptToMessage([]acpsdk.ContentBlock{
 			acpsdk.ResourceBlock(acpsdk.EmbeddedResourceResource{TextResourceContents: &acpsdk.TextResourceContents{
 				Uri:  "file:///workspace/notes.md",
 				Text: "# Notes\nKeep this context.",
@@ -84,7 +84,7 @@ func TestPromptToMessageEmbeddedResources(t *testing.T) {
 
 	t.Run("explicit MIME type", func(t *testing.T) {
 		mimeType := "application/pdf"
-		msg := (&Agent{}).promptToMessage([]acpsdk.ContentBlock{
+		msg := PromptToMessage([]acpsdk.ContentBlock{
 			acpsdk.ResourceBlock(acpsdk.EmbeddedResourceResource{BlobResourceContents: &acpsdk.BlobResourceContents{
 				Uri:      "file:///workspace/docs/report.unknown",
 				MimeType: &mimeType,
@@ -112,7 +112,7 @@ func TestPromptToMessageEmbeddedResources(t *testing.T) {
 			}
 		}()
 
-		_ = (&Agent{}).promptToMessage([]acpsdk.ContentBlock{
+		_ = PromptToMessage([]acpsdk.ContentBlock{
 			acpsdk.ResourceBlock(acpsdk.EmbeddedResourceResource{BlobResourceContents: &acpsdk.BlobResourceContents{
 				Uri:  "untitled-resource",
 				Blob: "AAAA",
@@ -127,7 +127,7 @@ func TestPromptToMessageEmbeddedResources(t *testing.T) {
 			}
 		}()
 
-		_ = (&Agent{}).promptToMessage([]acpsdk.ContentBlock{
+		_ = PromptToMessage([]acpsdk.ContentBlock{
 			acpsdk.ResourceBlock(acpsdk.EmbeddedResourceResource{BlobResourceContents: &acpsdk.BlobResourceContents{
 				Uri:  "file:///%zz",
 				Blob: "AAAA",
