@@ -34,6 +34,142 @@ type ServeOptions struct {
 	DbPath     string
 }
 
+type serverRuntimeCreator struct {
+	rawCfg *config.RawConfig
+	stderr io.Writer
+	store  *storage.Sqlite
+}
+
+var _ RuntimeCreator = (*serverRuntimeCreator)(nil)
+
+func (c *serverRuntimeCreator) Create(ctx context.Context, runtimeOpts runtimeOpts) (runtime, error) {
+	cfg, err := config.ResolveFromRaw(c.rawCfg, config.RuntimeOptions{
+		ModelRef: runtimeOpts.modelRef,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve model config: %v", err)
+	}
+
+	slog.Debug("config resolved")
+
+	// Load and render system prompt
+	systemPrompt, err := commands.LoadSystemPrompt(ctx, commands.LoadSystemPromptOptions{
+		SystemPromptPath: cfg.SystemPromptPath,
+		Config:           cfg,
+		Stderr:           c.stderr,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load system prompt: %v", err)
+	}
+
+	slog.Debug("system prompt loaded", slog.String("path", cfg.SystemPromptPath))
+
+	genBase, err := agent.InitGeneratorFromModel(ctx, cfg.Model, systemPrompt, cfg.Timeout)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create generator: %v", err)
+	}
+
+	gen, ok := genBase.(gai.ToolCallingGenerator)
+	if !ok {
+		return nil, fmt.Errorf("generator does not implement ToolCallingGenerator interface")
+	}
+
+	wrappers := []gai.WrapperFunc{
+		agent.WithBlockFilter(cfg.Model.Type),
+	}
+
+	wrapped := gai.Wrap(gen, wrappers...)
+	gen, ok = wrapped.(gai.ToolCallingGenerator)
+	if !ok {
+		return nil, fmt.Errorf("wrapped generator does not implement ToolCallingGenerator interface")
+	}
+
+	l := Loop{
+		DialogSaver: c.store,
+		CostAdder:   c.store,
+		Cfg:         cfg,
+		G:           gen,
+		conn:        runtimeOpts.conn,
+	}
+
+	ca := closerAgent{
+		Loop: &l,
+	}
+
+	if !cfg.DisableEditTool {
+		textEditTool, textEditCallback := textedit.MakeTool(
+			runtimeOpts.sessionId,
+			runtimeOpts.conn,
+		)
+		if err := l.Register(textEditTool, textEditCallback); err != nil {
+			return nil, fmt.Errorf("failed to register text_edit tool: %w", err)
+		}
+	}
+
+	mcpServersConfig, err := mergeACPServerConfigs(cfg.MCPServers, runtimeOpts.mcpServers)
+	if err != nil {
+		return nil, err
+	}
+
+	// connecting to mcps
+	// TODO: we connect to mcp servers for each active session, we really need a way to pool connections or something
+	mcpState, err := mcp.InitializeConnections(ctx, mcpServersConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize MCP connections: %w", err)
+	}
+	ca.mcpState = mcpState
+
+	slog.Debug("initialized mcp connections")
+
+	codeModeEnabled := cfg.CodeMode != nil && cfg.CodeMode.Enabled
+	slog.Debug("code mode config", slog.Bool("enabled", codeModeEnabled))
+	if codeModeEnabled {
+		executeGoCodeTool := codemode.MakeTool(cfg.CodeMode.MaxTimeout)
+		callback := &codemode.ExecuteGoCodeCallback{
+			Cwd:                  runtimeOpts.cwd,
+			SessionId:            runtimeOpts.sessionId,
+			MaxTimeout:           cfg.CodeMode.MaxTimeout,
+			LargeOutputCharLimit: codemode.ResolveLargeOutputCharLimit(cfg.CodeMode.LargeOutputCharLimit, cfg.Model.ContextWindow),
+			Conn:                 runtimeOpts.conn,
+		}
+
+		if err := l.Register(executeGoCodeTool, callback); err != nil {
+			ca.Close()
+			return nil, fmt.Errorf("failed to register execute_go_code tool: %w", err)
+		}
+	}
+
+	for serverName, conn := range mcpState.Connections {
+		for _, mcpTool := range conn.Tools {
+			gaiTool, err := mcp.ToGaiTool(mcpTool)
+			if err != nil {
+				ca.Close()
+				return nil, fmt.Errorf("converting tool %s: %w", mcpTool.Name, err)
+			}
+			if err := l.Register(gaiTool, mcp.NewToolCallback(
+				runtimeOpts.conn,
+				runtimeOpts.sessionId,
+				conn.ClientSession,
+				serverName,
+				mcpTool.Name,
+				conn.Config,
+			)); err != nil {
+				ca.Close()
+				return nil, fmt.Errorf("failed to register tool %s: %w", mcpTool.Name, err)
+			}
+		}
+	}
+
+	if cfg.Compaction != nil {
+		if err := l.Register(cfg.Compaction.Tool, nil); err != nil {
+			ca.Close()
+			return nil, fmt.Errorf("failed to register compaction tool: %w", err)
+		}
+	}
+
+	return &ca, nil
+}
+
 func Serve(ctx context.Context, opts ServeOptions) error {
 	if opts.Stdout == nil {
 		return errors.New("provided stdout cannot be nil")
@@ -84,134 +220,10 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	}
 
 	// TODO: we should refactor the runtime factory to be made from the session config options
-	runtimeFactory := func(
-		runtimeOpts runtimeOpts,
-	) (acpRuntime, error) {
-		cfg, err := config.ResolveFromRaw(rawCfg, config.RuntimeOptions{
-			ModelRef: runtimeOpts.modelRef,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve model config: %v", err)
-		}
-
-		slog.Debug("config resolved")
-
-		// Load and render system prompt
-		systemPrompt, err := commands.LoadSystemPrompt(ctx, commands.LoadSystemPromptOptions{
-			SystemPromptPath: cfg.SystemPromptPath,
-			Config:           cfg,
-			Stderr:           opts.Stderr,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to load system prompt: %v", err)
-		}
-
-		slog.Debug("system prompt loaded", slog.String("path", cfg.SystemPromptPath))
-
-		genBase, err := agent.InitGeneratorFromModel(ctx, cfg.Model, systemPrompt, cfg.Timeout)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create generator: %v", err)
-		}
-
-		gen, ok := genBase.(gai.ToolCallingGenerator)
-		if !ok {
-			return nil, fmt.Errorf("generator does not implement ToolCallingGenerator interface")
-		}
-
-		wrappers := []gai.WrapperFunc{
-			agent.WithBlockFilter(cfg.Model.Type),
-		}
-
-		wrapped := gai.Wrap(gen, wrappers...)
-		gen, ok = wrapped.(gai.ToolCallingGenerator)
-		if !ok {
-			return nil, fmt.Errorf("wrapped generator does not implement ToolCallingGenerator interface")
-		}
-
-		l := Loop{
-			DialogSaver: sqliteStorage,
-			CostAdder:   sqliteStorage,
-			Cfg:         cfg,
-			G:           gen,
-			conn:        runtimeOpts.conn,
-		}
-
-		ca := closerAgent{
-			Loop: &l,
-		}
-
-		if !cfg.DisableEditTool {
-			textEditTool, textEditCallback := textedit.MakeTool(
-				runtimeOpts.sessionId,
-				runtimeOpts.conn,
-			)
-			if err := l.Register(textEditTool, textEditCallback); err != nil {
-				return nil, fmt.Errorf("failed to register text_edit tool: %w", err)
-			}
-		}
-
-		mcpServersConfig, err := mergeACPServerConfigs(cfg.MCPServers, runtimeOpts.mcpServers)
-		if err != nil {
-			return nil, err
-		}
-
-		// connecting to mcps
-		// TODO: we connect to mcp servers for each active session, we really need a way to pool connections or something
-		mcpState, err := mcp.InitializeConnections(ctx, mcpServersConfig)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize MCP connections: %w", err)
-		}
-		ca.mcpState = mcpState
-
-		slog.Debug("initialized mcp connections")
-
-		codeModeEnabled := cfg.CodeMode != nil && cfg.CodeMode.Enabled
-		slog.Debug("code mode config", slog.Bool("enabled", codeModeEnabled))
-		if codeModeEnabled {
-			executeGoCodeTool := codemode.MakeTool(cfg.CodeMode.MaxTimeout)
-			callback := &codemode.ExecuteGoCodeCallback{
-				Cwd:                  runtimeOpts.cwd,
-				SessionId:            runtimeOpts.sessionId,
-				MaxTimeout:           cfg.CodeMode.MaxTimeout,
-				LargeOutputCharLimit: codemode.ResolveLargeOutputCharLimit(cfg.CodeMode.LargeOutputCharLimit, cfg.Model.ContextWindow),
-				Conn:                 runtimeOpts.conn,
-			}
-
-			if err := l.Register(executeGoCodeTool, callback); err != nil {
-				ca.Close()
-				return nil, fmt.Errorf("failed to register execute_go_code tool: %w", err)
-			}
-		}
-
-		for serverName, conn := range mcpState.Connections {
-			for _, mcpTool := range conn.Tools {
-				gaiTool, err := mcp.ToGaiTool(mcpTool)
-				if err != nil {
-					ca.Close()
-					return nil, fmt.Errorf("converting tool %s: %w", mcpTool.Name, err)
-				}
-				if err := l.Register(gaiTool, mcp.NewToolCallback(
-					runtimeOpts.conn,
-					runtimeOpts.sessionId,
-					conn.ClientSession,
-					serverName,
-					mcpTool.Name,
-					conn.Config,
-				)); err != nil {
-					ca.Close()
-					return nil, fmt.Errorf("failed to register tool %s: %w", mcpTool.Name, err)
-				}
-			}
-		}
-
-		if cfg.Compaction != nil {
-			if err := l.Register(cfg.Compaction.Tool, nil); err != nil {
-				ca.Close()
-				return nil, fmt.Errorf("failed to register compaction tool: %w", err)
-			}
-		}
-
-		return &ca, nil
+	runtimeFactory := &serverRuntimeCreator{
+		rawCfg: rawCfg,
+		stderr: opts.Stderr,
+		store:  sqliteStorage,
 	}
 
 	ag := Agent{

@@ -64,24 +64,30 @@ func (t *noOpAcpClient) WriteTextFile(ctx context.Context, params acp.WriteTextF
 
 var _ acp.Client = (*noOpAcpClient)(nil)
 
-// mockRuntime is used to simulate a [acpRuntime]. It needs to be able to return a response, or an error, and be able to simulate work
+// mockRuntime is used to simulate a [runtime]. It needs to be able to return a response, or an error, and be able to simulate work
 type mockRuntime func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error)
 
-// Close implements [acpRuntime].
+// Close implements [runtime].
 func (m mockRuntime) Close() error {
 	return nil
 }
 
-// Generate implements [acpRuntime].
+// Generate implements [runtime].
 func (m mockRuntime) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 	return m(ctx, dialog, opts)
 }
 
-var _ acpRuntime = (*mockRuntime)(nil)
+var _ runtime = (*mockRuntime)(nil)
 
-var unreachableRuntimeFactory = func(opts runtimeOpts) (acpRuntime, error) {
-	panic("should not be called")
+type runtimeCreatorFunc func(context.Context, runtimeOpts) (runtime, error)
+
+func (f runtimeCreatorFunc) Create(ctx context.Context, opts runtimeOpts) (runtime, error) {
+	return f(ctx, opts)
 }
+
+var unreachableRuntimeFactory = runtimeCreatorFunc(func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+	panic("should not be called")
+})
 
 type testSetup struct {
 	ClientConn *acp.ClientSideConnection
@@ -94,7 +100,7 @@ func setup(
 	t *testing.T,
 	client acp.Client,
 	cfg *config.RawConfig,
-	rf runtimeFactory,
+	rf runtimeCreatorFunc,
 ) testSetup {
 	t.Helper()
 

@@ -14,7 +14,7 @@ import (
 	"github.com/spachava753/cpe/internal/sync"
 )
 
-type acpRuntime interface {
+type runtime interface {
 	Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error)
 	Close() error
 }
@@ -27,7 +27,7 @@ type session struct {
 	modelRef      string
 	thinkingLevel string
 	mcpServers    []acp.McpServer
-	runtime       acpRuntime
+	runtime       runtime
 	cancelfunc    context.CancelFunc
 }
 
@@ -130,7 +130,7 @@ func (a *Agent) loadActiveSession(
 		if err := a.db.SetACPSessionThinkingLevel(ctx, sessionId, thinkingLevel); err != nil {
 			return nil, fmt.Errorf("could not update thinking level config: %v", err)
 		}
-		runtime, err := a.runtimeFactory(runtimeOpts{
+		runtime, err := a.runtimeFactory.Create(ctx, runtimeOpts{
 			conn:       a.conn,
 			modelRef:   modelRef,
 			mcpServers: mcpServers,
@@ -164,7 +164,7 @@ func (a *Agent) loadActiveSession(
 		}
 	}
 
-	runtime, err := a.runtimeFactory(runtimeOpts{
+	runtime, err := a.runtimeFactory.Create(ctx, runtimeOpts{
 		conn:       a.conn,
 		modelRef:   modelRef,
 		mcpServers: mcpServers,

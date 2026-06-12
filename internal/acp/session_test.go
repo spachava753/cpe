@@ -23,7 +23,7 @@ type closeTrackingRuntime struct {
 	closeErr   error
 }
 
-// Generate implements [acpRuntime].
+// Generate implements [runtime].
 func (r *closeTrackingRuntime) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 	if r.generate == nil {
 		return dialog, nil
@@ -31,7 +31,7 @@ func (r *closeTrackingRuntime) Generate(ctx context.Context, dialog gai.Dialog, 
 	return r.generate(ctx, dialog, opts)
 }
 
-// Close implements [acpRuntime].
+// Close implements [runtime].
 func (r *closeTrackingRuntime) Close() error {
 	r.closeCalls++
 	return r.closeErr
@@ -241,7 +241,7 @@ func TestResumeSession(t *testing.T) {
 					},
 				},
 			},
-			func(opts runtimeOpts) (acpRuntime, error) {
+			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
 				createdModelRefs = append(createdModelRefs, opts.modelRef)
 				return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 					return dialog, nil
@@ -322,7 +322,7 @@ func TestResumeSession(t *testing.T) {
 					},
 				},
 			},
-			func(opts runtimeOpts) (acpRuntime, error) {
+			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
 				createdModelRefs = append(createdModelRefs, opts.modelRef)
 				return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 					return dialog, nil
@@ -405,7 +405,7 @@ func TestResumeSession(t *testing.T) {
 					},
 				},
 			},
-			func(opts runtimeOpts) (acpRuntime, error) {
+			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
 				createdModelRefs = append(createdModelRefs, opts.modelRef)
 				return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 					return dialog, nil
@@ -483,7 +483,7 @@ func TestLoadSession(t *testing.T) {
 				},
 			},
 		},
-		func(opts runtimeOpts) (acpRuntime, error) {
+		func(ctx context.Context, opts runtimeOpts) (runtime, error) {
 			createdModelRefs = append(createdModelRefs, opts.modelRef)
 			return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 				return dialog, nil
@@ -601,7 +601,7 @@ func TestLoadSessionReplaysCompactionLineage(t *testing.T) {
 				},
 			},
 		},
-		func(opts runtimeOpts) (acpRuntime, error) {
+		func(ctx context.Context, opts runtimeOpts) (runtime, error) {
 			createdModelRefs = append(createdModelRefs, opts.modelRef)
 			return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 				return dialog, nil
@@ -757,7 +757,7 @@ func TestCancel(t *testing.T) {
 					},
 				},
 			},
-			func(opts runtimeOpts) (acpRuntime, error) {
+			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
 				return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 					close(generateStarted)
 					<-ctx.Done()
@@ -901,7 +901,7 @@ func TestDeleteSession(t *testing.T) {
 				},
 			},
 		},
-		func(opts runtimeOpts) (acpRuntime, error) {
+		func(ctx context.Context, opts runtimeOpts) (runtime, error) {
 			return trackingRuntime, nil
 		},
 	)
@@ -1025,7 +1025,7 @@ func TestForkSession(t *testing.T) {
 			t,
 			&noOpAcpClient{},
 			forkTestConfig(),
-			func(opts runtimeOpts) (acpRuntime, error) {
+			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
 				return savingRuntime, nil
 			},
 		)
@@ -1149,7 +1149,7 @@ func TestForkSession(t *testing.T) {
 			t,
 			&noOpAcpClient{},
 			forkTestConfig(),
-			func(opts runtimeOpts) (acpRuntime, error) {
+			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
 				return savingRuntime, nil
 			},
 		)
@@ -1290,7 +1290,7 @@ func TestCloseSession(t *testing.T) {
 					},
 				},
 			},
-			func(opts runtimeOpts) (acpRuntime, error) {
+			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
 				return trackingRuntime, nil
 			},
 		)
@@ -1366,7 +1366,7 @@ func TestCloseSession(t *testing.T) {
 					},
 				},
 			},
-			func(opts runtimeOpts) (acpRuntime, error) {
+			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
 				return trackingRuntime, nil
 			},
 		)

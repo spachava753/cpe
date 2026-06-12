@@ -27,7 +27,9 @@ type runtimeOpts struct {
 // runtimeFactory is the type to represent a factory that will
 // construct the runtime that actually executes the agent loop
 // on call the [Agent.Prompt]
-type runtimeFactory func(opts runtimeOpts) (acpRuntime, error)
+type RuntimeCreator interface {
+	Create(context.Context, runtimeOpts) (runtime, error)
+}
 
 // Agent is an implementation of an [acp.Agent]
 //
@@ -46,7 +48,7 @@ type Agent struct {
 	// genId is a factory function to create session ids
 	genId func() acp.SessionId
 	// runtimeFactory is a factory function to create runtimes for session execution
-	runtimeFactory runtimeFactory
+	runtimeFactory RuntimeCreator
 	// rawCfg is the raw config loaded, used for model picking at the beginning of a new session
 	rawCfg *config.RawConfig
 	// db represents the API surface needed for persistent session management
@@ -136,7 +138,7 @@ func (a *Agent) Prompt(
 			return nil
 		}
 		var err error
-		t.runtime, err = a.runtimeFactory(runtimeOpts{
+		t.runtime, err = a.runtimeFactory.Create(ctx, runtimeOpts{
 			sessionId:  params.SessionId,
 			cwd:        t.cwd,
 			conn:       a.conn,
@@ -179,7 +181,7 @@ func (a *Agent) Prompt(
 		}
 		dialog = append(dialog, a.promptToMessage(params.Prompt))
 		if t.runtime == nil {
-			runtime, err := a.runtimeFactory(runtimeOpts{
+			runtime, err := a.runtimeFactory.Create(cancelCtx, runtimeOpts{
 				conn:       a.conn,
 				cwd:        t.cwd,
 				sessionId:  params.SessionId,

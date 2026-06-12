@@ -557,7 +557,7 @@ func TestSetSessionConfigOptionDuringPrompt(t *testing.T) {
 				},
 			},
 		},
-		func(opts runtimeOpts) (acpRuntime, error) {
+		func(ctx context.Context, opts runtimeOpts) (runtime, error) {
 			return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 				if opts == nil {
 					capturedThinkingBudgets = append(capturedThinkingBudgets, "")
