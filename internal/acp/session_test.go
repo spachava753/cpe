@@ -243,9 +243,7 @@ func TestResumeSession(t *testing.T) {
 			},
 			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
 				createdModelRefs = append(createdModelRefs, opts.modelRef)
-				return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
-					return dialog, nil
-				}), nil
+				return testRuntime{}, nil
 			},
 		)
 		clientConn := fixture.ClientConn
@@ -324,9 +322,7 @@ func TestResumeSession(t *testing.T) {
 			},
 			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
 				createdModelRefs = append(createdModelRefs, opts.modelRef)
-				return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
-					return dialog, nil
-				}), nil
+				return testRuntime{}, nil
 			},
 		)
 		clientConn := fixture.ClientConn
@@ -407,9 +403,7 @@ func TestResumeSession(t *testing.T) {
 			},
 			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
 				createdModelRefs = append(createdModelRefs, opts.modelRef)
-				return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
-					return dialog, nil
-				}), nil
+				return testRuntime{}, nil
 			},
 		)
 		clientConn := fixture.ClientConn
@@ -485,9 +479,7 @@ func TestLoadSession(t *testing.T) {
 		},
 		func(ctx context.Context, opts runtimeOpts) (runtime, error) {
 			createdModelRefs = append(createdModelRefs, opts.modelRef)
-			return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
-				return dialog, nil
-			}), nil
+			return testRuntime{}, nil
 		},
 	)
 	clientConn := fixture.ClientConn
@@ -603,9 +595,7 @@ func TestLoadSessionReplaysCompactionLineage(t *testing.T) {
 		},
 		func(ctx context.Context, opts runtimeOpts) (runtime, error) {
 			createdModelRefs = append(createdModelRefs, opts.modelRef)
-			return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
-				return dialog, nil
-			}), nil
+			return testRuntime{}, nil
 		},
 	)
 	clientConn := fixture.ClientConn
@@ -738,45 +728,43 @@ func TestCancel(t *testing.T) {
 		generateStarted := make(chan struct{})
 		var clientConn *acp.ClientSideConnection
 		var store *storage.Sqlite
-		fixture := setup(
-			t,
-			&noOpAcpClient{},
-			&config.RawConfig{
-				Models: []config.ModelConfig{
-					{
-						Model: config.Model{
-							Ref:                  "test-model",
-							DisplayName:          "Test Model",
-							ID:                   "test-model",
-							Type:                 "responses",
-							BaseUrl:              "https://customurl.com/v1",
-							ContextWindow:        100,
-							InputCostPerMillion:  new(1.0),
-							OutputCostPerMillion: new(1.0),
-						},
+		rawCfg := config.RawConfig{
+			Models: []config.ModelConfig{
+				{
+					Model: config.Model{
+						Ref:                  "test-model",
+						DisplayName:          "Test Model",
+						ID:                   "test-model",
+						Type:                 "responses",
+						BaseUrl:              "https://customurl.com/v1",
+						ContextWindow:        100,
+						InputCostPerMillion:  new(1.0),
+						OutputCostPerMillion: new(1.0),
 					},
 				},
 			},
+		}
+		fixture := setup(
+			t,
+			&noOpAcpClient{},
+			&rawCfg,
 			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
-				return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
-					close(generateStarted)
-					<-ctx.Done()
-
-					generatedDialog := gai.Dialog{
-						{
-							Role:   gai.Assistant,
-							Blocks: []gai.Block{gai.TextBlock("cancelled")},
-						},
-					}
-					savedDialog := make(gai.Dialog, 0, len(generatedDialog))
-					for msg, err := range store.SaveDialog(context.WithoutCancel(ctx), slices.Values(generatedDialog)) {
-						if err != nil {
-							return nil, err
-						}
-						savedDialog = append(savedDialog, msg)
-					}
-					return savedDialog, ctx.Err()
-				}), nil
+				gen := testGen{responses: []genFunc{
+					func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+						close(generateStarted)
+						<-ctx.Done()
+						return gai.Response{}, ctx.Err()
+					},
+				}}
+				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: opts.modelRef})
+				be.Err(t, err, nil)
+				return testRuntime{Loop: &Loop{
+					G:           &gen,
+					DialogSaver: store,
+					CostAdder:   store,
+					Cfg:         cfg,
+					conn:        opts.conn,
+				}}, nil
 			},
 		)
 		clientConn = fixture.ClientConn

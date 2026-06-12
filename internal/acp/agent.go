@@ -259,6 +259,12 @@ func (a *Agent) Prompt(
 				Usage:      usage,
 			}, nil
 		}
+		if _, ok := errors.AsType[gai.ContentPolicyErr](result.err); ok {
+			return acp.PromptResponse{
+				StopReason: acp.StopReasonRefusal,
+				Usage:      usage,
+			}, nil
+		}
 		if _, ok := errors.AsType[*gai.ContentPolicyErr](result.err); ok {
 			return acp.PromptResponse{
 				StopReason: acp.StopReasonRefusal,

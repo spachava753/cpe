@@ -8,7 +8,6 @@ import (
 
 	"github.com/coder/acp-go-sdk"
 	"github.com/nalgeon/be"
-	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
@@ -63,21 +62,6 @@ func (t *noOpAcpClient) WriteTextFile(ctx context.Context, params acp.WriteTextF
 }
 
 var _ acp.Client = (*noOpAcpClient)(nil)
-
-// mockRuntime is used to simulate a [runtime]. It needs to be able to return a response, or an error, and be able to simulate work
-type mockRuntime func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error)
-
-// Close implements [runtime].
-func (m mockRuntime) Close() error {
-	return nil
-}
-
-// Generate implements [runtime].
-func (m mockRuntime) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
-	return m(ctx, dialog, opts)
-}
-
-var _ runtime = (*mockRuntime)(nil)
 
 type runtimeCreatorFunc func(context.Context, runtimeOpts) (runtime, error)
 

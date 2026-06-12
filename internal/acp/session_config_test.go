@@ -2,7 +2,6 @@ package acp
 
 import (
 	"context"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -526,64 +525,72 @@ func TestSetSessionConfigOptionDuringPrompt(t *testing.T) {
 		})
 	})
 
-	fixture := setup(
-		t,
-		&noOpAcpClient{},
-		&config.RawConfig{
-			Models: []config.ModelConfig{
-				{
-					Model: config.Model{
-						Ref:                  "test-model",
-						DisplayName:          "Test Model",
-						ID:                   "test-model",
-						Type:                 "responses",
-						BaseUrl:              "https://customurl.com/v1",
-						ContextWindow:        100,
-						InputCostPerMillion:  new(1.0),
-						OutputCostPerMillion: new(1.0),
-						ThinkingValues: []config.ThinkingValueConfig{
-							{
-								Name:        "Low",
-								Value:       "low",
-								Description: "Low thinking",
-							},
-							{
-								Name:        "High",
-								Value:       "high",
-								Description: "High thinking",
-							},
+	rawCfg := config.RawConfig{
+		Models: []config.ModelConfig{
+			{
+				Model: config.Model{
+					Ref:                  "test-model",
+					DisplayName:          "Test Model",
+					ID:                   "test-model",
+					Type:                 "responses",
+					BaseUrl:              "https://customurl.com/v1",
+					ContextWindow:        100,
+					InputCostPerMillion:  new(1.0),
+					OutputCostPerMillion: new(1.0),
+					ThinkingValues: []config.ThinkingValueConfig{
+						{
+							Name:        "Low",
+							Value:       "low",
+							Description: "Low thinking",
+						},
+						{
+							Name:        "High",
+							Value:       "high",
+							Description: "High thinking",
 						},
 					},
 				},
 			},
 		},
+	}
+	testClient := &promptTestClient{}
+	fixture := setup(
+		t,
+		testClient,
+		&rawCfg,
 		func(ctx context.Context, opts runtimeOpts) (runtime, error) {
-			return mockRuntime(func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
-				if opts == nil {
-					capturedThinkingBudgets = append(capturedThinkingBudgets, "")
-				} else {
-					capturedThinkingBudgets = append(capturedThinkingBudgets, opts.ThinkingBudget)
-				}
-				startedOnce.Do(func() {
-					close(generateStarted)
-				})
-				<-releaseGenerate
-
-				generatedDialog := gai.Dialog{
-					{
-						Role:   gai.Assistant,
-						Blocks: []gai.Block{gai.TextBlock("done")},
-					},
-				}
-				savedDialog := make(gai.Dialog, 0, len(generatedDialog))
-				for msg, err := range store.SaveDialog(context.WithoutCancel(ctx), slices.Values(generatedDialog)) {
-					if err != nil {
-						return nil, err
+			gen := testGen{responses: []genFunc{
+				func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+					if opts == nil {
+						capturedThinkingBudgets = append(capturedThinkingBudgets, "")
+					} else {
+						capturedThinkingBudgets = append(capturedThinkingBudgets, opts.ThinkingBudget)
 					}
-					savedDialog = append(savedDialog, msg)
-				}
-				return savedDialog, nil
-			}), nil
+					startedOnce.Do(func() {
+						close(generateStarted)
+					})
+					<-releaseGenerate
+
+					return gai.Response{
+						Candidates: []gai.Message{{
+							Role:            gai.Assistant,
+							Blocks:          []gai.Block{gai.TextBlock("done")},
+							ToolResultError: false,
+							ExtraFields:     map[string]any{},
+						}},
+						FinishReason: gai.EndTurn,
+					}, nil
+				},
+			}}
+			cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: opts.modelRef})
+			be.Err(t, err, nil)
+			return testRuntime{Loop: &Loop{
+				G:           &gen,
+				DialogSaver: store,
+				CostAdder:   store,
+				Cfg:         cfg,
+				conn:        opts.conn,
+			}}, nil
 		},
 	)
 	clientConn = fixture.ClientConn

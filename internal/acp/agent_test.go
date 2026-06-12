@@ -2,6 +2,9 @@ package acp
 
 import (
 	"context"
+	"errors"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/coder/acp-go-sdk"
@@ -11,6 +14,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
+	cpesync "github.com/spachava753/cpe/internal/sync"
 )
 
 type promptTestClient struct {
@@ -132,7 +136,7 @@ func TestPrompt(t *testing.T) {
 					},
 				}
 				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{
-					ModelRef: "test-model",
+					ModelRef: opts.modelRef,
 					// TODO: Should we set timeout?
 					// TODO: Should we set gen opts?
 				})
@@ -383,7 +387,7 @@ Output Cost: 1.00`),
 					},
 				}
 				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{
-					ModelRef: "test-model",
+					ModelRef: opts.modelRef,
 					// TODO: Should we set timeout?
 					// TODO: Should we set gen opts?
 				})
@@ -587,5 +591,736 @@ Output Cost: 1.00`),
 		outputTokens, ok := storedAssistant.ExtraFields[storage.AgentMetadataOutputTokensKey].(int64)
 		be.True(t, ok)
 		be.Equal(t, outputTokens, int64(2))
+	})
+	t.Run("continues existing session history", func(t *testing.T) {
+		var (
+			clientConn *acp.ClientSideConnection
+			store      *storage.Sqlite
+			cwd        = t.TempDir()
+			testClient = &promptTestClient{}
+			rawCfg     = config.RawConfig{
+				Models: []config.ModelConfig{
+					{
+						Model: config.Model{
+							Ref:                  "test-model",
+							DisplayName:          "Test Model",
+							ID:                   "test-model",
+							Type:                 "responses",
+							BaseUrl:              "https://customurl.com/v1",
+							ContextWindow:        100,
+							InputCostPerMillion:  new(1.0),
+							OutputCostPerMillion: new(1.0),
+						},
+					},
+				},
+			}
+		)
+		fixture := setup(
+			t,
+			testClient,
+			&rawCfg,
+			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+				gen := testGen{
+					responses: []genFunc{
+						func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+							be.Equal(t, len(d), 3)
+							be.Equal(t, d[0].Role, gai.User)
+							be.Equal(t, d[0].Blocks[0].Content.String(), "seed user")
+							be.Equal(t, d[1].Role, gai.Assistant)
+							be.Equal(t, d[1].Blocks[0].Content.String(), "seed assistant")
+							be.Equal(t, d[2].Role, gai.User)
+							be.Equal(t, d[2].Blocks[0].Content.String(), "follow-up")
+
+							return gai.Response{
+								Candidates: []gai.Message{{
+									Role:            gai.Assistant,
+									Blocks:          []gai.Block{gai.TextBlock("continued answer")},
+									ToolResultError: false,
+									ExtraFields:     map[string]any{},
+								}},
+								FinishReason: gai.EndTurn,
+								UsageMetadata: gai.Metadata{
+									gai.UsageMetricInputTokens:      12,
+									gai.UsageMetricGenerationTokens: 4,
+								},
+							}, nil
+						},
+					},
+				}
+				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: opts.modelRef})
+				be.Err(t, err, nil)
+				return testRuntime{Loop: &Loop{
+					G:           &gen,
+					DialogSaver: store,
+					CostAdder:   store,
+					Cfg:         cfg,
+					conn:        opts.conn,
+				}}, nil
+			},
+		)
+		clientConn = fixture.ClientConn
+		store = fixture.Store
+
+		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
+			ProtocolVersion: acp.ProtocolVersionNumber,
+			ClientCapabilities: acp.ClientCapabilities{
+				Terminal: true,
+			},
+		})
+		be.Err(t, err, nil)
+		newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{
+			Cwd:        cwd,
+			McpServers: []acp.McpServer{},
+		})
+		be.Err(t, err, nil)
+
+		seed := gai.Dialog{
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("seed user")}},
+			{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("seed assistant")}},
+		}
+		var lastMessageID string
+		for msg, err := range store.SaveDialog(t.Context(), slices.Values(seed)) {
+			be.Err(t, err, nil)
+			lastMessageID = storage.GetMessageID(msg)
+		}
+		_, err = store.AddACPSessionMessage(t.Context(), newSessionResp.SessionId, lastMessageID)
+		be.Err(t, err, nil)
+
+		promptResp, err := clientConn.Prompt(t.Context(), acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextBlock("follow-up")},
+			SessionId: newSessionResp.SessionId,
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
+		be.Equal(t, promptResp.Usage, &acp.Usage{TotalTokens: 16, InputTokens: 12, OutputTokens: 4})
+		be.Equal(t, testClient.capturedNotifications, []acp.SessionNotification{
+			{
+				SessionId: newSessionResp.SessionId,
+				Update: acp.SessionUpdate{
+					AgentMessageChunk: &acp.SessionUpdateAgentMessageChunk{
+						Content:       acp.TextBlock("continued answer"),
+						SessionUpdate: "agent_message_chunk",
+					},
+				},
+			},
+			{
+				SessionId: newSessionResp.SessionId,
+				Update: acp.SessionUpdate{
+					UsageUpdate: &acp.SessionUsageUpdate{
+						Cost: &acp.Cost{
+							Amount:   0.000016,
+							Currency: "USD",
+						},
+						SessionUpdate: "usage_update",
+						Size:          100,
+						Used:          16,
+					},
+				},
+			},
+		})
+
+		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionId)
+		be.Err(t, err, nil)
+		storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
+		be.Err(t, err, nil)
+		be.Equal(t, len(storedDialog), 4)
+		be.Equal(t, storedDialog[0].Blocks[0].Content.String(), "seed user")
+		be.Equal(t, storedDialog[1].Blocks[0].Content.String(), "seed assistant")
+		be.Equal(t, storedDialog[2].Blocks[0].Content.String(), "follow-up")
+		be.Equal(t, storedDialog[3].Blocks[0].Content.String(), "continued answer")
+	})
+	t.Run("reuses runtime and accumulates history across prompts", func(t *testing.T) {
+		var (
+			clientConn  *acp.ClientSideConnection
+			store       *storage.Sqlite
+			gen         *testGen
+			factoryCall int
+			cwd         = t.TempDir()
+			testClient  = &promptTestClient{}
+			rawCfg      = config.RawConfig{
+				Models: []config.ModelConfig{
+					{
+						Model: config.Model{
+							Ref:                  "test-model",
+							DisplayName:          "Test Model",
+							ID:                   "test-model",
+							Type:                 "responses",
+							BaseUrl:              "https://customurl.com/v1",
+							ContextWindow:        100,
+							InputCostPerMillion:  new(1.0),
+							OutputCostPerMillion: new(1.0),
+						},
+					},
+				},
+			}
+		)
+		fixture := setup(
+			t,
+			testClient,
+			&rawCfg,
+			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+				factoryCall++
+				gen = &testGen{
+					responses: []genFunc{
+						func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+							be.Equal(t, len(d), 1)
+							be.Equal(t, d[0].Role, gai.User)
+							be.Equal(t, d[0].Blocks[0].Content.String(), "first prompt")
+
+							return gai.Response{
+								Candidates: []gai.Message{{
+									Role:            gai.Assistant,
+									Blocks:          []gai.Block{gai.TextBlock("first answer")},
+									ToolResultError: false,
+									ExtraFields:     map[string]any{},
+								}},
+								FinishReason: gai.EndTurn,
+								UsageMetadata: gai.Metadata{
+									gai.UsageMetricInputTokens:      5,
+									gai.UsageMetricGenerationTokens: 2,
+								},
+							}, nil
+						},
+						func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+							be.Equal(t, len(d), 3)
+							be.Equal(t, d[0].Role, gai.User)
+							be.Equal(t, d[0].Blocks[0].Content.String(), "first prompt")
+							be.Equal(t, d[1].Role, gai.Assistant)
+							be.Equal(t, d[1].Blocks[0].Content.String(), "first answer")
+							be.Equal(t, d[2].Role, gai.User)
+							be.Equal(t, d[2].Blocks[0].Content.String(), "second prompt")
+
+							return gai.Response{
+								Candidates: []gai.Message{{
+									Role:            gai.Assistant,
+									Blocks:          []gai.Block{gai.TextBlock("second answer")},
+									ToolResultError: false,
+									ExtraFields:     map[string]any{},
+								}},
+								FinishReason: gai.EndTurn,
+								UsageMetadata: gai.Metadata{
+									gai.UsageMetricInputTokens:      6,
+									gai.UsageMetricGenerationTokens: 3,
+								},
+							}, nil
+						},
+					},
+				}
+				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: opts.modelRef})
+				be.Err(t, err, nil)
+				return testRuntime{Loop: &Loop{
+					G:           gen,
+					DialogSaver: store,
+					CostAdder:   store,
+					Cfg:         cfg,
+					conn:        opts.conn,
+				}}, nil
+			},
+		)
+		clientConn = fixture.ClientConn
+		store = fixture.Store
+
+		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
+			ProtocolVersion: acp.ProtocolVersionNumber,
+			ClientCapabilities: acp.ClientCapabilities{
+				Terminal: true,
+			},
+		})
+		be.Err(t, err, nil)
+		newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{
+			Cwd:        cwd,
+			McpServers: []acp.McpServer{},
+		})
+		be.Err(t, err, nil)
+
+		firstResp, err := clientConn.Prompt(t.Context(), acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextBlock("first prompt")},
+			SessionId: newSessionResp.SessionId,
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, firstResp.StopReason, acp.StopReasonEndTurn)
+		be.Equal(t, firstResp.Usage, &acp.Usage{TotalTokens: 7, InputTokens: 5, OutputTokens: 2})
+
+		secondResp, err := clientConn.Prompt(t.Context(), acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextBlock("second prompt")},
+			SessionId: newSessionResp.SessionId,
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, secondResp.StopReason, acp.StopReasonEndTurn)
+		be.Equal(t, secondResp.Usage, &acp.Usage{TotalTokens: 9, InputTokens: 6, OutputTokens: 3})
+		be.Equal(t, factoryCall, 1)
+		be.True(t, gen != nil)
+		be.Equal(t, gen.called, 2)
+		firstCost := float64(5)/1_000_000 + float64(2)/1_000_000
+		secondCost := firstCost + float64(6)/1_000_000 + float64(3)/1_000_000
+		be.Equal(t, testClient.capturedNotifications, []acp.SessionNotification{
+			{
+				SessionId: newSessionResp.SessionId,
+				Update: acp.SessionUpdate{
+					AgentMessageChunk: &acp.SessionUpdateAgentMessageChunk{
+						Content:       acp.TextBlock("first answer"),
+						SessionUpdate: "agent_message_chunk",
+					},
+				},
+			},
+			{
+				SessionId: newSessionResp.SessionId,
+				Update: acp.SessionUpdate{
+					UsageUpdate: &acp.SessionUsageUpdate{
+						Cost: &acp.Cost{
+							Amount:   firstCost,
+							Currency: "USD",
+						},
+						SessionUpdate: "usage_update",
+						Size:          100,
+						Used:          7,
+					},
+				},
+			},
+			{
+				SessionId: newSessionResp.SessionId,
+				Update: acp.SessionUpdate{
+					AgentMessageChunk: &acp.SessionUpdateAgentMessageChunk{
+						Content:       acp.TextBlock("second answer"),
+						SessionUpdate: "agent_message_chunk",
+					},
+				},
+			},
+			{
+				SessionId: newSessionResp.SessionId,
+				Update: acp.SessionUpdate{
+					UsageUpdate: &acp.SessionUsageUpdate{
+						Cost: &acp.Cost{
+							Amount:   secondCost,
+							Currency: "USD",
+						},
+						SessionUpdate: "usage_update",
+						Size:          100,
+						Used:          9,
+					},
+				},
+			},
+		})
+
+		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionId)
+		be.Err(t, err, nil)
+		storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
+		be.Err(t, err, nil)
+		be.Equal(t, len(storedDialog), 4)
+		be.Equal(t, storedDialog[0].Blocks[0].Content.String(), "first prompt")
+		be.Equal(t, storedDialog[1].Blocks[0].Content.String(), "first answer")
+		be.Equal(t, storedDialog[2].Blocks[0].Content.String(), "second prompt")
+		be.Equal(t, storedDialog[3].Blocks[0].Content.String(), "second answer")
+	})
+	t.Run("rejects concurrent prompt", func(t *testing.T) {
+		sessionID := acp.SessionId("active-session")
+		agent := &Agent{
+			activeSessions: new(cpesync.Map[acp.SessionId, *cpesync.Guard[session]]),
+			runtimeFactory: runtimeCreatorFunc(func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+				t.Fatal("runtime should not be created for an active session")
+				return nil, nil
+			}),
+		}
+		agent.activeSessions.Store(sessionID, cpesync.NewGuard(session{
+			runtime:    testRuntime{},
+			cancelfunc: func() {},
+		}))
+
+		_, err := agent.Prompt(t.Context(), acp.PromptRequest{
+			SessionId: sessionID,
+			Prompt:    []acp.ContentBlock{acp.TextBlock("second prompt")},
+		})
+		be.True(t, err != nil)
+		be.Equal(t, err.Error(), "cannot do prompt turn in actively generating session")
+	})
+	t.Run("maps max generation limit to stop reason", func(t *testing.T) {
+		var (
+			clientConn *acp.ClientSideConnection
+			store      *storage.Sqlite
+			testClient = &promptTestClient{}
+			rawCfg     = config.RawConfig{
+				Models: []config.ModelConfig{{
+					Model: config.Model{
+						Ref:                  "test-model",
+						DisplayName:          "Test Model",
+						ID:                   "test-model",
+						Type:                 "responses",
+						ContextWindow:        100,
+						InputCostPerMillion:  new(1.0),
+						OutputCostPerMillion: new(1.0),
+					},
+				}},
+			}
+		)
+		fixture := setup(
+			t,
+			testClient,
+			&rawCfg,
+			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+				gen := testGen{responses: []genFunc{
+					func(ctx context.Context, dialog gai.Dialog, genOpts *gai.GenOpts) (gai.Response, error) {
+						be.Equal(t, len(dialog), 1)
+						be.Equal(t, dialog[0].Role, gai.User)
+						be.Equal(t, dialog[0].Blocks[0].Content.String(), "Hello")
+						return gai.Response{}, gai.ErrMaxGenerationLimit
+					},
+				}}
+				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: opts.modelRef})
+				be.Err(t, err, nil)
+				return testRuntime{Loop: &Loop{
+					G:           &gen,
+					DialogSaver: store,
+					CostAdder:   store,
+					Cfg:         cfg,
+					conn:        opts.conn,
+				}}, nil
+			},
+		)
+		clientConn = fixture.ClientConn
+		store = fixture.Store
+
+		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
+			ProtocolVersion: acp.ProtocolVersionNumber,
+			ClientCapabilities: acp.ClientCapabilities{
+				Terminal: true,
+			},
+		})
+		be.Err(t, err, nil)
+		newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+		be.Err(t, err, nil)
+
+		promptResp, err := clientConn.Prompt(t.Context(), acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextBlock("Hello")},
+			SessionId: newSessionResp.SessionId,
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, promptResp.StopReason, acp.StopReasonMaxTokens)
+		be.Equal(t, promptResp.Usage, nil)
+		be.Equal(t, len(testClient.capturedNotifications), 0)
+
+		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionId)
+		be.Err(t, err, nil)
+		storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
+		be.Err(t, err, nil)
+		be.Equal(t, len(storedDialog), 1)
+		be.Equal(t, storedDialog[0].Role, gai.User)
+		be.Equal(t, storedDialog[0].Blocks[0].Content.String(), "Hello")
+	})
+	t.Run("maps content policy error to refusal", func(t *testing.T) {
+		var (
+			clientConn *acp.ClientSideConnection
+			store      *storage.Sqlite
+			testClient = &promptTestClient{}
+			rawCfg     = config.RawConfig{
+				Models: []config.ModelConfig{{
+					Model: config.Model{
+						Ref:                  "test-model",
+						DisplayName:          "Test Model",
+						ID:                   "test-model",
+						Type:                 "responses",
+						ContextWindow:        100,
+						InputCostPerMillion:  new(1.0),
+						OutputCostPerMillion: new(1.0),
+					},
+				}},
+			}
+		)
+		fixture := setup(
+			t,
+			testClient,
+			&rawCfg,
+			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+				gen := testGen{responses: []genFunc{
+					func(ctx context.Context, dialog gai.Dialog, genOpts *gai.GenOpts) (gai.Response, error) {
+						be.Equal(t, len(dialog), 1)
+						be.Equal(t, dialog[0].Role, gai.User)
+						be.Equal(t, dialog[0].Blocks[0].Content.String(), "Hello")
+						return gai.Response{}, gai.ContentPolicyErr("blocked")
+					},
+				}}
+				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: opts.modelRef})
+				be.Err(t, err, nil)
+				return testRuntime{Loop: &Loop{
+					G:           &gen,
+					DialogSaver: store,
+					CostAdder:   store,
+					Cfg:         cfg,
+					conn:        opts.conn,
+				}}, nil
+			},
+		)
+		clientConn = fixture.ClientConn
+		store = fixture.Store
+
+		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
+			ProtocolVersion: acp.ProtocolVersionNumber,
+			ClientCapabilities: acp.ClientCapabilities{
+				Terminal: true,
+			},
+		})
+		be.Err(t, err, nil)
+		newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+		be.Err(t, err, nil)
+
+		promptResp, err := clientConn.Prompt(t.Context(), acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextBlock("Hello")},
+			SessionId: newSessionResp.SessionId,
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, promptResp.StopReason, acp.StopReasonRefusal)
+		be.Equal(t, promptResp.Usage, nil)
+		be.Equal(t, len(testClient.capturedNotifications), 0)
+
+		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionId)
+		be.Err(t, err, nil)
+		storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
+		be.Err(t, err, nil)
+		be.Equal(t, len(storedDialog), 1)
+		be.Equal(t, storedDialog[0].Role, gai.User)
+		be.Equal(t, storedDialog[0].Blocks[0].Content.String(), "Hello")
+	})
+	t.Run("maps cancelled generation to stop reason", func(t *testing.T) {
+		var (
+			clientConn *acp.ClientSideConnection
+			store      *storage.Sqlite
+			testClient = &promptTestClient{}
+			rawCfg     = config.RawConfig{
+				Models: []config.ModelConfig{{
+					Model: config.Model{
+						Ref:                  "test-model",
+						DisplayName:          "Test Model",
+						ID:                   "test-model",
+						Type:                 "responses",
+						ContextWindow:        100,
+						InputCostPerMillion:  new(1.0),
+						OutputCostPerMillion: new(1.0),
+					},
+				}},
+			}
+		)
+		fixture := setup(
+			t,
+			testClient,
+			&rawCfg,
+			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+				gen := testGen{responses: []genFunc{
+					func(ctx context.Context, dialog gai.Dialog, genOpts *gai.GenOpts) (gai.Response, error) {
+						be.Equal(t, len(dialog), 1)
+						be.Equal(t, dialog[0].Role, gai.User)
+						be.Equal(t, dialog[0].Blocks[0].Content.String(), "Hello")
+						return gai.Response{}, context.Canceled
+					},
+				}}
+				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: opts.modelRef})
+				be.Err(t, err, nil)
+				return testRuntime{Loop: &Loop{
+					G:           &gen,
+					DialogSaver: store,
+					CostAdder:   store,
+					Cfg:         cfg,
+					conn:        opts.conn,
+				}}, nil
+			},
+		)
+		clientConn = fixture.ClientConn
+		store = fixture.Store
+
+		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
+			ProtocolVersion: acp.ProtocolVersionNumber,
+			ClientCapabilities: acp.ClientCapabilities{
+				Terminal: true,
+			},
+		})
+		be.Err(t, err, nil)
+		newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+		be.Err(t, err, nil)
+
+		promptResp, err := clientConn.Prompt(t.Context(), acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextBlock("Hello")},
+			SessionId: newSessionResp.SessionId,
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, promptResp.StopReason, acp.StopReasonCancelled)
+		be.Equal(t, promptResp.Usage, nil)
+		be.Equal(t, len(testClient.capturedNotifications), 0)
+
+		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionId)
+		be.Err(t, err, nil)
+		storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
+		be.Err(t, err, nil)
+		be.Equal(t, len(storedDialog), 1)
+		be.Equal(t, storedDialog[0].Role, gai.User)
+		be.Equal(t, storedDialog[0].Blocks[0].Content.String(), "Hello")
+	})
+	t.Run("surfaces unknown generation error", func(t *testing.T) {
+		var (
+			clientConn *acp.ClientSideConnection
+			store      *storage.Sqlite
+			testClient = &promptTestClient{}
+			rawCfg     = config.RawConfig{
+				Models: []config.ModelConfig{{
+					Model: config.Model{
+						Ref:                  "test-model",
+						DisplayName:          "Test Model",
+						ID:                   "test-model",
+						Type:                 "responses",
+						ContextWindow:        100,
+						InputCostPerMillion:  new(1.0),
+						OutputCostPerMillion: new(1.0),
+					},
+				}},
+			}
+		)
+		fixture := setup(
+			t,
+			testClient,
+			&rawCfg,
+			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+				gen := testGen{responses: []genFunc{
+					func(ctx context.Context, dialog gai.Dialog, genOpts *gai.GenOpts) (gai.Response, error) {
+						be.Equal(t, len(dialog), 1)
+						be.Equal(t, dialog[0].Role, gai.User)
+						be.Equal(t, dialog[0].Blocks[0].Content.String(), "Hello")
+						return gai.Response{}, errors.New("boom")
+					},
+				}}
+				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: opts.modelRef})
+				be.Err(t, err, nil)
+				return testRuntime{Loop: &Loop{
+					G:           &gen,
+					DialogSaver: store,
+					CostAdder:   store,
+					Cfg:         cfg,
+					conn:        opts.conn,
+				}}, nil
+			},
+		)
+		clientConn = fixture.ClientConn
+		store = fixture.Store
+
+		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
+			ProtocolVersion: acp.ProtocolVersionNumber,
+			ClientCapabilities: acp.ClientCapabilities{
+				Terminal: true,
+			},
+		})
+		be.Err(t, err, nil)
+		newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+		be.Err(t, err, nil)
+
+		_, err = clientConn.Prompt(t.Context(), acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextBlock("Hello")},
+			SessionId: newSessionResp.SessionId,
+		})
+		be.True(t, err != nil)
+		be.True(t, strings.Contains(err.Error(), "unknown error while generating: boom"))
+		be.Equal(t, len(testClient.capturedNotifications), 0)
+
+		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionId)
+		be.Err(t, err, nil)
+		storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
+		be.Err(t, err, nil)
+		be.Equal(t, len(storedDialog), 1)
+		be.Equal(t, storedDialog[0].Role, gai.User)
+		be.Equal(t, storedDialog[0].Blocks[0].Content.String(), "Hello")
+	})
+	t.Run("omits prompt usage and usage notification without metadata", func(t *testing.T) {
+		var (
+			clientConn *acp.ClientSideConnection
+			store      *storage.Sqlite
+			cwd        = t.TempDir()
+			testClient = &promptTestClient{}
+			rawCfg     = config.RawConfig{
+				Models: []config.ModelConfig{
+					{
+						Model: config.Model{
+							Ref:                  "test-model",
+							DisplayName:          "Test Model",
+							ID:                   "test-model",
+							Type:                 "responses",
+							BaseUrl:              "https://customurl.com/v1",
+							ContextWindow:        100,
+							InputCostPerMillion:  new(1.0),
+							OutputCostPerMillion: new(1.0),
+						},
+					},
+				},
+			}
+		)
+		fixture := setup(
+			t,
+			testClient,
+			&rawCfg,
+			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+				gen := testGen{
+					responses: []genFunc{
+						func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+							return gai.Response{
+								Candidates: []gai.Message{{
+									Role:            gai.Assistant,
+									Blocks:          []gai.Block{gai.TextBlock("metadata-free answer")},
+									ToolResultError: false,
+									ExtraFields:     map[string]any{},
+								}},
+								FinishReason: gai.EndTurn,
+							}, nil
+						},
+					},
+				}
+				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: opts.modelRef})
+				be.Err(t, err, nil)
+				return testRuntime{Loop: &Loop{
+					G:           &gen,
+					DialogSaver: store,
+					CostAdder:   store,
+					Cfg:         cfg,
+					conn:        opts.conn,
+				}}, nil
+			},
+		)
+		clientConn = fixture.ClientConn
+		store = fixture.Store
+
+		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
+			ProtocolVersion: acp.ProtocolVersionNumber,
+			ClientCapabilities: acp.ClientCapabilities{
+				Terminal: true,
+			},
+		})
+		be.Err(t, err, nil)
+		newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{
+			Cwd:        cwd,
+			McpServers: []acp.McpServer{},
+		})
+		be.Err(t, err, nil)
+
+		promptResp, err := clientConn.Prompt(t.Context(), acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextBlock("Hello")},
+			SessionId: newSessionResp.SessionId,
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
+		be.Equal(t, promptResp.Usage, nil)
+		be.Equal(t, testClient.capturedNotifications, []acp.SessionNotification{
+			{
+				SessionId: newSessionResp.SessionId,
+				Update: acp.SessionUpdate{
+					AgentMessageChunk: &acp.SessionUpdateAgentMessageChunk{
+						Content:       acp.TextBlock("metadata-free answer"),
+						SessionUpdate: "agent_message_chunk",
+					},
+				},
+			},
+		})
+
+		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionId)
+		be.Err(t, err, nil)
+		storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
+		be.Err(t, err, nil)
+		storedAssistant := storedDialog[len(storedDialog)-1]
+		_, ok := storedAssistant.ExtraFields[storage.AgentMetadataInputTokensKey]
+		be.True(t, !ok)
+		_, ok = storedAssistant.ExtraFields[storage.AgentMetadataOutputTokensKey]
+		be.True(t, !ok)
 	})
 }
