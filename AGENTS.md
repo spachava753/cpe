@@ -42,6 +42,10 @@ go generate ./internal/config/
 
 CPE is a CLI tool and MCP client where execution time is dominated by network calls to AI model APIs. Performance optimizations are typically not a concern unless specifically requested by the user. Focus on correctness, maintainability, iodmatic Golang, and user experience over micro-optimizations.
 
+## Testing style
+
+Tests should optimize for explicitness and auditability over deduplication. Prefer local setup, direct assertions, and copy-pasteable subtests. Do not introduce helpers or abstractions just to reduce repeated test code; add helpers only when they hide unavoidable infrastructure mechanics or make behavior materially clearer.
+
 ## Documentation for Go Symbols
 
 When gathering context about symbols like types, global variables, constants, functions and methods, prefer to use
