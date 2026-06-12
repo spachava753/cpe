@@ -8,6 +8,7 @@ import (
 
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/acp/xacp"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/sync"
@@ -244,7 +245,7 @@ func (a *Agent) Prompt(
 		return acp.PromptResponse{}, fmt.Errorf("cannot update acp session in db: %v", err)
 	}
 
-	usage := promptTurnUsage(promptTurnDialog(dialog, result.inputLen))
+	usage := xacp.PromptTurnUsage(promptTurnDialog(dialog, result.inputLen))
 	if result.err != nil {
 		if errors.Is(result.err, gai.ErrMaxGenerationLimit) {
 			return acp.PromptResponse{

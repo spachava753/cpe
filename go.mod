@@ -29,7 +29,6 @@ require (
 	github.com/spachava753/gai v0.41.1-0.20260530132625-76e6c6f6dc4b
 	github.com/spf13/cobra v1.10.2
 	github.com/yuin/goldmark v1.8.2
-	golang.org/x/mod v0.36.0
 	golang.org/x/term v0.43.0
 	golang.org/x/tools v0.45.0
 	google.golang.org/genai v1.58.0
@@ -322,6 +321,7 @@ require (
 	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/exp v0.0.0-20260529124908-c761662dc8c9 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20251023183803-a4bb9ffd2546 // indirect
+	golang.org/x/mod v0.36.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
