@@ -14,13 +14,14 @@ body:
       label: Affected Area
       description: Which part of CPE is affected?
       options:
+        - ACP server/protocol behavior
         - Model interaction (OpenAI, Anthropic, Gemini, etc.)
         - MCP server/tools
         - Code mode execution
-        - Conversation management
+        - Session management
         - Configuration/setup
         - File/folder operations
-        - CLI flags/commands
+        - CLI inspection commands
         - Token counting/context
         - Other
     validations:
@@ -74,9 +75,10 @@ body:
       label: Steps to Reproduce
       description: How can we reproduce this issue?
       placeholder: |
-        1. Run `cpe --config ... -m ...`
-        2. Provide prompt "..."
-        3. See error
+        1. Configure an ACP client to launch `cpe acp serve --config ...`
+        2. Start or load a CPE session in the client
+        3. Send prompt or invoke command "..."
+        4. See error
     validations:
       required: true
 
@@ -92,8 +94,8 @@ body:
   - type: textarea
     id: logs
     attributes:
-      label: Error Output / Logs
-      description: Any error messages or relevant terminal output
+      label: Error Output / ACP Logs
+      description: Any error messages, relevant terminal output, or ACP client logs
       render: shell
     validations:
       required: false

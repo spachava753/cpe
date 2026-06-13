@@ -1,6 +1,6 @@
 ## Project Overview
 
-CPE (Chat-based Programming Editor) is a CLI that connects local developer workflows to multiple AI model providers. It analyzes, edits, and creates code via natural-language prompts, with optional MCP tool integration and persistent conversation storage. Link: https://github.com/spachava753/cpe. To learn more, read the README.md
+CPE (Chat-based Programming Editor) is a local Agent Client Protocol (ACP) server for AI coding clients such as Zed. It connects editor-hosted agent workflows to multiple AI model providers, MCP tools, generated Go code execution, and local ACP session persistence. Link: https://github.com/spachava753/cpe. To learn more, read the README.md
 
 ## Documentation
 
@@ -34,13 +34,13 @@ Schema and configuration:
 # Generate JSON Schema for config
 go generate ./internal/config/
 
-# Validate configuration
-./cpe config lint ./examples/cpe.yaml
+# Validate example configuration loads
+go run . model list --config ./examples/cpe.yaml
 ```
 
 ## Performance considerations
 
-CPE is a CLI tool and MCP client where execution time is dominated by network calls to AI model APIs. Performance optimizations are typically not a concern unless specifically requested by the user. Focus on correctness, maintainability, iodmatic Golang, and user experience over micro-optimizations.
+CPE is an ACP server and inspection CLI where execution time is dominated by network calls to AI model APIs and MCP servers. Performance optimizations are typically not a concern unless specifically requested by the user. Focus on correctness, maintainability, idiomatic Golang, protocol behavior, and user experience over micro-optimizations.
 
 ## Testing style
 

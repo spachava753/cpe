@@ -7,7 +7,7 @@ func TestParseConfigDataRejectsJSON(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected JSON config error")
 	}
-	want := "JSON config files are no longer supported; use YAML (.yaml or .yml)"
+	want := "JSON config files are unsupported; use YAML (.yaml or .yml)"
 	if err.Error() != want {
 		t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
 	}

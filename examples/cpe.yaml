@@ -1,171 +1,83 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/spachava753/cpe/refs/heads/main/schema/cpe-config-schema.json
-# cpe.yaml - CPE model profiles. Select one with --model or CPE_MODEL.
 version: "1.0"
 
-# Each model is a complete runtime profile. Use YAML anchors to share repeated
-# generation, MCP, codeMode, or compaction blocks across profiles.
 models:
-  - ref: flash
-    display_name: "Gemini Flash Latest"
-    id: gemini-flash-latest
-    type: gemini
-    api_key_env: GEMINI_API_KEY
-    context_window: 1048576
-    max_output: 65536
-    input_cost_per_million: 0.30
-    output_cost_per_million: 2.50
-
-  - ref: kimig
-    display_name: "Kimi K2"
-    id: moonshotai/kimi-k2-instruct-0905
-    type: openai
-    base_url: https://api.groq.com/openai/v1/
-    api_key_env: GROQ_API_KEY
-    context_window: 262144
-    max_output: 16384
-    input_cost_per_million: 1
-    output_cost_per_million: 3
-
-  - ref: qwenn
-    display_name: "Qwen Next 80B"
-    id: qwen/qwen3-next-80b-a3b-instruct
-    type: openai
-    base_url: https://openrouter.ai/api/v1/
-    api_key_env: OPENROUTER_API_KEY
-    context_window: 262100
-    max_output: 16384
-    input_cost_per_million: 2
-    output_cost_per_million: 2
-    # Example of request patching
-    patchRequest:
-      includeHeaders:
-        HTTP-Referer: https://my-app.example.com
-        X-Title: My AI App
-    #   jsonPatch:
-    #     - op: add
-    #       path: /custom_field
-    #       value: custom_value
-
-  - ref: qwen
-    display_name: "Qwen3 Max"
-    id: qwen/qwen3-max
-    type: openai
-    base_url: https://openrouter.ai/api/v1/
-    api_key_env: OPENROUTER_API_KEY
-    context_window: 262100
-    max_output: 16384
-    input_cost_per_million: 2
-    output_cost_per_million: 2
-
-  - ref: codex
-    display_name: "GPT-5 Codex"
-    id: gpt-5-codex
-    type: responses
-    api_key_env: OPENAI_API_KEY
-    context_window: 400000
+  - ref: opus
+    display_name: "Claude Opus 4.8"
+    id: claude-opus-4-8
+    type: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    context_window: 1000000
     max_output: 128000
-    thinkingValues: &openAIThinkingValues
-      - value: minimal
-        name: Minimal
+    thinkingValues: &claudeThinkingValues
+      - value: disabled
+        name: Disabled
+      - value: adaptive
+        name: Adaptive
       - value: low
         name: Low
       - value: medium
         name: Medium
       - value: high
         name: High
-    input_cost_per_million: 1.25
-    output_cost_per_million: 10
-    systemPromptPath: "./codex_instructions.prompt"
-
-  - ref: gpt5
-    display_name: "GPT-5"
-    id: gpt-5
-    type: responses
-    api_key_env: OPENAI_API_KEY
-    context_window: 400000
-    max_output: 128000
-    thinkingValues: *openAIThinkingValues
-    input_cost_per_million: 1.25
-    output_cost_per_million: 10
-
-  - ref: gpt5mini
-    display_name: "GPT-5 Mini"
-    id: gpt-5-mini
-    type: responses
-    api_key_env: OPENAI_API_KEY
-    context_window: 400000
-    max_output: 128000
-    thinkingValues: *openAIThinkingValues
-    input_cost_per_million: 0.25
-    output_cost_per_million: 2
-
-  - ref: gpt5nano
-    display_name: "GPT-5 Nano"
-    id: gpt-5-nano
-    type: responses
-    api_key_env: OPENAI_API_KEY
-    context_window: 400000
-    max_output: 128000
-    thinkingValues: *openAIThinkingValues
-    input_cost_per_million: 0.05
-    output_cost_per_million: 0.40
-
-  - ref: opus
-    display_name: "Claude Opus 4.1"
-    id: claude-opus-4-1-20250805
-    type: anthropic
-    api_key_env: ANTHROPIC_API_KEY
-    context_window: 200000
-    max_output: 32000
-    thinkingValues: &anthropicThinkingValues
-      - value: adaptive
-        name: Adaptive
-      - value: "4000"
-        name: 4k tokens
-      - value: "10000"
-        name: 10k tokens
-      - value: "16000"
-        name: 16k tokens
-    input_cost_per_million: 15
-    output_cost_per_million: 75
-
-  - ref: sonnet
-    display_name: "Claude Sonnet 4.5"
-    id: claude-sonnet-4-5-20250929
-    type: anthropic
-    api_key_env: ANTHROPIC_API_KEY
-    context_window: 200000
-    max_output: 64000
-    thinkingValues: *anthropicThinkingValues
-    input_cost_per_million: 3
-    output_cost_per_million: 15
-    # Optional: disable CPE's bundled text_edit tool for this profile.
-    # disable_edit_tool: true
-    systemPromptPath: &standardPrompt "./agent_instructions.md"
-    timeout: &standardTimeout "5m"
-    generationParams: &balancedGeneration
-      temperature: 0.2
-      maxGenerationTokens: 4096
-    mcpServers: &standardMCPServers {}
-    codeMode: &goCodeMode
+      - value: xhigh
+        name: Extra High
+      - value: max
+        name: Max
+    input_cost_per_million: 5
+    output_cost_per_million: 25
+    cache_read_cost_per_million: 6.25
+    cache_write_cost_per_million: 0.5
+    systemPromptPath: ./agent_instructions.md
+    timeout: &standardTimeout 1h
+    generationParams:
+      maxGenerationTokens: 128000
+    codeMode: &standardCodeMode
       enabled: true
       maxTimeout: 3600
-      # Uncomment and point at local Go modules that contain helper packages.
-      # localModulePaths:
-      #   - ../my-go-helpers
+      largeOutputCharLimit: 150000
 
-  - ref: glm
-    display_name: "Z.AI GLM-4"
-    id: glm-4
-    type: zai
-    api_key_env: Z_API_KEY
-    context_window: 128000
-    max_output: 4096
-    systemPromptPath: *standardPrompt
+  - ref: gpt55-oauth
+    display_name: "GPT 5.5 (OAuth)"
+    id: gpt-5.5
+    type: responses
+    base_url: https://chatgpt.com/backend-api/codex
+    auth_method: oauth
+    context_window: 272000
+    max_output: 128000
+    thinkingValues: &openAIThinkingValues
+      - value: none
+        name: None
+      - value: low
+        name: Low
+      - value: medium
+        name: Medium
+      - value: high
+        name: High
+      - value: xhigh
+        name: Extra High
+    input_cost_per_million: 5
+    output_cost_per_million: 30
+    cache_read_cost_per_million: 0.5
+    systemPromptPath: ./gpt_agent_instructions.md
     timeout: *standardTimeout
-    generationParams: *balancedGeneration
-    mcpServers: *standardMCPServers
-    codeMode: *goCodeMode
+    generationParams:
+      thinkingBudget: high
+    codeMode: *standardCodeMode
 
-# Conversation storage is intentionally not configured in YAML. Use
-# --db-path or CPE_DB_PATH when needed.
+  - ref: gpt55-api
+    display_name: "GPT 5.5 (API Key)"
+    id: gpt-5.5
+    type: responses
+    api_key_env: OPENAI_API_KEY
+    context_window: 272000
+    max_output: 128000
+    thinkingValues: *openAIThinkingValues
+    input_cost_per_million: 5
+    output_cost_per_million: 30
+    cache_read_cost_per_million: 0.5
+    systemPromptPath: ./gpt_agent_instructions.md
+    timeout: *standardTimeout
+    generationParams:
+      thinkingBudget: high
+    codeMode: *standardCodeMode

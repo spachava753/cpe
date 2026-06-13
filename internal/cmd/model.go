@@ -8,12 +8,11 @@ import (
 	"github.com/spachava753/cpe/internal/commands"
 )
 
-// modelCmd is the CLI group for model inspection commands. It performs config
-// loading and delegates output logic to internal/commands.
+// modelCmd is the CLI group for inspecting model profiles from cpe.yaml.
 var modelCmd = &cobra.Command{
 	Use:     "model",
-	Short:   "Manage LLM models",
-	Long:    `Show and interact with models defined in a JSON catalog via --model-catalog.`,
+	Short:   "Inspect configured model profiles",
+	Long:    `List configured model profiles and inspect the settings CPE exposes to ACP sessions.`,
 	Aliases: []string{"models"},
 }
 
@@ -73,6 +72,8 @@ var systemPromptModelCmd = &cobra.Command{
 }
 
 func init() {
+	modelCmd.PersistentFlags().StringVarP(&model, "model", "m", DefaultModel, "Model profile ref for profile-specific inspection (env: CPE_MODEL)")
+
 	modelCmd.AddCommand(listModelCmd)
 	modelCmd.AddCommand(infoModelCmd)
 	modelCmd.AddCommand(systemPromptModelCmd)

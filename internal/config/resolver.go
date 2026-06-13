@@ -9,17 +9,18 @@ import (
 	"github.com/spachava753/gai"
 )
 
-// DefaultTimeout is the request timeout when neither a model profile nor CLI sets one.
+// DefaultTimeout is the request timeout when neither a model profile nor runtime override sets one.
 const DefaultTimeout = 5 * time.Minute
 
 // ResolveConfig loads and resolves the effective runtime configuration for one model profile.
 //
 // Resolution contract:
 //   - Config source: explicit configPath when provided, otherwise standard discovery.
-//   - Model selection: opts.ModelRef is required; callers normally populate it
-//     from --model or CPE_MODEL.
-//   - Model profile fields are complete and are not merged with any global defaults.
-//   - CLI/runtime generation and timeout flags override the selected model profile.
+//   - Model selection: opts.ModelRef is required; callers populate it from ACP
+//     session state, --model, or CPE_MODEL depending on entrypoint.
+//   - Model profile fields are resolved from the selected profile as written.
+//   - Runtime generation and timeout overrides take precedence over the selected
+//     model profile.
 //
 // The returned Config always has a non-nil GenerationParams pointer.
 func ResolveConfig(configPath string, opts RuntimeOptions) (Config, error) {
@@ -86,7 +87,7 @@ func resolveSystemPromptPath(model ModelConfig, configFilePath string) string {
 	return filepath.Join(filepath.Dir(configFilePath), path)
 }
 
-// resolveGenerationParams returns the model profile's generation parameters with CLI overrides applied.
+// resolveGenerationParams returns the model profile's generation parameters with runtime overrides applied.
 func resolveGenerationParams(model ModelConfig, opts RuntimeOptions) *gai.GenOpts {
 	genParams := &gai.GenOpts{}
 	if model.GenerationParams != nil {
@@ -146,7 +147,7 @@ func MergeGenOpts(dst, src *gai.GenOpts) {
 	}
 }
 
-// resolveTimeout parses the timeout with precedence: CLI/runtime override > model profile timeout > DefaultTimeout.
+// resolveTimeout parses the timeout with precedence: runtime override > model profile timeout > DefaultTimeout.
 func resolveTimeout(model ModelConfig, opts RuntimeOptions) (time.Duration, error) {
 	rawTimeout := model.Timeout
 	if opts.Timeout != "" {

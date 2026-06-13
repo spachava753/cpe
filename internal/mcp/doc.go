@@ -1,5 +1,6 @@
 /*
-Package mcp provides MCP client integration for CPE runs.
+Package mcp provides MCP client integration for CPE's ACP sessions and MCP
+inspection commands.
 
 Responsibilities:
   - build transports (stdio/http/sse) from configuration;

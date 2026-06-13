@@ -1,9 +1,9 @@
 /*
-Package storage defines CPE conversation persistence contracts and
+Package storage defines CPE message-tree and ACP session persistence contracts and
 implementations.
 
-Conversations are stored as message trees (parent-child lineage) where each
-message contains ordered content blocks. The package exposes narrow interfaces
+ACP sessions point at message trees (parent-child lineage) where each message
+contains ordered content blocks. The package exposes narrow interfaces
 (DialogSaver, MessagesGetter, MessagesLister, MessagesDeleter,
 ACPSessionCreator, ACPSessionMessageAdder, ACPSessionGetter,
 ACPSessionsLister, ACPSessionCostAdder) plus composed interfaces such as

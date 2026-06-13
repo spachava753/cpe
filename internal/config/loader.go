@@ -129,7 +129,7 @@ func loadRawConfigFromFile(file fs.File) (*RawConfig, error) {
 func parseConfigData(data []byte, filename string) (*RawConfig, error) {
 	ext := strings.ToLower(filepath.Ext(filename))
 	if ext == ".json" {
-		return nil, fmt.Errorf("JSON config files are no longer supported; use YAML (.yaml or .yml)")
+		return nil, fmt.Errorf("JSON config files are unsupported; use YAML (.yaml or .yml)")
 	}
 
 	expandedData := os.ExpandEnv(string(data))

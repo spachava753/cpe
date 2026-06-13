@@ -2,44 +2,53 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/spf13/cobra"
+
+	"github.com/spachava753/cpe/internal/version"
 )
 
 // DefaultModel is the process-start snapshot of CPE_MODEL.
-// It is used as the default value for the --model flag; a selected model is required.
+// It is used as the default model selector for inspection commands that resolve
+// a single model profile outside an ACP session.
 var DefaultModel = os.Getenv("CPE_MODEL")
 
 var (
 	model                   string
-	input                   []string
-	newConversation         bool
-	continueID              string
-	incognitoMode           bool
-	timeout                 string
-	skipStdin               bool
 	conversationStoragePath string
 	configPath              string
-	flagThinkingBudget      string
+	versionFlag             bool
 )
 
-// rootCmd is the CLI entrypoint for prompt execution.
+// rootCmd is the executable command hub for CPE.
 //
-// Responsibility split:
-//   - internal/cmd: parse flags/env and map Cobra state into plain option
-//     structs.
-//   - internal/commands: resolve runtime dependencies and execute business logic
-//     without Cobra coupling.
+// CPE's primary runtime is the ACP server exposed by "cpe acp serve". The rest
+// of the command tree contains local inspection and account/configuration
+// helpers for that server runtime.
 var rootCmd = &cobra.Command{
-	Use:   "cpe [flags] [prompt]",
-	Short: "Chat-based Programming Editor",
-	Long: `CPE (Chat-based Programming Editor) is a powerful command-line tool that enables
-developers to leverage AI for codebase analysis, modification, and improvement
-through natural language interactions.`,
-	Args: cobra.ArbitraryArgs,
+	Use:   "cpe",
+	Short: "ACP server for AI coding clients",
+	Long: `CPE (Chat-based Programming Editor) runs as an Agent Client Protocol
+(ACP) server for editor clients such as Zed. Use "cpe acp serve" from an
+ACP-compatible client configuration, and use the other commands to inspect model
+profiles, MCP servers, and provider account state.`,
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return nil
+		}
+		return fmt.Errorf("run CPE through an ACP client with 'cpe acp serve'")
+	},
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if versionFlag {
+			fmt.Fprintln(cmd.OutOrStdout(), version.Get())
+			return nil
+		}
+		return cmd.Help()
+	},
 }
 
 // Execute runs the Cobra command tree with process-level signal cancellation.
@@ -58,18 +67,6 @@ func Execute() {
 }
 
 func init() {
-	// Define flags for the root command
-	rootCmd.PersistentFlags().StringVarP(&model, "model", "m", DefaultModel, "Specify the model to use (required unless CPE_MODEL is set)")
-	rootCmd.PersistentFlags().StringVarP(&flagThinkingBudget, "thinking-budget", "b", "", "Budget for reasoning/thinking capabilities (string or numerical value)")
-	rootCmd.PersistentFlags().StringSliceVarP(&input, "input", "i", []string{}, "Specify input files or HTTP(S) URLs to process. Multiple inputs can be provided.")
-	rootCmd.PersistentFlags().BoolVarP(&newConversation, "new", "n", false, "Start a new conversation instead of continuing from the last one")
-	rootCmd.PersistentFlags().StringVarP(&continueID, "continue", "c", "", "Continue from a specific conversation ID")
-	rootCmd.PersistentFlags().BoolVarP(&incognitoMode, "incognito", "G", false, "Run in incognito mode (do not save conversations to storage)")
-	rootCmd.PersistentFlags().StringVarP(&timeout, "timeout", "", "", "Specify request timeout duration (e.g. '5m', '30s')")
-	rootCmd.PersistentFlags().BoolVar(&skipStdin, "skip-stdin", false, "Skip reading from stdin (useful in scripts)")
-	rootCmd.PersistentFlags().StringVar(&conversationStoragePath, "db-path", os.Getenv("CPE_DB_PATH"), "Path to conversation SQLite database (default: ./.cpeconvo, env: CPE_DB_PATH)")
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Path to YAML configuration file (default: ./cpe.yaml, ~/.config/cpe/cpe.yaml)")
-
-	// Add version flag
-	rootCmd.Flags().BoolP("version", "v", false, "Print the version number and exit")
+	rootCmd.Flags().BoolVarP(&versionFlag, "version", "v", false, "Print the version number and exit")
 }

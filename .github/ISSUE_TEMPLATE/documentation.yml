@@ -17,7 +17,7 @@ body:
         - README
         - AGENTS.md guidance
         - Code comments
-        - CLI help text (--help)
+        - CLI/ACP help text (--help)
         - Configuration examples
         - API/function documentation
         - Tutorial/guide

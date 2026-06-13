@@ -19,7 +19,7 @@ func TestResolveConfigRequiresModel(t *testing.T) {
 	}
 }
 
-func TestResolveGenerationParamsUsesModelProfileAndCLIOnly(t *testing.T) {
+func TestResolveGenerationParamsUsesModelProfileAndRuntimeOnly(t *testing.T) {
 	model := testModelProfile()
 	model.GenerationParams = &GenerationParams{
 		Temperature:         new(0.7),
@@ -28,17 +28,17 @@ func TestResolveGenerationParamsUsesModelProfileAndCLIOnly(t *testing.T) {
 	}
 	result := resolveGenerationParams(model, RuntimeOptions{GenParams: &gai.GenOpts{
 		Temperature:   new(0.2),
-		StopSequences: []string{"cli-stop"},
+		StopSequences: []string{"runtime-stop"},
 	}})
 
 	checkPtr(t, "Temperature", result.Temperature, new(0.2))
 	checkPtr(t, "MaxGenerationTokens", result.MaxGenerationTokens, new(1024))
-	if got, want := result.StopSequences, []string{"cli-stop"}; len(got) != len(want) || got[0] != want[0] {
+	if got, want := result.StopSequences, []string{"runtime-stop"}; len(got) != len(want) || got[0] != want[0] {
 		t.Fatalf("StopSequences = %v, want %v", got, want)
 	}
 }
 
-func TestResolveTimeoutUsesModelProfileAndCLI(t *testing.T) {
+func TestResolveTimeoutUsesModelProfileAndRuntimeOverride(t *testing.T) {
 	model := testModelProfile()
 	model.Timeout = "30s"
 	got, err := resolveTimeout(model, RuntimeOptions{})

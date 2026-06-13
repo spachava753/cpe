@@ -14,12 +14,13 @@ body:
       label: Enhancement Category
       description: What type of enhancement is this?
       options:
+        - ACP server/client integration
         - New AI model support
         - New MCP tool/server integration
         - Code mode improvements
-        - Conversation management
+        - Session management
         - Configuration/setup UX
-        - CLI commands/flags
+        - CLI inspection commands/flags
         - Performance optimization
         - Documentation
         - Developer experience
@@ -47,11 +48,11 @@ body:
       label: Proposed Solution
       description: How would you like this to work?
       placeholder: |
-        Describe the feature, new flag, command, or behavior you'd like to see.
+        Describe the feature, ACP behavior, command, or configuration you'd like to see.
         
         Example usage:
         ```bash
-        cpe --new-flag "prompt"
+        cpe acp serve --trace-protocol
         ```
     validations:
       required: true

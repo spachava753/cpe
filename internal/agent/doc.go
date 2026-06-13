@@ -1,32 +1,32 @@
 /*
-Package agent assembles and decorates model generators used by CPE.
+Package agent assembles provider generators and shared model-runtime helpers used
+by CPE's ACP server.
 
-It is the runtime orchestration layer between resolved configuration, model
-providers, MCP tools, dialog mutation, and user-facing output rendering.
+It is the runtime assembly layer between resolved configuration, model providers,
+MCP/built-in tools, and ACP session execution. The ACP protocol loop itself lives
+in internal/acp; this package owns provider initialization and reusable generator
+wrappers.
 
 Major responsibilities:
   - construct provider-specific generators (OpenAI, Anthropic, Gemini, etc.)
     with API key or OAuth authentication;
-  - assemble the generator pipeline, including panic recovery, turn-lifecycle
-    side effects, provider-specific block filtering, retries, and compaction
-    support;
-  - register built-in and MCP tools, including code-mode integration via
-    execute_go_code and conversation compaction tooling;
-  - orchestrate generator lifecycle concerns such as dialog restart into fresh
-    branches, configurable compaction restart caps, and compaction threshold
-    warnings carried through tool results.
+  - provide generator wrappers such as provider-specific block filtering and
+    Responses API request normalization;
+  - expose shared model/type helpers used when ACP sessions register built-in,
+    MCP, code-mode, and compaction tools.
 
 Related packages:
-  - internal/input handles prompt/file/URL block construction;
+  - internal/acp owns ACP session lifecycle, prompt execution, persistence, and
+    session updates;
+  - internal/commands handles local inspection commands around model profiles and
+    MCP servers;
   - internal/prompt handles system prompt template rendering and skill helpers;
-  - internal/render handles terminal markdown/plain-text renderer setup.
+  - internal/codemode owns the execute_go_code tool and sandbox execution.
 
 Behavioral notes:
-  - the turn-lifecycle middleware persists dialogs incrementally so message IDs
-    are available before tool-result and response output is rendered;
   - provider block filtering preserves only provider-compatible thinking blocks
-    when a conversation crosses model providers;
-  - execute_go_code formatting helpers live in internal/codemode so both agent
-    runtime printers and command-side conversation formatting can share them.
+    when a session crosses model providers;
+  - execute_go_code formatting helpers live in internal/codemode so ACP runtime
+    callbacks and command-side inspection output can share them.
 */
 package agent

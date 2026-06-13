@@ -4,7 +4,7 @@ Package codemode implements CPE's execute_go_code feature.
 Code mode asks the model to generate a complete Go source file and executes it
 in a temporary sandbox module. It does not create MCP server connections or
 expose MCP tools as generated Go function bindings; MCP tools remain normal
-conversational tools registered by the agent runtime.
+conversational tools registered by the ACP session runtime.
 
 Execution pipeline:
  1. Generate the execute_go_code prompt and sandbox main.go harness.

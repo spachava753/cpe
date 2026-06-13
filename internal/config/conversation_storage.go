@@ -7,13 +7,13 @@ import (
 	"strings"
 )
 
-// DefaultConversationStoragePath is used when no conversation storage path flag or environment variable is set.
+// DefaultConversationStoragePath is used when no ACP session database path flag or environment variable is set.
 const DefaultConversationStoragePath = ".cpeconvo"
 
-// ConversationStorageEnvVar is the environment variable used for conversation database path selection.
+// ConversationStorageEnvVar is the environment variable used for ACP session database path selection.
 const ConversationStorageEnvVar = "CPE_DB_PATH"
 
-// ResolveConversationStoragePath resolves a CLI/env conversation storage path into the effective SQLite path.
+// ResolveConversationStoragePath resolves a CLI/env ACP session database path into the effective SQLite path.
 //
 // Resolution contract:
 //   - empty value => DefaultConversationStoragePath

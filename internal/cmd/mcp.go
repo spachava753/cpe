@@ -18,8 +18,8 @@ var (
 // mcpCmd represents the mcp command
 var mcpCmd = &cobra.Command{
 	Use:   "mcp",
-	Short: "Model Context Protocol client",
-	Long:  `Interact with Model Context Protocol (MCP) servers.`,
+	Short: "Inspect configured MCP servers",
+	Long:  `Inspect and test Model Context Protocol (MCP) servers configured for a selected CPE model profile.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},
@@ -63,10 +63,7 @@ var mcpListToolsCmd = &cobra.Command{
 	Long:  `Connect to an MCP server and list available tools with their input schemas.`,
 	Example: `  # List tools with human-readable schema
   cpe mcp list-tools my-server
-  
-  # List tools with JSON schema format
-  cpe mcp list-tools my-server --json
-  
+
   # Show all tools including filtered ones
   cpe mcp list-tools my-server --show-all
   
@@ -145,6 +142,8 @@ tools as generated Go function bindings.`,
 }
 
 func init() {
+	mcpCmd.PersistentFlags().StringVarP(&model, "model", "m", DefaultModel, "Model profile ref whose MCP servers should be inspected (env: CPE_MODEL)")
+
 	rootCmd.AddCommand(mcpCmd)
 
 	// Add subcommands to mcp command

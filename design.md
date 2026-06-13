@@ -1,520 +1,215 @@
 # CPE Design
 
-This document describes the design of CPE (Chat-based Programming Editor): a CLI that connects local developer workflows to multiple model providers, MCP servers, conversation persistence, and code execution.
+This document describes the current design of CPE (Chat-based Programming Editor): a local Agent Client Protocol (ACP) server that connects ACP clients to model providers, MCP tools, generated Go code execution, and local session persistence.
 
-This document should be read as the canonical explanation of the codebase's current architectural decisions, package boundaries, and major trade-offs. It explains why the system is organized the way it is, what constraints it is optimizing for, and what shape new code should generally follow.
+Package-level `doc.go` files remain the source of truth for package-local behavior and detailed contracts. This document explains repo-level architecture, package boundaries, and the trade-offs that shape new code.
 
-Package-level `doc.go` files and exported symbol comments remain the source of truth for package-local behavior and detailed contracts. This document operates at the repo design level: it explains the structure of the system and the rationale behind that structure.
+## Product Shape
 
-## Similarities and differences with typical Cobra CLIs
+CPE is ACP-first. The primary user experience is an editor or other ACP-compatible client launching `cpe acp serve` and communicating with it over stdio JSON-RPC.
 
-Many Go CLIs built on Cobra place most runtime logic directly in `cmd/` packages. That is a reasonable default for smaller tools. CPE intentionally diverges.
+The executable uses Cobra for its server/control command surface. It starts the ACP server and provides local inspection commands for model profiles, MCP servers, provider accounts, and shell completion.
 
-In CPE:
+CPE still provides useful local inspection commands:
 
-- `main` is only the executable entry point.
-- `internal/cmd` owns Cobra structure, flags, help text, and `RunE` wiring.
-- `internal/commands` owns framework-agnostic command orchestration.
-- `internal/agent` owns model runtime assembly and execution.
-- support packages (`config`, `mcp`, `storage`, `codemode`, `render`, `prompt`, `input`, etc.) implement focused pieces of the system.
-
-The package is still named `cmd`, but it intentionally lives under `internal/` because its Cobra wiring is process-private implementation detail, not supported module API.
-
-This extra layer is not free. It adds packages and more explicit option structs. We keep it because CPE benefits from it in three ways:
-
-1. it keeps the CLI framework replaceable;
-2. it makes command behavior easier to test without Cobra-specific machinery;
-3. it gives the codebase an explicit dependency flow rather than letting package responsibilities blur over time.
+- `cpe model ...` inspects configured model profiles and rendered system prompts.
+- `cpe mcp ...` inspects and tests MCP servers attached to a selected model profile.
+- `cpe account ...` manages provider account credentials and usage lookups.
+- `cpe acp serve` starts the actual ACP server.
 
 ## Requirements
 
 CPE should aim to be:
 
-- **CLI-first**: the primary UX is a local terminal tool used interactively and in scripts.
-- **layered**: package boundaries should reflect ownership and keep dependencies flowing inward toward runtime policy rather than outward toward framework details.
-- **provider-agnostic**: support for model providers should share a common runtime model where possible.
-- **tool-composable**: MCP and built-in tools should be usable as direct conversational tools, while code mode stays focused on executing model-generated programs rather than hosting tool integrations.
-- **local-first**: conversation storage, configuration, and most execution state should remain local by default.
-- **privacy-conscious**: users must be able to run without persistence when needed.
-- **testable**: command orchestration and runtime assembly should be testable with narrow interfaces and explicit dependencies.
-- **observable**: failures in complex flows, especially model/tool interactions, should be diagnosable.
-- **maintainable**: new features should have an obvious home rather than being bolted onto whichever package is nearby.
-- **simple by default**: when forced to choose, prefer clearer and smaller architecture over backward-compatibility shims or speculative abstraction.
+- **ACP-first**: the primary interaction loop is hosted by an ACP client, not by CPE's terminal process.
+- **client-portable**: CPE should work with ACP clients such as Zed without baking in editor-specific behavior unless the protocol requires it.
+- **provider-agnostic**: model providers should share a common runtime model where possible while still allowing provider-specific behavior.
+- **tool-composable**: built-in tools, MCP tools, client-provided MCP servers, code mode, and compaction should compose predictably inside ACP sessions.
+- **local-first**: configuration, credentials, session metadata, and message history stay local by default.
+- **testable**: ACP behavior, local inspection commands, storage, and model-runtime assembly should be independently testable.
+- **observable**: protocol traffic, model/tool failures, and persistence errors should be diagnosable.
+- **maintainable**: package ownership should remain explicit, and compatibility code should have a clear current purpose.
 
 ## Non-goals
 
-This design intentionally does not optimize for the following:
+This design intentionally does not optimize for:
 
-- **framework neutrality at every layer**: only the CLI edge is kept framework-specific. Internally, CPE is free to use whatever implementation patterns best fit the runtime.
-- **backward compatibility by default**: CPE prefers a clearer structure over preserving old package shapes, shims, or command internals unless compatibility is itself the explicit goal.
-- **perfect abstraction of provider differences**: the system aims for a common runtime model, not for pretending all provider capabilities and quirks are identical.
-- **deeply generic plugin architecture**: CPE supports extension through MCP and code mode, but does not attempt to turn every internal behavior into a general-purpose extension point.
-- **maximal configurability of every policy**: some choices are intentionally opinionated because the maintenance cost of making every behavior configurable would outweigh the benefit.
-- **transporting persistence-specific types through the whole runtime**: the design favors a small set of shared runtime types, even when that means using metadata fields rather than introducing richer storage-specific wrapper objects everywhere.
+- **framework neutrality at every layer**: Cobra is isolated at the process edge, but internal packages use the patterns that best fit their runtime responsibilities.
+- **perfect provider abstraction**: provider APIs differ; CPE isolates differences rather than pretending they do not exist.
+- **generic plugin hosting**: extension happens through ACP, MCP, built-in tools, prompt templates, and code mode, not through a broad internal plugin system.
+- **deep config merging**: model profiles are self-contained runtime profiles; YAML anchors are the preferred deduplication mechanism.
 
-## Design
+## Package Layout
 
-The sections below describe the intended architecture of the codebase as it exists today.
-
-## Foundations
-
-### Package layout and dependency flow
-
-The intended top-level dependency flow is:
+The primary server dependency flow is:
 
 ```text
-main -> internal/cmd -> internal/commands -> internal/agent -> support packages
+main -> internal/cmd -> internal/acp -> internal/agent -> support packages
 ```
 
-There is one deliberate exception: `internal/cmd` may also import `internal/version` for process-level version reporting.
-
-This is the central architectural rule of the codebase.
-
-Its purpose is not aesthetic. It encodes two important ideas:
-
-- **framework details stay at the edge**: Cobra belongs in `internal/cmd`, not in use-case logic.
-- **runtime policy lives below the CLI**: command behavior, dependency resolution, and orchestration belong in `internal/commands` and below.
-
-The supporting package roles are intentionally narrow:
-
-- `internal/config`: file schema plus effective runtime configuration resolution.
-- `internal/mcpconfig`: dependency-neutral MCP server config schema shared by config loading and runtime code.
-- `internal/mcp`: MCP client runtime integration.
-- `internal/storage`: conversation persistence contracts plus SQLite and in-memory implementations.
-- `internal/codemode`: execute-go-code prompt generation, harness wiring, and execution.
-- `internal/input`: prompt/file/URL input loading into model blocks.
-- `internal/prompt`: system prompt templating and skill discovery helpers.
-- `internal/render`: TTY-aware markdown/plain-text rendering.
-- `internal/auth`: OAuth and credential transport helpers.
-- `internal/ports`: small shared interfaces used to decouple packages.
-
-Several of these packages exist to keep ownership clear and package responsibilities narrow:
-
-- `internal/input`, `internal/prompt`, and `internal/render` exist so `internal/agent` does not own unrelated concerns.
-- `internal/mcpconfig` exists so `internal/config` does not depend on MCP runtime code.
-- `internal/ports` exists as the shared place for small decoupling interfaces rather than allowing packages to depend on a vague bucket of shared concrete types.
-
-### Architectural boundaries
-
-CPE keeps package boundaries explicit through documentation, package ownership, and code review rather than custom architecture linting.
-
-The intended boundaries include:
-
-- `internal/cmd` should stay focused on Cobra wiring and process-edge concerns.
-- `internal/commands` should avoid Cobra or pflag dependencies.
-- `internal/config` should not depend on MCP runtime code; shared schema belongs in neutral packages such as `internal/mcpconfig`.
-- `internal/commands` should import `internal/agent` only from runtime orchestration code that actually assembles generation behavior.
-- `internal/agent` should not own input or prompt concerns; those belong in `internal/input` and `internal/prompt`.
-
-These boundaries are intentionally opinionated. The goal is to protect the package map and ownership model described in this document while allowing the enforcement mechanism to remain lightweight.
-
-### Dependency flow versus data flow
-
-A clean architecture requires distinguishing dependency direction from runtime data flow.
-
-Dependencies point inward:
+Inspection command flow is:
 
 ```text
-internal/cmd depends on commands
-commands depends on agent
-agent depends on config/mcp/storage/render/etc.
+main -> internal/cmd -> internal/commands -> support packages
 ```
 
-Runtime data often moves the other way:
+Important package roles:
 
-- CLI flags and stdin enter through `internal/cmd`.
-- `internal/commands` resolves config, storage, and inputs.
-- `internal/agent` consumes those resolved dependencies to execute generation.
-- responses, tool outputs, and persisted messages flow back outward to `internal/commands`, then to `internal/cmd`, then to the terminal.
+- `main` owns process startup and logging setup.
+- `internal/cmd` owns Cobra command structure, flags, help text, and argument mapping.
+- `internal/acp` owns ACP protocol implementation, session lifecycle, session configuration, prompt execution, cancellation, session updates, and runtime creation.
+- `internal/agent` owns provider generator construction and reusable generator wrappers.
+- `internal/commands` owns framework-agnostic helpers for local inspection commands.
+- `internal/config` owns YAML schema, validation, and effective runtime config resolution.
+- `internal/mcpconfig` owns dependency-neutral MCP server config schema.
+- `internal/mcp` owns MCP client runtime integration and ACP tool-call update helpers.
+- `internal/storage` owns message-tree and ACP session persistence contracts plus SQLite/in-memory implementations.
+- `internal/codemode` owns execute_go_code prompt generation, tool callback behavior, harness creation, and sandbox execution.
+- `internal/textedit` owns the bundled text_edit tool and ACP diff content generation.
+- `internal/prompt` owns system prompt template rendering and skill discovery helpers.
+- `internal/render` owns terminal rendering used by local inspection commands.
+- `internal/auth` owns OAuth and credential transport helpers.
 
-CPE is designed so the outer layers know about the inner layers, but the inner layers do not know about Cobra, process-global flags, or terminal command trees.
+## Architectural Boundaries
 
-### Configuration model
+The core rule is that protocol and framework boundaries stay narrow:
+
+- `internal/cmd` should stay focused on Cobra wiring.
+- `internal/acp` should own ACP protocol semantics and should not leak Cobra concepts.
+- `internal/commands` should remain framework-agnostic and avoid ACP session state.
+- `internal/config` should not import MCP runtime code; shared MCP schema belongs in `internal/mcpconfig`.
+- `internal/agent` should not own ACP session lifecycle, storage policy, prompt loading, or command output.
+- `internal/storage` should expose narrow interfaces so ACP/runtime code can depend on capabilities rather than SQLite details.
+
+## ACP Server Execution
+
+`cpe acp serve` loads raw config, opens the ACP session database, creates an `internal/acp.Agent`, and attaches it to an ACP agent-side stdio connection.
+
+ACP sessions are long-lived relative to prompt turns. Session state includes:
+
+- working directory supplied by the client;
+- selected model profile ref;
+- selected thinking level when configured;
+- client-provided MCP servers;
+- lazily-created runtime for the selected model/tool set;
+- cancellation function while a prompt turn is active.
+
+Runtime creation resolves the selected model profile, renders the system prompt, initializes a provider generator through `internal/agent`, registers built-in tools, connects configured and client-provided MCP servers, registers code mode when enabled, and registers compaction when configured.
+
+The prompt loop persists the dialog, calls the provider generator, sends ACP session updates for assistant content/tool activity/usage, executes tool callbacks, injects compaction warnings when configured thresholds are crossed, and records the session's latest message pointer.
+
+## Configuration Model
 
 CPE separates configuration into two layers:
 
-- `RawConfig`: the file-level YAML schema.
-- `Config`: the effective runtime configuration for one selected model execution.
+- `RawConfig`: file-level YAML schema.
+- `Config`: effective runtime settings for one selected model profile.
 
-This split exists because loading a config file and running a model are not the same operation.
+Every `models` entry is a self-contained runtime profile. CPE resolves the selected profile as written and does not infer shared fields from other profiles.
 
-`RawConfig` is useful for commands that inspect configuration as written, such as listing models or inspecting MCP servers. `Config` is useful for commands that execute behavior and need resolved precedence, normalized paths, and a chosen model.
+Selection and override rules:
 
-This separation makes several design choices explicit:
+- ACP sessions store the selected model profile ref and thinking level.
+- Local inspection commands use `--model` or `CPE_MODEL` only when they need to resolve profile-specific data, such as a rendered system prompt or MCP server list.
+- Runtime generation overrides, when supplied, layer over the profile's generation parameters.
+- Runtime timeout override, when supplied, wins over the profile timeout, then the built-in default.
 
-- model selection is a runtime concern, not a file-loading concern;
-- every `models` entry is a complete runtime profile, not an overlay on global defaults;
-- path normalization belongs in config resolution;
-- commands that inspect runtime model capabilities, including MCP commands, resolve the selected model profile.
+Relative `systemPromptPath` values resolve relative to the config file location when possible. ACP session storage is not part of YAML config; it is selected with `cpe acp serve --db-path` or `CPE_DB_PATH`.
 
-Resolution precedence is intentionally narrow:
+## Session and Message Persistence
 
-- model selection: `--model` or `CPE_MODEL` is required;
-- generation options: runtime overrides win over the selected profile's generation parameters;
-- timeout: runtime override, then selected profile timeout, then built-in default.
+CPE stores ACP sessions separately from messages. An ACP session points at its latest message ID, and messages are stored as parent-linked trees.
 
-CPE intentionally avoids global defaults and deep merging in config resolution. YAML anchors and aliases are the supported way to reduce duplication in hand-written config while keeping runtime semantics simple: after YAML parsing, CPE sees a fully materialized model profile.
+This supports ACP session behavior:
 
-Relative filesystem paths are interpreted relative to the config file location when possible. This applies to important user-facing settings such as system prompt paths and local module paths for code mode. Conversation storage is not part of the YAML config; use `--db-path` or `CPE_DB_PATH`.
+- loading a session reconstructs and replays its dialog as ACP session updates;
+- resuming a session continues from its latest message;
+- forking a session creates a new ACP session pointing at the same latest message, so future messages diverge as separate branches;
+- deleting a session removes only messages that are not reachable from other ACP sessions.
 
-## Root CLI execution
+Returned `gai.Message` values include storage metadata in `ExtraFields`, such as message ID, parent ID, creation time, compaction parent, and model usage metadata. This keeps the runtime centered on `gai.Message` rather than introducing storage wrapper types throughout the codebase.
 
-The main interactive execution path is intentionally split between layers.
+## Model Runtime
 
-### `main`
+`internal/agent` constructs provider-specific generators and provides reusable wrappers. ACP owns the session loop and persistence policy; agent owns provider setup and shared provider behavior.
 
-`main` is responsible only for process entry and top-level lifecycle concerns such as signal-aware context setup.
+Provider-specific behavior is isolated in the runtime layer. Examples include OAuth-backed transports, Responses API request shaping, thinking-block filtering, and provider-specific generator creation.
 
-### `internal/cmd`
+The runtime does not pretend all providers have identical capabilities. Instead, CPE exposes a common enough model for ACP sessions and local inspection commands while keeping provider branches near generator initialization.
 
-`internal/cmd` owns:
+## MCP Integration
 
-- Cobra command structure;
-- flag registration and parsing;
-- help text and command hierarchy;
-- mapping Cobra inputs to explicit option structs.
+CPE acts as an MCP client inside ACP sessions and in MCP inspection commands.
 
-`internal/cmd` should not own business logic or runtime assembly.
-
-### `internal/commands`
-
-`internal/commands` owns command use-case orchestration. For the root execution path, that includes:
-
-- resolving effective config;
-- opening storage when persistence is enabled;
-- resolving continuation history;
-- loading user input blocks from prompt, files, URLs, and stdin;
-- loading and rendering the system prompt;
-- delegating to `internal/agent` for actual model execution.
-
-This layer exists so the command behavior is testable and not coupled to Cobra.
-
-### `internal/agent`
-
-`internal/agent` is where the runtime model pipeline is built. It owns:
-
-- provider-specific generator creation;
-- middleware composition;
-- tool registration;
-- code-mode tool registration;
-- persistence middleware;
-- output printing and token usage reporting;
-- compaction orchestration and restart caps.
-
-This package is intentionally the deepest orchestrator in the normal CLI path. It should know how to run the model runtime, but not how Cobra parsed the request.
-
-## Conversation model and persistence
-
-CPE stores conversations as message trees rather than flat transcripts.
-
-That choice supports the actual CLI UX:
-
-- continue from the latest point;
-- continue from an arbitrary historical message;
-- branch a conversation from an earlier point;
-- preserve lineage during compaction.
-
-A linear append-only transcript would be simpler, but it would not fit the branching behavior the CLI exposes.
-
-### Storage interfaces
-
-`internal/storage` defines narrow interfaces such as `DialogSaver`, `MessagesGetter`, `MessagesLister`, and `MessagesDeleter`.
-
-This keeps consumers from depending directly on SQLite details and allows tests to use `MemDB` instead of a real database.
-
-### SQLite plus metadata in messages
-
-The production storage backend is SQLite. Returned `gai.Message` values include storage metadata in `ExtraFields`, such as message ID, parent ID, creation time, and compaction parent.
-
-This is a deliberate trade-off.
-
-A richer wrapper type around stored messages would be more explicit, but it would also force many parts of the runtime to learn storage-specific types. CPE instead keeps the primary runtime model centered on `gai.Message` and threads persistence metadata through `ExtraFields` where needed.
-
-This is less type-strict than a dedicated storage message type, but it keeps storage concerns from dominating the rest of the codebase.
-
-### Incognito mode
-
-Incognito mode means no conversation persistence for the root run. The runtime should execute without opening or mutating conversation storage.
-
-This design is intentionally strict because privacy features should fail closed rather than partially work.
-
-## Model runtime and middleware
-
-The model runtime is assembled as a decorated generator pipeline.
-
-The design uses middleware-style wrappers because CPE needs to layer behavior, but not every layer is independent. The current runtime keeps a few broad phases explicit:
-
-- panic recovery around provider-specific generator implementations;
-- one turn-lifecycle layer that groups persistence, tool-result rendering, assistant response rendering, and token/cost reporting in the order they must occur;
-- provider-specific input block filtering across model boundaries;
-- retries for transient provider failures;
-- compaction-related logic.
-
-A monolithic generator implementation would quickly become difficult to reason about, but overly fine-grained wrappers can hide real ordering dependencies. CPE therefore prefers a small number of middleware phases when their responsibilities are tightly coupled, while still keeping the overall runtime pipeline composable.
-
-### Middleware ordering
-
-Ordering matters.
-
-For example, persistence must be outside retry logic so messages are not re-saved on every retry, and saving must be arranged so message IDs propagate correctly through later runtime steps. Thinking-block filtering must preserve only provider-compatible reasoning blocks when conversations cross model families.
-
-CPE keeps this ordering inside `internal/agent`, where the runtime invariants are understood, rather than spreading wrapper assembly throughout the codebase.
-
-### Provider-specific differences
-
-CPE presents a unified CLI and unified generator pipeline, but it does not pretend all providers behave identically.
-
-Provider-specific initialization still exists, and provider-specific quirks such as reasoning block behavior, auth mechanisms, or API surfaces are handled in the runtime layer.
-
-The design goal is not to erase differences entirely. It is to isolate them so the rest of the system does not need provider-specific branches everywhere.
-
-## MCP client integration
-
-CPE acts as an MCP client during normal runs.
-
-The client integration is responsible for:
+The MCP runtime is responsible for:
 
 - creating transports for `stdio`, `http`, and `sse` servers;
 - applying per-server timeouts;
-- applying static headers or environment variables where appropriate;
-- connecting to configured servers;
+- applying static headers and environment variables;
 - listing and filtering tools;
-- rejecting duplicate tool names across servers;
-- adapting tool metadata and tool calls into the model runtime.
+- rejecting duplicate tool names across registered tools;
+- converting MCP tool metadata and tool calls into `gai` tools and callbacks;
+- sending ACP tool-call updates while MCP tools execute.
 
-### Why `internal/mcpconfig` exists
+Configured MCP servers from the selected model profile are merged with MCP servers supplied by the ACP client. Duplicate server names fail fast to avoid ambiguous tool behavior.
 
-MCP server configuration is shared by config loading and MCP runtime code. Those are different concerns.
+## Built-in Tools
 
-If `internal/config` imported `internal/mcp`, the config layer would depend on runtime transport implementation details. That was part of the original architectural muddiness. `internal/mcpconfig` exists to keep the shared schema neutral while allowing `internal/mcp` to own actual transport behavior.
+CPE registers some tools directly rather than through MCP.
 
-### Builtin tools
+The bundled `text_edit` tool allows file creation and exact text replacement, and emits ACP diff content so clients can display file changes. A model profile can set `disable_edit_tool: true` to omit it.
 
-CPE can register built-in tools directly in the agent runtime without routing them through MCP. The bundled `text_edit` tool is registered this way, so users can create and modify files without installing an editor MCP server.
+Code mode registers `execute_go_code` when enabled. Compaction registers `compact_conversation` when configured.
 
-Builtin tools are normal conversational tools. They are intentionally separate from code mode and remain registered directly even when code mode is enabled. Model profiles may opt out of `text_edit` with `disable_edit_tool: true`, which prevents registration entirely.
+## Code Mode
 
-### Tool filtering
-
-Per-server tool filtering uses `enabledTools` or `disabledTools`.
-
-This is a practical control surface rather than a sophisticated policy engine. The aim is to let users shape the exposed tool surface without adding a second policy language.
-
-### Duplicate tool names fail fast
-
-CPE rejects duplicate tool names across servers after filtering.
-
-This is intentionally strict. Silent shadowing or last-wins behavior would make tool behavior ambiguous and difficult to debug, especially once code mode is involved.
-
-## Code mode
-
-Code mode is CPE's generated-code execution path.
-
-When enabled, CPE asks the model to write a complete Go program implementing:
+Code mode asks the model to write a complete Go source file implementing:
 
 ```go
 Run(ctx context.Context) ([]mcp.Content, error)
 ```
 
-That program is compiled and executed in a temporary sandbox module. Code mode does not connect to MCP servers or expose MCP tools as generated Go function bindings; MCP tools remain normal conversational tools registered by the agent runtime.
+CPE compiles and runs the generated file in a temporary harness with timeout and output limits. Recoverable failures such as compile errors, runtime panics, and execution timeouts are returned as tool results so the model can iterate. Fatal harness failures stop execution.
 
-### Why Go
+MCP tools are intentionally not exposed as generated Go bindings. They remain conversational tools registered in the ACP session runtime.
 
-Go was chosen because it provides:
+## Rendering and Local Commands
 
-- good support for control flow and composition;
-- easy use of the standard library for I/O, parsing, and HTTP;
-- fast enough compile/run behavior for an interactive CLI tool;
-- a runtime model that is predictable and easy to constrain.
+Terminal rendering is now limited to local inspection commands such as MCP tool inspection and code mode description output. ACP session content is delivered to clients as protocol updates rather than rendered terminal markdown.
 
-CPE is already a Go project, so using Go as the code-mode language also keeps the harness and execution contract in one ecosystem.
+`internal/render` still centralizes TTY-aware markdown/plain-text rendering for command output.
 
-### Recoverable versus fatal failures
+## Authentication
 
-Code mode distinguishes between failures the model can recover from and failures that should stop execution entirely.
+Most providers use API keys from environment variables chosen by each model profile's `api_key_env` field. OAuth-backed flows live in `internal/auth` and are exposed through `cpe account` commands where supported.
 
-Recoverable failures include compile errors, runtime panics, or timeouts in generated code; these are returned as tool results so the model can iterate. Fatal harness failures remain hard errors.
+The account commands are local helpers. ACP clients still launch the same CPE process, so required credentials must be visible to that process.
 
-This distinction exists because code mode is meant to be iterative rather than all-or-nothing.
+## Testing Strategy
 
-### Tool boundary
+Tests should exercise behavior at the narrowest useful boundary:
 
-MCP tools are intentionally kept outside code mode. This preserves a small, intentional code execution surface and prevents code mode from becoming a second tool integration layer.
+- ACP RPC behavior through an ACP client/server connection when notification and transport semantics matter.
+- Direct `Agent` or `Loop` calls for branches that cannot be observed through RPC alone.
+- Command helpers in `internal/commands` without Cobra where possible.
+- Config resolution separately from command parsing.
+- Storage behavior with both SQLite and `MemDB` where appropriate.
+- MCP and provider integration tests behind the opt-in gates documented in `internal/testutil/testgate/doc.go`.
 
-## Rendering and terminal output
+## Current Invariants
 
-CPE centralizes rendering in `internal/render`.
+- `cpe acp serve` is the primary runtime entrypoint.
+- `internal/cmd` remains Cobra-only process-edge wiring.
+- `internal/acp` owns session lifecycle and prompt execution.
+- `internal/agent` owns provider generator construction and shared provider wrappers.
+- Model profiles are self-contained runtime profiles; CPE resolves the selected profile as written.
+- ACP session persistence remains SQLite-backed by default and message-tree-based.
+- MCP tools, built-in tools, code mode, and compaction are registered per session runtime.
+- Duplicate MCP server names or tool names fail fast.
 
-This package exists so higher-level packages can request appropriately configured renderers without taking a dependency on glamour, termenv, or TTY details.
+## Open Questions
 
-### Per-stream rendering
-
-CPE distinguishes between stdout and stderr output streams.
-
-User-visible assistant content generally goes to stdout. Thinking blocks, tool-call formatting, message IDs, token usage, and related diagnostics generally go to stderr.
-
-Renderers are selected per target stream so interactive formatting and script-friendly output can coexist more predictably.
-
-### Fallback behavior
-
-When rich rendering is unavailable or unsuitable, CPE falls back to plain text.
-
-That is an intentional CLI design choice: correctness and readability matter more than decoration.
-
-## Authentication and provider access
-
-Authentication is split between runtime configuration and a dedicated auth package.
-
-Most providers use API keys from environment variables. Supported OAuth-backed flows live in `internal/auth`, which owns:
-
-- PKCE and state helpers;
-- login callback handling;
-- token storage and refresh;
-- bearer-token HTTP transports;
-- provider-specific account usage helpers.
-
-This separation keeps OAuth concerns from leaking into the general model runtime.
-
-## Error handling, timeouts, and reliability
-
-CPE follows a few broad runtime rules.
-
-### Context everywhere I/O happens
-
-I/O and external calls should accept `context.Context` so cancellation and timeouts flow through the system.
-
-### Contextual errors
-
-Errors should be wrapped with enough context to explain which high-level step failed.
-
-### Fail fast on ambiguity
-
-Examples include duplicate MCP tool names, invalid output schema files, transport misconfiguration, or unsupported content types in places where silent degradation would hide real behavior.
-
-### Degrade gracefully where the model can recover
-
-Examples include code-mode compile/runtime failures returned as tool results, or tool-call parameter parsing issues surfaced in model-visible form.
-
-CPE tries to be strict about infrastructure and explicit contracts, while still allowing model-driven workflows to self-correct when the failure is part of the model's task loop.
-
-## Testing and enforcement strategy
-
-The architecture is designed for testability, not just for code organization.
-
-Key techniques include:
-
-- explicit option structs for command functions;
-- narrow interfaces for storage and related dependencies;
-- `MemDB` for fast conversation tests;
-- command orchestration placed below Cobra;
-- documented package boundaries that make dependency regressions easier to review.
-
-This makes it practical to test:
-
-- config resolution separately from CLI parsing;
-- conversation operations separately from SQLite plumbing;
-- rendering and wrapper behavior separately from provider calls;
-- MCP integration separately from model selection.
-
-## Alternatives considered
-
-This section records alternatives that are plausible for a system like CPE, but that are not the preferred design today.
-
-### Putting business logic directly in `internal/cmd`
-
-A smaller CLI could reasonably keep most execution logic in Cobra handlers. CPE does not do that because command behavior here is substantial: config resolution, storage, MCP inspection, account flows, and runtime model assembly all benefit from framework-independent orchestration and better testability.
-
-### Flattening `internal/commands` into `internal/agent`
-
-This would reduce one package boundary, but it would also merge command use-case orchestration with model runtime assembly. CPE keeps them separate because they change for different reasons: command workflows are not the same thing as generator construction and tool runtime policy.
-
-### Treating configuration as a single resolved structure only
-
-A single config type is simpler at first, but it forces every command into runtime-resolution behavior even when the command only needs the raw file schema. CPE keeps both `RawConfig` and effective `Config` because inspection commands and runtime execution commands do not have the same needs.
-
-### Storing conversations as flat transcripts
-
-A flat append-only transcript would simplify persistence logic, but it would not model conversation branching naturally. CPE stores message trees because branching and continuation from arbitrary historical points are part of the intended interaction model.
-
-### Using a richer persistence message type instead of metadata in `ExtraFields`
-
-A dedicated stored-message type would be more explicit, but it would also push persistence-specific types through much more of the runtime. CPE keeps the runtime centered on `gai.Message` and uses well-defined metadata keys when storage lineage needs to be preserved.
-
-### Deep-merging nested configuration objects
-
-Deep merge behavior can be flexible, but it is harder to explain and easier to misread. CPE prefers whole-object replacement for advanced nested runtime features such as `codeMode` and `compaction`.
-
-### Exposing all MCP tools directly and uniformly
-
-CPE instead distinguishes between normal tool exposure, filtered tool exposure, and code-mode exposure. This keeps the tool surface intentional and avoids turning code mode into an uncontrolled wrapper around every available tool.
-
-### Using a scripting language instead of Go for code mode
-
-A scripting language would reduce compile latency, but CPE values static typing, straightforward schema-to-code generation, standard library access, and predictable execution structure. Because CPE is already implemented in Go, Go is also the lowest-friction language for the harness and generated bindings.
-
-## Trade-offs
-
-The current design makes several conscious trade-offs.
-
-### Thin `internal/cmd`, richer `internal/commands`
-
-This adds an extra orchestration layer, but it preserves framework independence and testability.
-
-### Tree-shaped conversation storage
-
-This is more complex than a flat transcript store, but it matches CPE's branching conversation UX.
-
-### Metadata in `ExtraFields`
-
-This is less explicit than dedicated storage wrapper types, but it keeps persistence details from infecting the whole runtime model.
-
-### Whole-object config overrides
-
-This is less flexible than deep merging nested config, but much easier to explain and maintain.
-
-### Strict MCP validation and duplicate rejection
-
-This is less forgiving than permissive best-effort behavior, but it avoids ambiguous tool surfaces and silent no-op configuration.
-
-### Go-based code mode
-
-This adds harness complexity and a compile step, but it gives the model a real programming language with strong typing and standard-library access.
-
-### Simplicity over compatibility
-
-CPE is personal software with a single primary user. The design therefore favors simplification and clearer structure over preserving old shapes by default.
-
-## Current design invariants
-
-The current architecture should preserve the following invariants unless there is a deliberate design change:
-
-- `main` stays a thin executable boundary.
-- `internal/cmd` owns Cobra and only Cobra-facing concerns.
-- `internal/commands` owns framework-agnostic command orchestration.
-- `internal/agent` owns generator/runtime assembly.
-- `internal/config` does not depend on MCP runtime packages.
-- `internal/agent` does not own input loading, prompt rendering, or renderer construction details.
-- conversation persistence remains tree-based.
-- code mode remains a distinct runtime capability rather than being spread across unrelated packages.
-- package boundaries are enforced in code, not just described in prose.
-
-## Open questions
-
-This design resolves the major architectural shape of the codebase, but some questions remain intentionally open:
-
-- **how far to push framework-independence beyond the CLI edge**: today the main goal is keeping `internal/cmd` replaceable. It is still an open design question how much additional abstraction is useful below that layer before the abstractions become heavier than the problem.
-- **how broad provider parity should be**: CPE presents a unified runtime model, but provider APIs continue to diverge. The long-term balance between provider-specific features and a shared core remains an ongoing design question.
-- **how opinionated code mode should remain**: Go-based code mode is intentionally strong and specific. Future changes may revisit how much of the execution model should remain fixed versus configurable.
-- **how much policy should be enforced structurally versus by tooling**: some boundaries are encoded in package structure, while others rely on documentation and review. The right division between those approaches may evolve.
-
-## Future evolution
-
-This document is meant to evolve with the codebase.
-
-When the architecture changes, the preferred pattern is:
-
-1. keep package-local behavior documented in package `doc.go` files and exported comments;
-2. update this document when a repo-level architectural decision changes;
-3. add tests or tooling when a boundary becomes important enough to enforce mechanically.
-
-The purpose of this document is to make the intended structure of the codebase explicit so that future changes can be made deliberately rather than by drift.
+- How much CPE should expose editor-specific affordances beyond the ACP protocol surface.
+- Whether MCP server connections should be pooled across active ACP sessions instead of initialized per session runtime.
+- How broadly to expose model capability metadata through ACP session updates.
+- How much terminal-oriented helper functionality should remain as the ACP client ecosystem matures.

@@ -68,8 +68,8 @@ type RawCompactionConfig struct {
 // schema/cpe-config-schema.json with: go run ./build gen-schema
 // (or go generate ./...).
 type RawConfig struct {
-	// Model profiles. Each entry is a complete runtime profile; there is no
-	// defaults layer or field-level merging between models.
+	// Model profiles. Each entry is self-contained; CPE resolves one selected
+	// profile as written.
 	Models []ModelConfig `yaml:"models" json:"models" validate:"gt=0,unique=Ref,dive" jsonschema:"required"`
 
 	// Version for future compatibility.
@@ -110,7 +110,7 @@ func (g *GenerationParams) ToGenOpts() *gai.GenOpts {
 	}
 }
 
-// ModelConfig is a complete runtime profile selected by --model or CPE_MODEL.
+// ModelConfig is a self-contained runtime profile selected by ACP session state, --model, or CPE_MODEL.
 type ModelConfig struct {
 	Model `yaml:",inline" json:",inline"`
 
@@ -176,7 +176,7 @@ type Config struct {
 	// Resolved system prompt path for the selected model profile.
 	SystemPromptPath string
 
-	// Effective generation parameters for the selected model profile and CLI overrides.
+	// Effective generation parameters for the selected model profile and runtime overrides.
 	GenerationParams *gai.GenOpts
 
 	// Effective timeout.
@@ -192,14 +192,14 @@ type Config struct {
 	Compaction *CompactionConfig
 }
 
-// RuntimeOptions captures runtime overrides from CLI flags and environment.
+// RuntimeOptions captures runtime overrides from ACP session state, inspection flags, or environment.
 type RuntimeOptions struct {
-	// Model ref to use from --model or CPE_MODEL. Required.
+	// Model ref to use. Required.
 	ModelRef string
 
-	// Generation parameter overrides from flags.
+	// Generation parameter overrides from the runtime entrypoint.
 	GenParams *gai.GenOpts
 
-	// Timeout override from --timeout.
+	// Timeout override from the runtime entrypoint.
 	Timeout string
 }
