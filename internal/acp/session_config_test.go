@@ -558,7 +558,7 @@ func TestSetSessionConfigOptionDuringPrompt(t *testing.T) {
 		t,
 		testClient,
 		&rawCfg,
-		func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+		func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
 			gen := testGen{responses: []genFunc{
 				func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
 					if opts == nil {
@@ -582,14 +582,14 @@ func TestSetSessionConfigOptionDuringPrompt(t *testing.T) {
 					}, nil
 				},
 			}}
-			cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: opts.modelRef})
+			cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
 			be.Err(t, err, nil)
 			return testRuntime{Loop: &Loop{
 				G:           &gen,
 				DialogSaver: store,
 				CostAdder:   store,
 				Cfg:         cfg,
-				conn:        opts.conn,
+				conn:        conn,
 			}}, nil
 		},
 	)

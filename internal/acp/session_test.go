@@ -241,8 +241,8 @@ func TestResumeSession(t *testing.T) {
 					},
 				},
 			},
-			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
-				createdModelRefs = append(createdModelRefs, opts.modelRef)
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
+				createdModelRefs = append(createdModelRefs, s.model)
 				return testRuntime{}, nil
 			},
 		)
@@ -320,8 +320,8 @@ func TestResumeSession(t *testing.T) {
 					},
 				},
 			},
-			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
-				createdModelRefs = append(createdModelRefs, opts.modelRef)
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
+				createdModelRefs = append(createdModelRefs, s.model)
 				return testRuntime{}, nil
 			},
 		)
@@ -401,8 +401,8 @@ func TestResumeSession(t *testing.T) {
 					},
 				},
 			},
-			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
-				createdModelRefs = append(createdModelRefs, opts.modelRef)
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
+				createdModelRefs = append(createdModelRefs, s.model)
 				return testRuntime{}, nil
 			},
 		)
@@ -477,8 +477,8 @@ func TestLoadSession(t *testing.T) {
 				},
 			},
 		},
-		func(ctx context.Context, opts runtimeOpts) (runtime, error) {
-			createdModelRefs = append(createdModelRefs, opts.modelRef)
+		func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
+			createdModelRefs = append(createdModelRefs, s.model)
 			return testRuntime{}, nil
 		},
 	)
@@ -593,8 +593,8 @@ func TestLoadSessionReplaysCompactionLineage(t *testing.T) {
 				},
 			},
 		},
-		func(ctx context.Context, opts runtimeOpts) (runtime, error) {
-			createdModelRefs = append(createdModelRefs, opts.modelRef)
+		func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
+			createdModelRefs = append(createdModelRefs, s.model)
 			return testRuntime{}, nil
 		},
 	)
@@ -748,7 +748,7 @@ func TestCancel(t *testing.T) {
 			t,
 			&noOpAcpClient{},
 			&rawCfg,
-			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
 				gen := testGen{responses: []genFunc{
 					func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
 						close(generateStarted)
@@ -756,14 +756,14 @@ func TestCancel(t *testing.T) {
 						return gai.Response{}, ctx.Err()
 					},
 				}}
-				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: opts.modelRef})
+				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
 				be.Err(t, err, nil)
 				return testRuntime{Loop: &Loop{
 					G:           &gen,
 					DialogSaver: store,
 					CostAdder:   store,
 					Cfg:         cfg,
-					conn:        opts.conn,
+					conn:        conn,
 				}}, nil
 			},
 		)
@@ -889,7 +889,7 @@ func TestDeleteSession(t *testing.T) {
 				},
 			},
 		},
-		func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+		func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
 			return trackingRuntime, nil
 		},
 	)
@@ -1013,7 +1013,7 @@ func TestForkSession(t *testing.T) {
 			t,
 			&noOpAcpClient{},
 			forkTestConfig(),
-			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
 				return savingRuntime, nil
 			},
 		)
@@ -1137,7 +1137,7 @@ func TestForkSession(t *testing.T) {
 			t,
 			&noOpAcpClient{},
 			forkTestConfig(),
-			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
 				return savingRuntime, nil
 			},
 		)
@@ -1278,7 +1278,7 @@ func TestCloseSession(t *testing.T) {
 					},
 				},
 			},
-			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
 				return trackingRuntime, nil
 			},
 		)
@@ -1354,7 +1354,7 @@ func TestCloseSession(t *testing.T) {
 					},
 				},
 			},
-			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
 				return trackingRuntime, nil
 			},
 		)

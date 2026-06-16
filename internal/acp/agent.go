@@ -17,19 +17,11 @@ import (
 	"github.com/coder/acp-go-sdk"
 )
 
-type runtimeOpts struct {
-	conn       *acp.AgentSideConnection
-	sessionId  acp.SessionId
-	cwd        string
-	modelRef   string
-	mcpServers []acp.McpServer
-}
-
 // runtimeFactory is the type to represent a factory that will
 // construct the runtime that actually executes the agent loop
 // on call the [Agent.Prompt]
 type RuntimeCreator interface {
-	Create(context.Context, runtimeOpts) (runtime, error)
+	Create(context.Context, session, acp.ClientCapabilities) (runtime, error)
 }
 
 // Agent is an implementation of an [acp.Agent]
@@ -41,6 +33,8 @@ type RuntimeCreator interface {
 type Agent struct {
 	// conn is used to send updates to the client
 	conn *acp.AgentSideConnection
+	// clientCaps stores the client capabilities advertised during initialize.
+	clientCaps acp.ClientCapabilities
 	// activeSessions represents the active sessions for this process.
 	// Note that multiple processes can be accessing the same database, and each
 	// process can manage its own active sessions. On creation of a new session,
@@ -114,11 +108,7 @@ func (a *Agent) Initialize(
 		},
 	}
 
-	// TODO: if client doesn't support terminal capabilities,
-	// then we should handle terminal rpc on our own
-	if !params.ClientCapabilities.Terminal {
-		return resp, errors.New("expected terminal capabilities")
-	}
+	a.clientCaps = params.ClientCapabilities
 	return resp, nil
 }
 
@@ -139,13 +129,7 @@ func (a *Agent) Prompt(
 			return nil
 		}
 		var err error
-		t.runtime, err = a.runtimeFactory.Create(ctx, runtimeOpts{
-			sessionId:  params.SessionId,
-			cwd:        t.cwd,
-			conn:       a.conn,
-			modelRef:   t.modelRef,
-			mcpServers: t.mcpServers,
-		})
+		t.runtime, err = a.runtimeFactory.Create(ctx, *t, a.clientCaps)
 		return err
 	}); err != nil {
 		return acp.PromptResponse{}, fmt.Errorf("failed to create runtime: %v", err)
@@ -182,13 +166,7 @@ func (a *Agent) Prompt(
 		}
 		dialog = append(dialog, xacp.PromptToMessage(params.Prompt))
 		if t.runtime == nil {
-			runtime, err := a.runtimeFactory.Create(cancelCtx, runtimeOpts{
-				conn:       a.conn,
-				cwd:        t.cwd,
-				sessionId:  params.SessionId,
-				modelRef:   t.modelRef,
-				mcpServers: t.mcpServers,
-			})
+			runtime, err := a.runtimeFactory.Create(cancelCtx, *t, a.clientCaps)
 			if err != nil {
 				return fmt.Errorf("could not create runtime: %v", err)
 			}
@@ -201,8 +179,8 @@ func (a *Agent) Prompt(
 		// The runtime's Loop.Generate layers these over the model profile's
 		// generation parameters from the resolved config.
 		var genOpts *gai.GenOpts
-		if t.thinkingLevel != "" {
-			genOpts = &gai.GenOpts{ThinkingBudget: t.thinkingLevel}
+		if t.thinking != "" {
+			genOpts = &gai.GenOpts{ThinkingBudget: t.thinking}
 		}
 		t.cancelfunc = cancelFunc
 		go func() {

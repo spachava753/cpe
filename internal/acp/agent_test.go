@@ -98,7 +98,7 @@ func TestPrompt(t *testing.T) {
 			t,
 			testClient,
 			&rawCfg,
-			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
 				gen := testGen{
 					responses: []genFunc{
 						func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
@@ -136,7 +136,7 @@ func TestPrompt(t *testing.T) {
 					},
 				}
 				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{
-					ModelRef: opts.modelRef,
+					ModelRef: s.model,
 					// TODO: Should we set timeout?
 					// TODO: Should we set gen opts?
 				})
@@ -146,7 +146,7 @@ func TestPrompt(t *testing.T) {
 					DialogSaver: store,
 					CostAdder:   store,
 					Cfg:         cfg,
-					conn:        opts.conn,
+					conn:        conn,
 				}}, nil
 			},
 		)
@@ -335,7 +335,7 @@ Output Cost: 1.00`),
 			t,
 			testClient,
 			&rawCfg,
-			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
 				gen = &testGen{
 					responses: []genFunc{
 						func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
@@ -387,7 +387,7 @@ Output Cost: 1.00`),
 					},
 				}
 				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{
-					ModelRef: opts.modelRef,
+					ModelRef: s.model,
 					// TODO: Should we set timeout?
 					// TODO: Should we set gen opts?
 				})
@@ -397,7 +397,7 @@ Output Cost: 1.00`),
 					DialogSaver: store,
 					CostAdder:   store,
 					Cfg:         cfg,
-					conn:        opts.conn,
+					conn:        conn,
 				}}, nil
 			},
 		)
@@ -619,7 +619,7 @@ Output Cost: 1.00`),
 			t,
 			testClient,
 			&rawCfg,
-			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
 				gen := testGen{
 					responses: []genFunc{
 						func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
@@ -647,14 +647,14 @@ Output Cost: 1.00`),
 						},
 					},
 				}
-				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: opts.modelRef})
+				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
 				be.Err(t, err, nil)
 				return testRuntime{Loop: &Loop{
 					G:           &gen,
 					DialogSaver: store,
 					CostAdder:   store,
 					Cfg:         cfg,
-					conn:        opts.conn,
+					conn:        conn,
 				}}, nil
 			},
 		)
@@ -758,7 +758,7 @@ Output Cost: 1.00`),
 			t,
 			testClient,
 			&rawCfg,
-			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
 				factoryCall++
 				gen = &testGen{
 					responses: []genFunc{
@@ -806,14 +806,14 @@ Output Cost: 1.00`),
 						},
 					},
 				}
-				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: opts.modelRef})
+				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
 				be.Err(t, err, nil)
 				return testRuntime{Loop: &Loop{
 					G:           gen,
 					DialogSaver: store,
 					CostAdder:   store,
 					Cfg:         cfg,
-					conn:        opts.conn,
+					conn:        conn,
 				}}, nil
 			},
 		)
@@ -916,7 +916,7 @@ Output Cost: 1.00`),
 		sessionID := acp.SessionId("active-session")
 		agent := &Agent{
 			activeSessions: new(cpesync.Map[acp.SessionId, *cpesync.Guard[session]]),
-			runtimeFactory: runtimeCreatorFunc(func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+			runtimeFactory: runtimeCreatorFunc(func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
 				t.Fatal("runtime should not be created for an active session")
 				return nil, nil
 			}),
@@ -956,7 +956,7 @@ Output Cost: 1.00`),
 			t,
 			testClient,
 			&rawCfg,
-			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
 				gen := testGen{responses: []genFunc{
 					func(ctx context.Context, dialog gai.Dialog, genOpts *gai.GenOpts) (gai.Response, error) {
 						be.Equal(t, len(dialog), 1)
@@ -965,14 +965,14 @@ Output Cost: 1.00`),
 						return gai.Response{}, gai.ErrMaxGenerationLimit
 					},
 				}}
-				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: opts.modelRef})
+				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
 				be.Err(t, err, nil)
 				return testRuntime{Loop: &Loop{
 					G:           &gen,
 					DialogSaver: store,
 					CostAdder:   store,
 					Cfg:         cfg,
-					conn:        opts.conn,
+					conn:        conn,
 				}}, nil
 			},
 		)
@@ -1029,7 +1029,7 @@ Output Cost: 1.00`),
 			t,
 			testClient,
 			&rawCfg,
-			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
 				gen := testGen{responses: []genFunc{
 					func(ctx context.Context, dialog gai.Dialog, genOpts *gai.GenOpts) (gai.Response, error) {
 						be.Equal(t, len(dialog), 1)
@@ -1038,14 +1038,14 @@ Output Cost: 1.00`),
 						return gai.Response{}, gai.ContentPolicyErr("blocked")
 					},
 				}}
-				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: opts.modelRef})
+				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
 				be.Err(t, err, nil)
 				return testRuntime{Loop: &Loop{
 					G:           &gen,
 					DialogSaver: store,
 					CostAdder:   store,
 					Cfg:         cfg,
-					conn:        opts.conn,
+					conn:        conn,
 				}}, nil
 			},
 		)
@@ -1102,7 +1102,7 @@ Output Cost: 1.00`),
 			t,
 			testClient,
 			&rawCfg,
-			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
 				gen := testGen{responses: []genFunc{
 					func(ctx context.Context, dialog gai.Dialog, genOpts *gai.GenOpts) (gai.Response, error) {
 						be.Equal(t, len(dialog), 1)
@@ -1111,14 +1111,14 @@ Output Cost: 1.00`),
 						return gai.Response{}, context.Canceled
 					},
 				}}
-				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: opts.modelRef})
+				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
 				be.Err(t, err, nil)
 				return testRuntime{Loop: &Loop{
 					G:           &gen,
 					DialogSaver: store,
 					CostAdder:   store,
 					Cfg:         cfg,
-					conn:        opts.conn,
+					conn:        conn,
 				}}, nil
 			},
 		)
@@ -1175,7 +1175,7 @@ Output Cost: 1.00`),
 			t,
 			testClient,
 			&rawCfg,
-			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
 				gen := testGen{responses: []genFunc{
 					func(ctx context.Context, dialog gai.Dialog, genOpts *gai.GenOpts) (gai.Response, error) {
 						be.Equal(t, len(dialog), 1)
@@ -1184,14 +1184,14 @@ Output Cost: 1.00`),
 						return gai.Response{}, errors.New("boom")
 					},
 				}}
-				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: opts.modelRef})
+				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
 				be.Err(t, err, nil)
 				return testRuntime{Loop: &Loop{
 					G:           &gen,
 					DialogSaver: store,
 					CostAdder:   store,
 					Cfg:         cfg,
-					conn:        opts.conn,
+					conn:        conn,
 				}}, nil
 			},
 		)
@@ -1251,7 +1251,7 @@ Output Cost: 1.00`),
 			t,
 			testClient,
 			&rawCfg,
-			func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
 				gen := testGen{
 					responses: []genFunc{
 						func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
@@ -1267,14 +1267,14 @@ Output Cost: 1.00`),
 						},
 					},
 				}
-				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: opts.modelRef})
+				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
 				be.Err(t, err, nil)
 				return testRuntime{Loop: &Loop{
 					G:           &gen,
 					DialogSaver: store,
 					CostAdder:   store,
 					Cfg:         cfg,
-					conn:        opts.conn,
+					conn:        conn,
 				}}, nil
 			},
 		)

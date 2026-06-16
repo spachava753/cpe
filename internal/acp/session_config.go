@@ -29,8 +29,8 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessio
 	}
 	var modelRefVal, thinkingVal string
 	if err := s.Do(func(t *session) error {
-		modelRefVal = t.modelRef
-		thinkingVal = t.thinkingLevel
+		modelRefVal = t.model
+		thinkingVal = t.thinking
 		return nil
 	}); err != nil {
 		panic("unreachable")
@@ -60,8 +60,8 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessio
 					return err
 				}
 			}
-			t.modelRef = modelRefVal
-			t.thinkingLevel = thinkingVal
+			t.model = modelRefVal
+			t.thinking = thinkingVal
 			t.runtime = nil
 			return nil
 		}); err != nil {
@@ -89,7 +89,7 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessio
 					return err
 				}
 			}
-			t.thinkingLevel = thinkingVal
+			t.thinking = thinkingVal
 			t.runtime = nil
 			return nil
 		}); err != nil {

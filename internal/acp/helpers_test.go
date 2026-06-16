@@ -63,13 +63,22 @@ func (t *noOpAcpClient) WriteTextFile(ctx context.Context, params acp.WriteTextF
 
 var _ acp.Client = (*noOpAcpClient)(nil)
 
-type runtimeCreatorFunc func(context.Context, runtimeOpts) (runtime, error)
+type runtimeCreatorFunc func(context.Context, session, acp.ClientCapabilities, *acp.AgentSideConnection) (runtime, error)
 
-func (f runtimeCreatorFunc) Create(ctx context.Context, opts runtimeOpts) (runtime, error) {
-	return f(ctx, opts)
+func (f runtimeCreatorFunc) Create(ctx context.Context, s session, caps acp.ClientCapabilities) (runtime, error) {
+	return f(ctx, s, caps, nil)
 }
 
-var unreachableRuntimeFactory = runtimeCreatorFunc(func(ctx context.Context, opts runtimeOpts) (runtime, error) {
+type runtimeCreatorAdapter struct {
+	f    runtimeCreatorFunc
+	conn *acp.AgentSideConnection
+}
+
+func (r *runtimeCreatorAdapter) Create(ctx context.Context, s session, caps acp.ClientCapabilities) (runtime, error) {
+	return r.f(ctx, s, caps, r.conn)
+}
+
+var unreachableRuntimeFactory = runtimeCreatorFunc(func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
 	panic("should not be called")
 })
 
@@ -100,17 +109,19 @@ func setup(
 	ar, aw := io.Pipe()
 	cr, cw := io.Pipe()
 
+	adapter := &runtimeCreatorAdapter{f: rf}
 	ag := Agent{
 		activeSessions: new(sync.Map[acp.SessionId, *sync.Guard[session]]),
 		genId: func() acp.SessionId {
 			return acp.SessionId(storage.GenerateId())
 		},
-		runtimeFactory: rf,
+		runtimeFactory: adapter,
 		rawCfg:         cfg,
 		db:             sqliteStorage,
 	}
 	asc := acp.NewAgentSideConnection(&ag, aw, cr)
 	ag.conn = asc
+	adapter.conn = asc
 	go func() {
 		ctx, cancel := context.WithCancel(t.Context())
 		t.Cleanup(func() {

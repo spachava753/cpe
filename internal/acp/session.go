@@ -23,12 +23,15 @@ type runtime interface {
 // while not described in the protocol, sessions may be
 // accessed and mutated in parallel
 type session struct {
-	cwd           string
-	modelRef      string
-	thinkingLevel string
-	mcpServers    []acp.McpServer
-	runtime       runtime
-	cancelfunc    context.CancelFunc
+	id         acp.SessionId
+	cwd        string
+	model      string
+	thinking   string
+	mcpServers []acp.McpServer
+
+	// session state
+	runtime    runtime
+	cancelfunc context.CancelFunc
 }
 
 func (a *Agent) activeSession(sessionID acp.SessionId) (*sync.Guard[session], error) {
@@ -53,17 +56,18 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		thinkingVal = a.rawCfg.Models[0].ThinkingValues[0].Value
 	}
 	s := session{
-		cwd:           params.Cwd,
-		modelRef:      modelRef,
-		thinkingLevel: thinkingVal,
-		mcpServers:    params.McpServers,
+		id:         id,
+		cwd:        params.Cwd,
+		model:      modelRef,
+		thinking:   thinkingVal,
+		mcpServers: params.McpServers,
 	}
 
 	if err := a.db.CreateACPSession(ctx, storage.CreateACPSessionParams{
 		Session:       si,
 		LastMessageID: "",
-		ModelRef:      s.modelRef,
-		ThinkingLevel: s.thinkingLevel,
+		ModelRef:      s.model,
+		ThinkingLevel: s.thinking,
 	}); err != nil {
 		return acp.NewSessionResponse{}, fmt.Errorf("could not save created session: %v", err)
 	}
@@ -130,20 +134,21 @@ func (a *Agent) loadActiveSession(
 		if err := a.db.SetACPSessionThinkingLevel(ctx, sessionId, thinkingLevel); err != nil {
 			return nil, fmt.Errorf("could not update thinking level config: %v", err)
 		}
-		runtime, err := a.runtimeFactory.Create(ctx, runtimeOpts{
-			conn:       a.conn,
-			modelRef:   modelRef,
+		runtime, err := a.runtimeFactory.Create(ctx, session{
+			cwd:        cwd,
+			model:      modelRef,
+			thinking:   thinkingLevel,
 			mcpServers: mcpServers,
-		})
+		}, a.clientCaps)
 		if err != nil {
 			return nil, fmt.Errorf("could not create runtime: %v", err)
 		}
 		s := session{
-			cwd:           cwd,
-			modelRef:      modelRef,
-			thinkingLevel: thinkingLevel,
-			mcpServers:    mcpServers,
-			runtime:       runtime,
+			cwd:        cwd,
+			model:      modelRef,
+			thinking:   thinkingLevel,
+			mcpServers: mcpServers,
+			runtime:    runtime,
 		}
 		a.activeSessions.Store(sessionId, sync.NewGuard(s))
 		return a.configOptions(ctx, sessionId), nil
@@ -164,20 +169,21 @@ func (a *Agent) loadActiveSession(
 		}
 	}
 
-	runtime, err := a.runtimeFactory.Create(ctx, runtimeOpts{
-		conn:       a.conn,
-		modelRef:   modelRef,
+	runtime, err := a.runtimeFactory.Create(ctx, session{
+		cwd:        cwd,
+		model:      modelRef,
+		thinking:   thinkingLevel,
 		mcpServers: mcpServers,
-	})
+	}, a.clientCaps)
 	if err != nil {
 		return nil, fmt.Errorf("could not create runtime: %v", err)
 	}
 
 	s := session{
-		cwd:           cwd,
-		modelRef:      getSessionResp.ModelRef,
-		thinkingLevel: thinkingLevel,
-		runtime:       runtime,
+		cwd:      cwd,
+		model:    modelRef,
+		thinking: thinkingLevel,
+		runtime:  runtime,
 	}
 	a.activeSessions.Store(sessionId, sync.NewGuard(s))
 	return a.configOptions(ctx, sessionId), nil
@@ -299,10 +305,10 @@ func (a *Agent) UnstableForkSession(
 	}
 
 	a.activeSessions.Store(id, sync.NewGuard(session{
-		cwd:           params.Cwd,
-		modelRef:      modelRef,
-		thinkingLevel: thinkingLevel,
-		mcpServers:    stableMCPServers(params.McpServers),
+		cwd:        params.Cwd,
+		model:      modelRef,
+		thinking:   thinkingLevel,
+		mcpServers: stableMCPServers(params.McpServers),
 	}))
 
 	return acp.UnstableForkSessionResponse{

@@ -38,13 +38,14 @@ type serverRuntimeCreator struct {
 	rawCfg *config.RawConfig
 	stderr io.Writer
 	store  *storage.Sqlite
+	conn   *acp.AgentSideConnection
 }
 
 var _ RuntimeCreator = (*serverRuntimeCreator)(nil)
 
-func (c *serverRuntimeCreator) Create(ctx context.Context, runtimeOpts runtimeOpts) (runtime, error) {
+func (c *serverRuntimeCreator) Create(ctx context.Context, s session, caps acp.ClientCapabilities) (runtime, error) {
 	cfg, err := config.ResolveFromRaw(c.rawCfg, config.RuntimeOptions{
-		ModelRef: runtimeOpts.modelRef,
+		ModelRef: s.model,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve model config: %v", err)
@@ -89,7 +90,7 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, runtimeOpts runtimeOp
 		CostAdder:   c.store,
 		Cfg:         cfg,
 		G:           gen,
-		conn:        runtimeOpts.conn,
+		conn:        c.conn,
 	}
 
 	ca := closerAgent{
@@ -98,15 +99,15 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, runtimeOpts runtimeOp
 
 	if !cfg.DisableEditTool {
 		textEditTool, textEditCallback := textedit.MakeTool(
-			runtimeOpts.sessionId,
-			runtimeOpts.conn,
+			s.id,
+			c.conn,
 		)
 		if err := l.Register(textEditTool, textEditCallback); err != nil {
 			return nil, fmt.Errorf("failed to register text_edit tool: %w", err)
 		}
 	}
 
-	mcpServersConfig, err := mergeACPServerConfigs(cfg.MCPServers, runtimeOpts.mcpServers)
+	mcpServersConfig, err := mergeACPServerConfigs(cfg.MCPServers, s.mcpServers)
 	if err != nil {
 		return nil, err
 	}
@@ -126,11 +127,11 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, runtimeOpts runtimeOp
 	if codeModeEnabled {
 		executeGoCodeTool := codemode.MakeTool(cfg.CodeMode.MaxTimeout)
 		callback := &codemode.ExecuteGoCodeCallback{
-			Cwd:                  runtimeOpts.cwd,
-			SessionId:            runtimeOpts.sessionId,
+			Cwd:                  s.cwd,
+			SessionId:            s.id,
 			MaxTimeout:           cfg.CodeMode.MaxTimeout,
 			LargeOutputCharLimit: codemode.ResolveLargeOutputCharLimit(cfg.CodeMode.LargeOutputCharLimit, cfg.Model.ContextWindow),
-			Conn:                 runtimeOpts.conn,
+			Conn:                 c.conn,
 		}
 
 		if err := l.Register(executeGoCodeTool, callback); err != nil {
@@ -147,8 +148,8 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, runtimeOpts runtimeOp
 				return nil, fmt.Errorf("converting tool %s: %w", mcpTool.Name, err)
 			}
 			if err := l.Register(gaiTool, mcp.NewToolCallback(
-				runtimeOpts.conn,
-				runtimeOpts.sessionId,
+				c.conn,
+				s.id,
 				conn.ClientSession,
 				serverName,
 				mcpTool.Name,
@@ -249,6 +250,7 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	})
 	asc := acp.NewAgentSideConnection(&ag, stdout, stdin)
 	ag.conn = asc
+	runtimeFactory.conn = asc
 	asc.SetLogger(slog.Default())
 	select {
 	case <-asc.Done():
