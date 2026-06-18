@@ -132,6 +132,7 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, s session, caps acp.C
 			MaxTimeout:           cfg.CodeMode.MaxTimeout,
 			LargeOutputCharLimit: codemode.ResolveLargeOutputCharLimit(cfg.CodeMode.LargeOutputCharLimit, cfg.Model.ContextWindow),
 			Conn:                 c.conn,
+			TerminalSupport:      caps.Terminal,
 		}
 
 		if err := l.Register(executeGoCodeTool, callback); err != nil {

@@ -40,6 +40,7 @@ type ExecuteGoCodeCallback struct {
 	Cwd                  string
 	SessionId            acp.SessionId
 	Conn                 acpConn
+	TerminalSupport      bool
 }
 
 // contentToBlocks adapts MCP multimodal content into gai blocks.

@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"text/template"
 	"time"
 
@@ -19,12 +20,14 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/spachava753/cpe/internal/acp/xctx"
+	"github.com/spachava753/cpe/internal/xio"
 )
 
 const (
 	// timeoutCancellationNoteTemplate is appended to output when executionTimeout triggers cancellation.
 	timeoutCancellationNoteTemplate = "execution timed out after %d seconds; context was canceled because executionTimeout was reached.\n"
 	spilledOutputFilePattern        = "cpe-code-output-*.txt"
+	localProgramKillGrace           = time.Second
 )
 
 //go:embed maingen.go.tmpl
@@ -255,9 +258,23 @@ func (c *ExecuteGoCodeCallback) runCommand(ctx context.Context, dir string, name
 }
 
 // runProgramWithTimeout executes the compiled binary under executionTimeout semantics.
-// On cancellation, it sends SIGINT first, allows gracePeriod for cleanup, then SIGKILL if needed.
-// When executionTimeout triggers cancellation, a cancellation note is appended to stdout/stderr output.
+// Clients with terminal support own process execution through ACP terminal methods. For clients
+// without terminal support, CPE executes the binary directly and captures bounded output itself.
 func (c *ExecuteGoCodeCallback) runProgramWithTimeout(
+	ctx context.Context,
+	binaryPath string,
+	timeoutSecs int,
+) (executionResult, error) {
+	if c.TerminalSupport {
+		return c.runTerminalProgramWithTimeout(ctx, binaryPath, timeoutSecs)
+	}
+	return c.runLocalProgramWithTimeout(ctx, binaryPath, timeoutSecs)
+}
+
+// runLocalProgramWithTimeout executes the compiled binary directly when the ACP client does not
+// support terminal methods. On cancellation, it sends SIGINT first, allows a short grace period for
+// cleanup, then SIGKILLs the process if needed.
+func (c *ExecuteGoCodeCallback) runLocalProgramWithTimeout(
 	ctx context.Context,
 	binaryPath string,
 	timeoutSecs int,
@@ -266,10 +283,114 @@ func (c *ExecuteGoCodeCallback) runProgramWithTimeout(
 		return executionResult{}, err
 	}
 
+	cmd := exec.CommandContext(context.WithoutCancel(ctx), binaryPath)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if c.Cwd != "" {
+		cmd.Dir = c.Cwd
+	}
+
+	output := xio.NewTailBuffer(c.LargeOutputCharLimit)
+	cmd.Stdout = output
+	cmd.Stderr = output
+
+	if err := cmd.Start(); err != nil {
+		return executionResult{}, err
+	}
+
+	waitChan := make(chan error, 1)
+	go func() {
+		waitChan <- cmd.Wait()
+		close(waitChan)
+	}()
+
+	var timedOut, canceled bool
+	var waitErr error
+	select {
+	case <-time.After(time.Duration(timeoutSecs) * time.Second):
+		timedOut = true
+		slog.InfoContext(
+			ctx,
+			"execution timed out",
+			slog.Int("timeout", timeoutSecs),
+		)
+	case <-ctx.Done():
+		canceled = true
+		slog.DebugContext(ctx, "context canceled")
+	case waitErr = <-waitChan:
+	}
+
+	if timedOut || canceled {
+		waitErr = stopLocalProgram(cmd.Process, waitChan)
+	}
+
+	result, err := localExecutionResult(output, timedOut, timeoutSecs, waitErr)
+	if err != nil {
+		return result, err
+	}
+	if canceled {
+		return result, ctx.Err()
+	}
+	return result, nil
+}
+
+func localExecutionResult(output *xio.TailBuffer, timedOut bool, timeoutSecs int, waitErr error) (executionResult, error) {
+	result := executionResult{
+		Output: formatProgramOutput(timeoutSecs, timedOut, output.Truncated(), output.String()),
+	}
+	if waitErr != nil {
+		if exitErr, ok := errors.AsType[*exec.ExitError](waitErr); ok {
+			result.ExitCode = exitErr.ExitCode()
+		} else {
+			return result, waitErr
+		}
+	}
+	if timedOut && result.ExitCode == 0 {
+		result.ExitCode = -1
+	}
+	return result, nil
+}
+
+func stopLocalProgram(process *os.Process, waitChan <-chan error) error {
+	if process == nil {
+		return <-waitChan
+	}
+	if err := interruptLocalProgram(process); err != nil {
+		slog.Debug("could not interrupt generated program", slog.Any("err", err))
+	}
+
+	select {
+	case err := <-waitChan:
+		return err
+	case <-time.After(localProgramKillGrace):
+	}
+
+	if err := killLocalProgram(process); err != nil {
+		return err
+	}
+	return <-waitChan
+}
+
+// runTerminalProgramWithTimeout executes the compiled binary through ACP terminal methods.
+func (c *ExecuteGoCodeCallback) runTerminalProgramWithTimeout(
+	ctx context.Context,
+	binaryPath string,
+	timeoutSecs int,
+) (executionResult, error) {
+	if err := ctx.Err(); err != nil {
+		return executionResult{}, err
+	}
+	if c.Conn == nil {
+		return executionResult{}, errors.New("terminal execution requested without ACP connection")
+	}
+
+	var outputByteLimit *int
+	if c.LargeOutputCharLimit > 0 {
+		outputByteLimit = &c.LargeOutputCharLimit
+	}
 	creatTermResp, err := c.Conn.CreateTerminal(ctx, acp.CreateTerminalRequest{
 		Command:         binaryPath,
 		Cwd:             new(c.Cwd),
-		OutputByteLimit: &c.LargeOutputCharLimit,
+		OutputByteLimit: outputByteLimit,
 		SessionId:       c.SessionId,
 	})
 	if err != nil {
@@ -382,22 +503,24 @@ func (c *ExecuteGoCodeCallback) runProgramWithTimeout(
 		termOutputResp.ExitStatus.ExitCode != nil {
 		result.ExitCode = *termOutputResp.ExitStatus.ExitCode
 	}
+	result.Output = formatProgramOutput(timeoutSecs, timedOut, termOutputResp.Truncated, termOutputResp.Output)
 
+	return result, nil
+}
+
+func formatProgramOutput(timeoutSecs int, timedOut bool, truncated bool, output string) string {
 	var sb strings.Builder
 
 	if timedOut {
 		fmt.Fprintf(&sb, timeoutCancellationNoteTemplate, timeoutSecs)
 		sb.WriteRune('\n')
 	}
-	if termOutputResp.Truncated {
+	if truncated {
 		sb.WriteString("NOTE: output beginning was truncated\n\n")
 	}
 
-	sb.WriteString(termOutputResp.Output)
-
-	result.Output = sb.String()
-
-	return result, nil
+	sb.WriteString(output)
+	return sb.String()
 }
 
 // classifyExitCode maps sandbox process exits to agent-facing error classes.
