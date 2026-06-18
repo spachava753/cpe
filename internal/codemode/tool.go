@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/coder/acp-go-sdk"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/acp/xctx"
@@ -24,12 +24,12 @@ type executeGoCodeInput struct {
 }
 
 type acpConn interface {
-	SessionUpdate(ctx context.Context, params acp.SessionNotification) error
-	CreateTerminal(ctx context.Context, params acp.CreateTerminalRequest) (acp.CreateTerminalResponse, error)
-	KillTerminal(ctx context.Context, params acp.KillTerminalRequest) (acp.KillTerminalResponse, error)
-	TerminalOutput(ctx context.Context, params acp.TerminalOutputRequest) (acp.TerminalOutputResponse, error)
-	ReleaseTerminal(ctx context.Context, params acp.ReleaseTerminalRequest) (acp.ReleaseTerminalResponse, error)
-	WaitForTerminalExit(ctx context.Context, params acp.WaitForTerminalExitRequest) (acp.WaitForTerminalExitResponse, error)
+	SessionUpdate(ctx context.Context, params *acp.SessionNotification) error
+	CreateTerminal(ctx context.Context, params *acp.CreateTerminalRequest) (*acp.CreateTerminalResponse, error)
+	KillTerminal(ctx context.Context, params *acp.KillTerminalRequest) (*acp.KillTerminalResponse, error)
+	TerminalOutput(ctx context.Context, params *acp.TerminalOutputRequest) (*acp.TerminalOutputResponse, error)
+	ReleaseTerminal(ctx context.Context, params *acp.ReleaseTerminalRequest) (*acp.ReleaseTerminalResponse, error)
+	WaitForTerminalExit(ctx context.Context, params *acp.WaitForTerminalExitRequest) (*acp.WaitForTerminalExitResponse, error)
 }
 
 // ExecuteGoCodeCallback implements gai.ToolCallback for execute_go_code.
@@ -72,13 +72,12 @@ func (c *ExecuteGoCodeCallback) Call(ctx context.Context, params map[string]any)
 		if c.Conn == nil {
 			return
 		}
-		c.Conn.SessionUpdate(ctx, acp.SessionNotification{
-			SessionId: c.SessionId,
-			Update: acp.UpdateToolCall(
-				xctx.ToolCallIdFrom(ctx),
-				acp.WithUpdateKind(acp.ToolKindExecute),
-				acp.WithUpdateStatus(status),
-			),
+		update := acp.ToolCallUpdateSessionUpdate(xctx.ToolCallIdFrom(ctx))
+		update.Kind = new(acp.ToolKindExecute)
+		update.Status = &status
+		c.Conn.SessionUpdate(ctx, &acp.SessionNotification{
+			SessionID: c.SessionId,
+			Update:    update,
 		})
 	}
 

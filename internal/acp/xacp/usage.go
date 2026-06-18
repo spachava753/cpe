@@ -1,7 +1,7 @@
 package xacp
 
 import (
-	"github.com/coder/acp-go-sdk"
+	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/storage"
@@ -10,8 +10,8 @@ import (
 func PromptTurnUsage(dialog gai.Dialog) *acp.Usage {
 	var usage acp.Usage
 	var hasUsage bool
-	var cacheReadTokens int
-	var cacheWriteTokens int
+	var cacheReadTokens uint64
+	var cacheWriteTokens uint64
 	var hasCacheReadTokens bool
 	var hasCacheWriteTokens bool
 
@@ -52,14 +52,14 @@ func PromptTurnUsage(dialog gai.Dialog) *acp.Usage {
 	return &usage
 }
 
-func messageUsageInt(extra map[string]any, key string) (int, bool) {
+func messageUsageInt(extra map[string]any, key string) (uint64, bool) {
 	value, ok := extra[key]
 	if !ok {
 		return 0, false
 	}
 	intValue, ok := value.(int64)
-	if !ok {
+	if !ok || intValue < 0 {
 		return 0, false
 	}
-	return int(intValue), true
+	return uint64(intValue), true
 }

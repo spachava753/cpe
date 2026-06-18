@@ -11,7 +11,7 @@ import (
 	"log/slog"
 	"maps"
 
-	"github.com/coder/acp-go-sdk"
+	"github.com/spachava753/acp-sdk/acp"
 
 	"github.com/spachava753/gai"
 
@@ -38,7 +38,7 @@ type serverRuntimeCreator struct {
 	rawCfg *config.RawConfig
 	stderr io.Writer
 	store  *storage.Sqlite
-	conn   *acp.AgentSideConnection
+	conn   *acp.AgentConnection
 }
 
 var _ RuntimeCreator = (*serverRuntimeCreator)(nil)
@@ -249,17 +249,22 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		log: slog.Default(),
 		dir: "outgoing",
 	})
-	asc := acp.NewAgentSideConnection(&ag, stdout, stdin)
-	ag.conn = asc
-	runtimeFactory.conn = asc
-	asc.SetLogger(slog.Default())
-	select {
-	case <-asc.Done():
-	case <-ctx.Done():
-		return ctx.Err()
+	transport := &acp.IOTransport{
+		Reader: io.NopCloser(stdin),
+		Writer: nopWriteCloser{Writer: stdout},
 	}
+	return acp.RunAgent(ctx, transport, func(conn *acp.AgentConnection) any {
+		ag.conn = conn
+		runtimeFactory.conn = conn
+		return &ag
+	})
+}
 
-	// TODO: we should close on connection end and clean up mcp connections
+type nopWriteCloser struct {
+	io.Writer
+}
+
+func (n nopWriteCloser) Close() error {
 	return nil
 }
 
@@ -365,34 +370,34 @@ func mergeACPServerConfigs(
 }
 
 func acpMCPServerConfig(server acp.McpServer) (string, mcpconfig.ServerConfig, error) {
-	switch {
-	case server.Stdio != nil:
-		env := make(map[string]string, len(server.Stdio.Env))
-		for _, variable := range server.Stdio.Env {
+	switch server.Type {
+	case "":
+		env := make(map[string]string, len(server.Env))
+		for _, variable := range server.Env {
 			env[variable.Name] = variable.Value
 		}
-		return server.Stdio.Name, mcpconfig.ServerConfig{
+		return server.Name, mcpconfig.ServerConfig{
 			Type:    "stdio",
-			Command: server.Stdio.Command,
-			Args:    server.Stdio.Args,
+			Command: server.Command,
+			Args:    server.Args,
 			Env:     env,
 		}, nil
-	case server.Http != nil:
-		return server.Http.Name, mcpconfig.ServerConfig{
+	case acp.McpServerTypeHttp:
+		return server.Name, mcpconfig.ServerConfig{
 			Type:    "http",
-			URL:     server.Http.Url,
-			Headers: acpHTTPHeaders(server.Http.Headers),
+			URL:     server.Url,
+			Headers: acpHTTPHeaders(server.Headers),
 		}, nil
-	case server.Sse != nil:
-		return server.Sse.Name, mcpconfig.ServerConfig{
+	case acp.McpServerTypeSse:
+		return server.Name, mcpconfig.ServerConfig{
 			Type:    "sse",
-			URL:     server.Sse.Url,
-			Headers: acpHTTPHeaders(server.Sse.Headers),
+			URL:     server.Url,
+			Headers: acpHTTPHeaders(server.Headers),
 		}, nil
-	case server.Acp != nil:
-		return server.Acp.Name, mcpconfig.ServerConfig{}, errors.New("ACP transport is not supported")
+	case acp.McpServerTypeAcp:
+		return server.Name, mcpconfig.ServerConfig{}, errors.New("ACP transport is not supported")
 	default:
-		return "", mcpconfig.ServerConfig{}, errors.New("transport is required")
+		return "", mcpconfig.ServerConfig{}, fmt.Errorf("unsupported transport %q", server.Type)
 	}
 }
 

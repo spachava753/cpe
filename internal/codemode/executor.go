@@ -16,8 +16,8 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/coder/acp-go-sdk"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/spachava753/acp-sdk/acp"
 
 	"github.com/spachava753/cpe/internal/acp/xctx"
 	"github.com/spachava753/cpe/internal/xio"
@@ -383,21 +383,21 @@ func (c *ExecuteGoCodeCallback) runTerminalProgramWithTimeout(
 		return executionResult{}, errors.New("terminal execution requested without ACP connection")
 	}
 
-	var outputByteLimit *int
+	var outputByteLimit *uint64
 	if c.LargeOutputCharLimit > 0 {
-		outputByteLimit = &c.LargeOutputCharLimit
+		outputByteLimit = new(uint64(c.LargeOutputCharLimit))
 	}
-	creatTermResp, err := c.Conn.CreateTerminal(ctx, acp.CreateTerminalRequest{
+	creatTermResp, err := c.Conn.CreateTerminal(ctx, &acp.CreateTerminalRequest{
 		Command:         binaryPath,
-		Cwd:             new(c.Cwd),
+		Cwd:             &c.Cwd,
 		OutputByteLimit: outputByteLimit,
-		SessionId:       c.SessionId,
+		SessionID:       c.SessionId,
 	})
 	if err != nil {
 		return executionResult{}, err
 	}
 
-	termId := creatTermResp.TerminalId
+	termId := creatTermResp.TerminalID
 
 	defer func() {
 		// since context *could* canceled here, we need to create
@@ -407,9 +407,9 @@ func (c *ExecuteGoCodeCallback) runTerminalProgramWithTimeout(
 		rctx := context.WithoutCancel(ctx)
 		var cancel context.CancelFunc
 		rctx, cancel = context.WithTimeout(rctx, 1*time.Second)
-		_, err := c.Conn.ReleaseTerminal(rctx, acp.ReleaseTerminalRequest{
-			SessionId:  c.SessionId,
-			TerminalId: termId,
+		_, err := c.Conn.ReleaseTerminal(rctx, &acp.ReleaseTerminalRequest{
+			SessionID:  c.SessionId,
+			TerminalID: termId,
 		})
 		cancel()
 		if err != nil {
@@ -418,23 +418,22 @@ func (c *ExecuteGoCodeCallback) runTerminalProgramWithTimeout(
 	}()
 
 	// send in progress update for toolcall
-	c.Conn.SessionUpdate(ctx, acp.SessionNotification{
-		SessionId: c.SessionId,
-		Update: acp.UpdateToolCall(
-			xctx.ToolCallIdFrom(ctx),
-			acp.WithUpdateKind(acp.ToolKindExecute),
-			acp.WithUpdateStatus(acp.ToolCallStatusInProgress),
-			acp.WithUpdateContent([]acp.ToolCallContent{
-				acp.ToolTerminalRef(termId),
-			}),
-		),
+	terminalUpdate := acp.ToolCallUpdateSessionUpdate(xctx.ToolCallIdFrom(ctx))
+	terminalUpdate.Kind = new(acp.ToolKindExecute)
+	terminalUpdate.Status = new(acp.ToolCallStatusInProgress)
+	terminalUpdate.Content = []acp.ToolCallContent{
+		acp.TerminalToolCallContent(termId),
+	}
+	c.Conn.SessionUpdate(ctx, &acp.SessionNotification{
+		SessionID: c.SessionId,
+		Update:    terminalUpdate,
 	})
 
 	errChan := make(chan error)
 	go func() {
-		_, err := c.Conn.WaitForTerminalExit(ctx, acp.WaitForTerminalExitRequest{
-			SessionId:  c.SessionId,
-			TerminalId: termId,
+		_, err := c.Conn.WaitForTerminalExit(ctx, &acp.WaitForTerminalExitRequest{
+			SessionID:  c.SessionId,
+			TerminalID: termId,
 		})
 		errChan <- err
 		close(errChan)
@@ -472,9 +471,9 @@ func (c *ExecuteGoCodeCallback) runTerminalProgramWithTimeout(
 		kctx := context.WithoutCancel(ctx)
 		var cancel context.CancelFunc
 		kctx, cancel = context.WithTimeout(kctx, 1*time.Second)
-		_, err = c.Conn.KillTerminal(kctx, acp.KillTerminalRequest{
-			SessionId:  c.SessionId,
-			TerminalId: termId,
+		_, err = c.Conn.KillTerminal(kctx, &acp.KillTerminalRequest{
+			SessionID:  c.SessionId,
+			TerminalID: termId,
 		})
 		cancel()
 		if err != nil {
@@ -490,9 +489,9 @@ func (c *ExecuteGoCodeCallback) runTerminalProgramWithTimeout(
 	}
 
 	// since we killed the terminal, or it finished, we can get the output
-	termOutputResp, err := c.Conn.TerminalOutput(ctx, acp.TerminalOutputRequest{
-		SessionId:  c.SessionId,
-		TerminalId: termId,
+	termOutputResp, err := c.Conn.TerminalOutput(ctx, &acp.TerminalOutputRequest{
+		SessionID:  c.SessionId,
+		TerminalID: termId,
 	})
 	if err != nil {
 		return executionResult{}, err
@@ -501,7 +500,7 @@ func (c *ExecuteGoCodeCallback) runTerminalProgramWithTimeout(
 	var result executionResult
 	if termOutputResp.ExitStatus != nil &&
 		termOutputResp.ExitStatus.ExitCode != nil {
-		result.ExitCode = *termOutputResp.ExitStatus.ExitCode
+		result.ExitCode = int(*termOutputResp.ExitStatus.ExitCode)
 	}
 	result.Output = formatProgramOutput(timeoutSecs, timedOut, termOutputResp.Truncated, termOutputResp.Output)
 

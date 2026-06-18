@@ -3,7 +3,7 @@ package xctx
 import (
 	"context"
 
-	"github.com/coder/acp-go-sdk"
+	"github.com/spachava753/acp-sdk/acp"
 )
 
 type toolCallIdKey struct{}

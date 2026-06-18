@@ -5,8 +5,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/coder/acp-go-sdk"
 	"github.com/openai/openai-go/v3/responses"
+	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/config"
@@ -86,31 +86,30 @@ func TestLoopUsageSessionUpdate(t *testing.T) {
 			if !ok {
 				t.Fatal("usageSessionUpdate() ok = false, want true")
 			}
-			if update.UsageUpdate == nil {
-				t.Fatalf("usageSessionUpdate().UsageUpdate is nil")
+			if update.SessionUpdate != acp.SessionUpdateTypeUsageUpdate {
+				t.Fatalf("SessionUpdate = %q, want %q", update.SessionUpdate, acp.SessionUpdateTypeUsageUpdate)
 			}
-			usage := update.UsageUpdate
-			if usage.Size != int(tt.model.ContextWindow) {
-				t.Fatalf("Size = %d, want %d", usage.Size, tt.model.ContextWindow)
+			if update.Size != uint64(tt.model.ContextWindow) {
+				t.Fatalf("Size = %d, want %d", update.Size, tt.model.ContextWindow)
 			}
-			if usage.Used != tt.wantUsed {
-				t.Fatalf("Used = %d, want %d", usage.Used, tt.wantUsed)
+			if update.Used != uint64(tt.wantUsed) {
+				t.Fatalf("Used = %d, want %d", update.Used, tt.wantUsed)
 			}
 
 			if tt.wantCost == nil {
-				if usage.Cost != nil {
-					t.Fatalf("Cost = %#v, want nil", usage.Cost)
+				if update.Cost != nil {
+					t.Fatalf("Cost = %#v, want nil", update.Cost)
 				}
 				return
 			}
-			if usage.Cost == nil {
+			if update.Cost == nil {
 				t.Fatal("Cost is nil")
 			}
-			if usage.Cost.Currency != "USD" {
-				t.Fatalf("Cost.Currency = %q, want USD", usage.Cost.Currency)
+			if update.Cost.Currency != "USD" {
+				t.Fatalf("Cost.Currency = %q, want USD", update.Cost.Currency)
 			}
-			if math.Abs(usage.Cost.Amount-*tt.wantCost) > 0.0000000001 {
-				t.Fatalf("Cost.Amount = %.12f, want %.12f", usage.Cost.Amount, *tt.wantCost)
+			if math.Abs(update.Cost.Amount-*tt.wantCost) > 0.0000000001 {
+				t.Fatalf("Cost.Amount = %.12f, want %.12f", update.Cost.Amount, *tt.wantCost)
 			}
 		})
 	}
@@ -137,13 +136,13 @@ func TestLoopUsageSessionUpdateCostAccumulatesAcrossLoops(t *testing.T) {
 		CostAdder: adder,
 	}
 	update, ok, err := first.usageSessionUpdate(t.Context(), sessionID, metadata)
-	if err != nil || !ok || update.UsageUpdate == nil || update.UsageUpdate.Cost == nil {
+	if err != nil || !ok || update.SessionUpdate != acp.SessionUpdateTypeUsageUpdate || update.Cost == nil {
 		t.Fatalf("first usageSessionUpdate() = %#v, %v, %v", update, ok, err)
 	}
 	// 100 * 2/1M + 50 * 4/1M
 	wantFirst := 0.0004
-	if math.Abs(update.UsageUpdate.Cost.Amount-wantFirst) > 0.0000000001 {
-		t.Fatalf("first Cost.Amount = %.12f, want %.12f", update.UsageUpdate.Cost.Amount, wantFirst)
+	if math.Abs(update.Cost.Amount-wantFirst) > 0.0000000001 {
+		t.Fatalf("first Cost.Amount = %.12f, want %.12f", update.Cost.Amount, wantFirst)
 	}
 
 	// a new Loop with different model pricing simulates a model switch,
@@ -157,23 +156,23 @@ func TestLoopUsageSessionUpdateCostAccumulatesAcrossLoops(t *testing.T) {
 		CostAdder: adder,
 	}
 	update, ok, err = second.usageSessionUpdate(t.Context(), sessionID, metadata)
-	if err != nil || !ok || update.UsageUpdate == nil || update.UsageUpdate.Cost == nil {
+	if err != nil || !ok || update.SessionUpdate != acp.SessionUpdateTypeUsageUpdate || update.Cost == nil {
 		t.Fatalf("second usageSessionUpdate() = %#v, %v, %v", update, ok, err)
 	}
 	// previous total plus 100 * 1/1M + 50 * 1/1M
 	wantSecond := wantFirst + 0.00015
-	if math.Abs(update.UsageUpdate.Cost.Amount-wantSecond) > 0.0000000001 {
-		t.Fatalf("second Cost.Amount = %.12f, want %.12f", update.UsageUpdate.Cost.Amount, wantSecond)
+	if math.Abs(update.Cost.Amount-wantSecond) > 0.0000000001 {
+		t.Fatalf("second Cost.Amount = %.12f, want %.12f", update.Cost.Amount, wantSecond)
 	}
 
 	// a different session must not see this session's cost
 	other := Loop{Cfg: second.Cfg, CostAdder: adder}
 	update, ok, err = other.usageSessionUpdate(t.Context(), "other-session", metadata)
-	if err != nil || !ok || update.UsageUpdate == nil || update.UsageUpdate.Cost == nil {
+	if err != nil || !ok || update.SessionUpdate != acp.SessionUpdateTypeUsageUpdate || update.Cost == nil {
 		t.Fatalf("other session usageSessionUpdate() = %#v, %v, %v", update, ok, err)
 	}
-	if math.Abs(update.UsageUpdate.Cost.Amount-0.00015) > 0.0000000001 {
-		t.Fatalf("other session Cost.Amount = %.12f, want %.12f", update.UsageUpdate.Cost.Amount, 0.00015)
+	if math.Abs(update.Cost.Amount-0.00015) > 0.0000000001 {
+		t.Fatalf("other session Cost.Amount = %.12f, want %.12f", update.Cost.Amount, 0.00015)
 	}
 }
 

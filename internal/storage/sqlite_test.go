@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	acp "github.com/coder/acp-go-sdk"
 	_ "github.com/ncruces/go-sqlite3/driver"
+	acp "github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 )
 
@@ -205,7 +205,7 @@ func TestACPSessions(t *testing.T) {
 	err := db.CreateACPSession(ctx, CreateACPSessionParams{
 		Session: acp.SessionInfo{
 			Cwd:       "/tmp/older",
-			SessionId: acp.SessionId("older-session"),
+			SessionID: acp.SessionId("older-session"),
 			Title:     new("Older title"),
 		},
 		LastMessageID: olderMessageID,
@@ -219,7 +219,7 @@ func TestACPSessions(t *testing.T) {
 	err = db.CreateACPSession(ctx, CreateACPSessionParams{
 		Session: acp.SessionInfo{
 			Cwd:       "/tmp/newer",
-			SessionId: acp.SessionId("newer-session"),
+			SessionID: acp.SessionId("newer-session"),
 			Title:     new("Newer title"),
 		},
 		LastMessageID: newerMessageID,
@@ -244,8 +244,8 @@ func TestACPSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetACPSession: %v", err)
 	}
-	if resp.Session.SessionId != acp.SessionId("older-session") {
-		t.Fatalf("SessionId: got %q", resp.Session.SessionId)
+	if resp.Session.SessionID != acp.SessionId("older-session") {
+		t.Fatalf("SessionID: got %q", resp.Session.SessionID)
 	}
 	if resp.Session.Cwd != "/tmp/older" {
 		t.Fatalf("Cwd: got %q", resp.Session.Cwd)
@@ -293,8 +293,8 @@ func TestACPSessions(t *testing.T) {
 	if len(sessions) != 2 {
 		t.Fatalf("expected 2 sessions, got %d", len(sessions))
 	}
-	if sessions[0].SessionId != acp.SessionId("newer-session") || sessions[1].SessionId != acp.SessionId("older-session") {
-		t.Fatalf("unexpected session order: %q, %q", sessions[0].SessionId, sessions[1].SessionId)
+	if sessions[0].SessionID != acp.SessionId("newer-session") || sessions[1].SessionID != acp.SessionId("older-session") {
+		t.Fatalf("unexpected session order: %q, %q", sessions[0].SessionID, sessions[1].SessionID)
 	}
 	if sessions[0].UpdatedAt == nil || *sessions[0].UpdatedAt != newerSessionCreatedAt.Format(time.RFC3339Nano) {
 		t.Fatalf("newer UpdatedAt: got %v", sessions[0].UpdatedAt)
@@ -323,8 +323,8 @@ func TestACPSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListACPSessions after add: %v", err)
 	}
-	if sessions[0].SessionId != acp.SessionId("older-session") || sessions[1].SessionId != acp.SessionId("newer-session") {
-		t.Fatalf("unexpected session order after add: %q, %q", sessions[0].SessionId, sessions[1].SessionId)
+	if sessions[0].SessionID != acp.SessionId("older-session") || sessions[1].SessionID != acp.SessionId("newer-session") {
+		t.Fatalf("unexpected session order after add: %q, %q", sessions[0].SessionID, sessions[1].SessionID)
 	}
 	if sessions[0].UpdatedAt == nil || *sessions[0].UpdatedAt != olderSessionCreatedAt.Format(time.RFC3339Nano) {
 		t.Fatalf("older UpdatedAt after add: got %v", sessions[0].UpdatedAt)
@@ -346,7 +346,7 @@ func TestDeleteACPSessionDeletesMessagesAndBlocks(t *testing.T) {
 	if err := db.CreateACPSession(ctx, CreateACPSessionParams{
 		Session: acp.SessionInfo{
 			Cwd:       "/tmp/delete",
-			SessionId: acp.SessionId("delete-session"),
+			SessionID: acp.SessionId("delete-session"),
 			Title:     new("Delete title"),
 		},
 		LastMessageID: lastMessageID,
@@ -391,7 +391,7 @@ func TestACPSessionWithoutMessages(t *testing.T) {
 	err := db.CreateACPSession(ctx, CreateACPSessionParams{
 		Session: acp.SessionInfo{
 			Cwd:       "/tmp/empty",
-			SessionId: acp.SessionId("empty-session"),
+			SessionID: acp.SessionId("empty-session"),
 			Title:     new("Empty title"),
 		},
 		LastMessageID: "",
@@ -422,7 +422,7 @@ func TestACPSessionWithoutMessages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListACPSessions: %v", err)
 	}
-	if len(sessions) != 1 || sessions[0].SessionId != acp.SessionId("empty-session") {
+	if len(sessions) != 1 || sessions[0].SessionID != acp.SessionId("empty-session") {
 		t.Fatalf("unexpected sessions: %#v", sessions)
 	}
 }
@@ -2499,7 +2499,7 @@ func TestAddACPSessionCost(t *testing.T) {
 	if err := db.CreateACPSession(ctx, CreateACPSessionParams{
 		Session: acp.SessionInfo{
 			Cwd:       "/tmp/cost",
-			SessionId: acp.SessionId("cost-session"),
+			SessionID: acp.SessionId("cost-session"),
 			Title:     new("Cost title"),
 		},
 		ModelRef: testACPModelRef,

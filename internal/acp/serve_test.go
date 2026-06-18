@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/coder/acp-go-sdk"
 	"github.com/nalgeon/be"
+	"github.com/spachava753/acp-sdk/acp"
 
 	"github.com/spachava753/cpe/internal/mcpconfig"
 )
@@ -98,28 +98,15 @@ func TestMergeACPServerConfigs(t *testing.T) {
 	}
 
 	got, err := mergeACPServerConfigs(configured, []acp.McpServer{
-		{Stdio: &acp.McpServerStdio{
-			Name:    "stdio",
-			Command: "stdio-mcp",
-			Args:    []string{"--verbose"},
-			Env: []acp.EnvVariable{
-				{Name: "TOKEN", Value: "secret"},
-			},
-		}},
-		{Http: &acp.McpServerHttpInline{
-			Name: "http",
-			Url:  "https://example.com/mcp",
-			Headers: []acp.HttpHeader{
-				{Name: "Authorization", Value: "Bearer token"},
-			},
-		}},
-		{Sse: &acp.McpServerSseInline{
-			Name: "sse",
-			Url:  "https://example.com/sse",
-			Headers: []acp.HttpHeader{
-				{Name: "X-Test", Value: "true"},
-			},
-		}},
+		acp.StdioMcpServer("stdio", "stdio-mcp", []string{"--verbose"}, []acp.EnvVariable{
+			{Name: "TOKEN", Value: "secret"},
+		}),
+		acp.HttpMcpServer("http", "https://example.com/mcp", []acp.HttpHeader{
+			{Name: "Authorization", Value: "Bearer token"},
+		}),
+		acp.SseMcpServer("sse", "https://example.com/sse", []acp.HttpHeader{
+			{Name: "X-Test", Value: "true"},
+		}),
 	})
 	be.Err(t, err, nil)
 
@@ -160,14 +147,14 @@ func TestMergeACPServerConfigsRejectsCollisions(t *testing.T) {
 				"duplicate": {Type: "stdio", Command: "configured-mcp"},
 			},
 			provided: []acp.McpServer{
-				{Stdio: &acp.McpServerStdio{Name: "duplicate", Command: "client-mcp"}},
+				acp.StdioMcpServer("duplicate", "client-mcp", nil, nil),
 			},
 		},
 		{
 			name: "provided name",
 			provided: []acp.McpServer{
-				{Stdio: &acp.McpServerStdio{Name: "duplicate", Command: "first-mcp"}},
-				{Stdio: &acp.McpServerStdio{Name: "duplicate", Command: "second-mcp"}},
+				acp.StdioMcpServer("duplicate", "first-mcp", nil, nil),
+				acp.StdioMcpServer("duplicate", "second-mcp", nil, nil),
 			},
 		},
 	}
@@ -182,7 +169,7 @@ func TestMergeACPServerConfigsRejectsCollisions(t *testing.T) {
 
 func TestMergeACPServerConfigsRejectsUnsupportedACPTransport(t *testing.T) {
 	_, err := mergeACPServerConfigs(nil, []acp.McpServer{
-		{Acp: &acp.McpServerAcpInline{Name: "client-acp"}},
+		acp.AcpMcpServer("client-acp", "client-acp"),
 	})
 	be.True(t, err != nil)
 }

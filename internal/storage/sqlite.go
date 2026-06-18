@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	acp "github.com/coder/acp-go-sdk"
 	gonanoid "github.com/matoous/go-nanoid/v2"
 	_ "github.com/ncruces/go-sqlite3/driver"
+	acp "github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/storage/sqlcgen"
@@ -607,7 +607,7 @@ func acpSessionInfo(id, cwd, title string, updatedAt time.Time) acp.SessionInfo 
 	updatedAtText := updatedAt.UTC().Format(time.RFC3339Nano)
 	return acp.SessionInfo{
 		Cwd:       cwd,
-		SessionId: acp.SessionId(id),
+		SessionID: acp.SessionId(id),
 		Title:     &title,
 		UpdatedAt: &updatedAtText,
 	}
@@ -850,7 +850,7 @@ func (s *Sqlite) getMessage(ctx context.Context, messageID string) (gai.Message,
 // CreateACPSession persists ACP session metadata.
 func (s *Sqlite) CreateACPSession(ctx context.Context, params CreateACPSessionParams) error {
 	err := s.q.CreateSession(ctx, sqlcgen.CreateSessionParams{
-		ID:            string(params.Session.SessionId),
+		ID:            string(params.Session.SessionID),
 		LastMessageID: optionalString(params.LastMessageID),
 		Cwd:           params.Session.Cwd,
 		Title:         acpSessionTitle(params.Session),
@@ -858,7 +858,7 @@ func (s *Sqlite) CreateACPSession(ctx context.Context, params CreateACPSessionPa
 		ThinkingLevel: params.ThinkingLevel,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create ACP session %s: %w", params.Session.SessionId, err)
+		return fmt.Errorf("failed to create ACP session %s: %w", params.Session.SessionID, err)
 	}
 	return nil
 }

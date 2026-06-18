@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/coder/acp-go-sdk"
+	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/acp/xacp"
@@ -42,13 +42,13 @@ func (a *Agent) activeSession(sessionID acp.SessionId) (*sync.Guard[session], er
 	return s, nil
 }
 
-// NewSession implements [acp.Agent].
-func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (acp.NewSessionResponse, error) {
+// NewSession implements [acp.SessionHandler].
+func (a *Agent) NewSession(ctx context.Context, params *acp.NewSessionRequest) (*acp.NewSessionResponse, error) {
 	id := a.genId()
 	si := acp.SessionInfo{
 		Cwd:       params.Cwd,
 		Title:     new("untitled"),
-		SessionId: id,
+		SessionID: id,
 	}
 	modelRef := a.rawCfg.Models[0].Ref
 	var thinkingVal string
@@ -69,22 +69,23 @@ func (a *Agent) NewSession(ctx context.Context, params acp.NewSessionRequest) (a
 		ModelRef:      s.model,
 		ThinkingLevel: s.thinking,
 	}); err != nil {
-		return acp.NewSessionResponse{}, fmt.Errorf("could not save created session: %v", err)
+		return nil, fmt.Errorf("could not save created session: %v", err)
 	}
 	a.activeSessions.Store(id, sync.NewGuard(s))
-	return acp.NewSessionResponse{
-		SessionId:     id,
-		ConfigOptions: a.configOptions(ctx, id),
+	opts := a.configOptions(ctx, id)
+	return &acp.NewSessionResponse{
+		SessionID:     id,
+		ConfigOptions: &opts,
 	}, nil
 }
 
-// ListSessions implements [acp.Agent].
-func (a *Agent) ListSessions(ctx context.Context, params acp.ListSessionsRequest) (acp.ListSessionsResponse, error) {
+// ListSessions implements [acp.SessionHandler].
+func (a *Agent) ListSessions(ctx context.Context, params *acp.ListSessionsRequest) (*acp.ListSessionsResponse, error) {
 	sessionInfos, err := a.db.ListACPSessions(ctx)
 	if err != nil {
-		return acp.ListSessionsResponse{}, fmt.Errorf("could not list sessions: %v", err)
+		return nil, fmt.Errorf("could not list sessions: %v", err)
 	}
-	resp := acp.ListSessionsResponse{
+	resp := &acp.ListSessionsResponse{
 		Sessions: make([]acp.SessionInfo, 0, len(sessionInfos)),
 	}
 	resp.Sessions = append(resp.Sessions, sessionInfos...)
@@ -189,30 +190,30 @@ func (a *Agent) loadActiveSession(
 	return a.configOptions(ctx, sessionId), nil
 }
 
-// ResumeSession implements [acp.Agent].
-func (a *Agent) ResumeSession(ctx context.Context, params acp.ResumeSessionRequest) (acp.ResumeSessionResponse, error) {
-	opts, err := a.loadActiveSession(ctx, params.SessionId, params.Cwd, params.McpServers)
+// ResumeSession implements [acp.SessionHandler].
+func (a *Agent) ResumeSession(ctx context.Context, params *acp.ResumeSessionRequest) (*acp.ResumeSessionResponse, error) {
+	opts, err := a.loadActiveSession(ctx, params.SessionID, params.Cwd, params.McpServers)
 	if err != nil {
-		return acp.ResumeSessionResponse{}, fmt.Errorf("could not resume session: %v", err)
+		return nil, fmt.Errorf("could not resume session: %v", err)
 	}
-	return acp.ResumeSessionResponse{
-		ConfigOptions: opts,
+	return &acp.ResumeSessionResponse{
+		ConfigOptions: &opts,
 	}, nil
 }
 
-// LoadSession implements [acp.AgentLoader].
-func (a *Agent) LoadSession(ctx context.Context, params acp.LoadSessionRequest) (acp.LoadSessionResponse, error) {
-	opts, err := a.loadActiveSession(ctx, params.SessionId, params.Cwd, params.McpServers)
+// LoadSession implements [acp.SessionHandler].
+func (a *Agent) LoadSession(ctx context.Context, params *acp.LoadSessionRequest) (*acp.LoadSessionResponse, error) {
+	opts, err := a.loadActiveSession(ctx, params.SessionID, params.Cwd, params.McpServers)
 	if err != nil {
-		return acp.LoadSessionResponse{}, fmt.Errorf("could not load session: %v", err)
+		return nil, fmt.Errorf("could not load session: %v", err)
 	}
-	acpSession, err := a.db.GetACPSession(ctx, params.SessionId)
+	acpSession, err := a.db.GetACPSession(ctx, params.SessionID)
 	if err != nil {
-		return acp.LoadSessionResponse{}, fmt.Errorf("could get acp session from db: %v", err)
+		return nil, fmt.Errorf("could get acp session from db: %v", err)
 	}
 	dialog, err := storage.GetDialogForMessage(ctx, a.db, acpSession.LastMessageID)
 	if err != nil {
-		return acp.LoadSessionResponse{}, fmt.Errorf("could not get dialog from db: %v", err)
+		return nil, fmt.Errorf("could not get dialog from db: %v", err)
 	}
 	for len(dialog) > 0 {
 		compactionParentID, _ := dialog[0].ExtraFields[storage.MessageCompactionParentIDKey].(string)
@@ -221,26 +222,26 @@ func (a *Agent) LoadSession(ctx context.Context, params acp.LoadSessionRequest) 
 		}
 		parentDialog, err := storage.GetDialogForMessage(ctx, a.db, compactionParentID)
 		if err != nil {
-			return acp.LoadSessionResponse{}, fmt.Errorf("could not get compaction parent dialog from db: %v", err)
+			return nil, fmt.Errorf("could not get compaction parent dialog from db: %v", err)
 		}
 		dialog = append(parentDialog, dialog...)
 	}
 	for _, msg := range dialog {
 		for update := range xacp.MsgToSessionUpdate(msg) {
-			if err := a.conn.SessionUpdate(ctx, acp.SessionNotification{
-				SessionId: params.SessionId,
+			if err := a.conn.SessionUpdate(ctx, &acp.SessionNotification{
+				SessionID: params.SessionID,
 				Update:    update,
 			}); err != nil {
-				return acp.LoadSessionResponse{}, fmt.Errorf("could not send session update: %v", err)
+				return nil, fmt.Errorf("could not send session update: %v", err)
 			}
 		}
 	}
-	return acp.LoadSessionResponse{
-		ConfigOptions: opts,
+	return &acp.LoadSessionResponse{
+		ConfigOptions: &opts,
 	}, nil
 }
 
-// UnstableForkSession implements ACP's unstable session/fork method.
+// ForkSession implements ACP's unstable session/fork method.
 //
 // The forked session shares the source session's persisted history: the new
 // session points at the same last message, so prompts on either session
@@ -250,15 +251,15 @@ func (a *Agent) LoadSession(ctx context.Context, params acp.LoadSessionRequest) 
 // Stale stored config is resolved against the loaded config the same way
 // session resumption does. The forked session's runtime is created lazily on
 // the first prompt, like sessions created via session/new.
-func (a *Agent) UnstableForkSession(
+func (a *Agent) ForkSession(
 	ctx context.Context,
-	params acp.UnstableForkSessionRequest,
-) (acp.UnstableForkSessionResponse, error) {
-	src, err := a.db.GetACPSession(ctx, params.SessionId)
+	params *acp.ForkSessionRequest,
+) (*acp.ForkSessionResponse, error) {
+	src, err := a.db.GetACPSession(ctx, params.SessionID)
 	if err != nil {
-		return acp.UnstableForkSessionResponse{}, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"could not fetch acp session %s from storage: %v",
-			params.SessionId,
+			params.SessionID,
 			err,
 		)
 	}
@@ -295,75 +296,34 @@ func (a *Agent) UnstableForkSession(
 		Session: acp.SessionInfo{
 			Cwd:       params.Cwd,
 			Title:     title,
-			SessionId: id,
+			SessionID: id,
 		},
 		LastMessageID: src.LastMessageID,
 		ModelRef:      modelRef,
 		ThinkingLevel: thinkingLevel,
 	}); err != nil {
-		return acp.UnstableForkSessionResponse{}, fmt.Errorf("could not save forked session: %v", err)
+		return nil, fmt.Errorf("could not save forked session: %v", err)
 	}
 
 	a.activeSessions.Store(id, sync.NewGuard(session{
 		cwd:        params.Cwd,
 		model:      modelRef,
 		thinking:   thinkingLevel,
-		mcpServers: stableMCPServers(params.McpServers),
+		mcpServers: params.McpServers,
 	}))
 
-	return acp.UnstableForkSessionResponse{
-		SessionId:     id,
-		ConfigOptions: unstableConfigOptions(a.configOptions(ctx, id)),
+	opts := a.configOptions(ctx, id)
+	return &acp.ForkSessionResponse{
+		SessionID:     id,
+		ConfigOptions: &opts,
 	}, nil
 }
 
-// stableMCPServers converts the unstable MCP server descriptors used by
-// session/fork into their stable equivalents. The variants carry identical
-// fields; only the Go types differ.
-func stableMCPServers(servers []acp.UnstableMcpServer) []acp.McpServer {
-	if len(servers) == 0 {
-		return nil
-	}
-	converted := make([]acp.McpServer, len(servers))
-	for i, s := range servers {
-		converted[i] = acp.McpServer{
-			Http:  (*acp.McpServerHttpInline)(s.Http),
-			Sse:   (*acp.McpServerSseInline)(s.Sse),
-			Stdio: s.Stdio,
-		}
-		if s.Acp != nil {
-			converted[i].Acp = &acp.McpServerAcpInline{
-				Meta: s.Acp.Meta,
-				Id:   acp.McpServerAcpId(s.Acp.Id),
-				Name: s.Acp.Name,
-				Type: s.Acp.Type,
-			}
-		}
-	}
-	return converted
-}
-
-// unstableConfigOptions converts session config options into the unstable
-// wrapper type used by unstable session responses such as session/fork.
-func unstableConfigOptions(opts []acp.SessionConfigOption) []acp.UnstableSessionConfigOption {
-	if len(opts) == 0 {
-		return nil
-	}
-	converted := make([]acp.UnstableSessionConfigOption, len(opts))
-	for i, o := range opts {
-		converted[i] = acp.UnstableSessionConfigOption{
-			Select:  (*acp.UnstableSessionConfigOptionSelect)(o.Select),
-			Boolean: (*acp.UnstableSessionConfigOptionBoolean)(o.Boolean),
-		}
-	}
-	return converted
-}
-
-// Cancel implements [acp.Agent].
-func (a *Agent) Cancel(ctx context.Context, params acp.CancelNotification) error {
-	s, ok := a.activeSessions.Load(params.SessionId)
+// Cancel implements [acp.SessionHandler].
+func (a *Agent) Cancel(ctx context.Context, params *acp.CancelNotification) error {
+	s, ok := a.activeSessions.Load(params.SessionID)
 	if !ok {
-		return fmt.Errorf("session %s not found", params.SessionId)
+		return fmt.Errorf("session %s not found", params.SessionID)
 	}
 	return s.Do(func(t *session) error {
 		if t.cancelfunc != nil {
@@ -374,11 +334,11 @@ func (a *Agent) Cancel(ctx context.Context, params acp.CancelNotification) error
 	})
 }
 
-// CloseSession implements [acp.Agent].
-func (a *Agent) CloseSession(ctx context.Context, params acp.CloseSessionRequest) (acp.CloseSessionResponse, error) {
-	s, err := a.activeSession(params.SessionId)
+// CloseSession implements [acp.SessionHandler].
+func (a *Agent) CloseSession(ctx context.Context, params *acp.CloseSessionRequest) (*acp.CloseSessionResponse, error) {
+	s, err := a.activeSession(params.SessionID)
 	if err != nil {
-		return acp.CloseSessionResponse{}, err
+		return nil, err
 	}
 	if err := s.Do(func(t *session) error {
 		if t.runtime == nil {
@@ -386,18 +346,18 @@ func (a *Agent) CloseSession(ctx context.Context, params acp.CloseSessionRequest
 		}
 		return t.runtime.Close()
 	}); err != nil {
-		return acp.CloseSessionResponse{}, fmt.Errorf("could not close session %s, %v", params.SessionId, err)
+		return nil, fmt.Errorf("could not close session %s, %v", params.SessionID, err)
 	}
-	a.activeSessions.Delete(params.SessionId)
-	return acp.CloseSessionResponse{}, nil
+	a.activeSessions.Delete(params.SessionID)
+	return &acp.CloseSessionResponse{}, nil
 }
 
-// UnstableDeleteSession implements ACP's unstable session/delete method.
-func (a *Agent) UnstableDeleteSession(
+// DeleteSession implements [acp.SessionHandler].
+func (a *Agent) DeleteSession(
 	ctx context.Context,
-	params acp.UnstableDeleteSessionRequest,
-) (acp.UnstableDeleteSessionResponse, error) {
-	if s, ok := a.activeSessions.Load(params.SessionId); ok {
+	params *acp.DeleteSessionRequest,
+) (*acp.DeleteSessionResponse, error) {
+	if s, ok := a.activeSessions.Load(params.SessionID); ok {
 		if err := s.Do(func(t *session) error {
 			if t.cancelfunc != nil {
 				t.cancelfunc()
@@ -408,12 +368,12 @@ func (a *Agent) UnstableDeleteSession(
 			}
 			return t.runtime.Close()
 		}); err != nil {
-			return acp.UnstableDeleteSessionResponse{}, fmt.Errorf("could not close session %s before delete: %v", params.SessionId, err)
+			return nil, fmt.Errorf("could not close session %s before delete: %v", params.SessionID, err)
 		}
 	}
-	if err := a.db.DeleteACPSession(ctx, params.SessionId); err != nil {
-		return acp.UnstableDeleteSessionResponse{}, fmt.Errorf("could not delete session %s: %v", params.SessionId, err)
+	if err := a.db.DeleteACPSession(ctx, params.SessionID); err != nil {
+		return nil, fmt.Errorf("could not delete session %s: %v", params.SessionID, err)
 	}
-	a.activeSessions.Delete(params.SessionId)
-	return acp.UnstableDeleteSessionResponse{}, nil
+	a.activeSessions.Delete(params.SessionID)
+	return &acp.DeleteSessionResponse{}, nil
 }

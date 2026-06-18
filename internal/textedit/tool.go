@@ -3,8 +3,8 @@ package textedit
 import (
 	"context"
 
-	"github.com/coder/acp-go-sdk"
 	"github.com/google/jsonschema-go/jsonschema"
+	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/acp/xctx"
@@ -13,7 +13,7 @@ import (
 const toolDescription = "Create a new text file or replace exactly one occurrence of text in an existing UTF-8 file."
 
 type sessionUpdator interface {
-	SessionUpdate(ctx context.Context, params acp.SessionNotification) error
+	SessionUpdate(ctx context.Context, params *acp.SessionNotification) error
 }
 
 // MakeTool returns the text_edit tool definition and callback for direct gai registration.
@@ -29,40 +29,37 @@ func MakeTool(sessionId acp.SessionId, conn sessionUpdator) (gai.Tool, gai.ToolC
 		}
 
 		// send in progress update for toolcall
-		conn.SessionUpdate(ctx, acp.SessionNotification{
-			SessionId: sessionId,
-			Update: acp.UpdateToolCall(
-				xctx.ToolCallIdFrom(ctx),
-				acp.WithUpdateKind(acp.ToolKindEdit),
-				acp.WithUpdateStatus(acp.ToolCallStatusInProgress),
-			),
+		inProgress := acp.ToolCallUpdateSessionUpdate(xctx.ToolCallIdFrom(ctx))
+		inProgress.Kind = new(acp.ToolKindEdit)
+		inProgress.Status = new(acp.ToolCallStatusInProgress)
+		conn.SessionUpdate(ctx, &acp.SessionNotification{
+			SessionID: sessionId,
+			Update:    inProgress,
 		})
 
 		output, err := Apply(input)
 		if err != nil {
-			// send in progress update for toolcall
-			conn.SessionUpdate(ctx, acp.SessionNotification{
-				SessionId: sessionId,
-				Update: acp.UpdateToolCall(
-					xctx.ToolCallIdFrom(ctx),
-					acp.WithUpdateStatus(acp.ToolCallStatusFailed),
-				),
+			// send failed update for toolcall
+			failed := acp.ToolCallUpdateSessionUpdate(xctx.ToolCallIdFrom(ctx))
+			failed.Status = new(acp.ToolCallStatusFailed)
+			conn.SessionUpdate(ctx, &acp.SessionNotification{
+				SessionID: sessionId,
+				Update:    failed,
 			})
 
 			return "", err
 		}
 
-		// send in progress update for toolcall
-		conn.SessionUpdate(ctx, acp.SessionNotification{
-			SessionId: sessionId,
-			Update: acp.UpdateToolCall(
-				xctx.ToolCallIdFrom(ctx),
-				acp.WithUpdateKind(acp.ToolKindEdit),
-				acp.WithUpdateStatus(acp.ToolCallStatusCompleted),
-				acp.WithUpdateContent([]acp.ToolCallContent{
-					acp.ToolDiffContent(input.Path, input.NewText, input.OldText),
-				}),
-			),
+		// send completed update for toolcall
+		completed := acp.ToolCallUpdateSessionUpdate(xctx.ToolCallIdFrom(ctx))
+		completed.Kind = new(acp.ToolKindEdit)
+		completed.Status = new(acp.ToolCallStatusCompleted)
+		diffContent := acp.DiffToolCallContent(input.Path, input.NewText)
+		diffContent.OldText = &input.OldText
+		completed.Content = []acp.ToolCallContent{diffContent}
+		conn.SessionUpdate(ctx, &acp.SessionNotification{
+			SessionID: sessionId,
+			Update:    completed,
 		})
 
 		return output.Message(), nil

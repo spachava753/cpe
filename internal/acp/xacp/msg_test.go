@@ -3,7 +3,7 @@ package xacp
 import (
 	"testing"
 
-	acpsdk "github.com/coder/acp-go-sdk"
+	acpsdk "github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 )
 
@@ -14,9 +14,9 @@ func TestPromptToMessagePreservesACPBase64Content(t *testing.T) {
 	const audioBase64 = "UklGRiQAAABXQVZF"
 
 	msg := PromptToMessage([]acpsdk.ContentBlock{
-		acpsdk.TextBlock("look"),
-		acpsdk.ImageBlock(imageBase64, "image/png"),
-		acpsdk.AudioBlock(audioBase64, "audio/wav"),
+		acpsdk.TextContentBlock("look"),
+		acpsdk.ImageContentBlock(imageBase64, "image/png"),
+		acpsdk.AudioContentBlock(audioBase64, "audio/wav"),
 	})
 
 	if msg.Role != gai.User {
@@ -48,14 +48,14 @@ func TestPromptToMessageEmbeddedResources(t *testing.T) {
 
 	t.Run("text and inferred image blob", func(t *testing.T) {
 		msg := PromptToMessage([]acpsdk.ContentBlock{
-			acpsdk.ResourceBlock(acpsdk.EmbeddedResourceResource{TextResourceContents: &acpsdk.TextResourceContents{
-				Uri:  "file:///workspace/notes.md",
-				Text: "# Notes\nKeep this context.",
-			}}),
-			acpsdk.ResourceBlock(acpsdk.EmbeddedResourceResource{BlobResourceContents: &acpsdk.BlobResourceContents{
-				Uri:  "file:///workspace/screenshots/input.png",
-				Blob: "iVBORw0KGgo=",
-			}}),
+			acpsdk.ResourceContentBlock(acpsdk.TextResourceContentsEmbeddedResourceResource(
+				"# Notes\nKeep this context.",
+				"file:///workspace/notes.md",
+			)),
+			acpsdk.ResourceContentBlock(acpsdk.BlobResourceContentsEmbeddedResourceResource(
+				"iVBORw0KGgo=",
+				"file:///workspace/screenshots/input.png",
+			)),
 		})
 
 		if msg.Role != gai.User {
@@ -84,12 +84,13 @@ func TestPromptToMessageEmbeddedResources(t *testing.T) {
 
 	t.Run("explicit MIME type", func(t *testing.T) {
 		mimeType := "application/pdf"
+		resource := acpsdk.BlobResourceContentsEmbeddedResourceResource(
+			"JVBERi0xLjQ=",
+			"file:///workspace/docs/report.unknown",
+		)
+		resource.MimeType = &mimeType
 		msg := PromptToMessage([]acpsdk.ContentBlock{
-			acpsdk.ResourceBlock(acpsdk.EmbeddedResourceResource{BlobResourceContents: &acpsdk.BlobResourceContents{
-				Uri:      "file:///workspace/docs/report.unknown",
-				MimeType: &mimeType,
-				Blob:     "JVBERi0xLjQ=",
-			}}),
+			acpsdk.ResourceContentBlock(resource),
 		})
 
 		if len(msg.Blocks) != 1 {
@@ -113,10 +114,10 @@ func TestPromptToMessageEmbeddedResources(t *testing.T) {
 		}()
 
 		_ = PromptToMessage([]acpsdk.ContentBlock{
-			acpsdk.ResourceBlock(acpsdk.EmbeddedResourceResource{BlobResourceContents: &acpsdk.BlobResourceContents{
-				Uri:  "untitled-resource",
-				Blob: "AAAA",
-			}}),
+			acpsdk.ResourceContentBlock(acpsdk.BlobResourceContentsEmbeddedResourceResource(
+				"AAAA",
+				"untitled-resource",
+			)),
 		})
 	})
 
@@ -128,10 +129,10 @@ func TestPromptToMessageEmbeddedResources(t *testing.T) {
 		}()
 
 		_ = PromptToMessage([]acpsdk.ContentBlock{
-			acpsdk.ResourceBlock(acpsdk.EmbeddedResourceResource{BlobResourceContents: &acpsdk.BlobResourceContents{
-				Uri:  "file:///%zz",
-				Blob: "AAAA",
-			}}),
+			acpsdk.ResourceContentBlock(acpsdk.BlobResourceContentsEmbeddedResourceResource(
+				"AAAA",
+				"file:///%zz",
+			)),
 		})
 	})
 }

@@ -8,8 +8,8 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/coder/acp-go-sdk"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/acp/xctx"
@@ -118,7 +118,7 @@ func FilterMcpTools(tools []*mcp.Tool, config mcpconfig.ServerConfig) ([]*mcp.To
 }
 
 type sessionUpdator interface {
-	SessionUpdate(ctx context.Context, params acp.SessionNotification) error
+	SessionUpdate(ctx context.Context, params *acp.SessionNotification) error
 }
 
 // ToolCallback adapts one MCP tool into gai.ToolCallback invocation semantics.
@@ -140,24 +140,22 @@ func (c *ToolCallback) Call(ctx context.Context, parameters map[string]any) (gai
 	callCtx, cancel := WithServerTimeout(ctx, c.ServerConfig)
 	defer cancel()
 
-	_ = c.Conn.SessionUpdate(ctx, acp.SessionNotification{
-		SessionId: c.SessionId,
-		Update: acp.UpdateToolCall(
-			xctx.ToolCallIdFrom(ctx),
-			acp.WithUpdateKind(acp.ToolKindOther),
-			acp.WithUpdateStatus(acp.ToolCallStatusInProgress),
-			acp.WithUpdateRawInput(parameters),
-		),
+	started := acp.ToolCallUpdateSessionUpdate(xctx.ToolCallIdFrom(ctx))
+	started.Kind = new(acp.ToolKindOther)
+	started.Status = new(acp.ToolCallStatusInProgress)
+	started.RawInput = parameters
+	_ = c.Conn.SessionUpdate(ctx, &acp.SessionNotification{
+		SessionID: c.SessionId,
+		Update:    started,
 	})
 
 	failedUpdate := func(text string) {
-		_ = c.Conn.SessionUpdate(ctx, acp.SessionNotification{
-			SessionId: c.SessionId,
-			Update: acp.UpdateToolCall(
-				xctx.ToolCallIdFrom(ctx),
-				acp.WithUpdateStatus(acp.ToolCallStatusFailed),
-				acp.WithUpdateContent([]acp.ToolCallContent{acp.ToolContent(acp.TextBlock(text))}),
-			),
+		failed := acp.ToolCallUpdateSessionUpdate(xctx.ToolCallIdFrom(ctx))
+		failed.Status = new(acp.ToolCallStatusFailed)
+		failed.Content = []acp.ToolCallContent{acp.ContentToolCallContent(acp.TextContentBlock(text))}
+		_ = c.Conn.SessionUpdate(ctx, &acp.SessionNotification{
+			SessionID: c.SessionId,
+			Update:    failed,
 		})
 	}
 
@@ -232,22 +230,21 @@ func (c *ToolCallback) Call(ctx context.Context, parameters map[string]any) (gai
 		content := b.Content.String()
 		switch b.ModalityType {
 		case gai.Image:
-			contentBlock = acp.ImageBlock(content, b.MimeType)
+			contentBlock = acp.ImageContentBlock(content, b.MimeType)
 		case gai.Audio:
-			contentBlock = acp.AudioBlock(content, b.MimeType)
+			contentBlock = acp.AudioContentBlock(content, b.MimeType)
 		default:
-			contentBlock = acp.TextBlock(content)
+			contentBlock = acp.TextContentBlock(content)
 		}
-		acpBlocks[i] = acp.ToolContent(contentBlock)
+		acpBlocks[i] = acp.ContentToolCallContent(contentBlock)
 	}
 
-	_ = c.Conn.SessionUpdate(ctx, acp.SessionNotification{
-		SessionId: c.SessionId,
-		Update: acp.UpdateToolCall(
-			xctx.ToolCallIdFrom(ctx),
-			acp.WithUpdateStatus(status),
-			acp.WithUpdateContent(acpBlocks),
-		),
+	completed := acp.ToolCallUpdateSessionUpdate(xctx.ToolCallIdFrom(ctx))
+	completed.Status = new(status)
+	completed.Content = acpBlocks
+	_ = c.Conn.SessionUpdate(ctx, &acp.SessionNotification{
+		SessionID: c.SessionId,
+		Update:    completed,
 	})
 
 	return resultMsg, nil

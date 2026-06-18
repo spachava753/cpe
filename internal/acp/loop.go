@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/coder/acp-go-sdk"
+	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/acp/xacp"
@@ -42,7 +42,7 @@ type Loop struct {
 	// internal state
 	toolCallbacks      map[string]gai.ToolCallback
 	compactionRestarts int
-	conn               *acp.AgentSideConnection
+	conn               *acp.AgentConnection
 }
 
 // Register registers a tool with the provider model and stores its callback.
@@ -159,8 +159,8 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 		}
 
 		for update := range xacp.MsgToSessionUpdate(resp.Candidates[0]) {
-			if err := l.conn.SessionUpdate(ctx, acp.SessionNotification{
-				SessionId: sessionID,
+			if err := l.conn.SessionUpdate(ctx, &acp.SessionNotification{
+				SessionID: sessionID,
 				Update:    update,
 			}); err != nil {
 				return current, fmt.Errorf("send assistant session update: %w", err)
@@ -171,8 +171,8 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 			return current, err
 		}
 		if ok {
-			if err := l.conn.SessionUpdate(ctx, acp.SessionNotification{
-				SessionId: sessionID,
+			if err := l.conn.SessionUpdate(ctx, &acp.SessionNotification{
+				SessionID: sessionID,
 				Update:    update,
 			}); err != nil {
 				return current, fmt.Errorf("send usage session update: %w", err)
@@ -196,8 +196,8 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 		// if compacted, len of dialog will be 1
 		if len(current) == 1 {
 			for update := range xacp.MsgToSessionUpdate(current[0]) {
-				if err := l.conn.SessionUpdate(ctx, acp.SessionNotification{
-					SessionId: sessionID,
+				if err := l.conn.SessionUpdate(ctx, &acp.SessionNotification{
+					SessionID: sessionID,
 					Update:    update,
 				}); err != nil {
 					return current, fmt.Errorf("send compaction session update: %w", err)
@@ -406,13 +406,9 @@ func (l *Loop) usageSessionUpdate(ctx context.Context, sessionID acp.SessionId, 
 		return acp.SessionUpdate{}, false, nil
 	}
 
-	usage := acp.SessionUsageUpdate{
-		Size: int(l.Cfg.Model.ContextWindow),
-		Used: used,
-		Cost: cost,
-	}
-
-	return acp.SessionUpdate{UsageUpdate: &usage}, true, nil
+	update := acp.UsageUpdateSessionUpdate(uint64(used), uint64(l.Cfg.Model.ContextWindow))
+	update.Cost = cost
+	return update, true, nil
 }
 
 func contextUsedTokens(metadata gai.Metadata) (int, bool) {

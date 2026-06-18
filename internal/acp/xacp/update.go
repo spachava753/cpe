@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"iter"
 
-	"github.com/coder/acp-go-sdk"
+	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 )
 
@@ -13,24 +13,16 @@ func MsgToSessionUpdate(msg gai.Message) iter.Seq[acp.SessionUpdate] {
 	return func(yield func(acp.SessionUpdate) bool) {
 		for _, b := range msg.Blocks {
 			content := b.Content.String()
-			var acpBlock acp.ContentBlock
-			switch b.ModalityType {
-			case gai.Image:
-				acpBlock = acp.ImageBlock(content, b.MimeType)
-			case gai.Audio:
-				acpBlock = acp.AudioBlock(content, b.MimeType)
-			default:
-				acpBlock = acp.TextBlock(content)
-			}
+			acpBlock := blockToContentBlock(b, content)
 			switch msg.Role {
 			case gai.User:
-				if !yield(acp.UpdateUserMessage(acpBlock)) {
+				if !yield(acp.UserMessageChunkSessionUpdate(acpBlock)) {
 					return
 				}
 			case gai.Assistant:
 				switch b.BlockType {
 				case gai.Thinking:
-					if !yield(acp.UpdateAgentThought(acpBlock)) {
+					if !yield(acp.AgentThoughtChunkSessionUpdate(acpBlock)) {
 						return
 					}
 				case gai.ToolCall:
@@ -40,16 +32,14 @@ func MsgToSessionUpdate(msg gai.Message) iter.Seq[acp.SessionUpdate] {
 					}
 					// TODO: we should add support for tool kind
 					// TODO: we should add support for file locations
-					if !yield(acp.StartToolCall(
-						acp.ToolCallId(b.ID),
-						input.Name,
-						acp.WithStartStatus(acp.ToolCallStatusPending),
-						acp.WithStartRawInput(input.Parameters),
-					)) {
+					update := acp.ToolCallSessionUpdate(acp.ToolCallId(b.ID), input.Name)
+					update.Status = new(acp.ToolCallStatusPending)
+					update.RawInput = input.Parameters
+					if !yield(update) {
 						return
 					}
 				case gai.Content:
-					if !yield(acp.UpdateAgentMessage(acpBlock)) {
+					if !yield(acp.AgentMessageChunkSessionUpdate(acpBlock)) {
 						return
 					}
 				default:
@@ -60,18 +50,27 @@ func MsgToSessionUpdate(msg gai.Message) iter.Seq[acp.SessionUpdate] {
 				if msg.ToolResultError {
 					status = acp.ToolCallStatusFailed
 				}
-				if !yield(acp.UpdateToolCall(
-					acp.ToolCallId(b.ID),
-					acp.WithUpdateStatus(status),
-					acp.WithUpdateContent([]acp.ToolCallContent{
-						acp.ToolContent(acpBlock),
-					}),
-				)) {
+				content := []acp.ToolCallContent{acp.ContentToolCallContent(acpBlock)}
+				update := acp.ToolCallUpdateSessionUpdate(acp.ToolCallId(b.ID))
+				update.Status = &status
+				update.Content = content
+				if !yield(update) {
 					return
 				}
 			default:
 				panic("unknown role")
 			}
 		}
+	}
+}
+
+func blockToContentBlock(b gai.Block, content string) acp.ContentBlock {
+	switch b.ModalityType {
+	case gai.Image:
+		return acp.ImageContentBlock(content, b.MimeType)
+	case gai.Audio:
+		return acp.AudioContentBlock(content, b.MimeType)
+	default:
+		return acp.TextContentBlock(content)
 	}
 }

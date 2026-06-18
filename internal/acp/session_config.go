@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"slices"
 
-	"github.com/coder/acp-go-sdk"
+	"github.com/spachava753/acp-sdk/acp"
 
 	"github.com/spachava753/cpe/internal/config"
 )
@@ -16,16 +16,17 @@ const (
 	thinkingLevelConfigId acp.SessionConfigId = "thinkingLevel"
 )
 
-// SetSessionConfigOption implements [acp.Agent].
+// SetSessionConfigOption implements [acp.SessionHandler].
 //
 // TODO: we should probably expose more options like tool choice, etc. and wire up defaults from the config
-func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessionConfigOptionRequest) (acp.SetSessionConfigOptionResponse, error) {
-	if params.ValueId == nil {
-		return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("unsupported session config option type")
+func (a *Agent) SetSessionConfigOption(ctx context.Context, params *acp.SetSessionConfigOptionRequest) (*acp.SetSessionConfigOptionResponse, error) {
+	value, ok := sessionConfigValueString(params.Value)
+	if !ok {
+		return nil, fmt.Errorf("unsupported session config option type")
 	}
-	s, err := a.activeSession(params.ValueId.SessionId)
+	s, err := a.activeSession(params.SessionID)
 	if err != nil {
-		return acp.SetSessionConfigOptionResponse{}, err
+		return nil, err
 	}
 	var modelRefVal, thinkingVal string
 	if err := s.Do(func(t *session) error {
@@ -35,24 +36,24 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessio
 	}); err != nil {
 		panic("unreachable")
 	}
-	switch params.ValueId.ConfigId {
+	switch params.ConfigID {
 	case modelRefConfigId:
-		modelRefVal = string(params.ValueId.Value)
+		modelRefVal = value
 		idx := slices.IndexFunc(a.rawCfg.Models, func(m config.ModelConfig) bool {
 			return m.Ref == modelRefVal
 		})
 		if idx == -1 {
-			return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("invalid model config value: %s", modelRefVal)
+			return nil, fmt.Errorf("invalid model config value: %s", modelRefVal)
 		}
 		thinkingVal = ""
 		if len(a.rawCfg.Models[idx].ThinkingValues) > 0 {
 			thinkingVal = a.rawCfg.Models[idx].ThinkingValues[0].Value
 		}
-		if err := a.db.SetACPSessionModelRef(ctx, params.ValueId.SessionId, modelRefVal); err != nil {
-			return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("could not persist model config: %v", err)
+		if err := a.db.SetACPSessionModelRef(ctx, params.SessionID, modelRefVal); err != nil {
+			return nil, fmt.Errorf("could not persist model config: %v", err)
 		}
-		if err := a.db.SetACPSessionThinkingLevel(ctx, params.ValueId.SessionId, thinkingVal); err != nil {
-			return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("could not persist thinking config: %v", err)
+		if err := a.db.SetACPSessionThinkingLevel(ctx, params.SessionID, thinkingVal); err != nil {
+			return nil, fmt.Errorf("could not persist thinking config: %v", err)
 		}
 		if err := s.Do(func(t *session) error {
 			if t.runtime != nil {
@@ -65,23 +66,23 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessio
 			t.runtime = nil
 			return nil
 		}); err != nil {
-			return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("could not update model config: %v", err)
+			return nil, fmt.Errorf("could not update model config: %v", err)
 		}
 	case thinkingLevelConfigId:
-		thinkingVal = string(params.ValueId.Value)
+		thinkingVal = value
 		idx := slices.IndexFunc(a.rawCfg.Models, func(m config.ModelConfig) bool {
 			return m.Ref == modelRefVal
 		})
 		if idx == -1 {
-			return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("could not validate thinking config for model: %s", modelRefVal)
+			return nil, fmt.Errorf("could not validate thinking config for model: %s", modelRefVal)
 		}
 		if !slices.ContainsFunc(a.rawCfg.Models[idx].ThinkingValues, func(tv config.ThinkingValueConfig) bool {
 			return tv.Value == thinkingVal
 		}) {
-			return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("invalid thinking level config value: %s", thinkingVal)
+			return nil, fmt.Errorf("invalid thinking level config value: %s", thinkingVal)
 		}
-		if err := a.db.SetACPSessionThinkingLevel(ctx, params.ValueId.SessionId, thinkingVal); err != nil {
-			return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("could not persist model config: %v", err)
+		if err := a.db.SetACPSessionThinkingLevel(ctx, params.SessionID, thinkingVal); err != nil {
+			return nil, fmt.Errorf("could not persist model config: %v", err)
 		}
 		if err := s.Do(func(t *session) error {
 			if t.runtime != nil {
@@ -93,14 +94,25 @@ func (a *Agent) SetSessionConfigOption(ctx context.Context, params acp.SetSessio
 			t.runtime = nil
 			return nil
 		}); err != nil {
-			return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("could not update model config: %v", err)
+			return nil, fmt.Errorf("could not update model config: %v", err)
 		}
 	default:
-		return acp.SetSessionConfigOptionResponse{}, fmt.Errorf("unknown config id: %s", params.ValueId.ConfigId)
+		return nil, fmt.Errorf("unknown config id: %s", params.ConfigID)
 	}
-	return acp.SetSessionConfigOptionResponse{
-		ConfigOptions: a.configOptions(ctx, params.ValueId.SessionId),
+	return &acp.SetSessionConfigOptionResponse{
+		ConfigOptions: a.configOptions(ctx, params.SessionID),
 	}, nil
+}
+
+func sessionConfigValueString(value any) (string, bool) {
+	switch v := value.(type) {
+	case string:
+		return v, true
+	case acp.SessionConfigValueId:
+		return string(v), true
+	default:
+		return "", false
+	}
 }
 
 func (a *Agent) configOptions(ctx context.Context, sessionId acp.SessionId) []acp.SessionConfigOption {
@@ -115,20 +127,10 @@ func (a *Agent) configOptions(ctx context.Context, sessionId acp.SessionId) []ac
 		slog.Info("model not picked yet", slog.String("session_id", string(sessionId)))
 
 		opts := a.modelSelectOptions()
-
-		sessionConfigs = append(sessionConfigs, acp.SessionConfigOption{
-			Select: &acp.SessionConfigOptionSelect{
-				Category:     new(acp.SessionConfigOptionCategoryModel),
-				CurrentValue: acp.SessionConfigValueId(""),
-				Description:  new("Choose model"),
-				Id:           modelRefConfigId,
-				Name:         "Model",
-				Options: acp.SessionConfigSelectOptions{
-					Ungrouped: &opts,
-				},
-				Type: "select",
-			},
-		})
+		option := acp.SelectSessionConfigOption(modelRefConfigId, "Model", acp.SessionConfigValueId(""), acp.SessionConfigSelectOptions{Ungrouped: &opts})
+		option.Category = new(acp.SessionConfigOptionCategoryModel)
+		option.Description = new("Choose model")
+		sessionConfigs = append(sessionConfigs, option)
 		return sessionConfigs
 	}
 
@@ -143,39 +145,19 @@ func (a *Agent) configOptions(ctx context.Context, sessionId acp.SessionId) []ac
 			slog.String("value", string(s.ModelRef)),
 		)
 		opts := a.modelSelectOptions()
-
-		sessionConfigs = append(sessionConfigs, acp.SessionConfigOption{
-			Select: &acp.SessionConfigOptionSelect{
-				Category:     new(acp.SessionConfigOptionCategoryModel),
-				CurrentValue: acp.SessionConfigValueId(""),
-				Description:  new("Choose model"),
-				Id:           modelRefConfigId,
-				Name:         "Model",
-				Options: acp.SessionConfigSelectOptions{
-					Ungrouped: &opts,
-				},
-				Type: "select",
-			},
-		})
+		option := acp.SelectSessionConfigOption(modelRefConfigId, "Model", acp.SessionConfigValueId(""), acp.SessionConfigSelectOptions{Ungrouped: &opts})
+		option.Category = new(acp.SessionConfigOptionCategoryModel)
+		option.Description = new("Choose model")
+		sessionConfigs = append(sessionConfigs, option)
 		return sessionConfigs
 	}
 
 	// model was set, and is valid value
 	modelOpts := a.modelSelectOptions()
-
-	sessionConfigs = append(sessionConfigs, acp.SessionConfigOption{
-		Select: &acp.SessionConfigOptionSelect{
-			Category:     new(acp.SessionConfigOptionCategoryModel),
-			CurrentValue: acp.SessionConfigValueId(s.ModelRef),
-			Description:  new("Choose model"),
-			Id:           modelRefConfigId,
-			Name:         "Model",
-			Options: acp.SessionConfigSelectOptions{
-				Ungrouped: &modelOpts,
-			},
-			Type: "select",
-		},
-	})
+	modelOption := acp.SelectSessionConfigOption(modelRefConfigId, "Model", acp.SessionConfigValueId(s.ModelRef), acp.SessionConfigSelectOptions{Ungrouped: &modelOpts})
+	modelOption.Category = new(acp.SessionConfigOptionCategoryModel)
+	modelOption.Description = new("Choose model")
+	sessionConfigs = append(sessionConfigs, modelOption)
 
 	idx := slices.IndexFunc(a.rawCfg.Models, func(m config.ModelConfig) bool {
 		return m.Ref == s.ModelRef
@@ -201,7 +183,7 @@ func (a *Agent) configOptions(ctx context.Context, sessionId acp.SessionId) []ac
 		s.ThinkingLevel = m.ThinkingValues[0].Value
 	}
 
-	thinkingOpts := make(acp.SessionConfigSelectOptionsUngrouped, len(m.ThinkingValues))
+	thinkingOpts := make(acp.UngroupedSessionConfigSelectOptions, len(m.ThinkingValues))
 	for i, tv := range m.ThinkingValues {
 		thinkingOpts[i] = acp.SessionConfigSelectOption{
 			Description: new(tv.Description),
@@ -210,19 +192,10 @@ func (a *Agent) configOptions(ctx context.Context, sessionId acp.SessionId) []ac
 		}
 	}
 
-	sessionConfigs = append(sessionConfigs, acp.SessionConfigOption{
-		Select: &acp.SessionConfigOptionSelect{
-			Category:     new(acp.SessionConfigOptionCategoryThoughtLevel),
-			CurrentValue: acp.SessionConfigValueId(s.ThinkingLevel),
-			Description:  new("Choose thinking level"),
-			Id:           thinkingLevelConfigId,
-			Name:         "Thinking level",
-			Options: acp.SessionConfigSelectOptions{
-				Ungrouped: &thinkingOpts,
-			},
-			Type: "select",
-		},
-	})
+	thinkingOption := acp.SelectSessionConfigOption(thinkingLevelConfigId, "Thinking level", acp.SessionConfigValueId(s.ThinkingLevel), acp.SessionConfigSelectOptions{Ungrouped: &thinkingOpts})
+	thinkingOption.Category = new(acp.SessionConfigOptionCategoryThoughtLevel)
+	thinkingOption.Description = new("Choose thinking level")
+	sessionConfigs = append(sessionConfigs, thinkingOption)
 
 	return sessionConfigs
 }
@@ -230,8 +203,8 @@ func (a *Agent) configOptions(ctx context.Context, sessionId acp.SessionId) []ac
 // modelSelectOptions builds the model picker options for every configured
 // model profile. Cost fields are optional in the config, so nil costs are
 // rendered as "n/a" instead of being dereferenced.
-func (a *Agent) modelSelectOptions() acp.SessionConfigSelectOptionsUngrouped {
-	opts := make(acp.SessionConfigSelectOptionsUngrouped, len(a.rawCfg.Models))
+func (a *Agent) modelSelectOptions() acp.UngroupedSessionConfigSelectOptions {
+	opts := make(acp.UngroupedSessionConfigSelectOptions, len(a.rawCfg.Models))
 	for i, m := range a.rawCfg.Models {
 		opts[i] = acp.SessionConfigSelectOption{
 			Description: new(fmt.Sprintf(`Type: %s
@@ -253,10 +226,10 @@ func formatOptionalCost(cost *float64) string {
 	return fmt.Sprintf("%0.2f", *cost)
 }
 
-// SetSessionMode implements [acp.Agent].
+// SetSessionMode implements [acp.SessionHandler].
 //
 // Modes are being superseded by session config options.
 // We just provide a default response for older clients.
-func (a *Agent) SetSessionMode(ctx context.Context, params acp.SetSessionModeRequest) (acp.SetSessionModeResponse, error) {
-	return acp.SetSessionModeResponse{}, nil
+func (a *Agent) SetSessionMode(ctx context.Context, params *acp.SetSessionModeRequest) (*acp.SetSessionModeResponse, error) {
+	return &acp.SetSessionModeResponse{}, nil
 }

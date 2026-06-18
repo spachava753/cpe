@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	acpsdk "github.com/coder/acp-go-sdk"
+	acpsdk "github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/storage"
@@ -31,8 +31,8 @@ func TestPromptTurnUsage(t *testing.T) {
 		},
 	})
 
-	cachedReadTokens := 31
-	cachedWriteTokens := 4
+	cachedReadTokens := uint64(31)
+	cachedWriteTokens := uint64(4)
 	want := &acpsdk.Usage{
 		TotalTokens:       97,
 		InputTokens:       85,

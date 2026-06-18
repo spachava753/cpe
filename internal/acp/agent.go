@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/acp/xacp"
@@ -13,8 +14,6 @@ import (
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/sync"
 	"github.com/spachava753/cpe/internal/version"
-
-	"github.com/coder/acp-go-sdk"
 )
 
 // runtimeFactory is the type to represent a factory that will
@@ -24,7 +23,7 @@ type RuntimeCreator interface {
 	Create(context.Context, session, acp.ClientCapabilities) (runtime, error)
 }
 
-// Agent is an implementation of an [acp.Agent]
+// Agent implements CPE's ACP initialize, auth, logout, and session handlers.
 //
 // TODO: how should we split the functionality between
 // Agent and session. Currently we operate under the assumption
@@ -32,7 +31,7 @@ type RuntimeCreator interface {
 // sessions may also be mutated concurrently.
 type Agent struct {
 	// conn is used to send updates to the client
-	conn *acp.AgentSideConnection
+	conn *acp.AgentConnection
 	// clientCaps stores the client capabilities advertised during initialize.
 	clientCaps acp.ClientCapabilities
 	// activeSessions represents the active sessions for this process.
@@ -59,46 +58,46 @@ type Agent struct {
 	}
 }
 
-// Authenticate implements [acp.Agent].
+// Authenticate implements [acp.AuthenticateHandler].
 //
 // Support logging into Chat GPT subscription, and other subscription accounts is possible
 func (a *Agent) Authenticate(
 	ctx context.Context,
-	params acp.AuthenticateRequest,
-) (acp.AuthenticateResponse, error) {
-	return acp.AuthenticateResponse{}, nil
+	params *acp.AuthenticateRequest,
+) (*acp.AuthenticateResponse, error) {
+	return &acp.AuthenticateResponse{}, nil
 }
 
-// Logout implements [acp.Agent].
-func (a *Agent) Logout(ctx context.Context, params acp.LogoutRequest) (acp.LogoutResponse, error) {
-	return acp.LogoutResponse{}, nil
+// Logout implements [acp.LogoutHandler].
+func (a *Agent) Logout(ctx context.Context, params *acp.LogoutRequest) (*acp.LogoutResponse, error) {
+	return &acp.LogoutResponse{}, nil
 }
 
-// Initialize implements [acp.Agent].
+// Initialize implements [acp.InitializeHandler].
 func (a *Agent) Initialize(
 	ctx context.Context,
-	params acp.InitializeRequest,
-) (acp.InitializeResponse, error) {
-	resp := acp.InitializeResponse{
-		ProtocolVersion: acp.ProtocolVersionNumber,
+	params *acp.InitializeRequest,
+) (*acp.InitializeResponse, error) {
+	resp := &acp.InitializeResponse{
+		ProtocolVersion: acp.ProtocolVersion(1),
 		AgentInfo: &acp.Implementation{
 			Name:    "CPE",
 			Title:   new("CPE"),
 			Version: version.Get(),
 		},
-		AgentCapabilities: acp.AgentCapabilities{
+		AgentCapabilities: &acp.AgentCapabilities{
 			LoadSession: true,
-			McpCapabilities: acp.McpCapabilities{
+			McpCapabilities: &acp.McpCapabilities{
 				Acp:  false,
 				Http: true,
 				Sse:  true,
 			},
-			PromptCapabilities: acp.PromptCapabilities{
+			PromptCapabilities: &acp.PromptCapabilities{
 				Audio:           true,
 				EmbeddedContext: true,
 				Image:           true,
 			},
-			SessionCapabilities: acp.SessionCapabilities{
+			SessionCapabilities: &acp.SessionCapabilities{
 				List:   &acp.SessionListCapabilities{},
 				Resume: &acp.SessionResumeCapabilities{},
 				Close:  &acp.SessionCloseCapabilities{},
@@ -108,20 +107,24 @@ func (a *Agent) Initialize(
 		},
 	}
 
-	a.clientCaps = params.ClientCapabilities
+	if params != nil && params.ClientCapabilities != nil {
+		a.clientCaps = *params.ClientCapabilities
+	} else {
+		a.clientCaps = acp.ClientCapabilities{}
+	}
 	return resp, nil
 }
 
-// Prompt implements [acp.Agent].
+// Prompt implements [acp.SessionHandler].
 //
 // TODO: add synctest type test for testing concurrency semantics
 func (a *Agent) Prompt(
 	ctx context.Context,
-	params acp.PromptRequest,
-) (acp.PromptResponse, error) {
-	s, err := a.activeSession(params.SessionId)
+	params *acp.PromptRequest,
+) (*acp.PromptResponse, error) {
+	s, err := a.activeSession(params.SessionID)
 	if err != nil {
-		return acp.PromptResponse{}, err
+		return nil, err
 	}
 
 	if err := s.Do(func(t *session) error {
@@ -132,7 +135,7 @@ func (a *Agent) Prompt(
 		t.runtime, err = a.runtimeFactory.Create(ctx, *t, a.clientCaps)
 		return err
 	}); err != nil {
-		return acp.PromptResponse{}, fmt.Errorf("failed to create runtime: %v", err)
+		return nil, fmt.Errorf("failed to create runtime: %v", err)
 	}
 
 	cancelCtx, cancelFunc := context.WithCancel(ctx)
@@ -152,7 +155,7 @@ func (a *Agent) Prompt(
 		if t.cancelfunc != nil {
 			return errors.New("cannot do prompt turn in actively generating session")
 		}
-		acpSession, err := a.db.GetACPSession(ctx, params.SessionId)
+		acpSession, err := a.db.GetACPSession(ctx, params.SessionID)
 		if err != nil {
 			return fmt.Errorf("could not get acp session from db: %v", err)
 		}
@@ -185,7 +188,7 @@ func (a *Agent) Prompt(
 		t.cancelfunc = cancelFunc
 		go func() {
 			generatedDialog, err := runtime.Generate(
-				withSessionID(cancelCtx, params.SessionId),
+				withSessionID(cancelCtx, params.SessionID),
 				inputDialog,
 				genOpts,
 			)
@@ -193,7 +196,7 @@ func (a *Agent) Prompt(
 		}()
 		return nil
 	}); err != nil {
-		return acp.PromptResponse{}, err
+		return nil, err
 	}
 
 	// here we wait until the result is given, which could be because the
@@ -204,7 +207,7 @@ func (a *Agent) Prompt(
 
 	dialog := result.dialog
 	if len(dialog) == 0 {
-		return acp.PromptResponse{}, errors.New("cannot persist empty prompt dialog")
+		return nil, errors.New("cannot persist empty prompt dialog")
 	}
 
 	// we should reset the cancellation func, now that generation is over
@@ -218,9 +221,9 @@ func (a *Agent) Prompt(
 	acpCtx, acpCtxCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
 	defer acpCtxCancel()
 	lastMessageID := storage.GetMessageID(dialog[len(dialog)-1])
-	_, err = a.db.AddACPSessionMessage(acpCtx, params.SessionId, lastMessageID)
+	_, err = a.db.AddACPSessionMessage(acpCtx, params.SessionID, lastMessageID)
 	if err != nil {
-		return acp.PromptResponse{}, fmt.Errorf("cannot update acp session in db: %v", err)
+		return nil, fmt.Errorf("cannot update acp session in db: %v", err)
 	}
 
 	// Compaction can replace the input history with a shorter rebased dialog.
@@ -232,38 +235,34 @@ func (a *Agent) Prompt(
 	usage := xacp.PromptTurnUsage(usageDialog)
 	if result.err != nil {
 		if errors.Is(result.err, gai.ErrMaxGenerationLimit) {
-			return acp.PromptResponse{
+			return &acp.PromptResponse{
 				StopReason: acp.StopReasonMaxTokens,
 				Usage:      usage,
 			}, nil
 		}
 		if _, ok := errors.AsType[gai.ContentPolicyErr](result.err); ok {
-			return acp.PromptResponse{
+			return &acp.PromptResponse{
 				StopReason: acp.StopReasonRefusal,
 				Usage:      usage,
 			}, nil
 		}
 		if _, ok := errors.AsType[*gai.ContentPolicyErr](result.err); ok {
-			return acp.PromptResponse{
+			return &acp.PromptResponse{
 				StopReason: acp.StopReasonRefusal,
 				Usage:      usage,
 			}, nil
 		}
 		if errors.Is(result.err, context.Canceled) {
-			return acp.PromptResponse{
+			return &acp.PromptResponse{
 				StopReason: acp.StopReasonCancelled,
 				Usage:      usage,
 			}, nil
 		}
-		return acp.PromptResponse{}, fmt.Errorf("unknown error while generating: %v", result.err)
+		return nil, fmt.Errorf("unknown error while generating: %v", result.err)
 	}
 
-	return acp.PromptResponse{
-		StopReason:    acp.StopReasonEndTurn,
-		Usage:         usage,
-		UserMessageId: params.MessageId,
+	return &acp.PromptResponse{
+		StopReason: acp.StopReasonEndTurn,
+		Usage:      usage,
 	}, nil
 }
-
-var _ acp.Agent = (*Agent)(nil)
-var _ acp.AgentLoader = (*Agent)(nil)

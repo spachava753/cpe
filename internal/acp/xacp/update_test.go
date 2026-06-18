@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	acpsdk "github.com/coder/acp-go-sdk"
+	acpsdk "github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 )
 
@@ -16,6 +16,21 @@ func mustToolCallBlock(t *testing.T, id, name string, params map[string]any) gai
 		t.Fatalf("ToolCallBlock() error = %v", err)
 	}
 	return block
+}
+
+func toolCallSessionUpdate(id, title string, rawInput map[string]any) acpsdk.SessionUpdate {
+	status := acpsdk.ToolCallStatusPending
+	update := acpsdk.ToolCallSessionUpdate(acpsdk.ToolCallId(id), title)
+	update.RawInput = rawInput
+	update.Status = &status
+	return update
+}
+
+func toolCallResultSessionUpdate(id string, status acpsdk.ToolCallStatus, content acpsdk.ContentBlock) acpsdk.SessionUpdate {
+	update := acpsdk.ToolCallUpdateSessionUpdate(acpsdk.ToolCallId(id))
+	update.Content = []acpsdk.ToolCallContent{acpsdk.ContentToolCallContent(content)}
+	update.Status = &status
+	return update
 }
 
 func TestMsgToSessionUpdate(t *testing.T) {
@@ -35,9 +50,9 @@ func TestMsgToSessionUpdate(t *testing.T) {
 				Role:   gai.User,
 				Blocks: []gai.Block{gai.TextBlock("hello")},
 			},
-			want: []acpsdk.SessionUpdate{{UserMessageChunk: &acpsdk.SessionUpdateUserMessageChunk{
-				Content: acpsdk.TextBlock("hello"),
-			}}},
+			want: []acpsdk.SessionUpdate{
+				acpsdk.UserMessageChunkSessionUpdate(acpsdk.TextContentBlock("hello")),
+			},
 		},
 		{
 			name: "user multiple blocks",
@@ -46,8 +61,8 @@ func TestMsgToSessionUpdate(t *testing.T) {
 				{BlockType: gai.Content, ModalityType: gai.Image, MimeType: "image/png", Content: gai.Str("iVBORw0KGgo=")},
 			}},
 			want: []acpsdk.SessionUpdate{
-				{UserMessageChunk: &acpsdk.SessionUpdateUserMessageChunk{Content: acpsdk.TextBlock("hello")}},
-				{UserMessageChunk: &acpsdk.SessionUpdateUserMessageChunk{Content: acpsdk.ImageBlock("iVBORw0KGgo=", "image/png")}},
+				acpsdk.UserMessageChunkSessionUpdate(acpsdk.TextContentBlock("hello")),
+				acpsdk.UserMessageChunkSessionUpdate(acpsdk.ImageContentBlock("iVBORw0KGgo=", "image/png")),
 			},
 		},
 		{
@@ -56,9 +71,9 @@ func TestMsgToSessionUpdate(t *testing.T) {
 				Role:   gai.Assistant,
 				Blocks: []gai.Block{gai.TextBlock("answer")},
 			},
-			want: []acpsdk.SessionUpdate{{AgentMessageChunk: &acpsdk.SessionUpdateAgentMessageChunk{
-				Content: acpsdk.TextBlock("answer"),
-			}}},
+			want: []acpsdk.SessionUpdate{
+				acpsdk.AgentMessageChunkSessionUpdate(acpsdk.TextContentBlock("answer")),
+			},
 		},
 		{
 			name: "assistant thought",
@@ -68,19 +83,16 @@ func TestMsgToSessionUpdate(t *testing.T) {
 				MimeType:     "text/plain",
 				Content:      gai.Str("reasoning"),
 			}}},
-			want: []acpsdk.SessionUpdate{{AgentThoughtChunk: &acpsdk.SessionUpdateAgentThoughtChunk{
-				Content: acpsdk.TextBlock("reasoning"),
-			}}},
+			want: []acpsdk.SessionUpdate{
+				acpsdk.AgentThoughtChunkSessionUpdate(acpsdk.TextContentBlock("reasoning")),
+			},
 		},
 		{
 			name: "assistant tool call",
 			msg:  gai.Message{Role: gai.Assistant, Blocks: []gai.Block{toolCall}},
-			want: []acpsdk.SessionUpdate{{ToolCall: &acpsdk.SessionUpdateToolCall{
-				RawInput:   map[string]any{"query": "docs"},
-				Status:     acpsdk.ToolCallStatusPending,
-				Title:      "lookup",
-				ToolCallId: "call-1",
-			}}},
+			want: []acpsdk.SessionUpdate{
+				toolCallSessionUpdate("call-1", "lookup", map[string]any{"query": "docs"}),
+			},
 		},
 		{
 			name: "assistant thinking then multiple tool calls",
@@ -91,20 +103,10 @@ func TestMsgToSessionUpdate(t *testing.T) {
 				secondToolCall,
 			}},
 			want: []acpsdk.SessionUpdate{
-				{AgentThoughtChunk: &acpsdk.SessionUpdateAgentThoughtChunk{Content: acpsdk.TextBlock("first thought")}},
-				{AgentThoughtChunk: &acpsdk.SessionUpdateAgentThoughtChunk{Content: acpsdk.TextBlock("second thought")}},
-				{ToolCall: &acpsdk.SessionUpdateToolCall{
-					RawInput:   map[string]any{"query": "docs"},
-					Status:     acpsdk.ToolCallStatusPending,
-					Title:      "lookup",
-					ToolCallId: "call-1",
-				}},
-				{ToolCall: &acpsdk.SessionUpdateToolCall{
-					RawInput:   map[string]any{"path": "README.md"},
-					Status:     acpsdk.ToolCallStatusPending,
-					Title:      "read",
-					ToolCallId: "call-2",
-				}},
+				acpsdk.AgentThoughtChunkSessionUpdate(acpsdk.TextContentBlock("first thought")),
+				acpsdk.AgentThoughtChunkSessionUpdate(acpsdk.TextContentBlock("second thought")),
+				toolCallSessionUpdate("call-1", "lookup", map[string]any{"query": "docs"}),
+				toolCallSessionUpdate("call-2", "read", map[string]any{"path": "README.md"}),
 			},
 		},
 		{
@@ -124,16 +126,8 @@ func TestMsgToSessionUpdate(t *testing.T) {
 				{ID: "call-2", BlockType: gai.Content, ModalityType: gai.Image, MimeType: "image/png", Content: gai.Str("iVBORw0KGgo=")},
 			}},
 			want: []acpsdk.SessionUpdate{
-				{ToolCallUpdate: &acpsdk.SessionToolCallUpdate{
-					Content:    []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock("result"))},
-					Status:     new(acpsdk.ToolCallStatusCompleted),
-					ToolCallId: "call-2",
-				}},
-				{ToolCallUpdate: &acpsdk.SessionToolCallUpdate{
-					Content:    []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.ImageBlock("iVBORw0KGgo=", "image/png"))},
-					Status:     new(acpsdk.ToolCallStatusCompleted),
-					ToolCallId: "call-2",
-				}},
+				toolCallResultSessionUpdate("call-2", acpsdk.ToolCallStatusCompleted, acpsdk.TextContentBlock("result")),
+				toolCallResultSessionUpdate("call-2", acpsdk.ToolCallStatusCompleted, acpsdk.ImageContentBlock("iVBORw0KGgo=", "image/png")),
 			},
 		},
 		{
@@ -143,16 +137,8 @@ func TestMsgToSessionUpdate(t *testing.T) {
 				{ID: "call-2", BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("read result")},
 			}},
 			want: []acpsdk.SessionUpdate{
-				{ToolCallUpdate: &acpsdk.SessionToolCallUpdate{
-					Content:    []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock("lookup result"))},
-					Status:     new(acpsdk.ToolCallStatusCompleted),
-					ToolCallId: "call-1",
-				}},
-				{ToolCallUpdate: &acpsdk.SessionToolCallUpdate{
-					Content:    []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock("read result"))},
-					Status:     new(acpsdk.ToolCallStatusCompleted),
-					ToolCallId: "call-2",
-				}},
+				toolCallResultSessionUpdate("call-1", acpsdk.ToolCallStatusCompleted, acpsdk.TextContentBlock("lookup result")),
+				toolCallResultSessionUpdate("call-2", acpsdk.ToolCallStatusCompleted, acpsdk.TextContentBlock("read result")),
 			},
 		},
 		{
@@ -162,11 +148,9 @@ func TestMsgToSessionUpdate(t *testing.T) {
 				Blocks:          []gai.Block{{ID: "call-3", BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("boom")}},
 				ToolResultError: true,
 			},
-			want: []acpsdk.SessionUpdate{{ToolCallUpdate: &acpsdk.SessionToolCallUpdate{
-				Content:    []acpsdk.ToolCallContent{acpsdk.ToolContent(acpsdk.TextBlock("boom"))},
-				Status:     new(acpsdk.ToolCallStatusFailed),
-				ToolCallId: "call-3",
-			}}},
+			want: []acpsdk.SessionUpdate{
+				toolCallResultSessionUpdate("call-3", acpsdk.ToolCallStatusFailed, acpsdk.TextContentBlock("boom")),
+			},
 		},
 		{
 			name: "unsupported modality becomes text",
@@ -176,9 +160,9 @@ func TestMsgToSessionUpdate(t *testing.T) {
 				MimeType:     "video/mp4",
 				Content:      gai.Str("video-data"),
 			}}},
-			want: []acpsdk.SessionUpdate{{UserMessageChunk: &acpsdk.SessionUpdateUserMessageChunk{
-				Content: acpsdk.TextBlock("video-data"),
-			}}},
+			want: []acpsdk.SessionUpdate{
+				acpsdk.UserMessageChunkSessionUpdate(acpsdk.TextContentBlock("video-data")),
+			},
 		},
 	}
 

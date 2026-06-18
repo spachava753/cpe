@@ -5,11 +5,12 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
-	"github.com/coder/acp-go-sdk"
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/nalgeon/be"
+	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/config"
@@ -19,13 +20,22 @@ import (
 
 type promptTestClient struct {
 	noOpAcpClient
+	mu                    sync.Mutex
 	capturedNotifications []acp.SessionNotification
 }
 
-// SessionUpdate implements [acp.Client].
-func (t *promptTestClient) SessionUpdate(ctx context.Context, params acp.SessionNotification) error {
-	t.capturedNotifications = append(t.capturedNotifications, params)
+// Update implements [acp.SessionClientHandler].
+func (t *promptTestClient) Update(ctx context.Context, params *acp.SessionNotification) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.capturedNotifications = append(t.capturedNotifications, *params)
 	return nil
+}
+
+func (t *promptTestClient) notifications() []acp.SessionNotification {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return slices.Clone(t.capturedNotifications)
 }
 
 type genFunc func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error)
@@ -61,7 +71,7 @@ func (r testRuntime) Close() error {
 func TestPrompt(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
 		var (
-			clientConn *acp.ClientSideConnection
+			clientConn *acp.Client
 			store      *storage.Sqlite
 			cwd        = t.TempDir()
 			testClient = &promptTestClient{}
@@ -98,7 +108,7 @@ func TestPrompt(t *testing.T) {
 			t,
 			testClient,
 			&rawCfg,
-			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
 				gen := testGen{
 					responses: []genFunc{
 						func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
@@ -153,9 +163,9 @@ func TestPrompt(t *testing.T) {
 		clientConn = fixture.ClientConn
 		store = fixture.Store
 
-		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
-			ClientCapabilities: acp.ClientCapabilities{
-				Fs: acp.FileSystemCapabilities{
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ClientCapabilities: &acp.ClientCapabilities{
+				Fs: &acp.FileSystemCapabilities{
 					ReadTextFile:  false,
 					WriteTextFile: false,
 				},
@@ -166,119 +176,78 @@ func TestPrompt(t *testing.T) {
 				Title:   new("test client"),
 				Version: "test",
 			},
-			ProtocolVersion: acp.ProtocolVersionNumber,
+			ProtocolVersion: acp.ProtocolVersion(1),
 		})
 		t.Log("called init")
 		be.Err(t, err, nil) // we should not get an error on init connection
 
 		// new session
-		newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{
+		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{
 			Cwd:        cwd,
 			McpServers: []acp.McpServer{},
 		})
 		be.Err(t, err, nil)
-		sessionId := newSessionResp.SessionId
+		sessionId := newSessionResp.SessionID
 		be.True(t, sessionId != "") // session id cannot be empty
-		be.Equal(t, newSessionResp.ConfigOptions, []acp.SessionConfigOption{
+		modelOptions := acp.UngroupedSessionConfigSelectOptions{
 			{
-				Select: &acp.SessionConfigOptionSelect{
-					Category:     new(acp.SessionConfigOptionCategoryModel),
-					CurrentValue: acp.SessionConfigValueId("test-model"),
-					Description:  new("Choose model"),
-					Id:           modelRefConfigId,
-					Name:         "Model",
-					Options: acp.SessionConfigSelectOptions{
-						Ungrouped: &acp.SessionConfigSelectOptionsUngrouped{
-							{
-								Description: new(`Type: responses
+				Description: new(`Type: responses
 Base Url: https://customurl.com/v1
 Context Window: 100
 Input Cost: 1.00
 Output Cost: 1.00`),
-								Name:  "Test Model",
-								Value: "test-model",
-							},
-							{
-								Description: new(`Type: responses
-Base Url: https://customurl.com/v1
-Context Window: 100
-Input Cost: 1.00
-Output Cost: 1.00`),
-								Name:  "Test Model 2",
-								Value: "test-model2",
-							},
-						},
-					},
-					Type: "select",
-				},
+				Name:  "Test Model",
+				Value: "test-model",
 			},
-		})
+			{
+				Description: new(`Type: responses
+Base Url: https://customurl.com/v1
+Context Window: 100
+Input Cost: 1.00
+Output Cost: 1.00`),
+				Name:  "Test Model 2",
+				Value: "test-model2",
+			},
+		}
+		expectedConfigOptions := []acp.SessionConfigOption{
+			acp.SelectSessionConfigOption(modelRefConfigId, "Model", acp.SessionConfigValueId("test-model"), acp.SessionConfigSelectOptions{Ungrouped: &modelOptions}),
+		}
+		expectedConfigOptions[0].Category = new(acp.SessionConfigOptionCategoryModel)
+		expectedConfigOptions[0].CurrentValue = "test-model"
+		expectedConfigOptions[0].Description = new("Choose model")
+		be.Equal(t, *newSessionResp.ConfigOptions, expectedConfigOptions)
 		// set config option
-		_, err = clientConn.SetSessionConfigOption(t.Context(), acp.SetSessionConfigOptionRequest{
-			ValueId: &acp.SetSessionConfigOptionValueId{
-				ConfigId:  modelRefConfigId,
-				SessionId: sessionId,
-				Value:     "test-model",
-			},
+		_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+			ConfigID:  modelRefConfigId,
+			SessionID: sessionId,
+			Value:     "test-model",
 		})
 		be.Err(t, err, nil)
 		// prompt
-		promptResp, err := clientConn.Prompt(t.Context(), acp.PromptRequest{
+		promptResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
 			Prompt: []acp.ContentBlock{
-				{
-					Text: &acp.ContentBlockText{
-						Text: "Hello",
-						Type: "text",
-					},
-				},
+				acp.TextContentBlock("Hello"),
 			},
-			SessionId: sessionId,
+			SessionID: sessionId,
 		})
 		be.Err(t, err, nil)
 		be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
 		be.Equal(t, promptResp.Usage, &acp.Usage{TotalTokens: 90, InputTokens: 80, OutputTokens: 10})
-		be.Equal(t, testClient.capturedNotifications, []acp.SessionNotification{
+		be.Equal(t, testClient.notifications(), []acp.SessionNotification{
 			{
-				SessionId: sessionId,
-				Update: acp.SessionUpdate{
-					AgentThoughtChunk: &acp.SessionUpdateAgentThoughtChunk{
-						Content: acp.ContentBlock{
-							Text: &acp.ContentBlockText{
-								Text: "let me think",
-								Type: "text",
-							},
-						},
-						SessionUpdate: "agent_thought_chunk",
-					},
-				},
+				SessionID: sessionId,
+				Update:    expectedRPCAgentThoughtChunk("let me think"),
 			},
 			{
-				SessionId: sessionId,
-				Update: acp.SessionUpdate{
-					AgentMessageChunk: &acp.SessionUpdateAgentMessageChunk{
-						Content: acp.ContentBlock{
-							Text: &acp.ContentBlockText{
-								Text: "here is the answer:",
-								Type: "text",
-							},
-						},
-						SessionUpdate: "agent_message_chunk",
-					},
-				},
+				SessionID: sessionId,
+				Update:    expectedRPCAgentMessageChunk("here is the answer:"),
 			},
 			{
-				SessionId: sessionId,
-				Update: acp.SessionUpdate{
-					UsageUpdate: &acp.SessionUsageUpdate{
-						Cost: &acp.Cost{
-							Amount:   0.00009,
-							Currency: "USD",
-						},
-						SessionUpdate: "usage_update",
-						Size:          100,
-						Used:          90,
-					},
-				},
+				SessionID: sessionId,
+				Update: expectedUsageUpdate(90, 100, &acp.Cost{
+					Amount:   0.00009,
+					Currency: "USD",
+				}),
 			},
 		})
 
@@ -302,7 +271,7 @@ Output Cost: 1.00`),
 	})
 	t.Run("compaction", func(t *testing.T) {
 		var (
-			clientConn *acp.ClientSideConnection
+			clientConn *acp.Client
 			store      *storage.Sqlite
 			gen        *testGen
 			cwd        = t.TempDir()
@@ -335,7 +304,7 @@ Output Cost: 1.00`),
 			t,
 			testClient,
 			&rawCfg,
-			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
 				gen = &testGen{
 					responses: []genFunc{
 						func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
@@ -404,9 +373,9 @@ Output Cost: 1.00`),
 		clientConn = fixture.ClientConn
 		store = fixture.Store
 
-		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
-			ClientCapabilities: acp.ClientCapabilities{
-				Fs: acp.FileSystemCapabilities{
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ClientCapabilities: &acp.ClientCapabilities{
+				Fs: &acp.FileSystemCapabilities{
 					ReadTextFile:  false,
 					WriteTextFile: false,
 				},
@@ -417,146 +386,90 @@ Output Cost: 1.00`),
 				Title:   new("test client"),
 				Version: "test",
 			},
-			ProtocolVersion: acp.ProtocolVersionNumber,
+			ProtocolVersion: acp.ProtocolVersion(1),
 		})
 		t.Log("called init")
 		be.Err(t, err, nil) // we should not get an error on init connection
 
 		// new session
-		newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{
+		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{
 			Cwd:        cwd,
 			McpServers: []acp.McpServer{},
 		})
 		be.Err(t, err, nil)
-		sessionId := newSessionResp.SessionId
+		sessionId := newSessionResp.SessionID
 		be.True(t, sessionId != "") // session id cannot be empty
-		be.Equal(t, newSessionResp.ConfigOptions, []acp.SessionConfigOption{
+		modelOptions := acp.UngroupedSessionConfigSelectOptions{
 			{
-				Select: &acp.SessionConfigOptionSelect{
-					Category:     new(acp.SessionConfigOptionCategoryModel),
-					CurrentValue: acp.SessionConfigValueId("test-model"),
-					Description:  new("Choose model"),
-					Id:           modelRefConfigId,
-					Name:         "Model",
-					Options: acp.SessionConfigSelectOptions{
-						Ungrouped: &acp.SessionConfigSelectOptionsUngrouped{
-							{
-								Description: new(`Type: responses
+				Description: new(`Type: responses
 Base Url: https://customurl.com/v1
 Context Window: 100
 Input Cost: 1.00
 Output Cost: 1.00`),
-								Name:  "Test Model",
-								Value: "test-model",
-							},
-						},
-					},
-					Type: "select",
-				},
+				Name:  "Test Model",
+				Value: "test-model",
 			},
-		})
+		}
+		expectedConfigOptions := []acp.SessionConfigOption{
+			acp.SelectSessionConfigOption(modelRefConfigId, "Model", acp.SessionConfigValueId("test-model"), acp.SessionConfigSelectOptions{Ungrouped: &modelOptions}),
+		}
+		expectedConfigOptions[0].Category = new(acp.SessionConfigOptionCategoryModel)
+		expectedConfigOptions[0].CurrentValue = "test-model"
+		expectedConfigOptions[0].Description = new("Choose model")
+		be.Equal(t, *newSessionResp.ConfigOptions, expectedConfigOptions)
 		// set config option
-		_, err = clientConn.SetSessionConfigOption(t.Context(), acp.SetSessionConfigOptionRequest{
-			ValueId: &acp.SetSessionConfigOptionValueId{
-				ConfigId:  modelRefConfigId,
-				SessionId: sessionId,
-				Value:     "test-model",
-			},
+		_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+			ConfigID:  modelRefConfigId,
+			SessionID: sessionId,
+			Value:     "test-model",
 		})
 		be.Err(t, err, nil)
 		// prompt
-		promptResp, err := clientConn.Prompt(t.Context(), acp.PromptRequest{
+		promptResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
 			Prompt: []acp.ContentBlock{
-				{
-					Text: &acp.ContentBlockText{
-						Text: "Hello",
-						Type: "text",
-					},
-				},
+				acp.TextContentBlock("Hello"),
 			},
-			SessionId: sessionId,
+			SessionID: sessionId,
 		})
 		be.Err(t, err, nil)
 		be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
 		be.Equal(t, promptResp.Usage, &acp.Usage{TotalTokens: 7, InputTokens: 5, OutputTokens: 2})
 		be.True(t, gen != nil)
 		be.Equal(t, gen.called, 2)
-		be.Equal(t, testClient.capturedNotifications, []acp.SessionNotification{
+		be.Equal(t, testClient.notifications(), []acp.SessionNotification{
 			{
-				SessionId: sessionId,
-				Update: acp.SessionUpdate{
-					ToolCall: &acp.SessionUpdateToolCall{
-						RawInput: map[string]any{
-							"summary": "conversation compacted state",
-						},
-						SessionUpdate: "tool_call",
-						Status:        acp.ToolCallStatusPending,
-						Title:         config.CompactionToolName,
-						ToolCallId:    "compact-call-1",
-					},
-				},
+				SessionID: sessionId,
+				Update: expectedPendingToolCallUpdate("compact-call-1", config.CompactionToolName, map[string]any{
+					"summary": "conversation compacted state",
+				}),
 			},
 			{
-				SessionId: sessionId,
-				Update: acp.SessionUpdate{
-					UsageUpdate: &acp.SessionUsageUpdate{
-						Cost: &acp.Cost{
-							Amount:   0.00009,
-							Currency: "USD",
-						},
-						SessionUpdate: "usage_update",
-						Size:          100,
-						Used:          90,
-					},
-				},
+				SessionID: sessionId,
+				Update: expectedUsageUpdate(90, 100, &acp.Cost{
+					Amount:   0.00009,
+					Currency: "USD",
+				}),
 			},
 			{
-				SessionId: sessionId,
-				Update: acp.SessionUpdate{
-					UserMessageChunk: &acp.SessionUpdateUserMessageChunk{
-						Content: acp.ContentBlock{
-							Text: &acp.ContentBlockText{
-								Text: "compacted conversation: conversation compacted state",
-								Type: "text",
-							},
-						},
-						SessionUpdate: "user_message_chunk",
-					},
-				},
+				SessionID: sessionId,
+				Update:    expectedRPCUserMessageChunk("compacted conversation: conversation compacted state"),
 			},
 			{
-				SessionId: sessionId,
-				Update: acp.SessionUpdate{
-					AgentMessageChunk: &acp.SessionUpdateAgentMessageChunk{
-						Content: acp.ContentBlock{
-							Text: &acp.ContentBlockText{
-								Text: "continued after compaction",
-								Type: "text",
-							},
-						},
-						SessionUpdate: "agent_message_chunk",
-					},
-				},
+				SessionID: sessionId,
+				Update:    expectedRPCAgentMessageChunk("continued after compaction"),
 			},
 			{
-				SessionId: sessionId,
-				Update: acp.SessionUpdate{
-					UsageUpdate: &acp.SessionUsageUpdate{
-						Cost: &acp.Cost{
-							Amount:   0.000097,
-							Currency: "USD",
-						},
-						SessionUpdate: "usage_update",
-						Size:          100,
-						Used:          7,
-					},
-				},
+				SessionID: sessionId,
+				Update: expectedUsageUpdate(7, 100, &acp.Cost{
+					Amount:   0.000097,
+					Currency: "USD",
+				}),
 			},
 		})
-		firstUsage := testClient.capturedNotifications[1].Update.UsageUpdate
-		secondUsage := testClient.capturedNotifications[4].Update.UsageUpdate
-		be.True(t, firstUsage != nil)
-		be.True(t, secondUsage != nil)
+		firstUsage := testClient.notifications()[1].Update
+		secondUsage := testClient.notifications()[4].Update
+		be.Equal(t, firstUsage.SessionUpdate, acp.SessionUpdateTypeUsageUpdate)
+		be.Equal(t, secondUsage.SessionUpdate, acp.SessionUpdateTypeUsageUpdate)
 		be.True(t, firstUsage.Used > secondUsage.Used)
 
 		storedSession, err := store.GetACPSession(t.Context(), sessionId)
@@ -594,7 +507,7 @@ Output Cost: 1.00`),
 	})
 	t.Run("continues existing session history", func(t *testing.T) {
 		var (
-			clientConn *acp.ClientSideConnection
+			clientConn *acp.Client
 			store      *storage.Sqlite
 			cwd        = t.TempDir()
 			testClient = &promptTestClient{}
@@ -619,7 +532,7 @@ Output Cost: 1.00`),
 			t,
 			testClient,
 			&rawCfg,
-			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
 				gen := testGen{
 					responses: []genFunc{
 						func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
@@ -661,14 +574,14 @@ Output Cost: 1.00`),
 		clientConn = fixture.ClientConn
 		store = fixture.Store
 
-		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
-			ProtocolVersion: acp.ProtocolVersionNumber,
-			ClientCapabilities: acp.ClientCapabilities{
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ProtocolVersion: acp.ProtocolVersion(1),
+			ClientCapabilities: &acp.ClientCapabilities{
 				Terminal: true,
 			},
 		})
 		be.Err(t, err, nil)
-		newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{
+		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{
 			Cwd:        cwd,
 			McpServers: []acp.McpServer{},
 		})
@@ -683,43 +596,31 @@ Output Cost: 1.00`),
 			be.Err(t, err, nil)
 			lastMessageID = storage.GetMessageID(msg)
 		}
-		_, err = store.AddACPSessionMessage(t.Context(), newSessionResp.SessionId, lastMessageID)
+		_, err = store.AddACPSessionMessage(t.Context(), newSessionResp.SessionID, lastMessageID)
 		be.Err(t, err, nil)
 
-		promptResp, err := clientConn.Prompt(t.Context(), acp.PromptRequest{
-			Prompt:    []acp.ContentBlock{acp.TextBlock("follow-up")},
-			SessionId: newSessionResp.SessionId,
+		promptResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextContentBlock("follow-up")},
+			SessionID: newSessionResp.SessionID,
 		})
 		be.Err(t, err, nil)
 		be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
 		be.Equal(t, promptResp.Usage, &acp.Usage{TotalTokens: 16, InputTokens: 12, OutputTokens: 4})
-		be.Equal(t, testClient.capturedNotifications, []acp.SessionNotification{
+		be.Equal(t, testClient.notifications(), []acp.SessionNotification{
 			{
-				SessionId: newSessionResp.SessionId,
-				Update: acp.SessionUpdate{
-					AgentMessageChunk: &acp.SessionUpdateAgentMessageChunk{
-						Content:       acp.TextBlock("continued answer"),
-						SessionUpdate: "agent_message_chunk",
-					},
-				},
+				SessionID: newSessionResp.SessionID,
+				Update:    expectedRPCAgentMessageChunk("continued answer"),
 			},
 			{
-				SessionId: newSessionResp.SessionId,
-				Update: acp.SessionUpdate{
-					UsageUpdate: &acp.SessionUsageUpdate{
-						Cost: &acp.Cost{
-							Amount:   0.000016,
-							Currency: "USD",
-						},
-						SessionUpdate: "usage_update",
-						Size:          100,
-						Used:          16,
-					},
-				},
+				SessionID: newSessionResp.SessionID,
+				Update: expectedUsageUpdate(16, 100, &acp.Cost{
+					Amount:   0.000016,
+					Currency: "USD",
+				}),
 			},
 		})
 
-		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionId)
+		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionID)
 		be.Err(t, err, nil)
 		storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
 		be.Err(t, err, nil)
@@ -731,7 +632,7 @@ Output Cost: 1.00`),
 	})
 	t.Run("reuses runtime and accumulates history across prompts", func(t *testing.T) {
 		var (
-			clientConn  *acp.ClientSideConnection
+			clientConn  *acp.Client
 			store       *storage.Sqlite
 			gen         *testGen
 			factoryCall int
@@ -758,7 +659,7 @@ Output Cost: 1.00`),
 			t,
 			testClient,
 			&rawCfg,
-			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
 				factoryCall++
 				gen = &testGen{
 					responses: []genFunc{
@@ -820,30 +721,30 @@ Output Cost: 1.00`),
 		clientConn = fixture.ClientConn
 		store = fixture.Store
 
-		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
-			ProtocolVersion: acp.ProtocolVersionNumber,
-			ClientCapabilities: acp.ClientCapabilities{
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ProtocolVersion: acp.ProtocolVersion(1),
+			ClientCapabilities: &acp.ClientCapabilities{
 				Terminal: true,
 			},
 		})
 		be.Err(t, err, nil)
-		newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{
+		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{
 			Cwd:        cwd,
 			McpServers: []acp.McpServer{},
 		})
 		be.Err(t, err, nil)
 
-		firstResp, err := clientConn.Prompt(t.Context(), acp.PromptRequest{
-			Prompt:    []acp.ContentBlock{acp.TextBlock("first prompt")},
-			SessionId: newSessionResp.SessionId,
+		firstResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextContentBlock("first prompt")},
+			SessionID: newSessionResp.SessionID,
 		})
 		be.Err(t, err, nil)
 		be.Equal(t, firstResp.StopReason, acp.StopReasonEndTurn)
 		be.Equal(t, firstResp.Usage, &acp.Usage{TotalTokens: 7, InputTokens: 5, OutputTokens: 2})
 
-		secondResp, err := clientConn.Prompt(t.Context(), acp.PromptRequest{
-			Prompt:    []acp.ContentBlock{acp.TextBlock("second prompt")},
-			SessionId: newSessionResp.SessionId,
+		secondResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextContentBlock("second prompt")},
+			SessionID: newSessionResp.SessionID,
 		})
 		be.Err(t, err, nil)
 		be.Equal(t, secondResp.StopReason, acp.StopReasonEndTurn)
@@ -853,56 +754,32 @@ Output Cost: 1.00`),
 		be.Equal(t, gen.called, 2)
 		firstCost := float64(5)/1_000_000 + float64(2)/1_000_000
 		secondCost := firstCost + float64(6)/1_000_000 + float64(3)/1_000_000
-		be.Equal(t, testClient.capturedNotifications, []acp.SessionNotification{
+		be.Equal(t, testClient.notifications(), []acp.SessionNotification{
 			{
-				SessionId: newSessionResp.SessionId,
-				Update: acp.SessionUpdate{
-					AgentMessageChunk: &acp.SessionUpdateAgentMessageChunk{
-						Content:       acp.TextBlock("first answer"),
-						SessionUpdate: "agent_message_chunk",
-					},
-				},
+				SessionID: newSessionResp.SessionID,
+				Update:    expectedRPCAgentMessageChunk("first answer"),
 			},
 			{
-				SessionId: newSessionResp.SessionId,
-				Update: acp.SessionUpdate{
-					UsageUpdate: &acp.SessionUsageUpdate{
-						Cost: &acp.Cost{
-							Amount:   firstCost,
-							Currency: "USD",
-						},
-						SessionUpdate: "usage_update",
-						Size:          100,
-						Used:          7,
-					},
-				},
+				SessionID: newSessionResp.SessionID,
+				Update: expectedUsageUpdate(7, 100, &acp.Cost{
+					Amount:   firstCost,
+					Currency: "USD",
+				}),
 			},
 			{
-				SessionId: newSessionResp.SessionId,
-				Update: acp.SessionUpdate{
-					AgentMessageChunk: &acp.SessionUpdateAgentMessageChunk{
-						Content:       acp.TextBlock("second answer"),
-						SessionUpdate: "agent_message_chunk",
-					},
-				},
+				SessionID: newSessionResp.SessionID,
+				Update:    expectedRPCAgentMessageChunk("second answer"),
 			},
 			{
-				SessionId: newSessionResp.SessionId,
-				Update: acp.SessionUpdate{
-					UsageUpdate: &acp.SessionUsageUpdate{
-						Cost: &acp.Cost{
-							Amount:   secondCost,
-							Currency: "USD",
-						},
-						SessionUpdate: "usage_update",
-						Size:          100,
-						Used:          9,
-					},
-				},
+				SessionID: newSessionResp.SessionID,
+				Update: expectedUsageUpdate(9, 100, &acp.Cost{
+					Amount:   secondCost,
+					Currency: "USD",
+				}),
 			},
 		})
 
-		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionId)
+		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionID)
 		be.Err(t, err, nil)
 		storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
 		be.Err(t, err, nil)
@@ -916,7 +793,7 @@ Output Cost: 1.00`),
 		sessionID := acp.SessionId("active-session")
 		agent := &Agent{
 			activeSessions: new(cpesync.Map[acp.SessionId, *cpesync.Guard[session]]),
-			runtimeFactory: runtimeCreatorFunc(func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
+			runtimeFactory: runtimeCreatorFunc(func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
 				t.Fatal("runtime should not be created for an active session")
 				return nil, nil
 			}),
@@ -926,16 +803,16 @@ Output Cost: 1.00`),
 			cancelfunc: func() {},
 		}))
 
-		_, err := agent.Prompt(t.Context(), acp.PromptRequest{
-			SessionId: sessionID,
-			Prompt:    []acp.ContentBlock{acp.TextBlock("second prompt")},
+		_, err := agent.Prompt(t.Context(), &acp.PromptRequest{
+			SessionID: sessionID,
+			Prompt:    []acp.ContentBlock{acp.TextContentBlock("second prompt")},
 		})
 		be.True(t, err != nil)
 		be.Equal(t, err.Error(), "cannot do prompt turn in actively generating session")
 	})
 	t.Run("maps max generation limit to stop reason", func(t *testing.T) {
 		var (
-			clientConn *acp.ClientSideConnection
+			clientConn *acp.Client
 			store      *storage.Sqlite
 			testClient = &promptTestClient{}
 			rawCfg     = config.RawConfig{
@@ -956,7 +833,7 @@ Output Cost: 1.00`),
 			t,
 			testClient,
 			&rawCfg,
-			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
 				gen := testGen{responses: []genFunc{
 					func(ctx context.Context, dialog gai.Dialog, genOpts *gai.GenOpts) (gai.Response, error) {
 						be.Equal(t, len(dialog), 1)
@@ -979,26 +856,26 @@ Output Cost: 1.00`),
 		clientConn = fixture.ClientConn
 		store = fixture.Store
 
-		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
-			ProtocolVersion: acp.ProtocolVersionNumber,
-			ClientCapabilities: acp.ClientCapabilities{
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ProtocolVersion: acp.ProtocolVersion(1),
+			ClientCapabilities: &acp.ClientCapabilities{
 				Terminal: true,
 			},
 		})
 		be.Err(t, err, nil)
-		newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
 		be.Err(t, err, nil)
 
-		promptResp, err := clientConn.Prompt(t.Context(), acp.PromptRequest{
-			Prompt:    []acp.ContentBlock{acp.TextBlock("Hello")},
-			SessionId: newSessionResp.SessionId,
+		promptResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextContentBlock("Hello")},
+			SessionID: newSessionResp.SessionID,
 		})
 		be.Err(t, err, nil)
 		be.Equal(t, promptResp.StopReason, acp.StopReasonMaxTokens)
 		be.Equal(t, promptResp.Usage, nil)
-		be.Equal(t, len(testClient.capturedNotifications), 0)
+		be.Equal(t, len(testClient.notifications()), 0)
 
-		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionId)
+		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionID)
 		be.Err(t, err, nil)
 		storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
 		be.Err(t, err, nil)
@@ -1008,7 +885,7 @@ Output Cost: 1.00`),
 	})
 	t.Run("maps content policy error to refusal", func(t *testing.T) {
 		var (
-			clientConn *acp.ClientSideConnection
+			clientConn *acp.Client
 			store      *storage.Sqlite
 			testClient = &promptTestClient{}
 			rawCfg     = config.RawConfig{
@@ -1029,7 +906,7 @@ Output Cost: 1.00`),
 			t,
 			testClient,
 			&rawCfg,
-			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
 				gen := testGen{responses: []genFunc{
 					func(ctx context.Context, dialog gai.Dialog, genOpts *gai.GenOpts) (gai.Response, error) {
 						be.Equal(t, len(dialog), 1)
@@ -1052,26 +929,26 @@ Output Cost: 1.00`),
 		clientConn = fixture.ClientConn
 		store = fixture.Store
 
-		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
-			ProtocolVersion: acp.ProtocolVersionNumber,
-			ClientCapabilities: acp.ClientCapabilities{
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ProtocolVersion: acp.ProtocolVersion(1),
+			ClientCapabilities: &acp.ClientCapabilities{
 				Terminal: true,
 			},
 		})
 		be.Err(t, err, nil)
-		newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
 		be.Err(t, err, nil)
 
-		promptResp, err := clientConn.Prompt(t.Context(), acp.PromptRequest{
-			Prompt:    []acp.ContentBlock{acp.TextBlock("Hello")},
-			SessionId: newSessionResp.SessionId,
+		promptResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextContentBlock("Hello")},
+			SessionID: newSessionResp.SessionID,
 		})
 		be.Err(t, err, nil)
 		be.Equal(t, promptResp.StopReason, acp.StopReasonRefusal)
 		be.Equal(t, promptResp.Usage, nil)
-		be.Equal(t, len(testClient.capturedNotifications), 0)
+		be.Equal(t, len(testClient.notifications()), 0)
 
-		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionId)
+		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionID)
 		be.Err(t, err, nil)
 		storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
 		be.Err(t, err, nil)
@@ -1081,7 +958,7 @@ Output Cost: 1.00`),
 	})
 	t.Run("maps cancelled generation to stop reason", func(t *testing.T) {
 		var (
-			clientConn *acp.ClientSideConnection
+			clientConn *acp.Client
 			store      *storage.Sqlite
 			testClient = &promptTestClient{}
 			rawCfg     = config.RawConfig{
@@ -1102,7 +979,7 @@ Output Cost: 1.00`),
 			t,
 			testClient,
 			&rawCfg,
-			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
 				gen := testGen{responses: []genFunc{
 					func(ctx context.Context, dialog gai.Dialog, genOpts *gai.GenOpts) (gai.Response, error) {
 						be.Equal(t, len(dialog), 1)
@@ -1125,26 +1002,26 @@ Output Cost: 1.00`),
 		clientConn = fixture.ClientConn
 		store = fixture.Store
 
-		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
-			ProtocolVersion: acp.ProtocolVersionNumber,
-			ClientCapabilities: acp.ClientCapabilities{
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ProtocolVersion: acp.ProtocolVersion(1),
+			ClientCapabilities: &acp.ClientCapabilities{
 				Terminal: true,
 			},
 		})
 		be.Err(t, err, nil)
-		newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
 		be.Err(t, err, nil)
 
-		promptResp, err := clientConn.Prompt(t.Context(), acp.PromptRequest{
-			Prompt:    []acp.ContentBlock{acp.TextBlock("Hello")},
-			SessionId: newSessionResp.SessionId,
+		promptResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextContentBlock("Hello")},
+			SessionID: newSessionResp.SessionID,
 		})
 		be.Err(t, err, nil)
 		be.Equal(t, promptResp.StopReason, acp.StopReasonCancelled)
 		be.Equal(t, promptResp.Usage, nil)
-		be.Equal(t, len(testClient.capturedNotifications), 0)
+		be.Equal(t, len(testClient.notifications()), 0)
 
-		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionId)
+		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionID)
 		be.Err(t, err, nil)
 		storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
 		be.Err(t, err, nil)
@@ -1154,7 +1031,7 @@ Output Cost: 1.00`),
 	})
 	t.Run("surfaces unknown generation error", func(t *testing.T) {
 		var (
-			clientConn *acp.ClientSideConnection
+			clientConn *acp.Client
 			store      *storage.Sqlite
 			testClient = &promptTestClient{}
 			rawCfg     = config.RawConfig{
@@ -1175,7 +1052,7 @@ Output Cost: 1.00`),
 			t,
 			testClient,
 			&rawCfg,
-			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
 				gen := testGen{responses: []genFunc{
 					func(ctx context.Context, dialog gai.Dialog, genOpts *gai.GenOpts) (gai.Response, error) {
 						be.Equal(t, len(dialog), 1)
@@ -1198,25 +1075,25 @@ Output Cost: 1.00`),
 		clientConn = fixture.ClientConn
 		store = fixture.Store
 
-		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
-			ProtocolVersion: acp.ProtocolVersionNumber,
-			ClientCapabilities: acp.ClientCapabilities{
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ProtocolVersion: acp.ProtocolVersion(1),
+			ClientCapabilities: &acp.ClientCapabilities{
 				Terminal: true,
 			},
 		})
 		be.Err(t, err, nil)
-		newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
 		be.Err(t, err, nil)
 
-		_, err = clientConn.Prompt(t.Context(), acp.PromptRequest{
-			Prompt:    []acp.ContentBlock{acp.TextBlock("Hello")},
-			SessionId: newSessionResp.SessionId,
+		_, err = clientConn.Prompt(t.Context(), &acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextContentBlock("Hello")},
+			SessionID: newSessionResp.SessionID,
 		})
 		be.True(t, err != nil)
 		be.True(t, strings.Contains(err.Error(), "unknown error while generating: boom"))
-		be.Equal(t, len(testClient.capturedNotifications), 0)
+		be.Equal(t, len(testClient.notifications()), 0)
 
-		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionId)
+		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionID)
 		be.Err(t, err, nil)
 		storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
 		be.Err(t, err, nil)
@@ -1226,7 +1103,7 @@ Output Cost: 1.00`),
 	})
 	t.Run("omits prompt usage and usage notification without metadata", func(t *testing.T) {
 		var (
-			clientConn *acp.ClientSideConnection
+			clientConn *acp.Client
 			store      *storage.Sqlite
 			cwd        = t.TempDir()
 			testClient = &promptTestClient{}
@@ -1251,7 +1128,7 @@ Output Cost: 1.00`),
 			t,
 			testClient,
 			&rawCfg,
-			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentSideConnection) (runtime, error) {
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
 				gen := testGen{
 					responses: []genFunc{
 						func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
@@ -1281,39 +1158,34 @@ Output Cost: 1.00`),
 		clientConn = fixture.ClientConn
 		store = fixture.Store
 
-		_, err := clientConn.Initialize(t.Context(), acp.InitializeRequest{
-			ProtocolVersion: acp.ProtocolVersionNumber,
-			ClientCapabilities: acp.ClientCapabilities{
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ProtocolVersion: acp.ProtocolVersion(1),
+			ClientCapabilities: &acp.ClientCapabilities{
 				Terminal: true,
 			},
 		})
 		be.Err(t, err, nil)
-		newSessionResp, err := clientConn.NewSession(t.Context(), acp.NewSessionRequest{
+		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{
 			Cwd:        cwd,
 			McpServers: []acp.McpServer{},
 		})
 		be.Err(t, err, nil)
 
-		promptResp, err := clientConn.Prompt(t.Context(), acp.PromptRequest{
-			Prompt:    []acp.ContentBlock{acp.TextBlock("Hello")},
-			SessionId: newSessionResp.SessionId,
+		promptResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextContentBlock("Hello")},
+			SessionID: newSessionResp.SessionID,
 		})
 		be.Err(t, err, nil)
 		be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
 		be.Equal(t, promptResp.Usage, nil)
-		be.Equal(t, testClient.capturedNotifications, []acp.SessionNotification{
+		be.Equal(t, testClient.notifications(), []acp.SessionNotification{
 			{
-				SessionId: newSessionResp.SessionId,
-				Update: acp.SessionUpdate{
-					AgentMessageChunk: &acp.SessionUpdateAgentMessageChunk{
-						Content:       acp.TextBlock("metadata-free answer"),
-						SessionUpdate: "agent_message_chunk",
-					},
-				},
+				SessionID: newSessionResp.SessionID,
+				Update:    expectedRPCAgentMessageChunk("metadata-free answer"),
 			},
 		})
 
-		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionId)
+		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionID)
 		be.Err(t, err, nil)
 		storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
 		be.Err(t, err, nil)

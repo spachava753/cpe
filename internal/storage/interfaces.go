@@ -6,7 +6,7 @@ import (
 	"iter"
 	"slices"
 
-	acp "github.com/coder/acp-go-sdk"
+	acp "github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 )
 

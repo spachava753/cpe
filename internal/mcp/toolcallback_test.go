@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coder/acp-go-sdk"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/acp/xctx"
@@ -22,8 +22,8 @@ type recordingSessionUpdator struct {
 	updates []acp.SessionNotification
 }
 
-func (r *recordingSessionUpdator) SessionUpdate(ctx context.Context, params acp.SessionNotification) error {
-	r.updates = append(r.updates, params)
+func (r *recordingSessionUpdator) SessionUpdate(ctx context.Context, params *acp.SessionNotification) error {
+	r.updates = append(r.updates, *params)
 	return nil
 }
 
@@ -66,18 +66,18 @@ func newToolCallbackTestSession(t *testing.T, result *mcpsdk.CallToolResult, han
 	return session
 }
 
-func requireToolCallUpdate(t *testing.T, got acp.SessionNotification, wantID acp.ToolCallId, wantStatus acp.ToolCallStatus) *acp.SessionToolCallUpdate {
+func requireToolCallUpdate(t *testing.T, got acp.SessionNotification, wantID acp.ToolCallId, wantStatus acp.ToolCallStatus) acp.SessionUpdate {
 	t.Helper()
 
-	if got.SessionId != testSessionID {
-		t.Fatalf("SessionId = %q, want %q", got.SessionId, testSessionID)
+	if got.SessionID != testSessionID {
+		t.Fatalf("SessionId = %q, want %q", got.SessionID, testSessionID)
 	}
-	if got.Update.ToolCallUpdate == nil {
-		t.Fatalf("ToolCallUpdate is nil in %#v", got.Update)
+	update := got.Update
+	if update.SessionUpdate != acp.SessionUpdateTypeToolCallUpdate {
+		t.Fatalf("SessionUpdate = %q, want %q in %#v", update.SessionUpdate, acp.SessionUpdateTypeToolCallUpdate, update)
 	}
-	update := got.Update.ToolCallUpdate
-	if update.ToolCallId != wantID {
-		t.Fatalf("ToolCallId = %q, want %q", update.ToolCallId, wantID)
+	if update.ToolCallID != wantID {
+		t.Fatalf("ToolCallId = %q, want %q", update.ToolCallID, wantID)
 	}
 	if update.Status == nil || *update.Status != wantStatus {
 		t.Fatalf("Status = %#v, want %q", update.Status, wantStatus)
@@ -100,13 +100,14 @@ func requireToolResultText(t *testing.T, msg gai.Message, wantError bool) string
 	return msg.Blocks[0].Content.String()
 }
 
-func requireToolCallContentText(t *testing.T, update *acp.SessionToolCallUpdate) string {
+func requireToolCallContentText(t *testing.T, update acp.SessionUpdate) string {
 	t.Helper()
 
-	if len(update.Content) != 1 || update.Content[0].Content == nil || update.Content[0].Content.Content.Text == nil {
+	content, ok := update.Content.([]acp.ToolCallContent)
+	if !ok || len(content) != 1 || content[0].Type != acp.ToolCallContentTypeContent || content[0].Content.Type != acp.ContentBlockTypeText {
 		t.Fatalf("tool call content = %#v, want one text content", update.Content)
 	}
-	return update.Content[0].Content.Content.Text.Text
+	return content[0].Content.Text
 }
 
 func requireText(t *testing.T, label, got, want string, contains bool) {
