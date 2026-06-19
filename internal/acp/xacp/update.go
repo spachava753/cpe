@@ -16,12 +16,22 @@ func MsgToSessionUpdate(msg gai.Message) iter.Seq[acp.SessionUpdate] {
 			acpBlock := blockToContentBlock(b, content)
 			switch msg.Role {
 			case gai.User:
+				if isEmptyTextContentBlock(acpBlock) {
+					// ACP requires the `text` field on text content blocks, but
+					// acp.ContentBlock serializes Text with `omitempty`, so an
+					// empty text block would marshal as `{"type":"text"}` and be
+					// rejected by clients with -32602 "missing field `text`".
+					continue
+				}
 				if !yield(acp.UserMessageChunkSessionUpdate(acpBlock)) {
 					return
 				}
 			case gai.Assistant:
 				switch b.BlockType {
 				case gai.Thinking:
+					if isEmptyTextContentBlock(acpBlock) {
+						continue
+					}
 					if !yield(acp.AgentThoughtChunkSessionUpdate(acpBlock)) {
 						return
 					}
@@ -39,6 +49,9 @@ func MsgToSessionUpdate(msg gai.Message) iter.Seq[acp.SessionUpdate] {
 						return
 					}
 				case gai.Content:
+					if isEmptyTextContentBlock(acpBlock) {
+						continue
+					}
 					if !yield(acp.AgentMessageChunkSessionUpdate(acpBlock)) {
 						return
 					}
@@ -62,6 +75,14 @@ func MsgToSessionUpdate(msg gai.Message) iter.Seq[acp.SessionUpdate] {
 			}
 		}
 	}
+}
+
+// isEmptyTextContentBlock reports whether b is a text content block whose text
+// payload is empty. Such blocks must not be emitted as session updates because
+// the ACP schema requires the `text` field, but acp.ContentBlock marshals it
+// with `omitempty`, producing an invalid `{"type":"text"}` payload.
+func isEmptyTextContentBlock(b acp.ContentBlock) bool {
+	return b.Type == acp.ContentBlockTypeText && b.Text == ""
 }
 
 func blockToContentBlock(b gai.Block, content string) acp.ContentBlock {

@@ -164,6 +164,45 @@ func TestMsgToSessionUpdate(t *testing.T) {
 				acpsdk.UserMessageChunkSessionUpdate(acpsdk.TextContentBlock("video-data")),
 			},
 		},
+		{
+			name: "empty assistant thought is skipped",
+			msg: gai.Message{Role: gai.Assistant, Blocks: []gai.Block{
+				{BlockType: gai.Thinking, ModalityType: gai.Text, MimeType: "text/plain", Content: gai.Str("")},
+				{BlockType: gai.Thinking, ModalityType: gai.Text, MimeType: "text/plain", Content: gai.Str("kept thought")},
+			}},
+			want: []acpsdk.SessionUpdate{
+				acpsdk.AgentThoughtChunkSessionUpdate(acpsdk.TextContentBlock("kept thought")),
+			},
+		},
+		{
+			name: "empty assistant content is skipped",
+			msg: gai.Message{Role: gai.Assistant, Blocks: []gai.Block{
+				{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("")},
+				{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("answer")},
+			}},
+			want: []acpsdk.SessionUpdate{
+				acpsdk.AgentMessageChunkSessionUpdate(acpsdk.TextContentBlock("answer")),
+			},
+		},
+		{
+			name: "empty user text is skipped",
+			msg: gai.Message{Role: gai.User, Blocks: []gai.Block{
+				gai.TextBlock(""),
+				gai.TextBlock("hello"),
+			}},
+			want: []acpsdk.SessionUpdate{
+				acpsdk.UserMessageChunkSessionUpdate(acpsdk.TextContentBlock("hello")),
+			},
+		},
+		{
+			name: "empty image content is not skipped",
+			msg: gai.Message{Role: gai.Assistant, Blocks: []gai.Block{
+				{BlockType: gai.Content, ModalityType: gai.Image, MimeType: "image/png", Content: gai.Str("")},
+			}},
+			want: []acpsdk.SessionUpdate{
+				acpsdk.AgentMessageChunkSessionUpdate(acpsdk.ImageContentBlock("", "image/png")),
+			},
+		},
 	}
 
 	for _, tt := range tests {
