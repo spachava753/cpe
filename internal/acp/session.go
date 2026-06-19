@@ -135,22 +135,18 @@ func (a *Agent) loadActiveSession(
 		if err := a.db.SetACPSessionThinkingLevel(ctx, sessionId, thinkingLevel); err != nil {
 			return nil, fmt.Errorf("could not update thinking level config: %v", err)
 		}
-		runtime, err := a.runtimeFactory.Create(ctx, session{
+		s := session{
+			id:         sessionId,
 			cwd:        cwd,
 			model:      modelRef,
 			thinking:   thinkingLevel,
 			mcpServers: mcpServers,
-		}, a.clientCaps)
+		}
+		runtime, err := a.runtimeFactory.Create(ctx, s, a.clientCaps)
 		if err != nil {
 			return nil, fmt.Errorf("could not create runtime: %v", err)
 		}
-		s := session{
-			cwd:        cwd,
-			model:      modelRef,
-			thinking:   thinkingLevel,
-			mcpServers: mcpServers,
-			runtime:    runtime,
-		}
+		s.runtime = runtime
 		a.activeSessions.Store(sessionId, sync.NewGuard(s))
 		return a.configOptions(ctx, sessionId), nil
 	}
@@ -170,22 +166,19 @@ func (a *Agent) loadActiveSession(
 		}
 	}
 
-	runtime, err := a.runtimeFactory.Create(ctx, session{
+	s := session{
+		id:         sessionId,
 		cwd:        cwd,
 		model:      modelRef,
 		thinking:   thinkingLevel,
 		mcpServers: mcpServers,
-	}, a.clientCaps)
+	}
+	runtime, err := a.runtimeFactory.Create(ctx, s, a.clientCaps)
 	if err != nil {
 		return nil, fmt.Errorf("could not create runtime: %v", err)
 	}
+	s.runtime = runtime
 
-	s := session{
-		cwd:      cwd,
-		model:    modelRef,
-		thinking: thinkingLevel,
-		runtime:  runtime,
-	}
 	a.activeSessions.Store(sessionId, sync.NewGuard(s))
 	return a.configOptions(ctx, sessionId), nil
 }

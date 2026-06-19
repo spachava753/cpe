@@ -294,6 +294,7 @@ func TestResumeSession(t *testing.T) {
 
 	t.Run("stale model ref", func(t *testing.T) {
 		var createdModelRefs []string
+		var createdSessions []session
 		fixture := setup(
 			t,
 			&noOpAcpClient{},
@@ -322,6 +323,7 @@ func TestResumeSession(t *testing.T) {
 			},
 			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
 				createdModelRefs = append(createdModelRefs, s.model)
+				createdSessions = append(createdSessions, s)
 				return testRuntime{}, nil
 			},
 		)
@@ -366,6 +368,14 @@ func TestResumeSession(t *testing.T) {
 		be.Equal(t, (*resp.ConfigOptions)[0].CurrentValue, any("test-model"))
 		be.Equal(t, (*resp.ConfigOptions)[1].CurrentValue, any("low"))
 		be.Equal(t, createdModelRefs, []string{"test-model"})
+		if len(createdSessions) != 1 {
+			t.Fatalf("runtime created with %d sessions, want 1", len(createdSessions))
+		}
+		createdSession := createdSessions[0]
+		be.Equal(t, createdSession.id, acp.SessionId("abc123"))
+		be.Equal(t, createdSession.cwd, "/rando/dir")
+		be.Equal(t, createdSession.model, "test-model")
+		be.Equal(t, createdSession.thinking, "low")
 
 		storedSession, err := store.GetACPSession(t.Context(), "abc123")
 		be.Err(t, err, nil)
@@ -457,6 +467,7 @@ func TestResumeSession(t *testing.T) {
 
 func TestLoadSession(t *testing.T) {
 	var createdModelRefs []string
+	var createdSessions []session
 	testClient := &promptTestClient{}
 	fixture := setup(
 		t,
@@ -479,6 +490,7 @@ func TestLoadSession(t *testing.T) {
 		},
 		func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
 			createdModelRefs = append(createdModelRefs, s.model)
+			createdSessions = append(createdSessions, s)
 			return testRuntime{}, nil
 		},
 	)
@@ -529,9 +541,12 @@ func TestLoadSession(t *testing.T) {
 	t.Log("called init")
 	be.Err(t, err, nil)
 
+	mcpServers := []acp.McpServer{
+		acp.HttpMcpServer("parallel", "https://example.test/mcp", []acp.HttpHeader{}),
+	}
 	resp, err := clientConn.LoadSession(t.Context(), &acp.LoadSessionRequest{
 		Cwd:        "/rando/dir",
-		McpServers: []acp.McpServer{},
+		McpServers: mcpServers,
 		SessionID:  "abc123",
 	})
 	be.Err(t, err, nil)
@@ -539,6 +554,14 @@ func TestLoadSession(t *testing.T) {
 	be.Equal(t, (*resp.ConfigOptions)[0].ID, modelRefConfigId)
 	be.Equal(t, (*resp.ConfigOptions)[0].CurrentValue, any("test-model"))
 	be.Equal(t, createdModelRefs, []string{"test-model"})
+	if len(createdSessions) != 1 {
+		t.Fatalf("runtime created with %d sessions, want 1", len(createdSessions))
+	}
+	createdSession := createdSessions[0]
+	be.Equal(t, createdSession.id, acp.SessionId("abc123"))
+	be.Equal(t, createdSession.cwd, "/rando/dir")
+	be.Equal(t, createdSession.model, "test-model")
+	be.Equal(t, createdSession.mcpServers, mcpServers)
 	be.Equal(t, testClient.notifications(), []acp.SessionNotification{
 		{
 			SessionID: "abc123",
