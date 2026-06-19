@@ -191,6 +191,35 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	}
 	slog.SetDefault(slog.New(slog.NewMultiHandler(handlers...)))
 
+	// for the purposes of access logging, log all
+	// incoming and outgoing messages, to help with
+	// debugging communication between ACP client
+	// and server
+	stdin := io.TeeReader(opts.Stdin, &rpcLogger{
+		log: slog.Default(),
+		dir: "incoming",
+	})
+	stdout := io.MultiWriter(opts.Stdout, &rpcLogger{
+		log: slog.Default(),
+		dir: "outgoing",
+	})
+	transport := &acp.IOTransport{
+		Reader: io.NopCloser(stdin),
+		Writer: nopWriteCloser{Writer: stdout},
+	}
+	return Run(ctx, transport, RunOptions{
+		ConfigPath: opts.ConfigPath,
+		DbPath:     opts.DbPath,
+		Stderr:     opts.Stderr,
+	})
+}
+
+// Run starts the ACP agent over the provided transport.
+func Run(ctx context.Context, transport acp.Transport, opts RunOptions) error {
+	if opts.Stderr == nil {
+		return errors.New("provided stderr cannot be nil")
+	}
+
 	rawCfg, err := config.LoadRawConfig(opts.ConfigPath)
 	if err != nil {
 		return fmt.Errorf("could not load config: %v", err)
@@ -236,22 +265,6 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 			return acp.SessionId(storage.GenerateId())
 		},
 		runtimeFactory: runtimeFactory,
-	}
-	// for the purposes of access logging, log all
-	// incoming and outgoing messages, to help with
-	// debugging communication between ACP client
-	// and server
-	stdin := io.TeeReader(opts.Stdin, &rpcLogger{
-		log: slog.Default(),
-		dir: "incoming",
-	})
-	stdout := io.MultiWriter(opts.Stdout, &rpcLogger{
-		log: slog.Default(),
-		dir: "outgoing",
-	})
-	transport := &acp.IOTransport{
-		Reader: io.NopCloser(stdin),
-		Writer: nopWriteCloser{Writer: stdout},
 	}
 	return acp.RunAgent(ctx, transport, func(conn *acp.AgentConnection) any {
 		ag.conn = conn

@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"os"
-
 	"github.com/spf13/cobra"
 
 	"github.com/spachava753/cpe/internal/acp"
@@ -45,8 +43,6 @@ https://zed.dev/docs/ai/external-agents`,
 }
 
 func init() {
-	acpServeCmd.Flags().StringVar(&conversationStoragePath, "db-path", os.Getenv("CPE_DB_PATH"), "Path to ACP session SQLite database (default: ./.cpeconvo, env: CPE_DB_PATH)")
-
 	acpCmd.AddCommand(acpServeCmd)
 	rootCmd.AddCommand(acpCmd)
 }
