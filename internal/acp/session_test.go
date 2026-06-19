@@ -562,7 +562,7 @@ func TestLoadSession(t *testing.T) {
 	be.Equal(t, createdSession.cwd, "/rando/dir")
 	be.Equal(t, createdSession.model, "test-model")
 	be.Equal(t, createdSession.mcpServers, mcpServers)
-	be.Equal(t, testClient.notifications(), []acp.SessionNotification{
+	assertNotifications(t, testClient, []acp.SessionNotification{
 		{
 			SessionID: "abc123",
 			Update:    expectedRPCUserMessageChunk("hello"),
@@ -666,7 +666,7 @@ func TestLoadSessionReplaysCompactionLineage(t *testing.T) {
 	})
 	be.Err(t, err, nil)
 	be.Equal(t, createdModelRefs, []string{"test-model"})
-	be.Equal(t, testClient.notifications(), []acp.SessionNotification{
+	assertNotifications(t, testClient, []acp.SessionNotification{
 		{
 			SessionID: "abc123",
 			Update:    expectedRPCUserMessageChunk("original question"),
