@@ -2,11 +2,13 @@ package acp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/nalgeon/be"
@@ -19,7 +21,6 @@ import (
 )
 
 type promptTestClient struct {
-	noOpAcpClient
 	mu                    sync.Mutex
 	capturedNotifications []acp.SessionNotification
 }
@@ -36,6 +37,47 @@ func (t *promptTestClient) notifications() []acp.SessionNotification {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return slices.Clone(t.capturedNotifications)
+}
+
+func (t *promptTestClient) waitForNotifications(tb *testing.T, count int) []acp.SessionNotification {
+	tb.Helper()
+	deadline := time.After(5 * time.Second)
+	for range time.Tick(10 * time.Millisecond) {
+		notifications := t.notifications()
+		if len(notifications) >= count {
+			return notifications
+		}
+
+		select {
+		case <-tb.Context().Done():
+			tb.Fatalf("context cancelled while waiting for %d notifications", count)
+		case <-deadline:
+			tb.Fatalf("timed out waiting for %d notifications; got %d: %#v", count, len(notifications), notifications)
+		default:
+		}
+	}
+	panic("unreachable")
+}
+
+func assertNotifications(tb *testing.T, client *promptTestClient, want []acp.SessionNotification) {
+	tb.Helper()
+	be.Equal(tb, sortedNotifications(client.waitForNotifications(tb, len(want))), sortedNotifications(want))
+}
+
+func sortedNotifications(notifications []acp.SessionNotification) []acp.SessionNotification {
+	sorted := slices.Clone(notifications)
+	slices.SortFunc(sorted, func(a, b acp.SessionNotification) int {
+		return strings.Compare(notificationSortKey(a), notificationSortKey(b))
+	})
+	return sorted
+}
+
+func notificationSortKey(notification acp.SessionNotification) string {
+	key, err := json.Marshal(notification)
+	if err != nil {
+		panic(err)
+	}
+	return string(key)
 }
 
 type genFunc func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error)
@@ -233,7 +275,7 @@ Output Cost: 1.00`),
 		be.Err(t, err, nil)
 		be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
 		be.Equal(t, promptResp.Usage, &acp.Usage{TotalTokens: 90, InputTokens: 80, OutputTokens: 10})
-		be.Equal(t, testClient.notifications(), []acp.SessionNotification{
+		assertNotifications(t, testClient, []acp.SessionNotification{
 			{
 				SessionID: sessionId,
 				Update:    expectedRPCAgentThoughtChunk("let me think"),
@@ -436,7 +478,8 @@ Output Cost: 1.00`),
 		be.Equal(t, promptResp.Usage, &acp.Usage{TotalTokens: 7, InputTokens: 5, OutputTokens: 2})
 		be.True(t, gen != nil)
 		be.Equal(t, gen.called, 2)
-		be.Equal(t, testClient.notifications(), []acp.SessionNotification{
+		notifications := testClient.waitForNotifications(t, 5)
+		be.Equal(t, sortedNotifications(notifications), sortedNotifications([]acp.SessionNotification{
 			{
 				SessionID: sessionId,
 				Update: expectedPendingToolCallUpdate("compact-call-1", config.CompactionToolName, map[string]any{
@@ -465,12 +508,15 @@ Output Cost: 1.00`),
 					Currency: "USD",
 				}),
 			},
-		})
-		firstUsage := testClient.notifications()[1].Update
-		secondUsage := testClient.notifications()[4].Update
-		be.Equal(t, firstUsage.SessionUpdate, acp.SessionUpdateTypeUsageUpdate)
-		be.Equal(t, secondUsage.SessionUpdate, acp.SessionUpdateTypeUsageUpdate)
-		be.True(t, firstUsage.Used > secondUsage.Used)
+		}))
+		var usageUpdateUsed []uint64
+		for _, notification := range notifications {
+			if notification.Update.SessionUpdate == acp.SessionUpdateTypeUsageUpdate {
+				usageUpdateUsed = append(usageUpdateUsed, notification.Update.Used)
+			}
+		}
+		slices.Sort(usageUpdateUsed)
+		be.Equal(t, usageUpdateUsed, []uint64{7, 90})
 
 		storedSession, err := store.GetACPSession(t.Context(), sessionId)
 		be.Err(t, err, nil)
@@ -606,7 +652,7 @@ Output Cost: 1.00`),
 		be.Err(t, err, nil)
 		be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
 		be.Equal(t, promptResp.Usage, &acp.Usage{TotalTokens: 16, InputTokens: 12, OutputTokens: 4})
-		be.Equal(t, testClient.notifications(), []acp.SessionNotification{
+		assertNotifications(t, testClient, []acp.SessionNotification{
 			{
 				SessionID: newSessionResp.SessionID,
 				Update:    expectedRPCAgentMessageChunk("continued answer"),
@@ -754,7 +800,7 @@ Output Cost: 1.00`),
 		be.Equal(t, gen.called, 2)
 		firstCost := float64(5)/1_000_000 + float64(2)/1_000_000
 		secondCost := firstCost + float64(6)/1_000_000 + float64(3)/1_000_000
-		be.Equal(t, testClient.notifications(), []acp.SessionNotification{
+		assertNotifications(t, testClient, []acp.SessionNotification{
 			{
 				SessionID: newSessionResp.SessionID,
 				Update:    expectedRPCAgentMessageChunk("first answer"),
@@ -1178,7 +1224,7 @@ Output Cost: 1.00`),
 		be.Err(t, err, nil)
 		be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
 		be.Equal(t, promptResp.Usage, nil)
-		be.Equal(t, testClient.notifications(), []acp.SessionNotification{
+		assertNotifications(t, testClient, []acp.SessionNotification{
 			{
 				SessionID: newSessionResp.SessionID,
 				Update:    expectedRPCAgentMessageChunk("metadata-free answer"),

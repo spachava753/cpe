@@ -5,8 +5,13 @@ package codemode
 import (
 	"errors"
 	"os"
+	"os/exec"
 	"syscall"
 )
+
+func configureLocalProgramCommand(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+}
 
 func interruptLocalProgram(process *os.Process) error {
 	return signalLocalProgramGroup(process, syscall.SIGINT)

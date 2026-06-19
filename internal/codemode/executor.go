@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"text/template"
 	"time"
 
@@ -284,7 +283,7 @@ func (c *ExecuteGoCodeCallback) runLocalProgramWithTimeout(
 	}
 
 	cmd := exec.CommandContext(context.WithoutCancel(ctx), binaryPath)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	configureLocalProgramCommand(cmd)
 	if c.Cwd != "" {
 		cmd.Dir = c.Cwd
 	}
