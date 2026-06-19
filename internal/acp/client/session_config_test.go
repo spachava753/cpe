@@ -30,7 +30,7 @@ func TestValidateConfigValue(t *testing.T) {
 
 	t.Run("rejects option without values", func(t *testing.T) {
 		options := []acp.SessionConfigOption{
-			acp.SelectSessionConfigOption(modelRefConfigID, "Model", "first-model", acp.SessionConfigSelectOptions{}),
+			{ID: modelRefConfigID},
 		}
 
 		err := validateConfigValue(options, modelRefConfigID, "first-model")

@@ -16,55 +16,6 @@ import (
 
 type noOpAcpClient struct{}
 
-// CreateTerminal implements [acp.TerminalClientHandler].
-func (t *noOpAcpClient) CreateTerminal(ctx context.Context, params *acp.CreateTerminalRequest) (*acp.CreateTerminalResponse, error) {
-	panic("unimplemented")
-}
-
-// KillTerminal implements [acp.TerminalClientHandler].
-func (t *noOpAcpClient) KillTerminal(ctx context.Context, params *acp.KillTerminalRequest) (*acp.KillTerminalResponse, error) {
-	panic("unimplemented")
-}
-
-// ReadTextFile implements [acp.FsClientHandler].
-func (t *noOpAcpClient) ReadTextFile(ctx context.Context, params *acp.ReadTextFileRequest) (*acp.ReadTextFileResponse, error) {
-	panic("unimplemented")
-}
-
-// ReleaseTerminal implements [acp.TerminalClientHandler].
-func (t *noOpAcpClient) ReleaseTerminal(ctx context.Context, params *acp.ReleaseTerminalRequest) (*acp.ReleaseTerminalResponse, error) {
-	panic("unimplemented")
-}
-
-// RequestPermission implements [acp.SessionClientHandler].
-func (t *noOpAcpClient) RequestPermission(ctx context.Context, params *acp.RequestPermissionRequest) (*acp.RequestPermissionResponse, error) {
-	panic("unimplemented")
-}
-
-// Update implements [acp.SessionClientHandler].
-func (t *noOpAcpClient) Update(ctx context.Context, params *acp.SessionNotification) error {
-	panic("unimplemented")
-}
-
-// TerminalOutput implements [acp.TerminalClientHandler].
-func (t *noOpAcpClient) TerminalOutput(ctx context.Context, params *acp.TerminalOutputRequest) (*acp.TerminalOutputResponse, error) {
-	panic("unimplemented")
-}
-
-// WaitForTerminalExit implements [acp.TerminalClientHandler].
-func (t *noOpAcpClient) WaitForTerminalExit(ctx context.Context, params *acp.WaitForTerminalExitRequest) (*acp.WaitForTerminalExitResponse, error) {
-	panic("unimplemented")
-}
-
-// WriteTextFile implements [acp.FsClientHandler].
-func (t *noOpAcpClient) WriteTextFile(ctx context.Context, params *acp.WriteTextFileRequest) (*acp.WriteTextFileResponse, error) {
-	panic("unimplemented")
-}
-
-var _ acp.SessionClientHandler = (*noOpAcpClient)(nil)
-var _ acp.TerminalClientHandler = (*noOpAcpClient)(nil)
-var _ acp.FsClientHandler = (*noOpAcpClient)(nil)
-
 type runtimeCreatorFunc func(context.Context, session, acp.ClientCapabilities, *acp.AgentConnection) (runtime, error)
 
 func (f runtimeCreatorFunc) Create(ctx context.Context, s session, caps acp.ClientCapabilities) (runtime, error) {

@@ -44,10 +44,6 @@ func (f *fakeAgent) NewSession(ctx context.Context, params *acp.NewSessionReques
 	}, nil
 }
 
-func (f *fakeAgent) Cancel(ctx context.Context, params *acp.CancelNotification) error {
-	return errors.New("unexpected session/cancel")
-}
-
 func (f *fakeAgent) SetSessionConfigOption(ctx context.Context, params *acp.SetSessionConfigOptionRequest) (*acp.SetSessionConfigOptionResponse, error) {
 	f.setRequests = append(f.setRequests, *params)
 	if params.ConfigID == modelRefConfigID {
@@ -71,30 +67,6 @@ func (f *fakeAgent) SetSessionConfigOption(ctx context.Context, params *acp.SetS
 		return &acp.SetSessionConfigOptionResponse{ConfigOptions: configOptions}, nil
 	}
 	return nil, errors.New("unexpected config id")
-}
-
-func (f *fakeAgent) DeleteSession(ctx context.Context, params *acp.DeleteSessionRequest) (*acp.DeleteSessionResponse, error) {
-	return nil, errors.New("unexpected session/delete")
-}
-
-func (f *fakeAgent) ForkSession(ctx context.Context, params *acp.ForkSessionRequest) (*acp.ForkSessionResponse, error) {
-	return nil, errors.New("unexpected session/fork")
-}
-
-func (f *fakeAgent) ListSessions(ctx context.Context, params *acp.ListSessionsRequest) (*acp.ListSessionsResponse, error) {
-	return nil, errors.New("unexpected session/list")
-}
-
-func (f *fakeAgent) LoadSession(ctx context.Context, params *acp.LoadSessionRequest) (*acp.LoadSessionResponse, error) {
-	return nil, errors.New("unexpected session/load")
-}
-
-func (f *fakeAgent) ResumeSession(ctx context.Context, params *acp.ResumeSessionRequest) (*acp.ResumeSessionResponse, error) {
-	return nil, errors.New("unexpected session/resume")
-}
-
-func (f *fakeAgent) SetSessionMode(ctx context.Context, params *acp.SetSessionModeRequest) (*acp.SetSessionModeResponse, error) {
-	return nil, errors.New("unexpected session/set_mode")
 }
 
 func (f *fakeAgent) Prompt(ctx context.Context, params *acp.PromptRequest) (*acp.PromptResponse, error) {

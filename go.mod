@@ -25,7 +25,7 @@ require (
 	github.com/nalgeon/be v0.3.0
 	github.com/ncruces/go-sqlite3 v0.34.3
 	github.com/openai/openai-go/v3 v3.37.0
-	github.com/spachava753/acp-sdk v0.1.1-0.20260618174113-ba4e331c6768
+	github.com/spachava753/acp-sdk v0.1.1-0.20260619161708-c4317458a9fb
 	github.com/spachava753/gai v0.41.1-0.20260530132625-76e6c6f6dc4b
 	github.com/spf13/cobra v1.10.2
 	github.com/yuin/goldmark v1.8.2

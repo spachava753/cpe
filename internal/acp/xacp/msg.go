@@ -44,19 +44,19 @@ func PromptToMessage(contentBlocks []acp.ContentBlock) gai.Message {
 			// embedded context resources can be text or blobs
 			// TODO: should limit based on size of embedded resources?
 			resource := contentBlock.Resource
-			if resource.Blob == "" {
+			if resource.Text != nil {
 				var sb strings.Builder
 				if _, err := fmt.Fprintf(&sb, "`%s` contents:\n```", resource.URI); err != nil {
 					panic(err)
 				}
-				if _, err := sb.WriteString(resource.Text); err != nil {
+				if _, err := sb.WriteString(*resource.Text); err != nil {
 					panic(err)
 				}
 				if _, err := sb.WriteString("\n```\n"); err != nil {
 					panic(err)
 				}
 				block = gai.TextBlock(sb.String())
-			} else {
+			} else if resource.Blob != nil {
 				resourcePath := resource.URI
 				parsed, err := url.Parse(resource.URI)
 				if err != nil {
@@ -83,7 +83,7 @@ func PromptToMessage(contentBlocks []acp.ContentBlock) gai.Message {
 					BlockType: gai.Content,
 					MimeType:  mt,
 					// content comes as base64 encoded data
-					Content: gai.Str(resource.Blob),
+					Content: gai.Str(*resource.Blob),
 					ExtraFields: map[string]any{
 						gai.BlockFieldFilenameKey: filename,
 					},

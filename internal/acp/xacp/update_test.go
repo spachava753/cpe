@@ -1,6 +1,7 @@
 package xacp
 
 import (
+	"encoding/json"
 	"reflect"
 	"slices"
 	"testing"
@@ -31,6 +32,25 @@ func toolCallResultSessionUpdate(id string, status acpsdk.ToolCallStatus, conten
 	update.Content = []acpsdk.ToolCallContent{acpsdk.ContentToolCallContent(content)}
 	update.Status = &status
 	return update
+}
+
+func TestEmptyTextSessionUpdateMarshalsTextField(t *testing.T) {
+	updates := slices.Collect(MsgToSessionUpdate(gai.Message{
+		Role:   gai.Assistant,
+		Blocks: []gai.Block{gai.TextBlock("")},
+	}))
+	if len(updates) != 1 {
+		t.Fatalf("len(updates) = %d, want 1", len(updates))
+	}
+
+	got, err := json.Marshal(updates[0])
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	want := `{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":""}}`
+	if string(got) != want {
+		t.Fatalf("json.Marshal() = %s, want %s", got, want)
+	}
 }
 
 func TestMsgToSessionUpdate(t *testing.T) {
@@ -165,32 +185,35 @@ func TestMsgToSessionUpdate(t *testing.T) {
 			},
 		},
 		{
-			name: "empty assistant thought is skipped",
+			name: "empty assistant thought is preserved",
 			msg: gai.Message{Role: gai.Assistant, Blocks: []gai.Block{
 				{BlockType: gai.Thinking, ModalityType: gai.Text, MimeType: "text/plain", Content: gai.Str("")},
 				{BlockType: gai.Thinking, ModalityType: gai.Text, MimeType: "text/plain", Content: gai.Str("kept thought")},
 			}},
 			want: []acpsdk.SessionUpdate{
+				acpsdk.AgentThoughtChunkSessionUpdate(acpsdk.TextContentBlock("")),
 				acpsdk.AgentThoughtChunkSessionUpdate(acpsdk.TextContentBlock("kept thought")),
 			},
 		},
 		{
-			name: "empty assistant content is skipped",
+			name: "empty assistant content is preserved",
 			msg: gai.Message{Role: gai.Assistant, Blocks: []gai.Block{
 				{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("")},
 				{BlockType: gai.Content, ModalityType: gai.Text, Content: gai.Str("answer")},
 			}},
 			want: []acpsdk.SessionUpdate{
+				acpsdk.AgentMessageChunkSessionUpdate(acpsdk.TextContentBlock("")),
 				acpsdk.AgentMessageChunkSessionUpdate(acpsdk.TextContentBlock("answer")),
 			},
 		},
 		{
-			name: "empty user text is skipped",
+			name: "empty user text is preserved",
 			msg: gai.Message{Role: gai.User, Blocks: []gai.Block{
 				gai.TextBlock(""),
 				gai.TextBlock("hello"),
 			}},
 			want: []acpsdk.SessionUpdate{
+				acpsdk.UserMessageChunkSessionUpdate(acpsdk.TextContentBlock("")),
 				acpsdk.UserMessageChunkSessionUpdate(acpsdk.TextContentBlock("hello")),
 			},
 		},
