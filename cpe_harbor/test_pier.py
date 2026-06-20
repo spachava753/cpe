@@ -78,6 +78,31 @@ class CPEPierAdapterTest(unittest.TestCase):
             )
             self.assertNotIn("curl -fsSL file://", spec.steps[3].run)
 
+    def test_oauth_credentials_are_runtime_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            auth_path = root / "auth.json"
+            auth_path.write_text('{"openai":{"type":"oauth"}}\n', encoding="utf-8")
+            agent = self._agent(root, auth_url=auth_path.as_uri())
+
+            install_command = agent.install_spec().steps[3].run
+            run_command = agent._run_command("fix the bug")
+            run_env = agent._run_env()
+
+            self.assertNotIn("auth.json", install_command)
+            self.assertNotIn(
+                base64.b64encode(auth_path.read_bytes()).decode("ascii"),
+                install_command,
+            )
+            self.assertIn("CPE_AUTH_JSON_B64", run_env)
+            self.assertEqual(
+                base64.b64decode(run_env["CPE_AUTH_JSON_B64"]),
+                auth_path.read_bytes(),
+            )
+            self.assertIn('base64 -d > "$HOME/.config/cpe/auth.json"', run_command)
+            self.assertIn('chmod 600 "$HOME/.config/cpe/auth.json"', run_command)
+            self.assertNotIn(run_env["CPE_AUTH_JSON_B64"], run_command)
+
     def test_network_allowlist_includes_install_and_config_domains(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -98,11 +123,14 @@ models:
             )
             prompt_path = self._prompt_path(root)
             prompt_path.write_text("prompt\n", encoding="utf-8")
+            auth_path = root / "auth.json"
+            auth_path.write_text('{"openai":{"type":"oauth"}}\n', encoding="utf-8")
             agent = CPE(
                 root,
                 model_name="zai/glm-5.1",
                 config_url=config_path.as_uri(),
                 system_prompt_url="https://raw.githubusercontent.com/spachava753/cpe/main/prompt.md",
+                auth_url=auth_path.as_uri(),
                 model_ref="glm",
                 thinking_level="high",
             )
@@ -177,6 +205,7 @@ models:
         root: Path,
         *,
         version: str | None = None,
+        auth_url: str | None = None,
         extra_env: dict[str, str] | None = None,
     ) -> CPE:
         config_path = self._config_path(root)
@@ -200,6 +229,7 @@ models:
             model_name="zai/glm-5.1",
             config_url=config_path.as_uri(),
             system_prompt_url=prompt_path.as_uri(),
+            auth_url=auth_url,
             model_ref="glm",
             thinking_level="high",
             version=version,

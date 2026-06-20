@@ -64,11 +64,13 @@ class CPE(CPEAgentMixin, BaseInstalledAgent):
         system_prompt_url: str | None = None,
         model_ref: str | None = None,
         thinking_level: str | None = None,
+        auth_url: str | None = None,
         **kwargs: Any,
     ) -> None:
         self._init_cpe_options(
             config_url=config_url,
             system_prompt_url=system_prompt_url,
+            auth_url=auth_url,
             model_ref=model_ref,
             thinking_level=thinking_level,
         )
@@ -100,7 +102,7 @@ class CPE(CPEAgentMixin, BaseInstalledAgent):
         )
 
     def network_allowlist(self) -> NetworkAllowlist:
-        values: list[Any] = [self._config_url, self._system_prompt_url]
+        values: list[Any] = [self._config_url, self._system_prompt_url, self._auth_url]
         values.extend(self._config_url_values())
         return allowlist_from_urls(
             values,

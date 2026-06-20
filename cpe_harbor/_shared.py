@@ -35,6 +35,7 @@ class CPEAgentMixin:
         system_prompt_url: str | None,
         model_ref: str | None,
         thinking_level: str | None,
+        auth_url: str | None = None,
     ) -> None:
         if not config_url:
             raise ValueError("config_url agent kwarg is required")
@@ -47,6 +48,7 @@ class CPEAgentMixin:
 
         self._config_url = config_url
         self._system_prompt_url = system_prompt_url
+        self._auth_url = auth_url
         self._model_ref = model_ref
         self._thinking_level = thinking_level
 
@@ -145,19 +147,21 @@ class CPEAgentMixin:
     def _system_prompt_path(self) -> str:
         return f"$HOME/.config/cpe/{self._SYSTEM_PROMPT_FILENAME}"
 
+    def _auth_path(self) -> str:
+        return "$HOME/.config/cpe/auth.json"
+
     def _install_config_command(self) -> str:
         config_path = self._config_path()
         system_prompt_path = self._system_prompt_path()
-        return "\n".join(
-            [
-                "set -euo pipefail",
-                "mkdir -p \"$HOME/.config/cpe\"",
-                self._install_artifact_command(self._config_url, config_path),
-                self._install_artifact_command(
-                    self._system_prompt_url, system_prompt_path
-                ),
-            ]
-        )
+        commands = [
+            "set -euo pipefail",
+            "mkdir -p \"$HOME/.config/cpe\"",
+            self._install_artifact_command(self._config_url, config_path),
+            self._install_artifact_command(
+                self._system_prompt_url, system_prompt_path
+            ),
+        ]
+        return "\n".join(commands)
 
     def _install_artifact_command(self, source: str, target_path: str) -> str:
         parsed = urlparse(source)
@@ -651,13 +655,25 @@ class CPEAgentMixin:
         return self._model_ref == "glm"
 
     def _run_env(self) -> dict[str, str]:
-        if not self._is_zai_profile():
-            return {}
+        env: dict[str, str] = {}
+        if self._is_zai_profile():
+            z_api_key = self._extra_env.get("Z_API_KEY") or os.environ.get("Z_API_KEY")
+            if not z_api_key:
+                raise ValueError("Z_API_KEY must be set to run CPE with the Z.ai profile")
+            env["Z_API_KEY"] = z_api_key
 
-        z_api_key = self._extra_env.get("Z_API_KEY") or os.environ.get("Z_API_KEY")
-        if not z_api_key:
-            raise ValueError("Z_API_KEY must be set to run CPE with the Z.ai profile")
-        return {"Z_API_KEY": z_api_key}
+        if self._auth_url:
+            parsed = urlparse(self._auth_url)
+            if parsed.scheme != "file":
+                raise ValueError("auth_url currently supports local file:// URLs only")
+            if parsed.netloc not in {"", "localhost"}:
+                raise ValueError(f"unsupported file URL host: {parsed.netloc}")
+            auth_path = Path(unquote(parsed.path))
+            env["CPE_AUTH_JSON_B64"] = base64.b64encode(auth_path.read_bytes()).decode(
+                "ascii"
+            )
+
+        return env
 
     def _run_command(self, instruction: str) -> str:
         escaped_instruction = shlex.quote(instruction)
@@ -665,9 +681,17 @@ class CPEAgentMixin:
         db_path = f"/logs/agent/{self._CONVERSATION_DB_FILENAME}"
         model_ref = shlex.quote(self._cpe_model_ref())
         thinking_level = shlex.quote(self._thinking_level)
+        auth_setup = (
+            "if [ -n \"${CPE_AUTH_JSON_B64:-}\" ]; then "
+            "mkdir -p \"$HOME/.config/cpe\" && "
+            "printf '%s' \"$CPE_AUTH_JSON_B64\" | base64 -d > \"$HOME/.config/cpe/auth.json\" && "
+            "chmod 600 \"$HOME/.config/cpe/auth.json\"; "
+            "fi && "
+        )
         return (
             "mkdir -p /logs/agent/command-0 && "
             'export PATH="$HOME/.local/bin:$PATH" && '
+            f"{auth_setup}"
             f"cpe --config \"{config_path}\" "
             f"--db-path {shlex.quote(db_path)} "
             f"--model {model_ref} "
