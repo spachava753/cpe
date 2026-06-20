@@ -249,6 +249,19 @@ class CPETrajectoryConversionTest(unittest.TestCase):
             self.assertIn("thinkingValues:", config_text)
             self.assertIn("- value: high", config_text)
 
+    def test_bundled_prompts_include_execute_go_code_module_import_guard(self) -> None:
+        config_root = Path(__file__).parent / "configs"
+        for prompt_path in (
+            config_root / "text_edit" / "agent_instructions.md",
+            config_root / "execute_go_code_edits" / "agent_instructions.md",
+        ):
+            prompt = prompt_path.read_text(encoding="utf-8")
+
+            self.assertIn(
+                "IMPORTANT: YOU CANNOT IMPORT THE MODULE YOU ARE WORKING ON",
+                prompt,
+            )
+
     def test_execute_go_code_prompt_does_not_name_text_editor_tool(self) -> None:
         prompt_path = (
             Path(__file__).parent
