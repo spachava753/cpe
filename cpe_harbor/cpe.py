@@ -435,15 +435,20 @@ class CPE(BaseInstalledAgent):
                 ]
             )
             if last_message_id and "parent_id" in message_columns:
+                parent_expr = "m.parent_id"
+                parent_filter = "m.parent_id IS NOT NULL"
+                if "compaction_parent_id" in message_columns:
+                    parent_expr = "COALESCE(m.parent_id, m.compaction_parent_id)"
+                    parent_filter = "(m.parent_id IS NOT NULL OR m.compaction_parent_id IS NOT NULL)"
                 rows = conn.execute(
                     f"""
                     WITH RECURSIVE session_chain(id, depth) AS (
                         SELECT ? AS id, 0 AS depth
                         UNION ALL
-                        SELECT m.parent_id, session_chain.depth + 1
+                        SELECT {parent_expr}, session_chain.depth + 1
                         FROM messages m
                         JOIN session_chain ON m.id = session_chain.id
-                        WHERE m.parent_id IS NOT NULL
+                        WHERE {parent_filter}
                     )
                     SELECT
                         {", ".join(select_exprs)}

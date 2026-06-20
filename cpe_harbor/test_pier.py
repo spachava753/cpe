@@ -354,6 +354,28 @@ models:
             self.assertEqual(trajectory.steps[1].model_name, "glm-5.1")
             self.assertEqual(trajectory.steps[1].extra["model_ref"], "glm")
 
+    def test_conversation_conversion_follows_compaction_parent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            agent = self._agent(root)
+            db_path = self._write_compacted_conversation_db(root)
+
+            trajectory = agent._convert_conversation_db_to_trajectory(db_path)
+
+            self.assertIsInstance(trajectory, Trajectory)
+            assert trajectory is not None
+            self.assertEqual(
+                [step.message for step in trajectory.steps],
+                ["before compact", "first answer", "compaction summary", "after compact"],
+            )
+            self.assertEqual(
+                [step.source for step in trajectory.steps],
+                ["user", "agent", "user", "agent"],
+            )
+            self.assertEqual(trajectory.steps[1].extra["cpe_message_id"], "a1")
+            self.assertEqual(trajectory.steps[3].extra["cpe_message_id"], "a2")
+            self.assertEqual(trajectory.final_metrics.total_steps, 4)
+
     @staticmethod
     def _config_path(root: Path) -> Path:
         return root / "cpe.yaml"
@@ -475,6 +497,106 @@ models:
                     ) VALUES (
                         'session-1', 'a1', '/workspace', 'benchmark', 'glm',
                         'high', 0.42, '2026-01-01 00:00:03'
+                    );
+                    """
+                )
+        return db_path
+
+    @staticmethod
+    def _write_compacted_conversation_db(root: Path) -> Path:
+        db_path = root / ".cpeconvo"
+        with contextlib.closing(sqlite3.connect(db_path)) as conn:
+            with conn:
+                conn.executescript(
+                    """
+                    CREATE TABLE messages (
+                        id TEXT PRIMARY KEY,
+                        parent_id TEXT,
+                        compaction_parent_id TEXT,
+                        role TEXT NOT NULL,
+                        tool_result_error BOOLEAN NOT NULL DEFAULT 0,
+                        message_extra_fields TEXT,
+                        model_ref TEXT,
+                        model_id TEXT,
+                        model_type TEXT,
+                        model_display_name TEXT,
+                        input_tokens INTEGER,
+                        output_tokens INTEGER,
+                        cache_read_tokens INTEGER,
+                        cache_write_tokens INTEGER,
+                        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    );
+                    CREATE TABLE blocks (
+                        id TEXT,
+                        message_id TEXT NOT NULL,
+                        block_type TEXT NOT NULL,
+                        modality_type INTEGER NOT NULL,
+                        mime_type TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        extra_fields TEXT,
+                        sequence_order INTEGER NOT NULL,
+                        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (message_id, sequence_order)
+                    );
+                    CREATE TABLE acp_sessions (
+                        id TEXT PRIMARY KEY,
+                        last_message_id TEXT,
+                        cwd TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        model_ref TEXT NOT NULL,
+                        thinking_level TEXT NOT NULL DEFAULT '',
+                        cost_usd REAL NOT NULL DEFAULT 0,
+                        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    );
+                    INSERT INTO messages (id, role, created_at)
+                    VALUES ('u1', 'user', '2026-01-01 00:00:00');
+                    INSERT INTO blocks (
+                        message_id, block_type, modality_type, mime_type, content,
+                        sequence_order
+                    ) VALUES ('u1', 'content', 0, 'text/plain', 'before compact', 0);
+                    INSERT INTO messages (
+                        id, parent_id, role, model_ref, model_id, model_type,
+                        model_display_name, created_at
+                    ) VALUES (
+                        'a1', 'u1', 'assistant', 'glm', 'glm-5.1', 'zai',
+                        'GLM 5.1', '2026-01-01 00:00:01'
+                    );
+                    INSERT INTO blocks (
+                        message_id, block_type, modality_type, mime_type, content,
+                        sequence_order
+                    ) VALUES ('a1', 'content', 0, 'text/plain', 'first answer', 0);
+                    INSERT INTO messages (
+                        id, compaction_parent_id, role, created_at
+                    ) VALUES (
+                        'u2', 'a1', 'user', '2026-01-01 00:00:02'
+                    );
+                    INSERT INTO blocks (
+                        message_id, block_type, modality_type, mime_type, content,
+                        sequence_order
+                    ) VALUES ('u2', 'content', 0, 'text/plain', 'compaction summary', 0);
+                    INSERT INTO messages (
+                        id, parent_id, role, model_ref, model_id, model_type,
+                        model_display_name, created_at
+                    ) VALUES (
+                        'a2', 'u2', 'assistant', 'glm', 'glm-5.1', 'zai',
+                        'GLM 5.1', '2026-01-01 00:00:03'
+                    );
+                    INSERT INTO blocks (
+                        message_id, block_type, modality_type, mime_type, content,
+                        sequence_order
+                    ) VALUES ('a2', 'content', 0, 'text/plain', 'after compact', 0);
+                    INSERT INTO messages (id, role, created_at)
+                    VALUES ('other', 'user', '2026-01-01 00:00:04');
+                    INSERT INTO blocks (
+                        message_id, block_type, modality_type, mime_type, content,
+                        sequence_order
+                    ) VALUES ('other', 'content', 0, 'text/plain', 'unrelated', 0);
+                    INSERT INTO acp_sessions (
+                        id, last_message_id, cwd, title, model_ref, thinking_level,
+                        cost_usd, created_at
+                    ) VALUES (
+                        'session-1', 'a2', '/workspace', 'benchmark', 'glm',
+                        'high', 0.42, '2026-01-01 00:00:05'
                     );
                     """
                 )
