@@ -122,9 +122,13 @@ func (c *ExecuteGoCodeCallback) executeCode(ctx context.Context, llmCode string,
 	if err := goModTmpl.Execute(
 		goModFile,
 		struct {
-			GoVersion string
+			GoVersion     string
+			MCPSDKModule  string
+			MCPSDKVersion string
 		}{
-			GoVersion: systemGoVersion,
+			GoVersion:     systemGoVersion,
+			MCPSDKModule:  mcpSDKModule,
+			MCPSDKVersion: mcpSDKVersion,
 		}); err != nil {
 		return executionResult{}, fmt.Errorf("executing template: %w", err)
 	}

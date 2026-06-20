@@ -20,7 +20,9 @@ import (
 
 const (
 	// mcpSDKImport is the import path for the MCP SDK package
-	mcpSDKImport = "github.com/modelcontextprotocol/go-sdk/mcp"
+	mcpSDKImport  = "github.com/modelcontextprotocol/go-sdk/mcp"
+	mcpSDKModule  = "github.com/modelcontextprotocol/go-sdk"
+	mcpSDKVersion = "v1.6.1"
 )
 
 // correctFileImports runs goimports over the generated file and atomically

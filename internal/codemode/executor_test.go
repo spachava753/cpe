@@ -1,6 +1,7 @@
 package codemode
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"os/exec"
@@ -8,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"text/template"
 	"time"
 )
 
@@ -231,6 +233,35 @@ func Run(ctx context.Context) ([]mcp.Content, error) {
 	}
 	if !strings.Contains(result.Output, "tidy failed deterministically") {
 		t.Fatalf("executeCode() output = %q, want fake tidy output", result.Output)
+	}
+}
+
+func TestGoModTemplatePinsMCPSDK(t *testing.T) {
+	tmpl, err := template.New("go.mod").Parse(goModTmplSource)
+	if err != nil {
+		t.Fatalf("parse go.mod template: %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := tmpl.Execute(&out, struct {
+		GoVersion     string
+		MCPSDKModule  string
+		MCPSDKVersion string
+	}{
+		GoVersion:     "1.26.4",
+		MCPSDKModule:  mcpSDKModule,
+		MCPSDKVersion: mcpSDKVersion,
+	}); err != nil {
+		t.Fatalf("execute go.mod template: %v", err)
+	}
+
+	goMod := out.String()
+	if !strings.Contains(goMod, "go 1.26.4") {
+		t.Fatalf("generated go.mod = %q, want Go version", goMod)
+	}
+	wantRequire := "require github.com/modelcontextprotocol/go-sdk v1.6.1"
+	if !strings.Contains(goMod, wantRequire) {
+		t.Fatalf("generated go.mod = %q, want %q", goMod, wantRequire)
 	}
 }
 
