@@ -47,6 +47,8 @@
 # Harbor integration for agent evaluation
 !cpe_harbor/**.py
 !cpe_harbor/**.j2
+!cpe_harbor/configs/
+!cpe_harbor/configs/**
 cpe_harbor/__pycache__/
 
 # Cupaloy snapshot test files

@@ -1,4 +1,5 @@
 import base64
+import contextlib
 import json
 import os
 import re
@@ -39,6 +40,7 @@ class CPE(BaseInstalledAgent):
     _CONFIG_FILENAME = "cpe.yaml"
     _SYSTEM_PROMPT_FILENAME = "agent_instructions.md"
     _GO_VERSION = "1.26.4"
+    _GO_CODE_MCP_SDK_VERSION = "v1.6.1"
 
     def __init__(
         self,
@@ -115,6 +117,11 @@ class CPE(BaseInstalledAgent):
 
         await self.exec_as_agent(
             environment,
+            command=self._warm_go_module_cache_command(),
+        )
+
+        await self.exec_as_agent(
+            environment,
             command=self._install_config_command(),
         )
 
@@ -181,6 +188,22 @@ class CPE(BaseInstalledAgent):
             "fi; "
             "fi && "
             "\"$HOME/.local/bin/cpe\" --version"
+        )
+
+    def _warm_go_module_cache_command(self) -> str:
+        go_version = shlex.quote(self._GO_VERSION)
+        mcp_sdk_version = shlex.quote(self._GO_CODE_MCP_SDK_VERSION)
+        return (
+            "set -euo pipefail; "
+            "tmp=$(mktemp -d); trap 'rm -rf \"$tmp\"' EXIT INT TERM; "
+            "cat >\"$tmp/go.mod\" <<'CPE_CODE_MODE_GO_MOD'\n"
+            "module cpe-code-mode-cache\n\n"
+            f"go {go_version}\n\n"
+            f"require github.com/modelcontextprotocol/go-sdk {mcp_sdk_version}\n"
+            "CPE_CODE_MODE_GO_MOD\n"
+            "cd \"$tmp\" && "
+            "GOPROXY=https://proxy.golang.org,direct GOSUMDB=sum.golang.org "
+            "go mod download all"
         )
 
     def _config_path(self) -> str:
@@ -321,7 +344,9 @@ class CPE(BaseInstalledAgent):
         )
 
     def _read_cpe_session_metadata(self, db_path: Path) -> dict[str, Any]:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+        with contextlib.closing(
+            sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        ) as conn:
             conn.row_factory = sqlite3.Row
             session_table_count = conn.execute(
                 """
@@ -369,7 +394,9 @@ class CPE(BaseInstalledAgent):
         self, db_path: Path, last_message_id: str | None = None
     ) -> list[dict[str, Any]]:
         rows: list[sqlite3.Row]
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+        with contextlib.closing(
+            sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        ) as conn:
             conn.row_factory = sqlite3.Row
             message_columns = {
                 row["name"]

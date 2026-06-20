@@ -1,4 +1,5 @@
 import base64
+import contextlib
 import json
 import os
 import re
@@ -17,6 +18,7 @@ class CPEAgentMixin:
     _CONFIG_FILENAME = "cpe.yaml"
     _SYSTEM_PROMPT_FILENAME = "agent_instructions.md"
     _GO_VERSION = "1.26.4"
+    _GO_CODE_MCP_SDK_VERSION = "v1.6.1"
 
     _trajectory_agent_cls: Any = None
     _trajectory_final_metrics_cls: Any = None
@@ -43,14 +45,12 @@ class CPEAgentMixin:
             raise ValueError("system_prompt_url agent kwarg is required")
         if not model_ref:
             raise ValueError("model_ref agent kwarg is required")
-        if not thinking_level:
-            raise ValueError("thinking_level agent kwarg is required")
 
         self._config_url = config_url
         self._system_prompt_url = system_prompt_url
         self._auth_url = auth_url
         self._model_ref = model_ref
-        self._thinking_level = thinking_level
+        self._thinking_level = thinking_level or ""
 
     def version(self) -> str | None:
         return self._version or "latest"
@@ -139,6 +139,22 @@ class CPEAgentMixin:
             "fi; "
             "fi && "
             "\"$HOME/.local/bin/cpe\" --version"
+        )
+
+    def _warm_go_module_cache_command(self) -> str:
+        go_version = shlex.quote(self._GO_VERSION)
+        mcp_sdk_version = shlex.quote(self._GO_CODE_MCP_SDK_VERSION)
+        return (
+            "set -euo pipefail; "
+            "tmp=$(mktemp -d); trap 'rm -rf \"$tmp\"' EXIT INT TERM; "
+            "cat >\"$tmp/go.mod\" <<'CPE_CODE_MODE_GO_MOD'\n"
+            "module cpe-code-mode-cache\n\n"
+            f"go {go_version}\n\n"
+            f"require github.com/modelcontextprotocol/go-sdk {mcp_sdk_version}\n"
+            "CPE_CODE_MODE_GO_MOD\n"
+            "cd \"$tmp\" && "
+            "GOPROXY=https://proxy.golang.org,direct GOSUMDB=sum.golang.org "
+            "go mod download all"
         )
 
     def _config_path(self) -> str:
@@ -284,7 +300,9 @@ class CPEAgentMixin:
         )
 
     def _read_cpe_session_metadata(self, db_path: Path) -> dict[str, Any]:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+        with contextlib.closing(
+            sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        ) as conn:
             conn.row_factory = sqlite3.Row
             session_table_count = conn.execute(
                 """
@@ -332,7 +350,9 @@ class CPEAgentMixin:
         self, db_path: Path, last_message_id: str | None = None
     ) -> list[dict[str, Any]]:
         rows: list[sqlite3.Row]
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+        with contextlib.closing(
+            sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        ) as conn:
             conn.row_factory = sqlite3.Row
             message_columns = {
                 row["name"]
@@ -680,7 +700,9 @@ class CPEAgentMixin:
         config_path = self._config_path()
         db_path = f"/logs/agent/{self._CONVERSATION_DB_FILENAME}"
         model_ref = shlex.quote(self._cpe_model_ref())
-        thinking_level = shlex.quote(self._thinking_level)
+        thinking_arg = ""
+        if self._thinking_level:
+            thinking_arg = f"--thinking-level {shlex.quote(self._thinking_level)} "
         auth_setup = (
             "if [ -n \"${CPE_AUTH_JSON_B64:-}\" ]; then "
             "mkdir -p \"$HOME/.config/cpe\" && "
@@ -695,7 +717,7 @@ class CPEAgentMixin:
             f"cpe --config \"{config_path}\" "
             f"--db-path {shlex.quote(db_path)} "
             f"--model {model_ref} "
-            f"--thinking-level {thinking_level} -- {escaped_instruction} "
+            f"{thinking_arg}-- {escaped_instruction} "
             "2>&1 </dev/null | stdbuf -oL tee "
             f"/logs/agent/{self._OUTPUT_FILENAME} /logs/agent/command-0/stdout.txt"
         )

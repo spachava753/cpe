@@ -1,0 +1,231 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/spachava753/cpe/refs/heads/main/schema/cpe-config-schema.json
+version: "1.0"
+models:
+  - ref: gpt
+    display_name: GPT 5.5
+    id: gpt-5.5
+    type: responses
+    base_url: https://chatgpt.com/backend-api/codex
+    auth_method: oauth
+    context_window: 272000
+    max_output: 128000
+    input_cost_per_million: 5
+    output_cost_per_million: 30
+    cache_read_cost_per_million: 0.5
+    thinkingValues: &openAIThinkingValues
+      - value: none
+        name: None
+      - value: low
+        name: Low
+      - value: medium
+        name: Medium
+      - value: high
+        name: High
+      - value: xhigh
+        name: Extra High
+    patchRequest: &openAIPatchRequest
+      jsonPatch:
+        - op: add
+          path: /parallel_tool_calls
+          value: false
+    systemPromptPath: &agentPrompt $HOME/.config/cpe/agent_instructions.md
+    timeout: &standardTimeout 1h
+    codeMode: &standardCodeMode
+      enabled: true
+      largeOutputCharLimit: 150000
+      maxTimeout: 3600
+    compaction: &standardCompaction
+      autoTriggerThreshold: 0.75
+      initialMessageTemplate: |-
+        A conversation compaction occurred. Continue the user's request from the
+        preserved context below without asking them to repeat prior context unless
+        absolutely necessary.
+
+        Original conversation root message:
+        {{with index .Dialog 0}}{{range .Blocks}}{{.Content}}
+        {{end}}{{end}}
+
+        Compaction summary:
+        {{index .ToolArguments "summary"}}
+        {{with index .ToolArguments "keyPoints"}}
+
+        Key points:
+        {{range .}}- {{.}}
+        {{end}}{{end}}{{with index .ToolArguments "completedWork"}}
+
+        Completed work:
+        {{range .}}- {{.}}
+        {{end}}{{end}}{{with index .ToolArguments "artifacts"}}
+
+        Important artifacts:
+        {{range .}}- {{.}}
+        {{end}}{{end}}{{with index .ToolArguments "openQuestions"}}
+
+        Open questions:
+        {{range .}}- {{.}}
+        {{end}}{{end}}
+
+        Immediate next action:
+        {{index .ToolArguments "nextAction"}}
+
+        Resume from this state and continue the task.
+      inputSchema:
+        properties:
+          artifacts:
+            description: Relevant files, functions, commands, URLs, datasets, or outputs that matter for resuming the task.
+            items:
+              type: string
+            type: array
+          completedWork:
+            description: Meaningful work already completed, such as code changes made, analyses finished, or sources reviewed.
+            items:
+              type: string
+            type: array
+          keyPoints:
+            description: Important findings, decisions, constraints, assumptions, or caveats to preserve.
+            items:
+              type: string
+            type: array
+          nextAction:
+            description: The single most important next thing to do immediately after compaction.
+            type: string
+          openQuestions:
+            description: Remaining unknowns, unresolved decisions, or follow-up questions.
+            items:
+              type: string
+            type: array
+          summary:
+            description: A concise but information-dense summary of the current state of the task.
+            type: string
+        required:
+          - summary
+          - nextAction
+        type: object
+      maxAutoCompactionRestarts: 50
+      toolDescription: Compact the current conversation into a fresh linked branch when context usage is high or immediately after a tool result that begins with [COMPACTION WARNING]. Preserve the user's objective, completed work, important findings, constraints, artifacts, open questions, and the next action so you can continue seamlessly without asking the user to restate prior context.
+  - ref: gptmini
+    display_name: GPT 5.4 Mini
+    id: gpt-5.4-mini
+    type: responses
+    base_url: https://aag-gateway.fly.dev/codex/
+    api_key_env: ""
+    auth_method: oauth
+    context_window: 272000
+    max_output: 128000
+    input_cost_per_million: 21
+    output_cost_per_million: 168
+    patchRequest: *openAIPatchRequest
+    thinkingValues: *openAIThinkingValues
+    systemPromptPath: *agentPrompt
+    timeout: *standardTimeout
+    codeMode: *standardCodeMode
+    compaction: *standardCompaction
+  - ref: kimi
+    display_name: Kimi K2.7 Code
+    id: kimi-k2.7-code
+    type: anthropic
+    base_url: https://gateway.ai.cloudflare.com/v1/4eee6dd2fdc8cebc7802c5a638f460fe/cpe/custom-moonshot-anthropic/anthropic
+    api_key_env: MOONSHOT_API_KEY
+    context_window: 262144
+    max_output: 128000
+    input_cost_per_million: 0.95
+    output_cost_per_million: 4.00
+    cache_read_cost_per_million: 0.19
+    patchRequest:
+      jsonPatch:
+        - op: add
+          path: /thinking
+          value:
+            type: enabled
+    systemPromptPath: *agentPrompt
+    timeout: *standardTimeout
+    codeMode: *standardCodeMode
+    compaction: *standardCompaction
+    generationParams:
+      maxGenerationTokens: 128000
+  - ref: glm
+    display_name: GLM 5.2
+    id: glm-5.2
+    type: anthropic
+    base_url: https://api.z.ai/api/anthropic
+    api_key_env: Z_API_KEY
+    context_window: 1000000
+    max_output: 128000
+    input_cost_per_million: 1.40
+    output_cost_per_million: 4.40
+    cache_read_cost_per_million: 0.26
+    patchRequest:
+      jsonPatch:
+        - op: add
+          path: /thinking
+          value:
+            type: enabled
+    systemPromptPath: *agentPrompt
+    timeout: *standardTimeout
+    codeMode: *standardCodeMode
+    compaction: *standardCompaction
+    generationParams:
+      maxGenerationTokens: 128000
+  - ref: opus
+    display_name: Claude Opus 4.8
+    id: claude-opus-4-8
+    type: anthropic
+    base_url: https://gateway.ai.cloudflare.com/v1/4eee6dd2fdc8cebc7802c5a638f460fe/cpe/anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    context_window: 1000000
+    max_output: 128000
+    input_cost_per_million: 5.00
+    output_cost_per_million: 25.00
+    cache_read_cost_per_million: 6.25
+    cache_write_cost_per_million: 0.50
+    thinkingValues: &claudeThinkingValues
+      - value: disabled
+        name: Disabled
+      - value: adaptive
+        name: Adaptive
+      - value: low
+        name: Low
+      - value: medium
+        name: Medium
+      - value: high
+        name: High
+      - value: xhigh
+        name: Extra High
+      - value: max
+        name: Max
+    patchRequest:
+      jsonPatch:
+        - op: add
+          path: /cache_control
+          value:
+            type: "ephemeral"
+    systemPromptPath: *agentPrompt
+    timeout: *standardTimeout
+    codeMode: *standardCodeMode
+    compaction: *standardCompaction
+    generationParams: &claudeGenOpts
+      maxGenerationTokens: 128000
+  - ref: fable
+    display_name: Claude Fable 5
+    id: claude-fable-5
+    type: anthropic
+    base_url: https://gateway.ai.cloudflare.com/v1/4eee6dd2fdc8cebc7802c5a638f460fe/cpe/anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    context_window: 1000000
+    max_output: 128000
+    input_cost_per_million: 10.00
+    output_cost_per_million: 50.00
+    cache_read_cost_per_million: 1.00
+    cache_write_cost_per_million: 12.50
+    thinkingValues: *claudeThinkingValues
+    patchRequest:
+      jsonPatch:
+        - op: add
+          path: /cache_control
+          value:
+            type: "ephemeral"
+    systemPromptPath: *agentPrompt
+    timeout: *standardTimeout
+    codeMode: *standardCodeMode
+    compaction: *standardCompaction
+    generationParams: *claudeGenOpts

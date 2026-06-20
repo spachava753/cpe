@@ -1,4 +1,5 @@
 import base64
+import contextlib
 import shlex
 import sqlite3
 import tempfile
@@ -202,6 +203,21 @@ class CPETrajectoryConversionTest(unittest.TestCase):
         self.assertIn("tail -n 40 \"$install_log\"", command)
         self.assertIn("\"$HOME/.local/bin/cpe\" --version", command)
 
+    def test_warm_go_module_cache_command_downloads_code_mode_dependencies(self) -> None:
+        agent = self._agent()
+
+        command = agent._warm_go_module_cache_command()
+
+        self.assertIn("module cpe-code-mode-cache", command)
+        self.assertIn("go 1.26.4", command)
+        self.assertIn(
+            "require github.com/modelcontextprotocol/go-sdk v1.6.1",
+            command,
+        )
+        self.assertIn("GOPROXY=https://proxy.golang.org,direct", command)
+        self.assertIn("GOSUMDB=sum.golang.org", command)
+        self.assertIn("go mod download all", command)
+
     def test_run_command_uses_current_direct_prompt_cli(self) -> None:
         agent = self._agent()
         instruction = "- fix the failing test"
@@ -274,6 +290,49 @@ class CPETrajectoryConversionTest(unittest.TestCase):
         self.assertNotIn("text_edit", prompt)
         self.assertNotIn("text edit", prompt)
 
+    def test_deep_swe_config_uses_single_runtime_prompt_path(self) -> None:
+        config_root = Path(__file__).parent / "configs" / "deep-swe"
+        config_text = (config_root / "cpe.yaml").read_text(encoding="utf-8")
+        agent_prompt = (config_root / "agent_instructions.md").read_text(
+            encoding="utf-8"
+        )
+        gpt_prompt = (config_root / "gpt_instructions.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("ref: gpt", config_text)
+        self.assertIn("type: responses", config_text)
+        self.assertIn("auth_method: oauth", config_text)
+        self.assertIn("thinkingValues:", config_text)
+        self.assertIn("- value: high", config_text)
+        self.assertIn(
+            "systemPromptPath: &agentPrompt $HOME/.config/cpe/agent_instructions.md",
+            config_text,
+        )
+        self.assertIn("systemPromptPath: *agentPrompt", config_text)
+        self.assertNotIn("gpt_instructions.md", config_text)
+        self.assertNotIn("gptPrompt", config_text)
+        self.assertNotIn("disable_edit_tool: true", config_text)
+        self.assertIn("codeMode:", config_text)
+        self.assertIn(
+            "IMPORTANT: YOU CANNOT IMPORT THE MODULE YOU ARE WORKING ON",
+            agent_prompt,
+        )
+        self.assertIn(
+            "IMPORTANT: YOU CANNOT IMPORT THE MODULE YOU ARE WORKING ON",
+            gpt_prompt,
+        )
+
+    def test_deep_swe_oauth_config_declares_required_thinking_level(self) -> None:
+        config_text = (
+            Path(__file__).parent / "configs" / "deep-swe" / "cpe.yaml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("type: responses", config_text)
+        self.assertIn("auth_method: oauth", config_text)
+        self.assertIn("thinkingValues:", config_text)
+        self.assertIn("- value: high", config_text)
+
     def test_experiment_configs_select_expected_editing_tools(self) -> None:
         configs_dir = Path(__file__).parent / "configs"
         text_edit_config = (configs_dir / "text_edit" / "cpe.yaml").read_text(
@@ -301,55 +360,13 @@ class CPETrajectoryConversionTest(unittest.TestCase):
 
     def _write_conversation_db(self, *, include_metadata_columns: bool) -> Path:
         db_path = Path(tempfile.mkdtemp()) / ".cpeconvo"
-        with sqlite3.connect(db_path) as conn:
-            self._create_schema(conn, include_metadata_columns=include_metadata_columns)
-            conn.execute(
-                """
-                INSERT INTO messages (id, role, created_at)
-                VALUES ('u1', 'user', '2026-01-01 00:00:00')
-                """
-            )
-            conn.execute(
-                """
-                INSERT INTO blocks (
-                    message_id, block_type, modality_type, mime_type, content,
-                    sequence_order
-                ) VALUES ('u1', 'content', 0, 'text/plain', 'prompt', 0)
-                """
-            )
-            if include_metadata_columns:
-                conn.execute(
-                    """
-                    INSERT INTO messages (
-                        id, parent_id, role, model_ref, model_id, model_type,
-                        model_display_name, input_tokens, output_tokens,
-                        cache_read_tokens, cache_write_tokens, created_at
-                    ) VALUES (
-                        'a1', 'u1', 'assistant', 'glm', 'glm-5.1', 'zai',
-                        'GLM 5.1', 11, 7, 3, 2, '2026-01-01 00:00:01'
-                    )
-                    """
-                )
-            else:
-                conn.execute(
-                    """
-                    INSERT INTO messages (id, parent_id, role, created_at)
-                    VALUES ('a1', 'u1', 'assistant', '2026-01-01 00:00:01')
-                    """
-                )
-            conn.execute(
-                """
-                INSERT INTO blocks (
-                    message_id, block_type, modality_type, mime_type, content,
-                    sequence_order
-                ) VALUES ('a1', 'content', 0, 'text/plain', 'answer', 0)
-                """
-            )
-            if include_metadata_columns:
+        with contextlib.closing(sqlite3.connect(db_path)) as conn:
+            with conn:
+                self._create_schema(conn, include_metadata_columns=include_metadata_columns)
                 conn.execute(
                     """
                     INSERT INTO messages (id, role, created_at)
-                    VALUES ('other', 'user', '2026-01-01 00:00:02')
+                    VALUES ('u1', 'user', '2026-01-01 00:00:00')
                     """
                 )
                 conn.execute(
@@ -357,20 +374,63 @@ class CPETrajectoryConversionTest(unittest.TestCase):
                     INSERT INTO blocks (
                         message_id, block_type, modality_type, mime_type, content,
                         sequence_order
-                    ) VALUES ('other', 'content', 0, 'text/plain', 'unrelated', 0)
+                    ) VALUES ('u1', 'content', 0, 'text/plain', 'prompt', 0)
                     """
                 )
+                if include_metadata_columns:
+                    conn.execute(
+                        """
+                        INSERT INTO messages (
+                            id, parent_id, role, model_ref, model_id, model_type,
+                            model_display_name, input_tokens, output_tokens,
+                            cache_read_tokens, cache_write_tokens, created_at
+                        ) VALUES (
+                            'a1', 'u1', 'assistant', 'glm', 'glm-5.1', 'zai',
+                            'GLM 5.1', 11, 7, 3, 2, '2026-01-01 00:00:01'
+                        )
+                        """
+                    )
+                else:
+                    conn.execute(
+                        """
+                        INSERT INTO messages (id, parent_id, role, created_at)
+                        VALUES ('a1', 'u1', 'assistant', '2026-01-01 00:00:01')
+                        """
+                    )
                 conn.execute(
                     """
-                    INSERT INTO acp_sessions (
-                        id, last_message_id, cwd, title, model_ref, thinking_level,
-                        cost_usd, created_at
-                    ) VALUES (
-                        'session-1', 'a1', '/workspace', 'benchmark', 'glm', '',
-                        0.42, '2026-01-01 00:00:03'
-                    )
+                    INSERT INTO blocks (
+                        message_id, block_type, modality_type, mime_type, content,
+                        sequence_order
+                    ) VALUES ('a1', 'content', 0, 'text/plain', 'answer', 0)
                     """
                 )
+                if include_metadata_columns:
+                    conn.execute(
+                        """
+                        INSERT INTO messages (id, role, created_at)
+                        VALUES ('other', 'user', '2026-01-01 00:00:02')
+                        """
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO blocks (
+                            message_id, block_type, modality_type, mime_type, content,
+                            sequence_order
+                        ) VALUES ('other', 'content', 0, 'text/plain', 'unrelated', 0)
+                        """
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO acp_sessions (
+                            id, last_message_id, cwd, title, model_ref, thinking_level,
+                            cost_usd, created_at
+                        ) VALUES (
+                            'session-1', 'a1', '/workspace', 'benchmark', 'glm', '',
+                            0.42, '2026-01-01 00:00:03'
+                        )
+                        """
+                    )
         return db_path
 
     @staticmethod
