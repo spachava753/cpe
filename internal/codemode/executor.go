@@ -156,7 +156,7 @@ func (c *ExecuteGoCodeCallback) executeCode(ctx context.Context, llmCode string,
 		return executionResult{
 			Output:   tidyResult.Output,
 			ExitCode: tidyResult.ExitCode,
-		}, errors.New("error running go mod tidy")
+		}, RecoverableError{Err: errors.New("error running go mod tidy")}
 	}
 
 	slog.DebugContext(ctx, "ran go mod tidy")

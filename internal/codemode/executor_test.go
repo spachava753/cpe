@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const windowsGOOS = "windows"
+
 func TestRunProgramWithTimeoutWithoutTerminal(t *testing.T) {
 	t.Parallel()
 
@@ -108,7 +110,7 @@ func main() {
 	})
 
 	t.Run("kills descendant processes", func(t *testing.T) {
-		if runtime.GOOS == "windows" {
+		if runtime.GOOS == windowsGOOS {
 			t.Skip("uses POSIX shell and process group semantics")
 		}
 		t.Parallel()
@@ -154,6 +156,84 @@ func main() {
 	})
 }
 
+func TestExecuteCodeReturnsRecoverableErrorForTidyFailure(t *testing.T) {
+	if runtime.GOOS == windowsGOOS {
+		t.Skip("uses a POSIX shell script to fake the go command")
+	}
+
+	binDir := t.TempDir()
+	goEnvJSON, err := exec.CommandContext(
+		t.Context(),
+		"go",
+		"env",
+		"-json",
+		"GO111MODULE",
+		"GOFLAGS",
+		"GOINSECURE",
+		"GOMOD",
+		"GOMODCACHE",
+		"GONOPROXY",
+		"GONOSUMDB",
+		"GOPATH",
+		"GOPROXY",
+		"GOROOT",
+		"GOSUMDB",
+		"GOWORK",
+	).Output()
+	if err != nil {
+		t.Fatalf("capture go env for fake go: %v", err)
+	}
+	fakeGo := filepath.Join(binDir, "go")
+	fakeGoScript := `#!/bin/sh
+if [ "$1" = "env" ] && [ "$2" = "-json" ]; then
+	cat <<'CPE_GO_ENV_JSON'
+` + string(goEnvJSON) + `
+CPE_GO_ENV_JSON
+	exit 0
+fi
+if [ "$1" = "env" ] && [ "$2" = "GOVERSION" ]; then
+	echo go1.26.4
+	exit 0
+fi
+if [ "$1" = "mod" ] && [ "$2" = "tidy" ]; then
+	echo "tidy failed deterministically"
+	exit 1
+fi
+echo "unexpected go invocation: $*" >&2
+exit 1
+`
+	if err := os.WriteFile(fakeGo, []byte(fakeGoScript), 0o700); err != nil {
+		t.Fatalf("write fake go: %v", err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	callback := &ExecuteGoCodeCallback{}
+	result, err := callback.executeCode(t.Context(), `package main
+
+import (
+	"context"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+func Run(ctx context.Context) ([]mcp.Content, error) {
+	return nil, nil
+}
+`, 5)
+	if err == nil {
+		t.Fatal("executeCode() error = nil, want recoverable tidy failure")
+	}
+	if _, ok := errors.AsType[RecoverableError](err); !ok {
+		t.Fatalf("executeCode() error = %T %[1]v, want RecoverableError", err)
+	}
+	if result.ExitCode != 1 {
+		t.Fatalf("executeCode() exit code = %d, output = %q, want 1", result.ExitCode, result.Output)
+	}
+	if !strings.Contains(result.Output, "tidy failed deterministically") {
+		t.Fatalf("executeCode() output = %q, want fake tidy output", result.Output)
+	}
+}
+
 func buildTestProgram(t *testing.T, source string) string {
 	t.Helper()
 
@@ -164,7 +244,7 @@ func buildTestProgram(t *testing.T, source string) string {
 	}
 
 	binaryPath := filepath.Join(dir, "program")
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsGOOS {
 		binaryPath += ".exe"
 	}
 	cmd := exec.CommandContext(t.Context(), "go", "build", "-o", binaryPath, sourcePath)
