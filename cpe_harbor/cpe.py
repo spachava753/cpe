@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import re
@@ -5,6 +6,7 @@ import shlex
 import sqlite3
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 from harbor.agents.installed.base import BaseInstalledAgent, with_prompt_template
 from harbor.environments.base import BaseEnvironment
@@ -36,22 +38,30 @@ class CPE(BaseInstalledAgent):
     _CONVERSATION_DB_FILENAME = ".cpeconvo"
     _CONFIG_FILENAME = "cpe.yaml"
     _SYSTEM_PROMPT_FILENAME = "agent_instructions.md"
-    _GO_VERSION = "1.25.5"
+    _GO_VERSION = "1.26.4"
 
     def __init__(
         self,
         *args: Any,
         config_url: str | None = None,
         system_prompt_url: str | None = None,
+        model_ref: str | None = None,
+        thinking_level: str | None = None,
         **kwargs: Any,
     ) -> None:
         if not config_url:
             raise ValueError("config_url agent kwarg is required")
         if not system_prompt_url:
             raise ValueError("system_prompt_url agent kwarg is required")
+        if not model_ref:
+            raise ValueError("model_ref agent kwarg is required")
+        if not thinking_level:
+            raise ValueError("thinking_level agent kwarg is required")
 
         self._config_url = config_url
         self._system_prompt_url = system_prompt_url
+        self._model_ref = model_ref
+        self._thinking_level = thinking_level
         super().__init__(*args, **kwargs)
 
     @staticmethod
@@ -98,18 +108,9 @@ class CPE(BaseInstalledAgent):
             command=self._install_go_command(),
         )
 
-        install_version = shlex.quote(self._install_version())
         await self.exec_as_agent(
             environment,
-            command=(
-                "set -euo pipefail; "
-                "mkdir -p \"$HOME/.local/bin\" && "
-                "curl -fsSL "
-                f"{shlex.quote(self._INSTALLER_URL)} | "
-                f"CPE_INSTALL_VERSION={install_version} "
-                "CPE_INSTALL_DIR=\"$HOME/.local/bin\" sh && "
-                "\"$HOME/.local/bin/cpe\" --version"
-            ),
+            command=self._install_cpe_command(),
         )
 
         await self.exec_as_agent(
@@ -138,17 +139,84 @@ class CPE(BaseInstalledAgent):
             "go version"
         )
 
-    def _install_config_command(self) -> str:
-        config_url = shlex.quote(self._config_url)
-        system_prompt_url = shlex.quote(self._system_prompt_url)
-        config_path = f"$HOME/.config/cpe/{self._CONFIG_FILENAME}"
-        system_prompt_path = f"$HOME/.config/cpe/{self._SYSTEM_PROMPT_FILENAME}"
+    def _install_cpe_command(self) -> str:
+        install_version = self._install_version()
+        quoted_install_version = shlex.quote(install_version)
+        install_pkg = shlex.quote(f"github.com/spachava753/cpe@{install_version}")
         return (
             "set -euo pipefail; "
-            "mkdir -p \"$HOME/.config/cpe\" && "
-            f"curl -fsSL {config_url} -o \"{config_path}\" && "
-            f"curl -fsSL {system_prompt_url} -o \"{system_prompt_path}\""
+            "mkdir -p \"$HOME/.local/bin\"; "
+            f"version={quoted_install_version}; "
+            "os=$(uname -s | tr '[:upper:]' '[:lower:]'); "
+            "case \"$os\" in darwin|linux) ;; *) echo \"unsupported OS: $os\" >&2; exit 1 ;; esac; "
+            "arch=$(uname -m); "
+            "case \"$arch\" in x86_64|amd64) arch=x86_64 ;; arm64|aarch64) arch=arm64 ;; *) echo \"unsupported architecture: $arch\" >&2; exit 1 ;; esac; "
+            "archive=\"cpe_${os}_${arch}.tar.gz\"; "
+            "if [ \"$version\" = \"latest\" ]; then "
+            "base_url=\"https://github.com/spachava753/cpe/releases/latest/download\"; "
+            "else base_url=\"https://github.com/spachava753/cpe/releases/download/${version}\"; fi; "
+            "tmp=$(mktemp -d); trap 'rm -rf \"$tmp\"' EXIT INT TERM; "
+            "if curl -fsSL \"$base_url/$archive\" -o \"$tmp/$archive\" && "
+            "curl -fsSL \"$base_url/checksums.txt\" -o \"$tmp/checksums.txt\" && "
+            "checksum_line=$(grep \"[[:space:]]${archive}$\" \"$tmp/checksums.txt\") && "
+            "[ -n \"$checksum_line\" ] && "
+            "printf '%s\\n' \"$checksum_line\" | (cd \"$tmp\" && sha256sum -c - >/dev/null) && "
+            "tar -xzf \"$tmp/$archive\" -C \"$tmp\" && [ -f \"$tmp/cpe\" ]; then "
+            "install -m 0755 \"$tmp/cpe\" \"$HOME/.local/bin/cpe\"; "
+            "else "
+            "echo \"CPE release binary install failed; falling back to go install\" >&2; "
+            "install_log=\"$HOME/.local/share/cpe-harbor/cpe-install.log\"; "
+            "mkdir -p \"$HOME/.local/share/cpe-harbor\"; "
+            f"if ! GOMAXPROCS=1 GOGC=25 GOMEMLIMIT=512MiB GOBIN=\"$HOME/.local/bin\" go install -p=1 {install_pkg} >\"$install_log\" 2>&1; then "
+            "filtered_log=\"$tmp/cpe-install.filtered.log\"; "
+            "grep -v '^go: downloading ' \"$install_log\" >\"$filtered_log\" || true; "
+            "if [ -s \"$filtered_log\" ]; then "
+            "echo \"go install failed; showing last 80 non-download log lines from $install_log\" >&2; "
+            "tail -n 80 \"$filtered_log\" >&2 || true; "
+            "else "
+            "echo \"go install failed after producing only module download output; showing last 40 raw log lines from $install_log\" >&2; "
+            "tail -n 40 \"$install_log\" >&2 || true; "
+            "fi; "
+            "exit 1; "
+            "fi; "
+            "fi && "
+            "\"$HOME/.local/bin/cpe\" --version"
         )
+
+    def _config_path(self) -> str:
+        return f"$HOME/.config/cpe/{self._CONFIG_FILENAME}"
+
+    def _system_prompt_path(self) -> str:
+        return f"$HOME/.config/cpe/{self._SYSTEM_PROMPT_FILENAME}"
+
+    def _install_config_command(self) -> str:
+        config_path = self._config_path()
+        system_prompt_path = self._system_prompt_path()
+        return "\n".join(
+            [
+                "set -euo pipefail",
+                "mkdir -p \"$HOME/.config/cpe\"",
+                self._install_artifact_command(self._config_url, config_path),
+                self._install_artifact_command(
+                    self._system_prompt_url, system_prompt_path
+                ),
+            ]
+        )
+
+    def _install_artifact_command(self, source: str, target_path: str) -> str:
+        parsed = urlparse(source)
+        if parsed.scheme == "file":
+            if parsed.netloc not in {"", "localhost"}:
+                raise ValueError(f"unsupported file URL host: {parsed.netloc}")
+            local_path = Path(unquote(parsed.path))
+            encoded = base64.b64encode(local_path.read_bytes()).decode("ascii")
+            return (
+                f"base64 -d > \"{target_path}\" <<'CPE_HARBOR_ARTIFACT'\n"
+                f"{encoded}\n"
+                "CPE_HARBOR_ARTIFACT"
+            )
+
+        return f"curl -fsSL {shlex.quote(source)} -o \"{target_path}\""
 
     def populate_context_post_run(self, context: AgentContext) -> None:
         db_path = self.logs_dir / self._CONVERSATION_DB_FILENAME
@@ -185,14 +253,15 @@ class CPE(BaseInstalledAgent):
                 context.cost_usd = trajectory.final_metrics.total_cost_usd
 
     def _convert_conversation_db_to_trajectory(self, db_path: Path) -> Trajectory | None:
-        messages = self._read_cpe_messages(db_path)
+        session = self._read_cpe_session_metadata(db_path)
+        messages = self._read_cpe_messages(db_path, session.get("last_message_id"))
         if not messages:
             self.logger.debug("No CPE messages found for trajectory conversion")
             return None
 
         steps: list[Step] = []
         last_agent_step: Step | None = None
-        session_id = str(messages[0]["id"])
+        session_id = str(session.get("id") or messages[0]["id"])
 
         for message in messages:
             role = message["role"]
@@ -238,7 +307,7 @@ class CPE(BaseInstalledAgent):
             return None
 
         return Trajectory(
-            schema_version="ATIF-v1.6",
+            schema_version="ATIF-v1.7",
             session_id=session_id,
             agent=Agent(
                 name="cpe",
@@ -246,10 +315,59 @@ class CPE(BaseInstalledAgent):
                 model_name=self.model_name,
             ),
             steps=steps,
-            final_metrics=self._final_metrics_from_steps(steps),
+            final_metrics=self._final_metrics_from_steps(
+                steps, total_cost_usd=session.get("cost_usd")
+            ),
         )
 
-    def _read_cpe_messages(self, db_path: Path) -> list[dict[str, Any]]:
+    def _read_cpe_session_metadata(self, db_path: Path) -> dict[str, Any]:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            conn.row_factory = sqlite3.Row
+            session_table_count = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM sqlite_master
+                WHERE type = 'table' AND name = 'acp_sessions'
+                """
+            ).fetchone()[0]
+            if session_table_count == 0:
+                return {}
+
+            session_columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(acp_sessions)").fetchall()
+            }
+            select_exprs = ["id"]
+            for column in ("last_message_id", "cost_usd"):
+                if column in session_columns:
+                    select_exprs.append(column)
+                else:
+                    select_exprs.append(f"NULL AS {column}")
+            order_by = (
+                "created_at DESC, rowid DESC"
+                if "created_at" in session_columns
+                else "rowid DESC"
+            )
+            row = conn.execute(
+                f"""
+                SELECT {", ".join(select_exprs)}
+                FROM acp_sessions
+                ORDER BY {order_by}
+                LIMIT 1
+                """
+            ).fetchone()
+
+        if row is None:
+            return {}
+        return {
+            "id": row["id"],
+            "last_message_id": row["last_message_id"],
+            "cost_usd": self._float_or_none(row["cost_usd"]),
+        }
+
+    def _read_cpe_messages(
+        self, db_path: Path, last_message_id: str | None = None
+    ) -> list[dict[str, Any]]:
         rows: list[sqlite3.Row]
         with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
             conn.row_factory = sqlite3.Row
@@ -289,15 +407,37 @@ class CPE(BaseInstalledAgent):
                     "b.sequence_order",
                 ]
             )
-            rows = conn.execute(
-                f"""
-                SELECT
-                    {", ".join(select_exprs)}
-                FROM messages m
-                LEFT JOIN blocks b ON b.message_id = m.id
-                ORDER BY m.created_at ASC, m.rowid ASC, b.sequence_order ASC
-                """
-            ).fetchall()
+            if last_message_id and "parent_id" in message_columns:
+                rows = conn.execute(
+                    f"""
+                    WITH RECURSIVE session_chain(id, depth) AS (
+                        SELECT ? AS id, 0 AS depth
+                        UNION ALL
+                        SELECT m.parent_id, session_chain.depth + 1
+                        FROM messages m
+                        JOIN session_chain ON m.id = session_chain.id
+                        WHERE m.parent_id IS NOT NULL
+                    )
+                    SELECT
+                        {", ".join(select_exprs)}
+                    FROM session_chain
+                    JOIN messages m ON m.id = session_chain.id
+                    LEFT JOIN blocks b ON b.message_id = m.id
+                    WHERE session_chain.id IS NOT NULL
+                    ORDER BY session_chain.depth DESC, b.sequence_order ASC
+                    """,
+                    (last_message_id,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    f"""
+                    SELECT
+                        {", ".join(select_exprs)}
+                    FROM messages m
+                    LEFT JOIN blocks b ON b.message_id = m.id
+                    ORDER BY m.created_at ASC, m.rowid ASC, b.sequence_order ASC
+                    """
+                ).fetchall()
 
         messages: list[dict[str, Any]] = []
         by_id: dict[str, dict[str, Any]] = {}
@@ -368,6 +508,15 @@ class CPE(BaseInstalledAgent):
             return None
         try:
             return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _float_or_none(value: Any) -> float | None:
+        if value is None:
+            return None
+        try:
+            return float(value)
         except (TypeError, ValueError):
             return None
 
@@ -453,7 +602,9 @@ class CPE(BaseInstalledAgent):
         )
 
     @staticmethod
-    def _final_metrics_from_steps(steps: list[Step]) -> FinalMetrics:
+    def _final_metrics_from_steps(
+        steps: list[Step], *, total_cost_usd: float | None = None
+    ) -> FinalMetrics:
         total_prompt_tokens = 0
         total_completion_tokens = 0
         total_cached_tokens = 0
@@ -489,6 +640,7 @@ class CPE(BaseInstalledAgent):
                 total_completion_tokens if saw_completion_tokens else None
             ),
             total_cached_tokens=total_cached_tokens if saw_cached_tokens else None,
+            total_cost_usd=total_cost_usd,
             total_steps=len(steps),
             extra=extra,
         )
@@ -536,28 +688,36 @@ class CPE(BaseInstalledAgent):
         step.observation.results.extend(results)
 
     def _cpe_model_ref(self) -> str:
-        if not self.model_name:
-            return "glm"
+        return self._model_ref
 
-        if "/" not in self.model_name:
-            return self.model_name
-
-        provider, model = self.model_name.split("/", 1)
-        if provider != "zai":
-            raise ValueError(
-                "The bundled CPE Harbor config only defines the Z.ai GLM profile; "
-                f"unsupported provider: {provider}"
-            )
-
-        if model in {"glm", "glm-5.1"}:
-            return "glm"
-        return model
+    def _is_zai_profile(self) -> bool:
+        return self._model_ref == "glm"
 
     def _run_env(self) -> dict[str, str]:
+        if not self._is_zai_profile():
+            return {}
+
         z_api_key = self._extra_env.get("Z_API_KEY") or os.environ.get("Z_API_KEY")
         if not z_api_key:
             raise ValueError("Z_API_KEY must be set to run CPE with the Z.ai profile")
         return {"Z_API_KEY": z_api_key}
+
+    def _run_command(self, instruction: str) -> str:
+        escaped_instruction = shlex.quote(instruction)
+        config_path = self._config_path()
+        db_path = f"/logs/agent/{self._CONVERSATION_DB_FILENAME}"
+        model_ref = shlex.quote(self._cpe_model_ref())
+        thinking_level = shlex.quote(self._thinking_level)
+        return (
+            "mkdir -p /logs/agent/command-0 && "
+            'export PATH="$HOME/.local/bin:$PATH" && '
+            f"cpe --config \"{config_path}\" "
+            f"--db-path {shlex.quote(db_path)} "
+            f"--model {model_ref} "
+            f"--thinking-level {thinking_level} -- {escaped_instruction} "
+            "2>&1 </dev/null | stdbuf -oL tee "
+            f"/logs/agent/{self._OUTPUT_FILENAME} /logs/agent/command-0/stdout.txt"
+        )
 
     @with_prompt_template
     async def run(
@@ -566,19 +726,8 @@ class CPE(BaseInstalledAgent):
         environment: BaseEnvironment,
         context: AgentContext,
     ) -> None:
-        escaped_instruction = shlex.quote(instruction)
-        model_ref = shlex.quote(self._cpe_model_ref())
-        db_path = f"/logs/agent/{self._CONVERSATION_DB_FILENAME}"
-
         await self.exec_as_agent(
             environment,
-            command=(
-                "mkdir -p /logs/agent/command-0 && "
-                'export PATH="$HOME/.local/bin:$PATH" && '
-                f"cpe -n --skip-stdin --db-path {shlex.quote(db_path)} "
-                f"-m {model_ref} {escaped_instruction} "
-                "2>&1 </dev/null | stdbuf -oL tee "
-                f"/logs/agent/{self._OUTPUT_FILENAME} /logs/agent/command-0/stdout.txt"
-            ),
+            command=self._run_command(instruction),
             env=self._run_env(),
         )

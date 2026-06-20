@@ -3,13 +3,16 @@ models:
   - ref: glm
     display_name: "GLM 5.1"
     id: glm-5.1
-    type: zai
+    type: openai
     base_url: https://api.z.ai/api/coding/paas/v4
     api_key_env: Z_API_KEY
     context_window: 202752
     max_output: 131072
     input_cost_per_million: 1
     output_cost_per_million: 3.2
+    thinkingValues:
+      - value: high
+        name: High
     disable_edit_tool: true
     systemPromptPath: "$HOME/.config/cpe/agent_instructions.md"
     timeout: 1h

@@ -8,16 +8,22 @@ I already have the `harbor` cli installed using `uv`.
 
 ## Verification
 
-When making changes to ./cpe.py, update or add tests in ./test_cpe.py. The CPE Harbor agent requires both `config_url` and `system_prompt_url` kwargs; use raw GitHub `main` URLs while iterating and commit-SHA URLs for final reproducible benchmark runs.
+When making changes to ./cpe.py, update or add tests in ./test_cpe.py. The CPE Harbor agent requires `config_url`, `system_prompt_url`, `model_ref`, and `thinking_level` kwargs. Use local `file://` URLs for mandatory smoke tests while iterating so Harbor validates the current worktree. Use commit-SHA raw GitHub URLs for final reproducible benchmark runs.
+
+After changing the Harbor agent or bundled configs, always run at least one single-task Harbor smoke test from this file and record the job result. Unit tests alone are not sufficient because they do not exercise Harbor setup, CPE installation, config download, or direct prompt execution inside the benchmark environment.
+
+Always pass the CPE model profile ref and thinking level explicitly with `--ak model_ref=<ref>` and `--ak thinking_level=<value>`. Harbor's `-m` model name is benchmark metadata and must not be used to infer the CPE profile.
+
+For the bundled GLM configs, make `Z_API_KEY` available in the Harbor process environment, for example by exporting it in the shell or by using Harbor's `--env-file` option.
 
 Smoke test a single task with the text-editing config:
 ```shell
-harbor run -d bigcode/humanevalfix -i bigcode/python-48 --agent-import-path cpe_harbor:CPE --ak config_url=https://raw.githubusercontent.com/spachava753/cpe/main/cpe_harbor/configs/text_edit/cpe.yaml --ak system_prompt_url=https://raw.githubusercontent.com/spachava753/cpe/main/cpe_harbor/configs/text_edit/agent_instructions.md -m zai/glm-5.1 -e daytona -n 3 --yes --agent-timeout-multiplier 4 --ae Z_API_KEY=$Z_API_KEY
+harbor run -d bigcode/humanevalfix -i bigcode/python-48 --agent-import-path cpe_harbor:CPE --ak config_url=file://$PWD/cpe_harbor/configs/text_edit/cpe.yaml --ak system_prompt_url=file://$PWD/cpe_harbor/configs/text_edit/agent_instructions.md --ak model_ref=glm --ak thinking_level=high -m zai/glm-5.1 -e daytona -n 1 --yes --agent-timeout-multiplier 4 --agent-setup-timeout-multiplier 3
 ```
 
 Smoke test a single task with the execute-Go-code editing config:
 ```shell
-harbor run -d bigcode/humanevalfix -i bigcode/python-48 --agent-import-path cpe_harbor:CPE --ak config_url=https://raw.githubusercontent.com/spachava753/cpe/main/cpe_harbor/configs/execute_go_code_edits/cpe.yaml --ak system_prompt_url=https://raw.githubusercontent.com/spachava753/cpe/main/cpe_harbor/configs/execute_go_code_edits/agent_instructions.md -m zai/glm-5.1 -e daytona -n 3 --yes --agent-timeout-multiplier 4 --ae Z_API_KEY=$Z_API_KEY
+harbor run -d bigcode/humanevalfix -i bigcode/python-48 --agent-import-path cpe_harbor:CPE --ak config_url=file://$PWD/cpe_harbor/configs/execute_go_code_edits/cpe.yaml --ak system_prompt_url=file://$PWD/cpe_harbor/configs/execute_go_code_edits/agent_instructions.md --ak model_ref=glm --ak thinking_level=high -m zai/glm-5.1 -e daytona -n 1 --yes --agent-timeout-multiplier 4 --agent-setup-timeout-multiplier 3
 ```
 
 For full experiment runs, omit `-i bigcode/python-48` and use `-n 5` to run five concurrent trials. Allow up to an hour for the full dataset.

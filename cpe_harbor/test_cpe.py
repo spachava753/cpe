@@ -1,3 +1,4 @@
+import base64
 import shlex
 import sqlite3
 import tempfile
@@ -17,9 +18,13 @@ class CPETrajectoryConversionTest(unittest.TestCase):
 
         self.assertIsNotNone(trajectory)
         assert trajectory is not None
+        self.assertEqual(trajectory.schema_version, "ATIF-v1.7")
+        self.assertEqual(trajectory.session_id, "session-1")
         self.assertEqual(trajectory.final_metrics.total_prompt_tokens, 11)
         self.assertEqual(trajectory.final_metrics.total_completion_tokens, 7)
         self.assertEqual(trajectory.final_metrics.total_cached_tokens, 3)
+        self.assertEqual(trajectory.final_metrics.total_cost_usd, 0.42)
+        self.assertEqual(trajectory.final_metrics.total_steps, 2)
         self.assertEqual(
             trajectory.final_metrics.extra, {"total_cache_write_tokens": 2}
         )
@@ -46,6 +51,7 @@ class CPETrajectoryConversionTest(unittest.TestCase):
         self.assertIsNone(trajectory.final_metrics.total_prompt_tokens)
         self.assertIsNone(trajectory.final_metrics.total_completion_tokens)
         self.assertIsNone(trajectory.final_metrics.total_cached_tokens)
+        self.assertIsNone(trajectory.final_metrics.total_cost_usd)
         self.assertIsNone(trajectory.final_metrics.extra)
         self.assertEqual(trajectory.final_metrics.total_steps, 2)
 
@@ -81,6 +87,30 @@ class CPETrajectoryConversionTest(unittest.TestCase):
                     config_url="https://example.com/cpe.yaml",
                 )
 
+    def test_constructor_requires_model_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaisesRegex(ValueError, "model_ref agent kwarg is required"):
+                CPE(
+                    Path(tmpdir),
+                    model_name="zai/glm-5.1",
+                    config_url="https://example.com/cpe.yaml",
+                    system_prompt_url="https://example.com/prompt.md",
+                    thinking_level="high",
+                )
+
+    def test_constructor_requires_thinking_level(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaisesRegex(
+                ValueError, "thinking_level agent kwarg is required"
+            ):
+                CPE(
+                    Path(tmpdir),
+                    model_name="zai/glm-5.1",
+                    config_url="https://example.com/cpe.yaml",
+                    system_prompt_url="https://example.com/prompt.md",
+                    model_ref="glm",
+                )
+
     def test_install_config_command_downloads_required_artifacts(self) -> None:
         agent = self._agent()
         agent._config_url = "https://example.com/config.yaml?token=it's-real"
@@ -100,14 +130,124 @@ class CPETrajectoryConversionTest(unittest.TestCase):
             command,
         )
 
+    def test_install_config_command_embeds_local_file_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "cpe.yaml"
+            prompt_path = Path(tmpdir) / "agent_instructions.md"
+            config_path.write_text("version: '1.0'\n", encoding="utf-8")
+            prompt_path.write_text("agent prompt\n", encoding="utf-8")
+
+            agent = self._agent()
+            agent._config_url = config_path.as_uri()
+            agent._system_prompt_url = prompt_path.as_uri()
+
+            command = agent._install_config_command()
+
+            self.assertIn(
+                'base64 -d > "$HOME/.config/cpe/cpe.yaml"',
+                command,
+            )
+            self.assertIn(
+                'base64 -d > "$HOME/.config/cpe/agent_instructions.md"',
+                command,
+            )
+            self.assertIn(
+                base64.b64encode(config_path.read_bytes()).decode("ascii"),
+                command,
+            )
+            self.assertIn(
+                base64.b64encode(prompt_path.read_bytes()).decode("ascii"),
+                command,
+            )
+            self.assertNotIn("curl -fsSL file://", command)
+
     def test_install_go_command_downloads_official_toolchain(self) -> None:
         agent = self._agent()
 
         command = agent._install_go_command()
 
-        self.assertIn("go1.25.5.linux-${go_arch}.tar.gz", command)
+        self.assertIn("go1.26.4.linux-${go_arch}.tar.gz", command)
         self.assertIn("ln -sf /usr/local/go/bin/go /usr/local/bin/go", command)
         self.assertIn("go version", command)
+
+    def test_install_cpe_command_uses_release_binary_with_go_install_fallback(self) -> None:
+        agent = self._agent()
+        agent._version = "0.41.0"
+
+        command = agent._install_cpe_command()
+
+        self.assertIn("version=v0.41.0", command)
+        self.assertIn(
+            "https://github.com/spachava753/cpe/releases/download/${version}",
+            command,
+        )
+        self.assertIn('archive="cpe_${os}_${arch}.tar.gz"', command)
+        self.assertIn("checksums.txt", command)
+        self.assertIn("sha256sum -c", command)
+        self.assertIn("install -m 0755", command)
+        self.assertIn("falling back to go install", command)
+        self.assertIn(
+            "install_log=\"$HOME/.local/share/cpe-harbor/cpe-install.log\"",
+            command,
+        )
+        self.assertIn(
+            "GOMAXPROCS=1 GOGC=25 GOMEMLIMIT=512MiB "
+            "GOBIN=\"$HOME/.local/bin\" go install -p=1 "
+            "github.com/spachava753/cpe@v0.41.0",
+            command,
+        )
+        self.assertIn(">\"$install_log\" 2>&1", command)
+        self.assertIn("grep -v '^go: downloading '", command)
+        self.assertIn("tail -n 80 \"$filtered_log\"", command)
+        self.assertIn("tail -n 40 \"$install_log\"", command)
+        self.assertIn("\"$HOME/.local/bin/cpe\" --version", command)
+
+    def test_run_command_uses_current_direct_prompt_cli(self) -> None:
+        agent = self._agent()
+        instruction = "- fix the failing test"
+
+        command = agent._run_command(instruction)
+
+        self.assertIn('export PATH="$HOME/.local/bin:$PATH"', command)
+        self.assertIn('cpe --config "$HOME/.config/cpe/cpe.yaml"', command)
+        self.assertIn("--db-path /logs/agent/.cpeconvo", command)
+        self.assertIn("--model glm --thinking-level high --", command)
+        self.assertIn(shlex.quote(instruction), command)
+        self.assertIn("</dev/null", command)
+        self.assertIn("| stdbuf -oL tee", command)
+        self.assertNotIn("--skip-stdin", command)
+        self.assertNotIn(" -n ", command)
+
+    def test_cpe_model_ref_is_always_explicit(self) -> None:
+        agent = self._agent()
+        agent._model_ref = "custom-profile"
+        agent.model_name = "anthropic/claude-sonnet"
+
+        self.assertEqual(agent._cpe_model_ref(), "custom-profile")
+
+    def test_run_env_uses_explicit_model_ref_only(self) -> None:
+        agent = self._agent()
+        agent._extra_env = {"Z_API_KEY": "secret"}
+        agent.model_name = "openai/gpt-5.5"
+        self.assertEqual(agent._run_env(), {"Z_API_KEY": "secret"})
+
+        agent._model_ref = "gpt"
+        agent.model_name = "zai/glm-5.1"
+        agent._extra_env = {}
+        self.assertEqual(agent._run_env(), {})
+
+    def test_bundled_glm_configs_use_implemented_provider_type(self) -> None:
+        config_root = Path(__file__).parent / "configs"
+        for relative_path in (
+            Path("text_edit") / "cpe.yaml",
+            Path("execute_go_code_edits") / "cpe.yaml",
+        ):
+            config_text = (config_root / relative_path).read_text(encoding="utf-8")
+
+            self.assertIn("type: openai", config_text)
+            self.assertNotIn("type: zai", config_text)
+            self.assertIn("thinkingValues:", config_text)
+            self.assertIn("- value: high", config_text)
 
     def test_execute_go_code_prompt_does_not_name_text_editor_tool(self) -> None:
         prompt_path = (
@@ -130,15 +270,19 @@ class CPETrajectoryConversionTest(unittest.TestCase):
             configs_dir / "execute_go_code_edits" / "cpe.yaml"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("type: builtin", text_edit_config)
-        self.assertIn("- text_edit", text_edit_config)
+        self.assertNotIn("disable_edit_tool: true", text_edit_config)
+        self.assertIn("codeMode:", text_edit_config)
         self.assertNotIn("mcpServers:", execute_go_config)
+        self.assertIn("disable_edit_tool: true", execute_go_config)
         self.assertIn("codeMode:", execute_go_config)
 
     @staticmethod
     def _agent() -> CPE:
         agent = object.__new__(CPE)
         agent._version = "test"
+        agent._model_ref = "glm"
+        agent._thinking_level = "high"
+        agent._extra_env = {}
         agent.model_name = "zai/glm-5.1"
         return agent
 
@@ -188,6 +332,32 @@ class CPETrajectoryConversionTest(unittest.TestCase):
                 ) VALUES ('a1', 'content', 0, 'text/plain', 'answer', 0)
                 """
             )
+            if include_metadata_columns:
+                conn.execute(
+                    """
+                    INSERT INTO messages (id, role, created_at)
+                    VALUES ('other', 'user', '2026-01-01 00:00:02')
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO blocks (
+                        message_id, block_type, modality_type, mime_type, content,
+                        sequence_order
+                    ) VALUES ('other', 'content', 0, 'text/plain', 'unrelated', 0)
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO acp_sessions (
+                        id, last_message_id, cwd, title, model_ref, thinking_level,
+                        cost_usd, created_at
+                    ) VALUES (
+                        'session-1', 'a1', '/workspace', 'benchmark', 'glm', '',
+                        0.42, '2026-01-01 00:00:03'
+                    )
+                    """
+                )
         return db_path
 
     @staticmethod
@@ -195,6 +365,7 @@ class CPETrajectoryConversionTest(unittest.TestCase):
         conn: sqlite3.Connection, *, include_metadata_columns: bool
     ) -> None:
         metadata_columns = ""
+        session_schema = ""
         if include_metadata_columns:
             metadata_columns = """
                 message_extra_fields TEXT,
@@ -206,6 +377,18 @@ class CPETrajectoryConversionTest(unittest.TestCase):
                 output_tokens INTEGER,
                 cache_read_tokens INTEGER,
                 cache_write_tokens INTEGER,
+            """
+            session_schema = """
+            CREATE TABLE acp_sessions (
+                id TEXT PRIMARY KEY,
+                last_message_id TEXT,
+                cwd TEXT NOT NULL,
+                title TEXT NOT NULL,
+                model_ref TEXT NOT NULL,
+                thinking_level TEXT NOT NULL DEFAULT '',
+                cost_usd REAL NOT NULL DEFAULT 0,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
             """
 
         conn.executescript(
@@ -231,6 +414,7 @@ class CPETrajectoryConversionTest(unittest.TestCase):
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (message_id, sequence_order)
             );
+            {session_schema}
             """
         )
 
