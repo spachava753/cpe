@@ -2,14 +2,23 @@ package agent
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"maps"
 	"net/http"
+	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
+	a "github.com/anthropics/anthropic-sdk-go"
+	aopts "github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/spachava753/gai"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 
 	"github.com/spachava753/cpe/internal/config"
 )
@@ -18,6 +27,19 @@ type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+func useStaticGoogleCredentials(t *testing.T, token string) {
+	t.Helper()
+	original := findDefaultGoogleCredentials
+	findDefaultGoogleCredentials = func(context.Context, ...string) (*google.Credentials, error) {
+		return &google.Credentials{
+			TokenSource: oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token}),
+		}, nil
+	}
+	t.Cleanup(func() {
+		findDefaultGoogleCredentials = original
+	})
 }
 
 func TestHTTPClientConfiguration(t *testing.T) {
@@ -123,6 +145,218 @@ func TestInitGeneratorFromModel_WrapsOnlyResponsesWithPhaseRetry(t *testing.T) {
 	}
 	if _, ok := openAIGen.(*responsesPhaseRetryGenerator); ok {
 		t.Fatalf("openai generator type = %T, did not want *responsesPhaseRetryGenerator", openAIGen)
+	}
+}
+
+func TestInitGeneratorFromModel_AnthropicVertexRequiresVertexConfig(t *testing.T) {
+	_, err := InitGeneratorFromModel(t.Context(), config.Model{
+		ID:   "claude-sonnet-4-6",
+		Type: modelTypeAnthropicVertex,
+	}, "", time.Minute)
+	if err == nil {
+		t.Fatal("expected missing vertex config error")
+	}
+	want := "vertex configuration is required for anthropic_vertex models"
+	if err.Error() != want {
+		t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
+	}
+}
+
+func TestVertexScopes(t *testing.T) {
+	if got := vertexScopes(&config.VertexConfig{}); !slices.Equal(got, []string{googleCloudPlatformScope}) {
+		t.Fatalf("vertexScopes() = %#v, want cloud-platform default", got)
+	}
+
+	customScopes := []string{"https://example.test/scope-a", "https://example.test/scope-b"}
+	if got := vertexScopes(&config.VertexConfig{Scopes: customScopes}); !slices.Equal(got, customScopes) {
+		t.Fatalf("vertexScopes() = %#v, want %#v", got, customScopes)
+	}
+}
+
+func TestAnthropicVertexRequestOptionsUseGoogleAuthAndVertexRequestShape(t *testing.T) {
+	const modelID = "claude-sonnet-4-6"
+	tests := []struct {
+		name      string
+		apiKey    string
+		authToken string
+	}{
+		{
+			name:   "ignores Anthropic API key env",
+			apiKey: "anthropic-api-key",
+		},
+		{
+			name:      "ignores Anthropic auth token env",
+			authToken: "anthropic-auth-token",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("ANTHROPIC_API_KEY", tt.apiKey)
+			t.Setenv("ANTHROPIC_AUTH_TOKEN", tt.authToken)
+			t.Setenv("ANTHROPIC_BASE_URL", "https://anthropic-env.invalid")
+
+			requestCount := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requestCount++
+				if r.Method != http.MethodPost {
+					t.Errorf("method = %s, want %s", r.Method, http.MethodPost)
+					http.Error(w, "unexpected method", http.StatusBadRequest)
+					return
+				}
+				wantPath := fmt.Sprintf("/v1/projects/test-project/locations/global/publishers/anthropic/models/%s:rawPredict", modelID)
+				if r.URL.Path != wantPath {
+					t.Errorf("path = %s, want %s", r.URL.Path, wantPath)
+					http.Error(w, "unexpected path", http.StatusBadRequest)
+					return
+				}
+				if got := r.Header.Get("X-Api-Key"); got != "" {
+					t.Errorf("X-Api-Key header = %q, want empty", got)
+					http.Error(w, "unexpected Anthropic API key", http.StatusBadRequest)
+					return
+				}
+				if got := r.Header.Get("Authorization"); got != "Bearer google-token" {
+					t.Errorf("Authorization header = %q, want Google bearer token", got)
+					http.Error(w, "unexpected Authorization", http.StatusBadRequest)
+					return
+				}
+				if got := r.Header.Get("anthropic-beta"); got != anthropicFeatureBetaHeader {
+					t.Errorf("anthropic-beta header = %q, want %q", got, anthropicFeatureBetaHeader)
+					http.Error(w, "unexpected beta header", http.StatusBadRequest)
+					return
+				}
+
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Errorf("ReadAll() error = %v", err)
+					http.Error(w, "read body", http.StatusBadRequest)
+					return
+				}
+				var payload map[string]any
+				if err := json.Unmarshal(body, &payload); err != nil {
+					t.Errorf("request body is not JSON: %v", err)
+					http.Error(w, "bad json", http.StatusBadRequest)
+					return
+				}
+				if got := payload["anthropic_version"]; got != "vertex-2023-10-16" {
+					t.Errorf("anthropic_version = %#v, want vertex-2023-10-16", got)
+					http.Error(w, "unexpected anthropic_version", http.StatusBadRequest)
+					return
+				}
+				if _, ok := payload["model"]; ok {
+					t.Errorf("request body still contains model: %s", body)
+					http.Error(w, "model was not removed", http.StatusBadRequest)
+					return
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"hi"}],"model":"claude-sonnet-4-6","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`)
+			}))
+			defer server.Close()
+
+			useStaticGoogleCredentials(t, "google-token")
+			opts, err := anthropicVertexRequestOptions(t.Context(), &config.VertexConfig{
+				ProjectID: "test-project",
+				Region:    "global",
+			}, nil, time.Minute)
+			if err != nil {
+				t.Fatalf("anthropicVertexRequestOptions() error = %v", err)
+			}
+			opts = append(opts, aopts.WithBaseURL(server.URL))
+			client := a.NewClient(opts...)
+			_, err = client.Messages.New(t.Context(), a.MessageNewParams{
+				MaxTokens: 1,
+				Messages:  []a.MessageParam{a.NewUserMessage(a.NewTextBlock("hello"))},
+				Model:     a.Model(modelID),
+			})
+			if err != nil {
+				t.Fatalf("Messages.New() error = %v", err)
+			}
+			if requestCount != 1 {
+				t.Fatalf("request count = %d, want 1", requestCount)
+			}
+		})
+	}
+}
+
+func TestAnthropicVertexRequestOptionsApplyPatchRequest(t *testing.T) {
+	const modelID = "claude-sonnet-4-6"
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		wantPath := fmt.Sprintf("/v1/projects/test-project/locations/global/publishers/anthropic/models/%s:rawPredict", modelID)
+		if r.URL.Path != wantPath {
+			t.Errorf("path = %s, want %s", r.URL.Path, wantPath)
+			http.Error(w, "unexpected path", http.StatusBadRequest)
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer google-token" {
+			t.Errorf("Authorization header = %q, want Google bearer token", got)
+			http.Error(w, "unexpected Authorization", http.StatusBadRequest)
+			return
+		}
+		if got := r.Header.Get("X-Vertex-Test"); got != "patched" {
+			t.Errorf("X-Vertex-Test header = %q, want patched", got)
+			http.Error(w, "missing patched header", http.StatusBadRequest)
+			return
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("ReadAll() error = %v", err)
+			http.Error(w, "read body", http.StatusBadRequest)
+			return
+		}
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Errorf("request body is not JSON: %v", err)
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		if got := payload["anthropic_version"]; got != "patched-vertex-version" {
+			t.Errorf("anthropic_version = %#v, want patched-vertex-version", got)
+			http.Error(w, "unexpected anthropic_version", http.StatusBadRequest)
+			return
+		}
+		metadata, ok := payload["metadata"].(map[string]any)
+		if !ok || metadata["user_id"] != "patched-user" {
+			t.Errorf("metadata = %#v, want patched user_id", payload["metadata"])
+			http.Error(w, "unexpected metadata", http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"hi"}],"model":"claude-sonnet-4-6","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`)
+	}))
+	defer server.Close()
+
+	useStaticGoogleCredentials(t, "google-token")
+	patchConfig := &config.PatchRequestConfig{
+		JSONPatch: []map[string]any{
+			{"op": "replace", "path": "/anthropic_version", "value": "patched-vertex-version"},
+			{"op": "add", "path": "/metadata", "value": map[string]any{"user_id": "patched-user"}},
+		},
+		IncludeHeaders: map[string]string{"X-Vertex-Test": "patched"},
+	}
+	opts, err := anthropicVertexRequestOptions(t.Context(), &config.VertexConfig{
+		ProjectID: "test-project",
+		Region:    "global",
+	}, patchConfig, time.Minute)
+	if err != nil {
+		t.Fatalf("anthropicVertexRequestOptions() error = %v", err)
+	}
+	opts = append(opts, aopts.WithBaseURL(server.URL))
+	client := a.NewClient(opts...)
+	_, err = client.Messages.New(t.Context(), a.MessageNewParams{
+		MaxTokens: 1,
+		Messages:  []a.MessageParam{a.NewUserMessage(a.NewTextBlock("hello"))},
+		Model:     a.Model(modelID),
+	})
+	if err != nil {
+		t.Fatalf("Messages.New() error = %v", err)
+	}
+	if requestCount != 1 {
+		t.Fatalf("request count = %d, want 1", requestCount)
 	}
 }
 

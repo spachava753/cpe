@@ -135,6 +135,7 @@ Supported model `type` values include:
 | Provider | Type |
 | --- | --- |
 | Anthropic | `anthropic` |
+| Anthropic on Google Vertex AI | `anthropic_vertex` |
 | OpenAI Chat Completions | `openai` |
 | OpenAI Responses API | `responses` |
 | Google Gemini | `gemini` |
@@ -205,6 +206,25 @@ models:
     max_output: 128000
 ```
 
+### Anthropic on Google Vertex AI
+
+Use `type: anthropic_vertex` for Claude models served through Vertex AI. These profiles use Google Application Default Credentials and IAM instead of Anthropic API keys, so do not set `api_key_env`, `auth_method`, or `base_url`. `patchRequest` remains available for custom headers or JSON request patches.
+
+```yaml
+models:
+  - ref: vertex-sonnet
+    display_name: "Claude Sonnet 4.6 on Vertex AI"
+    id: claude-sonnet-4-6
+    type: anthropic_vertex
+    context_window: 200000
+    max_output: 64000
+    vertex:
+      project_id: my-gcp-project
+      region: global
+```
+
+Before using the profile, enable the Vertex AI API, enable/request the Claude model in Vertex AI Model Garden, configure Google credentials such as `gcloud auth application-default login` or `GOOGLE_APPLICATION_CREDENTIALS`, and grant an IAM role such as `roles/aiplatform.user` that includes `aiplatform.endpoints.predict`. Model availability varies by `global`, multi-region locations such as `us` and `eu`, and regional locations.
+
 ### Environment Variables
 
 | Variable | Description |
@@ -212,7 +232,7 @@ models:
 | `CPE_MODEL` | Default model profile for `cpe model system-prompt` and `cpe mcp ...` when `--model` is omitted |
 | `CPE_DB_PATH` | ACP session SQLite database path when `cpe acp serve --db-path` is not passed |
 
-API key variables are configured per model profile through `api_key_env`. OAuth-backed profiles use `auth_method: oauth` and provider account commands where supported.
+API key variables are configured per model profile through `api_key_env`. OAuth-backed profiles use `auth_method: oauth` and provider account commands where supported. Anthropic Vertex AI profiles use Google Application Default Credentials instead of `api_key_env`.
 
 ## Features
 
@@ -375,6 +395,8 @@ Use an absolute path for the `command` field if the editor process does not inhe
 ### API key missing
 
 Ensure the environment variable named by `api_key_env` is visible to the ACP server process. For editor-launched processes, put required variables in the client's agent server `env` block or in the environment that launches the editor.
+
+For `anthropic_vertex` profiles, CPE does not use `api_key_env`; configure Google Application Default Credentials or `GOOGLE_APPLICATION_CREDENTIALS` for the ACP server process instead.
 
 ### Model profile not found
 

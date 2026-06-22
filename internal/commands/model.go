@@ -57,16 +57,21 @@ func ModelInfo(ctx context.Context, opts ModelInfoOptions) error {
 Display Name: %s
 Type: %s
 ID: %s
-Context: %d
+`,
+		model.Ref,
+		model.DisplayName,
+		model.Type,
+		model.ID,
+	)
+	if model.Vertex != nil {
+		fmt.Fprintf(opts.Writer, "VertexProjectID: %s\nVertexRegion: %s\n", model.Vertex.ProjectID, model.Vertex.Region)
+	}
+	fmt.Fprintf(opts.Writer, `Context: %d
 MaxOutput: %d
 InputCostPerMillion: %s
 OutputCostPerMillion: %s
 CacheReadCostPerMillion: %s
 CacheWriteCostPerMillion: %s`,
-		model.Ref,
-		model.DisplayName,
-		model.Type,
-		model.ID,
 		model.ContextWindow,
 		model.MaxOutput,
 		formatCostPerMillion(model.InputCostPerMillion),

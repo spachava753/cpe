@@ -15,10 +15,11 @@ type Model struct {
 	Ref                      string                `json:"ref" yaml:"ref" validate:"required" jsonschema:"required"`
 	DisplayName              string                `json:"display_name" yaml:"display_name" validate:"required" jsonschema:"required"`
 	ID                       string                `json:"id" yaml:"id" validate:"required" jsonschema:"required"`
-	Type                     string                `json:"type" yaml:"type" validate:"required,oneof=openai anthropic gemini responses groq cerebras openrouter zai" jsonschema:"required"`
+	Type                     string                `json:"type" yaml:"type" validate:"required,oneof=openai anthropic anthropic_vertex gemini responses groq cerebras openrouter zai" jsonschema:"required"`
 	BaseUrl                  string                `json:"base_url" yaml:"base_url,omitempty" validate:"omitempty,https_url|http_url"`
-	ApiKeyEnv                string                `json:"api_key_env" yaml:"api_key_env" validate:"required_unless=AuthMethod oauth"`
+	ApiKeyEnv                string                `json:"api_key_env" yaml:"api_key_env,omitempty"`
 	AuthMethod               string                `json:"auth_method" yaml:"auth_method,omitempty" validate:"omitempty,oneof=apikey oauth"`
+	Vertex                   *VertexConfig         `json:"vertex,omitempty" yaml:"vertex,omitempty" validate:"omitempty"`
 	ContextWindow            uint32                `json:"context_window" yaml:"context_window,omitempty" validate:"required,gt=0" jsonschema:"required"`
 	MaxOutput                uint32                `json:"max_output" yaml:"max_output,omitempty" validate:"required,gt=0" jsonschema:"required"`
 	InputCostPerMillion      *float64              `json:"input_cost_per_million,omitempty" yaml:"input_cost_per_million,omitempty"`
@@ -27,6 +28,19 @@ type Model struct {
 	CacheWriteCostPerMillion *float64              `json:"cache_write_cost_per_million,omitempty" yaml:"cache_write_cost_per_million,omitempty"`
 	PatchRequest             *PatchRequestConfig   `json:"patchRequest,omitempty" yaml:"patchRequest,omitempty"`
 	ThinkingValues           []ThinkingValueConfig `json:"thinkingValues,omitempty" yaml:"thinkingValues,omitempty" validate:"dive"`
+}
+
+// VertexConfig configures Anthropic models served through Google Vertex AI.
+type VertexConfig struct {
+	// ProjectID is the Google Cloud project used for Vertex AI prediction requests.
+	ProjectID string `json:"project_id" yaml:"project_id" validate:"required" jsonschema:"required"`
+
+	// Region is a Vertex AI location such as "global", "us", "eu", or "us-east5".
+	Region string `json:"region" yaml:"region" validate:"required" jsonschema:"required"`
+
+	// Scopes optionally overrides the Google credential scopes used for ADC lookup.
+	// When omitted, CPE requests https://www.googleapis.com/auth/cloud-platform.
+	Scopes []string `json:"scopes,omitempty" yaml:"scopes,omitempty"`
 }
 
 // ThinkingValueConfig describes one model-supported thinking budget value.

@@ -59,6 +59,47 @@ func TestModelInfo_PrintsCachePricingFields(t *testing.T) {
 	}
 }
 
+func TestModelInfo_PrintsVertexFields(t *testing.T) {
+	t.Parallel()
+
+	rawCfg := &config.RawConfig{Models: []config.ModelConfig{{
+		Model: config.Model{
+			Ref:           "vertex-sonnet",
+			DisplayName:   "Vertex Sonnet",
+			Type:          "anthropic_vertex",
+			ID:            "claude-sonnet-4-6",
+			ContextWindow: 200000,
+			MaxOutput:     64000,
+			Vertex: &config.VertexConfig{
+				ProjectID: "test-project",
+				Region:    "global",
+			},
+		},
+	}}}
+
+	var out bytes.Buffer
+	err := ModelInfo(context.Background(), ModelInfoOptions{Config: rawCfg, ModelName: "vertex-sonnet", Writer: &out})
+	if err != nil {
+		t.Fatalf("ModelInfo() error = %v", err)
+	}
+
+	want := "Ref: vertex-sonnet\n" +
+		"Display Name: Vertex Sonnet\n" +
+		"Type: anthropic_vertex\n" +
+		"ID: claude-sonnet-4-6\n" +
+		"VertexProjectID: test-project\n" +
+		"VertexRegion: global\n" +
+		"Context: 200000\n" +
+		"MaxOutput: 64000\n" +
+		"InputCostPerMillion: n/a\n" +
+		"OutputCostPerMillion: n/a\n" +
+		"CacheReadCostPerMillion: n/a\n" +
+		"CacheWriteCostPerMillion: n/a\n"
+	if got := out.String(); got != want {
+		t.Fatalf("ModelInfo() output mismatch\nwant:\n%s\n\ngot:\n%s", want, got)
+	}
+}
+
 func TestModelInfo_PrintsThinkingValues(t *testing.T) {
 	t.Parallel()
 

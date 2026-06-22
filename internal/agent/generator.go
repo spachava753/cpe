@@ -10,10 +10,14 @@ import (
 
 	a "github.com/anthropics/anthropic-sdk-go"
 	aopts "github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/anthropics/anthropic-sdk-go/vertex"
 	"github.com/openai/openai-go/v3"
 	oaiopt "github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/spachava753/gai"
+	"golang.org/x/oauth2/google"
+	gapioption "google.golang.org/api/option"
+	gapitransport "google.golang.org/api/transport"
 	"google.golang.org/genai"
 
 	"github.com/spachava753/cpe/internal/auth"
@@ -21,7 +25,14 @@ import (
 	"github.com/spachava753/cpe/internal/httpclient"
 )
 
-const authMethodOAuth = "oauth"
+const (
+	authMethodOAuth            = "oauth"
+	modelTypeAnthropicVertex   = "anthropic_vertex"
+	googleCloudPlatformScope   = "https://www.googleapis.com/auth/cloud-platform"
+	anthropicFeatureBetaHeader = "interleaved-thinking-2025-05-14,context-management-2025-06-27"
+)
+
+var findDefaultGoogleCredentials = google.FindDefaultCredentials
 
 // ModelTypeResponses is the model type identifier for the OpenAI Responses API.
 const ModelTypeResponses = "responses"
@@ -64,6 +75,69 @@ func anthropicRequestOptions(apiKey string, httpClient *http.Client, timeout tim
 		aopts.WithRequestTimeout(timeout),
 		aopts.WithMaxRetries(0),
 	}
+}
+
+func anthropicVertexRequestOptions(
+	ctx context.Context,
+	vertexCfg *config.VertexConfig,
+	patchConfig *config.PatchRequestConfig,
+	timeout time.Duration,
+) (opts []aopts.RequestOption, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("configuring Google Vertex AI client: %v", recovered)
+		}
+	}()
+
+	if vertexCfg == nil {
+		return nil, fmt.Errorf("vertex configuration is required for %s models", modelTypeAnthropicVertex)
+	}
+	projectID := strings.TrimSpace(vertexCfg.ProjectID)
+	if projectID == "" {
+		return nil, fmt.Errorf("vertex.project_id is required for %s models", modelTypeAnthropicVertex)
+	}
+	region := strings.TrimSpace(vertexCfg.Region)
+	if region == "" {
+		return nil, fmt.Errorf("vertex.region is required for %s models", modelTypeAnthropicVertex)
+	}
+
+	creds, err := findDefaultGoogleCredentials(ctx, vertexScopes(vertexCfg)...)
+	if err != nil {
+		return nil, fmt.Errorf("finding Google Application Default Credentials for Vertex AI: %w", err)
+	}
+
+	opts = []aopts.RequestOption{
+		aopts.WithoutEnvironmentDefaults(),
+		aopts.WithHeader("anthropic-beta", anthropicFeatureBetaHeader),
+		vertex.WithCredentials(ctx, region, projectID, creds),
+	}
+	if patchConfig != nil {
+		// Vertex middleware rewrites the Anthropic request before the HTTP client runs;
+		// keep Google's auth transport underneath PatchTransport so IAM auth wins.
+		googleHTTPClient, _, err := gapitransport.NewHTTPClient(ctx, gapioption.WithTokenSource(creds.TokenSource))
+		if err != nil {
+			return nil, fmt.Errorf("creating Google Vertex AI HTTP client: %w", err)
+		}
+		transport, err := BuildPatchTransportFromConfig(googleHTTPClient.Transport, patchConfig)
+		if err != nil {
+			return nil, fmt.Errorf("building patch transport for Vertex AI: %w", err)
+		}
+		googleHTTPClient.Transport = transport
+		googleHTTPClient.Timeout = timeout
+		opts = append(opts, aopts.WithHTTPClient(googleHTTPClient))
+	}
+	opts = append(opts,
+		aopts.WithRequestTimeout(timeout),
+		aopts.WithMaxRetries(0),
+	)
+	return opts, nil
+}
+
+func vertexScopes(vertexCfg *config.VertexConfig) []string {
+	if len(vertexCfg.Scopes) > 0 {
+		return vertexCfg.Scopes
+	}
+	return []string{googleCloudPlatformScope}
 }
 
 // ApplyResponsesThinkingSummary ensures that when using the OpenAI Responses API
@@ -179,7 +253,7 @@ func InitGeneratorFromModel(
 			}
 			// Add beta headers for interleaved thinking and context management
 			anthOpts := append(anthropicRequestOptions(apiKey, httpClient, timeout),
-				aopts.WithHeader("anthropic-beta", "interleaved-thinking-2025-05-14,context-management-2025-06-27"),
+				aopts.WithHeader("anthropic-beta", anthropicFeatureBetaHeader),
 			)
 			if baseURL != "" {
 				anthOpts = append(anthOpts, aopts.WithBaseURL(baseURL))
@@ -194,6 +268,18 @@ func InitGeneratorFromModel(
 		// For OAuth, prepend Claude Code identifier (required by Anthropic for OAuth tokens)
 		if authMethod == authMethodOAuth {
 			modifiers = append([]gai.AnthropicServiceParamModifierFunc{prependClaudeCodeIdentifier}, modifiers...)
+		}
+		svc := gai.NewAnthropicServiceWrapper(&client.Messages, modifiers...)
+		gen = gai.NewAnthropicGenerator(svc, m.ID, systemPrompt)
+	case modelTypeAnthropicVertex:
+		anthOpts, err := anthropicVertexRequestOptions(ctx, m.Vertex, m.PatchRequest, timeout)
+		if err != nil {
+			return nil, err
+		}
+		client := a.NewClient(anthOpts...)
+		modifiers := []gai.AnthropicServiceParamModifierFunc{
+			gai.EnableSystemCaching,
+			gai.EnableMultiTurnCaching,
 		}
 		svc := gai.NewAnthropicServiceWrapper(&client.Messages, modifiers...)
 		gen = gai.NewAnthropicGenerator(svc, m.ID, systemPrompt)
