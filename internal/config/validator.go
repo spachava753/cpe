@@ -45,13 +45,64 @@ func validateSelectedProfile(model ModelConfig) error {
 	return nil
 }
 
-// validateModelAuth validates provider-specific auth_method constraints.
-// Currently, auth_method=oauth is restricted to anthropic and responses ports.
+// validateModelAuth validates provider-specific authentication constraints.
+// Anthropic-on-Vertex uses Google ADC and IAM instead of CPE's API-key/OAuth paths.
 func validateModelAuth(m ModelConfig) error {
-	if strings.ToLower(m.AuthMethod) == "oauth" {
-		modelType := strings.ToLower(m.Type)
+	modelType := strings.ToLower(m.Type)
+	authMethod := strings.ToLower(strings.TrimSpace(m.AuthMethod))
+
+	if modelType == "anthropic_vertex" {
+		return validateAnthropicVertexModel(m)
+	}
+	if m.Vertex != nil {
+		return fmt.Errorf("vertex configuration is only supported for anthropic_vertex models")
+	}
+	if authMethod == "oauth" {
 		if modelType != "anthropic" && modelType != "responses" {
 			return fmt.Errorf("auth_method 'oauth' is only supported for anthropic and responses providers")
+		}
+		return nil
+	}
+	if strings.TrimSpace(m.ApiKeyEnv) == "" {
+		return fmt.Errorf("api_key_env is required unless auth_method is oauth or type is anthropic_vertex")
+	}
+	if m.ApiKeyEnv != strings.TrimSpace(m.ApiKeyEnv) {
+		return fmt.Errorf("api_key_env must not have leading or trailing whitespace")
+	}
+	return nil
+}
+
+func validateAnthropicVertexModel(m ModelConfig) error {
+	if strings.TrimSpace(m.AuthMethod) != "" {
+		return fmt.Errorf("auth_method is not supported for anthropic_vertex models; Google Application Default Credentials are used")
+	}
+	if strings.TrimSpace(m.ApiKeyEnv) != "" {
+		return fmt.Errorf("api_key_env is not supported for anthropic_vertex models; Google Application Default Credentials are used")
+	}
+	if strings.TrimSpace(m.BaseUrl) != "" {
+		return fmt.Errorf("base_url is not supported for anthropic_vertex models; configure vertex.region instead")
+	}
+	if m.Vertex == nil {
+		return fmt.Errorf("vertex configuration is required for anthropic_vertex models")
+	}
+	if strings.TrimSpace(m.Vertex.ProjectID) == "" {
+		return fmt.Errorf("vertex.project_id is required for anthropic_vertex models")
+	}
+	if m.Vertex.ProjectID != strings.TrimSpace(m.Vertex.ProjectID) {
+		return fmt.Errorf("vertex.project_id must not have leading or trailing whitespace")
+	}
+	if strings.TrimSpace(m.Vertex.Region) == "" {
+		return fmt.Errorf("vertex.region is required for anthropic_vertex models")
+	}
+	if m.Vertex.Region != strings.TrimSpace(m.Vertex.Region) {
+		return fmt.Errorf("vertex.region must not have leading or trailing whitespace")
+	}
+	for i, scope := range m.Vertex.Scopes {
+		if strings.TrimSpace(scope) == "" {
+			return fmt.Errorf("vertex.scopes[%d] must not be empty", i)
+		}
+		if scope != strings.TrimSpace(scope) {
+			return fmt.Errorf("vertex.scopes[%d] must not have leading or trailing whitespace", i)
 		}
 	}
 	return nil

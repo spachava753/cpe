@@ -8,12 +8,6 @@
         "enabled": {
           "type": "boolean"
         },
-        "localModulePaths": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
         "maxTimeout": {
           "type": "integer"
         },
@@ -85,6 +79,9 @@
         },
         "auth_method": {
           "type": "string"
+        },
+        "vertex": {
+          "$ref": "#/$defs/VertexConfig"
         },
         "context_window": {
           "type": "integer"
@@ -504,6 +501,28 @@
       "type": "object",
       "required": [
         "value"
+      ]
+    },
+    "VertexConfig": {
+      "properties": {
+        "project_id": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "project_id",
+        "region"
       ]
     }
   },

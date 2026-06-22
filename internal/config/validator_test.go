@@ -70,6 +70,92 @@ func TestValidateModelAuth(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "anthropic vertex with google config and patch request is valid",
+			model: ModelConfig{
+				Model: Model{
+					Ref:           "test",
+					DisplayName:   "Test",
+					ID:            "claude-sonnet-4-6",
+					Type:          "anthropic_vertex",
+					ContextWindow: 200000,
+					MaxOutput:     64000,
+					Vertex: &VertexConfig{
+						ProjectID: "test-project",
+						Region:    "global",
+					},
+					PatchRequest: &PatchRequestConfig{
+						IncludeHeaders: map[string]string{"X-Test": "true"},
+						JSONPatch: []map[string]any{
+							{"op": "add", "path": "/metadata", "value": map[string]any{"user_id": "test"}},
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing api key env for api key provider is invalid",
+			model: ModelConfig{
+				Model: Model{
+					Ref:         "test",
+					DisplayName: "Test",
+					ID:          "gpt-4",
+					Type:        "openai",
+				},
+			},
+			wantErr:    true,
+			wantErrMsg: "api_key_env is required unless auth_method is oauth or type is anthropic_vertex",
+		},
+		{
+			name: "vertex config on non vertex provider is invalid",
+			model: ModelConfig{
+				Model: Model{
+					Ref:         "test",
+					DisplayName: "Test",
+					ID:          "claude-sonnet-4-6",
+					Type:        "anthropic",
+					ApiKeyEnv:   "ANTHROPIC_API_KEY",
+					Vertex: &VertexConfig{
+						ProjectID: "test-project",
+						Region:    "global",
+					},
+				},
+			},
+			wantErr:    true,
+			wantErrMsg: "vertex configuration is only supported for anthropic_vertex models",
+		},
+		{
+			name: "anthropic vertex requires vertex config",
+			model: ModelConfig{
+				Model: Model{
+					Ref:         "test",
+					DisplayName: "Test",
+					ID:          "claude-sonnet-4-6",
+					Type:        "anthropic_vertex",
+				},
+			},
+			wantErr:    true,
+			wantErrMsg: "vertex configuration is required for anthropic_vertex models",
+		},
+		{
+			name: "anthropic vertex rejects api key env",
+			model: ModelConfig{
+				Model: Model{
+					Ref:         "test",
+					DisplayName: "Test",
+					ID:          "claude-sonnet-4-6",
+					Type:        "anthropic_vertex",
+					ApiKeyEnv:   "ANTHROPIC_API_KEY",
+					Vertex: &VertexConfig{
+						ProjectID: "test-project",
+						Region:    "global",
+					},
+				},
+			},
+			wantErr:    true,
+			wantErrMsg: "api_key_env is not supported for anthropic_vertex models; Google Application Default Credentials are used",
+		},
+		{
 			name: "oauth for openai type is invalid",
 			model: ModelConfig{
 				Model: Model{

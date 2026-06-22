@@ -93,7 +93,7 @@ func WithBlockFilter(modelType string) gai.WrapperFunc {
 
 func providerBlockKeepFunc(modelType string) blockKeepFunc {
 	switch strings.ToLower(modelType) {
-	case "anthropic":
+	case "anthropic", "anthropic_vertex":
 		return thinkingBlockKeepFunc([]string{gai.ThinkingGeneratorAnthropic})
 	case "gemini":
 		return thinkingBlockKeepFunc([]string{gai.ThinkingGeneratorGemini})

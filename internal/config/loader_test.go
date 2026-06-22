@@ -42,3 +42,35 @@ func TestParseConfigDataSupportsDisableEditTool(t *testing.T) {
 		t.Fatal("DisableEditTool = false, want true")
 	}
 }
+
+func TestParseConfigDataSupportsAnthropicVertexConfig(t *testing.T) {
+	cfg, err := parseConfigData([]byte(`models:
+  - ref: vertex-sonnet
+    display_name: Vertex Sonnet
+    id: claude-sonnet-4-6
+    type: anthropic_vertex
+    context_window: 200000
+    max_output: 64000
+    vertex:
+      project_id: test-project
+      region: global
+      scopes:
+        - https://www.googleapis.com/auth/cloud-platform
+`), "cpe.yaml")
+	if err != nil {
+		t.Fatalf("parseConfigData returned error: %v", err)
+	}
+	vertex := cfg.Models[0].Vertex
+	if vertex == nil {
+		t.Fatal("Vertex = nil, want config")
+	}
+	if vertex.ProjectID != "test-project" {
+		t.Fatalf("ProjectID = %q, want test-project", vertex.ProjectID)
+	}
+	if vertex.Region != "global" {
+		t.Fatalf("Region = %q, want global", vertex.Region)
+	}
+	if len(vertex.Scopes) != 1 || vertex.Scopes[0] != "https://www.googleapis.com/auth/cloud-platform" {
+		t.Fatalf("Scopes = %#v, want cloud-platform scope", vertex.Scopes)
+	}
+}

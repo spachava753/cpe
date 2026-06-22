@@ -37,6 +37,22 @@ models:
       maxTimeout: 3600
       largeOutputCharLimit: 150000
 
+  - ref: vertex-sonnet
+    display_name: "Claude Sonnet 4.6 (Vertex AI)"
+    id: claude-sonnet-4-6
+    type: anthropic_vertex
+    context_window: 200000
+    max_output: 64000
+    thinkingValues: *claudeThinkingValues
+    systemPromptPath: ./agent_instructions.md
+    timeout: *standardTimeout
+    generationParams:
+      maxGenerationTokens: 64000
+    codeMode: *standardCodeMode
+    vertex:
+      project_id: my-gcp-project
+      region: global
+
   - ref: gpt55-oauth
     display_name: "GPT 5.5 (OAuth)"
     id: gpt-5.5
