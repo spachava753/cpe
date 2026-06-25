@@ -42,8 +42,9 @@ type serverRuntimeCreator struct {
 }
 
 var (
-	_                        RuntimeCreator = (*serverRuntimeCreator)(nil)
-	initializeMCPConnections                = mcp.InitializeConnections
+	_                            RuntimeCreator = (*serverRuntimeCreator)(nil)
+	initializeGeneratorFromModel                = agent.InitGeneratorFromModel
+	initializeMCPConnections                    = mcp.InitializeConnections
 )
 
 func (c *serverRuntimeCreator) Create(ctx context.Context, s session, caps acp.ClientCapabilities) (runtime, error) {
@@ -68,7 +69,21 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, s session, caps acp.C
 
 	slog.Debug("system prompt loaded", slog.String("path", cfg.SystemPromptPath))
 
-	genBase, err := agent.InitGeneratorFromModel(ctx, cfg.Model, systemPrompt, cfg.Timeout)
+	// Model clients and MCP transports are session-scoped. Link their context to
+	// the creation context only until setup finishes so early cancellation still
+	// aborts cold start, but a completed prompt/load RPC does not kill long-lived
+	// auth token sources or MCP servers.
+	runtimeCtx, cancelRuntime := context.WithCancel(context.WithoutCancel(ctx))
+	stopRuntimeOnCreateCancel := context.AfterFunc(ctx, cancelRuntime)
+	runtimeCtxOwned := false
+	defer func() {
+		if !runtimeCtxOwned {
+			stopRuntimeOnCreateCancel()
+			cancelRuntime()
+		}
+	}()
+
+	genBase, err := initializeGeneratorFromModel(runtimeCtx, cfg.Model, systemPrompt, cfg.Timeout)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create generator: %v", err)
 	}
@@ -114,19 +129,6 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, s session, caps acp.C
 	if err != nil {
 		return nil, err
 	}
-
-	// MCP transports are session-scoped. Link their context to the creation
-	// context only until setup finishes so early cancellation still aborts cold
-	// start, but a completed prompt/load RPC does not kill long-lived servers.
-	runtimeCtx, cancelRuntime := context.WithCancel(context.WithoutCancel(ctx))
-	stopRuntimeOnCreateCancel := context.AfterFunc(ctx, cancelRuntime)
-	runtimeCtxOwned := false
-	defer func() {
-		if !runtimeCtxOwned {
-			stopRuntimeOnCreateCancel()
-			cancelRuntime()
-		}
-	}()
 
 	// connecting to mcps
 	// TODO: we connect to mcp servers for each active session, we really need a way to pool connections or something

@@ -10,24 +10,41 @@ import (
 
 	"github.com/nalgeon/be"
 	"github.com/spachava753/acp-sdk/acp"
+	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/config"
 	cpemcp "github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/mcpconfig"
 )
 
-func TestServerRuntimeCreatorMCPContextOutlivesCreateContext(t *testing.T) {
-	original := initializeMCPConnections
+type testToolCallingGenerator struct{}
+
+func (testToolCallingGenerator) Generate(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
+	return gai.Response{}, nil
+}
+
+func (testToolCallingGenerator) Register(gai.Tool) error {
+	return nil
+}
+
+func TestServerRuntimeCreatorRuntimeContextOutlivesCreateContext(t *testing.T) {
+	originalGenerator := initializeGeneratorFromModel
+	originalMCP := initializeMCPConnections
+	var generatorCtx context.Context
 	var runtimeCtx context.Context
+	initializeGeneratorFromModel = func(ctx context.Context, _ config.Model, _ string, _ time.Duration) (gai.Generator, error) {
+		generatorCtx = ctx
+		return testToolCallingGenerator{}, nil
+	}
 	initializeMCPConnections = func(ctx context.Context, servers map[string]mcpconfig.ServerConfig) (*cpemcp.MCPState, error) {
 		runtimeCtx = ctx
 		return cpemcp.NewMCPState(), nil
 	}
 	t.Cleanup(func() {
-		initializeMCPConnections = original
+		initializeGeneratorFromModel = originalGenerator
+		initializeMCPConnections = originalMCP
 	})
 
-	t.Setenv("TEST_API_KEY", "test-key")
 	creator := &serverRuntimeCreator{
 		rawCfg: &config.RawConfig{
 			Models: []config.ModelConfig{
@@ -37,7 +54,6 @@ func TestServerRuntimeCreatorMCPContextOutlivesCreateContext(t *testing.T) {
 						DisplayName:   "Test Model",
 						ID:            "test-model",
 						Type:          "responses",
-						ApiKeyEnv:     "TEST_API_KEY",
 						ContextWindow: 100,
 						MaxOutput:     10,
 					},
@@ -56,22 +72,35 @@ func TestServerRuntimeCreatorMCPContextOutlivesCreateContext(t *testing.T) {
 		model: "test-model",
 	}, acp.ClientCapabilities{})
 	be.Err(t, err, nil)
+	if generatorCtx == nil {
+		t.Fatal("generator initializer was not called")
+	}
 	if runtimeCtx == nil {
 		t.Fatal("MCP initializer was not called")
 	}
 
 	cancelCreate()
 	select {
+	case <-generatorCtx.Done():
+		t.Fatal("generator context was cancelled by create context after successful creation")
+	default:
+	}
+	select {
 	case <-runtimeCtx.Done():
-		t.Fatal("runtime context was cancelled by create context after successful creation")
+		t.Fatal("MCP context was cancelled by create context after successful creation")
 	default:
 	}
 
 	be.Err(t, runtime.Close(), nil)
 	select {
+	case <-generatorCtx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for generator context cancellation on close")
+	}
+	select {
 	case <-runtimeCtx.Done():
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for runtime context cancellation on close")
+		t.Fatal("timed out waiting for MCP context cancellation on close")
 	}
 }
 
