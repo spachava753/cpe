@@ -321,7 +321,6 @@ func (a *Agent) Cancel(ctx context.Context, params *acp.CancelNotification) erro
 	return s.Do(func(t *session) error {
 		if t.cancelfunc != nil {
 			t.cancelfunc()
-			t.cancelfunc = nil
 		}
 		return nil
 	})

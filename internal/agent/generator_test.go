@@ -29,6 +29,8 @@ func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
+const testGoogleBearerToken = "Bearer google-token"
+
 func useStaticGoogleCredentials(t *testing.T, token string) {
 	t.Helper()
 	original := findDefaultGoogleCredentials
@@ -215,7 +217,7 @@ func TestAnthropicVertexRequestOptionsUseGoogleAuthAndVertexRequestShape(t *test
 					http.Error(w, "unexpected Anthropic API key", http.StatusBadRequest)
 					return
 				}
-				if got := r.Header.Get("Authorization"); got != "Bearer google-token" {
+				if got := r.Header.Get("Authorization"); got != testGoogleBearerToken {
 					t.Errorf("Authorization header = %q, want Google bearer token", got)
 					http.Error(w, "unexpected Authorization", http.StatusBadRequest)
 					return
@@ -279,6 +281,84 @@ func TestAnthropicVertexRequestOptionsUseGoogleAuthAndVertexRequestShape(t *test
 	}
 }
 
+func TestAnthropicVertexRequestOptionsRetryResourceExhausted(t *testing.T) {
+	const modelID = "claude-sonnet-4-6"
+	requestCount := 0
+	var bodies []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		wantPath := fmt.Sprintf("/v1/projects/test-project/locations/global/publishers/anthropic/models/%s:rawPredict", modelID)
+		if r.URL.Path != wantPath {
+			t.Errorf("path = %s, want %s", r.URL.Path, wantPath)
+			http.Error(w, "unexpected path", http.StatusBadRequest)
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != testGoogleBearerToken {
+			t.Errorf("Authorization header = %q, want Google bearer token", got)
+			http.Error(w, "unexpected Authorization", http.StatusBadRequest)
+			return
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("ReadAll() error = %v", err)
+			http.Error(w, "read body", http.StatusBadRequest)
+			return
+		}
+		bodies = append(bodies, string(body))
+		var payload map[string]any
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Errorf("request body is not JSON: %v", err)
+			http.Error(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		if got := payload["anthropic_version"]; got != "vertex-2023-10-16" {
+			t.Errorf("anthropic_version = %#v, want vertex-2023-10-16", got)
+			http.Error(w, "unexpected anthropic_version", http.StatusBadRequest)
+			return
+		}
+		if _, ok := payload["model"]; ok {
+			t.Errorf("request body still contains model: %s", body)
+			http.Error(w, "model was not removed", http.StatusBadRequest)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if requestCount == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprint(w, `{"error":{"message":"quota exhausted","type":"RESOURCE_EXHAUSTED"}}`)
+			return
+		}
+		fmt.Fprint(w, `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"hi"}],"model":"claude-sonnet-4-6","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`)
+	}))
+	defer server.Close()
+
+	useStaticGoogleCredentials(t, "google-token")
+	opts, err := anthropicVertexRequestOptions(t.Context(), &config.VertexConfig{
+		ProjectID: "test-project",
+		Region:    "global",
+	}, nil, time.Minute)
+	if err != nil {
+		t.Fatalf("anthropicVertexRequestOptions() error = %v", err)
+	}
+	opts = append(opts, aopts.WithBaseURL(server.URL))
+	client := a.NewClient(opts...)
+	_, err = client.Messages.New(t.Context(), a.MessageNewParams{
+		MaxTokens: 1,
+		Messages:  []a.MessageParam{a.NewUserMessage(a.NewTextBlock("hello"))},
+		Model:     a.Model(modelID),
+	})
+	if err != nil {
+		t.Fatalf("Messages.New() error = %v", err)
+	}
+	if requestCount != 2 {
+		t.Fatalf("request count = %d, want 2", requestCount)
+	}
+	if len(bodies) != 2 || bodies[0] != bodies[1] {
+		t.Fatalf("bodies = %#v, want identical replayed Vertex requests", bodies)
+	}
+}
+
 func TestAnthropicVertexRequestOptionsApplyPatchRequest(t *testing.T) {
 	const modelID = "claude-sonnet-4-6"
 	requestCount := 0
@@ -290,7 +370,7 @@ func TestAnthropicVertexRequestOptionsApplyPatchRequest(t *testing.T) {
 			http.Error(w, "unexpected path", http.StatusBadRequest)
 			return
 		}
-		if got := r.Header.Get("Authorization"); got != "Bearer google-token" {
+		if got := r.Header.Get("Authorization"); got != testGoogleBearerToken {
 			t.Errorf("Authorization header = %q, want Google bearer token", got)
 			http.Error(w, "unexpected Authorization", http.StatusBadRequest)
 			return
@@ -326,6 +406,11 @@ func TestAnthropicVertexRequestOptionsApplyPatchRequest(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
+		if requestCount == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			fmt.Fprint(w, `{"error":{"message":"quota exhausted","type":"RESOURCE_EXHAUSTED"}}`)
+			return
+		}
 		fmt.Fprint(w, `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"hi"}],"model":"claude-sonnet-4-6","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`)
 	}))
 	defer server.Close()
@@ -355,8 +440,8 @@ func TestAnthropicVertexRequestOptionsApplyPatchRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Messages.New() error = %v", err)
 	}
-	if requestCount != 1 {
-		t.Fatalf("request count = %d, want 1", requestCount)
+	if requestCount != 2 {
+		t.Fatalf("request count = %d, want 2", requestCount)
 	}
 }
 

@@ -796,6 +796,98 @@ func TestCancel(t *testing.T) {
 		be.True(t, storedSession.LastMessageID != "")
 	})
 
+	t.Run("active prompt during runtime creation", func(t *testing.T) {
+		runtimeCreateStarted := make(chan struct{})
+		runtimeCreateCancelled := make(chan struct{})
+		rawCfg := config.RawConfig{
+			Models: []config.ModelConfig{
+				{
+					Model: config.Model{
+						Ref:         "test-model",
+						DisplayName: "Test Model",
+						ID:          "test-model",
+						Type:        "responses",
+					},
+				},
+			},
+		}
+		fixture := setup(
+			t,
+			&noOpAcpClient{},
+			&rawCfg,
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
+				close(runtimeCreateStarted)
+				<-ctx.Done()
+				close(runtimeCreateCancelled)
+				return nil, ctx.Err()
+			},
+		)
+		clientConn := fixture.ClientConn
+
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ClientCapabilities: &acp.ClientCapabilities{Terminal: true},
+			ClientInfo: &acp.Implementation{
+				Name:    "test-client",
+				Title:   new("test client"),
+				Version: "test",
+			},
+			ProtocolVersion: acp.ProtocolVersion(1),
+		})
+		be.Err(t, err, nil)
+
+		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{
+			Cwd:        "/rando/dir",
+			McpServers: []acp.McpServer{},
+		})
+		be.Err(t, err, nil)
+
+		type promptResult struct {
+			resp *acp.PromptResponse
+			err  error
+		}
+		promptResultCh := make(chan promptResult, 1)
+		go func() {
+			resp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
+				Prompt:    []acp.ContentBlock{acp.TextContentBlock("Hello")},
+				SessionID: newSessionResp.SessionID,
+			})
+			promptResultCh <- promptResult{resp: resp, err: err}
+		}()
+
+		select {
+		case <-runtimeCreateStarted:
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for runtime creation to start")
+		}
+
+		cancelResultCh := make(chan error, 1)
+		go func() {
+			cancelResultCh <- clientConn.Cancel(t.Context(), &acp.CancelNotification{
+				SessionID: newSessionResp.SessionID,
+			})
+		}()
+		select {
+		case err := <-cancelResultCh:
+			be.Err(t, err, nil)
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for cancel to return during runtime creation")
+		}
+
+		select {
+		case <-runtimeCreateCancelled:
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for runtime creation context cancellation")
+		}
+
+		select {
+		case result := <-promptResultCh:
+			be.Err(t, result.err, nil)
+			be.Equal(t, result.resp.StopReason, acp.StopReasonCancelled)
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for prompt to return after cancellation")
+		}
+	})
+
 	t.Run("unknown session", func(t *testing.T) {
 		agent := Agent{
 			activeSessions: new(cpesync.Map[acp.SessionId, *cpesync.Guard[session]]),

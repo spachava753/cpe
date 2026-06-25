@@ -127,94 +127,107 @@ func (a *Agent) Prompt(
 		return nil, err
 	}
 
-	if err := s.Do(func(t *session) error {
-		if t.runtime != nil {
-			return nil
-		}
-		var err error
-		t.runtime, err = a.runtimeFactory.Create(ctx, *t, a.clientCaps)
-		return err
-	}); err != nil {
-		return nil, fmt.Errorf("failed to create runtime: %v", err)
-	}
-
 	cancelCtx, cancelFunc := context.WithCancel(ctx)
-
-	// we launch a go routine within the gaurd because we don't want
-	// to hold onto the active session the entire time we are generating.
-	// Otherwise, when [Agent.Cancel] is called, and it tries to lock the
-	// gaurd to call the cancellation function, it can't because the gaurd
-	// is held by this prompt call here
-	type generateResult struct {
-		dialog   gai.Dialog
-		inputLen int
-		err      error
+	defer cancelFunc()
+	cancelled := func(err error) bool {
+		return errors.Is(err, context.Canceled) || errors.Is(cancelCtx.Err(), context.Canceled)
 	}
-	resultChan := make(chan generateResult)
+	cancelledResponse := &acp.PromptResponse{StopReason: acp.StopReasonCancelled}
+
+	var (
+		runtime         runtime
+		sessionSnapshot session
+		genOpts         *gai.GenOpts
+	)
 	if err := s.Do(func(t *session) error {
 		if t.cancelfunc != nil {
 			return errors.New("cannot do prompt turn in actively generating session")
 		}
-		acpSession, err := a.db.GetACPSession(ctx, params.SessionID)
-		if err != nil {
-			return fmt.Errorf("could not get acp session from db: %v", err)
-		}
-		var dialog gai.Dialog
-		if acpSession.LastMessageID != "" {
-			var err error
-			dialog, err = storage.GetDialogForMessage(ctx, a.db, acpSession.LastMessageID)
-			if err != nil {
-				return fmt.Errorf("could not get dialog from db: %v", err)
-			}
-		}
-		dialog = append(dialog, xacp.PromptToMessage(params.Prompt))
-		if t.runtime == nil {
-			runtime, err := a.runtimeFactory.Create(cancelCtx, *t, a.clientCaps)
-			if err != nil {
-				return fmt.Errorf("could not create runtime: %v", err)
-			}
-			t.runtime = runtime
-		}
-		runtime := t.runtime
-		inputDialog := dialog
-		inputLen := len(inputDialog)
+		t.cancelfunc = cancelFunc
+		runtime = t.runtime
+		sessionSnapshot = *t
 		// Per-turn opts carry only ACP session overrides (thinking level).
 		// The runtime's Loop.Generate layers these over the model profile's
 		// generation parameters from the resolved config.
-		var genOpts *gai.GenOpts
 		if t.thinking != "" {
 			genOpts = &gai.GenOpts{ThinkingBudget: t.thinking}
 		}
-		t.cancelfunc = cancelFunc
-		go func() {
-			generatedDialog, err := runtime.Generate(
-				withSessionID(cancelCtx, params.SessionID),
-				inputDialog,
-				genOpts,
-			)
-			resultChan <- generateResult{dialog: generatedDialog, inputLen: inputLen, err: err}
-		}()
 		return nil
 	}); err != nil {
 		return nil, err
 	}
+	defer func() {
+		_ = s.Do(func(t *session) error {
+			t.cancelfunc = nil
+			return nil
+		})
+	}()
 
-	// here we wait until the result is given, which could be because the
-	// context was cancelled
-	// TODO: THIS ACTUALLY HANGS THE ENTIRE ACP SERVER, since we aren't
-	// listening for context for cancellation
-	result := <-resultChan
+	acpSession, err := a.db.GetACPSession(cancelCtx, params.SessionID)
+	if err != nil {
+		if cancelled(err) {
+			return cancelledResponse, nil
+		}
+		return nil, fmt.Errorf("could not get acp session from db: %v", err)
+	}
+	var dialog gai.Dialog
+	if acpSession.LastMessageID != "" {
+		dialog, err = storage.GetDialogForMessage(cancelCtx, a.db, acpSession.LastMessageID)
+		if err != nil {
+			if cancelled(err) {
+				return cancelledResponse, nil
+			}
+			return nil, fmt.Errorf("could not get dialog from db: %v", err)
+		}
+	}
+	dialog = append(dialog, xacp.PromptToMessage(params.Prompt))
 
-	dialog := result.dialog
-	if len(dialog) == 0 {
-		return nil, errors.New("cannot persist empty prompt dialog")
+	if runtime == nil {
+		runtime, err = a.runtimeFactory.Create(cancelCtx, sessionSnapshot, a.clientCaps)
+		if err != nil {
+			if cancelled(err) {
+				return cancelledResponse, nil
+			}
+			return nil, fmt.Errorf("could not create runtime: %v", err)
+		}
+		if err := cancelCtx.Err(); err != nil {
+			_ = runtime.Close()
+			return cancelledResponse, nil
+		}
+		if err := s.Do(func(t *session) error {
+			if t.cancelfunc == nil {
+				return context.Canceled
+			}
+			t.runtime = runtime
+			return nil
+		}); err != nil {
+			_ = runtime.Close()
+			if cancelled(err) {
+				return cancelledResponse, nil
+			}
+			return nil, err
+		}
 	}
 
-	// we should reset the cancellation func, now that generation is over
-	s.Do(func(t *session) error {
-		t.cancelfunc = nil
-		return nil
-	})
+	inputLen := len(dialog)
+	generatedDialog, err := runtime.Generate(
+		withSessionID(cancelCtx, params.SessionID),
+		dialog,
+		genOpts,
+	)
+	result := struct {
+		dialog   gai.Dialog
+		inputLen int
+		err      error
+	}{dialog: generatedDialog, inputLen: inputLen, err: err}
+
+	dialog = result.dialog
+	if len(dialog) == 0 {
+		if cancelled(result.err) {
+			return cancelledResponse, nil
+		}
+		return nil, errors.New("cannot persist empty prompt dialog")
+	}
 
 	// Persist even if the prompt context was cancelled, while still bounding how
 	// long the client waits for session bookkeeping.
@@ -252,7 +265,7 @@ func (a *Agent) Prompt(
 				Usage:      usage,
 			}, nil
 		}
-		if errors.Is(result.err, context.Canceled) {
+		if cancelled(result.err) {
 			return &acp.PromptResponse{
 				StopReason: acp.StopReasonCancelled,
 				Usage:      usage,

@@ -106,30 +106,30 @@ func anthropicVertexRequestOptions(
 		return nil, fmt.Errorf("finding Google Application Default Credentials for Vertex AI: %w", err)
 	}
 
+	googleHTTPClient, _, err := gapitransport.NewHTTPClient(ctx, gapioption.WithTokenSource(creds.TokenSource))
+	if err != nil {
+		return nil, fmt.Errorf("creating Google Vertex AI HTTP client: %w", err)
+	}
+	transport := googleHTTPClient.Transport
+	if patchConfig != nil {
+		// Vertex middleware rewrites the Anthropic request before the HTTP client runs;
+		// keep Google's auth transport underneath PatchTransport so IAM auth wins.
+		transport, err = BuildPatchTransportFromConfig(transport, patchConfig)
+		if err != nil {
+			return nil, fmt.Errorf("building patch transport for Vertex AI: %w", err)
+		}
+	}
+	googleHTTPClient.Transport = newModelRoundTripper(transport)
+	googleHTTPClient.Timeout = timeout
+
 	opts = []aopts.RequestOption{
 		aopts.WithoutEnvironmentDefaults(),
 		aopts.WithHeader("anthropic-beta", anthropicFeatureBetaHeader),
 		vertex.WithCredentials(ctx, region, projectID, creds),
-	}
-	if patchConfig != nil {
-		// Vertex middleware rewrites the Anthropic request before the HTTP client runs;
-		// keep Google's auth transport underneath PatchTransport so IAM auth wins.
-		googleHTTPClient, _, err := gapitransport.NewHTTPClient(ctx, gapioption.WithTokenSource(creds.TokenSource))
-		if err != nil {
-			return nil, fmt.Errorf("creating Google Vertex AI HTTP client: %w", err)
-		}
-		transport, err := BuildPatchTransportFromConfig(googleHTTPClient.Transport, patchConfig)
-		if err != nil {
-			return nil, fmt.Errorf("building patch transport for Vertex AI: %w", err)
-		}
-		googleHTTPClient.Transport = transport
-		googleHTTPClient.Timeout = timeout
-		opts = append(opts, aopts.WithHTTPClient(googleHTTPClient))
-	}
-	opts = append(opts,
+		aopts.WithHTTPClient(googleHTTPClient),
 		aopts.WithRequestTimeout(timeout),
 		aopts.WithMaxRetries(0),
-	)
+	}
 	return opts, nil
 }
 

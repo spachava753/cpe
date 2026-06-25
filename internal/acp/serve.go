@@ -41,7 +41,10 @@ type serverRuntimeCreator struct {
 	conn   *acp.AgentConnection
 }
 
-var _ RuntimeCreator = (*serverRuntimeCreator)(nil)
+var (
+	_                        RuntimeCreator = (*serverRuntimeCreator)(nil)
+	initializeMCPConnections                = mcp.InitializeConnections
+)
 
 func (c *serverRuntimeCreator) Create(ctx context.Context, s session, caps acp.ClientCapabilities) (runtime, error) {
 	cfg, err := config.ResolveFromRaw(c.rawCfg, config.RuntimeOptions{
@@ -112,13 +115,32 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, s session, caps acp.C
 		return nil, err
 	}
 
+	// MCP transports are session-scoped. Link their context to the creation
+	// context only until setup finishes so early cancellation still aborts cold
+	// start, but a completed prompt/load RPC does not kill long-lived servers.
+	runtimeCtx, cancelRuntime := context.WithCancel(context.WithoutCancel(ctx))
+	stopRuntimeOnCreateCancel := context.AfterFunc(ctx, cancelRuntime)
+	runtimeCtxOwned := false
+	defer func() {
+		if !runtimeCtxOwned {
+			stopRuntimeOnCreateCancel()
+			cancelRuntime()
+		}
+	}()
+
 	// connecting to mcps
 	// TODO: we connect to mcp servers for each active session, we really need a way to pool connections or something
-	mcpState, err := mcp.InitializeConnections(ctx, mcpServersConfig)
+	mcpState, err := initializeMCPConnections(runtimeCtx, mcpServersConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize MCP connections: %w", err)
 	}
 	ca.mcpState = mcpState
+	ca.cancelRuntime = cancelRuntime
+	if !stopRuntimeOnCreateCancel() && ctx.Err() != nil {
+		_ = ca.Close()
+		return nil, ctx.Err()
+	}
+	runtimeCtxOwned = true
 
 	slog.Debug("initialized mcp connections")
 
@@ -422,12 +444,19 @@ func acpHTTPHeaders(headers []acp.HttpHeader) map[string]string {
 	return mapped
 }
 
-// closerAgent is a type that embeds [Loop] and implementes a close function to close the mcp connections
+// closerAgent is a type that embeds [Loop] and implements a close function to close the mcp connections.
 type closerAgent struct {
 	*Loop
-	mcpState *mcp.MCPState
+	mcpState      *mcp.MCPState
+	cancelRuntime context.CancelFunc
 }
 
 func (c *closerAgent) Close() error {
+	if c.cancelRuntime != nil {
+		defer c.cancelRuntime()
+	}
+	if c.mcpState == nil {
+		return nil
+	}
 	return c.mcpState.Close()
 }

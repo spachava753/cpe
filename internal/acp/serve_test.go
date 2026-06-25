@@ -2,14 +2,78 @@ package acp
 
 import (
 	"bytes"
+	"context"
+	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/nalgeon/be"
 	"github.com/spachava753/acp-sdk/acp"
 
+	"github.com/spachava753/cpe/internal/config"
+	cpemcp "github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/mcpconfig"
 )
+
+func TestServerRuntimeCreatorMCPContextOutlivesCreateContext(t *testing.T) {
+	original := initializeMCPConnections
+	var runtimeCtx context.Context
+	initializeMCPConnections = func(ctx context.Context, servers map[string]mcpconfig.ServerConfig) (*cpemcp.MCPState, error) {
+		runtimeCtx = ctx
+		return cpemcp.NewMCPState(), nil
+	}
+	t.Cleanup(func() {
+		initializeMCPConnections = original
+	})
+
+	t.Setenv("TEST_API_KEY", "test-key")
+	creator := &serverRuntimeCreator{
+		rawCfg: &config.RawConfig{
+			Models: []config.ModelConfig{
+				{
+					Model: config.Model{
+						Ref:           "test-model",
+						DisplayName:   "Test Model",
+						ID:            "test-model",
+						Type:          "responses",
+						ApiKeyEnv:     "TEST_API_KEY",
+						ContextWindow: 100,
+						MaxOutput:     10,
+					},
+					DisableEditTool: true,
+					MCPServers: map[string]mcpconfig.ServerConfig{
+						"stub": {Type: "stdio", Command: "stub-mcp"},
+					},
+				},
+			},
+		},
+		stderr: io.Discard,
+	}
+	createCtx, cancelCreate := context.WithCancel(t.Context())
+	runtime, err := creator.Create(createCtx, session{
+		id:    "session-1",
+		model: "test-model",
+	}, acp.ClientCapabilities{})
+	be.Err(t, err, nil)
+	if runtimeCtx == nil {
+		t.Fatal("MCP initializer was not called")
+	}
+
+	cancelCreate()
+	select {
+	case <-runtimeCtx.Done():
+		t.Fatal("runtime context was cancelled by create context after successful creation")
+	default:
+	}
+
+	be.Err(t, runtime.Close(), nil)
+	select {
+	case <-runtimeCtx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for runtime context cancellation on close")
+	}
+}
 
 func TestRPCLoggerWrite(t *testing.T) {
 	tests := []struct {
