@@ -205,6 +205,12 @@ func TestLoopEffectiveGenOpts(t *testing.T) {
 			want:      &gai.GenOpts{MaxGenerationTokens: new(32000), ThinkingBudget: "high"},
 		},
 		{
+			name:        "responses with no generation opts requests detailed summary",
+			modelType:   "responses",
+			want:        &gai.GenOpts{},
+			wantSummary: responses.ReasoningSummaryDetailed,
+		},
+		{
 			name:        "responses thinking override requests detailed summary",
 			modelType:   "responses",
 			override:    &gai.GenOpts{ThinkingBudget: "high"},
@@ -219,21 +225,21 @@ func TestLoopEffectiveGenOpts(t *testing.T) {
 			wantSummary: responses.ReasoningSummaryDetailed,
 		},
 		{
-			name:      "responses without thinking omits summary request",
-			modelType: "responses",
-			override:  &gai.GenOpts{MaxGenerationTokens: new(32000)},
-			want:      &gai.GenOpts{MaxGenerationTokens: new(32000)},
+			name:        "responses without thinking requests detailed summary",
+			modelType:   "responses",
+			override:    &gai.GenOpts{MaxGenerationTokens: new(32000)},
+			want:        &gai.GenOpts{MaxGenerationTokens: new(32000)},
+			wantSummary: responses.ReasoningSummaryDetailed,
 		},
 		{
 			name:      "responses preserves explicit summary request",
 			modelType: "responses",
 			override: &gai.GenOpts{
-				ThinkingBudget: "high",
 				ExtraArgs: map[string]any{
 					gai.ResponsesThoughtSummaryDetailParam: responses.ReasoningSummaryConcise,
 				},
 			},
-			want:        &gai.GenOpts{ThinkingBudget: "high"},
+			want:        &gai.GenOpts{},
 			wantSummary: responses.ReasoningSummaryConcise,
 		},
 	}
@@ -290,8 +296,7 @@ func TestLoopEffectiveGenOpts(t *testing.T) {
 func TestLoopEffectiveGenOptsDoesNotMutateInputExtraArgs(t *testing.T) {
 	extraArgs := map[string]any{"custom": "value"}
 	override := &gai.GenOpts{
-		ThinkingBudget: "high",
-		ExtraArgs:      extraArgs,
+		ExtraArgs: extraArgs,
 	}
 	l := Loop{Cfg: config.Config{Model: config.Model{Type: "responses"}}}
 

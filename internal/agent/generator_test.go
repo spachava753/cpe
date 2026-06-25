@@ -457,24 +457,14 @@ func TestApplyResponsesThinkingSummary(t *testing.T) {
 			opts: nil,
 		},
 		{
-			name: "empty thinking budget does nothing",
-			opts: &gai.GenOpts{},
+			name:           "sets detailed summary without thinking budget",
+			opts:           &gai.GenOpts{},
+			wantExtraArgs:  true,
+			wantSummaryVal: responses.ReasoningSummaryDetailed,
 		},
 		{
-			name:           "sets detailed summary when thinking budget is set",
+			name:           "keeps thinking budget while setting detailed summary",
 			opts:           &gai.GenOpts{ThinkingBudget: "high"},
-			wantExtraArgs:  true,
-			wantSummaryVal: responses.ReasoningSummaryDetailed,
-		},
-		{
-			name:           "sets detailed summary for medium budget",
-			opts:           &gai.GenOpts{ThinkingBudget: "medium"},
-			wantExtraArgs:  true,
-			wantSummaryVal: responses.ReasoningSummaryDetailed,
-		},
-		{
-			name:           "sets detailed summary for low budget",
-			opts:           &gai.GenOpts{ThinkingBudget: "low"},
 			wantExtraArgs:  true,
 			wantSummaryVal: responses.ReasoningSummaryDetailed,
 		},
@@ -490,7 +480,6 @@ func TestApplyResponsesThinkingSummary(t *testing.T) {
 		{
 			name: "does not override existing summary param",
 			opts: &gai.GenOpts{
-				ThinkingBudget: "high",
 				ExtraArgs: map[string]any{
 					gai.ResponsesThoughtSummaryDetailParam: responses.ReasoningSummaryConcise,
 				},
@@ -501,7 +490,6 @@ func TestApplyResponsesThinkingSummary(t *testing.T) {
 		{
 			name: "preserves other ExtraArgs keys",
 			opts: &gai.GenOpts{
-				ThinkingBudget: "high",
 				ExtraArgs: map[string]any{
 					"other_key": "other_value",
 				},

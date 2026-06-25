@@ -140,8 +140,8 @@ func vertexScopes(vertexCfg *config.VertexConfig) []string {
 	return []string{googleCloudPlatformScope}
 }
 
-// ApplyResponsesThinkingSummary ensures that when using the OpenAI Responses API
-// with a thinking budget, the reasoning summary detail parameter is set to "detailed".
+// ApplyResponsesThinkingSummary ensures that when using the OpenAI Responses API,
+// the reasoning summary detail parameter defaults to "detailed".
 //
 // The Responses API requires an explicit `reasoning.summary` parameter to return
 // thinking/reasoning blocks in the response. Without it, the model reasons internally
@@ -152,7 +152,7 @@ func vertexScopes(vertexCfg *config.VertexConfig) []string {
 // This must be called with the correct openai SDK type (responses.ReasoningSummaryDetailed)
 // because the gai library performs a type assertion on the ExtraArgs value.
 func ApplyResponsesThinkingSummary(opts *gai.GenOpts) {
-	if opts == nil || opts.ThinkingBudget == "" {
+	if opts == nil {
 		return
 	}
 	if opts.ExtraArgs == nil {

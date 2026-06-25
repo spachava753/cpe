@@ -80,13 +80,14 @@ func (l *Loop) validateToolChoice(opts *gai.GenOpts) error {
 // thinking level) over the resolved model profile generation parameters,
 // so config fields like maxGenerationTokens apply to every Generate call.
 func (l *Loop) effectiveGenOpts(override *gai.GenOpts) *gai.GenOpts {
-	if l.Cfg.GenerationParams == nil && override == nil {
+	isResponsesModel := strings.EqualFold(l.Cfg.Model.Type, agent.ModelTypeResponses)
+	if l.Cfg.GenerationParams == nil && override == nil && !isResponsesModel {
 		return nil
 	}
 	merged := &gai.GenOpts{}
 	config.MergeGenOpts(merged, l.Cfg.GenerationParams)
 	config.MergeGenOpts(merged, override)
-	if strings.EqualFold(l.Cfg.Model.Type, agent.ModelTypeResponses) {
+	if isResponsesModel {
 		if merged.ExtraArgs != nil {
 			merged.ExtraArgs = maps.Clone(merged.ExtraArgs)
 		}
