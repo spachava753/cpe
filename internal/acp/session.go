@@ -2,10 +2,10 @@ package acp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
-	"strings"
 
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
@@ -328,10 +328,6 @@ func (a *Agent) Cancel(ctx context.Context, params *acp.CancelNotification) erro
 	})
 }
 
-func missingACPSessionErr(sessionID acp.SessionId, err error) bool {
-	return err != nil && strings.Contains(err.Error(), fmt.Sprintf("ACP session %s not found", sessionID))
-}
-
 // CloseSession implements [acp.SessionHandler].
 func (a *Agent) CloseSession(ctx context.Context, params *acp.CloseSessionRequest) (*acp.CloseSessionResponse, error) {
 	s, ok := a.activeSessions.Load(params.SessionID)
@@ -372,7 +368,7 @@ func (a *Agent) DeleteSession(
 		}
 	}
 	if err := a.db.DeleteACPSession(ctx, params.SessionID); err != nil {
-		if missingACPSessionErr(params.SessionID, err) {
+		if errors.Is(err, storage.ErrSessionNotFound) {
 			slog.Info("session delete requested for unknown session", slog.String("session_id", string(params.SessionID)))
 			a.activeSessions.Delete(params.SessionID)
 			return &acp.DeleteSessionResponse{}, nil

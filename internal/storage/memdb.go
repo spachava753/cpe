@@ -106,7 +106,7 @@ func (m *MemDB) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter
 				node, ok := m.byID[existingID]
 				if !ok {
 					rollback()
-					yield(gai.Message{}, fmt.Errorf("failed to verify message %s exists: not found", existingID))
+					yield(gai.Message{}, fmt.Errorf("message %s not found: %w", existingID, ErrMessageNotFound))
 					return
 				}
 
@@ -311,7 +311,7 @@ func (m *MemDB) GetMessages(ctx context.Context, messageIDs []string) (iter.Seq[
 	for _, id := range messageIDs {
 		node, ok := m.byID[id]
 		if !ok {
-			return nil, fmt.Errorf("message %s not found", id)
+			return nil, fmt.Errorf("message %s not found: %w", id, ErrMessageNotFound)
 		}
 		msgs = append(msgs, m.nodeToMessage(node))
 	}

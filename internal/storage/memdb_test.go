@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 
@@ -414,8 +415,24 @@ func TestMemDB_GetMessages_NotFound(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := db.GetMessages(ctx, []string{"nonexistent"})
-	if err == nil {
-		t.Fatal("expected error for nonexistent message ID, got nil")
+	if !errors.Is(err, ErrMessageNotFound) {
+		t.Fatalf("expected ErrMessageNotFound, got %v", err)
+	}
+}
+
+func TestMemDB_SaveDialog_MissingExistingMessage(t *testing.T) {
+	db := NewMemDB()
+	ctx := context.Background()
+	msg := makeTextMessage(gai.User, "missing")
+	msg.ExtraFields = map[string]any{MessageIDKey: "missing-message"}
+
+	var gotErr error
+	for _, err := range db.SaveDialog(ctx, slices.Values([]gai.Message{msg})) {
+		gotErr = err
+		break
+	}
+	if !errors.Is(gotErr, ErrMessageNotFound) {
+		t.Fatalf("expected ErrMessageNotFound, got %v", gotErr)
 	}
 }
 

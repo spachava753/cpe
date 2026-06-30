@@ -83,7 +83,8 @@ type DialogSaver interface {
 	//   - If ExtraFields[MessageIDKey] is present, the message is treated as
 	//     already persisted. The implementation verifies that the stored message
 	//     exists and that its stored parent matches the previous message in this
-	//     SaveDialog call. The first message must be a root in storage.
+	//     SaveDialog call. The first message must be a root in storage. Missing
+	//     existing messages yield an error wrapping ErrMessageNotFound.
 	//   - If ExtraFields[MessageIDKey] is absent, the message is inserted as a
 	//     new row whose parent is the previous message from this call. The
 	//     returned message includes MessageIDKey and, for non-root messages,
@@ -189,7 +190,8 @@ type MessagesLister interface {
 type MessagesGetter interface {
 	// GetMessages retrieves specific messages by ID.
 	//
-	// If any requested ID is missing, the call returns an error and no iterator.
+	// If any requested ID is missing, the call returns an error wrapping
+	// ErrMessageNotFound and no iterator.
 	// The returned iter.Seq is not guaranteed to preserve the input ID order.
 	//
 	// Every yielded message has fully populated Blocks and storage metadata in
@@ -238,6 +240,7 @@ type ACPSessionCreator interface {
 // ACPSessionMessageAdder updates an ACP session's latest message pointer.
 type ACPSessionMessageAdder interface {
 	// AddACPSessionMessage marks messageID as the latest message for sessionID.
+	// It returns an error wrapping ErrSessionNotFound when sessionID is missing.
 	AddACPSessionMessage(ctx context.Context, sessionID acp.SessionId, messageID string) (acp.SessionInfo, error)
 }
 
@@ -246,28 +249,32 @@ type ACPSessionDeleter interface {
 	// DeleteACPSession removes sessionID from the persisted ACP session list and
 	// deletes the messages in its chain that are not reachable from any other
 	// ACP session. Messages shared with other sessions (such as forks created
-	// via session/fork) are preserved.
+	// via session/fork) are preserved. It returns an error wrapping
+	// ErrSessionNotFound when sessionID is missing.
 	DeleteACPSession(ctx context.Context, sessionID acp.SessionId) error
 }
 
 // ACPSessionModelSetter updates an ACP session's selected model profile.
 type ACPSessionModelSetter interface {
 	// SetACPSessionModelRef marks modelRef as the selected CPE model profile for
-	// sessionID.
+	// sessionID. It returns an error wrapping ErrSessionNotFound when sessionID is
+	// missing.
 	SetACPSessionModelRef(ctx context.Context, sessionID acp.SessionId, modelRef string) error
 }
 
 // ACPSessionThinkingLevelSetter updates an ACP session's reasoning effort level.
 type ACPSessionThinkingLevelSetter interface {
 	// SetACPSessionThinkingLevel marks thinkingLevel as the selected reasoning
-	// effort level for sessionID.
+	// effort level for sessionID. It returns an error wrapping ErrSessionNotFound
+	// when sessionID is missing.
 	SetACPSessionThinkingLevel(ctx context.Context, sessionID acp.SessionId, thinkingLevel string) error
 }
 
 // ACPSessionCostAdder accumulates an ACP session's cumulative cost.
 type ACPSessionCostAdder interface {
 	// AddACPSessionCost atomically adds costUSD (in US dollars) to the
-	// session's persisted cumulative cost and returns the updated total.
+	// session's persisted cumulative cost and returns the updated total. It
+	// returns an error wrapping ErrSessionNotFound when sessionID is missing.
 	AddACPSessionCost(ctx context.Context, sessionID acp.SessionId, costUSD float64) (float64, error)
 }
 
@@ -277,7 +284,8 @@ type ACPSessionGetter interface {
 	// selected model profile reference, and reasoning effort level for sessionID.
 	//
 	// The returned SessionInfo.UpdatedAt is an ISO 8601 timestamp derived from
-	// the session's creation time.
+	// the session's creation time. It returns an error wrapping
+	// ErrSessionNotFound when sessionID is missing.
 	GetACPSession(ctx context.Context, sessionID acp.SessionId) (GetACPSessionResponse, error)
 }
 
@@ -309,7 +317,8 @@ type MessageDB interface {
 // no parent key). The returned dialog is ordered root-to-leaf and includes the
 // target message as the last element.
 //
-// If any message in the chain cannot be loaded, an error is returned.
+// If any message in the chain cannot be loaded, an error is returned. Missing
+// messages are reported with errors wrapping ErrMessageNotFound.
 func GetDialogForMessage(ctx context.Context, getter MessagesGetter, messageID string) (gai.Dialog, error) {
 	// Collect messages from the target up to the root (leaf-to-root order)
 	collected, err := collectAncestorMessages(ctx, getter, messageID)
@@ -343,7 +352,7 @@ func collectAncestorMessages(ctx context.Context, getter MessagesGetter, message
 			break
 		}
 		if !found {
-			return nil, fmt.Errorf("message %s not found", currentID)
+			return nil, fmt.Errorf("message %s not found: %w", currentID, ErrMessageNotFound)
 		}
 
 		result = append(result, msg)

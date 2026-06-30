@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"iter"
 	"math"
@@ -328,6 +329,64 @@ func TestACPSessions(t *testing.T) {
 	}
 	if sessions[0].UpdatedAt == nil || *sessions[0].UpdatedAt != olderSessionCreatedAt.Format(time.RFC3339Nano) {
 		t.Fatalf("older UpdatedAt after add: got %v", sessions[0].UpdatedAt)
+	}
+}
+
+func TestACPSessionNotFoundErrors(t *testing.T) {
+	db, _ := newTestDB(t)
+	ctx := context.Background()
+	sessionID := acp.SessionId("missing-session")
+
+	for _, tc := range []struct {
+		name string
+		run  func() error
+	}{
+		{
+			name: "get",
+			run: func() error {
+				_, err := db.GetACPSession(ctx, sessionID)
+				return err
+			},
+		},
+		{
+			name: "add message",
+			run: func() error {
+				_, err := db.AddACPSessionMessage(ctx, sessionID, "message-id")
+				return err
+			},
+		},
+		{
+			name: "delete",
+			run: func() error {
+				return db.DeleteACPSession(ctx, sessionID)
+			},
+		},
+		{
+			name: "set model",
+			run: func() error {
+				return db.SetACPSessionModelRef(ctx, sessionID, testACPModelRef)
+			},
+		},
+		{
+			name: "set thinking level",
+			run: func() error {
+				return db.SetACPSessionThinkingLevel(ctx, sessionID, "high")
+			},
+		},
+		{
+			name: "add cost",
+			run: func() error {
+				_, err := db.AddACPSessionCost(ctx, sessionID, 0.25)
+				return err
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.run()
+			if !errors.Is(err, ErrSessionNotFound) {
+				t.Fatalf("expected ErrSessionNotFound, got %v", err)
+			}
+		})
 	}
 }
 
@@ -807,6 +866,22 @@ func TestSaveDialog(t *testing.T) {
 	})
 }
 
+func TestSaveDialogMissingExistingMessage(t *testing.T) {
+	db, _ := newTestDB(t)
+	ctx := context.Background()
+	msg := makeTextMessage(gai.User, "missing")
+	msg.ExtraFields = map[string]any{MessageIDKey: "missing-message"}
+
+	var gotErr error
+	for _, err := range db.SaveDialog(ctx, slices.Values([]gai.Message{msg})) {
+		gotErr = err
+		break
+	}
+	if !errors.Is(gotErr, ErrMessageNotFound) {
+		t.Fatalf("expected ErrMessageNotFound, got %v", gotErr)
+	}
+}
+
 // TestGetMessages verifies message retrieval by ID, including correct population of
 // ExtraFields (MessageIDKey, MessageParentIDKey), preservation of Role and ToolResultError
 // fields, and round-trip of block-level ExtraFields. Also confirms non-existent IDs
@@ -905,8 +980,8 @@ func TestGetMessages(t *testing.T) {
 		ctx := context.Background()
 
 		_, err := db.GetMessages(ctx, []string{"nonexistent"})
-		if err == nil {
-			t.Fatal("expected error for non-existent ID")
+		if !errors.Is(err, ErrMessageNotFound) {
+			t.Fatalf("expected ErrMessageNotFound, got %v", err)
 		}
 	})
 
@@ -1863,8 +1938,9 @@ func (m *mockGetter) GetMessages(_ context.Context, messageIDs []string) (iter.S
 func TestCollectAncestorMessages(t *testing.T) {
 	t.Run("message not found", func(t *testing.T) {
 		getter := &mockGetter{messages: map[string]gai.Message{}}
-		if _, err := GetDialogForMessage(context.Background(), getter, "nonexistent"); err == nil {
-			t.Fatal("expected error for message not found")
+		_, err := GetDialogForMessage(context.Background(), getter, "nonexistent")
+		if !errors.Is(err, ErrMessageNotFound) {
+			t.Fatalf("expected ErrMessageNotFound, got %v", err)
 		}
 	})
 
@@ -1880,8 +1956,9 @@ func TestCollectAncestorMessages(t *testing.T) {
 				},
 			},
 		}
-		if _, err := GetDialogForMessage(context.Background(), getter, "child"); err == nil {
-			t.Fatal("expected error for missing parent")
+		_, err := GetDialogForMessage(context.Background(), getter, "child")
+		if !errors.Is(err, ErrMessageNotFound) {
+			t.Fatalf("expected ErrMessageNotFound, got %v", err)
 		}
 	})
 }

@@ -680,6 +680,10 @@ func (s *Sqlite) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) ite
 				// and has the correct parent.
 				dbMsg, dbErr := qtx.GetMessage(ctx, existingID)
 				if dbErr != nil {
+					if errors.Is(dbErr, sql.ErrNoRows) {
+						yield(gai.Message{}, fmt.Errorf("message %s not found: %w", existingID, ErrMessageNotFound))
+						return
+					}
 					yield(gai.Message{}, fmt.Errorf("failed to verify message %s exists: %w", existingID, dbErr))
 					return
 				}
@@ -769,6 +773,9 @@ func (s *Sqlite) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) ite
 func (s *Sqlite) getMessage(ctx context.Context, messageID string) (gai.Message, string, error) {
 	msg, err := s.q.GetMessage(ctx, messageID)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return gai.Message{}, "", fmt.Errorf("message %s not found: %w", messageID, ErrMessageNotFound)
+		}
 		return gai.Message{}, "", fmt.Errorf("failed to get message: %w", err)
 	}
 
@@ -874,7 +881,7 @@ func (s *Sqlite) AddACPSessionMessage(ctx context.Context, sessionID acp.Session
 		return acp.SessionInfo{}, fmt.Errorf("failed to add message %s to ACP session %s: %w", messageID, sessionID, err)
 	}
 	if rowsAffected == 0 {
-		return acp.SessionInfo{}, fmt.Errorf("ACP session %s not found", sessionID)
+		return acp.SessionInfo{}, fmt.Errorf("ACP session %s not found: %w", sessionID, ErrSessionNotFound)
 	}
 	resp, err := s.GetACPSession(ctx, sessionID)
 	if err != nil {
@@ -909,7 +916,7 @@ func (s *Sqlite) DeleteACPSession(ctx context.Context, sessionID acp.SessionId) 
 		return fmt.Errorf("failed to delete ACP session %s: %w", sessionID, err)
 	}
 	if rowsAffected == 0 {
-		return fmt.Errorf("ACP session %s not found", sessionID)
+		return fmt.Errorf("ACP session %s not found: %w", sessionID, ErrSessionNotFound)
 	}
 	for _, messageID := range messageIDs {
 		if err := qtx.DeleteMessage(ctx, messageID); err != nil {
@@ -934,7 +941,7 @@ func (s *Sqlite) SetACPSessionModelRef(ctx context.Context, sessionID acp.Sessio
 		return fmt.Errorf("failed to set model ref for ACP session %s: %w", sessionID, err)
 	}
 	if rowsAffected == 0 {
-		return fmt.Errorf("ACP session %s not found", sessionID)
+		return fmt.Errorf("ACP session %s not found: %w", sessionID, ErrSessionNotFound)
 	}
 	return nil
 }
@@ -950,7 +957,7 @@ func (s *Sqlite) SetACPSessionThinkingLevel(ctx context.Context, sessionID acp.S
 		return fmt.Errorf("failed to set thinking level for ACP session %s: %w", sessionID, err)
 	}
 	if rowsAffected == 0 {
-		return fmt.Errorf("ACP session %s not found", sessionID)
+		return fmt.Errorf("ACP session %s not found: %w", sessionID, ErrSessionNotFound)
 	}
 	return nil
 }
@@ -964,7 +971,7 @@ func (s *Sqlite) AddACPSessionCost(ctx context.Context, sessionID acp.SessionId,
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return 0, fmt.Errorf("ACP session %s not found", sessionID)
+			return 0, fmt.Errorf("ACP session %s not found: %w", sessionID, ErrSessionNotFound)
 		}
 		return 0, fmt.Errorf("failed to add cost to ACP session %s: %w", sessionID, err)
 	}
@@ -979,6 +986,9 @@ func (s *Sqlite) AddACPSessionCost(ctx context.Context, sessionID acp.SessionId,
 func (s *Sqlite) GetACPSession(ctx context.Context, sessionID acp.SessionId) (GetACPSessionResponse, error) {
 	row, err := s.q.GetSession(ctx, string(sessionID))
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return GetACPSessionResponse{}, fmt.Errorf("ACP session %s not found: %w", sessionID, ErrSessionNotFound)
+		}
 		return GetACPSessionResponse{}, fmt.Errorf("failed to get ACP session %s: %w", sessionID, err)
 	}
 	return GetACPSessionResponse{
