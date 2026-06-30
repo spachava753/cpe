@@ -3,7 +3,9 @@ package acp
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
+	"strings"
 
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
@@ -326,11 +328,16 @@ func (a *Agent) Cancel(ctx context.Context, params *acp.CancelNotification) erro
 	})
 }
 
+func missingACPSessionErr(sessionID acp.SessionId, err error) bool {
+	return err != nil && strings.Contains(err.Error(), fmt.Sprintf("ACP session %s not found", sessionID))
+}
+
 // CloseSession implements [acp.SessionHandler].
 func (a *Agent) CloseSession(ctx context.Context, params *acp.CloseSessionRequest) (*acp.CloseSessionResponse, error) {
-	s, err := a.activeSession(params.SessionID)
-	if err != nil {
-		return nil, err
+	s, ok := a.activeSessions.Load(params.SessionID)
+	if !ok {
+		slog.Info("session close requested for unknown session", slog.String("session_id", string(params.SessionID)))
+		return &acp.CloseSessionResponse{}, nil
 	}
 	if err := s.Do(func(t *session) error {
 		if t.runtime == nil {
@@ -349,7 +356,8 @@ func (a *Agent) DeleteSession(
 	ctx context.Context,
 	params *acp.DeleteSessionRequest,
 ) (*acp.DeleteSessionResponse, error) {
-	if s, ok := a.activeSessions.Load(params.SessionID); ok {
+	s, ok := a.activeSessions.Load(params.SessionID)
+	if ok {
 		if err := s.Do(func(t *session) error {
 			if t.cancelfunc != nil {
 				t.cancelfunc()
@@ -364,6 +372,11 @@ func (a *Agent) DeleteSession(
 		}
 	}
 	if err := a.db.DeleteACPSession(ctx, params.SessionID); err != nil {
+		if missingACPSessionErr(params.SessionID, err) {
+			slog.Info("session delete requested for unknown session", slog.String("session_id", string(params.SessionID)))
+			a.activeSessions.Delete(params.SessionID)
+			return &acp.DeleteSessionResponse{}, nil
+		}
 		return nil, fmt.Errorf("could not delete session %s: %v", params.SessionID, err)
 	}
 	a.activeSessions.Delete(params.SessionID)

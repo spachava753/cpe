@@ -574,6 +574,35 @@ func TestLoadSession(t *testing.T) {
 	})
 }
 
+func TestLoadSessionUnknownSession(t *testing.T) {
+	fixture := setup(t, &noOpAcpClient{}, &config.RawConfig{}, unreachableRuntimeFactory)
+	clientConn := fixture.ClientConn
+
+	_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+		ClientCapabilities: &acp.ClientCapabilities{
+			Fs: &acp.FileSystemCapabilities{
+				ReadTextFile:  false,
+				WriteTextFile: false,
+			},
+			Terminal: true,
+		},
+		ClientInfo: &acp.Implementation{
+			Name:    "test-client",
+			Title:   new("test client"),
+			Version: "test",
+		},
+		ProtocolVersion: acp.ProtocolVersion(1),
+	})
+	be.Err(t, err, nil)
+
+	_, err = clientConn.LoadSession(t.Context(), &acp.LoadSessionRequest{
+		Cwd:        "/rando/dir",
+		McpServers: []acp.McpServer{},
+		SessionID:  "does-not-exist",
+	})
+	be.True(t, err != nil)
+}
+
 func TestLoadSessionReplaysCompactionLineage(t *testing.T) {
 	var createdModelRefs []string
 	testClient := &promptTestClient{}
@@ -1006,14 +1035,61 @@ func TestDeleteSession(t *testing.T) {
 	_, err = store.GetACPSession(t.Context(), newSessionResp.SessionID)
 	be.True(t, err != nil)
 
+	_, err = clientConn.DeleteSession(t.Context(), &acp.DeleteSessionRequest{
+		SessionID: newSessionResp.SessionID,
+	})
+	be.Err(t, err, nil)
+	be.Equal(t, trackingRuntime.closeCalls, 1)
+
 	_, err = clientConn.CloseSession(t.Context(), &acp.CloseSessionRequest{
 		SessionID: newSessionResp.SessionID,
 	})
-	be.True(t, err != nil)
+	be.Err(t, err, nil)
 	be.Equal(t, trackingRuntime.closeCalls, 1)
 	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions WHERE id = ?", newSessionResp.SessionID), 0)
 	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM messages"), 0)
 	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM blocks"), 0)
+}
+
+func TestDeleteSessionRemovesInactivePersistedSession(t *testing.T) {
+	fixture := setup(t, &noOpAcpClient{}, &config.RawConfig{}, unreachableRuntimeFactory)
+	clientConn := fixture.ClientConn
+	store := fixture.Store
+	rawDB := fixture.RawDB
+
+	be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
+		Session: acp.SessionInfo{
+			Cwd:       "/rando/dir",
+			SessionID: "inactive-session",
+		},
+		LastMessageID: "",
+		ModelRef:      "test-model",
+		ThinkingLevel: "",
+	}), nil)
+	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions WHERE id = ?", "inactive-session"), 1)
+
+	_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+		ClientCapabilities: &acp.ClientCapabilities{
+			Fs: &acp.FileSystemCapabilities{
+				ReadTextFile:  false,
+				WriteTextFile: false,
+			},
+			Terminal: true,
+		},
+		ClientInfo: &acp.Implementation{
+			Name:    "test-client",
+			Title:   new("test client"),
+			Version: "test",
+		},
+		ProtocolVersion: acp.ProtocolVersion(1),
+	})
+	be.Err(t, err, nil)
+
+	_, err = clientConn.DeleteSession(t.Context(), &acp.DeleteSessionRequest{
+		SessionID: "inactive-session",
+	})
+	be.Err(t, err, nil)
+	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions WHERE id = ?", "inactive-session"), 0)
 }
 
 func TestForkSession(t *testing.T) {
@@ -1354,7 +1430,7 @@ func TestCloseSession(t *testing.T) {
 		_, err = clientConn.CloseSession(t.Context(), &acp.CloseSessionRequest{
 			SessionID: "abc123",
 		})
-		be.True(t, err != nil)
+		be.Err(t, err, nil)
 		be.Equal(t, trackingRuntime.closeCalls, 1)
 	})
 
