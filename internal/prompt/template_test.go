@@ -11,61 +11,150 @@ import (
 	"testing"
 )
 
-func TestSkillsReturnsNameDescriptionPath(t *testing.T) {
+func TestSkills(t *testing.T) {
 	t.Parallel()
 
-	baseDir := t.TempDir()
-	createSkill(t, baseDir, "alpha-skill", "alpha-skill", "Alpha description")
-	createSkill(t, baseDir, "beta-skill", "beta-skill", "Beta description")
+	t.Run("returns name description path", func(t *testing.T) {
+		t.Parallel()
 
-	got := skills(&bytes.Buffer{}, baseDir)
-	want := []Skill{
-		{Name: "alpha-skill", Description: "Alpha description", Path: filepath.Join(baseDir, "alpha-skill")},
-		{Name: "beta-skill", Description: "Beta description", Path: filepath.Join(baseDir, "beta-skill")},
-	}
+		baseDir := t.TempDir()
+		createSkill(t, baseDir, "alpha-skill", "alpha-skill", "Alpha description")
+		createSkill(t, baseDir, "beta-skill", "beta-skill", "Beta description")
 
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("skills() mismatch\nwant: %#v\n got: %#v", want, got)
-	}
-}
+		got := skills(&bytes.Buffer{}, baseDir)
+		want := []Skill{
+			{Name: "alpha-skill", Description: "Alpha description", Path: filepath.Join(baseDir, "alpha-skill")},
+			{Name: "beta-skill", Description: "Beta description", Path: filepath.Join(baseDir, "beta-skill")},
+		}
 
-func TestSkillsSkipsInvalidSkillsAndEmitsWarnings(t *testing.T) {
-	t.Parallel()
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("skills() mismatch\nwant: %#v\n got: %#v", want, got)
+		}
+	})
 
-	baseDir := t.TempDir()
-	createSkill(t, baseDir, "valid-skill", "valid-skill", "Valid description")
-	createInvalidSkill(t, baseDir, "invalid-skill", "name: invalid-skill")
+	t.Run("skips invalid skills and emits warnings", func(t *testing.T) {
+		t.Parallel()
 
-	var warnings bytes.Buffer
-	got := skills(&warnings, baseDir)
-	want := []Skill{{Name: "valid-skill", Description: "Valid description", Path: filepath.Join(baseDir, "valid-skill")}}
+		baseDir := t.TempDir()
+		createSkill(t, baseDir, "valid-skill", "valid-skill", "Valid description")
+		createInvalidSkill(t, baseDir, "invalid-skill", "name: invalid-skill")
 
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("skills() mismatch\nwant: %#v\n got: %#v", want, got)
-	}
+		var warnings bytes.Buffer
+		got := skills(&warnings, baseDir)
+		want := []Skill{{Name: "valid-skill", Description: "Valid description", Path: filepath.Join(baseDir, "valid-skill")}}
 
-	warnText := warnings.String()
-	if !strings.Contains(warnText, `warning: failed to load skill "invalid-skill"`) {
-		t.Fatalf("expected warning for invalid skill, got: %q", warnText)
-	}
-}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("skills() mismatch\nwant: %#v\n got: %#v", want, got)
+		}
 
-func TestSkillsSkipsMissingPaths(t *testing.T) {
-	t.Parallel()
+		warnText := warnings.String()
+		if !strings.Contains(warnText, `warning: failed to load skill "invalid-skill"`) {
+			t.Fatalf("expected warning for invalid skill, got: %q", warnText)
+		}
+	})
 
-	got := skills(&bytes.Buffer{}, "/path/that/does/not/exist")
-	if len(got) != 0 {
-		t.Fatalf("expected no skills, got: %#v", got)
-	}
-}
+	t.Run("follows symlinked skill directories", func(t *testing.T) {
+		t.Parallel()
 
-func TestSkillsReturnsEmptyWhenNoPathsProvided(t *testing.T) {
-	t.Parallel()
+		baseDir := t.TempDir()
+		targetBaseDir := t.TempDir()
+		createSkill(t, targetBaseDir, "actual-skill", "linked-skill", "Linked description")
 
-	got := skills(&bytes.Buffer{})
-	if len(got) != 0 {
-		t.Fatalf("expected no skills, got: %#v", got)
-	}
+		linkedSkillDir := filepath.Join(baseDir, "linked-skill")
+		createSymlink(t, filepath.Join(targetBaseDir, "actual-skill"), linkedSkillDir)
+
+		got := skills(&bytes.Buffer{}, baseDir)
+		want := []Skill{{Name: "linked-skill", Description: "Linked description", Path: linkedSkillDir}}
+
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("skills() mismatch\nwant: %#v\n got: %#v", want, got)
+		}
+	})
+
+	t.Run("reports broken symlink siblings", func(t *testing.T) {
+		t.Parallel()
+
+		baseDir := t.TempDir()
+		createSkill(t, baseDir, "valid-skill", "valid-skill", "Valid description")
+		createSymlink(t, filepath.Join(baseDir, "missing-skill"), filepath.Join(baseDir, "broken-skill"))
+
+		var warnings bytes.Buffer
+		got := skills(&warnings, baseDir)
+		want := []Skill{{Name: "valid-skill", Description: "Valid description", Path: filepath.Join(baseDir, "valid-skill")}}
+
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("skills() mismatch\nwant: %#v\n got: %#v", want, got)
+		}
+
+		warnText := warnings.String()
+		if !strings.Contains(warnText, `warning: failed to inspect skill "broken-skill"`) {
+			t.Fatalf("expected warning for broken symlink, got: %q", warnText)
+		}
+	})
+
+	t.Run("reports symlink loops", func(t *testing.T) {
+		t.Parallel()
+
+		baseDir := t.TempDir()
+		createSkill(t, baseDir, "valid-skill", "valid-skill", "Valid description")
+		createSymlink(t, "loop-skill", filepath.Join(baseDir, "loop-skill"))
+
+		var warnings bytes.Buffer
+		got := skills(&warnings, baseDir)
+		want := []Skill{{Name: "valid-skill", Description: "Valid description", Path: filepath.Join(baseDir, "valid-skill")}}
+
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("skills() mismatch\nwant: %#v\n got: %#v", want, got)
+		}
+
+		warnText := warnings.String()
+		if !strings.Contains(warnText, `warning: failed to inspect skill "loop-skill"`) {
+			t.Fatalf("expected warning for symlink loop, got: %q", warnText)
+		}
+	})
+
+	t.Run("reports symlink files", func(t *testing.T) {
+		t.Parallel()
+
+		baseDir := t.TempDir()
+		createSkill(t, baseDir, "valid-skill", "valid-skill", "Valid description")
+		filePath := filepath.Join(baseDir, "not-a-skill.md")
+		if err := os.WriteFile(filePath, []byte("not a skill"), 0o644); err != nil {
+			t.Fatalf("os.WriteFile() error = %v", err)
+		}
+		createSymlink(t, filePath, filepath.Join(baseDir, "file-symlink"))
+
+		var warnings bytes.Buffer
+		got := skills(&warnings, baseDir)
+		want := []Skill{{Name: "valid-skill", Description: "Valid description", Path: filepath.Join(baseDir, "valid-skill")}}
+
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("skills() mismatch\nwant: %#v\n got: %#v", want, got)
+		}
+
+		warnText := warnings.String()
+		if !strings.Contains(warnText, `warning: failed to inspect skill "file-symlink"`) {
+			t.Fatalf("expected warning for symlink file, got: %q", warnText)
+		}
+	})
+
+	t.Run("skips missing paths", func(t *testing.T) {
+		t.Parallel()
+
+		got := skills(&bytes.Buffer{}, "/path/that/does/not/exist")
+		if len(got) != 0 {
+			t.Fatalf("expected no skills, got: %#v", got)
+		}
+	})
+
+	t.Run("returns empty when no paths provided", func(t *testing.T) {
+		t.Parallel()
+
+		got := skills(&bytes.Buffer{})
+		if len(got) != 0 {
+			t.Fatalf("expected no skills, got: %#v", got)
+		}
+	})
 }
 
 func TestSystemPromptTemplateSupportsCustomSkillFormatting(t *testing.T) {
@@ -104,6 +193,14 @@ description: %s
 `, name, description, name)
 	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644); err != nil {
 		t.Fatalf("os.WriteFile() error = %v", err)
+	}
+}
+
+func createSymlink(t *testing.T, oldname, newname string) {
+	t.Helper()
+
+	if err := os.Symlink(oldname, newname); err != nil {
+		t.Skipf("os.Symlink() error = %v", err)
 	}
 }
 

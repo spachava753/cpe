@@ -117,7 +117,12 @@ func skills(w io.Writer, paths ...string) []Skill {
 		}
 
 		for _, entry := range entries {
-			if !entry.IsDir() {
+			candidate, err := skillCandidateDir(basePath, entry)
+			if err != nil {
+				fmt.Fprintf(w, "warning: failed to inspect skill %q: %v\n", entry.Name(), err)
+				continue
+			}
+			if !candidate {
 				continue
 			}
 
@@ -137,6 +142,26 @@ func skills(w io.Writer, paths ...string) []Skill {
 	}
 
 	return allSkills
+}
+
+func skillCandidateDir(basePath string, entry os.DirEntry) (bool, error) {
+	if entry.IsDir() {
+		return true, nil
+	}
+	if entry.Type()&os.ModeSymlink == 0 {
+		return false, nil
+	}
+
+	path := filepath.Join(basePath, entry.Name())
+	info, err := os.Stat(path)
+	if err != nil {
+		return false, fmt.Errorf("resolve symlink: %w", err)
+	}
+	if !info.IsDir() {
+		return false, fmt.Errorf("symlink target is not a directory")
+	}
+
+	return true, nil
 }
 
 func parseSkill(skillMdPath string) (Skill, error) {
