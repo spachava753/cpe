@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -197,18 +198,16 @@ func TestNewSession(t *testing.T) {
 	})
 	be.Err(t, err, nil)
 	be.True(t, resp.SessionID != "")
-	be.Equal(t, len(*resp.ConfigOptions), 2)
+	be.Equal(t, len(*resp.ConfigOptions), 1)
 	be.Equal(t, (*resp.ConfigOptions)[0].ID, modelRefConfigId)
-	be.Equal(t, (*resp.ConfigOptions)[0].CurrentValue, any("test-model"))
-	be.Equal(t, (*resp.ConfigOptions)[1].ID, thinkingLevelConfigId)
-	be.Equal(t, (*resp.ConfigOptions)[1].CurrentValue, any("low"))
+	be.Equal(t, (*resp.ConfigOptions)[0].CurrentValue, any(""))
 
 	storedSession, err := store.GetACPSession(t.Context(), resp.SessionID)
 	be.Err(t, err, nil)
 	be.Equal(t, storedSession.Session.Cwd, "/rando/dir")
 	be.Equal(t, *storedSession.Session.Title, "untitled")
-	be.Equal(t, storedSession.ModelRef, "test-model")
-	be.Equal(t, storedSession.ThinkingLevel, "low")
+	be.Equal(t, storedSession.ModelRef, "")
+	be.Equal(t, storedSession.ThinkingLevel, "")
 	be.Equal(t, storedSession.LastMessageID, "")
 }
 
@@ -364,23 +363,22 @@ func TestResumeSession(t *testing.T) {
 			SessionID:  "abc123",
 		})
 		be.Err(t, err, nil)
-		be.Equal(t, len(*resp.ConfigOptions), 2)
-		be.Equal(t, (*resp.ConfigOptions)[0].CurrentValue, any("test-model"))
-		be.Equal(t, (*resp.ConfigOptions)[1].CurrentValue, any("low"))
-		be.Equal(t, createdModelRefs, []string{"test-model"})
-		if len(createdSessions) != 1 {
-			t.Fatalf("runtime created with %d sessions, want 1", len(createdSessions))
-		}
-		createdSession := createdSessions[0]
-		be.Equal(t, createdSession.id, acp.SessionId("abc123"))
-		be.Equal(t, createdSession.cwd, "/rando/dir")
-		be.Equal(t, createdSession.model, "test-model")
-		be.Equal(t, createdSession.thinking, "low")
+		be.Equal(t, len(*resp.ConfigOptions), 1)
+		be.Equal(t, (*resp.ConfigOptions)[0].ID, modelRefConfigId)
+		be.Equal(t, (*resp.ConfigOptions)[0].CurrentValue, any(""))
+		be.Equal(t, len(createdModelRefs), 0)
+		be.Equal(t, len(createdSessions), 0)
+
+		_, err = clientConn.Prompt(t.Context(), &acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextContentBlock("Hello")},
+			SessionID: "abc123",
+		})
+		be.True(t, err != nil)
 
 		storedSession, err := store.GetACPSession(t.Context(), "abc123")
 		be.Err(t, err, nil)
-		be.Equal(t, storedSession.ModelRef, "test-model")
-		be.Equal(t, storedSession.ThinkingLevel, "low")
+		be.Equal(t, storedSession.ModelRef, "")
+		be.Equal(t, storedSession.ThinkingLevel, "")
 	})
 
 	t.Run("stale thinking level", func(t *testing.T) {
@@ -572,6 +570,86 @@ func TestLoadSession(t *testing.T) {
 			Update:    expectedRPCAgentMessageChunk("answer"),
 		},
 	})
+}
+
+func TestLoadSessionWithStaleModelRequiresModelSelection(t *testing.T) {
+	var createdModelRefs []string
+	testClient := &promptTestClient{}
+	fixture := setup(
+		t,
+		testClient,
+		&config.RawConfig{
+			Models: []config.ModelConfig{
+				{
+					Model: config.Model{
+						Ref:         "test-model",
+						DisplayName: "Test Model",
+						ID:          "test-model",
+						Type:        "responses",
+					},
+				},
+			},
+		},
+		func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
+			createdModelRefs = append(createdModelRefs, s.model)
+			return testRuntime{}, nil
+		},
+	)
+	clientConn := fixture.ClientConn
+	store := fixture.Store
+
+	dialog := gai.Dialog{
+		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("hello")}},
+		{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("answer")}},
+	}
+	var lastMessageID string
+	for msg, err := range store.SaveDialog(t.Context(), slices.Values(dialog)) {
+		be.Err(t, err, nil)
+		lastMessageID = storage.GetMessageID(msg)
+	}
+	be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
+		Session: acp.SessionInfo{
+			Cwd:       "/rando/dir",
+			SessionID: "abc123",
+		},
+		LastMessageID: lastMessageID,
+		ModelRef:      "stale-model",
+		ThinkingLevel: "stale-thinking",
+	}), nil)
+
+	_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+		ClientCapabilities: &acp.ClientCapabilities{Terminal: true},
+		ProtocolVersion:    acp.ProtocolVersion(1),
+	})
+	be.Err(t, err, nil)
+
+	resp, err := clientConn.LoadSession(t.Context(), &acp.LoadSessionRequest{
+		Cwd:        "/rando/dir",
+		McpServers: []acp.McpServer{},
+		SessionID:  "abc123",
+	})
+	be.Err(t, err, nil)
+	be.Equal(t, len(*resp.ConfigOptions), 1)
+	be.Equal(t, (*resp.ConfigOptions)[0].ID, modelRefConfigId)
+	be.Equal(t, (*resp.ConfigOptions)[0].CurrentValue, any(""))
+	be.Equal(t, len(createdModelRefs), 0)
+	assertNotifications(t, testClient, []acp.SessionNotification{
+		{SessionID: "abc123", Update: expectedRPCUserMessageChunk("hello")},
+		{SessionID: "abc123", Update: expectedRPCAgentMessageChunk("answer")},
+	})
+
+	_, err = clientConn.Prompt(t.Context(), &acp.PromptRequest{
+		Prompt:    []acp.ContentBlock{acp.TextContentBlock("follow-up")},
+		SessionID: "abc123",
+	})
+	be.True(t, err != nil)
+	be.True(t, strings.Contains(err.Error(), "cannot prompt before selecting a model"))
+
+	storedSession, err := store.GetACPSession(t.Context(), "abc123")
+	be.Err(t, err, nil)
+	be.Equal(t, storedSession.ModelRef, "")
+	be.Equal(t, storedSession.ThinkingLevel, "")
+	be.Equal(t, storedSession.LastMessageID, lastMessageID)
 }
 
 func TestLoadSessionUnknownSession(t *testing.T) {
@@ -786,6 +864,13 @@ func TestCancel(t *testing.T) {
 		})
 		be.Err(t, err, nil)
 
+		_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+			ConfigID:  modelRefConfigId,
+			SessionID: newSessionResp.SessionID,
+			Value:     "test-model",
+		})
+		be.Err(t, err, nil)
+
 		type promptResult struct {
 			resp *acp.PromptResponse
 			err  error
@@ -867,6 +952,13 @@ func TestCancel(t *testing.T) {
 		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{
 			Cwd:        "/rando/dir",
 			McpServers: []acp.McpServer{},
+		})
+		be.Err(t, err, nil)
+
+		_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+			ConfigID:  modelRefConfigId,
+			SessionID: newSessionResp.SessionID,
+			Value:     "test-model",
 		})
 		be.Err(t, err, nil)
 
@@ -1000,6 +1092,13 @@ func TestDeleteSession(t *testing.T) {
 	})
 	be.Err(t, err, nil)
 	be.True(t, newSessionResp.SessionID != "")
+
+	_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+		ConfigID:  modelRefConfigId,
+		SessionID: newSessionResp.SessionID,
+		Value:     "test-model",
+	})
+	be.Err(t, err, nil)
 
 	promptResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
 		Prompt: []acp.ContentBlock{
@@ -1165,6 +1264,13 @@ func TestForkSession(t *testing.T) {
 		})
 		be.Err(t, err, nil)
 
+		_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+			ConfigID:  modelRefConfigId,
+			SessionID: newSessionResp.SessionID,
+			Value:     "test-model",
+		})
+		be.Err(t, err, nil)
+
 		promptResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
 			Prompt: []acp.ContentBlock{
 				acp.TextContentBlock("Hello"),
@@ -1276,6 +1382,13 @@ func TestForkSession(t *testing.T) {
 		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{
 			Cwd:        "/rando/dir",
 			McpServers: []acp.McpServer{},
+		})
+		be.Err(t, err, nil)
+
+		_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+			ConfigID:  modelRefConfigId,
+			SessionID: newSessionResp.SessionID,
+			Value:     "test-model",
 		})
 		be.Err(t, err, nil)
 

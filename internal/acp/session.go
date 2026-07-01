@@ -52,11 +52,8 @@ func (a *Agent) NewSession(ctx context.Context, params *acp.NewSessionRequest) (
 		Title:     new("untitled"),
 		SessionID: id,
 	}
-	modelRef := a.rawCfg.Models[0].Ref
+	var modelRef string
 	var thinkingVal string
-	if len(a.rawCfg.Models[0].ThinkingValues) > 0 {
-		thinkingVal = a.rawCfg.Models[0].ThinkingValues[0].Value
-	}
 	s := session{
 		id:         id,
 		cwd:        params.Cwd,
@@ -120,36 +117,38 @@ func (a *Agent) loadActiveSession(
 	// config options may be stale, double check them
 	modelRef := getSessionResp.ModelRef
 	thinkingLevel := getSessionResp.ThinkingLevel
+	if modelRef == "" {
+		if thinkingLevel != "" {
+			thinkingLevel = ""
+			if err := a.db.SetACPSessionThinkingLevel(ctx, sessionId, thinkingLevel); err != nil {
+				return nil, fmt.Errorf("could not clear thinking level config: %v", err)
+			}
+		}
+		a.activeSessions.Store(sessionId, sync.NewGuard(session{
+			id:         sessionId,
+			cwd:        cwd,
+			mcpServers: mcpServers,
+		}))
+		return a.configOptions(ctx, sessionId), nil
+	}
 	idx := slices.IndexFunc(a.rawCfg.Models, func(m config.ModelConfig) bool {
 		return m.Ref == getSessionResp.ModelRef
 	})
 	if idx == -1 {
-		// model profile is stale, default the first one in config
-		modelRef = a.rawCfg.Models[0].Ref
+		// A stale model invalidates its thinking level too; require the client to pick a model before prompting.
+		modelRef = ""
 		thinkingLevel = ""
-		if len(a.rawCfg.Models[0].ThinkingValues) > 0 {
-			thinkingLevel = a.rawCfg.Models[0].ThinkingValues[0].Value
-		}
-
 		if err := a.db.SetACPSessionModelRef(ctx, sessionId, modelRef); err != nil {
 			return nil, fmt.Errorf("could not update model ref config: %v", err)
 		}
 		if err := a.db.SetACPSessionThinkingLevel(ctx, sessionId, thinkingLevel); err != nil {
 			return nil, fmt.Errorf("could not update thinking level config: %v", err)
 		}
-		s := session{
+		a.activeSessions.Store(sessionId, sync.NewGuard(session{
 			id:         sessionId,
 			cwd:        cwd,
-			model:      modelRef,
-			thinking:   thinkingLevel,
 			mcpServers: mcpServers,
-		}
-		runtime, err := a.runtimeFactory.Create(ctx, s, a.clientCaps)
-		if err != nil {
-			return nil, fmt.Errorf("could not create runtime: %v", err)
-		}
-		s.runtime = runtime
-		a.activeSessions.Store(sessionId, sync.NewGuard(s))
+		}))
 		return a.configOptions(ctx, sessionId), nil
 	}
 
@@ -265,12 +264,9 @@ func (a *Agent) ForkSession(
 		return m.Ref == modelRef
 	})
 	if idx == -1 {
-		// model profile is stale, default to the first one in config
-		modelRef = a.rawCfg.Models[0].Ref
+		// A stale model invalidates its thinking level too; fork into an unpicked model state.
+		modelRef = ""
 		thinkingLevel = ""
-		if len(a.rawCfg.Models[0].ThinkingValues) > 0 {
-			thinkingLevel = a.rawCfg.Models[0].ThinkingValues[0].Value
-		}
 	} else if !slices.ContainsFunc(
 		a.rawCfg.Models[idx].ThinkingValues,
 		func(tv config.ThinkingValueConfig) bool {

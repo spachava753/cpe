@@ -16,7 +16,7 @@ import (
 )
 
 func TestSessionConfigOptions(t *testing.T) {
-	t.Run("new session returns ordered defaults", func(t *testing.T) {
+	t.Run("new session waits for model before showing thinking levels", func(t *testing.T) {
 		fixture := setup(
 			t,
 			&noOpAcpClient{},
@@ -87,31 +87,19 @@ func TestSessionConfigOptions(t *testing.T) {
 			McpServers: []acp.McpServer{},
 		})
 		be.Err(t, err, nil)
-		be.Equal(t, len(*resp.ConfigOptions), 2)
+		be.Equal(t, len(*resp.ConfigOptions), 1)
 
 		modelOption := (*resp.ConfigOptions)[0]
 		be.Equal(t, modelOption.Type, acp.SessionConfigOptionTypeSelect)
 		be.Equal(t, modelOption.ID, modelRefConfigId)
 		be.Equal(t, modelOption.Name, "Model")
 		be.Equal(t, *modelOption.Category, acp.SessionConfigOptionCategoryModel)
-		be.Equal(t, modelOption.CurrentValue, any("test-model"))
+		be.Equal(t, modelOption.CurrentValue, any(""))
 		be.Equal(t, len(*modelOption.Options.Ungrouped), 2)
 		be.Equal(t, (*modelOption.Options.Ungrouped)[0].Value, acp.SessionConfigValueId("test-model"))
 		be.Equal(t, (*modelOption.Options.Ungrouped)[0].Name, "Test Model")
 		be.Equal(t, (*modelOption.Options.Ungrouped)[1].Value, acp.SessionConfigValueId("test-model2"))
 		be.Equal(t, (*modelOption.Options.Ungrouped)[1].Name, "Test Model 2")
-
-		thinkingOption := (*resp.ConfigOptions)[1]
-		be.Equal(t, thinkingOption.Type, acp.SessionConfigOptionTypeSelect)
-		be.Equal(t, thinkingOption.ID, thinkingLevelConfigId)
-		be.Equal(t, thinkingOption.Name, "Thinking level")
-		be.Equal(t, *thinkingOption.Category, acp.SessionConfigOptionCategoryThoughtLevel)
-		be.Equal(t, thinkingOption.CurrentValue, any("low"))
-		be.Equal(t, len(*thinkingOption.Options.Ungrouped), 2)
-		be.Equal(t, (*thinkingOption.Options.Ungrouped)[0].Value, acp.SessionConfigValueId("low"))
-		be.Equal(t, (*thinkingOption.Options.Ungrouped)[0].Name, "Low")
-		be.Equal(t, (*thinkingOption.Options.Ungrouped)[1].Value, acp.SessionConfigValueId("high"))
-		be.Equal(t, (*thinkingOption.Options.Ungrouped)[1].Name, "High")
 	})
 
 	t.Run("new session succeeds when model has no costs defined", func(t *testing.T) {
@@ -334,6 +322,13 @@ func TestSetSessionConfigOption(t *testing.T) {
 		})
 		be.Err(t, err, nil)
 
+		_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+			ConfigID:  modelRefConfigId,
+			SessionID: newSessionResp.SessionID,
+			Value:     "test-model",
+		})
+		be.Err(t, err, nil)
+
 		setResp, err := clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
 			ConfigID:  thinkingLevelConfigId,
 			SessionID: newSessionResp.SessionID,
@@ -417,8 +412,8 @@ func TestSetSessionConfigOption(t *testing.T) {
 
 		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionID)
 		be.Err(t, err, nil)
-		be.Equal(t, storedSession.ModelRef, "test-model")
-		be.Equal(t, storedSession.ThinkingLevel, "low")
+		be.Equal(t, storedSession.ModelRef, "")
+		be.Equal(t, storedSession.ThinkingLevel, "")
 	})
 
 	t.Run("rejects values outside option list", func(t *testing.T) {
@@ -493,8 +488,8 @@ func TestSetSessionConfigOption(t *testing.T) {
 
 		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionID)
 		be.Err(t, err, nil)
-		be.Equal(t, storedSession.ModelRef, "test-model")
-		be.Equal(t, storedSession.ThinkingLevel, "low")
+		be.Equal(t, storedSession.ModelRef, "")
+		be.Equal(t, storedSession.ThinkingLevel, "")
 	})
 }
 
@@ -605,6 +600,13 @@ func TestSetSessionConfigOptionDuringPrompt(t *testing.T) {
 	newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{
 		Cwd:        "/rando/dir",
 		McpServers: []acp.McpServer{},
+	})
+	be.Err(t, err, nil)
+
+	_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+		ConfigID:  modelRefConfigId,
+		SessionID: newSessionResp.SessionID,
+		Value:     "test-model",
 	})
 	be.Err(t, err, nil)
 

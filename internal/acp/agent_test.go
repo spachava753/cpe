@@ -111,6 +111,53 @@ func (r testRuntime) Close() error {
 }
 
 func TestPrompt(t *testing.T) {
+	t.Run("rejects prompt before model selection", func(t *testing.T) {
+		fixture := setup(
+			t,
+			&noOpAcpClient{},
+			&config.RawConfig{
+				Models: []config.ModelConfig{{
+					Model: config.Model{
+						Ref:         "test-model",
+						DisplayName: "Test Model",
+						ID:          "test-model",
+						Type:        "responses",
+					},
+				}},
+			},
+			unreachableRuntimeFactory,
+		)
+		clientConn := fixture.ClientConn
+		store := fixture.Store
+
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ProtocolVersion: acp.ProtocolVersion(1),
+			ClientCapabilities: &acp.ClientCapabilities{
+				Terminal: true,
+			},
+		})
+		be.Err(t, err, nil)
+
+		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{
+			Cwd:        t.TempDir(),
+			McpServers: []acp.McpServer{},
+		})
+		be.Err(t, err, nil)
+
+		_, err = clientConn.Prompt(t.Context(), &acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextContentBlock("Hello")},
+			SessionID: newSessionResp.SessionID,
+		})
+		be.True(t, err != nil)
+		be.True(t, strings.Contains(err.Error(), "cannot prompt before selecting a model"))
+
+		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionID)
+		be.Err(t, err, nil)
+		be.Equal(t, storedSession.ModelRef, "")
+		be.Equal(t, storedSession.ThinkingLevel, "")
+		be.Equal(t, storedSession.LastMessageID, "")
+	})
+
 	t.Run("happy path", func(t *testing.T) {
 		var (
 			clientConn *acp.Client
@@ -252,10 +299,10 @@ Output Cost: 1.00`),
 			},
 		}
 		expectedConfigOptions := []acp.SessionConfigOption{
-			acp.SelectSessionConfigOption(modelRefConfigId, "Model", acp.SessionConfigValueId("test-model"), acp.SessionConfigSelectOptions{Ungrouped: &modelOptions}),
+			acp.SelectSessionConfigOption(modelRefConfigId, "Model", acp.SessionConfigValueId(""), acp.SessionConfigSelectOptions{Ungrouped: &modelOptions}),
 		}
 		expectedConfigOptions[0].Category = new(acp.SessionConfigOptionCategoryModel)
-		expectedConfigOptions[0].CurrentValue = "test-model"
+		expectedConfigOptions[0].CurrentValue = ""
 		expectedConfigOptions[0].Description = new("Choose model")
 		be.Equal(t, *newSessionResp.ConfigOptions, expectedConfigOptions)
 		// set config option
@@ -453,10 +500,10 @@ Output Cost: 1.00`),
 			},
 		}
 		expectedConfigOptions := []acp.SessionConfigOption{
-			acp.SelectSessionConfigOption(modelRefConfigId, "Model", acp.SessionConfigValueId("test-model"), acp.SessionConfigSelectOptions{Ungrouped: &modelOptions}),
+			acp.SelectSessionConfigOption(modelRefConfigId, "Model", acp.SessionConfigValueId(""), acp.SessionConfigSelectOptions{Ungrouped: &modelOptions}),
 		}
 		expectedConfigOptions[0].Category = new(acp.SessionConfigOptionCategoryModel)
-		expectedConfigOptions[0].CurrentValue = "test-model"
+		expectedConfigOptions[0].CurrentValue = ""
 		expectedConfigOptions[0].Description = new("Choose model")
 		be.Equal(t, *newSessionResp.ConfigOptions, expectedConfigOptions)
 		// set config option
@@ -633,6 +680,13 @@ Output Cost: 1.00`),
 		})
 		be.Err(t, err, nil)
 
+		_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+			ConfigID:  modelRefConfigId,
+			SessionID: newSessionResp.SessionID,
+			Value:     "test-model",
+		})
+		be.Err(t, err, nil)
+
 		seed := gai.Dialog{
 			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("seed user")}},
 			{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("seed assistant")}},
@@ -668,6 +722,8 @@ Output Cost: 1.00`),
 
 		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionID)
 		be.Err(t, err, nil)
+		be.Equal(t, storedSession.ModelRef, "test-model")
+		be.Equal(t, storedSession.ThinkingLevel, "")
 		storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
 		be.Err(t, err, nil)
 		be.Equal(t, len(storedDialog), 4)
@@ -777,6 +833,13 @@ Output Cost: 1.00`),
 		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{
 			Cwd:        cwd,
 			McpServers: []acp.McpServer{},
+		})
+		be.Err(t, err, nil)
+
+		_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+			ConfigID:  modelRefConfigId,
+			SessionID: newSessionResp.SessionID,
+			Value:     "test-model",
 		})
 		be.Err(t, err, nil)
 
@@ -912,6 +975,13 @@ Output Cost: 1.00`),
 		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
 		be.Err(t, err, nil)
 
+		_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+			ConfigID:  modelRefConfigId,
+			SessionID: newSessionResp.SessionID,
+			Value:     "test-model",
+		})
+		be.Err(t, err, nil)
+
 		promptResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
 			Prompt:    []acp.ContentBlock{acp.TextContentBlock("Hello")},
 			SessionID: newSessionResp.SessionID,
@@ -983,6 +1053,13 @@ Output Cost: 1.00`),
 		})
 		be.Err(t, err, nil)
 		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+		be.Err(t, err, nil)
+
+		_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+			ConfigID:  modelRefConfigId,
+			SessionID: newSessionResp.SessionID,
+			Value:     "test-model",
+		})
 		be.Err(t, err, nil)
 
 		promptResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
@@ -1058,6 +1135,13 @@ Output Cost: 1.00`),
 		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
 		be.Err(t, err, nil)
 
+		_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+			ConfigID:  modelRefConfigId,
+			SessionID: newSessionResp.SessionID,
+			Value:     "test-model",
+		})
+		be.Err(t, err, nil)
+
 		promptResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
 			Prompt:    []acp.ContentBlock{acp.TextContentBlock("Hello")},
 			SessionID: newSessionResp.SessionID,
@@ -1129,6 +1213,13 @@ Output Cost: 1.00`),
 		})
 		be.Err(t, err, nil)
 		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{Cwd: t.TempDir(), McpServers: []acp.McpServer{}})
+		be.Err(t, err, nil)
+
+		_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+			ConfigID:  modelRefConfigId,
+			SessionID: newSessionResp.SessionID,
+			Value:     "test-model",
+		})
 		be.Err(t, err, nil)
 
 		_, err = clientConn.Prompt(t.Context(), &acp.PromptRequest{
@@ -1214,6 +1305,13 @@ Output Cost: 1.00`),
 		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{
 			Cwd:        cwd,
 			McpServers: []acp.McpServer{},
+		})
+		be.Err(t, err, nil)
+
+		_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+			ConfigID:  modelRefConfigId,
+			SessionID: newSessionResp.SessionID,
+			Value:     "test-model",
 		})
 		be.Err(t, err, nil)
 

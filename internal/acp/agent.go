@@ -143,6 +143,9 @@ func (a *Agent) Prompt(
 		if t.cancelfunc != nil {
 			return errors.New("cannot do prompt turn in actively generating session")
 		}
+		if t.model == "" {
+			return errors.New("cannot prompt before selecting a model")
+		}
 		t.cancelfunc = cancelFunc
 		runtime = t.runtime
 		sessionSnapshot = *t
