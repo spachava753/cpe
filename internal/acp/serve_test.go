@@ -3,7 +3,6 @@ package acp
 import (
 	"bytes"
 	"context"
-	"io"
 	"log/slog"
 	"testing"
 	"time"
@@ -64,7 +63,6 @@ func TestServerRuntimeCreatorRuntimeContextOutlivesCreateContext(t *testing.T) {
 				},
 			},
 		},
-		stderr: io.Discard,
 	}
 	createCtx, cancelCreate := context.WithCancel(t.Context())
 	runtime, err := creator.Create(createCtx, session{

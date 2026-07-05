@@ -57,7 +57,7 @@ Important package roles:
 
 - `main` owns process startup and logging setup.
 - `internal/cmd` owns Cobra command structure, flags, help text, and argument mapping.
-- `internal/acp` owns ACP protocol implementation, session lifecycle, session configuration, prompt execution, cancellation, session updates, and runtime creation.
+- `internal/acp` owns ACP protocol implementation, session lifecycle, session configuration, prompt execution, cancellation, session updates, skill slash commands, and runtime creation.
 - `internal/agent` owns provider generator construction and reusable generator wrappers.
 - `internal/commands` owns framework-agnostic helpers for local inspection commands.
 - `internal/config` owns YAML schema, validation, and effective runtime config resolution.
@@ -66,7 +66,8 @@ Important package roles:
 - `internal/storage` owns message-tree and ACP session persistence contracts plus SQLite/in-memory implementations.
 - `internal/codemode` owns execute_go_code prompt generation, tool callback behavior, harness creation, and sandbox execution.
 - `internal/textedit` owns the bundled text_edit tool and ACP diff content generation.
-- `internal/prompt` owns system prompt template rendering and skill discovery helpers.
+- `internal/prompt` owns system prompt template rendering.
+- `internal/skills` owns skill discovery, metadata parsing, and model-visible filtering.
 - `internal/render` owns terminal rendering used by local inspection commands.
 - `internal/auth` owns OAuth and credential transport helpers.
 

@@ -45,6 +45,8 @@ type Agent struct {
 	runtimeFactory RuntimeCreator
 	// rawCfg is the raw config loaded, used for model picking at the beginning of a new session
 	rawCfg *config.RawConfig
+	// skillHomeDir overrides the user home directory for skill discovery in tests.
+	skillHomeDir string
 	// db represents the API surface needed for persistent session management
 	db interface {
 		storage.ACPSessionCreator
@@ -134,11 +136,6 @@ func (a *Agent) Prompt(
 	}
 	cancelledResponse := &acp.PromptResponse{StopReason: acp.StopReasonCancelled}
 
-	var (
-		runtime         runtime
-		sessionSnapshot session
-		genOpts         *gai.GenOpts
-	)
 	if err := s.Do(func(t *session) error {
 		if t.cancelfunc != nil {
 			return errors.New("cannot do prompt turn in actively generating session")
@@ -147,6 +144,30 @@ func (a *Agent) Prompt(
 			return errors.New("cannot prompt before selecting a model")
 		}
 		t.cancelfunc = cancelFunc
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = s.Do(func(t *session) error {
+			t.cancelfunc = nil
+			return nil
+		})
+	}()
+
+	if err := a.refreshAvailableSkillCommands(cancelCtx, params.SessionID, s); err != nil {
+		if cancelled(err) {
+			return cancelledResponse, nil
+		}
+		return nil, fmt.Errorf("could not refresh available skill commands: %v", err)
+	}
+
+	var (
+		runtime         runtime
+		sessionSnapshot session
+		genOpts         *gai.GenOpts
+	)
+	if err := s.Do(func(t *session) error {
 		runtime = t.runtime
 		sessionSnapshot = *t
 		// Per-turn opts carry only ACP session overrides (thinking level).
@@ -159,12 +180,6 @@ func (a *Agent) Prompt(
 	}); err != nil {
 		return nil, err
 	}
-	defer func() {
-		_ = s.Do(func(t *session) error {
-			t.cancelfunc = nil
-			return nil
-		})
-	}()
 
 	acpSession, err := a.db.GetACPSession(cancelCtx, params.SessionID)
 	if err != nil {
@@ -183,7 +198,8 @@ func (a *Agent) Prompt(
 			return nil, fmt.Errorf("could not get dialog from db: %v", err)
 		}
 	}
-	dialog = append(dialog, xacp.PromptToMessage(params.Prompt))
+	expandedPrompt := expandSkillSlashCommands(params.Prompt, sessionSnapshot.skillCatalog)
+	dialog = append(dialog, xacp.PromptToMessage(expandedPrompt))
 
 	if runtime == nil {
 		runtime, err = a.runtimeFactory.Create(cancelCtx, sessionSnapshot, a.clientCaps)

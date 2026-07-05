@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -108,6 +110,257 @@ type testRuntime struct {
 
 func (r testRuntime) Close() error {
 	return nil
+}
+
+func TestSkillSlashCommands(t *testing.T) {
+	var (
+		clientConn              *acp.Client
+		store                   *storage.Sqlite
+		cwd                     = t.TempDir()
+		testClient              = &promptTestClient{}
+		sessionID               acp.SessionId
+		commandNotification     acp.SessionNotification
+		commandNotificationSeen int
+		rawCfg                  = config.RawConfig{
+			Models: []config.ModelConfig{{
+				Model: config.Model{
+					Ref:           "test-model",
+					DisplayName:   "Test Model",
+					ID:            "test-model",
+					Type:          "responses",
+					ContextWindow: 100,
+				},
+			}},
+		}
+	)
+	createACPSkill(t, filepath.Join(cwd, ".agents", "skills"), "domain-modeling", map[string]any{
+		"name":        "domain-modeling",
+		"description": "Domain modeling help",
+		"group":       "design",
+	})
+	createACPSkill(t, filepath.Join(cwd, ".agents", "skills"), "hidden-skill", map[string]any{
+		"name":                     "hidden-skill",
+		"description":              "Hidden help",
+		"disable-model-invocation": true,
+	})
+
+	fixture := setup(
+		t,
+		testClient,
+		&rawCfg,
+		func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
+			gen := testGen{responses: []genFunc{
+				func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+					be.Equal(t, countNotifications(testClient.notifications(), commandNotification), 3)
+					be.Equal(t, len(d), 1)
+					be.Equal(t, d[0].Role, gai.User)
+					be.Equal(t, d[0].Blocks[0].Content.String(), "Use ./.agents/skills/domain-modeling and /skill:missing")
+					return gai.Response{
+						Candidates: []gai.Message{{
+							Role:   gai.Assistant,
+							Blocks: []gai.Block{gai.TextBlock("done")},
+						}},
+						FinishReason: gai.EndTurn,
+					}, nil
+				},
+				func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+					commandNotificationSeen = countNotifications(testClient.notifications(), commandNotification)
+					be.Equal(t, commandNotificationSeen, 4)
+					be.Equal(t, len(d), 3)
+					be.Equal(t, d[2].Role, gai.User)
+					be.Equal(t, d[2].Blocks[0].Content.String(), "Again ./.agents/skills/domain-modeling")
+					return gai.Response{
+						Candidates: []gai.Message{{
+							Role:   gai.Assistant,
+							Blocks: []gai.Block{gai.TextBlock("done again")},
+						}},
+						FinishReason: gai.EndTurn,
+					}, nil
+				},
+			}}
+			cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
+			be.Err(t, err, nil)
+			return testRuntime{Loop: &Loop{
+				G:           &gen,
+				DialogSaver: store,
+				CostAdder:   store,
+				Cfg:         cfg,
+				conn:        conn,
+			}}, nil
+		},
+	)
+	clientConn = fixture.ClientConn
+	store = fixture.Store
+
+	_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+		ClientCapabilities: &acp.ClientCapabilities{Terminal: true},
+		ProtocolVersion:    acp.ProtocolVersion(1),
+	})
+	be.Err(t, err, nil)
+
+	newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{
+		Cwd:        cwd,
+		McpServers: []acp.McpServer{},
+	})
+	be.Err(t, err, nil)
+	sessionID = newSessionResp.SessionID
+	be.Equal(t, len(testClient.notifications()), 0)
+
+	inputDomain := acp.UnstructuredAvailableCommandInput("Domain modeling help")
+	inputHidden := acp.UnstructuredAvailableCommandInput("Hidden help")
+	commandNotification = acp.SessionNotification{
+		SessionID: sessionID,
+		Update: acp.AvailableCommandsUpdateSessionUpdate([]acp.AvailableCommand{
+			{Name: "skill:domain-modeling", Description: "Domain modeling help", Input: &inputDomain},
+			{Name: "skill:hidden-skill", Description: "Hidden help", Input: &inputHidden},
+		}),
+	}
+
+	_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+		ConfigID:  modelRefConfigId,
+		SessionID: sessionID,
+		Value:     "test-model",
+	})
+	be.Err(t, err, nil)
+	be.Equal(t, countNotifications(testClient.notifications(), commandNotification), 1)
+	_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+		ConfigID:  modelRefConfigId,
+		SessionID: sessionID,
+		Value:     "test-model",
+	})
+	be.Err(t, err, nil)
+	be.Equal(t, countNotifications(testClient.notifications(), commandNotification), 2)
+
+	promptResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
+		Prompt:    []acp.ContentBlock{acp.TextContentBlock("Use /skill:domain-modeling and /skill:missing")},
+		SessionID: sessionID,
+	})
+	be.Err(t, err, nil)
+	be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
+	be.Equal(t, countNotifications(testClient.notifications(), commandNotification), 3)
+
+	promptResp, err = clientConn.Prompt(t.Context(), &acp.PromptRequest{
+		Prompt:    []acp.ContentBlock{acp.TextContentBlock("Again /skill:domain-modeling")},
+		SessionID: sessionID,
+	})
+	be.Err(t, err, nil)
+	be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
+	be.Equal(t, commandNotificationSeen, 4)
+	be.Equal(t, countNotifications(testClient.notifications(), commandNotification), 4)
+
+	storedSession, err := store.GetACPSession(t.Context(), sessionID)
+	be.Err(t, err, nil)
+	storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
+	be.Err(t, err, nil)
+	be.Equal(t, storedDialog[0].Blocks[0].Content.String(), "Use ./.agents/skills/domain-modeling and /skill:missing")
+	be.Equal(t, storedDialog[2].Blocks[0].Content.String(), "Again ./.agents/skills/domain-modeling")
+}
+
+func countNotifications(notifications []acp.SessionNotification, want acp.SessionNotification) int {
+	count := 0
+	for _, notification := range notifications {
+		if reflect.DeepEqual(notification, want) {
+			count++
+		}
+	}
+	return count
+}
+
+func TestSkillSlashCommandsLifecycleMethodsDoNotPublish(t *testing.T) {
+	sourceCwd := t.TempDir()
+	forkCwd := t.TempDir()
+	loadCwd := t.TempDir()
+	resumeCwd := t.TempDir()
+	for _, cwd := range []string{sourceCwd, forkCwd, loadCwd, resumeCwd} {
+		createACPSkill(t, filepath.Join(cwd, ".agents", "skills"), "codebase-design", map[string]any{
+			"name":        "codebase-design",
+			"description": "Design help",
+		})
+	}
+
+	t.Run("new", func(t *testing.T) {
+		client := &promptTestClient{}
+		fixture := setup(t, client, &config.RawConfig{}, unreachableRuntimeFactory)
+		clientConn := fixture.ClientConn
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ClientCapabilities: &acp.ClientCapabilities{Terminal: true},
+			ProtocolVersion:    acp.ProtocolVersion(1),
+		})
+		be.Err(t, err, nil)
+		_, err = clientConn.NewSession(t.Context(), &acp.NewSessionRequest{Cwd: sourceCwd})
+		be.Err(t, err, nil)
+		be.Equal(t, len(client.notifications()), 0)
+	})
+
+	t.Run("fork", func(t *testing.T) {
+		client := &promptTestClient{}
+		fixture := setup(t, client, &config.RawConfig{}, unreachableRuntimeFactory)
+		clientConn := fixture.ClientConn
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ClientCapabilities: &acp.ClientCapabilities{Terminal: true},
+			ProtocolVersion:    acp.ProtocolVersion(1),
+		})
+		be.Err(t, err, nil)
+		sourceResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{Cwd: sourceCwd})
+		be.Err(t, err, nil)
+		_, err = clientConn.ForkSession(t.Context(), &acp.ForkSessionRequest{
+			Cwd:       forkCwd,
+			SessionID: sourceResp.SessionID,
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, len(client.notifications()), 0)
+	})
+
+	t.Run("load", func(t *testing.T) {
+		client := &promptTestClient{}
+		fixture := setup(t, client, &config.RawConfig{}, unreachableRuntimeFactory)
+		clientConn := fixture.ClientConn
+		store := fixture.Store
+		var lastMessageID string
+		for msg, err := range store.SaveDialog(t.Context(), slices.Values(gai.Dialog{{
+			Role:   gai.User,
+			Blocks: []gai.Block{gai.TextBlock("hello")},
+		}})) {
+			be.Err(t, err, nil)
+			lastMessageID = storage.GetMessageID(msg)
+		}
+		be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
+			Session:       acp.SessionInfo{Cwd: loadCwd, SessionID: "load-session"},
+			LastMessageID: lastMessageID,
+		}), nil)
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ClientCapabilities: &acp.ClientCapabilities{Terminal: true},
+			ProtocolVersion:    acp.ProtocolVersion(1),
+		})
+		be.Err(t, err, nil)
+		_, err = clientConn.LoadSession(t.Context(), &acp.LoadSessionRequest{Cwd: loadCwd, SessionID: "load-session"})
+		be.Err(t, err, nil)
+		input := acp.UnstructuredAvailableCommandInput("Design help")
+		be.Equal(t, countNotifications(client.notifications(), acp.SessionNotification{
+			SessionID: "load-session",
+			Update: acp.AvailableCommandsUpdateSessionUpdate([]acp.AvailableCommand{
+				{Name: "skill:codebase-design", Description: "Design help", Input: &input},
+			}),
+		}), 0)
+	})
+
+	t.Run("resume", func(t *testing.T) {
+		client := &promptTestClient{}
+		fixture := setup(t, client, &config.RawConfig{}, unreachableRuntimeFactory)
+		clientConn := fixture.ClientConn
+		store := fixture.Store
+		be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
+			Session: acp.SessionInfo{Cwd: resumeCwd, SessionID: "resume-session"},
+		}), nil)
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ClientCapabilities: &acp.ClientCapabilities{Terminal: true},
+			ProtocolVersion:    acp.ProtocolVersion(1),
+		})
+		be.Err(t, err, nil)
+		_, err = clientConn.ResumeSession(t.Context(), &acp.ResumeSessionRequest{Cwd: resumeCwd, SessionID: "resume-session"})
+		be.Err(t, err, nil)
+		be.Equal(t, len(client.notifications()), 0)
+	})
 }
 
 func TestPrompt(t *testing.T) {

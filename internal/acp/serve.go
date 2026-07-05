@@ -36,7 +36,6 @@ type ServeOptions struct {
 
 type serverRuntimeCreator struct {
 	rawCfg *config.RawConfig
-	stderr io.Writer
 	store  *storage.Sqlite
 	conn   *acp.AgentConnection
 }
@@ -61,7 +60,7 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, s session, caps acp.C
 	systemPrompt, err := commands.LoadSystemPrompt(ctx, commands.LoadSystemPromptOptions{
 		SystemPromptPath: cfg.SystemPromptPath,
 		Config:           cfg,
-		Stderr:           c.stderr,
+		Skills:           s.skillCatalog.ModelVisible(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to load system prompt: %v", err)
@@ -277,7 +276,6 @@ func Run(ctx context.Context, transport acp.Transport, opts RunOptions) error {
 	// TODO: we should refactor the runtime factory to be made from the session config options
 	runtimeFactory := &serverRuntimeCreator{
 		rawCfg: rawCfg,
-		stderr: opts.Stderr,
 		store:  sqliteStorage,
 	}
 

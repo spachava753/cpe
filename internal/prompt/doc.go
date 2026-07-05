@@ -1,7 +1,8 @@
 /*
-Package prompt provides system-prompt template rendering and skill discovery.
+Package prompt provides system-prompt template rendering.
 
 It owns the template helper functions exposed to prompt files, including file
-inclusion, command execution, and skill metadata lookup.
+inclusion and command execution. Skill metadata is discovered by internal/skills
+and passed to templates through TemplateData.
 */
 package prompt

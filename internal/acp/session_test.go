@@ -288,7 +288,7 @@ func TestResumeSession(t *testing.T) {
 		be.Equal(t, (*resp.ConfigOptions)[0].CurrentValue, any("test-model"))
 		be.Equal(t, (*resp.ConfigOptions)[1].ID, thinkingLevelConfigId)
 		be.Equal(t, (*resp.ConfigOptions)[1].CurrentValue, any("low"))
-		be.Equal(t, createdModelRefs, []string{"test-model"})
+		be.Equal(t, len(createdModelRefs), 0)
 	})
 
 	t.Run("stale model ref", func(t *testing.T) {
@@ -454,7 +454,7 @@ func TestResumeSession(t *testing.T) {
 		be.Equal(t, len(*resp.ConfigOptions), 2)
 		be.Equal(t, (*resp.ConfigOptions)[0].CurrentValue, any("test-model"))
 		be.Equal(t, (*resp.ConfigOptions)[1].CurrentValue, any("low"))
-		be.Equal(t, createdModelRefs, []string{"test-model"})
+		be.Equal(t, len(createdModelRefs), 0)
 
 		storedSession, err := store.GetACPSession(t.Context(), "abc123")
 		be.Err(t, err, nil)
@@ -551,15 +551,8 @@ func TestLoadSession(t *testing.T) {
 	be.Equal(t, len(*resp.ConfigOptions), 1)
 	be.Equal(t, (*resp.ConfigOptions)[0].ID, modelRefConfigId)
 	be.Equal(t, (*resp.ConfigOptions)[0].CurrentValue, any("test-model"))
-	be.Equal(t, createdModelRefs, []string{"test-model"})
-	if len(createdSessions) != 1 {
-		t.Fatalf("runtime created with %d sessions, want 1", len(createdSessions))
-	}
-	createdSession := createdSessions[0]
-	be.Equal(t, createdSession.id, acp.SessionId("abc123"))
-	be.Equal(t, createdSession.cwd, "/rando/dir")
-	be.Equal(t, createdSession.model, "test-model")
-	be.Equal(t, createdSession.mcpServers, mcpServers)
+	be.Equal(t, len(createdModelRefs), 0)
+	be.Equal(t, len(createdSessions), 0)
 	assertNotifications(t, testClient, []acp.SessionNotification{
 		{
 			SessionID: "abc123",
@@ -772,7 +765,7 @@ func TestLoadSessionReplaysCompactionLineage(t *testing.T) {
 		SessionID:  "abc123",
 	})
 	be.Err(t, err, nil)
-	be.Equal(t, createdModelRefs, []string{"test-model"})
+	be.Equal(t, len(createdModelRefs), 0)
 	assertNotifications(t, testClient, []acp.SessionNotification{
 		{
 			SessionID: "abc123",
@@ -1533,6 +1526,11 @@ func TestCloseSession(t *testing.T) {
 			SessionID:  "abc123",
 		})
 		be.Err(t, err, nil)
+		_, err = clientConn.Prompt(t.Context(), &acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextContentBlock("hello")},
+			SessionID: "abc123",
+		})
+		be.Err(t, err, nil)
 
 		_, err = clientConn.CloseSession(t.Context(), &acp.CloseSessionRequest{
 			SessionID: "abc123",
@@ -1607,6 +1605,11 @@ func TestCloseSession(t *testing.T) {
 			Cwd:        "/rando/dir",
 			McpServers: []acp.McpServer{},
 			SessionID:  "abc123",
+		})
+		be.Err(t, err, nil)
+		_, err = clientConn.Prompt(t.Context(), &acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextContentBlock("hello")},
+			SessionID: "abc123",
 		})
 		be.Err(t, err, nil)
 

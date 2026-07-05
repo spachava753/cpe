@@ -98,6 +98,7 @@ func setup(
 		},
 		runtimeFactory: adapter,
 		rawCfg:         cfg,
+		skillHomeDir:   t.TempDir(),
 		db:             sqliteStorage,
 	}
 

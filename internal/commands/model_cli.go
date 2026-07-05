@@ -101,6 +101,5 @@ func ModelSystemPromptFromConfig(ctx context.Context, opts ModelSystemPromptFrom
 		ModelName:      modelName,
 		DefaultModel:   opts.DefaultModel,
 		Output:         output,
-		Stderr:         opts.Stderr,
 	})
 }

@@ -16,11 +16,12 @@ Major responsibilities:
     MCP, code-mode, and compaction tools.
 
 Related packages:
-  - internal/acp owns ACP session lifecycle, prompt execution, persistence, and
-    session updates;
+  - internal/acp owns ACP session lifecycle, prompt execution, persistence,
+    session updates, and skill slash commands;
   - internal/commands handles local inspection commands around model profiles and
     MCP servers;
-  - internal/prompt handles system prompt template rendering and skill helpers;
+  - internal/prompt handles system prompt template rendering;
+  - internal/skills handles skill discovery and prompt metadata;
   - internal/codemode owns the execute_go_code tool and sandbox execution.
 
 Behavioral notes:

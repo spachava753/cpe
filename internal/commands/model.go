@@ -11,6 +11,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/prompt"
+	"github.com/spachava753/cpe/internal/skills"
 )
 
 // ModelListOptions contains dependencies for ModelList.
@@ -135,7 +136,6 @@ type ModelSystemPromptOptions struct {
 	ModelName      string
 	DefaultModel   string // Fallback model name from env var
 	Output         io.Writer
-	Stderr         io.Writer
 	// SystemPrompt is an optional override for testing - if provided, this file
 	// is used instead of opening the file from the path in config
 	SystemPrompt fs.File
@@ -200,14 +200,16 @@ func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error
 		}
 	}
 
-	stderr := opts.Stderr
-	if stderr == nil {
-		stderr = os.Stderr
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("could not resolve working directory for skill discovery: %w", err)
 	}
+	skillCatalog := skills.Discover(skills.DiscoverOptions{Cwd: cwd})
 
 	systemPrompt, err := prompt.SystemPromptTemplate(ctx, string(contents), prompt.TemplateData{
 		Config: templateConfig,
-	}, stderr)
+		Skills: skillCatalog.ModelVisible(),
+	})
 	if err != nil {
 		return fmt.Errorf("failed to render system prompt: %w", err)
 	}

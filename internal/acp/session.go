@@ -12,6 +12,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/acp/xacp"
 	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/skills"
 	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/sync"
 )
@@ -30,6 +31,9 @@ type session struct {
 	model      string
 	thinking   string
 	mcpServers []acp.McpServer
+	// skillCatalog is refreshed before prompt turns and session config mutations,
+	// then used for system prompt rendering and slash-command expansion.
+	skillCatalog skills.Catalog
 
 	// session state
 	runtime    runtime
@@ -42,6 +46,47 @@ func (a *Agent) activeSession(sessionID acp.SessionId) (*sync.Guard[session], er
 		return nil, fmt.Errorf("unknown session: %s", sessionID)
 	}
 	return s, nil
+}
+
+// discoverSkills loads the skill catalog for an ACP session. Tests can override
+// Agent.skillHomeDir so global user skills do not leak into session fixtures.
+func (a *Agent) discoverSkills(cwd string) skills.Catalog {
+	return skills.Discover(skills.DiscoverOptions{
+		Cwd:     cwd,
+		HomeDir: a.skillHomeDir,
+	})
+}
+
+// sendAvailableSkillCommands publishes ACP autocomplete metadata for the
+// session's discovered skills. It intentionally sends nothing when no skills are
+// available so clients do not receive empty command updates.
+func (a *Agent) sendAvailableSkillCommands(ctx context.Context, sessionID acp.SessionId, catalog skills.Catalog) error {
+	commands := availableSkillCommands(catalog)
+	if len(commands) == 0 || a.conn == nil {
+		return nil
+	}
+	return a.conn.SessionUpdate(ctx, &acp.SessionNotification{
+		SessionID: sessionID,
+		Update:    acp.AvailableCommandsUpdateSessionUpdate(commands),
+	})
+}
+
+func (a *Agent) refreshAvailableSkillCommands(ctx context.Context, sessionID acp.SessionId, s *sync.Guard[session]) error {
+	var cwd string
+	if err := s.Do(func(t *session) error {
+		cwd = t.cwd
+		return nil
+	}); err != nil {
+		return err
+	}
+	catalog := a.discoverSkills(cwd)
+	if err := a.sendAvailableSkillCommands(ctx, sessionID, catalog); err != nil {
+		return err
+	}
+	return s.Do(func(t *session) error {
+		t.skillCatalog = catalog
+		return nil
+	})
 }
 
 // NewSession implements [acp.SessionHandler].
@@ -174,11 +219,6 @@ func (a *Agent) loadActiveSession(
 		thinking:   thinkingLevel,
 		mcpServers: mcpServers,
 	}
-	runtime, err := a.runtimeFactory.Create(ctx, s, a.clientCaps)
-	if err != nil {
-		return nil, fmt.Errorf("could not create runtime: %v", err)
-	}
-	s.runtime = runtime
 
 	a.activeSessions.Store(sessionId, sync.NewGuard(s))
 	return a.configOptions(ctx, sessionId), nil
@@ -297,6 +337,7 @@ func (a *Agent) ForkSession(
 	}
 
 	a.activeSessions.Store(id, sync.NewGuard(session{
+		id:         id,
 		cwd:        params.Cwd,
 		model:      modelRef,
 		thinking:   thinkingLevel,

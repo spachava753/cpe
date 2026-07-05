@@ -297,14 +297,15 @@ Generated code can use the Go standard library, process local files, and return 
 
 ### System Prompts and Skills
 
-Set `systemPromptPath` on a model profile to render a prompt template for that profile. Templates can call CPE prompt helpers, including the `skills` helper that discovers directories containing `SKILL.md` files.
+Set `systemPromptPath` on a model profile to render a prompt template for that profile. CPE discovers skills from `./.agents/skills` and `~/.agents/skills` and exposes model-visible skills as `.Skills` template data when rendering system prompts. Skill frontmatter is available through `.Metadata`; skills with `disable-model-invocation: true` are omitted from `.Skills` but remain user-invocable through `/skill:<name>` slash commands.
 
 ```markdown
-{{- $skills := skills "./skills" "~/my-custom-skills" -}}
-{{- range $skill := $skills }}
+{{- range $skill := .Skills }}
 - {{ $skill.Name }}: {{ $skill.Description }} ({{ $skill.Path }})
 {{- end }}
 ```
+
+When a user prompt references a known skill command such as `/skill:domain-modeling`, CPE expands that text to the skill path before generation and persistence. Unknown `/skill:<name>` references are left unchanged. ACP clients receive refreshed available skill command metadata before prompt turns and session config option updates.
 
 Inspect the rendered prompt with:
 

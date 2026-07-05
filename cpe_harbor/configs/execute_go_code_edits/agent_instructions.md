@@ -212,9 +212,8 @@ Skills are reusable capabilities bundled as directories with a `SKILL.md` file c
 
 ## Available skills
 
-{{- $skills := skills "./skills" "~/.agents/skills" -}}
-{{- if $skills }}
-{{- range $skill := $skills }}
+{{- if .Skills }}
+{{- range $skill := .Skills }}
 
 ### {{ $skill.Name }}
 

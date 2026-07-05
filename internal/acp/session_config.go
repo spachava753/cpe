@@ -20,13 +20,16 @@ const (
 //
 // TODO: we should probably expose more options like tool choice, etc. and wire up defaults from the config
 func (a *Agent) SetSessionConfigOption(ctx context.Context, params *acp.SetSessionConfigOptionRequest) (*acp.SetSessionConfigOptionResponse, error) {
-	value, ok := sessionConfigValueString(params.Value)
-	if !ok {
-		return nil, fmt.Errorf("unsupported session config option type")
-	}
 	s, err := a.activeSession(params.SessionID)
 	if err != nil {
 		return nil, err
+	}
+	if err := a.refreshAvailableSkillCommands(ctx, params.SessionID, s); err != nil {
+		return nil, fmt.Errorf("could not refresh available skill commands: %v", err)
+	}
+	value, ok := sessionConfigValueString(params.Value)
+	if !ok {
+		return nil, fmt.Errorf("unsupported session config option type")
 	}
 	var modelRefVal, thinkingVal string
 	if err := s.Do(func(t *session) error {
