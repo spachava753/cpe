@@ -94,7 +94,7 @@ func (a *Agent) NewSession(ctx context.Context, params *acp.NewSessionRequest) (
 	id := a.genId()
 	si := acp.SessionInfo{
 		Cwd:       params.Cwd,
-		Title:     new("untitled"),
+		Title:     new(string(id)),
 		SessionID: id,
 	}
 	var modelRef string
@@ -319,14 +319,10 @@ func (a *Agent) ForkSession(
 	}
 
 	id := a.genId()
-	title := src.Session.Title
-	if title == nil {
-		title = new("untitled")
-	}
 	if err := a.db.CreateACPSession(ctx, storage.CreateACPSessionParams{
 		Session: acp.SessionInfo{
 			Cwd:       params.Cwd,
-			Title:     title,
+			Title:     new(string(id)),
 			SessionID: id,
 		},
 		LastMessageID: src.LastMessageID,

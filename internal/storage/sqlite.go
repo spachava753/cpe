@@ -613,13 +613,6 @@ func acpSessionInfo(id, cwd, title string, updatedAt time.Time) acp.SessionInfo 
 	}
 }
 
-func acpSessionTitle(session acp.SessionInfo) string {
-	if session.Title == nil {
-		return ""
-	}
-	return *session.Title
-}
-
 // generateUniqueIDInTx generates a unique ID checking for collisions within a transaction.
 func (s *Sqlite) generateUniqueIDInTx(ctx context.Context, qtx *sqlcgen.Queries) (string, error) {
 	maxAttempts := 10
@@ -852,6 +845,13 @@ func (s *Sqlite) getMessage(ctx context.Context, messageID string) (gai.Message,
 		ToolResultError: msg.ToolResultError,
 		ExtraFields:     msgExtraFields,
 	}, parentID, nil
+}
+
+func acpSessionTitle(session acp.SessionInfo) string {
+	if session.Title == nil {
+		return string(session.SessionID)
+	}
+	return *session.Title
 }
 
 // CreateACPSession persists ACP session metadata.

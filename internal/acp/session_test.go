@@ -205,7 +205,7 @@ func TestNewSession(t *testing.T) {
 	storedSession, err := store.GetACPSession(t.Context(), resp.SessionID)
 	be.Err(t, err, nil)
 	be.Equal(t, storedSession.Session.Cwd, "/rando/dir")
-	be.Equal(t, *storedSession.Session.Title, "untitled")
+	be.Equal(t, *storedSession.Session.Title, string(resp.SessionID))
 	be.Equal(t, storedSession.ModelRef, "")
 	be.Equal(t, storedSession.ThinkingLevel, "")
 	be.Equal(t, storedSession.LastMessageID, "")
@@ -1293,6 +1293,7 @@ func TestForkSession(t *testing.T) {
 		forkSession, err := store.GetACPSession(t.Context(), forkResp.SessionID)
 		be.Err(t, err, nil)
 		be.Equal(t, forkSession.LastMessageID, srcSession.LastMessageID)
+		be.Equal(t, *forkSession.Session.Title, string(forkResp.SessionID))
 		be.Equal(t, forkSession.ModelRef, "test-model")
 		be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM messages"), 2)
 

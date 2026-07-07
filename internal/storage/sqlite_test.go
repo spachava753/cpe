@@ -332,6 +332,30 @@ func TestACPSessions(t *testing.T) {
 	}
 }
 
+func TestCreateACPSessionDefaultsMissingTitleToSessionID(t *testing.T) {
+	db, _ := newTestDB(t)
+	ctx := context.Background()
+
+	err := db.CreateACPSession(ctx, CreateACPSessionParams{
+		Session: acp.SessionInfo{
+			Cwd:       "/tmp/default-title",
+			SessionID: "default-title-session",
+		},
+		ModelRef: testACPModelRef,
+	})
+	if err != nil {
+		t.Fatalf("CreateACPSession: %v", err)
+	}
+
+	resp, err := db.GetACPSession(ctx, "default-title-session")
+	if err != nil {
+		t.Fatalf("GetACPSession: %v", err)
+	}
+	if resp.Session.Title == nil || *resp.Session.Title != "default-title-session" {
+		t.Fatalf("Title: got %v", resp.Session.Title)
+	}
+}
+
 func TestACPSessionNotFoundErrors(t *testing.T) {
 	db, _ := newTestDB(t)
 	ctx := context.Background()
