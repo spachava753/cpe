@@ -1,4 +1,4 @@
-package commands
+package config
 
 import (
 	"bytes"
@@ -6,17 +6,15 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/spachava753/cpe/internal/config"
 )
 
 func TestModelInfo_PrintsCachePricingFields(t *testing.T) {
 	t.Parallel()
 
-	rawCfg := &config.RawConfig{
-		Models: []config.ModelConfig{
+	rawCfg := &RawConfig{
+		Models: []ModelConfig{
 			{
-				Model: config.Model{
+				Model: Model{
 					Ref:                      "test-model",
 					DisplayName:              "Test Model",
 					Type:                     "openai",
@@ -62,15 +60,15 @@ func TestModelInfo_PrintsCachePricingFields(t *testing.T) {
 func TestModelInfo_PrintsVertexFields(t *testing.T) {
 	t.Parallel()
 
-	rawCfg := &config.RawConfig{Models: []config.ModelConfig{{
-		Model: config.Model{
+	rawCfg := &RawConfig{Models: []ModelConfig{{
+		Model: Model{
 			Ref:           "vertex-sonnet",
 			DisplayName:   "Vertex Sonnet",
 			Type:          "anthropic_vertex",
 			ID:            "claude-sonnet-4-6",
 			ContextWindow: 200000,
 			MaxOutput:     64000,
-			Vertex: &config.VertexConfig{
+			Vertex: &VertexConfig{
 				ProjectID: "test-project",
 				Region:    "global",
 			},
@@ -103,15 +101,15 @@ func TestModelInfo_PrintsVertexFields(t *testing.T) {
 func TestModelInfo_PrintsThinkingValues(t *testing.T) {
 	t.Parallel()
 
-	rawCfg := &config.RawConfig{Models: []config.ModelConfig{{
-		Model: config.Model{
+	rawCfg := &RawConfig{Models: []ModelConfig{{
+		Model: Model{
 			Ref:           "reasoning-model",
 			DisplayName:   "Reasoning Model",
 			Type:          "responses",
 			ID:            "gpt-5",
 			ContextWindow: 400000,
 			MaxOutput:     128000,
-			ThinkingValues: []config.ThinkingValueConfig{
+			ThinkingValues: []ThinkingValueConfig{
 				{Value: "minimal", Name: "Minimal"},
 				{Value: "xhigh", Name: "Extra High"},
 				{Value: "10000"},
@@ -147,10 +145,10 @@ func TestModelInfo_PrintsThinkingValues(t *testing.T) {
 func TestModelInfo_PrintsNAWhenPricingUnavailable(t *testing.T) {
 	t.Parallel()
 
-	rawCfg := &config.RawConfig{
-		Models: []config.ModelConfig{
+	rawCfg := &RawConfig{
+		Models: []ModelConfig{
 			{
-				Model: config.Model{
+				Model: Model{
 					Ref:           "free-model",
 					DisplayName:   "Free Model",
 					Type:          "responses",
@@ -199,9 +197,9 @@ func TestModelSystemPrompt_ResolvesPathRelativeToConfigFile(t *testing.T) {
 		t.Fatalf("write prompt: %v", err)
 	}
 
-	rawCfg := &config.RawConfig{
-		Models: []config.ModelConfig{{
-			Model: config.Model{
+	rawCfg := &RawConfig{
+		Models: []ModelConfig{{
+			Model: Model{
 				Ref:           "test-model",
 				DisplayName:   "Test Model",
 				Type:          "openai",

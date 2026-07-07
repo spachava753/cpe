@@ -22,8 +22,8 @@ Resolution precedence is limited to runtime selection and explicit overrides:
 The package also validates custom invariants (model references, auth method
 constraints, MCP server transport constraints, codeMode settings, and compaction
 schema/template/restart-limit validity), resolves filesystem-relative
-systemPromptPath values, and carries per-profile runtime flags such as bundled
-edit-tool opt-out.
+systemPromptPath values, renders system prompt templates for resolved profiles,
+and carries per-profile runtime flags such as bundled edit-tool opt-out.
 
 MCP server connection settings are represented via the dependency-neutral
 `internal/mcpconfig` schema package so config loading does not depend on MCP

@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/spachava753/cpe/internal/commands"
+	"github.com/spachava753/cpe/internal/mcp"
 )
 
 var (
@@ -32,7 +32,7 @@ var mcpListServersCmd = &cobra.Command{
 	Long:    `List MCP servers defined by the selected model profile in cpe.yaml.`,
 	Aliases: []string{"ls-servers"},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return commands.MCPListServersFromConfig(cmd.Context(), commands.MCPListServersFromConfigOptions{
+		return mcp.MCPListServersFromConfig(cmd.Context(), mcp.MCPListServersFromConfigOptions{
 			ConfigPath: configPath,
 			ModelRef:   model,
 			Writer:     cmd.OutOrStdout(),
@@ -47,7 +47,7 @@ var mcpInfoCmd = &cobra.Command{
 	Long:  `Initialize connection to an MCP server and show its information.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return commands.MCPInfoFromConfig(cmd.Context(), commands.MCPInfoFromConfigOptions{
+		return mcp.MCPInfoFromConfig(cmd.Context(), mcp.MCPInfoFromConfigOptions{
 			ConfigPath: configPath,
 			ModelRef:   model,
 			ServerName: args[0],
@@ -75,7 +75,7 @@ var mcpListToolsCmd = &cobra.Command{
 		showAll, _ := cmd.Flags().GetBool("show-all")
 		showFiltered, _ := cmd.Flags().GetBool("show-filtered")
 
-		return commands.MCPListToolsFromConfig(cmd.Context(), commands.MCPListToolsFromConfigOptions{
+		return mcp.MCPListToolsFromConfig(cmd.Context(), mcp.MCPListToolsFromConfigOptions{
 			ConfigPath:   configPath,
 			ModelRef:     model,
 			ServerName:   args[0],
@@ -107,7 +107,7 @@ var mcpCallToolCmd = &cobra.Command{
 			}
 		}
 
-		return commands.MCPCallToolFromConfig(cmd.Context(), commands.MCPCallToolFromConfigOptions{
+		return mcp.MCPCallToolFromConfig(cmd.Context(), mcp.MCPCallToolFromConfigOptions{
 			ConfigPath: configPath,
 			ModelRef:   model,
 			ServerName: mcpServerName,
@@ -133,7 +133,7 @@ tools as generated Go function bindings.`,
   # Print code mode description for a specific model
   cpe mcp code-desc --model sonnet`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return commands.MCPCodeDescFromConfig(cmd.Context(), commands.MCPCodeDescFromConfigOptions{
+		return mcp.MCPCodeDescFromConfig(cmd.Context(), mcp.MCPCodeDescFromConfigOptions{
 			ConfigPath: configPath,
 			ModelRef:   model,
 			Writer:     cmd.OutOrStdout(),

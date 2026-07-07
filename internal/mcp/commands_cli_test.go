@@ -1,4 +1,4 @@
-package commands
+package mcp
 
 import (
 	"bytes"
@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestModelListFromConfig_PrefersRuntimeModelOverrideForDefaultMarker(t *testing.T) {
+func TestMCPListServersFromConfig_UsesSelectedModelProfile(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -22,30 +22,25 @@ models:
     api_key_env: ANTHROPIC_API_KEY
     context_window: 200000
     max_output: 64000
-  - ref: opus
-    display_name: Opus
-    id: claude-opus-4-20250514
-    type: anthropic
-    api_key_env: ANTHROPIC_API_KEY
-    context_window: 200000
-    max_output: 64000
-# model selection is runtime-only
+    mcpServers:
+      local:
+        command: echo
 `
 	if err := os.WriteFile(configPath, []byte(configYAML), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
 	var out bytes.Buffer
-	err := ModelListFromConfig(context.Background(), ModelListFromConfigOptions{
-		ConfigPath:   configPath,
-		DefaultModel: "opus",
-		Writer:       &out,
+	err := MCPListServersFromConfig(context.Background(), MCPListServersFromConfigOptions{
+		ConfigPath: configPath,
+		ModelRef:   "sonnet",
+		Writer:     &out,
 	})
 	if err != nil {
-		t.Fatalf("ModelListFromConfig() error = %v", err)
+		t.Fatalf("MCPListServersFromConfig() error = %v", err)
 	}
 
-	want := "sonnet\nopus (default)\n"
+	want := "Configured MCP Servers:\n- local (Type: stdio, Timeout: 60s)\n  Command: echo \n"
 	if got := out.String(); got != want {
 		t.Fatalf("output mismatch\nwant:\n%s\n\ngot:\n%s", want, got)
 	}

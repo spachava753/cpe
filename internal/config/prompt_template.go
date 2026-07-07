@@ -1,4 +1,4 @@
-package prompt
+package config
 
 import (
 	"bytes"
@@ -11,7 +11,6 @@ import (
 
 	"github.com/Masterminds/sprig/v3"
 
-	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/skills"
 )
 
@@ -19,7 +18,7 @@ import (
 // It embeds the resolved runtime configuration so templates can reference
 // model and MCP settings.
 type TemplateData struct {
-	config.Config
+	Config
 	// Skills contains model-visible skill metadata for prompt templates. For
 	// example, templates can range over .Skills and render .Name, .Description,
 	// .Path, or arbitrary frontmatter through .Metadata.

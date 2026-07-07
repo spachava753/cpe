@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/spachava753/cpe/internal/commands"
+	"github.com/spachava753/cpe/internal/account"
 )
 
 var (
@@ -52,7 +52,7 @@ Example:
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return commands.AccountLogin(cmd.Context(), commands.AccountLoginOptions{
+		return account.AccountLogin(cmd.Context(), account.AccountLoginOptions{
 			Provider:    strings.ToLower(args[0]),
 			Output:      cmd.OutOrStdout(),
 			Input:       cmd.InOrStdin(),
@@ -72,7 +72,7 @@ Example:
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return commands.AccountLogout(cmd.Context(), commands.AccountLogoutOptions{
+		return account.AccountLogout(cmd.Context(), account.AccountLogoutOptions{
 			Provider: strings.ToLower(args[0]),
 			Output:   cmd.OutOrStdout(),
 		})
@@ -101,7 +101,7 @@ Examples:
 `,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return commands.AccountUsage(cmd.Context(), commands.AccountUsageOptions{
+		return account.AccountUsage(cmd.Context(), account.AccountUsageOptions{
 			Provider: strings.ToLower(args[0]),
 			Output:   cmd.OutOrStdout(),
 			Raw:      accountUsageRaw,

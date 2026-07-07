@@ -1,4 +1,4 @@
-package commands
+package config
 
 import (
 	"context"
@@ -6,8 +6,6 @@ import (
 	"io"
 	"os"
 
-	"github.com/spachava753/cpe/internal/config"
-	"github.com/spachava753/cpe/internal/prompt"
 	"github.com/spachava753/cpe/internal/skills"
 )
 
@@ -16,7 +14,7 @@ type LoadSystemPromptOptions struct {
 	// SystemPromptPath is the path to the system prompt file
 	SystemPromptPath string
 	// Config is the effective configuration for template rendering
-	Config config.Config
+	Config Config
 	// Skills is the already-filtered model-visible skill metadata exposed to the
 	// prompt template through TemplateData.Skills. Callers should omit skills with
 	// disable-model-invocation: true unless they intentionally want those skills
@@ -42,7 +40,7 @@ func LoadSystemPrompt(ctx context.Context, opts LoadSystemPromptOptions) (string
 		return "", fmt.Errorf("failed to read system prompt file %q: %w", opts.SystemPromptPath, err)
 	}
 
-	rendered, err := prompt.SystemPromptTemplate(ctx, string(contents), prompt.TemplateData{
+	rendered, err := SystemPromptTemplate(ctx, string(contents), TemplateData{
 		Config: opts.Config,
 		Skills: opts.Skills,
 	})

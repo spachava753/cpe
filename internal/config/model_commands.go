@@ -1,4 +1,4 @@
-package commands
+package config
 
 import (
 	"context"
@@ -9,15 +9,13 @@ import (
 	"path/filepath"
 	"reflect"
 
-	"github.com/spachava753/cpe/internal/config"
-	"github.com/spachava753/cpe/internal/prompt"
 	"github.com/spachava753/cpe/internal/skills"
 )
 
 // ModelListOptions contains dependencies for ModelList.
 // Config must be preloaded by the caller.
 type ModelListOptions struct {
-	Config       *config.RawConfig
+	Config       *RawConfig
 	DefaultModel string
 	Writer       io.Writer
 }
@@ -37,7 +35,7 @@ func ModelList(ctx context.Context, opts ModelListOptions) error {
 
 // ModelInfoOptions contains dependencies for ModelInfo.
 type ModelInfoOptions struct {
-	Config    *config.RawConfig
+	Config    *RawConfig
 	ModelName string
 	Writer    io.Writer
 }
@@ -130,8 +128,8 @@ func formatCostPerMillion(cost *float64) string {
 // ModelSystemPromptOptions contains dependencies for ModelSystemPrompt.
 // The caller provides raw config and optional model selection hints.
 type ModelSystemPromptOptions struct {
-	RawConfig      *config.RawConfig
-	Config         config.Config
+	RawConfig      *RawConfig
+	Config         Config
 	ConfigFilePath string
 	ModelName      string
 	DefaultModel   string // Fallback model name from env var
@@ -192,7 +190,7 @@ func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error
 
 	templateConfig := opts.Config
 	if reflect.ValueOf(templateConfig).IsZero() {
-		templateConfig = config.Config{
+		templateConfig = Config{
 			Model:            selectedModel.Model,
 			MCPServers:       selectedModel.MCPServers,
 			GenerationParams: nil,
@@ -206,7 +204,7 @@ func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error
 	}
 	skillCatalog := skills.Discover(skills.DiscoverOptions{Cwd: cwd})
 
-	systemPrompt, err := prompt.SystemPromptTemplate(ctx, string(contents), prompt.TemplateData{
+	systemPrompt, err := SystemPromptTemplate(ctx, string(contents), TemplateData{
 		Config: templateConfig,
 		Skills: skillCatalog.ModelVisible(),
 	})

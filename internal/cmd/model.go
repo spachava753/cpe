@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/spachava753/cpe/internal/commands"
+	"github.com/spachava753/cpe/internal/config"
 )
 
 // modelCmd is the CLI group for inspecting model profiles from cpe.yaml.
@@ -17,13 +17,13 @@ var modelCmd = &cobra.Command{
 }
 
 // listModelCmd resolves raw config and delegates formatted listing to
-// commands.ModelList.
+// config.ModelList.
 var listModelCmd = &cobra.Command{
 	Use:     "list",
 	Short:   "List models from configuration",
 	Aliases: []string{"ls"},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return commands.ModelListFromConfig(cmd.Context(), commands.ModelListFromConfigOptions{
+		return config.ModelListFromConfig(cmd.Context(), config.ModelListFromConfigOptions{
 			ConfigPath:   configPath,
 			DefaultModel: model,
 			Writer:       cmd.OutOrStdout(),
@@ -32,7 +32,7 @@ var listModelCmd = &cobra.Command{
 }
 
 // infoModelCmd resolves raw config and delegates model detail rendering to
-// commands.ModelInfo.
+// config.ModelInfo.
 var infoModelCmd = &cobra.Command{
 	Use:   "info <model-name>",
 	Short: "Show model details by name",
@@ -46,7 +46,7 @@ cpe model info sonnet
 			name = os.Getenv("CPE_MODEL")
 		}
 
-		return commands.ModelInfoFromConfig(cmd.Context(), commands.ModelInfoFromConfigOptions{
+		return config.ModelInfoFromConfig(cmd.Context(), config.ModelInfoFromConfigOptions{
 			ConfigPath: configPath,
 			ModelName:  name,
 			Writer:     cmd.OutOrStdout(),
@@ -55,13 +55,13 @@ cpe model info sonnet
 }
 
 // systemPromptModelCmd resolves raw config and delegates system prompt
-// selection/rendering rules to commands.ModelSystemPrompt.
+// selection/rendering rules to config.ModelSystemPrompt.
 var systemPromptModelCmd = &cobra.Command{
 	Use:   "system-prompt",
 	Short: "Show the rendered system prompt for a model",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return commands.ModelSystemPromptFromConfig(cmd.Context(), commands.ModelSystemPromptFromConfigOptions{
+		return config.ModelSystemPromptFromConfig(cmd.Context(), config.ModelSystemPromptFromConfigOptions{
 			ConfigPath:   configPath,
 			ModelName:    model,
 			DefaultModel: DefaultModel,

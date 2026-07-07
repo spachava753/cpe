@@ -1,4 +1,4 @@
-package commands
+package mcp
 
 import (
 	"bytes"
@@ -10,11 +10,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
-	mcpinternal "github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/mcpconfig"
 	"github.com/spachava753/cpe/internal/render"
 )
@@ -37,8 +36,8 @@ func MCPListServers(ctx context.Context, opts MCPListServersOptions) error {
 
 	fmt.Fprintln(opts.Writer, "Configured MCP Servers:")
 	for name, server := range mcpConfig {
-		serverType := mcpinternal.EffectiveServerType(server)
-		timeout := int(mcpinternal.EffectiveServerTimeout(server).Seconds())
+		serverType := EffectiveServerType(server)
+		timeout := int(EffectiveServerTimeout(server).Seconds())
 
 		fmt.Fprintf(opts.Writer, "- %s (Type: %s, Timeout: %ds)\n", name, serverType, timeout)
 
@@ -80,10 +79,10 @@ func MCPInfo(ctx context.Context, opts MCPInfoOptions) error {
 		return fmt.Errorf("server '%s' not found in configuration", opts.ServerName)
 	}
 
-	connectCtx, cancel := mcpinternal.WithServerTimeout(ctx, serverConfig)
+	connectCtx, cancel := WithServerTimeout(ctx, serverConfig)
 	defer cancel()
 
-	conn, err := mcpinternal.ConnectServer(connectCtx, opts.ServerName, serverConfig)
+	conn, err := ConnectServer(connectCtx, opts.ServerName, serverConfig)
 	if err != nil {
 		return err
 	}
@@ -116,7 +115,7 @@ func MCPListTools(ctx context.Context, opts MCPListToolsOptions) error {
 		return fmt.Errorf("server '%s' not found in configuration", opts.ServerName)
 	}
 
-	conn, err := mcpinternal.ConnectAndListServer(ctx, opts.ServerName, serverConfig)
+	conn, err := ConnectAndListServer(ctx, opts.ServerName, serverConfig)
 	if err != nil {
 		return err
 	}
@@ -126,7 +125,7 @@ func MCPListTools(ctx context.Context, opts MCPListToolsOptions) error {
 	filteredTools := conn.Tools
 	filteredOut := conn.FilteredOut
 
-	var toolsToShow []*mcp.Tool
+	var toolsToShow []*mcpsdk.Tool
 	var title string
 
 	if opts.ShowAll {
@@ -266,16 +265,16 @@ func MCPCallTool(ctx context.Context, opts MCPCallToolOptions) error {
 		return fmt.Errorf("server '%s' not found in configuration", opts.ServerName)
 	}
 
-	operationCtx, cancel := mcpinternal.WithServerTimeout(ctx, serverConfig)
+	operationCtx, cancel := WithServerTimeout(ctx, serverConfig)
 	defer cancel()
 
-	conn, err := mcpinternal.ConnectServer(operationCtx, opts.ServerName, serverConfig)
+	conn, err := ConnectServer(operationCtx, opts.ServerName, serverConfig)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
 
-	result, err := conn.ClientSession.CallTool(operationCtx, &mcp.CallToolParams{
+	result, err := conn.ClientSession.CallTool(operationCtx, &mcpsdk.CallToolParams{
 		Name:      opts.ToolName,
 		Arguments: opts.ToolArgs,
 	})
@@ -284,7 +283,7 @@ func MCPCallTool(ctx context.Context, opts MCPCallToolOptions) error {
 	}
 
 	for _, content := range result.Content {
-		if textContent, ok := content.(*mcp.TextContent); ok {
+		if textContent, ok := content.(*mcpsdk.TextContent); ok {
 			fmt.Fprint(opts.Writer, textContent.Text)
 		}
 	}

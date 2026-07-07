@@ -17,7 +17,6 @@ import (
 
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/codemode"
-	"github.com/spachava753/cpe/internal/commands"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/mcpconfig"
@@ -57,7 +56,7 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, s session, caps acp.C
 	slog.Debug("config resolved")
 
 	// Load and render system prompt
-	systemPrompt, err := commands.LoadSystemPrompt(ctx, commands.LoadSystemPromptOptions{
+	systemPrompt, err := config.LoadSystemPrompt(ctx, config.LoadSystemPromptOptions{
 		SystemPromptPath: cfg.SystemPromptPath,
 		Config:           cfg,
 		Skills:           s.skillCatalog.ModelVisible(),

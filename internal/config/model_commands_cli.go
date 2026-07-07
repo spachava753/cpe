@@ -1,12 +1,10 @@
-package commands
+package config
 
 import (
 	"context"
 	"fmt"
 	"io"
 	"os"
-
-	"github.com/spachava753/cpe/internal/config"
 )
 
 // ModelListFromConfigOptions contains CLI-facing inputs for model listing.
@@ -18,7 +16,7 @@ type ModelListFromConfigOptions struct {
 
 // ModelListFromConfig loads raw config and prints configured models.
 func ModelListFromConfig(ctx context.Context, opts ModelListFromConfigOptions) error {
-	cfg, err := config.LoadRawConfig(opts.ConfigPath)
+	cfg, err := LoadRawConfig(opts.ConfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
@@ -44,7 +42,7 @@ type ModelInfoFromConfigOptions struct {
 
 // ModelInfoFromConfig loads raw config and prints one model's details.
 func ModelInfoFromConfig(ctx context.Context, opts ModelInfoFromConfigOptions) error {
-	cfg, err := config.LoadRawConfig(opts.ConfigPath)
+	cfg, err := LoadRawConfig(opts.ConfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
@@ -74,7 +72,7 @@ type ModelSystemPromptFromConfigOptions struct {
 // ModelSystemPromptFromConfig loads raw config and renders the selected model's
 // effective system prompt.
 func ModelSystemPromptFromConfig(ctx context.Context, opts ModelSystemPromptFromConfigOptions) error {
-	cfg, resolvedConfigPath, err := config.LoadRawConfigWithPath(opts.ConfigPath)
+	cfg, resolvedConfigPath, err := LoadRawConfigWithPath(opts.ConfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
@@ -84,7 +82,7 @@ func ModelSystemPromptFromConfig(ctx context.Context, opts ModelSystemPromptFrom
 		modelName = opts.DefaultModel
 	}
 
-	effectiveConfig, err := config.ResolveConfig(opts.ConfigPath, config.RuntimeOptions{ModelRef: modelName})
+	effectiveConfig, err := ResolveConfig(opts.ConfigPath, RuntimeOptions{ModelRef: modelName})
 	if err != nil {
 		return fmt.Errorf("failed to resolve configuration: %w", err)
 	}
