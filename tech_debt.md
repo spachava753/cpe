@@ -24,3 +24,9 @@ Various tech debt accumlated in the codebase that we must eventually get to
 
 - config is gradually getting complicated, with system templates and yaml anchors, change to using starlark config, allows for code resuse, more complicated system prompt buiding, compaction building
 - hot reload config on change
+
+## Errors
+
+- need to report compete error response
+- need infinite retries if not phase problem and not 429
+  - on 429, just wait until rate limits reset
