@@ -1429,22 +1429,6 @@ func TestNewSqlite_SchemaError(t *testing.T) {
 	}
 }
 
-// TestRoleConversion verifies edge cases in role-to-string and string-to-role
-// conversion functions that protect against data corruption during serialization.
-func TestRoleConversion(t *testing.T) {
-	t.Run("unknown role to string", func(t *testing.T) {
-		if got := roleToString(gai.Role(999)); got != "unknown" {
-			t.Errorf("expected %q, got %q", "unknown", got)
-		}
-	})
-
-	t.Run("invalid string to role", func(t *testing.T) {
-		if _, err := stringToRole("invalid_role"); err == nil {
-			t.Fatal("expected error for invalid role string")
-		}
-	})
-}
-
 // TestGetMessages_CorruptData verifies that GetMessages returns errors when the
 // database contains malformed data. Each case exercises a different corruption
 // scenario that could occur from database tampering or bugs in older versions.

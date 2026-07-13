@@ -11,8 +11,7 @@ MessageDB.
 
 Implementations:
   - Sqlite: production backend backed by .cpeconvo with transactional writes,
-    referential integrity, and migration helpers.
-  - MemDB: in-memory backend used primarily for tests.
+    referential integrity, and schema initialization.
 
 Message metadata contract:
 returned gai.Message values include storage metadata in ExtraFields using
