@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"iter"
 	"math"
+	"os"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -18,6 +19,101 @@ import (
 )
 
 const testACPModelRef = "gpt-5.5"
+
+func TestResolveStoragePath(t *testing.T) {
+	userConfigDir, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatalf("os.UserConfigDir: %v", err)
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("os.UserHomeDir: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		rawPath string
+		want    string
+		wantErr string
+	}{
+		{
+			name: "uses centralized user config database by default",
+			want: filepath.Join(userConfigDir, "cpe", DefaultFilename),
+		},
+		{
+			name:    "uses absolute configured path",
+			rawPath: filepath.Join(string(filepath.Separator), "tmp", "cpe", "conversations.db"),
+			want:    filepath.Join(string(filepath.Separator), "tmp", "cpe", "conversations.db"),
+		},
+		{
+			name:    "expands home path",
+			rawPath: "~/.config/cpe/conversations.db",
+			want:    filepath.Join(homeDir, ".config", "cpe", "conversations.db"),
+		},
+		{
+			name:    "expands windows-style home path",
+			rawPath: `~\Documents\cpe.db`,
+			want:    filepath.Join(homeDir, `Documents\cpe.db`),
+		},
+		{
+			name:    "keeps explicit relative path relative",
+			rawPath: ".history.db",
+			want:    filepath.Clean(".history.db"),
+		},
+		{
+			name:    "rejects unsupported tilde format",
+			rawPath: "~other/path.db",
+			wantErr: "unsupported home path format \"~other/path.db\" (use ~/...)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ResolveStoragePath(tt.rawPath)
+			if tt.wantErr != "" {
+				if err == nil {
+					t.Fatalf("expected error %q, got nil", tt.wantErr)
+				}
+				if err.Error() != tt.wantErr {
+					t.Fatalf("unexpected error: got %q want %q", err.Error(), tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ResolveStoragePath: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("unexpected path: got %q want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewConvoDBCreatesParentDirectory(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "nested", "conversations.db")
+	store, err := NewConvoDB(t.Context(), dbPath)
+	if err != nil {
+		t.Fatalf("NewConvoDB: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	sessions, err := store.ListACPSessions(t.Context())
+	if err != nil {
+		t.Fatalf("ListACPSessions: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("new store returned %d sessions, want 0", len(sessions))
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Fatalf("stat conversation database: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := store.ListACPSessions(t.Context()); err == nil {
+		t.Fatal("ListACPSessions after Close: expected error, got nil")
+	}
+}
 
 // --- Test helpers ---
 

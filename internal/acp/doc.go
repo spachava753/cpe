@@ -9,6 +9,8 @@ translation between ACP protocol updates and gai dialogs.
 At session runtime, this package resolves the selected CPE model profile,
 renders the configured system prompt, initializes provider generators through
 internal/agent, registers built-in tools, connects configured and client-provided
-MCP servers, and persists session state in storage.
+MCP servers, and persists session state through an injected SQLite store.
+Process-level config loading, database path selection, and storage lifecycle are
+composed by internal/cmd before the ACP server starts.
 */
 package acp

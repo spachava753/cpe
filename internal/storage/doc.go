@@ -10,8 +10,11 @@ ACPSessionsLister, ACPSessionCostAdder) plus composed interfaces such as
 MessageDB.
 
 Implementations:
-  - Sqlite: production backend backed by .cpeconvo with transactional writes,
-    referential integrity, and schema initialization.
+  - Sqlite: SQLite adapter with transactional writes, referential integrity,
+    and schema initialization.
+  - NewConvoDB: production opener that places .cpeconvo in CPE's user config
+    directory by default and returns a concrete Sqlite that owns its database
+    handle.
 
 Message metadata contract:
 returned gai.Message values include storage metadata in ExtraFields using

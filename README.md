@@ -240,7 +240,13 @@ API key variables are configured per model profile through `api_key_env`. OAuth-
 
 `cpe acp serve` starts CPE's stdio ACP server. The ACP client owns the visible interaction loop; CPE owns model runtime assembly, tool execution, session persistence, and protocol updates.
 
-CPE supports ACP session creation, loading, resumption, closing, deletion, and forking where the client exposes those capabilities. Session history is stored locally in SQLite, defaulting to `./.cpeconvo`.
+CPE supports ACP session creation, loading, resumption, closing, deletion, and forking where the client exposes those capabilities. Session history is stored locally in one centralized SQLite database in CPE's user config directory, alongside the standard `cpe.yaml` location:
+
+- macOS: `~/Library/Application Support/cpe/.cpeconvo`
+- Linux: `~/.config/cpe/.cpeconvo`
+- Windows: `%AppData%\cpe\.cpeconvo`
+
+Use `--db-path` or `CPE_DB_PATH` to override this location. Existing project-local `.cpeconvo` databases are not merged automatically; pass one through `--db-path` if you need to access its sessions.
 
 ### Model Selection
 

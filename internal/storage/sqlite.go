@@ -47,6 +47,7 @@ type Sqlite struct {
 	db          DB
 	q           *sqlcgen.Queries
 	idGenerator func() string
+	ownedDB     *sql.DB
 }
 
 // NewSqlite initializes a SQLite-backed message store.
@@ -75,6 +76,15 @@ func NewSqlite(ctx context.Context, db DB, opts ...SqliteOption) (*Sqlite, error
 		opt(store)
 	}
 	return store, nil
+}
+
+// Close closes the database opened by [NewConvoDB]. It is a no-op
+// for stores initialized with [NewSqlite], where the caller owns the database.
+func (s *Sqlite) Close() error {
+	if s.ownedDB == nil {
+		return nil
+	}
+	return s.ownedDB.Close()
 }
 
 func enableForeignKeys(ctx context.Context, db DB) error {

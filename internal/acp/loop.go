@@ -31,13 +31,9 @@ func withSessionID(ctx context.Context, sessionID acp.SessionId) context.Context
 
 // Loop owns the acp full agentic loop for a prompt turn.
 type Loop struct {
-	G           gai.ToolCallingGenerator
-	DialogSaver storage.DialogSaver
-	// CostAdder persists per-generation cost into the ACP session so the
-	// reported cumulative cost survives new prompts, model switches, and
-	// process restarts.
-	CostAdder storage.ACPSessionCostAdder
-	Cfg       config.Config
+	G     gai.ToolCallingGenerator
+	Store *storage.Sqlite
+	Cfg   config.Config
 
 	// internal state
 	toolCallbacks      map[string]gai.ToolCallback
@@ -112,11 +108,8 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 		return current, err
 	}
 
-	if l.DialogSaver == nil {
-		panic("DialogSaver not set")
-	}
-	if l.CostAdder == nil {
-		panic("CostAdder not set")
+	if l.Store == nil {
+		panic("Store not set")
 	}
 
 	sessionID, ok := ctx.Value(sessionIDCtxKey{}).(acp.SessionId)
@@ -260,11 +253,11 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 }
 
 func (l *Loop) save(ctx context.Context, dialog gai.Dialog) (gai.Dialog, error) {
-	if l.DialogSaver == nil {
+	if l.Store == nil {
 		return dialog, nil
 	}
 	idx := 0
-	for saved, err := range l.DialogSaver.SaveDialog(ctx, slices.Values(dialog)) {
+	for saved, err := range l.Store.SaveDialog(ctx, slices.Values(dialog)) {
 		if err != nil {
 			return nil, err
 		}
@@ -388,7 +381,7 @@ func (l *Loop) compact(current gai.Dialog) (gai.Dialog, error) {
 func (l *Loop) usageSessionUpdate(ctx context.Context, sessionID acp.SessionId, metadata gai.Metadata) (acp.SessionUpdate, bool, error) {
 	var cost *acp.Cost
 	if generationCost, ok := calculateUsageCostUSD(metadata, l.Cfg.Model); ok {
-		total, err := l.CostAdder.AddACPSessionCost(ctx, sessionID, generationCost)
+		total, err := l.Store.AddACPSessionCost(ctx, sessionID, generationCost)
 		if err != nil {
 			return acp.SessionUpdate{}, false, fmt.Errorf("persist session cost: %w", err)
 		}

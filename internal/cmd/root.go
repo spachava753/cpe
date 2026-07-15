@@ -11,6 +11,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/spachava753/cpe/internal/acp/client"
+	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/version"
 )
 
@@ -53,10 +55,20 @@ to the terminal.`,
 		if len(args) == 0 {
 			return cmd.Help()
 		}
+		rawCfg, err := config.LoadRawConfig(configPath)
+		if err != nil {
+			return fmt.Errorf("could not load config: %w", err)
+		}
+		store, err := storage.NewConvoDB(cmd.Context(), conversationStoragePath)
+		if err != nil {
+			return fmt.Errorf("could not open conversation storage: %w", err)
+		}
+		defer func() { _ = store.Close() }()
+
 		return client.Run(cmd.Context(), client.Options{
 			Prompt:        strings.Join(args, " "),
-			ConfigPath:    configPath,
-			DbPath:        conversationStoragePath,
+			RawConfig:     rawCfg,
+			Store:         store,
 			ModelRef:      model,
 			ThinkingLevel: thinkingLevel,
 			Stdout:        cmd.OutOrStdout(),
@@ -82,7 +94,7 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Path to YAML configuration file (default: ./cpe.yaml, ~/.config/cpe/cpe.yaml)")
-	rootCmd.PersistentFlags().StringVar(&conversationStoragePath, "db-path", os.Getenv("CPE_DB_PATH"), "Path to ACP session SQLite database (default: ./.cpeconvo, env: CPE_DB_PATH)")
+	rootCmd.PersistentFlags().StringVar(&conversationStoragePath, "db-path", os.Getenv("CPE_DB_PATH"), "Path to ACP session SQLite database (default: user config directory, env: CPE_DB_PATH)")
 	rootCmd.PersistentFlags().StringVarP(&model, "model", "m", DefaultModel, "Model profile ref for direct prompt sessions (env: CPE_MODEL)")
 	rootCmd.PersistentFlags().StringVar(&thinkingLevel, "thinking-level", "", "Thinking level for direct prompt sessions")
 	rootCmd.Flags().BoolVarP(&versionFlag, "version", "v", false, "Print the version number and exit")

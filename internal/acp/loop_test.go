@@ -1,7 +1,6 @@
 package acp
 
 import (
-	"context"
 	"math"
 	"testing"
 
@@ -10,20 +9,8 @@ import (
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/storage"
 )
-
-// fakeCostAdder is an in-memory storage.ACPSessionCostAdder for unit tests.
-type fakeCostAdder struct {
-	totals map[acp.SessionId]float64
-}
-
-func (f *fakeCostAdder) AddACPSessionCost(_ context.Context, sessionID acp.SessionId, costUSD float64) (float64, error) {
-	if f.totals == nil {
-		f.totals = make(map[acp.SessionId]float64)
-	}
-	f.totals[sessionID] += costUSD
-	return f.totals[sessionID], nil
-}
 
 func TestLoopUsageSessionUpdate(t *testing.T) {
 	tests := []struct {
@@ -78,7 +65,18 @@ func TestLoopUsageSessionUpdate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			l := Loop{Cfg: config.Config{Model: tt.model}, CostAdder: &fakeCostAdder{}}
+			store, _ := newTestSqlite(t)
+			if err := store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
+				Session: acp.SessionInfo{
+					SessionID: "test-session",
+					Cwd:       "/test/workspace",
+					Title:     new("Test session"),
+				},
+				ModelRef: "test-model",
+			}); err != nil {
+				t.Fatalf("CreateACPSession: %v", err)
+			}
+			l := Loop{Cfg: config.Config{Model: tt.model}, Store: store}
 			update, ok, err := l.usageSessionUpdate(t.Context(), "test-session", tt.metadata)
 			if err != nil {
 				t.Fatalf("usageSessionUpdate() err = %v, want nil", err)
@@ -117,11 +115,23 @@ func TestLoopUsageSessionUpdate(t *testing.T) {
 
 // TestLoopUsageSessionUpdateCostAccumulatesAcrossLoops verifies that the
 // reported cost is the session's cumulative total even when the Loop is
-// recreated (new prompt, model switch, or process restart) since the total
-// is persisted through the CostAdder rather than held in Loop memory.
+// recreated (new prompt, model switch, or process restart) since the total is
+// persisted in SQLite rather than held in Loop memory.
 func TestLoopUsageSessionUpdateCostAccumulatesAcrossLoops(t *testing.T) {
-	adder := &fakeCostAdder{}
+	store, _ := newTestSqlite(t)
 	sessionID := acp.SessionId("test-session")
+	for _, id := range []acp.SessionId{sessionID, "other-session"} {
+		if err := store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
+			Session: acp.SessionInfo{
+				SessionID: id,
+				Cwd:       "/test/workspace",
+				Title:     new("Test session"),
+			},
+			ModelRef: "test-model",
+		}); err != nil {
+			t.Fatalf("CreateACPSession(%q): %v", id, err)
+		}
+	}
 	metadata := gai.Metadata{
 		gai.UsageMetricInputTokens:      100,
 		gai.UsageMetricGenerationTokens: 50,
@@ -133,7 +143,7 @@ func TestLoopUsageSessionUpdateCostAccumulatesAcrossLoops(t *testing.T) {
 			InputCostPerMillion:  new(2.0),
 			OutputCostPerMillion: new(4.0),
 		}},
-		CostAdder: adder,
+		Store: store,
 	}
 	update, ok, err := first.usageSessionUpdate(t.Context(), sessionID, metadata)
 	if err != nil || !ok || update.SessionUpdate != acp.SessionUpdateTypeUsageUpdate || update.Cost == nil {
@@ -153,7 +163,7 @@ func TestLoopUsageSessionUpdateCostAccumulatesAcrossLoops(t *testing.T) {
 			InputCostPerMillion:  new(1.0),
 			OutputCostPerMillion: new(1.0),
 		}},
-		CostAdder: adder,
+		Store: store,
 	}
 	update, ok, err = second.usageSessionUpdate(t.Context(), sessionID, metadata)
 	if err != nil || !ok || update.SessionUpdate != acp.SessionUpdateTypeUsageUpdate || update.Cost == nil {
@@ -166,7 +176,7 @@ func TestLoopUsageSessionUpdateCostAccumulatesAcrossLoops(t *testing.T) {
 	}
 
 	// a different session must not see this session's cost
-	other := Loop{Cfg: second.Cfg, CostAdder: adder}
+	other := Loop{Cfg: second.Cfg, Store: store}
 	update, ok, err = other.usageSessionUpdate(t.Context(), "other-session", metadata)
 	if err != nil || !ok || update.SessionUpdate != acp.SessionUpdateTypeUsageUpdate || update.Cost == nil {
 		t.Fatalf("other session usageSessionUpdate() = %#v, %v, %v", update, ok, err)

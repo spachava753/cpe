@@ -3,7 +3,6 @@ package acp
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,11 +25,11 @@ import (
 )
 
 type ServeOptions struct {
-	Stdin      io.Reader
-	Stdout     io.Writer
-	Stderr     io.Writer
-	ConfigPath string
-	DbPath     string
+	Stdin     io.Reader
+	Stdout    io.Writer
+	Stderr    io.Writer
+	RawConfig *config.RawConfig
+	Store     *storage.Sqlite
 }
 
 type serverRuntimeCreator struct {
@@ -102,11 +101,10 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, s session, caps acp.C
 	}
 
 	l := Loop{
-		DialogSaver: c.store,
-		CostAdder:   c.store,
-		Cfg:         cfg,
-		G:           gen,
-		conn:        c.conn,
+		Store: c.store,
+		Cfg:   cfg,
+		G:     gen,
+		conn:  c.conn,
 	}
 
 	ca := closerAgent{
@@ -230,9 +228,9 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		Writer: nopWriteCloser{Writer: stdout},
 	}
 	return Run(ctx, transport, RunOptions{
-		ConfigPath: opts.ConfigPath,
-		DbPath:     opts.DbPath,
-		Stderr:     opts.Stderr,
+		RawConfig: opts.RawConfig,
+		Store:     opts.Store,
+		Stderr:    opts.Stderr,
 	})
 }
 
@@ -242,46 +240,23 @@ func Run(ctx context.Context, transport acp.Transport, opts RunOptions) error {
 		return errors.New("provided stderr cannot be nil")
 	}
 
-	rawCfg, err := config.LoadRawConfig(opts.ConfigPath)
-	if err != nil {
-		return fmt.Errorf("could not load config: %v", err)
+	if opts.RawConfig == nil {
+		return errors.New("provided raw config cannot be nil")
 	}
-
-	slog.Debug("loaded config file", slog.String("path", opts.ConfigPath))
-
-	dbPath, err := config.ResolveConversationStoragePath(opts.DbPath)
-	if err != nil {
-		return fmt.Errorf("invalid db path: %w", err)
-	}
-
-	slog.Debug("loaded db", slog.String("path", dbPath))
-
-	storageDB, err := sql.Open("sqlite3", dbPath)
-	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
-	}
-	defer func() {
-		slog.Debug("closing db connection")
-		if err := storageDB.Close(); err != nil {
-			slog.Error("could not close db conn", slog.String("err", err.Error()))
-		}
-	}()
-
-	sqliteStorage, err := storage.NewSqlite(ctx, storageDB)
-	if err != nil {
-		return fmt.Errorf("failed to initialize dialog storage: %w", err)
+	if opts.Store == nil {
+		return errors.New("provided conversation store cannot be nil")
 	}
 
 	// TODO: we should refactor the runtime factory to be made from the session config options
 	runtimeFactory := &serverRuntimeCreator{
-		rawCfg: rawCfg,
-		store:  sqliteStorage,
+		rawCfg: opts.RawConfig,
+		store:  opts.Store,
 	}
 
 	ag := Agent{
 		activeSessions: new(sync.Map[acp.SessionId, *sync.Guard[session]]),
-		rawCfg:         rawCfg,
-		db:             sqliteStorage,
+		rawCfg:         opts.RawConfig,
+		db:             opts.Store,
 		genId: func() acp.SessionId {
 			return acp.SessionId(storage.GenerateId())
 		},

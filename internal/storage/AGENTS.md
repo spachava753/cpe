@@ -12,12 +12,13 @@ message history with other sessions after a fork.
 
 ## Module Boundaries
 
-- `interfaces.go` is the public persistence seam. Depend on the narrowest
-  interface needed (`DialogSaver`, `MessagesGetter`, `MessagesLister`,
-  `MessagesDeleter`, or an ACP-session interface), not on `*Sqlite`.
+- `interfaces.go` contains the existing capability-oriented persistence contracts
+  used by consumers that need substitution. Do not add storage-owned composite
+  interfaces merely to hide `*Sqlite`; define an interface at the consumer only
+  when multiple implementations or a useful test seam require one. ACP uses the
+  concrete SQLite adapter directly.
 - `MessageDB` composes the message-only interfaces. ACP session capabilities
-  remain independently composable so callers do not acquire unrelated
-  dependencies.
+  remain independently available to non-ACP consumers.
 - `errors.go` defines the sentinel missing-record errors. Return contextual
   errors that wrap `ErrMessageNotFound` or `ErrSessionNotFound` where the
   interface promises them.
@@ -29,9 +30,14 @@ message history with other sessions after a fork.
 
 `Sqlite` is the production adapter. It enables foreign keys and initializes
 its schema in `NewSqlite`; the caller owns the database handle lifecycle.
+`NewConvoDB` is the process-level opener: it resolves the default centralized
+path under CPE's user config directory, creates the parent directory, and
+returns a `*Sqlite` that owns its database handle.
 
 Implementation files are intentionally organized by responsibility:
 
+- `conn.go`: default path policy, production database opening, and connection
+  lifecycle.
 - `sqlite.go`: database contract, adapter construction, schema embedding, and
   shared state.
 - `sqlite_message_codec.go`: role conversion and the mapping between message

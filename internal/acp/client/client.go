@@ -11,14 +11,16 @@ import (
 	"github.com/spachava753/acp-sdk/acp"
 
 	cpeacp "github.com/spachava753/cpe/internal/acp"
+	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/storage"
 	"github.com/spachava753/cpe/internal/version"
 )
 
 // Options configures the minimal terminal ACP client used by `cpe "prompt"`.
 type Options struct {
 	Prompt        string
-	ConfigPath    string
-	DbPath        string
+	RawConfig     *config.RawConfig
+	Store         *storage.Sqlite
 	ModelRef      string
 	ThinkingLevel string
 	Cwd           string
@@ -36,9 +38,9 @@ type agentRunner func(context.Context, acp.Transport, Options) error
 
 func cpeAgentRunner(ctx context.Context, transport acp.Transport, opts Options) error {
 	return cpeacp.Run(ctx, transport, cpeacp.RunOptions{
-		ConfigPath: opts.ConfigPath,
-		DbPath:     opts.DbPath,
-		Stderr:     opts.Stderr,
+		RawConfig: opts.RawConfig,
+		Store:     opts.Store,
+		Stderr:    opts.Stderr,
 	})
 }
 

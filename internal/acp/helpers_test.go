@@ -42,6 +42,19 @@ type testSetup struct {
 	RawDB      *sql.DB
 }
 
+func newTestSqlite(t *testing.T) (*storage.Sqlite, *sql.DB) {
+	t.Helper()
+
+	db, err := sql.Open("sqlite3", ":memory:")
+	be.Err(t, err, nil)
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+
+	store, err := storage.NewSqlite(t.Context(), db)
+	be.Err(t, err, nil)
+	return store, db
+}
+
 func expectedUsageUpdate(used, size uint64, cost *acp.Cost) acp.SessionUpdate {
 	update := acp.UsageUpdateSessionUpdate(used, size)
 	update.Cost = cost
@@ -83,12 +96,7 @@ func setup(
 	t.Helper()
 
 	// setup db
-	db, err := sql.Open("sqlite3", ":memory:")
-	be.Err(t, err, nil)
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { _ = db.Close() })
-	sqliteStorage, err := storage.NewSqlite(t.Context(), db)
-	be.Err(t, err, nil)
+	sqliteStorage, db := newTestSqlite(t)
 
 	adapter := &runtimeCreatorAdapter{f: rf}
 	ag := Agent{

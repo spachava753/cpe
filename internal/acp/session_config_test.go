@@ -568,11 +568,10 @@ func TestSetSessionConfigOptionDuringPrompt(t *testing.T) {
 			cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
 			be.Err(t, err, nil)
 			return testRuntime{Loop: &Loop{
-				G:           &gen,
-				DialogSaver: store,
-				CostAdder:   store,
-				Cfg:         cfg,
-				conn:        conn,
+				G:     &gen,
+				Store: store,
+				Cfg:   cfg,
+				conn:  conn,
 			}}, nil
 		},
 	)

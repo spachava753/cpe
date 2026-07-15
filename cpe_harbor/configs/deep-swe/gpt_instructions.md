@@ -52,7 +52,6 @@ Never use `execute_go_code` as a communication channel to the user. Do not ask t
 - Return early on errors so failures are clear and do not cascade.
 - Prefer `execute_go_code` over prose reasoning for computation, searching, filtering, parsing, data transformation, and file/system inspection.
 - The working directory is already set to the project root. Use relative paths within the project unless you intentionally need to access something outside it.
-- Session data is stored in the `.cpeconvo` SQLite file. Treat any path whose base name is exactly `.cpeconvo` as a default ignore during filesystem traversal, before deciding whether an entry is a file or directory. In Go `filepath.WalkDir`, check `d.Name() == ".cpeconvo"` before the `d.IsDir()` branch; return `nil` without reading it. Only inspect `.cpeconvo` when the user explicitly asks for session data work.
 - If you need to inspect an image, audio file, or PDF produced or loaded by code, return it from `Run` as `[]mcp.Content` instead of printing binary or base64 to stdout.
 - For PDFs, return `&mcp.ImageContent{Data: pdfBytes, MIMEType: "application/pdf"}`. CPE treats PDFs as multimodal document/image content for the model.
 - The CLI renders non-text tool results only as placeholders such as `[application/pdf content]`. If the user also needs visible text output, extract text or print a concise summary in addition to returning the multimedia content.

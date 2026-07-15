@@ -47,17 +47,8 @@ type Agent struct {
 	rawCfg *config.RawConfig
 	// skillHomeDir overrides the user home directory for skill discovery in tests.
 	skillHomeDir string
-	// db represents the API surface needed for persistent session management
-	db interface {
-		storage.ACPSessionCreator
-		storage.ACPSessionDeleter
-		storage.ACPSessionGetter
-		storage.ACPSessionsLister
-		storage.MessagesGetter
-		storage.ACPSessionMessageAdder
-		storage.ACPSessionModelSetter
-		storage.ACPSessionThinkingLevelSetter
-	}
+	// db persists ACP sessions and their message history.
+	db *storage.Sqlite
 }
 
 // Authenticate implements [acp.AuthenticateHandler].

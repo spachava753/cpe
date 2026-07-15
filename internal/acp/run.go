@@ -1,9 +1,14 @@
 package acp
 
-import "io"
+import (
+	"io"
+
+	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/storage"
+)
 
 type RunOptions struct {
-	ConfigPath string
-	DbPath     string
-	Stderr     io.Writer
+	RawConfig *config.RawConfig
+	Store     *storage.Sqlite
+	Stderr    io.Writer
 }
