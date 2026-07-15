@@ -5,7 +5,6 @@ CPE (Chat-based Programming Editor) is a local Agent Client Protocol (ACP) serve
 ## Documentation
 
 - Package-level `doc.go` files under the relevant `internal/` subpackages, and `build/` are the canonical feature and behavior specs.
-- `design.md` defines codebase design decisions, goals and non-goals, and project structure. It is required to read the design doc before starting to implement any code.
 - Exported symbols used across packages should have Go doc comments that describe behavior and contracts.
 - `examples/` is a folder that holds example yaml configuration for configuring CPE, as well example system prompt templates
 - `internal/testutil/testgate/doc.go` defines the canonical pattern for opt-in integration, live, and interactive tests. Prefer it over ad hoc env-var checks or unconditional live tests.
