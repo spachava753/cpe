@@ -212,4 +212,5 @@ SELECT acp_sessions.id,
        acp_sessions.created_at
 FROM acp_sessions
 LEFT JOIN messages ON messages.id = acp_sessions.last_message_id
+WHERE sqlc.narg(cwd) IS NULL OR acp_sessions.cwd = sqlc.narg(cwd)
 ORDER BY COALESCE(messages.created_at, acp_sessions.created_at) DESC, acp_sessions.rowid DESC;

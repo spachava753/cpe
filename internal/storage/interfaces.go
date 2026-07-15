@@ -292,10 +292,12 @@ type ACPSessionGetter interface {
 // ACPSessionsLister lists ACP session metadata.
 type ACPSessionsLister interface {
 	// ListACPSessions returns ACP sessions ordered by last activity, newest first.
+	// When cwd is non-nil, only sessions with an exactly matching working
+	// directory are returned. A nil cwd returns sessions from all directories.
 	//
 	// Each returned SessionInfo.UpdatedAt is an ISO 8601 timestamp derived from
 	// the session's creation time.
-	ListACPSessions(ctx context.Context) ([]acp.SessionInfo, error)
+	ListACPSessions(ctx context.Context, cwd *string) ([]acp.SessionInfo, error)
 }
 
 // MessageDB is the unified interface for message persistence operations.

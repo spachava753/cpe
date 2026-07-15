@@ -97,7 +97,7 @@ func TestNewConvoDBCreatesParentDirectory(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	sessions, err := store.ListACPSessions(t.Context())
+	sessions, err := store.ListACPSessions(t.Context(), nil)
 	if err != nil {
 		t.Fatalf("ListACPSessions: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestNewConvoDBCreatesParentDirectory(t *testing.T) {
 	if err := store.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if _, err := store.ListACPSessions(t.Context()); err == nil {
+	if _, err := store.ListACPSessions(t.Context(), nil); err == nil {
 		t.Fatal("ListACPSessions after Close: expected error, got nil")
 	}
 }
@@ -383,7 +383,7 @@ func TestACPSessions(t *testing.T) {
 		t.Fatalf("ModelRef after update: got %q", resp.ModelRef)
 	}
 
-	sessions, err := db.ListACPSessions(ctx)
+	sessions, err := db.ListACPSessions(ctx, nil)
 	if err != nil {
 		t.Fatalf("ListACPSessions: %v", err)
 	}
@@ -395,6 +395,24 @@ func TestACPSessions(t *testing.T) {
 	}
 	if sessions[0].UpdatedAt == nil || *sessions[0].UpdatedAt != newerSessionCreatedAt.Format(time.RFC3339Nano) {
 		t.Fatalf("newer UpdatedAt: got %v", sessions[0].UpdatedAt)
+	}
+
+	olderCwd := "/tmp/older"
+	sessions, err = db.ListACPSessions(ctx, &olderCwd)
+	if err != nil {
+		t.Fatalf("ListACPSessions by cwd: %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].SessionID != acp.SessionId("older-session") {
+		t.Fatalf("sessions for %q: got %#v", olderCwd, sessions)
+	}
+
+	missingCwd := "/tmp/missing"
+	sessions, err = db.ListACPSessions(ctx, &missingCwd)
+	if err != nil {
+		t.Fatalf("ListACPSessions by missing cwd: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("sessions for %q: got %#v, want none", missingCwd, sessions)
 	}
 
 	session, err := db.AddACPSessionMessage(ctx, acp.SessionId("older-session"), latestMessageID)
@@ -416,7 +434,7 @@ func TestACPSessions(t *testing.T) {
 		t.Fatalf("ModelRef after add: got %q", resp.ModelRef)
 	}
 
-	sessions, err = db.ListACPSessions(ctx)
+	sessions, err = db.ListACPSessions(ctx, nil)
 	if err != nil {
 		t.Fatalf("ListACPSessions after add: %v", err)
 	}
@@ -597,7 +615,7 @@ func TestACPSessionWithoutMessages(t *testing.T) {
 		t.Fatalf("UpdatedAt: got %v", resp.Session.UpdatedAt)
 	}
 
-	sessions, err := db.ListACPSessions(ctx)
+	sessions, err := db.ListACPSessions(ctx, nil)
 	if err != nil {
 		t.Fatalf("ListACPSessions: %v", err)
 	}

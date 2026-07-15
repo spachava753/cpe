@@ -135,6 +135,12 @@ func TestListSessions(t *testing.T) {
 	resp, err := clientConn.ListSessions(t.Context(), &acp.ListSessionsRequest{})
 	be.Err(t, err, nil)
 	be.Equal(t, len(resp.Sessions), len(sessionEntries))
+
+	cwd := "/rando/dir"
+	resp, err = clientConn.ListSessions(t.Context(), &acp.ListSessionsRequest{Cwd: &cwd})
+	be.Err(t, err, nil)
+	be.Equal(t, len(resp.Sessions), 1)
+	be.Equal(t, resp.Sessions[0].SessionID, acp.SessionId("abc123"))
 }
 
 func TestNewSession(t *testing.T) {
@@ -277,6 +283,14 @@ func TestResumeSession(t *testing.T) {
 		t.Log("called init")
 		be.Err(t, err, nil)
 
+		_, err = clientConn.ResumeSession(t.Context(), &acp.ResumeSessionRequest{
+			Cwd:        "/other/dir",
+			McpServers: []acp.McpServer{},
+			SessionID:  "abc123",
+		})
+		be.True(t, err != nil)
+		be.True(t, strings.Contains(err.Error(), `session abc123 belongs to working directory "/rando/dir", not "/other/dir"`))
+
 		resp, err := clientConn.ResumeSession(t.Context(), &acp.ResumeSessionRequest{
 			Cwd:        "/rando/dir",
 			McpServers: []acp.McpServer{},
@@ -289,6 +303,14 @@ func TestResumeSession(t *testing.T) {
 		be.Equal(t, (*resp.ConfigOptions)[1].ID, thinkingLevelConfigId)
 		be.Equal(t, (*resp.ConfigOptions)[1].CurrentValue, any("low"))
 		be.Equal(t, len(createdModelRefs), 0)
+
+		_, err = clientConn.ResumeSession(t.Context(), &acp.ResumeSessionRequest{
+			Cwd:        "/other/dir",
+			McpServers: []acp.McpServer{},
+			SessionID:  "abc123",
+		})
+		be.True(t, err != nil)
+		be.True(t, strings.Contains(err.Error(), `session abc123 belongs to working directory "/rando/dir", not "/other/dir"`))
 	})
 
 	t.Run("stale model ref", func(t *testing.T) {
@@ -563,6 +585,15 @@ func TestLoadSession(t *testing.T) {
 			Update:    expectedRPCAgentMessageChunk("answer"),
 		},
 	})
+
+	_, err = clientConn.LoadSession(t.Context(), &acp.LoadSessionRequest{
+		Cwd:        "/other/dir",
+		McpServers: mcpServers,
+		SessionID:  "abc123",
+	})
+	be.True(t, err != nil)
+	be.True(t, strings.Contains(err.Error(), `session abc123 belongs to working directory "/rando/dir", not "/other/dir"`))
+	be.Equal(t, len(testClient.notifications()), 2)
 }
 
 func TestLoadSessionWithStaleModelRequiresModelSelection(t *testing.T) {

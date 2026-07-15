@@ -183,12 +183,17 @@ func optionalString(value string) sql.NullString {
 }
 
 // ListACPSessions returns ACP session metadata ordered by last activity, newest
-// first.
+// first. When cwd is non-nil, only sessions with an exactly matching working
+// directory are returned.
 //
 // UpdatedAt is formatted as an ISO 8601 timestamp from each session's creation
 // time.
-func (s *Sqlite) ListACPSessions(ctx context.Context) ([]acp.SessionInfo, error) {
-	rows, err := s.q.ListSessions(ctx)
+func (s *Sqlite) ListACPSessions(ctx context.Context, cwd *string) ([]acp.SessionInfo, error) {
+	cwdFilter := sql.NullString{}
+	if cwd != nil {
+		cwdFilter = sql.NullString{String: *cwd, Valid: true}
+	}
+	rows, err := s.q.ListSessions(ctx, cwdFilter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list ACP sessions: %w", err)
 	}

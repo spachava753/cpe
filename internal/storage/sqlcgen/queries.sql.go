@@ -620,6 +620,7 @@ SELECT acp_sessions.id,
        acp_sessions.created_at
 FROM acp_sessions
 LEFT JOIN messages ON messages.id = acp_sessions.last_message_id
+WHERE ?1 IS NULL OR acp_sessions.cwd = ?1
 ORDER BY COALESCE(messages.created_at, acp_sessions.created_at) DESC, acp_sessions.rowid DESC
 `
 
@@ -632,8 +633,8 @@ type ListSessionsRow struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
-func (q *Queries) ListSessions(ctx context.Context) ([]ListSessionsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listSessions)
+func (q *Queries) ListSessions(ctx context.Context, cwd interface{}) ([]ListSessionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSessions, cwd)
 	if err != nil {
 		return nil, err
 	}

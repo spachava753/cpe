@@ -125,7 +125,11 @@ func (a *Agent) NewSession(ctx context.Context, params *acp.NewSessionRequest) (
 
 // ListSessions implements [acp.SessionHandler].
 func (a *Agent) ListSessions(ctx context.Context, params *acp.ListSessionsRequest) (*acp.ListSessionsResponse, error) {
-	sessionInfos, err := a.db.ListACPSessions(ctx)
+	var cwd *string
+	if params != nil {
+		cwd = params.Cwd
+	}
+	sessionInfos, err := a.db.ListACPSessions(ctx, cwd)
 	if err != nil {
 		return nil, fmt.Errorf("could not list sessions: %v", err)
 	}
@@ -143,13 +147,6 @@ func (a *Agent) loadActiveSession(
 	cwd string,
 	mcpServers []acp.McpServer,
 ) ([]acp.SessionConfigOption, error) {
-	// TODO: should we always load from db? Maybe be better, especially since config can change
-	if s, ok := a.activeSessions.Load(sessionId); ok {
-		// session already exists, but maybe we should reload the runtime based on stored config options?
-		_ = s
-		return a.configOptions(ctx, sessionId), nil
-	}
-
 	getSessionResp, err := a.db.GetACPSession(ctx, sessionId)
 	if err != nil {
 		return nil, fmt.Errorf(
@@ -157,6 +154,20 @@ func (a *Agent) loadActiveSession(
 			sessionId,
 			err,
 		)
+	}
+	if getSessionResp.Session.Cwd != cwd {
+		return nil, fmt.Errorf(
+			"session %s belongs to working directory %q, not %q",
+			sessionId,
+			getSessionResp.Session.Cwd,
+			cwd,
+		)
+	}
+
+	// Reuse active state only after validating the request against persisted
+	// session metadata.
+	if _, ok := a.activeSessions.Load(sessionId); ok {
+		return a.configOptions(ctx, sessionId), nil
 	}
 
 	// config options may be stale, double check them

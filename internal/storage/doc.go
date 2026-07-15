@@ -3,7 +3,11 @@ Package storage defines CPE message-tree and ACP session persistence contracts a
 implementations.
 
 ACP sessions point at message trees (parent-child lineage) where each message
-contains ordered content blocks. The package exposes narrow interfaces
+contains ordered content blocks. Session listings may be filtered by an exact
+working-directory match; omitting the filter lists sessions from every stored
+directory as required by ACP.
+
+The package exposes narrow interfaces
 (DialogSaver, MessagesGetter, MessagesLister, MessagesDeleter,
 ACPSessionCreator, ACPSessionMessageAdder, ACPSessionGetter,
 ACPSessionsLister, ACPSessionCostAdder) plus composed interfaces such as

@@ -65,6 +65,8 @@ lines of local logic.
 - Blocks are ordered by `sequence_order` and are cascade-deleted with their
   message.
 - Session deletion preserves history reachable from another ACP session.
+- Session listing applies an exact `cwd` match when a filter is provided and
+  preserves the unfiltered listing behavior when it is omitted.
 - `NewSqlite` applies the current `schema.sql` but does not migrate older
   table layouts. Treat compatibility migrations as a separate, explicitly
   designed behavior with tests.
