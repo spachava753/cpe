@@ -32,17 +32,19 @@ func (q *Queries) AddSessionCost(ctx context.Context, arg AddSessionCostParams) 
 
 const addSessionMessage = `-- name: AddSessionMessage :execrows
 UPDATE acp_sessions
-SET last_message_id = ?
-WHERE id = ?
+SET last_message_id = ?1
+WHERE id = ?2
+  AND last_message_id IS ?3
 `
 
 type AddSessionMessageParams struct {
-	LastMessageID sql.NullString `json:"last_message_id"`
-	ID            string         `json:"id"`
+	MessageID             sql.NullString `json:"message_id"`
+	SessionID             string         `json:"session_id"`
+	ExpectedLastMessageID sql.NullString `json:"expected_last_message_id"`
 }
 
 func (q *Queries) AddSessionMessage(ctx context.Context, arg AddSessionMessageParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, addSessionMessage, arg.LastMessageID, arg.ID)
+	result, err := q.db.ExecContext(ctx, addSessionMessage, arg.MessageID, arg.SessionID, arg.ExpectedLastMessageID)
 	if err != nil {
 		return 0, err
 	}

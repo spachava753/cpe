@@ -19,10 +19,10 @@ import (
 // transaction semantics (commit or rollback boundaries).
 type DB interface {
 	sqlcgen.DBTX
-	// ExecContext executes a statement that does not return rows. NewSqlite uses
-	// it for PRAGMA setup and schema initialization.
+	// ExecContext executes statements outside a transaction. NewSqlite uses it
+	// for connection-level PRAGMA setup.
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-	// BeginTx starts a transaction used for atomic write operations.
+	// BeginTx starts atomic write and serialized schema transactions.
 	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
 }
 
@@ -52,18 +52,15 @@ type Sqlite struct {
 
 // NewSqlite initializes a SQLite-backed message store.
 //
-// It enables foreign-key enforcement and executes the embedded schema SQL
-// before returning.
+// It enables foreign-key enforcement and initializes the current schema inside
+// one serialized write transaction.
 //
 // The caller owns the lifecycle of db (open/close).
 func NewSqlite(ctx context.Context, db DB, opts ...SqliteOption) (*Sqlite, error) {
 	if err := enableForeignKeys(ctx, db); err != nil {
 		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
 	}
-
-	// Initialize schema from embedded SQL file
-	_, err := db.ExecContext(ctx, schemaSQL)
-	if err != nil {
+	if err := initializeSchema(ctx, db); err != nil {
 		return nil, fmt.Errorf("failed to initialize schema: %w", err)
 	}
 
@@ -78,6 +75,22 @@ func NewSqlite(ctx context.Context, db DB, opts ...SqliteOption) (*Sqlite, error
 	return store, nil
 }
 
+// initializeSchema serializes first-run schema creation across processes.
+func initializeSchema(ctx context.Context, db DB) error {
+	tx, err := beginWriteTx(ctx, db)
+	if err != nil {
+		return fmt.Errorf("begin schema transaction: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, schemaSQL); err != nil {
+		return fmt.Errorf("apply current schema: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit schema transaction: %w", err)
+	}
+	return nil
+}
+
 // Close closes the database opened by [NewConvoDB]. It is a no-op
 // for stores initialized with [NewSqlite], where the caller owns the database.
 func (s *Sqlite) Close() error {
@@ -85,6 +98,12 @@ func (s *Sqlite) Close() error {
 		return nil
 	}
 	return s.ownedDB.Close()
+}
+
+// beginWriteTx acquires the write reservation before any reads in a write
+// transaction. The ncruces driver maps serializable transactions to IMMEDIATE.
+func beginWriteTx(ctx context.Context, db DB) (*sql.Tx, error) {
+	return db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 }
 
 func enableForeignKeys(ctx context.Context, db DB) error {

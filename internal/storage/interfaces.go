@@ -239,9 +239,11 @@ type ACPSessionCreator interface {
 
 // ACPSessionMessageAdder updates an ACP session's latest message pointer.
 type ACPSessionMessageAdder interface {
-	// AddACPSessionMessage marks messageID as the latest message for sessionID.
-	// It returns an error wrapping ErrSessionNotFound when sessionID is missing.
-	AddACPSessionMessage(ctx context.Context, sessionID acp.SessionId, messageID string) (acp.SessionInfo, error)
+	// AddACPSessionMessage changes the latest message from expectedMessageID to
+	// messageID. It returns an error wrapping ErrSessionConflict if another
+	// process advanced the session first, or ErrSessionNotFound if sessionID is
+	// missing.
+	AddACPSessionMessage(ctx context.Context, sessionID acp.SessionId, expectedMessageID, messageID string) (acp.SessionInfo, error)
 }
 
 // ACPSessionDeleter deletes ACP session metadata and owned message data.

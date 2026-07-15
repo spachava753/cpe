@@ -15,10 +15,19 @@ MessageDB.
 
 Implementations:
   - Sqlite: SQLite adapter with transactional writes, referential integrity,
-    and schema initialization.
+    serialized fresh-schema initialization, and optimistic ACP session
+    advancement.
   - NewConvoDB: production opener that places .cpeconvo in CPE's user config
-    directory by default and returns a concrete Sqlite that owns its database
-    handle.
+    directory by default, enables WAL with IMMEDIATE writer transactions, and
+    returns a concrete Sqlite that owns its database handle.
+
+Concurrent-process contract:
+production handles use WAL so readers can continue while a writer is active and
+IMMEDIATE write transactions so competing writers queue before reading mutable
+state. Advancing an ACP session requires its persisted last message to match the
+caller's expected value; conflicts wrap ErrSessionConflict instead of silently
+overwriting another process's advancement. Storage leaves any messages and cost
+persisted by the rejected process untouched for separate maintenance.
 
 Message metadata contract:
 returned gai.Message values include storage metadata in ExtraFields using

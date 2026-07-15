@@ -244,9 +244,16 @@ func (a *Agent) Prompt(
 	acpCtx, acpCtxCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
 	defer acpCtxCancel()
 	lastMessageID := storage.GetMessageID(dialog[len(dialog)-1])
-	_, err = a.db.AddACPSessionMessage(acpCtx, params.SessionID, lastMessageID)
+	_, err = a.db.AddACPSessionMessage(acpCtx, params.SessionID, acpSession.LastMessageID, lastMessageID)
+	if errors.Is(err, storage.ErrSessionConflict) {
+		panic(fmt.Errorf(
+			"ACP session %s was modified concurrently; ensure only one ACP agent instance serves this session: %w",
+			params.SessionID,
+			err,
+		))
+	}
 	if err != nil {
-		return nil, fmt.Errorf("cannot update acp session in db: %v", err)
+		return nil, fmt.Errorf("cannot update ACP session in db: %w", err)
 	}
 
 	// Compaction can replace the input history with a shorter rebased dialog.

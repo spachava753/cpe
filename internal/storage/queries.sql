@@ -167,8 +167,9 @@ VALUES (?, ?, ?, ?, ?, ?);
 
 -- name: AddSessionMessage :execrows
 UPDATE acp_sessions
-SET last_message_id = ?
-WHERE id = ?;
+SET last_message_id = sqlc.narg(message_id)
+WHERE id = sqlc.arg(session_id)
+  AND last_message_id IS sqlc.narg(expected_last_message_id);
 
 -- name: DeleteSession :execrows
 DELETE

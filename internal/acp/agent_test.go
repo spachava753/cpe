@@ -945,7 +945,7 @@ Output Cost: 1.00`),
 			be.Err(t, err, nil)
 			lastMessageID = storage.GetMessageID(msg)
 		}
-		_, err = store.AddACPSessionMessage(t.Context(), newSessionResp.SessionID, lastMessageID)
+		_, err = store.AddACPSessionMessage(t.Context(), newSessionResp.SessionID, "", lastMessageID)
 		be.Err(t, err, nil)
 
 		promptResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
@@ -1166,6 +1166,144 @@ Output Cost: 1.00`),
 		})
 		be.True(t, err != nil)
 		be.Equal(t, err.Error(), "cannot do prompt turn in actively generating session")
+	})
+	t.Run("panics when another process modifies the same session", func(t *testing.T) {
+		// This represents an invalid deployment in which two CPE ACP processes are
+		// serving the same persisted session. Each Agent has its own SQLite handle
+		// and in-memory prompt guard, so both can read the same session head before
+		// either process advances it. The rendezvous below makes that race
+		// deterministic. Storage must detect the stale head with its optimistic
+		// compare-and-swap, and ACP must panic because concurrent ownership of one
+		// session is a fatal setup error rather than a recoverable prompt outcome.
+		// The test recovers that panic only so it can verify ErrSessionConflict;
+		// pruning messages or cost persisted by the losing process is intentionally
+		// outside prompt finalization and can be handled by a future maintenance
+		// command.
+		dbPath := filepath.Join(t.TempDir(), "conversations.db")
+		stores := make([]*storage.Sqlite, 0, 2)
+		for range 2 {
+			store, err := storage.NewConvoDB(t.Context(), dbPath)
+			be.Err(t, err, nil)
+			t.Cleanup(func() { _ = store.Close() })
+			stores = append(stores, store)
+		}
+
+		sessionID := acp.SessionId("shared-session")
+		cwd := t.TempDir()
+		be.Err(t, stores[0].CreateACPSession(t.Context(), storage.CreateACPSessionParams{
+			Session: acp.SessionInfo{
+				Cwd:       cwd,
+				SessionID: sessionID,
+			},
+			ModelRef: "test-model",
+		}), nil)
+
+		ready := make(chan struct{}, 2)
+		release := make(chan struct{})
+		newRuntime := func(store *storage.Sqlite, answer string) runtime {
+			return &closeTrackingRuntime{generate: func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
+				ready <- struct{}{}
+				select {
+				case <-release:
+				case <-ctx.Done():
+					return dialog, ctx.Err()
+				}
+
+				dialog = append(dialog, gai.Message{
+					Role:   gai.Assistant,
+					Blocks: []gai.Block{gai.TextBlock(answer)},
+				})
+				idx := 0
+				for saved, err := range store.SaveDialog(ctx, slices.Values(dialog)) {
+					if err != nil {
+						return dialog, err
+					}
+					dialog[idx] = saved
+					idx++
+				}
+				if _, err := store.AddACPSessionCost(ctx, sessionID, 1); err != nil {
+					return dialog, err
+				}
+				return dialog, nil
+			}}
+		}
+		newAgent := func(store *storage.Sqlite, r runtime) *Agent {
+			agent := &Agent{
+				activeSessions: new(cpesync.Map[acp.SessionId, *cpesync.Guard[session]]),
+				rawCfg:         &config.RawConfig{},
+				skillHomeDir:   t.TempDir(),
+				db:             store,
+			}
+			agent.activeSessions.Store(sessionID, cpesync.NewGuard(session{
+				id:      sessionID,
+				cwd:     cwd,
+				model:   "test-model",
+				runtime: r,
+			}))
+			return agent
+		}
+
+		agents := []*Agent{
+			newAgent(stores[0], newRuntime(stores[0], "first answer")),
+			newAgent(stores[1], newRuntime(stores[1], "second answer")),
+		}
+		type promptOutcome struct {
+			err        error
+			panicValue any
+		}
+		outcomes := make(chan promptOutcome, len(agents))
+		var prompts sync.WaitGroup
+		for _, agent := range agents {
+			prompts.Go(func() {
+				outcome := promptOutcome{}
+				func() {
+					defer func() { outcome.panicValue = recover() }()
+					_, outcome.err = agent.Prompt(t.Context(), &acp.PromptRequest{
+						SessionID: sessionID,
+						Prompt:    []acp.ContentBlock{acp.TextContentBlock("concurrent prompt")},
+					})
+				}()
+				outcomes <- outcome
+			})
+		}
+		for range agents {
+			select {
+			case <-ready:
+			case <-time.After(5 * time.Second):
+				close(release)
+				t.Fatal("timed out waiting for both prompts to observe the same session head")
+			}
+		}
+		close(release)
+		prompts.Wait()
+		close(outcomes)
+
+		var succeeded, panicked int
+		for outcome := range outcomes {
+			if outcome.panicValue != nil {
+				panicErr, ok := outcome.panicValue.(error)
+				if !ok {
+					t.Fatalf("Prompt panic = %#v, want an error", outcome.panicValue)
+				}
+				if !errors.Is(panicErr, storage.ErrSessionConflict) {
+					t.Fatalf("Prompt panic = %v, want ErrSessionConflict", panicErr)
+				}
+				panicked++
+				continue
+			}
+			if outcome.err != nil {
+				t.Fatalf("Prompt returned error instead of panicking: %v", outcome.err)
+			}
+			succeeded++
+		}
+		be.Equal(t, succeeded, 1)
+		be.Equal(t, panicked, 1)
+
+		storedSession, err := stores[0].GetACPSession(t.Context(), sessionID)
+		be.Err(t, err, nil)
+		winningDialog, err := storage.GetDialogForMessage(t.Context(), stores[0], storedSession.LastMessageID)
+		be.Err(t, err, nil)
+		be.Equal(t, len(winningDialog), 2)
 	})
 	t.Run("maps max generation limit to stop reason", func(t *testing.T) {
 		var (

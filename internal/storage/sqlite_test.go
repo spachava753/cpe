@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -115,6 +116,165 @@ func TestNewConvoDBCreatesParentDirectory(t *testing.T) {
 	}
 }
 
+func TestNewConvoDBConcurrentProcesses(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "conversations.db")
+
+	type openResult struct {
+		store *Sqlite
+		err   error
+	}
+	openResults := make(chan openResult, 2)
+	startOpen := make(chan struct{})
+	for range 2 {
+		go func() {
+			<-startOpen
+			store, err := NewConvoDB(t.Context(), dbPath)
+			openResults <- openResult{store: store, err: err}
+		}()
+	}
+	close(startOpen)
+
+	stores := make([]*Sqlite, 0, 2)
+	for range 2 {
+		result := <-openResults
+		if result.err != nil {
+			for _, store := range stores {
+				_ = store.Close()
+			}
+			t.Fatalf("concurrent NewConvoDB: %v", result.err)
+		}
+		stores = append(stores, result.store)
+	}
+	for _, store := range stores {
+		t.Cleanup(func() { _ = store.Close() })
+		store.ownedDB.SetMaxOpenConns(1)
+	}
+	if stores[0].ownedDB == stores[1].ownedDB {
+		t.Fatal("NewConvoDB returned the same sql.DB handle twice")
+	}
+
+	for i, store := range stores {
+		var journalMode string
+		if err := store.ownedDB.QueryRowContext(t.Context(), "PRAGMA journal_mode").Scan(&journalMode); err != nil {
+			t.Fatalf("store %d journal mode: %v", i, err)
+		}
+		if !strings.EqualFold(journalMode, "wal") {
+			t.Fatalf("store %d journal mode: got %q, want WAL", i, journalMode)
+		}
+		var foreignKeys int
+		if err := store.ownedDB.QueryRowContext(t.Context(), "PRAGMA foreign_keys").Scan(&foreignKeys); err != nil {
+			t.Fatalf("store %d foreign keys: %v", i, err)
+		}
+		if foreignKeys != 1 {
+			t.Fatalf("store %d foreign keys: got %d, want 1", i, foreignKeys)
+		}
+	}
+	if got := countRows(t, stores[0].ownedDB, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('messages', 'blocks', 'acp_sessions')"); got != 3 {
+		t.Fatalf("current schema tables after concurrent initialization: got %d, want 3", got)
+	}
+
+	if _, err := stores[0].ownedDB.ExecContext(t.Context(), `
+		INSERT INTO messages (id, role, tool_result_error)
+		VALUES ('candidate-a', 'assistant', 0), ('candidate-b', 'assistant', 0)
+	`); err != nil {
+		t.Fatalf("insert candidate messages: %v", err)
+	}
+	if err := stores[0].CreateACPSession(t.Context(), CreateACPSessionParams{
+		Session: acp.SessionInfo{
+			Cwd:       "/tmp/concurrent",
+			SessionID: "concurrent-session",
+			Title:     new("Concurrent session"),
+		},
+		ModelRef: testACPModelRef,
+	}); err != nil {
+		t.Fatalf("CreateACPSession: %v", err)
+	}
+
+	lockCtx, cancelLock := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancelLock()
+	firstTx, err := beginWriteTx(lockCtx, stores[0].db)
+	if err != nil {
+		t.Fatalf("begin first write transaction: %v", err)
+	}
+	if _, err := stores[1].GetACPSession(lockCtx, "concurrent-session"); err != nil {
+		_ = firstTx.Rollback()
+		t.Fatalf("read through second handle during write transaction: %v", err)
+	}
+
+	type txResult struct {
+		tx  *sql.Tx
+		err error
+	}
+	secondTxResult := make(chan txResult, 1)
+	go func() {
+		tx, err := beginWriteTx(lockCtx, stores[1].db)
+		secondTxResult <- txResult{tx: tx, err: err}
+	}()
+	select {
+	case result := <-secondTxResult:
+		if result.tx != nil {
+			_ = result.tx.Rollback()
+		}
+		_ = firstTx.Rollback()
+		t.Fatalf("second writer did not queue at transaction start: %v", result.err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	if err := firstTx.Commit(); err != nil {
+		t.Fatalf("commit first write transaction: %v", err)
+	}
+	select {
+	case result := <-secondTxResult:
+		if result.err != nil {
+			t.Fatalf("begin queued write transaction: %v", result.err)
+		}
+		if err := result.tx.Rollback(); err != nil {
+			t.Fatalf("rollback queued write transaction: %v", err)
+		}
+	case <-lockCtx.Done():
+		t.Fatalf("queued writer did not start: %v", lockCtx.Err())
+	}
+
+	type advanceResult struct {
+		messageID string
+		err       error
+	}
+	advanceResults := make(chan advanceResult, 2)
+	startAdvance := make(chan struct{})
+	for i, messageID := range []string{"candidate-a", "candidate-b"} {
+		store := stores[i]
+		go func() {
+			<-startAdvance
+			_, err := store.AddACPSessionMessage(t.Context(), "concurrent-session", "", messageID)
+			advanceResults <- advanceResult{messageID: messageID, err: err}
+		}()
+	}
+	close(startAdvance)
+
+	var winner string
+	conflicts := 0
+	for range 2 {
+		result := <-advanceResults
+		switch {
+		case result.err == nil:
+			winner = result.messageID
+		case errors.Is(result.err, ErrSessionConflict):
+			conflicts++
+		default:
+			t.Fatalf("advance session to %s: %v", result.messageID, result.err)
+		}
+	}
+	if winner == "" || conflicts != 1 {
+		t.Fatalf("concurrent advancement: winner=%q conflicts=%d, want one of each", winner, conflicts)
+	}
+	persisted, err := stores[0].GetACPSession(t.Context(), "concurrent-session")
+	if err != nil {
+		t.Fatalf("GetACPSession after concurrent advancement: %v", err)
+	}
+	if persisted.LastMessageID != winner {
+		t.Fatalf("persisted last message: got %q, want winner %q", persisted.LastMessageID, winner)
+	}
+}
+
 // --- Test helpers ---
 
 // newTestDB returns a Sqlite backed by a temp SQLite file and the raw *sql.DB
@@ -156,15 +316,7 @@ func newTestDBWithFK(t *testing.T) (*Sqlite, *sql.DB) {
 // failDB wraps a real DB and allows injecting errors at specific points.
 type failDB struct {
 	DB
-	failExec    bool
 	failBeginTx bool
-}
-
-func (f *failDB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
-	if f.failExec {
-		return nil, fmt.Errorf("injected ExecContext error")
-	}
-	return f.DB.ExecContext(ctx, query, args...)
 }
 
 func (f *failDB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
@@ -415,12 +567,17 @@ func TestACPSessions(t *testing.T) {
 		t.Fatalf("sessions for %q: got %#v, want none", missingCwd, sessions)
 	}
 
-	session, err := db.AddACPSessionMessage(ctx, acp.SessionId("older-session"), latestMessageID)
+	session, err := db.AddACPSessionMessage(ctx, acp.SessionId("older-session"), olderMessageID, latestMessageID)
 	if err != nil {
 		t.Fatalf("AddACPSessionMessage: %v", err)
 	}
 	if session.UpdatedAt == nil || *session.UpdatedAt != olderSessionCreatedAt.Format(time.RFC3339Nano) {
 		t.Fatalf("AddACPSessionMessage UpdatedAt: got %v", session.UpdatedAt)
+	}
+
+	_, err = db.AddACPSessionMessage(ctx, acp.SessionId("older-session"), olderMessageID, newerMessageID)
+	if !errors.Is(err, ErrSessionConflict) {
+		t.Fatalf("stale AddACPSessionMessage error: got %v, want ErrSessionConflict", err)
 	}
 
 	resp, err = db.GetACPSession(ctx, acp.SessionId("older-session"))
@@ -489,7 +646,7 @@ func TestACPSessionNotFoundErrors(t *testing.T) {
 		{
 			name: "add message",
 			run: func() error {
-				_, err := db.AddACPSessionMessage(ctx, sessionID, "message-id")
+				_, err := db.AddACPSessionMessage(ctx, sessionID, "", "message-id")
 				return err
 			},
 		},
@@ -621,108 +778,6 @@ func TestACPSessionWithoutMessages(t *testing.T) {
 	}
 	if len(sessions) != 1 || sessions[0].SessionID != acp.SessionId("empty-session") {
 		t.Fatalf("unexpected sessions: %#v", sessions)
-	}
-}
-
-func TestNewSqlite_DeletesLegacySubagentMessages(t *testing.T) {
-	tests := []struct {
-		name           string
-		messageColumns string
-		messageValues  string
-	}{
-		{
-			name:           "is_subagent marker",
-			messageColumns: "id, parent_id, is_subagent, role, tool_result_error",
-			messageValues: `
-				('normal-root', NULL, 0, 'user', 0),
-				('legacy-subagent', 'normal-root', 1, 'assistant', 0),
-				('legacy-descendant', 'legacy-subagent', 0, 'tool_result', 0),
-				('normal-independent', NULL, 0, 'assistant', 0)`,
-		},
-		{
-			name:           "title marker",
-			messageColumns: "id, parent_id, title, role, tool_result_error",
-			messageValues: `
-				('normal-root', NULL, 'normal', 'user', 0),
-				('legacy-subagent', 'normal-root', 'subagent:worker:run1', 'assistant', 0),
-				('legacy-descendant', 'legacy-subagent', 'normal-child', 'tool_result', 0),
-				('normal-independent', NULL, 'normal', 'assistant', 0)`,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			dbPath := filepath.Join(t.TempDir(), "legacy.db")
-			rawDB, err := sql.Open("sqlite3", dbPath)
-			if err != nil {
-				t.Fatalf("sql.Open: %v", err)
-			}
-			defer rawDB.Close()
-
-			ctx := context.Background()
-			_, err = rawDB.ExecContext(ctx, fmt.Sprintf(`
-				CREATE TABLE messages (
-					id TEXT PRIMARY KEY,
-					parent_id TEXT,
-					compaction_parent_id TEXT,
-					is_subagent BOOLEAN NOT NULL DEFAULT 0,
-					title TEXT,
-					role TEXT NOT NULL,
-					tool_result_error BOOLEAN NOT NULL DEFAULT 0,
-					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-					FOREIGN KEY (parent_id) REFERENCES messages (id) ON DELETE RESTRICT
-				);
-				CREATE TABLE blocks (
-					id TEXT,
-					message_id TEXT NOT NULL,
-					block_type TEXT NOT NULL,
-					modality_type INTEGER NOT NULL,
-					mime_type TEXT NOT NULL,
-					content TEXT NOT NULL,
-					extra_fields TEXT,
-					sequence_order INTEGER NOT NULL,
-					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-					PRIMARY KEY (message_id, sequence_order),
-					FOREIGN KEY (message_id) REFERENCES messages (id) ON DELETE CASCADE
-				);
-				INSERT INTO messages (%s) VALUES %s;
-				INSERT INTO blocks (message_id, block_type, modality_type, mime_type, content, sequence_order) VALUES
-					('legacy-subagent', 'content', 0, 'text/plain', 'subagent block', 0),
-					('legacy-descendant', 'content', 0, 'text/plain', 'descendant block', 0),
-					('normal-independent', 'content', 0, 'text/plain', 'normal block', 0);
-			`, tt.messageColumns, tt.messageValues))
-			if err != nil {
-				t.Fatalf("create legacy schema: %v", err)
-			}
-
-			ds, err := NewSqlite(ctx, rawDB)
-			if err != nil {
-				t.Fatalf("NewSqlite: %v", err)
-			}
-
-			if got := countRows(t, rawDB, "SELECT COUNT(*) FROM messages"); got != 2 {
-				t.Fatalf("expected 2 remaining messages, got %d", got)
-			}
-			if got := countRows(t, rawDB, "SELECT COUNT(*) FROM messages WHERE id IN ('legacy-subagent', 'legacy-descendant')"); got != 0 {
-				t.Fatalf("expected legacy subagent subtree to be deleted, got %d rows", got)
-			}
-			if got := countRows(t, rawDB, "SELECT COUNT(*) FROM blocks WHERE message_id IN ('legacy-subagent', 'legacy-descendant')"); got != 0 {
-				t.Fatalf("expected legacy subagent blocks to be cascade-deleted, got %d rows", got)
-			}
-
-			msgs, err := ds.ListMessages(ctx, ListMessagesOptions{})
-			if err != nil {
-				t.Fatalf("ListMessages: %v", err)
-			}
-			var ids []string
-			for msg := range msgs {
-				ids = append(ids, getExtraFieldString(msg.ExtraFields, MessageIDKey))
-			}
-			slices.Sort(ids)
-			if !slices.Equal(ids, []string{"normal-independent", "normal-root"}) {
-				t.Fatalf("unexpected remaining message IDs: %v", ids)
-			}
-		})
 	}
 }
 
@@ -1526,20 +1581,33 @@ func TestSaveAndGetRoundTrip(t *testing.T) {
 	}
 }
 
-// TestNewSqlite_SchemaError verifies that NewSqlite returns an error when schema
-// initialization fails. Uses an injected ExecContext failure to exercise the error
-// path in the DDL execution.
+// TestNewSqlite_SchemaError verifies that NewSqlite returns an error when the
+// current schema cannot be applied.
 func TestNewSqlite_SchemaError(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "test.db")
 	realDB, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		t.Fatalf("sql.Open: %v", err)
 	}
-	t.Cleanup(func() { realDB.Close() })
+	t.Cleanup(func() { _ = realDB.Close() })
 
-	fdb := &failDB{DB: realDB, failExec: true}
-	if _, err = NewSqlite(context.Background(), fdb); err == nil {
+	// parent_id does not exist, so current schema initialization fails while
+	// creating the parent index.
+	if _, err := realDB.ExecContext(t.Context(), `
+		CREATE TABLE messages (
+			id TEXT PRIMARY KEY,
+			role TEXT NOT NULL,
+			tool_result_error BOOLEAN NOT NULL DEFAULT 0,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)
+	`); err != nil {
+		t.Fatalf("create incompatible schema: %v", err)
+	}
+	if _, err := NewSqlite(t.Context(), realDB); err == nil {
 		t.Fatal("expected error from failed schema init")
+	}
+	if got := countRows(t, realDB, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_messages_created_at'"); got != 0 {
+		t.Fatalf("rolled-back schema indexes: got %d, want 0", got)
 	}
 }
 
@@ -2740,73 +2808,5 @@ func TestAddACPSessionCost(t *testing.T) {
 
 	if _, err := db.AddACPSessionCost(ctx, acp.SessionId("missing-session"), 1.0); err == nil {
 		t.Fatal("AddACPSessionCost on unknown session: expected error, got nil")
-	}
-}
-
-func TestNewSqlite_MigratesACPSessionsCostColumn(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "legacy-cost.db")
-	rawDB, err := sql.Open("sqlite3", dbPath)
-	if err != nil {
-		t.Fatalf("sql.Open: %v", err)
-	}
-	defer rawDB.Close()
-
-	ctx := context.Background()
-	// legacy schema before the cost_usd column existed
-	if _, err := rawDB.ExecContext(ctx, `
-		CREATE TABLE messages (
-			id TEXT PRIMARY KEY,
-			parent_id TEXT,
-			role TEXT NOT NULL,
-			tool_result_error BOOLEAN NOT NULL DEFAULT 0,
-			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-		);
-		CREATE TABLE acp_sessions (
-			id TEXT PRIMARY KEY,
-			last_message_id TEXT,
-			cwd TEXT NOT NULL,
-			title TEXT NOT NULL,
-			model_ref TEXT NOT NULL,
-			thinking_level TEXT NOT NULL DEFAULT '',
-			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (last_message_id) REFERENCES messages (id) ON DELETE CASCADE
-		);
-		INSERT INTO acp_sessions (id, cwd, title, model_ref)
-		VALUES ('legacy-session', '/tmp/legacy', 'Legacy title', 'gpt-5.5');
-	`); err != nil {
-		t.Fatalf("create legacy schema: %v", err)
-	}
-
-	ds, err := NewSqlite(ctx, rawDB)
-	if err != nil {
-		t.Fatalf("NewSqlite: %v", err)
-	}
-
-	var hasColumn int
-	if err := rawDB.QueryRowContext(ctx, `
-		SELECT COUNT(*)
-		FROM pragma_table_info('acp_sessions')
-		WHERE name = 'cost_usd'
-	`).Scan(&hasColumn); err != nil {
-		t.Fatalf("check cost_usd column: %v", err)
-	}
-	if hasColumn != 1 {
-		t.Fatalf("expected cost_usd column to be created, got count=%d", hasColumn)
-	}
-
-	resp, err := ds.GetACPSession(ctx, acp.SessionId("legacy-session"))
-	if err != nil {
-		t.Fatalf("GetACPSession: %v", err)
-	}
-	if resp.CostUSD != 0 {
-		t.Fatalf("CostUSD on migrated session: got %v, want 0", resp.CostUSD)
-	}
-
-	total, err := ds.AddACPSessionCost(ctx, acp.SessionId("legacy-session"), 0.5)
-	if err != nil {
-		t.Fatalf("AddACPSessionCost: %v", err)
-	}
-	if math.Abs(total-0.5) > 1e-12 {
-		t.Fatalf("total after add: got %v, want 0.5", total)
 	}
 }

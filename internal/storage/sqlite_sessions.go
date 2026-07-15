@@ -45,18 +45,29 @@ func (s *Sqlite) CreateACPSession(ctx context.Context, params CreateACPSessionPa
 	return nil
 }
 
-// AddACPSessionMessage marks a persisted message as the latest message for an
-// ACP session and returns the updated session.
-func (s *Sqlite) AddACPSessionMessage(ctx context.Context, sessionID acp.SessionId, messageID string) (acp.SessionInfo, error) {
+// AddACPSessionMessage advances a persisted ACP session from
+// expectedMessageID to messageID and returns the updated session.
+func (s *Sqlite) AddACPSessionMessage(ctx context.Context, sessionID acp.SessionId, expectedMessageID, messageID string) (acp.SessionInfo, error) {
 	rowsAffected, err := s.q.AddSessionMessage(ctx, sqlcgen.AddSessionMessageParams{
-		LastMessageID: optionalString(messageID),
-		ID:            string(sessionID),
+		MessageID:             optionalString(messageID),
+		SessionID:             string(sessionID),
+		ExpectedLastMessageID: optionalString(expectedMessageID),
 	})
 	if err != nil {
 		return acp.SessionInfo{}, fmt.Errorf("failed to add message %s to ACP session %s: %w", messageID, sessionID, err)
 	}
 	if rowsAffected == 0 {
-		return acp.SessionInfo{}, fmt.Errorf("ACP session %s not found: %w", sessionID, ErrSessionNotFound)
+		current, err := s.GetACPSession(ctx, sessionID)
+		if err != nil {
+			return acp.SessionInfo{}, err
+		}
+		return acp.SessionInfo{}, fmt.Errorf(
+			"ACP session %s advanced to message %q while expecting %q: %w",
+			sessionID,
+			current.LastMessageID,
+			expectedMessageID,
+			ErrSessionConflict,
+		)
 	}
 	resp, err := s.GetACPSession(ctx, sessionID)
 	if err != nil {
@@ -70,7 +81,7 @@ func (s *Sqlite) AddACPSessionMessage(ctx context.Context, sessionID acp.Session
 // session. History shared with other sessions (for example, a fork created via
 // session/fork) is preserved.
 func (s *Sqlite) DeleteACPSession(ctx context.Context, sessionID acp.SessionId) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginWriteTx(ctx, s.db)
 	if err != nil {
 		return fmt.Errorf("failed to begin ACP session delete transaction: %w", err)
 	}

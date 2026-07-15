@@ -167,7 +167,7 @@ func (s *Sqlite) generateUniqueIDInTx(ctx context.Context, qtx *sqlcgen.Queries)
 // See DialogSaver for cross-implementation contract details.
 func (s *Sqlite) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter.Seq2[gai.Message, error] {
 	return func(yield func(gai.Message, error) bool) {
-		tx, err := s.db.BeginTx(ctx, nil)
+		tx, err := beginWriteTx(ctx, s.db)
 		if err != nil {
 			yield(gai.Message{}, fmt.Errorf("failed to begin transaction: %w", err))
 			return

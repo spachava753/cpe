@@ -3,10 +3,15 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/ncruces/go-sqlite3"
 )
 
 // DefaultFilename is the conversation database filename in
@@ -35,9 +40,10 @@ func ResolveStoragePath(rawPath string) (string, error) {
 	return filepath.Clean(path), nil
 }
 
-// NewConvoDB opens and initializes CPE's SQLite conversation
-// storage. It creates the database's parent directory with user-only
-// permissions when needed. The caller must close the returned Sqlite.
+// NewConvoDB opens and initializes CPE's SQLite conversation storage. It
+// creates the database's parent directory, enables WAL, and configures
+// connection-local busy timeout, foreign-key, and IMMEDIATE transaction
+// settings. The caller must close the returned Sqlite.
 func NewConvoDB(ctx context.Context, rawPath string) (*Sqlite, error) {
 	dbPath, err := ResolveStoragePath(rawPath)
 	if err != nil {
@@ -47,9 +53,13 @@ func NewConvoDB(ctx context.Context, rawPath string) (*Sqlite, error) {
 		return nil, fmt.Errorf("create conversation storage directory: %w", err)
 	}
 
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite3", sqliteDSN(dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("open conversation database: %w", err)
+	}
+	if err := enableWAL(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("enable WAL mode: %w", err)
 	}
 
 	store, err := NewSqlite(ctx, db)
@@ -59,6 +69,42 @@ func NewConvoDB(ctx context.Context, rawPath string) (*Sqlite, error) {
 	}
 	store.ownedDB = db
 	return store, nil
+}
+
+func sqliteDSN(path string) string {
+	query := url.Values{}
+	query.Add("_pragma", "busy_timeout(60000)")
+	query.Add("_pragma", "foreign_keys(1)")
+	query.Set("_txlock", "immediate")
+	return (&url.URL{
+		Scheme:   "file",
+		Path:     filepath.ToSlash(path),
+		RawQuery: query.Encode(),
+	}).String()
+}
+
+func enableWAL(ctx context.Context, db *sql.DB) error {
+	walCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+
+	for {
+		var mode string
+		err := db.QueryRowContext(walCtx, "PRAGMA journal_mode = WAL").Scan(&mode)
+		if err == nil {
+			if strings.EqualFold(mode, "wal") || strings.EqualFold(mode, "memory") {
+				return nil
+			}
+			return fmt.Errorf("journal mode is %q", mode)
+		}
+		if !errors.Is(err, sqlite3.BUSY) && !errors.Is(err, sqlite3.LOCKED) {
+			return err
+		}
+		select {
+		case <-walCtx.Done():
+			return fmt.Errorf("wait for database lock: %w", walCtx.Err())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 }
 
 func expandHomePath(path string) (string, error) {

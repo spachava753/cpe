@@ -16,7 +16,7 @@ import (
 // The operation is atomic across all IDs in opts.MessageIDs.
 func (s *Sqlite) DeleteMessages(ctx context.Context, opts DeleteMessagesOptions) error {
 	// Begin transaction
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := beginWriteTx(ctx, s.db)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
