@@ -13,7 +13,7 @@ func TestPromptToMessagePreservesACPBase64Content(t *testing.T) {
 	const imageBase64 = "iVBORw0KGgo="
 	const audioBase64 = "UklGRiQAAABXQVZF"
 
-	msg := PromptToMessage([]acpsdk.ContentBlock{
+	msg := PromptToMessage(t.Context(), []acpsdk.ContentBlock{
 		acpsdk.TextContentBlock("look"),
 		acpsdk.ImageContentBlock(imageBase64, "image/png"),
 		acpsdk.AudioContentBlock(audioBase64, "audio/wav"),
@@ -47,7 +47,7 @@ func TestPromptToMessageEmbeddedResources(t *testing.T) {
 	t.Parallel()
 
 	t.Run("text and inferred image blob", func(t *testing.T) {
-		msg := PromptToMessage([]acpsdk.ContentBlock{
+		msg := PromptToMessage(t.Context(), []acpsdk.ContentBlock{
 			acpsdk.ResourceContentBlock(acpsdk.TextResourceContentsEmbeddedResourceResource(
 				"# Notes\nKeep this context.",
 				"file:///workspace/notes.md",
@@ -89,7 +89,7 @@ func TestPromptToMessageEmbeddedResources(t *testing.T) {
 			"file:///workspace/docs/report.unknown",
 		)
 		resource.MimeType = &mimeType
-		msg := PromptToMessage([]acpsdk.ContentBlock{
+		msg := PromptToMessage(t.Context(), []acpsdk.ContentBlock{
 			acpsdk.ResourceContentBlock(resource),
 		})
 
@@ -113,7 +113,7 @@ func TestPromptToMessageEmbeddedResources(t *testing.T) {
 			}
 		}()
 
-		_ = PromptToMessage([]acpsdk.ContentBlock{
+		_ = PromptToMessage(t.Context(), []acpsdk.ContentBlock{
 			acpsdk.ResourceContentBlock(acpsdk.BlobResourceContentsEmbeddedResourceResource(
 				"AAAA",
 				"untitled-resource",
@@ -128,7 +128,7 @@ func TestPromptToMessageEmbeddedResources(t *testing.T) {
 			}
 		}()
 
-		_ = PromptToMessage([]acpsdk.ContentBlock{
+		_ = PromptToMessage(t.Context(), []acpsdk.ContentBlock{
 			acpsdk.ResourceContentBlock(acpsdk.BlobResourceContentsEmbeddedResourceResource(
 				"AAAA",
 				"file:///%zz",

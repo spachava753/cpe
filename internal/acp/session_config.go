@@ -123,11 +123,12 @@ func (a *Agent) configOptions(ctx context.Context, sessionId acp.SessionId) []ac
 	if err != nil {
 		panic(fmt.Sprintf("error fetching session %s: %v", sessionId, err))
 	}
+	ctx = withSessionLogAttrs(ctx, sessionId, s.Session.Cwd)
 	var sessionConfigs []acp.SessionConfigOption
 
 	// model not picked yet
 	if s.ModelRef == "" {
-		slog.Info("model not picked yet", slog.String("session_id", string(sessionId)))
+		slog.InfoContext(ctx, "model not picked yet")
 
 		opts := a.modelSelectOptions()
 		option := acp.SelectSessionConfigOption(modelRefConfigId, "Model", acp.SessionConfigValueId(""), acp.SessionConfigSelectOptions{Ungrouped: &opts})
@@ -141,9 +142,9 @@ func (a *Agent) configOptions(ctx context.Context, sessionId acp.SessionId) []ac
 	if !slices.ContainsFunc(a.rawCfg.Models, func(m config.ModelConfig) bool {
 		return m.Ref == s.ModelRef
 	}) {
-		slog.Info(
+		slog.InfoContext(
+			ctx,
 			"stale config value",
-			slog.String("session_id", string(sessionId)),
 			slog.String("config_id", string(modelRefConfigId)),
 			slog.String("value", string(s.ModelRef)),
 		)
@@ -176,9 +177,9 @@ func (a *Agent) configOptions(ctx context.Context, sessionId acp.SessionId) []ac
 	if !slices.ContainsFunc(m.ThinkingValues, func(tv config.ThinkingValueConfig) bool {
 		return tv.Value == s.ThinkingLevel
 	}) {
-		slog.Info(
+		slog.InfoContext(
+			ctx,
 			"stale config value",
-			slog.String("session_id", string(sessionId)),
 			slog.String("config_id", string(modelRefConfigId)),
 			slog.String("value", string(s.ModelRef)),
 		)

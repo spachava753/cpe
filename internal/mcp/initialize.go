@@ -79,7 +79,7 @@ func InitializeConnections(
 		state.Connections[serverName] = conn
 	}
 
-	slog.Info("MCP connections initialized", "servers", len(state.Connections))
+	slog.InfoContext(ctx, "MCP connections initialized", "servers", len(state.Connections))
 	return state, nil
 }
 
@@ -142,7 +142,7 @@ func populateConnectionTools(ctx context.Context, conn *MCPConn) error {
 
 	filteredTools, filteredOut := FilterMcpTools(allTools, conn.Config)
 	if len(filteredOut) > 0 {
-		slog.Info("MCP tools filtered",
+		slog.InfoContext(ctx, "MCP tools filtered",
 			"server", conn.ServerName,
 			"filtered_count", len(filteredOut),
 			"filtered", strings.Join(filteredOut, ", "))

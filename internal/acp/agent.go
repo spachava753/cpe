@@ -127,6 +127,7 @@ func (a *Agent) Prompt(
 	}
 	cancelledResponse := &acp.PromptResponse{StopReason: acp.StopReasonCancelled}
 
+	var sessionCwd string
 	if err := s.Do(func(t *session) error {
 		if t.cancelfunc != nil {
 			return errors.New("cannot do prompt turn in actively generating session")
@@ -135,10 +136,12 @@ func (a *Agent) Prompt(
 			return errors.New("cannot prompt before selecting a model")
 		}
 		t.cancelfunc = cancelFunc
+		sessionCwd = t.cwd
 		return nil
 	}); err != nil {
 		return nil, err
 	}
+	cancelCtx = withSessionLogAttrs(cancelCtx, params.SessionID, sessionCwd)
 	defer func() {
 		_ = s.Do(func(t *session) error {
 			t.cancelfunc = nil
@@ -190,7 +193,7 @@ func (a *Agent) Prompt(
 		}
 	}
 	expandedPrompt := expandSkillSlashCommands(params.Prompt, sessionSnapshot.skillCatalog)
-	dialog = append(dialog, xacp.PromptToMessage(expandedPrompt))
+	dialog = append(dialog, xacp.PromptToMessage(cancelCtx, expandedPrompt))
 
 	if runtime == nil {
 		runtime, err = a.runtimeFactory.Create(cancelCtx, sessionSnapshot, a.clientCaps)
@@ -240,8 +243,9 @@ func (a *Agent) Prompt(
 	}
 
 	// Persist even if the prompt context was cancelled, while still bounding how
-	// long the client waits for session bookkeeping.
-	acpCtx, acpCtxCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+	// long the client waits for session bookkeeping. Detach from cancellation but
+	// retain the prompt's structured session logging attributes.
+	acpCtx, acpCtxCancel := context.WithTimeout(context.WithoutCancel(cancelCtx), time.Second)
 	defer acpCtxCancel()
 	lastMessageID := storage.GetMessageID(dialog[len(dialog)-1])
 	_, err = a.db.AddACPSessionMessage(acpCtx, params.SessionID, acpSession.LastMessageID, lastMessageID)

@@ -323,7 +323,7 @@ func (c *ExecuteGoCodeCallback) runLocalProgramWithTimeout(
 	}
 
 	if timedOut || canceled {
-		waitErr = stopLocalProgram(cmd.Process, waitChan)
+		waitErr = stopLocalProgram(ctx, cmd.Process, waitChan)
 	}
 
 	result, err := localExecutionResult(output, timedOut, timeoutSecs, waitErr)
@@ -353,12 +353,12 @@ func localExecutionResult(output *xio.TailBuffer, timedOut bool, timeoutSecs int
 	return result, nil
 }
 
-func stopLocalProgram(process *os.Process, waitChan <-chan error) error {
+func stopLocalProgram(ctx context.Context, process *os.Process, waitChan <-chan error) error {
 	if process == nil {
 		return <-waitChan
 	}
 	if err := interruptLocalProgram(process); err != nil {
-		slog.Debug("could not interrupt generated program", slog.Any("err", err))
+		slog.DebugContext(ctx, "could not interrupt generated program", slog.Any("err", err))
 	}
 
 	select {

@@ -148,6 +148,26 @@ func TestRPCLoggerWrite(t *testing.T) {
 			wantOutput: `{"level":"DEBUG","msg":"jsonrpc frame","direction":"incoming","id":3,"result":{},"type":"response"}` + "\n" +
 				`{"level":"DEBUG","msg":"jsonrpc frame","direction":"incoming","method":"session/update","params":{},"type":"notification"}` + "\n",
 		},
+		{
+			name: "request scope fields",
+			writes: []string{
+				`{"jsonrpc":"2.0","id":4,"method":"session/prompt","params":{"sessionId":"session-1","cwd":"/repo"}}` + "\n",
+			},
+			wantAfter: []string{
+				`{"level":"DEBUG","msg":"jsonrpc frame","direction":"incoming","id":4,"session_id":"session-1","cwd":"/repo","method":"session/prompt","params":{"sessionId":"session-1","cwd":"/repo"},"type":"request"}` + "\n",
+			},
+			wantOutput: `{"level":"DEBUG","msg":"jsonrpc frame","direction":"incoming","id":4,"session_id":"session-1","cwd":"/repo","method":"session/prompt","params":{"sessionId":"session-1","cwd":"/repo"},"type":"request"}` + "\n",
+		},
+		{
+			name: "response scope fields",
+			writes: []string{
+				`{"jsonrpc":"2.0","id":5,"result":{"sessionId":"session-2"}}` + "\n",
+			},
+			wantAfter: []string{
+				`{"level":"DEBUG","msg":"jsonrpc frame","direction":"incoming","id":5,"session_id":"session-2","result":{"sessionId":"session-2"},"type":"response"}` + "\n",
+			},
+			wantOutput: `{"level":"DEBUG","msg":"jsonrpc frame","direction":"incoming","id":5,"session_id":"session-2","result":{"sessionId":"session-2"},"type":"response"}` + "\n",
+		},
 	}
 
 	for _, tt := range tests {

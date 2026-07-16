@@ -1,6 +1,7 @@
 package xacp
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"mime"
@@ -12,7 +13,7 @@ import (
 	"github.com/spachava753/gai"
 )
 
-func PromptToMessage(contentBlocks []acp.ContentBlock) gai.Message {
+func PromptToMessage(ctx context.Context, contentBlocks []acp.ContentBlock) gai.Message {
 	msg := gai.Message{
 		Role:   gai.User,
 		Blocks: make([]gai.Block, 0, len(contentBlocks)),
@@ -60,7 +61,7 @@ func PromptToMessage(contentBlocks []acp.ContentBlock) gai.Message {
 				resourcePath := resource.URI
 				parsed, err := url.Parse(resource.URI)
 				if err != nil {
-					slog.Error("failed to parse embedded resource URI", "uri", resource.URI, "error", err)
+					slog.ErrorContext(ctx, "failed to parse embedded resource URI", "uri", resource.URI, "error", err)
 					panic(err)
 				}
 				if parsed.Path != "" {
@@ -72,7 +73,7 @@ func PromptToMessage(contentBlocks []acp.ContentBlock) gai.Message {
 				}
 				if mt == "" {
 					msg := fmt.Sprintf("could not detect MIME type for embedded resource URI %q", resource.URI)
-					slog.Error(msg, "uri", resource.URI, "path", resourcePath)
+					slog.ErrorContext(ctx, msg, "uri", resource.URI, "path", resourcePath)
 					panic(msg)
 				}
 				filename := filepath.Base(resourcePath)

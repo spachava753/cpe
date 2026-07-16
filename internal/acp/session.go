@@ -50,8 +50,8 @@ func (a *Agent) activeSession(sessionID acp.SessionId) (*sync.Guard[session], er
 
 // discoverSkills loads the skill catalog for an ACP session. Tests can override
 // Agent.skillHomeDir so global user skills do not leak into session fixtures.
-func (a *Agent) discoverSkills(cwd string) skills.Catalog {
-	return skills.Discover(skills.DiscoverOptions{
+func (a *Agent) discoverSkills(ctx context.Context, cwd string) skills.Catalog {
+	return skills.Discover(ctx, skills.DiscoverOptions{
 		Cwd:     cwd,
 		HomeDir: a.skillHomeDir,
 	})
@@ -79,7 +79,8 @@ func (a *Agent) refreshAvailableSkillCommands(ctx context.Context, sessionID acp
 	}); err != nil {
 		return err
 	}
-	catalog := a.discoverSkills(cwd)
+	ctx = withSessionLogAttrs(ctx, sessionID, cwd)
+	catalog := a.discoverSkills(ctx, cwd)
 	if err := a.sendAvailableSkillCommands(ctx, sessionID, catalog); err != nil {
 		return err
 	}
@@ -376,7 +377,10 @@ func (a *Agent) Cancel(ctx context.Context, params *acp.CancelNotification) erro
 func (a *Agent) CloseSession(ctx context.Context, params *acp.CloseSessionRequest) (*acp.CloseSessionResponse, error) {
 	s, ok := a.activeSessions.Load(params.SessionID)
 	if !ok {
-		slog.Info("session close requested for unknown session", slog.String("session_id", string(params.SessionID)))
+		slog.InfoContext(
+			withSessionLogAttrs(ctx, params.SessionID, ""),
+			"session close requested for unknown session",
+		)
 		return &acp.CloseSessionResponse{}, nil
 	}
 	if err := s.Do(func(t *session) error {
@@ -413,7 +417,10 @@ func (a *Agent) DeleteSession(
 	}
 	if err := a.db.DeleteACPSession(ctx, params.SessionID); err != nil {
 		if errors.Is(err, storage.ErrSessionNotFound) {
-			slog.Info("session delete requested for unknown session", slog.String("session_id", string(params.SessionID)))
+			slog.InfoContext(
+				withSessionLogAttrs(ctx, params.SessionID, ""),
+				"session delete requested for unknown session",
+			)
 			a.activeSessions.Delete(params.SessionID)
 			return &acp.DeleteSessionResponse{}, nil
 		}

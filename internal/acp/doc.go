@@ -21,5 +21,10 @@ internal/agent, registers built-in tools, connects configured and client-provide
 MCP servers, and persists session state through an injected SQLite store.
 Process-level config loading, database path selection, and storage lifecycle are
 composed by internal/cmd before the ACP server starts.
+
+ACP prompt work attaches session_id and the session's immutable cwd to its
+context. Context-aware logs emitted by ACP and downstream MCP, skill discovery,
+and code-mode operations inherit those structured fields. JSON-RPC access logs
+also promote sessionId and cwd from request or response payloads when present.
 */
 package acp

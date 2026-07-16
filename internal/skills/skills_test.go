@@ -25,7 +25,7 @@ func TestDiscover(t *testing.T) {
 			"description": "Global description",
 		})
 
-		got := Discover(DiscoverOptions{Cwd: cwd, HomeDir: home})
+		got := Discover(t.Context(), DiscoverOptions{Cwd: cwd, HomeDir: home})
 
 		want := []Skill{
 			{
@@ -68,7 +68,7 @@ func TestDiscover(t *testing.T) {
 		})
 
 		warnings := captureSkillLogs(t)
-		got := Discover(DiscoverOptions{Cwd: cwd, HomeDir: home})
+		got := Discover(t.Context(), DiscoverOptions{Cwd: cwd, HomeDir: home})
 
 		if len(got.Skills) != 1 {
 			t.Fatalf("Discover() returned %d skills, want 1: %#v", len(got.Skills), got.Skills)
@@ -91,7 +91,7 @@ func TestDiscover(t *testing.T) {
 		createInvalidSkill(t, baseDir, "invalid-skill", "name: invalid-skill")
 
 		warnings := captureSkillLogs(t)
-		got := Discover(DiscoverOptions{Cwd: cwd, HomeDir: t.TempDir()})
+		got := Discover(t.Context(), DiscoverOptions{Cwd: cwd, HomeDir: t.TempDir()})
 
 		if len(got.Skills) != 1 || got.Skills[0].Name != "valid-skill" {
 			t.Fatalf("Discover() = %#v, want valid-skill only", got.Skills)
@@ -114,7 +114,7 @@ func TestDiscover(t *testing.T) {
 		}
 		createSymlink(t, filepath.Join(targetBaseDir, "actual-skill"), filepath.Join(baseDir, "linked-skill"))
 
-		got := Discover(DiscoverOptions{Cwd: cwd, HomeDir: t.TempDir()})
+		got := Discover(t.Context(), DiscoverOptions{Cwd: cwd, HomeDir: t.TempDir()})
 
 		if len(got.Skills) != 1 || got.Skills[0].Name != "linked-skill" || got.Skills[0].Path != "./.agents/skills/linked-skill" {
 			t.Fatalf("Discover() = %#v, want linked skill", got.Skills)
@@ -131,7 +131,7 @@ func TestDiscover(t *testing.T) {
 		createSymlink(t, filepath.Join(baseDir, "missing-skill"), filepath.Join(baseDir, "broken-skill"))
 
 		warnings := captureSkillLogs(t)
-		got := Discover(DiscoverOptions{Cwd: cwd, HomeDir: t.TempDir()})
+		got := Discover(t.Context(), DiscoverOptions{Cwd: cwd, HomeDir: t.TempDir()})
 
 		if len(got.Skills) != 1 || got.Skills[0].Name != "valid-skill" {
 			t.Fatalf("Discover() = %#v, want valid-skill only", got.Skills)

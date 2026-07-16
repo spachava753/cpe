@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -65,6 +66,7 @@ var (
 )
 
 // Discover scans project and user skill roots for valid skill directories.
+// Context-scoped slog attributes are preserved on discovery warnings.
 //
 // It looks for SKILL.md files under <Cwd>/.agents/skills and
 // <HomeDir>/.agents/skills. Project-local skills are returned before global
@@ -77,7 +79,7 @@ var (
 // "domain-modeling" under /repo/.agents/skills is returned with Path
 // "./.agents/skills/domain-modeling", while one under /home/me/.agents/skills
 // is returned with Path "~/.agents/skills/domain-modeling".
-func Discover(opts DiscoverOptions) Catalog {
+func Discover(ctx context.Context, opts DiscoverOptions) Catalog {
 	cwd := opts.Cwd
 	if cwd == "" {
 		var err error
@@ -107,7 +109,7 @@ func Discover(opts DiscoverOptions) Catalog {
 		})
 	}
 
-	return discoverRoots(roots)
+	return discoverRoots(ctx, roots)
 }
 
 // ModelVisible returns skills that may be shown to the model by default.
@@ -136,7 +138,7 @@ type skillRoot struct {
 // discoverRoots walks the configured roots in precedence order and returns the
 // first valid skill for each skill name. Warnings are logged and discovery keeps
 // going so unrelated skills remain available.
-func discoverRoots(roots []skillRoot) Catalog {
+func discoverRoots(ctx context.Context, roots []skillRoot) Catalog {
 	var discovered []Skill
 	seen := make(map[string]struct{})
 
@@ -154,7 +156,7 @@ func discoverRoots(roots []skillRoot) Catalog {
 		for _, entry := range entries {
 			candidate, err := skillCandidateDir(root.absPath, entry)
 			if err != nil {
-				slog.Warn("failed to inspect skill", "skill", entry.Name(), "err", err)
+				slog.WarnContext(ctx, "failed to inspect skill", "skill", entry.Name(), "err", err)
 				continue
 			}
 			if !candidate {
@@ -168,11 +170,11 @@ func discoverRoots(roots []skillRoot) Catalog {
 
 			skill, err := parseSkill(skillMdPath, displayJoin(root.displayPath, entry.Name()))
 			if err != nil {
-				slog.Warn("failed to load skill", "skill", entry.Name(), "err", err)
+				slog.WarnContext(ctx, "failed to load skill", "skill", entry.Name(), "err", err)
 				continue
 			}
 			if _, exists := seen[skill.Name]; exists {
-				slog.Warn("ignoring duplicate skill", "skill", skill.Name, "path", skill.Path)
+				slog.WarnContext(ctx, "ignoring duplicate skill", "skill", skill.Name, "path", skill.Path)
 				continue
 			}
 

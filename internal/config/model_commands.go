@@ -202,7 +202,7 @@ func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error
 	if err != nil {
 		return fmt.Errorf("could not resolve working directory for skill discovery: %w", err)
 	}
-	skillCatalog := skills.Discover(skills.DiscoverOptions{Cwd: cwd})
+	skillCatalog := skills.Discover(ctx, skills.DiscoverOptions{Cwd: cwd})
 
 	systemPrompt, err := SystemPromptTemplate(ctx, string(contents), TemplateData{
 		Config: templateConfig,

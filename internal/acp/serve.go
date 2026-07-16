@@ -17,6 +17,7 @@ import (
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
+	cpelogging "github.com/spachava753/cpe/internal/logging"
 	"github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/mcpconfig"
 	"github.com/spachava753/cpe/internal/storage"
@@ -52,7 +53,7 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, s session, caps acp.C
 		return nil, fmt.Errorf("failed to resolve model config: %v", err)
 	}
 
-	slog.Debug("config resolved")
+	slog.DebugContext(ctx, "config resolved")
 
 	// Load and render system prompt
 	systemPrompt, err := config.LoadSystemPrompt(ctx, config.LoadSystemPromptOptions{
@@ -64,7 +65,7 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, s session, caps acp.C
 		return nil, fmt.Errorf("failed to load system prompt: %v", err)
 	}
 
-	slog.Debug("system prompt loaded", slog.String("path", cfg.SystemPromptPath))
+	slog.DebugContext(ctx, "system prompt loaded", slog.String("path", cfg.SystemPromptPath))
 
 	// Model clients and MCP transports are session-scoped. Link their context to
 	// the creation context only until setup finishes so early cancellation still
@@ -140,10 +141,10 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, s session, caps acp.C
 	}
 	runtimeCtxOwned = true
 
-	slog.Debug("initialized mcp connections")
+	slog.DebugContext(ctx, "initialized mcp connections")
 
 	codeModeEnabled := cfg.CodeMode != nil && cfg.CodeMode.Enabled
-	slog.Debug("code mode config", slog.Bool("enabled", codeModeEnabled))
+	slog.DebugContext(ctx, "code mode config", slog.Bool("enabled", codeModeEnabled))
 	if codeModeEnabled {
 		executeGoCodeTool := codemode.MakeTool(cfg.CodeMode.MaxTimeout)
 		callback := &codemode.ExecuteGoCodeCallback{
@@ -201,10 +202,10 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	}
 
 	handlers := []slog.Handler{
-		slog.NewJSONHandler(opts.Stderr, &slog.HandlerOptions{
+		cpelogging.NewProcessHandler(slog.NewJSONHandler(opts.Stderr, &slog.HandlerOptions{
 			AddSource: true,
 			Level:     slog.LevelDebug,
-		}),
+		})),
 	}
 	if slog.Default().Handler() != nil {
 		handlers = append(handlers, slog.Default().Handler())
@@ -320,6 +321,11 @@ func (r *rpcLogger) Write(p []byte) (int, error) {
 			if len(m.ID) > 0 {
 				attrs = append(attrs, slog.Any("id", m.ID))
 			}
+			scope := m.Params
+			if m.Method == nil {
+				scope = m.Result
+			}
+			attrs = append(attrs, rpcLogScopeAttrs(scope)...)
 			if m.Method != nil {
 				attrs = append(attrs, slog.String("method", *m.Method))
 				if len(m.Params) > 0 {
@@ -352,6 +358,27 @@ func (r *rpcLogger) Write(p []byte) (int, error) {
 			r.b.Next(1)
 		}
 	}
+}
+
+func rpcLogScopeAttrs(raw json.RawMessage) []slog.Attr {
+	if len(raw) == 0 {
+		return nil
+	}
+	var scope struct {
+		SessionID string `json:"sessionId"`
+		Cwd       string `json:"cwd"`
+	}
+	if err := json.Unmarshal(raw, &scope); err != nil {
+		return nil
+	}
+	attrs := make([]slog.Attr, 0, 2)
+	if scope.SessionID != "" {
+		attrs = append(attrs, slog.String("session_id", scope.SessionID))
+	}
+	if scope.Cwd != "" {
+		attrs = append(attrs, slog.String("cwd", scope.Cwd))
+	}
+	return attrs
 }
 
 func mergeACPServerConfigs(

@@ -421,6 +421,20 @@ cpe mcp info <server-name> --model <model>
 
 For `stdio` servers, verify the command path, arguments, environment, and executable permissions. For `http` or `sse` servers, verify the URL and headers.
 
+### CPE logs
+
+CPE appends newline-delimited JSON logs to `.cpe.log` under the CPE user config directory. On macOS this is `~/Library/Application Support/cpe/.cpe.log`; on Linux it is normally `~/.config/cpe/.cpe.log`; on Windows it is `%AppData%\cpe\.cpe.log`.
+
+Every record includes `pid`. Logs produced while handling an active ACP session also include `session_id` and the session's immutable `cwd`; JSON-RPC access records include those fields whenever they are present in the protocol payload. Startup and process-wide records do not have session fields.
+
+Filter the combined log with `jq`, for example:
+
+```bash
+jq 'select(.pid == 12345)' ~/Library/Application\ Support/cpe/.cpe.log
+jq 'select(.session_id == "SESSION_ID")' ~/Library/Application\ Support/cpe/.cpe.log
+jq 'select(.cwd == "/path/to/project")' ~/Library/Application\ Support/cpe/.cpe.log
+```
+
 ### Timeout errors
 
 Increase the selected model profile's `timeout` or the MCP server's per-server `timeout`. Code Mode has its own `codeMode.maxTimeout` cap.
