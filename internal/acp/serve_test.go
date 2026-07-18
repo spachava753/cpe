@@ -11,6 +11,7 @@ import (
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
 	cpemcp "github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/mcpconfig"
@@ -23,6 +24,19 @@ func (testToolCallingGenerator) Generate(context.Context, gai.Dialog, *gai.GenOp
 }
 
 func (testToolCallingGenerator) Register(gai.Tool) error {
+	return nil
+}
+
+type recordingToolCallingGenerator struct {
+	tools []gai.Tool
+}
+
+func (*recordingToolCallingGenerator) Generate(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
+	return gai.Response{}, nil
+}
+
+func (g *recordingToolCallingGenerator) Register(tool gai.Tool) error {
+	g.tools = append(g.tools, tool)
 	return nil
 }
 
@@ -99,6 +113,83 @@ func TestServerRuntimeCreatorRuntimeContextOutlivesCreateContext(t *testing.T) {
 	case <-runtimeCtx.Done():
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for MCP context cancellation on close")
+	}
+}
+
+func TestServerRuntimeCreatorRegistersStarlarkREPL(t *testing.T) {
+	originalGenerator := initializeGeneratorFromModel
+	originalMCP := initializeMCPConnections
+	generator := &recordingToolCallingGenerator{}
+	initializeGeneratorFromModel = func(context.Context, config.Model, string, time.Duration) (gai.Generator, error) {
+		return generator, nil
+	}
+	initializeMCPConnections = func(context.Context, map[string]mcpconfig.ServerConfig) (*cpemcp.MCPState, error) {
+		return cpemcp.NewMCPState(), nil
+	}
+	t.Cleanup(func() {
+		initializeGeneratorFromModel = originalGenerator
+		initializeMCPConnections = originalMCP
+	})
+
+	creator := &serverRuntimeCreator{
+		rawCfg: &config.RawConfig{
+			Models: []config.ModelConfig{
+				{
+					Model: config.Model{
+						Ref:           "test-model",
+						DisplayName:   "Test Model",
+						ID:            "test-model",
+						Type:          "responses",
+						ContextWindow: 100,
+						MaxOutput:     10,
+					},
+					DisableEditTool: true,
+					CodeMode: &config.CodeModeConfig{
+						Enabled:              true,
+						MaxTimeout:           17,
+						LargeOutputCharLimit: 123,
+					},
+				},
+			},
+		},
+	}
+	cwd := t.TempDir()
+	runtime, err := creator.Create(t.Context(), session{
+		id:    "session-1",
+		model: "test-model",
+		cwd:   cwd,
+	}, acp.ClientCapabilities{})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := runtime.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
+
+	if len(generator.tools) != 1 {
+		t.Fatalf("registered tools = %#v, want one starlark_repl tool", generator.tools)
+	}
+	tool := generator.tools[0]
+	if tool.Name != codemode.StarlarkREPLToolName {
+		t.Fatalf("registered tool name = %q, want %q", tool.Name, codemode.StarlarkREPLToolName)
+	}
+	timeout := tool.InputSchema.Properties["executionTimeout"]
+	if timeout == nil || timeout.Maximum == nil || *timeout.Maximum != 17 {
+		t.Fatalf("executionTimeout schema = %#v, want maximum 17", timeout)
+	}
+
+	created, ok := runtime.(*closerAgent)
+	if !ok {
+		t.Fatalf("runtime type = %T, want *closerAgent", runtime)
+	}
+	callback, ok := created.toolCallbacks[codemode.StarlarkREPLToolName].(*codemode.StarlarkREPLCallback)
+	if !ok {
+		t.Fatalf("registered callback = %T, want *codemode.StarlarkREPLCallback", created.toolCallbacks[codemode.StarlarkREPLToolName])
+	}
+	if callback.SessionID != "session-1" || callback.Cwd != cwd || callback.MaxTimeout != 17 || callback.LargeOutputCharLimit != 123 {
+		t.Fatalf("registered callback = %#v, want resolved session settings", callback)
 	}
 }
 

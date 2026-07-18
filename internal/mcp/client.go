@@ -2,16 +2,21 @@ package mcp
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/acp/xacp"
 	"github.com/spachava753/cpe/internal/acp/xctx"
 	"github.com/spachava753/cpe/internal/httpclient"
 	"github.com/spachava753/cpe/internal/mcpconfig"
@@ -35,7 +40,10 @@ func (h *headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 	return h.next.RoundTrip(req)
 }
 
-const defaultServerTimeout = 60 * time.Second
+const (
+	defaultServerTimeout = 60 * time.Second
+	pdfMIMEType          = "application/pdf"
+)
 
 func newMCPRoundTripper(base http.RoundTripper) http.RoundTripper {
 	return httpclient.Transport(
@@ -121,6 +129,27 @@ type sessionUpdator interface {
 	SessionUpdate(ctx context.Context, params *acp.SessionNotification) error
 }
 
+func mcpAnnotationsToACP(annotations *mcp.Annotations) *acp.Annotations {
+	if annotations == nil {
+		return nil
+	}
+	converted := &acp.Annotations{}
+	if len(annotations.Audience) > 0 {
+		audience := make([]acp.Role, len(annotations.Audience))
+		for i, role := range annotations.Audience {
+			audience[i] = acp.Role(role)
+		}
+		converted.Audience = &audience
+	}
+	if annotations.LastModified != "" {
+		converted.LastModified = new(annotations.LastModified)
+	}
+	if annotations.Priority != 0 {
+		converted.Priority = new(annotations.Priority)
+	}
+	return converted
+}
+
 // ToolCallback adapts one MCP tool into gai.ToolCallback invocation semantics.
 // It is bound to a specific server session and tool name.
 type ToolCallback struct {
@@ -144,19 +173,24 @@ func (c *ToolCallback) Call(ctx context.Context, parameters map[string]any) (gai
 	started.Kind = new(acp.ToolKindOther)
 	started.Status = new(acp.ToolCallStatusInProgress)
 	started.RawInput = parameters
-	_ = c.Conn.SessionUpdate(ctx, &acp.SessionNotification{
+	if err := c.Conn.SessionUpdate(ctx, &acp.SessionNotification{
 		SessionID: c.SessionId,
 		Update:    started,
-	})
+	}); err != nil {
+		return gai.Message{}, fmt.Errorf("send in-progress tool call update: %w", err)
+	}
 
-	failedUpdate := func(text string) {
+	failedUpdate := func(text string) error {
 		failed := acp.ToolCallUpdateSessionUpdate(xctx.ToolCallIdFrom(ctx))
 		failed.Status = new(acp.ToolCallStatusFailed)
 		failed.Content = []acp.ToolCallContent{acp.ContentToolCallContent(acp.TextContentBlock(text))}
-		_ = c.Conn.SessionUpdate(ctx, &acp.SessionNotification{
+		if err := c.Conn.SessionUpdate(ctx, &acp.SessionNotification{
 			SessionID: c.SessionId,
 			Update:    failed,
-		})
+		}); err != nil {
+			return fmt.Errorf("send failed tool call update: %w", err)
+		}
+		return nil
 	}
 
 	result, err := c.ClientSession.CallTool(callCtx, &mcp.CallToolParams{
@@ -165,7 +199,9 @@ func (c *ToolCallback) Call(ctx context.Context, parameters map[string]any) (gai
 	})
 	if err != nil {
 		errText := fmt.Sprintf("Error calling MCP tool %s/%s: %v", c.ServerName, c.ToolName, err)
-		failedUpdate(errText)
+		if updateErr := failedUpdate(errText); updateErr != nil {
+			return gai.Message{}, updateErr
+		}
 		return gai.Message{
 			Role: gai.ToolResult,
 			Blocks: []gai.Block{
@@ -181,6 +217,7 @@ func (c *ToolCallback) Call(ctx context.Context, parameters map[string]any) (gai
 
 	// Convert the MCP CallToolResult to a gai.Message
 	blocks := make([]gai.Block, 0, len(result.Content))
+	acpContentOverrides := make(map[int]acp.ToolCallContent)
 	for _, content := range result.Content {
 		var block gai.Block
 
@@ -189,7 +226,7 @@ func (c *ToolCallback) Call(ctx context.Context, parameters map[string]any) (gai
 			block = gai.TextBlock(c.Text)
 		case *mcp.ImageContent:
 			// ImageContent.Data contains raw bytes (already base64-decoded by json.Unmarshal).
-			if c.MIMEType == "application/pdf" || c.MIMEType == "application/x-pdf" {
+			if c.MIMEType == pdfMIMEType || c.MIMEType == "application/x-pdf" {
 				block = gai.PDFBlock(c.Data, "document.pdf")
 			} else {
 				block = gai.ImageBlock(c.Data, c.MIMEType)
@@ -197,16 +234,94 @@ func (c *ToolCallback) Call(ctx context.Context, parameters map[string]any) (gai
 		case *mcp.AudioContent:
 			block = gai.AudioBlock(c.Data, c.MIMEType)
 		case *mcp.ResourceLink:
-			errText := "cannot handle resource links in tool call result"
-			failedUpdate(errText)
-			return gai.Message{}, fmt.Errorf("%s", errText)
+			text := fmt.Sprintf("Resource link: %s (%s)", c.Name, c.URI)
+			if c.Title != "" {
+				text += "\nTitle: " + c.Title
+			}
+			if c.Description != "" {
+				text += "\nDescription: " + c.Description
+			}
+			block = gai.TextBlock(text)
+
+			resourceLink := acp.ResourceLinkContentBlock(c.Name, c.URI)
+			resourceLink.Meta = acp.Meta(c.Meta)
+			resourceLink.Annotations = mcpAnnotationsToACP(c.Annotations)
+			if c.Title != "" {
+				resourceLink.Title = new(c.Title)
+			}
+			if c.Description != "" {
+				resourceLink.Description = new(c.Description)
+			}
+			if c.MIMEType != "" {
+				resourceLink.MimeType = new(c.MIMEType)
+			}
+			resourceLink.Size = c.Size
+			acpContentOverrides[len(blocks)] = acp.ContentToolCallContent(resourceLink)
 		case *mcp.EmbeddedResource:
-			errText := "cannot handle embedded resources in tool call result"
-			failedUpdate(errText)
-			return gai.Message{}, fmt.Errorf("%s", errText)
+			if c.Resource == nil {
+				errText := "embedded resource is missing resource contents"
+				if updateErr := failedUpdate(errText); updateErr != nil {
+					return gai.Message{}, updateErr
+				}
+				return gai.Message{}, fmt.Errorf("%s", errText)
+			}
+			toACPContent := func(resource acp.EmbeddedResourceResource) acp.ToolCallContent {
+				resource.Meta = acp.Meta(c.Resource.Meta)
+				contentBlock := acp.ResourceContentBlock(resource)
+				contentBlock.Meta = acp.Meta(c.Meta)
+				contentBlock.Annotations = mcpAnnotationsToACP(c.Annotations)
+				return acp.ContentToolCallContent(contentBlock)
+			}
+			if c.Resource.Blob != nil {
+				encoded := base64.StdEncoding.EncodeToString(c.Resource.Blob)
+				switch {
+				case c.Resource.MIMEType == pdfMIMEType || c.Resource.MIMEType == "application/x-pdf":
+					filename := "document.pdf"
+					if uri, err := url.Parse(c.Resource.URI); err == nil {
+						if base := path.Base(uri.Path); base != "" && base != "." && base != "/" {
+							filename = base
+						}
+					}
+					block = gai.PDFBlock(c.Resource.Blob, filename)
+				case strings.HasPrefix(c.Resource.MIMEType, "image/"):
+					block = gai.ImageBlock(c.Resource.Blob, c.Resource.MIMEType)
+				case strings.HasPrefix(c.Resource.MIMEType, "audio/"):
+					block = gai.AudioBlock(c.Resource.Blob, c.Resource.MIMEType)
+				case strings.HasPrefix(c.Resource.MIMEType, "video/"):
+					block = gai.Block{
+						BlockType:    gai.Content,
+						ModalityType: gai.Video,
+						MimeType:     c.Resource.MIMEType,
+						Content:      gai.Str(encoded),
+					}
+				default:
+					block = gai.TextBlock(fmt.Sprintf(
+						"Embedded resource: %s (%s, %d bytes)",
+						c.Resource.URI,
+						c.Resource.MIMEType,
+						len(c.Resource.Blob),
+					))
+				}
+
+				resource := acp.BlobResourceContentsEmbeddedResourceResource(encoded, c.Resource.URI)
+				if c.Resource.MIMEType != "" {
+					resource.MimeType = new(c.Resource.MIMEType)
+				}
+				acpContentOverrides[len(blocks)] = toACPContent(resource)
+				break
+			}
+
+			block = gai.TextBlock(c.Resource.Text)
+			resource := acp.TextResourceContentsEmbeddedResourceResource(c.Resource.Text, c.Resource.URI)
+			if c.Resource.MIMEType != "" {
+				resource.MimeType = new(c.Resource.MIMEType)
+			}
+			acpContentOverrides[len(blocks)] = toACPContent(resource)
 		default:
 			errText := fmt.Sprintf("cannot handle tool call result content type %T", content)
-			failedUpdate(errText)
+			if updateErr := failedUpdate(errText); updateErr != nil {
+				return gai.Message{}, updateErr
+			}
 			return gai.Message{}, fmt.Errorf("%s", errText)
 		}
 
@@ -224,28 +339,20 @@ func (c *ToolCallback) Call(ctx context.Context, parameters map[string]any) (gai
 		status = acp.ToolCallStatusFailed
 	}
 
-	acpBlocks := make([]acp.ToolCallContent, len(blocks))
-	for i, b := range blocks {
-		var contentBlock acp.ContentBlock
-		content := b.Content.String()
-		switch b.ModalityType {
-		case gai.Image:
-			contentBlock = acp.ImageContentBlock(content, b.MimeType)
-		case gai.Audio:
-			contentBlock = acp.AudioContentBlock(content, b.MimeType)
-		default:
-			contentBlock = acp.TextContentBlock(content)
-		}
-		acpBlocks[i] = acp.ContentToolCallContent(contentBlock)
+	acpBlocks := xacp.BlocksToToolCallContent(blocks)
+	for i, override := range acpContentOverrides {
+		acpBlocks[i] = override
 	}
 
 	completed := acp.ToolCallUpdateSessionUpdate(xctx.ToolCallIdFrom(ctx))
 	completed.Status = new(status)
 	completed.Content = acpBlocks
-	_ = c.Conn.SessionUpdate(ctx, &acp.SessionNotification{
+	if err := c.Conn.SessionUpdate(ctx, &acp.SessionNotification{
 		SessionID: c.SessionId,
 		Update:    completed,
-	})
+	}); err != nil {
+		return gai.Message{}, fmt.Errorf("send %s tool call update: %w", status, err)
+	}
 
 	return resultMsg, nil
 }

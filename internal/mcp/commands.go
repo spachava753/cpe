@@ -301,12 +301,12 @@ type MCPCodeDescOptions struct {
 	Renderer render.Iface
 }
 
-// MCPCodeDesc generates and prints the execute_go_code tool description.
+// MCPCodeDesc generates and prints the starlark_repl tool description.
 func MCPCodeDesc(ctx context.Context, opts MCPCodeDescOptions) error {
 	description := codemode.GenerateToolDescription()
 
 	var mdBuilder strings.Builder
-	mdBuilder.WriteString("# execute_go_code Tool Description\n\n")
+	mdBuilder.WriteString("# starlark_repl Tool Description\n\n")
 
 	if opts.CodeMode == nil || !opts.CodeMode.Enabled {
 		mdBuilder.WriteString("> **Note:** Code mode is not enabled in current configuration.\n\n")

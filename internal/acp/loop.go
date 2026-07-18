@@ -25,6 +25,10 @@ The conversation has exceeded the configured compaction threshold. Before contin
 
 type sessionIDCtxKey struct{}
 
+type compactionResetter interface {
+	Reset()
+}
+
 func withSessionID(ctx context.Context, sessionID acp.SessionId) context.Context {
 	return context.WithValue(ctx, sessionIDCtxKey{}, sessionID)
 }
@@ -37,6 +41,7 @@ type Loop struct {
 
 	// internal state
 	toolCallbacks      map[string]gai.ToolCallback
+	seenToolCallIDs    map[string]struct{}
 	compactionRestarts int
 	conn               *acp.AgentConnection
 }
@@ -98,10 +103,20 @@ func (l *Loop) effectiveGenOpts(override *gai.GenOpts) *gai.GenOpts {
 // TODO: we need to add support for sending session updates for streaming generators for a more real-time experience
 // TODO: acp clients, like editors like zed, might have unsaved changes, so generally speaking, it is preferable to use fs/read_text_file and fs/write_text_file tools where possible
 // TODO: support unstable feature https://agentclientprotocol.com/rfds/diff-delete
-// TODO: execute_go_code tool should display file edit diff, see https://agentclientprotocol.com/protocol/tool-calls#diffs, which would mean we would need to capture before and after we run execute go code tool, more complicated than text_edit
+// TODO: starlark_repl should display file edit diffs when practical; unlike text_edit, arbitrary host-backed code may touch many files
 // TODO: expose model capability metadata in session updates so ACP clients can adapt UI affordances
 func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 	current := append(gai.Dialog(nil), dialog...)
+	if l.seenToolCallIDs == nil {
+		l.seenToolCallIDs = make(map[string]struct{})
+		for _, msg := range current {
+			for _, block := range msg.Blocks {
+				if block.BlockType == gai.ToolCall && block.ID != "" {
+					l.seenToolCallIDs[block.ID] = struct{}{}
+				}
+			}
+		}
+	}
 
 	opts = l.effectiveGenOpts(opts)
 	if err := l.validateToolChoice(opts); err != nil {
@@ -143,6 +158,22 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 		if resp.Candidates[0].Role != gai.Assistant {
 			return current, fmt.Errorf("expected assistant role in response, got: %v", resp.Candidates[0].Role)
 		}
+		newToolCallIDs := make(map[string]struct{})
+		for _, block := range resp.Candidates[0].Blocks {
+			if block.BlockType != gai.ToolCall {
+				continue
+			}
+			if block.ID == "" {
+				return current, errors.New("tool call ID cannot be empty")
+			}
+			if _, exists := l.seenToolCallIDs[block.ID]; exists {
+				return current, fmt.Errorf("duplicate tool call ID %q", block.ID)
+			}
+			if _, exists := newToolCallIDs[block.ID]; exists {
+				return current, fmt.Errorf("duplicate tool call ID %q", block.ID)
+			}
+			newToolCallIDs[block.ID] = struct{}{}
+		}
 
 		// save response
 		l.attachAgentMetadata(&resp.Candidates[0], resp.UsageMetadata)
@@ -150,6 +181,9 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 		current, err = l.save(ctx, current)
 		if err != nil {
 			return current, err
+		}
+		for id := range newToolCallIDs {
+			l.seenToolCallIDs[id] = struct{}{}
 		}
 
 		for update := range xacp.MsgToSessionUpdate(resp.Candidates[0]) {
@@ -370,6 +404,11 @@ func (l *Loop) compact(current gai.Dialog) (gai.Dialog, error) {
 		root.ExtraFields = map[string]any{storage.MessageCompactionParentIDKey: previousLeafID}
 	}
 	l.compactionRestarts++
+	for _, callback := range l.toolCallbacks {
+		if resetter, ok := callback.(compactionResetter); ok {
+			resetter.Reset()
+		}
+	}
 	return gai.Dialog{root}, nil
 }
 

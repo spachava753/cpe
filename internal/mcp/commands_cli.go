@@ -134,7 +134,7 @@ func MCPCallToolFromConfig(ctx context.Context, opts MCPCallToolFromConfigOption
 }
 
 // MCPCodeDescFromConfigOptions contains CLI-facing inputs for generating the
-// execute_go_code description from resolved config.
+// starlark_repl description from resolved config.
 type MCPCodeDescFromConfigOptions struct {
 	ConfigPath string
 	ModelRef   string

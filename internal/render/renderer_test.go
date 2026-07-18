@@ -8,7 +8,7 @@ import (
 
 func TestPlainTextRendererRenderUsesGlamourFormatting(t *testing.T) {
 	renderer := NewPlainTextRenderer()
-	input := "#### Tool \"execute_go_code\" result:\n````shell\nline one\nline two\n````"
+	input := "#### Tool \"starlark_repl\" result:\n````shell\nline one\nline two\n````"
 
 	got, err := renderer.Render(input)
 	if err != nil {
@@ -22,7 +22,7 @@ func TestPlainTextRendererRenderUsesGlamourFormatting(t *testing.T) {
 			t.Fatalf("rendered output still contains markdown marker %q:\n%s", unwanted, got)
 		}
 	}
-	for _, want := range []string{"#### Tool \"execute_go_code\" result:", "line one", "line two"} {
+	for _, want := range []string{"#### Tool \"starlark_repl\" result:", "line one", "line two"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("rendered output missing %q:\n%s", want, got)
 		}

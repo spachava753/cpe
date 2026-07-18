@@ -1,6 +1,6 @@
 # CPE - Chat-based Programming Editor
 
-CPE is a local [Agent Client Protocol](https://agentclientprotocol.com/) (ACP) server for AI coding clients. Run it from an ACP-compatible editor such as [Zed](https://zed.dev/), and CPE provides model access, MCP tools, generated Go code execution, file editing, and local session persistence behind that editor UI.
+CPE is a local [Agent Client Protocol](https://agentclientprotocol.com/) (ACP) server for AI coding clients. Run it from an ACP-compatible editor such as [Zed](https://zed.dev/), and CPE provides model access, MCP tools, session-scoped Starlark execution, file editing, and local session persistence behind that editor UI.
 
 ## Contents
 
@@ -299,7 +299,13 @@ cpe mcp call-tool --server search --tool web_search --args '{"query":"golang"}' 
 
 ### Code Mode
 
-Code Mode registers an `execute_go_code` tool. The model writes a complete Go source file implementing `Run(ctx context.Context) ([]mcp.Content, error)`; CPE compiles and runs it in a temporary harness with timeout and output limits.
+Code Mode registers a `starlark_repl` tool backed by
+[`go.starlark.net/starlark`](https://pkg.go.dev/go.starlark.net/starlark) and
+[Dyson](https://github.com/spachava753/dyson). Each ACP session owns a Starlark
+REPL: globals persist across tool calls, and successful conversation compaction
+starts a fresh thread and clears those globals. Dyson supplies host-backed
+filesystem, environment, process, regular-expression, time, and related
+compatibility modules; its durable recording and replay features are not used.
 
 ```yaml
 models:
@@ -311,7 +317,12 @@ models:
       largeOutputCharLimit: 20000
 ```
 
-Generated code can use the Go standard library, process local files, and return text, images, PDFs, or audio through MCP content blocks. MCP tools remain normal conversational tools; they are not exposed as generated Go bindings.
+The model submits Starlark chunks rather than complete programs. Every call has
+an execution timeout; reaching it cancels the active `starlark.Thread`.
+`print(...)` produces bounded text output. The global
+`view_file(path, mime_type="")` builtin returns local images, PDFs, audio, and
+video as multimodal tool-result blocks. Relative artifact paths resolve from the
+ACP session working directory.
 
 ### System Prompts and Skills
 
@@ -396,7 +407,7 @@ Commands:
     list-tools, ls-tools <server>
     info <server>
     call-tool --server <server> --tool <tool> --args '{}'
-    code-desc       Print the execute_go_code tool description
+    code-desc       Print the starlark_repl tool description
                     -m, --model string  Model profile ref whose MCP servers should be inspected
 
   account           Manage provider account credentials and usage
@@ -455,7 +466,7 @@ jq 'select(.cwd == "/path/to/project")' ~/Library/Application\ Support/cpe/.cpe.
 
 ### Timeout errors
 
-Increase the selected model profile's `timeout` or the MCP server's per-server `timeout`. Code Mode has its own `codeMode.maxTimeout` cap.
+Increase the selected model profile's `timeout` or the MCP server's per-server `timeout`. Code Mode has its own `codeMode.maxTimeout` cap and cancels Starlark execution when a call reaches it.
 
 ## Contributing
 

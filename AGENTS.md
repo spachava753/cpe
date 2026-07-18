@@ -1,6 +1,6 @@
 ## Project Overview
 
-CPE (Chat-based Programming Editor) is a local Agent Client Protocol (ACP) server for AI coding clients such as Zed. It connects editor-hosted agent workflows to multiple AI model providers, MCP tools, generated Go code execution, and local ACP session persistence. Link: https://github.com/spachava753/cpe. To learn more, read the README.md
+CPE (Chat-based Programming Editor) is a local Agent Client Protocol (ACP) server for AI coding clients such as Zed. It connects editor-hosted agent workflows to multiple AI model providers, MCP tools, session-scoped Starlark code execution, and local ACP session persistence. Link: https://github.com/spachava753/cpe. To learn more, read the README.md
 
 ## Documentation
 

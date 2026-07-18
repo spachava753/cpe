@@ -61,7 +61,7 @@ type PatchRequestConfig struct {
 	IncludeHeaders map[string]string `json:"includeHeaders,omitempty" yaml:"includeHeaders,omitempty"`
 }
 
-// CodeModeConfig controls generated-code execution behavior.
+// CodeModeConfig controls session-scoped Starlark execution behavior.
 type CodeModeConfig struct {
 	Enabled              bool `yaml:"enabled" json:"enabled"`
 	MaxTimeout           int  `yaml:"maxTimeout,omitempty" json:"maxTimeout,omitempty" validate:"omitempty,gte=0"`
@@ -196,7 +196,7 @@ type Config struct {
 	// Effective timeout.
 	Timeout time.Duration
 
-	// Effective code mode configuration.
+	// Effective Starlark code mode configuration.
 	CodeMode *CodeModeConfig
 
 	// DisableEditTool controls whether the bundled text_edit tool is registered.

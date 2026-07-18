@@ -17,6 +17,7 @@ import (
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
 	cpesync "github.com/spachava753/cpe/internal/sync"
@@ -1746,4 +1747,363 @@ Output Cost: 1.00`),
 		_, ok = storedAssistant.ExtraFields[storage.AgentMetadataOutputTokensKey]
 		be.True(t, !ok)
 	})
+}
+
+func TestPromptReportsStarlarkREPLResultContentToACPClient(t *testing.T) {
+	toolCall, err := gai.ToolCallBlock("call-starlark", codemode.StarlarkREPLToolName, map[string]any{
+		"code":             `print("visible result")`,
+		"executionTimeout": 2,
+	})
+	if err != nil {
+		t.Fatalf("ToolCallBlock() error = %v", err)
+	}
+
+	var store *storage.Sqlite
+	testClient := &promptTestClient{}
+	rawCfg := config.RawConfig{
+		Models: []config.ModelConfig{{
+			Model: config.Model{
+				Ref:           "test-model",
+				DisplayName:   "Test Model",
+				ID:            "test-model",
+				Type:          "responses",
+				ContextWindow: 100,
+			},
+		}},
+	}
+	fixture := setup(
+		t,
+		testClient,
+		&rawCfg,
+		func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
+			gen := &testGen{responses: []genFunc{
+				func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
+					return gai.Response{
+						Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{toolCall}}},
+						FinishReason: gai.ToolUse,
+					}, nil
+				},
+				func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
+					return gai.Response{
+						Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("complete")}}},
+						FinishReason: gai.EndTurn,
+					}, nil
+				},
+			}}
+			cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
+			if err != nil {
+				return nil, err
+			}
+			loop := &Loop{G: gen, Store: store, Cfg: cfg, conn: conn}
+			if err := loop.Register(codemode.MakeTool(5), &codemode.StarlarkREPLCallback{
+				Cwd:        s.cwd,
+				SessionID:  s.id,
+				MaxTimeout: 5,
+				Conn:       conn,
+			}); err != nil {
+				return nil, err
+			}
+			return testRuntime{Loop: loop}, nil
+		},
+	)
+	store = fixture.Store
+
+	_, err = fixture.ClientConn.Initialize(t.Context(), &acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersion(1),
+		ClientCapabilities: &acp.ClientCapabilities{
+			Terminal: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	sessionResp, err := fixture.ClientConn.NewSession(t.Context(), &acp.NewSessionRequest{
+		Cwd:        t.TempDir(),
+		McpServers: []acp.McpServer{},
+	})
+	if err != nil {
+		t.Fatalf("NewSession() error = %v", err)
+	}
+	_, err = fixture.ClientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+		ConfigID:  modelRefConfigId,
+		SessionID: sessionResp.SessionID,
+		Value:     "test-model",
+	})
+	if err != nil {
+		t.Fatalf("SetSessionConfigOption() error = %v", err)
+	}
+
+	_, err = fixture.ClientConn.Prompt(t.Context(), &acp.PromptRequest{
+		Prompt:    []acp.ContentBlock{acp.TextContentBlock("run starlark")},
+		SessionID: sessionResp.SessionID,
+	})
+	if err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+
+	var pending, completed *acp.SessionUpdate
+	for _, notification := range testClient.notifications() {
+		update := notification.Update
+		if update.SessionUpdate == acp.SessionUpdateTypeToolCall &&
+			update.ToolCallID == "call-starlark" &&
+			update.Status != nil && *update.Status == acp.ToolCallStatusPending {
+			pending = &update
+		}
+		if update.SessionUpdate == acp.SessionUpdateTypeToolCallUpdate &&
+			update.ToolCallID == "call-starlark" &&
+			update.Status != nil && *update.Status == acp.ToolCallStatusCompleted {
+			completed = &update
+		}
+	}
+	if pending == nil {
+		t.Fatalf("notifications = %#v, want pending starlark_repl update", testClient.notifications())
+	}
+	pendingContent, ok := pending.Content.([]acp.ToolCallContent)
+	if !ok || len(pendingContent) != 1 || pendingContent[0].Content.Type != acp.ContentBlockTypeText || pendingContent[0].Content.Text != "" {
+		t.Fatalf("pending content = %#v, want replaceable empty text content", pending.Content)
+	}
+	if completed == nil {
+		t.Fatalf("notifications = %#v, want completed starlark_repl update", testClient.notifications())
+	}
+	content, ok := completed.Content.([]acp.ToolCallContent)
+	if !ok || len(content) != 1 || content[0].Content.Type != acp.ContentBlockTypeText || content[0].Content.Text != "visible result\n" {
+		t.Fatalf("completed content = %#v, want text content %q", completed.Content, "visible result\n")
+	}
+}
+
+func TestPromptRejectsInvalidToolCallIDsBeforeSessionUpdate(t *testing.T) {
+	tests := []struct {
+		name      string
+		blocks    func(*testing.T) []gai.Block
+		wantError string
+	}{
+		{
+			name: "empty ID",
+			blocks: func(t *testing.T) []gai.Block {
+				toolCall, err := gai.ToolCallBlock("placeholder", "lookup", map[string]any{"query": "docs"})
+				if err != nil {
+					t.Fatalf("ToolCallBlock() error = %v", err)
+				}
+				toolCall.ID = ""
+				return []gai.Block{toolCall}
+			},
+			wantError: "tool call id cannot be empty",
+		},
+		{
+			name: "duplicate ID",
+			blocks: func(t *testing.T) []gai.Block {
+				first, err := gai.ToolCallBlock("call-1", "lookup", map[string]any{"query": "docs"})
+				if err != nil {
+					t.Fatalf("first ToolCallBlock() error = %v", err)
+				}
+				second, err := gai.ToolCallBlock("call-1", "read", map[string]any{"path": "README.md"})
+				if err != nil {
+					t.Fatalf("second ToolCallBlock() error = %v", err)
+				}
+				return []gai.Block{first, second}
+			},
+			wantError: "duplicate tool call id",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var store *storage.Sqlite
+			testClient := &promptTestClient{}
+			rawCfg := config.RawConfig{
+				Models: []config.ModelConfig{{
+					Model: config.Model{
+						Ref:           "test-model",
+						DisplayName:   "Test Model",
+						ID:            "test-model",
+						Type:          "responses",
+						ContextWindow: 100,
+					},
+				}},
+			}
+			blocks := tt.blocks(t)
+			fixture := setup(
+				t,
+				testClient,
+				&rawCfg,
+				func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
+					gen := &testGen{responses: []genFunc{
+						func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+							return gai.Response{
+								Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: blocks}},
+								FinishReason: gai.ToolUse,
+							}, nil
+						},
+					}}
+					cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
+					if err != nil {
+						return nil, err
+					}
+					return testRuntime{Loop: &Loop{G: gen, Store: store, Cfg: cfg, conn: conn}}, nil
+				},
+			)
+			store = fixture.Store
+
+			_, err := fixture.ClientConn.Initialize(t.Context(), &acp.InitializeRequest{
+				ProtocolVersion: acp.ProtocolVersion(1),
+				ClientCapabilities: &acp.ClientCapabilities{
+					Terminal: true,
+				},
+			})
+			if err != nil {
+				t.Fatalf("Initialize() error = %v", err)
+			}
+			sessionResp, err := fixture.ClientConn.NewSession(t.Context(), &acp.NewSessionRequest{
+				Cwd:        t.TempDir(),
+				McpServers: []acp.McpServer{},
+			})
+			if err != nil {
+				t.Fatalf("NewSession() error = %v", err)
+			}
+			_, err = fixture.ClientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+				ConfigID:  modelRefConfigId,
+				SessionID: sessionResp.SessionID,
+				Value:     "test-model",
+			})
+			if err != nil {
+				t.Fatalf("SetSessionConfigOption() error = %v", err)
+			}
+
+			_, err = fixture.ClientConn.Prompt(t.Context(), &acp.PromptRequest{
+				Prompt:    []acp.ContentBlock{acp.TextContentBlock("use a tool")},
+				SessionID: sessionResp.SessionID,
+			})
+			if err == nil || !strings.Contains(strings.ToLower(err.Error()), tt.wantError) {
+				t.Fatalf("Prompt() error = %v, want containing %q", err, tt.wantError)
+			}
+			if notifications := testClient.notifications(); len(notifications) != 0 {
+				t.Fatalf("notifications = %#v, want none for invalid tool call ID", notifications)
+			}
+		})
+	}
+}
+
+type staticToolCallback struct{}
+
+func (staticToolCallback) Call(context.Context, map[string]any) (gai.Message, error) {
+	return gai.ToolResultMessage("", gai.TextBlock("lookup result")), nil
+}
+
+func TestPromptRejectsToolCallIDReusedInSessionBeforeSessionUpdate(t *testing.T) {
+	firstToolCall, err := gai.ToolCallBlock("call-1", "lookup", map[string]any{"query": "first"})
+	if err != nil {
+		t.Fatalf("first ToolCallBlock() error = %v", err)
+	}
+	reusedToolCall, err := gai.ToolCallBlock("call-1", "lookup", map[string]any{"query": "second"})
+	if err != nil {
+		t.Fatalf("second ToolCallBlock() error = %v", err)
+	}
+
+	var store *storage.Sqlite
+	testClient := &promptTestClient{}
+	rawCfg := config.RawConfig{
+		Models: []config.ModelConfig{{
+			Model: config.Model{
+				Ref:           "test-model",
+				DisplayName:   "Test Model",
+				ID:            "test-model",
+				Type:          "responses",
+				ContextWindow: 100,
+			},
+		}},
+	}
+	fixture := setup(
+		t,
+		testClient,
+		&rawCfg,
+		func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
+			gen := &testGen{responses: []genFunc{
+				func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
+					return gai.Response{
+						Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{firstToolCall}}},
+						FinishReason: gai.ToolUse,
+					}, nil
+				},
+				func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
+					return gai.Response{
+						Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("first complete")}}},
+						FinishReason: gai.EndTurn,
+					}, nil
+				},
+				func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
+					return gai.Response{
+						Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{reusedToolCall}}},
+						FinishReason: gai.ToolUse,
+					}, nil
+				},
+				func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
+					return gai.Response{
+						Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("second complete")}}},
+						FinishReason: gai.EndTurn,
+					}, nil
+				},
+			}}
+			cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
+			if err != nil {
+				return nil, err
+			}
+			return testRuntime{Loop: &Loop{
+				G:     gen,
+				Store: store,
+				Cfg:   cfg,
+				conn:  conn,
+				toolCallbacks: map[string]gai.ToolCallback{
+					"lookup": staticToolCallback{},
+				},
+			}}, nil
+		},
+	)
+	store = fixture.Store
+
+	_, err = fixture.ClientConn.Initialize(t.Context(), &acp.InitializeRequest{
+		ProtocolVersion: acp.ProtocolVersion(1),
+		ClientCapabilities: &acp.ClientCapabilities{
+			Terminal: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	sessionResp, err := fixture.ClientConn.NewSession(t.Context(), &acp.NewSessionRequest{
+		Cwd:        t.TempDir(),
+		McpServers: []acp.McpServer{},
+	})
+	if err != nil {
+		t.Fatalf("NewSession() error = %v", err)
+	}
+	_, err = fixture.ClientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+		ConfigID:  modelRefConfigId,
+		SessionID: sessionResp.SessionID,
+		Value:     "test-model",
+	})
+	if err != nil {
+		t.Fatalf("SetSessionConfigOption() error = %v", err)
+	}
+
+	_, err = fixture.ClientConn.Prompt(t.Context(), &acp.PromptRequest{
+		Prompt:    []acp.ContentBlock{acp.TextContentBlock("first prompt")},
+		SessionID: sessionResp.SessionID,
+	})
+	if err != nil {
+		t.Fatalf("first Prompt() error = %v", err)
+	}
+	notificationCount := len(testClient.notifications())
+	if notificationCount == 0 {
+		t.Fatal("first Prompt() sent no notifications")
+	}
+
+	_, err = fixture.ClientConn.Prompt(t.Context(), &acp.PromptRequest{
+		Prompt:    []acp.ContentBlock{acp.TextContentBlock("second prompt")},
+		SessionID: sessionResp.SessionID,
+	})
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "duplicate tool call id") {
+		t.Fatalf("second Prompt() error = %v, want duplicate tool call ID error", err)
+	}
+	if got := len(testClient.notifications()); got != notificationCount {
+		t.Fatalf("notification count after rejected ID = %d, want %d", got, notificationCount)
+	}
 }

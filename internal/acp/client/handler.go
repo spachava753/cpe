@@ -35,6 +35,13 @@ func (h *handler) Update(ctx context.Context, notification *acp.SessionNotificat
 			parts = append(parts, string(*u.Status))
 		}
 		fmt.Fprintf(h.out, "\n[tool update: %s]\n", strings.Join(parts, " | "))
+		if content, ok := u.Content.([]acp.ToolCallContent); ok {
+			for _, item := range content {
+				if item.Type == acp.ToolCallContentTypeContent {
+					fmt.Fprintln(h.out, strings.TrimSuffix(contentBlockText(item.Content), "\n"))
+				}
+			}
+		}
 		if u.RawOutput != nil {
 			fmt.Fprintf(h.out, "%s\n", marshal(u.RawOutput))
 		}

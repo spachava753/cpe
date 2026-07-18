@@ -1,74 +1,28 @@
-Execute generated Golang code. The version of Go is {{ .GoVersion }}. You must generate a complete Go source file that implements the `Run(ctx context.Context) ([]mcp.Content, error)` function. The file will be compiled alongside a `main.go` that calls your `Run` function.
+Execute Starlark code in a session-scoped REPL.
 
-A `ptr[T any](v T) *T` helper function is available to create pointers from literals for optional fields. For example: `ptr("hello")` returns `*string`, `ptr(42)` returns `*int`, `ptr(3.14)` returns `*float64`.
+Submit a Starlark chunk containing statements and expressions, not a complete Go or Python program. Globals, functions, loaded modules, and mutable values remain available to later `starlark_repl` calls in this conversation. Conversation compaction starts a fresh REPL, so define state again after `compact_conversation` runs.
 
-Your generated code should be a complete Go file with the following structure:
-```go
-package main
+Starlark is Python-like but is not Python. There are no Python imports, classes, exceptions, or arbitrary Python packages. Use `print(...)` for textual output. Top-level control flow, `while`, sets, and global reassignment are enabled.
 
-import (
-	"context"
-	"fmt"
-	// add other imports as needed
+Dyson provides host-backed standard-library compatibility modules. Load them with explicit symbols:
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-)
-
-func Run(ctx context.Context) ([]mcp.Content, error) {
-	// your implementation here
-	return nil, nil
-}
+```python
+load("os.star", "os")
+load("glob.star", "glob")
+load("re.star", "re")
+load("shutil.star", "shutil")
+load("subprocess.star", "subprocess")
+load("tempfile.star", "tempfile")
+load("time.star", "time")
 ```
 
-The `main.go` file (which you don't need to generate) will have the following shape:
-```go
-package main
+The `grp.star`, `pwd.star`, and `signal.star` modules are also available. Module coverage is intentionally partial; an unavailable member produces a Starlark error. Host-backed filesystem, environment, and process operations run with the CPE process's normal permissions.
 
-import (
-	"context"
-	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
-	// and other std packages
-)
+A global `view_file(path, mime_type="")` builtin adds a binary artifact to the tool result so the model can inspect it. Relative paths are resolved against the ACP session working directory. MIME type is inferred from the extension or contents, or may be supplied explicitly. Images, PDFs, audio, and video are supported.
 
-func main() {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-
-	content, err := Run(ctx)
-	if err != nil {
-		fmt.Printf("\nexecution error: %s\n", err)
-		os.Exit(1)
-	}
-
-	// content is serialized to a file for the parent process to read
-}
+```python
+view_file("diagram.png")
+view_file("recording.bin", mime_type="audio/wav")
 ```
 
-The error, if not nil, returned from the `Run` function, will be present in the tool result.
-
-The `Run` function can optionally return `[]mcp.Content` to include multimedia content in the tool result. Supported content types:
-- `&mcp.TextContent{Text: "..."}` - text content
-- `&mcp.ImageContent{Data: []byte{...}, MIMEType: "image/png"}` - images (PNG, JPEG, GIF, WebP) and PDFs (use MIMEType "application/pdf")
-- `&mcp.AudioContent{Data: []byte{...}, MIMEType: "audio/wav"}` - audio
-
-Example - returning an image for the model to analyze:
-```go
-func Run(ctx context.Context) ([]mcp.Content, error) {
-	imgData, err := os.ReadFile("photo.jpg")
-	if err != nil {
-		return nil, err
-	}
-	return []mcp.Content{
-		&mcp.ImageContent{Data: imgData, MIMEType: "image/jpeg"},
-	}, nil
-}
-```
-
-Note: `Data` is `[]byte` - pass the raw bytes from `os.ReadFile` directly (no base64 encoding needed).
-
-If you need to return multimedia (images, audio, etc.), return the content. Otherwise, return `nil, nil` and use `fmt.Println` for text output.
-
-IMPORTANT: Generate the complete file contents including package declaration and imports. This ensures that any compilation errors report accurate line numbers that you can use for debugging.
+Each call must provide an execution timeout. When that timeout is reached, CPE cancels the active `starlark.Thread`. Runtime and syntax errors are returned as tool results so you can correct the next chunk.

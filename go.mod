@@ -1,10 +1,12 @@
 module github.com/spachava753/cpe
 
-go 1.26.0
+go 1.26.4
 
 retract v0.16.10
 
 retract v0.22.6
+
+replace github.com/spachava753/dyson => /Users/shashankpachava/dev/dyson
 
 require (
 	github.com/Masterminds/sprig/v3 v3.3.0
@@ -26,12 +28,13 @@ require (
 	github.com/ncruces/go-sqlite3 v0.34.3
 	github.com/openai/openai-go/v3 v3.47.0
 	github.com/spachava753/acp-sdk v0.3.0
+	github.com/spachava753/dyson v0.0.0-20260708033035-e8bacb15b15e
 	github.com/spachava753/gai v0.42.0
 	github.com/spf13/cobra v1.10.2
 	github.com/yuin/goldmark v1.8.2
+	go.starlark.net v0.0.0-20260613233743-8ba36ccb83fb
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/term v0.45.0
-	golang.org/x/tools v0.48.0
 	google.golang.org/api v0.291.0
 	google.golang.org/genai v1.66.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -98,6 +101,7 @@ require (
 	github.com/charmbracelet/x/cellbuf v0.0.15 // indirect
 	github.com/charmbracelet/x/exp/slice v0.0.0-20260527151214-009e6338d40d // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
+	github.com/chzyer/readline v1.5.1 // indirect
 	github.com/ckaznocha/intrange v0.3.1 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
@@ -331,6 +335,7 @@ require (
 	golang.org/x/telemetry v0.0.0-20260708182218-49f421fb7959 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
+	golang.org/x/tools v0.48.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260630182238-925bb5da69e7 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260729162451-8efbd57d26e0 // indirect
 	google.golang.org/grpc v1.82.1 // indirect
