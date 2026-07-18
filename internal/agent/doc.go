@@ -22,7 +22,7 @@ Related packages:
     and system prompt template rendering;
   - internal/mcp owns MCP runtime integration and MCP inspection helpers;
   - internal/skills handles skill discovery and prompt metadata;
-  - internal/codemode owns the execute_go_code tool and sandbox execution.
+  - internal/codemode owns the starlark_repl tool and Dyson integration.
 
 Behavioral notes:
   - model HTTP transports and provider SDKs make one request attempt; a generator
@@ -31,7 +31,7 @@ Behavioral notes:
     by gai API errors may schedule a later retry within that overall budget;
   - provider block filtering preserves only provider-compatible thinking blocks
     when a session crosses model providers;
-  - execute_go_code formatting helpers live in internal/codemode so ACP runtime
-    callbacks and command-side inspection output can share them.
+  - starlark_repl tool-description helpers live in internal/codemode so ACP
+    runtime callbacks and command-side inspection output share one contract.
 */
 package agent

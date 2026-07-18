@@ -84,6 +84,9 @@ func expectedPendingToolCallUpdate(id acp.ToolCallId, title string, rawInput any
 	update := acp.ToolCallSessionUpdate(id, title)
 	update.RawInput = rawInput
 	update.Status = &status
+	update.Content = []acp.ToolCallContent{
+		acp.ContentToolCallContent(acp.TextContentBlock("")),
+	}
 	return update
 }
 

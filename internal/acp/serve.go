@@ -45,7 +45,7 @@ var (
 	initializeMCPConnections                    = mcp.InitializeConnections
 )
 
-func (c *serverRuntimeCreator) Create(ctx context.Context, s session, caps acp.ClientCapabilities) (runtime, error) {
+func (c *serverRuntimeCreator) Create(ctx context.Context, s session, _ acp.ClientCapabilities) (runtime, error) {
 	cfg, err := config.ResolveFromRaw(c.rawCfg, config.RuntimeOptions{
 		ModelRef: s.model,
 	})
@@ -146,19 +146,18 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, s session, caps acp.C
 	codeModeEnabled := cfg.CodeMode != nil && cfg.CodeMode.Enabled
 	slog.DebugContext(ctx, "code mode config", slog.Bool("enabled", codeModeEnabled))
 	if codeModeEnabled {
-		executeGoCodeTool := codemode.MakeTool(cfg.CodeMode.MaxTimeout)
-		callback := &codemode.ExecuteGoCodeCallback{
+		starlarkREPLTool := codemode.MakeTool(cfg.CodeMode.MaxTimeout)
+		callback := &codemode.StarlarkREPLCallback{
 			Cwd:                  s.cwd,
-			SessionId:            s.id,
+			SessionID:            s.id,
 			MaxTimeout:           cfg.CodeMode.MaxTimeout,
 			LargeOutputCharLimit: codemode.ResolveLargeOutputCharLimit(cfg.CodeMode.LargeOutputCharLimit, cfg.Model.ContextWindow),
 			Conn:                 c.conn,
-			TerminalSupport:      caps.Terminal,
 		}
 
-		if err := l.Register(executeGoCodeTool, callback); err != nil {
+		if err := l.Register(starlarkREPLTool, callback); err != nil {
 			ca.Close()
-			return nil, fmt.Errorf("failed to register execute_go_code tool: %w", err)
+			return nil, fmt.Errorf("failed to register starlark_repl tool: %w", err)
 		}
 	}
 

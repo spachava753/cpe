@@ -2,6 +2,7 @@ package textedit
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/spachava753/acp-sdk/acp"
@@ -32,20 +33,24 @@ func MakeTool(sessionId acp.SessionId, conn sessionUpdator) (gai.Tool, gai.ToolC
 		inProgress := acp.ToolCallUpdateSessionUpdate(xctx.ToolCallIdFrom(ctx))
 		inProgress.Kind = new(acp.ToolKindEdit)
 		inProgress.Status = new(acp.ToolCallStatusInProgress)
-		conn.SessionUpdate(ctx, &acp.SessionNotification{
+		if err := conn.SessionUpdate(ctx, &acp.SessionNotification{
 			SessionID: sessionId,
 			Update:    inProgress,
-		})
+		}); err != nil {
+			return "", gai.CallbackExecErr{Err: fmt.Errorf("send in-progress tool call update: %w", err)}
+		}
 
 		output, err := Apply(input)
 		if err != nil {
 			// send failed update for toolcall
 			failed := acp.ToolCallUpdateSessionUpdate(xctx.ToolCallIdFrom(ctx))
 			failed.Status = new(acp.ToolCallStatusFailed)
-			conn.SessionUpdate(ctx, &acp.SessionNotification{
+			if updateErr := conn.SessionUpdate(ctx, &acp.SessionNotification{
 				SessionID: sessionId,
 				Update:    failed,
-			})
+			}); updateErr != nil {
+				return "", gai.CallbackExecErr{Err: fmt.Errorf("send failed tool call update: %w", updateErr)}
+			}
 
 			return "", err
 		}
@@ -57,10 +62,12 @@ func MakeTool(sessionId acp.SessionId, conn sessionUpdator) (gai.Tool, gai.ToolC
 		diffContent := acp.DiffToolCallContent(input.Path, input.NewText)
 		diffContent.OldText = &input.OldText
 		completed.Content = []acp.ToolCallContent{diffContent}
-		conn.SessionUpdate(ctx, &acp.SessionNotification{
+		if err := conn.SessionUpdate(ctx, &acp.SessionNotification{
 			SessionID: sessionId,
 			Update:    completed,
-		})
+		}); err != nil {
+			return "", gai.CallbackExecErr{Err: fmt.Errorf("send completed tool call update: %w", err)}
+		}
 
 		return output.Message(), nil
 	})

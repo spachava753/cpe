@@ -40,17 +40,17 @@ func TestHandlerUpdate(t *testing.T) {
 
 		err := h.Update(t.Context(), &acp.SessionNotification{
 			SessionID: "test-session",
-			Update:    acp.ToolCallSessionUpdate("tool-call-1", "execute_go_code"),
+			Update:    acp.ToolCallSessionUpdate("tool-call-1", "starlark_repl"),
 		})
 		be.Err(t, err, nil)
-		be.Equal(t, out.String(), "\n[tool: execute_go_code]\n")
+		be.Equal(t, out.String(), "\n[tool: starlark_repl]\n")
 	})
 
 	t.Run("prints tool update with status and raw output", func(t *testing.T) {
 		var out bytes.Buffer
 		h := handler{out: &out}
 		status := acp.ToolCallStatusCompleted
-		title := "execute_go_code"
+		title := "starlark_repl"
 
 		err := h.Update(context.Background(), &acp.SessionNotification{
 			SessionID: "test-session",
@@ -65,7 +65,26 @@ func TestHandlerUpdate(t *testing.T) {
 			},
 		})
 		be.Err(t, err, nil)
-		be.Equal(t, out.String(), "\n[tool update: tool-call-1 | execute_go_code | completed]\n{\n  \"ok\": true\n}\n")
+		be.Equal(t, out.String(), "\n[tool update: tool-call-1 | starlark_repl | completed]\n{\n  \"ok\": true\n}\n")
+	})
+
+	t.Run("prints tool update content", func(t *testing.T) {
+		var out bytes.Buffer
+		h := handler{out: &out}
+		status := acp.ToolCallStatusCompleted
+		update := acp.ToolCallUpdateSessionUpdate("tool-call-1")
+		update.Status = &status
+		update.Content = []acp.ToolCallContent{
+			acp.ContentToolCallContent(acp.TextContentBlock("visible result\n")),
+			acp.ContentToolCallContent(acp.ImageContentBlock("data", "image/png")),
+		}
+
+		err := h.Update(t.Context(), &acp.SessionNotification{
+			SessionID: "test-session",
+			Update:    update,
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, out.String(), "\n[tool update: tool-call-1 | completed]\nvisible result\n[image content]\n")
 	})
 
 	t.Run("prints plan update", func(t *testing.T) {

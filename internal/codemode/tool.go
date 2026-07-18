@@ -4,146 +4,153 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
+	"time"
 
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
+	"go.starlark.net/starlark"
 
+	"github.com/spachava753/cpe/internal/acp/xacp"
 	"github.com/spachava753/cpe/internal/acp/xctx"
 	"github.com/spachava753/cpe/internal/mapstruct"
 )
 
-// ExecuteGoCodeToolName is the reserved model-facing tool name for code mode.
-const ExecuteGoCodeToolName = "execute_go_code"
+// StarlarkREPLToolName is the reserved model-facing tool name for code mode.
+const StarlarkREPLToolName = "starlark_repl"
 
-// executeGoCodeInput is the execute_go_code payload expected from the model.
-// ExecutionTimeout is validated against callback-level limits before execution starts.
-type executeGoCodeInput struct {
+type starlarkREPLInput struct {
 	Code             string `json:"code"`
 	ExecutionTimeout int    `json:"executionTimeout"`
 }
 
 type acpConn interface {
 	SessionUpdate(ctx context.Context, params *acp.SessionNotification) error
-	CreateTerminal(ctx context.Context, params *acp.CreateTerminalRequest) (*acp.CreateTerminalResponse, error)
-	KillTerminal(ctx context.Context, params *acp.KillTerminalRequest) (*acp.KillTerminalResponse, error)
-	TerminalOutput(ctx context.Context, params *acp.TerminalOutputRequest) (*acp.TerminalOutputResponse, error)
-	ReleaseTerminal(ctx context.Context, params *acp.ReleaseTerminalRequest) (*acp.ReleaseTerminalResponse, error)
-	WaitForTerminalExit(ctx context.Context, params *acp.WaitForTerminalExitRequest) (*acp.WaitForTerminalExitResponse, error)
 }
 
-// ExecuteGoCodeCallback implements gai.ToolCallback for execute_go_code.
-// It enforces timeout/output policy and delegates execution to the sandbox pipeline.
-type ExecuteGoCodeCallback struct {
+// StarlarkREPLCallback implements the session-scoped starlark_repl tool.
+type StarlarkREPLCallback struct {
 	MaxTimeout           int
 	LargeOutputCharLimit int
 	Cwd                  string
-	SessionId            acp.SessionId
+	SessionID            acp.SessionId
 	Conn                 acpConn
-	TerminalSupport      bool
+
+	mu   sync.Mutex
+	repl *starlarkREPL
 }
 
-// contentToBlocks adapts MCP multimodal content into gai blocks.
-// Unsupported content variants are ignored so tool output remains renderable.
-func contentToBlocks(content []mcpsdk.Content) []gai.Block {
-	blocks := make([]gai.Block, 0, len(content))
-	for _, c := range content {
-		switch v := c.(type) {
-		case *mcpsdk.TextContent:
-			blocks = append(blocks, gai.TextBlock(v.Text))
-		case *mcpsdk.ImageContent:
-			if v.MIMEType == "application/pdf" || v.MIMEType == "application/x-pdf" {
-				blocks = append(blocks, gai.PDFBlock(v.Data, "document.pdf"))
-			} else {
-				blocks = append(blocks, gai.ImageBlock(v.Data, v.MIMEType))
-			}
-		case *mcpsdk.AudioContent:
-			blocks = append(blocks, gai.AudioBlock(v.Data, v.MIMEType))
-		}
-	}
-	return blocks
+// Reset discards all REPL globals and creates a fresh thread on the next call.
+func (c *StarlarkREPLCallback) Reset() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.repl = nil
 }
 
-// Call validates input, runs generated code, and maps failures into agent control flow.
-// Recoverable execution failures are returned as ToolResult text so the model can iterate;
-// infrastructure failures are returned as Go errors to stop the run.
-func (c *ExecuteGoCodeCallback) Call(ctx context.Context, params map[string]any) (gai.Message, error) {
-	sendToolCallUpdate := func(status acp.ToolCallStatus) {
+// Call validates and evaluates one chunk while preserving REPL state between calls.
+func (c *StarlarkREPLCallback) Call(ctx context.Context, params map[string]any) (gai.Message, error) {
+	sendToolCallUpdate := func(status acp.ToolCallStatus, blocks []gai.Block) error {
 		if c.Conn == nil {
-			return
+			return nil
 		}
 		update := acp.ToolCallUpdateSessionUpdate(xctx.ToolCallIdFrom(ctx))
-		update.Kind = new(acp.ToolKindExecute)
+		update.Kind = new(acp.ToolKindOther)
 		update.Status = &status
-		c.Conn.SessionUpdate(ctx, &acp.SessionNotification{
-			SessionID: c.SessionId,
+		if len(blocks) > 0 {
+			update.Content = xacp.BlocksToToolCallContent(blocks)
+		}
+		if err := c.Conn.SessionUpdate(ctx, &acp.SessionNotification{
+			SessionID: c.SessionID,
 			Update:    update,
-		})
+		}); err != nil {
+			return fmt.Errorf("send %s tool call update: %w", status, err)
+		}
+		return nil
 	}
 
-	input, err := mapstruct.Map2Struct[executeGoCodeInput](params)
+	input, err := mapstruct.Map2Struct[starlarkREPLInput](params)
 	if err != nil {
-		sendToolCallUpdate(acp.ToolCallStatusFailed)
-		// Return error as tool result so LLM can adapt, not as Go error that stops execution
-		return gai.ToolResultMessage("", gai.TextBlock("Error parsing parameters: "+err.Error())), nil //nolint:nilerr // user/tool errors return results with nil error to allow agent recovery
+		msg := toolError("Error parsing parameters: " + err.Error())
+		if err := sendToolCallUpdate(acp.ToolCallStatusFailed, msg.Blocks); err != nil {
+			return gai.Message{}, err
+		}
+		return msg, nil
 	}
-
 	if input.ExecutionTimeout < 1 {
-		sendToolCallUpdate(acp.ToolCallStatusFailed)
-		return gai.ToolResultMessage("", gai.TextBlock("executionTimeout must be at least 1 second")), nil
+		msg := toolError("executionTimeout must be at least 1 second")
+		if err := sendToolCallUpdate(acp.ToolCallStatusFailed, msg.Blocks); err != nil {
+			return gai.Message{}, err
+		}
+		return msg, nil
 	}
 	maxAllowedTimeout := c.MaxTimeout
 	if maxAllowedTimeout <= 0 {
 		maxAllowedTimeout = 300
 	}
 	if input.ExecutionTimeout > maxAllowedTimeout {
-		sendToolCallUpdate(acp.ToolCallStatusFailed)
-		return gai.ToolResultMessage("", gai.TextBlock(fmt.Sprintf("executionTimeout exceeds maximum allowed (%d seconds)", maxAllowedTimeout))), nil
-	}
-
-	sendToolCallUpdate(acp.ToolCallStatusInProgress)
-
-	// Execute the code
-	result, err := c.executeCode(
-		ctx,
-		input.Code,
-		input.ExecutionTimeout,
-	)
-	if err != nil {
-		if recoverable, ok := errors.AsType[RecoverableError](err); ok {
-			// Recoverable errors are returned as tool results so LLM can adapt.
-			sendToolCallUpdate(acp.ToolCallStatusFailed)
-			text := recoverable.Error()
-			if result.Output != "" {
-				text += "\n\n" + result.Output
-			}
-			return gai.ToolResultMessage("", gai.TextBlock(text)), nil
+		msg := toolError(fmt.Sprintf("executionTimeout exceeds maximum allowed (%d seconds)", maxAllowedTimeout))
+		if err := sendToolCallUpdate(acp.ToolCallStatusFailed, msg.Blocks); err != nil {
+			return gai.Message{}, err
 		}
-		// Infrastructure errors (temp dir, file writes, etc.) stop agent execution.
+		return msg, nil
+	}
+	if err := ctx.Err(); err != nil {
 		return gai.Message{}, err
 	}
 
-	// Successful execution.
-	sendToolCallUpdate(acp.ToolCallStatusCompleted)
+	if err := sendToolCallUpdate(acp.ToolCallStatusInProgress, nil); err != nil {
+		return gai.Message{}, err
+	}
 
-	// build response with content blocks
-	var blocks []gai.Block
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.repl == nil {
+		c.repl = newStarlarkREPL(c.Cwd, c.LargeOutputCharLimit)
+	}
+	result, err := c.repl.Eval(ctx, input.Code, time.Duration(input.ExecutionTimeout)*time.Second)
+	if ctxErr := ctx.Err(); ctxErr != nil && !result.TimedOut {
+		return gai.Message{}, ctxErr
+	}
+	if err != nil {
+		text := "Starlark execution error:\n" + starlarkError(err)
+		if result.Output != "" {
+			text += "\n\nOutput:\n" + result.Output
+		}
+		blocks := append([]gai.Block{gai.TextBlock(text)}, result.Content...)
+		msg := gai.Message{
+			Role:            gai.ToolResult,
+			Blocks:          blocks,
+			ToolResultError: true,
+		}
+		if err := sendToolCallUpdate(acp.ToolCallStatusFailed, msg.Blocks); err != nil {
+			return gai.Message{}, err
+		}
+		return msg, nil
+	}
 
-	// Prepend stdout/stderr output as text block if present
+	blocks := result.Content
 	if result.Output != "" {
-		blocks = append(blocks, gai.TextBlock(result.Output))
+		blocks = append([]gai.Block{gai.TextBlock(result.Output)}, blocks...)
 	}
-
-	// Add multimedia content blocks
-	blocks = append(blocks, contentToBlocks(result.Content)...)
-
-	// If no blocks at all, add an empty text block to satisfy message requirements
 	if len(blocks) == 0 {
-		blocks = append(blocks, gai.TextBlock(""))
+		blocks = []gai.Block{gai.TextBlock("")}
 	}
+	msg := gai.Message{Role: gai.ToolResult, Blocks: blocks}
+	if err := sendToolCallUpdate(acp.ToolCallStatusCompleted, msg.Blocks); err != nil {
+		return gai.Message{}, err
+	}
+	return msg, nil
+}
 
-	return gai.Message{
-		Role:   gai.ToolResult,
-		Blocks: blocks,
-	}, nil
+func toolError(text string) gai.Message {
+	msg := gai.ToolResultMessage("", gai.TextBlock(text))
+	msg.ToolResultError = true
+	return msg
+}
+
+func starlarkError(err error) string {
+	if evalErr, ok := errors.AsType[*starlark.EvalError](err); ok {
+		return evalErr.Backtrace()
+	}
+	return err.Error()
 }

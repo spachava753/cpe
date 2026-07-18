@@ -1,6 +1,7 @@
 package xacp
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"reflect"
 	"slices"
@@ -24,14 +25,27 @@ func toolCallSessionUpdate(id, title string, rawInput map[string]any) acpsdk.Ses
 	update := acpsdk.ToolCallSessionUpdate(acpsdk.ToolCallId(id), title)
 	update.RawInput = rawInput
 	update.Status = &status
+	update.Content = []acpsdk.ToolCallContent{
+		acpsdk.ContentToolCallContent(acpsdk.TextContentBlock("")),
+	}
 	return update
 }
 
-func toolCallResultSessionUpdate(id string, status acpsdk.ToolCallStatus, content acpsdk.ContentBlock) acpsdk.SessionUpdate {
+func toolCallResultSessionUpdate(id string, status acpsdk.ToolCallStatus, contents ...acpsdk.ContentBlock) acpsdk.SessionUpdate {
+	content := make([]acpsdk.ToolCallContent, len(contents))
+	for i, block := range contents {
+		content[i] = acpsdk.ContentToolCallContent(block)
+	}
 	update := acpsdk.ToolCallUpdateSessionUpdate(acpsdk.ToolCallId(id))
-	update.Content = []acpsdk.ToolCallContent{acpsdk.ContentToolCallContent(content)}
+	update.Content = content
 	update.Status = &status
 	return update
+}
+
+func embeddedBlobContentBlock(data, mimeType, filename string) acpsdk.ContentBlock {
+	resource := acpsdk.BlobResourceContentsEmbeddedResourceResource(data, "artifact:///"+filename)
+	resource.MimeType = new(mimeType)
+	return acpsdk.ResourceContentBlock(resource)
 }
 
 func TestEmptyTextSessionUpdateMarshalsTextField(t *testing.T) {
@@ -53,10 +67,30 @@ func TestEmptyTextSessionUpdateMarshalsTextField(t *testing.T) {
 	}
 }
 
+func TestToolCallStartsWithReplaceableTextContent(t *testing.T) {
+	toolCall := mustToolCallBlock(t, "call-1", "starlark_repl", map[string]any{"code": "print(155)"})
+	updates := slices.Collect(MsgToSessionUpdate(gai.Message{
+		Role:   gai.Assistant,
+		Blocks: []gai.Block{toolCall},
+	}))
+	if len(updates) != 1 {
+		t.Fatalf("len(updates) = %d, want 1", len(updates))
+	}
+	want := []acpsdk.ToolCallContent{
+		acpsdk.ContentToolCallContent(acpsdk.TextContentBlock("")),
+	}
+	if !reflect.DeepEqual(updates[0].Content, want) {
+		t.Fatalf("Content = %#v, want replaceable empty text content %#v", updates[0].Content, want)
+	}
+}
+
 func TestMsgToSessionUpdate(t *testing.T) {
 	toolCall := mustToolCallBlock(t, "call-1", "lookup", map[string]any{"query": "docs"})
 
 	secondToolCall := mustToolCallBlock(t, "call-2", "read", map[string]any{"path": "README.md"})
+
+	pdfBlock := gai.PDFBlock([]byte("%PDF-1.7"), "report.pdf")
+	pdfBlock.ID = "call-pdf"
 
 	tests := []struct {
 		name      string
@@ -146,8 +180,12 @@ func TestMsgToSessionUpdate(t *testing.T) {
 				{ID: "call-2", BlockType: gai.Content, ModalityType: gai.Image, MimeType: "image/png", Content: gai.Str("iVBORw0KGgo=")},
 			}},
 			want: []acpsdk.SessionUpdate{
-				toolCallResultSessionUpdate("call-2", acpsdk.ToolCallStatusCompleted, acpsdk.TextContentBlock("result")),
-				toolCallResultSessionUpdate("call-2", acpsdk.ToolCallStatusCompleted, acpsdk.ImageContentBlock("iVBORw0KGgo=", "image/png")),
+				toolCallResultSessionUpdate(
+					"call-2",
+					acpsdk.ToolCallStatusCompleted,
+					acpsdk.TextContentBlock("result"),
+					acpsdk.ImageContentBlock("iVBORw0KGgo=", "image/png"),
+				),
 			},
 		},
 		{
@@ -173,15 +211,29 @@ func TestMsgToSessionUpdate(t *testing.T) {
 			},
 		},
 		{
-			name: "unsupported modality becomes text",
+			name: "video becomes embedded resource",
 			msg: gai.Message{Role: gai.User, Blocks: []gai.Block{{
 				BlockType:    gai.Content,
 				ModalityType: gai.Video,
 				MimeType:     "video/mp4",
 				Content:      gai.Str("video-data"),
+				ExtraFields: map[string]any{
+					gai.BlockFieldFilenameKey: "clip.mp4",
+				},
 			}}},
 			want: []acpsdk.SessionUpdate{
-				acpsdk.UserMessageChunkSessionUpdate(acpsdk.TextContentBlock("video-data")),
+				acpsdk.UserMessageChunkSessionUpdate(embeddedBlobContentBlock("video-data", "video/mp4", "clip.mp4")),
+			},
+		},
+		{
+			name: "PDF tool result becomes embedded resource",
+			msg:  gai.Message{Role: gai.ToolResult, Blocks: []gai.Block{pdfBlock}},
+			want: []acpsdk.SessionUpdate{
+				toolCallResultSessionUpdate(
+					"call-pdf",
+					acpsdk.ToolCallStatusCompleted,
+					embeddedBlobContentBlock(base64.StdEncoding.EncodeToString([]byte("%PDF-1.7")), "application/pdf", "report.pdf"),
+				),
 			},
 		},
 		{

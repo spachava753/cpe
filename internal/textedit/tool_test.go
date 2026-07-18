@@ -2,6 +2,7 @@ package textedit
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,11 +18,12 @@ const testSessionID acp.SessionId = "session-1"
 
 type recordingSessionUpdator struct {
 	updates []acp.SessionNotification
+	err     error
 }
 
 func (r *recordingSessionUpdator) SessionUpdate(ctx context.Context, params *acp.SessionNotification) error {
 	r.updates = append(r.updates, *params)
-	return nil
+	return r.err
 }
 
 var _ sessionUpdator = (*recordingSessionUpdator)(nil)
@@ -122,6 +124,31 @@ func TestMakeToolCallbackAppliesTextEdit(t *testing.T) {
 	diff := content[0]
 	if diff.Path != path || diff.NewText != wantContent {
 		t.Fatalf("diff = %#v, want path %q and new text hello", diff, path)
+	}
+}
+
+func TestMakeToolCallbackReturnsSessionUpdateErrorBeforeEditing(t *testing.T) {
+	t.Parallel()
+
+	updateErr := errors.New("session update failed")
+	updator := &recordingSessionUpdator{err: updateErr}
+	_, callback := MakeTool(testSessionID, updator)
+	path := filepath.Join(t.TempDir(), "file.txt")
+	toolCallID := acp.ToolCallId("call-update-error")
+
+	_, err := callback.Call(xctx.WithToolCallId(t.Context(), toolCallID), map[string]any{
+		"path":     path,
+		"new_text": wantContent,
+	})
+	if !errors.Is(err, updateErr) {
+		t.Fatalf("callback error = %v, want session update error", err)
+	}
+	if len(updator.updates) != 1 {
+		t.Fatalf("updates len = %d, want only in-progress attempt: %#v", len(updator.updates), updator.updates)
+	}
+	requireToolCallUpdate(t, updator.updates[0], toolCallID, acp.ToolCallStatusInProgress)
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("os.Stat(%q) error = %v, want file not to exist", path, err)
 	}
 }
 

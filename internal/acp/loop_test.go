@@ -1,16 +1,32 @@
 package acp
 
 import (
+	"context"
 	"math"
+	"strings"
 	"testing"
+	"text/template"
 
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
 )
+
+type resetCountingCallback struct {
+	resets int
+}
+
+func (c *resetCountingCallback) Call(context.Context, map[string]any) (gai.Message, error) {
+	return gai.Message{}, nil
+}
+
+func (c *resetCountingCallback) Reset() {
+	c.resets++
+}
 
 func TestLoopUsageSessionUpdate(t *testing.T) {
 	tests := []struct {
@@ -326,5 +342,93 @@ func TestLoopEffectiveGenOptsDoesNotMutateInputExtraArgs(t *testing.T) {
 	}
 	if override.ExtraArgs["custom"] != "value" {
 		t.Fatalf("override custom ExtraArgs = %#v, want value", override.ExtraArgs["custom"])
+	}
+}
+
+func TestLoopCompactionClearsStarlarkREPLState(t *testing.T) {
+	t.Parallel()
+
+	callback := &codemode.StarlarkREPLCallback{MaxTimeout: 5}
+	msg, err := callback.Call(t.Context(), map[string]any{
+		"code":             "answer = 42\nprint(answer)",
+		"executionTimeout": 2,
+	})
+	if err != nil {
+		t.Fatalf("initial Call() error = %v", err)
+	}
+	if msg.ToolResultError || len(msg.Blocks) != 1 || msg.Blocks[0].Content.String() != "42\n" {
+		t.Fatalf("initial Call() = %#v, want persisted answer", msg)
+	}
+
+	initialMessage := template.Must(template.New("compaction").Parse("compacted"))
+	loop := Loop{
+		Cfg: config.Config{Compaction: &config.CompactionConfig{
+			MaxCompactions:         1,
+			Tool:                   gai.Tool{Name: "compact_conversation"},
+			InitialMessageTemplate: initialMessage,
+		}},
+		toolCallbacks: map[string]gai.ToolCallback{
+			codemode.StarlarkREPLToolName: callback,
+		},
+	}
+	toolCall, err := gai.ToolCallBlock("compact-1", "compact_conversation", map[string]any{
+		"summary": "retain the important context",
+	})
+	if err != nil {
+		t.Fatalf("ToolCallBlock() error = %v", err)
+	}
+	if _, err := loop.compact(gai.Dialog{
+		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("large history")}},
+		{Role: gai.Assistant, Blocks: []gai.Block{toolCall}},
+	}); err != nil {
+		t.Fatalf("compact() error = %v", err)
+	}
+
+	msg, err = callback.Call(t.Context(), map[string]any{
+		"code":             "print(answer)",
+		"executionTimeout": 2,
+	})
+	if err != nil {
+		t.Fatalf("Call() after compaction error = %v", err)
+	}
+	if !msg.ToolResultError || len(msg.Blocks) != 1 || !strings.Contains(msg.Blocks[0].Content.String(), "undefined: answer") {
+		t.Fatalf("Call() after compaction = %#v, want cleared REPL state", msg)
+	}
+}
+
+func TestLoopCompactionResetsStatefulToolCallbacks(t *testing.T) {
+	t.Parallel()
+
+	initialMessage := template.Must(template.New("compaction").Parse("compacted: {{ index .ToolArguments \"summary\" }}"))
+	callback := &resetCountingCallback{}
+	loop := Loop{
+		Cfg: config.Config{Compaction: &config.CompactionConfig{
+			MaxCompactions:         1,
+			Tool:                   gai.Tool{Name: "compact_conversation"},
+			InitialMessageTemplate: initialMessage,
+		}},
+		toolCallbacks: map[string]gai.ToolCallback{
+			"starlark_repl": callback,
+		},
+	}
+	toolCall, err := gai.ToolCallBlock("compact-1", "compact_conversation", map[string]any{
+		"summary": "state to keep",
+	})
+	if err != nil {
+		t.Fatalf("ToolCallBlock() error = %v", err)
+	}
+
+	compacted, err := loop.compact(gai.Dialog{
+		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("large history")}},
+		{Role: gai.Assistant, Blocks: []gai.Block{toolCall}},
+	})
+	if err != nil {
+		t.Fatalf("compact() error = %v", err)
+	}
+	if len(compacted) != 1 || compacted[0].Blocks[0].Content.String() != "compacted: state to keep" {
+		t.Fatalf("compact() = %#v", compacted)
+	}
+	if callback.resets != 1 {
+		t.Fatalf("callback resets = %d, want 1", callback.resets)
 	}
 }

@@ -121,12 +121,12 @@ var mcpCallToolCmd = &cobra.Command{
 // mcpCodeDescCmd represents the 'mcp code-desc' subcommand
 var mcpCodeDescCmd = &cobra.Command{
 	Use:   "code-desc",
-	Short: "Print the execute_go_code tool description",
-	Long: `Generate and print the description for the execute_go_code tool.
+	Short: "Print the starlark_repl tool description",
+	Long: `Generate and print the description for the starlark_repl tool.
 
-This shows exactly what description would be provided to the LLM when code mode
-is enabled. Code mode executes generated Go code and does not expose MCP server
-tools as generated Go function bindings.`,
+This shows exactly what description is provided to the LLM when code mode is
+enabled. Code mode evaluates a session-scoped Starlark REPL with Dyson's
+host-backed standard-library modules.`,
 	Example: `  # Print code mode description with default model's settings
   cpe mcp code-desc
 

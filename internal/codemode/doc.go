@@ -1,23 +1,19 @@
 /*
-Package codemode implements CPE's execute_go_code feature.
+Package codemode implements CPE's starlark_repl feature.
 
-Code mode asks the model to generate a complete Go source file and executes it
-in a temporary sandbox module. It does not create MCP server connections or
-expose MCP tools as generated Go function bindings; MCP tools remain normal
-conversational tools registered by the ACP session runtime.
+Code mode evaluates model-generated Starlark in a session-scoped REPL. A Dyson
+Sphere owns the Starlark thread and globals, provides host-backed standard-library
+compatibility modules, and exposes a view_file builtin that returns local binary
+artifacts as multimodal tool-result blocks.
 
-Execution pipeline:
- 1. Generate the execute_go_code prompt and sandbox main.go harness.
- 2. Compile model-generated run.go into a temporary binary.
- 3. Run the binary through ACP terminal methods when the client supports
-    terminals, or directly in the CPE process when it does not.
- 4. Return combined output plus optional multimedia content from Run().
+REPL globals persist between tool calls. A successful conversation compaction
+discards the Sphere so the next evaluation starts with a fresh thread and state
+does not grow for the lifetime of a long conversation. Dyson's durable recording
+and replay features are intentionally disabled.
 
-Safety and reliability guarantees:
-  - execution timeouts are enforced (SIGINT then SIGKILL grace path,
-    targeting the local process group on Unix when CPE executes directly);
-  - recoverable failures (compile/runtime/panic/timeout) are returned as tool
-    results so the model can iterate;
-  - fatal harness failures are surfaced as hard errors to stop execution.
+Execution timeouts and prompt cancellation are propagated to the Sphere, which
+cancels its Starlark thread. Syntax, runtime, and timeout failures are returned as
+tool results so the model can iterate, while output is bounded by the configured
+large-output limit.
 */
 package codemode
