@@ -41,6 +41,26 @@ func (t *promptTestClient) notifications() []acp.SessionNotification {
 	return slices.Clone(t.capturedNotifications)
 }
 
+func (t *promptTestClient) waitForNotificationCount(tb *testing.T, want acp.SessionNotification, count int) {
+	tb.Helper()
+	deadline := time.After(5 * time.Second)
+	for range time.Tick(10 * time.Millisecond) {
+		notifications := t.notifications()
+		if countNotifications(notifications, want) >= count {
+			return
+		}
+
+		select {
+		case <-tb.Context().Done():
+			tb.Fatalf("context cancelled while waiting for %d matching notifications", count)
+		case <-deadline:
+			tb.Fatalf("timed out waiting for %d matching notifications; got %d: %#v", count, countNotifications(notifications, want), notifications)
+		default:
+		}
+	}
+	panic("unreachable")
+}
+
 func (t *promptTestClient) waitForNotifications(tb *testing.T, count int) []acp.SessionNotification {
 	tb.Helper()
 	deadline := time.After(5 * time.Second)
@@ -151,6 +171,7 @@ func TestSkillSlashCommands(t *testing.T) {
 		func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
 			gen := testGen{responses: []genFunc{
 				func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+					testClient.waitForNotificationCount(t, commandNotification, 3)
 					be.Equal(t, countNotifications(testClient.notifications(), commandNotification), 3)
 					be.Equal(t, len(d), 1)
 					be.Equal(t, d[0].Role, gai.User)
@@ -164,6 +185,7 @@ func TestSkillSlashCommands(t *testing.T) {
 					}, nil
 				},
 				func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+					testClient.waitForNotificationCount(t, commandNotification, 4)
 					commandNotificationSeen = countNotifications(testClient.notifications(), commandNotification)
 					be.Equal(t, commandNotificationSeen, 4)
 					be.Equal(t, len(d), 3)
@@ -221,6 +243,7 @@ func TestSkillSlashCommands(t *testing.T) {
 		Value:     "test-model",
 	})
 	be.Err(t, err, nil)
+	testClient.waitForNotificationCount(t, commandNotification, 1)
 	be.Equal(t, countNotifications(testClient.notifications(), commandNotification), 1)
 	_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
 		ConfigID:  modelRefConfigId,
@@ -228,6 +251,7 @@ func TestSkillSlashCommands(t *testing.T) {
 		Value:     "test-model",
 	})
 	be.Err(t, err, nil)
+	testClient.waitForNotificationCount(t, commandNotification, 2)
 	be.Equal(t, countNotifications(testClient.notifications(), commandNotification), 2)
 
 	promptResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
@@ -236,6 +260,7 @@ func TestSkillSlashCommands(t *testing.T) {
 	})
 	be.Err(t, err, nil)
 	be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
+	testClient.waitForNotificationCount(t, commandNotification, 3)
 	be.Equal(t, countNotifications(testClient.notifications(), commandNotification), 3)
 
 	promptResp, err = clientConn.Prompt(t.Context(), &acp.PromptRequest{
@@ -244,6 +269,7 @@ func TestSkillSlashCommands(t *testing.T) {
 	})
 	be.Err(t, err, nil)
 	be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
+	testClient.waitForNotificationCount(t, commandNotification, 4)
 	be.Equal(t, commandNotificationSeen, 4)
 	be.Equal(t, countNotifications(testClient.notifications(), commandNotification), 4)
 

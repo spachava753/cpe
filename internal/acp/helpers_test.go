@@ -113,10 +113,12 @@ func setup(
 	clientTransport, agentTransport := acp.NewInMemoryTransports()
 	agentCtx, cancelAgent := context.WithCancel(t.Context())
 	agentDone := make(chan error, 1)
+	agentConnected := make(chan struct{})
 	go func() {
 		agentDone <- acp.RunAgent(agentCtx, agentTransport, func(conn *acp.AgentConnection) any {
 			ag.conn = conn
 			adapter.conn = conn
+			close(agentConnected)
 			return &ag
 		})
 	}()
@@ -131,6 +133,12 @@ func setup(
 	clientConn, err := acp.Connect(t.Context(), clientTransport, client)
 	be.Err(t, err, nil)
 	t.Cleanup(func() { _ = clientConn.Close() })
+
+	select {
+	case <-agentConnected:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for test ACP agent connection")
+	}
 
 	t.Log("created connection")
 	return testSetup{
