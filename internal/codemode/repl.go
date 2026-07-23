@@ -39,13 +39,15 @@ func newStarlarkREPL(cwd string, outputLimit int) *starlarkREPL {
 		cwd:         cwd,
 		outputLimit: outputLimit,
 	}
+	stdlibConfig := dyson.HostStdlibConfig(cwd)
+	stdlibConfig.CommandRunner = dyson.HostCommandRunner()
 	r.sphere = dyson.NewSphere(
 		func(_ *starlark.Thread, msg string) {
 			if r.output != nil {
 				fmt.Fprintln(r.output, msg)
 			}
 		},
-		dyson.StdlibModules(),
+		dyson.StdlibModules(stdlibConfig),
 		starlark.StringDict{
 			"view_file": starlark.NewBuiltin("view_file", r.viewFile),
 		},
@@ -60,10 +62,11 @@ func (r *starlarkREPL) Eval(ctx context.Context, code string, timeout time.Durat
 	r.content = nil
 
 	timeoutErr := fmt.Errorf("execution timed out after %s", timeout)
-	executionCtx, cancel := context.WithTimeoutCause(ctx, timeout, timeoutErr)
+	// Let successful contexts expire naturally: canceling after Sphere.Eval returns
+	// can race Dyson's watcher and cancel the next chunk on the shared thread.
+	executionCtx, _ := context.WithTimeoutCause(ctx, timeout, timeoutErr)
 	err := r.sphere.Eval(executionCtx, code)
 	timedOut := errors.Is(context.Cause(executionCtx), timeoutErr)
-	cancel()
 
 	result := starlarkResult{
 		Output:   r.output.String(),
