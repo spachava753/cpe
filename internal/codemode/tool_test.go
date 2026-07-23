@@ -108,6 +108,65 @@ func TestStarlarkREPLCallbackPersistsStateAndResetStartsFreshSphere(t *testing.T
 	}
 }
 
+func TestStarlarkREPLCallbackRepeatedSuccessfulCallsRemainUncancelled(t *testing.T) {
+	t.Parallel()
+
+	callback := &StarlarkREPLCallback{MaxTimeout: 5}
+	for i := range 100 {
+		msg, err := callback.Call(t.Context(), map[string]any{
+			"code":             fmt.Sprintf("value = %d\nprint(value)", i),
+			"executionTimeout": 2,
+		})
+		if err != nil {
+			t.Fatalf("Call(%d) error = %v", i, err)
+		}
+		want := fmt.Sprintf("%d\n", i)
+		if msg.ToolResultError || len(msg.Blocks) != 1 || msg.Blocks[0].Content.String() != want {
+			t.Fatalf("Call(%d) = %#v, want %q", i, msg, want)
+		}
+	}
+}
+
+func TestStarlarkREPLCallbackRunsHostSubprocessInSessionDirectory(t *testing.T) {
+	t.Parallel()
+
+	cwd := t.TempDir()
+	callback := &StarlarkREPLCallback{MaxTimeout: 5, Cwd: cwd}
+	msg, err := callback.Call(t.Context(), map[string]any{
+		"code": `load("subprocess.star", "subprocess")
+result = subprocess.run(["pwd"], capture_output=True, text=True)
+print(result.stdout.strip())`,
+		"executionTimeout": 2,
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if msg.ToolResultError || len(msg.Blocks) != 1 || msg.Blocks[0].Content.String() != cwd+"\n" {
+		t.Fatalf("Call() = %#v, want host subprocess cwd %q", msg, cwd)
+	}
+}
+
+func TestStarlarkREPLCallbackCancelsHostSubprocessAtExecutionTimeout(t *testing.T) {
+	t.Parallel()
+
+	callback := &StarlarkREPLCallback{MaxTimeout: 5, Cwd: t.TempDir()}
+	started := time.Now()
+	msg, err := callback.Call(t.Context(), map[string]any{
+		"code": `load("subprocess.star", "subprocess")
+subprocess.run(["sleep", "10"])`,
+		"executionTimeout": 1,
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v, want recoverable tool result", err)
+	}
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Fatalf("Call() took %v, want subprocess cancellation near timeout", elapsed)
+	}
+	if !msg.ToolResultError || len(msg.Blocks) != 1 || !strings.Contains(msg.Blocks[0].Content.String(), "execution timed out after 1s") {
+		t.Fatalf("Call() = %#v, want timeout tool result", msg)
+	}
+}
+
 func TestStarlarkREPLCallbackReturnsOnlyPrintedText(t *testing.T) {
 	t.Parallel()
 
