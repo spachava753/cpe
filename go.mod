@@ -6,8 +6,6 @@ retract v0.16.10
 
 retract v0.22.6
 
-replace github.com/spachava753/dyson => /Users/shashankpachava/dev/dyson
-
 require (
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/anthropics/anthropic-sdk-go v1.61.0
@@ -28,7 +26,7 @@ require (
 	github.com/ncruces/go-sqlite3 v0.34.3
 	github.com/openai/openai-go/v3 v3.47.0
 	github.com/spachava753/acp-sdk v0.3.0
-	github.com/spachava753/dyson v0.0.0-20260708033035-e8bacb15b15e
+	github.com/spachava753/dyson v0.0.0-20260723020059-4fb62e38cfe3
 	github.com/spachava753/gai v0.42.0
 	github.com/spf13/cobra v1.10.2
 	github.com/yuin/goldmark v1.8.2
