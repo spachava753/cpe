@@ -62,9 +62,8 @@ func (r *starlarkREPL) Eval(ctx context.Context, code string, timeout time.Durat
 	r.content = nil
 
 	timeoutErr := fmt.Errorf("execution timed out after %s", timeout)
-	// Let successful contexts expire naturally: canceling after Sphere.Eval returns
-	// can race Dyson's watcher and cancel the next chunk on the shared thread.
-	executionCtx, _ := context.WithTimeoutCause(ctx, timeout, timeoutErr)
+	executionCtx, cancel := context.WithTimeoutCause(ctx, timeout, timeoutErr)
+	defer cancel()
 	err := r.sphere.Eval(executionCtx, code)
 	timedOut := errors.Is(context.Cause(executionCtx), timeoutErr)
 
