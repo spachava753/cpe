@@ -75,22 +75,19 @@ func TestHTTPClientConfiguration(t *testing.T) {
 	}
 }
 
-func TestModelRoundTripperRetriesRetryableResponseAndReplaysBody(t *testing.T) {
+func TestModelRoundTripperDoesNotRetryResponse(t *testing.T) {
 	const payload = `{"input":"hello"}`
 	attempts := 0
-	var bodies []string
+	var body string
 
 	base := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		attempts++
-		body, err := io.ReadAll(req.Body)
+		requestBody, err := io.ReadAll(req.Body)
 		if err != nil {
 			return nil, err
 		}
-		bodies = append(bodies, string(body))
-		status := http.StatusOK
-		if attempts == 1 {
-			status = http.StatusInternalServerError
-		}
+		body = string(requestBody)
+		status := http.StatusInternalServerError
 		return &http.Response{
 			StatusCode: status,
 			Status:     http.StatusText(status),
@@ -111,18 +108,18 @@ func TestModelRoundTripperRetriesRetryableResponseAndReplaysBody(t *testing.T) {
 		t.Fatalf("Do() error = %v", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusInternalServerError)
 	}
-	if attempts != 2 {
-		t.Fatalf("attempts = %d, want 2", attempts)
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts)
 	}
-	if len(bodies) != 2 || bodies[0] != payload || bodies[1] != payload {
-		t.Fatalf("bodies = %#v, want payload replayed twice", bodies)
+	if body != payload {
+		t.Fatalf("body = %q, want %q", body, payload)
 	}
 }
 
-func TestInitGeneratorFromModel_WrapsOnlyResponsesWithPhaseRetry(t *testing.T) {
+func TestInitGeneratorFromModel_WrapsAllModelsWithRetryAndOnlyResponsesWithPhaseRetry(t *testing.T) {
 	t.Setenv("TEST_OPENAI_API_KEY", "test-key")
 
 	responsesGen, err := InitGeneratorFromModel(t.Context(), config.Model{
@@ -133,8 +130,12 @@ func TestInitGeneratorFromModel_WrapsOnlyResponsesWithPhaseRetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("initGeneratorFromModel responses error = %v", err)
 	}
-	if _, ok := responsesGen.(*responsesPhaseRetryGenerator); !ok {
-		t.Fatalf("responses generator type = %T, want *responsesPhaseRetryGenerator", responsesGen)
+	responsesRetry, ok := responsesGen.(*gai.RetryGenerator)
+	if !ok {
+		t.Fatalf("responses generator type = %T, want *gai.RetryGenerator", responsesGen)
+	}
+	if _, ok := responsesRetry.Inner.(*responsesPhaseRetryGenerator); !ok {
+		t.Fatalf("responses retry inner type = %T, want *responsesPhaseRetryGenerator", responsesRetry.Inner)
 	}
 
 	openAIGen, err := InitGeneratorFromModel(t.Context(), config.Model{
@@ -145,8 +146,12 @@ func TestInitGeneratorFromModel_WrapsOnlyResponsesWithPhaseRetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("initGeneratorFromModel openai error = %v", err)
 	}
-	if _, ok := openAIGen.(*responsesPhaseRetryGenerator); ok {
-		t.Fatalf("openai generator type = %T, did not want *responsesPhaseRetryGenerator", openAIGen)
+	openAIRetry, ok := openAIGen.(*gai.RetryGenerator)
+	if !ok {
+		t.Fatalf("openai generator type = %T, want *gai.RetryGenerator", openAIGen)
+	}
+	if _, ok := openAIRetry.Inner.(*responsesPhaseRetryGenerator); ok {
+		t.Fatalf("openai retry inner type = %T, did not want *responsesPhaseRetryGenerator", openAIRetry.Inner)
 	}
 }
 
@@ -281,7 +286,7 @@ func TestAnthropicVertexRequestOptionsUseGoogleAuthAndVertexRequestShape(t *test
 	}
 }
 
-func TestAnthropicVertexRequestOptionsRetryResourceExhausted(t *testing.T) {
+func TestAnthropicVertexRequestOptionsDoNotRetryResourceExhausted(t *testing.T) {
 	const modelID = "claude-sonnet-4-6"
 	requestCount := 0
 	var bodies []string
@@ -324,12 +329,8 @@ func TestAnthropicVertexRequestOptionsRetryResourceExhausted(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		if requestCount == 1 {
-			w.WriteHeader(http.StatusTooManyRequests)
-			fmt.Fprint(w, `{"error":{"message":"quota exhausted","type":"RESOURCE_EXHAUSTED"}}`)
-			return
-		}
-		fmt.Fprint(w, `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"hi"}],"model":"claude-sonnet-4-6","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`)
+		w.WriteHeader(http.StatusTooManyRequests)
+		fmt.Fprint(w, `{"error":{"message":"quota exhausted","type":"RESOURCE_EXHAUSTED"}}`)
 	}))
 	defer server.Close()
 
@@ -348,14 +349,14 @@ func TestAnthropicVertexRequestOptionsRetryResourceExhausted(t *testing.T) {
 		Messages:  []a.MessageParam{a.NewUserMessage(a.NewTextBlock("hello"))},
 		Model:     a.Model(modelID),
 	})
-	if err != nil {
-		t.Fatalf("Messages.New() error = %v", err)
+	if err == nil {
+		t.Fatal("Messages.New() error = nil, want resource exhausted error")
 	}
-	if requestCount != 2 {
-		t.Fatalf("request count = %d, want 2", requestCount)
+	if requestCount != 1 {
+		t.Fatalf("request count = %d, want 1", requestCount)
 	}
-	if len(bodies) != 2 || bodies[0] != bodies[1] {
-		t.Fatalf("bodies = %#v, want identical replayed Vertex requests", bodies)
+	if len(bodies) != 1 {
+		t.Fatalf("bodies = %#v, want one Vertex request", bodies)
 	}
 }
 
@@ -406,11 +407,6 @@ func TestAnthropicVertexRequestOptionsApplyPatchRequest(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		if requestCount == 1 {
-			w.WriteHeader(http.StatusTooManyRequests)
-			fmt.Fprint(w, `{"error":{"message":"quota exhausted","type":"RESOURCE_EXHAUSTED"}}`)
-			return
-		}
 		fmt.Fprint(w, `{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"text","text":"hi"}],"model":"claude-sonnet-4-6","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`)
 	}))
 	defer server.Close()
@@ -440,8 +436,8 @@ func TestAnthropicVertexRequestOptionsApplyPatchRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Messages.New() error = %v", err)
 	}
-	if requestCount != 2 {
-		t.Fatalf("request count = %d, want 2", requestCount)
+	if requestCount != 1 {
+		t.Fatalf("request count = %d, want 1", requestCount)
 	}
 }
 

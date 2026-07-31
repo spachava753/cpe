@@ -25,6 +25,10 @@ Related packages:
   - internal/codemode owns the execute_go_code tool and sandbox execution.
 
 Behavioral notes:
+  - model HTTP transports and provider SDKs make one request attempt; a generator
+    wrapper owns transient provider retries, using jittered exponential delays
+    capped at two minutes for up to twelve hours; provider reset times exposed
+    by gai API errors may schedule a later retry within that overall budget;
   - provider block filtering preserves only provider-compatible thinking blocks
     when a session crosses model providers;
   - execute_go_code formatting helpers live in internal/codemode so ACP runtime

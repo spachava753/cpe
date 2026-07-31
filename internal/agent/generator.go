@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"strings"
@@ -22,7 +23,6 @@ import (
 
 	"github.com/spachava753/cpe/internal/auth"
 	"github.com/spachava753/cpe/internal/config"
-	"github.com/spachava753/cpe/internal/httpclient"
 )
 
 const (
@@ -30,6 +30,10 @@ const (
 	modelTypeAnthropicVertex   = "anthropic_vertex"
 	googleCloudPlatformScope   = "https://www.googleapis.com/auth/cloud-platform"
 	anthropicFeatureBetaHeader = "interleaved-thinking-2025-05-14,context-management-2025-06-27"
+	modelRetryInitialInterval  = time.Second
+	modelRetryMaxDelay         = 2 * time.Minute
+	modelRetryMaxElapsedTime   = 12 * time.Hour
+	modelRetryJitterFactor     = 0.2
 )
 
 var findDefaultGoogleCredentials = google.FindDefaultCredentials
@@ -38,25 +42,14 @@ var findDefaultGoogleCredentials = google.FindDefaultCredentials
 const ModelTypeResponses = "responses"
 
 func newModelHTTPClient(timeout time.Duration) *http.Client {
-	return httpclient.New(modelHTTPClientOptions(timeout)...)
+	return &http.Client{Timeout: timeout}
 }
 
 func newModelRoundTripper(base http.RoundTripper) http.RoundTripper {
-	opts := modelHTTPClientOptions(0)
-	opts = append(opts, httpclient.WithBaseTransport(base))
-	return httpclient.Transport(opts...)
-}
-
-func modelHTTPClientOptions(timeout time.Duration) []httpclient.Option {
-	opts := []httpclient.Option{
-		httpclient.WithBackoff(500*time.Millisecond, 30*time.Second),
-		httpclient.WithJitterFactor(0.2),
-		httpclient.WithMaxRetries(3),
+	if base == nil {
+		return http.DefaultTransport
 	}
-	if timeout > 0 {
-		opts = append(opts, httpclient.WithTimeout(timeout))
-	}
-	return opts
+	return base
 }
 
 func openAIRequestOptions(apiKey string, httpClient *http.Client, timeout time.Duration) []oaiopt.RequestOption {
@@ -228,7 +221,7 @@ func InitGeneratorFromModel(
 			if cred.Type != "oauth" {
 				return nil, fmt.Errorf("stored credential is not OAuth type")
 			}
-			// Build transport chain: PatchTransport -> OAuthTransport -> failsafe -> DefaultTransport.
+			// Build transport chain: PatchTransport -> OAuthTransport -> DefaultTransport.
 			// This order ensures OAuthTransport merges its headers with any headers
 			// set by PatchTransport, rather than PatchTransport overwriting OAuth headers.
 			oauthTransport := auth.NewOAuthTransport(newModelRoundTripper(nil), store)
@@ -325,7 +318,7 @@ func InitGeneratorFromModel(
 			if cred.Type != "oauth" {
 				return nil, fmt.Errorf("stored credential is not OAuth type")
 			}
-			// Build transport chain: PatchTransport -> OpenAIOAuthTransport -> failsafe -> DefaultTransport.
+			// Build transport chain: PatchTransport -> OpenAIOAuthTransport -> DefaultTransport.
 			oauthTransport := auth.NewOpenAIOAuthTransport(newModelRoundTripper(nil), store)
 			var finalTransport http.RoundTripper = oauthTransport
 			if m.PatchRequest != nil {
@@ -404,5 +397,20 @@ func InitGeneratorFromModel(
 		gen = newResponsesPhaseRetryGenerator(gen)
 	}
 
+	retryConfig := gai.RetryConfig{
+		Backoff: func(retry uint) (time.Duration, bool) {
+			interval := modelRetryInitialInterval
+			for current := uint(1); current < retry; current++ {
+				interval = min(interval*2, modelRetryMaxDelay)
+			}
+			jitter := int64(float64(interval) * modelRetryJitterFactor)
+			return interval - time.Duration(jitter) + time.Duration(rand.Int64N(2*jitter+1)), true
+		},
+		MaxElapsedTime: modelRetryMaxElapsedTime,
+	}
+	gen, ok := gai.Wrap(gen, gai.WithRetry(retryConfig)).(gai.ToolCallingGenerator)
+	if !ok {
+		panic("retry wrapper does not implement ToolCallingGenerator")
+	}
 	return gen, nil
 }
