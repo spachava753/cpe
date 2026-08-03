@@ -77,9 +77,9 @@ func (s *Sqlite) AddACPSessionMessage(ctx context.Context, sessionID acp.Session
 }
 
 // DeleteACPSession removes an ACP session from the persisted session list and
-// deletes the messages in its chain that are not reachable from any other ACP
-// session. History shared with other sessions (for example, a fork created via
-// session/fork) is preserved.
+// deletes its normal and pre-compaction history that is not reachable from any
+// other ACP session. History shared with other sessions and ancestors required
+// by orphaned branches are preserved.
 func (s *Sqlite) DeleteACPSession(ctx context.Context, sessionID acp.SessionId) error {
 	tx, err := beginWriteTx(ctx, s.db)
 	if err != nil {
@@ -213,4 +213,37 @@ func (s *Sqlite) ListACPSessions(ctx context.Context, cwd *string) ([]acp.Sessio
 		sessions = append(sessions, acpSessionInfo(row.ID, row.Cwd, row.Title, row.CreatedAt))
 	}
 	return sessions, nil
+}
+
+// ListACPSessionSummaries returns paginated session metadata ordered by last
+// modification time, newest first.
+func (s *Sqlite) ListACPSessionSummaries(ctx context.Context, opts ListACPSessionSummariesOptions) ([]ACPSessionSummary, error) {
+	const maxSQLiteInteger = uint64(1<<63 - 1)
+	if opts.Limit > maxSQLiteInteger {
+		return nil, errors.New("ACP session summary limit exceeds SQLite integer range")
+	}
+	if opts.Offset > maxSQLiteInteger {
+		return nil, errors.New("ACP session summary offset exceeds SQLite integer range")
+	}
+	rows, err := s.q.ListSessionSummaries(ctx, sqlcgen.ListSessionSummariesParams{
+		PageOffset: int64(opts.Offset),
+		PageSize:   int64(opts.Limit),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list ACP session summaries: %w", err)
+	}
+	summaries := make([]ACPSessionSummary, 0, len(rows))
+	for _, row := range rows {
+		lastModified := row.CreatedAt
+		if row.LastMessageCreatedAt.Valid && row.LastMessageCreatedAt.Time.After(lastModified) {
+			lastModified = row.LastMessageCreatedAt.Time
+		}
+		summaries = append(summaries, ACPSessionSummary{
+			SessionID:    acp.SessionId(row.ID),
+			Title:        row.Title,
+			CreatedAt:    row.CreatedAt,
+			LastModified: lastModified,
+		})
+	}
+	return summaries, nil
 }

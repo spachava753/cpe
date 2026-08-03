@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"iter"
 	"slices"
+	"time"
 
 	acp "github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
@@ -203,6 +204,22 @@ type MessagesGetter interface {
 	GetMessages(ctx context.Context, messageIDs []string) (iter.Seq[gai.Message], error)
 }
 
+// ACPSessionSummary is the persisted metadata shown by session inspection
+// clients. LastModified is the later of the session creation time and its head
+// message creation time.
+type ACPSessionSummary struct {
+	SessionID    acp.SessionId
+	Title        string
+	CreatedAt    time.Time
+	LastModified time.Time
+}
+
+// ListACPSessionSummariesOptions configures paginated session inspection.
+type ListACPSessionSummariesOptions struct {
+	Limit  uint64
+	Offset uint64
+}
+
 // GetACPSessionResponse is the result of loading ACP session metadata from
 // storage.
 type GetACPSessionResponse struct {
@@ -249,9 +266,9 @@ type ACPSessionMessageAdder interface {
 // ACPSessionDeleter deletes ACP session metadata and owned message data.
 type ACPSessionDeleter interface {
 	// DeleteACPSession removes sessionID from the persisted ACP session list and
-	// deletes the messages in its chain that are not reachable from any other
-	// ACP session. Messages shared with other sessions (such as forks created
-	// via session/fork) are preserved. It returns an error wrapping
+	// deletes its normal and pre-compaction history that is not reachable from
+	// any other ACP session. Messages shared with other sessions and ancestors
+	// required by orphaned branches are preserved. It returns an error wrapping
 	// ErrSessionNotFound when sessionID is missing.
 	DeleteACPSession(ctx context.Context, sessionID acp.SessionId) error
 }
@@ -334,6 +351,29 @@ func GetDialogForMessage(ctx context.Context, getter MessagesGetter, messageID s
 	slices.Reverse(collected)
 
 	return gai.Dialog(collected), nil
+}
+
+// GetDialogWithCompactions reconstructs the complete history ending at
+// messageID, including every prior dialog replaced by compaction. Compacted
+// branch roots remain in the result and retain MessageCompactionParentIDKey so
+// callers can render the boundaries explicitly.
+func GetDialogWithCompactions(ctx context.Context, getter MessagesGetter, messageID string) (gai.Dialog, error) {
+	dialog, err := GetDialogForMessage(ctx, getter, messageID)
+	if err != nil {
+		return nil, err
+	}
+	for len(dialog) > 0 {
+		compactionParentID, _ := dialog[0].ExtraFields[MessageCompactionParentIDKey].(string)
+		if compactionParentID == "" {
+			return dialog, nil
+		}
+		parentDialog, err := GetDialogForMessage(ctx, getter, compactionParentID)
+		if err != nil {
+			return nil, fmt.Errorf("get compaction parent dialog: %w", err)
+		}
+		dialog = append(parentDialog, dialog...)
+	}
+	return dialog, nil
 }
 
 // collectAncestorMessages walks from messageID to the root by following

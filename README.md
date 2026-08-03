@@ -248,6 +248,18 @@ CPE supports ACP session creation, loading, resumption, closing, deletion, and f
 
 Use `--db-path` or `CPE_DB_PATH` to override this location. Existing project-local `.cpeconvo` databases are not merged automatically; pass one through `--db-path` if you need to access its sessions.
 
+Manage persisted sessions directly from the CLI:
+
+```bash
+cpe acp list
+cpe acp list --page 2 --page-size 20
+cpe acp show <session-id>
+cpe acp fork <session-id>
+cpe acp delete <session-id>
+```
+
+`acp list` orders sessions by last activity, newest first. A newly created fork is considered modified at creation even when its shared head message is older. Page size is capped at 1000. `acp show` emits Markdown containing the complete history, including reasoning, tool calls and results, binary-content placeholders, and history from before every compaction. `acp fork` prints only the new session ID so it can be used in scripts.
+
 ### Model Selection
 
 ACP sessions default to the first configured model profile. CPE exposes model profiles and configured thinking levels as ACP session configuration options, so compatible clients can switch models or reasoning levels from the UI.
@@ -359,13 +371,19 @@ models:
 cpe [command]
 
 Root flags:
-  --config string   Path to YAML configuration file
-  -v, --version     Print the version number and exit
+  --config string    Path to YAML configuration file
+  --db-path string   ACP session SQLite database path (env: CPE_DB_PATH)
+  -v, --version      Print the version number and exit
 
 Commands:
-  acp
+  acp              Serve ACP and manage persisted sessions
     serve           Start the stdio ACP server
-                    --db-path string  ACP session SQLite database path
+    list, ls        List sessions by last activity, newest first
+                    --page uint       Page number, starting at 1 (default 1)
+                    --page-size uint  Sessions per page (default 20, maximum 1000)
+    show <id>       Render complete session history as Markdown
+    delete <id>     Delete a session
+    fork <id>       Fork a session and print the new session ID
 
   model, models     Inspect configured model profiles
     list, ls        List configured model refs

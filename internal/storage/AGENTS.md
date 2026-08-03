@@ -65,7 +65,7 @@ lines of local logic.
   requires the explicit recursive deletion path.
 - Blocks are ordered by `sequence_order` and are cascade-deleted with their
   message.
-- Session deletion preserves history reachable from another ACP session.
+- Session deletion removes unshared normal and pre-compaction history while preserving history reachable from another ACP session and ancestors required by orphaned branches left after optimistic conflicts.
 - Session advancement is optimistic: the stored last message must match the
   caller's expected message, or the operation returns `ErrSessionConflict`.
   Storage does not remove messages or reverse cost after that conflict.

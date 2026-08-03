@@ -2810,3 +2810,151 @@ func TestAddACPSessionCost(t *testing.T) {
 		t.Fatal("AddACPSessionCost on unknown session: expected error, got nil")
 	}
 }
+
+func TestDeleteACPSessionPreservesOrphanedConflictBranch(t *testing.T) {
+	db, _ := newTestDB(t)
+	ctx := t.Context()
+
+	root := saveDialog(t, db, ctx, []gai.Message{makeTextMessage(gai.User, "root")})[0]
+	rootID := GetMessageID(root)
+	if err := db.CreateACPSession(ctx, CreateACPSessionParams{
+		Session: acp.SessionInfo{
+			Cwd:       "/tmp/project",
+			SessionID: "conflicted-session",
+			Title:     new("Conflicted session"),
+		},
+		LastMessageID: rootID,
+		ModelRef:      testACPModelRef,
+	}); err != nil {
+		t.Fatalf("CreateACPSession: %v", err)
+	}
+
+	winningDialog := saveDialog(t, db, ctx, []gai.Message{
+		root,
+		makeTextMessage(gai.Assistant, "winning child"),
+	})
+	winningID := GetMessageID(winningDialog[1])
+	if _, err := db.AddACPSessionMessage(ctx, "conflicted-session", rootID, winningID); err != nil {
+		t.Fatalf("AddACPSessionMessage winning child: %v", err)
+	}
+
+	losingDialog := saveDialog(t, db, ctx, []gai.Message{
+		root,
+		makeTextMessage(gai.Assistant, "losing child"),
+	})
+	losingID := GetMessageID(losingDialog[1])
+	if _, err := db.AddACPSessionMessage(ctx, "conflicted-session", rootID, losingID); !errors.Is(err, ErrSessionConflict) {
+		t.Fatalf("AddACPSessionMessage losing child error = %v, want ErrSessionConflict", err)
+	}
+
+	if err := db.DeleteACPSession(ctx, "conflicted-session"); err != nil {
+		t.Fatalf("DeleteACPSession: %v", err)
+	}
+	if _, err := db.GetACPSession(ctx, "conflicted-session"); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("GetACPSession after delete error = %v, want ErrSessionNotFound", err)
+	}
+	if _, err := db.GetMessages(ctx, []string{winningID}); !errors.Is(err, ErrMessageNotFound) {
+		t.Fatalf("GetMessages winning child error = %v, want ErrMessageNotFound", err)
+	}
+	orphanedDialog, err := GetDialogForMessage(ctx, db, losingID)
+	if err != nil {
+		t.Fatalf("GetDialogForMessage losing child: %v", err)
+	}
+	if len(orphanedDialog) != 2 ||
+		orphanedDialog[0].Blocks[0].Content.String() != "root" ||
+		orphanedDialog[1].Blocks[0].Content.String() != "losing child" {
+		t.Fatalf("orphaned dialog = %#v", orphanedDialog)
+	}
+}
+
+func TestListACPSessionSummariesRejectsValuesBeyondSQLiteIntegerRange(t *testing.T) {
+	db, _ := newTestDB(t)
+	tooLarge := uint64(math.MaxInt64) + 1
+
+	if _, err := db.ListACPSessionSummaries(t.Context(), ListACPSessionSummariesOptions{
+		Limit: tooLarge,
+	}); err == nil || err.Error() != "ACP session summary limit exceeds SQLite integer range" {
+		t.Fatalf("oversized limit error = %v", err)
+	}
+	if _, err := db.ListACPSessionSummaries(t.Context(), ListACPSessionSummariesOptions{
+		Limit: 20, Offset: tooLarge,
+	}); err == nil || err.Error() != "ACP session summary offset exceeds SQLite integer range" {
+		t.Fatalf("oversized offset error = %v", err)
+	}
+}
+
+func TestListACPSessionSummariesPagination(t *testing.T) {
+	db, rawDB := newTestDB(t)
+	ctx := t.Context()
+
+	firstMessageID := saveOne(t, db, ctx, makeTextMessage(gai.User, "first"))
+	secondMessageID := saveOne(t, db, ctx, makeTextMessage(gai.User, "second"))
+	firstCreatedAt := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
+	secondCreatedAt := time.Date(2026, 7, 2, 9, 0, 0, 0, time.UTC)
+	emptyCreatedAt := time.Date(2026, 7, 4, 9, 0, 0, 0, time.UTC)
+	firstModifiedAt := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC)
+	secondModifiedAt := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+
+	for _, update := range []struct {
+		messageID string
+		createdAt time.Time
+	}{
+		{firstMessageID, firstModifiedAt},
+		{secondMessageID, secondModifiedAt},
+	} {
+		if _, err := rawDB.ExecContext(ctx, "UPDATE messages SET created_at = ? WHERE id = ?", update.createdAt, update.messageID); err != nil {
+			t.Fatalf("update message timestamp: %v", err)
+		}
+	}
+
+	for _, session := range []struct {
+		id            acp.SessionId
+		title         string
+		lastMessageID string
+		createdAt     time.Time
+	}{
+		{"first-session", "First", firstMessageID, firstCreatedAt},
+		{"second-session", "Second", secondMessageID, secondCreatedAt},
+		{"empty-session", "Empty", "", emptyCreatedAt},
+	} {
+		if err := db.CreateACPSession(ctx, CreateACPSessionParams{
+			Session: acp.SessionInfo{
+				Cwd:       "/tmp/project",
+				SessionID: session.id,
+				Title:     new(session.title),
+			},
+			LastMessageID: session.lastMessageID,
+			ModelRef:      testACPModelRef,
+		}); err != nil {
+			t.Fatalf("CreateACPSession(%s): %v", session.id, err)
+		}
+		if _, err := rawDB.ExecContext(ctx, "UPDATE acp_sessions SET created_at = ? WHERE id = ?", session.createdAt, session.id); err != nil {
+			t.Fatalf("update session timestamp: %v", err)
+		}
+	}
+
+	page, err := db.ListACPSessionSummaries(ctx, ListACPSessionSummariesOptions{Limit: 1, Offset: 1})
+	if err != nil {
+		t.Fatalf("ListACPSessionSummaries page: %v", err)
+	}
+	if len(page) != 1 || page[0].SessionID != "second-session" {
+		t.Fatalf("page = %#v, want second-session", page)
+	}
+	if page[0].CreatedAt != secondCreatedAt || page[0].LastModified != secondModifiedAt {
+		t.Fatalf("second session timestamps = (%v, %v), want (%v, %v)", page[0].CreatedAt, page[0].LastModified, secondCreatedAt, secondModifiedAt)
+	}
+
+	all, err := db.ListACPSessionSummaries(ctx, ListACPSessionSummariesOptions{Limit: 20})
+	if err != nil {
+		t.Fatalf("ListACPSessionSummaries all: %v", err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("len(all) = %d, want 3", len(all))
+	}
+	if all[0].SessionID != "first-session" || all[1].SessionID != "second-session" || all[2].SessionID != "empty-session" {
+		t.Fatalf("unexpected summary order: %#v", all)
+	}
+	if all[2].LastModified != emptyCreatedAt {
+		t.Fatalf("empty session LastModified = %v, want creation time %v", all[2].LastModified, emptyCreatedAt)
+	}
+}

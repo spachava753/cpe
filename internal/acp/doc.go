@@ -1,5 +1,6 @@
 /*
-Package acp implements CPE's Agent Client Protocol server.
+Package acp implements CPE's Agent Client Protocol server and persisted-session
+command operations.
 
 The server is launched by `cpe acp serve` and communicates with an ACP client
 over stdio JSON-RPC. It owns ACP session lifecycle, session configuration,
@@ -19,8 +20,10 @@ At session runtime, this package resolves the selected CPE model profile,
 renders the configured system prompt, initializes provider generators through
 internal/agent, registers built-in tools, connects configured and client-provided
 MCP servers, and persists session state through an injected SQLite store.
-Process-level config loading, database path selection, and storage lifecycle are
-composed by internal/cmd before the ACP server starts.
+Process-level config loading, database path selection, storage lifecycle, and
+Cobra wiring are composed by internal/cmd. Framework-agnostic helpers in this
+package list persisted sessions, render complete compaction-aware history as
+Markdown, delete sessions, and create shared-history forks for those commands.
 
 ACP prompt work attaches session_id and the session's immutable cwd to its
 context. Context-aware logs emitted by ACP and downstream MCP, skill discovery,

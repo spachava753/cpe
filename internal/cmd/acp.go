@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	acpsdk "github.com/spachava753/acp-sdk/acp"
 	"github.com/spf13/cobra"
 
 	"github.com/spachava753/cpe/internal/acp"
@@ -10,14 +11,17 @@ import (
 	"github.com/spachava753/cpe/internal/storage"
 )
 
-// acpCmd groups commands for running CPE through the Agent Client Protocol.
+var (
+	acpListPage     uint64 = 1
+	acpListPageSize uint64 = 20
+)
+
+// acpCmd groups commands for serving ACP and managing persisted sessions.
 var acpCmd = &cobra.Command{
 	Use:   "acp",
-	Short: "Run CPE as an ACP server",
-	Long: `Run CPE through the Agent Client Protocol (ACP).
-
-CPE is meant to be launched by an ACP-compatible client, such as Zed, which
-starts the server process and communicates with it over stdio JSON-RPC.`,
+	Short: "Serve ACP and manage sessions",
+	Long: `Run CPE through the Agent Client Protocol (ACP) or inspect and manage
+persisted ACP sessions.`,
 }
 
 // acpServeCmd starts the stdio ACP server used by editor clients.
@@ -56,7 +60,88 @@ https://zed.dev/docs/ai/external-agents`,
 	},
 }
 
+var acpListCmd = &cobra.Command{
+	Use:     "list",
+	Aliases: []string{"ls"},
+	Short:   "List persisted ACP sessions",
+	Args:    cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		store, err := storage.NewConvoDB(cmd.Context(), conversationStoragePath)
+		if err != nil {
+			return fmt.Errorf("could not open conversation storage: %w", err)
+		}
+		defer func() { _ = store.Close() }()
+
+		return acp.ListStoredSessions(cmd.Context(), acp.ListStoredSessionsOptions{
+			Store:    store,
+			Writer:   cmd.OutOrStdout(),
+			Page:     acpListPage,
+			PageSize: acpListPageSize,
+		})
+	},
+}
+
+var acpShowCmd = &cobra.Command{
+	Use:   "show <session-id>",
+	Short: "Show an ACP session as Markdown",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		store, err := storage.NewConvoDB(cmd.Context(), conversationStoragePath)
+		if err != nil {
+			return fmt.Errorf("could not open conversation storage: %w", err)
+		}
+		defer func() { _ = store.Close() }()
+
+		return acp.ShowStoredSession(cmd.Context(), acp.ShowStoredSessionOptions{
+			Store:     store,
+			Writer:    cmd.OutOrStdout(),
+			SessionID: acpsdk.SessionId(args[0]),
+		})
+	},
+}
+
+var acpDeleteCmd = &cobra.Command{
+	Use:   "delete <session-id>",
+	Short: "Delete an ACP session",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		store, err := storage.NewConvoDB(cmd.Context(), conversationStoragePath)
+		if err != nil {
+			return fmt.Errorf("could not open conversation storage: %w", err)
+		}
+		defer func() { _ = store.Close() }()
+
+		return acp.DeleteStoredSession(cmd.Context(), store, acpsdk.SessionId(args[0]))
+	},
+}
+
+var acpForkCmd = &cobra.Command{
+	Use:   "fork <session-id>",
+	Short: "Fork an ACP session",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		store, err := storage.NewConvoDB(cmd.Context(), conversationStoragePath)
+		if err != nil {
+			return fmt.Errorf("could not open conversation storage: %w", err)
+		}
+		defer func() { _ = store.Close() }()
+
+		return acp.ForkStoredSession(cmd.Context(), acp.ForkStoredSessionOptions{
+			Store:     store,
+			Writer:    cmd.OutOrStdout(),
+			SessionID: acpsdk.SessionId(args[0]),
+		})
+	},
+}
+
 func init() {
+	acpListCmd.Flags().Uint64Var(&acpListPage, "page", 1, "Page number (starting at 1)")
+	acpListCmd.Flags().Uint64Var(&acpListPageSize, "page-size", 20, "Number of sessions per page (maximum 1000)")
+
 	acpCmd.AddCommand(acpServeCmd)
+	acpCmd.AddCommand(acpListCmd)
+	acpCmd.AddCommand(acpShowCmd)
+	acpCmd.AddCommand(acpDeleteCmd)
+	acpCmd.AddCommand(acpForkCmd)
 	rootCmd.AddCommand(acpCmd)
 }

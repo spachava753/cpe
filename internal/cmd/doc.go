@@ -6,8 +6,8 @@
 // This package is intentionally thin: it binds flags, validates CLI-level
 // arguments, composes process-lifetime config and storage dependencies, and
 // delegates feature logic to domain packages. The primary runtime entrypoint is
-// `cpe acp serve`, which starts the ACP server in internal/acp; the remaining
-// commands are local inspection and account helpers.
+// `cpe acp serve`, while the remaining commands provide local inspection,
+// persisted-session management, and account helpers.
 //
 // Contract:
 //   - keep command handlers focused on Cobra wiring and CLI argument mapping;

@@ -257,20 +257,9 @@ func (a *Agent) LoadSession(ctx context.Context, params *acp.LoadSessionRequest)
 	if err != nil {
 		return nil, fmt.Errorf("could get acp session from db: %v", err)
 	}
-	dialog, err := storage.GetDialogForMessage(ctx, a.db, acpSession.LastMessageID)
+	dialog, err := storage.GetDialogWithCompactions(ctx, a.db, acpSession.LastMessageID)
 	if err != nil {
 		return nil, fmt.Errorf("could not get dialog from db: %v", err)
-	}
-	for len(dialog) > 0 {
-		compactionParentID, _ := dialog[0].ExtraFields[storage.MessageCompactionParentIDKey].(string)
-		if compactionParentID == "" {
-			break
-		}
-		parentDialog, err := storage.GetDialogForMessage(ctx, a.db, compactionParentID)
-		if err != nil {
-			return nil, fmt.Errorf("could not get compaction parent dialog from db: %v", err)
-		}
-		dialog = append(parentDialog, dialog...)
 	}
 	for _, msg := range dialog {
 		for update := range xacp.MsgToSessionUpdate(msg) {
