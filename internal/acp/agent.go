@@ -16,6 +16,9 @@ import (
 	"github.com/spachava753/cpe/internal/version"
 )
 
+const replStateMissingWarningText = `[REPL STATE RESET]
+This conversation was loaded, resumed, or forked into a fresh runtime. The previous starlark_repl state is unavailable, including globals, functions, loaded modules, and retained resources from earlier calls. Recreate any required REPL state before continuing.`
+
 // runtimeFactory is the type to represent a factory that will
 // construct the runtime that actually executes the agent loop
 // on call the [Agent.Prompt]
@@ -193,7 +196,11 @@ func (a *Agent) Prompt(
 		}
 	}
 	expandedPrompt := expandSkillSlashCommands(params.Prompt, sessionSnapshot.skillCatalog)
-	dialog = append(dialog, xacp.PromptToMessage(cancelCtx, expandedPrompt))
+	promptMessage := xacp.PromptToMessage(cancelCtx, expandedPrompt)
+	if sessionSnapshot.replStateMissing {
+		promptMessage.Blocks = append(promptMessage.Blocks, gai.TextBlock(replStateMissingWarningText))
+	}
+	dialog = append(dialog, promptMessage)
 
 	if runtime == nil {
 		runtime, err = a.runtimeFactory.Create(cancelCtx, sessionSnapshot, a.clientCaps)
@@ -258,6 +265,14 @@ func (a *Agent) Prompt(
 	}
 	if err != nil {
 		return nil, fmt.Errorf("cannot update ACP session in db: %w", err)
+	}
+	if sessionSnapshot.replStateMissing {
+		if err := s.Do(func(t *session) error {
+			t.replStateMissing = false
+			return nil
+		}); err != nil {
+			return nil, err
+		}
 	}
 
 	// Compaction can replace the input history with a shorter rebased dialog.

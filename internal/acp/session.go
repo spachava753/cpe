@@ -38,6 +38,8 @@ type session struct {
 	// session state
 	runtime    runtime
 	cancelfunc context.CancelFunc
+	// replStateMissing is cleared after its one-time warning is persisted.
+	replStateMissing bool
 }
 
 func (a *Agent) activeSession(sessionID acp.SessionId) (*sync.Guard[session], error) {
@@ -182,9 +184,10 @@ func (a *Agent) loadActiveSession(
 			}
 		}
 		a.activeSessions.Store(sessionId, sync.NewGuard(session{
-			id:         sessionId,
-			cwd:        cwd,
-			mcpServers: mcpServers,
+			id:               sessionId,
+			cwd:              cwd,
+			mcpServers:       mcpServers,
+			replStateMissing: true,
 		}))
 		return a.configOptions(ctx, sessionId), nil
 	}
@@ -202,9 +205,10 @@ func (a *Agent) loadActiveSession(
 			return nil, fmt.Errorf("could not update thinking level config: %v", err)
 		}
 		a.activeSessions.Store(sessionId, sync.NewGuard(session{
-			id:         sessionId,
-			cwd:        cwd,
-			mcpServers: mcpServers,
+			id:               sessionId,
+			cwd:              cwd,
+			mcpServers:       mcpServers,
+			replStateMissing: true,
 		}))
 		return a.configOptions(ctx, sessionId), nil
 	}
@@ -225,11 +229,12 @@ func (a *Agent) loadActiveSession(
 	}
 
 	s := session{
-		id:         sessionId,
-		cwd:        cwd,
-		model:      modelRef,
-		thinking:   thinkingLevel,
-		mcpServers: mcpServers,
+		id:               sessionId,
+		cwd:              cwd,
+		model:            modelRef,
+		thinking:         thinkingLevel,
+		mcpServers:       mcpServers,
+		replStateMissing: true,
 	}
 
 	a.activeSessions.Store(sessionId, sync.NewGuard(s))
@@ -334,11 +339,12 @@ func (a *Agent) ForkSession(
 	}
 
 	a.activeSessions.Store(id, sync.NewGuard(session{
-		id:         id,
-		cwd:        params.Cwd,
-		model:      modelRef,
-		thinking:   thinkingLevel,
-		mcpServers: params.McpServers,
+		id:               id,
+		cwd:              params.Cwd,
+		model:            modelRef,
+		thinking:         thinkingLevel,
+		mcpServers:       params.McpServers,
+		replStateMissing: true,
 	}))
 
 	opts := a.configOptions(ctx, id)

@@ -7,9 +7,13 @@ resources. CPE enables filesystem, process, and HTTP access, and exposes a
 view_file builtin that returns local binary artifacts as multimodal tool-result
 blocks.
 
-REPL globals persist between tool calls. A successful conversation compaction
-closes and discards the Sphere so the next evaluation starts with a fresh thread
-and state does not grow for the lifetime of a long conversation.
+REPL globals persist between tool calls while the owning session runtime remains
+active. A Sphere is not serialized with persisted conversation history, so an
+ACP session reconstructed by load or resume and every fork starts with a fresh
+REPL. ACP warns the model on the next user prompt in those cases. A successful
+conversation compaction also closes and discards the Sphere so the next
+evaluation starts with a fresh thread and state does not grow for the lifetime
+of a long conversation.
 
 Execution timeouts and prompt cancellation are propagated to the Sphere, which
 cancels its Starlark thread. Syntax, runtime, and timeout failures are returned as

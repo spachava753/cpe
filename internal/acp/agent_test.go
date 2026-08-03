@@ -389,6 +389,152 @@ func TestSkillSlashCommandsLifecycleMethodsDoNotPublish(t *testing.T) {
 	})
 }
 
+func TestPromptAppendsMissingREPLStateWarning(t *testing.T) {
+	tests := []struct {
+		name       string
+		activate   func(*testing.T, *acp.Client, string, acp.SessionId) acp.SessionId
+		reactivate func(*testing.T, *acp.Client, string, acp.SessionId)
+	}{
+		{
+			name: "resume",
+			activate: func(t *testing.T, client *acp.Client, cwd string, sourceID acp.SessionId) acp.SessionId {
+				t.Helper()
+				_, err := client.ResumeSession(t.Context(), &acp.ResumeSessionRequest{
+					Cwd: cwd, SessionID: sourceID,
+				})
+				be.Err(t, err, nil)
+				return sourceID
+			},
+			reactivate: func(t *testing.T, client *acp.Client, cwd string, sessionID acp.SessionId) {
+				t.Helper()
+				_, err := client.ResumeSession(t.Context(), &acp.ResumeSessionRequest{
+					Cwd: cwd, SessionID: sessionID,
+				})
+				be.Err(t, err, nil)
+			},
+		},
+		{
+			name: "load",
+			activate: func(t *testing.T, client *acp.Client, cwd string, sourceID acp.SessionId) acp.SessionId {
+				t.Helper()
+				_, err := client.LoadSession(t.Context(), &acp.LoadSessionRequest{
+					Cwd: cwd, SessionID: sourceID,
+				})
+				be.Err(t, err, nil)
+				return sourceID
+			},
+			reactivate: func(t *testing.T, client *acp.Client, cwd string, sessionID acp.SessionId) {
+				t.Helper()
+				_, err := client.LoadSession(t.Context(), &acp.LoadSessionRequest{
+					Cwd: cwd, SessionID: sessionID,
+				})
+				be.Err(t, err, nil)
+			},
+		},
+		{
+			name: "fork",
+			activate: func(t *testing.T, client *acp.Client, cwd string, sourceID acp.SessionId) acp.SessionId {
+				t.Helper()
+				resp, err := client.ForkSession(t.Context(), &acp.ForkSessionRequest{
+					Cwd: cwd, SessionID: sourceID,
+				})
+				be.Err(t, err, nil)
+				return resp.SessionID
+			},
+			reactivate: func(t *testing.T, client *acp.Client, cwd string, sessionID acp.SessionId) {
+				t.Helper()
+				_, err := client.ResumeSession(t.Context(), &acp.ResumeSessionRequest{
+					Cwd: cwd, SessionID: sessionID,
+				})
+				be.Err(t, err, nil)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var (
+				store     *storage.Sqlite
+				prompted  []gai.Message
+				createdAt []session
+			)
+			fixture := setup(
+				t,
+				&noOpAcpClient{},
+				&config.RawConfig{Models: []config.ModelConfig{{
+					Model: config.Model{Ref: "test-model", DisplayName: "Test Model"},
+				}}},
+				func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
+					createdAt = append(createdAt, s)
+					return &closeTrackingRuntime{generate: func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
+						prompted = append(prompted, dialog[len(dialog)-1])
+						generated := append(dialog, gai.Message{
+							Role:   gai.Assistant,
+							Blocks: []gai.Block{gai.TextBlock("answer")},
+						})
+						saved := make(gai.Dialog, 0, len(generated))
+						for msg, err := range store.SaveDialog(ctx, slices.Values(generated)) {
+							if err != nil {
+								return nil, err
+							}
+							saved = append(saved, msg)
+						}
+						return saved, nil
+					}}, nil
+				},
+			)
+			client := fixture.ClientConn
+			store = fixture.Store
+			_, err := client.Initialize(t.Context(), &acp.InitializeRequest{
+				ProtocolVersion: acp.ProtocolVersion(1),
+			})
+			be.Err(t, err, nil)
+
+			history := gai.Dialog{
+				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("set x in the REPL")}},
+				{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("x is set")}},
+			}
+			var lastMessageID string
+			for msg, err := range store.SaveDialog(t.Context(), slices.Values(history)) {
+				be.Err(t, err, nil)
+				lastMessageID = storage.GetMessageID(msg)
+			}
+			cwd := t.TempDir()
+			sourceID := acp.SessionId("source-session")
+			be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
+				Session:       acp.SessionInfo{Cwd: cwd, SessionID: sourceID},
+				LastMessageID: lastMessageID,
+				ModelRef:      "test-model",
+			}), nil)
+
+			sessionID := tt.activate(t, client, cwd, sourceID)
+			_, err = client.Prompt(t.Context(), &acp.PromptRequest{
+				SessionID: sessionID,
+				Prompt:    []acp.ContentBlock{acp.TextContentBlock("continue")},
+			})
+			be.Err(t, err, nil)
+
+			tt.reactivate(t, client, cwd, sessionID)
+			_, err = client.Prompt(t.Context(), &acp.PromptRequest{
+				SessionID: sessionID,
+				Prompt:    []acp.ContentBlock{acp.TextContentBlock("continue again")},
+			})
+			be.Err(t, err, nil)
+
+			be.Equal(t, len(createdAt), 1)
+			be.True(t, createdAt[0].replStateMissing)
+			be.Equal(t, len(prompted), 2)
+			be.Equal(t, prompted[0].Role, gai.User)
+			be.Equal(t, len(prompted[0].Blocks), 2)
+			be.Equal(t, prompted[0].Blocks[0].Content.String(), "continue")
+			be.Equal(t, prompted[0].Blocks[1].Content.String(), replStateMissingWarningText)
+			be.Equal(t, prompted[1].Role, gai.User)
+			be.Equal(t, len(prompted[1].Blocks), 1)
+			be.Equal(t, prompted[1].Blocks[0].Content.String(), "continue again")
+		})
+	}
+}
+
 func TestPrompt(t *testing.T) {
 	t.Run("rejects prompt before model selection", func(t *testing.T) {
 		fixture := setup(
@@ -480,6 +626,10 @@ func TestPrompt(t *testing.T) {
 				gen := testGen{
 					responses: []genFunc{
 						func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+							be.Equal(t, len(d), 1)
+							be.Equal(t, d[0].Role, gai.User)
+							be.Equal(t, len(d[0].Blocks), 1)
+							be.Equal(t, d[0].Blocks[0].Content.String(), "Hello")
 							return gai.Response{
 								Candidates: []gai.Message{{
 									Role: gai.Assistant,

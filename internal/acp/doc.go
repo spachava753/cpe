@@ -24,6 +24,10 @@ Process-level config loading, database path selection, storage lifecycle, and
 Cobra wiring are composed by internal/cmd. Framework-agnostic helpers in this
 package list persisted sessions, render complete compaction-aware history as
 Markdown, delete sessions, and create shared-history forks for those commands.
+A session's Starlark REPL is process-local and is not part of persisted history.
+When load or resume reconstructs inactive session state, or fork creates a new
+branch runtime, ACP appends a one-time reset warning to the next user prompt so
+the model does not rely on REPL globals or resources from the prior runtime.
 
 ACP prompt work attaches session_id and the session's immutable cwd to its
 context. Context-aware logs emitted by ACP and downstream MCP, skill discovery,
