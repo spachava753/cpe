@@ -2,14 +2,14 @@
 Package codemode implements CPE's starlark_repl feature.
 
 Code mode evaluates model-generated Starlark in a session-scoped REPL. A Dyson
-Sphere owns the Starlark thread and globals, provides host-backed standard-library
-compatibility modules, and exposes a view_file builtin that returns local binary
-artifacts as multimodal tool-result blocks.
+Sphere owns the Starlark thread, globals, compatibility library, and retained
+resources. CPE enables filesystem, process, and HTTP access, and exposes a
+view_file builtin that returns local binary artifacts as multimodal tool-result
+blocks.
 
 REPL globals persist between tool calls. A successful conversation compaction
-discards the Sphere so the next evaluation starts with a fresh thread and state
-does not grow for the lifetime of a long conversation. Dyson's durable recording
-and replay features are intentionally disabled.
+closes and discards the Sphere so the next evaluation starts with a fresh thread
+and state does not grow for the lifetime of a long conversation.
 
 Execution timeouts and prompt cancellation are propagated to the Sphere, which
 cancels its Starlark thread. Syntax, runtime, and timeout failures are returned as

@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -56,6 +58,91 @@ func requireExecutionStatus(
 	}
 	if got.Update.Kind == nil || *got.Update.Kind != acp.ToolKindOther {
 		t.Fatalf("Kind = %#v, want %q", got.Update.Kind, acp.ToolKindOther)
+	}
+}
+
+func TestStarlarkREPLCallbackSupportsOpenAndBytesDecode(t *testing.T) {
+	t.Parallel()
+
+	cwd := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cwd, "note.txt"), []byte("hello from Dyson"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	callback := &StarlarkREPLCallback{MaxTimeout: 5, Cwd: cwd}
+	msg, err := callback.Call(t.Context(), map[string]any{
+		"code": `file = open("note.txt")
+print(file.read())
+file.close()
+load("os.star", "os")
+fd = os.open("note.txt", os.O_RDONLY)
+data = os.read(fd, 100)
+os.close(fd)
+print(data.decode("utf-8"))`,
+		"executionTimeout": 2,
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if msg.ToolResultError || len(msg.Blocks) != 1 || msg.Blocks[0].Content.String() != "hello from Dyson\nhello from Dyson\n" {
+		t.Fatalf("Call() = %#v, want open and bytes.decode output", msg)
+	}
+}
+
+func TestStarlarkREPLCallbackAllowsHTTPRequests(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/status" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"ok":true}`)
+	}))
+	defer server.Close()
+
+	callback := &StarlarkREPLCallback{MaxTimeout: 5, Cwd: t.TempDir()}
+	msg, err := callback.Call(t.Context(), map[string]any{
+		"code": fmt.Sprintf(`load("requests.star", "requests")
+response = requests.get(%q)
+print(response.status_code)
+print(response.text)`, server.URL+"/status"),
+		"executionTimeout": 2,
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if msg.ToolResultError || len(msg.Blocks) != 1 || msg.Blocks[0].Content.String() != "200\n{\"ok\":true}\n" {
+		t.Fatalf("Call() = %#v, want successful HTTP response", msg)
+	}
+}
+
+func TestStarlarkREPLCallbackResetClosesOpenFiles(t *testing.T) {
+	t.Parallel()
+
+	cwd := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cwd, "note.txt"), []byte("contents"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	callback := &StarlarkREPLCallback{MaxTimeout: 5, Cwd: cwd}
+	msg, err := callback.Call(t.Context(), map[string]any{
+		"code":             `file = open("note.txt")`,
+		"executionTimeout": 2,
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v", err)
+	}
+	if msg.ToolResultError {
+		t.Fatalf("Call() returned tool error: %#v", msg)
+	}
+	file := callback.repl.sphere
+
+	callback.Reset()
+	if callback.repl != nil {
+		t.Fatal("Reset() retained the evaluator")
+	}
+	if err := file.Eval(t.Context(), `file.read()`); err == nil || !strings.Contains(err.Error(), "sphere is closed") {
+		t.Fatalf("Eval() after Reset error = %v, want closed sphere", err)
 	}
 }
 
@@ -666,7 +753,7 @@ view_file("video.mp4", mime_type="video/mp4")`,
 	}
 }
 
-func TestStarlarkREPLCallbackLoadsDysonModulesWithoutRecording(t *testing.T) {
+func TestStarlarkREPLCallbackLoadsDysonModulesAndGlobals(t *testing.T) {
 	t.Parallel()
 
 	callback := &StarlarkREPLCallback{MaxTimeout: 5}
@@ -693,9 +780,6 @@ func TestStarlarkREPLCallbackLoadsDysonModulesWithoutRecording(t *testing.T) {
 	}
 	if got := msg.Blocks[0].Content.String(); got != `["12", "34"]`+"\n" {
 		t.Fatalf("module reuse Call() output = %q, want Dyson re module result", got)
-	}
-	if got := len(callback.repl.sphere.Log()); got != 0 {
-		t.Fatalf("Sphere.Log() length = %d, want durability disabled", got)
 	}
 }
 
@@ -837,6 +921,12 @@ func TestMakeToolUsesStarlarkREPLContract(t *testing.T) {
 	}
 	if !strings.Contains(tool.Description, "view_file") {
 		t.Fatalf("MakeTool().Description does not document view_file: %q", tool.Description)
+	}
+	if !strings.Contains(tool.Description, "requests.star") {
+		t.Fatalf("MakeTool().Description does not document HTTP requests: %q", tool.Description)
+	}
+	if !strings.Contains(tool.Description, "global `open") {
+		t.Fatalf("MakeTool().Description does not document open: %q", tool.Description)
 	}
 	if tool.InputSchema == nil || tool.InputSchema.Type != "object" {
 		t.Fatalf("MakeTool().InputSchema = %#v, want object schema", tool.InputSchema)
