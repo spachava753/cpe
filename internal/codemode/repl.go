@@ -41,20 +41,23 @@ func newStarlarkREPL(cwd string, outputLimit int) *starlarkREPL {
 	}
 	stdlibConfig := dyson.HostStdlibConfig(cwd)
 	stdlibConfig.CommandRunner = dyson.HostCommandRunner()
+	stdlibConfig.HTTPClient = dyson.HostHTTPClient()
 	r.sphere = dyson.NewSphere(
 		func(_ *starlark.Thread, msg string) {
 			if r.output != nil {
 				fmt.Fprintln(r.output, msg)
 			}
 		},
-		dyson.StdlibModules(stdlibConfig),
-		starlark.StringDict{
+		dyson.NewStdlib(stdlibConfig),
+		dyson.GlobalSet{
 			"view_file": starlark.NewBuiltin("view_file", r.viewFile),
 		},
-		nil,
-		false,
 	)
 	return r
+}
+
+func (r *starlarkREPL) Close() error {
+	return r.sphere.Close()
 }
 
 func (r *starlarkREPL) Eval(ctx context.Context, code string, timeout time.Duration) (starlarkResult, error) {

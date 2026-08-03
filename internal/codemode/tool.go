@@ -44,6 +44,9 @@ type StarlarkREPLCallback struct {
 func (c *StarlarkREPLCallback) Reset() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.repl != nil {
+		_ = c.repl.Close()
+	}
 	c.repl = nil
 }
 
