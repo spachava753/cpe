@@ -408,9 +408,13 @@ func InitGeneratorFromModel(
 		},
 		MaxElapsedTime: modelRetryMaxElapsedTime,
 	}
-	gen, ok := gai.Wrap(gen, gai.WithRetry(retryConfig)).(gai.ToolCallingGenerator)
+	gen, ok := gai.Wrap(
+		gen,
+		withNetworkRetry(),
+		gai.WithRetry(retryConfig),
+	).(gai.ToolCallingGenerator)
 	if !ok {
-		panic("retry wrapper does not implement ToolCallingGenerator")
+		panic("generator wrappers do not implement ToolCallingGenerator")
 	}
 	return gen, nil
 }

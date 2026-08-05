@@ -119,7 +119,7 @@ func TestModelRoundTripperDoesNotRetryResponse(t *testing.T) {
 	}
 }
 
-func TestInitGeneratorFromModel_WrapsAllModelsWithRetryAndOnlyResponsesWithPhaseRetry(t *testing.T) {
+func TestInitGeneratorFromModel_WrapsAllModelsWithNetworkAndProviderRetryAndOnlyResponsesWithPhaseRetry(t *testing.T) {
 	t.Setenv("TEST_OPENAI_API_KEY", "test-key")
 
 	responsesGen, err := InitGeneratorFromModel(t.Context(), config.Model{
@@ -130,9 +130,13 @@ func TestInitGeneratorFromModel_WrapsAllModelsWithRetryAndOnlyResponsesWithPhase
 	if err != nil {
 		t.Fatalf("initGeneratorFromModel responses error = %v", err)
 	}
-	responsesRetry, ok := responsesGen.(*gai.RetryGenerator)
+	responsesNetworkRetry, ok := responsesGen.(*networkRetryGenerator)
 	if !ok {
-		t.Fatalf("responses generator type = %T, want *gai.RetryGenerator", responsesGen)
+		t.Fatalf("responses generator type = %T, want *networkRetryGenerator", responsesGen)
+	}
+	responsesRetry, ok := responsesNetworkRetry.Inner.(*gai.RetryGenerator)
+	if !ok {
+		t.Fatalf("responses network retry inner type = %T, want *gai.RetryGenerator", responsesNetworkRetry.Inner)
 	}
 	if _, ok := responsesRetry.Inner.(*responsesPhaseRetryGenerator); !ok {
 		t.Fatalf("responses retry inner type = %T, want *responsesPhaseRetryGenerator", responsesRetry.Inner)
@@ -146,9 +150,13 @@ func TestInitGeneratorFromModel_WrapsAllModelsWithRetryAndOnlyResponsesWithPhase
 	if err != nil {
 		t.Fatalf("initGeneratorFromModel openai error = %v", err)
 	}
-	openAIRetry, ok := openAIGen.(*gai.RetryGenerator)
+	openAINetworkRetry, ok := openAIGen.(*networkRetryGenerator)
 	if !ok {
-		t.Fatalf("openai generator type = %T, want *gai.RetryGenerator", openAIGen)
+		t.Fatalf("openai generator type = %T, want *networkRetryGenerator", openAIGen)
+	}
+	openAIRetry, ok := openAINetworkRetry.Inner.(*gai.RetryGenerator)
+	if !ok {
+		t.Fatalf("openai network retry inner type = %T, want *gai.RetryGenerator", openAINetworkRetry.Inner)
 	}
 	if _, ok := openAIRetry.Inner.(*responsesPhaseRetryGenerator); ok {
 		t.Fatalf("openai retry inner type = %T, did not want *responsesPhaseRetryGenerator", openAIRetry.Inner)

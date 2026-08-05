@@ -25,10 +25,13 @@ Related packages:
   - internal/codemode owns the starlark_repl tool and Dyson integration.
 
 Behavioral notes:
-  - model HTTP transports and provider SDKs make one request attempt; a generator
-    wrapper owns transient provider retries, using jittered exponential delays
-    capped at two minutes for up to twelve hours; provider reset times exposed
-    by gai API errors may schedule a later retry within that overall budget;
+  - model HTTP transports and provider SDKs make one request attempt; generator
+    wrappers own retries at the provider and network boundaries;
+  - transient provider failures use jittered exponential delays capped at two
+    minutes for up to twelve hours, and provider reset times exposed by gai API
+    errors may schedule a later retry within that overall budget;
+  - propagated network and HTTP disconnect errors receive up to three retries,
+    each after a fixed five-second delay;
   - provider block filtering preserves only provider-compatible thinking blocks
     when a session crosses model providers;
   - starlark_repl tool-description helpers live in internal/codemode so ACP
