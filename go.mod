@@ -26,7 +26,7 @@ require (
 	github.com/ncruces/go-sqlite3 v0.34.3
 	github.com/openai/openai-go/v3 v3.47.0
 	github.com/spachava753/acp-sdk v0.3.0
-	github.com/spachava753/dyson v0.0.0-20260804005736-9ab99af695f1
+	github.com/spachava753/dyson v0.0.0-20260805125702-5491b0f2f804
 	github.com/spachava753/gai v0.42.0
 	github.com/spf13/cobra v1.10.2
 	github.com/yuin/goldmark v1.8.2
