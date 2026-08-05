@@ -1992,7 +1992,8 @@ func TestPromptReportsStarlarkREPLResultContentToACPClient(t *testing.T) {
 	}
 
 	var pending, completed *acp.SessionUpdate
-	for _, notification := range testClient.notifications() {
+	notifications := testClient.waitForNotifications(t, 4)
+	for _, notification := range notifications {
 		update := notification.Update
 		if update.SessionUpdate == acp.SessionUpdateTypeToolCall &&
 			update.ToolCallID == "call-starlark" &&
@@ -2006,14 +2007,14 @@ func TestPromptReportsStarlarkREPLResultContentToACPClient(t *testing.T) {
 		}
 	}
 	if pending == nil {
-		t.Fatalf("notifications = %#v, want pending starlark_repl update", testClient.notifications())
+		t.Fatalf("notifications = %#v, want pending starlark_repl update", notifications)
 	}
 	pendingContent, ok := pending.Content.([]acp.ToolCallContent)
 	if !ok || len(pendingContent) != 1 || pendingContent[0].Content.Type != acp.ContentBlockTypeText || pendingContent[0].Content.Text != "" {
 		t.Fatalf("pending content = %#v, want replaceable empty text content", pending.Content)
 	}
 	if completed == nil {
-		t.Fatalf("notifications = %#v, want completed starlark_repl update", testClient.notifications())
+		t.Fatalf("notifications = %#v, want completed starlark_repl update", notifications)
 	}
 	content, ok := completed.Content.([]acp.ToolCallContent)
 	if !ok || len(content) != 1 || content[0].Content.Type != acp.ContentBlockTypeText || content[0].Content.Text != "visible result\n" {
@@ -2241,10 +2242,7 @@ func TestPromptRejectsToolCallIDReusedInSessionBeforeSessionUpdate(t *testing.T)
 	if err != nil {
 		t.Fatalf("first Prompt() error = %v", err)
 	}
-	notificationCount := len(testClient.notifications())
-	if notificationCount == 0 {
-		t.Fatal("first Prompt() sent no notifications")
-	}
+	notificationCount := len(testClient.waitForNotifications(t, 2))
 
 	_, err = fixture.ClientConn.Prompt(t.Context(), &acp.PromptRequest{
 		Prompt:    []acp.ContentBlock{acp.TextContentBlock("second prompt")},
