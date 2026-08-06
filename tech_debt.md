@@ -23,6 +23,12 @@ Various tech debt accumlated in the codebase that we must eventually get to
 - config is gradually getting complicated, with system templates and yaml anchors, change to using starlark config, allows for code resuse, more complicated system prompt buiding, compaction building
 - hot reload config on change
 
+## Persistence
+
+- compaction persists the successful tool result and replacement root in separate `SaveDialog` transactions because the root links to the persisted result ID
+- if replacement-root persistence fails, the successful result remains orphaned; CPE currently panics to prevent `Agent.Prompt` from advancing the session to that false-success branch
+- add a storage operation that atomically persists the successful result and linked replacement root, then replace the invariant panic with normal error handling
+
 ## Errors
 
 - need to report compete error response
