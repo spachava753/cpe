@@ -25,9 +25,22 @@ Cobra wiring are composed by internal/cmd. Framework-agnostic helpers in this
 package list persisted sessions, render complete compaction-aware history as
 Markdown, delete sessions, and create shared-history forks for those commands.
 A session's Starlark REPL is process-local and is not part of persisted history.
-When load or resume reconstructs inactive session state, or fork creates a new
-branch runtime, ACP appends a one-time reset warning to the next user prompt so
-the model does not rely on REPL globals or resources from the prior runtime.
+Conversation compaction validates tool arguments against the configured JSON
+Schema before rendering the replacement root message. Compaction must be the
+only tool call in its assistant response; mixed responses reject every call
+without executing siblings. Mixed-call and schema-validation failures allow at
+most three recoverable retries for each compaction cycle. A successful
+compaction resets the retry budget. Initial-message template execution failures
+are terminal configuration or runtime errors. Failed attempts do not reset
+stateful tools or consume a successful compaction restart. Successful attempts
+persist the completed tool result and replacement root before resetting
+compaction-scoped state or publishing completion, so session loading can replay
+both the call and its completion. Because the two branches cannot currently be
+saved atomically, failure to persist the replacement root after the successful
+result is an invariant panic rather than a returned false-success branch. When
+load or resume reconstructs inactive session state, or fork creates a new branch
+runtime, ACP appends a one-time reset warning to the next user prompt so the
+model does not rely on REPL globals or resources from the prior runtime.
 
 ACP prompt work attaches session_id and the session's immutable cwd to its
 context. Context-aware logs emitted by ACP and downstream MCP, skill discovery,

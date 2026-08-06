@@ -164,7 +164,6 @@ const CompactionToolName = "compact_conversation"
 
 // CompactionTemplateData is the data available to the compaction initial-message template.
 type CompactionTemplateData struct {
-	PreviousLeafID     string
 	Dialog             gai.Dialog
 	ToolArguments      map[string]any
 	ToolArgumentsJSON  string
@@ -176,6 +175,7 @@ type CompactionConfig struct {
 	TokenThreshold         uint
 	MaxCompactions         uint
 	Tool                   gai.Tool
+	InputSchema            *jsonschema.Resolved
 	InitialMessageTemplate *template.Template
 }
 

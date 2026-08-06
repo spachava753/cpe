@@ -42,6 +42,13 @@ func (t *promptTestClient) notifications() []acp.SessionNotification {
 	return slices.Clone(t.capturedNotifications)
 }
 
+func (t *promptTestClient) clearNotifications() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	clear(t.capturedNotifications)
+	t.capturedNotifications = t.capturedNotifications[:0]
+}
+
 func (t *promptTestClient) waitForNotificationCount(tb *testing.T, want acp.SessionNotification, count int) {
 	tb.Helper()
 	deadline := time.After(5 * time.Second)
@@ -786,14 +793,17 @@ Output Cost: 1.00`),
 		be.True(t, ok)
 		be.Equal(t, outputTokens, int64(10))
 	})
-	t.Run("compaction", func(t *testing.T) {
+	t.Run("compaction rejects siblings and recovers from invalid arguments", func(t *testing.T) {
 		var (
-			clientConn *acp.Client
-			store      *storage.Sqlite
-			gen        *testGen
-			cwd        = t.TempDir()
-			testClient = &promptTestClient{}
-			rawCfg     = config.RawConfig{
+			clientConn             *acp.Client
+			store                  *storage.Sqlite
+			gen                    *testGen
+			mixedCompactionError   string
+			mixedSiblingError      string
+			invalidCompactionError string
+			cwd                    = t.TempDir()
+			testClient             = &promptTestClient{}
+			rawCfg                 = config.RawConfig{
 				Models: []config.ModelConfig{
 					{
 						Model: config.Model{
@@ -810,8 +820,14 @@ Output Cost: 1.00`),
 							AutoTriggerThreshold:      0.8,
 							MaxAutoCompactionRestarts: 5,
 							ToolDescription:           "compaction",
-							InputSchema:               jsonschema.Schema{},
-							InitialMessageTemplate:    `compacted conversation: {{ index .ToolArguments "summary" }}`,
+							InputSchema: jsonschema.Schema{
+								Type: "object",
+								Properties: map[string]*jsonschema.Schema{
+									"summary": {Type: "string"},
+								},
+								Required: []string{"summary"},
+							},
+							InitialMessageTemplate: `compacted conversation: {{ index .ToolArguments "summary" }}`,
 						},
 					},
 				},
@@ -828,6 +844,74 @@ Output Cost: 1.00`),
 							be.Equal(t, len(d), 1)
 							be.Equal(t, d[0].Role, gai.User)
 							be.Equal(t, d[0].Blocks[0].Content.String(), "Hello")
+
+							compactionBlock, err := gai.ToolCallBlock("compact-mixed", config.CompactionToolName, map[string]any{
+								"summary": "must be retried alone",
+							})
+							if err != nil {
+								return gai.Response{}, err
+							}
+							siblingBlock, err := gai.ToolCallBlock("lookup-mixed", "lookup", map[string]any{
+								"query": "state",
+							})
+							if err != nil {
+								return gai.Response{}, err
+							}
+							return gai.Response{
+								Candidates: []gai.Message{{
+									Role:            gai.Assistant,
+									Blocks:          []gai.Block{compactionBlock, siblingBlock},
+									ToolResultError: false,
+									ExtraFields:     map[string]any{},
+								}},
+								FinishReason: gai.ToolUse,
+							}, nil
+						},
+						func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+							be.Equal(t, len(d), 4)
+							be.Equal(t, d[0].Role, gai.User)
+							be.Equal(t, d[1].Role, gai.Assistant)
+							be.Equal(t, len(d[1].Blocks), 2)
+							be.Equal(t, d[1].Blocks[0].ID, "compact-mixed")
+							be.Equal(t, d[1].Blocks[1].ID, "lookup-mixed")
+							be.Equal(t, d[2].Role, gai.ToolResult)
+							be.True(t, d[2].ToolResultError)
+							be.Equal(t, d[2].Blocks[0].ID, "compact-mixed")
+							be.Equal(t, d[3].Role, gai.ToolResult)
+							be.True(t, d[3].ToolResultError)
+							be.Equal(t, d[3].Blocks[0].ID, "lookup-mixed")
+							mixedCompactionError = d[2].Blocks[0].Content.String()
+							mixedSiblingError = d[3].Blocks[0].Content.String()
+							be.True(t, strings.Contains(mixedCompactionError, "must be the only tool call"))
+							be.True(t, strings.Contains(mixedSiblingError, "rejected"))
+
+							compactionBlock, err := gai.ToolCallBlock("compact-invalid", config.CompactionToolName, map[string]any{
+								"nextAction": "retry compaction",
+							})
+							if err != nil {
+								return gai.Response{}, err
+							}
+							return gai.Response{
+								Candidates: []gai.Message{{
+									Role:            gai.Assistant,
+									Blocks:          []gai.Block{compactionBlock},
+									ToolResultError: false,
+									ExtraFields:     map[string]any{},
+								}},
+								FinishReason: gai.ToolUse,
+							}, nil
+						},
+						func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+							be.Equal(t, len(d), 6)
+							be.Equal(t, d[4].Role, gai.Assistant)
+							be.Equal(t, d[4].Blocks[0].ID, "compact-invalid")
+							be.Equal(t, d[5].Role, gai.ToolResult)
+							be.True(t, d[5].ToolResultError)
+							be.Equal(t, len(d[5].Blocks), 1)
+							be.Equal(t, d[5].Blocks[0].ID, "compact-invalid")
+							invalidCompactionError = d[5].Blocks[0].Content.String()
+							be.True(t, strings.Contains(invalidCompactionError, "arguments do not match the input schema"))
+							be.True(t, strings.Contains(invalidCompactionError, "summary"))
 
 							compactionBlock, err := gai.ToolCallBlock("compact-call-1", config.CompactionToolName, map[string]any{
 								"summary": "conversation compacted state",
@@ -951,14 +1035,48 @@ Output Cost: 1.00`),
 		be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
 		be.Equal(t, promptResp.Usage, &acp.Usage{TotalTokens: 7, InputTokens: 5, OutputTokens: 2})
 		be.True(t, gen != nil)
-		be.Equal(t, gen.called, 2)
-		notifications := testClient.waitForNotifications(t, 5)
+		be.Equal(t, gen.called, 4)
+		notifications := testClient.waitForNotifications(t, 12)
 		be.Equal(t, sortedNotifications(notifications), sortedNotifications([]acp.SessionNotification{
+			{
+				SessionID: sessionId,
+				Update: expectedPendingToolCallUpdate("compact-mixed", config.CompactionToolName, map[string]any{
+					"summary": "must be retried alone",
+				}),
+			},
+			{
+				SessionID: sessionId,
+				Update: expectedPendingToolCallUpdate("lookup-mixed", "lookup", map[string]any{
+					"query": "state",
+				}),
+			},
+			{
+				SessionID: sessionId,
+				Update:    expectedFailedToolCallUpdate("compact-mixed", mixedCompactionError),
+			},
+			{
+				SessionID: sessionId,
+				Update:    expectedFailedToolCallUpdate("lookup-mixed", mixedSiblingError),
+			},
+			{
+				SessionID: sessionId,
+				Update: expectedPendingToolCallUpdate("compact-invalid", config.CompactionToolName, map[string]any{
+					"nextAction": "retry compaction",
+				}),
+			},
+			{
+				SessionID: sessionId,
+				Update:    expectedFailedToolCallUpdate("compact-invalid", invalidCompactionError),
+			},
 			{
 				SessionID: sessionId,
 				Update: expectedPendingToolCallUpdate("compact-call-1", config.CompactionToolName, map[string]any{
 					"summary": "conversation compacted state",
 				}),
+			},
+			{
+				SessionID: sessionId,
+				Update:    expectedCompletedToolCallUpdate("compact-call-1", compactionSuccessText),
 			},
 			{
 				SessionID: sessionId,
@@ -1003,18 +1121,18 @@ Output Cost: 1.00`),
 		be.True(t, ok)
 		be.True(t, compactionParentID != "")
 
-		parentMessages, err := store.GetMessages(t.Context(), []string{compactionParentID})
+		parentDialog, err := storage.GetDialogForMessage(t.Context(), store, compactionParentID)
 		be.Err(t, err, nil)
-		var compactionParent gai.Message
-		var foundCompactionParent bool
-		for msg := range parentMessages {
-			compactionParent = msg
-			foundCompactionParent = true
-		}
-		be.True(t, foundCompactionParent)
-		be.Equal(t, compactionParent.Role, gai.Assistant)
-		be.Equal(t, compactionParent.Blocks[0].BlockType, gai.ToolCall)
-		be.Equal(t, compactionParent.Blocks[0].ID, "compact-call-1")
+		be.True(t, len(parentDialog) >= 2)
+		compactionCall := parentDialog[len(parentDialog)-2]
+		be.Equal(t, compactionCall.Role, gai.Assistant)
+		be.Equal(t, compactionCall.Blocks[0].BlockType, gai.ToolCall)
+		be.Equal(t, compactionCall.Blocks[0].ID, "compact-call-1")
+		compactionResult := parentDialog[len(parentDialog)-1]
+		be.Equal(t, compactionResult.Role, gai.ToolResult)
+		be.Equal(t, compactionResult.ToolResultError, false)
+		be.Equal(t, compactionResult.Blocks[0].ID, "compact-call-1")
+		be.Equal(t, compactionResult.Blocks[0].Content.String(), compactionSuccessText)
 
 		storedAssistant := storedDialog[len(storedDialog)-1]
 		be.Equal(t, storedAssistant.Blocks[0].Content.String(), "continued after compaction")
@@ -1024,6 +1142,29 @@ Output Cost: 1.00`),
 		outputTokens, ok := storedAssistant.ExtraFields[storage.AgentMetadataOutputTokensKey].(int64)
 		be.True(t, ok)
 		be.Equal(t, outputTokens, int64(2))
+
+		testClient.clearNotifications()
+		_, err = clientConn.LoadSession(t.Context(), &acp.LoadSessionRequest{
+			Cwd:        cwd,
+			McpServers: []acp.McpServer{},
+			SessionID:  sessionId,
+		})
+		be.Err(t, err, nil)
+		pending := acp.SessionNotification{
+			SessionID: sessionId,
+			Update: expectedPendingToolCallUpdate("compact-call-1", config.CompactionToolName, map[string]any{
+				"summary": "conversation compacted state",
+			}),
+		}
+		completed := acp.SessionNotification{
+			SessionID: sessionId,
+			Update:    expectedCompletedToolCallUpdate("compact-call-1", compactionSuccessText),
+		}
+		testClient.waitForNotificationCount(t, pending, 1)
+		testClient.waitForNotificationCount(t, completed, 1)
+		replayed := testClient.notifications()
+		be.Equal(t, countNotifications(replayed, pending), 1)
+		be.Equal(t, countNotifications(replayed, completed), 1)
 	})
 	t.Run("continues existing session history", func(t *testing.T) {
 		var (

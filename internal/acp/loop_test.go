@@ -2,11 +2,13 @@ package acp
 
 import (
 	"context"
+	"errors"
 	"math"
 	"strings"
 	"testing"
 	"text/template"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/openai/openai-go/v3/responses"
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
@@ -26,6 +28,12 @@ func (c *resetCountingCallback) Call(context.Context, map[string]any) (gai.Messa
 
 func (c *resetCountingCallback) Reset() {
 	c.resets++
+}
+
+type sessionUpdateFunc func(context.Context, *acp.SessionNotification) error
+
+func (f sessionUpdateFunc) SessionUpdate(ctx context.Context, notification *acp.SessionNotification) error {
+	return f(ctx, notification)
 }
 
 func TestLoopUsageSessionUpdate(t *testing.T) {
@@ -345,6 +353,379 @@ func TestLoopEffectiveGenOptsDoesNotMutateInputExtraArgs(t *testing.T) {
 	}
 }
 
+func TestLoopGenerateCommitsCompactionBeforePublishingCompletion(t *testing.T) {
+	t.Parallel()
+
+	const compactionCallID = "compact-call-1"
+	completionErr := errors.New("completion update failed")
+	callback := &resetCountingCallback{}
+	store, _ := newTestSqlite(t)
+	toolCall, err := gai.ToolCallBlock(compactionCallID, config.CompactionToolName, map[string]any{
+		"summary": "state to preserve",
+	})
+	if err != nil {
+		t.Fatalf("ToolCallBlock() error = %v", err)
+	}
+	gen := &testGen{responses: []genFunc{
+		func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+			return gai.Response{
+				Candidates: []gai.Message{{
+					Role:   gai.Assistant,
+					Blocks: []gai.Block{toolCall},
+				}},
+				FinishReason: gai.ToolUse,
+			}, nil
+		},
+	}}
+	var updates []acp.SessionUpdate
+	loop := Loop{
+		G:     gen,
+		Store: store,
+		Cfg: config.Config{Compaction: &config.CompactionConfig{
+			MaxCompactions:         5,
+			Tool:                   gai.Tool{Name: config.CompactionToolName},
+			InitialMessageTemplate: template.Must(template.New("compaction").Parse(`compacted conversation: {{ index .ToolArguments "summary" }}`)),
+		}},
+		toolCallbacks: map[string]gai.ToolCallback{
+			"stateful": callback,
+		},
+		conn: sessionUpdateFunc(func(ctx context.Context, notification *acp.SessionNotification) error {
+			updates = append(updates, notification.Update)
+			status := notification.Update.Status
+			if notification.Update.ToolCallID == compactionCallID && status != nil && *status == acp.ToolCallStatusCompleted {
+				return completionErr
+			}
+			return nil
+		}),
+	}
+
+	got, err := loop.Generate(
+		withSessionID(t.Context(), "test-session"),
+		gai.Dialog{{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("Hello")}}},
+		nil,
+	)
+	if !errors.Is(err, completionErr) {
+		t.Fatalf("Generate() error = %v, want completion update failure", err)
+	}
+	if len(got) != 1 || got[0].Role != gai.User || got[0].Blocks[0].Content.String() != "compacted conversation: state to preserve" {
+		t.Fatalf("Generate() dialog = %#v, want persisted replacement root", got)
+	}
+	if loop.compactionRestarts != 1 {
+		t.Fatalf("compactionRestarts = %d, want 1", loop.compactionRestarts)
+	}
+	if callback.resets != 1 {
+		t.Fatalf("callback resets = %d, want 1", callback.resets)
+	}
+
+	compactionParentID, ok := got[0].ExtraFields[storage.MessageCompactionParentIDKey].(string)
+	if !ok || compactionParentID == "" {
+		t.Fatalf("replacement root compaction parent = %#v, want persisted result ID", got[0].ExtraFields)
+	}
+	parentDialog, err := storage.GetDialogForMessage(t.Context(), store, compactionParentID)
+	if err != nil {
+		t.Fatalf("GetDialogForMessage() error = %v", err)
+	}
+	compactionResult := parentDialog[len(parentDialog)-1]
+	if compactionResult.Role != gai.ToolResult || compactionResult.ToolResultError || compactionResult.Blocks[0].ID != compactionCallID {
+		t.Fatalf("compaction parent = %#v, want successful tool result", compactionResult)
+	}
+
+	for _, update := range updates {
+		if update.SessionUpdate == acp.SessionUpdateTypeUserMessageChunk {
+			t.Fatalf("updates = %#v, replacement root must not publish after completion failure", updates)
+		}
+	}
+}
+
+func TestLoopGeneratePanicsWhenCompactionRootPersistenceFails(t *testing.T) {
+	t.Parallel()
+
+	const compactionCallID = "compact-call-1"
+	callback := &resetCountingCallback{}
+	store, rawDB := newTestSqlite(t)
+	if _, err := rawDB.ExecContext(t.Context(), `
+		CREATE TRIGGER fail_compaction_root
+		BEFORE INSERT ON messages
+		WHEN NEW.compaction_parent_id IS NOT NULL
+		BEGIN
+			SELECT RAISE(ABORT, 'compaction root blocked');
+		END
+	`); err != nil {
+		t.Fatalf("create compaction root trigger: %v", err)
+	}
+	toolCall, err := gai.ToolCallBlock(compactionCallID, config.CompactionToolName, map[string]any{
+		"summary": "state to preserve",
+	})
+	if err != nil {
+		t.Fatalf("ToolCallBlock() error = %v", err)
+	}
+	gen := &testGen{responses: []genFunc{
+		func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+			return gai.Response{
+				Candidates: []gai.Message{{
+					Role:   gai.Assistant,
+					Blocks: []gai.Block{toolCall},
+				}},
+				FinishReason: gai.ToolUse,
+			}, nil
+		},
+	}}
+	loop := Loop{
+		G:     gen,
+		Store: store,
+		Cfg: config.Config{Compaction: &config.CompactionConfig{
+			MaxCompactions:         5,
+			Tool:                   gai.Tool{Name: config.CompactionToolName},
+			InitialMessageTemplate: template.Must(template.New("compaction").Parse(`compacted conversation: {{ index .ToolArguments "summary" }}`)),
+		}},
+		toolCallbacks: map[string]gai.ToolCallback{
+			"stateful": callback,
+		},
+		conn: sessionUpdateFunc(func(context.Context, *acp.SessionNotification) error { return nil }),
+	}
+
+	defer func() {
+		recovered := recover()
+		panicErr, ok := recovered.(error)
+		if !ok || !strings.Contains(panicErr.Error(), "persist compaction replacement root") {
+			t.Fatalf("Generate() panic = %#v, want replacement-root persistence error", recovered)
+		}
+		if loop.compactionRestarts != 0 {
+			t.Fatalf("compactionRestarts = %d, want 0", loop.compactionRestarts)
+		}
+		if callback.resets != 0 {
+			t.Fatalf("callback resets = %d, want 0", callback.resets)
+		}
+		var resultCount int
+		if err := rawDB.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM messages WHERE role = 'tool_result'`).Scan(&resultCount); err != nil {
+			t.Fatalf("count persisted tool results: %v", err)
+		}
+		if resultCount != 1 {
+			t.Fatalf("persisted tool results = %d, want 1", resultCount)
+		}
+		var rootCount int
+		if err := rawDB.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM messages WHERE compaction_parent_id IS NOT NULL`).Scan(&rootCount); err != nil {
+			t.Fatalf("count persisted compaction roots: %v", err)
+		}
+		if rootCount != 0 {
+			t.Fatalf("persisted compaction roots = %d, want 0", rootCount)
+		}
+	}()
+
+	_, _ = loop.Generate(
+		withSessionID(t.Context(), "test-session"),
+		gai.Dialog{{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("Hello")}}},
+		nil,
+	)
+}
+
+func TestLoopCompactionRejectsInvalidArguments(t *testing.T) {
+	t.Parallel()
+
+	inputSchema, err := (&jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"summary":   {Type: "string"},
+			"keyPoints": {Type: "array", Items: &jsonschema.Schema{Type: "string"}},
+		},
+		Required: []string{"summary"},
+	}).Resolve(nil)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	callback := &resetCountingCallback{}
+	loop := Loop{
+		Cfg: config.Config{Compaction: &config.CompactionConfig{
+			MaxCompactions:         1,
+			Tool:                   gai.Tool{Name: config.CompactionToolName},
+			InputSchema:            inputSchema,
+			InitialMessageTemplate: template.Must(template.New("compaction").Parse(`{{ range index .ToolArguments "keyPoints" }}{{ . }}{{ end }}`)),
+		}},
+		toolCallbacks: map[string]gai.ToolCallback{
+			"stateful_tool": callback,
+		},
+	}
+	toolCall, err := gai.ToolCallBlock("compact-invalid", config.CompactionToolName, map[string]any{
+		"summary":   "state to preserve",
+		"keyPoints": "should be an array",
+	})
+	if err != nil {
+		t.Fatalf("ToolCallBlock() error = %v", err)
+	}
+
+	got, results, root, err := loop.compact(gai.Dialog{
+		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("large history")}},
+		{Role: gai.Assistant, Blocks: []gai.Block{toolCall}},
+	})
+	if err != nil {
+		t.Fatalf("compact() error = %v", err)
+	}
+	if root != nil {
+		t.Fatalf("compact() root = %#v, want nil", root)
+	}
+	if len(results) != 1 {
+		t.Fatalf("compact() tool results = %d, want 1", len(results))
+	}
+	if len(got) != 3 {
+		t.Fatalf("compact() dialog length = %d, want 3", len(got))
+	}
+	result := got[2]
+	if result.Role != gai.ToolResult || !result.ToolResultError || len(result.Blocks) != 1 {
+		t.Fatalf("compact() result = %#v, want failed tool result", result)
+	}
+	if result.Blocks[0].ID != "compact-invalid" {
+		t.Fatalf("compact() tool result ID = %q, want compact-invalid", result.Blocks[0].ID)
+	}
+	if text := result.Blocks[0].Content.String(); !strings.Contains(text, "arguments do not match the input schema") || !strings.Contains(text, "keyPoints") {
+		t.Fatalf("compact() tool error = %q, want schema error naming keyPoints", text)
+	}
+	if loop.compactionRetries != 1 {
+		t.Fatalf("compactionRetries = %d, want 1", loop.compactionRetries)
+	}
+	if loop.compactionRestarts != 0 {
+		t.Fatalf("compactionRestarts = %d, want 0", loop.compactionRestarts)
+	}
+	if callback.resets != 0 {
+		t.Fatalf("callback resets = %d, want 0", callback.resets)
+	}
+}
+
+func TestLoopCompactionRetryLimit(t *testing.T) {
+	t.Parallel()
+
+	inputSchema, err := (&jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"summary": {Type: "string"},
+		},
+		Required: []string{"summary"},
+	}).Resolve(nil)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	loop := Loop{Cfg: config.Config{Compaction: &config.CompactionConfig{
+		MaxCompactions:         1,
+		Tool:                   gai.Tool{Name: config.CompactionToolName},
+		InputSchema:            inputSchema,
+		InitialMessageTemplate: template.Must(template.New("compaction").Parse(`{{ index .ToolArguments "summary" }}`)),
+	}}}
+	toolCall, err := gai.ToolCallBlock("compact-invalid", config.CompactionToolName, map[string]any{
+		"nextAction": "continue",
+	})
+	if err != nil {
+		t.Fatalf("ToolCallBlock() error = %v", err)
+	}
+	dialog := gai.Dialog{
+		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("large history")}},
+		{Role: gai.Assistant, Blocks: []gai.Block{toolCall}},
+	}
+
+	for attempt := 1; attempt <= 3; attempt++ {
+		got, results, root, err := loop.compact(dialog)
+		if err != nil {
+			t.Fatalf("compact() attempt %d error = %v", attempt, err)
+		}
+		if root != nil {
+			t.Fatalf("compact() attempt %d root = %#v, want nil", attempt, root)
+		}
+		if len(got) != 3 || len(results) != 1 || !results[0].ToolResultError {
+			t.Fatalf("compact() attempt %d = %#v, %#v; want one recoverable tool error", attempt, got, results)
+		}
+	}
+
+	got, results, root, err := loop.compact(dialog)
+	if err == nil {
+		t.Fatal("compact() fourth attempt error is nil, want retry-limit error")
+	}
+	if root != nil {
+		t.Fatalf("compact() fourth attempt root = %#v, want nil", root)
+	}
+	if !strings.Contains(err.Error(), "maximum compaction retries exceeded") {
+		t.Fatalf("compact() fourth attempt error = %q, want retry-limit context", err)
+	}
+	if len(got) != 3 || len(results) != 1 || !results[0].ToolResultError {
+		t.Fatalf("compact() fourth attempt = %#v, %#v; want terminal tool error", got, results)
+	}
+	if text := results[0].Blocks[0].Content.String(); !strings.Contains(text, "retry limit of 3 exceeded") {
+		t.Fatalf("compact() fourth attempt tool error = %q, want retry limit", text)
+	}
+	if loop.compactionRetries != 3 {
+		t.Fatalf("compactionRetries = %d, want 3", loop.compactionRetries)
+	}
+}
+
+func TestLoopCompactionCreatesToolErrorForTemplateFailure(t *testing.T) {
+	t.Parallel()
+
+	inputSchema, err := (&jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"summary": {Type: "string"},
+		},
+		Required: []string{"summary"},
+	}).Resolve(nil)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	callback := &resetCountingCallback{}
+	loop := Loop{
+		Cfg: config.Config{Compaction: &config.CompactionConfig{
+			MaxCompactions:         1,
+			Tool:                   gai.Tool{Name: config.CompactionToolName},
+			InputSchema:            inputSchema,
+			InitialMessageTemplate: template.Must(template.New("compaction").Parse(`{{ range index .ToolArguments "summary" }}{{ . }}{{ end }}`)),
+		}},
+		toolCallbacks: map[string]gai.ToolCallback{
+			"stateful_tool": callback,
+		},
+	}
+	toolCall, err := gai.ToolCallBlock("compact-template", config.CompactionToolName, map[string]any{
+		"summary": "state",
+	})
+	if err != nil {
+		t.Fatalf("ToolCallBlock() error = %v", err)
+	}
+
+	got, results, root, err := loop.compact(gai.Dialog{
+		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("large history")}},
+		{Role: gai.Assistant, Blocks: []gai.Block{toolCall}},
+	})
+	if err == nil {
+		t.Fatal("compact() error is nil, want terminal template error")
+	}
+	if root != nil {
+		t.Fatalf("compact() root = %#v, want nil", root)
+	}
+	if !strings.Contains(err.Error(), "rendering compaction initial message") {
+		t.Fatalf("compact() error = %q, want template rendering context", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("compact() tool results = %d, want 1", len(results))
+	}
+	if len(got) != 3 {
+		t.Fatalf("compact() dialog length = %d, want 3", len(got))
+	}
+	result := got[2]
+	if result.Role != gai.ToolResult || !result.ToolResultError || len(result.Blocks) != 1 {
+		t.Fatalf("compact() result = %#v, want failed tool result", result)
+	}
+	if result.Blocks[0].ID != "compact-template" {
+		t.Fatalf("compact() tool result ID = %q, want compact-template", result.Blocks[0].ID)
+	}
+	if text := result.Blocks[0].Content.String(); !strings.Contains(text, "could not render the configured initial message") || !strings.Contains(text, "do not retry compaction") {
+		t.Fatalf("compact() tool error = %q, want terminal template execution error", text)
+	}
+	if loop.compactionRetries != 0 {
+		t.Fatalf("compactionRetries = %d, want 0", loop.compactionRetries)
+	}
+	if loop.compactionRestarts != 0 {
+		t.Fatalf("compactionRestarts = %d, want 0", loop.compactionRestarts)
+	}
+	if callback.resets != 0 {
+		t.Fatalf("callback resets = %d, want 0", callback.resets)
+	}
+}
+
 func TestLoopCompactionClearsStarlarkREPLState(t *testing.T) {
 	t.Parallel()
 
@@ -361,7 +742,30 @@ func TestLoopCompactionClearsStarlarkREPLState(t *testing.T) {
 	}
 
 	initialMessage := template.Must(template.New("compaction").Parse("compacted"))
+	toolCall, err := gai.ToolCallBlock("compact-1", "compact_conversation", map[string]any{
+		"summary": "retain the important context",
+	})
+	if err != nil {
+		t.Fatalf("ToolCallBlock() error = %v", err)
+	}
+	store, _ := newTestSqlite(t)
+	gen := &testGen{responses: []genFunc{
+		func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+			return gai.Response{
+				Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{toolCall}}},
+				FinishReason: gai.ToolUse,
+			}, nil
+		},
+		func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+			return gai.Response{
+				Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("continued")}}},
+				FinishReason: gai.EndTurn,
+			}, nil
+		},
+	}}
 	loop := Loop{
+		G:     gen,
+		Store: store,
 		Cfg: config.Config{Compaction: &config.CompactionConfig{
 			MaxCompactions:         1,
 			Tool:                   gai.Tool{Name: "compact_conversation"},
@@ -370,18 +774,14 @@ func TestLoopCompactionClearsStarlarkREPLState(t *testing.T) {
 		toolCallbacks: map[string]gai.ToolCallback{
 			codemode.StarlarkREPLToolName: callback,
 		},
+		conn: sessionUpdateFunc(func(context.Context, *acp.SessionNotification) error { return nil }),
 	}
-	toolCall, err := gai.ToolCallBlock("compact-1", "compact_conversation", map[string]any{
-		"summary": "retain the important context",
-	})
-	if err != nil {
-		t.Fatalf("ToolCallBlock() error = %v", err)
-	}
-	if _, err := loop.compact(gai.Dialog{
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("large history")}},
-		{Role: gai.Assistant, Blocks: []gai.Block{toolCall}},
-	}); err != nil {
-		t.Fatalf("compact() error = %v", err)
+	if _, err := loop.Generate(
+		withSessionID(t.Context(), "test-session"),
+		gai.Dialog{{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("large history")}}},
+		nil,
+	); err != nil {
+		t.Fatalf("Generate() error = %v", err)
 	}
 
 	msg, err = callback.Call(t.Context(), map[string]any{
@@ -396,7 +796,7 @@ func TestLoopCompactionClearsStarlarkREPLState(t *testing.T) {
 	}
 }
 
-func TestLoopCompactionResetsStatefulToolCallbacks(t *testing.T) {
+func TestLoopCompactionPlansSuccessfulRebaseWithoutResettingState(t *testing.T) {
 	t.Parallel()
 
 	initialMessage := template.Must(template.New("compaction").Parse("compacted: {{ index .ToolArguments \"summary\" }}"))
@@ -418,17 +818,30 @@ func TestLoopCompactionResetsStatefulToolCallbacks(t *testing.T) {
 		t.Fatalf("ToolCallBlock() error = %v", err)
 	}
 
-	compacted, err := loop.compact(gai.Dialog{
+	loop.compactionRetries = 2
+	history, results, root, err := loop.compact(gai.Dialog{
 		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("large history")}},
 		{Role: gai.Assistant, Blocks: []gai.Block{toolCall}},
 	})
 	if err != nil {
 		t.Fatalf("compact() error = %v", err)
 	}
-	if len(compacted) != 1 || compacted[0].Blocks[0].Content.String() != "compacted: state to keep" {
-		t.Fatalf("compact() = %#v", compacted)
+	if len(results) != 1 || results[0].ToolResultError {
+		t.Fatalf("compact() tool results = %#v, want one successful result", results)
 	}
-	if callback.resets != 1 {
-		t.Fatalf("callback resets = %d, want 1", callback.resets)
+	if len(history) != 3 || history[2].Role != gai.ToolResult || history[2].Blocks[0].ID != "compact-1" || history[2].Blocks[0].Content.String() != compactionSuccessText {
+		t.Fatalf("compact() history = %#v, want persisted successful tool result", history)
+	}
+	if root == nil || len(root.Blocks) != 1 || root.Blocks[0].Content.String() != "compacted: state to keep" {
+		t.Fatalf("compact() root = %#v", root)
+	}
+	if loop.compactionRetries != 2 {
+		t.Fatalf("compactionRetries = %d, want unchanged value 2", loop.compactionRetries)
+	}
+	if loop.compactionRestarts != 0 {
+		t.Fatalf("compactionRestarts = %d, want 0", loop.compactionRestarts)
+	}
+	if callback.resets != 0 {
+		t.Fatalf("callback resets = %d, want 0 before replacement root is persisted", callback.resets)
 	}
 }

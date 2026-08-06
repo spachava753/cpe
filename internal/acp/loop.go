@@ -23,10 +23,18 @@ import (
 const compactionWarningText = `[COMPACTION WARNING]
 The conversation has exceeded the configured compaction threshold. Before continuing much further, call the compact_conversation tool with a compact but complete summary of the conversation state needed to continue. This warning will continue to appear until compaction is performed.`
 
+const maxCompactionRetries = 3
+
+const compactionSuccessText = "Conversation compacted successfully."
+
 type sessionIDCtxKey struct{}
 
 type compactionResetter interface {
 	Reset()
+}
+
+type sessionUpdater interface {
+	SessionUpdate(context.Context, *acp.SessionNotification) error
 }
 
 func withSessionID(ctx context.Context, sessionID acp.SessionId) context.Context {
@@ -43,7 +51,8 @@ type Loop struct {
 	toolCallbacks      map[string]gai.ToolCallback
 	seenToolCallIDs    map[string]struct{}
 	compactionRestarts int
-	conn               *acp.AgentConnection
+	compactionRetries  int
+	conn               sessionUpdater
 }
 
 // Register registers a tool with the provider model and stores its callback.
@@ -107,6 +116,7 @@ func (l *Loop) effectiveGenOpts(override *gai.GenOpts) *gai.GenOpts {
 // TODO: expose model capability metadata in session updates so ACP clients can adapt UI affordances
 func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 	current := append(gai.Dialog(nil), dialog...)
+	l.compactionRetries = 0
 	if l.seenToolCallIDs == nil {
 		l.seenToolCallIDs = make(map[string]struct{})
 		for _, msg := range current {
@@ -211,18 +221,53 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 			return current, nil
 		}
 
-		// compact conversation
-		current, err = l.compact(current)
-		if err != nil {
-			return current, err
-		}
+		// Persist compaction results on the old branch before linking a replacement root.
+		var compactionResults []gai.Message
+		var compactionRoot *gai.Message
+		var compactionErr error
+		current, compactionResults, compactionRoot, compactionErr = l.compact(current)
 		current, err = l.save(ctx, current)
 		if err != nil {
 			return current, err
 		}
+		if compactionRoot != nil {
+			previousLeafID := storage.GetMessageID(current[len(current)-1])
+			if previousLeafID != "" {
+				compactionRoot.ExtraFields = map[string]any{storage.MessageCompactionParentIDKey: previousLeafID}
+			}
+			replacement := gai.Dialog{*compactionRoot}
+			replacement, err = l.save(ctx, replacement)
+			if err != nil {
+				// The successful result is already durable. Returning the old branch
+				// would let Agent.Prompt commit a false-success session head.
+				panic(fmt.Errorf("persist compaction replacement root after successful result: %w", err))
+			}
+			current = replacement
 
-		// if compacted, len of dialog will be 1
-		if len(current) == 1 {
+			// The rebase is durable. Only now consume a restart and clear state that
+			// must not cross the compaction boundary.
+			l.compactionRestarts++
+			l.compactionRetries = 0
+			for _, callback := range l.toolCallbacks {
+				if resetter, ok := callback.(compactionResetter); ok {
+					resetter.Reset()
+				}
+			}
+		}
+		for _, result := range compactionResults {
+			for update := range xacp.MsgToSessionUpdate(result) {
+				if err := l.conn.SessionUpdate(ctx, &acp.SessionNotification{
+					SessionID: sessionID,
+					Update:    update,
+				}); err != nil {
+					return current, fmt.Errorf("send compaction tool result session update: %w", err)
+				}
+			}
+		}
+		if compactionErr != nil {
+			return current, compactionErr
+		}
+		if compactionRoot != nil {
 			for update := range xacp.MsgToSessionUpdate(current[0]) {
 				if err := l.conn.SessionUpdate(ctx, &acp.SessionNotification{
 					SessionID: sessionID,
@@ -346,49 +391,106 @@ func (l *Loop) attachAgentMetadata(msg *gai.Message, metadata gai.Metadata) {
 	}
 }
 
-func (l *Loop) compact(current gai.Dialog) (gai.Dialog, error) {
+// compact handles a compact_conversation call in the latest assistant message.
+// The returned dialog remains on the existing branch and includes any tool
+// results that must be persisted. The message slice contains those same new
+// results for ACP publication. On success, the replacement root is returned
+// separately so Generate can persist the completed result, link the root to it,
+// and only then switch branches and reset compaction-scoped state. Recoverable
+// rejections return a nil error so the model can retry; terminal failures return
+// both a failed result and an error.
+func (l *Loop) compact(current gai.Dialog) (gai.Dialog, []gai.Message, *gai.Message, error) {
 	if l.Cfg.Compaction == nil {
-		return current, nil
+		return current, nil, nil, nil
 	}
 
 	lastMsg := current[len(current)-1]
-
-	idx := slices.IndexFunc(lastMsg.Blocks, func(b gai.Block) bool {
-		if l.Cfg.Compaction == nil {
-			return false
+	toolCalls := make([]gai.Block, 0, len(lastMsg.Blocks))
+	for _, block := range lastMsg.Blocks {
+		if block.BlockType == gai.ToolCall {
+			toolCalls = append(toolCalls, block)
 		}
-
-		if b.BlockType != gai.ToolCall {
-			return false
-		}
-
-		var tci gai.ToolCallInput
-		if err := json.Unmarshal([]byte(b.Content.String()), &tci); err != nil {
-			panic(err)
-		}
-
-		return tci.Name == l.Cfg.Compaction.Tool.Name
-	})
-	if idx == -1 {
-		return current, nil
 	}
 
+	idx := slices.IndexFunc(toolCalls, func(block gai.Block) bool {
+		var input gai.ToolCallInput
+		if err := json.Unmarshal([]byte(block.Content.String()), &input); err != nil {
+			panic(err)
+		}
+		return input.Name == l.Cfg.Compaction.Tool.Name
+	})
+	if idx == -1 {
+		return current, nil, nil, nil
+	}
+
+	compactionBlock := toolCalls[idx]
 	var compactionTool gai.ToolCallInput
-	if err := json.Unmarshal([]byte(lastMsg.Blocks[idx].Content.String()), &compactionTool); err != nil {
+	if err := json.Unmarshal([]byte(compactionBlock.Content.String()), &compactionTool); err != nil {
 		panic(err)
+	}
+	toolError := func(block gai.Block, text string) gai.Message {
+		result := gai.ToolResultMessage(block.ID, gai.TextBlock(text))
+		result.ToolResultError = true
+		return result
+	}
+
+	// A rejection is recoverable until the retry budget is exhausted. In both
+	// cases, append results to the existing branch so they are saved and visible
+	// to the model; only the terminal case also stops Generate.
+	reject := func(results []gai.Message, reason string) (gai.Dialog, []gai.Message, *gai.Message, error) {
+		if l.compactionRetries >= maxCompactionRetries {
+			for i := range results {
+				if results[i].Blocks[0].ID == compactionBlock.ID {
+					results[i] = toolError(compactionBlock, fmt.Sprintf(
+						"compact_conversation retry limit of %d exceeded. Last error: %s",
+						maxCompactionRetries,
+						reason,
+					))
+					break
+				}
+			}
+			return append(current, results...), results, nil, fmt.Errorf("maximum compaction retries exceeded: %s", reason)
+		}
+		l.compactionRetries++
+		return append(current, results...), results, nil, nil
+	}
+
+	// Compaction replaces the active dialog, so sibling calls cannot be executed
+	// without losing their results. Reject every call and ask the model to retry
+	// compaction by itself.
+	if len(toolCalls) > 1 {
+		reason := "compact_conversation must be the only tool call in an assistant response"
+		results := make([]gai.Message, 0, len(toolCalls))
+		for i, block := range toolCalls {
+			text := "Tool call rejected because compact_conversation must be called without sibling tool calls."
+			if i == idx {
+				text = reason + ". Call compact_conversation again without sibling tool calls."
+			}
+			results = append(results, toolError(block, text))
+		}
+		return reject(results, reason)
 	}
 
 	if uint(l.compactionRestarts) >= l.Cfg.Compaction.MaxCompactions {
-		return current, fmt.Errorf("maximum compaction restarts exceeded")
+		result := toolError(compactionBlock, "compact_conversation cannot run because the maximum compaction restarts have been exceeded.")
+		return append(current, result), []gai.Message{result}, nil, fmt.Errorf("maximum compaction restarts exceeded")
+	}
+	if l.Cfg.Compaction.InputSchema != nil {
+		if err := l.Cfg.Compaction.InputSchema.Validate(compactionTool.Parameters); err != nil {
+			reason := fmt.Sprintf("arguments do not match the input schema: %v", err)
+			result := toolError(compactionBlock, "compact_conversation "+reason+". Call compact_conversation again with corrected arguments.")
+			return reject([]gai.Message{result}, reason)
+		}
 	}
 
-	previousLeafID := storage.GetMessageID(lastMsg)
+	// Render only after schema validation. This keeps payload shape errors, such
+	// as ranging over a scalar, recoverable instead of surfacing as template
+	// configuration failures.
 	paramJson, err := json.Marshal(compactionTool.Parameters)
 	if err != nil {
 		panic(err)
 	}
 	data := config.CompactionTemplateData{
-		PreviousLeafID:     previousLeafID,
 		Dialog:             current,
 		ToolArguments:      compactionTool.Parameters,
 		ToolArgumentsJSON:  string(paramJson),
@@ -396,20 +498,19 @@ func (l *Loop) compact(current gai.Dialog) (gai.Dialog, error) {
 	}
 	var rendered bytes.Buffer
 	if err := l.Cfg.Compaction.InitialMessageTemplate.Execute(&rendered, data); err != nil {
-		return current, fmt.Errorf("rendering compaction initial message: %w", err)
+		result := toolError(compactionBlock, fmt.Sprintf(
+			"compact_conversation could not render the configured initial message: %v. This is a CPE configuration or runtime error; do not retry compaction.",
+			err,
+		))
+		return append(current, result), []gai.Message{result}, nil, fmt.Errorf("rendering compaction initial message: %w", err)
 	}
 
+	// Keep the completed result on the old branch and return the rendered root
+	// separately. Generate saves the result first and uses its persisted ID as the
+	// replacement root's compaction parent, preserving completion during replay.
 	root := gai.Message{Role: gai.User, Blocks: []gai.Block{gai.TextBlock(rendered.String())}}
-	if previousLeafID != "" {
-		root.ExtraFields = map[string]any{storage.MessageCompactionParentIDKey: previousLeafID}
-	}
-	l.compactionRestarts++
-	for _, callback := range l.toolCallbacks {
-		if resetter, ok := callback.(compactionResetter); ok {
-			resetter.Reset()
-		}
-	}
-	return gai.Dialog{root}, nil
+	result := gai.ToolResultMessage(compactionBlock.ID, gai.TextBlock(compactionSuccessText))
+	return append(current, result), []gai.Message{result}, &root, nil
 }
 
 // usageSessionUpdate persists the cost of a single generation into the ACP

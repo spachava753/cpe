@@ -173,6 +173,10 @@ func resolveCompaction(model ModelConfig) (*CompactionConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("initialMessageTemplate: %w", err)
 	}
+	inputSchema, err := raw.InputSchema.Resolve(nil)
+	if err != nil {
+		return nil, fmt.Errorf("inputSchema: %w", err)
+	}
 
 	return &CompactionConfig{
 		TokenThreshold: uint(float64(model.ContextWindow) * raw.AutoTriggerThreshold),
@@ -182,6 +186,7 @@ func resolveCompaction(model ModelConfig) (*CompactionConfig, error) {
 			Description: raw.ToolDescription,
 			InputSchema: &raw.InputSchema,
 		},
+		InputSchema:            inputSchema,
 		InitialMessageTemplate: tmpl,
 	}, nil
 }

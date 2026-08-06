@@ -194,7 +194,6 @@ models:
         required: [summary]
       initialMessageTemplate: |
         Continue from this compacted CPE session.
-        Previous leaf message: {{ .PreviousLeafID }}
         Compaction arguments: {{ .ToolArgumentsJSON }}
 
   - ref: gpt
@@ -205,6 +204,20 @@ models:
     context_window: 400000
     max_output: 128000
 ```
+
+Before rendering `initialMessageTemplate`, CPE validates each
+`compact_conversation` argument object against `inputSchema`. Compaction must be
+the only tool call in its assistant response; mixed responses reject every call
+without executing siblings. Mixed-call and schema-validation failures allow
+at most three recoverable retries for each compaction cycle. A successful
+compaction resets the retry budget. Template execution failures are terminal
+configuration or runtime errors. Failed attempts do not reset session-scoped
+tool state or consume a successful compaction restart. Successful attempts
+persist the completed tool result and replacement root before resetting
+compaction-scoped state or publishing completion, so session loading can replay
+both the call and its completion. Because the two branches cannot currently be
+saved atomically, failure to persist the replacement root after the successful
+result is an invariant panic rather than a returned false-success branch.
 
 ### Anthropic on Google Vertex AI
 

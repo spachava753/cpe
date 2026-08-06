@@ -90,6 +90,26 @@ func expectedPendingToolCallUpdate(id acp.ToolCallId, title string, rawInput any
 	return update
 }
 
+func expectedFailedToolCallUpdate(id acp.ToolCallId, text string) acp.SessionUpdate {
+	status := acp.ToolCallStatusFailed
+	update := acp.ToolCallUpdateSessionUpdate(id)
+	update.Status = &status
+	update.Content = []acp.ToolCallContent{
+		acp.ContentToolCallContent(acp.TextContentBlock(text)),
+	}
+	return update
+}
+
+func expectedCompletedToolCallUpdate(id acp.ToolCallId, text string) acp.SessionUpdate {
+	status := acp.ToolCallStatusCompleted
+	update := acp.ToolCallUpdateSessionUpdate(id)
+	update.Status = &status
+	update.Content = []acp.ToolCallContent{
+		acp.ContentToolCallContent(acp.TextContentBlock(text)),
+	}
+	return update
+}
+
 func setup(
 	t *testing.T,
 	client any,

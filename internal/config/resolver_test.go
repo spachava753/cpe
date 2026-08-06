@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -111,6 +112,30 @@ func TestResolveCompactionFromModelProfile(t *testing.T) {
 	}
 	if cfg.Compaction.Tool.Description != "model compact" {
 		t.Fatalf("tool description = %q", cfg.Compaction.Tool.Description)
+	}
+	if cfg.Compaction.InputSchema == nil {
+		t.Fatal("resolved input schema is nil")
+	}
+}
+
+func TestResolveCompactionInvalidSchemaFails(t *testing.T) {
+	t.Parallel()
+
+	model := testModelProfile()
+	model.Compaction = &RawCompactionConfig{
+		AutoTriggerThreshold:      0.5,
+		MaxAutoCompactionRestarts: 1,
+		ToolDescription:           "compact",
+		InputSchema:               jsonschema.Schema{Ref: "#/$defs/missing"},
+		InitialMessageTemplate:    "compacted",
+	}
+
+	_, err := resolveFromRaw(&RawConfig{Models: []ModelConfig{model}}, RuntimeOptions{ModelRef: "test-model"}, "")
+	if err == nil {
+		t.Fatal("expected invalid input schema error")
+	}
+	if !strings.Contains(err.Error(), "inputSchema") {
+		t.Fatalf("error = %q, want inputSchema context", err)
 	}
 }
 
