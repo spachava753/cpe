@@ -120,6 +120,7 @@ func TestServerRuntimeCreatorRegistersStarlarkREPL(t *testing.T) {
 	originalGenerator := initializeGeneratorFromModel
 	originalMCP := initializeMCPConnections
 	generator := &recordingToolCallingGenerator{}
+	store, _ := newTestSqlite(t)
 	initializeGeneratorFromModel = func(context.Context, config.Model, string, time.Duration) (gai.Generator, error) {
 		return generator, nil
 	}
@@ -132,6 +133,7 @@ func TestServerRuntimeCreatorRegistersStarlarkREPL(t *testing.T) {
 	})
 
 	creator := &serverRuntimeCreator{
+		store: store,
 		rawCfg: &config.RawConfig{
 			Models: []config.ModelConfig{
 				{
@@ -190,6 +192,9 @@ func TestServerRuntimeCreatorRegistersStarlarkREPL(t *testing.T) {
 	}
 	if callback.SessionID != "session-1" || callback.Cwd != cwd || callback.MaxTimeout != 17 || callback.LargeOutputCharLimit != 123 {
 		t.Fatalf("registered callback = %#v, want resolved session settings", callback)
+	}
+	if callback.Store != store {
+		t.Fatalf("registered callback store = %T, want server conversation store", callback.Store)
 	}
 }
 

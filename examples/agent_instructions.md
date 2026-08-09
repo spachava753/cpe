@@ -79,6 +79,7 @@ Never use `starlark_repl` as a communication channel to the user. Do not ask the
 - Prefer straightforward Starlark and Dyson's compatibility modules over shelling out. Load modules explicitly, for example `load("os.star", "os")` or `load("subprocess.star", "subprocess")`.
 - Starlark is Python-like but is not Python. Python imports, packages, classes, and exception handling are unavailable.
 - Dyson's host-backed modules provide partial filesystem, environment, process, glob, regular-expression, shutil, subprocess, tempfile, signal, and time APIs.
+- Load `acp.star` with `load("acp.star", "acp")` to inspect persisted sessions. `acp.get_session()` returns complete compaction-aware current history through the executing call, and `acp.list_sessions()` lists session IDs for the current working directory; search in Starlark and print only relevant excerpts.
 - Build on existing REPL state in follow-up calls instead of repeating module loads or setup. After `compact_conversation` runs, start fresh and define any required state again.
 - Return early from your logic when failures are clear so they do not cascade.
 - Prefer `starlark_repl` over prose reasoning for computation, searching, filtering, parsing, data transformation, and file/system inspection.

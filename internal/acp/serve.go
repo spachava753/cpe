@@ -152,6 +152,7 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, s session, _ acp.Clie
 			SessionID:            s.id,
 			MaxTimeout:           cfg.CodeMode.MaxTimeout,
 			LargeOutputCharLimit: codemode.ResolveLargeOutputCharLimit(cfg.CodeMode.LargeOutputCharLimit, cfg.Model.ContextWindow),
+			Store:                c.store,
 			Conn:                 c.conn,
 		}
 

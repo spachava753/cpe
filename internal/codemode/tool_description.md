@@ -19,6 +19,19 @@ load("time.star", "time")
 
 The `grp.star`, `pwd.star`, and `signal.star` modules are also available. Module coverage is intentionally partial; an unavailable member produces a Starlark error. Filesystem, environment, process, and HTTP operations run with the CPE process's normal permissions.
 
+CPE provides a read-only `acp.star` module for inspecting persisted ACP sessions:
+
+```python
+load("acp.star", "acp")
+current = acp.get_session()
+ids = acp.list_sessions()
+other_ids = acp.list_sessions(cwd="/absolute/path/to/another/project")
+```
+
+`acp.get_session(id=None)` returns an `acp.Session` with `id`, `cwd`, `title`, `last_message_id`, and `messages` attributes. Omitting `id` reads the current session through the assistant message containing the executing tool call. Passing another ID reads that session's persisted head. `messages` is a chronological tuple of `acp.Message` values spanning all conversation compactions; each message exposes `id`, `parent_id`, `compaction_parent_id`, `created_at`, `role`, `tool_result_error`, and `blocks`. Each `acp.Block` exposes `id`, `kind`, `modality`, `mime_type`, `content`, parsed tool-call `name` and `arguments`, and `filename`.
+
+`acp.list_sessions(cwd=None)` returns session IDs for the current ACP working directory, newest activity first. An explicit `cwd` uses an exact persisted-directory match and may inspect another project. Session history is not truncated, so search or filter it in Starlark and print only relevant excerpts.
+
 The global `open(...)` builtin provides Python-style text and binary file reads. Native bytes returned by file, HTTP, subprocess, and related operations support `decode(...)`.
 
 ```python

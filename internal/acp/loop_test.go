@@ -13,6 +13,7 @@ import (
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/acp/xctx"
 	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
@@ -30,10 +31,75 @@ func (c *resetCountingCallback) Reset() {
 	c.resets++
 }
 
+type executionMessageCapturingCallback struct {
+	messageID string
+}
+
+func (c *executionMessageCapturingCallback) Call(ctx context.Context, _ map[string]any) (gai.Message, error) {
+	c.messageID = xctx.ExecutionMessageIDFrom(ctx)
+	return gai.ToolResultMessage("", gai.TextBlock("observed")), nil
+}
+
 type sessionUpdateFunc func(context.Context, *acp.SessionNotification) error
 
 func (f sessionUpdateFunc) SessionUpdate(ctx context.Context, notification *acp.SessionNotification) error {
 	return f(ctx, notification)
+}
+
+func TestLoopToolCallbackReceivesPersistedAssistantMessageID(t *testing.T) {
+	t.Parallel()
+
+	toolCall, err := gai.ToolCallBlock("probe-call", "history_probe", map[string]any{})
+	if err != nil {
+		t.Fatalf("ToolCallBlock() error = %v", err)
+	}
+	generator := &testGen{responses: []genFunc{
+		func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
+			return gai.Response{
+				Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{toolCall}}},
+				FinishReason: gai.ToolUse,
+			}, nil
+		},
+		func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
+			return gai.Response{
+				Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("finished")}}},
+				FinishReason: gai.EndTurn,
+			}, nil
+		},
+	}}
+	callback := &executionMessageCapturingCallback{}
+	store, _ := newTestSqlite(t)
+	loop := Loop{
+		G:     generator,
+		Store: store,
+		toolCallbacks: map[string]gai.ToolCallback{
+			"history_probe": callback,
+		},
+		conn: sessionUpdateFunc(func(context.Context, *acp.SessionNotification) error { return nil }),
+	}
+
+	if _, err := loop.Generate(
+		withSessionID(t.Context(), "test-session"),
+		gai.Dialog{{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("inspect history")}}},
+		nil,
+	); err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	if callback.messageID == "" {
+		t.Fatal("callback execution message ID is empty")
+	}
+
+	messages, err := store.GetMessages(t.Context(), []string{callback.messageID})
+	if err != nil {
+		t.Fatalf("GetMessages() error = %v", err)
+	}
+	var stored gai.Message
+	for message := range messages {
+		stored = message
+	}
+	if stored.Role != gai.Assistant || len(stored.Blocks) != 1 || stored.Blocks[0].ID != "probe-call" {
+		t.Fatalf("callback execution message = %#v, want persisted assistant tool-call message", stored)
+	}
 }
 
 func TestLoopUsageSessionUpdate(t *testing.T) {

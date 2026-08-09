@@ -13,6 +13,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/acp/xacp"
 	"github.com/spachava753/cpe/internal/acp/xctx"
+	codemodeacp "github.com/spachava753/cpe/internal/codemode/acp"
 	"github.com/spachava753/cpe/internal/mapstruct"
 )
 
@@ -34,6 +35,7 @@ type StarlarkREPLCallback struct {
 	LargeOutputCharLimit int
 	Cwd                  string
 	SessionID            acp.SessionId
+	Store                codemodeacp.SessionStore
 	Conn                 acpConn
 
 	mu   sync.Mutex
@@ -108,7 +110,12 @@ func (c *StarlarkREPLCallback) Call(ctx context.Context, params map[string]any) 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.repl == nil {
-		c.repl = newStarlarkREPL(c.Cwd, c.LargeOutputCharLimit)
+		c.repl = newStarlarkREPL(
+			c.Cwd,
+			c.LargeOutputCharLimit,
+			c.SessionID,
+			c.Store,
+		)
 	}
 	result, err := c.repl.Eval(ctx, input.Code, time.Duration(input.ExecutionTimeout)*time.Second)
 	if ctxErr := ctx.Err(); ctxErr != nil && !result.TimedOut {

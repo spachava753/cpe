@@ -280,6 +280,10 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 		}
 
 		lastMsg := current[len(current)-1]
+		executionMessageID := storage.GetMessageID(lastMsg)
+		if executionMessageID == "" {
+			return current, errors.New("persisted assistant message has no storage ID")
+		}
 		firstBlock := true
 		for _, block := range lastMsg.Blocks {
 			if block.BlockType != gai.ToolCall {
@@ -308,8 +312,9 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 			if callback == nil {
 				return current, nil
 			}
-			ctx = xctx.WithToolCallId(ctx, acp.ToolCallId(block.ID))
-			result, err := callback.Call(ctx, params)
+			callbackCtx := xctx.WithToolCallId(ctx, acp.ToolCallId(block.ID))
+			callbackCtx = xctx.WithExecutionMessageID(callbackCtx, executionMessageID)
+			result, err := callback.Call(callbackCtx, params)
 			if err != nil {
 				return current, err
 			}

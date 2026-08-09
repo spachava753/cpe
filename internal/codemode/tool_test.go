@@ -758,14 +758,16 @@ func TestStarlarkREPLCallbackLoadsDysonModulesAndGlobals(t *testing.T) {
 
 	callback := &StarlarkREPLCallback{MaxTimeout: 5}
 	msg, err := callback.Call(t.Context(), map[string]any{
-		"code":             `load("re.star", "re")`,
+		"code": `load("re.star", "re")
+load("acp.star", "acp")
+print(dir(acp))`,
 		"executionTimeout": 2,
 	})
 	if err != nil {
 		t.Fatalf("load Call() error = %v", err)
 	}
-	if msg.ToolResultError || len(msg.Blocks) != 1 || msg.Blocks[0].Content.String() != "" {
-		t.Fatalf("load Call() = %#v, want successful empty result", msg)
+	if msg.ToolResultError || len(msg.Blocks) != 1 || msg.Blocks[0].Content.String() != "[\"get_session\", \"list_sessions\"]\n" {
+		t.Fatalf("load Call() = %#v, want registered Dyson and ACP modules", msg)
 	}
 
 	msg, err = callback.Call(t.Context(), map[string]any{

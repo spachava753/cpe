@@ -337,6 +337,26 @@ an execution timeout; reaching it cancels the active `starlark.Thread`.
 video as multimodal tool-result blocks. Relative artifact paths resolve from the
 ACP session working directory.
 
+Code Mode also provides a read-only `acp.star` module. Models can call
+`acp.get_session()` to inspect the current session through the executing tool
+call, including complete history from before every conversation compaction, or
+pass a session ID to inspect another persisted session. `acp.list_sessions()`
+lists session IDs for the current working directory by default; passing an
+explicit `cwd` performs an exact match and permits cross-project inspection.
+The module returns typed `acp.Session`, `acp.Message`, and `acp.Block` values so
+large histories can be searched in Starlark without printing the entire
+conversation.
+
+```python
+load("acp.star", "acp")
+
+session = acp.get_session()
+for message in session.messages:
+    for block in message.blocks:
+        if block.content != None and "search term" in block.content:
+            print(message.id, block.content[:2000])
+```
+
 ### System Prompts and Skills
 
 Set `systemPromptPath` on a model profile to render a prompt template for that profile. CPE discovers skills from `./.agents/skills` and `~/.agents/skills` and exposes model-visible skills as `.Skills` template data when rendering system prompts. Skill frontmatter is available through `.Metadata`; skills with `disable-model-invocation: true` are omitted from `.Skills` but remain user-invocable through `/skill:<name>` slash commands.

@@ -12,10 +12,12 @@ import (
 	"strings"
 	"time"
 
+	acpsdk "github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/dyson"
 	"github.com/spachava753/gai"
 	"go.starlark.net/starlark"
 
+	codemodeacp "github.com/spachava753/cpe/internal/codemode/acp"
 	"github.com/spachava753/cpe/internal/xio"
 )
 
@@ -34,7 +36,12 @@ type starlarkResult struct {
 	TimedOut bool
 }
 
-func newStarlarkREPL(cwd string, outputLimit int) *starlarkREPL {
+func newStarlarkREPL(
+	cwd string,
+	outputLimit int,
+	sessionID acpsdk.SessionId,
+	store codemodeacp.SessionStore,
+) *starlarkREPL {
 	r := &starlarkREPL{
 		cwd:         cwd,
 		outputLimit: outputLimit,
@@ -49,6 +56,7 @@ func newStarlarkREPL(cwd string, outputLimit int) *starlarkREPL {
 			}
 		},
 		dyson.NewStdlib(stdlibConfig),
+		codemodeacp.Module(store, sessionID, cwd),
 		dyson.GlobalSet{
 			"view_file": starlark.NewBuiltin("view_file", r.viewFile),
 		},
