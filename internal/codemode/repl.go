@@ -52,7 +52,7 @@ func newStarlarkREPL(
 	r.sphere = dyson.NewSphere(
 		func(_ *starlark.Thread, msg string) {
 			if r.output != nil {
-				fmt.Fprintln(r.output, msg)
+				fmt.Fprint(r.output, msg)
 			}
 		},
 		dyson.NewStdlib(stdlibConfig),

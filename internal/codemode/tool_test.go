@@ -279,6 +279,18 @@ func TestStarlarkREPLCallbackReturnsOnlyPrintedText(t *testing.T) {
 	if msg.ToolResultError || len(msg.Blocks) != 1 || msg.Blocks[0].Content.String() != "3\n" {
 		t.Fatalf("print Call() = %#v, want printed value", msg)
 	}
+
+	msg, err = callback.Call(t.Context(), map[string]any{
+		"code": `print("left", end=" + ")
+print("right", end="")`,
+		"executionTimeout": 2,
+	})
+	if err != nil {
+		t.Fatalf("custom end Call() error = %v", err)
+	}
+	if msg.ToolResultError || len(msg.Blocks) != 1 || msg.Blocks[0].Content.String() != "left + right" {
+		t.Fatalf("custom end Call() = %#v, want custom print endings", msg)
+	}
 }
 
 func TestStarlarkREPLCallbackPersistsFunctionsAndMutableValues(t *testing.T) {

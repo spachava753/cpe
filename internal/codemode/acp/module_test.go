@@ -54,7 +54,7 @@ func newACPTestSphere(t *testing.T, store SessionStore, sessionID acpsdk.Session
 
 	output := new(bytes.Buffer)
 	sphere := dyson.NewSphere(
-		func(_ *starlark.Thread, message string) { fmt.Fprintln(output, message) },
+		func(_ *starlark.Thread, message string) { fmt.Fprint(output, message) },
 		Module(store, sessionID, cwd),
 	)
 	t.Cleanup(func() {
