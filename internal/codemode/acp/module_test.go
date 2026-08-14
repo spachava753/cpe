@@ -12,7 +12,7 @@ import (
 	acpsdk "github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/dyson"
 	"github.com/spachava753/gai"
-	"go.starlark.net/starlark"
+	"github.com/spachava753/starlarkx/starlark"
 
 	"github.com/spachava753/cpe/internal/acp/xctx"
 	"github.com/spachava753/cpe/internal/storage"

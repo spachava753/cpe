@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.starlark.net/starlark"
+	"github.com/spachava753/starlarkx/starlark"
 )
 
 func decodeToolCall(content string) (string, starlark.Value, error) {

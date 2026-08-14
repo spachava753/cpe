@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/spachava753/gai"
-	"go.starlark.net/starlark"
+	"github.com/spachava753/starlarkx/starlark"
 
 	"github.com/spachava753/cpe/internal/storage"
 )

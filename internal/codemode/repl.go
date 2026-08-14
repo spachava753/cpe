@@ -15,7 +15,7 @@ import (
 	acpsdk "github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/dyson"
 	"github.com/spachava753/gai"
-	"go.starlark.net/starlark"
+	"github.com/spachava753/starlarkx/starlark"
 
 	codemodeacp "github.com/spachava753/cpe/internal/codemode/acp"
 	"github.com/spachava753/cpe/internal/xio"

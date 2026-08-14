@@ -1,6 +1,6 @@
 package acp
 
-import "go.starlark.net/starlark"
+import "github.com/spachava753/starlarkx/starlark"
 
 func optionalStarlarkString(value string) starlark.Value {
 	if value == "" {

@@ -26,11 +26,11 @@ require (
 	github.com/ncruces/go-sqlite3 v0.34.3
 	github.com/openai/openai-go/v3 v3.47.0
 	github.com/spachava753/acp-sdk v0.3.0
-	github.com/spachava753/dyson v0.0.0-20260810134029-0950f1df2452
+	github.com/spachava753/dyson v0.0.0-20260814194707-38eb81e43c81
 	github.com/spachava753/gai v0.42.0
+	github.com/spachava753/starlarkx v0.0.0-20260814193657-4cd07fac1340
 	github.com/spf13/cobra v1.10.2
 	github.com/yuin/goldmark v1.8.2
-	go.starlark.net v0.0.0-20260613233743-8ba36ccb83fb
 	golang.org/x/net v0.57.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/term v0.45.0
@@ -355,5 +355,3 @@ tool (
 	golang.org/x/tools/cmd/deadcode
 	golang.org/x/tools/go/analysis/passes/modernize/cmd/modernize
 )
-
-replace go.starlark.net => github.com/spachava753/starlarkx v0.0.0-20260810013711-243e6013254e
