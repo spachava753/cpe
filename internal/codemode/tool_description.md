@@ -9,6 +9,7 @@ Dyson provides host-backed standard-library compatibility modules and globals. L
 ```python
 load("os.star", "os")
 load("glob.star", "glob")
+load("json.star", "json")
 load("re.star", "re")
 load("requests.star", "requests")
 load("shutil.star", "shutil")
@@ -17,7 +18,7 @@ load("tempfile.star", "tempfile")
 load("time.star", "time")
 ```
 
-The `grp.star`, `pwd.star`, and `signal.star` modules are also available. Module coverage is intentionally partial; an unavailable member produces a Starlark error. Filesystem, environment, process, and HTTP operations run with the CPE process's normal permissions.
+The `grp.star`, `pwd.star`, and `signal.star` modules are also available. JSON values can be encoded with `json.dumps(obj)`. Because Starlark reserves `load` as a keyword, decode a file with `getattr(json, "load")(file)` rather than `json.load(file)`. Module coverage is intentionally partial; an unavailable member produces a Starlark error. Filesystem, environment, process, and HTTP operations run with the CPE process's normal permissions.
 
 CPE provides a read-only `acp.star` module for inspecting persisted ACP sessions:
 

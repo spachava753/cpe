@@ -317,7 +317,7 @@ Code Mode registers a `starlark_repl` tool backed by
 [Dyson](https://github.com/spachava753/dyson). Each ACP session owns a Starlark
 REPL: globals persist across tool calls, and successful conversation compaction
 closes that session and starts a fresh thread. Dyson supplies Python-compatible
-filesystem, environment, process, HTTP, regular-expression, time, and related
+filesystem, environment, process, HTTP, JSON, regular-expression, time, and related
 APIs, including the global `open` builtin and native bytes decoding.
 
 ```yaml
