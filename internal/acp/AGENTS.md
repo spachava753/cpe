@@ -3,6 +3,7 @@
 Package-specific guidance for `internal/acp`.
 
 - Treat ACP as bidirectional and concurrent. The client can make RPC calls while the agent sends notifications, and multiple calls may target the same session. Do not assume request serialization; mutate active session state through the existing `sync.Guard` pattern.
+- Keep Code Mode's session-scoped Starlark REPL, tool callback, output limiting, prompt description, and `acp.star` integration in this package; the read-only Starlark module implementation lives in `acpstar` to avoid colliding with package `acp`.
 - Keep file ownership narrow: session lifecycle in `session.go`, persisted-session CLI operations and Markdown rendering in `commands.go`, session config in `session_config.go`, session-scoped log attributes in `logging.go`, skill slash-command ACP adaptation in `skill_commands.go`, ACP/GAI conversions in `gai.go`, and model/tool turn execution in `loop.go`.
 - Validate `session/load` and `session/resume` request working directories against persisted session metadata before reusing or creating active state. The match is exact because ACP session `cwd` is immutable.
 - Advance a session using the last message observed before generation as the optimistic concurrency expectation. If storage returns `ErrSessionConflict`, panic because more than one ACP process owns the same session; do not treat it as a recoverable prompt result or clean up the losing branch during prompt handling.

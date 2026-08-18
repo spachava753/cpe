@@ -1,4 +1,4 @@
-package codemode
+package acp
 
 import (
 	_ "embed"
@@ -8,7 +8,7 @@ import (
 	"github.com/spachava753/gai"
 )
 
-//go:embed tool_description.md
+//go:embed tool_description.prompt
 var toolDesc string
 
 // GenerateToolDescription returns the authoritative starlark_repl prompt.

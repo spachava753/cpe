@@ -15,7 +15,6 @@ import (
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/agent"
-	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
 	cpelogging "github.com/spachava753/cpe/internal/logging"
 	"github.com/spachava753/cpe/internal/mcp"
@@ -146,12 +145,12 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, s session, _ acp.Clie
 	codeModeEnabled := cfg.CodeMode != nil && cfg.CodeMode.Enabled
 	slog.DebugContext(ctx, "code mode config", slog.Bool("enabled", codeModeEnabled))
 	if codeModeEnabled {
-		starlarkREPLTool := codemode.MakeTool(cfg.CodeMode.MaxTimeout)
-		callback := &codemode.StarlarkREPLCallback{
+		starlarkREPLTool := MakeTool(cfg.CodeMode.MaxTimeout)
+		callback := &StarlarkREPLCallback{
 			Cwd:                  s.cwd,
 			SessionID:            s.id,
 			MaxTimeout:           cfg.CodeMode.MaxTimeout,
-			LargeOutputCharLimit: codemode.ResolveLargeOutputCharLimit(cfg.CodeMode.LargeOutputCharLimit, cfg.Model.ContextWindow),
+			LargeOutputCharLimit: ResolveLargeOutputCharLimit(cfg.CodeMode.LargeOutputCharLimit, cfg.Model.ContextWindow),
 			Store:                c.store,
 			Conn:                 c.conn,
 		}

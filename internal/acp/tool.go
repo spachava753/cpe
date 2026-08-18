@@ -1,4 +1,4 @@
-package codemode
+package acp
 
 import (
 	"context"
@@ -11,9 +11,9 @@ import (
 	"github.com/spachava753/gai"
 	"github.com/spachava753/starlarkx/starlark"
 
+	"github.com/spachava753/cpe/internal/acp/acpstar"
 	"github.com/spachava753/cpe/internal/acp/xacp"
 	"github.com/spachava753/cpe/internal/acp/xctx"
-	codemodeacp "github.com/spachava753/cpe/internal/codemode/acp"
 	"github.com/spachava753/cpe/internal/mapstruct"
 )
 
@@ -35,7 +35,7 @@ type StarlarkREPLCallback struct {
 	LargeOutputCharLimit int
 	Cwd                  string
 	SessionID            acp.SessionId
-	Store                codemodeacp.SessionStore
+	Store                acpstar.SessionStore
 	Conn                 acpConn
 
 	mu   sync.Mutex

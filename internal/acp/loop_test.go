@@ -14,7 +14,6 @@ import (
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/acp/xctx"
-	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
 )
@@ -795,7 +794,7 @@ func TestLoopCompactionCreatesToolErrorForTemplateFailure(t *testing.T) {
 func TestLoopCompactionClearsStarlarkREPLState(t *testing.T) {
 	t.Parallel()
 
-	callback := &codemode.StarlarkREPLCallback{MaxTimeout: 5}
+	callback := &StarlarkREPLCallback{MaxTimeout: 5}
 	msg, err := callback.Call(t.Context(), map[string]any{
 		"code":             "answer = 42\nprint(answer)",
 		"executionTimeout": 2,
@@ -838,7 +837,7 @@ func TestLoopCompactionClearsStarlarkREPLState(t *testing.T) {
 			InitialMessageTemplate: initialMessage,
 		}},
 		toolCallbacks: map[string]gai.ToolCallback{
-			codemode.StarlarkREPLToolName: callback,
+			StarlarkREPLToolName: callback,
 		},
 		conn: sessionUpdateFunc(func(context.Context, *acp.SessionNotification) error { return nil }),
 	}

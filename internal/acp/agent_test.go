@@ -17,7 +17,6 @@ import (
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
-	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
 	cpesync "github.com/spachava753/cpe/internal/sync"
@@ -2041,7 +2040,7 @@ Output Cost: 1.00`),
 }
 
 func TestPromptReportsStarlarkREPLResultContentToACPClient(t *testing.T) {
-	toolCall, err := gai.ToolCallBlock("call-starlark", codemode.StarlarkREPLToolName, map[string]any{
+	toolCall, err := gai.ToolCallBlock("call-starlark", StarlarkREPLToolName, map[string]any{
 		"code":             `print("visible result")`,
 		"executionTimeout": 2,
 	})
@@ -2086,7 +2085,7 @@ func TestPromptReportsStarlarkREPLResultContentToACPClient(t *testing.T) {
 				return nil, err
 			}
 			loop := &Loop{G: gen, Store: store, Cfg: cfg, conn: conn}
-			if err := loop.Register(codemode.MakeTool(5), &codemode.StarlarkREPLCallback{
+			if err := loop.Register(MakeTool(5), &StarlarkREPLCallback{
 				Cwd:        s.cwd,
 				SessionID:  s.id,
 				MaxTimeout: 5,

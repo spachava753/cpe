@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/spachava753/cpe/internal/acp"
 	"github.com/spachava753/cpe/internal/mcp"
 )
 
@@ -133,11 +134,7 @@ host-backed standard-library modules.`,
   # Print code mode description for a specific model
   cpe mcp code-desc --model sonnet`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return mcp.MCPCodeDescFromConfig(cmd.Context(), mcp.MCPCodeDescFromConfigOptions{
-			ConfigPath: configPath,
-			ModelRef:   model,
-			Writer:     cmd.OutOrStdout(),
-		})
+		return acp.CodeDescFromConfig(cmd.Context(), configPath, model, cmd.OutOrStdout())
 	},
 }
 

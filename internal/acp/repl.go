@@ -1,4 +1,4 @@
-package codemode
+package acp
 
 import (
 	"context"
@@ -17,9 +17,11 @@ import (
 	"github.com/spachava753/gai"
 	"github.com/spachava753/starlarkx/starlark"
 
-	codemodeacp "github.com/spachava753/cpe/internal/codemode/acp"
+	acpstar "github.com/spachava753/cpe/internal/acp/acpstar"
 	"github.com/spachava753/cpe/internal/xio"
 )
+
+const pdfMIMEType = "application/pdf"
 
 type starlarkREPL struct {
 	cwd         string
@@ -40,7 +42,7 @@ func newStarlarkREPL(
 	cwd string,
 	outputLimit int,
 	sessionID acpsdk.SessionId,
-	store codemodeacp.SessionStore,
+	store acpstar.SessionStore,
 ) *starlarkREPL {
 	r := &starlarkREPL{
 		cwd:         cwd,
@@ -56,7 +58,7 @@ func newStarlarkREPL(
 			}
 		},
 		dyson.NewStdlib(stdlibConfig),
-		codemodeacp.Module(store, sessionID, cwd),
+		acpstar.Module(store, sessionID, cwd),
 		dyson.GlobalSet{
 			"view_file": starlark.NewBuiltin("view_file", r.viewFile),
 		},
@@ -122,7 +124,7 @@ func (r *starlarkREPL) viewFile(
 	filename := filepath.Base(path)
 	var block gai.Block
 	switch {
-	case mimeType == "application/pdf":
+	case mimeType == pdfMIMEType:
 		block = gai.PDFBlock(data, filename)
 	case strings.HasPrefix(mimeType, "image/"):
 		block = gai.ImageBlock(data, mimeType)
@@ -159,7 +161,7 @@ func artifactMIMEType(path, explicit string, data []byte) (string, error) {
 		return "", fmt.Errorf("view_file: invalid MIME type %q: %w", mimeType, err)
 	}
 	if mediaType == "application/x-pdf" {
-		mediaType = "application/pdf"
+		mediaType = pdfMIMEType
 	}
 	return mediaType, nil
 }

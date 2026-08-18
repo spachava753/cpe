@@ -1,4 +1,4 @@
-package codemode
+package acp
 
 const (
 	charsPerToken              = 4

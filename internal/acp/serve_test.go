@@ -11,7 +11,6 @@ import (
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
-	"github.com/spachava753/cpe/internal/codemode"
 	"github.com/spachava753/cpe/internal/config"
 	cpemcp "github.com/spachava753/cpe/internal/mcp"
 	"github.com/spachava753/cpe/internal/mcpconfig"
@@ -174,8 +173,8 @@ func TestServerRuntimeCreatorRegistersStarlarkREPL(t *testing.T) {
 		t.Fatalf("registered tools = %#v, want one starlark_repl tool", generator.tools)
 	}
 	tool := generator.tools[0]
-	if tool.Name != codemode.StarlarkREPLToolName {
-		t.Fatalf("registered tool name = %q, want %q", tool.Name, codemode.StarlarkREPLToolName)
+	if tool.Name != StarlarkREPLToolName {
+		t.Fatalf("registered tool name = %q, want %q", tool.Name, StarlarkREPLToolName)
 	}
 	timeout := tool.InputSchema.Properties["executionTimeout"]
 	if timeout == nil || timeout.Maximum == nil || *timeout.Maximum != 17 {
@@ -186,9 +185,9 @@ func TestServerRuntimeCreatorRegistersStarlarkREPL(t *testing.T) {
 	if !ok {
 		t.Fatalf("runtime type = %T, want *closerAgent", runtime)
 	}
-	callback, ok := created.toolCallbacks[codemode.StarlarkREPLToolName].(*codemode.StarlarkREPLCallback)
+	callback, ok := created.toolCallbacks[StarlarkREPLToolName].(*StarlarkREPLCallback)
 	if !ok {
-		t.Fatalf("registered callback = %T, want *codemode.StarlarkREPLCallback", created.toolCallbacks[codemode.StarlarkREPLToolName])
+		t.Fatalf("registered callback = %T, want *StarlarkREPLCallback", created.toolCallbacks[StarlarkREPLToolName])
 	}
 	if callback.SessionID != "session-1" || callback.Cwd != cwd || callback.MaxTimeout != 17 || callback.LargeOutputCharLimit != 123 {
 		t.Fatalf("registered callback = %#v, want resolved session settings", callback)

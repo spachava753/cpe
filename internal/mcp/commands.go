@@ -12,8 +12,6 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/spachava753/cpe/internal/codemode"
-	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/mcpconfig"
 	"github.com/spachava753/cpe/internal/render"
 )
@@ -291,35 +289,5 @@ func MCPCallTool(ctx context.Context, opts MCPCallToolOptions) error {
 		return result.GetError()
 	}
 
-	return nil
-}
-
-// MCPCodeDescOptions contains parameters for generating code mode description
-type MCPCodeDescOptions struct {
-	CodeMode *config.CodeModeConfig
-	Writer   io.Writer
-	Renderer render.Iface
-}
-
-// MCPCodeDesc generates and prints the starlark_repl tool description.
-func MCPCodeDesc(ctx context.Context, opts MCPCodeDescOptions) error {
-	description := codemode.GenerateToolDescription()
-
-	var mdBuilder strings.Builder
-	mdBuilder.WriteString("# starlark_repl Tool Description\n\n")
-
-	if opts.CodeMode == nil || !opts.CodeMode.Enabled {
-		mdBuilder.WriteString("> **Note:** Code mode is not enabled in current configuration.\n\n")
-	}
-
-	mdBuilder.WriteString("---\n\n")
-	mdBuilder.WriteString(description)
-
-	rendered, err := opts.Renderer.Render(mdBuilder.String())
-	if err != nil {
-		return fmt.Errorf("failed to render markdown: %w", err)
-	}
-
-	fmt.Fprintln(opts.Writer, rendered)
 	return nil
 }

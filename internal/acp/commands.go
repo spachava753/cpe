@@ -218,7 +218,7 @@ func writeMarkdownContent(markdown *strings.Builder, block gai.Block) {
 	}
 
 	kind := block.ModalityType.String()
-	if block.MimeType == "application/pdf" {
+	if block.MimeType == pdfMIMEType {
 		kind = "PDF"
 	}
 	fmt.Fprintf(markdown, "[%s content", kind)

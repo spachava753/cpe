@@ -132,38 +132,3 @@ func MCPCallToolFromConfig(ctx context.Context, opts MCPCallToolFromConfigOption
 		Writer:     writer,
 	})
 }
-
-// MCPCodeDescFromConfigOptions contains CLI-facing inputs for generating the
-// starlark_repl description from resolved config.
-type MCPCodeDescFromConfigOptions struct {
-	ConfigPath string
-	ModelRef   string
-	Writer     io.Writer
-	Renderer   render.Iface
-}
-
-// MCPCodeDescFromConfig resolves config and prints the code mode description.
-func MCPCodeDescFromConfig(ctx context.Context, opts MCPCodeDescFromConfigOptions) error {
-	cfg, err := config.ResolveConfig(opts.ConfigPath, config.RuntimeOptions{ModelRef: opts.ModelRef})
-	if err != nil {
-		return err
-	}
-
-	writer := opts.Writer
-	if writer == nil {
-		writer = os.Stdout
-	}
-	renderer := opts.Renderer
-	if renderer == nil {
-		renderer = render.NewPlainTextRenderer()
-		if render.IsTTYWriter(writer) {
-			renderer = render.NewGlamourRendererForWriter(writer)
-		}
-	}
-
-	return MCPCodeDesc(ctx, MCPCodeDescOptions{
-		CodeMode: cfg.CodeMode,
-		Writer:   writer,
-		Renderer: renderer,
-	})
-}
