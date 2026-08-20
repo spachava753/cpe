@@ -173,8 +173,8 @@ func TestServerRuntimeCreatorRegistersStarlarkREPL(t *testing.T) {
 		t.Fatalf("registered tools = %#v, want one starlark_repl tool", generator.tools)
 	}
 	tool := generator.tools[0]
-	if tool.Name != StarlarkREPLToolName {
-		t.Fatalf("registered tool name = %q, want %q", tool.Name, StarlarkREPLToolName)
+	if tool.Name != starlarkREPLToolName {
+		t.Fatalf("registered tool name = %q, want %q", tool.Name, starlarkREPLToolName)
 	}
 	timeout := tool.InputSchema.Properties["executionTimeout"]
 	if timeout == nil || timeout.Maximum == nil || *timeout.Maximum != 17 {
@@ -185,9 +185,9 @@ func TestServerRuntimeCreatorRegistersStarlarkREPL(t *testing.T) {
 	if !ok {
 		t.Fatalf("runtime type = %T, want *closerAgent", runtime)
 	}
-	callback, ok := created.toolCallbacks[StarlarkREPLToolName].(*StarlarkREPLCallback)
+	callback, ok := created.toolCallbacks[starlarkREPLToolName].(*starlarkREPLCallback)
 	if !ok {
-		t.Fatalf("registered callback = %T, want *StarlarkREPLCallback", created.toolCallbacks[StarlarkREPLToolName])
+		t.Fatalf("registered callback = %T, want *StarlarkREPLCallback", created.toolCallbacks[starlarkREPLToolName])
 	}
 	if callback.SessionID != "session-1" || callback.Cwd != cwd || callback.MaxTimeout != 17 || callback.LargeOutputCharLimit != 123 {
 		t.Fatalf("registered callback = %#v, want resolved session settings", callback)

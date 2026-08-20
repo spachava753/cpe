@@ -16,7 +16,7 @@ type LoadSystemPromptOptions struct {
 	// Config is the effective configuration for template rendering
 	Config Config
 	// Skills is the already-filtered model-visible skill metadata exposed to the
-	// prompt template through TemplateData.Skills. Callers should omit skills with
+	// prompt template through templateData.Skills. Callers should omit skills with
 	// disable-model-invocation: true unless they intentionally want those skills
 	// visible in the rendered system prompt.
 	Skills []skills.Skill
@@ -40,7 +40,7 @@ func LoadSystemPrompt(ctx context.Context, opts LoadSystemPromptOptions) (string
 		return "", fmt.Errorf("failed to read system prompt file %q: %w", opts.SystemPromptPath, err)
 	}
 
-	rendered, err := SystemPromptTemplate(ctx, string(contents), TemplateData{
+	rendered, err := systemPromptTemplate(ctx, string(contents), templateData{
 		Config: opts.Config,
 		Skills: opts.Skills,
 	})

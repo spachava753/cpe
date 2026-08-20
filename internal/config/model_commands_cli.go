@@ -26,7 +26,7 @@ func ModelListFromConfig(ctx context.Context, opts ModelListFromConfigOptions) e
 		writer = os.Stdout
 	}
 
-	return ModelList(ctx, ModelListOptions{
+	return modelList(ctx, modelListOptions{
 		Config:       cfg,
 		DefaultModel: opts.DefaultModel,
 		Writer:       writer,
@@ -52,7 +52,7 @@ func ModelInfoFromConfig(ctx context.Context, opts ModelInfoFromConfigOptions) e
 		writer = os.Stdout
 	}
 
-	return ModelInfo(ctx, ModelInfoOptions{
+	return modelInfo(ctx, modelInfoOptions{
 		Config:    cfg,
 		ModelName: opts.ModelName,
 		Writer:    writer,
@@ -72,7 +72,7 @@ type ModelSystemPromptFromConfigOptions struct {
 // ModelSystemPromptFromConfig loads raw config and renders the selected model's
 // effective system prompt.
 func ModelSystemPromptFromConfig(ctx context.Context, opts ModelSystemPromptFromConfigOptions) error {
-	cfg, resolvedConfigPath, err := LoadRawConfigWithPath(opts.ConfigPath)
+	cfg, resolvedConfigPath, err := loadRawConfigWithPath(opts.ConfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
@@ -92,7 +92,7 @@ func ModelSystemPromptFromConfig(ctx context.Context, opts ModelSystemPromptFrom
 		output = os.Stdout
 	}
 
-	return ModelSystemPrompt(ctx, ModelSystemPromptOptions{
+	return modelSystemPrompt(ctx, modelSystemPromptOptions{
 		RawConfig:      cfg,
 		Config:         effectiveConfig,
 		ConfigFilePath: resolvedConfigPath,

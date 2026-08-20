@@ -852,7 +852,7 @@ func TestCancel(t *testing.T) {
 				}}
 				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
 				be.Err(t, err, nil)
-				return testRuntime{Loop: &Loop{
+				return testRuntime{loop: &loop{
 					G:     &gen,
 					Store: store,
 					Cfg:   cfg,
@@ -1033,7 +1033,7 @@ func TestCancel(t *testing.T) {
 	})
 
 	t.Run("unknown session", func(t *testing.T) {
-		agent := Agent{
+		agent := agent{
 			activeSessions: new(cpesync.Map[acp.SessionId, *cpesync.Guard[session]]),
 		}
 

@@ -7,61 +7,61 @@ import (
 	"testing"
 )
 
-// Kind identifies a category of opt-in test.
-type Kind string
+// kind identifies a category of opt-in test.
+type kind string
 
 const (
-	// Integration identifies tests that require real local services, binaries,
+	// integration identifies tests that require real local services, binaries,
 	// or multi-process orchestration.
-	Integration Kind = "integration"
-	// Live identifies tests that call real external APIs or accounts.
-	Live Kind = "live"
-	// Interactive identifies tests that require a browser, manual approval, or
+	integration kind = "integration"
+	// live identifies tests that call real external APIs or accounts.
+	live kind = "live"
+	// interactive identifies tests that require a browser, manual approval, or
 	// another human-in-the-loop step.
-	Interactive Kind = "interactive"
+	interactive kind = "interactive"
 )
 
 const (
-	// EnvIntegrationTests enables tests gated by Integration.
-	EnvIntegrationTests = "CPE_RUN_INTEGRATION_TESTS"
-	// EnvLiveTests enables tests gated by Live.
-	EnvLiveTests = "CPE_RUN_LIVE_TESTS"
-	// EnvInteractiveTests enables tests gated by Interactive.
-	EnvInteractiveTests = "CPE_RUN_INTERACTIVE_TESTS"
+	// envIntegrationTests enables tests gated by integration.
+	envIntegrationTests = "CPE_RUN_INTEGRATION_TESTS"
+	// envLiveTests enables tests gated by live.
+	envLiveTests = "CPE_RUN_LIVE_TESTS"
+	// envInteractiveTests enables tests gated by interactive.
+	envInteractiveTests = "CPE_RUN_INTERACTIVE_TESTS"
 )
 
-// EnvVar returns the environment variable that enables the given test kind.
+// envVar returns the environment variable that enables the given test kind.
 // It returns the empty string for unknown kinds.
-func EnvVar(kind Kind) string {
+func envVar(kind kind) string {
 	switch kind {
-	case Integration:
-		return EnvIntegrationTests
-	case Live:
-		return EnvLiveTests
-	case Interactive:
-		return EnvInteractiveTests
+	case integration:
+		return envIntegrationTests
+	case live:
+		return envLiveTests
+	case interactive:
+		return envInteractiveTests
 	default:
 		return ""
 	}
 }
 
-// Enabled reports whether the given opt-in test kind is enabled by the
+// enabled reports whether the given opt-in test kind is enabled by the
 // corresponding environment variable.
-func Enabled(kind Kind) bool {
-	envVar := EnvVar(kind)
+func enabled(kind kind) bool {
+	envVar := envVar(kind)
 	if envVar == "" {
 		return false
 	}
 	return truthyEnv(envVar)
 }
 
-// Require skips the current test unless the given opt-in test kind is enabled.
-func Require(t testing.TB, kind Kind) {
+// require skips the current test unless the given opt-in test kind is enabled.
+func require(t testing.TB, kind kind) {
 	t.Helper()
-	if Enabled(kind) {
+	if enabled(kind) {
 		return
 	}
-	envVar := EnvVar(kind)
+	envVar := envVar(kind)
 	if envVar == "" {
 		t.Fatalf("unknown test gate kind %q", kind)
 	}
@@ -70,7 +70,7 @@ func Require(t testing.TB, kind Kind) {
 
 // RequireLive skips the current test unless live tests are enabled.
 func RequireLive(t testing.TB) {
-	Require(t, Live)
+	require(t, live)
 }
 
 func missingEnv(vars ...string) []string {
@@ -95,12 +95,12 @@ func truthyEnv(envVar string) bool {
 	}
 }
 
-// Describe returns a human-readable summary of whether the given test kind is
+// describe returns a human-readable summary of whether the given test kind is
 // enabled and which environment variable controls it.
-func Describe(kind Kind) string {
-	envVar := EnvVar(kind)
+func describe(kind kind) string {
+	envVar := envVar(kind)
 	if envVar == "" {
 		return fmt.Sprintf("unknown test gate kind %q", kind)
 	}
-	return fmt.Sprintf("%s tests enabled=%t via %s", kind, Enabled(kind), envVar)
+	return fmt.Sprintf("%s tests enabled=%t via %s", kind, enabled(kind), envVar)
 }

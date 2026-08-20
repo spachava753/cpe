@@ -90,9 +90,9 @@ type RawConfig struct {
 	Version string `yaml:"version,omitempty" json:"version,omitempty"`
 }
 
-// GenerationParams wraps gai.GenOpts with camelCase YAML tags for config unmarshaling.
+// generationParams wraps gai.GenOpts with camelCase YAML tags for config unmarshaling.
 // This adapter exists because gai.GenOpts uses snake_case tags matching API conventions.
-type GenerationParams struct {
+type generationParams struct {
 	Temperature         *float64 `yaml:"temperature,omitempty" json:"temperature,omitempty" validate:"omitempty,lte=2,gte=0"`
 	TopP                *float64 `yaml:"topP,omitempty" json:"topP,omitempty" validate:"omitempty,lte=1,gte=0"`
 	TopK                *uint    `yaml:"topK,omitempty" json:"topK,omitempty" validate:"omitempty,gte=0"`
@@ -105,8 +105,8 @@ type GenerationParams struct {
 	ThinkingBudget      string   `yaml:"thinkingBudget,omitempty" json:"thinkingBudget,omitempty"`
 }
 
-// ToGenOpts converts GenerationParams to gai.GenOpts.
-func (g *GenerationParams) ToGenOpts() *gai.GenOpts {
+// ToGenOpts converts generationParams to gai.GenOpts.
+func (g *generationParams) ToGenOpts() *gai.GenOpts {
 	if g == nil {
 		return nil
 	}
@@ -135,7 +135,7 @@ type ModelConfig struct {
 	SystemPromptPath string `yaml:"systemPromptPath,omitempty" json:"systemPromptPath,omitempty" validate:"omitempty,filepath"`
 
 	// Generation parameters for this model profile.
-	GenerationParams *GenerationParams `yaml:"generationParams,omitempty" json:"generationParams,omitempty" validate:"omitempty"`
+	GenerationParams *generationParams `yaml:"generationParams,omitempty" json:"generationParams,omitempty" validate:"omitempty"`
 
 	// Request timeout for this model profile.
 	Timeout string `yaml:"timeout,omitempty" json:"timeout,omitempty"`

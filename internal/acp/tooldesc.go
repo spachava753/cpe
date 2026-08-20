@@ -11,13 +11,13 @@ import (
 //go:embed tool_description.prompt
 var toolDesc string
 
-// GenerateToolDescription returns the authoritative starlark_repl prompt.
-func GenerateToolDescription() string {
+// generateToolDescription returns the authoritative starlark_repl prompt.
+func generateToolDescription() string {
 	return toolDesc
 }
 
-// MakeTool returns the starlark_repl definition consumed by the agent runtime.
-func MakeTool(maxTimeout int) gai.Tool {
+// makeTool returns the starlark_repl definition consumed by the agent runtime.
+func makeTool(maxTimeout int) gai.Tool {
 	if maxTimeout <= 0 {
 		maxTimeout = 300
 	}
@@ -42,8 +42,8 @@ func MakeTool(maxTimeout int) gai.Tool {
 	}
 
 	return gai.Tool{
-		Name:        StarlarkREPLToolName,
-		Description: GenerateToolDescription(),
+		Name:        starlarkREPLToolName,
+		Description: generateToolDescription(),
 		InputSchema: inputSchema,
 	}
 }

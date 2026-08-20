@@ -19,8 +19,8 @@ func NewToolCallback(
 	session *mcpsdk.ClientSession,
 	serverName, toolName string,
 	serverConfig mcpconfig.ServerConfig,
-) *ToolCallback {
-	return &ToolCallback{
+) *toolCallback {
+	return &toolCallback{
 		Conn:          conn,
 		SessionId:     sessionId,
 		ClientSession: session,

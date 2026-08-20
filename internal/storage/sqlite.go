@@ -12,12 +12,12 @@ import (
 	"github.com/spachava753/cpe/internal/storage/sqlcgen"
 )
 
-// DB is the database contract required by NewSqlite.
+// db is the database contract required by NewSqlite.
 //
-// It is intentionally narrow so callers can pass either *sql.DB or a test
+// It is intentionally narrow so callers can pass either *sql.db or a test
 // double. SaveDialog and DeleteMessages rely on BeginTx providing real SQL
 // transaction semantics (commit or rollback boundaries).
-type DB interface {
+type db interface {
 	sqlcgen.DBTX
 	// ExecContext executes statements outside a transaction. NewSqlite uses it
 	// for connection-level PRAGMA setup.
@@ -36,15 +36,15 @@ func GenerateId() string {
 //go:embed schema.sql
 var schemaSQL string
 
-// SqliteOption configures a SQLite-backed message store.
-type SqliteOption func(*Sqlite)
+// sqliteOption configures a SQLite-backed message store.
+type sqliteOption func(*Sqlite)
 
-// Sqlite is the SQLite-backed MessageDB implementation.
+// Sqlite is the SQLite-backed messageDB implementation.
 //
 // It stores messages as a parent-linked tree and reconstructs gai.Message
 // values (including metadata keys in ExtraFields) on reads.
 type Sqlite struct {
-	db          DB
+	db          db
 	q           *sqlcgen.Queries
 	idGenerator func() string
 	ownedDB     *sql.DB
@@ -56,7 +56,7 @@ type Sqlite struct {
 // one serialized write transaction.
 //
 // The caller owns the lifecycle of db (open/close).
-func NewSqlite(ctx context.Context, db DB, opts ...SqliteOption) (*Sqlite, error) {
+func NewSqlite(ctx context.Context, db db, opts ...sqliteOption) (*Sqlite, error) {
 	if err := enableForeignKeys(ctx, db); err != nil {
 		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
 	}
@@ -76,7 +76,7 @@ func NewSqlite(ctx context.Context, db DB, opts ...SqliteOption) (*Sqlite, error
 }
 
 // initializeSchema serializes first-run schema creation across processes.
-func initializeSchema(ctx context.Context, db DB) error {
+func initializeSchema(ctx context.Context, db db) error {
 	tx, err := beginWriteTx(ctx, db)
 	if err != nil {
 		return fmt.Errorf("begin schema transaction: %w", err)
@@ -102,11 +102,11 @@ func (s *Sqlite) Close() error {
 
 // beginWriteTx acquires the write reservation before any reads in a write
 // transaction. The ncruces driver maps serializable transactions to IMMEDIATE.
-func beginWriteTx(ctx context.Context, db DB) (*sql.Tx, error) {
+func beginWriteTx(ctx context.Context, db db) (*sql.Tx, error) {
 	return db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 }
 
-func enableForeignKeys(ctx context.Context, db DB) error {
+func enableForeignKeys(ctx context.Context, db db) error {
 	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys = ON;"); err != nil {
 		return fmt.Errorf("failed to set PRAGMA foreign_keys = ON: %w", err)
 	}

@@ -22,7 +22,7 @@ func TestResolveConfigRequiresModel(t *testing.T) {
 
 func TestResolveGenerationParamsUsesModelProfileAndRuntimeOnly(t *testing.T) {
 	model := testModelProfile()
-	model.GenerationParams = &GenerationParams{
+	model.GenerationParams = &generationParams{
 		Temperature:         new(0.7),
 		MaxGenerationTokens: new(1024),
 		StopSequences:       []string{"model-stop"},

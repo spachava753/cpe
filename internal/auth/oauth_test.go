@@ -40,7 +40,7 @@ func TestGetProviderOAuthConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg, err := GetProviderOAuthConfig(tt.provider)
+			cfg, err := getProviderOAuthConfig(tt.provider)
 			if tt.wantErr {
 				if err == nil {
 					t.Error("expected error, got nil")
@@ -70,19 +70,19 @@ func TestGetProviderOAuthConfig(t *testing.T) {
 }
 
 func TestGetOpenAIDefaults(t *testing.T) {
-	if got := GetOpenAIClientID(); got != "app_EMoamEEZ73f0CkXaXp7hrann" {
+	if got := getOpenAIClientID(); got != "app_EMoamEEZ73f0CkXaXp7hrann" {
 		t.Errorf("GetOpenAIClientID() = %q, want %q", got, "app_EMoamEEZ73f0CkXaXp7hrann")
 	}
-	if got := GetOpenAIAuthURL(); got != "https://auth.openai.com/oauth/authorize" {
+	if got := getOpenAIAuthURL(); got != "https://auth.openai.com/oauth/authorize" {
 		t.Errorf("GetOpenAIAuthURL() = %q, want %q", got, "https://auth.openai.com/oauth/authorize")
 	}
-	if got := GetOpenAITokenURL(); got != "https://auth.openai.com/oauth/token" {
+	if got := getOpenAITokenURL(); got != "https://auth.openai.com/oauth/token" {
 		t.Errorf("GetOpenAITokenURL() = %q, want %q", got, "https://auth.openai.com/oauth/token")
 	}
-	if got := GetOpenAIRedirectURI(); got != "http://localhost:1455/auth/callback" {
+	if got := getOpenAIRedirectURI(); got != "http://localhost:1455/auth/callback" {
 		t.Errorf("GetOpenAIRedirectURI() = %q, want %q", got, "http://localhost:1455/auth/callback")
 	}
-	if got := GetOpenAIScopes(); got != "openid profile email offline_access" {
+	if got := getOpenAIScopes(); got != "openid profile email offline_access" {
 		t.Errorf("GetOpenAIScopes() = %q, want %q", got, "openid profile email offline_access")
 	}
 }
@@ -95,7 +95,7 @@ func TestExchangeCodeDoesNotRetryHTTPErrorStatus(t *testing.T) {
 		fmt.Fprint(w, "upstream exploded")
 	}))
 	defer server.Close()
-	t.Setenv(EnvAnthropicTokenURL, server.URL)
+	t.Setenv(envAnthropicTokenURL, server.URL)
 
 	_, err := ExchangeCode(context.Background(), "auth-code#state", "verifier")
 	if err == nil {
@@ -116,11 +116,11 @@ func TestGetOpenAIEnvOverrides(t *testing.T) {
 		getter   func() string
 		expected string
 	}{
-		{EnvOpenAIClientID, "custom-client-id", GetOpenAIClientID, "custom-client-id"},
-		{EnvOpenAIAuthURL, "https://custom.auth.com", GetOpenAIAuthURL, "https://custom.auth.com"},
-		{EnvOpenAITokenURL, "https://custom.token.com", GetOpenAITokenURL, "https://custom.token.com"},
-		{EnvOpenAIRedirectURI, "http://localhost:9999/cb", GetOpenAIRedirectURI, "http://localhost:9999/cb"},
-		{EnvOpenAIScopes, "custom:scope", GetOpenAIScopes, "custom:scope"},
+		{envOpenAIClientID, "custom-client-id", getOpenAIClientID, "custom-client-id"},
+		{envOpenAIAuthURL, "https://custom.auth.com", getOpenAIAuthURL, "https://custom.auth.com"},
+		{envOpenAITokenURL, "https://custom.token.com", getOpenAITokenURL, "https://custom.token.com"},
+		{envOpenAIRedirectURI, "http://localhost:9999/cb", getOpenAIRedirectURI, "http://localhost:9999/cb"},
+		{envOpenAIScopes, "custom:scope", getOpenAIScopes, "custom:scope"},
 	}
 
 	for _, tt := range tests {
@@ -214,7 +214,7 @@ func TestDecodeJWTClaims(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			claims, err := DecodeJWTClaims(tt.token)
+			claims, err := decodeJWTClaims(tt.token)
 			if tt.wantErr {
 				if err == nil {
 					t.Error("expected error, got nil")
@@ -261,7 +261,7 @@ func TestExtractChatGPTAccountID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			id, err := ExtractChatGPTAccountID(tt.token)
+			id, err := extractChatGPTAccountID(tt.token)
 			if tt.wantErr {
 				if err == nil {
 					t.Error("expected error, got nil")
@@ -292,7 +292,7 @@ func TestTokenToCredential(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			token := &TokenResponse{
+			token := &tokenResponse{
 				AccessToken:  "access-token-123",
 				RefreshToken: "refresh-token-456",
 				ExpiresIn:    3600,
@@ -348,7 +348,7 @@ func TestTokenToCredentialPreserveRefresh(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cred := TokenToCredentialPreserveRefresh("openai", &TokenResponse{
+			cred := TokenToCredentialPreserveRefresh("openai", &tokenResponse{
 				AccessToken:  "access-token-123",
 				RefreshToken: tt.tokenRefreshToken,
 				ExpiresIn:    3600,

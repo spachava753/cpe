@@ -29,7 +29,7 @@ func MCPListServersFromConfig(ctx context.Context, opts MCPListServersFromConfig
 		writer = os.Stdout
 	}
 
-	return MCPListServers(ctx, MCPListServersOptions{
+	return mcpListServers(ctx, mcpListServersOptions{
 		MCPServers: cfg.MCPServers,
 		Writer:     writer,
 	})
@@ -55,7 +55,7 @@ func MCPInfoFromConfig(ctx context.Context, opts MCPInfoFromConfigOptions) error
 		writer = os.Stdout
 	}
 
-	return MCPInfo(ctx, MCPInfoOptions{
+	return mcpInfo(ctx, mcpInfoOptions{
 		MCPServers: cfg.MCPServers,
 		ServerName: opts.ServerName,
 		Writer:     writer,
@@ -92,7 +92,7 @@ func MCPListToolsFromConfig(ctx context.Context, opts MCPListToolsFromConfigOpti
 		}
 	}
 
-	return MCPListTools(ctx, MCPListToolsOptions{
+	return mcpListTools(ctx, mcpListToolsOptions{
 		MCPServers:   cfg.MCPServers,
 		ServerName:   opts.ServerName,
 		Writer:       writer,
@@ -124,7 +124,7 @@ func MCPCallToolFromConfig(ctx context.Context, opts MCPCallToolFromConfigOption
 		writer = os.Stdout
 	}
 
-	return MCPCallTool(ctx, MCPCallToolOptions{
+	return mcpCallTool(ctx, mcpCallToolOptions{
 		MCPServers: cfg.MCPServers,
 		ServerName: opts.ServerName,
 		ToolName:   opts.ToolName,

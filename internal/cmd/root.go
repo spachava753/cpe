@@ -16,10 +16,10 @@ import (
 	"github.com/spachava753/cpe/internal/version"
 )
 
-// DefaultModel is the process-start snapshot of CPE_MODEL.
+// defaultModel is the process-start snapshot of CPE_MODEL.
 // It is used as the default model selector for inspection commands that resolve
 // a single model profile outside an ACP session.
-var DefaultModel = os.Getenv("CPE_MODEL")
+var defaultModel = os.Getenv("CPE_MODEL")
 
 var (
 	model                   string
@@ -95,7 +95,7 @@ func Execute() {
 func init() {
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Path to YAML configuration file (default: ./cpe.yaml, ~/.config/cpe/cpe.yaml)")
 	rootCmd.PersistentFlags().StringVar(&conversationStoragePath, "db-path", os.Getenv("CPE_DB_PATH"), "Path to ACP session SQLite database (default: user config directory, env: CPE_DB_PATH)")
-	rootCmd.PersistentFlags().StringVarP(&model, "model", "m", DefaultModel, "Model profile ref for direct prompt sessions (env: CPE_MODEL)")
+	rootCmd.PersistentFlags().StringVarP(&model, "model", "m", defaultModel, "Model profile ref for direct prompt sessions (env: CPE_MODEL)")
 	rootCmd.PersistentFlags().StringVar(&thinkingLevel, "thinking-level", "", "Thinking level for direct prompt sessions")
 	rootCmd.Flags().BoolVarP(&versionFlag, "version", "v", false, "Print the version number and exit")
 }

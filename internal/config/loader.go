@@ -12,21 +12,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ErrConfigNotFound indicates no config file was found in the standard search locations.
-var ErrConfigNotFound = errors.New("configuration file not found")
+// errConfigNotFound indicates no config file was found in the standard search locations.
+var errConfigNotFound = errors.New("configuration file not found")
 
 // LoadRawConfig loads and validates configuration, returning only the parsed
 // RawConfig. It is a convenience wrapper for callers that do not need the
 // resolved config file path.
 func LoadRawConfig(explicitPath string) (*RawConfig, error) {
-	cfg, _, err := LoadRawConfigWithPath(explicitPath)
+	cfg, _, err := loadRawConfigWithPath(explicitPath)
 	if err != nil {
 		return nil, err
 	}
 	return cfg, nil
 }
 
-// LoadRawConfigWithPath loads, parses, and validates configuration, returning
+// loadRawConfigWithPath loads, parses, and validates configuration, returning
 // both RawConfig and the concrete file path used.
 //
 // Path resolution contract:
@@ -35,7 +35,7 @@ func LoadRawConfig(explicitPath string) (*RawConfig, error) {
 //
 // Validation is always executed with ValidateWithConfigPath so path-based config
 // fields can be interpreted relative to the actual config file location.
-func LoadRawConfigWithPath(explicitPath string) (*RawConfig, string, error) {
+func loadRawConfigWithPath(explicitPath string) (*RawConfig, string, error) {
 	var configPath string
 	var err error
 
@@ -50,7 +50,7 @@ func LoadRawConfigWithPath(explicitPath string) (*RawConfig, string, error) {
 	} else {
 		configPath, err = findConfigFile()
 		if err != nil {
-			return nil, "", fmt.Errorf("%w: %w", ErrConfigNotFound, err)
+			return nil, "", fmt.Errorf("%w: %w", errConfigNotFound, err)
 		}
 	}
 

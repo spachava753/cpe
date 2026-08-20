@@ -15,7 +15,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/acp/xacp"
 	"github.com/spachava753/cpe/internal/acp/xctx"
-	"github.com/spachava753/cpe/internal/agent"
+	cpeagent "github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
 )
@@ -41,8 +41,8 @@ func withSessionID(ctx context.Context, sessionID acp.SessionId) context.Context
 	return context.WithValue(ctx, sessionIDCtxKey{}, sessionID)
 }
 
-// Loop owns the acp full agentic loop for a prompt turn.
-type Loop struct {
+// loop owns the acp full agentic loop for a prompt turn.
+type loop struct {
 	G     gai.ToolCallingGenerator
 	Store *storage.Sqlite
 	Cfg   config.Config
@@ -56,7 +56,7 @@ type Loop struct {
 }
 
 // Register registers a tool with the provider model and stores its callback.
-func (l *Loop) Register(tool gai.Tool, callback gai.ToolCallback) error {
+func (l *loop) Register(tool gai.Tool, callback gai.ToolCallback) error {
 	if l.toolCallbacks == nil {
 		l.toolCallbacks = make(map[string]gai.ToolCallback)
 	}
@@ -76,7 +76,7 @@ func (l *Loop) Register(tool gai.Tool, callback gai.ToolCallback) error {
 	return nil
 }
 
-func (l *Loop) validateToolChoice(opts *gai.GenOpts) error {
+func (l *loop) validateToolChoice(opts *gai.GenOpts) error {
 	if opts == nil || opts.ToolChoice == "" || opts.ToolChoice == gai.ToolChoiceAuto || opts.ToolChoice == gai.ToolChoiceToolsRequired {
 		return nil
 	}
@@ -89,8 +89,8 @@ func (l *Loop) validateToolChoice(opts *gai.GenOpts) error {
 // effectiveGenOpts layers per-turn overrides (such as the ACP session's
 // thinking level) over the resolved model profile generation parameters,
 // so config fields like maxGenerationTokens apply to every Generate call.
-func (l *Loop) effectiveGenOpts(override *gai.GenOpts) *gai.GenOpts {
-	isResponsesModel := strings.EqualFold(l.Cfg.Model.Type, agent.ModelTypeResponses)
+func (l *loop) effectiveGenOpts(override *gai.GenOpts) *gai.GenOpts {
+	isResponsesModel := strings.EqualFold(l.Cfg.Model.Type, cpeagent.ModelTypeResponses)
 	if l.Cfg.GenerationParams == nil && override == nil && !isResponsesModel {
 		return nil
 	}
@@ -101,7 +101,7 @@ func (l *Loop) effectiveGenOpts(override *gai.GenOpts) *gai.GenOpts {
 		if merged.ExtraArgs != nil {
 			merged.ExtraArgs = maps.Clone(merged.ExtraArgs)
 		}
-		agent.ApplyResponsesThinkingSummary(merged)
+		cpeagent.ApplyResponsesThinkingSummary(merged)
 	}
 	return merged
 }
@@ -114,7 +114,7 @@ func (l *Loop) effectiveGenOpts(override *gai.GenOpts) *gai.GenOpts {
 // TODO: support unstable feature https://agentclientprotocol.com/rfds/diff-delete
 // TODO: starlark_repl should display file edit diffs when practical; unlike text_edit, arbitrary host-backed code may touch many files
 // TODO: expose model capability metadata in session updates so ACP clients can adapt UI affordances
-func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
+func (l *loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
 	current := append(gai.Dialog(nil), dialog...)
 	l.compactionRetries = 0
 	if l.seenToolCallIDs == nil {
@@ -239,7 +239,7 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 			replacement, err = l.save(ctx, replacement)
 			if err != nil {
 				// The successful result is already durable. Returning the old branch
-				// would let Agent.Prompt commit a false-success session head.
+				// would let agent.Prompt commit a false-success session head.
 				panic(fmt.Errorf("persist compaction replacement root after successful result: %w", err))
 			}
 			current = replacement
@@ -336,7 +336,7 @@ func (l *Loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 	}
 }
 
-func (l *Loop) save(ctx context.Context, dialog gai.Dialog) (gai.Dialog, error) {
+func (l *loop) save(ctx context.Context, dialog gai.Dialog) (gai.Dialog, error) {
 	if l.Store == nil {
 		return dialog, nil
 	}
@@ -351,7 +351,7 @@ func (l *Loop) save(ctx context.Context, dialog gai.Dialog) (gai.Dialog, error) 
 	return dialog, nil
 }
 
-func (l *Loop) shouldInjectCompactionWarning(metadata gai.Metadata) bool {
+func (l *loop) shouldInjectCompactionWarning(metadata gai.Metadata) bool {
 	if l.Cfg.Compaction == nil || l.Cfg.Compaction.TokenThreshold == 0 {
 		return false
 	}
@@ -364,7 +364,7 @@ func (l *Loop) shouldInjectCompactionWarning(metadata gai.Metadata) bool {
 	return uint(inputTokens+outputTokens) >= l.Cfg.Compaction.TokenThreshold
 }
 
-func (l *Loop) attachAgentMetadata(msg *gai.Message, metadata gai.Metadata) {
+func (l *loop) attachAgentMetadata(msg *gai.Message, metadata gai.Metadata) {
 	if msg.ExtraFields == nil {
 		msg.ExtraFields = make(map[string]any)
 	}
@@ -404,7 +404,7 @@ func (l *Loop) attachAgentMetadata(msg *gai.Message, metadata gai.Metadata) {
 // and only then switch branches and reset compaction-scoped state. Recoverable
 // rejections return a nil error so the model can retry; terminal failures return
 // both a failed result and an error.
-func (l *Loop) compact(current gai.Dialog) (gai.Dialog, []gai.Message, *gai.Message, error) {
+func (l *loop) compact(current gai.Dialog) (gai.Dialog, []gai.Message, *gai.Message, error) {
 	if l.Cfg.Compaction == nil {
 		return current, nil, nil, nil
 	}
@@ -523,7 +523,7 @@ func (l *Loop) compact(current gai.Dialog) (gai.Dialog, []gai.Message, *gai.Mess
 // session's cumulative cost. Cost is persisted whenever the model pricing
 // allows calculating it, even if no usage update can be built (for example,
 // when the model has no configured context window).
-func (l *Loop) usageSessionUpdate(ctx context.Context, sessionID acp.SessionId, metadata gai.Metadata) (acp.SessionUpdate, bool, error) {
+func (l *loop) usageSessionUpdate(ctx context.Context, sessionID acp.SessionId, metadata gai.Metadata) (acp.SessionUpdate, bool, error) {
 	var cost *acp.Cost
 	if generationCost, ok := calculateUsageCostUSD(metadata, l.Cfg.Model); ok {
 		total, err := l.Store.AddACPSessionCost(ctx, sessionID, generationCost)

@@ -20,11 +20,11 @@ type sessionUpdator interface {
 // MakeTool returns the text_edit tool definition and callback for direct gai registration.
 func MakeTool(sessionId acp.SessionId, conn sessionUpdator) (gai.Tool, gai.ToolCallback) {
 	tool := gai.Tool{
-		Name:        ToolName,
+		Name:        toolName,
 		Description: toolDescription,
 		InputSchema: inputSchema(),
 	}
-	callback := gai.ToolCallBackFunc[Input](func(ctx context.Context, input Input) (string, error) {
+	callback := gai.ToolCallBackFunc[input](func(ctx context.Context, input input) (string, error) {
 		if err := ctx.Err(); err != nil {
 			return "", gai.CallbackExecErr{Err: err}
 		}
@@ -40,7 +40,7 @@ func MakeTool(sessionId acp.SessionId, conn sessionUpdator) (gai.Tool, gai.ToolC
 			return "", gai.CallbackExecErr{Err: fmt.Errorf("send in-progress tool call update: %w", err)}
 		}
 
-		output, err := Apply(input)
+		output, err := apply(input)
 		if err != nil {
 			// send failed update for toolcall
 			failed := acp.ToolCallUpdateSessionUpdate(xctx.ToolCallIdFrom(ctx))

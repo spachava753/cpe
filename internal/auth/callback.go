@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-// CallbackResult holds the result from an OAuth callback server
-type CallbackResult struct {
+// callbackResult holds the result from an OAuth callback server
+type callbackResult struct {
 	Code  string
 	State string
 	Error string
@@ -30,8 +30,8 @@ func GenerateState() (string, error) {
 // StartCallbackServer starts a local HTTP server that listens for the OAuth callback.
 // It returns the authorization code via the result channel.
 // The server shuts down after receiving the callback or when the context is cancelled.
-func StartCallbackServer(ctx context.Context, port int, expectedState string) (<-chan CallbackResult, error) {
-	resultCh := make(chan CallbackResult, 1)
+func StartCallbackServer(ctx context.Context, port int, expectedState string) (<-chan callbackResult, error) {
+	resultCh := make(chan callbackResult, 1)
 
 	// doneCh is used solely to signal that a result has been written,
 	// so the shutdown goroutine knows to stop the server without
@@ -49,7 +49,7 @@ func StartCallbackServer(ctx context.Context, port int, expectedState string) (<
 			w.Header().Set("Content-Type", "text/html")
 			fmt.Fprintf(w, `<html><body><h1>Authentication Failed</h1><p>%s: %s</p><p>You can close this window.</p></body></html>`,
 				html.EscapeString(errParam), html.EscapeString(errDesc))
-			resultCh <- CallbackResult{Error: fmt.Sprintf("%s: %s", errParam, errDesc)}
+			resultCh <- callbackResult{Error: fmt.Sprintf("%s: %s", errParam, errDesc)}
 			close(doneCh)
 			return
 		}
@@ -57,14 +57,14 @@ func StartCallbackServer(ctx context.Context, port int, expectedState string) (<
 		if state != expectedState {
 			w.Header().Set("Content-Type", "text/html")
 			fmt.Fprint(w, `<html><body><h1>Authentication Failed</h1><p>State mismatch.</p><p>You can close this window.</p></body></html>`)
-			resultCh <- CallbackResult{Error: "state mismatch"}
+			resultCh <- callbackResult{Error: "state mismatch"}
 			close(doneCh)
 			return
 		}
 
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, `<html><body><h1>Authentication Successful!</h1><p>You can close this window and return to the terminal.</p></body></html>`)
-		resultCh <- CallbackResult{Code: code, State: state}
+		resultCh <- callbackResult{Code: code, State: state}
 		close(doneCh)
 	})
 
@@ -81,7 +81,7 @@ func StartCallbackServer(ctx context.Context, port int, expectedState string) (<
 
 	go func() {
 		if err := server.Serve(listener); err != http.ErrServerClosed {
-			resultCh <- CallbackResult{Error: fmt.Sprintf("callback server error: %v", err)}
+			resultCh <- callbackResult{Error: fmt.Sprintf("callback server error: %v", err)}
 			close(doneCh)
 		}
 	}()

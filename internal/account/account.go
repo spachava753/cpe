@@ -12,12 +12,12 @@ import (
 )
 
 const (
-	ProviderAnthropic = "anthropic"
-	ProviderOpenAI    = "openai"
+	providerAnthropic = "anthropic"
+	providerOpenAI    = "openai"
 )
 
-// SupportedAccountProviders is the list of account providers supported by CPE.
-var SupportedAccountProviders = []string{ProviderAnthropic, ProviderOpenAI}
+// supportedAccountProviders is the list of account providers supported by CPE.
+var supportedAccountProviders = []string{providerAnthropic, providerOpenAI}
 
 // AccountLoginOptions contains parameters for logging into an account provider.
 type AccountLoginOptions struct {
@@ -44,10 +44,10 @@ type AccountUsageOptions struct {
 
 func normalizeAccountProvider(provider string) (string, error) {
 	provider = strings.ToLower(strings.TrimSpace(provider))
-	if slices.Contains(SupportedAccountProviders, provider) {
+	if slices.Contains(supportedAccountProviders, provider) {
 		return provider, nil
 	}
-	return "", fmt.Errorf("unsupported provider %q (supported: %s)", provider, strings.Join(SupportedAccountProviders, ", "))
+	return "", fmt.Errorf("unsupported provider %q (supported: %s)", provider, strings.Join(supportedAccountProviders, ", "))
 }
 
 // AccountLogin logs into the specified account provider.
@@ -58,12 +58,12 @@ func AccountLogin(ctx context.Context, opts AccountLoginOptions) error {
 	}
 
 	switch provider {
-	case ProviderAnthropic:
+	case providerAnthropic:
 		return loginAnthropicAccount(ctx, opts)
-	case ProviderOpenAI:
+	case providerOpenAI:
 		return loginOpenAIAccount(ctx, opts)
 	default:
-		return fmt.Errorf("unsupported provider %q (supported: %s)", provider, strings.Join(SupportedAccountProviders, ", "))
+		return fmt.Errorf("unsupported provider %q (supported: %s)", provider, strings.Join(supportedAccountProviders, ", "))
 	}
 }
 
@@ -97,12 +97,12 @@ func AccountUsage(ctx context.Context, opts AccountUsageOptions) error {
 	}
 
 	switch provider {
-	case ProviderOpenAI:
+	case providerOpenAI:
 		return runOpenAIAccountUsage(ctx, opts)
-	case ProviderAnthropic:
+	case providerAnthropic:
 		return fmt.Errorf("usage is not yet supported for %s accounts", provider)
 	default:
-		return fmt.Errorf("unsupported provider %q (supported: %s)", provider, strings.Join(SupportedAccountProviders, ", "))
+		return fmt.Errorf("unsupported provider %q (supported: %s)", provider, strings.Join(supportedAccountProviders, ", "))
 	}
 }
 
@@ -157,7 +157,7 @@ func loginAnthropicAccount(ctx context.Context, opts AccountLoginOptions) error 
 		return fmt.Errorf("initializing auth store: %w", err)
 	}
 
-	cred := auth.TokenToCredential(ProviderAnthropic, tokenResp)
+	cred := auth.TokenToCredential(providerAnthropic, tokenResp)
 	if err := store.SaveCredential(cred); err != nil {
 		return fmt.Errorf("saving credential: %w", err)
 	}
@@ -224,7 +224,7 @@ func loginOpenAIAccount(ctx context.Context, opts AccountLoginOptions) error {
 			return fmt.Errorf("initializing auth store: %w", err)
 		}
 
-		cred := auth.TokenToCredential(ProviderOpenAI, tokenResp)
+		cred := auth.TokenToCredential(providerOpenAI, tokenResp)
 		if err := store.SaveCredential(cred); err != nil {
 			return fmt.Errorf("saving credential: %w", err)
 		}

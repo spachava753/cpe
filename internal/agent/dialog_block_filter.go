@@ -9,26 +9,26 @@ import (
 
 type blockKeepFunc func(gai.Block) bool
 
-// BlockFilterWrapper filters input blocks before delegating generation to the
+// blockFilterWrapper filters input blocks before delegating generation to the
 // wrapped generator.
-type BlockFilterWrapper struct {
+type blockFilterWrapper struct {
 	gai.GeneratorWrapper
 	keep blockKeepFunc
 }
 
-// NewBlockFilterWrapper returns a wrapper that keeps only blocks accepted by
+// newBlockFilterWrapper returns a wrapper that keeps only blocks accepted by
 // keep. When keep is nil, all blocks are preserved.
-func NewBlockFilterWrapper(generator gai.Generator, keep blockKeepFunc) *BlockFilterWrapper {
+func newBlockFilterWrapper(generator gai.Generator, keep blockKeepFunc) *blockFilterWrapper {
 	if keep == nil {
 		keep = func(gai.Block) bool { return true }
 	}
-	return &BlockFilterWrapper{
+	return &blockFilterWrapper{
 		GeneratorWrapper: gai.GeneratorWrapper{Inner: generator},
 		keep:             keep,
 	}
 }
 
-func (f *BlockFilterWrapper) Generate(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
+func (f *blockFilterWrapper) Generate(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
 	filteredDialog := make(gai.Dialog, 0, len(dialog))
 	for _, message := range dialog {
 		filteredBlocks := make([]gai.Block, 0, len(message.Blocks))
@@ -87,7 +87,7 @@ func thinkingBlockKeepFunc(keepGeneratorTypes []string) blockKeepFunc {
 // input block filtering policy for the given model type.
 func WithBlockFilter(modelType string) gai.WrapperFunc {
 	return func(g gai.Generator) gai.Generator {
-		return NewBlockFilterWrapper(g, providerBlockKeepFunc(modelType))
+		return newBlockFilterWrapper(g, providerBlockKeepFunc(modelType))
 	}
 }
 

@@ -68,7 +68,7 @@ func TestLoopToolCallbackReceivesPersistedAssistantMessageID(t *testing.T) {
 	}}
 	callback := &executionMessageCapturingCallback{}
 	store, _ := newTestSqlite(t)
-	loop := Loop{
+	loop := loop{
 		G:     generator,
 		Store: store,
 		toolCallbacks: map[string]gai.ToolCallback{
@@ -165,7 +165,7 @@ func TestLoopUsageSessionUpdate(t *testing.T) {
 			}); err != nil {
 				t.Fatalf("CreateACPSession: %v", err)
 			}
-			l := Loop{Cfg: config.Config{Model: tt.model}, Store: store}
+			l := loop{Cfg: config.Config{Model: tt.model}, Store: store}
 			update, ok, err := l.usageSessionUpdate(t.Context(), "test-session", tt.metadata)
 			if err != nil {
 				t.Fatalf("usageSessionUpdate() err = %v, want nil", err)
@@ -226,7 +226,7 @@ func TestLoopUsageSessionUpdateCostAccumulatesAcrossLoops(t *testing.T) {
 		gai.UsageMetricGenerationTokens: 50,
 	}
 
-	first := Loop{
+	first := loop{
 		Cfg: config.Config{Model: config.Model{
 			ContextWindow:        200,
 			InputCostPerMillion:  new(2.0),
@@ -246,7 +246,7 @@ func TestLoopUsageSessionUpdateCostAccumulatesAcrossLoops(t *testing.T) {
 
 	// a new Loop with different model pricing simulates a model switch,
 	// which discards the previous runtime and its Loop
-	second := Loop{
+	second := loop{
 		Cfg: config.Config{Model: config.Model{
 			ContextWindow:        200,
 			InputCostPerMillion:  new(1.0),
@@ -265,7 +265,7 @@ func TestLoopUsageSessionUpdateCostAccumulatesAcrossLoops(t *testing.T) {
 	}
 
 	// a different session must not see this session's cost
-	other := Loop{Cfg: second.Cfg, Store: store}
+	other := loop{Cfg: second.Cfg, Store: store}
 	update, ok, err = other.usageSessionUpdate(t.Context(), "other-session", metadata)
 	if err != nil || !ok || update.SessionUpdate != acp.SessionUpdateTypeUsageUpdate || update.Cost == nil {
 		t.Fatalf("other session usageSessionUpdate() = %#v, %v, %v", update, ok, err)
@@ -345,7 +345,7 @@ func TestLoopEffectiveGenOpts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			l := Loop{Cfg: config.Config{
+			l := loop{Cfg: config.Config{
 				Model:            config.Model{Type: tt.modelType},
 				GenerationParams: tt.cfgParams,
 			}}
@@ -397,7 +397,7 @@ func TestLoopEffectiveGenOptsDoesNotMutateInputExtraArgs(t *testing.T) {
 	override := &gai.GenOpts{
 		ExtraArgs: extraArgs,
 	}
-	l := Loop{Cfg: config.Config{Model: config.Model{Type: "responses"}}}
+	l := loop{Cfg: config.Config{Model: config.Model{Type: "responses"}}}
 
 	got := l.effectiveGenOpts(override)
 	if got == nil {
@@ -443,7 +443,7 @@ func TestLoopGenerateCommitsCompactionBeforePublishingCompletion(t *testing.T) {
 		},
 	}}
 	var updates []acp.SessionUpdate
-	loop := Loop{
+	loop := loop{
 		G:     gen,
 		Store: store,
 		Cfg: config.Config{Compaction: &config.CompactionConfig{
@@ -535,7 +535,7 @@ func TestLoopGeneratePanicsWhenCompactionRootPersistenceFails(t *testing.T) {
 			}, nil
 		},
 	}}
-	loop := Loop{
+	loop := loop{
 		G:     gen,
 		Store: store,
 		Cfg: config.Config{Compaction: &config.CompactionConfig{
@@ -599,7 +599,7 @@ func TestLoopCompactionRejectsInvalidArguments(t *testing.T) {
 		t.Fatalf("Resolve() error = %v", err)
 	}
 	callback := &resetCountingCallback{}
-	loop := Loop{
+	loop := loop{
 		Cfg: config.Config{Compaction: &config.CompactionConfig{
 			MaxCompactions:         1,
 			Tool:                   gai.Tool{Name: config.CompactionToolName},
@@ -668,7 +668,7 @@ func TestLoopCompactionRetryLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
-	loop := Loop{Cfg: config.Config{Compaction: &config.CompactionConfig{
+	loop := loop{Cfg: config.Config{Compaction: &config.CompactionConfig{
 		MaxCompactions:         1,
 		Tool:                   gai.Tool{Name: config.CompactionToolName},
 		InputSchema:            inputSchema,
@@ -733,7 +733,7 @@ func TestLoopCompactionCreatesToolErrorForTemplateFailure(t *testing.T) {
 		t.Fatalf("Resolve() error = %v", err)
 	}
 	callback := &resetCountingCallback{}
-	loop := Loop{
+	loop := loop{
 		Cfg: config.Config{Compaction: &config.CompactionConfig{
 			MaxCompactions:         1,
 			Tool:                   gai.Tool{Name: config.CompactionToolName},
@@ -794,7 +794,7 @@ func TestLoopCompactionCreatesToolErrorForTemplateFailure(t *testing.T) {
 func TestLoopCompactionClearsStarlarkREPLState(t *testing.T) {
 	t.Parallel()
 
-	callback := &StarlarkREPLCallback{MaxTimeout: 5}
+	callback := &starlarkREPLCallback{MaxTimeout: 5}
 	msg, err := callback.Call(t.Context(), map[string]any{
 		"code":             "answer = 42\nprint(answer)",
 		"executionTimeout": 2,
@@ -828,7 +828,7 @@ func TestLoopCompactionClearsStarlarkREPLState(t *testing.T) {
 			}, nil
 		},
 	}}
-	loop := Loop{
+	loop := loop{
 		G:     gen,
 		Store: store,
 		Cfg: config.Config{Compaction: &config.CompactionConfig{
@@ -837,7 +837,7 @@ func TestLoopCompactionClearsStarlarkREPLState(t *testing.T) {
 			InitialMessageTemplate: initialMessage,
 		}},
 		toolCallbacks: map[string]gai.ToolCallback{
-			StarlarkREPLToolName: callback,
+			starlarkREPLToolName: callback,
 		},
 		conn: sessionUpdateFunc(func(context.Context, *acp.SessionNotification) error { return nil }),
 	}
@@ -866,7 +866,7 @@ func TestLoopCompactionPlansSuccessfulRebaseWithoutResettingState(t *testing.T) 
 
 	initialMessage := template.Must(template.New("compaction").Parse("compacted: {{ index .ToolArguments \"summary\" }}"))
 	callback := &resetCountingCallback{}
-	loop := Loop{
+	loop := loop{
 		Cfg: config.Config{Compaction: &config.CompactionConfig{
 			MaxCompactions:         1,
 			Tool:                   gai.Tool{Name: "compact_conversation"},

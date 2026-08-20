@@ -567,7 +567,7 @@ func TestSetSessionConfigOptionDuringPrompt(t *testing.T) {
 			}}
 			cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
 			be.Err(t, err, nil)
-			return testRuntime{Loop: &Loop{
+			return testRuntime{loop: &loop{
 				G:     &gen,
 				Store: store,
 				Cfg:   cfg,

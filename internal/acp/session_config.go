@@ -19,7 +19,7 @@ const (
 // SetSessionConfigOption implements [acp.SessionHandler].
 //
 // TODO: we should probably expose more options like tool choice, etc. and wire up defaults from the config
-func (a *Agent) SetSessionConfigOption(ctx context.Context, params *acp.SetSessionConfigOptionRequest) (*acp.SetSessionConfigOptionResponse, error) {
+func (a *agent) SetSessionConfigOption(ctx context.Context, params *acp.SetSessionConfigOptionRequest) (*acp.SetSessionConfigOptionResponse, error) {
 	s, err := a.activeSession(params.SessionID)
 	if err != nil {
 		return nil, err
@@ -118,7 +118,7 @@ func sessionConfigValueString(value any) (string, bool) {
 	}
 }
 
-func (a *Agent) configOptions(ctx context.Context, sessionId acp.SessionId) []acp.SessionConfigOption {
+func (a *agent) configOptions(ctx context.Context, sessionId acp.SessionId) []acp.SessionConfigOption {
 	s, err := a.db.GetACPSession(ctx, sessionId)
 	if err != nil {
 		panic(fmt.Sprintf("error fetching session %s: %v", sessionId, err))
@@ -207,7 +207,7 @@ func (a *Agent) configOptions(ctx context.Context, sessionId acp.SessionId) []ac
 // modelSelectOptions builds the model picker options for every configured
 // model profile. Cost fields are optional in the config, so nil costs are
 // rendered as "n/a" instead of being dereferenced.
-func (a *Agent) modelSelectOptions() acp.UngroupedSessionConfigSelectOptions {
+func (a *agent) modelSelectOptions() acp.UngroupedSessionConfigSelectOptions {
 	opts := make(acp.UngroupedSessionConfigSelectOptions, len(a.rawCfg.Models))
 	for i, m := range a.rawCfg.Models {
 		opts[i] = acp.SessionConfigSelectOption{
@@ -242,6 +242,6 @@ func formatOptionalCost(cost *float64) string {
 //
 // Modes are being superseded by session config options.
 // We just provide a default response for older clients.
-func (a *Agent) SetSessionMode(ctx context.Context, params *acp.SetSessionModeRequest) (*acp.SetSessionModeResponse, error) {
+func (a *agent) SetSessionMode(ctx context.Context, params *acp.SetSessionModeRequest) (*acp.SetSessionModeResponse, error) {
 	return &acp.SetSessionModeResponse{}, nil
 }

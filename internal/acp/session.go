@@ -42,7 +42,7 @@ type session struct {
 	replStateMissing bool
 }
 
-func (a *Agent) activeSession(sessionID acp.SessionId) (*sync.Guard[session], error) {
+func (a *agent) activeSession(sessionID acp.SessionId) (*sync.Guard[session], error) {
 	s, ok := a.activeSessions.Load(sessionID)
 	if !ok {
 		return nil, fmt.Errorf("unknown session: %s", sessionID)
@@ -51,8 +51,8 @@ func (a *Agent) activeSession(sessionID acp.SessionId) (*sync.Guard[session], er
 }
 
 // discoverSkills loads the skill catalog for an ACP session. Tests can override
-// Agent.skillHomeDir so global user skills do not leak into session fixtures.
-func (a *Agent) discoverSkills(ctx context.Context, cwd string) skills.Catalog {
+// agent.skillHomeDir so global user skills do not leak into session fixtures.
+func (a *agent) discoverSkills(ctx context.Context, cwd string) skills.Catalog {
 	return skills.Discover(ctx, skills.DiscoverOptions{
 		Cwd:     cwd,
 		HomeDir: a.skillHomeDir,
@@ -62,7 +62,7 @@ func (a *Agent) discoverSkills(ctx context.Context, cwd string) skills.Catalog {
 // sendAvailableSkillCommands publishes ACP autocomplete metadata for the
 // session's discovered skills. It intentionally sends nothing when no skills are
 // available so clients do not receive empty command updates.
-func (a *Agent) sendAvailableSkillCommands(ctx context.Context, sessionID acp.SessionId, catalog skills.Catalog) error {
+func (a *agent) sendAvailableSkillCommands(ctx context.Context, sessionID acp.SessionId, catalog skills.Catalog) error {
 	commands := availableSkillCommands(catalog)
 	if len(commands) == 0 || a.conn == nil {
 		return nil
@@ -73,7 +73,7 @@ func (a *Agent) sendAvailableSkillCommands(ctx context.Context, sessionID acp.Se
 	})
 }
 
-func (a *Agent) refreshAvailableSkillCommands(ctx context.Context, sessionID acp.SessionId, s *sync.Guard[session]) error {
+func (a *agent) refreshAvailableSkillCommands(ctx context.Context, sessionID acp.SessionId, s *sync.Guard[session]) error {
 	var cwd string
 	if err := s.Do(func(t *session) error {
 		cwd = t.cwd
@@ -93,7 +93,7 @@ func (a *Agent) refreshAvailableSkillCommands(ctx context.Context, sessionID acp
 }
 
 // NewSession implements [acp.SessionHandler].
-func (a *Agent) NewSession(ctx context.Context, params *acp.NewSessionRequest) (*acp.NewSessionResponse, error) {
+func (a *agent) NewSession(ctx context.Context, params *acp.NewSessionRequest) (*acp.NewSessionResponse, error) {
 	id := a.genId()
 	si := acp.SessionInfo{
 		Cwd:       params.Cwd,
@@ -127,7 +127,7 @@ func (a *Agent) NewSession(ctx context.Context, params *acp.NewSessionRequest) (
 }
 
 // ListSessions implements [acp.SessionHandler].
-func (a *Agent) ListSessions(ctx context.Context, params *acp.ListSessionsRequest) (*acp.ListSessionsResponse, error) {
+func (a *agent) ListSessions(ctx context.Context, params *acp.ListSessionsRequest) (*acp.ListSessionsResponse, error) {
 	var cwd *string
 	if params != nil {
 		cwd = params.Cwd
@@ -144,7 +144,7 @@ func (a *Agent) ListSessions(ctx context.Context, params *acp.ListSessionsReques
 }
 
 // loadActiveSession loads an active session from storage
-func (a *Agent) loadActiveSession(
+func (a *agent) loadActiveSession(
 	ctx context.Context,
 	sessionId acp.SessionId,
 	cwd string,
@@ -242,7 +242,7 @@ func (a *Agent) loadActiveSession(
 }
 
 // ResumeSession implements [acp.SessionHandler].
-func (a *Agent) ResumeSession(ctx context.Context, params *acp.ResumeSessionRequest) (*acp.ResumeSessionResponse, error) {
+func (a *agent) ResumeSession(ctx context.Context, params *acp.ResumeSessionRequest) (*acp.ResumeSessionResponse, error) {
 	opts, err := a.loadActiveSession(ctx, params.SessionID, params.Cwd, params.McpServers)
 	if err != nil {
 		return nil, fmt.Errorf("could not resume session: %v", err)
@@ -253,7 +253,7 @@ func (a *Agent) ResumeSession(ctx context.Context, params *acp.ResumeSessionRequ
 }
 
 // LoadSession implements [acp.SessionHandler].
-func (a *Agent) LoadSession(ctx context.Context, params *acp.LoadSessionRequest) (*acp.LoadSessionResponse, error) {
+func (a *agent) LoadSession(ctx context.Context, params *acp.LoadSessionRequest) (*acp.LoadSessionResponse, error) {
 	opts, err := a.loadActiveSession(ctx, params.SessionID, params.Cwd, params.McpServers)
 	if err != nil {
 		return nil, fmt.Errorf("could not load session: %v", err)
@@ -291,7 +291,7 @@ func (a *Agent) LoadSession(ctx context.Context, params *acp.LoadSessionRequest)
 // Stale stored config is resolved against the loaded config the same way
 // session resumption does. The forked session's runtime is created lazily on
 // the first prompt, like sessions created via session/new.
-func (a *Agent) ForkSession(
+func (a *agent) ForkSession(
 	ctx context.Context,
 	params *acp.ForkSessionRequest,
 ) (*acp.ForkSessionResponse, error) {
@@ -355,7 +355,7 @@ func (a *Agent) ForkSession(
 }
 
 // Cancel implements [acp.SessionHandler].
-func (a *Agent) Cancel(ctx context.Context, params *acp.CancelNotification) error {
+func (a *agent) Cancel(ctx context.Context, params *acp.CancelNotification) error {
 	s, ok := a.activeSessions.Load(params.SessionID)
 	if !ok {
 		return fmt.Errorf("session %s not found", params.SessionID)
@@ -369,7 +369,7 @@ func (a *Agent) Cancel(ctx context.Context, params *acp.CancelNotification) erro
 }
 
 // CloseSession implements [acp.SessionHandler].
-func (a *Agent) CloseSession(ctx context.Context, params *acp.CloseSessionRequest) (*acp.CloseSessionResponse, error) {
+func (a *agent) CloseSession(ctx context.Context, params *acp.CloseSessionRequest) (*acp.CloseSessionResponse, error) {
 	s, ok := a.activeSessions.Load(params.SessionID)
 	if !ok {
 		slog.InfoContext(
@@ -391,7 +391,7 @@ func (a *Agent) CloseSession(ctx context.Context, params *acp.CloseSessionReques
 }
 
 // DeleteSession implements [acp.SessionHandler].
-func (a *Agent) DeleteSession(
+func (a *agent) DeleteSession(
 	ctx context.Context,
 	params *acp.DeleteSessionRequest,
 ) (*acp.DeleteSessionResponse, error) {

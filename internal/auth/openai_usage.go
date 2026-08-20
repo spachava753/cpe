@@ -12,17 +12,13 @@ import (
 )
 
 const (
-	// OpenAIUsageBaseURL is the default ChatGPT backend base URL for account
+	// openAIUsageBaseURL is the default ChatGPT backend base URL for account
 	// usage lookups.
-	OpenAIUsageBaseURL = "https://chatgpt.com/backend-api"
-
-	// OpenAIUsageURL is the default ChatGPT backend endpoint that returns
-	// subscription usage and rate-limit information for the authenticated account.
-	OpenAIUsageURL = OpenAIUsageBaseURL + "/wham/usage"
+	openAIUsageBaseURL = "https://chatgpt.com/backend-api"
 )
 
-// OpenAIUsageURLForBase returns the usage endpoint for a ChatGPT backend base URL.
-func OpenAIUsageURLForBase(baseURL string) string {
+// openAIUsageURLForBase returns the usage endpoint for a ChatGPT backend base URL.
+func openAIUsageURLForBase(baseURL string) string {
 	baseURL = normalizeOpenAIUsageBaseURL(baseURL)
 	return strings.TrimRight(baseURL, "/") + "/wham/usage"
 }
@@ -30,7 +26,7 @@ func OpenAIUsageURLForBase(baseURL string) string {
 func normalizeOpenAIUsageBaseURL(baseURL string) string {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
-		return OpenAIUsageBaseURL
+		return openAIUsageBaseURL
 	}
 	return strings.TrimSuffix(baseURL, "/wham/usage")
 }
@@ -51,8 +47,8 @@ type OpenAIRateLimit struct {
 	SecondaryWindow *OpenAIUsageWindow `json:"secondary_window,omitempty"`
 }
 
-// OpenAICredits represents credit information in the ChatGPT usage API.
-type OpenAICredits struct {
+// openAICredits represents credit information in the ChatGPT usage API.
+type openAICredits struct {
 	Balance             string `json:"balance"`
 	HasCredits          bool   `json:"has_credits"`
 	Unlimited           bool   `json:"unlimited"`
@@ -76,7 +72,7 @@ type OpenAIUsageResponse struct {
 	RateLimit            OpenAIRateLimit             `json:"rate_limit"`
 	CodeReviewRateLimit  OpenAIRateLimit             `json:"code_review_rate_limit"`
 	AdditionalRateLimits []OpenAIAdditionalRateLimit `json:"additional_rate_limits,omitempty"`
-	Credits              OpenAICredits               `json:"credits"`
+	Credits              openAICredits               `json:"credits"`
 	Promo                any                         `json:"promo"`
 }
 
@@ -99,7 +95,7 @@ func FetchOpenAIUsage(ctx context.Context, client *http.Client, baseURL, accessT
 		client = newOpenAIUsageHTTPClient()
 	}
 
-	usageURL := OpenAIUsageURLForBase(baseURL)
+	usageURL := openAIUsageURLForBase(baseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, usageURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating usage request: %w", err)

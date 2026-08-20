@@ -163,8 +163,7 @@ func (s *Sqlite) generateUniqueIDInTx(ctx context.Context, qtx *sqlcgen.Queries)
 // Any validation or insert failure rolls back writes from this call. If the
 // consumer stops iteration early, the processed prefix is still committed when
 // possible; remaining input is not read.
-//
-// See DialogSaver for cross-implementation contract details.
+
 func (s *Sqlite) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter.Seq2[gai.Message, error] {
 	return func(yield func(gai.Message, error) bool) {
 		tx, err := beginWriteTx(ctx, s.db)

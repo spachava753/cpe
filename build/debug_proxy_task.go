@@ -15,11 +15,11 @@ import (
 	"github.com/goyek/goyek/v2"
 )
 
-// DebugProxy runs a local reverse proxy that logs HTTP requests and responses.
+// Register the local HTTP reverse-proxy task used for request diagnostics.
 // Operators provide -target for the upstream URL and optionally -port for local listen.
 // Output is terminal-focused: credential headers are partially masked and bodies are
 // pretty-printed with truncation for readability.
-var DebugProxy = goyek.Define(goyek.Task{
+var _ = goyek.Define(goyek.Task{
 	Name:  "debug-proxy",
 	Usage: "HTTP debug proxy. Use -target=URL [-port=8080]",
 	Action: func(a *goyek.A) {

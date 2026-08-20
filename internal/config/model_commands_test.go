@@ -31,7 +31,7 @@ func TestModelInfo_PrintsCachePricingFields(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := ModelInfo(context.Background(), ModelInfoOptions{
+	err := modelInfo(context.Background(), modelInfoOptions{
 		Config:    rawCfg,
 		ModelName: "test-model",
 		Writer:    &out,
@@ -76,7 +76,7 @@ func TestModelInfo_PrintsVertexFields(t *testing.T) {
 	}}}
 
 	var out bytes.Buffer
-	err := ModelInfo(context.Background(), ModelInfoOptions{Config: rawCfg, ModelName: "vertex-sonnet", Writer: &out})
+	err := modelInfo(context.Background(), modelInfoOptions{Config: rawCfg, ModelName: "vertex-sonnet", Writer: &out})
 	if err != nil {
 		t.Fatalf("ModelInfo() error = %v", err)
 	}
@@ -118,7 +118,7 @@ func TestModelInfo_PrintsThinkingValues(t *testing.T) {
 	}}}
 
 	var out bytes.Buffer
-	err := ModelInfo(context.Background(), ModelInfoOptions{Config: rawCfg, ModelName: "reasoning-model", Writer: &out})
+	err := modelInfo(context.Background(), modelInfoOptions{Config: rawCfg, ModelName: "reasoning-model", Writer: &out})
 	if err != nil {
 		t.Fatalf("ModelInfo() error = %v", err)
 	}
@@ -161,7 +161,7 @@ func TestModelInfo_PrintsNAWhenPricingUnavailable(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := ModelInfo(context.Background(), ModelInfoOptions{
+	err := modelInfo(context.Background(), modelInfoOptions{
 		Config:    rawCfg,
 		ModelName: "free-model",
 		Writer:    &out,
@@ -213,7 +213,7 @@ func TestModelSystemPrompt_ResolvesPathRelativeToConfigFile(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := ModelSystemPrompt(context.Background(), ModelSystemPromptOptions{
+	err := modelSystemPrompt(context.Background(), modelSystemPromptOptions{
 		RawConfig:      rawCfg,
 		ConfigFilePath: configPath,
 		ModelName:      "test-model",

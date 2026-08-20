@@ -8,9 +8,9 @@ import (
 	"github.com/spachava753/cpe/internal/mcpconfig"
 )
 
-// MCPConn holds runtime state for a single initialized MCP server.
+// mcpConn holds runtime state for a single initialized MCP server.
 // Tools are already filtered according to ServerConfig enabled/disabled rules.
-type MCPConn struct {
+type mcpConn struct {
 	ServerName string
 	Config     mcpconfig.ServerConfig
 	// ClientSession is the active MCP session. May be nil in test mocks
@@ -25,18 +25,18 @@ type MCPConn struct {
 
 // MCPState tracks all active MCP connections keyed by configured server name.
 type MCPState struct {
-	Connections map[string]*MCPConn // Exported, keyed by server name
+	Connections map[string]*mcpConn // Exported, keyed by server name
 }
 
 // NewMCPState creates an empty MCPState ready for incremental connection setup.
 func NewMCPState() *MCPState {
 	return &MCPState{
-		Connections: make(map[string]*MCPConn),
+		Connections: make(map[string]*mcpConn),
 	}
 }
 
 // Close best-effort closes the client session and owned connection resources.
-func (c *MCPConn) Close() error {
+func (c *mcpConn) Close() error {
 	var errs []error
 	if c.ClientSession != nil {
 		if err := c.ClientSession.Close(); err != nil {

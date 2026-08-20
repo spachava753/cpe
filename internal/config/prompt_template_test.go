@@ -12,7 +12,7 @@ func TestSystemPromptTemplateSupportsSkillData(t *testing.T) {
 	t.Parallel()
 
 	tmpl := `{{- range $s := .Skills -}}{{$s.Name}}={{$s.Description}}@{{$s.Path}}:{{$s.Metadata.group}};{{- end -}}`
-	out, err := SystemPromptTemplate(context.Background(), tmpl, TemplateData{
+	out, err := systemPromptTemplate(context.Background(), tmpl, templateData{
 		Skills: []skills.Skill{{
 			Name:        "alpha-skill",
 			Description: "Alpha description",
@@ -35,7 +35,7 @@ func TestSystemPromptTemplateSupportsSkillData(t *testing.T) {
 func TestSystemPromptTemplateDoesNotRegisterSkillsHelper(t *testing.T) {
 	t.Parallel()
 
-	_, err := SystemPromptTemplate(context.Background(), `{{ skills }}`, TemplateData{})
+	_, err := systemPromptTemplate(context.Background(), `{{ skills }}`, templateData{})
 	if err == nil {
 		t.Fatal("SystemPromptTemplate() error is nil, want parse error")
 	}

@@ -2,13 +2,13 @@ package sync
 
 import "sync"
 
-// A Mutex is a mutual exclusion lock.
-// This is re-exported for convenience from [sync.Mutex]
-type Mutex = sync.Mutex
+// A mutex is a mutual exclusion lock.
+// This is re-exported for convenience from [sync.mutex]
+type mutex = sync.Mutex
 
 // A Guard wraps a value with a mutex so callers can safely mutate it through Do.
 type Guard[T any] struct {
-	mu Mutex
+	mu mutex
 	t  T
 }
 

@@ -106,8 +106,8 @@ func anthropicVertexRequestOptions(
 	transport := googleHTTPClient.Transport
 	if patchConfig != nil {
 		// Vertex middleware rewrites the Anthropic request before the HTTP client runs;
-		// keep Google's auth transport underneath PatchTransport so IAM auth wins.
-		transport, err = BuildPatchTransportFromConfig(transport, patchConfig)
+		// keep Google's auth transport underneath patchTransport so IAM auth wins.
+		transport, err = buildPatchTransportFromConfig(transport, patchConfig)
 		if err != nil {
 			return nil, fmt.Errorf("building patch transport for Vertex AI: %w", err)
 		}
@@ -180,7 +180,7 @@ func InitGeneratorFromModel(
 
 	httpClient := newModelHTTPClient(timeout)
 	if m.PatchRequest != nil {
-		transport, err := BuildPatchTransportFromConfig(httpClient.Transport, m.PatchRequest)
+		transport, err := buildPatchTransportFromConfig(httpClient.Transport, m.PatchRequest)
 		if err != nil {
 			return nil, fmt.Errorf("building patch transport: %w", err)
 		}
@@ -221,14 +221,14 @@ func InitGeneratorFromModel(
 			if cred.Type != "oauth" {
 				return nil, fmt.Errorf("stored credential is not OAuth type")
 			}
-			// Build transport chain: PatchTransport -> OAuthTransport -> DefaultTransport.
+			// Build transport chain: patchTransport -> OAuthTransport -> DefaultTransport.
 			// This order ensures OAuthTransport merges its headers with any headers
-			// set by PatchTransport, rather than PatchTransport overwriting OAuth headers.
+			// set by patchTransport, rather than patchTransport overwriting OAuth headers.
 			oauthTransport := auth.NewOAuthTransport(newModelRoundTripper(nil), store)
 			var finalTransport http.RoundTripper = oauthTransport
 			if m.PatchRequest != nil {
-				// Wrap OAuthTransport with PatchTransport
-				finalTransport, err = BuildPatchTransportFromConfig(oauthTransport, m.PatchRequest)
+				// Wrap OAuthTransport with patchTransport
+				finalTransport, err = buildPatchTransportFromConfig(oauthTransport, m.PatchRequest)
 				if err != nil {
 					return nil, fmt.Errorf("building patch transport for OAuth: %w", err)
 				}
@@ -318,11 +318,11 @@ func InitGeneratorFromModel(
 			if cred.Type != "oauth" {
 				return nil, fmt.Errorf("stored credential is not OAuth type")
 			}
-			// Build transport chain: PatchTransport -> OpenAIOAuthTransport -> DefaultTransport.
+			// Build transport chain: patchTransport -> OpenAIOAuthTransport -> DefaultTransport.
 			oauthTransport := auth.NewOpenAIOAuthTransport(newModelRoundTripper(nil), store)
 			var finalTransport http.RoundTripper = oauthTransport
 			if m.PatchRequest != nil {
-				finalTransport, err = BuildPatchTransportFromConfig(oauthTransport, m.PatchRequest)
+				finalTransport, err = buildPatchTransportFromConfig(oauthTransport, m.PatchRequest)
 				if err != nil {
 					return nil, fmt.Errorf("building patch transport for OAuth: %w", err)
 				}

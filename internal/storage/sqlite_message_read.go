@@ -131,7 +131,7 @@ func (s *Sqlite) GetMessages(ctx context.Context, messageIDs []string) (iter.Seq
 //
 // Each yielded message includes all blocks and storage metadata keys in
 // ExtraFields.
-func (s *Sqlite) ListMessages(ctx context.Context, opts ListMessagesOptions) (iter.Seq[gai.Message], error) {
+func (s *Sqlite) ListMessages(ctx context.Context, opts listMessagesOptions) (iter.Seq[gai.Message], error) {
 	var rows []sqlcgen.Message
 	var err error
 	if opts.AscendingOrder {

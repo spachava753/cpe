@@ -12,12 +12,13 @@ import (
 	"github.com/goyek/goyek/v2"
 )
 
-// Lint runs repository lint checks used by local development and CI.
+// Register the repository lint task used by local development and CI.
 // It executes `go tool golangci-lint run ./...`, runs the modernize analyzer
-// (honoring -lint-fix and -lint-verbose where supported), checks for unreachable
-// code with `go tool deadcode -test ./...`, and then enforces repo-specific
-// architecture rules.
-var Lint = goyek.Define(goyek.Task{
+// (honoring -lint-fix and -lint-verbose where supported), reports package-level
+// declarations that can be unexported, checks for unreachable code with
+// `go tool deadcode -test ./...`, and then enforces repo-specific architecture
+// rules.
+var _ = goyek.Define(goyek.Task{
 	Name:  "lint",
 	Usage: "Run golangci-lint and custom linters. Use -lint-fix to auto-fix, -lint-verbose for details",
 	Action: func(a *goyek.A) {
@@ -41,6 +42,10 @@ var Lint = goyek.Define(goyek.Task{
 		}
 		modernizeArgs = append(modernizeArgs, modernizePackageArgs(a)...)
 		runLintCommand(a, "modernize", modernizeArgs...)
+
+		if err := runUnnecessaryExportAnalyzer(a.Context(), ".", *lintFix, os.Stderr); err != nil {
+			a.Errorf("unnecessary-export issues found: %v", err)
+		}
 
 		runLintCommand(a, "deadcode", "tool", "deadcode", "-test", "./...")
 	},

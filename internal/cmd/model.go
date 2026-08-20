@@ -64,7 +64,7 @@ var systemPromptModelCmd = &cobra.Command{
 		return config.ModelSystemPromptFromConfig(cmd.Context(), config.ModelSystemPromptFromConfigOptions{
 			ConfigPath:   configPath,
 			ModelName:    model,
-			DefaultModel: DefaultModel,
+			DefaultModel: defaultModel,
 			Output:       cmd.OutOrStdout(),
 			Stderr:       cmd.ErrOrStderr(),
 		})
@@ -72,7 +72,7 @@ var systemPromptModelCmd = &cobra.Command{
 }
 
 func init() {
-	modelCmd.PersistentFlags().StringVarP(&model, "model", "m", DefaultModel, "Model profile ref for profile-specific inspection (env: CPE_MODEL)")
+	modelCmd.PersistentFlags().StringVarP(&model, "model", "m", defaultModel, "Model profile ref for profile-specific inspection (env: CPE_MODEL)")
 
 	modelCmd.AddCommand(listModelCmd)
 	modelCmd.AddCommand(infoModelCmd)

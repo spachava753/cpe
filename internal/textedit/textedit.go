@@ -9,25 +9,25 @@ import (
 	"unicode/utf8"
 )
 
-// ToolName is the MCP tool name exposed by the bundled text editor server.
-const ToolName = "text_edit"
+// toolName is the MCP tool name exposed by the bundled text editor server.
+const toolName = "text_edit"
 
-// Input is the JSON payload accepted by the text_edit tool.
-type Input struct {
+// input is the JSON payload accepted by the text_edit tool.
+type input struct {
 	Path    string `json:"path" jsonschema:"Path to the file to edit or create"`
 	OldText string `json:"old_text,omitempty" jsonschema:"Exact text to find and replace. If empty, creates a new file instead"`
 	NewText string `json:"new_text" jsonschema:"Replacement text or content for new file"`
 }
 
-// Output is the structured result returned by text_edit.
-type Output struct {
+// output is the structured result returned by text_edit.
+type output struct {
 	Path         string `json:"path" jsonschema:"Resolved path that was edited or created"`
 	Operation    string `json:"operation" jsonschema:"Operation performed: created or modified"`
 	Replacements int    `json:"replacements,omitempty" jsonschema:"Number of replacements performed"`
 }
 
 // Message returns a short human-readable summary for tool result content.
-func (o Output) Message() string {
+func (o output) Message() string {
 	switch o.Operation {
 	case "created":
 		return fmt.Sprintf("created %s", o.Path)
@@ -38,15 +38,15 @@ func (o Output) Message() string {
 	}
 }
 
-// Apply performs the text_edit operation relative to the current working directory.
-func Apply(input Input) (Output, error) {
+// apply performs the text_edit operation relative to the current working directory.
+func apply(input input) (output, error) {
 	if strings.TrimSpace(input.Path) == "" {
-		return Output{}, fmt.Errorf("path is required")
+		return output{}, fmt.Errorf("path is required")
 	}
 
 	resolvedPath, err := filepath.Abs(input.Path)
 	if err != nil {
-		return Output{}, fmt.Errorf("resolving path: %w", err)
+		return output{}, fmt.Errorf("resolving path: %w", err)
 	}
 
 	if input.OldText == "" {
@@ -55,73 +55,73 @@ func Apply(input Input) (Output, error) {
 	return replaceText(resolvedPath, input.OldText, input.NewText)
 }
 
-func createFile(path, text string) (Output, error) {
+func createFile(path, text string) (output, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return Output{}, fmt.Errorf("creating parent directories: %w", err)
+		return output{}, fmt.Errorf("creating parent directories: %w", err)
 	}
 
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		if os.IsExist(err) {
-			return Output{}, fmt.Errorf("file already exists: %s", path)
+			return output{}, fmt.Errorf("file already exists: %s", path)
 		}
-		return Output{}, fmt.Errorf("creating file: %w", err)
+		return output{}, fmt.Errorf("creating file: %w", err)
 	}
 
 	if _, err := file.WriteString(text); err != nil {
 		_ = file.Close()
-		return Output{}, fmt.Errorf("writing file: %w", err)
+		return output{}, fmt.Errorf("writing file: %w", err)
 	}
 	if err := file.Close(); err != nil {
-		return Output{}, fmt.Errorf("closing file: %w", err)
+		return output{}, fmt.Errorf("closing file: %w", err)
 	}
-	return Output{Path: path, Operation: "created"}, nil
+	return output{Path: path, Operation: "created"}, nil
 }
 
-func replaceText(path, oldText, newText string) (Output, error) {
+func replaceText(path, oldText, newText string) (output, error) {
 	linkInfo, err := os.Lstat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return Output{}, fmt.Errorf("file does not exist: %s", path)
+			return output{}, fmt.Errorf("file does not exist: %s", path)
 		}
-		return Output{}, fmt.Errorf("stat file: %w", err)
+		return output{}, fmt.Errorf("stat file: %w", err)
 	}
 	if linkInfo.Mode()&os.ModeSymlink != 0 {
-		return Output{}, fmt.Errorf("path is a symlink: %s", path)
+		return output{}, fmt.Errorf("path is a symlink: %s", path)
 	}
 
 	info, err := os.Stat(path)
 	if err != nil {
-		return Output{}, fmt.Errorf("stat file: %w", err)
+		return output{}, fmt.Errorf("stat file: %w", err)
 	}
 	if info.IsDir() {
-		return Output{}, fmt.Errorf("path is a directory: %s", path)
+		return output{}, fmt.Errorf("path is a directory: %s", path)
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return Output{}, fmt.Errorf("reading file: %w", err)
+		return output{}, fmt.Errorf("reading file: %w", err)
 	}
 	if !utf8.Valid(data) {
-		return Output{}, fmt.Errorf("file is not valid UTF-8: %s", path)
+		return output{}, fmt.Errorf("file is not valid UTF-8: %s", path)
 	}
 
 	content := string(data)
 	count := countOverlappingOccurrences(content, oldText)
 	switch count {
 	case 0:
-		return Output{}, fmt.Errorf("old_text not found in %s", path)
+		return output{}, fmt.Errorf("old_text not found in %s", path)
 	case 1:
 		// proceed
 	default:
-		return Output{}, fmt.Errorf("old_text appears %d times in %s; expected exactly one match", count, path)
+		return output{}, fmt.Errorf("old_text appears %d times in %s; expected exactly one match", count, path)
 	}
 
 	updated := strings.Replace(content, oldText, newText, 1)
 	if err := writeFileAtomically(path, []byte(updated), info.Mode().Perm()); err != nil {
-		return Output{}, err
+		return output{}, err
 	}
-	return Output{Path: path, Operation: "modified", Replacements: 1}, nil
+	return output{Path: path, Operation: "modified", Replacements: 1}, nil
 }
 
 func countOverlappingOccurrences(content, needle string) int {

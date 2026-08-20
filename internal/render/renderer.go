@@ -26,14 +26,14 @@ type Iface interface {
 	Render(in string) (string, error)
 }
 
-// PlainTextRenderer renders markdown with Glamour's ASCII style and no width-based wrapping.
-type PlainTextRenderer struct {
-	renderer *GlamourRenderer
+// plainTextRenderer renders markdown with Glamour's ASCII style and no width-based wrapping.
+type plainTextRenderer struct {
+	renderer *glamourRenderer
 }
 
 // NewPlainTextRenderer creates a renderer for non-TTY/plain terminal output.
-func NewPlainTextRenderer() *PlainTextRenderer {
-	return &PlainTextRenderer{renderer: newTermRenderer(
+func NewPlainTextRenderer() *plainTextRenderer {
+	return &plainTextRenderer{renderer: newTermRenderer(
 		glamour.WithStyles(plainTextStyle()),
 		glamour.WithColorProfile(termenv.Ascii),
 		glamour.WithWordWrap(disabledWordWrapWidth),
@@ -41,17 +41,17 @@ func NewPlainTextRenderer() *PlainTextRenderer {
 }
 
 // Render renders markdown for plain terminal display without ANSI styling or wrapping.
-func (p *PlainTextRenderer) Render(in string) (string, error) {
+func (p *plainTextRenderer) Render(in string) (string, error) {
 	return p.renderer.Render(in)
 }
 
-// GlamourRenderer renders markdown through glamour after normalizing terminal-sensitive code blocks.
-type GlamourRenderer struct {
+// glamourRenderer renders markdown through glamour after normalizing terminal-sensitive code blocks.
+type glamourRenderer struct {
 	renderer *glamour.TermRenderer
 }
 
 // Render renders markdown for terminal display.
-func (r *GlamourRenderer) Render(in string) (string, error) {
+func (r *glamourRenderer) Render(in string) (string, error) {
 	return r.renderer.Render(expandCodeBlockTabs(in))
 }
 
@@ -160,16 +160,16 @@ func expandTabsToSpaces(s string) string {
 	return b.String()
 }
 
-func newTermRenderer(options ...glamour.TermRendererOption) *GlamourRenderer {
+func newTermRenderer(options ...glamour.TermRendererOption) *glamourRenderer {
 	renderer, err := glamour.NewTermRenderer(options...)
 	if err != nil {
 		panic(err.Error())
 	}
-	return &GlamourRenderer{renderer: renderer}
+	return &glamourRenderer{renderer: renderer}
 }
 
 // NewGlamourRendererForWriter creates a glamour renderer sized to the terminal backing w.
-func NewGlamourRendererForWriter(w io.Writer) *GlamourRenderer {
+func NewGlamourRendererForWriter(w io.Writer) *glamourRenderer {
 	return newTermRenderer(
 		glamour.WithStyles(baseStyle()),
 		glamour.WithWordWrap(writerWordWrapWidth(w)),

@@ -12,10 +12,10 @@ import (
 	"github.com/spachava753/cpe/internal/config"
 )
 
-// GenSchema reflects config.RawConfig into a JSON Schema document and writes it to
-// schema/cpe-config-schema.json at the module root.
+// Register the task that reflects config.RawConfig into a JSON Schema document
+// and writes it to schema/cpe-config-schema.json at the module root.
 // Module root resolution prefers GOMOD and falls back to an upward go.mod search.
-var GenSchema = goyek.Define(goyek.Task{
+var _ = goyek.Define(goyek.Task{
 	Name:  "gen-schema",
 	Usage: "Generate JSON schema for CPE configuration files",
 	Action: func(a *goyek.A) {

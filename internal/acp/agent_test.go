@@ -132,7 +132,7 @@ var _ gai.ToolCallingGenerator = (*testGen)(nil)
 
 // testRuntime is a test time implementation of a [runtime]
 type testRuntime struct {
-	*Loop
+	*loop
 }
 
 func (r testRuntime) Close() error {
@@ -209,7 +209,7 @@ func TestSkillSlashCommands(t *testing.T) {
 			}}
 			cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
 			be.Err(t, err, nil)
-			return testRuntime{Loop: &Loop{
+			return testRuntime{loop: &loop{
 				G:     &gen,
 				Store: store,
 				Cfg:   cfg,
@@ -675,7 +675,7 @@ func TestPrompt(t *testing.T) {
 					// TODO: Should we set gen opts?
 				})
 				be.Err(t, err, nil)
-				return testRuntime{Loop: &Loop{
+				return testRuntime{loop: &loop{
 					G:     &gen,
 					Store: store,
 					Cfg:   cfg,
@@ -961,7 +961,7 @@ Output Cost: 1.00`),
 					// TODO: Should we set gen opts?
 				})
 				be.Err(t, err, nil)
-				return testRuntime{Loop: &Loop{
+				return testRuntime{loop: &loop{
 					G:     gen,
 					Store: store,
 					Cfg:   cfg,
@@ -1222,7 +1222,7 @@ Output Cost: 1.00`),
 				}
 				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
 				be.Err(t, err, nil)
-				return testRuntime{Loop: &Loop{
+				return testRuntime{loop: &loop{
 					G:     &gen,
 					Store: store,
 					Cfg:   cfg,
@@ -1377,7 +1377,7 @@ Output Cost: 1.00`),
 				}
 				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
 				be.Err(t, err, nil)
-				return testRuntime{Loop: &Loop{
+				return testRuntime{loop: &loop{
 					G:     gen,
 					Store: store,
 					Cfg:   cfg,
@@ -1465,7 +1465,7 @@ Output Cost: 1.00`),
 	})
 	t.Run("rejects concurrent prompt", func(t *testing.T) {
 		sessionID := acp.SessionId("active-session")
-		agent := &Agent{
+		agent := &agent{
 			activeSessions: new(cpesync.Map[acp.SessionId, *cpesync.Guard[session]]),
 			runtimeFactory: runtimeCreatorFunc(func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
 				t.Fatal("runtime should not be created for an active session")
@@ -1544,8 +1544,8 @@ Output Cost: 1.00`),
 				return dialog, nil
 			}}
 		}
-		newAgent := func(store *storage.Sqlite, r runtime) *Agent {
-			agent := &Agent{
+		newAgent := func(store *storage.Sqlite, r runtime) *agent {
+			agent := &agent{
 				activeSessions: new(cpesync.Map[acp.SessionId, *cpesync.Guard[session]]),
 				rawCfg:         &config.RawConfig{},
 				skillHomeDir:   t.TempDir(),
@@ -1560,7 +1560,7 @@ Output Cost: 1.00`),
 			return agent
 		}
 
-		agents := []*Agent{
+		agents := []*agent{
 			newAgent(stores[0], newRuntime(stores[0], "first answer")),
 			newAgent(stores[1], newRuntime(stores[1], "second answer")),
 		}
@@ -1656,7 +1656,7 @@ Output Cost: 1.00`),
 				}}
 				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
 				be.Err(t, err, nil)
-				return testRuntime{Loop: &Loop{
+				return testRuntime{loop: &loop{
 					G:     &gen,
 					Store: store,
 					Cfg:   cfg,
@@ -1735,7 +1735,7 @@ Output Cost: 1.00`),
 				}}
 				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
 				be.Err(t, err, nil)
-				return testRuntime{Loop: &Loop{
+				return testRuntime{loop: &loop{
 					G:     &gen,
 					Store: store,
 					Cfg:   cfg,
@@ -1814,7 +1814,7 @@ Output Cost: 1.00`),
 				}}
 				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
 				be.Err(t, err, nil)
-				return testRuntime{Loop: &Loop{
+				return testRuntime{loop: &loop{
 					G:     &gen,
 					Store: store,
 					Cfg:   cfg,
@@ -1893,7 +1893,7 @@ Output Cost: 1.00`),
 				}}
 				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
 				be.Err(t, err, nil)
-				return testRuntime{Loop: &Loop{
+				return testRuntime{loop: &loop{
 					G:     &gen,
 					Store: store,
 					Cfg:   cfg,
@@ -1982,7 +1982,7 @@ Output Cost: 1.00`),
 				}
 				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
 				be.Err(t, err, nil)
-				return testRuntime{Loop: &Loop{
+				return testRuntime{loop: &loop{
 					G:     &gen,
 					Store: store,
 					Cfg:   cfg,
@@ -2040,7 +2040,7 @@ Output Cost: 1.00`),
 }
 
 func TestPromptReportsStarlarkREPLResultContentToACPClient(t *testing.T) {
-	toolCall, err := gai.ToolCallBlock("call-starlark", StarlarkREPLToolName, map[string]any{
+	toolCall, err := gai.ToolCallBlock("call-starlark", starlarkREPLToolName, map[string]any{
 		"code":             `print("visible result")`,
 		"executionTimeout": 2,
 	})
@@ -2084,8 +2084,8 @@ func TestPromptReportsStarlarkREPLResultContentToACPClient(t *testing.T) {
 			if err != nil {
 				return nil, err
 			}
-			loop := &Loop{G: gen, Store: store, Cfg: cfg, conn: conn}
-			if err := loop.Register(MakeTool(5), &StarlarkREPLCallback{
+			loop := &loop{G: gen, Store: store, Cfg: cfg, conn: conn}
+			if err := loop.Register(makeTool(5), &starlarkREPLCallback{
 				Cwd:        s.cwd,
 				SessionID:  s.id,
 				MaxTimeout: 5,
@@ -2093,7 +2093,7 @@ func TestPromptReportsStarlarkREPLResultContentToACPClient(t *testing.T) {
 			}); err != nil {
 				return nil, err
 			}
-			return testRuntime{Loop: loop}, nil
+			return testRuntime{loop: loop}, nil
 		},
 	)
 	store = fixture.Store
@@ -2229,7 +2229,7 @@ func TestPromptRejectsInvalidToolCallIDsBeforeSessionUpdate(t *testing.T) {
 					if err != nil {
 						return nil, err
 					}
-					return testRuntime{Loop: &Loop{G: gen, Store: store, Cfg: cfg, conn: conn}}, nil
+					return testRuntime{loop: &loop{G: gen, Store: store, Cfg: cfg, conn: conn}}, nil
 				},
 			)
 			store = fixture.Store
@@ -2337,7 +2337,7 @@ func TestPromptRejectsToolCallIDReusedInSessionBeforeSessionUpdate(t *testing.T)
 			if err != nil {
 				return nil, err
 			}
-			return testRuntime{Loop: &Loop{
+			return testRuntime{loop: &loop{
 				G:     gen,
 				Store: store,
 				Cfg:   cfg,

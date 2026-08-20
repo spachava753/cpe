@@ -1,5 +1,5 @@
 /*
-Package acp implements CPE's Agent Client Protocol server and persisted-session
+Package acp implements CPE's agent Client Protocol server and persisted-session
 command operations.
 
 The server is launched by `cpe acp serve` and communicates with an ACP client

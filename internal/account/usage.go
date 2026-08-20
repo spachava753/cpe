@@ -85,7 +85,7 @@ func fetchOpenAIAccountUsage(ctx context.Context, baseURL string) (*auth.OpenAIU
 }
 
 func ensureFreshOpenAIAccountCredential(ctx context.Context, store *auth.Store) (*auth.Credential, error) {
-	cred, err := store.GetCredential(ProviderOpenAI)
+	cred, err := store.GetCredential(providerOpenAI)
 	if err != nil {
 		return nil, fmt.Errorf("getting credential: %w", err)
 	}
@@ -102,7 +102,7 @@ func ensureFreshOpenAIAccountCredential(ctx context.Context, store *auth.Store) 
 		return nil, fmt.Errorf("refreshing openai token: %w", err)
 	}
 
-	cred = auth.TokenToCredentialPreserveRefresh(ProviderOpenAI, tokenResp, cred.RefreshToken)
+	cred = auth.TokenToCredentialPreserveRefresh(providerOpenAI, tokenResp, cred.RefreshToken)
 	if err := store.SaveCredential(cred); err != nil {
 		return nil, fmt.Errorf("saving refreshed openai credential: %w", err)
 	}

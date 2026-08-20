@@ -14,7 +14,7 @@ import (
 // With opts.Recursive=false, deletion fails if any target has children.
 //
 // The operation is atomic across all IDs in opts.MessageIDs.
-func (s *Sqlite) DeleteMessages(ctx context.Context, opts DeleteMessagesOptions) error {
+func (s *Sqlite) DeleteMessages(ctx context.Context, opts deleteMessagesOptions) error {
 	// Begin transaction
 	tx, err := beginWriteTx(ctx, s.db)
 	if err != nil {

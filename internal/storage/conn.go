@@ -14,23 +14,23 @@ import (
 	"github.com/ncruces/go-sqlite3"
 )
 
-// DefaultFilename is the conversation database filename in
+// defaultFilename is the conversation database filename in
 // CPE's user config directory when no explicit path is configured.
-const DefaultFilename = ".cpeconvo"
+const defaultFilename = ".cpeconvo"
 
-// ResolveStoragePath resolves a CLI or environment database path
+// resolveStoragePath resolves a CLI or environment database path
 // into the effective SQLite path.
 //
 // An empty path selects .cpeconvo in CPE's user config directory. Explicit
 // paths support ~ and ~/... home expansion; absolute and relative paths are
 // otherwise cleaned without changing whether they are relative.
-func ResolveStoragePath(rawPath string) (string, error) {
+func resolveStoragePath(rawPath string) (string, error) {
 	if rawPath == "" {
 		configDir, err := os.UserConfigDir()
 		if err != nil {
 			return "", fmt.Errorf("resolve user config directory: %w", err)
 		}
-		return filepath.Join(configDir, "cpe", DefaultFilename), nil
+		return filepath.Join(configDir, "cpe", defaultFilename), nil
 	}
 
 	path, err := expandHomePath(rawPath)
@@ -45,7 +45,7 @@ func ResolveStoragePath(rawPath string) (string, error) {
 // connection-local busy timeout, foreign-key, and IMMEDIATE transaction
 // settings. The caller must close the returned Sqlite.
 func NewConvoDB(ctx context.Context, rawPath string) (*Sqlite, error) {
-	dbPath, err := ResolveStoragePath(rawPath)
+	dbPath, err := resolveStoragePath(rawPath)
 	if err != nil {
 		return nil, err
 	}

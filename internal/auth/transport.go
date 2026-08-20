@@ -12,8 +12,8 @@ import (
 	"time"
 )
 
-// OAuthTransport wraps an http.RoundTripper to inject OAuth bearer tokens (Anthropic)
-type OAuthTransport struct {
+// oauthTransport wraps an http.RoundTripper to inject OAuth bearer tokens (Anthropic)
+type oauthTransport struct {
 	base  http.RoundTripper
 	store *Store
 	mu    sync.RWMutex
@@ -21,18 +21,18 @@ type OAuthTransport struct {
 
 // NewOAuthTransport creates a new Anthropic OAuth transport wrapper.
 // If base is nil, http.DefaultTransport is used.
-func NewOAuthTransport(base http.RoundTripper, store *Store) *OAuthTransport {
+func NewOAuthTransport(base http.RoundTripper, store *Store) *oauthTransport {
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	return &OAuthTransport{
+	return &oauthTransport{
 		base:  base,
 		store: store,
 	}
 }
 
 // RoundTrip implements http.RoundTripper
-func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *oauthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	cred, err := t.store.GetCredential("anthropic")
 	if err != nil {
 		return nil, fmt.Errorf("getting credential: %w", err)
@@ -49,7 +49,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		if time.Now().Unix() >= cred.ExpiresAt-60 {
-			tokenResp, err := RefreshAccessToken(req.Context(), cred.RefreshToken)
+			tokenResp, err := refreshAccessToken(req.Context(), cred.RefreshToken)
 			if err != nil {
 				t.mu.Unlock()
 				return nil, fmt.Errorf("refreshing token: %w", err)
@@ -69,7 +69,7 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	// Merge beta headers - preserve any existing betas and add OAuth required ones
 	existingBeta := clone.Header.Get("anthropic-beta")
-	mergedBeta := mergeBetaHeaders(existingBeta, AnthropicAuthBetaHeader)
+	mergedBeta := mergeBetaHeaders(existingBeta, anthropicAuthBetaHeader)
 
 	// Set Bearer auth and required headers
 	clone.Header.Set("Authorization", "Bearer "+cred.AccessToken)
@@ -79,9 +79,9 @@ func (t *OAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.base.RoundTrip(clone)
 }
 
-// OpenAIOAuthTransport wraps an http.RoundTripper to inject OpenAI OAuth bearer tokens.
+// openAIOAuthTransport wraps an http.RoundTripper to inject OpenAI OAuth bearer tokens.
 // It handles automatic token refresh and sets required headers for the ChatGPT backend API.
-type OpenAIOAuthTransport struct {
+type openAIOAuthTransport struct {
 	base  http.RoundTripper
 	store *Store
 	mu    sync.RWMutex
@@ -89,18 +89,18 @@ type OpenAIOAuthTransport struct {
 
 // NewOpenAIOAuthTransport creates a new OpenAI OAuth transport wrapper.
 // If base is nil, http.DefaultTransport is used.
-func NewOpenAIOAuthTransport(base http.RoundTripper, store *Store) *OpenAIOAuthTransport {
+func NewOpenAIOAuthTransport(base http.RoundTripper, store *Store) *openAIOAuthTransport {
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	return &OpenAIOAuthTransport{
+	return &openAIOAuthTransport{
 		base:  base,
 		store: store,
 	}
 }
 
 // RoundTrip implements http.RoundTripper for OpenAI OAuth
-func (t *OpenAIOAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *openAIOAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	cred, err := t.store.GetCredential("openai")
 	if err != nil {
 		return nil, fmt.Errorf("getting openai credential: %w", err)
@@ -141,7 +141,7 @@ func (t *OpenAIOAuthTransport) RoundTrip(req *http.Request) (*http.Response, err
 	clone.Header.Del("x-api-key")
 
 	// Extract and set the ChatGPT account ID from the JWT
-	accountID, err := ExtractChatGPTAccountID(cred.AccessToken)
+	accountID, err := extractChatGPTAccountID(cred.AccessToken)
 	if err == nil && accountID != "" {
 		clone.Header.Set("chatgpt-account-id", accountID)
 	}

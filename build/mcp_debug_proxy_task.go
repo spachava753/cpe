@@ -15,11 +15,11 @@ import (
 	"github.com/goyek/goyek/v2"
 )
 
-// MCPDebugProxy runs an MCP stdio command behind a timestamped logging proxy.
+// Register the MCP stdio logging-proxy task.
 // It requires -log and -cmd, forwards stdin/stdout transparently, and mirrors
 // each line to the log file with direction markers. SIGINT/SIGTERM are propagated
 // to the child process so shutdown behavior matches direct execution.
-var MCPDebugProxy = goyek.Define(goyek.Task{
+var _ = goyek.Define(goyek.Task{
 	Name:  "mcp-debug-proxy",
 	Usage: "MCP stdio debug proxy. Use -log=FILE -cmd='command args'",
 	Action: func(a *goyek.A) {

@@ -39,7 +39,7 @@ func TestResolveStoragePath(t *testing.T) {
 	}{
 		{
 			name: "uses centralized user config database by default",
-			want: filepath.Join(userConfigDir, "cpe", DefaultFilename),
+			want: filepath.Join(userConfigDir, "cpe", defaultFilename),
 		},
 		{
 			name:    "uses absolute configured path",
@@ -70,7 +70,7 @@ func TestResolveStoragePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ResolveStoragePath(tt.rawPath)
+			got, err := resolveStoragePath(tt.rawPath)
 			if tt.wantErr != "" {
 				if err == nil {
 					t.Fatalf("expected error %q, got nil", tt.wantErr)
@@ -315,7 +315,7 @@ func newTestDBWithFK(t *testing.T) (*Sqlite, *sql.DB) {
 
 // failDB wraps a real DB and allows injecting errors at specific points.
 type failDB struct {
-	DB
+	db
 	failBeginTx bool
 }
 
@@ -323,7 +323,7 @@ func (f *failDB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, err
 	if f.failBeginTx {
 		return nil, fmt.Errorf("injected BeginTx error")
 	}
-	return f.DB.BeginTx(ctx, opts)
+	return f.db.BeginTx(ctx, opts)
 }
 
 // addBlockingTrigger creates a SQLite trigger that blocks INSERT or DELETE
@@ -1012,7 +1012,7 @@ func TestSaveDialog(t *testing.T) {
 			}
 		}
 
-		allMsgs, err := db.ListMessages(ctx, ListMessagesOptions{})
+		allMsgs, err := db.ListMessages(ctx, listMessagesOptions{})
 		if err != nil {
 			t.Fatalf("ListMessages: %v", err)
 		}
@@ -1244,7 +1244,7 @@ func TestListMessages(t *testing.T) {
 					savedIDs = append(savedIDs, id)
 				}
 
-				msgs, err := db.ListMessages(ctx, ListMessagesOptions{AscendingOrder: tt.ascending})
+				msgs, err := db.ListMessages(ctx, listMessagesOptions{AscendingOrder: tt.ascending})
 				if err != nil {
 					t.Fatalf("ListMessages: %v", err)
 				}
@@ -1274,7 +1274,7 @@ func TestListMessages(t *testing.T) {
 			saveOne(t, db, ctx, makeTextMessage(gai.User, "msg"))
 		}
 
-		msgs, err := db.ListMessages(ctx, ListMessagesOptions{Offset: 3})
+		msgs, err := db.ListMessages(ctx, listMessagesOptions{Offset: 3})
 		if err != nil {
 			t.Fatalf("ListMessages: %v", err)
 		}
@@ -1297,7 +1297,7 @@ func TestListMessages(t *testing.T) {
 		})
 		parentID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
 
-		msgs, err := db.ListMessages(ctx, ListMessagesOptions{AscendingOrder: true})
+		msgs, err := db.ListMessages(ctx, listMessagesOptions{AscendingOrder: true})
 		if err != nil {
 			t.Fatalf("ListMessages: %v", err)
 		}
@@ -1337,7 +1337,7 @@ func TestDeleteMessages(t *testing.T) {
 
 		leafID := saveOne(t, db, ctx, makeTextMessage(gai.User, "leaf"))
 
-		err := db.DeleteMessages(ctx, DeleteMessagesOptions{
+		err := db.DeleteMessages(ctx, deleteMessagesOptions{
 			MessageIDs: []string{leafID},
 			Recursive:  false,
 		})
@@ -1361,7 +1361,7 @@ func TestDeleteMessages(t *testing.T) {
 		parentID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
 		childID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
 
-		err := db.DeleteMessages(ctx, DeleteMessagesOptions{
+		err := db.DeleteMessages(ctx, deleteMessagesOptions{
 			MessageIDs: []string{parentID},
 			Recursive:  false,
 		})
@@ -1391,7 +1391,7 @@ func TestDeleteMessages(t *testing.T) {
 			allIDs = append(allIDs, getExtraFieldString(s.ExtraFields, MessageIDKey))
 		}
 
-		err := db.DeleteMessages(ctx, DeleteMessagesOptions{
+		err := db.DeleteMessages(ctx, deleteMessagesOptions{
 			MessageIDs: []string{allIDs[0]},
 			Recursive:  true,
 		})
@@ -1716,7 +1716,7 @@ func TestBeginTxError(t *testing.T) {
 		{
 			name: "DeleteMessages",
 			call: func(ds *Sqlite) error {
-				return ds.DeleteMessages(context.Background(), DeleteMessagesOptions{
+				return ds.DeleteMessages(context.Background(), deleteMessagesOptions{
 					MessageIDs: []string{"any"},
 					Recursive:  false,
 				})
@@ -1726,7 +1726,7 @@ func TestBeginTxError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ds, rawDB := newTestDB(t)
-			fdb := &failDB{DB: rawDB, failBeginTx: true}
+			fdb := &failDB{db: rawDB, failBeginTx: true}
 			ds.db = fdb
 			if err := tt.call(ds); err == nil {
 				t.Fatal("expected error from BeginTx failure")
@@ -1755,7 +1755,7 @@ func TestIteratorEarlyBreak(t *testing.T) {
 			},
 			iterate: func(db *Sqlite, ctx context.Context) int {
 				// Re-list all messages to get their saved forms, then re-submit
-				msgs, _ := db.ListMessages(ctx, ListMessagesOptions{AscendingOrder: true})
+				msgs, _ := db.ListMessages(ctx, listMessagesOptions{AscendingOrder: true})
 				var saved []gai.Message
 				for m := range msgs {
 					saved = append(saved, m)
@@ -1781,7 +1781,7 @@ func TestIteratorEarlyBreak(t *testing.T) {
 				}
 			},
 			iterate: func(db *Sqlite, ctx context.Context) int {
-				msgs, _ := db.ListMessages(ctx, ListMessagesOptions{})
+				msgs, _ := db.ListMessages(ctx, listMessagesOptions{})
 				consumed := 0
 				for range msgs {
 					consumed++
@@ -1801,7 +1801,7 @@ func TestIteratorEarlyBreak(t *testing.T) {
 			},
 			iterate: func(db *Sqlite, ctx context.Context) int {
 				// Get all message IDs
-				allMsgs, _ := db.ListMessages(ctx, ListMessagesOptions{})
+				allMsgs, _ := db.ListMessages(ctx, listMessagesOptions{})
 				var ids []string
 				for m := range allMsgs {
 					ids = append(ids, getExtraFieldString(m.ExtraFields, MessageIDKey))
@@ -1877,7 +1877,7 @@ func TestDeleteMessages_CommitError(t *testing.T) {
 	id := saveOne(t, ds, ctx, makeTextMessage(gai.User, "to-delete"))
 	addPoisonTrigger(t, rawDB, "delete")
 
-	err := ds.DeleteMessages(ctx, DeleteMessagesOptions{
+	err := ds.DeleteMessages(ctx, deleteMessagesOptions{
 		MessageIDs: []string{id},
 		Recursive:  false,
 	})
@@ -1900,7 +1900,7 @@ func TestDeleteMessages_ErrorPaths(t *testing.T) {
 			t.Fatalf("rename: %v", err)
 		}
 
-		err := db.DeleteMessages(ctx, DeleteMessagesOptions{
+		err := db.DeleteMessages(ctx, deleteMessagesOptions{
 			MessageIDs: []string{id},
 			Recursive:  false,
 		})
@@ -1922,7 +1922,7 @@ func TestDeleteMessages_ErrorPaths(t *testing.T) {
 
 		addBlockingTrigger(t, rawDB, "messages", "DELETE")
 
-		err = db.DeleteMessages(ctx, DeleteMessagesOptions{
+		err = db.DeleteMessages(ctx, deleteMessagesOptions{
 			MessageIDs: []string{"delete-err-msg"},
 			Recursive:  false,
 		})
@@ -1945,7 +1945,7 @@ func TestDeleteMessages_ErrorPaths(t *testing.T) {
 			t.Fatalf("rename: %v", err)
 		}
 
-		err := db.DeleteMessages(ctx, DeleteMessagesOptions{
+		err := db.DeleteMessages(ctx, deleteMessagesOptions{
 			MessageIDs: []string{rootID},
 			Recursive:  true,
 		})
@@ -1966,7 +1966,7 @@ func TestDeleteMessages_ErrorPaths(t *testing.T) {
 
 		addBlockingTrigger(t, rawDB, "messages", "DELETE")
 
-		err := db.DeleteMessages(ctx, DeleteMessagesOptions{
+		err := db.DeleteMessages(ctx, deleteMessagesOptions{
 			MessageIDs: []string{rootID},
 			Recursive:  true,
 		})
@@ -2001,7 +2001,7 @@ func TestListMessages_ErrorPaths(t *testing.T) {
 				}
 				rawDB.Close()
 
-				if _, err = ds.ListMessages(context.Background(), ListMessagesOptions{AscendingOrder: tt.ascending}); err == nil {
+				if _, err = ds.ListMessages(context.Background(), listMessagesOptions{AscendingOrder: tt.ascending}); err == nil {
 					t.Fatal("expected error from closed DB")
 				}
 			})
@@ -2019,7 +2019,7 @@ func TestListMessages_ErrorPaths(t *testing.T) {
 			t.Fatalf("insert: %v", err)
 		}
 
-		if _, err := db.ListMessages(ctx, ListMessagesOptions{}); err == nil {
+		if _, err := db.ListMessages(ctx, listMessagesOptions{}); err == nil {
 			t.Fatal("expected error from getMessage with invalid role during ListMessages")
 		}
 	})
@@ -2357,7 +2357,7 @@ func TestTreeBranching(t *testing.T) {
 	}
 
 	// Deleting child1 non-recursively should leave child2 and root intact
-	err = db.DeleteMessages(ctx, DeleteMessagesOptions{
+	err = db.DeleteMessages(ctx, deleteMessagesOptions{
 		MessageIDs: []string{child1ID},
 		Recursive:  false,
 	})
@@ -2449,7 +2449,7 @@ func TestListMessages_OffsetBeyondTotal(t *testing.T) {
 		saveOne(t, db, ctx, makeTextMessage(gai.User, "msg"))
 	}
 
-	msgs, err := db.ListMessages(ctx, ListMessagesOptions{Offset: 100})
+	msgs, err := db.ListMessages(ctx, listMessagesOptions{Offset: 100})
 	if err != nil {
 		t.Fatalf("ListMessages with large offset: %v", err)
 	}
@@ -2712,7 +2712,7 @@ func TestDeleteMessages_MultipleIDs(t *testing.T) {
 	id2 := saveOne(t, db, ctx, makeTextMessage(gai.User, "leaf2"))
 	id3 := saveOne(t, db, ctx, makeTextMessage(gai.User, "leaf3"))
 
-	err := db.DeleteMessages(ctx, DeleteMessagesOptions{
+	err := db.DeleteMessages(ctx, deleteMessagesOptions{
 		MessageIDs: []string{id1, id3},
 		Recursive:  false,
 	})
@@ -2745,7 +2745,7 @@ func TestListMessages_CreatedAtOrdering(t *testing.T) {
 	}
 
 	// Ascending: timestamps should be non-decreasing
-	msgs, err := db.ListMessages(ctx, ListMessagesOptions{AscendingOrder: true})
+	msgs, err := db.ListMessages(ctx, listMessagesOptions{AscendingOrder: true})
 	if err != nil {
 		t.Fatalf("ListMessages: %v", err)
 	}

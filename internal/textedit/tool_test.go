@@ -59,8 +59,8 @@ func TestMakeToolReturnsTextEditTool(t *testing.T) {
 	t.Parallel()
 
 	tool, callback := MakeTool(testSessionID, nil)
-	if tool.Name != ToolName {
-		t.Fatalf("tool name = %q, want %q", tool.Name, ToolName)
+	if tool.Name != toolName {
+		t.Fatalf("tool name = %q, want %q", tool.Name, toolName)
 	}
 	if tool.Description == "" {
 		t.Fatal("expected tool description")

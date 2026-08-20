@@ -122,7 +122,7 @@ func setup(
 	sqliteStorage, db := newTestSqlite(t)
 
 	adapter := &runtimeCreatorAdapter{f: rf}
-	ag := Agent{
+	ag := agent{
 		activeSessions: new(sync.Map[acp.SessionId, *sync.Guard[session]]),
 		genId: func() acp.SessionId {
 			return acp.SessionId(storage.GenerateId())

@@ -17,8 +17,8 @@ import (
 	"github.com/spachava753/cpe/internal/mapstruct"
 )
 
-// StarlarkREPLToolName is the reserved model-facing tool name for code mode.
-const StarlarkREPLToolName = "starlark_repl"
+// starlarkREPLToolName is the reserved model-facing tool name for code mode.
+const starlarkREPLToolName = "starlark_repl"
 
 type starlarkREPLInput struct {
 	Code             string `json:"code"`
@@ -29,8 +29,8 @@ type acpConn interface {
 	SessionUpdate(ctx context.Context, params *acp.SessionNotification) error
 }
 
-// StarlarkREPLCallback implements the session-scoped starlark_repl tool.
-type StarlarkREPLCallback struct {
+// starlarkREPLCallback implements the session-scoped starlark_repl tool.
+type starlarkREPLCallback struct {
 	MaxTimeout           int
 	LargeOutputCharLimit int
 	Cwd                  string
@@ -43,7 +43,7 @@ type StarlarkREPLCallback struct {
 }
 
 // Reset discards all REPL globals and creates a fresh thread on the next call.
-func (c *StarlarkREPLCallback) Reset() {
+func (c *starlarkREPLCallback) Reset() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.repl != nil {
@@ -53,7 +53,7 @@ func (c *StarlarkREPLCallback) Reset() {
 }
 
 // Call validates and evaluates one chunk while preserving REPL state between calls.
-func (c *StarlarkREPLCallback) Call(ctx context.Context, params map[string]any) (gai.Message, error) {
+func (c *starlarkREPLCallback) Call(ctx context.Context, params map[string]any) (gai.Message, error) {
 	sendToolCallUpdate := func(status acp.ToolCallStatus, blocks []gai.Block) error {
 		if c.Conn == nil {
 			return nil

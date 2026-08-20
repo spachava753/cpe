@@ -49,7 +49,7 @@ func TestPromptScopesRuntimeLogsToSession(t *testing.T) {
 		model: "test-model",
 	}))
 	var runtimeCtx context.Context
-	agent := Agent{
+	agent := agent{
 		activeSessions: activeSessions,
 		runtimeFactory: runtimeCreatorFunc(func(context.Context, session, acp.ClientCapabilities, *acp.AgentConnection) (runtime, error) {
 			return contextCapturingRuntime{captured: &runtimeCtx}, nil

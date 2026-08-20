@@ -55,7 +55,7 @@ func TestCreateTransportRemoteHTTPClientsUseTransportWithoutClientTimeout(t *tes
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			transport, err := CreateTransport(context.Background(), mcpconfig.ServerConfig{
+			transport, err := createTransport(context.Background(), mcpconfig.ServerConfig{
 				Type: tt.serverType,
 				URL:  "http://example.com/mcp",
 			})

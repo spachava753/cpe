@@ -55,33 +55,33 @@ func newMCPRoundTripper(base http.RoundTripper) http.RoundTripper {
 	)
 }
 
-// EffectiveServerType returns the runtime transport type, defaulting empty to stdio.
-func EffectiveServerType(config mcpconfig.ServerConfig) string {
+// effectiveServerType returns the runtime transport type, defaulting empty to stdio.
+func effectiveServerType(config mcpconfig.ServerConfig) string {
 	if config.Type == "" {
 		return "stdio"
 	}
 	return config.Type
 }
 
-// EffectiveServerTimeout returns the per-server operation timeout, defaulting to 60s.
-func EffectiveServerTimeout(config mcpconfig.ServerConfig) time.Duration {
+// effectiveServerTimeout returns the per-server operation timeout, defaulting to 60s.
+func effectiveServerTimeout(config mcpconfig.ServerConfig) time.Duration {
 	if config.Timeout <= 0 {
 		return defaultServerTimeout
 	}
 	return time.Duration(config.Timeout) * time.Second
 }
 
-// WithServerTimeout derives an operation-scoped timeout context from ctx.
-func WithServerTimeout(ctx context.Context, config mcpconfig.ServerConfig) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(ctx, EffectiveServerTimeout(config))
+// withServerTimeout derives an operation-scoped timeout context from ctx.
+func withServerTimeout(ctx context.Context, config mcpconfig.ServerConfig) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, effectiveServerTimeout(config))
 }
 
-// FilterMcpTools applies per-server enabledTools/disabledTools policy.
+// filterMcpTools applies per-server enabledTools/disabledTools policy.
 // Mode is inferred from config: enabledTools (allowlist), disabledTools (blocklist),
 // or pass-through when neither list is set. Input order is preserved.
 //
 // Returns the kept tools and names filtered out for observability logging.
-func FilterMcpTools(tools []*mcp.Tool, config mcpconfig.ServerConfig) ([]*mcp.Tool, []string) {
+func filterMcpTools(tools []*mcp.Tool, config mcpconfig.ServerConfig) ([]*mcp.Tool, []string) {
 	// Infer filtering mode from which list is populated
 	if len(config.EnabledTools) > 0 {
 		// Whitelist mode: only include tools in EnabledTools
@@ -150,9 +150,9 @@ func mcpAnnotationsToACP(annotations *mcp.Annotations) *acp.Annotations {
 	return converted
 }
 
-// ToolCallback adapts one MCP tool into gai.ToolCallback invocation semantics.
+// toolCallback adapts one MCP tool into gai.toolCallback invocation semantics.
 // It is bound to a specific server session and tool name.
-type ToolCallback struct {
+type toolCallback struct {
 	Conn          sessionUpdator
 	SessionId     acp.SessionId
 	ClientSession *mcp.ClientSession
@@ -164,9 +164,9 @@ type ToolCallback struct {
 // Call executes the bound MCP tool and converts MCP content into gai blocks.
 // Parameter/tool-call failures are returned as ToolResult text (nil error) so the
 // model can recover; unsupported content types return a hard error.
-func (c *ToolCallback) Call(ctx context.Context, parameters map[string]any) (gai.Message, error) {
+func (c *toolCallback) Call(ctx context.Context, parameters map[string]any) (gai.Message, error) {
 	// Call the tool
-	callCtx, cancel := WithServerTimeout(ctx, c.ServerConfig)
+	callCtx, cancel := withServerTimeout(ctx, c.ServerConfig)
 	defer cancel()
 
 	started := acp.ToolCallUpdateSessionUpdate(xctx.ToolCallIdFrom(ctx))
@@ -357,14 +357,14 @@ func (c *ToolCallback) Call(ctx context.Context, parameters map[string]any) (gai
 	return resultMsg, nil
 }
 
-// CreateTransport builds the transport used during client.Connect.
+// createTransport builds the transport used during client.Connect.
 //
 // - stdio: spawns the configured command, forwards stderr, and injects configured env
 // - http/sse: builds endpoint transports with optional request headers
 //
 // Session lifecycle (connect/close) is managed by callers after transport creation.
-func CreateTransport(ctx context.Context, config mcpconfig.ServerConfig) (transport mcp.Transport, err error) {
-	serverType := EffectiveServerType(config)
+func createTransport(ctx context.Context, config mcpconfig.ServerConfig) (transport mcp.Transport, err error) {
+	serverType := effectiveServerType(config)
 
 	// Create a custom HTTP client only for static header injection.
 	// Per-operation timeouts are enforced via context deadlines so long-lived
@@ -409,9 +409,9 @@ func CreateTransport(ctx context.Context, config mcpconfig.ServerConfig) (transp
 	return
 }
 
-// NewClient constructs the MCP client identity announced during initialize.
+// newClient constructs the MCP client identity announced during initialize.
 // Version is sourced from the running CPE build metadata.
-func NewClient() *mcp.Client {
+func newClient() *mcp.Client {
 	return mcp.NewClient(
 		&mcp.Implementation{
 			Name:    "cpe",

@@ -14,7 +14,7 @@ import (
 
 	"github.com/spachava753/gai"
 
-	"github.com/spachava753/cpe/internal/agent"
+	cpeagent "github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/config"
 	cpelogging "github.com/spachava753/cpe/internal/logging"
 	"github.com/spachava753/cpe/internal/mcp"
@@ -39,8 +39,8 @@ type serverRuntimeCreator struct {
 }
 
 var (
-	_                            RuntimeCreator = (*serverRuntimeCreator)(nil)
-	initializeGeneratorFromModel                = agent.InitGeneratorFromModel
+	_                            runtimeCreator = (*serverRuntimeCreator)(nil)
+	initializeGeneratorFromModel                = cpeagent.InitGeneratorFromModel
 	initializeMCPConnections                    = mcp.InitializeConnections
 )
 
@@ -91,7 +91,7 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, s session, _ acp.Clie
 	}
 
 	wrappers := []gai.WrapperFunc{
-		agent.WithBlockFilter(cfg.Model.Type),
+		cpeagent.WithBlockFilter(cfg.Model.Type),
 	}
 
 	wrapped := gai.Wrap(gen, wrappers...)
@@ -100,7 +100,7 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, s session, _ acp.Clie
 		return nil, fmt.Errorf("wrapped generator does not implement ToolCallingGenerator interface")
 	}
 
-	l := Loop{
+	l := loop{
 		Store: c.store,
 		Cfg:   cfg,
 		G:     gen,
@@ -108,7 +108,7 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, s session, _ acp.Clie
 	}
 
 	ca := closerAgent{
-		Loop: &l,
+		loop: &l,
 	}
 
 	if !cfg.DisableEditTool {
@@ -145,12 +145,12 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, s session, _ acp.Clie
 	codeModeEnabled := cfg.CodeMode != nil && cfg.CodeMode.Enabled
 	slog.DebugContext(ctx, "code mode config", slog.Bool("enabled", codeModeEnabled))
 	if codeModeEnabled {
-		starlarkREPLTool := MakeTool(cfg.CodeMode.MaxTimeout)
-		callback := &StarlarkREPLCallback{
+		starlarkREPLTool := makeTool(cfg.CodeMode.MaxTimeout)
+		callback := &starlarkREPLCallback{
 			Cwd:                  s.cwd,
 			SessionID:            s.id,
 			MaxTimeout:           cfg.CodeMode.MaxTimeout,
-			LargeOutputCharLimit: ResolveLargeOutputCharLimit(cfg.CodeMode.LargeOutputCharLimit, cfg.Model.ContextWindow),
+			LargeOutputCharLimit: resolveLargeOutputCharLimit(cfg.CodeMode.LargeOutputCharLimit, cfg.Model.ContextWindow),
 			Store:                c.store,
 			Conn:                 c.conn,
 		}
@@ -253,7 +253,7 @@ func Run(ctx context.Context, transport acp.Transport, opts RunOptions) error {
 		store:  opts.Store,
 	}
 
-	ag := Agent{
+	ag := agent{
 		activeSessions: new(sync.Map[acp.SessionId, *sync.Guard[session]]),
 		rawCfg:         opts.RawConfig,
 		db:             opts.Store,
@@ -444,9 +444,9 @@ func acpHTTPHeaders(headers []acp.HttpHeader) map[string]string {
 	return mapped
 }
 
-// closerAgent is a type that embeds [Loop] and implements a close function to close the mcp connections.
+// closerAgent is a type that embeds [loop] and implements a close function to close the mcp connections.
 type closerAgent struct {
-	*Loop
+	*loop
 	mcpState      *mcp.MCPState
 	cancelRuntime context.CancelFunc
 }

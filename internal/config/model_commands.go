@@ -12,17 +12,17 @@ import (
 	"github.com/spachava753/cpe/internal/skills"
 )
 
-// ModelListOptions contains dependencies for ModelList.
+// modelListOptions contains dependencies for modelList.
 // Config must be preloaded by the caller.
-type ModelListOptions struct {
+type modelListOptions struct {
 	Config       *RawConfig
 	DefaultModel string
 	Writer       io.Writer
 }
 
-// ModelList prints model refs in configuration order and marks the effective
+// modelList prints model refs in configuration order and marks the effective
 // default model when provided.
-func ModelList(ctx context.Context, opts ModelListOptions) error {
+func modelList(ctx context.Context, opts modelListOptions) error {
 	for _, model := range opts.Config.Models {
 		line := model.Ref
 		if opts.DefaultModel != "" && model.Ref == opts.DefaultModel {
@@ -33,16 +33,16 @@ func ModelList(ctx context.Context, opts ModelListOptions) error {
 	return nil
 }
 
-// ModelInfoOptions contains dependencies for ModelInfo.
-type ModelInfoOptions struct {
+// modelInfoOptions contains dependencies for modelInfo.
+type modelInfoOptions struct {
 	Config    *RawConfig
 	ModelName string
 	Writer    io.Writer
 }
 
-// ModelInfo prints details for one configured model ref.
+// modelInfo prints details for one configured model ref.
 // It reports exactly what is configured and does not apply CLI runtime overrides.
-func ModelInfo(ctx context.Context, opts ModelInfoOptions) error {
+func modelInfo(ctx context.Context, opts modelInfoOptions) error {
 	if opts.ModelName == "" {
 		return fmt.Errorf("no model name provided")
 	}
@@ -125,9 +125,9 @@ func formatCostPerMillion(cost *float64) string {
 	return fmt.Sprintf("%.6f", *cost)
 }
 
-// ModelSystemPromptOptions contains dependencies for ModelSystemPrompt.
+// modelSystemPromptOptions contains dependencies for modelSystemPrompt.
 // The caller provides raw config and optional model selection hints.
-type ModelSystemPromptOptions struct {
+type modelSystemPromptOptions struct {
 	RawConfig      *RawConfig
 	Config         Config
 	ConfigFilePath string
@@ -139,8 +139,8 @@ type ModelSystemPromptOptions struct {
 	SystemPrompt fs.File
 }
 
-// ModelSystemPrompt renders the selected model profile's effective system prompt.
-func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error {
+// modelSystemPrompt renders the selected model profile's effective system prompt.
+func modelSystemPrompt(ctx context.Context, opts modelSystemPromptOptions) error {
 	modelName := opts.ModelName
 	if modelName == "" {
 		modelName = opts.DefaultModel
@@ -204,7 +204,7 @@ func ModelSystemPrompt(ctx context.Context, opts ModelSystemPromptOptions) error
 	}
 	skillCatalog := skills.Discover(ctx, skills.DiscoverOptions{Cwd: cwd})
 
-	systemPrompt, err := SystemPromptTemplate(ctx, string(contents), TemplateData{
+	systemPrompt, err := systemPromptTemplate(ctx, string(contents), templateData{
 		Config: templateConfig,
 		Skills: skillCatalog.ModelVisible(),
 	})

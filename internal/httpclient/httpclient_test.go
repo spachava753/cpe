@@ -33,7 +33,7 @@ func TestNewPreservesBaseClientAndAppliesDefaultTimeout(t *testing.T) {
 		},
 	}
 
-	client := New(WithBaseClient(base), WithDefaultTimeout(30*time.Second))
+	client := New(withBaseClient(base), withDefaultTimeout(30*time.Second))
 	if client == base {
 		t.Fatal("New returned the base client instead of a copy")
 	}

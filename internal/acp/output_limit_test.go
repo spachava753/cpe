@@ -33,7 +33,7 @@ func TestResolveLargeOutputCharLimit(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := ResolveLargeOutputCharLimit(tt.configured, tt.contextWindow)
+			got := resolveLargeOutputCharLimit(tt.configured, tt.contextWindow)
 			if got != tt.want {
 				t.Fatalf("result mismatch: got %d, want %d", got, tt.want)
 			}

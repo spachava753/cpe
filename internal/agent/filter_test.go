@@ -22,7 +22,7 @@ func TestDialogBlockFilter_PreservesEmptyToolResultMessages(t *testing.T) {
 	t.Parallel()
 
 	inner := &captureDialogGenerator{}
-	filter := NewBlockFilterWrapper(inner, whitelistBlockKeepFunc([]string{gai.Content}))
+	filter := newBlockFilterWrapper(inner, whitelistBlockKeepFunc([]string{gai.Content}))
 
 	_, err := filter.Generate(context.Background(), gai.Dialog{{
 		Role:   gai.ToolResult,

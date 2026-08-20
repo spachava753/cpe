@@ -75,71 +75,8 @@ const (
 	AgentMetadataCacheWriteTokensKey = "cpe_agent_cache_write_tokens"
 )
 
-// DialogSaver persists a dialog (a sequence of related messages) to storage.
-type DialogSaver interface {
-	// SaveDialog validates and persists a root-to-leaf dialog chain.
-	//
-	// The input iterator must yield messages in parent order (root first, then
-	// descendants). For each message:
-	//   - If ExtraFields[MessageIDKey] is present, the message is treated as
-	//     already persisted. The implementation verifies that the stored message
-	//     exists and that its stored parent matches the previous message in this
-	//     SaveDialog call. The first message must be a root in storage. Missing
-	//     existing messages yield an error wrapping ErrMessageNotFound.
-	//   - If ExtraFields[MessageIDKey] is absent, the message is inserted as a
-	//     new row whose parent is the previous message from this call. The
-	//     returned message includes MessageIDKey and, for non-root messages,
-	//     MessageParentIDKey.
-	//
-	// Atomicity boundary:
-	//   - All writes performed while consuming a single SaveDialog iterator are
-	//     part of one transaction.
-	//   - Validation, insert, or commit failures roll back writes from this call.
-	//   - If the consumer stops iteration early (yield returns false), the
-	//     processed prefix may still be committed; unconsumed input is ignored.
-	//
-	// Iterator contract:
-	//   - Outputs are yielded in the same order as processed input.
-	//   - On error, the iterator yields one non-nil error and then stops.
-	//   - Existing messages are yielded without rewriting their content; newly
-	//     inserted messages are yielded with storage IDs populated in ExtraFields.
-	//   - JSON-compatible message-level ExtraFields are persisted for newly
-	//     inserted messages; storage-owned keys are reconstructed from dedicated
-	//     columns on reads.
-	//
-	// Example — saving a brand-new dialog:
-	//
-	//	dialog := []gai.Message{userMsg, assistantMsg}
-	//	idx := 0
-	//	for saved, err := range saver.SaveDialog(ctx, slices.Values(dialog)) {
-	//		if err != nil {
-	//			return err
-	//		}
-	//		dialog[idx] = saved
-	//		idx++
-	//	}
-	//
-	// Example — appending to a previously saved dialog. Messages that already
-	// have ExtraFields[MessageIDKey] are validated but not re-saved; only new
-	// trailing messages are inserted:
-	//
-	//	// previousDialog was returned by an earlier SaveDialog call,
-	//	// so every message already has MessageIDKey set.
-	//	fullDialog := append(previousDialog, newAssistantMsg)
-	//	idx := 0
-	//	for saved, err := range saver.SaveDialog(ctx, slices.Values(fullDialog)) {
-	//		if err != nil {
-	//			return err
-	//		}
-	//		fullDialog[idx] = saved // keep ExtraFields in sync
-	//		idx++
-	//	}
-	//
-	SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter.Seq2[gai.Message, error]
-}
-
-// DeleteMessagesOptions configures a message deletion operation.
-type DeleteMessagesOptions struct {
+// deleteMessagesOptions configures a message deletion operation.
+type deleteMessagesOptions struct {
 	// MessageIDs is the list of message IDs to delete.
 	MessageIDs []string
 
@@ -149,17 +86,8 @@ type DeleteMessagesOptions struct {
 	Recursive bool
 }
 
-// MessagesDeleter deletes messages from storage.
-type MessagesDeleter interface {
-	// DeleteMessages deletes the specified messages. If Recursive is true, each
-	// message's entire subtree of descendants is also deleted. If Recursive is
-	// false and any message has children, an error is returned and no messages
-	// are deleted. The entire operation is atomic.
-	DeleteMessages(ctx context.Context, opts DeleteMessagesOptions) error
-}
-
-// ListMessagesOptions configures message listing behavior.
-type ListMessagesOptions struct {
+// listMessagesOptions configures message listing behavior.
+type listMessagesOptions struct {
 	// Offset is the number of messages to skip before returning results,
 	// enabling pagination. Zero means start from the beginning.
 	Offset uint
@@ -169,22 +97,6 @@ type ListMessagesOptions struct {
 	// (newest first). When true, messages are returned in ascending order
 	// (oldest first).
 	AscendingOrder bool
-}
-
-// MessagesLister lists messages from storage with ordering and pagination.
-type MessagesLister interface {
-	// ListMessages returns a snapshot of stored messages ordered by creation time.
-	//
-	// Ordering is descending by default (newest first) or ascending when
-	// opts.AscendingOrder is true. opts.Offset is applied after ordering.
-	//
-	// Every yielded message has fully populated Blocks and storage metadata in
-	// ExtraFields:
-	//   - MessageIDKey (always)
-	//   - MessageCreatedAtKey (always)
-	//   - MessageParentIDKey (only for non-root messages)
-	//   - MessageCompactionParentIDKey (only for compacted branch roots)
-	ListMessages(ctx context.Context, opts ListMessagesOptions) (iter.Seq[gai.Message], error)
 }
 
 // MessagesGetter fetches specific messages by ID.
@@ -204,10 +116,10 @@ type MessagesGetter interface {
 	GetMessages(ctx context.Context, messageIDs []string) (iter.Seq[gai.Message], error)
 }
 
-// ACPSessionSummary is the persisted metadata shown by session inspection
+// acpSessionSummary is the persisted metadata shown by session inspection
 // clients. LastModified is the later of the session creation time and its head
 // message creation time.
-type ACPSessionSummary struct {
+type acpSessionSummary struct {
 	SessionID    acp.SessionId
 	Title        string
 	CreatedAt    time.Time
@@ -248,55 +160,6 @@ type CreateACPSessionParams struct {
 	ThinkingLevel string
 }
 
-// ACPSessionCreator creates ACP session metadata.
-type ACPSessionCreator interface {
-	// CreateACPSession persists ACP session metadata.
-	CreateACPSession(ctx context.Context, params CreateACPSessionParams) error
-}
-
-// ACPSessionMessageAdder updates an ACP session's latest message pointer.
-type ACPSessionMessageAdder interface {
-	// AddACPSessionMessage changes the latest message from expectedMessageID to
-	// messageID. It returns an error wrapping ErrSessionConflict if another
-	// process advanced the session first, or ErrSessionNotFound if sessionID is
-	// missing.
-	AddACPSessionMessage(ctx context.Context, sessionID acp.SessionId, expectedMessageID, messageID string) (acp.SessionInfo, error)
-}
-
-// ACPSessionDeleter deletes ACP session metadata and owned message data.
-type ACPSessionDeleter interface {
-	// DeleteACPSession removes sessionID from the persisted ACP session list and
-	// deletes its normal and pre-compaction history that is not reachable from
-	// any other ACP session. Messages shared with other sessions and ancestors
-	// required by orphaned branches are preserved. It returns an error wrapping
-	// ErrSessionNotFound when sessionID is missing.
-	DeleteACPSession(ctx context.Context, sessionID acp.SessionId) error
-}
-
-// ACPSessionModelSetter updates an ACP session's selected model profile.
-type ACPSessionModelSetter interface {
-	// SetACPSessionModelRef marks modelRef as the selected CPE model profile for
-	// sessionID. It returns an error wrapping ErrSessionNotFound when sessionID is
-	// missing.
-	SetACPSessionModelRef(ctx context.Context, sessionID acp.SessionId, modelRef string) error
-}
-
-// ACPSessionThinkingLevelSetter updates an ACP session's reasoning effort level.
-type ACPSessionThinkingLevelSetter interface {
-	// SetACPSessionThinkingLevel marks thinkingLevel as the selected reasoning
-	// effort level for sessionID. It returns an error wrapping ErrSessionNotFound
-	// when sessionID is missing.
-	SetACPSessionThinkingLevel(ctx context.Context, sessionID acp.SessionId, thinkingLevel string) error
-}
-
-// ACPSessionCostAdder accumulates an ACP session's cumulative cost.
-type ACPSessionCostAdder interface {
-	// AddACPSessionCost atomically adds costUSD (in US dollars) to the
-	// session's persisted cumulative cost and returns the updated total. It
-	// returns an error wrapping ErrSessionNotFound when sessionID is missing.
-	AddACPSessionCost(ctx context.Context, sessionID acp.SessionId, costUSD float64) (float64, error)
-}
-
 // ACPSessionGetter fetches ACP session metadata by session ID.
 type ACPSessionGetter interface {
 	// GetACPSession returns ACP session metadata, the latest persisted message ID,
@@ -317,18 +180,6 @@ type ACPSessionsLister interface {
 	// Each returned SessionInfo.UpdatedAt is an ISO 8601 timestamp derived from
 	// the session's creation time.
 	ListACPSessions(ctx context.Context, cwd *string) ([]acp.SessionInfo, error)
-}
-
-// MessageDB is the unified interface for message persistence operations.
-// It composes the four single-method interfaces so that consumers requiring
-// full storage access can depend on one type, while consumers needing only a
-// subset (e.g., only saving or only reading) can depend on the narrower
-// interface.
-type MessageDB interface {
-	DialogSaver
-	MessagesDeleter
-	MessagesLister
-	MessagesGetter
 }
 
 // GetDialogForMessage reconstructs the ancestor chain for messageID.

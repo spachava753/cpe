@@ -38,7 +38,7 @@ func (m *Map[K, V]) LoadFunc(key K, f func(value V, loaded bool)) {
 func (m *Map[K, V]) Store(key K, value V) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	Set(&m.m, key, value)
+	set(&m.m, key, value)
 }
 
 // LoadOrStore returns the value for the given key if it exists
@@ -53,7 +53,7 @@ func (m *Map[K, V]) LoadOrStore(key K, value V) (actual V, loaded bool) {
 	actual, loaded = m.m[key]
 	if !loaded {
 		actual = value
-		Set(&m.m, key, value)
+		set(&m.m, key, value)
 	}
 	return actual, loaded
 }
@@ -74,7 +74,7 @@ func (m *Map[K, V]) LoadOrInit(key K, f func() V) (actual V, loaded bool) {
 
 	loaded = false
 	actual = f()
-	Set(&m.m, key, actual)
+	set(&m.m, key, actual)
 	return actual, loaded
 }
 
@@ -175,14 +175,14 @@ func (m *Map[K, V]) Swap(key K, value V) (oldValue V) {
 	defer m.mu.Unlock()
 
 	oldValue = m.m[key]
-	Set(&m.m, key, value)
+	set(&m.m, key, value)
 	return oldValue
 }
 
-// Set populates an entry in a map, making the map if necessary.
+// set populates an entry in a map, making the map if necessary.
 //
 // That is, it assigns (*m)[k] = v, making *m if it was nil.
-func Set[K comparable, V any, T ~map[K]V](m *T, k K, v V) {
+func set[K comparable, V any, T ~map[K]V](m *T, k K, v V) {
 	if *m == nil {
 		*m = make(map[K]V)
 	}

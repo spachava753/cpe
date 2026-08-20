@@ -6,9 +6,8 @@ import (
 	"github.com/goyek/goyek/v2"
 )
 
-// List is the default build task.
-// It prints every registered task with its usage string for quick operator discovery.
-var List = goyek.Define(goyek.Task{
+// Register the default task that prints every available task and its usage.
+var _ = goyek.Define(goyek.Task{
 	Name:  "list",
 	Usage: "List all available tasks",
 	Action: func(_ *goyek.A) {

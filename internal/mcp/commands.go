@@ -18,14 +18,14 @@ import (
 
 const serverTypeStdio = "stdio"
 
-// MCPListServersOptions contains parameters for listing MCP servers
-type MCPListServersOptions struct {
+// mcpListServersOptions contains parameters for listing MCP servers
+type mcpListServersOptions struct {
 	MCPServers map[string]mcpconfig.ServerConfig
 	Writer     io.Writer
 }
 
-// MCPListServers lists all configured MCP servers
-func MCPListServers(ctx context.Context, opts MCPListServersOptions) error {
+// mcpListServers lists all configured MCP servers
+func mcpListServers(ctx context.Context, opts mcpListServersOptions) error {
 	mcpConfig := opts.MCPServers
 	if len(mcpConfig) == 0 {
 		fmt.Fprintln(opts.Writer, "No MCP servers configured.")
@@ -34,8 +34,8 @@ func MCPListServers(ctx context.Context, opts MCPListServersOptions) error {
 
 	fmt.Fprintln(opts.Writer, "Configured MCP Servers:")
 	for name, server := range mcpConfig {
-		serverType := EffectiveServerType(server)
-		timeout := int(EffectiveServerTimeout(server).Seconds())
+		serverType := effectiveServerType(server)
+		timeout := int(effectiveServerTimeout(server).Seconds())
 
 		fmt.Fprintf(opts.Writer, "- %s (Type: %s, Timeout: %ds)\n", name, serverType, timeout)
 
@@ -58,15 +58,15 @@ func MCPListServers(ctx context.Context, opts MCPListServersOptions) error {
 	return nil
 }
 
-// MCPInfoOptions contains parameters for getting MCP server info
-type MCPInfoOptions struct {
+// mcpInfoOptions contains parameters for getting MCP server info
+type mcpInfoOptions struct {
 	MCPServers map[string]mcpconfig.ServerConfig
 	ServerName string
 	Writer     io.Writer
 }
 
-// MCPInfo connects to an MCP server and displays its information
-func MCPInfo(ctx context.Context, opts MCPInfoOptions) error {
+// mcpInfo connects to an MCP server and displays its information
+func mcpInfo(ctx context.Context, opts mcpInfoOptions) error {
 	mcpConfig := opts.MCPServers
 	if len(mcpConfig) == 0 {
 		return fmt.Errorf("no MCP servers configured")
@@ -77,10 +77,10 @@ func MCPInfo(ctx context.Context, opts MCPInfoOptions) error {
 		return fmt.Errorf("server '%s' not found in configuration", opts.ServerName)
 	}
 
-	connectCtx, cancel := WithServerTimeout(ctx, serverConfig)
+	connectCtx, cancel := withServerTimeout(ctx, serverConfig)
 	defer cancel()
 
-	conn, err := ConnectServer(connectCtx, opts.ServerName, serverConfig)
+	conn, err := connectServer(connectCtx, opts.ServerName, serverConfig)
 	if err != nil {
 		return err
 	}
@@ -91,8 +91,8 @@ func MCPInfo(ctx context.Context, opts MCPInfoOptions) error {
 	return nil
 }
 
-// MCPListToolsOptions contains parameters for listing MCP server tools
-type MCPListToolsOptions struct {
+// mcpListToolsOptions contains parameters for listing MCP server tools
+type mcpListToolsOptions struct {
 	MCPServers   map[string]mcpconfig.ServerConfig
 	ServerName   string
 	Writer       io.Writer
@@ -101,8 +101,8 @@ type MCPListToolsOptions struct {
 	Renderer     render.Iface
 }
 
-// MCPListTools lists tools available on an MCP server
-func MCPListTools(ctx context.Context, opts MCPListToolsOptions) error {
+// mcpListTools lists tools available on an MCP server
+func mcpListTools(ctx context.Context, opts mcpListToolsOptions) error {
 	mcpConfig := opts.MCPServers
 	if len(mcpConfig) == 0 {
 		return fmt.Errorf("no MCP servers configured")
@@ -113,7 +113,7 @@ func MCPListTools(ctx context.Context, opts MCPListToolsOptions) error {
 		return fmt.Errorf("server '%s' not found in configuration", opts.ServerName)
 	}
 
-	conn, err := ConnectAndListServer(ctx, opts.ServerName, serverConfig)
+	conn, err := connectAndListServer(ctx, opts.ServerName, serverConfig)
 	if err != nil {
 		return err
 	}
@@ -242,8 +242,8 @@ func MCPListTools(ctx context.Context, opts MCPListToolsOptions) error {
 	return nil
 }
 
-// MCPCallToolOptions contains parameters for calling an MCP tool
-type MCPCallToolOptions struct {
+// mcpCallToolOptions contains parameters for calling an MCP tool
+type mcpCallToolOptions struct {
 	MCPServers map[string]mcpconfig.ServerConfig
 	ServerName string
 	ToolName   string
@@ -251,8 +251,8 @@ type MCPCallToolOptions struct {
 	Writer     io.Writer
 }
 
-// MCPCallTool calls a specific tool on an MCP server
-func MCPCallTool(ctx context.Context, opts MCPCallToolOptions) error {
+// mcpCallTool calls a specific tool on an MCP server
+func mcpCallTool(ctx context.Context, opts mcpCallToolOptions) error {
 	mcpConfig := opts.MCPServers
 	if len(mcpConfig) == 0 {
 		return fmt.Errorf("no MCP servers configured")
@@ -263,10 +263,10 @@ func MCPCallTool(ctx context.Context, opts MCPCallToolOptions) error {
 		return fmt.Errorf("server '%s' not found in configuration", opts.ServerName)
 	}
 
-	operationCtx, cancel := WithServerTimeout(ctx, serverConfig)
+	operationCtx, cancel := withServerTimeout(ctx, serverConfig)
 	defer cancel()
 
-	conn, err := ConnectServer(operationCtx, opts.ServerName, serverConfig)
+	conn, err := connectServer(operationCtx, opts.ServerName, serverConfig)
 	if err != nil {
 		return err
 	}

@@ -14,10 +14,10 @@ import (
 	"github.com/spachava753/cpe/internal/skills"
 )
 
-// TemplateData is the input object exposed to system prompt templates.
+// templateData is the input object exposed to system prompt templates.
 // It embeds the resolved runtime configuration so templates can reference
 // model and MCP settings.
-type TemplateData struct {
+type templateData struct {
 	Config
 	// Skills contains model-visible skill metadata for prompt templates. For
 	// example, templates can range over .Skills and render .Name, .Description,
@@ -25,8 +25,8 @@ type TemplateData struct {
 	Skills []skills.Skill
 }
 
-// SystemPromptTemplate renders a template string with system info data.
-func SystemPromptTemplate(ctx context.Context, templateStr string, td TemplateData) (string, error) {
+// systemPromptTemplate renders a template string with system info data.
+func systemPromptTemplate(ctx context.Context, templateStr string, td templateData) (string, error) {
 	tmpl, err := template.New("sysinfo").Funcs(createTemplateFuncMap(ctx)).Parse(templateStr)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template string: %w", err)

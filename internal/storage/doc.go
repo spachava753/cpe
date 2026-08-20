@@ -7,11 +7,10 @@ contains ordered content blocks. Session listings may be filtered by an exact
 working-directory match; omitting the filter lists sessions from every stored
 directory as required by ACP.
 
-The package exposes narrow interfaces
-(DialogSaver, MessagesGetter, MessagesLister, MessagesDeleter,
-ACPSessionCreator, ACPSessionMessageAdder, ACPSessionGetter,
-ACPSessionsLister, ACPSessionCostAdder) plus composed interfaces such as
-MessageDB.
+The package exposes the narrow MessagesGetter, ACPSessionGetter, and
+ACPSessionsLister interfaces used by consumers that need read-only substitution.
+Mutation paths use the concrete Sqlite adapter unless a consumer defines its own
+smaller interface.
 
 Implementations:
   - Sqlite: SQLite adapter with transactional writes, referential integrity,
@@ -33,7 +32,7 @@ Message metadata contract:
 returned gai.Message values include storage metadata in ExtraFields using
 MessageIDKey, MessageParentIDKey, MessageCompactionParentIDKey, and
 MessageCreatedAtKey to keep persistence details available without leaking
-DB-specific ports. JSON-compatible message-level ExtraFields are persisted
+db-specific ports. JSON-compatible message-level ExtraFields are persisted
 across save/load; known agent metadata keys are also stored in typed SQLite
 columns for lightweight analysis.
 */

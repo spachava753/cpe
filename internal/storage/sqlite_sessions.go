@@ -217,7 +217,7 @@ func (s *Sqlite) ListACPSessions(ctx context.Context, cwd *string) ([]acp.Sessio
 
 // ListACPSessionSummaries returns paginated session metadata ordered by last
 // modification time, newest first.
-func (s *Sqlite) ListACPSessionSummaries(ctx context.Context, opts ListACPSessionSummariesOptions) ([]ACPSessionSummary, error) {
+func (s *Sqlite) ListACPSessionSummaries(ctx context.Context, opts ListACPSessionSummariesOptions) ([]acpSessionSummary, error) {
 	const maxSQLiteInteger = uint64(1<<63 - 1)
 	if opts.Limit > maxSQLiteInteger {
 		return nil, errors.New("ACP session summary limit exceeds SQLite integer range")
@@ -232,13 +232,13 @@ func (s *Sqlite) ListACPSessionSummaries(ctx context.Context, opts ListACPSessio
 	if err != nil {
 		return nil, fmt.Errorf("failed to list ACP session summaries: %w", err)
 	}
-	summaries := make([]ACPSessionSummary, 0, len(rows))
+	summaries := make([]acpSessionSummary, 0, len(rows))
 	for _, row := range rows {
 		lastModified := row.CreatedAt
 		if row.LastMessageCreatedAt.Valid && row.LastMessageCreatedAt.Time.After(lastModified) {
 			lastModified = row.LastMessageCreatedAt.Time
 		}
-		summaries = append(summaries, ACPSessionSummary{
+		summaries = append(summaries, acpSessionSummary{
 			SessionID:    acp.SessionId(row.ID),
 			Title:        row.Title,
 			CreatedAt:    row.CreatedAt,

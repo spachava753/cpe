@@ -25,36 +25,36 @@ type options struct {
 	retryStatuses  bool
 }
 
-// Option configures a reliable HTTP client or transport.
-type Option func(*options)
+// option configures a reliable HTTP client or transport.
+type option func(*options)
 
-// WithBaseClient clones client settings before installing a failsafe transport.
+// withBaseClient clones client settings before installing a failsafe transport.
 // If client.Transport is nil, http.DefaultTransport is used.
-func WithBaseClient(client *http.Client) Option {
+func withBaseClient(client *http.Client) option {
 	return func(o *options) {
 		o.baseClient = client
 	}
 }
 
 // WithBaseTransport sets the transport wrapped by failsafe. It takes precedence
-// over a transport from WithBaseClient. If transport is nil, http.DefaultTransport
+// over a transport from withBaseClient. If transport is nil, http.DefaultTransport
 // is used.
-func WithBaseTransport(transport http.RoundTripper) Option {
+func WithBaseTransport(transport http.RoundTripper) option {
 	return func(o *options) {
 		o.baseTransport = transport
 	}
 }
 
 // WithTimeout sets http.Client.Timeout on the returned client.
-func WithTimeout(timeout time.Duration) Option {
+func WithTimeout(timeout time.Duration) option {
 	return func(o *options) {
 		o.timeout = &timeout
 	}
 }
 
-// WithDefaultTimeout sets http.Client.Timeout only when the base client does not
+// withDefaultTimeout sets http.Client.Timeout only when the base client does not
 // already define one.
-func WithDefaultTimeout(timeout time.Duration) Option {
+func withDefaultTimeout(timeout time.Duration) option {
 	return func(o *options) {
 		o.defaultTimeout = &timeout
 	}
@@ -62,14 +62,14 @@ func WithDefaultTimeout(timeout time.Duration) Option {
 
 // WithMaxRetries configures the maximum number of retry attempts after the
 // initial request attempt. Values below zero are treated as zero.
-func WithMaxRetries(maxRetries int) Option {
+func WithMaxRetries(maxRetries int) option {
 	return func(o *options) {
 		o.maxRetries = max(maxRetries, 0)
 	}
 }
 
 // WithBackoff configures exponential retry backoff.
-func WithBackoff(delay, maxDelay time.Duration) Option {
+func WithBackoff(delay, maxDelay time.Duration) option {
 	return func(o *options) {
 		o.backoffDelay = delay
 		o.backoffMax = maxDelay
@@ -77,7 +77,7 @@ func WithBackoff(delay, maxDelay time.Duration) Option {
 }
 
 // WithJitterFactor configures proportional retry jitter.
-func WithJitterFactor(jitterFactor float64) Option {
+func WithJitterFactor(jitterFactor float64) option {
 	return func(o *options) {
 		o.jitterFactor = jitterFactor
 	}
@@ -86,17 +86,17 @@ func WithJitterFactor(jitterFactor float64) Option {
 // WithRetryStatuses configures whether retryable HTTP responses such as 429 and
 // most 5xx statuses are retried. When false, only retryable transport errors are
 // retried and any HTTP response is returned directly to the caller.
-func WithRetryStatuses(retryStatuses bool) Option {
+func WithRetryStatuses(retryStatuses bool) option {
 	return func(o *options) {
 		o.retryStatuses = retryStatuses
 	}
 }
 
 // New returns an HTTP client whose transport is wrapped with failsafe retry
-// behavior. If WithBaseClient is provided, the returned client is a shallow copy
+// behavior. If withBaseClient is provided, the returned client is a shallow copy
 // that preserves fields such as CheckRedirect, Jar, and Timeout unless timeout
 // options override them.
-func New(opts ...Option) *http.Client {
+func New(opts ...option) *http.Client {
 	cfg := applyOptions(opts...)
 	client := http.Client{}
 	if cfg.baseClient != nil {
@@ -116,7 +116,7 @@ func New(opts ...Option) *http.Client {
 // scheduling another attempt.
 //
 //nolint:bodyclose // retry status responses are closed by closeRetryResponseBody.
-func Transport(opts ...Option) http.RoundTripper {
+func Transport(opts ...option) http.RoundTripper {
 	cfg := applyOptions(opts...)
 	return failsafehttp.NewRoundTripper(baseTransport(cfg), retryPolicy(cfg))
 }
@@ -142,7 +142,7 @@ func retryPolicyBuilder(cfg options) retrypolicy.Builder[*http.Response] {
 	}).AbortOnErrors(context.Canceled)
 }
 
-func applyOptions(opts ...Option) options {
+func applyOptions(opts ...option) options {
 	cfg := options{
 		maxRetries:    2,
 		backoffDelay:  200 * time.Millisecond,

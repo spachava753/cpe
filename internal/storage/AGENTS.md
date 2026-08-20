@@ -12,13 +12,7 @@ message history with other sessions after a fork.
 
 ## Module Boundaries
 
-- `interfaces.go` contains the existing capability-oriented persistence contracts
-  used by consumers that need substitution. Do not add storage-owned composite
-  interfaces merely to hide `*Sqlite`; define an interface at the consumer only
-  when multiple implementations or a useful test seam require one. ACP uses the
-  concrete SQLite adapter directly.
-- `MessageDB` composes the message-only interfaces. ACP session capabilities
-  remain independently available to non-ACP consumers.
+- `interfaces.go` contains shared persistence data types and the capability-oriented contracts actually used for substitution. Do not add storage-owned composite interfaces merely to hide `*Sqlite`; define an interface at the consumer only when multiple implementations or a useful test seam require one. ACP uses the concrete SQLite adapter directly.
 - `errors.go` defines the sentinel missing-record and concurrency errors. Return
   contextual errors that wrap `ErrMessageNotFound`, `ErrSessionNotFound`, or
   `ErrSessionConflict` where the interface promises them.

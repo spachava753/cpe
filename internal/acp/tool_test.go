@@ -68,7 +68,7 @@ func TestStarlarkREPLCallbackSupportsOpenAndBytesDecode(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cwd, "note.txt"), []byte("hello from Dyson"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	callback := &StarlarkREPLCallback{MaxTimeout: 5, Cwd: cwd}
+	callback := &starlarkREPLCallback{MaxTimeout: 5, Cwd: cwd}
 	msg, err := callback.Call(t.Context(), map[string]any{
 		"code": `file = open("note.txt")
 print(file.read())
@@ -101,7 +101,7 @@ func TestStarlarkREPLCallbackAllowsHTTPRequests(t *testing.T) {
 	}))
 	defer server.Close()
 
-	callback := &StarlarkREPLCallback{MaxTimeout: 5, Cwd: t.TempDir()}
+	callback := &starlarkREPLCallback{MaxTimeout: 5, Cwd: t.TempDir()}
 	msg, err := callback.Call(t.Context(), map[string]any{
 		"code": fmt.Sprintf(`load("requests.star", "requests")
 response = requests.get(%q)
@@ -124,7 +124,7 @@ func TestStarlarkREPLCallbackResetClosesOpenFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cwd, "note.txt"), []byte("contents"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	callback := &StarlarkREPLCallback{MaxTimeout: 5, Cwd: cwd}
+	callback := &starlarkREPLCallback{MaxTimeout: 5, Cwd: cwd}
 	msg, err := callback.Call(t.Context(), map[string]any{
 		"code":             `file = open("note.txt")`,
 		"executionTimeout": 2,
@@ -149,7 +149,7 @@ func TestStarlarkREPLCallbackResetClosesOpenFiles(t *testing.T) {
 func TestStarlarkREPLCallbackPersistsStateAndResetStartsFreshSphere(t *testing.T) {
 	t.Parallel()
 
-	callback := &StarlarkREPLCallback{MaxTimeout: 5}
+	callback := &starlarkREPLCallback{MaxTimeout: 5}
 	msg, err := callback.Call(t.Context(), map[string]any{
 		"code":             "answer = 41\nprint(answer)",
 		"executionTimeout": 2,
@@ -198,7 +198,7 @@ func TestStarlarkREPLCallbackPersistsStateAndResetStartsFreshSphere(t *testing.T
 func TestStarlarkREPLCallbackRepeatedSuccessfulCallsRemainUncancelled(t *testing.T) {
 	t.Parallel()
 
-	callback := &StarlarkREPLCallback{MaxTimeout: 5}
+	callback := &starlarkREPLCallback{MaxTimeout: 5}
 	for i := range 100 {
 		msg, err := callback.Call(t.Context(), map[string]any{
 			"code":             fmt.Sprintf("value = %d\nprint(value)", i),
@@ -218,7 +218,7 @@ func TestStarlarkREPLCallbackRunsHostSubprocessInSessionDirectory(t *testing.T) 
 	t.Parallel()
 
 	cwd := t.TempDir()
-	callback := &StarlarkREPLCallback{MaxTimeout: 5, Cwd: cwd}
+	callback := &starlarkREPLCallback{MaxTimeout: 5, Cwd: cwd}
 	msg, err := callback.Call(t.Context(), map[string]any{
 		"code": `load("subprocess.star", "subprocess")
 result = subprocess.run(["pwd"], capture_output=True, text=True)
@@ -236,7 +236,7 @@ print(result.stdout.strip())`,
 func TestStarlarkREPLCallbackCancelsHostSubprocessAtExecutionTimeout(t *testing.T) {
 	t.Parallel()
 
-	callback := &StarlarkREPLCallback{MaxTimeout: 5, Cwd: t.TempDir()}
+	callback := &starlarkREPLCallback{MaxTimeout: 5, Cwd: t.TempDir()}
 	started := time.Now()
 	msg, err := callback.Call(t.Context(), map[string]any{
 		"code": `load("subprocess.star", "subprocess")
@@ -257,7 +257,7 @@ subprocess.run(["sleep", "10"])`,
 func TestStarlarkREPLCallbackReturnsOnlyPrintedText(t *testing.T) {
 	t.Parallel()
 
-	callback := &StarlarkREPLCallback{MaxTimeout: 5}
+	callback := &starlarkREPLCallback{MaxTimeout: 5}
 	msg, err := callback.Call(t.Context(), map[string]any{
 		"code":             "1 + 2",
 		"executionTimeout": 2,
@@ -296,7 +296,7 @@ print("right", end="")`,
 func TestStarlarkREPLCallbackPersistsFunctionsAndMutableValues(t *testing.T) {
 	t.Parallel()
 
-	callback := &StarlarkREPLCallback{MaxTimeout: 5}
+	callback := &starlarkREPLCallback{MaxTimeout: 5}
 	msg, err := callback.Call(t.Context(), map[string]any{
 		"code": `items = ["first"]
 def add_item(item):
@@ -325,7 +325,7 @@ def add_item(item):
 func TestStarlarkREPLCallbackCancelsThreadAtExecutionTimeout(t *testing.T) {
 	t.Parallel()
 
-	callback := &StarlarkREPLCallback{MaxTimeout: 5}
+	callback := &starlarkREPLCallback{MaxTimeout: 5}
 	started := time.Now()
 	msg, err := callback.Call(t.Context(), map[string]any{
 		"code":             "while True:\n    pass",
@@ -360,7 +360,7 @@ func TestStarlarkREPLCallbackRejectsAlreadyCanceledContext(t *testing.T) {
 	t.Parallel()
 
 	conn := &recordingACPConn{}
-	callback := &StarlarkREPLCallback{
+	callback := &starlarkREPLCallback{
 		MaxTimeout: 5,
 		SessionID:  testSessionID,
 		Conn:       conn,
@@ -383,7 +383,7 @@ func TestStarlarkREPLCallbackRejectsAlreadyCanceledContext(t *testing.T) {
 func TestStarlarkREPLCallbackCancelsThreadWithParentContext(t *testing.T) {
 	t.Parallel()
 
-	callback := &StarlarkREPLCallback{MaxTimeout: 5}
+	callback := &starlarkREPLCallback{MaxTimeout: 5}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancelTimer := time.AfterFunc(100*time.Millisecond, cancel)
 	defer cancelTimer.Stop()
@@ -461,7 +461,7 @@ func TestStarlarkREPLCallbackRejectsInvalidInput(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			callback := &StarlarkREPLCallback{MaxTimeout: tt.maxTimeout}
+			callback := &starlarkREPLCallback{MaxTimeout: tt.maxTimeout}
 			msg, err := callback.Call(t.Context(), tt.params)
 			if err != nil {
 				t.Fatalf("Call() error = %v, want recoverable tool result", err)
@@ -499,7 +499,7 @@ func TestStarlarkREPLCallbackReturnsExecutionErrorsWithOutput(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			callback := &StarlarkREPLCallback{MaxTimeout: 5}
+			callback := &starlarkREPLCallback{MaxTimeout: 5}
 			msg, err := callback.Call(t.Context(), map[string]any{
 				"code":             tt.code,
 				"executionTimeout": 2,
@@ -525,7 +525,7 @@ func TestStarlarkREPLCallbackReturnsSessionUpdateError(t *testing.T) {
 
 	updateErr := errors.New("session update failed")
 	conn := &recordingACPConn{err: updateErr}
-	callback := &StarlarkREPLCallback{
+	callback := &starlarkREPLCallback{
 		MaxTimeout: 5,
 		SessionID:  testSessionID,
 		Conn:       conn,
@@ -605,7 +605,7 @@ func TestStarlarkREPLCallbackReturnsErrorsFromEveryTerminalSessionUpdate(t *test
 
 			updateErr := errors.New("session update failed")
 			conn := &recordingACPConn{err: updateErr, errAt: tt.failAt}
-			callback := &StarlarkREPLCallback{
+			callback := &starlarkREPLCallback{
 				MaxTimeout: 5,
 				SessionID:  testSessionID,
 				Conn:       conn,
@@ -668,7 +668,7 @@ func TestStarlarkREPLCallbackReportsExecutionStatuses(t *testing.T) {
 			t.Parallel()
 
 			conn := &recordingACPConn{}
-			callback := &StarlarkREPLCallback{
+			callback := &starlarkREPLCallback{
 				MaxTimeout: 5,
 				SessionID:  testSessionID,
 				Conn:       conn,
@@ -715,7 +715,7 @@ func TestStarlarkREPLCallbackReportsMultimodalResultInOneCompletedUpdate(t *test
 	}
 
 	conn := &recordingACPConn{}
-	callback := &StarlarkREPLCallback{
+	callback := &starlarkREPLCallback{
 		Cwd:        cwd,
 		MaxTimeout: 5,
 		SessionID:  testSessionID,
@@ -768,7 +768,7 @@ view_file("video.mp4", mime_type="video/mp4")`,
 func TestStarlarkREPLCallbackLoadsDysonModulesAndGlobals(t *testing.T) {
 	t.Parallel()
 
-	callback := &StarlarkREPLCallback{MaxTimeout: 5}
+	callback := &starlarkREPLCallback{MaxTimeout: 5}
 	msg, err := callback.Call(t.Context(), map[string]any{
 		"code": `load("re.star", "re")
 load("json.star", "json")
@@ -830,7 +830,7 @@ func TestStarlarkREPLCallbackViewFile(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(cwd, tt.filename), data, 0o600); err != nil {
 				t.Fatalf("write artifact: %v", err)
 			}
-			callback := &StarlarkREPLCallback{Cwd: cwd, MaxTimeout: 5}
+			callback := &starlarkREPLCallback{Cwd: cwd, MaxTimeout: 5}
 			msg, err := callback.Call(t.Context(), map[string]any{
 				"code": fmt.Sprintf(
 					"view_file(%q, mime_type=%q)",
@@ -885,7 +885,7 @@ func TestStarlarkREPLCallbackViewFileErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			callback := &StarlarkREPLCallback{Cwd: cwd, MaxTimeout: 5}
+			callback := &starlarkREPLCallback{Cwd: cwd, MaxTimeout: 5}
 			msg, err := callback.Call(t.Context(), map[string]any{
 				"code":             tt.code,
 				"executionTimeout": 2,
@@ -906,7 +906,7 @@ func TestStarlarkREPLCallbackViewFileErrors(t *testing.T) {
 func TestStarlarkREPLCallbackTruncatesPrintOutput(t *testing.T) {
 	t.Parallel()
 
-	callback := &StarlarkREPLCallback{MaxTimeout: 5, LargeOutputCharLimit: 10}
+	callback := &starlarkREPLCallback{MaxTimeout: 5, LargeOutputCharLimit: 10}
 	msg, err := callback.Call(t.Context(), map[string]any{
 		"code":             `print("abcdefghijklmnopqrstuvwxyz")`,
 		"executionTimeout": 2,
@@ -926,7 +926,7 @@ func TestStarlarkREPLCallbackTruncatesPrintOutput(t *testing.T) {
 func TestMakeToolUsesStarlarkREPLContract(t *testing.T) {
 	t.Parallel()
 
-	tool := MakeTool(42)
+	tool := makeTool(42)
 	if tool.Name != "starlark_repl" {
 		t.Fatalf("MakeTool().Name = %q", tool.Name)
 	}
@@ -959,7 +959,7 @@ func TestMakeToolUsesStarlarkREPLContract(t *testing.T) {
 		t.Fatalf("executionTimeout schema = %#v, want integer range 1-42", timeout)
 	}
 
-	defaultTimeout := MakeTool(0).InputSchema.Properties["executionTimeout"]
+	defaultTimeout := makeTool(0).InputSchema.Properties["executionTimeout"]
 	if defaultTimeout.Maximum == nil || *defaultTimeout.Maximum != 300 {
 		t.Fatalf("default executionTimeout maximum = %#v, want 300", defaultTimeout.Maximum)
 	}

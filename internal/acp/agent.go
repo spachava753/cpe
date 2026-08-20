@@ -21,18 +21,18 @@ This conversation was loaded, resumed, or forked into a fresh runtime. The previ
 
 // runtimeFactory is the type to represent a factory that will
 // construct the runtime that actually executes the agent loop
-// on call the [Agent.Prompt]
-type RuntimeCreator interface {
+// on call the [agent.Prompt]
+type runtimeCreator interface {
 	Create(context.Context, session, acp.ClientCapabilities) (runtime, error)
 }
 
-// Agent implements CPE's ACP initialize, auth, logout, and session handlers.
+// agent implements CPE's ACP initialize, auth, logout, and session handlers.
 //
 // TODO: how should we split the functionality between
-// Agent and session. Currently we operate under the assumption
+// agent and session. Currently we operate under the assumption
 // that sessions may be created concurrently, and that
 // sessions may also be mutated concurrently.
-type Agent struct {
+type agent struct {
 	// conn is used to send updates to the client
 	conn *acp.AgentConnection
 	// clientCaps stores the client capabilities advertised during initialize.
@@ -45,7 +45,7 @@ type Agent struct {
 	// genId is a factory function to create session ids
 	genId func() acp.SessionId
 	// runtimeFactory is a factory function to create runtimes for session execution
-	runtimeFactory RuntimeCreator
+	runtimeFactory runtimeCreator
 	// rawCfg is the raw config loaded, used for model picking at the beginning of a new session
 	rawCfg *config.RawConfig
 	// skillHomeDir overrides the user home directory for skill discovery in tests.
@@ -57,7 +57,7 @@ type Agent struct {
 // Authenticate implements [acp.AuthenticateHandler].
 //
 // Support logging into Chat GPT subscription, and other subscription accounts is possible
-func (a *Agent) Authenticate(
+func (a *agent) Authenticate(
 	ctx context.Context,
 	params *acp.AuthenticateRequest,
 ) (*acp.AuthenticateResponse, error) {
@@ -65,12 +65,12 @@ func (a *Agent) Authenticate(
 }
 
 // Logout implements [acp.LogoutHandler].
-func (a *Agent) Logout(ctx context.Context, params *acp.LogoutRequest) (*acp.LogoutResponse, error) {
+func (a *agent) Logout(ctx context.Context, params *acp.LogoutRequest) (*acp.LogoutResponse, error) {
 	return &acp.LogoutResponse{}, nil
 }
 
 // Initialize implements [acp.InitializeHandler].
-func (a *Agent) Initialize(
+func (a *agent) Initialize(
 	ctx context.Context,
 	params *acp.InitializeRequest,
 ) (*acp.InitializeResponse, error) {
@@ -114,7 +114,7 @@ func (a *Agent) Initialize(
 // Prompt implements [acp.SessionHandler].
 //
 // TODO: add synctest type test for testing concurrency semantics
-func (a *Agent) Prompt(
+func (a *agent) Prompt(
 	ctx context.Context,
 	params *acp.PromptRequest,
 ) (*acp.PromptResponse, error) {
@@ -168,7 +168,7 @@ func (a *Agent) Prompt(
 		runtime = t.runtime
 		sessionSnapshot = *t
 		// Per-turn opts carry only ACP session overrides (thinking level).
-		// The runtime's Loop.Generate layers these over the model profile's
+		// The runtime's loop.Generate layers these over the model profile's
 		// generation parameters from the resolved config.
 		if t.thinking != "" {
 			genOpts = &gai.GenOpts{ThinkingBudget: t.thinking}

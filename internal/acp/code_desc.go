@@ -11,15 +11,15 @@ import (
 	"github.com/spachava753/cpe/internal/render"
 )
 
-// CodeDescOptions contains parameters for rendering the code mode description.
-type CodeDescOptions struct {
+// codeDescOptions contains parameters for rendering the code mode description.
+type codeDescOptions struct {
 	CodeMode *config.CodeModeConfig
 	Writer   io.Writer
 	Renderer render.Iface
 }
 
-// CodeDesc renders and prints the starlark_repl tool description.
-func CodeDesc(_ context.Context, opts CodeDescOptions) error {
+// codeDesc renders and prints the starlark_repl tool description.
+func codeDesc(_ context.Context, opts codeDescOptions) error {
 	var mdBuilder strings.Builder
 	mdBuilder.WriteString("# starlark_repl Tool Description\n\n")
 
@@ -28,7 +28,7 @@ func CodeDesc(_ context.Context, opts CodeDescOptions) error {
 	}
 
 	mdBuilder.WriteString("---\n\n")
-	mdBuilder.WriteString(GenerateToolDescription())
+	mdBuilder.WriteString(generateToolDescription())
 
 	rendered, err := opts.Renderer.Render(mdBuilder.String())
 	if err != nil {
@@ -54,7 +54,7 @@ func CodeDescFromConfig(ctx context.Context, configPath, modelRef string, writer
 		renderer = render.NewGlamourRendererForWriter(writer)
 	}
 
-	return CodeDesc(ctx, CodeDescOptions{
+	return codeDesc(ctx, codeDescOptions{
 		CodeMode: cfg.CodeMode,
 		Writer:   writer,
 		Renderer: renderer,

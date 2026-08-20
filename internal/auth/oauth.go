@@ -26,7 +26,7 @@ const (
 	defaultAnthropicRedirectURI = "https://console.anthropic.com/oauth/code/callback"
 	defaultAnthropicScopes      = "org:create_api_key user:profile user:inference"
 
-	AnthropicAuthBetaHeader = "oauth-2025-04-20,claude-code-20250219"
+	anthropicAuthBetaHeader = "oauth-2025-04-20,claude-code-20250219"
 )
 
 // Default OAuth constants for OpenAI
@@ -43,17 +43,17 @@ const (
 
 // Environment variable names for OAuth configuration
 const (
-	EnvAnthropicClientID    = "CPE_ANTHROPIC_CLIENT_ID"
-	EnvAnthropicAuthURL     = "CPE_ANTHROPIC_AUTH_URL"
-	EnvAnthropicTokenURL    = "CPE_ANTHROPIC_TOKEN_URL"
-	EnvAnthropicRedirectURI = "CPE_ANTHROPIC_REDIRECT_URI"
-	EnvAnthropicScopes      = "CPE_ANTHROPIC_SCOPES"
+	envAnthropicClientID    = "CPE_ANTHROPIC_CLIENT_ID"
+	envAnthropicAuthURL     = "CPE_ANTHROPIC_AUTH_URL"
+	envAnthropicTokenURL    = "CPE_ANTHROPIC_TOKEN_URL"
+	envAnthropicRedirectURI = "CPE_ANTHROPIC_REDIRECT_URI"
+	envAnthropicScopes      = "CPE_ANTHROPIC_SCOPES"
 
-	EnvOpenAIClientID    = "CPE_OPENAI_CLIENT_ID"
-	EnvOpenAIAuthURL     = "CPE_OPENAI_AUTH_URL"
-	EnvOpenAITokenURL    = "CPE_OPENAI_TOKEN_URL"
-	EnvOpenAIRedirectURI = "CPE_OPENAI_REDIRECT_URI"
-	EnvOpenAIScopes      = "CPE_OPENAI_SCOPES"
+	envOpenAIClientID    = "CPE_OPENAI_CLIENT_ID"
+	envOpenAIAuthURL     = "CPE_OPENAI_AUTH_URL"
+	envOpenAITokenURL    = "CPE_OPENAI_TOKEN_URL"
+	envOpenAIRedirectURI = "CPE_OPENAI_REDIRECT_URI"
+	envOpenAIScopes      = "CPE_OPENAI_SCOPES"
 )
 
 // getEnvOrDefault returns the environment variable value or the default if not set
@@ -64,58 +64,58 @@ func getEnvOrDefault(envVar, defaultVal string) string {
 	return defaultVal
 }
 
-// GetAnthropicClientID returns the OAuth client ID from env var or default
-func GetAnthropicClientID() string {
-	return getEnvOrDefault(EnvAnthropicClientID, defaultAnthropicClientID)
+// getAnthropicClientID returns the OAuth client ID from env var or default
+func getAnthropicClientID() string {
+	return getEnvOrDefault(envAnthropicClientID, defaultAnthropicClientID)
 }
 
-// GetAnthropicAuthURL returns the OAuth authorization URL from env var or default
-func GetAnthropicAuthURL() string {
-	return getEnvOrDefault(EnvAnthropicAuthURL, defaultAnthropicAuthURL)
+// getAnthropicAuthURL returns the OAuth authorization URL from env var or default
+func getAnthropicAuthURL() string {
+	return getEnvOrDefault(envAnthropicAuthURL, defaultAnthropicAuthURL)
 }
 
-// GetAnthropicTokenURL returns the OAuth token URL from env var or default
-func GetAnthropicTokenURL() string {
-	return getEnvOrDefault(EnvAnthropicTokenURL, defaultAnthropicTokenURL)
+// getAnthropicTokenURL returns the OAuth token URL from env var or default
+func getAnthropicTokenURL() string {
+	return getEnvOrDefault(envAnthropicTokenURL, defaultAnthropicTokenURL)
 }
 
-// GetAnthropicRedirectURI returns the OAuth redirect URI from env var or default
-func GetAnthropicRedirectURI() string {
-	return getEnvOrDefault(EnvAnthropicRedirectURI, defaultAnthropicRedirectURI)
+// getAnthropicRedirectURI returns the OAuth redirect URI from env var or default
+func getAnthropicRedirectURI() string {
+	return getEnvOrDefault(envAnthropicRedirectURI, defaultAnthropicRedirectURI)
 }
 
-// GetAnthropicScopes returns the OAuth scopes from env var or default
-func GetAnthropicScopes() string {
-	return getEnvOrDefault(EnvAnthropicScopes, defaultAnthropicScopes)
+// getAnthropicScopes returns the OAuth scopes from env var or default
+func getAnthropicScopes() string {
+	return getEnvOrDefault(envAnthropicScopes, defaultAnthropicScopes)
 }
 
-// GetOpenAIClientID returns the OAuth client ID from env var or default
-func GetOpenAIClientID() string {
-	return getEnvOrDefault(EnvOpenAIClientID, defaultOpenAIClientID)
+// getOpenAIClientID returns the OAuth client ID from env var or default
+func getOpenAIClientID() string {
+	return getEnvOrDefault(envOpenAIClientID, defaultOpenAIClientID)
 }
 
-// GetOpenAIAuthURL returns the OAuth authorization URL from env var or default
-func GetOpenAIAuthURL() string {
-	return getEnvOrDefault(EnvOpenAIAuthURL, defaultOpenAIAuthURL)
+// getOpenAIAuthURL returns the OAuth authorization URL from env var or default
+func getOpenAIAuthURL() string {
+	return getEnvOrDefault(envOpenAIAuthURL, defaultOpenAIAuthURL)
 }
 
-// GetOpenAITokenURL returns the OAuth token URL from env var or default
-func GetOpenAITokenURL() string {
-	return getEnvOrDefault(EnvOpenAITokenURL, defaultOpenAITokenURL)
+// getOpenAITokenURL returns the OAuth token URL from env var or default
+func getOpenAITokenURL() string {
+	return getEnvOrDefault(envOpenAITokenURL, defaultOpenAITokenURL)
 }
 
-// GetOpenAIRedirectURI returns the OAuth redirect URI from env var or default
-func GetOpenAIRedirectURI() string {
-	return getEnvOrDefault(EnvOpenAIRedirectURI, defaultOpenAIRedirectURI)
+// getOpenAIRedirectURI returns the OAuth redirect URI from env var or default
+func getOpenAIRedirectURI() string {
+	return getEnvOrDefault(envOpenAIRedirectURI, defaultOpenAIRedirectURI)
 }
 
-// GetOpenAIScopes returns the OAuth scopes from env var or default
-func GetOpenAIScopes() string {
-	return getEnvOrDefault(EnvOpenAIScopes, defaultOpenAIScopes)
+// getOpenAIScopes returns the OAuth scopes from env var or default
+func getOpenAIScopes() string {
+	return getEnvOrDefault(envOpenAIScopes, defaultOpenAIScopes)
 }
 
-// ProviderOAuthConfig holds the OAuth configuration for a specific provider
-type ProviderOAuthConfig struct {
+// providerOAuthConfig holds the OAuth configuration for a specific provider
+type providerOAuthConfig struct {
 	ClientID    string
 	AuthURL     string
 	TokenURL    string
@@ -123,33 +123,33 @@ type ProviderOAuthConfig struct {
 	Scopes      string
 }
 
-// GetProviderOAuthConfig returns the OAuth configuration for the given provider.
+// getProviderOAuthConfig returns the OAuth configuration for the given provider.
 // Returns an error if the provider is not supported.
-func GetProviderOAuthConfig(provider string) (ProviderOAuthConfig, error) {
+func getProviderOAuthConfig(provider string) (providerOAuthConfig, error) {
 	switch provider {
 	case "anthropic":
-		return ProviderOAuthConfig{
-			ClientID:    GetAnthropicClientID(),
-			AuthURL:     GetAnthropicAuthURL(),
-			TokenURL:    GetAnthropicTokenURL(),
-			RedirectURI: GetAnthropicRedirectURI(),
-			Scopes:      GetAnthropicScopes(),
+		return providerOAuthConfig{
+			ClientID:    getAnthropicClientID(),
+			AuthURL:     getAnthropicAuthURL(),
+			TokenURL:    getAnthropicTokenURL(),
+			RedirectURI: getAnthropicRedirectURI(),
+			Scopes:      getAnthropicScopes(),
 		}, nil
 	case "openai":
-		return ProviderOAuthConfig{
-			ClientID:    GetOpenAIClientID(),
-			AuthURL:     GetOpenAIAuthURL(),
-			TokenURL:    GetOpenAITokenURL(),
-			RedirectURI: GetOpenAIRedirectURI(),
-			Scopes:      GetOpenAIScopes(),
+		return providerOAuthConfig{
+			ClientID:    getOpenAIClientID(),
+			AuthURL:     getOpenAIAuthURL(),
+			TokenURL:    getOpenAITokenURL(),
+			RedirectURI: getOpenAIRedirectURI(),
+			Scopes:      getOpenAIScopes(),
 		}, nil
 	default:
-		return ProviderOAuthConfig{}, fmt.Errorf("unsupported OAuth provider: %s", provider)
+		return providerOAuthConfig{}, fmt.Errorf("unsupported OAuth provider: %s", provider)
 	}
 }
 
-// TokenResponse represents the OAuth token response
-type TokenResponse struct {
+// tokenResponse represents the OAuth token response
+type tokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	TokenType    string `json:"token_type"`
 	ExpiresIn    int    `json:"expires_in"`
@@ -162,15 +162,15 @@ type TokenResponse struct {
 func BuildAuthURL(challenge, verifier string) string {
 	params := url.Values{
 		"code":                  {"true"},
-		"client_id":             {GetAnthropicClientID()},
+		"client_id":             {getAnthropicClientID()},
 		"response_type":         {"code"},
-		"redirect_uri":          {GetAnthropicRedirectURI()},
-		"scope":                 {GetAnthropicScopes()},
+		"redirect_uri":          {getAnthropicRedirectURI()},
+		"scope":                 {getAnthropicScopes()},
 		"code_challenge":        {challenge},
 		"code_challenge_method": {"S256"},
 		"state":                 {verifier},
 	}
-	return GetAnthropicAuthURL() + "?" + params.Encode()
+	return getAnthropicAuthURL() + "?" + params.Encode()
 }
 
 // BuildOpenAIAuthURL constructs the OAuth authorization URL for OpenAI with PKCE parameters.
@@ -178,14 +178,14 @@ func BuildAuthURL(challenge, verifier string) string {
 func BuildOpenAIAuthURL(challenge, state string) string {
 	params := url.Values{
 		"response_type":         {"code"},
-		"client_id":             {GetOpenAIClientID()},
-		"redirect_uri":          {GetOpenAIRedirectURI()},
-		"scope":                 {GetOpenAIScopes()},
+		"client_id":             {getOpenAIClientID()},
+		"redirect_uri":          {getOpenAIRedirectURI()},
+		"scope":                 {getOpenAIScopes()},
 		"code_challenge":        {challenge},
 		"code_challenge_method": {"S256"},
 		"state":                 {state},
 	}
-	return GetOpenAIAuthURL() + "?" + params.Encode()
+	return getOpenAIAuthURL() + "?" + params.Encode()
 }
 
 // OpenBrowser opens the default browser to the given URL
@@ -225,7 +225,7 @@ func oauthResponseError(action string, resp *http.Response) error {
 
 // ExchangeCode exchanges an authorization code for tokens (Anthropic provider)
 // The code parameter should be in the format "code#state" as returned by the callback
-func ExchangeCode(ctx context.Context, code, verifier string) (*TokenResponse, error) {
+func ExchangeCode(ctx context.Context, code, verifier string) (*tokenResponse, error) {
 	// Split code#state format
 	authCode := code
 	state := ""
@@ -238,8 +238,8 @@ func ExchangeCode(ctx context.Context, code, verifier string) (*TokenResponse, e
 		"code":          authCode,
 		"state":         state,
 		"grant_type":    "authorization_code",
-		"client_id":     GetAnthropicClientID(),
-		"redirect_uri":  GetAnthropicRedirectURI(),
+		"client_id":     getAnthropicClientID(),
+		"redirect_uri":  getAnthropicRedirectURI(),
 		"code_verifier": verifier,
 	}
 
@@ -248,7 +248,7 @@ func ExchangeCode(ctx context.Context, code, verifier string) (*TokenResponse, e
 		return nil, fmt.Errorf("marshaling token request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", GetAnthropicTokenURL(), bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", getAnthropicTokenURL(), bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("creating token request: %w", err)
 	}
@@ -264,7 +264,7 @@ func ExchangeCode(ctx context.Context, code, verifier string) (*TokenResponse, e
 		return nil, oauthResponseError("token exchange", resp)
 	}
 
-	var tokenResp TokenResponse
+	var tokenResp tokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
 		return nil, fmt.Errorf("parsing token response: %w", err)
 	}
@@ -274,16 +274,16 @@ func ExchangeCode(ctx context.Context, code, verifier string) (*TokenResponse, e
 
 // ExchangeCodeOpenAI exchanges an authorization code for tokens (OpenAI provider).
 // OpenAI uses application/x-www-form-urlencoded for token exchange.
-func ExchangeCodeOpenAI(ctx context.Context, code, verifier string) (*TokenResponse, error) {
+func ExchangeCodeOpenAI(ctx context.Context, code, verifier string) (*tokenResponse, error) {
 	form := url.Values{
 		"grant_type":    {"authorization_code"},
-		"client_id":     {GetOpenAIClientID()},
+		"client_id":     {getOpenAIClientID()},
 		"code":          {code},
 		"code_verifier": {verifier},
-		"redirect_uri":  {GetOpenAIRedirectURI()},
+		"redirect_uri":  {getOpenAIRedirectURI()},
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", GetOpenAITokenURL(), strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, "POST", getOpenAITokenURL(), strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("creating token request: %w", err)
 	}
@@ -299,7 +299,7 @@ func ExchangeCodeOpenAI(ctx context.Context, code, verifier string) (*TokenRespo
 		return nil, oauthResponseError("token exchange", resp)
 	}
 
-	var tokenResp TokenResponse
+	var tokenResp tokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
 		return nil, fmt.Errorf("parsing token response: %w", err)
 	}
@@ -307,12 +307,12 @@ func ExchangeCodeOpenAI(ctx context.Context, code, verifier string) (*TokenRespo
 	return &tokenResp, nil
 }
 
-// RefreshAccessToken uses the refresh token to get a new access token (Anthropic)
-func RefreshAccessToken(ctx context.Context, refreshToken string) (*TokenResponse, error) {
+// refreshAccessToken uses the refresh token to get a new access token (Anthropic)
+func refreshAccessToken(ctx context.Context, refreshToken string) (*tokenResponse, error) {
 	payload := map[string]string{
 		"grant_type":    "refresh_token",
-		"client_id":     GetAnthropicClientID(),
-		"redirect_uri":  GetAnthropicRedirectURI(),
+		"client_id":     getAnthropicClientID(),
+		"redirect_uri":  getAnthropicRedirectURI(),
 		"refresh_token": refreshToken,
 	}
 
@@ -321,7 +321,7 @@ func RefreshAccessToken(ctx context.Context, refreshToken string) (*TokenRespons
 		return nil, fmt.Errorf("marshaling refresh request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", GetAnthropicTokenURL(), bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", getAnthropicTokenURL(), bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("creating refresh request: %w", err)
 	}
@@ -337,7 +337,7 @@ func RefreshAccessToken(ctx context.Context, refreshToken string) (*TokenRespons
 		return nil, oauthResponseError("token refresh", resp)
 	}
 
-	var tokenResp TokenResponse
+	var tokenResp tokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
 		return nil, fmt.Errorf("parsing refresh response: %w", err)
 	}
@@ -347,14 +347,14 @@ func RefreshAccessToken(ctx context.Context, refreshToken string) (*TokenRespons
 
 // RefreshAccessTokenOpenAI uses the refresh token to get a new access token (OpenAI).
 // OpenAI uses application/x-www-form-urlencoded for token refresh.
-func RefreshAccessTokenOpenAI(ctx context.Context, refreshToken string) (*TokenResponse, error) {
+func RefreshAccessTokenOpenAI(ctx context.Context, refreshToken string) (*tokenResponse, error) {
 	form := url.Values{
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {refreshToken},
-		"client_id":     {GetOpenAIClientID()},
+		"client_id":     {getOpenAIClientID()},
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", GetOpenAITokenURL(), strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, "POST", getOpenAITokenURL(), strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("creating refresh request: %w", err)
 	}
@@ -370,7 +370,7 @@ func RefreshAccessTokenOpenAI(ctx context.Context, refreshToken string) (*TokenR
 		return nil, oauthResponseError("token refresh", resp)
 	}
 
-	var tokenResp TokenResponse
+	var tokenResp tokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
 		return nil, fmt.Errorf("parsing refresh response: %w", err)
 	}
@@ -379,14 +379,14 @@ func RefreshAccessTokenOpenAI(ctx context.Context, refreshToken string) (*TokenR
 }
 
 // TokenToCredential converts a token response to a credential for the given provider.
-func TokenToCredential(provider string, token *TokenResponse) *Credential {
+func TokenToCredential(provider string, token *tokenResponse) *Credential {
 	return TokenToCredentialPreserveRefresh(provider, token, "")
 }
 
 // TokenToCredentialPreserveRefresh converts a token response to a credential for
 // the given provider, preserving the existing refresh token when the token
 // response omits a new one.
-func TokenToCredentialPreserveRefresh(provider string, token *TokenResponse, existingRefreshToken string) *Credential {
+func TokenToCredentialPreserveRefresh(provider string, token *tokenResponse, existingRefreshToken string) *Credential {
 	refreshToken := token.RefreshToken
 	if refreshToken == "" {
 		refreshToken = existingRefreshToken
@@ -400,9 +400,9 @@ func TokenToCredentialPreserveRefresh(provider string, token *TokenResponse, exi
 	}
 }
 
-// DecodeJWTClaims extracts claims from a JWT token without verifying the signature.
+// decodeJWTClaims extracts claims from a JWT token without verifying the signature.
 // This is used to extract the chatgpt_account_id from the access token.
-func DecodeJWTClaims(token string) (map[string]any, error) {
+func decodeJWTClaims(token string) (map[string]any, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
 		return nil, fmt.Errorf("invalid JWT: expected 3 parts, got %d", len(parts))
@@ -431,10 +431,10 @@ func DecodeJWTClaims(token string) (map[string]any, error) {
 	return claims, nil
 }
 
-// ExtractChatGPTAccountID extracts the chatgpt_account_id from a JWT access token.
+// extractChatGPTAccountID extracts the chatgpt_account_id from a JWT access token.
 // The account ID is nested under "https://api.openai.com/auth" -> "chatgpt_account_id".
-func ExtractChatGPTAccountID(accessToken string) (string, error) {
-	claims, err := DecodeJWTClaims(accessToken)
+func extractChatGPTAccountID(accessToken string) (string, error) {
+	claims, err := decodeJWTClaims(accessToken)
 	if err != nil {
 		return "", fmt.Errorf("decoding JWT: %w", err)
 	}

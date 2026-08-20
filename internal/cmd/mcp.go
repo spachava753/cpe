@@ -139,7 +139,7 @@ host-backed standard-library modules.`,
 }
 
 func init() {
-	mcpCmd.PersistentFlags().StringVarP(&model, "model", "m", DefaultModel, "Model profile ref whose MCP servers should be inspected (env: CPE_MODEL)")
+	mcpCmd.PersistentFlags().StringVarP(&model, "model", "m", defaultModel, "Model profile ref whose MCP servers should be inspected (env: CPE_MODEL)")
 
 	rootCmd.AddCommand(mcpCmd)
 

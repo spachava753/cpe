@@ -9,8 +9,8 @@ import (
 	"github.com/spachava753/gai"
 )
 
-// DefaultTimeout is the request timeout when neither a model profile nor runtime override sets one.
-const DefaultTimeout = 5 * time.Minute
+// defaultTimeout is the request timeout when neither a model profile nor runtime override sets one.
+const defaultTimeout = 5 * time.Minute
 
 // ResolveConfig loads and resolves the effective runtime configuration for one model profile.
 //
@@ -22,9 +22,9 @@ const DefaultTimeout = 5 * time.Minute
 //   - Runtime generation and timeout overrides take precedence over the selected
 //     model profile.
 //
-// The returned Config always has a non-nil GenerationParams pointer.
+// The returned Config always has a non-nil generationParams pointer.
 func ResolveConfig(configPath string, opts RuntimeOptions) (Config, error) {
-	rawCfg, resolvedConfigPath, err := LoadRawConfigWithPath(configPath)
+	rawCfg, resolvedConfigPath, err := loadRawConfigWithPath(configPath)
 	if err != nil {
 		return Config{}, err
 	}
@@ -147,14 +147,14 @@ func MergeGenOpts(dst, src *gai.GenOpts) {
 	}
 }
 
-// resolveTimeout parses the timeout with precedence: runtime override > model profile timeout > DefaultTimeout.
+// resolveTimeout parses the timeout with precedence: runtime override > model profile timeout > defaultTimeout.
 func resolveTimeout(model ModelConfig, opts RuntimeOptions) (time.Duration, error) {
 	rawTimeout := model.Timeout
 	if opts.Timeout != "" {
 		rawTimeout = opts.Timeout
 	}
 	if rawTimeout == "" {
-		return DefaultTimeout, nil
+		return defaultTimeout, nil
 	}
 	parsedTimeout, err := time.ParseDuration(rawTimeout)
 	if err != nil {
