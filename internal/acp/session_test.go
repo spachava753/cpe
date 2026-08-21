@@ -1045,7 +1045,8 @@ func TestCancel(t *testing.T) {
 		}
 
 		failedUpdateSeen := false
-		for _, notification := range testClient.notifications() {
+		notifications := testClient.waitForNotifications(t, 3)
+		for _, notification := range notifications {
 			status := notification.Update.Status
 			if notification.Update.ToolCallID == toolCallID && status != nil && *status == acp.ToolCallStatusFailed {
 				failedUpdateSeen = true
@@ -1053,7 +1054,7 @@ func TestCancel(t *testing.T) {
 			}
 		}
 		if !failedUpdateSeen {
-			t.Fatalf("notifications = %#v, want failed update for %q", testClient.notifications(), toolCallID)
+			t.Fatalf("notifications = %#v, want failed update for %q", notifications, toolCallID)
 		}
 
 		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionID)
