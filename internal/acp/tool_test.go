@@ -380,6 +380,44 @@ func TestStarlarkREPLCallbackRejectsAlreadyCanceledContext(t *testing.T) {
 	}
 }
 
+func TestStarlarkREPLCallbackCancellationReturnsPartialOutput(t *testing.T) {
+	t.Parallel()
+
+	conn := &recordingACPConn{}
+	callback := &starlarkREPLCallback{
+		MaxTimeout: 5,
+		SessionID:  testSessionID,
+		Conn:       conn,
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancelTimer := time.AfterFunc(100*time.Millisecond, cancel)
+	defer cancelTimer.Stop()
+
+	msg, err := callback.Call(xctx.WithToolCallId(ctx, "cancelled-call"), map[string]any{
+		"code":             "print(\"before cancellation\")\nwhile True:\n    pass",
+		"executionTimeout": 5,
+	})
+	if err != nil {
+		t.Fatalf("Call() error = %v, want failed tool result", err)
+	}
+	if !msg.ToolResultError || len(msg.Blocks) != 1 {
+		t.Fatalf("Call() = %#v, want one failed tool-result block", msg)
+	}
+	resultText := msg.Blocks[0].Content.String()
+	if !strings.Contains(resultText, "context canceled") || !strings.Contains(resultText, "Output:\nbefore cancellation\n") {
+		t.Fatalf("Call() result = %q, want cancellation error with partial output", resultText)
+	}
+	if len(conn.updates) != 2 {
+		t.Fatalf("SessionUpdate count = %d, want in-progress and failed updates", len(conn.updates))
+	}
+	requireExecutionStatus(t, conn.updates[0], "cancelled-call", acp.ToolCallStatusInProgress)
+	requireExecutionStatus(t, conn.updates[1], "cancelled-call", acp.ToolCallStatusFailed)
+	content, ok := conn.updates[1].Update.Content.([]acp.ToolCallContent)
+	if !ok || len(content) != 1 || content[0].Content.Text != resultText {
+		t.Fatalf("failed update content = %#v, want %q", conn.updates[1].Update.Content, resultText)
+	}
+}
+
 func TestStarlarkREPLCallbackCancelsThreadWithParentContext(t *testing.T) {
 	t.Parallel()
 
@@ -389,18 +427,21 @@ func TestStarlarkREPLCallbackCancelsThreadWithParentContext(t *testing.T) {
 	defer cancelTimer.Stop()
 
 	started := time.Now()
-	_, err := callback.Call(ctx, map[string]any{
+	msg, err := callback.Call(ctx, map[string]any{
 		"code":             "while True:\n    pass",
 		"executionTimeout": 5,
 	})
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("Call() error = %v, want context.Canceled", err)
+	if err != nil {
+		t.Fatalf("Call() error = %v, want failed tool result", err)
+	}
+	if !msg.ToolResultError || len(msg.Blocks) != 1 || !strings.Contains(msg.Blocks[0].Content.String(), "context canceled") {
+		t.Fatalf("Call() = %#v, want cancellation tool result", msg)
 	}
 	if elapsed := time.Since(started); elapsed > 2*time.Second {
 		t.Fatalf("Call() took %v, want prompt cancellation to stop the thread", elapsed)
 	}
 
-	msg, err := callback.Call(t.Context(), map[string]any{
+	msg, err = callback.Call(t.Context(), map[string]any{
 		"code":             "print(8)",
 		"executionTimeout": 2,
 	})

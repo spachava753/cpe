@@ -25,12 +25,14 @@ Cobra wiring are composed by internal/cmd. Framework-agnostic helpers in this
 package list persisted sessions, render complete compaction-aware history as
 Markdown, delete sessions, and create shared-history forks for those commands.
 A session's Starlark REPL is process-local and is not part of persisted history.
-The ACP loop attaches the persisted assistant message containing each tool call
-to its callback context. Code Mode uses that execution-scoped cutoff for
-acp.star current-session reads because the session's committed head advances
-only after the complete prompt turn. The module reconstructs prior compacted
-branches through storage and may list or read sessions from other exact working
-directories.
+Canceling a prompt during Starlark evaluation interrupts the active execution,
+publishes and persists a failed tool result with any captured output, and then
+returns the ACP cancelled stop reason. The ACP loop attaches the persisted
+assistant message containing each tool call to its callback context. Code Mode
+uses that execution-scoped cutoff for acp.star current-session reads because the
+session's committed head advances only after the complete prompt turn. The
+module reconstructs prior compacted branches through storage and may list or
+read sessions from other exact working directories.
 
 Conversation compaction validates tool arguments against the configured JSON
 Schema before rendering the replacement root message. Compaction must be the

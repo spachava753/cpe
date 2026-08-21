@@ -933,6 +933,143 @@ func TestCancel(t *testing.T) {
 		be.True(t, storedSession.LastMessageID != "")
 	})
 
+	t.Run("active starlark tool", func(t *testing.T) {
+		const toolCallID = "cancelled-starlark-call"
+		toolCall, err := gai.ToolCallBlock(toolCallID, starlarkREPLToolName, map[string]any{
+			"code":             "print(\"before cancellation\")\nwhile True:\n    pass",
+			"executionTimeout": 5,
+		})
+		be.Err(t, err, nil)
+
+		testClient := &promptTestClient{}
+		var store *storage.Sqlite
+		rawCfg := config.RawConfig{
+			Models: []config.ModelConfig{
+				{
+					Model: config.Model{
+						Ref:           "test-model",
+						DisplayName:   "Test Model",
+						ID:            "test-model",
+						Type:          "responses",
+						ContextWindow: 100,
+					},
+				},
+			},
+		}
+		fixture := setup(
+			t,
+			testClient,
+			&rawCfg,
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
+				generator := &testGen{responses: []genFunc{
+					func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
+						return gai.Response{
+							Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{toolCall}}},
+							FinishReason: gai.ToolUse,
+						}, nil
+					},
+				}}
+				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
+				be.Err(t, err, nil)
+				callback := &starlarkREPLCallback{
+					MaxTimeout: 5,
+					Cwd:        s.cwd,
+					SessionID:  s.id,
+					Store:      store,
+					Conn:       conn,
+				}
+				return testRuntime{loop: &loop{
+					G:     generator,
+					Store: store,
+					Cfg:   cfg,
+					toolCallbacks: map[string]gai.ToolCallback{
+						starlarkREPLToolName: callback,
+					},
+					conn: conn,
+				}}, nil
+			},
+		)
+		clientConn := fixture.ClientConn
+		store = fixture.Store
+
+		_, err = clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ClientCapabilities: &acp.ClientCapabilities{Terminal: true},
+			ClientInfo: &acp.Implementation{
+				Name:    "test-client",
+				Title:   new("test client"),
+				Version: "test",
+			},
+			ProtocolVersion: acp.ProtocolVersion(1),
+		})
+		be.Err(t, err, nil)
+		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{
+			Cwd:        t.TempDir(),
+			McpServers: []acp.McpServer{},
+		})
+		be.Err(t, err, nil)
+		_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+			ConfigID:  modelRefConfigId,
+			SessionID: newSessionResp.SessionID,
+			Value:     "test-model",
+		})
+		be.Err(t, err, nil)
+
+		type promptResult struct {
+			resp *acp.PromptResponse
+			err  error
+		}
+		promptResultCh := make(chan promptResult, 1)
+		go func() {
+			resp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
+				Prompt:    []acp.ContentBlock{acp.TextContentBlock("run starlark")},
+				SessionID: newSessionResp.SessionID,
+			})
+			promptResultCh <- promptResult{resp: resp, err: err}
+		}()
+
+		inProgress := acp.ToolCallUpdateSessionUpdate(toolCallID)
+		inProgress.Kind = new(acp.ToolKindOther)
+		inProgress.Status = new(acp.ToolCallStatusInProgress)
+		testClient.waitForNotificationCount(t, acp.SessionNotification{
+			SessionID: newSessionResp.SessionID,
+			Update:    inProgress,
+		}, 1)
+		be.Err(t, clientConn.Cancel(t.Context(), &acp.CancelNotification{SessionID: newSessionResp.SessionID}), nil)
+
+		select {
+		case result := <-promptResultCh:
+			be.Err(t, result.err, nil)
+			be.Equal(t, result.resp.StopReason, acp.StopReasonCancelled)
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for starlark prompt to return after cancellation")
+		}
+
+		failedUpdateSeen := false
+		for _, notification := range testClient.notifications() {
+			status := notification.Update.Status
+			if notification.Update.ToolCallID == toolCallID && status != nil && *status == acp.ToolCallStatusFailed {
+				failedUpdateSeen = true
+				break
+			}
+		}
+		if !failedUpdateSeen {
+			t.Fatalf("notifications = %#v, want failed update for %q", testClient.notifications(), toolCallID)
+		}
+
+		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionID)
+		be.Err(t, err, nil)
+		dialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
+		be.Err(t, err, nil)
+		result := dialog[len(dialog)-1]
+		if result.Role != gai.ToolResult || !result.ToolResultError || len(result.Blocks) != 1 || result.Blocks[0].ID != toolCallID {
+			t.Fatalf("persisted session leaf = %#v, want failed starlark tool result", result)
+		}
+		resultText := result.Blocks[0].Content.String()
+		if !strings.Contains(resultText, "context canceled") || !strings.Contains(resultText, "Output:\nbefore cancellation\n") {
+			t.Fatalf("persisted starlark result = %q, want cancellation with partial output", resultText)
+		}
+	})
+
 	t.Run("active prompt during runtime creation", func(t *testing.T) {
 		runtimeCreateStarted := make(chan struct{})
 		runtimeCreateCancelled := make(chan struct{})

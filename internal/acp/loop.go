@@ -9,6 +9,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
@@ -329,7 +330,17 @@ func (l *loop) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpt
 				result.Blocks[i].ID = block.ID
 			}
 
+			previous := current
 			current = append(current, result)
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				saveCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+				saved, saveErr := l.save(saveCtx, current)
+				cancel()
+				if saveErr != nil {
+					return previous, fmt.Errorf("persist tool result after cancellation: %w", saveErr)
+				}
+				return saved, ctxErr
+			}
 
 			firstBlock = false
 		}

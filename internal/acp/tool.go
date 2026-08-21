@@ -58,13 +58,19 @@ func (c *starlarkREPLCallback) Call(ctx context.Context, params map[string]any) 
 		if c.Conn == nil {
 			return nil
 		}
-		update := acp.ToolCallUpdateSessionUpdate(xctx.ToolCallIdFrom(ctx))
+		updateCtx := ctx
+		if ctx.Err() != nil {
+			var cancel context.CancelFunc
+			updateCtx, cancel = context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+			defer cancel()
+		}
+		update := acp.ToolCallUpdateSessionUpdate(xctx.ToolCallIdFrom(updateCtx))
 		update.Kind = new(acp.ToolKindOther)
 		update.Status = &status
 		if len(blocks) > 0 {
 			update.Content = xacp.BlocksToToolCallContent(blocks)
 		}
-		if err := c.Conn.SessionUpdate(ctx, &acp.SessionNotification{
+		if err := c.Conn.SessionUpdate(updateCtx, &acp.SessionNotification{
 			SessionID: c.SessionID,
 			Update:    update,
 		}); err != nil {
@@ -119,7 +125,7 @@ func (c *starlarkREPLCallback) Call(ctx context.Context, params map[string]any) 
 	}
 	result, err := c.repl.Eval(ctx, input.Code, time.Duration(input.ExecutionTimeout)*time.Second)
 	if ctxErr := ctx.Err(); ctxErr != nil && !result.TimedOut {
-		return gai.Message{}, ctxErr
+		err = ctxErr
 	}
 	if err != nil {
 		text := "Starlark execution error:\n" + starlarkError(err)

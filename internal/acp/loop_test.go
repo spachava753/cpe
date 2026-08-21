@@ -39,10 +39,80 @@ func (c *executionMessageCapturingCallback) Call(ctx context.Context, _ map[stri
 	return gai.ToolResultMessage("", gai.TextBlock("observed")), nil
 }
 
+type cancellationResultCallback struct {
+	cancel context.CancelFunc
+}
+
+func (c *cancellationResultCallback) Call(ctx context.Context, _ map[string]any) (gai.Message, error) {
+	c.cancel()
+	<-ctx.Done()
+	result := gai.ToolResultMessage("", gai.TextBlock("partial output before cancellation"))
+	result.ToolResultError = true
+	return result, nil
+}
+
 type sessionUpdateFunc func(context.Context, *acp.SessionNotification) error
 
 func (f sessionUpdateFunc) SessionUpdate(ctx context.Context, notification *acp.SessionNotification) error {
 	return f(ctx, notification)
+}
+
+func TestLoopPersistsToolResultWhenPromptIsCancelledDuringCallback(t *testing.T) {
+	t.Parallel()
+
+	toolCall, err := gai.ToolCallBlock("cancelled-call", "cancelling_tool", map[string]any{})
+	if err != nil {
+		t.Fatalf("ToolCallBlock() error = %v", err)
+	}
+	generator := &testGen{responses: []genFunc{
+		func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
+			return gai.Response{
+				Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{toolCall}}},
+				FinishReason: gai.ToolUse,
+			}, nil
+		},
+	}}
+	ctx, cancel := context.WithCancel(t.Context())
+	store, _ := newTestSqlite(t)
+	loop := loop{
+		G:     generator,
+		Store: store,
+		toolCallbacks: map[string]gai.ToolCallback{
+			"cancelling_tool": &cancellationResultCallback{cancel: cancel},
+		},
+		conn: sessionUpdateFunc(func(context.Context, *acp.SessionNotification) error { return nil }),
+	}
+
+	dialog, err := loop.Generate(
+		withSessionID(ctx, "test-session"),
+		gai.Dialog{{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("run the tool")}}},
+		nil,
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Generate() error = %v, want context.Canceled", err)
+	}
+	if len(dialog) != 3 {
+		t.Fatalf("Generate() dialog length = %d, want 3", len(dialog))
+	}
+	result := dialog[len(dialog)-1]
+	if result.Role != gai.ToolResult || !result.ToolResultError || len(result.Blocks) != 1 {
+		t.Fatalf("Generate() result = %#v, want failed tool result", result)
+	}
+	if result.Blocks[0].ID != "cancelled-call" || result.Blocks[0].Content.String() != "partial output before cancellation" {
+		t.Fatalf("Generate() result block = %#v, want cancelled call partial output", result.Blocks[0])
+	}
+	resultID := storage.GetMessageID(result)
+	if resultID == "" {
+		t.Fatal("cancelled tool result has no storage ID")
+	}
+	stored, err := storage.GetDialogForMessage(t.Context(), store, resultID)
+	if err != nil {
+		t.Fatalf("GetDialogForMessage() error = %v", err)
+	}
+	storedResult := stored[len(stored)-1]
+	if storedResult.Role != gai.ToolResult || !storedResult.ToolResultError || storedResult.Blocks[0].Content.String() != "partial output before cancellation" {
+		t.Fatalf("stored result = %#v, want failed tool result with partial output", storedResult)
+	}
 }
 
 func TestLoopToolCallbackReceivesPersistedAssistantMessageID(t *testing.T) {
