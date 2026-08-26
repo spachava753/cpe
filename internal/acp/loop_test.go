@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"path/filepath"
 	"strings"
 	"testing"
 	"text/template"
@@ -14,6 +15,7 @@ import (
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/acp/xctx"
+	cpeagent "github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/storage"
 )
@@ -55,6 +57,78 @@ type sessionUpdateFunc func(context.Context, *acp.SessionNotification) error
 
 func (f sessionUpdateFunc) SessionUpdate(ctx context.Context, notification *acp.SessionNotification) error {
 	return f(ctx, notification)
+}
+
+func TestLoopBlockProvenanceSurvivesStorageRestart(t *testing.T) {
+	t.Parallel()
+
+	model := config.Model{
+		Ref:     "copilot",
+		Type:    cpeagent.ModelTypeResponses,
+		BaseUrl: "https://api.githubcopilot.example",
+	}
+	message := gai.Message{
+		Role: gai.Assistant,
+		Blocks: []gai.Block{{
+			BlockType:    gai.Thinking,
+			ModalityType: gai.Text,
+			Content:      gai.Str("reasoning"),
+			ExtraFields: map[string]any{
+				gai.ThinkingExtraFieldGeneratorKey:      gai.ThinkingGeneratorResponses,
+				gai.ResponsesExtraFieldReasoningID:      "rs_copilot",
+				gai.ResponsesExtraFieldEncryptedContent: "copilot-encrypted-content",
+			},
+		}},
+	}
+	dbPath := filepath.Join(t.TempDir(), "conversations.db")
+	store, err := storage.NewConvoDB(t.Context(), dbPath)
+	if err != nil {
+		t.Fatalf("NewConvoDB() error = %v", err)
+	}
+	loop := loop{Cfg: config.Config{Model: model}, Store: store}
+	loop.attachAgentMetadata(&message, nil)
+	saved, err := loop.save(t.Context(), gai.Dialog{
+		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("prompt")}},
+		message,
+	})
+	if err != nil {
+		t.Fatalf("save() error = %v", err)
+	}
+	leafID := storage.GetMessageID(saved[len(saved)-1])
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	reopened, err := storage.NewConvoDB(t.Context(), dbPath)
+	if err != nil {
+		t.Fatalf("reopen NewConvoDB() error = %v", err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	reloaded, err := storage.GetDialogForMessage(t.Context(), reopened, leafID)
+	if err != nil {
+		t.Fatalf("GetDialogForMessage() error = %v", err)
+	}
+	if got := reloaded[1].Blocks[0].ExtraFields[gai.ResponsesExtraFieldReasoningID]; got != "rs_copilot" {
+		t.Fatalf("reloaded reasoning ID = %v, want rs_copilot", got)
+	}
+	if got := reloaded[1].Blocks[0].ExtraFields[gai.ResponsesExtraFieldEncryptedContent]; got != "copilot-encrypted-content" {
+		t.Fatalf("reloaded encrypted content = %v, want copilot-encrypted-content", got)
+	}
+
+	var captured gai.Dialog
+	inner := &testGen{responses: []genFunc{
+		func(_ context.Context, dialog gai.Dialog, _ *gai.GenOpts) (gai.Response, error) {
+			captured = dialog
+			return gai.Response{}, nil
+		},
+	}}
+	filter := cpeagent.WithBlockFilter(model)(inner)
+	if _, err := filter.Generate(t.Context(), reloaded, nil); err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	if len(captured) != 2 || len(captured[1].Blocks) != 1 {
+		t.Fatalf("filtered dialog = %#v, want the reloaded provenance-matched thinking block", captured)
+	}
 }
 
 func TestLoopPersistsToolResultWhenPromptIsCancelledDuringCallback(t *testing.T) {

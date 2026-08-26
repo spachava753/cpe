@@ -31,8 +31,8 @@ Behavioral notes:
     errors may schedule a later retry within that overall budget;
   - propagated network and HTTP disconnect errors receive up to three retries,
     each after a fixed five-second delay;
-  - provider block filtering preserves only provider-compatible thinking blocks
-    when a session crosses model providers;
+  - provider block filtering preserves provider-specific thinking only when the
+    block's model-ref and provider-URL provenance match the selected profile;
   - starlark_repl tool-description helpers live in internal/acp so ACP runtime
     callbacks and command-side inspection output share one contract.
 */

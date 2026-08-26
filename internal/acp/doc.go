@@ -20,6 +20,9 @@ At session runtime, this package resolves the selected CPE model profile,
 renders the configured system prompt, initializes provider generators through
 internal/agent, registers built-in tools, connects configured and client-provided
 MCP servers, and persists session state through an injected SQLite store.
+Generated assistant blocks receive model-ref and provider-URL provenance before
+persistence so provider-specific thinking is replayed only to the exact profile
+and endpoint that produced it.
 Process-level config loading, database path selection, storage lifecycle, and
 Cobra wiring are composed by internal/cmd. Framework-agnostic helpers in this
 package list persisted sessions, render complete compaction-aware history as

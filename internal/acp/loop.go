@@ -376,6 +376,8 @@ func (l *loop) shouldInjectCompactionWarning(metadata gai.Metadata) bool {
 }
 
 func (l *loop) attachAgentMetadata(msg *gai.Message, metadata gai.Metadata) {
+	cpeagent.ApplyBlockProvenance(msg, l.Cfg.Model)
+
 	if msg.ExtraFields == nil {
 		msg.ExtraFields = make(map[string]any)
 	}

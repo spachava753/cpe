@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/config"
 )
 
 type captureDialogGenerator struct {
@@ -43,37 +45,95 @@ func TestDialogBlockFilter_PreservesEmptyToolResultMessages(t *testing.T) {
 	}
 }
 
-func TestProviderBlockFilter_ResponsesKeepsOnlyCompatibleThinkingBlocks(t *testing.T) {
+func TestApplyBlockProvenance(t *testing.T) {
 	t.Parallel()
 
-	inner := &captureDialogGenerator{}
-	filter := WithBlockFilter("responses")(inner)
-
-	dialog := gai.Dialog{{
-		Role: gai.User,
-		Blocks: []gai.Block{
-			gai.TextBlock("prompt"),
-			thinkingBlockForTest("keep", gai.ThinkingGeneratorResponses),
-			thinkingBlockForTest("drop", gai.ThinkingGeneratorAnthropic),
-			mustFilterToolCallBlock(t, "call_1", "test_tool"),
+	model := config.Model{Ref: "codex", BaseUrl: "https://chatgpt.example/codex"}
+	message := gai.Message{Blocks: []gai.Block{
+		gai.TextBlock("answer"),
+		{
+			BlockType:    gai.Thinking,
+			ModalityType: gai.Text,
+			Content:      gai.Str("reasoning"),
+			ExtraFields:  map[string]any{"existing": "value"},
 		},
 	}}
+
+	ApplyBlockProvenance(&message, model)
+
+	want := provenanceForModel(model)
+	for i, block := range message.Blocks {
+		got, ok := provenanceForBlock(block)
+		if !ok || got != want {
+			t.Fatalf("block %d provenance = %#v, %t; want %#v, true", i, got, ok, want)
+		}
+	}
+	if got := message.Blocks[1].ExtraFields["existing"]; got != "value" {
+		t.Fatalf("existing block metadata = %v, want value", got)
+	}
+}
+
+func TestProviderBlockFilter_ResponsesKeepsOnlyMatchingProvenance(t *testing.T) {
+	t.Parallel()
+
+	target := config.Model{
+		Ref:     "copilot",
+		Type:    ModelTypeResponses,
+		BaseUrl: "https://api.githubcopilot.example",
+	}
+	matching := thinkingBlockForModelTest("keep matching reasoning", gai.ThinkingGeneratorResponses, target)
+	matching.ExtraFields[gai.ResponsesExtraFieldReasoningID] = "rs_copilot"
+	matching.ExtraFields[gai.ResponsesExtraFieldEncryptedContent] = "copilot-encrypted-content"
+	differentModel := thinkingBlockForModelTest(
+		"drop different model",
+		gai.ThinkingGeneratorResponses,
+		config.Model{Ref: "codex", BaseUrl: target.BaseUrl},
+	)
+	differentURL := thinkingBlockForModelTest(
+		"drop different URL",
+		gai.ThinkingGeneratorResponses,
+		config.Model{Ref: target.Ref, BaseUrl: "https://chatgpt.example/codex"},
+	)
+	legacy := thinkingBlockForTest("drop missing provenance", gai.ThinkingGeneratorResponses)
+	foreignGenerator := thinkingBlockForModelTest("drop foreign generator", gai.ThinkingGeneratorAnthropic, target)
+
+	inner := &captureDialogGenerator{}
+	filter := WithBlockFilter(target)(inner)
+	dialog := gai.Dialog{
+		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("first prompt")}},
+		{
+			Role: gai.Assistant,
+			Blocks: []gai.Block{
+				gai.TextBlock("answer"),
+				matching,
+				differentModel,
+				differentURL,
+				legacy,
+				foreignGenerator,
+				mustFilterToolCallBlock(t, "call_1", "test_tool"),
+			},
+		},
+		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow-up")}},
+	}
 
 	_, err := filter.Generate(context.Background(), dialog, nil)
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
-	if len(inner.dialog) != 1 {
-		t.Fatalf("len(dialog) = %d, want 1", len(inner.dialog))
+	if len(inner.dialog) != 3 {
+		t.Fatalf("len(dialog) = %d, want 3", len(inner.dialog))
 	}
-	if len(inner.dialog[0].Blocks) != 3 {
-		t.Fatalf("len(blocks) = %d, want 3", len(inner.dialog[0].Blocks))
+	if len(inner.dialog[1].Blocks) != 3 {
+		t.Fatalf("len(assistant blocks) = %d, want 3", len(inner.dialog[1].Blocks))
 	}
-	if got := inner.dialog[0].Blocks[1].Content.String(); got != "keep" {
-		t.Fatalf("kept thinking block content = %q, want %q", got, "keep")
+	if got := inner.dialog[1].Blocks[0].Content.String(); got != "answer" {
+		t.Fatalf("assistant content = %q, want answer", got)
 	}
-	if got := inner.dialog[0].Blocks[2].BlockType; got != gai.ToolCall {
-		t.Fatalf("last block type = %q, want %q", got, gai.ToolCall)
+	if got := inner.dialog[1].Blocks[1].Content.String(); got != "keep matching reasoning" {
+		t.Fatalf("kept thinking content = %q, want %q", got, "keep matching reasoning")
+	}
+	if got := inner.dialog[1].Blocks[2].BlockType; got != gai.ToolCall {
+		t.Fatalf("last assistant block type = %q, want %q", got, gai.ToolCall)
 	}
 }
 
@@ -81,7 +141,7 @@ func TestProviderBlockFilter_OpenAIKeepsOnlyContentAndToolCalls(t *testing.T) {
 	t.Parallel()
 
 	inner := &captureDialogGenerator{}
-	filter := WithBlockFilter("openai")(inner)
+	filter := WithBlockFilter(config.Model{Type: "openai"})(inner)
 
 	dialog := gai.Dialog{{
 		Role: gai.User,
@@ -109,6 +169,12 @@ func TestProviderBlockFilter_OpenAIKeepsOnlyContentAndToolCalls(t *testing.T) {
 	if got := inner.dialog[0].Blocks[1].BlockType; got != gai.ToolCall {
 		t.Fatalf("second block type = %q, want %q", got, gai.ToolCall)
 	}
+}
+
+func thinkingBlockForModelTest(content, generatorType string, model config.Model) gai.Block {
+	message := gai.Message{Blocks: []gai.Block{thinkingBlockForTest(content, generatorType)}}
+	ApplyBlockProvenance(&message, model)
+	return message.Blocks[0]
 }
 
 func thinkingBlockForTest(content, generatorType string) gai.Block {

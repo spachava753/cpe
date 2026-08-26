@@ -5,7 +5,19 @@ import (
 	"strings"
 
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/config"
 )
+
+const (
+	blockModelRefKey    = "cpe_block_model_ref"
+	blockProviderURLKey = "cpe_block_provider_url"
+)
+
+type blockProvenance struct {
+	modelRef    string
+	providerURL string
+}
 
 type blockKeepFunc func(gai.Block) bool
 
@@ -51,6 +63,34 @@ func (f *blockFilterWrapper) Generate(ctx context.Context, dialog gai.Dialog, op
 	return f.GeneratorWrapper.Generate(ctx, filteredDialog, options)
 }
 
+// ApplyBlockProvenance records the model profile and configured provider URL
+// that produced every block in an assistant message.
+func ApplyBlockProvenance(message *gai.Message, model config.Model) {
+	for i := range message.Blocks {
+		if message.Blocks[i].ExtraFields == nil {
+			message.Blocks[i].ExtraFields = make(map[string]any)
+		}
+		message.Blocks[i].ExtraFields[blockModelRefKey] = model.Ref
+		message.Blocks[i].ExtraFields[blockProviderURLKey] = model.BaseUrl
+	}
+}
+
+func provenanceForBlock(block gai.Block) (blockProvenance, bool) {
+	if block.ExtraFields == nil {
+		return blockProvenance{}, false
+	}
+	modelRef, hasModelRef := block.ExtraFields[blockModelRefKey].(string)
+	providerURL, hasProviderURL := block.ExtraFields[blockProviderURLKey].(string)
+	if !hasModelRef || !hasProviderURL {
+		return blockProvenance{}, false
+	}
+	return blockProvenance{modelRef: modelRef, providerURL: providerURL}, true
+}
+
+func provenanceForModel(model config.Model) blockProvenance {
+	return blockProvenance{modelRef: model.Ref, providerURL: model.BaseUrl}
+}
+
 func whitelistBlockKeepFunc(allowedTypes []string) blockKeepFunc {
 	allowed := make(map[string]struct{}, len(allowedTypes))
 	for _, allowedType := range allowedTypes {
@@ -62,11 +102,12 @@ func whitelistBlockKeepFunc(allowedTypes []string) blockKeepFunc {
 	}
 }
 
-func thinkingBlockKeepFunc(keepGeneratorTypes []string) blockKeepFunc {
+func thinkingBlockKeepFunc(keepGeneratorTypes []string, model config.Model) blockKeepFunc {
 	allowedGenerators := make(map[string]struct{}, len(keepGeneratorTypes))
 	for _, generatorType := range keepGeneratorTypes {
 		allowedGenerators[generatorType] = struct{}{}
 	}
+	target := provenanceForModel(model)
 	return func(block gai.Block) bool {
 		if block.BlockType != gai.Thinking {
 			return true
@@ -78,33 +119,36 @@ func thinkingBlockKeepFunc(keepGeneratorTypes []string) blockKeepFunc {
 		if !ok {
 			return false
 		}
-		_, ok = allowedGenerators[generatorType]
-		return ok
+		if _, ok = allowedGenerators[generatorType]; !ok {
+			return false
+		}
+		provenance, ok := provenanceForBlock(block)
+		return ok && provenance.modelRef == target.modelRef && provenance.providerURL == target.providerURL
 	}
 }
 
 // WithBlockFilter returns a WrapperFunc that applies the provider-specific
-// input block filtering policy for the given model type.
-func WithBlockFilter(modelType string) gai.WrapperFunc {
+// input block filtering policy for the selected model profile.
+func WithBlockFilter(model config.Model) gai.WrapperFunc {
 	return func(g gai.Generator) gai.Generator {
-		return newBlockFilterWrapper(g, providerBlockKeepFunc(modelType))
+		return newBlockFilterWrapper(g, providerBlockKeepFunc(model))
 	}
 }
 
-func providerBlockKeepFunc(modelType string) blockKeepFunc {
-	switch strings.ToLower(modelType) {
+func providerBlockKeepFunc(model config.Model) blockKeepFunc {
+	switch strings.ToLower(model.Type) {
 	case "anthropic", "anthropic_vertex":
-		return thinkingBlockKeepFunc([]string{gai.ThinkingGeneratorAnthropic})
+		return thinkingBlockKeepFunc([]string{gai.ThinkingGeneratorAnthropic}, model)
 	case "gemini":
-		return thinkingBlockKeepFunc([]string{gai.ThinkingGeneratorGemini})
+		return thinkingBlockKeepFunc([]string{gai.ThinkingGeneratorGemini}, model)
 	case "openrouter":
-		return thinkingBlockKeepFunc([]string{gai.ThinkingGeneratorOpenRouter})
+		return thinkingBlockKeepFunc([]string{gai.ThinkingGeneratorOpenRouter}, model)
 	case "responses":
-		return thinkingBlockKeepFunc([]string{gai.ThinkingGeneratorResponses})
+		return thinkingBlockKeepFunc([]string{gai.ThinkingGeneratorResponses}, model)
 	case "cerebras":
-		return thinkingBlockKeepFunc([]string{gai.ThinkingGeneratorCerebras})
+		return thinkingBlockKeepFunc([]string{gai.ThinkingGeneratorCerebras}, model)
 	case "zai":
-		return thinkingBlockKeepFunc([]string{gai.ThinkingGeneratorZai})
+		return thinkingBlockKeepFunc([]string{gai.ThinkingGeneratorZai}, model)
 	case "openai", "groq":
 		return whitelistBlockKeepFunc([]string{gai.Content, gai.ToolCall})
 	default:

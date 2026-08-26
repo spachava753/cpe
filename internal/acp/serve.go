@@ -91,7 +91,7 @@ func (c *serverRuntimeCreator) Create(ctx context.Context, s session, _ acp.Clie
 	}
 
 	wrappers := []gai.WrapperFunc{
-		cpeagent.WithBlockFilter(cfg.Model.Type),
+		cpeagent.WithBlockFilter(cfg.Model),
 	}
 
 	wrapped := gai.Wrap(gen, wrappers...)
