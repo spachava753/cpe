@@ -62,21 +62,15 @@ func expectedUsageUpdate(used, size uint64, cost *acp.Cost) acp.SessionUpdate {
 }
 
 func expectedRPCUserMessageChunk(text string) acp.SessionUpdate {
-	update := acp.UserMessageChunkSessionUpdate(acp.TextContentBlock(text))
-	update.Content = map[string]any{"text": text, "type": "text"}
-	return update
+	return acp.UserMessageChunkSessionUpdate(acp.TextContentBlock(text))
 }
 
 func expectedRPCAgentThoughtChunk(text string) acp.SessionUpdate {
-	update := acp.AgentThoughtChunkSessionUpdate(acp.TextContentBlock(text))
-	update.Content = map[string]any{"text": text, "type": "text"}
-	return update
+	return acp.AgentThoughtChunkSessionUpdate(acp.TextContentBlock(text))
 }
 
 func expectedRPCAgentMessageChunk(text string) acp.SessionUpdate {
-	update := acp.AgentMessageChunkSessionUpdate(acp.TextContentBlock(text))
-	update.Content = map[string]any{"text": text, "type": "text"}
-	return update
+	return acp.AgentMessageChunkSessionUpdate(acp.TextContentBlock(text))
 }
 
 func expectedPendingToolCallUpdate(id acp.ToolCallId, title string, rawInput any) acp.SessionUpdate {
@@ -92,21 +86,23 @@ func expectedPendingToolCallUpdate(id acp.ToolCallId, title string, rawInput any
 
 func expectedFailedToolCallUpdate(id acp.ToolCallId, text string) acp.SessionUpdate {
 	status := acp.ToolCallStatusFailed
-	update := acp.ToolCallUpdateSessionUpdate(id)
-	update.Status = &status
-	update.Content = []acp.ToolCallContent{
+	content := []acp.ToolCallContent{
 		acp.ContentToolCallContent(acp.TextContentBlock(text)),
 	}
+	update := acp.ToolCallUpdateSessionUpdate(id)
+	update.Status = &status
+	update.Content = &content
 	return update
 }
 
 func expectedCompletedToolCallUpdate(id acp.ToolCallId, text string) acp.SessionUpdate {
 	status := acp.ToolCallStatusCompleted
-	update := acp.ToolCallUpdateSessionUpdate(id)
-	update.Status = &status
-	update.Content = []acp.ToolCallContent{
+	content := []acp.ToolCallContent{
 		acp.ContentToolCallContent(acp.TextContentBlock(text)),
 	}
+	update := acp.ToolCallUpdateSessionUpdate(id)
+	update.Status = &status
+	update.Content = &content
 	return update
 }
 

@@ -2156,8 +2156,8 @@ func TestPromptReportsStarlarkREPLResultContentToACPClient(t *testing.T) {
 	if completed == nil {
 		t.Fatalf("notifications = %#v, want completed starlark_repl update", notifications)
 	}
-	content, ok := completed.Content.([]acp.ToolCallContent)
-	if !ok || len(content) != 1 || content[0].Content.Type != acp.ContentBlockTypeText || content[0].Content.Text != "visible result\n" {
+	content, ok := completed.Content.(*[]acp.ToolCallContent)
+	if !ok || content == nil || len(*content) != 1 || (*content)[0].Content.Type != acp.ContentBlockTypeText || (*content)[0].Content.Text != "visible result\n" {
 		t.Fatalf("completed content = %#v, want text content %q", completed.Content, "visible result\n")
 	}
 }

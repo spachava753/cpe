@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/nalgeon/be"
@@ -83,6 +84,31 @@ func TestHandlerUpdate(t *testing.T) {
 			SessionID: "test-session",
 			Update:    update,
 		})
+		be.Err(t, err, nil)
+		be.Equal(t, out.String(), "\n[tool update: tool-call-1 | completed]\nvisible result\n[image content]\n")
+	})
+
+	t.Run("prints decoded tool update content", func(t *testing.T) {
+		var out bytes.Buffer
+		h := handler{out: &out}
+		status := acp.ToolCallStatusCompleted
+		update := acp.ToolCallUpdateSessionUpdate("tool-call-1")
+		update.Status = &status
+		update.Content = []acp.ToolCallContent{
+			acp.ContentToolCallContent(acp.TextContentBlock("visible result\n")),
+			acp.ContentToolCallContent(acp.ImageContentBlock("data", "image/png")),
+		}
+		notification := acp.SessionNotification{
+			SessionID: "test-session",
+			Update:    update,
+		}
+		data, err := json.Marshal(notification)
+		be.Err(t, err, nil)
+
+		var decoded acp.SessionNotification
+		err = json.Unmarshal(data, &decoded)
+		be.Err(t, err, nil)
+		err = h.Update(t.Context(), &decoded)
 		be.Err(t, err, nil)
 		be.Equal(t, out.String(), "\n[tool update: tool-call-1 | completed]\nvisible result\n[image content]\n")
 	})
