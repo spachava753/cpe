@@ -45,6 +45,7 @@ func decodeToolCall(content string) (string, starlark.Value, error) {
 	return input.Name, arguments, nil
 }
 
+// jsonCompatibleToStarlark converts scalar values directly and recursively rebuilds arrays and sorted-key objects as Starlark collections.
 func jsonCompatibleToStarlark(value any) (starlark.Value, error) {
 	switch value := value.(type) {
 	case nil:

@@ -9,271 +9,269 @@ import (
 	"github.com/spachava753/cpe/internal/mcpconfig"
 )
 
-func TestValidateModelAuth(t *testing.T) {
-	tests := []struct {
-		name       string
-		model      ModelConfig
-		wantErr    bool
-		wantErrMsg string
-	}{
-		{
-			name: "apikey auth for openai is valid",
-			model: ModelConfig{
-				Model: Model{
-					Ref:         "test",
-					DisplayName: "Test",
-					ID:          "gpt-4",
-					Type:        "openai",
-					ApiKeyEnv:   "OPENAI_API_KEY",
-					AuthMethod:  "apikey",
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "no auth_method is valid",
-			model: ModelConfig{
-				Model: Model{
-					Ref:         "test",
-					DisplayName: "Test",
-					ID:          "gpt-4",
-					Type:        "openai",
-					ApiKeyEnv:   "OPENAI_API_KEY",
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "oauth for anthropic is valid",
-			model: ModelConfig{
-				Model: Model{
-					Ref:         "test",
-					DisplayName: "Test",
-					ID:          "claude-sonnet",
-					Type:        "anthropic",
-					AuthMethod:  "oauth",
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "oauth for responses is valid",
-			model: ModelConfig{
-				Model: Model{
-					Ref:         "test",
-					DisplayName: "Test",
-					ID:          "gpt-5.2-codex",
-					Type:        "responses",
-					AuthMethod:  "oauth",
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "anthropic vertex with google config and patch request is valid",
-			model: ModelConfig{
-				Model: Model{
-					Ref:           "test",
-					DisplayName:   "Test",
-					ID:            "claude-sonnet-4-6",
-					Type:          "anthropic_vertex",
-					ContextWindow: 200000,
-					MaxOutput:     64000,
-					Vertex: &VertexConfig{
-						ProjectID: "test-project",
-						Region:    "global",
+func TestValidate(t *testing.T) {
+	t.Run("model auth", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			model      ModelConfig
+			wantErr    bool
+			wantErrMsg string
+		}{
+			{
+				name: "apikey auth for openai is valid",
+				model: ModelConfig{
+					Model: Model{
+						Ref:         "test",
+						DisplayName: "Test",
+						ID:          "gpt-4",
+						Type:        "openai",
+						ApiKeyEnv:   "OPENAI_API_KEY",
+						AuthMethod:  "apikey",
 					},
-					PatchRequest: &PatchRequestConfig{
-						IncludeHeaders: map[string]string{"X-Test": "true"},
-						JSONPatch: []map[string]any{
-							{"op": "add", "path": "/metadata", "value": map[string]any{"user_id": "test"}},
+				},
+				wantErr: false,
+			},
+			{
+				name: "no auth_method is valid",
+				model: ModelConfig{
+					Model: Model{
+						Ref:         "test",
+						DisplayName: "Test",
+						ID:          "gpt-4",
+						Type:        "openai",
+						ApiKeyEnv:   "OPENAI_API_KEY",
+					},
+				},
+				wantErr: false,
+			},
+			{
+				name: "oauth for anthropic is valid",
+				model: ModelConfig{
+					Model: Model{
+						Ref:         "test",
+						DisplayName: "Test",
+						ID:          "claude-sonnet",
+						Type:        "anthropic",
+						AuthMethod:  "oauth",
+					},
+				},
+				wantErr: false,
+			},
+			{
+				name: "oauth for responses is valid",
+				model: ModelConfig{
+					Model: Model{
+						Ref:         "test",
+						DisplayName: "Test",
+						ID:          "gpt-5.2-codex",
+						Type:        "responses",
+						AuthMethod:  "oauth",
+					},
+				},
+				wantErr: false,
+			},
+			{
+				name: "anthropic vertex with google config and patch request is valid",
+				model: ModelConfig{
+					Model: Model{
+						Ref:           "test",
+						DisplayName:   "Test",
+						ID:            "claude-sonnet-4-6",
+						Type:          "anthropic_vertex",
+						ContextWindow: 200000,
+						MaxOutput:     64000,
+						Vertex: &VertexConfig{
+							ProjectID: "test-project",
+							Region:    "global",
+						},
+						PatchRequest: &PatchRequestConfig{
+							IncludeHeaders: map[string]string{"X-Test": "true"},
+							JSONPatch: []map[string]any{
+								{"op": "add", "path": "/metadata", "value": map[string]any{"user_id": "test"}},
+							},
 						},
 					},
 				},
+				wantErr: false,
 			},
-			wantErr: false,
-		},
-		{
-			name: "missing api key env for api key provider is invalid",
-			model: ModelConfig{
-				Model: Model{
-					Ref:         "test",
-					DisplayName: "Test",
-					ID:          "gpt-4",
-					Type:        "openai",
-				},
-			},
-			wantErr:    true,
-			wantErrMsg: "api_key_env is required unless auth_method is oauth or type is anthropic_vertex",
-		},
-		{
-			name: "vertex config on non vertex provider is invalid",
-			model: ModelConfig{
-				Model: Model{
-					Ref:         "test",
-					DisplayName: "Test",
-					ID:          "claude-sonnet-4-6",
-					Type:        "anthropic",
-					ApiKeyEnv:   "ANTHROPIC_API_KEY",
-					Vertex: &VertexConfig{
-						ProjectID: "test-project",
-						Region:    "global",
-					},
-				},
-			},
-			wantErr:    true,
-			wantErrMsg: "vertex configuration is only supported for anthropic_vertex models",
-		},
-		{
-			name: "anthropic vertex requires vertex config",
-			model: ModelConfig{
-				Model: Model{
-					Ref:         "test",
-					DisplayName: "Test",
-					ID:          "claude-sonnet-4-6",
-					Type:        "anthropic_vertex",
-				},
-			},
-			wantErr:    true,
-			wantErrMsg: "vertex configuration is required for anthropic_vertex models",
-		},
-		{
-			name: "anthropic vertex rejects api key env",
-			model: ModelConfig{
-				Model: Model{
-					Ref:         "test",
-					DisplayName: "Test",
-					ID:          "claude-sonnet-4-6",
-					Type:        "anthropic_vertex",
-					ApiKeyEnv:   "ANTHROPIC_API_KEY",
-					Vertex: &VertexConfig{
-						ProjectID: "test-project",
-						Region:    "global",
-					},
-				},
-			},
-			wantErr:    true,
-			wantErrMsg: "api_key_env is not supported for anthropic_vertex models; Google Application Default Credentials are used",
-		},
-		{
-			name: "oauth for openai type is invalid",
-			model: ModelConfig{
-				Model: Model{
-					Ref:         "test",
-					DisplayName: "Test",
-					ID:          "gpt-4",
-					Type:        "openai",
-					AuthMethod:  "oauth",
-				},
-			},
-			wantErr:    true,
-			wantErrMsg: "auth_method 'oauth' is only supported for anthropic and responses providers",
-		},
-		{
-			name: "oauth for gemini is invalid",
-			model: ModelConfig{
-				Model: Model{
-					Ref:         "test",
-					DisplayName: "Test",
-					ID:          "gemini-pro",
-					Type:        "gemini",
-					AuthMethod:  "oauth",
-				},
-			},
-			wantErr:    true,
-			wantErrMsg: "auth_method 'oauth' is only supported for anthropic and responses providers",
-		},
-		{
-			name: "oauth for openrouter is invalid",
-			model: ModelConfig{
-				Model: Model{
-					Ref:         "test",
-					DisplayName: "Test",
-					ID:          "some-model",
-					Type:        "openrouter",
-					AuthMethod:  "oauth",
-				},
-			},
-			wantErr:    true,
-			wantErrMsg: "auth_method 'oauth' is only supported for anthropic and responses providers",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateModelAuth(tt.model)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error, got nil")
-				} else if tt.wantErrMsg != "" && err.Error() != tt.wantErrMsg {
-					t.Errorf("unexpected error: got %q want %q", err.Error(), tt.wantErrMsg)
-				}
-				return
-			}
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-		})
-	}
-}
-
-func TestValidateThinkingValues(t *testing.T) {
-	tests := []struct {
-		name    string
-		values  []ThinkingValueConfig
-		wantErr string
-	}{
-		{
-			name: "accepts semantic and token values",
-			values: []ThinkingValueConfig{
-				{Value: "minimal", Name: "Minimal"},
-				{Value: "xhigh", Name: "Extra High"},
-				{Value: "10000", Name: "10k tokens"},
-			},
-		},
-		{
-			name:    "rejects empty value",
-			values:  []ThinkingValueConfig{{Value: "  "}},
-			wantErr: "thinkingValues[0].value must not be empty",
-		},
-		{
-			name:    "rejects surrounding whitespace",
-			values:  []ThinkingValueConfig{{Value: " low "}},
-			wantErr: "thinkingValues[0].value must not have leading or trailing whitespace",
-		},
-		{
-			name:    "rejects duplicate value",
-			values:  []ThinkingValueConfig{{Value: "low"}, {Value: "low"}},
-			wantErr: "thinkingValues contains duplicate value: low",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateThinkingValues(tt.values)
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("expected valid thinking values, got %v", err)
-				}
-				return
-			}
-			if err == nil {
-				t.Fatal("expected error, got nil")
-			}
-			if err.Error() != tt.wantErr {
-				t.Fatalf("unexpected error: got %q want %q", err.Error(), tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestRawConfigValidate_RequiresContextWindowAndMaxOutput(t *testing.T) {
-	t.Parallel()
-
-	base := RawConfig{
-		Version: "1.0",
-		Models: []ModelConfig{
 			{
+				name: "missing api key env for api key provider is invalid",
+				model: ModelConfig{
+					Model: Model{
+						Ref:         "test",
+						DisplayName: "Test",
+						ID:          "gpt-4",
+						Type:        "openai",
+					},
+				},
+				wantErr:    true,
+				wantErrMsg: "api_key_env is required unless auth_method is oauth or type is anthropic_vertex",
+			},
+			{
+				name: "vertex config on non vertex provider is invalid",
+				model: ModelConfig{
+					Model: Model{
+						Ref:         "test",
+						DisplayName: "Test",
+						ID:          "claude-sonnet-4-6",
+						Type:        "anthropic",
+						ApiKeyEnv:   "ANTHROPIC_API_KEY",
+						Vertex: &VertexConfig{
+							ProjectID: "test-project",
+							Region:    "global",
+						},
+					},
+				},
+				wantErr:    true,
+				wantErrMsg: "vertex configuration is only supported for anthropic_vertex models",
+			},
+			{
+				name: "anthropic vertex requires vertex config",
+				model: ModelConfig{
+					Model: Model{
+						Ref:         "test",
+						DisplayName: "Test",
+						ID:          "claude-sonnet-4-6",
+						Type:        "anthropic_vertex",
+					},
+				},
+				wantErr:    true,
+				wantErrMsg: "vertex configuration is required for anthropic_vertex models",
+			},
+			{
+				name: "anthropic vertex rejects api key env",
+				model: ModelConfig{
+					Model: Model{
+						Ref:         "test",
+						DisplayName: "Test",
+						ID:          "claude-sonnet-4-6",
+						Type:        "anthropic_vertex",
+						ApiKeyEnv:   "ANTHROPIC_API_KEY",
+						Vertex: &VertexConfig{
+							ProjectID: "test-project",
+							Region:    "global",
+						},
+					},
+				},
+				wantErr:    true,
+				wantErrMsg: "api_key_env is not supported for anthropic_vertex models; Google Application Default Credentials are used",
+			},
+			{
+				name: "oauth for openai type is invalid",
+				model: ModelConfig{
+					Model: Model{
+						Ref:         "test",
+						DisplayName: "Test",
+						ID:          "gpt-4",
+						Type:        "openai",
+						AuthMethod:  "oauth",
+					},
+				},
+				wantErr:    true,
+				wantErrMsg: "auth_method 'oauth' is only supported for anthropic and responses providers",
+			},
+			{
+				name: "oauth for gemini is invalid",
+				model: ModelConfig{
+					Model: Model{
+						Ref:         "test",
+						DisplayName: "Test",
+						ID:          "gemini-pro",
+						Type:        "gemini",
+						AuthMethod:  "oauth",
+					},
+				},
+				wantErr:    true,
+				wantErrMsg: "auth_method 'oauth' is only supported for anthropic and responses providers",
+			},
+			{
+				name: "oauth for openrouter is invalid",
+				model: ModelConfig{
+					Model: Model{
+						Ref:         "test",
+						DisplayName: "Test",
+						ID:          "some-model",
+						Type:        "openrouter",
+						AuthMethod:  "oauth",
+					},
+				},
+				wantErr:    true,
+				wantErrMsg: "auth_method 'oauth' is only supported for anthropic and responses providers",
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				err := validateModelAuth(tt.model)
+				if tt.wantErr {
+					if err == nil {
+						t.Error("expected error, got nil")
+					} else if tt.wantErrMsg != "" && err.Error() != tt.wantErrMsg {
+						t.Errorf("unexpected error: got %q want %q", err.Error(), tt.wantErrMsg)
+					}
+					return
+				}
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			})
+		}
+	})
+	t.Run("thinking values", func(t *testing.T) {
+		tests := []struct {
+			name    string
+			values  []ThinkingValueConfig
+			wantErr string
+		}{
+			{
+				name: "accepts semantic and token values",
+				values: []ThinkingValueConfig{
+					{Value: "minimal", Name: "Minimal"},
+					{Value: "xhigh", Name: "Extra High"},
+					{Value: "10000", Name: "10k tokens"},
+				},
+			},
+			{
+				name:    "rejects empty value",
+				values:  []ThinkingValueConfig{{Value: "  "}},
+				wantErr: "thinkingValues[0].value must not be empty",
+			},
+			{
+				name:    "rejects surrounding whitespace",
+				values:  []ThinkingValueConfig{{Value: " low "}},
+				wantErr: "thinkingValues[0].value must not have leading or trailing whitespace",
+			},
+			{
+				name:    "rejects duplicate value",
+				values:  []ThinkingValueConfig{{Value: "low"}, {Value: "low"}},
+				wantErr: "thinkingValues contains duplicate value: low",
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				err := validateThinkingValues(tt.values)
+				if tt.wantErr == "" {
+					if err != nil {
+						t.Fatalf("expected valid thinking values, got %v", err)
+					}
+					return
+				}
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if err.Error() != tt.wantErr {
+					t.Fatalf("unexpected error: got %q want %q", err.Error(), tt.wantErr)
+				}
+			})
+		}
+	})
+	t.Run("with config path mcp server url requires explicit type", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := RawConfig{
+			Version: "1.0",
+			Models: []ModelConfig{{
 				Model: Model{
 					Ref:           "test-model",
 					DisplayName:   "Test Model",
@@ -283,237 +281,238 @@ func TestRawConfigValidate_RequiresContextWindowAndMaxOutput(t *testing.T) {
 					ContextWindow: 200000,
 					MaxOutput:     64000,
 				},
-			},
-		},
-	}
-
-	if err := base.Validate(); err != nil {
-		t.Fatalf("expected valid config, got error: %v", err)
-	}
-
-	missingContext := base
-	missingContext.Models = append([]ModelConfig(nil), base.Models...)
-	missingContext.Models[0].ContextWindow = 0
-	if err := missingContext.Validate(); err == nil {
-		t.Fatal("expected validation error for missing context_window")
-	}
-
-	missingMaxOutput := base
-	missingMaxOutput.Models = append([]ModelConfig(nil), base.Models...)
-	missingMaxOutput.Models[0].MaxOutput = 0
-	if err := missingMaxOutput.Validate(); err == nil {
-		t.Fatal("expected validation error for missing max_output")
-	}
-}
-
-func TestRawConfigValidate_CompactionStructTags(t *testing.T) {
-	t.Parallel()
-
-	locations := []struct {
-		name        string
-		apply       func(*RawConfig, *RawCompactionConfig)
-		fieldPrefix string
-	}{
-		{
-			name: "model compaction",
-			apply: func(cfg *RawConfig, compaction *RawCompactionConfig) {
-				cfg.Models[0].Compaction = compaction
-			},
-			fieldPrefix: "RawConfig.Models[0].Compaction",
-		},
-	}
-
-	cases := []struct {
-		name      string
-		mutate    func(*RawCompactionConfig)
-		fieldName string
-		wantTag   string
-	}{
-		{
-			name: "requires auto trigger threshold",
-			mutate: func(compaction *RawCompactionConfig) {
-				compaction.AutoTriggerThreshold = 0
-			},
-			fieldName: "AutoTriggerThreshold",
-			wantTag:   "required",
-		},
-		{
-			name: "caps auto trigger threshold at one",
-			mutate: func(compaction *RawCompactionConfig) {
-				compaction.AutoTriggerThreshold = 1.2
-			},
-			fieldName: "AutoTriggerThreshold",
-			wantTag:   "max",
-		},
-		{
-			name: "requires positive max auto compaction restarts",
-			mutate: func(compaction *RawCompactionConfig) {
-				compaction.MaxAutoCompactionRestarts = -1
-			},
-			fieldName: "MaxAutoCompactionRestarts",
-			wantTag:   "min",
-		},
-		{
-			name: "requires tool description",
-			mutate: func(compaction *RawCompactionConfig) {
-				compaction.ToolDescription = ""
-			},
-			fieldName: "ToolDescription",
-			wantTag:   "required",
-		},
-		{
-			name: "requires input schema",
-			mutate: func(compaction *RawCompactionConfig) {
-				compaction.InputSchema = jsonschema.Schema{}
-			},
-			fieldName: "InputSchema",
-			wantTag:   "required",
-		},
-		{
-			name: "requires initial message template",
-			mutate: func(compaction *RawCompactionConfig) {
-				compaction.InitialMessageTemplate = ""
-			},
-			fieldName: "InitialMessageTemplate",
-			wantTag:   "required",
-		},
-	}
-
-	for _, location := range locations {
-
-		for _, tc := range cases {
-
-			t.Run(location.name+"/"+tc.name, func(t *testing.T) {
-				cfg := rawConfigWithCompaction(*validCompactionConfig())
-				compaction := validCompactionConfig()
-				tc.mutate(compaction)
-				location.apply(&cfg, compaction)
-
-				err := cfg.Validate()
-				if err == nil {
-					t.Fatal("expected error, got nil")
-				}
-
-				assertValidationError(t, err, location.fieldPrefix+"."+tc.fieldName, tc.wantTag)
-			})
+				MCPServers: map[string]mcpconfig.ServerConfig{
+					"remote": {URL: "http://example.com/mcp"},
+				},
+			}},
 		}
-	}
+
+		err := validateMCPServerConfigs(cfg.Models[0].MCPServers, "mcpServers")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		want := "mcpServers.remote.type: required when url is set; use \"http\" or \"sse\""
+		if err.Error() != want {
+			t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
+		}
+	})
+	t.Run("with config path mcp server headers require remote transport type", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := RawConfig{
+			Version: "1.0",
+			Models: []ModelConfig{{
+				Model: Model{
+					Ref:           "test-model",
+					DisplayName:   "Test Model",
+					ID:            "test-id",
+					Type:          "openai",
+					ApiKeyEnv:     "OPENAI_API_KEY",
+					ContextWindow: 200000,
+					MaxOutput:     64000,
+				},
+				MCPServers: map[string]mcpconfig.ServerConfig{
+					"local": {Command: "echo", Headers: map[string]string{"X-Test": "1"}},
+				},
+			}},
+		}
+
+		err := validateMCPServerConfigs(cfg.Models[0].MCPServers, "mcpServers")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		want := "mcpServers.local.headers: only supported for type \"http\" or \"sse\""
+		if err.Error() != want {
+			t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
+		}
+	})
+	t.Run("with config path remote mcp server rejects command and args", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := RawConfig{
+			Version: "1.0",
+			Models: []ModelConfig{{
+				Model: Model{
+					Ref:           "test-model",
+					DisplayName:   "Test Model",
+					ID:            "test-id",
+					Type:          "openai",
+					ApiKeyEnv:     "OPENAI_API_KEY",
+					ContextWindow: 200000,
+					MaxOutput:     64000,
+				},
+				MCPServers: map[string]mcpconfig.ServerConfig{
+					"remote": {Type: "http", URL: "http://example.com/mcp", Command: "echo", Args: []string{"hello"}},
+				},
+			}},
+		}
+
+		err := validateMCPServerConfigs(cfg.Models[0].MCPServers, "mcpServers")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		want := "mcpServers.remote.command: only supported for type \"stdio\""
+		if err.Error() != want {
+			t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
+		}
+	})
 }
 
-func TestRawConfigValidate_CompactionStructTags_AcceptsValidConfig(t *testing.T) {
-	t.Parallel()
+func TestRawConfigValidate(t *testing.T) {
+	t.Run("requires context window and max output", func(t *testing.T) {
+		t.Parallel()
 
-	cfg := rawConfigWithCompaction(*validCompactionConfig())
-	cfg.Models[0].Compaction = validCompactionConfig()
-
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("expected valid config, got error: %v", err)
-	}
-}
-
-func TestRawConfigValidate_CompactionStructTags_OmittedInModel(t *testing.T) {
-	t.Parallel()
-
-	cfg := rawConfigWithCodeMode(CodeModeConfig{})
-	cfg.Models[0].CodeMode = nil
-	cfg.Models[0].Compaction = nil
-
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("expected omitted compaction config to be valid, got error: %v", err)
-	}
-}
-
-func TestValidateWithConfigPath_MCPServerURLRequiresExplicitType(t *testing.T) {
-	t.Parallel()
-
-	cfg := RawConfig{
-		Version: "1.0",
-		Models: []ModelConfig{{
-			Model: Model{
-				Ref:           "test-model",
-				DisplayName:   "Test Model",
-				ID:            "test-id",
-				Type:          "openai",
-				ApiKeyEnv:     "OPENAI_API_KEY",
-				ContextWindow: 200000,
-				MaxOutput:     64000,
+		base := RawConfig{
+			Version: "1.0",
+			Models: []ModelConfig{
+				{
+					Model: Model{
+						Ref:           "test-model",
+						DisplayName:   "Test Model",
+						ID:            "test-id",
+						Type:          "openai",
+						ApiKeyEnv:     "OPENAI_API_KEY",
+						ContextWindow: 200000,
+						MaxOutput:     64000,
+					},
+				},
 			},
-			MCPServers: map[string]mcpconfig.ServerConfig{
-				"remote": {URL: "http://example.com/mcp"},
-			},
-		}},
-	}
+		}
 
-	err := validateSelectedProfile(cfg.Models[0])
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	want := "mcpServers.remote.type: required when url is set; use \"http\" or \"sse\""
-	if err.Error() != want {
-		t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
-	}
-}
+		if err := base.Validate(); err != nil {
+			t.Fatalf("expected valid config, got error: %v", err)
+		}
 
-func TestValidateWithConfigPath_MCPServerHeadersRequireRemoteTransportType(t *testing.T) {
-	t.Parallel()
+		missingContext := base
+		missingContext.Models = append([]ModelConfig(nil), base.Models...)
+		missingContext.Models[0].ContextWindow = 0
+		if err := missingContext.Validate(); err == nil {
+			t.Fatal("expected validation error for missing context_window")
+		}
 
-	cfg := RawConfig{
-		Version: "1.0",
-		Models: []ModelConfig{{
-			Model: Model{
-				Ref:           "test-model",
-				DisplayName:   "Test Model",
-				ID:            "test-id",
-				Type:          "openai",
-				ApiKeyEnv:     "OPENAI_API_KEY",
-				ContextWindow: 200000,
-				MaxOutput:     64000,
-			},
-			MCPServers: map[string]mcpconfig.ServerConfig{
-				"local": {Command: "echo", Headers: map[string]string{"X-Test": "1"}},
-			},
-		}},
-	}
+		missingMaxOutput := base
+		missingMaxOutput.Models = append([]ModelConfig(nil), base.Models...)
+		missingMaxOutput.Models[0].MaxOutput = 0
+		if err := missingMaxOutput.Validate(); err == nil {
+			t.Fatal("expected validation error for missing max_output")
+		}
+	})
+	t.Run("compaction struct tags", func(t *testing.T) {
+		t.Run("base case", func(t *testing.T) {
+			t.Parallel()
 
-	err := validateSelectedProfile(cfg.Models[0])
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	want := "mcpServers.local.headers: only supported for type \"http\" or \"sse\""
-	if err.Error() != want {
-		t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
-	}
-}
+			locations := []struct {
+				name        string
+				apply       func(*RawConfig, *RawCompactionConfig)
+				fieldPrefix string
+			}{
+				{
+					name: "model compaction",
+					apply: func(cfg *RawConfig, compaction *RawCompactionConfig) {
+						cfg.Models[0].Compaction = compaction
+					},
+					fieldPrefix: "RawConfig.Models[0].Compaction",
+				},
+			}
 
-func TestValidateWithConfigPath_RemoteMCPServerRejectsCommandAndArgs(t *testing.T) {
-	t.Parallel()
+			cases := []struct {
+				name      string
+				mutate    func(*RawCompactionConfig)
+				fieldName string
+				wantTag   string
+			}{
+				{
+					name: "requires auto trigger threshold",
+					mutate: func(compaction *RawCompactionConfig) {
+						compaction.AutoTriggerThreshold = 0
+					},
+					fieldName: "AutoTriggerThreshold",
+					wantTag:   "required",
+				},
+				{
+					name: "caps auto trigger threshold at one",
+					mutate: func(compaction *RawCompactionConfig) {
+						compaction.AutoTriggerThreshold = 1.2
+					},
+					fieldName: "AutoTriggerThreshold",
+					wantTag:   "max",
+				},
+				{
+					name: "requires positive max auto compaction restarts",
+					mutate: func(compaction *RawCompactionConfig) {
+						compaction.MaxAutoCompactionRestarts = -1
+					},
+					fieldName: "MaxAutoCompactionRestarts",
+					wantTag:   "min",
+				},
+				{
+					name: "requires tool description",
+					mutate: func(compaction *RawCompactionConfig) {
+						compaction.ToolDescription = ""
+					},
+					fieldName: "ToolDescription",
+					wantTag:   "required",
+				},
+				{
+					name: "requires input schema",
+					mutate: func(compaction *RawCompactionConfig) {
+						compaction.InputSchema = jsonschema.Schema{}
+					},
+					fieldName: "InputSchema",
+					wantTag:   "required",
+				},
+				{
+					name: "requires initial message template",
+					mutate: func(compaction *RawCompactionConfig) {
+						compaction.InitialMessageTemplate = ""
+					},
+					fieldName: "InitialMessageTemplate",
+					wantTag:   "required",
+				},
+			}
 
-	cfg := RawConfig{
-		Version: "1.0",
-		Models: []ModelConfig{{
-			Model: Model{
-				Ref:           "test-model",
-				DisplayName:   "Test Model",
-				ID:            "test-id",
-				Type:          "openai",
-				ApiKeyEnv:     "OPENAI_API_KEY",
-				ContextWindow: 200000,
-				MaxOutput:     64000,
-			},
-			MCPServers: map[string]mcpconfig.ServerConfig{
-				"remote": {Type: "http", URL: "http://example.com/mcp", Command: "echo", Args: []string{"hello"}},
-			},
-		}},
-	}
+			for _, location := range locations {
 
-	err := validateSelectedProfile(cfg.Models[0])
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	want := "mcpServers.remote.command: only supported for type \"stdio\""
-	if err.Error() != want {
-		t.Fatalf("unexpected error: got %q want %q", err.Error(), want)
-	}
+				for _, tc := range cases {
+
+					t.Run(location.name+"/"+tc.name, func(t *testing.T) {
+						cfg := rawConfigWithCompaction(*validCompactionConfig())
+						compaction := validCompactionConfig()
+						tc.mutate(compaction)
+						location.apply(&cfg, compaction)
+
+						err := cfg.Validate()
+						if err == nil {
+							t.Fatal("expected error, got nil")
+						}
+
+						assertValidationError(t, err, location.fieldPrefix+"."+tc.fieldName, tc.wantTag)
+					})
+				}
+			}
+		})
+		t.Run("accepts valid config", func(t *testing.T) {
+			t.Parallel()
+
+			cfg := rawConfigWithCompaction(*validCompactionConfig())
+			cfg.Models[0].Compaction = validCompactionConfig()
+
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("expected valid config, got error: %v", err)
+			}
+		})
+		t.Run("omitted in model", func(t *testing.T) {
+			t.Parallel()
+
+			cfg := rawConfigWithCodeMode(CodeModeConfig{})
+			cfg.Models[0].CodeMode = nil
+			cfg.Models[0].Compaction = nil
+
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("expected omitted compaction config to be valid, got error: %v", err)
+			}
+		})
+	})
 }
 
 func assertValidationError(t *testing.T, err error, wantField, wantTag string) {

@@ -38,13 +38,6 @@ func (c *RawConfig) ValidateWithConfigPath(configFilePath string) error {
 	return nil
 }
 
-func validateSelectedProfile(model ModelConfig) error {
-	if err := validateMCPServerConfigs(model.MCPServers, "mcpServers"); err != nil {
-		return err
-	}
-	return nil
-}
-
 // validateModelAuth validates provider-specific authentication constraints.
 // Anthropic-on-Vertex uses Google ADC and IAM instead of CPE's API-key/OAuth paths.
 func validateModelAuth(m ModelConfig) error {
@@ -72,6 +65,7 @@ func validateModelAuth(m ModelConfig) error {
 	return nil
 }
 
+// validateAnthropicVertexModel rejects unsupported direct-auth fields, requires a complete Vertex location, and checks every configured scope.
 func validateAnthropicVertexModel(m ModelConfig) error {
 	if strings.TrimSpace(m.AuthMethod) != "" {
 		return fmt.Errorf("auth_method is not supported for anthropic_vertex models; Google Application Default Credentials are used")
@@ -126,6 +120,7 @@ func validateThinkingValues(values []ThinkingValueConfig) error {
 	return nil
 }
 
+// validateMCPServerConfigs checks each transport type and rejects command, URL, argument, or header fields that do not belong to that transport.
 func validateMCPServerConfigs(servers map[string]mcpconfig.ServerConfig, fieldPrefix string) error {
 	for name, server := range servers {
 		field := fieldPrefix + "." + name

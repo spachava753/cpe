@@ -13,9 +13,9 @@ import (
 	"github.com/spachava753/cpe/internal/storage/sqlcgen"
 )
 
-// saveMessageInTx saves a single message and its blocks within a transaction.
+// saveMessageInTx allocates an ID, encodes message metadata, inserts the message
+// row, then stores its blocks in sequence order within the transaction.
 func (s *Sqlite) saveMessageInTx(ctx context.Context, qtx *sqlcgen.Queries, message gai.Message, parentID, compactionParentID string) (string, error) {
-	// Generate a unique message ID
 	messageID, err := s.generateUniqueIDInTx(ctx, qtx)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate message ID: %w", err)
@@ -163,7 +163,6 @@ func (s *Sqlite) generateUniqueIDInTx(ctx context.Context, qtx *sqlcgen.Queries)
 // Any validation or insert failure rolls back writes from this call. If the
 // consumer stops iteration early, the processed prefix is still committed when
 // possible; remaining input is not read.
-
 func (s *Sqlite) SaveDialog(ctx context.Context, msgs iter.Seq[gai.Message]) iter.Seq2[gai.Message, error] {
 	return func(yield func(gai.Message, error) bool) {
 		tx, err := beginWriteTx(ctx, s.db)

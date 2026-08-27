@@ -45,16 +45,6 @@ const (
 	pdfMIMEType          = "application/pdf"
 )
 
-func newMCPRoundTripper(base http.RoundTripper) http.RoundTripper {
-	return httpclient.Transport(
-		httpclient.WithBaseTransport(base),
-		httpclient.WithRetryStatuses(false),
-		httpclient.WithBackoff(200*time.Millisecond, 5*time.Second),
-		httpclient.WithJitterFactor(0.2),
-		httpclient.WithMaxRetries(2),
-	)
-}
-
 // effectiveServerType returns the runtime transport type, defaulting empty to stdio.
 func effectiveServerType(config mcpconfig.ServerConfig) string {
 	if config.Type == "" {
@@ -371,7 +361,13 @@ func createTransport(ctx context.Context, config mcpconfig.ServerConfig) (transp
 	// HTTP/SSE sessions are not terminated by http.Client.Timeout.
 	var httpClient *http.Client
 	if serverType == "http" || serverType == "sse" {
-		transport := newMCPRoundTripper(nil)
+		transport := httpclient.Transport(
+			httpclient.WithBaseTransport(nil),
+			httpclient.WithRetryStatuses(false),
+			httpclient.WithBackoff(200*time.Millisecond, 5*time.Second),
+			httpclient.WithJitterFactor(0.2),
+			httpclient.WithMaxRetries(2),
+		)
 		if len(config.Headers) > 0 {
 			transport = &headerRoundTripper{headers: config.Headers, next: transport}
 		}

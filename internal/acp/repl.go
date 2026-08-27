@@ -94,6 +94,7 @@ func (r *starlarkREPL) Eval(ctx context.Context, code string, timeout time.Durat
 	return result, err
 }
 
+// viewFile resolves and reads the requested file, determines its media type, then publishes the matching ACP artifact block.
 func (r *starlarkREPL) viewFile(
 	_ *starlark.Thread,
 	fn *starlark.Builtin,

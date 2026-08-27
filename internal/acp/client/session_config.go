@@ -54,8 +54,16 @@ func applySessionConfig(
 }
 
 func validateConfigValue(options []acp.SessionConfigOption, id acp.SessionConfigId, value string) error {
-	option, ok := findConfigOption(options, id)
-	if !ok {
+	var option acp.SessionConfigOption
+	found := false
+	for _, candidate := range options {
+		if candidate.ID == id {
+			option = candidate
+			found = true
+			break
+		}
+	}
+	if !found {
 		return fmt.Errorf("session config option %q is not available", id)
 	}
 	if option.Options.Ungrouped == nil {
@@ -67,15 +75,6 @@ func validateConfigValue(options []acp.SessionConfigOption, id acp.SessionConfig
 		}
 	}
 	return fmt.Errorf("invalid %s %q; valid values: %s", id, value, strings.Join(configValues(option), ", "))
-}
-
-func findConfigOption(options []acp.SessionConfigOption, id acp.SessionConfigId) (acp.SessionConfigOption, bool) {
-	for _, option := range options {
-		if option.ID == id {
-			return option, true
-		}
-	}
-	return acp.SessionConfigOption{}, false
 }
 
 func configValues(option acp.SessionConfigOption) []string {

@@ -28,18 +28,6 @@ type blockFilterWrapper struct {
 	keep blockKeepFunc
 }
 
-// newBlockFilterWrapper returns a wrapper that keeps only blocks accepted by
-// keep. When keep is nil, all blocks are preserved.
-func newBlockFilterWrapper(generator gai.Generator, keep blockKeepFunc) *blockFilterWrapper {
-	if keep == nil {
-		keep = func(gai.Block) bool { return true }
-	}
-	return &blockFilterWrapper{
-		GeneratorWrapper: gai.GeneratorWrapper{Inner: generator},
-		keep:             keep,
-	}
-}
-
 func (f *blockFilterWrapper) Generate(ctx context.Context, dialog gai.Dialog, options *gai.GenOpts) (gai.Response, error) {
 	filteredDialog := make(gai.Dialog, 0, len(dialog))
 	for _, message := range dialog {
@@ -87,10 +75,6 @@ func provenanceForBlock(block gai.Block) (blockProvenance, bool) {
 	return blockProvenance{modelRef: modelRef, providerURL: providerURL}, true
 }
 
-func provenanceForModel(model config.Model) blockProvenance {
-	return blockProvenance{modelRef: model.Ref, providerURL: model.BaseUrl}
-}
-
 func whitelistBlockKeepFunc(allowedTypes []string) blockKeepFunc {
 	allowed := make(map[string]struct{}, len(allowedTypes))
 	for _, allowedType := range allowedTypes {
@@ -107,7 +91,7 @@ func thinkingBlockKeepFunc(keepGeneratorTypes []string, model config.Model) bloc
 	for _, generatorType := range keepGeneratorTypes {
 		allowedGenerators[generatorType] = struct{}{}
 	}
-	target := provenanceForModel(model)
+	target := blockProvenance{modelRef: model.Ref, providerURL: model.BaseUrl}
 	return func(block gai.Block) bool {
 		if block.BlockType != gai.Thinking {
 			return true
@@ -131,7 +115,10 @@ func thinkingBlockKeepFunc(keepGeneratorTypes []string, model config.Model) bloc
 // input block filtering policy for the selected model profile.
 func WithBlockFilter(model config.Model) gai.WrapperFunc {
 	return func(g gai.Generator) gai.Generator {
-		return newBlockFilterWrapper(g, providerBlockKeepFunc(model))
+		return &blockFilterWrapper{
+			GeneratorWrapper: gai.GeneratorWrapper{Inner: g},
+			keep:             providerBlockKeepFunc(model),
+		}
 	}
 }
 

@@ -44,6 +44,7 @@ func cpeAgentRunner(ctx context.Context, transport acp.Transport, opts Options) 
 	})
 }
 
+// run validates CLI input, connects an in-memory ACP client and agent, initializes a session, sends one prompt, and waits for both sides to finish.
 func run(ctx context.Context, opts Options, runAgent agentRunner) error {
 	if strings.TrimSpace(opts.Prompt) == "" {
 		return errors.New("prompt cannot be empty")

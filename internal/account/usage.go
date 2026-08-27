@@ -58,7 +58,12 @@ func printOpenAIAccountUsageSnapshot(ctx context.Context, output io.Writer, base
 }
 
 func watchOpenAIAccountUsage(ctx context.Context, output io.Writer, baseURL string) error {
-	model := newOpenAIUsageWatchModel(ctx, baseURL)
+	model := openAIUsageWatchModel{
+		ctx:     ctx,
+		baseURL: baseURL,
+		width:   80,
+		loading: true,
+	}
 	program := tea.NewProgram(model, tea.WithContext(ctx), tea.WithOutput(output))
 	if _, err := program.Run(); err != nil {
 		return fmt.Errorf("running usage watch UI: %w", err)

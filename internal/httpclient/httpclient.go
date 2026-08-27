@@ -28,17 +28,9 @@ type options struct {
 // option configures a reliable HTTP client or transport.
 type option func(*options)
 
-// withBaseClient clones client settings before installing a failsafe transport.
-// If client.Transport is nil, http.DefaultTransport is used.
-func withBaseClient(client *http.Client) option {
-	return func(o *options) {
-		o.baseClient = client
-	}
-}
-
 // WithBaseTransport sets the transport wrapped by failsafe. It takes precedence
-// over a transport from withBaseClient. If transport is nil, http.DefaultTransport
-// is used.
+// over a transport from a configured base client. If transport is nil,
+// http.DefaultTransport is used.
 func WithBaseTransport(transport http.RoundTripper) option {
 	return func(o *options) {
 		o.baseTransport = transport
@@ -49,14 +41,6 @@ func WithBaseTransport(transport http.RoundTripper) option {
 func WithTimeout(timeout time.Duration) option {
 	return func(o *options) {
 		o.timeout = &timeout
-	}
-}
-
-// withDefaultTimeout sets http.Client.Timeout only when the base client does not
-// already define one.
-func withDefaultTimeout(timeout time.Duration) option {
-	return func(o *options) {
-		o.defaultTimeout = &timeout
 	}
 }
 
@@ -93,9 +77,9 @@ func WithRetryStatuses(retryStatuses bool) option {
 }
 
 // New returns an HTTP client whose transport is wrapped with failsafe retry
-// behavior. If withBaseClient is provided, the returned client is a shallow copy
-// that preserves fields such as CheckRedirect, Jar, and Timeout unless timeout
-// options override them.
+// behavior. When configured with a base client, the returned client is a shallow
+// copy that preserves fields such as CheckRedirect, Jar, and Timeout unless
+// timeout options override them.
 func New(opts ...option) *http.Client {
 	cfg := applyOptions(opts...)
 	client := http.Client{}
@@ -118,28 +102,20 @@ func New(opts ...option) *http.Client {
 //nolint:bodyclose // retry status responses are closed by closeRetryResponseBody.
 func Transport(opts ...option) http.RoundTripper {
 	cfg := applyOptions(opts...)
-	return failsafehttp.NewRoundTripper(baseTransport(cfg), retryPolicy(cfg))
-}
-
-//nolint:bodyclose // retry status responses are closed by closeRetryResponseBody.
-func retryPolicy(cfg options) retrypolicy.RetryPolicy[*http.Response] {
-	builder := retryPolicyBuilder(cfg).
+	builder := failsafehttp.NewRetryPolicyBuilder()
+	if !cfg.retryStatuses {
+		builder = retrypolicy.NewBuilder[*http.Response]().HandleIf(func(_ *http.Response, err error) bool {
+			return shouldRetryTransportError(err)
+		}).AbortOnErrors(context.Canceled)
+	}
+	policy := builder.
 		WithBackoff(cfg.backoffDelay, cfg.backoffMax).
 		WithJitterFactor(cfg.jitterFactor).
 		WithMaxRetries(cfg.maxRetries).
 		OnRetryScheduled(closeRetryResponseBody).
-		ReturnLastFailure()
-	return builder.Build()
-}
-
-//nolint:bodyclose // retry status responses are closed by closeRetryResponseBody.
-func retryPolicyBuilder(cfg options) retrypolicy.Builder[*http.Response] {
-	if cfg.retryStatuses {
-		return failsafehttp.NewRetryPolicyBuilder()
-	}
-	return retrypolicy.NewBuilder[*http.Response]().HandleIf(func(_ *http.Response, err error) bool {
-		return shouldRetryTransportError(err)
-	}).AbortOnErrors(context.Canceled)
+		ReturnLastFailure().
+		Build()
+	return failsafehttp.NewRoundTripper(baseTransport(cfg), policy)
 }
 
 func applyOptions(opts ...option) options {

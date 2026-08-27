@@ -52,7 +52,9 @@ func (c *starlarkREPLCallback) Reset() {
 	c.repl = nil
 }
 
-// Call validates and evaluates one chunk while preserving REPL state between calls.
+// Call validates execution limits, evaluates one chunk in the session sphere,
+// reports status updates, and returns printed text or structured errors and
+// artifacts while preserving REPL state between calls.
 func (c *starlarkREPLCallback) Call(ctx context.Context, params map[string]any) (gai.Message, error) {
 	sendToolCallUpdate := func(status acp.ToolCallStatus, blocks []gai.Block) error {
 		if c.Conn == nil {
@@ -128,7 +130,11 @@ func (c *starlarkREPLCallback) Call(ctx context.Context, params map[string]any) 
 		err = ctxErr
 	}
 	if err != nil {
-		text := "Starlark execution error:\n" + starlarkError(err)
+		errorText := err.Error()
+		if evalErr, ok := errors.AsType[*starlark.EvalError](err); ok {
+			errorText = evalErr.Backtrace()
+		}
+		text := "Starlark execution error:\n" + errorText
 		if result.Output != "" {
 			text += "\n\nOutput:\n" + result.Output
 		}
@@ -162,11 +168,4 @@ func toolError(text string) gai.Message {
 	msg := gai.ToolResultMessage("", gai.TextBlock(text))
 	msg.ToolResultError = true
 	return msg
-}
-
-func starlarkError(err error) string {
-	if evalErr, ok := errors.AsType[*starlark.EvalError](err); ok {
-		return evalErr.Backtrace()
-	}
-	return err.Error()
 }

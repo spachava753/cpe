@@ -1,7 +1,6 @@
 package testgate
 
 import (
-	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -45,25 +44,15 @@ func envVar(kind kind) string {
 	}
 }
 
-// enabled reports whether the given opt-in test kind is enabled by the
-// corresponding environment variable.
-func enabled(kind kind) bool {
-	envVar := envVar(kind)
-	if envVar == "" {
-		return false
-	}
-	return truthyEnv(envVar)
-}
-
 // require skips the current test unless the given opt-in test kind is enabled.
 func require(t testing.TB, kind kind) {
 	t.Helper()
-	if enabled(kind) {
-		return
-	}
 	envVar := envVar(kind)
 	if envVar == "" {
 		t.Fatalf("unknown test gate kind %q", kind)
+	}
+	if truthyEnv(envVar) {
+		return
 	}
 	t.Skipf("skipping %s test; set %s=1 to enable", kind, envVar)
 }
@@ -93,14 +82,4 @@ func truthyEnv(envVar string) bool {
 	default:
 		return false
 	}
-}
-
-// describe returns a human-readable summary of whether the given test kind is
-// enabled and which environment variable controls it.
-func describe(kind kind) string {
-	envVar := envVar(kind)
-	if envVar == "" {
-		return fmt.Sprintf("unknown test gate kind %q", kind)
-	}
-	return fmt.Sprintf("%s tests enabled=%t via %s", kind, enabled(kind), envVar)
 }

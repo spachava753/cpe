@@ -17,13 +17,6 @@ type responsesPhaseRetryGenerator struct {
 	maxRetries int
 }
 
-func newResponsesPhaseRetryGenerator(inner gai.ToolCallingGenerator) *responsesPhaseRetryGenerator {
-	return &responsesPhaseRetryGenerator{
-		GeneratorWrapper: gai.GeneratorWrapper{Inner: inner},
-		maxRetries:       defaultResponsesPhaseRetryMaxRetries,
-	}
-}
-
 func (g *responsesPhaseRetryGenerator) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
 	maxAttempts := max(g.maxRetries, 0) + 1
 
@@ -38,16 +31,12 @@ func (g *responsesPhaseRetryGenerator) Generate(ctx context.Context, dialog gai.
 		if err == nil {
 			return resp, nil
 		}
-		if !isResponsesPhaseConflictError(err) {
+		if !strings.Contains(err.Error(), responsesPhaseConflictErrorText) {
 			return resp, err
 		}
 	}
 
 	return resp, fmt.Errorf("%d generation attempts: %w", maxAttempts, err)
-}
-
-func isResponsesPhaseConflictError(err error) bool {
-	return err != nil && strings.Contains(err.Error(), responsesPhaseConflictErrorText)
 }
 
 var _ gai.ToolCallingGenerator = (*responsesPhaseRetryGenerator)(nil)

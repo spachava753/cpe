@@ -9,272 +9,268 @@ import (
 	"github.com/spachava753/cpe/internal/storage"
 )
 
-func TestResponsesPromptCacheKey_IgnoresStorageMetadataAndThinking(t *testing.T) {
-	callA := mustPromptCacheToolCallBlock(t, "call-1", "search", map[string]any{"query": "prompt caching"})
-	callB := mustPromptCacheToolCallBlock(t, "call-1", "search", map[string]any{"query": "prompt caching"})
+func TestPromptCacheKeyForResponses(t *testing.T) {
+	t.Run("ignores storage metadata and thinking", func(t *testing.T) {
+		callA := mustPromptCacheToolCallBlock(t, "call-1", "search", map[string]any{"query": "prompt caching"})
+		callB := mustPromptCacheToolCallBlock(t, "call-1", "search", map[string]any{"query": "prompt caching"})
 
-	dialogA := gai.Dialog{
-		{
-			Role: gai.User,
-			Blocks: []gai.Block{
-				gai.TextBlock("find recent prompt caching docs"),
+		dialogA := gai.Dialog{
+			{
+				Role: gai.User,
+				Blocks: []gai.Block{
+					gai.TextBlock("find recent prompt caching docs"),
+				},
+				ExtraFields: map[string]any{storage.MessageIDKey: "user-a"},
 			},
-			ExtraFields: map[string]any{storage.MessageIDKey: "user-a"},
-		},
-		{
-			Role: gai.Assistant,
-			Blocks: []gai.Block{
-				{
-					BlockType:    gai.Thinking,
+			{
+				Role: gai.Assistant,
+				Blocks: []gai.Block{
+					{
+						BlockType:    gai.Thinking,
+						ModalityType: gai.Text,
+						MimeType:     "text/plain",
+						Content:      gai.Str("hidden reasoning"),
+						ExtraFields: map[string]any{
+							gai.ThinkingExtraFieldGeneratorKey: gai.ThinkingGeneratorResponses,
+						},
+					},
+					callA,
+				},
+				ExtraFields: map[string]any{storage.MessageIDKey: "assistant-a"},
+			},
+			{
+				Role: gai.ToolResult,
+				Blocks: []gai.Block{{
+					ID:           "call-1",
+					BlockType:    gai.Content,
 					ModalityType: gai.Text,
 					MimeType:     "text/plain",
-					Content:      gai.Str("hidden reasoning"),
-					ExtraFields: map[string]any{
-						gai.ThinkingExtraFieldGeneratorKey: gai.ThinkingGeneratorResponses,
-					},
+					Content:      gai.Str("found docs"),
+				}},
+			},
+			{
+				Role: gai.Assistant,
+				Blocks: []gai.Block{
+					gai.TextBlock("Here are the docs."),
 				},
-				callA,
 			},
-			ExtraFields: map[string]any{storage.MessageIDKey: "assistant-a"},
-		},
-		{
-			Role: gai.ToolResult,
-			Blocks: []gai.Block{{
-				ID:           "call-1",
-				BlockType:    gai.Content,
-				ModalityType: gai.Text,
-				MimeType:     "text/plain",
-				Content:      gai.Str("found docs"),
-			}},
-		},
-		{
-			Role: gai.Assistant,
-			Blocks: []gai.Block{
-				gai.TextBlock("Here are the docs."),
+			{
+				Role: gai.User,
+				Blocks: []gai.Block{
+					gai.TextBlock("summarize them"),
+				},
+				ExtraFields: map[string]any{storage.MessageParentIDKey: "assistant-a"},
 			},
-		},
-		{
-			Role: gai.User,
-			Blocks: []gai.Block{
-				gai.TextBlock("summarize them"),
+		}
+
+		dialogB := gai.Dialog{
+			{
+				Role:        gai.User,
+				Blocks:      []gai.Block{gai.TextBlock("find recent prompt caching docs")},
+				ExtraFields: map[string]any{storage.MessageIDKey: "user-b"},
 			},
-			ExtraFields: map[string]any{storage.MessageParentIDKey: "assistant-a"},
-		},
-	}
+			{
+				Role:        gai.Assistant,
+				Blocks:      []gai.Block{callB},
+				ExtraFields: map[string]any{storage.MessageIDKey: "assistant-b"},
+			},
+			{
+				Role: gai.ToolResult,
+				Blocks: []gai.Block{{
+					ID:           "call-1",
+					BlockType:    gai.Content,
+					ModalityType: gai.Text,
+					MimeType:     "text/plain",
+					Content:      gai.Str("found docs"),
+				}},
+			},
+			{
+				Role:   gai.Assistant,
+				Blocks: []gai.Block{gai.TextBlock("Here are the docs.")},
+			},
+			{
+				Role:        gai.User,
+				Blocks:      []gai.Block{gai.TextBlock("summarize them")},
+				ExtraFields: map[string]any{storage.MessageParentIDKey: "assistant-b"},
+			},
+		}
 
-	dialogB := gai.Dialog{
-		{
-			Role:        gai.User,
-			Blocks:      []gai.Block{gai.TextBlock("find recent prompt caching docs")},
-			ExtraFields: map[string]any{storage.MessageIDKey: "user-b"},
-		},
-		{
-			Role:        gai.Assistant,
-			Blocks:      []gai.Block{callB},
-			ExtraFields: map[string]any{storage.MessageIDKey: "assistant-b"},
-		},
-		{
-			Role: gai.ToolResult,
-			Blocks: []gai.Block{{
-				ID:           "call-1",
-				BlockType:    gai.Content,
-				ModalityType: gai.Text,
-				MimeType:     "text/plain",
-				Content:      gai.Str("found docs"),
-			}},
-		},
-		{
-			Role:   gai.Assistant,
-			Blocks: []gai.Block{gai.TextBlock("Here are the docs.")},
-		},
-		{
-			Role:        gai.User,
-			Blocks:      []gai.Block{gai.TextBlock("summarize them")},
-			ExtraFields: map[string]any{storage.MessageParentIDKey: "assistant-b"},
-		},
-	}
-
-	keyA := responsesPromptCacheKey("gpt-5", dialogA)
-	keyB := responsesPromptCacheKey("gpt-5", dialogB)
-	if keyA != keyB {
-		t.Fatalf("expected identical cache keys, got %q != %q", keyA, keyB)
-	}
-}
-
-func TestResponsesPromptCacheKey_UsesPrefixThroughLatestUser(t *testing.T) {
-	prefix := gai.Dialog{
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("first")}},
-		{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("reply")}},
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow up")}},
-	}
-	withInFlightAssistant := append(append(gai.Dialog{}, prefix...), gai.Message{
-		Role: gai.Assistant,
-		Blocks: []gai.Block{{
-			BlockType:    gai.Thinking,
-			ModalityType: gai.Text,
-			MimeType:     "text/plain",
-			Content:      gai.Str("temporary reasoning"),
-		}},
+		keyA := responsesPromptCacheKey("gpt-5", dialogA)
+		keyB := responsesPromptCacheKey("gpt-5", dialogB)
+		if keyA != keyB {
+			t.Fatalf("expected identical cache keys, got %q != %q", keyA, keyB)
+		}
 	})
+	t.Run("uses prefix through latest user", func(t *testing.T) {
+		prefix := gai.Dialog{
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("first")}},
+			{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("reply")}},
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow up")}},
+		}
+		withInFlightAssistant := append(append(gai.Dialog{}, prefix...), gai.Message{
+			Role: gai.Assistant,
+			Blocks: []gai.Block{{
+				BlockType:    gai.Thinking,
+				ModalityType: gai.Text,
+				MimeType:     "text/plain",
+				Content:      gai.Str("temporary reasoning"),
+			}},
+		})
 
-	keyPrefix := responsesPromptCacheKey("gpt-5", prefix)
-	keyInFlight := responsesPromptCacheKey("gpt-5", withInFlightAssistant)
-	if keyPrefix != keyInFlight {
-		t.Fatalf("expected latest-user prefix cache key to ignore in-flight assistant data, got %q != %q", keyPrefix, keyInFlight)
-	}
+		keyPrefix := responsesPromptCacheKey("gpt-5", prefix)
+		keyInFlight := responsesPromptCacheKey("gpt-5", withInFlightAssistant)
+		if keyPrefix != keyInFlight {
+			t.Fatalf("expected latest-user prefix cache key to ignore in-flight assistant data, got %q != %q", keyPrefix, keyInFlight)
+		}
 
-	if otherModel := responsesPromptCacheKey("gpt-5-mini", prefix); otherModel == keyPrefix {
-		t.Fatal("expected model ID to affect the prompt cache key")
-	}
-}
+		if otherModel := responsesPromptCacheKey("gpt-5-mini", prefix); otherModel == keyPrefix {
+			t.Fatal("expected model ID to affect the prompt cache key")
+		}
+	})
+	t.Run("changes when tool i ds change", func(t *testing.T) {
+		dialogA := gai.Dialog{
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("call tool")}},
+			{Role: gai.Assistant, Blocks: []gai.Block{mustPromptCacheToolCallBlock(t, "call-1", "lookup", map[string]any{"query": "docs"})}},
+			{Role: gai.ToolResult, Blocks: []gai.Block{{
+				ID:           "call-1",
+				BlockType:    gai.Content,
+				ModalityType: gai.Text,
+				MimeType:     "text/plain",
+				Content:      gai.Str("result"),
+			}}},
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow up")}},
+		}
+		dialogB := gai.Dialog{
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("call tool")}},
+			{Role: gai.Assistant, Blocks: []gai.Block{mustPromptCacheToolCallBlock(t, "call-2", "lookup", map[string]any{"query": "docs"})}},
+			{Role: gai.ToolResult, Blocks: []gai.Block{{
+				ID:           "call-2",
+				BlockType:    gai.Content,
+				ModalityType: gai.Text,
+				MimeType:     "text/plain",
+				Content:      gai.Str("result"),
+			}}},
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow up")}},
+		}
 
-func TestResponsesPromptCacheKey_ChangesWhenToolIDsChange(t *testing.T) {
-	dialogA := gai.Dialog{
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("call tool")}},
-		{Role: gai.Assistant, Blocks: []gai.Block{mustPromptCacheToolCallBlock(t, "call-1", "lookup", map[string]any{"query": "docs"})}},
-		{Role: gai.ToolResult, Blocks: []gai.Block{{
-			ID:           "call-1",
-			BlockType:    gai.Content,
-			ModalityType: gai.Text,
-			MimeType:     "text/plain",
-			Content:      gai.Str("result"),
-		}}},
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow up")}},
-	}
-	dialogB := gai.Dialog{
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("call tool")}},
-		{Role: gai.Assistant, Blocks: []gai.Block{mustPromptCacheToolCallBlock(t, "call-2", "lookup", map[string]any{"query": "docs"})}},
-		{Role: gai.ToolResult, Blocks: []gai.Block{{
-			ID:           "call-2",
-			BlockType:    gai.Content,
-			ModalityType: gai.Text,
-			MimeType:     "text/plain",
-			Content:      gai.Str("result"),
-		}}},
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow up")}},
-	}
+		keyA := responsesPromptCacheKey("gpt-5", dialogA)
+		keyB := responsesPromptCacheKey("gpt-5", dialogB)
+		if keyA == keyB {
+			t.Fatalf("expected tool IDs to affect the cache key, got %q", keyA)
+		}
+	})
+	t.Run("ignores tool result error flag", func(t *testing.T) {
+		dialogA := gai.Dialog{
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("call tool")}},
+			{Role: gai.ToolResult, ToolResultError: false, Blocks: []gai.Block{{
+				ID:           "call-1",
+				BlockType:    gai.Content,
+				ModalityType: gai.Text,
+				MimeType:     "text/plain",
+				Content:      gai.Str("same content"),
+			}}},
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow up")}},
+		}
+		dialogB := gai.Dialog{
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("call tool")}},
+			{Role: gai.ToolResult, ToolResultError: true, Blocks: []gai.Block{{
+				ID:           "call-1",
+				BlockType:    gai.Content,
+				ModalityType: gai.Text,
+				MimeType:     "text/plain",
+				Content:      gai.Str("same content"),
+			}}},
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow up")}},
+		}
 
-	keyA := responsesPromptCacheKey("gpt-5", dialogA)
-	keyB := responsesPromptCacheKey("gpt-5", dialogB)
-	if keyA == keyB {
-		t.Fatalf("expected tool IDs to affect the cache key, got %q", keyA)
-	}
-}
+		keyA := responsesPromptCacheKey("gpt-5", dialogA)
+		keyB := responsesPromptCacheKey("gpt-5", dialogB)
+		if keyA != keyB {
+			t.Fatalf("expected tool result error flag to be ignored, got %q != %q", keyA, keyB)
+		}
+	})
+	t.Run("preserves large integer tool parameters", func(t *testing.T) {
+		const largeID int64 = 9007199254740993
 
-func TestResponsesPromptCacheKey_IgnoresToolResultErrorFlag(t *testing.T) {
-	dialogA := gai.Dialog{
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("call tool")}},
-		{Role: gai.ToolResult, ToolResultError: false, Blocks: []gai.Block{{
-			ID:           "call-1",
-			BlockType:    gai.Content,
-			ModalityType: gai.Text,
-			MimeType:     "text/plain",
-			Content:      gai.Str("same content"),
-		}}},
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow up")}},
-	}
-	dialogB := gai.Dialog{
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("call tool")}},
-		{Role: gai.ToolResult, ToolResultError: true, Blocks: []gai.Block{{
-			ID:           "call-1",
-			BlockType:    gai.Content,
-			ModalityType: gai.Text,
-			MimeType:     "text/plain",
-			Content:      gai.Str("same content"),
-		}}},
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow up")}},
-	}
+		dialogA := gai.Dialog{
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("call tool")}},
+			{Role: gai.Assistant, Blocks: []gai.Block{mustPromptCacheToolCallBlock(t, "call-1", "lookup", map[string]any{"id": largeID})}},
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow up")}},
+		}
+		dialogB := gai.Dialog{
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("call tool")}},
+			{Role: gai.Assistant, Blocks: []gai.Block{mustPromptCacheToolCallBlock(t, "call-1", "lookup", map[string]any{"id": largeID + 1})}},
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow up")}},
+		}
 
-	keyA := responsesPromptCacheKey("gpt-5", dialogA)
-	keyB := responsesPromptCacheKey("gpt-5", dialogB)
-	if keyA != keyB {
-		t.Fatalf("expected tool result error flag to be ignored, got %q != %q", keyA, keyB)
-	}
-}
+		keyA := responsesPromptCacheKey("gpt-5", dialogA)
+		keyB := responsesPromptCacheKey("gpt-5", dialogB)
+		if keyA == keyB {
+			t.Fatalf("expected distinct large integer tool parameters to produce different cache keys, got %q", keyA)
+		}
+	})
+	t.Run("ignores text mime differences", func(t *testing.T) {
+		dialogA := gai.Dialog{{
+			Role: gai.User,
+			Blocks: []gai.Block{{
+				BlockType:    gai.Content,
+				ModalityType: gai.Text,
+				MimeType:     "text/plain",
+				Content:      gai.Str("hello"),
+			}},
+		}}
+		dialogB := gai.Dialog{{
+			Role: gai.User,
+			Blocks: []gai.Block{{
+				BlockType:    gai.Content,
+				ModalityType: gai.Text,
+				MimeType:     "text/markdown",
+				Content:      gai.Str("hello"),
+			}},
+		}}
 
-func TestResponsesPromptCacheKey_PreservesLargeIntegerToolParameters(t *testing.T) {
-	const largeID int64 = 9007199254740993
+		keyA := responsesPromptCacheKey("gpt-5", dialogA)
+		keyB := responsesPromptCacheKey("gpt-5", dialogB)
+		if keyA != keyB {
+			t.Fatalf("expected text mime differences to be ignored, got %q != %q", keyA, keyB)
+		}
+	})
+	t.Run("canonicalizes all text tool results like responses input", func(t *testing.T) {
+		dialogA := gai.Dialog{
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("call tool")}},
+			{Role: gai.ToolResult, Blocks: []gai.Block{{
+				ID:           "call-1",
+				BlockType:    gai.Content,
+				ModalityType: gai.Text,
+				MimeType:     "text/plain",
+				Content:      gai.Str("a"),
+			}, {
+				ID:           "call-1",
+				BlockType:    gai.Content,
+				ModalityType: gai.Text,
+				MimeType:     "text/plain",
+				Content:      gai.Str("b"),
+			}}},
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow up")}},
+		}
+		dialogB := gai.Dialog{
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("call tool")}},
+			{Role: gai.ToolResult, Blocks: []gai.Block{{
+				ID:           "call-1",
+				BlockType:    gai.Content,
+				ModalityType: gai.Text,
+				MimeType:     "text/plain",
+				Content:      gai.Str("ab"),
+			}}},
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow up")}},
+		}
 
-	dialogA := gai.Dialog{
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("call tool")}},
-		{Role: gai.Assistant, Blocks: []gai.Block{mustPromptCacheToolCallBlock(t, "call-1", "lookup", map[string]any{"id": largeID})}},
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow up")}},
-	}
-	dialogB := gai.Dialog{
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("call tool")}},
-		{Role: gai.Assistant, Blocks: []gai.Block{mustPromptCacheToolCallBlock(t, "call-1", "lookup", map[string]any{"id": largeID + 1})}},
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow up")}},
-	}
-
-	keyA := responsesPromptCacheKey("gpt-5", dialogA)
-	keyB := responsesPromptCacheKey("gpt-5", dialogB)
-	if keyA == keyB {
-		t.Fatalf("expected distinct large integer tool parameters to produce different cache keys, got %q", keyA)
-	}
-}
-
-func TestResponsesPromptCacheKey_IgnoresTextMimeDifferences(t *testing.T) {
-	dialogA := gai.Dialog{{
-		Role: gai.User,
-		Blocks: []gai.Block{{
-			BlockType:    gai.Content,
-			ModalityType: gai.Text,
-			MimeType:     "text/plain",
-			Content:      gai.Str("hello"),
-		}},
-	}}
-	dialogB := gai.Dialog{{
-		Role: gai.User,
-		Blocks: []gai.Block{{
-			BlockType:    gai.Content,
-			ModalityType: gai.Text,
-			MimeType:     "text/markdown",
-			Content:      gai.Str("hello"),
-		}},
-	}}
-
-	keyA := responsesPromptCacheKey("gpt-5", dialogA)
-	keyB := responsesPromptCacheKey("gpt-5", dialogB)
-	if keyA != keyB {
-		t.Fatalf("expected text mime differences to be ignored, got %q != %q", keyA, keyB)
-	}
-}
-
-func TestResponsesPromptCacheKey_CanonicalizesAllTextToolResultsLikeResponsesInput(t *testing.T) {
-	dialogA := gai.Dialog{
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("call tool")}},
-		{Role: gai.ToolResult, Blocks: []gai.Block{{
-			ID:           "call-1",
-			BlockType:    gai.Content,
-			ModalityType: gai.Text,
-			MimeType:     "text/plain",
-			Content:      gai.Str("a"),
-		}, {
-			ID:           "call-1",
-			BlockType:    gai.Content,
-			ModalityType: gai.Text,
-			MimeType:     "text/plain",
-			Content:      gai.Str("b"),
-		}}},
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow up")}},
-	}
-	dialogB := gai.Dialog{
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("call tool")}},
-		{Role: gai.ToolResult, Blocks: []gai.Block{{
-			ID:           "call-1",
-			BlockType:    gai.Content,
-			ModalityType: gai.Text,
-			MimeType:     "text/plain",
-			Content:      gai.Str("ab"),
-		}}},
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("follow up")}},
-	}
-
-	keyA := responsesPromptCacheKey("gpt-5", dialogA)
-	keyB := responsesPromptCacheKey("gpt-5", dialogB)
-	if keyA != keyB {
-		t.Fatalf("expected split and merged all-text tool results to hash the same, got %q != %q", keyA, keyB)
-	}
+		keyA := responsesPromptCacheKey("gpt-5", dialogA)
+		keyB := responsesPromptCacheKey("gpt-5", dialogB)
+		if keyA != keyB {
+			t.Fatalf("expected split and merged all-text tool results to hash the same, got %q != %q", keyA, keyB)
+		}
+	})
 }
 
 func mustPromptCacheToolCallBlock(t *testing.T, id, name string, params map[string]any) gai.Block {

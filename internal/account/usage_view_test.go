@@ -8,47 +8,21 @@ import (
 	"github.com/spachava753/cpe/internal/auth"
 )
 
-func TestValidateAccountUsageOptions(t *testing.T) {
-	tests := []struct {
-		name    string
-		opts    AccountUsageOptions
-		wantErr string
-	}{
-		{
-			name:    "raw and watch conflict",
-			opts:    AccountUsageOptions{Raw: true, Watch: true},
-			wantErr: "--raw and --watch cannot be used together",
-		},
-		{
-			name: "raw only",
-			opts: AccountUsageOptions{Raw: true},
-		},
-		{
-			name: "watch only",
-			opts: AccountUsageOptions{Watch: true},
-		},
+func TestAccountUsageRejectsRawAndWatch(t *testing.T) {
+	err := AccountUsage(t.Context(), AccountUsageOptions{
+		Provider: providerOpenAI,
+		Raw:      true,
+		Watch:    true,
+	})
+	if err == nil {
+		t.Fatal("AccountUsage() error = nil, want raw/watch conflict")
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := validateAccountUsageOptions(tt.opts)
-			if tt.wantErr == "" {
-				if err != nil {
-					t.Fatalf("validateAccountUsageOptions() error = %v", err)
-				}
-				return
-			}
-			if err == nil {
-				t.Fatalf("validateAccountUsageOptions() error = nil, want %q", tt.wantErr)
-			}
-			if err.Error() != tt.wantErr {
-				t.Fatalf("validateAccountUsageOptions() error = %q, want %q", err.Error(), tt.wantErr)
-			}
-		})
+	if err.Error() != "--raw and --watch cannot be used together" {
+		t.Fatalf("AccountUsage() error = %q, want raw/watch conflict", err.Error())
 	}
 }
 
-func TestRenderOpenAIUsageView(t *testing.T) {
+func TestOpenAIUsageViewRendering(t *testing.T) {
 	now := time.Date(2026, time.March, 13, 14, 20, 0, 0, time.UTC)
 	view := renderOpenAIUsageView(&auth.OpenAIUsageResponse{
 		Email:    "user@example.com",
@@ -76,7 +50,8 @@ func TestRenderOpenAIUsageView(t *testing.T) {
 		Watch:       true,
 	})
 
-	got := stripANSI(view)
+	re := regexp.MustCompile(`\x1b\[[0-9;]*m`)
+	got := re.ReplaceAllString(view, "")
 	want := "OpenAI account usage\nuser@example.com • PRO\nUpdated 2026-03-13 14:20:00 UTC\n\nPrimary window (5h)\n████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  19% used\nAllowed now • resets in 21m 16s\n\nSecondary window (weekly)\n███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  25% used\nAllowed now • resets in 4d 22h\n\nAdditional metered limits\nextra\n  Primary window (5h)\n░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0% used\nAllowed now • reset unknown\n  Secondary window (weekly)\nUnavailable in the current response\n\nWatching live • refreshes every 1s • press q to quit"
 	if got != want {
 		t.Fatalf("renderOpenAIUsageView() = %q, want %q", got, want)
@@ -119,9 +94,4 @@ func TestJoinUsageFields(t *testing.T) {
 			}
 		})
 	}
-}
-
-func stripANSI(s string) string {
-	re := regexp.MustCompile(`\x1b\[[0-9;]*m`)
-	return re.ReplaceAllString(s, "")
 }

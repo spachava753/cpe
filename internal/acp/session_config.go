@@ -16,7 +16,9 @@ const (
 	thinkingLevelConfigId acp.SessionConfigId = "thinkingLevel"
 )
 
-// SetSessionConfigOption implements [acp.SessionHandler].
+// SetSessionConfigOption validates the requested value, persists model or
+// thinking changes, and rebuilds runtime state when the model changes. It
+// implements [acp.SessionHandler].
 //
 // TODO: we should probably expose more options like tool choice, etc. and wire up defaults from the config
 func (a *agent) SetSessionConfigOption(ctx context.Context, params *acp.SetSessionConfigOptionRequest) (*acp.SetSessionConfigOptionResponse, error) {
@@ -210,25 +212,22 @@ func (a *agent) configOptions(ctx context.Context, sessionId acp.SessionId) []ac
 func (a *agent) modelSelectOptions() acp.UngroupedSessionConfigSelectOptions {
 	opts := make(acp.UngroupedSessionConfigSelectOptions, len(a.rawCfg.Models))
 	for i, m := range a.rawCfg.Models {
+		location := fmt.Sprintf("Base Url: %s", m.BaseUrl)
+		if m.Vertex != nil {
+			location = fmt.Sprintf("Vertex Project: %s\nVertex Region: %s", m.Vertex.ProjectID, m.Vertex.Region)
+		}
+		description := fmt.Sprintf(`Type: %s
+%s
+Context Window: %d
+Input Cost: %s
+Output Cost: %s`, m.Type, location, m.ContextWindow, formatOptionalCost(m.InputCostPerMillion), formatOptionalCost(m.OutputCostPerMillion))
 		opts[i] = acp.SessionConfigSelectOption{
-			Description: new(modelSelectDescription(m)),
+			Description: &description,
 			Name:        m.DisplayName,
 			Value:       acp.SessionConfigValueId(m.Ref),
 		}
 	}
 	return opts
-}
-
-func modelSelectDescription(m config.ModelConfig) string {
-	location := fmt.Sprintf("Base Url: %s", m.BaseUrl)
-	if m.Vertex != nil {
-		location = fmt.Sprintf("Vertex Project: %s\nVertex Region: %s", m.Vertex.ProjectID, m.Vertex.Region)
-	}
-	return fmt.Sprintf(`Type: %s
-%s
-Context Window: %d
-Input Cost: %s
-Output Cost: %s`, m.Type, location, m.ContextWindow, formatOptionalCost(m.InputCostPerMillion), formatOptionalCost(m.OutputCostPerMillion))
 }
 
 func formatOptionalCost(cost *float64) string {

@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/spachava753/cpe/internal/cmd"
+	cpelogging "github.com/spachava753/cpe/internal/logging"
 )
 
 func main() {
@@ -20,6 +21,7 @@ func main() {
 		defer func() { _ = logFile.Close() }()
 	}
 
-	slog.SetDefault(newProcessLogger(logOutput))
+	handler := slog.NewJSONHandler(logOutput, &slog.HandlerOptions{Level: slog.LevelDebug})
+	slog.SetDefault(slog.New(cpelogging.NewProcessHandler(handler)))
 	cmd.Execute()
 }

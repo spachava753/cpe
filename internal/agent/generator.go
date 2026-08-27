@@ -41,10 +41,6 @@ var findDefaultGoogleCredentials = google.FindDefaultCredentials
 // ModelTypeResponses is the model type identifier for the OpenAI Responses API.
 const ModelTypeResponses = "responses"
 
-func newModelHTTPClient(timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout}
-}
-
 func newModelRoundTripper(base http.RoundTripper) http.RoundTripper {
 	if base == nil {
 		return http.DefaultTransport
@@ -94,7 +90,11 @@ func anthropicVertexRequestOptions(
 		return nil, fmt.Errorf("vertex.region is required for %s models", modelTypeAnthropicVertex)
 	}
 
-	creds, err := findDefaultGoogleCredentials(ctx, vertexScopes(vertexCfg)...)
+	scopes := vertexCfg.Scopes
+	if len(scopes) == 0 {
+		scopes = []string{googleCloudPlatformScope}
+	}
+	creds, err := findDefaultGoogleCredentials(ctx, scopes...)
 	if err != nil {
 		return nil, fmt.Errorf("finding Google Application Default Credentials for Vertex AI: %w", err)
 	}
@@ -124,13 +124,6 @@ func anthropicVertexRequestOptions(
 		aopts.WithMaxRetries(0),
 	}
 	return opts, nil
-}
-
-func vertexScopes(vertexCfg *config.VertexConfig) []string {
-	if len(vertexCfg.Scopes) > 0 {
-		return vertexCfg.Scopes
-	}
-	return []string{googleCloudPlatformScope}
 }
 
 // ApplyResponsesThinkingSummary ensures that when using the OpenAI Responses API,
@@ -169,6 +162,7 @@ func prependClaudeCodeIdentifier(_ context.Context, params *a.MessageNewParams) 
 	return nil
 }
 
+// InitGeneratorFromModel builds the model HTTP client, selects and configures the provider generator, then applies the shared retry wrappers.
 func InitGeneratorFromModel(
 	ctx context.Context,
 	m config.Model,
@@ -178,7 +172,7 @@ func InitGeneratorFromModel(
 	t := strings.ToLower(m.Type)
 	baseURL := m.BaseUrl
 
-	httpClient := newModelHTTPClient(timeout)
+	httpClient := &http.Client{Timeout: timeout}
 	if m.PatchRequest != nil {
 		transport, err := buildPatchTransportFromConfig(httpClient.Transport, m.PatchRequest)
 		if err != nil {
@@ -394,7 +388,10 @@ func InitGeneratorFromModel(
 		gen = &gai.StreamingAdapter{S: sg}
 	}
 	if t == ModelTypeResponses {
-		gen = newResponsesPhaseRetryGenerator(gen)
+		gen = &responsesPhaseRetryGenerator{
+			GeneratorWrapper: gai.GeneratorWrapper{Inner: gen},
+			maxRetries:       defaultResponsesPhaseRetryMaxRetries,
+		}
 	}
 
 	retryConfig := gai.RetryConfig{
@@ -410,7 +407,13 @@ func InitGeneratorFromModel(
 	}
 	gen, ok := gai.Wrap(
 		gen,
-		withNetworkRetry(),
+		func(inner gai.Generator) gai.Generator {
+			return &networkRetryGenerator{
+				GeneratorWrapper: gai.GeneratorWrapper{Inner: inner},
+				maxRetries:       defaultNetworkMaxRetries,
+				retryDelay:       defaultNetworkRetryDelay,
+			}
+		},
 		gai.WithRetry(retryConfig),
 	).(gai.ToolCallingGenerator)
 	if !ok {

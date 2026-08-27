@@ -41,13 +41,6 @@ func (t *promptTestClient) notifications() []acp.SessionNotification {
 	return slices.Clone(t.capturedNotifications)
 }
 
-func (t *promptTestClient) clearNotifications() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	clear(t.capturedNotifications)
-	t.capturedNotifications = t.capturedNotifications[:0]
-}
-
 func (t *promptTestClient) waitForNotificationCount(tb *testing.T, want acp.SessionNotification, count int) {
 	tb.Helper()
 	deadline := time.After(5 * time.Second)
@@ -140,152 +133,250 @@ func (r testRuntime) Close() error {
 }
 
 func TestSkillSlashCommands(t *testing.T) {
-	var (
-		clientConn              *acp.Client
-		store                   *storage.Sqlite
-		cwd                     = t.TempDir()
-		testClient              = &promptTestClient{}
-		sessionID               acp.SessionId
-		commandNotification     acp.SessionNotification
-		commandNotificationSeen int
-		rawCfg                  = config.RawConfig{
-			Models: []config.ModelConfig{{
-				Model: config.Model{
-					Ref:           "test-model",
-					DisplayName:   "Test Model",
-					ID:            "test-model",
-					Type:          "responses",
-					ContextWindow: 100,
-				},
-			}},
+	t.Run("base case", func(t *testing.T) {
+		var (
+			clientConn              *acp.Client
+			store                   *storage.Sqlite
+			cwd                     = t.TempDir()
+			testClient              = &promptTestClient{}
+			sessionID               acp.SessionId
+			commandNotification     acp.SessionNotification
+			commandNotificationSeen int
+			rawCfg                  = config.RawConfig{
+				Models: []config.ModelConfig{{
+					Model: config.Model{
+						Ref:           "test-model",
+						DisplayName:   "Test Model",
+						ID:            "test-model",
+						Type:          "responses",
+						ContextWindow: 100,
+					},
+				}},
+			}
+		)
+		createACPSkill(t, filepath.Join(cwd, ".agents", "skills"), "domain-modeling", map[string]any{
+			"name":        "domain-modeling",
+			"description": "Domain modeling help",
+			"group":       "design",
+		})
+		createACPSkill(t, filepath.Join(cwd, ".agents", "skills"), "hidden-skill", map[string]any{
+			"name":                     "hidden-skill",
+			"description":              "Hidden help",
+			"disable-model-invocation": true,
+		})
+
+		fixture := setup(
+			t,
+			testClient,
+			&rawCfg,
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
+				gen := testGen{responses: []genFunc{
+					func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+						testClient.waitForNotificationCount(t, commandNotification, 3)
+						be.Equal(t, countNotifications(testClient.notifications(), commandNotification), 3)
+						be.Equal(t, len(d), 1)
+						be.Equal(t, d[0].Role, gai.User)
+						be.Equal(t, d[0].Blocks[0].Content.String(), "Use ./.agents/skills/domain-modeling and /skill:missing")
+						return gai.Response{
+							Candidates: []gai.Message{{
+								Role:   gai.Assistant,
+								Blocks: []gai.Block{gai.TextBlock("done")},
+							}},
+							FinishReason: gai.EndTurn,
+						}, nil
+					},
+					func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+						testClient.waitForNotificationCount(t, commandNotification, 4)
+						commandNotificationSeen = countNotifications(testClient.notifications(), commandNotification)
+						be.Equal(t, commandNotificationSeen, 4)
+						be.Equal(t, len(d), 3)
+						be.Equal(t, d[2].Role, gai.User)
+						be.Equal(t, d[2].Blocks[0].Content.String(), "Again ./.agents/skills/domain-modeling")
+						return gai.Response{
+							Candidates: []gai.Message{{
+								Role:   gai.Assistant,
+								Blocks: []gai.Block{gai.TextBlock("done again")},
+							}},
+							FinishReason: gai.EndTurn,
+						}, nil
+					},
+				}}
+				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
+				be.Err(t, err, nil)
+				return testRuntime{loop: &loop{
+					G:     &gen,
+					Store: store,
+					Cfg:   cfg,
+					conn:  conn,
+				}}, nil
+			},
+		)
+		clientConn = fixture.ClientConn
+		store = fixture.Store
+
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ClientCapabilities: &acp.ClientCapabilities{Terminal: true},
+			ProtocolVersion:    acp.ProtocolVersion(1),
+		})
+		be.Err(t, err, nil)
+
+		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{
+			Cwd:        cwd,
+			McpServers: []acp.McpServer{},
+		})
+		be.Err(t, err, nil)
+		sessionID = newSessionResp.SessionID
+		be.Equal(t, len(testClient.notifications()), 0)
+
+		inputDomain := acp.UnstructuredAvailableCommandInput("Domain modeling help")
+		inputHidden := acp.UnstructuredAvailableCommandInput("Hidden help")
+		commandNotification = acp.SessionNotification{
+			SessionID: sessionID,
+			Update: acp.AvailableCommandsUpdateSessionUpdate([]acp.AvailableCommand{
+				{Name: "skill:domain-modeling", Description: "Domain modeling help", Input: &inputDomain},
+				{Name: "skill:hidden-skill", Description: "Hidden help", Input: &inputHidden},
+			}),
 		}
-	)
-	createACPSkill(t, filepath.Join(cwd, ".agents", "skills"), "domain-modeling", map[string]any{
-		"name":        "domain-modeling",
-		"description": "Domain modeling help",
-		"group":       "design",
-	})
-	createACPSkill(t, filepath.Join(cwd, ".agents", "skills"), "hidden-skill", map[string]any{
-		"name":                     "hidden-skill",
-		"description":              "Hidden help",
-		"disable-model-invocation": true,
-	})
 
-	fixture := setup(
-		t,
-		testClient,
-		&rawCfg,
-		func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
-			gen := testGen{responses: []genFunc{
-				func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
-					testClient.waitForNotificationCount(t, commandNotification, 3)
-					be.Equal(t, countNotifications(testClient.notifications(), commandNotification), 3)
-					be.Equal(t, len(d), 1)
-					be.Equal(t, d[0].Role, gai.User)
-					be.Equal(t, d[0].Blocks[0].Content.String(), "Use ./.agents/skills/domain-modeling and /skill:missing")
-					return gai.Response{
-						Candidates: []gai.Message{{
-							Role:   gai.Assistant,
-							Blocks: []gai.Block{gai.TextBlock("done")},
-						}},
-						FinishReason: gai.EndTurn,
-					}, nil
-				},
-				func(ctx context.Context, d gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
-					testClient.waitForNotificationCount(t, commandNotification, 4)
-					commandNotificationSeen = countNotifications(testClient.notifications(), commandNotification)
-					be.Equal(t, commandNotificationSeen, 4)
-					be.Equal(t, len(d), 3)
-					be.Equal(t, d[2].Role, gai.User)
-					be.Equal(t, d[2].Blocks[0].Content.String(), "Again ./.agents/skills/domain-modeling")
-					return gai.Response{
-						Candidates: []gai.Message{{
-							Role:   gai.Assistant,
-							Blocks: []gai.Block{gai.TextBlock("done again")},
-						}},
-						FinishReason: gai.EndTurn,
-					}, nil
-				},
-			}}
-			cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
+		_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+			ConfigID:  modelRefConfigId,
+			SessionID: sessionID,
+			Value:     "test-model",
+		})
+		be.Err(t, err, nil)
+		testClient.waitForNotificationCount(t, commandNotification, 1)
+		be.Equal(t, countNotifications(testClient.notifications(), commandNotification), 1)
+		_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+			ConfigID:  modelRefConfigId,
+			SessionID: sessionID,
+			Value:     "test-model",
+		})
+		be.Err(t, err, nil)
+		testClient.waitForNotificationCount(t, commandNotification, 2)
+		be.Equal(t, countNotifications(testClient.notifications(), commandNotification), 2)
+
+		promptResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextContentBlock("Use /skill:domain-modeling and /skill:missing")},
+			SessionID: sessionID,
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
+		testClient.waitForNotificationCount(t, commandNotification, 3)
+		be.Equal(t, countNotifications(testClient.notifications(), commandNotification), 3)
+
+		promptResp, err = clientConn.Prompt(t.Context(), &acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextContentBlock("Again /skill:domain-modeling")},
+			SessionID: sessionID,
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
+		testClient.waitForNotificationCount(t, commandNotification, 4)
+		be.Equal(t, commandNotificationSeen, 4)
+		be.Equal(t, countNotifications(testClient.notifications(), commandNotification), 4)
+
+		storedSession, err := store.GetACPSession(t.Context(), sessionID)
+		be.Err(t, err, nil)
+		storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
+		be.Err(t, err, nil)
+		be.Equal(t, storedDialog[0].Blocks[0].Content.String(), "Use ./.agents/skills/domain-modeling and /skill:missing")
+		be.Equal(t, storedDialog[2].Blocks[0].Content.String(), "Again ./.agents/skills/domain-modeling")
+	})
+	t.Run("lifecycle methods do not publish", func(t *testing.T) {
+		sourceCwd := t.TempDir()
+		forkCwd := t.TempDir()
+		loadCwd := t.TempDir()
+		resumeCwd := t.TempDir()
+		for _, cwd := range []string{sourceCwd, forkCwd, loadCwd, resumeCwd} {
+			createACPSkill(t, filepath.Join(cwd, ".agents", "skills"), "codebase-design", map[string]any{
+				"name":        "codebase-design",
+				"description": "Design help",
+			})
+		}
+
+		t.Run("new", func(t *testing.T) {
+			client := &promptTestClient{}
+			fixture := setup(t, client, &config.RawConfig{}, unreachableRuntimeFactory)
+			clientConn := fixture.ClientConn
+			_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+				ClientCapabilities: &acp.ClientCapabilities{Terminal: true},
+				ProtocolVersion:    acp.ProtocolVersion(1),
+			})
 			be.Err(t, err, nil)
-			return testRuntime{loop: &loop{
-				G:     &gen,
-				Store: store,
-				Cfg:   cfg,
-				conn:  conn,
-			}}, nil
-		},
-	)
-	clientConn = fixture.ClientConn
-	store = fixture.Store
+			_, err = clientConn.NewSession(t.Context(), &acp.NewSessionRequest{Cwd: sourceCwd})
+			be.Err(t, err, nil)
+			be.Equal(t, len(client.notifications()), 0)
+		})
 
-	_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
-		ClientCapabilities: &acp.ClientCapabilities{Terminal: true},
-		ProtocolVersion:    acp.ProtocolVersion(1),
+		t.Run("fork", func(t *testing.T) {
+			client := &promptTestClient{}
+			fixture := setup(t, client, &config.RawConfig{}, unreachableRuntimeFactory)
+			clientConn := fixture.ClientConn
+			_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+				ClientCapabilities: &acp.ClientCapabilities{Terminal: true},
+				ProtocolVersion:    acp.ProtocolVersion(1),
+			})
+			be.Err(t, err, nil)
+			sourceResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{Cwd: sourceCwd})
+			be.Err(t, err, nil)
+			_, err = clientConn.ForkSession(t.Context(), &acp.ForkSessionRequest{
+				Cwd:       forkCwd,
+				SessionID: sourceResp.SessionID,
+			})
+			be.Err(t, err, nil)
+			be.Equal(t, len(client.notifications()), 0)
+		})
+
+		t.Run("load", func(t *testing.T) {
+			client := &promptTestClient{}
+			fixture := setup(t, client, &config.RawConfig{}, unreachableRuntimeFactory)
+			clientConn := fixture.ClientConn
+			store := fixture.Store
+			var lastMessageID string
+			for msg, err := range store.SaveDialog(t.Context(), slices.Values(gai.Dialog{{
+				Role:   gai.User,
+				Blocks: []gai.Block{gai.TextBlock("hello")},
+			}})) {
+				be.Err(t, err, nil)
+				lastMessageID = storage.GetMessageID(msg)
+			}
+			be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
+				Session:       acp.SessionInfo{Cwd: loadCwd, SessionID: "load-session"},
+				LastMessageID: lastMessageID,
+			}), nil)
+			_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+				ClientCapabilities: &acp.ClientCapabilities{Terminal: true},
+				ProtocolVersion:    acp.ProtocolVersion(1),
+			})
+			be.Err(t, err, nil)
+			_, err = clientConn.LoadSession(t.Context(), &acp.LoadSessionRequest{Cwd: loadCwd, SessionID: "load-session"})
+			be.Err(t, err, nil)
+			input := acp.UnstructuredAvailableCommandInput("Design help")
+			be.Equal(t, countNotifications(client.notifications(), acp.SessionNotification{
+				SessionID: "load-session",
+				Update: acp.AvailableCommandsUpdateSessionUpdate([]acp.AvailableCommand{
+					{Name: "skill:codebase-design", Description: "Design help", Input: &input},
+				}),
+			}), 0)
+		})
+
+		t.Run("resume", func(t *testing.T) {
+			client := &promptTestClient{}
+			fixture := setup(t, client, &config.RawConfig{}, unreachableRuntimeFactory)
+			clientConn := fixture.ClientConn
+			store := fixture.Store
+			be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
+				Session: acp.SessionInfo{Cwd: resumeCwd, SessionID: "resume-session"},
+			}), nil)
+			_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+				ClientCapabilities: &acp.ClientCapabilities{Terminal: true},
+				ProtocolVersion:    acp.ProtocolVersion(1),
+			})
+			be.Err(t, err, nil)
+			_, err = clientConn.ResumeSession(t.Context(), &acp.ResumeSessionRequest{Cwd: resumeCwd, SessionID: "resume-session"})
+			be.Err(t, err, nil)
+			be.Equal(t, len(client.notifications()), 0)
+		})
 	})
-	be.Err(t, err, nil)
-
-	newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{
-		Cwd:        cwd,
-		McpServers: []acp.McpServer{},
-	})
-	be.Err(t, err, nil)
-	sessionID = newSessionResp.SessionID
-	be.Equal(t, len(testClient.notifications()), 0)
-
-	inputDomain := acp.UnstructuredAvailableCommandInput("Domain modeling help")
-	inputHidden := acp.UnstructuredAvailableCommandInput("Hidden help")
-	commandNotification = acp.SessionNotification{
-		SessionID: sessionID,
-		Update: acp.AvailableCommandsUpdateSessionUpdate([]acp.AvailableCommand{
-			{Name: "skill:domain-modeling", Description: "Domain modeling help", Input: &inputDomain},
-			{Name: "skill:hidden-skill", Description: "Hidden help", Input: &inputHidden},
-		}),
-	}
-
-	_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
-		ConfigID:  modelRefConfigId,
-		SessionID: sessionID,
-		Value:     "test-model",
-	})
-	be.Err(t, err, nil)
-	testClient.waitForNotificationCount(t, commandNotification, 1)
-	be.Equal(t, countNotifications(testClient.notifications(), commandNotification), 1)
-	_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
-		ConfigID:  modelRefConfigId,
-		SessionID: sessionID,
-		Value:     "test-model",
-	})
-	be.Err(t, err, nil)
-	testClient.waitForNotificationCount(t, commandNotification, 2)
-	be.Equal(t, countNotifications(testClient.notifications(), commandNotification), 2)
-
-	promptResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
-		Prompt:    []acp.ContentBlock{acp.TextContentBlock("Use /skill:domain-modeling and /skill:missing")},
-		SessionID: sessionID,
-	})
-	be.Err(t, err, nil)
-	be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
-	testClient.waitForNotificationCount(t, commandNotification, 3)
-	be.Equal(t, countNotifications(testClient.notifications(), commandNotification), 3)
-
-	promptResp, err = clientConn.Prompt(t.Context(), &acp.PromptRequest{
-		Prompt:    []acp.ContentBlock{acp.TextContentBlock("Again /skill:domain-modeling")},
-		SessionID: sessionID,
-	})
-	be.Err(t, err, nil)
-	be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
-	testClient.waitForNotificationCount(t, commandNotification, 4)
-	be.Equal(t, commandNotificationSeen, 4)
-	be.Equal(t, countNotifications(testClient.notifications(), commandNotification), 4)
-
-	storedSession, err := store.GetACPSession(t.Context(), sessionID)
-	be.Err(t, err, nil)
-	storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
-	be.Err(t, err, nil)
-	be.Equal(t, storedDialog[0].Blocks[0].Content.String(), "Use ./.agents/skills/domain-modeling and /skill:missing")
-	be.Equal(t, storedDialog[2].Blocks[0].Content.String(), "Again ./.agents/skills/domain-modeling")
 }
 
 func countNotifications(notifications []acp.SessionNotification, want acp.SessionNotification) int {
@@ -298,250 +389,152 @@ func countNotifications(notifications []acp.SessionNotification, want acp.Sessio
 	return count
 }
 
-func TestSkillSlashCommandsLifecycleMethodsDoNotPublish(t *testing.T) {
-	sourceCwd := t.TempDir()
-	forkCwd := t.TempDir()
-	loadCwd := t.TempDir()
-	resumeCwd := t.TempDir()
-	for _, cwd := range []string{sourceCwd, forkCwd, loadCwd, resumeCwd} {
-		createACPSkill(t, filepath.Join(cwd, ".agents", "skills"), "codebase-design", map[string]any{
-			"name":        "codebase-design",
-			"description": "Design help",
-		})
-	}
-
-	t.Run("new", func(t *testing.T) {
-		client := &promptTestClient{}
-		fixture := setup(t, client, &config.RawConfig{}, unreachableRuntimeFactory)
-		clientConn := fixture.ClientConn
-		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
-			ClientCapabilities: &acp.ClientCapabilities{Terminal: true},
-			ProtocolVersion:    acp.ProtocolVersion(1),
-		})
-		be.Err(t, err, nil)
-		_, err = clientConn.NewSession(t.Context(), &acp.NewSessionRequest{Cwd: sourceCwd})
-		be.Err(t, err, nil)
-		be.Equal(t, len(client.notifications()), 0)
-	})
-
-	t.Run("fork", func(t *testing.T) {
-		client := &promptTestClient{}
-		fixture := setup(t, client, &config.RawConfig{}, unreachableRuntimeFactory)
-		clientConn := fixture.ClientConn
-		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
-			ClientCapabilities: &acp.ClientCapabilities{Terminal: true},
-			ProtocolVersion:    acp.ProtocolVersion(1),
-		})
-		be.Err(t, err, nil)
-		sourceResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{Cwd: sourceCwd})
-		be.Err(t, err, nil)
-		_, err = clientConn.ForkSession(t.Context(), &acp.ForkSessionRequest{
-			Cwd:       forkCwd,
-			SessionID: sourceResp.SessionID,
-		})
-		be.Err(t, err, nil)
-		be.Equal(t, len(client.notifications()), 0)
-	})
-
-	t.Run("load", func(t *testing.T) {
-		client := &promptTestClient{}
-		fixture := setup(t, client, &config.RawConfig{}, unreachableRuntimeFactory)
-		clientConn := fixture.ClientConn
-		store := fixture.Store
-		var lastMessageID string
-		for msg, err := range store.SaveDialog(t.Context(), slices.Values(gai.Dialog{{
-			Role:   gai.User,
-			Blocks: []gai.Block{gai.TextBlock("hello")},
-		}})) {
-			be.Err(t, err, nil)
-			lastMessageID = storage.GetMessageID(msg)
-		}
-		be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
-			Session:       acp.SessionInfo{Cwd: loadCwd, SessionID: "load-session"},
-			LastMessageID: lastMessageID,
-		}), nil)
-		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
-			ClientCapabilities: &acp.ClientCapabilities{Terminal: true},
-			ProtocolVersion:    acp.ProtocolVersion(1),
-		})
-		be.Err(t, err, nil)
-		_, err = clientConn.LoadSession(t.Context(), &acp.LoadSessionRequest{Cwd: loadCwd, SessionID: "load-session"})
-		be.Err(t, err, nil)
-		input := acp.UnstructuredAvailableCommandInput("Design help")
-		be.Equal(t, countNotifications(client.notifications(), acp.SessionNotification{
-			SessionID: "load-session",
-			Update: acp.AvailableCommandsUpdateSessionUpdate([]acp.AvailableCommand{
-				{Name: "skill:codebase-design", Description: "Design help", Input: &input},
-			}),
-		}), 0)
-	})
-
-	t.Run("resume", func(t *testing.T) {
-		client := &promptTestClient{}
-		fixture := setup(t, client, &config.RawConfig{}, unreachableRuntimeFactory)
-		clientConn := fixture.ClientConn
-		store := fixture.Store
-		be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
-			Session: acp.SessionInfo{Cwd: resumeCwd, SessionID: "resume-session"},
-		}), nil)
-		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
-			ClientCapabilities: &acp.ClientCapabilities{Terminal: true},
-			ProtocolVersion:    acp.ProtocolVersion(1),
-		})
-		be.Err(t, err, nil)
-		_, err = clientConn.ResumeSession(t.Context(), &acp.ResumeSessionRequest{Cwd: resumeCwd, SessionID: "resume-session"})
-		be.Err(t, err, nil)
-		be.Equal(t, len(client.notifications()), 0)
-	})
-}
-
-func TestPromptAppendsMissingREPLStateWarning(t *testing.T) {
-	tests := []struct {
-		name       string
-		activate   func(*testing.T, *acp.Client, string, acp.SessionId) acp.SessionId
-		reactivate func(*testing.T, *acp.Client, string, acp.SessionId)
-	}{
-		{
-			name: "resume",
-			activate: func(t *testing.T, client *acp.Client, cwd string, sourceID acp.SessionId) acp.SessionId {
-				t.Helper()
-				_, err := client.ResumeSession(t.Context(), &acp.ResumeSessionRequest{
-					Cwd: cwd, SessionID: sourceID,
-				})
-				be.Err(t, err, nil)
-				return sourceID
-			},
-			reactivate: func(t *testing.T, client *acp.Client, cwd string, sessionID acp.SessionId) {
-				t.Helper()
-				_, err := client.ResumeSession(t.Context(), &acp.ResumeSessionRequest{
-					Cwd: cwd, SessionID: sessionID,
-				})
-				be.Err(t, err, nil)
-			},
-		},
-		{
-			name: "load",
-			activate: func(t *testing.T, client *acp.Client, cwd string, sourceID acp.SessionId) acp.SessionId {
-				t.Helper()
-				_, err := client.LoadSession(t.Context(), &acp.LoadSessionRequest{
-					Cwd: cwd, SessionID: sourceID,
-				})
-				be.Err(t, err, nil)
-				return sourceID
-			},
-			reactivate: func(t *testing.T, client *acp.Client, cwd string, sessionID acp.SessionId) {
-				t.Helper()
-				_, err := client.LoadSession(t.Context(), &acp.LoadSessionRequest{
-					Cwd: cwd, SessionID: sessionID,
-				})
-				be.Err(t, err, nil)
-			},
-		},
-		{
-			name: "fork",
-			activate: func(t *testing.T, client *acp.Client, cwd string, sourceID acp.SessionId) acp.SessionId {
-				t.Helper()
-				resp, err := client.ForkSession(t.Context(), &acp.ForkSessionRequest{
-					Cwd: cwd, SessionID: sourceID,
-				})
-				be.Err(t, err, nil)
-				return resp.SessionID
-			},
-			reactivate: func(t *testing.T, client *acp.Client, cwd string, sessionID acp.SessionId) {
-				t.Helper()
-				_, err := client.ResumeSession(t.Context(), &acp.ResumeSessionRequest{
-					Cwd: cwd, SessionID: sessionID,
-				})
-				be.Err(t, err, nil)
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var (
-				store     *storage.Sqlite
-				prompted  []gai.Message
-				createdAt []session
-			)
-			fixture := setup(
-				t,
-				&noOpAcpClient{},
-				&config.RawConfig{Models: []config.ModelConfig{{
-					Model: config.Model{Ref: "test-model", DisplayName: "Test Model"},
-				}}},
-				func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
-					createdAt = append(createdAt, s)
-					return &closeTrackingRuntime{generate: func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
-						prompted = append(prompted, dialog[len(dialog)-1])
-						generated := append(dialog, gai.Message{
-							Role:   gai.Assistant,
-							Blocks: []gai.Block{gai.TextBlock("answer")},
-						})
-						saved := make(gai.Dialog, 0, len(generated))
-						for msg, err := range store.SaveDialog(ctx, slices.Values(generated)) {
-							if err != nil {
-								return nil, err
-							}
-							saved = append(saved, msg)
-						}
-						return saved, nil
-					}}, nil
-				},
-			)
-			client := fixture.ClientConn
-			store = fixture.Store
-			_, err := client.Initialize(t.Context(), &acp.InitializeRequest{
-				ProtocolVersion: acp.ProtocolVersion(1),
-			})
-			be.Err(t, err, nil)
-
-			history := gai.Dialog{
-				{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("set x in the REPL")}},
-				{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("x is set")}},
-			}
-			var lastMessageID string
-			for msg, err := range store.SaveDialog(t.Context(), slices.Values(history)) {
-				be.Err(t, err, nil)
-				lastMessageID = storage.GetMessageID(msg)
-			}
-			cwd := t.TempDir()
-			sourceID := acp.SessionId("source-session")
-			be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
-				Session:       acp.SessionInfo{Cwd: cwd, SessionID: sourceID},
-				LastMessageID: lastMessageID,
-				ModelRef:      "test-model",
-			}), nil)
-
-			sessionID := tt.activate(t, client, cwd, sourceID)
-			_, err = client.Prompt(t.Context(), &acp.PromptRequest{
-				SessionID: sessionID,
-				Prompt:    []acp.ContentBlock{acp.TextContentBlock("continue")},
-			})
-			be.Err(t, err, nil)
-
-			tt.reactivate(t, client, cwd, sessionID)
-			_, err = client.Prompt(t.Context(), &acp.PromptRequest{
-				SessionID: sessionID,
-				Prompt:    []acp.ContentBlock{acp.TextContentBlock("continue again")},
-			})
-			be.Err(t, err, nil)
-
-			be.Equal(t, len(createdAt), 1)
-			be.True(t, createdAt[0].replStateMissing)
-			be.Equal(t, len(prompted), 2)
-			be.Equal(t, prompted[0].Role, gai.User)
-			be.Equal(t, len(prompted[0].Blocks), 2)
-			be.Equal(t, prompted[0].Blocks[0].Content.String(), "continue")
-			be.Equal(t, prompted[0].Blocks[1].Content.String(), replStateMissingWarningText)
-			be.Equal(t, prompted[1].Role, gai.User)
-			be.Equal(t, len(prompted[1].Blocks), 1)
-			be.Equal(t, prompted[1].Blocks[0].Content.String(), "continue again")
-		})
-	}
-}
-
 func TestPrompt(t *testing.T) {
+	t.Run("appends missing repl state warning", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			activate   func(*testing.T, *acp.Client, string, acp.SessionId) acp.SessionId
+			reactivate func(*testing.T, *acp.Client, string, acp.SessionId)
+		}{
+			{
+				name: "resume",
+				activate: func(t *testing.T, client *acp.Client, cwd string, sourceID acp.SessionId) acp.SessionId {
+					t.Helper()
+					_, err := client.ResumeSession(t.Context(), &acp.ResumeSessionRequest{
+						Cwd: cwd, SessionID: sourceID,
+					})
+					be.Err(t, err, nil)
+					return sourceID
+				},
+				reactivate: func(t *testing.T, client *acp.Client, cwd string, sessionID acp.SessionId) {
+					t.Helper()
+					_, err := client.ResumeSession(t.Context(), &acp.ResumeSessionRequest{
+						Cwd: cwd, SessionID: sessionID,
+					})
+					be.Err(t, err, nil)
+				},
+			},
+			{
+				name: "load",
+				activate: func(t *testing.T, client *acp.Client, cwd string, sourceID acp.SessionId) acp.SessionId {
+					t.Helper()
+					_, err := client.LoadSession(t.Context(), &acp.LoadSessionRequest{
+						Cwd: cwd, SessionID: sourceID,
+					})
+					be.Err(t, err, nil)
+					return sourceID
+				},
+				reactivate: func(t *testing.T, client *acp.Client, cwd string, sessionID acp.SessionId) {
+					t.Helper()
+					_, err := client.LoadSession(t.Context(), &acp.LoadSessionRequest{
+						Cwd: cwd, SessionID: sessionID,
+					})
+					be.Err(t, err, nil)
+				},
+			},
+			{
+				name: "fork",
+				activate: func(t *testing.T, client *acp.Client, cwd string, sourceID acp.SessionId) acp.SessionId {
+					t.Helper()
+					resp, err := client.ForkSession(t.Context(), &acp.ForkSessionRequest{
+						Cwd: cwd, SessionID: sourceID,
+					})
+					be.Err(t, err, nil)
+					return resp.SessionID
+				},
+				reactivate: func(t *testing.T, client *acp.Client, cwd string, sessionID acp.SessionId) {
+					t.Helper()
+					_, err := client.ResumeSession(t.Context(), &acp.ResumeSessionRequest{
+						Cwd: cwd, SessionID: sessionID,
+					})
+					be.Err(t, err, nil)
+				},
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				var (
+					store     *storage.Sqlite
+					prompted  []gai.Message
+					createdAt []session
+				)
+				fixture := setup(
+					t,
+					&noOpAcpClient{},
+					&config.RawConfig{Models: []config.ModelConfig{{
+						Model: config.Model{Ref: "test-model", DisplayName: "Test Model"},
+					}}},
+					func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
+						createdAt = append(createdAt, s)
+						return &closeTrackingRuntime{generate: func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
+							prompted = append(prompted, dialog[len(dialog)-1])
+							generated := append(dialog, gai.Message{
+								Role:   gai.Assistant,
+								Blocks: []gai.Block{gai.TextBlock("answer")},
+							})
+							saved := make(gai.Dialog, 0, len(generated))
+							for msg, err := range store.SaveDialog(ctx, slices.Values(generated)) {
+								if err != nil {
+									return nil, err
+								}
+								saved = append(saved, msg)
+							}
+							return saved, nil
+						}}, nil
+					},
+				)
+				client := fixture.ClientConn
+				store = fixture.Store
+				_, err := client.Initialize(t.Context(), &acp.InitializeRequest{
+					ProtocolVersion: acp.ProtocolVersion(1),
+				})
+				be.Err(t, err, nil)
+
+				history := gai.Dialog{
+					{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("set x in the REPL")}},
+					{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("x is set")}},
+				}
+				var lastMessageID string
+				for msg, err := range store.SaveDialog(t.Context(), slices.Values(history)) {
+					be.Err(t, err, nil)
+					lastMessageID = storage.GetMessageID(msg)
+				}
+				cwd := t.TempDir()
+				sourceID := acp.SessionId("source-session")
+				be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
+					Session:       acp.SessionInfo{Cwd: cwd, SessionID: sourceID},
+					LastMessageID: lastMessageID,
+					ModelRef:      "test-model",
+				}), nil)
+
+				sessionID := tt.activate(t, client, cwd, sourceID)
+				_, err = client.Prompt(t.Context(), &acp.PromptRequest{
+					SessionID: sessionID,
+					Prompt:    []acp.ContentBlock{acp.TextContentBlock("continue")},
+				})
+				be.Err(t, err, nil)
+
+				tt.reactivate(t, client, cwd, sessionID)
+				_, err = client.Prompt(t.Context(), &acp.PromptRequest{
+					SessionID: sessionID,
+					Prompt:    []acp.ContentBlock{acp.TextContentBlock("continue again")},
+				})
+				be.Err(t, err, nil)
+
+				be.Equal(t, len(createdAt), 1)
+				be.True(t, createdAt[0].replStateMissing)
+				be.Equal(t, len(prompted), 2)
+				be.Equal(t, prompted[0].Role, gai.User)
+				be.Equal(t, len(prompted[0].Blocks), 2)
+				be.Equal(t, prompted[0].Blocks[0].Content.String(), "continue")
+				be.Equal(t, prompted[0].Blocks[1].Content.String(), replStateMissingWarningText)
+				be.Equal(t, prompted[1].Role, gai.User)
+				be.Equal(t, len(prompted[1].Blocks), 1)
+				be.Equal(t, prompted[1].Blocks[0].Content.String(), "continue again")
+			})
+		}
+	})
 	t.Run("rejects prompt before model selection", func(t *testing.T) {
 		fixture := setup(
 			t,
@@ -759,7 +752,7 @@ Output Cost: 1.00`),
 		assertNotifications(t, testClient, []acp.SessionNotification{
 			{
 				SessionID: sessionId,
-				Update:    expectedRPCAgentThoughtChunk("let me think"),
+				Update:    acp.AgentThoughtChunkSessionUpdate(acp.TextContentBlock("let me think")),
 			},
 			{
 				SessionID: sessionId,
@@ -1142,7 +1135,10 @@ Output Cost: 1.00`),
 		be.True(t, ok)
 		be.Equal(t, outputTokens, int64(2))
 
-		testClient.clearNotifications()
+		testClient.mu.Lock()
+		clear(testClient.capturedNotifications)
+		testClient.capturedNotifications = testClient.capturedNotifications[:0]
+		testClient.mu.Unlock()
 		_, err = clientConn.LoadSession(t.Context(), &acp.LoadSessionRequest{
 			Cwd:        cwd,
 			McpServers: []acp.McpServer{},
@@ -2037,361 +2033,358 @@ Output Cost: 1.00`),
 		_, ok = storedAssistant.ExtraFields[storage.AgentMetadataOutputTokensKey]
 		be.True(t, !ok)
 	})
-}
-
-func TestPromptReportsStarlarkREPLResultContentToACPClient(t *testing.T) {
-	toolCall, err := gai.ToolCallBlock("call-starlark", starlarkREPLToolName, map[string]any{
-		"code":             `print("visible result")`,
-		"executionTimeout": 2,
-	})
-	if err != nil {
-		t.Fatalf("ToolCallBlock() error = %v", err)
-	}
-
-	var store *storage.Sqlite
-	testClient := &promptTestClient{}
-	rawCfg := config.RawConfig{
-		Models: []config.ModelConfig{{
-			Model: config.Model{
-				Ref:           "test-model",
-				DisplayName:   "Test Model",
-				ID:            "test-model",
-				Type:          "responses",
-				ContextWindow: 100,
-			},
-		}},
-	}
-	fixture := setup(
-		t,
-		testClient,
-		&rawCfg,
-		func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
-			gen := &testGen{responses: []genFunc{
-				func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
-					return gai.Response{
-						Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{toolCall}}},
-						FinishReason: gai.ToolUse,
-					}, nil
-				},
-				func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
-					return gai.Response{
-						Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("complete")}}},
-						FinishReason: gai.EndTurn,
-					}, nil
-				},
-			}}
-			cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
-			if err != nil {
-				return nil, err
-			}
-			loop := &loop{G: gen, Store: store, Cfg: cfg, conn: conn}
-			if err := loop.Register(makeTool(5), &starlarkREPLCallback{
-				Cwd:        s.cwd,
-				SessionID:  s.id,
-				MaxTimeout: 5,
-				Conn:       conn,
-			}); err != nil {
-				return nil, err
-			}
-			return testRuntime{loop: loop}, nil
-		},
-	)
-	store = fixture.Store
-
-	_, err = fixture.ClientConn.Initialize(t.Context(), &acp.InitializeRequest{
-		ProtocolVersion: acp.ProtocolVersion(1),
-		ClientCapabilities: &acp.ClientCapabilities{
-			Terminal: true,
-		},
-	})
-	if err != nil {
-		t.Fatalf("Initialize() error = %v", err)
-	}
-	sessionResp, err := fixture.ClientConn.NewSession(t.Context(), &acp.NewSessionRequest{
-		Cwd:        t.TempDir(),
-		McpServers: []acp.McpServer{},
-	})
-	if err != nil {
-		t.Fatalf("NewSession() error = %v", err)
-	}
-	_, err = fixture.ClientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
-		ConfigID:  modelRefConfigId,
-		SessionID: sessionResp.SessionID,
-		Value:     "test-model",
-	})
-	if err != nil {
-		t.Fatalf("SetSessionConfigOption() error = %v", err)
-	}
-
-	_, err = fixture.ClientConn.Prompt(t.Context(), &acp.PromptRequest{
-		Prompt:    []acp.ContentBlock{acp.TextContentBlock("run starlark")},
-		SessionID: sessionResp.SessionID,
-	})
-	if err != nil {
-		t.Fatalf("Prompt() error = %v", err)
-	}
-
-	var pending, completed *acp.SessionUpdate
-	notifications := testClient.waitForNotifications(t, 4)
-	for _, notification := range notifications {
-		update := notification.Update
-		if update.SessionUpdate == acp.SessionUpdateTypeToolCall &&
-			update.ToolCallID == "call-starlark" &&
-			update.Status != nil && *update.Status == acp.ToolCallStatusPending {
-			pending = &update
-		}
-		if update.SessionUpdate == acp.SessionUpdateTypeToolCallUpdate &&
-			update.ToolCallID == "call-starlark" &&
-			update.Status != nil && *update.Status == acp.ToolCallStatusCompleted {
-			completed = &update
-		}
-	}
-	if pending == nil {
-		t.Fatalf("notifications = %#v, want pending starlark_repl update", notifications)
-	}
-	pendingContent, ok := pending.Content.([]acp.ToolCallContent)
-	if !ok || len(pendingContent) != 1 || pendingContent[0].Content.Type != acp.ContentBlockTypeText || pendingContent[0].Content.Text != "" {
-		t.Fatalf("pending content = %#v, want replaceable empty text content", pending.Content)
-	}
-	if completed == nil {
-		t.Fatalf("notifications = %#v, want completed starlark_repl update", notifications)
-	}
-	content, ok := completed.Content.(*[]acp.ToolCallContent)
-	if !ok || content == nil || len(*content) != 1 || (*content)[0].Content.Type != acp.ContentBlockTypeText || (*content)[0].Content.Text != "visible result\n" {
-		t.Fatalf("completed content = %#v, want text content %q", completed.Content, "visible result\n")
-	}
-}
-
-func TestPromptRejectsInvalidToolCallIDsBeforeSessionUpdate(t *testing.T) {
-	tests := []struct {
-		name      string
-		blocks    func(*testing.T) []gai.Block
-		wantError string
-	}{
-		{
-			name: "empty ID",
-			blocks: func(t *testing.T) []gai.Block {
-				toolCall, err := gai.ToolCallBlock("placeholder", "lookup", map[string]any{"query": "docs"})
-				if err != nil {
-					t.Fatalf("ToolCallBlock() error = %v", err)
-				}
-				toolCall.ID = ""
-				return []gai.Block{toolCall}
-			},
-			wantError: "tool call id cannot be empty",
-		},
-		{
-			name: "duplicate ID",
-			blocks: func(t *testing.T) []gai.Block {
-				first, err := gai.ToolCallBlock("call-1", "lookup", map[string]any{"query": "docs"})
-				if err != nil {
-					t.Fatalf("first ToolCallBlock() error = %v", err)
-				}
-				second, err := gai.ToolCallBlock("call-1", "read", map[string]any{"path": "README.md"})
-				if err != nil {
-					t.Fatalf("second ToolCallBlock() error = %v", err)
-				}
-				return []gai.Block{first, second}
-			},
-			wantError: "duplicate tool call id",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var store *storage.Sqlite
-			testClient := &promptTestClient{}
-			rawCfg := config.RawConfig{
-				Models: []config.ModelConfig{{
-					Model: config.Model{
-						Ref:           "test-model",
-						DisplayName:   "Test Model",
-						ID:            "test-model",
-						Type:          "responses",
-						ContextWindow: 100,
-					},
-				}},
-			}
-			blocks := tt.blocks(t)
-			fixture := setup(
-				t,
-				testClient,
-				&rawCfg,
-				func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
-					gen := &testGen{responses: []genFunc{
-						func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
-							return gai.Response{
-								Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: blocks}},
-								FinishReason: gai.ToolUse,
-							}, nil
-						},
-					}}
-					cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
-					if err != nil {
-						return nil, err
-					}
-					return testRuntime{loop: &loop{G: gen, Store: store, Cfg: cfg, conn: conn}}, nil
-				},
-			)
-			store = fixture.Store
-
-			_, err := fixture.ClientConn.Initialize(t.Context(), &acp.InitializeRequest{
-				ProtocolVersion: acp.ProtocolVersion(1),
-				ClientCapabilities: &acp.ClientCapabilities{
-					Terminal: true,
-				},
-			})
-			if err != nil {
-				t.Fatalf("Initialize() error = %v", err)
-			}
-			sessionResp, err := fixture.ClientConn.NewSession(t.Context(), &acp.NewSessionRequest{
-				Cwd:        t.TempDir(),
-				McpServers: []acp.McpServer{},
-			})
-			if err != nil {
-				t.Fatalf("NewSession() error = %v", err)
-			}
-			_, err = fixture.ClientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
-				ConfigID:  modelRefConfigId,
-				SessionID: sessionResp.SessionID,
-				Value:     "test-model",
-			})
-			if err != nil {
-				t.Fatalf("SetSessionConfigOption() error = %v", err)
-			}
-
-			_, err = fixture.ClientConn.Prompt(t.Context(), &acp.PromptRequest{
-				Prompt:    []acp.ContentBlock{acp.TextContentBlock("use a tool")},
-				SessionID: sessionResp.SessionID,
-			})
-			if err == nil || !strings.Contains(strings.ToLower(err.Error()), tt.wantError) {
-				t.Fatalf("Prompt() error = %v, want containing %q", err, tt.wantError)
-			}
-			if notifications := testClient.notifications(); len(notifications) != 0 {
-				t.Fatalf("notifications = %#v, want none for invalid tool call ID", notifications)
-			}
+	t.Run("reports starlark repl result content to acp client", func(t *testing.T) {
+		toolCall, err := gai.ToolCallBlock("call-starlark", starlarkREPLToolName, map[string]any{
+			"code":             `print("visible result")`,
+			"executionTimeout": 2,
 		})
-	}
+		if err != nil {
+			t.Fatalf("ToolCallBlock() error = %v", err)
+		}
+
+		var store *storage.Sqlite
+		testClient := &promptTestClient{}
+		rawCfg := config.RawConfig{
+			Models: []config.ModelConfig{{
+				Model: config.Model{
+					Ref:           "test-model",
+					DisplayName:   "Test Model",
+					ID:            "test-model",
+					Type:          "responses",
+					ContextWindow: 100,
+				},
+			}},
+		}
+		fixture := setup(
+			t,
+			testClient,
+			&rawCfg,
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
+				gen := &testGen{responses: []genFunc{
+					func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
+						return gai.Response{
+							Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{toolCall}}},
+							FinishReason: gai.ToolUse,
+						}, nil
+					},
+					func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
+						return gai.Response{
+							Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("complete")}}},
+							FinishReason: gai.EndTurn,
+						}, nil
+					},
+				}}
+				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
+				if err != nil {
+					return nil, err
+				}
+				loop := &loop{G: gen, Store: store, Cfg: cfg, conn: conn}
+				if err := loop.Register(makeTool(5), &starlarkREPLCallback{
+					Cwd:        s.cwd,
+					SessionID:  s.id,
+					MaxTimeout: 5,
+					Conn:       conn,
+				}); err != nil {
+					return nil, err
+				}
+				return testRuntime{loop: loop}, nil
+			},
+		)
+		store = fixture.Store
+
+		_, err = fixture.ClientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ProtocolVersion: acp.ProtocolVersion(1),
+			ClientCapabilities: &acp.ClientCapabilities{
+				Terminal: true,
+			},
+		})
+		if err != nil {
+			t.Fatalf("Initialize() error = %v", err)
+		}
+		sessionResp, err := fixture.ClientConn.NewSession(t.Context(), &acp.NewSessionRequest{
+			Cwd:        t.TempDir(),
+			McpServers: []acp.McpServer{},
+		})
+		if err != nil {
+			t.Fatalf("NewSession() error = %v", err)
+		}
+		_, err = fixture.ClientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+			ConfigID:  modelRefConfigId,
+			SessionID: sessionResp.SessionID,
+			Value:     "test-model",
+		})
+		if err != nil {
+			t.Fatalf("SetSessionConfigOption() error = %v", err)
+		}
+
+		_, err = fixture.ClientConn.Prompt(t.Context(), &acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextContentBlock("run starlark")},
+			SessionID: sessionResp.SessionID,
+		})
+		if err != nil {
+			t.Fatalf("Prompt() error = %v", err)
+		}
+
+		var pending, completed *acp.SessionUpdate
+		notifications := testClient.waitForNotifications(t, 4)
+		for _, notification := range notifications {
+			update := notification.Update
+			if update.SessionUpdate == acp.SessionUpdateTypeToolCall &&
+				update.ToolCallID == "call-starlark" &&
+				update.Status != nil && *update.Status == acp.ToolCallStatusPending {
+				pending = &update
+			}
+			if update.SessionUpdate == acp.SessionUpdateTypeToolCallUpdate &&
+				update.ToolCallID == "call-starlark" &&
+				update.Status != nil && *update.Status == acp.ToolCallStatusCompleted {
+				completed = &update
+			}
+		}
+		if pending == nil {
+			t.Fatalf("notifications = %#v, want pending starlark_repl update", notifications)
+		}
+		pendingContent, ok := pending.Content.([]acp.ToolCallContent)
+		if !ok || len(pendingContent) != 1 || pendingContent[0].Content.Type != acp.ContentBlockTypeText || pendingContent[0].Content.Text != "" {
+			t.Fatalf("pending content = %#v, want replaceable empty text content", pending.Content)
+		}
+		if completed == nil {
+			t.Fatalf("notifications = %#v, want completed starlark_repl update", notifications)
+		}
+		content, ok := completed.Content.(*[]acp.ToolCallContent)
+		if !ok || content == nil || len(*content) != 1 || (*content)[0].Content.Type != acp.ContentBlockTypeText || (*content)[0].Content.Text != "visible result\n" {
+			t.Fatalf("completed content = %#v, want text content %q", completed.Content, "visible result\n")
+		}
+	})
+	t.Run("rejects invalid tool call i ds before session update", func(t *testing.T) {
+		tests := []struct {
+			name      string
+			blocks    func(*testing.T) []gai.Block
+			wantError string
+		}{
+			{
+				name: "empty ID",
+				blocks: func(t *testing.T) []gai.Block {
+					toolCall, err := gai.ToolCallBlock("placeholder", "lookup", map[string]any{"query": "docs"})
+					if err != nil {
+						t.Fatalf("ToolCallBlock() error = %v", err)
+					}
+					toolCall.ID = ""
+					return []gai.Block{toolCall}
+				},
+				wantError: "tool call id cannot be empty",
+			},
+			{
+				name: "duplicate ID",
+				blocks: func(t *testing.T) []gai.Block {
+					first, err := gai.ToolCallBlock("call-1", "lookup", map[string]any{"query": "docs"})
+					if err != nil {
+						t.Fatalf("first ToolCallBlock() error = %v", err)
+					}
+					second, err := gai.ToolCallBlock("call-1", "read", map[string]any{"path": "README.md"})
+					if err != nil {
+						t.Fatalf("second ToolCallBlock() error = %v", err)
+					}
+					return []gai.Block{first, second}
+				},
+				wantError: "duplicate tool call id",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				var store *storage.Sqlite
+				testClient := &promptTestClient{}
+				rawCfg := config.RawConfig{
+					Models: []config.ModelConfig{{
+						Model: config.Model{
+							Ref:           "test-model",
+							DisplayName:   "Test Model",
+							ID:            "test-model",
+							Type:          "responses",
+							ContextWindow: 100,
+						},
+					}},
+				}
+				blocks := tt.blocks(t)
+				fixture := setup(
+					t,
+					testClient,
+					&rawCfg,
+					func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
+						gen := &testGen{responses: []genFunc{
+							func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
+								return gai.Response{
+									Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: blocks}},
+									FinishReason: gai.ToolUse,
+								}, nil
+							},
+						}}
+						cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
+						if err != nil {
+							return nil, err
+						}
+						return testRuntime{loop: &loop{G: gen, Store: store, Cfg: cfg, conn: conn}}, nil
+					},
+				)
+				store = fixture.Store
+
+				_, err := fixture.ClientConn.Initialize(t.Context(), &acp.InitializeRequest{
+					ProtocolVersion: acp.ProtocolVersion(1),
+					ClientCapabilities: &acp.ClientCapabilities{
+						Terminal: true,
+					},
+				})
+				if err != nil {
+					t.Fatalf("Initialize() error = %v", err)
+				}
+				sessionResp, err := fixture.ClientConn.NewSession(t.Context(), &acp.NewSessionRequest{
+					Cwd:        t.TempDir(),
+					McpServers: []acp.McpServer{},
+				})
+				if err != nil {
+					t.Fatalf("NewSession() error = %v", err)
+				}
+				_, err = fixture.ClientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+					ConfigID:  modelRefConfigId,
+					SessionID: sessionResp.SessionID,
+					Value:     "test-model",
+				})
+				if err != nil {
+					t.Fatalf("SetSessionConfigOption() error = %v", err)
+				}
+
+				_, err = fixture.ClientConn.Prompt(t.Context(), &acp.PromptRequest{
+					Prompt:    []acp.ContentBlock{acp.TextContentBlock("use a tool")},
+					SessionID: sessionResp.SessionID,
+				})
+				if err == nil || !strings.Contains(strings.ToLower(err.Error()), tt.wantError) {
+					t.Fatalf("Prompt() error = %v, want containing %q", err, tt.wantError)
+				}
+				if notifications := testClient.notifications(); len(notifications) != 0 {
+					t.Fatalf("notifications = %#v, want none for invalid tool call ID", notifications)
+				}
+			})
+		}
+	})
+	t.Run("rejects tool call id reused in session before session update", func(t *testing.T) {
+		firstToolCall, err := gai.ToolCallBlock("call-1", "lookup", map[string]any{"query": "first"})
+		if err != nil {
+			t.Fatalf("first ToolCallBlock() error = %v", err)
+		}
+		reusedToolCall, err := gai.ToolCallBlock("call-1", "lookup", map[string]any{"query": "second"})
+		if err != nil {
+			t.Fatalf("second ToolCallBlock() error = %v", err)
+		}
+
+		var store *storage.Sqlite
+		testClient := &promptTestClient{}
+		rawCfg := config.RawConfig{
+			Models: []config.ModelConfig{{
+				Model: config.Model{
+					Ref:           "test-model",
+					DisplayName:   "Test Model",
+					ID:            "test-model",
+					Type:          "responses",
+					ContextWindow: 100,
+				},
+			}},
+		}
+		fixture := setup(
+			t,
+			testClient,
+			&rawCfg,
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
+				gen := &testGen{responses: []genFunc{
+					func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
+						return gai.Response{
+							Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{firstToolCall}}},
+							FinishReason: gai.ToolUse,
+						}, nil
+					},
+					func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
+						return gai.Response{
+							Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("first complete")}}},
+							FinishReason: gai.EndTurn,
+						}, nil
+					},
+					func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
+						return gai.Response{
+							Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{reusedToolCall}}},
+							FinishReason: gai.ToolUse,
+						}, nil
+					},
+					func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
+						return gai.Response{
+							Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("second complete")}}},
+							FinishReason: gai.EndTurn,
+						}, nil
+					},
+				}}
+				cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
+				if err != nil {
+					return nil, err
+				}
+				return testRuntime{loop: &loop{
+					G:     gen,
+					Store: store,
+					Cfg:   cfg,
+					conn:  conn,
+					toolCallbacks: map[string]gai.ToolCallback{
+						"lookup": staticToolCallback{},
+					},
+				}}, nil
+			},
+		)
+		store = fixture.Store
+
+		_, err = fixture.ClientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ProtocolVersion: acp.ProtocolVersion(1),
+			ClientCapabilities: &acp.ClientCapabilities{
+				Terminal: true,
+			},
+		})
+		if err != nil {
+			t.Fatalf("Initialize() error = %v", err)
+		}
+		sessionResp, err := fixture.ClientConn.NewSession(t.Context(), &acp.NewSessionRequest{
+			Cwd:        t.TempDir(),
+			McpServers: []acp.McpServer{},
+		})
+		if err != nil {
+			t.Fatalf("NewSession() error = %v", err)
+		}
+		_, err = fixture.ClientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+			ConfigID:  modelRefConfigId,
+			SessionID: sessionResp.SessionID,
+			Value:     "test-model",
+		})
+		if err != nil {
+			t.Fatalf("SetSessionConfigOption() error = %v", err)
+		}
+
+		_, err = fixture.ClientConn.Prompt(t.Context(), &acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextContentBlock("first prompt")},
+			SessionID: sessionResp.SessionID,
+		})
+		if err != nil {
+			t.Fatalf("first Prompt() error = %v", err)
+		}
+		notificationCount := len(testClient.waitForNotifications(t, 2))
+
+		_, err = fixture.ClientConn.Prompt(t.Context(), &acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextContentBlock("second prompt")},
+			SessionID: sessionResp.SessionID,
+		})
+		if err == nil || !strings.Contains(strings.ToLower(err.Error()), "duplicate tool call id") {
+			t.Fatalf("second Prompt() error = %v, want duplicate tool call ID error", err)
+		}
+		if got := len(testClient.notifications()); got != notificationCount {
+			t.Fatalf("notification count after rejected ID = %d, want %d", got, notificationCount)
+		}
+	})
 }
 
 type staticToolCallback struct{}
 
 func (staticToolCallback) Call(context.Context, map[string]any) (gai.Message, error) {
 	return gai.ToolResultMessage("", gai.TextBlock("lookup result")), nil
-}
-
-func TestPromptRejectsToolCallIDReusedInSessionBeforeSessionUpdate(t *testing.T) {
-	firstToolCall, err := gai.ToolCallBlock("call-1", "lookup", map[string]any{"query": "first"})
-	if err != nil {
-		t.Fatalf("first ToolCallBlock() error = %v", err)
-	}
-	reusedToolCall, err := gai.ToolCallBlock("call-1", "lookup", map[string]any{"query": "second"})
-	if err != nil {
-		t.Fatalf("second ToolCallBlock() error = %v", err)
-	}
-
-	var store *storage.Sqlite
-	testClient := &promptTestClient{}
-	rawCfg := config.RawConfig{
-		Models: []config.ModelConfig{{
-			Model: config.Model{
-				Ref:           "test-model",
-				DisplayName:   "Test Model",
-				ID:            "test-model",
-				Type:          "responses",
-				ContextWindow: 100,
-			},
-		}},
-	}
-	fixture := setup(
-		t,
-		testClient,
-		&rawCfg,
-		func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
-			gen := &testGen{responses: []genFunc{
-				func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
-					return gai.Response{
-						Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{firstToolCall}}},
-						FinishReason: gai.ToolUse,
-					}, nil
-				},
-				func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
-					return gai.Response{
-						Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("first complete")}}},
-						FinishReason: gai.EndTurn,
-					}, nil
-				},
-				func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
-					return gai.Response{
-						Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{reusedToolCall}}},
-						FinishReason: gai.ToolUse,
-					}, nil
-				},
-				func(context.Context, gai.Dialog, *gai.GenOpts) (gai.Response, error) {
-					return gai.Response{
-						Candidates:   []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("second complete")}}},
-						FinishReason: gai.EndTurn,
-					}, nil
-				},
-			}}
-			cfg, err := config.ResolveFromRaw(&rawCfg, config.RuntimeOptions{ModelRef: s.model})
-			if err != nil {
-				return nil, err
-			}
-			return testRuntime{loop: &loop{
-				G:     gen,
-				Store: store,
-				Cfg:   cfg,
-				conn:  conn,
-				toolCallbacks: map[string]gai.ToolCallback{
-					"lookup": staticToolCallback{},
-				},
-			}}, nil
-		},
-	)
-	store = fixture.Store
-
-	_, err = fixture.ClientConn.Initialize(t.Context(), &acp.InitializeRequest{
-		ProtocolVersion: acp.ProtocolVersion(1),
-		ClientCapabilities: &acp.ClientCapabilities{
-			Terminal: true,
-		},
-	})
-	if err != nil {
-		t.Fatalf("Initialize() error = %v", err)
-	}
-	sessionResp, err := fixture.ClientConn.NewSession(t.Context(), &acp.NewSessionRequest{
-		Cwd:        t.TempDir(),
-		McpServers: []acp.McpServer{},
-	})
-	if err != nil {
-		t.Fatalf("NewSession() error = %v", err)
-	}
-	_, err = fixture.ClientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
-		ConfigID:  modelRefConfigId,
-		SessionID: sessionResp.SessionID,
-		Value:     "test-model",
-	})
-	if err != nil {
-		t.Fatalf("SetSessionConfigOption() error = %v", err)
-	}
-
-	_, err = fixture.ClientConn.Prompt(t.Context(), &acp.PromptRequest{
-		Prompt:    []acp.ContentBlock{acp.TextContentBlock("first prompt")},
-		SessionID: sessionResp.SessionID,
-	})
-	if err != nil {
-		t.Fatalf("first Prompt() error = %v", err)
-	}
-	notificationCount := len(testClient.waitForNotifications(t, 2))
-
-	_, err = fixture.ClientConn.Prompt(t.Context(), &acp.PromptRequest{
-		Prompt:    []acp.ContentBlock{acp.TextContentBlock("second prompt")},
-		SessionID: sessionResp.SessionID,
-	})
-	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "duplicate tool call id") {
-		t.Fatalf("second Prompt() error = %v, want duplicate tool call ID error", err)
-	}
-	if got := len(testClient.notifications()); got != notificationCount {
-		t.Fatalf("notification count after rejected ID = %d, want %d", got, notificationCount)
-	}
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/spachava753/gai"
 )
 
+// PromptToMessage converts each ACP content variant into its GAI block form, preserving binary data, links, embedded resources, and annotations.
 func PromptToMessage(ctx context.Context, contentBlocks []acp.ContentBlock) gai.Message {
 	msg := gai.Message{
 		Role:   gai.User,

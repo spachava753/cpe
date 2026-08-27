@@ -2,20 +2,11 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
-
-	cpelogging "github.com/spachava753/cpe/internal/logging"
 )
 
 const logFilename = ".cpe.log"
-
-func newProcessLogger(output io.Writer) *slog.Logger {
-	handler := slog.NewJSONHandler(output, &slog.HandlerOptions{Level: slog.LevelDebug})
-	return slog.New(cpelogging.NewProcessHandler(handler))
-}
 
 func openLogFile() (*os.File, error) {
 	configDir, err := os.UserConfigDir()

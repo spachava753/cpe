@@ -46,6 +46,7 @@ func Module(store SessionStore, sessionID acpsdk.SessionId, cwd string) dyson.Mo
 	return dyson.ModuleSet{modulePath: starlark.StringDict{"acp": value}}
 }
 
+// getSession resolves the requested or current execution head, loads its full compaction history, then converts the stored session for Starlark.
 func (m *module) getSession(
 	thread *starlark.Thread,
 	fn *starlark.Builtin,

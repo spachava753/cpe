@@ -17,6 +17,7 @@ func (h *handler) RequestPermission(ctx context.Context, request *acp.RequestPer
 	return &acp.RequestPermissionResponse{Outcome: acp.CancelledRequestPermissionOutcome()}, nil
 }
 
+// Update selects the renderer for each session update and writes message, thought, tool, plan, or usage details in arrival order.
 func (h *handler) Update(ctx context.Context, notification *acp.SessionNotification) error {
 	u := notification.Update
 	switch u.SessionUpdate {
@@ -25,7 +26,11 @@ func (h *handler) Update(ctx context.Context, notification *acp.SessionNotificat
 	case acp.SessionUpdateTypeAgentThoughtChunk:
 		fmt.Fprintf(h.out, "\n[thought] %s\n", contentText(u.Content))
 	case acp.SessionUpdateTypeToolCall:
-		fmt.Fprintf(h.out, "\n[tool: %s]\n", value(u.Title))
+		title := ""
+		if u.Title != nil {
+			title = *u.Title
+		}
+		fmt.Fprintf(h.out, "\n[tool: %s]\n", title)
 	case acp.SessionUpdateTypeToolCallUpdate:
 		parts := []string{string(u.ToolCallID)}
 		if u.Title != nil && *u.Title != "" {

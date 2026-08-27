@@ -101,7 +101,8 @@ type mcpListToolsOptions struct {
 	Renderer     render.Iface
 }
 
-// mcpListTools lists tools available on an MCP server
+// mcpListTools validates and connects to the selected server, chooses the
+// requested filtered view, then renders the matching tool definitions.
 func mcpListTools(ctx context.Context, opts mcpListToolsOptions) error {
 	mcpConfig := opts.MCPServers
 	if len(mcpConfig) == 0 {
@@ -113,7 +114,7 @@ func mcpListTools(ctx context.Context, opts mcpListToolsOptions) error {
 		return fmt.Errorf("server '%s' not found in configuration", opts.ServerName)
 	}
 
-	conn, err := connectAndListServer(ctx, opts.ServerName, serverConfig)
+	conn, err := connectToServer(ctx, newClient(), opts.ServerName, serverConfig)
 	if err != nil {
 		return err
 	}

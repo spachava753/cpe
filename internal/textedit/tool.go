@@ -22,7 +22,24 @@ func MakeTool(sessionId acp.SessionId, conn sessionUpdator) (gai.Tool, gai.ToolC
 	tool := gai.Tool{
 		Name:        toolName,
 		Description: toolDescription,
-		InputSchema: inputSchema(),
+		InputSchema: &jsonschema.Schema{
+			Type: "object",
+			Properties: map[string]*jsonschema.Schema{
+				"path": {
+					Type:        "string",
+					Description: "Path to the file to edit or create.",
+				},
+				"old_text": {
+					Type:        "string",
+					Description: "Exact text to find and replace. If empty, creates a new file instead.",
+				},
+				"new_text": {
+					Type:        "string",
+					Description: "Replacement text or content for new file.",
+				},
+			},
+			Required: []string{"path", "new_text"},
+		},
 	}
 	callback := gai.ToolCallBackFunc[input](func(ctx context.Context, input input) (string, error) {
 		if err := ctx.Err(); err != nil {
@@ -72,25 +89,4 @@ func MakeTool(sessionId acp.SessionId, conn sessionUpdator) (gai.Tool, gai.ToolC
 		return output.Message(), nil
 	})
 	return tool, callback
-}
-
-func inputSchema() *jsonschema.Schema {
-	return &jsonschema.Schema{
-		Type: "object",
-		Properties: map[string]*jsonschema.Schema{
-			"path": {
-				Type:        "string",
-				Description: "Path to the file to edit or create.",
-			},
-			"old_text": {
-				Type:        "string",
-				Description: "Exact text to find and replace. If empty, creates a new file instead.",
-			},
-			"new_text": {
-				Type:        "string",
-				Description: "Replacement text or content for new file.",
-			},
-		},
-		Required: []string{"path", "new_text"},
-	}
 }

@@ -111,7 +111,9 @@ func (a *agent) Initialize(
 	return resp, nil
 }
 
-// Prompt implements [acp.SessionHandler].
+// Prompt claims the active session, refreshes its commands and runtime, persists
+// the user turn, runs generation, then releases session state on every exit.
+// It implements [acp.SessionHandler].
 //
 // TODO: add synctest type test for testing concurrency semantics
 func (a *agent) Prompt(
@@ -231,7 +233,7 @@ func (a *agent) Prompt(
 
 	inputLen := len(dialog)
 	generatedDialog, err := runtime.Generate(
-		withSessionID(cancelCtx, params.SessionID),
+		context.WithValue(cancelCtx, sessionIDCtxKey{}, params.SessionID),
 		dialog,
 		genOpts,
 	)

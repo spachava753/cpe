@@ -26,7 +26,8 @@ type ListStoredSessionsOptions struct {
 
 const maxStoredSessionsPageSize uint64 = 1000
 
-// ListStoredSessions writes a page of persisted ACP sessions as a table.
+// ListStoredSessions validates bounded pagination, queries one page, then writes
+// the persisted ACP sessions as a table after every row renders successfully.
 func ListStoredSessions(ctx context.Context, opts ListStoredSessionsOptions) error {
 	if opts.Store == nil {
 		return errors.New("provided conversation store cannot be nil")
@@ -122,6 +123,7 @@ func ShowStoredSession(ctx context.Context, opts ShowStoredSessionOptions) error
 	return nil
 }
 
+// renderSessionMarkdown writes session metadata, then renders each message and block according to its role, content kind, and compaction boundary.
 func renderSessionMarkdown(session storage.GetACPSessionResponse, dialog gai.Dialog) (string, error) {
 	title := string(session.Session.SessionID)
 	if session.Session.Title != nil && *session.Session.Title != "" {
@@ -202,7 +204,11 @@ func writeMarkdownToolCall(markdown *strings.Builder, block gai.Block) error {
 	if block.ID != "" {
 		fmt.Fprintf(markdown, "ID: `%s`\n\n", block.ID)
 	}
-	writeMarkdownCodeBlock(markdown, "json", string(encoded))
+	fence := "```"
+	for strings.Contains(string(encoded), fence) {
+		fence += "`"
+	}
+	fmt.Fprintf(markdown, "%sjson\n%s\n%s\n\n", fence, encoded, fence)
 	return nil
 }
 
@@ -229,14 +235,6 @@ func writeMarkdownContent(markdown *strings.Builder, block gai.Block) {
 		fmt.Fprintf(markdown, ", %s", filename)
 	}
 	markdown.WriteString("]\n\n")
-}
-
-func writeMarkdownCodeBlock(markdown *strings.Builder, language, content string) {
-	fence := "```"
-	for strings.Contains(content, fence) {
-		fence += "`"
-	}
-	fmt.Fprintf(markdown, "%s%s\n%s\n%s\n\n", fence, language, content, fence)
 }
 
 // DeleteStoredSession deletes one persisted ACP session and its unshared

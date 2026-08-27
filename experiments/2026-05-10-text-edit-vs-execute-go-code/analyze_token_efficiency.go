@@ -101,7 +101,11 @@ func main() {
 		return
 	}
 
-	printTable(result.Rows)
+	fmt.Println("| Metric | `text_edit` | `execute_go_code_edits` | Savings with `text_edit` |")
+	fmt.Println("|---|---:|---:|---:|")
+	for _, row := range result.Rows {
+		fmt.Printf("| %s | `%s` | `%s` | `%s` |\n", row.Metric, display(row.TextEdit, row.Unit), display(row.ExecuteGoCodeEdits, row.Unit), fmt.Sprintf("%.2f%%", row.SavingsWithTextEditPercent))
+	}
 }
 
 func analyze(experimentDir string) (analysis, error) {
@@ -151,7 +155,31 @@ func analyze(experimentDir string) (analysis, error) {
 
 	sum.TextCost = cost(sum.TextPrompt, sum.TextCompletion, inputCost, outputCost)
 	sum.ExecCost = cost(sum.ExecPrompt, sum.ExecCompletion, inputCost, outputCost)
-	result.Rows = rows(sum)
+	textTotal := sum.TextPrompt + sum.TextCompletion
+	execTotal := sum.ExecPrompt + sum.ExecCompletion
+	textAverageDuration := sum.TextDurationSeconds / float64(sum.Count)
+	execAverageDuration := sum.ExecDurationSeconds / float64(sum.Count)
+	result.Rows = []analysisRow{
+		tokenRow("Prompt tokens", sum.TextPrompt, sum.ExecPrompt),
+		tokenRow("Completion tokens", sum.TextCompletion, sum.ExecCompletion),
+		tokenRow("Prompt + completion", textTotal, execTotal),
+		{
+			Metric:                     "Nominal cost using config rates",
+			TextEdit:                   sum.TextCost,
+			ExecuteGoCodeEdits:         sum.ExecCost,
+			Unit:                       "usd",
+			DiffTextMinusExecuteGoCode: sum.TextCost - sum.ExecCost,
+			SavingsWithTextEditPercent: savings(sum.TextCost, sum.ExecCost),
+		},
+		{
+			Metric:                     "Average duration",
+			TextEdit:                   textAverageDuration,
+			ExecuteGoCodeEdits:         execAverageDuration,
+			Unit:                       "seconds",
+			DiffTextMinusExecuteGoCode: textAverageDuration - execAverageDuration,
+			SavingsWithTextEditPercent: savings(textAverageDuration, execAverageDuration),
+		},
+	}
 	return result, nil
 }
 
@@ -214,18 +242,6 @@ func readRuns(dir string) (map[string]runRecord, error) {
 	return runs, nil
 }
 
-func rows(sum totals) []analysisRow {
-	textTotal := sum.TextPrompt + sum.TextCompletion
-	execTotal := sum.ExecPrompt + sum.ExecCompletion
-	return []analysisRow{
-		tokenRow("Prompt tokens", sum.TextPrompt, sum.ExecPrompt),
-		tokenRow("Completion tokens", sum.TextCompletion, sum.ExecCompletion),
-		tokenRow("Prompt + completion", textTotal, execTotal),
-		costRow("Nominal cost using config rates", sum.TextCost, sum.ExecCost),
-		durationRow("Average duration", sum.TextDurationSeconds/float64(sum.Count), sum.ExecDurationSeconds/float64(sum.Count)),
-	}
-}
-
 func tokenRow(name string, textValue, execValue int64) analysisRow {
 	return analysisRow{
 		Metric:                     name,
@@ -234,36 +250,6 @@ func tokenRow(name string, textValue, execValue int64) analysisRow {
 		Unit:                       "tokens",
 		DiffTextMinusExecuteGoCode: float64(textValue - execValue),
 		SavingsWithTextEditPercent: savings(float64(textValue), float64(execValue)),
-	}
-}
-
-func costRow(name string, textValue, execValue float64) analysisRow {
-	return analysisRow{
-		Metric:                     name,
-		TextEdit:                   textValue,
-		ExecuteGoCodeEdits:         execValue,
-		Unit:                       "usd",
-		DiffTextMinusExecuteGoCode: textValue - execValue,
-		SavingsWithTextEditPercent: savings(textValue, execValue),
-	}
-}
-
-func durationRow(name string, textValue, execValue float64) analysisRow {
-	return analysisRow{
-		Metric:                     name,
-		TextEdit:                   textValue,
-		ExecuteGoCodeEdits:         execValue,
-		Unit:                       "seconds",
-		DiffTextMinusExecuteGoCode: textValue - execValue,
-		SavingsWithTextEditPercent: savings(textValue, execValue),
-	}
-}
-
-func printTable(rows []analysisRow) {
-	fmt.Println("| Metric | `text_edit` | `execute_go_code_edits` | Savings with `text_edit` |")
-	fmt.Println("|---|---:|---:|---:|")
-	for _, row := range rows {
-		fmt.Printf("| %s | `%s` | `%s` | `%s` |\n", row.Metric, display(row.TextEdit, row.Unit), display(row.ExecuteGoCodeEdits, row.Unit), fmt.Sprintf("%.2f%%", row.SavingsWithTextEditPercent))
 	}
 }
 

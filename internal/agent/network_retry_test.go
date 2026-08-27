@@ -43,152 +43,146 @@ func (g *scriptedNetworkRetryGenerator) Register(tool gai.Tool) error {
 	return nil
 }
 
-func TestNetworkRetryGeneratorGenerate(t *testing.T) {
-	connectionReset := &net.OpError{Op: "read", Net: "tcp", Err: errors.New("connection reset by peer")}
-	wrappedConnectionReset := fmt.Errorf("provider stream failed: %w", connectionReset)
-	truncatedStream := fmt.Errorf("provider stream failed: %w", io.ErrUnexpectedEOF)
-	http2Disconnect := fmt.Errorf("provider stream failed: %w", http2.StreamError{
-		StreamID: 7,
-		Code:     http2.ErrCodeInternal,
-		Cause:    errors.New("received from peer"),
-	})
-	ordinaryErr := errors.New("invalid tool schema")
-	unsupportedProtocol := &url.Error{
-		Op:  "Post",
-		URL: "example.test",
-		Err: errors.New("unsupported protocol scheme"),
-	}
-	success := gai.Response{
-		Candidates: []gai.Message{{
-			Role:   gai.Assistant,
-			Blocks: []gai.Block{gai.TextBlock("ok")},
-		}},
-	}
-
-	tests := []struct {
-		name      string
-		responses []gai.Response
-		errors    []error
-		wantErr   error
-		wantCalls int
-		wantText  string
-	}{
-		{
-			name:      "retries wrapped TCP error and succeeds",
-			responses: []gai.Response{{}, success},
-			errors:    []error{wrappedConnectionReset, nil},
-			wantCalls: 2,
-			wantText:  "ok",
-		},
-		{
-			name:      "retries truncated HTTP stream and succeeds",
-			responses: []gai.Response{{}, success},
-			errors:    []error{truncatedStream, nil},
-			wantCalls: 2,
-			wantText:  "ok",
-		},
-		{
-			name:      "retries HTTP2 disconnect and succeeds",
-			responses: []gai.Response{{}, success},
-			errors:    []error{http2Disconnect, nil},
-			wantCalls: 2,
-			wantText:  "ok",
-		},
-		{
-			name: "exhausts three network retries",
-			errors: []error{
-				wrappedConnectionReset,
-				wrappedConnectionReset,
-				wrappedConnectionReset,
-				wrappedConnectionReset,
-			},
-			wantErr:   connectionReset,
-			wantCalls: 4,
-		},
-		{
-			name:      "does not retry ordinary error",
-			errors:    []error{ordinaryErr},
-			wantErr:   ordinaryErr,
-			wantCalls: 1,
-		},
-		{
-			name:      "does not retry context deadline",
-			errors:    []error{context.DeadlineExceeded},
-			wantErr:   context.DeadlineExceeded,
-			wantCalls: 1,
-		},
-		{
-			name:      "does not retry deterministic URL error",
-			errors:    []error{unsupportedProtocol},
-			wantErr:   unsupportedProtocol,
-			wantCalls: 1,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			inner := &scriptedNetworkRetryGenerator{
-				responses: tt.responses,
-				errors:    tt.errors,
-			}
-			gen := newNetworkRetryGenerator(inner)
-			gen.retryDelay = 0
-
-			resp, err := gen.Generate(t.Context(), gai.Dialog{}, nil)
-			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("Generate() error = %v, want %v", err, tt.wantErr)
-			}
-			if inner.calls != tt.wantCalls {
-				t.Fatalf("calls = %d, want %d", inner.calls, tt.wantCalls)
-			}
-			if tt.wantText != "" {
-				if got := resp.Candidates[0].Blocks[0].Content.String(); got != tt.wantText {
-					t.Fatalf("response content = %q, want %q", got, tt.wantText)
-				}
-			}
+func TestNetworkRetryGenerator(t *testing.T) {
+	t.Run("generate", func(t *testing.T) {
+		connectionReset := &net.OpError{Op: "read", Net: "tcp", Err: errors.New("connection reset by peer")}
+		wrappedConnectionReset := fmt.Errorf("provider stream failed: %w", connectionReset)
+		truncatedStream := fmt.Errorf("provider stream failed: %w", io.ErrUnexpectedEOF)
+		http2Disconnect := fmt.Errorf("provider stream failed: %w", http2.StreamError{
+			StreamID: 7,
+			Code:     http2.ErrCodeInternal,
+			Cause:    errors.New("received from peer"),
 		})
-	}
-}
+		ordinaryErr := errors.New("invalid tool schema")
+		unsupportedProtocol := &url.Error{
+			Op:  "Post",
+			URL: "example.test",
+			Err: errors.New("unsupported protocol scheme"),
+		}
+		success := gai.Response{
+			Candidates: []gai.Message{{
+				Role:   gai.Assistant,
+				Blocks: []gai.Block{gai.TextBlock("ok")},
+			}},
+		}
 
-func TestNetworkRetryGeneratorCancellationStopsDelay(t *testing.T) {
-	connectionReset := &net.OpError{Op: "read", Net: "tcp", Err: errors.New("connection reset by peer")}
-	ctx, cancel := context.WithCancel(t.Context())
-	inner := &scriptedNetworkRetryGenerator{
-		errors: []error{connectionReset},
-		onCall: cancel,
-	}
-	gen := newNetworkRetryGenerator(inner)
-	gen.retryDelay = time.Hour
+		tests := []struct {
+			name      string
+			responses []gai.Response
+			errors    []error
+			wantErr   error
+			wantCalls int
+			wantText  string
+		}{
+			{
+				name:      "retries wrapped TCP error and succeeds",
+				responses: []gai.Response{{}, success},
+				errors:    []error{wrappedConnectionReset, nil},
+				wantCalls: 2,
+				wantText:  "ok",
+			},
+			{
+				name:      "retries truncated HTTP stream and succeeds",
+				responses: []gai.Response{{}, success},
+				errors:    []error{truncatedStream, nil},
+				wantCalls: 2,
+				wantText:  "ok",
+			},
+			{
+				name:      "retries HTTP2 disconnect and succeeds",
+				responses: []gai.Response{{}, success},
+				errors:    []error{http2Disconnect, nil},
+				wantCalls: 2,
+				wantText:  "ok",
+			},
+			{
+				name: "exhausts three network retries",
+				errors: []error{
+					wrappedConnectionReset,
+					wrappedConnectionReset,
+					wrappedConnectionReset,
+					wrappedConnectionReset,
+				},
+				wantErr:   connectionReset,
+				wantCalls: 4,
+			},
+			{
+				name:      "does not retry ordinary error",
+				errors:    []error{ordinaryErr},
+				wantErr:   ordinaryErr,
+				wantCalls: 1,
+			},
+			{
+				name:      "does not retry context deadline",
+				errors:    []error{context.DeadlineExceeded},
+				wantErr:   context.DeadlineExceeded,
+				wantCalls: 1,
+			},
+			{
+				name:      "does not retry deterministic URL error",
+				errors:    []error{unsupportedProtocol},
+				wantErr:   unsupportedProtocol,
+				wantCalls: 1,
+			},
+		}
 
-	_, err := gen.Generate(ctx, gai.Dialog{}, nil)
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("Generate() error = %v, want context.Canceled", err)
-	}
-	if inner.calls != 1 {
-		t.Fatalf("calls = %d, want 1", inner.calls)
-	}
-}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				inner := &scriptedNetworkRetryGenerator{
+					responses: tt.responses,
+					errors:    tt.errors,
+				}
+				gen := &networkRetryGenerator{
+					GeneratorWrapper: gai.GeneratorWrapper{Inner: inner},
+					maxRetries:       defaultNetworkMaxRetries,
+				}
 
-func TestNewNetworkRetryGeneratorDefaults(t *testing.T) {
-	gen := newNetworkRetryGenerator(&scriptedNetworkRetryGenerator{})
+				resp, err := gen.Generate(t.Context(), gai.Dialog{}, nil)
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("Generate() error = %v, want %v", err, tt.wantErr)
+				}
+				if inner.calls != tt.wantCalls {
+					t.Fatalf("calls = %d, want %d", inner.calls, tt.wantCalls)
+				}
+				if tt.wantText != "" {
+					if got := resp.Candidates[0].Blocks[0].Content.String(); got != tt.wantText {
+						t.Fatalf("response content = %q, want %q", got, tt.wantText)
+					}
+				}
+			})
+		}
+	})
+	t.Run("cancellation stops delay", func(t *testing.T) {
+		connectionReset := &net.OpError{Op: "read", Net: "tcp", Err: errors.New("connection reset by peer")}
+		ctx, cancel := context.WithCancel(t.Context())
+		inner := &scriptedNetworkRetryGenerator{
+			errors: []error{connectionReset},
+			onCall: cancel,
+		}
+		gen := &networkRetryGenerator{
+			GeneratorWrapper: gai.GeneratorWrapper{Inner: inner},
+			maxRetries:       defaultNetworkMaxRetries,
+			retryDelay:       time.Hour,
+		}
 
-	if gen.maxRetries != defaultNetworkMaxRetries {
-		t.Fatalf("maxRetries = %d, want %d", gen.maxRetries, defaultNetworkMaxRetries)
-	}
-	if gen.retryDelay != defaultNetworkRetryDelay {
-		t.Fatalf("retryDelay = %v, want %v", gen.retryDelay, defaultNetworkRetryDelay)
-	}
-}
+		_, err := gen.Generate(ctx, gai.Dialog{}, nil)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Generate() error = %v, want context.Canceled", err)
+		}
+		if inner.calls != 1 {
+			t.Fatalf("calls = %d, want 1", inner.calls)
+		}
+	})
+	t.Run("register delegates", func(t *testing.T) {
+		inner := &scriptedNetworkRetryGenerator{}
+		gen := &networkRetryGenerator{GeneratorWrapper: gai.GeneratorWrapper{Inner: inner}}
+		tool := gai.Tool{Name: "lookup", Description: "look up a value"}
 
-func TestNetworkRetryGeneratorRegisterDelegates(t *testing.T) {
-	inner := &scriptedNetworkRetryGenerator{}
-	gen := newNetworkRetryGenerator(inner)
-	tool := gai.Tool{Name: "lookup", Description: "look up a value"}
-
-	if err := gen.Register(tool); err != nil {
-		t.Fatalf("Register() error = %v", err)
-	}
-	if len(inner.tools) != 1 || inner.tools[0].Name != tool.Name {
-		t.Fatalf("registered tools = %#v, want %q", inner.tools, tool.Name)
-	}
+		if err := gen.Register(tool); err != nil {
+			t.Fatalf("Register() error = %v", err)
+		}
+		if len(inner.tools) != 1 || inner.tools[0].Name != tool.Name {
+			t.Fatalf("registered tools = %#v, want %q", inner.tools, tool.Name)
+		}
+	})
 }

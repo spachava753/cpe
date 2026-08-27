@@ -22,20 +22,17 @@ func acpSessionInfo(id, cwd, title string, updatedAt time.Time) acp.SessionInfo 
 	}
 }
 
-func acpSessionTitle(session acp.SessionInfo) string {
-	if session.Title == nil {
-		return string(session.SessionID)
-	}
-	return *session.Title
-}
-
 // CreateACPSession persists ACP session metadata.
 func (s *Sqlite) CreateACPSession(ctx context.Context, params CreateACPSessionParams) error {
+	title := string(params.Session.SessionID)
+	if params.Session.Title != nil {
+		title = *params.Session.Title
+	}
 	err := s.q.CreateSession(ctx, sqlcgen.CreateSessionParams{
 		ID:            string(params.Session.SessionID),
 		LastMessageID: optionalString(params.LastMessageID),
 		Cwd:           params.Session.Cwd,
-		Title:         acpSessionTitle(params.Session),
+		Title:         title,
 		ModelRef:      params.ModelRef,
 		ThinkingLevel: params.ThinkingLevel,
 	})

@@ -99,7 +99,8 @@ func NewOpenAIOAuthTransport(base http.RoundTripper, store *Store) *openAIOAuthT
 	}
 }
 
-// RoundTrip implements http.RoundTripper for OpenAI OAuth
+// RoundTrip loads the saved OpenAI credential, refreshes an expiring token
+// under a lock, then authenticates a request clone before sending it.
 func (t *openAIOAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	cred, err := t.store.GetCredential("openai")
 	if err != nil {

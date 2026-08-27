@@ -48,7 +48,7 @@ func resolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions, resolvedConfigPath s
 	if !found {
 		return Config{}, fmt.Errorf("model %q not found in configuration", opts.ModelRef)
 	}
-	if err := validateSelectedProfile(selectedModel); err != nil {
+	if err := validateMCPServerConfigs(selectedModel.MCPServers, "mcpServers"); err != nil {
 		return Config{}, fmt.Errorf("invalid selected model profile %q: %w", opts.ModelRef, err)
 	}
 
@@ -99,9 +99,9 @@ func resolveGenerationParams(model ModelConfig, opts RuntimeOptions) *gai.GenOpt
 	return genParams
 }
 
-// MergeGenOpts applies non-zero presence fields from src onto dst.
-// Pointer fields use nil to mean "not set"; a non-nil pointer to a zero value still overrides.
-// A nil src is a no-op.
+// MergeGenOpts copies every field explicitly present in src onto dst. Pointer
+// fields use nil to mean "not set", so pointers to zero values still override.
+// Non-empty value fields also override, and a nil src is a no-op.
 func MergeGenOpts(dst, src *gai.GenOpts) {
 	if src == nil {
 		return
