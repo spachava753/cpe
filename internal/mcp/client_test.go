@@ -6,9 +6,11 @@ import (
 	"io"
 	"net/http"
 	"testing"
+	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/spachava753/cpe/internal/httpclient"
 	"github.com/spachava753/cpe/internal/mcpconfig"
 )
 
@@ -18,7 +20,7 @@ func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
-func TestMCPRoundTripperDoesNotRetryHTTPStatus(t *testing.T) {
+func TestRoundTripperDoesNotRetryMCPHTTPStatus(t *testing.T) {
 	attempts := 0
 	base := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		attempts++
@@ -34,7 +36,14 @@ func TestMCPRoundTripperDoesNotRetryHTTPStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRequestWithContext() error = %v", err)
 	}
-	resp, err := newMCPRoundTripper(base).RoundTrip(req)
+	transport := httpclient.Transport(
+		httpclient.WithBaseTransport(base),
+		httpclient.WithRetryStatuses(false),
+		httpclient.WithBackoff(200*time.Millisecond, 5*time.Second),
+		httpclient.WithJitterFactor(0.2),
+		httpclient.WithMaxRetries(2),
+	)
+	resp, err := transport.RoundTrip(req)
 	if err != nil {
 		t.Fatalf("RoundTrip() error = %v", err)
 	}

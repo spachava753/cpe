@@ -65,10 +65,6 @@ func expectedRPCUserMessageChunk(text string) acp.SessionUpdate {
 	return acp.UserMessageChunkSessionUpdate(acp.TextContentBlock(text))
 }
 
-func expectedRPCAgentThoughtChunk(text string) acp.SessionUpdate {
-	return acp.AgentThoughtChunkSessionUpdate(acp.TextContentBlock(text))
-}
-
 func expectedRPCAgentMessageChunk(text string) acp.SessionUpdate {
 	return acp.AgentMessageChunkSessionUpdate(acp.TextContentBlock(text))
 }

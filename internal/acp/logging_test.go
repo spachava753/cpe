@@ -28,7 +28,7 @@ func (contextCapturingRuntime) Close() error {
 	return nil
 }
 
-func TestPromptScopesRuntimeLogsToSession(t *testing.T) {
+func TestRuntimeLogsStayScopedToPromptSession(t *testing.T) {
 	store, _ := newTestSqlite(t)
 	sessionID := acp.SessionId("session-1")
 	cwd := t.TempDir()

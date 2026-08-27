@@ -39,6 +39,7 @@ type sourceEdit struct {
 	replacement string
 }
 
+// runUnnecessaryExportAnalyzer resolves the analysis root, reports each finding, and optionally applies safe renames.
 func runUnnecessaryExportAnalyzer(ctx context.Context, dir string, fix bool, output io.Writer) error {
 	root, err := filepath.Abs(dir)
 	if err != nil {
@@ -53,7 +54,10 @@ func runUnnecessaryExportAnalyzer(ctx context.Context, dir string, fix bool, out
 	}
 
 	for _, finding := range findings {
-		path := relativePath(root, finding.position.Filename)
+		path, pathErr := filepath.Rel(root, finding.position.Filename)
+		if pathErr != nil {
+			path = finding.position.Filename
+		}
 		if finding.fixable {
 			fmt.Fprintf(output, "%s:%d:%d: exported %s %s has no references outside package %s; unexport as %s\n",
 				path, finding.position.Line, finding.position.Column, finding.kind, finding.key.name, finding.key.pkgPath, finding.newName)
@@ -80,6 +84,7 @@ func runUnnecessaryExportAnalyzer(ctx context.Context, dir string, fix bool, out
 	return nil
 }
 
+// findUnnecessaryExports loads module packages, collects exported declarations and references, then marks safe unexported renames after collision checks.
 func findUnnecessaryExports(ctx context.Context, dir string) ([]unnecessaryExport, error) {
 	cfg := &packages.Config{
 		Context: ctx,
@@ -93,8 +98,10 @@ func findUnnecessaryExports(ctx context.Context, dir string) ([]unnecessaryExpor
 	if err != nil {
 		return nil, fmt.Errorf("load packages for unnecessary-export analysis: %w", err)
 	}
-	if err := packageLoadError(loaded); err != nil {
-		return nil, err
+	for _, pkg := range loaded {
+		if len(pkg.Errors) != 0 {
+			return nil, fmt.Errorf("load package %s for unnecessary-export analysis: %s", pkg.PkgPath, pkg.Errors[0])
+		}
 	}
 
 	candidates := make(map[exportKey]*unnecessaryExport)
@@ -244,15 +251,6 @@ func isMainModulePackage(pkg *packages.Package) bool {
 	return pkg != nil && pkg.Module != nil && pkg.Module.Main && pkg.Types != nil && pkg.TypesInfo != nil
 }
 
-func packageLoadError(pkgs []*packages.Package) error {
-	for _, pkg := range pkgs {
-		if len(pkg.Errors) != 0 {
-			return fmt.Errorf("load package %s for unnecessary-export analysis: %s", pkg.PkgPath, pkg.Errors[0])
-		}
-	}
-	return nil
-}
-
 func importedNames(pkg *packages.Package) map[string]bool {
 	names := make(map[string]bool)
 	for _, file := range pkg.Syntax {
@@ -368,6 +366,7 @@ func addSourceEdit(edits map[string]sourceEdit, position token.Position, oldName
 	edits[key] = sourceEdit{offset: position.Offset, oldText: oldName, replacement: newName}
 }
 
+// applyUnnecessaryExportFixes groups safe edits by file, applies each unique offset from end to start, then preserves the original file mode.
 func applyUnnecessaryExportFixes(findings []unnecessaryExport) error {
 	byFile := make(map[string][]sourceEdit)
 	for _, finding := range findings {
@@ -407,12 +406,4 @@ func applyUnnecessaryExportFixes(findings []unnecessaryExport) error {
 		}
 	}
 	return nil
-}
-
-func relativePath(dir, path string) string {
-	relative, err := filepath.Rel(dir, path)
-	if err != nil {
-		return path
-	}
-	return relative
 }

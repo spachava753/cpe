@@ -20,19 +20,6 @@ type patchTransport struct {
 	headers     map[string]string
 }
 
-// newPatchTransport constructs a patchTransport. If base is nil,
-// http.DefaultTransport is used.
-func newPatchTransport(base http.RoundTripper, patches []jsonpatch.Patch, headers map[string]string) *patchTransport {
-	if base == nil {
-		base = http.DefaultTransport
-	}
-	return &patchTransport{
-		base:        base,
-		jsonPatches: patches,
-		headers:     headers,
-	}
-}
-
 func (t *patchTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	for key, value := range t.headers {
 		req.Header.Set(key, value)
@@ -89,5 +76,12 @@ func buildPatchTransportFromConfig(base http.RoundTripper, patchConfig *config.P
 		return base, nil
 	}
 
-	return newPatchTransport(base, patches, patchConfig.IncludeHeaders), nil
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return &patchTransport{
+		base:        base,
+		jsonPatches: patches,
+		headers:     patchConfig.IncludeHeaders,
+	}, nil
 }

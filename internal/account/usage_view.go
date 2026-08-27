@@ -40,15 +40,6 @@ type openAIUsageWatchModel struct {
 	statusErr   error
 }
 
-func newOpenAIUsageWatchModel(ctx context.Context, baseURL string) openAIUsageWatchModel {
-	return openAIUsageWatchModel{
-		ctx:     ctx,
-		baseURL: baseURL,
-		width:   80,
-		loading: true,
-	}
-}
-
 func (m openAIUsageWatchModel) Init() tea.Cmd {
 	return fetchOpenAIUsageCmd(m.ctx, m.baseURL)
 }
@@ -77,7 +68,9 @@ func (m openAIUsageWatchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastUpdated = msg.fetchedAt
 			m.statusErr = nil
 		}
-		return m, scheduleOpenAIUsageRefresh()
+		return m, tea.Tick(accountUsageRefreshInterval, func(t time.Time) tea.Msg {
+			return openAIUsageRefreshMsg(t)
+		})
 	}
 	return m, nil
 }
@@ -104,14 +97,9 @@ func fetchOpenAIUsageCmd(ctx context.Context, baseURL string) tea.Cmd {
 	}
 }
 
-func scheduleOpenAIUsageRefresh() tea.Cmd {
-	return tea.Tick(accountUsageRefreshInterval, func(t time.Time) tea.Msg {
-		return openAIUsageRefreshMsg(t)
-	})
-}
-
+// renderOpenAIUsageView builds the status header first, handles an absent snapshot, then renders each available usage window and credit balance.
 func renderOpenAIUsageView(usage *auth.OpenAIUsageResponse, opts openAIUsageViewOptions) string {
-	width := maxInt(60, opts.Width)
+	width := max(60, opts.Width)
 	var lines []string
 
 	titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "#5A56E0", Dark: "#A78BFA"})
@@ -244,6 +232,7 @@ func renderResetText(window *auth.OpenAIUsageWindow, now time.Time) string {
 	return "reset unknown"
 }
 
+// humanizeDuration clamps negative input, splits whole seconds into units, and returns the two largest useful units.
 func humanizeDuration(d time.Duration) string {
 	if d < 0 {
 		d = 0
@@ -296,11 +285,4 @@ func clampInt(v, minValue, maxValue int) int {
 		return maxValue
 	}
 	return v
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }

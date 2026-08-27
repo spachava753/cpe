@@ -50,29 +50,6 @@ func (a *agent) activeSession(sessionID acp.SessionId) (*sync.Guard[session], er
 	return s, nil
 }
 
-// discoverSkills loads the skill catalog for an ACP session. Tests can override
-// agent.skillHomeDir so global user skills do not leak into session fixtures.
-func (a *agent) discoverSkills(ctx context.Context, cwd string) skills.Catalog {
-	return skills.Discover(ctx, skills.DiscoverOptions{
-		Cwd:     cwd,
-		HomeDir: a.skillHomeDir,
-	})
-}
-
-// sendAvailableSkillCommands publishes ACP autocomplete metadata for the
-// session's discovered skills. It intentionally sends nothing when no skills are
-// available so clients do not receive empty command updates.
-func (a *agent) sendAvailableSkillCommands(ctx context.Context, sessionID acp.SessionId, catalog skills.Catalog) error {
-	commands := availableSkillCommands(catalog)
-	if len(commands) == 0 || a.conn == nil {
-		return nil
-	}
-	return a.conn.SessionUpdate(ctx, &acp.SessionNotification{
-		SessionID: sessionID,
-		Update:    acp.AvailableCommandsUpdateSessionUpdate(commands),
-	})
-}
-
 func (a *agent) refreshAvailableSkillCommands(ctx context.Context, sessionID acp.SessionId, s *sync.Guard[session]) error {
 	var cwd string
 	if err := s.Do(func(t *session) error {
@@ -82,9 +59,18 @@ func (a *agent) refreshAvailableSkillCommands(ctx context.Context, sessionID acp
 		return err
 	}
 	ctx = withSessionLogAttrs(ctx, sessionID, cwd)
-	catalog := a.discoverSkills(ctx, cwd)
-	if err := a.sendAvailableSkillCommands(ctx, sessionID, catalog); err != nil {
-		return err
+	catalog := skills.Discover(ctx, skills.DiscoverOptions{
+		Cwd:     cwd,
+		HomeDir: a.skillHomeDir,
+	})
+	commands := availableSkillCommands(catalog)
+	if len(commands) > 0 && a.conn != nil {
+		if err := a.conn.SessionUpdate(ctx, &acp.SessionNotification{
+			SessionID: sessionID,
+			Update:    acp.AvailableCommandsUpdateSessionUpdate(commands),
+		}); err != nil {
+			return err
+		}
 	}
 	return s.Do(func(t *session) error {
 		t.skillCatalog = catalog
@@ -143,7 +129,8 @@ func (a *agent) ListSessions(ctx context.Context, params *acp.ListSessionsReques
 	return resp, nil
 }
 
-// loadActiveSession loads an active session from storage
+// loadActiveSession validates persisted ownership, reuses an existing session
+// when safe, or repairs stale model settings before restoring active state.
 func (a *agent) loadActiveSession(
 	ctx context.Context,
 	sessionId acp.SessionId,

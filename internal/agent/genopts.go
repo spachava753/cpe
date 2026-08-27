@@ -51,7 +51,9 @@ func responsesPromptCacheKey(modelID string, dialog gai.Dialog) string {
 		if phase, ok := msg.ExtraFields[gai.ResponsesMessageExtraFieldPhase].(string); ok && phase != "" {
 			canonical.Phase = phase
 		}
-		canonical.ToolID = promptCacheToolResultID(msg)
+		if msg.Role == gai.ToolResult && len(msg.Blocks) > 0 {
+			canonical.ToolID = msg.Blocks[0].ID
+		}
 		canonical.Blocks = canonicalPromptCacheBlocks(msg)
 		payload.Messages = append(payload.Messages, canonical)
 	}
@@ -91,7 +93,14 @@ func canonicalPromptCacheBlocks(msg gai.Message) []promptCacheBlock {
 	if len(blocks) == 0 {
 		return nil
 	}
-	if msg.Role == gai.ToolResult && promptCacheBlocksAreAllText(blocks) {
+	allText := true
+	for _, block := range blocks {
+		if block.ModalityType != gai.Text {
+			allText = false
+			break
+		}
+	}
+	if msg.Role == gai.ToolResult && allText {
 		var sb strings.Builder
 		for _, block := range blocks {
 			sb.WriteString(blockContentString(block))
@@ -119,22 +128,6 @@ func filteredPromptCacheBlocks(blocks []gai.Block) []gai.Block {
 		filtered = append(filtered, block)
 	}
 	return filtered
-}
-
-func promptCacheBlocksAreAllText(blocks []gai.Block) bool {
-	for _, block := range blocks {
-		if block.ModalityType != gai.Text {
-			return false
-		}
-	}
-	return true
-}
-
-func promptCacheToolResultID(msg gai.Message) string {
-	if msg.Role != gai.ToolResult || len(msg.Blocks) == 0 {
-		return ""
-	}
-	return msg.Blocks[0].ID
 }
 
 func canonicalPromptCacheBlock(block gai.Block) promptCacheBlock {

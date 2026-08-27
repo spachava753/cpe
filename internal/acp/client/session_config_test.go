@@ -53,22 +53,6 @@ func TestValidateConfigValue(t *testing.T) {
 	})
 }
 
-func TestFindConfigOption(t *testing.T) {
-	modelOptions := acp.UngroupedSessionConfigSelectOptions{{Name: "Model", Value: "model"}}
-	thinkingOptions := acp.UngroupedSessionConfigSelectOptions{{Name: "High", Value: "high"}}
-	options := []acp.SessionConfigOption{
-		acp.SelectSessionConfigOption(modelRefConfigID, "Model", "model", acp.SessionConfigSelectOptions{Ungrouped: &modelOptions}),
-		acp.SelectSessionConfigOption(thinkingLevelConfigID, "Thinking level", "high", acp.SessionConfigSelectOptions{Ungrouped: &thinkingOptions}),
-	}
-
-	option, ok := findConfigOption(options, thinkingLevelConfigID)
-	be.True(t, ok)
-	be.Equal(t, option.ID, thinkingLevelConfigID)
-
-	_, ok = findConfigOption(options, "missing")
-	be.Equal(t, ok, false)
-}
-
 func TestConfigValues(t *testing.T) {
 	modelOptions := acp.UngroupedSessionConfigSelectOptions{
 		{Name: "First", Value: "first-model"},

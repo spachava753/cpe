@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestModelListFromConfig_PrefersRuntimeModelOverrideForDefaultMarker(t *testing.T) {
+func TestListCommandPrefersRuntimeModelOverrideForDefaultMarker(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()

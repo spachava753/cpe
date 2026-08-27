@@ -17,20 +17,6 @@ const (
 	openAIUsageBaseURL = "https://chatgpt.com/backend-api"
 )
 
-// openAIUsageURLForBase returns the usage endpoint for a ChatGPT backend base URL.
-func openAIUsageURLForBase(baseURL string) string {
-	baseURL = normalizeOpenAIUsageBaseURL(baseURL)
-	return strings.TrimRight(baseURL, "/") + "/wham/usage"
-}
-
-func normalizeOpenAIUsageBaseURL(baseURL string) string {
-	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	if baseURL == "" {
-		return openAIUsageBaseURL
-	}
-	return strings.TrimSuffix(baseURL, "/wham/usage")
-}
-
 // OpenAIUsageWindow represents a rate-limit window in the ChatGPT usage API.
 type OpenAIUsageWindow struct {
 	UsedPercent        int   `json:"used_percent,omitempty"`
@@ -76,15 +62,6 @@ type OpenAIUsageResponse struct {
 	Promo                any                         `json:"promo"`
 }
 
-func newOpenAIUsageHTTPClient() *http.Client {
-	return httpclient.New(
-		httpclient.WithBackoff(200*time.Millisecond, 3*time.Second),
-		httpclient.WithJitterFactor(0.2),
-		httpclient.WithMaxRetries(2),
-		httpclient.WithTimeout(15*time.Second),
-	)
-}
-
 // FetchOpenAIUsage retrieves subscription usage information from the ChatGPT
 // backend usage endpoint using an OAuth bearer token.
 func FetchOpenAIUsage(ctx context.Context, client *http.Client, baseURL, accessToken string) (*OpenAIUsageResponse, error) {
@@ -92,10 +69,20 @@ func FetchOpenAIUsage(ctx context.Context, client *http.Client, baseURL, accessT
 		return nil, fmt.Errorf("access token is required")
 	}
 	if client == nil {
-		client = newOpenAIUsageHTTPClient()
+		client = httpclient.New(
+			httpclient.WithBackoff(200*time.Millisecond, 3*time.Second),
+			httpclient.WithJitterFactor(0.2),
+			httpclient.WithMaxRetries(2),
+			httpclient.WithTimeout(15*time.Second),
+		)
 	}
 
-	usageURL := openAIUsageURLForBase(baseURL)
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		baseURL = openAIUsageBaseURL
+	}
+	baseURL = strings.TrimSuffix(baseURL, "/wham/usage")
+	usageURL := baseURL + "/wham/usage"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, usageURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating usage request: %w", err)

@@ -113,6 +113,7 @@ func messageMetadataInt64(extra map[string]any, key string) (sql.NullInt64, erro
 	return sql.NullInt64{Int64: intValue, Valid: true}, nil
 }
 
+// extraFieldInt64 accepts all integer forms and exact integral floats while rejecting unsigned overflow, fractions, and unrelated types.
 func extraFieldInt64(value any) (int64, error) {
 	switch v := value.(type) {
 	case int:

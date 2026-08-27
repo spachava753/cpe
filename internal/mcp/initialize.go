@@ -19,13 +19,6 @@ func connectServer(ctx context.Context, serverName string, config mcpconfig.Serv
 	return connectServerSession(ctx, client, serverName, config)
 }
 
-// connectAndListServer establishes one MCP connection, lists its tools, and
-// applies per-server filtering. The returned connection must be closed by the caller.
-func connectAndListServer(ctx context.Context, serverName string, config mcpconfig.ServerConfig) (*mcpConn, error) {
-	client := newClient()
-	return connectToServer(ctx, client, serverName, config)
-}
-
 // InitializeConnections establishes sessions to all configured MCP servers,
 // lists tools, applies per-server filtering, and validates cross-server tool name
 // uniqueness after filtering.

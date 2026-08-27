@@ -40,8 +40,9 @@ type modelInfoOptions struct {
 	Writer    io.Writer
 }
 
-// modelInfo prints details for one configured model ref.
-// It reports exactly what is configured and does not apply CLI runtime overrides.
+// modelInfo resolves one configured model ref and prints its fixed fields. It
+// appends only configured thinking, header, and request-patch sections and does
+// not apply CLI runtime overrides.
 func modelInfo(ctx context.Context, opts modelInfoOptions) error {
 	if opts.ModelName == "" {
 		return fmt.Errorf("no model name provided")
@@ -139,7 +140,8 @@ type modelSystemPromptOptions struct {
 	SystemPrompt fs.File
 }
 
-// modelSystemPrompt renders the selected model profile's effective system prompt.
+// modelSystemPrompt selects the model and prompt source, resolves relative
+// paths, then renders the effective system prompt.
 func modelSystemPrompt(ctx context.Context, opts modelSystemPromptOptions) error {
 	modelName := opts.ModelName
 	if modelName == "" {

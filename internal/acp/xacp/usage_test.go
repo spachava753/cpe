@@ -10,7 +10,7 @@ import (
 	"github.com/spachava753/cpe/internal/storage"
 )
 
-func TestPromptTurnUsage(t *testing.T) {
+func TestTurnUsageFromPrompt(t *testing.T) {
 	usage := PromptTurnUsage(gai.Dialog{
 		{
 			Role: gai.Assistant,

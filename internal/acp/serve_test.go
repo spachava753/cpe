@@ -39,162 +39,163 @@ func (g *recordingToolCallingGenerator) Register(tool gai.Tool) error {
 	return nil
 }
 
-func TestServerRuntimeCreatorRuntimeContextOutlivesCreateContext(t *testing.T) {
-	originalGenerator := initializeGeneratorFromModel
-	originalMCP := initializeMCPConnections
-	var generatorCtx context.Context
-	var runtimeCtx context.Context
-	initializeGeneratorFromModel = func(ctx context.Context, _ config.Model, _ string, _ time.Duration) (gai.Generator, error) {
-		generatorCtx = ctx
-		return testToolCallingGenerator{}, nil
-	}
-	initializeMCPConnections = func(ctx context.Context, servers map[string]mcpconfig.ServerConfig) (*cpemcp.MCPState, error) {
-		runtimeCtx = ctx
-		return cpemcp.NewMCPState(), nil
-	}
-	t.Cleanup(func() {
-		initializeGeneratorFromModel = originalGenerator
-		initializeMCPConnections = originalMCP
-	})
+func TestServerRuntimeCreator(t *testing.T) {
+	t.Run("runtime context outlives create context", func(t *testing.T) {
+		originalGenerator := initializeGeneratorFromModel
+		originalMCP := initializeMCPConnections
+		var generatorCtx context.Context
+		var runtimeCtx context.Context
+		initializeGeneratorFromModel = func(ctx context.Context, _ config.Model, _ string, _ time.Duration) (gai.Generator, error) {
+			generatorCtx = ctx
+			return testToolCallingGenerator{}, nil
+		}
+		initializeMCPConnections = func(ctx context.Context, servers map[string]mcpconfig.ServerConfig) (*cpemcp.MCPState, error) {
+			runtimeCtx = ctx
+			return cpemcp.NewMCPState(), nil
+		}
+		t.Cleanup(func() {
+			initializeGeneratorFromModel = originalGenerator
+			initializeMCPConnections = originalMCP
+		})
 
-	creator := &serverRuntimeCreator{
-		rawCfg: &config.RawConfig{
-			Models: []config.ModelConfig{
-				{
-					Model: config.Model{
-						Ref:           "test-model",
-						DisplayName:   "Test Model",
-						ID:            "test-model",
-						Type:          "responses",
-						ContextWindow: 100,
-						MaxOutput:     10,
-					},
-					DisableEditTool: true,
-					MCPServers: map[string]mcpconfig.ServerConfig{
-						"stub": {Type: "stdio", Command: "stub-mcp"},
-					},
-				},
-			},
-		},
-	}
-	createCtx, cancelCreate := context.WithCancel(t.Context())
-	runtime, err := creator.Create(createCtx, session{
-		id:    "session-1",
-		model: "test-model",
-	}, acp.ClientCapabilities{})
-	be.Err(t, err, nil)
-	if generatorCtx == nil {
-		t.Fatal("generator initializer was not called")
-	}
-	if runtimeCtx == nil {
-		t.Fatal("MCP initializer was not called")
-	}
-
-	cancelCreate()
-	select {
-	case <-generatorCtx.Done():
-		t.Fatal("generator context was cancelled by create context after successful creation")
-	default:
-	}
-	select {
-	case <-runtimeCtx.Done():
-		t.Fatal("MCP context was cancelled by create context after successful creation")
-	default:
-	}
-
-	be.Err(t, runtime.Close(), nil)
-	select {
-	case <-generatorCtx.Done():
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for generator context cancellation on close")
-	}
-	select {
-	case <-runtimeCtx.Done():
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for MCP context cancellation on close")
-	}
-}
-
-func TestServerRuntimeCreatorRegistersStarlarkREPL(t *testing.T) {
-	originalGenerator := initializeGeneratorFromModel
-	originalMCP := initializeMCPConnections
-	generator := &recordingToolCallingGenerator{}
-	store, _ := newTestSqlite(t)
-	initializeGeneratorFromModel = func(context.Context, config.Model, string, time.Duration) (gai.Generator, error) {
-		return generator, nil
-	}
-	initializeMCPConnections = func(context.Context, map[string]mcpconfig.ServerConfig) (*cpemcp.MCPState, error) {
-		return cpemcp.NewMCPState(), nil
-	}
-	t.Cleanup(func() {
-		initializeGeneratorFromModel = originalGenerator
-		initializeMCPConnections = originalMCP
-	})
-
-	creator := &serverRuntimeCreator{
-		store: store,
-		rawCfg: &config.RawConfig{
-			Models: []config.ModelConfig{
-				{
-					Model: config.Model{
-						Ref:           "test-model",
-						DisplayName:   "Test Model",
-						ID:            "test-model",
-						Type:          "responses",
-						ContextWindow: 100,
-						MaxOutput:     10,
-					},
-					DisableEditTool: true,
-					CodeMode: &config.CodeModeConfig{
-						Enabled:              true,
-						MaxTimeout:           17,
-						LargeOutputCharLimit: 123,
+		creator := &serverRuntimeCreator{
+			rawCfg: &config.RawConfig{
+				Models: []config.ModelConfig{
+					{
+						Model: config.Model{
+							Ref:           "test-model",
+							DisplayName:   "Test Model",
+							ID:            "test-model",
+							Type:          "responses",
+							ContextWindow: 100,
+							MaxOutput:     10,
+						},
+						DisableEditTool: true,
+						MCPServers: map[string]mcpconfig.ServerConfig{
+							"stub": {Type: "stdio", Command: "stub-mcp"},
+						},
 					},
 				},
 			},
-		},
-	}
-	cwd := t.TempDir()
-	runtime, err := creator.Create(t.Context(), session{
-		id:    "session-1",
-		model: "test-model",
-		cwd:   cwd,
-	}, acp.ClientCapabilities{})
-	if err != nil {
-		t.Fatalf("Create() error = %v", err)
-	}
-	t.Cleanup(func() {
-		if err := runtime.Close(); err != nil {
-			t.Errorf("Close() error = %v", err)
+		}
+		createCtx, cancelCreate := context.WithCancel(t.Context())
+		runtime, err := creator.Create(createCtx, session{
+			id:    "session-1",
+			model: "test-model",
+		}, acp.ClientCapabilities{})
+		be.Err(t, err, nil)
+		if generatorCtx == nil {
+			t.Fatal("generator initializer was not called")
+		}
+		if runtimeCtx == nil {
+			t.Fatal("MCP initializer was not called")
+		}
+
+		cancelCreate()
+		select {
+		case <-generatorCtx.Done():
+			t.Fatal("generator context was cancelled by create context after successful creation")
+		default:
+		}
+		select {
+		case <-runtimeCtx.Done():
+			t.Fatal("MCP context was cancelled by create context after successful creation")
+		default:
+		}
+
+		be.Err(t, runtime.Close(), nil)
+		select {
+		case <-generatorCtx.Done():
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for generator context cancellation on close")
+		}
+		select {
+		case <-runtimeCtx.Done():
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for MCP context cancellation on close")
 		}
 	})
+	t.Run("registers starlark repl", func(t *testing.T) {
+		originalGenerator := initializeGeneratorFromModel
+		originalMCP := initializeMCPConnections
+		generator := &recordingToolCallingGenerator{}
+		store, _ := newTestSqlite(t)
+		initializeGeneratorFromModel = func(context.Context, config.Model, string, time.Duration) (gai.Generator, error) {
+			return generator, nil
+		}
+		initializeMCPConnections = func(context.Context, map[string]mcpconfig.ServerConfig) (*cpemcp.MCPState, error) {
+			return cpemcp.NewMCPState(), nil
+		}
+		t.Cleanup(func() {
+			initializeGeneratorFromModel = originalGenerator
+			initializeMCPConnections = originalMCP
+		})
 
-	if len(generator.tools) != 1 {
-		t.Fatalf("registered tools = %#v, want one starlark_repl tool", generator.tools)
-	}
-	tool := generator.tools[0]
-	if tool.Name != starlarkREPLToolName {
-		t.Fatalf("registered tool name = %q, want %q", tool.Name, starlarkREPLToolName)
-	}
-	timeout := tool.InputSchema.Properties["executionTimeout"]
-	if timeout == nil || timeout.Maximum == nil || *timeout.Maximum != 17 {
-		t.Fatalf("executionTimeout schema = %#v, want maximum 17", timeout)
-	}
+		creator := &serverRuntimeCreator{
+			store: store,
+			rawCfg: &config.RawConfig{
+				Models: []config.ModelConfig{
+					{
+						Model: config.Model{
+							Ref:           "test-model",
+							DisplayName:   "Test Model",
+							ID:            "test-model",
+							Type:          "responses",
+							ContextWindow: 100,
+							MaxOutput:     10,
+						},
+						DisableEditTool: true,
+						CodeMode: &config.CodeModeConfig{
+							Enabled:              true,
+							MaxTimeout:           17,
+							LargeOutputCharLimit: 123,
+						},
+					},
+				},
+			},
+		}
+		cwd := t.TempDir()
+		runtime, err := creator.Create(t.Context(), session{
+			id:    "session-1",
+			model: "test-model",
+			cwd:   cwd,
+		}, acp.ClientCapabilities{})
+		if err != nil {
+			t.Fatalf("Create() error = %v", err)
+		}
+		t.Cleanup(func() {
+			if err := runtime.Close(); err != nil {
+				t.Errorf("Close() error = %v", err)
+			}
+		})
 
-	created, ok := runtime.(*closerAgent)
-	if !ok {
-		t.Fatalf("runtime type = %T, want *closerAgent", runtime)
-	}
-	callback, ok := created.toolCallbacks[starlarkREPLToolName].(*starlarkREPLCallback)
-	if !ok {
-		t.Fatalf("registered callback = %T, want *StarlarkREPLCallback", created.toolCallbacks[starlarkREPLToolName])
-	}
-	if callback.SessionID != "session-1" || callback.Cwd != cwd || callback.MaxTimeout != 17 || callback.LargeOutputCharLimit != 123 {
-		t.Fatalf("registered callback = %#v, want resolved session settings", callback)
-	}
-	if callback.Store != store {
-		t.Fatalf("registered callback store = %T, want server conversation store", callback.Store)
-	}
+		if len(generator.tools) != 1 {
+			t.Fatalf("registered tools = %#v, want one starlark_repl tool", generator.tools)
+		}
+		tool := generator.tools[0]
+		if tool.Name != starlarkREPLToolName {
+			t.Fatalf("registered tool name = %q, want %q", tool.Name, starlarkREPLToolName)
+		}
+		timeout := tool.InputSchema.Properties["executionTimeout"]
+		if timeout == nil || timeout.Maximum == nil || *timeout.Maximum != 17 {
+			t.Fatalf("executionTimeout schema = %#v, want maximum 17", timeout)
+		}
+
+		created, ok := runtime.(*closerAgent)
+		if !ok {
+			t.Fatalf("runtime type = %T, want *closerAgent", runtime)
+		}
+		callback, ok := created.toolCallbacks[starlarkREPLToolName].(*starlarkREPLCallback)
+		if !ok {
+			t.Fatalf("registered callback = %T, want *StarlarkREPLCallback", created.toolCallbacks[starlarkREPLToolName])
+		}
+		if callback.SessionID != "session-1" || callback.Cwd != cwd || callback.MaxTimeout != 17 || callback.LargeOutputCharLimit != 123 {
+			t.Fatalf("registered callback = %#v, want resolved session settings", callback)
+		}
+		if callback.Store != store {
+			t.Fatalf("registered callback store = %T, want server conversation store", callback.Store)
+		}
+	})
 }
 
 func TestRPCLoggerWrite(t *testing.T) {
@@ -296,86 +297,88 @@ func TestRPCLoggerWrite(t *testing.T) {
 }
 
 func TestMergeACPServerConfigs(t *testing.T) {
-	configured := map[string]mcpconfig.ServerConfig{
-		"configured": {
+	t.Run("base case", func(t *testing.T) {
+		configured := map[string]mcpconfig.ServerConfig{
+			"configured": {
+				Type:    "stdio",
+				Command: "configured-mcp",
+			},
+		}
+
+		got, err := mergeACPServerConfigs(configured, []acp.McpServer{
+			acp.StdioMcpServer("stdio", "stdio-mcp", []string{"--verbose"}, []acp.EnvVariable{
+				{Name: "TOKEN", Value: "secret"},
+			}),
+			acp.HttpMcpServer("http", "https://example.com/mcp", []acp.HttpHeader{
+				{Name: "Authorization", Value: "Bearer token"},
+			}),
+			acp.SseMcpServer("sse", "https://example.com/sse", []acp.HttpHeader{
+				{Name: "X-Test", Value: "true"},
+			}),
+		})
+		be.Err(t, err, nil)
+
+		be.Equal(t, got["configured"], configured["configured"])
+		be.Equal(t, got["stdio"], mcpconfig.ServerConfig{
 			Type:    "stdio",
-			Command: "configured-mcp",
-		},
-	}
-
-	got, err := mergeACPServerConfigs(configured, []acp.McpServer{
-		acp.StdioMcpServer("stdio", "stdio-mcp", []string{"--verbose"}, []acp.EnvVariable{
-			{Name: "TOKEN", Value: "secret"},
-		}),
-		acp.HttpMcpServer("http", "https://example.com/mcp", []acp.HttpHeader{
-			{Name: "Authorization", Value: "Bearer token"},
-		}),
-		acp.SseMcpServer("sse", "https://example.com/sse", []acp.HttpHeader{
-			{Name: "X-Test", Value: "true"},
-		}),
-	})
-	be.Err(t, err, nil)
-
-	be.Equal(t, got["configured"], configured["configured"])
-	be.Equal(t, got["stdio"], mcpconfig.ServerConfig{
-		Type:    "stdio",
-		Command: "stdio-mcp",
-		Args:    []string{"--verbose"},
-		Env: map[string]string{
-			"TOKEN": "secret",
-		},
-	})
-	be.Equal(t, got["http"], mcpconfig.ServerConfig{
-		Type: "http",
-		URL:  "https://example.com/mcp",
-		Headers: map[string]string{
-			"Authorization": "Bearer token",
-		},
-	})
-	be.Equal(t, got["sse"], mcpconfig.ServerConfig{
-		Type: "sse",
-		URL:  "https://example.com/sse",
-		Headers: map[string]string{
-			"X-Test": "true",
-		},
-	})
-}
-
-func TestMergeACPServerConfigsRejectsCollisions(t *testing.T) {
-	tests := []struct {
-		name       string
-		configured map[string]mcpconfig.ServerConfig
-		provided   []acp.McpServer
-	}{
-		{
-			name: "configured name",
-			configured: map[string]mcpconfig.ServerConfig{
-				"duplicate": {Type: "stdio", Command: "configured-mcp"},
+			Command: "stdio-mcp",
+			Args:    []string{"--verbose"},
+			Env: map[string]string{
+				"TOKEN": "secret",
 			},
-			provided: []acp.McpServer{
-				acp.StdioMcpServer("duplicate", "client-mcp", nil, nil),
+		})
+		be.Equal(t, got["http"], mcpconfig.ServerConfig{
+			Type: "http",
+			URL:  "https://example.com/mcp",
+			Headers: map[string]string{
+				"Authorization": "Bearer token",
 			},
-		},
-		{
-			name: "provided name",
-			provided: []acp.McpServer{
-				acp.StdioMcpServer("duplicate", "first-mcp", nil, nil),
-				acp.StdioMcpServer("duplicate", "second-mcp", nil, nil),
+		})
+		be.Equal(t, got["sse"], mcpconfig.ServerConfig{
+			Type: "sse",
+			URL:  "https://example.com/sse",
+			Headers: map[string]string{
+				"X-Test": "true",
 			},
-		},
-	}
+		})
+	})
+	t.Run("rejects", func(t *testing.T) {
+		t.Run("collisions", func(t *testing.T) {
+			tests := []struct {
+				name       string
+				configured map[string]mcpconfig.ServerConfig
+				provided   []acp.McpServer
+			}{
+				{
+					name: "configured name",
+					configured: map[string]mcpconfig.ServerConfig{
+						"duplicate": {Type: "stdio", Command: "configured-mcp"},
+					},
+					provided: []acp.McpServer{
+						acp.StdioMcpServer("duplicate", "client-mcp", nil, nil),
+					},
+				},
+				{
+					name: "provided name",
+					provided: []acp.McpServer{
+						acp.StdioMcpServer("duplicate", "first-mcp", nil, nil),
+						acp.StdioMcpServer("duplicate", "second-mcp", nil, nil),
+					},
+				},
+			}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := mergeACPServerConfigs(tt.configured, tt.provided)
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					_, err := mergeACPServerConfigs(tt.configured, tt.provided)
+					be.True(t, err != nil)
+				})
+			}
+		})
+		t.Run("unsupported acp transport", func(t *testing.T) {
+			_, err := mergeACPServerConfigs(nil, []acp.McpServer{
+				acp.AcpMcpServer("client-acp", "client-acp"),
+			})
 			be.True(t, err != nil)
 		})
-	}
-}
-
-func TestMergeACPServerConfigsRejectsUnsupportedACPTransport(t *testing.T) {
-	_, err := mergeACPServerConfigs(nil, []acp.McpServer{
-		acp.AcpMcpServer("client-acp", "client-acp"),
 	})
-	be.True(t, err != nil)
 }

@@ -24,20 +24,6 @@ type networkRetryGenerator struct {
 	retryDelay time.Duration
 }
 
-func newNetworkRetryGenerator(inner gai.Generator) *networkRetryGenerator {
-	return &networkRetryGenerator{
-		GeneratorWrapper: gai.GeneratorWrapper{Inner: inner},
-		maxRetries:       defaultNetworkMaxRetries,
-		retryDelay:       defaultNetworkRetryDelay,
-	}
-}
-
-func withNetworkRetry() gai.WrapperFunc {
-	return func(inner gai.Generator) gai.Generator {
-		return newNetworkRetryGenerator(inner)
-	}
-}
-
 func (g *networkRetryGenerator) Generate(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Response, error) {
 	maxRetries := max(g.maxRetries, 0)
 
@@ -70,6 +56,7 @@ func (g *networkRetryGenerator) Generate(ctx context.Context, dialog gai.Dialog,
 	}
 }
 
+// isRetryableNetworkError excludes caller cancellation, unwraps URL errors, and recognizes transport closures, network errors, and HTTP/2 disconnects.
 func isRetryableNetworkError(err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false

@@ -34,7 +34,7 @@ type plainTextRenderer struct {
 // NewPlainTextRenderer creates a renderer for non-TTY/plain terminal output.
 func NewPlainTextRenderer() *plainTextRenderer {
 	return &plainTextRenderer{renderer: newTermRenderer(
-		glamour.WithStyles(plainTextStyle()),
+		glamour.WithStyles(withoutLeadingDocumentBlock(styles.ASCIIStyleConfig)),
 		glamour.WithColorProfile(termenv.Ascii),
 		glamour.WithWordWrap(disabledWordWrapWidth),
 	)}
@@ -62,18 +62,6 @@ func IsTTYWriter(w io.Writer) bool {
 		return false
 	}
 	return term.IsTerminal(int(f.Fd()))
-}
-
-func baseStyle() ansi.StyleConfig {
-	style := styles.LightStyleConfig
-	if termenv.HasDarkBackground() {
-		style = styles.DarkStyleConfig
-	}
-	return withoutLeadingDocumentBlock(style)
-}
-
-func plainTextStyle() ansi.StyleConfig {
-	return withoutLeadingDocumentBlock(styles.ASCIIStyleConfig)
 }
 
 func withoutLeadingDocumentBlock(style ansi.StyleConfig) ansi.StyleConfig {
@@ -170,8 +158,12 @@ func newTermRenderer(options ...glamour.TermRendererOption) *glamourRenderer {
 
 // NewGlamourRendererForWriter creates a glamour renderer sized to the terminal backing w.
 func NewGlamourRendererForWriter(w io.Writer) *glamourRenderer {
+	style := styles.LightStyleConfig
+	if termenv.HasDarkBackground() {
+		style = styles.DarkStyleConfig
+	}
 	return newTermRenderer(
-		glamour.WithStyles(baseStyle()),
+		glamour.WithStyles(withoutLeadingDocumentBlock(style)),
 		glamour.WithWordWrap(writerWordWrapWidth(w)),
 	)
 }

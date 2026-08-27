@@ -13,78 +13,107 @@ import (
 	"github.com/spachava753/cpe/internal/testutil/testgate"
 )
 
-func TestGetProviderOAuthConfig(t *testing.T) {
-	testgate.RequireLive(t)
-	tests := []struct {
-		name     string
-		provider string
-		wantErr  bool
-		wantURL  string // partial check on auth URL
-	}{
-		{
-			name:     "anthropic",
-			provider: "anthropic",
-			wantURL:  "claude.ai",
-		},
-		{
-			name:     "openai",
-			provider: "openai",
-			wantURL:  "auth.openai.com",
-		},
-		{
-			name:     "unsupported",
-			provider: "google",
-			wantErr:  true,
-		},
-	}
+func TestGet(t *testing.T) {
+	t.Run("provider o auth config", func(t *testing.T) {
+		testgate.RequireLive(t)
+		tests := []struct {
+			name     string
+			provider string
+			wantErr  bool
+			wantURL  string // partial check on auth URL
+		}{
+			{
+				name:     "anthropic",
+				provider: "anthropic",
+				wantURL:  "claude.ai",
+			},
+			{
+				name:     "openai",
+				provider: "openai",
+				wantURL:  "auth.openai.com",
+			},
+			{
+				name:     "unsupported",
+				provider: "google",
+				wantErr:  true,
+			},
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg, err := getProviderOAuthConfig(tt.provider)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("expected error, got nil")
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				cfg, err := getProviderOAuthConfig(tt.provider)
+				if tt.wantErr {
+					if err == nil {
+						t.Error("expected error, got nil")
+					}
+					return
 				}
-				return
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if !strings.Contains(cfg.AuthURL, tt.wantURL) {
+					t.Errorf("AuthURL %q does not contain %q", cfg.AuthURL, tt.wantURL)
+				}
+				if cfg.ClientID == "" {
+					t.Error("ClientID is empty")
+				}
+				if cfg.TokenURL == "" {
+					t.Error("TokenURL is empty")
+				}
+				if cfg.RedirectURI == "" {
+					t.Error("RedirectURI is empty")
+				}
+				if cfg.Scopes == "" {
+					t.Error("Scopes is empty")
+				}
+			})
+		}
+	})
+	t.Run("open ai", func(t *testing.T) {
+		t.Run("defaults", func(t *testing.T) {
+			if got := getOpenAIClientID(); got != "app_EMoamEEZ73f0CkXaXp7hrann" {
+				t.Errorf("GetOpenAIClientID() = %q, want %q", got, "app_EMoamEEZ73f0CkXaXp7hrann")
 			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+			if got := getOpenAIAuthURL(); got != "https://auth.openai.com/oauth/authorize" {
+				t.Errorf("GetOpenAIAuthURL() = %q, want %q", got, "https://auth.openai.com/oauth/authorize")
 			}
-			if !strings.Contains(cfg.AuthURL, tt.wantURL) {
-				t.Errorf("AuthURL %q does not contain %q", cfg.AuthURL, tt.wantURL)
+			if got := getOpenAITokenURL(); got != "https://auth.openai.com/oauth/token" {
+				t.Errorf("GetOpenAITokenURL() = %q, want %q", got, "https://auth.openai.com/oauth/token")
 			}
-			if cfg.ClientID == "" {
-				t.Error("ClientID is empty")
+			if got := getOpenAIRedirectURI(); got != "http://localhost:1455/auth/callback" {
+				t.Errorf("GetOpenAIRedirectURI() = %q, want %q", got, "http://localhost:1455/auth/callback")
 			}
-			if cfg.TokenURL == "" {
-				t.Error("TokenURL is empty")
-			}
-			if cfg.RedirectURI == "" {
-				t.Error("RedirectURI is empty")
-			}
-			if cfg.Scopes == "" {
-				t.Error("Scopes is empty")
+			if got := getOpenAIScopes(); got != "openid profile email offline_access" {
+				t.Errorf("GetOpenAIScopes() = %q, want %q", got, "openid profile email offline_access")
 			}
 		})
-	}
-}
+		t.Run("env overrides", func(t *testing.T) {
+			tests := []struct {
+				envKey   string
+				envVal   string
+				getter   func() string
+				expected string
+			}{
+				{envOpenAIClientID, "custom-client-id", getOpenAIClientID, "custom-client-id"},
+				{envOpenAIAuthURL, "https://custom.auth.com", getOpenAIAuthURL, "https://custom.auth.com"},
+				{envOpenAITokenURL, "https://custom.token.com", getOpenAITokenURL, "https://custom.token.com"},
+				{envOpenAIRedirectURI, "http://localhost:9999/cb", getOpenAIRedirectURI, "http://localhost:9999/cb"},
+				{envOpenAIScopes, "custom:scope", getOpenAIScopes, "custom:scope"},
+			}
 
-func TestGetOpenAIDefaults(t *testing.T) {
-	if got := getOpenAIClientID(); got != "app_EMoamEEZ73f0CkXaXp7hrann" {
-		t.Errorf("GetOpenAIClientID() = %q, want %q", got, "app_EMoamEEZ73f0CkXaXp7hrann")
-	}
-	if got := getOpenAIAuthURL(); got != "https://auth.openai.com/oauth/authorize" {
-		t.Errorf("GetOpenAIAuthURL() = %q, want %q", got, "https://auth.openai.com/oauth/authorize")
-	}
-	if got := getOpenAITokenURL(); got != "https://auth.openai.com/oauth/token" {
-		t.Errorf("GetOpenAITokenURL() = %q, want %q", got, "https://auth.openai.com/oauth/token")
-	}
-	if got := getOpenAIRedirectURI(); got != "http://localhost:1455/auth/callback" {
-		t.Errorf("GetOpenAIRedirectURI() = %q, want %q", got, "http://localhost:1455/auth/callback")
-	}
-	if got := getOpenAIScopes(); got != "openid profile email offline_access" {
-		t.Errorf("GetOpenAIScopes() = %q, want %q", got, "openid profile email offline_access")
-	}
+			for _, tt := range tests {
+				t.Run(tt.envKey, func(t *testing.T) {
+					old := os.Getenv(tt.envKey)
+					os.Setenv(tt.envKey, tt.envVal)
+					defer os.Setenv(tt.envKey, old)
+
+					if got := tt.getter(); got != tt.expected {
+						t.Errorf("got %q, want %q", got, tt.expected)
+					}
+				})
+			}
+		})
+	})
 }
 
 func TestExchangeCodeDoesNotRetryHTTPErrorStatus(t *testing.T) {
@@ -106,33 +135,6 @@ func TestExchangeCodeDoesNotRetryHTTPErrorStatus(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "status 503") || !strings.Contains(err.Error(), "upstream exploded") {
 		t.Fatalf("error = %q, want status and response body", err.Error())
-	}
-}
-
-func TestGetOpenAIEnvOverrides(t *testing.T) {
-	tests := []struct {
-		envKey   string
-		envVal   string
-		getter   func() string
-		expected string
-	}{
-		{envOpenAIClientID, "custom-client-id", getOpenAIClientID, "custom-client-id"},
-		{envOpenAIAuthURL, "https://custom.auth.com", getOpenAIAuthURL, "https://custom.auth.com"},
-		{envOpenAITokenURL, "https://custom.token.com", getOpenAITokenURL, "https://custom.token.com"},
-		{envOpenAIRedirectURI, "http://localhost:9999/cb", getOpenAIRedirectURI, "http://localhost:9999/cb"},
-		{envOpenAIScopes, "custom:scope", getOpenAIScopes, "custom:scope"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.envKey, func(t *testing.T) {
-			old := os.Getenv(tt.envKey)
-			os.Setenv(tt.envKey, tt.envVal)
-			defer os.Setenv(tt.envKey, old)
-
-			if got := tt.getter(); got != tt.expected {
-				t.Errorf("got %q, want %q", got, tt.expected)
-			}
-		})
 	}
 }
 
@@ -282,81 +284,82 @@ func TestExtractChatGPTAccountID(t *testing.T) {
 }
 
 func TestTokenToCredential(t *testing.T) {
-	tests := []struct {
-		name     string
-		provider string
-	}{
-		{name: "anthropic", provider: "anthropic"},
-		{name: "openai", provider: "openai"},
-	}
+	t.Run("base case", func(t *testing.T) {
+		tests := []struct {
+			name     string
+			provider string
+		}{
+			{name: "anthropic", provider: "anthropic"},
+			{name: "openai", provider: "openai"},
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			token := &tokenResponse{
-				AccessToken:  "access-token-123",
-				RefreshToken: "refresh-token-456",
-				ExpiresIn:    3600,
-			}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				token := &tokenResponse{
+					AccessToken:  "access-token-123",
+					RefreshToken: "refresh-token-456",
+					ExpiresIn:    3600,
+				}
 
-			cred := TokenToCredential(tt.provider, token)
+				cred := TokenToCredential(tt.provider, token)
 
-			if cred.Type != "oauth" {
-				t.Errorf("Type = %q, want 'oauth'", cred.Type)
-			}
-			if cred.Provider != tt.provider {
-				t.Errorf("Provider = %q, want %q", cred.Provider, tt.provider)
-			}
-			if cred.AccessToken != "access-token-123" {
-				t.Errorf("AccessToken = %q, want 'access-token-123'", cred.AccessToken)
-			}
-			if cred.RefreshToken != "refresh-token-456" {
-				t.Errorf("RefreshToken = %q, want 'refresh-token-456'", cred.RefreshToken)
-			}
-			if cred.ExpiresAt == 0 {
-				t.Error("ExpiresAt should be non-zero")
-			}
-		})
-	}
-}
+				if cred.Type != "oauth" {
+					t.Errorf("Type = %q, want 'oauth'", cred.Type)
+				}
+				if cred.Provider != tt.provider {
+					t.Errorf("Provider = %q, want %q", cred.Provider, tt.provider)
+				}
+				if cred.AccessToken != "access-token-123" {
+					t.Errorf("AccessToken = %q, want 'access-token-123'", cred.AccessToken)
+				}
+				if cred.RefreshToken != "refresh-token-456" {
+					t.Errorf("RefreshToken = %q, want 'refresh-token-456'", cred.RefreshToken)
+				}
+				if cred.ExpiresAt == 0 {
+					t.Error("ExpiresAt should be non-zero")
+				}
+			})
+		}
+	})
+	t.Run("preserve refresh", func(t *testing.T) {
+		tests := []struct {
+			name                 string
+			tokenRefreshToken    string
+			existingRefreshToken string
+			wantRefreshToken     string
+		}{
+			{
+				name:                 "prefer token refresh token when present",
+				tokenRefreshToken:    "new-refresh-token",
+				existingRefreshToken: "old-refresh-token",
+				wantRefreshToken:     "new-refresh-token",
+			},
+			{
+				name:                 "preserve existing refresh token when omitted",
+				tokenRefreshToken:    "",
+				existingRefreshToken: "old-refresh-token",
+				wantRefreshToken:     "old-refresh-token",
+			},
+			{
+				name:                 "empty when neither token nor existing refresh token provided",
+				tokenRefreshToken:    "",
+				existingRefreshToken: "",
+				wantRefreshToken:     "",
+			},
+		}
 
-func TestTokenToCredentialPreserveRefresh(t *testing.T) {
-	tests := []struct {
-		name                 string
-		tokenRefreshToken    string
-		existingRefreshToken string
-		wantRefreshToken     string
-	}{
-		{
-			name:                 "prefer token refresh token when present",
-			tokenRefreshToken:    "new-refresh-token",
-			existingRefreshToken: "old-refresh-token",
-			wantRefreshToken:     "new-refresh-token",
-		},
-		{
-			name:                 "preserve existing refresh token when omitted",
-			tokenRefreshToken:    "",
-			existingRefreshToken: "old-refresh-token",
-			wantRefreshToken:     "old-refresh-token",
-		},
-		{
-			name:                 "empty when neither token nor existing refresh token provided",
-			tokenRefreshToken:    "",
-			existingRefreshToken: "",
-			wantRefreshToken:     "",
-		},
-	}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				cred := TokenToCredentialPreserveRefresh("openai", &tokenResponse{
+					AccessToken:  "access-token-123",
+					RefreshToken: tt.tokenRefreshToken,
+					ExpiresIn:    3600,
+				}, tt.existingRefreshToken)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cred := TokenToCredentialPreserveRefresh("openai", &tokenResponse{
-				AccessToken:  "access-token-123",
-				RefreshToken: tt.tokenRefreshToken,
-				ExpiresIn:    3600,
-			}, tt.existingRefreshToken)
-
-			if cred.RefreshToken != tt.wantRefreshToken {
-				t.Fatalf("RefreshToken = %q, want %q", cred.RefreshToken, tt.wantRefreshToken)
-			}
-		})
-	}
+				if cred.RefreshToken != tt.wantRefreshToken {
+					t.Fatalf("RefreshToken = %q, want %q", cred.RefreshToken, tt.wantRefreshToken)
+				}
+			})
+		}
+	})
 }

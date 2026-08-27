@@ -33,126 +33,126 @@ func setupTestStore(t *testing.T, creds map[string]*Credential) *Store {
 	return &Store{path: authPath}
 }
 
-func TestOpenAIOAuthTransport_InjectsHeaders(t *testing.T) {
-	ctx := context.Background()
+func TestOpenAITransportOAuthBehavior(t *testing.T) {
+	t.Run("injects headers", func(t *testing.T) {
+		ctx := context.Background()
 
-	// JWT with account ID: {"https://api.openai.com/auth":{"chatgpt_account_id":"test-account-id"}}
-	accessToken := "eyJhbGciOiJIUzI1NiJ9.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoidGVzdC1hY2NvdW50LWlkIn19.signature"
+		// JWT with account ID: {"https://api.openai.com/auth":{"chatgpt_account_id":"test-account-id"}}
+		accessToken := "eyJhbGciOiJIUzI1NiJ9.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjoidGVzdC1hY2NvdW50LWlkIn19.signature"
 
-	store := setupTestStore(t, map[string]*Credential{
-		"openai": {
-			Type:         "oauth",
-			Provider:     "openai",
-			AccessToken:  accessToken,
-			RefreshToken: "refresh-token",
-			ExpiresAt:    time.Now().Add(1 * time.Hour).Unix(),
-		},
-	})
+		store := setupTestStore(t, map[string]*Credential{
+			"openai": {
+				Type:         "oauth",
+				Provider:     "openai",
+				AccessToken:  accessToken,
+				RefreshToken: "refresh-token",
+				ExpiresAt:    time.Now().Add(1 * time.Hour).Unix(),
+			},
+		})
 
-	// Create a test server that captures request headers
-	var capturedHeaders http.Header
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedHeaders = r.Header.Clone()
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer ts.Close()
+		// Create a test server that captures request headers
+		var capturedHeaders http.Header
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			capturedHeaders = r.Header.Clone()
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer ts.Close()
 
-	transport := NewOpenAIOAuthTransport(http.DefaultTransport, store)
+		transport := NewOpenAIOAuthTransport(http.DefaultTransport, store)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", ts.URL+"/responses", nil)
-	if err != nil {
-		t.Fatalf("creating request: %v", err)
-	}
-	// Simulate the OpenAI SDK setting x-api-key
-	req.Header.Set("x-api-key", "should-be-removed")
+		req, err := http.NewRequestWithContext(ctx, "POST", ts.URL+"/responses", nil)
+		if err != nil {
+			t.Fatalf("creating request: %v", err)
+		}
+		// Simulate the OpenAI SDK setting x-api-key
+		req.Header.Set("x-api-key", "should-be-removed")
 
-	resp, err := transport.RoundTrip(req)
-	if err != nil {
-		t.Fatalf("RoundTrip error: %v", err)
-	}
-	resp.Body.Close()
-
-	// Check Authorization header
-	authHeader := capturedHeaders.Get("Authorization")
-	if authHeader != "Bearer "+accessToken {
-		t.Errorf("Authorization = %q, want 'Bearer %s'", authHeader, accessToken)
-	}
-
-	// Check x-api-key was removed
-	if capturedHeaders.Get("x-api-key") != "" {
-		t.Error("x-api-key header should have been removed")
-	}
-
-	// Check chatgpt-account-id header
-	accountID := capturedHeaders.Get("chatgpt-account-id")
-	if accountID != "test-account-id" {
-		t.Errorf("chatgpt-account-id = %q, want 'test-account-id'", accountID)
-	}
-
-	// Check originator header
-	originator := capturedHeaders.Get("originator")
-	if originator != "codex_cli_rs" {
-		t.Errorf("originator = %q, want 'codex_cli_rs'", originator)
-	}
-}
-
-func TestOpenAIOAuthTransport_NoCredential(t *testing.T) {
-	ctx := context.Background()
-	store := setupTestStore(t, nil)
-	transport := NewOpenAIOAuthTransport(http.DefaultTransport, store)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", "http://example.com", nil)
-	if err != nil {
-		t.Fatalf("creating request: %v", err)
-	}
-
-	resp, err := transport.RoundTrip(req)
-	if err == nil {
+		resp, err := transport.RoundTrip(req)
+		if err != nil {
+			t.Fatalf("RoundTrip error: %v", err)
+		}
 		resp.Body.Close()
-		t.Error("expected error when no credential exists")
-	}
-}
 
-func TestOpenAIOAuthTransport_OriginalRequestNotModified(t *testing.T) {
-	ctx := context.Background()
-	accessToken := "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.signature"
+		// Check Authorization header
+		authHeader := capturedHeaders.Get("Authorization")
+		if authHeader != "Bearer "+accessToken {
+			t.Errorf("Authorization = %q, want 'Bearer %s'", authHeader, accessToken)
+		}
 
-	store := setupTestStore(t, map[string]*Credential{
-		"openai": {
-			Type:         "oauth",
-			Provider:     "openai",
-			AccessToken:  accessToken,
-			RefreshToken: "refresh",
-			ExpiresAt:    time.Now().Add(1 * time.Hour).Unix(),
-		},
+		// Check x-api-key was removed
+		if capturedHeaders.Get("x-api-key") != "" {
+			t.Error("x-api-key header should have been removed")
+		}
+
+		// Check chatgpt-account-id header
+		accountID := capturedHeaders.Get("chatgpt-account-id")
+		if accountID != "test-account-id" {
+			t.Errorf("chatgpt-account-id = %q, want 'test-account-id'", accountID)
+		}
+
+		// Check originator header
+		originator := capturedHeaders.Get("originator")
+		if originator != "codex_cli_rs" {
+			t.Errorf("originator = %q, want 'codex_cli_rs'", originator)
+		}
 	})
+	t.Run("no credential", func(t *testing.T) {
+		ctx := context.Background()
+		store := setupTestStore(t, nil)
+		transport := NewOpenAIOAuthTransport(http.DefaultTransport, store)
 
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer ts.Close()
+		req, err := http.NewRequestWithContext(ctx, "GET", "http://example.com", nil)
+		if err != nil {
+			t.Fatalf("creating request: %v", err)
+		}
 
-	transport := NewOpenAIOAuthTransport(http.DefaultTransport, store)
+		resp, err := transport.RoundTrip(req)
+		if err == nil {
+			resp.Body.Close()
+			t.Error("expected error when no credential exists")
+		}
+	})
+	t.Run("original request not modified", func(t *testing.T) {
+		ctx := context.Background()
+		accessToken := "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.signature"
 
-	req, err := http.NewRequestWithContext(ctx, "GET", ts.URL, nil)
-	if err != nil {
-		t.Fatalf("creating request: %v", err)
-	}
-	req.Header.Set("x-api-key", "original-key")
+		store := setupTestStore(t, map[string]*Credential{
+			"openai": {
+				Type:         "oauth",
+				Provider:     "openai",
+				AccessToken:  accessToken,
+				RefreshToken: "refresh",
+				ExpiresAt:    time.Now().Add(1 * time.Hour).Unix(),
+			},
+		})
 
-	resp, err := transport.RoundTrip(req)
-	if err != nil {
-		t.Fatalf("RoundTrip error: %v", err)
-	}
-	resp.Body.Close()
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer ts.Close()
 
-	// Original request should not be modified
-	if req.Header.Get("x-api-key") != "original-key" {
-		t.Error("original request x-api-key was modified")
-	}
-	if req.Header.Get("Authorization") != "" {
-		t.Error("original request Authorization was modified")
-	}
+		transport := NewOpenAIOAuthTransport(http.DefaultTransport, store)
+
+		req, err := http.NewRequestWithContext(ctx, "GET", ts.URL, nil)
+		if err != nil {
+			t.Fatalf("creating request: %v", err)
+		}
+		req.Header.Set("x-api-key", "original-key")
+
+		resp, err := transport.RoundTrip(req)
+		if err != nil {
+			t.Fatalf("RoundTrip error: %v", err)
+		}
+		resp.Body.Close()
+
+		// Original request should not be modified
+		if req.Header.Get("x-api-key") != "original-key" {
+			t.Error("original request x-api-key was modified")
+		}
+		if req.Header.Get("Authorization") != "" {
+			t.Error("original request Authorization was modified")
+		}
+	})
 }
 
 func TestOAuthTransport_AnthropicHeaders(t *testing.T) {

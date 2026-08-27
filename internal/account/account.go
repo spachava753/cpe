@@ -92,8 +92,8 @@ func AccountUsage(ctx context.Context, opts AccountUsageOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := validateAccountUsageOptions(opts); err != nil {
-		return err
+	if opts.Raw && opts.Watch {
+		return fmt.Errorf("--raw and --watch cannot be used together")
 	}
 
 	switch provider {
@@ -104,13 +104,6 @@ func AccountUsage(ctx context.Context, opts AccountUsageOptions) error {
 	default:
 		return fmt.Errorf("unsupported provider %q (supported: %s)", provider, strings.Join(supportedAccountProviders, ", "))
 	}
-}
-
-func validateAccountUsageOptions(opts AccountUsageOptions) error {
-	if opts.Raw && opts.Watch {
-		return fmt.Errorf("--raw and --watch cannot be used together")
-	}
-	return nil
 }
 
 func loginAnthropicAccount(ctx context.Context, opts AccountLoginOptions) error {
@@ -170,6 +163,7 @@ func loginAnthropicAccount(ctx context.Context, opts AccountLoginOptions) error 
 	return nil
 }
 
+// loginOpenAIAccount starts a PKCE callback flow, opens the authorization page when requested, then exchanges and stores the returned code.
 func loginOpenAIAccount(ctx context.Context, opts AccountLoginOptions) error {
 	verifier, challenge, err := auth.GeneratePKCE()
 	if err != nil {

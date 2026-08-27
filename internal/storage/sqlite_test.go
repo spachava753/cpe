@@ -90,189 +90,221 @@ func TestResolveStoragePath(t *testing.T) {
 	}
 }
 
-func TestNewConvoDBCreatesParentDirectory(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "nested", "conversations.db")
-	store, err := NewConvoDB(t.Context(), dbPath)
-	if err != nil {
-		t.Fatalf("NewConvoDB: %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-
-	sessions, err := store.ListACPSessions(t.Context(), nil)
-	if err != nil {
-		t.Fatalf("ListACPSessions: %v", err)
-	}
-	if len(sessions) != 0 {
-		t.Fatalf("new store returned %d sessions, want 0", len(sessions))
-	}
-	if _, err := os.Stat(dbPath); err != nil {
-		t.Fatalf("stat conversation database: %v", err)
-	}
-	if err := store.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
-	if _, err := store.ListACPSessions(t.Context(), nil); err == nil {
-		t.Fatal("ListACPSessions after Close: expected error, got nil")
-	}
-}
-
-func TestNewConvoDBConcurrentProcesses(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "conversations.db")
-
-	type openResult struct {
-		store *Sqlite
-		err   error
-	}
-	openResults := make(chan openResult, 2)
-	startOpen := make(chan struct{})
-	for range 2 {
-		go func() {
-			<-startOpen
+func TestNew(t *testing.T) {
+	t.Run("convo db", func(t *testing.T) {
+		t.Run("creates parent directory", func(t *testing.T) {
+			dbPath := filepath.Join(t.TempDir(), "nested", "conversations.db")
 			store, err := NewConvoDB(t.Context(), dbPath)
-			openResults <- openResult{store: store, err: err}
-		}()
-	}
-	close(startOpen)
-
-	stores := make([]*Sqlite, 0, 2)
-	for range 2 {
-		result := <-openResults
-		if result.err != nil {
-			for _, store := range stores {
-				_ = store.Close()
+			if err != nil {
+				t.Fatalf("NewConvoDB: %v", err)
 			}
-			t.Fatalf("concurrent NewConvoDB: %v", result.err)
-		}
-		stores = append(stores, result.store)
-	}
-	for _, store := range stores {
-		t.Cleanup(func() { _ = store.Close() })
-		store.ownedDB.SetMaxOpenConns(1)
-	}
-	if stores[0].ownedDB == stores[1].ownedDB {
-		t.Fatal("NewConvoDB returned the same sql.DB handle twice")
-	}
+			t.Cleanup(func() { _ = store.Close() })
 
-	for i, store := range stores {
-		var journalMode string
-		if err := store.ownedDB.QueryRowContext(t.Context(), "PRAGMA journal_mode").Scan(&journalMode); err != nil {
-			t.Fatalf("store %d journal mode: %v", i, err)
-		}
-		if !strings.EqualFold(journalMode, "wal") {
-			t.Fatalf("store %d journal mode: got %q, want WAL", i, journalMode)
-		}
-		var foreignKeys int
-		if err := store.ownedDB.QueryRowContext(t.Context(), "PRAGMA foreign_keys").Scan(&foreignKeys); err != nil {
-			t.Fatalf("store %d foreign keys: %v", i, err)
-		}
-		if foreignKeys != 1 {
-			t.Fatalf("store %d foreign keys: got %d, want 1", i, foreignKeys)
-		}
-	}
-	if got := countRows(t, stores[0].ownedDB, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('messages', 'blocks', 'acp_sessions')"); got != 3 {
-		t.Fatalf("current schema tables after concurrent initialization: got %d, want 3", got)
-	}
+			sessions, err := store.ListACPSessions(t.Context(), nil)
+			if err != nil {
+				t.Fatalf("ListACPSessions: %v", err)
+			}
+			if len(sessions) != 0 {
+				t.Fatalf("new store returned %d sessions, want 0", len(sessions))
+			}
+			if _, err := os.Stat(dbPath); err != nil {
+				t.Fatalf("stat conversation database: %v", err)
+			}
+			if err := store.Close(); err != nil {
+				t.Fatalf("Close: %v", err)
+			}
+			if _, err := store.ListACPSessions(t.Context(), nil); err == nil {
+				t.Fatal("ListACPSessions after Close: expected error, got nil")
+			}
+		})
+		t.Run("concurrent processes", func(t *testing.T) {
+			dbPath := filepath.Join(t.TempDir(), "conversations.db")
 
-	if _, err := stores[0].ownedDB.ExecContext(t.Context(), `
+			type openResult struct {
+				store *Sqlite
+				err   error
+			}
+			openResults := make(chan openResult, 2)
+			startOpen := make(chan struct{})
+			for range 2 {
+				go func() {
+					<-startOpen
+					store, err := NewConvoDB(t.Context(), dbPath)
+					openResults <- openResult{store: store, err: err}
+				}()
+			}
+			close(startOpen)
+
+			stores := make([]*Sqlite, 0, 2)
+			for range 2 {
+				result := <-openResults
+				if result.err != nil {
+					for _, store := range stores {
+						_ = store.Close()
+					}
+					t.Fatalf("concurrent NewConvoDB: %v", result.err)
+				}
+				stores = append(stores, result.store)
+			}
+			for _, store := range stores {
+				t.Cleanup(func() { _ = store.Close() })
+				store.ownedDB.SetMaxOpenConns(1)
+			}
+			if stores[0].ownedDB == stores[1].ownedDB {
+				t.Fatal("NewConvoDB returned the same sql.DB handle twice")
+			}
+
+			for i, store := range stores {
+				var journalMode string
+				if err := store.ownedDB.QueryRowContext(t.Context(), "PRAGMA journal_mode").Scan(&journalMode); err != nil {
+					t.Fatalf("store %d journal mode: %v", i, err)
+				}
+				if !strings.EqualFold(journalMode, "wal") {
+					t.Fatalf("store %d journal mode: got %q, want WAL", i, journalMode)
+				}
+				var foreignKeys int
+				if err := store.ownedDB.QueryRowContext(t.Context(), "PRAGMA foreign_keys").Scan(&foreignKeys); err != nil {
+					t.Fatalf("store %d foreign keys: %v", i, err)
+				}
+				if foreignKeys != 1 {
+					t.Fatalf("store %d foreign keys: got %d, want 1", i, foreignKeys)
+				}
+			}
+			if got := countRows(t, stores[0].ownedDB, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('messages', 'blocks', 'acp_sessions')"); got != 3 {
+				t.Fatalf("current schema tables after concurrent initialization: got %d, want 3", got)
+			}
+
+			if _, err := stores[0].ownedDB.ExecContext(t.Context(), `
 		INSERT INTO messages (id, role, tool_result_error)
 		VALUES ('candidate-a', 'assistant', 0), ('candidate-b', 'assistant', 0)
 	`); err != nil {
-		t.Fatalf("insert candidate messages: %v", err)
-	}
-	if err := stores[0].CreateACPSession(t.Context(), CreateACPSessionParams{
-		Session: acp.SessionInfo{
-			Cwd:       "/tmp/concurrent",
-			SessionID: "concurrent-session",
-			Title:     new("Concurrent session"),
-		},
-		ModelRef: testACPModelRef,
-	}); err != nil {
-		t.Fatalf("CreateACPSession: %v", err)
-	}
+				t.Fatalf("insert candidate messages: %v", err)
+			}
+			if err := stores[0].CreateACPSession(t.Context(), CreateACPSessionParams{
+				Session: acp.SessionInfo{
+					Cwd:       "/tmp/concurrent",
+					SessionID: "concurrent-session",
+					Title:     new("Concurrent session"),
+				},
+				ModelRef: testACPModelRef,
+			}); err != nil {
+				t.Fatalf("CreateACPSession: %v", err)
+			}
 
-	lockCtx, cancelLock := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancelLock()
-	firstTx, err := beginWriteTx(lockCtx, stores[0].db)
-	if err != nil {
-		t.Fatalf("begin first write transaction: %v", err)
-	}
-	if _, err := stores[1].GetACPSession(lockCtx, "concurrent-session"); err != nil {
-		_ = firstTx.Rollback()
-		t.Fatalf("read through second handle during write transaction: %v", err)
-	}
+			lockCtx, cancelLock := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancelLock()
+			firstTx, err := beginWriteTx(lockCtx, stores[0].db)
+			if err != nil {
+				t.Fatalf("begin first write transaction: %v", err)
+			}
+			if _, err := stores[1].GetACPSession(lockCtx, "concurrent-session"); err != nil {
+				_ = firstTx.Rollback()
+				t.Fatalf("read through second handle during write transaction: %v", err)
+			}
 
-	type txResult struct {
-		tx  *sql.Tx
-		err error
-	}
-	secondTxResult := make(chan txResult, 1)
-	go func() {
-		tx, err := beginWriteTx(lockCtx, stores[1].db)
-		secondTxResult <- txResult{tx: tx, err: err}
-	}()
-	select {
-	case result := <-secondTxResult:
-		if result.tx != nil {
-			_ = result.tx.Rollback()
-		}
-		_ = firstTx.Rollback()
-		t.Fatalf("second writer did not queue at transaction start: %v", result.err)
-	case <-time.After(50 * time.Millisecond):
-	}
-	if err := firstTx.Commit(); err != nil {
-		t.Fatalf("commit first write transaction: %v", err)
-	}
-	select {
-	case result := <-secondTxResult:
-		if result.err != nil {
-			t.Fatalf("begin queued write transaction: %v", result.err)
-		}
-		if err := result.tx.Rollback(); err != nil {
-			t.Fatalf("rollback queued write transaction: %v", err)
-		}
-	case <-lockCtx.Done():
-		t.Fatalf("queued writer did not start: %v", lockCtx.Err())
-	}
+			type txResult struct {
+				tx  *sql.Tx
+				err error
+			}
+			secondTxResult := make(chan txResult, 1)
+			go func() {
+				tx, err := beginWriteTx(lockCtx, stores[1].db)
+				secondTxResult <- txResult{tx: tx, err: err}
+			}()
+			select {
+			case result := <-secondTxResult:
+				if result.tx != nil {
+					_ = result.tx.Rollback()
+				}
+				_ = firstTx.Rollback()
+				t.Fatalf("second writer did not queue at transaction start: %v", result.err)
+			case <-time.After(50 * time.Millisecond):
+			}
+			if err := firstTx.Commit(); err != nil {
+				t.Fatalf("commit first write transaction: %v", err)
+			}
+			select {
+			case result := <-secondTxResult:
+				if result.err != nil {
+					t.Fatalf("begin queued write transaction: %v", result.err)
+				}
+				if err := result.tx.Rollback(); err != nil {
+					t.Fatalf("rollback queued write transaction: %v", err)
+				}
+			case <-lockCtx.Done():
+				t.Fatalf("queued writer did not start: %v", lockCtx.Err())
+			}
 
-	type advanceResult struct {
-		messageID string
-		err       error
-	}
-	advanceResults := make(chan advanceResult, 2)
-	startAdvance := make(chan struct{})
-	for i, messageID := range []string{"candidate-a", "candidate-b"} {
-		store := stores[i]
-		go func() {
-			<-startAdvance
-			_, err := store.AddACPSessionMessage(t.Context(), "concurrent-session", "", messageID)
-			advanceResults <- advanceResult{messageID: messageID, err: err}
-		}()
-	}
-	close(startAdvance)
+			type advanceResult struct {
+				messageID string
+				err       error
+			}
+			advanceResults := make(chan advanceResult, 2)
+			startAdvance := make(chan struct{})
+			for i, messageID := range []string{"candidate-a", "candidate-b"} {
+				store := stores[i]
+				go func() {
+					<-startAdvance
+					_, err := store.AddACPSessionMessage(t.Context(), "concurrent-session", "", messageID)
+					advanceResults <- advanceResult{messageID: messageID, err: err}
+				}()
+			}
+			close(startAdvance)
 
-	var winner string
-	conflicts := 0
-	for range 2 {
-		result := <-advanceResults
-		switch {
-		case result.err == nil:
-			winner = result.messageID
-		case errors.Is(result.err, ErrSessionConflict):
-			conflicts++
-		default:
-			t.Fatalf("advance session to %s: %v", result.messageID, result.err)
+			var winner string
+			conflicts := 0
+			for range 2 {
+				result := <-advanceResults
+				switch {
+				case result.err == nil:
+					winner = result.messageID
+				case errors.Is(result.err, ErrSessionConflict):
+					conflicts++
+				default:
+					t.Fatalf("advance session to %s: %v", result.messageID, result.err)
+				}
+			}
+			if winner == "" || conflicts != 1 {
+				t.Fatalf("concurrent advancement: winner=%q conflicts=%d, want one of each", winner, conflicts)
+			}
+			persisted, err := stores[0].GetACPSession(t.Context(), "concurrent-session")
+			if err != nil {
+				t.Fatalf("GetACPSession after concurrent advancement: %v", err)
+			}
+			if persisted.LastMessageID != winner {
+				t.Fatalf("persisted last message: got %q, want winner %q", persisted.LastMessageID, winner)
+			}
+		})
+	})
+	// TestNewSqlite_SchemaError verifies that NewSqlite returns an error when the
+	// current schema cannot be applied.
+	t.Run("sqlite schema error", func(t *testing.T) {
+		dbPath := filepath.Join(t.TempDir(), "test.db")
+		realDB, err := sql.Open("sqlite3", dbPath)
+		if err != nil {
+			t.Fatalf("sql.Open: %v", err)
 		}
-	}
-	if winner == "" || conflicts != 1 {
-		t.Fatalf("concurrent advancement: winner=%q conflicts=%d, want one of each", winner, conflicts)
-	}
-	persisted, err := stores[0].GetACPSession(t.Context(), "concurrent-session")
-	if err != nil {
-		t.Fatalf("GetACPSession after concurrent advancement: %v", err)
-	}
-	if persisted.LastMessageID != winner {
-		t.Fatalf("persisted last message: got %q, want winner %q", persisted.LastMessageID, winner)
-	}
+		t.Cleanup(func() { _ = realDB.Close() })
+
+		// parent_id does not exist, so current schema initialization fails while
+		// creating the parent index.
+		if _, err := realDB.ExecContext(t.Context(), `
+		CREATE TABLE messages (
+			id TEXT PRIMARY KEY,
+			role TEXT NOT NULL,
+			tool_result_error BOOLEAN NOT NULL DEFAULT 0,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)
+	`); err != nil {
+			t.Fatalf("create incompatible schema: %v", err)
+		}
+		if _, err := NewSqlite(t.Context(), realDB); err == nil {
+			t.Fatal("expected error from failed schema init")
+		}
+		if got := countRows(t, realDB, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_messages_created_at'"); got != 0 {
+			t.Fatalf("rolled-back schema indexes: got %d, want 0", got)
+		}
+	})
 }
 
 // --- Test helpers ---
@@ -425,182 +457,286 @@ func expectSaveDialogError(t *testing.T, db *Sqlite, ctx context.Context, msgs [
 	}
 }
 
-func TestACPSessions(t *testing.T) {
-	db, rawDB := newTestDB(t)
-	ctx := context.Background()
+func TestACP(t *testing.T) {
+	t.Run("sessions", func(t *testing.T) {
+		db, rawDB := newTestDB(t)
+		ctx := context.Background()
 
-	olderMessageID := saveOne(t, db, ctx, makeTextMessage(gai.User, "older"))
-	newerMessageID := saveOne(t, db, ctx, makeTextMessage(gai.User, "newer"))
-	latestMessageID := saveOne(t, db, ctx, makeTextMessage(gai.User, "latest"))
-	olderMessageCreatedAt := time.Date(2026, 5, 24, 10, 30, 0, 0, time.UTC)
-	newerMessageCreatedAt := time.Date(2026, 5, 24, 12, 45, 30, 0, time.UTC)
-	latestMessageCreatedAt := time.Date(2026, 5, 24, 13, 15, 0, 123, time.UTC)
-	olderSessionCreatedAt := time.Date(2026, 5, 23, 9, 0, 0, 0, time.UTC)
-	newerSessionCreatedAt := time.Date(2026, 5, 23, 10, 0, 0, 0, time.UTC)
+		olderMessageID := saveOne(t, db, ctx, makeTextMessage(gai.User, "older"))
+		newerMessageID := saveOne(t, db, ctx, makeTextMessage(gai.User, "newer"))
+		latestMessageID := saveOne(t, db, ctx, makeTextMessage(gai.User, "latest"))
+		olderMessageCreatedAt := time.Date(2026, 5, 24, 10, 30, 0, 0, time.UTC)
+		newerMessageCreatedAt := time.Date(2026, 5, 24, 12, 45, 30, 0, time.UTC)
+		latestMessageCreatedAt := time.Date(2026, 5, 24, 13, 15, 0, 123, time.UTC)
+		olderSessionCreatedAt := time.Date(2026, 5, 23, 9, 0, 0, 0, time.UTC)
+		newerSessionCreatedAt := time.Date(2026, 5, 23, 10, 0, 0, 0, time.UTC)
 
-	for _, update := range []struct {
-		messageID string
-		createdAt time.Time
-	}{
-		{olderMessageID, olderMessageCreatedAt},
-		{newerMessageID, newerMessageCreatedAt},
-		{latestMessageID, latestMessageCreatedAt},
-	} {
-		if _, err := rawDB.ExecContext(ctx, "UPDATE messages SET created_at = ? WHERE id = ?", update.createdAt, update.messageID); err != nil {
-			t.Fatalf("update message timestamp: %v", err)
+		for _, update := range []struct {
+			messageID string
+			createdAt time.Time
+		}{
+			{olderMessageID, olderMessageCreatedAt},
+			{newerMessageID, newerMessageCreatedAt},
+			{latestMessageID, latestMessageCreatedAt},
+		} {
+			if _, err := rawDB.ExecContext(ctx, "UPDATE messages SET created_at = ? WHERE id = ?", update.createdAt, update.messageID); err != nil {
+				t.Fatalf("update message timestamp: %v", err)
+			}
 		}
-	}
 
-	err := db.CreateACPSession(ctx, CreateACPSessionParams{
-		Session: acp.SessionInfo{
-			Cwd:       "/tmp/older",
-			SessionID: acp.SessionId("older-session"),
-			Title:     new("Older title"),
-		},
-		LastMessageID: olderMessageID,
-		ModelRef:      "claude-opus",
-		ThinkingLevel: "low",
-	})
-	if err != nil {
-		t.Fatalf("CreateACPSession older: %v", err)
-	}
-
-	err = db.CreateACPSession(ctx, CreateACPSessionParams{
-		Session: acp.SessionInfo{
-			Cwd:       "/tmp/newer",
-			SessionID: acp.SessionId("newer-session"),
-			Title:     new("Newer title"),
-		},
-		LastMessageID: newerMessageID,
-		ModelRef:      testACPModelRef,
-	})
-	if err != nil {
-		t.Fatalf("CreateACPSession newer: %v", err)
-	}
-	for _, update := range []struct {
-		sessionID string
-		createdAt time.Time
-	}{
-		{"older-session", olderSessionCreatedAt},
-		{"newer-session", newerSessionCreatedAt},
-	} {
-		if _, err := rawDB.ExecContext(ctx, "UPDATE acp_sessions SET created_at = ? WHERE id = ?", update.createdAt, update.sessionID); err != nil {
-			t.Fatalf("update session timestamp: %v", err)
+		err := db.CreateACPSession(ctx, CreateACPSessionParams{
+			Session: acp.SessionInfo{
+				Cwd:       "/tmp/older",
+				SessionID: acp.SessionId("older-session"),
+				Title:     new("Older title"),
+			},
+			LastMessageID: olderMessageID,
+			ModelRef:      "claude-opus",
+			ThinkingLevel: "low",
+		})
+		if err != nil {
+			t.Fatalf("CreateACPSession older: %v", err)
 		}
-	}
 
-	resp, err := db.GetACPSession(ctx, acp.SessionId("older-session"))
-	if err != nil {
-		t.Fatalf("GetACPSession: %v", err)
-	}
-	if resp.Session.SessionID != acp.SessionId("older-session") {
-		t.Fatalf("SessionID: got %q", resp.Session.SessionID)
-	}
-	if resp.Session.Cwd != "/tmp/older" {
-		t.Fatalf("Cwd: got %q", resp.Session.Cwd)
-	}
-	if resp.Session.Title == nil || *resp.Session.Title != "Older title" {
-		t.Fatalf("Title: got %v", resp.Session.Title)
-	}
-	if resp.Session.UpdatedAt == nil || *resp.Session.UpdatedAt != olderSessionCreatedAt.Format(time.RFC3339Nano) {
-		t.Fatalf("UpdatedAt: got %v", resp.Session.UpdatedAt)
-	}
-	if resp.LastMessageID != olderMessageID {
-		t.Fatalf("LastMessageID: got %q", resp.LastMessageID)
-	}
-	if resp.ModelRef != "claude-opus" {
-		t.Fatalf("ModelRef: got %q", resp.ModelRef)
-	}
-	if resp.ThinkingLevel != "low" {
-		t.Fatalf("ThinkingLevel: got %q", resp.ThinkingLevel)
-	}
-	if err := db.SetACPSessionThinkingLevel(ctx, acp.SessionId("older-session"), "high"); err != nil {
-		t.Fatalf("SetACPSessionThinkingLevel: %v", err)
-	}
-	resp, err = db.GetACPSession(ctx, acp.SessionId("older-session"))
-	if err != nil {
-		t.Fatalf("GetACPSession after thinking level update: %v", err)
-	}
-	if resp.ThinkingLevel != "high" {
-		t.Fatalf("ThinkingLevel after update: got %q", resp.ThinkingLevel)
-	}
-	if err := db.SetACPSessionModelRef(ctx, acp.SessionId("older-session"), testACPModelRef); err != nil {
-		t.Fatalf("SetACPSessionModelRef: %v", err)
-	}
-	resp, err = db.GetACPSession(ctx, acp.SessionId("older-session"))
-	if err != nil {
-		t.Fatalf("GetACPSession after model update: %v", err)
-	}
-	if resp.ModelRef != testACPModelRef {
-		t.Fatalf("ModelRef after update: got %q", resp.ModelRef)
-	}
+		err = db.CreateACPSession(ctx, CreateACPSessionParams{
+			Session: acp.SessionInfo{
+				Cwd:       "/tmp/newer",
+				SessionID: acp.SessionId("newer-session"),
+				Title:     new("Newer title"),
+			},
+			LastMessageID: newerMessageID,
+			ModelRef:      testACPModelRef,
+		})
+		if err != nil {
+			t.Fatalf("CreateACPSession newer: %v", err)
+		}
+		for _, update := range []struct {
+			sessionID string
+			createdAt time.Time
+		}{
+			{"older-session", olderSessionCreatedAt},
+			{"newer-session", newerSessionCreatedAt},
+		} {
+			if _, err := rawDB.ExecContext(ctx, "UPDATE acp_sessions SET created_at = ? WHERE id = ?", update.createdAt, update.sessionID); err != nil {
+				t.Fatalf("update session timestamp: %v", err)
+			}
+		}
 
-	sessions, err := db.ListACPSessions(ctx, nil)
-	if err != nil {
-		t.Fatalf("ListACPSessions: %v", err)
-	}
-	if len(sessions) != 2 {
-		t.Fatalf("expected 2 sessions, got %d", len(sessions))
-	}
-	if sessions[0].SessionID != acp.SessionId("newer-session") || sessions[1].SessionID != acp.SessionId("older-session") {
-		t.Fatalf("unexpected session order: %q, %q", sessions[0].SessionID, sessions[1].SessionID)
-	}
-	if sessions[0].UpdatedAt == nil || *sessions[0].UpdatedAt != newerSessionCreatedAt.Format(time.RFC3339Nano) {
-		t.Fatalf("newer UpdatedAt: got %v", sessions[0].UpdatedAt)
-	}
+		resp, err := db.GetACPSession(ctx, acp.SessionId("older-session"))
+		if err != nil {
+			t.Fatalf("GetACPSession: %v", err)
+		}
+		if resp.Session.SessionID != acp.SessionId("older-session") {
+			t.Fatalf("SessionID: got %q", resp.Session.SessionID)
+		}
+		if resp.Session.Cwd != "/tmp/older" {
+			t.Fatalf("Cwd: got %q", resp.Session.Cwd)
+		}
+		if resp.Session.Title == nil || *resp.Session.Title != "Older title" {
+			t.Fatalf("Title: got %v", resp.Session.Title)
+		}
+		if resp.Session.UpdatedAt == nil || *resp.Session.UpdatedAt != olderSessionCreatedAt.Format(time.RFC3339Nano) {
+			t.Fatalf("UpdatedAt: got %v", resp.Session.UpdatedAt)
+		}
+		if resp.LastMessageID != olderMessageID {
+			t.Fatalf("LastMessageID: got %q", resp.LastMessageID)
+		}
+		if resp.ModelRef != "claude-opus" {
+			t.Fatalf("ModelRef: got %q", resp.ModelRef)
+		}
+		if resp.ThinkingLevel != "low" {
+			t.Fatalf("ThinkingLevel: got %q", resp.ThinkingLevel)
+		}
+		if err := db.SetACPSessionThinkingLevel(ctx, acp.SessionId("older-session"), "high"); err != nil {
+			t.Fatalf("SetACPSessionThinkingLevel: %v", err)
+		}
+		resp, err = db.GetACPSession(ctx, acp.SessionId("older-session"))
+		if err != nil {
+			t.Fatalf("GetACPSession after thinking level update: %v", err)
+		}
+		if resp.ThinkingLevel != "high" {
+			t.Fatalf("ThinkingLevel after update: got %q", resp.ThinkingLevel)
+		}
+		if err := db.SetACPSessionModelRef(ctx, acp.SessionId("older-session"), testACPModelRef); err != nil {
+			t.Fatalf("SetACPSessionModelRef: %v", err)
+		}
+		resp, err = db.GetACPSession(ctx, acp.SessionId("older-session"))
+		if err != nil {
+			t.Fatalf("GetACPSession after model update: %v", err)
+		}
+		if resp.ModelRef != testACPModelRef {
+			t.Fatalf("ModelRef after update: got %q", resp.ModelRef)
+		}
 
-	olderCwd := "/tmp/older"
-	sessions, err = db.ListACPSessions(ctx, &olderCwd)
-	if err != nil {
-		t.Fatalf("ListACPSessions by cwd: %v", err)
-	}
-	if len(sessions) != 1 || sessions[0].SessionID != acp.SessionId("older-session") {
-		t.Fatalf("sessions for %q: got %#v", olderCwd, sessions)
-	}
+		sessions, err := db.ListACPSessions(ctx, nil)
+		if err != nil {
+			t.Fatalf("ListACPSessions: %v", err)
+		}
+		if len(sessions) != 2 {
+			t.Fatalf("expected 2 sessions, got %d", len(sessions))
+		}
+		if sessions[0].SessionID != acp.SessionId("newer-session") || sessions[1].SessionID != acp.SessionId("older-session") {
+			t.Fatalf("unexpected session order: %q, %q", sessions[0].SessionID, sessions[1].SessionID)
+		}
+		if sessions[0].UpdatedAt == nil || *sessions[0].UpdatedAt != newerSessionCreatedAt.Format(time.RFC3339Nano) {
+			t.Fatalf("newer UpdatedAt: got %v", sessions[0].UpdatedAt)
+		}
 
-	missingCwd := "/tmp/missing"
-	sessions, err = db.ListACPSessions(ctx, &missingCwd)
-	if err != nil {
-		t.Fatalf("ListACPSessions by missing cwd: %v", err)
-	}
-	if len(sessions) != 0 {
-		t.Fatalf("sessions for %q: got %#v, want none", missingCwd, sessions)
-	}
+		olderCwd := "/tmp/older"
+		sessions, err = db.ListACPSessions(ctx, &olderCwd)
+		if err != nil {
+			t.Fatalf("ListACPSessions by cwd: %v", err)
+		}
+		if len(sessions) != 1 || sessions[0].SessionID != acp.SessionId("older-session") {
+			t.Fatalf("sessions for %q: got %#v", olderCwd, sessions)
+		}
 
-	session, err := db.AddACPSessionMessage(ctx, acp.SessionId("older-session"), olderMessageID, latestMessageID)
-	if err != nil {
-		t.Fatalf("AddACPSessionMessage: %v", err)
-	}
-	if session.UpdatedAt == nil || *session.UpdatedAt != olderSessionCreatedAt.Format(time.RFC3339Nano) {
-		t.Fatalf("AddACPSessionMessage UpdatedAt: got %v", session.UpdatedAt)
-	}
+		missingCwd := "/tmp/missing"
+		sessions, err = db.ListACPSessions(ctx, &missingCwd)
+		if err != nil {
+			t.Fatalf("ListACPSessions by missing cwd: %v", err)
+		}
+		if len(sessions) != 0 {
+			t.Fatalf("sessions for %q: got %#v, want none", missingCwd, sessions)
+		}
 
-	_, err = db.AddACPSessionMessage(ctx, acp.SessionId("older-session"), olderMessageID, newerMessageID)
-	if !errors.Is(err, ErrSessionConflict) {
-		t.Fatalf("stale AddACPSessionMessage error: got %v, want ErrSessionConflict", err)
-	}
+		session, err := db.AddACPSessionMessage(ctx, acp.SessionId("older-session"), olderMessageID, latestMessageID)
+		if err != nil {
+			t.Fatalf("AddACPSessionMessage: %v", err)
+		}
+		if session.UpdatedAt == nil || *session.UpdatedAt != olderSessionCreatedAt.Format(time.RFC3339Nano) {
+			t.Fatalf("AddACPSessionMessage UpdatedAt: got %v", session.UpdatedAt)
+		}
 
-	resp, err = db.GetACPSession(ctx, acp.SessionId("older-session"))
-	if err != nil {
-		t.Fatalf("GetACPSession after add: %v", err)
-	}
-	if resp.LastMessageID != latestMessageID {
-		t.Fatalf("LastMessageID after add: got %q", resp.LastMessageID)
-	}
-	if resp.ModelRef != testACPModelRef {
-		t.Fatalf("ModelRef after add: got %q", resp.ModelRef)
-	}
+		_, err = db.AddACPSessionMessage(ctx, acp.SessionId("older-session"), olderMessageID, newerMessageID)
+		if !errors.Is(err, ErrSessionConflict) {
+			t.Fatalf("stale AddACPSessionMessage error: got %v, want ErrSessionConflict", err)
+		}
 
-	sessions, err = db.ListACPSessions(ctx, nil)
-	if err != nil {
-		t.Fatalf("ListACPSessions after add: %v", err)
-	}
-	if sessions[0].SessionID != acp.SessionId("older-session") || sessions[1].SessionID != acp.SessionId("newer-session") {
-		t.Fatalf("unexpected session order after add: %q, %q", sessions[0].SessionID, sessions[1].SessionID)
-	}
-	if sessions[0].UpdatedAt == nil || *sessions[0].UpdatedAt != olderSessionCreatedAt.Format(time.RFC3339Nano) {
-		t.Fatalf("older UpdatedAt after add: got %v", sessions[0].UpdatedAt)
-	}
+		resp, err = db.GetACPSession(ctx, acp.SessionId("older-session"))
+		if err != nil {
+			t.Fatalf("GetACPSession after add: %v", err)
+		}
+		if resp.LastMessageID != latestMessageID {
+			t.Fatalf("LastMessageID after add: got %q", resp.LastMessageID)
+		}
+		if resp.ModelRef != testACPModelRef {
+			t.Fatalf("ModelRef after add: got %q", resp.ModelRef)
+		}
+
+		sessions, err = db.ListACPSessions(ctx, nil)
+		if err != nil {
+			t.Fatalf("ListACPSessions after add: %v", err)
+		}
+		if sessions[0].SessionID != acp.SessionId("older-session") || sessions[1].SessionID != acp.SessionId("newer-session") {
+			t.Fatalf("unexpected session order after add: %q, %q", sessions[0].SessionID, sessions[1].SessionID)
+		}
+		if sessions[0].UpdatedAt == nil || *sessions[0].UpdatedAt != olderSessionCreatedAt.Format(time.RFC3339Nano) {
+			t.Fatalf("older UpdatedAt after add: got %v", sessions[0].UpdatedAt)
+		}
+	})
+	t.Run("session", func(t *testing.T) {
+		t.Run("not found errors", func(t *testing.T) {
+			db, _ := newTestDB(t)
+			ctx := context.Background()
+			sessionID := acp.SessionId("missing-session")
+
+			for _, tc := range []struct {
+				name string
+				run  func() error
+			}{
+				{
+					name: "get",
+					run: func() error {
+						_, err := db.GetACPSession(ctx, sessionID)
+						return err
+					},
+				},
+				{
+					name: "add message",
+					run: func() error {
+						_, err := db.AddACPSessionMessage(ctx, sessionID, "", "message-id")
+						return err
+					},
+				},
+				{
+					name: "delete",
+					run: func() error {
+						return db.DeleteACPSession(ctx, sessionID)
+					},
+				},
+				{
+					name: "set model",
+					run: func() error {
+						return db.SetACPSessionModelRef(ctx, sessionID, testACPModelRef)
+					},
+				},
+				{
+					name: "set thinking level",
+					run: func() error {
+						return db.SetACPSessionThinkingLevel(ctx, sessionID, "high")
+					},
+				},
+				{
+					name: "add cost",
+					run: func() error {
+						_, err := db.AddACPSessionCost(ctx, sessionID, 0.25)
+						return err
+					},
+				},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					err := tc.run()
+					if !errors.Is(err, ErrSessionNotFound) {
+						t.Fatalf("expected ErrSessionNotFound, got %v", err)
+					}
+				})
+			}
+		})
+		t.Run("without messages", func(t *testing.T) {
+			db, rawDB := newTestDB(t)
+			ctx := context.Background()
+			createdAt := time.Date(2026, 5, 25, 9, 0, 0, 0, time.UTC)
+
+			err := db.CreateACPSession(ctx, CreateACPSessionParams{
+				Session: acp.SessionInfo{
+					Cwd:       "/tmp/empty",
+					SessionID: acp.SessionId("empty-session"),
+					Title:     new("Empty title"),
+				},
+				LastMessageID: "",
+				ModelRef:      testACPModelRef,
+			})
+			if err != nil {
+				t.Fatalf("CreateACPSession: %v", err)
+			}
+			if _, err := rawDB.ExecContext(ctx, "UPDATE acp_sessions SET created_at = ? WHERE id = ?", createdAt, "empty-session"); err != nil {
+				t.Fatalf("update session timestamp: %v", err)
+			}
+
+			resp, err := db.GetACPSession(ctx, acp.SessionId("empty-session"))
+			if err != nil {
+				t.Fatalf("GetACPSession: %v", err)
+			}
+			if resp.LastMessageID != "" {
+				t.Fatalf("LastMessageID: got %q", resp.LastMessageID)
+			}
+			if resp.ModelRef != testACPModelRef {
+				t.Fatalf("ModelRef: got %q", resp.ModelRef)
+			}
+			if resp.Session.UpdatedAt == nil || *resp.Session.UpdatedAt != createdAt.Format(time.RFC3339Nano) {
+				t.Fatalf("UpdatedAt: got %v", resp.Session.UpdatedAt)
+			}
+
+			sessions, err := db.ListACPSessions(ctx, nil)
+			if err != nil {
+				t.Fatalf("ListACPSessions: %v", err)
+			}
+			if len(sessions) != 1 || sessions[0].SessionID != acp.SessionId("empty-session") {
+				t.Fatalf("unexpected sessions: %#v", sessions)
+			}
+		})
+	})
 }
 
 func TestCreateACPSessionDefaultsMissingTitleToSessionID(t *testing.T) {
@@ -627,464 +763,818 @@ func TestCreateACPSessionDefaultsMissingTitleToSessionID(t *testing.T) {
 	}
 }
 
-func TestACPSessionNotFoundErrors(t *testing.T) {
-	db, _ := newTestDB(t)
-	ctx := context.Background()
-	sessionID := acp.SessionId("missing-session")
+func TestDelete(t *testing.T) {
+	t.Run("acp session", func(t *testing.T) {
+		t.Run("deletes messages and blocks", func(t *testing.T) {
+			db, rawDB := newTestDB(t)
+			ctx := context.Background()
 
-	for _, tc := range []struct {
-		name string
-		run  func() error
-	}{
-		{
-			name: "get",
-			run: func() error {
-				_, err := db.GetACPSession(ctx, sessionID)
-				return err
-			},
-		},
-		{
-			name: "add message",
-			run: func() error {
-				_, err := db.AddACPSessionMessage(ctx, sessionID, "", "message-id")
-				return err
-			},
-		},
-		{
-			name: "delete",
-			run: func() error {
-				return db.DeleteACPSession(ctx, sessionID)
-			},
-		},
-		{
-			name: "set model",
-			run: func() error {
-				return db.SetACPSessionModelRef(ctx, sessionID, testACPModelRef)
-			},
-		},
-		{
-			name: "set thinking level",
-			run: func() error {
-				return db.SetACPSessionThinkingLevel(ctx, sessionID, "high")
-			},
-		},
-		{
-			name: "add cost",
-			run: func() error {
-				_, err := db.AddACPSessionCost(ctx, sessionID, 0.25)
-				return err
-			},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			err := tc.run()
-			if !errors.Is(err, ErrSessionNotFound) {
-				t.Fatalf("expected ErrSessionNotFound, got %v", err)
+			savedDialog := saveDialog(t, db, ctx, []gai.Message{
+				makeTextMessage(gai.User, "hello"),
+				makeTextMessage(gai.Assistant, "answer"),
+				makeTextMessage(gai.User, "follow up"),
+			})
+			lastMessageID := GetMessageID(savedDialog[len(savedDialog)-1])
+			unrelatedMessageID := saveOne(t, db, ctx, makeTextMessage(gai.User, "unrelated"))
+
+			if err := db.CreateACPSession(ctx, CreateACPSessionParams{
+				Session: acp.SessionInfo{
+					Cwd:       "/tmp/delete",
+					SessionID: acp.SessionId("delete-session"),
+					Title:     new("Delete title"),
+				},
+				LastMessageID: lastMessageID,
+				ModelRef:      testACPModelRef,
+			}); err != nil {
+				t.Fatalf("CreateACPSession: %v", err)
+			}
+
+			if got := countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions WHERE id = ?", "delete-session"); got != 1 {
+				t.Fatalf("session count before delete: got %d", got)
+			}
+			if got := countRows(t, rawDB, "SELECT COUNT(*) FROM messages"); got != 4 {
+				t.Fatalf("message count before delete: got %d", got)
+			}
+			if got := countRows(t, rawDB, "SELECT COUNT(*) FROM blocks"); got != 4 {
+				t.Fatalf("block count before delete: got %d", got)
+			}
+
+			if err := db.DeleteACPSession(ctx, "delete-session"); err != nil {
+				t.Fatalf("DeleteACPSession: %v", err)
+			}
+
+			if got := countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions WHERE id = ?", "delete-session"); got != 0 {
+				t.Fatalf("session count after delete: got %d", got)
+			}
+			if got := countRows(t, rawDB, "SELECT COUNT(*) FROM messages"); got != 1 {
+				t.Fatalf("message count after delete: got %d", got)
+			}
+			if got := countRows(t, rawDB, "SELECT COUNT(*) FROM messages WHERE id = ?", unrelatedMessageID); got != 1 {
+				t.Fatalf("unrelated message count after delete: got %d", got)
+			}
+			if got := countRows(t, rawDB, "SELECT COUNT(*) FROM blocks"); got != 1 {
+				t.Fatalf("block count after delete: got %d", got)
 			}
 		})
-	}
-}
+		t.Run("preserves orphaned conflict branch", func(t *testing.T) {
+			db, _ := newTestDB(t)
+			ctx := t.Context()
 
-func TestDeleteACPSessionDeletesMessagesAndBlocks(t *testing.T) {
-	db, rawDB := newTestDB(t)
-	ctx := context.Background()
-
-	savedDialog := saveDialog(t, db, ctx, []gai.Message{
-		makeTextMessage(gai.User, "hello"),
-		makeTextMessage(gai.Assistant, "answer"),
-		makeTextMessage(gai.User, "follow up"),
-	})
-	lastMessageID := GetMessageID(savedDialog[len(savedDialog)-1])
-	unrelatedMessageID := saveOne(t, db, ctx, makeTextMessage(gai.User, "unrelated"))
-
-	if err := db.CreateACPSession(ctx, CreateACPSessionParams{
-		Session: acp.SessionInfo{
-			Cwd:       "/tmp/delete",
-			SessionID: acp.SessionId("delete-session"),
-			Title:     new("Delete title"),
-		},
-		LastMessageID: lastMessageID,
-		ModelRef:      testACPModelRef,
-	}); err != nil {
-		t.Fatalf("CreateACPSession: %v", err)
-	}
-
-	if got := countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions WHERE id = ?", "delete-session"); got != 1 {
-		t.Fatalf("session count before delete: got %d", got)
-	}
-	if got := countRows(t, rawDB, "SELECT COUNT(*) FROM messages"); got != 4 {
-		t.Fatalf("message count before delete: got %d", got)
-	}
-	if got := countRows(t, rawDB, "SELECT COUNT(*) FROM blocks"); got != 4 {
-		t.Fatalf("block count before delete: got %d", got)
-	}
-
-	if err := db.DeleteACPSession(ctx, "delete-session"); err != nil {
-		t.Fatalf("DeleteACPSession: %v", err)
-	}
-
-	if got := countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions WHERE id = ?", "delete-session"); got != 0 {
-		t.Fatalf("session count after delete: got %d", got)
-	}
-	if got := countRows(t, rawDB, "SELECT COUNT(*) FROM messages"); got != 1 {
-		t.Fatalf("message count after delete: got %d", got)
-	}
-	if got := countRows(t, rawDB, "SELECT COUNT(*) FROM messages WHERE id = ?", unrelatedMessageID); got != 1 {
-		t.Fatalf("unrelated message count after delete: got %d", got)
-	}
-	if got := countRows(t, rawDB, "SELECT COUNT(*) FROM blocks"); got != 1 {
-		t.Fatalf("block count after delete: got %d", got)
-	}
-}
-
-func TestACPSessionWithoutMessages(t *testing.T) {
-	db, rawDB := newTestDB(t)
-	ctx := context.Background()
-	createdAt := time.Date(2026, 5, 25, 9, 0, 0, 0, time.UTC)
-
-	err := db.CreateACPSession(ctx, CreateACPSessionParams{
-		Session: acp.SessionInfo{
-			Cwd:       "/tmp/empty",
-			SessionID: acp.SessionId("empty-session"),
-			Title:     new("Empty title"),
-		},
-		LastMessageID: "",
-		ModelRef:      testACPModelRef,
-	})
-	if err != nil {
-		t.Fatalf("CreateACPSession: %v", err)
-	}
-	if _, err := rawDB.ExecContext(ctx, "UPDATE acp_sessions SET created_at = ? WHERE id = ?", createdAt, "empty-session"); err != nil {
-		t.Fatalf("update session timestamp: %v", err)
-	}
-
-	resp, err := db.GetACPSession(ctx, acp.SessionId("empty-session"))
-	if err != nil {
-		t.Fatalf("GetACPSession: %v", err)
-	}
-	if resp.LastMessageID != "" {
-		t.Fatalf("LastMessageID: got %q", resp.LastMessageID)
-	}
-	if resp.ModelRef != testACPModelRef {
-		t.Fatalf("ModelRef: got %q", resp.ModelRef)
-	}
-	if resp.Session.UpdatedAt == nil || *resp.Session.UpdatedAt != createdAt.Format(time.RFC3339Nano) {
-		t.Fatalf("UpdatedAt: got %v", resp.Session.UpdatedAt)
-	}
-
-	sessions, err := db.ListACPSessions(ctx, nil)
-	if err != nil {
-		t.Fatalf("ListACPSessions: %v", err)
-	}
-	if len(sessions) != 1 || sessions[0].SessionID != acp.SessionId("empty-session") {
-		t.Fatalf("unexpected sessions: %#v", sessions)
-	}
-}
-
-// TestSaveDialog verifies the SaveDialog iterator's core contract: assigning IDs,
-// building parent chains, handling pre-existing messages, and maintaining transaction
-// atomicity (commit on success/early-break, rollback on error).
-func TestSaveDialog(t *testing.T) {
-	t.Run("single root message", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		saved := saveDialog(t, db, ctx, []gai.Message{
-			makeTextMessage(gai.User, "hello"),
-		})
-
-		gotID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
-		if gotID == "" {
-			t.Fatal("expected non-empty ID")
-		}
-		if parentID := getExtraFieldString(saved[0].ExtraFields, MessageParentIDKey); parentID != "" {
-			t.Errorf("root message should not have parent ID, got %q", parentID)
-		}
-	})
-
-	t.Run("dialog chain sets parent IDs correctly", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		msgs := []gai.Message{
-			makeTextMessage(gai.User, "msg1"),
-			makeTextMessage(gai.Assistant, "msg2"),
-			makeTextMessage(gai.User, "msg3"),
-		}
-		saved := saveDialog(t, db, ctx, msgs)
-
-		ids := make([]string, 3)
-		for i, s := range saved {
-			ids[i] = getExtraFieldString(s.ExtraFields, MessageIDKey)
-			if ids[i] == "" {
-				t.Fatalf("saved[%d]: expected non-empty ID", i)
+			root := saveDialog(t, db, ctx, []gai.Message{makeTextMessage(gai.User, "root")})[0]
+			rootID := GetMessageID(root)
+			if err := db.CreateACPSession(ctx, CreateACPSessionParams{
+				Session: acp.SessionInfo{
+					Cwd:       "/tmp/project",
+					SessionID: "conflicted-session",
+					Title:     new("Conflicted session"),
+				},
+				LastMessageID: rootID,
+				ModelRef:      testACPModelRef,
+			}); err != nil {
+				t.Fatalf("CreateACPSession: %v", err)
 			}
-		}
-		if ids[0] == ids[1] || ids[1] == ids[2] || ids[0] == ids[2] {
-			t.Fatalf("IDs should be unique: %v", ids)
-		}
 
-		if p := getExtraFieldString(saved[0].ExtraFields, MessageParentIDKey); p != "" {
-			t.Errorf("first message should have no parent, got %q", p)
-		}
-		if p := getExtraFieldString(saved[1].ExtraFields, MessageParentIDKey); p != ids[0] {
-			t.Errorf("second message parent: expected %q, got %q", ids[0], p)
-		}
-		if p := getExtraFieldString(saved[2].ExtraFields, MessageParentIDKey); p != ids[1] {
-			t.Errorf("third message parent: expected %q, got %q", ids[1], p)
-		}
-	})
-
-	t.Run("message with blocks persists and retrieves", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		msg := gai.Message{
-			Role: gai.Assistant,
-			Blocks: []gai.Block{
-				{
-					BlockType:    gai.Content,
-					ModalityType: gai.Text,
-					MimeType:     "text/plain",
-					Content:      gai.Str("text content"),
-				},
-				{
-					ID:           "tool-call-1",
-					BlockType:    gai.ToolCall,
-					ModalityType: gai.Text,
-					MimeType:     "text/plain",
-					Content:      gai.Str(`{"name":"test","parameters":{}}`),
-					ExtraFields:  map[string]any{"provider": "anthropic"},
-				},
-			},
-		}
-
-		saved := saveDialog(t, db, ctx, []gai.Message{msg})
-		savedID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
-
-		msgs, err := db.GetMessages(ctx, []string{savedID})
-		if err != nil {
-			t.Fatalf("GetMessages: %v", err)
-		}
-		var retrieved gai.Message
-		for m := range msgs {
-			retrieved = m
-		}
-		if len(retrieved.Blocks) != 2 {
-			t.Fatalf("expected 2 blocks, got %d", len(retrieved.Blocks))
-		}
-	})
-
-	t.Run("existing messages are verified not re-saved", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		saved := saveDialog(t, db, ctx, []gai.Message{
-			makeTextMessage(gai.User, "root"),
-			makeTextMessage(gai.Assistant, "reply"),
-		})
-
-		newMsg := makeTextMessage(gai.User, "follow-up")
-		fullDialog := append(saved, newMsg)
-		saved2 := saveDialog(t, db, ctx, fullDialog)
-
-		if len(saved2) != 3 {
-			t.Fatalf("expected 3 messages, got %d", len(saved2))
-		}
-		for i := range 2 {
-			origID := getExtraFieldString(saved[i].ExtraFields, MessageIDKey)
-			newID := getExtraFieldString(saved2[i].ExtraFields, MessageIDKey)
-			if origID != newID {
-				t.Errorf("message %d: expected same ID %q, got %q", i, origID, newID)
+			winningDialog := saveDialog(t, db, ctx, []gai.Message{
+				root,
+				makeTextMessage(gai.Assistant, "winning child"),
+			})
+			winningID := GetMessageID(winningDialog[1])
+			if _, err := db.AddACPSessionMessage(ctx, "conflicted-session", rootID, winningID); err != nil {
+				t.Fatalf("AddACPSessionMessage winning child: %v", err)
 			}
-		}
 
-		thirdID := getExtraFieldString(saved2[2].ExtraFields, MessageIDKey)
-		if thirdID == "" {
-			t.Fatal("expected non-empty ID for new message")
-		}
-		thirdParent := getExtraFieldString(saved2[2].ExtraFields, MessageParentIDKey)
-		secondID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
-		if thirdParent != secondID {
-			t.Errorf("third message parent: expected %q, got %q", secondID, thirdParent)
-		}
+			losingDialog := saveDialog(t, db, ctx, []gai.Message{
+				root,
+				makeTextMessage(gai.Assistant, "losing child"),
+			})
+			losingID := GetMessageID(losingDialog[1])
+			if _, err := db.AddACPSessionMessage(ctx, "conflicted-session", rootID, losingID); !errors.Is(err, ErrSessionConflict) {
+				t.Fatalf("AddACPSessionMessage losing child error = %v, want ErrSessionConflict", err)
+			}
+
+			if err := db.DeleteACPSession(ctx, "conflicted-session"); err != nil {
+				t.Fatalf("DeleteACPSession: %v", err)
+			}
+			if _, err := db.GetACPSession(ctx, "conflicted-session"); !errors.Is(err, ErrSessionNotFound) {
+				t.Fatalf("GetACPSession after delete error = %v, want ErrSessionNotFound", err)
+			}
+			if _, err := db.GetMessages(ctx, []string{winningID}); !errors.Is(err, ErrMessageNotFound) {
+				t.Fatalf("GetMessages winning child error = %v, want ErrMessageNotFound", err)
+			}
+			orphanedDialog, err := GetDialogForMessage(ctx, db, losingID)
+			if err != nil {
+				t.Fatalf("GetDialogForMessage losing child: %v", err)
+			}
+			if len(orphanedDialog) != 2 ||
+				orphanedDialog[0].Blocks[0].Content.String() != "root" ||
+				orphanedDialog[1].Blocks[0].Content.String() != "losing child" {
+				t.Fatalf("orphaned dialog = %#v", orphanedDialog)
+			}
+		})
 	})
-
-	t.Run("existing message validation errors", func(t *testing.T) {
-		tests := []struct {
-			name  string
-			setup func(t *testing.T, db *Sqlite, ctx context.Context) []gai.Message
-		}{
-			{
-				name: "first existing message with parent",
-				setup: func(t *testing.T, db *Sqlite, ctx context.Context) []gai.Message {
-					saved := saveDialog(t, db, ctx, []gai.Message{
-						makeTextMessage(gai.User, "root"),
-						makeTextMessage(gai.Assistant, "child"),
-					})
-					return []gai.Message{saved[1]}
-				},
-			},
-			{
-				name: "wrong parent chain",
-				setup: func(t *testing.T, db *Sqlite, ctx context.Context) []gai.Message {
-					saved1 := saveDialog(t, db, ctx, []gai.Message{makeTextMessage(gai.User, "root1")})
-					saved2 := saveDialog(t, db, ctx, []gai.Message{makeTextMessage(gai.User, "root2")})
-					return []gai.Message{saved1[0], saved2[0]}
-				},
-			},
-			{
-				name: "non-existent ID",
-				setup: func(t *testing.T, db *Sqlite, ctx context.Context) []gai.Message {
-					msg := makeTextMessage(gai.User, "ghost")
-					msg.ExtraFields = map[string]any{MessageIDKey: "nonexistent"}
-					return []gai.Message{msg}
-				},
-			},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
+	t.Run("messages", func(t *testing.T) {
+		// TestDeleteMessages verifies DeleteMessages enforces referential integrity by
+		// preventing non-recursive deletion of messages with children, while allowing
+		// recursive deletion to remove entire subtrees atomically.
+		t.Run("base case", func(t *testing.T) {
+			t.Run("delete leaf message non-recursively", func(t *testing.T) {
 				db, _ := newTestDB(t)
 				ctx := context.Background()
-				msgs := tt.setup(t, db, ctx)
-				expectSaveDialogError(t, db, ctx, msgs)
-			})
-		}
-	})
 
-	t.Run("dialog retrievable via GetDialogForMessage", func(t *testing.T) {
-		db, _ := newTestDB(t)
+				leafID := saveOne(t, db, ctx, makeTextMessage(gai.User, "leaf"))
+
+				err := db.DeleteMessages(ctx, deleteMessagesOptions{
+					MessageIDs: []string{leafID},
+					Recursive:  false,
+				})
+				if err != nil {
+					t.Fatalf("DeleteMessages: %v", err)
+				}
+
+				if _, err = db.GetMessages(ctx, []string{leafID}); err == nil {
+					t.Fatal("expected error retrieving deleted message")
+				}
+			})
+
+			t.Run("non-recursive delete of parent with children fails", func(t *testing.T) {
+				db, _ := newTestDB(t)
+				ctx := context.Background()
+
+				saved := saveDialog(t, db, ctx, []gai.Message{
+					makeTextMessage(gai.User, "parent"),
+					makeTextMessage(gai.Assistant, "child"),
+				})
+				parentID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
+				childID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
+
+				err := db.DeleteMessages(ctx, deleteMessagesOptions{
+					MessageIDs: []string{parentID},
+					Recursive:  false,
+				})
+				if err == nil {
+					t.Fatal("expected error deleting parent with children non-recursively")
+				}
+
+				// Child should still exist
+				if _, err = db.GetMessages(ctx, []string{childID}); err != nil {
+					t.Fatalf("child should still exist: %v", err)
+				}
+			})
+
+			t.Run("recursive delete removes entire tree", func(t *testing.T) {
+				db, _ := newTestDB(t)
+				ctx := context.Background()
+
+				// root → child → grandchild
+				saved := saveDialog(t, db, ctx, []gai.Message{
+					makeTextMessage(gai.User, "root"),
+					makeTextMessage(gai.Assistant, "child"),
+					makeTextMessage(gai.User, "grandchild"),
+				})
+
+				var allIDs []string
+				for _, s := range saved {
+					allIDs = append(allIDs, getExtraFieldString(s.ExtraFields, MessageIDKey))
+				}
+
+				err := db.DeleteMessages(ctx, deleteMessagesOptions{
+					MessageIDs: []string{allIDs[0]},
+					Recursive:  true,
+				})
+				if err != nil {
+					t.Fatalf("DeleteMessages: %v", err)
+				}
+
+				for _, id := range allIDs {
+					if _, err = db.GetMessages(ctx, []string{id}); err == nil {
+						t.Errorf("message %s should be deleted", id)
+					}
+				}
+			})
+		})
+		// TestDeleteMessages_CommitError verifies that commit failures during DeleteMessages
+		// are properly propagated to the caller. Uses a deferred FK violation triggered on
+		// DELETE.
+		t.Run("commit error", func(t *testing.T) {
+			ds, rawDB := newTestDBWithFK(t)
+			ctx := context.Background()
+
+			id := saveOne(t, ds, ctx, makeTextMessage(gai.User, "to-delete"))
+			addPoisonTrigger(t, rawDB, "delete")
+
+			err := ds.DeleteMessages(ctx, deleteMessagesOptions{
+				MessageIDs: []string{id},
+				Recursive:  false,
+			})
+			if err == nil {
+				t.Fatal("expected commit error from deferred FK violation")
+			}
+		})
+		// TestDeleteMessages_ErrorPaths exercises error handling for each database operation
+		// in DeleteMessages by breaking underlying tables or blocking operations with
+		// triggers.
+		t.Run("error paths", func(t *testing.T) {
+			t.Run("HasChildren error (renamed table)", func(t *testing.T) {
+				db, rawDB := newTestDB(t)
+				ctx := context.Background()
+
+				id := saveOne(t, db, ctx, makeTextMessage(gai.User, "leaf"))
+
+				if _, err := rawDB.ExecContext(ctx, "ALTER TABLE messages RENAME TO messages_old"); err != nil {
+					t.Fatalf("rename: %v", err)
+				}
+
+				err := db.DeleteMessages(ctx, deleteMessagesOptions{
+					MessageIDs: []string{id},
+					Recursive:  false,
+				})
+				if err == nil {
+					t.Fatal("expected error from HasChildren on renamed table")
+				}
+			})
+
+			t.Run("DeleteMessage error (trigger blocks delete)", func(t *testing.T) {
+				db, rawDB := newTestDB(t)
+				ctx := context.Background()
+
+				_, err := rawDB.ExecContext(ctx,
+					`INSERT INTO messages (id, role, tool_result_error) VALUES (?, ?, ?)`,
+					"delete-err-msg", "user", false)
+				if err != nil {
+					t.Fatalf("insert: %v", err)
+				}
+
+				addBlockingTrigger(t, rawDB, "messages", "DELETE")
+
+				err = db.DeleteMessages(ctx, deleteMessagesOptions{
+					MessageIDs: []string{"delete-err-msg"},
+					Recursive:  false,
+				})
+				if err == nil {
+					t.Fatal("expected error from DeleteMessage blocked by trigger")
+				}
+			})
+
+			t.Run("ListMessagesByParent error (renamed table)", func(t *testing.T) {
+				db, rawDB := newTestDB(t)
+				ctx := context.Background()
+
+				saved := saveDialog(t, db, ctx, []gai.Message{
+					makeTextMessage(gai.User, "root"),
+					makeTextMessage(gai.Assistant, "child"),
+				})
+				rootID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
+
+				if _, err := rawDB.ExecContext(ctx, "ALTER TABLE messages RENAME TO messages_old"); err != nil {
+					t.Fatalf("rename: %v", err)
+				}
+
+				err := db.DeleteMessages(ctx, deleteMessagesOptions{
+					MessageIDs: []string{rootID},
+					Recursive:  true,
+				})
+				if err == nil {
+					t.Fatal("expected error from ListMessagesByParent on renamed table")
+				}
+			})
+
+			t.Run("recursive child deletion error (trigger blocks delete)", func(t *testing.T) {
+				db, rawDB := newTestDB(t)
+				ctx := context.Background()
+
+				saved := saveDialog(t, db, ctx, []gai.Message{
+					makeTextMessage(gai.User, "root"),
+					makeTextMessage(gai.Assistant, "child"),
+				})
+				rootID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
+
+				addBlockingTrigger(t, rawDB, "messages", "DELETE")
+
+				err := db.DeleteMessages(ctx, deleteMessagesOptions{
+					MessageIDs: []string{rootID},
+					Recursive:  true,
+				})
+				if err == nil {
+					t.Fatal("expected error from recursive child deletion")
+				}
+			})
+		})
+		// TestDeleteMessages_MultipleIDs verifies that DeleteMessages can atomically delete
+		// multiple leaf messages in a single call while leaving other messages intact.
+		t.Run("multiple i ds", func(t *testing.T) {
+			// Verify deleting multiple leaf messages in one call works
+			db, _ := newTestDB(t)
+			ctx := context.Background()
+
+			id1 := saveOne(t, db, ctx, makeTextMessage(gai.User, "leaf1"))
+			id2 := saveOne(t, db, ctx, makeTextMessage(gai.User, "leaf2"))
+			id3 := saveOne(t, db, ctx, makeTextMessage(gai.User, "leaf3"))
+
+			err := db.DeleteMessages(ctx, deleteMessagesOptions{
+				MessageIDs: []string{id1, id3},
+				Recursive:  false,
+			})
+			if err != nil {
+				t.Fatalf("DeleteMessages: %v", err)
+			}
+
+			// id1 and id3 should be gone
+			for _, id := range []string{id1, id3} {
+				if _, err := db.GetMessages(ctx, []string{id}); err == nil {
+					t.Errorf("message %s should be deleted", id)
+				}
+			}
+			// id2 should still exist
+			if _, err := db.GetMessages(ctx, []string{id2}); err != nil {
+				t.Fatalf("message %s should still exist: %v", id2, err)
+			}
+		})
+	})
+	// TestDeleteMiddleMessage_ForeignKeyRestriction verifies that deleting a parent
+	// message directly is blocked by the RESTRICT foreign key when children exist.
+	t.Run("middle message foreign key restriction", func(t *testing.T) {
+		db, rawDB := newTestDB(t)
 		ctx := context.Background()
 
 		saved := saveDialog(t, db, ctx, []gai.Message{
-			makeTextMessage(gai.User, "first"),
-			makeTextMessage(gai.Assistant, "second"),
-			makeTextMessage(gai.User, "third"),
+			makeTextMessage(gai.User, "A"),
+			makeTextMessage(gai.Assistant, "B"),
+			makeTextMessage(gai.User, "C"),
 		})
+		bID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
+		cID := getExtraFieldString(saved[2].ExtraFields, MessageIDKey)
 
-		lastID := getExtraFieldString(saved[2].ExtraFields, MessageIDKey)
-		dialog, err := GetDialogForMessage(ctx, db, lastID)
+		_, err := rawDB.ExecContext(ctx, "DELETE FROM messages WHERE id = ?", bID)
+		if err == nil {
+			t.Fatal("expected direct delete to fail with foreign key restriction")
+		}
+
+		// Child remains reachable because parent delete was rejected.
+		dialog, err := GetDialogForMessage(ctx, db, cID)
 		if err != nil {
 			t.Fatalf("GetDialogForMessage: %v", err)
 		}
 		if len(dialog) != 3 {
-			t.Fatalf("expected 3 messages in dialog chain, got %d", len(dialog))
+			t.Fatalf("expected 3 messages in dialog, got %d", len(dialog))
 		}
 	})
+}
 
-	// Verifies that breaking out of the SaveDialog iterator early commits the
-	// transaction for messages already yielded, rather than rolling back.
-	t.Run("early break commits saved messages", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
+func TestSave(t *testing.T) {
+	t.Run("dialog", func(t *testing.T) {
+		// TestSaveDialog verifies the SaveDialog iterator's core contract: assigning IDs,
+		// building parent chains, handling pre-existing messages, and maintaining transaction
+		// atomicity (commit on success/early-break, rollback on error).
+		t.Run("base case", func(t *testing.T) {
+			t.Run("single root message", func(t *testing.T) {
+				db, _ := newTestDB(t)
+				ctx := context.Background()
 
-		msgs := []gai.Message{
-			makeTextMessage(gai.User, "msg1"),
-			makeTextMessage(gai.Assistant, "msg2"),
-			makeTextMessage(gai.User, "msg3"),
-		}
+				saved := saveDialog(t, db, ctx, []gai.Message{
+					makeTextMessage(gai.User, "hello"),
+				})
 
-		consumed := 0
-		var firstID, secondID string
-		for msg, err := range db.SaveDialog(ctx, slices.Values(msgs)) {
-			if err != nil {
-				t.Fatalf("SaveDialog: %v", err)
-			}
-			id := getExtraFieldString(msg.ExtraFields, MessageIDKey)
-			switch consumed {
-			case 0:
-				firstID = id
-			case 1:
-				secondID = id
-			}
-			consumed++
-			if consumed == 2 {
+				gotID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
+				if gotID == "" {
+					t.Fatal("expected non-empty ID")
+				}
+				if parentID := getExtraFieldString(saved[0].ExtraFields, MessageParentIDKey); parentID != "" {
+					t.Errorf("root message should not have parent ID, got %q", parentID)
+				}
+			})
+
+			t.Run("dialog chain sets parent IDs correctly", func(t *testing.T) {
+				db, _ := newTestDB(t)
+				ctx := context.Background()
+
+				msgs := []gai.Message{
+					makeTextMessage(gai.User, "msg1"),
+					makeTextMessage(gai.Assistant, "msg2"),
+					makeTextMessage(gai.User, "msg3"),
+				}
+				saved := saveDialog(t, db, ctx, msgs)
+
+				ids := make([]string, 3)
+				for i, s := range saved {
+					ids[i] = getExtraFieldString(s.ExtraFields, MessageIDKey)
+					if ids[i] == "" {
+						t.Fatalf("saved[%d]: expected non-empty ID", i)
+					}
+				}
+				if ids[0] == ids[1] || ids[1] == ids[2] || ids[0] == ids[2] {
+					t.Fatalf("IDs should be unique: %v", ids)
+				}
+
+				if p := getExtraFieldString(saved[0].ExtraFields, MessageParentIDKey); p != "" {
+					t.Errorf("first message should have no parent, got %q", p)
+				}
+				if p := getExtraFieldString(saved[1].ExtraFields, MessageParentIDKey); p != ids[0] {
+					t.Errorf("second message parent: expected %q, got %q", ids[0], p)
+				}
+				if p := getExtraFieldString(saved[2].ExtraFields, MessageParentIDKey); p != ids[1] {
+					t.Errorf("third message parent: expected %q, got %q", ids[1], p)
+				}
+			})
+
+			t.Run("message with blocks persists and retrieves", func(t *testing.T) {
+				db, _ := newTestDB(t)
+				ctx := context.Background()
+
+				msg := gai.Message{
+					Role: gai.Assistant,
+					Blocks: []gai.Block{
+						{
+							BlockType:    gai.Content,
+							ModalityType: gai.Text,
+							MimeType:     "text/plain",
+							Content:      gai.Str("text content"),
+						},
+						{
+							ID:           "tool-call-1",
+							BlockType:    gai.ToolCall,
+							ModalityType: gai.Text,
+							MimeType:     "text/plain",
+							Content:      gai.Str(`{"name":"test","parameters":{}}`),
+							ExtraFields:  map[string]any{"provider": "anthropic"},
+						},
+					},
+				}
+
+				saved := saveDialog(t, db, ctx, []gai.Message{msg})
+				savedID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
+
+				msgs, err := db.GetMessages(ctx, []string{savedID})
+				if err != nil {
+					t.Fatalf("GetMessages: %v", err)
+				}
+				var retrieved gai.Message
+				for m := range msgs {
+					retrieved = m
+				}
+				if len(retrieved.Blocks) != 2 {
+					t.Fatalf("expected 2 blocks, got %d", len(retrieved.Blocks))
+				}
+			})
+
+			t.Run("existing messages are verified not re-saved", func(t *testing.T) {
+				db, _ := newTestDB(t)
+				ctx := context.Background()
+
+				saved := saveDialog(t, db, ctx, []gai.Message{
+					makeTextMessage(gai.User, "root"),
+					makeTextMessage(gai.Assistant, "reply"),
+				})
+
+				newMsg := makeTextMessage(gai.User, "follow-up")
+				fullDialog := append(saved, newMsg)
+				saved2 := saveDialog(t, db, ctx, fullDialog)
+
+				if len(saved2) != 3 {
+					t.Fatalf("expected 3 messages, got %d", len(saved2))
+				}
+				for i := range 2 {
+					origID := getExtraFieldString(saved[i].ExtraFields, MessageIDKey)
+					newID := getExtraFieldString(saved2[i].ExtraFields, MessageIDKey)
+					if origID != newID {
+						t.Errorf("message %d: expected same ID %q, got %q", i, origID, newID)
+					}
+				}
+
+				thirdID := getExtraFieldString(saved2[2].ExtraFields, MessageIDKey)
+				if thirdID == "" {
+					t.Fatal("expected non-empty ID for new message")
+				}
+				thirdParent := getExtraFieldString(saved2[2].ExtraFields, MessageParentIDKey)
+				secondID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
+				if thirdParent != secondID {
+					t.Errorf("third message parent: expected %q, got %q", secondID, thirdParent)
+				}
+			})
+
+			t.Run("existing message validation errors", func(t *testing.T) {
+				tests := []struct {
+					name  string
+					setup func(t *testing.T, db *Sqlite, ctx context.Context) []gai.Message
+				}{
+					{
+						name: "first existing message with parent",
+						setup: func(t *testing.T, db *Sqlite, ctx context.Context) []gai.Message {
+							saved := saveDialog(t, db, ctx, []gai.Message{
+								makeTextMessage(gai.User, "root"),
+								makeTextMessage(gai.Assistant, "child"),
+							})
+							return []gai.Message{saved[1]}
+						},
+					},
+					{
+						name: "wrong parent chain",
+						setup: func(t *testing.T, db *Sqlite, ctx context.Context) []gai.Message {
+							saved1 := saveDialog(t, db, ctx, []gai.Message{makeTextMessage(gai.User, "root1")})
+							saved2 := saveDialog(t, db, ctx, []gai.Message{makeTextMessage(gai.User, "root2")})
+							return []gai.Message{saved1[0], saved2[0]}
+						},
+					},
+					{
+						name: "non-existent ID",
+						setup: func(t *testing.T, db *Sqlite, ctx context.Context) []gai.Message {
+							msg := makeTextMessage(gai.User, "ghost")
+							msg.ExtraFields = map[string]any{MessageIDKey: "nonexistent"}
+							return []gai.Message{msg}
+						},
+					},
+				}
+				for _, tt := range tests {
+					t.Run(tt.name, func(t *testing.T) {
+						db, _ := newTestDB(t)
+						ctx := context.Background()
+						msgs := tt.setup(t, db, ctx)
+						expectSaveDialogError(t, db, ctx, msgs)
+					})
+				}
+			})
+
+			t.Run("dialog retrievable via GetDialogForMessage", func(t *testing.T) {
+				db, _ := newTestDB(t)
+				ctx := context.Background()
+
+				saved := saveDialog(t, db, ctx, []gai.Message{
+					makeTextMessage(gai.User, "first"),
+					makeTextMessage(gai.Assistant, "second"),
+					makeTextMessage(gai.User, "third"),
+				})
+
+				lastID := getExtraFieldString(saved[2].ExtraFields, MessageIDKey)
+				dialog, err := GetDialogForMessage(ctx, db, lastID)
+				if err != nil {
+					t.Fatalf("GetDialogForMessage: %v", err)
+				}
+				if len(dialog) != 3 {
+					t.Fatalf("expected 3 messages in dialog chain, got %d", len(dialog))
+				}
+			})
+
+			// Verifies that breaking out of the SaveDialog iterator early commits the
+			// transaction for messages already yielded, rather than rolling back.
+			t.Run("early break commits saved messages", func(t *testing.T) {
+				db, _ := newTestDB(t)
+				ctx := context.Background()
+
+				msgs := []gai.Message{
+					makeTextMessage(gai.User, "msg1"),
+					makeTextMessage(gai.Assistant, "msg2"),
+					makeTextMessage(gai.User, "msg3"),
+				}
+
+				consumed := 0
+				var firstID, secondID string
+				for msg, err := range db.SaveDialog(ctx, slices.Values(msgs)) {
+					if err != nil {
+						t.Fatalf("SaveDialog: %v", err)
+					}
+					id := getExtraFieldString(msg.ExtraFields, MessageIDKey)
+					switch consumed {
+					case 0:
+						firstID = id
+					case 1:
+						secondID = id
+					}
+					consumed++
+					if consumed == 2 {
+						break
+					}
+				}
+				if consumed != 2 {
+					t.Fatalf("expected to consume 2, got %d", consumed)
+				}
+
+				for _, id := range []string{firstID, secondID} {
+					if _, err := db.GetMessages(ctx, []string{id}); err != nil {
+						t.Fatalf("message %s should be retrievable: %v", id, err)
+					}
+				}
+
+				allMsgs, err := db.ListMessages(ctx, listMessagesOptions{})
+				if err != nil {
+					t.Fatalf("ListMessages: %v", err)
+				}
+				count := 0
+				for range allMsgs {
+					count++
+				}
+				if count != 2 {
+					t.Fatalf("expected exactly 2 messages in DB, got %d", count)
+				}
+			})
+
+			t.Run("empty iterator is a no-op", func(t *testing.T) {
+				db, _ := newTestDB(t)
+				ctx := context.Background()
+
+				var count int
+				for _, err := range db.SaveDialog(ctx, slices.Values([]gai.Message{})) {
+					if err != nil {
+						t.Fatalf("SaveDialog: %v", err)
+					}
+					count++
+				}
+				if count != 0 {
+					t.Fatalf("expected 0 messages yielded, got %d", count)
+				}
+			})
+
+			t.Run("transaction rolls back on save error", func(t *testing.T) {
+				db, _ := newTestDB(t)
+				ctx := context.Background()
+
+				db.idGenerator = func() string { return "fixed_id" }
+
+				msgs := []gai.Message{
+					makeTextMessage(gai.User, "msg1"),
+					makeTextMessage(gai.Assistant, "msg2"),
+				}
+				expectSaveDialogError(t, db, ctx, msgs)
+
+				if _, err := db.GetMessages(ctx, []string{"fixed_id"}); err == nil {
+					t.Fatal("message should not exist after rollback")
+				}
+			})
+		})
+		t.Run("missing existing message", func(t *testing.T) {
+			db, _ := newTestDB(t)
+			ctx := context.Background()
+			msg := makeTextMessage(gai.User, "missing")
+			msg.ExtraFields = map[string]any{MessageIDKey: "missing-message"}
+
+			var gotErr error
+			for _, err := range db.SaveDialog(ctx, slices.Values([]gai.Message{msg})) {
+				gotErr = err
 				break
 			}
-		}
-		if consumed != 2 {
-			t.Fatalf("expected to consume 2, got %d", consumed)
-		}
-
-		for _, id := range []string{firstID, secondID} {
-			if _, err := db.GetMessages(ctx, []string{id}); err != nil {
-				t.Fatalf("message %s should be retrievable: %v", id, err)
+			if !errors.Is(gotErr, ErrMessageNotFound) {
+				t.Fatalf("expected ErrMessageNotFound, got %v", gotErr)
 			}
-		}
+		})
+		// TestSaveDialog_CommitError verifies that transaction commit failures are handled
+		// correctly depending on iterator consumption state. Uses a deferred FK violation
+		// to trigger commit errors.
+		t.Run("commit error", func(t *testing.T) {
+			t.Run("consumer still active", func(t *testing.T) {
+				ds, rawDB := newTestDBWithFK(t)
+				addPoisonTrigger(t, rawDB, "insert")
 
-		allMsgs, err := db.ListMessages(ctx, listMessagesOptions{})
-		if err != nil {
-			t.Fatalf("ListMessages: %v", err)
-		}
-		count := 0
-		for range allMsgs {
-			count++
-		}
-		if count != 2 {
-			t.Fatalf("expected exactly 2 messages in DB, got %d", count)
-		}
-	})
+				expectSaveDialogError(t, ds, context.Background(), []gai.Message{
+					makeTextMessage(gai.User, "commit-test"),
+				})
+			})
 
-	t.Run("empty iterator is a no-op", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
+			t.Run("consumer stopped", func(t *testing.T) {
+				ds, rawDB := newTestDBWithFK(t)
+				addPoisonTrigger(t, rawDB, "insert")
 
-		var count int
-		for _, err := range db.SaveDialog(ctx, slices.Values([]gai.Message{})) {
-			if err != nil {
-				t.Fatalf("SaveDialog: %v", err)
+				// Break after first message — commit fails silently (consumer stopped)
+				consumed := 0
+				for _, err := range ds.SaveDialog(context.Background(), slices.Values([]gai.Message{
+					makeTextMessage(gai.User, "msg1"),
+					makeTextMessage(gai.Assistant, "msg2"),
+				})) {
+					if err != nil {
+						t.Fatalf("unexpected error during iteration: %v", err)
+					}
+					consumed++
+					if consumed == 1 {
+						break
+					}
+				}
+				// No panic = success. The commit fails after consumer broke out of the
+				// loop, so the error cannot be propagated via yield. The deferred
+				// Rollback cleans up silently.
+			})
+		})
+		// TestSaveDialog_SaveErrors exercises error paths during message persistence:
+		// blocked INSERT, missing blocks table, unmarshallable ExtraFields, and ID
+		// generation on missing tables.
+		t.Run("save errors", func(t *testing.T) {
+			t.Run("CreateMessage error (trigger blocks insert)", func(t *testing.T) {
+				db, rawDB := newTestDB(t)
+				ctx := context.Background()
+
+				rootID := saveOne(t, db, ctx, makeTextMessage(gai.User, "root"))
+
+				addBlockingTrigger(t, rawDB, "messages", "INSERT")
+
+				rootMsg := makeTextMessage(gai.User, "root")
+				rootMsg.ExtraFields = map[string]any{MessageIDKey: rootID}
+				expectSaveDialogError(t, db, ctx, []gai.Message{rootMsg, makeTextMessage(gai.Assistant, "should-fail")})
+			})
+
+			t.Run("CreateBlock error (dropped blocks table)", func(t *testing.T) {
+				db, rawDB := newTestDB(t)
+				ctx := context.Background()
+
+				if _, err := rawDB.ExecContext(ctx, "DROP TABLE blocks"); err != nil {
+					t.Fatalf("drop blocks table: %v", err)
+				}
+
+				expectSaveDialogError(t, db, ctx, []gai.Message{makeTextMessage(gai.User, "should-fail")})
+			})
+
+			t.Run("ExtraFields marshal error", func(t *testing.T) {
+				db, _ := newTestDB(t)
+				ctx := context.Background()
+
+				msg := gai.Message{
+					Role: gai.User,
+					Blocks: []gai.Block{{
+						BlockType:    gai.Content,
+						ModalityType: gai.Text,
+						MimeType:     "text/plain",
+						Content:      gai.Str("test"),
+						ExtraFields:  map[string]any{"bad": make(chan int)},
+					}},
+				}
+				expectSaveDialogError(t, db, ctx, []gai.Message{msg})
+			})
+
+			t.Run("CheckMessageIDExists error (dropped tables)", func(t *testing.T) {
+				db, rawDB := newTestDB(t)
+				ctx := context.Background()
+
+				if _, err := rawDB.ExecContext(ctx, "DROP TABLE blocks; DROP TABLE messages;"); err != nil {
+					t.Fatalf("drop tables: %v", err)
+				}
+
+				expectSaveDialogError(t, db, ctx, []gai.Message{makeTextMessage(gai.User, "test")})
+			})
+		})
+		// TestSaveDialog_InterleavedExistingAndNew verifies that SaveDialog detects parent
+		// chain mismatches when existing messages from different chains are mixed with new
+		// messages.
+		t.Run("interleaved existing and new", func(t *testing.T) {
+			// When existing messages followed by new messages followed by more existing
+			// messages are submitted, the parent chain validation should catch the
+			// mismatch on the second existing message.
+			db, _ := newTestDB(t)
+			ctx := context.Background()
+
+			// Save two separate chains
+			chainA := saveDialog(t, db, ctx, []gai.Message{
+				makeTextMessage(gai.User, "A1"),
+				makeTextMessage(gai.Assistant, "A2"),
+			})
+			chainB := saveDialog(t, db, ctx, []gai.Message{
+				makeTextMessage(gai.User, "B1"),
+			})
+
+			// Try: [A1(existing), NEW, B1(existing)]
+			// After A1 and NEW are processed, prevID = NEW's ID.
+			// B1's parent in DB is NULL (it's a root), but prevID is NEW's ID.
+			// This should fail parent chain validation for B1.
+			dialog := []gai.Message{
+				chainA[0],
+				makeTextMessage(gai.Assistant, "new-middle"),
+				chainB[0],
 			}
-			count++
-		}
-		if count != 0 {
-			t.Fatalf("expected 0 messages yielded, got %d", count)
-		}
-	})
 
-	t.Run("transaction rolls back on save error", func(t *testing.T) {
+			expectSaveDialogError(t, db, ctx, dialog)
+		})
+	})
+	// TestSaveAndGetRoundTrip is a comprehensive persistence test that verifies all
+	// message fields survive a save/retrieve cycle: Role, ToolResultError, multiple blocks
+	// with different types and modalities, and block-level ExtraFields including nested values.
+	t.Run("and get round trip", func(t *testing.T) {
 		db, _ := newTestDB(t)
 		ctx := context.Background()
 
-		db.idGenerator = func() string { return "fixed_id" }
-
-		msgs := []gai.Message{
-			makeTextMessage(gai.User, "msg1"),
-			makeTextMessage(gai.Assistant, "msg2"),
+		msg := gai.Message{
+			Role:            gai.ToolResult,
+			ToolResultError: true,
+			Blocks: []gai.Block{
+				{
+					ID:           "block-text",
+					BlockType:    gai.Content,
+					ModalityType: gai.Text,
+					MimeType:     "text/plain",
+					Content:      gai.Str("hello world"),
+				},
+				{
+					ID:           "block-tool",
+					BlockType:    gai.ToolCall,
+					ModalityType: gai.Text,
+					MimeType:     "text/plain",
+					Content:      gai.Str(`{"name":"tool","parameters":{"key":"value"}}`),
+					ExtraFields:  map[string]any{"provider": "test", "version": float64(1)},
+				},
+				{
+					ID:           "block-image",
+					BlockType:    gai.Content,
+					ModalityType: gai.Image,
+					MimeType:     "image/png",
+					Content:      gai.Str("base64encodeddata"),
+				},
+			},
 		}
-		expectSaveDialogError(t, db, ctx, msgs)
 
-		if _, err := db.GetMessages(ctx, []string{"fixed_id"}); err == nil {
-			t.Fatal("message should not exist after rollback")
-		}
-	})
-}
-
-func TestSaveDialogMissingExistingMessage(t *testing.T) {
-	db, _ := newTestDB(t)
-	ctx := context.Background()
-	msg := makeTextMessage(gai.User, "missing")
-	msg.ExtraFields = map[string]any{MessageIDKey: "missing-message"}
-
-	var gotErr error
-	for _, err := range db.SaveDialog(ctx, slices.Values([]gai.Message{msg})) {
-		gotErr = err
-		break
-	}
-	if !errors.Is(gotErr, ErrMessageNotFound) {
-		t.Fatalf("expected ErrMessageNotFound, got %v", gotErr)
-	}
-}
-
-// TestGetMessages verifies message retrieval by ID, including correct population of
-// ExtraFields (MessageIDKey, MessageParentIDKey), preservation of Role and ToolResultError
-// fields, and round-trip of block-level ExtraFields. Also confirms non-existent IDs
-// produce errors.
-func TestGetMessages(t *testing.T) {
-	t.Run("retrieve by ID with correct ExtraFields", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		savedID := saveOne(t, db, ctx, makeTextMessage(gai.User, "hello"))
+		savedID := saveOne(t, db, ctx, msg)
 
 		msgs, err := db.GetMessages(ctx, []string{savedID})
 		if err != nil {
@@ -1094,589 +1584,743 @@ func TestGetMessages(t *testing.T) {
 		for m := range msgs {
 			got = m
 		}
-		gotID, ok := got.ExtraFields[MessageIDKey].(string)
-		if !ok || gotID != savedID {
-			t.Fatalf("expected ExtraFields[%q] = %q, got %q", MessageIDKey, savedID, gotID)
+
+		if got.Role != gai.ToolResult {
+			t.Errorf("expected role ToolResult, got %v", got.Role)
 		}
-	})
-
-	t.Run("parent ID in ExtraFields", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		saved := saveDialog(t, db, ctx, []gai.Message{
-			makeTextMessage(gai.User, "parent"),
-			makeTextMessage(gai.Assistant, "child"),
-		})
-		parentID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
-		childID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
-
-		// Root should not have MessageParentIDKey
-		msgs, err := db.GetMessages(ctx, []string{parentID})
-		if err != nil {
-			t.Fatalf("GetMessages (parent): %v", err)
+		if !got.ToolResultError {
+			t.Error("expected ToolResultError = true")
 		}
-		for m := range msgs {
-			if _, exists := m.ExtraFields[MessageParentIDKey]; exists {
-				t.Error("root message should not have MessageParentIDKey")
+		if len(got.Blocks) != 3 {
+			t.Fatalf("expected 3 blocks, got %d", len(got.Blocks))
+		}
+
+		// Verify each block
+		wantBlocks := []struct {
+			id       string
+			btype    string
+			modality gai.Modality
+			mime     string
+			content  string
+		}{
+			{"block-text", gai.Content, gai.Text, "text/plain", "hello world"},
+			{"block-tool", gai.ToolCall, gai.Text, "text/plain", `{"name":"tool","parameters":{"key":"value"}}`},
+			{"block-image", gai.Content, gai.Image, "image/png", "base64encodeddata"},
+		}
+		for i, want := range wantBlocks {
+			b := got.Blocks[i]
+			if b.ID != want.id {
+				t.Errorf("block[%d].ID: expected %q, got %q", i, want.id, b.ID)
+			}
+			if b.BlockType != want.btype {
+				t.Errorf("block[%d].BlockType: expected %q, got %q", i, want.btype, b.BlockType)
+			}
+			if b.ModalityType != want.modality {
+				t.Errorf("block[%d].ModalityType: expected %v, got %v", i, want.modality, b.ModalityType)
+			}
+			if b.MimeType != want.mime {
+				t.Errorf("block[%d].MimeType: expected %q, got %q", i, want.mime, b.MimeType)
+			}
+			if b.Content.String() != want.content {
+				t.Errorf("block[%d].Content: expected %q, got %q", i, want.content, b.Content.String())
 			}
 		}
 
-		// Child should have MessageParentIDKey
-		msgs, err = db.GetMessages(ctx, []string{childID})
-		if err != nil {
-			t.Fatalf("GetMessages (child): %v", err)
+		// Verify ExtraFields on tool call block
+		b1 := got.Blocks[1]
+		if b1.ExtraFields == nil {
+			t.Fatal("block[1].ExtraFields should not be nil")
 		}
-		for m := range msgs {
-			gotParent, ok := m.ExtraFields[MessageParentIDKey].(string)
-			if !ok || gotParent != parentID {
-				t.Fatalf("expected ExtraFields[%q] = %q, got %q", MessageParentIDKey, parentID, gotParent)
-			}
+		if v, ok := b1.ExtraFields["provider"].(string); !ok || v != "test" {
+			t.Errorf("block[1].ExtraFields[provider]: expected %q, got %v", "test", b1.ExtraFields["provider"])
 		}
-	})
-
-	t.Run("round-trip Role and ToolResultError", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		msg := gai.Message{
-			Role:            gai.ToolResult,
-			ToolResultError: true,
-			Blocks: []gai.Block{
-				{
-					ID:           "tool-1",
-					BlockType:    gai.Content,
-					ModalityType: gai.Text,
-					MimeType:     "text/plain",
-					Content:      gai.Str("error result"),
-				},
-			},
-		}
-		savedID := saveOne(t, db, ctx, msg)
-
-		msgs, err := db.GetMessages(ctx, []string{savedID})
-		if err != nil {
-			t.Fatalf("GetMessages: %v", err)
-		}
-		for m := range msgs {
-			if m.Role != gai.ToolResult {
-				t.Errorf("expected role ToolResult, got %v", m.Role)
-			}
-			if !m.ToolResultError {
-				t.Error("expected ToolResultError = true")
-			}
-		}
-	})
-
-	t.Run("non-existent ID returns error", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		_, err := db.GetMessages(ctx, []string{"nonexistent"})
-		if !errors.Is(err, ErrMessageNotFound) {
-			t.Fatalf("expected ErrMessageNotFound, got %v", err)
-		}
-	})
-
-	t.Run("block ExtraFields round-trip", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		msg := gai.Message{
-			Role: gai.Assistant,
-			Blocks: []gai.Block{
-				{
-					ID:           "block-1",
-					BlockType:    gai.ToolCall,
-					ModalityType: gai.Text,
-					MimeType:     "text/plain",
-					Content:      gai.Str(`{"name":"test"}`),
-					ExtraFields:  map[string]any{"key1": "value1", "key2": float64(42)},
-				},
-			},
-		}
-		savedID := saveOne(t, db, ctx, msg)
-
-		msgs, err := db.GetMessages(ctx, []string{savedID})
-		if err != nil {
-			t.Fatalf("GetMessages: %v", err)
-		}
-		for m := range msgs {
-			if len(m.Blocks) != 1 {
-				t.Fatalf("expected 1 block, got %d", len(m.Blocks))
-			}
-			block := m.Blocks[0]
-			if block.ExtraFields == nil {
-				t.Fatal("expected block ExtraFields to be non-nil")
-			}
-			if v, ok := block.ExtraFields["key1"].(string); !ok || v != "value1" {
-				t.Errorf("expected block ExtraFields[key1] = value1, got %v", block.ExtraFields["key1"])
-			}
-			if v, ok := block.ExtraFields["key2"].(float64); !ok || v != 42 {
-				t.Errorf("expected block ExtraFields[key2] = 42, got %v", block.ExtraFields["key2"])
-			}
+		if v, ok := b1.ExtraFields["version"].(float64); !ok || v != 1 {
+			t.Errorf("block[1].ExtraFields[version]: expected %v, got %v", float64(1), b1.ExtraFields["version"])
 		}
 	})
 }
 
-// TestListMessages verifies message listing with ordering (ascending/descending by
-// created_at), pagination via offset, and correct ExtraFields population for
-// parent-child relationships.
-func TestListMessages(t *testing.T) {
-	t.Run("ordering", func(t *testing.T) {
-		tests := []struct {
-			name      string
-			ascending bool
-			wantFirst int // index in savedIDs expected as first result
-			wantLast  int // index in savedIDs expected as last result
-		}{
-			{"descending (default)", false, 2, 0},
-			{"ascending", true, 0, 2},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
+func TestGet(t *testing.T) {
+	t.Run("messages", func(t *testing.T) {
+		// TestGetMessages verifies message retrieval by ID, including correct population of
+		// ExtraFields (MessageIDKey, MessageParentIDKey), preservation of Role and ToolResultError
+		// fields, and round-trip of block-level ExtraFields. Also confirms non-existent IDs
+		// produce errors.
+		t.Run("base case", func(t *testing.T) {
+			t.Run("retrieve by ID with correct ExtraFields", func(t *testing.T) {
 				db, _ := newTestDB(t)
 				ctx := context.Background()
 
-				var savedIDs []string
-				for range 3 {
-					id := saveOne(t, db, ctx, makeTextMessage(gai.User, "msg"))
-					savedIDs = append(savedIDs, id)
+				savedID := saveOne(t, db, ctx, makeTextMessage(gai.User, "hello"))
+
+				msgs, err := db.GetMessages(ctx, []string{savedID})
+				if err != nil {
+					t.Fatalf("GetMessages: %v", err)
+				}
+				var got gai.Message
+				for m := range msgs {
+					got = m
+				}
+				gotID, ok := got.ExtraFields[MessageIDKey].(string)
+				if !ok || gotID != savedID {
+					t.Fatalf("expected ExtraFields[%q] = %q, got %q", MessageIDKey, savedID, gotID)
+				}
+			})
+
+			t.Run("parent ID in ExtraFields", func(t *testing.T) {
+				db, _ := newTestDB(t)
+				ctx := context.Background()
+
+				saved := saveDialog(t, db, ctx, []gai.Message{
+					makeTextMessage(gai.User, "parent"),
+					makeTextMessage(gai.Assistant, "child"),
+				})
+				parentID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
+				childID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
+
+				// Root should not have MessageParentIDKey
+				msgs, err := db.GetMessages(ctx, []string{parentID})
+				if err != nil {
+					t.Fatalf("GetMessages (parent): %v", err)
+				}
+				for m := range msgs {
+					if _, exists := m.ExtraFields[MessageParentIDKey]; exists {
+						t.Error("root message should not have MessageParentIDKey")
+					}
 				}
 
-				msgs, err := db.ListMessages(ctx, listMessagesOptions{AscendingOrder: tt.ascending})
+				// Child should have MessageParentIDKey
+				msgs, err = db.GetMessages(ctx, []string{childID})
 				if err != nil {
-					t.Fatalf("ListMessages: %v", err)
+					t.Fatalf("GetMessages (child): %v", err)
 				}
-				var listedIDs []string
 				for m := range msgs {
-					id, _ := m.ExtraFields[MessageIDKey].(string)
-					listedIDs = append(listedIDs, id)
+					gotParent, ok := m.ExtraFields[MessageParentIDKey].(string)
+					if !ok || gotParent != parentID {
+						t.Fatalf("expected ExtraFields[%q] = %q, got %q", MessageParentIDKey, parentID, gotParent)
+					}
 				}
-				if len(listedIDs) != 3 {
-					t.Fatalf("expected 3 messages, got %d", len(listedIDs))
+			})
+
+			t.Run("round-trip Role and ToolResultError", func(t *testing.T) {
+				db, _ := newTestDB(t)
+				ctx := context.Background()
+
+				msg := gai.Message{
+					Role:            gai.ToolResult,
+					ToolResultError: true,
+					Blocks: []gai.Block{
+						{
+							ID:           "tool-1",
+							BlockType:    gai.Content,
+							ModalityType: gai.Text,
+							MimeType:     "text/plain",
+							Content:      gai.Str("error result"),
+						},
+					},
 				}
-				if listedIDs[0] != savedIDs[tt.wantFirst] {
-					t.Errorf("first: got %q, want %q", listedIDs[0], savedIDs[tt.wantFirst])
+				savedID := saveOne(t, db, ctx, msg)
+
+				msgs, err := db.GetMessages(ctx, []string{savedID})
+				if err != nil {
+					t.Fatalf("GetMessages: %v", err)
 				}
-				if listedIDs[2] != savedIDs[tt.wantLast] {
-					t.Errorf("last: got %q, want %q", listedIDs[2], savedIDs[tt.wantLast])
+				for m := range msgs {
+					if m.Role != gai.ToolResult {
+						t.Errorf("expected role ToolResult, got %v", m.Role)
+					}
+					if !m.ToolResultError {
+						t.Error("expected ToolResultError = true")
+					}
+				}
+			})
+
+			t.Run("non-existent ID returns error", func(t *testing.T) {
+				db, _ := newTestDB(t)
+				ctx := context.Background()
+
+				_, err := db.GetMessages(ctx, []string{"nonexistent"})
+				if !errors.Is(err, ErrMessageNotFound) {
+					t.Fatalf("expected ErrMessageNotFound, got %v", err)
+				}
+			})
+
+			t.Run("block ExtraFields round-trip", func(t *testing.T) {
+				db, _ := newTestDB(t)
+				ctx := context.Background()
+
+				msg := gai.Message{
+					Role: gai.Assistant,
+					Blocks: []gai.Block{
+						{
+							ID:           "block-1",
+							BlockType:    gai.ToolCall,
+							ModalityType: gai.Text,
+							MimeType:     "text/plain",
+							Content:      gai.Str(`{"name":"test"}`),
+							ExtraFields:  map[string]any{"key1": "value1", "key2": float64(42)},
+						},
+					},
+				}
+				savedID := saveOne(t, db, ctx, msg)
+
+				msgs, err := db.GetMessages(ctx, []string{savedID})
+				if err != nil {
+					t.Fatalf("GetMessages: %v", err)
+				}
+				for m := range msgs {
+					if len(m.Blocks) != 1 {
+						t.Fatalf("expected 1 block, got %d", len(m.Blocks))
+					}
+					block := m.Blocks[0]
+					if block.ExtraFields == nil {
+						t.Fatal("expected block ExtraFields to be non-nil")
+					}
+					if v, ok := block.ExtraFields["key1"].(string); !ok || v != "value1" {
+						t.Errorf("expected block ExtraFields[key1] = value1, got %v", block.ExtraFields["key1"])
+					}
+					if v, ok := block.ExtraFields["key2"].(float64); !ok || v != 42 {
+						t.Errorf("expected block ExtraFields[key2] = 42, got %v", block.ExtraFields["key2"])
+					}
+				}
+			})
+		})
+		// TestGetMessages_CorruptData verifies that GetMessages returns errors when the
+		// database contains malformed data. Each case exercises a different corruption
+		// scenario that could occur from database tampering or bugs in older versions.
+		t.Run("corrupt data", func(t *testing.T) {
+			tests := []struct {
+				name  string
+				setup func(t *testing.T, rawDB *sql.DB)
+				msgID string
+			}{
+				{
+					name: "invalid role in database",
+					setup: func(t *testing.T, rawDB *sql.DB) {
+						_, err := rawDB.ExecContext(context.Background(),
+							`INSERT INTO messages (id, role, tool_result_error) VALUES (?, ?, ?)`,
+							"bad-role-msg", "bogus_role", false)
+						if err != nil {
+							t.Fatalf("insert: %v", err)
+						}
+					},
+					msgID: "bad-role-msg",
+				},
+				{
+					name: "corrupt block ExtraFields JSON",
+					setup: func(t *testing.T, rawDB *sql.DB) {
+						_, err := rawDB.ExecContext(context.Background(),
+							`INSERT INTO messages (id, role, tool_result_error) VALUES (?, ?, ?)`,
+							"corrupt-ef-msg", "user", false)
+						if err != nil {
+							t.Fatalf("insert message: %v", err)
+						}
+						_, err = rawDB.ExecContext(context.Background(),
+							`INSERT INTO blocks (message_id, block_type, modality_type, mime_type, content, extra_fields, sequence_order)
+					 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+							"corrupt-ef-msg", "content", 0, "text/plain", "hello", "not-valid-json{{{", 0)
+						if err != nil {
+							t.Fatalf("insert block: %v", err)
+						}
+					},
+					msgID: "corrupt-ef-msg",
+				},
+				{
+					name: "GetBlocksByMessage fails (dropped blocks table)",
+					setup: func(t *testing.T, rawDB *sql.DB) {
+						_, err := rawDB.ExecContext(context.Background(),
+							`INSERT INTO messages (id, role, tool_result_error) VALUES (?, ?, ?)`,
+							"blocks-err-msg", "user", false)
+						if err != nil {
+							t.Fatalf("insert: %v", err)
+						}
+						if _, err = rawDB.ExecContext(context.Background(), "DROP TABLE blocks"); err != nil {
+							t.Fatalf("drop blocks: %v", err)
+						}
+					},
+					msgID: "blocks-err-msg",
+				},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					db, rawDB := newTestDB(t)
+					ctx := context.Background()
+					tt.setup(t, rawDB)
+					if _, err := db.GetMessages(ctx, []string{tt.msgID}); err == nil {
+						t.Fatal("expected error")
+					}
+				})
+			}
+		})
+		// TestGetMessages_EmptyIDs verifies that an empty ID slice returns an empty
+		// iterator without error, rather than failing or returning all messages.
+		t.Run("empty i ds", func(t *testing.T) {
+			db, _ := newTestDB(t)
+			ctx := context.Background()
+
+			msgs, err := db.GetMessages(ctx, []string{})
+			if err != nil {
+				t.Fatalf("GetMessages(empty): %v", err)
+			}
+			count := 0
+			for range msgs {
+				count++
+			}
+			if count != 0 {
+				t.Errorf("expected 0 messages for empty ID list, got %d", count)
+			}
+		})
+		// TestGetMessages_DuplicateIDs documents that the current implementation fetches
+		// each ID independently, so duplicate IDs produce duplicate messages in the result.
+		t.Run("duplicate i ds", func(t *testing.T) {
+			db, _ := newTestDB(t)
+			ctx := context.Background()
+
+			id := saveOne(t, db, ctx, makeTextMessage(gai.User, "hello"))
+
+			msgs, err := db.GetMessages(ctx, []string{id, id})
+			if err != nil {
+				t.Fatalf("GetMessages: %v", err)
+			}
+			count := 0
+			for range msgs {
+				count++
+			}
+			// Current implementation fetches each ID independently, so duplicates produce duplicates
+			if count != 2 {
+				t.Errorf("expected 2 messages for duplicate IDs, got %d", count)
+			}
+		})
+	})
+	t.Run("dialog for message", func(t *testing.T) {
+		// TestGetDialogForMessage verifies that conversation history reconstruction
+		// correctly walks the parent chain from any message back to the root, returning
+		// messages in chronological order with proper parent ID linkage.
+		t.Run("base case", func(t *testing.T) {
+			t.Run("full chain from leaf to root with correct IDs and parents", func(t *testing.T) {
+				db, _ := newTestDB(t)
+				ctx := context.Background()
+
+				saved := saveDialog(t, db, ctx, []gai.Message{
+					makeTextMessage(gai.User, "root"),
+					makeTextMessage(gai.Assistant, "msg1"),
+					makeTextMessage(gai.User, "msg2"),
+					makeTextMessage(gai.Assistant, "msg3"),
+				})
+
+				var allIDs []string
+				for _, s := range saved {
+					allIDs = append(allIDs, getExtraFieldString(s.ExtraFields, MessageIDKey))
+				}
+
+				dialog, err := GetDialogForMessage(ctx, db, allIDs[3])
+				if err != nil {
+					t.Fatalf("GetDialogForMessage: %v", err)
+				}
+				if len(dialog) != 4 {
+					t.Fatalf("expected 4 messages in dialog, got %d", len(dialog))
+				}
+
+				// Verify order and parent chain
+				for i, msg := range dialog {
+					gotID, ok := msg.ExtraFields[MessageIDKey].(string)
+					if !ok || gotID != allIDs[i] {
+						t.Errorf("dialog[%d]: expected ID %q, got %q", i, allIDs[i], gotID)
+					}
+					if i == 0 {
+						if _, ok := msg.ExtraFields[MessageParentIDKey]; ok {
+							t.Error("root message should not have MessageParentIDKey")
+						}
+					} else {
+						gotParent, ok := msg.ExtraFields[MessageParentIDKey].(string)
+						if !ok || gotParent != allIDs[i-1] {
+							t.Errorf("dialog[%d]: expected parent %q, got %q", i, allIDs[i-1], gotParent)
+						}
+					}
+				}
+			})
+
+			t.Run("root message returns single-element dialog", func(t *testing.T) {
+				db, _ := newTestDB(t)
+				ctx := context.Background()
+
+				rootID := saveOne(t, db, ctx, makeTextMessage(gai.User, "root"))
+
+				dialog, err := GetDialogForMessage(ctx, db, rootID)
+				if err != nil {
+					t.Fatalf("GetDialogForMessage: %v", err)
+				}
+				if len(dialog) != 1 {
+					t.Fatalf("expected 1 message, got %d", len(dialog))
+				}
+			})
+
+			t.Run("non-existent ID returns error", func(t *testing.T) {
+				db, _ := newTestDB(t)
+				ctx := context.Background()
+
+				_, err := GetDialogForMessage(ctx, db, "nonexistent")
+				if err == nil {
+					t.Fatal("expected error for non-existent ID")
+				}
+			})
+		})
+		// TestGetDialogForMessage_MidChain verifies that GetDialogForMessage returns only
+		// the ancestor chain up to the specified message, not descendants beyond it.
+		t.Run("mid chain", func(t *testing.T) {
+			db, _ := newTestDB(t)
+			ctx := context.Background()
+
+			saved := saveDialog(t, db, ctx, []gai.Message{
+				makeTextMessage(gai.User, "A"),
+				makeTextMessage(gai.Assistant, "B"),
+				makeTextMessage(gai.User, "C"),
+				makeTextMessage(gai.Assistant, "D"),
+			})
+
+			// Get dialog from B (mid-chain) — should return [A, B]
+			bID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
+			dialog, err := GetDialogForMessage(ctx, db, bID)
+			if err != nil {
+				t.Fatalf("GetDialogForMessage: %v", err)
+			}
+			if len(dialog) != 2 {
+				t.Fatalf("expected 2 messages (A → B), got %d", len(dialog))
+			}
+
+			aID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
+			if gotID := getExtraFieldString(dialog[0].ExtraFields, MessageIDKey); gotID != aID {
+				t.Errorf("dialog[0]: expected %q, got %q", aID, gotID)
+			}
+			if gotID := getExtraFieldString(dialog[1].ExtraFields, MessageIDKey); gotID != bID {
+				t.Errorf("dialog[1]: expected %q, got %q", bID, gotID)
+			}
+		})
+	})
+	// TestGetExtraFieldString verifies the helper returns empty string for nil maps,
+	// missing keys, and non-string values, and returns the value only when the key
+	// exists with string type.
+	t.Run("extra field string", func(t *testing.T) {
+		tests := []struct {
+			name string
+			m    map[string]any
+			key  string
+			want string
+		}{
+			{"nil map", nil, "key", ""},
+			{"missing key", map[string]any{"other": "val"}, "key", ""},
+			{"wrong type", map[string]any{"key": 42}, "key", ""},
+			{"present", map[string]any{"key": "value"}, "key", "value"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				got := getExtraFieldString(tt.m, tt.key)
+				if got != tt.want {
+					t.Errorf("getExtraFieldString() = %q, want %q", got, tt.want)
 				}
 			})
 		}
 	})
-
-	t.Run("offset skips messages", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		for range 5 {
-			saveOne(t, db, ctx, makeTextMessage(gai.User, "msg"))
-		}
-
-		msgs, err := db.ListMessages(ctx, listMessagesOptions{Offset: 3})
-		if err != nil {
-			t.Fatalf("ListMessages: %v", err)
-		}
-		count := 0
-		for range msgs {
-			count++
-		}
-		if count != 2 {
-			t.Fatalf("expected 2 messages after offset 3, got %d", count)
-		}
-	})
-
-	t.Run("messages have ID and parent ID in ExtraFields", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		saved := saveDialog(t, db, ctx, []gai.Message{
-			makeTextMessage(gai.User, "parent"),
-			makeTextMessage(gai.Assistant, "child"),
-		})
-		parentID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
-
-		msgs, err := db.ListMessages(ctx, listMessagesOptions{AscendingOrder: true})
-		if err != nil {
-			t.Fatalf("ListMessages: %v", err)
-		}
-
-		var listed []gai.Message
-		for m := range msgs {
-			listed = append(listed, m)
-		}
-		if len(listed) != 2 {
-			t.Fatalf("expected 2 messages, got %d", len(listed))
-		}
-
-		if _, ok := listed[0].ExtraFields[MessageIDKey]; !ok {
-			t.Error("parent should have MessageIDKey")
-		}
-		if _, ok := listed[0].ExtraFields[MessageParentIDKey]; ok {
-			t.Error("parent should not have MessageParentIDKey")
-		}
-
-		if _, ok := listed[1].ExtraFields[MessageIDKey]; !ok {
-			t.Error("child should have MessageIDKey")
-		}
-		gotParent, ok := listed[1].ExtraFields[MessageParentIDKey].(string)
-		if !ok || gotParent != parentID {
-			t.Errorf("expected child MessageParentIDKey = %q, got %q", parentID, gotParent)
-		}
-	})
 }
 
-// TestDeleteMessages verifies DeleteMessages enforces referential integrity by
-// preventing non-recursive deletion of messages with children, while allowing
-// recursive deletion to remove entire subtrees atomically.
-func TestDeleteMessages(t *testing.T) {
-	t.Run("delete leaf message non-recursively", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		leafID := saveOne(t, db, ctx, makeTextMessage(gai.User, "leaf"))
-
-		err := db.DeleteMessages(ctx, deleteMessagesOptions{
-			MessageIDs: []string{leafID},
-			Recursive:  false,
-		})
-		if err != nil {
-			t.Fatalf("DeleteMessages: %v", err)
-		}
-
-		if _, err = db.GetMessages(ctx, []string{leafID}); err == nil {
-			t.Fatal("expected error retrieving deleted message")
-		}
-	})
-
-	t.Run("non-recursive delete of parent with children fails", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		saved := saveDialog(t, db, ctx, []gai.Message{
-			makeTextMessage(gai.User, "parent"),
-			makeTextMessage(gai.Assistant, "child"),
-		})
-		parentID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
-		childID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
-
-		err := db.DeleteMessages(ctx, deleteMessagesOptions{
-			MessageIDs: []string{parentID},
-			Recursive:  false,
-		})
-		if err == nil {
-			t.Fatal("expected error deleting parent with children non-recursively")
-		}
-
-		// Child should still exist
-		if _, err = db.GetMessages(ctx, []string{childID}); err != nil {
-			t.Fatalf("child should still exist: %v", err)
-		}
-	})
-
-	t.Run("recursive delete removes entire tree", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		// root → child → grandchild
-		saved := saveDialog(t, db, ctx, []gai.Message{
-			makeTextMessage(gai.User, "root"),
-			makeTextMessage(gai.Assistant, "child"),
-			makeTextMessage(gai.User, "grandchild"),
-		})
-
-		var allIDs []string
-		for _, s := range saved {
-			allIDs = append(allIDs, getExtraFieldString(s.ExtraFields, MessageIDKey))
-		}
-
-		err := db.DeleteMessages(ctx, deleteMessagesOptions{
-			MessageIDs: []string{allIDs[0]},
-			Recursive:  true,
-		})
-		if err != nil {
-			t.Fatalf("DeleteMessages: %v", err)
-		}
-
-		for _, id := range allIDs {
-			if _, err = db.GetMessages(ctx, []string{id}); err == nil {
-				t.Errorf("message %s should be deleted", id)
-			}
-		}
-	})
-}
-
-// TestGetDialogForMessage verifies that conversation history reconstruction
-// correctly walks the parent chain from any message back to the root, returning
-// messages in chronological order with proper parent ID linkage.
-func TestGetDialogForMessage(t *testing.T) {
-	t.Run("full chain from leaf to root with correct IDs and parents", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		saved := saveDialog(t, db, ctx, []gai.Message{
-			makeTextMessage(gai.User, "root"),
-			makeTextMessage(gai.Assistant, "msg1"),
-			makeTextMessage(gai.User, "msg2"),
-			makeTextMessage(gai.Assistant, "msg3"),
-		})
-
-		var allIDs []string
-		for _, s := range saved {
-			allIDs = append(allIDs, getExtraFieldString(s.ExtraFields, MessageIDKey))
-		}
-
-		dialog, err := GetDialogForMessage(ctx, db, allIDs[3])
-		if err != nil {
-			t.Fatalf("GetDialogForMessage: %v", err)
-		}
-		if len(dialog) != 4 {
-			t.Fatalf("expected 4 messages in dialog, got %d", len(dialog))
-		}
-
-		// Verify order and parent chain
-		for i, msg := range dialog {
-			gotID, ok := msg.ExtraFields[MessageIDKey].(string)
-			if !ok || gotID != allIDs[i] {
-				t.Errorf("dialog[%d]: expected ID %q, got %q", i, allIDs[i], gotID)
-			}
-			if i == 0 {
-				if _, ok := msg.ExtraFields[MessageParentIDKey]; ok {
-					t.Error("root message should not have MessageParentIDKey")
+func TestList(t *testing.T) {
+	t.Run("messages", func(t *testing.T) {
+		// TestListMessages verifies message listing with ordering (ascending/descending by
+		// created_at), pagination via offset, and correct ExtraFields population for
+		// parent-child relationships.
+		t.Run("base case", func(t *testing.T) {
+			t.Run("ordering", func(t *testing.T) {
+				tests := []struct {
+					name      string
+					ascending bool
+					wantFirst int // index in savedIDs expected as first result
+					wantLast  int // index in savedIDs expected as last result
+				}{
+					{"descending (default)", false, 2, 0},
+					{"ascending", true, 0, 2},
 				}
-			} else {
-				gotParent, ok := msg.ExtraFields[MessageParentIDKey].(string)
-				if !ok || gotParent != allIDs[i-1] {
-					t.Errorf("dialog[%d]: expected parent %q, got %q", i, allIDs[i-1], gotParent)
+				for _, tt := range tests {
+					t.Run(tt.name, func(t *testing.T) {
+						db, _ := newTestDB(t)
+						ctx := context.Background()
+
+						var savedIDs []string
+						for range 3 {
+							id := saveOne(t, db, ctx, makeTextMessage(gai.User, "msg"))
+							savedIDs = append(savedIDs, id)
+						}
+
+						msgs, err := db.ListMessages(ctx, listMessagesOptions{AscendingOrder: tt.ascending})
+						if err != nil {
+							t.Fatalf("ListMessages: %v", err)
+						}
+						var listedIDs []string
+						for m := range msgs {
+							id, _ := m.ExtraFields[MessageIDKey].(string)
+							listedIDs = append(listedIDs, id)
+						}
+						if len(listedIDs) != 3 {
+							t.Fatalf("expected 3 messages, got %d", len(listedIDs))
+						}
+						if listedIDs[0] != savedIDs[tt.wantFirst] {
+							t.Errorf("first: got %q, want %q", listedIDs[0], savedIDs[tt.wantFirst])
+						}
+						if listedIDs[2] != savedIDs[tt.wantLast] {
+							t.Errorf("last: got %q, want %q", listedIDs[2], savedIDs[tt.wantLast])
+						}
+					})
 				}
-			}
-		}
-	})
+			})
 
-	t.Run("root message returns single-element dialog", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
+			t.Run("offset skips messages", func(t *testing.T) {
+				db, _ := newTestDB(t)
+				ctx := context.Background()
 
-		rootID := saveOne(t, db, ctx, makeTextMessage(gai.User, "root"))
+				for range 5 {
+					saveOne(t, db, ctx, makeTextMessage(gai.User, "msg"))
+				}
 
-		dialog, err := GetDialogForMessage(ctx, db, rootID)
-		if err != nil {
-			t.Fatalf("GetDialogForMessage: %v", err)
-		}
-		if len(dialog) != 1 {
-			t.Fatalf("expected 1 message, got %d", len(dialog))
-		}
-	})
-
-	t.Run("non-existent ID returns error", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		_, err := GetDialogForMessage(ctx, db, "nonexistent")
-		if err == nil {
-			t.Fatal("expected error for non-existent ID")
-		}
-	})
-}
-
-// TestSaveAndGetRoundTrip is a comprehensive persistence test that verifies all
-// message fields survive a save/retrieve cycle: Role, ToolResultError, multiple blocks
-// with different types and modalities, and block-level ExtraFields including nested values.
-func TestSaveAndGetRoundTrip(t *testing.T) {
-	db, _ := newTestDB(t)
-	ctx := context.Background()
-
-	msg := gai.Message{
-		Role:            gai.ToolResult,
-		ToolResultError: true,
-		Blocks: []gai.Block{
-			{
-				ID:           "block-text",
-				BlockType:    gai.Content,
-				ModalityType: gai.Text,
-				MimeType:     "text/plain",
-				Content:      gai.Str("hello world"),
-			},
-			{
-				ID:           "block-tool",
-				BlockType:    gai.ToolCall,
-				ModalityType: gai.Text,
-				MimeType:     "text/plain",
-				Content:      gai.Str(`{"name":"tool","parameters":{"key":"value"}}`),
-				ExtraFields:  map[string]any{"provider": "test", "version": float64(1)},
-			},
-			{
-				ID:           "block-image",
-				BlockType:    gai.Content,
-				ModalityType: gai.Image,
-				MimeType:     "image/png",
-				Content:      gai.Str("base64encodeddata"),
-			},
-		},
-	}
-
-	savedID := saveOne(t, db, ctx, msg)
-
-	msgs, err := db.GetMessages(ctx, []string{savedID})
-	if err != nil {
-		t.Fatalf("GetMessages: %v", err)
-	}
-	var got gai.Message
-	for m := range msgs {
-		got = m
-	}
-
-	if got.Role != gai.ToolResult {
-		t.Errorf("expected role ToolResult, got %v", got.Role)
-	}
-	if !got.ToolResultError {
-		t.Error("expected ToolResultError = true")
-	}
-	if len(got.Blocks) != 3 {
-		t.Fatalf("expected 3 blocks, got %d", len(got.Blocks))
-	}
-
-	// Verify each block
-	wantBlocks := []struct {
-		id       string
-		btype    string
-		modality gai.Modality
-		mime     string
-		content  string
-	}{
-		{"block-text", gai.Content, gai.Text, "text/plain", "hello world"},
-		{"block-tool", gai.ToolCall, gai.Text, "text/plain", `{"name":"tool","parameters":{"key":"value"}}`},
-		{"block-image", gai.Content, gai.Image, "image/png", "base64encodeddata"},
-	}
-	for i, want := range wantBlocks {
-		b := got.Blocks[i]
-		if b.ID != want.id {
-			t.Errorf("block[%d].ID: expected %q, got %q", i, want.id, b.ID)
-		}
-		if b.BlockType != want.btype {
-			t.Errorf("block[%d].BlockType: expected %q, got %q", i, want.btype, b.BlockType)
-		}
-		if b.ModalityType != want.modality {
-			t.Errorf("block[%d].ModalityType: expected %v, got %v", i, want.modality, b.ModalityType)
-		}
-		if b.MimeType != want.mime {
-			t.Errorf("block[%d].MimeType: expected %q, got %q", i, want.mime, b.MimeType)
-		}
-		if b.Content.String() != want.content {
-			t.Errorf("block[%d].Content: expected %q, got %q", i, want.content, b.Content.String())
-		}
-	}
-
-	// Verify ExtraFields on tool call block
-	b1 := got.Blocks[1]
-	if b1.ExtraFields == nil {
-		t.Fatal("block[1].ExtraFields should not be nil")
-	}
-	if v, ok := b1.ExtraFields["provider"].(string); !ok || v != "test" {
-		t.Errorf("block[1].ExtraFields[provider]: expected %q, got %v", "test", b1.ExtraFields["provider"])
-	}
-	if v, ok := b1.ExtraFields["version"].(float64); !ok || v != 1 {
-		t.Errorf("block[1].ExtraFields[version]: expected %v, got %v", float64(1), b1.ExtraFields["version"])
-	}
-}
-
-// TestNewSqlite_SchemaError verifies that NewSqlite returns an error when the
-// current schema cannot be applied.
-func TestNewSqlite_SchemaError(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "test.db")
-	realDB, err := sql.Open("sqlite3", dbPath)
-	if err != nil {
-		t.Fatalf("sql.Open: %v", err)
-	}
-	t.Cleanup(func() { _ = realDB.Close() })
-
-	// parent_id does not exist, so current schema initialization fails while
-	// creating the parent index.
-	if _, err := realDB.ExecContext(t.Context(), `
-		CREATE TABLE messages (
-			id TEXT PRIMARY KEY,
-			role TEXT NOT NULL,
-			tool_result_error BOOLEAN NOT NULL DEFAULT 0,
-			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-		)
-	`); err != nil {
-		t.Fatalf("create incompatible schema: %v", err)
-	}
-	if _, err := NewSqlite(t.Context(), realDB); err == nil {
-		t.Fatal("expected error from failed schema init")
-	}
-	if got := countRows(t, realDB, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_messages_created_at'"); got != 0 {
-		t.Fatalf("rolled-back schema indexes: got %d, want 0", got)
-	}
-}
-
-// TestGetMessages_CorruptData verifies that GetMessages returns errors when the
-// database contains malformed data. Each case exercises a different corruption
-// scenario that could occur from database tampering or bugs in older versions.
-func TestGetMessages_CorruptData(t *testing.T) {
-	tests := []struct {
-		name  string
-		setup func(t *testing.T, rawDB *sql.DB)
-		msgID string
-	}{
-		{
-			name: "invalid role in database",
-			setup: func(t *testing.T, rawDB *sql.DB) {
-				_, err := rawDB.ExecContext(context.Background(),
-					`INSERT INTO messages (id, role, tool_result_error) VALUES (?, ?, ?)`,
-					"bad-role-msg", "bogus_role", false)
+				msgs, err := db.ListMessages(ctx, listMessagesOptions{Offset: 3})
 				if err != nil {
+					t.Fatalf("ListMessages: %v", err)
+				}
+				count := 0
+				for range msgs {
+					count++
+				}
+				if count != 2 {
+					t.Fatalf("expected 2 messages after offset 3, got %d", count)
+				}
+			})
+
+			t.Run("messages have ID and parent ID in ExtraFields", func(t *testing.T) {
+				db, _ := newTestDB(t)
+				ctx := context.Background()
+
+				saved := saveDialog(t, db, ctx, []gai.Message{
+					makeTextMessage(gai.User, "parent"),
+					makeTextMessage(gai.Assistant, "child"),
+				})
+				parentID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
+
+				msgs, err := db.ListMessages(ctx, listMessagesOptions{AscendingOrder: true})
+				if err != nil {
+					t.Fatalf("ListMessages: %v", err)
+				}
+
+				var listed []gai.Message
+				for m := range msgs {
+					listed = append(listed, m)
+				}
+				if len(listed) != 2 {
+					t.Fatalf("expected 2 messages, got %d", len(listed))
+				}
+
+				if _, ok := listed[0].ExtraFields[MessageIDKey]; !ok {
+					t.Error("parent should have MessageIDKey")
+				}
+				if _, ok := listed[0].ExtraFields[MessageParentIDKey]; ok {
+					t.Error("parent should not have MessageParentIDKey")
+				}
+
+				if _, ok := listed[1].ExtraFields[MessageIDKey]; !ok {
+					t.Error("child should have MessageIDKey")
+				}
+				gotParent, ok := listed[1].ExtraFields[MessageParentIDKey].(string)
+				if !ok || gotParent != parentID {
+					t.Errorf("expected child MessageParentIDKey = %q, got %q", parentID, gotParent)
+				}
+			})
+		})
+		// TestListMessages_ErrorPaths verifies error handling when the initial query fails
+		// (closed DB) or when getMessage fails during result iteration (invalid role data
+		// in storage).
+		t.Run("error paths", func(t *testing.T) {
+			t.Run("query fails on closed DB", func(t *testing.T) {
+				tests := []struct {
+					name      string
+					ascending bool
+				}{
+					{"descending", false},
+					{"ascending", true},
+				}
+				for _, tt := range tests {
+					t.Run(tt.name, func(t *testing.T) {
+						dbPath := filepath.Join(t.TempDir(), "test.db")
+						rawDB, err := sql.Open("sqlite3", dbPath)
+						if err != nil {
+							t.Fatalf("sql.Open: %v", err)
+						}
+						ds, err := NewSqlite(context.Background(), rawDB)
+						if err != nil {
+							t.Fatalf("NewSqlite: %v", err)
+						}
+						rawDB.Close()
+
+						if _, err = ds.ListMessages(context.Background(), listMessagesOptions{AscendingOrder: tt.ascending}); err == nil {
+							t.Fatal("expected error from closed DB")
+						}
+					})
+				}
+			})
+
+			t.Run("getMessage fails during iteration", func(t *testing.T) {
+				db, rawDB := newTestDB(t)
+				ctx := context.Background()
+
+				// Insert message with invalid role — ListMessages finds it but getMessage fails
+				if _, err := rawDB.ExecContext(ctx,
+					`INSERT INTO messages (id, role, tool_result_error) VALUES (?, ?, ?)`,
+					"bad-role-list", "not_a_role", false); err != nil {
 					t.Fatalf("insert: %v", err)
 				}
-			},
-			msgID: "bad-role-msg",
-		},
-		{
-			name: "corrupt block ExtraFields JSON",
-			setup: func(t *testing.T, rawDB *sql.DB) {
-				_, err := rawDB.ExecContext(context.Background(),
-					`INSERT INTO messages (id, role, tool_result_error) VALUES (?, ?, ?)`,
-					"corrupt-ef-msg", "user", false)
-				if err != nil {
-					t.Fatalf("insert message: %v", err)
+
+				if _, err := db.ListMessages(ctx, listMessagesOptions{}); err == nil {
+					t.Fatal("expected error from getMessage with invalid role during ListMessages")
 				}
-				_, err = rawDB.ExecContext(context.Background(),
-					`INSERT INTO blocks (message_id, block_type, modality_type, mime_type, content, extra_fields, sequence_order)
-					 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-					"corrupt-ef-msg", "content", 0, "text/plain", "hello", "not-valid-json{{{", 0)
-				if err != nil {
-					t.Fatalf("insert block: %v", err)
-				}
-			},
-			msgID: "corrupt-ef-msg",
-		},
-		{
-			name: "GetBlocksByMessage fails (dropped blocks table)",
-			setup: func(t *testing.T, rawDB *sql.DB) {
-				_, err := rawDB.ExecContext(context.Background(),
-					`INSERT INTO messages (id, role, tool_result_error) VALUES (?, ?, ?)`,
-					"blocks-err-msg", "user", false)
-				if err != nil {
-					t.Fatalf("insert: %v", err)
-				}
-				if _, err = rawDB.ExecContext(context.Background(), "DROP TABLE blocks"); err != nil {
-					t.Fatalf("drop blocks: %v", err)
-				}
-			},
-			msgID: "blocks-err-msg",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			db, rawDB := newTestDB(t)
+			})
+		})
+		// TestListMessages_OffsetBeyondTotal verifies that an offset exceeding the total
+		// message count returns an empty result gracefully rather than erroring.
+		t.Run("offset beyond total", func(t *testing.T) {
+			db, _ := newTestDB(t)
 			ctx := context.Background()
-			tt.setup(t, rawDB)
-			if _, err := db.GetMessages(ctx, []string{tt.msgID}); err == nil {
-				t.Fatal("expected error")
+
+			for range 3 {
+				saveOne(t, db, ctx, makeTextMessage(gai.User, "msg"))
+			}
+
+			msgs, err := db.ListMessages(ctx, listMessagesOptions{Offset: 100})
+			if err != nil {
+				t.Fatalf("ListMessages with large offset: %v", err)
+			}
+			count := 0
+			for range msgs {
+				count++
+			}
+			if count != 0 {
+				t.Errorf("expected 0 messages with offset beyond total, got %d", count)
 			}
 		})
-	}
+		// TestListMessages_CreatedAtOrdering verifies that ListMessages returns messages
+		// sorted by created_at timestamps in the requested order.
+		t.Run("created at ordering", func(t *testing.T) {
+			// Verify that ListMessages ordering actually uses created_at timestamps
+			// and that the returned messages have timestamps in the correct order.
+			db, _ := newTestDB(t)
+			ctx := context.Background()
+
+			for i := range 5 {
+				saveOne(t, db, ctx, makeTextMessage(gai.User, fmt.Sprintf("msg-%d", i)))
+			}
+
+			// Ascending: timestamps should be non-decreasing
+			msgs, err := db.ListMessages(ctx, listMessagesOptions{AscendingOrder: true})
+			if err != nil {
+				t.Fatalf("ListMessages: %v", err)
+			}
+			var prev string
+			for m := range msgs {
+				ts := fmt.Sprintf("%v", m.ExtraFields[MessageCreatedAtKey])
+				if prev != "" && ts < prev {
+					t.Errorf("timestamps not ascending: %q came after %q", ts, prev)
+				}
+				prev = ts
+			}
+		})
+	})
+	t.Run("acp session summaries", func(t *testing.T) {
+		t.Run("rejects values beyond sq lite integer range", func(t *testing.T) {
+			db, _ := newTestDB(t)
+			tooLarge := uint64(math.MaxInt64) + 1
+
+			if _, err := db.ListACPSessionSummaries(t.Context(), ListACPSessionSummariesOptions{
+				Limit: tooLarge,
+			}); err == nil || err.Error() != "ACP session summary limit exceeds SQLite integer range" {
+				t.Fatalf("oversized limit error = %v", err)
+			}
+			if _, err := db.ListACPSessionSummaries(t.Context(), ListACPSessionSummariesOptions{
+				Limit: 20, Offset: tooLarge,
+			}); err == nil || err.Error() != "ACP session summary offset exceeds SQLite integer range" {
+				t.Fatalf("oversized offset error = %v", err)
+			}
+		})
+		t.Run("pagination", func(t *testing.T) {
+			db, rawDB := newTestDB(t)
+			ctx := t.Context()
+
+			firstMessageID := saveOne(t, db, ctx, makeTextMessage(gai.User, "first"))
+			secondMessageID := saveOne(t, db, ctx, makeTextMessage(gai.User, "second"))
+			firstCreatedAt := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
+			secondCreatedAt := time.Date(2026, 7, 2, 9, 0, 0, 0, time.UTC)
+			emptyCreatedAt := time.Date(2026, 7, 4, 9, 0, 0, 0, time.UTC)
+			firstModifiedAt := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC)
+			secondModifiedAt := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
+
+			for _, update := range []struct {
+				messageID string
+				createdAt time.Time
+			}{
+				{firstMessageID, firstModifiedAt},
+				{secondMessageID, secondModifiedAt},
+			} {
+				if _, err := rawDB.ExecContext(ctx, "UPDATE messages SET created_at = ? WHERE id = ?", update.createdAt, update.messageID); err != nil {
+					t.Fatalf("update message timestamp: %v", err)
+				}
+			}
+
+			for _, session := range []struct {
+				id            acp.SessionId
+				title         string
+				lastMessageID string
+				createdAt     time.Time
+			}{
+				{"first-session", "First", firstMessageID, firstCreatedAt},
+				{"second-session", "Second", secondMessageID, secondCreatedAt},
+				{"empty-session", "Empty", "", emptyCreatedAt},
+			} {
+				if err := db.CreateACPSession(ctx, CreateACPSessionParams{
+					Session: acp.SessionInfo{
+						Cwd:       "/tmp/project",
+						SessionID: session.id,
+						Title:     new(session.title),
+					},
+					LastMessageID: session.lastMessageID,
+					ModelRef:      testACPModelRef,
+				}); err != nil {
+					t.Fatalf("CreateACPSession(%s): %v", session.id, err)
+				}
+				if _, err := rawDB.ExecContext(ctx, "UPDATE acp_sessions SET created_at = ? WHERE id = ?", session.createdAt, session.id); err != nil {
+					t.Fatalf("update session timestamp: %v", err)
+				}
+			}
+
+			page, err := db.ListACPSessionSummaries(ctx, ListACPSessionSummariesOptions{Limit: 1, Offset: 1})
+			if err != nil {
+				t.Fatalf("ListACPSessionSummaries page: %v", err)
+			}
+			if len(page) != 1 || page[0].SessionID != "second-session" {
+				t.Fatalf("page = %#v, want second-session", page)
+			}
+			if page[0].CreatedAt != secondCreatedAt || page[0].LastModified != secondModifiedAt {
+				t.Fatalf("second session timestamps = (%v, %v), want (%v, %v)", page[0].CreatedAt, page[0].LastModified, secondCreatedAt, secondModifiedAt)
+			}
+
+			all, err := db.ListACPSessionSummaries(ctx, ListACPSessionSummariesOptions{Limit: 20})
+			if err != nil {
+				t.Fatalf("ListACPSessionSummaries all: %v", err)
+			}
+			if len(all) != 3 {
+				t.Fatalf("len(all) = %d, want 3", len(all))
+			}
+			if all[0].SessionID != "first-session" || all[1].SessionID != "second-session" || all[2].SessionID != "empty-session" {
+				t.Fatalf("unexpected summary order: %#v", all)
+			}
+			if all[2].LastModified != emptyCreatedAt {
+				t.Fatalf("empty session LastModified = %v, want creation time %v", all[2].LastModified, emptyCreatedAt)
+			}
+		})
+	})
 }
 
 // TestGenerateUniqueIDInTx_Exhaustion verifies that ID generation fails gracefully
@@ -1830,283 +2474,6 @@ func TestIteratorEarlyBreak(t *testing.T) {
 	}
 }
 
-// TestSaveDialog_CommitError verifies that transaction commit failures are handled
-// correctly depending on iterator consumption state. Uses a deferred FK violation
-// to trigger commit errors.
-func TestSaveDialog_CommitError(t *testing.T) {
-	t.Run("consumer still active", func(t *testing.T) {
-		ds, rawDB := newTestDBWithFK(t)
-		addPoisonTrigger(t, rawDB, "insert")
-
-		expectSaveDialogError(t, ds, context.Background(), []gai.Message{
-			makeTextMessage(gai.User, "commit-test"),
-		})
-	})
-
-	t.Run("consumer stopped", func(t *testing.T) {
-		ds, rawDB := newTestDBWithFK(t)
-		addPoisonTrigger(t, rawDB, "insert")
-
-		// Break after first message — commit fails silently (consumer stopped)
-		consumed := 0
-		for _, err := range ds.SaveDialog(context.Background(), slices.Values([]gai.Message{
-			makeTextMessage(gai.User, "msg1"),
-			makeTextMessage(gai.Assistant, "msg2"),
-		})) {
-			if err != nil {
-				t.Fatalf("unexpected error during iteration: %v", err)
-			}
-			consumed++
-			if consumed == 1 {
-				break
-			}
-		}
-		// No panic = success. The commit fails after consumer broke out of the
-		// loop, so the error cannot be propagated via yield. The deferred
-		// Rollback cleans up silently.
-	})
-}
-
-// TestDeleteMessages_CommitError verifies that commit failures during DeleteMessages
-// are properly propagated to the caller. Uses a deferred FK violation triggered on
-// DELETE.
-func TestDeleteMessages_CommitError(t *testing.T) {
-	ds, rawDB := newTestDBWithFK(t)
-	ctx := context.Background()
-
-	id := saveOne(t, ds, ctx, makeTextMessage(gai.User, "to-delete"))
-	addPoisonTrigger(t, rawDB, "delete")
-
-	err := ds.DeleteMessages(ctx, deleteMessagesOptions{
-		MessageIDs: []string{id},
-		Recursive:  false,
-	})
-	if err == nil {
-		t.Fatal("expected commit error from deferred FK violation")
-	}
-}
-
-// TestDeleteMessages_ErrorPaths exercises error handling for each database operation
-// in DeleteMessages by breaking underlying tables or blocking operations with
-// triggers.
-func TestDeleteMessages_ErrorPaths(t *testing.T) {
-	t.Run("HasChildren error (renamed table)", func(t *testing.T) {
-		db, rawDB := newTestDB(t)
-		ctx := context.Background()
-
-		id := saveOne(t, db, ctx, makeTextMessage(gai.User, "leaf"))
-
-		if _, err := rawDB.ExecContext(ctx, "ALTER TABLE messages RENAME TO messages_old"); err != nil {
-			t.Fatalf("rename: %v", err)
-		}
-
-		err := db.DeleteMessages(ctx, deleteMessagesOptions{
-			MessageIDs: []string{id},
-			Recursive:  false,
-		})
-		if err == nil {
-			t.Fatal("expected error from HasChildren on renamed table")
-		}
-	})
-
-	t.Run("DeleteMessage error (trigger blocks delete)", func(t *testing.T) {
-		db, rawDB := newTestDB(t)
-		ctx := context.Background()
-
-		_, err := rawDB.ExecContext(ctx,
-			`INSERT INTO messages (id, role, tool_result_error) VALUES (?, ?, ?)`,
-			"delete-err-msg", "user", false)
-		if err != nil {
-			t.Fatalf("insert: %v", err)
-		}
-
-		addBlockingTrigger(t, rawDB, "messages", "DELETE")
-
-		err = db.DeleteMessages(ctx, deleteMessagesOptions{
-			MessageIDs: []string{"delete-err-msg"},
-			Recursive:  false,
-		})
-		if err == nil {
-			t.Fatal("expected error from DeleteMessage blocked by trigger")
-		}
-	})
-
-	t.Run("ListMessagesByParent error (renamed table)", func(t *testing.T) {
-		db, rawDB := newTestDB(t)
-		ctx := context.Background()
-
-		saved := saveDialog(t, db, ctx, []gai.Message{
-			makeTextMessage(gai.User, "root"),
-			makeTextMessage(gai.Assistant, "child"),
-		})
-		rootID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
-
-		if _, err := rawDB.ExecContext(ctx, "ALTER TABLE messages RENAME TO messages_old"); err != nil {
-			t.Fatalf("rename: %v", err)
-		}
-
-		err := db.DeleteMessages(ctx, deleteMessagesOptions{
-			MessageIDs: []string{rootID},
-			Recursive:  true,
-		})
-		if err == nil {
-			t.Fatal("expected error from ListMessagesByParent on renamed table")
-		}
-	})
-
-	t.Run("recursive child deletion error (trigger blocks delete)", func(t *testing.T) {
-		db, rawDB := newTestDB(t)
-		ctx := context.Background()
-
-		saved := saveDialog(t, db, ctx, []gai.Message{
-			makeTextMessage(gai.User, "root"),
-			makeTextMessage(gai.Assistant, "child"),
-		})
-		rootID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
-
-		addBlockingTrigger(t, rawDB, "messages", "DELETE")
-
-		err := db.DeleteMessages(ctx, deleteMessagesOptions{
-			MessageIDs: []string{rootID},
-			Recursive:  true,
-		})
-		if err == nil {
-			t.Fatal("expected error from recursive child deletion")
-		}
-	})
-}
-
-// TestListMessages_ErrorPaths verifies error handling when the initial query fails
-// (closed DB) or when getMessage fails during result iteration (invalid role data
-// in storage).
-func TestListMessages_ErrorPaths(t *testing.T) {
-	t.Run("query fails on closed DB", func(t *testing.T) {
-		tests := []struct {
-			name      string
-			ascending bool
-		}{
-			{"descending", false},
-			{"ascending", true},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				dbPath := filepath.Join(t.TempDir(), "test.db")
-				rawDB, err := sql.Open("sqlite3", dbPath)
-				if err != nil {
-					t.Fatalf("sql.Open: %v", err)
-				}
-				ds, err := NewSqlite(context.Background(), rawDB)
-				if err != nil {
-					t.Fatalf("NewSqlite: %v", err)
-				}
-				rawDB.Close()
-
-				if _, err = ds.ListMessages(context.Background(), listMessagesOptions{AscendingOrder: tt.ascending}); err == nil {
-					t.Fatal("expected error from closed DB")
-				}
-			})
-		}
-	})
-
-	t.Run("getMessage fails during iteration", func(t *testing.T) {
-		db, rawDB := newTestDB(t)
-		ctx := context.Background()
-
-		// Insert message with invalid role — ListMessages finds it but getMessage fails
-		if _, err := rawDB.ExecContext(ctx,
-			`INSERT INTO messages (id, role, tool_result_error) VALUES (?, ?, ?)`,
-			"bad-role-list", "not_a_role", false); err != nil {
-			t.Fatalf("insert: %v", err)
-		}
-
-		if _, err := db.ListMessages(ctx, listMessagesOptions{}); err == nil {
-			t.Fatal("expected error from getMessage with invalid role during ListMessages")
-		}
-	})
-}
-
-// TestSaveDialog_SaveErrors exercises error paths during message persistence:
-// blocked INSERT, missing blocks table, unmarshallable ExtraFields, and ID
-// generation on missing tables.
-func TestSaveDialog_SaveErrors(t *testing.T) {
-	t.Run("CreateMessage error (trigger blocks insert)", func(t *testing.T) {
-		db, rawDB := newTestDB(t)
-		ctx := context.Background()
-
-		rootID := saveOne(t, db, ctx, makeTextMessage(gai.User, "root"))
-
-		addBlockingTrigger(t, rawDB, "messages", "INSERT")
-
-		rootMsg := makeTextMessage(gai.User, "root")
-		rootMsg.ExtraFields = map[string]any{MessageIDKey: rootID}
-		expectSaveDialogError(t, db, ctx, []gai.Message{rootMsg, makeTextMessage(gai.Assistant, "should-fail")})
-	})
-
-	t.Run("CreateBlock error (dropped blocks table)", func(t *testing.T) {
-		db, rawDB := newTestDB(t)
-		ctx := context.Background()
-
-		if _, err := rawDB.ExecContext(ctx, "DROP TABLE blocks"); err != nil {
-			t.Fatalf("drop blocks table: %v", err)
-		}
-
-		expectSaveDialogError(t, db, ctx, []gai.Message{makeTextMessage(gai.User, "should-fail")})
-	})
-
-	t.Run("ExtraFields marshal error", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		msg := gai.Message{
-			Role: gai.User,
-			Blocks: []gai.Block{{
-				BlockType:    gai.Content,
-				ModalityType: gai.Text,
-				MimeType:     "text/plain",
-				Content:      gai.Str("test"),
-				ExtraFields:  map[string]any{"bad": make(chan int)},
-			}},
-		}
-		expectSaveDialogError(t, db, ctx, []gai.Message{msg})
-	})
-
-	t.Run("CheckMessageIDExists error (dropped tables)", func(t *testing.T) {
-		db, rawDB := newTestDB(t)
-		ctx := context.Background()
-
-		if _, err := rawDB.ExecContext(ctx, "DROP TABLE blocks; DROP TABLE messages;"); err != nil {
-			t.Fatalf("drop tables: %v", err)
-		}
-
-		expectSaveDialogError(t, db, ctx, []gai.Message{makeTextMessage(gai.User, "test")})
-	})
-}
-
-// TestGetExtraFieldString verifies the helper returns empty string for nil maps,
-// missing keys, and non-string values, and returns the value only when the key
-// exists with string type.
-func TestGetExtraFieldString(t *testing.T) {
-	tests := []struct {
-		name string
-		m    map[string]any
-		key  string
-		want string
-	}{
-		{"nil map", nil, "key", ""},
-		{"missing key", map[string]any{"other": "val"}, "key", ""},
-		{"wrong type", map[string]any{"key": 42}, "key", ""},
-		{"present", map[string]any{"key": "value"}, "key", "value"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := getExtraFieldString(tt.m, tt.key)
-			if got != tt.want {
-				t.Errorf("getExtraFieldString() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
 // mockGetter implements MessagesGetter, returning only messages in its map.
 // Missing IDs silently return nothing (no error), testing the "!found" branch.
 type mockGetter struct {
@@ -2153,47 +2520,95 @@ func TestCollectAncestorMessages(t *testing.T) {
 	})
 }
 
-// TestBlockOrderPreservation verifies that blocks within a message are returned in
-// the same order they were saved. Catches regressions in sequence_order handling.
-func TestBlockOrderPreservation(t *testing.T) {
-	db, _ := newTestDB(t)
-	ctx := context.Background()
+func TestBlock(t *testing.T) {
+	// TestBlockOrderPreservation verifies that blocks within a message are returned in
+	// the same order they were saved. Catches regressions in sequence_order handling.
+	t.Run("order preservation", func(t *testing.T) {
+		db, _ := newTestDB(t)
+		ctx := context.Background()
 
-	// Save a message with many blocks in a specific order
-	blocks := make([]gai.Block, 10)
-	for i := range blocks {
-		blocks[i] = gai.Block{
-			ID:           fmt.Sprintf("block-%d", i),
-			BlockType:    gai.Content,
-			ModalityType: gai.Text,
-			MimeType:     "text/plain",
-			Content:      gai.Str(fmt.Sprintf("content-%d", i)),
+		// Save a message with many blocks in a specific order
+		blocks := make([]gai.Block, 10)
+		for i := range blocks {
+			blocks[i] = gai.Block{
+				ID:           fmt.Sprintf("block-%d", i),
+				BlockType:    gai.Content,
+				ModalityType: gai.Text,
+				MimeType:     "text/plain",
+				Content:      gai.Str(fmt.Sprintf("content-%d", i)),
+			}
 		}
-	}
-	msg := gai.Message{Role: gai.User, Blocks: blocks}
-	savedID := saveOne(t, db, ctx, msg)
+		msg := gai.Message{Role: gai.User, Blocks: blocks}
+		savedID := saveOne(t, db, ctx, msg)
 
-	msgs, err := db.GetMessages(ctx, []string{savedID})
-	if err != nil {
-		t.Fatalf("GetMessages: %v", err)
-	}
-	var got gai.Message
-	for m := range msgs {
-		got = m
-	}
-	if len(got.Blocks) != 10 {
-		t.Fatalf("expected 10 blocks, got %d", len(got.Blocks))
-	}
-	for i, b := range got.Blocks {
-		wantID := fmt.Sprintf("block-%d", i)
-		wantContent := fmt.Sprintf("content-%d", i)
-		if b.ID != wantID {
-			t.Errorf("block[%d].ID: expected %q, got %q", i, wantID, b.ID)
+		msgs, err := db.GetMessages(ctx, []string{savedID})
+		if err != nil {
+			t.Fatalf("GetMessages: %v", err)
 		}
-		if b.Content.String() != wantContent {
-			t.Errorf("block[%d].Content: expected %q, got %q", i, wantContent, b.Content.String())
+		var got gai.Message
+		for m := range msgs {
+			got = m
 		}
-	}
+		if len(got.Blocks) != 10 {
+			t.Fatalf("expected 10 blocks, got %d", len(got.Blocks))
+		}
+		for i, b := range got.Blocks {
+			wantID := fmt.Sprintf("block-%d", i)
+			wantContent := fmt.Sprintf("content-%d", i)
+			if b.ID != wantID {
+				t.Errorf("block[%d].ID: expected %q, got %q", i, wantID, b.ID)
+			}
+			if b.Content.String() != wantContent {
+				t.Errorf("block[%d].Content: expected %q, got %q", i, wantContent, b.Content.String())
+			}
+		}
+	})
+	// TestBlockCascadeDeleteViaRawSQL verifies that the ON DELETE CASCADE foreign key
+	// constraint on the blocks table works correctly when a message is deleted.
+	t.Run("cascade delete via raw sql", func(t *testing.T) {
+		// Verify that ON DELETE CASCADE on blocks works when FKs are enabled
+		db, rawDB := newTestDB(t)
+		ctx := context.Background()
+
+		// Enable foreign keys
+		if _, err := rawDB.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
+			t.Fatalf("enable FK: %v", err)
+		}
+
+		msg := gai.Message{
+			Role: gai.User,
+			Blocks: []gai.Block{
+				{BlockType: gai.Content, ModalityType: gai.Text, MimeType: "text/plain", Content: gai.Str("text")},
+				{BlockType: gai.Content, ModalityType: gai.Text, MimeType: "text/plain", Content: gai.Str("more")},
+			},
+		}
+		savedID := saveOne(t, db, ctx, msg)
+
+		// Verify blocks exist
+		var blockCount int
+		err := rawDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM blocks WHERE message_id = ?", savedID).Scan(&blockCount)
+		if err != nil {
+			t.Fatalf("count blocks: %v", err)
+		}
+		if blockCount != 2 {
+			t.Fatalf("expected 2 blocks before delete, got %d", blockCount)
+		}
+
+		// Delete the message directly
+		_, err = rawDB.ExecContext(ctx, "DELETE FROM messages WHERE id = ?", savedID)
+		if err != nil {
+			t.Fatalf("delete message: %v", err)
+		}
+
+		// Blocks should be cascade-deleted
+		err = rawDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM blocks WHERE message_id = ?", savedID).Scan(&blockCount)
+		if err != nil {
+			t.Fatalf("count blocks after: %v", err)
+		}
+		if blockCount != 0 {
+			t.Errorf("expected 0 blocks after cascade delete, got %d", blockCount)
+		}
+	})
 }
 
 // TestSpecialCharacterRoundTrip verifies that content with special characters
@@ -2262,38 +2677,6 @@ func TestCreatedAtPopulated(t *testing.T) {
 		if ts == nil {
 			t.Fatal("expected non-nil timestamp")
 		}
-	}
-}
-
-// TestGetDialogForMessage_MidChain verifies that GetDialogForMessage returns only
-// the ancestor chain up to the specified message, not descendants beyond it.
-func TestGetDialogForMessage_MidChain(t *testing.T) {
-	db, _ := newTestDB(t)
-	ctx := context.Background()
-
-	saved := saveDialog(t, db, ctx, []gai.Message{
-		makeTextMessage(gai.User, "A"),
-		makeTextMessage(gai.Assistant, "B"),
-		makeTextMessage(gai.User, "C"),
-		makeTextMessage(gai.Assistant, "D"),
-	})
-
-	// Get dialog from B (mid-chain) — should return [A, B]
-	bID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
-	dialog, err := GetDialogForMessage(ctx, db, bID)
-	if err != nil {
-		t.Fatalf("GetDialogForMessage: %v", err)
-	}
-	if len(dialog) != 2 {
-		t.Fatalf("expected 2 messages (A → B), got %d", len(dialog))
-	}
-
-	aID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
-	if gotID := getExtraFieldString(dialog[0].ExtraFields, MessageIDKey); gotID != aID {
-		t.Errorf("dialog[0]: expected %q, got %q", aID, gotID)
-	}
-	if gotID := getExtraFieldString(dialog[1].ExtraFields, MessageIDKey); gotID != bID {
-		t.Errorf("dialog[1]: expected %q, got %q", bID, gotID)
 	}
 }
 
@@ -2375,388 +2758,159 @@ func TestTreeBranching(t *testing.T) {
 	}
 }
 
-// TestMessageWithZeroBlocks verifies that messages with no content blocks can be
-// saved and retrieved without error. Guards against nil slice handling bugs.
-func TestMessageWithZeroBlocks(t *testing.T) {
-	db, _ := newTestDB(t)
-	ctx := context.Background()
-
-	msg := gai.Message{Role: gai.User, Blocks: nil}
-	savedID := saveOne(t, db, ctx, msg)
-
-	msgs, err := db.GetMessages(ctx, []string{savedID})
-	if err != nil {
-		t.Fatalf("GetMessages: %v", err)
-	}
-	for m := range msgs {
-		if len(m.Blocks) != 0 {
-			t.Errorf("expected 0 blocks, got %d", len(m.Blocks))
-		}
-		if m.Role != gai.User {
-			t.Errorf("expected role User, got %v", m.Role)
-		}
-	}
-}
-
-// TestGetMessages_EmptyIDs verifies that an empty ID slice returns an empty
-// iterator without error, rather than failing or returning all messages.
-func TestGetMessages_EmptyIDs(t *testing.T) {
-	db, _ := newTestDB(t)
-	ctx := context.Background()
-
-	msgs, err := db.GetMessages(ctx, []string{})
-	if err != nil {
-		t.Fatalf("GetMessages(empty): %v", err)
-	}
-	count := 0
-	for range msgs {
-		count++
-	}
-	if count != 0 {
-		t.Errorf("expected 0 messages for empty ID list, got %d", count)
-	}
-}
-
-// TestGetMessages_DuplicateIDs documents that the current implementation fetches
-// each ID independently, so duplicate IDs produce duplicate messages in the result.
-func TestGetMessages_DuplicateIDs(t *testing.T) {
-	db, _ := newTestDB(t)
-	ctx := context.Background()
-
-	id := saveOne(t, db, ctx, makeTextMessage(gai.User, "hello"))
-
-	msgs, err := db.GetMessages(ctx, []string{id, id})
-	if err != nil {
-		t.Fatalf("GetMessages: %v", err)
-	}
-	count := 0
-	for range msgs {
-		count++
-	}
-	// Current implementation fetches each ID independently, so duplicates produce duplicates
-	if count != 2 {
-		t.Errorf("expected 2 messages for duplicate IDs, got %d", count)
-	}
-}
-
-// TestListMessages_OffsetBeyondTotal verifies that an offset exceeding the total
-// message count returns an empty result gracefully rather than erroring.
-func TestListMessages_OffsetBeyondTotal(t *testing.T) {
-	db, _ := newTestDB(t)
-	ctx := context.Background()
-
-	for range 3 {
-		saveOne(t, db, ctx, makeTextMessage(gai.User, "msg"))
-	}
-
-	msgs, err := db.ListMessages(ctx, listMessagesOptions{Offset: 100})
-	if err != nil {
-		t.Fatalf("ListMessages with large offset: %v", err)
-	}
-	count := 0
-	for range msgs {
-		count++
-	}
-	if count != 0 {
-		t.Errorf("expected 0 messages with offset beyond total, got %d", count)
-	}
-}
-
-// TestDeleteMiddleMessage_ForeignKeyRestriction verifies that deleting a parent
-// message directly is blocked by the RESTRICT foreign key when children exist.
-func TestDeleteMiddleMessage_ForeignKeyRestriction(t *testing.T) {
-	db, rawDB := newTestDB(t)
-	ctx := context.Background()
-
-	saved := saveDialog(t, db, ctx, []gai.Message{
-		makeTextMessage(gai.User, "A"),
-		makeTextMessage(gai.Assistant, "B"),
-		makeTextMessage(gai.User, "C"),
-	})
-	bID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
-	cID := getExtraFieldString(saved[2].ExtraFields, MessageIDKey)
-
-	_, err := rawDB.ExecContext(ctx, "DELETE FROM messages WHERE id = ?", bID)
-	if err == nil {
-		t.Fatal("expected direct delete to fail with foreign key restriction")
-	}
-
-	// Child remains reachable because parent delete was rejected.
-	dialog, err := GetDialogForMessage(ctx, db, cID)
-	if err != nil {
-		t.Fatalf("GetDialogForMessage: %v", err)
-	}
-	if len(dialog) != 3 {
-		t.Fatalf("expected 3 messages in dialog, got %d", len(dialog))
-	}
-}
-
-// TestBlockCascadeDeleteViaRawSQL verifies that the ON DELETE CASCADE foreign key
-// constraint on the blocks table works correctly when a message is deleted.
-func TestBlockCascadeDeleteViaRawSQL(t *testing.T) {
-	// Verify that ON DELETE CASCADE on blocks works when FKs are enabled
-	db, rawDB := newTestDB(t)
-	ctx := context.Background()
-
-	// Enable foreign keys
-	if _, err := rawDB.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
-		t.Fatalf("enable FK: %v", err)
-	}
-
-	msg := gai.Message{
-		Role: gai.User,
-		Blocks: []gai.Block{
-			{BlockType: gai.Content, ModalityType: gai.Text, MimeType: "text/plain", Content: gai.Str("text")},
-			{BlockType: gai.Content, ModalityType: gai.Text, MimeType: "text/plain", Content: gai.Str("more")},
-		},
-	}
-	savedID := saveOne(t, db, ctx, msg)
-
-	// Verify blocks exist
-	var blockCount int
-	err := rawDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM blocks WHERE message_id = ?", savedID).Scan(&blockCount)
-	if err != nil {
-		t.Fatalf("count blocks: %v", err)
-	}
-	if blockCount != 2 {
-		t.Fatalf("expected 2 blocks before delete, got %d", blockCount)
-	}
-
-	// Delete the message directly
-	_, err = rawDB.ExecContext(ctx, "DELETE FROM messages WHERE id = ?", savedID)
-	if err != nil {
-		t.Fatalf("delete message: %v", err)
-	}
-
-	// Blocks should be cascade-deleted
-	err = rawDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM blocks WHERE message_id = ?", savedID).Scan(&blockCount)
-	if err != nil {
-		t.Fatalf("count blocks after: %v", err)
-	}
-	if blockCount != 0 {
-		t.Errorf("expected 0 blocks after cascade delete, got %d", blockCount)
-	}
-}
-
-// TestMessageExtraFields verifies that message-level ExtraFields round-trip and
-// that known runtime metadata fields are also written to typed message columns.
-func TestMessageExtraFields(t *testing.T) {
-	t.Run("custom and agent metadata round trip", func(t *testing.T) {
-		db, rawDB := newTestDB(t)
+func TestMessage(t *testing.T) {
+	// TestMessageWithZeroBlocks verifies that messages with no content blocks can be
+	// saved and retrieved without error. Guards against nil slice handling bugs.
+	t.Run("with zero blocks", func(t *testing.T) {
+		db, _ := newTestDB(t)
 		ctx := context.Background()
 
-		msg := makeTextMessage(gai.Assistant, "test")
-		msg.ExtraFields = map[string]any{
-			"custom_key":                     "custom_value",
-			"custom_number":                  42,
-			AgentMetadataModelRefKey:         "glm",
-			AgentMetadataModelIDKey:          "glm-5.1",
-			AgentMetadataModelTypeKey:        "zai",
-			AgentMetadataModelDisplayNameKey: "GLM 5.1",
-			AgentMetadataInputTokensKey:      int64(11),
-			AgentMetadataOutputTokensKey:     7,
-			AgentMetadataCacheReadTokensKey:  uint(3),
-			AgentMetadataCacheWriteTokensKey: float64(2),
-		}
-
-		saved := saveDialog(t, db, ctx, []gai.Message{msg})
-		savedID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
-
-		var modelRef string
-		var inputTokens int64
-		var messageExtraFields sql.NullString
-		if err := rawDB.QueryRowContext(ctx, `
-			SELECT model_ref, input_tokens, message_extra_fields
-			FROM messages
-			WHERE id = ?
-		`, savedID).Scan(&modelRef, &inputTokens, &messageExtraFields); err != nil {
-			t.Fatalf("query message metadata columns: %v", err)
-		}
-		if modelRef != "glm" {
-			t.Fatalf("model_ref = %q, want glm", modelRef)
-		}
-		if inputTokens != 11 {
-			t.Fatalf("input_tokens = %d, want 11", inputTokens)
-		}
-		if !messageExtraFields.Valid || messageExtraFields.String == "" {
-			t.Fatal("expected custom message ExtraFields JSON to be stored")
-		}
+		msg := gai.Message{Role: gai.User, Blocks: nil}
+		savedID := saveOne(t, db, ctx, msg)
 
 		msgs, err := db.GetMessages(ctx, []string{savedID})
 		if err != nil {
 			t.Fatalf("GetMessages: %v", err)
 		}
 		for m := range msgs {
-			if _, ok := m.ExtraFields[MessageIDKey]; !ok {
-				t.Error("expected MessageIDKey")
+			if len(m.Blocks) != 0 {
+				t.Errorf("expected 0 blocks, got %d", len(m.Blocks))
 			}
-			if _, ok := m.ExtraFields[MessageCreatedAtKey]; !ok {
-				t.Error("expected MessageCreatedAtKey")
-			}
-			if got := m.ExtraFields["custom_key"]; got != "custom_value" {
-				t.Fatalf("custom_key = %#v, want custom_value", got)
-			}
-			if got := m.ExtraFields["custom_number"]; got != float64(42) {
-				t.Fatalf("custom_number = %#v, want 42 as JSON number", got)
-			}
-			if got := m.ExtraFields[AgentMetadataModelIDKey]; got != "glm-5.1" {
-				t.Fatalf("model id = %#v, want glm-5.1", got)
-			}
-			if got := m.ExtraFields[AgentMetadataInputTokensKey]; got != int64(11) {
-				t.Fatalf("input tokens = %#v, want 11", got)
-			}
-			if got := m.ExtraFields[AgentMetadataOutputTokensKey]; got != int64(7) {
-				t.Fatalf("output tokens = %#v, want 7", got)
-			}
-			if got := m.ExtraFields[AgentMetadataCacheReadTokensKey]; got != int64(3) {
-				t.Fatalf("cache read tokens = %#v, want 3", got)
-			}
-			if got := m.ExtraFields[AgentMetadataCacheWriteTokensKey]; got != int64(2) {
-				t.Fatalf("cache write tokens = %#v, want 2", got)
+			if m.Role != gai.User {
+				t.Errorf("expected role User, got %v", m.Role)
 			}
 		}
 	})
+	// TestMessageExtraFields verifies that message-level ExtraFields round-trip and
+	// that known runtime metadata fields are also written to typed message columns.
+	t.Run("extra fields", func(t *testing.T) {
+		t.Run("custom and agent metadata round trip", func(t *testing.T) {
+			db, rawDB := newTestDB(t)
+			ctx := context.Background()
 
-	t.Run("responses phase survives dialog reload", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
+			msg := makeTextMessage(gai.Assistant, "test")
+			msg.ExtraFields = map[string]any{
+				"custom_key":                     "custom_value",
+				"custom_number":                  42,
+				AgentMetadataModelRefKey:         "glm",
+				AgentMetadataModelIDKey:          "glm-5.1",
+				AgentMetadataModelTypeKey:        "zai",
+				AgentMetadataModelDisplayNameKey: "GLM 5.1",
+				AgentMetadataInputTokensKey:      int64(11),
+				AgentMetadataOutputTokensKey:     7,
+				AgentMetadataCacheReadTokensKey:  uint(3),
+				AgentMetadataCacheWriteTokensKey: float64(2),
+			}
 
-		assistant := makeTextMessage(gai.Assistant, "answer")
-		assistant.ExtraFields = map[string]any{
-			gai.ResponsesMessageExtraFieldPhase: gai.ResponsesMessagePhaseFinalAnswer,
-		}
-		saved := saveDialog(t, db, ctx, []gai.Message{
-			makeTextMessage(gai.User, "question"),
-			assistant,
+			saved := saveDialog(t, db, ctx, []gai.Message{msg})
+			savedID := getExtraFieldString(saved[0].ExtraFields, MessageIDKey)
+
+			var modelRef string
+			var inputTokens int64
+			var messageExtraFields sql.NullString
+			if err := rawDB.QueryRowContext(ctx, `
+			SELECT model_ref, input_tokens, message_extra_fields
+			FROM messages
+			WHERE id = ?
+		`, savedID).Scan(&modelRef, &inputTokens, &messageExtraFields); err != nil {
+				t.Fatalf("query message metadata columns: %v", err)
+			}
+			if modelRef != "glm" {
+				t.Fatalf("model_ref = %q, want glm", modelRef)
+			}
+			if inputTokens != 11 {
+				t.Fatalf("input_tokens = %d, want 11", inputTokens)
+			}
+			if !messageExtraFields.Valid || messageExtraFields.String == "" {
+				t.Fatal("expected custom message ExtraFields JSON to be stored")
+			}
+
+			msgs, err := db.GetMessages(ctx, []string{savedID})
+			if err != nil {
+				t.Fatalf("GetMessages: %v", err)
+			}
+			for m := range msgs {
+				if _, ok := m.ExtraFields[MessageIDKey]; !ok {
+					t.Error("expected MessageIDKey")
+				}
+				if _, ok := m.ExtraFields[MessageCreatedAtKey]; !ok {
+					t.Error("expected MessageCreatedAtKey")
+				}
+				if got := m.ExtraFields["custom_key"]; got != "custom_value" {
+					t.Fatalf("custom_key = %#v, want custom_value", got)
+				}
+				if got := m.ExtraFields["custom_number"]; got != float64(42) {
+					t.Fatalf("custom_number = %#v, want 42 as JSON number", got)
+				}
+				if got := m.ExtraFields[AgentMetadataModelIDKey]; got != "glm-5.1" {
+					t.Fatalf("model id = %#v, want glm-5.1", got)
+				}
+				if got := m.ExtraFields[AgentMetadataInputTokensKey]; got != int64(11) {
+					t.Fatalf("input tokens = %#v, want 11", got)
+				}
+				if got := m.ExtraFields[AgentMetadataOutputTokensKey]; got != int64(7) {
+					t.Fatalf("output tokens = %#v, want 7", got)
+				}
+				if got := m.ExtraFields[AgentMetadataCacheReadTokensKey]; got != int64(3) {
+					t.Fatalf("cache read tokens = %#v, want 3", got)
+				}
+				if got := m.ExtraFields[AgentMetadataCacheWriteTokensKey]; got != int64(2) {
+					t.Fatalf("cache write tokens = %#v, want 2", got)
+				}
+			}
 		})
-		leafID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
 
-		dialog, err := GetDialogForMessage(ctx, db, leafID)
-		if err != nil {
-			t.Fatalf("GetDialogForMessage: %v", err)
-		}
-		if len(dialog) != 2 {
-			t.Fatalf("dialog length = %d, want 2", len(dialog))
-		}
-		got, ok := dialog[1].ExtraFields[gai.ResponsesMessageExtraFieldPhase].(string)
-		if !ok || got != gai.ResponsesMessagePhaseFinalAnswer {
-			t.Fatalf("responses phase = %#v, want %q", got, gai.ResponsesMessagePhaseFinalAnswer)
-		}
+		t.Run("responses phase survives dialog reload", func(t *testing.T) {
+			db, _ := newTestDB(t)
+			ctx := context.Background()
+
+			assistant := makeTextMessage(gai.Assistant, "answer")
+			assistant.ExtraFields = map[string]any{
+				gai.ResponsesMessageExtraFieldPhase: gai.ResponsesMessagePhaseFinalAnswer,
+			}
+			saved := saveDialog(t, db, ctx, []gai.Message{
+				makeTextMessage(gai.User, "question"),
+				assistant,
+			})
+			leafID := getExtraFieldString(saved[1].ExtraFields, MessageIDKey)
+
+			dialog, err := GetDialogForMessage(ctx, db, leafID)
+			if err != nil {
+				t.Fatalf("GetDialogForMessage: %v", err)
+			}
+			if len(dialog) != 2 {
+				t.Fatalf("dialog length = %d, want 2", len(dialog))
+			}
+			got, ok := dialog[1].ExtraFields[gai.ResponsesMessageExtraFieldPhase].(string)
+			if !ok || got != gai.ResponsesMessagePhaseFinalAnswer {
+				t.Fatalf("responses phase = %#v, want %q", got, gai.ResponsesMessagePhaseFinalAnswer)
+			}
+		})
+
+		t.Run("invalid agent metadata is rejected", func(t *testing.T) {
+			db, _ := newTestDB(t)
+			ctx := context.Background()
+
+			msg := makeTextMessage(gai.Assistant, "test")
+			msg.ExtraFields = map[string]any{
+				AgentMetadataInputTokensKey: "not an integer",
+			}
+
+			expectSaveDialogError(t, db, ctx, []gai.Message{msg})
+		})
+
+		t.Run("non JSON message ExtraFields are rejected", func(t *testing.T) {
+			db, _ := newTestDB(t)
+			ctx := context.Background()
+
+			msg := makeTextMessage(gai.Assistant, "test")
+			msg.ExtraFields = map[string]any{
+				"custom_key": make(chan int),
+			}
+
+			expectSaveDialogError(t, db, ctx, []gai.Message{msg})
+		})
 	})
-
-	t.Run("invalid agent metadata is rejected", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		msg := makeTextMessage(gai.Assistant, "test")
-		msg.ExtraFields = map[string]any{
-			AgentMetadataInputTokensKey: "not an integer",
-		}
-
-		expectSaveDialogError(t, db, ctx, []gai.Message{msg})
-	})
-
-	t.Run("non JSON message ExtraFields are rejected", func(t *testing.T) {
-		db, _ := newTestDB(t)
-		ctx := context.Background()
-
-		msg := makeTextMessage(gai.Assistant, "test")
-		msg.ExtraFields = map[string]any{
-			"custom_key": make(chan int),
-		}
-
-		expectSaveDialogError(t, db, ctx, []gai.Message{msg})
-	})
-}
-
-// TestSaveDialog_InterleavedExistingAndNew verifies that SaveDialog detects parent
-// chain mismatches when existing messages from different chains are mixed with new
-// messages.
-func TestSaveDialog_InterleavedExistingAndNew(t *testing.T) {
-	// When existing messages followed by new messages followed by more existing
-	// messages are submitted, the parent chain validation should catch the
-	// mismatch on the second existing message.
-	db, _ := newTestDB(t)
-	ctx := context.Background()
-
-	// Save two separate chains
-	chainA := saveDialog(t, db, ctx, []gai.Message{
-		makeTextMessage(gai.User, "A1"),
-		makeTextMessage(gai.Assistant, "A2"),
-	})
-	chainB := saveDialog(t, db, ctx, []gai.Message{
-		makeTextMessage(gai.User, "B1"),
-	})
-
-	// Try: [A1(existing), NEW, B1(existing)]
-	// After A1 and NEW are processed, prevID = NEW's ID.
-	// B1's parent in DB is NULL (it's a root), but prevID is NEW's ID.
-	// This should fail parent chain validation for B1.
-	dialog := []gai.Message{
-		chainA[0],
-		makeTextMessage(gai.Assistant, "new-middle"),
-		chainB[0],
-	}
-
-	expectSaveDialogError(t, db, ctx, dialog)
-}
-
-// TestDeleteMessages_MultipleIDs verifies that DeleteMessages can atomically delete
-// multiple leaf messages in a single call while leaving other messages intact.
-func TestDeleteMessages_MultipleIDs(t *testing.T) {
-	// Verify deleting multiple leaf messages in one call works
-	db, _ := newTestDB(t)
-	ctx := context.Background()
-
-	id1 := saveOne(t, db, ctx, makeTextMessage(gai.User, "leaf1"))
-	id2 := saveOne(t, db, ctx, makeTextMessage(gai.User, "leaf2"))
-	id3 := saveOne(t, db, ctx, makeTextMessage(gai.User, "leaf3"))
-
-	err := db.DeleteMessages(ctx, deleteMessagesOptions{
-		MessageIDs: []string{id1, id3},
-		Recursive:  false,
-	})
-	if err != nil {
-		t.Fatalf("DeleteMessages: %v", err)
-	}
-
-	// id1 and id3 should be gone
-	for _, id := range []string{id1, id3} {
-		if _, err := db.GetMessages(ctx, []string{id}); err == nil {
-			t.Errorf("message %s should be deleted", id)
-		}
-	}
-	// id2 should still exist
-	if _, err := db.GetMessages(ctx, []string{id2}); err != nil {
-		t.Fatalf("message %s should still exist: %v", id2, err)
-	}
-}
-
-// TestListMessages_CreatedAtOrdering verifies that ListMessages returns messages
-// sorted by created_at timestamps in the requested order.
-func TestListMessages_CreatedAtOrdering(t *testing.T) {
-	// Verify that ListMessages ordering actually uses created_at timestamps
-	// and that the returned messages have timestamps in the correct order.
-	db, _ := newTestDB(t)
-	ctx := context.Background()
-
-	for i := range 5 {
-		saveOne(t, db, ctx, makeTextMessage(gai.User, fmt.Sprintf("msg-%d", i)))
-	}
-
-	// Ascending: timestamps should be non-decreasing
-	msgs, err := db.ListMessages(ctx, listMessagesOptions{AscendingOrder: true})
-	if err != nil {
-		t.Fatalf("ListMessages: %v", err)
-	}
-	var prev string
-	for m := range msgs {
-		ts := fmt.Sprintf("%v", m.ExtraFields[MessageCreatedAtKey])
-		if prev != "" && ts < prev {
-			t.Errorf("timestamps not ascending: %q came after %q", ts, prev)
-		}
-		prev = ts
-	}
 }
 
 func TestAddACPSessionCost(t *testing.T) {
@@ -2808,153 +2962,5 @@ func TestAddACPSessionCost(t *testing.T) {
 
 	if _, err := db.AddACPSessionCost(ctx, acp.SessionId("missing-session"), 1.0); err == nil {
 		t.Fatal("AddACPSessionCost on unknown session: expected error, got nil")
-	}
-}
-
-func TestDeleteACPSessionPreservesOrphanedConflictBranch(t *testing.T) {
-	db, _ := newTestDB(t)
-	ctx := t.Context()
-
-	root := saveDialog(t, db, ctx, []gai.Message{makeTextMessage(gai.User, "root")})[0]
-	rootID := GetMessageID(root)
-	if err := db.CreateACPSession(ctx, CreateACPSessionParams{
-		Session: acp.SessionInfo{
-			Cwd:       "/tmp/project",
-			SessionID: "conflicted-session",
-			Title:     new("Conflicted session"),
-		},
-		LastMessageID: rootID,
-		ModelRef:      testACPModelRef,
-	}); err != nil {
-		t.Fatalf("CreateACPSession: %v", err)
-	}
-
-	winningDialog := saveDialog(t, db, ctx, []gai.Message{
-		root,
-		makeTextMessage(gai.Assistant, "winning child"),
-	})
-	winningID := GetMessageID(winningDialog[1])
-	if _, err := db.AddACPSessionMessage(ctx, "conflicted-session", rootID, winningID); err != nil {
-		t.Fatalf("AddACPSessionMessage winning child: %v", err)
-	}
-
-	losingDialog := saveDialog(t, db, ctx, []gai.Message{
-		root,
-		makeTextMessage(gai.Assistant, "losing child"),
-	})
-	losingID := GetMessageID(losingDialog[1])
-	if _, err := db.AddACPSessionMessage(ctx, "conflicted-session", rootID, losingID); !errors.Is(err, ErrSessionConflict) {
-		t.Fatalf("AddACPSessionMessage losing child error = %v, want ErrSessionConflict", err)
-	}
-
-	if err := db.DeleteACPSession(ctx, "conflicted-session"); err != nil {
-		t.Fatalf("DeleteACPSession: %v", err)
-	}
-	if _, err := db.GetACPSession(ctx, "conflicted-session"); !errors.Is(err, ErrSessionNotFound) {
-		t.Fatalf("GetACPSession after delete error = %v, want ErrSessionNotFound", err)
-	}
-	if _, err := db.GetMessages(ctx, []string{winningID}); !errors.Is(err, ErrMessageNotFound) {
-		t.Fatalf("GetMessages winning child error = %v, want ErrMessageNotFound", err)
-	}
-	orphanedDialog, err := GetDialogForMessage(ctx, db, losingID)
-	if err != nil {
-		t.Fatalf("GetDialogForMessage losing child: %v", err)
-	}
-	if len(orphanedDialog) != 2 ||
-		orphanedDialog[0].Blocks[0].Content.String() != "root" ||
-		orphanedDialog[1].Blocks[0].Content.String() != "losing child" {
-		t.Fatalf("orphaned dialog = %#v", orphanedDialog)
-	}
-}
-
-func TestListACPSessionSummariesRejectsValuesBeyondSQLiteIntegerRange(t *testing.T) {
-	db, _ := newTestDB(t)
-	tooLarge := uint64(math.MaxInt64) + 1
-
-	if _, err := db.ListACPSessionSummaries(t.Context(), ListACPSessionSummariesOptions{
-		Limit: tooLarge,
-	}); err == nil || err.Error() != "ACP session summary limit exceeds SQLite integer range" {
-		t.Fatalf("oversized limit error = %v", err)
-	}
-	if _, err := db.ListACPSessionSummaries(t.Context(), ListACPSessionSummariesOptions{
-		Limit: 20, Offset: tooLarge,
-	}); err == nil || err.Error() != "ACP session summary offset exceeds SQLite integer range" {
-		t.Fatalf("oversized offset error = %v", err)
-	}
-}
-
-func TestListACPSessionSummariesPagination(t *testing.T) {
-	db, rawDB := newTestDB(t)
-	ctx := t.Context()
-
-	firstMessageID := saveOne(t, db, ctx, makeTextMessage(gai.User, "first"))
-	secondMessageID := saveOne(t, db, ctx, makeTextMessage(gai.User, "second"))
-	firstCreatedAt := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
-	secondCreatedAt := time.Date(2026, 7, 2, 9, 0, 0, 0, time.UTC)
-	emptyCreatedAt := time.Date(2026, 7, 4, 9, 0, 0, 0, time.UTC)
-	firstModifiedAt := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC)
-	secondModifiedAt := time.Date(2026, 7, 5, 9, 0, 0, 0, time.UTC)
-
-	for _, update := range []struct {
-		messageID string
-		createdAt time.Time
-	}{
-		{firstMessageID, firstModifiedAt},
-		{secondMessageID, secondModifiedAt},
-	} {
-		if _, err := rawDB.ExecContext(ctx, "UPDATE messages SET created_at = ? WHERE id = ?", update.createdAt, update.messageID); err != nil {
-			t.Fatalf("update message timestamp: %v", err)
-		}
-	}
-
-	for _, session := range []struct {
-		id            acp.SessionId
-		title         string
-		lastMessageID string
-		createdAt     time.Time
-	}{
-		{"first-session", "First", firstMessageID, firstCreatedAt},
-		{"second-session", "Second", secondMessageID, secondCreatedAt},
-		{"empty-session", "Empty", "", emptyCreatedAt},
-	} {
-		if err := db.CreateACPSession(ctx, CreateACPSessionParams{
-			Session: acp.SessionInfo{
-				Cwd:       "/tmp/project",
-				SessionID: session.id,
-				Title:     new(session.title),
-			},
-			LastMessageID: session.lastMessageID,
-			ModelRef:      testACPModelRef,
-		}); err != nil {
-			t.Fatalf("CreateACPSession(%s): %v", session.id, err)
-		}
-		if _, err := rawDB.ExecContext(ctx, "UPDATE acp_sessions SET created_at = ? WHERE id = ?", session.createdAt, session.id); err != nil {
-			t.Fatalf("update session timestamp: %v", err)
-		}
-	}
-
-	page, err := db.ListACPSessionSummaries(ctx, ListACPSessionSummariesOptions{Limit: 1, Offset: 1})
-	if err != nil {
-		t.Fatalf("ListACPSessionSummaries page: %v", err)
-	}
-	if len(page) != 1 || page[0].SessionID != "second-session" {
-		t.Fatalf("page = %#v, want second-session", page)
-	}
-	if page[0].CreatedAt != secondCreatedAt || page[0].LastModified != secondModifiedAt {
-		t.Fatalf("second session timestamps = (%v, %v), want (%v, %v)", page[0].CreatedAt, page[0].LastModified, secondCreatedAt, secondModifiedAt)
-	}
-
-	all, err := db.ListACPSessionSummaries(ctx, ListACPSessionSummariesOptions{Limit: 20})
-	if err != nil {
-		t.Fatalf("ListACPSessionSummaries all: %v", err)
-	}
-	if len(all) != 3 {
-		t.Fatalf("len(all) = %d, want 3", len(all))
-	}
-	if all[0].SessionID != "first-session" || all[1].SessionID != "second-session" || all[2].SessionID != "empty-session" {
-		t.Fatalf("unexpected summary order: %#v", all)
-	}
-	if all[2].LastModified != emptyCreatedAt {
-		t.Fatalf("empty session LastModified = %v, want creation time %v", all[2].LastModified, emptyCreatedAt)
 	}
 }

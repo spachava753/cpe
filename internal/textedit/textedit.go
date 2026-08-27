@@ -78,6 +78,7 @@ func createFile(path, text string) (output, error) {
 	return output{Path: path, Operation: "created"}, nil
 }
 
+// replaceText validates a regular UTF-8 file, requires exactly one possibly overlapping match, then writes the replacement atomically.
 func replaceText(path, oldText, newText string) (output, error) {
 	linkInfo, err := os.Lstat(path)
 	if err != nil {

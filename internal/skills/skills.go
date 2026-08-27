@@ -168,7 +168,8 @@ func discoverRoots(ctx context.Context, roots []skillRoot) Catalog {
 				continue
 			}
 
-			skill, err := parseSkill(skillMdPath, displayJoin(root.displayPath, entry.Name()))
+			displayPath := strings.TrimRight(root.displayPath, "/") + "/" + entry.Name()
+			skill, err := parseSkill(skillMdPath, displayPath)
 			if err != nil {
 				slog.WarnContext(ctx, "failed to load skill", "skill", entry.Name(), "err", err)
 				continue
@@ -184,12 +185,6 @@ func discoverRoots(ctx context.Context, roots []skillRoot) Catalog {
 	}
 
 	return Catalog{Skills: discovered}
-}
-
-// displayJoin preserves model-facing path prefixes such as "./" and "~";
-// filepath.Join would clean "./.agents/skills/name" to ".agents/skills/name".
-func displayJoin(base, name string) string {
-	return strings.TrimRight(base, "/") + "/" + name
 }
 
 // skillCandidateDir reports whether entry should be considered a skill
@@ -225,10 +220,11 @@ func parseSkill(skillMdPath, displayPath string) (Skill, error) {
 		return Skill{}, err
 	}
 
-	frontmatter, err := extractFrontmatter(string(content))
-	if err != nil {
-		return Skill{}, err
+	matches := frontmatterRegexp.FindStringSubmatch(string(content))
+	if len(matches) < 2 {
+		return Skill{}, fmt.Errorf("no frontmatter found")
 	}
+	frontmatter := matches[1]
 
 	var metadata map[string]any
 	if err := yaml.Unmarshal([]byte(frontmatter), &metadata); err != nil {
@@ -240,7 +236,7 @@ func parseSkill(skillMdPath, displayPath string) (Skill, error) {
 	if name == "" || description == "" {
 		return Skill{}, fmt.Errorf("skill missing required name or description")
 	}
-	if !isValidSkillName(name) {
+	if len(name) == 0 || len(name) > 64 || !skillNameRegexp.MatchString(name) {
 		return Skill{}, fmt.Errorf("invalid skill name: %s", name)
 	}
 	disableModelInvocation, _ := metadata["disable-model-invocation"].(bool)
@@ -253,23 +249,4 @@ func parseSkill(skillMdPath, displayPath string) (Skill, error) {
 		DisableModelInvocation: disableModelInvocation,
 		Metadata:               metadata,
 	}, nil
-}
-
-// extractFrontmatter returns the YAML block between the opening and closing
-// --- markers at the start of SKILL.md.
-func extractFrontmatter(content string) (string, error) {
-	matches := frontmatterRegexp.FindStringSubmatch(content)
-	if len(matches) < 2 {
-		return "", fmt.Errorf("no frontmatter found")
-	}
-	return matches[1], nil
-}
-
-// isValidSkillName enforces the slash-command-safe skill name grammar:
-// lowercase alphanumeric words separated by single hyphens, up to 64 bytes.
-func isValidSkillName(name string) bool {
-	if len(name) > 64 || len(name) == 0 {
-		return false
-	}
-	return skillNameRegexp.MatchString(name)
 }

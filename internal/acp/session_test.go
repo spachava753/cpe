@@ -81,7 +81,7 @@ func TestInit(t *testing.T) {
 	be.True(t, resp.AgentCapabilities.PromptCapabilities.EmbeddedContext)
 }
 
-func TestListSessions(t *testing.T) {
+func TestListingSessions(t *testing.T) {
 	fixture := setup(t, &noOpAcpClient{}, &config.RawConfig{}, unreachableRuntimeFactory)
 	clientConn := fixture.ClientConn
 	store := fixture.Store
@@ -486,334 +486,333 @@ func TestResumeSession(t *testing.T) {
 }
 
 func TestLoadSession(t *testing.T) {
-	var createdModelRefs []string
-	var createdSessions []session
-	testClient := &promptTestClient{}
-	fixture := setup(
-		t,
-		testClient,
-		&config.RawConfig{
-			Models: []config.ModelConfig{
-				{
-					Model: config.Model{
-						Ref:                  "test-model",
-						DisplayName:          "Test Model",
-						ID:                   "test-model",
-						Type:                 "responses",
-						BaseUrl:              "https://customurl.com/v1",
-						ContextWindow:        100,
-						InputCostPerMillion:  new(1.0),
-						OutputCostPerMillion: new(1.0),
+	t.Run("base case", func(t *testing.T) {
+		var createdModelRefs []string
+		var createdSessions []session
+		testClient := &promptTestClient{}
+		fixture := setup(
+			t,
+			testClient,
+			&config.RawConfig{
+				Models: []config.ModelConfig{
+					{
+						Model: config.Model{
+							Ref:                  "test-model",
+							DisplayName:          "Test Model",
+							ID:                   "test-model",
+							Type:                 "responses",
+							BaseUrl:              "https://customurl.com/v1",
+							ContextWindow:        100,
+							InputCostPerMillion:  new(1.0),
+							OutputCostPerMillion: new(1.0),
+						},
 					},
 				},
 			},
-		},
-		func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
-			createdModelRefs = append(createdModelRefs, s.model)
-			createdSessions = append(createdSessions, s)
-			return testRuntime{}, nil
-		},
-	)
-	clientConn := fixture.ClientConn
-	store := fixture.Store
-
-	dialog := gai.Dialog{
-		{
-			Role:   gai.User,
-			Blocks: []gai.Block{gai.TextBlock("hello")},
-		},
-		{
-			Role:   gai.Assistant,
-			Blocks: []gai.Block{gai.TextBlock("answer")},
-		},
-	}
-	savedDialog := make(gai.Dialog, 0, len(dialog))
-	for msg, err := range store.SaveDialog(t.Context(), slices.Values(dialog)) {
-		be.Err(t, err, nil)
-		savedDialog = append(savedDialog, msg)
-	}
-	lastMessageID := storage.GetMessageID(savedDialog[len(savedDialog)-1])
-	be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
-		Session: acp.SessionInfo{
-			Cwd:       "/rando/dir",
-			SessionID: "abc123",
-		},
-		LastMessageID: lastMessageID,
-		ModelRef:      "test-model",
-		ThinkingLevel: "",
-	}), nil)
-
-	_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
-		ClientCapabilities: &acp.ClientCapabilities{
-			Fs: &acp.FileSystemCapabilities{
-				ReadTextFile:  false,
-				WriteTextFile: false,
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
+				createdModelRefs = append(createdModelRefs, s.model)
+				createdSessions = append(createdSessions, s)
+				return testRuntime{}, nil
 			},
-			Terminal: true,
-		},
-		ClientInfo: &acp.Implementation{
-			Name:    "test-client",
-			Title:   new("test client"),
-			Version: "test",
-		},
-		ProtocolVersion: acp.ProtocolVersion(1),
-	})
-	t.Log("called init")
-	be.Err(t, err, nil)
+		)
+		clientConn := fixture.ClientConn
+		store := fixture.Store
 
-	mcpServers := []acp.McpServer{
-		acp.HttpMcpServer("parallel", "https://example.test/mcp", []acp.HttpHeader{}),
-	}
-	resp, err := clientConn.LoadSession(t.Context(), &acp.LoadSessionRequest{
-		Cwd:        "/rando/dir",
-		McpServers: mcpServers,
-		SessionID:  "abc123",
-	})
-	be.Err(t, err, nil)
-	be.Equal(t, len(*resp.ConfigOptions), 1)
-	be.Equal(t, (*resp.ConfigOptions)[0].ID, modelRefConfigId)
-	be.Equal(t, (*resp.ConfigOptions)[0].CurrentValue, any("test-model"))
-	be.Equal(t, len(createdModelRefs), 0)
-	be.Equal(t, len(createdSessions), 0)
-	assertNotifications(t, testClient, []acp.SessionNotification{
-		{
-			SessionID: "abc123",
-			Update:    expectedRPCUserMessageChunk("hello"),
-		},
-		{
-			SessionID: "abc123",
-			Update:    expectedRPCAgentMessageChunk("answer"),
-		},
-	})
+		dialog := gai.Dialog{
+			{
+				Role:   gai.User,
+				Blocks: []gai.Block{gai.TextBlock("hello")},
+			},
+			{
+				Role:   gai.Assistant,
+				Blocks: []gai.Block{gai.TextBlock("answer")},
+			},
+		}
+		savedDialog := make(gai.Dialog, 0, len(dialog))
+		for msg, err := range store.SaveDialog(t.Context(), slices.Values(dialog)) {
+			be.Err(t, err, nil)
+			savedDialog = append(savedDialog, msg)
+		}
+		lastMessageID := storage.GetMessageID(savedDialog[len(savedDialog)-1])
+		be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
+			Session: acp.SessionInfo{
+				Cwd:       "/rando/dir",
+				SessionID: "abc123",
+			},
+			LastMessageID: lastMessageID,
+			ModelRef:      "test-model",
+			ThinkingLevel: "",
+		}), nil)
 
-	_, err = clientConn.LoadSession(t.Context(), &acp.LoadSessionRequest{
-		Cwd:        "/other/dir",
-		McpServers: mcpServers,
-		SessionID:  "abc123",
-	})
-	be.True(t, err != nil)
-	be.True(t, strings.Contains(err.Error(), `session abc123 belongs to working directory "/rando/dir", not "/other/dir"`))
-	be.Equal(t, len(testClient.notifications()), 2)
-}
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ClientCapabilities: &acp.ClientCapabilities{
+				Fs: &acp.FileSystemCapabilities{
+					ReadTextFile:  false,
+					WriteTextFile: false,
+				},
+				Terminal: true,
+			},
+			ClientInfo: &acp.Implementation{
+				Name:    "test-client",
+				Title:   new("test client"),
+				Version: "test",
+			},
+			ProtocolVersion: acp.ProtocolVersion(1),
+		})
+		t.Log("called init")
+		be.Err(t, err, nil)
 
-func TestLoadSessionWithStaleModelRequiresModelSelection(t *testing.T) {
-	var createdModelRefs []string
-	testClient := &promptTestClient{}
-	fixture := setup(
-		t,
-		testClient,
-		&config.RawConfig{
-			Models: []config.ModelConfig{
-				{
-					Model: config.Model{
-						Ref:         "test-model",
-						DisplayName: "Test Model",
-						ID:          "test-model",
-						Type:        "responses",
+		mcpServers := []acp.McpServer{
+			acp.HttpMcpServer("parallel", "https://example.test/mcp", []acp.HttpHeader{}),
+		}
+		resp, err := clientConn.LoadSession(t.Context(), &acp.LoadSessionRequest{
+			Cwd:        "/rando/dir",
+			McpServers: mcpServers,
+			SessionID:  "abc123",
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, len(*resp.ConfigOptions), 1)
+		be.Equal(t, (*resp.ConfigOptions)[0].ID, modelRefConfigId)
+		be.Equal(t, (*resp.ConfigOptions)[0].CurrentValue, any("test-model"))
+		be.Equal(t, len(createdModelRefs), 0)
+		be.Equal(t, len(createdSessions), 0)
+		assertNotifications(t, testClient, []acp.SessionNotification{
+			{
+				SessionID: "abc123",
+				Update:    expectedRPCUserMessageChunk("hello"),
+			},
+			{
+				SessionID: "abc123",
+				Update:    expectedRPCAgentMessageChunk("answer"),
+			},
+		})
+
+		_, err = clientConn.LoadSession(t.Context(), &acp.LoadSessionRequest{
+			Cwd:        "/other/dir",
+			McpServers: mcpServers,
+			SessionID:  "abc123",
+		})
+		be.True(t, err != nil)
+		be.True(t, strings.Contains(err.Error(), `session abc123 belongs to working directory "/rando/dir", not "/other/dir"`))
+		be.Equal(t, len(testClient.notifications()), 2)
+	})
+	t.Run("with stale model requires model selection", func(t *testing.T) {
+		var createdModelRefs []string
+		testClient := &promptTestClient{}
+		fixture := setup(
+			t,
+			testClient,
+			&config.RawConfig{
+				Models: []config.ModelConfig{
+					{
+						Model: config.Model{
+							Ref:         "test-model",
+							DisplayName: "Test Model",
+							ID:          "test-model",
+							Type:        "responses",
+						},
 					},
 				},
 			},
-		},
-		func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
-			createdModelRefs = append(createdModelRefs, s.model)
-			return testRuntime{}, nil
-		},
-	)
-	clientConn := fixture.ClientConn
-	store := fixture.Store
-
-	dialog := gai.Dialog{
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("hello")}},
-		{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("answer")}},
-	}
-	var lastMessageID string
-	for msg, err := range store.SaveDialog(t.Context(), slices.Values(dialog)) {
-		be.Err(t, err, nil)
-		lastMessageID = storage.GetMessageID(msg)
-	}
-	be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
-		Session: acp.SessionInfo{
-			Cwd:       "/rando/dir",
-			SessionID: "abc123",
-		},
-		LastMessageID: lastMessageID,
-		ModelRef:      "stale-model",
-		ThinkingLevel: "stale-thinking",
-	}), nil)
-
-	_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
-		ClientCapabilities: &acp.ClientCapabilities{Terminal: true},
-		ProtocolVersion:    acp.ProtocolVersion(1),
-	})
-	be.Err(t, err, nil)
-
-	resp, err := clientConn.LoadSession(t.Context(), &acp.LoadSessionRequest{
-		Cwd:        "/rando/dir",
-		McpServers: []acp.McpServer{},
-		SessionID:  "abc123",
-	})
-	be.Err(t, err, nil)
-	be.Equal(t, len(*resp.ConfigOptions), 1)
-	be.Equal(t, (*resp.ConfigOptions)[0].ID, modelRefConfigId)
-	be.Equal(t, (*resp.ConfigOptions)[0].CurrentValue, any(""))
-	be.Equal(t, len(createdModelRefs), 0)
-	assertNotifications(t, testClient, []acp.SessionNotification{
-		{SessionID: "abc123", Update: expectedRPCUserMessageChunk("hello")},
-		{SessionID: "abc123", Update: expectedRPCAgentMessageChunk("answer")},
-	})
-
-	_, err = clientConn.Prompt(t.Context(), &acp.PromptRequest{
-		Prompt:    []acp.ContentBlock{acp.TextContentBlock("follow-up")},
-		SessionID: "abc123",
-	})
-	be.True(t, err != nil)
-	be.True(t, strings.Contains(err.Error(), "cannot prompt before selecting a model"))
-
-	storedSession, err := store.GetACPSession(t.Context(), "abc123")
-	be.Err(t, err, nil)
-	be.Equal(t, storedSession.ModelRef, "")
-	be.Equal(t, storedSession.ThinkingLevel, "")
-	be.Equal(t, storedSession.LastMessageID, lastMessageID)
-}
-
-func TestLoadSessionUnknownSession(t *testing.T) {
-	fixture := setup(t, &noOpAcpClient{}, &config.RawConfig{}, unreachableRuntimeFactory)
-	clientConn := fixture.ClientConn
-
-	_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
-		ClientCapabilities: &acp.ClientCapabilities{
-			Fs: &acp.FileSystemCapabilities{
-				ReadTextFile:  false,
-				WriteTextFile: false,
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
+				createdModelRefs = append(createdModelRefs, s.model)
+				return testRuntime{}, nil
 			},
-			Terminal: true,
-		},
-		ClientInfo: &acp.Implementation{
-			Name:    "test-client",
-			Title:   new("test client"),
-			Version: "test",
-		},
-		ProtocolVersion: acp.ProtocolVersion(1),
-	})
-	be.Err(t, err, nil)
+		)
+		clientConn := fixture.ClientConn
+		store := fixture.Store
 
-	_, err = clientConn.LoadSession(t.Context(), &acp.LoadSessionRequest{
-		Cwd:        "/rando/dir",
-		McpServers: []acp.McpServer{},
-		SessionID:  "does-not-exist",
-	})
-	be.True(t, err != nil)
-}
+		dialog := gai.Dialog{
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("hello")}},
+			{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("answer")}},
+		}
+		var lastMessageID string
+		for msg, err := range store.SaveDialog(t.Context(), slices.Values(dialog)) {
+			be.Err(t, err, nil)
+			lastMessageID = storage.GetMessageID(msg)
+		}
+		be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
+			Session: acp.SessionInfo{
+				Cwd:       "/rando/dir",
+				SessionID: "abc123",
+			},
+			LastMessageID: lastMessageID,
+			ModelRef:      "stale-model",
+			ThinkingLevel: "stale-thinking",
+		}), nil)
 
-func TestLoadSessionReplaysCompactionLineage(t *testing.T) {
-	var createdModelRefs []string
-	testClient := &promptTestClient{}
-	fixture := setup(
-		t,
-		testClient,
-		&config.RawConfig{
-			Models: []config.ModelConfig{
-				{
-					Model: config.Model{
-						Ref:                  "test-model",
-						DisplayName:          "Test Model",
-						ID:                   "test-model",
-						Type:                 "responses",
-						BaseUrl:              "https://customurl.com/v1",
-						ContextWindow:        100,
-						InputCostPerMillion:  new(1.0),
-						OutputCostPerMillion: new(1.0),
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ClientCapabilities: &acp.ClientCapabilities{Terminal: true},
+			ProtocolVersion:    acp.ProtocolVersion(1),
+		})
+		be.Err(t, err, nil)
+
+		resp, err := clientConn.LoadSession(t.Context(), &acp.LoadSessionRequest{
+			Cwd:        "/rando/dir",
+			McpServers: []acp.McpServer{},
+			SessionID:  "abc123",
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, len(*resp.ConfigOptions), 1)
+		be.Equal(t, (*resp.ConfigOptions)[0].ID, modelRefConfigId)
+		be.Equal(t, (*resp.ConfigOptions)[0].CurrentValue, any(""))
+		be.Equal(t, len(createdModelRefs), 0)
+		assertNotifications(t, testClient, []acp.SessionNotification{
+			{SessionID: "abc123", Update: expectedRPCUserMessageChunk("hello")},
+			{SessionID: "abc123", Update: expectedRPCAgentMessageChunk("answer")},
+		})
+
+		_, err = clientConn.Prompt(t.Context(), &acp.PromptRequest{
+			Prompt:    []acp.ContentBlock{acp.TextContentBlock("follow-up")},
+			SessionID: "abc123",
+		})
+		be.True(t, err != nil)
+		be.True(t, strings.Contains(err.Error(), "cannot prompt before selecting a model"))
+
+		storedSession, err := store.GetACPSession(t.Context(), "abc123")
+		be.Err(t, err, nil)
+		be.Equal(t, storedSession.ModelRef, "")
+		be.Equal(t, storedSession.ThinkingLevel, "")
+		be.Equal(t, storedSession.LastMessageID, lastMessageID)
+	})
+	t.Run("unknown session", func(t *testing.T) {
+		fixture := setup(t, &noOpAcpClient{}, &config.RawConfig{}, unreachableRuntimeFactory)
+		clientConn := fixture.ClientConn
+
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ClientCapabilities: &acp.ClientCapabilities{
+				Fs: &acp.FileSystemCapabilities{
+					ReadTextFile:  false,
+					WriteTextFile: false,
+				},
+				Terminal: true,
+			},
+			ClientInfo: &acp.Implementation{
+				Name:    "test-client",
+				Title:   new("test client"),
+				Version: "test",
+			},
+			ProtocolVersion: acp.ProtocolVersion(1),
+		})
+		be.Err(t, err, nil)
+
+		_, err = clientConn.LoadSession(t.Context(), &acp.LoadSessionRequest{
+			Cwd:        "/rando/dir",
+			McpServers: []acp.McpServer{},
+			SessionID:  "does-not-exist",
+		})
+		be.True(t, err != nil)
+	})
+	t.Run("replays compaction lineage", func(t *testing.T) {
+		var createdModelRefs []string
+		testClient := &promptTestClient{}
+		fixture := setup(
+			t,
+			testClient,
+			&config.RawConfig{
+				Models: []config.ModelConfig{
+					{
+						Model: config.Model{
+							Ref:                  "test-model",
+							DisplayName:          "Test Model",
+							ID:                   "test-model",
+							Type:                 "responses",
+							BaseUrl:              "https://customurl.com/v1",
+							ContextWindow:        100,
+							InputCostPerMillion:  new(1.0),
+							OutputCostPerMillion: new(1.0),
+						},
 					},
 				},
 			},
-		},
-		func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
-			createdModelRefs = append(createdModelRefs, s.model)
-			return testRuntime{}, nil
-		},
-	)
-	clientConn := fixture.ClientConn
-	store := fixture.Store
-
-	prior := gai.Dialog{
-		{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("original question")}},
-		{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("original answer")}},
-	}
-	var savedPrior gai.Dialog
-	for msg, err := range store.SaveDialog(t.Context(), slices.Values(prior)) {
-		be.Err(t, err, nil)
-		savedPrior = append(savedPrior, msg)
-	}
-	priorLeafID := storage.GetMessageID(savedPrior[len(savedPrior)-1])
-
-	compactedRoot := gai.Message{
-		Role:        gai.User,
-		Blocks:      []gai.Block{gai.TextBlock("compacted summary")},
-		ExtraFields: map[string]any{storage.MessageCompactionParentIDKey: priorLeafID},
-	}
-	compacted := gai.Dialog{
-		compactedRoot,
-		{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("answer after compaction")}},
-	}
-	var savedCompacted gai.Dialog
-	for msg, err := range store.SaveDialog(t.Context(), slices.Values(compacted)) {
-		be.Err(t, err, nil)
-		savedCompacted = append(savedCompacted, msg)
-	}
-	lastMessageID := storage.GetMessageID(savedCompacted[len(savedCompacted)-1])
-
-	be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
-		Session: acp.SessionInfo{
-			Cwd:       "/rando/dir",
-			SessionID: "abc123",
-		},
-		LastMessageID: lastMessageID,
-		ModelRef:      "test-model",
-		ThinkingLevel: "",
-	}), nil)
-
-	_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
-		ClientCapabilities: &acp.ClientCapabilities{
-			Fs: &acp.FileSystemCapabilities{
-				ReadTextFile:  false,
-				WriteTextFile: false,
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
+				createdModelRefs = append(createdModelRefs, s.model)
+				return testRuntime{}, nil
 			},
-			Terminal: true,
-		},
-		ClientInfo: &acp.Implementation{
-			Name:    "test-client",
-			Title:   new("test client"),
-			Version: "test",
-		},
-		ProtocolVersion: acp.ProtocolVersion(1),
-	})
-	t.Log("called init")
-	be.Err(t, err, nil)
+		)
+		clientConn := fixture.ClientConn
+		store := fixture.Store
 
-	_, err = clientConn.LoadSession(t.Context(), &acp.LoadSessionRequest{
-		Cwd:        "/rando/dir",
-		McpServers: []acp.McpServer{},
-		SessionID:  "abc123",
-	})
-	be.Err(t, err, nil)
-	be.Equal(t, len(createdModelRefs), 0)
-	assertNotifications(t, testClient, []acp.SessionNotification{
-		{
-			SessionID: "abc123",
-			Update:    expectedRPCUserMessageChunk("original question"),
-		},
-		{
-			SessionID: "abc123",
-			Update:    expectedRPCAgentMessageChunk("original answer"),
-		},
-		{
-			SessionID: "abc123",
-			Update:    expectedRPCUserMessageChunk("compacted summary"),
-		},
-		{
-			SessionID: "abc123",
-			Update:    expectedRPCAgentMessageChunk("answer after compaction"),
-		},
+		prior := gai.Dialog{
+			{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("original question")}},
+			{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("original answer")}},
+		}
+		var savedPrior gai.Dialog
+		for msg, err := range store.SaveDialog(t.Context(), slices.Values(prior)) {
+			be.Err(t, err, nil)
+			savedPrior = append(savedPrior, msg)
+		}
+		priorLeafID := storage.GetMessageID(savedPrior[len(savedPrior)-1])
+
+		compactedRoot := gai.Message{
+			Role:        gai.User,
+			Blocks:      []gai.Block{gai.TextBlock("compacted summary")},
+			ExtraFields: map[string]any{storage.MessageCompactionParentIDKey: priorLeafID},
+		}
+		compacted := gai.Dialog{
+			compactedRoot,
+			{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("answer after compaction")}},
+		}
+		var savedCompacted gai.Dialog
+		for msg, err := range store.SaveDialog(t.Context(), slices.Values(compacted)) {
+			be.Err(t, err, nil)
+			savedCompacted = append(savedCompacted, msg)
+		}
+		lastMessageID := storage.GetMessageID(savedCompacted[len(savedCompacted)-1])
+
+		be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
+			Session: acp.SessionInfo{
+				Cwd:       "/rando/dir",
+				SessionID: "abc123",
+			},
+			LastMessageID: lastMessageID,
+			ModelRef:      "test-model",
+			ThinkingLevel: "",
+		}), nil)
+
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ClientCapabilities: &acp.ClientCapabilities{
+				Fs: &acp.FileSystemCapabilities{
+					ReadTextFile:  false,
+					WriteTextFile: false,
+				},
+				Terminal: true,
+			},
+			ClientInfo: &acp.Implementation{
+				Name:    "test-client",
+				Title:   new("test client"),
+				Version: "test",
+			},
+			ProtocolVersion: acp.ProtocolVersion(1),
+		})
+		t.Log("called init")
+		be.Err(t, err, nil)
+
+		_, err = clientConn.LoadSession(t.Context(), &acp.LoadSessionRequest{
+			Cwd:        "/rando/dir",
+			McpServers: []acp.McpServer{},
+			SessionID:  "abc123",
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, len(createdModelRefs), 0)
+		assertNotifications(t, testClient, []acp.SessionNotification{
+			{
+				SessionID: "abc123",
+				Update:    expectedRPCUserMessageChunk("original question"),
+			},
+			{
+				SessionID: "abc123",
+				Update:    expectedRPCAgentMessageChunk("original answer"),
+			},
+			{
+				SessionID: "abc123",
+				Update:    expectedRPCUserMessageChunk("compacted summary"),
+			},
+			{
+				SessionID: "abc123",
+				Update:    expectedRPCAgentMessageChunk("answer after compaction"),
+			},
+		})
 	})
 }
 
@@ -1183,176 +1182,177 @@ func TestCancel(t *testing.T) {
 }
 
 func TestDeleteSession(t *testing.T) {
-	var store *storage.Sqlite
-	trackingRuntime := &closeTrackingRuntime{
-		generate: func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
-			generatedDialog := append(dialog, gai.Message{
-				Role:   gai.Assistant,
-				Blocks: []gai.Block{gai.TextBlock("assistant answer")},
-			})
-			savedDialog := make(gai.Dialog, 0, len(generatedDialog))
-			for msg, err := range store.SaveDialog(ctx, slices.Values(generatedDialog)) {
-				if err != nil {
-					return nil, err
+	t.Run("base case", func(t *testing.T) {
+		var store *storage.Sqlite
+		trackingRuntime := &closeTrackingRuntime{
+			generate: func(ctx context.Context, dialog gai.Dialog, opts *gai.GenOpts) (gai.Dialog, error) {
+				generatedDialog := append(dialog, gai.Message{
+					Role:   gai.Assistant,
+					Blocks: []gai.Block{gai.TextBlock("assistant answer")},
+				})
+				savedDialog := make(gai.Dialog, 0, len(generatedDialog))
+				for msg, err := range store.SaveDialog(ctx, slices.Values(generatedDialog)) {
+					if err != nil {
+						return nil, err
+					}
+					savedDialog = append(savedDialog, msg)
 				}
-				savedDialog = append(savedDialog, msg)
-			}
-			return savedDialog, nil
-		},
-	}
-	var clientConn *acp.Client
-	var rawDB *sql.DB
-	fixture := setup(
-		t,
-		&noOpAcpClient{},
-		&config.RawConfig{
-			Models: []config.ModelConfig{
-				{
-					Model: config.Model{
-						Ref:                  "test-model",
-						DisplayName:          "Test Model",
-						ID:                   "test-model",
-						Type:                 "responses",
-						BaseUrl:              "https://customurl.com/v1",
-						ContextWindow:        100,
-						InputCostPerMillion:  new(1.0),
-						OutputCostPerMillion: new(1.0),
+				return savedDialog, nil
+			},
+		}
+		var clientConn *acp.Client
+		var rawDB *sql.DB
+		fixture := setup(
+			t,
+			&noOpAcpClient{},
+			&config.RawConfig{
+				Models: []config.ModelConfig{
+					{
+						Model: config.Model{
+							Ref:                  "test-model",
+							DisplayName:          "Test Model",
+							ID:                   "test-model",
+							Type:                 "responses",
+							BaseUrl:              "https://customurl.com/v1",
+							ContextWindow:        100,
+							InputCostPerMillion:  new(1.0),
+							OutputCostPerMillion: new(1.0),
+						},
 					},
 				},
 			},
-		},
-		func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
-			return trackingRuntime, nil
-		},
-	)
-	clientConn = fixture.ClientConn
-	store = fixture.Store
-	rawDB = fixture.RawDB
-
-	_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
-		ClientCapabilities: &acp.ClientCapabilities{
-			Fs: &acp.FileSystemCapabilities{
-				ReadTextFile:  false,
-				WriteTextFile: false,
+			func(ctx context.Context, s session, caps acp.ClientCapabilities, conn *acp.AgentConnection) (runtime, error) {
+				return trackingRuntime, nil
 			},
-			Terminal: true,
-		},
-		ClientInfo: &acp.Implementation{
-			Name:    "test-client",
-			Title:   new("test client"),
-			Version: "test",
-		},
-		ProtocolVersion: acp.ProtocolVersion(1),
+		)
+		clientConn = fixture.ClientConn
+		store = fixture.Store
+		rawDB = fixture.RawDB
+
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ClientCapabilities: &acp.ClientCapabilities{
+				Fs: &acp.FileSystemCapabilities{
+					ReadTextFile:  false,
+					WriteTextFile: false,
+				},
+				Terminal: true,
+			},
+			ClientInfo: &acp.Implementation{
+				Name:    "test-client",
+				Title:   new("test client"),
+				Version: "test",
+			},
+			ProtocolVersion: acp.ProtocolVersion(1),
+		})
+		t.Log("called init")
+		be.Err(t, err, nil)
+
+		newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{
+			Cwd:        "/rando/dir",
+			McpServers: []acp.McpServer{},
+		})
+		be.Err(t, err, nil)
+		be.True(t, newSessionResp.SessionID != "")
+
+		_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
+			ConfigID:  modelRefConfigId,
+			SessionID: newSessionResp.SessionID,
+			Value:     "test-model",
+		})
+		be.Err(t, err, nil)
+
+		promptResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
+			Prompt: []acp.ContentBlock{
+				acp.TextContentBlock("Hello"),
+			},
+			SessionID: newSessionResp.SessionID,
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
+
+		storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionID)
+		be.Err(t, err, nil)
+		be.True(t, storedSession.LastMessageID != "")
+		storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
+		be.Err(t, err, nil)
+		be.Equal(t, len(storedDialog), 2)
+		be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions WHERE id = ?", newSessionResp.SessionID), 1)
+		be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM messages"), 2)
+		be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM blocks"), 2)
+
+		_, err = clientConn.DeleteSession(t.Context(), &acp.DeleteSessionRequest{
+			SessionID: newSessionResp.SessionID,
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, trackingRuntime.closeCalls, 1)
+
+		listResp, err := clientConn.ListSessions(t.Context(), &acp.ListSessionsRequest{})
+		be.Err(t, err, nil)
+		be.True(t, !slices.ContainsFunc(listResp.Sessions, func(si acp.SessionInfo) bool {
+			return si.SessionID == newSessionResp.SessionID
+		}))
+
+		_, err = store.GetACPSession(t.Context(), newSessionResp.SessionID)
+		be.True(t, err != nil)
+
+		_, err = clientConn.DeleteSession(t.Context(), &acp.DeleteSessionRequest{
+			SessionID: newSessionResp.SessionID,
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, trackingRuntime.closeCalls, 1)
+
+		_, err = clientConn.CloseSession(t.Context(), &acp.CloseSessionRequest{
+			SessionID: newSessionResp.SessionID,
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, trackingRuntime.closeCalls, 1)
+		be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions WHERE id = ?", newSessionResp.SessionID), 0)
+		be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM messages"), 0)
+		be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM blocks"), 0)
 	})
-	t.Log("called init")
-	be.Err(t, err, nil)
+	t.Run("removes inactive persisted session", func(t *testing.T) {
+		fixture := setup(t, &noOpAcpClient{}, &config.RawConfig{}, unreachableRuntimeFactory)
+		clientConn := fixture.ClientConn
+		store := fixture.Store
+		rawDB := fixture.RawDB
 
-	newSessionResp, err := clientConn.NewSession(t.Context(), &acp.NewSessionRequest{
-		Cwd:        "/rando/dir",
-		McpServers: []acp.McpServer{},
-	})
-	be.Err(t, err, nil)
-	be.True(t, newSessionResp.SessionID != "")
+		be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
+			Session: acp.SessionInfo{
+				Cwd:       "/rando/dir",
+				SessionID: "inactive-session",
+			},
+			LastMessageID: "",
+			ModelRef:      "test-model",
+			ThinkingLevel: "",
+		}), nil)
+		be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions WHERE id = ?", "inactive-session"), 1)
 
-	_, err = clientConn.SetSessionConfigOption(t.Context(), &acp.SetSessionConfigOptionRequest{
-		ConfigID:  modelRefConfigId,
-		SessionID: newSessionResp.SessionID,
-		Value:     "test-model",
-	})
-	be.Err(t, err, nil)
+		_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
+			ClientCapabilities: &acp.ClientCapabilities{
+				Fs: &acp.FileSystemCapabilities{
+					ReadTextFile:  false,
+					WriteTextFile: false,
+				},
+				Terminal: true,
+			},
+			ClientInfo: &acp.Implementation{
+				Name:    "test-client",
+				Title:   new("test client"),
+				Version: "test",
+			},
+			ProtocolVersion: acp.ProtocolVersion(1),
+		})
+		be.Err(t, err, nil)
 
-	promptResp, err := clientConn.Prompt(t.Context(), &acp.PromptRequest{
-		Prompt: []acp.ContentBlock{
-			acp.TextContentBlock("Hello"),
-		},
-		SessionID: newSessionResp.SessionID,
-	})
-	be.Err(t, err, nil)
-	be.Equal(t, promptResp.StopReason, acp.StopReasonEndTurn)
-
-	storedSession, err := store.GetACPSession(t.Context(), newSessionResp.SessionID)
-	be.Err(t, err, nil)
-	be.True(t, storedSession.LastMessageID != "")
-	storedDialog, err := storage.GetDialogForMessage(t.Context(), store, storedSession.LastMessageID)
-	be.Err(t, err, nil)
-	be.Equal(t, len(storedDialog), 2)
-	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions WHERE id = ?", newSessionResp.SessionID), 1)
-	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM messages"), 2)
-	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM blocks"), 2)
-
-	_, err = clientConn.DeleteSession(t.Context(), &acp.DeleteSessionRequest{
-		SessionID: newSessionResp.SessionID,
-	})
-	be.Err(t, err, nil)
-	be.Equal(t, trackingRuntime.closeCalls, 1)
-
-	listResp, err := clientConn.ListSessions(t.Context(), &acp.ListSessionsRequest{})
-	be.Err(t, err, nil)
-	be.True(t, !slices.ContainsFunc(listResp.Sessions, func(si acp.SessionInfo) bool {
-		return si.SessionID == newSessionResp.SessionID
-	}))
-
-	_, err = store.GetACPSession(t.Context(), newSessionResp.SessionID)
-	be.True(t, err != nil)
-
-	_, err = clientConn.DeleteSession(t.Context(), &acp.DeleteSessionRequest{
-		SessionID: newSessionResp.SessionID,
-	})
-	be.Err(t, err, nil)
-	be.Equal(t, trackingRuntime.closeCalls, 1)
-
-	_, err = clientConn.CloseSession(t.Context(), &acp.CloseSessionRequest{
-		SessionID: newSessionResp.SessionID,
-	})
-	be.Err(t, err, nil)
-	be.Equal(t, trackingRuntime.closeCalls, 1)
-	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions WHERE id = ?", newSessionResp.SessionID), 0)
-	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM messages"), 0)
-	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM blocks"), 0)
-}
-
-func TestDeleteSessionRemovesInactivePersistedSession(t *testing.T) {
-	fixture := setup(t, &noOpAcpClient{}, &config.RawConfig{}, unreachableRuntimeFactory)
-	clientConn := fixture.ClientConn
-	store := fixture.Store
-	rawDB := fixture.RawDB
-
-	be.Err(t, store.CreateACPSession(t.Context(), storage.CreateACPSessionParams{
-		Session: acp.SessionInfo{
-			Cwd:       "/rando/dir",
+		_, err = clientConn.DeleteSession(t.Context(), &acp.DeleteSessionRequest{
 			SessionID: "inactive-session",
-		},
-		LastMessageID: "",
-		ModelRef:      "test-model",
-		ThinkingLevel: "",
-	}), nil)
-	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions WHERE id = ?", "inactive-session"), 1)
-
-	_, err := clientConn.Initialize(t.Context(), &acp.InitializeRequest{
-		ClientCapabilities: &acp.ClientCapabilities{
-			Fs: &acp.FileSystemCapabilities{
-				ReadTextFile:  false,
-				WriteTextFile: false,
-			},
-			Terminal: true,
-		},
-		ClientInfo: &acp.Implementation{
-			Name:    "test-client",
-			Title:   new("test client"),
-			Version: "test",
-		},
-		ProtocolVersion: acp.ProtocolVersion(1),
+		})
+		be.Err(t, err, nil)
+		be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions WHERE id = ?", "inactive-session"), 0)
 	})
-	be.Err(t, err, nil)
-
-	_, err = clientConn.DeleteSession(t.Context(), &acp.DeleteSessionRequest{
-		SessionID: "inactive-session",
-	})
-	be.Err(t, err, nil)
-	be.Equal(t, countRows(t, rawDB, "SELECT COUNT(*) FROM acp_sessions WHERE id = ?", "inactive-session"), 0)
 }
 
-func TestForkSession(t *testing.T) {
+func TestForkingSession(t *testing.T) {
 	forkTestConfig := func() *config.RawConfig {
 		return &config.RawConfig{
 			Models: []config.ModelConfig{

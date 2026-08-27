@@ -58,13 +58,6 @@ func decodedContentText(block map[string]any) (string, bool) {
 	}
 }
 
-func value(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
 func marshal(v any) string {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {

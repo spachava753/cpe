@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestMCPListServersFromConfig_UsesSelectedModelProfile(t *testing.T) {
+func TestListServersCommandUsesSelectedModelProfile(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()

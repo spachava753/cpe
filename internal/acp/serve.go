@@ -44,6 +44,7 @@ var (
 	initializeMCPConnections                    = mcp.InitializeConnections
 )
 
+// Create resolves session configuration, builds the prompt and generator, connects tools, then transfers ownership of the completed runtime context.
 func (c *serverRuntimeCreator) Create(ctx context.Context, s session, _ acp.ClientCapabilities) (runtime, error) {
 	cfg, err := config.ResolveFromRaw(c.rawCfg, config.RuntimeOptions{
 		ModelRef: s.model,
@@ -283,7 +284,8 @@ type rpcLogger struct {
 	dir string
 }
 
-// Write implements [io.Writer]. It writes to its buffer, then reads
+// Write buffers partial input, removes complete newline-delimited JSON-RPC
+// frames, and logs parsed fields or the raw parse failure for each frame.
 func (r *rpcLogger) Write(p []byte) (int, error) {
 	n, err := r.b.Write(p)
 	// loop on contained JSON RPC frames,

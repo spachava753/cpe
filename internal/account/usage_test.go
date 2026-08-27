@@ -7,7 +7,7 @@ import (
 	"github.com/spachava753/cpe/internal/auth"
 )
 
-func TestRenderResetText(t *testing.T) {
+func TestResetTextRendering(t *testing.T) {
 	tests := []struct {
 		name   string
 		window *auth.OpenAIUsageWindow

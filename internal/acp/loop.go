@@ -38,10 +38,6 @@ type sessionUpdater interface {
 	SessionUpdate(context.Context, *acp.SessionNotification) error
 }
 
-func withSessionID(ctx context.Context, sessionID acp.SessionId) context.Context {
-	return context.WithValue(ctx, sessionIDCtxKey{}, sessionID)
-}
-
 // loop owns the acp full agentic loop for a prompt turn.
 type loop struct {
 	G     gai.ToolCallingGenerator
@@ -107,8 +103,10 @@ func (l *loop) effectiveGenOpts(override *gai.GenOpts) *gai.GenOpts {
 	return merged
 }
 
-// Generate runs the dialog until a terminal assistant response, nil-callback
-// terminal tool, callback error, or compaction restart limit is reached.
+// Generate repeatedly saves the current branch, asks the model for one turn,
+// publishes updates, runs tools, and applies any requested compaction. It stops
+// at a terminal assistant response, nil-callback terminal tool, callback error,
+// or the compaction restart limit.
 //
 // TODO: we need to add support for sending session updates for streaming generators for a more real-time experience
 // TODO: acp clients, like editors like zed, might have unsaved changes, so generally speaking, it is preferable to use fs/read_text_file and fs/write_text_file tools where possible
@@ -573,6 +571,7 @@ func contextUsedTokens(metadata gai.Metadata) (int, bool) {
 	return inputTokens + outputTokens, true
 }
 
+// calculateUsageCostUSD separates uncached input, output, cache-read, and cache-write tokens, then adds every component with configured pricing.
 func calculateUsageCostUSD(metadata gai.Metadata, model config.Model) (float64, bool) {
 	total := 0.0
 	hasAnyCost := false

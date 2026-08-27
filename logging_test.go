@@ -63,7 +63,8 @@ func TestProcessLoggerIncludesPIDAndContextAttributes(t *testing.T) {
 		slog.String("cwd", "/repo"),
 	)
 
-	newProcessLogger(&output).InfoContext(ctx, "test log record")
+	handler := slog.NewJSONHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug})
+	slog.New(cpelogging.NewProcessHandler(handler)).InfoContext(ctx, "test log record")
 
 	var record struct {
 		PID       int    `json:"pid"`

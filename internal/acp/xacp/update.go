@@ -12,6 +12,7 @@ import (
 
 const pdfMIMEType = "application/pdf"
 
+// MsgToSessionUpdate groups tool results by call ID and otherwise emits the ACP update variant corresponding to each message block and role.
 func MsgToSessionUpdate(msg gai.Message) iter.Seq[acp.SessionUpdate] {
 	return func(yield func(acp.SessionUpdate) bool) {
 		if msg.Role == gai.ToolResult {

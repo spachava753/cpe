@@ -35,140 +35,139 @@ func doGet(ctx context.Context, url string) (*http.Response, error) {
 	return http.DefaultClient.Do(req)
 }
 
-func TestStartCallbackServer_Success(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+func TestStartCallbackServer(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-	port := 19876
-	state := "test-state-12345"
-	resultCh, err := StartCallbackServer(ctx, port, state)
-	if err != nil {
-		t.Fatalf("StartCallbackServer() error: %v", err)
-	}
-
-	// Simulate the OAuth callback
-	reqDone := make(chan struct{})
-	go func() {
-		defer close(reqDone)
-		callbackURL := fmt.Sprintf("http://127.0.0.1:%d/auth/callback?code=test-code-abc&state=%s", port, state)
-		resp, reqErr := doGet(ctx, callbackURL)
-		if reqErr != nil {
-			// Don't call t.Errorf from goroutine after test might be done
-			return
+		port := 19876
+		state := "test-state-12345"
+		resultCh, err := StartCallbackServer(ctx, port, state)
+		if err != nil {
+			t.Fatalf("StartCallbackServer() error: %v", err)
 		}
-		resp.Body.Close()
-	}()
 
-	select {
-	case result := <-resultCh:
-		if result.Error != "" {
-			t.Fatalf("unexpected error: %s", result.Error)
+		// Simulate the OAuth callback
+		reqDone := make(chan struct{})
+		go func() {
+			defer close(reqDone)
+			callbackURL := fmt.Sprintf("http://127.0.0.1:%d/auth/callback?code=test-code-abc&state=%s", port, state)
+			resp, reqErr := doGet(ctx, callbackURL)
+			if reqErr != nil {
+				// Don't call t.Errorf from goroutine after test might be done
+				return
+			}
+			resp.Body.Close()
+		}()
+
+		select {
+		case result := <-resultCh:
+			if result.Error != "" {
+				t.Fatalf("unexpected error: %s", result.Error)
+			}
+			if result.Code != "test-code-abc" {
+				t.Errorf("expected code 'test-code-abc', got %q", result.Code)
+			}
+			if result.State != state {
+				t.Errorf("expected state %q, got %q", state, result.State)
+			}
+		case <-ctx.Done():
+			t.Fatal("timed out waiting for callback result")
 		}
-		if result.Code != "test-code-abc" {
-			t.Errorf("expected code 'test-code-abc', got %q", result.Code)
+
+		// Wait for the HTTP request goroutine to complete before test exits
+		<-reqDone
+	})
+	t.Run("state mismatch", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		port := 19877
+		state := "expected-state"
+		resultCh, err := StartCallbackServer(ctx, port, state)
+		if err != nil {
+			t.Fatalf("StartCallbackServer() error: %v", err)
 		}
-		if result.State != state {
-			t.Errorf("expected state %q, got %q", state, result.State)
+
+		// Send callback with wrong state
+		reqDone := make(chan struct{})
+		go func() {
+			defer close(reqDone)
+			callbackURL := fmt.Sprintf("http://127.0.0.1:%d/auth/callback?code=test-code&state=wrong-state", port)
+			resp, reqErr := doGet(ctx, callbackURL)
+			if reqErr != nil {
+				return
+			}
+			resp.Body.Close()
+		}()
+
+		select {
+		case result := <-resultCh:
+			if result.Error != "state mismatch" {
+				t.Errorf("expected error 'state mismatch', got %q", result.Error)
+			}
+		case <-ctx.Done():
+			t.Fatal("timed out waiting for callback result")
 		}
-	case <-ctx.Done():
-		t.Fatal("timed out waiting for callback result")
-	}
 
-	// Wait for the HTTP request goroutine to complete before test exits
-	<-reqDone
-}
+		<-reqDone
+	})
+	t.Run("o auth error", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-func TestStartCallbackServer_StateMismatch(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	port := 19877
-	state := "expected-state"
-	resultCh, err := StartCallbackServer(ctx, port, state)
-	if err != nil {
-		t.Fatalf("StartCallbackServer() error: %v", err)
-	}
-
-	// Send callback with wrong state
-	reqDone := make(chan struct{})
-	go func() {
-		defer close(reqDone)
-		callbackURL := fmt.Sprintf("http://127.0.0.1:%d/auth/callback?code=test-code&state=wrong-state", port)
-		resp, reqErr := doGet(ctx, callbackURL)
-		if reqErr != nil {
-			return
+		port := 19878
+		state := "test-state"
+		resultCh, err := StartCallbackServer(ctx, port, state)
+		if err != nil {
+			t.Fatalf("StartCallbackServer() error: %v", err)
 		}
-		resp.Body.Close()
-	}()
 
-	select {
-	case result := <-resultCh:
-		if result.Error != "state mismatch" {
-			t.Errorf("expected error 'state mismatch', got %q", result.Error)
+		// Send callback with error
+		reqDone := make(chan struct{})
+		go func() {
+			defer close(reqDone)
+			callbackURL := fmt.Sprintf("http://127.0.0.1:%d/auth/callback?error=access_denied&error_description=user+denied", port)
+			resp, reqErr := doGet(ctx, callbackURL)
+			if reqErr != nil {
+				return
+			}
+			resp.Body.Close()
+		}()
+
+		select {
+		case result := <-resultCh:
+			if result.Error != "access_denied: user denied" {
+				t.Errorf("expected error 'access_denied: user denied', got %q", result.Error)
+			}
+		case <-ctx.Done():
+			t.Fatal("timed out waiting for callback result")
 		}
-	case <-ctx.Done():
-		t.Fatal("timed out waiting for callback result")
-	}
 
-	<-reqDone
-}
+		<-reqDone
+	})
+	t.Run("context cancellation", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 
-func TestStartCallbackServer_OAuthError(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	port := 19878
-	state := "test-state"
-	resultCh, err := StartCallbackServer(ctx, port, state)
-	if err != nil {
-		t.Fatalf("StartCallbackServer() error: %v", err)
-	}
-
-	// Send callback with error
-	reqDone := make(chan struct{})
-	go func() {
-		defer close(reqDone)
-		callbackURL := fmt.Sprintf("http://127.0.0.1:%d/auth/callback?error=access_denied&error_description=user+denied", port)
-		resp, reqErr := doGet(ctx, callbackURL)
-		if reqErr != nil {
-			return
+		port := 19879
+		_, err := StartCallbackServer(ctx, port, "state")
+		if err != nil {
+			t.Fatalf("StartCallbackServer() error: %v", err)
 		}
-		resp.Body.Close()
-	}()
 
-	select {
-	case result := <-resultCh:
-		if result.Error != "access_denied: user denied" {
-			t.Errorf("expected error 'access_denied: user denied', got %q", result.Error)
+		// Cancel context immediately
+		cancel()
+
+		// Give time for shutdown
+		time.Sleep(1 * time.Second)
+
+		// Server should be shut down - connection should fail
+		checkCtx, checkCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer checkCancel()
+		resp, err := doGet(checkCtx, fmt.Sprintf("http://127.0.0.1:%d/auth/callback?code=test&state=state", port))
+		if err == nil {
+			resp.Body.Close()
+			t.Error("expected connection error after context cancellation, but request succeeded")
 		}
-	case <-ctx.Done():
-		t.Fatal("timed out waiting for callback result")
-	}
-
-	<-reqDone
-}
-
-func TestStartCallbackServer_ContextCancellation(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-
-	port := 19879
-	_, err := StartCallbackServer(ctx, port, "state")
-	if err != nil {
-		t.Fatalf("StartCallbackServer() error: %v", err)
-	}
-
-	// Cancel context immediately
-	cancel()
-
-	// Give time for shutdown
-	time.Sleep(1 * time.Second)
-
-	// Server should be shut down - connection should fail
-	checkCtx, checkCancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer checkCancel()
-	resp, err := doGet(checkCtx, fmt.Sprintf("http://127.0.0.1:%d/auth/callback?code=test&state=state", port))
-	if err == nil {
-		resp.Body.Close()
-		t.Error("expected connection error after context cancellation, but request succeeded")
-	}
+	})
 }
