@@ -3,9 +3,12 @@ package config
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestInfoCommand(t *testing.T) {
@@ -184,6 +187,38 @@ func TestInfoCommand(t *testing.T) {
 			t.Fatalf("ModelInfo() output mismatch\nwant:\n%s\n\ngot:\n%s", want, got)
 		}
 	})
+}
+
+func TestCanceledPromptCommand(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is required for template exec")
+	}
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("HOME", dir)
+	promptPath := filepath.Join(dir, "prompt.md")
+	if err := os.WriteFile(promptPath, []byte(`before {{exec "sleep 2 | cat"}} after`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rawCfg := &RawConfig{Models: []ModelConfig{{
+		Model:            Model{Ref: "test-model"},
+		SystemPromptPath: "prompt.md",
+	}}}
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	var out bytes.Buffer
+	err := modelSystemPrompt(ctx, modelSystemPromptOptions{
+		RawConfig:      rawCfg,
+		ConfigFilePath: filepath.Join(dir, "cpe.yaml"),
+		ModelName:      "test-model",
+		Output:         &out,
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error = %v, want cancellation propagated", err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("printed incomplete prompt on cancellation: %q", out.String())
+	}
 }
 
 func TestRelativeSystemPromptPathInCommand(t *testing.T) {

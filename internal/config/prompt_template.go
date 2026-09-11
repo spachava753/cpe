@@ -3,11 +3,13 @@ package config
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/Masterminds/sprig/v3"
 
@@ -27,6 +29,9 @@ type templateData struct {
 
 // systemPromptTemplate renders a template string with system info data.
 func systemPromptTemplate(ctx context.Context, templateStr string, td templateData) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	tmpl, err := template.New("sysinfo").Funcs(createTemplateFuncMap(ctx)).Parse(templateStr)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse template string: %w", err)
@@ -37,6 +42,9 @@ func systemPromptTemplate(ctx context.Context, templateStr string, td templateDa
 		return "", fmt.Errorf("failed to execute template: %w", err)
 	}
 
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	return buf.String(), nil
 }
 
@@ -44,8 +52,25 @@ func createTemplateFuncMap(ctx context.Context) template.FuncMap {
 	fm := sprig.TxtFuncMap()
 	fm["fileExists"] = fileExists
 	fm["includeFile"] = includeFile
-	fm["exec"] = func(command string) string {
-		return execCommand(ctx, command)
+	fm["exec"] = func(command string) (string, error) {
+		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+
+		cmd := templateCommand(ctx, command)
+		// Descendants can inherit stdout even after the shell exits. Bound pipe
+		// draining as well as command execution so they cannot stall rendering.
+		cmd.WaitDelay = 100 * time.Millisecond
+		output, err := cmd.Output()
+		if ctx.Err() != nil {
+			return "", fmt.Errorf("template command %q: %w", command, ctx.Err())
+		}
+		if errors.Is(err, exec.ErrWaitDelay) {
+			return "", fmt.Errorf("template command %q left output pipes open: %w", command, err)
+		}
+		if err != nil {
+			return "", nil
+		}
+		return strings.TrimSpace(string(output)), nil
 	}
 	return fm
 }
@@ -61,13 +86,4 @@ func includeFile(path string) string {
 		return ""
 	}
 	return string(content)
-}
-
-func execCommand(ctx context.Context, command string) string {
-	cmd := exec.CommandContext(ctx, "bash", "-c", command)
-	output, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(output))
 }

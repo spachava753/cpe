@@ -65,6 +65,10 @@ Adding new tasks:
 
 ## Git
 
+Use Conventional Commits for all commit messages: `type(scope): description`,
+with an optional scope. For example, `fix(config): propagate prompt cancellation`
+or `refactor: resolve lint violations`.
+
 The tracked files commited in this repo are controlled by the `.gitignore`, which is configured more as an allowlist. By default, all files are not tracked or commited, unless explicitly allowed by the `.gitignore`. Never modify `.gitignore`, unless explicitly asked by the user. If you find that a file you are working on is not being tracked, you can ask the user as to whether this file should be tracked or not.
 
 `PLAN.md` files should never be tracked, they are transient files that will be deleted after implementation completion.

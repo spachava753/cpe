@@ -25,6 +25,16 @@ schema/template/restart-limit validity), resolves filesystem-relative
 systemPromptPath values, renders system prompt templates for resolved profiles,
 and carries per-profile runtime flags such as bundled edit-tool opt-out.
 
+System prompt template exec commands run in the current working directory, not
+in the config file's directory. Each command has a 10-second deadline and bounded
+output-pipe draining. Cancellation and deadline errors abort rendering rather
+than publishing an incomplete prompt. On Unix, cancellation kills the shell's
+process group, including pipelines. On other platforms it kills the shell, and
+pipe draining is bounded even if descendants keep output handles open. Ordinary
+command failures still return empty text for optional probes such as cat AGENTS.md.
+Templates should use scoped discovery (for example git ls-files) rather than
+unbounded recursive filesystem scans from the working directory.
+
 MCP server connection settings are represented via the dependency-neutral
 `internal/mcpconfig` schema package so config loading does not depend on MCP
 runtime implementation packages.
