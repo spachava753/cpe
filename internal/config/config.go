@@ -82,6 +82,11 @@ type RawCompactionConfig struct {
 // schema/cpe-config-schema.json with: go run ./build gen-schema
 // (or go generate ./...).
 type RawConfig struct {
+	// configFilePath is the absolute source path retained by file loading. It is
+	// runtime metadata, not part of the YAML or JSON configuration. Keeping it
+	// here lets later model selection resolve paths without depending on CWD.
+	configFilePath string
+
 	// Model profiles. Each entry is self-contained; CPE resolves one selected
 	// profile as written.
 	Models []ModelConfig `yaml:"models" json:"models" validate:"gt=0,unique=Ref,dive" jsonschema:"required"`

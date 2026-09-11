@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -40,6 +42,61 @@ func (g *recordingToolCallingGenerator) Register(tool gai.Tool) error {
 }
 
 func TestServerRuntimeCreator(t *testing.T) {
+	t.Run("loads a relative prompt from the config directory", func(t *testing.T) {
+		configDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(configDir, "prompt.md"), []byte("configured prompt"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		configPath := filepath.Join(configDir, "cpe.yaml")
+		if err := os.WriteFile(configPath, []byte(`models:
+  - ref: test-model
+    display_name: Test Model
+    id: test-model
+    type: responses
+    auth_method: oauth
+    context_window: 1000
+    max_output: 100
+    systemPromptPath: prompt.md
+    disable_edit_tool: true
+`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := config.LoadRawConfig(configPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		projectDir := t.TempDir()
+		t.Chdir(projectDir)
+		if err := os.WriteFile("prompt.md", []byte("wrong project prompt"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		originalGenerator := initializeGeneratorFromModel
+		originalMCP := initializeMCPConnections
+		t.Cleanup(func() {
+			initializeGeneratorFromModel = originalGenerator
+			initializeMCPConnections = originalMCP
+		})
+		var receivedPrompt string
+		initializeGeneratorFromModel = func(_ context.Context, _ config.Model, prompt string, _ time.Duration) (gai.Generator, error) {
+			receivedPrompt = prompt
+			return testToolCallingGenerator{}, nil
+		}
+		initializeMCPConnections = func(context.Context, map[string]mcpconfig.ServerConfig) (*cpemcp.MCPState, error) {
+			return cpemcp.NewMCPState(), nil
+		}
+		creator := &serverRuntimeCreator{rawCfg: raw}
+		runtime, err := creator.Create(t.Context(), session{id: "session-1", model: "test-model", cwd: projectDir}, acp.ClientCapabilities{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := runtime.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if receivedPrompt != "configured prompt" {
+			t.Fatalf("generator received %q, want configured prompt", receivedPrompt)
+		}
+	})
 	t.Run("runtime context outlives create context", func(t *testing.T) {
 		originalGenerator := initializeGeneratorFromModel
 		originalMCP := initializeMCPConnections

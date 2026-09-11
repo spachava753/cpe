@@ -24,18 +24,21 @@ const defaultTimeout = 5 * time.Minute
 //
 // The returned Config always has a non-nil generationParams pointer.
 func ResolveConfig(configPath string, opts RuntimeOptions) (Config, error) {
-	rawCfg, resolvedConfigPath, err := loadRawConfigWithPath(configPath)
+	rawCfg, err := LoadRawConfig(configPath)
 	if err != nil {
 		return Config{}, err
 	}
 
-	return resolveFromRaw(rawCfg, opts, resolvedConfigPath)
+	return resolveFromRaw(rawCfg, opts, rawCfg.configFilePath)
 }
 
 // ResolveFromRaw resolves configuration from an already-loaded RawConfig.
-// It applies the same rules as ResolveConfig but does not perform config file discovery or loading.
+// It uses the source location retained by LoadRawConfig to resolve relative
+// system prompt paths, even if the working directory has changed since loading.
+// For programmatically constructed configs without a source location, relative
+// paths remain unchanged and are interpreted against CWD when opened.
 func ResolveFromRaw(rawCfg *RawConfig, opts RuntimeOptions) (Config, error) {
-	return resolveFromRaw(rawCfg, opts, "")
+	return resolveFromRaw(rawCfg, opts, rawCfg.configFilePath)
 }
 
 // resolveFromRaw constructs the effective runtime config for the selected model profile.

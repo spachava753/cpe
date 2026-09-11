@@ -25,6 +25,13 @@ schema/template/restart-limit validity), resolves filesystem-relative
 systemPromptPath values, renders system prompt templates for resolved profiles,
 and carries per-profile runtime flags such as bundled edit-tool opt-out.
 
+File loading retains the absolute config source location as private runtime
+metadata. Relative systemPromptPath values are resolved against that file's
+directory for both CLI inspection and direct/ACP runtime creation, including
+model switches after loading or changes to the working directory. Absolute
+prompt paths and raw profile values are preserved. Configs constructed in memory
+without a source location keep relative paths unchanged for the caller to use.
+
 System prompt template exec commands run in the current working directory, not
 in the config file's directory. Each command has a 10-second deadline and bounded
 output-pipe draining. Cancellation and deadline errors abort rendering rather

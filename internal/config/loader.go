@@ -15,9 +15,10 @@ import (
 // errConfigNotFound indicates no config file was found in the standard search locations.
 var errConfigNotFound = errors.New("configuration file not found")
 
-// LoadRawConfig loads and validates configuration, returning only the parsed
-// RawConfig. It is a convenience wrapper for callers that do not need the
-// resolved config file path.
+// LoadRawConfig loads and validates configuration, returning the parsed
+// RawConfig with its absolute source location retained for later resolution.
+// Relative system prompt paths stay unchanged in the raw model profiles and are
+// anchored to this source location by ResolveFromRaw.
 func LoadRawConfig(explicitPath string) (*RawConfig, error) {
 	cfg, _, err := loadRawConfigWithPath(explicitPath)
 	if err != nil {
@@ -67,6 +68,11 @@ func loadRawConfigWithPath(explicitPath string) (*RawConfig, string, error) {
 
 	if err := config.ValidateWithConfigPath(configPath); err != nil {
 		return nil, "", err
+	}
+
+	config.configFilePath, err = filepath.Abs(configPath)
+	if err != nil {
+		return nil, "", fmt.Errorf("resolve configuration file path %q: %w", configPath, err)
 	}
 
 	return config, configPath, nil

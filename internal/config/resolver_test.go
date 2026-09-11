@@ -1,15 +1,130 @@
 package config
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/spachava753/gai"
+	"gopkg.in/yaml.v3"
 )
 
 func TestResolve(t *testing.T) {
+	t.Run("in memory config keeps paths without a source location", func(t *testing.T) {
+		t.Parallel()
+		for _, path := range []string{"", "prompts/agent.md", filepath.Join(t.TempDir(), "agent.md")} {
+			model := testModelProfile()
+			model.SystemPromptPath = path
+			cfg, err := ResolveFromRaw(&RawConfig{Models: []ModelConfig{model}}, RuntimeOptions{ModelRef: model.Ref})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.SystemPromptPath != path {
+				t.Fatalf("path = %q, want unchanged %q", cfg.SystemPromptPath, path)
+			}
+		}
+	})
+	t.Run("loaded config keeps prompt paths anchored after changing directories", func(t *testing.T) {
+		for _, source := range []string{"absolute config path", "relative config path", "current directory discovery", "user config discovery"} {
+			t.Run(source, func(t *testing.T) {
+				home := t.TempDir()
+				t.Setenv("HOME", home)
+				t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config home"))
+				t.Setenv("APPDATA", filepath.Join(home, "AppData"))
+				userConfigDir, err := os.UserConfigDir()
+				if err != nil {
+					t.Fatal(err)
+				}
+				configDir := filepath.Join(userConfigDir, "cpe")
+				if err := os.MkdirAll(filepath.Join(configDir, "prompts"), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				promptPath := filepath.Join(configDir, "prompts", "agent.md")
+				if err := os.WriteFile(promptPath, []byte("the configured prompt"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				models := []ModelConfig{testModelProfile(), testModelProfile(), testModelProfile()}
+				models[0].Ref = "relative"
+				models[0].SystemPromptPath = "./prompts/../prompts/agent.md"
+				models[1].Ref = "absolute"
+				models[1].SystemPromptPath = promptPath
+				models[2].Ref = "no-prompt"
+				models[2].SystemPromptPath = ""
+				encoded, err := yaml.Marshal(&RawConfig{Models: models})
+				if err != nil {
+					t.Fatal(err)
+				}
+				configPath := filepath.Join(configDir, "cpe.yaml")
+				if err := os.WriteFile(configPath, encoded, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				t.Chdir(configDir)
+				loadPath := configPath
+				switch source {
+				case "relative config path":
+					loadPath = "cpe.yaml"
+				case "current directory discovery":
+					loadPath = ""
+				case "user config discovery":
+					t.Chdir(home)
+					loadPath = ""
+				}
+				raw, err := LoadRawConfig(loadPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				// Runtime creation happens later, potentially in another directory.
+				// Plant a same-named prompt there to catch accidental CWD resolution.
+				runtimeDir := t.TempDir()
+				if err := os.MkdirAll(filepath.Join(runtimeDir, "prompts"), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(runtimeDir, "prompts", "agent.md"), []byte("wrong prompt"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				t.Chdir(runtimeDir)
+				for _, model := range models {
+					cfg, err := ResolveFromRaw(raw, RuntimeOptions{ModelRef: model.Ref})
+					if err != nil {
+						t.Fatal(err)
+					}
+					wantPath, wantPrompt := promptPath, "the configured prompt"
+					if model.SystemPromptPath == "" {
+						wantPath, wantPrompt = "", ""
+					}
+					if cfg.SystemPromptPath != wantPath {
+						t.Fatalf("%s runtime path = %q, want %q", model.Ref, cfg.SystemPromptPath, wantPath)
+					}
+					prompt, err := LoadSystemPrompt(t.Context(), LoadSystemPromptOptions{SystemPromptPath: cfg.SystemPromptPath, Config: cfg})
+					if err != nil || prompt != wantPrompt {
+						t.Fatalf("%s runtime prompt = %q, %v; want %q", model.Ref, prompt, err, wantPrompt)
+					}
+					fromFile, err := ResolveConfig(configPath, RuntimeOptions{ModelRef: model.Ref})
+					if err != nil || !reflect.DeepEqual(fromFile, cfg) {
+						t.Fatalf("%s ResolveConfig and ResolveFromRaw disagree: %v", model.Ref, err)
+					}
+					if model.SystemPromptPath != "" {
+						var out bytes.Buffer
+						err := ModelSystemPromptFromConfig(t.Context(), ModelSystemPromptFromConfigOptions{ConfigPath: configPath, ModelName: model.Ref, Output: &out})
+						if err != nil || !strings.HasSuffix(out.String(), "\n\n"+wantPrompt+"\n") {
+							t.Fatalf("%s inspection output = %q, %v", model.Ref, out.String(), err)
+						}
+					}
+				}
+				for i, model := range models {
+					if raw.Models[i].SystemPromptPath != model.SystemPromptPath {
+						t.Fatalf("resolution mutated the raw prompt path for %s", model.Ref)
+					}
+				}
+			})
+		}
+	})
 	t.Run("config requires model", func(t *testing.T) {
 		_, err := ResolveFromRaw(&RawConfig{Models: []ModelConfig{testModelProfile()}}, RuntimeOptions{})
 		if err == nil {
