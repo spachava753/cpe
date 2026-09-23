@@ -1,510 +1,314 @@
-# CPE - Chat-based Programming Editor
+# CPE
 
-CPE is a local [Agent Client Protocol](https://agentclientprotocol.com/) (ACP) server for AI coding clients. Run it from an ACP-compatible editor such as [Zed](https://zed.dev/), and CPE provides model access, MCP tools, session-scoped Starlark execution, file editing, and local session persistence behind that editor UI.
+CPE is a small terminal programming agent built with Bubble Tea, gai, Starlarkx,
+and Dyson. The model has one tool: a persistent `starlark_repl`. It uses Starlark
+functions to read and write files, run commands, call HTTP services, and invoke
+application-supplied tools.
 
-## Contents
+This is a replacement for the previous ACP application. The old ACP server,
+SQLite sessions, YAML configuration, the old OAuth commands, MCP configuration, and
+Harbor/Pier adapters have been removed. Existing SQLite sessions are not migrated.
 
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [Features](#features)
-- [Command Reference](#command-reference)
-- [Troubleshooting](#troubleshooting)
+## Run
 
-## Installation
+Requires Go 1.26.6 or newer.
 
-### Release binaries
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/spachava753/cpe/main/install.sh | sh
-```
-
-The installer downloads the latest release for macOS or Linux and installs `cpe` to `~/.local/bin` by default. Set `CPE_INSTALL_DIR=/usr/local/bin` or `CPE_INSTALL_VERSION=vX.Y.Z` to customize the install.
-
-### Go install
-
-```bash
-go install github.com/spachava753/cpe@latest
-```
-
-### From source
-
-```bash
-git clone https://github.com/spachava753/cpe.git
-cd cpe
+```sh
 go build -o cpe .
+./cpe --init
+./cpe
 ```
 
-### Shell completion
+The starter configuration selects Codex. Use `/login` in the TUI to open the
+browser sign-in flow. CPE validates the OAuth callback with PKCE and state, then
+saves its own credentials to `~/.cpe/auth.json`. Use `/login device` for a remote
+terminal or a machine without a browser: open the displayed URL and enter the
+code. Device login may need to be enabled in your ChatGPT account settings.
+Escape or Ctrl+C cancels either flow. Login instructions stay out of model
+context and session history. The TUI starts without credentials so you can sign
+in, and the selected model is ready to use as soon as login succeeds.
 
-```bash
-# Bash
-source <(cpe completion bash)
-
-# Zsh
-source <(cpe completion zsh)
-
-# Fish
-cpe completion fish | source
-
-# PowerShell
-cpe completion powershell | Out-String | Invoke-Expression
-```
-
-## Quick Start
-
-CPE requires a YAML configuration file with at least one model profile. There is no zero-config mode.
-
-### 1. Create `cpe.yaml`
-
-Create `cpe.yaml` in your project directory or user config directory:
-
-- macOS: `~/Library/Application Support/cpe/cpe.yaml`
-- Linux: `~/.config/cpe/cpe.yaml`
-- Windows: `%AppData%\cpe\cpe.yaml`
-
-```yaml
-version: "1.0"
-
-models:
-  - ref: sonnet
-    display_name: "Claude Sonnet"
-    id: claude-sonnet-4-5-20250929
-    type: anthropic
-    api_key_env: ANTHROPIC_API_KEY
-    context_window: 200000
-    max_output: 64000
-    timeout: 5m
-    generationParams:
-      temperature: 0.2
-```
-
-### 2. Set provider credentials
-
-```bash
-export ANTHROPIC_API_KEY="your-api-key"
-```
-
-The environment variable name is controlled by `api_key_env` in the selected model profile.
-
-### 3. Configure an ACP client
-
-CPE communicates over stdio JSON-RPC. The client launches `cpe acp serve` and hosts the chat/thread UI.
-
-Zed supports external ACP agents through `agent_servers`. See [Zed External Agents](https://zed.dev/docs/ai/external-agents) and the [Zed ACP page](https://zed.dev/acp/editor/zed).
-
-A minimal Zed settings entry looks like this:
+Configuration always lives in `~/.cpe`, including on Linux and macOS. Edit
+`config.json` for settings and `system.md` for system instructions, then restart
+CPE to apply changes. CPE does not look in the current directory or
+`$XDG_CONFIG_HOME`. `--init` only creates missing files.
 
 ```json
 {
-  "agent_servers": {
-    "CPE": {
-      "type": "custom",
-      "command": "cpe",
-      "args": ["acp", "serve", "--config", "/absolute/path/to/cpe.yaml"],
-      "env": {
-        "ANTHROPIC_API_KEY": "your-api-key"
-      }
+  "default_model": "gpt",
+  "models": {
+    "gpt": {
+      "provider": "codex",
+      "id": "gpt-6-astra",
+      "reasoning_effort": "low"
+    }
+  },
+  "agent": {
+    "tool_timeout": "1m",
+    "output_limit": 32000,
+    "max_rounds": 50
+  },
+  "compaction": {
+    "max_characters": 0,
+    "prompt": "Summarize goals, decisions, work completed, verification, and remaining work. Persistent Starlark state survives compaction."
+  }
+}
+```
+
+JSON must contain one object. Unknown fields, duplicate keys, trailing data, and
+invalid settings are errors. Examples are in [examples/](examples/README.md).
+
+Supported API-key providers are `openai` (Chat Completions, including compatible
+servers), `responses`, `anthropic`, and `gemini`. Those profiles require
+`api_key_env` and may set `base_url`, `max_output_tokens`, and `temperature`.
+`reasoning_effort` is supported by `responses` and `codex`; accepted values depend
+on the model. Codex uses its fixed endpoint and rejects the API-key, base URL,
+output-token limit, and temperature settings.
+
+CPE owns its Codex credentials; it does not read or modify Pi's login. Subsequent
+requests reload `auth.json` and refresh expiring tokens. Login and refresh update
+the file atomically with mode 0600, preserving unrelated entries. A separate OS
+lock coordinates CPE processes and releases automatically on exit or crash.
+The lock file remains on disk; do not remove it while CPE is running. Credential
+file symlinks are rejected. Tokens never enter config or conversation files.
+
+Both replies and compaction use streaming Codex requests. Truncated streams fail
+without committing partial output. Model requests, token exchanges, and refreshes
+are not automatically retried. Device authorization is polled until approved,
+canceled, denied, or expired. If credentials are rejected, use `/login` again.
+
+## Terminal controls
+
+| Key or command | Action |
+| --- | --- |
+| Enter | Send the prompt |
+| Alt+Enter | Insert a newline |
+| PgUp / PgDn, mouse wheel | Scroll the conversation |
+| Esc or Ctrl+C while busy | Cancel the current operation and wait for cleanup |
+| Ctrl+C while idle, `/quit` | Exit |
+| `/help` | Show commands |
+| `/login` | Sign in to Codex in the browser |
+| `/login device` | Sign in with a device code |
+| `/model` or `/model NAME` | Pick or switch to a profile from config.json |
+| `/reasoning` or `/reasoning LEVEL` | Pick or set reasoning effort for Codex/Responses |
+| `/reasoning default` | Restore the active profile's configured effort |
+| `/usage` | Show exact session token totals, estimated cost, and context budget |
+| `/session` | Show the JSONL path |
+| `/tree` | List saved checkpoints |
+| `/branch ID` | Continue from a checkpoint, preserving other branches |
+| `/compact` | Summarize model context while retaining REPL state |
+
+The conversation displays streamed text provisionally. Completed assistant
+messages and tool results are saved before the next operation. Input stays
+editable between turns; prompts are not queued while the agent is busy.
+
+Model and reasoning pickers use Up/Down, Enter to apply, and Esc to cancel.
+For example, `/model sol` switches to your `sol` profile and `/reasoning high`
+changes its reasoning effort for subsequent replies and compaction. The header
+shows the active profile and effort. Recognized levels are `none`, `minimal`,
+`low`, `medium`, `high`, `xhigh`, and `max`; model support varies.
+`/reasoning default` restores the profile's configured value, or lets the provider
+choose if no value is configured. This differs from the explicit `none` level.
+Switching to a different profile uses that profile's settings. A failed switch
+keeps the active profile. Conversation and Starlark state are preserved.
+These settings apply to the running process only; config.json is unchanged and
+restart/resume uses the configured default or `--model`.
+
+Each profile can also configure a working input-token budget and prices in USD
+per million tokens. For example, these settings use illustrative rates:
+
+```json
+{
+  "context_window": 272000,
+  "cost": {
+    "input": 2,
+    "output": 10,
+    "cache_read": 0.2,
+    "cache_write": 2.5,
+    "long_context": {
+      "above_input_tokens": 272000,
+      "input": 4,
+      "output": 15,
+      "cache_read": 0.4,
+      "cache_write": 5
     }
   }
 }
 ```
 
-If Zed cannot find `cpe` on its PATH, set `command` to an absolute path such as `/Users/me/.local/bin/cpe`.
+Add those fields to a model profile. `context_window` is the preferred **input**
+budget, which can be lower than the provider's actual context limit to control
+cost. Leave room for output when choosing it. CPE compacts at approximately 90%
+of this budget (244,800 for 272,000). Estimates include system instructions,
+tools, and dialog; they use UTF-8 bytes/3 plus framing, calibrated upward from
+the last reported input count. They are not exact provider tokenizer counts or
+a guarantee against a pricing cutoff. Requests still estimated over budget are
+stopped before generation, including compaction requests. An oversized prompt or
+switch to a much smaller model may require choosing a larger budget to compact.
 
-### 4. Start an ACP thread
+`cost` is optional. When supplied, all four rates are required; zero explicitly
+means free. `long_context` is optional and replaces all rates for a request whose
+**total input**, including cached tokens, exceeds `above_input_tokens`. Rates are
+saved with each request, so later config changes do not reprice history. These
+are local estimates, including API-equivalent estimates for subscription logins;
+they do not query your account bill or model catalog.
 
-Open your ACP client's agent panel and start a CPE thread. In Zed, open the Agent Panel, create a new external-agent thread, and choose `CPE`. CPE exposes configured model profiles as ACP session configuration options, so model selection happens in the client UI.
+The TUI shows uncached input, output, cache reads, cache writes, and their sum.
+Cached tokens are counted once per request; repeated use on later requests still
+counts as consumption. Provider-reported output includes reasoning where exposed
+by the adapter. The pinned Gemini streaming adapter reports candidate output
+without a separate thought-token count. The context estimate describes the active
+working context, while token totals sum consumption across every call, including
+compaction and inactive branches. Totals survive resume and model changes.
+`/usage` shows exact numbers; the footer abbreviates large counts. `+` means some
+token usage is unavailable, and `+?` marks incomplete cost estimates. Old sessions
+have no historical usage to recover; accounting starts with new requests.
 
-## Configuration
-
-### Config Discovery
-
-CPE searches for configuration in this order:
-
-1. `--config` explicit path
-2. `./cpe.yaml` or `./cpe.yml`
-3. User config directory, usually `~/.config/cpe/cpe.yaml` on Linux and `~/Library/Application Support/cpe/cpe.yaml` on macOS
-
-### Model Profiles
-
-Each `models` entry is a self-contained runtime profile. Use YAML anchors if you want to share repeated fields between profiles.
-
-Supported model `type` values include:
-
-| Provider | Type |
-| --- | --- |
-| Anthropic | `anthropic` |
-| Anthropic on Google Vertex AI | `anthropic_vertex` |
-| OpenAI Chat Completions | `openai` |
-| OpenAI Responses API | `responses` |
-| Google Gemini | `gemini` |
-| Groq | `groq` |
-| Cerebras | `cerebras` |
-| OpenRouter | `openrouter` or `openai` with `base_url` |
-| Z.AI | `zai` |
-
-### Full Example
-
-```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/spachava753/cpe/refs/heads/main/schema/cpe-config-schema.json
-version: "1.0"
-
-models:
-  - ref: sonnet
-    display_name: "Claude Sonnet"
-    id: claude-sonnet-4-5-20250929
-    type: anthropic
-    api_key_env: ANTHROPIC_API_KEY
-    context_window: 200000
-    max_output: 64000
-    input_cost_per_million: 3
-    output_cost_per_million: 15
-    systemPromptPath: ./agent_instructions.md
-    timeout: 5m
-    thinkingValues:
-      - name: "Fast"
-        value: "1024"
-        description: "Lower reasoning budget"
-      - name: "Deep"
-        value: "8192"
-        description: "Higher reasoning budget"
-    generationParams:
-      temperature: 0.2
-      maxGenerationTokens: 12000
-    codeMode:
-      enabled: true
-      maxTimeout: 3600
-      largeOutputCharLimit: 20000
-    mcpServers:
-      search:
-        type: http
-        url: https://search.example.com/mcp
-        headers:
-          Authorization: "Bearer ${SEARCH_API_KEY}"
-    compaction:
-      autoTriggerThreshold: 0.8
-      maxAutoCompactionRestarts: 2
-      toolDescription: "Compact the current session into a concise continuation summary."
-      inputSchema:
-        type: object
-        properties:
-          summary:
-            type: string
-        required: [summary]
-      initialMessageTemplate: |
-        Continue from this compacted CPE session.
-        Compaction arguments: {{ .ToolArgumentsJSON }}
-
-  - ref: gpt
-    display_name: "GPT"
-    id: gpt-5.1
-    type: responses
-    auth_method: oauth
-    context_window: 400000
-    max_output: 128000
+```sh
+cpe --model default
+cpe --sessions
+cpe --continue
+cpe --resume 20260923T020000_SESSIONID
+cpe --resume /absolute/path/session.jsonl --branch CHECKPOINT_ID
+cpe --prompt 'Inspect the README and describe the project'
 ```
 
-Before rendering `initialMessageTemplate`, CPE validates each
-`compact_conversation` argument object against `inputSchema`. Compaction must be
-the only tool call in its assistant response; mixed responses reject every call
-without executing siblings. Mixed-call and schema-validation failures allow
-at most three recoverable retries for each compaction cycle. A successful
-compaction resets the retry budget. Template execution failures are terminal
-configuration or runtime errors. Failed attempts do not reset session-scoped
-tool state or consume a successful compaction restart. Successful attempts
-persist the completed tool result and replacement root before resetting
-compaction-scoped state or publishing completion, so session loading can replay
-both the call and its completion. Because the two branches cannot currently be
-saved atomically, failure to persist the replacement root after the successful
-result is an invariant panic rather than a returned false-success branch.
+`--continue` selects the most recently modified session in the current directory.
+`--resume` requires an existing file or filename without its `.jsonl` suffix.
+A session's working directory is fixed; start CPE in that directory to resume it.
 
-### Anthropic on Google Vertex AI
+## Starlark and Dyson
 
-Use `type: anthropic_vertex` for Claude models served through Vertex AI. These profiles use Google Application Default Credentials and IAM instead of Anthropic API keys, so do not set `api_key_env`, `auth_method`, or `base_url`. `patchRequest` remains available for custom headers or JSON request patches.
-
-```yaml
-models:
-  - ref: vertex-sonnet
-    display_name: "Claude Sonnet 4.6 on Vertex AI"
-    id: claude-sonnet-4-6
-    type: anthropic_vertex
-    context_window: 200000
-    max_output: 64000
-    vertex:
-      project_id: my-gcp-project
-      region: global
-```
-
-Before using the profile, enable the Vertex AI API, enable/request the Claude model in Vertex AI Model Garden, configure Google credentials such as `gcloud auth application-default login` or `GOOGLE_APPLICATION_CREDENTIALS`, and grant an IAM role such as `roles/aiplatform.user` that includes `aiplatform.endpoints.predict`. Model availability varies by `global`, multi-region locations such as `us` and `eu`, and regional locations.
-
-### Environment Variables
-
-| Variable | Description |
-| --- | --- |
-| `CPE_MODEL` | Default model profile for `cpe model system-prompt` and `cpe mcp ...` when `--model` is omitted |
-| `CPE_DB_PATH` | ACP session SQLite database path when `cpe acp serve --db-path` is not passed |
-
-API key variables are configured per model profile through `api_key_env`. OAuth-backed profiles use `auth_method: oauth` and provider account commands where supported. Anthropic Vertex AI profiles use Google Application Default Credentials instead of `api_key_env`.
-
-## Features
-
-### ACP Server Runtime
-
-`cpe acp serve` starts CPE's stdio ACP server. The ACP client owns the visible interaction loop; CPE owns model runtime assembly, tool execution, session persistence, and protocol updates.
-
-CPE supports ACP session creation, loading, resumption, closing, deletion, and forking where the client exposes those capabilities. Session history is stored locally in one centralized SQLite database in CPE's user config directory, alongside the standard `cpe.yaml` location:
-
-- macOS: `~/Library/Application Support/cpe/.cpeconvo`
-- Linux: `~/.config/cpe/.cpeconvo`
-- Windows: `%AppData%\cpe\.cpeconvo`
-
-Use `--db-path` or `CPE_DB_PATH` to override this location. Existing project-local `.cpeconvo` databases are not merged automatically; pass one through `--db-path` if you need to access its sessions.
-
-Manage persisted sessions directly from the CLI:
-
-```bash
-cpe acp list
-cpe acp list --page 2 --page-size 20
-cpe acp show <session-id>
-cpe acp fork <session-id>
-cpe acp delete <session-id>
-```
-
-`acp list` orders sessions by last activity, newest first. A newly created fork is considered modified at creation even when its shared head message is older. Page size is capped at 1000. `acp show` emits Markdown containing the complete history, including reasoning, tool calls and results, binary-content placeholders, and history from before every compaction. `acp fork` prints only the new session ID so it can be used in scripts.
-
-### Model Selection
-
-ACP sessions default to the first configured model profile. CPE exposes model profiles and configured thinking levels as ACP session configuration options, so compatible clients can switch models or reasoning levels from the UI.
-
-ACP sessions choose the model through the client's session configuration. The CLI only needs a model ref for commands that inspect profile-specific data:
-
-```bash
-cpe model system-prompt --model sonnet
-cpe mcp list-servers --model sonnet
-```
-
-Set `CPE_MODEL=sonnet` to omit `--model` for those commands.
-
-### MCP Tool Integration
-
-CPE is an MCP client inside each ACP session. Configure MCP servers on a model profile with `mcpServers`:
-
-| Type | Description |
-| --- | --- |
-| `stdio` | Local process over stdin/stdout |
-| `http` | HTTP endpoint |
-| `sse` | Server-Sent Events endpoint |
-
-CPE also accepts MCP servers forwarded by the ACP client and merges them with configured servers. Duplicate server names fail fast so tool behavior is not ambiguous.
-
-The bundled `text_edit` file editing tool is registered directly by CPE and does not require MCP configuration. Set `disable_edit_tool: true` on a model profile to omit it.
-
-Use the MCP inspection commands to inspect and test configured servers:
-
-```bash
-cpe mcp list-servers --model sonnet
-cpe mcp list-tools search --model sonnet
-cpe mcp list-tools search --show-all --model sonnet
-cpe mcp info search --model sonnet
-cpe mcp call-tool --server search --tool web_search --args '{"query":"golang"}' --model sonnet
-```
-
-### Code Mode
-
-Code Mode registers a `starlark_repl` tool backed by
-[`go.starlark.net/starlark`](https://pkg.go.dev/go.starlark.net/starlark) and
-[Dyson](https://github.com/spachava753/dyson). Each ACP session owns a Starlark
-REPL: globals persist across tool calls, and successful conversation compaction
-closes that session and starts a fresh thread. Dyson supplies Python-compatible
-filesystem, environment, process, HTTP, JSON, regular-expression, time, and related
-APIs, including the global `open` builtin and native bytes decoding.
-
-```yaml
-models:
-  - ref: sonnet
-    # ...model provider fields...
-    codeMode:
-      enabled: true
-      maxTimeout: 3600
-      largeOutputCharLimit: 20000
-```
-
-The model submits Starlark chunks rather than complete programs. Every call has
-an execution timeout; reaching it cancels the active `starlark.Thread`.
-`print(...)` produces bounded text output. The global
-`view_file(path, mime_type="")` builtin returns local images, PDFs, audio, and
-video as multimodal tool-result blocks. Relative artifact paths resolve from the
-ACP session working directory.
-
-Code Mode also provides a read-only `acp.star` module. Models can call
-`acp.get_session()` to inspect the current session through the executing tool
-call, including complete history from before every conversation compaction, or
-pass a session ID to inspect another persisted session. `acp.list_sessions()`
-lists session IDs for the current working directory by default; passing an
-explicit `cwd` performs an exact match and permits cross-project inspection.
-The module returns typed `acp.Session`, `acp.Message`, and `acp.Block` values so
-large histories can be searched in Starlark without printing the entire
-conversation.
+Globals, functions, collections, binary data, and native Dyson response objects
+persist across chunks. The supported modules are `os.star`, `glob.star`,
+`json.star`, `re.star`, `requests.star`, `subprocess.star`, and `time.star`.
 
 ```python
-load("acp.star", "acp")
+load("os.star", "os")
+load("requests.star", "requests")
+load("subprocess.star", "subprocess")
 
-session = acp.get_session()
-for message in session.messages:
-    for block in message.blocks:
-        if block.content != None and "search term" in block.content:
-            print(message.id, block.content[:2000])
+f = open("README.md")
+readme = f.read()
+f.close()
+
+fd = os.open("notes.txt", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+os.write(fd, "Hello from Starlark\n")
+os.close(fd)
+
+response = requests.get("https://example.com")
+print(response.status_code, response.text[:200])
+
+result = subprocess.run(["git", "status", "--short"], capture_output=True, text=True)
+print(result.stdout)
 ```
 
-### System Prompts and Skills
+Dyson's `open` supports reading; writes use the `os` descriptor functions.
+Prefer closing file handles within each chunk. Replay reconstructs handles without
+opening files. On **new** host I/O, surviving handles reattach by path at their
+saved position, without repeating creation or truncation. Reattachment observes
+the current filesystem; it does not resurrect deleted files or preserve inode
+identity across process restarts.
+Filesystem paths retain normal host permissions and semantics; the working
+directory is a base for relative paths, not a sandbox. Commands cannot inherit
+terminal input or overwrite the TUI through inherited output streams.
+Environment mutation, process signaling, and the `tempfile`, `pwd`, `grp`, and
+`shutil` modules are not exposed in this first version.
 
-Set `systemPromptPath` on a model profile to render a prompt template for that profile. CPE discovers skills from `./.agents/skills` and `~/.agents/skills` and exposes model-visible skills as `.Skills` template data when rendering system prompts. Skill frontmatter is available through `.Metadata`; skills with `disable-model-invocation: true` are omitted from `.Skills` but remain user-invocable through `/skill:<name>` slash commands.
+## Durability
 
-```markdown
-{{- range $skill := .Skills }}
-- {{ $skill.Name }}: {{ $skill.Description }} ({{ $skill.Path }})
-{{- end }}
+Sessions are private, exclusively locked files under `~/.cpe/sessions/`. Each JSONL
+entry contains `id`, `parentId`, `type`, `timestamp`, and typed `data`. Entries form
+an append-only tree inspired by Pi's session layout. The last entry is the active
+head. Branching appends a head marker pointing to a checkpoint, leaving all other
+branches in the file.
+
+A successful REPL evaluation records:
+
+1. The source and tool-call ID (`eval_start`).
+2. A synced intent before each host call (`host_call`).
+3. Its synced return value and error, before Starlark receives them (`host_result`).
+4. The printed output and committed outcome (`eval_end`).
+
+The journal intercepts Dyson's filesystem operations (including individual file
+reads/writes), HTTP, commands, and clocks, plus injected tool calls. Values use
+explicit JSON representations: binary data is base64, file metadata is typed,
+and error identities such as EOF and not-found survive replay. Dyson reconstructs
+its native Starlark objects from these saved host results; pure interpreter work
+is reevaluated.
+
+Restoration runs committed source against the recorded results. **It never calls
+the live host closures.** Missing, extra, or reordered calls, changed arguments,
+or changed output stop restoration. The interpreter/Dyson contract is versioned;
+incompatible sessions are rejected. A malformed complete JSONL record is an error;
+an unterminated final record is discarded as an interrupted append.
+
+A failed or canceled chunk rolls back interpreter state by replaying the preceding
+committed chunks. External effects already performed remain. After a crash, an
+unfinished chunk is marked interrupted and its tool result is reconciled as a
+failure. A crash between a host effect and its recorded result leaves an uncertain
+outcome; CPE reports it and **never automatically retries that call**. Check the
+external state before asking the agent to repeat interrupted work.
+
+Compaction appends a summary used for subsequent model context. It retains all
+REPL source and host results needed for restoration. A positive per-model
+`context_window` enables token-budget compaction. Otherwise, a positive
+`compaction.max_characters` retains the legacy serialized-dialog size trigger.
+With both zero, automatic compaction is disabled. Compaction runs at most once
+per user turn. Manual `/compact` is always available.
+
+## Internal SDK
+
+`internal/agent.Open` accepts configuration, a `gai.Generator`, a session store,
+and `[]repl.Tool`. Each tool has a name, description, JSON Schema, and a
+context-aware Go callback returning JSON-serializable data. The callback becomes
+a function loaded with `load("tools.star", "name")`; parameters can be passed as
+keyword arguments or one dictionary. Both inputs and results are journaled.
+Only `starlark_repl` appears in the model's tool schema.
+
+The SDK uses gai's `PrepareDialog`, `BeforeGeneration`, `AfterGeneration`,
+`AfterTool`, and `GenerationChunk` hooks for compaction, bounds, persistence, and
+streaming. Package `doc.go` files are the canonical behavior contracts.
+
+gai is pinned to main commit `649ab82e7b0c`. Dyson is pinned to `b790356d9233` and
+Starlarkx to its compatible dependency `40a94bc8c78e`; the newer Starlarkx HEAD
+changes interfaces that Dyson does not yet implement.
+
+## Verification
+
+```sh
+go fmt ./...
+go vet ./...
+go test ./...
+go test -race ./internal/...
+go run ./build lint
+CPE_RUN_INTEGRATION_TESTS=1 go test ./internal/repl
 ```
 
-When a user prompt references a known skill command such as `/skill:domain-modeling`, CPE expands that text to the skill path before generation and persistence. Unknown `/skill:<name>` references are left unchanged. ACP clients receive refreshed available skill command metadata before prompt turns and session config option updates.
+The tests cover restart without host access, binary and large-integer values,
+file/HTTP/command effects occurring once, interrupted calls, replay divergence,
+failed-chunk rollback, tree branching, compaction, provider metadata, locking,
+and torn JSONL writes. Bubble Tea tests run the real event loop with keyboard
+input and verify cancellation, resizing, multiline input, and persisted turns.
 
-Inspect the rendered prompt with:
+For a deterministic TUI in a real terminal without credentials:
 
-```bash
-cpe model --model sonnet system-prompt
+```sh
+go test -c -o /tmp/cpe-tui.test ./internal/tui
+mkdir -p /tmp/cpe-tui-session
+CPE_RUN_INTEGRATION_TESTS=1 CPE_TUI_TEST_DIR=/tmp/cpe-tui-session \
+  /tmp/cpe-tui.test -test.run=TestTerminalHarness
 ```
 
-### Account Authentication
+Use `/login device` for a simulated login (completes after eight seconds), or
+`/model api-fixture` to use the fixture without login. Test `/model` and `/reasoning`
+pickers, or `/model alternate` and `/reasoning high` for direct changes.
+Send `compute`, restart the process, then send `restore` to verify the saved
+variable. Send `wait` and press Esc to test cancellation. This harness also works
+inside tmux, where `capture-pane` provides the actual rendered terminal grid.
 
-CPE can store OAuth credentials for supported provider subscription flows.
+An optional real-provider smoke test uses the default profile in `~/.cpe`:
 
-```bash
-cpe account login anthropic
-cpe account login openai
-cpe account usage openai
-cpe account usage openai --watch
-cpe account usage openai --raw
-cpe account logout openai
+```sh
+CPE_RUN_LIVE_TESTS=1 go test ./internal/agent -run TestLiveConfiguredAgent -v
 ```
-
-For OpenAI Responses API profiles that use a ChatGPT subscription, configure `type: responses` and `auth_method: oauth`.
-
-### Request Patching
-
-Use `patchRequest` for advanced provider-specific headers or JSON Patch operations.
-
-```yaml
-models:
-  - ref: qwen
-    id: qwen/qwen3-max
-    type: openai
-    base_url: https://openrouter.ai/api/v1/
-    api_key_env: OPENROUTER_API_KEY
-    context_window: 262144
-    max_output: 32768
-    patchRequest:
-      includeHeaders:
-        HTTP-Referer: https://my-app.example.com
-        X-Title: My AI App
-```
-
-## Command Reference
-
-```text
-cpe [command]
-
-Root flags:
-  --config string    Path to YAML configuration file
-  --db-path string   ACP session SQLite database path (env: CPE_DB_PATH)
-  -v, --version      Print the version number and exit
-
-Commands:
-  acp              Serve ACP and manage persisted sessions
-    serve           Start the stdio ACP server
-    list, ls        List sessions by last activity, newest first
-                    --page uint       Page number, starting at 1 (default 1)
-                    --page-size uint  Sessions per page (default 20, maximum 1000)
-    show <id>       Render complete session history as Markdown
-    delete <id>     Delete a session
-    fork <id>       Fork a session and print the new session ID
-
-  model, models     Inspect configured model profiles
-    list, ls        List configured model refs
-    info <ref>      Show model profile details
-    system-prompt   Render the selected model profile's system prompt
-                    -m, --model string  Model profile ref for profile-specific inspection
-
-  mcp               Inspect MCP servers for a selected model profile
-    list-servers, ls-servers
-    list-tools, ls-tools <server>
-    info <server>
-    call-tool --server <server> --tool <tool> --args '{}'
-    code-desc       Print the starlark_repl tool description
-                    -m, --model string  Model profile ref whose MCP servers should be inspected
-
-  account           Manage provider account credentials and usage
-    login <provider>
-    logout <provider>
-    usage <provider> [--watch | --raw]
-
-  completion        Generate shell completion scripts
-```
-
-## Troubleshooting
-
-### `configuration file not found`
-
-Create `cpe.yaml` in the current directory or user config directory, or pass `--config /path/to/cpe.yaml` from the ACP client command args.
-
-### ACP client cannot start CPE
-
-Use an absolute path for the `command` field if the editor process does not inherit your shell PATH. In Zed, inspect ACP traffic with `dev: open acp logs` from the Command Palette.
-
-### API key missing
-
-Ensure the environment variable named by `api_key_env` is visible to the ACP server process. For editor-launched processes, put required variables in the client's agent server `env` block or in the environment that launches the editor.
-
-For `anthropic_vertex` profiles, CPE does not use `api_key_env`; configure Google Application Default Credentials or `GOOGLE_APPLICATION_CREDENTIALS` for the ACP server process instead.
-
-### Model profile not found
-
-Run `cpe model list` to inspect configured refs. ACP sessions can only select profiles present in the loaded config file.
-
-### MCP server fails to start
-
-Use the MCP inspection commands:
-
-```bash
-cpe mcp list-servers --model <model>
-cpe mcp list-tools <server-name> --model <model>
-cpe mcp info <server-name> --model <model>
-```
-
-For `stdio` servers, verify the command path, arguments, environment, and executable permissions. For `http` or `sse` servers, verify the URL and headers.
-
-### CPE logs
-
-CPE appends newline-delimited JSON logs to `.cpe.log` under the CPE user config directory. On macOS this is `~/Library/Application Support/cpe/.cpe.log`; on Linux it is normally `~/.config/cpe/.cpe.log`; on Windows it is `%AppData%\cpe\.cpe.log`.
-
-Every record includes `pid`. Logs produced while handling an active ACP session also include `session_id` and the session's immutable `cwd`; JSON-RPC access records include those fields whenever they are present in the protocol payload. Startup and process-wide records do not have session fields.
-
-Filter the combined log with `jq`, for example:
-
-```bash
-jq 'select(.pid == 12345)' ~/Library/Application\ Support/cpe/.cpe.log
-jq 'select(.session_id == "SESSION_ID")' ~/Library/Application\ Support/cpe/.cpe.log
-jq 'select(.cwd == "/path/to/project")' ~/Library/Application\ Support/cpe/.cpe.log
-```
-
-### Timeout errors
-
-Increase the selected model profile's `timeout` or the MCP server's per-server `timeout`. Code Mode has its own `codeMode.maxTimeout` cap and cancels Starlark execution when a call reaches it.
-
-## Contributing
-
-Contributions are welcome. See [AGENTS.md](./AGENTS.md) for development guidelines, code style, and test commands.
-
-## License
-
-This project is licensed under the [MIT License](LICENSE).

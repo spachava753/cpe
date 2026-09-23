@@ -1,0 +1,27 @@
+{
+  "default_model": "default",
+  "models": {
+    "default": {
+      "provider": "openai",
+      "id": "your-model-id",
+      "api_key_env": "OPENAI_API_KEY",
+      "max_output_tokens": 8192,
+      "context_window": 128000,
+      "cost": {
+        "input": 2,
+        "output": 10,
+        "cache_read": 0.2,
+        "cache_write": 2.5
+      }
+    }
+  },
+  "agent": {
+    "tool_timeout": "1m",
+    "output_limit": 32000,
+    "max_rounds": 50
+  },
+  "compaction": {
+    "max_characters": 0,
+    "prompt": "Summarize for continuation: preserve goals, decisions, file changes, unresolved work, and persistent Starlark variables."
+  }
+}

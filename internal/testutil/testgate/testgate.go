@@ -83,3 +83,9 @@ func truthyEnv(envVar string) bool {
 		return false
 	}
 }
+
+// RequireIntegration skips tests requiring local binaries or process orchestration
+// unless CPE_RUN_INTEGRATION_TESTS is enabled.
+func RequireIntegration(t testing.TB) {
+	require(t, integration)
+}

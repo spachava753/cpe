@@ -16,15 +16,12 @@ Environment gates:
 
 Typical usage:
 
-	func TestLiveOpenAIFlow(t *testing.T) {
-		testgate.RequireLive(t)
-		testgate.require(t, testgate.interactive)
-		testgate.RequireEnv(t, "OPENAI_API_KEY")
-		// ... run the live browser-backed flow ...
+	func TestLocalProcess(t *testing.T) {
+	    testgate.RequireIntegration(t)
+	    // ... exercise local process orchestration ...
 	}
 
-If a test only needs to branch on enablement instead of skipping immediately,
-use enabled.
+Use RequireLive for tests that consume credentials and call a real provider.
 
 Prefer fakes, `httptest`, and local fixtures for ordinary tests. Reach for this
 package only when the real integration itself is what needs verification.

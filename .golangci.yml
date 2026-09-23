@@ -46,19 +46,21 @@ linters:
       local-variables-are-used: false
       generated-is-used: false
 
+  exclusions:
+    rules:
+      # Test files: more lenient requirements
+      - path: _test\.go$
+        linters:
+          - forcetypeassert
+          - unused
+          - wastedassign
+          - bodyclose
+          - noctx
+
 issues:
   max-issues-per-linter: 50
   max-same-issues: 10
 
-  exclude-rules:
-    # Test files: more lenient requirements
-    - path: _test\.go$
-      linters:
-        - forcetypeassert
-        - unused
-        - wastedassign
-        - bodyclose
-        - noctx
 
 formatters:
   enable:

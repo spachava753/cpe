@@ -1,27 +1,22 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"io"
-	"log/slog"
 	"os"
+	"os/signal"
 
-	"github.com/spachava753/cpe/internal/cmd"
-	cpelogging "github.com/spachava753/cpe/internal/logging"
+	"github.com/spachava753/cpe/internal/cli"
 )
 
 func main() {
-	logOutput := io.Discard
-	logFile, err := openLogFile()
-	if err != nil {
-		// Best-effort: keep running but inform the user once and discard logs.
-		fmt.Fprintf(os.Stderr, "warning: failed to initialize CPE logging: %v. logging will be discarded.\n", err)
-	} else {
-		logOutput = logFile
-		defer func() { _ = logFile.Close() }()
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+	if err := cli.Run(ctx, os.Args[1:], os.Stdout, os.Stderr); err != nil {
+		if !errors.Is(err, context.Canceled) {
+			fmt.Fprintln(os.Stderr, "cpe:", err)
+		}
+		os.Exit(1)
 	}
-
-	handler := slog.NewJSONHandler(logOutput, &slog.HandlerOptions{Level: slog.LevelDebug})
-	slog.SetDefault(slog.New(cpelogging.NewProcessHandler(handler)))
-	cmd.Execute()
 }

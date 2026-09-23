@@ -1,0 +1,33 @@
+{
+  "default_model": "gpt",
+  "models": {
+    "gpt": {
+      "provider": "codex",
+      "id": "gpt-6-astra",
+      "reasoning_effort": "low",
+      "context_window": 272000,
+      "cost": {
+        "input": 10,
+        "output": 50,
+        "cache_read": 1,
+        "cache_write": 12.5,
+        "long_context": {
+          "above_input_tokens": 272000,
+          "input": 20,
+          "output": 75,
+          "cache_read": 2,
+          "cache_write": 25
+        }
+      }
+    }
+  },
+  "agent": {
+    "tool_timeout": "1m",
+    "output_limit": 32000,
+    "max_rounds": 50
+  },
+  "compaction": {
+    "max_characters": 0,
+    "prompt": "Summarize for continuation: preserve goals, approvals, decisions, file changes, verification, unresolved work, and persistent Starlark variables. REPL state survives compaction."
+  }
+}

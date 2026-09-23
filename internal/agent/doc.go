@@ -1,39 +1,36 @@
-/*
-Package agent assembles provider generators and shared model-runtime helpers used
-by CPE's ACP server.
-
-It is the runtime assembly layer between resolved configuration, model providers,
-MCP/built-in tools, and ACP session execution. The ACP protocol loop itself lives
-in internal/acp; this package owns provider initialization and reusable generator
-wrappers.
-
-Major responsibilities:
-  - construct provider-specific generators (OpenAI, Anthropic, Gemini, etc.)
-    with API key or OAuth authentication;
-  - provide generator wrappers such as provider-specific block filtering and
-    Responses API request normalization;
-  - expose shared model/type helpers used when ACP sessions register built-in,
-    MCP, code-mode, and compaction tools.
-
-Related packages:
-  - internal/acp owns ACP session lifecycle, prompt execution, persistence,
-    session updates, skill slash commands, and the starlark_repl code-mode tool;
-  - internal/config owns configuration loading, model profile inspection helpers,
-    and system prompt template rendering;
-  - internal/mcp owns MCP runtime integration and MCP inspection helpers;
-  - internal/skills handles skill discovery and prompt metadata;
-
-Behavioral notes:
-  - model HTTP transports and provider SDKs make one request attempt; generator
-    wrappers own retries at the provider and network boundaries;
-  - transient provider failures use jittered exponential delays capped at two
-    minutes for up to twelve hours, and provider reset times exposed by gai API
-    errors may schedule a later retry within that overall budget;
-  - propagated network and HTTP disconnect errors receive up to three retries,
-    each after a fixed five-second delay;
-  - provider block filtering preserves provider-specific thinking only when the
-    block's model-ref and provider-URL provenance match the selected profile;
-  - starlark_repl tool-description helpers live in internal/acp so ACP runtime
-    callbacks and command-side inspection output share one contract.
-*/
+// Package agent is CPE's internal SDK. Open accepts configuration, a generator,
+// an owned session store, and optional JSON tools. The model sees exactly one
+// tool, starlark_repl; injected tools are functions loaded from tools.star.
+//
+// The gai/agent loop supplies generation, streaming, and tool hooks. Complete
+// assistant responses are persisted before tools run; results are persisted
+// before the next generation. Partial streamed output is provisional. Missing
+// historical tool results are reconciled from durable evaluation outcomes, or
+// recorded as interrupted failures, never executed again.
+//
+// Compaction replaces only model context. It appends a summary node and leaves
+// all REPL inputs and host outcomes reachable for restoration. Branching selects
+// a completed-turn checkpoint and rebuilds its interpreter without host effects.
+// One Agent has one caller at a time; the caller owns Store.Close separately.
+// SetModel and SetReasoningEffort change subsequent turns and compaction without
+// replaying or replacing the interpreter. They must be called between operations.
+// These settings are local to the Agent instance and are not stored in its tree.
+//
+// Context compaction estimates the entire request, including instructions and
+// tools, using UTF-8 bytes/3 plus framing overhead, calibrated upward by the last
+// reported input count on the active branch for the same provider/model. A
+// positive model context_window triggers compaction at 90%; requests still
+// estimated over the budget fail before generation, including summary requests.
+// This is a heuristic, not a hard provider token or monetary limit. Compaction
+// runs at most once per user turn. Oversized new input or a switch to a much
+// smaller budget may require reducing input or selecting a larger profile first.
+//
+// Every model request, including summary generation, durably records its start
+// and reported usage. Input, output, cache reads, and cache writes are disjoint
+// buckets: gai's inclusive input count is reduced by its cached counts. Cost is
+// estimated using a saved pricing snapshot for that request. Totals cover the
+// entire file, including inactive branches; compaction, branch, model changes,
+// price changes, and reopening cannot erase historical consumption. Failures
+// retain any reported usage; missing reports and old history are flagged as
+// incomplete, never guessed. Token estimates are never added to billed totals.
 package agent

@@ -1,12 +1,12 @@
 ## Project Overview
 
-CPE (Chat-based Programming Editor) is a local Agent Client Protocol (ACP) server for AI coding clients such as Zed. It connects editor-hosted agent workflows to multiple AI model providers, MCP tools, session-scoped Starlark code execution, and local ACP session persistence. Link: https://github.com/spachava753/cpe. To learn more, read the README.md
+CPE is an interactive terminal programming agent built with Bubble Tea, gai, Starlarkx, and Dyson. The model uses one persistent Starlark REPL tool; JSONL session trees durably record conversations and host boundary results for replay without external effects. Link: https://github.com/spachava753/cpe. To learn more, read README.md
 
 ## Documentation
 
 - Package-level `doc.go` files under the relevant `internal/` subpackages, and `build/` are the canonical feature and behavior specs.
 - Exported symbols used across packages should have Go doc comments that describe behavior and contracts.
-- `examples/` is a folder that holds example yaml configuration for configuring CPE, as well example system prompt templates
+- `examples/` is a folder that holds example JSON configuration for configuring CPE, as well example system prompt templates
 - `internal/testutil/testgate/doc.go` defines the canonical pattern for opt-in integration, live, and interactive tests. Prefer it over ad hoc env-var checks or unconditional live tests.
 
 ## Teck stack
@@ -27,19 +27,17 @@ go run ./build lint
 go run ./build -lint-fix lint
 ```
 
-Schema and configuration:
+CLI and configuration:
 
 ```bash
-# Generate JSON Schema for config
-go generate ./internal/config/
-
-# Validate example configuration loads
-go run . model list --config ./examples/cpe.yaml
+go run . --help
+# Explicitly create starter config files in ~/.cpe without overwriting existing files
+go run . --init
 ```
 
 ## Performance considerations
 
-CPE is an ACP server and inspection CLI where execution time is dominated by network calls to AI model APIs and MCP servers. Performance optimizations are typically not a concern unless specifically requested by the user. Focus on correctness, maintainability, idiomatic Golang, protocol behavior, and user experience over micro-optimizations.
+CPE is an interactive terminal agent where execution time is dominated by network calls to AI model APIs and MCP servers. Performance optimizations are typically not a concern unless specifically requested by the user. Focus on correctness, maintainability, idiomatic Golang, protocol behavior, and user experience over micro-optimizations.
 
 ## Testing style
 

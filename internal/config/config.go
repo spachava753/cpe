@@ -1,224 +1,316 @@
 package config
 
 import (
-	"text/template"
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"math"
+	"net/url"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
 	"time"
-
-	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/spachava753/gai"
-
-	"github.com/spachava753/cpe/internal/mcpconfig"
 )
 
-// Model represents an AI model provider and capability configuration.
+// Config contains application defaults and named provider profiles.
+type Config struct {
+	DefaultModel string           `json:"default_model"`
+	Models       map[string]Model `json:"models"`
+	Agent        Agent            `json:"agent"`
+	Compaction   Compaction       `json:"compaction"`
+	System       string           `json:"-"`
+	Dir          string           `json:"-"`
+}
+
+// Model selects a provider, credentials, and generation settings. Codex uses
+// credentials in ~/.cpe/auth.json, not APIKeyEnv or BaseURL. ReasoningEffort
+// applies to Responses and Codex; Codex rejects output limits and temperature.
 type Model struct {
-	Ref                      string                `json:"ref" yaml:"ref" validate:"required" jsonschema:"required"`
-	DisplayName              string                `json:"display_name" yaml:"display_name" validate:"required" jsonschema:"required"`
-	ID                       string                `json:"id" yaml:"id" validate:"required" jsonschema:"required"`
-	Type                     string                `json:"type" yaml:"type" validate:"required,oneof=openai anthropic anthropic_vertex gemini responses groq cerebras openrouter zai" jsonschema:"required"`
-	BaseUrl                  string                `json:"base_url" yaml:"base_url,omitempty" validate:"omitempty,https_url|http_url"`
-	ApiKeyEnv                string                `json:"api_key_env" yaml:"api_key_env,omitempty"`
-	AuthMethod               string                `json:"auth_method" yaml:"auth_method,omitempty" validate:"omitempty,oneof=apikey oauth"`
-	Vertex                   *VertexConfig         `json:"vertex,omitempty" yaml:"vertex,omitempty" validate:"omitempty"`
-	ContextWindow            uint32                `json:"context_window" yaml:"context_window,omitempty" validate:"required,gt=0" jsonschema:"required"`
-	MaxOutput                uint32                `json:"max_output" yaml:"max_output,omitempty" validate:"required,gt=0" jsonschema:"required"`
-	InputCostPerMillion      *float64              `json:"input_cost_per_million,omitempty" yaml:"input_cost_per_million,omitempty"`
-	OutputCostPerMillion     *float64              `json:"output_cost_per_million,omitempty" yaml:"output_cost_per_million,omitempty"`
-	CacheReadCostPerMillion  *float64              `json:"cache_read_cost_per_million,omitempty" yaml:"cache_read_cost_per_million,omitempty"`
-	CacheWriteCostPerMillion *float64              `json:"cache_write_cost_per_million,omitempty" yaml:"cache_write_cost_per_million,omitempty"`
-	PatchRequest             *PatchRequestConfig   `json:"patchRequest,omitempty" yaml:"patchRequest,omitempty"`
-	ThinkingValues           []ThinkingValueConfig `json:"thinkingValues,omitempty" yaml:"thinkingValues,omitempty" validate:"dive"`
+	Provider        string   `json:"provider"`
+	ID              string   `json:"id"`
+	APIKeyEnv       string   `json:"api_key_env"`
+	BaseURL         string   `json:"base_url"`
+	ReasoningEffort string   `json:"reasoning_effort"`
+	MaxOutputTokens int      `json:"max_output_tokens"`
+	Temperature     *float64 `json:"temperature"`
+	ContextWindow   int      `json:"context_window"`
+	Cost            *Pricing `json:"cost"`
 }
 
-// VertexConfig configures Anthropic models served through Google Vertex AI.
-type VertexConfig struct {
-	// ProjectID is the Google Cloud project used for Vertex AI prediction requests.
-	ProjectID string `json:"project_id" yaml:"project_id" validate:"required" jsonschema:"required"`
-
-	// Region is a Vertex AI location such as "global", "us", "eu", or "us-east5".
-	Region string `json:"region" yaml:"region" validate:"required" jsonschema:"required"`
-
-	// Scopes optionally overrides the Google credential scopes used for ADC lookup.
-	// When omitted, CPE requests https://www.googleapis.com/auth/cloud-platform.
-	Scopes []string `json:"scopes,omitempty" yaml:"scopes,omitempty"`
+// Rates are USD per million tokens in four mutually exclusive billing buckets.
+// All four values must be supplied; zero explicitly means no charge.
+type Rates struct {
+	Input      *float64 `json:"input"`
+	Output     *float64 `json:"output"`
+	CacheWrite *float64 `json:"cache_write"`
+	CacheRead  *float64 `json:"cache_read"`
 }
 
-// ThinkingValueConfig describes one model-supported thinking budget value.
-type ThinkingValueConfig struct {
-	// Value is passed through to gai.GenOpts.ThinkingBudget when selected.
-	Value string `json:"value" yaml:"value" validate:"required" jsonschema:"required"`
-
-	// Name is the optional display label shown in ACP clients. Value is used when empty.
-	Name string `json:"name,omitempty" yaml:"name,omitempty"`
-
-	// Description is optional help text shown in ACP clients.
-	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+// Pricing configures estimates, not provider billing. LongContext optionally
+// replaces all rates when a request's total input exceeds its threshold.
+type Pricing struct {
+	Rates
+	LongContext *PriceTier `json:"long_context,omitempty"`
 }
 
-// PatchRequestConfig holds configuration for patching HTTP requests.
-type PatchRequestConfig struct {
-	JSONPatch      []map[string]any  `json:"jsonPatch,omitempty" yaml:"jsonPatch,omitempty"`
-	IncludeHeaders map[string]string `json:"includeHeaders,omitempty" yaml:"includeHeaders,omitempty"`
+// PriceTier applies to the entire request, including cached input and output.
+type PriceTier struct {
+	AboveInputTokens int64 `json:"above_input_tokens"`
+	Rates
 }
 
-// CodeModeConfig controls session-scoped Starlark execution behavior.
-type CodeModeConfig struct {
-	Enabled              bool `yaml:"enabled" json:"enabled"`
-	MaxTimeout           int  `yaml:"maxTimeout,omitempty" json:"maxTimeout,omitempty" validate:"omitempty,gte=0"`
-	LargeOutputCharLimit int  `yaml:"largeOutputCharLimit,omitempty" json:"largeOutputCharLimit,omitempty" validate:"omitempty,gte=0"`
-}
-
-// RawCompactionConfig controls manual and threshold-driven conversation compaction.
-type RawCompactionConfig struct {
-	AutoTriggerThreshold      float64           `yaml:"autoTriggerThreshold,omitempty" json:"autoTriggerThreshold,omitempty" validate:"required,gt=0,max=1" jsonschema:"required"`
-	MaxAutoCompactionRestarts int               `yaml:"maxAutoCompactionRestarts,omitempty" json:"maxAutoCompactionRestarts,omitempty" validate:"required,min=1" jsonschema:"required"`
-	ToolDescription           string            `yaml:"toolDescription,omitempty" json:"toolDescription,omitempty" validate:"required" jsonschema:"required"`
-	InputSchema               jsonschema.Schema `yaml:"inputSchema,omitempty" json:"inputSchema" jsonschema:"required,oneof_type=object;boolean" validate:"required"`
-	InitialMessageTemplate    string            `yaml:"initialMessageTemplate,omitempty" json:"initialMessageTemplate,omitempty" validate:"required" jsonschema:"required"`
-}
-
-// RawConfig represents the YAML configuration file structure.
-// NOTE: If you change schema-facing fields/tags in config structs, regenerate
-// schema/cpe-config-schema.json with: go run ./build gen-schema
-// (or go generate ./...).
-type RawConfig struct {
-	// configFilePath is the absolute source path retained by file loading. It is
-	// runtime metadata, not part of the YAML or JSON configuration. Keeping it
-	// here lets later model selection resolve paths without depending on CWD.
-	configFilePath string
-
-	// Model profiles. Each entry is self-contained; CPE resolves one selected
-	// profile as written.
-	Models []ModelConfig `yaml:"models" json:"models" validate:"gt=0,unique=Ref,dive" jsonschema:"required"`
-
-	// Version for future compatibility.
-	Version string `yaml:"version,omitempty" json:"version,omitempty"`
-}
-
-// generationParams wraps gai.GenOpts with camelCase YAML tags for config unmarshaling.
-// This adapter exists because gai.GenOpts uses snake_case tags matching API conventions.
-type generationParams struct {
-	Temperature         *float64 `yaml:"temperature,omitempty" json:"temperature,omitempty" validate:"omitempty,lte=2,gte=0"`
-	TopP                *float64 `yaml:"topP,omitempty" json:"topP,omitempty" validate:"omitempty,lte=1,gte=0"`
-	TopK                *uint    `yaml:"topK,omitempty" json:"topK,omitempty" validate:"omitempty,gte=0"`
-	FrequencyPenalty    *float64 `yaml:"frequencyPenalty,omitempty" json:"frequencyPenalty,omitempty" validate:"omitempty,lte=2,gte=-2"`
-	PresencePenalty     *float64 `yaml:"presencePenalty,omitempty" json:"presencePenalty,omitempty" validate:"omitempty,lte=2,gte=-2"`
-	N                   *uint    `yaml:"n,omitempty" json:"n,omitempty" validate:"omitempty,lte=2,gte=0"`
-	MaxGenerationTokens *int     `yaml:"maxGenerationTokens,omitempty" json:"maxGenerationTokens,omitempty" validate:"omitempty,gte=0"`
-	ToolChoice          string   `yaml:"toolChoice,omitempty" json:"toolChoice,omitempty"`
-	StopSequences       []string `yaml:"stopSequences,omitempty" json:"stopSequences,omitempty"`
-	ThinkingBudget      string   `yaml:"thinkingBudget,omitempty" json:"thinkingBudget,omitempty"`
-}
-
-// ToGenOpts converts generationParams to gai.GenOpts.
-func (g *generationParams) ToGenOpts() *gai.GenOpts {
-	if g == nil {
+// ValidateBudget checks local context and pricing settings independently of
+// provider credentials. ContextWindow is a preferred input-token budget; zero
+// disables token-based compaction. It does not alter the provider's actual limit.
+func (m Model) ValidateBudget() error {
+	if m.ContextWindow < 0 {
+		return errors.New("context_window must be nonnegative")
+	}
+	if m.Cost == nil {
 		return nil
 	}
-	return &gai.GenOpts{
-		Temperature:         g.Temperature,
-		TopP:                g.TopP,
-		TopK:                g.TopK,
-		FrequencyPenalty:    g.FrequencyPenalty,
-		PresencePenalty:     g.PresencePenalty,
-		N:                   g.N,
-		MaxGenerationTokens: g.MaxGenerationTokens,
-		ToolChoice:          g.ToolChoice,
-		StopSequences:       g.StopSequences,
-		ThinkingBudget:      g.ThinkingBudget,
+	if err := m.Cost.validate(); err != nil {
+		return err
 	}
+	if tier := m.Cost.LongContext; tier != nil {
+		if tier.AboveInputTokens <= 0 {
+			return errors.New("cost.long_context.above_input_tokens must be positive")
+		}
+		return tier.validate()
+	}
+	return nil
 }
 
-// ModelConfig is a self-contained runtime profile selected by ACP session state, --model, or CPE_MODEL.
-type ModelConfig struct {
-	Model `yaml:",inline" json:",inline"`
-
-	// MCP server configurations available when this model profile is selected.
-	MCPServers map[string]mcpconfig.ServerConfig `yaml:"mcpServers,omitempty" json:"mcpServers,omitempty" validate:"dive"`
-
-	// Optional system prompt template path. Relative paths resolve from the config file directory.
-	SystemPromptPath string `yaml:"systemPromptPath,omitempty" json:"systemPromptPath,omitempty" validate:"omitempty,filepath"`
-
-	// Generation parameters for this model profile.
-	GenerationParams *generationParams `yaml:"generationParams,omitempty" json:"generationParams,omitempty" validate:"omitempty"`
-
-	// Request timeout for this model profile.
-	Timeout string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
-
-	// Code mode configuration for this model profile.
-	CodeMode *CodeModeConfig `yaml:"codeMode,omitempty" json:"codeMode,omitempty"`
-
-	// DisableEditTool prevents CPE from registering the bundled text_edit tool.
-	DisableEditTool bool `yaml:"disable_edit_tool,omitempty" json:"disable_edit_tool,omitempty"`
-
-	// Conversation compaction configuration for this model profile.
-	Compaction *RawCompactionConfig `yaml:"compaction,omitempty" json:"compaction,omitempty" validate:"omitempty"`
-}
-
-// FindModel searches for a model profile by ref in the config.
-func (c *RawConfig) FindModel(ref string) (ModelConfig, bool) {
-	for _, model := range c.Models {
-		if model.Ref == ref {
-			return model, true
+func (r Rates) validate() error {
+	for _, rate := range []*float64{r.Input, r.Output, r.CacheWrite, r.CacheRead} {
+		if rate == nil || *rate < 0 || math.IsNaN(*rate) || math.IsInf(*rate, 0) {
+			return errors.New("cost requires finite, nonnegative input, output, cache_write, and cache_read rates")
 		}
 	}
-	return ModelConfig{}, false
+	return nil
 }
 
-const CompactionToolName = "compact_conversation"
-
-// CompactionTemplateData is the data available to the compaction initial-message template.
-type CompactionTemplateData struct {
-	Dialog             gai.Dialog
-	ToolArguments      map[string]any
-	ToolArgumentsJSON  string
-	CompactionToolName string
+// ReasoningEfforts returns the recognized effort labels in increasing order.
+// Individual models may support only a subset of these labels.
+func ReasoningEfforts() []string {
+	return []string{"none", "minimal", "low", "medium", "high", "xhigh", "max"}
 }
 
-// CompactionConfig controls effective runtime conversation compaction behavior.
-type CompactionConfig struct {
-	TokenThreshold         uint
-	MaxCompactions         uint
-	Tool                   gai.Tool
-	InputSchema            *jsonschema.Resolved
-	InitialMessageTemplate *template.Template
+// WithReasoningEffort returns a copy with validated reasoning settings. An empty
+// effort omits the provider option; it is distinct from the explicit "none".
+func (m Model) WithReasoningEffort(effort string) (Model, error) {
+	if effort != "" {
+		if m.Provider != "responses" && m.Provider != "codex" {
+			return m, errors.New("reasoning_effort requires responses or codex")
+		}
+		if !slices.Contains(ReasoningEfforts(), effort) {
+			return m, fmt.Errorf("invalid reasoning_effort %q", effort)
+		}
+	}
+	m.ReasoningEffort = effort
+	return m, nil
 }
 
-// Config represents the effective runtime configuration for one selected model profile.
-type Config struct {
-	// MCP server configurations for the selected model profile.
-	MCPServers map[string]mcpconfig.ServerConfig
-
-	// Selected model provider and capability settings.
-	Model Model
-
-	// Resolved system prompt path for the selected model profile.
-	SystemPromptPath string
-
-	// Effective generation parameters for the selected model profile and runtime overrides.
-	GenerationParams *gai.GenOpts
-
-	// Effective timeout.
-	Timeout time.Duration
-
-	// Effective Starlark code mode configuration.
-	CodeMode *CodeModeConfig
-
-	// DisableEditTool controls whether the bundled text_edit tool is registered.
-	DisableEditTool bool
-
-	// Effective conversation compaction configuration.
-	Compaction *CompactionConfig
+// Agent bounds individual REPL executions and the number of model rounds.
+type Agent struct {
+	ToolTimeout string `json:"tool_timeout"`
+	OutputLimit int    `json:"output_limit"`
+	MaxRounds   int    `json:"max_rounds"`
 }
 
-// RuntimeOptions captures runtime overrides from ACP session state, inspection flags, or environment.
-type RuntimeOptions struct {
-	// Model ref to use. Required.
-	ModelRef string
+// Compaction configures manual /compact and optional automatic context reduction.
+// MaxCharacters is a serialized-dialog character threshold; zero disables auto.
+type Compaction struct {
+	Prompt        string `json:"prompt"`
+	MaxCharacters int    `json:"max_characters"`
+}
 
-	// Generation parameter overrides from the runtime entrypoint.
-	GenParams *gai.GenOpts
+// Directory returns ~/.cpe using the operating system's user home directory.
+func Directory() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".cpe"), nil
+}
 
-	// Timeout override from the runtime entrypoint.
-	Timeout string
+// Load reads and validates both files in the fixed user configuration directory.
+func Load() (Config, error) {
+	dir, err := Directory()
+	if err != nil {
+		return Config{}, err
+	}
+	return load(dir)
+}
+func load(dir string) (Config, error) {
+	c := Config{Dir: dir, Agent: Agent{ToolTimeout: "1m", OutputLimit: 32000, MaxRounds: 50}, Compaction: Compaction{Prompt: "Summarize the conversation for continuation. Preserve the user's goals, decisions, files changed, unresolved work, and names/types of useful persistent Starlark variables. Do not claim external effects were undone."}}
+	data, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	if err != nil {
+		return c, fmt.Errorf("load config.json (run cpe --init for starter files): %w", err)
+	}
+	if err := decode(data, &c); err != nil {
+		return c, fmt.Errorf("load config.json: %w", err)
+	}
+	data, err = os.ReadFile(filepath.Join(dir, "system.md"))
+	if err != nil {
+		return c, err
+	}
+	c.System = string(data)
+	if strings.TrimSpace(c.System) == "" {
+		return c, errors.New("system.md must not be empty")
+	}
+	if _, ok := c.Models[c.DefaultModel]; !ok {
+		return c, errors.New("default_model must name a configured model")
+	}
+	for name, m := range c.Models {
+		if err := m.ValidateBudget(); err != nil {
+			return c, fmt.Errorf("model %q: %w", name, err)
+		}
+		if m.ID == "" || m.MaxOutputTokens < 0 {
+			return c, fmt.Errorf("model %q requires id and nonnegative max_output_tokens", name)
+		}
+		switch m.Provider {
+		case "openai", "responses", "anthropic", "gemini":
+			if m.APIKeyEnv == "" {
+				return c, fmt.Errorf("model %q requires api_key_env", name)
+			}
+		case "codex":
+			if m.APIKeyEnv != "" || m.BaseURL != "" || m.MaxOutputTokens != 0 || m.Temperature != nil {
+				return c, fmt.Errorf("codex model %q uses CPE OAuth and a fixed endpoint; omit api_key_env, base_url, max_output_tokens, and temperature", name)
+			}
+		default:
+			return c, fmt.Errorf("unsupported provider %q", m.Provider)
+		}
+		if _, err := m.WithReasoningEffort(m.ReasoningEffort); err != nil {
+			return c, fmt.Errorf("model %q: %w", name, err)
+		}
+		if m.BaseURL != "" {
+			u, err := url.Parse(m.BaseURL)
+			if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+				return c, fmt.Errorf("invalid base_url for %q", name)
+			}
+		}
+		if m.Temperature != nil && (*m.Temperature < 0 || *m.Temperature > 2) {
+			return c, fmt.Errorf("temperature for %q must be between 0 and 2", name)
+		}
+	}
+	timeout, err := time.ParseDuration(c.Agent.ToolTimeout)
+	if err != nil || timeout <= 0 {
+		return c, errors.New("agent.tool_timeout must be a positive duration")
+	}
+	if c.Agent.OutputLimit <= 0 || c.Agent.MaxRounds <= 0 {
+		return c, errors.New("agent output_limit and max_rounds must be positive")
+	}
+	if c.Compaction.MaxCharacters < 0 || strings.TrimSpace(c.Compaction.Prompt) == "" {
+		return c, errors.New("invalid compaction settings")
+	}
+	return c, nil
+}
+
+// Init creates private starter files, leaving any existing files intact.
+func Init() (string, error) {
+	dir, err := Directory()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+	for _, v := range []struct{ name, body string }{{"config.json", defaultJSON}, {"system.md", defaultSystem}} {
+		f, err := os.OpenFile(filepath.Join(dir, v.name), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if errors.Is(err, os.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		_, writeErr := f.WriteString(v.body)
+		err = errors.Join(writeErr, f.Close())
+		if err != nil {
+			return "", err
+		}
+	}
+	return dir, nil
+}
+
+const defaultJSON = `{
+  "default_model": "default",
+  "models": {
+    "default": {
+      "provider": "codex",
+      "id": "gpt-6-astra",
+      "reasoning_effort": "low",
+      "context_window": 272000
+    }
+  },
+  "agent": {
+    "tool_timeout": "1m",
+    "output_limit": 32000,
+    "max_rounds": 50
+  },
+  "compaction": {
+    "max_characters": 0,
+    "prompt": "Summarize for continuation: preserve goals, decisions, file changes, unresolved work, and persistent Starlark variables."
+  }
+}
+`
+const defaultSystem = `You are a thoughtful programming assistant working in the user's current directory.
+Inspect relevant files before changing them. Make focused changes and verify your work.
+Use the persistent Starlark REPL to interact with files, HTTP services, and commands.
+Explain outcomes clearly and concisely.
+`
+
+func decode(data []byte, target *Config) error {
+	if len(bytes.TrimSpace(data)) == 0 || bytes.TrimSpace(data)[0] != '{' {
+		return errors.New("configuration must be a JSON object")
+	}
+	keys := json.NewDecoder(bytes.NewReader(data))
+	if err := uniqueKeys(keys); err != nil {
+		return err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return errors.New("configuration must contain one JSON object")
+	}
+	return nil
+}
+func uniqueKeys(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	delim, ok := token.(json.Delim)
+	if !ok {
+		return nil
+	}
+	seen := map[string]bool{}
+	for decoder.More() {
+		if delim == '{' {
+			key, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			name, ok := key.(string)
+			if !ok {
+				return errors.New("invalid JSON object key")
+			}
+			if seen[name] {
+				return fmt.Errorf("duplicate JSON key %q", name)
+			}
+			seen[name] = true
+		}
+		if err := uniqueKeys(decoder); err != nil {
+			return err
+		}
+	}
+	_, err = decoder.Token()
+	return err
 }

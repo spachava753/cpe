@@ -1,49 +1,25 @@
-/*
-Package config defines CPE's YAML configuration schema and runtime resolution pipeline.
-
-It separates two layers:
-  - RawConfig: file-level representation loaded from YAML.
-  - Config: effective runtime settings for one selected model profile.
-
-The config file is a list of self-contained model profiles. Each models entry
-contains model provider settings plus optional MCP servers, generation
-parameters, valid thinking values, system prompt path, timeout, codeMode, and
-compaction settings. Users can reduce YAML duplication with anchors and aliases;
-CPE resolves only the selected profile and does not infer shared fields from
-other profiles.
-
-Resolution precedence is limited to runtime selection and explicit overrides:
-  - model selection: ACP session state, --model, or CPE_MODEL supplies a model
-    profile ref depending on caller;
-  - generation options: runtime opts override the selected profile fields;
-  - timeout: runtime timeout override, then selected profile timeout, then the
-    built-in default.
-
-The package also validates custom invariants (model references, auth method
-constraints, MCP server transport constraints, codeMode settings, and compaction
-schema/template/restart-limit validity), resolves filesystem-relative
-systemPromptPath values, renders system prompt templates for resolved profiles,
-and carries per-profile runtime flags such as bundled edit-tool opt-out.
-
-File loading retains the absolute config source location as private runtime
-metadata. Relative systemPromptPath values are resolved against that file's
-directory for both CLI inspection and direct/ACP runtime creation, including
-model switches after loading or changes to the working directory. Absolute
-prompt paths and raw profile values are preserved. Configs constructed in memory
-without a source location keep relative paths unchanged for the caller to use.
-
-System prompt template exec commands run in the current working directory, not
-in the config file's directory. Each command has a 10-second deadline and bounded
-output-pipe draining. Cancellation and deadline errors abort rendering rather
-than publishing an incomplete prompt. On Unix, cancellation kills the shell's
-process group, including pipelines. On other platforms it kills the shell, and
-pipe draining is bounded even if descendants keep output handles open. Ordinary
-command failures still return empty text for optional probes such as cat AGENTS.md.
-Templates should use scoped discovery (for example git ls-files) rather than
-unbounded recursive filesystem scans from the working directory.
-
-MCP server connection settings are represented via the dependency-neutral
-`internal/mcpconfig` schema package so config loading does not depend on MCP
-runtime implementation packages.
-*/
+// Package config loads ~/.cpe/config.json and ~/.cpe/system.md. The directory
+// is fixed on Unix (including macOS) and Windows; XDG and project configuration
+// are not consulted. JSON must contain one object and rejects unknown fields,
+// duplicate keys, and trailing data. Init creates private missing starter files
+// without overwriting existing configuration; the starter profile uses Codex.
+//
+// API providers read named environment variables. Codex instead uses CPE's own
+// ~/.cpe/auth.json with TUI /login and automatic refresh. There is no credential
+// path setting or fallback to Pi. Codex uses a fixed endpoint and rejects API-key,
+// output-limit, and temperature options. Responses and Codex accept
+// reasoning_effort; allowed labels ultimately depend on the selected model.
+// Interactive reasoning changes use the same validation as file configuration.
+//
+// Each profile may set context_window, a preferred input-token budget (zero
+// disables it). It takes precedence over the legacy compaction.max_characters
+// trigger; automatic compaction starts at 90% of the budget. Context estimates
+// do not change provider limits or guarantee a pricing tier. Leave output room
+// below the provider's physical context limit when choosing an input budget.
+//
+// cost optionally supplies input, output, cache_read, and cache_write rates in
+// USD per million tokens. All four must be explicit, finite, and nonnegative.
+// Omitted cost means unknown, not free. cost.long_context optionally supplies
+// all four replacement rates and above_input_tokens, an exclusive threshold
+// based on total request input (including caches). Rates apply to the full call.
 package config
