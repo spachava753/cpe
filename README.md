@@ -92,6 +92,7 @@ canceled, denied, or expired. If credentials are rejected, use `/login` again.
 | `/model` or `/model NAME` | Pick or switch to a profile from config.json |
 | `/reasoning` or `/reasoning LEVEL` | Pick or set reasoning effort for Codex/Responses |
 | `/reasoning default` | Restore the active profile's configured effort |
+| `/theme` or `/theme NAME` | Pick or switch themes and save the selection |
 | `/usage` | Show exact session token totals, estimated cost, and context budget |
 | `/session` | Show the JSONL path |
 | `/tree` | List saved checkpoints |
@@ -101,6 +102,18 @@ canceled, denied, or expired. If credentials are rejected, use `/login` again.
 The conversation displays streamed text provisionally. Completed assistant
 messages and tool results are saved before the next operation. Input stays
 editable between turns; prompts are not queued while the agent is busy.
+
+Start a draft with `/` to see a small command popup above the composer. Keep
+typing to filter, use Up/Down to select, Tab to complete without running, or
+Enter to run the selection. `/branch` completion leaves room for a checkpoint ID.
+The popup uses the active theme and shows up to five commands, scrolling as you
+move through the list. It shrinks or hides in very short terminals.
+
+Escape closes the popup without clearing your text and keeps it dismissed for
+that draft. Remove the leading slash or send/clear the draft to enable it again.
+After dismissal, an unrecognized slash prefix such as `/tmp` can be sent as
+ordinary prompt text; recognized commands still work. Slashes inside prose or
+paths, multiline input, and command arguments do not trigger the popup.
 
 Model and reasoning pickers use Up/Down, Enter to apply, and Esc to cancel.
 For example, `/model sol` switches to your `sol` profile and `/reasoning high`
@@ -176,6 +189,116 @@ cpe --prompt 'Inspect the README and describe the project'
 `--continue` selects the most recently modified session in the current directory.
 `--resume` requires an existing file or filename without its `.jsonl` suffix.
 A session's working directory is fixed; start CPE in that directory to resume it.
+
+## Themes
+
+Appearance lives separately in `~/.cpe/themes.json`. `cpe --init` creates it
+without overwriting existing files. These themes ship inside CPE:
+
+| Theme | Appearance |
+| --- | --- |
+| `desktop` | Derives light/dark colors and an accent from the OS appearance |
+| `terminal` | Inherits the terminal's foreground, background, and ANSI palette |
+| `light` | Neutral light palette |
+| `dark` | Neutral dark palette |
+| `nord` | Nord's cool blue and gray palette |
+| `dracula` | Dracula's purple, pink, and cyan palette |
+| `gruvbox` | Gruvbox's warm dark palette |
+
+Use `/theme` to open the picker (Up/Down, Enter to apply, Esc to cancel), or
+switch directly with `/theme nord`. The picker includes custom themes and marks
+the current one. Selections apply immediately and are saved in `themes.json`
+for future sessions. Invalid selections or save failures retain the current theme.
+
+You can also select a built-in by editing the file without copying its colors:
+
+```json
+{
+  "active": "nord"
+}
+```
+
+Changes apply live within a second. The fixed palettes are CPE role mappings
+based on [Nord](https://www.nordtheme.com/docs/colors-and-palettes/),
+[Dracula](https://spec.draculatheme.com/), and
+[Gruvbox](https://github.com/morhetz/gruvbox). No downloads are needed.
+
+A missing file defaults to `desktop`, using `source: "system"`. Linux reads
+light/dark preference and an optional accent from the standard
+[XDG Settings portal](https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.Settings.html).
+This is the same API on Ubuntu, Debian, Fedora, and other distributions; it needs
+a running portal backend, not a particular distribution or theme manager.
+macOS reads AppKit's [effective appearance](https://developer.apple.com/documentation/appkit/nsapplication/effectiveappearance)
+and [accent color](https://developer.apple.com/documentation/appkit/nscolor/controlaccentcolor)
+through the built-in `osascript` bridge, without CGO or a developer SDK.
+
+These are OS preferences, not a complete shared desktop palette. CPE derives its
+neutral light/dark surfaces from the mode and uses the accent for headings and
+selection, adjusting contrast for readability. A missing accent uses the default
+accent. Missing services, no mode preference, unsupported OSes, and SSH sessions
+fall back to terminal inheritance. Probes are bounded and run off the UI loop;
+changes are picked up by the one-second reload cycle.
+
+Use `/theme terminal` for the emulator's full current palette independently of OS
+preferences. This works across operating systems and over SSH/tmux. If the
+emulator follows a custom desktop theme, this follows its colors too; whether
+changes reach already-open windows depends on the emulator's theme integration.
+
+Customize a built-in by creating a named theme with its palette as `source`:
+
+```json
+{
+  "active": "work",
+  "themes": {
+    "work": {
+      "source": "nord",
+      "colors": {
+        "assistant": "$accent",
+        "error": "#ef6464",
+        "background": "default"
+      },
+      "bold": true,
+      "italic": false,
+      "input_height": 3
+    }
+  }
+}
+```
+
+Sources are `system`, `terminal`, `file`, `light`, `dark`, `nord`, `dracula`,
+`gruvbox`, and `auto` (an alias for `system`). User definitions take precedence
+over built-ins with the same name. The starter file defines `desktop` with
+`source: "system"`.
+
+For an exact externally supplied palette, use `source: "file"` and `palette_file`
+pointing to a JSON object of named `#rrggbb` colors. Paths may be absolute, start
+with `~/`, or be relative to `~/.cpe`; symlinks work. `foreground` and `background`
+are required, with `fg`/`bg` or `color7`/`color0` accepted as aliases. See
+[palette.json](examples/palette.json). CPE never runs hooks or user-supplied code.
+The earlier `omarchy` source and automatic TOML lookup have been removed. Change
+old definitions to `source: "system"`, or export a JSON palette and use `file`.
+Only `file` accepts `palette_file`.
+
+Color roles are `foreground`, `background`, `accent`, `muted`, `border`, `error`,
+`user`, `assistant`, `tool`, `selection_foreground`, and `selection_background`.
+Values accept `#rrggbb`, ANSI indices as strings (`"0"`–`"255"`), `"default"`
+for terminal inheritance, or `$palette_key`. References use the source palette
+before overrides. All hex keys in a palette file can be referenced; every source
+provides the base semantic colors and `color0`–`color15`.
+`"background": "default"` preserves the terminal background/transparency.
+
+`bold` controls headings and selected items; `italic` controls muted text.
+`input_height` sets the preferred editor height in rows (1–20), limited to fit
+small terminals. Font family and size are controlled by your terminal emulator;
+CPE inherits them. RGB colors are reduced to the terminal's supported color depth
+when necessary; `NO_COLOR` is respected.
+
+Reloads preserve drafts, cursor, scroll, conversation and REPL state. Invalid
+edits keep the last valid theme and show a footer error; fixing the file clears
+it. Startup errors fall back to terminal colors. `/theme` marks the active theme
+in the picker; after a selection, the status shows its name and source.
+Headless commands do not load theme files. See
+[examples/themes.json](examples/themes.json) for custom and desktop integrations.
 
 ## Starlark and Dyson
 
@@ -306,6 +429,8 @@ pickers, or `/model alternate` and `/reasoning high` for direct changes.
 Send `compute`, restart the process, then send `restore` to verify the saved
 variable. Send `wait` and press Esc to test cancellation. This harness also works
 inside tmux, where `capture-pane` provides the actual rendered terminal grid.
+The harness also reads `themes.json` from `CPE_TUI_TEST_DIR`; use an explicit JSON `palette_file`
+to point at fixture palettes and test live edits without changing the desktop.
 
 An optional real-provider smoke test uses the default profile in `~/.cpe`:
 

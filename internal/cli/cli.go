@@ -30,7 +30,7 @@ import (
 func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	flags := flag.NewFlagSet("cpe", flag.ContinueOnError)
 	flags.SetOutput(errOut)
-	initConfig := flags.Bool("init", false, "create ~/.cpe/config.json and system.md")
+	initConfig := flags.Bool("init", false, "create missing ~/.cpe/config.json, system.md, and themes.json")
 	modelName := flags.String("model", "", "model profile from config.json")
 	resume := flags.String("resume", "", "resume a session ID or JSONL path")
 	latest := flags.Bool("continue", false, "continue the newest session in this directory")
@@ -153,7 +153,8 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	}
 	authFile := filepath.Join(c.Dir, "auth.json")
 	options := tui.Options{
-		Models: c.Models,
+		Models:   c.Models,
+		ThemeDir: c.Dir,
 		LoginRequired: func(profile config.Model) bool {
 			_, err := os.Stat(authFile)
 			return profile.Provider == "codex" && errors.Is(err, os.ErrNotExist)

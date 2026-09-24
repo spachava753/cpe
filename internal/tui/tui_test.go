@@ -75,7 +75,7 @@ func TestProgramKeyboardRenderAndDurableTurn(t *testing.T) {
 		case <-tick.C:
 		}
 	}
-	program.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/quit")})
+	program.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(quitCommand)})
 	program.Send(tea.KeyMsg{Type: tea.KeyEnter})
 	select {
 	case err := <-done:

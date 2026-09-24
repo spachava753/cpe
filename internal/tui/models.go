@@ -11,6 +11,8 @@ import (
 	"github.com/spachava753/cpe/internal/config"
 )
 
+const currentChoiceSuffix = " (current)"
+
 const defaultEffort = "default"
 const codexProvider = "codex"
 
@@ -38,7 +40,7 @@ func effortLabel(effort string) string {
 
 func (m *model) configureModel(command, value string) {
 	switch command {
-	case "/model":
+	case modelCommand:
 		if value != "" {
 			m.switchModel(value)
 			return
@@ -50,7 +52,7 @@ func (m *model) configureModel(command, value string) {
 			label := fmt.Sprintf("%s · %s/%s", name, profile.Provider, profile.ID)
 			if name == m.name {
 				selected = len(items)
-				label += " (current)"
+				label += currentChoiceSuffix
 			}
 			items = append(items, choice{name, oneline(label)})
 		}
@@ -59,7 +61,7 @@ func (m *model) configureModel(command, value string) {
 			return
 		}
 		m.openPicker(command, "Choose model", items, selected)
-	case "/reasoning":
+	case reasoningCommand:
 		if !supportsReasoning(m.profile) {
 			m.notice = "Reasoning effort requires a Codex or Responses profile"
 			return
@@ -83,7 +85,7 @@ func (m *model) configureModel(command, value string) {
 			label := effort
 			if effort == m.profile.ReasoningEffort {
 				selected = len(items)
-				label += " (current)"
+				label += currentChoiceSuffix
 			}
 			items = append(items, choice{effort, label})
 		}
@@ -92,9 +94,7 @@ func (m *model) configureModel(command, value string) {
 }
 
 func (m *model) openPicker(command, title string, items []list.Item, selected int) {
-	delegate := list.NewDefaultDelegate()
-	delegate.ShowDescription = false
-	delegate.SetSpacing(0)
+	delegate := m.pickerDelegate()
 	l := list.New(items, delegate, m.viewport.Width, m.viewport.Height)
 	l.SetShowTitle(false)
 	l.SetShowStatusBar(false)
@@ -119,7 +119,11 @@ func (m model) updatePicker(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if selected, ok := m.picker.list.SelectedItem().(choice); ok {
 			command := m.picker.command
 			m.picker = nil
-			m.configureModel(command, selected.value)
+			if command == themeCommand {
+				m.configureTheme(selected.value)
+			} else {
+				m.configureModel(command, selected.value)
+			}
 		}
 		return m, nil
 	}

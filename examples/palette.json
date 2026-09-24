@@ -1,0 +1,13 @@
+{
+  "background": "#20242c",
+  "foreground": "#e2e5eb",
+  "accent": "#8ab4f8",
+  "muted": "#9da6b5",
+  "red": "#ef8290",
+  "green": "#a3c98b",
+  "yellow": "#e3c784",
+  "blue": "#8ab4f8",
+  "magenta": "#c59ee8",
+  "cyan": "#80c9cb",
+  "selection": "#3b465a"
+}

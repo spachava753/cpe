@@ -67,8 +67,8 @@ func TestModelAndReasoningCommands(t *testing.T) {
 		{"/reasoning default", secondProfile, "", "Reasoning: provider default", false},
 		{"/model gamma", thirdProfile, "", "Model: gamma", false},
 		{"/reasoning high", thirdProfile, "", "requires a Codex or Responses", false},
-		{"/reasoning", thirdProfile, "", "requires a Codex or Responses", false},
-		{"/login", thirdProfile, "", "Select a Codex profile", false},
+		{reasoningCommand, thirdProfile, "", "requires a Codex or Responses", false},
+		{loginCommand, thirdProfile, "", "Select a Codex profile", false},
 		{"/model alpha", firstProfile, lowEffort, "sign in with /login", true},
 	} {
 		m.input.SetValue(step.command)
@@ -82,7 +82,7 @@ func TestModelAndReasoningCommands(t *testing.T) {
 		t.Fatal("commands changed defaults or entered conversation history")
 	}
 	// Bare commands are keyboard pickers; cancellation leaves all settings alone.
-	m.input.SetValue("/model")
+	m.input.SetValue(modelCommand)
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(model)
 	if m.picker == nil || m.picker.list.SelectedItem().(choice).value != firstProfile {
@@ -95,7 +95,7 @@ func TestModelAndReasoningCommands(t *testing.T) {
 	if m.name != secondProfile || m.loginRequired || m.picker != nil {
 		t.Fatal("picker did not apply model selection")
 	}
-	m.input.SetValue("/reasoning")
+	m.input.SetValue(reasoningCommand)
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(model)
 	for _, size := range []tea.WindowSizeMsg{{Width: 80, Height: 24}, {Width: 32, Height: 12}, {Width: 24, Height: 8}} {
@@ -117,7 +117,7 @@ func TestModelAndReasoningCommands(t *testing.T) {
 	if m.profile.ReasoningEffort != "" || m.picker != nil {
 		t.Fatal("cancel changed effort")
 	}
-	m.input.SetValue("/reasoning")
+	m.input.SetValue(reasoningCommand)
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(model)
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})

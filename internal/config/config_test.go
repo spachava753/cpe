@@ -5,7 +5,41 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spachava753/cpe/internal/theme"
 )
+
+func TestInitCreatesPrivateThemeWithoutOverwritingFiles(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".cpe")
+	if _, err := initFiles(dir); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"config.json", "system.md", themesFile} {
+		path := filepath.Join(dir, name)
+		info, err := os.Stat(path)
+		if err != nil || info.Mode().Perm() != 0600 {
+			t.Fatalf("%s must be private: %v %v", name, info, err)
+		}
+		if name == themesFile {
+			data, err := os.ReadFile(path)
+			if err != nil || string(data) != theme.StarterJSON {
+				t.Fatalf("theme starter: %s %v", data, err)
+			}
+		}
+		if err := os.WriteFile(path, []byte("existing user content"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := initFiles(dir); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"config.json", "system.md", themesFile} {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil || string(data) != "existing user content" {
+			t.Fatalf("init overwrote %s: %v", name, err)
+		}
+	}
+}
 
 func TestJSONConfigurationAndSystemMarkdown(t *testing.T) {
 	dir := t.TempDir()

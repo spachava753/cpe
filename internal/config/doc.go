@@ -3,6 +3,8 @@
 // are not consulted. JSON must contain one object and rejects unknown fields,
 // duplicate keys, and trailing data. Init creates private missing starter files
 // without overwriting existing configuration; the starter profile uses Codex.
+// Init also creates themes.json. Theme loading is independent of model config
+// and is handled by package theme only for the interactive TUI.
 //
 // API providers read named environment variables. Codex instead uses CPE's own
 // ~/.cpe/auth.json with TUI /login and automatic refresh. There is no credential

@@ -1,11 +1,8 @@
 package config
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net/url"
 	"os"
@@ -13,6 +10,9 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/spachava753/cpe/internal/jsonconfig"
+	"github.com/spachava753/cpe/internal/theme"
 )
 
 // Config contains application defaults and named provider profiles.
@@ -151,7 +151,7 @@ func load(dir string) (Config, error) {
 	if err != nil {
 		return c, fmt.Errorf("load config.json (run cpe --init for starter files): %w", err)
 	}
-	if err := decode(data, &c); err != nil {
+	if err := jsonconfig.Decode(data, &c); err != nil {
 		return c, fmt.Errorf("load config.json: %w", err)
 	}
 	data, err = os.ReadFile(filepath.Join(dir, "system.md"))
@@ -210,16 +210,22 @@ func load(dir string) (Config, error) {
 	return c, nil
 }
 
+const themesFile = "themes.json"
+
 // Init creates private starter files, leaving any existing files intact.
 func Init() (string, error) {
 	dir, err := Directory()
 	if err != nil {
 		return "", err
 	}
+	return initFiles(dir)
+}
+
+func initFiles(dir string) (string, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", err
 	}
-	for _, v := range []struct{ name, body string }{{"config.json", defaultJSON}, {"system.md", defaultSystem}} {
+	for _, v := range []struct{ name, body string }{{"config.json", defaultJSON}, {"system.md", defaultSystem}, {themesFile, theme.StarterJSON}} {
 		f, err := os.OpenFile(filepath.Join(dir, v.name), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 		if errors.Is(err, os.ErrExist) {
 			continue
@@ -262,55 +268,3 @@ Inspect relevant files before changing them. Make focused changes and verify you
 Use the persistent Starlark REPL to interact with files, HTTP services, and commands.
 Explain outcomes clearly and concisely.
 `
-
-func decode(data []byte, target *Config) error {
-	if len(bytes.TrimSpace(data)) == 0 || bytes.TrimSpace(data)[0] != '{' {
-		return errors.New("configuration must be a JSON object")
-	}
-	keys := json.NewDecoder(bytes.NewReader(data))
-	if err := uniqueKeys(keys); err != nil {
-		return err
-	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		return err
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return errors.New("configuration must contain one JSON object")
-	}
-	return nil
-}
-func uniqueKeys(decoder *json.Decoder) error {
-	token, err := decoder.Token()
-	if err != nil {
-		return err
-	}
-	delim, ok := token.(json.Delim)
-	if !ok {
-		return nil
-	}
-	seen := map[string]bool{}
-	for decoder.More() {
-		if delim == '{' {
-			key, err := decoder.Token()
-			if err != nil {
-				return err
-			}
-			name, ok := key.(string)
-			if !ok {
-				return errors.New("invalid JSON object key")
-			}
-			if seen[name] {
-				return fmt.Errorf("duplicate JSON key %q", name)
-			}
-			seen[name] = true
-		}
-		if err := uniqueKeys(decoder); err != nil {
-			return err
-		}
-	}
-	_, err = decoder.Token()
-	return err
-}

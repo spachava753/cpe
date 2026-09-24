@@ -1,0 +1,29 @@
+{
+  "active": "desktop",
+  "themes": {
+    "desktop": {
+      "source": "system",
+      "colors": {
+        "assistant": "$accent",
+        "error": "$bright_red"
+      },
+      "bold": true,
+      "italic": false,
+      "input_height": 3
+    },
+    "my-nord": {
+      "source": "nord",
+      "colors": {
+        "assistant": "$accent",
+        "muted": "#9aa7bc"
+      },
+      "bold": true,
+      "italic": false,
+      "input_height": 4
+    },
+    "custom-file": {
+      "source": "file",
+      "palette_file": "palette.json"
+    }
+  }
+}

@@ -19,11 +19,8 @@ import (
 
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/theme"
 )
-
-var accent = lipgloss.NewStyle().Foreground(lipgloss.Color("110"))
-var muted = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-var errorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("174"))
 
 const loginDeviceCommand = "/login device"
 const quitKey = "ctrl+c"
@@ -38,12 +35,16 @@ type update struct {
 // Options supplies model profiles and UI-only authentication. NewGenerator
 // defaults to agent.Provider and constructs a provider without generating text.
 // Login must honor cancellation and send only display instructions to notify.
-// LoginRequired is checked at startup and after changing profiles.
+// LoginRequired is checked at startup and after changing profiles. ThemeDir is
+// the configuration directory for theme loading, live reload, and saved theme
+// selections. An empty directory disables theme configuration. Reload failures
+// keep the last valid theme and display a warning.
 type Options struct {
 	Models        map[string]config.Model
 	NewGenerator  func(context.Context, config.Model) (gai.Generator, error)
 	Login         func(context.Context, string, func(string)) error
 	LoginRequired func(config.Model) bool
+	ThemeDir      string
 }
 type model struct {
 	ctx           context.Context
@@ -72,6 +73,15 @@ type model struct {
 	usage         agent.Usage
 	contextTokens int
 	usageView     bool
+	staticView    string
+	theme         theme.Theme
+	appearance    theme.Appearance
+	styles        styles
+	renderer      *lipgloss.Renderer
+	themeDir      string
+	themeRevision uint64
+	themeError    string
+	completion    completion
 }
 
 func newModel(ctx context.Context, a *agent.Agent, name string) model {
@@ -82,23 +92,34 @@ func newModel(ctx context.Context, a *agent.Agent, name string) model {
 	input.CharLimit = 0
 	input.SetHeight(3)
 	input.SetWidth(80)
-	input.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	input.Focus()
 	spin := spinner.New()
 	spin.Spinner = spinner.Dot
-	spin.Style = accent
 	m := model{ctx: ctx, agent: a, name: name, input: input, viewport: viewport.New(80, 14), spinner: spin, width: 80, height: 24, messages: a.Messages(), notice: "/help for commands"}
 	m.profile = a.Model()
 	m.usage, m.contextTokens = a.Usage(), a.ContextEstimate()
 	m.newGenerator = agent.Provider
-	m.refresh(true)
+	m.renderer = lipgloss.DefaultRenderer()
+	m.applyTheme(theme.Default())
 	return m
 }
 
 // Run owns the terminal until the user exits or ctx is canceled. Agent and store
 // lifetimes remain the caller's responsibility.
 func Run(ctx context.Context, a *agent.Agent, name string, options Options) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	m := newModel(ctx, a, name)
+	m.themeDir = options.ThemeDir
+	if m.themeDir != "" {
+		m.appearance = theme.SystemAppearance(ctx)
+		t, err := theme.Load(m.themeDir, m.appearance)
+		if err != nil {
+			m.themeError = err.Error()
+		} else {
+			m.applyTheme(t)
+		}
+	}
 	m.login, m.needsLogin, m.profiles = options.Login, options.LoginRequired, options.Models
 	if options.NewGenerator != nil {
 		m.newGenerator = options.NewGenerator
@@ -123,7 +144,9 @@ func Run(ctx context.Context, a *agent.Agent, name string, options Options) erro
 	}
 	return err
 }
-func (m model) Init() tea.Cmd            { return textarea.Blink }
+func (m model) Init() tea.Cmd {
+	return tea.Batch(textarea.Blink, pollTheme(m.ctx, m.themeDir, m.themeRevision))
+}
 func await(events <-chan update) tea.Cmd { return func() tea.Msg { return <-events } }
 func (m *model) start(text string) tea.Cmd {
 	ctx, cancel := context.WithCancel(m.ctx)
@@ -132,8 +155,9 @@ func (m *model) start(text string) tea.Cmd {
 	m.provisional = ""
 	m.notice = ""
 	m.usageView = false
+	m.staticView = ""
 	m.activity = "Thinking"
-	m.loggingIn = text == "/login" || text == loginDeviceCommand
+	m.loggingIn = text == loginCommand || text == loginDeviceCommand
 	m.loginText = ""
 	if m.loggingIn {
 		m.activity = "Signing in"
@@ -151,10 +175,10 @@ func (m *model) start(text string) tea.Cmd {
 				method = "device"
 			}
 			err = m.login(ctx, method, func(text string) { ch <- update{loginText: text} })
-		case text == "/compact":
+		case text == compactCommand:
 			err = m.agent.Compact(ctx)
-		case strings.HasPrefix(text, "/branch "):
-			err = m.agent.Branch(ctx, strings.TrimSpace(strings.TrimPrefix(text, "/branch ")))
+		case strings.HasPrefix(text, branchCommand+" "):
+			err = m.agent.Branch(ctx, strings.TrimSpace(strings.TrimPrefix(text, branchCommand+" ")))
 		default:
 			err = m.agent.Prompt(ctx, text, func(event agent.Event) {
 				// Keep durable message notifications even after cancellation. The UI drains
@@ -168,6 +192,23 @@ func (m *model) start(text string) tea.Cmd {
 }
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case themeUpdate:
+		if v.revision != m.themeRevision {
+			return m, pollTheme(m.ctx, m.themeDir, m.themeRevision)
+		}
+		m.appearance = v.appearance
+		if v.err != nil {
+			m.themeError = v.err.Error()
+		} else {
+			m.themeError = ""
+			if v.theme != m.theme {
+				m.applyTheme(v.theme)
+			}
+		}
+		if strings.HasPrefix(m.notice, "Theme: ") || strings.HasPrefix(m.notice, "Theme error: ") {
+			m.notice = m.themeStatus()
+		}
+		return m, pollTheme(m.ctx, m.themeDir, m.themeRevision)
 	case tea.WindowSizeMsg:
 		atBottom := m.viewport.AtBottom()
 		m.width = max(1, v.Width)
@@ -233,6 +274,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.picker != nil {
 			return m.updatePicker(v)
 		}
+		if m.completionKey(v) {
+			return m, nil
+		}
 		switch v.String() {
 		case quitKey, "esc":
 			if m.busy {
@@ -244,6 +288,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			m.input.Reset()
+			m.syncCompletion()
 			return m, nil
 		case "ctrl+d":
 			if !m.busy && m.input.Value() == "" {
@@ -256,6 +301,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "alt+enter":
 			if !m.busy {
 				m.input.InsertRune('\n')
+				m.syncCompletion()
 			}
 			return m, nil
 		case "enter":
@@ -266,29 +312,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if text == "" {
 				return m, nil
 			}
+			literalSlash := m.completion.literal
 			m.input.Reset()
+			m.syncCompletion()
 			command := strings.Fields(text)[0]
 			argument := strings.TrimSpace(strings.TrimPrefix(text, command))
-			if command == "/model" || command == "/reasoning" {
+			if command == themeCommand {
+				m.configureTheme(argument)
+				return m, nil
+			}
+			if command == modelCommand || command == reasoningCommand {
 				m.configureModel(command, argument)
 				return m, nil
 			}
 			switch text {
-			case "/quit", "/exit":
+			case quitCommand, exitCommand:
 				return m, tea.Quit
-			case "/help":
-				m.notice = "/model  /reasoning  /usage  /login  /compact  /tree  /branch ID  /session  /quit"
+			case helpCommand:
+				m.notice = "/model  /reasoning  /theme  /usage  /login  /compact  /tree  /branch ID  /session  /quit"
 				return m, nil
-			case "/usage":
+			case usageCommand:
+				m.staticView = ""
 				m.usageView = true
 				m.notice = "Session totals · PgUp/PgDn scroll"
 				m.refresh(false)
 				m.viewport.GotoTop()
 				return m, nil
-			case "/session":
+			case sessionCommand:
 				m.notice = m.agent.SessionFile()
 				return m, nil
-			case "/tree":
+			case treeCommand:
 				var b strings.Builder
 				for _, e := range m.agent.Checkpoints() {
 					var data struct {
@@ -300,23 +353,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					fmt.Fprintf(&b, "%s  %s\n", e.ID, data.Label)
 				}
-				m.viewport.SetContent("Checkpoints — /branch ID to continue from one\n\n" + clean(b.String()))
+				m.usageView = false
+				m.staticView = "Checkpoints — /branch ID to continue from one\n\n" + clean(b.String())
+				m.refresh(false)
 				m.viewport.GotoTop()
 				m.notice = "History is preserved when branching"
 				return m, nil
 			}
-			if text == "/login" || text == loginDeviceCommand {
+			if text == loginCommand || text == loginDeviceCommand {
 				if m.login == nil || m.profile.Provider != codexProvider {
 					m.notice = "Select a Codex profile with /model to use /login"
 					return m, nil
 				}
 				return m, m.start(text)
 			}
-			if strings.HasPrefix(text, "/") && text != "/compact" && !strings.HasPrefix(text, "/branch ") {
+			if !literalSlash && strings.HasPrefix(text, "/") && text != compactCommand && !strings.HasPrefix(text, branchCommand+" ") {
 				m.notice = "Unknown command. /help for commands"
 				return m, nil
 			}
-			if m.loginRequired && !strings.HasPrefix(text, "/branch ") {
+			if m.loginRequired && !strings.HasPrefix(text, branchCommand+" ") {
 				m.input.SetValue(text)
 				m.notice = "Sign in with /login first"
 				return m, nil
@@ -338,11 +393,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if !m.busy {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
+		m.syncCompletion()
 		return m, cmd
 	}
 	return m, nil
 }
 func (m *model) refresh(bottom bool) {
+	if m.staticView != "" {
+		m.viewport.SetContent(ansi.Hardwrap(m.staticView, max(1, m.viewport.Width), true))
+		return
+	}
 	if m.usageView {
 		m.viewport.SetContent(ansi.Hardwrap(m.usageDetails(), max(1, m.viewport.Width), true))
 		return
@@ -357,13 +417,16 @@ func (m *model) refresh(bottom bool) {
 	}
 	for _, message := range m.messages {
 		label := "You"
+		labelStyle := m.styles.user
 		switch message.Role {
 		case gai.Assistant:
 			label = "Assistant"
+			labelStyle = m.styles.assistant
 		case gai.ToolResult:
 			label = "Starlark"
+			labelStyle = m.styles.tool.Bold(m.theme.Bold)
 		}
-		b.WriteString(accent.Render(label) + "\n")
+		b.WriteString(labelStyle.Render(label) + "\n")
 		for _, block := range message.Blocks {
 			if block.Content == nil {
 				continue
@@ -379,13 +442,17 @@ func (m *model) refresh(bottom bool) {
 					text = "› starlark_repl\n" + code
 				}
 			}
-			b.WriteString(clean(text))
+			text = clean(text)
+			if block.BlockType == gai.ToolCall || message.Role == gai.ToolResult {
+				text = m.styles.tool.Render(text)
+			}
+			b.WriteString(text)
 			b.WriteByte('\n')
 		}
 		b.WriteByte('\n')
 	}
 	if m.provisional != "" {
-		b.WriteString(accent.Render("Assistant") + "\n" + clean(m.provisional))
+		b.WriteString(m.styles.assistant.Render("Assistant") + "\n" + clean(m.provisional))
 	}
 	wasBottom := m.viewport.AtBottom()
 	m.viewport.SetContent(ansi.Hardwrap(b.String(), max(1, m.viewport.Width), true))
@@ -397,33 +464,42 @@ func (m model) View() string {
 	if m.width < 24 || m.height < 8 {
 		return "Resize terminal to at least 24 × 8"
 	}
-	title := accent.Render("cpe") + "  " + oneline(m.name)
+	profile := "  " + oneline(m.name)
 	if supportsReasoning(m.profile) {
-		title += " · " + effortLabel(m.profile.ReasoningEffort)
+		profile += " · " + effortLabel(m.profile.ReasoningEffort)
 	}
-	title += "  " + muted.Render(oneline(filepath.Base(m.agent.SessionFile())))
+	title := m.styles.accent.Render("cpe") + m.styles.base.Render(profile+"  ") + m.styles.muted.Render(oneline(filepath.Base(m.agent.SessionFile())))
 	status := oneline(m.notice)
 	if m.busy {
-		status = m.spinner.View() + " " + m.activity + " · Esc to cancel"
+		status = m.spinner.View() + m.styles.base.Render(" "+oneline(m.activity)+" · Esc to cancel")
 	} else if strings.HasPrefix(status, "Error:") {
-		status = errorStyle.Render(status)
+		status = m.styles.failure.Render(status)
 	} else {
-		status = muted.Render(status)
+		status = m.styles.muted.Render(status)
 	}
-	line := muted.Render(strings.Repeat("─", max(1, m.width-2)))
-	footer := muted.Render("Enter send · Alt+Enter newline · PgUp/PgDn scroll · Ctrl+C quit")
+	line := m.styles.border.Render(strings.Repeat("─", max(1, m.width-2)))
+	footer := m.styles.muted.Render("Enter send · Alt+Enter newline · PgUp/PgDn scroll · Ctrl+C quit")
 	content := m.viewport.View()
 	if m.picker != nil {
 		content = m.picker.list.View()
-		footer = muted.Render("↑/↓ select · Enter apply · Esc cancel · Ctrl+C quit")
+		footer = m.styles.muted.Render("↑/↓ select · Enter apply · Esc cancel · Ctrl+C quit")
+	}
+	if m.completionHeight() > 0 {
+		footer = m.styles.muted.Render(m.completionHelp())
+	}
+	if m.themeError != "" {
+		footer = m.styles.failure.Render(oneline(m.themeStatus()))
 	}
 	counts, totals := m.usageLines()
 	rows := []string{ansi.Truncate(title, m.width, "…"), content, ansi.Truncate(status, m.width, "…")}
 	if !m.loggingIn {
-		rows = append(rows, muted.Render(ansi.Truncate(counts, m.width, "…")), muted.Render(ansi.Truncate(totals, m.width, "…")))
+		rows = append(rows, m.styles.muted.Render(ansi.Truncate(counts, m.width, "…")), m.styles.muted.Render(ansi.Truncate(totals, m.width, "…")))
+	}
+	if popup := m.completionView(); popup != "" {
+		rows = append(rows, popup)
 	}
 	rows = append(rows, line, m.input.View(), ansi.Truncate(footer, m.width, "…"))
-	return strings.Join(rows, "\n")
+	return m.canvas(strings.Join(rows, "\n"))
 }
 
 func (m *model) layout() {
@@ -432,9 +508,9 @@ func (m *model) layout() {
 		overhead = 5
 	}
 	m.input.SetWidth(max(1, m.width-2))
-	m.input.SetHeight(min(3, max(1, m.height-overhead-1)))
+	m.input.SetHeight(min(m.theme.InputHeight, max(1, m.height-overhead-1)))
 	m.viewport.Width = max(1, m.width-2)
-	m.viewport.Height = max(1, m.height-m.input.Height()-overhead)
+	m.viewport.Height = max(1, m.height-m.input.Height()-overhead-m.completionHeight())
 	if m.picker != nil {
 		m.picker.list.SetSize(m.viewport.Width, m.viewport.Height)
 	}

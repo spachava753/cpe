@@ -20,3 +20,13 @@ subscription bill. `/usage` displays durable session totals across compactions.
 
 Configuration is plain JSON: no comments, duplicate keys, or trailing commas.
 Agent and compaction sections may be omitted to use their defaults.
+
+Copy `themes.json` to `~/.cpe/themes.json` for appearance settings. The `desktop`
+theme derives colors from generic Linux/macOS appearance preferences, with
+terminal fallback. `terminal` explicitly follows the emulator instead.
+Set `active` to `light`, `dark`, `nord`, `dracula`, or `gruvbox` to select a bundled
+preset; no matching entry under `themes` is needed. `my-nord` demonstrates custom
+overrides of a preset; `custom-file` reads an explicit JSON palette. Copy
+`palette.json` alongside `themes.json` to use that example.
+Changes apply live. `$accent` references the source palette before overrides.
+See the README's Themes section for color roles and font limitations.

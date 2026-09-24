@@ -57,6 +57,7 @@ func TestTerminalHarness(t *testing.T) {
 	defer a.Close()
 	signedIn := false
 	options := Options{Models: profiles,
+		ThemeDir:      dir,
 		NewGenerator:  func(context.Context, config.Model) (gai.Generator, error) { return gen, nil },
 		LoginRequired: func(profile config.Model) bool { return profile.Provider == codexProvider && !signedIn },
 		Login: func(ctx context.Context, method string, notify func(string)) error {
