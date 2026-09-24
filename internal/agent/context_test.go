@@ -97,3 +97,66 @@ func TestContextEstimateUsesReportedInputAndResetsAfterCompaction(t *testing.T) 
 		t.Fatalf("compaction did not reset context estimate: %d", a.ContextEstimate())
 	}
 }
+
+func TestAgentPrompt(t *testing.T) {
+	for _, reopen := range []bool{false, true} {
+		name := "retry in same agent"
+		if reopen {
+			name = "retry after reopen"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "session.jsonl")
+			store, err := session.Open(path, dir, repl.Runtime)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = store.Close() }()
+			gen := agenttest.NewScriptedGenerator(agenttest.GenerateStep{
+				Check: func(req gai.GenerationRequest) error {
+					if len(req.Dialog) != 1 || req.Dialog[0].Blocks[0].Content.String() != "short replacement" {
+						t.Errorf("rejected prompt persisted: %+v", req.Dialog)
+					}
+					return nil
+				},
+				Response: gai.Response{Candidates: []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("ready")}}}, FinishReason: gai.EndTurn},
+			})
+			opts := Options{Config: config.Config{Agent: config.Agent{ToolTimeout: "1s", MaxRounds: 3}, Compaction: config.Compaction{Prompt: "Summarize"}}, Model: config.Model{ID: "fixture", ContextWindow: 3000}, Generator: gen, Store: store, CWD: dir}
+			a, err := Open(t.Context(), opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = a.Close() }()
+			before := len(store.Entries())
+			if err := a.Prompt(t.Context(), strings.Repeat("oversized input ", 5000), nil); err == nil || !strings.Contains(err.Error(), "context_window") {
+				t.Fatalf("oversized prompt accepted: %v", err)
+			}
+			if len(a.Messages()) != 0 || len(store.Entries()) != before || a.Usage().Requests != 0 {
+				t.Fatal("rejected input changed the session")
+			}
+			if reopen {
+				if err := a.Close(); err != nil {
+					t.Fatal(err)
+				}
+				if err := store.Close(); err != nil {
+					t.Fatal(err)
+				}
+				store, err = session.Open(path, dir, repl.Runtime)
+				if err != nil {
+					t.Fatal(err)
+				}
+				opts.Store = store
+				a, err = Open(t.Context(), opts)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := a.Prompt(t.Context(), "short replacement", nil); err != nil {
+				t.Fatal(err)
+			}
+			if a.Usage().Requests != 1 {
+				t.Fatalf("requests = %d, want 1", a.Usage().Requests)
+			}
+		})
+	}
+}

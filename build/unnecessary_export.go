@@ -149,6 +149,12 @@ func findUnnecessaryExports(ctx context.Context, dir string) ([]unnecessaryExpor
 		for name := range importedNames(pkg) {
 			packageImportNames[pkg.PkgPath][name] = true
 		}
+		for key, candidate := range candidates {
+			if key.pkgPath == pkg.PkgPath && pkg.Types.Scope().Lookup(candidate.newName) != nil {
+				candidate.fixable = false
+				candidate.reason = fmt.Sprintf("%s already exists", candidate.newName)
+			}
+		}
 	}
 
 	for _, pkg := range loaded {
@@ -176,8 +182,39 @@ func findUnnecessaryExports(ctx context.Context, dir string) ([]unnecessaryExpor
 		if pkg.TypesInfo == nil {
 			continue
 		}
+		// An embedded type also names a field, including through promotion into
+		// arbitrary containing types. This analyzer is not a general renamer:
+		// leave those declarations for manual review rather than changing member
+		// selection or serialization while all lexical references still compile.
+		for _, info := range pkg.TypesInfo.Types {
+			structure, ok := info.Type.Underlying().(*types.Struct)
+			if !ok {
+				continue
+			}
+			for field := range structure.Fields() {
+				if !field.Embedded() || field.Pkg() == nil {
+					continue
+				}
+				candidate := candidates[exportKey{pkgPath: field.Pkg().Path(), name: field.Name()}]
+				if candidate != nil {
+					candidate.fixable = false
+					candidate.reason = fmt.Sprintf("%s names an embedded field; rename requires manual review", field.Name())
+				}
+			}
+		}
 		for ident, obj := range pkg.TypesInfo.Uses {
-			if ident == nil || obj == nil || obj.Pkg() == nil {
+			if ident == nil || obj == nil {
+				continue
+			}
+			if obj.Parent() == types.Universe {
+				for key, candidate := range candidates {
+					if key.pkgPath == pkg.PkgPath && candidate.newName == obj.Name() {
+						candidate.fixable = false
+						candidate.reason = fmt.Sprintf("%s would shadow a predeclared identifier in use", candidate.newName)
+					}
+				}
+			}
+			if obj.Pkg() == nil {
 				continue
 			}
 			key := exportKey{pkgPath: obj.Pkg().Path(), name: obj.Name()}
@@ -201,6 +238,18 @@ func findUnnecessaryExports(ctx context.Context, dir string) ([]unnecessaryExpor
 				externallyUsed[key] = true
 				continue
 			}
+			// Only lexical references can be captured by a local binding. Embedded
+			// field selectors and struct-literal keys use the receiver's field scope.
+			if obj.Parent() == obj.Pkg().Scope() {
+				scope := pkg.Types.Scope().Innermost(ident.Pos())
+				if scope == nil {
+					candidate.fixable = false
+					candidate.reason = "reference scope is unavailable"
+				} else if _, binding := scope.LookupParent(candidate.newName, ident.Pos()); binding != nil && binding.Parent() != types.Universe {
+					candidate.fixable = false
+					candidate.reason = fmt.Sprintf("%s would capture a reference to %s", candidate.newName, key.name)
+				}
+			}
 			addSourceEdit(candidate.locations, pkg.Fset.PositionFor(ident.Pos(), false), key.name, candidate.newName)
 		}
 	}
@@ -212,7 +261,10 @@ func findUnnecessaryExports(ctx context.Context, dir string) ([]unnecessaryExpor
 			continue
 		}
 		scope := packageScopes[key.pkgPath]
-		if existing := scope.Lookup(candidate.newName); existing != nil {
+		if !token.IsIdentifier(candidate.newName) {
+			candidate.fixable = false
+			candidate.reason = fmt.Sprintf("%s is not a valid identifier", candidate.newName)
+		} else if existing := scope.Lookup(candidate.newName); existing != nil {
 			candidate.fixable = false
 			candidate.reason = fmt.Sprintf("%s already exists", candidate.newName)
 		} else if packageImportNames[key.pkgPath][candidate.newName] {

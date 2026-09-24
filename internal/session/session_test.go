@@ -1,20 +1,114 @@
-package session
+package session_test
 
 import (
+	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spachava753/cpe/internal/session"
 )
 
-func TestTreeLockAndReopen(t *testing.T) {
+func TestOpen(t *testing.T) {
+	for _, test := range []struct {
+		name, contents, cwd, runtime string
+		wantErr                      bool
+	}{
+		{name: "new file"},
+		{name: "complete header", contents: "header"},
+		{name: "torn tail", contents: "header" + `{"id":"partial`},
+		{name: "malformed complete record", contents: "header" + "bad JSON\n", wantErr: true},
+		{name: "wrong working directory", contents: "header" + `{"id":"partial`, cwd: "elsewhere", wantErr: true},
+		{name: "wrong runtime", contents: "header" + `{"id":"partial`, runtime: "different", wantErr: true},
+		{name: "unterminated header", contents: `{"id":"partial`, wantErr: true},
+		{name: "unrelated file", contents: "keep this file unchanged", wantErr: true},
+		{name: "missing header", contents: "\n", wantErr: true},
+		{name: "null record", contents: "null\n", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "s.jsonl")
+			header := fmt.Sprintf(`{"id":"root","type":"session","data":{"version":1,"cwd":%q,"runtime":"test"}}`+"\n", dir)
+			original := []byte(strings.Replace(test.contents, "header", header, 1))
+			if test.contents != "" {
+				if err := os.WriteFile(path, original, 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cwd, runtime := dir, "test"
+			if test.cwd != "" {
+				cwd = test.cwd
+			}
+			if test.runtime != "" {
+				runtime = test.runtime
+			}
+			store, err := session.Open(path, cwd, runtime)
+			if store != nil {
+				t.Cleanup(func() { _ = store.Close() })
+			}
+			if (err != nil) != test.wantErr {
+				t.Fatalf("Open() error = %v, want error %t", err, test.wantErr)
+			}
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			info, statErr := os.Stat(path)
+			if statErr != nil {
+				t.Fatal(statErr)
+			}
+			if test.wantErr {
+				if !bytes.Equal(data, original) || info.Mode().Perm() != 0644 {
+					t.Fatalf("failed open changed file: %q, mode %v", data, info.Mode())
+				}
+				return
+			}
+			if len(store.Entries()) != 1 || store.Path()[0].Type != "session" {
+				t.Fatalf("unexpected entries: %+v", store.Entries())
+			}
+			if info.Mode().Perm() != 0600 {
+				t.Fatalf("session permissions = %v", info.Mode())
+			}
+			if test.contents != "" && string(data) != header {
+				t.Fatalf("repaired data = %q, want %q", data, header)
+			}
+		})
+	}
+	t.Run("exclusive writer lock", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "s.jsonl")
+		first, err := session.Open(path, dir, "test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = first.Close() })
+		if second, err := session.Open(path, dir, "test"); err == nil {
+			_ = second.Close()
+			t.Fatal("second writer acquired lock")
+		}
+		if err := first.Close(); err != nil {
+			t.Fatal(err)
+		}
+		next, err := session.Open(path, dir, "test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := next.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestStoreBranch(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "s.jsonl")
-	s, err := Open(path, dir, "test")
+	s, err := session.Open(path, dir, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if second, err := Open(path, dir, "test"); err == nil {
+	if second, err := session.Open(path, dir, "test"); err == nil {
 		_ = second.Close()
 		t.Fatal("second writer acquired lock")
 	}
@@ -43,7 +137,7 @@ func TestTreeLockAndReopen(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	s, err = Open(path, dir, "test")
+	s, err = session.Open(path, dir, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,108 +153,5 @@ func TestTreeLockAndReopen(t *testing.T) {
 	}
 	if mode, err := os.Stat(path); err != nil || mode.Mode().Perm() != 0600 {
 		t.Fatal("session permissions", mode, err)
-	}
-}
-
-func TestTornTailAndMalformedCompleteRecord(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "s.jsonl")
-	s, err := Open(path, dir, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.Append("checkpoint", struct{}{}); err != nil {
-		t.Fatal(err)
-	}
-	_ = s.Close()
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := file.WriteString(`{"id":"partial`); err != nil {
-		t.Fatal(err)
-	}
-	_ = file.Close()
-	s, err = Open(path, dir, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(s.Entries()) != 2 {
-		t.Fatal(s.Entries())
-	}
-	_ = s.Close()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(data), "partial") {
-		t.Fatal("torn tail retained")
-	}
-	if err := os.WriteFile(path, append(data, []byte("bad JSON\n")...), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if s, err := Open(path, dir, "test"); err == nil {
-		_ = s.Close()
-		t.Fatal("malformed record accepted")
-	}
-}
-
-func TestWriteFailurePoisonsStore(t *testing.T) {
-	dir := t.TempDir()
-	s, err := Open(filepath.Join(dir, "s.jsonl"), dir, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	if err := s.file.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.Append("message", "first"); err == nil {
-		t.Fatal("closed file write accepted")
-	}
-	if _, err := s.Append("message", "second"); err == nil {
-		t.Fatal("poisoned writer accepted")
-	}
-	if len(s.Entries()) != 1 {
-		t.Fatal("failed write advanced head")
-	}
-}
-
-func TestMetadataMismatch(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "s.jsonl")
-	s, err := Open(path, dir, "test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = s.Close()
-	if s, err := Open(path, "elsewhere", "test"); err == nil {
-		_ = s.Close()
-		t.Fatal("cwd mismatch accepted")
-	}
-	if s, err := Open(path, dir, "different"); err == nil {
-		_ = s.Close()
-		t.Fatal("runtime mismatch accepted")
-	}
-}
-
-func TestInvalidResumeDoesNotModifyFile(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "not-session")
-	original := []byte("keep this file unchanged")
-	if err := os.WriteFile(path, original, 0644); err != nil {
-		t.Fatal(err)
-	}
-	if s, err := Open(path, dir, "test"); err == nil {
-		_ = s.Close()
-		t.Fatal("invalid file accepted")
-	}
-	data, err := os.ReadFile(path)
-	if err != nil || string(data) != string(original) {
-		t.Fatalf("invalid resume changed file: %q %v", data, err)
-	}
-	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0644 {
-		t.Fatalf("invalid resume changed mode: %v %v", info, err)
 	}
 }

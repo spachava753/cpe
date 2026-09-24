@@ -190,6 +190,14 @@ func normalizeTokens(metadata gai.Metadata) (tokens, bool, error) {
 		counts[i] = int64(count)
 	}
 	input, output, read, write := counts[0], counts[1], counts[2], counts[3]
+	if _, reported := metadata[gai.UsageMetricInputTokens]; !reported {
+		// Without inclusive input, only the reported cache buckets are known.
+		// Keep them and output, but do not infer uncached input or complete cost.
+		if write > math.MaxInt64-read {
+			return tokens{}, false, errors.New("overflowing provider token counts")
+		}
+		input = read + write
+	}
 	if read > input || write > input-read || output > math.MaxInt64-input {
 		return tokens{}, false, errors.New("inconsistent provider token counts")
 	}

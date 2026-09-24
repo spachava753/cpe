@@ -1,71 +1,48 @@
-package xio
+package xio_test
 
 import (
-	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/spachava753/cpe/internal/xio"
 )
 
-func TestTailBuffer(t *testing.T) {
+func TestTailBufferWrite(t *testing.T) {
 	t.Parallel()
-
-	t.Run("without limit retains all output", func(t *testing.T) {
-		t.Parallel()
-
-		output := NewTailBuffer(0)
-		if n, err := output.Write([]byte("abc")); err != nil || n != 3 {
-			t.Fatalf("Write() = %d, %v, want 3, nil", n, err)
-		}
-		if n, err := output.Write([]byte("def")); err != nil || n != 3 {
-			t.Fatalf("Write() = %d, %v, want 3, nil", n, err)
-		}
-
-		if got := output.String(); got != "abcdef" {
-			t.Fatalf("String() = %q, want %q", got, "abcdef")
-		}
-		if output.Truncated() {
-			t.Fatal("Truncated() = true, want false")
-		}
-	})
-
-	t.Run("retains tail across writes", func(t *testing.T) {
-		t.Parallel()
-
-		output := NewTailBuffer(10)
-		for _, chunk := range []string{"abc", "def", "ghijklmnopqrstuvwxyz"} {
-			if _, err := output.Write([]byte(chunk)); err != nil {
-				t.Fatalf("Write(%q) error = %v, want nil", chunk, err)
+	for _, test := range []struct {
+		name      string
+		limit     int
+		writes    []string
+		want      string
+		truncated bool
+	}{
+		{name: "unlimited", writes: []string{"abc", "def"}, want: "abcdef"},
+		{name: "negative limit", limit: -1, writes: []string{"abc", "def"}, want: "abcdef"},
+		{name: "empty", limit: 3, writes: []string{""}},
+		{name: "exact limit", limit: 3, writes: []string{"abc"}, want: "abc"},
+		{name: "exact limit across writes", limit: 3, writes: []string{"a", "bc", ""}, want: "abc"},
+		{name: "replace existing bytes", limit: 3, writes: []string{"a", "bcd"}, want: "bcd", truncated: true},
+		{name: "tail across writes", limit: 10, writes: []string{"abc", "def", "ghijklmnopqrstuvwxyz"}, want: "qrstuvwxyz", truncated: true},
+		{name: "UTF-8 boundary", limit: 5, writes: []string{"ééé"}, want: "éé", truncated: true},
+		{name: "split rune fits", limit: 3, writes: []string{"\xe2\x82", "\xac"}, want: "€"},
+		{name: "split rune discarded", limit: 2, writes: []string{"\xe2\x82", "\xac", "a"}, want: "a", truncated: true},
+		{name: "continuations after empty tail", limit: 1, writes: []string{"\xe2\x82", "\xac", ""}, want: "", truncated: true},
+		{name: "rune completed in combined tail", limit: 4, writes: []string{"xx\xe2\x82", "\xac", "a"}, want: "€a", truncated: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			output := xio.NewTailBuffer(test.limit)
+			for _, chunk := range test.writes {
+				if n, err := output.Write([]byte(chunk)); n != len(chunk) || err != nil {
+					t.Fatalf("Write(%q) = %d, %v, want %d, nil", chunk, n, err, len(chunk))
+				}
 			}
-		}
-
-		if got := output.String(); got != "qrstuvwxyz" {
-			t.Fatalf("String() = %q, want %q", got, "qrstuvwxyz")
-		}
-		if !output.Truncated() {
-			t.Fatal("Truncated() = false, want true")
-		}
-		if strings.Contains(output.String(), "abcdef") {
-			t.Fatalf("String() = %q, want beginning truncated", output.String())
-		}
-	})
-
-	t.Run("truncates at UTF-8 boundary", func(t *testing.T) {
-		t.Parallel()
-
-		output := NewTailBuffer(5)
-		if _, err := output.Write([]byte("ééé")); err != nil {
-			t.Fatalf("Write() error = %v, want nil", err)
-		}
-
-		got := output.String()
-		if !utf8.ValidString(got) {
-			t.Fatalf("String() = %q, want valid UTF-8", got)
-		}
-		if got != "éé" {
-			t.Fatalf("String() = %q, want %q", got, "éé")
-		}
-		if !output.Truncated() {
-			t.Fatal("Truncated() = false, want true")
-		}
-	})
+			if got := output.String(); got != test.want || !utf8.ValidString(got) {
+				t.Fatalf("String() = %q, want valid UTF-8 %q", got, test.want)
+			}
+			if got := output.Truncated(); got != test.truncated {
+				t.Fatalf("Truncated() = %t, want %t", got, test.truncated)
+			}
+		})
+	}
 }

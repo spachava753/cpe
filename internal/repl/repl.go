@@ -8,9 +8,11 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
+	exactschema "github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/spachava753/dyson"
 	starjson "github.com/spachava753/starlarkx/lib/json"
 	"github.com/spachava753/starlarkx/starlark"
@@ -25,6 +27,8 @@ const Runtime = "cpe-repl-1/dyson-b790356d9233/starlarkx-40a94bc8c78e/" + runtim
 // Tool is an injected host function. Execute accepts schema-validated JSON
 // parameters and returns a JSON-serializable value. Calls are synchronous and
 // journaled; implementations must honor cancellation and must not retain inputs.
+// Input numbers, including nested numbers, are json.Number so integers do not
+// lose precision. Callbacks choose the numeric range/conversion they require.
 type Tool struct {
 	Name        string
 	Description string
@@ -43,10 +47,18 @@ type Options struct {
 	Host        *dyson.StdlibConfig
 }
 
+type toolArgumentFormat uint8
+
+const (
+	legacyToolArguments toolArgumentFormat = iota
+	losslessToolArguments
+)
+
 type evalStart struct {
-	CallID      string `json:"callId"`
-	Code        string `json:"code"`
-	OutputLimit int    `json:"outputLimit"`
+	CallID        string             `json:"callId"`
+	Code          string             `json:"code"`
+	OutputLimit   int                `json:"outputLimit"`
+	ToolArguments toolArgumentFormat `json:"toolArguments,omitempty"`
 }
 
 // Result is the durable outcome of one chunk. An error rolls back interpreter
@@ -68,12 +80,13 @@ type chunk struct {
 
 // REPL owns one Dyson sphere and its durable host journal. Use Close when done.
 type REPL struct {
-	opts   Options
-	j      *journal
-	sphere *dyson.Sphere
-	output *xio.TailBuffer
-	tools  dyson.ModuleSet
-	fatal  error
+	opts          Options
+	j             *journal
+	sphere        *dyson.Sphere
+	output        *xio.TailBuffer
+	tools         dyson.ModuleSet
+	fatal         error
+	toolArguments toolArgumentFormat
 }
 
 // New restores all committed chunks on the active branch without host effects.
@@ -148,6 +161,9 @@ func (r *REPL) restore(ctx context.Context) error {
 			if err := json.Unmarshal(e.Data, &current.start); err != nil {
 				return err
 			}
+			if current.start.ToolArguments != legacyToolArguments && current.start.ToolArguments != losslessToolArguments {
+				return fmt.Errorf("unsupported tool argument format %d", current.start.ToolArguments)
+			}
 		case "host_call", "host_result":
 			if current == nil {
 				return errors.New("host record outside evaluation")
@@ -177,6 +193,7 @@ func (r *REPL) restore(ctx context.Context) error {
 			continue
 		}
 		r.j.records = c.records
+		r.toolArguments = c.start.ToolArguments
 		r.j.position = 0
 		r.j.active = true
 		limit := c.start.OutputLimit
@@ -197,20 +214,28 @@ func (r *REPL) restore(ctx context.Context) error {
 		if r.j.position != len(c.records) {
 			return fmt.Errorf("restore %s: unused host results", c.id)
 		}
-		if r.outputText() != c.end.Output {
+		output := r.outputText()
+		// Older journals marked a single exact-capacity write as truncated even
+		// when no bytes were lost. Accept that historical prefix only when all
+		// retained bytes match; current evaluations use the corrected semantics.
+		legacyExactLimit := c.start.ToolArguments == legacyToolArguments && !r.output.Truncated() && len(output) == limit && c.end.Output == truncatedOutputPrefix+output
+		if output != c.end.Output && !legacyExactLimit {
 			return fmt.Errorf("restore %s: output differs", c.id)
 		}
 	}
 	r.j.records = nil
 	r.j.replay = false
+	r.toolArguments = losslessToolArguments
 	r.output = nil
 	return nil
 }
 
+const truncatedOutputPrefix = "[output truncated]\n"
+
 func (r *REPL) outputText() string {
 	output := r.output.String()
 	if r.output.Truncated() {
-		output = "[output truncated]\n" + output
+		output = truncatedOutputPrefix + output
 	}
 	return output
 }
@@ -225,11 +250,12 @@ func (r *REPL) Eval(ctx context.Context, callID, code string) (Result, error) {
 	if r.sphere == nil {
 		return Result{}, errors.New("REPL is closed")
 	}
-	id, err := r.opts.Store.Append("eval_start", evalStart{CallID: callID, Code: code, OutputLimit: r.opts.OutputLimit})
+	id, err := r.opts.Store.Append("eval_start", evalStart{CallID: callID, Code: code, OutputLimit: r.opts.OutputLimit, ToolArguments: losslessToolArguments})
 	if err != nil {
 		return Result{}, err
 	}
 	r.output = xio.NewTailBuffer(r.opts.OutputLimit)
+	r.toolArguments = losslessToolArguments
 	r.j.active = true
 	evalCtx, cancel := context.WithTimeout(ctx, r.opts.Timeout)
 	evalErr := r.sphere.Eval(evalCtx, code)
@@ -290,6 +316,11 @@ func (r *REPL) makeTools() (dyson.ModuleSet, error) {
 		if err != nil {
 			return nil, err
 		}
+		// Legacy replay keeps its original validator. Compile the current one
+		// lazily so stricter schema checks cannot prevent older chunks restoring.
+		currentSchema := sync.OnceValues(func() (*exactschema.Schema, error) {
+			return compileToolSchema(schema)
+		})
 		funcs[tool.Name] = starlark.NewBuiltin(tool.Name, func(thread *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 			params := starlark.NewDict(len(kwargs))
 			if len(args) > 1 || len(args) == 1 && len(kwargs) > 0 {
@@ -316,10 +347,22 @@ func (r *REPL) makeTools() (dyson.ModuleSet, error) {
 				return nil, errors.New("JSON encoder returned non-string")
 			}
 			var input map[string]any
-			if err := json.Unmarshal([]byte(text), &input); err != nil {
+			decoder := json.NewDecoder(strings.NewReader(text))
+			if r.toolArguments == losslessToolArguments {
+				decoder.UseNumber()
+			}
+			if err := decoder.Decode(&input); err != nil {
 				return nil, err
 			}
-			if err := resolved.Validate(input); err != nil {
+			if r.toolArguments == losslessToolArguments {
+				schema, err := currentSchema()
+				if err != nil {
+					return nil, err
+				}
+				if err := schema.Validate(input); err != nil {
+					return nil, err
+				}
+			} else if err := resolved.Validate(input); err != nil {
 				return nil, err
 			}
 			value, err := boundary(r.j, "tool."+tool.Name, input, func() (json.RawMessage, error) {
@@ -336,6 +379,27 @@ func (r *REPL) makeTools() (dyson.ModuleSet, error) {
 		})
 	}
 	return dyson.ModuleSet{"tools.star": funcs}, nil
+}
+
+func compileToolSchema(schema *jsonschema.Schema) (*exactschema.Schema, error) {
+	data, err := json.Marshal(schema)
+	if err != nil {
+		return nil, err
+	}
+	document, err := exactschema.UnmarshalJSON(strings.NewReader(string(data)))
+	if err != nil {
+		return nil, err
+	}
+	compiler := exactschema.NewCompiler()
+	compiler.DefaultDraft(exactschema.Draft2020)
+	// Tool schemas are supplied by the host. Resolving a reference must never
+	// introduce unjournaled filesystem or network access during evaluation.
+	compiler.UseLoader(nil)
+	const location = "urn:cpe:tool-schema"
+	if err := compiler.AddResource(location, document); err != nil {
+		return nil, err
+	}
+	return compiler.Compile(location)
 }
 
 // ToolInstructions describes the tools.star functions and their JSON schemas.

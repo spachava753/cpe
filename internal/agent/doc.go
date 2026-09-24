@@ -11,6 +11,9 @@
 // Compaction replaces only model context. It appends a summary node and leaves
 // all REPL inputs and host outcomes reachable for restoration. Branching selects
 // a completed-turn checkpoint and rebuilds its interpreter without host effects.
+// If restoration fails, the selected head remains durable and generation/model
+// changes are disabled until a successful branch restoration or reopen. The
+// displayed dialog follows the selected head, never the abandoned branch.
 // One Agent has one caller at a time; the caller owns Store.Close separately.
 // SetModel and SetReasoningEffort change subsequent turns and compaction without
 // replaying or replacing the interpreter. They must be called between operations.
@@ -21,6 +24,8 @@
 // reported input count on the active branch for the same provider/model. A
 // positive model context_window triggers compaction at 90%; requests still
 // estimated over the budget fail before generation, including summary requests.
+// New prompts are checked against the prospective normal or summary request
+// before being persisted, so definitely oversized input can be shortened/retried.
 // This is a heuristic, not a hard provider token or monetary limit. Compaction
 // runs at most once per user turn. Oversized new input or a switch to a much
 // smaller budget may require reducing input or selecting a larger profile first.

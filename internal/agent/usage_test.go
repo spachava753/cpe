@@ -185,3 +185,54 @@ func TestLegacyUsageIsUnknownAndMalformedRecordsFailClosed(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeTokens(t *testing.T) {
+	tests := []struct {
+		name              string
+		metadata          gai.Metadata
+		want              tokens
+		complete, wantErr bool
+	}{
+		{name: "missing report"},
+		{name: "explicit zero", metadata: gai.Metadata{gai.UsageMetricInputTokens: 0, gai.UsageMetricGenerationTokens: 0}, complete: true},
+		{name: "disjoint buckets", metadata: gai.Metadata{gai.UsageMetricInputTokens: 100, gai.UsageMetricGenerationTokens: 20, gai.UsageMetricCacheReadTokens: 40, gai.UsageMetricCacheWriteTokens: 10}, want: tokens{Input: 50, Output: 20, CacheRead: 40, CacheWrite: 10}, complete: true},
+		{name: "input only", metadata: gai.Metadata{gai.UsageMetricInputTokens: 100}, want: tokens{Input: 100}},
+		{name: "output only", metadata: gai.Metadata{gai.UsageMetricGenerationTokens: 20}, want: tokens{Output: 20}},
+		{name: "output and caches without input", metadata: gai.Metadata{gai.UsageMetricGenerationTokens: 20, gai.UsageMetricCacheReadTokens: 40, gai.UsageMetricCacheWriteTokens: 10}, want: tokens{Output: 20, CacheRead: 40, CacheWrite: 10}},
+		{name: "explicit zero contradicts cache", metadata: gai.Metadata{gai.UsageMetricInputTokens: 0, gai.UsageMetricCacheReadTokens: 1}, wantErr: true},
+		{name: "cache reads exceed input", metadata: gai.Metadata{gai.UsageMetricInputTokens: 10, gai.UsageMetricCacheReadTokens: 11}, wantErr: true},
+		{name: "combined caches exceed input", metadata: gai.Metadata{gai.UsageMetricInputTokens: 10, gai.UsageMetricCacheReadTokens: 6, gai.UsageMetricCacheWriteTokens: 5}, wantErr: true},
+		{name: "negative", metadata: gai.Metadata{gai.UsageMetricGenerationTokens: -1}, wantErr: true},
+		{name: "wrong type", metadata: gai.Metadata{gai.UsageMetricInputTokens: float64(10)}, wantErr: true},
+	}
+	// Metadata counters are native ints. Only 64-bit hosts can individually
+	// represent counts large enough to overflow the int64 accounting buckets.
+	maxCount := int(^uint(0) >> 1)
+	if int64(maxCount) == math.MaxInt64 {
+		for _, test := range []struct {
+			name     string
+			metadata gai.Metadata
+		}{
+			{"input plus output overflow", gai.Metadata{gai.UsageMetricInputTokens: maxCount, gai.UsageMetricGenerationTokens: 1}},
+			{"partial cache overflow", gai.Metadata{gai.UsageMetricCacheReadTokens: maxCount, gai.UsageMetricCacheWriteTokens: 1}},
+			{"partial output overflow", gai.Metadata{gai.UsageMetricCacheReadTokens: maxCount, gai.UsageMetricGenerationTokens: 1}},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				if _, _, err := normalizeTokens(test.metadata); err == nil {
+					t.Fatal("overflow accepted")
+				}
+			})
+		}
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, complete, err := normalizeTokens(test.metadata)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("normalizeTokens() error = %v, want error %t", err, test.wantErr)
+			}
+			if err == nil && (got != test.want || complete != test.complete) {
+				t.Fatalf("normalizeTokens() = %+v, complete=%t; want %+v, complete=%t", got, complete, test.want, test.complete)
+			}
+		})
+	}
+}

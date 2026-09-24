@@ -32,7 +32,7 @@ func (g *Generator) Generate(ctx context.Context, req gai.GenerationRequest) (ga
 	return response, err
 }
 
-// Stream forwards content and adds complete SDK usage to terminal metadata.
+// Stream forwards content and adds reported SDK usage to terminal metadata.
 func (g *Generator) Stream(ctx context.Context, req gai.GenerationRequest) iter.Seq[gai.StreamChunk] {
 	return func(yield func(gai.StreamChunk) bool) {
 		s := &usageService{ResponsesService: g.service}
@@ -68,11 +68,18 @@ func (s *usageService) capture(response api.Response) {
 		return
 	}
 	u := response.Usage
-	s.usage = gai.Metadata{
-		gai.UsageMetricInputTokens:      int(u.InputTokens),
-		gai.UsageMetricGenerationTokens: int(u.OutputTokens),
-		gai.UsageMetricCacheReadTokens:  int(u.InputTokensDetails.CachedTokens),
-		gai.UsageMetricCacheWriteTokens: int(u.InputTokensDetails.CacheWriteTokens),
+	s.usage = gai.Metadata{}
+	if u.JSON.InputTokens.Valid() {
+		s.usage[gai.UsageMetricInputTokens] = int(u.InputTokens)
+	}
+	if u.JSON.OutputTokens.Valid() {
+		s.usage[gai.UsageMetricGenerationTokens] = int(u.OutputTokens)
+	}
+	if u.InputTokensDetails.JSON.CachedTokens.Valid() {
+		s.usage[gai.UsageMetricCacheReadTokens] = int(u.InputTokensDetails.CachedTokens)
+	}
+	if u.InputTokensDetails.JSON.CacheWriteTokens.Valid() {
+		s.usage[gai.UsageMetricCacheWriteTokens] = int(u.InputTokensDetails.CacheWriteTokens)
 	}
 }
 

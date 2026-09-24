@@ -41,16 +41,24 @@ func (a *Agent) checkContext(req gai.GenerationRequest) error {
 	return nil
 }
 
-func (a *Agent) prepareContext(ctx context.Context, req gai.GenerationRequest) (gaiagent.PrepareDialogDecision, error) {
+func (a *Agent) needsCompaction(req gai.GenerationRequest) (bool, error) {
 	data, err := json.Marshal(req.Dialog)
 	if err != nil {
-		return gaiagent.PrepareDialogDecision{}, err
+		return false, err
 	}
 	characters := a.opts.Config.Compaction.MaxCharacters
 	window := a.opts.Model.ContextWindow
 	needsCompaction := window == 0 && characters > 0 && len(data) > characters
 	if window > 0 && a.estimateContext(req) >= window-window/10 {
 		needsCompaction = true
+	}
+	return needsCompaction, nil
+}
+
+func (a *Agent) prepareContext(ctx context.Context, req gai.GenerationRequest) (gaiagent.PrepareDialogDecision, error) {
+	needsCompaction, err := a.needsCompaction(req)
+	if err != nil {
+		return gaiagent.PrepareDialogDecision{}, err
 	}
 	if needsCompaction && !a.compacted {
 		if err := a.Compact(ctx); err != nil {
@@ -67,7 +75,16 @@ func (a *Agent) prepareContext(ctx context.Context, req gai.GenerationRequest) (
 // tool instructions. Read it only between operations. Billing uses provider
 // usage instead; this number is solely a working-context estimate.
 func (a *Agent) ContextEstimate() int {
-	return a.estimateContext(gai.GenerationRequest{Model: a.opts.Model.ID,
+	return a.estimateContext(a.conversationRequest(a.dialog))
+}
+
+func (a *Agent) conversationRequest(dialog gai.Dialog) gai.GenerationRequest {
+	return gai.GenerationRequest{Model: a.opts.Model.ID,
 		Instructions: a.instructions(), Tools: []gai.Tool{replDefinition()},
-		Dialog: a.dialog, Options: a.generationOptions()})
+		Dialog: dialog, Options: a.generationOptions()}
+}
+
+func (a *Agent) compactionRequest(dialog gai.Dialog) gai.GenerationRequest {
+	input := append(append(gai.Dialog{}, dialog...), gai.Message{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("Summarize this conversation for continuation.")}})
+	return gai.GenerationRequest{Model: a.opts.Model.ID, Instructions: gai.SystemMessage(gai.TextBlock(a.opts.Config.Compaction.Prompt)), Dialog: input, Options: a.generationOptions()}
 }

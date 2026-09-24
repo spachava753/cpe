@@ -60,6 +60,7 @@ type Agent struct {
 	pending       map[string]gai.Message
 	usage         Usage
 	contextSample *contextSample
+	stateErr      error
 }
 
 // Open restores the interpreter and reconciles interrupted tool results.
@@ -79,9 +80,23 @@ func Open(ctx context.Context, opts Options) (*Agent, error) {
 	}
 	return a, nil
 }
-func (a *Agent) restore(ctx context.Context) error {
+func (a *Agent) restore(ctx context.Context) (err error) {
+	// A durable head change must not leave a usable agent combining that head
+	// with the previous branch's conversation or interpreter after failed replay.
+	defer func() {
+		if err != nil {
+			a.stateErr = fmt.Errorf("agent restoration failed; reopen the session or select a checkpoint: %w", err)
+		} else {
+			a.stateErr = nil
+		}
+	}()
+	if err := a.reload(); err != nil {
+		return err
+	}
 	if a.repl != nil {
-		if err := a.repl.Close(); err != nil {
+		err := a.repl.Close()
+		a.repl = nil
+		if err != nil {
 			return err
 		}
 	}
@@ -93,15 +108,11 @@ func (a *Agent) restore(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	a.repl = r
-	if err := a.reload(); err != nil {
-		_ = r.Close()
-		return err
-	}
 	if err := a.reconcile(); err != nil {
 		_ = r.Close()
 		return err
 	}
+	a.repl = r
 	return nil
 }
 func (a *Agent) reload() error {
@@ -244,14 +255,33 @@ func (a *Agent) syncDialog(dialog gai.Dialog) error {
 // Prompt saves user input, runs the gai hook-driven loop, and creates a branch
 // checkpoint. Cancellation preserves completed work and repairs pending results.
 func (a *Agent) Prompt(ctx context.Context, text string, emit func(Event)) error {
+	if a.stateErr != nil {
+		return a.stateErr
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if strings.TrimSpace(text) == "" {
 		return errors.New("empty prompt")
+	}
+	input := gai.Message{Role: gai.User, Blocks: []gai.Block{gai.TextBlock(text)}}
+	prospective := append(append(gai.Dialog{}, a.dialog...), input)
+	request := a.conversationRequest(prospective)
+	compact, err := a.needsCompaction(request)
+	if err != nil {
+		return err
+	}
+	if compact {
+		request = a.compactionRequest(prospective)
+	}
+	if err := a.checkContext(request); err != nil {
+		return err
 	}
 	a.emit = emit
 	defer func() { a.emit = nil }()
 	a.compacted = false
 	a.pending = make(map[string]gai.Message)
-	if err := a.append(gai.Message{Role: gai.User, Blocks: []gai.Block{gai.TextBlock(text)}}); err != nil {
+	if err := a.append(input); err != nil {
 		return err
 	}
 	definition := replDefinition()
@@ -361,12 +391,14 @@ func (a *Agent) generationOptions() gai.GenerationOptions {
 
 // Compact appends a durable summary without discarding any REPL history.
 func (a *Agent) Compact(ctx context.Context) error {
+	if a.stateErr != nil {
+		return a.stateErr
+	}
 	if len(a.dialog) == 0 {
 		return errors.New("nothing to compact")
 	}
 	a.notify(Event{Kind: EventActivity, Text: "Compacting"})
-	dialog := append(append(gai.Dialog{}, a.dialog...), gai.Message{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("Summarize this conversation for continuation.")}})
-	request := gai.GenerationRequest{Model: a.opts.Model.ID, Instructions: gai.SystemMessage(gai.TextBlock(a.opts.Config.Compaction.Prompt)), Dialog: dialog, Options: a.generationOptions()}
+	request := a.compactionRequest(a.dialog)
 	if err := a.checkContext(request); err != nil {
 		return err
 	}
@@ -395,7 +427,9 @@ func (a *Agent) Compact(ctx context.Context) error {
 	return err
 }
 
-// Branch rebuilds interpreter and model context at a saved checkpoint.
+// Branch rebuilds interpreter and model context at a saved checkpoint. If replay
+// fails after the head is saved, generation is disabled until another Branch
+// succeeds or the session is reopened. Messages still reflects the selected head.
 func (a *Agent) Branch(ctx context.Context, id string) error {
 	if err := a.opts.Store.Branch(id); err != nil {
 		return err
@@ -414,6 +448,9 @@ func (a *Agent) Model() config.Model { return a.opts.Model }
 // rebuilding the interpreter or changing conversation history. Settings are local
 // to this Agent; reopening a session uses the caller's configuration again.
 func (a *Agent) SetModel(model config.Model, generator gai.Generator) error {
+	if a.stateErr != nil {
+		return a.stateErr
+	}
 	if generator == nil || model.ID == "" {
 		return errors.New("model ID and generator are required")
 	}
@@ -430,6 +467,9 @@ func (a *Agent) SetModel(model config.Model, generator gai.Generator) error {
 // SetReasoningEffort changes subsequent turns and compaction between operations.
 // Empty effort omits the option; invalid settings leave the active model intact.
 func (a *Agent) SetReasoningEffort(effort string) error {
+	if a.stateErr != nil {
+		return a.stateErr
+	}
 	model, err := a.opts.Model.WithReasoningEffort(effort)
 	if err != nil {
 		return err

@@ -33,18 +33,21 @@ func (b *TailBuffer) Write(p []byte) (int, error) {
 		return len(p), nil
 	}
 	if len(p) >= b.limit {
+		b.truncated = b.truncated || len(b.buf) > 0 || len(p) > b.limit
 		b.buf = append(b.buf[:0], p[len(p)-b.limit:]...)
-		b.truncated = true
-		b.trimLeadingPartialRuneLocked()
-		return len(p), nil
+	} else {
+		if overflow := len(b.buf) + len(p) - b.limit; overflow > 0 {
+			copy(b.buf, b.buf[overflow:])
+			b.buf = b.buf[:len(b.buf)-overflow]
+			b.truncated = true
+		}
+		b.buf = append(b.buf, p...)
 	}
-	if overflow := len(b.buf) + len(p) - b.limit; overflow > 0 {
-		copy(b.buf, b.buf[overflow:])
-		b.buf = b.buf[:len(b.buf)-overflow]
-		b.truncated = true
+	// A rune may span writes, including after its prefix has been discarded.
+	// Trim the combined tail so later continuation bytes cannot become its start.
+	if b.truncated {
 		b.trimLeadingPartialRuneLocked()
 	}
-	b.buf = append(b.buf, p...)
 	return len(p), nil
 }
 
