@@ -17,27 +17,41 @@ import (
 
 // Config contains application defaults and named provider profiles.
 type Config struct {
-	DefaultModel string           `json:"default_model"`
-	Models       map[string]Model `json:"models"`
-	Agent        Agent            `json:"agent"`
-	Compaction   Compaction       `json:"compaction"`
-	System       string           `json:"-"`
-	Dir          string           `json:"-"`
+	DefaultModel string               `json:"default_model"`
+	Models       map[string]Model     `json:"models"`
+	Agent        Agent                `json:"agent"`
+	Compaction   Compaction           `json:"compaction"`
+	MCPServers   map[string]mcpServer `json:"mcp_servers,omitempty"`
+	System       string               `json:"-"`
+	Dir          string               `json:"-"`
 }
 
-// Model selects a provider, credentials, and generation settings. Codex uses
-// credentials in ~/.cpe/auth.json, not APIKeyEnv or BaseURL. ReasoningEffort
-// applies to Responses and Codex; Codex rejects output limits and temperature.
+// mcpServer selects exactly one transport: a stdio command (with optional args
+// and environment overrides), or a Streamable HTTP URL. Commands run in the
+// agent's working directory and inherit the process environment.
+type mcpServer struct {
+	Command string            `json:"command,omitempty"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	URL     string            `json:"url,omitempty"`
+}
+
+// Model selects a wire provider, credentials, and generation settings. Codex uses
+// ~/.cpe/auth.json. Credential="opencode-go" selects CPE's saved Go API key with
+// an openai, responses, or anthropic provider. Both omit APIKeyEnv and BaseURL.
+// ReasoningEffort is forwarded through every provider; Codex rejects output
+// limits and temperature.
 type Model struct {
 	Provider        string   `json:"provider"`
 	ID              string   `json:"id"`
-	APIKeyEnv       string   `json:"api_key_env"`
-	BaseURL         string   `json:"base_url"`
-	ReasoningEffort string   `json:"reasoning_effort"`
-	MaxOutputTokens int      `json:"max_output_tokens"`
-	Temperature     *float64 `json:"temperature"`
-	ContextWindow   int      `json:"context_window"`
-	Cost            *Pricing `json:"cost"`
+	Credential      string   `json:"credential,omitempty"`
+	APIKeyEnv       string   `json:"api_key_env,omitempty"`
+	BaseURL         string   `json:"base_url,omitempty"`
+	ReasoningEffort string   `json:"reasoning_effort,omitempty"`
+	MaxOutputTokens int      `json:"max_output_tokens,omitempty"`
+	Temperature     *float64 `json:"temperature,omitempty"`
+	ContextWindow   int      `json:"context_window,omitempty"`
+	Cost            *Pricing `json:"cost,omitempty"`
 }
 
 // Rates are USD per million tokens in four mutually exclusive billing buckets.
@@ -93,19 +107,17 @@ func (r Rates) validate() error {
 	return nil
 }
 
-// ReasoningEfforts returns the recognized effort labels in increasing order.
-// Individual models may support only a subset of these labels.
+// ReasoningEfforts returns common effort labels followed by thinking modes.
+// All providers accept this setting; their adapters/models determine which
+// labels are supported. In particular, Anthropic supports adaptive and disabled.
 func ReasoningEfforts() []string {
-	return []string{"none", "minimal", "low", "medium", "high", "xhigh", "max"}
+	return []string{"none", "minimal", "low", "medium", "high", "xhigh", "max", "adaptive", "disabled"}
 }
 
 // WithReasoningEffort returns a copy with validated reasoning settings. An empty
 // effort omits the provider option; it is distinct from the explicit "none".
 func (m Model) WithReasoningEffort(effort string) (Model, error) {
 	if effort != "" {
-		if m.Provider != "responses" && m.Provider != "codex" {
-			return m, errors.New("reasoning_effort requires responses or codex")
-		}
 		if !slices.Contains(ReasoningEfforts(), effort) {
 			return m, fmt.Errorf("invalid reasoning_effort %q", effort)
 		}
@@ -146,15 +158,19 @@ func Load() (Config, error) {
 	return load(dir)
 }
 func load(dir string) (Config, error) {
-	c := Config{Dir: dir, Agent: Agent{ToolTimeout: "1m", OutputLimit: 32000, MaxRounds: 50}, Compaction: Compaction{Prompt: "Summarize the conversation for continuation. Preserve the user's goals, decisions, files changed, unresolved work, and names/types of useful persistent Starlark variables. Do not claim external effects were undone."}}
 	data, err := os.ReadFile(filepath.Join(dir, "config.json"))
 	if err != nil {
-		return c, fmt.Errorf("load config.json (run cpe --init for starter files): %w", err)
+		return Config{}, fmt.Errorf("load config.json (run cpe --init for starter files): %w", err)
 	}
+	return parse(dir, data)
+}
+
+func parse(dir string, data []byte) (Config, error) {
+	c := Config{Dir: dir, Agent: Agent{ToolTimeout: "1m", OutputLimit: 32000, MaxRounds: 50}, Compaction: Compaction{Prompt: "Summarize the conversation for continuation. Preserve the user's goals, decisions, files changed, unresolved work, and names/types of useful persistent Starlark variables. Do not claim external effects were undone."}}
 	if err := jsonconfig.Decode(data, &c); err != nil {
 		return c, fmt.Errorf("load config.json: %w", err)
 	}
-	data, err = os.ReadFile(filepath.Join(dir, "system.md"))
+	data, err := os.ReadFile(filepath.Join(dir, "system.md"))
 	if err != nil {
 		return c, err
 	}
@@ -166,6 +182,11 @@ func load(dir string) (Config, error) {
 		return c, errors.New("default_model must name a configured model")
 	}
 	for name, m := range c.Models {
+		if m.Credential != "" {
+			if m.Credential != "opencode-go" || (m.Provider != "openai" && m.Provider != "responses" && m.Provider != "anthropic") || m.APIKeyEnv != "" || m.BaseURL != "" {
+				return c, fmt.Errorf("model %q: credential must be opencode-go with provider openai, responses, or anthropic; omit api_key_env and base_url", name)
+			}
+		}
 		if err := m.ValidateBudget(); err != nil {
 			return c, fmt.Errorf("model %q: %w", name, err)
 		}
@@ -174,7 +195,7 @@ func load(dir string) (Config, error) {
 		}
 		switch m.Provider {
 		case "openai", "responses", "anthropic", "gemini":
-			if m.APIKeyEnv == "" {
+			if m.APIKeyEnv == "" && m.Credential == "" {
 				return c, fmt.Errorf("model %q requires api_key_env", name)
 			}
 		case "codex":
@@ -206,6 +227,20 @@ func load(dir string) (Config, error) {
 	}
 	if c.Compaction.MaxCharacters < 0 || strings.TrimSpace(c.Compaction.Prompt) == "" {
 		return c, errors.New("invalid compaction settings")
+	}
+	for name, server := range c.MCPServers {
+		if (server.Command == "") == (server.URL == "") {
+			return c, fmt.Errorf("MCP %q requires exactly one of command or url", name)
+		}
+		if server.URL != "" {
+			u, err := url.Parse(server.URL)
+			if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.Fragment != "" {
+				return c, fmt.Errorf("MCP %q requires an HTTP(S) URL without userinfo or fragment", name)
+			}
+			if len(server.Args) != 0 || len(server.Env) != 0 {
+				return c, fmt.Errorf("MCP %q: args and env require command", name)
+			}
+		}
 	}
 	return c, nil
 }

@@ -42,6 +42,107 @@ func TestInitFiles(t *testing.T) {
 }
 
 func TestLoad(t *testing.T) {
+	t.Run("reasoning across providers", func(t *testing.T) {
+		for _, provider := range []string{"openai", "responses", "anthropic", "gemini", "codex"} {
+			t.Run(provider, func(t *testing.T) {
+				efforts := []string{"", "high"}
+				if provider == "anthropic" {
+					efforts = append(efforts, "adaptive", "disabled")
+				}
+				for _, effort := range efforts {
+					name := effort
+					if name == "" {
+						name = "omitted"
+					}
+					t.Run(name, func(t *testing.T) {
+						dir := t.TempDir()
+						profile := `"provider":"` + provider + `","id":"custom-model","reasoning_effort":"` + effort + `"`
+						if provider != "codex" {
+							profile += `,"api_key_env":"FIXTURE_KEY","base_url":"https://compatible.example/v1"`
+						}
+						body := `{"default_model":"fixture","models":{"fixture":{` + profile + `}}}`
+						if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(body), 0600); err != nil {
+							t.Fatal(err)
+						}
+						if err := os.WriteFile(filepath.Join(dir, "system.md"), []byte("test"), 0600); err != nil {
+							t.Fatal(err)
+						}
+						cfg, err := load(dir)
+						if err != nil || cfg.Models["fixture"].ReasoningEffort != effort {
+							t.Fatalf("profile=%+v err=%v", cfg.Models["fixture"], err)
+						}
+					})
+				}
+			})
+		}
+	})
+	t.Run("saved credentials", func(t *testing.T) {
+		for _, test := range []struct {
+			name, fields string
+			invalid      bool
+		}{
+			{"Go chat", `"provider":"openai","credential":"opencode-go"`, false},
+			{"Go responses", `"provider":"responses","credential":"opencode-go"`, false},
+			{"Go messages", `"provider":"anthropic","credential":"opencode-go"`, false},
+			{"unknown credential", `"provider":"openai","credential":"unknown"`, true},
+			{"Go Gemini", `"provider":"gemini","credential":"opencode-go"`, true},
+			{"Go Codex", `"provider":"codex","credential":"opencode-go"`, true},
+			{"ambiguous credentials", `"provider":"openai","credential":"opencode-go","api_key_env":"KEY"`, true},
+			{"endpoint override", `"provider":"openai","credential":"opencode-go","base_url":"https://example.com"`, true},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				dir := t.TempDir()
+				body := `{"default_model":"go","models":{"go":{"id":"fixture",` + test.fields + `}}}`
+				if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(body), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "system.md"), []byte("test"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				_, err := load(dir)
+				if (err != nil) != test.invalid {
+					t.Fatalf("load error: %v", err)
+				}
+			})
+		}
+	})
+	t.Run("MCP transports", func(t *testing.T) {
+		for _, test := range []struct {
+			name, server string
+			invalid      bool
+		}{
+			{"stdio", `{"command":"fixture","args":["--stdio"],"env":{"MODE":"test"}}`, false},
+			{"HTTP", `{"url":"http://127.0.0.1:8000/mcp"}`, false},
+			{"HTTPS", `{"url":"https://example.com/mcp"}`, false},
+			{"empty", `{}`, true},
+			{"null", `null`, true},
+			{"both", `{"command":"fixture","url":"https://example.com/mcp"}`, true},
+			{"wrong scheme", `{"url":"file:///tmp/mcp"}`, true},
+			{"URL credentials", `{"url":"https://user:secret@example.com/mcp"}`, true},
+			{"fragment", `{"url":"https://example.com/mcp#fragment"}`, true},
+			{"args without command", `{"url":"https://example.com/mcp","args":["arg"]}`, true},
+			{"env without command", `{"url":"https://example.com/mcp","env":{"X":"Y"}}`, true},
+			{"unknown field", `{"command":"fixture","typo":true}`, true},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				dir := t.TempDir()
+				body := strings.Replace(defaultJSON, "{", `{"mcp_servers":{"fixture":`+test.server+`},`, 1)
+				if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(body), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "system.md"), []byte(defaultSystem), 0600); err != nil {
+					t.Fatal(err)
+				}
+				c, err := load(dir)
+				if (err != nil) != test.invalid {
+					t.Fatalf("config=%+v err=%v", c, err)
+				}
+				if !test.invalid && len(c.MCPServers) != 1 {
+					t.Fatal("MCP server lost during loading")
+				}
+			})
+		}
+	})
 	t.Run("system markdown", func(t *testing.T) {
 		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(defaultJSON), 0600); err != nil {

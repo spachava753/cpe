@@ -28,7 +28,7 @@ func TestSlashCompletionEditingAndNavigation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	profile := config.Model{Provider: codexProvider, ID: "completion-model"}
+	profile := config.Model{Provider: "codex", ID: "completion-model"}
 	a, err := agent.Open(t.Context(), agent.Options{Config: config.Config{Agent: config.Agent{ToolTimeout: "1s", OutputLimit: 1024, MaxRounds: 3}}, Model: profile, Generator: agenttest.NewScriptedGenerator(), Store: store, CWD: dir})
 	if err != nil {
 		t.Fatal(err)

@@ -165,6 +165,9 @@ func resultMessage(r repl.Result) gai.Message {
 		text = "(no output)"
 	}
 	m := gai.ToolResultMessage(r.CallID, gai.TextBlock(text))
+	for _, img := range r.Images {
+		m.Blocks = append(m.Blocks, gai.Block{ID: r.CallID, BlockType: gai.Content, ModalityType: gai.Image, MimeType: img.MIMEType, Content: gai.Str(img.Data)})
+	}
 	m.ToolResultError = r.Error != ""
 	return m
 }
@@ -501,6 +504,7 @@ func (a *Agent) Close() error {
 }
 
 const replDescription = `Use starlark_repl to execute persistent Starlarkx code. Variables and functions survive across calls and restarts. This is the only model tool. Print values to see output. The language is Starlark with top-level control flow, while loops, sets, and reassignment; it is not Python.
+Use load("repl.star", "emit_image") to show images to the model. For MCP image content use emit_image(result["content"][i]); for base64 strings or raw bytes use emit_image(data, mime_type="image/png"). This attaches actual images to this tool result; printing base64 does not display an image. PNG, JPEG, GIF, and WebP are supported, up to 20 MiB of image bytes per evaluation. Emitted images persist even if later code fails, like printed output.
 Load Dyson modules with load("os.star", "os"), load("requests.star", "requests"), and similarly glob, json, re, subprocess, time. Use open(path).read() to read text; open supports read modes only. Write via fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644); os.write(fd, "text"); os.close(fd). Run commands with subprocess.run(["command", "arg"], capture_output=True, text=True). Use requests.get(url).text or .json() for HTTP.
 Prefer closing files and descriptors within each chunk. Restored handles reattach by path and saved offset on NEW host I/O, without repeating creation or truncation; they observe the current filesystem. The working directory is fixed; use explicit paths or subprocess cwd. Environment mutation, process signaling, tempfile, pwd, grp, and shutil are not exposed.
 Every host operation is journaled. Restoration supplies recorded results without repeating effects. A failed chunk rolls back Starlark state, but file writes, HTTP requests, and commands already performed remain. Inspect those effects before retrying. Historical data in restored variables is a snapshot; call the host again when fresh data is needed.`

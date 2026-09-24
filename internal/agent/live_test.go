@@ -20,16 +20,16 @@ func TestLiveConfiguredAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	model := cfg.Models[cfg.DefaultModel]
-	gen, err := Provider(t.Context(), model)
-	if err != nil {
-		t.Fatal(err)
-	}
 	dir := t.TempDir()
 	store, err := session.Open(filepath.Join(dir, "live.jsonl"), dir, repl.Runtime)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer store.Close()
+	gen, err := Provider(t.Context(), model, cfg.Dir, store.Entries()[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	a, err := Open(t.Context(), Options{Config: cfg, Model: model, Generator: gen, Store: store, CWD: dir})
 	if err != nil {
 		t.Fatal(err)

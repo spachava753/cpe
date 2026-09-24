@@ -22,4 +22,13 @@
 // exact numbers with the pinned jsonschema/v6 validator and no external schema
 // loader. Unknown versions fail closed. Subsequent live
 // evaluations always use the current format, including after rollback or branching.
+//
+// repl.star provides emit_image(image) for MCP image dictionaries and
+// emit_image(data, mime_type="image/png") for base64 strings or Starlark bytes.
+// PNG, JPEG, GIF, and WebP headers must match their MIME type. At most 20 MiB of
+// decoded image bytes may be emitted per evaluation, separately from text limits.
+// Images are ordered, saved in eval_end, and compared during committed replay.
+// Like printed output, images emitted before a failed chunk remain in its result;
+// neither rollback nor a later evaluation inherits the pending image list.
+// Emission is pure: it performs no file/network I/O and needs no host-call record.
 package repl

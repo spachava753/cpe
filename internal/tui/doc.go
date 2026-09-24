@@ -1,7 +1,9 @@
 // Package tui presents the internal agent through Bubble Tea. A viewport holds
 // accepted messages and provisional streamed text; a textarea accepts multiline
 // prompts. Agent work runs off the UI loop and sends ordered events through one
-// channel. Esc or Ctrl+C cancels active work; the program waits for reconciliation
+// channel. Image content is represented by an [Image: MIME] placeholder; the
+// model receives the actual image block rather than a base64 text dump.
+// Esc or Ctrl+C cancels active work; the program waits for reconciliation
 // before allowing another operation. Ctrl+C when idle or /quit exits. Alt+Enter
 // inserts a newline, Enter submits, and PgUp/PgDn scroll the conversation.
 //
@@ -20,7 +22,12 @@
 // suggestions never capture navigation or Enter. Reloading themes and resizing
 // preserve the completion selection, draft and conversation scroll position.
 //
-// /login opens a browser PKCE flow; /login device shows a device code. Login work
+// /login opens a provider picker; /login codex opens browser PKCE, and /login
+// device shows a Codex device code. /login opencode-go opens masked API-key input,
+// separate from the prompt composer, then saves the key and imports profiles.
+// Successful import refreshes /model immediately without switching the active
+// model or changing its settings. Escape/Ctrl+C cancels key entry without exiting.
+// Login work
 // shares the cancellation and worker lifecycle with agent work, but sends only
 // ephemeral display events. Its URLs and codes are cleared on completion and
 // never enter model context or the durable conversation. Missing credentials do
@@ -31,8 +38,9 @@
 // and leave conversation and interpreter state intact. Selecting a different
 // profile applies its configured defaults; selecting the same one is a no-op.
 // /reasoning default restores the active profile's configured effort (or omits
-// the provider option when unset). Only Codex and Responses profiles support
-// reasoning effort. These commands do not enter model context or session files,
+// the provider option when unset). Reasoning can be set for every profile and
+// appears in the header; supported labels depend on the adapter/model. These
+// commands do not enter model context or session files,
 // and do not edit config.json; restart/resume uses configuration and --model.
 //
 // Two status rows display cumulative uncached input, output, cache reads/writes,

@@ -35,8 +35,9 @@ var slashCommands = []slashCommand{
 	{reasoningCommand, "Set reasoning effort", false},
 	{themeCommand, "Choose a theme", false},
 	{usageCommand, "Show session token totals", false},
-	{loginCommand, "Sign in through the browser", false},
+	{loginCommand, "Choose a login provider", false},
 	{loginDeviceCommand, "Sign in with a device code", false},
+	{loginGoCommand, "Save an OpenCode Go API key", false},
 	{compactCommand, "Summarize model context", false},
 	{treeCommand, "List saved checkpoints", false},
 	{branchCommand, "Continue from a checkpoint ID", true},
@@ -68,7 +69,7 @@ func (m *model) syncCompletion() {
 	}
 	c.query, c.matches = value, nil
 	info := m.input.LineInfo()
-	if !m.busy && m.picker == nil && !c.dismissed && m.input.LineCount() == 1 && strings.HasPrefix(value, "/") && info.StartColumn+info.ColumnOffset == utf8.RuneCountInString(value) {
+	if !m.busy && !m.loggingIn && m.picker == nil && !c.dismissed && m.input.LineCount() == 1 && strings.HasPrefix(value, "/") && info.StartColumn+info.ColumnOffset == utf8.RuneCountInString(value) {
 		for _, command := range slashCommands {
 			if strings.HasPrefix(command.name, value) {
 				c.matches = append(c.matches, command)

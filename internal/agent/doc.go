@@ -1,6 +1,11 @@
 // Package agent is CPE's internal SDK. Open accepts configuration, a generator,
 // an owned session store, and optional JSON tools. The model sees exactly one
 // tool, starlark_repl; injected tools are functions loaded from tools.star.
+// MCP connections supply these same tools through package mcptools. REPL images
+// become image content blocks in the tool result, with the original call ID.
+// Both normal completion and interrupted-result reconciliation preserve them.
+// Provider accepts an explicit credential directory and durable conversation ID;
+// OpenCode Go uses them for lazy API-key loading and stable per-session headers.
 //
 // The gai/agent loop supplies generation, streaming, and tool hooks. Complete
 // assistant responses are persisted before tools run; results are persisted

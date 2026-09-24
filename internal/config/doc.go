@@ -9,9 +9,15 @@
 // API providers read named environment variables. Codex instead uses CPE's own
 // ~/.cpe/auth.json with TUI /login and automatic refresh. There is no credential
 // path setting or fallback to Pi. Codex uses a fixed endpoint and rejects API-key,
-// output-limit, and temperature options. Responses and Codex accept
-// reasoning_effort; allowed labels ultimately depend on the selected model.
+// output-limit, and temperature options. Every provider accepts reasoning_effort,
+// including Chat Completions profiles pointing at compatible endpoints. CPE
+// recognizes common effort labels plus adaptive/disabled thinking modes; gai
+// translates the setting and the adapter/model determines supported values.
 // Interactive reasoning changes use the same validation as file configuration.
+// credential=opencode-go selects a saved Go API key with an openai, responses, or
+// anthropic protocol. Such profiles omit api_key_env/base_url; CPE fixes endpoints.
+// AddModels parses the merged configuration and atomically adds missing profiles
+// without changing existing names or defaults. Imports follow config symlinks.
 //
 // Each profile may set context_window, a preferred input-token budget (zero
 // disables it). It takes precedence over the legacy compaction.max_characters
@@ -24,4 +30,11 @@
 // Omitted cost means unknown, not free. cost.long_context optionally supplies
 // all four replacement rates and above_input_tokens, an exclusive threshold
 // based on total request input (including caches). Rates apply to the full call.
+//
+// mcp_servers maps server identifiers to either command/args/env (stdio) or url
+// (Streamable HTTP). The CLI connects and discovers tools at startup, with
+// agent.tool_timeout bounding each connection. Commands inherit the environment
+// and working directory; env entries override inherited values. Exactly one
+// transport is required. HTTP URLs must omit userinfo/fragments. MCP OAuth,
+// legacy HTTP+SSE endpoints, and dynamic catalog updates are not configured here.
 package config

@@ -8,18 +8,23 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/gai"
 	"golang.org/x/term"
 
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/codex"
 	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/mcptools"
+	"github.com/spachava753/cpe/internal/opencodego"
 	"github.com/spachava753/cpe/internal/repl"
 	"github.com/spachava753/cpe/internal/session"
 	"github.com/spachava753/cpe/internal/tui"
@@ -58,7 +63,7 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	if *initConfig {
 		dir, err := config.Init()
 		if err == nil {
-			fmt.Fprintf(out, "Configuration ready in %s. Start CPE and use /login for Codex, or configure API-key credentials.\n", dir)
+			fmt.Fprintf(out, "Configuration ready in %s. Start CPE and use /login for Codex or OpenCode Go, or configure API-key credentials.\n", dir)
 		}
 		return err
 	}
@@ -103,10 +108,6 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	if !ok {
 		return fmt.Errorf("unknown model profile %q", *modelName)
 	}
-	generator, err := agent.Provider(ctx, model)
-	if err != nil {
-		return err
-	}
 	if *prompt == "" && (!term.IsTerminal(int(os.Stdin.Fd())) || !term.IsTerminal(int(os.Stdout.Fd()))) {
 		return errors.New("interactive mode requires a terminal; use --prompt")
 	}
@@ -134,7 +135,40 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 			return err
 		}
 	}
-	a, err := agent.Open(ctx, agent.Options{Config: c, Model: model, Generator: generator, Store: store, CWD: cwd})
+	sessionID := store.Entries()[0].ID
+	newGenerator := func(ctx context.Context, profile config.Model) (gai.Generator, error) {
+		return agent.Provider(ctx, profile, c.Dir, sessionID)
+	}
+	generator, err := newGenerator(ctx, model)
+	if err != nil {
+		return err
+	}
+	var tools []repl.Tool
+	for _, name := range slices.Sorted(maps.Keys(c.MCPServers)) {
+		server := c.MCPServers[name]
+		var transport mcp.Transport
+		if server.Command != "" {
+			command := exec.CommandContext(ctx, server.Command, server.Args...)
+			command.Dir, command.Stderr = cwd, errOut
+			command.Env = os.Environ()
+			for _, key := range slices.Sorted(maps.Keys(server.Env)) {
+				command.Env = append(command.Env, key+"="+server.Env[key])
+			}
+			transport = &mcp.CommandTransport{Command: command}
+		} else {
+			transport = &mcp.StreamableClientTransport{Endpoint: server.URL, MaxRetries: -1, DisableStandaloneSSE: true}
+		}
+		timeout, _ := time.ParseDuration(c.Agent.ToolTimeout) // Validated by config.Load.
+		connectCtx, cancel := context.WithTimeout(ctx, timeout)
+		connection, err := mcptools.Connect(connectCtx, name, transport)
+		cancel()
+		if err != nil {
+			return err
+		}
+		defer func() { _ = connection.Close() }()
+		tools = append(tools, connection.Tools()...)
+	}
+	a, err := agent.Open(ctx, agent.Options{Config: c, Model: model, Generator: generator, Store: store, CWD: cwd, Tools: tools})
 	if err != nil {
 		return err
 	}
@@ -153,9 +187,16 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	}
 	authFile := filepath.Join(c.Dir, "auth.json")
 	options := tui.Options{
-		Models:   c.Models,
-		ThemeDir: c.Dir,
+		Models:       c.Models,
+		NewGenerator: newGenerator,
+		ThemeDir:     c.Dir,
+		LoginGo: func(ctx context.Context, key string) (map[string]config.Model, error) {
+			return opencodego.Login(ctx, c.Dir, key)
+		},
 		LoginRequired: func(profile config.Model) bool {
+			if profile.Credential == "opencode-go" {
+				return !opencodego.HasKey(c.Dir)
+			}
 			_, err := os.Stat(authFile)
 			return profile.Provider == "codex" && errors.Is(err, os.ErrNotExist)
 		},

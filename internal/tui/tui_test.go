@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/spachava753/gai"
@@ -25,6 +26,27 @@ import (
 type outputBuffer struct {
 	mu sync.Mutex
 	bytes.Buffer
+}
+
+func TestModelRefresh(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		block        gai.Block
+		want, absent string
+	}{
+		{"text", gai.TextBlock("printed output"), "printed output", "[Image:"},
+		{"image", gai.ImageBlock([]byte("fixture bytes"), "image/png"), "[Image: image/png]", "Zml4dHVyZSBieXRlcw=="},
+		{"thinking", gai.Block{BlockType: gai.Thinking, Content: gai.Str("private reasoning")}, "Starlark", "private reasoning"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			m := model{viewport: viewport.New(80, 20), messages: gai.Dialog{gai.ToolResultMessage("call", test.block)}}
+			m.refresh(true)
+			view := ansi.Strip(m.viewport.View())
+			if !strings.Contains(view, test.want) || strings.Contains(view, test.absent) {
+				t.Fatalf("transcript=%q", view)
+			}
+		})
+	}
 }
 
 func (b *outputBuffer) Write(p []byte) (int, error) {
@@ -173,7 +195,7 @@ func TestLoginIsCancellableAndNeverEntersConversation(t *testing.T) {
 	}
 	defer store.Close()
 	gen := agenttest.NewScriptedGenerator(agenttest.GenerateStep{Response: gai.Response{Candidates: []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("Ready after login.")}}}, FinishReason: gai.EndTurn}})
-	a, err := agent.Open(t.Context(), agent.Options{Config: config.Config{System: "Login test", Agent: config.Agent{ToolTimeout: "1s", OutputLimit: 1024, MaxRounds: 3}}, Model: config.Model{Provider: codexProvider, ID: "login-fixture"}, Generator: gen, Store: store, CWD: dir})
+	a, err := agent.Open(t.Context(), agent.Options{Config: config.Config{System: "Login test", Agent: config.Agent{ToolTimeout: "1s", OutputLimit: 1024, MaxRounds: 3}}, Model: config.Model{Provider: "codex", ID: "login-fixture"}, Generator: gen, Store: store, CWD: dir})
 	if err != nil {
 		t.Fatal(err)
 	}

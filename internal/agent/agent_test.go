@@ -130,7 +130,10 @@ func TestInterruptedToolResultReconciliation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	call, err := gai.ToolCallBlock("pending", "starlark_repl", map[string]any{codeParameter: "x = 7; print(x)"})
+	const code = `load("repl.star", "emit_image")
+x = 7; print(x)
+emit_image("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l1sAAAAASUVORK5CYII=", mime_type="image/png")`
+	call, err := gai.ToolCallBlock("pending", "starlark_repl", map[string]any{codeParameter: code})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +147,7 @@ func TestInterruptedToolResultReconciliation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := r.Eval(t.Context(), "pending", "x = 7; print(x)")
+	result, err := r.Eval(t.Context(), "pending", code)
 	if err != nil || result.Error != "" {
 		t.Fatal(result, err)
 	}
@@ -157,6 +160,9 @@ func TestInterruptedToolResultReconciliation(t *testing.T) {
 	last := a.Messages()[len(a.Messages())-1]
 	if last.Role != gai.ToolResult || last.Blocks[0].ID != "pending" || last.Blocks[0].Content.String() != "7\n" {
 		t.Fatal(last)
+	}
+	if len(last.Blocks) != 2 || last.Blocks[1].ModalityType != gai.Image || last.Blocks[1].MimeType != "image/png" || last.Blocks[1].Content.String() != result.Images[0].Data {
+		t.Fatalf("interrupted result lost its image: %+v", last)
 	}
 	before := len(store.Entries())
 	if err := a.restore(t.Context()); err != nil {

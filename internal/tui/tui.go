@@ -11,6 +11,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -30,11 +31,14 @@ type update struct {
 	done      bool
 	err       error
 	loginText string
+	profiles  map[string]config.Model
 }
 
 // Options supplies model profiles and UI-only authentication. NewGenerator
 // defaults to agent.Provider and constructs a provider without generating text.
-// Login must honor cancellation and send only display instructions to notify.
+// Login handles Codex, honoring cancellation and sending only UI instructions.
+// LoginGo accepts a UI-only API key and returns all profiles after import. Both
+// callbacks must omit secrets from errors and display messages.
 // LoginRequired is checked at startup and after changing profiles. ThemeDir is
 // the configuration directory for theme loading, live reload, and saved theme
 // selections. An empty directory disables theme configuration. Reload failures
@@ -43,6 +47,7 @@ type Options struct {
 	Models        map[string]config.Model
 	NewGenerator  func(context.Context, config.Model) (gai.Generator, error)
 	Login         func(context.Context, string, func(string)) error
+	LoginGo       func(context.Context, string) (map[string]config.Model, error)
 	LoginRequired func(config.Model) bool
 	ThemeDir      string
 }
@@ -62,6 +67,8 @@ type model struct {
 	activity      string
 	notice        string
 	login         func(context.Context, string, func(string)) error
+	loginGo       func(context.Context, string) (map[string]config.Model, error)
+	keyInput      *textinput.Model
 	loggingIn     bool
 	loginRequired bool
 	loginText     string
@@ -98,7 +105,13 @@ func newModel(ctx context.Context, a *agent.Agent, name string) model {
 	m := model{ctx: ctx, agent: a, name: name, input: input, viewport: viewport.New(80, 14), spinner: spin, width: 80, height: 24, messages: a.Messages(), notice: "/help for commands"}
 	m.profile = a.Model()
 	m.usage, m.contextTokens = a.Usage(), a.ContextEstimate()
-	m.newGenerator = agent.Provider
+	m.newGenerator = func(ctx context.Context, profile config.Model) (gai.Generator, error) {
+		dir, err := config.Directory()
+		if err != nil {
+			return nil, err
+		}
+		return agent.Provider(ctx, profile, dir, a.Checkpoints()[0].ID)
+	}
 	m.renderer = lipgloss.DefaultRenderer()
 	m.applyTheme(theme.Default())
 	return m
@@ -120,7 +133,7 @@ func Run(ctx context.Context, a *agent.Agent, name string, options Options) erro
 			m.applyTheme(t)
 		}
 	}
-	m.login, m.needsLogin, m.profiles = options.Login, options.LoginRequired, options.Models
+	m.login, m.loginGo, m.needsLogin, m.profiles = options.Login, options.LoginGo, options.LoginRequired, options.Models
 	if options.NewGenerator != nil {
 		m.newGenerator = options.NewGenerator
 	}
@@ -128,7 +141,7 @@ func Run(ctx context.Context, a *agent.Agent, name string, options Options) erro
 		m.loginRequired = m.needsLogin(m.profile)
 	}
 	if m.loginRequired {
-		m.notice = "Sign in with /login to use Codex"
+		m.notice = "Sign in with /login to use this model"
 	}
 	program := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithContext(ctx))
 	final, err := program.Run()
@@ -149,6 +162,9 @@ func (m model) Init() tea.Cmd {
 }
 func await(events <-chan update) tea.Cmd { return func() tea.Msg { return <-events } }
 func (m *model) start(text string) tea.Cmd {
+	return m.startWork(text, "")
+}
+func (m *model) startWork(text, key string) tea.Cmd {
 	ctx, cancel := context.WithCancel(m.ctx)
 	m.cancel = cancel
 	m.busy = true
@@ -157,7 +173,7 @@ func (m *model) start(text string) tea.Cmd {
 	m.usageView = false
 	m.staticView = ""
 	m.activity = "Thinking"
-	m.loggingIn = text == loginCommand || text == loginDeviceCommand
+	m.loggingIn = text == loginCodexCommand || text == loginDeviceCommand || text == loginGoCommand
 	m.loginText = ""
 	if m.loggingIn {
 		m.activity = "Signing in"
@@ -168,11 +184,14 @@ func (m *model) start(text string) tea.Cmd {
 	go func() {
 		defer close(ch)
 		var err error
+		var profiles map[string]config.Model
 		switch {
+		case text == loginGoCommand:
+			profiles, err = m.loginGo(ctx, key)
 		case m.loggingIn:
 			method := "browser"
 			if text == loginDeviceCommand {
-				method = "device"
+				method = deviceLogin
 			}
 			err = m.login(ctx, method, func(text string) { ch <- update{loginText: text} })
 		case text == compactCommand:
@@ -186,7 +205,7 @@ func (m *model) start(text string) tea.Cmd {
 				ch <- update{event: event}
 			})
 		}
-		ch <- update{done: true, err: err}
+		ch <- update{done: true, err: err, profiles: profiles}
 	}()
 	return tea.Batch(await(ch), m.spinner.Tick)
 }
@@ -240,8 +259,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if v.err != nil {
 				m.notice = "Error: " + v.err.Error()
 			} else if m.loggingIn {
-				m.loginRequired = false
+				m.loginRequired = m.needsLogin != nil && m.needsLogin(m.profile)
 				m.notice = "Signed in · credentials saved to ~/.cpe/auth.json"
+				if v.profiles != nil {
+					m.profiles = v.profiles
+					m.notice = "OpenCode Go key saved · models ready in /model"
+				}
 			} else {
 				m.notice = "Saved"
 			}
@@ -271,6 +294,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refresh(true)
 		return m, await(m.events)
 	case tea.KeyMsg:
+		if m.keyInput != nil {
+			return m.updateKeyInput(msg)
+		}
 		if m.picker != nil {
 			return m.updatePicker(v)
 		}
@@ -317,6 +343,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.syncCompletion()
 			command := strings.Fields(text)[0]
 			argument := strings.TrimSpace(strings.TrimPrefix(text, command))
+			if command == loginCommand {
+				return m, m.configureLogin(argument)
+			}
 			if command == themeCommand {
 				m.configureTheme(argument)
 				return m, nil
@@ -360,13 +389,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.notice = "History is preserved when branching"
 				return m, nil
 			}
-			if text == loginCommand || text == loginDeviceCommand {
-				if m.login == nil || m.profile.Provider != codexProvider {
-					m.notice = "Select a Codex profile with /model to use /login"
-					return m, nil
-				}
-				return m, m.start(text)
-			}
 			if !literalSlash && strings.HasPrefix(text, "/") && text != compactCommand && !strings.HasPrefix(text, branchCommand+" ") {
 				m.notice = "Unknown command. /help for commands"
 				return m, nil
@@ -390,6 +412,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.keyInput != nil {
+		return m.updateKeyInput(msg)
+	}
 	if !m.busy {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
@@ -408,7 +433,7 @@ func (m *model) refresh(bottom bool) {
 		return
 	}
 	if m.loggingIn && m.loginText != "" {
-		m.viewport.SetContent(ansi.Hardwrap(clean(m.loginText), max(1, m.viewport.Width), true))
+		m.viewport.SetContent(ansi.Wrap(clean(m.loginText), max(1, m.viewport.Width), ""))
 		return
 	}
 	var b strings.Builder
@@ -432,6 +457,9 @@ func (m *model) refresh(bottom bool) {
 				continue
 			}
 			text := block.Content.String()
+			if block.BlockType == gai.Content && block.ModalityType == gai.Image {
+				text = "[Image: " + block.MimeType + "]"
+			}
 			if block.BlockType == gai.Thinking {
 				continue
 			}
@@ -464,10 +492,7 @@ func (m model) View() string {
 	if m.width < 24 || m.height < 8 {
 		return "Resize terminal to at least 24 × 8"
 	}
-	profile := "  " + oneline(m.name)
-	if supportsReasoning(m.profile) {
-		profile += " · " + effortLabel(m.profile.ReasoningEffort)
-	}
+	profile := "  " + oneline(m.name) + " · " + effortLabel(m.profile.ReasoningEffort)
 	title := m.styles.accent.Render("cpe") + m.styles.base.Render(profile+"  ") + m.styles.muted.Render(oneline(filepath.Base(m.agent.SessionFile())))
 	status := oneline(m.notice)
 	if m.busy {
@@ -498,7 +523,12 @@ func (m model) View() string {
 	if popup := m.completionView(); popup != "" {
 		rows = append(rows, popup)
 	}
-	rows = append(rows, line, m.input.View(), ansi.Truncate(footer, m.width, "…"))
+	editor := m.input.View()
+	if m.keyInput != nil {
+		editor = m.keyInput.View() + strings.Repeat("\n", max(0, m.input.Height()-1))
+		footer = m.styles.muted.Render("Enter save key · Esc cancel")
+	}
+	rows = append(rows, line, editor, ansi.Truncate(footer, m.width, "…"))
 	return m.canvas(strings.Join(rows, "\n"))
 }
 
@@ -509,6 +539,10 @@ func (m *model) layout() {
 	}
 	m.input.SetWidth(max(1, m.width-2))
 	m.input.SetHeight(min(m.theme.InputHeight, max(1, m.height-overhead-1)))
+	if m.keyInput != nil {
+		m.keyInput.Width = max(1, m.width-12)
+		m.keyInput.PromptStyle, m.keyInput.TextStyle, m.keyInput.PlaceholderStyle = m.styles.accent, m.styles.base, m.styles.muted
+	}
 	m.viewport.Width = max(1, m.width-2)
 	m.viewport.Height = max(1, m.height-m.input.Height()-overhead-m.completionHeight())
 	if m.picker != nil {

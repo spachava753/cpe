@@ -30,9 +30,11 @@ func TestModelAndReasoningCommands(t *testing.T) {
 	}
 	defer store.Close()
 	profiles := map[string]config.Model{
-		firstProfile:  {Provider: codexProvider, ID: "alpha-model", ReasoningEffort: "low"},
+		firstProfile:  {Provider: "codex", ID: "alpha-model", ReasoningEffort: "low"},
 		secondProfile: {Provider: "responses", ID: "beta-model"},
 		thirdProfile:  {Provider: "anthropic", ID: "gamma-model"},
+		"gemini":      {Provider: "gemini", ID: "custom-gemini"},
+		"compatible":  {Provider: "openai", ID: "custom-chat-model"},
 		"missing-key": {Provider: "openai", ID: "unavailable"},
 	}
 	gen := agenttest.NewScriptedGenerator()
@@ -43,7 +45,7 @@ func TestModelAndReasoningCommands(t *testing.T) {
 	defer a.Close()
 	m := newModel(t.Context(), a, firstProfile)
 	m.profiles = profiles
-	m.needsLogin = func(profile config.Model) bool { return profile.Provider == codexProvider }
+	m.needsLogin = func(profile config.Model) bool { return profile.Provider == "codex" }
 	m.loginRequired = true
 	m.newGenerator = func(_ context.Context, profile config.Model) (gai.Generator, error) {
 		if profile.ID == "unavailable" {
@@ -66,9 +68,15 @@ func TestModelAndReasoningCommands(t *testing.T) {
 		{"/reasoning none", secondProfile, "none", "Reasoning: none", false},
 		{"/reasoning default", secondProfile, "", "Reasoning: provider default", false},
 		{"/model gamma", thirdProfile, "", "Model: gamma", false},
-		{"/reasoning high", thirdProfile, "", "requires a Codex or Responses", false},
-		{reasoningCommand, thirdProfile, "", "requires a Codex or Responses", false},
-		{loginCommand, thirdProfile, "", "Select a Codex profile", false},
+		{"/reasoning high", thirdProfile, highEffort, "Reasoning: high", false},
+		{"/reasoning adaptive", thirdProfile, "adaptive", "Reasoning: adaptive", false},
+		{"/reasoning disabled", thirdProfile, "disabled", "Reasoning: disabled", false},
+		{loginCommand, thirdProfile, "disabled", "Login is unavailable", false},
+		{"/model gemini", "gemini", "", "Model: gemini", false},
+		{"/reasoning high", "gemini", highEffort, "Reasoning: high", false},
+		{"/reasoning default", "gemini", "", "Reasoning: provider default", false},
+		{"/model compatible", "compatible", "", "Model: compatible", false},
+		{"/reasoning high", "compatible", highEffort, "Reasoning: high", false},
 		{"/model alpha", firstProfile, lowEffort, "sign in with /login", true},
 	} {
 		m.input.SetValue(step.command)
@@ -127,6 +135,27 @@ func TestModelAndReasoningCommands(t *testing.T) {
 	if m.profile.ReasoningEffort != "none" || m.picker != nil {
 		t.Fatal("picker did not apply reasoning selection")
 	}
+	for _, name := range []string{firstProfile, secondProfile, thirdProfile, "gemini", "compatible"} {
+		t.Run("reasoning picker for "+name, func(t *testing.T) {
+			m.configureModel(modelCommand, name)
+			m.configureModel(reasoningCommand, "")
+			if m.picker == nil || m.picker.command != reasoningCommand {
+				t.Fatal("missing reasoning picker")
+			}
+			for i, item := range m.picker.list.Items() {
+				if item.(choice).value == highEffort {
+					m.picker.list.Select(i)
+					break
+				}
+			}
+			next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = next.(model)
+			if m.profile.ReasoningEffort != highEffort || m.picker != nil || !strings.Contains(ansi.Strip(m.View()), highEffort) {
+				t.Fatalf("effort not selected/displayed: %s", m.View())
+			}
+		})
+	}
+	m.configureModel(modelCommand, secondProfile)
 	// Busy turns must not permit settings mutations or picker activation.
 	m.busy = true
 	m.input.SetValue("/model alpha")

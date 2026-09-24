@@ -3,8 +3,10 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,8 +40,8 @@ func TestTerminalHarness(t *testing.T) {
 	in, out, read, write := 2.0, 10.0, 0.2, 2.5
 	pricing := &config.Pricing{Rates: config.Rates{Input: &in, Output: &out, CacheRead: &read, CacheWrite: &write}}
 	profiles := map[string]config.Model{
-		"terminal-fixture": {Provider: codexProvider, ID: "terminal-fixture", ReasoningEffort: lowEffort},
-		"alternate":        {Provider: codexProvider, ID: "alternate-fixture", ReasoningEffort: "medium"},
+		"terminal-fixture": {Provider: "codex", ID: "terminal-fixture", ReasoningEffort: lowEffort},
+		"alternate":        {Provider: "codex", ID: "alternate-fixture", ReasoningEffort: "medium"},
 		"api-fixture":      {Provider: "openai", ID: "api-fixture"},
 	}
 	for name, profile := range profiles {
@@ -59,7 +61,22 @@ func TestTerminalHarness(t *testing.T) {
 	options := Options{Models: profiles,
 		ThemeDir:      dir,
 		NewGenerator:  func(context.Context, config.Model) (gai.Generator, error) { return gen, nil },
-		LoginRequired: func(profile config.Model) bool { return profile.Provider == codexProvider && !signedIn },
+		LoginRequired: func(profile config.Model) bool { return profile.Provider == "codex" && !signedIn },
+		LoginGo: func(ctx context.Context, key string) (map[string]config.Model, error) {
+			if key != "fixture-go-key" {
+				return nil, errors.New("fixture expects fixture-go-key")
+			}
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
+			updated := maps.Clone(profiles)
+			for _, provider := range []string{"openai", "responses", "anthropic"} {
+				updated["opencode-go/"+provider] = config.Model{Provider: provider, ID: provider + "-fixture", Credential: "opencode-go", ContextWindow: 128000, MaxOutputTokens: 16384}
+			}
+			return updated, nil
+		},
 		Login: func(ctx context.Context, method string, notify func(string)) error {
 			notify("Sign in to OpenAI Codex\n\nOpen https://example.com/device\n\nEnter code: CPE-TEST\n\nTerminal fixture: waiting for authorization. Esc cancels.")
 			select {
@@ -104,6 +121,9 @@ func (g *terminalGenerator) Stream(ctx context.Context, req gai.GenerationReques
 			code := `answer = 6 * 7; print(answer)`
 			if strings.Contains(text, "restore") {
 				code = `print("Restored answer:", answer)`
+			}
+			if strings.Contains(text, "image") {
+				code = `load("repl.star", "emit_image"); emit_image("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l1sAAAAASUVORK5CYII=", mime_type="image/png")`
 			}
 			params, err := json.Marshal(map[string]any{"code": code})
 			if err != nil {

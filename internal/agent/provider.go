@@ -17,25 +17,37 @@ import (
 
 	"github.com/spachava753/cpe/internal/codex"
 	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/opencodego"
 	"github.com/spachava753/cpe/internal/responses"
 )
 
 const codexProvider = "codex"
 
 // Provider builds a gai generator with explicit credentials and no SDK retries.
-func Provider(ctx context.Context, m config.Model) (gai.Generator, error) {
+// dir owns CPE credentials; sessionID is the durable root entry ID, shared by
+// generation and compaction and retained when resuming or branching a session.
+func Provider(ctx context.Context, m config.Model, dir, sessionID string) (gai.Generator, error) {
 	if m.Provider == codexProvider {
-		dir, err := config.Directory()
-		if err != nil {
-			return nil, err
-		}
 		return codex.New(filepath.Join(dir, "auth.json")), nil
 	}
 	key := os.Getenv(m.APIKeyEnv)
-	if key == "" {
+	client := &http.Client{Timeout: 10 * time.Minute}
+	if m.Credential == "opencode-go" {
+		var err error
+		m.BaseURL, err = opencodego.BaseURL(m.Provider)
+		if err != nil {
+			return nil, err
+		}
+		client, err = opencodego.Client(dir, sessionID)
+		if err != nil {
+			return nil, err
+		}
+		key = "cpe-key-loaded-by-transport" // SDK placeholder; never sent on the wire.
+	} else if m.Credential != "" {
+		return nil, fmt.Errorf("unsupported credential %q", m.Credential)
+	} else if key == "" {
 		return nil, fmt.Errorf("set %s for model %s", m.APIKeyEnv, m.ID)
 	}
-	client := &http.Client{Timeout: 10 * time.Minute}
 	switch m.Provider {
 	case "openai":
 		return gai.NewOpenAiGenerator(client, m.BaseURL, key)

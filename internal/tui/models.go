@@ -14,7 +14,6 @@ import (
 const currentChoiceSuffix = " (current)"
 
 const defaultEffort = "default"
-const codexProvider = "codex"
 
 type choice struct{ value, label string }
 
@@ -25,10 +24,6 @@ func (c choice) FilterValue() string { return c.label }
 type picker struct {
 	command string
 	list    list.Model
-}
-
-func supportsReasoning(profile config.Model) bool {
-	return profile.Provider == codexProvider || profile.Provider == "responses"
 }
 
 func effortLabel(effort string) string {
@@ -62,10 +57,6 @@ func (m *model) configureModel(command, value string) {
 		}
 		m.openPicker(command, "Choose model", items, selected)
 	case reasoningCommand:
-		if !supportsReasoning(m.profile) {
-			m.notice = "Reasoning effort requires a Codex or Responses profile"
-			return
-		}
 		if value != "" {
 			effort := value
 			if value == defaultEffort {
@@ -119,6 +110,9 @@ func (m model) updatePicker(key tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if selected, ok := m.picker.list.SelectedItem().(choice); ok {
 			command := m.picker.command
 			m.picker = nil
+			if command == loginCommand {
+				return m, m.configureLogin(selected.value)
+			}
 			if command == themeCommand {
 				m.configureTheme(selected.value)
 			} else {

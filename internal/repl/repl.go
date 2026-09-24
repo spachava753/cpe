@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -64,11 +65,12 @@ type evalStart struct {
 // Result is the durable outcome of one chunk. An error rolls back interpreter
 // state while preserving the audit trail and any already-performed host effects.
 type Result struct {
-	EvalID    string `json:"evalId"`
-	CallID    string `json:"callId"`
-	Output    string `json:"output"`
-	Error     string `json:"error,omitempty"`
-	Committed bool   `json:"committed"`
+	EvalID    string  `json:"evalId"`
+	CallID    string  `json:"callId"`
+	Output    string  `json:"output"`
+	Error     string  `json:"error,omitempty"`
+	Committed bool    `json:"committed"`
+	Images    []Image `json:"images,omitempty"`
 }
 
 type chunk struct {
@@ -84,6 +86,8 @@ type REPL struct {
 	j             *journal
 	sphere        *dyson.Sphere
 	output        *xio.TailBuffer
+	images        []Image
+	imageBytes    int
 	tools         dyson.ModuleSet
 	fatal         error
 	toolArguments toolArgumentFormat
@@ -136,7 +140,7 @@ func (r *REPL) newSphere() {
 		if r.output != nil {
 			_, _ = r.output.Write([]byte(text))
 		}
-	}, source, r.tools)
+	}, source, r.tools, dyson.ModuleSet{"repl.star": {"emit_image": starlark.NewBuiltin("emit_image", r.emitImage)}})
 }
 
 func (r *REPL) restore(ctx context.Context) error {
@@ -201,6 +205,7 @@ func (r *REPL) restore(ctx context.Context) error {
 			limit = r.opts.OutputLimit
 		}
 		r.output = xio.NewTailBuffer(limit)
+		r.images, r.imageBytes = nil, 0
 		replayCtx, cancel := context.WithTimeout(ctx, r.opts.Timeout)
 		err := r.sphere.Eval(replayCtx, c.start.Code)
 		cancel()
@@ -222,11 +227,15 @@ func (r *REPL) restore(ctx context.Context) error {
 		if output != c.end.Output && !legacyExactLimit {
 			return fmt.Errorf("restore %s: output differs", c.id)
 		}
+		if !slices.Equal(r.images, c.end.Images) {
+			return fmt.Errorf("restore %s: images differ", c.id)
+		}
 	}
 	r.j.records = nil
 	r.j.replay = false
 	r.toolArguments = losslessToolArguments
 	r.output = nil
+	r.images, r.imageBytes = nil, 0
 	return nil
 }
 
@@ -255,6 +264,7 @@ func (r *REPL) Eval(ctx context.Context, callID, code string) (Result, error) {
 		return Result{}, err
 	}
 	r.output = xio.NewTailBuffer(r.opts.OutputLimit)
+	r.images, r.imageBytes = nil, 0
 	r.toolArguments = losslessToolArguments
 	r.j.active = true
 	evalCtx, cancel := context.WithTimeout(ctx, r.opts.Timeout)
@@ -265,7 +275,7 @@ func (r *REPL) Eval(ctx context.Context, callID, code string) (Result, error) {
 		r.fatal = r.j.fatal
 		return Result{}, r.fatal
 	}
-	result := Result{EvalID: id, CallID: callID, Output: r.outputText(), Committed: evalErr == nil}
+	result := Result{EvalID: id, CallID: callID, Output: r.outputText(), Images: r.images, Committed: evalErr == nil}
 	if evalErr != nil {
 		result.Error = evalErr.Error() + "\nInterpreter state rolled back; external effects remain."
 	}

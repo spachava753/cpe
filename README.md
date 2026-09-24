@@ -3,10 +3,10 @@
 CPE is a small terminal programming agent built with Bubble Tea, gai, Starlarkx,
 and Dyson. The model has one tool: a persistent `starlark_repl`. It uses Starlark
 functions to read and write files, run commands, call HTTP services, and invoke
-application-supplied tools.
+application-supplied tools or MCP servers.
 
 This is a replacement for the previous ACP application. The old ACP server,
-SQLite sessions, YAML configuration, the old OAuth commands, MCP configuration, and
+SQLite sessions, YAML configuration, the old OAuth commands, the previous MCP configuration format, and
 Harbor/Pier adapters have been removed. Existing SQLite sessions are not migrated.
 
 ## Run
@@ -19,8 +19,8 @@ go build -o cpe .
 ./cpe
 ```
 
-The starter configuration selects Codex. Use `/login` in the TUI to open the
-browser sign-in flow. CPE validates the OAuth callback with PKCE and state, then
+The starter configuration selects Codex. Use `/login` to choose a login provider,
+or `/login codex` to open the browser sign-in flow. CPE validates the OAuth callback with PKCE and state, then
 saves its own credentials to `~/.cpe/auth.json`. Use `/login device` for a remote
 terminal or a machine without a browser: open the displayed URL and enter the
 code. Device login may need to be enabled in your ChatGPT account settings.
@@ -59,10 +59,14 @@ JSON must contain one object. Unknown fields, duplicate keys, trailing data, and
 invalid settings are errors. Examples are in [examples/](examples/README.md).
 
 Supported API-key providers are `openai` (Chat Completions, including compatible
-servers), `responses`, `anthropic`, and `gemini`. Those profiles require
+servers), `responses`, `anthropic`, and `gemini`. Ordinary API-key profiles require
 `api_key_env` and may set `base_url`, `max_output_tokens`, and `temperature`.
-`reasoning_effort` is supported by `responses` and `codex`; accepted values depend
-on the model. Codex uses its fixed endpoint and rejects the API-key, base URL,
+`reasoning_effort` and `/reasoning` are available for every provider, including
+Chat Completions profiles using compatible endpoints. Labels are `none`, `minimal`,
+`low`, `medium`, `high`, `xhigh`, `max`, `adaptive`, and `disabled`. Gai translates
+the setting for each provider; supported labels depend on the adapter/model.
+Anthropic supports `adaptive` and `disabled` thinking modes. An empty setting
+omits the option. Codex uses its fixed endpoint and rejects the API-key, base URL,
 output-token limit, and temperature settings.
 
 CPE owns its Codex credentials; it does not read or modify Pi's login. Subsequent
@@ -77,6 +81,45 @@ without committing partial output. Model requests, token exchanges, and refreshe
 are not automatically retried. Device authorization is polled until approved,
 canceled, denied, or expired. If credentials are rejected, use `/login` again.
 
+## OpenCode Go
+
+Use `/login` → **OpenCode Go**, or `/login opencode-go`. Sign in at
+[OpenCode](https://opencode.ai/auth), subscribe to Go, and paste the API key into
+the masked input. Enter saves it privately to `~/.cpe/opencode-go.json`; Escape
+cancels. It never enters the prompt composer, config.json, or session history.
+The public model catalog cannot verify the key: the service checks it on the
+first model request.
+
+Login adds `opencode-go/<model-id>` profiles to config.json. Select one with
+`/model`; no restart is needed. Your existing profiles, custom settings, active
+model, and default model stay unchanged. Repeat login to import newly available
+models or replace the saved key. A failed catalog fetch preserves your setup;
+if saving the key fails after import, the added profiles remain signed out and
+you can retry.
+
+CPE starts from the [Go model endpoint](https://opencode.ai/zen/go/v1/models) and
+looks up metadata exclusively in the `opencode-go` section of
+[models.dev](https://github.com/anomalyco/models.dev). The full catalog covers many
+providers; entries under Zen (`opencode`), OpenAI, or other providers never qualify
+a model for Go. Deprecated models are excluded even if the Go endpoint still
+lists them. This filter affects new imports; existing saved profiles are not pruned.
+
+Go's documented endpoint corrections take precedence over catalog protocol
+metadata. Chat Completions maps to `openai`, Responses to `responses`, and Messages
+to `anthropic`. Unknown protocols, missing Go metadata, and models without tool
+support are skipped. Imported profiles share
+`"credential": "opencode-go"`; omit `api_key_env` and `base_url`, since CPE uses
+fixed Go endpoints. You can add a profile manually using the protocol listed
+in [OpenCode Go's documentation](https://opencode.ai/docs/go/#endpoints).
+
+New profiles start with up to 128,000 input tokens and 16,384 output tokens,
+bounded by model limits and with room for output. Adjust `context_window`,
+`max_output_tokens`, and `reasoning_effort` in config.json as desired. Pricing is
+left unset because subscription quota rates are not necessarily your bill; you
+can configure cost estimates explicitly. CPE sends its own user agent and a
+stable `x-opencode-session` header for replies and compaction, including after
+resuming, branching, or switching profiles.
+
 ## Terminal controls
 
 | Key or command | Action |
@@ -87,10 +130,12 @@ canceled, denied, or expired. If credentials are rejected, use `/login` again.
 | Esc or Ctrl+C while busy | Cancel the current operation and wait for cleanup |
 | Ctrl+C while idle, `/quit` | Exit |
 | `/help` | Show commands |
-| `/login` | Sign in to Codex in the browser |
+| `/login` | Choose a login provider |
+| `/login codex` | Sign in to Codex in the browser |
+| `/login opencode-go` | Save a Go API key and import model profiles |
 | `/login device` | Sign in with a device code |
 | `/model` or `/model NAME` | Pick or switch to a profile from config.json |
-| `/reasoning` or `/reasoning LEVEL` | Pick or set reasoning effort for Codex/Responses |
+| `/reasoning` or `/reasoning LEVEL` | Pick or set reasoning effort for the active provider |
 | `/reasoning default` | Restore the active profile's configured effort |
 | `/theme` or `/theme NAME` | Pick or switch themes and save the selection |
 | `/usage` | Show exact session token totals, estimated cost, and context budget |
@@ -119,7 +164,7 @@ Model and reasoning pickers use Up/Down, Enter to apply, and Esc to cancel.
 For example, `/model sol` switches to your `sol` profile and `/reasoning high`
 changes its reasoning effort for subsequent replies and compaction. The header
 shows the active profile and effort. Recognized levels are `none`, `minimal`,
-`low`, `medium`, `high`, `xhigh`, and `max`; model support varies.
+`low`, `medium`, `high`, `xhigh`, `max`, `adaptive`, and `disabled`; model support varies.
 `/reasoning default` restores the profile's configured value, or lets the provider
 choose if no value is configured. This differs from the explicit `none` level.
 Switching to a different profile uses that profile's settings. A failed switch
@@ -389,6 +434,61 @@ a function loaded with `load("tools.star", "name")`; parameters can be passed as
 keyword arguments or one dictionary. Both inputs and results are journaled.
 Only `starlark_repl` appears in the model's tool schema.
 
+### MCP tools and images
+
+Add `mcp_servers` to `~/.cpe/config.json` to connect servers at startup:
+
+```json
+{
+  "mcp_servers": {
+    "local": {"command": "my-mcp-server", "args": ["--stdio"], "env": {"MODE": "development"}},
+    "remote": {"url": "http://127.0.0.1:8000/mcp"}
+  }
+}
+```
+
+This is a configuration fragment; keep your model and agent settings. Each
+server uses either a stdio command or a Streamable HTTP URL. Commands inherit
+CPE's environment and working directory. Server names must be ASCII identifiers;
+punctuation in tool names becomes underscores, and collisions are rejected.
+Startup uses `agent.tool_timeout` for each connection. Legacy HTTP+SSE endpoints,
+MCP OAuth, and dynamic catalog updates are not supported yet.
+
+The agent receives descriptions and schemas for functions named
+`mcp_<server>__<tool>`. Calls return the MCP envelope as a Starlark dictionary,
+including `content`, optional `structuredContent`, `_meta`, and `isError`.
+For example, assuming the local server advertises `search` and `screenshot`:
+
+```python
+load("tools.star", "mcp_local__search", "mcp_local__screenshot")
+load("repl.star", "emit_image")
+
+result = mcp_local__search(query="example")
+if result.get("isError", False):
+    print(result["content"])
+else:
+    print(result.get("structuredContent", result["content"]))
+
+screen = mcp_local__screenshot()
+for content in screen["content"]:
+    if content["type"] == "image":
+        emit_image(content)
+    elif content["type"] == "text":
+        print(content["text"])
+```
+
+`emit_image` attaches actual image blocks to the REPL tool result so a vision
+model can inspect them. It also accepts `emit_image(data, mime_type="image/png")`
+with a base64 string or raw Starlark bytes. PNG, JPEG, GIF, and WebP are supported,
+with a 20 MiB total decoded-image limit per evaluation, independent of text
+truncation. The TUI displays an image placeholder. Other MCP media, including audio
+and resources, remain available as dictionaries; only images have a model-output
+helper. Emitted images survive in the durable result even if later code fails.
+Replay restores saved content without calling the server again.
+
+SDK callers can use `internal/mcptools.Connect` with an MCP SDK transport and
+pass `connection.Tools()` to `agent.Open`. Close the agent before its connections.
+
 The SDK uses gai's `PrepareDialog`, `BeforeGeneration`, `AfterGeneration`,
 `AfterTool`, and `GenerationChunk` hooks for compaction, bounds, persistence, and
 streaming. Package `doc.go` files are the canonical behavior contracts.
@@ -406,12 +506,16 @@ go test ./...
 go test -race ./internal/...
 go run ./build lint
 CPE_RUN_INTEGRATION_TESTS=1 go test ./internal/repl
+CPE_RUN_INTEGRATION_TESTS=1 go test ./internal/mcptools -run TestConnect
 ```
 
 The tests cover restart without host access, binary and large-integer values,
 file/HTTP/command effects occurring once, interrupted calls, replay divergence,
 failed-chunk rollback, tree branching, compaction, provider metadata, locking,
-and torn JSONL writes. Bubble Tea tests run the real event loop with keyboard
+and torn JSONL writes. Dummy MCP servers cover discovery/pagination, no-argument
+and parameterized tools, chained calls, text/structured/multimedia results,
+schema/tool/protocol errors, and replay after disconnect. Responses wire tests
+verify image delivery with and without streaming. Bubble Tea tests run the real event loop with keyboard
 input and verify cancellation, resizing, multiline input, and persisted turns.
 
 For a deterministic TUI in a real terminal without credentials:
@@ -426,6 +530,9 @@ CPE_RUN_INTEGRATION_TESTS=1 CPE_TUI_TEST_DIR=/tmp/cpe-tui-session \
 Use `/login device` for a simulated login (completes after eight seconds), or
 `/model api-fixture` to use the fixture without login. Test `/model` and `/reasoning`
 pickers, or `/model alternate` and `/reasoning high` for direct changes.
+Use `/login` → OpenCode Go (or `/login opencode-go`) and the dummy key
+`fixture-go-key` to exercise masked entry and model import. This fixture takes
+two seconds, supports cancellation, and never contacts OpenCode or saves a real key.
 Send `compute`, restart the process, then send `restore` to verify the saved
 variable. Send `wait` and press Esc to test cancellation. This harness also works
 inside tmux, where `capture-pane` provides the actual rendered terminal grid.

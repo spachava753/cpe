@@ -16,6 +16,7 @@ require (
 	github.com/gofrs/flock v0.13.0
 	github.com/google/jsonschema-go v0.4.3
 	github.com/goyek/goyek/v2 v2.3.0
+	github.com/modelcontextprotocol/go-sdk v1.8.1-0.20260922085944-8075fb3cf313
 	github.com/muesli/termenv v0.16.0
 	github.com/openai/openai-go/v3 v3.53.0
 	github.com/spachava753/dyson v0.0.0-20260921004927-b790356d9233
@@ -215,6 +216,8 @@ require (
 	github.com/sashamelentyev/interfacebloat v1.1.0 // indirect
 	github.com/sashamelentyev/usestdlibvars v1.29.0 // indirect
 	github.com/securego/gosec/v2 v2.28.0 // indirect
+	github.com/segmentio/asm v1.1.3 // indirect
+	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/sirupsen/logrus v1.10.1 // indirect
 	github.com/sivchari/containedctx v1.0.3 // indirect
@@ -249,6 +252,7 @@ require (
 	github.com/yagipy/maintidx v1.0.0 // indirect
 	github.com/yeya24/promlinter v0.3.0 // indirect
 	github.com/ykadowak/zerologlint v0.1.5 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	gitlab.com/bosi/decorder v0.4.2 // indirect
 	go-simpler.org/musttag v0.14.0 // indirect
 	go-simpler.org/sloglint v0.12.0 // indirect
@@ -268,10 +272,12 @@ require (
 	golang.org/x/exp/typeparams v0.0.0-20260811152304-ee035b5b010f // indirect
 	golang.org/x/mod v0.40.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260811182544-a038080d80e5 // indirect
 	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/api v0.294.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260825221802-da73d73af1c5 // indirect
 	google.golang.org/grpc v1.83.2 // indirect
