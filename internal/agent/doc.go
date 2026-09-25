@@ -5,7 +5,8 @@
 // become image content blocks in the tool result, with the original call ID.
 // Both normal completion and interrupted-result reconciliation preserve them.
 // Provider accepts an explicit credential directory and durable conversation ID;
-// OpenCode Go uses them for lazy API-key loading and stable per-session headers.
+// OpenCode Go uses them for lazy API-key loading, stable per-session headers,
+// and service-specific API error attribution independent of the wire protocol.
 // Options also accepts an immutable skills.Catalog. Model instructions disclose
 // only model-invocable skill metadata. Prompt resolves /skill:NAME [arguments]
 // before context admission or persistence; unknown and model-only commands fail

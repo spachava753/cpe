@@ -8,10 +8,10 @@ import (
 	"github.com/spachava753/cpe/internal/version"
 )
 
-// Client reloads CPE's saved API key for each request. Credentials are sent only
+// newClient reloads CPE's saved API key for each request. Credentials are sent only
 // to the fixed Go inference endpoints, with CPE's user agent and a stable session
 // identifier shared by interactive turns and compaction. Redirects are disabled.
-func Client(dir, sessionID string) (*http.Client, error) {
+func newClient(dir, sessionID string) (*http.Client, error) {
 	if !validKey(sessionID) {
 		return nil, errors.New("OpenCode Go requires a stable conversation ID")
 	}
@@ -22,11 +22,11 @@ func Client(dir, sessionID string) (*http.Client, error) {
 	}, nil
 }
 
-// BaseURL returns the fixed SDK base for the selected protocol. Anthropic's SDK
+// baseURL returns the fixed SDK base for the selected protocol. Anthropic's SDK
 // appends v1/messages itself; the other adapters append paths relative to v1.
-func BaseURL(provider string) (string, error) {
+func baseURL(provider string) (string, error) {
 	switch provider {
-	case "openai", "responses":
+	case chatProtocol, responsesProtocol:
 		return apiURL, nil
 	case anthropicProtocol:
 		return "https://opencode.ai/zen/go", nil

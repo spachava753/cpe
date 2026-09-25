@@ -71,7 +71,7 @@ func TestTransportRoundTrip(t *testing.T) {
 	}
 }
 
-func TestClient(t *testing.T) {
+func TestNewClient(t *testing.T) {
 	for _, test := range []struct {
 		name, sessionID string
 		invalid         bool
@@ -80,7 +80,7 @@ func TestClient(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			dir := t.TempDir()
-			client, err := Client(dir, test.sessionID)
+			client, err := newClient(dir, test.sessionID)
 			if (err != nil) != test.invalid {
 				t.Fatalf("constructor error: %v", err)
 			}

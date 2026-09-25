@@ -27,7 +27,13 @@
 // configuration errors leave the previous key untouched. A key-save failure can
 // leave imported profiles signed out; retrying login is safe.
 //
-// Client is lazy, reloads the key on each request, disables redirects, and limits
+// New binds a protocol to Go and labels API errors opencode-go, independently of
+// the model vendor or wire adapter. Authentication errors explain how to replace
+// the saved key, without echoing the upstream authentication message. The original
+// error remains available through unwrapping; status, kind, and retry timing are
+// preserved. Non-API errors (including cancellation) pass through unchanged.
+//
+// Its client is lazy, reloads the key on each request, disables redirects, and limits
 // credentials to fixed Go inference endpoints. It sends cpe/<version> as user
 // agent and x-opencode-session from the durable conversation root ID. Both normal
 // turns and compaction share that ID across model switches, branches, and reopen.

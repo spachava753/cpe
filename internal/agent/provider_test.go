@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,49 +21,90 @@ import (
 
 func TestProvider(t *testing.T) {
 	t.Run("OpenCode Go routing", func(t *testing.T) {
-		for _, test := range []struct{ provider, path, authHeader, authValue string }{
-			{"openai", "/zen/go/v1/chat/completions", "Authorization", "Bearer fixture-key"},
-			{"responses", "/zen/go/v1/responses", "Authorization", "Bearer fixture-key"},
-			{"anthropic", "/zen/go/v1/messages", "X-Api-Key", "fixture-key"},
+		for _, test := range []struct{ provider, path, authHeader, authValue, response, stream string }{
+			{"openai", "/zen/go/v1/chat/completions", "Authorization", "Bearer fixture-key",
+				`{"choices":[{"index":0,"message":{"role":"assistant","content":"Hello"},"finish_reason":"stop"}]}`,
+				"data: " + `{"choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":"stop"}]}` + "\n\ndata: [DONE]\n\n"},
+			{"responses", "/zen/go/v1/responses", "Authorization", "Bearer fixture-key",
+				`{"status":"completed","output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Hello"}]}]}`,
+				"data: " + `{"type":"response.output_text.delta","delta":"Hello","output_index":0,"content_index":0}` + "\n\ndata: " + `{"type":"response.completed","response":{"status":"completed"}}` + "\n\n"},
+			{"anthropic", "/zen/go/v1/messages", "X-Api-Key", "fixture-key",
+				`{"id":"fixture","type":"message","role":"assistant","content":[{"type":"text","text":"Hello"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`,
+				"event: message_start\ndata: " + `{"type":"message_start","message":{"id":"fixture","type":"message","role":"assistant","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}` +
+					"\n\nevent: content_block_start\ndata: " + `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}` +
+					"\n\nevent: content_block_delta\ndata: " + `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}` +
+					"\n\nevent: content_block_stop\ndata: " + `{"type":"content_block_stop","index":0}` +
+					"\n\nevent: message_delta\ndata: " + `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}` +
+					"\n\nevent: message_stop\ndata: " + `{"type":"message_stop"}` + "\n\n"},
 		} {
 			t.Run(test.provider, func(t *testing.T) {
-				dir := t.TempDir()
-				if err := os.WriteFile(filepath.Join(dir, "opencode-go.json"), []byte(`{"key":"fixture-key"}`), 0600); err != nil {
-					t.Fatal(err)
-				}
-				calls := 0
-				previous := http.DefaultTransport
-				t.Cleanup(func() { http.DefaultTransport = previous })
-				http.DefaultTransport = providerRoundTrip(func(r *http.Request) (*http.Response, error) {
-					calls++
-					if r.URL.String() != "https://opencode.ai"+test.path {
-						t.Errorf("endpoint %s", r.URL)
-					}
-					if r.Header.Get(test.authHeader) != test.authValue {
-						t.Error("missing saved API key")
-					}
-					if r.Header.Get("X-Opencode-Session") != "durable-root" || !strings.HasPrefix(r.Header.Get("User-Agent"), "cpe/") {
-						t.Error("missing CPE session identity")
-					}
-					return &http.Response{StatusCode: 400, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"fixture stops after capture","type":"fixture"}}`)), Request: r}, nil
-				})
-				profile := config.Model{Provider: test.provider, ID: "model", Credential: "opencode-go"}
-				gen, err := Provider(t.Context(), profile, dir, "durable-root")
-				if err != nil {
-					t.Fatal(err)
-				}
-				request := gai.GenerationRequest{Model: "model", Dialog: gai.Dialog{{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("test")}}}}
-				if _, err := gen.Generate(t.Context(), request); err == nil {
-					t.Fatal("expected fixture HTTP error")
-				}
-				var streamErr error
-				for chunk := range gen.(gai.StreamingGenerator).Stream(t.Context(), request) {
-					if chunk.Err != nil {
-						streamErr = chunk.Err
-					}
-				}
-				if streamErr == nil || calls != 2 {
-					t.Fatalf("Generate/Stream failed before reaching Go or retried: calls=%d err=%v", calls, streamErr)
+				for _, mode := range []string{"generate", "stream"} {
+					t.Run(mode, func(t *testing.T) {
+						dir := t.TempDir()
+						path := filepath.Join(dir, "opencode-go.json")
+						if err := os.WriteFile(path, []byte(`{"key":"rejected-key"}`), 0600); err != nil {
+							t.Fatal(err)
+						}
+						t.Setenv("OPENAI_API_KEY", "unrelated-openai-key")
+						t.Setenv("ANTHROPIC_API_KEY", "unrelated-anthropic-key")
+						calls := 0
+						previous := http.DefaultTransport
+						t.Cleanup(func() { http.DefaultTransport = previous })
+						http.DefaultTransport = providerRoundTrip(func(r *http.Request) (*http.Response, error) {
+							calls++
+							if r.URL.String() != "https://opencode.ai"+test.path {
+								t.Errorf("endpoint %s", r.URL)
+							}
+							want := test.authValue
+							if calls == 1 {
+								want = strings.ReplaceAll(want, "fixture-key", "rejected-key")
+							}
+							if r.Header.Get(test.authHeader) != want {
+								t.Error("missing saved API key")
+							}
+							if r.Header.Get("X-Opencode-Session") != "durable-root" || !strings.HasPrefix(r.Header.Get("User-Agent"), "cpe/") {
+								t.Error("missing CPE session identity")
+							}
+							body, err := io.ReadAll(r.Body)
+							if err != nil {
+								t.Fatal(err)
+							}
+							if strings.Contains(string(body), "-key") {
+								t.Error("credentials in request body")
+							}
+							status, contentType, response := 200, "application/json", test.response
+							if mode == "stream" {
+								contentType, response = "text/event-stream", test.stream
+							}
+							if calls == 1 {
+								status, contentType, response = 401, "application/json", `{"error":{"message":"Invalid API key","type":"authentication_error"}}`
+							}
+							return &http.Response{StatusCode: status, Header: http.Header{"Content-Type": []string{contentType}}, Body: io.NopCloser(strings.NewReader(response)), Request: r}, nil
+						})
+						profile := config.Model{Provider: test.provider, ID: "fixture", Credential: "opencode-go"}
+						gen, err := Provider(t.Context(), profile, dir, "durable-root")
+						if err != nil {
+							t.Fatal(err)
+						}
+						request := gai.GenerationRequest{Model: "fixture", Dialog: gai.Dialog{{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("test")}}}, Options: gai.NewGenerationOptions(gai.WithMaxGenerationTokens(100))}
+						invoke := gen
+						if mode == "stream" {
+							invoke = &gai.StreamingAdapter{S: gen.(gai.StreamingGenerator)}
+						}
+						_, err = invoke.Generate(t.Context(), request)
+						var apiErr *gai.ApiErr
+						if !errors.As(err, &apiErr) || apiErr.Provider != "opencode-go" || apiErr.StatusCode != 401 || apiErr.Kind != gai.APIErrorKindAuthentication || apiErr.Retryable() || !strings.Contains(err.Error(), "/login opencode-go") || calls != 1 {
+							t.Fatalf("authentication error: %v (calls=%d)", err, calls)
+						}
+						// Replacing the key recovers on the same generator, without a restart.
+						if err := os.WriteFile(path, []byte(`{"key":"fixture-key"}`), 0600); err != nil {
+							t.Fatal(err)
+						}
+						response, err := invoke.Generate(t.Context(), request)
+						if err != nil || calls != 2 || len(response.Candidates) != 1 || len(response.Candidates[0].Blocks) != 1 || response.Candidates[0].Blocks[0].Content.String() != "Hello" {
+							t.Fatalf("credential recovery: response=%+v err=%v calls=%d", response, err, calls)
+						}
+					})
 				}
 			})
 		}

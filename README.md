@@ -97,6 +97,13 @@ cancels. It never enters the prompt composer, config.json, or session history.
 The public model catalog cannot verify the key: the service checks it on the
 first model request.
 
+If that request returns `opencode-go authentication (401)`, use
+`/login opencode-go` again with the key from your OpenCode account. Saving a key
+does not establish that the service accepts it. OpenCode profiles use OpenCode's
+saved key and endpoints; `openai`, `responses`, and `anthropic` in those profiles
+describe API formats, not the account supplying authentication. Older CPE versions
+labeled these failures with the API format (for example, `openai authentication`).
+
 Login adds `opencode-go/<model-id>` profiles to config.json. Select one with
 `/model`; no restart is needed. Your existing profiles, custom settings, active
 model, and default model stay unchanged. Repeat login to import newly available

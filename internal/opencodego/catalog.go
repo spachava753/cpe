@@ -17,6 +17,8 @@ import (
 const (
 	credentialName    = "opencode-go"
 	anthropicProtocol = "anthropic"
+	chatProtocol      = "openai"
+	responsesProtocol = "responses"
 	apiURL            = "https://opencode.ai/zen/go/v1"
 	modelsURL         = apiURL + "/models"
 	catalogURL        = "https://models.dev/api.json"
@@ -112,9 +114,9 @@ func discover(ctx context.Context, client *http.Client, modelsEndpoint, catalogE
 		if provider == "" {
 			switch npm {
 			case "@ai-sdk/openai-compatible":
-				provider = "openai"
+				provider = chatProtocol
 			case "@ai-sdk/openai":
-				provider = "responses"
+				provider = responsesProtocol
 			case "@ai-sdk/anthropic":
 				provider = anthropicProtocol
 			default:
