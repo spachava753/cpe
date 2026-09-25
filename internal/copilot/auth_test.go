@@ -20,12 +20,11 @@ func TestCredentialStoreCurrent(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		expired  bool
-		legacy   bool
 		status   int
 		endpoint string
 		cancel   bool
 	}{
-		{name: "cached"}, {name: "legacy cached", legacy: true}, {name: "legacy refresh", expired: true, legacy: true}, {name: "legacy rejected refresh", expired: true, legacy: true, status: 401}, {name: "refresh", expired: true}, {name: "rejected refresh", expired: true, status: 401}, {name: "untrusted refresh endpoint", expired: true, endpoint: "https://evil.example"}, {name: "canceled lock", cancel: true},
+		{name: "cached"}, {name: "refresh", expired: true}, {name: "rejected refresh", expired: true, status: 401}, {name: "untrusted refresh endpoint", expired: true, endpoint: "https://evil.example"}, {name: "canceled lock", cancel: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -38,15 +37,7 @@ func TestCredentialStoreCurrent(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, credentialFile), []byte(`{"other":{"key":"keep"}}`), 0600); err != nil {
 				t.Fatal(err)
 			}
-			legacy, err := json.Marshal(saved)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if test.legacy {
-				if err := os.WriteFile(filepath.Join(dir, "copilot.json"), legacy, 0600); err != nil {
-					t.Fatal(err)
-				}
-			} else if err := store.save(t.Context(), saved); err != nil {
+			if err := store.save(t.Context(), saved); err != nil {
 				t.Fatal(err)
 			}
 			calls := 0
@@ -102,20 +93,6 @@ func TestCredentialStoreCurrent(t *testing.T) {
 			if err != nil || json.Unmarshal(data, &document) != nil || !strings.Contains(string(document["other"]), "keep") {
 				t.Fatal("other service lost", err)
 			}
-			if test.legacy {
-				backup, err := os.ReadFile(filepath.Join(dir, "copilot.json"))
-				if err != nil || string(backup) != string(legacy) {
-					t.Fatal("legacy backup changed")
-				}
-				if !wantErr {
-					var stored credential
-					if json.Unmarshal(document[credentialName], &stored) != nil || stored != got {
-						t.Fatal("credential not migrated")
-					}
-				} else if document[credentialName] != nil {
-					t.Fatal("failed refresh migrated legacy credential")
-				}
-			}
 		})
 	}
 	t.Run("concurrent stores exchange once", func(t *testing.T) {
@@ -152,20 +129,16 @@ func TestCredentialStoreRead(t *testing.T) {
 	data, _ := json.Marshal(fixtureCredential())
 	valid := string(data)
 	for _, test := range []struct {
-		name, body      string
-		symlink, legacy bool
-		wantErr         bool
+		name, body string
+		symlink    bool
+		wantErr    bool
 	}{
-		{name: "valid", body: valid}, {name: "read legacy without migration", body: valid, legacy: true}, {name: "reject invalid legacy", body: strings.Replace(valid, `"version":1`, `"version":2`, 1), legacy: true, wantErr: true}, {name: "missing", wantErr: true}, {name: "null", body: `null`, wantErr: true}, {name: "malformed secret", body: `{"token":"fixture-secret`, wantErr: true}, {name: "unknown version", body: strings.Replace(valid, `"version":1`, `"version":2`, 1), wantErr: true}, {name: "untrusted host", body: strings.Replace(valid, apiURL, "https://example.com", 1), wantErr: true}, {name: "symlink", body: valid, symlink: true, wantErr: true},
+		{name: "valid", body: valid}, {name: "missing", wantErr: true}, {name: "null", body: `null`, wantErr: true}, {name: "malformed secret", body: `{"token":"fixture-secret`, wantErr: true}, {name: "unknown version", body: strings.Replace(valid, `"version":1`, `"version":2`, 1), wantErr: true}, {name: "untrusted host", body: strings.Replace(valid, apiURL, "https://example.com", 1), wantErr: true}, {name: "symlink", body: valid, symlink: true, wantErr: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, credentialFile)
 			body := `{"github-copilot":` + test.body + `}`
-			if test.legacy {
-				path = filepath.Join(dir, "copilot.json")
-				body = test.body
-			}
 			if test.body != "" {
 				if test.symlink {
 					target := filepath.Join(dir, "target")
@@ -186,16 +159,6 @@ func TestCredentialStoreRead(t *testing.T) {
 			if err != nil && strings.Contains(err.Error(), "fixture-secret") {
 				t.Fatal("secret exposed")
 			}
-			if test.legacy {
-				backup, err := os.ReadFile(path)
-				if err != nil || string(backup) != body {
-					t.Fatal("legacy backup changed")
-				}
-				if _, err := os.Stat(filepath.Join(dir, credentialFile)); !errors.Is(err, os.ErrNotExist) {
-					t.Fatal("local availability check wrote auth.json")
-				}
-			}
-
 		})
 	}
 }

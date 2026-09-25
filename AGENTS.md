@@ -21,6 +21,9 @@ README.md     User workflows and verification instructions
 
 ## Design
 
+- **Greenfield:** CPE has no existing users or deployed state. Do not add
+  migrations, backward-compatibility layers, or legacy fallbacks unless explicitly
+  requested. Design for the current requirements rather than hypothetical old data.
 - Read the relevant package's `doc.go` before changing behavior; these are the
   canonical contracts. Update them when the contract changes.
 - Model domain concepts and state transitions explicitly with types. Prefer
@@ -33,8 +36,7 @@ README.md     User workflows and verification instructions
 - Separate service credentials, model identity, and wire protocol. Establish model
   availability from service-specific sources. Login data stays outside model
   context and session history.
-- Treat persisted formats and replay semantics as versioned contracts. Changes
-  need compatibility tests that restore old records without repeating host effects.
+- Test current-format persistence and replay without repeating external effects.
 - Keep changes scoped; avoid speculative abstractions and performance work unless
   a demonstrated need or the task calls for it.
 

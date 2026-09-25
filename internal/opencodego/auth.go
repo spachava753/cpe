@@ -25,7 +25,7 @@ func validKey(key string) bool {
 // HasKey reports whether CPE has a locally well-formed OpenCode Go API key.
 // It does not contact the service or check subscription status.
 func HasKey(dir string) bool {
-	entry := authstore.Entry{Path: filepath.Join(dir, credentialFile), Service: credentialName, LegacyPath: filepath.Join(dir, "opencode-go.json")}
+	entry := authstore.Entry{Path: filepath.Join(dir, credentialFile), Service: credentialName}
 	raw, err := entry.Read()
 	if err != nil {
 		return false
@@ -35,7 +35,7 @@ func HasKey(dir string) bool {
 }
 
 func readKey(ctx context.Context, dir string) (string, error) {
-	entry := authstore.Entry{Path: filepath.Join(dir, credentialFile), Service: credentialName, LegacyPath: filepath.Join(dir, "opencode-go.json")}
+	entry := authstore.Entry{Path: filepath.Join(dir, credentialFile), Service: credentialName}
 	var key string
 	err := entry.Update(ctx, func(raw json.RawMessage) (json.RawMessage, error) {
 		var err error

@@ -82,22 +82,14 @@ CPE stores all subscription credentials in `~/.cpe/auth.json`, keyed by service:
 file permissions, not encrypted. Ordinary API-key profiles still use environment
 variables. CPE does not read or modify Pi's or other applications' logins.
 
-Requests reload saved credentials and refresh expiring tokens. Login, migration,
-and refresh update `auth.json` atomically with mode 0600, preserving other service
+Requests reload saved credentials and refresh expiring tokens. Login and refresh
+update `auth.json` atomically with mode 0600, preserving other service
 entries. The shared `auth.json.lock` coordinates CPE processes and releases on
 exit or crash. The lock file remains on disk; do not remove it while CPE is
 running. Credential symlinks and malformed/duplicate-key documents are rejected
 without overwriting them. Tokens never enter config or conversation files.
 Canceled saves leave the file unchanged, except that a completed token rotation
 is committed before returning cancellation so its replacement cannot be lost.
-
-Existing `opencode-go.json` and `copilot.json` credentials migrate on first
-request without another login. Local login-status checks do not write files. An existing service entry
-in `auth.json` always takes precedence, even if invalid; CPE never silently falls
-back to stale credentials. Migration leaves the old files untouched as backups;
-after confirming the migrated login works, you may remove them. New logins and
-refreshes write only `auth.json`. Stop older CPE versions before migration, since
-they still use the separate files. The existing OpenAI entry needs no migration.
 
 Both replies and compaction use streaming Codex requests. Truncated streams fail
 without committing partial output. Model requests, token exchanges, and refreshes

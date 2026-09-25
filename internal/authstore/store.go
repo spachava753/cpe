@@ -14,22 +14,21 @@ import (
 	"github.com/spachava753/cpe/internal/jsonconfig"
 )
 
-// Entry identifies one service in the shared auth.json document. LegacyPath,
-// when set, is the former standalone credential file for that service.
+// Entry identifies one service in the shared auth.json document.
 type Entry struct {
-	Path, Service, LegacyPath string
+	Path, Service string
 }
 
-// Read returns a snapshot for local availability checks without locking, writing,
-// or migrating. Update is required when using or refreshing credentials.
+// Read returns a snapshot for local availability checks without locking or
+// writing. Update is required when using or refreshing credentials.
 func (e Entry) Read() (json.RawMessage, error) {
-	_, raw, _, err := e.read()
-	return raw, err
+	document, err := readDocument(e.Path)
+	return document[e.Service], err
 }
 
 // Update runs a read/refresh/save transaction. The callback receives nil for a
 // missing entry and must parse credentials before using them. Returning nil
-// leaves the entry unchanged, except that an accepted legacy entry is migrated.
+// leaves the entry unchanged.
 // Callback errors abort the transaction. Callbacks must not reenter this store.
 func (e Entry) Update(ctx context.Context, update func(json.RawMessage) (json.RawMessage, error)) error {
 	return e.transact(ctx, update, ordinaryUpdate)
@@ -61,11 +60,11 @@ func (e Entry) transact(ctx context.Context, update func(json.RawMessage) (json.
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	document, raw, migrating, err := e.read()
+	document, err := readDocument(e.Path)
 	if err != nil {
 		return err
 	}
-	next, err := update(raw)
+	next, err := update(document[e.Service])
 	if err != nil {
 		return err
 	}
@@ -77,10 +76,7 @@ func (e Entry) transact(ctx context.Context, update func(json.RawMessage) (json.
 		return err
 	}
 	if next == nil {
-		if !migrating {
-			return nil
-		}
-		next = raw
+		return nil
 	}
 	var fields map[string]json.RawMessage
 	if jsonconfig.Decode(next, &fields) != nil {
@@ -94,26 +90,17 @@ func (e Entry) transact(ctx context.Context, update func(json.RawMessage) (json.
 	return writeFile(ctx, e.Path, append(data, '\n'))
 }
 
-func (e Entry) read() (map[string]json.RawMessage, json.RawMessage, bool, error) {
+func readDocument(path string) (map[string]json.RawMessage, error) {
 	document := map[string]json.RawMessage{}
-	data, err := readFile(e.Path)
+	data, err := readFile(path)
 	if err == nil {
 		if jsonconfig.Decode(data, &document) != nil {
-			return nil, nil, false, errors.New("invalid auth.json; existing credentials were not overwritten")
+			return nil, errors.New("invalid auth.json; existing credentials were not overwritten")
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, nil, false, err
+		return nil, err
 	}
-	raw := document[e.Service]
-	migrating := false
-	if raw == nil && e.LegacyPath != "" {
-		raw, err = readFile(e.LegacyPath)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, nil, false, err
-		}
-		migrating = err == nil
-	}
-	return document, raw, migrating, nil
+	return document, nil
 }
 
 func acquireLock(ctx context.Context, path string) (*flock.Flock, error) {

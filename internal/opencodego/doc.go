@@ -21,10 +21,8 @@
 //
 // The API key occupies the opencode-go entry in shared ~/.cpe/auth.json.
 // authstore provides atomic mode-0600 writes, preserves other services, and
-// serializes updates through auth.json.lock. Missing entries migrate from
-// opencode-go.json after parsing, retaining the old file as an untouched backup;
-// existing entries always win. Credential symlinks are rejected. Each complete
-// login replaces this service entry; simultaneous logins use the last saved
+// serializes updates through auth.json.lock. Credential symlinks are rejected.
+// Each complete login replaces this service entry; simultaneous logins use the last saved
 // key. Public discovery never receives the key and cannot authenticate it; the
 // first inference request checks subscription and key validity. Discovery and
 // configuration errors leave the previous key untouched. A key-save failure can

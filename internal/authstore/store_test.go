@@ -16,22 +16,14 @@ import (
 
 func TestEntryUpdate(t *testing.T) {
 	for _, test := range []struct {
-		name, document, legacy, next string
-		setup, action                string
-		wantRaw                      string
-		wantErr, wantWrite           bool
+		name, document, next string
+		setup, action        string
+		wantRaw              string
+		wantErr, wantWrite   bool
 	}{
 		{name: "new entry", next: `{"key":"new"}`, wantWrite: true},
 		{name: "preserve other services and large numbers", document: `{"other":{"number":9007199254740993,"future":true}}`, next: `{"key":"new"}`, wantWrite: true},
 		{name: "read without rewriting", document: `{"service":{"key":"current"}}`, wantRaw: `{"key":"current"}`},
-		{name: "migrate legacy into existing document", document: `{"other":{"key":"keep"}}`, legacy: `{"key":"legacy"}`, wantRaw: `{"key":"legacy"}`, wantWrite: true},
-		{name: "migrate legacy into new document", legacy: `{"key":"legacy"}`, wantRaw: `{"key":"legacy"}`, wantWrite: true},
-		{name: "current entry wins", document: `{"service":{"key":"current"}}`, legacy: `{"key":"legacy"}`, wantRaw: `{"key":"current"}`},
-		{name: "null entry is authoritative", document: `{"service":null}`, legacy: `{"key":"legacy"}`, wantRaw: `null`},
-		{name: "rejected legacy stays untouched", document: `{"other":{}}`, legacy: `{"key":"legacy"}`, action: "reject", wantRaw: `{"key":"legacy"}`, wantErr: true},
-		{name: "invalid migration cannot commit", legacy: `{"secret":`, wantRaw: `{"secret":`, wantErr: true},
-		{name: "legacy symlink rejected", setup: "legacy symlink", wantErr: true},
-		{name: "current ignores legacy symlink", setup: "legacy symlink", document: `{"service":{}}`, wantRaw: `{}`},
 		{name: "credential symlink rejected", setup: "symlink", next: `{}`, wantErr: true},
 		{name: "credential directory rejected", setup: "directory", next: `{}`, wantErr: true},
 		{name: "null document rejected", document: `null`, next: `{}`, wantErr: true},
@@ -47,14 +39,9 @@ func TestEntryUpdate(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			dir := t.TempDir()
-			entry := Entry{Path: filepath.Join(dir, "auth.json"), Service: "service", LegacyPath: filepath.Join(dir, "legacy.json")}
+			entry := Entry{Path: filepath.Join(dir, "auth.json"), Service: "service"}
 			if test.document != "" {
 				if err := os.WriteFile(entry.Path, []byte(test.document), 0644); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if test.legacy != "" {
-				if err := os.WriteFile(entry.LegacyPath, []byte(test.legacy), 0600); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -63,16 +50,12 @@ func TestEntryUpdate(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			if strings.Contains(test.setup, "symlink") {
+			if test.setup == "symlink" {
 				target := filepath.Join(dir, "target")
 				if err := os.WriteFile(target, []byte(`{"key":"untouched"}`), 0600); err != nil {
 					t.Fatal(err)
 				}
-				path := entry.Path
-				if test.setup == "legacy symlink" {
-					path = entry.LegacyPath
-				}
-				if err := os.Symlink(target, path); err != nil {
+				if err := os.Symlink(target, entry.Path); err != nil {
 					t.Skip(err)
 				}
 			}
@@ -124,11 +107,7 @@ func TestEntryUpdate(t *testing.T) {
 						t.Fatal("another service was changed")
 					}
 				}
-				want := test.next
-				if want == "" {
-					want = test.legacy
-				}
-				if !sameJSON(document[entry.Service], []byte(want)) {
+				if !sameJSON(document[entry.Service], []byte(test.next)) {
 					t.Fatal("wrong credential persisted")
 				}
 				info, err := os.Stat(entry.Path)
@@ -145,13 +124,7 @@ func TestEntryUpdate(t *testing.T) {
 			} else if test.setup == "" && !errors.Is(readErr, os.ErrNotExist) {
 				t.Fatal("unexpected auth document created")
 			}
-			if test.legacy != "" {
-				data, err := os.ReadFile(entry.LegacyPath)
-				if err != nil || string(data) != test.legacy {
-					t.Fatal("legacy backup changed")
-				}
-			}
-			if strings.Contains(test.setup, "symlink") {
+			if test.setup == "symlink" {
 				data, err := os.ReadFile(filepath.Join(dir, "target"))
 				if err != nil || string(data) != `{"key":"untouched"}` {
 					t.Fatal("symlink target changed")
@@ -232,24 +205,21 @@ func TestEntryUpdate(t *testing.T) {
 
 func TestEntryRead(t *testing.T) {
 	for _, test := range []struct {
-		name, document, legacy, want string
-		wantErr                      bool
+		name, document, want string
+		wantErr              bool
 	}{
 		{name: "missing"},
 		{name: "current", document: `{"service":{"key":"new"}}`, want: `{"key":"new"}`},
-		{name: "legacy", legacy: `{"key":"old"}`, want: `{"key":"old"}`},
-		{name: "current overrides legacy", document: `{"service":{"key":"new"}}`, legacy: `{"key":"old"}`, want: `{"key":"new"}`},
-		{name: "invalid current never falls back", document: `{"service":null}`, legacy: `{"key":"old"}`, want: `null`},
-		{name: "malformed shared document", document: `{"fixture-secret":`, legacy: `{"key":"old"}`, wantErr: true},
+		{name: "missing service", document: `{"other":{"key":"value"}}`},
+		{name: "null entry", document: `{"service":null}`, want: `null`},
+		{name: "malformed document", document: `{"fixture-secret":`, wantErr: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			dir := t.TempDir()
-			entry := Entry{Path: filepath.Join(dir, "auth.json"), Service: "service", LegacyPath: filepath.Join(dir, "legacy.json")}
-			for path, body := range map[string]string{entry.Path: test.document, entry.LegacyPath: test.legacy} {
-				if body != "" {
-					if err := os.WriteFile(path, []byte(body), 0600); err != nil {
-						t.Fatal(err)
-					}
+			entry := Entry{Path: filepath.Join(dir, "auth.json"), Service: "service"}
+			if test.document != "" {
+				if err := os.WriteFile(entry.Path, []byte(test.document), 0600); err != nil {
+					t.Fatal(err)
 				}
 			}
 			lock, err := acquireLock(t.Context(), entry.Path+".lock")

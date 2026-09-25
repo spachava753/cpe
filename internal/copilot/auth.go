@@ -32,7 +32,7 @@ func HasCredential(dir string) bool {
 }
 
 func (s *credentialStore) read() (credential, error) {
-	entry := authstore.Entry{Path: filepath.Join(s.dir, credentialFile), Service: credentialName, LegacyPath: filepath.Join(s.dir, "copilot.json")}
+	entry := authstore.Entry{Path: filepath.Join(s.dir, credentialFile), Service: credentialName}
 	raw, err := entry.Read()
 	if err != nil {
 		return credential{}, err
@@ -44,7 +44,7 @@ func (s *credentialStore) current(ctx context.Context) (credential, error) {
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	entry := authstore.Entry{Path: filepath.Join(s.dir, credentialFile), Service: credentialName, LegacyPath: filepath.Join(s.dir, "copilot.json")}
+	entry := authstore.Entry{Path: filepath.Join(s.dir, credentialFile), Service: credentialName}
 	var saved credential
 	err := entry.Update(ctx, func(raw json.RawMessage) (json.RawMessage, error) {
 		var err error
