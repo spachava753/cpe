@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,6 +43,46 @@ func TestInitFiles(t *testing.T) {
 }
 
 func TestLoad(t *testing.T) {
+	t.Run("composer submit key", func(t *testing.T) {
+		for _, tc := range []struct {
+			name, fields string
+			want         SubmitKey
+			invalid      bool
+		}{
+			{name: "omitted"},
+			{name: "empty preferences", fields: `"tui":{},`},
+			{name: "enter", fields: `"tui":{"submit_key":"enter"},`},
+			{name: "shift enter", fields: `"tui":{"submit_key":"shift+enter"},`, want: SubmitShiftEnter},
+			{name: "unknown key", fields: `"tui":{"submit_key":"alt+enter"},`, invalid: true},
+			{name: "empty key", fields: `"tui":{"submit_key":""},`, invalid: true},
+			{name: "number", fields: `"tui":{"submit_key":1},`, invalid: true},
+			{name: "null key", fields: `"tui":{"submit_key":null},`, invalid: true},
+			{name: "unknown preference", fields: `"tui":{"send_key":"enter"},`, invalid: true},
+			{name: "duplicate key", fields: `"tui":{"submit_key":"enter","submit_key":"shift+enter"},`, invalid: true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				dir := t.TempDir()
+				body := `{` + tc.fields + `"default_model":"fixture","models":{"fixture":{"provider":"codex","id":"test"}}}`
+				if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(body), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "system.md"), []byte("test"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				c, err := load(dir)
+				if (err != nil) != tc.invalid || (!tc.invalid && c.TUI.SubmitKey != tc.want) {
+					t.Fatalf("submit key=%s error=%v", c.TUI.SubmitKey, err)
+				}
+				if !tc.invalid {
+					data, err := json.Marshal(c.TUI)
+					if err != nil || string(data) != `{"submit_key":"`+tc.want.String()+`"}` {
+						t.Fatalf("serialized preferences=%s error=%v", data, err)
+					}
+				}
+			})
+		}
+	})
+
 	t.Run("reasoning across providers", func(t *testing.T) {
 		for _, provider := range []string{"openai", "responses", "anthropic", "gemini", "codex"} {
 			t.Run(provider, func(t *testing.T) {

@@ -6,9 +6,12 @@
 // Esc or Ctrl+C cancels active work; the program waits for reconciliation
 // before allowing another operation. Ctrl+C when idle or /quit exits. Shift+Enter
 // inserts a newline when the terminal reports modified keys; Ctrl+J is a fallback
-// for legacy terminals. Enter submits, and PgUp/PgDn scroll the conversation.
+// for legacy terminals. By default Enter submits. Options.SubmitKey can reverse
+// Enter and Shift+Enter for the composer; Ctrl+J still inserts a newline. Pickers
+// and private login input always use Enter to confirm. PgUp/PgDn scroll.
 // While agent work is active, the composer remains editable for the next draft,
-// including paste and Shift+Enter. Enter neither submits nor queues it until work
+// including paste and the configured newline key. The submit key neither submits
+// nor queues it until work
 // finishes. Completion, errors, and cancellation preserve the draft and cursor;
 // slash completion resumes when idle. During login, the normal composer stays
 // locked and private credential input retains its separate routing.
@@ -16,7 +19,7 @@
 // A leading slash on a single-line draft opens a themed command completion popup
 // above the composer. Suggestions filter by prefix while the cursor is at the
 // end. Up/Down cycle through all matches; at most five rows are visible. Tab
-// fills the command plus a space without running it. Enter fills and dispatches
+// fills the command plus a space without running it. The submit key fills and dispatches
 // the selection, except /branch which waits for a checkpoint ID. Model, reasoning,
 // and theme pickers still handle argument selection after dispatch.
 // Escape dismisses completion without clearing the draft and suppresses it until
@@ -25,11 +28,11 @@
 // their meaning. Unknown commands otherwise still report an error. Inline
 // slashes, arguments, multiline drafts and busy turns do not open completion.
 // The popup shrinks or hides when terminal space is insufficient, and hidden
-// suggestions never capture navigation or Enter. Reloading themes and resizing
+// suggestions never capture navigation or the submit key. Reloading themes and resizing
 // preserve the completion selection, draft and conversation scroll position.
 // /skill:NAME [arguments] uses the agent's startup catalog. Completion includes
 // only user-invocable skills, with sanitized descriptions. Tab leaves arguments
-// editable; Enter submits the selection to Agent.Prompt for resolution and
+// editable; the submit key submits the selection to Agent.Prompt for resolution and
 // persistence. The /skill: prefix remains a command after Escape, like /model.
 //
 // /login opens a provider picker; /login codex opens browser PKCE, and /login

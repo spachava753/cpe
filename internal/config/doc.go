@@ -5,6 +5,9 @@
 // without overwriting existing configuration; the starter profile uses Codex.
 // Init also creates themes.json. Theme loading is independent of model config
 // and is handled by package theme only for the interactive TUI.
+// tui.submit_key is enter (the default) or shift+enter. The other key inserts
+// a newline; Ctrl+J remains a newline fallback. This preference is read at
+// startup and only controls the composer, not pickers or private login input.
 //
 // API providers read named environment variables. Codex instead uses CPE's own
 // ~/.cpe/auth.json with TUI /login and automatic refresh. There is no credential

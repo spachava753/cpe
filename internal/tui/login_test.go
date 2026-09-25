@@ -22,8 +22,10 @@ func TestOpenCodeGoLogin(t *testing.T) {
 	for _, test := range []struct {
 		name, action string
 		picker       bool
+		submitKey    config.SubmitKey
 	}{
 		{name: "direct login", action: "save"},
+		{name: "shift submit preference", action: "save", picker: true, submitKey: config.SubmitShiftEnter},
 		{name: "provider picker", action: "save", picker: true},
 		{name: "cancel pasted provider picker", action: "picker cancel", picker: true},
 		{name: "escape at input", action: "esc"},
@@ -47,6 +49,7 @@ func TestOpenCodeGoLogin(t *testing.T) {
 			}
 			defer a.Close()
 			m := newModel(t.Context(), a, "codex")
+			m.submitKey = test.submitKey
 			m.profiles = map[string]config.Model{"codex": profile}
 			m.loginRequired = true
 			m.needsLogin = func(p config.Model) bool { return p.Provider == "codex" }
@@ -69,7 +72,11 @@ func TestOpenCodeGoLogin(t *testing.T) {
 				command = loginCommand
 			}
 			m.input.SetValue(command)
-			next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			submit := tea.KeyPressMsg{Code: tea.KeyEnter}
+			if test.submitKey == config.SubmitShiftEnter {
+				submit.Mod = tea.ModShift
+			}
+			next, _ := m.Update(submit)
 			m = next.(model)
 			if test.picker {
 				if m.picker == nil || m.picker.command != loginCommand {
@@ -101,7 +108,9 @@ func TestOpenCodeGoLogin(t *testing.T) {
 			const secret = "sensitive-fixture-key"
 			next, _ = m.Update(tea.PasteMsg{Content: secret})
 			m = next.(model)
-			if m.input.Value() != "" || m.keyInput.Value() != secret {
+			next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift})
+			m = next.(model)
+			if m.busy || m.keyInput == nil || m.input.Value() != "" || m.keyInput.Value() != secret {
 				t.Fatal("key entered composer instead of private input")
 			}
 			for _, size := range []tea.WindowSizeMsg{{Width: 100, Height: 28}, {Width: 32, Height: 12}, {Width: 24, Height: 8}} {

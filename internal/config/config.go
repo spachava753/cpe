@@ -20,6 +20,7 @@ type Config struct {
 	DefaultModel string               `json:"default_model"`
 	Models       map[string]Model     `json:"models"`
 	Agent        Agent                `json:"agent"`
+	TUI          tui                  `json:"tui"`
 	Compaction   Compaction           `json:"compaction"`
 	MCPServers   map[string]mcpServer `json:"mcp_servers,omitempty"`
 	System       string               `json:"-"`
@@ -279,6 +280,7 @@ func initFiles(dir string) (string, error) {
 
 const defaultJSON = `{
   "default_model": "default",
+  "tui": {"submit_key": "enter"},
   "models": {
     "default": {
       "provider": "codex",

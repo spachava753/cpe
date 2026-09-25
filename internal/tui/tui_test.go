@@ -59,11 +59,17 @@ func (b *outputBuffer) Write(p []byte) (int, error) {
 func (b *outputBuffer) text() string { b.mu.Lock(); defer b.mu.Unlock(); return b.String() }
 
 func TestProgramKeyboardRenderAndDurableTurn(t *testing.T) {
-	for _, tc := range []struct{ name, input, want string }{
-		{"enter submits", "compute\r", "compute"},
-		{"shift enter newline", "compute\x1b[13;2umore\r", "compute\nmore"},
-		{"control J newline", "compute\nmore\r", "compute\nmore"},
-		{"bracketed multiline paste", "\x1b[200~compute\nmore\x1b[201~\r", "compute\nmore"},
+	for _, tc := range []struct {
+		name, input, want string
+		submitKey         config.SubmitKey
+	}{
+		{"enter submits", "compute\r", "compute", config.SubmitEnter},
+		{"shift enter newline", "compute\x1b[13;2umore\r", "compute\nmore", config.SubmitEnter},
+		{"control J newline", "compute\nmore\r", "compute\nmore", config.SubmitEnter},
+		{"shift submit and enter newline", "compute\rmore\x1b[13;2u", "compute\nmore", config.SubmitShiftEnter},
+		{"shift submit and control J newline", "compute\nmore\x1b[13;2u", "compute\nmore", config.SubmitShiftEnter},
+		{"shift submit with lock state", "compute\x1b[13;65umore\x1b[13;66u", "compute\nmore", config.SubmitShiftEnter},
+		{"bracketed multiline paste", "\x1b[200~compute\nmore\x1b[201~\r", "compute\nmore", config.SubmitEnter},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -89,7 +95,9 @@ func TestProgramKeyboardRenderAndDurableTurn(t *testing.T) {
 			defer input.Close()
 			defer writer.Close()
 			output := &outputBuffer{}
-			program := tea.NewProgram(newModel(t.Context(), a, "test"), tea.WithInput(input), tea.WithOutput(output), tea.WithWindowSize(80, 24), tea.WithoutSignalHandler(), tea.WithoutCatchPanics())
+			m := newModel(t.Context(), a, "test")
+			m.submitKey = tc.submitKey
+			program := tea.NewProgram(m, tea.WithInput(input), tea.WithOutput(output), tea.WithWindowSize(80, 24), tea.WithoutSignalHandler(), tea.WithoutCatchPanics())
 			done := make(chan error, 1)
 			go func() { _, err := program.Run(); done <- err }()
 			t.Cleanup(func() { program.Kill() })
@@ -109,7 +117,11 @@ func TestProgramKeyboardRenderAndDurableTurn(t *testing.T) {
 				}
 			}
 			program.Send(tea.KeyPressMsg{Text: quitCommand})
-			program.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
+			submit := tea.KeyPressMsg{Code: tea.KeyEnter}
+			if tc.submitKey == config.SubmitShiftEnter {
+				submit.Mod = tea.ModShift
+			}
+			program.Send(submit)
 			select {
 			case err := <-done:
 				if err != nil {
@@ -156,8 +168,12 @@ func TestDraftDuringWork(t *testing.T) {
 		err          error
 		cancelKey    tea.KeyPressMsg
 		slash        bool
+		submitKey    config.SubmitKey
 	}{
 		{name: "completion", notice: "Saved"},
+		{name: "shift submit completion", notice: "Saved", submitKey: config.SubmitShiftEnter},
+		{name: "shift submit cancellation", notice: "Canceled", cancelKey: tea.KeyPressMsg{Code: tea.KeyEsc}, submitKey: config.SubmitShiftEnter},
+		{name: "shift submit slash draft", notice: "Saved", slash: true, submitKey: config.SubmitShiftEnter},
 		{name: "failure", err: errors.New("provider failed"), notice: "provider failed"},
 		{name: "escape cancellation", cancelKey: tea.KeyPressMsg{Code: tea.KeyEsc}, notice: "Canceled"},
 		{name: "control C cancellation", cancelKey: tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}, notice: "Canceled"},
@@ -178,8 +194,14 @@ func TestDraftDuringWork(t *testing.T) {
 			}
 			defer a.Close()
 			m := newModel(t.Context(), a, "test")
+			m.submitKey = tc.submitKey
+			submit := tea.KeyPressMsg{Code: tea.KeyEnter}
+			newline := tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift}
+			if tc.submitKey == config.SubmitShiftEnter {
+				submit, newline = newline, submit
+			}
 			m.input.SetValue("wait")
-			next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			next, _ := m.Update(submit)
 			m = next.(model)
 			defer func() {
 				if m.busy {
@@ -200,7 +222,7 @@ func TestDraftDuringWork(t *testing.T) {
 				tea.KeyPressMsg{Text: "nexx"}, tea.KeyPressMsg{Code: tea.KeyBackspace},
 				tea.KeyPressMsg{Text: "t"}, tea.KeyPressMsg{Code: tea.KeyLeft},
 				tea.KeyPressMsg{Text: "X"}, tea.KeyPressMsg{Code: tea.KeyBackspace}, tea.KeyPressMsg{Code: tea.KeyRight},
-				tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift}, tea.PasteMsg{Content: "pasted\nlast"},
+				newline, tea.PasteMsg{Content: "pasted\nlast"},
 				tea.KeyPressMsg{Code: tea.KeyHome}, tea.KeyPressMsg{Text: "Edited "}, tea.KeyPressMsg{Code: tea.KeyLeft},
 			}
 			want := "next\npasted\nEdited last"
@@ -218,7 +240,7 @@ func TestDraftDuringWork(t *testing.T) {
 			row, column := m.input.Line(), m.input.LineInfo().ColumnOffset
 			for _, msg := range []tea.Msg{
 				update{event: agent.Event{Kind: agent.EventDelta, Text: "Still working"}},
-				tea.KeyPressMsg{Code: tea.KeyEnter},
+				submit,
 				tea.WindowSizeMsg{Width: 32, Height: 12},
 				tea.WindowSizeMsg{Width: 80, Height: 24},
 			} {
@@ -262,7 +284,7 @@ func TestDraftDuringWork(t *testing.T) {
 				return
 			}
 			// The same draft can be sent explicitly after the worker has stopped.
-			next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			next, _ = m.Update(submit)
 			m = next.(model)
 			for m.busy {
 				select {

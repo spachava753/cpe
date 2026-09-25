@@ -92,26 +92,26 @@ func (m *model) closeCompletion(literal bool) {
 	m.refresh(bottom)
 }
 
-// completionKey reports whether it consumed the key. Enter may fill a command
+// completionKey reports whether it consumed the key. The submit key may fill a command
 // and then fall through to normal dispatch; commands requiring an argument stay
 // in the composer. Tab never executes a command.
 func (m *model) completionKey(key tea.KeyPressMsg) bool {
-	if m.completionHeight() == 0 || key.Mod&^(tea.ModCapsLock|tea.ModNumLock) != 0 {
+	if m.completionHeight() == 0 {
 		return false
 	}
 	c := &m.completion
-	switch key.Code {
-	case tea.KeyEsc:
+	switch key.String() {
+	case escapeKey:
 		m.closeCompletion(true)
 		return true
-	case tea.KeyUp, tea.KeyDown:
+	case "up", "down":
 		delta := 1
 		if key.Code == tea.KeyUp {
 			delta = -1
 		}
 		c.selected = (c.selected + delta + len(c.matches)) % len(c.matches)
 		return true
-	case tea.KeyTab, tea.KeyEnter:
+	case "tab", m.submitKey.String():
 		command := c.matches[c.selected]
 		text := command.name
 		if command.argument || key.Code == tea.KeyTab {
@@ -169,7 +169,7 @@ func (m model) completionView() string {
 
 func (m model) completionHelp() string {
 	if m.width < 60 {
-		return fmt.Sprintf("↑↓ · Tab/Enter · Esc · %d/%d", m.completion.selected+1, len(m.completion.matches))
+		return fmt.Sprintf("↑↓ · Tab/%s · Esc · %d/%d", keyLabel(m.submitKey.String()), m.completion.selected+1, len(m.completion.matches))
 	}
-	return fmt.Sprintf("↑/↓ choose · Tab complete · Enter run · Esc dismiss · %d/%d", m.completion.selected+1, len(m.completion.matches))
+	return fmt.Sprintf("↑/↓ choose · Tab complete · %s run · Esc dismiss · %d/%d", keyLabel(m.submitKey.String()), m.completion.selected+1, len(m.completion.matches))
 }

@@ -97,6 +97,39 @@ func TestSlashCompletionEditingAndNavigation(t *testing.T) {
 		}
 	}
 
+	t.Run("shift submit preference and picker isolation", func(t *testing.T) {
+		m := newModel(t.Context(), a, "fixture")
+		m.submitKey = config.SubmitShiftEnter
+		m.profiles = map[string]config.Model{"fixture": profile}
+		m.input.SetValue("/mo")
+		m.syncCompletion()
+		if !strings.Contains(m.completionHelp(), "Shift+Enter run") || !strings.Contains(ansi.Strip(m.View().Content), "Shift+Enter run") {
+			t.Fatal("completion help did not follow the submit preference")
+		}
+		next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		m = next.(model)
+		if m.input.Value() != "/mo\n" || m.completionHeight() != 0 || m.picker != nil || m.busy {
+			t.Fatal("Enter dispatched completion instead of inserting a newline")
+		}
+		m.input.SetValue("/mo")
+		m.syncCompletion()
+		next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift | tea.ModCapsLock})
+		m = next.(model)
+		if m.picker == nil || m.input.Value() != "" || m.busy {
+			t.Fatal("Shift+Enter did not dispatch the completed command")
+		}
+		next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift})
+		m = next.(model)
+		if m.picker == nil {
+			t.Fatal("composer preference changed picker confirmation")
+		}
+		next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		m = next.(model)
+		if m.picker != nil || len(a.Messages()) != 0 || !strings.Contains(ansi.Strip(m.View().Content), "Shift+Enter send · Enter newline") {
+			t.Fatal("picker confirmation, history isolation, or composer help changed")
+		}
+	})
+
 	t.Run("tab completes without running", func(t *testing.T) {
 		m := newModel(t.Context(), a, "tab-fixture")
 		for _, key := range []tea.KeyPressMsg{{Text: "/l"}, {Code: tea.KeyDown}, {Code: tea.KeyTab}} {

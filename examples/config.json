@@ -1,5 +1,6 @@
 {
   "default_model": "default",
+  "tui": {"submit_key": "enter"},
   "models": {
     "default": {
       "provider": "openai",

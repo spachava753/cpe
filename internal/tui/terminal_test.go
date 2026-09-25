@@ -78,7 +78,17 @@ func TestTerminalHarness(t *testing.T) {
 	}
 	defer a.Close()
 	signedIn := false
-	options := Options{Models: profiles,
+	var submitKey config.SubmitKey
+	if value := os.Getenv("CPE_TUI_TEST_SUBMIT_KEY"); value != "" {
+		data, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(data, &submitKey); err != nil {
+			t.Fatal(err)
+		}
+	}
+	options := Options{Models: profiles, SubmitKey: submitKey,
 		ThemeDir:      dir,
 		NewGenerator:  func(context.Context, config.Model) (gai.Generator, error) { return gen, nil },
 		LoginRequired: func(profile config.Model) bool { return profile.Provider == "codex" && !signedIn },

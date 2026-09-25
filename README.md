@@ -36,6 +36,7 @@ CPE to apply changes. CPE does not look in the current directory or
 ```json
 {
   "default_model": "gpt",
+  "tui": {"submit_key": "enter"},
   "models": {
     "gpt": {
       "provider": "codex",
@@ -122,6 +123,13 @@ resuming, branching, or switching profiles.
 
 ## Terminal controls
 
+The default composer bindings are listed below. Set `"tui": {"submit_key":
+"shift+enter"}` in `~/.cpe/config.json` and restart to submit with Shift+Enter
+and insert newlines with Enter instead. `"enter"` (or omitting the setting)
+uses the defaults. Ctrl+J always inserts a newline. The chosen submit key also
+runs slash completions; pickers and private API-key input always use Enter to
+confirm. Choose `"enter"` if your terminal cannot distinguish Shift+Enter.
+
 | Key or command | Action |
 | --- | --- |
 | Enter | Send the prompt when idle |
@@ -152,15 +160,16 @@ use Ctrl+J to insert a newline instead.
 
 The conversation displays streamed text provisionally. Completed assistant
 messages and tool results are saved before the next operation. You can type,
-edit, paste, and use Shift+Enter to draft your next message while the agent works.
-Enter leaves the draft in place until the current operation finishes; nothing
+edit, paste, and use the configured newline key to draft your next message while
+the agent works.
+The submit key leaves the draft in place until the current operation finishes; nothing
 is queued or sent automatically. The draft survives completion, errors, and
 cancellation. Slash completion returns when the agent becomes idle. The normal
 composer remains locked during login.
 
 Start a draft with `/` to see a small command popup above the composer. Keep
 typing to filter, use Up/Down to select, Tab to complete without running, or
-Enter to run the selection. `/branch` completion leaves room for a checkpoint ID.
+the configured submit key to run the selection. `/branch` completion leaves room for a checkpoint ID.
 The popup uses the active theme and shows up to five commands, scrolling as you
 move through the list. It shrinks or hides in very short terminals.
 
@@ -191,8 +200,8 @@ findings. Resolve any supporting references relative to this skill directory.
 ```
 
 Type `/skill:` to browse installed skills, then filter by name. Tab completes the
-command so you can add arguments, such as `/skill:review staged changes`; Enter
-invokes it. This also works with `cpe --prompt '/skill:review staged changes'`.
+command so you can add arguments, such as `/skill:review staged changes`; the configured
+submit key invokes it. This also works with `cpe --prompt '/skill:review staged changes'`.
 
 By default both you and the model can invoke a skill. CPE supports these
 [invocation-control extensions](https://code.claude.com/docs/en/skills#control-who-invokes-a-skill)
@@ -595,8 +604,8 @@ two seconds, supports cancellation, and never contacts OpenCode or saves a real 
 Send `compute`, restart the process, then send `restore` to verify the saved
 variable. Send `slow` for a three-second REPL call and draft another message
 while it runs; the draft stays unsent after completion. Send `wait`, type a draft,
-and press Esc to verify cancellation preserves it. This harness also works
-inside tmux, where `capture-pane` provides the actual rendered terminal grid.
+and press Esc to verify cancellation preserves it. Set `CPE_TUI_TEST_SUBMIT_KEY=shift+enter` to exercise the alternate composer
+binding. This harness also works inside tmux, where `capture-pane` provides the actual rendered terminal grid.
 The harness creates isolated `review`, `publish` (user-only), and `background`
 (model-only) skills beneath `CPE_TUI_TEST_DIR/agents/skills`. Type `/skill:` to test
 completion, `/skill:review staged changes` to read a skill through the REPL, and

@@ -196,6 +196,7 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	}
 	authFile := filepath.Join(c.Dir, "auth.json")
 	options := tui.Options{
+		SubmitKey:    c.TUI.SubmitKey,
 		Models:       c.Models,
 		NewGenerator: newGenerator,
 		ThemeDir:     c.Dir,

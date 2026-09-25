@@ -27,6 +27,7 @@ const loginDeviceCommand = "/login device"
 const quitKey = "ctrl+c"
 const escapeKey = "esc"
 const enterKey = "enter"
+const shiftEnterKey = "shift+enter"
 
 type update struct {
 	event     agent.Event
@@ -36,7 +37,7 @@ type update struct {
 	profiles  map[string]config.Model
 }
 
-// Options supplies model profiles and UI-only authentication. NewGenerator
+// Options supplies model profiles, composer submission preferences, and UI-only authentication. NewGenerator
 // defaults to agent.Provider and constructs a provider without generating text.
 // Login handles Codex, honoring cancellation and sending only UI instructions.
 // LoginGo accepts a UI-only API key and returns all profiles after import. Both
@@ -46,6 +47,7 @@ type update struct {
 // selections. An empty directory disables theme configuration. Reload failures
 // keep the last valid theme and display a warning.
 type Options struct {
+	SubmitKey     config.SubmitKey
 	Models        map[string]config.Model
 	NewGenerator  func(context.Context, config.Model) (gai.Generator, error)
 	Login         func(context.Context, string, func(string)) error
@@ -57,6 +59,7 @@ type model struct {
 	ctx           context.Context
 	agent         *agent.Agent
 	name          string
+	submitKey     config.SubmitKey
 	input         textarea.Model
 	viewport      viewport.Model
 	spinner       spinner.Model
@@ -129,6 +132,7 @@ func Run(ctx context.Context, a *agent.Agent, name string, options Options) erro
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	m := newModel(ctx, a, name)
+	m.submitKey = options.SubmitKey
 	m.themeDir = options.ThemeDir
 	if m.themeDir != "" {
 		m.appearance = theme.SystemAppearance(ctx)
@@ -331,13 +335,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
 			return m, cmd
-		case "shift+enter", "ctrl+j":
+		case m.newlineKey(), "ctrl+j":
 			if !m.loggingIn {
 				m.input.InsertRune('\n')
 				m.syncCompletion()
 			}
 			return m, nil
-		case enterKey:
+		case m.submitKey.String():
 			if m.busy {
 				return m, nil
 			}
@@ -520,9 +524,9 @@ func (m model) viewContent() string {
 		status = m.styles.muted.Render(status)
 	}
 	line := m.styles.border.Render(strings.Repeat("─", max(1, m.width-2)))
-	footer := m.styles.muted.Render("Enter send · Shift+Enter newline · PgUp/PgDn scroll · Ctrl+C quit")
+	footer := m.styles.muted.Render(keyLabel(m.submitKey.String()) + " send · " + keyLabel(m.newlineKey()) + " newline · PgUp/PgDn scroll · Ctrl+C quit")
 	if m.busy {
-		footer = m.styles.muted.Render("Draft next message · Shift+Enter newline · Esc/Ctrl+C cancel")
+		footer = m.styles.muted.Render("Draft next message · " + keyLabel(m.newlineKey()) + " newline · Esc/Ctrl+C cancel")
 		if m.loggingIn {
 			footer = m.styles.muted.Render("Esc/Ctrl+C cancel login")
 		}
@@ -591,4 +595,18 @@ func clean(text string) string {
 		}
 		return r
 	}, text)
+}
+
+func (m model) newlineKey() string {
+	if m.submitKey == config.SubmitShiftEnter {
+		return enterKey
+	}
+	return shiftEnterKey
+}
+
+func keyLabel(key string) string {
+	if key == shiftEnterKey {
+		return "Shift+Enter"
+	}
+	return "Enter"
 }
