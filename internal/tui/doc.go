@@ -71,7 +71,15 @@
 // not prevent startup; successful login enables prompts without restarting.
 //
 // /model and /reasoning open keyboard pickers (arrows, Enter, Esc), or accept a
-// profile name and effort label directly. /model also works during agent work:
+// profile name and effort label directly. The model picker has a focused Filter
+// input below its choices. Typing/paste fuzzy-match profile names, provider names,
+// and model IDs, ranked synchronously before selection. Printable list shortcuts
+// belong to the query; arrows/PageUp/PageDown navigate matches, left/right edit
+// the query, Backspace deletes, and Ctrl+U clears. Enter/Ctrl+S use the highlighted
+// match and do nothing when none match. Escape closes immediately. The query is
+// ephemeral, starts empty on open, and survives resizing/theme reload with its
+// selection and cursor. Cursor timers follow the active input surface.
+// /model also works during agent work:
 // the current generation and its tool calls finish, then the next generation uses
 // the queued provider/settings. The header shows the applied profile; status shows
 // a pending selection. A later choice replaces it, including choosing the current

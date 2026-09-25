@@ -27,6 +27,8 @@ const quitKey = "ctrl+c"
 const escapeKey = "esc"
 const enterKey = "enter"
 const shiftEnterKey = "shift+enter"
+const pageDownKey = "pgdown"
+const pageUpKey = "pgup"
 
 type update struct {
 	event       agent.Event
@@ -256,6 +258,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			next.input.Blur()
 		}
 	}
+	if next.picker != nil && next.picker != m.picker && next.picker.command == modelCommand {
+		cmd = tea.Batch(cmd, next.picker.list.FilterInput.Focus())
+	}
 	return next, cmd
 }
 
@@ -393,7 +398,7 @@ func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 			if !m.busy && m.savingDefault == nil && m.input.Value() == "" {
 				return m, tea.Quit
 			}
-		case "pgup", "pgdown", "ctrl+u":
+		case pageUpKey, pageDownKey, "ctrl+u":
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
 			m.scroll.following = m.viewport.AtBottom()
@@ -497,7 +502,7 @@ func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 		return m.updateKeyInput(msg)
 	}
 	if m.picker != nil {
-		return m, nil
+		return m.updatePicker(msg)
 	}
 	if !m.loggingIn {
 		var cmd tea.Cmd
@@ -636,6 +641,9 @@ func (m model) viewContent() string {
 		if m.picker.command == modelCommand || m.picker.command == reasoningCommand {
 			apply = "↑↓ · Enter apply · Ctrl+S save default"
 		}
+		if m.picker.command == modelCommand {
+			status = m.picker.list.FilterInput.View()
+		}
 		footer = m.styles.muted.Render(apply + " · Esc close · Ctrl+C " + controlC)
 	}
 	if m.completionHeight() > 0 {
@@ -679,7 +687,19 @@ func (m *model) layout() {
 	m.viewport.SetWidth(max(1, m.width-2))
 	m.viewport.SetHeight(max(1, m.height-m.input.Height()-overhead-m.completionHeight()))
 	if m.picker != nil {
+		input := &m.picker.list.FilterInput
+		previousWidth := input.Width()
 		m.picker.list.SetSize(m.viewport.Width(), m.viewport.Height())
+		input.SetWidth(max(1, m.viewport.Width()-ansi.StringWidth(input.Prompt)-1))
+		if input.Width() != previousWidth {
+			// SetWidth leaves textinput's horizontal window unchanged. Rebuild it
+			// around the same cursor without changing the list's ranked matches.
+			value, position := input.Value(), input.Position()
+			input.Reset()
+			input.SetValue(value)
+			input.SetCursor(position)
+		}
+		m.picker.list.Styles.NoItems = m.styles.muted.MaxWidth(m.viewport.Width())
 	}
 }
 

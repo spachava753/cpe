@@ -22,14 +22,18 @@ import (
 )
 
 func TestDefaultSelection(t *testing.T) {
+	longPrefix := strings.Repeat("a", 64)
+	longModel := longPrefix + "-two"
 	for _, test := range []struct {
-		name, command, value, wantModel, wantEffort, wantDefault, wantSavedEffort  string
-		cancel, badFile, badProvider, blocked, shutdown, afterCommit, conversation bool
+		name, command, value, wantModel, wantEffort, wantDefault, wantSavedEffort               string
+		cancel, badFile, badProvider, blocked, shutdown, afterCommit, conversation, typedFilter bool
 	}{
 		{name: "conversation model only", command: modelCommand, value: "beta", conversation: true, wantModel: "beta", wantEffort: "low", wantDefault: "alpha", wantSavedEffort: "low"},
 		{name: "conversation reasoning only", command: reasoningCommand, value: "high", conversation: true, wantModel: "beta", wantEffort: "high", wantDefault: "alpha", wantSavedEffort: "low"},
 		{name: "configured reasoning choice", command: reasoningCommand, value: defaultEffort, wantModel: "beta", wantEffort: "low", wantDefault: "alpha", wantSavedEffort: "low"},
 		{name: "save model", command: modelCommand, value: "beta", wantModel: "beta", wantEffort: "low", wantDefault: "beta", wantSavedEffort: "low"},
+		{name: "paste long profile and save", command: modelCommand, value: longModel, wantModel: longModel, wantDefault: longModel, wantSavedEffort: "low"},
+		{name: "type long profile and apply", command: modelCommand, value: longModel, typedFilter: true, conversation: true, wantModel: longModel, wantDefault: "alpha", wantSavedEffort: "low"},
 		{name: "save reasoning only", command: reasoningCommand, value: "high", wantModel: "beta", wantEffort: "high", wantDefault: "alpha", wantSavedEffort: "high"},
 		{name: "provider reasoning", command: reasoningCommand, value: providerEffort, wantModel: "beta", wantDefault: "alpha"},
 		{name: "explicit none", command: reasoningCommand, value: "none", wantModel: "beta", wantEffort: "none", wantDefault: "alpha", wantSavedEffort: "none"},
@@ -43,6 +47,8 @@ func TestDefaultSelection(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			dir := t.TempDir()
 			profiles := map[string]config.Model{"alpha": {Provider: "codex", ID: "a"}, "beta": {Provider: "codex", ID: "b", ReasoningEffort: lowEffort}}
+			profiles[longPrefix+"-one"] = config.Model{Provider: "codex", ID: "long-one"}
+			profiles[longModel] = config.Model{Provider: "codex", ID: "long-two"}
 			data, err := json.Marshal(map[string]any{"default_model": "alpha", "models": profiles})
 			if err != nil {
 				t.Fatal(err)
@@ -116,10 +122,27 @@ func TestDefaultSelection(t *testing.T) {
 					m.picker.list.Select(i)
 				}
 			}
-			next, _ = m.Update(tea.PasteMsg{Content: "must not leak"})
-			m = next.(model)
+			paste := "must not leak"
+			if test.command == modelCommand {
+				paste = "BTA"
+				if test.value == longModel {
+					paste = longModel
+				}
+			}
+			if test.typedFilter {
+				for _, r := range paste {
+					next, _ = m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+					m = next.(model)
+				}
+			} else {
+				next, _ = m.Update(tea.PasteMsg{Content: paste})
+				m = next.(model)
+			}
 			if strings.Contains(m.View().Content, "must not leak") || m.input.Value() != "draft stays here" {
 				t.Fatal("paste escaped picker")
+			}
+			if test.command == modelCommand && (m.picker.list.FilterValue() != paste || m.picker.list.SelectedItem().(choice).value != test.value) {
+				t.Fatal("filter did not select the intended default")
 			}
 			if test.badFile {
 				if err := os.WriteFile(path, []byte("invalid"), 0600); err != nil {

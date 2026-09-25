@@ -146,12 +146,11 @@ func TestActiveModelSelection(t *testing.T) {
 				if m.picker == nil || !m.busy {
 					t.Fatal("no active model picker")
 				}
-				next, _ = m.Update(tea.PasteMsg{Content: "private paste"})
+				next, _ = m.Update(tea.KeyPressMsg{Text: "bta"})
 				m = next.(model)
-				if strings.Contains(m.View().Content, "private paste") || m.input.Value() != "" {
-					t.Fatal("picker paste leaked")
+				if m.picker.list.FilterValue() != "bta" || m.input.Value() != "" || m.picker.list.SelectedItem().(choice).value != "beta" {
+					t.Fatal("active picker did not isolate/filter the query")
 				}
-				m.picker.list.Select(1)
 				key := tea.KeyPressMsg{Code: tea.KeyEnter}
 				if test.saved {
 					key = tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}

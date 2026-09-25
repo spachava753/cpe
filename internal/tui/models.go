@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
@@ -21,7 +22,7 @@ type choice struct{ value, label string }
 
 func (c choice) Title() string       { return c.label }
 func (c choice) Description() string { return "" }
-func (c choice) FilterValue() string { return c.label }
+func (c choice) FilterValue() string { return strings.TrimSuffix(c.label, currentChoiceSuffix) }
 
 type picker struct {
 	command string
@@ -102,56 +103,97 @@ func (m *model) openPicker(command, title string, items []list.Item, selected in
 	l.SetShowStatusBar(false)
 	l.SetShowHelp(false)
 	l.SetShowPagination(false)
-	l.SetFilteringEnabled(false)
+	l.SetShowFilter(false)
+	l.SetFilteringEnabled(command == modelCommand)
+	if command == modelCommand {
+		l.FilterInput.SetVirtualCursor(true)
+		l.FilterInput.CharLimit = 0
+		l.FilterInput.Placeholder = "Type to filter models"
+		l.SetStatusBarItemName("matching model", "matching models")
+	}
 	l.DisableQuitKeybindings()
 	l.Select(selected)
 	m.picker = &picker{command: command, list: l}
+	m.stylePicker()
+	m.layout()
 	m.notice = title
 }
 
-func (m model) updatePicker(key tea.KeyPressMsg) (model, tea.Cmd) {
-	switch key.String() {
-	case quitKey:
-		if m.busy {
+func (m model) updatePicker(msg tea.Msg) (model, tea.Cmd) {
+	if key, ok := msg.(tea.KeyPressMsg); ok {
+		switch key.String() {
+		case quitKey:
+			if m.busy {
+				m.picker = nil
+				m.cancel()
+				m.activity = "Canceling"
+				return m, nil
+			}
+			return m, tea.Quit
+		case escapeKey:
 			m.picker = nil
-			m.cancel()
-			m.activity = "Canceling"
+			m.notice = "Selection canceled"
+			return m, nil
+		case enterKey, saveDefaultKey:
+			if key.String() == saveDefaultKey {
+				if m.picker.command != modelCommand && m.picker.command != reasoningCommand {
+					return m, nil
+				}
+				if m.configDir == "" {
+					m.notice = "Default settings are unavailable"
+					return m, nil
+				}
+			}
+			if selected, ok := m.picker.list.SelectedItem().(choice); ok {
+				command := m.picker.command
+				m.picker = nil
+				if key.String() == saveDefaultKey {
+					return m, m.saveDefault(command, selected.value)
+				}
+				if command == loginCommand {
+					return m, m.configureLogin(selected.value)
+				}
+				if command == themeCommand {
+					m.configureTheme(selected.value)
+				} else {
+					m.configureModel(command, selected.value)
+				}
+			}
 			return m, nil
 		}
-		return m, tea.Quit
-	case escapeKey:
-		m.picker = nil
-		m.notice = "Selection canceled"
-		return m, nil
-	case enterKey, saveDefaultKey:
-		if key.String() == saveDefaultKey {
-			if m.picker.command != modelCommand && m.picker.command != reasoningCommand {
-				return m, nil
-			}
-			if m.configDir == "" {
-				m.notice = "Default settings are unavailable"
-				return m, nil
-			}
+		if m.picker.command != modelCommand {
+			var cmd tea.Cmd
+			m.picker.list, cmd = m.picker.list.Update(key)
+			return m, cmd
 		}
-		if selected, ok := m.picker.list.SelectedItem().(choice); ok {
-			command := m.picker.command
-			m.picker = nil
-			if key.String() == saveDefaultKey {
-				return m, m.saveDefault(command, selected.value)
-			}
-			if command == loginCommand {
-				return m, m.configureLogin(selected.value)
-			}
-			if command == themeCommand {
-				m.configureTheme(selected.value)
-			} else {
-				m.configureModel(command, selected.value)
-			}
+		// Only navigation keys go to the list. Printable shortcuts such as j,
+		// k, / and ? belong to the query; left/right/home/end edit its cursor.
+		switch key.String() {
+		case "ctrl+u":
+			m.picker.list.ResetFilter()
+			m.picker.list.GoToStart()
+			return m, m.picker.list.FilterInput.Focus()
+		case "up", "down", pageUpKey, pageDownKey:
+			var cmd tea.Cmd
+			m.picker.list, cmd = m.picker.list.Update(key)
+			return m, cmd
 		}
+	}
+	if m.picker.command != modelCommand {
 		return m, nil
 	}
-	var cmd tea.Cmd
-	m.picker.list, cmd = m.picker.list.Update(key)
+	// Filter synchronously so an immediate Enter/Ctrl+S sees the matches for
+	// the latest edit. Keep textinput's cursor rather than SetFilterText's reset.
+	input, cmd := m.picker.list.FilterInput.Update(msg)
+	if input.Value() != m.picker.list.FilterValue() {
+		if input.Value() == "" {
+			m.picker.list.ResetFilter()
+			m.picker.list.GoToStart()
+		} else {
+			m.picker.list.SetFilterText(input.Value())
+		}
+	}
+	m.picker.list.FilterInput = input
 	return m, cmd
 }
 

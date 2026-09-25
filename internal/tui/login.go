@@ -89,7 +89,7 @@ func (m *model) configureLogin(method string) tea.Cmd {
 func (m model) updateKeyInput(msg tea.Msg) (model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyPressMsg); ok {
 		switch key.String() {
-		case "pgup", "pgdown":
+		case pageUpKey, pageDownKey:
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
 			return m, cmd

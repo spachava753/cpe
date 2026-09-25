@@ -309,6 +309,12 @@ client-specific execution modes from other skill hosts.
 ## Models and usage
 
 Model and reasoning pickers use Up/Down, Enter to apply, and Esc to cancel.
+In `/model`, type or paste into the **Filter** field to fuzzy-match profile names,
+providers, and model IDs. Matches are ranked as you type; Enter applies the
+highlighted match immediately. Backspace edits the query and Ctrl+U clears it.
+Ctrl+S saves the highlighted match as the default. With no matches, neither key
+selects a model. The query stays out of your prompt draft and conversation history,
+and starts empty each time you open the picker.
 For example, `/model sol` switches to your `sol` profile and `/reasoning high`
 changes its reasoning effort for subsequent replies and compaction. The header
 shows the active profile and effort. Recognized levels are `none`, `minimal`,

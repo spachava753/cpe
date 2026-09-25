@@ -114,10 +114,19 @@ func (m *model) applyTheme(t theme.Theme) {
 	inputStyles.Cursor.Color = color(t.Colors.Accent)
 	m.input.SetStyles(inputStyles)
 	if m.picker != nil {
-		m.picker.list.SetDelegate(m.pickerDelegate())
+		m.stylePicker()
 	}
 	m.layout()
 	m.refresh(bottom)
+}
+
+func (m *model) stylePicker() {
+	m.picker.list.SetDelegate(m.pickerDelegate())
+	styles := m.picker.list.FilterInput.Styles()
+	styles.Focused.Prompt, styles.Focused.Text, styles.Focused.Placeholder = m.styles.accent, m.styles.base, m.styles.muted
+	styles.Blurred = styles.Focused
+	styles.Cursor.Color = color(m.theme.Colors.Accent)
+	m.picker.list.FilterInput.SetStyles(styles)
 }
 
 func (m model) pickerDelegate() list.DefaultDelegate {
@@ -130,6 +139,7 @@ func (m model) pickerDelegate() list.DefaultDelegate {
 		BorderForeground(color(m.theme.Colors.Accent)).
 		BorderBackground(color(m.theme.Colors.Background)).PaddingLeft(1)
 	d.Styles.DimmedTitle = m.styles.muted.PaddingLeft(2)
+	d.Styles.FilterMatch = lipgloss.NewStyle().Underline(true)
 	return d
 }
 
