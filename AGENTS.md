@@ -28,6 +28,13 @@ README.md     User workflows and verification instructions
 - **Parse, don't validate:** convert configuration and protocol input into domain
   values at boundaries. Establish invariants there instead of repeatedly checking
   partially valid data downstream.
+- Keep CLI/TUI focused on wiring and presentation. Conversation state belongs in
+  `agent`, host-call durability in `repl`/`session`, and protocol quirks in adapters.
+- Separate service credentials, model identity, and wire protocol. Establish model
+  availability from service-specific sources. Login data stays outside model
+  context and session history.
+- Treat persisted formats and replay semantics as versioned contracts. Changes
+  need compatibility tests that restore old records without repeating host effects.
 - Keep changes scoped; avoid speculative abstractions and performance work unless
   a demonstrated need or the task calls for it.
 
