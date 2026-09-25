@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -161,6 +162,59 @@ func TestModelAndReasoningCommands(t *testing.T) {
 			}
 		})
 	}
+	t.Run("composer cursor lifecycle", func(t *testing.T) {
+		for _, tc := range []struct {
+			name, command string
+			key           tea.KeyPressMsg
+			busy          bool
+		}{
+			{"model dismiss", modelCommand, tea.KeyPressMsg{Code: tea.KeyEsc}, false},
+			{"model apply", modelCommand, tea.KeyPressMsg{Code: tea.KeyEnter}, false},
+			{"reasoning dismiss", reasoningCommand, tea.KeyPressMsg{Code: tea.KeyEsc}, false},
+			{"reasoning apply", reasoningCommand, tea.KeyPressMsg{Code: tea.KeyEnter}, false},
+			{"active picker cancellation", modelCommand, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}, true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				m := newModel(t.Context(), a, firstProfile)
+				m.profiles, m.busy = profiles, tc.busy
+				m.cancel = func() {}
+				styles := m.input.Styles()
+				styles.Cursor.BlinkSpeed = time.Millisecond
+				m.input.SetStyles(styles)
+				m.input.SetValue(tc.command)
+				visible := m.input.View()
+				// Enter the hidden phase before the picker takes focus.
+				blink := m.input.Focus()
+				next, _ := m.Update(blink())
+				m = next.(model)
+				if m.input.View() == visible {
+					t.Fatal("cursor did not enter hidden phase")
+				}
+				next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+				m = next.(model)
+				if m.picker == nil || m.input.Focused() {
+					t.Fatal("picker did not take composer focus")
+				}
+				next, cmd := m.Update(tc.key)
+				m = next.(model)
+				if m.picker != nil || !m.input.Focused() || cmd == nil {
+					t.Fatal("picker did not restore focus with its cursor command")
+				}
+				for range 2 {
+					before := m.input.View()
+					messages := commandMessages(cmd)
+					if len(messages) != 1 {
+						t.Fatalf("expected one cursor timer, got %d messages", len(messages))
+					}
+					next, cmd = m.Update(messages[0])
+					m = next.(model)
+					if m.input.View() == before || cmd == nil {
+						t.Fatal("restored cursor did not continue blinking")
+					}
+				}
+			})
+		}
+	})
 	m.configureModel(modelCommand, secondProfile)
 	// Busy turns must not permit settings mutations or picker activation.
 	m.busy = true

@@ -109,7 +109,7 @@ func (m *model) openPicker(command, title string, items []list.Item, selected in
 	m.notice = title
 }
 
-func (m model) updatePicker(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m model) updatePicker(key tea.KeyPressMsg) (model, tea.Cmd) {
 	switch key.String() {
 	case quitKey:
 		if m.busy {

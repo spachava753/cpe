@@ -86,7 +86,7 @@ func (m *model) configureLogin(method string) tea.Cmd {
 	return nil
 }
 
-func (m model) updateKeyInput(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m model) updateKeyInput(msg tea.Msg) (model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyPressMsg); ok {
 		switch key.String() {
 		case "pgup", "pgdown":
@@ -100,7 +100,7 @@ func (m model) updateKeyInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.notice = "Login canceled"
 			m.layout()
 			m.refresh(true)
-			return m, m.input.Focus()
+			return m, nil
 		case enterKey:
 			value := strings.TrimSpace(m.keyInput.Value())
 			if value == "" {
@@ -109,7 +109,6 @@ func (m model) updateKeyInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.keyInput.Reset()
 			m.keyInput = nil
-			m.input.Focus()
 			return m, m.startWork(loginGoCommand, value)
 		}
 	}

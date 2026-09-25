@@ -94,6 +94,42 @@ func TestThemeReloadPreservesUIAndRecoversFromErrors(t *testing.T) {
 	if len(a.Messages()) != 0 {
 		t.Fatal("presentation entered the conversation")
 	}
+	for _, state := range []string{"focused", "blurred"} {
+		t.Run("composer selection "+state, func(t *testing.T) {
+			m := newModel(t.Context(), a, "theme-fixture")
+			m.input.SetValue("selected draft")
+			m.input.SelectAll()
+			if state == "blurred" {
+				m.configureModel(reasoningCommand, "")
+				m.input.Blur()
+			}
+			for _, tc := range []struct {
+				name  string
+				theme theme.Theme
+			}{
+				{"initial", theme.Default()}, {"reload", themed},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					next, _ := m.Update(themeUpdate{theme: tc.theme})
+					m = next.(model)
+					styles := m.input.Styles().Focused
+					if state == "blurred" {
+						styles = m.input.Styles().Blurred
+					}
+					selected := styles.Selection.Render("selected draft")
+					if selected == styles.Text.Render("selected draft") || selected != m.styles.selection.Render("selected draft") {
+						t.Fatal("composer selection does not use visible semantic colors")
+					}
+					if !m.input.HasSelection() || m.input.Value() != "selected draft" || (state == "focused") != m.input.Focused() {
+						t.Fatal("reload lost selection, draft, or focus")
+					}
+					if tc.name == "reload" && !strings.Contains(m.input.View(), "48;2;51;68;85") {
+						t.Fatal("rendered selection missed the reloaded background")
+					}
+				})
+			}
+		})
+	}
 }
 
 func TestThemePickerAndDirectSelection(t *testing.T) {

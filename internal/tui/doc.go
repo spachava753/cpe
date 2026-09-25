@@ -6,12 +6,20 @@
 // Starlark result previews at most 20 wrapped rows across all its blocks, followed
 // by a hidden-row count. The full result remains in the agent and session; only
 // presentation is shortened. Source code and assistant replies are not capped.
+// Transcript tabs display as four spaces before wrapping, preview budgeting,
+// and scroll anchoring; model requests and durable text retain their original tabs.
 // Esc or Ctrl+C cancels active work; the program waits for reconciliation
 // before allowing another operation. Ctrl+C when idle or /quit exits. Shift+Enter
 // inserts a newline when the terminal reports modified keys; Ctrl+J is a fallback
 // for legacy terminals. By default Enter submits. Options.SubmitKey can reverse
 // Enter and Shift+Enter for the composer; Ctrl+J still inserts a newline. Pickers
 // and private login input always use Enter to confirm. PgUp/PgDn scroll.
+// Shift+arrows select composer text; Ctrl+G selects all. Selection uses the
+// theme's selection colors, including after reload. Typing, paste, and newline
+// replace selected text through the textarea's editing behavior.
+// Pickers and login blur the normal composer. Every return to composer input
+// restores focus and schedules its cursor command, so blinking cannot depend
+// on which phase was visible when a modal surface opened.
 // New output follows the bottom only if it was already visible. Scrolling up
 // keeps the reading position across deltas, accepted results, and completion or
 // cancellation. Scrolling back to the bottom resumes following; starting a new

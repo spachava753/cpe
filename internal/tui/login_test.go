@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -49,6 +50,9 @@ func TestOpenCodeGoLogin(t *testing.T) {
 			}
 			defer a.Close()
 			m := newModel(t.Context(), a, "codex")
+			styles := m.input.Styles()
+			styles.Cursor.BlinkSpeed = time.Millisecond
+			m.input.SetStyles(styles)
 			m.submitKey = test.submitKey
 			m.profiles = map[string]config.Model{"codex": profile}
 			m.loginRequired = true
@@ -102,7 +106,7 @@ func TestOpenCodeGoLogin(t *testing.T) {
 				next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 				m = next.(model)
 			}
-			if m.keyInput == nil || !m.loggingIn || m.busy || m.picker != nil {
+			if m.keyInput == nil || !m.loggingIn || m.busy || m.picker != nil || m.input.Focused() {
 				t.Fatal("missing private key input")
 			}
 			const secret = "sensitive-fixture-key"
@@ -129,6 +133,7 @@ func TestOpenCodeGoLogin(t *testing.T) {
 					t.Fatalf("login exceeds height %d: %s", size.Height, view)
 				}
 			}
+			var restored tea.Cmd
 			if test.action == "esc" || test.action == "ctrl+c" {
 				key := tea.KeyPressMsg{Code: tea.KeyEsc}
 				if test.action == "ctrl+c" {
@@ -136,11 +141,7 @@ func TestOpenCodeGoLogin(t *testing.T) {
 				}
 				next, cmd := m.Update(key)
 				m = next.(model)
-				if cmd != nil {
-					if _, quits := cmd().(tea.QuitMsg); quits {
-						t.Fatal("canceling private input exited TUI")
-					}
-				}
+				restored = cmd
 				select {
 				case <-called:
 					t.Fatal("canceled key submitted")
@@ -149,7 +150,7 @@ func TestOpenCodeGoLogin(t *testing.T) {
 			} else {
 				next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 				m = next.(model)
-				if !m.busy || m.keyInput != nil {
+				if !m.busy || m.keyInput != nil || m.input.Focused() {
 					t.Fatal("key retained while submitting")
 				}
 				if key := <-called; key != secret {
@@ -171,8 +172,23 @@ func TestOpenCodeGoLogin(t *testing.T) {
 					m = next.(model)
 				}
 				done := <-m.events
-				next, _ = m.Update(done)
+				next, restored = m.Update(done)
 				m = next.(model)
+			}
+			if !m.input.Focused() || restored == nil {
+				t.Fatal("login exit lost composer focus/cursor command")
+			}
+			for range 2 {
+				before := m.input.View()
+				messages := commandMessages(restored)
+				if len(messages) != 1 {
+					t.Fatalf("expected one cursor timer, got %d", len(messages))
+				}
+				next, restored = m.Update(messages[0])
+				m = next.(model)
+				if m.input.View() == before || restored == nil {
+					t.Fatal("cursor did not keep blinking after login")
+				}
 			}
 			if m.busy || m.loggingIn || m.keyInput != nil || m.loginText != "" || strings.Contains(m.View().Content, secret) || m.input.Value() != "" {
 				t.Fatal("login state retained")

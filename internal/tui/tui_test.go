@@ -33,6 +33,23 @@ type outputBuffer struct {
 	bytes.Buffer
 }
 
+// commandMessages executes one command batch, as the Tea runtime does, without
+// following timer commands returned by subsequent model updates.
+func commandMessages(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		var messages []tea.Msg
+		for _, child := range batch {
+			messages = append(messages, commandMessages(child)...)
+		}
+		return messages
+	}
+	return []tea.Msg{msg}
+}
+
 func TestModelRefresh(t *testing.T) {
 	for _, test := range []struct {
 		name         string
@@ -74,6 +91,7 @@ func TestModelRefresh(t *testing.T) {
 		{name: "failed tool preview", blocks: []gai.Block{gai.TextBlock(strings.Repeat("error row\n", 30))}, failed: true, width: 80, needle: "error row", count: 20, notice: "… 10 more lines"},
 		{name: "assistant stays complete", blocks: []gai.Block{gai.TextBlock(strings.Repeat("row\n", 30))}, assistant: true, width: 80, needle: "row", count: 30},
 		{name: "terminal controls stripped", blocks: []gai.Block{gai.TextBlock(strings.Repeat("row\x1b[2J\n", 21))}, width: 80, needle: "row", count: 20, notice: "… 1 more line"},
+		{name: "tabs count toward preview rows", blocks: []gai.Block{gai.TextBlock(strings.Repeat("\t1234567890\n", 21))}, width: 10, needle: "123456", count: 10, notice: "… 22"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			message := gai.ToolResultMessage("preview", tc.blocks...)
@@ -397,6 +415,94 @@ func TestModelUpdate(t *testing.T) {
 	if err := a.Prompt(t.Context(), "seed history", nil); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("transcript tabs fit the frame", func(t *testing.T) {
+		for _, kind := range []string{"assistant", "provisional", "tool result", "source"} {
+			t.Run(kind, func(t *testing.T) {
+				m := newModel(t.Context(), a, "test")
+				text := strings.Repeat("\t1234567890123456789012\n", 25)
+				message := gai.Message{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock(text)}}
+				switch kind {
+				case "provisional":
+					m.provisional = text
+					message.Blocks = nil
+				case "tool result":
+					message = gai.ToolResultMessage("tabs", gai.TextBlock(text))
+				case "source":
+					block, err := gai.ToolCallBlock("tabs", "starlark_repl", map[string]any{"code": text})
+					if err != nil {
+						t.Fatal(err)
+					}
+					message.Blocks = []gai.Block{block}
+				}
+				m.messages = gai.Dialog{message}
+				before, err := json.Marshal(m.messages)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, width := range []int{24, 40, 80, 24} {
+					next, _ := m.Update(tea.WindowSizeMsg{Width: width, Height: 24})
+					m = next.(model)
+					view := m.View().Content
+					if strings.Count(view, "\n")+1 > m.height || strings.Count(m.viewport.View(), "\n")+1 > m.viewport.Height() {
+						t.Fatal("tab expansion overflowed frame or viewport")
+					}
+					for line := range strings.SplitSeq(view, "\n") {
+						if ansi.StringWidth(line) > width {
+							t.Fatal("tab expansion overflowed width")
+						}
+					}
+					if !strings.Contains(ansi.Strip(view), "Enter send") {
+						t.Fatal("composer footer lost")
+					}
+				}
+				after, err := json.Marshal(m.messages)
+				if err != nil || !bytes.Equal(before, after) || (kind == "provisional" && m.provisional != text) {
+					t.Fatal("display expansion changed original text")
+				}
+			})
+		}
+	})
+	t.Run("composer selection replacement", func(t *testing.T) {
+		for _, tc := range []struct {
+			name   string
+			submit config.SubmitKey
+			key    tea.Msg
+			want   string
+		}{
+			{"shift enter", config.SubmitEnter, tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift}, "\n"},
+			{"control J", config.SubmitEnter, tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl}, "\n"},
+			{"enter with shift submit", config.SubmitShiftEnter, tea.KeyPressMsg{Code: tea.KeyEnter}, "\n"},
+			{"control J with shift submit", config.SubmitShiftEnter, tea.KeyPressMsg{Code: 'j', Mod: tea.ModCtrl}, "\n"},
+			{"typing", config.SubmitEnter, tea.KeyPressMsg{Text: "replacement"}, "replacement"},
+			{"paste", config.SubmitEnter, tea.PasteMsg{Content: "pasted\ntext"}, "pasted\ntext"},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				for _, state := range []string{"idle", "busy"} {
+					t.Run(state, func(t *testing.T) {
+						m := newModel(t.Context(), a, "test")
+						m.submitKey, m.busy = tc.submit, state == "busy"
+						m.input.SetValue("hello")
+						next, _ := m.Update(tea.KeyPressMsg{Code: 'g', Mod: tea.ModCtrl})
+						m = next.(model)
+						if !m.input.HasSelection() {
+							t.Fatal("select all did not select text")
+						}
+						before := len(store.Entries())
+						next, _ = m.Update(tc.key)
+						m = next.(model)
+						if m.input.Value() != tc.want || m.input.HasSelection() {
+							t.Fatalf("replacement=%q selected=%t; want %q with cleared selection", m.input.Value(), m.input.HasSelection(), tc.want)
+						}
+						next, _ = m.Update(tea.KeyPressMsg{Text: "after"})
+						m = next.(model)
+						if m.input.Value() != tc.want+"after" || len(store.Entries()) != before {
+							t.Fatal("subsequent typing lost replacement or edited history")
+						}
+					})
+				}
+			})
+		}
+	})
 	smallerInput := theme.Default()
 	smallerInput.InputHeight = 1
 	for _, tc := range []struct {

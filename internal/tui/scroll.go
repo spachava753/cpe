@@ -32,6 +32,9 @@ type toolPreview struct {
 // number that changes with terminal width. Geometry may clamp the position but
 // cannot change following: only user scrolling or explicit navigation does.
 func (m *model) setViewportContent(content string, following bool, previews ...toolPreview) {
+	// Match Lip Gloss's display expansion before measuring rows and anchors;
+	// otherwise its later expansion can wrap a measured row a second time.
+	content = strings.ReplaceAll(content, "\t", "    ")
 	anchor := m.scroll.anchor
 	if row := m.viewport.YOffset(); row != m.scroll.offset && row < len(m.scroll.rows) {
 		anchor = m.scroll.rows[row]

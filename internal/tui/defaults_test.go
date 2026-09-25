@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/gofrs/flock"
@@ -65,6 +66,9 @@ func TestDefaultSelection(t *testing.T) {
 			}
 			defer a.Close()
 			m := newModel(t.Context(), a, "alpha")
+			styles := m.input.Styles()
+			styles.Cursor.BlinkSpeed = time.Millisecond
+			m.input.SetStyles(styles)
 			m.profiles, m.configDir = profiles, dir
 			started := make(chan struct{})
 			m.newGenerator = func(ctx context.Context, _ config.Model) (gai.Generator, error) {
@@ -138,6 +142,9 @@ func TestDefaultSelection(t *testing.T) {
 			}
 			next, cmd := m.Update(key)
 			m = next.(model)
+			if !m.input.Focused() || cmd == nil {
+				t.Fatal("picker close/save did not restore composer cursor")
+			}
 			if !test.cancel && !test.conversation {
 				if cmd == nil || m.savingDefault == nil {
 					t.Fatal("save did not start")
@@ -161,8 +168,10 @@ func TestDefaultSelection(t *testing.T) {
 						t.Fatal("cancel erased draft")
 					}
 				}
-				next, _ = m.Update(cmd())
-				m = next.(model)
+				for _, msg := range commandMessages(cmd) {
+					next, _ = m.Update(msg)
+					m = next.(model)
+				}
 			}
 			if m.name != test.wantModel || m.profile.ReasoningEffort != test.wantEffort || a.Model() != m.profile || m.savingDefault != nil {
 				t.Fatalf("active=%s/%s notice=%s", m.name, m.profile.ReasoningEffort, m.notice)

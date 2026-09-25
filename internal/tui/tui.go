@@ -108,6 +108,9 @@ type model struct {
 func newModel(ctx context.Context, a *agent.Agent, name string) model {
 	input := textarea.New()
 	input.SetVirtualCursor(true)
+	// Submission is handled by the parent; all newline events reaching the
+	// textarea must retain its selection replacement and cursor behavior.
+	input.KeyMap.InsertNewline.SetKeys(enterKey, shiftEnterKey, "ctrl+j", "ctrl+m")
 	input.Placeholder = "Ask anything…"
 	input.Prompt = "› "
 	input.ShowLineNumbers = false
@@ -241,6 +244,22 @@ func (m *model) startWork(text, key string) tea.Cmd {
 	return tea.Batch(await(ch), m.spinner.Tick)
 }
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	// Synchronize focus after every transition, including picker application,
+	// default saves, and asynchronous login completion. Focus's command starts
+	// a fresh blink chain after an inactive surface discarded old timer events.
+	focused := next.picker == nil && !next.loggingIn
+	if focused != next.input.Focused() {
+		if focused {
+			cmd = tea.Batch(cmd, next.input.Focus())
+		} else {
+			next.input.Blur()
+		}
+	}
+	return next, cmd
+}
+
+func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 	switch v := msg.(type) {
 	case themeUpdate:
 		if v.revision != m.themeRevision {
@@ -379,12 +398,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport, cmd = m.viewport.Update(msg)
 			m.scroll.following = m.viewport.AtBottom()
 			return m, cmd
-		case m.newlineKey(), "ctrl+j":
-			if !m.loggingIn {
-				m.input.InsertRune('\n')
-				m.syncCompletion()
-			}
-			return m, nil
 		case m.submitKey.String():
 			if m.savingDefault != nil {
 				return m, nil

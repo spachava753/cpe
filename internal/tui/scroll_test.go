@@ -16,6 +16,8 @@ func TestModelSetViewportContent(t *testing.T) {
 		{"ASCII", "abcdefghijkl", "efgh"},
 		{"wide characters", "A界BC界DE", "C界D"},
 		{"styled wide characters", "\x1b[31mA界BC界DE\x1b[0m", "C界D"},
+		{"tabs", "\tabcdefgh", "abcd"},
+		{"styled tabs", "\x1b[31m\tabcdefgh\x1b[0m", "abcd"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := model{viewport: viewport.New(viewport.WithWidth(4), viewport.WithHeight(1))}

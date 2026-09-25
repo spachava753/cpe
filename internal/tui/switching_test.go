@@ -65,6 +65,9 @@ func TestActiveModelSelection(t *testing.T) {
 				}
 			}
 			m := newModel(t.Context(), a, "alpha")
+			styles := m.input.Styles()
+			styles.Cursor.BlinkSpeed = time.Millisecond
+			m.input.SetStyles(styles)
 			m.profiles = profiles
 			path := filepath.Join(dir, "config.json")
 			if test.saved {
@@ -176,8 +179,10 @@ func TestActiveModelSelection(t *testing.T) {
 							m = next.(model)
 						}
 					}
-					next, _ = m.Update(cmd())
-					m = next.(model)
+					for _, msg := range commandMessages(cmd) {
+						next, _ = m.Update(msg)
+						m = next.(model)
+					}
 					if m.savingDefault != nil || m.input.Value() != "draft during save" {
 						t.Fatal("save lost draft or did not settle")
 					}

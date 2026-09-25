@@ -108,6 +108,7 @@ func (m *model) applyTheme(t theme.Theme) {
 		Base: base, Text: base, CursorLine: base, CursorLineNumber: m.styles.muted,
 		LineNumber: m.styles.muted, EndOfBuffer: m.styles.muted,
 		Placeholder: m.styles.muted, Prompt: m.styles.accent,
+		Selection: m.styles.selection,
 	}
 	inputStyles.Blurred = inputStyles.Focused
 	inputStyles.Cursor.Color = color(t.Colors.Accent)

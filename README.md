@@ -184,6 +184,7 @@ confirm. Choose `"enter"` if your terminal cannot distinguish Shift+Enter.
 | --- | --- |
 | Enter | Send the prompt when idle |
 | Shift+Enter or Ctrl+J | Insert a newline |
+| Shift+arrows / Ctrl+G | Select composer text / select all |
 | PgUp / PgDn, mouse wheel | Scroll the conversation |
 | Esc or Ctrl+C while busy | Cancel the current operation and wait for cleanup |
 | Ctrl+C while idle, `/quit` | Exit |
@@ -210,12 +211,16 @@ Shift+Enter requires a terminal that reports modified keys (such as Kitty,
 Ghostty, or iTerm2 with its extended keyboard protocol enabled). CPE requests
 this support automatically. If your terminal sends Shift+Enter as plain Enter,
 use Ctrl+J to insert a newline instead.
+Selected composer text uses the theme's selection colors. Typing, pasting, or
+inserting a newline replaces the selection, including while drafting during work.
 
 The conversation displays streamed text provisionally. Output follows the bottom
 while you are there. Scroll up with PgUp or the mouse wheel to read earlier
 messages without being pulled back by new output, completion, or cancellation.
 Scroll back to the bottom to resume following. Submitting a new prompt shows the
-latest conversation. Completed assistant
+latest conversation. Transcript tabs display as four spaces so wrapping and
+scrolling match the rendered rows; saved text retains its original tabs.
+Completed assistant
 messages and tool results are saved before the next operation. You can type,
 edit, paste, and use the configured newline key to draft your next message while
 the agent works.
