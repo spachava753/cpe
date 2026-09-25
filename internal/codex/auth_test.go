@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +17,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/gofrs/flock"
 )
 
 const fixtureRefresh = "fixture-refresh"
@@ -95,11 +98,12 @@ func TestCredentialStoreCredential(t *testing.T) {
 		if runtime.GOOS != windowsOS && info.Mode().Perm() != 0600 {
 			t.Fatal("credentials not private")
 		}
-		lock, err := acquireLock(t.Context(), path+".lock")
-		if err != nil {
-			t.Fatal(err)
+		lock := flock.New(path + ".lock")
+		held, err := lock.TryLockContext(t.Context(), time.Millisecond)
+		if err != nil || !held {
+			t.Fatal("lock still held", err)
 		}
-		lock.close()
+		_ = lock.Close()
 	})
 	t.Run("failed refresh preserves credentials", func(t *testing.T) {
 		for _, test := range []struct {
@@ -185,6 +189,49 @@ func TestCredentialStoreCredential(t *testing.T) {
 			t.Fatalf("new account claim not retained: %v", err)
 		}
 	})
+	t.Run("cancellation at refresh response", func(t *testing.T) {
+		for _, test := range []struct {
+			name, body string
+			rotated    bool
+		}{
+			{"validated rotation is committed", `{"access_token":"new-access","refresh_token":"rotated-refresh","expires_in":3600}`, true},
+			{"invalid response is not committed", `{"access_token":"new-access","refresh_token":"rotated-refresh","expires_in":0}`, false},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				path := filepath.Join(t.TempDir(), "auth.json")
+				before := writeAuthFixture(t, path, time.Now().Add(-time.Hour))
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				calls := 0
+				store := credentialStore{path: path, tokenURL: "https://fixture.test/token", client: &http.Client{Transport: authRoundTrip(func(r *http.Request) (*http.Response, error) {
+					calls++
+					return &http.Response{StatusCode: 200, Header: http.Header{}, Request: r, Body: io.NopCloser(&cancelAfterRead{reader: strings.NewReader(test.body), cancel: cancel})}, nil
+				})}}
+				_, err := store.credential(ctx, true)
+				if err == nil || calls != 1 {
+					t.Fatalf("canceled request: err=%v calls=%d", err, calls)
+				}
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !test.rotated {
+					if string(data) != string(before) {
+						t.Fatal("invalid response changed credentials")
+					}
+					return
+				}
+				var document map[string]json.RawMessage
+				if json.Unmarshal(data, &document) != nil || !strings.Contains(string(document["other"]), "other-secret") || !strings.Contains(string(document[providerKey]), "rotated-refresh") {
+					t.Fatal("rotation or unrelated service lost")
+				}
+				next, err := store.credential(t.Context(), true)
+				if err != nil || next.refresh != "rotated-refresh" || next.access != "new-access" || calls != 1 {
+					t.Fatalf("replacement unavailable or obsolete token retried: %v, calls=%d", err, calls)
+				}
+			})
+		}
+	})
 	t.Run("canceled refresh releases lock", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "auth.json")
 		before := writeAuthFixture(t, path, time.Now().Add(-time.Hour))
@@ -217,11 +264,12 @@ func TestCredentialStoreCredential(t *testing.T) {
 		if err != nil || string(after) != string(before) {
 			t.Fatal("cancellation changed saved credential")
 		}
-		lock, err := acquireLock(t.Context(), path+".lock")
-		if err != nil {
-			t.Fatal(err)
+		lock := flock.New(path + ".lock")
+		held, err := lock.TryLockContext(t.Context(), time.Millisecond)
+		if err != nil || !held {
+			t.Fatal("lock still held", err)
 		}
-		lock.close()
+		_ = lock.Close()
 	})
 	t.Run("refresh refuses redirect", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "auth.json")
@@ -243,23 +291,19 @@ func TestCredentialStoreCredential(t *testing.T) {
 	})
 }
 
-func TestAcquireLock(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "auth.json.lock")
-	lock, err := acquireLock(t.Context(), path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
-	defer cancel()
-	if _, err := acquireLock(ctx, path); !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("lock wait: %v", err)
-	}
-	lock.close()
-	next, err := acquireLock(t.Context(), path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	next.close()
+type authRoundTrip func(*http.Request) (*http.Response, error)
+
+func (f authRoundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+type cancelAfterRead struct {
+	reader io.Reader
+	cancel context.CancelFunc
+}
+
+func (r *cancelAfterRead) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	r.cancel()
+	return n, err
 }
 
 func TestNew(t *testing.T) {
@@ -284,6 +328,41 @@ func TestAccountFromToken(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			if got := accountFromToken(test.token); got != test.want {
 				t.Fatalf("accountFromToken() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestHasCredential(t *testing.T) {
+	valid := fmt.Sprintf(`{"type":"oauth","access":"fixture-access","refresh":"fixture-refresh","accountId":"account","expires":%d}`, time.Now().Add(time.Hour).UnixMilli())
+	for _, test := range []struct {
+		name, document string
+		want           bool
+	}{
+		{name: "missing file"},
+		{name: "other service only", document: `{"opencode-go":{"key":"fixture-key"}}`},
+		{name: "valid OpenAI entry", document: `{"openai-codex":` + valid + `}`, want: true},
+		{name: "both services", document: `{"opencode-go":{"key":"fixture-key"},"openai-codex":` + valid + `}`, want: true},
+		{name: "invalid entry", document: `{"openai-codex":null}`},
+		{name: "malformed document", document: `{"openai-codex":`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "auth.json")
+			if test.document != "" {
+				if err := os.WriteFile(path, []byte(test.document), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if got := HasCredential(path); got != test.want {
+				t.Fatalf("HasCredential = %v, want %v", got, test.want)
+			}
+			data, err := os.ReadFile(path)
+			if test.document == "" {
+				if !errors.Is(err, os.ErrNotExist) {
+					t.Fatal("created credentials")
+				}
+			} else if err != nil || string(data) != test.document {
+				t.Fatal("modified credentials")
 			}
 		})
 	}

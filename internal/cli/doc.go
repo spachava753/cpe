@@ -9,7 +9,8 @@
 // Provider construction binds the session's root entry ID, preserving OpenCode
 // Go's routing/cache identity on reopen, branch, model switching, and compaction.
 // TUI login supports Codex OAuth, GitHub Copilot device authorization/model import,
-// or OpenCode Go API-key storage/model import. Each service owns its credentials.
+// or OpenCode Go API-key storage/model import. Services own their credential
+// protocols; authstore persists their separate entries in shared auth.json.
 // Startup discovers skills in ~/.agents/skills and ./agents/skills (relative to
 // the working directory), with project skills taking precedence. Diagnostics go
 // to stderr without blocking other skills. The same catalog supplies model

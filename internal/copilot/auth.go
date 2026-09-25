@@ -5,13 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
 	"path/filepath"
-	"runtime"
 	"time"
 
-	"github.com/gofrs/flock"
-
+	"github.com/spachava753/cpe/internal/authstore"
 	"github.com/spachava753/cpe/internal/jsonconfig"
 )
 
@@ -35,16 +32,47 @@ func HasCredential(dir string) bool {
 }
 
 func (s *credentialStore) read() (credential, error) {
-	path := filepath.Join(s.dir, credentialFile)
-	info, err := os.Lstat(path)
-	if err != nil || !info.Mode().IsRegular() {
-		return credential{}, errors.New("missing or invalid CPE Copilot credentials; use /login copilot")
+	entry := authstore.Entry{Path: filepath.Join(s.dir, credentialFile), Service: credentialName, LegacyPath: filepath.Join(s.dir, "copilot.json")}
+	raw, err := entry.Read()
+	if err != nil {
+		return credential{}, err
 	}
-	data, err := os.ReadFile(path)
+	return parseCredential(raw)
+}
+
+func (s *credentialStore) current(ctx context.Context) (credential, error) {
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	entry := authstore.Entry{Path: filepath.Join(s.dir, credentialFile), Service: credentialName, LegacyPath: filepath.Join(s.dir, "copilot.json")}
 	var saved credential
-	if err != nil || jsonconfig.Decode(data, &saved) != nil || saved.Version != 1 || !validToken(saved.GitHubToken) || !validToken(saved.Token) || saved.ExpiresAt <= 0 {
+	err := entry.Update(ctx, func(raw json.RawMessage) (json.RawMessage, error) {
+		var err error
+		saved, err = parseCredential(raw)
+		if err != nil {
+			return nil, err
+		}
+		if time.Now().Add(time.Minute).Unix() < saved.ExpiresAt {
+			return nil, nil
+		}
+		saved, err = exchange(ctx, s.client, saved.GitHubToken)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(saved)
+	})
+	if err != nil {
+		return credential{}, err
+	}
+	return saved, nil
+}
+
+func parseCredential(raw json.RawMessage) (credential, error) {
+	var saved credential
+	if jsonconfig.Decode(raw, &saved) != nil || saved.Version != 1 || !validToken(saved.GitHubToken) || !validToken(saved.Token) || saved.ExpiresAt <= 0 {
 		return credential{}, errors.New("invalid CPE Copilot credentials; use /login copilot")
 	}
+	var err error
 	saved.APIURL, err = parseAPIURL(saved.APIURL)
 	if err != nil {
 		return credential{}, err
@@ -52,100 +80,11 @@ func (s *credentialStore) read() (credential, error) {
 	return saved, nil
 }
 
-func (s *credentialStore) lock(ctx context.Context) (*flock.Flock, error) {
-	if err := os.MkdirAll(s.dir, 0700); err != nil {
-		return nil, err
-	}
-	l := flock.New(filepath.Join(s.dir, credentialFile+".lock"), flock.SetPermissions(0600))
-	held, err := l.TryLockContext(ctx, 50*time.Millisecond)
-	if err != nil || !held {
-		_ = l.Close()
-		if err == nil {
-			err = ctx.Err()
-		}
-		return nil, err
-	}
-	return l, nil
-}
-
-func (s *credentialStore) current(ctx context.Context) (credential, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	l, err := s.lock(ctx)
-	if err != nil {
-		return credential{}, err
-	}
-	defer l.Close()
-	saved, err := s.read()
-	if err != nil {
-		return credential{}, err
-	}
-	if time.Now().Add(time.Minute).Unix() < saved.ExpiresAt {
-		return saved, nil
-	}
-	next, err := exchange(ctx, s.client, saved.GitHubToken)
-	if err != nil {
-		return credential{}, err
-	}
-	if err := s.write(ctx, next); err != nil {
-		return credential{}, err
-	}
-	return next, nil
-}
-
 func (s *credentialStore) save(ctx context.Context, saved credential) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	l, err := s.lock(ctx)
-	if err != nil {
-		return err
-	}
-	defer l.Close()
-	return s.write(ctx, saved)
-}
-
-// write is called only under the stable credential lock, with parsed credentials.
-func (s *credentialStore) write(ctx context.Context, saved credential) error {
-	path := filepath.Join(s.dir, credentialFile)
-	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
-		return errors.New("copilot credential file must be regular, not a symlink")
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	data, err := json.Marshal(saved)
-	if err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(s.dir, ".cpe-copilot-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	defer f.Close()
-	if _, err := f.Write(append(data, '\n')); err != nil {
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := os.Rename(f.Name(), path); err != nil {
-		return err
-	}
-	if runtime.GOOS == "windows" {
-		return nil
-	}
-	dir, err := os.Open(s.dir)
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
+	entry := authstore.Entry{Path: filepath.Join(s.dir, credentialFile), Service: credentialName}
+	return entry.Update(ctx, func(json.RawMessage) (json.RawMessage, error) {
+		return json.Marshal(saved)
+	})
 }
 
 func exchange(ctx context.Context, client *http.Client, githubToken string) (credential, error) {

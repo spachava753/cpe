@@ -9,12 +9,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/spachava753/cpe/internal/authstore"
 )
 
 const providerKey = "openai-codex"
@@ -36,17 +35,53 @@ type credentialStore struct {
 func (s *credentialStore) credential(ctx context.Context, refresh bool) (credential, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	lock, err := acquireLock(ctx, s.path+".lock")
+	var cred credential
+	entry := authstore.Entry{Path: s.path, Service: providerKey}
+	err := entry.Refresh(ctx, func(raw json.RawMessage) (json.RawMessage, error) {
+		var fields map[string]json.RawMessage
+		var err error
+		cred, err = parseCredential(raw)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			return nil, errors.New("invalid CPE Codex credential")
+		}
+		if !refresh || time.Now().Add(time.Minute).UnixMilli() < cred.expires {
+			return nil, nil
+		}
+		cred, err = s.refresh(ctx, cred)
+		if err != nil {
+			return nil, err
+		}
+		for key, value := range map[string]any{"access": cred.access, "refresh": cred.refresh, "expires": cred.expires, "accountId": cred.accountID} {
+			fields[key], err = json.Marshal(value)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return json.Marshal(fields)
+	})
 	if err != nil {
 		return credential{}, err
 	}
-	defer lock.close()
-	data, err := readCredentialFile(s.path)
-	if err != nil {
-		return credential{}, fmt.Errorf("read CPE OAuth file %s: %w; sign in with /login in CPE", s.path, err)
+	if err := ctx.Err(); err != nil {
+		return credential{}, err
 	}
-	var document map[string]json.RawMessage
-	var fields map[string]json.RawMessage
+	return cred, nil
+}
+
+// HasCredential checks the OpenAI entry locally, without refresh or file writes.
+func HasCredential(path string) bool {
+	raw, err := (authstore.Entry{Path: path, Service: providerKey}).Read()
+	if err != nil {
+		return false
+	}
+	_, err = parseCredential(raw)
+	return err == nil
+}
+
+func parseCredential(raw json.RawMessage) (credential, error) {
 	var saved struct {
 		Type      string `json:"type"`
 		Access    string `json:"access"`
@@ -55,8 +90,7 @@ func (s *credentialStore) credential(ctx context.Context, refresh bool) (credent
 		AccountID string `json:"accountId"`
 	}
 	// Do not include decoding errors: malformed values may contain credentials.
-	if json.Unmarshal(data, &document) != nil || json.Unmarshal(document[providerKey], &saved) != nil ||
-		json.Unmarshal(document[providerKey], &fields) != nil || saved.Type != "oauth" ||
+	if json.Unmarshal(raw, &saved) != nil || saved.Type != "oauth" ||
 		!validHeaderValue(saved.Access) || !validHeaderValue(saved.Refresh) || saved.Expires <= 0 {
 		return credential{}, errors.New("invalid or missing CPE Codex OAuth credential; sign in with /login in CPE")
 	}
@@ -66,29 +100,6 @@ func (s *credentialStore) credential(ctx context.Context, refresh bool) (credent
 	}
 	if !validHeaderValue(cred.accountID) {
 		return credential{}, errors.New("saved CPE Codex credential has no valid account ID; sign in with /login in CPE")
-	}
-	if refresh && time.Now().Add(time.Minute).UnixMilli() >= cred.expires {
-		cred, err = s.refresh(ctx, cred)
-		if err != nil {
-			return credential{}, err
-		}
-		for key, value := range map[string]any{"access": cred.access, "refresh": cred.refresh, "expires": cred.expires, "accountId": cred.accountID} {
-			fields[key], err = json.Marshal(value)
-			if err != nil {
-				return credential{}, err
-			}
-		}
-		document[providerKey], err = json.Marshal(fields)
-		if err != nil {
-			return credential{}, err
-		}
-		data, err = json.MarshalIndent(document, "", "  ")
-		if err != nil {
-			return credential{}, err
-		}
-		if err := saveCredentials(s.path, append(data, '\n')); err != nil {
-			return credential{}, fmt.Errorf("save refreshed CPE OAuth credential: %w; sign in again if the saved token no longer works", err)
-		}
 	}
 	return cred, nil
 }
@@ -158,90 +169,20 @@ func (s *credentialStore) refresh(ctx context.Context, old credential) (credenti
 	return credential{access: token.Access, refresh: token.Refresh, accountID: account, expires: time.Now().Add(time.Duration(token.ExpiresIn) * time.Second).UnixMilli()}, nil
 }
 
-func saveCredentials(path string, data []byte) error {
-	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
-		return errors.New("OAuth credential file must be a regular file, not a symlink")
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	target := path
-	f, err := os.CreateTemp(filepath.Dir(target), ".cpe-oauth-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	if _, err := f.Write(data); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		_ = f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(f.Name(), target); err != nil {
-		return err
-	}
-	if runtime.GOOS != windowsOS {
-		dir, err := os.Open(filepath.Dir(target))
-		if err != nil {
-			return err
-		}
-		defer dir.Close()
-		return dir.Sync()
-	}
-	return nil
-}
-
-func readCredentialFile(path string) ([]byte, error) {
-	info, err := os.Lstat(path)
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() {
-		return nil, errors.New("OAuth credential file must be a regular file, not a symlink")
-	}
-	return os.ReadFile(path)
-}
-
 func (s *credentialStore) save(ctx context.Context, cred credential) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	lock, err := acquireLock(ctx, s.path+".lock")
-	if err != nil {
-		return err
-	}
-	defer lock.close()
-	document := map[string]json.RawMessage{}
-	data, err := readCredentialFile(s.path)
-	if err == nil {
-		if json.Unmarshal(data, &document) != nil || document == nil {
-			return errors.New("invalid auth.json; existing credentials were not overwritten")
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	fields := map[string]json.RawMessage{}
-	if raw := document[providerKey]; raw != nil {
+	entry := authstore.Entry{Path: s.path, Service: providerKey}
+	return entry.Update(ctx, func(raw json.RawMessage) (json.RawMessage, error) {
+		fields := map[string]json.RawMessage{}
 		if json.Unmarshal(raw, &fields) != nil || fields == nil {
 			fields = map[string]json.RawMessage{}
 		}
-	}
-	for key, value := range map[string]any{"type": "oauth", "access": cred.access, "refresh": cred.refresh, "expires": cred.expires, "accountId": cred.accountID} {
-		fields[key], err = json.Marshal(value)
-		if err != nil {
-			return err
+		for key, value := range map[string]any{"type": "oauth", "access": cred.access, "refresh": cred.refresh, "expires": cred.expires, "accountId": cred.accountID} {
+			encoded, err := json.Marshal(value)
+			if err != nil {
+				return nil, err
+			}
+			fields[key] = encoded
 		}
-	}
-	document[providerKey], err = json.Marshal(fields)
-	if err != nil {
-		return err
-	}
-	data, err = json.MarshalIndent(document, "", "  ")
-	if err != nil {
-		return err
-	}
-	return saveCredentials(s.path, append(data, '\n'))
+		return json.Marshal(fields)
+	})
 }

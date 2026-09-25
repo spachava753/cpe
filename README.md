@@ -76,12 +76,28 @@ Anthropic supports `adaptive` and `disabled` thinking modes. An empty setting
 omits the option. Codex uses its fixed endpoint and rejects the API-key, base URL,
 output-token limit, and temperature settings.
 
-CPE owns its Codex credentials; it does not read or modify Pi's login. Subsequent
-requests reload `auth.json` and refresh expiring tokens. Login and refresh update
-the file atomically with mode 0600, preserving unrelated entries. A separate OS
-lock coordinates CPE processes and releases automatically on exit or crash.
-The lock file remains on disk; do not remove it while CPE is running. Credential
-file symlinks are rejected. Tokens never enter config or conversation files.
+CPE stores all subscription credentials in `~/.cpe/auth.json`, keyed by service:
+`openai-codex` for OpenAI OAuth, `opencode-go` for its API key, and
+`github-copilot` for GitHub/Copilot tokens. Credentials are plaintext protected by
+file permissions, not encrypted. Ordinary API-key profiles still use environment
+variables. CPE does not read or modify Pi's or other applications' logins.
+
+Requests reload saved credentials and refresh expiring tokens. Login, migration,
+and refresh update `auth.json` atomically with mode 0600, preserving other service
+entries. The shared `auth.json.lock` coordinates CPE processes and releases on
+exit or crash. The lock file remains on disk; do not remove it while CPE is
+running. Credential symlinks and malformed/duplicate-key documents are rejected
+without overwriting them. Tokens never enter config or conversation files.
+Canceled saves leave the file unchanged, except that a completed token rotation
+is committed before returning cancellation so its replacement cannot be lost.
+
+Existing `opencode-go.json` and `copilot.json` credentials migrate on first
+request without another login. Local login-status checks do not write files. An existing service entry
+in `auth.json` always takes precedence, even if invalid; CPE never silently falls
+back to stale credentials. Migration leaves the old files untouched as backups;
+after confirming the migrated login works, you may remove them. New logins and
+refreshes write only `auth.json`. Stop older CPE versions before migration, since
+they still use the separate files. The existing OpenAI entry needs no migration.
 
 Both replies and compaction use streaming Codex requests. Truncated streams fail
 without committing partial output. Model requests, token exchanges, and refreshes
@@ -92,7 +108,7 @@ canceled, denied, or expired. If credentials are rejected, use `/login` again.
 
 Use `/login` → **GitHub Copilot · device code**, or `/login copilot`. Open the
 GitHub URL shown, enter the device code, and approve GitHub Copilot access.
-Escape cancels. CPE stores credentials privately in `~/.cpe/copilot.json` and
+Escape cancels. CPE stores the `github-copilot` entry privately in `~/.cpe/auth.json` and
 renews short-lived Copilot tokens before requests. Login instructions and tokens
 never enter the conversation. No Copilot CLI, editor login, or API key is required.
 
@@ -129,7 +145,7 @@ service compatibility is tested with local fixtures, not guaranteed by GitHub.
 
 Use `/login` → **OpenCode Go**, or `/login opencode-go`. Sign in at
 [OpenCode](https://opencode.ai/auth), subscribe to Go, and paste the API key into
-the masked input. Enter saves it privately to `~/.cpe/opencode-go.json`; Escape
+the masked input. Enter saves its `opencode-go` entry privately to `~/.cpe/auth.json`; Escape
 cancels. It never enters the prompt composer, config.json, or session history.
 The public model catalog cannot verify the key: the service checks it on the
 first model request.

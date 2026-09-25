@@ -26,7 +26,7 @@
 // Interactive reasoning changes use the same validation as file configuration.
 // credential=opencode-go selects a saved Go API key with an openai, responses, or
 // anthropic protocol. Such profiles omit api_key_env/base_url; CPE fixes endpoints.
-// credential=github-copilot uses ~/.cpe/copilot.json with the same three wire
+// credential=github-copilot uses its entry in shared ~/.cpe/auth.json with the same three wire
 // protocols and no api_key_env/base_url; /login copilot imports account models.
 // copilot_streaming records that catalog's streaming capability; only true
 // enables streaming for Copilot, and other credentials cannot enable this field.

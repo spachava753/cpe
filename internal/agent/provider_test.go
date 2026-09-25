@@ -41,8 +41,8 @@ func TestProvider(t *testing.T) {
 				for _, mode := range []string{"generate", "stream"} {
 					t.Run(mode, func(t *testing.T) {
 						dir := t.TempDir()
-						path := filepath.Join(dir, "opencode-go.json")
-						if err := os.WriteFile(path, []byte(`{"key":"rejected-key"}`), 0600); err != nil {
+						path := filepath.Join(dir, "auth.json")
+						if err := os.WriteFile(path, []byte(`{"opencode-go":{"key":"rejected-key"}}`), 0600); err != nil {
 							t.Fatal(err)
 						}
 						t.Setenv("OPENAI_API_KEY", "unrelated-openai-key")
@@ -97,7 +97,7 @@ func TestProvider(t *testing.T) {
 							t.Fatalf("authentication error: %v (calls=%d)", err, calls)
 						}
 						// Replacing the key recovers on the same generator, without a restart.
-						if err := os.WriteFile(path, []byte(`{"key":"fixture-key"}`), 0600); err != nil {
+						if err := os.WriteFile(path, []byte(`{"opencode-go":{"key":"fixture-key"}}`), 0600); err != nil {
 							t.Fatal(err)
 						}
 						response, err := invoke.Generate(t.Context(), request)

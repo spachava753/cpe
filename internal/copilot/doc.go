@@ -5,7 +5,10 @@
 // Cancellation stops polling and response reads. OAuth errors omit response
 // bodies and tokens while preserving cancellation/deadline identity.
 //
-// CPE owns ~/.cpe/copilot.json (version 1, atomic writes, mode 0600). It does not
+// CPE owns the github-copilot entry in ~/.cpe/auth.json (version-1 payload).
+// authstore provides atomic mode-0600 writes and a shared auth.json.lock. Missing
+// entries migrate from copilot.json after parsing; the legacy file stays as an
+// untouched backup. Existing entries always take precedence. CPE does not
 // read credentials from GitHub CLI, Copilot CLI, editors, or environment variables.
 // Each inference reloads credentials under a stable OS file lock and exchanges
 // expiring Copilot tokens before sending the request. Revoked GitHub tokens

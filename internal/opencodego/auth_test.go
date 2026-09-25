@@ -2,6 +2,7 @@ package opencodego
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -28,7 +29,7 @@ func TestSaveKey(t *testing.T) {
 			path := filepath.Join(dir, credentialFile)
 			switch test.setup {
 			case "old":
-				if err := os.WriteFile(path, []byte(`{"key":"old-key"}`), 0644); err != nil {
+				if err := os.WriteFile(path, []byte(`{"opencode-go":{"key":"old-key"}}`), 0644); err != nil {
 					t.Fatal(err)
 				}
 			case "symlink":
@@ -54,7 +55,7 @@ func TestSaveKey(t *testing.T) {
 				t.Fatalf("save error = %v", err)
 			}
 			if !test.wantErr {
-				got, err := readKey(dir)
+				got, err := readKey(t.Context(), dir)
 				if err != nil || got != test.key || !HasKey(dir) {
 					t.Fatal("saved key unavailable", err)
 				}
@@ -67,7 +68,7 @@ func TestSaveKey(t *testing.T) {
 				}
 			} else if test.setup == "old" {
 				data, err := os.ReadFile(path)
-				if err != nil || string(data) != `{"key":"old-key"}` {
+				if err != nil || string(data) != `{"opencode-go":{"key":"old-key"}}` {
 					t.Fatal("previous key changed", err)
 				}
 			} else if test.setup == "symlink" {
@@ -76,7 +77,7 @@ func TestSaveKey(t *testing.T) {
 					t.Fatal("symlink target changed", err)
 				}
 			}
-			matches, err := filepath.Glob(filepath.Join(dir, ".cpe-go-key-*"))
+			matches, err := filepath.Glob(filepath.Join(dir, ".cpe-auth-*"))
 			if err != nil || len(matches) > 0 {
 				t.Fatal("temporary secret file left behind")
 			}
@@ -86,26 +87,44 @@ func TestSaveKey(t *testing.T) {
 
 func TestReadKey(t *testing.T) {
 	for _, test := range []struct {
-		name, body string
-		wantErr    bool
+		name, body, current string
+		legacy, wantErr     bool
 	}{
-		{"valid", `{"key":"fixture-secret"}`, false},
-		{"missing", "", true},
-		{"null", `null`, true},
-		{"empty", `{"key":""}`, true},
-		{"whitespace", `{"key":"fixture-secret value"}`, true},
-		{"wrong type", `{"key":{"fixture-secret":true}}`, true},
-		{"malformed", `{"key":"fixture-secret`, true},
-		{"duplicate", `{"key":"first","key":"fixture-secret"}`, true},
+		{name: "valid", body: `{"key":"fixture-secret"}`},
+		{name: "missing", wantErr: true},
+		{name: "null", body: `null`, wantErr: true},
+		{name: "empty", body: `{"key":""}`, wantErr: true},
+		{name: "whitespace", body: `{"key":"fixture-secret value"}`, wantErr: true},
+		{name: "wrong type", body: `{"key":{"fixture-secret":true}}`, wantErr: true},
+		{name: "malformed", body: `{"key":"fixture-secret`, wantErr: true},
+		{name: "duplicate", body: `{"key":"first","key":"fixture-secret"}`, wantErr: true},
+		{name: "migrate standalone key", body: `{"key":"fixture-secret"}`, legacy: true},
+		{name: "reject malformed legacy", body: `{"key":"fixture-secret`, legacy: true, wantErr: true},
+		{name: "reject invalid legacy", body: `{"key":"fixture-secret value"}`, legacy: true, wantErr: true},
+		{name: "current key overrides legacy", body: `{"key":"old-secret"}`, current: `{"key":"fixture-secret"}`, legacy: true},
+		{name: "invalid current never falls back", body: `{"key":"fixture-secret"}`, current: `null`, legacy: true, wantErr: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			dir := t.TempDir()
-			if test.body != "" {
-				if err := os.WriteFile(filepath.Join(dir, credentialFile), []byte(test.body), 0600); err != nil {
+			auth := filepath.Join(dir, credentialFile)
+			path, body := auth, `{"other":{"key":"keep"},"opencode-go":`+test.body+`}`
+			if test.legacy {
+				path, body = filepath.Join(dir, "opencode-go.json"), test.body
+				document := `{"other":{"key":"keep"}}`
+				if test.current != "" {
+					document = `{"other":{"key":"keep"},"opencode-go":` + test.current + `}`
+				}
+				if err := os.WriteFile(auth, []byte(document), 0600); err != nil {
 					t.Fatal(err)
 				}
 			}
-			key, err := readKey(dir)
+			if test.body != "" {
+				if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, _ := os.ReadFile(auth)
+			key, err := readKey(t.Context(), dir)
 			if (err != nil) != test.wantErr || HasKey(dir) == test.wantErr {
 				t.Fatalf("unexpected credential availability: %v", err)
 			}
@@ -114,6 +133,32 @@ func TestReadKey(t *testing.T) {
 			}
 			if err == nil && key != "fixture-secret" {
 				t.Fatal("key changed")
+			}
+			if test.legacy {
+				backup, err := os.ReadFile(path)
+				if err != nil || string(backup) != body {
+					t.Fatal("legacy backup changed")
+				}
+				data, err := os.ReadFile(auth)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if test.wantErr {
+					if string(data) != string(before) {
+						t.Fatal("failed migration changed auth.json")
+					}
+				} else {
+					var document map[string]credential
+					if err := json.Unmarshal(data, &document); err != nil || document[credentialName].Key != key || document["other"].Key != "keep" {
+						t.Fatal("migration did not preserve credentials", err)
+					}
+					if err := os.Remove(path); err != nil {
+						t.Fatal(err)
+					}
+					if !HasKey(dir) {
+						t.Fatal("still depends on legacy file")
+					}
+				}
 			}
 		})
 	}

@@ -17,7 +17,7 @@ import (
 
 const (
 	credentialName    = "github-copilot"
-	credentialFile    = "copilot.json"
+	credentialFile    = "auth.json"
 	apiURL            = "https://api.githubcopilot.com"
 	tokenURL          = "https://api.github.com/copilot_internal/v2/token"
 	deviceURL         = "https://github.com/login/device/code"

@@ -218,8 +218,7 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 			if profile.Credential == "opencode-go" {
 				return !opencodego.HasKey(c.Dir)
 			}
-			_, err := os.Stat(authFile)
-			return profile.Provider == "codex" && errors.Is(err, os.ErrNotExist)
+			return profile.Provider == "codex" && !codex.HasCredential(authFile)
 		},
 		Login: func(ctx context.Context, method string, notify func(string)) error {
 			return codex.Login(ctx, authFile, method, notify)

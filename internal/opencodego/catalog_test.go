@@ -177,7 +177,7 @@ func TestLogin(t *testing.T) {
 					if string(data) != body {
 						t.Fatal("failed preparation changed config")
 					}
-					old, err := readKey(dir)
+					old, err := readKey(t.Context(), dir)
 					if err != nil || old != "old-key" {
 						t.Fatal("failed preparation changed credentials")
 					}
@@ -189,7 +189,7 @@ func TestLogin(t *testing.T) {
 			if len(got) != 4 || got["mine"].Provider != "codex" || strings.Contains(string(data), key) {
 				t.Fatal("unexpected imported profiles or key in config")
 			}
-			saved, err := readKey(dir)
+			saved, err := readKey(t.Context(), dir)
 			if err != nil || saved != key {
 				t.Fatal("key not saved", err)
 			}

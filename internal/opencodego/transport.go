@@ -49,7 +49,7 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	default:
 		return nil, errors.New("unsupported OpenCode Go inference endpoint")
 	}
-	key, err := readKey(t.dir)
+	key, err := readKey(req.Context(), t.dir)
 	if err != nil {
 		return nil, err
 	}
