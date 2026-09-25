@@ -142,6 +142,21 @@ func (g *terminalGenerator) Stream(ctx context.Context, req gai.GenerationReques
 		last := req.Dialog[len(req.Dialog)-1]
 		if last.Role == gai.User {
 			text := last.Blocks[0].Content.String()
+			if text == "scroll" {
+				for i := range 100 {
+					select {
+					case <-ctx.Done():
+						yield(gai.StreamChunk{Err: ctx.Err()})
+						return
+					case <-time.After(75 * time.Millisecond):
+					}
+					if !yield(gai.StreamChunk{Block: gai.TextBlock(fmt.Sprintf("Scroll fixture line %03d\n", i))}) {
+						return
+					}
+				}
+				yield(usage)
+				return
+			}
 			if strings.Contains(text, "wait") {
 				if !yield(gai.StreamChunk{Block: gai.TextBlock("Waiting for cancellation…")}) {
 					return

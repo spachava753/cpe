@@ -58,7 +58,7 @@ type completion struct {
 // syncCompletion runs after editor changes, including asynchronous paste. Only
 // a leading slash on a single line, with the cursor at its end, is completed.
 func (m *model) syncCompletion() {
-	oldHeight, bottom := m.completionHeight(), m.viewport.AtBottom()
+	oldHeight, bottom := m.completionHeight(), m.scroll.following
 	value := m.input.Value()
 	if !strings.HasPrefix(value, "/") {
 		m.completion = completion{}
@@ -84,7 +84,7 @@ func (m *model) syncCompletion() {
 }
 
 func (m *model) closeCompletion(literal bool) {
-	bottom := m.viewport.AtBottom()
+	bottom := m.scroll.following
 	m.completion.matches = nil
 	m.completion.dismissed = true
 	m.completion.literal = literal

@@ -158,7 +158,11 @@ Ghostty, or iTerm2 with its extended keyboard protocol enabled). CPE requests
 this support automatically. If your terminal sends Shift+Enter as plain Enter,
 use Ctrl+J to insert a newline instead.
 
-The conversation displays streamed text provisionally. Completed assistant
+The conversation displays streamed text provisionally. Output follows the bottom
+while you are there. Scroll up with PgUp or the mouse wheel to read earlier
+messages without being pulled back by new output, completion, or cancellation.
+Scroll back to the bottom to resume following. Submitting a new prompt shows the
+latest conversation. Completed assistant
 messages and tool results are saved before the next operation. You can type,
 edit, paste, and use the configured newline key to draft your next message while
 the agent works.
@@ -601,6 +605,8 @@ pickers, or `/model alternate` and `/reasoning high` for direct changes.
 Use `/login` → OpenCode Go (or `/login opencode-go`) and the dummy key
 `fixture-go-key` to exercise masked entry and model import. This fixture takes
 two seconds, supports cancellation, and never contacts OpenCode or saves a real key.
+Send `scroll` for a long streamed response: scroll up while it runs, verify the
+reading position stays put through completion, then scroll down to follow again.
 Send `compute`, restart the process, then send `restore` to verify the saved
 variable. Send `slow` for a three-second REPL call and draft another message
 while it runs; the draft stays unsent after completion. Send `wait`, type a draft,

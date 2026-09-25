@@ -9,6 +9,11 @@
 // for legacy terminals. By default Enter submits. Options.SubmitKey can reverse
 // Enter and Shift+Enter for the composer; Ctrl+J still inserts a newline. Pickers
 // and private login input always use Enter to confirm. PgUp/PgDn scroll.
+// New output follows the bottom only if it was already visible. Scrolling up
+// keeps the reading position across deltas, accepted results, and completion or
+// cancellation. Scrolling back to the bottom resumes following; starting a new
+// operation shows the latest conversation. Width reflow anchors to the same
+// logical text, and layout clamping never re-enables following on its own.
 // While agent work is active, the composer remains editable for the next draft,
 // including paste and the configured newline key. The submit key neither submits
 // nor queues it until work

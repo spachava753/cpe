@@ -88,7 +88,7 @@ func color(value string) stdcolor.Color {
 }
 
 func (m *model) applyTheme(t theme.Theme) {
-	bottom := m.viewport.AtBottom()
+	bottom := m.scroll.following
 	m.theme = t
 	base := lipgloss.NewStyle().Foreground(color(t.Colors.Foreground)).Background(color(t.Colors.Background))
 	m.styles = styles{

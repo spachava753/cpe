@@ -23,6 +23,7 @@ import (
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/repl"
 	"github.com/spachava753/cpe/internal/session"
+	"github.com/spachava753/cpe/internal/theme"
 )
 
 type outputBuffer struct {
@@ -312,6 +313,118 @@ func TestDraftDuringWork(t *testing.T) {
 				if strings.Count(view, "\n")+1 > size.Height {
 					t.Fatalf("view exceeds height %d:\n%s", size.Height, view)
 				}
+			}
+		})
+	}
+}
+
+func TestModelUpdate(t *testing.T) {
+	dir := t.TempDir()
+	store, err := session.Open(filepath.Join(dir, "scroll.jsonl"), dir, repl.Runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	var history strings.Builder
+	for i := range 100 {
+		fmt.Fprintf(&history, "History line %03d %s\n", i, strings.Repeat("word ", 10))
+	}
+	gen := agenttest.NewScriptedGenerator(agenttest.GenerateStep{Response: gai.Response{Candidates: []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock(history.String())}}}, FinishReason: gai.EndTurn}})
+	a, err := agent.Open(t.Context(), agent.Options{Config: config.Config{Agent: config.Agent{ToolTimeout: "1s", OutputLimit: 32000, MaxRounds: 3}}, Model: config.Model{ID: "test"}, Generator: gen, Store: store, CWD: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	if err := a.Prompt(t.Context(), "seed history", nil); err != nil {
+		t.Fatal(err)
+	}
+	smallerInput := theme.Default()
+	smallerInput.InputHeight = 1
+	for _, tc := range []struct {
+		name        string
+		scroll      tea.Msg
+		err         error
+		layout      []tea.Msg
+		inputHeight int
+		reflow      bool
+	}{
+		{name: "page up through completion", scroll: tea.KeyPressMsg{Code: tea.KeyPgUp}},
+		{name: "wheel through completion", scroll: tea.MouseWheelMsg{Button: tea.MouseWheelUp}},
+		{name: "page up through failure", scroll: tea.KeyPressMsg{Code: tea.KeyPgUp}, err: errors.New("fixture failure")},
+		{name: "page up through cancellation", scroll: tea.KeyPressMsg{Code: tea.KeyPgUp}, err: context.Canceled},
+		{name: "follow the bottom"},
+		{name: "height growth near bottom", scroll: tea.MouseWheelMsg{Button: tea.MouseWheelUp}, layout: []tea.Msg{tea.WindowSizeMsg{Width: 80, Height: 30}}},
+		{name: "theme height near bottom", scroll: tea.MouseWheelMsg{Button: tea.MouseWheelUp}, inputHeight: 6, layout: []tea.Msg{themeUpdate{theme: smallerInput}}},
+		{name: "narrow reflow", scroll: tea.KeyPressMsg{Code: tea.KeyPgUp}, reflow: true, layout: []tea.Msg{tea.WindowSizeMsg{Width: 40, Height: 24}}},
+		{name: "narrow and wide reflow", scroll: tea.KeyPressMsg{Code: tea.KeyPgUp}, reflow: true, layout: []tea.Msg{tea.WindowSizeMsg{Width: 40, Height: 24}, tea.WindowSizeMsg{Width: 80, Height: 24}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newModel(t.Context(), a, "test")
+			if tc.inputHeight != 0 {
+				themed := m.theme
+				themed.InputHeight = tc.inputHeight
+				m.applyTheme(themed)
+			}
+			m.busy = true
+			m.input.SetValue("/mo") // Completion reappears and resizes on done.
+			if tc.scroll != nil {
+				next, _ := m.Update(tc.scroll)
+				m = next.(model)
+				if m.viewport.AtBottom() {
+					t.Fatal("user could not scroll away from the bottom")
+				}
+			}
+			before, _, _ := strings.Cut(ansi.Strip(m.viewport.View()), "\n")
+			for _, layout := range tc.layout {
+				next, _ := m.Update(layout)
+				m = next.(model)
+				if m.scroll.following {
+					t.Fatal("layout enabled following without a user scroll")
+				}
+				if tc.reflow {
+					marker := strings.Join(strings.Fields(before)[:3], " ")
+					top, _, _ := strings.Cut(ansi.Strip(m.viewport.View()), "\n")
+					if !strings.Contains(top, marker) {
+						t.Fatalf("reflow lost %q: %q", marker, top)
+					}
+				}
+			}
+			offset := m.viewport.YOffset()
+			top, _, _ := strings.Cut(ansi.Strip(m.viewport.View()), "\n")
+			message := gai.Message{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock(strings.Repeat("Accepted line\n", 20))}}
+			for _, event := range []update{
+				{event: agent.Event{Kind: agent.EventDelta, Text: strings.Repeat("Streamed line\n", 20)}},
+				{event: agent.Event{Kind: agent.EventActivity, Text: "Running Starlark"}},
+				{event: agent.Event{Kind: agent.EventUsage, Usage: &agent.Usage{}}},
+				{event: agent.Event{Kind: agent.EventMessage, Message: &message}},
+				{event: agent.Event{Kind: agent.EventDelta, Text: "More streamed text"}},
+				{done: true, err: tc.err},
+			} {
+				next, _ := m.Update(event)
+				m = next.(model)
+				currentTop, _, _ := strings.Cut(ansi.Strip(m.viewport.View()), "\n")
+				if tc.scroll == nil {
+					if !m.viewport.AtBottom() {
+						t.Fatal("new output stopped following the bottom")
+					}
+				} else if m.viewport.YOffset() != offset || currentTop != top {
+					t.Fatalf("event %+v moved the reading position: offset %d -> %d", event, offset, m.viewport.YOffset())
+				}
+			}
+			if m.input.Value() != "/mo" || m.completionHeight() == 0 {
+				t.Fatal("completion lost the draft")
+			}
+			for i := 0; !m.viewport.AtBottom() && i < 100; i++ {
+				next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyPgDown})
+				m = next.(model)
+			}
+			if !m.viewport.AtBottom() {
+				t.Fatal("could not scroll back to the bottom")
+			}
+			next, _ := m.Update(update{event: agent.Event{Kind: agent.EventDelta, Text: strings.Repeat("Follow again\n", 20)}})
+			m = next.(model)
+			if !m.viewport.AtBottom() {
+				t.Fatal("scrolling to the bottom did not resume following")
 			}
 		})
 	}

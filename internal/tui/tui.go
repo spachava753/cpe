@@ -62,6 +62,7 @@ type model struct {
 	submitKey     config.SubmitKey
 	input         textarea.Model
 	viewport      viewport.Model
+	scroll        transcriptScroll
 	spinner       spinner.Model
 	width, height int
 	busy          bool
@@ -108,7 +109,7 @@ func newModel(ctx context.Context, a *agent.Agent, name string) model {
 	input.Focus()
 	spin := spinner.New()
 	spin.Spinner = spinner.Dot
-	m := model{ctx: ctx, agent: a, name: name, input: input, viewport: viewport.New(viewport.WithWidth(80), viewport.WithHeight(14)), spinner: spin, width: 80, height: 24, messages: a.Messages(), notice: "/help for commands"}
+	m := model{ctx: ctx, agent: a, name: name, input: input, viewport: viewport.New(viewport.WithWidth(80), viewport.WithHeight(14)), scroll: transcriptScroll{following: true}, spinner: spin, width: 80, height: 24, messages: a.Messages(), notice: "/help for commands"}
 	m.profile = a.Model()
 	m.commands = append([]slashCommand{}, slashCommands...)
 	for _, command := range a.Skills().Commands() {
@@ -189,6 +190,7 @@ func (m *model) startWork(text, key string) tea.Cmd {
 		m.activity = "Signing in"
 	}
 	m.layout()
+	m.refresh(true)
 	ch := make(chan update, 64)
 	m.events = ch
 	go func() {
@@ -239,7 +241,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, pollTheme(m.ctx, m.themeDir, m.themeRevision)
 	case tea.WindowSizeMsg:
-		atBottom := m.viewport.AtBottom()
+		atBottom := m.scroll.following
 		m.width = max(1, v.Width)
 		m.height = max(1, v.Height)
 		m.layout()
@@ -253,6 +255,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, await(m.events)
 		}
 		if v.done {
+			bottom := m.scroll.following
 			if m.cancel != nil {
 				m.cancel()
 			}
@@ -282,7 +285,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loginText = ""
 			m.syncCompletion()
 			m.layout()
-			m.refresh(true)
+			m.refresh(bottom)
 			return m, nil
 		}
 		switch v.event.Kind {
@@ -302,7 +305,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-		m.refresh(true)
+		m.refresh(m.scroll.following)
 		return m, await(m.events)
 	case tea.KeyPressMsg:
 		if m.keyInput != nil {
@@ -334,6 +337,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "pgup", "pgdown", "ctrl+u":
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
+			m.scroll.following = m.viewport.AtBottom()
 			return m, cmd
 		case m.newlineKey(), "ctrl+j":
 			if !m.loggingIn {
@@ -414,6 +418,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
+		if wheel, ok := msg.(tea.MouseWheelMsg); ok && (wheel.Button == tea.MouseWheelUp || wheel.Button == tea.MouseWheelDown) {
+			m.scroll.following = m.viewport.AtBottom()
+		}
 		return m, cmd
 	case spinner.TickMsg:
 		if m.busy {
@@ -439,15 +446,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 func (m *model) refresh(bottom bool) {
 	if m.staticView != "" {
-		m.viewport.SetContent(ansi.Hardwrap(m.staticView, max(1, m.viewport.Width()), true))
+		m.setViewportContent(m.staticView, bottom)
 		return
 	}
 	if m.usageView {
-		m.viewport.SetContent(ansi.Hardwrap(m.usageDetails(), max(1, m.viewport.Width()), true))
+		m.setViewportContent(m.usageDetails(), bottom)
 		return
 	}
 	if m.loggingIn && m.loginText != "" {
-		m.viewport.SetContent(ansi.Wrap(clean(m.loginText), max(1, m.viewport.Width()), ""))
+		m.setViewportContent(clean(m.loginText), bottom)
 		return
 	}
 	var b strings.Builder
@@ -496,11 +503,7 @@ func (m *model) refresh(bottom bool) {
 	if m.provisional != "" {
 		b.WriteString(m.styles.assistant.Render("Assistant") + "\n" + clean(m.provisional))
 	}
-	wasBottom := m.viewport.AtBottom()
-	m.viewport.SetContent(ansi.Hardwrap(b.String(), max(1, m.viewport.Width()), true))
-	if bottom || wasBottom {
-		m.viewport.GotoBottom()
-	}
+	m.setViewportContent(b.String(), bottom)
 }
 func (m model) View() tea.View {
 	v := tea.NewView(m.viewContent())

@@ -146,7 +146,7 @@ func (m *model) switchModel(name string) {
 	}
 	m.name, m.profile = name, profile
 	m.contextTokens = m.agent.ContextEstimate()
-	m.refresh(false)
+	m.refresh(m.scroll.following)
 	m.loginRequired = m.needsLogin != nil && m.needsLogin(profile)
 	m.notice = "Model: " + name
 	if m.loginRequired {
