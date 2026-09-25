@@ -22,9 +22,12 @@ import (
 
 func TestDefaultSelection(t *testing.T) {
 	for _, test := range []struct {
-		name, command, value, wantModel, wantEffort, wantDefault, wantSavedEffort string
-		cancel, badFile, badProvider, blocked, shutdown, afterCommit              bool
+		name, command, value, wantModel, wantEffort, wantDefault, wantSavedEffort  string
+		cancel, badFile, badProvider, blocked, shutdown, afterCommit, conversation bool
 	}{
+		{name: "conversation model only", command: modelCommand, value: "beta", conversation: true, wantModel: "beta", wantEffort: "low", wantDefault: "alpha", wantSavedEffort: "low"},
+		{name: "conversation reasoning only", command: reasoningCommand, value: "high", conversation: true, wantModel: "beta", wantEffort: "high", wantDefault: "alpha", wantSavedEffort: "low"},
+		{name: "configured reasoning choice", command: reasoningCommand, value: defaultEffort, wantModel: "beta", wantEffort: "low", wantDefault: "alpha", wantSavedEffort: "low"},
 		{name: "save model", command: modelCommand, value: "beta", wantModel: "beta", wantEffort: "low", wantDefault: "beta", wantSavedEffort: "low"},
 		{name: "save reasoning only", command: reasoningCommand, value: "high", wantModel: "beta", wantEffort: "high", wantDefault: "alpha", wantSavedEffort: "high"},
 		{name: "provider reasoning", command: reasoningCommand, value: providerEffort, wantModel: "beta", wantDefault: "alpha"},
@@ -97,16 +100,12 @@ func TestDefaultSelection(t *testing.T) {
 			m.input.SetValue("draft stays here")
 			next, _ = m.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 			m = next.(model)
-			if m.picker == nil || m.picker.command != defaultsMenu {
-				t.Fatal("missing defaults menu")
+			if m.picker != nil || m.savingDefault != nil {
+				t.Fatal("composer Ctrl+S opened a separate defaults menu")
 			}
-			if test.command == reasoningCommand {
-				m.picker.list.Select(1)
-			}
-			next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-			m = next.(model)
-			if m.picker == nil || m.picker.scope != savedSelection {
-				t.Fatal("missing save picker")
+			m.configureModel(test.command, "")
+			if m.picker == nil || m.picker.command != test.command || !strings.Contains(m.View().Content, "Ctrl+S save default") {
+				t.Fatal("missing default action in slash picker")
 			}
 			for i, item := range m.picker.list.Items() {
 				if item.(choice).value == test.value {
@@ -130,13 +129,16 @@ func TestDefaultSelection(t *testing.T) {
 				}
 				defer lock.Close()
 			}
-			key := tea.KeyEnter
-			if test.cancel {
-				key = tea.KeyEsc
+			key := tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}
+			if test.conversation {
+				key = tea.KeyPressMsg{Code: tea.KeyEnter}
 			}
-			next, cmd := m.Update(tea.KeyPressMsg{Code: key})
+			if test.cancel {
+				key = tea.KeyPressMsg{Code: tea.KeyEsc}
+			}
+			next, cmd := m.Update(key)
 			m = next.(model)
-			if !test.cancel {
+			if !test.cancel && !test.conversation {
 				if cmd == nil || m.savingDefault == nil {
 					t.Fatal("save did not start")
 				}

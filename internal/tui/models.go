@@ -15,6 +15,7 @@ import (
 const currentChoiceSuffix = " (current)"
 
 const defaultEffort = "default"
+const saveDefaultKey = "ctrl+s"
 
 type choice struct{ value, label string }
 
@@ -24,7 +25,6 @@ func (c choice) FilterValue() string { return c.label }
 
 type picker struct {
 	command string
-	scope   selectionScope
 	list    list.Model
 }
 
@@ -123,31 +123,20 @@ func (m model) updatePicker(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.picker = nil
 		m.notice = "Selection canceled"
 		return m, nil
-	case enterKey:
-		if selected, ok := m.picker.list.SelectedItem().(choice); ok {
-			command, scope := m.picker.command, m.picker.scope
-			m.picker = nil
-			if command == defaultsMenu {
-				m.configureModel(selected.value, "")
-				if m.picker != nil {
-					m.picker.scope = savedSelection
-					m.notice = "Save default model"
-					if selected.value == reasoningCommand {
-						m.notice = "Save default reasoning for " + oneline(m.name)
-						items := m.picker.list.Items()[1:]
-						m.picker.list.SetItems(items)
-						for i, item := range items {
-							entry, _ := item.(choice)
-							value := entry.value
-							if value == m.profile.ReasoningEffort || (value == providerEffort && m.profile.ReasoningEffort == "") {
-								m.picker.list.Select(i)
-							}
-						}
-					}
-				}
+	case enterKey, saveDefaultKey:
+		if key.String() == saveDefaultKey {
+			if m.picker.command != modelCommand && m.picker.command != reasoningCommand {
 				return m, nil
 			}
-			if scope == savedSelection {
+			if m.configDir == "" {
+				m.notice = "Default settings are unavailable"
+				return m, nil
+			}
+		}
+		if selected, ok := m.picker.list.SelectedItem().(choice); ok {
+			command := m.picker.command
+			m.picker = nil
+			if key.String() == saveDefaultKey {
 				return m, m.saveDefault(command, selected.value)
 			}
 			if command == loginCommand {

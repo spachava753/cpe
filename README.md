@@ -149,7 +149,7 @@ confirm. Choose `"enter"` if your terminal cannot distinguish Shift+Enter.
 | `/login device` | Sign in with a device code |
 | `/model` or `/model NAME` | Pick or switch to a profile from config.json |
 | `/reasoning` or `/reasoning LEVEL` | Pick or set reasoning effort for the active provider |
-| Ctrl+S | Save a default model or reasoning effort for the current model |
+| Ctrl+S in `/model` or `/reasoning` | Apply the highlighted choice and save it as the default |
 | `/reasoning provider` | Omit reasoning effort and let the provider choose |
 | `/reasoning default` | Restore the active profile's configured effort |
 | `/theme` or `/theme NAME` | Pick or switch themes and save the selection |
@@ -286,15 +286,19 @@ when a transferred tool call lacks a signature. Model-specific modality/context
 limits still apply; a smaller configured context budget may require compaction or
 a larger-budget selection.
 
-**Ctrl+S** opens a defaults menu. Choose **Default model**, then a profile, to
-save it and apply its configured settings to the current conversation. Choose
-**Default reasoning for NAME** to save and apply reasoning for the active profile;
-this does **not** change the default model, even if another model is the default.
+In the **`/model` picker**, highlight a profile and press **Ctrl+S** to save it as
+the default model and apply its configured settings to the current conversation.
+In the **`/reasoning` picker**, **Ctrl+S** saves and applies the highlighted effort
+for the active model; it does **not** change which model is the default.
+**Enter** in either picker applies the choice only to the current conversation.
+Ctrl+S in the composer has no action.
 The **provider** choice removes `reasoning_effort`, allowing the provider to choose.
-New starter profiles omit this option. Enter confirms each picker; Escape cancels,
-and the current draft is preserved. Defaults can be saved between operations.
-During a save, Escape or Ctrl+C cancels work that has not committed yet and
-preserves the draft. A completed config write is retained; CPE reports whether
+New starter profiles omit this option. Escape closes either picker without changes,
+and the current draft is preserved. You can save a default model during agent work;
+the conversation switch waits for the next generation boundary, as with Enter.
+Reasoning selection remains available between operations.
+During a save, Escape or Ctrl+C cancels the save if it has not committed yet,
+preserving the draft and letting any agent work continue. A completed config write is retained; CPE reports whether
 its selection was applied. Terminal shutdown cancels and joins pending saves.
 Writes preserve unrelated settings, file permissions, and config symlinks, and
 serialize with model imports. A write failure leaves the active selection alone;
@@ -659,7 +663,8 @@ CPE_RUN_INTEGRATION_TESTS=1 CPE_TUI_TEST_DIR=/tmp/cpe-tui-session \
 Use `/login device` for a simulated login (completes after eight seconds), or
 `/model api-fixture` to use the fixture without login. Test `/model` and `/reasoning`
 pickers, or `/model alternate` and `/reasoning high` for direct changes. Ctrl+S
-saves defaults to the fixture directory; restarting the harness uses them. Send
+inside either picker saves the highlighted default to the fixture directory;
+Enter applies it only to the conversation. Restarting the harness uses saved defaults. Send
 `handoff`, select another model while it prepares its tool call, and verify the
 final “Handled by” model and the journal: one old-model generation, one tool
 execution, then a new-model generation.

@@ -64,26 +64,31 @@
 // a pending selection. A later choice replaces it, including choosing the current
 // profile to stay with it. No new prompt is queued. While a picker is open, Escape
 // dismisses it and Ctrl+C cancels active work; paste never reaches the composer.
-// /reasoning and Ctrl+S defaults remain available between operations.
+// /reasoning remains available between operations.
 // Selections leave conversation and interpreter state intact. Selecting a different
 // profile applies its configured defaults; selecting the same one is a no-op.
 // /reasoning default restores the active profile's configured effort (or omits
 // the provider option when unset). Reasoning can be set for every profile and
-// appears in the header; supported labels depend on the adapter/model. These
+// appears in the header; supported labels depend on the adapter/model.
 // /reasoning provider always omits the provider option, even with a saved effort.
-// These commands do not enter model context or session files,
-// and do not edit config.json; restart/resume uses configuration and --model.
+// These commands do not enter model context or session files. Direct arguments
+// and Enter in a picker do not edit config.json; restart/resume uses configuration
+// and --model.
 //
-// Ctrl+S opens separate default-model and current-profile reasoning pickers.
-// Confirmation saves config.json off the event loop, then applies the selection.
+// Ctrl+S in the /model or /reasoning picker saves the highlighted choice to
+// config.json off the event loop, then applies it. Composer Ctrl+S has no action.
 // Saving reasoning never selects the default model. Saving a model applies that
 // profile's saved settings. The provider reasoning choice removes the option.
+// A default model can also be saved during agent work; its conversation selection
+// queues at the same generation boundary as an ordinary model change. Only the
+// agent's concurrent-safe queue is accessed until that work has completed.
 // Drafts and history are preserved. ConfigDir enables this workflow; selection
 // and submission are disabled during the save. Write failures preserve the
 // current selection. Esc/Ctrl+C cancel an in-flight save without clearing drafts;
-// committed writes remain saved. Shutdown cancels and joins pending saves.
+// agent work continues and committed writes remain saved. Shutdown cancels and
+// joins both pending saves and agent work.
 // Provider failures after a save report the saved default
-// without replacing the active model. Defaults are available between operations.
+// without replacing the active model.
 //
 // Two status rows display cumulative uncached input, output, cache reads/writes,
 // total tokens, estimated USD cost, and estimated current context versus budget.

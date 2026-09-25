@@ -339,6 +339,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.picker != nil {
 			return m.updatePicker(v)
 		}
+		if m.savingDefault != nil && (v.String() == quitKey || v.String() == escapeKey) {
+			m.savingDefault.cancel()
+			m.notice = "Canceling default save…"
+			return m, nil
+		}
 		if m.busy && (v.String() == quitKey || v.String() == escapeKey) {
 			m.cancel()
 			m.activity = "Canceling"
@@ -349,21 +354,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch v.String() {
 		case quitKey, escapeKey:
-			if m.savingDefault != nil {
-				m.savingDefault.cancel()
-				m.notice = "Canceling default save…"
-				return m, nil
-			}
 			if v.String() == quitKey {
 				return m, tea.Quit
 			}
 			m.input.Reset()
 			m.syncCompletion()
 			return m, nil
-		case "ctrl+s":
-			if !m.busy && m.savingDefault == nil {
-				m.openDefaults()
-			}
+		case saveDefaultKey:
 			return m, nil
 		case "ctrl+d":
 			if !m.busy && m.savingDefault == nil && m.input.Value() == "" {
@@ -418,7 +415,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case quitCommand, exitCommand:
 				return m, tea.Quit
 			case helpCommand:
-				m.notice = "/model  /reasoning  /theme  /usage  /login  /skill:NAME [args]  /compact  /tree  /branch ID  /session  /quit  · Ctrl+S defaults"
+				m.notice = "/model  /reasoning  /theme  /usage  /login  /skill:NAME [args]  /compact  /tree  /branch ID  /session  /quit  · Ctrl+S saves defaults in /model or /reasoning"
 				return m, nil
 			case usageCommand:
 				m.staticView = ""
@@ -579,7 +576,11 @@ func (m model) viewContent() string {
 	title := m.styles.accent.Render("cpe") + m.styles.base.Render(profile+"  ") + m.styles.muted.Render(oneline(filepath.Base(m.agent.SessionFile())))
 	status := oneline(m.notice)
 	if m.busy {
-		status = m.spinner.View() + m.styles.base.Render(" "+oneline(m.activity)+" · Esc to cancel")
+		cancelAction := "cancel"
+		if m.savingDefault != nil {
+			cancelAction = "cancel save"
+		}
+		status = m.spinner.View() + m.styles.base.Render(" "+oneline(m.activity)+" · Esc to "+cancelAction)
 		if m.notice != "" {
 			status += " · " + oneline(m.notice)
 		}
@@ -592,7 +593,7 @@ func (m model) viewContent() string {
 		status = m.styles.muted.Render(status)
 	}
 	line := m.styles.border.Render(strings.Repeat("─", max(1, m.width-2)))
-	footer := m.styles.muted.Render(keyLabel(m.submitKey.String()) + " send · " + keyLabel(m.newlineKey()) + " newline · Ctrl+S defaults · PgUp/PgDn scroll")
+	footer := m.styles.muted.Render(keyLabel(m.submitKey.String()) + " send · " + keyLabel(m.newlineKey()) + " newline · PgUp/PgDn scroll")
 	if m.busy {
 		footer = m.styles.muted.Render("Draft next message · " + keyLabel(m.newlineKey()) + " newline · /model switch · Esc/Ctrl+C cancel")
 		if m.loggingIn {
@@ -600,7 +601,7 @@ func (m model) viewContent() string {
 		}
 	}
 	if m.savingDefault != nil {
-		footer = m.styles.muted.Render("Saving default · Esc/Ctrl+C cancel")
+		footer = m.styles.muted.Render("Saving default · Esc/Ctrl+C cancel save")
 	}
 	content := m.viewport.View()
 	if m.picker != nil {
@@ -610,7 +611,11 @@ func (m model) viewContent() string {
 		if m.busy {
 			controlC = "cancel work"
 		}
-		footer = m.styles.muted.Render("↑/↓ select · Enter apply · Esc close · Ctrl+C " + controlC)
+		apply := "↑/↓ select · Enter apply"
+		if m.picker.command == modelCommand || m.picker.command == reasoningCommand {
+			apply = "↑↓ · Enter apply · Ctrl+S save default"
+		}
+		footer = m.styles.muted.Render(apply + " · Esc close · Ctrl+C " + controlC)
 	}
 	if m.completionHeight() > 0 {
 		footer = m.styles.muted.Render(m.completionHelp())

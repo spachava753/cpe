@@ -4,22 +4,13 @@ import (
 	"context"
 	"errors"
 
-	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/config"
 )
 
-const defaultsMenu = "defaults"
 const providerEffort = "provider"
-
-type selectionScope uint8
-
-const (
-	conversationSelection selectionScope = iota
-	savedSelection
-)
 
 type defaultSave struct {
 	cancel context.CancelFunc
@@ -37,25 +28,18 @@ type defaultsSaved struct {
 	err       error
 }
 
-func (m *model) openDefaults() {
-	if m.configDir == "" {
-		m.notice = "Default settings are unavailable"
-		return
-	}
-	m.openPicker(defaultsMenu, "Save defaults · applies now and to future conversations", []list.Item{
-		choice{modelCommand, "Default model"},
-		choice{reasoningCommand, "Default reasoning for " + oneline(m.name)},
-	}, 0)
-	m.syncCompletion()
-}
-
 func (m *model) saveDefault(command, value string) tea.Cmd {
 	selection := defaultSelection{command: command, name: m.name, effort: value}
 	if command == modelCommand {
 		selection.name = value
 	}
-	if value == providerEffort {
-		selection.effort = ""
+	if command == reasoningCommand {
+		switch value {
+		case providerEffort:
+			selection.effort = ""
+		case defaultEffort:
+			selection.effort = m.profiles[m.name].ReasoningEffort
+		}
 	}
 	ctx, cancel := context.WithCancel(m.ctx)
 	done := make(chan struct{})
@@ -99,6 +83,17 @@ func (m *model) applyDefault(result defaultsSaved) {
 	}
 	selected := result.selection
 	if selected.command == modelCommand {
+		if m.busy {
+			result.err = m.agent.QueueModel(selected.name, m.profiles[selected.name], result.generator)
+			if result.err == nil {
+				m.pendingModel = selected.name
+				m.notice = "Default model saved: " + selected.name + " · switch queued"
+			} else {
+				m.notice = "Default saved, but could not apply: " + result.err.Error()
+			}
+			m.syncCompletion()
+			return
+		}
 		result.err = m.agent.SetModel(m.profiles[selected.name], result.generator)
 		if result.err == nil {
 			m.name, m.profile = selected.name, m.agent.Model()

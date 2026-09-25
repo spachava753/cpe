@@ -2,13 +2,16 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/gofrs/flock"
 	"github.com/spachava753/gai"
 	"github.com/spachava753/gai/agent/agenttest"
 
@@ -22,7 +25,13 @@ func TestActiveModelSelection(t *testing.T) {
 	for _, test := range []struct {
 		name                                                         string
 		picker, cancel, late, replace, providerError, shift, compact bool
+		saved, cancelSave, savedAfterDone                            bool
 	}{
+		{name: "save default during generation", picker: true, saved: true},
+		{name: "save default after worker completion", picker: true, saved: true, savedAfterDone: true},
+		{name: "save default with late completion notification", picker: true, saved: true, late: true},
+		{name: "cancel default save while generation continues", picker: true, saved: true, cancelSave: true},
+		{name: "saved default with provider failure", picker: true, saved: true, providerError: true},
 		{name: "direct selection"}, {name: "picker during generation", picker: true},
 		{name: "cancel preserves queued selection", cancel: true}, {name: "late completion notification", late: true},
 		{name: "replace pending with current", replace: true}, {name: "provider setup failure", providerError: true},
@@ -35,7 +44,7 @@ func TestActiveModelSelection(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer store.Close()
-			profiles := map[string]config.Model{"alpha": {Provider: "responses", ID: "old", ReasoningEffort: lowEffort}, "beta": {Provider: "anthropic", ID: "new", ReasoningEffort: "high"}}
+			profiles := map[string]config.Model{"alpha": {Provider: "responses", ID: "old", APIKeyEnv: "FIXTURE_KEY", ReasoningEffort: lowEffort}, "beta": {Provider: "anthropic", ID: "new", APIKeyEnv: "FIXTURE_KEY", ReasoningEffort: "high"}}
 			old := &waitingGenerator{started: make(chan struct{}), finish: make(chan error, 1)}
 			a, err := agent.Open(t.Context(), agent.Options{Config: config.Config{System: "test", Agent: config.Agent{ToolTimeout: "1s", OutputLimit: 1000, MaxRounds: 3}, Compaction: config.Compaction{Prompt: "summarize"}}, Model: profiles["alpha"], Generator: old, Store: store, CWD: dir})
 			if err != nil {
@@ -57,6 +66,27 @@ func TestActiveModelSelection(t *testing.T) {
 			}
 			m := newModel(t.Context(), a, "alpha")
 			m.profiles = profiles
+			path := filepath.Join(dir, "config.json")
+			if test.saved {
+				m.configDir = dir
+				data, err := json.Marshal(map[string]any{"default_model": "alpha", "models": profiles})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err = os.WriteFile(path, data, 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "system.md"), []byte("fixture"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if test.cancelSave {
+					lock := flock.New(path + ".lock")
+					if err := lock.Lock(); err != nil {
+						t.Fatal(err)
+					}
+					defer lock.Close()
+				}
+			}
 			nextGenerator := agenttest.NewScriptedGenerator()
 			m.newGenerator = func(context.Context, config.Model) (gai.Generator, error) {
 				if test.providerError {
@@ -119,21 +149,70 @@ func TestActiveModelSelection(t *testing.T) {
 					t.Fatal("picker paste leaked")
 				}
 				m.picker.list.Select(1)
-				next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+				key := tea.KeyPressMsg{Code: tea.KeyEnter}
+				if test.saved {
+					key = tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}
+				}
+				next, cmd := m.Update(key)
 				m = next.(model)
+				if test.saved {
+					if cmd == nil || m.savingDefault == nil {
+						t.Fatal("picker save did not start")
+					}
+					defer func() {
+						if m.savingDefault != nil {
+							m.savingDefault.stop()
+						}
+					}()
+					m.input.SetValue("draft during save")
+					if test.cancelSave {
+						next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+						m = next.(model)
+					}
+					if test.savedAfterDone {
+						old.finish <- nil
+						for m.busy {
+							next, _ = m.Update(<-m.events)
+							m = next.(model)
+						}
+					}
+					next, _ = m.Update(cmd())
+					m = next.(model)
+					if m.savingDefault != nil || m.input.Value() != "draft during save" {
+						t.Fatal("save lost draft or did not settle")
+					}
+					if test.cancelSave && !strings.Contains(m.notice, "Default save canceled") {
+						t.Fatal(m.notice)
+					}
+					data, err := os.ReadFile(path)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var cfg config.Config
+					if err = json.Unmarshal(data, &cfg); err != nil {
+						t.Fatal(err)
+					}
+					wantDefault := "beta"
+					if test.cancelSave {
+						wantDefault = "alpha"
+					}
+					if cfg.DefaultModel != wantDefault {
+						t.Fatalf("default=%s notice=%s", cfg.DefaultModel, m.notice)
+					}
+				}
 			} else {
 				m.input.SetValue("/model beta")
 				next, _ := m.Update(submit)
 				m = next.(model)
 			}
-			if m.name != "alpha" || !m.busy {
+			if !test.savedAfterDone && (m.name != "alpha" || !m.busy) {
 				t.Fatal("selection interrupted active generation")
 			}
 			if test.providerError {
-				if !strings.Contains(m.View().Content, "fixture unavailable") || m.pendingModel != "" {
+				if !strings.Contains(m.notice, "fixture unavailable") || m.pendingModel != "" {
 					t.Fatal("failed selection hidden or queued")
 				}
-			} else if m.pendingModel != "beta" {
+			} else if !test.cancelSave && !test.savedAfterDone && m.pendingModel != "beta" {
 				t.Fatal("choice not queued")
 			}
 			if test.replace {
@@ -142,12 +221,15 @@ func TestActiveModelSelection(t *testing.T) {
 				m = next.(model)
 			}
 			m.input.SetValue("draft stays unsent")
-			next, _ := m.Update(submit)
-			m = next.(model)
+			var next tea.Model
+			if m.busy {
+				next, _ = m.Update(submit)
+				m = next.(model)
+			}
 			if test.cancel {
 				next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 				m = next.(model)
-			} else if !test.late {
+			} else if !test.late && !test.savedAfterDone {
 				old.finish <- nil
 			}
 			if completed != nil {
@@ -164,8 +246,11 @@ func TestActiveModelSelection(t *testing.T) {
 					t.Fatal("worker never completed")
 				}
 			}
+			if test.cancelSave && strings.Contains(m.notice, "Canceled") {
+				t.Fatal("canceling the save canceled agent work")
+			}
 			want := "beta"
-			if test.providerError || test.replace {
+			if test.providerError || test.replace || test.cancelSave {
 				want = "alpha"
 			}
 			if m.name != want || m.profile != profiles[want] || a.Model() != m.profile || m.pendingModel != "" || m.input.Value() != "draft stays unsent" {
