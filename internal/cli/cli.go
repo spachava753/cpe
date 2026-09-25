@@ -23,6 +23,7 @@ import (
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/codex"
 	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/copilot"
 	"github.com/spachava753/cpe/internal/mcptools"
 	"github.com/spachava753/cpe/internal/opencodego"
 	"github.com/spachava753/cpe/internal/repl"
@@ -64,7 +65,7 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	if *initConfig {
 		dir, err := config.Init()
 		if err == nil {
-			fmt.Fprintf(out, "Configuration ready in %s. Start CPE and use /login for Codex or OpenCode Go, or configure API-key credentials.\n", dir)
+			fmt.Fprintf(out, "Configuration ready in %s. Start CPE and use /login for OpenAI, GitHub Copilot, or OpenCode Go, or configure API-key credentials.\n", dir)
 		}
 		return err
 	}
@@ -207,7 +208,13 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 		LoginGo: func(ctx context.Context, key string) (map[string]config.Model, error) {
 			return opencodego.Login(ctx, c.Dir, key)
 		},
+		LoginCopilot: func(ctx context.Context, notify func(string)) (map[string]config.Model, error) {
+			return copilot.Login(ctx, c.Dir, notify)
+		},
 		LoginRequired: func(profile config.Model) bool {
+			if profile.Credential == "github-copilot" {
+				return !copilot.HasCredential(c.Dir)
+			}
 			if profile.Credential == "opencode-go" {
 				return !opencodego.HasKey(c.Dir)
 			}

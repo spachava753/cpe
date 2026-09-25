@@ -42,21 +42,25 @@ type mcpServer struct {
 }
 
 // Model selects a wire provider, credentials, and generation settings. Codex uses
-// ~/.cpe/auth.json. Credential="opencode-go" selects CPE's saved Go API key with
-// an openai, responses, or anthropic provider. Both omit APIKeyEnv and BaseURL.
+// ~/.cpe/auth.json. Credential="opencode-go" or "github-copilot" selects CPE's
+// saved service credentials with an openai, responses, or anthropic protocol.
+// These subscription profiles omit APIKeyEnv and BaseURL.
+// CopilotStreaming preserves the Copilot catalog capability; false uses ordinary
+// responses. It does not change streaming behavior for other credentials.
 // ReasoningEffort is forwarded through every provider; Codex rejects output
 // limits and temperature.
 type Model struct {
-	Provider        string   `json:"provider"`
-	ID              string   `json:"id"`
-	Credential      string   `json:"credential,omitempty"`
-	APIKeyEnv       string   `json:"api_key_env,omitempty"`
-	BaseURL         string   `json:"base_url,omitempty"`
-	ReasoningEffort string   `json:"reasoning_effort,omitempty"`
-	MaxOutputTokens int      `json:"max_output_tokens,omitempty"`
-	Temperature     *float64 `json:"temperature,omitempty"`
-	ContextWindow   int      `json:"context_window,omitempty"`
-	Cost            *Pricing `json:"cost,omitempty"`
+	Provider         string   `json:"provider"`
+	ID               string   `json:"id"`
+	Credential       string   `json:"credential,omitempty"`
+	CopilotStreaming bool     `json:"copilot_streaming,omitempty"`
+	APIKeyEnv        string   `json:"api_key_env,omitempty"`
+	BaseURL          string   `json:"base_url,omitempty"`
+	ReasoningEffort  string   `json:"reasoning_effort,omitempty"`
+	MaxOutputTokens  int      `json:"max_output_tokens,omitempty"`
+	Temperature      *float64 `json:"temperature,omitempty"`
+	ContextWindow    int      `json:"context_window,omitempty"`
+	Cost             *Pricing `json:"cost,omitempty"`
 }
 
 // Rates are USD per million tokens in four mutually exclusive billing buckets.
@@ -205,9 +209,12 @@ func parse(dir string, data []byte) (Config, error) {
 			return c, errors.New("model profile names must not be empty")
 		}
 		if m.Credential != "" {
-			if m.Credential != "opencode-go" || (m.Provider != "openai" && m.Provider != "responses" && m.Provider != "anthropic") || m.APIKeyEnv != "" || m.BaseURL != "" {
-				return c, fmt.Errorf("model %q: credential must be opencode-go with provider openai, responses, or anthropic; omit api_key_env and base_url", name)
+			if (m.Credential != "opencode-go" && m.Credential != "github-copilot") || (m.Provider != "openai" && m.Provider != "responses" && m.Provider != "anthropic") || m.APIKeyEnv != "" || m.BaseURL != "" {
+				return c, fmt.Errorf("model %q: credential must be opencode-go or github-copilot with provider openai, responses, or anthropic; omit api_key_env and base_url", name)
 			}
+		}
+		if m.CopilotStreaming && m.Credential != "github-copilot" {
+			return c, fmt.Errorf("model %q: copilot_streaming requires credential github-copilot", name)
 		}
 		if err := m.ValidateBudget(); err != nil {
 			return c, fmt.Errorf("model %q: %w", name, err)

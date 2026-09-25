@@ -319,7 +319,7 @@ func (a *Agent) Prompt(ctx context.Context, text string, emit func(Event)) (fina
 	}
 	definition := replDefinition()
 	loop, err := gaiagent.New(gaiagent.Config{
-		Generator: conversationGenerator{a}, Model: a.opts.Model.ID,
+		Generator: &conversationGenerator{agent: a, userPending: true}, Model: a.opts.Model.ID,
 		Instructions: a.instructions(),
 		Tools: []gaiagent.Tool{{Definition: definition, Handler: gaiagent.ToolHandlerFunc(func(ctx context.Context, req gaiagent.ToolRequest) (gai.Message, error) {
 			code, ok := req.Call.Parameters[codeParameter].(string)

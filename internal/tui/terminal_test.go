@@ -130,6 +130,15 @@ func TestTerminalHarness(t *testing.T) {
 			}
 			return updated, nil
 		},
+		LoginCopilot: func(ctx context.Context, notify func(string)) (map[string]config.Model, error) {
+			notify("Sign in to GitHub Copilot\n\nOpen https://example.com/device\n\nEnter code: COPILOT-TEST\n\nTerminal fixture: waiting for authorization. Esc cancels.")
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(3 * time.Second):
+			}
+			return config.AddModels(ctx, dir, map[string]config.Model{"github-copilot/fixture": {Provider: "openai", Credential: "github-copilot", ID: "copilot-fixture", ContextWindow: 128000, MaxOutputTokens: 16384}})
+		},
 		Login: func(ctx context.Context, method string, notify func(string)) error {
 			notify("Sign in to OpenAI Codex\n\nOpen https://example.com/device\n\nEnter code: CPE-TEST\n\nTerminal fixture: waiting for authorization. Esc cancels.")
 			select {

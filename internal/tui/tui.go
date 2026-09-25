@@ -29,17 +29,19 @@ const enterKey = "enter"
 const shiftEnterKey = "shift+enter"
 
 type update struct {
-	event     agent.Event
-	done      bool
-	err       error
-	loginText string
-	profiles  map[string]config.Model
+	event       agent.Event
+	done        bool
+	err         error
+	loginText   string
+	loginNotice string
+	profiles    map[string]config.Model
 }
 
 // Options supplies model profiles, composer submission preferences, and UI-only authentication. NewGenerator
 // defaults to agent.Provider and constructs a provider without generating text.
 // Login handles Codex, honoring cancellation and sending only UI instructions.
-// LoginGo accepts a UI-only API key and returns all profiles after import. Both
+// LoginGo accepts a UI-only API key and returns all profiles after import.
+// LoginCopilot displays a device code and returns all profiles after import. All
 // callbacks must omit secrets from errors and display messages.
 // LoginRequired is checked at startup and after changing profiles. ThemeDir is
 // the configuration directory for theme loading, live reload, and saved theme
@@ -53,6 +55,7 @@ type Options struct {
 	NewGenerator  func(context.Context, config.Model) (gai.Generator, error)
 	Login         func(context.Context, string, func(string)) error
 	LoginGo       func(context.Context, string) (map[string]config.Model, error)
+	LoginCopilot  func(context.Context, func(string)) (map[string]config.Model, error)
 	LoginRequired func(config.Model) bool
 	ThemeDir      string
 }
@@ -78,6 +81,7 @@ type model struct {
 	notice        string
 	login         func(context.Context, string, func(string)) error
 	loginGo       func(context.Context, string) (map[string]config.Model, error)
+	loginCopilot  func(context.Context, func(string)) (map[string]config.Model, error)
 	keyInput      *textinput.Model
 	loggingIn     bool
 	loginRequired bool
@@ -151,6 +155,7 @@ func Run(ctx context.Context, a *agent.Agent, name string, options Options) erro
 		}
 	}
 	m.login, m.loginGo, m.needsLogin, m.profiles = options.Login, options.LoginGo, options.LoginRequired, options.Models
+	m.loginCopilot = options.LoginCopilot
 	if options.NewGenerator != nil {
 		m.newGenerator = options.NewGenerator
 	}
@@ -193,7 +198,7 @@ func (m *model) startWork(text, key string) tea.Cmd {
 	m.usageView = false
 	m.staticView = ""
 	m.activity = "Thinking"
-	m.loggingIn = text == loginOpenAICommand || text == loginDeviceCommand || text == loginGoCommand
+	m.loggingIn = text == loginOpenAICommand || text == loginDeviceCommand || text == loginGoCommand || text == loginCopilotCommand
 	m.loginText = ""
 	if m.loggingIn {
 		m.activity = "Signing in"
@@ -206,9 +211,14 @@ func (m *model) startWork(text, key string) tea.Cmd {
 		defer close(ch)
 		var err error
 		var profiles map[string]config.Model
+		loginNotice := "Signed in · credentials saved to ~/.cpe/auth.json"
 		switch {
 		case text == loginGoCommand:
 			profiles, err = m.loginGo(ctx, key)
+			loginNotice = "OpenCode Go key saved · models ready in /model"
+		case text == loginCopilotCommand:
+			profiles, err = m.loginCopilot(ctx, func(text string) { ch <- update{loginText: text} })
+			loginNotice = "GitHub Copilot signed in · models ready in /model"
 		case m.loggingIn:
 			method := "browser"
 			if text == loginDeviceCommand {
@@ -226,7 +236,7 @@ func (m *model) startWork(text, key string) tea.Cmd {
 				ch <- update{event: event}
 			})
 		}
-		ch <- update{done: true, err: err, profiles: profiles}
+		ch <- update{done: true, err: err, profiles: profiles, loginNotice: loginNotice}
 	}()
 	return tea.Batch(await(ch), m.spinner.Tick)
 }
@@ -293,10 +303,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.notice = "Error: " + v.err.Error()
 			} else if m.loggingIn {
 				m.loginRequired = m.needsLogin != nil && m.needsLogin(m.profile)
-				m.notice = "Signed in · credentials saved to ~/.cpe/auth.json"
+				m.notice = v.loginNotice
 				if v.profiles != nil {
 					m.profiles = v.profiles
-					m.notice = "OpenCode Go key saved · models ready in /model"
 				}
 			} else {
 				m.notice = "Saved"

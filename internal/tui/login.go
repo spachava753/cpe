@@ -14,24 +14,32 @@ const loginDeviceCommand = "/login openai device"
 const openAIDeviceLogin = "openai device"
 const deviceLogin = "device"
 const goLogin = "opencode-go"
+const copilotLogin = "copilot"
+const loginCopilotCommand = "/login copilot"
 
 func (m *model) configureLogin(method string) tea.Cmd {
 	switch method {
 	case "":
 		var items []list.Item
+		selected := 0
 		if m.login != nil {
 			items = append(items, choice{"openai", "OpenAI · browser"}, choice{openAIDeviceLogin, "OpenAI · device code"})
 		}
 		if m.loginGo != nil {
+			if m.profile.Credential == goLogin {
+				selected = len(items)
+			}
 			items = append(items, choice{goLogin, "OpenCode Go · API key"})
+		}
+		if m.loginCopilot != nil {
+			if m.profile.Credential == "github-copilot" {
+				selected = len(items)
+			}
+			items = append(items, choice{copilotLogin, "GitHub Copilot · device code"})
 		}
 		if len(items) == 0 {
 			m.notice = "Login is unavailable"
 			return nil
-		}
-		selected := 0
-		if m.profile.Credential == goLogin && m.loginGo != nil {
-			selected = len(items) - 1
 		}
 		m.openPicker(loginCommand, "Choose login provider", items, selected)
 	case "openai", openAIDeviceLogin, "codex", deviceLogin:
@@ -44,6 +52,12 @@ func (m *model) configureLogin(method string) tea.Cmd {
 			command = loginDeviceCommand
 		}
 		return m.start(command)
+	case copilotLogin:
+		if m.loginCopilot == nil {
+			m.notice = "GitHub Copilot login is unavailable"
+			return nil
+		}
+		return m.start(loginCopilotCommand)
 	case goLogin:
 		if m.loginGo == nil {
 			m.notice = "OpenCode Go login is unavailable"
@@ -67,7 +81,7 @@ func (m *model) configureLogin(method string) tea.Cmd {
 		m.viewport.GotoTop()
 		return m.keyInput.Focus()
 	default:
-		m.notice = "Use /login, /login openai, /login openai device, or /login opencode-go"
+		m.notice = "Use /login, /login openai, /login openai device, /login copilot, or /login opencode-go"
 	}
 	return nil
 }

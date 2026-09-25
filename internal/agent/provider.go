@@ -17,6 +17,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/codex"
 	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/copilot"
 	"github.com/spachava753/cpe/internal/gemini"
 	"github.com/spachava753/cpe/internal/opencodego"
 	"github.com/spachava753/cpe/internal/responses"
@@ -33,6 +34,9 @@ func Provider(ctx context.Context, m config.Model, dir, sessionID string) (gai.G
 	}
 	if m.Credential == "opencode-go" {
 		return opencodego.New(m.Provider, dir, sessionID)
+	}
+	if m.Credential == "github-copilot" {
+		return copilot.New(m.Provider, dir, sessionID, m.CopilotStreaming)
 	}
 	if m.Credential != "" {
 		return nil, fmt.Errorf("unsupported credential %q", m.Credential)

@@ -201,3 +201,118 @@ func TestOpenCodeGoLogin(t *testing.T) {
 		})
 	}
 }
+
+func TestCopilotLogin(t *testing.T) {
+	for _, test := range []struct {
+		name, action string
+		picker       bool
+		credential   string
+	}{
+		{name: "direct", action: "save"}, {name: "picker", action: "save", picker: true}, {name: "current Copilot profile", action: "save", picker: true, credential: "github-copilot"}, {name: "Go picker remains selected", action: "save", picker: true, credential: goLogin}, {name: "cancel", action: "cancel"}, {name: "failed authorization", action: "fail"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			store, err := session.Open(filepath.Join(dir, "login.jsonl"), dir, repl.Runtime)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			profile := config.Model{Provider: "codex", ID: "fixture"}
+			if test.credential != "" {
+				profile.Provider = "openai"
+				profile.Credential = test.credential
+			}
+			imported := config.Model{Provider: "responses", ID: "copilot-fixture", Credential: "github-copilot"}
+			gen := agenttest.NewScriptedGenerator()
+			a, err := agent.Open(t.Context(), agent.Options{Config: config.Config{Agent: config.Agent{ToolTimeout: "1s"}}, Model: profile, Generator: gen, Store: store, CWD: dir})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer a.Close()
+			m := newModel(t.Context(), a, "original")
+			m.profiles = map[string]config.Model{"original": profile}
+			m.loginRequired = true
+			m.login = func(context.Context, string, func(string)) error { return errors.New("wrong login") }
+			m.loginGo = func(context.Context, string) (map[string]config.Model, error) { return nil, errors.New("wrong login") }
+			signedIn := false
+			ready := make(chan struct{})
+			m.needsLogin = func(p config.Model) bool { return p.Credential != "github-copilot" || !signedIn }
+			m.newGenerator = func(context.Context, config.Model) (gai.Generator, error) { return gen, nil }
+			m.loginCopilot = func(ctx context.Context, notify func(string)) (map[string]config.Model, error) {
+				notify("Open https://github.com/login/device\nEnter code: COPILOT-PRIVATE")
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-ready:
+				}
+				if test.action == "fail" {
+					return nil, errors.New("Copilot subscription unavailable")
+				}
+				signedIn = true
+				return map[string]config.Model{"original": profile, "github-copilot/fixture": imported}, nil
+			}
+			command := loginCopilotCommand
+			if test.picker {
+				command = loginCommand
+			}
+			m.input.SetValue(command)
+			next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			m = next.(model)
+			if test.picker {
+				want := 0
+				switch test.credential {
+				case goLogin:
+					want = 2
+				case "github-copilot":
+					want = 3
+				}
+				if m.picker == nil || m.picker.list.Index() != want || m.picker.list.Items()[3].(choice).label != "GitHub Copilot · device code" {
+					t.Fatal("wrong provider preselection")
+				}
+				m.picker.list.Select(3)
+				next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+				m = next.(model)
+			}
+			next, _ = m.Update(<-m.events)
+			m = next.(model)
+			if !m.busy || !m.loggingIn || !strings.Contains(m.View().Content, "COPILOT-PRIVATE") {
+				t.Fatal("missing device authorization")
+			}
+			for _, msg := range []tea.Msg{tea.PasteMsg{Content: "private text"}, tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift}, tea.KeyPressMsg{Code: tea.KeyEnter}} {
+				next, _ = m.Update(msg)
+				m = next.(model)
+			}
+			if m.input.Value() != "" {
+				t.Fatal("login enabled composer")
+			}
+			if test.action == "cancel" {
+				next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+				m = next.(model)
+			} else {
+				close(ready)
+			}
+			next, _ = m.Update(<-m.events)
+			m = next.(model)
+			if m.busy || m.loggingIn || m.loginText != "" || strings.Contains(m.View().Content, "COPILOT-PRIVATE") || len(a.Messages()) != 0 || len(store.Path()) != 1 {
+				t.Fatal("login leaked into display or history")
+			}
+			if m.profile != profile || m.name != "original" {
+				t.Fatal("login changed active model")
+			}
+			if test.action == "save" {
+				if len(m.profiles) != 2 || !strings.Contains(m.notice, "GitHub Copilot signed in") {
+					t.Fatal("models not imported")
+				}
+				if m.loginRequired != (test.credential != "github-copilot") {
+					t.Fatal("wrong account unlocked")
+				}
+				m.configureModel(modelCommand, "github-copilot/fixture")
+				if m.profile != imported || m.loginRequired {
+					t.Fatal("imported profile unavailable")
+				}
+			} else if len(m.profiles) != 1 || !m.loginRequired {
+				t.Fatal("failed login changed profiles or credentials")
+			}
+		})
+	}
+}

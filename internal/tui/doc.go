@@ -52,6 +52,8 @@
 // Codex OAuth provider; model configuration and credential storage are unchanged.
 // /login opencode-go opens masked API-key input,
 // separate from the prompt composer, then saves the key and imports profiles.
+// /login copilot displays GitHub's device authorization instructions, then imports
+// the account's Copilot models and saves credentials separately in copilot.json.
 // Successful import refreshes /model immediately without switching the active
 // model or changing its settings. Escape/Ctrl+C cancels key entry without exiting.
 // Login work

@@ -195,6 +195,7 @@ func TestSlashCompletionEditingAndNavigation(t *testing.T) {
 		down          int
 	}{
 		{"OpenAI browser", loginOpenAICommand, 1}, {"OpenAI device", loginDeviceCommand, 2},
+		{"GitHub Copilot", loginCopilotCommand, 4},
 	} {
 		t.Run("tab completes "+test.name+" without running", func(t *testing.T) {
 			m := newModel(t.Context(), a, "tab-fixture")
@@ -212,7 +213,7 @@ func TestSlashCompletionEditingAndNavigation(t *testing.T) {
 			next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 			m = next.(model)
 			if m.input.Value() != test.command+" " || m.completionHeight() != 0 || m.busy {
-				t.Fatal("Tab did not complete OpenAI login without executing")
+				t.Fatal("Tab did not complete login without executing")
 			}
 		})
 	}

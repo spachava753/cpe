@@ -7,6 +7,10 @@
 // Provider accepts an explicit credential directory and durable conversation ID;
 // OpenCode Go uses them for lazy API-key loading, stable per-session headers,
 // and service-specific API error attribution independent of the wire protocol.
+// Copilot uses its own credentials and preflight token renewal, with service
+// identity kept distinct from the underlying OpenAI/Anthropic wire adapters.
+// Each Prompt explicitly marks its first conversational request user-initiated;
+// summaries and later generations are agent-initiated, independent of compaction.
 // Options also accepts an immutable skills.Catalog. Model instructions disclose
 // only model-invocable skill metadata. Prompt resolves /skill:NAME [arguments]
 // before context admission or persistence; unknown and model-only commands fail

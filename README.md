@@ -88,6 +88,43 @@ without committing partial output. Model requests, token exchanges, and refreshe
 are not automatically retried. Device authorization is polled until approved,
 canceled, denied, or expired. If credentials are rejected, use `/login` again.
 
+## GitHub Copilot
+
+Use `/login` → **GitHub Copilot · device code**, or `/login copilot`. Open the
+GitHub URL shown, enter the device code, and approve GitHub Copilot access.
+Escape cancels. CPE stores credentials privately in `~/.cpe/copilot.json` and
+renews short-lived Copilot tokens before requests. Login instructions and tokens
+never enter the conversation. No Copilot CLI, editor login, or API key is required.
+
+Login queries your account's Copilot model catalog and adds
+`github-copilot/<model-id>` profiles. Choose one with `/model`; your active model
+and existing default stay unchanged until you select a model. Existing profiles
+and settings are preserved. Repeat login to discover newly available models.
+Only selectable, enabled models supporting tools, a supported API endpoint, and
+usable context limits are imported. Organization policies and subscription access
+still apply; CPE does not enable restricted models automatically.
+Older catalog entries without endpoint metadata use Chat Completions. The
+imported `copilot_streaming` capability enables streaming only when the catalog
+supports it; other Copilot models return their response when generation completes.
+
+Profiles use `"credential": "github-copilot"` with `openai`, `responses`, or
+`anthropic` as the wire protocol, as reported by Copilot. Omit `api_key_env` and
+`base_url`: CPE uses the saved Copilot credential and GitHub's subscription API
+host. Initial budgets are capped at 128,000 input and 16,384 output tokens with
+output room reserved; reasoning defaults and dollar prices are left unset.
+GitHub.com accounts are supported, including organization subscriptions hosted
+there. Custom GitHub Enterprise hosts are not yet supported.
+
+Authentication or access failures identify `github-copilot`. Use `/login copilot`
+again for revoked GitHub credentials; requests are not automatically retried.
+Discovery/import failure preserves prior credentials. If the final credential
+save fails after import, retry login to finish connecting the imported profiles.
+The first conversational request for each prompt is marked user initiated;
+summaries and subsequent tool continuations are marked agent initiated.
+This integration follows [GitHub's device flow](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#device-flow)
+and the [Copilot token exchange](https://github.com/microsoft/vscode-copilot-chat/blob/main/src/platform/authentication/node/copilotTokenManager.ts);
+service compatibility is tested with local fixtures, not guaranteed by GitHub.
+
 ## OpenCode Go
 
 Use `/login` → **OpenCode Go**, or `/login opencode-go`. Sign in at
@@ -155,6 +192,7 @@ confirm. Choose `"enter"` if your terminal cannot distinguish Shift+Enter.
 | `/login openai` | Sign in to OpenAI in the browser |
 | `/login opencode-go` | Save a Go API key and import model profiles |
 | `/login openai device` | Sign in to OpenAI with a device code |
+| `/login copilot` | Sign in to GitHub Copilot and import account models |
 | `/model` or `/model NAME` | Pick or switch to a profile from config.json |
 | `/reasoning` or `/reasoning LEVEL` | Pick or set reasoning effort for the active provider |
 | Ctrl+S in `/model` or `/reasoning` | Apply the highlighted choice and save it as the default |
@@ -679,6 +717,12 @@ execution, then a new-model generation.
 Use `/login` → OpenCode Go (or `/login opencode-go`) and the dummy key
 `fixture-go-key` to exercise masked entry and model import. This fixture takes
 two seconds, supports cancellation, and never contacts OpenCode or saves a real key.
+
+Use `/login copilot` for a simulated GitHub device flow. It displays `COPILOT-TEST`,
+completes after three seconds, and imports `github-copilot/fixture` into the isolated
+test configuration. Escape cancels; no GitHub request or credential storage occurs.
+Select the fixture with `/model github-copilot/fixture`, then send `compute` to test
+the normal REPL workflow after login.
 Send `verbose` for 60 lines of Starlark output: the TUI previews 20 rows, while
 `terminal.jsonl` retains all 60.
 Send `scroll` for a long streamed response: scroll up while it runs, verify the

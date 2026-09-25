@@ -39,6 +39,7 @@ var slashCommands = []slashCommand{
 	{loginOpenAICommand, "Sign in to OpenAI in the browser", false},
 	{loginDeviceCommand, "Sign in to OpenAI with a device code", false},
 	{loginGoCommand, "Save an OpenCode Go API key", false},
+	{loginCopilotCommand, "Sign in to GitHub Copilot with a device code", false},
 	{compactCommand, "Summarize model context", false},
 	{treeCommand, "List saved checkpoints", false},
 	{branchCommand, "Continue from a checkpoint ID", true},

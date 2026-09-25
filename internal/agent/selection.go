@@ -10,6 +10,7 @@ import (
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/copilot"
 )
 
 // ModelSelection is an applied selection snapshot, safe to display during work.
@@ -80,9 +81,16 @@ func checkModel(model config.Model, generator gai.Generator) error {
 
 // conversationGenerator chooses the active provider once per generation. It
 // forwards streams without pretending nonstreaming providers yield stream chunks.
-type conversationGenerator struct{ agent *Agent }
+type conversationGenerator struct {
+	agent       *Agent
+	userPending bool
+}
 
-func (g conversationGenerator) Generate(ctx context.Context, req gai.GenerationRequest) (gai.Response, error) {
+func (g *conversationGenerator) Generate(ctx context.Context, req gai.GenerationRequest) (gai.Response, error) {
+	if g.userPending {
+		ctx = copilot.WithUserInitiation(ctx)
+		g.userPending = false
+	}
 	generator := g.agent.metered("conversation")
 	if stream, ok := generator.(gai.StreamingGenerator); ok {
 		return (&gai.StreamingAdapter{S: conversationStream{stream, g.agent}}).Generate(ctx, req)
