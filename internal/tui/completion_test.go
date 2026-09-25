@@ -190,16 +190,32 @@ func TestSlashCompletionEditingAndNavigation(t *testing.T) {
 		}
 	})
 
-	t.Run("tab completes without running", func(t *testing.T) {
-		m := newModel(t.Context(), a, "tab-fixture")
-		for _, key := range []tea.KeyPressMsg{{Text: "/l"}, {Code: tea.KeyDown}, {Code: tea.KeyTab}} {
-			next, _ := m.Update(key)
+	for _, test := range []struct {
+		name, command string
+		down          int
+	}{
+		{"OpenAI browser", loginOpenAICommand, 1}, {"OpenAI device", loginDeviceCommand, 2},
+	} {
+		t.Run("tab completes "+test.name+" without running", func(t *testing.T) {
+			m := newModel(t.Context(), a, "tab-fixture")
+			next, _ := m.Update(tea.KeyPressMsg{Text: "/l"})
 			m = next.(model)
-		}
-		if m.input.Value() != loginDeviceCommand+" " || m.completionHeight() != 0 || m.busy {
-			t.Fatal("Tab did not fill the selected compound command without executing")
-		}
-	})
+			for _, match := range m.completion.matches {
+				if match.name == "/login device" || match.name == "/login codex" {
+					t.Fatal("unqualified legacy login advertised")
+				}
+			}
+			for range test.down {
+				next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+				m = next.(model)
+			}
+			next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+			m = next.(model)
+			if m.input.Value() != test.command+" " || m.completionHeight() != 0 || m.busy {
+				t.Fatal("Tab did not complete OpenAI login without executing")
+			}
+		})
+	}
 
 	t.Run("escape suppresses until slash is removed", func(t *testing.T) {
 		m := newModel(t.Context(), a, "dismiss-fixture")

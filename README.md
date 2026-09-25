@@ -20,13 +20,14 @@ go build -o cpe .
 ```
 
 The starter configuration selects Codex. Use `/login` to choose a login provider,
-or `/login codex` to open the browser sign-in flow. CPE validates the OAuth callback with PKCE and state, then
-saves its own credentials to `~/.cpe/auth.json`. Use `/login device` for a remote
+or `/login openai` to open the browser sign-in flow. CPE validates the OAuth callback with PKCE and state, then
+saves its own credentials to `~/.cpe/auth.json`. Use `/login openai device` for a remote
 terminal or a machine without a browser: open the displayed URL and enter the
 code. Device login may need to be enabled in your ChatGPT account settings.
 Escape or Ctrl+C cancels either flow. Login instructions stay out of model
 context and session history. The TUI starts without credentials so you can sign
 in, and the selected model is ready to use as soon as login succeeds.
+The old `/login codex` and `/login device` commands remain compatibility aliases.
 
 Configuration always lives in `~/.cpe`, including on Linux and macOS. Edit
 `config.json` for settings and `system.md` for system instructions, then restart
@@ -144,9 +145,9 @@ confirm. Choose `"enter"` if your terminal cannot distinguish Shift+Enter.
 | Ctrl+C while idle, `/quit` | Exit |
 | `/help` | Show commands |
 | `/login` | Choose a login provider |
-| `/login codex` | Sign in to Codex in the browser |
+| `/login openai` | Sign in to OpenAI in the browser |
 | `/login opencode-go` | Save a Go API key and import model profiles |
-| `/login device` | Sign in with a device code |
+| `/login openai device` | Sign in to OpenAI with a device code |
 | `/model` or `/model NAME` | Pick or switch to a profile from config.json |
 | `/reasoning` or `/reasoning LEVEL` | Pick or set reasoning effort for the active provider |
 | Ctrl+S in `/model` or `/reasoning` | Apply the highlighted choice and save it as the default |
@@ -660,7 +661,7 @@ CPE_RUN_INTEGRATION_TESTS=1 CPE_TUI_TEST_DIR=/tmp/cpe-tui-session \
   /tmp/cpe-tui.test -test.run=TestTerminalHarness
 ```
 
-Use `/login device` for a simulated login (completes after eight seconds), or
+Use `/login openai device` for a simulated login (completes after eight seconds), or
 `/model api-fixture` to use the fixture without login. Test `/model` and `/reasoning`
 pickers, or `/model alternate` and `/reasoning high` for direct changes. Ctrl+S
 inside either picker saves the highlighted default to the fixture directory;

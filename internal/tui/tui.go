@@ -23,7 +23,6 @@ import (
 	"github.com/spachava753/cpe/internal/theme"
 )
 
-const loginDeviceCommand = "/login device"
 const quitKey = "ctrl+c"
 const escapeKey = "esc"
 const enterKey = "enter"
@@ -194,7 +193,7 @@ func (m *model) startWork(text, key string) tea.Cmd {
 	m.usageView = false
 	m.staticView = ""
 	m.activity = "Thinking"
-	m.loggingIn = text == loginCodexCommand || text == loginDeviceCommand || text == loginGoCommand
+	m.loggingIn = text == loginOpenAICommand || text == loginDeviceCommand || text == loginGoCommand
 	m.loginText = ""
 	if m.loggingIn {
 		m.activity = "Signing in"

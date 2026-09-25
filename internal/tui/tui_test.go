@@ -497,98 +497,121 @@ func TestTerminalControlSequencesAreRemoved(t *testing.T) {
 }
 
 func TestLoginIsCancellableAndNeverEntersConversation(t *testing.T) {
-	dir := t.TempDir()
-	store, err := session.Open(filepath.Join(dir, "login.jsonl"), dir, repl.Runtime)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-	gen := agenttest.NewScriptedGenerator(agenttest.GenerateStep{Response: gai.Response{Candidates: []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("Ready after login.")}}}, FinishReason: gai.EndTurn}})
-	a, err := agent.Open(t.Context(), agent.Options{Config: config.Config{System: "Login test", Agent: config.Agent{ToolTimeout: "1s", OutputLimit: 1024, MaxRounds: 3}}, Model: config.Model{Provider: "codex", ID: "login-fixture"}, Generator: gen, Store: store, CWD: dir})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer a.Close()
-	ready := make(chan struct{})
-	m := newModel(t.Context(), a, "test")
-	m.loginRequired = true
-	m.login = func(ctx context.Context, method string, notify func(string)) error {
-		if method != "device" {
-			return fmt.Errorf("unexpected login method")
-		}
-		notify("Open https://example.com/device\nEnter code: PRIVATE-CODE\n" + strings.Repeat("Long login instructions ", 20))
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ready:
-			return nil
-		}
-	}
-	for attempt := range 2 {
-		m.input.SetValue("/login device")
-		next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-		m = next.(model)
-		progress := <-m.events
-		next, _ = m.Update(progress)
-		m = next.(model)
-		if !strings.Contains(m.viewport.View(), "PRIVATE-CODE") {
-			t.Fatal("missing login instructions")
-		}
-		for _, key := range []tea.Msg{tea.PasteMsg{Content: "ignored during login"}, tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift}} {
-			next, _ = m.Update(key)
-			m = next.(model)
-		}
-		if m.input.Value() != "" {
-			t.Fatal("OAuth enabled the normal composer")
-		}
-		for _, size := range []tea.WindowSizeMsg{{Width: 80, Height: 24}, {Width: 32, Height: 12}} {
-			next, _ = m.Update(size)
-			m = next.(model)
-			for line := range strings.SplitSeq(m.View().Content, "\n") {
-				if ansi.StringWidth(line) > size.Width {
-					t.Fatal("login view exceeds terminal width")
+	for _, test := range []struct {
+		name, command, method, label string
+		pickerIndex                  int
+	}{
+		{name: "OpenAI browser", command: loginOpenAICommand, method: "browser"},
+		{name: "OpenAI device", command: loginDeviceCommand, method: deviceLogin},
+		{name: "legacy Codex alias", command: "/login codex", method: "browser"},
+		{name: "legacy device alias", command: "/login device", method: deviceLogin},
+		{name: "OpenAI browser picker", command: loginCommand, method: "browser", label: "OpenAI · browser"},
+		{name: "OpenAI device picker", command: loginCommand, method: deviceLogin, label: "OpenAI · device code", pickerIndex: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			store, err := session.Open(filepath.Join(dir, "login.jsonl"), dir, repl.Runtime)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			gen := agenttest.NewScriptedGenerator(agenttest.GenerateStep{Response: gai.Response{Candidates: []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("Ready after login.")}}}, FinishReason: gai.EndTurn}})
+			a, err := agent.Open(t.Context(), agent.Options{Config: config.Config{System: "Login test", Agent: config.Agent{ToolTimeout: "1s", OutputLimit: 1024, MaxRounds: 3}}, Model: config.Model{Provider: "codex", ID: "login-fixture"}, Generator: gen, Store: store, CWD: dir})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer a.Close()
+			ready := make(chan struct{})
+			m := newModel(t.Context(), a, "test")
+			m.loginRequired = true
+			m.login = func(ctx context.Context, method string, notify func(string)) error {
+				if method != test.method {
+					return fmt.Errorf("unexpected login method")
+				}
+				notify("Open https://example.com/device\nEnter code: PRIVATE-CODE\n" + strings.Repeat("Long login instructions ", 20))
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-ready:
+					return nil
 				}
 			}
-			if strings.Count(m.View().Content, "\n")+1 > size.Height {
-				t.Fatal("login view exceeds terminal height")
+			for attempt := range 2 {
+				m.input.SetValue(test.command)
+				next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+				m = next.(model)
+				if test.command == loginCommand {
+					if m.picker == nil || m.picker.list.Items()[test.pickerIndex].(choice).Title() != test.label {
+						t.Fatal("missing OpenAI account label")
+					}
+					m.picker.list.Select(test.pickerIndex)
+					next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+					m = next.(model)
+				}
+				progress := <-m.events
+				next, _ = m.Update(progress)
+				m = next.(model)
+				if !strings.Contains(m.viewport.View(), "PRIVATE-CODE") {
+					t.Fatal("missing login instructions")
+				}
+				for _, key := range []tea.Msg{tea.PasteMsg{Content: "ignored during login"}, tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift}} {
+					next, _ = m.Update(key)
+					m = next.(model)
+				}
+				if m.input.Value() != "" {
+					t.Fatal("OAuth enabled the normal composer")
+				}
+				for _, size := range []tea.WindowSizeMsg{{Width: 80, Height: 24}, {Width: 32, Height: 12}} {
+					next, _ = m.Update(size)
+					m = next.(model)
+					for line := range strings.SplitSeq(m.View().Content, "\n") {
+						if ansi.StringWidth(line) > size.Width {
+							t.Fatal("login view exceeds terminal width")
+						}
+					}
+					if strings.Count(m.View().Content, "\n")+1 > size.Height {
+						t.Fatal("login view exceeds terminal height")
+					}
+				}
+				if attempt == 0 {
+					next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+					m = next.(model)
+				} else {
+					close(ready)
+				}
+				completed := <-m.events
+				next, _ = m.Update(completed)
+				m = next.(model)
+				if m.busy || m.loggingIn || m.loginText != "" || strings.Contains(m.View().Content, "PRIVATE-CODE") {
+					t.Fatal("login state leaked after completion")
+				}
+				if len(a.Messages()) != 0 || len(store.Path()) != 1 {
+					t.Fatal("login was written to model history")
+				}
+				if attempt == 0 && (!m.loginRequired || m.notice != "Login canceled") {
+					t.Fatal("cancellation did not preserve signed-out state")
+				}
 			}
-		}
-		if attempt == 0 {
-			next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+			if m.loginRequired || !strings.Contains(m.notice, "Signed in") {
+				t.Fatal("successful login did not unlock prompting")
+			}
+			next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 			m = next.(model)
-		} else {
-			close(ready)
-		}
-		completed := <-m.events
-		next, _ = m.Update(completed)
-		m = next.(model)
-		if m.busy || m.loggingIn || m.loginText != "" || strings.Contains(m.View().Content, "PRIVATE-CODE") {
-			t.Fatal("login state leaked after completion")
-		}
-		if len(a.Messages()) != 0 || len(store.Path()) != 1 {
-			t.Fatal("login was written to model history")
-		}
-		if attempt == 0 && (!m.loginRequired || m.notice != "Login canceled") {
-			t.Fatal("cancellation did not preserve signed-out state")
-		}
-	}
-	if m.loginRequired || !strings.Contains(m.notice, "Signed in") {
-		t.Fatal("successful login did not unlock prompting")
-	}
-	next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	m = next.(model)
-	m.input.SetValue("hello")
-	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m = next.(model)
-	for {
-		u := <-m.events
-		next, _ = m.Update(u)
-		m = next.(model)
-		if u.done {
-			break
-		}
-	}
-	if len(a.Messages()) != 2 || !strings.Contains(m.viewport.View(), "Ready after login.") {
-		t.Fatal("conversation unusable after login")
+			m.input.SetValue("hello")
+			next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+			m = next.(model)
+			for {
+				u := <-m.events
+				next, _ = m.Update(u)
+				m = next.(model)
+				if u.done {
+					break
+				}
+			}
+			if len(a.Messages()) != 2 || !strings.Contains(m.viewport.View(), "Ready after login.") {
+				t.Fatal("conversation unusable after login")
+			}
+
+		})
 	}
 }

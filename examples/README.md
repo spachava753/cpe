@@ -1,7 +1,7 @@
 # Configuration examples
 
 Copy `codex.json` to `~/.cpe/config.json` and `system.md` to `~/.cpe/system.md`
-for Codex OAuth, then start CPE and type `/login`. Use `/login device` for a
+for Codex OAuth, then start CPE and type `/login`. Use `/login openai device` for a
 remote terminal. Credentials are stored separately in `~/.cpe/auth.json`.
 `cpe --init` creates starter files without overwriting existing configuration.
 

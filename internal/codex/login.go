@@ -65,7 +65,7 @@ func (l *loginClient) login(ctx context.Context, method string, notify func(stri
 	case "device":
 		cred, err = l.device(ctx, notify)
 	default:
-		return errors.New("use /login or /login device")
+		return errors.New("use /login openai or /login openai device")
 	}
 	if err != nil {
 		return err
@@ -86,7 +86,7 @@ func (l *loginClient) browser(ctx context.Context, notify func(string)) (credent
 	state := rand.Text()
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp4", l.listenAddress)
 	if err != nil {
-		return credential{}, errors.New("cannot listen on localhost:1455; close the other login flow or use /login device")
+		return credential{}, errors.New("cannot listen on localhost:1455; close the other login flow or use /login openai device")
 	}
 	redirect := l.redirectURI
 	if redirect == "" {
@@ -139,7 +139,7 @@ func (l *loginClient) browser(ctx context.Context, notify func(string)) (credent
 		"code_challenge": {base64.RawURLEncoding.EncodeToString(challenge[:])}, "code_challenge_method": {"S256"},
 		"id_token_add_organizations": {"true"}, "codex_cli_simplified_flow": {"true"}, "originator": {"cpe"},
 	}.Encode()
-	notify("Sign in to OpenAI Codex\n\nComplete login in your browser. If it does not open, open this URL:\n\n" + authURL.String() + "\n\nWaiting for the browser callback. Esc cancels. For a remote terminal, cancel and use /login device.")
+	notify("Sign in to OpenAI Codex\n\nComplete login in your browser. If it does not open, open this URL:\n\n" + authURL.String() + "\n\nWaiting for the browser callback. Esc cancels. For a remote terminal, cancel and use /login openai device.")
 	if l.openBrowser != nil {
 		if err := l.openBrowser(ctx, authURL.String()); err != nil && ctx.Err() == nil {
 			notify("The browser could not be opened automatically. Open the URL above to continue.")
