@@ -69,7 +69,7 @@ func TestLoad(t *testing.T) {
 				if err := os.WriteFile(filepath.Join(dir, "system.md"), []byte("test"), 0600); err != nil {
 					t.Fatal(err)
 				}
-				c, err := load(dir)
+				c, err := load(t.Context(), dir)
 				if (err != nil) != tc.invalid || (!tc.invalid && c.TUI.SubmitKey != tc.want) {
 					t.Fatalf("submit key=%s error=%v", c.TUI.SubmitKey, err)
 				}
@@ -108,7 +108,7 @@ func TestLoad(t *testing.T) {
 						if err := os.WriteFile(filepath.Join(dir, "system.md"), []byte("test"), 0600); err != nil {
 							t.Fatal(err)
 						}
-						cfg, err := load(dir)
+						cfg, err := load(t.Context(), dir)
 						if err != nil || cfg.Models["fixture"].ReasoningEffort != effort {
 							t.Fatalf("profile=%+v err=%v", cfg.Models["fixture"], err)
 						}
@@ -140,7 +140,7 @@ func TestLoad(t *testing.T) {
 				if err := os.WriteFile(filepath.Join(dir, "system.md"), []byte("test"), 0600); err != nil {
 					t.Fatal(err)
 				}
-				_, err := load(dir)
+				_, err := load(t.Context(), dir)
 				if (err != nil) != test.invalid {
 					t.Fatalf("load error: %v", err)
 				}
@@ -174,7 +174,7 @@ func TestLoad(t *testing.T) {
 				if err := os.WriteFile(filepath.Join(dir, "system.md"), []byte(defaultSystem), 0600); err != nil {
 					t.Fatal(err)
 				}
-				c, err := load(dir)
+				c, err := load(t.Context(), dir)
 				if (err != nil) != test.invalid {
 					t.Fatalf("config=%+v err=%v", c, err)
 				}
@@ -184,6 +184,47 @@ func TestLoad(t *testing.T) {
 			})
 		}
 	})
+	t.Run("initial default", func(t *testing.T) {
+		for _, test := range []struct {
+			name, body, want string
+			changed          bool
+		}{
+			{"declaration order", `{"models":{"z":{"provider":"codex","id":"z"},"a":{"provider":"codex","id":"a"}}}`, "z", true},
+			{"empty default", `{"default_model":"","models":{"z":{"provider":"codex","id":"z"}}}`, "z", true},
+			{"explicit default", `{"default_model":"a","models":{"z":{"provider":"codex","id":"z"},"a":{"provider":"codex","id":"a"}}}`, "a", false},
+			{"no profiles", `{"models":{}}`, "", false},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				dir := t.TempDir()
+				path := filepath.Join(dir, "config.json")
+				if err := os.WriteFile(path, []byte(test.body), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "system.md"), []byte("test"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				c, err := load(t.Context(), dir)
+				if err != nil || c.DefaultModel != test.want {
+					t.Fatalf("default=%q err=%v", c.DefaultModel, err)
+				}
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if (string(data) != test.body) != test.changed {
+					t.Fatalf("unexpected file mutation: %s", data)
+				}
+				again, err := load(t.Context(), dir)
+				if err != nil || again.DefaultModel != test.want {
+					t.Fatalf("reload=%+v err=%v", again, err)
+				}
+				if c.Models[test.want].ReasoningEffort != "" {
+					t.Fatal("invented reasoning default")
+				}
+			})
+		}
+	})
+
 	t.Run("system markdown", func(t *testing.T) {
 		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(defaultJSON), 0600); err != nil {
@@ -192,7 +233,7 @@ func TestLoad(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "system.md"), []byte("Custom instructions\n"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		c, err := load(dir)
+		c, err := load(t.Context(), dir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -202,6 +243,11 @@ func TestLoad(t *testing.T) {
 	})
 	t.Run("invalid configuration", func(t *testing.T) {
 		for _, test := range []struct{ name, body string }{
+			{"models casing without default", `{"Models":{"a":{"provider":"codex","id":"a"}}}`},
+			{"models casing", strings.Replace(defaultJSON, `"models"`, `"Models"`, 1)},
+			{"default casing", strings.Replace(defaultJSON, `"default_model"`, `"Default_Model"`, 1)},
+			{"default alias duplicate", strings.Replace(defaultJSON, `"default_model": "default"`, `"default_model":"default","DEFAULT_MODEL":"default"`, 1)},
+			{"profile field casing", strings.Replace(defaultJSON, `"context_window": 272000`, `"Reasoning_Effort":"low"`, 1)},
 			{"unknown", strings.Replace(defaultJSON, "max_rounds", "max_round", 1)},
 			{"duplicate", strings.Replace(defaultJSON, `"max_rounds": 50`, `"max_rounds": 50, "max_rounds": 3`, 1)},
 			{"trailing", defaultJSON + `{}`},
@@ -210,12 +256,12 @@ func TestLoad(t *testing.T) {
 			{"timeout", strings.Replace(defaultJSON, `"tool_timeout": "1m"`, `"tool_timeout": "0s"`, 1)},
 			{"limit", strings.Replace(defaultJSON, `"output_limit": 32000`, `"output_limit": -1`, 1)},
 			{"provider", strings.Replace(defaultJSON, `"provider": "codex"`, `"provider": "unknown"`, 1)},
-			{"effort", strings.Replace(defaultJSON, `"reasoning_effort": "low"`, `"reasoning_effort": "unknown"`, 1)},
-			{"old-pi-file", strings.Replace(defaultJSON, `"reasoning_effort": "low"`, `"oauth_file": "~/.pi/agent/auth.json"`, 1)},
-			{"codex-api-key", strings.Replace(defaultJSON, `"reasoning_effort": "low"`, `"api_key_env": "KEY"`, 1)},
-			{"codex-endpoint", strings.Replace(defaultJSON, `"reasoning_effort": "low"`, `"base_url": "https://example.com"`, 1)},
-			{"codex-output", strings.Replace(defaultJSON, `"reasoning_effort": "low"`, `"max_output_tokens": 100`, 1)},
-			{"codex-temperature", strings.Replace(defaultJSON, `"reasoning_effort": "low"`, `"temperature": 0.2`, 1)},
+			{"effort", strings.Replace(defaultJSON, `"context_window": 272000`, `"reasoning_effort": "unknown"`, 1)},
+			{"old-pi-file", strings.Replace(defaultJSON, `"context_window": 272000`, `"oauth_file": "~/.pi/agent/auth.json"`, 1)},
+			{"codex-api-key", strings.Replace(defaultJSON, `"context_window": 272000`, `"api_key_env": "KEY"`, 1)},
+			{"codex-endpoint", strings.Replace(defaultJSON, `"context_window": 272000`, `"base_url": "https://example.com"`, 1)},
+			{"codex-output", strings.Replace(defaultJSON, `"context_window": 272000`, `"max_output_tokens": 100`, 1)},
+			{"codex-temperature", strings.Replace(defaultJSON, `"context_window": 272000`, `"temperature": 0.2`, 1)},
 			{"api-missing-key", `{"default_model":"a","models":{"a":{"provider":"openai","id":"test"}}}`},
 		} {
 			t.Run(test.name, func(t *testing.T) {
@@ -226,7 +272,7 @@ func TestLoad(t *testing.T) {
 				if err := os.WriteFile(filepath.Join(dir, "system.md"), []byte(defaultSystem), 0600); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := load(dir); err == nil {
+				if _, err := load(t.Context(), dir); err == nil {
 					t.Fatal("invalid configuration accepted")
 				}
 			})
@@ -241,7 +287,7 @@ func TestLoad(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "system.md"), []byte(defaultSystem), 0600); err != nil {
 			t.Fatal(err)
 		}
-		c, err := load(dir)
+		c, err := load(t.Context(), dir)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -273,7 +319,7 @@ func TestLoad(t *testing.T) {
 				if err := os.WriteFile(filepath.Join(dir, "system.md"), []byte(defaultSystem), 0600); err != nil {
 					t.Fatal(err)
 				}
-				_, err := load(dir)
+				_, err := load(t.Context(), dir)
 				if (err == nil) != test.valid {
 					t.Fatalf("valid=%t err=%v", test.valid, err)
 				}

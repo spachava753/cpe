@@ -61,8 +61,20 @@
 // /reasoning default restores the active profile's configured effort (or omits
 // the provider option when unset). Reasoning can be set for every profile and
 // appears in the header; supported labels depend on the adapter/model. These
-// commands do not enter model context or session files,
+// /reasoning provider always omits the provider option, even with a saved effort.
+// These commands do not enter model context or session files,
 // and do not edit config.json; restart/resume uses configuration and --model.
+//
+// Ctrl+S opens separate default-model and current-profile reasoning pickers.
+// Confirmation saves config.json off the event loop, then applies the selection.
+// Saving reasoning never selects the default model. Saving a model applies that
+// profile's saved settings. The provider reasoning choice removes the option.
+// Drafts and history are preserved. ConfigDir enables this workflow; selection
+// and submission are disabled during the save. Write failures preserve the
+// current selection. Esc/Ctrl+C cancel an in-flight save without clearing drafts;
+// committed writes remain saved. Shutdown cancels and joins pending saves.
+// Provider failures after a save report the saved default
+// without replacing the active model. Defaults are available between operations.
 //
 // Two status rows display cumulative uncached input, output, cache reads/writes,
 // total tokens, estimated USD cost, and estimated current context versus budget.

@@ -56,8 +56,13 @@ CPE to apply changes. CPE does not look in the current directory or
 }
 ```
 
-JSON must contain one object. Unknown fields, duplicate keys, trailing data, and
-invalid settings are errors. Examples are in [examples/](examples/README.md).
+JSON must contain one object. Field names use their documented, case-sensitive
+spelling (profile names remain case-sensitive map keys). Unknown fields, duplicate
+keys, trailing data, and
+invalid settings are errors. If models exist but `default_model` is missing or
+empty, CPE selects the first profile declared in JSON and persists that choice.
+An empty catalog has no default; add a model profile before starting a conversation.
+Examples are in [examples/](examples/README.md).
 
 Supported API-key providers are `openai` (Chat Completions, including compatible
 servers), `responses`, `anthropic`, and `gemini`. Ordinary API-key profiles require
@@ -144,6 +149,8 @@ confirm. Choose `"enter"` if your terminal cannot distinguish Shift+Enter.
 | `/login device` | Sign in with a device code |
 | `/model` or `/model NAME` | Pick or switch to a profile from config.json |
 | `/reasoning` or `/reasoning LEVEL` | Pick or set reasoning effort for the active provider |
+| Ctrl+S | Save a default model or reasoning effort for the current model |
+| `/reasoning provider` | Omit reasoning effort and let the provider choose |
 | `/reasoning default` | Restore the active profile's configured effort |
 | `/theme` or `/theme NAME` | Pick or switch themes and save the selection |
 | `/usage` | Show exact session token totals, estimated cost, and context budget |
@@ -244,11 +251,27 @@ changes its reasoning effort for subsequent replies and compaction. The header
 shows the active profile and effort. Recognized levels are `none`, `minimal`,
 `low`, `medium`, `high`, `xhigh`, `max`, `adaptive`, and `disabled`; model support varies.
 `/reasoning default` restores the profile's configured value, or lets the provider
-choose if no value is configured. This differs from the explicit `none` level.
+choose if no value is configured. `/reasoning provider` always omits the option,
+even when the profile has a saved effort. This differs from the explicit `none` level.
 Switching to a different profile uses that profile's settings. A failed switch
 keeps the active profile. Conversation and Starlark state are preserved.
-These settings apply to the running process only; config.json is unchanged and
-restart/resume uses the configured default or `--model`.
+Slash selections apply only to the current conversation; config.json is unchanged.
+Restart/resume uses the configured default or `--model`.
+
+**Ctrl+S** opens a defaults menu. Choose **Default model**, then a profile, to
+save it and apply its configured settings to the current conversation. Choose
+**Default reasoning for NAME** to save and apply reasoning for the active profile;
+this does **not** change the default model, even if another model is the default.
+The **provider** choice removes `reasoning_effort`, allowing the provider to choose.
+New starter profiles omit this option. Enter confirms each picker; Escape cancels,
+and the current draft is preserved. Defaults can be saved between operations.
+During a save, Escape or Ctrl+C cancels work that has not committed yet and
+preserves the draft. A completed config write is retained; CPE reports whether
+its selection was applied. Terminal shutdown cancels and joins pending saves.
+Writes preserve unrelated settings, file permissions, and config symlinks, and
+serialize with model imports. A write failure leaves the active selection alone;
+if provider setup fails after a successful save, CPE reports that the default was
+saved but could not be applied.
 
 Each profile can also configure a working input-token budget and prices in USD
 per million tokens. For example, these settings use illustrative rates:
@@ -607,7 +630,8 @@ CPE_RUN_INTEGRATION_TESTS=1 CPE_TUI_TEST_DIR=/tmp/cpe-tui-session \
 
 Use `/login device` for a simulated login (completes after eight seconds), or
 `/model api-fixture` to use the fixture without login. Test `/model` and `/reasoning`
-pickers, or `/model alternate` and `/reasoning high` for direct changes.
+pickers, or `/model alternate` and `/reasoning high` for direct changes. Ctrl+S
+saves defaults to the fixture directory; restarting the harness uses them.
 Use `/login` → OpenCode Go (or `/login opencode-go`) and the dummy key
 `fixture-go-key` to exercise masked entry and model import. This fixture takes
 two seconds, supports cancellation, and never contacts OpenCode or saves a real key.

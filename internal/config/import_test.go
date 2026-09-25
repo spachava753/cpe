@@ -11,10 +11,10 @@ import (
 
 func TestAddModels(t *testing.T) {
 	for _, test := range []struct {
-		name                       string
-		symlink, canceled, invalid bool
+		name                              string
+		symlink, canceled, invalid, empty bool
 	}{
-		{name: "preserve existing settings"}, {name: "follow config symlink", symlink: true},
+		{name: "initial catalog", empty: true}, {name: "preserve existing settings"}, {name: "follow config symlink", symlink: true},
 		{name: "canceled", canceled: true}, {name: "invalid addition", invalid: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -23,11 +23,16 @@ func TestAddModels(t *testing.T) {
 				t.Fatal(err)
 			}
 			path := filepath.Join(dir, "config.json")
+			if test.empty {
+				if err := os.WriteFile(path, []byte(`{"models":{}}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
 			before, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)
 			}
-			original, err := load(dir)
+			original, err := load(t.Context(), dir)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -64,10 +69,14 @@ func TestAddModels(t *testing.T) {
 				return
 			}
 			want := map[string]Model{"default": original.Models["default"], "opencode-go/fixture": addition}
+			if test.empty {
+				want["default"] = addition
+				original.DefaultModel = "default"
+			}
 			if !reflect.DeepEqual(models, want) {
 				t.Fatalf("profiles %+v", models)
 			}
-			reloaded, err := load(dir)
+			reloaded, err := load(t.Context(), dir)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -83,6 +92,9 @@ func TestAddModels(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, field := range []string{"agent", "compaction", "default_model"} {
+				if test.empty {
+					continue
+				}
 				var oldValue, newValue any
 				if err := json.Unmarshal(oldDocument[field], &oldValue); err != nil {
 					t.Fatal(err)

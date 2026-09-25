@@ -1,8 +1,15 @@
 // Package config loads ~/.cpe/config.json and ~/.cpe/system.md. The directory
 // is fixed on Unix (including macOS) and Windows; XDG and project configuration
 // are not consulted. JSON must contain one object and rejects unknown fields,
-// duplicate keys, and trailing data. Init creates private missing starter files
+// duplicate keys, case aliases of field names, and trailing data. Init creates private missing starter files
 // without overwriting existing configuration; the starter profile uses Codex.
+// If default_model is absent/empty and models exist, Load selects the first
+// profile declared in JSON and persists it. Empty catalogs have no default.
+// Reasoning is omitted in new starter profiles; empty effort leaves provider
+// defaults in control. SaveDefaultModel changes only the default profile name;
+// SaveReasoning changes only that profile's effort (empty removes the option).
+// Writes and imports share a lock, preserve unrelated fields and permissions,
+// and follow config symlinks. Invalid edits never replace the original file.
 // Init also creates themes.json. Theme loading is independent of model config
 // and is handled by package theme only for the interactive TUI.
 // tui.submit_key is enter (the default) or shift+enter. The other key inserts

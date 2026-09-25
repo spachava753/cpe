@@ -15,7 +15,7 @@ import (
 
 func TestLiveConfiguredAgent(t *testing.T) {
 	testgate.RequireLive(t)
-	cfg, err := config.Load()
+	cfg, err := config.Load(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

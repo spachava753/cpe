@@ -44,9 +44,11 @@ type update struct {
 // callbacks must omit secrets from errors and display messages.
 // LoginRequired is checked at startup and after changing profiles. ThemeDir is
 // the configuration directory for theme loading, live reload, and saved theme
-// selections. An empty directory disables theme configuration. Reload failures
+// selections. ConfigDir enables Ctrl+S model/reasoning default persistence.
+// An empty directory disables theme configuration. Reload failures
 // keep the last valid theme and display a warning.
 type Options struct {
+	ConfigDir     string
 	SubmitKey     config.SubmitKey
 	Models        map[string]config.Model
 	NewGenerator  func(context.Context, config.Model) (gai.Generator, error)
@@ -56,6 +58,8 @@ type Options struct {
 	ThemeDir      string
 }
 type model struct {
+	configDir     string
+	savingDefault *defaultSave
 	ctx           context.Context
 	agent         *agent.Agent
 	name          string
@@ -134,6 +138,7 @@ func Run(ctx context.Context, a *agent.Agent, name string, options Options) erro
 	defer cancel()
 	m := newModel(ctx, a, name)
 	m.submitKey = options.SubmitKey
+	m.configDir = options.ConfigDir
 	m.themeDir = options.ThemeDir
 	if m.themeDir != "" {
 		m.appearance = theme.SystemAppearance(ctx)
@@ -156,6 +161,9 @@ func Run(ctx context.Context, a *agent.Agent, name string, options Options) erro
 	}
 	program := tea.NewProgram(m, tea.WithContext(ctx))
 	final, err := program.Run()
+	if last, ok := final.(model); ok && last.savingDefault != nil {
+		last.savingDefault.stop()
+	}
 	// A parent-context exit can interrupt the renderer before the worker finishes.
 	// Join it before the caller closes the journal or interpreter.
 	if last, ok := final.(model); ok && last.busy && last.cancel != nil {
@@ -240,6 +248,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.notice = m.themeStatus()
 		}
 		return m, pollTheme(m.ctx, m.themeDir, m.themeRevision)
+	case defaultsSaved:
+		m.applyDefault(v)
+		return m, nil
 	case tea.WindowSizeMsg:
 		atBottom := m.scroll.following
 		m.width = max(1, v.Width)
@@ -319,6 +330,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch v.String() {
 		case quitKey, escapeKey:
+			if m.savingDefault != nil {
+				m.savingDefault.cancel()
+				m.notice = "Canceling default save…"
+				return m, nil
+			}
 			if m.busy {
 				m.cancel()
 				m.activity = "Canceling"
@@ -330,8 +346,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.input.Reset()
 			m.syncCompletion()
 			return m, nil
+		case "ctrl+s":
+			if !m.busy && m.savingDefault == nil {
+				m.openDefaults()
+			}
+			return m, nil
 		case "ctrl+d":
-			if !m.busy && m.input.Value() == "" {
+			if !m.busy && m.savingDefault == nil && m.input.Value() == "" {
 				return m, tea.Quit
 			}
 		case "pgup", "pgdown", "ctrl+u":
@@ -346,7 +367,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case m.submitKey.String():
-			if m.busy {
+			if m.busy || m.savingDefault != nil {
 				return m, nil
 			}
 			text := strings.TrimSpace(m.input.Value())
@@ -373,7 +394,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case quitCommand, exitCommand:
 				return m, tea.Quit
 			case helpCommand:
-				m.notice = "/model  /reasoning  /theme  /usage  /login  /skill:NAME [args]  /compact  /tree  /branch ID  /session  /quit"
+				m.notice = "/model  /reasoning  /theme  /usage  /login  /skill:NAME [args]  /compact  /tree  /branch ID  /session  /quit  · Ctrl+S defaults"
 				return m, nil
 			case usageCommand:
 				m.staticView = ""
@@ -541,12 +562,15 @@ func (m model) viewContent() string {
 		status = m.styles.muted.Render(status)
 	}
 	line := m.styles.border.Render(strings.Repeat("─", max(1, m.width-2)))
-	footer := m.styles.muted.Render(keyLabel(m.submitKey.String()) + " send · " + keyLabel(m.newlineKey()) + " newline · PgUp/PgDn scroll · Ctrl+C quit")
+	footer := m.styles.muted.Render(keyLabel(m.submitKey.String()) + " send · " + keyLabel(m.newlineKey()) + " newline · Ctrl+S defaults · PgUp/PgDn scroll")
 	if m.busy {
 		footer = m.styles.muted.Render("Draft next message · " + keyLabel(m.newlineKey()) + " newline · Esc/Ctrl+C cancel")
 		if m.loggingIn {
 			footer = m.styles.muted.Render("Esc/Ctrl+C cancel login")
 		}
+	}
+	if m.savingDefault != nil {
+		footer = m.styles.muted.Render("Saving default · Esc/Ctrl+C cancel")
 	}
 	content := m.viewport.View()
 	if m.picker != nil {

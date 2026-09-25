@@ -1,6 +1,9 @@
 package config
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -17,6 +20,7 @@ import (
 
 // Config contains application defaults and named provider profiles.
 type Config struct {
+	needsDefault bool
 	DefaultModel string               `json:"default_model"`
 	Models       map[string]Model     `json:"models"`
 	Agent        Agent                `json:"agent"`
@@ -151,25 +155,39 @@ func Directory() (string, error) {
 }
 
 // Load reads and validates both files in the fixed user configuration directory.
-func Load() (Config, error) {
+func Load(ctx context.Context) (Config, error) {
 	dir, err := Directory()
 	if err != nil {
 		return Config{}, err
 	}
-	return load(dir)
+	return load(ctx, dir)
 }
-func load(dir string) (Config, error) {
+func load(ctx context.Context, dir string) (Config, error) {
 	data, err := os.ReadFile(filepath.Join(dir, "config.json"))
 	if err != nil {
 		return Config{}, fmt.Errorf("load config.json (run cpe --init for starter files): %w", err)
 	}
-	return parse(dir, data)
+	c, err := parse(dir, data)
+	if err == nil && c.needsDefault {
+		return editConfig(ctx, dir, nil)
+	}
+	return c, err
 }
 
 func parse(dir string, data []byte) (Config, error) {
 	c := Config{Dir: dir, Agent: Agent{ToolTimeout: "1m", OutputLimit: 32000, MaxRounds: 50}, Compaction: Compaction{Prompt: "Summarize the conversation for continuation. Preserve the user's goals, decisions, files changed, unresolved work, and names/types of useful persistent Starlark variables. Do not claim external effects were undone."}}
 	if err := jsonconfig.Decode(data, &c); err != nil {
 		return c, fmt.Errorf("load config.json: %w", err)
+	}
+	if c.DefaultModel == "" && len(c.Models) > 0 {
+		// Preserve declaration order: maps deliberately do not carry this boundary fact.
+		var document map[string]json.RawMessage
+		_ = json.Unmarshal(data, &document)
+		decoder := json.NewDecoder(bytes.NewReader(document["models"]))
+		_, _ = decoder.Token()
+		first, _ := decoder.Token()
+		c.DefaultModel, _ = first.(string)
+		c.needsDefault = true
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "system.md"))
 	if err != nil {
@@ -179,10 +197,13 @@ func parse(dir string, data []byte) (Config, error) {
 	if strings.TrimSpace(c.System) == "" {
 		return c, errors.New("system.md must not be empty")
 	}
-	if _, ok := c.Models[c.DefaultModel]; !ok {
+	if _, ok := c.Models[c.DefaultModel]; !ok && (len(c.Models) != 0 || c.DefaultModel != "") {
 		return c, errors.New("default_model must name a configured model")
 	}
 	for name, m := range c.Models {
+		if strings.TrimSpace(name) == "" {
+			return c, errors.New("model profile names must not be empty")
+		}
 		if m.Credential != "" {
 			if m.Credential != "opencode-go" || (m.Provider != "openai" && m.Provider != "responses" && m.Provider != "anthropic") || m.APIKeyEnv != "" || m.BaseURL != "" {
 				return c, fmt.Errorf("model %q: credential must be opencode-go with provider openai, responses, or anthropic; omit api_key_env and base_url", name)
@@ -285,7 +306,6 @@ const defaultJSON = `{
     "default": {
       "provider": "codex",
       "id": "gpt-6-astra",
-      "reasoning_effort": "low",
       "context_window": 272000
     }
   },

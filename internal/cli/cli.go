@@ -98,9 +98,12 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 		}
 		*resume = sessions[0]
 	}
-	c, err := config.Load()
+	c, err := config.Load(ctx)
 	if err != nil {
 		return err
+	}
+	if len(c.Models) == 0 {
+		return errors.New("no model profiles configured; add a profile to ~/.cpe/config.json")
 	}
 	if *modelName == "" {
 		*modelName = c.DefaultModel
@@ -196,6 +199,7 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	}
 	authFile := filepath.Join(c.Dir, "auth.json")
 	options := tui.Options{
+		ConfigDir:    c.Dir,
 		SubmitKey:    c.TUI.SubmitKey,
 		Models:       c.Models,
 		NewGenerator: newGenerator,

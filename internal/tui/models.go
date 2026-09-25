@@ -23,6 +23,7 @@ func (c choice) FilterValue() string { return c.label }
 
 type picker struct {
 	command string
+	scope   selectionScope
 	list    list.Model
 }
 
@@ -59,6 +60,9 @@ func (m *model) configureModel(command, value string) {
 	case reasoningCommand:
 		if value != "" {
 			effort := value
+			if value == providerEffort {
+				effort = ""
+			}
 			if value == defaultEffort {
 				effort = m.profiles[m.name].ReasoningEffort
 			}
@@ -80,6 +84,12 @@ func (m *model) configureModel(command, value string) {
 			}
 			items = append(items, choice{effort, label})
 		}
+		label := "provider · omit reasoning effort"
+		if m.profile.ReasoningEffort == "" {
+			selected = len(items)
+			label += currentChoiceSuffix
+		}
+		items = append(items, choice{providerEffort, label})
 		m.openPicker(command, "Choose reasoning · support varies by model", items, selected)
 	}
 }
@@ -108,8 +118,31 @@ func (m model) updatePicker(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case enterKey:
 		if selected, ok := m.picker.list.SelectedItem().(choice); ok {
-			command := m.picker.command
+			command, scope := m.picker.command, m.picker.scope
 			m.picker = nil
+			if command == defaultsMenu {
+				m.configureModel(selected.value, "")
+				if m.picker != nil {
+					m.picker.scope = savedSelection
+					m.notice = "Save default model"
+					if selected.value == reasoningCommand {
+						m.notice = "Save default reasoning for " + oneline(m.name)
+						items := m.picker.list.Items()[1:]
+						m.picker.list.SetItems(items)
+						for i, item := range items {
+							entry, _ := item.(choice)
+							value := entry.value
+							if value == m.profile.ReasoningEffort || (value == providerEffort && m.profile.ReasoningEffort == "") {
+								m.picker.list.Select(i)
+							}
+						}
+					}
+				}
+				return m, nil
+			}
+			if scope == savedSelection {
+				return m, m.saveDefault(command, selected.value)
+			}
 			if command == loginCommand {
 				return m, m.configureLogin(selected.value)
 			}

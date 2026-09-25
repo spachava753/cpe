@@ -133,6 +133,7 @@ func TestModelAndReasoningCommands(t *testing.T) {
 	m.input.SetValue(reasoningCommand)
 	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(model)
+	m.picker.list.Select(0)
 	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	m = next.(model)
 	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})

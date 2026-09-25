@@ -43,12 +43,34 @@ func TestTerminalHarness(t *testing.T) {
 	profiles := map[string]config.Model{
 		"terminal-fixture": {Provider: "codex", ID: "terminal-fixture", ReasoningEffort: lowEffort},
 		"alternate":        {Provider: "codex", ID: "alternate-fixture", ReasoningEffort: "medium"},
-		"api-fixture":      {Provider: "openai", ID: "api-fixture"},
+		"api-fixture":      {Provider: "openai", ID: "api-fixture", APIKeyEnv: "CPE_FIXTURE_KEY"},
 	}
 	for name, profile := range profiles {
 		profile.Cost, profile.ContextWindow = pricing, 272000
 		profiles[name] = profile
 	}
+	// Defaults are persisted in the fixture directory and reused on restart.
+	configPath := filepath.Join(dir, "config.json")
+	initial := config.Config{DefaultModel: "terminal-fixture", Models: profiles, Agent: config.Agent{ToolTimeout: "5s", OutputLimit: 32000, MaxRounds: 5}, Compaction: config.Compaction{Prompt: "Summarize"}}
+	if data, err := os.ReadFile(configPath); err == nil {
+		if err := json.Unmarshal(data, &initial); err != nil {
+			t.Fatal(err)
+		}
+	} else if errors.Is(err, os.ErrNotExist) {
+		data, err := json.Marshal(initial)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(configPath, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "system.md"), []byte("Terminal test"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	profiles = initial.Models
 	skillRoot := filepath.Join(dir, "agents", "skills")
 	for _, fixture := range []struct{ name, description, flags string }{
 		{"review", "Review the current changes", ""},
@@ -71,7 +93,7 @@ func TestTerminalHarness(t *testing.T) {
 	gen := &terminalGenerator{skillRoot: skillRoot}
 	a, err := agent.Open(t.Context(), agent.Options{
 		Config: config.Config{System: "Terminal test", Agent: config.Agent{ToolTimeout: "5s", OutputLimit: 32000, MaxRounds: 5}, Compaction: config.Compaction{Prompt: "Summarize"}},
-		Model:  profiles["terminal-fixture"], Generator: gen, Store: store, CWD: dir, Skills: catalog,
+		Model:  profiles[initial.DefaultModel], Generator: gen, Store: store, CWD: dir, Skills: catalog,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +110,7 @@ func TestTerminalHarness(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	options := Options{Models: profiles, SubmitKey: submitKey,
+	options := Options{ConfigDir: dir, Models: profiles, SubmitKey: submitKey,
 		ThemeDir:      dir,
 		NewGenerator:  func(context.Context, config.Model) (gai.Generator, error) { return gen, nil },
 		LoginRequired: func(profile config.Model) bool { return profile.Provider == "codex" && !signedIn },
@@ -117,7 +139,7 @@ func TestTerminalHarness(t *testing.T) {
 				return nil
 			}
 		}}
-	if err := Run(t.Context(), a, "terminal-fixture", options); err != nil {
+	if err := Run(t.Context(), a, initial.DefaultModel, options); err != nil {
 		t.Fatal(err)
 	}
 }
