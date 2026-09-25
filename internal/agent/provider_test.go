@@ -68,6 +68,60 @@ func TestProvider(t *testing.T) {
 		}
 	})
 
+	t.Run("switched tool history", func(t *testing.T) {
+		for _, provider := range []string{"openai", "responses", "anthropic", "gemini"} {
+			t.Run(provider, func(t *testing.T) {
+				t.Setenv("CPE_SWITCH_FIXTURE_KEY", "fixture")
+				var bodies []string
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					data, err := io.ReadAll(r.Body)
+					if err != nil {
+						t.Error(err)
+					}
+					bodies = append(bodies, string(data))
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = io.WriteString(w, `{"error":{"message":"fixture captured history","type":"invalid_request_error","status":"INVALID_ARGUMENT"}}`)
+				}))
+				defer server.Close()
+				profile := config.Model{Provider: provider, ID: "fixture", APIKeyEnv: "CPE_SWITCH_FIXTURE_KEY", BaseURL: server.URL, MaxOutputTokens: 4096}
+				gen, err := Provider(t.Context(), profile, t.TempDir(), "fixture")
+				if err != nil {
+					t.Fatal(err)
+				}
+				call, err := gai.ToolCallBlock("foreign-call", "starlark_repl", map[string]any{codeParameter: "print(42)"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				call.ExtraFields = map[string]any{gai.GeminiExtraFieldThoughtSignature: "foreign-signature"}
+				a := &Agent{opts: Options{Model: profile}, dialog: gai.Dialog{
+					{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("compute")}},
+					{Role: gai.Assistant, ExtraFields: map[string]any{gai.OpenAIExtraFieldWireFields: map[string]any{"reasoning_content": "foreign-secret"}}, Blocks: []gai.Block{{BlockType: gai.Thinking, ModalityType: gai.Text, Content: gai.Str("foreign-secret"), ExtraFields: map[string]any{gai.AnthropicExtraFieldThinkingSignature: "foreign-signature"}}, call}},
+					gai.ToolResultMessage("foreign-call", gai.TextBlock("42"), gai.ImageBlock([]byte{1, 2, 3}, "image/png")),
+				}}
+				before, _ := json.Marshal(a.dialog)
+				req := a.conversationRequest(a.dialog)
+				if _, err := gen.Generate(t.Context(), req); err == nil {
+					t.Fatal("expected HTTP fixture error")
+				}
+				for range gen.(gai.StreamingGenerator).Stream(t.Context(), req) {
+				}
+				if len(bodies) != 2 {
+					t.Fatalf("provider rejected transferable history before HTTP: bodies=%v", bodies)
+				}
+				for _, body := range bodies {
+					if strings.Contains(body, "foreign-secret") || strings.Contains(body, "foreign-signature") || !strings.Contains(body, "starlark_repl") || !strings.Contains(body, "42") || !strings.Contains(body, "image/png") {
+						t.Fatalf("wire history=%s", body)
+					}
+				}
+				after, _ := json.Marshal(a.dialog)
+				if string(before) != string(after) {
+					t.Fatal("provider call changed canonical history")
+				}
+			})
+		}
+	})
+
 	type field struct {
 		path  []string
 		value any

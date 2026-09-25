@@ -78,7 +78,7 @@ func (a *Agent) restoreUsage() error {
 			a.addUsage(record)
 		case "message":
 			if a.usage.Requests == 0 {
-				message, err := decodeMessage(entry.Data)
+				message, _, err := decodeMessage(entry.Data)
 				if err != nil {
 					return err
 				}

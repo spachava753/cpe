@@ -18,10 +18,10 @@
 // operation shows the latest conversation. Width reflow anchors to the same
 // logical text, and layout clamping never re-enables following on its own.
 // While agent work is active, the composer remains editable for the next draft,
-// including paste and the configured newline key. The submit key neither submits
-// nor queues it until work
-// finishes. Completion, errors, and cancellation preserve the draft and cursor;
-// slash completion resumes when idle. During login, the normal composer stays
+// including paste and the configured newline key. Ordinary drafts are neither
+// submitted nor queued until work finishes. Single-line /model commands are the
+// exception: they queue a model selection without submitting a user message. Completion, errors, and cancellation preserve the draft and cursor;
+// busy slash completion offers only /model; all commands resume when idle. During login, the normal composer stays
 // locked and private credential input retains its separate routing.
 //
 // A leading slash on a single-line draft opens a themed command completion popup
@@ -30,11 +30,14 @@
 // fills the command plus a space without running it. The submit key fills and dispatches
 // the selection, except /branch which waits for a checkpoint ID. Model, reasoning,
 // and theme pickers still handle argument selection after dispatch.
-// Escape dismisses completion without clearing the draft and suppresses it until
+// While idle, Escape dismisses completion without clearing the draft and suppresses it until
 // the leading slash is removed or the draft is sent/cleared. An unrecognized
 // slash prefix after Escape is ordinary prompt text; recognized commands retain
 // their meaning. Unknown commands otherwise still report an error. Inline
-// slashes, arguments, multiline drafts and busy turns do not open completion.
+// slashes, arguments, and multiline drafts do not open completion. Busy turns
+// offer only model selection, with Esc/Ctrl+C retaining work cancellation priority.
+// An open model picker uses Escape to close; Ctrl+C cancels active work or quits
+// when idle. Completion and picker help reflect those active-work exceptions.
 // The popup shrinks or hides when terminal space is insufficient, and hidden
 // suggestions never capture navigation or the submit key. Reloading themes and resizing
 // preserve the completion selection, draft and conversation scroll position.
@@ -55,8 +58,14 @@
 // not prevent startup; successful login enables prompts without restarting.
 //
 // /model and /reasoning open keyboard pickers (arrows, Enter, Esc), or accept a
-// profile name and effort label directly. Changes are allowed only between turns
-// and leave conversation and interpreter state intact. Selecting a different
+// profile name and effort label directly. /model also works during agent work:
+// the current generation and its tool calls finish, then the next generation uses
+// the queued provider/settings. The header shows the applied profile; status shows
+// a pending selection. A later choice replaces it, including choosing the current
+// profile to stay with it. No new prompt is queued. While a picker is open, Escape
+// dismisses it and Ctrl+C cancels active work; paste never reaches the composer.
+// /reasoning and Ctrl+S defaults remain available between operations.
+// Selections leave conversation and interpreter state intact. Selecting a different
 // profile applies its configured defaults; selecting the same one is a no-op.
 // /reasoning default restores the active profile's configured effort (or omits
 // the provider option when unset). Reasoning can be set for every profile and

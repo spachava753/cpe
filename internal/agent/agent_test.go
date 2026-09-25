@@ -194,17 +194,37 @@ emit_image("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMC
 }
 
 func TestMessageCodecPreservesProviderReplayData(t *testing.T) {
-	input := gai.Message{Role: gai.Assistant, ExtraFields: map[string]any{"phase": "commentary"}, Blocks: []gai.Block{{ID: "reasoning-id", BlockType: gai.Thinking, Content: gai.Str("thought"), ExtraFields: map[string]any{"signature": "signed"}}, gai.ImageBlock([]byte{0, 255}, "image/png")}}
-	data, err := json.Marshal(encodeMessage(input))
-	if err != nil {
-		t.Fatal(err)
-	}
-	result, err := decodeMessage(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.ExtraFields["phase"] != "commentary" || result.Blocks[0].ExtraFields["signature"] != "signed" || result.Blocks[1].Content.String() != input.Blocks[1].Content.String() {
-		t.Fatal(result)
+	for _, test := range []struct {
+		name    string
+		version int
+		invalid bool
+	}{
+		{name: "legacy"}, {name: "origin version one", version: 1}, {name: "unknown version", version: 2, invalid: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			input := gai.Message{Role: gai.Assistant, ExtraFields: map[string]any{"phase": "commentary"}, Blocks: []gai.Block{{ID: "reasoning-id", BlockType: gai.Thinking, Content: gai.Str("thought"), ExtraFields: map[string]any{"signature": "signed"}}, gai.ImageBlock([]byte{0, 255}, "image/png")}}
+			record := encodeMessage(input)
+			if test.version != 0 {
+				record.Origin = &messageOrigin{Version: test.version, Identity: identityOf(config.Model{Provider: "responses", ID: "fixture"}), Prefix: strings.Repeat("a", 64)}
+			}
+			data, err := json.Marshal(record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, origin, err := decodeMessage(data)
+			if (err != nil) != test.invalid {
+				t.Fatal(err)
+			}
+			if test.invalid {
+				return
+			}
+			if (origin != nil) != (test.version == 1) {
+				t.Fatal("origin lost or invented")
+			}
+			if result.ExtraFields["phase"] != "commentary" || result.Blocks[0].ExtraFields["signature"] != "signed" || result.Blocks[1].Content.String() != input.Blocks[1].Content.String() {
+				t.Fatal(result)
+			}
+		})
 	}
 }
 

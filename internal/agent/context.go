@@ -65,8 +65,7 @@ func (a *Agent) prepareContext(ctx context.Context, req gai.GenerationRequest) (
 			return gaiagent.PrepareDialogDecision{}, err
 		}
 		a.compacted = true
-		req.Dialog = a.dialog
-		return gaiagent.PrepareDialogDecision{Dialog: a.dialog}, a.checkContext(req)
+		return gaiagent.PrepareDialogDecision{Dialog: a.dialog}, a.checkContext(a.conversationRequest(a.dialog))
 	}
 	return gaiagent.PrepareDialogDecision{}, a.checkContext(req)
 }
@@ -79,12 +78,12 @@ func (a *Agent) ContextEstimate() int {
 }
 
 func (a *Agent) conversationRequest(dialog gai.Dialog) gai.GenerationRequest {
-	return gai.GenerationRequest{Model: a.opts.Model.ID,
+	return a.projectRequest(gai.GenerationRequest{Model: a.opts.Model.ID,
 		Instructions: a.instructions(), Tools: []gai.Tool{replDefinition()},
-		Dialog: dialog, Options: a.generationOptions()}
+		Dialog: dialog, Options: a.generationOptions()})
 }
 
 func (a *Agent) compactionRequest(dialog gai.Dialog) gai.GenerationRequest {
 	input := append(append(gai.Dialog{}, dialog...), gai.Message{Role: gai.User, Blocks: []gai.Block{gai.TextBlock("Summarize this conversation for continuation.")}})
-	return gai.GenerationRequest{Model: a.opts.Model.ID, Instructions: gai.SystemMessage(gai.TextBlock(a.opts.Config.Compaction.Prompt)), Dialog: input, Options: a.generationOptions()}
+	return a.projectRequest(gai.GenerationRequest{Model: a.opts.Model.ID, Instructions: gai.SystemMessage(gai.TextBlock(a.opts.Config.Compaction.Prompt)), Dialog: input, Options: a.generationOptions()})
 }

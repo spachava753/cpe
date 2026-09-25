@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 
@@ -10,6 +12,7 @@ import (
 // wireMessage encodes fmt.Stringer block content explicitly. This avoids loss
 // of tool IDs, thinking signatures, multimodal data, and provider replay fields.
 type wireMessage struct {
+	Origin *messageOrigin `json:"origin,omitempty"`
 	Role   gai.Role       `json:"role"`
 	Blocks []wireBlock    `json:"blocks"`
 	Error  bool           `json:"tool_result_error,omitempty"`
@@ -36,13 +39,22 @@ func encodeMessage(m gai.Message) wireMessage {
 	}
 	return w
 }
-func decodeMessage(data []byte) (gai.Message, error) {
+func decodeMessage(data []byte) (gai.Message, *messageOrigin, error) {
 	var w wireMessage
-	if err := json.Unmarshal(data, &w); err != nil {
-		return gai.Message{}, err
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&w); err != nil {
+		return gai.Message{}, nil, err
 	}
 	if w.Role != gai.User && w.Role != gai.Assistant && w.Role != gai.ToolResult {
-		return gai.Message{}, fmt.Errorf("invalid stored role %v", w.Role)
+		return gai.Message{}, nil, fmt.Errorf("invalid stored role %v", w.Role)
+	}
+	if o := w.Origin; o != nil {
+		prefix, err := hex.DecodeString(o.Prefix)
+		service, serviceErr := hex.DecodeString(o.Identity.Service)
+		if o.Version != 1 || o.Identity.Model == "" || w.Role != gai.Assistant || err != nil || len(prefix) != 32 || serviceErr != nil || len(service) != 32 {
+			return gai.Message{}, nil, fmt.Errorf("unsupported or malformed message origin version %d", o.Version)
+		}
 	}
 	m := gai.Message{Role: w.Role, ToolResultError: w.Error, ExtraFields: w.Extra}
 	for _, b := range w.Blocks {
@@ -52,5 +64,5 @@ func decodeMessage(data []byte) (gai.Message, error) {
 		}
 		m.Blocks = append(m.Blocks, block)
 	}
-	return m, nil
+	return m, w.Origin, nil
 }

@@ -33,6 +33,66 @@ func TestSlashCompletionEditingAndNavigation(t *testing.T) {
 	}
 	defer a.Close()
 
+	for _, test := range []struct {
+		name                 string
+		busy, picker, narrow bool
+	}{
+		{name: "idle completion help"}, {name: "busy completion help", busy: true},
+		{name: "busy narrow completion help", busy: true, narrow: true},
+		{name: "idle picker help", picker: true}, {name: "busy picker help", busy: true, picker: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			m := newModel(t.Context(), a, "fixture")
+			m.profiles = map[string]config.Model{"fixture": profile}
+			canceled := false
+			m.busy = test.busy
+			m.cancel = func() { canceled = true }
+			if test.narrow {
+				m.width = 59
+			}
+			m.input.SetValue("/mo")
+			m.syncCompletion()
+			key := tea.KeyPressMsg{Code: tea.KeyEsc}
+			want := "Esc dismiss"
+			if test.busy {
+				want = "Esc cancel work"
+			}
+			if test.picker {
+				m.configureModel(modelCommand, "")
+				m.syncCompletion()
+				key = tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
+				want = "Ctrl+C quit"
+				if test.busy {
+					want = "Ctrl+C cancel work"
+				}
+			}
+			view := ansi.Strip(m.View().Content)
+			if !strings.Contains(view, want) {
+				t.Fatalf("missing %q: %s", want, view)
+			}
+			next, cmd := m.Update(key)
+			m = next.(model)
+			if canceled != test.busy || m.input.Value() != "/mo" {
+				t.Fatalf("canceled=%v draft=%q", canceled, m.input.Value())
+			}
+			if test.picker {
+				if test.busy && m.picker != nil {
+					t.Fatal("canceled work retained picker")
+				}
+				if !test.busy {
+					if cmd == nil {
+						t.Fatal("idle picker did not quit")
+					}
+					if _, ok := cmd().(tea.QuitMsg); !ok {
+						t.Fatal("idle picker did not quit")
+					}
+				}
+			} else if m.completion.dismissed == test.busy {
+				t.Fatalf("completion dismissal=%v busy=%v", m.completion.dismissed, test.busy)
+			}
+		})
+	}
+
 	t.Run("filter and run a picker", func(t *testing.T) {
 		m := newModel(t.Context(), a, "fixture")
 		m.profiles = map[string]config.Model{"fixture": profile}

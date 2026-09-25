@@ -69,8 +69,11 @@ func (m *model) syncCompletion() {
 	}
 	c.query, c.matches = value, nil
 	info := m.input.LineInfo()
-	if !m.busy && m.savingDefault == nil && !m.loggingIn && m.picker == nil && !c.dismissed && m.input.LineCount() == 1 && strings.HasPrefix(value, "/") && info.StartColumn+info.ColumnOffset == utf8.RuneCountInString(value) {
+	if m.savingDefault == nil && !m.loggingIn && m.picker == nil && !c.dismissed && m.input.LineCount() == 1 && strings.HasPrefix(value, "/") && info.StartColumn+info.ColumnOffset == utf8.RuneCountInString(value) {
 		for _, command := range m.commands {
+			if m.busy && (len(m.profiles) == 0 || command.name != modelCommand) {
+				continue
+			}
 			if strings.HasPrefix(command.name, value) {
 				c.matches = append(c.matches, command)
 			}
@@ -125,7 +128,7 @@ func (m *model) completionKey(key tea.KeyPressMsg) bool {
 }
 
 func (m model) completionHeight() int {
-	if m.busy || m.picker != nil || m.width < 24 {
+	if m.loggingIn || m.savingDefault != nil || m.picker != nil || m.width < 24 {
 		return 0
 	}
 	// Leave the editor, normal status/footer rows and one conversation row.
@@ -168,8 +171,12 @@ func (m model) completionView() string {
 }
 
 func (m model) completionHelp() string {
-	if m.width < 60 {
-		return fmt.Sprintf("↑↓ · Tab/%s · Esc · %d/%d", keyLabel(m.submitKey.String()), m.completion.selected+1, len(m.completion.matches))
+	escape := "dismiss"
+	if m.busy {
+		escape = "cancel work"
 	}
-	return fmt.Sprintf("↑/↓ choose · Tab complete · %s run · Esc dismiss · %d/%d", keyLabel(m.submitKey.String()), m.completion.selected+1, len(m.completion.matches))
+	if m.width < 60 {
+		return fmt.Sprintf("↑↓ · Tab/%s · Esc %s · %d/%d", keyLabel(m.submitKey.String()), escape, m.completion.selected+1, len(m.completion.matches))
+	}
+	return fmt.Sprintf("↑/↓ choose · Tab complete · %s run · Esc %s · %d/%d", keyLabel(m.submitKey.String()), escape, m.completion.selected+1, len(m.completion.matches))
 }

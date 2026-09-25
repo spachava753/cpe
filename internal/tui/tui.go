@@ -63,6 +63,7 @@ type model struct {
 	ctx           context.Context
 	agent         *agent.Agent
 	name          string
+	pendingModel  string
 	submitKey     config.SubmitKey
 	input         textarea.Model
 	viewport      viewport.Model
@@ -120,12 +121,13 @@ func newModel(ctx context.Context, a *agent.Agent, name string) model {
 		m.commands = append(m.commands, slashCommand{name: command.Name, description: oneline(command.Description)})
 	}
 	m.usage, m.contextTokens = a.Usage(), a.ContextEstimate()
+	sessionID := a.Checkpoints()[0].ID
 	m.newGenerator = func(ctx context.Context, profile config.Model) (gai.Generator, error) {
 		dir, err := config.Directory()
 		if err != nil {
 			return nil, err
 		}
-		return agent.Provider(ctx, profile, dir, a.Checkpoints()[0].ID)
+		return agent.Provider(ctx, profile, dir, sessionID)
 	}
 	m.applyTheme(theme.Default())
 	return m
@@ -271,6 +273,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cancel()
 			}
 			m.busy = false
+			_, selectionErr := m.agent.ApplyQueuedModel()
+			selected := m.agent.SelectedModel()
+			v.err = errors.Join(v.err, selectionErr)
+			if selected != nil {
+				m.acceptSelection(selected)
+			}
+			m.pendingModel = ""
+			m.profile = m.agent.Model()
 			m.cancel = nil
 			m.activity = ""
 			m.provisional = ""
@@ -300,6 +310,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch v.event.Kind {
+		case agent.EventModel:
+			if v.event.Selection != nil {
+				m.acceptSelection(v.event.Selection)
+			}
 		case agent.EventUsage:
 			if v.event.Usage != nil {
 				m.usage = *v.event.Usage
@@ -325,6 +339,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.picker != nil {
 			return m.updatePicker(v)
 		}
+		if m.busy && (v.String() == quitKey || v.String() == escapeKey) {
+			m.cancel()
+			m.activity = "Canceling"
+			return m, nil
+		}
 		if m.completionKey(v) {
 			return m, nil
 		}
@@ -333,11 +352,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.savingDefault != nil {
 				m.savingDefault.cancel()
 				m.notice = "Canceling default save…"
-				return m, nil
-			}
-			if m.busy {
-				m.cancel()
-				m.activity = "Canceling"
 				return m, nil
 			}
 			if v.String() == quitKey {
@@ -367,7 +381,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case m.submitKey.String():
-			if m.busy || m.savingDefault != nil {
+			if m.savingDefault != nil {
+				return m, nil
+			}
+			if m.busy {
+				text := strings.TrimSpace(m.input.Value())
+				fields := strings.Fields(text)
+				if !m.loggingIn && m.input.LineCount() == 1 && len(fields) > 0 && fields[0] == modelCommand {
+					m.input.Reset()
+					m.syncCompletion()
+					m.configureModel(modelCommand, strings.TrimSpace(strings.TrimPrefix(text, modelCommand)))
+				}
 				return m, nil
 			}
 			text := strings.TrimSpace(m.input.Value())
@@ -556,6 +580,12 @@ func (m model) viewContent() string {
 	status := oneline(m.notice)
 	if m.busy {
 		status = m.spinner.View() + m.styles.base.Render(" "+oneline(m.activity)+" · Esc to cancel")
+		if m.notice != "" {
+			status += " · " + oneline(m.notice)
+		}
+		if m.pendingModel != "" {
+			status += " · next: " + oneline(m.pendingModel)
+		}
 	} else if strings.HasPrefix(status, "Error:") {
 		status = m.styles.failure.Render(status)
 	} else {
@@ -564,7 +594,7 @@ func (m model) viewContent() string {
 	line := m.styles.border.Render(strings.Repeat("─", max(1, m.width-2)))
 	footer := m.styles.muted.Render(keyLabel(m.submitKey.String()) + " send · " + keyLabel(m.newlineKey()) + " newline · Ctrl+S defaults · PgUp/PgDn scroll")
 	if m.busy {
-		footer = m.styles.muted.Render("Draft next message · " + keyLabel(m.newlineKey()) + " newline · Esc/Ctrl+C cancel")
+		footer = m.styles.muted.Render("Draft next message · " + keyLabel(m.newlineKey()) + " newline · /model switch · Esc/Ctrl+C cancel")
 		if m.loggingIn {
 			footer = m.styles.muted.Render("Esc/Ctrl+C cancel login")
 		}
@@ -575,7 +605,12 @@ func (m model) viewContent() string {
 	content := m.viewport.View()
 	if m.picker != nil {
 		content = m.picker.list.View()
-		footer = m.styles.muted.Render("↑/↓ select · Enter apply · Esc cancel · Ctrl+C quit")
+		status = m.styles.muted.Render(oneline(m.notice))
+		controlC := "quit"
+		if m.busy {
+			controlC = "cancel work"
+		}
+		footer = m.styles.muted.Render("↑/↓ select · Enter apply · Esc close · Ctrl+C " + controlC)
 	}
 	if m.completionHeight() > 0 {
 		footer = m.styles.muted.Render(m.completionHelp())

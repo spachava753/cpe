@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/config"
 )
 
@@ -111,6 +112,12 @@ func (m *model) openPicker(command, title string, items []list.Item, selected in
 func (m model) updatePicker(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case quitKey:
+		if m.busy {
+			m.picker = nil
+			m.cancel()
+			m.activity = "Canceling"
+			return m, nil
+		}
 		return m, tea.Quit
 	case escapeKey:
 		m.picker = nil
@@ -165,16 +172,28 @@ func (m *model) switchModel(name string) {
 		m.notice = fmt.Sprintf("Error: unknown model profile %q; use /model to choose", name)
 		return
 	}
-	if name == m.name {
+	if name == m.name && m.pendingModel == "" {
 		m.notice = "Model: " + name
 		return
 	}
+	if name == m.name {
+		profile = m.profile
+	}
 	generator, err := m.newGenerator(m.ctx, profile)
 	if err == nil {
-		err = m.agent.SetModel(profile, generator)
+		if m.busy {
+			err = m.agent.QueueModel(name, profile, generator)
+		} else {
+			err = m.agent.SetModel(profile, generator)
+		}
 	}
 	if err != nil {
 		m.notice = "Error: " + err.Error()
+		return
+	}
+	if m.busy {
+		m.pendingModel = name
+		m.notice = "Model switch queued"
 		return
 	}
 	m.name, m.profile = name, profile
@@ -185,4 +204,13 @@ func (m *model) switchModel(name string) {
 	if m.loginRequired {
 		m.notice += " · sign in with /login"
 	}
+}
+
+func (m *model) acceptSelection(selected *agent.ModelSelection) {
+	m.name, m.profile, m.contextTokens = selected.Name, selected.Model, selected.ContextTokens
+	if m.pendingModel == selected.Name {
+		m.pendingModel = ""
+	}
+	m.loginRequired = m.needsLogin != nil && m.needsLogin(m.profile)
+	m.notice = "Model: " + selected.Name
 }

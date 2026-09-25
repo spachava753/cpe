@@ -173,9 +173,10 @@ latest conversation. Completed assistant
 messages and tool results are saved before the next operation. You can type,
 edit, paste, and use the configured newline key to draft your next message while
 the agent works.
-The submit key leaves the draft in place until the current operation finishes; nothing
-is queued or sent automatically. The draft survives completion, errors, and
-cancellation. Slash completion returns when the agent becomes idle. The normal
+The submit key leaves ordinary drafts in place until the current operation finishes;
+nothing is queued or sent automatically. The draft survives completion, errors,
+and cancellation. During work, slash completion offers `/model` so you can switch
+the next generation; other slash commands return when the agent becomes idle. The normal
 composer remains locked during login.
 
 Starlark results show the first 20 terminal rows per result, followed by a count
@@ -190,11 +191,14 @@ the configured submit key to run the selection. `/branch` completion leaves room
 The popup uses the active theme and shows up to five commands, scrolling as you
 move through the list. It shrinks or hides in very short terminals.
 
-Escape closes the popup without clearing your text and keeps it dismissed for
+While idle, Escape closes the popup without clearing your text and keeps it dismissed for
 that draft. Remove the leading slash or send/clear the draft to enable it again.
 After dismissal, an unrecognized slash prefix such as `/tmp` can be sent as
 ordinary prompt text; recognized commands still work. Slashes inside prose or
 paths, multiline input, and command arguments do not trigger the popup.
+During agent work, completion offers only `/model`; Escape or Ctrl+C cancels the
+work and keeps the draft. Inside the model picker, Escape closes the picker;
+Ctrl+C cancels active work (or quits when idle). The footer shows the current controls.
 
 ## Skills
 
@@ -257,6 +261,30 @@ Switching to a different profile uses that profile's settings. A failed switch
 keeps the active profile. Conversation and Starlark state are preserved.
 Slash selections apply only to the current conversation; config.json is unchanged.
 Restart/resume uses the configured default or `--model`.
+
+You can also submit `/model` or `/model NAME` while the agent is working. Only
+model completion is offered during work; ordinary drafts remain unsent. The
+current generation finishes and any returned tool calls execute once. The next
+generation receives their results using the selected model/provider. A queued
+choice appears in status; a later choice replaces it. If no further generation
+is needed, the choice applies when work finishes. Escape closes an open picker;
+Ctrl+C cancels the active operation. Outside a picker, Escape still cancels work.
+
+Thinking, signatures, and other assistant replay fields are attributed to the
+exact provider, model ID, and configured service. Requests filter incompatible
+fields without changing saved history, so A→B→A restores A's compatible thinking.
+Older records with no origin metadata keep their public content but omit
+unattributed replay fields. Tool results and interpreter state remain intact.
+
+Anthropic's [preserved-thinking rules](https://platform.claude.com/docs/en/build-with-claude/preserved-thinking)
+do not impose a blanket one-way switch ban: incompatible model thinking is dropped,
+while a changed earlier prefix can invalidate otherwise compatible signatures.
+CPE also checks the original system/tools/history prefix before forwarding its own
+Anthropic thinking, including after restart or compaction. Gemini's GenerateContent
+adapter supplies Google's [documented imported-call marker](https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures)
+when a transferred tool call lacks a signature. Model-specific modality/context
+limits still apply; a smaller configured context budget may require compaction or
+a larger-budget selection.
 
 **Ctrl+S** opens a defaults menu. Choose **Default model**, then a profile, to
 save it and apply its configured settings to the current conversation. Choose
@@ -631,7 +659,10 @@ CPE_RUN_INTEGRATION_TESTS=1 CPE_TUI_TEST_DIR=/tmp/cpe-tui-session \
 Use `/login device` for a simulated login (completes after eight seconds), or
 `/model api-fixture` to use the fixture without login. Test `/model` and `/reasoning`
 pickers, or `/model alternate` and `/reasoning high` for direct changes. Ctrl+S
-saves defaults to the fixture directory; restarting the harness uses them.
+saves defaults to the fixture directory; restarting the harness uses them. Send
+`handoff`, select another model while it prepares its tool call, and verify the
+final “Handled by” model and the journal: one old-model generation, one tool
+execution, then a new-model generation.
 Use `/login` → OpenCode Go (or `/login opencode-go`) and the dummy key
 `fixture-go-key` to exercise masked entry and model import. This fixture takes
 two seconds, supports cancellation, and never contacts OpenCode or saves a real key.

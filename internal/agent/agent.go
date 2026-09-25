@@ -39,21 +39,27 @@ const (
 	// EventDelta carries provisional streamed assistant text.
 	EventDelta = "delta"
 	// EventUsage carries cumulative session usage, including compaction requests.
-	EventUsage      = "usage"
+	EventUsage = "usage"
+	// EventModel carries a model selection applied at a generation boundary.
+	EventModel      = "model"
 	codeParameter   = "code"
 	compactionEntry = "compaction"
 )
 
 // Event reports provisional text, accepted messages, or current activity.
 type Event struct {
-	Kind    string
-	Text    string
-	Message *gai.Message
-	Usage   *Usage
+	Selection *ModelSelection
+	Kind      string
+	Text      string
+	Message   *gai.Message
+	Usage     *Usage
 }
 
 // Agent manages one durable conversation and interpreter.
 type Agent struct {
+	selectedName  string
+	origins       map[int]messageOrigin
+	selection     modelQueue
 	opts          Options
 	repl          *repl.REPL
 	dialog        gai.Dialog
@@ -118,6 +124,7 @@ func (a *Agent) restore(ctx context.Context) (err error) {
 	return nil
 }
 func (a *Agent) reload() error {
+	a.origins = make(map[int]messageOrigin)
 	a.dialog = nil
 	a.contextSample = nil
 	for _, e := range a.opts.Store.Path() {
@@ -133,21 +140,31 @@ func (a *Agent) reload() error {
 		if e.Type != "message" && e.Type != compactionEntry {
 			continue
 		}
-		m, err := decodeMessage(e.Data)
+		m, origin, err := decodeMessage(e.Data)
 		if err != nil {
 			return err
 		}
 		if e.Type == compactionEntry {
+			a.origins = make(map[int]messageOrigin)
 			a.dialog = nil
 			a.contextSample = nil
+		}
+		if origin != nil {
+			a.origins[len(a.dialog)] = *origin
 		}
 		a.dialog = append(a.dialog, m)
 	}
 	return nil
 }
-func (a *Agent) append(m gai.Message) error {
-	if _, err := a.opts.Store.Append("message", encodeMessage(m)); err != nil {
+func (a *Agent) append(m gai.Message) error { return a.appendWithOrigin(m, nil) }
+func (a *Agent) appendWithOrigin(m gai.Message, origin *messageOrigin) error {
+	record := encodeMessage(m)
+	record.Origin = origin
+	if _, err := a.opts.Store.Append("message", record); err != nil {
 		return err
+	}
+	if origin != nil {
+		a.origins[len(a.dialog)] = *origin
 	}
 	a.dialog = append(a.dialog, m)
 	a.notify(Event{Kind: EventMessage, Message: &m})
@@ -259,7 +276,7 @@ func (a *Agent) syncDialog(dialog gai.Dialog) error {
 
 // Prompt saves user input, runs the gai hook-driven loop, and creates a branch
 // checkpoint. Cancellation preserves completed work and repairs pending results.
-func (a *Agent) Prompt(ctx context.Context, text string, emit func(Event)) error {
+func (a *Agent) Prompt(ctx context.Context, text string, emit func(Event)) (finalErr error) {
 	if a.stateErr != nil {
 		return a.stateErr
 	}
@@ -268,6 +285,15 @@ func (a *Agent) Prompt(ctx context.Context, text string, emit func(Event)) error
 	}
 	if strings.TrimSpace(text) == "" {
 		return errors.New("empty prompt")
+	}
+	a.emit = emit
+	defer func() {
+		_, err := a.ApplyQueuedModel()
+		finalErr = errors.Join(finalErr, err)
+		a.emit = nil
+	}()
+	if _, err := a.ApplyQueuedModel(); err != nil {
+		return err
 	}
 	expanded, err := a.opts.Skills.Expand(text)
 	if err != nil {
@@ -286,8 +312,6 @@ func (a *Agent) Prompt(ctx context.Context, text string, emit func(Event)) error
 	if err := a.checkContext(request); err != nil {
 		return err
 	}
-	a.emit = emit
-	defer func() { a.emit = nil }()
 	a.compacted = false
 	a.pending = make(map[string]gai.Message)
 	if err := a.append(input); err != nil {
@@ -295,7 +319,7 @@ func (a *Agent) Prompt(ctx context.Context, text string, emit func(Event)) error
 	}
 	definition := replDefinition()
 	loop, err := gaiagent.New(gaiagent.Config{
-		Generator: a.metered("conversation"), Model: a.opts.Model.ID,
+		Generator: conversationGenerator{a}, Model: a.opts.Model.ID,
 		Instructions: a.instructions(),
 		Tools: []gaiagent.Tool{{Definition: definition, Handler: gaiagent.ToolHandlerFunc(func(ctx context.Context, req gaiagent.ToolRequest) (gai.Message, error) {
 			code, ok := req.Call.Parameters[codeParameter].(string)
@@ -313,20 +337,35 @@ func (a *Agent) Prompt(ctx context.Context, text string, emit func(Event)) error
 			if err := a.syncDialog(req.Request.Dialog); err != nil {
 				return gaiagent.PrepareDialogDecision{}, err
 			}
-			return a.prepareContext(ctx, req.Request)
+			if _, err := a.ApplyQueuedModel(); err != nil {
+				return gaiagent.PrepareDialogDecision{}, err
+			}
+			decision, err := a.prepareContext(ctx, a.conversationRequest(req.Request.Dialog))
+			if err != nil {
+				return decision, err
+			}
+			if _, err := a.ApplyQueuedModel(); err != nil {
+				return decision, err
+			}
+			return decision, a.checkContext(a.conversationRequest(a.dialog))
 		}),
 		BeforeGeneration: gaiagent.BeforeGenerationFunc(func(_ context.Context, req gaiagent.BeforeGenerationRequest) (gaiagent.BeforeGenerationDecision, error) {
 			if req.Generation >= uint(a.opts.Config.Agent.MaxRounds) {
 				return gaiagent.BeforeGenerationDecision{StopReason: "round_limit"}, nil
 			}
 			a.notify(Event{Kind: EventActivity, Text: "Thinking"})
-			return gaiagent.BeforeGenerationDecision{}, nil
+			request := a.conversationRequest(req.Request.Dialog)
+			return gaiagent.BeforeGenerationDecision{Request: &request}, a.checkContext(request)
 		}),
 		AfterGeneration: gaiagent.AfterGenerationFunc(func(_ context.Context, req gaiagent.AfterGenerationRequest) (*gai.Response, error) {
 			if len(req.Response.Candidates) != 1 {
 				return nil, errors.New("expected one candidate")
 			}
-			return nil, a.append(req.Response.Candidates[0])
+			origin, err := a.originFor(req.Request)
+			if err != nil {
+				return nil, err
+			}
+			return nil, a.appendWithOrigin(req.Response.Candidates[0], origin)
 		}),
 		AfterTool: gaiagent.AfterToolFunc(func(_ context.Context, req gaiagent.AfterToolRequest) (gaiagent.AfterToolDecision, error) {
 			m := gai.ToolResultMessage(req.Block.ID, req.Result.Blocks...)
@@ -338,13 +377,6 @@ func (a *Agent) Prompt(ctx context.Context, text string, emit func(Event)) error
 			a.pending[req.Block.ID] = m
 			a.notify(Event{Kind: EventMessage, Message: &m})
 			return gaiagent.AfterToolDecision{}, nil
-		}),
-		GenerationChunk: gaiagent.GenerationChunkFunc(func(_ context.Context, event gaiagent.GenerationChunkEvent) error {
-			b := event.Chunk.Block
-			if b.BlockType == gai.Content && b.ModalityType == gai.Text && b.Content != nil {
-				a.notify(Event{Kind: EventDelta, Text: b.Content.String()})
-			}
-			return nil
 		}),
 	})
 	if err != nil {
@@ -403,7 +435,11 @@ func (a *Agent) generationOptions() gai.GenerationOptions {
 }
 
 // Compact appends a durable summary without discarding any REPL history.
-func (a *Agent) Compact(ctx context.Context) error {
+func (a *Agent) Compact(ctx context.Context) (finalErr error) {
+	defer func() { _, err := a.ApplyQueuedModel(); finalErr = errors.Join(finalErr, err) }()
+	if _, err := a.ApplyQueuedModel(); err != nil {
+		return err
+	}
 	if a.stateErr != nil {
 		return a.stateErr
 	}
@@ -435,6 +471,7 @@ func (a *Agent) Compact(ctx context.Context) error {
 		return err
 	}
 	a.dialog = gai.Dialog{m}
+	a.origins = make(map[int]messageOrigin)
 	a.contextSample = nil
 	_, err = a.opts.Store.Append("checkpoint", map[string]string{"label": "compacted"})
 	return err
@@ -464,16 +501,11 @@ func (a *Agent) SetModel(model config.Model, generator gai.Generator) error {
 	if a.stateErr != nil {
 		return a.stateErr
 	}
-	if generator == nil || model.ID == "" {
-		return errors.New("model ID and generator are required")
-	}
-	if err := model.ValidateBudget(); err != nil {
-		return err
-	}
-	if _, err := model.WithReasoningEffort(model.ReasoningEffort); err != nil {
+	if err := checkModel(model, generator); err != nil {
 		return err
 	}
 	a.opts.Model, a.opts.Generator = model, generator
+	a.selectedName = ""
 	return nil
 }
 

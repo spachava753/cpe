@@ -17,6 +17,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/codex"
 	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/gemini"
 	"github.com/spachava753/cpe/internal/opencodego"
 	"github.com/spachava753/cpe/internal/responses"
 )
@@ -66,11 +67,7 @@ func Provider(ctx context.Context, m config.Model, dir, sessionID string) (gai.G
 		c := anthropic.NewClient(opts...)
 		return gai.NewAnthropicGenerator(&c.Messages), nil
 	case "gemini":
-		c, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: key, Backend: genai.BackendGeminiAPI, HTTPClient: client, HTTPOptions: genai.HTTPOptions{BaseURL: m.BaseURL}})
-		if err != nil {
-			return nil, err
-		}
-		return gai.NewGeminiGenerator(c), nil
+		return gemini.New(ctx, genai.ClientConfig{APIKey: key, Backend: genai.BackendGeminiAPI, HTTPClient: client, HTTPOptions: genai.HTTPOptions{BaseURL: m.BaseURL}})
 	default:
 		return nil, fmt.Errorf("unsupported provider %q", m.Provider)
 	}

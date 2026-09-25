@@ -41,9 +41,10 @@ func TestTerminalHarness(t *testing.T) {
 	in, out, read, write := 2.0, 10.0, 0.2, 2.5
 	pricing := &config.Pricing{Rates: config.Rates{Input: &in, Output: &out, CacheRead: &read, CacheWrite: &write}}
 	profiles := map[string]config.Model{
-		"terminal-fixture": {Provider: "codex", ID: "terminal-fixture", ReasoningEffort: lowEffort},
-		"alternate":        {Provider: "codex", ID: "alternate-fixture", ReasoningEffort: "medium"},
-		"api-fixture":      {Provider: "openai", ID: "api-fixture", APIKeyEnv: "CPE_FIXTURE_KEY"},
+		"terminal-fixture":  {Provider: "codex", ID: "terminal-fixture", ReasoningEffort: lowEffort},
+		"alternate":         {Provider: "codex", ID: "alternate-fixture", ReasoningEffort: "medium"},
+		"anthropic-fixture": {Provider: "anthropic", ID: "anthropic-fixture", APIKeyEnv: "CPE_FIXTURE_KEY"},
+		"api-fixture":       {Provider: "openai", ID: "api-fixture", APIKeyEnv: "CPE_FIXTURE_KEY"},
 	}
 	for name, profile := range profiles {
 		profile.Cost, profile.ContextWindow = pricing, 272000
@@ -187,6 +188,17 @@ func (g *terminalGenerator) Stream(ctx context.Context, req gai.GenerationReques
 				yield(gai.StreamChunk{Err: ctx.Err()})
 				return
 			}
+			if text == "handoff" {
+				if !yield(gai.StreamChunk{Block: gai.TextBlock("Preparing handoff…\n")}) {
+					return
+				}
+				select {
+				case <-ctx.Done():
+					yield(gai.StreamChunk{Err: ctx.Err()})
+					return
+				case <-time.After(5 * time.Second):
+				}
+			}
 			g.next++
 			code := `answer = 6 * 7; print(answer)`
 			if text == "verbose" {
@@ -218,7 +230,7 @@ func (g *terminalGenerator) Stream(ctx context.Context, req gai.GenerationReques
 			}
 			return
 		}
-		parts := []string{"The answer ", "is 42. ", "The Starlark state has been saved."}
+		parts := []string{"The answer ", "is 42. ", "The Starlark state has been saved.", "\nHandled by " + req.Model}
 		if last.Role == gai.ToolResult && strings.Contains(last.Blocks[0].Content.String(), "Skill instructions:") {
 			parts = []string{"Skill loaded through the REPL."}
 		}
