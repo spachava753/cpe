@@ -3,11 +3,13 @@ package tui
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -116,67 +118,169 @@ func TestProgramKeyboardRenderAndDurableTurn(t *testing.T) {
 	}
 }
 
-type waitingGenerator struct{ started chan struct{} }
-
-func (g waitingGenerator) Generate(ctx context.Context, _ gai.GenerationRequest) (gai.Response, error) {
-	close(g.started)
-	<-ctx.Done()
-	return gai.Response{}, ctx.Err()
+type waitingGenerator struct {
+	started chan struct{}
+	finish  chan error
+	calls   atomic.Int32
 }
 
-func TestCancellationKeepsUIUsableAndResizeFits(t *testing.T) {
-	dir := t.TempDir()
-	store, err := session.Open(filepath.Join(dir, "s.jsonl"), dir, repl.Runtime)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-	started := make(chan struct{})
-	a, err := agent.Open(t.Context(), agent.Options{Config: config.Config{System: "Test", Agent: config.Agent{ToolTimeout: "1s", OutputLimit: 32000, MaxRounds: 3}}, Model: config.Model{ID: "test"}, Generator: waitingGenerator{started}, Store: store, CWD: dir})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer a.Close()
-	m := newModel(t.Context(), a, "test")
-	m.input.SetValue("wait")
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = next.(model)
-	<-started
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	m = next.(model)
-	if !m.busy {
-		t.Fatal("cancellation did not wait for worker")
-	}
-	for {
-		u := <-m.events
-		next, _ = m.Update(u)
-		m = next.(model)
-		if u.done {
-			break
-		}
-	}
-	if m.busy || !strings.Contains(m.notice, "Canceled") {
-		t.Fatal(m.notice)
-	}
-	m.notice = "Error: first line\nsecond line"
-	for _, size := range []tea.WindowSizeMsg{{Width: 80, Height: 24}, {Width: 32, Height: 12}, {Width: 24, Height: 8}} {
-		next, _ = m.Update(size)
-		m = next.(model)
-		view := m.View()
-		for line := range strings.SplitSeq(view, "\n") {
-			if ansi.StringWidth(line) > size.Width {
-				t.Fatalf("line exceeds width %d: %q", size.Width, line)
+func (g *waitingGenerator) Generate(ctx context.Context, _ gai.GenerationRequest) (gai.Response, error) {
+	if g.calls.Add(1) == 1 {
+		close(g.started)
+		select {
+		case err := <-g.finish:
+			if err != nil {
+				return gai.Response{}, err
 			}
-		}
-		if strings.Count(view, "\n")+1 > size.Height {
-			t.Fatalf("view exceeds height %d:\n%s", size.Height, view)
+		case <-ctx.Done():
+			return gai.Response{}, ctx.Err()
 		}
 	}
-	m.input.SetValue("one")
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter, Alt: true})
-	m = next.(model)
-	if m.input.Value() != "one\n" {
-		t.Fatalf("multiline input %q", m.input.Value())
+	return gai.Response{Candidates: []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("Ready")}}}, FinishReason: gai.EndTurn}, nil
+}
+
+func TestDraftDuringWork(t *testing.T) {
+	for _, tc := range []struct {
+		name, notice string
+		err          error
+		cancelKey    tea.KeyType
+		slash        bool
+	}{
+		{name: "completion", notice: "Saved"},
+		{name: "failure", err: errors.New("provider failed"), notice: "provider failed"},
+		{name: "escape cancellation", cancelKey: tea.KeyEsc, notice: "Canceled"},
+		{name: "control C cancellation", cancelKey: tea.KeyCtrlC, notice: "Canceled"},
+		{name: "slash draft after completion", notice: "Saved", slash: true},
+		{name: "slash draft after cancellation", cancelKey: tea.KeyEsc, notice: "Canceled", slash: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			store, err := session.Open(filepath.Join(dir, "s.jsonl"), dir, repl.Runtime)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			gen := &waitingGenerator{started: make(chan struct{}), finish: make(chan error, 1)}
+			a, err := agent.Open(t.Context(), agent.Options{Config: config.Config{System: "Test", Agent: config.Agent{ToolTimeout: "1s", OutputLimit: 32000, MaxRounds: 3}}, Model: config.Model{ID: "test"}, Generator: gen, Store: store, CWD: dir})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer a.Close()
+			m := newModel(t.Context(), a, "test")
+			m.input.SetValue("wait")
+			next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = next.(model)
+			defer func() {
+				if m.busy {
+					m.cancel()
+					for u := range m.events {
+						if u.done {
+							break
+						}
+					}
+				}
+			}()
+			select {
+			case <-gen.started:
+			case <-time.After(5 * time.Second):
+				t.Fatal("generation did not start")
+			}
+			keys := []tea.KeyMsg{
+				{Type: tea.KeyRunes, Runes: []rune("nexx")}, {Type: tea.KeyBackspace},
+				{Type: tea.KeyRunes, Runes: []rune("t")}, {Type: tea.KeyLeft},
+				{Type: tea.KeyRunes, Runes: []rune("X")}, {Type: tea.KeyBackspace}, {Type: tea.KeyRight},
+				{Type: tea.KeyEnter, Alt: true}, {Type: tea.KeyRunes, Runes: []rune("pasted\nlast"), Paste: true},
+				{Type: tea.KeyHome}, {Type: tea.KeyRunes, Runes: []rune("Edited ")}, {Type: tea.KeyLeft},
+			}
+			want := "next\npasted\nEdited last"
+			if tc.slash {
+				keys = []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune("/mo")}}
+				want = "/mo"
+			}
+			for _, key := range keys {
+				next, _ = m.Update(key)
+				m = next.(model)
+			}
+			if m.input.Value() != want || m.completionHeight() != 0 || !strings.Contains(ansi.Strip(m.View()), "Draft next message") {
+				t.Fatalf("busy draft = %q, popup height = %d", m.input.Value(), m.completionHeight())
+			}
+			row, column := m.input.Line(), m.input.LineInfo().ColumnOffset
+			for _, msg := range []tea.Msg{
+				update{event: agent.Event{Kind: agent.EventDelta, Text: "Still working"}},
+				tea.KeyMsg{Type: tea.KeyEnter},
+				tea.WindowSizeMsg{Width: 32, Height: 12},
+				tea.WindowSizeMsg{Width: 80, Height: 24},
+			} {
+				next, _ = m.Update(msg)
+				m = next.(model)
+			}
+			if m.input.Value() != want || m.input.Line() != row || m.input.LineInfo().ColumnOffset != column || gen.calls.Load() != 1 || !m.busy || m.picker != nil {
+				t.Fatal("streaming, Enter, or resizing changed the draft or submitted work")
+			}
+			if tc.cancelKey != 0 {
+				next, _ = m.Update(tea.KeyMsg{Type: tc.cancelKey})
+				m = next.(model)
+				if !m.busy || m.input.Value() != want {
+					t.Fatal("cancellation cleared the draft or skipped worker cleanup")
+				}
+			} else {
+				gen.finish <- tc.err
+			}
+			deadline := time.After(5 * time.Second)
+			for m.busy {
+				select {
+				case u := <-m.events:
+					next, _ = m.Update(u)
+					m = next.(model)
+				case <-deadline:
+					t.Fatal("worker did not finish")
+				}
+			}
+			if !strings.Contains(m.notice, tc.notice) || m.input.Value() != want || m.input.Line() != row || m.input.LineInfo().ColumnOffset != column || gen.calls.Load() != 1 {
+				t.Fatalf("completion lost the draft or queued it: draft=%q, notice=%q, calls=%d", m.input.Value(), m.notice, gen.calls.Load())
+			}
+			for _, msg := range a.Messages() {
+				if msg.Role == gai.User && msg.Blocks[0].Content.String() != "wait" {
+					t.Fatal("unsent draft entered the conversation")
+				}
+			}
+			if tc.slash {
+				if len(m.completion.matches) != 1 || m.completion.matches[0].name != modelCommand || m.completionHeight() == 0 {
+					t.Fatal("slash completion did not resume")
+				}
+				return
+			}
+			// The same draft can be sent explicitly after the worker has stopped.
+			next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = next.(model)
+			for m.busy {
+				select {
+				case u := <-m.events:
+					next, _ = m.Update(u)
+					m = next.(model)
+				case <-deadline:
+					t.Fatal("draft submission did not finish")
+				}
+			}
+			messages := a.Messages()
+			if gen.calls.Load() != 2 || messages[len(messages)-2].Blocks[0].Content.String() != want || m.input.Value() != "" {
+				t.Fatal("idle Enter did not submit the preserved draft once")
+			}
+			m.notice = "Error: first line\nsecond line"
+			for _, size := range []tea.WindowSizeMsg{{Width: 80, Height: 24}, {Width: 32, Height: 12}, {Width: 24, Height: 8}} {
+				next, _ = m.Update(size)
+				m = next.(model)
+				view := m.View()
+				for line := range strings.SplitSeq(view, "\n") {
+					if ansi.StringWidth(line) > size.Width {
+						t.Fatalf("line exceeds width %d: %q", size.Width, line)
+					}
+				}
+				if strings.Count(view, "\n")+1 > size.Height {
+					t.Fatalf("view exceeds height %d:\n%s", size.Height, view)
+				}
+			}
+		})
 	}
 }
 
@@ -224,6 +328,13 @@ func TestLoginIsCancellableAndNeverEntersConversation(t *testing.T) {
 		m = next.(model)
 		if !strings.Contains(m.viewport.View(), "PRIVATE-CODE") {
 			t.Fatal("missing login instructions")
+		}
+		for _, key := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune("ignored during login"), Paste: true}, {Type: tea.KeyEnter, Alt: true}} {
+			next, _ = m.Update(key)
+			m = next.(model)
+		}
+		if m.input.Value() != "" {
+			t.Fatal("OAuth enabled the normal composer")
 		}
 		for _, size := range []tea.WindowSizeMsg{{Width: 80, Height: 24}, {Width: 32, Height: 12}} {
 			next, _ = m.Update(size)

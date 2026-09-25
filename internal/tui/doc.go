@@ -6,6 +6,11 @@
 // Esc or Ctrl+C cancels active work; the program waits for reconciliation
 // before allowing another operation. Ctrl+C when idle or /quit exits. Alt+Enter
 // inserts a newline, Enter submits, and PgUp/PgDn scroll the conversation.
+// While agent work is active, the composer remains editable for the next draft,
+// including paste and Alt+Enter. Enter neither submits nor queues it until work
+// finishes. Completion, errors, and cancellation preserve the draft and cursor;
+// slash completion resumes when idle. During login, the normal composer stays
+// locked and private credential input retains its separate routing.
 //
 // A leading slash on a single-line draft opens a themed command completion popup
 // above the composer. Suggestions filter by prefix while the cursor is at the

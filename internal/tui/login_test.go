@@ -132,6 +132,17 @@ func TestOpenCodeGoLogin(t *testing.T) {
 				if key := <-called; key != secret {
 					t.Fatal("login did not receive entered key")
 				}
+				for _, key := range []tea.KeyMsg{
+					{Type: tea.KeyRunes, Runes: []rune("ignored during login")},
+					{Type: tea.KeyEnter, Alt: true},
+					{Type: tea.KeyRunes, Runes: []rune(secret), Paste: true},
+				} {
+					next, _ = m.Update(key)
+					m = next.(model)
+				}
+				if m.input.Value() != "" {
+					t.Fatal("login work enabled the normal composer")
+				}
 				if test.action == "cancel" {
 					next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 					m = next.(model)

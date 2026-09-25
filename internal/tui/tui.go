@@ -276,6 +276,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.loggingIn = false
 			m.loginText = ""
+			m.syncCompletion()
 			m.layout()
 			m.refresh(true)
 			return m, nil
@@ -331,7 +332,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport, cmd = m.viewport.Update(msg)
 			return m, cmd
 		case "alt+enter":
-			if !m.busy {
+			if !m.loggingIn {
 				m.input.InsertRune('\n')
 				m.syncCompletion()
 			}
@@ -421,7 +422,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.keyInput != nil {
 		return m.updateKeyInput(msg)
 	}
-	if !m.busy {
+	if !m.loggingIn {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
 		m.syncCompletion()
@@ -510,6 +511,12 @@ func (m model) View() string {
 	}
 	line := m.styles.border.Render(strings.Repeat("─", max(1, m.width-2)))
 	footer := m.styles.muted.Render("Enter send · Alt+Enter newline · PgUp/PgDn scroll · Ctrl+C quit")
+	if m.busy {
+		footer = m.styles.muted.Render("Draft next message · Alt+Enter newline · Esc/Ctrl+C cancel")
+		if m.loggingIn {
+			footer = m.styles.muted.Render("Esc/Ctrl+C cancel login")
+		}
+	}
 	content := m.viewport.View()
 	if m.picker != nil {
 		content = m.picker.list.View()

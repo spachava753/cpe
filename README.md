@@ -124,7 +124,7 @@ resuming, branching, or switching profiles.
 
 | Key or command | Action |
 | --- | --- |
-| Enter | Send the prompt |
+| Enter | Send the prompt when idle |
 | Alt+Enter | Insert a newline |
 | PgUp / PgDn, mouse wheel | Scroll the conversation |
 | Esc or Ctrl+C while busy | Cancel the current operation and wait for cleanup |
@@ -146,8 +146,12 @@ resuming, branching, or switching profiles.
 | `/compact` | Summarize model context while retaining REPL state |
 
 The conversation displays streamed text provisionally. Completed assistant
-messages and tool results are saved before the next operation. Input stays
-editable between turns; prompts are not queued while the agent is busy.
+messages and tool results are saved before the next operation. You can type,
+edit, paste, and use Alt+Enter to draft your next message while the agent works.
+Enter leaves the draft in place until the current operation finishes; nothing
+is queued or sent automatically. The draft survives completion, errors, and
+cancellation. Slash completion returns when the agent becomes idle. The normal
+composer remains locked during login.
 
 Start a draft with `/` to see a small command popup above the composer. Keep
 typing to filter, use Up/Down to select, Tab to complete without running, or
@@ -584,7 +588,9 @@ Use `/login` → OpenCode Go (or `/login opencode-go`) and the dummy key
 `fixture-go-key` to exercise masked entry and model import. This fixture takes
 two seconds, supports cancellation, and never contacts OpenCode or saves a real key.
 Send `compute`, restart the process, then send `restore` to verify the saved
-variable. Send `wait` and press Esc to test cancellation. This harness also works
+variable. Send `slow` for a three-second REPL call and draft another message
+while it runs; the draft stays unsent after completion. Send `wait`, type a draft,
+and press Esc to verify cancellation preserves it. This harness also works
 inside tmux, where `capture-pane` provides the actual rendered terminal grid.
 The harness creates isolated `review`, `publish` (user-only), and `background`
 (model-only) skills beneath `CPE_TUI_TEST_DIR/agents/skills`. Type `/skill:` to test
