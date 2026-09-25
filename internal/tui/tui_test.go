@@ -3,6 +3,7 @@ package tui
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -50,6 +52,63 @@ func TestModelRefresh(t *testing.T) {
 			}
 		})
 	}
+	for _, tc := range []struct {
+		name                     string
+		blocks                   []gai.Block
+		width                    int
+		assistant, twice, failed bool
+		needle                   string
+		count                    int
+		notice                   string
+	}{
+		{name: "below preview limit", blocks: []gai.Block{gai.TextBlock(strings.Repeat("row\n", 19))}, width: 80, needle: "row", count: 19},
+		{name: "exact preview limit", blocks: []gai.Block{gai.TextBlock(strings.Repeat("row\n", 19) + "row")}, width: 80, needle: "row", count: 20},
+		{name: "exact with trailing newline", blocks: []gai.Block{gai.TextBlock(strings.Repeat("row\n", 20))}, width: 80, needle: "row", count: 20},
+		{name: "one beyond preview", blocks: []gai.Block{gai.TextBlock(strings.Repeat("row\n", 21))}, width: 80, needle: "row", count: 20, notice: "… 1 more line"},
+		{name: "one budget across blocks", blocks: []gai.Block{gai.TextBlock(strings.Repeat("row\n", 20)), gai.TextBlock("row\nrow")}, width: 80, needle: "row", count: 20, notice: "… 2 more lines"},
+		{name: "wrapped single line", blocks: []gai.Block{gai.TextBlock(strings.Repeat("x", 41))}, width: 2, needle: "xx", count: 20, notice: "…"},
+		{name: "wide characters", blocks: []gai.Block{gai.TextBlock(strings.Repeat("界", 64))}, width: 6, needle: "界", count: 60, notice: "… 2"},
+		{name: "image within preview", blocks: []gai.Block{gai.TextBlock(strings.Repeat("row\n", 19)), gai.ImageBlock([]byte("fixture"), "image/png")}, width: 80, needle: "[Image: image/png]", count: 1},
+		{name: "image beyond preview", blocks: []gai.Block{gai.TextBlock(strings.Repeat("row\n", 20)), gai.ImageBlock([]byte("fixture"), "image/png")}, width: 80, needle: "[Image: image/png]", count: 0, notice: "… 1 more line"},
+		{name: "separate result budgets", blocks: []gai.Block{gai.TextBlock(strings.Repeat("row\n", 21))}, twice: true, width: 80, needle: "row", count: 40, notice: "… 1 more line"},
+		{name: "failed tool preview", blocks: []gai.Block{gai.TextBlock(strings.Repeat("error row\n", 30))}, failed: true, width: 80, needle: "error row", count: 20, notice: "… 10 more lines"},
+		{name: "assistant stays complete", blocks: []gai.Block{gai.TextBlock(strings.Repeat("row\n", 30))}, assistant: true, width: 80, needle: "row", count: 30},
+		{name: "terminal controls stripped", blocks: []gai.Block{gai.TextBlock(strings.Repeat("row\x1b[2J\n", 21))}, width: 80, needle: "row", count: 20, notice: "… 1 more line"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			message := gai.ToolResultMessage("preview", tc.blocks...)
+			message.ToolResultError = tc.failed
+			if tc.assistant {
+				message = gai.Message{Role: gai.Assistant, Blocks: tc.blocks}
+			}
+			m := model{input: textarea.New(), width: tc.width + 2, height: 110, viewport: viewport.New(viewport.WithWidth(tc.width), viewport.WithHeight(100)), messages: gai.Dialog{message}}
+			if tc.twice {
+				m.messages = append(m.messages, gai.ToolResultMessage("second", tc.blocks...))
+			}
+			before, err := json.Marshal(m.messages)
+			if err != nil {
+				t.Fatal(err)
+			}
+			themed := theme.Default()
+			themed.Colors.Tool = "#123456"
+			m.applyTheme(themed) // Include colored tool text and its reset sequences.
+			m.viewport.SetWidth(tc.width)
+			m.viewport.SetHeight(100)
+			m.refresh(false)
+			view := ansi.Strip(m.viewport.View())
+			if count := strings.Count(view, tc.needle); count != tc.count {
+				t.Fatalf("preview contains %d %q, want %d:\n%s", count, tc.needle, tc.count, view)
+			}
+			if tc.notice == "" && strings.Contains(view, "more lines") || tc.notice != "" && !strings.Contains(view, tc.notice) {
+				t.Fatalf("truncation notice mismatch:\n%s", view)
+			}
+			after, err := json.Marshal(m.messages)
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatal("display truncation changed the underlying messages")
+			}
+		})
+	}
+
 }
 
 func (b *outputBuffer) Write(p []byte) (int, error) {

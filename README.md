@@ -171,6 +171,12 @@ is queued or sent automatically. The draft survives completion, errors, and
 cancellation. Slash completion returns when the agent becomes idle. The normal
 composer remains locked during login.
 
+Starlark results show the first 20 terminal rows per result, followed by a count
+of hidden rows. The limit includes wrapped lines and image placeholders across
+all blocks. The model and JSONL session keep the complete tool result (subject to
+`agent.output_limit`); `/session` shows its file path. Assistant replies and
+Starlark source code are displayed in full.
+
 Start a draft with `/` to see a small command popup above the composer. Keep
 typing to filter, use Up/Down to select, Tab to complete without running, or
 the configured submit key to run the selection. `/branch` completion leaves room for a checkpoint ID.
@@ -605,6 +611,8 @@ pickers, or `/model alternate` and `/reasoning high` for direct changes.
 Use `/login` → OpenCode Go (or `/login opencode-go`) and the dummy key
 `fixture-go-key` to exercise masked entry and model import. This fixture takes
 two seconds, supports cancellation, and never contacts OpenCode or saves a real key.
+Send `verbose` for 60 lines of Starlark output: the TUI previews 20 rows, while
+`terminal.jsonl` retains all 60.
 Send `scroll` for a long streamed response: scroll up while it runs, verify the
 reading position stays put through completion, then scroll down to follow again.
 Send `compute`, restart the process, then send `restore` to verify the saved

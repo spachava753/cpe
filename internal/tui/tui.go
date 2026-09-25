@@ -458,10 +458,13 @@ func (m *model) refresh(bottom bool) {
 		return
 	}
 	var b strings.Builder
+	var previews []toolPreview
+	line := 0
 	if len(m.messages) == 0 {
 		b.WriteString("A conversation with a persistent workspace.\n\nAsk a question or describe a change.\n")
 	}
 	for _, message := range m.messages {
+		var body strings.Builder
 		label := "You"
 		labelStyle := m.styles.user
 		switch message.Role {
@@ -473,6 +476,7 @@ func (m *model) refresh(bottom bool) {
 			labelStyle = m.styles.tool.Bold(m.theme.Bold)
 		}
 		b.WriteString(labelStyle.Render(label) + "\n")
+		line++
 		for _, block := range message.Blocks {
 			if block.Content == nil {
 				continue
@@ -492,18 +496,28 @@ func (m *model) refresh(bottom bool) {
 				}
 			}
 			text = clean(text)
+			if message.Role == gai.ToolResult {
+				text = strings.TrimRight(text, "\n")
+			}
 			if block.BlockType == gai.ToolCall || message.Role == gai.ToolResult {
 				text = m.styles.tool.Render(text)
 			}
-			b.WriteString(text)
-			b.WriteByte('\n')
+			body.WriteString(text)
+			body.WriteByte('\n')
 		}
+		text := body.String()
+		if message.Role == gai.ToolResult && text != "" {
+			text = strings.TrimRight(text, "\n") + "\n"
+			previews = append(previews, toolPreview{start: line, end: line + strings.Count(text, "\n")})
+		}
+		b.WriteString(text)
 		b.WriteByte('\n')
+		line += strings.Count(text, "\n") + 1
 	}
 	if m.provisional != "" {
 		b.WriteString(m.styles.assistant.Render("Assistant") + "\n" + clean(m.provisional))
 	}
-	m.setViewportContent(b.String(), bottom)
+	m.setViewportContent(b.String(), bottom, previews...)
 }
 func (m model) View() tea.View {
 	v := tea.NewView(m.viewContent())

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
@@ -19,22 +20,53 @@ type transcriptScroll struct {
 	offset    int
 }
 
+const toolPreviewRows = 20
+
+// toolPreview marks a tool result's logical lines, excluding its label and
+// separator. Rendering can elide rows without changing conversation anchors.
+type toolPreview struct {
+	start, end int
+}
+
 // setViewportContent preserves a logical reading position, rather than a row
 // number that changes with terminal width. Geometry may clamp the position but
 // cannot change following: only user scrolling or explicit navigation does.
-func (m *model) setViewportContent(content string, following bool) {
+func (m *model) setViewportContent(content string, following bool, previews ...toolPreview) {
 	anchor := m.scroll.anchor
 	if row := m.viewport.YOffset(); row != m.scroll.offset && row < len(m.scroll.rows) {
 		anchor = m.scroll.rows[row]
 	}
 	var rows []string
 	var anchors []textAnchor
+	preview, shown, hidden := 0, 0, 0
+	width := max(1, m.viewport.Width())
 	for line, text := range strings.Split(content, "\n") {
+		limited := preview < len(previews) && line >= previews[preview].start && line < previews[preview].end
 		cell := 0
-		for row := range strings.SplitSeq(ansi.Hardwrap(text, max(1, m.viewport.Width()), true), "\n") {
-			rows = append(rows, row)
-			anchors = append(anchors, textAnchor{line: line, cell: cell})
+		for row := range strings.SplitSeq(ansi.Hardwrap(text, width, true), "\n") {
+			if !limited || shown < toolPreviewRows {
+				rows = append(rows, row)
+				anchors = append(anchors, textAnchor{line: line, cell: cell})
+			} else {
+				hidden++
+			}
+			if limited {
+				shown++
+			}
 			cell += ansi.StringWidth(row)
+		}
+		if limited && line == previews[preview].end-1 {
+			if hidden > 0 {
+				unit := "lines"
+				if hidden == 1 {
+					unit = "line"
+				}
+				notice := fmt.Sprintf("… %d more %s · full result in session", hidden, unit)
+				rows = append(rows, m.styles.muted.Render(ansi.Truncate(notice, width, "…")))
+				anchors = append(anchors, textAnchor{line: line, cell: cell})
+			}
+			preview++
+			shown, hidden = 0, 0
 		}
 	}
 	m.viewport.SetContentLines(rows)

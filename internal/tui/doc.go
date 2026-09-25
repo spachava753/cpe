@@ -2,7 +2,10 @@
 // accepted messages and provisional streamed text; a textarea accepts multiline
 // prompts. Agent work runs off the UI loop and sends ordered events through one
 // channel. Image content is represented by an [Image: MIME] placeholder; the
-// model receives the actual image block rather than a base64 text dump.
+// model receives the actual image block rather than a base64 text dump. Each
+// Starlark result previews at most 20 wrapped rows across all its blocks, followed
+// by a hidden-row count. The full result remains in the agent and session; only
+// presentation is shortened. Source code and assistant replies are not capped.
 // Esc or Ctrl+C cancels active work; the program waits for reconciliation
 // before allowing another operation. Ctrl+C when idle or /quit exits. Shift+Enter
 // inserts a newline when the terminal reports modified keys; Ctrl+J is a fallback

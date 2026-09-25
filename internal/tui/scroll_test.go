@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -40,4 +41,29 @@ func TestModelSetViewportContent(t *testing.T) {
 			}
 		})
 	}
+	t.Run("reading after a resized preview", func(t *testing.T) {
+		text := "Starlark\n" + strings.Repeat(strings.Repeat("x", 72)+"\n", 10) + "\nAssistant\n"
+		for i := range 40 {
+			text += fmt.Sprintf("Kept line %03d\n", i)
+		}
+		preview := toolPreview{start: 1, end: 11}
+		m := model{viewport: viewport.New(viewport.WithWidth(80), viewport.WithHeight(5))}
+		m.setViewportContent(text, false, preview)
+		m.viewport.SetYOffset(20)
+		m.setViewportContent(text, false, preview)
+		before, _, _ := strings.Cut(ansi.Strip(m.viewport.View()), "\n")
+		if !strings.HasPrefix(before, "Kept line 007") {
+			t.Fatalf("unexpected reading position: %q", before)
+		}
+		for _, width := range []int{24, 80, 40, 80} {
+			m.viewport.SetWidth(width)
+			m.setViewportContent(text, false, preview)
+			m.setViewportContent(text+"Another message", false, preview)
+			top, _, _ := strings.Cut(ansi.Strip(m.viewport.View()), "\n")
+			if !strings.HasPrefix(top, "Kept line 007") || m.scroll.following {
+				t.Fatalf("preview reflow moved the reading position: %q", top)
+			}
+		}
+	})
+
 }

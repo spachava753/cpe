@@ -167,6 +167,9 @@ func (g *terminalGenerator) Stream(ctx context.Context, req gai.GenerationReques
 			}
 			g.next++
 			code := `answer = 6 * 7; print(answer)`
+			if text == "verbose" {
+				code = `for i in range(60): print("Output fixture line %03d" % i)`
+			}
 			if text == "slow" {
 				code = `load("time.star", "time"); time.sleep(3); answer = 6 * 7; print(answer)`
 			}
