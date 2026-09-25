@@ -20,6 +20,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/config"
+	"github.com/spachava753/cpe/internal/skills"
 	"github.com/spachava753/cpe/internal/theme"
 )
 
@@ -89,6 +90,7 @@ type model struct {
 	themeRevision uint64
 	themeError    string
 	completion    completion
+	commands      []slashCommand
 }
 
 func newModel(ctx context.Context, a *agent.Agent, name string) model {
@@ -104,6 +106,10 @@ func newModel(ctx context.Context, a *agent.Agent, name string) model {
 	spin.Spinner = spinner.Dot
 	m := model{ctx: ctx, agent: a, name: name, input: input, viewport: viewport.New(80, 14), spinner: spin, width: 80, height: 24, messages: a.Messages(), notice: "/help for commands"}
 	m.profile = a.Model()
+	m.commands = append([]slashCommand{}, slashCommands...)
+	for _, command := range a.Skills().Commands() {
+		m.commands = append(m.commands, slashCommand{name: command.Name, description: oneline(command.Description)})
+	}
 	m.usage, m.contextTokens = a.Usage(), a.ContextEstimate()
 	m.newGenerator = func(ctx context.Context, profile config.Model) (gai.Generator, error) {
 		dir, err := config.Directory()
@@ -358,7 +364,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case quitCommand, exitCommand:
 				return m, tea.Quit
 			case helpCommand:
-				m.notice = "/model  /reasoning  /theme  /usage  /login  /compact  /tree  /branch ID  /session  /quit"
+				m.notice = "/model  /reasoning  /theme  /usage  /login  /skill:NAME [args]  /compact  /tree  /branch ID  /session  /quit"
 				return m, nil
 			case usageCommand:
 				m.staticView = ""
@@ -389,7 +395,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.notice = "History is preserved when branching"
 				return m, nil
 			}
-			if !literalSlash && strings.HasPrefix(text, "/") && text != compactCommand && !strings.HasPrefix(text, branchCommand+" ") {
+			if !literalSlash && strings.HasPrefix(text, "/") && text != compactCommand && !strings.HasPrefix(text, branchCommand+" ") && !strings.HasPrefix(command, skills.CommandPrefix) {
 				m.notice = "Unknown command. /help for commands"
 				return m, nil
 			}

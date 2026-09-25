@@ -139,6 +139,7 @@ resuming, branching, or switching profiles.
 | `/reasoning default` | Restore the active profile's configured effort |
 | `/theme` or `/theme NAME` | Pick or switch themes and save the selection |
 | `/usage` | Show exact session token totals, estimated cost, and context budget |
+| `/skill:NAME [arguments]` | Invoke an installed skill |
 | `/session` | Show the JSONL path |
 | `/tree` | List saved checkpoints |
 | `/branch ID` | Continue from a checkpoint, preserving other branches |
@@ -159,6 +160,55 @@ that draft. Remove the leading slash or send/clear the draft to enable it again.
 After dismissal, an unrecognized slash prefix such as `/tmp` can be sent as
 ordinary prompt text; recognized commands still work. Slashes inside prose or
 paths, multiline input, and command arguments do not trigger the popup.
+
+## Skills
+
+CPE discovers [Agent Skills](https://agentskills.io/specification) at startup in
+`~/.agents/skills` and `./agents/skills`, relative to the current working directory.
+Each immediate child directory contains a `SKILL.md`; symlinked directories work.
+Project skills override global skills with the same name. Invalid files produce
+warnings and are skipped; an invalid project override also hides its global copy.
+Restart CPE after changing skill metadata or installing a skill.
+
+For example, `./agents/skills/review/SKILL.md`:
+
+```markdown
+---
+name: review
+description: Review code changes for correctness and missing tests.
+---
+Read the requested diff, inspect relevant code and tests, and report actionable
+findings. Resolve any supporting references relative to this skill directory.
+```
+
+Type `/skill:` to browse installed skills, then filter by name. Tab completes the
+command so you can add arguments, such as `/skill:review staged changes`; Enter
+invokes it. This also works with `cpe --prompt '/skill:review staged changes'`.
+
+By default both you and the model can invoke a skill. CPE supports these
+[invocation-control extensions](https://code.claude.com/docs/en/skills#control-who-invokes-a-skill)
+as top-level YAML booleans:
+
+| Frontmatter | Slash command | Automatic model discovery |
+| --- | --- | --- |
+| Neither flag | Available | Available |
+| `disable-model-invocation: true` | Available | Hidden |
+| `user-invocable: false` | Hidden and rejected | Available |
+| Both restrictions | Hidden and rejected | Hidden |
+
+The model sees only names, descriptions, and paths for model-invocable skills.
+An explicit command records your input and instructions to read the selected
+`SKILL.md` through `starlark_repl`. The model reads references and runs scripts
+through the same REPL as needed. Bodies are not added to the initial system
+prompt, and no extra model tool is registered. Existing host-call durability
+covers those reads and executions, so restoring a session does not repeat them.
+
+Invocation controls govern discovery and explicit commands; they are not file
+access restrictions. Arguments remain ordinary user text. CPE does not implement
+template substitution, inline shell expansion, `allowed-tools` enforcement, or
+client-specific execution modes from other skill hosts.
+
+## Models and usage
 
 Model and reasoning pickers use Up/Down, Enter to apply, and Esc to cancel.
 For example, `/model sol` switches to your `sol` profile and `/reasoning high`
@@ -536,6 +586,10 @@ two seconds, supports cancellation, and never contacts OpenCode or saves a real 
 Send `compute`, restart the process, then send `restore` to verify the saved
 variable. Send `wait` and press Esc to test cancellation. This harness also works
 inside tmux, where `capture-pane` provides the actual rendered terminal grid.
+The harness creates isolated `review`, `publish` (user-only), and `background`
+(model-only) skills beneath `CPE_TUI_TEST_DIR/agents/skills`. Type `/skill:` to test
+completion, `/skill:review staged changes` to read a skill through the REPL, and
+`/skill:background` to verify that direct user invocation is rejected.
 The harness also reads `themes.json` from `CPE_TUI_TEST_DIR`; use an explicit JSON `palette_file`
 to point at fixture palettes and test live edits without changing the desktop.
 

@@ -16,6 +16,7 @@ import (
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/repl"
 	"github.com/spachava753/cpe/internal/session"
+	"github.com/spachava753/cpe/internal/skills"
 )
 
 // Options supplies all internal SDK dependencies. Generator can be a provider
@@ -27,6 +28,7 @@ type Options struct {
 	Store     *session.Store
 	CWD       string
 	Tools     []repl.Tool
+	Skills    skills.Catalog
 }
 
 const (
@@ -267,7 +269,11 @@ func (a *Agent) Prompt(ctx context.Context, text string, emit func(Event)) error
 	if strings.TrimSpace(text) == "" {
 		return errors.New("empty prompt")
 	}
-	input := gai.Message{Role: gai.User, Blocks: []gai.Block{gai.TextBlock(text)}}
+	expanded, err := a.opts.Skills.Expand(text)
+	if err != nil {
+		return err
+	}
+	input := gai.Message{Role: gai.User, Blocks: []gai.Block{gai.TextBlock(expanded)}}
 	prospective := append(append(gai.Dialog{}, a.dialog...), input)
 	request := a.conversationRequest(prospective)
 	compact, err := a.needsCompaction(request)
@@ -372,8 +378,12 @@ func replDefinition() gai.Tool {
 }
 
 func (a *Agent) instructions() gai.Message {
-	return gai.SystemMessage(gai.TextBlock(a.opts.Config.System + "\n\n" + replDescription + repl.ToolInstructions(a.opts.Tools)))
+	return gai.SystemMessage(gai.TextBlock(a.opts.Config.System + "\n\n" + replDescription + repl.ToolInstructions(a.opts.Tools) + a.opts.Skills.Instructions()))
 }
+
+// Skills returns the immutable catalog used for discovery and user invocation.
+func (a *Agent) Skills() skills.Catalog { return a.opts.Skills }
+
 func shortLabel(text string) string {
 	r := []rune(strings.ReplaceAll(text, "\n", " "))
 	return string(r[:min(len(r), 80)])

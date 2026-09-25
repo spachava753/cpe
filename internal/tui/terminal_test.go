@@ -19,6 +19,7 @@ import (
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/repl"
 	"github.com/spachava753/cpe/internal/session"
+	"github.com/spachava753/cpe/internal/skills"
 	"github.com/spachava753/cpe/internal/testutil/testgate"
 )
 
@@ -48,10 +49,29 @@ func TestTerminalHarness(t *testing.T) {
 		profile.Cost, profile.ContextWindow = pricing, 272000
 		profiles[name] = profile
 	}
-	gen := &terminalGenerator{}
+	skillRoot := filepath.Join(dir, "agents", "skills")
+	for _, fixture := range []struct{ name, description, flags string }{
+		{"review", "Review the current changes", ""},
+		{"publish", "Publish only when explicitly requested", "disable-model-invocation: true\n"},
+		{"background", "Background knowledge for the model", "user-invocable: false\n"},
+	} {
+		skillDir := filepath.Join(skillRoot, fixture.name)
+		if err := os.MkdirAll(skillDir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		data := "---\nname: " + fixture.name + "\ndescription: " + fixture.description + "\n" + fixture.flags + "---\nTerminal skill fixture: " + fixture.name
+		if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	catalog, warnings := skills.Discover(skillRoot)
+	if len(warnings) != 0 {
+		t.Fatal(warnings)
+	}
+	gen := &terminalGenerator{skillRoot: skillRoot}
 	a, err := agent.Open(t.Context(), agent.Options{
 		Config: config.Config{System: "Terminal test", Agent: config.Agent{ToolTimeout: "5s", OutputLimit: 32000, MaxRounds: 5}, Compaction: config.Compaction{Prompt: "Summarize"}},
-		Model:  profiles["terminal-fixture"], Generator: gen, Store: store, CWD: dir,
+		Model:  profiles["terminal-fixture"], Generator: gen, Store: store, CWD: dir, Skills: catalog,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +112,10 @@ func TestTerminalHarness(t *testing.T) {
 	}
 }
 
-type terminalGenerator struct{ next int }
+type terminalGenerator struct {
+	next      int
+	skillRoot string
+}
 
 func (g *terminalGenerator) Generate(_ context.Context, _ gai.GenerationRequest) (gai.Response, error) {
 	return gai.Response{Candidates: []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("The user tested CPE. Persistent variable answer is 42.")}}}, FinishReason: gai.EndTurn}, nil
@@ -125,6 +148,10 @@ func (g *terminalGenerator) Stream(ctx context.Context, req gai.GenerationReques
 			if strings.Contains(text, "image") {
 				code = `load("repl.star", "emit_image"); emit_image("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l1sAAAAASUVORK5CYII=", mime_type="image/png")`
 			}
+			if strings.HasPrefix(text, skills.CommandPrefix) {
+				name := strings.TrimPrefix(strings.Fields(text)[0], skills.CommandPrefix)
+				code = fmt.Sprintf("skill_file = open(%q)\nskill_text = skill_file.read()\nskill_file.close()\nprint(\"Skill instructions:\", skill_text)", filepath.Join(g.skillRoot, name, "SKILL.md"))
+			}
 			params, err := json.Marshal(map[string]any{"code": code})
 			if err != nil {
 				yield(gai.StreamChunk{Err: err})
@@ -138,7 +165,11 @@ func (g *terminalGenerator) Stream(ctx context.Context, req gai.GenerationReques
 			}
 			return
 		}
-		for _, text := range []string{"The answer ", "is 42. ", "The Starlark state has been saved."} {
+		parts := []string{"The answer ", "is 42. ", "The Starlark state has been saved."}
+		if last.Role == gai.ToolResult && strings.Contains(last.Blocks[0].Content.String(), "Skill instructions:") {
+			parts = []string{"Skill loaded through the REPL."}
+		}
+		for _, text := range parts {
 			select {
 			case <-ctx.Done():
 				yield(gai.StreamChunk{Err: ctx.Err()})

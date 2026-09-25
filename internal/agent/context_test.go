@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/repl"
 	"github.com/spachava753/cpe/internal/session"
+	"github.com/spachava753/cpe/internal/skills"
 )
 
 func TestContextBudgetCompactsAndRejectsOversizedInput(t *testing.T) {
@@ -99,13 +101,30 @@ func TestContextEstimateUsesReportedInputAndResetsAfterCompaction(t *testing.T) 
 }
 
 func TestAgentPrompt(t *testing.T) {
-	for _, reopen := range []bool{false, true} {
-		name := "retry in same agent"
-		if reopen {
-			name = "retry after reopen"
-		}
-		t.Run(name, func(t *testing.T) {
+	for _, tc := range []struct {
+		name, input, wantError string
+		reopen                 bool
+	}{
+		{"oversized retry in same agent", strings.Repeat("oversized input ", 5000), "context_window", false},
+		{"oversized retry after reopen", strings.Repeat("oversized input ", 5000), "context_window", true},
+		{"unknown skill retry in same agent", "/skill:missing", "unknown skill", false},
+		{"unknown skill retry after reopen", "/skill:missing", "unknown skill", true},
+		{"model-only skill retry in same agent", "/skill:background", "not user-invocable", false},
+		{"model-only skill retry after reopen", "/skill:background", "not user-invocable", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
+			skillDir := filepath.Join(dir, "skills", "background")
+			if err := os.MkdirAll(skillDir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: background\ndescription: Background knowledge\nuser-invocable: false\n---\nRead only when relevant."), 0600); err != nil {
+				t.Fatal(err)
+			}
+			catalog, warnings := skills.Discover(filepath.Dir(skillDir))
+			if len(warnings) != 0 {
+				t.Fatal(warnings)
+			}
 			path := filepath.Join(dir, "session.jsonl")
 			store, err := session.Open(path, dir, repl.Runtime)
 			if err != nil {
@@ -121,20 +140,20 @@ func TestAgentPrompt(t *testing.T) {
 				},
 				Response: gai.Response{Candidates: []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("ready")}}}, FinishReason: gai.EndTurn},
 			})
-			opts := Options{Config: config.Config{Agent: config.Agent{ToolTimeout: "1s", MaxRounds: 3}, Compaction: config.Compaction{Prompt: "Summarize"}}, Model: config.Model{ID: "fixture", ContextWindow: 3000}, Generator: gen, Store: store, CWD: dir}
+			opts := Options{Config: config.Config{Agent: config.Agent{ToolTimeout: "1s", MaxRounds: 3}, Compaction: config.Compaction{Prompt: "Summarize"}}, Model: config.Model{ID: "fixture", ContextWindow: 3000}, Generator: gen, Store: store, CWD: dir, Skills: catalog}
 			a, err := Open(t.Context(), opts)
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer func() { _ = a.Close() }()
 			before := len(store.Entries())
-			if err := a.Prompt(t.Context(), strings.Repeat("oversized input ", 5000), nil); err == nil || !strings.Contains(err.Error(), "context_window") {
-				t.Fatalf("oversized prompt accepted: %v", err)
+			if err := a.Prompt(t.Context(), tc.input, nil); err == nil || !strings.Contains(err.Error(), tc.wantError) {
+				t.Fatalf("prompt error = %v, want %q", err, tc.wantError)
 			}
 			if len(a.Messages()) != 0 || len(store.Entries()) != before || a.Usage().Requests != 0 {
 				t.Fatal("rejected input changed the session")
 			}
-			if reopen {
+			if tc.reopen {
 				if err := a.Close(); err != nil {
 					t.Fatal(err)
 				}

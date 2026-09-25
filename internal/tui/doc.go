@@ -21,6 +21,10 @@
 // The popup shrinks or hides when terminal space is insufficient, and hidden
 // suggestions never capture navigation or Enter. Reloading themes and resizing
 // preserve the completion selection, draft and conversation scroll position.
+// /skill:NAME [arguments] uses the agent's startup catalog. Completion includes
+// only user-invocable skills, with sanitized descriptions. Tab leaves arguments
+// editable; Enter submits the selection to Agent.Prompt for resolution and
+// persistence. The /skill: prefix remains a command after Escape, like /model.
 //
 // /login opens a provider picker; /login codex opens browser PKCE, and /login
 // device shows a Codex device code. /login opencode-go opens masked API-key input,

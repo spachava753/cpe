@@ -27,6 +27,7 @@ import (
 	"github.com/spachava753/cpe/internal/opencodego"
 	"github.com/spachava753/cpe/internal/repl"
 	"github.com/spachava753/cpe/internal/session"
+	"github.com/spachava753/cpe/internal/skills"
 	"github.com/spachava753/cpe/internal/tui"
 	"github.com/spachava753/cpe/internal/version"
 )
@@ -168,7 +169,15 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 		defer func() { _ = connection.Close() }()
 		tools = append(tools, connection.Tools()...)
 	}
-	a, err := agent.Open(ctx, agent.Options{Config: c, Model: model, Generator: generator, Store: store, CWD: cwd, Tools: tools})
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	catalog, warnings := skills.Discover(filepath.Join(home, ".agents", "skills"), filepath.Join(cwd, "agents", "skills"))
+	for _, warning := range warnings {
+		fmt.Fprintf(errOut, "Skill warning: %q\n", warning.Error())
+	}
+	a, err := agent.Open(ctx, agent.Options{Config: c, Model: model, Generator: generator, Store: store, CWD: cwd, Tools: tools, Skills: catalog})
 	if err != nil {
 		return err
 	}

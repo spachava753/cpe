@@ -9,4 +9,8 @@
 // Provider construction binds the session's root entry ID, preserving OpenCode
 // Go's routing/cache identity on reopen, branch, model switching, and compaction.
 // TUI login supports Codex OAuth or OpenCode Go API-key storage/model import.
+// Startup discovers skills in ~/.agents/skills and ./agents/skills (relative to
+// the working directory), with project skills taking precedence. Diagnostics go
+// to stderr without blocking other skills. The same catalog supplies model
+// metadata, TUI completion, and /skill:NAME expansion in --prompt mode.
 package cli

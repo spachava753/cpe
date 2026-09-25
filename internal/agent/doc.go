@@ -6,6 +6,12 @@
 // Both normal completion and interrupted-result reconciliation preserve them.
 // Provider accepts an explicit credential directory and durable conversation ID;
 // OpenCode Go uses them for lazy API-key loading and stable per-session headers.
+// Options also accepts an immutable skills.Catalog. Model instructions disclose
+// only model-invocable skill metadata. Prompt resolves /skill:NAME [arguments]
+// before context admission or persistence; unknown and model-only commands fail
+// without changing history. Accepted invocations record the original input and
+// an absolute SKILL.md path to read through the REPL. Reopen uses these recorded
+// messages and host results, without re-resolving historical skill commands.
 //
 // The gai/agent loop supplies generation, streaming, and tool hooks. Complete
 // assistant responses are persisted before tools run; results are persisted

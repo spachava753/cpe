@@ -70,7 +70,7 @@ func (m *model) syncCompletion() {
 	c.query, c.matches = value, nil
 	info := m.input.LineInfo()
 	if !m.busy && !m.loggingIn && m.picker == nil && !c.dismissed && m.input.LineCount() == 1 && strings.HasPrefix(value, "/") && info.StartColumn+info.ColumnOffset == utf8.RuneCountInString(value) {
-		for _, command := range slashCommands {
+		for _, command := range m.commands {
 			if strings.HasPrefix(command.name, value) {
 				c.matches = append(c.matches, command)
 			}
