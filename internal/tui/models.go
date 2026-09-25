@@ -5,8 +5,8 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/charmbracelet/bubbles/list"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/list"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/spachava753/cpe/internal/config"
 )
@@ -86,7 +86,7 @@ func (m *model) configureModel(command, value string) {
 
 func (m *model) openPicker(command, title string, items []list.Item, selected int) {
 	delegate := m.pickerDelegate()
-	l := list.New(items, delegate, m.viewport.Width, m.viewport.Height)
+	l := list.New(items, delegate, m.viewport.Width(), m.viewport.Height())
 	l.SetShowTitle(false)
 	l.SetShowStatusBar(false)
 	l.SetShowHelp(false)
@@ -98,15 +98,15 @@ func (m *model) openPicker(command, title string, items []list.Item, selected in
 	m.notice = title
 }
 
-func (m model) updatePicker(key tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m model) updatePicker(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case quitKey:
 		return m, tea.Quit
-	case "esc":
+	case escapeKey:
 		m.picker = nil
 		m.notice = "Selection canceled"
 		return m, nil
-	case "enter":
+	case enterKey:
 		if selected, ok := m.picker.list.SelectedItem().(choice); ok {
 			command := m.picker.command
 			m.picker = nil

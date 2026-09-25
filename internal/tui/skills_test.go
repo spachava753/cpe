@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/spachava753/gai"
 	"github.com/spachava753/gai/agent/agenttest"
 
@@ -21,7 +21,7 @@ import (
 func TestSkillSlashCommands(t *testing.T) {
 	for _, tc := range []struct {
 		name, draft, args, wantPrompt, wantError string
-		key                                      tea.KeyType
+		key                                      rune
 	}{
 		{name: "tab then arguments", draft: "/skill:re", key: tea.KeyTab, args: "staged changes", wantPrompt: "/skill:review staged changes"},
 		{name: "enter runs user-only skill", draft: "/skill:pu", key: tea.KeyEnter, wantPrompt: "/skill:publish"},
@@ -60,7 +60,7 @@ func TestSkillSlashCommands(t *testing.T) {
 			}
 			defer a.Close()
 			m := newModel(t.Context(), a, "skills-fixture")
-			next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/skill:")})
+			next, _ := m.Update(tea.KeyPressMsg{Text: "/skill:"})
 			m = next.(model)
 			if len(m.completion.matches) != 2 || m.completion.matches[0].name != "/skill:publish" || m.completion.matches[1].name != "/skill:review" {
 				t.Fatalf("unexpected skill suggestions: %+v", m.completion.matches)
@@ -71,20 +71,20 @@ func TestSkillSlashCommands(t *testing.T) {
 			m.input.SetValue(tc.draft)
 			m.syncCompletion()
 			before := len(store.Entries())
-			next, _ = m.Update(tea.KeyMsg{Type: tc.key})
+			next, _ = m.Update(tea.KeyPressMsg{Code: tc.key})
 			m = next.(model)
 			if tc.key != tea.KeyEnter {
 				if m.busy || m.completionHeight() != 0 {
 					t.Fatal("Tab/Escape executed a skill or left completion open")
 				}
 				if tc.args != "" {
-					next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tc.args)})
+					next, _ = m.Update(tea.KeyPressMsg{Text: tc.args})
 					m = next.(model)
 					if m.input.Value() != tc.wantPrompt {
 						t.Fatalf("completed draft = %q", m.input.Value())
 					}
 				}
-				next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+				next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 				m = next.(model)
 			}
 			if !m.busy {

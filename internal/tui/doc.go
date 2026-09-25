@@ -4,10 +4,11 @@
 // channel. Image content is represented by an [Image: MIME] placeholder; the
 // model receives the actual image block rather than a base64 text dump.
 // Esc or Ctrl+C cancels active work; the program waits for reconciliation
-// before allowing another operation. Ctrl+C when idle or /quit exits. Alt+Enter
-// inserts a newline, Enter submits, and PgUp/PgDn scroll the conversation.
+// before allowing another operation. Ctrl+C when idle or /quit exits. Shift+Enter
+// inserts a newline when the terminal reports modified keys; Ctrl+J is a fallback
+// for legacy terminals. Enter submits, and PgUp/PgDn scroll the conversation.
 // While agent work is active, the composer remains editable for the next draft,
-// including paste and Alt+Enter. Enter neither submits nor queues it until work
+// including paste and Shift+Enter. Enter neither submits nor queues it until work
 // finishes. Completion, errors, and cancellation preserve the draft and cursor;
 // slash completion resumes when idle. During login, the normal composer stays
 // locked and private credential input retains its separate routing.

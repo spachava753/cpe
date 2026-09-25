@@ -5,8 +5,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -95,18 +95,18 @@ func (m *model) closeCompletion(literal bool) {
 // completionKey reports whether it consumed the key. Enter may fill a command
 // and then fall through to normal dispatch; commands requiring an argument stay
 // in the composer. Tab never executes a command.
-func (m *model) completionKey(key tea.KeyMsg) bool {
-	if m.completionHeight() == 0 || key.Alt {
+func (m *model) completionKey(key tea.KeyPressMsg) bool {
+	if m.completionHeight() == 0 || key.Mod&^(tea.ModCapsLock|tea.ModNumLock) != 0 {
 		return false
 	}
 	c := &m.completion
-	switch key.Type {
+	switch key.Code {
 	case tea.KeyEsc:
 		m.closeCompletion(true)
 		return true
 	case tea.KeyUp, tea.KeyDown:
 		delta := 1
-		if key.Type == tea.KeyUp {
+		if key.Code == tea.KeyUp {
 			delta = -1
 		}
 		c.selected = (c.selected + delta + len(c.matches)) % len(c.matches)
@@ -114,12 +114,12 @@ func (m *model) completionKey(key tea.KeyMsg) bool {
 	case tea.KeyTab, tea.KeyEnter:
 		command := c.matches[c.selected]
 		text := command.name
-		if command.argument || key.Type == tea.KeyTab {
+		if command.argument || key.Code == tea.KeyTab {
 			text += " "
 		}
 		m.input.SetValue(text)
 		m.closeCompletion(false)
-		return command.argument || key.Type == tea.KeyTab
+		return command.argument || key.Code == tea.KeyTab
 	}
 	return false
 }

@@ -2,13 +2,14 @@ package tui
 
 import (
 	"context"
+	stdcolor "image/color"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/spachava753/cpe/internal/theme"
 )
@@ -79,9 +80,9 @@ func (m *model) configureTheme(name string) {
 	m.openPicker(themeCommand, "Choose theme · Enter saves for future sessions", items, selected)
 }
 
-func color(value string) lipgloss.TerminalColor {
+func color(value string) stdcolor.Color {
 	if value == "default" {
-		return lipgloss.NoColor{}
+		return nil
 	}
 	return lipgloss.Color(value)
 }
@@ -89,7 +90,7 @@ func color(value string) lipgloss.TerminalColor {
 func (m *model) applyTheme(t theme.Theme) {
 	bottom := m.viewport.AtBottom()
 	m.theme = t
-	base := m.renderer.NewStyle().Foreground(color(t.Colors.Foreground)).Background(color(t.Colors.Background))
+	base := lipgloss.NewStyle().Foreground(color(t.Colors.Foreground)).Background(color(t.Colors.Background))
 	m.styles = styles{
 		base: base, accent: base.Foreground(color(t.Colors.Accent)).Bold(t.Bold),
 		muted:     base.Foreground(color(t.Colors.Muted)).Italic(t.Italic),
@@ -102,17 +103,15 @@ func (m *model) applyTheme(t theme.Theme) {
 	}
 	m.spinner.Style = m.styles.accent
 	m.viewport.Style = base
-	m.input.FocusedStyle = textarea.Style{
+	inputStyles := m.input.Styles()
+	inputStyles.Focused = textarea.StyleState{
 		Base: base, Text: base, CursorLine: base, CursorLineNumber: m.styles.muted,
 		LineNumber: m.styles.muted, EndOfBuffer: m.styles.muted,
 		Placeholder: m.styles.muted, Prompt: m.styles.accent,
 	}
-	m.input.BlurredStyle = m.input.FocusedStyle
-	// Textarea retains a pointer to the active style across value copies. Rebind
-	// it after replacing styles so a live reload also updates the editor.
-	m.input.Focus()
-	m.input.Cursor.Style = base.Foreground(color(t.Colors.Accent))
-	m.input.Cursor.TextStyle = base
+	inputStyles.Blurred = inputStyles.Focused
+	inputStyles.Cursor.Color = color(t.Colors.Accent)
+	m.input.SetStyles(inputStyles)
 	if m.picker != nil {
 		m.picker.list.SetDelegate(m.pickerDelegate())
 	}
@@ -143,7 +142,7 @@ func (m model) themeStatus() string {
 func (m model) canvas(content string) string {
 	const reset = "\x1b[0m"
 	view := m.styles.base.Width(m.width).Height(m.height).Render(content)
-	// Lip Gloss v1 resets nested styles to the terminal defaults. Restore the
+	// Nested styles can reset colors to the terminal defaults. Restore the
 	// canvas colors after those resets so padding following a heading/tool block
 	// does not show the terminal's background through an explicit theme background.
 	prefix, _, _ := strings.Cut(m.styles.base.Render("x"), "x")
@@ -151,7 +150,7 @@ func (m model) canvas(content string) string {
 		view = strings.ReplaceAll(view, reset, reset+prefix)
 		view = strings.TrimSuffix(view, prefix)
 	}
-	// NoColor emits no SGR code. Reset the frame boundaries so switching back to
+	// Inherited colors emit no SGR code. Reset the frame boundaries so switching back to
 	// terminal inheritance cannot retain colors from a previously rendered frame.
 	return reset + view + reset
 }

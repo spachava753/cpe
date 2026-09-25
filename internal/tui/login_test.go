@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/spachava753/gai"
 	"github.com/spachava753/gai/agent/agenttest"
@@ -25,6 +25,7 @@ func TestOpenCodeGoLogin(t *testing.T) {
 	}{
 		{name: "direct login", action: "save"},
 		{name: "provider picker", action: "save", picker: true},
+		{name: "cancel pasted provider picker", action: "picker cancel", picker: true},
 		{name: "escape at input", action: "esc"},
 		{name: "control C at input", action: "ctrl+c"},
 		{name: "cancel during import", action: "cancel"},
@@ -68,24 +69,37 @@ func TestOpenCodeGoLogin(t *testing.T) {
 				command = loginCommand
 			}
 			m.input.SetValue(command)
-			next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 			m = next.(model)
 			if test.picker {
 				if m.picker == nil || m.picker.command != loginCommand {
 					t.Fatal("missing login picker")
 				}
+				next, _ = m.Update(tea.PasteMsg{Content: "private chooser paste"})
+				m = next.(model)
+				if m.input.Value() != "" || strings.Contains(m.View().Content, "private chooser paste") || len(a.Messages()) != 0 || len(store.Path()) != 1 {
+					t.Fatal("login chooser paste escaped into the composer, display, or journal")
+				}
+				if test.action == "picker cancel" {
+					next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+					m = next.(model)
+					if m.picker != nil || m.input.Value() != "" || strings.Contains(m.View().Content, "private chooser paste") {
+						t.Fatal("cancel retained pasted credentials")
+					}
+					return
+				}
 				for range 2 {
-					next, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+					next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 					m = next.(model)
 				}
-				next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+				next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 				m = next.(model)
 			}
 			if m.keyInput == nil || !m.loggingIn || m.busy || m.picker != nil {
 				t.Fatal("missing private key input")
 			}
 			const secret = "sensitive-fixture-key"
-			next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(secret), Paste: true})
+			next, _ = m.Update(tea.PasteMsg{Content: secret})
 			m = next.(model)
 			if m.input.Value() != "" || m.keyInput.Value() != secret {
 				t.Fatal("key entered composer instead of private input")
@@ -93,7 +107,7 @@ func TestOpenCodeGoLogin(t *testing.T) {
 			for _, size := range []tea.WindowSizeMsg{{Width: 100, Height: 28}, {Width: 32, Height: 12}, {Width: 24, Height: 8}} {
 				next, _ = m.Update(size)
 				m = next.(model)
-				view := m.View()
+				view := m.View().Content
 				if strings.Contains(view, secret) {
 					t.Fatal("API key visible")
 				}
@@ -107,11 +121,11 @@ func TestOpenCodeGoLogin(t *testing.T) {
 				}
 			}
 			if test.action == "esc" || test.action == "ctrl+c" {
-				key := tea.KeyEsc
+				key := tea.KeyPressMsg{Code: tea.KeyEsc}
 				if test.action == "ctrl+c" {
-					key = tea.KeyCtrlC
+					key = tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
 				}
-				next, cmd := m.Update(tea.KeyMsg{Type: key})
+				next, cmd := m.Update(key)
 				m = next.(model)
 				if cmd != nil {
 					if _, quits := cmd().(tea.QuitMsg); quits {
@@ -124,7 +138,7 @@ func TestOpenCodeGoLogin(t *testing.T) {
 				default:
 				}
 			} else {
-				next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+				next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 				m = next.(model)
 				if !m.busy || m.keyInput != nil {
 					t.Fatal("key retained while submitting")
@@ -132,10 +146,10 @@ func TestOpenCodeGoLogin(t *testing.T) {
 				if key := <-called; key != secret {
 					t.Fatal("login did not receive entered key")
 				}
-				for _, key := range []tea.KeyMsg{
-					{Type: tea.KeyRunes, Runes: []rune("ignored during login")},
-					{Type: tea.KeyEnter, Alt: true},
-					{Type: tea.KeyRunes, Runes: []rune(secret), Paste: true},
+				for _, key := range []tea.Msg{
+					tea.KeyPressMsg{Text: "ignored during login"},
+					tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift},
+					tea.PasteMsg{Content: secret},
 				} {
 					next, _ = m.Update(key)
 					m = next.(model)
@@ -144,14 +158,14 @@ func TestOpenCodeGoLogin(t *testing.T) {
 					t.Fatal("login work enabled the normal composer")
 				}
 				if test.action == "cancel" {
-					next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+					next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 					m = next.(model)
 				}
 				done := <-m.events
 				next, _ = m.Update(done)
 				m = next.(model)
 			}
-			if m.busy || m.loggingIn || m.keyInput != nil || m.loginText != "" || strings.Contains(m.View(), secret) || m.input.Value() != "" {
+			if m.busy || m.loggingIn || m.keyInput != nil || m.loginText != "" || strings.Contains(m.View().Content, secret) || m.input.Value() != "" {
 				t.Fatal("login state retained")
 			}
 			if len(a.Messages()) != 0 || len(store.Path()) != 1 {

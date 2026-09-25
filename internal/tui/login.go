@@ -3,9 +3,9 @@ package tui
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 )
 
 const loginGoCommand = "/login opencode-go"
@@ -44,6 +44,7 @@ func (m *model) configureLogin(method string) tea.Cmd {
 			return nil
 		}
 		input := textinput.New()
+		input.SetVirtualCursor(true)
 		input.Prompt = "API key: "
 		input.Placeholder = "Paste your OpenCode Go key"
 		input.EchoMode = textinput.EchoPassword
@@ -66,13 +67,13 @@ func (m *model) configureLogin(method string) tea.Cmd {
 }
 
 func (m model) updateKeyInput(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if key, ok := msg.(tea.KeyMsg); ok {
-		switch key.Type {
-		case tea.KeyPgUp, tea.KeyPgDown:
+	if key, ok := msg.(tea.KeyPressMsg); ok {
+		switch key.String() {
+		case "pgup", "pgdown":
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
 			return m, cmd
-		case tea.KeyEsc, tea.KeyCtrlC:
+		case escapeKey, "ctrl+c":
 			m.keyInput.Reset()
 			m.keyInput = nil
 			m.loggingIn, m.loginText = false, ""
@@ -80,7 +81,7 @@ func (m model) updateKeyInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.layout()
 			m.refresh(true)
 			return m, m.input.Focus()
-		case tea.KeyEnter:
+		case enterKey:
 			value := strings.TrimSpace(m.keyInput.Value())
 			if value == "" {
 				m.notice = "Paste an API key or press Esc to cancel"

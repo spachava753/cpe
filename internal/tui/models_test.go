@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/spachava753/gai"
 	"github.com/spachava753/gai/agent/agenttest"
@@ -80,7 +80,7 @@ func TestModelAndReasoningCommands(t *testing.T) {
 		{"/model alpha", firstProfile, lowEffort, "sign in with /login", true},
 	} {
 		m.input.SetValue(step.command)
-		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		m = next.(model)
 		if m.name != step.name || m.profile.ReasoningEffort != step.effort || a.Model() != m.profile || m.loginRequired != step.signedOut || !strings.Contains(m.notice, step.notice) || m.busy || m.picker != nil {
 			t.Fatalf("%q: model=%s effort=%s login=%t notice=%s", step.command, m.name, m.profile.ReasoningEffort, m.loginRequired, m.notice)
@@ -91,46 +91,51 @@ func TestModelAndReasoningCommands(t *testing.T) {
 	}
 	// Bare commands are keyboard pickers; cancellation leaves all settings alone.
 	m.input.SetValue(modelCommand)
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(model)
 	if m.picker == nil || m.picker.list.SelectedItem().(choice).value != firstProfile {
 		t.Fatal("picker did not start at current profile")
 	}
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	next, _ = m.Update(tea.PasteMsg{Content: "picker paste must stay private"})
 	m = next.(model)
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.input.Value() != "" || strings.Contains(m.View().Content, "picker paste must stay private") || len(a.Messages()) != 0 {
+		t.Fatal("picker paste reached the composer, display, or conversation")
+	}
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	m = next.(model)
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(model)
 	if m.name != secondProfile || m.loginRequired || m.picker != nil {
 		t.Fatal("picker did not apply model selection")
 	}
 	m.input.SetValue(reasoningCommand)
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(model)
 	for _, size := range []tea.WindowSizeMsg{{Width: 80, Height: 24}, {Width: 32, Height: 12}, {Width: 24, Height: 8}} {
 		next, _ = m.Update(size)
 		m = next.(model)
-		for line := range strings.SplitSeq(m.View(), "\n") {
+		for line := range strings.SplitSeq(m.View().Content, "\n") {
 			if ansi.StringWidth(line) > size.Width {
 				t.Fatalf("picker line exceeds %d: %q", size.Width, line)
 			}
 		}
-		if strings.Count(m.View(), "\n")+1 > size.Height {
-			t.Fatalf("picker exceeds height %d:\n%s", size.Height, m.View())
+		if strings.Count(m.View().Content, "\n")+1 > size.Height {
+			t.Fatalf("picker exceeds height %d:\n%s", size.Height, m.View().Content)
 		}
 	}
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	m = next.(model)
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	m = next.(model)
 	if m.profile.ReasoningEffort != "" || m.picker != nil {
 		t.Fatal("cancel changed effort")
 	}
 	m.input.SetValue(reasoningCommand)
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(model)
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	m = next.(model)
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(model)
 	if m.profile.ReasoningEffort != "none" || m.picker != nil {
 		t.Fatal("picker did not apply reasoning selection")
@@ -148,10 +153,10 @@ func TestModelAndReasoningCommands(t *testing.T) {
 					break
 				}
 			}
-			next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 			m = next.(model)
-			if m.profile.ReasoningEffort != highEffort || m.picker != nil || !strings.Contains(ansi.Strip(m.View()), highEffort) {
-				t.Fatalf("effort not selected/displayed: %s", m.View())
+			if m.profile.ReasoningEffort != highEffort || m.picker != nil || !strings.Contains(ansi.Strip(m.View().Content), highEffort) {
+				t.Fatalf("effort not selected/displayed: %s", m.View().Content)
 			}
 		})
 	}
@@ -159,7 +164,7 @@ func TestModelAndReasoningCommands(t *testing.T) {
 	// Busy turns must not permit settings mutations or picker activation.
 	m.busy = true
 	m.input.SetValue("/model alpha")
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(model)
 	if m.name != secondProfile || m.picker != nil {
 		t.Fatal("model changed during generation")

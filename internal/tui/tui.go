@@ -9,12 +9,11 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/spachava753/gai"
 
@@ -26,6 +25,8 @@ import (
 
 const loginDeviceCommand = "/login device"
 const quitKey = "ctrl+c"
+const escapeKey = "esc"
+const enterKey = "enter"
 
 type update struct {
 	event     agent.Event
@@ -85,7 +86,6 @@ type model struct {
 	theme         theme.Theme
 	appearance    theme.Appearance
 	styles        styles
-	renderer      *lipgloss.Renderer
 	themeDir      string
 	themeRevision uint64
 	themeError    string
@@ -95,6 +95,7 @@ type model struct {
 
 func newModel(ctx context.Context, a *agent.Agent, name string) model {
 	input := textarea.New()
+	input.SetVirtualCursor(true)
 	input.Placeholder = "Ask anything…"
 	input.Prompt = "› "
 	input.ShowLineNumbers = false
@@ -104,7 +105,7 @@ func newModel(ctx context.Context, a *agent.Agent, name string) model {
 	input.Focus()
 	spin := spinner.New()
 	spin.Spinner = spinner.Dot
-	m := model{ctx: ctx, agent: a, name: name, input: input, viewport: viewport.New(80, 14), spinner: spin, width: 80, height: 24, messages: a.Messages(), notice: "/help for commands"}
+	m := model{ctx: ctx, agent: a, name: name, input: input, viewport: viewport.New(viewport.WithWidth(80), viewport.WithHeight(14)), spinner: spin, width: 80, height: 24, messages: a.Messages(), notice: "/help for commands"}
 	m.profile = a.Model()
 	m.commands = append([]slashCommand{}, slashCommands...)
 	for _, command := range a.Skills().Commands() {
@@ -118,7 +119,6 @@ func newModel(ctx context.Context, a *agent.Agent, name string) model {
 		}
 		return agent.Provider(ctx, profile, dir, a.Checkpoints()[0].ID)
 	}
-	m.renderer = lipgloss.DefaultRenderer()
 	m.applyTheme(theme.Default())
 	return m
 }
@@ -149,7 +149,7 @@ func Run(ctx context.Context, a *agent.Agent, name string, options Options) erro
 	if m.loginRequired {
 		m.notice = "Sign in with /login to use this model"
 	}
-	program := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithContext(ctx))
+	program := tea.NewProgram(m, tea.WithContext(ctx))
 	final, err := program.Run()
 	// A parent-context exit can interrupt the renderer before the worker finishes.
 	// Join it before the caller closes the journal or interpreter.
@@ -300,7 +300,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.refresh(true)
 		return m, await(m.events)
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if m.keyInput != nil {
 			return m.updateKeyInput(msg)
 		}
@@ -311,7 +311,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch v.String() {
-		case quitKey, "esc":
+		case quitKey, escapeKey:
 			if m.busy {
 				m.cancel()
 				m.activity = "Canceling"
@@ -331,13 +331,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
 			return m, cmd
-		case "alt+enter":
+		case "shift+enter", "ctrl+j":
 			if !m.loggingIn {
 				m.input.InsertRune('\n')
 				m.syncCompletion()
 			}
 			return m, nil
-		case "enter":
+		case enterKey:
 			if m.busy {
 				return m, nil
 			}
@@ -422,6 +422,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.keyInput != nil {
 		return m.updateKeyInput(msg)
 	}
+	if m.picker != nil {
+		return m, nil
+	}
 	if !m.loggingIn {
 		var cmd tea.Cmd
 		m.input, cmd = m.input.Update(msg)
@@ -432,15 +435,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 func (m *model) refresh(bottom bool) {
 	if m.staticView != "" {
-		m.viewport.SetContent(ansi.Hardwrap(m.staticView, max(1, m.viewport.Width), true))
+		m.viewport.SetContent(ansi.Hardwrap(m.staticView, max(1, m.viewport.Width()), true))
 		return
 	}
 	if m.usageView {
-		m.viewport.SetContent(ansi.Hardwrap(m.usageDetails(), max(1, m.viewport.Width), true))
+		m.viewport.SetContent(ansi.Hardwrap(m.usageDetails(), max(1, m.viewport.Width()), true))
 		return
 	}
 	if m.loggingIn && m.loginText != "" {
-		m.viewport.SetContent(ansi.Wrap(clean(m.loginText), max(1, m.viewport.Width), ""))
+		m.viewport.SetContent(ansi.Wrap(clean(m.loginText), max(1, m.viewport.Width()), ""))
 		return
 	}
 	var b strings.Builder
@@ -490,12 +493,19 @@ func (m *model) refresh(bottom bool) {
 		b.WriteString(m.styles.assistant.Render("Assistant") + "\n" + clean(m.provisional))
 	}
 	wasBottom := m.viewport.AtBottom()
-	m.viewport.SetContent(ansi.Hardwrap(b.String(), max(1, m.viewport.Width), true))
+	m.viewport.SetContent(ansi.Hardwrap(b.String(), max(1, m.viewport.Width()), true))
 	if bottom || wasBottom {
 		m.viewport.GotoBottom()
 	}
 }
-func (m model) View() string {
+func (m model) View() tea.View {
+	v := tea.NewView(m.viewContent())
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
+}
+
+func (m model) viewContent() string {
 	if m.width < 24 || m.height < 8 {
 		return "Resize terminal to at least 24 × 8"
 	}
@@ -510,9 +520,9 @@ func (m model) View() string {
 		status = m.styles.muted.Render(status)
 	}
 	line := m.styles.border.Render(strings.Repeat("─", max(1, m.width-2)))
-	footer := m.styles.muted.Render("Enter send · Alt+Enter newline · PgUp/PgDn scroll · Ctrl+C quit")
+	footer := m.styles.muted.Render("Enter send · Shift+Enter newline · PgUp/PgDn scroll · Ctrl+C quit")
 	if m.busy {
-		footer = m.styles.muted.Render("Draft next message · Alt+Enter newline · Esc/Ctrl+C cancel")
+		footer = m.styles.muted.Render("Draft next message · Shift+Enter newline · Esc/Ctrl+C cancel")
 		if m.loggingIn {
 			footer = m.styles.muted.Render("Esc/Ctrl+C cancel login")
 		}
@@ -553,13 +563,17 @@ func (m *model) layout() {
 	m.input.SetWidth(max(1, m.width-2))
 	m.input.SetHeight(min(m.theme.InputHeight, max(1, m.height-overhead-1)))
 	if m.keyInput != nil {
-		m.keyInput.Width = max(1, m.width-12)
-		m.keyInput.PromptStyle, m.keyInput.TextStyle, m.keyInput.PlaceholderStyle = m.styles.accent, m.styles.base, m.styles.muted
+		m.keyInput.SetWidth(max(1, m.width-12))
+		styles := m.keyInput.Styles()
+		styles.Focused.Prompt, styles.Focused.Text, styles.Focused.Placeholder = m.styles.accent, m.styles.base, m.styles.muted
+		styles.Blurred = styles.Focused
+		styles.Cursor.Color = color(m.theme.Colors.Accent)
+		m.keyInput.SetStyles(styles)
 	}
-	m.viewport.Width = max(1, m.width-2)
-	m.viewport.Height = max(1, m.height-m.input.Height()-overhead-m.completionHeight())
+	m.viewport.SetWidth(max(1, m.width-2))
+	m.viewport.SetHeight(max(1, m.height-m.input.Height()-overhead-m.completionHeight()))
 	if m.picker != nil {
-		m.picker.list.SetSize(m.viewport.Width, m.viewport.Height)
+		m.picker.list.SetSize(m.viewport.Width(), m.viewport.Height())
 	}
 }
 

@@ -2,16 +2,14 @@ package tui
 
 import (
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 	"github.com/spachava753/gai"
 	"github.com/spachava753/gai/agent/agenttest"
 
@@ -35,14 +33,12 @@ func TestThemeReloadPreservesUIAndRecoversFromErrors(t *testing.T) {
 	}
 	defer a.Close()
 	m := newModel(t.Context(), a, "theme-fixture")
-	m.renderer = lipgloss.NewRenderer(io.Discard)
-	m.renderer.SetColorProfile(termenv.TrueColor)
 	m.messages = gai.Dialog{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock(strings.Repeat("A long conversation\n", 80))}}}
 	m.refresh(false)
 	m.viewport.SetYOffset(7)
 	m.input.SetValue("unsent draft")
 	m.input.CursorStart()
-	m.input, _ = m.input.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m.input, _ = m.input.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m.provisional = "Streaming reply"
 	m.busy = true
 	m.activity = "Working"
@@ -54,15 +50,15 @@ func TestThemeReloadPreservesUIAndRecoversFromErrors(t *testing.T) {
 	themed.InputHeight = 5
 	next, _ := m.Update(themeUpdate{theme: themed})
 	m = next.(model)
-	if m.input.Value() != "unsent draft" || m.input.LineInfo().ColumnOffset != 1 || m.viewport.YOffset != 7 || !m.busy || m.provisional != "Streaming reply" || m.input.Height() != 5 {
-		t.Fatalf("theme changed interaction state: draft=%q cursor=%+v scroll=%d busy=%t", m.input.Value(), m.input.LineInfo(), m.viewport.YOffset, m.busy)
+	if m.input.Value() != "unsent draft" || m.input.LineInfo().ColumnOffset != 1 || m.viewport.YOffset() != 7 || !m.busy || m.provisional != "Streaming reply" || m.input.Height() != 5 {
+		t.Fatalf("theme changed interaction state: draft=%q cursor=%+v scroll=%d busy=%t", m.input.Value(), m.input.LineInfo(), m.viewport.YOffset(), m.busy)
 	}
-	if !strings.Contains(m.input.View(), "38;2;18;52;86") || !strings.Contains(m.View(), "48;2;241;242;243") || !strings.Contains(m.viewport.View(), "38;2;23;40;56") {
-		t.Fatalf("editor, background or conversation missed theme: %q", m.View())
+	if !strings.Contains(m.input.View(), "38;2;18;52;86") || !strings.Contains(m.View().Content, "48;2;241;242;243") || !strings.Contains(m.viewport.View(), "38;2;23;40;56") {
+		t.Fatalf("editor, background or conversation missed theme: %q", m.View().Content)
 	}
 	next, _ = m.Update(themeUpdate{err: errors.New("unfinished JSON edit")})
 	m = next.(model)
-	if m.theme != themed || !strings.Contains(ansi.Strip(m.View()), "Theme error:") || !strings.Contains(ansi.Strip(m.View()), "Esc to cancel") {
+	if m.theme != themed || !strings.Contains(ansi.Strip(m.View().Content), "Theme error:") || !strings.Contains(ansi.Strip(m.View().Content), "Esc to cancel") {
 		t.Fatal("invalid reload lost theme, warning, or cancellation status")
 	}
 	m.busy = false
@@ -78,7 +74,7 @@ func TestThemeReloadPreservesUIAndRecoversFromErrors(t *testing.T) {
 	m.picker = nil
 	for _, command := range []string{treeCommand, usageCommand} {
 		m.input.SetValue(command)
-		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		m = next.(model)
 		before := ansi.Strip(m.viewport.View())
 		themed.Bold = !themed.Bold
@@ -91,7 +87,7 @@ func TestThemeReloadPreservesUIAndRecoversFromErrors(t *testing.T) {
 	for _, size := range []tea.WindowSizeMsg{{Width: 100, Height: 28}, {Width: 32, Height: 12}, {Width: 24, Height: 8}} {
 		next, _ = m.Update(size)
 		m = next.(model)
-		if lipgloss.Width(m.View()) > size.Width || lipgloss.Height(m.View()) > size.Height {
+		if lipgloss.Width(m.View().Content) > size.Width || lipgloss.Height(m.View().Content) > size.Height {
 			t.Fatalf("themed UI does not fit %+v", size)
 		}
 	}
@@ -119,14 +115,14 @@ func TestThemePickerAndDirectSelection(t *testing.T) {
 	m.refresh(false)
 	m.viewport.SetYOffset(7)
 	m.input.SetValue(themeCommand)
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(model)
 	if m.picker == nil || len(m.picker.list.Items()) != 7 || m.picker.list.SelectedItem().(choice).value != "desktop" {
 		t.Fatal("theme command must open a picker at the current theme")
 	}
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	m = next.(model)
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	m = next.(model)
 	if m.picker != nil || m.theme != theme.Default() {
 		t.Fatal("cancel changed the theme")
@@ -135,19 +131,19 @@ func TestThemePickerAndDirectSelection(t *testing.T) {
 		t.Fatalf("cancel wrote configuration: %v", err)
 	}
 	m.input.SetValue(themeCommand)
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(model)
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	m = next.(model)
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(model)
 	saved, err := theme.Load(dir, theme.Appearance{})
-	if err != nil || m.picker != nil || m.theme.Name != "dracula" || m.theme != saved || m.viewport.YOffset != 7 {
+	if err != nil || m.picker != nil || m.theme.Name != "dracula" || m.theme != saved || m.viewport.YOffset() != 7 {
 		t.Fatalf("picker failed to apply/save while preserving scroll: %+v %v", m.theme, err)
 	}
 	for _, command := range []string{"/theme nord", "/theme gruvbox", "/theme light", "/theme dark", "/theme desktop"} {
 		m.input.SetValue(command)
-		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		m = next.(model)
 		saved, err = theme.Load(dir, theme.Appearance{})
 		if err != nil || m.theme != saved || m.theme.Name != strings.TrimPrefix(command, themeCommand+" ") || m.busy || !strings.Contains(m.notice, "Theme: ") {
@@ -174,7 +170,7 @@ func TestThemePickerAndDirectSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.input.SetValue("/theme unknown")
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(model)
 	after, err := os.ReadFile(filepath.Join(dir, "themes.json"))
 	if err != nil || string(after) != string(before) || m.theme != current || !strings.Contains(m.notice, "unknown theme") {

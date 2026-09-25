@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/spachava753/gai"
 	"github.com/spachava753/gai/agent/agenttest"
@@ -41,7 +41,7 @@ func TestModelRefresh(t *testing.T) {
 		{"thinking", gai.Block{BlockType: gai.Thinking, Content: gai.Str("private reasoning")}, "Starlark", "private reasoning"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			m := model{viewport: viewport.New(80, 20), messages: gai.Dialog{gai.ToolResultMessage("call", test.block)}}
+			m := model{viewport: viewport.New(viewport.WithWidth(80), viewport.WithHeight(20)), messages: gai.Dialog{gai.ToolResultMessage("call", test.block)}}
 			m.refresh(true)
 			view := ansi.Strip(m.viewport.View())
 			if !strings.Contains(view, test.want) || strings.Contains(view, test.absent) {
@@ -59,62 +59,73 @@ func (b *outputBuffer) Write(p []byte) (int, error) {
 func (b *outputBuffer) text() string { b.mu.Lock(); defer b.mu.Unlock(); return b.String() }
 
 func TestProgramKeyboardRenderAndDurableTurn(t *testing.T) {
-	dir := t.TempDir()
-	store, err := session.Open(filepath.Join(dir, "s.jsonl"), dir, repl.Runtime)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-	call, err := gai.ToolCallBlock("ui-call", "starlark_repl", map[string]any{"code": "answer = 6 * 7; print(answer)"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	gen := agenttest.NewScriptedGenerator(
-		agenttest.GenerateStep{Response: gai.Response{Candidates: []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{call}}}, FinishReason: gai.ToolUse}},
-		agenttest.GenerateStep{Response: gai.Response{Candidates: []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("The answer is 42.")}}}, FinishReason: gai.EndTurn}},
-	)
-	a, err := agent.Open(t.Context(), agent.Options{Config: config.Config{System: "Test", Agent: config.Agent{ToolTimeout: "1s", OutputLimit: 32000, MaxRounds: 3}}, Model: config.Model{ID: "test"}, Generator: gen, Store: store, CWD: dir})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer a.Close()
-	input, writer := io.Pipe()
-	defer input.Close()
-	defer writer.Close()
-	output := &outputBuffer{}
-	program := tea.NewProgram(newModel(t.Context(), a, "test"), tea.WithInput(input), tea.WithOutput(output), tea.WithoutSignalHandler(), tea.WithoutCatchPanics())
-	done := make(chan error, 1)
-	go func() { _, err := program.Run(); done <- err }()
-	t.Cleanup(func() { program.Kill() })
-	program.Send(tea.WindowSizeMsg{Width: 80, Height: 24})
-	program.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("compute")})
-	program.Send(tea.KeyMsg{Type: tea.KeyEnter})
-	deadline := time.After(5 * time.Second)
-	tick := time.NewTicker(10 * time.Millisecond)
-	defer tick.Stop()
-	for !strings.Contains(output.text(), "Saved") {
-		select {
-		case <-deadline:
-			t.Fatalf("TUI never finished:\n%s", ansi.Strip(output.text()))
-		case <-tick.C:
-		}
-	}
-	program.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(quitCommand)})
-	program.Send(tea.KeyMsg{Type: tea.KeyEnter})
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("TUI did not exit")
-	}
-	rendered := ansi.Strip(output.text())
-	if !strings.Contains(rendered, "The answer is 42.") || !strings.Contains(rendered, "starlark_repl") {
-		t.Fatalf("missing output:\n%s", rendered)
-	}
-	if len(a.Messages()) != 4 {
-		t.Fatal("turn not durable")
+	for _, tc := range []struct{ name, input, want string }{
+		{"enter submits", "compute\r", "compute"},
+		{"shift enter newline", "compute\x1b[13;2umore\r", "compute\nmore"},
+		{"control J newline", "compute\nmore\r", "compute\nmore"},
+		{"bracketed multiline paste", "\x1b[200~compute\nmore\x1b[201~\r", "compute\nmore"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			store, err := session.Open(filepath.Join(dir, "s.jsonl"), dir, repl.Runtime)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			call, err := gai.ToolCallBlock("ui-call", "starlark_repl", map[string]any{"code": "answer = 6 * 7; print(answer)"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			gen := agenttest.NewScriptedGenerator(
+				agenttest.GenerateStep{Response: gai.Response{Candidates: []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{call}}}, FinishReason: gai.ToolUse}},
+				agenttest.GenerateStep{Response: gai.Response{Candidates: []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("The answer is 42.")}}}, FinishReason: gai.EndTurn}},
+			)
+			a, err := agent.Open(t.Context(), agent.Options{Config: config.Config{System: "Test", Agent: config.Agent{ToolTimeout: "1s", OutputLimit: 32000, MaxRounds: 3}}, Model: config.Model{ID: "test"}, Generator: gen, Store: store, CWD: dir})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer a.Close()
+			input, writer := io.Pipe()
+			defer input.Close()
+			defer writer.Close()
+			output := &outputBuffer{}
+			program := tea.NewProgram(newModel(t.Context(), a, "test"), tea.WithInput(input), tea.WithOutput(output), tea.WithWindowSize(80, 24), tea.WithoutSignalHandler(), tea.WithoutCatchPanics())
+			done := make(chan error, 1)
+			go func() { _, err := program.Run(); done <- err }()
+			t.Cleanup(func() { program.Kill() })
+			if _, err := io.WriteString(writer, tc.input); err != nil {
+				t.Fatal(err)
+			}
+			deadline := time.After(5 * time.Second)
+			tick := time.NewTicker(10 * time.Millisecond)
+			defer tick.Stop()
+			for !strings.Contains(output.text(), "Saved") {
+				select {
+				case err := <-done:
+					t.Fatalf("TUI exited before finishing: %v", err)
+				case <-deadline:
+					t.Fatalf("TUI never finished:\n%s", ansi.Strip(output.text()))
+				case <-tick.C:
+				}
+			}
+			program.Send(tea.KeyPressMsg{Text: quitCommand})
+			program.Send(tea.KeyPressMsg{Code: tea.KeyEnter})
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("TUI did not exit")
+			}
+			rendered := ansi.Strip(output.text())
+			if !strings.Contains(rendered, "The answer is 42.") || !strings.Contains(rendered, "starlark_repl") {
+				t.Fatalf("missing output:\n%s", rendered)
+			}
+			if messages := a.Messages(); len(messages) != 4 || messages[0].Blocks[0].Content.String() != tc.want {
+				t.Fatalf("durable conversation = %+v, want prompt %q", messages, tc.want)
+			}
+		})
 	}
 }
 
@@ -143,15 +154,15 @@ func TestDraftDuringWork(t *testing.T) {
 	for _, tc := range []struct {
 		name, notice string
 		err          error
-		cancelKey    tea.KeyType
+		cancelKey    tea.KeyPressMsg
 		slash        bool
 	}{
 		{name: "completion", notice: "Saved"},
 		{name: "failure", err: errors.New("provider failed"), notice: "provider failed"},
-		{name: "escape cancellation", cancelKey: tea.KeyEsc, notice: "Canceled"},
-		{name: "control C cancellation", cancelKey: tea.KeyCtrlC, notice: "Canceled"},
+		{name: "escape cancellation", cancelKey: tea.KeyPressMsg{Code: tea.KeyEsc}, notice: "Canceled"},
+		{name: "control C cancellation", cancelKey: tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}, notice: "Canceled"},
 		{name: "slash draft after completion", notice: "Saved", slash: true},
-		{name: "slash draft after cancellation", cancelKey: tea.KeyEsc, notice: "Canceled", slash: true},
+		{name: "slash draft after cancellation", cancelKey: tea.KeyPressMsg{Code: tea.KeyEsc}, notice: "Canceled", slash: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -168,7 +179,7 @@ func TestDraftDuringWork(t *testing.T) {
 			defer a.Close()
 			m := newModel(t.Context(), a, "test")
 			m.input.SetValue("wait")
-			next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 			m = next.(model)
 			defer func() {
 				if m.busy {
@@ -185,29 +196,29 @@ func TestDraftDuringWork(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				t.Fatal("generation did not start")
 			}
-			keys := []tea.KeyMsg{
-				{Type: tea.KeyRunes, Runes: []rune("nexx")}, {Type: tea.KeyBackspace},
-				{Type: tea.KeyRunes, Runes: []rune("t")}, {Type: tea.KeyLeft},
-				{Type: tea.KeyRunes, Runes: []rune("X")}, {Type: tea.KeyBackspace}, {Type: tea.KeyRight},
-				{Type: tea.KeyEnter, Alt: true}, {Type: tea.KeyRunes, Runes: []rune("pasted\nlast"), Paste: true},
-				{Type: tea.KeyHome}, {Type: tea.KeyRunes, Runes: []rune("Edited ")}, {Type: tea.KeyLeft},
+			keys := []tea.Msg{
+				tea.KeyPressMsg{Text: "nexx"}, tea.KeyPressMsg{Code: tea.KeyBackspace},
+				tea.KeyPressMsg{Text: "t"}, tea.KeyPressMsg{Code: tea.KeyLeft},
+				tea.KeyPressMsg{Text: "X"}, tea.KeyPressMsg{Code: tea.KeyBackspace}, tea.KeyPressMsg{Code: tea.KeyRight},
+				tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift}, tea.PasteMsg{Content: "pasted\nlast"},
+				tea.KeyPressMsg{Code: tea.KeyHome}, tea.KeyPressMsg{Text: "Edited "}, tea.KeyPressMsg{Code: tea.KeyLeft},
 			}
 			want := "next\npasted\nEdited last"
 			if tc.slash {
-				keys = []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune("/mo")}}
+				keys = []tea.Msg{tea.KeyPressMsg{Text: "/mo"}}
 				want = "/mo"
 			}
 			for _, key := range keys {
 				next, _ = m.Update(key)
 				m = next.(model)
 			}
-			if m.input.Value() != want || m.completionHeight() != 0 || !strings.Contains(ansi.Strip(m.View()), "Draft next message") {
+			if m.input.Value() != want || m.completionHeight() != 0 || !strings.Contains(ansi.Strip(m.View().Content), "Draft next message") {
 				t.Fatalf("busy draft = %q, popup height = %d", m.input.Value(), m.completionHeight())
 			}
 			row, column := m.input.Line(), m.input.LineInfo().ColumnOffset
 			for _, msg := range []tea.Msg{
 				update{event: agent.Event{Kind: agent.EventDelta, Text: "Still working"}},
-				tea.KeyMsg{Type: tea.KeyEnter},
+				tea.KeyPressMsg{Code: tea.KeyEnter},
 				tea.WindowSizeMsg{Width: 32, Height: 12},
 				tea.WindowSizeMsg{Width: 80, Height: 24},
 			} {
@@ -217,8 +228,8 @@ func TestDraftDuringWork(t *testing.T) {
 			if m.input.Value() != want || m.input.Line() != row || m.input.LineInfo().ColumnOffset != column || gen.calls.Load() != 1 || !m.busy || m.picker != nil {
 				t.Fatal("streaming, Enter, or resizing changed the draft or submitted work")
 			}
-			if tc.cancelKey != 0 {
-				next, _ = m.Update(tea.KeyMsg{Type: tc.cancelKey})
+			if tc.cancelKey.Code != 0 {
+				next, _ = m.Update(tc.cancelKey)
 				m = next.(model)
 				if !m.busy || m.input.Value() != want {
 					t.Fatal("cancellation cleared the draft or skipped worker cleanup")
@@ -251,7 +262,7 @@ func TestDraftDuringWork(t *testing.T) {
 				return
 			}
 			// The same draft can be sent explicitly after the worker has stopped.
-			next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 			m = next.(model)
 			for m.busy {
 				select {
@@ -270,7 +281,7 @@ func TestDraftDuringWork(t *testing.T) {
 			for _, size := range []tea.WindowSizeMsg{{Width: 80, Height: 24}, {Width: 32, Height: 12}, {Width: 24, Height: 8}} {
 				next, _ = m.Update(size)
 				m = next.(model)
-				view := m.View()
+				view := m.View().Content
 				for line := range strings.SplitSeq(view, "\n") {
 					if ansi.StringWidth(line) > size.Width {
 						t.Fatalf("line exceeds width %d: %q", size.Width, line)
@@ -321,7 +332,7 @@ func TestLoginIsCancellableAndNeverEntersConversation(t *testing.T) {
 	}
 	for attempt := range 2 {
 		m.input.SetValue("/login device")
-		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		m = next.(model)
 		progress := <-m.events
 		next, _ = m.Update(progress)
@@ -329,7 +340,7 @@ func TestLoginIsCancellableAndNeverEntersConversation(t *testing.T) {
 		if !strings.Contains(m.viewport.View(), "PRIVATE-CODE") {
 			t.Fatal("missing login instructions")
 		}
-		for _, key := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune("ignored during login"), Paste: true}, {Type: tea.KeyEnter, Alt: true}} {
+		for _, key := range []tea.Msg{tea.PasteMsg{Content: "ignored during login"}, tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift}} {
 			next, _ = m.Update(key)
 			m = next.(model)
 		}
@@ -339,17 +350,17 @@ func TestLoginIsCancellableAndNeverEntersConversation(t *testing.T) {
 		for _, size := range []tea.WindowSizeMsg{{Width: 80, Height: 24}, {Width: 32, Height: 12}} {
 			next, _ = m.Update(size)
 			m = next.(model)
-			for line := range strings.SplitSeq(m.View(), "\n") {
+			for line := range strings.SplitSeq(m.View().Content, "\n") {
 				if ansi.StringWidth(line) > size.Width {
 					t.Fatal("login view exceeds terminal width")
 				}
 			}
-			if strings.Count(m.View(), "\n")+1 > size.Height {
+			if strings.Count(m.View().Content, "\n")+1 > size.Height {
 				t.Fatal("login view exceeds terminal height")
 			}
 		}
 		if attempt == 0 {
-			next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+			next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 			m = next.(model)
 		} else {
 			close(ready)
@@ -357,7 +368,7 @@ func TestLoginIsCancellableAndNeverEntersConversation(t *testing.T) {
 		completed := <-m.events
 		next, _ = m.Update(completed)
 		m = next.(model)
-		if m.busy || m.loggingIn || m.loginText != "" || strings.Contains(m.View(), "PRIVATE-CODE") {
+		if m.busy || m.loggingIn || m.loginText != "" || strings.Contains(m.View().Content, "PRIVATE-CODE") {
 			t.Fatal("login state leaked after completion")
 		}
 		if len(a.Messages()) != 0 || len(store.Path()) != 1 {
@@ -373,7 +384,7 @@ func TestLoginIsCancellableAndNeverEntersConversation(t *testing.T) {
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = next.(model)
 	m.input.SetValue("hello")
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(model)
 	for {
 		u := <-m.events

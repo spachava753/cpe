@@ -1,16 +1,14 @@
 package tui
 
 import (
-	"io"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 	"github.com/spachava753/gai"
 	"github.com/spachava753/gai/agent/agenttest"
 
@@ -38,36 +36,70 @@ func TestSlashCompletionEditingAndNavigation(t *testing.T) {
 	t.Run("filter and run a picker", func(t *testing.T) {
 		m := newModel(t.Context(), a, "fixture")
 		m.profiles = map[string]config.Model{"fixture": profile}
-		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+		next, _ := m.Update(tea.KeyPressMsg{Text: "/"})
 		m = next.(model)
 		if m.completionHeight() != 7 || !strings.Contains(ansi.Strip(m.completionView()), "Choose a model") {
 			t.Fatal("slash did not open the five-row popup")
 		}
-		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+		next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 		m = next.(model)
 		if !strings.Contains(ansi.Strip(m.completionView()), exitCommand) || m.input.Value() != "/" {
 			t.Fatal("up did not wrap to the last command or changed the draft")
 		}
-		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 		m = next.(model)
 		if m.completion.selected != 0 {
 			t.Fatal("down did not wrap to the first command")
 		}
-		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("mo")})
+		next, _ = m.Update(tea.KeyPressMsg{Text: "mo"})
 		m = next.(model)
 		if len(m.completion.matches) != 1 || m.completion.matches[0].name != modelCommand {
 			t.Fatal("command prefix did not filter suggestions")
 		}
-		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 		m = next.(model)
 		if m.picker == nil || m.completionHeight() != 0 || m.input.Value() != "" || m.busy {
 			t.Fatal("Enter did not open the completed model picker")
 		}
 	})
 
+	for _, lock := range []struct {
+		name string
+		mod  tea.KeyMod
+	}{
+		{"caps lock", tea.ModCapsLock}, {"num lock", tea.ModNumLock},
+		{"both locks", tea.ModCapsLock | tea.ModNumLock},
+	} {
+		for _, action := range []struct {
+			name              string
+			code              rune
+			want              string
+			selected          int
+			picker, dismissed bool
+		}{
+			{name: "enter dispatches", code: tea.KeyEnter, picker: true},
+			{name: "tab completes", code: tea.KeyTab, want: "/model ", dismissed: true},
+			{name: "down selects", code: tea.KeyDown, want: "/", selected: 1},
+			{name: "up wraps", code: tea.KeyUp, want: "/", selected: len(slashCommands) - 1},
+			{name: "escape dismisses", code: tea.KeyEsc, want: "/", dismissed: true},
+		} {
+			t.Run(lock.name+"/"+action.name, func(t *testing.T) {
+				m := newModel(t.Context(), a, "fixture")
+				m.profiles = map[string]config.Model{"fixture": profile}
+				m.input.SetValue("/")
+				m.syncCompletion()
+				next, _ := m.Update(tea.KeyPressMsg{Code: action.code, Mod: lock.mod})
+				m = next.(model)
+				if m.input.Value() != action.want || (m.picker != nil) != action.picker || m.completion.selected != action.selected || m.completion.dismissed != action.dismissed {
+					t.Fatalf("lock state changed completion: input=%q picker=%v completion=%+v", m.input.Value(), m.picker, m.completion)
+				}
+			})
+		}
+	}
+
 	t.Run("tab completes without running", func(t *testing.T) {
 		m := newModel(t.Context(), a, "tab-fixture")
-		for _, key := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune("/l")}, {Type: tea.KeyDown}, {Type: tea.KeyTab}} {
+		for _, key := range []tea.KeyPressMsg{{Text: "/l"}, {Code: tea.KeyDown}, {Code: tea.KeyTab}} {
 			next, _ := m.Update(key)
 			m = next.(model)
 		}
@@ -78,7 +110,7 @@ func TestSlashCompletionEditingAndNavigation(t *testing.T) {
 
 	t.Run("escape suppresses until slash is removed", func(t *testing.T) {
 		m := newModel(t.Context(), a, "dismiss-fixture")
-		for _, key := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune("/t")}, {Type: tea.KeyEsc}, {Type: tea.KeyRunes, Runes: []rune("h")}} {
+		for _, key := range []tea.KeyPressMsg{{Text: "/t"}, {Code: tea.KeyEsc}, {Text: "h"}} {
 			next, _ := m.Update(key)
 			m = next.(model)
 		}
@@ -86,10 +118,10 @@ func TestSlashCompletionEditingAndNavigation(t *testing.T) {
 			t.Fatal("dismissal lost the draft or reopened while typing")
 		}
 		for range 3 {
-			next, _ := m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+			next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
 			m = next.(model)
 		}
-		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+		next, _ := m.Update(tea.KeyPressMsg{Text: "/"})
 		m = next.(model)
 		if m.completionHeight() == 0 || m.completion.literal {
 			t.Fatal("a new slash did not reactivate suggestions")
@@ -98,7 +130,7 @@ func TestSlashCompletionEditingAndNavigation(t *testing.T) {
 
 	t.Run("required argument stays editable", func(t *testing.T) {
 		m := newModel(t.Context(), a, "branch-fixture")
-		for _, key := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune("/br")}, {Type: tea.KeyEnter}} {
+		for _, key := range []tea.KeyPressMsg{{Text: "/br"}, {Code: tea.KeyEnter}} {
 			next, _ := m.Update(key)
 			m = next.(model)
 		}
@@ -109,7 +141,7 @@ func TestSlashCompletionEditingAndNavigation(t *testing.T) {
 
 	t.Run("dismissal preserves recognized command behavior", func(t *testing.T) {
 		m := newModel(t.Context(), a, "help-fixture")
-		for _, key := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune(helpCommand)}, {Type: tea.KeyEsc}, {Type: tea.KeyEnter}} {
+		for _, key := range []tea.KeyPressMsg{{Text: helpCommand}, {Code: tea.KeyEsc}, {Code: tea.KeyEnter}} {
 			next, _ := m.Update(key)
 			m = next.(model)
 		}
@@ -120,7 +152,7 @@ func TestSlashCompletionEditingAndNavigation(t *testing.T) {
 
 	t.Run("unknown commands still error without dismissal", func(t *testing.T) {
 		m := newModel(t.Context(), a, "typo-fixture")
-		for _, key := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune("/typo")}, {Type: tea.KeyEnter}} {
+		for _, key := range []tea.KeyPressMsg{{Text: "/typo"}, {Code: tea.KeyEnter}} {
 			next, _ := m.Update(key)
 			m = next.(model)
 		}
@@ -131,7 +163,7 @@ func TestSlashCompletionEditingAndNavigation(t *testing.T) {
 
 	t.Run("invisible suggestions do not consume Enter", func(t *testing.T) {
 		m := newModel(t.Context(), a, "tiny-fixture")
-		for _, msg := range []tea.Msg{tea.WindowSizeMsg{Width: 24, Height: 8}, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/mo")}, tea.KeyMsg{Type: tea.KeyEnter}} {
+		for _, msg := range []tea.Msg{tea.WindowSizeMsg{Width: 24, Height: 8}, tea.KeyPressMsg{Text: "/mo"}, tea.KeyPressMsg{Code: tea.KeyEnter}} {
 			next, _ := m.Update(msg)
 			m = next.(model)
 		}
@@ -143,7 +175,7 @@ func TestSlashCompletionEditingAndNavigation(t *testing.T) {
 	for _, text := range []string{"read /tmp", "/unknown", "/model named-profile", " /help", "/help\nsecond line", "https://example.com/"} {
 		t.Run(text, func(t *testing.T) {
 			m := newModel(t.Context(), a, "text-fixture")
-			next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(text), Paste: true})
+			next, _ := m.Update(tea.PasteMsg{Content: text})
 			m = next.(model)
 			if m.completionHeight() != 0 || m.input.Value() != text {
 				t.Fatal("ordinary text, arguments or multiline paste opened completion")
@@ -153,22 +185,22 @@ func TestSlashCompletionEditingAndNavigation(t *testing.T) {
 
 	t.Run("cursor movement and multiline editing", func(t *testing.T) {
 		m := newModel(t.Context(), a, "cursor-fixture")
-		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/rea")})
+		next, _ := m.Update(tea.KeyPressMsg{Text: "/rea"})
 		m = next.(model)
-		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+		next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 		m = next.(model)
 		if m.completionHeight() != 0 {
 			t.Fatal("completion stayed open with cursor inside a word")
 		}
-		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+		next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 		m = next.(model)
 		if m.completionHeight() == 0 {
 			t.Fatal("completion did not return at end of input")
 		}
-		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter, Alt: true})
+		next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModShift})
 		m = next.(model)
 		if m.input.Value() != "/rea\n" || m.completionHeight() != 0 {
-			t.Fatal("Alt+Enter did not close completion and insert a newline")
+			t.Fatal("Shift+Enter did not close completion and insert a newline")
 		}
 	})
 	if len(a.Messages()) != 0 || len(store.Path()) != 1 {
@@ -192,15 +224,13 @@ func TestCompletionThemeResizeAndScroll(t *testing.T) {
 	m.messages = gai.Dialog{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock(strings.Repeat("Conversation history\n", 70))}}}
 	m.refresh(false)
 	m.viewport.SetYOffset(6)
-	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	next, _ := m.Update(tea.KeyPressMsg{Text: "/"})
 	m = next.(model)
-	if m.viewport.YOffset != 6 {
+	if m.viewport.YOffset() != 6 {
 		t.Fatal("opening popup moved the conversation")
 	}
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	m = next.(model)
-	m.renderer = lipgloss.NewRenderer(io.Discard)
-	m.renderer.SetColorProfile(termenv.TrueColor)
 	palette := theme.Default()
 	palette.Colors.SelectionBackground = "#334455"
 	next, _ = m.Update(themeUpdate{theme: palette})
@@ -211,17 +241,17 @@ func TestCompletionThemeResizeAndScroll(t *testing.T) {
 	for _, size := range []tea.WindowSizeMsg{{Width: 100, Height: 28}, {Width: 40, Height: 14}, {Width: 24, Height: 8}, {Width: 80, Height: 24}} {
 		next, _ = m.Update(size)
 		m = next.(model)
-		if lipgloss.Width(m.View()) > size.Width || lipgloss.Height(m.View()) > size.Height {
+		if lipgloss.Width(m.View().Content) > size.Width || lipgloss.Height(m.View().Content) > size.Height {
 			t.Fatalf("popup does not fit %+v", size)
 		}
-		text := ansi.Strip(m.View())
+		text := ansi.Strip(m.View().Content)
 		if m.completionHeight() > 0 && strings.Index(text, reasoningCommand) > strings.LastIndex(text, "› /") {
 			t.Fatal("popup is not above the composer")
 		}
 	}
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	m = next.(model)
-	if m.viewport.YOffset != 6 || m.input.Value() != "/" {
+	if m.viewport.YOffset() != 6 || m.input.Value() != "/" {
 		t.Fatal("dismissing popup changed scroll or input")
 	}
 }
@@ -240,7 +270,7 @@ func TestDismissedSlashCanBeSentAsLiteralText(t *testing.T) {
 	}
 	defer a.Close()
 	m := newModel(t.Context(), a, "literal-fixture")
-	for _, key := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune("/")}, {Type: tea.KeyEsc}, {Type: tea.KeyRunes, Runes: []rune("tmp is the directory to inspect")}, {Type: tea.KeyEnter}} {
+	for _, key := range []tea.KeyPressMsg{{Text: "/"}, {Code: tea.KeyEsc}, {Text: "tmp is the directory to inspect"}, {Code: tea.KeyEnter}} {
 		next, _ := m.Update(key)
 		m = next.(model)
 	}

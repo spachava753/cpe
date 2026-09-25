@@ -125,7 +125,7 @@ resuming, branching, or switching profiles.
 | Key or command | Action |
 | --- | --- |
 | Enter | Send the prompt when idle |
-| Alt+Enter | Insert a newline |
+| Shift+Enter or Ctrl+J | Insert a newline |
 | PgUp / PgDn, mouse wheel | Scroll the conversation |
 | Esc or Ctrl+C while busy | Cancel the current operation and wait for cleanup |
 | Ctrl+C while idle, `/quit` | Exit |
@@ -145,9 +145,14 @@ resuming, branching, or switching profiles.
 | `/branch ID` | Continue from a checkpoint, preserving other branches |
 | `/compact` | Summarize model context while retaining REPL state |
 
+Shift+Enter requires a terminal that reports modified keys (such as Kitty,
+Ghostty, or iTerm2 with its extended keyboard protocol enabled). CPE requests
+this support automatically. If your terminal sends Shift+Enter as plain Enter,
+use Ctrl+J to insert a newline instead.
+
 The conversation displays streamed text provisionally. Completed assistant
 messages and tool results are saved before the next operation. You can type,
-edit, paste, and use Alt+Enter to draft your next message while the agent works.
+edit, paste, and use Shift+Enter to draft your next message while the agent works.
 Enter leaves the draft in place until the current operation finishes; nothing
 is queued or sent automatically. The draft survives completion, errors, and
 cancellation. Slash completion returns when the agent becomes idle. The normal
