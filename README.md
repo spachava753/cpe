@@ -215,6 +215,7 @@ confirm. Choose `"enter"` if your terminal cannot distinguish Shift+Enter.
 | `/tree` | List saved checkpoints |
 | `/branch ID` | Continue from a checkpoint, preserving other branches |
 | `/compact` | Summarize model context while retaining REPL state |
+| `/queue` / `/queue clear` | Inspect pending commands and failures / discard pending commands without stopping active work |
 
 Shift+Enter requires a terminal that reports modified keys (such as Kitty,
 Ghostty, or iTerm2 with its extended keyboard protocol enabled). CPE requests
@@ -246,10 +247,32 @@ messages and tool results are saved before the next operation. You can type,
 edit, paste, and use the configured newline key to draft your next message while
 the agent works.
 The submit key leaves ordinary drafts in place until the current operation finishes;
-nothing is queued or sent automatically. The draft survives completion, errors,
-and cancellation. During work, slash completion offers `/model` so you can switch
-the next generation; other slash commands return when the agent becomes idle. The normal
-composer remains locked during login.
+an unsent draft is never queued automatically. Slash completion offers the same
+commands and user-invocable skills during work as when idle. Help, usage, the
+session path, completed checkpoints, and theme selection work immediately. Model
+and reasoning choices take effect at the next generation boundary.
+
+Explicitly submitted `/skill:NAME`, `/compact`, `/branch ID`, and login flows
+wait in a FIFO queue until the current operation settles. The status shows the
+queue count and next command. `/queue` lists pending commands; `/queue clear`
+discards them without canceling active work. Canceling active work with Esc/Ctrl+C
+also clears the queue. `/quit` discards the queue and
+exits after cleanup. Provider failures do not retry commands or discard later
+explicitly queued commands. Pending commands live only in memory until executed;
+exiting does not save them. Queued skills are resolved when they run.
+Failed operations leave a persistent error indicator, with full errors in `/queue`,
+even after later commands succeed. These errors stay in the TUI until exit;
+`/queue clear` clears pending commands only. They are not added to model context.
+Default-save errors also remain inspectable, distinguishing a failed save from
+a saved setting that could not be applied. Canceling a save before it commits
+does not add an error.
+
+Pickers open immediately; queued operations wait while a picker or private login
+has focus, or a default save is pending. A selected login flow starts after agent
+work ends, and private credential input keeps its separate routing. New drafts
+survive queued work, completion, errors, and cancellation. `/tree` uses the latest
+completed-operation snapshot; `/usage` receives live usage updates.
+Canceling private key entry also discards the remaining command queue.
 
 Starlark results show the first 20 terminal rows per result, followed by a count
 of hidden rows. The limit includes wrapped lines and image placeholders across
@@ -268,7 +291,7 @@ that draft. Remove the leading slash or send/clear the draft to enable it again.
 After dismissal, an unrecognized slash prefix such as `/tmp` can be sent as
 ordinary prompt text; recognized commands still work. Slashes inside prose or
 paths, multiline input, and command arguments do not trigger the popup.
-During agent work, completion offers only `/model`; Escape or Ctrl+C cancels the
+During agent work, completion offers the full catalog; Escape or Ctrl+C cancels the
 work and keeps the draft. Inside the model picker, Escape closes the picker;
 Ctrl+C cancels active work (or quits when idle). The footer shows the current controls.
 
@@ -340,8 +363,8 @@ keeps the active profile. Conversation and Starlark state are preserved.
 Slash selections apply only to the current conversation; config.json is unchanged.
 Restart/resume uses the configured default or `--model`.
 
-You can also submit `/model` or `/model NAME` while the agent is working. Only
-model completion is offered during work; ordinary drafts remain unsent. The
+You can also submit `/model` or `/model NAME` while the agent is working. All slash
+commands remain available during work; ordinary drafts remain unsent. The
 current generation finishes and any returned tool calls execute once. The next
 generation receives their results using the selected model/provider. A queued
 choice appears in status; a later choice replaces it. If no further generation
@@ -367,14 +390,18 @@ a larger-budget selection.
 In the **`/model` picker**, highlight a profile and press **Ctrl+S** to save it as
 the default model and apply its configured settings to the current conversation.
 In the **`/reasoning` picker**, **Ctrl+S** saves and applies the highlighted effort
-for the active model; it does **not** change which model is the default.
+for the selected model (including a pending model switch); it does **not** change
+which model is the default.
 **Enter** in either picker applies the choice only to the current conversation.
 Ctrl+S in the composer has no action.
 The **provider** choice removes `reasoning_effort`, allowing the provider to choose.
 New starter profiles omit this option. Escape closes either picker without changes,
 and the current draft is preserved. You can save a default model during agent work;
 the conversation switch waits for the next generation boundary, as with Enter.
-Reasoning selection remains available between operations.
+Reasoning selection also works during generation and takes effect at the next
+generation boundary. When a model switch is pending, reasoning edits target that
+selected profile. Ctrl+S in its reasoning picker saves that profile's effort
+without changing the default model.
 During a save, Escape or Ctrl+C cancels the save if it has not committed yet,
 preserving the draft and letting any agent work continue. A completed config write is retained; CPE reports whether
 its selection was applied. Terminal shutdown cancels and joins pending saves.
@@ -770,6 +797,14 @@ The harness creates isolated `review`, `publish` (user-only), and `background`
 (model-only) skills beneath `CPE_TUI_TEST_DIR/agents/skills`. Type `/skill:` to test
 completion, `/skill:review staged changes` to read a skill through the REPL, and
 `/skill:background` to verify that direct user invocation is rejected.
+During `handoff` or `slow`, submit `/skill:review first` and `/skill:publish second`;
+verify both complete in order after the original turn and a new draft stays unsent.
+During `wait`, verify all slash suggestions appear, `/usage` and `/theme` work,
+and `/queue clear` drops pending commands without stopping the response. Queue a
+skill again and press Esc: the active turn and pending skill should be canceled.
+Queue `/branch missing` followed by a skill during `handoff`; verify the skill runs
+and `/queue` retains the branch failure. Queue a Go login followed by an OpenAI
+login, then cancel the private key input; the second login must not start.
 The harness also reads `themes.json` from `CPE_TUI_TEST_DIR`; use an explicit JSON `palette_file`
 to point at fixture palettes and test live edits without changing the desktop.
 

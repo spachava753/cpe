@@ -24,6 +24,20 @@ func (c choice) Title() string       { return c.label }
 func (c choice) Description() string { return "" }
 func (c choice) FilterValue() string { return strings.TrimSuffix(c.label, currentChoiceSuffix) }
 
+// modelChoice keeps a pending profile name and its settings together. Reasoning
+// edits compose with a queued model switch before either has reached a boundary.
+type modelChoice struct {
+	name    string
+	profile config.Model
+}
+
+func (m model) modelTarget() modelChoice {
+	if m.pendingModel != nil {
+		return *m.pendingModel
+	}
+	return modelChoice{m.name, m.profile}
+}
+
 type picker struct {
 	command string
 	list    list.Model
@@ -60,39 +74,42 @@ func (m *model) configureModel(command, value string) {
 		}
 		m.openPicker(command, "Choose model", items, selected)
 	case reasoningCommand:
+		target := m.modelTarget()
 		if value != "" {
 			effort := value
 			if value == providerEffort {
 				effort = ""
 			}
 			if value == defaultEffort {
-				effort = m.profiles[m.name].ReasoningEffort
+				effort = m.profiles[target.name].ReasoningEffort
 			}
-			if err := m.agent.SetReasoningEffort(effort); err != nil {
+			if err := m.setReasoning(target, effort); err != nil {
 				m.notice = "Error: " + err.Error() + "; use /reasoning to choose"
 				return
 			}
-			m.profile = m.agent.Model()
 			m.notice = "Reasoning: " + effortLabel(effort)
+			if m.busy {
+				m.notice += " · change queued for " + target.name
+			}
 			return
 		}
-		items := []list.Item{choice{defaultEffort, "default · configured setting (" + effortLabel(m.profiles[m.name].ReasoningEffort) + ")"}}
+		items := []list.Item{choice{defaultEffort, "default · configured setting (" + effortLabel(m.profiles[target.name].ReasoningEffort) + ")"}}
 		selected := 0
 		for _, effort := range config.ReasoningEfforts() {
 			label := effort
-			if effort == m.profile.ReasoningEffort {
+			if effort == target.profile.ReasoningEffort {
 				selected = len(items)
 				label += currentChoiceSuffix
 			}
 			items = append(items, choice{effort, label})
 		}
 		label := "provider · omit reasoning effort"
-		if m.profile.ReasoningEffort == "" {
+		if target.profile.ReasoningEffort == "" {
 			selected = len(items)
 			label += currentChoiceSuffix
 		}
 		items = append(items, choice{providerEffort, label})
-		m.openPicker(command, "Choose reasoning · support varies by model", items, selected)
+		m.openPicker(command, "Choose reasoning for "+oneline(target.name)+" · support varies by model", items, selected)
 	}
 }
 
@@ -125,11 +142,10 @@ func (m model) updatePicker(msg tea.Msg) (model, tea.Cmd) {
 		case quitKey:
 			if m.busy {
 				m.picker = nil
-				m.cancel()
-				m.activity = "Canceling"
+				m.cancelWork()
 				return m, nil
 			}
-			return m, tea.Quit
+			return m, m.quit()
 		case escapeKey:
 			m.picker = nil
 			m.notice = "Selection canceled"
@@ -203,7 +219,7 @@ func (m *model) switchModel(name string) {
 		m.notice = fmt.Sprintf("Error: unknown model profile %q; use /model to choose", name)
 		return
 	}
-	if name == m.name && m.pendingModel == "" {
+	if name == m.name && m.pendingModel == nil {
 		m.notice = "Model: " + name
 		return
 	}
@@ -223,7 +239,7 @@ func (m *model) switchModel(name string) {
 		return
 	}
 	if m.busy {
-		m.pendingModel = name
+		m.pendingModel = &modelChoice{name, profile}
 		m.notice = "Model switch queued"
 		return
 	}
@@ -239,9 +255,32 @@ func (m *model) switchModel(name string) {
 
 func (m *model) acceptSelection(selected *agent.ModelSelection) {
 	m.name, m.profile, m.contextTokens = selected.Name, selected.Model, selected.ContextTokens
-	if m.pendingModel == selected.Name {
-		m.pendingModel = ""
+	if m.pendingModel != nil && m.pendingModel.name == selected.Name && m.pendingModel.profile == selected.Model {
+		m.pendingModel = nil
 	}
 	m.loginRequired = m.needsLogin != nil && m.needsLogin(m.profile)
 	m.notice = "Model: " + selected.Name
+}
+
+func (m *model) setReasoning(target modelChoice, effort string) error {
+	profile, err := target.profile.WithReasoningEffort(effort)
+	if err != nil {
+		return err
+	}
+	if m.busy {
+		generator, err := m.newGenerator(m.ctx, profile)
+		if err != nil {
+			return err
+		}
+		if err := m.agent.QueueModel(target.name, profile, generator); err != nil {
+			return err
+		}
+		m.pendingModel = &modelChoice{target.name, profile}
+		return nil
+	}
+	if err := m.agent.SetReasoningEffort(effort); err != nil {
+		return err
+	}
+	m.profile = m.agent.Model()
+	return nil
 }

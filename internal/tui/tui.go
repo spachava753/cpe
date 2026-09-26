@@ -19,7 +19,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/config"
-	"github.com/spachava753/cpe/internal/skills"
+	"github.com/spachava753/cpe/internal/session"
 	"github.com/spachava753/cpe/internal/theme"
 )
 
@@ -63,50 +63,56 @@ type Options struct {
 	ThemeDir      string
 }
 type model struct {
-	configDir     string
-	savingDefault *defaultSave
-	ctx           context.Context
-	agent         *agent.Agent
-	name          string
-	pendingModel  string
-	submitKey     config.SubmitKey
-	mouseMode     config.MouseMode
-	input         textarea.Model
-	viewport      viewport.Model
-	scroll        transcriptScroll
-	spinner       spinner.Model
-	width, height int
-	busy          bool
-	cancel        context.CancelFunc
-	events        <-chan update
-	messages      gai.Dialog
-	provisional   string
-	activity      string
-	notice        string
-	login         func(context.Context, string, func(string)) error
-	loginGo       func(context.Context, string) (map[string]config.Model, error)
-	loginCopilot  func(context.Context, func(string)) (map[string]config.Model, error)
-	keyInput      *textinput.Model
-	loggingIn     bool
-	loginRequired bool
-	loginText     string
-	profile       config.Model
-	profiles      map[string]config.Model
-	newGenerator  func(context.Context, config.Model) (gai.Generator, error)
-	needsLogin    func(config.Model) bool
-	picker        *picker
-	usage         agent.Usage
-	contextTokens int
-	usageView     bool
-	staticView    string
-	theme         theme.Theme
-	appearance    theme.Appearance
-	styles        styles
-	themeDir      string
-	themeRevision uint64
-	themeError    string
-	completion    completion
-	commands      []slashCommand
+	configDir       string
+	savingDefault   *defaultSave
+	ctx             context.Context
+	agent           *agent.Agent
+	name            string
+	pendingModel    *modelChoice
+	queuedCommands  []commandRequest
+	operationErrors []string
+	quitting        bool
+	checkpoints     []session.Entry
+	sessionFile     string
+	queueView       bool
+	submitKey       config.SubmitKey
+	mouseMode       config.MouseMode
+	input           textarea.Model
+	viewport        viewport.Model
+	scroll          transcriptScroll
+	spinner         spinner.Model
+	width, height   int
+	busy            bool
+	cancel          context.CancelFunc
+	events          <-chan update
+	messages        gai.Dialog
+	provisional     string
+	activity        string
+	notice          string
+	login           func(context.Context, string, func(string)) error
+	loginGo         func(context.Context, string) (map[string]config.Model, error)
+	loginCopilot    func(context.Context, func(string)) (map[string]config.Model, error)
+	keyInput        *textinput.Model
+	loggingIn       bool
+	loginRequired   bool
+	loginText       string
+	profile         config.Model
+	profiles        map[string]config.Model
+	newGenerator    func(context.Context, config.Model) (gai.Generator, error)
+	needsLogin      func(config.Model) bool
+	picker          *picker
+	usage           agent.Usage
+	contextTokens   int
+	usageView       bool
+	staticView      string
+	theme           theme.Theme
+	appearance      theme.Appearance
+	styles          styles
+	themeDir        string
+	themeRevision   uint64
+	themeError      string
+	completion      completion
+	commands        []slashCommand
 }
 
 func newModel(ctx context.Context, a *agent.Agent, name string) model {
@@ -126,6 +132,7 @@ func newModel(ctx context.Context, a *agent.Agent, name string) model {
 	spin.Spinner = spinner.Dot
 	m := model{ctx: ctx, agent: a, name: name, input: input, viewport: viewport.New(viewport.WithWidth(80), viewport.WithHeight(14)), scroll: transcriptScroll{following: true}, spinner: spin, width: 80, height: 24, messages: a.Messages(), notice: "/help for commands"}
 	m.profile = a.Model()
+	m.sessionFile, m.checkpoints = a.SessionFile(), a.Checkpoints()
 	m.commands = append([]slashCommand{}, slashCommands...)
 	for _, command := range a.Skills().Commands() {
 		m.commands = append(m.commands, slashCommand{name: command.Name, description: oneline(command.Description)})
@@ -205,6 +212,7 @@ func (m *model) startWork(text, key string) tea.Cmd {
 	m.notice = ""
 	m.usageView = false
 	m.staticView = ""
+	m.queueView = false
 	m.activity = "Thinking"
 	m.loggingIn = text == loginOpenAICommand || text == loginDeviceCommand || text == loginGoCommand || text == loginCopilotCommand
 	m.loginText = ""
@@ -250,6 +258,7 @@ func (m *model) startWork(text, key string) tea.Cmd {
 }
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, cmd := m.update(msg)
+	cmd = tea.Batch(cmd, next.drainCommands())
 	// Synchronize focus after every transition, including picker application,
 	// default saves, and asynchronous login completion. Focus's command starts
 	// a fresh blink chain after an inactive surface discarded old timer events.
@@ -315,12 +324,13 @@ func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 			if selected != nil {
 				m.acceptSelection(selected)
 			}
-			m.pendingModel = ""
+			m.pendingModel = nil
 			m.profile = m.agent.Model()
 			m.cancel = nil
 			m.activity = ""
 			m.provisional = ""
 			m.messages = m.agent.Messages()
+			m.checkpoints = m.agent.Checkpoints()
 			m.usage, m.contextTokens = m.agent.Usage(), m.agent.ContextEstimate()
 			if m.loggingIn && errors.Is(v.err, context.Canceled) {
 				m.notice = "Login canceled"
@@ -328,6 +338,7 @@ func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 				m.notice = "Canceled · completed work saved"
 			} else if v.err != nil {
 				m.notice = "Error: " + v.err.Error()
+				m.operationErrors = append(m.operationErrors, v.err.Error())
 			} else if m.loggingIn {
 				m.loginRequired = m.needsLogin != nil && m.needsLogin(m.profile)
 				m.notice = v.loginNotice
@@ -388,8 +399,7 @@ func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 			return m, nil
 		}
 		if m.busy && (v.String() == quitKey || v.String() == escapeKey) {
-			m.cancel()
-			m.activity = "Canceling"
+			m.cancelWork()
 			return m, nil
 		}
 		if m.completionKey(v) {
@@ -398,7 +408,7 @@ func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 		switch v.String() {
 		case quitKey, escapeKey:
 			if v.String() == quitKey {
-				return m, tea.Quit
+				return m, m.quit()
 			}
 			m.input.Reset()
 			m.syncCompletion()
@@ -407,7 +417,7 @@ func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 			return m, nil
 		case "ctrl+d":
 			if !m.busy && m.savingDefault == nil && m.input.Value() == "" {
-				return m, tea.Quit
+				return m, m.quit()
 			}
 		case pageUpKey, pageDownKey, "ctrl+u":
 			var cmd tea.Cmd
@@ -415,84 +425,7 @@ func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 			m.scroll.following = m.viewport.AtBottom()
 			return m, cmd
 		case m.submitKey.String():
-			if m.savingDefault != nil {
-				return m, nil
-			}
-			if m.busy {
-				text := strings.TrimSpace(m.input.Value())
-				fields := strings.Fields(text)
-				if !m.loggingIn && m.input.LineCount() == 1 && len(fields) > 0 && fields[0] == modelCommand {
-					m.input.Reset()
-					m.syncCompletion()
-					m.configureModel(modelCommand, strings.TrimSpace(strings.TrimPrefix(text, modelCommand)))
-				}
-				return m, nil
-			}
-			text := strings.TrimSpace(m.input.Value())
-			if text == "" {
-				return m, nil
-			}
-			literalSlash := m.completion.literal
-			m.input.Reset()
-			m.syncCompletion()
-			command := strings.Fields(text)[0]
-			argument := strings.TrimSpace(strings.TrimPrefix(text, command))
-			if command == loginCommand {
-				return m, m.configureLogin(argument)
-			}
-			if command == themeCommand {
-				m.configureTheme(argument)
-				return m, nil
-			}
-			if command == modelCommand || command == reasoningCommand {
-				m.configureModel(command, argument)
-				return m, nil
-			}
-			switch text {
-			case quitCommand, exitCommand:
-				return m, tea.Quit
-			case helpCommand:
-				m.notice = "/model  /reasoning  /theme  /usage  /login  /skill:NAME [args]  /compact  /tree  /branch ID  /session  /quit  · Ctrl+S saves defaults in /model or /reasoning"
-				return m, nil
-			case usageCommand:
-				m.staticView = ""
-				m.usageView = true
-				m.notice = "Session totals · PgUp/PgDn scroll"
-				m.refresh(false)
-				m.viewport.GotoTop()
-				return m, nil
-			case sessionCommand:
-				m.notice = m.agent.SessionFile()
-				return m, nil
-			case treeCommand:
-				var b strings.Builder
-				for _, e := range m.agent.Checkpoints() {
-					var data struct {
-						Label string `json:"label"`
-					}
-					_ = json.Unmarshal(e.Data, &data)
-					if e.Type == "session" {
-						data.Label = "start"
-					}
-					fmt.Fprintf(&b, "%s  %s\n", e.ID, data.Label)
-				}
-				m.usageView = false
-				m.staticView = "Checkpoints — /branch ID to continue from one\n\n" + clean(b.String())
-				m.refresh(false)
-				m.viewport.GotoTop()
-				m.notice = "History is preserved when branching"
-				return m, nil
-			}
-			if !literalSlash && strings.HasPrefix(text, "/") && text != compactCommand && !strings.HasPrefix(text, branchCommand+" ") && !strings.HasPrefix(command, skills.CommandPrefix) {
-				m.notice = "Unknown command. /help for commands"
-				return m, nil
-			}
-			if m.loginRequired && !strings.HasPrefix(text, branchCommand+" ") {
-				m.input.SetValue(text)
-				m.notice = "Sign in with /login first"
-				return m, nil
-			}
-			return m, m.start(text)
+			return m, m.submitInput()
 		}
 	case tea.MouseMsg:
 		if m.mouseMode != config.MouseScroll {
@@ -527,6 +460,10 @@ func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 	return m, nil
 }
 func (m *model) refresh(bottom bool) {
+	if m.queueView {
+		m.setViewportContent(m.queueText(), bottom)
+		return
+	}
 	if m.staticView != "" {
 		m.setViewportContent(m.staticView, bottom)
 		return
@@ -615,7 +552,7 @@ func (m model) viewContent() string {
 		return "Resize terminal to at least 24 × 8"
 	}
 	profile := "  " + oneline(m.name) + " · " + effortLabel(m.profile.ReasoningEffort)
-	title := m.styles.accent.Render("cpe") + m.styles.base.Render(profile+"  ") + m.styles.muted.Render(oneline(filepath.Base(m.agent.SessionFile())))
+	title := m.styles.accent.Render("cpe") + m.styles.base.Render(profile+"  ") + m.styles.muted.Render(oneline(filepath.Base(m.sessionFile)))
 	status := oneline(m.notice)
 	if m.busy {
 		cancelAction := "cancel"
@@ -626,18 +563,24 @@ func (m model) viewContent() string {
 		if m.notice != "" {
 			status += " · " + oneline(m.notice)
 		}
-		if m.pendingModel != "" {
-			status += " · next: " + oneline(m.pendingModel)
+		if m.pendingModel != nil {
+			status += " · next: " + oneline(m.pendingModel.name) + " / " + effortLabel(m.pendingModel.profile.ReasoningEffort)
 		}
 	} else if strings.HasPrefix(status, "Error:") {
 		status = m.styles.failure.Render(status)
 	} else {
 		status = m.styles.muted.Render(status)
 	}
+	if len(m.queuedCommands) > 0 {
+		status = fmt.Sprintf("%d queued: %s · ", len(m.queuedCommands), oneline(m.queuedCommands[0].label())) + status
+	}
+	if len(m.operationErrors) > 0 {
+		status = m.styles.failure.Render(fmt.Sprintf("Error: %d failed · /queue · ", len(m.operationErrors))) + status
+	}
 	line := m.styles.border.Render(strings.Repeat("─", max(1, m.width-2)))
 	footer := m.styles.muted.Render(keyLabel(m.submitKey.String()) + " send · " + keyLabel(m.newlineKey()) + " newline · PgUp/PgDn scroll")
 	if m.busy {
-		footer = m.styles.muted.Render("Draft next message · " + keyLabel(m.newlineKey()) + " newline · /model switch · Esc/Ctrl+C cancel")
+		footer = m.styles.muted.Render("Draft next message · " + keyLabel(m.newlineKey()) + " newline · / commands · Esc/Ctrl+C cancel")
 		if m.loggingIn {
 			footer = m.styles.muted.Render("Esc/Ctrl+C cancel login")
 		}

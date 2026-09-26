@@ -29,7 +29,7 @@ type defaultsSaved struct {
 }
 
 func (m *model) saveDefault(command, value string) tea.Cmd {
-	selection := defaultSelection{command: command, name: m.name, effort: value}
+	selection := defaultSelection{command: command, name: m.modelTarget().name, effort: value}
 	if command == modelCommand {
 		selection.name = value
 	}
@@ -38,7 +38,7 @@ func (m *model) saveDefault(command, value string) tea.Cmd {
 		case providerEffort:
 			selection.effort = ""
 		case defaultEffort:
-			selection.effort = m.profiles[m.name].ReasoningEffort
+			selection.effort = m.profiles[selection.name].ReasoningEffort
 		}
 	}
 	ctx, cancel := context.WithCancel(m.ctx)
@@ -66,6 +66,13 @@ func (m *model) saveDefault(command, value string) tea.Cmd {
 }
 
 func (m *model) applyDefault(result defaultsSaved) {
+	// Queue advancement can start another operation in this same UI update.
+	// Retain the commit-aware outcome before that operation replaces the notice.
+	defer func() {
+		if result.err != nil && (!errors.Is(result.err, context.Canceled) || result.config.Models != nil) {
+			m.operationErrors = append(m.operationErrors, m.notice)
+		}
+	}()
 	m.savingDefault = nil
 	if result.config.Models != nil {
 		m.profiles = result.config.Models
@@ -86,7 +93,7 @@ func (m *model) applyDefault(result defaultsSaved) {
 		if m.busy {
 			result.err = m.agent.QueueModel(selected.name, m.profiles[selected.name], result.generator)
 			if result.err == nil {
-				m.pendingModel = selected.name
+				m.pendingModel = &modelChoice{selected.name, m.profiles[selected.name]}
 				m.notice = "Default model saved: " + selected.name + " · switch queued"
 			} else {
 				m.notice = "Default saved, but could not apply: " + result.err.Error()
@@ -100,16 +107,18 @@ func (m *model) applyDefault(result defaultsSaved) {
 		}
 		m.notice = "Default model saved: " + selected.name
 	} else {
-		result.err = m.agent.SetReasoningEffort(selected.effort)
-		if result.err == nil {
-			m.profile = m.agent.Model()
+		target := m.modelTarget()
+		if target.name == selected.name {
+			result.err = m.setReasoning(target, selected.effort)
 		}
 		m.notice = "Default reasoning saved for " + selected.name + ": " + effortLabel(selected.effort)
 	}
 	if result.err != nil {
 		m.notice = "Default saved, but could not apply: " + result.err.Error()
 	}
-	m.contextTokens = m.agent.ContextEstimate()
+	if !m.busy {
+		m.contextTokens = m.agent.ContextEstimate()
+	}
 	m.loginRequired = m.needsLogin != nil && m.needsLogin(m.profile)
 	m.syncCompletion()
 	m.refresh(m.scroll.following)

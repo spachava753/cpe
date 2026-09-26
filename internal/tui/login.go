@@ -51,17 +51,26 @@ func (m *model) configureLogin(method string) tea.Cmd {
 		if method == openAIDeviceLogin || method == deviceLogin {
 			command = loginDeviceCommand
 		}
+		if m.busy {
+			return m.enqueueCommand(commandRequest{loginCommand, method})
+		}
 		return m.start(command)
 	case copilotLogin:
 		if m.loginCopilot == nil {
 			m.notice = "GitHub Copilot login is unavailable"
 			return nil
 		}
+		if m.busy {
+			return m.enqueueCommand(commandRequest{loginCommand, method})
+		}
 		return m.start(loginCopilotCommand)
 	case goLogin:
 		if m.loginGo == nil {
 			m.notice = "OpenCode Go login is unavailable"
 			return nil
+		}
+		if m.busy {
+			return m.enqueueCommand(commandRequest{loginCommand, method})
 		}
 		input := textinput.New()
 		input.SetVirtualCursor(true)
@@ -70,6 +79,7 @@ func (m *model) configureLogin(method string) tea.Cmd {
 		input.EchoMode = textinput.EchoPassword
 		input.EchoCharacter = '•'
 		input.CharLimit = 4096
+		m.queueView = false
 		m.keyInput = &input
 		m.input.Blur()
 		m.loggingIn = true
@@ -94,6 +104,7 @@ func (m model) updateKeyInput(msg tea.Msg) (model, tea.Cmd) {
 			m.viewport, cmd = m.viewport.Update(msg)
 			return m, cmd
 		case escapeKey, "ctrl+c":
+			m.queuedCommands = nil
 			m.keyInput.Reset()
 			m.keyInput = nil
 			m.loggingIn, m.loginText = false, ""

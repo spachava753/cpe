@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -27,6 +28,7 @@ func TestDefaultSelection(t *testing.T) {
 	for _, test := range []struct {
 		name, command, value, wantModel, wantEffort, wantDefault, wantSavedEffort               string
 		cancel, badFile, badProvider, blocked, shutdown, afterCommit, conversation, typedFilter bool
+		queued                                                                                  bool
 	}{
 		{name: "conversation model only", command: modelCommand, value: "beta", conversation: true, wantModel: "beta", wantEffort: "low", wantDefault: "alpha", wantSavedEffort: "low"},
 		{name: "conversation reasoning only", command: reasoningCommand, value: "high", conversation: true, wantModel: "beta", wantEffort: "high", wantDefault: "alpha", wantSavedEffort: "low"},
@@ -43,6 +45,10 @@ func TestDefaultSelection(t *testing.T) {
 		{name: "cancel", command: modelCommand, value: "beta", cancel: true, wantModel: "alpha", wantDefault: "alpha", wantSavedEffort: "low"},
 		{name: "save failure", command: modelCommand, value: "beta", badFile: true, wantModel: "alpha", wantDefault: "alpha", wantSavedEffort: "low"},
 		{name: "provider failure", command: modelCommand, value: "beta", badProvider: true, wantModel: "alpha", wantDefault: "beta", wantSavedEffort: "low"},
+		{name: "save failure followed by queued success", command: modelCommand, value: "beta", badFile: true, queued: true, wantModel: "alpha", wantDefault: "alpha", wantSavedEffort: "low"},
+		{name: "provider failure followed by queued success", command: modelCommand, value: "beta", badProvider: true, queued: true, wantModel: "alpha", wantDefault: "beta", wantSavedEffort: "low"},
+		{name: "precommit cancellation followed by queued success", command: modelCommand, value: "beta", blocked: true, queued: true, wantModel: "alpha", wantDefault: "alpha", wantSavedEffort: "low"},
+		{name: "postcommit cancellation followed by queued success", command: modelCommand, value: "beta", afterCommit: true, queued: true, wantModel: "alpha", wantDefault: "beta", wantSavedEffort: "low"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -72,6 +78,11 @@ func TestDefaultSelection(t *testing.T) {
 			}
 			defer a.Close()
 			m := newModel(t.Context(), a, "alpha")
+			var logins atomic.Int32
+			m.login = func(context.Context, string, func(string)) error {
+				logins.Add(1)
+				return nil
+			}
 			styles := m.input.Styles()
 			styles.Cursor.BlinkSpeed = time.Millisecond
 			m.input.SetStyles(styles)
@@ -177,6 +188,9 @@ func TestDefaultSelection(t *testing.T) {
 				if m.busy || len(a.Messages()) != 0 {
 					t.Fatal("submitted while saving")
 				}
+				if test.queued {
+					m.queuedCommands = []commandRequest{{loginCommand, "openai"}}
+				}
 				if test.afterCommit {
 					<-started
 				}
@@ -196,17 +210,49 @@ func TestDefaultSelection(t *testing.T) {
 					m = next.(model)
 				}
 			}
+			deadline := time.After(5 * time.Second)
+			for m.busy {
+				select {
+				case event := <-m.events:
+					next, _ = m.Update(event)
+					m = next.(model)
+				case <-deadline:
+					m.cancel()
+					t.Fatal("queued login did not settle")
+				}
+			}
+			outcome := m.notice
+			if test.queued {
+				if logins.Load() != 1 || len(m.queuedCommands) != 0 || !strings.Contains(m.notice, "Signed in") {
+					t.Fatal("save completion did not advance queued work exactly once")
+				}
+				if test.blocked {
+					if len(m.operationErrors) != 0 {
+						t.Fatal("canceled write was reported as a failure")
+					}
+				} else {
+					if len(m.operationErrors) != 1 || !strings.Contains(m.View().Content, "Error: 1 failed") {
+						t.Fatal("save outcome lost after queued success")
+					}
+					outcome = m.operationErrors[0]
+					m.dispatchCommand(commandRequest{kind: queueCommand})
+					m.dispatchCommand(commandRequest{queueCommand, "clear"})
+					if len(m.operationErrors) != 1 || !strings.Contains(m.View().Content, outcome) {
+						t.Fatalf("save outcome not inspectable after queue clear: %s", m.View().Content)
+					}
+				}
+			}
 			if m.name != test.wantModel || m.profile.ReasoningEffort != test.wantEffort || a.Model() != m.profile || m.savingDefault != nil {
 				t.Fatalf("active=%s/%s notice=%s", m.name, m.profile.ReasoningEffort, m.notice)
 			}
 			if test.badFile {
-				if !strings.HasPrefix(m.notice, "Error:") {
-					t.Fatal(m.notice)
+				if !strings.HasPrefix(outcome, "Error:") {
+					t.Fatal(outcome)
 				}
 				return
 			}
-			if (test.badProvider || test.afterCommit) && !strings.Contains(m.notice, "Default saved, but could not apply") {
-				t.Fatal(m.notice)
+			if (test.badProvider || test.afterCommit) && !strings.Contains(outcome, "Default saved, but could not apply") {
+				t.Fatal(outcome)
 			}
 			after, err := os.ReadFile(path)
 			if err != nil {

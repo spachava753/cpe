@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,7 +23,13 @@ func TestSkillSlashCommands(t *testing.T) {
 	for _, tc := range []struct {
 		name, draft, args, wantPrompt, wantError string
 		key                                      rune
+		busy, canceled, failed                   bool
 	}{
+		{name: "busy tab then arguments", busy: true, draft: "/skill:re", key: tea.KeyTab, args: "staged changes", wantPrompt: "/skill:review staged changes"},
+		{name: "busy user-only skill", busy: true, draft: "/skill:pu", key: tea.KeyEnter, wantPrompt: "/skill:publish"},
+		{name: "busy unknown skill", busy: true, draft: "/skill:missing", key: tea.KeyEnter, wantError: "unknown skill"},
+		{name: "cancel queued skill", busy: true, canceled: true, draft: "/skill:pu", key: tea.KeyEnter},
+		{name: "queued skill after provider failure", busy: true, failed: true, draft: "/skill:pu", key: tea.KeyEnter, wantPrompt: "/skill:publish"},
 		{name: "tab then arguments", draft: "/skill:re", key: tea.KeyTab, args: "staged changes", wantPrompt: "/skill:review staged changes"},
 		{name: "enter runs user-only skill", draft: "/skill:pu", key: tea.KeyEnter, wantPrompt: "/skill:publish"},
 		{name: "escape preserves recognized command", draft: "/skill:review", key: tea.KeyEsc, wantPrompt: "/skill:review"},
@@ -53,13 +60,31 @@ func TestSkillSlashCommands(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer store.Close()
-			gen := agenttest.NewScriptedGenerator(agenttest.GenerateStep{Response: gai.Response{Candidates: []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("Skill accepted")}}}, FinishReason: gai.EndTurn}})
+			var gen gai.Generator = agenttest.NewScriptedGenerator(agenttest.GenerateStep{Response: gai.Response{Candidates: []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("Skill accepted")}}}, FinishReason: gai.EndTurn}})
+			gate := &waitingGenerator{started: make(chan struct{}), finish: make(chan error, 1)}
+			if tc.busy {
+				gen = gate
+			}
 			a, err := agent.Open(t.Context(), agent.Options{Config: config.Config{Agent: config.Agent{ToolTimeout: "1s", MaxRounds: 3}}, Model: config.Model{ID: "fixture"}, Generator: gen, Store: store, CWD: dir, Skills: catalog})
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer a.Close()
 			m := newModel(t.Context(), a, "skills-fixture")
+			if tc.busy {
+				m.start("wait")
+				<-gate.started
+				defer func() {
+					if m.busy {
+						m.cancel()
+						for u := range m.events {
+							if u.done {
+								break
+							}
+						}
+					}
+				}()
+			}
 			next, _ := m.Update(tea.KeyPressMsg{Text: "/skill:"})
 			m = next.(model)
 			if len(m.completion.matches) != 2 || m.completion.matches[0].name != "/skill:publish" || m.completion.matches[1].name != "/skill:review" {
@@ -70,11 +95,14 @@ func TestSkillSlashCommands(t *testing.T) {
 			}
 			m.input.SetValue(tc.draft)
 			m.syncCompletion()
-			before := len(store.Entries())
+			before := 0
+			if !tc.busy {
+				before = len(store.Entries())
+			}
 			next, _ = m.Update(tea.KeyPressMsg{Code: tc.key})
 			m = next.(model)
 			if tc.key != tea.KeyEnter {
-				if m.busy || m.completionHeight() != 0 {
+				if m.busy != tc.busy || m.completionHeight() != 0 {
 					t.Fatal("Tab/Escape executed a skill or left completion open")
 				}
 				if tc.args != "" {
@@ -90,6 +118,20 @@ func TestSkillSlashCommands(t *testing.T) {
 			if !m.busy {
 				t.Fatalf("skill command was not routed to agent: %s", m.notice)
 			}
+			if tc.busy {
+				if len(m.queuedCommands) != 1 || gate.calls.Load() != 1 {
+					t.Fatal("skill not queued separately from active generation")
+				}
+				m.input.SetValue("next unsent draft")
+				if tc.canceled {
+					next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+					m = next.(model)
+				} else if tc.failed {
+					gate.finish <- errors.New("fixture failed")
+				} else {
+					gate.finish <- nil
+				}
+			}
 			defer m.cancel()
 			deadline := time.After(5 * time.Second)
 			for m.busy {
@@ -100,6 +142,37 @@ func TestSkillSlashCommands(t *testing.T) {
 				case <-deadline:
 					t.Fatal("skill command did not complete")
 				}
+			}
+			if tc.busy {
+				if m.input.Value() != "next unsent draft" || len(m.queuedCommands) != 0 {
+					t.Fatal("completion lost draft or retained queue")
+				}
+				if tc.failed {
+					if len(m.operationErrors) != 1 || !strings.Contains(m.View().Content, "Error: 1 failed") {
+						t.Fatal("successful queued skill erased earlier failure")
+					}
+					m.dispatchCommand(commandRequest{kind: queueCommand})
+					if !strings.Contains(m.View().Content, "fixture failed") {
+						t.Fatal("provider failure no longer inspectable")
+					}
+				}
+				if tc.canceled {
+					if gate.calls.Load() != 1 {
+						t.Fatal("canceled skill ran")
+					}
+					return
+				}
+				if tc.wantError != "" {
+					if !strings.Contains(m.notice, tc.wantError) || gate.calls.Load() != 1 {
+						t.Fatal(m.notice)
+					}
+					return
+				}
+				messages := a.Messages()
+				if gate.calls.Load() != 2 || !strings.HasPrefix(messages[len(messages)-2].Blocks[0].Content.String(), tc.wantPrompt+"\n\n") {
+					t.Fatal("queued skill did not run exactly once after work")
+				}
+				return
 			}
 			if tc.wantError != "" {
 				if !strings.Contains(m.notice, tc.wantError) || len(a.Messages()) != 0 || len(store.Entries()) != before {

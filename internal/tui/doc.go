@@ -33,12 +33,27 @@
 // cancellation. Scrolling back to the bottom resumes following; starting a new
 // operation shows the latest conversation. Width reflow anchors to the same
 // logical text, and layout clamping never re-enables following on its own.
-// While agent work is active, the composer remains editable for the next draft,
-// including paste and the configured newline key. Ordinary drafts are neither
-// submitted nor queued until work finishes. Single-line /model commands are the
-// exception: they queue a model selection without submitting a user message. Completion, errors, and cancellation preserve the draft and cursor;
-// busy slash completion offers only /model; all commands resume when idle. During login, the normal composer stays
-// locked and private credential input retains its separate routing.
+// While agent work is active, the composer remains editable and offers the full
+// slash-command/skill catalog. Ordinary drafts remain unsent until a later
+// explicit submission. Commands are parsed once, then dispatched independently
+// of the worker: UI commands use snapshots and run immediately; model/reasoning
+// changes use QueueModel at generation boundaries. Skills, compaction, branching,
+// and chosen login flows enter an in-memory FIFO until the current operation
+// settles. The status shows pending work; /queue inspects it and /queue clear
+// discards it without stopping current work. Canceling active work clears the
+// queue; provider failures settle and advance without retrying an invocation.
+// Worker failures retain a UI-only error indicator and full messages in /queue
+// until exit, including when later commands succeed. /queue clear removes only
+// pending requests, not errors. Failures never become model messages.
+// Default-save failures use the same reporting, distinguishing uncommitted
+// writes from saved defaults that could not apply (including post-commit
+// cancellation). Cancellation before a save commits is not a failure.
+// /quit drops pending work and joins the active worker/default save on exit.
+// A picker, private login, or pending default save holds queue advancement.
+// Login secrets never enter the queue. Commands that have not run are not durable;
+// skills resolve at execution. New drafts are preserved throughout. Session path
+// and completed checkpoints are cached at operation boundaries; usage uses live
+// events. No concurrent Agent reads are needed to render/dispatch UI commands.
 //
 // A leading slash on a single-line draft opens a themed command completion popup
 // above the composer. Suggestions filter by prefix while the cursor is at the
@@ -51,7 +66,7 @@
 // slash prefix after Escape is ordinary prompt text; recognized commands retain
 // their meaning. Unknown commands otherwise still report an error. Inline
 // slashes, arguments, and multiline drafts do not open completion. Busy turns
-// offer only model selection, with Esc/Ctrl+C retaining work cancellation priority.
+// retain all commands, with Esc/Ctrl+C retaining work/queue cancellation priority.
 // An open model picker uses Escape to close; Ctrl+C cancels active work or quits
 // when idle. Completion and picker help reflect those active-work exceptions.
 // The popup shrinks or hides when terminal space is insufficient, and hidden
@@ -71,7 +86,8 @@
 // /login copilot displays GitHub's device authorization instructions, then imports
 // the account's Copilot models. All logins save their service entry in auth.json.
 // Successful import refreshes /model immediately without switching the active
-// model or changing its settings. Escape/Ctrl+C cancels key entry without exiting.
+// model or changing its settings. Escape/Ctrl+C cancels key entry and discards
+// pending commands without exiting.
 // Login work
 // shares the cancellation and worker lifecycle with agent work, but sends only
 // ephemeral display events. Its URLs and codes are cleared on completion and
@@ -93,7 +109,8 @@
 // a pending selection. A later choice replaces it, including choosing the current
 // profile to stay with it. No new prompt is queued. While a picker is open, Escape
 // dismisses it and Ctrl+C cancels active work; paste never reaches the composer.
-// /reasoning remains available between operations.
+// /reasoning also queues settings at generation boundaries. A pending model
+// selection supplies its target profile, so model/reasoning edits compose.
 // Selections leave conversation and interpreter state intact. Selecting a different
 // profile applies its configured defaults; selecting the same one is a no-op.
 // /reasoning default restores the active profile's configured effort (or omits
@@ -108,7 +125,7 @@
 // config.json off the event loop, then applies it. Composer Ctrl+S has no action.
 // Saving reasoning never selects the default model. Saving a model applies that
 // profile's saved settings. The provider reasoning choice removes the option.
-// A default model can also be saved during agent work; its conversation selection
+// A default model or reasoning effort can also be saved during agent work; its selection
 // queues at the same generation boundary as an ordinary model change. Only the
 // agent's concurrent-safe queue is accessed until that work has completed.
 // Drafts and history are preserved. ConfigDir enables this workflow; selection

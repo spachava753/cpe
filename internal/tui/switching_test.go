@@ -139,7 +139,7 @@ func TestActiveModelSelection(t *testing.T) {
 				next, _ := m.Update(tea.KeyPressMsg{Text: "/mo"})
 				m = next.(model)
 				if len(m.completion.matches) != 1 || m.completion.matches[0].name != modelCommand || m.completionHeight() == 0 {
-					t.Fatal("active completion must offer only model")
+					t.Fatal("active /mo completion must offer model")
 				}
 				next, _ = m.Update(submit)
 				m = next.(model)
@@ -213,10 +213,10 @@ func TestActiveModelSelection(t *testing.T) {
 				t.Fatal("selection interrupted active generation")
 			}
 			if test.providerError {
-				if !strings.Contains(m.notice, "fixture unavailable") || m.pendingModel != "" {
+				if !strings.Contains(m.notice, "fixture unavailable") || m.pendingModel != nil {
 					t.Fatal("failed selection hidden or queued")
 				}
-			} else if !test.cancelSave && !test.savedAfterDone && m.pendingModel != "beta" {
+			} else if !test.cancelSave && !test.savedAfterDone && (m.pendingModel == nil || m.pendingModel.name != "beta") {
 				t.Fatal("choice not queued")
 			}
 			if test.replace {
@@ -257,8 +257,8 @@ func TestActiveModelSelection(t *testing.T) {
 			if test.providerError || test.replace || test.cancelSave {
 				want = "alpha"
 			}
-			if m.name != want || m.profile != profiles[want] || a.Model() != m.profile || m.pendingModel != "" || m.input.Value() != "draft stays unsent" {
-				t.Fatalf("name=%s profile=%+v pending=%q draft=%q notice=%s", m.name, m.profile, m.pendingModel, m.input.Value(), m.notice)
+			if m.name != want || m.profile != profiles[want] || a.Model() != m.profile || m.pendingModel != nil || m.input.Value() != "draft stays unsent" {
+				t.Fatalf("name=%s profile=%+v pending=%+v draft=%q notice=%s", m.name, m.profile, m.pendingModel, m.input.Value(), m.notice)
 			}
 			if len(nextGenerator.Requests()) != 0 {
 				t.Fatal("selection generated a new prompt")

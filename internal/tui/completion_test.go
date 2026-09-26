@@ -266,7 +266,7 @@ func TestSlashCompletionEditingAndNavigation(t *testing.T) {
 			next, _ := m.Update(key)
 			m = next.(model)
 		}
-		if !strings.Contains(m.notice, "Unknown command") || m.busy {
+		if !strings.Contains(m.notice, "unknown command") || m.busy {
 			t.Fatal("command typo unexpectedly sent to the agent")
 		}
 	})
@@ -277,7 +277,7 @@ func TestSlashCompletionEditingAndNavigation(t *testing.T) {
 			next, _ := m.Update(msg)
 			m = next.(model)
 		}
-		if m.picker != nil || !strings.Contains(m.notice, "Unknown command") {
+		if m.picker != nil || !strings.Contains(m.notice, "unknown command") {
 			t.Fatal("hidden suggestion captured Enter")
 		}
 	})

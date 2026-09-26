@@ -23,6 +23,7 @@ func TestOpenCodeGoLogin(t *testing.T) {
 	for _, test := range []struct {
 		name, action string
 		picker       bool
+		queued       bool
 		submitKey    config.SubmitKey
 	}{
 		{name: "direct login", action: "save"},
@@ -31,6 +32,8 @@ func TestOpenCodeGoLogin(t *testing.T) {
 		{name: "cancel pasted provider picker", action: "picker cancel", picker: true},
 		{name: "escape at input", action: "esc"},
 		{name: "control C at input", action: "ctrl+c"},
+		{name: "escape discards pending login", action: "esc", queued: true},
+		{name: "control C discards pending login", action: "ctrl+c", queued: true},
 		{name: "cancel during import", action: "cancel"},
 		{name: "failed import", action: "fail"},
 	} {
@@ -58,7 +61,11 @@ func TestOpenCodeGoLogin(t *testing.T) {
 			m.loginRequired = true
 			m.needsLogin = func(p config.Model) bool { return p.Provider == "codex" }
 			m.newGenerator = func(context.Context, config.Model) (gai.Generator, error) { return gen, nil }
-			m.login = func(context.Context, string, func(string)) error { return errors.New("wrong login provider") }
+			otherCalled := make(chan struct{}, 1)
+			m.login = func(context.Context, string, func(string)) error {
+				otherCalled <- struct{}{}
+				return errors.New("wrong login provider")
+			}
 			called := make(chan string, 1)
 			m.loginGo = func(ctx context.Context, key string) (map[string]config.Model, error) {
 				called <- key
@@ -134,6 +141,12 @@ func TestOpenCodeGoLogin(t *testing.T) {
 				}
 			}
 			var restored tea.Cmd
+			wantDraft := ""
+			if test.queued {
+				m.queuedCommands = []commandRequest{{loginCommand, "openai"}}
+				wantDraft = "unsent draft"
+				m.input.SetValue(wantDraft)
+			}
 			if test.action == "esc" || test.action == "ctrl+c" {
 				key := tea.KeyPressMsg{Code: tea.KeyEsc}
 				if test.action == "ctrl+c" {
@@ -190,8 +203,11 @@ func TestOpenCodeGoLogin(t *testing.T) {
 					t.Fatal("cursor did not keep blinking after login")
 				}
 			}
-			if m.busy || m.loggingIn || m.keyInput != nil || m.loginText != "" || strings.Contains(m.View().Content, secret) || m.input.Value() != "" {
+			if m.busy || m.loggingIn || m.keyInput != nil || m.loginText != "" || strings.Contains(m.View().Content, secret) || m.input.Value() != wantDraft {
 				t.Fatal("login state retained")
+			}
+			if len(m.queuedCommands) != 0 || len(otherCalled) != 0 {
+				t.Fatal("private login cancellation retained or started pending work")
 			}
 			if len(a.Messages()) != 0 || len(store.Path()) != 1 {
 				t.Fatal("login entered durable conversation")

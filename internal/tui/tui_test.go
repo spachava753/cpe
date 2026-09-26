@@ -312,13 +312,16 @@ func TestDraftDuringWork(t *testing.T) {
 				next, _ = m.Update(key)
 				m = next.(model)
 			}
-			if m.input.Value() != want || m.completionHeight() != 0 || !strings.Contains(ansi.Strip(m.View().Content), "Draft next message") {
+			if m.input.Value() != want || (!tc.slash && (m.completionHeight() != 0 || !strings.Contains(ansi.Strip(m.View().Content), "Draft next message"))) {
 				t.Fatalf("busy draft = %q, popup height = %d", m.input.Value(), m.completionHeight())
+			}
+			if !tc.slash {
+				next, _ = m.Update(submit)
+				m = next.(model)
 			}
 			row, column := m.input.Line(), m.input.LineInfo().ColumnOffset
 			for _, msg := range []tea.Msg{
 				update{event: agent.Event{Kind: agent.EventDelta, Text: "Still working"}},
-				submit,
 				tea.WindowSizeMsg{Width: 32, Height: 12},
 				tea.WindowSizeMsg{Width: 80, Height: 24},
 			} {

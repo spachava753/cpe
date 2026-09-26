@@ -20,6 +20,7 @@ const (
 	treeCommand      = "/tree"
 	branchCommand    = "/branch"
 	sessionCommand   = "/session"
+	queueCommand     = "/queue"
 	helpCommand      = "/help"
 	quitCommand      = "/quit"
 	exitCommand      = "/exit"
@@ -44,6 +45,7 @@ var slashCommands = []slashCommand{
 	{treeCommand, "List saved checkpoints", false},
 	{branchCommand, "Continue from a checkpoint ID", true},
 	{sessionCommand, "Show the session path", false},
+	{queueCommand, "Inspect pending commands and failures (/queue clear discards pending work)", false},
 	{helpCommand, "Show commands", false},
 	{quitCommand, "Exit CPE", false},
 	{exitCommand, "Exit CPE (alias)", false},
@@ -73,9 +75,6 @@ func (m *model) syncCompletion() {
 	info := m.input.LineInfo()
 	if m.savingDefault == nil && !m.loggingIn && m.picker == nil && !c.dismissed && m.input.LineCount() == 1 && strings.HasPrefix(value, "/") && info.StartColumn+info.ColumnOffset == utf8.RuneCountInString(value) {
 		for _, command := range m.commands {
-			if m.busy && (len(m.profiles) == 0 || command.name != modelCommand) {
-				continue
-			}
 			if strings.HasPrefix(command.name, value) {
 				c.matches = append(c.matches, command)
 			}
