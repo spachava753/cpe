@@ -203,6 +203,7 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 		ConfigDir:    c.Dir,
 		SubmitKey:    c.TUI.SubmitKey,
 		MouseMode:    c.TUI.MouseMode,
+		PromptMode:   c.TUI.PromptMode,
 		Models:       c.Models,
 		NewGenerator: newGenerator,
 		ThemeDir:     c.Dir,

@@ -9,7 +9,10 @@
 // conversation tree. A host intent is synced before execution and its outcome
 // before returning to Starlark. A crash between them means an uncertain external
 // effect, never permission to retry it. Replay uses only completed evaluations.
-// Failed or interrupted evaluations roll back interpreter state, not host effects.
+// Ordinary failed or unfinished evaluations roll back state, not host effects.
+// A completed eval_end may instead commit a steering interruption: its saved
+// instruction count and stop phase reconstruct the partial interpreter state.
+// An absent eval_end never implies a known cutoff or permission to retry effects.
 // request_start and usage entries record model invocation accounting separately
 // from messages. Totals use all entries, including branches and pre-compaction
 // history; an unmatched request_start means consumption is unknown after a crash.

@@ -30,7 +30,7 @@ func parseCommand(text string, literal bool) (commandRequest, error) {
 	name := fields[0]
 	argument := strings.TrimSpace(strings.TrimPrefix(text, name))
 	switch name {
-	case modelCommand, reasoningCommand, themeCommand, loginCommand:
+	case modelCommand, reasoningCommand, themeCommand, loginCommand, promptModeCommand:
 		return commandRequest{commandKind(name), argument}, nil
 	case branchCommand:
 		if argument == "" {
@@ -38,8 +38,8 @@ func parseCommand(text string, literal bool) (commandRequest, error) {
 		}
 		return commandRequest{commandKind(name), argument}, nil
 	case queueCommand:
-		if argument != "" && argument != "clear" {
-			return commandRequest{}, errors.New("use /queue or /queue clear")
+		if argument != "" && argument != "clear" && argument != "steer" {
+			return commandRequest{}, errors.New("use /queue, /queue clear, or /queue steer")
 		}
 		return commandRequest{commandKind(name), argument}, nil
 	case helpCommand, usageCommand, sessionCommand, treeCommand, compactCommand, quitCommand, exitCommand:
@@ -58,6 +58,9 @@ func parseCommand(text string, literal bool) (commandRequest, error) {
 }
 
 func (r commandRequest) label() string {
+	if r.kind == "" {
+		return "Prompt: " + oneline(r.argument)
+	}
 	if r.kind == skillCommand {
 		return strings.Fields(r.argument)[0]
 	}
@@ -74,10 +77,6 @@ func (m *model) submitInput() tea.Cmd {
 		m.notice = "Error: " + err.Error()
 		return nil
 	}
-	// Editing a normal draft during work still requires a later explicit submit.
-	if m.busy && request.kind == "" {
-		return nil
-	}
 	if m.loginRequired && (request.kind == "" || request.kind == skillCommand) {
 		m.notice = "Sign in with /login first"
 		return nil
@@ -88,7 +87,8 @@ func (m *model) submitInput() tea.Cmd {
 }
 
 func (m *model) enqueueCommand(request commandRequest) tea.Cmd {
-	m.queuedCommands = append(m.queuedCommands, request)
+	m.nextQueuedID++
+	m.queuedCommands = append(m.queuedCommands, queuedCommand{id: m.nextQueuedID, request: request})
 	if m.queueView {
 		m.refresh(m.scroll.following)
 	}
@@ -101,6 +101,8 @@ func (m *model) dispatchCommand(request commandRequest) tea.Cmd {
 		m.queueView = false
 	}
 	switch request.kind {
+	case promptModeCommand:
+		m.configurePromptMode(request.argument)
 	case modelCommand, reasoningCommand:
 		m.configureModel(string(request.kind), request.argument)
 	case themeCommand:
@@ -110,7 +112,7 @@ func (m *model) dispatchCommand(request commandRequest) tea.Cmd {
 	case quitCommand, exitCommand:
 		return m.quit()
 	case helpCommand:
-		m.notice = "/model  /reasoning  /theme  /usage  /login  /skill:NAME [args]  /queue [clear]  /compact  /tree  /branch ID  /session  /quit"
+		m.notice = "/model  /reasoning  /theme  /usage  /login  /skill:NAME [args]  /prompt-mode  /queue [clear|steer]  /compact  /tree  /branch ID  /session  /quit"
 	case usageCommand:
 		m.staticView, m.usageView = "", true
 		m.notice = "Session totals · PgUp/PgDn scroll"
@@ -136,16 +138,20 @@ func (m *model) dispatchCommand(request commandRequest) tea.Cmd {
 		m.refresh(false)
 		m.viewport.GotoTop()
 	case queueCommand:
-		if request.argument == "clear" {
+		switch request.argument {
+		case "clear":
 			m.queuedCommands = nil
+			m.steering = nil
 			if m.queueView {
 				m.refresh(m.scroll.following)
 			}
 			m.notice = "Queued commands cleared · active work continues"
-		} else {
+		case "steer":
+			m.chooseSteeringPrompt()
+		default:
 			m.showQueue()
 		}
-	case compactCommand, branchCommand, skillCommand:
+	case compactCommand, branchCommand:
 		if m.busy {
 			return m.enqueueCommand(request)
 		}
@@ -158,7 +164,7 @@ func (m *model) dispatchCommand(request commandRequest) tea.Cmd {
 			return m.start(request.argument)
 		}
 	default:
-		return m.start(request.argument)
+		return m.dispatchPrompt(request)
 	}
 	return nil
 }
@@ -166,8 +172,9 @@ func (m *model) dispatchCommand(request commandRequest) tea.Cmd {
 func (m model) queueText() string {
 	var b strings.Builder
 	b.WriteString("Queued commands — /queue clear to discard\n\n")
-	for i, request := range m.queuedCommands {
-		fmt.Fprintf(&b, "%d. %s\n", i+1, request.label())
+	b.WriteString("Use /queue steer to select a prompt and interrupt current work.\n\n")
+	for _, pending := range m.queuedCommands {
+		fmt.Fprintf(&b, "%d. %s\n", pending.id, pending.request.label())
 	}
 	if len(m.queuedCommands) == 0 {
 		b.WriteString("No queued commands.\n")
@@ -192,10 +199,23 @@ func (m *model) showQueue() {
 // picker or private login may hold the UI while the user finishes their choice.
 func (m *model) drainCommands() tea.Cmd {
 	var cmds []tea.Cmd
-	for !m.busy && m.savingDefault == nil && !m.loggingIn && m.picker == nil && !m.quitting && m.ctx.Err() == nil && len(m.queuedCommands) > 0 {
-		request := m.queuedCommands[0]
-		if m.loginRequired && request.kind == skillCommand {
-			m.notice = "Queued skill needs login · /login or /queue clear"
+	for !m.busy && m.savingDefault == nil && !m.loggingIn && m.picker == nil && !m.quitting && m.ctx.Err() == nil && (len(m.steering) > 0 || len(m.queuedCommands) > 0) {
+		if len(m.steering) > 0 {
+			if m.loginRequired {
+				m.notice = "Steering prompt needs login · /login or /queue clear"
+				break
+			}
+			var texts []string
+			for _, request := range m.steering {
+				texts = append(texts, request.argument)
+			}
+			m.steering = nil
+			cmds = append(cmds, m.startWork(texts[0], "", texts[1:]...))
+			break
+		}
+		request := m.queuedCommands[0].request
+		if m.loginRequired && request.isPrompt() {
+			m.notice = "Queued prompt needs login · /login or /queue clear"
 			break
 		}
 		m.queuedCommands = m.queuedCommands[1:]
@@ -206,6 +226,7 @@ func (m *model) drainCommands() tea.Cmd {
 
 func (m *model) cancelWork() {
 	m.queuedCommands = nil
+	m.steering = nil
 	m.cancel()
 	m.activity = "Canceling"
 	if m.queueView {
@@ -217,5 +238,6 @@ func (m *model) cancelWork() {
 func (m *model) quit() tea.Cmd {
 	m.quitting = true
 	m.queuedCommands = nil
+	m.steering = nil
 	return tea.Quit
 }

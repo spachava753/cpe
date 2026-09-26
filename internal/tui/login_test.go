@@ -143,7 +143,7 @@ func TestOpenCodeGoLogin(t *testing.T) {
 			var restored tea.Cmd
 			wantDraft := ""
 			if test.queued {
-				m.queuedCommands = []commandRequest{{loginCommand, "openai"}}
+				m.queuedCommands = []queuedCommand{{id: 1, request: commandRequest{loginCommand, "openai"}}}
 				wantDraft = "unsent draft"
 				m.input.SetValue(wantDraft)
 			}

@@ -18,6 +18,9 @@
 // tui.mouse_mode is select (the default) or scroll. Select leaves mouse events
 // to the terminal for native drag selection/copy; scroll captures them for CPE's
 // wheel scrolling. F4 toggles the mode for the running TUI without saving config.
+// tui.prompt_mode is queue (the default) or steer, controlling explicit prompt
+// submissions during work. It does not change submit/newline keys. SavePromptMode
+// changes only this preference under the shared configuration lock.
 //
 // API providers read named environment variables. Codex instead uses CPE's own
 // ~/.cpe/auth.json with TUI /login and automatic refresh. There is no credential

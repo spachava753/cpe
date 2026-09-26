@@ -116,7 +116,7 @@ func (a *Agent) restore(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	if err := a.reconcile(); err != nil {
+	if err := a.reconcile(nil); err != nil {
 		_ = r.Close()
 		return err
 	}
@@ -190,7 +190,7 @@ func resultMessage(r repl.Result) gai.Message {
 	m.ToolResultError = r.Error != ""
 	return m
 }
-func (a *Agent) reconcile() error {
+func (a *Agent) reconcile(cause error) error {
 	results := map[string]repl.Result{}
 	for _, e := range a.opts.Store.Path() {
 		if e.Type == compactionEntry {
@@ -222,6 +222,9 @@ func (a *Agent) reconcile() error {
 			r, ok := results[b.ID]
 			if !ok {
 				r = repl.Result{CallID: b.ID, Error: "Tool call interrupted before a durable result. It was not retried."}
+				if errors.Is(cause, ErrSteered) {
+					r.Error += " " + ErrSteered.Error() + "."
+				}
 			}
 			if err := a.append(resultMessage(r)); err != nil {
 				return err
@@ -276,14 +279,24 @@ func (a *Agent) syncDialog(dialog gai.Dialog) error {
 
 // Prompt saves user input, runs the gai hook-driven loop, and creates a branch
 // checkpoint. Cancellation preserves completed work and repairs pending results.
-func (a *Agent) Prompt(ctx context.Context, text string, emit func(Event)) (finalErr error) {
+func (a *Agent) Prompt(ctx context.Context, text string, emit func(Event)) error {
+	return a.Prompts(ctx, []string{text}, emit)
+}
+
+// ErrSteered cancels an operation to admit steering prompts after it settles.
+// Partial tool state is durably retained; incomplete generations are discarded.
+var ErrSteered = repl.ErrSteered
+
+// Prompts admits a batch of user inputs before one generation loop. Steering
+// requests received while cancellation settles can be delivered together.
+func (a *Agent) Prompts(ctx context.Context, texts []string, emit func(Event)) (finalErr error) {
 	if a.stateErr != nil {
 		return a.stateErr
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if strings.TrimSpace(text) == "" {
+	if len(texts) == 0 {
 		return errors.New("empty prompt")
 	}
 	a.emit = emit
@@ -295,12 +308,18 @@ func (a *Agent) Prompt(ctx context.Context, text string, emit func(Event)) (fina
 	if _, err := a.ApplyQueuedModel(); err != nil {
 		return err
 	}
-	expanded, err := a.opts.Skills.Expand(text)
-	if err != nil {
-		return err
+	var inputs gai.Dialog
+	for _, text := range texts {
+		if strings.TrimSpace(text) == "" {
+			return errors.New("empty prompt")
+		}
+		expanded, err := a.opts.Skills.Expand(text)
+		if err != nil {
+			return err
+		}
+		inputs = append(inputs, gai.Message{Role: gai.User, Blocks: []gai.Block{gai.TextBlock(expanded)}})
 	}
-	input := gai.Message{Role: gai.User, Blocks: []gai.Block{gai.TextBlock(expanded)}}
-	prospective := append(append(gai.Dialog{}, a.dialog...), input)
+	prospective := append(append(gai.Dialog{}, a.dialog...), inputs...)
 	request := a.conversationRequest(prospective)
 	compact, err := a.needsCompaction(request)
 	if err != nil {
@@ -314,8 +333,10 @@ func (a *Agent) Prompt(ctx context.Context, text string, emit func(Event)) (fina
 	}
 	a.compacted = false
 	a.pending = make(map[string]gai.Message)
-	if err := a.append(input); err != nil {
-		return err
+	for _, input := range inputs {
+		if err := a.append(input); err != nil {
+			return err
+		}
 	}
 	definition := replDefinition()
 	loop, err := gaiagent.New(gaiagent.Config{
@@ -357,7 +378,10 @@ func (a *Agent) Prompt(ctx context.Context, text string, emit func(Event)) (fina
 			request := a.conversationRequest(req.Request.Dialog)
 			return gaiagent.BeforeGenerationDecision{Request: &request}, a.checkContext(request)
 		}),
-		AfterGeneration: gaiagent.AfterGenerationFunc(func(_ context.Context, req gaiagent.AfterGenerationRequest) (*gai.Response, error) {
+		AfterGeneration: gaiagent.AfterGenerationFunc(func(ctx context.Context, req gaiagent.AfterGenerationRequest) (*gai.Response, error) {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			if len(req.Response.Candidates) != 1 {
 				return nil, errors.New("expected one candidate")
 			}
@@ -393,10 +417,10 @@ func (a *Agent) Prompt(ctx context.Context, text string, emit func(Event)) (fina
 	if err := a.reload(); err != nil {
 		return errors.Join(runErr, err)
 	}
-	if err := a.reconcile(); err != nil {
+	if err := a.reconcile(context.Cause(ctx)); err != nil {
 		return errors.Join(runErr, err)
 	}
-	if _, err := a.opts.Store.Append("checkpoint", map[string]string{"label": shortLabel(text)}); err != nil {
+	if _, err := a.opts.Store.Append("checkpoint", map[string]string{"label": shortLabel(strings.Join(texts, " / "))}); err != nil {
 		return errors.Join(runErr, err)
 	}
 	if result.StopReason == "round_limit" {
@@ -549,4 +573,4 @@ const replDescription = `Use starlark_repl to execute persistent Starlarkx code.
 Use load("repl.star", "emit_image") to show images to the model. For MCP image content use emit_image(result["content"][i]); for base64 strings or raw bytes use emit_image(data, mime_type="image/png"). This attaches actual images to this tool result; printing base64 does not display an image. PNG, JPEG, GIF, and WebP are supported, up to 20 MiB of image bytes per evaluation. Emitted images persist even if later code fails, like printed output.
 Load Dyson modules with load("os.star", "os"), load("requests.star", "requests"), and similarly glob, json, re, subprocess, time. Use open(path).read() to read text; open supports read modes only. Write via fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644); os.write(fd, "text"); os.close(fd). Run commands with subprocess.run(["command", "arg"], capture_output=True, text=True). Use requests.get(url).text or .json() for HTTP.
 Prefer closing files and descriptors within each chunk. Restored handles reattach by path and saved offset on NEW host I/O, without repeating creation or truncation; they observe the current filesystem. The working directory is fixed; use explicit paths or subprocess cwd. Environment mutation, process signaling, tempfile, pwd, grp, and shutil are not exposed.
-Every host operation is journaled. Restoration supplies recorded results without repeating effects. A failed chunk rolls back Starlark state, but file writes, HTTP requests, and commands already performed remain. Inspect those effects before retrying. Historical data in restored variables is a snapshot; call the host again when fresh data is needed.`
+Every host operation is journaled. Restoration supplies recorded results without repeating effects. Ordinary errors/timeouts/cancellation roll back Starlark state. A tool result marked canceled due to a steered prompt instead retains partial interpreter state, printed output, and images at its recorded interruption point. File writes, HTTP requests, and commands already performed remain in either case. Inspect those effects before retrying. Historical data in restored variables is a snapshot; call the host again when fresh data is needed.`

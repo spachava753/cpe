@@ -226,10 +226,6 @@ func TestActiveModelSelection(t *testing.T) {
 			}
 			m.input.SetValue("draft stays unsent")
 			var next tea.Model
-			if m.busy {
-				next, _ = m.Update(submit)
-				m = next.(model)
-			}
 			if test.cancel {
 				next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 				m = next.(model)

@@ -76,12 +76,26 @@ func (e *recordedError) Unwrap() error {
 }
 
 type journal struct {
+	ctx      context.Context
+	output   io.Writer
 	store    *session.Store
 	replay   bool
 	records  []session.Entry
 	position int
 	fatal    error
 	active   bool
+}
+
+// hostContext preserves builtin-specific deadlines while adding the active
+// evaluation's cancellation. The evaluator itself owns the Starlark thread.
+func (j *journal) hostContext(parent context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancelCause(parent)
+	evaluation := j.ctx
+	stop := context.AfterFunc(evaluation, func() { cancel(context.Cause(evaluation)) })
+	if evaluation.Err() != nil {
+		cancel(context.Cause(evaluation))
+	}
+	return ctx, func() { stop(); cancel(context.Canceled) }
 }
 
 // boundary is the only route to a live capability. The closure is never called
@@ -138,6 +152,9 @@ func boundary[T any](j *journal, name string, args any, live func() (T, error)) 
 		j.fatal = err
 		return zero, err
 	}
+	// Once an opcode has entered a builtin, let its host boundary settle.
+	// Context-aware capabilities receive cancellation through hostContext;
+	// noncancellable calls finish before the next opcode observes it.
 	value, callErr := live()
 	encoded, err := json.Marshal(value)
 	if err != nil {

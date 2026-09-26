@@ -23,7 +23,7 @@ import (
 )
 
 // Runtime identifies the exact interpreter and host contract used by a journal.
-const Runtime = "cpe-repl-1/dyson-b790356d9233/starlarkx-40a94bc8c78e/" + runtime.GOOS + "/" + runtime.GOARCH
+const Runtime = "cpe-repl-2/dyson-b790356d9233/starlarkx-40a94bc8c78e/" + runtime.GOOS + "/" + runtime.GOARCH
 
 // Tool is an injected host function. Execute accepts schema-validated JSON
 // parameters and returns a JSON-serializable value. Calls are synchronous and
@@ -62,15 +62,17 @@ type evalStart struct {
 	ToolArguments toolArgumentFormat `json:"toolArguments,omitempty"`
 }
 
-// Result is the durable outcome of one chunk. An error rolls back interpreter
-// state while preserving the audit trail and any already-performed host effects.
+// Result is the durable outcome of one chunk. Ordinary errors roll back state;
+// steering interruptions commit partial state with an exact replay cutoff.
+// Both retain the audit trail and already-performed host effects.
 type Result struct {
-	EvalID    string  `json:"evalId"`
-	CallID    string  `json:"callId"`
-	Output    string  `json:"output"`
-	Error     string  `json:"error,omitempty"`
-	Committed bool    `json:"committed"`
-	Images    []Image `json:"images,omitempty"`
+	EvalID       string        `json:"evalId"`
+	CallID       string        `json:"callId"`
+	Output       string        `json:"output"`
+	Error        string        `json:"error,omitempty"`
+	Committed    bool          `json:"committed"`
+	Images       []Image       `json:"images,omitempty"`
+	Interruption *interruption `json:"interruption,omitempty"`
 }
 
 type chunk struct {
@@ -80,11 +82,11 @@ type chunk struct {
 	end     *Result
 }
 
-// REPL owns one Dyson sphere and its durable host journal. Use Close when done.
+// REPL owns an interpreter with Dyson capabilities and its durable host journal. Use Close when done.
 type REPL struct {
 	opts          Options
 	j             *journal
-	sphere        *dyson.Sphere
+	sphere        *evaluator
 	output        *xio.TailBuffer
 	images        []Image
 	imageBytes    int
@@ -106,7 +108,7 @@ func New(ctx context.Context, opts Options) (*REPL, error) {
 		opts.OutputLimit = 32000
 	}
 	r := &REPL{opts: opts, j: &journal{store: opts.Store}}
-	tools, err := r.makeTools() //nolint:contextcheck // Callbacks use Dyson's active Eval context, not the construction context.
+	tools, err := r.makeTools() //nolint:contextcheck // Callbacks use the active evaluation context, not the construction context.
 	if err != nil {
 		return nil, err
 	}
@@ -136,11 +138,11 @@ func (r *REPL) newSphere() {
 	source := dyson.NewStdlib(cfg).Select(dyson.StdlibSelection{
 		Modules: []string{"os.star", "glob.star", "json.star", "re.star", "requests.star", "subprocess.star", "time.star"}, Globals: []string{"open"},
 	})
-	r.sphere = dyson.NewSphere(func(_ *starlark.Thread, text string) {
+	r.sphere = newEvaluator(func(_ *starlark.Thread, text string) {
 		if r.output != nil {
 			_, _ = r.output.Write([]byte(text))
 		}
-	}, source, r.tools, dyson.ModuleSet{"repl.star": {"emit_image": starlark.NewBuiltin("emit_image", r.emitImage)}})
+	}, source, r.j.subprocessModule(source), r.tools, dyson.ModuleSet{"repl.star": {"emit_image": starlark.NewBuiltin("emit_image", r.emitImage)}})
 }
 
 func (r *REPL) restore(ctx context.Context) error {
@@ -181,6 +183,9 @@ func (r *REPL) restore(ctx context.Context) error {
 			if current == nil || result.EvalID != current.id || result.CallID != current.start.CallID {
 				return errors.New("mismatched evaluation outcome")
 			}
+			if stop := result.Interruption; stop != nil && (!result.Committed || stop.Steps == 0 || result.Error == "") {
+				return errors.New("invalid interrupted evaluation outcome")
+			}
 			current.end = &result
 			chunks = append(chunks, *current)
 			current = nil
@@ -205,15 +210,25 @@ func (r *REPL) restore(ctx context.Context) error {
 			limit = r.opts.OutputLimit
 		}
 		r.output = xio.NewTailBuffer(limit)
+		r.j.output = r.output
 		r.images, r.imageBytes = nil, 0
 		replayCtx, cancel := context.WithTimeout(ctx, r.opts.Timeout)
-		err := r.sphere.Eval(replayCtx, c.start.Code)
+		r.j.ctx = replayCtx
+		steps, before, err := r.sphere.Eval(replayCtx, c.start.Code, c.end.Interruption)
+		contextErr := replayCtx.Err()
 		cancel()
 		r.j.active = false
 		if r.j.fatal != nil {
 			return fmt.Errorf("restore %s: %w", c.id, r.j.fatal)
 		}
-		if err != nil {
+		if contextErr != nil {
+			return fmt.Errorf("restore %s: %w", c.id, contextErr)
+		}
+		if stop := c.end.Interruption; stop != nil {
+			if err == nil || steps != stop.Steps || before != stop.BeforeOpcode {
+				return fmt.Errorf("restore %s: interrupted execution differs", c.id)
+			}
+		} else if err != nil {
 			return fmt.Errorf("restore %s: %w", c.id, err)
 		}
 		if r.j.position != len(c.records) {
@@ -264,11 +279,14 @@ func (r *REPL) Eval(ctx context.Context, callID, code string) (Result, error) {
 		return Result{}, err
 	}
 	r.output = xio.NewTailBuffer(r.opts.OutputLimit)
+	r.j.output = r.output
 	r.images, r.imageBytes = nil, 0
 	r.toolArguments = losslessToolArguments
 	r.j.active = true
 	evalCtx, cancel := context.WithTimeout(ctx, r.opts.Timeout)
-	evalErr := r.sphere.Eval(evalCtx, code)
+	r.j.ctx = evalCtx
+	steps, before, evalErr := r.sphere.Eval(evalCtx, code, nil)
+	steered := errors.Is(context.Cause(evalCtx), ErrSteered)
 	cancel()
 	r.j.active = false
 	if r.j.fatal != nil {
@@ -277,13 +295,19 @@ func (r *REPL) Eval(ctx context.Context, callID, code string) (Result, error) {
 	}
 	result := Result{EvalID: id, CallID: callID, Output: r.outputText(), Images: r.images, Committed: evalErr == nil}
 	if evalErr != nil {
-		result.Error = evalErr.Error() + "\nInterpreter state rolled back; external effects remain."
+		if steered && steps > 0 {
+			result.Committed = true
+			result.Interruption = &interruption{Steps: steps, BeforeOpcode: before}
+			result.Error = evalErr.Error() + "\n" + ErrSteered.Error() + ". Partial interpreter state and completed host effects retained."
+		} else {
+			result.Error = evalErr.Error() + "\nInterpreter state rolled back; external effects remain."
+		}
 	}
 	if _, err := r.opts.Store.Append("eval_end", result); err != nil {
 		r.fatal = err
 		return Result{}, err
 	}
-	if evalErr != nil {
+	if !result.Committed {
 		// Recovery uses its own bounded context so cancellation cannot prevent rollback.
 		recoveryCtx, recoveryCancel := context.WithTimeout(context.WithoutCancel(ctx), r.opts.Timeout)
 		err := r.restore(recoveryCtx)
@@ -376,7 +400,10 @@ func (r *REPL) makeTools() (dyson.ModuleSet, error) {
 				return nil, err
 			}
 			value, err := boundary(r.j, "tool."+tool.Name, input, func() (json.RawMessage, error) {
-				result, err := tool.Execute(dyson.EvaluationContext(thread), input)
+				if err := r.j.ctx.Err(); err != nil {
+					return nil, err
+				}
+				result, err := tool.Execute(r.j.ctx, input)
 				if err != nil {
 					return nil, err
 				}

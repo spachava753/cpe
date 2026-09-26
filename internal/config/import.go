@@ -53,6 +53,25 @@ func SaveDefaultModel(ctx context.Context, dir, name string) (Config, error) {
 	})
 }
 
+// SavePromptMode changes only the default delivery mode, preserving all other
+// TUI preferences and model settings under the shared configuration lock.
+func SavePromptMode(ctx context.Context, dir string, mode PromptMode) (Config, error) {
+	if mode != PromptQueue && mode != PromptSteer {
+		return Config{}, errors.New("invalid prompt mode")
+	}
+	return editConfig(ctx, dir, func(document map[string]json.RawMessage, c Config) (bool, error) {
+		var settings map[string]json.RawMessage
+		_ = json.Unmarshal(document["tui"], &settings)
+		if settings == nil {
+			settings = make(map[string]json.RawMessage)
+		}
+		_, present := settings["prompt_mode"]
+		settings["prompt_mode"], _ = json.Marshal(mode)
+		document["tui"], _ = json.Marshal(settings)
+		return !present || c.TUI.PromptMode != mode, nil
+	})
+}
+
 // SaveReasoning persists a profile's reasoning default without changing the
 // default model. Empty effort removes the option, letting the provider choose.
 func SaveReasoning(ctx context.Context, dir, name, effort string) (Config, error) {

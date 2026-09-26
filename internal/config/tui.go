@@ -7,8 +7,48 @@ import (
 
 // tui configures interactive input independently of model generation.
 type tui struct {
-	SubmitKey SubmitKey `json:"submit_key"`
-	MouseMode MouseMode `json:"mouse_mode"`
+	SubmitKey  SubmitKey  `json:"submit_key"`
+	MouseMode  MouseMode  `json:"mouse_mode"`
+	PromptMode PromptMode `json:"prompt_mode"`
+}
+
+// PromptMode chooses how a submitted prompt is delivered during agent work.
+type PromptMode uint8
+
+const (
+	PromptQueue PromptMode = iota
+	PromptSteer
+)
+
+func (m PromptMode) String() string {
+	if m == PromptSteer {
+		return "steer"
+	}
+	return "queue"
+}
+func (m PromptMode) MarshalJSON() ([]byte, error) { return json.Marshal(m.String()) }
+func (m *PromptMode) UnmarshalJSON(data []byte) error {
+	var text string
+	if err := json.Unmarshal(data, &text); err != nil {
+		return fmt.Errorf("tui.prompt_mode: %w", err)
+	}
+	mode, err := ParsePromptMode(text)
+	if err == nil {
+		*m = mode
+	}
+	return err
+}
+
+// ParsePromptMode parses the same setting used by JSON and the TUI picker.
+func ParsePromptMode(text string) (PromptMode, error) {
+	switch text {
+	case "queue":
+		return PromptQueue, nil
+	case "steer":
+		return PromptSteer, nil
+	default:
+		return PromptQueue, fmt.Errorf("tui.prompt_mode must be queue or steer, got %q", text)
+	}
 }
 
 // MouseMode chooses who owns mouse events. Its zero value leaves selection to

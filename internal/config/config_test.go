@@ -75,7 +75,7 @@ func TestLoad(t *testing.T) {
 				}
 				if !tc.invalid {
 					data, err := json.Marshal(c.TUI)
-					if err != nil || string(data) != `{"submit_key":"`+tc.want.String()+`","mouse_mode":"select"}` {
+					if err != nil || string(data) != `{"submit_key":"`+tc.want.String()+`","mouse_mode":"select","prompt_mode":"queue"}` {
 						t.Fatalf("serialized preferences=%s error=%v", data, err)
 					}
 				}

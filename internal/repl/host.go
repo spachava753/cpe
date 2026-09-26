@@ -3,6 +3,7 @@ package repl
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/spachava753/dyson"
@@ -18,6 +19,8 @@ func (h httpClient) Do(ctx context.Context, r dyson.HTTPRequest) (dyson.HTTPResp
 		if h.host == nil {
 			return dyson.HTTPResponse{}, errors.New("HTTP capability is unavailable")
 		}
+		ctx, cancel := h.j.hostContext(ctx)
+		defer cancel()
 		return h.host.Do(ctx, r)
 	})
 }
@@ -28,6 +31,12 @@ type commandRunner struct {
 	cwd  string
 }
 
+type commandOutcome struct {
+	Result  dyson.CommandResult `json:"result"`
+	Steered bool                `json:"steered,omitempty"`
+}
+
+//nolint:contextcheck // Evaluation cancellation is distinct from a builtin-specific timeout.
 func (h commandRunner) RunCommand(ctx context.Context, c dyson.Command) (dyson.CommandResult, error) {
 	if c.Dir == "" {
 		c.Dir = h.cwd
@@ -42,12 +51,24 @@ func (h commandRunner) RunCommand(ctx context.Context, c dyson.Command) (dyson.C
 	if c.Stderr == dyson.StreamInherit {
 		c.Stderr = dyson.StreamPipe
 	}
-	return boundary(h.j, "command.run", c, func() (dyson.CommandResult, error) {
+	outcome, err := boundary(h.j, "command.run", c, func() (commandOutcome, error) {
 		if h.host == nil {
-			return dyson.CommandResult{}, errors.New("command capability is unavailable")
+			return commandOutcome{}, errors.New("command capability is unavailable")
 		}
-		return h.host.RunCommand(ctx, c)
+		ctx, cancel := h.j.hostContext(ctx)
+		defer cancel()
+		result, err := h.host.RunCommand(ctx, c)
+		return commandOutcome{Result: result, Steered: errors.Is(context.Cause(h.j.ctx), ErrSteered)}, err
 	})
+	if outcome.Steered && h.j.output != nil {
+		if len(outcome.Result.Stdout) > 0 {
+			fmt.Fprintf(h.j.output, "\n[interrupted command stdout]\n%s", outcome.Result.Stdout)
+		}
+		if len(outcome.Result.Stderr) > 0 {
+			fmt.Fprintf(h.j.output, "\n[interrupted command stderr]\n%s", outcome.Result.Stderr)
+		}
+	}
+	return outcome.Result, err
 }
 
 type clock struct {
@@ -77,6 +98,8 @@ func (h clock) Sleep(ctx context.Context, d time.Duration) error {
 		if h.host == nil {
 			return errors.New("clock capability is unavailable")
 		}
+		ctx, cancel := h.j.hostContext(ctx)
+		defer cancel()
 		return h.host.Sleep(ctx, d)
 	})
 }

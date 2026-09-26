@@ -34,13 +34,24 @@
 // operation shows the latest conversation. Width reflow anchors to the same
 // logical text, and layout clamping never re-enables following on its own.
 // While agent work is active, the composer remains editable and offers the full
-// slash-command/skill catalog. Ordinary drafts remain unsent until a later
-// explicit submission. Commands are parsed once, then dispatched independently
+// slash-command/skill catalog. Drafts remain unsent until explicitly submitted.
+// The configured submit key queues busy prompts by default; /prompt-mode selects
+// queue or steer for this conversation, and Ctrl+S in that picker also saves it.
+// Shift+Enter follows this mode when configured as the submit key; newline keys
+// retain their editing behavior. Skills follow the same prompt delivery mode.
+// /queue steer opens a picker to promote one queued prompt by stable ID. It is
+// removed once and sent ahead of remaining FIFO work. Steering cancels generation
+// or tools with agent.ErrSteered and waits for reconciliation before running again.
+// Several steering submissions during settlement become one ordered input batch.
+// Branch restoration/login settle normally; steering runs afterward. Pending
+// model selections apply before the steered generation. The latest interrupted
+// stream stays in the UI with a not-saved label, never in model/session messages.
+// Commands are parsed once, then dispatched independently
 // of the worker: UI commands use snapshots and run immediately; model/reasoning
-// changes use QueueModel at generation boundaries. Skills, compaction, branching,
+// changes use QueueModel at generation boundaries. Queued prompts, compaction, branching,
 // and chosen login flows enter an in-memory FIFO until the current operation
 // settles. The status shows pending work; /queue inspects it and /queue clear
-// discards it without stopping current work. Canceling active work clears the
+// discards it, including pending steering, without stopping current work. Canceling active work clears the
 // queue; provider failures settle and advance without retrying an invocation.
 // Worker failures retain a UI-only error indicator and full messages in /queue
 // until exit, including when later commands succeed. /queue clear removes only
@@ -121,7 +132,7 @@
 // and Enter in a picker do not edit config.json; restart/resume uses configuration
 // and --model.
 //
-// Ctrl+S in the /model or /reasoning picker saves the highlighted choice to
+// Ctrl+S in /model, /reasoning, or /prompt-mode saves the highlighted choice to
 // config.json off the event loop, then applies it. Composer Ctrl+S has no action.
 // Saving reasoning never selects the default model. Saving a model applies that
 // profile's saved settings. The provider reasoning choice removes the option.

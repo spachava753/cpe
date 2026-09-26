@@ -215,7 +215,10 @@ confirm. Choose `"enter"` if your terminal cannot distinguish Shift+Enter.
 | `/tree` | List saved checkpoints |
 | `/branch ID` | Continue from a checkpoint, preserving other branches |
 | `/compact` | Summarize model context while retaining REPL state |
-| `/queue` / `/queue clear` | Inspect pending commands and failures / discard pending commands without stopping active work |
+| `/queue` / `/queue clear` | Inspect pending prompts/commands and failures / discard pending work without stopping active work |
+| `/queue steer` | Pick a queued prompt to send as steering now |
+| `/prompt-mode` or `/prompt-mode queue\|steer` | Choose how prompts submitted during work are delivered |
+| Ctrl+S in `/prompt-mode` | Apply the highlighted mode and save it for future conversations |
 
 Shift+Enter requires a terminal that reports modified keys (such as Kitty,
 Ghostty, or iTerm2 with its extended keyboard protocol enabled). CPE requests
@@ -246,14 +249,31 @@ Completed assistant
 messages and tool results are saved before the next operation. You can type,
 edit, paste, and use the configured newline key to draft your next message while
 the agent works.
-The submit key leaves ordinary drafts in place until the current operation finishes;
-an unsent draft is never queued automatically. Slash completion offers the same
+Pressing the configured submit key during work **queues the prompt by default**.
+You can submit several prompts; they run in order after the active operation.
+Typing alone never sends or queues a draft.
+
+Use `/prompt-mode` to pick **queue** or **steer**. Enter applies the choice to this
+conversation; Ctrl+S also saves `tui.prompt_mode` in `~/.cpe/config.json` for future
+conversations. `/prompt-mode steer` and `/prompt-mode queue` change only the
+current conversation. This does not change your submit/newline bindings: with
+`"submit_key": "shift+enter"`, Shift+Enter queues or steers and Enter adds a newline.
+
+In steer mode, submitting cancels the active generation or tool execution, waits
+for it to settle, and sends your new direction. `/queue steer` lets you choose a
+specific queued prompt to promote immediately; the others retain their order.
+Several steering prompts submitted while cancellation settles are sent together.
+Incomplete streamed assistant text is marked **interrupted by steering (not saved)**
+in the TUI; it is excluded from the journal and subsequent requests. Accepted tool
+calls remain saved, with partial output/images and cancellation results reconciled
+before steering input is appended. Partial Starlark state is preserved exactly
+as described below. Login and branch restoration settle before steering runs. Slash completion offers the same
 commands and user-invocable skills during work as when idle. Help, usage, the
 session path, completed checkpoints, and theme selection work immediately. Model
 and reasoning choices take effect at the next generation boundary.
 
-Explicitly submitted `/skill:NAME`, `/compact`, `/branch ID`, and login flows
-wait in a FIFO queue until the current operation settles. The status shows the
+Skills follow the selected prompt mode. Explicit `/compact`, `/branch ID`, and
+login flows wait in the FIFO queue until the current operation settles. The status shows the
 queue count and next command. `/queue` lists pending commands; `/queue clear`
 discards them without canceling active work. Canceling active work with Esc/Ctrl+C
 also clears the queue. `/quit` discards the queue and
@@ -364,7 +384,7 @@ Slash selections apply only to the current conversation; config.json is unchange
 Restart/resume uses the configured default or `--model`.
 
 You can also submit `/model` or `/model NAME` while the agent is working. All slash
-commands remain available during work; ordinary drafts remain unsent. The
+commands remain available during work; unsubmitted drafts remain intact. The
 current generation finishes and any returned tool calls execute once. The next
 generation receives their results using the selected model/provider. A queued
 choice appears in status; a later choice replaces it. If no further generation
@@ -649,10 +669,21 @@ or changed output stop restoration. The interpreter/Dyson contract is versioned;
 incompatible sessions are rejected. A malformed complete JSONL record is an error;
 an unterminated final record is discarded as an interrupted append.
 
-A failed or canceled chunk rolls back interpreter state by replaying the preceding
-committed chunks. External effects already performed remain. After a crash, an
-unfinished chunk is marked interrupted and its tool result is reconciled as a
-failure. A crash between a host effect and its recorded result leaves an uncertain
+Ordinary failed, timed-out, or canceled chunks roll back interpreter state by
+replaying preceding committed chunks. **Steering preserves partial state** instead:
+the completed outcome records an instruction count and whether execution stopped
+before an opcode or inside a host call. Replay executes to that exact boundary
+using recorded host results, preserving globals and mutations without repeating
+side effects. Printed output, emitted images, and captured subprocess output are
+returned along with the steering-cancellation notice. Subprocess builtin outcomes
+are recorded after their timeout checks, so replay cannot turn an original timeout
+into success even when the host runner succeeded. Context-aware host calls
+receive cancellation while retaining their own deadlines; other builtins must
+finish before execution can stop at the next opcode.
+
+External effects already performed remain in either case. After a crash, an
+unfinished chunk has no exact recorded stop point: it rolls back and its tool
+result is reconciled as a failure. A crash between a host effect and its recorded result leaves an uncertain
 outcome; CPE reports it and **never automatically retries that call**. Check the
 external state before asking the agent to repeat interrupted work.
 
@@ -805,6 +836,13 @@ skill again and press Esc: the active turn and pending skill should be canceled.
 Queue `/branch missing` followed by a skill during `handoff`; verify the skill runs
 and `/queue` retains the branch failure. Queue a Go login followed by an OpenAI
 login, then cancel the private key input; the second login must not start.
+To check prompt delivery, submit several ordinary prompts during `handoff` and
+inspect `/queue`. Promote the middle one with `/queue steer`; it should run first,
+with the remaining prompts in order. Use `/prompt-mode` and Ctrl+S to save steer,
+restart, then submit `wait` followed by `compute`: the partial stream is marked
+interrupted and absent from `terminal.jsonl`. Send `steer-tool` and steer it with
+`restore-partial`; it should print `[1, 7]`, including after restart. The fixture
+writes one `steering-effect` line before interruption; replay must not add another.
 The harness also reads `themes.json` from `CPE_TUI_TEST_DIR`; use an explicit JSON `palette_file`
 to point at fixture palettes and test live edits without changing the desktop.
 

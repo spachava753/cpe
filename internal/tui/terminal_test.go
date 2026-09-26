@@ -111,7 +111,7 @@ func TestTerminalHarness(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	options := Options{ConfigDir: dir, Models: profiles, SubmitKey: submitKey, MouseMode: initial.TUI.MouseMode,
+	options := Options{ConfigDir: dir, Models: profiles, SubmitKey: submitKey, MouseMode: initial.TUI.MouseMode, PromptMode: initial.TUI.PromptMode,
 		ThemeDir:      dir,
 		NewGenerator:  func(context.Context, config.Model) (gai.Generator, error) { return gen, nil },
 		LoginRequired: func(profile config.Model) bool { return profile.Provider == "codex" && !signedIn },
@@ -219,6 +219,20 @@ func (g *terminalGenerator) Stream(ctx context.Context, req gai.GenerationReques
 			if strings.Contains(text, "restore") {
 				code = `print("Restored answer:", answer)`
 			}
+			if text == "steer-tool" {
+				code = `load("time.star", "time")
+partial = [1]; partial.append(7)
+load("os.star", "os")
+fd = os.open("steering-effect", os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+os.write(fd, "once\n"); os.close(fd)
+print("partial ready")
+time.sleep(10)
+partial.append(999)`
+			}
+			if text == "restore-partial" {
+				code = `print("Restored partial:", partial)`
+			}
+
 			if strings.Contains(text, "image") {
 				code = `load("repl.star", "emit_image"); emit_image("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l1sAAAAASUVORK5CYII=", mime_type="image/png")`
 			}

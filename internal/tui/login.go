@@ -105,6 +105,7 @@ func (m model) updateKeyInput(msg tea.Msg) (model, tea.Cmd) {
 			return m, cmd
 		case escapeKey, "ctrl+c":
 			m.queuedCommands = nil
+			m.steering = nil
 			m.keyInput.Reset()
 			m.keyInput = nil
 			m.loggingIn, m.loginText = false, ""

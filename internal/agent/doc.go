@@ -23,7 +23,13 @@
 // assistant responses are persisted before tools run; results are persisted
 // before the next generation. Partial streamed output is provisional. Missing
 // historical tool results are reconciled from durable evaluation outcomes, or
-// recorded as interrupted failures, never executed again.
+// recorded as interrupted failures, never executed again. ErrSteered is a context
+// cancellation cause that preserves partial REPL state and marks canceled tool
+// results, including calls skipped later in an accepted batch. All results are
+// reconciled before admitting new prompts; incomplete generation is not persisted.
+// Prompts admits a batch of steering inputs before one new generation loop.
+// Its skill expansion/context admission completes before any batch input is saved.
+// Callers must cancel and join the old operation before invoking the next one.
 //
 // Compaction replaces only model context. It appends a summary node and leaves
 // all REPL inputs and host outcomes reachable for restoration. Branching selects

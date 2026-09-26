@@ -152,7 +152,7 @@ func (m model) updatePicker(msg tea.Msg) (model, tea.Cmd) {
 			return m, nil
 		case enterKey, saveDefaultKey:
 			if key.String() == saveDefaultKey {
-				if m.picker.command != modelCommand && m.picker.command != reasoningCommand {
+				if m.picker.command != modelCommand && m.picker.command != reasoningCommand && m.picker.command != promptModeCommand {
 					return m, nil
 				}
 				if m.configDir == "" {
@@ -168,6 +168,13 @@ func (m model) updatePicker(msg tea.Msg) (model, tea.Cmd) {
 				}
 				if command == loginCommand {
 					return m, m.configureLogin(selected.value)
+				}
+				if command == queueSteerCommand {
+					return m, m.promotePrompt(selected.value)
+				}
+				if command == promptModeCommand {
+					m.configurePromptMode(selected.value)
+					return m, nil
 				}
 				if command == themeCommand {
 					m.configureTheme(selected.value)

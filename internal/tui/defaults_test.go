@@ -189,7 +189,7 @@ func TestDefaultSelection(t *testing.T) {
 					t.Fatal("submitted while saving")
 				}
 				if test.queued {
-					m.queuedCommands = []commandRequest{{loginCommand, "openai"}}
+					m.queuedCommands = []queuedCommand{{id: 1, request: commandRequest{loginCommand, "openai"}}}
 				}
 				if test.afterCommit {
 					<-started

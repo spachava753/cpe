@@ -229,23 +229,52 @@ func TestMessageCodecPreservesProviderReplayData(t *testing.T) {
 }
 
 func TestPartialStreamIsNotDurable(t *testing.T) {
-	dir := t.TempDir()
-	store, err := session.Open(filepath.Join(dir, "s.jsonl"), dir, repl.Runtime)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
-	gen := agenttest.NewScriptedStreamingGenerator(agenttest.StreamStep{Chunks: []gai.StreamChunk{{Block: gai.TextBlock("partial")}, {Err: errors.New("connection lost")}}})
-	a, err := Open(t.Context(), Options{Config: config.Config{System: "Reconcile interrupted tool results.", Agent: config.Agent{ToolTimeout: "1s", OutputLimit: 32000, MaxRounds: 5}}, Model: config.Model{ID: "stream-test"}, Generator: gen, Store: store, CWD: dir})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer a.Close()
-	if err := a.Prompt(t.Context(), "start", nil); err == nil {
-		t.Fatal("expected stream failure")
-	}
-	if len(a.Messages()) != 1 || a.Messages()[0].Role != gai.User {
-		t.Fatal("partial output persisted")
+	for _, steered := range []bool{false, true} {
+		name := "connection failure"
+		if steered {
+			name = "steering"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			store, err := session.Open(filepath.Join(dir, "s.jsonl"), dir, repl.Runtime)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			ctx, cancel := context.WithCancelCause(t.Context())
+			defer cancel(context.Canceled)
+			chunks := []gai.StreamChunk{{Block: gai.TextBlock("partial")}}
+			if !steered {
+				chunks = append(chunks, gai.StreamChunk{Err: errors.New("connection lost")})
+			}
+			gen := agenttest.NewScriptedStreamingGenerator(agenttest.StreamStep{Chunks: chunks})
+			a, err := Open(t.Context(), Options{Config: config.Config{Agent: config.Agent{ToolTimeout: "1s", MaxRounds: 5}}, Model: config.Model{ID: "fixture"}, Generator: gen, Store: store, CWD: dir})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer a.Close()
+			deltas := 0
+			err = a.Prompt(ctx, "start", func(e Event) {
+				if e.Kind == EventDelta {
+					deltas++
+					if steered {
+						cancel(ErrSteered)
+					}
+				}
+			})
+			if err == nil || deltas != 1 {
+				t.Fatal(err, deltas)
+			}
+			if len(a.Messages()) != 1 || a.Messages()[0].Role != gai.User {
+				t.Fatal("partial persisted")
+			}
+			if err := a.restore(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if len(a.Messages()) != 1 {
+				t.Fatal("partial restored")
+			}
+		})
 	}
 }
 

@@ -52,9 +52,16 @@ func (m *model) saveDefault(command, value string) tea.Cmd {
 		defer close(done)
 		defer cancel()
 		result := defaultsSaved{selection: selection}
-		if command == modelCommand {
+		switch command {
+		case promptModeCommand:
+			var mode config.PromptMode
+			mode, result.err = config.ParsePromptMode(value)
+			if result.err == nil {
+				result.config, result.err = config.SavePromptMode(ctx, dir, mode)
+			}
+		case modelCommand:
 			result.config, result.err = config.SaveDefaultModel(ctx, dir, selection.name)
-		} else {
+		default:
 			result.config, result.err = config.SaveReasoning(ctx, dir, selection.name, selection.effort)
 		}
 		if result.err == nil && command == modelCommand {
@@ -89,6 +96,12 @@ func (m *model) applyDefault(result defaultsSaved) {
 		return
 	}
 	selected := result.selection
+	if selected.command == promptModeCommand {
+		m.promptMode = result.config.TUI.PromptMode
+		m.notice = "Default prompt mode saved: " + m.promptMode.String()
+		m.syncCompletion()
+		return
+	}
 	if selected.command == modelCommand {
 		if m.busy {
 			result.err = m.agent.QueueModel(selected.name, m.profiles[selected.name], result.generator)

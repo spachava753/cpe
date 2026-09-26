@@ -37,6 +37,7 @@ type update struct {
 	loginText   string
 	loginNotice string
 	profiles    map[string]config.Model
+	steered     bool
 }
 
 // Options supplies model profiles, composer/mouse preferences, and UI-only authentication. NewGenerator
@@ -54,6 +55,7 @@ type Options struct {
 	ConfigDir     string
 	SubmitKey     config.SubmitKey
 	MouseMode     config.MouseMode
+	PromptMode    config.PromptMode
 	Models        map[string]config.Model
 	NewGenerator  func(context.Context, config.Model) (gai.Generator, error)
 	Login         func(context.Context, string, func(string)) error
@@ -69,7 +71,13 @@ type model struct {
 	agent           *agent.Agent
 	name            string
 	pendingModel    *modelChoice
-	queuedCommands  []commandRequest
+	queuedCommands  []queuedCommand
+	nextQueuedID    uint64
+	steering        []commandRequest
+	steer           context.CancelFunc
+	operation       commandKind
+	promptMode      config.PromptMode
+	interrupted     *interruptedStream
 	operationErrors []string
 	quitting        bool
 	checkpoints     []session.Entry
@@ -158,6 +166,7 @@ func Run(ctx context.Context, a *agent.Agent, name string, options Options) erro
 	m := newModel(ctx, a, name)
 	m.submitKey = options.SubmitKey
 	m.mouseMode = options.MouseMode
+	m.promptMode = options.PromptMode
 	m.configDir = options.ConfigDir
 	m.themeDir = options.ThemeDir
 	if m.themeDir != "" {
@@ -204,9 +213,17 @@ func await(events <-chan update) tea.Cmd { return func() tea.Msg { return <-even
 func (m *model) start(text string) tea.Cmd {
 	return m.startWork(text, "")
 }
-func (m *model) startWork(text, key string) tea.Cmd {
-	ctx, cancel := context.WithCancel(m.ctx)
-	m.cancel = cancel
+func (m *model) startWork(text, key string, additional ...string) tea.Cmd {
+	ctx, cancel := context.WithCancelCause(m.ctx)
+	m.cancel = func() { cancel(context.Canceled) }
+	m.steer = func() { cancel(agent.ErrSteered) }
+	m.operation = ""
+	if text == compactCommand {
+		m.operation = compactCommand
+	}
+	if strings.HasPrefix(text, branchCommand+" ") {
+		m.operation = branchCommand
+	}
 	m.busy = true
 	m.provisional = ""
 	m.notice = ""
@@ -246,13 +263,13 @@ func (m *model) startWork(text, key string) tea.Cmd {
 		case strings.HasPrefix(text, branchCommand+" "):
 			err = m.agent.Branch(ctx, strings.TrimSpace(strings.TrimPrefix(text, branchCommand+" ")))
 		default:
-			err = m.agent.Prompt(ctx, text, func(event agent.Event) {
+			err = m.agent.Prompts(ctx, append([]string{text}, additional...), func(event agent.Event) {
 				// Keep durable message notifications even after cancellation. The UI drains
 				// until done, so a cancel cannot strand the producer on a full channel.
 				ch <- update{event: event}
 			})
 		}
-		ch <- update{done: true, err: err, profiles: profiles, loginNotice: loginNotice}
+		ch <- update{done: true, err: err, profiles: profiles, loginNotice: loginNotice, steered: errors.Is(context.Cause(ctx), agent.ErrSteered)}
 	}()
 	return tea.Batch(await(ch), m.spinner.Tick)
 }
@@ -328,17 +345,25 @@ func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 			m.profile = m.agent.Model()
 			m.cancel = nil
 			m.activity = ""
+			if m.operation == branchCommand || m.operation == compactCommand || len(m.agent.Messages()) < len(m.messages) {
+				m.interrupted = nil
+			}
+			if v.steered && m.provisional != "" {
+				m.interrupted = &interruptedStream{after: len(m.agent.Messages()), text: m.provisional}
+			}
 			m.provisional = ""
 			m.messages = m.agent.Messages()
 			m.checkpoints = m.agent.Checkpoints()
 			m.usage, m.contextTokens = m.agent.Usage(), m.agent.ContextEstimate()
-			if m.loggingIn && errors.Is(v.err, context.Canceled) {
+			if v.err != nil && !cancellationOnly(v.err) {
+				m.notice = "Error: " + v.err.Error()
+				m.operationErrors = append(m.operationErrors, v.err.Error())
+			} else if v.steered {
+				m.notice = "Interrupted by steering · completed work and partial tool state saved"
+			} else if m.loggingIn && errors.Is(v.err, context.Canceled) {
 				m.notice = "Login canceled"
 			} else if errors.Is(v.err, context.Canceled) {
 				m.notice = "Canceled · completed work saved"
-			} else if v.err != nil {
-				m.notice = "Error: " + v.err.Error()
-				m.operationErrors = append(m.operationErrors, v.err.Error())
 			} else if m.loggingIn {
 				m.loginRequired = m.needsLogin != nil && m.needsLogin(m.profile)
 				m.notice = v.loginNotice
@@ -482,7 +507,15 @@ func (m *model) refresh(bottom bool) {
 	if len(m.messages) == 0 {
 		b.WriteString("A conversation with a persistent workspace.\n\nAsk a question or describe a change.\n")
 	}
-	for _, message := range m.messages {
+	writeInterruption := func(index int) {
+		if m.interrupted != nil && m.interrupted.after == index {
+			text := m.styles.failure.Render("Assistant · interrupted by steering (not saved)") + "\n" + clean(m.interrupted.text) + "\n\n"
+			b.WriteString(text)
+			line += strings.Count(text, "\n")
+		}
+	}
+	for index, message := range m.messages {
+		writeInterruption(index)
 		var body strings.Builder
 		label := "You"
 		labelStyle := m.styles.user
@@ -533,6 +566,7 @@ func (m *model) refresh(bottom bool) {
 		b.WriteByte('\n')
 		line += strings.Count(text, "\n") + 1
 	}
+	writeInterruption(len(m.messages))
 	if m.provisional != "" {
 		b.WriteString(m.styles.assistant.Render("Assistant") + "\n" + clean(m.provisional))
 	}
@@ -572,7 +606,10 @@ func (m model) viewContent() string {
 		status = m.styles.muted.Render(status)
 	}
 	if len(m.queuedCommands) > 0 {
-		status = fmt.Sprintf("%d queued: %s · ", len(m.queuedCommands), oneline(m.queuedCommands[0].label())) + status
+		status = fmt.Sprintf("%d queued: %s · ", len(m.queuedCommands), oneline(m.queuedCommands[0].request.label())) + status
+	}
+	if len(m.steering) > 0 {
+		status = fmt.Sprintf("%d steering · ", len(m.steering)) + status
 	}
 	if len(m.operationErrors) > 0 {
 		status = m.styles.failure.Render(fmt.Sprintf("Error: %d failed · /queue · ", len(m.operationErrors))) + status
@@ -580,7 +617,7 @@ func (m model) viewContent() string {
 	line := m.styles.border.Render(strings.Repeat("─", max(1, m.width-2)))
 	footer := m.styles.muted.Render(keyLabel(m.submitKey.String()) + " send · " + keyLabel(m.newlineKey()) + " newline · PgUp/PgDn scroll")
 	if m.busy {
-		footer = m.styles.muted.Render("Draft next message · " + keyLabel(m.newlineKey()) + " newline · / commands · Esc/Ctrl+C cancel")
+		footer = m.styles.muted.Render(keyLabel(m.submitKey.String()) + " " + m.promptMode.String() + " · " + keyLabel(m.newlineKey()) + " newline · / commands · Esc/Ctrl+C cancel")
 		if m.loggingIn {
 			footer = m.styles.muted.Render("Esc/Ctrl+C cancel login")
 		}
@@ -597,8 +634,11 @@ func (m model) viewContent() string {
 			controlC = "cancel work"
 		}
 		apply := "↑/↓ select · Enter apply"
-		if m.picker.command == modelCommand || m.picker.command == reasoningCommand {
+		if m.picker.command == modelCommand || m.picker.command == reasoningCommand || m.picker.command == promptModeCommand {
 			apply = "↑↓ · Enter apply · Ctrl+S save default"
+		}
+		if m.picker.command == queueSteerCommand {
+			apply = "↑/↓ select · Enter steer now"
 		}
 		if m.picker.command == modelCommand {
 			status = m.picker.list.FilterInput.View()

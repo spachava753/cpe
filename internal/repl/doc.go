@@ -5,9 +5,22 @@
 // calls are fatal replay errors. File handles and HTTP objects are reconstructed
 // by Dyson from recorded capability results, preserving native Starlark types.
 //
-// Only successful chunks commit interpreter state. Failed/canceled chunks retain
-// their audit trail and external effects but rebuild the previous interpreter
-// state. An unfinished chunk on restart is marked interrupted, never executed.
+// Successful chunks commit interpreter state. Ordinary failures, timeouts, and
+// cancellation roll it back while retaining their audit trail and external effects.
+// Cancellation caused by ErrSteered instead commits the partial globals/mutations,
+// output, images, and an exact per-evaluation instruction count and stop phase.
+// CPE owns the interpreter thread; context cancellation is observed synchronously
+// before opcodes, or by context-aware host capabilities. Noncancellable builtins
+// settle before the next opcode. Builtin-specific deadlines remain effective.
+// Replay stops before the recorded opcode or lets its recorded host error return
+// during that opcode. Counts, phase, host records, output, and images must match.
+// Subprocess terminal builtin outcomes are journaled after its timeout check,
+// separately from the host runner result. Replay omits that fresh timer, rebuilds
+// native values through Dyson, and supplies the recorded builtin error/success.
+// No wall-clock timing controls replay's stop.
+// Captured subprocess stdout/stderr also enter the result when steered.
+// An unfinished chunk after a crash has no exact cutoff: it is marked interrupted
+// and rolled back, never executed or inferred from a pending steering request.
 // Supported modules are os, glob, json, re, requests, subprocess, and time.
 // Environment mutation, process signaling, tempfile, pwd, and grp are excluded.
 // Replay reconstructs file handles without opening files. On a new host call,

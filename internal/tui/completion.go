@@ -11,19 +11,21 @@ import (
 )
 
 const (
-	modelCommand     = "/model"
-	reasoningCommand = "/reasoning"
-	themeCommand     = "/theme"
-	usageCommand     = "/usage"
-	loginCommand     = "/login"
-	compactCommand   = "/compact"
-	treeCommand      = "/tree"
-	branchCommand    = "/branch"
-	sessionCommand   = "/session"
-	queueCommand     = "/queue"
-	helpCommand      = "/help"
-	quitCommand      = "/quit"
-	exitCommand      = "/exit"
+	modelCommand      = "/model"
+	reasoningCommand  = "/reasoning"
+	themeCommand      = "/theme"
+	usageCommand      = "/usage"
+	loginCommand      = "/login"
+	compactCommand    = "/compact"
+	treeCommand       = "/tree"
+	branchCommand     = "/branch"
+	sessionCommand    = "/session"
+	queueCommand      = "/queue"
+	queueSteerCommand = "/queue steer"
+	promptModeCommand = "/prompt-mode"
+	helpCommand       = "/help"
+	quitCommand       = "/quit"
+	exitCommand       = "/exit"
 )
 
 type slashCommand struct {
@@ -46,6 +48,8 @@ var slashCommands = []slashCommand{
 	{branchCommand, "Continue from a checkpoint ID", true},
 	{sessionCommand, "Show the session path", false},
 	{queueCommand, "Inspect pending commands and failures (/queue clear discards pending work)", false},
+	{queueSteerCommand, "Choose a queued prompt to steer now", false},
+	{promptModeCommand, "Choose queue or steer for busy prompt submission", false},
 	{helpCommand, "Show commands", false},
 	{quitCommand, "Exit CPE", false},
 	{exitCommand, "Exit CPE (alias)", false},
