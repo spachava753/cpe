@@ -15,6 +15,9 @@
 // tui.submit_key is enter (the default) or shift+enter. The other key inserts
 // a newline; Ctrl+J remains a newline fallback. This preference is read at
 // startup and only controls the composer, not pickers or private login input.
+// tui.mouse_mode is select (the default) or scroll. Select leaves mouse events
+// to the terminal for native drag selection/copy; scroll captures them for CPE's
+// wheel scrolling. F4 toggles the mode for the running TUI without saving config.
 //
 // API providers read named environment variables. Codex instead uses CPE's own
 // ~/.cpe/auth.json with TUI /login and automatic refresh. There is no credential

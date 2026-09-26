@@ -12,7 +12,7 @@ import (
 func defaultFixture(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	body := `{"default_model":"alpha","models":{"alpha":{"provider":"codex","id":"a","reasoning_effort":"low"},"beta":{"provider":"codex","id":"b","reasoning_effort":"high"}},"tui":{"submit_key":"shift+enter"},"agent":{"max_rounds":7}}`
+	body := `{"default_model":"alpha","models":{"alpha":{"provider":"codex","id":"a","reasoning_effort":"low"},"beta":{"provider":"codex","id":"b","reasoning_effort":"high"}},"tui":{"submit_key":"shift+enter","mouse_mode":"scroll"},"agent":{"max_rounds":7}}`
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(body), 0640); err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestSaveDefaultModel(t *testing.T) {
 				}
 				return
 			}
-			if c.DefaultModel != test.model || c.Models["alpha"].ReasoningEffort != "low" || c.Models["beta"].ReasoningEffort != "high" || c.TUI.SubmitKey != SubmitShiftEnter || c.Agent.MaxRounds != 7 {
+			if c.DefaultModel != test.model || c.Models["alpha"].ReasoningEffort != "low" || c.Models["beta"].ReasoningEffort != "high" || c.TUI.SubmitKey != SubmitShiftEnter || c.TUI.MouseMode != MouseScroll || c.Agent.MaxRounds != 7 {
 				t.Fatalf("lost settings: %+v", c)
 			}
 			loaded, err := load(t.Context(), dir)
@@ -130,7 +130,7 @@ func TestSaveReasoning(t *testing.T) {
 				}
 				return
 			}
-			if c.DefaultModel != "alpha" || c.Models[test.model].ReasoningEffort != test.effort || c.TUI.SubmitKey != SubmitShiftEnter || c.Agent.MaxRounds != 7 {
+			if c.DefaultModel != "alpha" || c.Models[test.model].ReasoningEffort != test.effort || c.TUI.SubmitKey != SubmitShiftEnter || c.TUI.MouseMode != MouseScroll || c.Agent.MaxRounds != 7 {
 				t.Fatalf("settings=%+v", c)
 			}
 			if test.effort == "" && strings.Count(string(after), "reasoning_effort") != 1 {

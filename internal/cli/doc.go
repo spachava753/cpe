@@ -3,6 +3,7 @@
 // session in the current directory, and --sessions lists matching session files.
 // --init creates starter configuration, --model selects a JSON profile, and
 // --prompt runs a single non-interactive turn using the same durable agent.
+// Interactive input preferences (submit key and mouse mode) come from config.tui.
 // Configured MCP servers connect before opening the agent and close after it.
 // Their functions are injected into the REPL; startup discovery is bounded by
 // agent.tool_timeout. Neither CLI mode exposes MCP tools directly to the model.

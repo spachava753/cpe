@@ -39,7 +39,7 @@ type update struct {
 	profiles    map[string]config.Model
 }
 
-// Options supplies model profiles, composer submission preferences, and UI-only authentication. NewGenerator
+// Options supplies model profiles, composer/mouse preferences, and UI-only authentication. NewGenerator
 // defaults to agent.Provider and constructs a provider without generating text.
 // Login handles Codex, honoring cancellation and sending only UI instructions.
 // LoginGo accepts a UI-only API key and returns all profiles after import.
@@ -53,6 +53,7 @@ type update struct {
 type Options struct {
 	ConfigDir     string
 	SubmitKey     config.SubmitKey
+	MouseMode     config.MouseMode
 	Models        map[string]config.Model
 	NewGenerator  func(context.Context, config.Model) (gai.Generator, error)
 	Login         func(context.Context, string, func(string)) error
@@ -69,6 +70,7 @@ type model struct {
 	name          string
 	pendingModel  string
 	submitKey     config.SubmitKey
+	mouseMode     config.MouseMode
 	input         textarea.Model
 	viewport      viewport.Model
 	scroll        transcriptScroll
@@ -148,6 +150,7 @@ func Run(ctx context.Context, a *agent.Agent, name string, options Options) erro
 	defer cancel()
 	m := newModel(ctx, a, name)
 	m.submitKey = options.SubmitKey
+	m.mouseMode = options.MouseMode
 	m.configDir = options.ConfigDir
 	m.themeDir = options.ThemeDir
 	if m.themeDir != "" {
@@ -365,6 +368,14 @@ func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 		m.refresh(m.scroll.following)
 		return m, await(m.events)
 	case tea.KeyPressMsg:
+		if v.String() == "f4" {
+			if m.mouseMode == config.MouseSelect {
+				m.mouseMode = config.MouseScroll
+			} else {
+				m.mouseMode = config.MouseSelect
+			}
+			return m, nil
+		}
 		if m.keyInput != nil {
 			return m.updateKeyInput(msg)
 		}
@@ -484,6 +495,9 @@ func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 			return m, m.start(text)
 		}
 	case tea.MouseMsg:
+		if m.mouseMode != config.MouseScroll {
+			return m, nil
+		}
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
 		if wheel, ok := msg.(tea.MouseWheelMsg); ok && (wheel.Button == tea.MouseWheelUp || wheel.Button == tea.MouseWheelDown) {
@@ -590,7 +604,9 @@ func (m *model) refresh(bottom bool) {
 func (m model) View() tea.View {
 	v := tea.NewView(m.viewContent())
 	v.AltScreen = true
-	v.MouseMode = tea.MouseModeCellMotion
+	if m.mouseMode == config.MouseScroll {
+		v.MouseMode = tea.MouseModeCellMotion
+	}
 	return v
 }
 
@@ -665,6 +681,11 @@ func (m model) viewContent() string {
 		editor = m.keyInput.View() + strings.Repeat("\n", max(0, m.input.Height()-1))
 		footer = m.styles.muted.Render("Enter save key · Esc cancel")
 	}
+	mouseAction := "wheel scroll"
+	if m.mouseMode == config.MouseScroll {
+		mouseAction = "select text"
+	}
+	footer += m.styles.muted.Render(" · F4 " + mouseAction)
 	rows = append(rows, line, editor, ansi.Truncate(footer, m.width, "…"))
 	return m.canvas(strings.Join(rows, "\n"))
 }

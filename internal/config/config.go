@@ -308,7 +308,7 @@ func initFiles(dir string) (string, error) {
 
 const defaultJSON = `{
   "default_model": "default",
-  "tui": {"submit_key": "enter"},
+  "tui": {"submit_key": "enter", "mouse_mode": "select"},
   "models": {
     "default": {
       "provider": "codex",

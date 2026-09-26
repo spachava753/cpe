@@ -202,6 +202,7 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	options := tui.Options{
 		ConfigDir:    c.Dir,
 		SubmitKey:    c.TUI.SubmitKey,
+		MouseMode:    c.TUI.MouseMode,
 		Models:       c.Models,
 		NewGenerator: newGenerator,
 		ThemeDir:     c.Dir,

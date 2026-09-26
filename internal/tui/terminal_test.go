@@ -111,7 +111,7 @@ func TestTerminalHarness(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	options := Options{ConfigDir: dir, Models: profiles, SubmitKey: submitKey,
+	options := Options{ConfigDir: dir, Models: profiles, SubmitKey: submitKey, MouseMode: initial.TUI.MouseMode,
 		ThemeDir:      dir,
 		NewGenerator:  func(context.Context, config.Model) (gai.Generator, error) { return gen, nil },
 		LoginRequired: func(profile config.Model) bool { return profile.Provider == "codex" && !signedIn },

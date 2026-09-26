@@ -75,8 +75,51 @@ func TestLoad(t *testing.T) {
 				}
 				if !tc.invalid {
 					data, err := json.Marshal(c.TUI)
-					if err != nil || string(data) != `{"submit_key":"`+tc.want.String()+`"}` {
+					if err != nil || string(data) != `{"submit_key":"`+tc.want.String()+`","mouse_mode":"select"}` {
 						t.Fatalf("serialized preferences=%s error=%v", data, err)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("mouse mode", func(t *testing.T) {
+		for _, tc := range []struct {
+			name, fields string
+			want         MouseMode
+			invalid      bool
+		}{
+			{name: "omitted"},
+			{name: "select", fields: `"tui":{"mouse_mode":"select"},`},
+			{name: "scroll", fields: `"tui":{"mouse_mode":"scroll"},`, want: MouseScroll},
+			{name: "unknown", fields: `"tui":{"mouse_mode":"all"},`, invalid: true},
+			{name: "wrong case", fields: `"tui":{"mouse_mode":"Scroll"},`, invalid: true},
+			{name: "empty", fields: `"tui":{"mouse_mode":""},`, invalid: true},
+			{name: "null", fields: `"tui":{"mouse_mode":null},`, invalid: true},
+			{name: "boolean", fields: `"tui":{"mouse_mode":true},`, invalid: true},
+			{name: "number", fields: `"tui":{"mouse_mode":1},`, invalid: true},
+			{name: "duplicate", fields: `"tui":{"mouse_mode":"scroll","mouse_mode":"select"},`, invalid: true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				dir := t.TempDir()
+				body := `{` + tc.fields + `"default_model":"fixture","models":{"fixture":{"provider":"codex","id":"test"}}}`
+				if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte(body), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "system.md"), []byte("test"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				c, err := load(t.Context(), dir)
+				if (err != nil) != tc.invalid || (!tc.invalid && c.TUI.MouseMode != tc.want) {
+					t.Fatalf("mouse mode=%s error=%v", c.TUI.MouseMode, err)
+				}
+				if tc.invalid && !strings.Contains(err.Error(), "mouse_mode") {
+					t.Fatal(err)
+				}
+				if !tc.invalid {
+					data, err := json.Marshal(c.TUI.MouseMode)
+					if err != nil || string(data) != `"`+tc.want.String()+`"` {
+						t.Fatalf("serialized mouse mode=%s error=%v", data, err)
 					}
 				}
 			})

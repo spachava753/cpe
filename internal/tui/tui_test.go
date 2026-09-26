@@ -415,6 +415,57 @@ func TestModelUpdate(t *testing.T) {
 	if err := a.Prompt(t.Context(), "seed history", nil); err != nil {
 		t.Fatal(err)
 	}
+	for _, surface := range []string{"composer", "busy", "picker", "private login"} {
+		t.Run("mouse ownership/"+surface, func(t *testing.T) {
+			m := newModel(t.Context(), a, "test")
+			m.input.SetValue("unsent draft")
+			canceled := false
+			m.cancel = func() { canceled = true }
+			switch surface {
+			case "busy":
+				m.busy = true
+			case "picker":
+				m.profiles = map[string]config.Model{"test": a.Model()}
+				m.configureModel(modelCommand, "")
+			case "private login":
+				m.loginGo = func(context.Context, string) (map[string]config.Model, error) {
+					t.Fatal("unexpected login")
+					return nil, nil
+				}
+				m.configureLogin(goLogin)
+				m.keyInput.SetValue("fixture-secret")
+			}
+			messages := len(a.Messages())
+			for _, want := range []config.MouseMode{config.MouseSelect, config.MouseScroll, config.MouseSelect} {
+				if m.mouseMode != want {
+					t.Fatalf("mouse mode=%s, want %s", m.mouseMode, want)
+				}
+				view := m.View()
+				captured := view.MouseMode == tea.MouseModeCellMotion
+				if captured != (want == config.MouseScroll) {
+					t.Fatal("View does not declare current mouse ownership")
+				}
+				m.viewport.GotoBottom()
+				before := m.viewport.YOffset()
+				next, _ := m.Update(tea.MouseWheelMsg{Button: tea.MouseWheelUp})
+				m = next.(model)
+				if surface != "private login" && (m.viewport.YOffset() < before) != captured {
+					t.Fatal("wheel routing does not follow mouse ownership")
+				}
+				next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF4})
+				m = next.(model)
+				if m.input.Value() != "unsent draft" || canceled || len(a.Messages()) != messages {
+					t.Fatal("mouse toggle changed draft/work/history")
+				}
+				if surface == "picker" && m.picker == nil {
+					t.Fatal("mouse toggle closed picker")
+				}
+				if surface == "private login" && (m.keyInput.Value() != "fixture-secret" || strings.Contains(m.View().Content, "fixture-secret")) {
+					t.Fatal("mouse toggle altered or exposed private input")
+				}
+			}
+		})
+	}
 	t.Run("transcript tabs fit the frame", func(t *testing.T) {
 		for _, kind := range []string{"assistant", "provisional", "tool result", "source"} {
 			t.Run(kind, func(t *testing.T) {
@@ -525,6 +576,9 @@ func TestModelUpdate(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := newModel(t.Context(), a, "test")
+			if _, wheel := tc.scroll.(tea.MouseWheelMsg); wheel {
+				m.mouseMode = config.MouseScroll
+			}
 			if tc.inputHeight != 0 {
 				themed := m.theme
 				themed.InputHeight = tc.inputHeight

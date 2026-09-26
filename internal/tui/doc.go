@@ -14,6 +14,14 @@
 // for legacy terminals. By default Enter submits. Options.SubmitKey can reverse
 // Enter and Shift+Enter for the composer; Ctrl+J still inserts a newline. Pickers
 // and private login input always use Enter to confirm. PgUp/PgDn scroll.
+// Mouse selection belongs to the terminal by default: drag normally and use its
+// Copy/Paste actions. Options.MouseMode can enable mouse capture for conversation
+// wheel scrolling instead. F4 toggles capture on every input surface, including
+// during work/login, without changing drafts, config, or conversation state.
+// Terminal wheel behavior in selection mode is terminal-specific; PgUp/PgDn
+// scroll the conversation in either mode. Mouse capture requires the terminal's
+// selection override (commonly Shift+drag) to select text. CPE does not manage the
+// terminal's selection or clipboard for this workflow.
 // Shift+arrows select composer text; Ctrl+G selects all. Selection uses the
 // theme's selection colors, including after reload. Typing, paste, and newline
 // replace selected text through the textarea's editing behavior.

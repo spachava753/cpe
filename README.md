@@ -193,7 +193,8 @@ confirm. Choose `"enter"` if your terminal cannot distinguish Shift+Enter.
 | Enter | Send the prompt when idle |
 | Shift+Enter or Ctrl+J | Insert a newline |
 | Shift+arrows / Ctrl+G | Select composer text / select all |
-| PgUp / PgDn, mouse wheel | Scroll the conversation |
+| PgUp / PgDn | Scroll the conversation |
+| F4 | Toggle normal mouse selection / CPE mouse-wheel scrolling |
 | Esc or Ctrl+C while busy | Cancel the current operation and wait for cleanup |
 | Ctrl+C while idle, `/quit` | Exit |
 | `/help` | Show commands |
@@ -222,8 +223,20 @@ use Ctrl+J to insert a newline instead.
 Selected composer text uses the theme's selection colors. Typing, pasting, or
 inserting a newline replaces the selection, including while drafting during work.
 
+To copy conversation text, **click and drag normally**, then use your terminal's
+Copy action; use its Paste action to paste into the composer. CPE leaves mouse
+selection to the terminal by default. Press **F4** to enable CPE's mouse-wheel
+scrolling, and F4 again to return to normal selection. While mouse capture is on,
+use your terminal's selection override (commonly Shift+drag). The footer names
+the action F4 will enable, where space permits.
+
+To start with mouse-wheel scrolling enabled, set `"mouse_mode": "scroll"` inside
+the `"tui"` object in `~/.cpe/config.json`. `"select"` is the default. F4 changes
+only the running TUI and works during generation, pickers, and login. In selection
+mode, wheel behavior is controlled by your terminal; use PgUp/PgDn to scroll CPE.
+
 The conversation displays streamed text provisionally. Output follows the bottom
-while you are there. Scroll up with PgUp or the mouse wheel to read earlier
+while you are there. Scroll up with PgUp (or the wheel in mouse-scroll mode) to read earlier
 messages without being pulled back by new output, completion, or cancellation.
 Scroll back to the bottom to resume following. Submitting a new prompt shows the
 latest conversation. Transcript tabs display as four spaces so wrapping and
@@ -746,6 +759,8 @@ Send `verbose` for 60 lines of Starlark output: the TUI previews 20 rows, while
 `terminal.jsonl` retains all 60.
 Send `scroll` for a long streamed response: scroll up while it runs, verify the
 reading position stays put through completion, then scroll down to follow again.
+Use PgUp/PgDn, or press F4 to capture the mouse wheel. Verify F4 releases capture
+again so ordinary dragging selects text in the terminal, with the draft intact.
 Send `compute`, restart the process, then send `restore` to verify the saved
 variable. Send `slow` for a three-second REPL call and draft another message
 while it runs; the draft stays unsent after completion. Send `wait`, type a draft,
