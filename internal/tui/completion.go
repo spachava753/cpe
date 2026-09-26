@@ -177,8 +177,8 @@ func (m model) completionView() string {
 
 func (m model) completionHelp() string {
 	escape := "dismiss"
-	if m.busy {
-		escape = "cancel work"
+	if m.busy && m.panel.kind == conversationPanel {
+		escape = cancelWorkAction
 	}
 	if m.width < 60 {
 		return fmt.Sprintf("↑↓ · Tab/%s · Esc %s · %d/%d", keyLabel(m.submitKey.String()), escape, m.completion.selected+1, len(m.completion.matches))

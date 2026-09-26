@@ -89,7 +89,7 @@ func (m *model) submitInput() tea.Cmd {
 func (m *model) enqueueCommand(request commandRequest) tea.Cmd {
 	m.nextQueuedID++
 	m.queuedCommands = append(m.queuedCommands, queuedCommand{id: m.nextQueuedID, request: request})
-	if m.queueView {
+	if m.panel.kind == queuePanel {
 		m.refresh(m.scroll.following)
 	}
 	m.notice = "Queued " + request.label() + " · /queue to inspect or /queue clear"
@@ -97,9 +97,6 @@ func (m *model) enqueueCommand(request commandRequest) tea.Cmd {
 }
 
 func (m *model) dispatchCommand(request commandRequest) tea.Cmd {
-	if request.kind != queueCommand {
-		m.queueView = false
-	}
 	switch request.kind {
 	case promptModeCommand:
 		m.configurePromptMode(request.argument)
@@ -114,10 +111,8 @@ func (m *model) dispatchCommand(request commandRequest) tea.Cmd {
 	case helpCommand:
 		m.notice = "/model  /reasoning  /theme  /usage  /login  /skill:NAME [args]  /prompt-mode  /queue [clear|steer]  /compact  /tree  /branch ID  /session  /quit"
 	case usageCommand:
-		m.staticView, m.usageView = "", true
-		m.notice = "Session totals · PgUp/PgDn scroll"
-		m.refresh(false)
-		m.viewport.GotoTop()
+		m.notice = "Session totals · Esc conversation"
+		m.openPanel(usagePanel, "")
 	case sessionCommand:
 		m.notice = m.sessionFile
 	case treeCommand:
@@ -133,16 +128,14 @@ func (m *model) dispatchCommand(request commandRequest) tea.Cmd {
 			}
 			fmt.Fprintf(&b, "%s  %s\n", e.ID, data.Label)
 		}
-		m.usageView, m.staticView = false, clean(b.String())
 		m.notice = "History is preserved when branching"
-		m.refresh(false)
-		m.viewport.GotoTop()
+		m.openPanel(treePanel, clean(b.String()))
 	case queueCommand:
 		switch request.argument {
 		case "clear":
 			m.queuedCommands = nil
 			m.steering = nil
-			if m.queueView {
+			if m.panel.kind == queuePanel {
 				m.refresh(m.scroll.following)
 			}
 			m.notice = "Queued commands cleared · active work continues"
@@ -189,10 +182,8 @@ func (m model) queueText() string {
 }
 
 func (m *model) showQueue() {
-	m.queueView, m.usageView, m.staticView = true, false, ""
-	m.notice = "Commands run in order after active work · Esc/Ctrl+C cancels work and queue"
-	m.refresh(false)
-	m.viewport.GotoTop()
+	m.notice = "Commands run in order after active work · Esc conversation"
+	m.openPanel(queuePanel, "")
 }
 
 // drainCommands runs only on the UI owner after a worker has fully settled. A
@@ -229,7 +220,7 @@ func (m *model) cancelWork() {
 	m.steering = nil
 	m.cancel()
 	m.activity = "Canceling"
-	if m.queueView {
+	if m.panel.kind == queuePanel {
 		m.refresh(m.scroll.following)
 	}
 	m.notice = "Queued commands cleared"

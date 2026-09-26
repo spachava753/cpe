@@ -79,11 +79,10 @@ func (m *model) configureLogin(method string) tea.Cmd {
 		input.EchoMode = textinput.EchoPassword
 		input.EchoCharacter = '•'
 		input.CharLimit = 4096
-		m.queueView = false
 		m.keyInput = &input
 		m.input.Blur()
 		m.loggingIn = true
-		m.usageView, m.staticView = false, ""
+		m.panel = panelState{}
 		m.loginText = "OpenCode Go\n\nSign in at https://opencode.ai/auth, subscribe to Go, and copy your API key.\n\nPaste it below. CPE saves it privately in ~/.cpe/auth.json and adds available model profiles to config.json. Existing profiles stay unchanged.\n\nThe key is checked by the service on your first model request."
 		m.notice = "Enter save · Esc cancel"
 		m.layout()

@@ -29,6 +29,7 @@ const enterKey = "enter"
 const shiftEnterKey = "shift+enter"
 const pageDownKey = "pgdown"
 const pageUpKey = "pgup"
+const cancelWorkAction = "cancel work"
 
 type update struct {
 	event       agent.Event
@@ -82,7 +83,6 @@ type model struct {
 	quitting        bool
 	checkpoints     []session.Entry
 	sessionFile     string
-	queueView       bool
 	submitKey       config.SubmitKey
 	mouseMode       config.MouseMode
 	input           textarea.Model
@@ -111,8 +111,7 @@ type model struct {
 	picker          *picker
 	usage           agent.Usage
 	contextTokens   int
-	usageView       bool
-	staticView      string
+	panel           panelState
 	theme           theme.Theme
 	appearance      theme.Appearance
 	styles          styles
@@ -227,9 +226,7 @@ func (m *model) startWork(text, key string, additional ...string) tea.Cmd {
 	m.busy = true
 	m.provisional = ""
 	m.notice = ""
-	m.usageView = false
-	m.staticView = ""
-	m.queueView = false
+	m.panel = panelState{}
 	m.activity = "Thinking"
 	m.loggingIn = text == loginOpenAICommand || text == loginDeviceCommand || text == loginGoCommand || text == loginCopilotCommand
 	m.loginText = ""
@@ -423,6 +420,13 @@ func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 			m.notice = "Canceling default save…"
 			return m, nil
 		}
+		if v.String() == escapeKey && m.panel.kind != conversationPanel {
+			if m.completionKey(v) {
+				return m, nil
+			}
+			m.closePanel()
+			return m, nil
+		}
 		if m.busy && (v.String() == quitKey || v.String() == escapeKey) {
 			m.cancelWork()
 			return m, nil
@@ -485,15 +489,14 @@ func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 	return m, nil
 }
 func (m *model) refresh(bottom bool) {
-	if m.queueView {
+	switch m.panel.kind {
+	case queuePanel:
 		m.setViewportContent(m.queueText(), bottom)
 		return
-	}
-	if m.staticView != "" {
-		m.setViewportContent(m.staticView, bottom)
+	case treePanel:
+		m.setViewportContent(m.panel.text, bottom)
 		return
-	}
-	if m.usageView {
+	case usagePanel:
 		m.setViewportContent(m.usageDetails(), bottom)
 		return
 	}
@@ -589,11 +592,16 @@ func (m model) viewContent() string {
 	title := m.styles.accent.Render("cpe") + m.styles.base.Render(profile+"  ") + m.styles.muted.Render(oneline(filepath.Base(m.sessionFile)))
 	status := oneline(m.notice)
 	if m.busy {
+		cancelKey := "Esc"
 		cancelAction := "cancel"
+		if m.panel.kind != conversationPanel {
+			cancelKey = "Ctrl+C"
+		}
 		if m.savingDefault != nil {
+			cancelKey = "Esc"
 			cancelAction = "cancel save"
 		}
-		status = m.spinner.View() + m.styles.base.Render(" "+oneline(m.activity)+" · Esc to "+cancelAction)
+		status = m.spinner.View() + m.styles.base.Render(" "+oneline(m.activity)+" · "+cancelKey+" to "+cancelAction)
 		if m.notice != "" {
 			status += " · " + oneline(m.notice)
 		}
@@ -622,6 +630,13 @@ func (m model) viewContent() string {
 			footer = m.styles.muted.Render("Esc/Ctrl+C cancel login")
 		}
 	}
+	if m.panel.kind != conversationPanel {
+		controlC := "quit"
+		if m.busy {
+			controlC = cancelWorkAction
+		}
+		footer = m.styles.muted.Render("Esc conversation · PgUp/PgDn scroll · Ctrl+C " + controlC)
+	}
 	if m.savingDefault != nil {
 		footer = m.styles.muted.Render("Saving default · Esc/Ctrl+C cancel save")
 	}
@@ -631,7 +646,7 @@ func (m model) viewContent() string {
 		status = m.styles.muted.Render(oneline(m.notice))
 		controlC := "quit"
 		if m.busy {
-			controlC = "cancel work"
+			controlC = cancelWorkAction
 		}
 		apply := "↑/↓ select · Enter apply"
 		if m.picker.command == modelCommand || m.picker.command == reasoningCommand || m.picker.command == promptModeCommand {

@@ -8,7 +8,7 @@
 // presentation is shortened. Source code and assistant replies are not capped.
 // Transcript tabs display as four spaces before wrapping, preview budgeting,
 // and scroll anchoring; model requests and durable text retain their original tabs.
-// Esc or Ctrl+C cancels active work; the program waits for reconciliation
+// From the conversation, Esc or Ctrl+C cancels active work; the program waits for reconciliation
 // before allowing another operation. Ctrl+C when idle or /quit exits. Shift+Enter
 // inserts a newline when the terminal reports modified keys; Ctrl+J is a fallback
 // for legacy terminals. By default Enter submits. Options.SubmitKey can reverse
@@ -77,7 +77,8 @@
 // slash prefix after Escape is ordinary prompt text; recognized commands retain
 // their meaning. Unknown commands otherwise still report an error. Inline
 // slashes, arguments, and multiline drafts do not open completion. Busy turns
-// retain all commands, with Esc/Ctrl+C retaining work/queue cancellation priority.
+// retain all commands. In the conversation, Esc/Ctrl+C retain work/queue
+// cancellation priority; over a read-only panel, Esc dismisses completion first.
 // An open model picker uses Escape to close; Ctrl+C cancels active work or quits
 // when idle. Completion and picker help reflect those active-work exceptions.
 // The popup shrinks or hides when terminal space is insufficient, and hidden
@@ -150,7 +151,13 @@
 // Two status rows display cumulative uncached input, output, cache reads/writes,
 // total tokens, estimated USD cost, and estimated current context versus budget.
 // Narrow terminals abbreviate the categories to I/O/R/W; /usage shows exact
-// counts and explains missing reports/prices. A plus marks incomplete tokens;
+// counts and explains missing reports/prices. Escape closes /usage, /tree, and
+// /queue, restoring the conversation's logical reading position/follow mode and
+// preserving drafts, active work, and pending prompts. These read-only panels
+// share one state; switching panels retains the original conversation anchor.
+// A visible completion/picker dismisses first; private input and default saves
+// retain their cancellation priority. Ctrl+C still cancels active work or quits
+// when idle. New work returns to the latest conversation. A plus marks incomplete tokens;
 // +? marks partial cost. Login temporarily hides these rows to make room for its
 // instructions. Usage snapshots arrive through worker events, never concurrent
 // Agent reads. Completed operations refresh totals and the context estimate.

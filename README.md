@@ -195,7 +195,7 @@ confirm. Choose `"enter"` if your terminal cannot distinguish Shift+Enter.
 | Shift+arrows / Ctrl+G | Select composer text / select all |
 | PgUp / PgDn | Scroll the conversation |
 | F4 | Toggle normal mouse selection / CPE mouse-wheel scrolling |
-| Esc or Ctrl+C while busy | Cancel the current operation and wait for cleanup |
+| Esc or Ctrl+C from the conversation while busy | Cancel the current operation and wait for cleanup |
 | Ctrl+C while idle, `/quit` | Exit |
 | `/help` | Show commands |
 | `/login` | Choose a login provider |
@@ -209,7 +209,7 @@ confirm. Choose `"enter"` if your terminal cannot distinguish Shift+Enter.
 | `/reasoning provider` | Omit reasoning effort and let the provider choose |
 | `/reasoning default` | Restore the active profile's configured effort |
 | `/theme` or `/theme NAME` | Pick or switch themes and save the selection |
-| `/usage` | Show exact session token totals, estimated cost, and context budget |
+| `/usage` | Show exact session token totals, estimated cost, and context budget; Escape returns to the conversation |
 | `/skill:NAME [arguments]` | Invoke an installed skill |
 | `/session` | Show the JSONL path |
 | `/tree` | List saved checkpoints |
@@ -280,6 +280,12 @@ also clears the queue. `/quit` discards the queue and
 exits after cleanup. Provider failures do not retry commands or discard later
 explicitly queued commands. Pending commands live only in memory until executed;
 exiting does not save them. Queued skills are resolved when they run.
+Escape closes `/usage`, `/tree`, or `/queue` and returns to your conversation
+reading position, preserving your draft and any running or queued work. If a
+completion popup or picker is open, Escape dismisses that first. Ctrl+C still
+cancels active work (or quits when idle); pending saves and private login input
+retain their own Escape behavior.
+
 Failed operations leave a persistent error indicator, with full errors in `/queue`,
 even after later commands succeed. These errors stay in the TUI until exit;
 `/queue clear` clears pending commands only. They are not added to model context.
@@ -311,8 +317,9 @@ that draft. Remove the leading slash or send/clear the draft to enable it again.
 After dismissal, an unrecognized slash prefix such as `/tmp` can be sent as
 ordinary prompt text; recognized commands still work. Slashes inside prose or
 paths, multiline input, and command arguments do not trigger the popup.
-During agent work, completion offers the full catalog; Escape or Ctrl+C cancels the
-work and keeps the draft. Inside the model picker, Escape closes the picker;
+During agent work, completion offers the full catalog. In the conversation,
+Escape or Ctrl+C cancels work and keeps the draft. Over a read-only panel such as
+`/usage`, Escape dismisses completion first, then closes the panel. Inside the model picker, Escape closes the picker;
 Ctrl+C cancels active work (or quits when idle). The footer shows the current controls.
 
 ## Skills
@@ -389,7 +396,7 @@ current generation finishes and any returned tool calls execute once. The next
 generation receives their results using the selected model/provider. A queued
 choice appears in status; a later choice replaces it. If no further generation
 is needed, the choice applies when work finishes. Escape closes an open picker;
-Ctrl+C cancels the active operation. Outside a picker, Escape still cancels work.
+Ctrl+C cancels the active operation. In the conversation, Escape still cancels work; read-only panels close first.
 
 Thinking, signatures, and other assistant replay fields are attributed to the
 exact provider, model ID, and configured service. Requests filter incompatible
@@ -832,7 +839,8 @@ During `handoff` or `slow`, submit `/skill:review first` and `/skill:publish sec
 verify both complete in order after the original turn and a new draft stays unsent.
 During `wait`, verify all slash suggestions appear, `/usage` and `/theme` work,
 and `/queue clear` drops pending commands without stopping the response. Queue a
-skill again and press Esc: the active turn and pending skill should be canceled.
+skill again and press Ctrl+C: the active turn and pending skill should be canceled,
+even while the queue panel is open. Escape closes the panel without canceling work.
 Queue `/branch missing` followed by a skill during `handoff`; verify the skill runs
 and `/queue` retains the branch failure. Queue a Go login followed by an OpenAI
 login, then cancel the private key input; the second login must not start.
