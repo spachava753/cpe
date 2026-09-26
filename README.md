@@ -274,8 +274,13 @@ and reasoning choices take effect at the next generation boundary.
 
 Skills follow the selected prompt mode. Explicit `/compact`, `/branch ID`, and
 login flows wait in the FIFO queue until the current operation settles. The status shows the
-queue count and next command. `/queue` lists pending commands; `/queue clear`
-discards them without canceling active work. Canceling active work with Esc/Ctrl+C
+queue count and next command. `/queue` lists pending commands and pauses automatic
+dispatch while you inspect them, even if the active operation finishes. Leaving
+the queue view resumes FIFO dispatch; closing a popup or picker over it keeps the
+queue paused. Choosing a prompt with `/queue steer` leaves the view and sends that
+prompt first. New queue-mode prompts join the held queue; explicit steer-mode
+submissions also leave the view and steer immediately. `/queue clear`
+discards pending commands without canceling active work. Canceling active work with Esc/Ctrl+C
 also clears the queue. `/quit` discards the queue and
 exits after cleanup. Provider failures do not retry commands or discard later
 explicitly queued commands. Pending commands live only in memory until executed;
@@ -845,7 +850,9 @@ Queue `/branch missing` followed by a skill during `handoff`; verify the skill r
 and `/queue` retains the branch failure. Queue a Go login followed by an OpenAI
 login, then cancel the private key input; the second login must not start.
 To check prompt delivery, submit several ordinary prompts during `handoff` and
-inspect `/queue`. Promote the middle one with `/queue steer`; it should run first,
+inspect `/queue`. Let the active response finish: queued prompts should stay put
+until you leave the view. Open and cancel `/queue steer` to verify they stay held,
+then reopen it and promote the middle one; it should run first,
 with the remaining prompts in order. Use `/prompt-mode` and Ctrl+S to save steer,
 restart, then submit `wait` followed by `compute`: the partial stream is marked
 interrupted and absent from `terminal.jsonl`. Send `steer-tool` and steer it with

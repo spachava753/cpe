@@ -60,7 +60,11 @@
 // writes from saved defaults that could not apply (including post-commit
 // cancellation). Cancellation before a save commits is not a failure.
 // /quit drops pending work and joins the active worker/default save on exit.
-// A picker, private login, or pending default save holds queue advancement.
+// The /queue panel holds automatic dispatch even after active work finishes;
+// completion and pickers over it keep that hold. Leaving the panel resumes FIFO
+// work. Explicit steering leaves the panel and sends the chosen prompt first.
+// Queue-mode prompts submitted in the panel join the held queue even when idle.
+// A picker, private login, or pending default save also holds queue advancement.
 // Login secrets never enter the queue. Commands that have not run are not durable;
 // skills resolve at execution. New drafts are preserved throughout. Session path
 // and completed checkpoints are cached at operation boundaries; usage uses live

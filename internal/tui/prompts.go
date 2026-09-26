@@ -26,7 +26,7 @@ type interruptedStream struct {
 func (r commandRequest) isPrompt() bool { return r.kind == "" || r.kind == skillCommand }
 
 func (m *model) dispatchPrompt(request commandRequest) tea.Cmd {
-	if !m.busy {
+	if !m.busy && m.panel.kind != queuePanel {
 		return m.start(request.argument)
 	}
 	if m.promptMode == config.PromptSteer {
@@ -36,6 +36,9 @@ func (m *model) dispatchPrompt(request commandRequest) tea.Cmd {
 }
 
 func (m *model) requestSteering(request commandRequest) tea.Cmd {
+	if m.panel.kind == queuePanel {
+		m.closePanel()
+	}
 	m.steering = append(m.steering, request)
 	// Branch restoration must settle before the interpreter can accept input.
 	if m.busy && !m.loggingIn && m.operation != branchCommand {

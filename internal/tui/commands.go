@@ -165,6 +165,7 @@ func (m *model) dispatchCommand(request commandRequest) tea.Cmd {
 func (m model) queueText() string {
 	var b strings.Builder
 	b.WriteString("Queued commands — /queue clear to discard\n\n")
+	b.WriteString("Queue paused while this view is open · Esc returns and resumes.\n\n")
 	b.WriteString("Use /queue steer to select a prompt and interrupt current work.\n\n")
 	for _, pending := range m.queuedCommands {
 		fmt.Fprintf(&b, "%d. %s\n", pending.id, pending.request.label())
@@ -182,15 +183,15 @@ func (m model) queueText() string {
 }
 
 func (m *model) showQueue() {
-	m.notice = "Commands run in order after active work · Esc conversation"
+	m.notice = "Queue paused · Esc conversation and resume"
 	m.openPanel(queuePanel, "")
 }
 
 // drainCommands runs only on the UI owner after a worker has fully settled. A
-// picker or private login may hold the UI while the user finishes their choice.
+// queue panel, picker, or private login holds dispatch while the user chooses.
 func (m *model) drainCommands() tea.Cmd {
 	var cmds []tea.Cmd
-	for !m.busy && m.savingDefault == nil && !m.loggingIn && m.picker == nil && !m.quitting && m.ctx.Err() == nil && (len(m.steering) > 0 || len(m.queuedCommands) > 0) {
+	for !m.busy && m.panel.kind != queuePanel && m.savingDefault == nil && !m.loggingIn && m.picker == nil && !m.quitting && m.ctx.Err() == nil && (len(m.steering) > 0 || len(m.queuedCommands) > 0) {
 		if len(m.steering) > 0 {
 			if m.loginRequired {
 				m.notice = "Steering prompt needs login · /login or /queue clear"
