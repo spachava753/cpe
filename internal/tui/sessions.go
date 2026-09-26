@@ -26,16 +26,22 @@ func (m *model) startSession(request commandRequest) tea.Cmd {
 	if request.kind == sessionListCommand {
 		m.activity = "Listing sessions"
 	}
+	if request.kind == sessionRenameCommand {
+		m.activity = "Renaming session"
+	}
 	m.notice = ""
 	ch := make(chan update, 1)
 	m.events = ch
-	sessions := m.sessions
+	sessions, a := m.sessions, m.agent
 	go func() {
 		defer close(ch)
 		result := update{done: true}
-		if request.kind == sessionListCommand {
+		switch request.kind {
+		case sessionRenameCommand:
+			result.err = a.Rename(ctx, request.argument)
+		case sessionListCommand:
 			result.sessions, result.err = sessions.List(ctx)
-		} else {
+		default:
 			result.conversation, result.err = sessions.Open(ctx, agent.SessionStart{Path: request.argument})
 		}
 		ch <- result
@@ -48,9 +54,14 @@ func (m *model) showSessions(sessions []session.Info) {
 	selected := 0
 	for _, info := range sessions {
 		label := fmt.Sprintf("%s · %s", info.Updated.Local().Format("2006-01-02 15:04"), filepath.Base(info.Path))
-		if info.Label != "" {
-			label = info.Label + " · " + label
+		name := info.Title.String()
+		if name == "" {
+			name = info.Label
 		}
+		if name == "" {
+			name = "New session"
+		}
+		label = name + " · " + label
 		if info.Path == m.sessionFile {
 			label += currentChoiceSuffix
 			selected = len(items)
@@ -69,6 +80,7 @@ func (m *model) acceptConversation(next *agent.Conversation) {
 		return
 	}
 	m.agent, m.name = next.Agent, next.Name
+	m.sessionTitle = next.Agent.Title().String()
 	m.sessionFile, m.checkpoints = next.Agent.SessionFile(), next.Agent.Checkpoints()
 	m.profile, m.profiles = next.Agent.Model(), next.Config.Models
 	m.promptMode = next.Config.TUI.PromptMode

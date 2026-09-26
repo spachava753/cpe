@@ -71,6 +71,10 @@
 // events. No concurrent Agent reads are needed to render/dispatch UI commands.
 // /session shows the active JSONL path. /session new creates a fresh conversation;
 // /session list opens a current-directory picker ordered by most recent activity.
+// Session titles appear in the header and picker; untitled headers say New session.
+// EventTitle supplies saved snapshots during work. /session rename TITLE runs in
+// the same FIFO and updates metadata without renaming files or sending model input.
+// Auxiliary title warnings remain inspectable in /queue with other operation errors.
 // Session operations run off the UI loop and join the same FIFO as other work.
 // Prompts before a switch run in the old session; prompts after it run in the new
 // one. Selecting a session or creating one exits queue inspection. Restoration
@@ -85,7 +89,7 @@
 // above the composer. Suggestions filter by prefix while the cursor is at the
 // end. Up/Down cycle through all matches; at most five rows are visible. Tab
 // fills the command plus a space without running it. The submit key fills and dispatches
-// the selection, except /branch which waits for a checkpoint ID. Model, reasoning,
+// the selection, except /branch and /session rename which wait for an argument. Model, reasoning,
 // and theme pickers still handle argument selection after dispatch.
 // While idle, Escape dismisses completion without clearing the draft and suppresses it until
 // the leading slash is removed or the draft is sent/cleared. An unrecognized

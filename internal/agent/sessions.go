@@ -130,7 +130,10 @@ func (s *Sessions) Open(ctx context.Context, start SessionStart) (_ *Conversatio
 	if err != nil {
 		return nil, err
 	}
-	a, err := Open(ctx, Options{Config: cfg, Model: profile, Generator: generator, Store: store, CWD: s.opts.CWD, Tools: s.opts.Tools, Skills: s.opts.Skills})
+	rootID := store.Entries()[0].ID
+	a, err := Open(ctx, Options{NewTitleGenerator: func(ctx context.Context, model config.Model) (gai.Generator, error) {
+		return s.opts.NewGenerator(ctx, model, rootID)
+	}, Config: cfg, Model: profile, Generator: generator, Store: store, CWD: s.opts.CWD, Tools: s.opts.Tools, Skills: s.opts.Skills})
 	if err != nil {
 		return nil, err
 	}

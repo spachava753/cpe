@@ -178,9 +178,14 @@ func (s *Store) validate(e Entry) error {
 			return fmt.Errorf("missing parent %q", e.ParentID)
 		}
 		switch e.Type {
-		case "message", "eval_start", "host_call", "host_result", "eval_end", checkpointEntry, "compaction", "head", "request_start", "usage":
+		case titleEntry, "message", "eval_start", "host_call", "host_result", "eval_end", checkpointEntry, "compaction", "head", "request_start", "usage":
 		default:
 			return fmt.Errorf("unknown session entry type %q", e.Type)
+		}
+		if e.Type == titleEntry {
+			if _, err := decodeTitle(e.Data); err != nil {
+				return err
+			}
 		}
 		if e.Type == "head" {
 			parent := s.entries[s.indexes[e.ParentID]]

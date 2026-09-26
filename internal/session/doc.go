@@ -7,6 +7,11 @@
 // Resume requires an existing nonempty file. List reads bounded discovery
 // metadata for the current directory without writer locks, repair, or replay;
 // Open/Resume remain authoritative when a listed entry is selected.
+// Discovery scans a fixed file snapshot, skips records larger than 1 MiB, and
+// reads the latest title even after large tool results. It ignores incomplete tails.
+// Titles are parsed single-line values stored as synced title entries. The latest
+// title in the whole file wins independently of the selected branch; renaming
+// never changes file identity or contributes a conversation message.
 //
 // REPL inputs, host call intents, host results, and evaluation outcomes share the
 // conversation tree. A host intent is synced before execution and its outcome

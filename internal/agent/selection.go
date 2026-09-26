@@ -106,6 +106,7 @@ type conversationStream struct {
 func (s conversationStream) Stream(ctx context.Context, req gai.GenerationRequest) iter.Seq[gai.StreamChunk] {
 	return func(yield func(gai.StreamChunk) bool) {
 		for chunk := range s.source.Stream(ctx, req) {
+			s.agent.collectTitle(false)
 			b := chunk.Block
 			if chunk.Err == nil && b.BlockType == gai.Content && b.ModalityType == gai.Text && b.Content != nil {
 				s.agent.notify(Event{Kind: EventDelta, Text: b.Content.String()})

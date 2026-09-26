@@ -214,6 +214,7 @@ confirm. Choose `"enter"` if your terminal cannot distinguish Shift+Enter.
 | `/session` | Show the JSONL path |
 | `/session new` | Start a new conversation with saved defaults |
 | `/session list` | Pick a saved session in this directory to resume |
+| `/session rename TITLE` | Rename the current session |
 | `/tree` | List saved checkpoints |
 | `/branch ID` | Continue from a checkpoint, preserving other branches |
 | `/compact` | Summarize model context while retaining REPL state |
@@ -505,9 +506,29 @@ cpe --prompt 'Inspect the README and describe the project'
 
 An ordinary `cpe` launch always starts a **new session**. Inside the TUI,
 `/session new` starts another, and `/session list` opens a picker of sessions for
-the current working directory, newest first. Entries show a saved prompt label
-when available, activity time, and filename. Use arrows and Enter to resume;
+the current working directory, newest first. Entries show the session title
+(or first prompt label if untitled), activity time, and filename. Use arrows and Enter to resume;
 Escape closes the picker. `/session` alone still shows the active file path.
+
+The session title appears in the header and picker. On the first accepted prompt,
+CPE asks the active model to generate a short title alongside the conversation
+response. This is a separate, tool-free request using that profile's settings;
+its reported tokens and cost are included in `/usage`. It receives at most the
+first 4,000 characters of your initial input, without conversation instructions.
+The request has a 30-second timeout and settles before the turn finishes.
+If it fails or is canceled, the conversation remains usable; title generation
+is not retried automatically. Use `/session rename Investigate Copilot auth` to
+name or rename it manually (1–120 characters, one line). A rename submitted
+during work waits in the operation queue, so it takes precedence over the initial
+generated title. Renaming before the first prompt skips automatic generation.
+Titles survive restart, compaction, and branching and never enter model history.
+
+Filenames use a UTC creation timestamp followed by a cryptographically random
+base32 identifier (at least 128 bits), for example `20260926T153000_<ID>.jsonl`.
+This keeps file identities unique; the identifier is not derived from your text.
+Titles are saved as JSONL metadata. Renaming leaves the filename and session ID
+unchanged.
+
 
 Session changes wait for active and earlier queued work. Prompts queued after a
 switch run in the destination session. Creating or selecting a session leaves
@@ -847,7 +868,11 @@ Send `scroll` for a long streamed response: scroll up while it runs, verify the
 reading position stays put through completion, then scroll down to follow again.
 Use PgUp/PgDn, or press F4 to capture the mouse wheel. Verify F4 releases capture
 again so ordinary dragging selects text in the terminal, with the draft intact.
-Send `compute`, then `/session new`: the transcript and usage should clear.
+Send `compute`: the header should become `Testing persistent Starlark state`.
+Run `/session rename My test session` and verify the header and `/session list`
+picker show that title. Resume it and confirm the title survives without another
+title request. Send `/session new`: the transcript and usage should clear and the
+header should read `New session`.
 Use `/session list` to resume the `compute` session, then send `restore` to verify
 the saved variable. Restart the harness to verify it starts fresh; set
 `CPE_TUI_TEST_SESSION` to a saved JSONL path to exercise explicit startup resume.

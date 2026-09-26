@@ -10,7 +10,7 @@
 // Copilot uses its own credentials and preflight token renewal, with service
 // identity kept distinct from the underlying OpenAI/Anthropic wire adapters.
 // Each Prompt explicitly marks its first conversational request user-initiated;
-// summaries and later generations are agent-initiated, independent of compaction.
+// titles, summaries, and later generations are agent-initiated, independent of compaction.
 // Options also accepts an immutable skills.Catalog. Model instructions disclose
 // only model-invocable skill metadata. Prompt resolves /skill:NAME [arguments]
 // before context admission or persistence; unknown and model-only commands fail
@@ -46,6 +46,20 @@
 // before switching. Shared tools and the skill catalog keep their process lifetime.
 // Startup checkpoint selection changes the durable head before replay, so
 // abandoned later evaluations need not be loadable to resume an earlier branch.
+// Sessions enables automatic titles: the first accepted prompt starts a separate
+// tool-free request with the then-active model/settings and at most 4,000 input
+// runes. It runs alongside conversation generation with a 30-second deadline.
+// Direct Open callers opt in with Options.NewTitleGenerator, which must return an
+// independent generator. Construction and all Agent/journal mutations stay on the
+// operation owner; only title generation runs concurrently. Results publish at
+// stream/generation boundaries or when the operation joins the title task on exit.
+// Usage retains the title request's pricing and never calibrates conversation
+// context. Title/provider-usage failures emit EventWarning and retain unknown
+// accounting without failing the conversation; persistence failures
+// remain errors. The durable request marker prevents automatic retries, including
+// after cancellation or restart. Rename runs between operations, overrides the
+// generated title, and skips automatic generation if used before the first prompt.
+// Titles remain outside model history and survive branch selection and compaction.
 // QueueModel is the sole concurrent mutation: it replaces a pending selection,
 // never interrupts generation or tools, and applies before the next generation
 // (including after summary generation) or when the operation finishes. The latest
@@ -84,7 +98,7 @@
 // runs at most once per user turn. Oversized new input or a switch to a much
 // smaller budget may require reducing input or selecting a larger profile first.
 //
-// Every model request, including summary generation, durably records its start
+// Every model request, including titles and summary generation, durably records its start
 // and reported usage. Input, output, cache reads, and cache writes are disjoint
 // buckets: gai's inclusive input count is reduced by its cached counts. Cost is
 // estimated using a saved pricing snapshot for that request. Totals cover the

@@ -45,7 +45,9 @@ func TestRun(t *testing.T) {
 					w.WriteHeader(400)
 					return
 				}
-				dialogSizes <- len(req.Messages)
+				if len(req.Messages) == 0 || !strings.Contains(string(req.Messages[0]), "Generate a short session title") {
+					dialogSizes <- len(req.Messages)
+				}
 				w.Header().Set("Content-Type", "text/event-stream")
 				_, _ = w.Write([]byte("data: {\"id\":\"fixture\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"done\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"))
 			}))
@@ -107,7 +109,7 @@ func TestRun(t *testing.T) {
 				t.Fatal(err)
 			}
 			first, err := session.List(t.Context(), filepath.Join(dir, "sessions"), cwd)
-			if err != nil || len(first) != 1 {
+			if err != nil || len(first) != 1 || first[0].Title.String() != "done" {
 				t.Fatal(first, err)
 			}
 			args := []string{"--prompt", "second"}

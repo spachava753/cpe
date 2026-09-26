@@ -22,13 +22,16 @@ import (
 // Options supplies all internal SDK dependencies. Generator can be a provider
 // or a deterministic test generator. Tools are exposed only inside Starlark.
 type Options struct {
-	Config    config.Config
-	Model     config.Model
-	Generator gai.Generator
-	Store     *session.Store
-	CWD       string
-	Tools     []repl.Tool
-	Skills    skills.Catalog
+	// NewTitleGenerator constructs an independent generator for a concurrent first-prompt title request.
+	// Sessions supplies this automatically; direct SDK callers may omit it.
+	NewTitleGenerator func(context.Context, config.Model) (gai.Generator, error)
+	Config            config.Config
+	Model             config.Model
+	Generator         gai.Generator
+	Store             *session.Store
+	CWD               string
+	Tools             []repl.Tool
+	Skills            skills.Catalog
 }
 
 const (
@@ -41,7 +44,11 @@ const (
 	// EventUsage carries cumulative session usage, including compaction requests.
 	EventUsage = "usage"
 	// EventModel carries a model selection applied at a generation boundary.
-	EventModel      = "model"
+	EventModel = "model"
+	// EventTitle carries a durably saved session title.
+	EventTitle = "title"
+	// EventWarning reports a nonfatal auxiliary operation failure.
+	EventWarning    = "warning"
 	codeParameter   = "code"
 	compactionEntry = "compaction"
 )
@@ -57,6 +64,8 @@ type Event struct {
 
 // Agent manages one durable conversation and interpreter.
 type Agent struct {
+	titleJob      *titleJob
+	titleErr      error
 	selectedName  string
 	origins       map[int]messageOrigin
 	selection     modelQueue
@@ -301,6 +310,9 @@ func (a *Agent) Prompts(ctx context.Context, texts []string, emit func(Event)) (
 	}
 	a.emit = emit
 	defer func() {
+		a.collectTitle(true)
+		finalErr = errors.Join(finalErr, a.titleErr)
+		a.titleErr = nil
 		_, err := a.ApplyQueuedModel()
 		finalErr = errors.Join(finalErr, err)
 		a.emit = nil
@@ -338,6 +350,9 @@ func (a *Agent) Prompts(ctx context.Context, texts []string, emit func(Event)) (
 			return err
 		}
 	}
+	if err := a.startTitle(ctx, texts); err != nil {
+		return err
+	}
 	definition := replDefinition()
 	loop, err := gaiagent.New(gaiagent.Config{
 		Generator: &conversationGenerator{agent: a, userPending: true}, Model: a.opts.Model.ID,
@@ -371,6 +386,7 @@ func (a *Agent) Prompts(ctx context.Context, texts []string, emit func(Event)) (
 			return decision, a.checkContext(a.conversationRequest(a.dialog))
 		}),
 		BeforeGeneration: gaiagent.BeforeGenerationFunc(func(_ context.Context, req gaiagent.BeforeGenerationRequest) (gaiagent.BeforeGenerationDecision, error) {
+			a.collectTitle(false)
 			if req.Generation >= uint(a.opts.Config.Agent.MaxRounds) {
 				return gaiagent.BeforeGenerationDecision{StopReason: "round_limit"}, nil
 			}

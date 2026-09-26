@@ -43,6 +43,13 @@ func parseCommand(text string, literal bool) (commandRequest, error) {
 		}
 		return commandRequest{commandKind(name), argument}, nil
 	case sessionCommand:
+		if len(fields) >= 2 && fields[1] == "rename" {
+			title := strings.TrimSpace(strings.TrimPrefix(argument, "rename"))
+			if title == "" {
+				return commandRequest{}, errors.New("use /session rename TITLE")
+			}
+			return commandRequest{sessionRenameCommand, title}, nil
+		}
 		switch argument {
 		case "":
 			return commandRequest{kind: sessionCommand}, nil
@@ -51,7 +58,7 @@ func parseCommand(text string, literal bool) (commandRequest, error) {
 		case "list":
 			return commandRequest{kind: sessionListCommand}, nil
 		default:
-			return commandRequest{}, errors.New("use /session, /session new, or /session list")
+			return commandRequest{}, errors.New("use /session, /session new, /session list, or /session rename TITLE")
 		}
 	case helpCommand, usageCommand, treeCommand, compactCommand, quitCommand, exitCommand:
 		if argument != "" {
@@ -113,12 +120,12 @@ func (m *model) dispatchCommand(request commandRequest) tea.Cmd {
 	if m.changingSession() && (request.kind == modelCommand || request.kind == reasoningCommand || request.kind == promptModeCommand) {
 		return m.enqueueCommand(request)
 	}
-	if request.kind == sessionNewCommand || request.kind == sessionListCommand || request.kind == sessionResumeCommand {
-		if m.sessions == nil {
+	if request.kind == sessionNewCommand || request.kind == sessionListCommand || request.kind == sessionResumeCommand || request.kind == sessionRenameCommand {
+		if m.sessions == nil && request.kind != sessionRenameCommand {
 			m.notice = "Session switching is unavailable"
 			return nil
 		}
-		if request.kind != sessionListCommand && m.panel.kind == queuePanel {
+		if (request.kind == sessionNewCommand || request.kind == sessionResumeCommand) && m.panel.kind == queuePanel {
 			m.closePanel()
 		}
 		if m.busy || m.savingDefault != nil || len(m.queuedCommands) > 0 {
@@ -132,7 +139,7 @@ func (m *model) dispatchCommand(request commandRequest) tea.Cmd {
 // the head cannot be admitted again behind requests that were submitted later.
 func (m *model) executeCommand(request commandRequest) tea.Cmd {
 	switch request.kind {
-	case sessionNewCommand, sessionListCommand, sessionResumeCommand:
+	case sessionNewCommand, sessionListCommand, sessionResumeCommand, sessionRenameCommand:
 		return m.startSession(request)
 	case promptModeCommand:
 		m.configurePromptMode(request.argument)
@@ -145,7 +152,7 @@ func (m *model) executeCommand(request commandRequest) tea.Cmd {
 	case quitCommand, exitCommand:
 		return m.quit()
 	case helpCommand:
-		m.notice = "/model  /reasoning  /theme  /usage  /login  /skill:NAME [args]  /prompt-mode  /queue [clear|steer]  /compact  /tree  /branch ID  /session [new|list]  /quit"
+		m.notice = "/model  /reasoning  /theme  /usage  /login  /skill:NAME [args]  /prompt-mode  /queue [clear|steer]  /compact  /tree  /branch ID  /session [new|list|rename TITLE]  /quit"
 	case usageCommand:
 		m.notice = "Session totals · Esc conversation"
 		m.openPanel(usagePanel, "")

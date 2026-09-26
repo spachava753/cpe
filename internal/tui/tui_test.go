@@ -225,7 +225,10 @@ type waitingGenerator struct {
 	calls   atomic.Int32
 }
 
-func (g *waitingGenerator) Generate(ctx context.Context, _ gai.GenerationRequest) (gai.Response, error) {
+func (g *waitingGenerator) Generate(ctx context.Context, req gai.GenerationRequest) (gai.Response, error) {
+	if len(req.Instructions.Blocks) > 0 && strings.HasPrefix(req.Instructions.Blocks[0].Content.String(), "Generate a short session title") {
+		return gai.Response{Candidates: []gai.Message{{Role: gai.Assistant, Blocks: []gai.Block{gai.TextBlock("Fixture session")}}}, FinishReason: gai.EndTurn}, nil
+	}
 	if g.calls.Add(1) == 1 {
 		close(g.started)
 		select {

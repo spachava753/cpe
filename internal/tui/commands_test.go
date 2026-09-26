@@ -38,6 +38,8 @@ func TestParseCommand(t *testing.T) {
 		{name: "new session", text: sessionNewCommand, want: commandRequest{kind: sessionNewCommand}},
 		{name: "session picker", text: sessionListCommand, want: commandRequest{kind: sessionListCommand}},
 		{name: "invalid session action", text: "/session unknown", invalid: true},
+		{name: "rename title", text: "/session rename  Fix auth for Copilot", want: commandRequest{sessionRenameCommand, "Fix auth for Copilot"}},
+		{name: "rename needs title", text: "/session rename", invalid: true},
 		{name: "session action extra argument", text: "/session new extra", invalid: true},
 		{name: "unknown queue action", text: "/queue next", invalid: true},
 		{name: "unknown", text: "/unknown", invalid: true},

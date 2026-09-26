@@ -178,6 +178,11 @@ func (g *terminalGenerator) Stream(ctx context.Context, req gai.GenerationReques
 			}
 			return
 		}
+		if len(req.Instructions.Blocks) > 0 && strings.HasPrefix(req.Instructions.Blocks[0].Content.String(), "Generate a short session title") {
+			yield(gai.StreamChunk{Block: gai.TextBlock("Testing persistent Starlark state")})
+			yield(usage)
+			return
+		}
 		last := req.Dialog[len(req.Dialog)-1]
 		if last.Role == gai.User {
 			text := last.Blocks[0].Content.String()

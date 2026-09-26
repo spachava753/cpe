@@ -156,7 +156,7 @@ func TestSessionCommands(t *testing.T) {
 							t.Fatal("resume did not settle")
 						}
 					}
-					if m.sessionFile != firstPath || len(m.messages) != 2 || m.messages[0].Blocks[0].Content.String() != "first conversation" || m.usage.Requests != 1 {
+					if m.sessionFile != firstPath || len(m.messages) != 2 || m.messages[0].Blocks[0].Content.String() != "first conversation" || m.usage.Requests != 2 {
 						t.Fatal("resumed wrong conversation/accounting")
 					}
 				}
@@ -166,6 +166,74 @@ func TestSessionCommands(t *testing.T) {
 			}
 		})
 	}
+	for _, name := range []string{"rename idle", "rename after first generation", "invalid rename"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfg := config.Config{DefaultModel: "fixture", Models: map[string]config.Model{"fixture": {ID: "fixture"}}, Agent: config.Agent{ToolTimeout: "1s", MaxRounds: 3}}
+			waiting := &waitingGenerator{started: make(chan struct{}), finish: make(chan error, 1)}
+			sessions := agent.NewSessions(agent.SessionOptions{Directory: filepath.Join(dir, "sessions"), CWD: dir, LoadConfig: func(context.Context) (config.Config, error) { return cfg, nil }, NewGenerator: func(context.Context, config.Model, string) (gai.Generator, error) { return waiting, nil }})
+			defer sessions.Close()
+			first, err := sessions.Open(t.Context(), agent.SessionStart{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			m := newModel(t.Context(), first.Agent, first.Name)
+			m.sessions = sessions
+			next, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+			m = next.(model)
+			if name == "rename after first generation" {
+				m.start("wait")
+				<-waiting.started
+			}
+			title := "My Copilot investigation"
+			if name == "invalid rename" {
+				title = strings.Repeat("x", 121)
+			}
+			m.dispatchCommand(commandRequest{sessionRenameCommand, title})
+			m.input.SetValue("keep draft")
+			if name == "rename after first generation" {
+				waiting.finish <- nil
+			}
+			deadline := time.After(5 * time.Second)
+			for m.busy {
+				select {
+				case msg := <-m.events:
+					next, _ = m.Update(msg)
+					m = next.(model)
+				case <-deadline:
+					t.Fatal("rename did not finish")
+				}
+			}
+			if name == "invalid rename" {
+				if m.sessionTitle != "" || len(m.operationErrors) != 1 {
+					t.Fatal("invalid rename changed title or lost error")
+				}
+				return
+			}
+			if m.sessionTitle != title || m.agent.Title().String() != title || !strings.Contains(m.View().Content, title) || m.sessionFile != first.Agent.SessionFile() {
+				t.Fatal("rename missing from header/store or changed file")
+			}
+			if m.input.Value() != "keep draft" {
+				t.Fatal("rename lost draft")
+			}
+			infos, err := sessions.List(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			m.showSessions(infos)
+			if m.picker == nil || !strings.Contains(m.picker.list.Items()[0].(choice).label, title) {
+				t.Fatal("picker missing title")
+			}
+			for _, message := range m.messages {
+				for _, block := range message.Blocks {
+					if block.Content != nil && strings.Contains(block.Content.String(), title) {
+						t.Fatal("rename entered dialog")
+					}
+				}
+			}
+		})
+	}
+
 	for _, action := range []string{"new before prompt", "resume before prompt", "consecutive new sessions"} {
 		t.Run(action, func(t *testing.T) {
 			dir := t.TempDir()

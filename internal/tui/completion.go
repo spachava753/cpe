@@ -22,6 +22,7 @@ const (
 	sessionCommand       = "/session"
 	sessionNewCommand    = "/session new"
 	sessionListCommand   = "/session list"
+	sessionRenameCommand = "/session rename"
 	sessionResumeCommand = "/session resume"
 	queueCommand         = "/queue"
 	queueSteerCommand    = "/queue steer"
@@ -52,6 +53,7 @@ var slashCommands = []slashCommand{
 	{sessionCommand, "Show the session path", false},
 	{sessionNewCommand, "Start a new conversation", false},
 	{sessionListCommand, "Choose a saved session to resume", false},
+	{sessionRenameCommand, "Rename this session", true},
 	{queueCommand, "Inspect pending commands and failures (/queue clear discards pending work)", false},
 	{queueSteerCommand, "Choose a queued prompt to steer now", false},
 	{promptModeCommand, "Choose queue or steer for busy prompt submission", false},
@@ -162,7 +164,11 @@ func (m model) completionView() string {
 		command := m.completion.matches[i]
 		name := command.name
 		if command.argument {
-			name += " ID"
+			if command.name == sessionRenameCommand {
+				name += " TITLE"
+			} else {
+				name += " ID"
+			}
 		}
 		text := "  " + name
 		style := m.styles.base

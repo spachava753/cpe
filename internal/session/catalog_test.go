@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,6 +34,16 @@ func TestList(t *testing.T) {
 					}
 					defer store.Close()
 					if _, err := store.Append("checkpoint", map[string]string{"label": name}); err != nil {
+						t.Fatal(err)
+					}
+					if _, err := store.Append("message", map[string]string{"text": strings.Repeat("x", 2<<20)}); err != nil {
+						t.Fatal(err)
+					}
+					title, err := session.ParseTitle("Title " + name)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := store.SetTitle(title); err != nil {
 						t.Fatal(err)
 					}
 					stamp := time.Unix(int64(i+1), 0)
@@ -65,7 +76,7 @@ func TestList(t *testing.T) {
 				}
 				return
 			}
-			if len(got) != 2 || filepath.Base(got[0].Path) != "second.jsonl" || got[1].Label != "first.jsonl" {
+			if len(got) != 2 || filepath.Base(got[0].Path) != "second.jsonl" || got[1].Label != "first.jsonl" || got[1].Title.String() != "Title first.jsonl" {
 				t.Fatalf("%+v", got)
 			}
 		})

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"unicode"
 
@@ -89,6 +88,7 @@ type model struct {
 	quitting        bool
 	checkpoints     []session.Entry
 	sessionFile     string
+	sessionTitle    string
 	submitKey       config.SubmitKey
 	mouseMode       config.MouseMode
 	input           textarea.Model
@@ -145,6 +145,7 @@ func newModel(ctx context.Context, a *agent.Agent, name string) model {
 	spin.Spinner = spinner.Dot
 	m := model{ctx: ctx, agent: a, name: name, input: input, viewport: viewport.New(viewport.WithWidth(80), viewport.WithHeight(14)), scroll: transcriptScroll{following: true}, spinner: spin, width: 80, height: 24, messages: a.Messages(), notice: "/help for commands"}
 	m.profile = a.Model()
+	m.sessionTitle = a.Title().String()
 	m.sessionFile, m.checkpoints = a.SessionFile(), a.Checkpoints()
 	m.commands = append([]slashCommand{}, slashCommands...)
 	for _, command := range a.Skills().Commands() {
@@ -364,6 +365,7 @@ func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 			m.provisional = ""
 			m.messages = m.agent.Messages()
 			m.checkpoints = m.agent.Checkpoints()
+			m.sessionTitle = m.agent.Title().String()
 			m.usage, m.contextTokens = m.agent.Usage(), m.agent.ContextEstimate()
 			if v.err != nil && !cancellationOnly(v.err) {
 				m.notice = "Error: " + v.err.Error()
@@ -396,6 +398,10 @@ func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 			return m, nil
 		}
 		switch v.event.Kind {
+		case agent.EventTitle:
+			m.sessionTitle = v.event.Text
+		case agent.EventWarning:
+			m.operationErrors = append(m.operationErrors, v.event.Text)
 		case agent.EventModel:
 			if v.event.Selection != nil {
 				m.acceptSelection(v.event.Selection)
@@ -607,7 +613,11 @@ func (m model) viewContent() string {
 		return "Resize terminal to at least 24 × 8"
 	}
 	profile := "  " + oneline(m.name) + " · " + effortLabel(m.profile.ReasoningEffort)
-	title := m.styles.accent.Render("cpe") + m.styles.base.Render(profile+"  ") + m.styles.muted.Render(oneline(filepath.Base(m.sessionFile)))
+	sessionTitle := m.sessionTitle
+	if sessionTitle == "" {
+		sessionTitle = "New session"
+	}
+	title := m.styles.accent.Render("cpe") + m.styles.base.Render("  "+oneline(sessionTitle)) + m.styles.muted.Render(profile)
 	status := oneline(m.notice)
 	if m.busy {
 		cancelKey := "Esc"

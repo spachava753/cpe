@@ -170,6 +170,9 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	if *prompt != "" {
 		fmt.Fprintf(errOut, "Session: %s\n", a.SessionFile())
 		return a.Prompt(ctx, *prompt, func(e agent.Event) {
+			if e.Kind == agent.EventWarning {
+				fmt.Fprintln(errOut, e.Text)
+			}
 			if e.Kind == agent.EventMessage && e.Message != nil && e.Message.Role == gai.Assistant {
 				for _, b := range e.Message.Blocks {
 					if b.BlockType == gai.Content && b.Content != nil {

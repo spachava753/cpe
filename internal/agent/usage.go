@@ -137,12 +137,19 @@ func (a *Agent) beginRequest(purpose string) (string, error) {
 }
 
 func (a *Agent) finishRequest(id string, metadata gai.Metadata, req gai.GenerationRequest, purpose string) error {
-	record := usageRecord{RequestID: id, Pricing: a.opts.Model.Cost}
+	reportErr, saveErr := a.finishProfileRequest(id, metadata, req, purpose, a.opts.Model)
+	return errors.Join(reportErr, saveErr)
+}
+
+// finishProfileRequest distinguishes invalid provider reports from failures to
+// safely persist accounting. Even invalid reports save an unknown-usage outcome.
+func (a *Agent) finishProfileRequest(id string, metadata gai.Metadata, req gai.GenerationRequest, purpose string, profile config.Model) (reportErr, saveErr error) {
+	record := usageRecord{RequestID: id, Pricing: profile.Cost}
 	tokens, complete, err := normalizeTokens(metadata)
 	if err == nil {
 		record.Tokens, record.Complete = tokens, complete
-		if input, ok := metadata[gai.UsageMetricInputTokens].(int); ok && purpose != compactionEntry {
-			record.Context = &contextSample{Provider: a.opts.Model.Provider, Model: req.Model, Estimate: estimateTokens(req), Input: input}
+		if input, ok := metadata[gai.UsageMetricInputTokens].(int); ok && purpose == "conversation" {
+			record.Context = &contextSample{Provider: profile.Provider, Model: req.Model, Estimate: estimateTokens(req), Input: input}
 		}
 	}
 	if record.Complete && record.Pricing != nil {
@@ -157,10 +164,10 @@ func (a *Agent) finishRequest(id string, metadata gai.Metadata, req gai.Generati
 		}
 	}
 	if validationErr := a.validateUsage(record); validationErr != nil {
-		return errors.Join(err, validationErr)
+		return err, validationErr
 	}
 	if _, saveErr := a.opts.Store.Append(EventUsage, record); saveErr != nil {
-		return errors.Join(err, saveErr)
+		return err, saveErr
 	}
 	a.addUsage(record)
 	if record.Context != nil {
@@ -168,7 +175,7 @@ func (a *Agent) finishRequest(id string, metadata gai.Metadata, req gai.Generati
 	}
 	snapshot := a.usage
 	a.notify(Event{Kind: EventUsage, Usage: &snapshot})
-	return err
+	return err, nil
 }
 
 func normalizeTokens(metadata gai.Metadata) (tokens, bool, error) {
