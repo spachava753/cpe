@@ -17,8 +17,6 @@ import (
 
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/config"
-	"github.com/spachava753/cpe/internal/repl"
-	"github.com/spachava753/cpe/internal/session"
 	"github.com/spachava753/cpe/internal/skills"
 	"github.com/spachava753/cpe/internal/testutil/testgate"
 )
@@ -33,11 +31,6 @@ func TestTerminalHarness(t *testing.T) {
 	if dir == "" {
 		t.Skip("set CPE_TUI_TEST_DIR to use the terminal harness")
 	}
-	store, err := session.Open(filepath.Join(dir, "terminal.jsonl"), dir, repl.Runtime)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer store.Close()
 	in, out, read, write := 2.0, 10.0, 0.2, 2.5
 	pricing := &config.Pricing{Rates: config.Rates{Input: &in, Output: &out, CacheRead: &read, CacheWrite: &write}}
 	profiles := map[string]config.Model{
@@ -92,14 +85,28 @@ func TestTerminalHarness(t *testing.T) {
 		t.Fatal(warnings)
 	}
 	gen := &terminalGenerator{skillRoot: skillRoot}
-	a, err := agent.Open(t.Context(), agent.Options{
-		Config: config.Config{System: "Terminal test", Agent: config.Agent{ToolTimeout: "5s", OutputLimit: 32000, MaxRounds: 5}, Compaction: config.Compaction{Prompt: "Summarize"}},
-		Model:  profiles[initial.DefaultModel], Generator: gen, Store: store, CWD: dir, Skills: catalog,
+	sessions := agent.NewSessions(agent.SessionOptions{
+		Directory: filepath.Join(dir, "sessions"), CWD: dir, Skills: catalog,
+		LoadConfig: func(context.Context) (config.Config, error) {
+			data, err := os.ReadFile(configPath)
+			if err != nil {
+				return config.Config{}, err
+			}
+			var cfg config.Config
+			if err := json.Unmarshal(data, &cfg); err != nil {
+				return cfg, err
+			}
+			cfg.Dir, cfg.System = dir, "Terminal test"
+			return cfg, nil
+		},
+		NewGenerator: func(context.Context, config.Model, string) (gai.Generator, error) { return gen, nil },
 	})
+	defer sessions.Close()
+	conversation, err := sessions.Open(t.Context(), agent.SessionStart{Path: os.Getenv("CPE_TUI_TEST_SESSION")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer a.Close()
+	a := conversation.Agent
 	signedIn := false
 	var submitKey config.SubmitKey
 	if value := os.Getenv("CPE_TUI_TEST_SUBMIT_KEY"); value != "" {
@@ -111,9 +118,9 @@ func TestTerminalHarness(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	options := Options{ConfigDir: dir, Models: profiles, SubmitKey: submitKey, MouseMode: initial.TUI.MouseMode, PromptMode: initial.TUI.PromptMode,
+	options := Options{Sessions: sessions, ConfigDir: dir, Models: profiles, SubmitKey: submitKey, MouseMode: initial.TUI.MouseMode, PromptMode: initial.TUI.PromptMode,
 		ThemeDir:      dir,
-		NewGenerator:  func(context.Context, config.Model) (gai.Generator, error) { return gen, nil },
+		NewGenerator:  sessions.Generator,
 		LoginRequired: func(profile config.Model) bool { return profile.Provider == "codex" && !signedIn },
 		LoginGo: func(ctx context.Context, key string) (map[string]config.Model, error) {
 			if key != "fixture-go-key" {

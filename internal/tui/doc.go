@@ -69,6 +69,17 @@
 // skills resolve at execution. New drafts are preserved throughout. Session path
 // and completed checkpoints are cached at operation boundaries; usage uses live
 // events. No concurrent Agent reads are needed to render/dispatch UI commands.
+// /session shows the active JSONL path. /session new creates a fresh conversation;
+// /session list opens a current-directory picker ordered by most recent activity.
+// Session operations run off the UI loop and join the same FIFO as other work.
+// Prompts before a switch run in the old session; prompts after it run in the new
+// one. Selecting a session or creating one exits queue inspection. Restoration
+// must succeed before the old agent/journal are released. Failures preserve the
+// old conversation and report in /queue. Selecting the active file is a no-op.
+// Model/reasoning edits during restoration wait for that boundary. Successful
+// switches reset transcript, usage, interpreter, interrupted stream, and local
+// model/reasoning/prompt-mode overrides to the destination and saved defaults;
+// drafts, process integrations, theme, and terminal preferences survive.
 //
 // A leading slash on a single-line draft opens a themed command completion popup
 // above the composer. Suggestions filter by prefix while the cursor is at the

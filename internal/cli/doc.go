@@ -3,6 +3,9 @@
 // session in the current directory, and --sessions lists matching session files.
 // --init creates starter configuration, --model selects a JSON profile, and
 // --prompt runs a single non-interactive turn using the same durable agent.
+// Ordinary launches never auto-resume. Interactive /session new and /session list
+// use the same internal session lifecycle; process-owned MCP connections and the
+// startup skill catalog remain available after switching conversations.
 // Interactive input preferences (submit key and mouse mode) come from config.tui.
 // Configured MCP servers connect before opening the agent and close after it.
 // Their functions are injected into the REPL; startup discovery is bounded by

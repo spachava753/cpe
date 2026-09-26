@@ -38,6 +38,14 @@
 // changes are disabled until a successful branch restoration or reopen. The
 // displayed dialog follows the selected head, never the abandoned branch.
 // One Agent has one operation at a time; the caller owns Store.Close separately.
+// Sessions owns an Agent and its Store together for interactive session changes.
+// It stages restoration before publishing the replacement, reloads configuration
+// defaults, and binds every provider to the destination journal ID. Missing,
+// locked, incompatible, canceled, or failed destinations leave the current agent
+// usable. Callers must join agent work and provider/default-setting operations
+// before switching. Shared tools and the skill catalog keep their process lifetime.
+// Startup checkpoint selection changes the durable head before replay, so
+// abandoned later evaluations need not be loadable to resume an earlier branch.
 // QueueModel is the sole concurrent mutation: it replaces a pending selection,
 // never interrupts generation or tools, and applies before the next generation
 // (including after summary generation) or when the operation finishes. The latest

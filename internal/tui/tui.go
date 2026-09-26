@@ -32,13 +32,15 @@ const pageUpKey = "pgup"
 const cancelWorkAction = "cancel work"
 
 type update struct {
-	event       agent.Event
-	done        bool
-	err         error
-	loginText   string
-	loginNotice string
-	profiles    map[string]config.Model
-	steered     bool
+	event        agent.Event
+	done         bool
+	err          error
+	loginText    string
+	loginNotice  string
+	profiles     map[string]config.Model
+	steered      bool
+	conversation *agent.Conversation
+	sessions     []session.Info
 }
 
 // Options supplies model profiles, composer/mouse preferences, and UI-only authentication. NewGenerator
@@ -52,7 +54,10 @@ type update struct {
 // selections. ConfigDir enables Ctrl+S model/reasoning default persistence.
 // An empty directory disables theme configuration. Reload failures
 // keep the last valid theme and display a warning.
+// Sessions enables new/resume/list and owns all agents/journals it opens. The
+// caller must close it after Run returns. Its active agent must be a at startup.
 type Options struct {
+	Sessions      *agent.Sessions
 	ConfigDir     string
 	SubmitKey     config.SubmitKey
 	MouseMode     config.MouseMode
@@ -66,6 +71,7 @@ type Options struct {
 	ThemeDir      string
 }
 type model struct {
+	sessions        *agent.Sessions
 	configDir       string
 	savingDefault   *defaultSave
 	ctx             context.Context
@@ -167,6 +173,7 @@ func Run(ctx context.Context, a *agent.Agent, name string, options Options) erro
 	m.mouseMode = options.MouseMode
 	m.promptMode = options.PromptMode
 	m.configDir = options.ConfigDir
+	m.sessions = options.Sessions
 	m.themeDir = options.ThemeDir
 	if m.themeDir != "" {
 		m.appearance = theme.SystemAppearance(ctx)
@@ -332,6 +339,12 @@ func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 				m.cancel()
 			}
 			m.busy = false
+			if v.conversation != nil {
+				if m.agent != v.conversation.Agent {
+					bottom = true
+				}
+				m.acceptConversation(v.conversation)
+			}
 			_, selectionErr := m.agent.ApplyQueuedModel()
 			selected := m.agent.SelectedModel()
 			v.err = errors.Join(v.err, selectionErr)
@@ -367,6 +380,8 @@ func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 				if v.profiles != nil {
 					m.profiles = v.profiles
 				}
+			} else if v.conversation != nil {
+				m.notice = "Session ready · " + m.sessionFile
 			} else {
 				m.notice = "Saved"
 			}
@@ -375,6 +390,9 @@ func (m model) update(msg tea.Msg) (model, tea.Cmd) {
 			m.syncCompletion()
 			m.layout()
 			m.refresh(bottom)
+			if m.operation == sessionListCommand && v.err == nil {
+				m.showSessions(v.sessions)
+			}
 			return m, nil
 		}
 		switch v.event.Kind {

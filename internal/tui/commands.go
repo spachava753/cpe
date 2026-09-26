@@ -42,7 +42,18 @@ func parseCommand(text string, literal bool) (commandRequest, error) {
 			return commandRequest{}, errors.New("use /queue, /queue clear, or /queue steer")
 		}
 		return commandRequest{commandKind(name), argument}, nil
-	case helpCommand, usageCommand, sessionCommand, treeCommand, compactCommand, quitCommand, exitCommand:
+	case sessionCommand:
+		switch argument {
+		case "":
+			return commandRequest{kind: sessionCommand}, nil
+		case "new":
+			return commandRequest{kind: sessionNewCommand}, nil
+		case "list":
+			return commandRequest{kind: sessionListCommand}, nil
+		default:
+			return commandRequest{}, errors.New("use /session, /session new, or /session list")
+		}
+	case helpCommand, usageCommand, treeCommand, compactCommand, quitCommand, exitCommand:
 		if argument != "" {
 			return commandRequest{}, fmt.Errorf("%s takes no arguments", name)
 		}
@@ -97,7 +108,32 @@ func (m *model) enqueueCommand(request commandRequest) tea.Cmd {
 }
 
 func (m *model) dispatchCommand(request commandRequest) tea.Cmd {
+	// Session restoration owns the agent until its completion arrives. Defer
+	// settings that would otherwise touch the old agent or its provider factory.
+	if m.changingSession() && (request.kind == modelCommand || request.kind == reasoningCommand || request.kind == promptModeCommand) {
+		return m.enqueueCommand(request)
+	}
+	if request.kind == sessionNewCommand || request.kind == sessionListCommand || request.kind == sessionResumeCommand {
+		if m.sessions == nil {
+			m.notice = "Session switching is unavailable"
+			return nil
+		}
+		if request.kind != sessionListCommand && m.panel.kind == queuePanel {
+			m.closePanel()
+		}
+		if m.busy || m.savingDefault != nil || len(m.queuedCommands) > 0 {
+			return m.enqueueCommand(request)
+		}
+	}
+	return m.executeCommand(request)
+}
+
+// executeCommand runs an admitted request. Queue drainage calls it directly so
+// the head cannot be admitted again behind requests that were submitted later.
+func (m *model) executeCommand(request commandRequest) tea.Cmd {
 	switch request.kind {
+	case sessionNewCommand, sessionListCommand, sessionResumeCommand:
+		return m.startSession(request)
 	case promptModeCommand:
 		m.configurePromptMode(request.argument)
 	case modelCommand, reasoningCommand:
@@ -109,7 +145,7 @@ func (m *model) dispatchCommand(request commandRequest) tea.Cmd {
 	case quitCommand, exitCommand:
 		return m.quit()
 	case helpCommand:
-		m.notice = "/model  /reasoning  /theme  /usage  /login  /skill:NAME [args]  /prompt-mode  /queue [clear|steer]  /compact  /tree  /branch ID  /session  /quit"
+		m.notice = "/model  /reasoning  /theme  /usage  /login  /skill:NAME [args]  /prompt-mode  /queue [clear|steer]  /compact  /tree  /branch ID  /session [new|list]  /quit"
 	case usageCommand:
 		m.notice = "Session totals · Esc conversation"
 		m.openPanel(usagePanel, "")
@@ -211,7 +247,7 @@ func (m *model) drainCommands() tea.Cmd {
 			break
 		}
 		m.queuedCommands = m.queuedCommands[1:]
-		cmds = append(cmds, m.dispatchCommand(request))
+		cmds = append(cmds, m.executeCommand(request))
 	}
 	return tea.Batch(cmds...)
 }

@@ -172,6 +172,9 @@ func (m model) updatePicker(msg tea.Msg) (model, tea.Cmd) {
 				if command == queueSteerCommand {
 					return m, m.promotePrompt(selected.value)
 				}
+				if command == sessionListCommand {
+					return m, m.dispatchCommand(commandRequest{sessionResumeCommand, selected.value})
+				}
 				if command == promptModeCommand {
 					m.configurePromptMode(selected.value)
 					return m, nil

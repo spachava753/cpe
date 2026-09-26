@@ -41,7 +41,7 @@ func (m *model) requestSteering(request commandRequest) tea.Cmd {
 	}
 	m.steering = append(m.steering, request)
 	// Branch restoration must settle before the interpreter can accept input.
-	if m.busy && !m.loggingIn && m.operation != branchCommand {
+	if m.busy && !m.loggingIn && m.operation != branchCommand && !m.changingSession() {
 		m.steer()
 	}
 	m.notice = "Steering requested · waiting for current work to settle"

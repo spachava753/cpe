@@ -17,9 +17,11 @@ import (
 )
 
 const formatVersion = 1
+const sessionEntry = "session"
+const checkpointEntry = "checkpoint"
 
-// Header fixes the working directory and interpreter format for a session.
-type Header struct {
+// header fixes the working directory and interpreter format for a session.
+type header struct {
 	Version int    `json:"version"`
 	CWD     string `json:"cwd"`
 	Runtime string `json:"runtime"`
@@ -44,17 +46,32 @@ type Store struct {
 	entries []Entry
 	indexes map[string]int
 	head    string
-	header  Header
+	header  header
 	failed  error
 }
 
 // Open creates or resumes path. cwd and runtime must match existing metadata.
 // The caller must Close the store. Parent directories are private by default.
 func Open(path, cwd, runtime string) (_ *Store, err error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return nil, err
+	return open(path, cwd, runtime, true)
+}
+
+// Resume opens an existing journal without creating a missing or empty session.
+func Resume(path, cwd, runtime string) (*Store, error) {
+	return open(path, cwd, runtime, false)
+}
+
+func open(path, cwd, runtime string, create bool) (_ *Store, err error) {
+	flags := os.O_RDWR
+	if create {
+		flags |= os.O_CREATE
 	}
-	lock := flock.New(path)
+	if create {
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			return nil, err
+		}
+	}
+	lock := flock.New(path, flock.SetFlag(flags))
 	locked, err := lock.TryLock()
 	if err != nil {
 		_ = lock.Close()
@@ -69,7 +86,7 @@ func Open(path, cwd, runtime string) (_ *Store, err error) {
 			_ = lock.Close()
 		}
 	}()
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0600)
+	f, err := os.OpenFile(path, flags, 0600)
 	if err != nil {
 		return nil, err
 	}
@@ -82,6 +99,9 @@ func Open(path, cwd, runtime string) (_ *Store, err error) {
 	data, err := io.ReadAll(f)
 	if err != nil {
 		return nil, err
+	}
+	if !create && len(data) == 0 {
+		return nil, errors.New("session is empty")
 	}
 	complete := bytes.LastIndexByte(data, '\n') + 1
 	if len(data) > 0 && complete == 0 {
@@ -129,8 +149,8 @@ func Open(path, cwd, runtime string) (_ *Store, err error) {
 		return nil, err
 	}
 	if len(s.entries) == 0 {
-		s.header = Header{Version: formatVersion, CWD: cwd, Runtime: runtime}
-		if _, err := s.Append("session", s.header); err != nil {
+		s.header = header{Version: formatVersion, CWD: cwd, Runtime: runtime}
+		if _, err := s.Append(sessionEntry, s.header); err != nil {
 			return nil, err
 		}
 		// Persist the directory entry as well as the file on Unix filesystems.
@@ -150,7 +170,7 @@ func (s *Store) validate(e Entry) error {
 		return fmt.Errorf("duplicate entry %s", e.ID)
 	}
 	if len(s.entries) == 0 {
-		if e.Type != "session" || e.ParentID != "" {
+		if e.Type != sessionEntry || e.ParentID != "" {
 			return errors.New("missing session header")
 		}
 	} else {
@@ -158,13 +178,13 @@ func (s *Store) validate(e Entry) error {
 			return fmt.Errorf("missing parent %q", e.ParentID)
 		}
 		switch e.Type {
-		case "message", "eval_start", "host_call", "host_result", "eval_end", "checkpoint", "compaction", "head", "request_start", "usage":
+		case "message", "eval_start", "host_call", "host_result", "eval_end", checkpointEntry, "compaction", "head", "request_start", "usage":
 		default:
 			return fmt.Errorf("unknown session entry type %q", e.Type)
 		}
 		if e.Type == "head" {
 			parent := s.entries[s.indexes[e.ParentID]]
-			if parent.Type != "checkpoint" && parent.Type != "session" {
+			if parent.Type != checkpointEntry && parent.Type != sessionEntry {
 				return errors.New("branches must start at a checkpoint")
 			}
 		} else if e.ParentID != s.head {

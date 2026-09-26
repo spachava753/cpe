@@ -4,6 +4,9 @@
 // active head. Files are exclusively locked for the lifetime of an open session.
 // Appends are fsynced before being acknowledged. An unterminated final line is
 // discarded on open; malformed complete records fail closed.
+// Resume requires an existing nonempty file. List reads bounded discovery
+// metadata for the current directory without writer locks, repair, or replay;
+// Open/Resume remain authoritative when a listed entry is selected.
 //
 // REPL inputs, host call intents, host results, and evaluation outcomes share the
 // conversation tree. A host intent is synced before execution and its outcome

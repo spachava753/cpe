@@ -212,6 +212,8 @@ confirm. Choose `"enter"` if your terminal cannot distinguish Shift+Enter.
 | `/usage` | Show exact session token totals, estimated cost, and context budget; Escape returns to the conversation |
 | `/skill:NAME [arguments]` | Invoke an installed skill |
 | `/session` | Show the JSONL path |
+| `/session new` | Start a new conversation with saved defaults |
+| `/session list` | Pick a saved session in this directory to resume |
 | `/tree` | List saved checkpoints |
 | `/branch ID` | Continue from a checkpoint, preserving other branches |
 | `/compact` | Summarize model context while retaining REPL state |
@@ -501,7 +503,21 @@ cpe --resume /absolute/path/session.jsonl --branch CHECKPOINT_ID
 cpe --prompt 'Inspect the README and describe the project'
 ```
 
-`--continue` selects the most recently modified session in the current directory.
+An ordinary `cpe` launch always starts a **new session**. Inside the TUI,
+`/session new` starts another, and `/session list` opens a picker of sessions for
+the current working directory, newest first. Entries show a saved prompt label
+when available, activity time, and filename. Use arrows and Enter to resume;
+Escape closes the picker. `/session` alone still shows the active file path.
+
+Session changes wait for active and earlier queued work. Prompts queued after a
+switch run in the destination session. Creating or selecting a session leaves
+queue inspection. The destination's conversation, usage, and Starlark state are
+restored without repeating host effects; a failed resume leaves the current
+session usable. Selecting the current file does nothing. New and resumed sessions
+use saved model/reasoning and prompt-mode defaults; unsent drafts, theme, terminal
+preferences, MCP connections, and the startup skill catalog stay available.
+
+Explicit `--continue` selects the most recently modified session in the current directory.
 `--resume` requires an existing file or filename without its `.jsonl` suffix.
 A session's working directory is fixed; start CPE in that directory to resume it.
 
@@ -826,13 +842,16 @@ test configuration. Escape cancels; no GitHub request or credential storage occu
 Select the fixture with `/model github-copilot/fixture`, then send `compute` to test
 the normal REPL workflow after login.
 Send `verbose` for 60 lines of Starlark output: the TUI previews 20 rows, while
-`terminal.jsonl` retains all 60.
+the active file under `CPE_TUI_TEST_DIR/sessions/` retains all 60.
 Send `scroll` for a long streamed response: scroll up while it runs, verify the
 reading position stays put through completion, then scroll down to follow again.
 Use PgUp/PgDn, or press F4 to capture the mouse wheel. Verify F4 releases capture
 again so ordinary dragging selects text in the terminal, with the draft intact.
-Send `compute`, restart the process, then send `restore` to verify the saved
-variable. Send `slow` for a three-second REPL call and draft another message
+Send `compute`, then `/session new`: the transcript and usage should clear.
+Use `/session list` to resume the `compute` session, then send `restore` to verify
+the saved variable. Restart the harness to verify it starts fresh; set
+`CPE_TUI_TEST_SESSION` to a saved JSONL path to exercise explicit startup resume.
+Send `slow` for a three-second REPL call and draft another message
 while it runs; the draft stays unsent after completion. Send `wait`, type a draft,
 and press Esc to verify cancellation preserves it. Set `CPE_TUI_TEST_SUBMIT_KEY=shift+enter` to exercise the alternate composer
 binding. This harness also works inside tmux, where `capture-pane` provides the actual rendered terminal grid.
@@ -855,7 +874,7 @@ until you leave the view. Open and cancel `/queue steer` to verify they stay hel
 then reopen it and promote the middle one; it should run first,
 with the remaining prompts in order. Use `/prompt-mode` and Ctrl+S to save steer,
 restart, then submit `wait` followed by `compute`: the partial stream is marked
-interrupted and absent from `terminal.jsonl`. Send `steer-tool` and steer it with
+interrupted and absent from the session JSONL. Send `steer-tool` and steer it with
 `restore-partial`; it should print `[1, 7]`, including after restart. The fixture
 writes one `steering-effect` line before interruption; replay must not add another.
 The harness also reads `themes.json` from `CPE_TUI_TEST_DIR`; use an explicit JSON `palette_file`

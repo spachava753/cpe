@@ -2,8 +2,6 @@ package cli
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -84,20 +82,20 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 		return err
 	}
 	if *list || *latest {
-		sessions, err := listSessions(filepath.Join(dir, "sessions"), cwd)
+		sessions, err := session.List(ctx, filepath.Join(dir, "sessions"), cwd)
 		if err != nil {
 			return err
 		}
 		if *list {
 			for _, s := range sessions {
-				fmt.Fprintln(out, s)
+				fmt.Fprintln(out, s.Path)
 			}
 			return nil
 		}
 		if len(sessions) == 0 {
 			return errors.New("no sessions in this directory")
 		}
-		*resume = sessions[0]
+		*resume = sessions[0].Path
 	}
 	c, err := config.Load(ctx)
 	if err != nil {
@@ -109,44 +107,12 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	if *modelName == "" {
 		*modelName = c.DefaultModel
 	}
-	model, ok := c.Models[*modelName]
+	_, ok := c.Models[*modelName]
 	if !ok {
 		return fmt.Errorf("unknown model profile %q", *modelName)
 	}
 	if *prompt == "" && (!term.IsTerminal(int(os.Stdin.Fd())) || !term.IsTerminal(int(os.Stdout.Fd()))) {
 		return errors.New("interactive mode requires a terminal; use --prompt")
-	}
-	path := *resume
-	if path == "" {
-		path = filepath.Join(c.Dir, "sessions", time.Now().UTC().Format("20060102T150405")+"_"+rand.Text()+".jsonl")
-	} else {
-		if filepath.Base(path) == path {
-			path = filepath.Join(c.Dir, "sessions", path)
-			if !strings.HasSuffix(path, ".jsonl") {
-				path += ".jsonl"
-			}
-		}
-		if _, err := os.Stat(path); err != nil {
-			return fmt.Errorf("resume: %w", err)
-		}
-	}
-	store, err := session.Open(path, cwd, repl.Runtime)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = store.Close() }()
-	if *branch != "" {
-		if err := store.Branch(*branch); err != nil {
-			return err
-		}
-	}
-	sessionID := store.Entries()[0].ID
-	newGenerator := func(ctx context.Context, profile config.Model) (gai.Generator, error) {
-		return agent.Provider(ctx, profile, c.Dir, sessionID)
-	}
-	generator, err := newGenerator(ctx, model)
-	if err != nil {
-		return err
 	}
 	var tools []repl.Tool
 	for _, name := range slices.Sorted(maps.Keys(c.MCPServers)) {
@@ -181,13 +147,28 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 	for _, warning := range warnings {
 		fmt.Fprintf(errOut, "Skill warning: %q\n", warning.Error())
 	}
-	a, err := agent.Open(ctx, agent.Options{Config: c, Model: model, Generator: generator, Store: store, CWD: cwd, Tools: tools, Skills: catalog})
+	sessions := agent.NewSessions(agent.SessionOptions{
+		Directory: filepath.Join(c.Dir, "sessions"), CWD: cwd, Tools: tools, Skills: catalog,
+		LoadConfig: config.Load,
+		NewGenerator: func(ctx context.Context, profile config.Model, id string) (gai.Generator, error) {
+			return agent.Provider(ctx, profile, c.Dir, id)
+		},
+	})
+	defer func() { _ = sessions.Close() }()
+	path := *resume
+	if path != "" && filepath.Base(path) == path {
+		path = filepath.Join(c.Dir, "sessions", path)
+		if !strings.HasSuffix(path, ".jsonl") {
+			path += ".jsonl"
+		}
+	}
+	conversation, err := sessions.Open(ctx, agent.SessionStart{Path: path, Model: *modelName, Checkpoint: *branch})
 	if err != nil {
 		return err
 	}
-	defer func() { _ = a.Close() }()
+	a := conversation.Agent
 	if *prompt != "" {
-		fmt.Fprintf(errOut, "Session: %s\n", path)
+		fmt.Fprintf(errOut, "Session: %s\n", a.SessionFile())
 		return a.Prompt(ctx, *prompt, func(e agent.Event) {
 			if e.Kind == agent.EventMessage && e.Message != nil && e.Message.Role == gai.Assistant {
 				for _, b := range e.Message.Blocks {
@@ -205,7 +186,8 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 		MouseMode:    c.TUI.MouseMode,
 		PromptMode:   c.TUI.PromptMode,
 		Models:       c.Models,
-		NewGenerator: newGenerator,
+		NewGenerator: sessions.Generator,
+		Sessions:     sessions,
 		ThemeDir:     c.Dir,
 		LoginGo: func(ctx context.Context, key string) (map[string]config.Model, error) {
 			return opencodego.Login(ctx, c.Dir, key)
@@ -227,49 +209,4 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) error {
 		},
 	}
 	return tui.Run(ctx, a, *modelName, options)
-}
-func listSessions(dir, cwd string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	type item struct {
-		path string
-		time time.Time
-	}
-	var items []item
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
-			continue
-		}
-		path := filepath.Join(dir, entry.Name())
-		f, err := os.Open(path)
-		if err != nil {
-			return nil, err
-		}
-		var e session.Entry
-		err = json.NewDecoder(io.LimitReader(f, 1<<20)).Decode(&e)
-		_ = f.Close()
-		if err != nil || e.Type != "session" {
-			continue
-		}
-		var h session.Header
-		if json.Unmarshal(e.Data, &h) != nil || h.CWD != cwd {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, item{path, info.ModTime()})
-	}
-	slices.SortFunc(items, func(a, b item) int { return b.time.Compare(a.time) })
-	var paths []string
-	for _, i := range items {
-		paths = append(paths, i.path)
-	}
-	return paths, nil
 }

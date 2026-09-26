@@ -11,21 +11,24 @@ import (
 )
 
 const (
-	modelCommand      = "/model"
-	reasoningCommand  = "/reasoning"
-	themeCommand      = "/theme"
-	usageCommand      = "/usage"
-	loginCommand      = "/login"
-	compactCommand    = "/compact"
-	treeCommand       = "/tree"
-	branchCommand     = "/branch"
-	sessionCommand    = "/session"
-	queueCommand      = "/queue"
-	queueSteerCommand = "/queue steer"
-	promptModeCommand = "/prompt-mode"
-	helpCommand       = "/help"
-	quitCommand       = "/quit"
-	exitCommand       = "/exit"
+	modelCommand         = "/model"
+	reasoningCommand     = "/reasoning"
+	themeCommand         = "/theme"
+	usageCommand         = "/usage"
+	loginCommand         = "/login"
+	compactCommand       = "/compact"
+	treeCommand          = "/tree"
+	branchCommand        = "/branch"
+	sessionCommand       = "/session"
+	sessionNewCommand    = "/session new"
+	sessionListCommand   = "/session list"
+	sessionResumeCommand = "/session resume"
+	queueCommand         = "/queue"
+	queueSteerCommand    = "/queue steer"
+	promptModeCommand    = "/prompt-mode"
+	helpCommand          = "/help"
+	quitCommand          = "/quit"
+	exitCommand          = "/exit"
 )
 
 type slashCommand struct {
@@ -47,6 +50,8 @@ var slashCommands = []slashCommand{
 	{treeCommand, "List saved checkpoints", false},
 	{branchCommand, "Continue from a checkpoint ID", true},
 	{sessionCommand, "Show the session path", false},
+	{sessionNewCommand, "Start a new conversation", false},
+	{sessionListCommand, "Choose a saved session to resume", false},
 	{queueCommand, "Inspect pending commands and failures (/queue clear discards pending work)", false},
 	{queueSteerCommand, "Choose a queued prompt to steer now", false},
 	{promptModeCommand, "Choose queue or steer for busy prompt submission", false},
