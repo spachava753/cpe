@@ -864,6 +864,9 @@ Select the fixture with `/model github-copilot/fixture`, then send `compute` to 
 the normal REPL workflow after login.
 Send `verbose` for 60 lines of Starlark output: the TUI previews 20 rows, while
 the active file under `CPE_TUI_TEST_DIR/sessions/` retains all 60.
+Send `gaps` for short output lines followed by a long line, plus a long source
+comment. At 80 columns, short lines stay adjacent without extra blank rows; the
+result shows all 19 short lines, one wrapped long-line row, and two hidden rows.
 Send `scroll` for a long streamed response: scroll up while it runs, verify the
 reading position stays put through completion, then scroll down to follow again.
 Use PgUp/PgDn, or press F4 to capture the mouse wheel. Verify F4 releases capture

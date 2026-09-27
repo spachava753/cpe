@@ -92,6 +92,9 @@ func TestModelRefresh(t *testing.T) {
 		{name: "assistant stays complete", blocks: []gai.Block{gai.TextBlock(strings.Repeat("row\n", 30))}, assistant: true, width: 80, needle: "row", count: 30},
 		{name: "terminal controls stripped", blocks: []gai.Block{gai.TextBlock(strings.Repeat("row\x1b[2J\n", 21))}, width: 80, needle: "row", count: 20, notice: "… 1 more line"},
 		{name: "tabs count toward preview rows", blocks: []gai.Block{gai.TextBlock(strings.Repeat("\t1234567890\n", 21))}, width: 10, needle: "123456", count: 10, notice: "… 22"},
+		{name: "long line after short lines", blocks: []gai.Block{gai.TextBlock(strings.Repeat("row\n", 19) + strings.Repeat("x", 81))}, width: 80, needle: "row", count: 19, notice: "… 1 more line"},
+		{name: "long line before short lines", blocks: []gai.Block{gai.TextBlock(strings.Repeat("x", 81) + "\n" + strings.Repeat("row\n", 19))}, width: 80, needle: "row", count: 18, notice: "… 1 more line"},
+		{name: "intentional blank lines", blocks: []gai.Block{gai.TextBlock(strings.Repeat("row\n\n", 10) + strings.Repeat("x", 81))}, width: 80, needle: "row", count: 10, notice: "… 2 more lines"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			message := gai.ToolResultMessage("preview", tc.blocks...)

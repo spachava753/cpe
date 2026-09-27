@@ -225,6 +225,9 @@ func (g *terminalGenerator) Stream(ctx context.Context, req gai.GenerationReques
 			if text == "verbose" {
 				code = `for i in range(60): print("Output fixture line %03d" % i)`
 			}
+			if text == "gaps" {
+				code = "# " + strings.Repeat("long source line ", 12) + "\nfor i in range(19): print(\"Short row %02d\" % i)\nprint(\"x\" * 160)"
+			}
 			if text == "slow" {
 				code = `load("time.star", "time"); time.sleep(3); answer = 6 * 7; print(answer)`
 			}

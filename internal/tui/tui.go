@@ -579,7 +579,13 @@ func (m *model) refresh(bottom bool) {
 				text = strings.TrimRight(text, "\n")
 			}
 			if block.BlockType == gai.ToolCall || message.Role == gai.ToolResult {
-				text = m.styles.tool.Render(text)
+				// Multiline styling pads every line to the longest line. That
+				// padding would wrap into blank rows and consume preview space.
+				lines := strings.Split(text, "\n")
+				for i, line := range lines {
+					lines[i] = m.styles.tool.Render(line)
+				}
+				text = strings.Join(lines, "\n")
 			}
 			body.WriteString(text)
 			body.WriteByte('\n')
