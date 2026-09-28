@@ -18,7 +18,6 @@
 !go.sum
 !go.mod
 !go.work
-!sqlc.yaml
 !.golangci.yml
 
 !README.md
@@ -29,8 +28,6 @@
 !skills/
 !skills/**
 
-!*.prompt
-
 !examples/
 !examples/**
 
@@ -40,9 +37,6 @@
 !experiments/
 !experiments/**
 
-!schema/
-!schema/**
-
 # Harbor integration for agent evaluation
 !cpe_harbor/**.py
 !cpe_harbor/**.j2
@@ -50,11 +44,4 @@
 !cpe_harbor/configs/**
 cpe_harbor/__pycache__/
 
-# Cupaloy snapshot test files
-!.snapshots/
-!**/.snapshots/
-!**/.snapshots/**
-
 !*/
-
-!internal/codemode/tool_description.md
