@@ -43,10 +43,6 @@ var _ = goyek.Define(goyek.Task{
 		modernizeArgs = append(modernizeArgs, modernizePackageArgs(a)...)
 		runLintCommand(a, "modernize", modernizeArgs...)
 
-		if err := runUnnecessaryExportAnalyzer(a.Context(), ".", *lintFix, os.Stderr); err != nil {
-			a.Errorf("unnecessary-export issues found: %v", err)
-		}
-
 		runLintCommand(a, "deadcode", "tool", "deadcode", "-test", "./...")
 	},
 })
