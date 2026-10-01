@@ -143,6 +143,7 @@ func TestLoadComponentIsolation(t *testing.T) {
 		value       any
 		manifest    bool
 		wholeMCP    string
+		serverJSON  string
 		skill       bool
 	}{
 		{name: "unknown manifest field", manifest: true, field: "skills", value: "./alternate"},
@@ -154,6 +155,21 @@ func TestLoadComponentIsolation(t *testing.T) {
 		{name: "missing MCP schema", wholeMCP: `{"mcpServers":{}}`},
 		{name: "MCP top-level unknown field", wholeMCP: `{"$schema":"` + mcpSchema + `","mcpServers":{},"other":true}`},
 		{name: "MCP servers null", wholeMCP: `{"$schema":"` + mcpSchema + `","mcpServers":null}`},
+		{name: "MCP servers missing", wholeMCP: `{"$schema":"` + mcpSchema + `"}`},
+		{name: "MCP servers array", wholeMCP: `{"$schema":"` + mcpSchema + `","mcpServers":[]}`},
+		{name: "MCP schema null", wholeMCP: `{"$schema":null,"mcpServers":{}}`},
+		{name: "MCP root array", wholeMCP: `[]`},
+		{name: "duplicate MCP schema", wholeMCP: `{"$schema":"` + mcpSchema + `","$schema":"` + mcpSchema + `","mcpServers":{}}`},
+		{name: "duplicate server name", wholeMCP: `{"$schema":"` + mcpSchema + `","mcpServers":{"same":{},"same":{}}}`},
+		{name: "null server", serverJSON: `null`},
+		{name: "array server", serverJSON: `[]`},
+		{name: "missing transport", serverJSON: `{"command":"example"}`},
+		{name: "missing command", serverJSON: `{"type":"stdio"}`},
+		{name: "case-sensitive fields", serverJSON: `{"Type":"stdio","command":"example"}`},
+		{name: "huge numeric command", serverJSON: `{"type":"stdio","command":1e309}`},
+		{name: "duplicate command", serverJSON: `{"type":"stdio","command":"one","command":"two"}`},
+		{name: "duplicate environment key", serverJSON: `{"type":"stdio","command":"example","env":{"KEY":"one","KEY":"two"}}`},
+		{name: "duplicate header key", serverJSON: `{"type":"sse","url":"https://example.com/mcp","headers":{"X-Test":"one","X-Test":"two"}}`},
 		{name: "unknown transport", field: "type", value: "other"},
 		{name: "numeric transport", field: "type", value: 1},
 		{name: "null transport", field: "type"},
@@ -200,6 +216,9 @@ func TestLoadComponentIsolation(t *testing.T) {
 				bad := map[string]any{"type": "stdio", "command": "unavailable-but-valid-executable"}
 				bad[change.field] = change.value
 				servers["bad"] = bad
+				if change.serverJSON != "" {
+					servers["bad"] = json.RawMessage(change.serverJSON)
+				}
 				fixture.files["mcp.json"] = jsonFixture(config)
 			}
 			fsys := make(fstest.MapFS)

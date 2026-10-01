@@ -86,19 +86,3 @@ func jsonStrings(raw json.RawMessage) ([]string, error) {
 	}
 	return values, nil
 }
-
-func jsonStringMap(raw json.RawMessage) (map[string]string, error) {
-	object, err := jsonObject(raw)
-	if err != nil {
-		return nil, err
-	}
-	values := make(map[string]string, len(object))
-	for key, raw := range object {
-		value, err := jsonString(raw)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", key, err)
-		}
-		values[key] = value
-	}
-	return values, nil
-}

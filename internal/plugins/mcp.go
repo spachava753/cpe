@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"golang.org/x/net/http/httpguts"
 )
 
@@ -19,14 +21,12 @@ func parseMCP(data []byte, pkg packageFS) (map[string]MCPServer, []error, error)
 	if err != nil {
 		return nil, nil, err
 	}
-	for key := range fields {
-		if key != "$schema" && key != "mcpServers" {
-			return nil, nil, fmt.Errorf("unknown MCP configuration field %q", key)
-		}
+	validators, err := mcpSchemas()
+	if err != nil {
+		return nil, nil, err
 	}
-	schema, err := jsonString(fields["$schema"])
-	if err != nil || schema != mcpSchema {
-		return nil, nil, fmt.Errorf("unsupported or invalid MCP $schema")
+	if err := validateMCPEnvelope(data, validators.envelope); err != nil {
+		return nil, nil, err
 	}
 	entries, err := jsonObject(fields["mcpServers"])
 	if err != nil {
@@ -35,7 +35,7 @@ func parseMCP(data []byte, pkg packageFS) (map[string]MCPServer, []error, error)
 	servers := make(map[string]MCPServer)
 	var diagnostics []error
 	for _, name := range slices.Sorted(maps.Keys(entries)) {
-		server, err := parseServer(entries[name], pkg)
+		server, err := parseServer(entries[name], pkg, validators.server)
 		if err != nil {
 			diagnostics = append(diagnostics, fmt.Errorf("server %q: %w", name, err))
 			continue
@@ -45,71 +45,54 @@ func parseMCP(data []byte, pkg packageFS) (map[string]MCPServer, []error, error)
 	return servers, diagnostics, nil
 }
 
-func parseServer(data []byte, pkg packageFS) (MCPServer, error) {
+func parseServer(data []byte, pkg packageFS, schema *jsonschema.Resolved) (MCPServer, error) {
 	fields, err := jsonObject(data)
 	if err != nil {
 		return MCPServer{}, err
 	}
-	transport, err := jsonString(fields["type"])
-	if err != nil {
-		return MCPServer{}, fmt.Errorf("type: %w", err)
+	var instance any
+	if err := json.Unmarshal(data, &instance); err != nil {
+		return MCPServer{}, err
 	}
-	server := MCPServer{Type: Transport(transport)}
-	for key := range fields {
-		allowed := key == "type"
-		switch server.Type {
-		case Stdio:
-			allowed = allowed || key == "command" || key == "args" || key == "env" || key == "cwd"
-		case StreamableHTTP, SSE:
-			allowed = allowed || key == "url" || key == "headers"
-		default:
-			return MCPServer{}, fmt.Errorf("unsupported transport %q", transport)
-		}
-		if !allowed {
-			return MCPServer{}, fmt.Errorf("field %q does not belong to transport %q", key, transport)
+	if err := schema.Validate(instance); err != nil {
+		return MCPServer{}, err
+	}
+	// Schema validation sees decoded JSON values, so duplicate map keys need
+	// to be rejected separately before encoding/json can discard them.
+	for _, key := range []string{"env", "headers"} {
+		if raw, exists := fields[key]; exists {
+			if _, err := jsonObject(raw); err != nil {
+				return MCPServer{}, fmt.Errorf("%s: %w", key, err)
+			}
 		}
 	}
+	var config struct {
+		Type    Transport         `json:"type"`
+		Command string            `json:"command"`
+		Args    []string          `json:"args"`
+		Env     map[string]string `json:"env"`
+		Cwd     *string           `json:"cwd"`
+		URL     string            `json:"url"`
+		Headers map[string]string `json:"headers"`
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return MCPServer{}, err
+	}
+	server := MCPServer{Type: config.Type, Command: config.Command, Args: config.Args, Env: config.Env}
 	if server.Type == Stdio {
-		server.Command, err = jsonString(fields["command"])
-		if err != nil {
-			return MCPServer{}, fmt.Errorf("command: %w", err)
-		}
 		if err := validateCommand(server.Command, pkg); err != nil {
 			return MCPServer{}, err
 		}
 		server.Cwd = "${PLUGIN_ROOT}"
-		if raw, exists := fields["cwd"]; exists {
-			server.Cwd, err = jsonString(raw)
-			if err != nil {
-				return MCPServer{}, fmt.Errorf("cwd: %w", err)
-			}
+		if config.Cwd != nil {
+			server.Cwd = *config.Cwd
 			if err := validateCwd(server.Cwd, pkg); err != nil {
 				return MCPServer{}, err
 			}
 		}
-		if raw, exists := fields["args"]; exists {
-			server.Args, err = jsonStrings(raw)
-			if err != nil {
-				return MCPServer{}, fmt.Errorf("args: %w", err)
-			}
-		}
-		if raw, exists := fields["env"]; exists {
-			server.Env, err = jsonStringMap(raw)
-			if err != nil {
-				return MCPServer{}, fmt.Errorf("env: %w", err)
-			}
-			for _, reserved := range []string{"PLUGIN_ROOT", "PLUGIN_DATA"} {
-				if _, exists := server.Env[reserved]; exists {
-					return MCPServer{}, fmt.Errorf("env must not override %s", reserved)
-				}
-			}
-		}
 		return server, nil
 	}
-	endpoint, err := jsonString(fields["url"])
-	if err != nil {
-		return MCPServer{}, fmt.Errorf("url: %w", err)
-	}
+	endpoint := config.URL
 	parsed, err := url.Parse(endpoint)
 	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || strings.Contains(endpoint, "#") {
 		return MCPServer{}, fmt.Errorf("url must be absolute HTTP(S), without user information or fragments")
@@ -121,13 +104,9 @@ func parseServer(data []byte, pkg packageFS) (MCPServer, error) {
 		}
 	}
 	server.URL = *parsed
-	if raw, exists := fields["headers"]; exists {
-		headers, err := jsonStringMap(raw)
-		if err != nil {
-			return MCPServer{}, fmt.Errorf("headers: %w", err)
-		}
-		server.Headers = make(http.Header, len(headers))
-		for name, value := range headers {
+	if config.Headers != nil {
+		server.Headers = make(http.Header, len(config.Headers))
+		for name, value := range config.Headers {
 			if !httpguts.ValidHeaderFieldName(name) || !httpguts.ValidHeaderFieldValue(value) {
 				return MCPServer{}, fmt.Errorf("invalid HTTP header %q", name)
 			}

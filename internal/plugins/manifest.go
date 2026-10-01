@@ -8,10 +8,7 @@ import (
 	"strings"
 )
 
-const (
-	manifestSchema = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
-	mcpSchema      = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
-)
+const manifestSchema = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
 
 func parseManifest(data []byte) (string, []error, error) {
 	fields, err := jsonObject(data)
