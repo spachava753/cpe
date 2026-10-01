@@ -45,3 +45,6 @@
 cpe_harbor/__pycache__/
 
 !*/
+
+# Temporary agent plans and review fixtures stay local.
+.plan/
