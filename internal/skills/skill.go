@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -31,6 +33,18 @@ type Skill struct {
 	InvocationDisabled bool
 	// Path is the file path that the skill is stored in
 	Path string
+}
+
+func GlobalPath() (string, error) {
+	h, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(h, ".agents", "skills"), nil
+}
+
+func ProjectPath(cwd string) string {
+	return filepath.Join(cwd, ".agents", "skills")
 }
 
 // Load reads SKILL.md from each immediate child directory of root, following

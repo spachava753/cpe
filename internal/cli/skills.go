@@ -1,0 +1,276 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/lithammer/dedent"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+
+	"github.com/spachava753/cpe/internal/skills"
+)
+
+const (
+	scopeFlag    = "scope"
+	dirFlag      = "dir"
+	projectScope = "project"
+	globalScope  = "global"
+)
+
+// Keep command adapters testable without running skill operations.
+type skillActions struct {
+	install func(context.Context, skills.InstallOptions, skills.IO) error
+	list    func(context.Context, skills.ListOptions, skills.IO) error
+	update  func(context.Context, skills.UpdateOptions, skills.IO) error
+	remove  func(context.Context, skills.RemoveOptions, skills.IO) error
+}
+
+func scopeOptsFromFlags(p *pflag.FlagSet) (skills.ScopeOptions, error) {
+	scope, err := p.GetString(scopeFlag)
+	if err != nil {
+		return skills.ScopeOptions{}, err
+	}
+	if (p.Changed(scopeFlag) && scope == "") || (scope != "" && scope != projectScope && scope != globalScope) {
+		return skills.ScopeOptions{}, fmt.Errorf("--scope must be project or global")
+	}
+
+	var dir *string
+	if p.Changed(dirFlag) {
+		d, err := p.GetString(dirFlag)
+		if err != nil {
+			return skills.ScopeOptions{}, err
+		}
+		if d == "" {
+			return skills.ScopeOptions{}, fmt.Errorf("--dir must not be empty")
+		}
+		if scope == globalScope {
+			return skills.ScopeOptions{}, fmt.Errorf("--dir cannot be combined with --scope global")
+		}
+		dir = &d
+	}
+
+	return skills.ScopeOptions{
+		Directory: dir,
+		Project:   scope == projectScope,
+		Global:    scope == globalScope,
+	}, nil
+}
+
+func skillsCmd(parent *cobra.Command) {
+	skillsCmdWithActions(parent, skillActions{
+		install: skills.Install,
+		list:    skills.List,
+		update:  skills.Update,
+		remove:  skills.Remove,
+	})
+}
+
+func skillsCmdWithActions(parent *cobra.Command, actions skillActions) {
+	c := &cobra.Command{
+		Use:   "skills",
+		Short: "Manage agent skills",
+		Long: dedent.Dedent(`
+		Install, update, list, and remove agent skills from Git sources.
+
+		The default skill directories are ~/.agents/skills for global scope and
+		./.agents/skills for project scope. Managed installations are recorded in
+		skills.json inside the selected skill directory: ~/.agents/skills/skills.json
+		or ./.agents/skills/skills.json for the default directories.
+
+		--dir selects an exact custom skill directory; .agents/skills is not
+		appended. Only that directory is selected, even when scope is omitted.
+		Its metadata is always <directory>/skills.json, so selecting a default
+		directory explicitly uses the same metadata file as selecting its scope.
+		--dir cannot be combined with --scope global.
+		`),
+	}
+	c.PersistentFlags().String(scopeFlag, "", "Skill scope: project or global; required for install")
+	c.PersistentFlags().String(dirFlag, "", "Exact custom skill directory; selects only this directory (not with --scope global)")
+	parent.AddCommand(c)
+	skillsInstallCmd(c, actions.install)
+	skillsListCmd(c, actions.list)
+	skillsUpdateCmd(c, actions.update)
+	skillsRemoveCmd(c, actions.remove)
+}
+
+func skillsInstallCmd(parent *cobra.Command, run func(context.Context, skills.InstallOptions, skills.IO) error) {
+	c := &cobra.Command{
+		Use:     "install SOURCE",
+		Aliases: []string{"i", "add"},
+		Short:   "Install agent skills",
+		Args:    cobra.ExactArgs(1),
+		Long: dedent.Dedent(`
+		Install agent skills from a Git source. GitHub repositories accept the
+		<owner>/<repo> shorthand; other Git sources require a full URL.
+		Without --skill, install all skills found in the source repository.
+		Repeat --skill to select specific skills.
+
+		--scope is required. Global selects ~/.agents/skills; project selects
+		./.agents/skills. With --scope project, --dir instead selects the exact
+		custom skill directory. Metadata is stored in <directory>/skills.json.
+
+		Search up to five directory levels by default. --full-depth removes
+		that depth limit.
+		`),
+		Example: dedent.Dedent(fmt.Sprintf(`
+        %[1]s install vercel-labs/find-skill --scope global
+        %[1]s install https://github.enterprise.com/my-company/custom-skills --scope project
+        %[1]s i mattpocock/skills --skill grill-with-docs --skill write-a-skill --scope project
+        %[1]s i ggprompts/tfe --skill bubbletea --scope project
+        %[1]s i shadcn-ui/ui --skill shadcn --scope project --dir ./custom/dir
+		`, parent.CommandPath())),
+	}
+	var skillArgs []string
+	c.Flags().StringArrayVar(&skillArgs, "skill", nil, "Skill to install (can be specified multiple times)")
+	var fullDepth bool
+	c.Flags().BoolVar(&fullDepth, "full-depth", false, "Scan full depth of source for skills")
+	c.RunE = func(cmd *cobra.Command, args []string) error {
+		so, err := scopeOptsFromFlags(cmd.Flags())
+		if err != nil {
+			return err
+		}
+		if !so.Project && !so.Global {
+			return fmt.Errorf("--scope is required for install")
+		}
+		return run(
+			cmd.Context(),
+			skills.InstallOptions{
+				Scope:     so,
+				Source:    args[0],
+				Skills:    skillArgs,
+				FullDepth: fullDepth,
+				JSON:      false,
+			},
+			skills.IO{
+				In:  cmd.InOrStdin(),
+				Out: cmd.OutOrStdout(),
+				Err: cmd.ErrOrStderr(),
+			},
+		)
+	}
+	parent.AddCommand(c)
+}
+
+func skillsListCmd(parent *cobra.Command, run func(context.Context, skills.ListOptions, skills.IO) error) {
+	c := &cobra.Command{
+		Use:     "list [SOURCE]",
+		Aliases: []string{"ls"},
+		Short:   "List agent skills",
+		Long: dedent.Dedent(`
+		List installed skills, including skills not installed or managed by CPE.
+		With neither --scope nor --dir, list both global and project directories.
+		--scope restricts inventory to that scope; --dir selects only the exact
+		custom skill directory.
+
+		With SOURCE, list available skills in that Git source instead of installed
+		skills. Scope and directory flags select installed inventory only.
+		`),
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			so, err := scopeOptsFromFlags(cmd.Flags())
+			if err != nil {
+				return err
+			}
+			var source *string
+			if len(args) == 1 {
+				source = &args[0]
+			}
+			return run(
+				cmd.Context(),
+				skills.ListOptions{
+					Scope:  so,
+					Source: source,
+					JSON:   false,
+				},
+				skills.IO{
+					In:  cmd.InOrStdin(),
+					Out: cmd.OutOrStdout(),
+					Err: cmd.ErrOrStderr(),
+				},
+			)
+		},
+	}
+	parent.AddCommand(c)
+}
+
+func skillsUpdateCmd(parent *cobra.Command, run func(context.Context, skills.UpdateOptions, skills.IO) error) {
+	c := &cobra.Command{
+		Use:     "update [SKILL...]",
+		Aliases: []string{"u", "upgrade"},
+		Short:   "Update installed agent skills",
+		Long: dedent.Dedent(`
+		Update installed skills recorded in skills.json. Unmanaged skills, such
+		as manually copied bundles or skills installed by another tool, are not
+		updated. With skill names, update only those managed skills; without
+		names, update all managed skills in the selected directories.
+
+		With neither --scope nor --dir, update both global and project directories.
+		--scope selects one scope. --dir selects only that exact custom directory,
+		including when --scope is omitted; global skills are not included.
+		`),
+		Example: dedent.Dedent(fmt.Sprintf(`
+        %[1]s update
+        %[1]s u custom-enterprise-skill grill-me
+		`, parent.CommandPath())),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			so, err := scopeOptsFromFlags(cmd.Flags())
+			if err != nil {
+				return err
+			}
+			return run(
+				cmd.Context(),
+				skills.UpdateOptions{
+					Scope:  so,
+					Skills: args,
+					JSON:   false,
+				},
+				skills.IO{
+					In:  cmd.InOrStdin(),
+					Out: cmd.OutOrStdout(),
+					Err: cmd.ErrOrStderr(),
+				},
+			)
+		},
+	}
+	parent.AddCommand(c)
+}
+
+func skillsRemoveCmd(parent *cobra.Command, run func(context.Context, skills.RemoveOptions, skills.IO) error) {
+	c := &cobra.Command{
+		Use:     "remove SKILL...",
+		Aliases: []string{"rm"},
+		Short:   "Remove agent skills",
+		Long: dedent.Dedent(`
+		Remove named installed skills, including unmanaged, manually copied skills.
+		Delete their skills.json records when present; a record is not required
+		to remove an installed skill.
+
+		Without --scope or --dir, find each name in the global and project
+		directories. If a name exists in both, --scope is required to choose one.
+		--dir selects only that exact custom directory, so no other directory is
+		searched or modified.
+		`),
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			so, err := scopeOptsFromFlags(cmd.Flags())
+			if err != nil {
+				return err
+			}
+			return run(
+				cmd.Context(),
+				skills.RemoveOptions{
+					Scope:  so,
+					Skills: args,
+					JSON:   false,
+				},
+				skills.IO{
+					In:  cmd.InOrStdin(),
+					Out: cmd.OutOrStdout(),
+					Err: cmd.ErrOrStderr(),
+				},
+			)
+		},
+	}
+	parent.AddCommand(c)
+}
