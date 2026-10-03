@@ -25,7 +25,7 @@ require (
 	github.com/muesli/mango-cobra v1.2.0 // indirect
 	github.com/muesli/mango-pflag v0.1.0 // indirect
 	github.com/muesli/roff v0.1.0 // indirect
-	github.com/spf13/afero v1.15.0 // indirect
+	github.com/spf13/afero v1.15.0
 	golang.org/x/tools v0.49.0 // indirect
 )
 

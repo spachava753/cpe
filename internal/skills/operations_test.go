@@ -1,0 +1,289 @@
+package skills_test
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"testing/fstest"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/spf13/afero"
+
+	"github.com/spachava753/cpe/internal/skills"
+)
+
+func TestInstall(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		scope   skills.ScopeOptions
+		source  string
+		names   []string
+		deep    bool
+		json    bool
+		errText string
+	}{
+		{name: "custom project directory", scope: skills.ScopeOptions{Project: true, Directory: new("/custom")}, source: managerSource},
+		{name: "global directory", scope: skills.ScopeOptions{Global: true}, source: managerSource},
+		{name: "selected skill only", scope: skills.ScopeOptions{Project: true, Directory: new("/custom")}, source: managerSource, names: []string{"alpha"}},
+		{name: "full depth forwarded", scope: skills.ScopeOptions{Project: true, Directory: new("/custom")}, source: managerSource, deep: true},
+		{name: "JSON result", scope: skills.ScopeOptions{Project: true, Directory: new("/custom")}, source: managerSource, json: true},
+		{name: "scope required", source: managerSource, errText: "scope"},
+		{name: "source required", scope: skills.ScopeOptions{Project: true}, errText: "source"},
+		{name: "conflicting scopes", scope: skills.ScopeOptions{Project: true, Global: true}, source: managerSource, errText: "scope"},
+		{name: "global and custom directory conflict", scope: skills.ScopeOptions{Global: true, Directory: new("/custom")}, source: managerSource, errText: "directory"},
+		{name: "empty explicit directory", scope: skills.ScopeOptions{Project: true, Directory: new("")}, source: managerSource, errText: "directory"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("HOME", "/test-home")
+			destinations := afero.NewMemMapFs()
+			files := fstest.MapFS{"alpha/SKILL.md": {Data: []byte(alphaSkill)}, "beta/SKILL.md": {Data: []byte(betaSkill)}}
+			if test.deep {
+				files = fstest.MapFS{"a/b/c/d/e/alpha/SKILL.md": {Data: []byte(alphaSkill)}}
+			}
+			before := snapshotManagerFS(t, destinations)
+			manager := skills.NewManager(managerSourceClient{files: files}, destinations)
+			var output bytes.Buffer
+			err := skills.Install(t.Context(), manager, skills.InstallOptions{Scope: test.scope, Source: test.source, Skills: test.names, FullDepth: test.deep, JSON: test.json}, skills.IO{Out: &output, Err: &output})
+			if test.errText != "" {
+				if err == nil || !strings.Contains(err.Error(), test.errText) {
+					t.Fatalf("error = %v, want %q", err, test.errText)
+				}
+				if diff := cmp.Diff(before, snapshotManagerFS(t, destinations)); diff != "" {
+					t.Fatalf("invalid invocation changed files:\n%s", diff)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			root := "/custom"
+			if test.scope.Global {
+				root = filepath.FromSlash("/test-home/.agents/skills")
+			}
+			data, readErr := afero.ReadFile(destinations, filepath.Join(root, "alpha", "SKILL.md"))
+			if readErr != nil || string(data) != alphaSkill {
+				t.Errorf("installation at selected root = %q, %v", data, readErr)
+			}
+			if len(test.names) > 0 {
+				if _, statErr := destinations.Stat(filepath.Join(root, "beta")); !errors.Is(statErr, fs.ErrNotExist) {
+					t.Errorf("unselected beta installed: %v", statErr)
+				}
+			}
+			if test.json {
+				if !json.Valid(output.Bytes()) {
+					t.Fatalf("invalid JSON: %q", &output)
+				}
+			} else if !strings.Contains(output.String(), "alpha") {
+				t.Errorf("missing installed name in output: %q", &output)
+			}
+		})
+	}
+}
+
+func TestList(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		scope  skills.ScopeOptions
+		source *string
+		json   bool
+		want   []string
+	}{
+		{name: "both scopes by default", want: []string{"alpha", "beta"}},
+		{name: "project only", scope: skills.ScopeOptions{Project: true}, want: []string{"alpha"}},
+		{name: "global only", scope: skills.ScopeOptions{Global: true}, want: []string{"beta"}},
+		{name: "custom directory excludes both defaults", scope: skills.ScopeOptions{Directory: new("/custom")}, want: []string{"gamma"}},
+		{name: "source catalog", source: new(managerSource), want: []string{"delta"}},
+		{name: "JSON inventory", json: true, want: []string{"alpha", "beta"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("HOME", "/test-home")
+			cwd, err := os.Getwd()
+			if err != nil {
+				t.Fatal(err)
+			}
+			destinations := newManagerFilesystem(t, skills.ProjectPath(cwd), fstest.MapFS{"alpha/SKILL.md": {Data: []byte(alphaSkill)}})
+			for root, files := range map[string]fstest.MapFS{filepath.FromSlash("/test-home/.agents/skills"): {"beta/SKILL.md": {Data: []byte(betaSkill)}}, "/custom": {"gamma/SKILL.md": {Data: []byte("---\nname: gamma\ndescription: Gamma\n---\n")}}} {
+				for name, file := range files {
+					filename := filepath.Join(root, filepath.FromSlash(name))
+					if err := destinations.MkdirAll(filepath.Dir(filename), 0o700); err != nil {
+						t.Fatal(err)
+					}
+					if err := afero.WriteFile(destinations, filename, file.Data, 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			manager := skills.NewManager(managerSourceClient{files: fstest.MapFS{"delta/SKILL.md": {Data: []byte("---\nname: delta\ndescription: Delta\n---\n")}}}, destinations)
+			var output bytes.Buffer
+			err = skills.List(t.Context(), manager, skills.ListOptions{Scope: test.scope, Source: test.source, JSON: test.json}, skills.IO{Out: &output})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range []string{"alpha", "beta", "gamma", "delta"} {
+				present := false
+				for _, want := range test.want {
+					if name == want {
+						present = true
+					}
+				}
+				if strings.Contains(output.String(), name) != present {
+					t.Errorf("name %s presence = %t, output=%q", name, present, &output)
+				}
+			}
+			if test.json && !json.Valid(output.Bytes()) {
+				t.Errorf("invalid JSON: %q", &output)
+			}
+		})
+	}
+}
+
+func TestRemove(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		scope      skills.ScopeOptions
+		both, json bool
+		errText    string
+	}{
+		{name: "unambiguous default selection"},
+		{name: "ambiguous default selection", both: true, errText: "scope"},
+		{name: "explicit project preserves global", scope: skills.ScopeOptions{Project: true}, both: true},
+		{name: "custom directory only", scope: skills.ScopeOptions{Directory: new("/custom")}, both: true},
+		{name: "JSON result", json: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("HOME", "/test-home")
+			cwd, err := os.Getwd()
+			if err != nil {
+				t.Fatal(err)
+			}
+			project := skills.ProjectPath(cwd)
+			global := filepath.FromSlash("/test-home/.agents/skills")
+			destinations := newManagerFilesystem(t, project, fstest.MapFS{"alpha/SKILL.md": {Data: []byte(alphaSkill)}})
+			if test.both {
+				if err := destinations.MkdirAll(filepath.Join(global, "alpha"), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := afero.WriteFile(destinations, filepath.Join(global, "alpha", "SKILL.md"), []byte(alphaSkill), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if test.scope.Directory != nil {
+				if err := destinations.MkdirAll("/custom/alpha", 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := afero.WriteFile(destinations, "/custom/alpha/SKILL.md", []byte(alphaSkill), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := snapshotManagerFS(t, destinations)
+			var output bytes.Buffer
+			err = skills.Remove(t.Context(), skills.NewManager(nil, destinations), skills.RemoveOptions{Scope: test.scope, Skills: []string{"alpha"}, JSON: test.json}, skills.IO{Out: &output})
+			if test.errText != "" {
+				if err == nil || !strings.Contains(err.Error(), test.errText) {
+					t.Fatalf("error = %v", err)
+				}
+				if diff := cmp.Diff(before, snapshotManagerFS(t, destinations)); diff != "" {
+					t.Fatal(diff)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			selected := project
+			if test.scope.Directory != nil {
+				selected = *test.scope.Directory
+			}
+			if _, err := destinations.Stat(filepath.Join(selected, "alpha")); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("selected bundle still exists: %v", err)
+			}
+			if test.both {
+				if _, err := destinations.Stat(filepath.Join(global, "alpha")); err != nil {
+					t.Errorf("global counterpart changed: %v", err)
+				}
+			}
+			if test.scope.Directory != nil {
+				if _, err := destinations.Stat(filepath.Join(project, "alpha")); err != nil {
+					t.Errorf("default project changed: %v", err)
+				}
+			}
+			if test.json && !json.Valid(output.Bytes()) {
+				t.Error("invalid JSON")
+			}
+		})
+	}
+}
+
+func TestUpdate(t *testing.T) {
+	for _, test := range []struct {
+		name                                string
+		scope                               skills.ScopeOptions
+		json                                bool
+		names                               []string
+		wantProject, wantGlobal, wantCustom bool
+	}{
+		{name: "both scopes by default", wantProject: true, wantGlobal: true},
+		{name: "selected skill only", names: []string{"alpha"}, wantProject: true, wantGlobal: true},
+		{name: "project only", scope: skills.ScopeOptions{Project: true}, wantProject: true},
+		{name: "global only", scope: skills.ScopeOptions{Global: true}, wantGlobal: true},
+		{name: "custom directory only", scope: skills.ScopeOptions{Directory: new("/custom")}, wantCustom: true},
+		{name: "JSON result", json: true, wantProject: true, wantGlobal: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("HOME", "/test-home")
+			cwd, err := os.Getwd()
+			if err != nil {
+				t.Fatal(err)
+			}
+			project := skills.ProjectPath(cwd)
+			global := filepath.FromSlash("/test-home/.agents/skills")
+			destinations := afero.NewMemMapFs()
+			for _, root := range []string{project, global, "/custom"} {
+				for name, data := range map[string]string{"alpha/SKILL.md": alphaSkill, "beta/SKILL.md": betaSkill, "skills.json": bothRecords} {
+					filename := filepath.Join(root, filepath.FromSlash(name))
+					if err := destinations.MkdirAll(filepath.Dir(filename), 0o700); err != nil {
+						t.Fatal(err)
+					}
+					if err := afero.WriteFile(destinations, filename, []byte(data), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			manager := skills.NewManager(managerSourceClient{files: fstest.MapFS{"alpha/SKILL.md": {Data: []byte(alphaUpdated)}, "beta/SKILL.md": {Data: []byte(strings.ReplaceAll(betaSkill, "Beta skill", "Updated beta"))}}}, destinations)
+			var output bytes.Buffer
+			err = skills.Update(t.Context(), manager, skills.UpdateOptions{Scope: test.scope, Skills: test.names, JSON: test.json}, skills.IO{Out: &output})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, root := range []struct {
+				path    string
+				updated bool
+			}{{project, test.wantProject}, {global, test.wantGlobal}, {"/custom", test.wantCustom}} {
+				want := alphaSkill
+				if root.updated {
+					want = alphaUpdated
+				}
+				got, readErr := afero.ReadFile(destinations, filepath.Join(root.path, "alpha", "SKILL.md"))
+				if readErr != nil || string(got) != want {
+					t.Errorf("%s content = %q, %v", root.path, got, readErr)
+				}
+				wantBeta := betaSkill
+				if root.updated && len(test.names) == 0 {
+					wantBeta = strings.ReplaceAll(betaSkill, "Beta skill", "Updated beta")
+				}
+				beta, betaErr := afero.ReadFile(destinations, filepath.Join(root.path, "beta", "SKILL.md"))
+				if betaErr != nil || string(beta) != wantBeta {
+					t.Errorf("%s beta = %q, %v", root.path, beta, betaErr)
+				}
+			}
+			if test.json && !json.Valid(output.Bytes()) {
+				t.Error("invalid JSON")
+			}
+		})
+	}
+}

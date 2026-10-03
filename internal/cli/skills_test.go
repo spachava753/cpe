@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 
 	"github.com/spachava753/cpe/internal/skills"
@@ -135,38 +136,39 @@ func TestSkillsCommands(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 			operationErr := errors.New("operation failed")
+			manager := skills.NewManager(nil, afero.NewMemMapFs())
 			calls := 0
-			checkBoundary := func(actualCtx context.Context, streams skills.IO) {
+			checkBoundary := func(actualCtx context.Context, actualManager *skills.Manager, streams skills.IO) {
 				t.Helper()
 				calls++
-				if actualCtx != ctx || streams.In != input || streams.Out != &output || streams.Err != &diagnostics {
-					t.Fatal("adapter did not forward command context and streams")
+				if actualCtx != ctx || actualManager != manager || streams.In != input || streams.Out != &output || streams.Err != &diagnostics {
+					t.Fatal("adapter did not forward command context, manager, and streams")
 				}
 			}
-			skillsCmdWithActions(root, skillActions{
-				install: func(ctx context.Context, opts skills.InstallOptions, streams skills.IO) error {
-					checkBoundary(ctx, streams)
+			skillsCmdWithActions(root, manager, skillActions{
+				install: func(ctx context.Context, manager *skills.Manager, opts skills.InstallOptions, streams skills.IO) error {
+					checkBoundary(ctx, manager, streams)
 					if diff := cmp.Diff(test.install, &opts); diff != "" {
 						t.Fatalf("install options (-want +got):\n%s", diff)
 					}
 					return operationErr
 				},
-				list: func(ctx context.Context, opts skills.ListOptions, streams skills.IO) error {
-					checkBoundary(ctx, streams)
+				list: func(ctx context.Context, manager *skills.Manager, opts skills.ListOptions, streams skills.IO) error {
+					checkBoundary(ctx, manager, streams)
 					if diff := cmp.Diff(test.list, &opts); diff != "" {
 						t.Fatalf("list options (-want +got):\n%s", diff)
 					}
 					return operationErr
 				},
-				update: func(ctx context.Context, opts skills.UpdateOptions, streams skills.IO) error {
-					checkBoundary(ctx, streams)
+				update: func(ctx context.Context, manager *skills.Manager, opts skills.UpdateOptions, streams skills.IO) error {
+					checkBoundary(ctx, manager, streams)
 					if diff := cmp.Diff(test.update, &opts); diff != "" {
 						t.Fatalf("update options (-want +got):\n%s", diff)
 					}
 					return operationErr
 				},
-				remove: func(ctx context.Context, opts skills.RemoveOptions, streams skills.IO) error {
-					checkBoundary(ctx, streams)
+				remove: func(ctx context.Context, manager *skills.Manager, opts skills.RemoveOptions, streams skills.IO) error {
+					checkBoundary(ctx, manager, streams)
 					if diff := cmp.Diff(test.remove, &opts); diff != "" {
 						t.Fatalf("remove options (-want +got):\n%s", diff)
 					}
@@ -226,7 +228,7 @@ func TestSkillsHelp(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			root := Root("test")
+			root := Root("test", skills.NewManager(nil, afero.NewMemMapFs()))
 			var output bytes.Buffer
 			root.SetOut(&output)
 			root.SetErr(&output)

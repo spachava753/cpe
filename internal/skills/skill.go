@@ -51,8 +51,8 @@ func ProjectPath(cwd string) string {
 // symlinked directories. Paths are relative to root. Every child directory must
 // contain a valid skill; other files and bundled resources are ignored.
 // Load stops at the first error and returns no partial results.
-func Load(root fs.ReadDirFS) ([]Skill, error) {
-	entries, err := root.ReadDir(".")
+func Load(root fs.FS) ([]Skill, error) {
+	entries, err := fs.ReadDir(root, ".")
 	if err != nil {
 		return nil, fmt.Errorf("read skills directory: %w", err)
 	}

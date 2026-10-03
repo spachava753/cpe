@@ -20,10 +20,10 @@ const (
 
 // Keep command adapters testable without running skill operations.
 type skillActions struct {
-	install func(context.Context, skills.InstallOptions, skills.IO) error
-	list    func(context.Context, skills.ListOptions, skills.IO) error
-	update  func(context.Context, skills.UpdateOptions, skills.IO) error
-	remove  func(context.Context, skills.RemoveOptions, skills.IO) error
+	install func(context.Context, *skills.Manager, skills.InstallOptions, skills.IO) error
+	list    func(context.Context, *skills.Manager, skills.ListOptions, skills.IO) error
+	update  func(context.Context, *skills.Manager, skills.UpdateOptions, skills.IO) error
+	remove  func(context.Context, *skills.Manager, skills.RemoveOptions, skills.IO) error
 }
 
 func scopeOptsFromFlags(p *pflag.FlagSet) (skills.ScopeOptions, error) {
@@ -57,8 +57,8 @@ func scopeOptsFromFlags(p *pflag.FlagSet) (skills.ScopeOptions, error) {
 	}, nil
 }
 
-func skillsCmd(parent *cobra.Command) {
-	skillsCmdWithActions(parent, skillActions{
+func skillsCmd(parent *cobra.Command, manager *skills.Manager) {
+	skillsCmdWithActions(parent, manager, skillActions{
 		install: skills.Install,
 		list:    skills.List,
 		update:  skills.Update,
@@ -66,7 +66,7 @@ func skillsCmd(parent *cobra.Command) {
 	})
 }
 
-func skillsCmdWithActions(parent *cobra.Command, actions skillActions) {
+func skillsCmdWithActions(parent *cobra.Command, manager *skills.Manager, actions skillActions) {
 	c := &cobra.Command{
 		Use:   "skills",
 		Short: "Manage agent skills",
@@ -88,13 +88,13 @@ func skillsCmdWithActions(parent *cobra.Command, actions skillActions) {
 	c.PersistentFlags().String(scopeFlag, "", "Skill scope: project or global; required for install")
 	c.PersistentFlags().String(dirFlag, "", "Exact custom skill directory; selects only this directory (not with --scope global)")
 	parent.AddCommand(c)
-	skillsInstallCmd(c, actions.install)
-	skillsListCmd(c, actions.list)
-	skillsUpdateCmd(c, actions.update)
-	skillsRemoveCmd(c, actions.remove)
+	skillsInstallCmd(c, manager, actions.install)
+	skillsListCmd(c, manager, actions.list)
+	skillsUpdateCmd(c, manager, actions.update)
+	skillsRemoveCmd(c, manager, actions.remove)
 }
 
-func skillsInstallCmd(parent *cobra.Command, run func(context.Context, skills.InstallOptions, skills.IO) error) {
+func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.InstallOptions, skills.IO) error) {
 	c := &cobra.Command{
 		Use:     "install SOURCE",
 		Aliases: []string{"i", "add"},
@@ -135,6 +135,7 @@ func skillsInstallCmd(parent *cobra.Command, run func(context.Context, skills.In
 		}
 		return run(
 			cmd.Context(),
+			manager,
 			skills.InstallOptions{
 				Scope:     so,
 				Source:    args[0],
@@ -152,7 +153,7 @@ func skillsInstallCmd(parent *cobra.Command, run func(context.Context, skills.In
 	parent.AddCommand(c)
 }
 
-func skillsListCmd(parent *cobra.Command, run func(context.Context, skills.ListOptions, skills.IO) error) {
+func skillsListCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.ListOptions, skills.IO) error) {
 	c := &cobra.Command{
 		Use:     "list [SOURCE]",
 		Aliases: []string{"ls"},
@@ -178,6 +179,7 @@ func skillsListCmd(parent *cobra.Command, run func(context.Context, skills.ListO
 			}
 			return run(
 				cmd.Context(),
+				manager,
 				skills.ListOptions{
 					Scope:  so,
 					Source: source,
@@ -194,7 +196,7 @@ func skillsListCmd(parent *cobra.Command, run func(context.Context, skills.ListO
 	parent.AddCommand(c)
 }
 
-func skillsUpdateCmd(parent *cobra.Command, run func(context.Context, skills.UpdateOptions, skills.IO) error) {
+func skillsUpdateCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.UpdateOptions, skills.IO) error) {
 	c := &cobra.Command{
 		Use:     "update [SKILL...]",
 		Aliases: []string{"u", "upgrade"},
@@ -220,6 +222,7 @@ func skillsUpdateCmd(parent *cobra.Command, run func(context.Context, skills.Upd
 			}
 			return run(
 				cmd.Context(),
+				manager,
 				skills.UpdateOptions{
 					Scope:  so,
 					Skills: args,
@@ -236,7 +239,7 @@ func skillsUpdateCmd(parent *cobra.Command, run func(context.Context, skills.Upd
 	parent.AddCommand(c)
 }
 
-func skillsRemoveCmd(parent *cobra.Command, run func(context.Context, skills.RemoveOptions, skills.IO) error) {
+func skillsRemoveCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.RemoveOptions, skills.IO) error) {
 	c := &cobra.Command{
 		Use:     "remove SKILL...",
 		Aliases: []string{"rm"},
@@ -259,6 +262,7 @@ func skillsRemoveCmd(parent *cobra.Command, run func(context.Context, skills.Rem
 			}
 			return run(
 				cmd.Context(),
+				manager,
 				skills.RemoveOptions{
 					Scope:  so,
 					Skills: args,
