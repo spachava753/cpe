@@ -1,9 +1,6 @@
 package skills
 
-import (
-	"context"
-	"fmt"
-)
+import "context"
 
 // RemoveOptions is unparsed command input. Remove owns invocation parsing,
 // destination resolution, prompting, and output; Manager owns removal and records.
@@ -15,9 +12,11 @@ type RemoveOptions struct {
 }
 
 // Remove is the high-level removal entry point for a command adapter.
-// It will remove named installations, including unmanaged skills, delete their
-// records when present, and write results through streams.
+// It removes named installations, including unmanaged skills, deletes their
+// records when present, and writes results through streams.
 func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams IO) error {
-	// TODO: implement removal after the exported API has been reviewed.
-	return fmt.Errorf("remove skills: %w", ErrNotImplemented)
+	if err := removeCommand(ctx, manager, opts, streams); err != nil {
+		return &commandError{action: "remove", cause: err}
+	}
+	return nil
 }

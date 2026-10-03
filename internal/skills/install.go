@@ -1,9 +1,6 @@
 package skills
 
-import (
-	"context"
-	"fmt"
-)
+import "context"
 
 // InstallOptions is unparsed command input. Install owns invocation parsing,
 // destination resolution, prompting, and output; Manager owns skill operations.
@@ -17,8 +14,10 @@ type InstallOptions struct {
 }
 
 // Install is the high-level installation entry point for a command adapter.
-// It will handle the complete operation and write results through streams.
+// It resolves the destination and writes results through streams.
 func Install(ctx context.Context, manager *Manager, opts InstallOptions, streams IO) error {
-	// TODO: implement installation after the exported API has been reviewed.
-	return fmt.Errorf("install skills: %w", ErrNotImplemented)
+	if err := installCommand(ctx, manager, opts, streams); err != nil {
+		return &commandError{action: "install", cause: err}
+	}
+	return nil
 }

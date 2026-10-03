@@ -96,6 +96,7 @@ type skillFrontmatter struct {
 }
 
 func parseSkill(data []byte, filename string) (Skill, error) {
+	data = bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf})
 	frontmatter, err := skillHeader(data)
 	if err != nil {
 		return Skill{}, err
@@ -143,8 +144,8 @@ func parseSkill(data []byte, filename string) (Skill, error) {
 			return Skill{}, fmt.Errorf("name must contain only lowercase alphanumeric characters and hyphens")
 		}
 	}
-	if skill.Name != path.Dir(filename) {
-		return Skill{}, fmt.Errorf("name %q must match directory %q", skill.Name, path.Dir(filename))
+	if directory := path.Dir(filename); directory != "." && skill.Name != path.Base(directory) {
+		return Skill{}, fmt.Errorf("name %q must match directory %q", skill.Name, directory)
 	}
 	if fields.Metadata.Kind != 0 {
 		metadata, err := skillMetadata(&fields.Metadata)

@@ -13,8 +13,7 @@ import (
 )
 
 func main() {
-	// Source acquisition remains unavailable until a client is implemented.
-	manager := skills.NewManager(nil, afero.NewOsFs())
+	manager := skills.NewManager(skills.GitSourceClient{}, afero.NewOsFs())
 	if err := fang.Execute(
 		context.Background(),
 		cli.Root(version.Get(), manager),

@@ -24,6 +24,7 @@ func TestInstall(t *testing.T) {
 		source  string
 		names   []string
 		deep    bool
+		link    bool
 		json    bool
 		errText string
 	}{
@@ -33,6 +34,8 @@ func TestInstall(t *testing.T) {
 		{name: "full depth forwarded", scope: skills.ScopeOptions{Project: true, Directory: new("/custom")}, source: managerSource, deep: true},
 		{name: "JSON result", scope: skills.ScopeOptions{Project: true, Directory: new("/custom")}, source: managerSource, json: true},
 		{name: "scope required", source: managerSource, errText: "scope"},
+		{name: "symlink followed by parent component is not cleaned away", scope: skills.ScopeOptions{Project: true, Directory: new("/link/../custom")}, source: managerSource, link: true, errText: "symlink"},
+		{name: "missing component cannot hide link behind parent traversal", scope: skills.ScopeOptions{Project: true, Directory: new("/missing/../link/custom")}, source: managerSource, link: true, errText: "parent"},
 		{name: "source required", scope: skills.ScopeOptions{Project: true}, errText: "source"},
 		{name: "conflicting scopes", scope: skills.ScopeOptions{Project: true, Global: true}, source: managerSource, errText: "scope"},
 		{name: "global and custom directory conflict", scope: skills.ScopeOptions{Global: true, Directory: new("/custom")}, source: managerSource, errText: "directory"},
@@ -40,7 +43,13 @@ func TestInstall(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("HOME", "/test-home")
-			destinations := afero.NewMemMapFs()
+			destinations := newManagerFilesystem(t, "/", nil)
+			if test.link {
+				if err := destinations.MkdirAll("/link", 0o700); err != nil {
+					t.Fatal(err)
+				}
+				destinations = managerLinkFS{Fs: destinations, links: map[string]bool{"/link": true}}
+			}
 			files := fstest.MapFS{"alpha/SKILL.md": {Data: []byte(alphaSkill)}, "beta/SKILL.md": {Data: []byte(betaSkill)}}
 			if test.deep {
 				files = fstest.MapFS{"a/b/c/d/e/alpha/SKILL.md": {Data: []byte(alphaSkill)}}
@@ -87,14 +96,16 @@ func TestInstall(t *testing.T) {
 
 func TestList(t *testing.T) {
 	for _, test := range []struct {
-		name   string
-		scope  skills.ScopeOptions
-		source *string
-		json   bool
-		want   []string
+		name              string
+		scope             skills.ScopeOptions
+		source            *string
+		json              bool
+		want              []string
+		unsafeDescription bool
 	}{
 		{name: "both scopes by default", want: []string{"alpha", "beta"}},
 		{name: "project only", scope: skills.ScopeOptions{Project: true}, want: []string{"alpha"}},
+		{name: "terminal controls escaped", unsafeDescription: true, want: []string{"alpha", "beta"}},
 		{name: "global only", scope: skills.ScopeOptions{Global: true}, want: []string{"beta"}},
 		{name: "custom directory excludes both defaults", scope: skills.ScopeOptions{Directory: new("/custom")}, want: []string{"gamma"}},
 		{name: "source catalog", source: new(managerSource), want: []string{"delta"}},
@@ -106,7 +117,11 @@ func TestList(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			destinations := newManagerFilesystem(t, skills.ProjectPath(cwd), fstest.MapFS{"alpha/SKILL.md": {Data: []byte(alphaSkill)}})
+			definition := alphaSkill
+			if test.unsafeDescription {
+				definition = strings.ReplaceAll(alphaSkill, "Alpha skill", `"Alpha\e]52;c;evil\a"`)
+			}
+			destinations := newManagerFilesystem(t, skills.ProjectPath(cwd), fstest.MapFS{"alpha/SKILL.md": {Data: []byte(definition)}})
 			for root, files := range map[string]fstest.MapFS{filepath.FromSlash("/test-home/.agents/skills"): {"beta/SKILL.md": {Data: []byte(betaSkill)}}, "/custom": {"gamma/SKILL.md": {Data: []byte("---\nname: gamma\ndescription: Gamma\n---\n")}}} {
 				for name, file := range files {
 					filename := filepath.Join(root, filepath.FromSlash(name))
@@ -118,11 +133,14 @@ func TestList(t *testing.T) {
 					}
 				}
 			}
-			manager := skills.NewManager(managerSourceClient{files: fstest.MapFS{"delta/SKILL.md": {Data: []byte("---\nname: delta\ndescription: Delta\n---\n")}}}, destinations)
+			manager := skills.NewManager(managerSourceClient{files: fstest.MapFS{"delta/SKILL.md": {Data: []byte("---\nname: delta\ndescription: \"Delta\\e]52;c;evil\\a\"\n---\n")}}}, destinations)
 			var output bytes.Buffer
 			err = skills.List(t.Context(), manager, skills.ListOptions{Scope: test.scope, Source: test.source, JSON: test.json}, skills.IO{Out: &output})
 			if err != nil {
 				t.Fatal(err)
+			}
+			if strings.ContainsAny(output.String(), "\x1b\x07\r") {
+				t.Errorf("untrusted controls reached terminal: %q", &output)
 			}
 			for _, name := range []string{"alpha", "beta", "gamma", "delta"} {
 				present := false
@@ -144,12 +162,14 @@ func TestList(t *testing.T) {
 
 func TestRemove(t *testing.T) {
 	for _, test := range []struct {
-		name       string
-		scope      skills.ScopeOptions
-		both, json bool
-		errText    string
+		name              string
+		scope             skills.ScopeOptions
+		both, json        bool
+		invalidCrossScope bool
+		errText           string
 	}{
 		{name: "unambiguous default selection"},
+		{name: "cross scope invalid selection preserves valid selection", invalidCrossScope: true, errText: "skill directory"},
 		{name: "ambiguous default selection", both: true, errText: "scope"},
 		{name: "explicit project preserves global", scope: skills.ScopeOptions{Project: true}, both: true},
 		{name: "custom directory only", scope: skills.ScopeOptions{Directory: new("/custom")}, both: true},
@@ -180,9 +200,19 @@ func TestRemove(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			names := []string{"alpha"}
+			if test.invalidCrossScope {
+				names = append(names, "notes")
+				if err := destinations.MkdirAll(filepath.Join(global, "notes"), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := afero.WriteFile(destinations, filepath.Join(global, "notes", "file.txt"), []byte("keep"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
 			before := snapshotManagerFS(t, destinations)
 			var output bytes.Buffer
-			err = skills.Remove(t.Context(), skills.NewManager(nil, destinations), skills.RemoveOptions{Scope: test.scope, Skills: []string{"alpha"}, JSON: test.json}, skills.IO{Out: &output})
+			err = skills.Remove(t.Context(), skills.NewManager(nil, destinations), skills.RemoveOptions{Scope: test.scope, Skills: names, JSON: test.json}, skills.IO{Out: &output})
 			if test.errText != "" {
 				if err == nil || !strings.Contains(err.Error(), test.errText) {
 					t.Fatalf("error = %v", err)

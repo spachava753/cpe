@@ -1,9 +1,6 @@
 package skills
 
-import (
-	"context"
-	"fmt"
-)
+import "context"
 
 // UpdateOptions is unparsed command input. Update owns invocation parsing,
 // destination resolution, prompting, and output; Manager owns source acquisition
@@ -15,8 +12,10 @@ type UpdateOptions struct {
 }
 
 // Update is the high-level update entry point for a command adapter.
-// It will update managed installations and write results through streams.
+// It updates managed installations and writes results through streams.
 func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams IO) error {
-	// TODO: implement updates after the exported API has been reviewed.
-	return fmt.Errorf("update skills: %w", ErrNotImplemented)
+	if err := updateCommand(ctx, manager, opts, streams); err != nil {
+		return &commandError{action: "update", cause: err}
+	}
+	return nil
 }

@@ -2,40 +2,37 @@ package skills
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
+	"path/filepath"
+	"sort"
 
 	"github.com/spf13/afero"
 )
 
-// Manager owns skill discovery, destination files, and skills.json bookkeeping.
-// It acquires source filesystems through its source client and returns results
-// without prompting or writing command output. Its operations are still stubs.
+// Manager owns discovery, destination files, and skills.json bookkeeping.
+// It returns domain results without prompting or writing command output.
 type Manager struct {
-	sources      SourceClient //nolint:unused // Reserved for the signature-only operation stubs.
-	destinations afero.Fs     //nolint:unused // Reserved for the signature-only operation stubs.
+	sources      SourceClient
+	destinations afero.Fs
 }
 
-// NewManager supplies source acquisition and destination filesystem boundaries.
-// All destination files and skills.json records belong to destinations; Manager
-// does not choose a disk filesystem itself. A nil source client leaves source
-// acquisition unavailable; it is not needed for installed listing or removal.
+// NewManager supplies acquisition and destination filesystem boundaries. A nil
+// source client is sufficient for installed listing and removal.
 func NewManager(sources SourceClient, destinations afero.Fs) *Manager {
 	return &Manager{sources: sources, destinations: destinations}
 }
 
-// DiscoveryOptions controls source discovery without command presentation flags.
-type DiscoveryOptions struct {
-	FullDepth bool
-}
+type DiscoveryOptions struct{ FullDepth bool }
 
-// SkillSource identifies a bundle in its original source. Location is the source
-// locator; Directory is relative to the source filesystem, not a checkout path.
+// SkillSource identifies a bundle in its original source, never a temporary
+// checkout path. Directory is relative to the acquired source filesystem.
 type SkillSource struct {
-	Location  string
-	Directory string
+	Location  string `json:"location"`
+	Directory string `json:"directory"`
 }
 
-// InstalledSkill associates a definition with its destination bundle directory.
 // A nil Source denotes an unmanaged installation.
 type InstalledSkill struct {
 	Skill     Skill
@@ -43,9 +40,7 @@ type InstalledSkill struct {
 	Source    *SkillSource
 }
 
-// InstallRequest selects a source's skills and one exact destination root.
-// An empty Skills slice selects all discovered skills. Directory is the skill
-// root, not a project directory; its metadata file is Directory/skills.json.
+// Directory is an exact skill root. Empty Skills selects all discovered skills.
 type InstallRequest struct {
 	Source    string
 	Directory string
@@ -53,46 +48,250 @@ type InstallRequest struct {
 	Discovery DiscoveryOptions
 }
 
-// RemoveRequest selects installed directory names in one exact skill root.
-// Removal does not require installation records or source acquisition.
+// Removal selects explicit installed directory names, including unmanaged skills.
 type RemoveRequest struct {
 	Directory string
 	Skills    []string
 }
 
-// UpdateRequest selects managed installations in one exact skill root.
-// An empty Skills slice selects all managed installations in that root.
+// Empty Skills selects all managed installations in the exact destination root.
 type UpdateRequest struct {
 	Directory string
 	Skills    []string
 }
 
-// ListSource will acquire a source filesystem and discover available skills.
-// Skill.Path in each result is source-relative and uses io/fs path conventions.
-func (m *Manager) ListSource(ctx context.Context, source string, opts DiscoveryOptions) ([]Skill, error) {
-	return nil, fmt.Errorf("list source skills: %w", ErrNotImplemented)
+// ListSource returns source-relative Skill.Path values using io/fs conventions.
+func (m *Manager) ListSource(ctx context.Context, source string, opts DiscoveryOptions) (result []Skill, err error) {
+	checkout, err := m.acquire(ctx, source)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		err = errors.Join(err, releaseCheckout(checkout))
+		if err != nil {
+			result = nil
+		}
+	}()
+	return discover(ctx, checkout.FS, opts)
 }
 
-// Install will acquire a source filesystem, discover and copy selected bundles, and
-// record their provenance. It returns installations without formatting output.
-func (m *Manager) Install(ctx context.Context, request InstallRequest) ([]InstalledSkill, error) {
-	return nil, fmt.Errorf("manager install skills: %w", ErrNotImplemented)
+// Install copies selected bundles and records their original provenance.
+func (m *Manager) Install(ctx context.Context, request InstallRequest) (result []InstalledSkill, err error) {
+	if err := m.destination(ctx, request.Directory); err != nil {
+		return nil, err
+	}
+	names, err := selectedNames(request.Skills)
+	if err != nil {
+		return nil, err
+	}
+	records, err := m.records(request.Directory)
+	if err != nil {
+		return nil, err
+	}
+	checkout, err := m.acquire(ctx, request.Source)
+	if err != nil {
+		return nil, err
+	}
+	released := false
+	defer func() {
+		if !released {
+			err = errors.Join(err, releaseCheckout(checkout))
+			if err != nil {
+				result = nil
+			}
+		}
+	}()
+	available, err := discover(ctx, checkout.FS, request.Discovery)
+	if err != nil {
+		return nil, err
+	}
+	candidates := map[string][]Skill{}
+	for _, skill := range available {
+		candidates[skill.Name] = append(candidates[skill.Name], skill)
+	}
+	if len(names) == 0 {
+		for name := range candidates {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	var changes []bundleChange
+	for _, name := range names {
+		options := candidates[name]
+		if len(options) == 0 {
+			return nil, fmt.Errorf("skill %q not found: %w", name, fs.ErrNotExist)
+		}
+		if len(options) > 1 {
+			return nil, fmt.Errorf("ambiguous skill name %q", name)
+		}
+		if _, ok := records.Skills[name]; ok {
+			return nil, fmt.Errorf("skill %q already has an installation record", name)
+		}
+		filename := filepath.Join(request.Directory, name)
+		if _, statErr := m.pathInfo(filename); statErr == nil {
+			return nil, fmt.Errorf("destination %s already exists: %w", filename, fs.ErrExist)
+		} else if !errors.Is(statErr, fs.ErrNotExist) {
+			return nil, statErr
+		}
+		skill := options[0]
+		directory := sourceDirectory(skill)
+		payload, err := readPayload(ctx, checkout.FS, directory)
+		if err != nil {
+			return nil, err
+		}
+		source := SkillSource{Location: request.Source, Directory: directory}
+		records.Skills[name] = source
+		changes = append(changes, bundleChange{name: name, payload: payload})
+		skill.Path = filepath.Join(filename, "SKILL.md")
+		result = append(result, InstalledSkill{Skill: skill, Directory: filename, Source: &source})
+	}
+	released = true
+	if err := releaseCheckout(checkout); err != nil {
+		return nil, fmt.Errorf("release source: %w", err)
+	}
+	if err := m.applyChanges(ctx, request.Directory, changes, records, true); err != nil {
+		if _, committed := errors.AsType[*CommittedCleanupError](err); !committed {
+			result = nil
+		}
+		return result, fmt.Errorf("install skills: %w", err)
+	}
+	return result, nil
 }
 
-// ListInstalled will inspect one exact skill root, including unmanaged skills,
-// without acquiring a source filesystem.
+// ListInstalled inspects one exact root, including manually copied skills.
 func (m *Manager) ListInstalled(ctx context.Context, directory string) ([]InstalledSkill, error) {
-	return nil, fmt.Errorf("list installed skills: %w", ErrNotImplemented)
+	if err := m.destination(ctx, directory); err != nil {
+		return nil, err
+	}
+	records, err := m.records(directory)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := afero.ReadDir(m.destinations, directory)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	filesystem := afero.NewIOFS(afero.NewBasePathFs(m.destinations, directory))
+	var result []InstalledSkill
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		info, err := m.pathInfo(filepath.Join(directory, name))
+		if err != nil {
+			return nil, err
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			return nil, fmt.Errorf("skill directory %q is a symlink", name)
+		}
+		if _, err := m.pathInfo(filepath.Join(directory, name, "SKILL.md")); errors.Is(err, fs.ErrNotExist) {
+			continue
+		} else if err != nil {
+			return nil, err
+		}
+		skill, err := readDefinition(filesystem, name)
+		if err != nil {
+			return nil, err
+		}
+		skill.Path = filepath.Join(directory, name, "SKILL.md")
+		installed := InstalledSkill{Skill: skill, Directory: filepath.Join(directory, name)}
+		if source, ok := records.Skills[name]; ok {
+			installed.Source = &source
+		}
+		result = append(result, installed)
+	}
+	return result, nil
 }
 
-// Remove will delete named installations and their records when present. The
-// result contains destination bundle paths, not source-filesystem paths.
+// Remove deletes named bundle directories and their records when present.
 func (m *Manager) Remove(ctx context.Context, request RemoveRequest) ([]string, error) {
-	return nil, fmt.Errorf("manager remove skills: %w", ErrNotImplemented)
+	plan, err := m.prepareRemoval(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	if err := m.applyChanges(ctx, request.Directory, plan.changes, plan.records, plan.writeRecords); err != nil {
+		if _, committed := errors.AsType[*CommittedCleanupError](err); committed {
+			return plan.paths, fmt.Errorf("remove skills: %w", err)
+		}
+		return nil, fmt.Errorf("remove skills: %w", err)
+	}
+	return plan.paths, nil
 }
 
-// Update will acquire the recorded sources of managed installations and update
-// their bundles and bookkeeping. Unmanaged installations are not selected.
-func (m *Manager) Update(ctx context.Context, request UpdateRequest) ([]InstalledSkill, error) {
-	return nil, fmt.Errorf("manager update skills: %w", ErrNotImplemented)
+// Update replaces only recorded bundles, leaving unmanaged files untouched.
+func (m *Manager) Update(ctx context.Context, request UpdateRequest) (result []InstalledSkill, err error) {
+	if err := m.destination(ctx, request.Directory); err != nil {
+		return nil, err
+	}
+	records, err := m.records(request.Directory)
+	if err != nil {
+		return nil, err
+	}
+	names, err := selectedNames(request.Skills)
+	if err != nil {
+		return nil, err
+	}
+	if len(names) == 0 {
+		for name := range records.Skills {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if _, ok := records.Skills[name]; !ok {
+			return nil, fmt.Errorf("skill %q is not managed", name)
+		}
+	}
+	var changes []bundleChange
+	for _, name := range names {
+		filename := filepath.Join(request.Directory, name)
+		info, statErr := m.pathInfo(filename)
+		if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
+			return nil, statErr
+		}
+		if statErr == nil && (!info.IsDir() || info.Mode()&fs.ModeSymlink != 0) {
+			return nil, fmt.Errorf("%s is not a skill directory", filename)
+		}
+		source := records.Skills[name]
+		checkout, err := m.acquire(ctx, source.Location)
+		if err != nil {
+			return nil, err
+		}
+		skill, readErr := readDefinition(checkout.FS, source.Directory)
+		var payload []payloadEntry
+		if readErr == nil && skill.Name != name {
+			readErr = fmt.Errorf("source name %q no longer matches installed name %q", skill.Name, name)
+		}
+		if readErr == nil {
+			payload, readErr = readPayload(ctx, checkout.FS, source.Directory)
+		}
+		if err := errors.Join(readErr, releaseCheckout(checkout)); err != nil {
+			return nil, err
+		}
+		changes = append(changes, bundleChange{name: name, payload: payload, action: replaceBundle})
+		skill.Path = filepath.Join(filename, "SKILL.md")
+		result = append(result, InstalledSkill{Skill: skill, Directory: filename, Source: &source})
+	}
+	if err := m.applyChanges(ctx, request.Directory, changes, records, true); err != nil {
+		if _, committed := errors.AsType[*CommittedCleanupError](err); !committed {
+			result = nil
+		}
+		return result, fmt.Errorf("update skills: %w", err)
+	}
+	return result, nil
+}
+
+func (m *Manager) pathInfo(filename string) (fs.FileInfo, error) {
+	if filesystem, ok := m.destinations.(afero.Lstater); ok {
+		info, _, err := filesystem.LstatIfPossible(filename)
+		return info, err
+	}
+	return m.destinations.Stat(filename)
 }

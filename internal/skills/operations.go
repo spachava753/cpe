@@ -1,17 +1,10 @@
 package skills
 
-import (
-	"errors"
-	"io"
-)
-
-// ErrNotImplemented reports that an action is still a stub. Stub calls perform
-// no inspection, prompting, output, or mutation.
-var ErrNotImplemented = errors.New("skills action is not implemented")
+import "io"
 
 // IO supplies the command's streams without coupling skills to Cobra. The
 // actions own prompting, progress, and text/JSON results. Nil members request
-// the corresponding process standard streams when the actions are implemented.
+// the corresponding process standard streams.
 type IO struct {
 	In  io.Reader
 	Out io.Writer

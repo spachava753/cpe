@@ -1,9 +1,6 @@
 package skills
 
-import (
-	"context"
-	"fmt"
-)
+import "context"
 
 // ListOptions is unparsed listing input. List owns destination resolution and
 // text/JSON formatting; Manager owns source discovery and installed inventory.
@@ -16,10 +13,12 @@ type ListOptions struct {
 	JSON   bool
 }
 
-// List is the high-level listing entry point for a command adapter. It will
+// List is the high-level listing entry point for a command adapter. It can
 // list available source skills or installed skills, including unmanaged ones,
 // and write results through streams.
 func List(ctx context.Context, manager *Manager, opts ListOptions, streams IO) error {
-	// TODO: implement listing after the exported API has been reviewed.
-	return fmt.Errorf("list skills: %w", ErrNotImplemented)
+	if err := listCommand(ctx, manager, opts, streams); err != nil {
+		return &commandError{action: "list", cause: err}
+	}
+	return nil
 }
