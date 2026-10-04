@@ -18,15 +18,17 @@ import (
 )
 
 func TestInstall(t *testing.T) {
+	outputErr := errors.New("output unavailable")
 	for _, test := range []struct {
-		name    string
-		scope   skills.ScopeOptions
-		source  string
-		names   []string
-		deep    bool
-		link    bool
-		json    bool
-		errText string
+		name      string
+		scope     skills.ScopeOptions
+		source    string
+		names     []string
+		deep      bool
+		link      bool
+		json      bool
+		errText   string
+		outputErr error
 	}{
 		{
 			name: "custom project directory",
@@ -71,6 +73,15 @@ func TestInstall(t *testing.T) {
 			},
 			source: managerSource,
 			json:   true,
+		},
+		{
+			name: "output failure preserves its cause and diagnostic",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source:    managerSource,
+			outputErr: outputErr,
 		},
 		{
 			name:    "scope required",
@@ -184,6 +195,15 @@ func TestInstall(t *testing.T) {
 					destinations,
 				)
 				var output bytes.Buffer
+				streams := skills.IO{
+					Out: &output,
+					Err: &output,
+				}
+				if test.outputErr != nil {
+					streams.Out = commandOutputFailure{
+						err: test.outputErr,
+					}
+				}
 				err := skills.Install(
 					t.Context(),
 					manager,
@@ -194,10 +214,7 @@ func TestInstall(t *testing.T) {
 						FullDepth: test.deep,
 						JSON:      test.json,
 					},
-					skills.IO{
-						Out: &output,
-						Err: &output,
-					},
+					streams,
 				)
 				if test.errText != "" {
 					if err == nil || !strings.Contains(
@@ -224,7 +241,17 @@ func TestInstall(t *testing.T) {
 					}
 					return
 				}
-				if err != nil {
+				if test.outputErr != nil {
+					if !errors.Is(
+						err,
+						test.outputErr,
+					) || err.Error() != "output unavailable" {
+						t.Fatalf(
+							"error = %v, want output failure with its original diagnostic",
+							err,
+						)
+					}
+				} else if err != nil {
 					t.Fatal(err)
 				}
 				root := "/custom"
@@ -260,6 +287,9 @@ func TestInstall(t *testing.T) {
 						)
 					}
 				}
+				if test.outputErr != nil {
+					return
+				}
 				if test.json {
 					if !json.Valid(output.Bytes()) {
 						t.Fatalf(
@@ -279,6 +309,14 @@ func TestInstall(t *testing.T) {
 			},
 		)
 	}
+}
+
+type commandOutputFailure struct {
+	err error
+}
+
+func (writer commandOutputFailure) Write([]byte) (int, error) {
+	return 0, writer.err
 }
 
 func TestList(t *testing.T) {

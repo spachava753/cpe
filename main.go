@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
+	"io"
 	"os"
+	"strconv"
 
 	"github.com/charmbracelet/fang"
 	"github.com/spf13/afero"
@@ -24,6 +27,15 @@ func main() {
 			manager,
 		),
 		fang.WithNotifySignal(os.Interrupt),
+		fang.WithErrorHandler(func(output io.Writer, styles fang.Styles, err error) {
+			// Escape only the displayed text; Fang returns the original error.
+			quoted := strconv.Quote(err.Error())
+			fang.DefaultErrorHandler(
+				output,
+				styles,
+				errors.New(quoted[1:len(quoted)-1]),
+			)
+		}),
 	); err != nil {
 		os.Exit(1)
 	}
