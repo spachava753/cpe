@@ -85,6 +85,7 @@ func (m *Manager) ListSource(ctx context.Context, source string, opts DiscoveryO
 		ctx,
 		checkout.FS,
 		opts,
+		nil,
 	)
 }
 
@@ -127,6 +128,7 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 		ctx,
 		checkout.FS,
 		request.Discovery,
+		names,
 	)
 	if err != nil {
 		return nil, err

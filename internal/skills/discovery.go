@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -46,7 +47,9 @@ func releaseCheckout(checkout Checkout) error {
 	return nil
 }
 
-func discover(ctx context.Context, filesystem fs.FS, opts DiscoveryOptions) ([]Skill, error) {
+// Names match bundle directories by the parsed skill invariant. Root bundles
+// have no directory identity, so their declared name is checked after parsing.
+func discover(ctx context.Context, filesystem fs.FS, opts DiscoveryOptions, names []string) ([]Skill, error) {
 	var result []Skill
 	err := fs.WalkDir(
 		filesystem,
@@ -81,6 +84,12 @@ func discover(ctx context.Context, filesystem fs.FS, opts DiscoveryOptions) ([]S
 				if child.Name() != "SKILL.md" {
 					continue
 				}
+				if directory != "." && len(names) > 0 && !slices.Contains(
+					names,
+					path.Base(directory),
+				) {
+					return fs.SkipDir
+				}
 				if err := ensureSourceDirectory(
 					filesystem,
 					directory,
@@ -94,10 +103,15 @@ func discover(ctx context.Context, filesystem fs.FS, opts DiscoveryOptions) ([]S
 				if err != nil {
 					return err
 				}
-				result = append(
-					result,
-					skill,
-				)
+				if len(names) == 0 || slices.Contains(
+					names,
+					skill.Name,
+				) {
+					result = append(
+						result,
+						skill,
+					)
+				}
 				return fs.SkipDir // Nested resources belong to this bundle, not a collection.
 			}
 			return nil

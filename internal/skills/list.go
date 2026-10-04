@@ -3,6 +3,7 @@ package skills
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 )
 
@@ -31,12 +32,24 @@ func List(ctx context.Context, manager *Manager, opts ListOptions, streams IO) e
 		if err != nil {
 			return err
 		}
+		var violationErr error
+		for _, skill := range result {
+			if violationErr = writeViolations(
+				streams,
+				skill,
+			); violationErr != nil {
+				break
+			}
+		}
 		output := outputStream(streams)
 		if opts.JSON {
 			if result == nil {
 				result = []Skill{}
 			}
-			return json.NewEncoder(output).Encode(result)
+			return errors.Join(
+				violationErr,
+				json.NewEncoder(output).Encode(result),
+			)
 		}
 		var rows [][]string
 		for _, skill := range result {
@@ -49,14 +62,17 @@ func List(ctx context.Context, manager *Manager, opts ListOptions, streams IO) e
 				},
 			)
 		}
-		return writeTable(
-			output,
-			[]string{
-				"Skill",
-				"Description",
-				locationColumn,
-			},
-			rows,
+		return errors.Join(
+			violationErr,
+			writeTable(
+				output,
+				[]string{
+					"Skill",
+					"Description",
+					locationColumn,
+				},
+				rows,
+			),
 		)
 	}
 	directories, err := resolveDirectories(

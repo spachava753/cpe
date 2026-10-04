@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,19 +22,24 @@ import (
 
 func TestInstall(t *testing.T) {
 	outputErr := errors.New("output unavailable")
+	warningErr := errors.New("warnings unavailable")
 	for _, test := range []struct {
-		name        string
-		scope       skills.ScopeOptions
-		source      string
-		names       []string
-		deep        bool
-		link        bool
-		json        bool
-		errText     string
-		outputErr   error
-		forceColor  bool
-		description string
-		wantText    []string
+		name             string
+		scope            skills.ScopeOptions
+		source           string
+		names            []string
+		deep             bool
+		link             bool
+		json             bool
+		errText          string
+		outputErr        error
+		forceColor       bool
+		description      string
+		otherDescription string
+		invalidOther     bool
+		warningErr       error
+		wantWarnings     []string
+		wantText         []string
 	}{
 		{
 			name: "custom project directory",
@@ -91,6 +98,73 @@ func TestInstall(t *testing.T) {
 				"Alpha skill says \"quoted\" in C:\\work.",
 				"next    line.",
 			},
+		},
+		{
+			name: "selected installation warns only for its skill",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source: managerSource,
+			names: []string{
+				"alpha",
+			},
+			description: strings.Repeat(
+				"é",
+				1025,
+			),
+			invalidOther: true,
+			wantWarnings: []string{
+				"alpha: description exceeds 1024 characters (found 1025)",
+			},
+		},
+		{
+			name: "unselected soft violations do not produce installation warnings",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source: managerSource,
+			names: []string{
+				"alpha",
+			},
+			otherDescription: strings.Repeat(
+				"x",
+				2048,
+			),
+		},
+		{
+			name: "install all warns for every installed skill",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source: managerSource,
+			description: strings.Repeat(
+				"é",
+				1025,
+			),
+			otherDescription: strings.Repeat(
+				"x",
+				1030,
+			),
+			wantWarnings: []string{
+				"alpha: description exceeds 1024 characters (found 1025)",
+				"beta: description exceeds 1024 characters (found 1030)",
+			},
+		},
+		{
+			name: "warning output failure preserves its cause and committed result",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source: managerSource,
+			description: strings.Repeat(
+				"é",
+				1025,
+			),
+			warningErr: warningErr,
 		},
 		{
 			name: "JSON result",
@@ -218,12 +292,23 @@ func TestInstall(t *testing.T) {
 						strconv.Quote(test.description),
 					)
 				}
+				otherDefinition := betaSkill
+				if test.otherDescription != "" {
+					otherDefinition = strings.ReplaceAll(
+						betaSkill,
+						"Beta skill",
+						strconv.Quote(test.otherDescription),
+					)
+				}
+				if test.invalidOther {
+					otherDefinition = "invalid"
+				}
 				files := fstest.MapFS{
 					"alpha/SKILL.md": {
 						Data: []byte(definition),
 					},
 					"beta/SKILL.md": {
-						Data: []byte(betaSkill),
+						Data: []byte(otherDefinition),
 					},
 				}
 				if test.deep {
@@ -243,10 +328,15 @@ func TestInstall(t *testing.T) {
 					},
 					destinations,
 				)
-				var output bytes.Buffer
+				var output, diagnostics bytes.Buffer
 				streams := skills.IO{
 					Out: &output,
-					Err: &output,
+					Err: &diagnostics,
+				}
+				if test.warningErr != nil {
+					streams.Err = commandOutputFailure{
+						err: test.warningErr,
+					}
 				}
 				if test.outputErr != nil {
 					streams.Out = commandOutputFailure{
@@ -300,6 +390,16 @@ func TestInstall(t *testing.T) {
 							err,
 						)
 					}
+				} else if test.warningErr != nil {
+					if !errors.Is(
+						err,
+						test.warningErr,
+					) {
+						t.Fatalf(
+							"error = %v, want original warning writer failure",
+							err,
+						)
+					}
 				} else if err != nil {
 					t.Fatal(err)
 				}
@@ -339,6 +439,33 @@ func TestInstall(t *testing.T) {
 				if test.outputErr != nil {
 					return
 				}
+				if count := strings.Count(
+					diagnostics.String(),
+					"\n",
+				); count != len(test.wantWarnings) {
+					t.Errorf(
+						"warning count = %d, want %d: %q",
+						count,
+						len(test.wantWarnings),
+						&diagnostics,
+					)
+				}
+				for _, warning := range test.wantWarnings {
+					if !strings.Contains(
+						diagnostics.String(),
+						warning,
+					) || strings.Contains(
+						output.String(),
+						"Warning:",
+					) {
+						t.Errorf(
+							"warning %q not confined to stderr: stdout=%q, stderr=%q",
+							warning,
+							&output,
+							&diagnostics,
+						)
+					}
+				}
 				if test.json {
 					if !json.Valid(output.Bytes()) {
 						t.Fatalf(
@@ -352,7 +479,6 @@ func TestInstall(t *testing.T) {
 						"Description",
 						"Location",
 						"alpha",
-						"Alpha skill",
 						filepath.Join(
 							root,
 							"alpha",
@@ -368,6 +494,15 @@ func TestInstall(t *testing.T) {
 								&output,
 							)
 						}
+					}
+					if test.description == "" && !strings.Contains(
+						output.String(),
+						"Alpha skill",
+					) {
+						t.Errorf(
+							"missing installed description: %q",
+							&output,
+						)
 					}
 					if strings.Contains(
 						output.String(),
@@ -420,6 +555,7 @@ func (writer commandOutputFailure) Write([]byte) (int, error) {
 }
 
 func TestList(t *testing.T) {
+	warningErr := errors.New("warnings unavailable")
 	for _, test := range []struct {
 		name              string
 		scope             skills.ScopeOptions
@@ -430,6 +566,9 @@ func TestList(t *testing.T) {
 		description       string
 		wantText          []string
 		wantLineCount     int
+		wantWarnings      []string
+		violations        []string
+		warningErr        error
 		nestedMetadata    bool
 		nonJSONMetadata   bool
 		forceColor        bool
@@ -449,6 +588,48 @@ func TestList(t *testing.T) {
 			},
 			want: []string{
 				"alpha",
+			},
+		},
+		{
+			name: "installed length violations warn on stderr without failing",
+			scope: skills.ScopeOptions{
+				Project: true,
+			},
+			description: strings.Repeat(
+				"é",
+				1025,
+			),
+			want: []string{
+				"alpha",
+			},
+			wantWarnings: []string{
+				"alpha: description exceeds 1024 characters (found 1025)",
+			},
+		},
+		{
+			name: "installed warning writer failure preserves cause and listing",
+			scope: skills.ScopeOptions{
+				Project: true,
+			},
+			description: strings.Repeat(
+				"é",
+				1025,
+			),
+			warningErr: warningErr,
+			want: []string{
+				"alpha",
+			},
+		},
+		{
+			name:   "source warning writer failure preserves cause and listing",
+			source: new(managerSource),
+			description: strings.Repeat(
+				"é",
+				1025,
+			),
+			warningErr: warningErr,
+			want: []string{
+				"delta",
 			},
 		},
 		{
@@ -529,6 +710,20 @@ func TestList(t *testing.T) {
 			},
 		},
 		{
+			name:   "source length violations warn without failing",
+			source: new(managerSource),
+			description: strings.Repeat(
+				"é",
+				1025,
+			),
+			want: []string{
+				"delta",
+			},
+			wantWarnings: []string{
+				"delta: description exceeds 1024 characters (found 1025)",
+			},
+		},
+		{
 			name:   "source catalog",
 			source: new(managerSource),
 			want: []string{
@@ -566,6 +761,44 @@ func TestList(t *testing.T) {
 			want: []string{
 				"alpha",
 				"beta",
+			},
+		},
+		{
+			name: "JSON inventory retains violations with stderr warnings",
+			json: true,
+			description: strings.Repeat(
+				"é",
+				1025,
+			),
+			forceColor: true,
+			want: []string{
+				"alpha",
+				"beta",
+			},
+			wantWarnings: []string{
+				"alpha: description exceeds 1024 characters (found 1025)",
+			},
+			violations: []string{
+				"description exceeds 1024 characters (found 1025)",
+			},
+		},
+		{
+			name:   "source JSON retains violations with stderr warnings",
+			source: new(managerSource),
+			json:   true,
+			description: strings.Repeat(
+				"é",
+				1025,
+			),
+			forceColor: true,
+			want: []string{
+				"delta",
+			},
+			wantWarnings: []string{
+				"delta: description exceeds 1024 characters (found 1025)",
+			},
+			violations: []string{
+				"description exceeds 1024 characters (found 1025)",
 			},
 		},
 		{
@@ -727,7 +960,13 @@ func TestList(t *testing.T) {
 					},
 					destinations,
 				)
-				var output bytes.Buffer
+				var output, diagnostics bytes.Buffer
+				var warningOutput io.Writer = &diagnostics
+				if test.warningErr != nil {
+					warningOutput = commandOutputFailure{
+						err: test.warningErr,
+					}
+				}
 				err = skills.List(
 					t.Context(),
 					manager,
@@ -738,6 +977,7 @@ func TestList(t *testing.T) {
 					},
 					skills.IO{
 						Out: &output,
+						Err: warningOutput,
 					},
 				)
 				if test.nonJSONMetadata && test.json {
@@ -759,8 +999,45 @@ func TestList(t *testing.T) {
 					}
 					return
 				}
-				if err != nil {
+				if test.warningErr != nil {
+					if !errors.Is(
+						err,
+						test.warningErr,
+					) {
+						t.Fatalf(
+							"error = %v, want original warning writer failure",
+							err,
+						)
+					}
+				} else if err != nil {
 					t.Fatal(err)
+				}
+				if count := strings.Count(
+					diagnostics.String(),
+					"\n",
+				); count != len(test.wantWarnings) {
+					t.Errorf(
+						"warning count = %d, want %d: %q",
+						count,
+						len(test.wantWarnings),
+						&diagnostics,
+					)
+				}
+				for _, warning := range test.wantWarnings {
+					if !strings.Contains(
+						diagnostics.String(),
+						warning,
+					) || strings.Contains(
+						output.String(),
+						"Warning:",
+					) {
+						t.Errorf(
+							"warning %q not confined to stderr: stdout=%q, stderr=%q",
+							warning,
+							&output,
+							&diagnostics,
+						)
+					}
 				}
 				colored := test.forceColor && !test.json && !test.noColor
 				if strings.Contains(
@@ -844,6 +1121,15 @@ func TestList(t *testing.T) {
 						&output,
 					)
 				}
+				if test.json && len(test.wantWarnings) == 0 && strings.Contains(
+					output.String(),
+					`"Violations"`,
+				) {
+					t.Errorf(
+						"JSON includes an empty violations field: %q",
+						&output,
+					)
+				}
 				if test.wantLineCount > 0 {
 					if lines := strings.Split(
 						output.String(),
@@ -859,6 +1145,7 @@ func TestList(t *testing.T) {
 				}
 				if test.description != "" && test.json {
 					var description string
+					var violations []string
 					if test.source != nil {
 						var entries []skills.Skill
 						if err := json.Unmarshal(
@@ -874,6 +1161,7 @@ func TestList(t *testing.T) {
 							)
 						}
 						description = entries[0].Description
+						violations = entries[0].Violations
 					} else {
 						var entries []skills.InstalledSkill
 						if err := json.Unmarshal(
@@ -889,6 +1177,17 @@ func TestList(t *testing.T) {
 							)
 						}
 						description = entries[0].Skill.Description
+						violations = entries[0].Skill.Violations
+					}
+					if !slices.Equal(
+						violations,
+						test.violations,
+					) {
+						t.Errorf(
+							"JSON violations = %#v, want %#v",
+							violations,
+							test.violations,
+						)
 					}
 					if description != test.description {
 						t.Errorf(

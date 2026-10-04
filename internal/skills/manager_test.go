@@ -311,6 +311,7 @@ func TestManagerInstall(t *testing.T) {
 		fetchErr, cleanupErr          error
 		cancel, readOnly, missingRoot bool
 		want                          []string
+		violations                    map[string][]string
 		wantErr                       error
 		errText                       string
 	}{
@@ -325,6 +326,60 @@ func TestManagerInstall(t *testing.T) {
 				},
 				"beta/SKILL.md": {
 					Data: []byte(betaSkill),
+				},
+			},
+			names: []string{
+				"alpha",
+			},
+			want: []string{
+				"alpha",
+			},
+		},
+		{
+			name: "overlong names remain selectable and persist their violations",
+			files: fstest.MapFS{
+				strings.Repeat(
+					"é",
+					65,
+				) + "/SKILL.md": {
+					Data: []byte("---\nname: " + strings.Repeat(
+						"é",
+						65,
+					) + "\ndescription: valid\n---\n"),
+				},
+			},
+			names: []string{
+				strings.Repeat(
+					"é",
+					65,
+				),
+			},
+			want: []string{
+				strings.Repeat(
+					"é",
+					65,
+				),
+			},
+			violations: map[string][]string{
+				strings.Repeat(
+					"é",
+					65,
+				): {
+					"name exceeds 64 characters (found 65)",
+				},
+			},
+		},
+		{
+			name: "selected skill ignores invalid unrelated definitions",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+				"broken/SKILL.md": {
+					Data: []byte("invalid"),
+				},
+				"template/SKILL.md": {
+					Data: []byte("---\nname: template-skill\ndescription: Template\n---\n"),
 				},
 			},
 			names: []string{
@@ -680,6 +735,16 @@ func TestManagerInstall(t *testing.T) {
 							entry,
 						)
 					}
+					if diff := cmp.Diff(
+						test.violations[entry.Skill.Name],
+						entry.Skill.Violations,
+						cmpopts.EquateEmpty(),
+					); diff != "" {
+						t.Fatalf(
+							"installation violations (-want +got):\n%s",
+							diff,
+						)
+					}
 					sourceFile := ""
 					for name := range test.files {
 						if filepath.Base(name) == "SKILL.md" && strings.Contains(
@@ -783,6 +848,16 @@ func TestManagerInstall(t *testing.T) {
 						for _, skill := range loaded {
 							if skill.Name == name {
 								found = true
+								if diff := cmp.Diff(
+									test.violations[name],
+									skill.Violations,
+									cmpopts.EquateEmpty(),
+								); diff != "" {
+									t.Fatalf(
+										"loaded violations (-want +got):\n%s",
+										diff,
+									)
+								}
 							}
 						}
 						if !found {
@@ -804,6 +879,16 @@ func TestManagerInstall(t *testing.T) {
 						for _, entry := range listed {
 							if entry.Skill.Name == name && entry.Source != nil {
 								found = true
+								if diff := cmp.Diff(
+									test.violations[name],
+									entry.Skill.Violations,
+									cmpopts.EquateEmpty(),
+								); diff != "" {
+									t.Fatalf(
+										"listed violations (-want +got):\n%s",
+										diff,
+									)
+								}
 							}
 						}
 						if !found {

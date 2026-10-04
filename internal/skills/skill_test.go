@@ -153,7 +153,7 @@ func TestLoadValidSkills(t *testing.T) {
 						seen[actual.Name] = true
 						if actual.Name != expected.Name || actual.Description != expected.Description ||
 							actual.License != expected.License || actual.Compatibility != expected.Compatibility ||
-							actual.InvocationDisabled != expected.InvocationDisabled || actual.Path != expected.Path ||
+							actual.InvocationDisabled != expected.InvocationDisabled || actual.Path != expected.Path || len(actual.Violations) != 0 ||
 							!cmp.Equal(
 								actual.Metadata,
 								expected.Metadata,
@@ -238,14 +238,6 @@ func TestLoadInvalidSkills(t *testing.T) {
 			value: `"a🙂"`,
 		},
 		{
-			name:  "65 character name",
-			field: "name",
-			value: strconv.Quote(strings.Repeat(
-				"é",
-				65,
-			)),
-		},
-		{
 			name:  "non-string name",
 			field: "name",
 			value: "[a]",
@@ -282,14 +274,6 @@ func TestLoadInvalidSkills(t *testing.T) {
 			name:  "blank description",
 			field: "description",
 			value: `" \t\n "`,
-		},
-		{
-			name:  "1025 character description",
-			field: "description",
-			value: strconv.Quote(strings.Repeat(
-				"é",
-				1025,
-			)),
 		},
 		{
 			name:  "non-string description",
@@ -537,8 +521,8 @@ func FuzzLoadArbitraryFiles(f *testing.F) {
 		skill := got[0]
 		if skill.Name != "example" || skill.Path != "example/SKILL.md" ||
 			!utf8.ValidString(skill.Description) || strings.TrimSpace(skill.Description) == "" ||
-			utf8.RuneCountInString(skill.Description) > 1024 ||
-			!utf8.ValidString(skill.Compatibility) || utf8.RuneCountInString(skill.Compatibility) > 500 {
+			!utf8.ValidString(skill.Compatibility) || utf8.RuneCountInString(skill.Compatibility) > 500 ||
+			(utf8.RuneCountInString(skill.Description) > 1024) != (len(skill.Violations) > 0) {
 			t.Fatalf(
 				"successful Load returned invalid skill: %#v",
 				skill,
@@ -563,6 +547,8 @@ func TestLoadFilesystem(t *testing.T) {
 		wantCause   error
 		unopened    string
 		description string
+		skillName   string
+		violations  []string
 		metadata    map[string]any
 		tools       []string
 	}{
@@ -608,6 +594,95 @@ func TestLoadFilesystem(t *testing.T) {
 				},
 				"README.md": {},
 			},
+		},
+		{
+			name: "overlong description loads unchanged with a violation",
+			files: fstest.MapFS{
+				"example/SKILL.md": {
+					Data: []byte("---\nname: example\ndescription: " + strings.Repeat(
+						"é",
+						1025,
+					) + "\n---\n"),
+				},
+			},
+			wantCount: 1,
+			description: strings.Repeat(
+				"é",
+				1025,
+			),
+			violations: []string{
+				"description exceeds 1024 characters (found 1025)",
+			},
+		},
+		{
+			name: "overlong Unicode name loads unchanged with a violation",
+			files: fstest.MapFS{
+				strings.Repeat(
+					"é",
+					65,
+				) + "/SKILL.md": {
+					Data: []byte("---\nname: " + strings.Repeat(
+						"é",
+						65,
+					) + "\ndescription: valid\n---\n"),
+				},
+			},
+			wantCount: 1,
+			skillName: strings.Repeat(
+				"é",
+				65,
+			),
+			violations: []string{
+				"name exceeds 64 characters (found 65)",
+			},
+		},
+		{
+			name: "both soft limits record violations in field order",
+			files: fstest.MapFS{
+				strings.Repeat(
+					"a",
+					65,
+				) + "/SKILL.md": {
+					Data: []byte("---\nname: " + strings.Repeat(
+						"a",
+						65,
+					) + "\ndescription: " + strings.Repeat(
+						"é",
+						1025,
+					) + "\n---\n"),
+				},
+			},
+			wantCount: 1,
+			skillName: strings.Repeat(
+				"a",
+				65,
+			),
+			description: strings.Repeat(
+				"é",
+				1025,
+			),
+			violations: []string{
+				"name exceeds 64 characters (found 65)",
+				"description exceeds 1024 characters (found 1025)",
+			},
+		},
+		{
+			name: "Unicode character boundaries produce no violations",
+			files: fstest.MapFS{
+				strings.Repeat(
+					"é",
+					64,
+				) + "/SKILL.md": {
+					Data: []byte("---\nname: " + strings.Repeat(
+						"é",
+						64,
+					) + "\ndescription: " + strings.Repeat(
+						"🙂",
+						1024,
+					) + "\n---\n"),
+				},
+			},
+			wantCount: 1,
 		},
 		{
 			name: "ignores unknown string field",
@@ -914,6 +989,25 @@ func TestLoadFilesystem(t *testing.T) {
 						got[0].Description,
 						test.description,
 					)
+				}
+				if test.skillName != "" && got[0].Name != test.skillName {
+					t.Fatalf(
+						"name = %q, want unchanged %q",
+						got[0].Name,
+						test.skillName,
+					)
+				}
+				if len(got) > 0 {
+					if diff := cmp.Diff(
+						test.violations,
+						got[0].Violations,
+						cmpopts.EquateEmpty(),
+					); diff != "" {
+						t.Fatalf(
+							"violations (-want +got):\n%s",
+							diff,
+						)
+					}
 				}
 				if test.metadata != nil {
 					if diff := cmp.Diff(

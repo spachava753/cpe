@@ -96,13 +96,45 @@ func outputStream(streams IO) io.Writer {
 	return os.Stdout
 }
 
+func writeViolations(streams IO, skill Skill) error {
+	if len(skill.Violations) == 0 {
+		return nil
+	}
+	output := streams.Err
+	if output == nil {
+		output = os.Stderr
+	}
+	label := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Yellow).Render("Warning:")
+	for _, violation := range skill.Violations {
+		if _, err := lipgloss.Fprintln(
+			output,
+			label+" "+displayText(skill.Name)+": "+displayText(violation),
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func writeInstalled(streams IO, asJSON bool, result []InstalledSkill) error {
+	var violationErr error
+	for _, entry := range result {
+		if violationErr = writeViolations(
+			streams,
+			entry.Skill,
+		); violationErr != nil {
+			break
+		}
+	}
 	output := outputStream(streams)
 	if asJSON {
 		if result == nil {
 			result = []InstalledSkill{}
 		}
-		return json.NewEncoder(output).Encode(result)
+		return errors.Join(
+			violationErr,
+			json.NewEncoder(output).Encode(result),
+		)
 	}
 	var rows [][]string
 	for _, entry := range result {
@@ -115,14 +147,17 @@ func writeInstalled(streams IO, asJSON bool, result []InstalledSkill) error {
 			},
 		)
 	}
-	return writeTable(
-		output,
-		[]string{
-			"Skill",
-			"Description",
-			locationColumn,
-		},
-		rows,
+	return errors.Join(
+		violationErr,
+		writeTable(
+			output,
+			[]string{
+				"Skill",
+				"Description",
+				locationColumn,
+			},
+			rows,
+		),
 	)
 }
 

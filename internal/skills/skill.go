@@ -17,9 +17,11 @@ import (
 
 // Skill represents a single skill, as defined by https://agentskills.io/specification
 type Skill struct {
-	// Name is the name of the skill. Max 64 characters
+	// Name identifies the skill. CPE records violations of the specification's
+	// 64-character limit rather than rejecting the skill.
 	Name string
-	// Description is the skill description for what the skill does and when to use it. Max 1024 characters
+	// Description explains what the skill does and when to use it. CPE records
+	// violations of the specification's 1024-character limit without truncation.
 	Description string
 	// License name or reference to a bundled license file
 	License string
@@ -33,6 +35,8 @@ type Skill struct {
 	InvocationDisabled bool
 	// Path is the file path that the skill is stored in
 	Path string
+	// Violations records non-fatal specification issues without changing content.
+	Violations []string `json:",omitempty"`
 }
 
 func GlobalPath() (string, error) {
@@ -59,6 +63,7 @@ func ProjectPath(cwd string) string {
 // symlinked directories. Paths are relative to root. Every child directory must
 // contain a valid skill; other files and bundled resources are ignored.
 // Unknown frontmatter fields are ignored; client-specific metadata is preserved.
+// Name and description length limits produce Violations, not errors.
 // Load stops at the first error and returns no partial results.
 func Load(root fs.FS) ([]Skill, error) {
 	entries, err := fs.ReadDir(
@@ -184,14 +189,14 @@ func parseSkill(data []byte, filename string) (Skill, error) {
 			&fields.Name,
 			"name",
 			true,
-			64,
+			0,
 			&skill.Name,
 		},
 		{
 			&fields.Description,
 			"description",
 			true,
-			1024,
+			0,
 			&skill.Description,
 		},
 		{
@@ -250,6 +255,34 @@ func parseSkill(data []byte, filename string) (Skill, error) {
 			skill.Name,
 			directory,
 		)
+	}
+	for _, field := range []struct {
+		name  string
+		value string
+		limit int
+	}{
+		{
+			name:  "name",
+			value: skill.Name,
+			limit: 64,
+		},
+		{
+			name:  "description",
+			value: skill.Description,
+			limit: 1024,
+		},
+	} {
+		if length := utf8.RuneCountInString(field.value); length > field.limit {
+			skill.Violations = append(
+				skill.Violations,
+				fmt.Sprintf(
+					"%s exceeds %d characters (found %d)",
+					field.name,
+					field.limit,
+					length,
+				),
+			)
+		}
 	}
 	if fields.Metadata.Kind != 0 {
 		if err := uniqueMetadataKeys(
