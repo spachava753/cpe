@@ -34,51 +34,81 @@ type bundleChange struct {
 }
 
 func readPayload(ctx context.Context, filesystem fs.FS, directory string) ([]payloadEntry, error) {
-	if err := ensureSourceDirectory(filesystem, directory); err != nil {
+	if err := ensureSourceDirectory(
+		filesystem,
+		directory,
+	); err != nil {
 		return nil, err
 	}
 	var result []payloadEntry
-	err := fs.WalkDir(filesystem, directory, func(filename string, entry fs.DirEntry, walkErr error) error {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if walkErr != nil {
-			return walkErr
-		}
-		if filename != directory && entry.IsDir() && excludedDirectory(entry.Name()) {
-			return fs.SkipDir
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if info.Mode()&fs.ModeSymlink != 0 {
-			return fmt.Errorf("payload symlink %s is not supported", filename)
-		}
-		if !info.IsDir() && !info.Mode().IsRegular() {
-			return fmt.Errorf("payload %s is not a regular file", filename)
-		}
-		name := filename
-		if directory != "." {
-			if filename == directory {
-				name = "."
-			} else {
-				name = filename[len(directory)+1:]
+	err := fs.WalkDir(
+		filesystem,
+		directory,
+		func(filename string, entry fs.DirEntry, walkErr error) error {
+			if err := ctx.Err(); err != nil {
+				return err
 			}
-		}
-		if !fs.ValidPath(name) {
-			return fmt.Errorf("invalid payload path %q", name)
-		}
-		item := payloadEntry{name: name, mode: info.Mode().Perm(), directory: info.IsDir()}
-		if !item.directory {
-			item.data, err = fs.ReadFile(filesystem, filename)
+			if walkErr != nil {
+				return walkErr
+			}
+			if filename != directory && entry.IsDir() && excludedDirectory(entry.Name()) {
+				return fs.SkipDir
+			}
+			info, err := entry.Info()
 			if err != nil {
-				return fmt.Errorf("read payload %s: %w", filename, err)
+				return err
 			}
-		}
-		result = append(result, item)
-		return nil
-	})
+			if info.Mode()&fs.ModeSymlink != 0 {
+				return fmt.Errorf(
+					"payload symlink %s is not supported",
+					filename,
+				)
+			}
+			if !info.IsDir() && !info.Mode().IsRegular() {
+				return fmt.Errorf(
+					"payload %s is not a regular file",
+					filename,
+				)
+			}
+			name := filename
+			if directory != "." {
+				if filename == directory {
+					name = "."
+				} else {
+					name = filename[len(directory)+1:]
+				}
+			}
+			if !fs.ValidPath(name) {
+				return fmt.Errorf(
+					"invalid payload path %q",
+					name,
+				)
+			}
+			item := payloadEntry{
+				name:      name,
+				mode:      info.Mode().Perm(),
+				directory: info.IsDir(),
+			}
+			if !item.directory {
+				item.data, err = fs.ReadFile(
+					filesystem,
+					filename,
+				)
+				if err != nil {
+					return fmt.Errorf(
+						"read payload %s: %w",
+						filename,
+						err,
+					)
+				}
+			}
+			result = append(
+				result,
+				item,
+			)
+			return nil
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +123,11 @@ type CommittedCleanupError struct {
 }
 
 func (err *CommittedCleanupError) Error() string {
-	return fmt.Sprintf("skills changes committed; cleanup failed for %s: %v", err.Directory, err.Err)
+	return fmt.Sprintf(
+		"skills changes committed; cleanup failed for %s: %v",
+		err.Directory,
+		err.Err,
+	)
 }
 func (err *CommittedCleanupError) Unwrap() error { return err.Err }
 
@@ -104,14 +138,24 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 		return nil
 	}
 	_, statErr := m.destinations.Stat(root)
-	created := errors.Is(statErr, fs.ErrNotExist)
+	created := errors.Is(
+		statErr,
+		fs.ErrNotExist,
+	)
 	if statErr != nil && !created {
 		return statErr
 	}
-	if err := m.destinations.MkdirAll(root, 0o700); err != nil {
+	if err := m.destinations.MkdirAll(
+		root,
+		0o700,
+	); err != nil {
 		return err
 	}
-	stage, err := afero.TempDir(m.destinations, root, ".cpe-stage-")
+	stage, err := afero.TempDir(
+		m.destinations,
+		root,
+		".cpe-stage-",
+	)
 	if err != nil {
 		if created {
 			_ = m.destinations.Remove(root)
@@ -126,15 +170,27 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 		}
 		cleanupErr := m.destinations.RemoveAll(stage)
 		if committed && cleanupErr != nil {
-			err = &CommittedCleanupError{Directory: stage, Err: cleanupErr}
+			err = &CommittedCleanupError{
+				Directory: stage,
+				Err:       cleanupErr,
+			}
 			return
 		}
 		if !committed && created {
-			if removeErr := m.destinations.Remove(root); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
-				cleanupErr = errors.Join(cleanupErr, removeErr)
+			if removeErr := m.destinations.Remove(root); removeErr != nil && !errors.Is(
+				removeErr,
+				fs.ErrNotExist,
+			) {
+				cleanupErr = errors.Join(
+					cleanupErr,
+					removeErr,
+				)
 			}
 		}
-		err = errors.Join(err, cleanupErr)
+		err = errors.Join(
+			err,
+			cleanupErr,
+		)
 	}()
 	for _, change := range changes {
 		if err := ctx.Err(); err != nil {
@@ -143,29 +199,50 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 		if change.action == removeBundle {
 			continue
 		}
-		newRoot := filepath.Join(stage, "new", change.name)
-		if err := m.destinations.MkdirAll(newRoot, 0o700); err != nil {
+		newRoot := filepath.Join(
+			stage,
+			"new",
+			change.name,
+		)
+		if err := m.destinations.MkdirAll(
+			newRoot,
+			0o700,
+		); err != nil {
 			return err
 		}
 		for _, entry := range change.payload {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			filename := filepath.Join(newRoot, filepath.FromSlash(entry.name))
+			filename := filepath.Join(
+				newRoot,
+				filepath.FromSlash(entry.name),
+			)
 			if entry.directory {
-				if err := m.destinations.MkdirAll(filename, 0o700); err != nil {
+				if err := m.destinations.MkdirAll(
+					filename,
+					0o700,
+				); err != nil {
 					return err
 				}
 				continue
 			}
-			if err := m.destinations.MkdirAll(filepath.Dir(filename), 0o700); err != nil {
+			if err := m.destinations.MkdirAll(
+				filepath.Dir(filename),
+				0o700,
+			); err != nil {
 				return err
 			}
 			mode := entry.mode
 			if mode == 0 {
 				mode = 0o644
 			}
-			if err := afero.WriteFile(m.destinations, filename, entry.data, mode); err != nil {
+			if err := afero.WriteFile(
+				m.destinations,
+				filename,
+				entry.data,
+				mode,
+			); err != nil {
 				return err
 			}
 		}
@@ -174,14 +251,40 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 	rollback := func(cause error) error {
 		var restoreErr error
 		for _, name := range slices.Backward(installed) {
-			restoreErr = errors.Join(restoreErr, m.destinations.RemoveAll(filepath.Join(root, name)))
+			restoreErr = errors.Join(
+				restoreErr,
+				m.destinations.RemoveAll(filepath.Join(
+					root,
+					name,
+				)),
+			)
 		}
 		for _, name := range slices.Backward(moved) {
-			restoreErr = errors.Join(restoreErr, m.destinations.Rename(filepath.Join(stage, "old", name), filepath.Join(root, name)))
+			restoreErr = errors.Join(
+				restoreErr,
+				m.destinations.Rename(
+					filepath.Join(
+						stage,
+						"old",
+						name,
+					),
+					filepath.Join(
+						root,
+						name,
+					),
+				),
+			)
 		}
 		if restoreErr != nil {
 			preserveStage = true
-			return errors.Join(cause, fmt.Errorf("rollback failed; recovery files retained at %s: %w", stage, restoreErr))
+			return errors.Join(
+				cause,
+				fmt.Errorf(
+					"rollback failed; recovery files retained at %s: %w",
+					stage,
+					restoreErr,
+				),
+			)
 		}
 		return cause
 	}
@@ -189,46 +292,106 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 		if err := ctx.Err(); err != nil {
 			return rollback(err)
 		}
-		filename := filepath.Join(root, change.name)
+		filename := filepath.Join(
+			root,
+			change.name,
+		)
 		info, statErr := m.pathInfo(filename)
 		if statErr == nil {
 			if change.action == installBundle {
-				return rollback(fmt.Errorf("destination %s already exists: %w", filename, fs.ErrExist))
+				return rollback(fmt.Errorf(
+					"destination %s already exists: %w",
+					filename,
+					fs.ErrExist,
+				))
 			}
 			if !info.IsDir() || info.Mode()&fs.ModeSymlink != 0 {
-				return rollback(fmt.Errorf("destination %s is not a regular bundle directory", filename))
+				return rollback(fmt.Errorf(
+					"destination %s is not a regular bundle directory",
+					filename,
+				))
 			}
-			if err := m.destinations.MkdirAll(filepath.Join(stage, "old"), 0o700); err != nil {
+			if err := m.destinations.MkdirAll(
+				filepath.Join(
+					stage,
+					"old",
+				),
+				0o700,
+			); err != nil {
 				return rollback(err)
 			}
-			if err := m.destinations.Rename(filename, filepath.Join(stage, "old", change.name)); err != nil {
+			if err := m.destinations.Rename(
+				filename,
+				filepath.Join(
+					stage,
+					"old",
+					change.name,
+				),
+			); err != nil {
 				return rollback(err)
 			}
-			moved = append(moved, change.name)
-		} else if !errors.Is(statErr, fs.ErrNotExist) {
+			moved = append(
+				moved,
+				change.name,
+			)
+		} else if !errors.Is(
+			statErr,
+			fs.ErrNotExist,
+		) {
 			return rollback(statErr)
 		}
 		if change.action != removeBundle {
-			if err := m.destinations.Rename(filepath.Join(stage, "new", change.name), filename); err != nil {
+			if err := m.destinations.Rename(
+				filepath.Join(
+					stage,
+					"new",
+					change.name,
+				),
+				filename,
+			); err != nil {
 				return rollback(err)
 			}
-			installed = append(installed, change.name)
+			installed = append(
+				installed,
+				change.name,
+			)
 		}
 	}
 	if err := ctx.Err(); err != nil {
 		return rollback(err)
 	}
 	if writeRecords {
-		data, err := json.MarshalIndent(records, "", "  ")
+		data, err := json.MarshalIndent(
+			records,
+			"",
+			"  ",
+		)
 		if err != nil {
 			return rollback(err)
 		}
-		data = append(data, '\n')
-		filename := filepath.Join(stage, recordFilename)
-		if err := afero.WriteFile(m.destinations, filename, data, 0o600); err != nil {
+		data = append(
+			data,
+			'\n',
+		)
+		filename := filepath.Join(
+			stage,
+			recordFilename,
+		)
+		if err := afero.WriteFile(
+			m.destinations,
+			filename,
+			data,
+			0o600,
+		); err != nil {
 			return rollback(err)
 		}
-		if err := m.destinations.Rename(filename, filepath.Join(root, recordFilename)); err != nil {
+		if err := m.destinations.Rename(
+			filename,
+			filepath.Join(
+				root,
+				recordFilename,
+			),
+		); err != nil {
 			return rollback(err)
 		}
 	}

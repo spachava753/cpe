@@ -8,8 +8,16 @@ import (
 
 // Flags consumed by the lint task.
 var (
-	lintFix     = flag.Bool("lint-fix", false, "Auto-fix linting issues")
-	lintVerbose = flag.Bool("lint-verbose", false, "Verbose linting output")
+	lintFix = flag.Bool(
+		"lint-fix",
+		false,
+		"Auto-fix linting issues",
+	)
+	lintVerbose = flag.Bool(
+		"lint-verbose",
+		false,
+		"Verbose linting output",
+	)
 )
 
 // main parses global build-task flags and dispatches requested goyek tasks.
@@ -18,7 +26,9 @@ func main() {
 	flag.Parse()
 	args := flag.Args()
 	if len(args) == 0 {
-		args = []string{"list"}
+		args = []string{
+			"list",
+		}
 	}
 	goyek.Main(args)
 }

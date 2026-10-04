@@ -17,8 +17,16 @@ type ListOptions struct {
 // list available source skills or installed skills, including unmanaged ones,
 // and write results through streams.
 func List(ctx context.Context, manager *Manager, opts ListOptions, streams IO) error {
-	if err := listCommand(ctx, manager, opts, streams); err != nil {
-		return &commandError{action: "list", cause: err}
+	if err := listCommand(
+		ctx,
+		manager,
+		opts,
+		streams,
+	); err != nil {
+		return &commandError{
+			action: "list",
+			cause:  err,
+		}
 	}
 	return nil
 }

@@ -14,7 +14,11 @@ var _ = goyek.Define(goyek.Task{
 		fmt.Println("Available tasks:")
 		fmt.Println()
 		for _, task := range goyek.Tasks() {
-			fmt.Printf("  %-20s %s\n", task.Name(), task.Usage())
+			fmt.Printf(
+				"  %-20s %s\n",
+				task.Name(),
+				task.Usage(),
+			)
 		}
 	},
 })

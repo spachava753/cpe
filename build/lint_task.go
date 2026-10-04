@@ -22,28 +22,68 @@ var _ = goyek.Define(goyek.Task{
 	Name:  "lint",
 	Usage: "Run golangci-lint and custom linters. Use -lint-fix to auto-fix, -lint-verbose for details",
 	Action: func(a *goyek.A) {
-		args := []string{"tool", "golangci-lint", "run"}
+		args := []string{
+			"tool",
+			"golangci-lint",
+			"run",
+		}
 		if *lintFix {
-			args = append(args, "--fix")
+			args = append(
+				args,
+				"--fix",
+			)
 		}
 		if *lintVerbose {
-			args = append(args, "-v")
+			args = append(
+				args,
+				"-v",
+			)
 		}
-		args = append(args, "./...")
+		args = append(
+			args,
+			"./...",
+		)
 
-		runLintCommand(a, "golangci-lint", args...)
+		runLintCommand(
+			a,
+			"golangci-lint",
+			args...,
+		)
 
-		modernizeArgs := []string{"tool", "modernize"}
+		modernizeArgs := []string{
+			"tool",
+			"modernize",
+		}
 		if *lintFix {
-			modernizeArgs = append(modernizeArgs, "-fix")
+			modernizeArgs = append(
+				modernizeArgs,
+				"-fix",
+			)
 		}
 		if *lintVerbose {
-			modernizeArgs = append(modernizeArgs, "-v")
+			modernizeArgs = append(
+				modernizeArgs,
+				"-v",
+			)
 		}
-		modernizeArgs = append(modernizeArgs, modernizePackageArgs(a)...)
-		runLintCommand(a, "modernize", modernizeArgs...)
+		modernizeArgs = append(
+			modernizeArgs,
+			modernizePackageArgs(a)...,
+		)
+		runLintCommand(
+			a,
+			"modernize",
+			modernizeArgs...,
+		)
 
-		runLintCommand(a, "deadcode", "tool", "deadcode", "-test", "./...")
+		runLintCommand(
+			a,
+			"deadcode",
+			"tool",
+			"deadcode",
+			"-test",
+			"./...",
+		)
 	},
 })
 
@@ -56,10 +96,20 @@ type listedPackage struct {
 }
 
 func modernizePackageArgs(a *goyek.A) []string {
-	cmd := exec.CommandContext(a.Context(), "go", "list", "-json", "./...")
+	cmd := exec.CommandContext(
+		a.Context(),
+		"go",
+		"list",
+		"-json",
+		"./...",
+	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		a.Fatalf("failed to list packages for modernize: %v\n%s", err, out)
+		a.Fatalf(
+			"failed to list packages for modernize: %v\n%s",
+			err,
+			out,
+		)
 	}
 
 	var args []string
@@ -70,10 +120,16 @@ func modernizePackageArgs(a *goyek.A) []string {
 			if err == io.EOF {
 				break
 			}
-			a.Fatalf("failed to parse go list output for modernize: %v", err)
+			a.Fatalf(
+				"failed to parse go list output for modernize: %v",
+				err,
+			)
 		}
 		if !packageHasGeneratedGoFiles(pkg) {
-			args = append(args, pkg.ImportPath)
+			args = append(
+				args,
+				pkg.ImportPath,
+			)
 		}
 	}
 	return args
@@ -82,8 +138,17 @@ func modernizePackageArgs(a *goyek.A) []string {
 // modernize cannot exclude individual generated files within a package, so skip
 // packages containing generated files and leave those sources to their generator.
 func packageHasGeneratedGoFiles(pkg listedPackage) bool {
-	for _, name := range append(append(pkg.GoFiles, pkg.TestGoFiles...), pkg.XTestGoFiles...) {
-		generated, err := isGeneratedGoFile(filepath.Join(pkg.Dir, name))
+	for _, name := range append(
+		append(
+			pkg.GoFiles,
+			pkg.TestGoFiles...,
+		),
+		pkg.XTestGoFiles...,
+	) {
+		generated, err := isGeneratedGoFile(filepath.Join(
+			pkg.Dir,
+			name,
+		))
 		if err == nil && generated {
 			return true
 		}
@@ -105,14 +170,26 @@ func isGeneratedGoFile(path string) (bool, error) {
 }
 
 func runLintCommand(a *goyek.A, name string, args ...string) {
-	cmd := exec.CommandContext(a.Context(), "go", args...)
+	cmd := exec.CommandContext(
+		a.Context(),
+		"go",
+		args...,
+	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			a.Errorf("%s issues found (exit code %d)", name, exitErr.ExitCode())
+			a.Errorf(
+				"%s issues found (exit code %d)",
+				name,
+				exitErr.ExitCode(),
+			)
 		} else {
-			a.Fatalf("failed to run %s: %v", name, err)
+			a.Fatalf(
+				"failed to run %s: %v",
+				name,
+				err,
+			)
 		}
 	}
 }

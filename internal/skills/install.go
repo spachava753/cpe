@@ -16,8 +16,16 @@ type InstallOptions struct {
 // Install is the high-level installation entry point for a command adapter.
 // It resolves the destination and writes results through streams.
 func Install(ctx context.Context, manager *Manager, opts InstallOptions, streams IO) error {
-	if err := installCommand(ctx, manager, opts, streams); err != nil {
-		return &commandError{action: "install", cause: err}
+	if err := installCommand(
+		ctx,
+		manager,
+		opts,
+		streams,
+	); err != nil {
+		return &commandError{
+			action: "install",
+			cause:  err,
+		}
 	}
 	return nil
 }

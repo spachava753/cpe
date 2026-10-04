@@ -17,7 +17,10 @@ type removalPlan struct {
 
 // All eligibility and bookkeeping checks happen before a removal can mutate.
 func (m *Manager) prepareRemoval(ctx context.Context, request RemoveRequest) (removalPlan, error) {
-	if err := m.destination(ctx, request.Directory); err != nil {
+	if err := m.destination(
+		ctx,
+		request.Directory,
+	); err != nil {
 		return removalPlan{}, err
 	}
 	names, err := selectedNames(request.Skills)
@@ -31,33 +34,67 @@ func (m *Manager) prepareRemoval(ctx context.Context, request RemoveRequest) (re
 	if err != nil {
 		return removalPlan{}, err
 	}
-	plan := removalPlan{records: records}
+	plan := removalPlan{
+		records: records,
+	}
 	for _, name := range names {
 		if err := ctx.Err(); err != nil {
 			return removalPlan{}, err
 		}
-		filename := filepath.Join(request.Directory, name)
+		filename := filepath.Join(
+			request.Directory,
+			name,
+		)
 		info, err := m.pathInfo(filename)
 		if err != nil {
-			return removalPlan{}, fmt.Errorf("remove %s: %w", filename, err)
+			return removalPlan{}, fmt.Errorf(
+				"remove %s: %w",
+				filename,
+				err,
+			)
 		}
 		if !info.IsDir() || info.Mode()&fs.ModeSymlink != 0 {
-			return removalPlan{}, fmt.Errorf("%s is not a skill directory", filename)
+			return removalPlan{}, fmt.Errorf(
+				"%s is not a skill directory",
+				filename,
+			)
 		}
 		if _, ok := records.Skills[name]; ok {
-			delete(records.Skills, name)
+			delete(
+				records.Skills,
+				name,
+			)
 			plan.writeRecords = true
 		} else {
-			definition, err := m.pathInfo(filepath.Join(filename, "SKILL.md"))
+			definition, err := m.pathInfo(filepath.Join(
+				filename,
+				"SKILL.md",
+			))
 			if err != nil {
-				return removalPlan{}, fmt.Errorf("%s is not a skill directory: %w", filename, err)
+				return removalPlan{}, fmt.Errorf(
+					"%s is not a skill directory: %w",
+					filename,
+					err,
+				)
 			}
 			if !definition.Mode().IsRegular() {
-				return removalPlan{}, fmt.Errorf("%s is not a skill directory with a regular SKILL.md", filename)
+				return removalPlan{}, fmt.Errorf(
+					"%s is not a skill directory with a regular SKILL.md",
+					filename,
+				)
 			}
 		}
-		plan.changes = append(plan.changes, bundleChange{name: name, action: removeBundle})
-		plan.paths = append(plan.paths, filename)
+		plan.changes = append(
+			plan.changes,
+			bundleChange{
+				name:   name,
+				action: removeBundle,
+			},
+		)
+		plan.paths = append(
+			plan.paths,
+			filename,
+		)
 	}
 	return plan, nil
 }

@@ -13,10 +13,16 @@ import (
 )
 
 func main() {
-	manager := skills.NewManager(skills.GitSourceClient{}, afero.NewOsFs())
+	manager := skills.NewManager(
+		skills.GitSourceClient{},
+		afero.NewOsFs(),
+	)
 	if err := fang.Execute(
 		context.Background(),
-		cli.Root(version.Get(), manager),
+		cli.Root(
+			version.Get(),
+			manager,
+		),
 		fang.WithNotifySignal(os.Interrupt),
 	); err != nil {
 		os.Exit(1)

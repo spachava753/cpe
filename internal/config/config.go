@@ -21,7 +21,10 @@ func Path() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(h, configPath), nil
+	return filepath.Join(
+		h,
+		configPath,
+	), nil
 }
 
 const settingsFile = "settings.json"

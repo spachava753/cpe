@@ -14,8 +14,16 @@ type UpdateOptions struct {
 // Update is the high-level update entry point for a command adapter.
 // It updates managed installations and writes results through streams.
 func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams IO) error {
-	if err := updateCommand(ctx, manager, opts, streams); err != nil {
-		return &commandError{action: "update", cause: err}
+	if err := updateCommand(
+		ctx,
+		manager,
+		opts,
+		streams,
+	); err != nil {
+		return &commandError{
+			action: "update",
+			cause:  err,
+		}
 	}
 	return nil
 }

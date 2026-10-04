@@ -40,11 +40,19 @@ func GlobalPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(h, ".agents", "skills"), nil
+	return filepath.Join(
+		h,
+		".agents",
+		"skills",
+	), nil
 }
 
 func ProjectPath(cwd string) string {
-	return filepath.Join(cwd, ".agents", "skills")
+	return filepath.Join(
+		cwd,
+		".agents",
+		"skills",
+	)
 }
 
 // Load reads SKILL.md from each immediate child directory of root, following
@@ -52,33 +60,66 @@ func ProjectPath(cwd string) string {
 // contain a valid skill; other files and bundled resources are ignored.
 // Load stops at the first error and returns no partial results.
 func Load(root fs.FS) ([]Skill, error) {
-	entries, err := fs.ReadDir(root, ".")
+	entries, err := fs.ReadDir(
+		root,
+		".",
+	)
 	if err != nil {
-		return nil, fmt.Errorf("read skills directory: %w", err)
+		return nil, fmt.Errorf(
+			"read skills directory: %w",
+			err,
+		)
 	}
 	var skills []Skill
 	for _, entry := range entries {
 		isDir := entry.IsDir()
 		if entry.Type()&fs.ModeSymlink != 0 {
-			info, err := fs.Stat(root, entry.Name())
+			info, err := fs.Stat(
+				root,
+				entry.Name(),
+			)
 			if err != nil {
-				return nil, fmt.Errorf("stat skill directory %q: %w", entry.Name(), err)
+				return nil, fmt.Errorf(
+					"stat skill directory %q: %w",
+					entry.Name(),
+					err,
+				)
 			}
 			isDir = info.IsDir()
 		}
 		if !isDir {
 			continue
 		}
-		filename := path.Join(entry.Name(), "SKILL.md")
-		data, err := fs.ReadFile(root, filename)
+		filename := path.Join(
+			entry.Name(),
+			"SKILL.md",
+		)
+		data, err := fs.ReadFile(
+			root,
+			filename,
+		)
 		if err != nil {
-			return nil, fmt.Errorf("read skill %q: %w", filename, err)
+			return nil, fmt.Errorf(
+				"read skill %q: %w",
+				filename,
+				err,
+			)
 		}
-		skill, err := parseSkill(data, filename)
+		skill, err := parseSkill(
+			data,
+			filename,
+		)
 		if err != nil {
-			return nil, fmt.Errorf("parse skill %q: %w", filename, err)
+			return nil, fmt.Errorf(
+				"parse skill %q: %w",
+				filename,
+				err,
+			)
 		}
-		skills = append(skills, skill)
+		skills = append(
+			skills,
+			skill,
+		)
 	}
 	return skills, nil
 }
@@ -96,7 +137,14 @@ type skillFrontmatter struct {
 }
 
 func parseSkill(data []byte, filename string) (Skill, error) {
-	data = bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf})
+	data = bytes.TrimPrefix(
+		data,
+		[]byte{
+			0xef,
+			0xbb,
+			0xbf,
+		},
+	)
 	frontmatter, err := skillHeader(data)
 	if err != nil {
 		return Skill{}, err
@@ -105,17 +153,25 @@ func parseSkill(data []byte, filename string) (Skill, error) {
 	decoder.KnownFields(true)
 	var fields skillFrontmatter
 	if err := decoder.Decode(&fields); err != nil {
-		return Skill{}, fmt.Errorf("decode frontmatter: %w", err)
+		return Skill{}, fmt.Errorf(
+			"decode frontmatter: %w",
+			err,
+		)
 	}
 	var trailing yaml.Node
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		if err != nil {
-			return Skill{}, fmt.Errorf("decode trailing frontmatter: %w", err)
+			return Skill{}, fmt.Errorf(
+				"decode trailing frontmatter: %w",
+				err,
+			)
 		}
 		return Skill{}, fmt.Errorf("frontmatter must contain one YAML mapping")
 	}
 
-	skill := Skill{Path: filename}
+	skill := Skill{
+		Path: filename,
+	}
 	var allowedTools string
 	for _, field := range []struct {
 		node     *yaml.Node
@@ -124,19 +180,63 @@ func parseSkill(data []byte, filename string) (Skill, error) {
 		limit    int
 		value    *string
 	}{
-		{&fields.Name, "name", true, 64, &skill.Name},
-		{&fields.Description, "description", true, 1024, &skill.Description},
-		{&fields.License, "license", false, 0, &skill.License},
-		{&fields.Compatibility, "compatibility", fields.Compatibility.Kind != 0, 500, &skill.Compatibility},
-		{&fields.AllowedTools, "allowed-tools", false, 0, &allowedTools},
+		{
+			&fields.Name,
+			"name",
+			true,
+			64,
+			&skill.Name,
+		},
+		{
+			&fields.Description,
+			"description",
+			true,
+			1024,
+			&skill.Description,
+		},
+		{
+			&fields.License,
+			"license",
+			false,
+			0,
+			&skill.License,
+		},
+		{
+			&fields.Compatibility,
+			"compatibility",
+			fields.Compatibility.Kind != 0,
+			500,
+			&skill.Compatibility,
+		},
+		{
+			&fields.AllowedTools,
+			"allowed-tools",
+			false,
+			0,
+			&allowedTools,
+		},
 	} {
-		value, err := skillString(field.node, field.name, field.required, field.limit)
+		value, err := skillString(
+			field.node,
+			field.name,
+			field.required,
+			field.limit,
+		)
 		if err != nil {
 			return Skill{}, err
 		}
 		*field.value = value
 	}
-	if strings.HasPrefix(skill.Name, "-") || strings.HasSuffix(skill.Name, "-") || strings.Contains(skill.Name, "--") {
+	if strings.HasPrefix(
+		skill.Name,
+		"-",
+	) || strings.HasSuffix(
+		skill.Name,
+		"-",
+	) || strings.Contains(
+		skill.Name,
+		"--",
+	) {
 		return Skill{}, fmt.Errorf("name must not start or end with a hyphen or contain consecutive hyphens")
 	}
 	for _, r := range skill.Name {
@@ -145,7 +245,11 @@ func parseSkill(data []byte, filename string) (Skill, error) {
 		}
 	}
 	if directory := path.Dir(filename); directory != "." && skill.Name != path.Base(directory) {
-		return Skill{}, fmt.Errorf("name %q must match directory %q", skill.Name, directory)
+		return Skill{}, fmt.Errorf(
+			"name %q must match directory %q",
+			skill.Name,
+			directory,
+		)
 	}
 	if fields.Metadata.Kind != 0 {
 		metadata, err := skillMetadata(&fields.Metadata)
@@ -161,7 +265,10 @@ func parseSkill(data []byte, filename string) (Skill, error) {
 			return Skill{}, fmt.Errorf("disable-model-invocation must be a boolean")
 		}
 		if err := node.Decode(&skill.InvocationDisabled); err != nil {
-			return Skill{}, fmt.Errorf("decode disable-model-invocation: %w", err)
+			return Skill{}, fmt.Errorf(
+				"decode disable-model-invocation: %w",
+				err,
+			)
 		}
 	}
 	return skill, nil
@@ -170,13 +277,19 @@ func parseSkill(data []byte, filename string) (Skill, error) {
 // Delimiters occupy their own lines. Embedded "---" in scalar values and
 // arbitrary Markdown after the closing delimiter are not frontmatter.
 func skillHeader(data []byte) ([]byte, error) {
-	opening, remaining, newline := bytes.Cut(data, []byte("\n"))
+	opening, remaining, newline := bytes.Cut(
+		data,
+		[]byte("\n"),
+	)
 	if !newline || !skillDelimiter(opening) {
 		return nil, fmt.Errorf("SKILL.md must start with YAML frontmatter (---)")
 	}
 	header := remaining
 	for {
-		line, next, newline := bytes.Cut(remaining, []byte("\n"))
+		line, next, newline := bytes.Cut(
+			remaining,
+			[]byte("\n"),
+		)
 		if skillDelimiter(line) {
 			return header[:len(header)-len(remaining)], nil
 		}
@@ -188,25 +301,44 @@ func skillHeader(data []byte) ([]byte, error) {
 }
 
 func skillDelimiter(line []byte) bool {
-	return bytes.Equal(bytes.TrimRight(line, " \t\r"), []byte("---"))
+	return bytes.Equal(
+		bytes.TrimRight(
+			line,
+			" \t\r",
+		),
+		[]byte("---"),
+	)
 }
 
 func skillString(node *yaml.Node, field string, required bool, limit int) (string, error) {
 	if node.Kind == 0 {
 		if required {
-			return "", fmt.Errorf("missing required field %q", field)
+			return "", fmt.Errorf(
+				"missing required field %q",
+				field,
+			)
 		}
 		return "", nil
 	}
 	node = resolveSkillAlias(node)
 	if node.Kind != yaml.ScalarNode || node.Tag != "!!str" || !utf8.ValidString(node.Value) {
-		return "", fmt.Errorf("%s must be a UTF-8 string", field)
+		return "", fmt.Errorf(
+			"%s must be a UTF-8 string",
+			field,
+		)
 	}
 	if required && strings.TrimSpace(node.Value) == "" {
-		return "", fmt.Errorf("%s must be non-empty", field)
+		return "", fmt.Errorf(
+			"%s must be non-empty",
+			field,
+		)
 	}
 	if limit > 0 && utf8.RuneCountInString(node.Value) > limit {
-		return "", fmt.Errorf("%s exceeds %d characters", field, limit)
+		return "", fmt.Errorf(
+			"%s exceeds %d characters",
+			field,
+			limit,
+		)
 	}
 	return node.Value, nil
 }
@@ -216,18 +348,34 @@ func skillMetadata(node *yaml.Node) (map[string]string, error) {
 	if node.Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("metadata must be a string-to-string mapping")
 	}
-	metadata := make(map[string]string, len(node.Content)/2)
+	metadata := make(
+		map[string]string,
+		len(node.Content)/2,
+	)
 	for i := 0; i < len(node.Content); i += 2 {
-		key, err := skillString(node.Content[i], "metadata key", false, 0)
+		key, err := skillString(
+			node.Content[i],
+			"metadata key",
+			false,
+			0,
+		)
 		if err != nil {
 			return nil, err
 		}
-		value, err := skillString(node.Content[i+1], "metadata value", false, 0)
+		value, err := skillString(
+			node.Content[i+1],
+			"metadata value",
+			false,
+			0,
+		)
 		if err != nil {
 			return nil, err
 		}
 		if _, exists := metadata[key]; exists {
-			return nil, fmt.Errorf("duplicate metadata key %q", key)
+			return nil, fmt.Errorf(
+				"duplicate metadata key %q",
+				key,
+			)
 		}
 		metadata[key] = value
 	}

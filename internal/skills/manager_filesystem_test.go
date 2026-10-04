@@ -25,14 +25,23 @@ type managerFaultFS struct {
 
 func (filesystem managerFaultFS) Rename(oldname, newname string) error {
 	if filesystem.fault == managerMetadataRenameFailure || filesystem.fault == managerRestoreFailure {
-		if filepath.Base(oldname) == "skills.json" || (filesystem.fault == managerRestoreFailure && strings.Contains(filepath.ToSlash(oldname), "/old/")) {
+		if filepath.Base(oldname) == "skills.json" || (filesystem.fault == managerRestoreFailure && strings.Contains(
+			filepath.ToSlash(oldname),
+			"/old/",
+		)) {
 			return fs.ErrPermission
 		}
 	}
-	return filesystem.Fs.Rename(oldname, newname)
+	return filesystem.Fs.Rename(
+		oldname,
+		newname,
+	)
 }
 func (filesystem managerFaultFS) RemoveAll(name string) error {
-	if filesystem.fault == managerStageCleanupFailure && strings.HasPrefix(filepath.Base(name), ".cpe-stage-") {
+	if filesystem.fault == managerStageCleanupFailure && strings.HasPrefix(
+		filepath.Base(name),
+		".cpe-stage-",
+	) {
 		return fs.ErrPermission
 	}
 	return filesystem.Fs.RemoveAll(name)
@@ -52,7 +61,9 @@ func (filesystem managerLinkFS) LstatIfPossible(name string) (fs.FileInfo, bool,
 		return nil, true, err
 	}
 	if filesystem.links[filepath.Clean(name)] {
-		return managerLinkInfo{info}, true, nil
+		return managerLinkInfo{
+			info,
+		}, true, nil
 	}
 	return info, true, nil
 }

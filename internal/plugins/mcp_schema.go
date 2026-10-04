@@ -16,15 +16,24 @@ type mcpValidators struct {
 
 var mcpSchemas = sync.OnceValues(func() (mcpValidators, error) {
 	var schema jsonschema.Schema
-	if err := json.Unmarshal([]byte(mcpSchemaJSON), &schema); err != nil {
-		return mcpValidators{}, fmt.Errorf("decode embedded MCP schema: %w", err)
+	if err := json.Unmarshal(
+		[]byte(mcpSchemaJSON),
+		&schema,
+	); err != nil {
+		return mcpValidators{}, fmt.Errorf(
+			"decode embedded MCP schema: %w",
+			err,
+		)
 	}
 	// The envelope must not validate server entries: one invalid server must
 	// not disable its valid siblings (Agent Plugins specification §7.2.2).
 	schema.Properties["mcpServers"].AdditionalProperties = nil
 	envelope, err := schema.Resolve(nil)
 	if err != nil {
-		return mcpValidators{}, fmt.Errorf("resolve MCP envelope schema: %w", err)
+		return mcpValidators{}, fmt.Errorf(
+			"resolve MCP envelope schema: %w",
+			err,
+		)
 	}
 	server, err := (&jsonschema.Schema{
 		Schema: schema.Schema,
@@ -32,9 +41,15 @@ var mcpSchemas = sync.OnceValues(func() (mcpValidators, error) {
 		Defs:   schema.Defs,
 	}).Resolve(nil)
 	if err != nil {
-		return mcpValidators{}, fmt.Errorf("resolve MCP server schema: %w", err)
+		return mcpValidators{}, fmt.Errorf(
+			"resolve MCP server schema: %w",
+			err,
+		)
 	}
-	return mcpValidators{envelope: envelope, server: server}, nil
+	return mcpValidators{
+		envelope: envelope,
+		server:   server,
+	}, nil
 })
 
 // Callers check UTF-8, duplicate keys, and trailing data with jsonObject.

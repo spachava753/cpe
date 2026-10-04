@@ -12,6 +12,9 @@ func Root(version string, manager *skills.Manager) *cobra.Command {
 		Short:   "Another ACP agent server that comes with builtin TUI",
 		Version: version,
 	}
-	skillsCmd(r, manager)
+	skillsCmd(
+		r,
+		manager,
+	)
 	return r
 }

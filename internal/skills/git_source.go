@@ -26,30 +26,63 @@ func (GitSourceClient) Fetch(ctx context.Context, source string) (Checkout, erro
 	if err != nil {
 		return Checkout{}, err
 	}
-	root, err := os.MkdirTemp("", "cpe-source-")
+	root, err := os.MkdirTemp(
+		"",
+		"cpe-source-",
+	)
 	if err != nil {
-		return Checkout{}, fmt.Errorf("create source checkout: %w", err)
+		return Checkout{}, fmt.Errorf(
+			"create source checkout: %w",
+			err,
+		)
 	}
 	cleanup := sync.OnceValue(func() error { return os.RemoveAll(root) })
-	directory := filepath.Join(root, "repository")
-	command := exec.CommandContext(ctx, "git", "clone", "--quiet", "--", locator, directory)
+	directory := filepath.Join(
+		root,
+		"repository",
+	)
+	command := exec.CommandContext(
+		ctx,
+		"git",
+		"clone",
+		"--quiet",
+		"--",
+		locator,
+		directory,
+	)
 	configureGitCancellation(command)
 	command.WaitDelay = time.Second
 	// Do not hang waiting for interactive credentials; Git's configured credential
 	// helpers and SSH authentication still work for explicit user invocations.
-	command.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	command.Env = append(
+		os.Environ(),
+		"GIT_TERMINAL_PROMPT=0",
+	)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		if ctx.Err() != nil {
 			err = ctx.Err()
 		}
-		return Checkout{}, errors.Join(fmt.Errorf("clone source: %w: %s", err, terminalText(strings.TrimSpace(string(output)))), cleanup())
+		return Checkout{}, errors.Join(
+			fmt.Errorf(
+				"clone source: %w: %s",
+				err,
+				terminalText(strings.TrimSpace(string(output))),
+			),
+			cleanup(),
+		)
 	}
-	return Checkout{FS: os.DirFS(directory), Cleanup: cleanup}, nil
+	return Checkout{
+		FS:      os.DirFS(directory),
+		Cleanup: cleanup,
+	}, nil
 }
 
 func gitLocator(source string) (string, error) {
-	if !strings.Contains(source, "://") {
+	if !strings.Contains(
+		source,
+		"://",
+	) {
 		if !validGitHubShorthand(source) {
 			return "", errors.New("source must be a Git URL or GitHub owner/repository")
 		}
@@ -64,15 +97,27 @@ func gitLocator(source string) (string, error) {
 			return "", errors.New("source URL must not contain a password")
 		}
 	}
-	if strings.Contains(source, "#") || locator.RawQuery != "" || locator.ForceQuery {
+	if strings.Contains(
+		source,
+		"#",
+	) || locator.RawQuery != "" || locator.ForceQuery {
 		return "", errors.New("source URL must not contain a query or fragment")
 	}
-	for _, component := range []string{locator.Host, locator.Path} {
-		if strings.ContainsFunc(component, unicode.IsControl) {
+	for _, component := range []string{
+		locator.Host,
+		locator.Path,
+	} {
+		if strings.ContainsFunc(
+			component,
+			unicode.IsControl,
+		) {
 			return "", errors.New("source URL must not contain control characters")
 		}
 	}
-	if locator.User != nil && strings.ContainsFunc(locator.User.Username(), unicode.IsControl) {
+	if locator.User != nil && strings.ContainsFunc(
+		locator.User.Username(),
+		unicode.IsControl,
+	) {
 		return "", errors.New("source URL must not contain control characters")
 	}
 	switch locator.Scheme {
@@ -94,8 +139,17 @@ func gitLocator(source string) (string, error) {
 }
 
 func validGitHubShorthand(source string) bool {
-	owner, repository, ok := strings.Cut(source, "/")
-	if !ok || owner == "" || repository == "" || repository == "." || repository == ".." || strings.HasPrefix(owner, "-") || strings.HasSuffix(owner, "-") {
+	owner, repository, ok := strings.Cut(
+		source,
+		"/",
+	)
+	if !ok || owner == "" || repository == "" || repository == "." || repository == ".." || strings.HasPrefix(
+		owner,
+		"-",
+	) || strings.HasSuffix(
+		owner,
+		"-",
+	) {
 		return false
 	}
 	for _, character := range owner {

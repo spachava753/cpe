@@ -30,40 +30,75 @@ func parseManifest(data []byte) (string, []error, error) {
 		case "$schema", "name":
 		case "version", "description", "homepage", "repository", "license":
 			if _, err := jsonString(raw); err != nil {
-				return "", nil, fmt.Errorf("%s: %w", key, err)
+				return "", nil, fmt.Errorf(
+					"%s: %w",
+					key,
+					err,
+				)
 			}
 		case "keywords":
 			if _, err := jsonStrings(raw); err != nil {
-				return "", nil, fmt.Errorf("keywords: %w", err)
+				return "", nil, fmt.Errorf(
+					"keywords: %w",
+					err,
+				)
 			}
 		case "author":
 			author, err := jsonObject(raw)
 			if err != nil {
-				return "", nil, fmt.Errorf("author: %w", err)
+				return "", nil, fmt.Errorf(
+					"author: %w",
+					err,
+				)
 			}
 			for key, raw := range author {
 				if key != "name" && key != "email" && key != "url" {
-					return "", nil, fmt.Errorf("unknown author field %q", key)
+					return "", nil, fmt.Errorf(
+						"unknown author field %q",
+						key,
+					)
 				}
 				if _, err := jsonString(raw); err != nil {
-					return "", nil, fmt.Errorf("author.%s: %w", key, err)
+					return "", nil, fmt.Errorf(
+						"author.%s: %w",
+						key,
+						err,
+					)
 				}
 			}
 		case "extensions":
 			// We implement no extension namespace. Its contents are not
 			// validated, even when they violate the machine-readable schema.
-			if !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("{")) {
-				diagnostics = append(diagnostics, fmt.Errorf("non-object extensions ignored"))
+			if !bytes.HasPrefix(
+				bytes.TrimSpace(raw),
+				[]byte("{"),
+			) {
+				diagnostics = append(
+					diagnostics,
+					fmt.Errorf("non-object extensions ignored"),
+				)
 			}
 		default:
-			diagnostics = append(diagnostics, fmt.Errorf("unknown manifest field %q ignored", key))
+			diagnostics = append(
+				diagnostics,
+				fmt.Errorf(
+					"unknown manifest field %q ignored",
+					key,
+				),
+			)
 		}
 	}
 	return name, diagnostics, nil
 }
 
 func validPluginName(name string) bool {
-	if len(name) < 1 || len(name) > 64 || strings.Contains(name, "--") || strings.Contains(name, "..") {
+	if len(name) < 1 || len(name) > 64 || strings.Contains(
+		name,
+		"--",
+	) || strings.Contains(
+		name,
+		"..",
+	) {
 		return false
 	}
 	alphanumeric := func(c byte) bool { return c >= 'a' && c <= 'z' || c >= '0' && c <= '9' }

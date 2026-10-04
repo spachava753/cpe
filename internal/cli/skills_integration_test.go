@@ -21,113 +21,333 @@ func TestSkillsLifecycle(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git unavailable")
 	}
-	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-	t.Setenv("GIT_CONFIG_GLOBAL", os.DevNull)
+	t.Setenv(
+		"GIT_CONFIG_NOSYSTEM",
+		"1",
+	)
+	t.Setenv(
+		"GIT_CONFIG_GLOBAL",
+		os.DevNull,
+	)
 	repository := t.TempDir()
 	definition := "---\nname: alpha\ndescription: Alpha version one\n---\nInstructions\n"
-	if err := os.MkdirAll(filepath.Join(repository, "alpha"), 0o700); err != nil {
+	if err := os.MkdirAll(
+		filepath.Join(
+			repository,
+			"alpha",
+		),
+		0o700,
+	); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repository, "alpha", "SKILL.md"), []byte(definition), 0o600); err != nil {
+	if err := os.WriteFile(
+		filepath.Join(
+			repository,
+			"alpha",
+			"SKILL.md",
+		),
+		[]byte(definition),
+		0o600,
+	); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(repository, "alpha", "run.sh"), []byte("echo alpha\n"), 0o755); err != nil {
+	if err := os.WriteFile(
+		filepath.Join(
+			repository,
+			"alpha",
+			"run.sh",
+		),
+		[]byte("echo alpha\n"),
+		0o755,
+	); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{{"init", "--quiet", repository}, {"-C", repository, "add", "."}, {"-C", repository, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--quiet", "-m", "fixture"}} {
-		if output, err := exec.CommandContext(t.Context(), "git", args...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v, %s", args, err, output)
+	for _, args := range [][]string{
+		{
+			"init",
+			"--quiet",
+			repository,
+		},
+		{
+			"-C",
+			repository,
+			"add",
+			".",
+		},
+		{
+			"-C",
+			repository,
+			"-c",
+			"user.name=Test",
+			"-c",
+			"user.email=test@example.com",
+			"commit",
+			"--quiet",
+			"-m",
+			"fixture",
+		},
+	} {
+		if output, err := exec.CommandContext(
+			t.Context(),
+			"git",
+			args...,
+		).CombinedOutput(); err != nil {
+			t.Fatalf(
+				"git %v: %v, %s",
+				args,
+				err,
+				output,
+			)
 		}
 	}
-	source := (&url.URL{Scheme: "file", Path: filepath.ToSlash(repository)}).String()
+	source := (&url.URL{
+		Scheme: "file",
+		Path:   filepath.ToSlash(repository),
+	}).String()
 	destinations := afero.NewMemMapFs()
-	manager := skills.NewManager(skills.GitSourceClient{}, destinations)
-	t.Run("install", func(t *testing.T) {
-		var output bytes.Buffer
-		command := Root("test", manager)
-		command.SetArgs([]string{"skills", "install", source, "--scope", "project", "--dir", "/skills", "--skill", "alpha"})
-		command.SetOut(&output)
-		command.SetErr(&output)
-		if err := command.ExecuteContext(t.Context()); err != nil {
-			t.Fatal(err)
-		}
-		data, err := afero.ReadFile(destinations, "/skills/alpha/SKILL.md")
-		if err != nil || string(data) != definition {
-			t.Fatalf("installed definition = %q, %v", data, err)
-		}
-		info, err := destinations.Stat("/skills/alpha/run.sh")
-		if err != nil || info.Mode().Perm() != 0o755 {
-			t.Fatalf("executable support file = %v, %v", info, err)
-		}
-		data, err = afero.ReadFile(destinations, "/skills/skills.json")
-		if err != nil {
-			t.Fatal(err)
-		}
-		var records struct {
-			Version int                           `json:"version"`
-			Skills  map[string]skills.SkillSource `json:"skills"`
-		}
-		if err := json.Unmarshal(data, &records); err != nil {
-			t.Fatal(err)
-		}
-		if records.Version != 1 || records.Skills["alpha"] != (skills.SkillSource{Location: source, Directory: "alpha"}) {
-			t.Fatalf("bookkeeping = %#v", records)
-		}
-	})
-	t.Run("list", func(t *testing.T) {
-		var output bytes.Buffer
-		command := Root("test", manager)
-		command.SetArgs([]string{"skills", "list", "--dir", "/skills"})
-		command.SetOut(&output)
-		if err := command.ExecuteContext(t.Context()); err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(output.String(), "alpha") || !strings.Contains(output.String(), "Alpha version one") {
-			t.Errorf("inventory = %q", &output)
-		}
-	})
-	t.Run("update", func(t *testing.T) {
-		definition = strings.ReplaceAll(definition, "version one", "version two")
-		if err := os.WriteFile(filepath.Join(repository, "alpha", "SKILL.md"), []byte(definition), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Remove(filepath.Join(repository, "alpha", "run.sh")); err != nil {
-			t.Fatal(err)
-		}
-		for _, args := range [][]string{{"-C", repository, "add", "."}, {"-C", repository, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--quiet", "-m", "update"}} {
-			if output, err := exec.CommandContext(t.Context(), "git", args...).CombinedOutput(); err != nil {
-				t.Fatalf("git %v: %v, %s", args, err, output)
+	manager := skills.NewManager(
+		skills.GitSourceClient{},
+		destinations,
+	)
+	t.Run(
+		"install",
+		func(t *testing.T) {
+			var output bytes.Buffer
+			command := Root(
+				"test",
+				manager,
+			)
+			command.SetArgs([]string{
+				"skills",
+				"install",
+				source,
+				"--scope",
+				"project",
+				"--dir",
+				"/skills",
+				"--skill",
+				"alpha",
+			})
+			command.SetOut(&output)
+			command.SetErr(&output)
+			if err := command.ExecuteContext(t.Context()); err != nil {
+				t.Fatal(err)
 			}
-		}
-		var output bytes.Buffer
-		command := Root("test", manager)
-		command.SetArgs([]string{"skills", "update", "alpha", "--dir", "/skills"})
-		command.SetOut(&output)
-		if err := command.ExecuteContext(t.Context()); err != nil {
-			t.Fatal(err)
-		}
-		data, err := afero.ReadFile(destinations, "/skills/alpha/SKILL.md")
-		if err != nil || string(data) != definition {
-			t.Fatalf("updated definition = %q, %v", data, err)
-		}
-		if _, err := destinations.Stat("/skills/alpha/run.sh"); !errors.Is(err, fs.ErrNotExist) {
-			t.Fatal("obsolete supporting file remains")
-		}
-	})
-	t.Run("remove", func(t *testing.T) {
-		var output bytes.Buffer
-		command := Root("test", manager)
-		command.SetArgs([]string{"skills", "remove", "alpha", "--dir", "/skills"})
-		command.SetOut(&output)
-		if err := command.ExecuteContext(t.Context()); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := destinations.Stat("/skills/alpha"); !errors.Is(err, fs.ErrNotExist) {
-			t.Errorf("bundle remains: %v", err)
-		}
-		data, err := afero.ReadFile(destinations, "/skills/skills.json")
-		if err != nil || strings.Contains(string(data), "alpha") {
-			t.Errorf("removed provenance remains: %q, %v", data, err)
-		}
-	})
+			data, err := afero.ReadFile(
+				destinations,
+				"/skills/alpha/SKILL.md",
+			)
+			if err != nil || string(data) != definition {
+				t.Fatalf(
+					"installed definition = %q, %v",
+					data,
+					err,
+				)
+			}
+			info, err := destinations.Stat("/skills/alpha/run.sh")
+			if err != nil || info.Mode().Perm() != 0o755 {
+				t.Fatalf(
+					"executable support file = %v, %v",
+					info,
+					err,
+				)
+			}
+			data, err = afero.ReadFile(
+				destinations,
+				"/skills/skills.json",
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var records struct {
+				Version int                           `json:"version"`
+				Skills  map[string]skills.SkillSource `json:"skills"`
+			}
+			if err := json.Unmarshal(
+				data,
+				&records,
+			); err != nil {
+				t.Fatal(err)
+			}
+			if records.Version != 1 || records.Skills["alpha"] != (skills.SkillSource{
+				Location:  source,
+				Directory: "alpha",
+			}) {
+				t.Fatalf(
+					"bookkeeping = %#v",
+					records,
+				)
+			}
+		},
+	)
+	t.Run(
+		"list",
+		func(t *testing.T) {
+			var output bytes.Buffer
+			command := Root(
+				"test",
+				manager,
+			)
+			command.SetArgs([]string{
+				"skills",
+				"list",
+				"--dir",
+				"/skills",
+			})
+			command.SetOut(&output)
+			if err := command.ExecuteContext(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(
+				output.String(),
+				"alpha",
+			) || !strings.Contains(
+				output.String(),
+				"Alpha version one",
+			) {
+				t.Errorf(
+					"inventory = %q",
+					&output,
+				)
+			}
+		},
+	)
+	t.Run(
+		"update",
+		func(t *testing.T) {
+			definition = strings.ReplaceAll(
+				definition,
+				"version one",
+				"version two",
+			)
+			if err := os.WriteFile(
+				filepath.Join(
+					repository,
+					"alpha",
+					"SKILL.md",
+				),
+				[]byte(definition),
+				0o600,
+			); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Remove(filepath.Join(
+				repository,
+				"alpha",
+				"run.sh",
+			)); err != nil {
+				t.Fatal(err)
+			}
+			for _, args := range [][]string{
+				{
+					"-C",
+					repository,
+					"add",
+					".",
+				},
+				{
+					"-C",
+					repository,
+					"-c",
+					"user.name=Test",
+					"-c",
+					"user.email=test@example.com",
+					"commit",
+					"--quiet",
+					"-m",
+					"update",
+				},
+			} {
+				if output, err := exec.CommandContext(
+					t.Context(),
+					"git",
+					args...,
+				).CombinedOutput(); err != nil {
+					t.Fatalf(
+						"git %v: %v, %s",
+						args,
+						err,
+						output,
+					)
+				}
+			}
+			var output bytes.Buffer
+			command := Root(
+				"test",
+				manager,
+			)
+			command.SetArgs([]string{
+				"skills",
+				"update",
+				"alpha",
+				"--dir",
+				"/skills",
+			})
+			command.SetOut(&output)
+			if err := command.ExecuteContext(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			data, err := afero.ReadFile(
+				destinations,
+				"/skills/alpha/SKILL.md",
+			)
+			if err != nil || string(data) != definition {
+				t.Fatalf(
+					"updated definition = %q, %v",
+					data,
+					err,
+				)
+			}
+			if _, err := destinations.Stat("/skills/alpha/run.sh"); !errors.Is(
+				err,
+				fs.ErrNotExist,
+			) {
+				t.Fatal("obsolete supporting file remains")
+			}
+		},
+	)
+	t.Run(
+		"remove",
+		func(t *testing.T) {
+			var output bytes.Buffer
+			command := Root(
+				"test",
+				manager,
+			)
+			command.SetArgs([]string{
+				"skills",
+				"remove",
+				"alpha",
+				"--dir",
+				"/skills",
+			})
+			command.SetOut(&output)
+			if err := command.ExecuteContext(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := destinations.Stat("/skills/alpha"); !errors.Is(
+				err,
+				fs.ErrNotExist,
+			) {
+				t.Errorf(
+					"bundle remains: %v",
+					err,
+				)
+			}
+			data, err := afero.ReadFile(
+				destinations,
+				"/skills/skills.json",
+			)
+			if err != nil || strings.Contains(
+				string(data),
+				"alpha",
+			) {
+				t.Errorf(
+					"removed provenance remains: %q, %v",
+					data,
+					err,
+				)
+			}
+		},
+	)
 }

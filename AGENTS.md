@@ -24,6 +24,17 @@ README.md     User workflows and verification instructions
 - Keep changes scoped and simple; avoid speculative abstractions and performance work unless
   a demonstrated need or the task calls for it.
 
+## Go formatting
+
+- Write nonempty composite literals across multiple lines, with one field or
+  element per line and no fields or elements on the opening or closing brace
+  lines. This includes structs, maps, slices, arrays, and nested test-table entries.
+- Write function and method calls with two or more arguments across multiple
+  lines, with one argument per line and the closing parenthesis on its own line.
+  This includes builtins and variadic calls.
+- Empty literals and zero/one-argument calls may stay compact. Apply these rules
+  recursively to nested literals and calls, and run `gofmt` after wrapping.
+
 ## Tests
 
 - Prefer table-driven unit tests with named `t.Run` cases. For the same function

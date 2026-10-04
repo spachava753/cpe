@@ -51,51 +51,107 @@ type Plugin struct {
 func Load(root fs.ReadDirFS) ([]Plugin, error) {
 	entries, err := root.ReadDir(".")
 	if err != nil {
-		return nil, fmt.Errorf("read plugins directory: %w", err)
+		return nil, fmt.Errorf(
+			"read plugins directory: %w",
+			err,
+		)
 	}
 	var loaded []Plugin
 	for _, entry := range entries {
 		if entry.Type()&fs.ModeSymlink != 0 {
-			return nil, fmt.Errorf("plugin root %q must not be a symbolic link", entry.Name())
+			return nil, fmt.Errorf(
+				"plugin root %q must not be a symbolic link",
+				entry.Name(),
+			)
 		}
 		if !entry.IsDir() {
 			continue
 		}
-		pkg := packageFS{root: root, directory: entry.Name()}
+		pkg := packageFS{
+			root:      root,
+			directory: entry.Name(),
+		}
 		info, err := pkg.Stat("plugin.json")
 		if err != nil {
-			return nil, fmt.Errorf("%s/plugin.json: %w", entry.Name(), err)
+			return nil, fmt.Errorf(
+				"%s/plugin.json: %w",
+				entry.Name(),
+				err,
+			)
 		}
 		if !info.Mode().IsRegular() {
-			return nil, fmt.Errorf("%s/plugin.json must resolve to a regular file", entry.Name())
+			return nil, fmt.Errorf(
+				"%s/plugin.json must resolve to a regular file",
+				entry.Name(),
+			)
 		}
-		data, err := fs.ReadFile(pkg, "plugin.json")
+		data, err := fs.ReadFile(
+			pkg,
+			"plugin.json",
+		)
 		if err != nil {
-			return nil, fmt.Errorf("%s/plugin.json: %w", entry.Name(), err)
+			return nil, fmt.Errorf(
+				"%s/plugin.json: %w",
+				entry.Name(),
+				err,
+			)
 		}
 		name, diagnostics, err := parseManifest(data)
 		if err != nil {
-			return nil, fmt.Errorf("%s/plugin.json: %w", entry.Name(), err)
+			return nil, fmt.Errorf(
+				"%s/plugin.json: %w",
+				entry.Name(),
+				err,
+			)
 		}
-		plugin := Plugin{Name: name, Path: entry.Name()}
+		plugin := Plugin{
+			Name: name,
+			Path: entry.Name(),
+		}
 		for _, diagnostic := range diagnostics {
-			plugin.Diagnostics = append(plugin.Diagnostics, fmt.Errorf("%s/plugin.json: %w", entry.Name(), diagnostic))
+			plugin.Diagnostics = append(
+				plugin.Diagnostics,
+				fmt.Errorf(
+					"%s/plugin.json: %w",
+					entry.Name(),
+					diagnostic,
+				),
+			)
 		}
 		locations, err := pkg.ReadDir(".")
 		if err != nil {
-			plugin.Diagnostics = append(plugin.Diagnostics, fmt.Errorf("%s: %w", entry.Name(), err))
-			loaded = append(loaded, plugin)
+			plugin.Diagnostics = append(
+				plugin.Diagnostics,
+				fmt.Errorf(
+					"%s: %w",
+					entry.Name(),
+					err,
+				),
+			)
+			loaded = append(
+				loaded,
+				plugin,
+			)
 			continue
 		}
 		for _, location := range locations {
 			switch location.Name() {
 			case "skills":
-				loadPluginSkills(pkg, &plugin)
+				loadPluginSkills(
+					pkg,
+					&plugin,
+				)
 			case "mcp.json":
-				loadPluginMCP(pkg, &plugin)
+				loadPluginMCP(
+					pkg,
+					&plugin,
+				)
 			}
 		}
-		loaded = append(loaded, plugin)
+		loaded = append(
+			loaded,
+			plugin,
+		)
 	}
 	return loaded, nil
 }
@@ -103,32 +159,71 @@ func Load(root fs.ReadDirFS) ([]Plugin, error) {
 func loadPluginSkills(pkg packageFS, plugin *Plugin) {
 	entries, err := pkg.ReadDir("skills")
 	if err != nil {
-		plugin.Diagnostics = append(plugin.Diagnostics, fmt.Errorf("%s/skills: %w", plugin.Path, err))
+		plugin.Diagnostics = append(
+			plugin.Diagnostics,
+			fmt.Errorf(
+				"%s/skills: %w",
+				plugin.Path,
+				err,
+			),
+		)
 		return
 	}
 	for _, entry := range entries {
 		if !entry.IsDir() && entry.Type()&fs.ModeSymlink == 0 {
 			continue
 		}
-		filename := path.Join("skills", entry.Name(), "SKILL.md")
+		filename := path.Join(
+			"skills",
+			entry.Name(),
+			"SKILL.md",
+		)
 		info, err := pkg.Stat(filename)
 		if err != nil {
-			if !errors.Is(err, fs.ErrNotExist) {
-				plugin.Diagnostics = append(plugin.Diagnostics, fmt.Errorf("%s/%s: %w", plugin.Path, filename, err))
+			if !errors.Is(
+				err,
+				fs.ErrNotExist,
+			) {
+				plugin.Diagnostics = append(
+					plugin.Diagnostics,
+					fmt.Errorf(
+						"%s/%s: %w",
+						plugin.Path,
+						filename,
+						err,
+					),
+				)
 			}
 			continue
 		}
 		if !info.Mode().IsRegular() {
 			continue
 		}
-		loaded, err := skills.Load(singleSkillFS{pkg: pkg, entry: entry})
+		loaded, err := skills.Load(singleSkillFS{
+			pkg:   pkg,
+			entry: entry,
+		})
 		if err != nil {
-			plugin.Diagnostics = append(plugin.Diagnostics, fmt.Errorf("%s/skills: %w", plugin.Path, err))
+			plugin.Diagnostics = append(
+				plugin.Diagnostics,
+				fmt.Errorf(
+					"%s/skills: %w",
+					plugin.Path,
+					err,
+				),
+			)
 			continue
 		}
 		for _, skill := range loaded {
-			skill.Path = path.Join(plugin.Path, "skills", skill.Path)
-			plugin.Skills = append(plugin.Skills, skill)
+			skill.Path = path.Join(
+				plugin.Path,
+				"skills",
+				skill.Path,
+			)
+			plugin.Skills = append(
+				plugin.Skills,
+				skill,
+			)
 		}
 	}
 }
@@ -136,25 +231,65 @@ func loadPluginSkills(pkg packageFS, plugin *Plugin) {
 func loadPluginMCP(pkg packageFS, plugin *Plugin) {
 	info, err := pkg.Stat("mcp.json")
 	if err != nil {
-		plugin.Diagnostics = append(plugin.Diagnostics, fmt.Errorf("%s/mcp.json: %w", plugin.Path, err))
+		plugin.Diagnostics = append(
+			plugin.Diagnostics,
+			fmt.Errorf(
+				"%s/mcp.json: %w",
+				plugin.Path,
+				err,
+			),
+		)
 		return
 	}
 	if !info.Mode().IsRegular() {
-		plugin.Diagnostics = append(plugin.Diagnostics, fmt.Errorf("%s/mcp.json must resolve to a regular file", plugin.Path))
+		plugin.Diagnostics = append(
+			plugin.Diagnostics,
+			fmt.Errorf(
+				"%s/mcp.json must resolve to a regular file",
+				plugin.Path,
+			),
+		)
 		return
 	}
-	data, err := fs.ReadFile(pkg, "mcp.json")
+	data, err := fs.ReadFile(
+		pkg,
+		"mcp.json",
+	)
 	if err != nil {
-		plugin.Diagnostics = append(plugin.Diagnostics, fmt.Errorf("%s/mcp.json: %w", plugin.Path, err))
+		plugin.Diagnostics = append(
+			plugin.Diagnostics,
+			fmt.Errorf(
+				"%s/mcp.json: %w",
+				plugin.Path,
+				err,
+			),
+		)
 		return
 	}
-	servers, diagnostics, err := parseMCP(data, pkg)
+	servers, diagnostics, err := parseMCP(
+		data,
+		pkg,
+	)
 	if err != nil {
-		plugin.Diagnostics = append(plugin.Diagnostics, fmt.Errorf("%s/mcp.json: %w", plugin.Path, err))
+		plugin.Diagnostics = append(
+			plugin.Diagnostics,
+			fmt.Errorf(
+				"%s/mcp.json: %w",
+				plugin.Path,
+				err,
+			),
+		)
 		return
 	}
 	plugin.MCPConfig = servers
 	for _, diagnostic := range diagnostics {
-		plugin.Diagnostics = append(plugin.Diagnostics, fmt.Errorf("%s/mcp.json: %w", plugin.Path, diagnostic))
+		plugin.Diagnostics = append(
+			plugin.Diagnostics,
+			fmt.Errorf(
+				"%s/mcp.json: %w",
+				plugin.Path,
+				diagnostic,
+			),
+		)
 	}
 }

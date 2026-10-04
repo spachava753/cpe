@@ -21,7 +21,10 @@ type Manager struct {
 // NewManager supplies acquisition and destination filesystem boundaries. A nil
 // source client is sufficient for installed listing and removal.
 func NewManager(sources SourceClient, destinations afero.Fs) *Manager {
-	return &Manager{sources: sources, destinations: destinations}
+	return &Manager{
+		sources:      sources,
+		destinations: destinations,
+	}
 }
 
 type DiscoveryOptions struct{ FullDepth bool }
@@ -62,22 +65,35 @@ type UpdateRequest struct {
 
 // ListSource returns source-relative Skill.Path values using io/fs conventions.
 func (m *Manager) ListSource(ctx context.Context, source string, opts DiscoveryOptions) (result []Skill, err error) {
-	checkout, err := m.acquire(ctx, source)
+	checkout, err := m.acquire(
+		ctx,
+		source,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
-		err = errors.Join(err, releaseCheckout(checkout))
+		err = errors.Join(
+			err,
+			releaseCheckout(checkout),
+		)
 		if err != nil {
 			result = nil
 		}
 	}()
-	return discover(ctx, checkout.FS, opts)
+	return discover(
+		ctx,
+		checkout.FS,
+		opts,
+	)
 }
 
 // Install copies selected bundles and records their original provenance.
 func (m *Manager) Install(ctx context.Context, request InstallRequest) (result []InstalledSkill, err error) {
-	if err := m.destination(ctx, request.Directory); err != nil {
+	if err := m.destination(
+		ctx,
+		request.Directory,
+	); err != nil {
 		return nil, err
 	}
 	names, err := selectedNames(request.Skills)
@@ -88,30 +104,46 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 	if err != nil {
 		return nil, err
 	}
-	checkout, err := m.acquire(ctx, request.Source)
+	checkout, err := m.acquire(
+		ctx,
+		request.Source,
+	)
 	if err != nil {
 		return nil, err
 	}
 	released := false
 	defer func() {
 		if !released {
-			err = errors.Join(err, releaseCheckout(checkout))
+			err = errors.Join(
+				err,
+				releaseCheckout(checkout),
+			)
 			if err != nil {
 				result = nil
 			}
 		}
 	}()
-	available, err := discover(ctx, checkout.FS, request.Discovery)
+	available, err := discover(
+		ctx,
+		checkout.FS,
+		request.Discovery,
+	)
 	if err != nil {
 		return nil, err
 	}
 	candidates := map[string][]Skill{}
 	for _, skill := range available {
-		candidates[skill.Name] = append(candidates[skill.Name], skill)
+		candidates[skill.Name] = append(
+			candidates[skill.Name],
+			skill,
+		)
 	}
 	if len(names) == 0 {
 		for name := range candidates {
-			names = append(names, name)
+			names = append(
+				names,
+				name,
+			)
 		}
 	}
 	sort.Strings(names)
@@ -119,62 +151,129 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 	for _, name := range names {
 		options := candidates[name]
 		if len(options) == 0 {
-			return nil, fmt.Errorf("skill %q not found: %w", name, fs.ErrNotExist)
+			return nil, fmt.Errorf(
+				"skill %q not found: %w",
+				name,
+				fs.ErrNotExist,
+			)
 		}
 		if len(options) > 1 {
-			return nil, fmt.Errorf("ambiguous skill name %q", name)
+			return nil, fmt.Errorf(
+				"ambiguous skill name %q",
+				name,
+			)
 		}
 		if _, ok := records.Skills[name]; ok {
-			return nil, fmt.Errorf("skill %q already has an installation record", name)
+			return nil, fmt.Errorf(
+				"skill %q already has an installation record",
+				name,
+			)
 		}
-		filename := filepath.Join(request.Directory, name)
+		filename := filepath.Join(
+			request.Directory,
+			name,
+		)
 		if _, statErr := m.pathInfo(filename); statErr == nil {
-			return nil, fmt.Errorf("destination %s already exists: %w", filename, fs.ErrExist)
-		} else if !errors.Is(statErr, fs.ErrNotExist) {
+			return nil, fmt.Errorf(
+				"destination %s already exists: %w",
+				filename,
+				fs.ErrExist,
+			)
+		} else if !errors.Is(
+			statErr,
+			fs.ErrNotExist,
+		) {
 			return nil, statErr
 		}
 		skill := options[0]
 		directory := sourceDirectory(skill)
-		payload, err := readPayload(ctx, checkout.FS, directory)
+		payload, err := readPayload(
+			ctx,
+			checkout.FS,
+			directory,
+		)
 		if err != nil {
 			return nil, err
 		}
-		source := SkillSource{Location: request.Source, Directory: directory}
+		source := SkillSource{
+			Location:  request.Source,
+			Directory: directory,
+		}
 		records.Skills[name] = source
-		changes = append(changes, bundleChange{name: name, payload: payload})
-		skill.Path = filepath.Join(filename, "SKILL.md")
-		result = append(result, InstalledSkill{Skill: skill, Directory: filename, Source: &source})
+		changes = append(
+			changes,
+			bundleChange{
+				name:    name,
+				payload: payload,
+			},
+		)
+		skill.Path = filepath.Join(
+			filename,
+			"SKILL.md",
+		)
+		result = append(
+			result,
+			InstalledSkill{
+				Skill:     skill,
+				Directory: filename,
+				Source:    &source,
+			},
+		)
 	}
 	released = true
 	if err := releaseCheckout(checkout); err != nil {
-		return nil, fmt.Errorf("release source: %w", err)
+		return nil, fmt.Errorf(
+			"release source: %w",
+			err,
+		)
 	}
-	if err := m.applyChanges(ctx, request.Directory, changes, records, true); err != nil {
+	if err := m.applyChanges(
+		ctx,
+		request.Directory,
+		changes,
+		records,
+		true,
+	); err != nil {
 		if _, committed := errors.AsType[*CommittedCleanupError](err); !committed {
 			result = nil
 		}
-		return result, fmt.Errorf("install skills: %w", err)
+		return result, fmt.Errorf(
+			"install skills: %w",
+			err,
+		)
 	}
 	return result, nil
 }
 
 // ListInstalled inspects one exact root, including manually copied skills.
 func (m *Manager) ListInstalled(ctx context.Context, directory string) ([]InstalledSkill, error) {
-	if err := m.destination(ctx, directory); err != nil {
+	if err := m.destination(
+		ctx,
+		directory,
+	); err != nil {
 		return nil, err
 	}
 	records, err := m.records(directory)
 	if err != nil {
 		return nil, err
 	}
-	entries, err := afero.ReadDir(m.destinations, directory)
-	if errors.Is(err, fs.ErrNotExist) {
+	entries, err := afero.ReadDir(
+		m.destinations,
+		directory,
+	)
+	if errors.Is(
+		err,
+		fs.ErrNotExist,
+	) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	filesystem := afero.NewIOFS(afero.NewBasePathFs(m.destinations, directory))
+	filesystem := afero.NewIOFS(afero.NewBasePathFs(
+		m.destinations,
+		directory,
+	))
 	var result []InstalledSkill
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
@@ -184,50 +283,97 @@ func (m *Manager) ListInstalled(ctx context.Context, directory string) ([]Instal
 			continue
 		}
 		name := entry.Name()
-		info, err := m.pathInfo(filepath.Join(directory, name))
+		info, err := m.pathInfo(filepath.Join(
+			directory,
+			name,
+		))
 		if err != nil {
 			return nil, err
 		}
 		if info.Mode()&fs.ModeSymlink != 0 {
-			return nil, fmt.Errorf("skill directory %q is a symlink", name)
+			return nil, fmt.Errorf(
+				"skill directory %q is a symlink",
+				name,
+			)
 		}
-		if _, err := m.pathInfo(filepath.Join(directory, name, "SKILL.md")); errors.Is(err, fs.ErrNotExist) {
+		if _, err := m.pathInfo(filepath.Join(
+			directory,
+			name,
+			"SKILL.md",
+		)); errors.Is(
+			err,
+			fs.ErrNotExist,
+		) {
 			continue
 		} else if err != nil {
 			return nil, err
 		}
-		skill, err := readDefinition(filesystem, name)
+		skill, err := readDefinition(
+			filesystem,
+			name,
+		)
 		if err != nil {
 			return nil, err
 		}
-		skill.Path = filepath.Join(directory, name, "SKILL.md")
-		installed := InstalledSkill{Skill: skill, Directory: filepath.Join(directory, name)}
+		skill.Path = filepath.Join(
+			directory,
+			name,
+			"SKILL.md",
+		)
+		installed := InstalledSkill{
+			Skill: skill,
+			Directory: filepath.Join(
+				directory,
+				name,
+			),
+		}
 		if source, ok := records.Skills[name]; ok {
 			installed.Source = &source
 		}
-		result = append(result, installed)
+		result = append(
+			result,
+			installed,
+		)
 	}
 	return result, nil
 }
 
 // Remove deletes named bundle directories and their records when present.
 func (m *Manager) Remove(ctx context.Context, request RemoveRequest) ([]string, error) {
-	plan, err := m.prepareRemoval(ctx, request)
+	plan, err := m.prepareRemoval(
+		ctx,
+		request,
+	)
 	if err != nil {
 		return nil, err
 	}
-	if err := m.applyChanges(ctx, request.Directory, plan.changes, plan.records, plan.writeRecords); err != nil {
+	if err := m.applyChanges(
+		ctx,
+		request.Directory,
+		plan.changes,
+		plan.records,
+		plan.writeRecords,
+	); err != nil {
 		if _, committed := errors.AsType[*CommittedCleanupError](err); committed {
-			return plan.paths, fmt.Errorf("remove skills: %w", err)
+			return plan.paths, fmt.Errorf(
+				"remove skills: %w",
+				err,
+			)
 		}
-		return nil, fmt.Errorf("remove skills: %w", err)
+		return nil, fmt.Errorf(
+			"remove skills: %w",
+			err,
+		)
 	}
 	return plan.paths, nil
 }
 
 // Update replaces only recorded bundles, leaving unmanaged files untouched.
 func (m *Manager) Update(ctx context.Context, request UpdateRequest) (result []InstalledSkill, err error) {
-	if err := m.destination(ctx, request.Directory); err != nil {
+	if err := m.destination(
+		ctx,
+		request.Directory,
+	); err != nil {
 		return nil, err
 	}
 	records, err := m.records(request.Directory)
@@ -240,50 +386,108 @@ func (m *Manager) Update(ctx context.Context, request UpdateRequest) (result []I
 	}
 	if len(names) == 0 {
 		for name := range records.Skills {
-			names = append(names, name)
+			names = append(
+				names,
+				name,
+			)
 		}
 	}
 	sort.Strings(names)
 	for _, name := range names {
 		if _, ok := records.Skills[name]; !ok {
-			return nil, fmt.Errorf("skill %q is not managed", name)
+			return nil, fmt.Errorf(
+				"skill %q is not managed",
+				name,
+			)
 		}
 	}
 	var changes []bundleChange
 	for _, name := range names {
-		filename := filepath.Join(request.Directory, name)
+		filename := filepath.Join(
+			request.Directory,
+			name,
+		)
 		info, statErr := m.pathInfo(filename)
-		if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
+		if statErr != nil && !errors.Is(
+			statErr,
+			fs.ErrNotExist,
+		) {
 			return nil, statErr
 		}
 		if statErr == nil && (!info.IsDir() || info.Mode()&fs.ModeSymlink != 0) {
-			return nil, fmt.Errorf("%s is not a skill directory", filename)
+			return nil, fmt.Errorf(
+				"%s is not a skill directory",
+				filename,
+			)
 		}
 		source := records.Skills[name]
-		checkout, err := m.acquire(ctx, source.Location)
+		checkout, err := m.acquire(
+			ctx,
+			source.Location,
+		)
 		if err != nil {
 			return nil, err
 		}
-		skill, readErr := readDefinition(checkout.FS, source.Directory)
+		skill, readErr := readDefinition(
+			checkout.FS,
+			source.Directory,
+		)
 		var payload []payloadEntry
 		if readErr == nil && skill.Name != name {
-			readErr = fmt.Errorf("source name %q no longer matches installed name %q", skill.Name, name)
+			readErr = fmt.Errorf(
+				"source name %q no longer matches installed name %q",
+				skill.Name,
+				name,
+			)
 		}
 		if readErr == nil {
-			payload, readErr = readPayload(ctx, checkout.FS, source.Directory)
+			payload, readErr = readPayload(
+				ctx,
+				checkout.FS,
+				source.Directory,
+			)
 		}
-		if err := errors.Join(readErr, releaseCheckout(checkout)); err != nil {
+		if err := errors.Join(
+			readErr,
+			releaseCheckout(checkout),
+		); err != nil {
 			return nil, err
 		}
-		changes = append(changes, bundleChange{name: name, payload: payload, action: replaceBundle})
-		skill.Path = filepath.Join(filename, "SKILL.md")
-		result = append(result, InstalledSkill{Skill: skill, Directory: filename, Source: &source})
+		changes = append(
+			changes,
+			bundleChange{
+				name:    name,
+				payload: payload,
+				action:  replaceBundle,
+			},
+		)
+		skill.Path = filepath.Join(
+			filename,
+			"SKILL.md",
+		)
+		result = append(
+			result,
+			InstalledSkill{
+				Skill:     skill,
+				Directory: filename,
+				Source:    &source,
+			},
+		)
 	}
-	if err := m.applyChanges(ctx, request.Directory, changes, records, true); err != nil {
+	if err := m.applyChanges(
+		ctx,
+		request.Directory,
+		changes,
+		records,
+		true,
+	); err != nil {
 		if _, committed := errors.AsType[*CommittedCleanupError](err); !committed {
 			result = nil
 		}
-		return result, fmt.Errorf("update skills: %w", err)
+		return result, fmt.Errorf(
+			"update skills: %w",
+			err,
+		)
 	}
 	return result, nil
 }

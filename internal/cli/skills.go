@@ -58,12 +58,16 @@ func scopeOptsFromFlags(p *pflag.FlagSet) (skills.ScopeOptions, error) {
 }
 
 func skillsCmd(parent *cobra.Command, manager *skills.Manager) {
-	skillsCmdWithActions(parent, manager, skillActions{
-		install: skills.Install,
-		list:    skills.List,
-		update:  skills.Update,
-		remove:  skills.Remove,
-	})
+	skillsCmdWithActions(
+		parent,
+		manager,
+		skillActions{
+			install: skills.Install,
+			list:    skills.List,
+			update:  skills.Update,
+			remove:  skills.Remove,
+		},
+	)
 }
 
 func skillsCmdWithActions(parent *cobra.Command, manager *skills.Manager, actions skillActions) {
@@ -85,21 +89,48 @@ func skillsCmdWithActions(parent *cobra.Command, manager *skills.Manager, action
 		--dir cannot be combined with --scope global.
 		`),
 	}
-	c.PersistentFlags().String(scopeFlag, "", "Skill scope: project or global; required for install")
-	c.PersistentFlags().String(dirFlag, "", "Exact custom skill directory; selects only this directory (not with --scope global)")
+	c.PersistentFlags().String(
+		scopeFlag,
+		"",
+		"Skill scope: project or global; required for install",
+	)
+	c.PersistentFlags().String(
+		dirFlag,
+		"",
+		"Exact custom skill directory; selects only this directory (not with --scope global)",
+	)
 	parent.AddCommand(c)
-	skillsInstallCmd(c, manager, actions.install)
-	skillsListCmd(c, manager, actions.list)
-	skillsUpdateCmd(c, manager, actions.update)
-	skillsRemoveCmd(c, manager, actions.remove)
+	skillsInstallCmd(
+		c,
+		manager,
+		actions.install,
+	)
+	skillsListCmd(
+		c,
+		manager,
+		actions.list,
+	)
+	skillsUpdateCmd(
+		c,
+		manager,
+		actions.update,
+	)
+	skillsRemoveCmd(
+		c,
+		manager,
+		actions.remove,
+	)
 }
 
 func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.InstallOptions, skills.IO) error) {
 	c := &cobra.Command{
-		Use:     "install SOURCE",
-		Aliases: []string{"i", "add"},
-		Short:   "Install agent skills",
-		Args:    cobra.ExactArgs(1),
+		Use: "install SOURCE",
+		Aliases: []string{
+			"i",
+			"add",
+		},
+		Short: "Install agent skills",
+		Args:  cobra.ExactArgs(1),
 		Long: dedent.Dedent(`
 		Install agent skills from a Git source. GitHub repositories accept the
 		<owner>/<repo> shorthand; other Git sources require a full URL.
@@ -113,18 +144,31 @@ func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(c
 		Search up to five directory levels by default. --full-depth removes
 		that depth limit.
 		`),
-		Example: dedent.Dedent(fmt.Sprintf(`
+		Example: dedent.Dedent(fmt.Sprintf(
+			`
         %[1]s install vercel-labs/find-skill --scope global
         %[1]s install https://github.enterprise.com/my-company/custom-skills --scope project
         %[1]s i mattpocock/skills --skill grill-with-docs --skill write-a-skill --scope project
         %[1]s i ggprompts/tfe --skill bubbletea --scope project
         %[1]s i shadcn-ui/ui --skill shadcn --scope project --dir ./custom/dir
-		`, parent.CommandPath())),
+		`,
+			parent.CommandPath(),
+		)),
 	}
 	var skillArgs []string
-	c.Flags().StringArrayVar(&skillArgs, "skill", nil, "Skill to install (can be specified multiple times)")
+	c.Flags().StringArrayVar(
+		&skillArgs,
+		"skill",
+		nil,
+		"Skill to install (can be specified multiple times)",
+	)
 	var fullDepth bool
-	c.Flags().BoolVar(&fullDepth, "full-depth", false, "Scan full depth of source for skills")
+	c.Flags().BoolVar(
+		&fullDepth,
+		"full-depth",
+		false,
+		"Scan full depth of source for skills",
+	)
 	c.RunE = func(cmd *cobra.Command, args []string) error {
 		so, err := scopeOptsFromFlags(cmd.Flags())
 		if err != nil {
@@ -155,9 +199,11 @@ func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(c
 
 func skillsListCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.ListOptions, skills.IO) error) {
 	c := &cobra.Command{
-		Use:     "list [SOURCE]",
-		Aliases: []string{"ls"},
-		Short:   "List agent skills",
+		Use: "list [SOURCE]",
+		Aliases: []string{
+			"ls",
+		},
+		Short: "List agent skills",
 		Long: dedent.Dedent(`
 		List installed skills, including skills not installed or managed by CPE.
 		With neither --scope nor --dir, list both global and project directories.
@@ -198,9 +244,12 @@ func skillsListCmd(parent *cobra.Command, manager *skills.Manager, run func(cont
 
 func skillsUpdateCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.UpdateOptions, skills.IO) error) {
 	c := &cobra.Command{
-		Use:     "update [SKILL...]",
-		Aliases: []string{"u", "upgrade"},
-		Short:   "Update installed agent skills",
+		Use: "update [SKILL...]",
+		Aliases: []string{
+			"u",
+			"upgrade",
+		},
+		Short: "Update installed agent skills",
 		Long: dedent.Dedent(`
 		Update installed skills recorded in skills.json. Unmanaged skills, such
 		as manually copied bundles or skills installed by another tool, are not
@@ -211,10 +260,13 @@ func skillsUpdateCmd(parent *cobra.Command, manager *skills.Manager, run func(co
 		--scope selects one scope. --dir selects only that exact custom directory,
 		including when --scope is omitted; global skills are not included.
 		`),
-		Example: dedent.Dedent(fmt.Sprintf(`
+		Example: dedent.Dedent(fmt.Sprintf(
+			`
         %[1]s update
         %[1]s u custom-enterprise-skill grill-me
-		`, parent.CommandPath())),
+		`,
+			parent.CommandPath(),
+		)),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			so, err := scopeOptsFromFlags(cmd.Flags())
 			if err != nil {
@@ -241,9 +293,11 @@ func skillsUpdateCmd(parent *cobra.Command, manager *skills.Manager, run func(co
 
 func skillsRemoveCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.RemoveOptions, skills.IO) error) {
 	c := &cobra.Command{
-		Use:     "remove SKILL...",
-		Aliases: []string{"rm"},
-		Short:   "Remove agent skills",
+		Use: "remove SKILL...",
+		Aliases: []string{
+			"rm",
+		},
+		Short: "Remove agent skills",
 		Long: dedent.Dedent(`
 		Remove named installed skills, including unmanaged, manually copied skills.
 		Delete their skills.json records when present; a record is not required

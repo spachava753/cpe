@@ -34,7 +34,10 @@ func jsonObject(data []byte) (map[string]json.RawMessage, error) {
 			return nil, fmt.Errorf("expected a string object key")
 		}
 		if _, exists := object[key]; exists {
-			return nil, fmt.Errorf("duplicate JSON key %q", key)
+			return nil, fmt.Errorf(
+				"duplicate JSON key %q",
+				key,
+			)
 		}
 		var value json.RawMessage
 		if err := decoder.Decode(&value); err != nil {
@@ -61,7 +64,10 @@ func jsonString(raw json.RawMessage) (string, error) {
 		return "", fmt.Errorf("expected a JSON string")
 	}
 	var value string
-	if err := json.Unmarshal(trimmed, &value); err != nil {
+	if err := json.Unmarshal(
+		trimmed,
+		&value,
+	); err != nil {
 		return "", err
 	}
 	return value, nil
@@ -73,16 +79,26 @@ func jsonStrings(raw json.RawMessage) ([]string, error) {
 		return nil, fmt.Errorf("expected an array of strings")
 	}
 	var items []json.RawMessage
-	if err := json.Unmarshal(trimmed, &items); err != nil {
+	if err := json.Unmarshal(
+		trimmed,
+		&items,
+	); err != nil {
 		return nil, err
 	}
-	values := make([]string, 0, len(items))
+	values := make(
+		[]string,
+		0,
+		len(items),
+	)
 	for _, item := range items {
 		value, err := jsonString(item)
 		if err != nil {
 			return nil, err
 		}
-		values = append(values, value)
+		values = append(
+			values,
+			value,
+		)
 	}
 	return values, nil
 }

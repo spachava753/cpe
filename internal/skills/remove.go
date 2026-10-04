@@ -15,8 +15,16 @@ type RemoveOptions struct {
 // It removes named installations, including unmanaged skills, deletes their
 // records when present, and writes results through streams.
 func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams IO) error {
-	if err := removeCommand(ctx, manager, opts, streams); err != nil {
-		return &commandError{action: "remove", cause: err}
+	if err := removeCommand(
+		ctx,
+		manager,
+		opts,
+		streams,
+	); err != nil {
+		return &commandError{
+			action: "remove",
+			cause:  err,
+		}
 	}
 	return nil
 }
