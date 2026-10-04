@@ -372,6 +372,17 @@ func TestManagerInstall(t *testing.T) {
 			},
 		},
 		{
+			name: "unknown frontmatter fields are preserved and load",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte("---\nname: alpha\ndescription: Alpha skill\nhomepage: https://browser-use.com\ncustom-map:\n  requires:\n    bins: [browser-use]\n---\n# Alpha\n"),
+				},
+			},
+			want: []string{
+				"alpha",
+			},
+		},
+		{
 			name: "BOM-prefixed installed skill loads",
 			files: fstest.MapFS{
 				"alpha/SKILL.md": {

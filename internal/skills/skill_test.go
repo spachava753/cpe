@@ -398,14 +398,6 @@ func TestLoadInvalidSkills(t *testing.T) {
 			value: "null",
 		},
 		{
-			name:  "unknown field",
-			field: "not-a-field",
-			value: "true",
-		},
-		{
-			name: "unknown aliased field",
-		},
-		{
 			name: "missing opening delimiter",
 		},
 		{
@@ -498,19 +490,6 @@ func TestLoadInvalidSkills(t *testing.T) {
 						content,
 						"\n---\n",
 						"\nlicense: &field \"license\"\n? *field\n: \"duplicate\"\n---\n",
-						1,
-					)
-				case "unknown aliased field":
-					content = strings.Replace(
-						content,
-						"description: "+strconv.Quote(description),
-						"description: &license "+strconv.Quote(description),
-						1,
-					)
-					content = strings.Replace(
-						content,
-						"\n---\n",
-						"\n? *license\n: hidden\n---\n",
 						1,
 					)
 				case "trailing YAML data":
@@ -657,6 +636,42 @@ func TestLoadFilesystem(t *testing.T) {
 				},
 				"README.md": {},
 			},
+		},
+		{
+			name: "ignores unknown string field",
+			files: fstest.MapFS{
+				"example/SKILL.md": {
+					Data: []byte("---\nname: example\ndescription: valid\nhomepage: https://browser-use.com\n---\n"),
+				},
+			},
+			wantCount:   1,
+			description: "valid",
+		},
+		{
+			name: "ignores unknown scalar and structured fields",
+			files: fstest.MapFS{
+				"example/SKILL.md": {
+					Data: []byte("---\nname: example\ndescription: valid\ncustom-flag: true\ncustom-number: 42\ncustom-null: null\ncustom-list: [Read, 1, false]\ncustom-map:\n  requires:\n    bins: [browser-use]\nmetadata:\n  author: someone\nallowed-tools: Read\n---\n"),
+				},
+			},
+			wantCount:   1,
+			description: "valid",
+			metadata: map[string]string{
+				"author": "someone",
+			},
+			tools: []string{
+				"Read",
+			},
+		},
+		{
+			name: "ignores unknown aliased field",
+			files: fstest.MapFS{
+				"example/SKILL.md": {
+					Data: []byte("---\nname: example\ndescription: &field homepage\n? *field\n: https://browser-use.com\n---\n"),
+				},
+			},
+			wantCount:   1,
+			description: "homepage",
 		},
 		{
 			name: "YAML aliases",

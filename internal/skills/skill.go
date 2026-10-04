@@ -58,6 +58,7 @@ func ProjectPath(cwd string) string {
 // Load reads SKILL.md from each immediate child directory of root, following
 // symlinked directories. Paths are relative to root. Every child directory must
 // contain a valid skill; other files and bundled resources are ignored.
+// Unknown frontmatter fields are ignored.
 // Load stops at the first error and returns no partial results.
 func Load(root fs.FS) ([]Skill, error) {
 	entries, err := fs.ReadDir(
@@ -150,7 +151,6 @@ func parseSkill(data []byte, filename string) (Skill, error) {
 		return Skill{}, err
 	}
 	decoder := yaml.NewDecoder(bytes.NewReader(frontmatter))
-	decoder.KnownFields(true)
 	var fields skillFrontmatter
 	if err := decoder.Decode(&fields); err != nil {
 		return Skill{}, fmt.Errorf(
