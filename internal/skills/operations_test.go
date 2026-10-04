@@ -327,6 +327,8 @@ func TestList(t *testing.T) {
 		json              bool
 		want              []string
 		unsafeDescription bool
+		nestedMetadata    bool
+		nonJSONMetadata   bool
 	}{
 		{
 			name: "both scopes by default",
@@ -385,6 +387,36 @@ func TestList(t *testing.T) {
 				"beta",
 			},
 		},
+		{
+			name:           "nested metadata text inventory",
+			nestedMetadata: true,
+			want: []string{
+				"alpha",
+				"beta",
+			},
+		},
+		{
+			name:           "nested metadata JSON inventory",
+			nestedMetadata: true,
+			json:           true,
+			want: []string{
+				"alpha",
+				"beta",
+			},
+		},
+		{
+			name:            "non-JSON metadata text inventory",
+			nonJSONMetadata: true,
+			want: []string{
+				"alpha",
+				"beta",
+			},
+		},
+		{
+			name:            "non-JSON metadata reports a JSON encoding error",
+			nonJSONMetadata: true,
+			json:            true,
+		},
 	} {
 		t.Run(
 			test.name,
@@ -398,6 +430,12 @@ func TestList(t *testing.T) {
 					t.Fatal(err)
 				}
 				definition := alphaSkill
+				if test.nestedMetadata {
+					definition = "---\nname: alpha\ndescription: Alpha skill\nhomepage: https://browser-use.com\nmetadata:\n  openclaw:\n    requires:\n      bins: [browser-use]\n    values: [42, true, null]\n---\n"
+				}
+				if test.nonJSONMetadata {
+					definition = "---\nname: alpha\ndescription: Alpha skill\nmetadata:\n  value: .nan\n---\n"
+				}
 				if test.unsafeDescription {
 					definition = strings.ReplaceAll(
 						alphaSkill,
@@ -470,6 +508,25 @@ func TestList(t *testing.T) {
 						Out: &output,
 					},
 				)
+				if test.nonJSONMetadata && test.json {
+					var unsupported *json.UnsupportedValueError
+					if !errors.As(
+						err,
+						&unsupported,
+					) {
+						t.Fatalf(
+							"error = %v, want unsupported JSON value",
+							err,
+						)
+					}
+					if output.Len() != 0 {
+						t.Fatalf(
+							"failed JSON encoding wrote partial output: %q",
+							&output,
+						)
+					}
+					return
+				}
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -511,6 +568,43 @@ func TestList(t *testing.T) {
 						"invalid JSON: %q",
 						&output,
 					)
+				}
+				if test.nestedMetadata && test.json {
+					var entries []skills.InstalledSkill
+					if err := json.Unmarshal(
+						output.Bytes(),
+						&entries,
+					); err != nil {
+						t.Fatal(err)
+					}
+					if len(entries) != 2 || entries[0].Skill.Name != "alpha" {
+						t.Fatalf(
+							"inventory = %#v",
+							entries,
+						)
+					}
+					if diff := cmp.Diff(
+						map[string]any{
+							"openclaw": map[string]any{
+								"requires": map[string]any{
+									"bins": []any{
+										"browser-use",
+									},
+								},
+								"values": []any{
+									float64(42),
+									true,
+									nil,
+								},
+							},
+						},
+						entries[0].Skill.Metadata,
+					); diff != "" {
+						t.Errorf(
+							"JSON metadata (-want +got):\n%s",
+							diff,
+						)
+					}
 				}
 			},
 		)

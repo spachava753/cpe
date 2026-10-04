@@ -375,7 +375,7 @@ func TestManagerInstall(t *testing.T) {
 			name: "unknown frontmatter fields are preserved and load",
 			files: fstest.MapFS{
 				"alpha/SKILL.md": {
-					Data: []byte("---\nname: alpha\ndescription: Alpha skill\nhomepage: https://browser-use.com\ncustom-map:\n  requires:\n    bins: [browser-use]\n---\n# Alpha\n"),
+					Data: []byte("---\nname: alpha\ndescription: Alpha skill\nhomepage: https://browser-use.com\nmetadata:\n  author: someone\n  openclaw:\n    requires:\n      bins: [browser-use]\n---\n# Alpha\n"),
 				},
 			},
 			want: []string{
@@ -955,6 +955,18 @@ func TestManagerListInstalled(t *testing.T) {
 				},
 			},
 			errText: "version",
+		},
+		{
+			name: "symlinked installed directory",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			link: "/skills/alpha",
+			want: []string{
+				"alpha",
+			},
 		},
 		{
 			name: "destination root symlink",

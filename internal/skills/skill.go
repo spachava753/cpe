@@ -25,8 +25,8 @@ type Skill struct {
 	License string
 	// Compatibility indicates environment requirements (intended product, system packages, network access, etc.). Max 500 characters
 	Compatibility string
-	// Metadata is arbitrary key-value mapping for additional metadata
-	Metadata map[string]string
+	// Metadata preserves client-specific attributes, including nested values.
+	Metadata map[string]any
 	// AllowedTools is an experimental field that is a space-separated string of tools that are pre-approved to run
 	AllowedTools []string
 	// InvocationDisabled reflects the disable-model-invocation boolean.
@@ -58,7 +58,7 @@ func ProjectPath(cwd string) string {
 // Load reads SKILL.md from each immediate child directory of root, following
 // symlinked directories. Paths are relative to root. Every child directory must
 // contain a valid skill; other files and bundled resources are ignored.
-// Unknown frontmatter fields are ignored.
+// Unknown frontmatter fields are ignored; client-specific metadata is preserved.
 // Load stops at the first error and returns no partial results.
 func Load(root fs.FS) ([]Skill, error) {
 	entries, err := fs.ReadDir(
@@ -252,11 +252,19 @@ func parseSkill(data []byte, filename string) (Skill, error) {
 		)
 	}
 	if fields.Metadata.Kind != 0 {
-		metadata, err := skillMetadata(&fields.Metadata)
-		if err != nil {
+		if err := uniqueMetadataKeys(
+			&fields.Metadata,
+			map[*yaml.Node]bool{},
+			true,
+		); err != nil {
 			return Skill{}, err
 		}
-		skill.Metadata = metadata
+		if err := fields.Metadata.Decode(&skill.Metadata); err != nil {
+			return Skill{}, fmt.Errorf(
+				"decode metadata: %w",
+				err,
+			)
+		}
 	}
 	skill.AllowedTools = strings.Fields(allowedTools)
 	if fields.InvocationDisabled.Kind != 0 {
@@ -343,43 +351,51 @@ func skillString(node *yaml.Node, field string, required bool, limit int) (strin
 	return node.Value, nil
 }
 
-func skillMetadata(node *yaml.Node) (map[string]string, error) {
+// yaml.Node.Decode checks literal duplicates but misses aliased mapping keys.
+// Visit each anchored node once, including nested metadata, before decoding.
+func uniqueMetadataKeys(node *yaml.Node, visited map[*yaml.Node]bool, root bool) error {
 	node = resolveSkillAlias(node)
-	if node.Kind != yaml.MappingNode {
-		return nil, fmt.Errorf("metadata must be a string-to-string mapping")
+	if visited[node] {
+		return nil
 	}
-	metadata := make(
-		map[string]string,
-		len(node.Content)/2,
-	)
-	for i := 0; i < len(node.Content); i += 2 {
-		key, err := skillString(
-			node.Content[i],
-			"metadata key",
-			false,
-			0,
-		)
-		if err != nil {
-			return nil, err
+	visited[node] = true
+	if node.Kind == yaml.MappingNode {
+		keys := map[any]bool{}
+		for i := 0; i < len(node.Content); i += 2 {
+			keyNode := resolveSkillAlias(node.Content[i])
+			if keyNode.Kind != yaml.ScalarNode {
+				return fmt.Errorf("metadata keys must be scalar values")
+			}
+			var key any
+			if root {
+				// The exported metadata map decodes root keys as strings.
+				var text string
+				if err := keyNode.Decode(&text); err != nil {
+					return err
+				}
+				key = text
+			} else if err := keyNode.Decode(&key); err != nil {
+				return err
+			}
+			if keys[key] {
+				return fmt.Errorf(
+					"duplicate metadata key %v",
+					key,
+				)
+			}
+			keys[key] = true
 		}
-		value, err := skillString(
-			node.Content[i+1],
-			"metadata value",
-			false,
-			0,
-		)
-		if err != nil {
-			return nil, err
-		}
-		if _, exists := metadata[key]; exists {
-			return nil, fmt.Errorf(
-				"duplicate metadata key %q",
-				key,
-			)
-		}
-		metadata[key] = value
 	}
-	return metadata, nil
+	for _, child := range node.Content {
+		if err := uniqueMetadataKeys(
+			child,
+			visited,
+			false,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func resolveSkillAlias(node *yaml.Node) *yaml.Node {

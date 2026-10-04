@@ -13,6 +13,8 @@ import (
 	"testing/fstest"
 	"unicode/utf8"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"gopkg.in/yaml.v3"
 	"pgregory.net/rapid"
 
@@ -152,7 +154,7 @@ func TestLoadValidSkills(t *testing.T) {
 						if actual.Name != expected.Name || actual.Description != expected.Description ||
 							actual.License != expected.License || actual.Compatibility != expected.Compatibility ||
 							actual.InvocationDisabled != expected.InvocationDisabled || actual.Path != expected.Path ||
-							!maps.Equal(
+							!cmp.Equal(
 								actual.Metadata,
 								expected.Metadata,
 							) || !slices.Equal(
@@ -341,36 +343,6 @@ func TestLoadInvalidSkills(t *testing.T) {
 			name:  "null license",
 			field: "license",
 			value: "null",
-		},
-		{
-			name:  "non-map metadata",
-			field: "metadata",
-			value: `"author"`,
-		},
-		{
-			name:  "null metadata",
-			field: "metadata",
-			value: "null",
-		},
-		{
-			name:  "non-string metadata key",
-			field: "metadata",
-			value: "\n  123: value",
-		},
-		{
-			name:  "non-string metadata value",
-			field: "metadata",
-			value: "\n  author: [someone]",
-		},
-		{
-			name:  "numeric metadata value",
-			field: "metadata",
-			value: "\n  version: 123",
-		},
-		{
-			name:  "null metadata value",
-			field: "metadata",
-			value: "\n  author: null",
 		},
 		{
 			name:  "duplicate metadata key",
@@ -591,7 +563,7 @@ func TestLoadFilesystem(t *testing.T) {
 		wantCause   error
 		unopened    string
 		description string
-		metadata    map[string]string
+		metadata    map[string]any
 		tools       []string
 	}{
 		{
@@ -656,7 +628,7 @@ func TestLoadFilesystem(t *testing.T) {
 			},
 			wantCount:   1,
 			description: "valid",
-			metadata: map[string]string{
+			metadata: map[string]any{
 				"author": "someone",
 			},
 			tools: []string{
@@ -674,6 +646,115 @@ func TestLoadFilesystem(t *testing.T) {
 			description: "homepage",
 		},
 		{
+			name: "preserves nested client metadata",
+			files: fstest.MapFS{
+				"example/SKILL.md": {
+					Data: []byte("---\nname: example\ndescription: valid\nhomepage: https://browser-use.com\nmetadata: {author: someone, openclaw: {requires: {bins: [browser-use]}, install: [{id: uv, kind: uv, package: browser-use, bins: [browser-use]}]}}\n---\n"),
+				},
+			},
+			wantCount:   1,
+			description: "valid",
+			metadata: map[string]any{
+				"author": "someone",
+				"openclaw": map[string]any{
+					"requires": map[string]any{
+						"bins": []any{
+							"browser-use",
+						},
+					},
+					"install": []any{
+						map[string]any{
+							"id":      "uv",
+							"kind":    "uv",
+							"package": "browser-use",
+							"bins": []any{
+								"browser-use",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "preserves non-string metadata entries",
+			files: fstest.MapFS{
+				"example/SKILL.md": {
+					Data: []byte("---\nname: example\ndescription: valid\nmetadata:\n  author: someone\n  123: value\n  version: 123\n  tags: [one, two]\n  flag: true\n  empty: null\n---\n"),
+				},
+			},
+			wantCount: 1,
+			metadata: map[string]any{
+				"author":  "someone",
+				"123":     "value",
+				"version": 123,
+				"tags": []any{
+					"one",
+					"two",
+				},
+				"flag":  true,
+				"empty": nil,
+			},
+		},
+		{
+			name: "numeric root metadata keys retain their spelling",
+			files: fstest.MapFS{
+				"example/SKILL.md": {
+					Data: []byte("---\nname: example\ndescription: valid\nmetadata:\n  1: original\n  01: separate\n---\n"),
+				},
+			},
+			wantCount: 1,
+			metadata: map[string]any{
+				"1":  "original",
+				"01": "separate",
+			},
+		},
+		{
+			name: "duplicate nested numeric metadata key",
+			files: fstest.MapFS{
+				"example/SKILL.md": {
+					Data: []byte("---\nname: example\ndescription: valid\nmetadata:\n  nested:\n    1: original\n    01: overwritten\n---\n"),
+				},
+			},
+			wantError: true,
+		},
+		{
+			name: "duplicate nested aliased numeric metadata key",
+			files: fstest.MapFS{
+				"example/SKILL.md": {
+					Data: []byte("---\nname: example\ndescription: valid\nmetadata:\n  nested:\n    1: &key 01\n    ? *key\n    : overwritten\n---\n"),
+				},
+			},
+			wantError: true,
+		},
+		{
+			name: "duplicate aliased metadata key",
+			files: fstest.MapFS{
+				"example/SKILL.md": {
+					Data: []byte("---\nname: example\ndescription: valid\nmetadata:\n  author: &key author\n  ? *key\n  : overwritten\n---\n"),
+				},
+			},
+			wantError: true,
+		},
+		{
+			name: "non-map metadata",
+			files: fstest.MapFS{
+				"example/SKILL.md": {
+					Data: []byte("---\nname: example\ndescription: valid\nmetadata: author\n---\n"),
+				},
+			},
+			wantError: true,
+		},
+		{
+			name: "null metadata is absent",
+			files: fstest.MapFS{
+				"example/SKILL.md": {
+					Data: []byte("---\nname: example\ndescription: valid\nmetadata: null\n---\n"),
+				},
+			},
+			wantCount: 1,
+			metadata:  map[string]any{},
+		},
+		{
 			name: "YAML aliases",
 			files: fstest.MapFS{
 				"example/SKILL.md": {
@@ -682,7 +763,7 @@ func TestLoadFilesystem(t *testing.T) {
 			},
 			wantCount:   1,
 			description: "example",
-			metadata: map[string]string{
+			metadata: map[string]any{
 				"original": "text",
 				"copy":     "text",
 			},
@@ -709,7 +790,7 @@ func TestLoadFilesystem(t *testing.T) {
 				},
 			},
 			wantCount: 1,
-			metadata:  map[string]string{},
+			metadata:  map[string]any{},
 			tools:     []string{},
 		},
 		{
@@ -834,15 +915,17 @@ func TestLoadFilesystem(t *testing.T) {
 						test.description,
 					)
 				}
-				if test.metadata != nil && !maps.Equal(
-					got[0].Metadata,
-					test.metadata,
-				) {
-					t.Fatalf(
-						"metadata = %#v, want %#v",
-						got[0].Metadata,
+				if test.metadata != nil {
+					if diff := cmp.Diff(
 						test.metadata,
-					)
+						got[0].Metadata,
+						cmpopts.EquateEmpty(),
+					); diff != "" {
+						t.Fatalf(
+							"metadata (-want +got):\n%s",
+							diff,
+						)
+					}
 				}
 				if test.tools != nil && !slices.Equal(
 					got[0].AllowedTools,
@@ -1013,7 +1096,10 @@ func skillGenerator() *rapid.Generator[skills.Skill] {
 					"version",
 					"cpe:key",
 				}),
-				textGenerator(32),
+				rapid.Map(
+					textGenerator(32),
+					func(value string) any { return value },
+				),
 				1,
 				3,
 			).Draw(
@@ -1078,14 +1164,7 @@ func encodeSkill(skill skills.Skill, style yaml.Style) (string, error) {
 		}
 	}
 	if skill.Metadata != nil {
-		metadata := make(
-			map[string]*yaml.Node,
-			len(skill.Metadata),
-		)
-		for key, value := range skill.Metadata {
-			metadata[key] = scalar(value)
-		}
-		fields["metadata"] = metadata
+		fields["metadata"] = skill.Metadata
 	}
 	// Exercise both omitted and explicit false, as well as true.
 	if skill.InvocationDisabled || style != yaml.DoubleQuotedStyle {

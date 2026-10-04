@@ -53,6 +53,37 @@ type managerLinkFS struct {
 }
 type managerLinkInfo struct{ fs.FileInfo }
 
+type managerLinkFile struct {
+	afero.File
+	links map[string]bool
+}
+
+func (file managerLinkFile) Readdir(count int) ([]fs.FileInfo, error) {
+	entries, err := file.File.Readdir(count)
+	for i, entry := range entries {
+		if file.links[filepath.Clean(filepath.Join(
+			file.Name(),
+			entry.Name(),
+		))] {
+			entries[i] = managerLinkInfo{
+				entry,
+			}
+		}
+	}
+	return entries, err
+}
+
+func (filesystem managerLinkFS) Open(name string) (afero.File, error) {
+	file, err := filesystem.Fs.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	return managerLinkFile{
+		File:  file,
+		links: filesystem.links,
+	}, nil
+}
+
 func (info managerLinkInfo) Mode() fs.FileMode { return fs.ModeSymlink | 0o777 }
 func (info managerLinkInfo) IsDir() bool       { return false }
 func (filesystem managerLinkFS) LstatIfPossible(name string) (fs.FileInfo, bool, error) {

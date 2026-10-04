@@ -81,6 +81,12 @@ func discover(ctx context.Context, filesystem fs.FS, opts DiscoveryOptions) ([]S
 				if child.Name() != "SKILL.md" {
 					continue
 				}
+				if err := ensureSourceDirectory(
+					filesystem,
+					directory,
+				); err != nil {
+					return err
+				}
 				skill, err := readDefinition(
 					filesystem,
 					directory,
@@ -106,13 +112,9 @@ func discover(ctx context.Context, filesystem fs.FS, opts DiscoveryOptions) ([]S
 	return result, nil
 }
 
+// Source callers reject directory symlinks before reading. Installed inventory
+// may follow user-owned directory links without acquiring or changing their data.
 func readDefinition(filesystem fs.FS, directory string) (Skill, error) {
-	if err := ensureSourceDirectory(
-		filesystem,
-		directory,
-	); err != nil {
-		return Skill{}, err
-	}
 	filename := path.Join(
 		directory,
 		"SKILL.md",

@@ -19,7 +19,8 @@ type ListOptions struct {
 
 // List is the high-level listing entry point for a command adapter. It can
 // list available source skills or installed skills, including unmanaged ones,
-// and write results through streams.
+// and write results through streams. JSON output returns an error for metadata
+// values JSON cannot represent, such as non-finite YAML numbers.
 func List(ctx context.Context, manager *Manager, opts ListOptions, streams IO) error {
 	if opts.Source != nil {
 		result, err := manager.ListSource(

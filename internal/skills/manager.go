@@ -245,7 +245,8 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 	return result, nil
 }
 
-// ListInstalled inspects one exact root, including manually copied skills.
+// ListInstalled inspects one exact root, including manually copied skills and
+// symlinked skill directories. Listing never mutates their targets.
 func (m *Manager) ListInstalled(ctx context.Context, directory string) ([]InstalledSkill, error) {
 	if err := m.destination(
 		ctx,
@@ -279,7 +280,7 @@ func (m *Manager) ListInstalled(ctx context.Context, directory string) ([]Instal
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if !entry.IsDir() {
+		if !entry.IsDir() && entry.Mode()&fs.ModeSymlink == 0 {
 			continue
 		}
 		name := entry.Name()
@@ -291,10 +292,16 @@ func (m *Manager) ListInstalled(ctx context.Context, directory string) ([]Instal
 			return nil, err
 		}
 		if info.Mode()&fs.ModeSymlink != 0 {
-			return nil, fmt.Errorf(
-				"skill directory %q is a symlink",
+			info, err = m.destinations.Stat(filepath.Join(
+				directory,
 				name,
-			)
+			))
+			if err != nil {
+				return nil, err
+			}
+		}
+		if !info.IsDir() {
+			continue
 		}
 		if _, err := m.pathInfo(filepath.Join(
 			directory,
@@ -428,10 +435,17 @@ func (m *Manager) Update(ctx context.Context, request UpdateRequest) (result []I
 		if err != nil {
 			return nil, err
 		}
-		skill, readErr := readDefinition(
+		readErr := ensureSourceDirectory(
 			checkout.FS,
 			source.Directory,
 		)
+		var skill Skill
+		if readErr == nil {
+			skill, readErr = readDefinition(
+				checkout.FS,
+				source.Directory,
+			)
+		}
 		var payload []payloadEntry
 		if readErr == nil && skill.Name != name {
 			readErr = fmt.Errorf(
