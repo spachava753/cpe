@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -20,15 +21,18 @@ import (
 func TestInstall(t *testing.T) {
 	outputErr := errors.New("output unavailable")
 	for _, test := range []struct {
-		name      string
-		scope     skills.ScopeOptions
-		source    string
-		names     []string
-		deep      bool
-		link      bool
-		json      bool
-		errText   string
-		outputErr error
+		name        string
+		scope       skills.ScopeOptions
+		source      string
+		names       []string
+		deep        bool
+		link        bool
+		json        bool
+		errText     string
+		outputErr   error
+		forceColor  bool
+		description string
+		wantText    []string
 	}{
 		{
 			name: "custom project directory",
@@ -64,6 +68,29 @@ func TestInstall(t *testing.T) {
 			},
 			source: managerSource,
 			deep:   true,
+		},
+		{
+			name: "colored install result",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source:     managerSource,
+			forceColor: true,
+		},
+		{
+			name: "install keeps readable descriptions and neutralizes terminal commands",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source:      managerSource,
+			forceColor:  true,
+			description: " \n\tAlpha skill says \"quoted\" in C:\\work.\nnext\tline\x1b[2J\x1b[H\a\r\b\x00. \n ",
+			wantText: []string{
+				"Alpha skill says \"quoted\" in C:\\work.",
+				"next    line.",
+			},
 		},
 		{
 			name: "JSON result",
@@ -150,6 +177,20 @@ func TestInstall(t *testing.T) {
 					"HOME",
 					"/test-home",
 				)
+				t.Setenv(
+					"CLICOLOR_FORCE",
+					"",
+				)
+				t.Setenv(
+					"NO_COLOR",
+					"",
+				)
+				if test.forceColor {
+					t.Setenv(
+						"CLICOLOR_FORCE",
+						"1",
+					)
+				}
 				destinations := newManagerFilesystem(
 					t,
 					"/",
@@ -169,9 +210,17 @@ func TestInstall(t *testing.T) {
 						},
 					}
 				}
+				definition := alphaSkill
+				if test.description != "" {
+					definition = strings.ReplaceAll(
+						alphaSkill,
+						"Alpha skill",
+						strconv.Quote(test.description),
+					)
+				}
 				files := fstest.MapFS{
 					"alpha/SKILL.md": {
-						Data: []byte(alphaSkill),
+						Data: []byte(definition),
 					},
 					"beta/SKILL.md": {
 						Data: []byte(betaSkill),
@@ -180,7 +229,7 @@ func TestInstall(t *testing.T) {
 				if test.deep {
 					files = fstest.MapFS{
 						"a/b/c/d/e/alpha/SKILL.md": {
-							Data: []byte(alphaSkill),
+							Data: []byte(definition),
 						},
 					}
 				}
@@ -266,7 +315,7 @@ func TestInstall(t *testing.T) {
 						"SKILL.md",
 					),
 				)
-				if readErr != nil || string(data) != alphaSkill {
+				if readErr != nil || string(data) != definition {
 					t.Errorf(
 						"installation at selected root = %q, %v",
 						data,
@@ -297,14 +346,65 @@ func TestInstall(t *testing.T) {
 							&output,
 						)
 					}
-				} else if !strings.Contains(
-					output.String(),
-					"alpha",
-				) {
-					t.Errorf(
-						"missing installed name in output: %q",
-						&output,
-					)
+				} else {
+					for _, text := range []string{
+						"Skill",
+						"Description",
+						"Location",
+						"alpha",
+						"Alpha skill",
+						filepath.Join(
+							root,
+							"alpha",
+						),
+					} {
+						if !strings.Contains(
+							output.String(),
+							text,
+						) {
+							t.Errorf(
+								"missing installed detail %q: %q",
+								text,
+								&output,
+							)
+						}
+					}
+					if strings.Contains(
+						output.String(),
+						"\x1b[",
+					) != test.forceColor {
+						t.Errorf(
+							"unexpected styling in installation output: %q",
+							&output,
+						)
+					}
+					for _, text := range test.wantText {
+						if !strings.Contains(
+							output.String(),
+							text,
+						) {
+							t.Errorf(
+								"missing readable install text %q: %q",
+								text,
+								&output,
+							)
+						}
+					}
+					if strings.ContainsAny(
+						output.String(),
+						"\a\r\b\x00",
+					) || strings.Contains(
+						output.String(),
+						"\x1b[2J",
+					) || strings.Contains(
+						output.String(),
+						"\x1b[H",
+					) {
+						t.Errorf(
+							"untrusted controls reached install output: %q",
+							&output,
+						)
+					}
 				}
 			},
 		)
@@ -327,8 +427,13 @@ func TestList(t *testing.T) {
 		json              bool
 		want              []string
 		unsafeDescription bool
+		description       string
+		wantText          []string
+		wantLineCount     int
 		nestedMetadata    bool
 		nonJSONMetadata   bool
+		forceColor        bool
+		noColor           bool
 	}{
 		{
 			name: "both scopes by default",
@@ -347,11 +452,24 @@ func TestList(t *testing.T) {
 			},
 		},
 		{
-			name:              "terminal controls escaped",
+			name:              "terminal controls removed",
 			unsafeDescription: true,
 			want: []string{
 				"alpha",
 				"beta",
+			},
+		},
+		{
+			name:          "quotes and inner whitespace remain readable",
+			wantLineCount: 5,
+			description:   " \n\t Mentions \"red-green-refactor\", or wants\n\tintegration tests in C:\\work. \n ",
+			want: []string{
+				"alpha",
+				"beta",
+			},
+			wantText: []string{
+				"\nalpha  Mentions \"red-green-refactor\", or wants",
+				"\n           integration tests in C:\\work.",
 			},
 		},
 		{
@@ -360,6 +478,44 @@ func TestList(t *testing.T) {
 				Global: true,
 			},
 			want: []string{
+				"beta",
+			},
+		},
+		{
+			name:              "colored inventory removes untrusted controls",
+			forceColor:        true,
+			unsafeDescription: true,
+			want: []string{
+				"alpha",
+				"beta",
+			},
+		},
+		{
+			name:        "terminal instructions and non-layout controls are removed",
+			description: " Alpha \x1b[2J\x1b[H\x1b[31mred\x1b[0m \x1b]8;;https://evil.invalid\x1b\\link\x1b]8;;\x1b\\ \x1b]52;c;ZXZpbA==\a safe\a\r\b\x00\v\f\x7f\u009bEND \n",
+			forceColor:  true,
+			want: []string{
+				"alpha",
+				"beta",
+			},
+			wantText: []string{
+				"Alpha red link  safeEND",
+			},
+		},
+		{
+			name:    "NO_COLOR inventory",
+			noColor: true,
+			want: []string{
+				"alpha",
+				"beta",
+			},
+		},
+		{
+			name:       "JSON is unstyled even when color is forced",
+			json:       true,
+			forceColor: true,
+			want: []string{
+				"alpha",
 				"beta",
 			},
 		},
@@ -380,11 +536,56 @@ func TestList(t *testing.T) {
 			},
 		},
 		{
+			name:          "source quotes and inner whitespace remain readable",
+			wantLineCount: 4,
+			source:        new(managerSource),
+			description:   " \n\t Mentions \"red-green-refactor\", or wants\n\tintegration tests in C:\\work. \n ",
+			want: []string{
+				"delta",
+			},
+			wantText: []string{
+				"\ndelta  Mentions \"red-green-refactor\", or wants",
+				"\n           integration tests in C:\\work.",
+			},
+		},
+		{
+			name:        "colored source strips terminal instructions",
+			source:      new(managerSource),
+			description: "Delta\x1b[2J\x1b[H\x1b]52;c;ZXZpbA==\a safe\r\b\x00\u009bEND",
+			forceColor:  true,
+			want: []string{
+				"delta",
+			},
+			wantText: []string{
+				"Delta safeEND",
+			},
+		},
+		{
 			name: "JSON inventory",
 			json: true,
 			want: []string{
 				"alpha",
 				"beta",
+			},
+		},
+		{
+			name:        "JSON preserves original description content",
+			json:        true,
+			description: " \tAlpha \"quoted\"\\path\n\tline.\x1b[2J\a\r \n",
+			forceColor:  true,
+			want: []string{
+				"alpha",
+				"beta",
+			},
+		},
+		{
+			name:        "source JSON preserves original description content",
+			source:      new(managerSource),
+			json:        true,
+			description: " \tDelta \"quoted\"\\path\n\tline.\x1b[2J\a\r \n",
+			forceColor:  true,
+			want: []string{
+				"delta",
 			},
 		},
 		{
@@ -429,6 +630,26 @@ func TestList(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				t.Setenv(
+					"CLICOLOR_FORCE",
+					"",
+				)
+				t.Setenv(
+					"NO_COLOR",
+					"",
+				)
+				if test.forceColor {
+					t.Setenv(
+						"CLICOLOR_FORCE",
+						"1",
+					)
+				}
+				if test.noColor {
+					t.Setenv(
+						"NO_COLOR",
+						"1",
+					)
+				}
 				definition := alphaSkill
 				if test.nestedMetadata {
 					definition = "---\nname: alpha\ndescription: Alpha skill\nhomepage: https://browser-use.com\nmetadata:\n  openclaw:\n    requires:\n      bins: [browser-use]\n    values: [42, true, null]\n---\n"
@@ -441,6 +662,13 @@ func TestList(t *testing.T) {
 						alphaSkill,
 						"Alpha skill",
 						`"Alpha\e]52;c;evil\a"`,
+					)
+				}
+				if test.description != "" {
+					definition = strings.ReplaceAll(
+						alphaSkill,
+						"Alpha skill",
+						strconv.Quote(test.description),
 					)
 				}
 				destinations := newManagerFilesystem(
@@ -485,11 +713,15 @@ func TestList(t *testing.T) {
 						}
 					}
 				}
+				sourceDefinition := "---\nname: delta\ndescription: \"Delta\\e]52;c;evil\\a\"\n---\n"
+				if test.description != "" {
+					sourceDefinition = "---\nname: delta\ndescription: " + strconv.Quote(test.description) + "\n---\n"
+				}
 				manager := skills.NewManager(
 					managerSourceClient{
 						files: fstest.MapFS{
 							"delta/SKILL.md": {
-								Data: []byte("---\nname: delta\ndescription: \"Delta\\e]52;c;evil\\a\"\n---\n"),
+								Data: []byte(sourceDefinition),
 							},
 						},
 					},
@@ -530,14 +762,45 @@ func TestList(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				colored := test.forceColor && !test.json && !test.noColor
+				if strings.Contains(
+					output.String(),
+					"\x1b[",
+				) != colored {
+					t.Errorf(
+						"ANSI styling presence differs from color request: %q",
+						&output,
+					)
+				}
 				if strings.ContainsAny(
 					output.String(),
-					"\x1b\x07\r",
+					"\x07\r",
+				) || strings.Contains(
+					output.String(),
+					"\x1b]",
 				) {
 					t.Errorf(
 						"untrusted controls reached terminal: %q",
 						&output,
 					)
+				}
+				if !test.json {
+					for _, header := range []string{
+						"Skill",
+						"Description",
+						"Location",
+					} {
+						if !strings.Contains(
+							output.String(),
+							header,
+						) {
+							t.Errorf(
+								"missing inventory column %q: %q",
+								header,
+								&output,
+							)
+						}
+					}
 				}
 				for _, name := range []string{
 					"alpha",
@@ -563,11 +826,77 @@ func TestList(t *testing.T) {
 						)
 					}
 				}
+				for _, text := range test.wantText {
+					if !strings.Contains(
+						output.String(),
+						text,
+					) {
+						t.Errorf(
+							"missing readable text %q: %q",
+							text,
+							&output,
+						)
+					}
+				}
 				if test.json && !json.Valid(output.Bytes()) {
 					t.Errorf(
 						"invalid JSON: %q",
 						&output,
 					)
+				}
+				if test.wantLineCount > 0 {
+					if lines := strings.Split(
+						output.String(),
+						"\n",
+					); len(lines) != test.wantLineCount {
+						t.Errorf(
+							"listing has %d lines, want %d without outer description whitespace: %q",
+							len(lines),
+							test.wantLineCount,
+							&output,
+						)
+					}
+				}
+				if test.description != "" && test.json {
+					var description string
+					if test.source != nil {
+						var entries []skills.Skill
+						if err := json.Unmarshal(
+							output.Bytes(),
+							&entries,
+						); err != nil {
+							t.Fatal(err)
+						}
+						if len(entries) != 1 {
+							t.Fatalf(
+								"source inventory = %#v",
+								entries,
+							)
+						}
+						description = entries[0].Description
+					} else {
+						var entries []skills.InstalledSkill
+						if err := json.Unmarshal(
+							output.Bytes(),
+							&entries,
+						); err != nil {
+							t.Fatal(err)
+						}
+						if len(entries) != 2 {
+							t.Fatalf(
+								"installed inventory = %#v",
+								entries,
+							)
+						}
+						description = entries[0].Skill.Description
+					}
+					if description != test.description {
+						t.Errorf(
+							"JSON description = %q, want unchanged %q",
+							description,
+							test.description,
+						)
+					}
 				}
 				if test.nestedMetadata && test.json {
 					var entries []skills.InstalledSkill
@@ -617,10 +946,35 @@ func TestRemove(t *testing.T) {
 		scope             skills.ScopeOptions
 		both, json        bool
 		invalidCrossScope bool
+		forceColor        bool
+		wantText          []string
 		errText           string
 	}{
 		{
 			name: "unambiguous default selection",
+		},
+		{
+			name:       "colored removal",
+			forceColor: true,
+		},
+		{
+			name: "colored removal strips directory controls",
+			scope: skills.ScopeOptions{
+				Directory: new("/custom\x1b]52;c;evil\x07"),
+			},
+			forceColor: true,
+			wantText: []string{
+				"/custom/alpha",
+			},
+		},
+		{
+			name: "removal paths preserve quotes backslashes and spaces",
+			scope: skills.ScopeOptions{
+				Directory: new("/custom \"quoted\" \\folder "),
+			},
+			wantText: []string{
+				"/custom \"quoted\" \\folder /alpha",
+			},
 		},
 		{
 			name:              "cross scope invalid selection preserves valid selection",
@@ -662,6 +1016,20 @@ func TestRemove(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				t.Setenv(
+					"CLICOLOR_FORCE",
+					"",
+				)
+				t.Setenv(
+					"NO_COLOR",
+					"",
+				)
+				if test.forceColor {
+					t.Setenv(
+						"CLICOLOR_FORCE",
+						"1",
+					)
+				}
 				project := skills.ProjectPath(cwd)
 				global := filepath.FromSlash("/test-home/.agents/skills")
 				destinations := newManagerFilesystem(
@@ -698,14 +1066,21 @@ func TestRemove(t *testing.T) {
 				}
 				if test.scope.Directory != nil {
 					if err := destinations.MkdirAll(
-						"/custom/alpha",
+						filepath.Join(
+							*test.scope.Directory,
+							"alpha",
+						),
 						0o700,
 					); err != nil {
 						t.Fatal(err)
 					}
 					if err := afero.WriteFile(
 						destinations,
-						"/custom/alpha/SKILL.md",
+						filepath.Join(
+							*test.scope.Directory,
+							"alpha",
+							"SKILL.md",
+						),
 						[]byte(alphaSkill),
 						0o600,
 					); err != nil {
@@ -826,6 +1201,57 @@ func TestRemove(t *testing.T) {
 				}
 				if test.json && !json.Valid(output.Bytes()) {
 					t.Error("invalid JSON")
+				}
+				if !test.json {
+					if strings.Contains(
+						output.String(),
+						"\x1b[",
+					) != test.forceColor {
+						t.Errorf(
+							"unexpected styling in removal output: %q",
+							&output,
+						)
+					}
+					for _, text := range []string{
+						"Removed",
+						"Location",
+						"alpha",
+					} {
+						if !strings.Contains(
+							output.String(),
+							text,
+						) {
+							t.Errorf(
+								"missing removal detail %q: %q",
+								text,
+								&output,
+							)
+						}
+					}
+					for _, text := range test.wantText {
+						if !strings.Contains(
+							output.String(),
+							text,
+						) {
+							t.Errorf(
+								"missing readable removal path %q: %q",
+								text,
+								&output,
+							)
+						}
+					}
+					if strings.Contains(
+						output.String(),
+						"\x1b]",
+					) || strings.ContainsAny(
+						output.String(),
+						"\x07\r",
+					) {
+						t.Errorf(
+							"directory controls reached terminal: %q",
+							&output,
+						)
+					}
 				}
 			},
 		)

@@ -3,7 +3,7 @@ package skills
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"strings"
 )
 
 // ListOptions is unparsed listing input. List owns destination resolution and
@@ -38,18 +38,26 @@ func List(ctx context.Context, manager *Manager, opts ListOptions, streams IO) e
 			}
 			return json.NewEncoder(output).Encode(result)
 		}
+		var rows [][]string
 		for _, skill := range result {
-			if _, err := fmt.Fprintf(
-				output,
-				"%s\t%s\t%s\n",
-				terminalText(skill.Name),
-				terminalText(skill.Description),
-				terminalText(skill.Path),
-			); err != nil {
-				return err
-			}
+			rows = append(
+				rows,
+				[]string{
+					strings.TrimSpace(displayText(skill.Name)),
+					strings.TrimSpace(displayText(skill.Description)),
+					displayText(skill.Path),
+				},
+			)
 		}
-		return nil
+		return writeTable(
+			output,
+			[]string{
+				"Skill",
+				"Description",
+				locationColumn,
+			},
+			rows,
+		)
 	}
 	directories, err := resolveDirectories(
 		opts.Scope,

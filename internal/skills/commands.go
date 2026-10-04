@@ -3,12 +3,20 @@ package skills
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"unicode"
+
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/table"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/charmbracelet/x/term"
 )
+
+const locationColumn = "Location"
 
 func resolveDirectories(scope ScopeOptions, requireScope bool) ([]string, error) {
 	if scope.Project && scope.Global {
@@ -67,6 +75,20 @@ func terminalText(value string) string {
 	return quoted[1 : len(quoted)-1]
 }
 
+// displayText removes skill-controlled terminal commands before styling. Keep
+// layout whitespace for Lip Gloss, which handles multiline cells and tabs.
+func displayText(value string) string {
+	return strings.Map(
+		func(character rune) rune {
+			if character != '\n' && character != '\t' && unicode.IsControl(character) {
+				return -1
+			}
+			return character
+		},
+		ansi.Strip(value),
+	)
+}
+
 func outputStream(streams IO) io.Writer {
 	if streams.Out != nil {
 		return streams.Out
@@ -82,18 +104,67 @@ func writeInstalled(streams IO, asJSON bool, result []InstalledSkill) error {
 		}
 		return json.NewEncoder(output).Encode(result)
 	}
+	var rows [][]string
 	for _, entry := range result {
-		if _, err := fmt.Fprintf(
-			output,
-			"%s\t%s\t%s\n",
-			terminalText(entry.Skill.Name),
-			terminalText(entry.Skill.Description),
-			terminalText(entry.Directory),
-		); err != nil {
-			return err
+		rows = append(
+			rows,
+			[]string{
+				strings.TrimSpace(displayText(entry.Skill.Name)),
+				strings.TrimSpace(displayText(entry.Skill.Description)),
+				displayText(entry.Directory),
+			},
+		)
+	}
+	return writeTable(
+		output,
+		[]string{
+			"Skill",
+			"Description",
+			locationColumn,
+		},
+		rows,
+	)
+}
+
+// Lip Gloss owns layout and styling. Cells are sanitized before rendering, so
+// only our own styles can introduce terminal escape sequences.
+func writeTable(output io.Writer, headers []string, rows [][]string) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	cell := lipgloss.NewStyle().PaddingRight(2)
+	view := table.New().
+		Border(lipgloss.Border{}).
+		BorderTop(false).
+		BorderBottom(false).
+		BorderLeft(false).
+		BorderRight(false).
+		BorderColumn(false).
+		BorderHeader(false).
+		Headers(headers...).
+		Rows(rows...).
+		StyleFunc(func(row, column int) lipgloss.Style {
+			switch {
+			case row == table.HeaderRow:
+				return cell.Bold(true).Foreground(lipgloss.Cyan)
+			case column == 0:
+				return cell.Foreground(lipgloss.Cyan)
+			case column == len(headers)-1:
+				return cell.Faint(true)
+			default:
+				return cell
+			}
+		})
+	if terminal, ok := output.(interface{ Fd() uintptr }); ok {
+		if width, _, err := term.GetSize(terminal.Fd()); err == nil && width > 0 {
+			view.Width(width)
 		}
 	}
-	return nil
+	_, err := lipgloss.Fprintln(
+		output,
+		view.Render(),
+	)
+	return err
 }
 
 func writeRemoved(streams IO, asJSON bool, result []string) error {
@@ -104,13 +175,22 @@ func writeRemoved(streams IO, asJSON bool, result []string) error {
 		}
 		return json.NewEncoder(output).Encode(result)
 	}
+	var rows [][]string
 	for _, filename := range result {
-		if _, err := fmt.Fprintln(
-			output,
-			terminalText(filename),
-		); err != nil {
-			return err
-		}
+		rows = append(
+			rows,
+			[]string{
+				strings.TrimSpace(displayText(filepath.Base(filename))),
+				displayText(filename),
+			},
+		)
 	}
-	return nil
+	return writeTable(
+		output,
+		[]string{
+			"Removed",
+			locationColumn,
+		},
+		rows,
+	)
 }
