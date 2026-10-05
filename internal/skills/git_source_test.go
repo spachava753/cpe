@@ -244,10 +244,25 @@ func TestGitSourceClientFetch(t *testing.T) {
 	for _, test := range []struct {
 		name, source, errText                                                 string
 		wantErr                                                               error
+		wantText                                                              string
+		literalBackslash                                                      bool
 		reusedPath                                                            bool
 		cancel, deadline, duringClone, missingGit, missingTemp, empty, second bool
 	}{
 		// Accepted locators, with real HTTP(S) transport only for loopback servers.
+		{
+			name: "Git failure preserves ordinary quotes and backslashes",
+			source: (&url.URL{
+				Scheme: "file",
+				Path: filepath.ToSlash(filepath.Join(
+					t.TempDir(),
+					`missing "repository" C:\work`,
+				)),
+			}).String(),
+			errText:          "clone source:",
+			wantText:         `missing "repository" C:\work`,
+			literalBackslash: true,
+		},
 		{
 			name:   "rooted checkout and cleanup",
 			source: locator,
@@ -477,6 +492,9 @@ func TestGitSourceClientFetch(t *testing.T) {
 		t.Run(
 			test.name,
 			func(t *testing.T) {
+				if test.literalBackslash && filepath.Separator == '\\' {
+					t.Skip("fixture needs a literal backslash, not a path separator")
+				}
 				// Give this acquisition its own resource directory. Environment changes
 				// are restored after this subtest, so fault cases do not affect later rows.
 				scratch := t.TempDir()
@@ -617,6 +635,16 @@ func TestGitSourceClientFetch(t *testing.T) {
 					}
 				} else if err != nil {
 					t.Fatal(err)
+				}
+				if test.wantText != "" && (err == nil || !strings.Contains(
+					err.Error(),
+					test.wantText,
+				)) {
+					t.Fatalf(
+						"error = %v, want readable text %q",
+						err,
+						test.wantText,
+					)
 				}
 				if err != nil {
 					// Failure returns no usable checkout and must not expose the password.

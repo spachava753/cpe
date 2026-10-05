@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 	"unicode"
+
+	"github.com/spachava753/cpe/internal/terminaltext"
 )
 
 // GitSourceClient acquires an isolated Git checkout using the installed git CLI.
@@ -67,7 +69,7 @@ func (GitSourceClient) Fetch(ctx context.Context, source string) (Checkout, erro
 			fmt.Errorf(
 				"clone source: %w: %s",
 				err,
-				terminalText(strings.TrimSpace(string(output))),
+				terminaltext.Sanitize(strings.TrimSpace(string(output))),
 			),
 			cleanup(),
 		)

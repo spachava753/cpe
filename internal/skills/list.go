@@ -6,6 +6,8 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+
+	"github.com/spachava753/cpe/internal/terminaltext"
 )
 
 // ListOptions is unparsed listing input. List owns destination resolution and
@@ -112,10 +114,10 @@ func List(ctx context.Context, manager *Manager, opts ListOptions, streams IO) e
 		rows = append(
 			rows,
 			[]string{
-				strings.TrimSpace(displayText(skill.Name)),
-				strings.TrimSpace(displayText(skill.Description)),
+				strings.TrimSpace(terminaltext.Sanitize(skill.Name)),
+				strings.TrimSpace(terminaltext.Sanitize(skill.Description)),
 				invocation,
-				displayText(location),
+				terminaltext.Sanitize(location),
 			},
 		)
 	}

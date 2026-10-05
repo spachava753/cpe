@@ -1193,7 +1193,7 @@ func TestList(t *testing.T) {
 		},
 		{
 			name:        "terminal instructions and non-layout controls are removed",
-			description: " Alpha \x1b[2J\x1b[H\x1b[31mred\x1b[0m \x1b]8;;https://evil.invalid\x1b\\link\x1b]8;;\x1b\\ \x1b]52;c;ZXZpbA==\a safe\a\r\b\x00\v\f\x7f\u009bEND \n",
+			description: " Alpha \x1b[2J\x1b[H\x1b[31mred\x1b[0m \x1b]8;;https://evil.invalid\x1b\\link\x1b]8;;\x1b\\ \x1b]52;c;ZXZpbA==\a safe\a\r\b\x00\v\f\x7f\u0085END \n",
 			forceColor:  true,
 			want: []string{
 				"alpha",
@@ -1266,7 +1266,7 @@ func TestList(t *testing.T) {
 		{
 			name:        "colored source strips terminal instructions",
 			source:      new(managerSource),
-			description: "Delta\x1b[2J\x1b[H\x1b]52;c;ZXZpbA==\a safe\r\b\x00\u009bEND",
+			description: "Delta\x1b[2J\x1b[H\x1b]52;c;ZXZpbA==\a safe\r\b\x00\u0085END",
 			forceColor:  true,
 			want: []string{
 				"delta",

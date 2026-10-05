@@ -6,14 +6,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"unicode"
 
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
-	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/term"
+
+	"github.com/spachava753/cpe/internal/terminaltext"
 )
 
 const locationColumn = "Location"
@@ -76,25 +75,6 @@ func resolveDirectories(scope ScopeOptions, requireScope bool) ([]string, error)
 	return directories, nil
 }
 
-func terminalText(value string) string {
-	quoted := strconv.Quote(value)
-	return quoted[1 : len(quoted)-1]
-}
-
-// displayText removes skill-controlled terminal commands before styling. Keep
-// layout whitespace for Lip Gloss, which handles multiline cells and tabs.
-func displayText(value string) string {
-	return strings.Map(
-		func(character rune) rune {
-			if character != '\n' && character != '\t' && unicode.IsControl(character) {
-				return -1
-			}
-			return character
-		},
-		ansi.Strip(value),
-	)
-}
-
 func outputStream(streams IO) io.Writer {
 	if streams.Out != nil {
 		return streams.Out
@@ -124,7 +104,7 @@ func writeViolations(streams IO, skill Skill) error {
 	for _, violation := range skill.Violations {
 		if _, err := lipgloss.Fprintln(
 			output,
-			label+" "+displayText(skill.Name)+": "+displayText(violation),
+			label+" "+terminaltext.Sanitize(skill.Name)+": "+terminaltext.Sanitize(violation),
 		); err != nil {
 			return err
 		}
@@ -172,9 +152,9 @@ func writeInstalled(streams IO, asJSON bool, result []InstalledSkill) error {
 		rows = append(
 			rows,
 			[]string{
-				strings.TrimSpace(displayText(entry.Skill.Name)),
-				strings.TrimSpace(displayText(entry.Skill.Description)),
-				displayText(entry.Directory),
+				strings.TrimSpace(terminaltext.Sanitize(entry.Skill.Name)),
+				strings.TrimSpace(terminaltext.Sanitize(entry.Skill.Description)),
+				terminaltext.Sanitize(entry.Directory),
 			},
 		)
 	}
@@ -258,8 +238,8 @@ func writeRemoved(streams IO, asJSON bool, result []RemovedSkill) error {
 		rows = append(
 			rows,
 			[]string{
-				strings.TrimSpace(displayText(filepath.Base(filename))),
-				displayText(filename),
+				strings.TrimSpace(terminaltext.Sanitize(filepath.Base(filename))),
+				terminaltext.Sanitize(filename),
 			},
 		)
 	}

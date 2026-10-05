@@ -5,13 +5,13 @@ import (
 	"errors"
 	"io"
 	"os"
-	"strconv"
 
 	"github.com/charmbracelet/fang"
 	"github.com/spf13/afero"
 
 	"github.com/spachava753/cpe/internal/cli"
 	"github.com/spachava753/cpe/internal/skills"
+	"github.com/spachava753/cpe/internal/terminaltext"
 	"github.com/spachava753/cpe/internal/version"
 )
 
@@ -28,12 +28,11 @@ func main() {
 		),
 		fang.WithNotifySignal(os.Interrupt),
 		fang.WithErrorHandler(func(output io.Writer, styles fang.Styles, err error) {
-			// Escape only the displayed text; Fang returns the original error.
-			quoted := strconv.Quote(err.Error())
+			// Sanitize only the displayed text; Fang returns the original error.
 			fang.DefaultErrorHandler(
 				output,
 				styles,
-				errors.New(quoted[1:len(quoted)-1]),
+				errors.New(terminaltext.Sanitize(err.Error())),
 			)
 		}),
 	); err != nil {
