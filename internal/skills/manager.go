@@ -88,6 +88,7 @@ func (m *Manager) ListSource(ctx context.Context, source string, opts DiscoveryO
 }
 
 // Install copies selected bundles. Override replaces complete existing bundles.
+// Returned skills identify committed installations, even if cleanup returns an error.
 func (m *Manager) Install(ctx context.Context, request InstallRequest) (result []InstalledSkill, err error) {
 	if err := m.destination(
 		ctx,
@@ -282,12 +283,12 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 			err,
 		)
 	}
-	if err := m.applyChanges(
+	if committed, err := m.applyChanges(
 		ctx,
 		request.Directory,
 		changes,
 	); err != nil {
-		if _, committed := errors.AsType[*CommittedCleanupError](err); !committed {
+		if !committed {
 			result = nil
 		}
 		return result, fmt.Errorf(
@@ -393,6 +394,7 @@ func (m *Manager) ListInstalled(ctx context.Context, directory string) ([]Instal
 
 // Remove deletes named skill directories. Reading frontmatter for result details
 // is best-effort and never determines whether a directory can be removed.
+// Returned skills identify committed removals, even if cleanup returns an error.
 func (m *Manager) Remove(ctx context.Context, request RemoveRequest) ([]RemovedSkill, error) {
 	plan, err := m.prepareRemoval(
 		ctx,
@@ -426,12 +428,12 @@ func (m *Manager) Remove(ctx context.Context, request RemoveRequest) ([]RemovedS
 			removed,
 		)
 	}
-	if err := m.applyChanges(
+	if committed, err := m.applyChanges(
 		ctx,
 		request.Directory,
 		plan.changes,
 	); err != nil {
-		if _, committed := errors.AsType[*CommittedCleanupError](err); committed {
+		if committed {
 			return result, fmt.Errorf(
 				"remove skills: %w",
 				err,

@@ -23,6 +23,10 @@ README.md     User workflows and verification instructions
   partially valid data downstream.
 - Keep changes scoped and simple; avoid speculative abstractions and performance work unless
   a demonstrated need or the task calls for it.
+- Keep errors opaque by default, especially at exported API boundaries. Do not
+  introduce exported error types or sentinel errors unless a concrete API consumer
+  needs to branch on that specific failure. Keep operation outcomes separate from
+  error classification.
 
 ## Go formatting
 

@@ -43,7 +43,7 @@ func Install(ctx context.Context, manager *Manager, opts InstallOptions, streams
 		},
 	)
 	if err != nil {
-		if _, committed := errors.AsType[*CommittedCleanupError](err); committed {
+		if len(result) > 0 {
 			return errors.Join(
 				err,
 				writeInstalled(

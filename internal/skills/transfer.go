@@ -114,27 +114,12 @@ func readPayload(ctx context.Context, filesystem fs.FS, directory string) ([]pay
 	return result, nil
 }
 
-// CommittedCleanupError reports successful mutations whose temporary files could
-// not be removed. Operation results remain available alongside this error.
-type CommittedCleanupError struct {
-	Directory string
-	Err       error
-}
-
-func (err *CommittedCleanupError) Error() string {
-	return fmt.Sprintf(
-		"skills changes committed; cleanup failed for %s: %v",
-		err.Directory,
-		err.Err,
-	)
-}
-func (err *CommittedCleanupError) Unwrap() error { return err.Err }
-
 // applyChanges stages every bundle before replacing any destination. Old bundles
 // remain recoverable until every selected change has been published successfully.
-func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundleChange) (err error) {
+// The outcome is separate from errors: cleanup can fail after changes commit.
+func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundleChange) (committed bool, err error) {
 	if len(changes) == 0 {
-		return nil
+		return true, nil
 	}
 	_, statErr := m.destinations.Stat(root)
 	created := errors.Is(
@@ -142,13 +127,13 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 		fs.ErrNotExist,
 	)
 	if statErr != nil && !created {
-		return statErr
+		return false, statErr
 	}
 	if err := m.destinations.MkdirAll(
 		root,
 		0o700,
 	); err != nil {
-		return err
+		return false, err
 	}
 	stage, err := afero.TempDir(
 		m.destinations,
@@ -159,9 +144,8 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 		if created {
 			_ = m.destinations.Remove(root)
 		}
-		return err
+		return false, err
 	}
-	committed := false
 	preserveStage := false
 	defer func() {
 		if preserveStage {
@@ -169,10 +153,11 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 		}
 		cleanupErr := m.destinations.RemoveAll(stage)
 		if committed && cleanupErr != nil {
-			err = &CommittedCleanupError{
-				Directory: stage,
-				Err:       cleanupErr,
-			}
+			err = fmt.Errorf(
+				"skills changes committed; cleanup failed for %s: %w",
+				stage,
+				cleanupErr,
+			)
 			return
 		}
 		if !committed && created {
@@ -193,7 +178,7 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 	}()
 	for _, change := range changes {
 		if err := ctx.Err(); err != nil {
-			return err
+			return false, err
 		}
 		if change.action == removeBundle {
 			continue
@@ -207,11 +192,11 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 			newRoot,
 			0o700,
 		); err != nil {
-			return err
+			return false, err
 		}
 		for _, entry := range change.payload {
 			if err := ctx.Err(); err != nil {
-				return err
+				return false, err
 			}
 			filename := filepath.Join(
 				newRoot,
@@ -222,7 +207,7 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 					filename,
 					0o700,
 				); err != nil {
-					return err
+					return false, err
 				}
 				continue
 			}
@@ -230,7 +215,7 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 				filepath.Dir(filename),
 				0o700,
 			); err != nil {
-				return err
+				return false, err
 			}
 			mode := entry.mode
 			if mode == 0 {
@@ -242,7 +227,7 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 				entry.data,
 				mode,
 			); err != nil {
-				return err
+				return false, err
 			}
 		}
 	}
@@ -289,7 +274,7 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 	}
 	for _, change := range changes {
 		if err := ctx.Err(); err != nil {
-			return rollback(err)
+			return false, rollback(err)
 		}
 		filename := filepath.Join(
 			root,
@@ -298,14 +283,14 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 		info, statErr := m.pathInfo(filename)
 		if statErr == nil {
 			if change.action == installBundle {
-				return rollback(fmt.Errorf(
+				return false, rollback(fmt.Errorf(
 					"destination %s already exists: %w",
 					filename,
 					fs.ErrExist,
 				))
 			}
 			if !info.IsDir() || info.Mode()&fs.ModeSymlink != 0 {
-				return rollback(fmt.Errorf(
+				return false, rollback(fmt.Errorf(
 					"destination %s is not a regular bundle directory",
 					filename,
 				))
@@ -315,10 +300,10 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 				"SKILL.md",
 			))
 			if err != nil {
-				return rollback(err)
+				return false, rollback(err)
 			}
 			if !definition.Mode().IsRegular() {
-				return rollback(fmt.Errorf(
+				return false, rollback(fmt.Errorf(
 					"destination %s must contain a regular SKILL.md",
 					filename,
 				))
@@ -330,7 +315,7 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 				),
 				0o700,
 			); err != nil {
-				return rollback(err)
+				return false, rollback(err)
 			}
 			if err := m.destinations.Rename(
 				filename,
@@ -340,7 +325,7 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 					change.name,
 				),
 			); err != nil {
-				return rollback(err)
+				return false, rollback(err)
 			}
 			moved = append(
 				moved,
@@ -350,7 +335,7 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 			statErr,
 			fs.ErrNotExist,
 		) {
-			return rollback(statErr)
+			return false, rollback(statErr)
 		}
 		if change.action != removeBundle {
 			if err := m.destinations.Rename(
@@ -361,7 +346,7 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 				),
 				filename,
 			); err != nil {
-				return rollback(err)
+				return false, rollback(err)
 			}
 			installed = append(
 				installed,
@@ -370,10 +355,9 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 		}
 	}
 	if err := ctx.Err(); err != nil {
-		return rollback(err)
+		return false, rollback(err)
 	}
-	committed = true
-	return nil
+	return true, nil
 }
 
 func sourceDirectory(skill Skill) string { return path.Dir(skill.Path) }

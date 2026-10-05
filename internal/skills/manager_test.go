@@ -1254,10 +1254,9 @@ func TestManagerInstall(t *testing.T) {
 					t.Fatal("original skill data was lost")
 				}
 				if test.committed {
-					var cleanup *skills.CommittedCleanupError
-					if !errors.As(
-						err,
-						&cleanup,
+					if err == nil || !strings.Contains(
+						err.Error(),
+						"skills changes committed; cleanup failed for ",
 					) {
 						t.Fatalf(
 							"error = %v, want committed cleanup failure",

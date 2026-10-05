@@ -676,13 +676,12 @@ func TestInstall(t *testing.T) {
 						)
 					}
 				} else if test.committed {
-					var cleanup *skills.CommittedCleanupError
-					if !errors.As(
-						err,
-						&cleanup,
-					) || !errors.Is(
+					if !errors.Is(
 						err,
 						fs.ErrPermission,
+					) || !strings.Contains(
+						err.Error(),
+						"skills changes committed; cleanup failed for ",
 					) {
 						t.Fatalf(
 							"error = %v, want committed cleanup failure with its cause",
@@ -2089,9 +2088,12 @@ func TestRemove(t *testing.T) {
 					return
 				}
 				if test.committed {
-					if _, ok := errors.AsType[*skills.CommittedCleanupError](err); !ok || !errors.Is(
+					if !errors.Is(
 						err,
 						fs.ErrPermission,
+					) || !strings.Contains(
+						err.Error(),
+						"skills changes committed; cleanup failed for ",
 					) {
 						t.Fatalf(
 							"error = %v, want committed cleanup failure",
