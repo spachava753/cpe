@@ -258,10 +258,6 @@ func TestLoadInvalidSkills(t *testing.T) {
 			value: "null",
 		},
 		{
-			name:  "directory mismatch",
-			field: "name",
-		},
-		{
 			name:  "missing description",
 			field: "description",
 		},
@@ -391,13 +387,6 @@ func TestLoadInvalidSkills(t *testing.T) {
 					"description: " + strconv.Quote(description),
 				}
 				value := change.value
-				if change.name == "directory mismatch" {
-					other := "a"
-					if name == other {
-						other = "b"
-					}
-					value = strconv.Quote(other)
-				}
 				if change.field != "" {
 					fields = slices.DeleteFunc(
 						fields,
@@ -458,7 +447,7 @@ func TestLoadInvalidSkills(t *testing.T) {
 				}
 
 				directory := name
-				if change.field == "name" && change.name != "directory mismatch" {
+				if change.field == "name" {
 					invalid, err := strconv.Unquote(value)
 					if err != nil {
 						invalid = value
@@ -467,7 +456,6 @@ func TestLoadInvalidSkills(t *testing.T) {
 						invalid,
 						"/",
 					) {
-						// Avoid letting directory mismatch mask broken name validation.
 						directory = invalid
 					}
 				}
@@ -519,10 +507,11 @@ func FuzzLoadArbitraryFiles(f *testing.F) {
 			)
 		}
 		skill := got[0]
-		if skill.Name != "example" || skill.Path != "example/SKILL.md" ||
+		if !utf8.ValidString(skill.Name) || strings.TrimSpace(skill.Name) == "" || skill.Path != "example/SKILL.md" ||
 			!utf8.ValidString(skill.Description) || strings.TrimSpace(skill.Description) == "" ||
 			!utf8.ValidString(skill.Compatibility) || utf8.RuneCountInString(skill.Compatibility) > 500 ||
-			(utf8.RuneCountInString(skill.Description) > 1024) != (len(skill.Violations) > 0) {
+			((skill.Name != "example" || utf8.RuneCountInString(skill.Name) > 64 ||
+				utf8.RuneCountInString(skill.Description) > 1024) != (len(skill.Violations) > 0)) {
 			t.Fatalf(
 				"successful Load returned invalid skill: %#v",
 				skill,
@@ -596,6 +585,17 @@ func TestLoadFilesystem(t *testing.T) {
 			},
 		},
 		{
+			name: "directory mismatch loads declared name with a violation",
+			files: fstest.MapFS{
+				"template/SKILL.md": valid("template-skill"),
+			},
+			wantCount: 1,
+			skillName: "template-skill",
+			violations: []string{
+				`name "template-skill" does not match directory "template"`,
+			},
+		},
+		{
 			name: "overlong description loads unchanged with a violation",
 			files: fstest.MapFS{
 				"example/SKILL.md": {
@@ -662,6 +662,34 @@ func TestLoadFilesystem(t *testing.T) {
 				1025,
 			),
 			violations: []string{
+				"name exceeds 64 characters (found 65)",
+				"description exceeds 1024 characters (found 1025)",
+			},
+		},
+		{
+			name: "directory mismatch and both length violations are preserved",
+			files: fstest.MapFS{
+				"template/SKILL.md": {
+					Data: []byte("---\nname: " + strings.Repeat(
+						"a",
+						65,
+					) + "\ndescription: " + strings.Repeat(
+						"é",
+						1025,
+					) + "\n---\n"),
+				},
+			},
+			wantCount: 1,
+			skillName: strings.Repeat(
+				"a",
+				65,
+			),
+			description: strings.Repeat(
+				"é",
+				1025,
+			),
+			violations: []string{
+				`name "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" does not match directory "template"`,
 				"name exceeds 64 characters (found 65)",
 				"description exceeds 1024 characters (found 1025)",
 			},

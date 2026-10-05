@@ -9,17 +9,16 @@ import (
 )
 
 // RemoveOptions is unparsed command input. Remove owns invocation parsing,
-// destination resolution, and output; Manager owns removal and records.
+// destination resolution, and output; Manager owns removal.
 type RemoveOptions struct {
 	Scope  ScopeOptions
-	Skills []string // Raw installed directory names; records need not exist.
+	Skills []string // Raw installed directory names.
 	All    bool
 	JSON   bool
 }
 
 // Remove is the high-level removal entry point for a command adapter.
-// It removes named installations, including unmanaged skills, deletes their
-// records when present, and writes results through streams.
+// It removes named installed skill directories and writes results through streams.
 func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams IO) error {
 	directories, err := resolveDirectories(
 		opts.Scope,
@@ -51,7 +50,7 @@ func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams I
 			for _, entry := range installed {
 				selected[directory] = append(
 					selected[directory],
-					entry.Skill.Name,
+					filepath.Base(entry.Directory),
 				)
 			}
 		}

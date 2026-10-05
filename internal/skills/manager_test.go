@@ -2,10 +2,8 @@ package skills_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io/fs"
-	"maps"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,8 +21,6 @@ const (
 	alphaSkill    = "---\nname: alpha\ndescription: Alpha skill\n---\n# Alpha\n"
 	betaSkill     = "---\nname: beta\ndescription: Beta skill\n---\n# Beta\n"
 	alphaUpdated  = "---\nname: alpha\ndescription: Updated alpha\n---\n# Updated\n"
-	alphaRecord   = `{"version":1,"skills":{"alpha":{"location":"https://example.com/skills.git","directory":"alpha"}}}`
-	bothRecords   = `{"version":1,"skills":{"alpha":{"location":"https://example.com/skills.git","directory":"alpha"},"beta":{"location":"https://example.com/skills.git","directory":"beta"}}}`
 )
 
 func TestManagerListSource(t *testing.T) {
@@ -178,13 +174,22 @@ func TestManagerListSource(t *testing.T) {
 			errText: "alpha/SKILL.md",
 		},
 		{
-			name: "mismatched name",
+			name: "mismatched name loads with a violation",
 			files: fstest.MapFS{
 				"other/SKILL.md": {
 					Data: []byte(alphaSkill),
 				},
 			},
-			errText: "directory",
+			want: []skills.Skill{
+				{
+					Name:        "alpha",
+					Description: "Alpha skill",
+					Path:        "other/SKILL.md",
+					Violations: []string{
+						`name "alpha" does not match directory "other"`,
+					},
+				},
+			},
 		},
 		{
 			name: "definition is a symlink",
@@ -305,16 +310,19 @@ func TestManagerInstall(t *testing.T) {
 	t.Parallel()
 	fetchErr := errors.New("source unavailable")
 	for _, test := range []struct {
-		name                          string
-		files, existing               fstest.MapFS
-		names                         []string
-		sourcePath                    *string
-		fetchErr, cleanupErr          error
-		cancel, readOnly, missingRoot bool
-		want                          []string
-		violations                    map[string][]string
-		wantErr                       error
-		errText                       string
+		name                            string
+		files, existing                 fstest.MapFS
+		names                           []string
+		sourcePath                      *string
+		override, committed, recovery   bool
+		fault                           managerFSFault
+		links                           []string
+		fetchErr, cleanupErr            error
+		cancel, readOnly, missingRoot   bool
+		want                            []string
+		violations, installedViolations map[string][]string
+		wantErr                         error
+		errText                         string
 	}{
 		{
 			name: "selected bundle includes supporting files",
@@ -371,6 +379,145 @@ func TestManagerInstall(t *testing.T) {
 			},
 		},
 		{
+			name: "declared name selects a differently named source directory",
+			files: fstest.MapFS{
+				"template/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+				"beta/SKILL.md": {
+					Data: []byte("invalid"),
+				},
+			},
+			names: []string{
+				"alpha",
+			},
+			want: []string{
+				"alpha",
+			},
+			violations: map[string][]string{
+				"alpha": {
+					`name "alpha" does not match directory "template"`,
+				},
+			},
+			installedViolations: map[string][]string{},
+		},
+		{
+			name: "install all accepts a mismatched source directory",
+			files: fstest.MapFS{
+				"template/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+				"beta/SKILL.md": {
+					Data: []byte(betaSkill),
+				},
+			},
+			want: []string{
+				"alpha",
+				"beta",
+			},
+			violations: map[string][]string{
+				"alpha": {
+					`name "alpha" does not match directory "template"`,
+				},
+			},
+			installedViolations: map[string][]string{},
+		},
+		{
+			name: "exact path accepts a mismatched source directory",
+			files: fstest.MapFS{
+				"template/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+				"beta/SKILL.md": {
+					Data: []byte("invalid"),
+				},
+			},
+			sourcePath: new("template"),
+			want: []string{
+				"alpha",
+			},
+			violations: map[string][]string{
+				"alpha": {
+					`name "alpha" does not match directory "template"`,
+				},
+			},
+			installedViolations: map[string][]string{},
+		},
+		{
+			name: "directory names do not act as declared-name aliases",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(betaSkill),
+				},
+			},
+			names: []string{
+				"alpha",
+			},
+			wantErr: fs.ErrNotExist,
+		},
+		{
+			name: "known unrelated names skip hard validation even in a matching directory",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte("---\nname: beta\n---\n"),
+				},
+				"template/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			names: []string{
+				"alpha",
+			},
+			want: []string{
+				"alpha",
+			},
+			violations: map[string][]string{
+				"alpha": {
+					`name "alpha" does not match directory "template"`,
+				},
+			},
+			installedViolations: map[string][]string{},
+		},
+		{
+			name: "mismatched directories cannot hide duplicate declared names",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+				"template/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			names: []string{
+				"alpha",
+			},
+			errText: `ambiguous skill name "alpha" at source directories ["alpha" "template"]; use --path to select one`,
+		},
+		{
+			name: "selected declared name retains hard frontmatter failures",
+			files: fstest.MapFS{
+				"template/SKILL.md": {
+					Data: []byte("---\nname: alpha\n---\n"),
+				},
+			},
+			names: []string{
+				"alpha",
+			},
+			errText: `missing required field "description"`,
+		},
+		{
+			name: "selected declared name retains hard encoding failures",
+			files: fstest.MapFS{
+				"template/SKILL.md": {
+					Data: []byte(alphaSkill + "\xff"),
+				},
+			},
+			names: []string{
+				"alpha",
+			},
+			errText: "must contain UTF-8",
+		},
+		{
 			name: "selected skill ignores invalid unrelated definitions",
 			files: fstest.MapFS{
 				"alpha/SKILL.md": {
@@ -406,7 +553,7 @@ func TestManagerInstall(t *testing.T) {
 			},
 		},
 		{
-			name: "nested bundle provenance",
+			name: "nested source bundle",
 			files: fstest.MapFS{
 				"collection/alpha/SKILL.md": {
 					Data: []byte(alphaSkill),
@@ -417,7 +564,7 @@ func TestManagerInstall(t *testing.T) {
 			},
 		},
 		{
-			name: "root bundle provenance",
+			name: "root source bundle",
 			files: fstest.MapFS{
 				"SKILL.md": {
 					Data: []byte(alphaSkill),
@@ -484,7 +631,7 @@ func TestManagerInstall(t *testing.T) {
 			},
 		},
 		{
-			name: "preserves existing skill and record",
+			name: "preserves unselected existing skill",
 			files: fstest.MapFS{
 				"alpha/SKILL.md": {
 					Data: []byte(alphaSkill),
@@ -493,9 +640,6 @@ func TestManagerInstall(t *testing.T) {
 			existing: fstest.MapFS{
 				"beta/SKILL.md": {
 					Data: []byte(betaSkill),
-				},
-				"skills.json": {
-					Data: []byte(`{"version":1,"skills":{"beta":{"location":"other","directory":"beta"}}}`),
 				},
 			},
 			want: []string{
@@ -530,7 +674,7 @@ func TestManagerInstall(t *testing.T) {
 			errText: `ambiguous skill name "alpha" at source directories ["a/alpha" "b/alpha"]; use --path to select one`,
 		},
 		{
-			name: "exact source path selects one duplicate and records its provenance",
+			name: "exact source path selects one duplicate with distinct content",
 			files: fstest.MapFS{
 				"a/alpha/SKILL.md": {
 					Data: []byte(alphaSkill),
@@ -708,6 +852,208 @@ func TestManagerInstall(t *testing.T) {
 			errText: "ambiguous",
 		},
 		{
+			name: "override also installs absent skills",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			override: true,
+			want: []string{
+				"alpha",
+			},
+		},
+		{
+			name: "override repairs damaged frontmatter",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			existing: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte("broken"),
+				},
+			},
+			override: true,
+			want: []string{
+				"alpha",
+			},
+		},
+		{
+			name: "override replaces the complete selected bundle",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaUpdated),
+				},
+				"alpha/new.txt": {
+					Data: []byte("new"),
+				},
+			},
+			existing: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+				"alpha/obsolete.txt": {
+					Data: []byte("old"),
+				},
+				"beta/SKILL.md": {
+					Data: []byte(betaSkill),
+				},
+			},
+			override: true,
+			want: []string{
+				"alpha",
+			},
+		},
+		{
+			name: "override rejects a non-skill directory",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			existing: fstest.MapFS{
+				"alpha/unrelated.txt": {
+					Data: []byte("keep"),
+				},
+			},
+			override: true,
+			wantErr:  fs.ErrNotExist,
+		},
+		{
+			name: "override rejects an existing file",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			existing: fstest.MapFS{
+				"alpha": {
+					Data: []byte("keep"),
+				},
+			},
+			override: true,
+			errText:  "regular skill directory",
+		},
+		{
+			name: "override rejects a linked directory",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			existing: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			links: []string{
+				"alpha",
+			},
+			override: true,
+			errText:  "regular skill directory",
+		},
+		{
+			name: "override rejects a linked definition",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			existing: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			links: []string{
+				"alpha/SKILL.md",
+			},
+			override: true,
+			errText:  "regular SKILL.md",
+		},
+		{
+			name: "failed replacement restores its original bundle",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaUpdated),
+				},
+			},
+			existing: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+				"alpha/obsolete.txt": {
+					Data: []byte("keep"),
+				},
+			},
+			override: true,
+			fault:    managerPublishFailure,
+			wantErr:  fs.ErrPermission,
+		},
+		{
+			name: "later replacement failure rolls back every bundle",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaUpdated),
+				},
+				"beta/SKILL.md": {
+					Data: []byte(betaSkill),
+				},
+			},
+			existing: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+				"alpha/obsolete.txt": {
+					Data: []byte("keep"),
+				},
+				"beta/SKILL.md": {
+					Data: []byte("broken"),
+				},
+			},
+			override: true,
+			fault:    managerLatePublishFailure,
+			wantErr:  fs.ErrPermission,
+		},
+		{
+			name: "failed restoration retains recovery data",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaUpdated),
+				},
+			},
+			existing: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			override: true,
+			fault:    managerRestoreFailure,
+			recovery: true,
+			wantErr:  fs.ErrPermission,
+		},
+		{
+			name: "cleanup failure reports committed replacement",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaUpdated),
+				},
+			},
+			existing: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			override:  true,
+			fault:     managerStageCleanupFailure,
+			committed: true,
+			wantErr:   fs.ErrPermission,
+			want: []string{
+				"alpha",
+			},
+		},
+		{
 			name: "rejects existing directory",
 			files: fstest.MapFS{
 				"alpha/SKILL.md": {
@@ -758,20 +1104,6 @@ func TestManagerInstall(t *testing.T) {
 			errText: "symlink",
 		},
 		{
-			name: "corrupt metadata",
-			files: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaSkill),
-				},
-			},
-			existing: fstest.MapFS{
-				"skills.json": {
-					Data: []byte("broken"),
-				},
-			},
-			errText: "skills.json",
-		},
-		{
 			name:     "source failure",
 			fetchErr: fetchErr,
 			wantErr:  fetchErr,
@@ -783,6 +1115,12 @@ func TestManagerInstall(t *testing.T) {
 					Data: []byte(alphaSkill),
 				},
 			},
+			existing: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaUpdated),
+				},
+			},
+			override:   true,
 			cleanupErr: fetchErr,
 			wantErr:    fetchErr,
 		},
@@ -822,6 +1160,25 @@ func TestManagerInstall(t *testing.T) {
 					base,
 				)
 				destination := base
+				if test.fault != managerNoFault {
+					destination = managerFaultFS{
+						Fs:    destination,
+						fault: test.fault,
+					}
+				}
+				if len(test.links) > 0 {
+					links := map[string]bool{}
+					for _, name := range test.links {
+						links[filepath.Join(
+							directory,
+							filepath.FromSlash(name),
+						)] = true
+					}
+					destination = managerLinkFS{
+						Fs:    destination,
+						links: links,
+					}
+				}
 				if test.readOnly {
 					destination = afero.NewReadOnlyFs(base)
 				}
@@ -845,6 +1202,7 @@ func TestManagerInstall(t *testing.T) {
 						Directory: directory,
 						Skills:    test.names,
 						Path:      test.sourcePath,
+						Override:  test.override,
 					},
 				)
 				if test.wantErr != nil {
@@ -872,7 +1230,41 @@ func TestManagerInstall(t *testing.T) {
 				} else if err != nil {
 					t.Fatal(err)
 				}
-				if err != nil {
+				if test.recovery {
+					if err == nil || !strings.Contains(
+						err.Error(),
+						"recovery files retained at",
+					) {
+						t.Fatalf(
+							"missing recovery diagnostic: %v",
+							err,
+						)
+					}
+					for name, data := range snapshotManagerFS(
+						t,
+						base,
+					) {
+						if strings.HasSuffix(
+							filepath.ToSlash(name),
+							"/old/alpha/SKILL.md",
+						) && data == alphaSkill {
+							return
+						}
+					}
+					t.Fatal("original skill data was lost")
+				}
+				if test.committed {
+					var cleanup *skills.CommittedCleanupError
+					if !errors.As(
+						err,
+						&cleanup,
+					) {
+						t.Fatalf(
+							"error = %v, want committed cleanup failure",
+							err,
+						)
+					}
+				} else if err != nil {
 					if diff := cmp.Diff(
 						before,
 						snapshotManagerFS(
@@ -887,22 +1279,6 @@ func TestManagerInstall(t *testing.T) {
 					}
 					return
 				}
-				wantRecords := map[string]skills.SkillSource{}
-				if file, ok := test.existing["skills.json"]; ok {
-					var previous struct {
-						Skills map[string]skills.SkillSource `json:"skills"`
-					}
-					if err := json.Unmarshal(
-						file.Data,
-						&previous,
-					); err != nil {
-						t.Fatal(err)
-					}
-					maps.Copy(
-						wantRecords,
-						previous.Skills,
-					)
-				}
 				var names []string
 				for _, entry := range got {
 					names = append(
@@ -912,7 +1288,7 @@ func TestManagerInstall(t *testing.T) {
 					if entry.Directory != filepath.Join(
 						directory,
 						entry.Skill.Name,
-					) || entry.Source == nil || entry.Source.Location != managerSource {
+					) {
 						t.Fatalf(
 							"bad installation result: %#v",
 							entry,
@@ -944,17 +1320,6 @@ func TestManagerInstall(t *testing.T) {
 								break
 							}
 						}
-					}
-					if entry.Source.Directory != filepath.ToSlash(filepath.Dir(sourceFile)) {
-						t.Errorf(
-							"source directory = %q, want relative directory for %s",
-							entry.Source.Directory,
-							sourceFile,
-						)
-					}
-					wantRecords[entry.Skill.Name] = skills.SkillSource{
-						Location:  managerSource,
-						Directory: filepath.ToSlash(filepath.Dir(sourceFile)),
 					}
 					data, readErr := afero.ReadFile(
 						base,
@@ -1010,51 +1375,44 @@ func TestManagerInstall(t *testing.T) {
 					}
 				}
 				if len(test.want) > 0 {
-					if diff := cmp.Diff(
-						wantRecords,
-						readManagerRecords(
-							t,
+					installedViolations := test.violations
+					if test.installedViolations != nil {
+						installedViolations = test.installedViolations
+					}
+					if !test.committed {
+						loaded, loadErr := skills.Load(afero.NewIOFS(afero.NewBasePathFs(
 							base,
 							directory,
-						),
-					); diff != "" {
-						t.Fatalf(
-							"persisted records (-want +got):\n%s",
-							diff,
-						)
-					}
-					loaded, loadErr := skills.Load(afero.NewIOFS(afero.NewBasePathFs(
-						base,
-						directory,
-					)))
-					if loadErr != nil {
-						t.Fatalf(
-							"installed skills fail existing loader: %v",
-							loadErr,
-						)
-					}
-					for _, name := range test.want {
-						found := false
-						for _, skill := range loaded {
-							if skill.Name == name {
-								found = true
-								if diff := cmp.Diff(
-									test.violations[name],
-									skill.Violations,
-									cmpopts.EquateEmpty(),
-								); diff != "" {
-									t.Fatalf(
-										"loaded violations (-want +got):\n%s",
-										diff,
-									)
+						)))
+						if loadErr != nil {
+							t.Fatalf(
+								"installed skills fail existing loader: %v",
+								loadErr,
+							)
+						}
+						for _, name := range test.want {
+							found := false
+							for _, skill := range loaded {
+								if skill.Name == name {
+									found = true
+									if diff := cmp.Diff(
+										installedViolations[name],
+										skill.Violations,
+										cmpopts.EquateEmpty(),
+									); diff != "" {
+										t.Fatalf(
+											"loaded violations (-want +got):\n%s",
+											diff,
+										)
+									}
 								}
 							}
-						}
-						if !found {
-							t.Errorf(
-								"installed %s is not loadable",
-								name,
-							)
+							if !found {
+								t.Errorf(
+									"installed %s is not loadable",
+									name,
+								)
+							}
 						}
 					}
 					listed, listErr := manager.ListInstalled(
@@ -1067,10 +1425,10 @@ func TestManagerInstall(t *testing.T) {
 					for _, name := range test.want {
 						found := false
 						for _, entry := range listed {
-							if entry.Skill.Name == name && entry.Source != nil {
+							if entry.Skill.Name == name {
 								found = true
 								if diff := cmp.Diff(
-									test.violations[name],
+									installedViolations[name],
 									entry.Skill.Violations,
 									cmpopts.EquateEmpty(),
 								); diff != "" {
@@ -1083,7 +1441,7 @@ func TestManagerInstall(t *testing.T) {
 						}
 						if !found {
 							t.Errorf(
-								"%s installation is not persisted as managed",
+								"%s installation is not listed",
 								name,
 							)
 						}
@@ -1111,8 +1469,23 @@ func TestManagerInstall(t *testing.T) {
 						}
 					}
 				}
+				if test.override {
+					if _, err := base.Stat(filepath.Join(
+						directory,
+						"alpha",
+						"obsolete.txt",
+					)); !errors.Is(
+						err,
+						fs.ErrNotExist,
+					) {
+						t.Errorf("obsolete payload survived replacement")
+					}
+				}
 				for name, file := range test.existing {
-					if name == "skills.json" {
+					if test.override && strings.HasPrefix(
+						name,
+						"alpha/",
+					) {
 						continue
 					}
 					data, readErr := afero.ReadFile(
@@ -1142,7 +1515,6 @@ func TestManagerListInstalled(t *testing.T) {
 		missing, cancel bool
 		link            string
 		want            []string
-		managed         []string
 		errText         string
 		wantErr         error
 	}{
@@ -1154,7 +1526,7 @@ func TestManagerListInstalled(t *testing.T) {
 			missing: true,
 		},
 		{
-			name: "unmanaged skill",
+			name: "installed skill",
 			files: fstest.MapFS{
 				"alpha/SKILL.md": {
 					Data: []byte(alphaSkill),
@@ -1162,35 +1534,6 @@ func TestManagerListInstalled(t *testing.T) {
 			},
 			want: []string{
 				"alpha",
-			},
-		},
-		{
-			name: "managed and unmanaged",
-			files: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaSkill),
-				},
-				"beta/SKILL.md": {
-					Data: []byte(betaSkill),
-				},
-				"skills.json": {
-					Data: []byte(alphaRecord),
-				},
-			},
-			want: []string{
-				"alpha",
-				"beta",
-			},
-			managed: []string{
-				"alpha",
-			},
-		},
-		{
-			name: "stale records are not installed skills",
-			files: fstest.MapFS{
-				"skills.json": {
-					Data: []byte(alphaRecord),
-				},
 			},
 		},
 		{
@@ -1214,24 +1557,6 @@ func TestManagerListInstalled(t *testing.T) {
 			errText: "SKILL.md",
 		},
 		{
-			name: "corrupt metadata",
-			files: fstest.MapFS{
-				"skills.json": {
-					Data: []byte("broken"),
-				},
-			},
-			errText: "skills.json",
-		},
-		{
-			name: "unsupported record version",
-			files: fstest.MapFS{
-				"skills.json": {
-					Data: []byte(`{"version":99,"skills":{}}`),
-				},
-			},
-			errText: "version",
-		},
-		{
 			name: "symlinked installed directory",
 			files: fstest.MapFS{
 				"alpha/SKILL.md": {
@@ -1252,25 +1577,6 @@ func TestManagerListInstalled(t *testing.T) {
 			},
 			link:    "/skills",
 			errText: "symlink",
-		},
-		{
-			name: "record symlink",
-			files: fstest.MapFS{
-				"skills.json": {
-					Data: []byte(alphaRecord),
-				},
-			},
-			link:    "/skills/skills.json",
-			errText: "regular",
-		},
-		{
-			name: "unsafe record key",
-			files: fstest.MapFS{
-				"skills.json": {
-					Data: []byte(`{"version":1,"skills":{"../outside":{"location":"source","directory":"alpha"}}}`),
-				},
-			},
-			errText: "record",
 		},
 		{
 			name:    "cancelled",
@@ -1344,7 +1650,7 @@ func TestManagerListInstalled(t *testing.T) {
 					t.Fatal(err)
 				}
 				if err == nil {
-					var names, managed []string
+					var names []string
 					for _, entry := range got {
 						names = append(
 							names,
@@ -1359,23 +1665,10 @@ func TestManagerListInstalled(t *testing.T) {
 								entry.Directory,
 							)
 						}
-						if entry.Source != nil {
-							managed = append(
-								managed,
-								entry.Skill.Name,
-							)
-						}
 					}
 					if diff := cmp.Diff(
 						test.want,
 						names,
-						cmpopts.EquateEmpty(),
-					); diff != "" {
-						t.Error(diff)
-					}
-					if diff := cmp.Diff(
-						test.managed,
-						managed,
 						cmpopts.EquateEmpty(),
 					); diff != "" {
 						t.Error(diff)
@@ -1409,33 +1702,13 @@ func TestManagerRemove(t *testing.T) {
 		wantErr          error
 	}{
 		{
-			name: "selected unmanaged skill",
+			name: "selected installed skill",
 			files: fstest.MapFS{
 				"alpha/SKILL.md": {
 					Data: []byte(alphaSkill),
 				},
 				"beta/SKILL.md": {
 					Data: []byte(betaSkill),
-				},
-			},
-			names: []string{
-				"alpha",
-			},
-			want: []string{
-				"alpha",
-			},
-		},
-		{
-			name: "managed skill and record",
-			files: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaSkill),
-				},
-				"beta/SKILL.md": {
-					Data: []byte(betaSkill),
-				},
-				"skills.json": {
-					Data: []byte(bothRecords),
 				},
 			},
 			names: []string{
@@ -1461,7 +1734,7 @@ func TestManagerRemove(t *testing.T) {
 			},
 		},
 		{
-			name: "damaged unmanaged bundle",
+			name: "damaged installed bundle",
 			files: fstest.MapFS{
 				"alpha/SKILL.md": {
 					Data: []byte("invalid"),
@@ -1528,21 +1801,6 @@ func TestManagerRemove(t *testing.T) {
 				"alpha",
 			},
 			errText: "directory",
-		},
-		{
-			name: "corrupt records",
-			files: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaSkill),
-				},
-				"skills.json": {
-					Data: []byte("broken"),
-				},
-			},
-			names: []string{
-				"alpha",
-			},
-			errText: "skills.json",
 		},
 		{
 			name: "read only",
@@ -1678,559 +1936,6 @@ func TestManagerRemove(t *testing.T) {
 						t.Errorf("unselected bundle changed")
 					}
 				}
-				if _, ok := test.files["skills.json"]; ok {
-					records := readManagerRecords(
-						t,
-						base,
-						directory,
-					)
-					if _, ok := records["alpha"]; ok {
-						t.Error("removed record remains")
-					}
-					if _, ok := records["beta"]; !ok {
-						t.Error("unselected beta record removed")
-					}
-				}
-			},
-		)
-	}
-}
-
-func TestManagerUpdate(t *testing.T) {
-	t.Parallel()
-	fetchErr := errors.New("source unavailable")
-	for _, test := range []struct {
-		name             string
-		existing, source fstest.MapFS
-		fault            managerFSFault
-		names            []string
-		fetchErr         error
-		cancel, readOnly bool
-		want             []string
-		wantErr          error
-		errText          string
-	}{
-		{
-			name: "empty destination",
-		},
-		{
-			name: "unmanaged skill ignored",
-			existing: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaSkill),
-				},
-			},
-		},
-		{
-			name: "updates managed bundle",
-			existing: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaSkill),
-				},
-				"alpha/obsolete.txt": {
-					Data: []byte("old"),
-				},
-				"skills.json": {
-					Data: []byte(alphaRecord),
-				},
-			},
-			source: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaUpdated),
-				},
-				"alpha/new.txt": {
-					Data: []byte("new"),
-				},
-			},
-			want: []string{
-				"alpha",
-			},
-		},
-		{
-			name: "selected managed skill only",
-			existing: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaSkill),
-				},
-				"beta/SKILL.md": {
-					Data: []byte(betaSkill),
-				},
-				"skills.json": {
-					Data: []byte(bothRecords),
-				},
-			},
-			source: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaUpdated),
-				},
-				"beta/SKILL.md": {
-					Data: []byte("invalid"),
-				},
-			},
-			names: []string{
-				"alpha",
-			},
-			want: []string{
-				"alpha",
-			},
-		},
-		{
-			name: "recorded nested directory",
-			existing: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaSkill),
-				},
-				"skills.json": {
-					Data: []byte(`{"version":1,"skills":{"alpha":{"location":"https://example.com/skills.git","directory":"a/b/c/d/e/alpha"}}}`),
-				},
-			},
-			source: fstest.MapFS{
-				"a/b/c/d/e/alpha/SKILL.md": {
-					Data: []byte(alphaUpdated),
-				},
-			},
-			want: []string{
-				"alpha",
-			},
-		},
-		{
-			name: "recreates missing managed bundle",
-			existing: fstest.MapFS{
-				"skills.json": {
-					Data: []byte(alphaRecord),
-				},
-			},
-			source: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaUpdated),
-				},
-			},
-			want: []string{
-				"alpha",
-			},
-		},
-		{
-			name: "named unmanaged skill rejected",
-			existing: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaSkill),
-				},
-			},
-			names: []string{
-				"alpha",
-			},
-			errText: "managed",
-		},
-		{
-			name: "fetch failure preserves installed bundle",
-			existing: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaSkill),
-				},
-				"skills.json": {
-					Data: []byte(alphaRecord),
-				},
-			},
-			fetchErr: fetchErr,
-			wantErr:  fetchErr,
-		},
-		{
-			name: "invalid incoming definition",
-			existing: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaSkill),
-				},
-				"skills.json": {
-					Data: []byte(alphaRecord),
-				},
-			},
-			source: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte("invalid"),
-				},
-			},
-			errText: "SKILL.md",
-		},
-		{
-			name: "changed incoming name",
-			existing: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaSkill),
-				},
-				"skills.json": {
-					Data: []byte(alphaRecord),
-				},
-			},
-			source: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(betaSkill),
-				},
-			},
-			errText: "directory",
-		},
-		{
-			name: "corrupt records",
-			existing: fstest.MapFS{
-				"skills.json": {
-					Data: []byte("broken"),
-				},
-			},
-			errText: "skills.json",
-		},
-		{
-			name: "recorded source ancestor becomes symlink",
-			existing: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaSkill),
-				},
-				"skills.json": {
-					Data: []byte(`{"version":1,"skills":{"alpha":{"location":"https://example.com/skills.git","directory":"nested/alpha"}}}`),
-				},
-			},
-			source: fstest.MapFS{
-				"nested": {
-					Mode: fs.ModeSymlink,
-				},
-				"nested/alpha/SKILL.md": {
-					Data: []byte(alphaUpdated),
-				},
-			},
-			errText: "symlink",
-		},
-		{
-			name: "metadata commit failure restores old bundle",
-			existing: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaSkill),
-				},
-				"skills.json": {
-					Data: []byte(alphaRecord),
-				},
-			},
-			source: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaUpdated),
-				},
-			},
-			fault:   managerMetadataRenameFailure,
-			wantErr: fs.ErrPermission,
-		},
-		{
-			name: "failed restore retains recovery data",
-			existing: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaSkill),
-				},
-				"skills.json": {
-					Data: []byte(alphaRecord),
-				},
-			},
-			source: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaUpdated),
-				},
-			},
-			fault:   managerRestoreFailure,
-			wantErr: fs.ErrPermission,
-		},
-		{
-			name: "postcommit cleanup error exposes committed result",
-			existing: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaSkill),
-				},
-				"skills.json": {
-					Data: []byte(alphaRecord),
-				},
-			},
-			source: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaUpdated),
-				},
-			},
-			fault:   managerStageCleanupFailure,
-			wantErr: fs.ErrPermission,
-		},
-		{
-			name: "unsafe recorded directory",
-			existing: fstest.MapFS{
-				"skills.json": {
-					Data: []byte(`{"version":1,"skills":{"alpha":{"location":"source","directory":"../outside"}}}`),
-				},
-			},
-			errText: "record",
-		},
-		{
-			name: "read only destination",
-			existing: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaSkill),
-				},
-				"skills.json": {
-					Data: []byte(alphaRecord),
-				},
-			},
-			source: fstest.MapFS{
-				"alpha/SKILL.md": {
-					Data: []byte(alphaUpdated),
-				},
-			},
-			readOnly: true,
-			wantErr:  fs.ErrPermission,
-		},
-		{
-			name:    "cancelled",
-			cancel:  true,
-			wantErr: context.Canceled,
-		},
-	} {
-		t.Run(
-			test.name,
-			func(t *testing.T) {
-				t.Parallel()
-				directory := filepath.FromSlash("/skills")
-				base := newManagerFilesystem(
-					t,
-					directory,
-					test.existing,
-				)
-				before := snapshotManagerFS(
-					t,
-					base,
-				)
-				destinations := base
-				if test.readOnly {
-					destinations = afero.NewReadOnlyFs(base)
-				}
-				ctx, cancel := context.WithCancel(t.Context())
-				defer cancel()
-				if test.cancel {
-					cancel()
-				}
-				if test.fault != managerNoFault {
-					destinations = managerFaultFS{
-						Fs:    base,
-						fault: test.fault,
-					}
-				}
-				got, err := skills.NewManager(
-					managerSourceClient{
-						files: test.source,
-						err:   test.fetchErr,
-					},
-					destinations,
-				).Update(
-					ctx,
-					skills.UpdateRequest{
-						Directory: directory,
-						Skills:    test.names,
-					},
-				)
-				if test.wantErr != nil {
-					if !errors.Is(
-						err,
-						test.wantErr,
-					) {
-						t.Fatalf(
-							"error = %v, want cause %v",
-							err,
-							test.wantErr,
-						)
-					}
-				} else if test.errText != "" {
-					if err == nil || !strings.Contains(
-						err.Error(),
-						test.errText,
-					) {
-						t.Fatalf(
-							"error = %v, want %q",
-							err,
-							test.errText,
-						)
-					}
-				} else if err != nil {
-					t.Fatal(err)
-				}
-				if err != nil {
-					if test.fault == managerRestoreFailure {
-						if !strings.Contains(
-							err.Error(),
-							"retained",
-						) {
-							t.Fatalf(
-								"missing recovery information: %v",
-								err,
-							)
-						}
-						found := false
-						for name, data := range snapshotManagerFS(
-							t,
-							base,
-						) {
-							if strings.Contains(
-								filepath.ToSlash(name),
-								"/old/alpha/SKILL.md",
-							) && data == alphaSkill {
-								found = true
-							}
-						}
-						if !found {
-							t.Fatal("original bundle destroyed after failed rollback")
-						}
-						return
-					}
-					if test.fault == managerStageCleanupFailure {
-						if !strings.Contains(
-							err.Error(),
-							"committed",
-						) || len(got) != 1 || got[0].Skill.Name != "alpha" {
-							t.Fatalf(
-								"committed outcome lost: %#v, %v",
-								got,
-								err,
-							)
-						}
-						data, readErr := afero.ReadFile(
-							base,
-							filepath.Join(
-								directory,
-								"alpha",
-								"SKILL.md",
-							),
-						)
-						if readErr != nil || string(data) != alphaUpdated {
-							t.Fatal("committed bundle missing")
-						}
-						return
-					}
-					if diff := cmp.Diff(
-						before,
-						snapshotManagerFS(
-							t,
-							base,
-						),
-					); diff != "" {
-						t.Fatalf(
-							"failed update changed files:\n%s",
-							diff,
-						)
-					}
-					return
-				}
-				var names []string
-				for _, entry := range got {
-					names = append(
-						names,
-						entry.Skill.Name,
-					)
-					if entry.Source == nil {
-						t.Error("updated entry lost provenance")
-					}
-					data, readErr := afero.ReadFile(
-						base,
-						filepath.Join(
-							entry.Directory,
-							"SKILL.md",
-						),
-					)
-					if readErr != nil || string(data) != alphaUpdated {
-						t.Errorf(
-							"updated definition = %q, %v",
-							data,
-							readErr,
-						)
-					}
-				}
-				if diff := cmp.Diff(
-					test.want,
-					names,
-					cmpopts.EquateEmpty(),
-				); diff != "" {
-					t.Error(diff)
-				}
-				if len(got) > 0 {
-					var previous struct {
-						Skills map[string]skills.SkillSource `json:"skills"`
-					}
-					if err := json.Unmarshal(
-						test.existing["skills.json"].Data,
-						&previous,
-					); err != nil {
-						t.Fatal(err)
-					}
-					if diff := cmp.Diff(
-						previous.Skills,
-						readManagerRecords(
-							t,
-							base,
-							directory,
-						),
-					); diff != "" {
-						t.Fatalf(
-							"update changed provenance records:\n%s",
-							diff,
-						)
-					}
-					for _, entry := range got {
-						source := previous.Skills[entry.Skill.Name]
-						if diff := cmp.Diff(
-							&source,
-							entry.Source,
-						); diff != "" {
-							t.Errorf(
-								"updated provenance:\n%s",
-								diff,
-							)
-						}
-					}
-				}
-				if len(got) == 0 {
-					if diff := cmp.Diff(
-						before,
-						snapshotManagerFS(
-							t,
-							base,
-						),
-					); diff != "" {
-						t.Fatal(diff)
-					}
-				}
-				if _, ok := test.existing["alpha/obsolete.txt"]; ok {
-					if _, statErr := base.Stat(filepath.Join(
-						directory,
-						"alpha",
-						"obsolete.txt",
-					)); !errors.Is(
-						statErr,
-						fs.ErrNotExist,
-					) {
-						t.Error("obsolete payload survived update")
-					}
-					data, readErr := afero.ReadFile(
-						base,
-						filepath.Join(
-							directory,
-							"alpha",
-							"new.txt",
-						),
-					)
-					if readErr != nil || string(data) != "new" {
-						t.Error("new supporting payload missing")
-					}
-				}
-				if file, ok := test.existing["beta/SKILL.md"]; ok {
-					data, readErr := afero.ReadFile(
-						base,
-						filepath.Join(
-							directory,
-							"beta",
-							"SKILL.md",
-						),
-					)
-					if readErr != nil || string(data) != string(file.Data) {
-						t.Error("unselected beta changed")
-					}
-				}
 			},
 		)
 	}
@@ -2315,34 +2020,4 @@ func snapshotManagerFS(t *testing.T, filesystem afero.Fs) map[string]string {
 		t.Fatal(err)
 	}
 	return result
-}
-func readManagerRecords(t *testing.T, filesystem afero.Fs, root string) map[string]skills.SkillSource {
-	t.Helper()
-	data, err := afero.ReadFile(
-		filesystem,
-		filepath.Join(
-			root,
-			"skills.json",
-		),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var records struct {
-		Version int                           `json:"version"`
-		Skills  map[string]skills.SkillSource `json:"skills"`
-	}
-	if err := json.Unmarshal(
-		data,
-		&records,
-	); err != nil {
-		t.Fatal(err)
-	}
-	if records.Version != 1 {
-		t.Fatalf(
-			"record version = %d",
-			records.Version,
-		)
-	}
-	return records.Skills
 }

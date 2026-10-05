@@ -14,6 +14,7 @@ type InstallOptions struct {
 	Source    string
 	Skills    []string
 	Path      *string
+	Override  bool
 	FullDepth bool
 	JSON      bool
 }
@@ -35,6 +36,7 @@ func Install(ctx context.Context, manager *Manager, opts InstallOptions, streams
 			Directory: directories[0],
 			Skills:    opts.Skills,
 			Path:      opts.Path,
+			Override:  opts.Override,
 			Discovery: DiscoveryOptions{
 				FullDepth: opts.FullDepth,
 			},

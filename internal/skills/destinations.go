@@ -1,26 +1,14 @@
 package skills
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/spf13/afero"
 )
-
-const recordFilename = "skills.json"
-
-type installationRecords struct {
-	Version int                    `json:"version"`
-	Skills  map[string]SkillSource `json:"skills"`
-}
 
 func validDirectoryName(name string) bool {
 	return name != "" && name != "." && name != ".." && utf8.ValidString(name) && !strings.ContainsAny(
@@ -93,95 +81,6 @@ func (m *Manager) rejectDestinationLinks(directory string) error {
 		}
 	}
 	return nil
-}
-
-func (m *Manager) records(directory string) (installationRecords, error) {
-	filename := filepath.Join(
-		directory,
-		recordFilename,
-	)
-	info, statErr := m.pathInfo(filename)
-	if errors.Is(
-		statErr,
-		fs.ErrNotExist,
-	) {
-		return installationRecords{
-			Version: 1,
-			Skills:  map[string]SkillSource{},
-		}, nil
-	}
-	if statErr != nil {
-		return installationRecords{}, statErr
-	}
-	if !info.Mode().IsRegular() {
-		return installationRecords{}, fmt.Errorf(
-			"%s must be a regular metadata file",
-			filename,
-		)
-	}
-	data, err := afero.ReadFile(
-		m.destinations,
-		filename,
-	)
-	if errors.Is(
-		err,
-		fs.ErrNotExist,
-	) {
-		return installationRecords{
-			Version: 1,
-			Skills:  map[string]SkillSource{},
-		}, nil
-	}
-	if err != nil {
-		return installationRecords{}, fmt.Errorf(
-			"read %s: %w",
-			filename,
-			err,
-		)
-	}
-	var records installationRecords
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&records); err != nil {
-		return installationRecords{}, fmt.Errorf(
-			"decode %s: %w",
-			filename,
-			err,
-		)
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		return installationRecords{}, fmt.Errorf(
-			"%s must contain one JSON object",
-			filename,
-		)
-	}
-	if records.Version != 1 {
-		return installationRecords{}, fmt.Errorf(
-			"%s: unsupported version %d",
-			filename,
-			records.Version,
-		)
-	}
-	if records.Skills == nil {
-		return installationRecords{}, fmt.Errorf(
-			"%s: missing skills records",
-			filename,
-		)
-	}
-	for name, source := range records.Skills {
-		if !validDirectoryName(name) || strings.TrimSpace(source.Location) == "" || !fs.ValidPath(source.Directory) || strings.ContainsAny(
-			source.Directory,
-			"\\\x00",
-		) {
-			return installationRecords{}, fmt.Errorf(
-				"%s: invalid record %q",
-				filename,
-				name,
-			)
-		}
-	}
-	return records, nil
 }
 
 func selectedNames(names []string) ([]string, error) {

@@ -30,6 +30,10 @@ func TestInstall(t *testing.T) {
 		names            []string
 		sourcePath       *string
 		sourceFiles      fstest.MapFS
+		existing         fstest.MapFS
+		override         bool
+		fault            managerFSFault
+		committed        bool
 		wantDefinition   string
 		deep             bool
 		link             bool
@@ -51,6 +55,42 @@ func TestInstall(t *testing.T) {
 				Directory: new("/custom"),
 			},
 			source: managerSource,
+		},
+		{
+			name: "override replaces an existing skill",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source: managerSource,
+			names: []string{
+				"alpha",
+			},
+			existing: fstest.MapFS{
+				"custom/alpha/SKILL.md": {
+					Data: []byte(alphaUpdated),
+				},
+			},
+			override: true,
+		},
+		{
+			name: "committed replacement is rendered despite cleanup failure",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source: managerSource,
+			names: []string{
+				"alpha",
+			},
+			existing: fstest.MapFS{
+				"custom/alpha/SKILL.md": {
+					Data: []byte(alphaUpdated),
+				},
+			},
+			override:  true,
+			fault:     managerStageCleanupFailure,
+			committed: true,
 		},
 		{
 			name: "global directory",
@@ -145,6 +185,66 @@ func TestInstall(t *testing.T) {
 			source:     managerSource,
 			sourcePath: new(""),
 			errText:    "invalid source directory",
+		},
+		{
+			name: "install all warns for a directory mismatch without blocking",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source: managerSource,
+			sourceFiles: fstest.MapFS{
+				"template/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+				"beta/SKILL.md": {
+					Data: []byte(betaSkill),
+				},
+			},
+			wantWarnings: []string{
+				`alpha: name "alpha" does not match directory "template"`,
+			},
+		},
+		{
+			name: "name-selected installation warns for its mismatched directory",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source: managerSource,
+			names: []string{
+				"alpha",
+			},
+			sourceFiles: fstest.MapFS{
+				"template/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+				"beta/SKILL.md": {
+					Data: []byte("invalid"),
+				},
+			},
+			wantWarnings: []string{
+				`alpha: name "alpha" does not match directory "template"`,
+			},
+		},
+		{
+			name: "unselected mismatched directories do not produce warnings",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source: managerSource,
+			names: []string{
+				"alpha",
+			},
+			sourceFiles: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+				"template/SKILL.md": {
+					Data: []byte(betaSkill),
+				},
+			},
 		},
 		{
 			name: "selected installation warns only for its skill",
@@ -315,7 +415,7 @@ func TestInstall(t *testing.T) {
 				destinations := newManagerFilesystem(
 					t,
 					"/",
-					nil,
+					test.existing,
 				)
 				if test.link {
 					if err := destinations.MkdirAll(
@@ -338,6 +438,12 @@ func TestInstall(t *testing.T) {
 						"Alpha skill",
 						strconv.Quote(test.description),
 					)
+				}
+				if test.fault != managerNoFault {
+					destinations = managerFaultFS{
+						Fs:    destinations,
+						fault: test.fault,
+					}
 				}
 				otherDefinition := betaSkill
 				if test.otherDescription != "" {
@@ -401,6 +507,7 @@ func TestInstall(t *testing.T) {
 						Source:    test.source,
 						Skills:    test.names,
 						Path:      test.sourcePath,
+						Override:  test.override,
 						FullDepth: test.deep,
 						JSON:      test.json,
 					},
@@ -448,6 +555,20 @@ func TestInstall(t *testing.T) {
 					) {
 						t.Fatalf(
 							"error = %v, want original warning writer failure",
+							err,
+						)
+					}
+				} else if test.committed {
+					var cleanup *skills.CommittedCleanupError
+					if !errors.As(
+						err,
+						&cleanup,
+					) || !errors.Is(
+						err,
+						fs.ErrPermission,
+					) {
+						t.Fatalf(
+							"error = %v, want committed cleanup failure with its cause",
 							err,
 						)
 					}
@@ -618,6 +739,7 @@ func TestList(t *testing.T) {
 		json              bool
 		want              []string
 		unsafeDescription bool
+		directoryMismatch bool
 		description       string
 		wantText          []string
 		wantLineCount     int
@@ -643,6 +765,62 @@ func TestList(t *testing.T) {
 			},
 			want: []string{
 				"alpha",
+			},
+		},
+		{
+			name: "installed directory mismatch warns without blocking inventory",
+			scope: skills.ScopeOptions{
+				Project: true,
+			},
+			directoryMismatch: true,
+			want: []string{
+				"alpha",
+			},
+			wantWarnings: []string{
+				`alpha: name "alpha" does not match directory "template"`,
+			},
+		},
+		{
+			name:              "installed JSON retains a directory mismatch violation",
+			json:              true,
+			directoryMismatch: true,
+			description:       "Alpha skill",
+			want: []string{
+				"alpha",
+				"beta",
+			},
+			wantWarnings: []string{
+				`alpha: name "alpha" does not match directory "template"`,
+			},
+			violations: []string{
+				`name "alpha" does not match directory "template"`,
+			},
+		},
+		{
+			name:              "source directory mismatch warns without blocking inventory",
+			source:            new(managerSource),
+			directoryMismatch: true,
+			want: []string{
+				"delta",
+			},
+			wantWarnings: []string{
+				`delta: name "delta" does not match directory "template"`,
+			},
+		},
+		{
+			name:              "source JSON retains a directory mismatch violation",
+			source:            new(managerSource),
+			json:              true,
+			directoryMismatch: true,
+			description:       "Delta skill",
+			want: []string{
+				"delta",
+			},
+			wantWarnings: []string{
+				`delta: name "delta" does not match directory "template"`,
+			},
+			violations: []string{
+				`name "delta" does not match directory "template"`,
 			},
 		},
 		{
@@ -959,11 +1137,17 @@ func TestList(t *testing.T) {
 						strconv.Quote(test.description),
 					)
 				}
+				projectDirectory := "alpha"
+				sourceDirectory := "delta"
+				if test.directoryMismatch {
+					projectDirectory = "template"
+					sourceDirectory = "template"
+				}
 				destinations := newManagerFilesystem(
 					t,
 					skills.ProjectPath(cwd),
 					fstest.MapFS{
-						"alpha/SKILL.md": {
+						projectDirectory + "/SKILL.md": {
 							Data: []byte(definition),
 						},
 					},
@@ -1008,7 +1192,7 @@ func TestList(t *testing.T) {
 				manager := skills.NewManager(
 					managerSourceClient{
 						files: fstest.MapFS{
-							"delta/SKILL.md": {
+							sourceDirectory + "/SKILL.md": {
 								Data: []byte(sourceDefinition),
 							},
 						},
@@ -1298,7 +1482,9 @@ func TestRemove(t *testing.T) {
 	for _, test := range []struct {
 		name              string
 		scope             skills.ScopeOptions
-		both, json        bool
+		both, json, all   bool
+		files             fstest.MapFS
+		removed           []string
 		invalidCrossScope bool
 		forceColor        bool
 		wantText          []string
@@ -1306,6 +1492,35 @@ func TestRemove(t *testing.T) {
 	}{
 		{
 			name: "unambiguous default selection",
+		},
+		{
+			name: "all removes the actual mismatched directory",
+			all:  true,
+			files: fstest.MapFS{
+				"template/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			removed: []string{
+				"template",
+			},
+		},
+		{
+			name: "all removes every directory despite duplicate declared names",
+			all:  true,
+			json: true,
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+				"template/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			removed: []string{
+				"alpha",
+				"template",
+			},
 		},
 		{
 			name:       "colored removal",
@@ -1386,14 +1601,18 @@ func TestRemove(t *testing.T) {
 				}
 				project := skills.ProjectPath(cwd)
 				global := filepath.FromSlash("/test-home/.agents/skills")
-				destinations := newManagerFilesystem(
-					t,
-					project,
-					fstest.MapFS{
+				files := test.files
+				if files == nil {
+					files = fstest.MapFS{
 						"alpha/SKILL.md": {
 							Data: []byte(alphaSkill),
 						},
-					},
+					}
+				}
+				destinations := newManagerFilesystem(
+					t,
+					project,
+					files,
 				)
 				if test.both {
 					if err := destinations.MkdirAll(
@@ -1444,6 +1663,9 @@ func TestRemove(t *testing.T) {
 				names := []string{
 					"alpha",
 				}
+				if test.all {
+					names = nil
+				}
 				if test.invalidCrossScope {
 					names = append(
 						names,
@@ -1485,6 +1707,7 @@ func TestRemove(t *testing.T) {
 					skills.RemoveOptions{
 						Scope:  test.scope,
 						Skills: names,
+						All:    test.all,
 						JSON:   test.json,
 					},
 					skills.IO{
@@ -1519,17 +1742,26 @@ func TestRemove(t *testing.T) {
 				if test.scope.Directory != nil {
 					selected = *test.scope.Directory
 				}
-				if _, err := destinations.Stat(filepath.Join(
-					selected,
-					"alpha",
-				)); !errors.Is(
-					err,
-					fs.ErrNotExist,
-				) {
-					t.Errorf(
-						"selected bundle still exists: %v",
+				removed := test.removed
+				if removed == nil {
+					removed = []string{
+						"alpha",
+					}
+				}
+				for _, name := range removed {
+					if _, err := destinations.Stat(filepath.Join(
+						selected,
+						name,
+					)); !errors.Is(
 						err,
-					)
+						fs.ErrNotExist,
+					) {
+						t.Errorf(
+							"selected bundle %s still exists: %v",
+							name,
+							err,
+						)
+					}
 				}
 				if test.both {
 					if _, err := destinations.Stat(filepath.Join(
@@ -1553,8 +1785,33 @@ func TestRemove(t *testing.T) {
 						)
 					}
 				}
-				if test.json && !json.Valid(output.Bytes()) {
-					t.Error("invalid JSON")
+				if test.json {
+					var paths []string
+					if err := json.Unmarshal(
+						output.Bytes(),
+						&paths,
+					); err != nil {
+						t.Fatal(err)
+					}
+					var wantPaths []string
+					for _, name := range removed {
+						wantPaths = append(
+							wantPaths,
+							filepath.Join(
+								selected,
+								name,
+							),
+						)
+					}
+					if diff := cmp.Diff(
+						wantPaths,
+						paths,
+					); diff != "" {
+						t.Fatalf(
+							"removed paths (-want +got):\n%s",
+							diff,
+						)
+					}
 				}
 				if !test.json {
 					if strings.Contains(
@@ -1566,11 +1823,13 @@ func TestRemove(t *testing.T) {
 							&output,
 						)
 					}
-					for _, text := range []string{
-						"Removed",
-						"Location",
-						"alpha",
-					} {
+					for _, text := range append(
+						[]string{
+							"Removed",
+							"Location",
+						},
+						removed...,
+					) {
 						if !strings.Contains(
 							output.String(),
 							text,
@@ -1606,202 +1865,6 @@ func TestRemove(t *testing.T) {
 							&output,
 						)
 					}
-				}
-			},
-		)
-	}
-}
-
-func TestUpdate(t *testing.T) {
-	for _, test := range []struct {
-		name                                string
-		scope                               skills.ScopeOptions
-		json                                bool
-		names                               []string
-		wantProject, wantGlobal, wantCustom bool
-	}{
-		{
-			name:        "both scopes by default",
-			wantProject: true,
-			wantGlobal:  true,
-		},
-		{
-			name: "selected skill only",
-			names: []string{
-				"alpha",
-			},
-			wantProject: true,
-			wantGlobal:  true,
-		},
-		{
-			name: "project only",
-			scope: skills.ScopeOptions{
-				Project: true,
-			},
-			wantProject: true,
-		},
-		{
-			name: "global only",
-			scope: skills.ScopeOptions{
-				Global: true,
-			},
-			wantGlobal: true,
-		},
-		{
-			name: "custom directory only",
-			scope: skills.ScopeOptions{
-				Directory: new("/custom"),
-			},
-			wantCustom: true,
-		},
-		{
-			name:        "JSON result",
-			json:        true,
-			wantProject: true,
-			wantGlobal:  true,
-		},
-	} {
-		t.Run(
-			test.name,
-			func(t *testing.T) {
-				t.Setenv(
-					"HOME",
-					"/test-home",
-				)
-				cwd, err := os.Getwd()
-				if err != nil {
-					t.Fatal(err)
-				}
-				project := skills.ProjectPath(cwd)
-				global := filepath.FromSlash("/test-home/.agents/skills")
-				destinations := afero.NewMemMapFs()
-				for _, root := range []string{
-					project,
-					global,
-					"/custom",
-				} {
-					for name, data := range map[string]string{
-						"alpha/SKILL.md": alphaSkill,
-						"beta/SKILL.md":  betaSkill,
-						"skills.json":    bothRecords,
-					} {
-						filename := filepath.Join(
-							root,
-							filepath.FromSlash(name),
-						)
-						if err := destinations.MkdirAll(
-							filepath.Dir(filename),
-							0o700,
-						); err != nil {
-							t.Fatal(err)
-						}
-						if err := afero.WriteFile(
-							destinations,
-							filename,
-							[]byte(data),
-							0o600,
-						); err != nil {
-							t.Fatal(err)
-						}
-					}
-				}
-				manager := skills.NewManager(
-					managerSourceClient{
-						files: fstest.MapFS{
-							"alpha/SKILL.md": {
-								Data: []byte(alphaUpdated),
-							},
-							"beta/SKILL.md": {
-								Data: []byte(strings.ReplaceAll(
-									betaSkill,
-									"Beta skill",
-									"Updated beta",
-								)),
-							},
-						},
-					},
-					destinations,
-				)
-				var output bytes.Buffer
-				err = skills.Update(
-					t.Context(),
-					manager,
-					skills.UpdateOptions{
-						Scope:  test.scope,
-						Skills: test.names,
-						JSON:   test.json,
-					},
-					skills.IO{
-						Out: &output,
-					},
-				)
-				if err != nil {
-					t.Fatal(err)
-				}
-				for _, root := range []struct {
-					path    string
-					updated bool
-				}{
-					{
-						project,
-						test.wantProject,
-					},
-					{
-						global,
-						test.wantGlobal,
-					},
-					{
-						"/custom",
-						test.wantCustom,
-					},
-				} {
-					want := alphaSkill
-					if root.updated {
-						want = alphaUpdated
-					}
-					got, readErr := afero.ReadFile(
-						destinations,
-						filepath.Join(
-							root.path,
-							"alpha",
-							"SKILL.md",
-						),
-					)
-					if readErr != nil || string(got) != want {
-						t.Errorf(
-							"%s content = %q, %v",
-							root.path,
-							got,
-							readErr,
-						)
-					}
-					wantBeta := betaSkill
-					if root.updated && len(test.names) == 0 {
-						wantBeta = strings.ReplaceAll(
-							betaSkill,
-							"Beta skill",
-							"Updated beta",
-						)
-					}
-					beta, betaErr := afero.ReadFile(
-						destinations,
-						filepath.Join(
-							root.path,
-							"beta",
-							"SKILL.md",
-						),
-					)
-					if betaErr != nil || string(beta) != wantBeta {
-						t.Errorf(
-							"%s beta = %q, %v",
-							root.path,
-							beta,
-							betaErr,
-						)
-					}
-				}
-				if test.json && !json.Valid(output.Bytes()) {
-					t.Error("invalid JSON")
 				}
 			},
 		)

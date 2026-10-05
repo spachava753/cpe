@@ -9,13 +9,11 @@ import (
 )
 
 type removalPlan struct {
-	changes      []bundleChange
-	paths        []string
-	records      installationRecords
-	writeRecords bool
+	changes []bundleChange
+	paths   []string
 }
 
-// All eligibility and bookkeeping checks happen before a removal can mutate.
+// All eligibility checks happen before a removal can mutate.
 func (m *Manager) prepareRemoval(ctx context.Context, request RemoveRequest) (removalPlan, error) {
 	if err := m.destination(
 		ctx,
@@ -30,13 +28,7 @@ func (m *Manager) prepareRemoval(ctx context.Context, request RemoveRequest) (re
 	if len(names) == 0 {
 		return removalPlan{}, errors.New("select at least one skill to remove")
 	}
-	records, err := m.records(request.Directory)
-	if err != nil {
-		return removalPlan{}, err
-	}
-	plan := removalPlan{
-		records: records,
-	}
+	plan := removalPlan{}
 	for _, name := range names {
 		if err := ctx.Err(); err != nil {
 			return removalPlan{}, err
@@ -59,30 +51,22 @@ func (m *Manager) prepareRemoval(ctx context.Context, request RemoveRequest) (re
 				filename,
 			)
 		}
-		if _, ok := records.Skills[name]; ok {
-			delete(
-				records.Skills,
-				name,
-			)
-			plan.writeRecords = true
-		} else {
-			definition, err := m.pathInfo(filepath.Join(
+		definition, err := m.pathInfo(filepath.Join(
+			filename,
+			"SKILL.md",
+		))
+		if err != nil {
+			return removalPlan{}, fmt.Errorf(
+				"%s is not a skill directory: %w",
 				filename,
-				"SKILL.md",
-			))
-			if err != nil {
-				return removalPlan{}, fmt.Errorf(
-					"%s is not a skill directory: %w",
-					filename,
-					err,
-				)
-			}
-			if !definition.Mode().IsRegular() {
-				return removalPlan{}, fmt.Errorf(
-					"%s is not a skill directory with a regular SKILL.md",
-					filename,
-				)
-			}
+				err,
+			)
+		}
+		if !definition.Mode().IsRegular() {
+			return removalPlan{}, fmt.Errorf(
+				"%s is not a skill directory with a regular SKILL.md",
+				filename,
+			)
 		}
 		plan.changes = append(
 			plan.changes,

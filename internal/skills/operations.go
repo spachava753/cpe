@@ -12,10 +12,10 @@ type IO struct {
 }
 
 // ScopeOptions contains raw destination inputs. Actions own path resolution.
-// A non-nil Directory selects only that exact skill directory, with skills.json
-// inside it; it may be combined with Project, but not Global. Otherwise Project
-// or Global selects its default directory. When both are false, List and Update
-// use both defaults, Remove searches both, and Install requires an explicit scope.
+// A non-nil Directory selects only that exact skill directory; it may be combined
+// with Project, but not Global. Otherwise Project or Global selects its default
+// directory. When both are false, List uses both defaults, Remove searches both,
+// and Install requires an explicit scope.
 type ScopeOptions struct {
 	Directory *string
 	Project   bool

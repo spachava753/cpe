@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"io/fs"
 	"net/url"
@@ -220,30 +219,15 @@ func TestSkillsLifecycle(t *testing.T) {
 					err,
 				)
 			}
-			data, err = afero.ReadFile(
+			entries, err := afero.ReadDir(
 				destinations,
-				"/skills/skills.json",
+				"/skills",
 			)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var records struct {
-				Version int                           `json:"version"`
-				Skills  map[string]skills.SkillSource `json:"skills"`
-			}
-			if err := json.Unmarshal(
-				data,
-				&records,
-			); err != nil {
-				t.Fatal(err)
-			}
-			if records.Version != 1 || records.Skills["alpha"] != (skills.SkillSource{
-				Location:  source,
-				Directory: "alpha",
-			}) {
+			if err != nil || len(entries) != 1 || entries[0].Name() != "alpha" {
 				t.Fatalf(
-					"bookkeeping = %#v",
-					records,
+					"installation wrote more than its bundle: %v, %v",
+					entries,
+					err,
 				)
 			}
 		},
@@ -281,7 +265,7 @@ func TestSkillsLifecycle(t *testing.T) {
 		},
 	)
 	t.Run(
-		"update",
+		"reinstall with override",
 		func(t *testing.T) {
 			definition = strings.ReplaceAll(
 				definition,
@@ -323,7 +307,7 @@ func TestSkillsLifecycle(t *testing.T) {
 					"commit",
 					"--quiet",
 					"-m",
-					"update",
+					"replace bundle",
 				},
 			} {
 				if output, err := exec.CommandContext(
@@ -346,10 +330,15 @@ func TestSkillsLifecycle(t *testing.T) {
 			)
 			command.SetArgs([]string{
 				"skills",
-				"update",
-				"alpha",
+				"install",
+				source,
+				"--scope",
+				"project",
 				"--dir",
 				"/skills",
+				"--path",
+				"alpha",
+				"--override",
 			})
 			command.SetOut(&output)
 			if err := command.ExecuteContext(t.Context()); err != nil {
@@ -361,7 +350,7 @@ func TestSkillsLifecycle(t *testing.T) {
 			)
 			if err != nil || string(data) != definition {
 				t.Fatalf(
-					"updated definition = %q, %v",
+					"replacement definition = %q, %v",
 					data,
 					err,
 				)
@@ -402,17 +391,14 @@ func TestSkillsLifecycle(t *testing.T) {
 					err,
 				)
 			}
-			data, err := afero.ReadFile(
+			entries, err := afero.ReadDir(
 				destinations,
-				"/skills/skills.json",
+				"/skills",
 			)
-			if err != nil || strings.Contains(
-				string(data),
-				"alpha",
-			) {
+			if err != nil || len(entries) != 0 {
 				t.Errorf(
-					"removed provenance remains: %q, %v",
-					data,
+					"removal left files behind: %v, %v",
+					entries,
 					err,
 				)
 			}

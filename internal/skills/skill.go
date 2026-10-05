@@ -18,7 +18,7 @@ import (
 // Skill represents a single skill, as defined by https://agentskills.io/specification
 type Skill struct {
 	// Name identifies the skill. CPE records violations of the specification's
-	// 64-character limit rather than rejecting the skill.
+	// 64-character limit and directory-name convention rather than rejecting it.
 	Name string
 	// Description explains what the skill does and when to use it. CPE records
 	// violations of the specification's 1024-character limit without truncation.
@@ -63,7 +63,8 @@ func ProjectPath(cwd string) string {
 // symlinked directories. Paths are relative to root. Every child directory must
 // contain a valid skill; other files and bundled resources are ignored.
 // Unknown frontmatter fields are ignored; client-specific metadata is preserved.
-// Name and description length limits produce Violations, not errors.
+// Name/directory mismatches and name/description length limits produce
+// Violations, not errors.
 // Load stops at the first error and returns no partial results.
 func Load(root fs.FS) ([]Skill, error) {
 	entries, err := fs.ReadDir(
@@ -142,7 +143,7 @@ type skillFrontmatter struct {
 	InvocationDisabled yaml.Node `yaml:"disable-model-invocation"`
 }
 
-func parseSkill(data []byte, filename string) (Skill, error) {
+func decodeSkillFrontmatter(data []byte) (skillFrontmatter, error) {
 	data = bytes.TrimPrefix(
 		data,
 		[]byte{
@@ -153,12 +154,12 @@ func parseSkill(data []byte, filename string) (Skill, error) {
 	)
 	frontmatter, err := skillHeader(data)
 	if err != nil {
-		return Skill{}, err
+		return skillFrontmatter{}, err
 	}
 	decoder := yaml.NewDecoder(bytes.NewReader(frontmatter))
 	var fields skillFrontmatter
 	if err := decoder.Decode(&fields); err != nil {
-		return Skill{}, fmt.Errorf(
+		return skillFrontmatter{}, fmt.Errorf(
 			"decode frontmatter: %w",
 			err,
 		)
@@ -166,14 +167,21 @@ func parseSkill(data []byte, filename string) (Skill, error) {
 	var trailing yaml.Node
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		if err != nil {
-			return Skill{}, fmt.Errorf(
+			return skillFrontmatter{}, fmt.Errorf(
 				"decode trailing frontmatter: %w",
 				err,
 			)
 		}
-		return Skill{}, fmt.Errorf("frontmatter must contain one YAML mapping")
+		return skillFrontmatter{}, fmt.Errorf("frontmatter must contain one YAML mapping")
 	}
+	return fields, nil
+}
 
+func parseSkill(data []byte, filename string) (Skill, error) {
+	fields, err := decodeSkillFrontmatter(data)
+	if err != nil {
+		return Skill{}, err
+	}
 	skill := Skill{
 		Path: filename,
 	}
@@ -250,10 +258,13 @@ func parseSkill(data []byte, filename string) (Skill, error) {
 		}
 	}
 	if directory := path.Dir(filename); directory != "." && skill.Name != path.Base(directory) {
-		return Skill{}, fmt.Errorf(
-			"name %q must match directory %q",
-			skill.Name,
-			directory,
+		skill.Violations = append(
+			skill.Violations,
+			fmt.Sprintf(
+				"name %q does not match directory %q",
+				skill.Name,
+				directory,
+			),
 		)
 	}
 	for _, field := range []struct {

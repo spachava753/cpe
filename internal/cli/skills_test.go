@@ -21,7 +21,6 @@ func TestSkillsCommands(t *testing.T) {
 		args    []string
 		install *skills.InstallOptions
 		list    *skills.ListOptions
-		update  *skills.UpdateOptions
 		remove  *skills.RemoveOptions
 		err     string
 	}{
@@ -65,6 +64,24 @@ func TestSkillsCommands(t *testing.T) {
 					"two",
 				},
 				FullDepth: true,
+			},
+		},
+		{
+			name: "install override is forwarded",
+			args: []string{
+				"skills",
+				"install",
+				"owner/repo",
+				"--scope",
+				"project",
+				"--override",
+			},
+			install: &skills.InstallOptions{
+				Scope: skills.ScopeOptions{
+					Project: true,
+				},
+				Source:   "owner/repo",
+				Override: true,
 			},
 		},
 		{
@@ -210,55 +227,7 @@ func TestSkillsCommands(t *testing.T) {
 			},
 		},
 		{
-			name: "update defaults",
-			args: []string{
-				"skills",
-				"update",
-			},
-			update: &skills.UpdateOptions{
-				Skills: []string{},
-			},
-		},
-		{
-			name: "update custom directory without scope",
-			args: []string{
-				"skills",
-				"u",
-				"one",
-				"two",
-				"--dir",
-				"./team-skills",
-			},
-			update: &skills.UpdateOptions{
-				Scope: skills.ScopeOptions{
-					Directory: new("./team-skills"),
-				},
-				Skills: []string{
-					"one",
-					"two",
-				},
-			},
-		},
-		{
-			name: "update explicit project",
-			args: []string{
-				"skills",
-				"upgrade",
-				"one",
-				"--scope",
-				"project",
-			},
-			update: &skills.UpdateOptions{
-				Scope: skills.ScopeOptions{
-					Project: true,
-				},
-				Skills: []string{
-					"one",
-				},
-			},
-		},
-		{
-			name: "remove names without scope or records",
+			name: "remove names without scope",
 			args: []string{
 				"skills",
 				"remove",
@@ -390,16 +359,6 @@ func TestSkillsCommands(t *testing.T) {
 			err: "--scope must be project or global",
 		},
 		{
-			name: "invalid update scope",
-			args: []string{
-				"skills",
-				"update",
-				"--scope",
-				"globla",
-			},
-			err: "--scope must be project or global",
-		},
-		{
 			name: "invalid remove scope",
 			args: []string{
 				"skills",
@@ -414,7 +373,7 @@ func TestSkillsCommands(t *testing.T) {
 			name: "explicitly empty scope",
 			args: []string{
 				"skills",
-				"update",
+				"list",
 				"--scope=",
 			},
 			err: "--scope must be project or global",
@@ -423,7 +382,7 @@ func TestSkillsCommands(t *testing.T) {
 			name: "empty directory",
 			args: []string{
 				"skills",
-				"update",
+				"list",
 				"--dir=",
 			},
 			err: "--dir must not be empty",
@@ -432,7 +391,7 @@ func TestSkillsCommands(t *testing.T) {
 			name: "global scope conflicts with directory",
 			args: []string{
 				"skills",
-				"update",
+				"list",
 				"--scope",
 				"global",
 				"--dir",
@@ -520,23 +479,6 @@ func TestSkillsCommands(t *testing.T) {
 							}
 							return operationErr
 						},
-						update: func(ctx context.Context, manager *skills.Manager, opts skills.UpdateOptions, streams skills.IO) error {
-							checkBoundary(
-								ctx,
-								manager,
-								streams,
-							)
-							if diff := cmp.Diff(
-								test.update,
-								&opts,
-							); diff != "" {
-								t.Fatalf(
-									"update options (-want +got):\n%s",
-									diff,
-								)
-							}
-							return operationErr
-						},
 						remove: func(ctx context.Context, manager *skills.Manager, opts skills.RemoveOptions, streams skills.IO) error {
 							checkBoundary(
 								ctx,
@@ -597,15 +539,14 @@ func TestSkillsHelp(t *testing.T) {
 		want []string
 	}{
 		{
-			name: "destinations and metadata",
+			name: "destinations",
 			args: []string{
 				"skills",
 				"--help",
 			},
 			want: []string{
-				"~/.agents/skills/skills.json",
-				"./.agents/skills/skills.json",
-				"<directory>/skills.json",
+				"~/.agents/skills",
+				"./.agents/skills",
 				"Only that directory is selected",
 			},
 		},
@@ -619,6 +560,8 @@ func TestSkillsHelp(t *testing.T) {
 			want: []string{
 				"install SOURCE",
 				"--full-depth",
+				"--override",
+				"replace the complete selected skill directory",
 				"--path",
 				"source-relative skill directory",
 				"--path and --skill are mutually exclusive",
@@ -637,23 +580,11 @@ func TestSkillsHelp(t *testing.T) {
 			},
 			want: []string{
 				"list [SOURCE]",
-				"including skills not installed or managed by CPE",
+				"including skills copied manually or by another tool",
 			},
 		},
 		{
-			name: "directory-only update",
-			args: []string{
-				"skills",
-				"update",
-				"--help",
-			},
-			want: []string{
-				"update [SKILL...]",
-				"global skills are not included",
-			},
-		},
-		{
-			name: "unmanaged removal",
+			name: "removal without frontmatter parsing",
 			args: []string{
 				"skills",
 				"remove",
@@ -661,8 +592,8 @@ func TestSkillsHelp(t *testing.T) {
 			},
 			want: []string{
 				"remove SKILL...",
-				"including unmanaged, manually copied skills",
-				"a record is not required",
+				"including manually copied skills",
+				"without parsing their frontmatter",
 			},
 		},
 	} {

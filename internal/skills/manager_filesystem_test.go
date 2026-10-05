@@ -13,7 +13,8 @@ type managerFSFault uint8
 
 const (
 	managerNoFault managerFSFault = iota
-	managerMetadataRenameFailure
+	managerPublishFailure
+	managerLatePublishFailure
 	managerRestoreFailure
 	managerStageCleanupFailure
 )
@@ -24,13 +25,17 @@ type managerFaultFS struct {
 }
 
 func (filesystem managerFaultFS) Rename(oldname, newname string) error {
-	if filesystem.fault == managerMetadataRenameFailure || filesystem.fault == managerRestoreFailure {
-		if filepath.Base(oldname) == "skills.json" || (filesystem.fault == managerRestoreFailure && strings.Contains(
-			filepath.ToSlash(oldname),
-			"/old/",
-		)) {
-			return fs.ErrPermission
-		}
+	failPublish := filesystem.fault == managerPublishFailure ||
+		filesystem.fault == managerRestoreFailure ||
+		(filesystem.fault == managerLatePublishFailure && filepath.Base(oldname) == "beta")
+	if (failPublish && strings.Contains(
+		filepath.ToSlash(oldname),
+		"/new/",
+	)) || (filesystem.fault == managerRestoreFailure && strings.Contains(
+		filepath.ToSlash(oldname),
+		"/old/",
+	)) {
+		return fs.ErrPermission
 	}
 	return filesystem.Fs.Rename(
 		oldname,

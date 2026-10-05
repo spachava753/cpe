@@ -2,7 +2,6 @@ package skills
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -132,8 +131,8 @@ func (err *CommittedCleanupError) Error() string {
 func (err *CommittedCleanupError) Unwrap() error { return err.Err }
 
 // applyChanges stages every bundle before replacing any destination. Old bundles
-// remain recoverable until the atomic metadata rename succeeds.
-func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundleChange, records installationRecords, writeRecords bool) (err error) {
+// remain recoverable until every selected change has been published successfully.
+func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundleChange) (err error) {
 	if len(changes) == 0 {
 		return nil
 	}
@@ -311,6 +310,19 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 					filename,
 				))
 			}
+			definition, err := m.pathInfo(filepath.Join(
+				filename,
+				"SKILL.md",
+			))
+			if err != nil {
+				return rollback(err)
+			}
+			if !definition.Mode().IsRegular() {
+				return rollback(fmt.Errorf(
+					"destination %s must contain a regular SKILL.md",
+					filename,
+				))
+			}
 			if err := m.destinations.MkdirAll(
 				filepath.Join(
 					stage,
@@ -359,41 +371,6 @@ func (m *Manager) applyChanges(ctx context.Context, root string, changes []bundl
 	}
 	if err := ctx.Err(); err != nil {
 		return rollback(err)
-	}
-	if writeRecords {
-		data, err := json.MarshalIndent(
-			records,
-			"",
-			"  ",
-		)
-		if err != nil {
-			return rollback(err)
-		}
-		data = append(
-			data,
-			'\n',
-		)
-		filename := filepath.Join(
-			stage,
-			recordFilename,
-		)
-		if err := afero.WriteFile(
-			m.destinations,
-			filename,
-			data,
-			0o600,
-		); err != nil {
-			return rollback(err)
-		}
-		if err := m.destinations.Rename(
-			filename,
-			filepath.Join(
-				root,
-				recordFilename,
-			),
-		); err != nil {
-			return rollback(err)
-		}
 	}
 	committed = true
 	return nil

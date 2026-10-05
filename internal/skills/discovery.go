@@ -47,8 +47,7 @@ func releaseCheckout(checkout Checkout) error {
 	return nil
 }
 
-// Names match bundle directories by the parsed skill invariant. Root bundles
-// have no directory identity, so their declared name is checked after parsing.
+// Select by declared skill names, not by source directory names.
 func discover(ctx context.Context, filesystem fs.FS, opts DiscoveryOptions, names []string) ([]Skill, error) {
 	var result []Skill
 	err := fs.WalkDir(
@@ -84,34 +83,76 @@ func discover(ctx context.Context, filesystem fs.FS, opts DiscoveryOptions, name
 				if child.Name() != "SKILL.md" {
 					continue
 				}
-				if directory != "." && len(names) > 0 && !slices.Contains(
-					names,
-					path.Base(directory),
-				) {
-					return fs.SkipDir
-				}
 				if err := ensureSourceDirectory(
 					filesystem,
 					directory,
 				); err != nil {
 					return err
 				}
-				skill, err := readDefinition(
+				data, err := readDefinitionData(
 					filesystem,
 					directory,
 				)
+				filename := path.Join(
+					directory,
+					"SKILL.md",
+				)
+				if len(names) > 0 {
+					var declaredName string
+					if err == nil || data != nil {
+						fields, parseErr := decodeSkillFrontmatter(data)
+						if parseErr == nil {
+							declaredName, parseErr = skillString(
+								&fields.Name,
+								"name",
+								true,
+								0,
+							)
+						}
+						if parseErr != nil && err == nil {
+							err = fmt.Errorf(
+								"parse %s: %w",
+								filename,
+								parseErr,
+							)
+						}
+					}
+					if err != nil && declaredName == "" {
+						// An unreadable name cannot be selected by frontmatter. Keep
+						// failures at requested directories fatal; skip unrelated bundles.
+						if directory != "." && !slices.Contains(
+							names,
+							path.Base(directory),
+						) {
+							return fs.SkipDir
+						}
+						return err
+					}
+					if !slices.Contains(
+						names,
+						declaredName,
+					) {
+						return fs.SkipDir
+					}
+				}
 				if err != nil {
 					return err
 				}
-				if len(names) == 0 || slices.Contains(
-					names,
-					skill.Name,
-				) {
-					result = append(
-						result,
-						skill,
+				skill, err := parseSkill(
+					data,
+					filename,
+				)
+				if err != nil {
+					return fmt.Errorf(
+						"parse %s: %w",
+						filename,
+						err,
 					)
 				}
+				result = append(
+					result,
+					skill,
+				)
 				return fs.SkipDir // Nested resources belong to this bundle, not a collection.
 			}
 			return nil
@@ -128,7 +169,7 @@ func discover(ctx context.Context, filesystem fs.FS, opts DiscoveryOptions, name
 
 // Source callers reject directory symlinks before reading. Installed inventory
 // may follow user-owned directory links without acquiring or changing their data.
-func readDefinition(filesystem fs.FS, directory string) (Skill, error) {
+func readDefinitionData(filesystem fs.FS, directory string) ([]byte, error) {
 	filename := path.Join(
 		directory,
 		"SKILL.md",
@@ -138,7 +179,7 @@ func readDefinition(filesystem fs.FS, directory string) (Skill, error) {
 		directory,
 	)
 	if err != nil {
-		return Skill{}, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"read %s: %w",
 			filename,
 			err,
@@ -149,14 +190,14 @@ func readDefinition(filesystem fs.FS, directory string) (Skill, error) {
 		if entry.Name() == "SKILL.md" {
 			info, err := entry.Info()
 			if err != nil {
-				return Skill{}, err
+				return nil, err
 			}
 			regular = info.Mode().IsRegular()
 			break
 		}
 	}
 	if !regular {
-		return Skill{}, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"%s must be a regular definition file",
 			filename,
 		)
@@ -166,18 +207,35 @@ func readDefinition(filesystem fs.FS, directory string) (Skill, error) {
 		filename,
 	)
 	if err != nil {
-		return Skill{}, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"read %s: %w",
 			filename,
 			err,
 		)
 	}
 	if !utf8.Valid(data) {
-		return Skill{}, fmt.Errorf(
+		// Retain bytes so discovery can identify a selected name in valid
+		// frontmatter even when the body has an encoding error.
+		return data, fmt.Errorf(
 			"%s must contain UTF-8",
 			filename,
 		)
 	}
+	return data, nil
+}
+
+func readDefinition(filesystem fs.FS, directory string) (Skill, error) {
+	data, err := readDefinitionData(
+		filesystem,
+		directory,
+	)
+	if err != nil {
+		return Skill{}, err
+	}
+	filename := path.Join(
+		directory,
+		"SKILL.md",
+	)
 	skill, err := parseSkill(
 		data,
 		filename,

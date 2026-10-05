@@ -22,7 +22,6 @@ const (
 type skillActions struct {
 	install func(context.Context, *skills.Manager, skills.InstallOptions, skills.IO) error
 	list    func(context.Context, *skills.Manager, skills.ListOptions, skills.IO) error
-	update  func(context.Context, *skills.Manager, skills.UpdateOptions, skills.IO) error
 	remove  func(context.Context, *skills.Manager, skills.RemoveOptions, skills.IO) error
 }
 
@@ -64,7 +63,6 @@ func skillsCmd(parent *cobra.Command, manager *skills.Manager) {
 		skillActions{
 			install: skills.Install,
 			list:    skills.List,
-			update:  skills.Update,
 			remove:  skills.Remove,
 		},
 	)
@@ -75,17 +73,13 @@ func skillsCmdWithActions(parent *cobra.Command, manager *skills.Manager, action
 		Use:   "skills",
 		Short: "Manage agent skills",
 		Long: dedent.Dedent(`
-		Install, update, list, and remove agent skills from Git sources.
+		Install, list, and remove agent skills from Git sources.
 
 		The default skill directories are ~/.agents/skills for global scope and
-		./.agents/skills for project scope. Managed installations are recorded in
-		skills.json inside the selected skill directory: ~/.agents/skills/skills.json
-		or ./.agents/skills/skills.json for the default directories.
+		./.agents/skills for project scope.
 
 		--dir selects an exact custom skill directory; .agents/skills is not
 		appended. Only that directory is selected, even when scope is omitted.
-		Its metadata is always <directory>/skills.json, so selecting a default
-		directory explicitly uses the same metadata file as selecting its scope.
 		--dir cannot be combined with --scope global.
 		`),
 	}
@@ -109,11 +103,6 @@ func skillsCmdWithActions(parent *cobra.Command, manager *skills.Manager, action
 		c,
 		manager,
 		actions.list,
-	)
-	skillsUpdateCmd(
-		c,
-		manager,
-		actions.update,
 	)
 	skillsRemoveCmd(
 		c,
@@ -145,7 +134,10 @@ func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(c
 
 		--scope is required. Global selects ~/.agents/skills; project selects
 		./.agents/skills. With --scope project, --dir instead selects the exact
-		custom skill directory. Metadata is stored in <directory>/skills.json.
+		custom skill directory.
+
+		Existing skills are preserved unless --override is set. With --override,
+		replace the complete selected skill directory, removing obsolete files.
 
 		Search up to five directory levels by default. --full-depth removes
 		that depth limit.
@@ -180,6 +172,13 @@ func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(c
 		"skill",
 		"path",
 	)
+	var override bool
+	c.Flags().BoolVar(
+		&override,
+		"override",
+		false,
+		"Replace existing skill directories with the fetched bundles",
+	)
 	var fullDepth bool
 	c.Flags().BoolVar(
 		&fullDepth,
@@ -207,6 +206,7 @@ func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(c
 				Source:    args[0],
 				Skills:    skillArgs,
 				Path:      selectedPath,
+				Override:  override,
 				FullDepth: fullDepth,
 				JSON:      false,
 			},
@@ -228,7 +228,7 @@ func skillsListCmd(parent *cobra.Command, manager *skills.Manager, run func(cont
 		},
 		Short: "List agent skills",
 		Long: dedent.Dedent(`
-		List installed skills, including skills not installed or managed by CPE.
+		List installed skills, including skills copied manually or by another tool.
 		With neither --scope nor --dir, list both global and project directories.
 		--scope restricts inventory to that scope; --dir selects only the exact
 		custom skill directory.
@@ -265,55 +265,6 @@ func skillsListCmd(parent *cobra.Command, manager *skills.Manager, run func(cont
 	parent.AddCommand(c)
 }
 
-func skillsUpdateCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.UpdateOptions, skills.IO) error) {
-	c := &cobra.Command{
-		Use: "update [SKILL...]",
-		Aliases: []string{
-			"u",
-			"upgrade",
-		},
-		Short: "Update installed agent skills",
-		Long: dedent.Dedent(`
-		Update installed skills recorded in skills.json. Unmanaged skills, such
-		as manually copied bundles or skills installed by another tool, are not
-		updated. With skill names, update only those managed skills; without
-		names, update all managed skills in the selected directories.
-
-		With neither --scope nor --dir, update both global and project directories.
-		--scope selects one scope. --dir selects only that exact custom directory,
-		including when --scope is omitted; global skills are not included.
-		`),
-		Example: dedent.Dedent(fmt.Sprintf(
-			`
-        %[1]s update
-        %[1]s u custom-enterprise-skill grill-me
-		`,
-			parent.CommandPath(),
-		)),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			so, err := scopeOptsFromFlags(cmd.Flags())
-			if err != nil {
-				return err
-			}
-			return run(
-				cmd.Context(),
-				manager,
-				skills.UpdateOptions{
-					Scope:  so,
-					Skills: args,
-					JSON:   false,
-				},
-				skills.IO{
-					In:  cmd.InOrStdin(),
-					Out: cmd.OutOrStdout(),
-					Err: cmd.ErrOrStderr(),
-				},
-			)
-		},
-	}
-	parent.AddCommand(c)
-}
-
 func skillsRemoveCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.RemoveOptions, skills.IO) error) {
 	c := &cobra.Command{
 		Use: "remove SKILL...",
@@ -322,9 +273,8 @@ func skillsRemoveCmd(parent *cobra.Command, manager *skills.Manager, run func(co
 		},
 		Short: "Remove agent skills",
 		Long: dedent.Dedent(`
-		Remove named installed skills, including unmanaged, manually copied skills.
-		Delete their skills.json records when present; a record is not required
-		to remove an installed skill.
+		Remove named installed skills, including manually copied skills.
+		Damaged skill definitions can be removed without parsing their frontmatter.
 
 		Without --scope or --dir, find each name in the global and project
 		directories. If a name exists in both, --scope is required to choose one.
