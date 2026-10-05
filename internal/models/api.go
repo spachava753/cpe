@@ -1,6 +1,6 @@
 package models
 
-//go:generate go run golang.org/x/tools/cmd/stringer@latest -type=API
+//go:generate go run golang.org/x/tools/cmd/stringer -type=API
 
 type API int
 

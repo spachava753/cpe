@@ -12,11 +12,16 @@ func _() {
 	_ = x[Anthropic-1]
 	_ = x[Gemini-2]
 	_ = x[Openai-3]
+	_ = x[Zai-4]
+	_ = x[Moonshot-5]
+	_ = x[Deepseek-6]
+	_ = x[Cerebras-7]
+	_ = x[OpenRouter-8]
 }
 
-const _API_name = "ResponsesAnthropicGeminiOpenai"
+const _API_name = "ResponsesAnthropicGeminiOpenaiZaiMoonshotDeepseekCerebrasOpenRouter"
 
-var _API_index = [...]uint8{0, 9, 18, 24, 30}
+var _API_index = [...]uint8{0, 9, 18, 24, 30, 33, 41, 49, 57, 67}
 
 func (i API) String() string {
 	idx := int(i) - 0
