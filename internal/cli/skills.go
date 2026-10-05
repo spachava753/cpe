@@ -81,6 +81,9 @@ func skillsCmdWithActions(parent *cobra.Command, manager *skills.Manager, action
 		--dir selects an exact custom skill directory; .agents/skills is not
 		appended. Only that directory is selected, even when scope is omitted.
 		--dir cannot be combined with --scope global.
+
+		Result output is a styled table on a terminal and a JSON array otherwise.
+		--json forces JSON output, including when stdout is a terminal.
 		`),
 	}
 	c.PersistentFlags().String(
@@ -112,6 +115,7 @@ func skillsCmdWithActions(parent *cobra.Command, manager *skills.Manager, action
 }
 
 func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.InstallOptions, skills.IO) error) {
+	var asJSON bool
 	c := &cobra.Command{
 		Use: "install SOURCE",
 		Aliases: []string{
@@ -141,6 +145,9 @@ func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(c
 
 		Search up to five directory levels by default. --full-depth removes
 		that depth limit.
+
+		Output is a JSON array when stdout is not a terminal or --json is set.
+		Each object has name, description, and path to its SKILL.md.
 		`),
 		Example: dedent.Dedent(fmt.Sprintf(
 			`
@@ -208,7 +215,7 @@ func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(c
 				Path:      selectedPath,
 				Override:  override,
 				FullDepth: fullDepth,
-				JSON:      false,
+				JSON:      asJSON,
 			},
 			skills.IO{
 				In:  cmd.InOrStdin(),
@@ -217,10 +224,17 @@ func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(c
 			},
 		)
 	}
+	c.Flags().BoolVar(
+		&asJSON,
+		"json",
+		false,
+		"Output a JSON array (automatic when stdout is not a terminal)",
+	)
 	parent.AddCommand(c)
 }
 
 func skillsListCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.ListOptions, skills.IO) error) {
+	var asJSON bool
 	c := &cobra.Command{
 		Use: "list [SOURCE]",
 		Aliases: []string{
@@ -235,6 +249,12 @@ func skillsListCmd(parent *cobra.Command, manager *skills.Manager, run func(cont
 
 		With SOURCE, list available skills in that Git source instead of installed
 		skills. Scope and directory flags select installed inventory only.
+
+		Model invocation shows whether a skill can be invoked by the model.
+		Skills with disable-model-invocation: true are user-only.
+		Output is a JSON array when stdout is not a terminal or --json is set.
+		Each object has name, description, path to its SKILL.md, and
+		disable-model-invocation.
 		`),
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -252,7 +272,7 @@ func skillsListCmd(parent *cobra.Command, manager *skills.Manager, run func(cont
 				skills.ListOptions{
 					Scope:  so,
 					Source: source,
-					JSON:   false,
+					JSON:   asJSON,
 				},
 				skills.IO{
 					In:  cmd.InOrStdin(),
@@ -262,10 +282,17 @@ func skillsListCmd(parent *cobra.Command, manager *skills.Manager, run func(cont
 			)
 		},
 	}
+	c.Flags().BoolVar(
+		&asJSON,
+		"json",
+		false,
+		"Output a JSON array (automatic when stdout is not a terminal)",
+	)
 	parent.AddCommand(c)
 }
 
 func skillsRemoveCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.RemoveOptions, skills.IO) error) {
+	var asJSON bool
 	c := &cobra.Command{
 		Use: "remove SKILL...",
 		Aliases: []string{
@@ -274,12 +301,17 @@ func skillsRemoveCmd(parent *cobra.Command, manager *skills.Manager, run func(co
 		Short: "Remove agent skills",
 		Long: dedent.Dedent(`
 		Remove named installed skills, including manually copied skills.
-		Damaged skill definitions can be removed without parsing their frontmatter.
+		Damaged skill definitions can be removed without requiring valid frontmatter.
 
 		Without --scope or --dir, find each name in the global and project
 		directories. If a name exists in both, --scope is required to choose one.
 		--dir selects only that exact custom directory, so no other directory is
 		searched or modified.
+
+		Output is a JSON array when stdout is not a terminal or --json is set.
+		Each object has name, description, and the removed SKILL.md path.
+		Unreadable frontmatter falls back to the directory name and an empty
+		description; it does not block removal.
 		`),
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -293,7 +325,7 @@ func skillsRemoveCmd(parent *cobra.Command, manager *skills.Manager, run func(co
 				skills.RemoveOptions{
 					Scope:  so,
 					Skills: args,
-					JSON:   false,
+					JSON:   asJSON,
 				},
 				skills.IO{
 					In:  cmd.InOrStdin(),
@@ -303,5 +335,11 @@ func skillsRemoveCmd(parent *cobra.Command, manager *skills.Manager, run func(co
 			)
 		},
 	}
+	c.Flags().BoolVar(
+		&asJSON,
+		"json",
+		false,
+		"Output a JSON array (automatic when stdout is not a terminal)",
+	)
 	parent.AddCommand(c)
 }

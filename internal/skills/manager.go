@@ -36,6 +36,14 @@ type InstalledSkill struct {
 	Directory string
 }
 
+// RemovedSkill identifies a deleted definition. When frontmatter cannot be read,
+// Name falls back to the directory name and Description is empty.
+type RemovedSkill struct {
+	Name        string
+	Description string
+	Path        string
+}
+
 // Directory is an exact skill root. Path selects one source-relative bundle
 // directory and is exclusive with Skills. With neither, install all discovered skills.
 type InstallRequest struct {
@@ -383,8 +391,9 @@ func (m *Manager) ListInstalled(ctx context.Context, directory string) ([]Instal
 	return result, nil
 }
 
-// Remove deletes named skill directories without parsing their frontmatter.
-func (m *Manager) Remove(ctx context.Context, request RemoveRequest) ([]string, error) {
+// Remove deletes named skill directories. Reading frontmatter for result details
+// is best-effort and never determines whether a directory can be removed.
+func (m *Manager) Remove(ctx context.Context, request RemoveRequest) ([]RemovedSkill, error) {
 	plan, err := m.prepareRemoval(
 		ctx,
 		request,
@@ -392,13 +401,38 @@ func (m *Manager) Remove(ctx context.Context, request RemoveRequest) ([]string, 
 	if err != nil {
 		return nil, err
 	}
+	filesystem := afero.NewIOFS(afero.NewBasePathFs(
+		m.destinations,
+		request.Directory,
+	))
+	var result []RemovedSkill
+	for _, directory := range plan.paths {
+		removed := RemovedSkill{
+			Name: filepath.Base(directory),
+			Path: filepath.Join(
+				directory,
+				"SKILL.md",
+			),
+		}
+		if skill, err := readDefinition(
+			filesystem,
+			filepath.Base(directory),
+		); err == nil {
+			removed.Name = skill.Name
+			removed.Description = skill.Description
+		}
+		result = append(
+			result,
+			removed,
+		)
+	}
 	if err := m.applyChanges(
 		ctx,
 		request.Directory,
 		plan.changes,
 	); err != nil {
 		if _, committed := errors.AsType[*CommittedCleanupError](err); committed {
-			return plan.paths, fmt.Errorf(
+			return result, fmt.Errorf(
 				"remove skills: %w",
 				err,
 			)
@@ -408,7 +442,7 @@ func (m *Manager) Remove(ctx context.Context, request RemoveRequest) ([]string, 
 			err,
 		)
 	}
-	return plan.paths, nil
+	return result, nil
 }
 
 func (m *Manager) pathInfo(filename string) (fs.FileInfo, error) {

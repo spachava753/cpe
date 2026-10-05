@@ -125,7 +125,7 @@ func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams I
 			return err
 		}
 	}
-	var result []string
+	var result []RemovedSkill
 	for _, directory := range directories {
 		if len(selected[directory]) == 0 {
 			continue

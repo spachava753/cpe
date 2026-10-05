@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"net/url"
@@ -29,7 +30,7 @@ func TestSkillsLifecycle(t *testing.T) {
 		os.DevNull,
 	)
 	repository := t.TempDir()
-	definition := "---\nname: alpha\ndescription: Alpha version one\n---\nInstructions\n"
+	definition := "---\nname: alpha\ndescription: Alpha version one\ndisable-model-invocation: true\n---\nInstructions\n"
 	if err := os.MkdirAll(
 		filepath.Join(
 			repository,
@@ -204,6 +205,21 @@ func TestSkillsLifecycle(t *testing.T) {
 				destinations,
 				"/skills/alpha/SKILL.md",
 			)
+			var summaries []map[string]any
+			if err := json.Unmarshal(
+				output.Bytes(),
+				&summaries,
+			); err != nil {
+				t.Fatal(err)
+			}
+			if len(summaries) != 1 || len(summaries[0]) != 3 ||
+				summaries[0]["name"] != "alpha" || summaries[0]["description"] != "Alpha version one" ||
+				summaries[0]["path"] != filepath.FromSlash("/skills/alpha/SKILL.md") {
+				t.Fatalf(
+					"automatic install JSON = %#v",
+					summaries,
+				)
+			}
 			if err != nil || string(data) != definition {
 				t.Fatalf(
 					"installed definition = %q, %v",
@@ -260,6 +276,43 @@ func TestSkillsLifecycle(t *testing.T) {
 				t.Errorf(
 					"inventory = %q",
 					&output,
+				)
+			}
+		},
+	)
+	t.Run(
+		"list JSON exposes invocation status",
+		func(t *testing.T) {
+			var output bytes.Buffer
+			command := Root(
+				"test",
+				manager,
+			)
+			command.SetArgs([]string{
+				"skills",
+				"ls",
+				"--dir",
+				"/skills",
+				"--json",
+			})
+			command.SetOut(&output)
+			if err := command.ExecuteContext(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			var entries []map[string]any
+			if err := json.Unmarshal(
+				output.Bytes(),
+				&entries,
+			); err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 1 || len(entries[0]) != 4 || entries[0]["name"] != "alpha" ||
+				entries[0]["description"] != "Alpha version one" ||
+				entries[0]["path"] != filepath.FromSlash("/skills/alpha/SKILL.md") ||
+				entries[0]["disable-model-invocation"] != true {
+				t.Fatalf(
+					"skill summary = %#v",
+					entries,
 				)
 			}
 		},
@@ -381,6 +434,21 @@ func TestSkillsLifecycle(t *testing.T) {
 			command.SetOut(&output)
 			if err := command.ExecuteContext(t.Context()); err != nil {
 				t.Fatal(err)
+			}
+			var summaries []map[string]any
+			if err := json.Unmarshal(
+				output.Bytes(),
+				&summaries,
+			); err != nil {
+				t.Fatal(err)
+			}
+			if len(summaries) != 1 || len(summaries[0]) != 3 ||
+				summaries[0]["name"] != "alpha" || summaries[0]["description"] != "Alpha version two" ||
+				summaries[0]["path"] != filepath.FromSlash("/skills/alpha/SKILL.md") {
+				t.Fatalf(
+					"automatic removal JSON = %#v",
+					summaries,
+				)
 			}
 			if _, err := destinations.Stat("/skills/alpha"); !errors.Is(
 				err,

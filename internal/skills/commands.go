@@ -18,6 +18,12 @@ import (
 
 const locationColumn = "Location"
 
+type skillSummary struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Path        string `json:"path"`
+}
+
 func resolveDirectories(scope ScopeOptions, requireScope bool) ([]string, error) {
 	if scope.Project && scope.Global {
 		return nil, errors.New("conflicting scope selections")
@@ -96,6 +102,16 @@ func outputStream(streams IO) io.Writer {
 	return os.Stdout
 }
 
+// Format follows the result stream, not stdin or stderr. Color settings never
+// turn a redirected stream into a terminal.
+func jsonOutput(output io.Writer, requested bool) bool {
+	if requested {
+		return true
+	}
+	terminal, ok := output.(interface{ Fd() uintptr })
+	return !ok || !term.IsTerminal(terminal.Fd())
+}
+
 func writeViolations(streams IO, skill Skill) error {
 	if len(skill.Violations) == 0 {
 		return nil
@@ -127,13 +143,28 @@ func writeInstalled(streams IO, asJSON bool, result []InstalledSkill) error {
 		}
 	}
 	output := outputStream(streams)
-	if asJSON {
-		if result == nil {
-			result = []InstalledSkill{}
+	if jsonOutput(
+		output,
+		asJSON,
+	) {
+		summaries := make(
+			[]skillSummary,
+			0,
+			len(result),
+		)
+		for _, entry := range result {
+			summaries = append(
+				summaries,
+				skillSummary{
+					Name:        entry.Skill.Name,
+					Description: entry.Skill.Description,
+					Path:        entry.Skill.Path,
+				},
+			)
 		}
 		return errors.Join(
 			violationErr,
-			json.NewEncoder(output).Encode(result),
+			json.NewEncoder(output).Encode(summaries),
 		)
 	}
 	var rows [][]string
@@ -202,16 +233,28 @@ func writeTable(output io.Writer, headers []string, rows [][]string) error {
 	return err
 }
 
-func writeRemoved(streams IO, asJSON bool, result []string) error {
+func writeRemoved(streams IO, asJSON bool, result []RemovedSkill) error {
 	output := outputStream(streams)
-	if asJSON {
-		if result == nil {
-			result = []string{}
+	if jsonOutput(
+		output,
+		asJSON,
+	) {
+		summaries := make(
+			[]skillSummary,
+			0,
+			len(result),
+		)
+		for _, entry := range result {
+			summaries = append(
+				summaries,
+				skillSummary(entry),
+			)
 		}
-		return json.NewEncoder(output).Encode(result)
+		return json.NewEncoder(output).Encode(summaries)
 	}
 	var rows [][]string
-	for _, filename := range result {
+	for _, entry := range result {
+		filename := filepath.Dir(entry.Path)
 		rows = append(
 			rows,
 			[]string{

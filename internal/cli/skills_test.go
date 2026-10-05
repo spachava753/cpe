@@ -67,6 +67,24 @@ func TestSkillsCommands(t *testing.T) {
 			},
 		},
 		{
+			name: "install JSON flag is forwarded",
+			args: []string{
+				"skills",
+				"install",
+				"owner/repo",
+				"--scope",
+				"project",
+				"--json",
+			},
+			install: &skills.InstallOptions{
+				Scope: skills.ScopeOptions{
+					Project: true,
+				},
+				Source: "owner/repo",
+				JSON:   true,
+			},
+		},
+		{
 			name: "install override is forwarded",
 			args: []string{
 				"skills",
@@ -177,6 +195,17 @@ func TestSkillsCommands(t *testing.T) {
 			list: &skills.ListOptions{},
 		},
 		{
+			name: "list JSON flag is forwarded",
+			args: []string{
+				"skills",
+				"list",
+				"--json",
+			},
+			list: &skills.ListOptions{
+				JSON: true,
+			},
+		},
+		{
 			name: "list source",
 			args: []string{
 				"skills",
@@ -224,6 +253,21 @@ func TestSkillsCommands(t *testing.T) {
 				Scope: skills.ScopeOptions{
 					Directory: new("./team-skills"),
 				},
+			},
+		},
+		{
+			name: "remove JSON flag is forwarded",
+			args: []string{
+				"skills",
+				"remove",
+				"alpha",
+				"--json",
+			},
+			remove: &skills.RemoveOptions{
+				Skills: []string{
+					"alpha",
+				},
+				JSON: true,
 			},
 		},
 		{
@@ -568,6 +612,8 @@ func TestSkillsHelp(t *testing.T) {
 				"--path .",
 				"regardless of discovery depth",
 				"--scope is required",
+				"--json",
+				"Output is a JSON array when stdout is not a terminal",
 				"https://github.enterprise.com/my-company/custom-skills --scope project",
 			},
 		},
@@ -581,10 +627,14 @@ func TestSkillsHelp(t *testing.T) {
 			want: []string{
 				"list [SOURCE]",
 				"including skills copied manually or by another tool",
+				"Model invocation",
+				"user-only",
+				"--json",
+				"disable-model-invocation",
 			},
 		},
 		{
-			name: "removal without frontmatter parsing",
+			name: "removal without requiring valid frontmatter",
 			args: []string{
 				"skills",
 				"remove",
@@ -593,7 +643,9 @@ func TestSkillsHelp(t *testing.T) {
 			want: []string{
 				"remove SKILL...",
 				"including manually copied skills",
-				"without parsing their frontmatter",
+				"without requiring valid frontmatter",
+				"--json",
+				"Output is a JSON array when stdout is not a terminal",
 			},
 		},
 	} {

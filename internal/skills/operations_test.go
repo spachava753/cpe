@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -38,6 +37,8 @@ func TestInstall(t *testing.T) {
 		deep             bool
 		link             bool
 		json             bool
+		nonTTY, pipe     bool
+		empty            bool
 		errText          string
 		outputErr        error
 		forceColor       bool
@@ -91,6 +92,104 @@ func TestInstall(t *testing.T) {
 			override:  true,
 			fault:     managerStageCleanupFailure,
 			committed: true,
+		},
+		{
+			name: "non-terminal install automatically receives a summary array",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source: managerSource,
+			nonTTY: true,
+			names: []string{
+				"alpha",
+			},
+		},
+		{
+			name: "pipe install output remains JSON with forced color",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source:     managerSource,
+			nonTTY:     true,
+			pipe:       true,
+			forceColor: true,
+		},
+		{
+			name: "committed cleanup failure still emits an automatic JSON array",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source:    managerSource,
+			nonTTY:    true,
+			fault:     managerStageCleanupFailure,
+			committed: true,
+			names: []string{
+				"alpha",
+			},
+		},
+		{
+			name: "automatic JSON excludes non-JSON metadata without losing bundle contents",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source: managerSource,
+			nonTTY: true,
+			names: []string{
+				"alpha",
+			},
+			sourceFiles: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte("---\nname: alpha\ndescription: Alpha skill\nmetadata:\n  value: .nan\n---\n"),
+				},
+			},
+			wantDefinition: "---\nname: alpha\ndescription: Alpha skill\nmetadata:\n  value: .nan\n---\n",
+		},
+		{
+			name: "automatic JSON preserves description whitespace and terminal controls",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source:      managerSource,
+			nonTTY:      true,
+			description: " \t\"Alpha\" \\\nnext \x1b[31mred\x1b[0m ",
+			names: []string{
+				"alpha",
+			},
+		},
+		{
+			name: "automatic JSON keeps warnings on stderr",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source: managerSource,
+			nonTTY: true,
+			description: strings.Repeat(
+				"x",
+				1025,
+			),
+			names: []string{
+				"alpha",
+			},
+			wantWarnings: []string{
+				"alpha: description exceeds 1024 characters (found 1025)",
+			},
+		},
+		{
+			name: "empty source produces an empty JSON array without mutation",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source:      managerSource,
+			sourceFiles: fstest.MapFS{},
+			nonTTY:      true,
+			empty:       true,
 		},
 		{
 			name: "global directory",
@@ -499,6 +598,24 @@ func TestInstall(t *testing.T) {
 						err: test.outputErr,
 					}
 				}
+				if !test.forceColor {
+					t.Setenv(
+						"NO_COLOR",
+						"1",
+					)
+				}
+				if !test.nonTTY && test.errText == "" {
+					streams.Out = commandTerminal(
+						t,
+						streams.Out,
+					)
+				} else if test.pipe {
+					streams.Out = commandPipe(
+						t,
+						streams.Out,
+					)
+				}
+				asJSON := test.json || test.nonTTY
 				err := skills.Install(
 					t.Context(),
 					manager,
@@ -579,24 +696,40 @@ func TestInstall(t *testing.T) {
 				if test.scope.Global {
 					root = filepath.FromSlash("/test-home/.agents/skills")
 				}
-				data, readErr := afero.ReadFile(
-					destinations,
-					filepath.Join(
-						root,
-						"alpha",
-						"SKILL.md",
-					),
-				)
-				wantDefinition := definition
-				if test.wantDefinition != "" {
-					wantDefinition = test.wantDefinition
-				}
-				if readErr != nil || string(data) != wantDefinition {
-					t.Errorf(
-						"installation at selected root = %q, %v",
-						data,
-						readErr,
+				if !test.empty {
+					data, readErr := afero.ReadFile(
+						destinations,
+						filepath.Join(
+							root,
+							"alpha",
+							"SKILL.md",
+						),
 					)
+					wantDefinition := definition
+					if test.wantDefinition != "" {
+						wantDefinition = test.wantDefinition
+					}
+					if readErr != nil || string(data) != wantDefinition {
+						t.Errorf(
+							"installation at selected root = %q, %v",
+							data,
+							readErr,
+						)
+					}
+				}
+				if test.empty {
+					if diff := cmp.Diff(
+						before,
+						snapshotManagerFS(
+							t,
+							destinations,
+						),
+					); diff != "" {
+						t.Fatalf(
+							"empty install changed files:\n%s",
+							diff,
+						)
+					}
 				}
 				if len(test.names) > 0 {
 					if _, statErr := destinations.Stat(filepath.Join(
@@ -642,12 +775,59 @@ func TestInstall(t *testing.T) {
 						)
 					}
 				}
-				if test.json {
-					if !json.Valid(output.Bytes()) {
+				if asJSON {
+					var entries []map[string]any
+					if err := json.Unmarshal(
+						output.Bytes(),
+						&entries,
+					); err != nil {
+						t.Fatal(err)
+					}
+					wantNames := test.names
+					if test.empty {
+						wantNames = []string{}
+						if strings.TrimSpace(output.String()) != "[]" {
+							t.Fatalf(
+								"empty install output = %q",
+								&output,
+							)
+						}
+					}
+					if wantNames == nil {
+						wantNames = []string{
+							"alpha",
+							"beta",
+						}
+					}
+					if len(entries) != len(wantNames) {
 						t.Fatalf(
-							"invalid JSON: %q",
-							&output,
+							"installed summaries = %#v, want %d skills",
+							entries,
+							len(wantNames),
 						)
+					}
+					for i, entry := range entries {
+						name := wantNames[i]
+						wantDescription := "Alpha skill"
+						if name == "beta" {
+							wantDescription = "Beta skill"
+							if test.otherDescription != "" {
+								wantDescription = test.otherDescription
+							}
+						} else if test.description != "" {
+							wantDescription = test.description
+						}
+						if len(entry) != 3 || entry["name"] != name || entry["description"] != wantDescription ||
+							entry["path"] != filepath.Join(
+								root,
+								name,
+								"SKILL.md",
+							) {
+							t.Errorf(
+								"installed summary = %#v",
+								entry,
+							)
+						}
 					}
 				} else {
 					for _, text := range []string{
@@ -737,14 +917,16 @@ func TestList(t *testing.T) {
 		scope             skills.ScopeOptions
 		source            *string
 		json              bool
+		nonTTY, pipe      bool
+		empty             bool
 		want              []string
 		unsafeDescription bool
 		directoryMismatch bool
 		description       string
+		invocation        *bool
 		wantText          []string
 		wantLineCount     int
 		wantWarnings      []string
-		violations        []string
 		warningErr        error
 		nestedMetadata    bool
 		nonJSONMetadata   bool
@@ -756,6 +938,117 @@ func TestList(t *testing.T) {
 			want: []string{
 				"alpha",
 				"beta",
+			},
+			wantText: []string{
+				"Enabled",
+			},
+		},
+		{
+			name: "installed JSON reports disabled model invocation",
+			scope: skills.ScopeOptions{
+				Project: true,
+			},
+			json:       true,
+			invocation: new(true),
+			want: []string{
+				"alpha",
+			},
+			wantText: []string{
+				`"disable-model-invocation":true`,
+			},
+		},
+		{
+			name: "installed table marks user-only skills as disabled",
+			scope: skills.ScopeOptions{
+				Project: true,
+			},
+			invocation: new(true),
+			want: []string{
+				"alpha",
+			},
+			wantText: []string{
+				"Model invocation",
+				"Disabled",
+			},
+		},
+		{
+			name:       "source table marks user-only skills as disabled",
+			source:     new(managerSource),
+			invocation: new(true),
+			want: []string{
+				"delta",
+			},
+			wantText: []string{
+				"Model invocation",
+				"Disabled",
+			},
+		},
+		{
+			name:       "source JSON reports disabled model invocation",
+			source:     new(managerSource),
+			json:       true,
+			invocation: new(true),
+			want: []string{
+				"delta",
+			},
+		},
+		{
+			name: "explicit false permits model invocation",
+			scope: skills.ScopeOptions{
+				Project: true,
+			},
+			invocation: new(false),
+			want: []string{
+				"alpha",
+			},
+			wantText: []string{
+				"Enabled",
+			},
+		},
+		{
+			name:       "invocation status is per skill in mixed JSON inventory",
+			json:       true,
+			invocation: new(true),
+			want: []string{
+				"alpha",
+				"beta",
+			},
+		},
+		{
+			name: "empty inventory is an empty JSON array",
+			scope: skills.ScopeOptions{
+				Project: true,
+			},
+			json:  true,
+			empty: true,
+			wantText: []string{
+				"[]",
+			},
+		},
+		{
+			name:   "non-terminal writer automatically receives JSON",
+			nonTTY: true,
+			want: []string{
+				"alpha",
+				"beta",
+			},
+		},
+		{
+			name:       "pipe output receives JSON even with forced color",
+			nonTTY:     true,
+			pipe:       true,
+			forceColor: true,
+			want: []string{
+				"alpha",
+				"beta",
+			},
+		},
+		{
+			name:   "source non-terminal output automatically receives JSON",
+			source: new(managerSource),
+			nonTTY: true,
+			want: []string{
+				"delta",
 			},
 		},
 		{
@@ -781,7 +1074,7 @@ func TestList(t *testing.T) {
 			},
 		},
 		{
-			name:              "installed JSON retains a directory mismatch violation",
+			name:              "installed JSON reports directory mismatch warnings on stderr",
 			json:              true,
 			directoryMismatch: true,
 			description:       "Alpha skill",
@@ -791,9 +1084,6 @@ func TestList(t *testing.T) {
 			},
 			wantWarnings: []string{
 				`alpha: name "alpha" does not match directory "template"`,
-			},
-			violations: []string{
-				`name "alpha" does not match directory "template"`,
 			},
 		},
 		{
@@ -808,7 +1098,7 @@ func TestList(t *testing.T) {
 			},
 		},
 		{
-			name:              "source JSON retains a directory mismatch violation",
+			name:              "source JSON reports directory mismatch warnings on stderr",
 			source:            new(managerSource),
 			json:              true,
 			directoryMismatch: true,
@@ -818,9 +1108,6 @@ func TestList(t *testing.T) {
 			},
 			wantWarnings: []string{
 				`delta: name "delta" does not match directory "template"`,
-			},
-			violations: []string{
-				`name "delta" does not match directory "template"`,
 			},
 		},
 		{
@@ -997,7 +1284,7 @@ func TestList(t *testing.T) {
 			},
 		},
 		{
-			name: "JSON inventory retains violations with stderr warnings",
+			name: "compact JSON inventory keeps warnings on stderr",
 			json: true,
 			description: strings.Repeat(
 				"é",
@@ -1011,12 +1298,9 @@ func TestList(t *testing.T) {
 			wantWarnings: []string{
 				"alpha: description exceeds 1024 characters (found 1025)",
 			},
-			violations: []string{
-				"description exceeds 1024 characters (found 1025)",
-			},
 		},
 		{
-			name:   "source JSON retains violations with stderr warnings",
+			name:   "compact source JSON keeps warnings on stderr",
 			source: new(managerSource),
 			json:   true,
 			description: strings.Repeat(
@@ -1029,9 +1313,6 @@ func TestList(t *testing.T) {
 			},
 			wantWarnings: []string{
 				"delta: description exceeds 1024 characters (found 1025)",
-			},
-			violations: []string{
-				"description exceeds 1024 characters (found 1025)",
 			},
 		},
 		{
@@ -1063,7 +1344,7 @@ func TestList(t *testing.T) {
 			},
 		},
 		{
-			name:           "nested metadata JSON inventory",
+			name:           "compact JSON excludes nested metadata",
 			nestedMetadata: true,
 			json:           true,
 			want: []string{
@@ -1080,9 +1361,13 @@ func TestList(t *testing.T) {
 			},
 		},
 		{
-			name:            "non-JSON metadata reports a JSON encoding error",
+			name:            "compact JSON excludes non-JSON metadata",
 			nonJSONMetadata: true,
 			json:            true,
+			want: []string{
+				"alpha",
+				"beta",
+			},
 		},
 	} {
 		t.Run(
@@ -1110,7 +1395,7 @@ func TestList(t *testing.T) {
 						"1",
 					)
 				}
-				if test.noColor {
+				if test.noColor || !test.forceColor {
 					t.Setenv(
 						"NO_COLOR",
 						"1",
@@ -1137,20 +1422,32 @@ func TestList(t *testing.T) {
 						strconv.Quote(test.description),
 					)
 				}
+				if test.invocation != nil {
+					definition = strings.Replace(
+						definition,
+						"\n---\n",
+						"\ndisable-model-invocation: "+strconv.FormatBool(*test.invocation)+"\n---\n",
+						1,
+					)
+				}
 				projectDirectory := "alpha"
 				sourceDirectory := "delta"
 				if test.directoryMismatch {
 					projectDirectory = "template"
 					sourceDirectory = "template"
 				}
+				projectFiles := fstest.MapFS{
+					projectDirectory + "/SKILL.md": {
+						Data: []byte(definition),
+					},
+				}
+				if test.empty {
+					projectFiles = fstest.MapFS{}
+				}
 				destinations := newManagerFilesystem(
 					t,
 					skills.ProjectPath(cwd),
-					fstest.MapFS{
-						projectDirectory + "/SKILL.md": {
-							Data: []byte(definition),
-						},
-					},
+					projectFiles,
 				)
 				for root, files := range map[string]fstest.MapFS{
 					filepath.FromSlash("/test-home/.agents/skills"): {
@@ -1189,6 +1486,14 @@ func TestList(t *testing.T) {
 				if test.description != "" {
 					sourceDefinition = "---\nname: delta\ndescription: " + strconv.Quote(test.description) + "\n---\n"
 				}
+				if test.invocation != nil {
+					sourceDefinition = strings.Replace(
+						sourceDefinition,
+						"\n---\n",
+						"\ndisable-model-invocation: "+strconv.FormatBool(*test.invocation)+"\n---\n",
+						1,
+					)
+				}
 				manager := skills.NewManager(
 					managerSourceClient{
 						files: fstest.MapFS{
@@ -1200,6 +1505,19 @@ func TestList(t *testing.T) {
 					destinations,
 				)
 				var output, diagnostics bytes.Buffer
+				var resultOutput io.Writer = &output
+				if !test.nonTTY {
+					resultOutput = commandTerminal(
+						t,
+						resultOutput,
+					)
+				} else if test.pipe {
+					resultOutput = commandPipe(
+						t,
+						resultOutput,
+					)
+				}
+				asJSON := test.json || test.nonTTY
 				var warningOutput io.Writer = &diagnostics
 				if test.warningErr != nil {
 					warningOutput = commandOutputFailure{
@@ -1215,29 +1533,10 @@ func TestList(t *testing.T) {
 						JSON:   test.json,
 					},
 					skills.IO{
-						Out: &output,
+						Out: resultOutput,
 						Err: warningOutput,
 					},
 				)
-				if test.nonJSONMetadata && test.json {
-					var unsupported *json.UnsupportedValueError
-					if !errors.As(
-						err,
-						&unsupported,
-					) {
-						t.Fatalf(
-							"error = %v, want unsupported JSON value",
-							err,
-						)
-					}
-					if output.Len() != 0 {
-						t.Fatalf(
-							"failed JSON encoding wrote partial output: %q",
-							&output,
-						)
-					}
-					return
-				}
 				if test.warningErr != nil {
 					if !errors.Is(
 						err,
@@ -1278,7 +1577,7 @@ func TestList(t *testing.T) {
 						)
 					}
 				}
-				colored := test.forceColor && !test.json && !test.noColor
+				colored := test.forceColor && !asJSON && !test.noColor
 				if strings.Contains(
 					output.String(),
 					"\x1b[",
@@ -1300,10 +1599,11 @@ func TestList(t *testing.T) {
 						&output,
 					)
 				}
-				if !test.json {
+				if !asJSON {
 					for _, header := range []string{
 						"Skill",
 						"Description",
+						"Model invocation",
 						"Location",
 					} {
 						if !strings.Contains(
@@ -1354,13 +1654,13 @@ func TestList(t *testing.T) {
 						)
 					}
 				}
-				if test.json && !json.Valid(output.Bytes()) {
+				if asJSON && !json.Valid(output.Bytes()) {
 					t.Errorf(
 						"invalid JSON: %q",
 						&output,
 					)
 				}
-				if test.json && len(test.wantWarnings) == 0 && strings.Contains(
+				if asJSON && len(test.wantWarnings) == 0 && strings.Contains(
 					output.String(),
 					`"Violations"`,
 				) {
@@ -1382,95 +1682,60 @@ func TestList(t *testing.T) {
 						)
 					}
 				}
-				if test.description != "" && test.json {
-					var description string
-					var violations []string
-					if test.source != nil {
-						var entries []skills.Skill
-						if err := json.Unmarshal(
-							output.Bytes(),
-							&entries,
-						); err != nil {
-							t.Fatal(err)
-						}
-						if len(entries) != 1 {
-							t.Fatalf(
-								"source inventory = %#v",
-								entries,
-							)
-						}
-						description = entries[0].Description
-						violations = entries[0].Violations
-					} else {
-						var entries []skills.InstalledSkill
-						if err := json.Unmarshal(
-							output.Bytes(),
-							&entries,
-						); err != nil {
-							t.Fatal(err)
-						}
-						if len(entries) != 2 {
-							t.Fatalf(
-								"installed inventory = %#v",
-								entries,
-							)
-						}
-						description = entries[0].Skill.Description
-						violations = entries[0].Skill.Violations
-					}
-					if !slices.Equal(
-						violations,
-						test.violations,
-					) {
-						t.Errorf(
-							"JSON violations = %#v, want %#v",
-							violations,
-							test.violations,
-						)
-					}
-					if description != test.description {
-						t.Errorf(
-							"JSON description = %q, want unchanged %q",
-							description,
-							test.description,
-						)
-					}
-				}
-				if test.nestedMetadata && test.json {
-					var entries []skills.InstalledSkill
+				if asJSON {
+					var entries []map[string]any
 					if err := json.Unmarshal(
 						output.Bytes(),
 						&entries,
 					); err != nil {
 						t.Fatal(err)
 					}
-					if len(entries) != 2 || entries[0].Skill.Name != "alpha" {
+					if len(entries) != len(test.want) {
 						t.Fatalf(
-							"inventory = %#v",
+							"JSON inventory = %#v, want %d skills",
 							entries,
+							len(test.want),
 						)
 					}
-					if diff := cmp.Diff(
-						map[string]any{
-							"openclaw": map[string]any{
-								"requires": map[string]any{
-									"bins": []any{
-										"browser-use",
-									},
-								},
-								"values": []any{
-									float64(42),
-									true,
-									nil,
-								},
-							},
-						},
-						entries[0].Skill.Metadata,
-					); diff != "" {
-						t.Errorf(
-							"JSON metadata (-want +got):\n%s",
-							diff,
+					for i, entry := range entries {
+						name := test.want[i]
+						if len(entry) != 4 || entry["name"] != name {
+							t.Fatalf(
+								"JSON summary has unexpected fields or name: %#v",
+								entry,
+							)
+						}
+						wantDescription := "Alpha skill"
+						wantPath := filepath.Join(
+							skills.ProjectPath(cwd),
+							projectDirectory,
+							"SKILL.md",
 						)
+						switch name {
+						case "beta":
+							wantDescription = "Beta skill"
+							wantPath = filepath.FromSlash("/test-home/.agents/skills/beta/SKILL.md")
+						case "gamma":
+							wantDescription = "Gamma"
+							wantPath = filepath.FromSlash("/custom/gamma/SKILL.md")
+						case "delta":
+							wantDescription = "Delta\x1b]52;c;evil\a"
+							wantPath = sourceDirectory + "/SKILL.md"
+						}
+						if test.description != "" && (name == "alpha" || name == "delta") {
+							wantDescription = test.description
+						}
+						disabled := test.invocation != nil && *test.invocation && (name == "alpha" || name == "delta")
+						if entry["description"] != wantDescription || entry["path"] != wantPath ||
+							entry["disable-model-invocation"] != disabled {
+							t.Errorf(
+								"JSON summary = %#v, want unchanged description %q, path %q, disabled=%t",
+								entry,
+								wantDescription,
+								wantPath,
+								disabled,
+							)
+						}
 					}
 				}
 			},
@@ -1479,12 +1744,19 @@ func TestList(t *testing.T) {
 }
 
 func TestRemove(t *testing.T) {
+	outputErr := errors.New("output unavailable")
 	for _, test := range []struct {
 		name              string
 		scope             skills.ScopeOptions
 		both, json, all   bool
+		nonTTY, pipe      bool
 		files             fstest.MapFS
 		removed           []string
+		summaryNames      map[string]string
+		damaged, empty    bool
+		fault             managerFSFault
+		committed         bool
+		outputErr         error
 		invalidCrossScope bool
 		forceColor        bool
 		wantText          []string
@@ -1492,6 +1764,53 @@ func TestRemove(t *testing.T) {
 	}{
 		{
 			name: "unambiguous default selection",
+		},
+		{
+			name:   "non-terminal removal automatically receives a summary array",
+			nonTTY: true,
+		},
+		{
+			name:       "pipe removal remains JSON with forced color",
+			nonTTY:     true,
+			pipe:       true,
+			forceColor: true,
+		},
+		{
+			name:    "damaged definitions remain removable with an empty description",
+			json:    true,
+			damaged: true,
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte("invalid"),
+				},
+			},
+		},
+		{
+			name: "cleanup failure emits committed removal JSON",
+			scope: skills.ScopeOptions{
+				Project: true,
+			},
+			nonTTY:    true,
+			fault:     managerStageCleanupFailure,
+			committed: true,
+		},
+		{
+			name: "JSON writer failure preserves its cause after removal",
+			scope: skills.ScopeOptions{
+				Project: true,
+			},
+			nonTTY:    true,
+			outputErr: outputErr,
+		},
+		{
+			name: "empty bulk removal produces an empty JSON array",
+			scope: skills.ScopeOptions{
+				Project: true,
+			},
+			all:    true,
+			nonTTY: true,
+			empty:  true,
+			files:  fstest.MapFS{},
 		},
 		{
 			name: "all removes the actual mismatched directory",
@@ -1509,6 +1828,9 @@ func TestRemove(t *testing.T) {
 			name: "all removes every directory despite duplicate declared names",
 			all:  true,
 			json: true,
+			summaryNames: map[string]string{
+				"template": "alpha",
+			},
 			files: fstest.MapFS{
 				"alpha/SKILL.md": {
 					Data: []byte(alphaSkill),
@@ -1697,12 +2019,43 @@ func TestRemove(t *testing.T) {
 					t,
 					destinations,
 				)
+				removalDestinations := destinations
+				if test.fault != managerNoFault {
+					removalDestinations = managerFaultFS{
+						Fs:    destinations,
+						fault: test.fault,
+					}
+				}
 				var output bytes.Buffer
+				var resultOutput io.Writer = &output
+				if test.outputErr != nil {
+					resultOutput = commandOutputFailure{
+						err: test.outputErr,
+					}
+				}
+				if !test.forceColor {
+					t.Setenv(
+						"NO_COLOR",
+						"1",
+					)
+				}
+				if !test.nonTTY && test.errText == "" {
+					resultOutput = commandTerminal(
+						t,
+						resultOutput,
+					)
+				} else if test.pipe {
+					resultOutput = commandPipe(
+						t,
+						resultOutput,
+					)
+				}
+				asJSON := test.json || test.nonTTY
 				err = skills.Remove(
 					t.Context(),
 					skills.NewManager(
 						nil,
-						destinations,
+						removalDestinations,
 					),
 					skills.RemoveOptions{
 						Scope:  test.scope,
@@ -1711,7 +2064,7 @@ func TestRemove(t *testing.T) {
 						JSON:   test.json,
 					},
 					skills.IO{
-						Out: &output,
+						Out: resultOutput,
 					},
 				)
 				if test.errText != "" {
@@ -1735,7 +2088,24 @@ func TestRemove(t *testing.T) {
 					}
 					return
 				}
-				if err != nil {
+				if test.committed {
+					if _, ok := errors.AsType[*skills.CommittedCleanupError](err); !ok || !errors.Is(
+						err,
+						fs.ErrPermission,
+					) {
+						t.Fatalf(
+							"error = %v, want committed cleanup failure",
+							err,
+						)
+					}
+				} else if test.outputErr != nil {
+					if !errors.Is(
+						err,
+						test.outputErr,
+					) {
+						t.Fatal(err)
+					}
+				} else if err != nil {
 					t.Fatal(err)
 				}
 				selected := project
@@ -1743,6 +2113,15 @@ func TestRemove(t *testing.T) {
 					selected = *test.scope.Directory
 				}
 				removed := test.removed
+				if test.empty {
+					removed = []string{}
+					if strings.TrimSpace(output.String()) != "[]" {
+						t.Fatalf(
+							"empty removal output = %q",
+							&output,
+						)
+					}
+				}
 				if removed == nil {
 					removed = []string{
 						"alpha",
@@ -1785,35 +2164,48 @@ func TestRemove(t *testing.T) {
 						)
 					}
 				}
-				if test.json {
-					var paths []string
+				if test.outputErr != nil {
+					return
+				}
+				if asJSON {
+					var entries []map[string]any
 					if err := json.Unmarshal(
 						output.Bytes(),
-						&paths,
+						&entries,
 					); err != nil {
 						t.Fatal(err)
 					}
-					var wantPaths []string
-					for _, name := range removed {
-						wantPaths = append(
-							wantPaths,
-							filepath.Join(
+					if len(entries) != len(removed) {
+						t.Fatalf(
+							"removed summaries = %#v, want %d skills",
+							entries,
+							len(removed),
+						)
+					}
+					for i, name := range removed {
+						wantName := name
+						if declared, ok := test.summaryNames[name]; ok {
+							wantName = declared
+						}
+						description := "Alpha skill"
+						if test.damaged {
+							description = ""
+						}
+						entry := entries[i]
+						if len(entry) != 3 || entry["name"] != wantName || entry["description"] != description ||
+							entry["path"] != filepath.Join(
 								selected,
 								name,
-							),
-						)
-					}
-					if diff := cmp.Diff(
-						wantPaths,
-						paths,
-					); diff != "" {
-						t.Fatalf(
-							"removed paths (-want +got):\n%s",
-							diff,
-						)
+								"SKILL.md",
+							) {
+							t.Errorf(
+								"removed summary = %#v",
+								entry,
+							)
+						}
 					}
 				}
-				if !test.json {
+				if !asJSON {
 					if strings.Contains(
 						output.String(),
 						"\x1b[",

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strings"
 )
 
@@ -18,13 +19,19 @@ type ListOptions struct {
 	JSON   bool
 }
 
-// List is the high-level listing entry point for a command adapter. It can
-// list available source skills or installed skills, including manually copied ones,
-// and write results through streams. JSON output returns an error for metadata
-// values JSON cannot represent, such as non-finite YAML numbers.
+type listedSkill struct {
+	Name               string `json:"name"`
+	Description        string `json:"description"`
+	Path               string `json:"path"`
+	InvocationDisabled bool   `json:"disable-model-invocation"`
+}
+
+// List lists available source skills or installed skills, including manually
+// copied ones. JSON exposes skill summaries; warnings are written separately.
 func List(ctx context.Context, manager *Manager, opts ListOptions, streams IO) error {
+	var result []Skill
 	if opts.Source != nil {
-		result, err := manager.ListSource(
+		available, err := manager.ListSource(
 			ctx,
 			*opts.Source,
 			DiscoveryOptions{},
@@ -32,73 +39,97 @@ func List(ctx context.Context, manager *Manager, opts ListOptions, streams IO) e
 		if err != nil {
 			return err
 		}
-		var violationErr error
-		for _, skill := range result {
-			if violationErr = writeViolations(
-				streams,
-				skill,
-			); violationErr != nil {
-				break
-			}
+		result = available
+	} else {
+		directories, err := resolveDirectories(
+			opts.Scope,
+			false,
+		)
+		if err != nil {
+			return err
 		}
-		output := outputStream(streams)
-		if opts.JSON {
-			if result == nil {
-				result = []Skill{}
-			}
-			return errors.Join(
-				violationErr,
-				json.NewEncoder(output).Encode(result),
+		for _, directory := range directories {
+			installed, err := manager.ListInstalled(
+				ctx,
+				directory,
 			)
+			if err != nil {
+				return err
+			}
+			for _, entry := range installed {
+				result = append(
+					result,
+					entry.Skill,
+				)
+			}
 		}
-		var rows [][]string
+	}
+	var violationErr error
+	for _, skill := range result {
+		if violationErr = writeViolations(
+			streams,
+			skill,
+		); violationErr != nil {
+			break
+		}
+	}
+	output := outputStream(streams)
+	if jsonOutput(
+		output,
+		opts.JSON,
+	) {
+		entries := make(
+			[]listedSkill,
+			0,
+			len(result),
+		)
 		for _, skill := range result {
-			rows = append(
-				rows,
-				[]string{
-					strings.TrimSpace(displayText(skill.Name)),
-					strings.TrimSpace(displayText(skill.Description)),
-					displayText(skill.Path),
+			entries = append(
+				entries,
+				listedSkill{
+					Name:               skill.Name,
+					Description:        skill.Description,
+					Path:               skill.Path,
+					InvocationDisabled: skill.InvocationDisabled,
 				},
 			)
 		}
 		return errors.Join(
 			violationErr,
-			writeTable(
-				output,
-				[]string{
-					"Skill",
-					"Description",
-					locationColumn,
-				},
-				rows,
-			),
+			json.NewEncoder(output).Encode(entries),
 		)
 	}
-	directories, err := resolveDirectories(
-		opts.Scope,
-		false,
-	)
-	if err != nil {
-		return err
-	}
-	var result []InstalledSkill
-	for _, directory := range directories {
-		installed, err := manager.ListInstalled(
-			ctx,
-			directory,
-		)
-		if err != nil {
-			return err
+	var rows [][]string
+	for _, skill := range result {
+		invocation := "Enabled"
+		if skill.InvocationDisabled {
+			invocation = "Disabled"
 		}
-		result = append(
-			result,
-			installed...,
+		location := skill.Path
+		if opts.Source == nil {
+			location = filepath.Dir(location)
+		}
+		rows = append(
+			rows,
+			[]string{
+				strings.TrimSpace(displayText(skill.Name)),
+				strings.TrimSpace(displayText(skill.Description)),
+				invocation,
+				displayText(location),
+			},
 		)
 	}
-	return writeInstalled(
-		streams,
-		opts.JSON,
-		result,
+	return errors.Join(
+		violationErr,
+		writeTable(
+			output,
+			[]string{
+				"Skill",
+				"Description",
+				"Model invocation",
+				locationColumn,
+			},
+			rows,
+		),
 	)
 }

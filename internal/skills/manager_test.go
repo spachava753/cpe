@@ -1697,6 +1697,8 @@ func TestManagerRemove(t *testing.T) {
 		name             string
 		files            fstest.MapFS
 		names, want      []string
+		wantName         string
+		wantDescription  *string
 		cancel, readOnly bool
 		errText          string
 		wantErr          error
@@ -1734,7 +1736,23 @@ func TestManagerRemove(t *testing.T) {
 			},
 		},
 		{
-			name: "damaged installed bundle",
+			name: "mismatched removal returns the declared name and actual path",
+			files: fstest.MapFS{
+				"template/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			names: []string{
+				"template",
+			},
+			want: []string{
+				"template",
+			},
+			wantName: "alpha",
+		},
+		{
+			name:            "damaged installed bundle",
+			wantDescription: new(""),
 			files: fstest.MapFS{
 				"alpha/SKILL.md": {
 					Data: []byte("invalid"),
@@ -1894,14 +1912,27 @@ func TestManagerRemove(t *testing.T) {
 					}
 					return
 				}
-				var paths []string
+				var removed []skills.RemovedSkill
 				for _, name := range test.want {
-					paths = append(
-						paths,
-						filepath.Join(
-							directory,
-							name,
-						),
+					description := "Alpha skill"
+					if test.wantDescription != nil {
+						description = *test.wantDescription
+					}
+					declaredName := name
+					if test.wantName != "" {
+						declaredName = test.wantName
+					}
+					removed = append(
+						removed,
+						skills.RemovedSkill{
+							Name:        declaredName,
+							Description: description,
+							Path: filepath.Join(
+								directory,
+								name,
+								"SKILL.md",
+							),
+						},
 					)
 					if _, statErr := base.Stat(filepath.Join(
 						directory,
@@ -1918,7 +1949,7 @@ func TestManagerRemove(t *testing.T) {
 					}
 				}
 				if diff := cmp.Diff(
-					paths,
+					removed,
 					got,
 				); diff != "" {
 					t.Error(diff)
