@@ -134,8 +134,14 @@ func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(c
 		Long: dedent.Dedent(`
 		Install agent skills from a Git source. GitHub repositories accept the
 		<owner>/<repo> shorthand; other Git sources require a full URL.
-		Without --skill, install all skills found in the source repository.
-		Repeat --skill to select specific skills.
+		Without --skill or --path, install all skills found in the source repository.
+		Repeat --skill to select specific skills by name. Ambiguous names report the
+		matching source directories; select one with --path instead.
+		--path and --skill are mutually exclusive.
+
+		--path selects one exact source-relative skill directory, not SKILL.md.
+		Use forward-slash separators, or --path . for a skill at the source root.
+		The selected directory is read directly, regardless of discovery depth.
 
 		--scope is required. Global selects ~/.agents/skills; project selects
 		./.agents/skills. With --scope project, --dir instead selects the exact
@@ -151,6 +157,7 @@ func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(c
         %[1]s i mattpocock/skills --skill grill-with-docs --skill write-a-skill --scope project
         %[1]s i ggprompts/tfe --skill bubbletea --scope project
         %[1]s i shadcn-ui/ui --skill shadcn --scope project --dir ./custom/dir
+        %[1]s i owner/repo --path variants/react/frontend-design --scope project
 		`,
 			parent.CommandPath(),
 		)),
@@ -161,6 +168,17 @@ func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(c
 		"skill",
 		nil,
 		"Skill to install (can be specified multiple times)",
+	)
+	var sourcePath string
+	c.Flags().StringVar(
+		&sourcePath,
+		"path",
+		"",
+		"Exact source-relative skill directory (exclusive with --skill; . selects the source root)",
+	)
+	c.MarkFlagsMutuallyExclusive(
+		"skill",
+		"path",
 	)
 	var fullDepth bool
 	c.Flags().BoolVar(
@@ -177,6 +195,10 @@ func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(c
 		if !so.Project && !so.Global {
 			return fmt.Errorf("--scope is required for install")
 		}
+		var selectedPath *string
+		if cmd.Flags().Changed("path") {
+			selectedPath = &sourcePath
+		}
 		return run(
 			cmd.Context(),
 			manager,
@@ -184,6 +206,7 @@ func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(c
 				Scope:     so,
 				Source:    args[0],
 				Skills:    skillArgs,
+				Path:      selectedPath,
 				FullDepth: fullDepth,
 				JSON:      false,
 			},

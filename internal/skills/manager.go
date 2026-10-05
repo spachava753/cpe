@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/spf13/afero"
 )
@@ -43,11 +44,13 @@ type InstalledSkill struct {
 	Source    *SkillSource
 }
 
-// Directory is an exact skill root. Empty Skills selects all discovered skills.
+// Directory is an exact skill root. Path selects one source-relative bundle
+// directory and is exclusive with Skills. With neither, install all discovered skills.
 type InstallRequest struct {
 	Source    string
 	Directory string
 	Skills    []string
+	Path      *string
 	Discovery DiscoveryOptions
 }
 
@@ -97,6 +100,20 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 	); err != nil {
 		return nil, err
 	}
+	if request.Path != nil {
+		if len(request.Skills) > 0 {
+			return nil, errors.New("--path and --skill are mutually exclusive")
+		}
+		if !fs.ValidPath(*request.Path) || strings.ContainsAny(
+			*request.Path,
+			"\\\x00",
+		) {
+			return nil, fmt.Errorf(
+				"invalid source directory %q; --path must be a source-relative skill directory (use . for the source root)",
+				*request.Path,
+			)
+		}
+	}
 	names, err := selectedNames(request.Skills)
 	if err != nil {
 		return nil, err
@@ -124,14 +141,37 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 			}
 		}
 	}()
-	available, err := discover(
-		ctx,
-		checkout.FS,
-		request.Discovery,
-		names,
-	)
-	if err != nil {
-		return nil, err
+	var available []Skill
+	if request.Path != nil {
+		if err := ensureSourceDirectory(
+			checkout.FS,
+			*request.Path,
+		); err != nil {
+			return nil, err
+		}
+		skill, err := readDefinition(
+			checkout.FS,
+			*request.Path,
+		)
+		if err != nil {
+			return nil, err
+		}
+		available = []Skill{
+			skill,
+		}
+		names = []string{
+			skill.Name,
+		}
+	} else {
+		available, err = discover(
+			ctx,
+			checkout.FS,
+			request.Discovery,
+			names,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 	candidates := map[string][]Skill{}
 	for _, skill := range available {
@@ -160,9 +200,17 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 			)
 		}
 		if len(options) > 1 {
+			var directories []string
+			for _, skill := range options {
+				directories = append(
+					directories,
+					sourceDirectory(skill),
+				)
+			}
 			return nil, fmt.Errorf(
-				"ambiguous skill name %q",
+				"ambiguous skill name %q at source directories %q; use --path to select one",
 				name,
+				directories,
 			)
 		}
 		if _, ok := records.Skills[name]; ok {

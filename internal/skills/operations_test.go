@@ -28,6 +28,9 @@ func TestInstall(t *testing.T) {
 		scope            skills.ScopeOptions
 		source           string
 		names            []string
+		sourcePath       *string
+		sourceFiles      fstest.MapFS
+		wantDefinition   string
 		deep             bool
 		link             bool
 		json             bool
@@ -98,6 +101,50 @@ func TestInstall(t *testing.T) {
 				"Alpha skill says \"quoted\" in C:\\work.",
 				"next    line.",
 			},
+		},
+		{
+			name: "exact source path installs the requested duplicate",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source:     managerSource,
+			sourcePath: new("second/alpha"),
+			sourceFiles: fstest.MapFS{
+				"first/alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+				"second/alpha/SKILL.md": {
+					Data: []byte(alphaUpdated),
+				},
+			},
+			wantDefinition: alphaUpdated,
+			wantText: []string{
+				"Updated alpha",
+			},
+		},
+		{
+			name: "command rejects both selector kinds",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source:     managerSource,
+			sourcePath: new("alpha"),
+			names: []string{
+				"alpha",
+			},
+			errText: "--path and --skill are mutually exclusive",
+		},
+		{
+			name: "command rejects explicitly empty path",
+			scope: skills.ScopeOptions{
+				Project:   true,
+				Directory: new("/custom"),
+			},
+			source:     managerSource,
+			sourcePath: new(""),
+			errText:    "invalid source directory",
 		},
 		{
 			name: "selected installation warns only for its skill",
@@ -311,6 +358,9 @@ func TestInstall(t *testing.T) {
 						Data: []byte(otherDefinition),
 					},
 				}
+				if test.sourceFiles != nil {
+					files = test.sourceFiles
+				}
 				if test.deep {
 					files = fstest.MapFS{
 						"a/b/c/d/e/alpha/SKILL.md": {
@@ -350,6 +400,7 @@ func TestInstall(t *testing.T) {
 						Scope:     test.scope,
 						Source:    test.source,
 						Skills:    test.names,
+						Path:      test.sourcePath,
 						FullDepth: test.deep,
 						JSON:      test.json,
 					},
@@ -415,7 +466,11 @@ func TestInstall(t *testing.T) {
 						"SKILL.md",
 					),
 				)
-				if readErr != nil || string(data) != definition {
+				wantDefinition := definition
+				if test.wantDefinition != "" {
+					wantDefinition = test.wantDefinition
+				}
+				if readErr != nil || string(data) != wantDefinition {
 					t.Errorf(
 						"installation at selected root = %q, %v",
 						data,
@@ -495,7 +550,7 @@ func TestInstall(t *testing.T) {
 							)
 						}
 					}
-					if test.description == "" && !strings.Contains(
+					if test.description == "" && test.wantDefinition == "" && !strings.Contains(
 						output.String(),
 						"Alpha skill",
 					) {

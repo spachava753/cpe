@@ -308,6 +308,7 @@ func TestManagerInstall(t *testing.T) {
 		name                          string
 		files, existing               fstest.MapFS
 		names                         []string
+		sourcePath                    *string
 		fetchErr, cleanupErr          error
 		cancel, readOnly, missingRoot bool
 		want                          []string
@@ -514,6 +515,187 @@ func TestManagerInstall(t *testing.T) {
 			errText: "missing",
 		},
 		{
+			name: "ambiguous selected name reports paths and disambiguation flag",
+			files: fstest.MapFS{
+				"a/alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+				"b/alpha/SKILL.md": {
+					Data: []byte(alphaUpdated),
+				},
+			},
+			names: []string{
+				"alpha",
+			},
+			errText: `ambiguous skill name "alpha" at source directories ["a/alpha" "b/alpha"]; use --path to select one`,
+		},
+		{
+			name: "exact source path selects one duplicate and records its provenance",
+			files: fstest.MapFS{
+				"a/alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+				"b/alpha/SKILL.md": {
+					Data: []byte(alphaUpdated),
+				},
+			},
+			sourcePath: new("b/alpha"),
+			want: []string{
+				"alpha",
+			},
+		},
+		{
+			name: "source path and skill names are mutually exclusive",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			names: []string{
+				"alpha",
+			},
+			sourcePath: new("alpha"),
+			errText:    "--path and --skill are mutually exclusive",
+		},
+		{
+			name:       "explicitly empty source path fails before acquisition",
+			sourcePath: new(""),
+			fetchErr:   fetchErr,
+			errText:    "invalid source directory",
+		},
+		{
+			name: "exact path bypasses discovery depth and ignores unrelated invalid bundles",
+			files: fstest.MapFS{
+				"broken/SKILL.md": {
+					Data: []byte("invalid"),
+				},
+				"a/b/c/d/e/f/alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			sourcePath: new("a/b/c/d/e/f/alpha"),
+			want: []string{
+				"alpha",
+			},
+		},
+		{
+			name: "source root can be selected explicitly",
+			files: fstest.MapFS{
+				"SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			sourcePath: new("."),
+			want: []string{
+				"alpha",
+			},
+		},
+		{
+			name: "missing exact source path",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			sourcePath: new("missing"),
+			wantErr:    fs.ErrNotExist,
+		},
+		{
+			name: "path must identify a skill rather than a collection",
+			files: fstest.MapFS{
+				"collection/alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			sourcePath: new("collection"),
+			errText:    "collection/SKILL.md must be a regular definition file",
+		},
+		{
+			name: "path cannot point at the definition file",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			sourcePath: new("alpha/SKILL.md"),
+			errText:    "not a directory",
+		},
+		{
+			name: "exact path rejects invalid selected definitions",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte("invalid"),
+				},
+			},
+			sourcePath: new("alpha"),
+			errText:    "parse alpha/SKILL.md",
+		},
+		{
+			name:       "source traversal fails before acquisition",
+			sourcePath: new("alpha/../beta"),
+			fetchErr:   fetchErr,
+			errText:    "invalid source directory",
+		},
+		{
+			name:       "absolute source path fails before acquisition",
+			sourcePath: new("/alpha"),
+			fetchErr:   fetchErr,
+			errText:    "invalid source directory",
+		},
+		{
+			name:       "backslash source path fails before acquisition",
+			sourcePath: new(`collection\alpha`),
+			fetchErr:   fetchErr,
+			errText:    "invalid source directory",
+		},
+		{
+			name: "exact source path rejects symlinked directory components",
+			files: fstest.MapFS{
+				"link": {
+					Mode: fs.ModeSymlink,
+					Data: []byte("outside"),
+				},
+			},
+			sourcePath: new("link/alpha"),
+			errText:    "symlink",
+		},
+		{
+			name: "exact source path rejects linked definitions",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Mode: fs.ModeSymlink,
+					Data: []byte("../outside"),
+				},
+			},
+			sourcePath: new("alpha"),
+			errText:    "must be a regular definition file",
+		},
+		{
+			name: "exact path retains payload safety",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+				"alpha/escape": {
+					Mode: fs.ModeSymlink,
+					Data: []byte("../../outside"),
+				},
+			},
+			sourcePath: new("alpha"),
+			errText:    "symlink",
+		},
+		{
+			name: "exact path cleanup failure leaves destination unchanged",
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaSkill),
+				},
+			},
+			sourcePath: new("alpha"),
+			cleanupErr: fetchErr,
+			wantErr:    fetchErr,
+		},
+		{
 			name: "ambiguous names",
 			files: fstest.MapFS{
 				"a/alpha/SKILL.md": {
@@ -662,6 +844,7 @@ func TestManagerInstall(t *testing.T) {
 						Source:    managerSource,
 						Directory: directory,
 						Skills:    test.names,
+						Path:      test.sourcePath,
 					},
 				)
 				if test.wantErr != nil {
@@ -746,13 +929,20 @@ func TestManagerInstall(t *testing.T) {
 						)
 					}
 					sourceFile := ""
-					for name := range test.files {
-						if filepath.Base(name) == "SKILL.md" && strings.Contains(
-							string(test.files[name].Data),
-							"name: "+entry.Skill.Name+"\n",
-						) {
-							sourceFile = name
-							break
+					if test.sourcePath != nil {
+						sourceFile = filepath.ToSlash(filepath.Join(
+							*test.sourcePath,
+							"SKILL.md",
+						))
+					} else {
+						for name := range test.files {
+							if filepath.Base(name) == "SKILL.md" && strings.Contains(
+								string(test.files[name].Data),
+								"name: "+entry.Skill.Name+"\n",
+							) {
+								sourceFile = name
+								break
+							}
 						}
 					}
 					if entry.Source.Directory != filepath.ToSlash(filepath.Dir(sourceFile)) {

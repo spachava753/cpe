@@ -68,6 +68,71 @@ func TestSkillsCommands(t *testing.T) {
 			},
 		},
 		{
+			name: "install exact source directory",
+			args: []string{
+				"skills",
+				"add",
+				"owner/repo",
+				"--scope",
+				"project",
+				"--path",
+				"variants/react/alpha",
+			},
+			install: &skills.InstallOptions{
+				Scope: skills.ScopeOptions{
+					Project: true,
+				},
+				Source: "owner/repo",
+				Path:   new("variants/react/alpha"),
+			},
+		},
+		{
+			name: "install path and skill flags are mutually exclusive",
+			args: []string{
+				"skills",
+				"install",
+				"owner/repo",
+				"--scope",
+				"project",
+				"--path",
+				"variants/react/alpha",
+				"--skill",
+				"alpha",
+			},
+			err: "none of the others can be",
+		},
+		{
+			name: "install preserves explicitly empty path for invocation validation",
+			args: []string{
+				"skills",
+				"install",
+				"owner/repo",
+				"--scope",
+				"global",
+				"--path=",
+			},
+			install: &skills.InstallOptions{
+				Scope: skills.ScopeOptions{
+					Global: true,
+				},
+				Source: "owner/repo",
+				Path:   new(""),
+			},
+		},
+		{
+			name: "even empty selector flags are mutually exclusive",
+			args: []string{
+				"skills",
+				"install",
+				"owner/repo",
+				"--scope",
+				"project",
+				"--skill=",
+				"--path=",
+			},
+			err: "none of the others can be",
+		},
+		{
 			name: "install custom directory with inherited scope before command",
 			args: []string{
 				"skills",
@@ -554,6 +619,11 @@ func TestSkillsHelp(t *testing.T) {
 			want: []string{
 				"install SOURCE",
 				"--full-depth",
+				"--path",
+				"source-relative skill directory",
+				"--path and --skill are mutually exclusive",
+				"--path .",
+				"regardless of discovery depth",
 				"--scope is required",
 				"https://github.enterprise.com/my-company/custom-skills --scope project",
 			},

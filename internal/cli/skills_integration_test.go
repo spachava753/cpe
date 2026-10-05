@@ -62,6 +62,28 @@ func TestSkillsLifecycle(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(
+		filepath.Join(
+			repository,
+			"other",
+			"alpha",
+		),
+		0o700,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(
+			repository,
+			"other",
+			"alpha",
+			"SKILL.md",
+		),
+		[]byte("---\nname: alpha\ndescription: Other variant\n---\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
 	for _, args := range [][]string{
 		{
 			"init",
@@ -110,7 +132,7 @@ func TestSkillsLifecycle(t *testing.T) {
 		destinations,
 	)
 	t.Run(
-		"install",
+		"duplicate name returns actionable error without installation",
 		func(t *testing.T) {
 			var output bytes.Buffer
 			command := Root(
@@ -126,6 +148,52 @@ func TestSkillsLifecycle(t *testing.T) {
 				"--dir",
 				"/skills",
 				"--skill",
+				"alpha",
+			})
+			command.SetOut(&output)
+			command.SetErr(&output)
+			err := command.ExecuteContext(t.Context())
+			if err == nil || !strings.Contains(
+				err.Error(),
+				`ambiguous skill name "alpha" at source directories ["alpha" "other/alpha"]; use --path to select one`,
+			) {
+				t.Fatalf(
+					"ambiguous installation error = %v",
+					err,
+				)
+			}
+			if _, err := destinations.Stat("/skills"); !errors.Is(
+				err,
+				fs.ErrNotExist,
+			) || !strings.Contains(
+				output.String(),
+				`Error: ambiguous skill name "alpha" at source directories ["alpha" "other/alpha"]; use --path to select one`,
+			) {
+				t.Fatalf(
+					"ambiguous install changed destination or omitted its diagnostic: %v, %q",
+					err,
+					&output,
+				)
+			}
+		},
+	)
+	t.Run(
+		"install by exact source path",
+		func(t *testing.T) {
+			var output bytes.Buffer
+			command := Root(
+				"test",
+				manager,
+			)
+			command.SetArgs([]string{
+				"skills",
+				"install",
+				source,
+				"--scope",
+				"project",
+				"--dir",
+				"/skills",
+				"--path",
 				"alpha",
 			})
 			command.SetOut(&output)
