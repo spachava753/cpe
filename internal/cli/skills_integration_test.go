@@ -138,6 +138,7 @@ func TestSkillsLifecycle(t *testing.T) {
 			command := Root(
 				"test",
 				manager,
+				nil,
 			)
 			command.SetArgs([]string{
 				"skills",
@@ -184,6 +185,7 @@ func TestSkillsLifecycle(t *testing.T) {
 			command := Root(
 				"test",
 				manager,
+				nil,
 			)
 			command.SetArgs([]string{
 				"skills",
@@ -255,6 +257,7 @@ func TestSkillsLifecycle(t *testing.T) {
 			command := Root(
 				"test",
 				manager,
+				nil,
 			)
 			command.SetArgs([]string{
 				"skills",
@@ -287,6 +290,7 @@ func TestSkillsLifecycle(t *testing.T) {
 			command := Root(
 				"test",
 				manager,
+				nil,
 			)
 			command.SetArgs([]string{
 				"skills",
@@ -380,6 +384,7 @@ func TestSkillsLifecycle(t *testing.T) {
 			command := Root(
 				"test",
 				manager,
+				nil,
 			)
 			command.SetArgs([]string{
 				"skills",
@@ -423,6 +428,7 @@ func TestSkillsLifecycle(t *testing.T) {
 			command := Root(
 				"test",
 				manager,
+				nil,
 			)
 			command.SetArgs([]string{
 				"skills",

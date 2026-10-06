@@ -659,6 +659,7 @@ func TestSkillsHelp(t *testing.T) {
 						nil,
 						afero.NewMemMapFs(),
 					),
+					nil,
 				)
 				var output bytes.Buffer
 				root.SetOut(&output)

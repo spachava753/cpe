@@ -10,21 +10,27 @@ import (
 	"github.com/spf13/afero"
 
 	"github.com/spachava753/cpe/internal/cli"
+	"github.com/spachava753/cpe/internal/plugins"
 	"github.com/spachava753/cpe/internal/skills"
 	"github.com/spachava753/cpe/internal/terminaltext"
 	"github.com/spachava753/cpe/internal/version"
 )
 
 func main() {
-	manager := skills.NewManager(
+	skillManager := skills.NewManager(
 		skills.GitSourceClient{},
+		afero.NewOsFs(),
+	)
+	pluginManager := plugins.NewManager(
+		plugins.GitSourceClient{},
 		afero.NewOsFs(),
 	)
 	if err := fang.Execute(
 		context.Background(),
 		cli.Root(
 			version.Get(),
-			manager,
+			skillManager,
+			pluginManager,
 		),
 		fang.WithNotifySignal(os.Interrupt),
 		fang.WithErrorHandler(func(output io.Writer, styles fang.Styles, err error) {

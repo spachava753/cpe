@@ -16,6 +16,8 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
+const httpScheme = "http"
+
 func parseMCP(data []byte, pkg packageFS) (map[string]MCPServer, []error, error) {
 	fields, err := jsonObject(data)
 	if err != nil {
@@ -135,13 +137,13 @@ func parseServer(data []byte, pkg packageFS, schema *jsonschema.Resolved) (MCPSe
 	}
 	endpoint := config.URL
 	parsed, err := url.Parse(endpoint)
-	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil || strings.Contains(
+	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != httpScheme && parsed.Scheme != "https") || parsed.User != nil || strings.Contains(
 		endpoint,
 		"#",
 	) {
 		return MCPServer{}, fmt.Errorf("url must be absolute HTTP(S), without user information or fragments")
 	}
-	if parsed.Scheme == "http" && parsed.Hostname() != "localhost" {
+	if parsed.Scheme == httpScheme && parsed.Hostname() != "localhost" {
 		ip, err := netip.ParseAddr(parsed.Hostname())
 		if err != nil || !ip.Unmap().IsLoopback() {
 			return MCPServer{}, fmt.Errorf("non-loopback URL must use HTTPS")

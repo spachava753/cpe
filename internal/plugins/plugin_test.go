@@ -80,7 +80,7 @@ func TestLoadValidPlugins(t *testing.T) {
 			seen := make(map[string]bool)
 			for _, actual := range got {
 				expected, exists := want[actual.Path]
-				if !exists || seen[actual.Path] || actual.Name != expected.Name || len(actual.Diagnostics) != 0 {
+				if !exists || seen[actual.Path] || actual.Name != expected.Name || actual.Description != expected.Description || len(actual.Diagnostics) != 0 {
 					t.Fatalf(
 						"unexpected plugin: %#v",
 						actual,
@@ -1312,6 +1312,14 @@ func pluginGenerator() *rapid.Generator[pluginFixture] {
 			t,
 			"name",
 		)
+		description := rapid.StringN(
+			0,
+			32,
+			-1,
+		).Draw(
+			t,
+			"description",
+		)
 		manifest := map[string]any{
 			"$schema":    manifestSchema,
 			"name":       name,
@@ -1323,14 +1331,7 @@ func pluginGenerator() *rapid.Generator[pluginFixture] {
 				"email": "not-an-email",
 				"url":   "not-a-url",
 			},
-			"description": rapid.StringN(
-				0,
-				32,
-				-1,
-			).Draw(
-				t,
-				"description",
-			),
+			"description": description,
 			"keywords": []string{
 				"one",
 				"two",
@@ -1338,8 +1339,9 @@ func pluginGenerator() *rapid.Generator[pluginFixture] {
 		}
 		fixture := pluginFixture{
 			want: plugins.Plugin{
-				Name:      name,
-				MCPConfig: make(map[string]plugins.MCPServer),
+				Name:        name,
+				Description: description,
+				MCPConfig:   make(map[string]plugins.MCPServer),
 			},
 			files: fstest.MapFS{
 				"plugin.json": jsonFixture(manifest),
