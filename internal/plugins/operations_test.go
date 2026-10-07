@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"github.com/spachava753/cpe/internal/commandio"
 	"github.com/spachava753/cpe/internal/plugins"
 )
 
@@ -24,7 +25,7 @@ func TestInstall(t *testing.T) {
 	outputErr := errors.New("output unavailable")
 	for _, test := range []struct {
 		name          string
-		scope         plugins.ScopeOptions
+		scope         commandio.ScopeOptions
 		terminal      bool
 		pipe          bool
 		json          bool
@@ -37,19 +38,19 @@ func TestInstall(t *testing.T) {
 	}{
 		{
 			name: "project default automatic JSON",
-			scope: plugins.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 		},
 		{
 			name: "global default",
-			scope: plugins.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Global: true,
 			},
 		},
 		{
 			name: "exact relative custom directory",
-			scope: plugins.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("custom"),
 			},
@@ -57,14 +58,14 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "terminal table",
-			scope: plugins.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 			terminal: true,
 		},
 		{
 			name: "explicit JSON on terminal",
-			scope: plugins.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 			terminal: true,
@@ -72,28 +73,28 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "pipe stays JSON with forced color",
-			scope: plugins.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 			pipe: true,
 		},
 		{
 			name: "empty results are an array not null",
-			scope: plugins.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 			empty: true,
 		},
 		{
 			name: "scope required even for custom directory",
-			scope: plugins.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Directory: new("custom"),
 			},
 			errText: "scope is required",
 		},
 		{
 			name: "conflicting scopes",
-			scope: plugins.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 				Global:  true,
 			},
@@ -101,7 +102,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "custom global is rejected",
-			scope: plugins.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Global:    true,
 				Directory: new("custom"),
 			},
@@ -109,7 +110,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "empty directory rejected",
-			scope: plugins.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new(""),
 			},
@@ -117,7 +118,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "cleanup failure still emits committed installation",
-			scope: plugins.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 			fault:   managerStageCleanupFailure,
@@ -125,7 +126,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "JSON writer error preserves its cause",
-			scope: plugins.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 			outputErr: outputErr,
@@ -189,7 +190,7 @@ func TestInstall(t *testing.T) {
 						Source: managerSource,
 						JSON:   test.json,
 					},
-					plugins.IO{
+					commandio.IO{
 						Out: writer,
 						Err: io.Discard,
 					},
@@ -397,7 +398,7 @@ func TestList(t *testing.T) {
 						Source: source,
 						JSON:   test.json,
 					},
-					plugins.IO{
+					commandio.IO{
 						Out: writer,
 						Err: &diagnostics,
 					},
@@ -456,7 +457,7 @@ func TestList(t *testing.T) {
 func TestRemove(t *testing.T) {
 	for _, test := range []struct {
 		name     string
-		scope    plugins.ScopeOptions
+		scope    commandio.ScopeOptions
 		both     bool
 		all      bool
 		noNames  bool
@@ -475,7 +476,7 @@ func TestRemove(t *testing.T) {
 		},
 		{
 			name: "explicit project preserves global copy",
-			scope: plugins.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 			both: true,
@@ -593,7 +594,7 @@ func TestRemove(t *testing.T) {
 						All:     test.all,
 						JSON:    test.json,
 					},
-					plugins.IO{
+					commandio.IO{
 						Out: writer,
 					},
 				)

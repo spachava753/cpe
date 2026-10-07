@@ -10,58 +10,81 @@ import (
 	"strings"
 
 	"github.com/spf13/afero"
+
+	"github.com/spachava753/cpe/internal/bundlefs"
+	"github.com/spachava753/cpe/internal/source"
 )
 
-// Manager owns plugin discovery and destination files.
-// It returns domain results without prompting or writing command output.
+// Manager discovers and manages native Agent Plugin packages in source and
+// destination filesystems. Construct a Manager with NewManager.
 type Manager struct {
-	sources      SourceClient
+	sources      source.Client
 	destinations afero.Fs
 }
 
-// NewManager supplies acquisition and destination filesystem boundaries. A nil
-// source client is sufficient for installed listing and removal.
-func NewManager(sources SourceClient, destinations afero.Fs) *Manager {
+// NewManager uses sources to fetch trees and destinations to manage installed files.
+// sources may be nil for installed listing and removal. Installed operations require
+// a non-nil destinations filesystem, such as afero.NewOsFs().
+func NewManager(sources source.Client, destinations afero.Fs) *Manager {
 	return &Manager{
 		sources:      sources,
 		destinations: destinations,
 	}
 }
 
-type DiscoveryOptions struct{ FullDepth bool }
+// DiscoveryOptions controls recursive source search, which skips .git and node_modules.
+type DiscoveryOptions struct {
+	// FullDepth removes the default search limit of five directory components.
+	FullDepth bool
+}
 
-// InstalledPlugin is a plugin found in a destination directory.
+// InstalledPlugin pairs a plugin with its installed package directory.
 type InstalledPlugin struct {
-	Plugin    Plugin
+	// Plugin.Path equals Directory; skill paths name installed SKILL.md files.
+	Plugin Plugin
+	// Directory is the package's location beneath the supplied destination root.
 	Directory string
 }
 
-// RemovedPlugin identifies a deleted package. Unreadable manifests fall back
-// to the directory name and an empty description.
+// RemovedPlugin identifies a deleted package. Unreadable manifests yield the
+// directory name and an empty description.
 type RemovedPlugin struct {
 	Name        string
 	Description string
-	Path        string
+	// Path names the former package directory in native filesystem syntax.
+	Path string
 }
 
-// Directory is an exact plugin root. Path selects one source-relative package
-// directory and is exclusive with Plugins. Neither selects all discovered plugins.
+// InstallRequest selects packages and an exact root for Manager.Install.
+// Empty Plugins and nil Path select all discovered native packages.
 type InstallRequest struct {
-	Source    string
+	// Source is a locator accepted by the configured source.Client.
+	Source string
+	// Directory receives packages at Directory/<declared plugin name>.
 	Directory string
-	Plugins   []string
-	Path      *string
-	Override  bool
+	// Plugins selects declared manifest names. Use Path to resolve ambiguity.
+	Plugins []string
+	// Path selects a source-relative package directory; "." selects the root.
+	// It uses io/fs slash paths and is mutually exclusive with Plugins.
+	Path *string
+	// Override replaces existing packages, including obsolete files.
+	Override bool
+	// Discovery controls search when Path is nil.
 	Discovery DiscoveryOptions
 }
 
-// RemoveRequest selects explicit installed plugin directory names.
+// RemoveRequest selects installed package directories for Manager.Remove.
 type RemoveRequest struct {
+	// Directory is the exact installation root in native filesystem syntax.
 	Directory string
-	Plugins   []string
+	// Plugins contains child directory names. At least one name is required.
+	Plugins []string
 }
 
-// ListSource returns source-relative Plugin.Path values using io/fs conventions.
+// ListSource fetches source and discovers native packages according to opts.
+// Package and skill paths are source-relative slash paths; "." names a root package.
+// The checkout is closed before returning. Fatal errors return nil plugins;
+// component problems are recorded in Plugin.Diagnostics.
 func (m *Manager) ListSource(ctx context.Context, source string, opts DiscoveryOptions) (result []Plugin, err error) {
 	checkout, err := m.acquire(
 		ctx,
@@ -73,7 +96,7 @@ func (m *Manager) ListSource(ctx context.Context, source string, opts DiscoveryO
 	defer func() {
 		err = errors.Join(
 			err,
-			releaseCheckout(checkout),
+			checkout.Close(),
 		)
 		if err != nil {
 			result = nil
@@ -87,9 +110,13 @@ func (m *Manager) ListSource(ctx context.Context, source string, opts DiscoveryO
 	)
 }
 
-// Install copies whole packages without activating them. Override replaces
-// complete existing packages. Returned plugins identify committed installations,
-// even if cleanup returns an error.
+// Install copies selected packages to request.Directory/<declared plugin name>.
+// Whole packages are preserved except Git metadata; contained relative links are
+// materialized as independent files. Existing destinations require a regular plugin.json.
+//
+// Publication failures attempt rollback. Non-nil results with an error identify
+// committed installations whose cleanup failed; rollback failures retain recovery
+// files described in the error. Component problems remain in Plugin.Diagnostics.
 func (m *Manager) Install(ctx context.Context, request InstallRequest) (result []InstalledPlugin, err error) {
 	if err := m.destination(
 		ctx,
@@ -127,7 +154,7 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 		if !released {
 			err = errors.Join(
 				err,
-				releaseCheckout(checkout),
+				checkout.Close(),
 			)
 			if err != nil {
 				result = nil
@@ -136,7 +163,7 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 	}()
 	var available []Plugin
 	if request.Path != nil {
-		if err := ensureSourceDirectory(
+		if err := bundlefs.CheckSourceDirectory(
 			checkout.FS,
 			*request.Path,
 		); err != nil {
@@ -182,7 +209,7 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 		}
 	}
 	sort.Strings(names)
-	var changes []bundleChange
+	var changes []bundlefs.Change
 	for _, name := range names {
 		options := candidates[name]
 		if len(options) == 0 {
@@ -210,7 +237,10 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 			request.Directory,
 			name,
 		)
-		if info, statErr := m.pathInfo(filename); statErr == nil {
+		if info, statErr := bundlefs.Lstat(
+			m.destinations,
+			filename,
+		); statErr == nil {
 			if !request.Override {
 				return nil, fmt.Errorf(
 					"destination %s already exists; use --override to replace it: %w",
@@ -224,18 +254,8 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 					filename,
 				)
 			}
-			definition, err := m.pathInfo(filepath.Join(
-				filename,
-				"plugin.json",
-			))
-			if err != nil {
+			if err := m.checkDefinition(filename); err != nil {
 				return nil, err
-			}
-			if !definition.Mode().IsRegular() {
-				return nil, fmt.Errorf(
-					"destination %s must contain a regular plugin.json",
-					filename,
-				)
 			}
 		} else if !errors.Is(
 			statErr,
@@ -252,16 +272,16 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 		if err != nil {
 			return nil, err
 		}
-		action := installBundle
+		action := bundlefs.Install
 		if request.Override {
-			action = replaceBundle
+			action = bundlefs.Replace
 		}
 		changes = append(
 			changes,
-			bundleChange{
-				name:    name,
-				payload: payload,
-				action:  action,
+			bundlefs.Change{
+				Name:    name,
+				Payload: payload,
+				Action:  action,
 			},
 		)
 		result = append(
@@ -276,18 +296,20 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 		)
 	}
 	released = true
-	if err := releaseCheckout(checkout); err != nil {
+	if err := checkout.Close(); err != nil {
 		return nil, fmt.Errorf(
 			"release source: %w",
 			err,
 		)
 	}
-	if committed, err := m.applyChanges(
+	if outcome, err := bundlefs.Apply(
 		ctx,
+		m.destinations,
 		request.Directory,
 		changes,
+		m.checkDefinition,
 	); err != nil {
-		if !committed {
+		if outcome != bundlefs.Committed {
 			result = nil
 		}
 		return result, fmt.Errorf(
@@ -298,8 +320,10 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 	return result, nil
 }
 
-// ListInstalled inspects one exact root, including manually copied packages.
-// Plugin-root symlinks are rejected, matching Load. Listing never activates code.
+// ListInstalled reads packages immediately beneath directory, including manually
+// copied packages. It skips directories without plugin.json and recovery stages;
+// symlink entries are rejected. A missing root returns no results. Invalid manifests
+// return nil results and an error; component problems become Plugin.Diagnostics.
 func (m *Manager) ListInstalled(ctx context.Context, directory string) ([]InstalledPlugin, error) {
 	if err := m.destination(
 		ctx,
@@ -338,11 +362,14 @@ func (m *Manager) ListInstalled(ctx context.Context, directory string) ([]Instal
 		) {
 			continue
 		}
-		if _, err := m.pathInfo(filepath.Join(
-			directory,
-			entry.Name(),
-			"plugin.json",
-		)); errors.Is(
+		if _, err := bundlefs.Lstat(
+			m.destinations,
+			filepath.Join(
+				directory,
+				entry.Name(),
+				"plugin.json",
+			),
+		); errors.Is(
 			err,
 			fs.ErrNotExist,
 		) {
@@ -375,9 +402,10 @@ func (m *Manager) ListInstalled(ctx context.Context, directory string) ([]Instal
 	return result, nil
 }
 
-// Remove deletes named plugin directories. Reading the manifest for result
-// details is best-effort and never determines whether a package can be removed.
-// Returned plugins identify committed removals, even if cleanup returns an error.
+// Remove deletes selected package directories containing regular plugin.json files.
+// Directory symlinks are rejected; result metadata is read best-effort.
+// Non-nil results with an error identify committed removals whose cleanup failed.
+// Failed rollback retains recovery files described in the error.
 func (m *Manager) Remove(ctx context.Context, request RemoveRequest) ([]RemovedPlugin, error) {
 	plan, err := m.prepareRemoval(
 		ctx,
@@ -405,12 +433,14 @@ func (m *Manager) Remove(ctx context.Context, request RemoveRequest) ([]RemovedP
 			removed,
 		)
 	}
-	if committed, err := m.applyChanges(
+	if outcome, err := bundlefs.Apply(
 		ctx,
+		m.destinations,
 		request.Directory,
 		plan.changes,
+		m.checkDefinition,
 	); err != nil {
-		if committed {
+		if outcome == bundlefs.Committed {
 			return result, fmt.Errorf(
 				"remove plugins: %w",
 				err,
@@ -442,14 +472,6 @@ func relocatePlugin(plugin Plugin, directory string) Plugin {
 	return plugin
 }
 
-func (m *Manager) pathInfo(filename string) (fs.FileInfo, error) {
-	if filesystem, ok := m.destinations.(afero.Lstater); ok {
-		info, _, err := filesystem.LstatIfPossible(filename)
-		return info, err
-	}
-	return m.destinations.Stat(filename)
-}
-
 func (m *Manager) destinationFilesystem(directory string) fs.FS {
 	return destinationFS{
 		FS: afero.NewIOFS(afero.NewBasePathFs(
@@ -478,8 +500,11 @@ func (d destinationFS) ReadLink(name string) (string, error) {
 }
 
 func (d destinationFS) Lstat(name string) (fs.FileInfo, error) {
-	return d.manager.pathInfo(filepath.Join(
-		d.directory,
-		filepath.FromSlash(name),
-	))
+	return bundlefs.Lstat(
+		d.manager.destinations,
+		filepath.Join(
+			d.directory,
+			filepath.FromSlash(name),
+		),
+	)
 }

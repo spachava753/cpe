@@ -6,72 +6,58 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
-	"path/filepath"
 
 	"github.com/spachava753/cpe/internal/skills"
 )
 
-// Transport identifies a supported MCP configuration variant.
+// Transport identifies an MCP server's communication protocol.
 type Transport string
 
 const (
-	Stdio          Transport = "stdio"
+	// Stdio exchanges MCP messages through a child process's stdin and stdout.
+	Stdio Transport = "stdio"
+	// StreamableHTTP uses the MCP Streamable HTTP transport.
 	StreamableHTTP Transport = "streamable-http"
-	SSE            Transport = "sse"
+	// SSE uses the HTTP and Server-Sent Events transport.
+	SSE Transport = "sse"
 )
 
-// MCPServer is validated configuration, not a running connection. Args, Env,
-// and Cwd retain runtime placeholders; omitted Cwd defaults to ${PLUGIN_ROOT}.
+// MCPServer holds validated launch or connection settings for an MCP server.
+// Runtime placeholders remain available for expansion by the launcher.
 type MCPServer struct {
-	Type    Transport
+	Type Transport
+	// Command is the executable for Stdio servers.
 	Command string
 	Args    []string
-	Env     map[string]string
-	Cwd     string
-	URL     url.URL
+	// Env supplies environment overrides for Stdio servers.
+	Env map[string]string
+	// Cwd is the Stdio working directory; its default is ${PLUGIN_ROOT}.
+	Cwd string
+	// URL is the endpoint for StreamableHTTP and SSE servers.
+	URL url.URL
+	// Headers contains canonicalized HTTP request headers.
 	Headers http.Header
 }
 
-// Plugin represents an Agent Plugin as specified by https://agent-plugins.org/specification
+// Plugin contains a native Agent Plugin's manifest metadata and loaded components.
 type Plugin struct {
 	Name        string
 	Description string
-	// Path identifies the package directory, not its manifest file.
-	Path        string
-	Skills      []skills.Skill
-	MCPConfig   map[string]MCPServer
+	// Path names the package directory, source-relative when loaded and using
+	// native destination paths when installed.
+	Path   string
+	Skills []skills.Skill
+	// MCPConfig maps server names to their connection or launch settings.
+	MCPConfig map[string]MCPServer
+	// Diagnostics records non-fatal manifest warnings and component failures.
 	Diagnostics []error
 }
 
-func GlobalPath() (string, error) {
-	h, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(
-		h,
-		".agents",
-		"plugins",
-	), nil
-}
-
-func ProjectPath(cwd string) string {
-	return filepath.Join(
-		cwd,
-		".agents",
-		"plugins",
-	)
-}
-
-// Load reads plugins from immediate child directories of root. A missing or
-// invalid manifest stops loading and returns no partial results. Component
-// failures are isolated and reported through Plugin.Diagnostics, as required
-// by the Agent Plugins 1.0.0 specification. Paths are relative to root.
-// Load never launches executables, connects to servers, or expands placeholders.
-// Plugin root symlinks are rejected; relative links inside a package are allowed
-// only when their containment can be established through fs.ReadLinkFS.
+// Load reads native Agent Plugins from immediate child directories of root.
+// Missing or invalid manifests return nil plugins and an error; component failures
+// are recorded in Plugin.Diagnostics. Package and skill paths are root-relative.
+// Package-root symlinks are rejected; contained relative links require fs.ReadLinkFS.
 func Load(root fs.ReadDirFS) ([]Plugin, error) {
 	entries, err := root.ReadDir(".")
 	if err != nil {

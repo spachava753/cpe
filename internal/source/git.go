@@ -1,4 +1,4 @@
-package skills
+package source
 
 import (
 	"context"
@@ -16,11 +16,15 @@ import (
 	"github.com/spachava753/cpe/internal/terminaltext"
 )
 
-// GitSourceClient acquires an isolated Git checkout using the installed git CLI.
-// It accepts Git URLs and GitHub owner/repository shorthand.
-type GitSourceClient struct{}
+// GitClient clones repositories into temporary directories using git on PATH.
+// Its zero value is ready to use.
+type GitClient struct{}
 
-func (GitSourceClient) Fetch(ctx context.Context, source string) (Checkout, error) {
+// Fetch clones source at its default checkout and returns an owned Checkout.
+// source accepts GitHub owner/repository shorthand or http, https, ssh, git, and
+// absolute local file URLs. The caller must Close the checkout; cleanup is idempotent.
+// Git credential helpers and SSH authentication are used with terminal prompts disabled.
+func (GitClient) Fetch(ctx context.Context, source string) (Checkout, error) {
 	if err := ctx.Err(); err != nil {
 		return Checkout{}, err
 	}

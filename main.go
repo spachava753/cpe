@@ -12,17 +12,18 @@ import (
 	"github.com/spachava753/cpe/internal/cli"
 	"github.com/spachava753/cpe/internal/plugins"
 	"github.com/spachava753/cpe/internal/skills"
+	"github.com/spachava753/cpe/internal/source"
 	"github.com/spachava753/cpe/internal/terminaltext"
 	"github.com/spachava753/cpe/internal/version"
 )
 
 func main() {
 	skillManager := skills.NewManager(
-		skills.GitSourceClient{},
+		source.GitClient{},
 		afero.NewOsFs(),
 	)
 	pluginManager := plugins.NewManager(
-		plugins.GitSourceClient{},
+		source.GitClient{},
 		afero.NewOsFs(),
 	)
 	if err := fang.Execute(

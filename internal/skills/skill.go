@@ -5,67 +5,51 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"os"
 	"path"
-	"path/filepath"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/spachava753/cpe/internal/commandio"
 )
 
-// Skill represents a single skill, as defined by https://agentskills.io/specification
+// Skill contains parsed Agent Skills frontmatter and its definition's location.
 type Skill struct {
-	// Name identifies the skill. CPE records violations of the specification's
-	// 64-character limit and directory-name convention rather than rejecting it.
+	// Name is the skill identifier declared in frontmatter.
 	Name string
-	// Description explains what the skill does and when to use it. CPE records
-	// violations of the specification's 1024-character limit without truncation.
+	// Description explains what the skill does and when to use it.
 	Description string
-	// License name or reference to a bundled license file
+	// License is the license name or a reference to a bundled license file.
 	License string
-	// Compatibility indicates environment requirements (intended product, system packages, network access, etc.). Max 500 characters
+	// Compatibility describes environment requirements (up to 500 characters).
 	Compatibility string
 	// Metadata preserves client-specific attributes, including nested values.
 	Metadata map[string]any
-	// AllowedTools is an experimental field that is a space-separated string of tools that are pre-approved to run
+	// AllowedTools lists tool names parsed from the allowed-tools field.
 	AllowedTools []string
-	// InvocationDisabled reflects the disable-model-invocation boolean.
+	// InvocationDisabled indicates that the model should not invoke this skill.
 	InvocationDisabled bool
-	// Path is the file path that the skill is stored in
+	// Path names SKILL.md. Loaded paths are source-relative slash paths;
+	// installed paths include the supplied installation root and use native syntax.
 	Path string
-	// Violations records non-fatal specification issues without changing content.
+	// Violations records non-fatal length and directory-name warnings.
 	Violations []string `json:",omitempty"`
 }
 
-func GlobalPath() (string, error) {
-	h, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(
-		h,
-		".agents",
-		"skills",
-	), nil
-}
-
+// ProjectPath returns the default skill directory, cwd/.agents/skills.
 func ProjectPath(cwd string) string {
-	return filepath.Join(
+	return commandio.ProjectPath(
 		cwd,
-		".agents",
 		"skills",
 	)
 }
 
 // Load reads SKILL.md from each immediate child directory of root, following
-// symlinked directories. Paths are relative to root. Every child directory must
-// contain a valid skill; other files and bundled resources are ignored.
-// Unknown frontmatter fields are ignored; client-specific metadata is preserved.
-// Name/directory mismatches and name/description length limits produce
-// Violations, not errors.
-// Load stops at the first error and returns no partial results.
+// directory symlinks. Returned paths are root-relative slash paths.
+// Invalid definitions return nil skills and an error; specification warnings
+// are recorded in Skill.Violations.
 func Load(root fs.FS) ([]Skill, error) {
 	entries, err := fs.ReadDir(
 		root,

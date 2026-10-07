@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/afero"
 
 	"github.com/spachava753/cpe/internal/plugins"
+	acquisition "github.com/spachava753/cpe/internal/source"
 )
 
 func TestPluginsLifecycle(t *testing.T) {
@@ -130,7 +131,7 @@ func TestPluginsLifecycle(t *testing.T) {
 	)
 	filesystem := afero.NewMemMapFs()
 	manager := plugins.NewManager(
-		plugins.GitSourceClient{},
+		acquisition.GitClient{},
 		filesystem,
 	)
 	for _, test := range []struct {

@@ -1,6 +1,6 @@
 //go:build unix
 
-package skills
+package source
 
 import (
 	"errors"

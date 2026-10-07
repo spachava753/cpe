@@ -1,4 +1,4 @@
-package plugins_test
+package source_test
 
 import (
 	"context"
@@ -15,12 +15,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spachava753/cpe/internal/plugins"
+	acquisition "github.com/spachava753/cpe/internal/source"
 )
 
-// TestGitSourceClientFetch exercises the public acquisition boundary with real
+const checkoutDefinition = "---\nname: alpha\ndescription: Alpha skill\n---\n# Alpha\n"
+
+// TestGitClientFetch exercises the public acquisition boundary with real
 // Git processes, temporary repositories, and loopback HTTP servers, not mocks.
-func TestGitSourceClientFetch(t *testing.T) {
+func TestGitClientFetch(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git unavailable")
 	}
@@ -115,13 +117,13 @@ func TestGitSourceClientFetch(t *testing.T) {
 	// rewrites these fixture URLs to a real file:// repository before transport.
 	// These cases test locator handling, not real SSH or Git-protocol connections.
 	for _, prefix := range []string{
-		"https://github.com/fixture/plugins",
-		"https://github.com/Fixture/Plugins",
+		"https://github.com/fixture/skills",
+		"https://github.com/Fixture/Skills",
 		"https://github.com/fixture/.github",
-		"https://github.com/fixture/plugin.tools_v2",
-		"https://git.company.invalid/team/subgroup/plugins.git",
-		"ssh://git@example.com/team/plugins.git",
-		"git://example.com/team/plugins.git",
+		"https://github.com/fixture/skill.tools_v2",
+		"https://git.company.invalid/team/subgroup/skills.git",
+		"ssh://git@example.com/team/skills.git",
+		"git://example.com/team/skills.git",
 	} {
 		runSourceGit(
 			t,
@@ -154,7 +156,7 @@ func TestGitSourceClientFetch(t *testing.T) {
 	// indexes Git needs to fetch objects through an ordinary static file server.
 	bare := filepath.Join(
 		t.TempDir(),
-		"plugins.git",
+		"skills.git",
 	)
 	runSourceGit(
 		t,
@@ -224,7 +226,7 @@ func TestGitSourceClientFetch(t *testing.T) {
 	}).String()
 	encoded := filepath.Join(
 		t.TempDir(),
-		"plugins #%.git",
+		"skills #%.git",
 	)
 	runSourceGit(
 		t,
@@ -282,19 +284,19 @@ func TestGitSourceClientFetch(t *testing.T) {
 		},
 		{
 			name:   "HTTP Git repository",
-			source: server.URL + "/plugins.git",
+			source: server.URL + "/skills.git",
 		},
 		{
 			name:   "HTTPS Git repository",
-			source: tlsServer.URL + "/plugins.git",
+			source: tlsServer.URL + "/skills.git",
 		},
 		{
 			name:   "GitHub shorthand",
-			source: "fixture/plugins",
+			source: "fixture/skills",
 		},
 		{
 			name:   "case-preserving GitHub shorthand",
-			source: "Fixture/Plugins",
+			source: "Fixture/Skills",
 		},
 		{
 			name:   "dot repository shorthand",
@@ -302,19 +304,19 @@ func TestGitSourceClientFetch(t *testing.T) {
 		},
 		{
 			name:   "repository punctuation shorthand",
-			source: "fixture/plugin.tools_v2",
+			source: "fixture/skill.tools_v2",
 		},
 		{
 			name:   "enterprise URL",
-			source: "https://git.company.invalid/team/subgroup/plugins.git",
+			source: "https://git.company.invalid/team/subgroup/skills.git",
 		},
 		{
 			name:   "SSH URL",
-			source: "ssh://git@example.com/team/plugins.git",
+			source: "ssh://git@example.com/team/skills.git",
 		},
 		{
 			name:   "Git protocol URL",
-			source: "git://example.com/team/plugins.git",
+			source: "git://example.com/team/skills.git",
 		},
 		// Checkout lifetime and ownership, beyond a single ordinary clone.
 		{
@@ -345,7 +347,7 @@ func TestGitSourceClientFetch(t *testing.T) {
 		},
 		{
 			name:    "authentication failure without prompting",
-			source:  denied.URL + "/plugins.git",
+			source:  denied.URL + "/skills.git",
 			errText: "clone",
 		},
 		// Invalid locators must fail at parsing, not merely fail later in Git.
@@ -370,42 +372,42 @@ func TestGitSourceClientFetch(t *testing.T) {
 		},
 		{
 			name:    "shorthand parent traversal",
-			source:  "fixture/../plugins",
+			source:  "fixture/../skills",
 			errText: "Git URL or GitHub",
 		},
 		{
 			name:    "encoded separator in shorthand",
-			source:  "fixture/plugin%2fother",
+			source:  "fixture/skill%2fother",
 			errText: "Git URL or GitHub",
 		},
 		{
 			name:    "encoded whitespace in shorthand",
-			source:  "fixture/plugin%20other",
+			source:  "fixture/skill%20other",
 			errText: "Git URL or GitHub",
 		},
 		{
 			name:    "invalid owner character",
-			source:  "fixture_owner/plugins",
+			source:  "fixture_owner/skills",
 			errText: "Git URL or GitHub",
 		},
 		{
 			name:    "trailing slash shorthand",
-			source:  "fixture/plugins/",
+			source:  "fixture/skills/",
 			errText: "Git URL or GitHub",
 		},
 		{
 			name:    "malformed URL",
-			source:  "http://127.0.0.1:%xx/plugins",
+			source:  "http://127.0.0.1:%xx/skills",
 			errText: "invalid Git",
 		},
 		{
 			name:    "unsupported scheme",
-			source:  "ftp://127.0.0.1/plugins",
+			source:  "ftp://127.0.0.1/skills",
 			errText: "unsupported",
 		},
 		{
 			name:    "URL without host",
-			source:  "https:///plugins",
+			source:  "https:///skills",
 			errText: "requires a host",
 		},
 		{
@@ -415,37 +417,37 @@ func TestGitSourceClientFetch(t *testing.T) {
 		},
 		{
 			name:    "URL query",
-			source:  "http://127.0.0.1:1/plugins?private=fixture",
+			source:  "http://127.0.0.1:1/skills?private=fixture",
 			errText: "query or fragment",
 		},
 		{
 			name:    "empty URL query",
-			source:  "http://127.0.0.1:1/plugins?",
+			source:  "http://127.0.0.1:1/skills?",
 			errText: "query or fragment",
 		},
 		{
 			name:    "URL fragment",
-			source:  "http://127.0.0.1:1/plugins#main",
+			source:  "http://127.0.0.1:1/skills#main",
 			errText: "query or fragment",
 		},
 		{
 			name:    "encoded control in URL path",
-			source:  "http://127.0.0.1:1/plugin%0As",
+			source:  "http://127.0.0.1:1/skill%0As",
 			errText: "control",
 		},
 		{
 			name:    "URL password rejected without disclosure",
-			source:  "http://user:fixture-secret@127.0.0.1:1/plugins",
+			source:  "http://user:fixture-secret@127.0.0.1:1/skills",
 			errText: "password",
 		},
 		{
 			name:    "relative file URL",
-			source:  "file://./plugins",
+			source:  "file://./skills",
 			errText: "absolute local",
 		},
 		{
 			name:    "remote file authority",
-			source:  "file://other-host/plugins",
+			source:  "file://other-host/skills",
 			errText: "absolute local",
 		},
 		{
@@ -534,7 +536,7 @@ func TestGitSourceClientFetch(t *testing.T) {
 					cancel()
 				}
 				source := test.source
-				var checkout plugins.Checkout
+				var checkout acquisition.Checkout
 				var err error
 				if test.duringClone {
 					// Hold the HTTP response open, then cancel only after Git reaches it.
@@ -567,9 +569,9 @@ func TestGitSourceClientFetch(t *testing.T) {
 					// Defers run in reverse order: unblock the handler before closing the
 					// server, including when an assertion fails while Git is still waiting.
 					defer close(release)
-					source = blocked.URL + "/plugins.git"
+					source = blocked.URL + "/skills.git"
 					type outcome struct {
-						checkout plugins.Checkout
+						checkout acquisition.Checkout
 						err      error
 					}
 					finished := make(
@@ -577,7 +579,7 @@ func TestGitSourceClientFetch(t *testing.T) {
 						1,
 					)
 					go func() {
-						checkout, err := (plugins.GitSourceClient{}).Fetch(
+						checkout, err := (acquisition.GitClient{}).Fetch(
 							ctx,
 							source,
 						)
@@ -605,7 +607,7 @@ func TestGitSourceClientFetch(t *testing.T) {
 						t.Error("cancelled transport still owns server connection")
 					}
 				} else {
-					checkout, err = (plugins.GitSourceClient{}).Fetch(
+					checkout, err = (acquisition.GitClient{}).Fetch(
 						ctx,
 						source,
 					)
@@ -688,7 +690,7 @@ func TestGitSourceClientFetch(t *testing.T) {
 						}
 					} else {
 						for name, want := range map[string]string{
-							"plugin.json":     alphaPlugin,
+							"SKILL.md":        checkoutDefinition,
 							"nested/tool.txt": "support\n",
 							"scripts/run.sh":  "echo alpha\n",
 							"data.bin": string([]byte{
@@ -737,7 +739,7 @@ func TestGitSourceClientFetch(t *testing.T) {
 						// io/fs names are source-relative: absolute paths and .. are invalid.
 						for _, name := range []string{
 							"../outside",
-							"/plugin.json",
+							"/SKILL.md",
 						} {
 							if _, readErr := fs.ReadFile(
 								checkout.FS,
@@ -763,7 +765,7 @@ func TestGitSourceClientFetch(t *testing.T) {
 					// Two acquisitions own separate resources; releasing the first must
 					// leave the second readable, even when both came from the same source.
 					if test.second {
-						other, err := (plugins.GitSourceClient{}).Fetch(
+						other, err := (acquisition.GitClient{}).Fetch(
 							t.Context(),
 							source,
 						)
@@ -780,9 +782,9 @@ func TestGitSourceClientFetch(t *testing.T) {
 						}
 						data, readErr := fs.ReadFile(
 							other.FS,
-							"plugin.json",
+							"SKILL.md",
 						)
-						if readErr != nil || string(data) != alphaPlugin {
+						if readErr != nil || string(data) != checkoutDefinition {
 							t.Fatal("cleanup affected a different checkout")
 						}
 						if err := other.Cleanup(); err != nil {
@@ -865,7 +867,7 @@ func TestGitSourceClientFetch(t *testing.T) {
 						)
 					}
 					for name, want := range map[string]string{
-						"plugin.json":   alphaPlugin,
+						"SKILL.md":      checkoutDefinition,
 						"untracked.txt": "private workspace file",
 					} {
 						data, readErr := os.ReadFile(filepath.Join(
@@ -908,7 +910,7 @@ func newGitSourceRepository(t *testing.T) string {
 		repository,
 	)
 	for name, data := range map[string]string{
-		"plugin.json":     alphaPlugin,
+		"SKILL.md":        checkoutDefinition,
 		"nested/tool.txt": "support\n",
 		"scripts/run.sh":  "echo alpha\n",
 		"data.bin": string([]byte{

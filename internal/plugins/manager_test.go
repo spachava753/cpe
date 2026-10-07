@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/afero"
 
 	"github.com/spachava753/cpe/internal/plugins"
+	"github.com/spachava753/cpe/internal/source"
 )
 
 const (
@@ -30,11 +31,11 @@ type managerSourceClient struct {
 	cleanup func() error
 }
 
-func (client managerSourceClient) Fetch(context.Context, string) (plugins.Checkout, error) {
+func (client managerSourceClient) Fetch(context.Context, string) (source.Checkout, error) {
 	if client.err != nil {
-		return plugins.Checkout{}, client.err
+		return source.Checkout{}, client.err
 	}
-	return plugins.Checkout{
+	return source.Checkout{
 		FS:      client.files,
 		Cleanup: client.cleanup,
 	}, nil
@@ -250,7 +251,7 @@ func TestManagerListSource(t *testing.T) {
 					cancel()
 				}
 				cleanups := 0
-				var client plugins.SourceClient = managerSourceClient{
+				var client source.Client = managerSourceClient{
 					files: test.files,
 					err:   test.fetchErr,
 					cleanup: func() error {

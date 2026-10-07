@@ -16,6 +16,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/afero"
 
+	"github.com/spachava753/cpe/internal/commandio"
 	"github.com/spachava753/cpe/internal/skills"
 )
 
@@ -24,7 +25,7 @@ func TestInstall(t *testing.T) {
 	warningErr := errors.New("warnings unavailable")
 	for _, test := range []struct {
 		name             string
-		scope            skills.ScopeOptions
+		scope            commandio.ScopeOptions
 		source           string
 		names            []string
 		sourcePath       *string
@@ -51,7 +52,7 @@ func TestInstall(t *testing.T) {
 	}{
 		{
 			name: "custom project directory",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -59,7 +60,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "override replaces an existing skill",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -76,7 +77,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "committed replacement is rendered despite cleanup failure",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -95,7 +96,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "non-terminal install automatically receives a summary array",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -107,7 +108,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "pipe install output remains JSON with forced color",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -118,7 +119,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "committed cleanup failure still emits an automatic JSON array",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -132,7 +133,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "automatic JSON excludes non-JSON metadata without losing bundle contents",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -150,7 +151,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "automatic JSON preserves description whitespace and terminal controls",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -163,7 +164,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "automatic JSON keeps warnings on stderr",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -182,7 +183,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "empty source produces an empty JSON array without mutation",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -193,14 +194,14 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "global directory",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Global: true,
 			},
 			source: managerSource,
 		},
 		{
 			name: "selected skill only",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -211,7 +212,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "full depth forwarded",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -220,7 +221,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "colored install result",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -229,7 +230,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "install keeps readable descriptions and neutralizes terminal commands",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -243,7 +244,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "exact source path installs the requested duplicate",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -264,7 +265,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "command rejects both selector kinds",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -277,7 +278,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "command rejects explicitly empty path",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -287,7 +288,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "install all warns for a directory mismatch without blocking",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -306,7 +307,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "name-selected installation warns for its mismatched directory",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -328,7 +329,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "unselected mismatched directories do not produce warnings",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -347,7 +348,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "selected installation warns only for its skill",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -366,7 +367,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "unselected soft violations do not produce installation warnings",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -381,7 +382,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "install all warns for every installed skill",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -401,7 +402,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "warning output failure preserves its cause and committed result",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -414,7 +415,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "JSON result",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -423,7 +424,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "output failure preserves its cause and diagnostic",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/custom"),
 			},
@@ -437,7 +438,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "symlink followed by parent component is not cleaned away",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/link/../custom"),
 			},
@@ -447,7 +448,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "missing component cannot hide link behind parent traversal",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new("/missing/../link/custom"),
 			},
@@ -457,14 +458,14 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "source required",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 			errText: "source",
 		},
 		{
 			name: "conflicting scopes",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 				Global:  true,
 			},
@@ -473,7 +474,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "global and custom directory conflict",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Global:    true,
 				Directory: new("/custom"),
 			},
@@ -482,7 +483,7 @@ func TestInstall(t *testing.T) {
 		},
 		{
 			name: "empty explicit directory",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project:   true,
 				Directory: new(""),
 			},
@@ -584,7 +585,7 @@ func TestInstall(t *testing.T) {
 					destinations,
 				)
 				var output, diagnostics bytes.Buffer
-				streams := skills.IO{
+				streams := commandio.IO{
 					Out: &output,
 					Err: &diagnostics,
 				}
@@ -681,7 +682,7 @@ func TestInstall(t *testing.T) {
 						fs.ErrPermission,
 					) || !strings.Contains(
 						err.Error(),
-						"skills changes committed; cleanup failed for ",
+						"bundle changes committed; cleanup failed for ",
 					) {
 						t.Fatalf(
 							"error = %v, want committed cleanup failure with its cause",
@@ -913,7 +914,7 @@ func TestList(t *testing.T) {
 	warningErr := errors.New("warnings unavailable")
 	for _, test := range []struct {
 		name              string
-		scope             skills.ScopeOptions
+		scope             commandio.ScopeOptions
 		source            *string
 		json              bool
 		nonTTY, pipe      bool
@@ -944,7 +945,7 @@ func TestList(t *testing.T) {
 		},
 		{
 			name: "installed JSON reports disabled model invocation",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 			json:       true,
@@ -958,7 +959,7 @@ func TestList(t *testing.T) {
 		},
 		{
 			name: "installed table marks user-only skills as disabled",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 			invocation: new(true),
@@ -993,7 +994,7 @@ func TestList(t *testing.T) {
 		},
 		{
 			name: "explicit false permits model invocation",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 			invocation: new(false),
@@ -1015,7 +1016,7 @@ func TestList(t *testing.T) {
 		},
 		{
 			name: "empty inventory is an empty JSON array",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 			json:  true,
@@ -1052,7 +1053,7 @@ func TestList(t *testing.T) {
 		},
 		{
 			name: "project only",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 			want: []string{
@@ -1061,7 +1062,7 @@ func TestList(t *testing.T) {
 		},
 		{
 			name: "installed directory mismatch warns without blocking inventory",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 			directoryMismatch: true,
@@ -1111,7 +1112,7 @@ func TestList(t *testing.T) {
 		},
 		{
 			name: "installed length violations warn on stderr without failing",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 			description: strings.Repeat(
@@ -1127,7 +1128,7 @@ func TestList(t *testing.T) {
 		},
 		{
 			name: "installed warning writer failure preserves cause and listing",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 			description: strings.Repeat(
@@ -1174,7 +1175,7 @@ func TestList(t *testing.T) {
 		},
 		{
 			name: "global only",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Global: true,
 			},
 			want: []string{
@@ -1221,7 +1222,7 @@ func TestList(t *testing.T) {
 		},
 		{
 			name: "custom directory excludes both defaults",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Directory: new("/custom"),
 			},
 			want: []string{
@@ -1531,7 +1532,7 @@ func TestList(t *testing.T) {
 						Source: test.source,
 						JSON:   test.json,
 					},
-					skills.IO{
+					commandio.IO{
 						Out: resultOutput,
 						Err: warningOutput,
 					},
@@ -1746,7 +1747,7 @@ func TestRemove(t *testing.T) {
 	outputErr := errors.New("output unavailable")
 	for _, test := range []struct {
 		name              string
-		scope             skills.ScopeOptions
+		scope             commandio.ScopeOptions
 		both, json, all   bool
 		nonTTY, pipe      bool
 		files             fstest.MapFS
@@ -1786,7 +1787,7 @@ func TestRemove(t *testing.T) {
 		},
 		{
 			name: "cleanup failure emits committed removal JSON",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 			nonTTY:    true,
@@ -1795,7 +1796,7 @@ func TestRemove(t *testing.T) {
 		},
 		{
 			name: "JSON writer failure preserves its cause after removal",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 			nonTTY:    true,
@@ -1803,7 +1804,7 @@ func TestRemove(t *testing.T) {
 		},
 		{
 			name: "empty bulk removal produces an empty JSON array",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 			all:    true,
@@ -1849,7 +1850,7 @@ func TestRemove(t *testing.T) {
 		},
 		{
 			name: "colored removal strips directory controls",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Directory: new("/custom\x1b]52;c;evil\x07"),
 			},
 			forceColor: true,
@@ -1859,7 +1860,7 @@ func TestRemove(t *testing.T) {
 		},
 		{
 			name: "removal paths preserve quotes backslashes and spaces",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Directory: new("/custom \"quoted\" \\folder "),
 			},
 			wantText: []string{
@@ -1878,14 +1879,14 @@ func TestRemove(t *testing.T) {
 		},
 		{
 			name: "explicit project preserves global",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Project: true,
 			},
 			both: true,
 		},
 		{
 			name: "custom directory only",
-			scope: skills.ScopeOptions{
+			scope: commandio.ScopeOptions{
 				Directory: new("/custom"),
 			},
 			both: true,
@@ -2062,7 +2063,7 @@ func TestRemove(t *testing.T) {
 						All:    test.all,
 						JSON:   test.json,
 					},
-					skills.IO{
+					commandio.IO{
 						Out: resultOutput,
 					},
 				)
@@ -2093,7 +2094,7 @@ func TestRemove(t *testing.T) {
 						fs.ErrPermission,
 					) || !strings.Contains(
 						err.Error(),
-						"skills changes committed; cleanup failed for ",
+						"bundle changes committed; cleanup failed for ",
 					) {
 						t.Fatalf(
 							"error = %v, want committed cleanup failure",

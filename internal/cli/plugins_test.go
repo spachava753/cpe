@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 
+	"github.com/spachava753/cpe/internal/commandio"
 	"github.com/spachava753/cpe/internal/plugins"
 )
 
@@ -34,7 +35,7 @@ func TestPluginsCommands(t *testing.T) {
 				"global",
 			},
 			install: &plugins.InstallOptions{
-				Scope: plugins.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Global: true,
 				},
 				Source: "owner/repo",
@@ -55,7 +56,7 @@ func TestPluginsCommands(t *testing.T) {
 				"--full-depth",
 			},
 			install: &plugins.InstallOptions{
-				Scope: plugins.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Project: true,
 				},
 				Source: "owner/repo",
@@ -77,7 +78,7 @@ func TestPluginsCommands(t *testing.T) {
 				"--json",
 			},
 			install: &plugins.InstallOptions{
-				Scope: plugins.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Project: true,
 				},
 				Source: "owner/repo",
@@ -95,7 +96,7 @@ func TestPluginsCommands(t *testing.T) {
 				"--override",
 			},
 			install: &plugins.InstallOptions{
-				Scope: plugins.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Project: true,
 				},
 				Source:   "owner/repo",
@@ -114,7 +115,7 @@ func TestPluginsCommands(t *testing.T) {
 				"variants/react/alpha",
 			},
 			install: &plugins.InstallOptions{
-				Scope: plugins.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Project: true,
 				},
 				Source: "owner/repo",
@@ -147,7 +148,7 @@ func TestPluginsCommands(t *testing.T) {
 				"--path=",
 			},
 			install: &plugins.InstallOptions{
-				Scope: plugins.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Global: true,
 				},
 				Source: "owner/repo",
@@ -179,7 +180,7 @@ func TestPluginsCommands(t *testing.T) {
 				"./team-plugins",
 			},
 			install: &plugins.InstallOptions{
-				Scope: plugins.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Directory: new("./team-plugins"),
 					Project:   true,
 				},
@@ -236,7 +237,7 @@ func TestPluginsCommands(t *testing.T) {
 				"global",
 			},
 			list: &plugins.ListOptions{
-				Scope: plugins.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Global: true,
 				},
 			},
@@ -250,7 +251,7 @@ func TestPluginsCommands(t *testing.T) {
 				"./team-plugins",
 			},
 			list: &plugins.ListOptions{
-				Scope: plugins.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Directory: new("./team-plugins"),
 				},
 			},
@@ -295,7 +296,7 @@ func TestPluginsCommands(t *testing.T) {
 				"./team-plugins",
 			},
 			remove: &plugins.RemoveOptions{
-				Scope: plugins.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Directory: new("./team-plugins"),
 				},
 				Plugins: []string{
@@ -313,7 +314,7 @@ func TestPluginsCommands(t *testing.T) {
 				"global",
 			},
 			remove: &plugins.RemoveOptions{
-				Scope: plugins.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Global: true,
 				},
 				Plugins: []string{
@@ -478,7 +479,7 @@ func TestPluginsCommands(t *testing.T) {
 					afero.NewMemMapFs(),
 				)
 				calls := 0
-				checkBoundary := func(actualCtx context.Context, actualManager *plugins.Manager, streams plugins.IO) {
+				checkBoundary := func(actualCtx context.Context, actualManager *plugins.Manager, streams commandio.IO) {
 					t.Helper()
 					calls++
 					if actualCtx != ctx || actualManager != manager || streams.In != input || streams.Out != &output || streams.Err != &diagnostics {
@@ -489,7 +490,7 @@ func TestPluginsCommands(t *testing.T) {
 					root,
 					manager,
 					pluginActions{
-						install: func(ctx context.Context, manager *plugins.Manager, opts plugins.InstallOptions, streams plugins.IO) error {
+						install: func(ctx context.Context, manager *plugins.Manager, opts plugins.InstallOptions, streams commandio.IO) error {
 							checkBoundary(
 								ctx,
 								manager,
@@ -506,7 +507,7 @@ func TestPluginsCommands(t *testing.T) {
 							}
 							return operationErr
 						},
-						list: func(ctx context.Context, manager *plugins.Manager, opts plugins.ListOptions, streams plugins.IO) error {
+						list: func(ctx context.Context, manager *plugins.Manager, opts plugins.ListOptions, streams commandio.IO) error {
 							checkBoundary(
 								ctx,
 								manager,
@@ -523,7 +524,7 @@ func TestPluginsCommands(t *testing.T) {
 							}
 							return operationErr
 						},
-						remove: func(ctx context.Context, manager *plugins.Manager, opts plugins.RemoveOptions, streams plugins.IO) error {
+						remove: func(ctx context.Context, manager *plugins.Manager, opts plugins.RemoveOptions, streams commandio.IO) error {
 							checkBoundary(
 								ctx,
 								manager,

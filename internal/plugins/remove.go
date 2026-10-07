@@ -6,22 +6,29 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+
+	"github.com/spachava753/cpe/internal/bundlefs"
+	"github.com/spachava753/cpe/internal/commandio"
 )
 
-// RemoveOptions is unparsed command input. Remove owns invocation parsing,
-// destination resolution, and output; Manager owns removal.
+// RemoveOptions selects installed package directories and their output format.
 type RemoveOptions struct {
-	Scope   ScopeOptions
-	Plugins []string // Raw installed directory names.
-	All     bool
-	JSON    bool
+	// Scope selects roots to search; its zero value searches project and global roots.
+	Scope commandio.ScopeOptions
+	// Plugins contains installed directory names. A name in both roots is ambiguous.
+	Plugins []string
+	// All selects every listed package and is mutually exclusive with Plugins.
+	All bool
+	// JSON forces JSON results even when output is a terminal.
+	JSON bool
 }
 
-// Remove is the high-level removal entry point for a command adapter.
-// It removes named installed plugin directories and writes results through streams.
-func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams IO) error {
-	directories, err := resolveDirectories(
-		opts.Scope,
+// Remove deletes selected packages and writes summaries to streams.Out.
+// Results are terminal tables or JSON arrays containing name, description, and
+// former package-directory path. Errors can follow committed removals or result writes.
+func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams commandio.IO) error {
+	directories, err := opts.Scope.Directories(
+		"plugins",
 		false,
 	)
 	if err != nil {
@@ -64,10 +71,13 @@ func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams I
 				); err != nil {
 					return err
 				}
-				info, err := manager.pathInfo(filepath.Join(
-					directory,
-					name,
-				))
+				info, err := bundlefs.Lstat(
+					manager.destinations,
+					filepath.Join(
+						directory,
+						name,
+					),
+				)
 				if errors.Is(
 					err,
 					fs.ErrNotExist,

@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/afero"
 
 	"github.com/spachava753/cpe/internal/skills"
+	acquisition "github.com/spachava753/cpe/internal/source"
 )
 
 func TestSkillsLifecycle(t *testing.T) {
@@ -128,7 +129,7 @@ func TestSkillsLifecycle(t *testing.T) {
 	}).String()
 	destinations := afero.NewMemMapFs()
 	manager := skills.NewManager(
-		skills.GitSourceClient{},
+		acquisition.GitClient{},
 		destinations,
 	)
 	t.Run(

@@ -2,48 +2,25 @@ package plugins
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/fs"
-	"path"
 	"slices"
 	"strings"
+
+	"github.com/spachava753/cpe/internal/bundlefs"
+	"github.com/spachava753/cpe/internal/source"
 )
 
-func (m *Manager) acquire(ctx context.Context, source string) (Checkout, error) {
-	if err := ctx.Err(); err != nil {
-		return Checkout{}, err
+func (m *Manager) acquire(ctx context.Context, locator string) (source.Checkout, error) {
+	var client source.Client
+	if m != nil {
+		client = m.sources
 	}
-	if m == nil || m.sources == nil {
-		return Checkout{}, errors.New("source client is unavailable")
-	}
-	if strings.TrimSpace(source) == "" {
-		return Checkout{}, errors.New("source is required")
-	}
-	checkout, err := m.sources.Fetch(
+	return source.Acquire(
 		ctx,
-		source,
+		client,
+		locator,
 	)
-	if err != nil {
-		return Checkout{}, fmt.Errorf(
-			"fetch source: %w",
-			err,
-		)
-	}
-	if checkout.FS == nil {
-		return Checkout{}, errors.Join(
-			errors.New("source filesystem is unavailable"),
-			releaseCheckout(checkout),
-		)
-	}
-	return checkout, nil
-}
-
-func releaseCheckout(checkout Checkout) error {
-	if checkout.Cleanup != nil {
-		return checkout.Cleanup()
-	}
-	return nil
 }
 
 // Discovery recognizes native manifests by schema, not by filename alone.
@@ -83,7 +60,7 @@ func discover(ctx context.Context, filesystem fs.FS, opts DiscoveryOptions, name
 				if child.Name() != "plugin.json" {
 					continue
 				}
-				if err := ensureSourceDirectory(
+				if err := bundlefs.CheckSourceDirectory(
 					filesystem,
 					directory,
 				); err != nil {
@@ -146,68 +123,6 @@ func discover(ctx context.Context, filesystem fs.FS, opts DiscoveryOptions, name
 		)
 	}
 	return result, nil
-}
-
-// Inspect parent entries so no directory symlink can redirect source selection.
-func ensureSourceDirectory(filesystem fs.FS, directory string) error {
-	if !fs.ValidPath(directory) || strings.ContainsAny(
-		directory,
-		"\\\x00",
-	) {
-		return fmt.Errorf(
-			"invalid source directory %q",
-			directory,
-		)
-	}
-	if directory == "." {
-		return nil
-	}
-	parent := "."
-	for component := range strings.SplitSeq(
-		directory,
-		"/",
-	) {
-		entries, err := fs.ReadDir(
-			filesystem,
-			parent,
-		)
-		if err != nil {
-			return err
-		}
-		found := false
-		for _, entry := range entries {
-			if entry.Name() != component {
-				continue
-			}
-			info, err := entry.Info()
-			if err != nil {
-				return err
-			}
-			if info.Mode()&fs.ModeSymlink != 0 || !info.IsDir() {
-				return fmt.Errorf(
-					"source path %s must be a regular directory, not a symlink",
-					path.Join(
-						parent,
-						component,
-					),
-				)
-			}
-			found = true
-			break
-		}
-		if !found {
-			return &fs.PathError{
-				Op:   "read source directory",
-				Path: directory,
-				Err:  fs.ErrNotExist,
-			}
-		}
-		parent = path.Join(
-			parent,
-			component,
-		)
-	}
-	return nil
 }
 
 func excludedDirectory(name string) bool { return name == ".git" || name == "node_modules" }

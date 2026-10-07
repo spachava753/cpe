@@ -3,15 +3,12 @@ package skills
 import (
 	"encoding/json"
 	"errors"
-	"io"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"charm.land/lipgloss/v2/table"
-	"github.com/charmbracelet/x/term"
 
+	"github.com/spachava753/cpe/internal/commandio"
 	"github.com/spachava753/cpe/internal/terminaltext"
 )
 
@@ -23,87 +20,14 @@ type skillSummary struct {
 	Path        string `json:"path"`
 }
 
-func resolveDirectories(scope ScopeOptions, requireScope bool) ([]string, error) {
-	if scope.Project && scope.Global {
-		return nil, errors.New("conflicting scope selections")
-	}
-	if requireScope && !scope.Project && !scope.Global {
-		return nil, errors.New("scope is required for install")
-	}
-	if scope.Directory != nil {
-		if *scope.Directory == "" {
-			return nil, errors.New("directory must not be empty")
-		}
-		if scope.Global {
-			return nil, errors.New("custom directory cannot be combined with global scope")
-		}
-		directory := *scope.Directory
-		if !filepath.IsAbs(directory) {
-			cwd, err := os.Getwd()
-			if err != nil {
-				return nil, err
-			}
-			directory = cwd + string(filepath.Separator) + directory
-		}
-		return []string{
-			directory,
-		}, nil
-	}
-	var directories []string
-	if scope.Project || !scope.Global {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return nil, err
-		}
-		directories = append(
-			directories,
-			ProjectPath(cwd),
-		)
-	}
-	if scope.Global || !scope.Project {
-		directory, err := GlobalPath()
-		if err != nil {
-			return nil, err
-		}
-		if len(directories) == 0 || directory != directories[0] {
-			directories = append(
-				directories,
-				directory,
-			)
-		}
-	}
-	return directories, nil
-}
-
-func outputStream(streams IO) io.Writer {
-	if streams.Out != nil {
-		return streams.Out
-	}
-	return os.Stdout
-}
-
-// Format follows the result stream, not stdin or stderr. Color settings never
-// turn a redirected stream into a terminal.
-func jsonOutput(output io.Writer, requested bool) bool {
-	if requested {
-		return true
-	}
-	terminal, ok := output.(interface{ Fd() uintptr })
-	return !ok || !term.IsTerminal(terminal.Fd())
-}
-
-func writeViolations(streams IO, skill Skill) error {
+func writeViolations(streams commandio.IO, skill Skill) error {
 	if len(skill.Violations) == 0 {
 		return nil
-	}
-	output := streams.Err
-	if output == nil {
-		output = os.Stderr
 	}
 	label := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Yellow).Render("Warning:")
 	for _, violation := range skill.Violations {
 		if _, err := lipgloss.Fprintln(
-			output,
+			streams.ErrorOutput(),
 			label+" "+terminaltext.Sanitize(skill.Name)+": "+terminaltext.Sanitize(violation),
 		); err != nil {
 			return err
@@ -112,7 +36,7 @@ func writeViolations(streams IO, skill Skill) error {
 	return nil
 }
 
-func writeInstalled(streams IO, asJSON bool, result []InstalledSkill) error {
+func writeInstalled(streams commandio.IO, asJSON bool, result []InstalledSkill) error {
 	var violationErr error
 	for _, entry := range result {
 		if violationErr = writeViolations(
@@ -122,8 +46,8 @@ func writeInstalled(streams IO, asJSON bool, result []InstalledSkill) error {
 			break
 		}
 	}
-	output := outputStream(streams)
-	if jsonOutput(
+	output := streams.Output()
+	if commandio.UseJSON(
 		output,
 		asJSON,
 	) {
@@ -160,7 +84,7 @@ func writeInstalled(streams IO, asJSON bool, result []InstalledSkill) error {
 	}
 	return errors.Join(
 		violationErr,
-		writeTable(
+		commandio.WriteTable(
 			output,
 			[]string{
 				"Skill",
@@ -172,50 +96,9 @@ func writeInstalled(streams IO, asJSON bool, result []InstalledSkill) error {
 	)
 }
 
-// Lip Gloss owns layout and styling. Cells are sanitized before rendering, so
-// only our own styles can introduce terminal escape sequences.
-func writeTable(output io.Writer, headers []string, rows [][]string) error {
-	if len(rows) == 0 {
-		return nil
-	}
-	cell := lipgloss.NewStyle().PaddingRight(2)
-	view := table.New().
-		Border(lipgloss.Border{}).
-		BorderTop(false).
-		BorderBottom(false).
-		BorderLeft(false).
-		BorderRight(false).
-		BorderColumn(false).
-		BorderHeader(false).
-		Headers(headers...).
-		Rows(rows...).
-		StyleFunc(func(row, column int) lipgloss.Style {
-			switch {
-			case row == table.HeaderRow:
-				return cell.Bold(true).Foreground(lipgloss.Cyan)
-			case column == 0:
-				return cell.Foreground(lipgloss.Cyan)
-			case column == len(headers)-1:
-				return cell.Faint(true)
-			default:
-				return cell
-			}
-		})
-	if terminal, ok := output.(interface{ Fd() uintptr }); ok {
-		if width, _, err := term.GetSize(terminal.Fd()); err == nil && width > 0 {
-			view.Width(width)
-		}
-	}
-	_, err := lipgloss.Fprintln(
-		output,
-		view.Render(),
-	)
-	return err
-}
-
-func writeRemoved(streams IO, asJSON bool, result []RemovedSkill) error {
-	output := outputStream(streams)
-	if jsonOutput(
+func writeRemoved(streams commandio.IO, asJSON bool, result []RemovedSkill) error {
+	output := streams.Output()
+	if commandio.UseJSON(
 		output,
 		asJSON,
 	) {
@@ -243,7 +126,7 @@ func writeRemoved(streams IO, asJSON bool, result []RemovedSkill) error {
 			},
 		)
 	}
-	return writeTable(
+	return commandio.WriteTable(
 		output,
 		[]string{
 			"Removed",

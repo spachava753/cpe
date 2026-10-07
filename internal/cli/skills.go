@@ -6,54 +6,16 @@ import (
 
 	"github.com/lithammer/dedent"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 
+	"github.com/spachava753/cpe/internal/commandio"
 	"github.com/spachava753/cpe/internal/skills"
-)
-
-const (
-	scopeFlag    = "scope"
-	dirFlag      = "dir"
-	projectScope = "project"
-	globalScope  = "global"
 )
 
 // Keep command adapters testable without running skill operations.
 type skillActions struct {
-	install func(context.Context, *skills.Manager, skills.InstallOptions, skills.IO) error
-	list    func(context.Context, *skills.Manager, skills.ListOptions, skills.IO) error
-	remove  func(context.Context, *skills.Manager, skills.RemoveOptions, skills.IO) error
-}
-
-func scopeOptsFromFlags(p *pflag.FlagSet) (skills.ScopeOptions, error) {
-	scope, err := p.GetString(scopeFlag)
-	if err != nil {
-		return skills.ScopeOptions{}, err
-	}
-	if (p.Changed(scopeFlag) && scope == "") || (scope != "" && scope != projectScope && scope != globalScope) {
-		return skills.ScopeOptions{}, fmt.Errorf("--scope must be project or global")
-	}
-
-	var dir *string
-	if p.Changed(dirFlag) {
-		d, err := p.GetString(dirFlag)
-		if err != nil {
-			return skills.ScopeOptions{}, err
-		}
-		if d == "" {
-			return skills.ScopeOptions{}, fmt.Errorf("--dir must not be empty")
-		}
-		if scope == globalScope {
-			return skills.ScopeOptions{}, fmt.Errorf("--dir cannot be combined with --scope global")
-		}
-		dir = &d
-	}
-
-	return skills.ScopeOptions{
-		Directory: dir,
-		Project:   scope == projectScope,
-		Global:    scope == globalScope,
-	}, nil
+	install func(context.Context, *skills.Manager, skills.InstallOptions, commandio.IO) error
+	list    func(context.Context, *skills.Manager, skills.ListOptions, commandio.IO) error
+	remove  func(context.Context, *skills.Manager, skills.RemoveOptions, commandio.IO) error
 }
 
 func skillsCmd(parent *cobra.Command, manager *skills.Manager) {
@@ -114,7 +76,7 @@ func skillsCmdWithActions(parent *cobra.Command, manager *skills.Manager, action
 	)
 }
 
-func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.InstallOptions, skills.IO) error) {
+func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.InstallOptions, commandio.IO) error) {
 	var asJSON bool
 	c := &cobra.Command{
 		Use: "install SOURCE",
@@ -217,7 +179,7 @@ func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(c
 				FullDepth: fullDepth,
 				JSON:      asJSON,
 			},
-			skills.IO{
+			commandio.IO{
 				In:  cmd.InOrStdin(),
 				Out: cmd.OutOrStdout(),
 				Err: cmd.ErrOrStderr(),
@@ -233,7 +195,7 @@ func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(c
 	parent.AddCommand(c)
 }
 
-func skillsListCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.ListOptions, skills.IO) error) {
+func skillsListCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.ListOptions, commandio.IO) error) {
 	var asJSON bool
 	c := &cobra.Command{
 		Use: "list [SOURCE]",
@@ -274,7 +236,7 @@ func skillsListCmd(parent *cobra.Command, manager *skills.Manager, run func(cont
 					Source: source,
 					JSON:   asJSON,
 				},
-				skills.IO{
+				commandio.IO{
 					In:  cmd.InOrStdin(),
 					Out: cmd.OutOrStdout(),
 					Err: cmd.ErrOrStderr(),
@@ -291,7 +253,7 @@ func skillsListCmd(parent *cobra.Command, manager *skills.Manager, run func(cont
 	parent.AddCommand(c)
 }
 
-func skillsRemoveCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.RemoveOptions, skills.IO) error) {
+func skillsRemoveCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.RemoveOptions, commandio.IO) error) {
 	var asJSON bool
 	c := &cobra.Command{
 		Use: "remove SKILL...",
@@ -327,7 +289,7 @@ func skillsRemoveCmd(parent *cobra.Command, manager *skills.Manager, run func(co
 					Skills: args,
 					JSON:   asJSON,
 				},
-				skills.IO{
+				commandio.IO{
 					In:  cmd.InOrStdin(),
 					Out: cmd.OutOrStdout(),
 					Err: cmd.ErrOrStderr(),

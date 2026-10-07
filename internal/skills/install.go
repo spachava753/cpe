@@ -3,27 +3,33 @@ package skills
 import (
 	"context"
 	"errors"
+
+	"github.com/spachava753/cpe/internal/commandio"
 )
 
-// InstallOptions is unparsed command input. Install owns invocation parsing,
-// destination resolution, and output; Manager owns skill operations.
-// Source is the required raw source argument; Skills are repeated --skill values.
-// Path is the optional --path value, an exact source-relative skill directory.
+// InstallOptions selects source skills, destination scope, and result format.
 type InstallOptions struct {
-	Scope     ScopeOptions
-	Source    string
-	Skills    []string
-	Path      *string
-	Override  bool
+	// Scope requires Project or Global; Directory selects an exact custom root.
+	Scope  commandio.ScopeOptions
+	Source string
+	// Skills selects declared names; empty Skills and nil Path select all.
+	Skills []string
+	// Path selects a source-relative bundle directory and is exclusive with Skills.
+	Path *string
+	// Override replaces existing bundles, including obsolete files.
+	Override bool
+	// FullDepth searches beyond the default five directory components.
 	FullDepth bool
-	JSON      bool
+	// JSON forces JSON results even when output is a terminal.
+	JSON bool
 }
 
-// Install is the high-level installation entry point for a command adapter.
-// It resolves the destination and writes results through streams.
-func Install(ctx context.Context, manager *Manager, opts InstallOptions, streams IO) error {
-	directories, err := resolveDirectories(
-		opts.Scope,
+// Install installs selected skills into the resolved scope and writes results.
+// Results use terminal tables or JSON according to opts.JSON and streams.Out;
+// skill warnings go to streams.Err. Output errors may follow a successful installation.
+func Install(ctx context.Context, manager *Manager, opts InstallOptions, streams commandio.IO) error {
+	directories, err := opts.Scope.Directories(
+		"skills",
 		true,
 	)
 	if err != nil {

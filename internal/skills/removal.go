@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+
+	"github.com/spachava753/cpe/internal/bundlefs"
 )
 
 type removalPlan struct {
-	changes []bundleChange
+	changes []bundlefs.Change
 	paths   []string
 }
 
@@ -37,7 +39,10 @@ func (m *Manager) prepareRemoval(ctx context.Context, request RemoveRequest) (re
 			request.Directory,
 			name,
 		)
-		info, err := m.pathInfo(filename)
+		info, err := bundlefs.Lstat(
+			m.destinations,
+			filename,
+		)
 		if err != nil {
 			return removalPlan{}, fmt.Errorf(
 				"remove %s: %w",
@@ -51,28 +56,18 @@ func (m *Manager) prepareRemoval(ctx context.Context, request RemoveRequest) (re
 				filename,
 			)
 		}
-		definition, err := m.pathInfo(filepath.Join(
-			filename,
-			"SKILL.md",
-		))
-		if err != nil {
+		if err := m.checkDefinition(filename); err != nil {
 			return removalPlan{}, fmt.Errorf(
 				"%s is not a skill directory: %w",
 				filename,
 				err,
 			)
 		}
-		if !definition.Mode().IsRegular() {
-			return removalPlan{}, fmt.Errorf(
-				"%s is not a skill directory with a regular SKILL.md",
-				filename,
-			)
-		}
 		plan.changes = append(
 			plan.changes,
-			bundleChange{
-				name:   name,
-				action: removeBundle,
+			bundlefs.Change{
+				Name:   name,
+				Action: bundlefs.Remove,
 			},
 		)
 		plan.paths = append(

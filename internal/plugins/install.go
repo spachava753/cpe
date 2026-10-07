@@ -3,27 +3,33 @@ package plugins
 import (
 	"context"
 	"errors"
+
+	"github.com/spachava753/cpe/internal/commandio"
 )
 
-// InstallOptions is unparsed command input. Install owns invocation parsing,
-// destination resolution, and output; Manager owns plugin operations.
-// Source is the required raw source argument; Plugins are repeated --plugin values.
-// Path is the optional --path value, an exact source-relative plugin directory.
+// InstallOptions selects source packages, destination scope, and result format.
 type InstallOptions struct {
-	Scope     ScopeOptions
-	Source    string
-	Plugins   []string
-	Path      *string
-	Override  bool
+	// Scope requires Project or Global; Directory selects an exact custom root.
+	Scope  commandio.ScopeOptions
+	Source string
+	// Plugins selects declared names; empty Plugins and nil Path select all.
+	Plugins []string
+	// Path selects a source-relative package directory and is exclusive with Plugins.
+	Path *string
+	// Override replaces existing packages, including obsolete files.
+	Override bool
+	// FullDepth searches beyond the default five directory components.
 	FullDepth bool
-	JSON      bool
+	// JSON forces JSON results even when output is a terminal.
+	JSON bool
 }
 
-// Install is the high-level installation entry point for a command adapter.
-// It resolves the destination and writes results through streams.
-func Install(ctx context.Context, manager *Manager, opts InstallOptions, streams IO) error {
-	directories, err := resolveDirectories(
-		opts.Scope,
+// Install installs selected packages into the resolved scope and writes results.
+// Results use terminal tables or JSON according to opts.JSON and streams.Out;
+// diagnostics go to streams.Err. Output errors may follow a successful installation.
+func Install(ctx context.Context, manager *Manager, opts InstallOptions, streams commandio.IO) error {
+	directories, err := opts.Scope.Directories(
+		"plugins",
 		true,
 	)
 	if err != nil {

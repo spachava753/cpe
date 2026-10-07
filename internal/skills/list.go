@@ -7,18 +7,18 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/spachava753/cpe/internal/commandio"
 	"github.com/spachava753/cpe/internal/terminaltext"
 )
 
-// ListOptions is unparsed listing input. List owns destination resolution and
-// text/JSON formatting; Manager owns source discovery and installed inventory.
+// ListOptions selects installed or source skills and their output format.
 type ListOptions struct {
-	Scope ScopeOptions
-	// Source selects available skills in a Git source instead of installed
-	// inventory. Nil means omitted; non-nil preserves an explicit argument.
-	// Scope applies only to installed inventory.
+	// Scope selects installed roots; its zero value lists project and global roots.
+	Scope commandio.ScopeOptions
+	// Source selects source discovery when non-nil, ignoring Scope.
 	Source *string
-	JSON   bool
+	// JSON forces JSON results even when output is a terminal.
+	JSON bool
 }
 
 type listedSkill struct {
@@ -28,9 +28,10 @@ type listedSkill struct {
 	InvocationDisabled bool   `json:"disable-model-invocation"`
 }
 
-// List lists available source skills or installed skills, including manually
-// copied ones. JSON exposes skill summaries; warnings are written separately.
-func List(ctx context.Context, manager *Manager, opts ListOptions, streams IO) error {
+// List writes source or installed skill summaries to streams.Out and warnings
+// to streams.Err. JSON includes name, description, SKILL.md path, and
+// disable-model-invocation; terminal output also shows bundle locations.
+func List(ctx context.Context, manager *Manager, opts ListOptions, streams commandio.IO) error {
 	var result []Skill
 	if opts.Source != nil {
 		available, err := manager.ListSource(
@@ -43,8 +44,8 @@ func List(ctx context.Context, manager *Manager, opts ListOptions, streams IO) e
 		}
 		result = available
 	} else {
-		directories, err := resolveDirectories(
-			opts.Scope,
+		directories, err := opts.Scope.Directories(
+			"skills",
 			false,
 		)
 		if err != nil {
@@ -75,8 +76,8 @@ func List(ctx context.Context, manager *Manager, opts ListOptions, streams IO) e
 			break
 		}
 	}
-	output := outputStream(streams)
-	if jsonOutput(
+	output := streams.Output()
+	if commandio.UseJSON(
 		output,
 		opts.JSON,
 	) {
@@ -123,7 +124,7 @@ func List(ctx context.Context, manager *Manager, opts ListOptions, streams IO) e
 	}
 	return errors.Join(
 		violationErr,
-		writeTable(
+		commandio.WriteTable(
 			output,
 			[]string{
 				"Skill",

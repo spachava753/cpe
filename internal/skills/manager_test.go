@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/afero"
 
 	"github.com/spachava753/cpe/internal/skills"
+	"github.com/spachava753/cpe/internal/source"
 )
 
 const (
@@ -238,7 +239,7 @@ func TestManagerListSource(t *testing.T) {
 					cancel()
 				}
 				cleaned := false
-				var client skills.SourceClient = managerSourceClient{
+				var client source.Client = managerSourceClient{
 					files:   test.files,
 					err:     test.fetchErr,
 					cleanup: func() error { cleaned = true; return test.cleanupErr },
@@ -762,7 +763,7 @@ func TestManagerInstall(t *testing.T) {
 				},
 			},
 			sourcePath: new("alpha/SKILL.md"),
-			errText:    "not a directory",
+			errText:    "regular directory",
 		},
 		{
 			name: "exact path rejects invalid selected definitions",
@@ -1256,7 +1257,7 @@ func TestManagerInstall(t *testing.T) {
 				if test.committed {
 					if err == nil || !strings.Contains(
 						err.Error(),
-						"skills changes committed; cleanup failed for ",
+						"bundle changes committed; cleanup failed for ",
 					) {
 						t.Fatalf(
 							"error = %v, want committed cleanup failure",
@@ -1978,14 +1979,14 @@ type managerSourceClient struct {
 	cleanup func() error
 }
 
-func (client managerSourceClient) Fetch(_ context.Context, source string) (skills.Checkout, error) {
-	if source != managerSource {
-		return skills.Checkout{}, errors.New("unexpected source locator: " + source)
+func (client managerSourceClient) Fetch(_ context.Context, locator string) (source.Checkout, error) {
+	if locator != managerSource {
+		return source.Checkout{}, errors.New("unexpected source locator: " + locator)
 	}
 	if client.err != nil {
-		return skills.Checkout{}, client.err
+		return source.Checkout{}, client.err
 	}
-	return skills.Checkout{
+	return source.Checkout{
 		FS:      client.files,
 		Cleanup: client.cleanup,
 	}, nil

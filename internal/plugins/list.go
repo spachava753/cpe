@@ -1,21 +1,25 @@
 package plugins
 
-import "context"
+import (
+	"context"
 
-// ListOptions is unparsed listing input. List owns destination resolution and
-// text/JSON formatting; Manager owns source discovery and installed inventory.
+	"github.com/spachava753/cpe/internal/commandio"
+)
+
+// ListOptions selects installed or source packages and their output format.
 type ListOptions struct {
-	Scope ScopeOptions
-	// Source selects available plugins in a Git source instead of installed
-	// inventory. Nil means omitted; non-nil preserves an explicit argument.
-	// Scope applies only to installed inventory.
+	// Scope selects installed roots; its zero value lists project and global roots.
+	Scope commandio.ScopeOptions
+	// Source selects source discovery when non-nil, ignoring Scope.
 	Source *string
-	JSON   bool
+	// JSON forces JSON results even when output is a terminal.
+	JSON bool
 }
 
-// List lists available source plugins or installed plugins, including manually
-// copied ones. JSON exposes summaries; diagnostics are written separately.
-func List(ctx context.Context, manager *Manager, opts ListOptions, streams IO) error {
+// List writes source or installed plugin summaries to streams.Out and diagnostics
+// to streams.Err. Results are terminal tables or JSON arrays containing name,
+// description, and package-directory path.
+func List(ctx context.Context, manager *Manager, opts ListOptions, streams commandio.IO) error {
 	var result []InstalledPlugin
 	if opts.Source != nil {
 		available, err := manager.ListSource(
@@ -36,8 +40,8 @@ func List(ctx context.Context, manager *Manager, opts ListOptions, streams IO) e
 			)
 		}
 	} else {
-		directories, err := resolveDirectories(
-			opts.Scope,
+		directories, err := opts.Scope.Directories(
+			"plugins",
 			false,
 		)
 		if err != nil {

@@ -6,47 +6,16 @@ import (
 
 	"github.com/lithammer/dedent"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 
+	"github.com/spachava753/cpe/internal/commandio"
 	"github.com/spachava753/cpe/internal/plugins"
 )
 
 // Keep command adapters testable without running plugin operations.
 type pluginActions struct {
-	install func(context.Context, *plugins.Manager, plugins.InstallOptions, plugins.IO) error
-	list    func(context.Context, *plugins.Manager, plugins.ListOptions, plugins.IO) error
-	remove  func(context.Context, *plugins.Manager, plugins.RemoveOptions, plugins.IO) error
-}
-
-func pluginScopeOptsFromFlags(p *pflag.FlagSet) (plugins.ScopeOptions, error) {
-	scope, err := p.GetString(scopeFlag)
-	if err != nil {
-		return plugins.ScopeOptions{}, err
-	}
-	if (p.Changed(scopeFlag) && scope == "") || (scope != "" && scope != projectScope && scope != globalScope) {
-		return plugins.ScopeOptions{}, fmt.Errorf("--scope must be project or global")
-	}
-
-	var dir *string
-	if p.Changed(dirFlag) {
-		d, err := p.GetString(dirFlag)
-		if err != nil {
-			return plugins.ScopeOptions{}, err
-		}
-		if d == "" {
-			return plugins.ScopeOptions{}, fmt.Errorf("--dir must not be empty")
-		}
-		if scope == globalScope {
-			return plugins.ScopeOptions{}, fmt.Errorf("--dir cannot be combined with --scope global")
-		}
-		dir = &d
-	}
-
-	return plugins.ScopeOptions{
-		Directory: dir,
-		Project:   scope == projectScope,
-		Global:    scope == globalScope,
-	}, nil
+	install func(context.Context, *plugins.Manager, plugins.InstallOptions, commandio.IO) error
+	list    func(context.Context, *plugins.Manager, plugins.ListOptions, commandio.IO) error
+	remove  func(context.Context, *plugins.Manager, plugins.RemoveOptions, commandio.IO) error
 }
 
 func pluginsCmd(parent *cobra.Command, manager *plugins.Manager) {
@@ -107,7 +76,7 @@ func pluginsCmdWithActions(parent *cobra.Command, manager *plugins.Manager, acti
 	)
 }
 
-func pluginsInstallCmd(parent *cobra.Command, manager *plugins.Manager, run func(context.Context, *plugins.Manager, plugins.InstallOptions, plugins.IO) error) {
+func pluginsInstallCmd(parent *cobra.Command, manager *plugins.Manager, run func(context.Context, *plugins.Manager, plugins.InstallOptions, commandio.IO) error) {
 	var asJSON bool
 	c := &cobra.Command{
 		Use: "install SOURCE",
@@ -187,7 +156,7 @@ func pluginsInstallCmd(parent *cobra.Command, manager *plugins.Manager, run func
 		"Scan full depth of source for plugins",
 	)
 	c.RunE = func(cmd *cobra.Command, args []string) error {
-		so, err := pluginScopeOptsFromFlags(cmd.Flags())
+		so, err := scopeOptsFromFlags(cmd.Flags())
 		if err != nil {
 			return err
 		}
@@ -210,7 +179,7 @@ func pluginsInstallCmd(parent *cobra.Command, manager *plugins.Manager, run func
 				FullDepth: fullDepth,
 				JSON:      asJSON,
 			},
-			plugins.IO{
+			commandio.IO{
 				In:  cmd.InOrStdin(),
 				Out: cmd.OutOrStdout(),
 				Err: cmd.ErrOrStderr(),
@@ -226,7 +195,7 @@ func pluginsInstallCmd(parent *cobra.Command, manager *plugins.Manager, run func
 	parent.AddCommand(c)
 }
 
-func pluginsListCmd(parent *cobra.Command, manager *plugins.Manager, run func(context.Context, *plugins.Manager, plugins.ListOptions, plugins.IO) error) {
+func pluginsListCmd(parent *cobra.Command, manager *plugins.Manager, run func(context.Context, *plugins.Manager, plugins.ListOptions, commandio.IO) error) {
 	var asJSON bool
 	c := &cobra.Command{
 		Use: "list [SOURCE]",
@@ -249,7 +218,7 @@ func pluginsListCmd(parent *cobra.Command, manager *plugins.Manager, run func(co
 		`),
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			so, err := pluginScopeOptsFromFlags(cmd.Flags())
+			so, err := scopeOptsFromFlags(cmd.Flags())
 			if err != nil {
 				return err
 			}
@@ -265,7 +234,7 @@ func pluginsListCmd(parent *cobra.Command, manager *plugins.Manager, run func(co
 					Source: source,
 					JSON:   asJSON,
 				},
-				plugins.IO{
+				commandio.IO{
 					In:  cmd.InOrStdin(),
 					Out: cmd.OutOrStdout(),
 					Err: cmd.ErrOrStderr(),
@@ -282,7 +251,7 @@ func pluginsListCmd(parent *cobra.Command, manager *plugins.Manager, run func(co
 	parent.AddCommand(c)
 }
 
-func pluginsRemoveCmd(parent *cobra.Command, manager *plugins.Manager, run func(context.Context, *plugins.Manager, plugins.RemoveOptions, plugins.IO) error) {
+func pluginsRemoveCmd(parent *cobra.Command, manager *plugins.Manager, run func(context.Context, *plugins.Manager, plugins.RemoveOptions, commandio.IO) error) {
 	var asJSON bool
 	c := &cobra.Command{
 		Use: "remove PLUGIN...",
@@ -306,7 +275,7 @@ func pluginsRemoveCmd(parent *cobra.Command, manager *plugins.Manager, run func(
 		`),
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			so, err := pluginScopeOptsFromFlags(cmd.Flags())
+			so, err := scopeOptsFromFlags(cmd.Flags())
 			if err != nil {
 				return err
 			}
@@ -318,7 +287,7 @@ func pluginsRemoveCmd(parent *cobra.Command, manager *plugins.Manager, run func(
 					Plugins: args,
 					JSON:    asJSON,
 				},
-				plugins.IO{
+				commandio.IO{
 					In:  cmd.InOrStdin(),
 					Out: cmd.OutOrStdout(),
 					Err: cmd.ErrOrStderr(),

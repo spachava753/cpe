@@ -10,58 +10,80 @@ import (
 	"strings"
 
 	"github.com/spf13/afero"
+
+	"github.com/spachava753/cpe/internal/bundlefs"
+	"github.com/spachava753/cpe/internal/source"
 )
 
-// Manager owns skill discovery and destination files.
-// It returns domain results without prompting or writing command output.
+// Manager discovers and manages skill bundles in source and destination filesystems.
+// A bundle contains SKILL.md and its resources. Construct a Manager with NewManager.
 type Manager struct {
-	sources      SourceClient
+	sources      source.Client
 	destinations afero.Fs
 }
 
-// NewManager supplies acquisition and destination filesystem boundaries. A nil
-// source client is sufficient for installed listing and removal.
-func NewManager(sources SourceClient, destinations afero.Fs) *Manager {
+// NewManager uses sources to fetch trees and destinations to manage installed files.
+// sources may be nil for installed listing and removal. Installed operations require
+// a non-nil destinations filesystem, such as afero.NewOsFs().
+func NewManager(sources source.Client, destinations afero.Fs) *Manager {
 	return &Manager{
 		sources:      sources,
 		destinations: destinations,
 	}
 }
 
-type DiscoveryOptions struct{ FullDepth bool }
+// DiscoveryOptions controls recursive source search, which skips .git and node_modules.
+type DiscoveryOptions struct {
+	// FullDepth removes the default search limit of five directory components.
+	FullDepth bool
+}
 
-// InstalledSkill is a skill found in a destination directory.
+// InstalledSkill pairs a skill with its installed bundle directory.
 type InstalledSkill struct {
-	Skill     Skill
+	// Skill.Path names the installed SKILL.md file in native filesystem syntax.
+	Skill Skill
+	// Directory is the bundle's location beneath the supplied destination root.
 	Directory string
 }
 
-// RemovedSkill identifies a deleted definition. When frontmatter cannot be read,
-// Name falls back to the directory name and Description is empty.
+// RemovedSkill identifies a deleted bundle. Unreadable frontmatter yields the
+// directory name and an empty description.
 type RemovedSkill struct {
 	Name        string
 	Description string
-	Path        string
+	// Path names the former SKILL.md file in native filesystem syntax.
+	Path string
 }
 
-// Directory is an exact skill root. Path selects one source-relative bundle
-// directory and is exclusive with Skills. With neither, install all discovered skills.
+// InstallRequest selects skills and an exact root for Manager.Install.
+// Empty Skills and nil Path select all discovered skills.
 type InstallRequest struct {
-	Source    string
+	// Source is a locator accepted by the configured source.Client.
+	Source string
+	// Directory receives bundles at Directory/<declared skill name>.
 	Directory string
-	Skills    []string
-	Path      *string
-	Override  bool
+	// Skills selects declared frontmatter names. Use Path to resolve ambiguity.
+	Skills []string
+	// Path selects a source-relative bundle directory; "." selects the root.
+	// It uses io/fs slash paths and is mutually exclusive with Skills.
+	Path *string
+	// Override replaces existing bundles, including obsolete files.
+	Override bool
+	// Discovery controls search when Path is nil.
 	Discovery DiscoveryOptions
 }
 
-// Removal selects explicit installed skill directory names.
+// RemoveRequest selects installed bundle directories for Manager.Remove.
 type RemoveRequest struct {
+	// Directory is the exact installation root in native filesystem syntax.
 	Directory string
-	Skills    []string
+	// Skills contains child directory names. At least one name is required.
+	Skills []string
 }
 
-// ListSource returns source-relative Skill.Path values using io/fs conventions.
+// ListSource fetches source and discovers skills according to opts.
+// Skill.Path values are source-relative SKILL.md paths using slash separators.
+// The checkout is closed before returning; any error returns nil skills.
 func (m *Manager) ListSource(ctx context.Context, source string, opts DiscoveryOptions) (result []Skill, err error) {
 	checkout, err := m.acquire(
 		ctx,
@@ -73,7 +95,7 @@ func (m *Manager) ListSource(ctx context.Context, source string, opts DiscoveryO
 	defer func() {
 		err = errors.Join(
 			err,
-			releaseCheckout(checkout),
+			checkout.Close(),
 		)
 		if err != nil {
 			result = nil
@@ -87,8 +109,13 @@ func (m *Manager) ListSource(ctx context.Context, source string, opts DiscoveryO
 	)
 }
 
-// Install copies selected bundles. Override replaces complete existing bundles.
-// Returned skills identify committed installations, even if cleanup returns an error.
+// Install copies selected bundles to request.Directory/<declared skill name>.
+// Payloads omit .git and node_modules and reject symlinks and special files.
+// Existing destinations must be regular directories containing a regular SKILL.md.
+//
+// Publication failures attempt rollback. Non-nil results with an error identify
+// committed installations whose cleanup failed; rollback failures retain recovery
+// files described in the error.
 func (m *Manager) Install(ctx context.Context, request InstallRequest) (result []InstalledSkill, err error) {
 	if err := m.destination(
 		ctx,
@@ -126,7 +153,7 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 		if !released {
 			err = errors.Join(
 				err,
-				releaseCheckout(checkout),
+				checkout.Close(),
 			)
 			if err != nil {
 				result = nil
@@ -135,7 +162,7 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 	}()
 	var available []Skill
 	if request.Path != nil {
-		if err := ensureSourceDirectory(
+		if err := bundlefs.CheckSourceDirectory(
 			checkout.FS,
 			*request.Path,
 		); err != nil {
@@ -181,7 +208,7 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 		}
 	}
 	sort.Strings(names)
-	var changes []bundleChange
+	var changes []bundlefs.Change
 	for _, name := range names {
 		options := candidates[name]
 		if len(options) == 0 {
@@ -209,7 +236,10 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 			request.Directory,
 			name,
 		)
-		if info, statErr := m.pathInfo(filename); statErr == nil {
+		if info, statErr := bundlefs.Lstat(
+			m.destinations,
+			filename,
+		); statErr == nil {
 			if !request.Override {
 				return nil, fmt.Errorf(
 					"destination %s already exists; use --override to replace it: %w",
@@ -223,18 +253,8 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 					filename,
 				)
 			}
-			definition, err := m.pathInfo(filepath.Join(
-				filename,
-				"SKILL.md",
-			))
-			if err != nil {
+			if err := m.checkDefinition(filename); err != nil {
 				return nil, err
-			}
-			if !definition.Mode().IsRegular() {
-				return nil, fmt.Errorf(
-					"destination %s must contain a regular SKILL.md",
-					filename,
-				)
 			}
 		} else if !errors.Is(
 			statErr,
@@ -252,16 +272,16 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 		if err != nil {
 			return nil, err
 		}
-		action := installBundle
+		action := bundlefs.Install
 		if request.Override {
-			action = replaceBundle
+			action = bundlefs.Replace
 		}
 		changes = append(
 			changes,
-			bundleChange{
-				name:    name,
-				payload: payload,
-				action:  action,
+			bundlefs.Change{
+				Name:    name,
+				Payload: payload,
+				Action:  action,
 			},
 		)
 		skill.Path = filepath.Join(
@@ -277,18 +297,20 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 		)
 	}
 	released = true
-	if err := releaseCheckout(checkout); err != nil {
+	if err := checkout.Close(); err != nil {
 		return nil, fmt.Errorf(
 			"release source: %w",
 			err,
 		)
 	}
-	if committed, err := m.applyChanges(
+	if outcome, err := bundlefs.Apply(
 		ctx,
+		m.destinations,
 		request.Directory,
 		changes,
+		m.checkDefinition,
 	); err != nil {
-		if !committed {
+		if outcome != bundlefs.Committed {
 			result = nil
 		}
 		return result, fmt.Errorf(
@@ -299,8 +321,9 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 	return result, nil
 }
 
-// ListInstalled inspects one exact root, including manually copied skills and
-// symlinked skill directories. Listing never mutates their targets.
+// ListInstalled reads bundles immediately beneath directory, including manually
+// copied and symlinked bundles. Entries without SKILL.md are skipped.
+// A missing root returns no results; malformed definitions return nil results and an error.
 func (m *Manager) ListInstalled(ctx context.Context, directory string) ([]InstalledSkill, error) {
 	if err := m.destination(
 		ctx,
@@ -334,10 +357,13 @@ func (m *Manager) ListInstalled(ctx context.Context, directory string) ([]Instal
 			continue
 		}
 		name := entry.Name()
-		info, err := m.pathInfo(filepath.Join(
-			directory,
-			name,
-		))
+		info, err := bundlefs.Lstat(
+			m.destinations,
+			filepath.Join(
+				directory,
+				name,
+			),
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -353,11 +379,14 @@ func (m *Manager) ListInstalled(ctx context.Context, directory string) ([]Instal
 		if !info.IsDir() {
 			continue
 		}
-		if _, err := m.pathInfo(filepath.Join(
-			directory,
-			name,
-			"SKILL.md",
-		)); errors.Is(
+		if _, err := bundlefs.Lstat(
+			m.destinations,
+			filepath.Join(
+				directory,
+				name,
+				"SKILL.md",
+			),
+		); errors.Is(
 			err,
 			fs.ErrNotExist,
 		) {
@@ -392,9 +421,10 @@ func (m *Manager) ListInstalled(ctx context.Context, directory string) ([]Instal
 	return result, nil
 }
 
-// Remove deletes named skill directories. Reading frontmatter for result details
-// is best-effort and never determines whether a directory can be removed.
-// Returned skills identify committed removals, even if cleanup returns an error.
+// Remove deletes selected bundle directories containing regular SKILL.md files.
+// Directory symlinks are rejected; result metadata is read best-effort.
+// Non-nil results with an error identify committed removals whose cleanup failed.
+// Failed rollback retains recovery files described in the error.
 func (m *Manager) Remove(ctx context.Context, request RemoveRequest) ([]RemovedSkill, error) {
 	plan, err := m.prepareRemoval(
 		ctx,
@@ -428,12 +458,14 @@ func (m *Manager) Remove(ctx context.Context, request RemoveRequest) ([]RemovedS
 			removed,
 		)
 	}
-	if committed, err := m.applyChanges(
+	if outcome, err := bundlefs.Apply(
 		ctx,
+		m.destinations,
 		request.Directory,
 		plan.changes,
+		m.checkDefinition,
 	); err != nil {
-		if committed {
+		if outcome == bundlefs.Committed {
 			return result, fmt.Errorf(
 				"remove skills: %w",
 				err,
@@ -445,12 +477,4 @@ func (m *Manager) Remove(ctx context.Context, request RemoveRequest) ([]RemovedS
 		)
 	}
 	return result, nil
-}
-
-func (m *Manager) pathInfo(filename string) (fs.FileInfo, error) {
-	if filesystem, ok := m.destinations.(afero.Lstater); ok {
-		info, _, err := filesystem.LstatIfPossible(filename)
-		return info, err
-	}
-	return m.destinations.Stat(filename)
 }

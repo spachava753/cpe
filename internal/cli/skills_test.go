@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 
+	"github.com/spachava753/cpe/internal/commandio"
 	"github.com/spachava753/cpe/internal/skills"
 )
 
@@ -34,7 +35,7 @@ func TestSkillsCommands(t *testing.T) {
 				"global",
 			},
 			install: &skills.InstallOptions{
-				Scope: skills.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Global: true,
 				},
 				Source: "owner/repo",
@@ -55,7 +56,7 @@ func TestSkillsCommands(t *testing.T) {
 				"--full-depth",
 			},
 			install: &skills.InstallOptions{
-				Scope: skills.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Project: true,
 				},
 				Source: "owner/repo",
@@ -77,7 +78,7 @@ func TestSkillsCommands(t *testing.T) {
 				"--json",
 			},
 			install: &skills.InstallOptions{
-				Scope: skills.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Project: true,
 				},
 				Source: "owner/repo",
@@ -95,7 +96,7 @@ func TestSkillsCommands(t *testing.T) {
 				"--override",
 			},
 			install: &skills.InstallOptions{
-				Scope: skills.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Project: true,
 				},
 				Source:   "owner/repo",
@@ -114,7 +115,7 @@ func TestSkillsCommands(t *testing.T) {
 				"variants/react/alpha",
 			},
 			install: &skills.InstallOptions{
-				Scope: skills.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Project: true,
 				},
 				Source: "owner/repo",
@@ -147,7 +148,7 @@ func TestSkillsCommands(t *testing.T) {
 				"--path=",
 			},
 			install: &skills.InstallOptions{
-				Scope: skills.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Global: true,
 				},
 				Source: "owner/repo",
@@ -179,7 +180,7 @@ func TestSkillsCommands(t *testing.T) {
 				"./team-skills",
 			},
 			install: &skills.InstallOptions{
-				Scope: skills.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Directory: new("./team-skills"),
 					Project:   true,
 				},
@@ -236,7 +237,7 @@ func TestSkillsCommands(t *testing.T) {
 				"global",
 			},
 			list: &skills.ListOptions{
-				Scope: skills.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Global: true,
 				},
 			},
@@ -250,7 +251,7 @@ func TestSkillsCommands(t *testing.T) {
 				"./team-skills",
 			},
 			list: &skills.ListOptions{
-				Scope: skills.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Directory: new("./team-skills"),
 				},
 			},
@@ -295,7 +296,7 @@ func TestSkillsCommands(t *testing.T) {
 				"./team-skills",
 			},
 			remove: &skills.RemoveOptions{
-				Scope: skills.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Directory: new("./team-skills"),
 				},
 				Skills: []string{
@@ -313,7 +314,7 @@ func TestSkillsCommands(t *testing.T) {
 				"global",
 			},
 			remove: &skills.RemoveOptions{
-				Scope: skills.ScopeOptions{
+				Scope: commandio.ScopeOptions{
 					Global: true,
 				},
 				Skills: []string{
@@ -478,7 +479,7 @@ func TestSkillsCommands(t *testing.T) {
 					afero.NewMemMapFs(),
 				)
 				calls := 0
-				checkBoundary := func(actualCtx context.Context, actualManager *skills.Manager, streams skills.IO) {
+				checkBoundary := func(actualCtx context.Context, actualManager *skills.Manager, streams commandio.IO) {
 					t.Helper()
 					calls++
 					if actualCtx != ctx || actualManager != manager || streams.In != input || streams.Out != &output || streams.Err != &diagnostics {
@@ -489,7 +490,7 @@ func TestSkillsCommands(t *testing.T) {
 					root,
 					manager,
 					skillActions{
-						install: func(ctx context.Context, manager *skills.Manager, opts skills.InstallOptions, streams skills.IO) error {
+						install: func(ctx context.Context, manager *skills.Manager, opts skills.InstallOptions, streams commandio.IO) error {
 							checkBoundary(
 								ctx,
 								manager,
@@ -506,7 +507,7 @@ func TestSkillsCommands(t *testing.T) {
 							}
 							return operationErr
 						},
-						list: func(ctx context.Context, manager *skills.Manager, opts skills.ListOptions, streams skills.IO) error {
+						list: func(ctx context.Context, manager *skills.Manager, opts skills.ListOptions, streams commandio.IO) error {
 							checkBoundary(
 								ctx,
 								manager,
@@ -523,7 +524,7 @@ func TestSkillsCommands(t *testing.T) {
 							}
 							return operationErr
 						},
-						remove: func(ctx context.Context, manager *skills.Manager, opts skills.RemoveOptions, streams skills.IO) error {
+						remove: func(ctx context.Context, manager *skills.Manager, opts skills.RemoveOptions, streams commandio.IO) error {
 							checkBoundary(
 								ctx,
 								manager,
