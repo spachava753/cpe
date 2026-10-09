@@ -19,9 +19,19 @@ type skill struct {
 // Server implements the ACP server spec, and is meant to be passed to [acp.RunAgent]
 //
 // TODO: skills will be loaded as slash commands. Skills can be loaded from file system paths, or from agent plugins
+// TODO: we need to be able juggle multiple sessions, many sessions can be inflight, as well as be able to cancel an session
+// TODO: need to be able figure out when we want to swap models mid session (I say we can stop current generation, and resume from last message (tool result or assistant), or we can swap model while tool execution is happening)
+// TODO: durability: for now, the starlark repl is not persistent, so we can simply just persist the tool result. And also want to support ATIF v1.8 natively. I think we can just of the server emit atif trajectory traces, and have separate engine that actually persists the trajectory? Whether that be JSONL files, or sqlite or whatever. We may be even able to support import and export from different harnesses
+// TODO: observability: want to support the gen ai otel standard
+// TODO: we will support terminal style auth, sign in with chatgpt, and opencode go
+// TODO: since only a single tool will be exposed, starlark execution, we want tools to be loaded via MCP as functions that are callable. And to support on demand mcp server loading (like in the case of agent plugins), we should have something like `load_mcp_tools` function. MCP today is stateless, but many MCP servers that are older will still be a stateful connection, so need to figure out how to handle that
+// TODO: we want to design the server to also be able to run in something like a wasm worker or an http server
+// TODO: similar to pi, lets use a models.json to store configured models that we can use
 type Server struct {
-	ac     *acp.AgentConnection
-	loop   agent.Agent
+	// ac is the agent connection that can be used to send session updates or notications to the client
+	ac *acp.AgentConnection
+	// loop is the [gai.Agent] that we use and extend for the core agentic loop
+	loop agent.Agent
 	// skills are skills loaded from filesystem or plugins, are used to construct slash commands
 	skills []skill
 }
