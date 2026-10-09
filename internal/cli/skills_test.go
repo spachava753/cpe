@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 
+	"github.com/spachava753/cpe/internal/auth"
 	"github.com/spachava753/cpe/internal/commandio"
 	"github.com/spachava753/cpe/internal/skills"
 )
@@ -661,6 +662,8 @@ func TestSkillsHelp(t *testing.T) {
 						afero.NewMemMapFs(),
 					),
 					nil,
+					nil,
+					auth.LoginOptions{},
 				)
 				var output bytes.Buffer
 				root.SetOut(&output)

@@ -21,6 +21,12 @@ README.md     User workflows and verification instructions
 - **Parse, don't validate:** convert configuration and protocol input into domain
   values at boundaries. Establish invariants there instead of repeatedly checking
   partially valid data downstream.
+- Inject required configuration and dependencies explicitly. Do not silently fill
+  missing struct fields with defaults. Unconfigured required values should return
+  a clear error at the start of an operation.
+- Accept filesystem paths at exported API boundaries. Keep private filesystem
+  helpers independent of the host filesystem by using injected `afero.Fs` values
+  or streams.
 - Keep changes scoped and simple; avoid speculative abstractions and performance work unless
   a demonstrated need or the task calls for it.
 - Keep errors opaque by default, especially at exported API boundaries. Do not
@@ -39,8 +45,18 @@ README.md     User workflows and verification instructions
 - Empty literals and zero/one-argument calls may stay compact. Apply these rules
   recursively to nested literals and calls, and run `gofmt` after wrapping.
 
+## Exported API documentation
+
+- Write comments for readers who have only the symbol's signature and documentation.
+  State its purpose clearly at a glance, following Go standard-library style.
+- Prefer one or two lines. Add explanation only for non-obvious inputs, return values,
+  ownership, side effects, or error contracts.
+- Use concrete wording. Avoid implementation narration, redundant qualifiers, and
+  "does this, not that" boilerplate.
+
 ## Tests
 
+- Do not add tests in the main package. Test behavior in the relevant internal package.
 - Prefer table-driven unit tests with named `t.Run` cases. For the same function
   or method, extend its existing test table instead of creating another top-level
   test for each scenario.

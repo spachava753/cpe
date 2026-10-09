@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"github.com/spachava753/cpe/internal/auth"
 	"github.com/spachava753/cpe/internal/skills"
 	acquisition "github.com/spachava753/cpe/internal/source"
 )
@@ -140,6 +141,8 @@ func TestSkillsLifecycle(t *testing.T) {
 				"test",
 				manager,
 				nil,
+				nil,
+				auth.LoginOptions{},
 			)
 			command.SetArgs([]string{
 				"skills",
@@ -187,6 +190,8 @@ func TestSkillsLifecycle(t *testing.T) {
 				"test",
 				manager,
 				nil,
+				nil,
+				auth.LoginOptions{},
 			)
 			command.SetArgs([]string{
 				"skills",
@@ -259,6 +264,8 @@ func TestSkillsLifecycle(t *testing.T) {
 				"test",
 				manager,
 				nil,
+				nil,
+				auth.LoginOptions{},
 			)
 			command.SetArgs([]string{
 				"skills",
@@ -292,6 +299,8 @@ func TestSkillsLifecycle(t *testing.T) {
 				"test",
 				manager,
 				nil,
+				nil,
+				auth.LoginOptions{},
 			)
 			command.SetArgs([]string{
 				"skills",
@@ -386,6 +395,8 @@ func TestSkillsLifecycle(t *testing.T) {
 				"test",
 				manager,
 				nil,
+				nil,
+				auth.LoginOptions{},
 			)
 			command.SetArgs([]string{
 				"skills",
@@ -430,6 +441,8 @@ func TestSkillsLifecycle(t *testing.T) {
 				"test",
 				manager,
 				nil,
+				nil,
+				auth.LoginOptions{},
 			)
 			command.SetArgs([]string{
 				"skills",

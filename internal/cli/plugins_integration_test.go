@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/afero"
 
+	"github.com/spachava753/cpe/internal/auth"
 	"github.com/spachava753/cpe/internal/plugins"
 	acquisition "github.com/spachava753/cpe/internal/source"
 )
@@ -259,6 +260,8 @@ func TestPluginsLifecycle(t *testing.T) {
 					"test",
 					nil,
 					manager,
+					nil,
+					auth.LoginOptions{},
 				)
 				command.SilenceErrors = true
 				command.SilenceUsage = true
