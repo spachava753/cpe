@@ -15,21 +15,28 @@ import (
 
 func TestReadFile(t *testing.T) {
 	for _, test := range []struct {
-		name              string
-		content           *string
-		readonly          bool
-		nativeSidecar     bool
-		cancel            bool
-		cleanupFailure    bool
-		finishPublication bool
-		wantError         error
+		name                string
+		content             *string
+		readonly            bool
+		nativeSidecar       bool
+		cancel              bool
+		cleanupFailure      bool
+		finishPublication   bool
+		readonlyPublication bool
+		wantError           error
 	}{
 		{
 			name: "missing file returns absence",
 		},
 		{
-			name:     "missing read-only lock needs no filesystem writes",
-			readonly: true,
+			name:      "read-only absence without a guard safely aborts",
+			readonly:  true,
+			wantError: fs.ErrPermission,
+		},
+		{
+			name:                "read-only gap detection aborts even when publication completes",
+			readonlyPublication: true,
+			wantError:           fs.ErrPermission,
 		},
 		{
 			name:          "retained native sidecar supports read-only absent lock",
@@ -116,6 +123,13 @@ func TestReadFile(t *testing.T) {
 						filename: filename,
 					}
 				}
+				if test.readonlyPublication {
+					configured = &readonlyFinishingFS{
+						Fs:       afero.NewReadOnlyFs(filesystem),
+						writable: filesystem,
+						filename: filename,
+					}
+				}
 				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
 				if test.cancel {
@@ -138,6 +152,19 @@ func TestReadFile(t *testing.T) {
 					)
 				}
 				if test.wantError != nil {
+					if test.readonlyPublication {
+						committed, readErr := afero.ReadFile(
+							filesystem,
+							filename,
+						)
+						if readErr != nil || string(committed) != "new lock" {
+							t.Fatalf(
+								"publication did not complete during the read: %q, %v",
+								committed,
+								readErr,
+							)
+						}
+					}
 					return
 				}
 				if test.finishPublication {

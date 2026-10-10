@@ -4,7 +4,7 @@ package bundlefs
 
 import "errors"
 
-func tryFileLock(uintptr) (bool, error) {
+func tryFileLock(uintptr, guardAccess) (bool, error) {
 	return false, errors.New("native publication locking is unsupported on this platform")
 }
 

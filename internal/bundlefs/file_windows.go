@@ -7,10 +7,14 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func tryFileLock(descriptor uintptr) (bool, error) {
+func tryFileLock(descriptor uintptr, access guardAccess) (bool, error) {
+	flags := uint32(windows.LOCKFILE_FAIL_IMMEDIATELY)
+	if access == writerGuard {
+		flags |= windows.LOCKFILE_EXCLUSIVE_LOCK
+	}
 	err := windows.LockFileEx(
 		windows.Handle(descriptor),
-		windows.LOCKFILE_EXCLUSIVE_LOCK|windows.LOCKFILE_FAIL_IMMEDIATELY,
+		flags,
 		0,
 		1,
 		0,

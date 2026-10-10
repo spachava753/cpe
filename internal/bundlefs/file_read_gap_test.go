@@ -3,6 +3,7 @@ package bundlefs_test
 import (
 	"errors"
 	"io/fs"
+	"os"
 
 	"github.com/spf13/afero"
 )
@@ -32,4 +33,31 @@ func (filesystem *finishingPublicationFS) LstatIfPossible(filename string) (fs.F
 		}
 	}
 	return info, false, err
+}
+
+// Complete the backing writer after a read-only reader cannot create a guard.
+// The reader must report acquisition failure, not an untracked snapshot.
+type readonlyFinishingFS struct {
+	afero.Fs
+	writable afero.Fs
+	filename string
+}
+
+func (filesystem *readonlyFinishingFS) OpenFile(filename string, flags int, mode fs.FileMode) (afero.File, error) {
+	if filename == filesystem.filename+".cpe-lock" && flags&os.O_CREATE != 0 {
+		if err := afero.WriteFile(
+			filesystem.writable,
+			filesystem.filename,
+			[]byte("new lock"),
+			0o600,
+		); err != nil {
+			return nil, err
+		}
+		return nil, fs.ErrPermission
+	}
+	return filesystem.Fs.OpenFile(
+		filename,
+		flags,
+		mode,
+	)
 }

@@ -10,12 +10,13 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/afero"
+	"github.com/spf13/afero/mem"
 )
 
 type publishedFile struct {
-	info   fs.FileInfo
-	data   []byte
-	native bool
+	info     fs.FileInfo
+	identity fs.FileInfo
+	data     []byte
 }
 
 func (file *publishedFile) complete() bool {
@@ -23,12 +24,26 @@ func (file *publishedFile) complete() bool {
 }
 
 func (file *publishedFile) owns(info fs.FileInfo, data []byte) bool {
-	return (!file.native || os.SameFile(
-		file.info,
+	return samePublicationFile(
+		file.identity,
 		info,
-	)) && bytes.Equal(
+	) && bytes.Equal(
 		file.data,
 		data,
+	)
+}
+
+func samePublicationFile(previous fs.FileInfo, current fs.FileInfo) bool {
+	if previous == nil || current == nil {
+		return false
+	}
+	if previous, ok := previous.(*mem.FileInfo); ok {
+		current, ok := current.(*mem.FileInfo)
+		return ok && previous.FileData == current.FileData
+	}
+	return os.SameFile(
+		previous,
+		current,
 	)
 }
 
@@ -49,11 +64,19 @@ func publishPreparedFile(filesystem afero.Fs, staged string, filename string) (p
 			staged,
 		)
 	}
-	data, err := afero.ReadFile(
-		filesystem,
-		staged,
-	)
+	source, err := filesystem.Open(staged)
 	if err != nil {
+		return nil, err
+	}
+	// Handle-based Stat eagerly captures Windows file IDs before MoveFile
+	// consumes the staged pathname; pathname-based Lstat resolves IDs lazily.
+	info, statErr := source.Stat()
+	data, readErr := io.ReadAll(source)
+	if err := errors.Join(
+		statErr,
+		readErr,
+		source.Close(),
+	); err != nil {
 		return nil, err
 	}
 	directory, err := filesystem.Open(filepath.Dir(filename))
@@ -75,9 +98,9 @@ func publishPreparedFile(filesystem afero.Fs, staged string, filename string) (p
 			return nil, err
 		}
 		return &publishedFile{
-			info:   info,
-			data:   data,
-			native: true,
+			info:     info,
+			identity: info,
+			data:     data,
 		}, nil
 	}
 	output, err := filesystem.OpenFile(
@@ -88,13 +111,23 @@ func publishPreparedFile(filesystem afero.Fs, staged string, filename string) (p
 	if err != nil {
 		return nil, err
 	}
+	identity, statErr := output.Stat()
+	if statErr != nil {
+		return &publishedFile{
+			info: info,
+		}, errors.Join(
+			statErr,
+			output.Close(),
+		)
+	}
 	written, copyErr := io.Copy(
 		output,
 		bytes.NewReader(data),
 	)
 	return &publishedFile{
-		info: info,
-		data: data[:written],
+		info:     info,
+		identity: identity,
+		data:     data[:written],
 	}, errors.Join(
 		copyErr,
 		output.Close(),
