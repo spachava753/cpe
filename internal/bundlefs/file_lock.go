@@ -25,33 +25,35 @@ func ReadFile(ctx context.Context, filesystem afero.Fs, filename string) (data [
 	); err != nil {
 		return nil, err
 	}
-	if _, err := Lstat(
-		filesystem,
-		filename,
-	); errors.Is(
-		err,
-		fs.ErrNotExist,
-	) {
-		if _, err := Lstat(
-			filesystem,
-			filename+".cpe-lock",
-		); errors.Is(
-			err,
-			fs.ErrNotExist,
-		) {
-			return nil, nil
-		} else if err != nil {
-			return nil, err
-		}
-	} else if err != nil {
-		return nil, err
-	}
 	guard, err := lockFile(
 		ctx,
 		filesystem,
 		filename,
+		readerGuard,
 	)
 	if err != nil {
+		if errors.Is(
+			err,
+			fs.ErrPermission,
+		) {
+			if _, fileErr := Lstat(
+				filesystem,
+				filename,
+			); errors.Is(
+				fileErr,
+				fs.ErrNotExist,
+			) {
+				if _, guardErr := Lstat(
+					filesystem,
+					filename+".cpe-lock",
+				); errors.Is(
+					guardErr,
+					fs.ErrNotExist,
+				) {
+					return nil, nil
+				}
+			}
+		}
 		return nil, err
 	}
 	defer func() {
@@ -125,7 +127,14 @@ func checkFileParent(ctx context.Context, filesystem afero.Fs, filename string) 
 	)
 }
 
-func lockFile(ctx context.Context, filesystem afero.Fs, filename string) (_ *fileGuard, err error) {
+type guardAccess uint8
+
+const (
+	readerGuard guardAccess = iota
+	writerGuard
+)
+
+func lockFile(ctx context.Context, filesystem afero.Fs, filename string, access guardAccess) (_ *fileGuard, err error) {
 	if err := checkFileParent(
 		ctx,
 		filesystem,
@@ -151,50 +160,76 @@ func lockFile(ctx context.Context, filesystem afero.Fs, filename string) (_ *fil
 			)
 		}
 	}()
-	guard.created, err = missingDirectories(
-		filesystem,
-		filepath.Dir(filename),
-	)
-	if err != nil {
-		return nil, err
-	}
-	if err := filesystem.MkdirAll(
-		filepath.Dir(filename),
-		0o700,
-	); err != nil {
-		return nil, err
-	}
-	guard.file, err = filesystem.OpenFile(
-		lockPath,
-		os.O_RDWR|os.O_CREATE|os.O_EXCL,
-		0o600,
-	)
-	if errors.Is(
-		err,
-		fs.ErrExist,
-	) {
-		// Native sidecars are stable inodes shared by every publishing process.
-		// In-memory filesystems use exclusive creation instead of native locks.
-		file, openErr := filesystem.OpenFile(
-			lockPath,
-			os.O_RDWR,
-			0o600,
-		)
-		if openErr != nil {
+	if access == readerGuard {
+		file, openErr := filesystem.Open(lockPath)
+		if openErr == nil {
+			if _, native := nativeDescriptor(file); !native {
+				_ = file.Close()
+				return nil, fmt.Errorf(
+					"another operation is publishing %s; retry the operation",
+					filename,
+				)
+			}
+			guard.file = file
+		} else if !errors.Is(
+			openErr,
+			fs.ErrNotExist,
+		) {
 			return nil, openErr
 		}
-		if _, native := nativeDescriptor(file); !native {
-			_ = file.Close()
-			return nil, fmt.Errorf(
-				"another operation is publishing %s; retry the operation",
-				filename,
-			)
-		}
-		guard.file = file
-		err = nil
 	}
-	if err != nil {
-		return nil, err
+	if guard.file == nil {
+		guard.created, err = missingDirectories(
+			filesystem,
+			filepath.Dir(filename),
+		)
+		if err != nil {
+			return nil, err
+		}
+		if len(guard.created) != 0 {
+			if err := filesystem.MkdirAll(
+				filepath.Dir(filename),
+				0o700,
+			); err != nil {
+				return nil, err
+			}
+		}
+		guard.file, err = filesystem.OpenFile(
+			lockPath,
+			os.O_RDWR|os.O_CREATE|os.O_EXCL,
+			0o600,
+		)
+		if errors.Is(
+			err,
+			fs.ErrExist,
+		) {
+			// Native sidecars are stable inodes shared by every publishing process.
+			// In-memory filesystems use exclusive creation instead of native locks.
+			flags := os.O_RDONLY
+			if access == writerGuard {
+				flags = os.O_RDWR
+			}
+			file, openErr := filesystem.OpenFile(
+				lockPath,
+				flags,
+				0o600,
+			)
+			if openErr != nil {
+				return nil, openErr
+			}
+			if _, native := nativeDescriptor(file); !native {
+				_ = file.Close()
+				return nil, fmt.Errorf(
+					"another operation is publishing %s; retry the operation",
+					filename,
+				)
+			}
+			guard.file = file
+			err = nil
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 	descriptor, native := nativeDescriptor(guard.file)
 	guard.native = native

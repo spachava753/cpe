@@ -209,10 +209,19 @@ func TestApplyWithFile(t *testing.T) {
 						)
 					}
 				} else if test.fault == fileCancelRollbackFailure {
-					if after[filename] != "new lock" || !strings.Contains(
-						err.Error(),
-						"published file remains at "+filename,
-					) {
+					identified := false
+					for path, data := range after {
+						if strings.HasPrefix(
+							filepath.Base(path),
+							".cpe-displaced-",
+						) && data == "new lock" && strings.Contains(
+							err.Error(),
+							"published file remains at "+path,
+						) {
+							identified = true
+						}
+					}
+					if !identified {
 						t.Fatalf(
 							"failed first rollback did not identify surviving lock: %v, %v",
 							after,
@@ -301,8 +310,17 @@ func (filesystem fileFaultFS) Rename(oldname string, newname string) error {
 }
 
 func (filesystem fileFaultFS) Remove(name string) error {
-	if filesystem.fault == fileCancelRollbackFailure && filepath.Base(name) == ".skill-lock.json" {
-		return fs.ErrPermission
+	if filesystem.fault == fileCancelRollbackFailure && strings.HasPrefix(
+		filepath.Base(name),
+		".cpe-displaced-",
+	) {
+		data, err := afero.ReadFile(
+			filesystem.Fs,
+			name,
+		)
+		if err == nil && string(data) == "new lock" {
+			return fs.ErrPermission
+		}
 	}
 	if filesystem.fault == fileCleanupFailure && strings.HasPrefix(
 		filepath.Base(name),

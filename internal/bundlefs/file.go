@@ -69,6 +69,7 @@ func ApplyWithFile(ctx context.Context, filesystem afero.Fs, root string, change
 		ctx,
 		filesystem,
 		file.Path,
+		writerGuard,
 	)
 	if err != nil {
 		return NotCommitted, err
@@ -90,15 +91,17 @@ func ApplyWithFile(ctx context.Context, filesystem afero.Fs, root string, change
 }
 
 type stagedFile struct {
-	filesystem afero.Fs
-	path       string
-	newPath    string
-	oldPath    string
-	backupPath string
-	previous   []byte
-	published  bool
-	preserve   bool
-	created    []string
+	filesystem        afero.Fs
+	path              string
+	newPath           string
+	oldPath           string
+	backupPath        string
+	previous          []byte
+	published         *publishedFile
+	displacedPath     string
+	preserveDisplaced bool
+	preserve          bool
+	created           []string
 }
 
 func prepareFile(ctx context.Context, filesystem afero.Fs, file FileChange) (_ *stagedFile, err error) {
@@ -286,40 +289,149 @@ func (file *stagedFile) rollback() error {
 	if file == nil {
 		return nil
 	}
-	if file.published {
-		if err := file.filesystem.Remove(file.path); err != nil {
+	if file.published != nil {
+		if err := file.withdrawPublished(); err != nil {
 			file.preserve = true
-			if file.oldPath == "" {
+			if file.oldPath != "" {
+				return errors.Join(
+					err,
+					fmt.Errorf(
+						"original recovery file retained at %s",
+						file.oldPath,
+					),
+				)
+			}
+			return err
+		}
+		file.published = nil
+	}
+	if file.oldPath != "" {
+		restored, err := publishPreparedFile(
+			file.filesystem,
+			file.oldPath,
+			file.path,
+		)
+		if restored != nil && restored.complete() {
+			file.oldPath = ""
+			if err != nil {
 				return fmt.Errorf(
-					"file rollback failed; published file remains at %s: %w",
+					"file restored at %s; cleanup failed: %w",
 					file.path,
 					err,
 				)
 			}
-			return fmt.Errorf(
-				"file rollback failed; published file remains at %s; recovery file retained at %s: %w",
-				file.path,
-				file.oldPath,
-				err,
-			)
-		}
-		file.published = false
-	}
-	if file.oldPath != "" {
-		if _, err := publishPreparedFile(
-			file.filesystem,
-			file.oldPath,
-			file.path,
-		); err != nil {
+		} else {
 			file.preserve = true
-			return fmt.Errorf(
-				"file rollback failed; recovery file retained at %s: %w",
-				file.oldPath,
+			file.published = restored
+			return errors.Join(
+				fmt.Errorf(
+					"file rollback failed; recovery file retained at %s",
+					file.oldPath,
+				),
 				err,
 			)
 		}
-		file.oldPath = ""
 	}
+	return nil
+}
+
+// Capture the current file atomically before checking ownership. A replacement
+// arriving between inspection and deletion must never be removed by rollback.
+func (file *stagedFile) withdrawPublished() error {
+	temporary, err := afero.TempFile(
+		file.filesystem,
+		filepath.Dir(file.path),
+		".cpe-displaced-",
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"file rollback could not inspect %s: %w",
+			file.path,
+			err,
+		)
+	}
+	file.displacedPath = temporary.Name()
+	if err := errors.Join(
+		temporary.Close(),
+		file.filesystem.Remove(file.displacedPath),
+	); err != nil {
+		return err
+	}
+	if err := file.filesystem.Rename(
+		file.path,
+		file.displacedPath,
+	); err != nil {
+		return fmt.Errorf(
+			"file rollback could not capture %s: %w",
+			file.path,
+			err,
+		)
+	}
+	file.preserveDisplaced = true
+	info, err := Lstat(
+		file.filesystem,
+		file.displacedPath,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"file rollback could not inspect replacement; recovery file retained at %s: %w",
+			file.displacedPath,
+			err,
+		)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf(
+			"file rollback captured a non-regular replacement; recovery file retained at %s",
+			file.displacedPath,
+		)
+	}
+	data, err := afero.ReadFile(
+		file.filesystem,
+		file.displacedPath,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"file rollback could not inspect replacement; recovery file retained at %s: %w",
+			file.displacedPath,
+			err,
+		)
+	}
+	if !file.published.owns(
+		info,
+		data,
+	) {
+		restored, err := publishPreparedFile(
+			file.filesystem,
+			file.displacedPath,
+			file.path,
+		)
+		if restored != nil && restored.complete() {
+			file.preserveDisplaced = false
+			return errors.Join(
+				fmt.Errorf(
+					"file rollback preserved replacement at %s",
+					file.path,
+				),
+				err,
+			)
+		}
+		return errors.Join(
+			fmt.Errorf(
+				"file rollback could not restore replacement; recovery file retained at %s",
+				file.displacedPath,
+			),
+			err,
+		)
+	}
+	if err := file.filesystem.Remove(file.displacedPath); err != nil {
+		return fmt.Errorf(
+			"file rollback failed; published file remains at %s: %w",
+			file.displacedPath,
+			err,
+		)
+	}
+	file.displacedPath = ""
+	file.preserveDisplaced = false
 	return nil
 }
 
@@ -331,8 +443,9 @@ func (file *stagedFile) cleanup() error {
 	for _, filename := range []string{
 		file.newPath,
 		file.backupPath,
+		file.displacedPath,
 	} {
-		if filename == "" || (file.preserve && filename == file.backupPath) {
+		if filename == "" || (file.preserve && filename == file.backupPath) || (file.preserveDisplaced && filename == file.displacedPath) {
 			continue
 		}
 		if removeErr := file.filesystem.Remove(filename); removeErr != nil && !errors.Is(
@@ -349,7 +462,7 @@ func (file *stagedFile) cleanup() error {
 			)
 		}
 	}
-	if !file.published && !file.preserve {
+	if file.published == nil && !file.preserve {
 		err = errors.Join(
 			err,
 			removeDirectories(

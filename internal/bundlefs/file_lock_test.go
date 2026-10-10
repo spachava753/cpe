@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,12 +15,14 @@ import (
 
 func TestReadFile(t *testing.T) {
 	for _, test := range []struct {
-		name           string
-		content        *string
-		readonly       bool
-		cancel         bool
-		cleanupFailure bool
-		wantError      error
+		name              string
+		content           *string
+		readonly          bool
+		nativeSidecar     bool
+		cancel            bool
+		cleanupFailure    bool
+		finishPublication bool
+		wantError         error
 	}{
 		{
 			name: "missing file returns absence",
@@ -29,12 +32,27 @@ func TestReadFile(t *testing.T) {
 			readonly: true,
 		},
 		{
+			name:          "retained native sidecar supports read-only absent lock",
+			readonly:      true,
+			nativeSidecar: true,
+		},
+		{
+			name:          "retained native sidecar supports read-only regular lock",
+			readonly:      true,
+			nativeSidecar: true,
+			content:       new("lock bytes"),
+		},
+		{
 			name:    "empty file is distinct from absence",
 			content: new(""),
 		},
 		{
 			name:    "regular bytes are preserved",
 			content: new("lock bytes"),
+		},
+		{
+			name:              "publication completing after a missing stat is observed",
+			finishPublication: true,
 		},
 		{
 			name:      "canceled reads do not acquire guards",
@@ -52,10 +70,31 @@ func TestReadFile(t *testing.T) {
 			test.name,
 			func(t *testing.T) {
 				filesystem := afero.NewMemMapFs()
+				root := t.TempDir()
+				filename := filepath.Join(
+					root,
+					"lock.json",
+				)
+				if test.nativeSidecar {
+					filesystem = afero.NewOsFs()
+					if err := afero.WriteFile(
+						filesystem,
+						filename+".cpe-lock",
+						nil,
+						0o600,
+					); err != nil {
+						t.Fatal(err)
+					}
+				} else if err := filesystem.MkdirAll(
+					root,
+					0o700,
+				); err != nil {
+					t.Fatal(err)
+				}
 				if test.content != nil {
 					if err := afero.WriteFile(
 						filesystem,
-						"/lock.json",
+						filename,
 						[]byte(*test.content),
 						0o600,
 					); err != nil {
@@ -71,6 +110,12 @@ func TestReadFile(t *testing.T) {
 						Fs: filesystem,
 					}
 				}
+				if test.finishPublication {
+					configured = &finishingPublicationFS{
+						Fs:       filesystem,
+						filename: filename,
+					}
+				}
 				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
 				if test.cancel {
@@ -79,7 +124,7 @@ func TestReadFile(t *testing.T) {
 				data, err := bundlefs.ReadFile(
 					ctx,
 					configured,
-					"/lock.json",
+					filename,
 				)
 				if !errors.Is(
 					err,
@@ -95,7 +140,14 @@ func TestReadFile(t *testing.T) {
 				if test.wantError != nil {
 					return
 				}
-				if test.content == nil {
+				if test.finishPublication {
+					if string(data) != "new lock" {
+						t.Fatalf(
+							"completed publication was mistaken for absence: %q",
+							data,
+						)
+					}
+				} else if test.content == nil {
 					if data != nil {
 						t.Fatal("missing lock did not return absence")
 					}
@@ -108,8 +160,8 @@ func TestReadFile(t *testing.T) {
 				}
 				if exists, err := afero.Exists(
 					filesystem,
-					"/lock.json.cpe-lock",
-				); err != nil || exists {
+					filename+".cpe-lock",
+				); err != nil || exists != test.nativeSidecar {
 					t.Fatalf(
 						"memory guard was not released: %v, %v",
 						exists,

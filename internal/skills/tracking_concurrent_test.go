@@ -308,6 +308,16 @@ func (filesystem *trackingPublicationFS) LstatIfPossible(filename string) (fs.Fi
 	return info, false, err
 }
 
+func (filesystem *trackingPublicationFS) Open(filename string) (afero.File, error) {
+	if filename == filesystem.filename+".cpe-lock" && filesystem.publishing.Load() {
+		select {
+		case filesystem.attempted <- struct{}{}:
+		default:
+		}
+	}
+	return filesystem.Fs.Open(filename)
+}
+
 func (filesystem *trackingPublicationFS) OpenFile(filename string, flags int, mode fs.FileMode) (afero.File, error) {
 	if filename == filesystem.filename+".cpe-lock" && flags == os.O_RDWR && filesystem.publishing.Load() {
 		select {
