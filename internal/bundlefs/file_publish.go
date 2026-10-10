@@ -1,21 +1,64 @@
 package bundlefs
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 
 	"github.com/spf13/afero"
 )
 
+type publishedFile struct {
+	info   fs.FileInfo
+	data   []byte
+	native bool
+}
+
+func (file *publishedFile) complete() bool {
+	return int64(len(file.data)) == file.info.Size()
+}
+
+func (file *publishedFile) owns(info fs.FileInfo, data []byte) bool {
+	return (!file.native || os.SameFile(
+		file.info,
+		info,
+	)) && bytes.Equal(
+		file.data,
+		data,
+	)
+}
+
 // Native publication installs complete staged bytes without replacing a file
 // that appeared meanwhile. Other injected filesystems reserve the destination
 // exclusively; cooperating readers are protected by the publication guard.
-func publishPreparedFile(filesystem afero.Fs, staged string, filename string) (published bool, err error) {
+func publishPreparedFile(filesystem afero.Fs, staged string, filename string) (published *publishedFile, err error) {
+	info, err := Lstat(
+		filesystem,
+		staged,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf(
+			"staged publication file %s is not regular",
+			staged,
+		)
+	}
+	data, err := afero.ReadFile(
+		filesystem,
+		staged,
+	)
+	if err != nil {
+		return nil, err
+	}
 	directory, err := filesystem.Open(filepath.Dir(filename))
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	defer func() {
 		err = errors.Join(
@@ -29,33 +72,30 @@ func publishPreparedFile(filesystem afero.Fs, staged string, filename string) (p
 			filepath.Base(staged),
 			filepath.Base(filename),
 		); err != nil {
-			return false, err
+			return nil, err
 		}
-		return true, nil
+		return &publishedFile{
+			info:   info,
+			data:   data,
+			native: true,
+		}, nil
 	}
-	input, err := filesystem.Open(staged)
-	if err != nil {
-		return false, err
-	}
-	defer func() {
-		err = errors.Join(
-			err,
-			input.Close(),
-		)
-	}()
 	output, err := filesystem.OpenFile(
 		filename,
 		os.O_WRONLY|os.O_CREATE|os.O_EXCL,
 		0o644,
 	)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	_, copyErr := io.Copy(
+	written, copyErr := io.Copy(
 		output,
-		input,
+		bytes.NewReader(data),
 	)
-	return true, errors.Join(
+	return &publishedFile{
+		info: info,
+		data: data[:written],
+	}, errors.Join(
 		copyErr,
 		output.Close(),
 	)
