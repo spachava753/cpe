@@ -16,6 +16,7 @@ type skillActions struct {
 	install func(context.Context, *skills.Manager, skills.InstallOptions, commandio.IO) error
 	list    func(context.Context, *skills.Manager, skills.ListOptions, commandio.IO) error
 	remove  func(context.Context, *skills.Manager, skills.RemoveOptions, commandio.IO) error
+	update  func(context.Context, *skills.Manager, skills.UpdateOptions, commandio.IO) error
 }
 
 func skillsCmd(parent *cobra.Command, manager *skills.Manager) {
@@ -26,6 +27,7 @@ func skillsCmd(parent *cobra.Command, manager *skills.Manager) {
 			install: skills.Install,
 			list:    skills.List,
 			remove:  skills.Remove,
+			update:  skills.Update,
 		},
 	)
 }
@@ -35,7 +37,7 @@ func skillsCmdWithActions(parent *cobra.Command, manager *skills.Manager, action
 		Use:   "skills",
 		Short: "Manage agent skills",
 		Long: dedent.Dedent(`
-		Install, list, and remove agent skills from Git sources.
+		Install, update, list, and remove agent skills from Git sources.
 
 		The default skill directories are ~/.agents/skills for global scope and
 		./.agents/skills for project scope.
@@ -73,6 +75,11 @@ func skillsCmdWithActions(parent *cobra.Command, manager *skills.Manager, action
 		c,
 		manager,
 		actions.remove,
+	)
+	skillsUpdateCmd(
+		c,
+		manager,
+		actions.update,
 	)
 }
 
