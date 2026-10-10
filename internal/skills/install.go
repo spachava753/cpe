@@ -28,8 +28,8 @@ type InstallOptions struct {
 // Results use terminal tables or JSON according to opts.JSON and streams.Out;
 // skill warnings go to streams.Err. Output errors may follow a successful installation.
 func Install(ctx context.Context, manager *Manager, opts InstallOptions, streams commandio.IO) error {
-	directories, err := opts.Scope.Directories(
-		"skills",
+	scopes, err := resolveScopes(
+		opts.Scope,
 		true,
 	)
 	if err != nil {
@@ -39,7 +39,8 @@ func Install(ctx context.Context, manager *Manager, opts InstallOptions, streams
 		ctx,
 		InstallRequest{
 			Source:    opts.Source,
-			Directory: directories[0],
+			Directory: scopes[0].directory,
+			Lock:      &scopes[0].lock,
 			Skills:    opts.Skills,
 			Path:      opts.Path,
 			Override:  opts.Override,

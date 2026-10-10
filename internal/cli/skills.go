@@ -44,7 +44,8 @@ func skillsCmdWithActions(parent *cobra.Command, manager *skills.Manager, action
 
 		--dir selects an exact custom skill directory; .agents/skills is not
 		appended. Only that directory is selected, even when scope is omitted.
-		--dir cannot be combined with --scope global.
+		--dir cannot be combined with --scope global. Its lock file is
+		<directory>/skills-lock.json, separate from the default project inventory.
 
 		Result output is a styled table on a terminal and a JSON array otherwise.
 		--json forces JSON output, including when stdout is a terminal.
@@ -111,6 +112,8 @@ func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(c
 
 		Existing skills are preserved unless --override is set. With --override,
 		replace the complete selected skill directory, removing obsolete files.
+
+		Installations are recorded in the scope's lock file for skills update.
 
 		Search up to five directory levels by default. --full-depth removes
 		that depth limit.
@@ -271,6 +274,7 @@ func skillsRemoveCmd(parent *cobra.Command, manager *skills.Manager, run func(co
 		Long: dedent.Dedent(`
 		Remove named installed skills, including manually copied skills.
 		Damaged skill definitions can be removed without requiring valid frontmatter.
+		If a lock record exists, it is removed with the bundle.
 
 		Without --scope or --dir, find each name in the global and project
 		directories. If a name exists in both, --scope is required to choose one.

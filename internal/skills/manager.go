@@ -145,6 +145,16 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 	if installErr != nil {
 		return nil, installErr
 	}
+	var lock *skillLock
+	if request.Lock != nil {
+		lock, installErr = m.readLock(
+			ctx,
+			*request.Lock,
+		)
+		if installErr != nil {
+			return nil, installErr
+		}
+	}
 	checkout, installErr := m.acquire(
 		ctx,
 		request.Source,
@@ -276,6 +286,24 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 		if err != nil {
 			return nil, err
 		}
+		if lock != nil {
+			record, err := lock.hashRecord(
+				ctx,
+				checkout.FS,
+				skill,
+				payload,
+				sourceRecord(request.Source),
+			)
+			if err != nil {
+				return nil, err
+			}
+			if err := lock.put(
+				name,
+				record,
+			); err != nil {
+				return nil, err
+			}
+		}
 		action := bundlefs.Install
 		if request.Override {
 			action = bundlefs.Replace
@@ -307,12 +335,11 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 			err,
 		)
 	}
-	if outcome, err := bundlefs.Apply(
+	if outcome, err := m.applyTracked(
 		ctx,
-		m.destinations,
 		request.Directory,
 		changes,
-		m.checkDefinition,
+		lock,
 	); err != nil {
 		if outcome != bundlefs.Committed {
 			result = nil
@@ -437,6 +464,30 @@ func (m *Manager) Remove(ctx context.Context, request RemoveRequest) ([]RemovedS
 	if err != nil {
 		return nil, err
 	}
+	var lock *skillLock
+	if request.Lock != nil {
+		lock, err = m.readLock(
+			ctx,
+			*request.Lock,
+		)
+		if err != nil {
+			return nil, err
+		}
+		changed := false
+		for _, directory := range plan.paths {
+			name := filepath.Base(directory)
+			if _, exists := lock.skills[name]; exists {
+				delete(
+					lock.skills,
+					name,
+				)
+				changed = true
+			}
+		}
+		if !changed {
+			lock = nil
+		}
+	}
 	filesystem := afero.NewIOFS(afero.NewBasePathFs(
 		m.destinations,
 		request.Directory,
@@ -462,12 +513,11 @@ func (m *Manager) Remove(ctx context.Context, request RemoveRequest) ([]RemovedS
 			removed,
 		)
 	}
-	if outcome, err := bundlefs.Apply(
+	if outcome, err := m.applyTracked(
 		ctx,
-		m.destinations,
 		request.Directory,
 		plan.changes,
-		m.checkDefinition,
+		lock,
 	); err != nil {
 		if outcome == bundlefs.Committed {
 			return result, fmt.Errorf(

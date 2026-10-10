@@ -23,7 +23,18 @@ import (
 // Cancellation or publication failure triggers rollback. Failed rollback retains
 // recovery files identified in the error. Committed with an error means changes
 // took effect but staging cleanup failed. NotCommitted may include failed rollback.
-func Apply(ctx context.Context, filesystem afero.Fs, root string, changes []Change, checkExisting func(string) error) (outcome Outcome, applyErr error) {
+func Apply(ctx context.Context, filesystem afero.Fs, root string, changes []Change, checkExisting func(string) error) (Outcome, error) {
+	return apply(
+		ctx,
+		filesystem,
+		root,
+		changes,
+		checkExisting,
+		nil,
+	)
+}
+
+func apply(ctx context.Context, filesystem afero.Fs, root string, changes []Change, checkExisting func(string) error, file *FileChange) (outcome Outcome, applyErr error) {
 	if err := CheckDestination(
 		ctx,
 		filesystem,
@@ -40,19 +51,41 @@ func Apply(ctx context.Context, filesystem afero.Fs, root string, changes []Chan
 	if len(changes) == 0 {
 		return Committed, nil
 	}
-	_, statErr := filesystem.Stat(root)
-	created := errors.Is(
-		statErr,
-		fs.ErrNotExist,
+	var metadata *stagedFile
+	if file != nil {
+		metadata, applyErr = prepareFile(
+			ctx,
+			filesystem,
+			*file,
+		)
+		if applyErr != nil {
+			return NotCommitted, applyErr
+		}
+		defer func() {
+			applyErr = errors.Join(
+				applyErr,
+				metadata.cleanup(),
+			)
+		}()
+	}
+	created, applyErr := missingDirectories(
+		filesystem,
+		root,
 	)
-	if statErr != nil && !created {
-		return NotCommitted, statErr
+	if applyErr != nil {
+		return NotCommitted, applyErr
 	}
 	if err := filesystem.MkdirAll(
 		root,
 		0o700,
 	); err != nil {
-		return NotCommitted, err
+		return NotCommitted, errors.Join(
+			err,
+			removeDirectories(
+				filesystem,
+				created,
+			),
+		)
 	}
 	stage, applyErr := afero.TempDir(
 		filesystem,
@@ -60,10 +93,13 @@ func Apply(ctx context.Context, filesystem afero.Fs, root string, changes []Chan
 		".cpe-stage-",
 	)
 	if applyErr != nil {
-		if created {
-			_ = filesystem.Remove(root)
-		}
-		return NotCommitted, applyErr
+		return NotCommitted, errors.Join(
+			applyErr,
+			removeDirectories(
+				filesystem,
+				created,
+			),
+		)
 	}
 	preserveStage := false
 	defer func() {
@@ -79,16 +115,14 @@ func Apply(ctx context.Context, filesystem afero.Fs, root string, changes []Chan
 			)
 			return
 		}
-		if outcome != Committed && created {
-			if removeErr := filesystem.Remove(root); removeErr != nil && !errors.Is(
-				removeErr,
-				fs.ErrNotExist,
-			) {
-				cleanupErr = errors.Join(
-					cleanupErr,
-					removeErr,
-				)
-			}
+		if outcome != Committed {
+			cleanupErr = errors.Join(
+				cleanupErr,
+				removeDirectories(
+					filesystem,
+					created,
+				),
+			)
 		}
 		applyErr = errors.Join(
 			applyErr,
@@ -152,7 +186,7 @@ func Apply(ctx context.Context, filesystem afero.Fs, root string, changes []Chan
 	}
 	var moved, installed []string
 	rollback := func(cause error) error {
-		var restoreErr error
+		restoreErr := metadata.rollback()
 		for _, name := range slices.Backward(installed) {
 			restoreErr = errors.Join(
 				restoreErr,
@@ -269,7 +303,54 @@ func Apply(ctx context.Context, filesystem afero.Fs, root string, changes []Chan
 	if err := ctx.Err(); err != nil {
 		return NotCommitted, rollback(err)
 	}
+	if metadata != nil {
+		if err := metadata.publish(); err != nil {
+			return NotCommitted, rollback(err)
+		}
+		if err := ctx.Err(); err != nil {
+			return NotCommitted, rollback(err)
+		}
+	}
 	return Committed, nil
+}
+
+func missingDirectories(filesystem afero.Fs, directory string) ([]string, error) {
+	var missing []string
+	for {
+		if _, err := filesystem.Stat(directory); err == nil {
+			return missing, nil
+		} else if !errors.Is(
+			err,
+			fs.ErrNotExist,
+		) {
+			return nil, err
+		}
+		missing = append(
+			missing,
+			directory,
+		)
+		parent := filepath.Dir(directory)
+		if parent == directory {
+			return missing, nil
+		}
+		directory = parent
+	}
+}
+
+func removeDirectories(filesystem afero.Fs, directories []string) error {
+	var result error
+	for _, directory := range directories {
+		if err := filesystem.Remove(directory); err != nil && !errors.Is(
+			err,
+			fs.ErrNotExist,
+		) {
+			result = errors.Join(
+				result,
+				err,
+			)
+		}
+	}
+	return result
 }
 
 // Changes are prepared in memory by callers. Establish their filesystem

@@ -247,9 +247,9 @@ func TestSkillsLifecycle(t *testing.T) {
 				destinations,
 				"/skills",
 			)
-			if readErr != nil || len(entries) != 1 || entries[0].Name() != "alpha" {
+			if readErr != nil || len(entries) != 2 || entries[0].Name() != "alpha" || entries[1].Name() != "skills-lock.json" {
 				t.Fatalf(
-					"installation wrote more than its bundle: %v, %v",
+					"installation did not write exactly its bundle and lock: %v, %v",
 					entries,
 					readErr,
 				)
@@ -332,7 +332,7 @@ func TestSkillsLifecycle(t *testing.T) {
 		},
 	)
 	t.Run(
-		"reinstall with override",
+		"update from recorded exact source path",
 		func(t *testing.T) {
 			definition = strings.ReplaceAll(
 				definition,
@@ -400,15 +400,10 @@ func TestSkillsLifecycle(t *testing.T) {
 			)
 			command.SetArgs([]string{
 				"skills",
-				"install",
-				source,
-				"--scope",
-				"project",
+				"update",
+				"alpha",
 				"--dir",
 				"/skills",
-				"--path",
-				"alpha",
-				"--override",
 			})
 			command.SetOut(&output)
 			if err := command.ExecuteContext(t.Context()); err != nil {
@@ -483,9 +478,9 @@ func TestSkillsLifecycle(t *testing.T) {
 				destinations,
 				"/skills",
 			)
-			if err != nil || len(entries) != 0 {
+			if err != nil || len(entries) != 1 || entries[0].Name() != "skills-lock.json" {
 				t.Errorf(
-					"removal left files behind: %v, %v",
+					"removal left bundle files behind: %v, %v",
 					entries,
 					err,
 				)
