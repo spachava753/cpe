@@ -3,6 +3,7 @@ package skills_test
 import (
 	"encoding/json"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -121,9 +122,10 @@ func TestSkillTracking(t *testing.T) {
 						},
 					},
 					trackingFaultFS{
-						Fs:       filesystem,
-						filename: filename,
-						fail:     test.publishFailure,
+						Fs:           filesystem,
+						filename:     filename,
+						fail:         test.publishFailure,
+						publications: new(int),
 					},
 				)
 				lock := &skills.LockFile{
@@ -229,19 +231,21 @@ func TestSkillTracking(t *testing.T) {
 
 type trackingFaultFS struct {
 	afero.Fs
-	filename string
-	fail     bool
+	filename     string
+	fail         bool
+	publications *int
 }
 
-func (filesystem trackingFaultFS) Rename(oldname string, newname string) error {
-	if filesystem.fail && newname == filesystem.filename && strings.HasPrefix(
-		filepath.Base(oldname),
-		".cpe-file-",
-	) {
-		return fs.ErrPermission
+func (filesystem trackingFaultFS) OpenFile(name string, flags int, mode fs.FileMode) (afero.File, error) {
+	if name == filesystem.filename && flags&os.O_EXCL != 0 {
+		*filesystem.publications++
+		if filesystem.fail && *filesystem.publications == 1 {
+			return nil, fs.ErrPermission
+		}
 	}
-	return filesystem.Fs.Rename(
-		oldname,
-		newname,
+	return filesystem.Fs.OpenFile(
+		name,
+		flags,
+		mode,
 	)
 }

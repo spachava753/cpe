@@ -9,7 +9,6 @@ import (
 	"maps"
 	"net/url"
 	"path"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -76,51 +75,30 @@ func (m *Manager) readLock(ctx context.Context, file LockFile) (*skillLock, erro
 	if strings.TrimSpace(file.Path) == "" {
 		return nil, errors.New("lock file path is required")
 	}
-	if err := m.destination(
-		ctx,
-		filepath.Dir(file.Path),
-	); err != nil {
-		return nil, err
+	var filesystem afero.Fs
+	if m != nil {
+		filesystem = m.destinations
 	}
 	lock := &skillLock{
 		file:   file,
 		fields: map[string]json.RawMessage{},
 		skills: map[string]json.RawMessage{},
 	}
-	info, err := bundlefs.Lstat(
-		m.destinations,
+	data, err := bundlefs.ReadFile(
+		ctx,
+		filesystem,
 		file.Path,
 	)
-	if errors.Is(
-		err,
-		fs.ErrNotExist,
-	) {
+	if err != nil {
+		return nil, fmt.Errorf(
+			"read lock %s: %w",
+			file.Path,
+			err,
+		)
+	}
+	if data == nil {
 		lock.fields["version"] = json.RawMessage(fmt.Sprint(version))
 		return lock, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf(
-			"read lock %s: %w",
-			file.Path,
-			err,
-		)
-	}
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf(
-			"lock file %s is not a regular file",
-			file.Path,
-		)
-	}
-	data, err := afero.ReadFile(
-		m.destinations,
-		file.Path,
-	)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"read lock %s: %w",
-			file.Path,
-			err,
-		)
 	}
 	lock.original = data
 	if err := json.Unmarshal(
