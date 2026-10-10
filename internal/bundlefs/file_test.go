@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -157,9 +158,10 @@ func TestApplyWithFile(t *testing.T) {
 				outcome, err := bundlefs.ApplyWithFile(
 					ctx,
 					fileFaultFS{
-						Fs:     filesystem,
-						fault:  test.fault,
-						cancel: cancel,
+						Fs:           filesystem,
+						fault:        test.fault,
+						cancel:       cancel,
+						publications: new(int),
 					},
 					root,
 					changes,
@@ -254,8 +256,9 @@ const (
 
 type fileFaultFS struct {
 	afero.Fs
-	fault  fileFault
-	cancel context.CancelFunc
+	fault        fileFault
+	cancel       context.CancelFunc
+	publications *int
 }
 
 func (filesystem fileFaultFS) OpenFile(name string, flag int, mode fs.FileMode) (afero.File, error) {
@@ -265,45 +268,36 @@ func (filesystem fileFaultFS) OpenFile(name string, flag int, mode fs.FileMode) 
 	) {
 		return nil, fs.ErrPermission
 	}
-	return filesystem.Fs.OpenFile(
+	publication := filepath.Base(name) == ".skill-lock.json" && flag&os.O_EXCL != 0
+	if publication {
+		*filesystem.publications++
+		if filesystem.fault == fileRestoreFailure || (filesystem.fault == filePublishFailure && *filesystem.publications == 1) {
+			return nil, fs.ErrPermission
+		}
+	}
+	file, err := filesystem.Fs.OpenFile(
 		name,
 		flag,
 		mode,
 	)
+	if err == nil && publication && (filesystem.fault == fileCancelPublication || filesystem.fault == fileCancelRollbackFailure) {
+		filesystem.cancel()
+	}
+	return file, err
 }
 
 func (filesystem fileFaultFS) Rename(oldname string, newname string) error {
 	newBase := filepath.Base(newname)
-	oldBase := filepath.Base(oldname)
 	if filesystem.fault == fileBackupFailure && strings.HasPrefix(
 		newBase,
 		".cpe-backup-",
 	) {
 		return fs.ErrPermission
 	}
-	if (filesystem.fault == filePublishFailure || filesystem.fault == fileRestoreFailure) && strings.HasPrefix(
-		oldBase,
-		".cpe-file-",
-	) {
-		return fs.ErrPermission
-	}
-	if filesystem.fault == fileRestoreFailure && strings.HasPrefix(
-		oldBase,
-		".cpe-backup-",
-	) {
-		return fs.ErrPermission
-	}
-	err := filesystem.Fs.Rename(
+	return filesystem.Fs.Rename(
 		oldname,
 		newname,
 	)
-	if (filesystem.fault == fileCancelPublication || filesystem.fault == fileCancelRollbackFailure) && strings.HasPrefix(
-		oldBase,
-		".cpe-file-",
-	) {
-		filesystem.cancel()
-	}
-	return err
 }
 
 func (filesystem fileFaultFS) Remove(name string) error {

@@ -23,8 +23,9 @@ type FileChange struct {
 // ApplyWithFile publishes bundles and a file in one rollback transaction.
 // It follows Apply's outcome contract. The file's parents are created as needed;
 // symlinks and non-regular existing files are rejected. Empty changes leave the
-// file untouched.
-func ApplyWithFile(ctx context.Context, filesystem afero.Fs, root string, changes []Change, checkExisting func(string) error, file FileChange) (Outcome, error) {
+// file untouched. Native filesystems retain a .cpe-lock sidecar to serialize
+// publications; changed snapshots abort instead of overwriting another writer.
+func ApplyWithFile(ctx context.Context, filesystem afero.Fs, root string, changes []Change, checkExisting func(string) error, file FileChange) (outcome Outcome, err error) {
 	if file.Path == "" {
 		return NotCommitted, errors.New("publication file path is required")
 	}
@@ -41,6 +42,43 @@ func ApplyWithFile(ctx context.Context, filesystem afero.Fs, root string, change
 			return NotCommitted, errors.New("publication file must be outside changed bundles")
 		}
 	}
+	if err := CheckDestination(
+		ctx,
+		filesystem,
+		root,
+	); err != nil {
+		return NotCommitted, err
+	}
+	if err := checkFileParent(
+		ctx,
+		filesystem,
+		file.Path,
+	); err != nil {
+		return NotCommitted, err
+	}
+	if err := checkChanges(changes); err != nil {
+		return NotCommitted, err
+	}
+	if checkExisting == nil {
+		return NotCommitted, errors.New("existing bundle check is unavailable")
+	}
+	if len(changes) == 0 {
+		return Committed, nil
+	}
+	guard, err := lockFile(
+		ctx,
+		filesystem,
+		file.Path,
+	)
+	if err != nil {
+		return NotCommitted, err
+	}
+	defer func() {
+		err = errors.Join(
+			err,
+			guard.close(),
+		)
+	}()
 	return apply(
 		ctx,
 		filesystem,
@@ -64,10 +102,10 @@ type stagedFile struct {
 }
 
 func prepareFile(ctx context.Context, filesystem afero.Fs, file FileChange) (_ *stagedFile, err error) {
-	if err := CheckDestination(
+	if err := checkFileParent(
 		ctx,
 		filesystem,
-		filepath.Dir(file.Path),
+		file.Path,
 	); err != nil {
 		return nil, err
 	}
@@ -235,15 +273,13 @@ func (file *stagedFile) publish() error {
 	) {
 		return err
 	}
-	if err := file.filesystem.Rename(
+	var err error
+	file.published, err = publishPreparedFile(
+		file.filesystem,
 		file.newPath,
 		file.path,
-	); err != nil {
-		return err
-	}
-	file.newPath = ""
-	file.published = true
-	return nil
+	)
+	return err
 }
 
 func (file *stagedFile) rollback() error {
@@ -270,7 +306,8 @@ func (file *stagedFile) rollback() error {
 		file.published = false
 	}
 	if file.oldPath != "" {
-		if err := file.filesystem.Rename(
+		if _, err := publishPreparedFile(
+			file.filesystem,
 			file.oldPath,
 			file.path,
 		); err != nil {
