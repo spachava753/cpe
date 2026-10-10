@@ -24,16 +24,34 @@ func TestRollbackPreservesLateReplacement(t *testing.T) {
 			false,
 			true,
 		} {
-			for _, point := range []string{
-				"after publication",
-				"during withdrawal",
+			for _, test := range []struct {
+				point       string
+				replacement string
+			}{
+				{
+					point:       "after publication",
+					replacement: "external lock",
+				},
+				{
+					point:       "after publication",
+					replacement: "new lock",
+				},
+				{
+					point:       "during withdrawal",
+					replacement: "external lock",
+				},
+				{
+					point:       "during withdrawal",
+					replacement: "new lock",
+				},
 			} {
 				t.Run(
 					fmt.Sprintf(
-						"native=%v/existing=%v/%s",
+						"native=%v/existing=%v/%s/%s",
 						native,
 						existing,
-						point,
+						test.point,
+						test.replacement,
 					),
 					func(t *testing.T) {
 						base := t.TempDir()
@@ -86,10 +104,11 @@ func TestRollbackPreservesLateReplacement(t *testing.T) {
 						ctx, cancel := context.WithCancel(t.Context())
 						defer cancel()
 						probe := &lateReplacementFS{
-							Fs:       filesystem,
-							filename: filename,
-							point:    point,
-							cancel:   cancel,
+							Fs:          filesystem,
+							filename:    filename,
+							point:       test.point,
+							replacement: test.replacement,
+							cancel:      cancel,
 						}
 						outcome, err := bundlefs.ApplyWithFile(
 							ctx,
@@ -125,7 +144,7 @@ func TestRollbackPreservesLateReplacement(t *testing.T) {
 							)
 						}
 						for path, want := range map[string]string{
-							filename: "external lock",
+							filename: test.replacement,
 							marker:   "old bundle",
 						} {
 							data, readErr := afero.ReadFile(
@@ -189,11 +208,12 @@ func TestRollbackPreservesLateReplacement(t *testing.T) {
 
 type lateReplacementFS struct {
 	afero.Fs
-	filename string
-	point    string
-	cancel   context.CancelFunc
-	once     sync.Once
-	err      error
+	filename    string
+	point       string
+	replacement string
+	cancel      context.CancelFunc
+	once        sync.Once
+	err         error
 }
 
 func (filesystem *lateReplacementFS) replace() error {
@@ -208,7 +228,7 @@ func (filesystem *lateReplacementFS) replace() error {
 		filesystem.err = afero.WriteFile(
 			filesystem.Fs,
 			filesystem.filename,
-			[]byte("external lock"),
+			[]byte(filesystem.replacement),
 			0o600,
 		)
 	})

@@ -8,10 +8,14 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func tryFileLock(descriptor uintptr) (bool, error) {
+func tryFileLock(descriptor uintptr, access guardAccess) (bool, error) {
+	flags := unix.LOCK_SH | unix.LOCK_NB
+	if access == writerGuard {
+		flags = unix.LOCK_EX | unix.LOCK_NB
+	}
 	err := unix.Flock(
 		int(descriptor),
-		unix.LOCK_EX|unix.LOCK_NB,
+		flags,
 	)
 	if errors.Is(
 		err,

@@ -355,7 +355,12 @@ func (file *stagedFile) withdrawPublished() error {
 		temporary.Close(),
 		file.filesystem.Remove(file.displacedPath),
 	); err != nil {
-		return err
+		return fmt.Errorf(
+			"file rollback could not capture %s; published file remains at %s: %w",
+			file.path,
+			file.path,
+			err,
+		)
 	}
 	if err := file.filesystem.Rename(
 		file.path,

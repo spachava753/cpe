@@ -16,7 +16,8 @@ import (
 // ReadFile reads a regular file without overlapping a tracked publication.
 // Parent symlinks are rejected before path cleaning. Missing files return nil
 // data; empty files return a non-nil empty slice. Native filesystems retain a
-// .cpe-lock sidecar.
+// .cpe-lock sidecar. A guard must be readable or creatable; inability to acquire
+// it returns an error even if the target may be absent.
 func ReadFile(ctx context.Context, filesystem afero.Fs, filename string) (data []byte, err error) {
 	if err := checkFileParent(
 		ctx,
@@ -32,29 +33,11 @@ func ReadFile(ctx context.Context, filesystem afero.Fs, filename string) (data [
 		readerGuard,
 	)
 	if err != nil {
-		if errors.Is(
+		return nil, fmt.Errorf(
+			"acquire publication guard for %s: %w",
+			filename,
 			err,
-			fs.ErrPermission,
-		) {
-			if _, fileErr := Lstat(
-				filesystem,
-				filename,
-			); errors.Is(
-				fileErr,
-				fs.ErrNotExist,
-			) {
-				if _, guardErr := Lstat(
-					filesystem,
-					filename+".cpe-lock",
-				); errors.Is(
-					guardErr,
-					fs.ErrNotExist,
-				) {
-					return nil, nil
-				}
-			}
-		}
-		return nil, err
+		)
 	}
 	defer func() {
 		err = errors.Join(
@@ -240,7 +223,10 @@ func lockFile(ctx context.Context, filesystem afero.Fs, filename string, access 
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		locked, err := tryFileLock(descriptor)
+		locked, err := tryFileLock(
+			descriptor,
+			access,
+		)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"lock publication file %s: %w",
