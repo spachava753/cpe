@@ -388,8 +388,10 @@ obsolete files, just like installing with `--override`.
 
 Listing includes untracked skills. Removal also works for untracked skills and
 removes the lock record when one exists. A malformed or unsupported lock file
-blocks changes to its inventory rather than being discarded. Bundle changes and
-lock changes are published together with rollback on failure; an error reports
+blocks changes to its inventory rather than being discarded. A lock changed by
+another writer during acquisition causes the operation to abort; retry to use its
+new contents. Bundle changes and lock changes are published together with
+rollback on failure; an error reports
 any committed results or recovery files left by failed cleanup or rollback.
 Results are JSON arrays when stdout is redirected; `--json` forces JSON on a
 terminal. Warnings go to stderr.

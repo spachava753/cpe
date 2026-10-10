@@ -3,6 +3,7 @@ package skills_test
 import (
 	"bytes"
 	"encoding/json"
+	"io/fs"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,18 +18,21 @@ import (
 
 func TestUpdate(t *testing.T) {
 	for _, test := range []struct {
-		name        string
-		names       []string
-		project     bool
-		global      bool
-		duplicate   bool
-		untracked   bool
-		unsupported bool
-		corrupt     bool
-		fault       managerFSFault
-		wantPaths   []string
-		warnings    []string
-		wantError   string
+		name               string
+		names              []string
+		project            bool
+		global             bool
+		duplicate          bool
+		untracked          bool
+		unsupported        bool
+		unsupportedLocator bool
+		missingURL         bool
+		unreadableOther    bool
+		corrupt            bool
+		fault              managerFSFault
+		wantPaths          []string
+		warnings           []string
+		wantError          string
 	}{
 		{
 			name: "all scopes include both inventories",
@@ -136,6 +140,36 @@ func TestUpdate(t *testing.T) {
 			},
 		},
 		{
+			name:               "unsupported Git locator warns without blocking a supported sibling",
+			unsupportedLocator: true,
+			wantPaths: []string{
+				"global/beta",
+			},
+			warnings: []string{
+				"unsupported recorded source",
+			},
+		},
+		{
+			name:       "generic Git source without URL is not guessed as GitHub",
+			missingURL: true,
+			wantPaths: []string{
+				"global/beta",
+			},
+			warnings: []string{
+				"unambiguous sourceUrl",
+			},
+		},
+		{
+			name: "named selection does not inspect unrelated definitions in either scope",
+			names: []string{
+				"alpha",
+			},
+			unreadableOther: true,
+			wantPaths: []string{
+				"project/alpha",
+			},
+		},
+		{
 			name:      "corrupt lock prevents mutations",
 			corrupt:   true,
 			wantError: "lock",
@@ -240,6 +274,33 @@ func TestUpdate(t *testing.T) {
 						"extra":        "preserved",
 					}
 				}
+				if test.unsupportedLocator {
+					projectRecords["alpha"].(map[string]any)["sourceUrl"] = "git@github.com:owner/repo.git"
+				}
+				if test.missingURL {
+					projectRecords["alpha"].(map[string]any)["source"] = "owner/repo"
+					delete(
+						projectRecords["alpha"].(map[string]any),
+						"sourceUrl",
+					)
+				}
+				if test.unreadableOther {
+					for _, root := range []string{
+						projectRoot,
+						globalRoot,
+					} {
+						writeTrackingFixture(
+							t,
+							filesystem,
+							filepath.Join(
+								root,
+								"ignored",
+								"SKILL.md",
+							),
+							"invalid definition",
+						)
+					}
+				}
 				globalRecords := map[string]any{
 					"beta": map[string]any{
 						"source":          managerSource,
@@ -316,9 +377,12 @@ func TestUpdate(t *testing.T) {
 							},
 						},
 					},
-					managerFaultFS{
-						Fs:    filesystem,
-						fault: test.fault,
+					updateInventoryFS{
+						Fs: managerFaultFS{
+							Fs:    filesystem,
+							fault: test.fault,
+						},
+						unreadableOther: test.unreadableOther,
 					},
 				)
 				var output, warnings bytes.Buffer
@@ -472,6 +536,18 @@ func TestUpdate(t *testing.T) {
 			},
 		)
 	}
+}
+
+type updateInventoryFS struct {
+	afero.Fs
+	unreadableOther bool
+}
+
+func (filesystem updateInventoryFS) Stat(filename string) (fs.FileInfo, error) {
+	if filesystem.unreadableOther && filepath.Base(filepath.Dir(filename)) == "ignored" {
+		return nil, fs.ErrPermission
+	}
+	return filesystem.Fs.Stat(filename)
 }
 
 func writeTrackingFixture(t *testing.T, filesystem afero.Fs, filename string, content string) {

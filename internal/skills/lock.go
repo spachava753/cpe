@@ -16,6 +16,7 @@ import (
 	"github.com/spf13/afero"
 
 	"github.com/spachava753/cpe/internal/bundlefs"
+	"github.com/spachava753/cpe/internal/source"
 )
 
 // LockFormat identifies a supported skill lock file schema.
@@ -37,9 +38,10 @@ type LockFile struct {
 // Keep records opaque until an update selects them. Unrelated entries and tool
 // preferences survive writes, including source types that CPE cannot acquire.
 type skillLock struct {
-	file   LockFile
-	fields map[string]json.RawMessage
-	skills map[string]json.RawMessage
+	file     LockFile
+	fields   map[string]json.RawMessage
+	skills   map[string]json.RawMessage
+	original []byte
 }
 
 type skillSourceType string
@@ -120,6 +122,7 @@ func (m *Manager) readLock(ctx context.Context, file LockFile) (*skillLock, erro
 			err,
 		)
 	}
+	lock.original = data
 	if err := json.Unmarshal(
 		data,
 		&lock.fields,
@@ -180,6 +183,19 @@ func (lock *skillLock) record(name string) (lockedSkill, error) {
 		"\\\x00",
 	) || path.Base(record.SkillPath) != skillDefinition {
 		return record, errors.New("lock record has no valid skillPath")
+	}
+	locator := record.locator()
+	if record.SourceType == gitSource && record.SourceURL == "" && !strings.Contains(
+		record.Source,
+		"://",
+	) {
+		return record, errors.New("generic Git source has no unambiguous sourceUrl")
+	}
+	if _, err := source.ParseGitLocator(locator); err != nil {
+		return record, fmt.Errorf(
+			"unsupported recorded source: %w",
+			err,
+		)
 	}
 	return record, nil
 }
@@ -351,8 +367,9 @@ func (m *Manager) applyTracked(ctx context.Context, directory string, changes []
 		changes,
 		m.checkDefinition,
 		bundlefs.FileChange{
-			Path: lock.file.Path,
-			Data: data,
+			Path:     lock.file.Path,
+			Data:     data,
+			Previous: lock.original,
 		},
 	)
 }
