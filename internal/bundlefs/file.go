@@ -1,6 +1,7 @@
 package bundlefs
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -12,9 +13,11 @@ import (
 
 // FileChange supplies a regular file to publish alongside bundle changes.
 // Path uses native filesystem syntax; Data replaces the complete file contents.
+// Previous must match the existing bytes; nil requires the file to be absent.
 type FileChange struct {
-	Path string
-	Data []byte
+	Path     string
+	Data     []byte
+	Previous []byte
 }
 
 // ApplyWithFile publishes bundles and a file in one rollback transaction.
@@ -54,6 +57,7 @@ type stagedFile struct {
 	newPath    string
 	oldPath    string
 	backupPath string
+	previous   []byte
 	published  bool
 	preserve   bool
 	created    []string
@@ -67,15 +71,17 @@ func prepareFile(ctx context.Context, filesystem afero.Fs, file FileChange) (_ *
 	); err != nil {
 		return nil, err
 	}
-	if err := checkRegularFile(
+	if err := checkFileSnapshot(
 		filesystem,
 		file.Path,
+		file.Previous,
 	); err != nil {
 		return nil, err
 	}
 	staged := &stagedFile{
 		filesystem: filesystem,
 		path:       file.Path,
+		previous:   file.Previous,
 	}
 	defer func() {
 		if err != nil {
@@ -123,6 +129,41 @@ func prepareFile(ctx context.Context, filesystem afero.Fs, file FileChange) (_ *
 	return staged, nil
 }
 
+func checkFileSnapshot(filesystem afero.Fs, filename string, previous []byte) error {
+	if err := checkRegularFile(
+		filesystem,
+		filename,
+	); err != nil {
+		return err
+	}
+	data, err := afero.ReadFile(
+		filesystem,
+		filename,
+	)
+	if errors.Is(
+		err,
+		fs.ErrNotExist,
+	) && previous == nil {
+		return nil
+	}
+	if err != nil && !errors.Is(
+		err,
+		fs.ErrNotExist,
+	) {
+		return err
+	}
+	if err != nil || previous == nil || !bytes.Equal(
+		data,
+		previous,
+	) {
+		return fmt.Errorf(
+			"publication file %s changed since it was read; retry the operation",
+			filename,
+		)
+	}
+	return nil
+}
+
 func checkRegularFile(filesystem afero.Fs, filename string) error {
 	info, err := Lstat(
 		filesystem,
@@ -147,9 +188,10 @@ func checkRegularFile(filesystem afero.Fs, filename string) error {
 }
 
 func (file *stagedFile) publish() error {
-	if err := checkRegularFile(
+	if err := checkFileSnapshot(
 		file.filesystem,
 		file.path,
+		file.previous,
 	); err != nil {
 		return err
 	}
@@ -176,6 +218,17 @@ func (file *stagedFile) publish() error {
 			return err
 		}
 		file.oldPath = file.backupPath
+		if err := checkFileSnapshot(
+			file.filesystem,
+			file.oldPath,
+			file.previous,
+		); err != nil {
+			return fmt.Errorf(
+				"publication file %s changed while publishing; retry the operation: %w",
+				file.path,
+				err,
+			)
+		}
 	} else if !errors.Is(
 		err,
 		fs.ErrNotExist,
@@ -200,8 +253,16 @@ func (file *stagedFile) rollback() error {
 	if file.published {
 		if err := file.filesystem.Remove(file.path); err != nil {
 			file.preserve = true
+			if file.oldPath == "" {
+				return fmt.Errorf(
+					"file rollback failed; published file remains at %s: %w",
+					file.path,
+					err,
+				)
+			}
 			return fmt.Errorf(
-				"file rollback failed; recovery file retained at %s: %w",
+				"file rollback failed; published file remains at %s; recovery file retained at %s: %w",
+				file.path,
 				file.oldPath,
 				err,
 			)

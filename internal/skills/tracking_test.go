@@ -20,6 +20,7 @@ func TestSkillTracking(t *testing.T) {
 		format         skills.LockFormat
 		corrupt        bool
 		publishFailure bool
+		concurrent     bool
 	}{
 		{
 			name:   "project install and remove preserve unrelated records",
@@ -33,6 +34,11 @@ func TestSkillTracking(t *testing.T) {
 			name:    "corrupt lock prevents install",
 			format:  skills.ProjectLock,
 			corrupt: true,
+		},
+		{
+			name:       "concurrent lock record and preference changes are not overwritten",
+			format:     skills.ProjectLock,
+			concurrent: true,
 		},
 		{
 			name:           "lock publication failure rolls back bundles",
@@ -78,8 +84,33 @@ func TestSkillTracking(t *testing.T) {
 					t,
 					filesystem,
 				)
+				var cleanup func() error
+				if test.concurrent {
+					external := strings.Replace(
+						string(initial),
+						`"skills":{`,
+						`"skills":{"concurrent":{"sourceType":"local"},`,
+						1,
+					)
+					external = strings.Replace(
+						external,
+						`"lastSelectedAgents":["claude-code"]`,
+						`"lastSelectedAgents":["codex"]`,
+						1,
+					)
+					before[filename] = external
+					cleanup = func() error {
+						return afero.WriteFile(
+							filesystem,
+							filename,
+							[]byte(external),
+							0o600,
+						)
+					}
+				}
 				manager := skills.NewManager(
 					managerSourceClient{
+						cleanup: cleanup,
 						files: fstest.MapFS{
 							"nested/alpha/SKILL.md": {
 								Data: []byte(alphaSkill),
@@ -107,7 +138,7 @@ func TestSkillTracking(t *testing.T) {
 						Lock:      lock,
 					},
 				)
-				if test.corrupt || test.publishFailure {
+				if test.corrupt || test.publishFailure || test.concurrent {
 					if err == nil || len(installed) != 0 {
 						t.Fatalf(
 							"Install = %v, %v; want uncommitted error",

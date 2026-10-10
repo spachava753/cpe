@@ -241,17 +241,59 @@ func TestGitClientFetch(t *testing.T) {
 		Scheme: "file",
 		Path:   filepath.ToSlash(encoded),
 	}).String()
+	transformed := newGitSourceRepository(t)
+	if err := os.WriteFile(
+		filepath.Join(
+			transformed,
+			".gitattributes",
+		),
+		[]byte("SKILL.md text eol=crlf\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	runSourceGit(
+		t,
+		"-C",
+		transformed,
+		"add",
+		".gitattributes",
+		"SKILL.md",
+	)
+	runSourceGit(
+		t,
+		"-C",
+		transformed,
+		"-c",
+		"user.name=Test",
+		"-c",
+		"user.email=test@example.com",
+		"commit",
+		"--quiet",
+		"-m",
+		"checkout transformations",
+	)
+	transformedLocator := (&url.URL{
+		Scheme: "file",
+		Path:   filepath.ToSlash(transformed),
+	}).String()
 	// Each row changes the source or one acquisition condition. wantErr checks a
 	// wrapped cause; errText checks a diagnostic; neither means success is expected.
 	for _, test := range []struct {
 		name, source, errText                                                 string
 		wantErr                                                               error
 		wantText                                                              string
+		crlf                                                                  bool
 		literalBackslash                                                      bool
 		reusedPath                                                            bool
 		cancel, deadline, duringClone, missingGit, missingTemp, empty, second bool
 	}{
 		// Accepted locators, with real HTTP(S) transport only for loopback servers.
+		{
+			name:   "Git tree metadata is independent of CRLF checkout bytes",
+			source: transformedLocator,
+			crlf:   true,
+		},
 		{
 			name: "Git failure preserves ordinary quotes and backslashes",
 			source: (&url.URL{
@@ -700,6 +742,13 @@ func TestGitClientFetch(t *testing.T) {
 								0x80,
 							}),
 						} {
+							if test.crlf && name == "SKILL.md" {
+								want = strings.ReplaceAll(
+									want,
+									"\n",
+									"\r\n",
+								)
+							}
 							data, readErr := fs.ReadFile(
 								checkout.FS,
 								name,
@@ -760,6 +809,65 @@ func TestGitClientFetch(t *testing.T) {
 							"nested",
 						); readErr != nil {
 							t.Fatal(readErr)
+						}
+					}
+					if checkout.GitTreeHash == nil {
+						t.Fatal("Git tree metadata is unavailable")
+					}
+					if !test.empty {
+						original := repository
+						if test.crlf {
+							original = transformed
+						}
+						for _, directory := range []string{
+							".",
+							"nested",
+							"scripts",
+						} {
+							object := "HEAD:" + directory
+							if directory == "." {
+								object = "HEAD^{tree}"
+							}
+							expected, err := exec.CommandContext(
+								t.Context(),
+								"git",
+								"-C",
+								original,
+								"rev-parse",
+								"--verify",
+								object,
+							).Output()
+							if err != nil {
+								t.Fatal(err)
+							}
+							got, err := checkout.GitTreeHash(
+								t.Context(),
+								directory,
+							)
+							if err != nil || got != strings.TrimSpace(string(expected)) {
+								t.Fatalf(
+									"GitTreeHash(%q) = %q, %v; want %q",
+									directory,
+									got,
+									err,
+									expected,
+								)
+							}
+						}
+						for _, directory := range []string{
+							"../outside",
+							"SKILL.md",
+							"missing",
+						} {
+							if _, err := checkout.GitTreeHash(
+								t.Context(),
+								directory,
+							); err == nil {
+								t.Fatalf(
+									"invalid tree %q was accepted",
+									directory,
+								)
+							}
 						}
 					}
 					// Two acquisitions own separate resources; releasing the first must

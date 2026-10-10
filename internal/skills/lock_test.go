@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-	"testing/fstest"
 
 	"github.com/spf13/afero"
 
@@ -169,28 +168,6 @@ func TestFolderHash(t *testing.T) {
 	if got := folderHash(payload); got != "1b605fff4f64b77114d26a9ef43415ae38b87df5f51c48b729316c9b31eda674" {
 		t.Fatalf(
 			"folderHash = %s",
-			got,
-		)
-	}
-}
-
-func TestGitTreeHash(t *testing.T) {
-	filesystem := fstest.MapFS{
-		"alpha/SKILL.md": {
-			Data: []byte("---\nname: alpha\ndescription: Alpha skill\n---\n"),
-		},
-	}
-	got, err := gitTreeHash(
-		t.Context(),
-		filesystem,
-		"alpha",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "70993c44c50665a842d44706f3daf42d0530412f" {
-		t.Fatalf(
-			"gitTreeHash = %s",
 			got,
 		)
 	}

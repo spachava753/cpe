@@ -28,7 +28,7 @@ func (GitClient) Fetch(ctx context.Context, source string) (Checkout, error) {
 	if err := ctx.Err(); err != nil {
 		return Checkout{}, err
 	}
-	locator, err := gitLocator(source)
+	locator, err := ParseGitLocator(source)
 	if err != nil {
 		return Checkout{}, err
 	}
@@ -53,7 +53,7 @@ func (GitClient) Fetch(ctx context.Context, source string) (Checkout, error) {
 		"clone",
 		"--quiet",
 		"--",
-		locator,
+		locator.String(),
 		directory,
 	)
 	configureGitCancellation(command)
@@ -79,7 +79,14 @@ func (GitClient) Fetch(ctx context.Context, source string) (Checkout, error) {
 		)
 	}
 	return Checkout{
-		FS:      os.DirFS(directory),
+		FS: os.DirFS(directory),
+		GitTreeHash: func(ctx context.Context, path string) (string, error) {
+			return readGitTreeHash(
+				ctx,
+				directory,
+				path,
+			)
+		},
 		Cleanup: cleanup,
 	}, nil
 }

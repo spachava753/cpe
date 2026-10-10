@@ -52,6 +52,7 @@ func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams c
 		inventory[index], err = manager.installedNames(
 			ctx,
 			scope.directory,
+			names,
 		)
 		if err != nil {
 			return err
@@ -160,37 +161,43 @@ func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams c
 
 // Inventory does not parse frontmatter: damaged or manually copied definitions
 // must not stop warnings about untracked skills or updates to unrelated bundles.
-func (m *Manager) installedNames(ctx context.Context, directory string) ([]string, error) {
+func (m *Manager) installedNames(ctx context.Context, directory string, requested []string) ([]string, error) {
 	if err := m.destination(
 		ctx,
 		directory,
 	); err != nil {
 		return nil, err
 	}
-	entries, err := afero.ReadDir(
-		m.destinations,
-		directory,
-	)
-	if errors.Is(
-		err,
-		fs.ErrNotExist,
-	) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
+	candidates := requested
+	if len(candidates) == 0 {
+		entries, err := afero.ReadDir(
+			m.destinations,
+			directory,
+		)
+		if errors.Is(
+			err,
+			fs.ErrNotExist,
+		) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		for _, entry := range entries {
+			candidates = append(
+				candidates,
+				entry.Name(),
+			)
+		}
 	}
 	var names []string
-	for _, entry := range entries {
+	for _, name := range candidates {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if !entry.IsDir() && entry.Mode()&fs.ModeSymlink == 0 {
-			continue
-		}
 		filename := filepath.Join(
 			directory,
-			entry.Name(),
+			name,
 		)
 		info, err := m.destinations.Stat(filename)
 		if errors.Is(
@@ -221,7 +228,7 @@ func (m *Manager) installedNames(ctx context.Context, directory string) ([]strin
 		}
 		names = append(
 			names,
-			entry.Name(),
+			name,
 		)
 	}
 	return names, nil
@@ -366,7 +373,7 @@ func (m *Manager) prepareUpdate(ctx context.Context, lock *skillLock, record loc
 	}
 	updated, err = lock.hashRecord(
 		ctx,
-		checkout.FS,
+		checkout,
 		skill,
 		payload,
 		record,

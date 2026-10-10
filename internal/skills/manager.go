@@ -289,7 +289,7 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 		if lock != nil {
 			record, err := lock.hashRecord(
 				ctx,
-				checkout.FS,
+				checkout,
 				skill,
 				payload,
 				sourceRecord(request.Source),
