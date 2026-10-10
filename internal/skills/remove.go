@@ -27,12 +27,21 @@ type RemoveOptions struct {
 // Results are terminal tables or JSON arrays containing name, description, and
 // former SKILL.md path. Errors can follow committed removals or result writes.
 func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams commandio.IO) error {
-	directories, err := opts.Scope.Directories(
-		"skills",
+	scopes, err := resolveScopes(
+		opts.Scope,
 		false,
 	)
 	if err != nil {
 		return err
+	}
+	var directories []string
+	locks := map[string]LockFile{}
+	for _, scope := range scopes {
+		directories = append(
+			directories,
+			scope.directory,
+		)
+		locks[scope.directory] = scope.lock
 	}
 	names, err := selectedNames(opts.Skills)
 	if err != nil {
@@ -134,17 +143,25 @@ func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams c
 		); err != nil {
 			return err
 		}
+		if _, err := manager.readLock(
+			ctx,
+			locks[directory],
+		); err != nil {
+			return err
+		}
 	}
 	var result []RemovedSkill
 	for _, directory := range directories {
 		if len(selected[directory]) == 0 {
 			continue
 		}
+		lock := locks[directory]
 		removed, err := manager.Remove(
 			ctx,
 			RemoveRequest{
 				Directory: directory,
 				Skills:    selected[directory],
+				Lock:      &lock,
 			},
 		)
 		result = append(

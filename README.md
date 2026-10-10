@@ -39,6 +39,42 @@ Logout leaves remote sessions and provider-issued API keys active.
 These commands establish authentication storage. Model execution and automatic
 token refresh will be wired separately.
 
+## Skills
+
+Install skills from a Git repository and update them from their recorded source:
+
+```sh
+cpe skills install mattpocock/skills --skill writing-great-skills --scope project
+cpe skills update writing-great-skills --scope project
+cpe skills update
+cpe skills list
+cpe skills remove writing-great-skills --scope project
+```
+
+Project skills live in `./.agents/skills` and are tracked in `./skills-lock.json`
+(version 1). Global skills live in `~/.agents/skills`; their lock is
+`$XDG_STATE_HOME/skills/.skill-lock.json` when `XDG_STATE_HOME` is set, otherwise
+`~/.agents/.skill-lock.json` (version 3). These are the lock formats used by
+[the skills CLI](https://github.com/vercel-labs/skills). Project records use its
+folder-content SHA-256 algorithm; global GitHub records use Git tree hashes.
+With `--dir`, CPE uses that exact skill directory and keeps a `skills-lock.json`
+inside it, separate from the default project inventory.
+
+`update` without names updates both scopes; `--scope` restricts it to one.
+A named skill installed in both scopes is skipped with a warning unless a scope
+is explicit. Missing and untracked skills are also warned about and skipped.
+CPE updates GitHub and Git sources at their default checkout; records using other
+source types or explicit refs are skipped. Updates replace local edits and remove
+obsolete files, just like installing with `--override`.
+
+Listing includes untracked skills. Removal also works for untracked skills and
+removes the lock record when one exists. A malformed or unsupported lock file
+blocks changes to its inventory rather than being discarded. Bundle changes and
+lock changes are published together with rollback on failure; an error reports
+any committed results or recovery files left by failed cleanup or rollback.
+Results are JSON arrays when stdout is redirected; `--json` forces JSON on a
+terminal. Warnings go to stderr.
+
 ## Agent Plugins
 
 CPE installs native [Agent Plugins](https://agent-plugins.org/specification)

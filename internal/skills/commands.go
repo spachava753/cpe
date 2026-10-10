@@ -24,16 +24,24 @@ func writeViolations(streams commandio.IO, skill Skill) error {
 	if len(skill.Violations) == 0 {
 		return nil
 	}
-	label := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Yellow).Render("Warning:")
 	for _, violation := range skill.Violations {
-		if _, err := lipgloss.Fprintln(
-			streams.ErrorOutput(),
-			label+" "+terminaltext.Sanitize(skill.Name)+": "+terminaltext.Sanitize(violation),
+		if err := writeWarning(
+			streams,
+			skill.Name+": "+violation,
 		); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func writeWarning(streams commandio.IO, message string) error {
+	label := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Yellow).Render("Warning:")
+	_, err := lipgloss.Fprintln(
+		streams.ErrorOutput(),
+		label+" "+terminaltext.Sanitize(message),
+	)
+	return err
 }
 
 func writeInstalled(streams commandio.IO, asJSON bool, result []InstalledSkill) error {
