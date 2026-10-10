@@ -58,6 +58,8 @@ type RemovedSkill struct {
 // InstallRequest selects skills and an exact root for Manager.Install.
 // Empty Skills and nil Path select all discovered skills.
 type InstallRequest struct {
+	// Lock tracks committed installations when non-nil.
+	Lock *LockFile
 	// Path selects a source-relative bundle directory; "." selects the root.
 	// It uses io/fs slash paths and is mutually exclusive with Skills.
 	Path *string
@@ -75,6 +77,8 @@ type InstallRequest struct {
 
 // RemoveRequest selects installed bundle directories for Manager.Remove.
 type RemoveRequest struct {
+	// Lock removes records for committed removals when non-nil.
+	Lock *LockFile
 	// Directory is the exact installation root in native filesystem syntax.
 	Directory string
 	// Skills contains child directory names. At least one name is required.
