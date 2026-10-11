@@ -27,6 +27,9 @@ type RemoveOptions struct {
 // Results are terminal tables or JSON arrays containing name, description, and
 // former SKILL.md path. Errors can follow committed removals or result writes.
 func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams commandio.IO) error {
+	if manager == nil {
+		return errors.New("skills manager is unavailable")
+	}
 	scopes, err := resolveScopes(
 		opts.Scope,
 		false,
@@ -37,8 +40,18 @@ func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams c
 	var directories []string
 	locks := map[string]LockFile{}
 	for _, scope := range scopes {
-		if _, exists := locks[scope.directory]; exists {
-			return errors.New("project and global inventories share a directory; provide an explicit --scope to remove skills")
+		for _, directory := range directories {
+			same, err := bundlefs.SameDirectory(
+				manager.destinations,
+				directory,
+				scope.directory,
+			)
+			if err != nil {
+				return err
+			}
+			if directory == scope.directory || same {
+				return errors.New("project and global inventories share a directory; provide an explicit --scope to remove skills")
+			}
 		}
 		directories = append(
 			directories,

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 
 	"github.com/spf13/afero"
@@ -118,6 +119,15 @@ func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams c
 			return err
 		}
 	}
+	if err := skipOverlappingUpdates(
+		manager.destinations,
+		scopes,
+		locks,
+		selected,
+		streams,
+	); err != nil {
+		return err
+	}
 	var result []InstalledSkill
 	for index, scope := range scopes {
 		if len(selected[index]) == 0 {
@@ -157,6 +167,59 @@ func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams c
 		opts.JSON,
 		result,
 	)
+}
+
+func skipOverlappingUpdates(filesystem afero.Fs, scopes []skillScope, locks []*skillLock, selected [][]string, streams commandio.IO) error {
+	for first, scope := range scopes {
+		if locks[first] == nil {
+			continue
+		}
+		for second := first + 1; second < len(scopes); second++ {
+			if locks[second] == nil {
+				continue
+			}
+			same, err := bundlefs.SameDirectory(
+				filesystem,
+				scope.directory,
+				scopes[second].directory,
+			)
+			if err != nil {
+				return err
+			}
+			if !same {
+				continue
+			}
+			for _, name := range slices.Clone(selected[first]) {
+				if _, tracked := locks[first].skills[name]; !tracked {
+					continue
+				}
+				if _, tracked := locks[second].skills[name]; !tracked || !slices.Contains(
+					selected[second],
+					name,
+				) {
+					continue
+				}
+				if err := writeWarning(
+					streams,
+					fmt.Sprintf(
+						"cannot update skill %q: project and global tracking share one installed bundle; provide an explicit --scope",
+						name,
+					),
+				); err != nil {
+					return err
+				}
+				selected[first] = slices.DeleteFunc(
+					selected[first],
+					func(candidate string) bool { return candidate == name },
+				)
+				selected[second] = slices.DeleteFunc(
+					selected[second],
+					func(candidate string) bool { return candidate == name },
+				)
+			}
+		}
+	}
+	return nil
 }
 
 // Inventory does not parse frontmatter: damaged or manually copied definitions

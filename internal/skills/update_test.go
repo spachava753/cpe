@@ -23,6 +23,9 @@ func TestUpdate(t *testing.T) {
 		project            bool
 		global             bool
 		atHome             bool
+		rootAlias          bool
+		native             bool
+		overlapping        bool
 		duplicate          bool
 		untracked          bool
 		unsupported        bool
@@ -59,6 +62,60 @@ func TestUpdate(t *testing.T) {
 			wantPaths: []string{
 				"project/alpha",
 				"global/beta",
+			},
+			warnings: []string{
+				"not in the lock file",
+			},
+		},
+		{
+			name:        "shared-root tracked collisions skip while disjoint updates continue",
+			atHome:      true,
+			duplicate:   true,
+			overlapping: true,
+			wantPaths: []string{
+				"global/beta",
+			},
+			warnings: []string{
+				"one installed bundle",
+				"explicit --scope",
+			},
+		},
+		{
+			name:        "native shared-root tracked collisions skip while disjoint updates continue",
+			atHome:      true,
+			native:      true,
+			duplicate:   true,
+			overlapping: true,
+			wantPaths: []string{
+				"global/beta",
+			},
+			warnings: []string{
+				"one installed bundle",
+				"explicit --scope",
+			},
+		},
+		{
+			name:        "root aliases retain collision detection",
+			atHome:      true,
+			rootAlias:   true,
+			duplicate:   true,
+			overlapping: true,
+			wantPaths: []string{
+				"global/beta",
+			},
+			warnings: []string{
+				"one installed bundle",
+				"explicit --scope",
+			},
+		},
+		{
+			name:        "explicit scope resolves a shared-root tracked collision",
+			atHome:      true,
+			project:     true,
+			duplicate:   true,
+			overlapping: true,
+			wantPaths: []string{
+				"project/alpha",
 			},
 			warnings: []string{
 				"not in the lock file",
@@ -223,6 +280,13 @@ func TestUpdate(t *testing.T) {
 					project = home
 				}
 				t.Chdir(project)
+				canonicalHome := home
+				if test.rootAlias {
+					home = filepath.Join(
+						filepath.Dir(home),
+						strings.ToUpper(filepath.Base(home)),
+					)
+				}
 				t.Setenv(
 					"HOME",
 					home,
@@ -255,6 +319,19 @@ func TestUpdate(t *testing.T) {
 					".skill-lock.json",
 				)
 				filesystem := afero.NewMemMapFs()
+				if test.native {
+					filesystem = afero.NewBasePathFs(
+						afero.NewOsFs(),
+						t.TempDir(),
+					)
+				}
+				if test.rootAlias {
+					filesystem = rootAliasFS{
+						Fs:    filesystem,
+						alias: home,
+						root:  canonicalHome,
+					}
+				}
 				writeTrackingFixture(
 					t,
 					filesystem,
@@ -356,6 +433,9 @@ func TestUpdate(t *testing.T) {
 						"skillFolderHash": "old",
 					}
 				}
+				if test.overlapping {
+					globalRecords["alpha"].(map[string]any)["skillPath"] = "global-alpha/SKILL.md"
+				}
 				for filename, data := range map[string]any{
 					projectLock: map[string]any{
 						"version": 1,
@@ -400,6 +480,14 @@ func TestUpdate(t *testing.T) {
 							},
 							"beta/SKILL.md": {
 								Data: []byte(betaSkill),
+							},
+							"global-alpha/SKILL.md": {
+								Data: []byte(strings.Replace(
+									alphaUpdated,
+									"Updated alpha",
+									"Different global payload",
+									1,
+								)),
 							},
 						},
 					},
@@ -499,6 +587,56 @@ func TestUpdate(t *testing.T) {
 						"unexpected warnings: %s",
 						warnings.String(),
 					)
+				}
+				if test.overlapping && !test.project {
+					for _, filename := range []string{
+						projectLock,
+						filepath.Join(
+							projectRoot,
+							"alpha",
+							"SKILL.md",
+						),
+						filepath.Join(
+							projectRoot,
+							"alpha",
+							"obsolete.txt",
+						),
+					} {
+						data, err := afero.ReadFile(
+							filesystem,
+							filename,
+						)
+						if err != nil || string(data) != before[filename] {
+							t.Fatalf(
+								"colliding update changed %s: %s, %v",
+								filename,
+								data,
+								err,
+							)
+						}
+					}
+					data, err := afero.ReadFile(
+						filesystem,
+						globalLock,
+					)
+					if err != nil {
+						t.Fatal(err)
+					}
+					var lock struct {
+						Skills map[string]map[string]any `json:"skills"`
+					}
+					if err := json.Unmarshal(
+						data,
+						&lock,
+					); err != nil {
+						t.Fatal(err)
+					}
+					if lock.Skills["alpha"]["skillFolderHash"] != "old" {
+						t.Fatalf(
+							"colliding global record was changed: %s",
+							data,
+						)
+					}
 				}
 				for _, updated := range test.wantPaths {
 					parts := strings.Split(
