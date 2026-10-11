@@ -56,16 +56,26 @@ func Key(s string) []byte {
 			}
 		}
 	}
-	for i := 0; i < len(runes); {
-		weights, consumed, skipped := t.match(
+	consumed := make(
+		[]bool,
+		len(runes),
+	)
+	for i := range runes {
+		if consumed[i] {
+			continue
+		}
+		weights, suffix := t.match(
 			runes,
 			i,
+			consumed,
 		)
 		appendWeights(weights)
-		for _, r := range skipped {
-			appendWeights(t.single(r))
+		consumed[i] = true
+		for _, position := range suffix {
+			consumed[position] = true
 		}
-		i += consumed
+		// Skipped marks remain in the input. Their next matching pass can form
+		// another contraction, including with later unconsumed characters.
 	}
 	key := append(
 		primary,
@@ -117,10 +127,9 @@ func decompose(s string) []rune {
 	return runes
 }
 
-func (t table) match(text []rune, start int) ([]uint64, int, []rune) {
+func (t table) match(text []rune, start int, consumed []bool) ([]uint64, []int) {
 	var selected *mapping
-	end := start + 1
-	var skipped []rune
+	var suffix []int
 	for _, candidate := range t.mappings[text[start]] {
 		if len(candidate.prefix) > start || !runesEqual(
 			candidate.prefix,
@@ -129,36 +138,42 @@ func (t table) match(text []rune, start int) ([]uint64, int, []rune) {
 			continue
 		}
 		position := start + 1
-		var omitted []rune
+		var positions []int
 		matched := true
 		for _, wanted := range candidate.text[1:] {
 			ccc := norm.NFD.PropertiesString(string(wanted)).CCC()
-			for position < len(text) && text[position] != wanted {
+			for position < len(text) {
+				if consumed[position] {
+					position++
+					continue
+				}
+				if text[position] == wanted {
+					break
+				}
 				other := norm.NFD.PropertiesString(string(text[position])).CCC()
 				if other == 0 || other >= ccc {
 					break
 				}
-				omitted = append(
-					omitted,
-					text[position],
-				)
 				position++
 			}
 			if position == len(text) || text[position] != wanted {
 				matched = false
 				break
 			}
+			positions = append(
+				positions,
+				position,
+			)
 			position++
 		}
 		if matched && (selected == nil || len(candidate.text) > len(selected.text) || len(candidate.text) == len(selected.text) && len(candidate.prefix) > len(selected.prefix)) {
-			copy := candidate
-			selected, end, skipped = &copy, position, omitted
+			selected, suffix = &candidate, positions
 		}
 	}
 	if selected != nil {
-		return selected.weights, end - start, skipped
+		return selected.weights, suffix
 	}
-	return t.single(text[start]), 1, nil
+	return t.single(text[start]), nil
 }
 
 func runesEqual(a, b []rune) bool {

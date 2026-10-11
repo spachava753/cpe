@@ -230,6 +230,24 @@ func TestFolderHash(t *testing.T) {
 			want: "cd4bd4942f844457860f54f12fd4bec412d11c51f1647ddd618ad40d1a26a95a",
 		},
 		{
+			name: "skipped Tibetan marks form another contraction",
+			payload: []bundlefs.Entry{
+				{
+					Path: "\u0f71\u0f71\u0f72\u0f72.txt",
+					Data: []byte("double contraction"),
+				},
+				{
+					Path: "\u0f73\u0f72.txt",
+					Data: []byte("contraction plus single"),
+				},
+				{
+					Path: "SKILL.md",
+					Data: []byte("skill"),
+				},
+			},
+			want: "e11b5f7734ab8c1f1bd46e3417cb006a72687b1ef09f3446a37da7f2a7de909f",
+		},
+		{
 			name: "Unicode 15 through 17 emoji",
 			payload: []bundlefs.Entry{
 				{
