@@ -121,7 +121,6 @@ func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams c
 		}
 	}
 	if err := skipOverlappingUpdates(
-		manager.destinations,
 		scopes,
 		locks,
 		selected,
@@ -150,8 +149,6 @@ func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams c
 			scope,
 			locks[index],
 			plan[index],
-			opts.Override,
-			streams,
 		)
 		result = append(
 			result,
@@ -181,7 +178,7 @@ func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams c
 	)
 }
 
-func skipOverlappingUpdates(filesystem afero.Fs, scopes []skillScope, locks []*skillLock, selected [][]string, streams commandio.IO) error {
+func skipOverlappingUpdates(scopes []skillScope, locks []*skillLock, selected [][]string, streams commandio.IO) error {
 	for first, scope := range scopes {
 		if locks[first] == nil {
 			continue
@@ -190,15 +187,7 @@ func skipOverlappingUpdates(filesystem afero.Fs, scopes []skillScope, locks []*s
 			if locks[second] == nil {
 				continue
 			}
-			same, err := bundlefs.SameDirectory(
-				filesystem,
-				scope.directory,
-				scopes[second].directory,
-			)
-			if err != nil {
-				return err
-			}
-			if !same {
+			if filepath.Clean(scope.directory) != filepath.Clean(scopes[second].directory) {
 				continue
 			}
 			for _, name := range slices.Clone(selected[first]) {
@@ -309,10 +298,9 @@ func (m *Manager) installedNames(ctx context.Context, directory string, requeste
 	return names, nil
 }
 
-func (m *Manager) updateScope(ctx context.Context, scope skillScope, lock *skillLock, updates []skillUpdate, override bool, streams commandio.IO) ([]InstalledSkill, error) {
+func (m *Manager) updateScope(ctx context.Context, scope skillScope, lock *skillLock, updates []skillUpdate) ([]InstalledSkill, error) {
 	var changes []bundlefs.Change
 	var result []InstalledSkill
-	expected := map[string]string{}
 	for _, update := range updates {
 		bundle, err := update.source.bundle(
 			ctx,
@@ -339,20 +327,6 @@ func (m *Manager) updateScope(ctx context.Context, scope skillScope, lock *skill
 		if err := m.checkDefinition(filename); err != nil {
 			return nil, err
 		}
-		if !override {
-			matches, err := m.matchesInstalled(
-				ctx,
-				filename,
-				update.previous,
-				streams,
-			)
-			if err != nil {
-				return nil, err
-			}
-			if !matches {
-				continue
-			}
-		}
 		record := lock.hashRecord(
 			bundle.skill,
 			bundle.payload,
@@ -364,17 +338,12 @@ func (m *Manager) updateScope(ctx context.Context, scope skillScope, lock *skill
 		); err != nil {
 			return nil, err
 		}
-		expected[update.name] = update.previous
-		action := bundlefs.ReplaceExisting
-		if override {
-			action = bundlefs.Replace
-		}
 		changes = append(
 			changes,
 			bundlefs.Change{
 				Name:    update.name,
 				Payload: bundle.payload,
-				Action:  action,
+				Action:  bundlefs.Replace,
 			},
 		)
 		skill := bundle.skill
@@ -390,41 +359,12 @@ func (m *Manager) updateScope(ctx context.Context, scope skillScope, lock *skill
 			},
 		)
 	}
-	checkExisting := m.checkDefinition
-	if !override {
-		checkExisting = func(directory string) error {
-			if err := m.checkDefinition(directory); err != nil {
-				return err
-			}
-			previous, exists := expected[filepath.Base(directory)]
-			if !exists {
-				return errors.New("installed skill tracking is unavailable")
-			}
-			hash, err := m.installedHash(
-				ctx,
-				directory,
-			)
-			if err != nil {
-				return fmt.Errorf(
-					"verify installed contents before publication: %w",
-					err,
-				)
-			}
-			if hash != previous {
-				return fmt.Errorf(
-					"installed skill in %s changed during update; retry or use --override",
-					directory,
-				)
-			}
-			return nil
-		}
-	}
 	outcome, err := m.applyTracked(
 		ctx,
 		scope.directory,
 		changes,
 		lock,
-		checkExisting,
+		m.checkDefinition,
 	)
 	if err != nil {
 		if outcome != bundlefs.Committed {

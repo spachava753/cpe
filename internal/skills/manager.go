@@ -471,10 +471,13 @@ func (m *Manager) Remove(ctx context.Context, request RemoveRequest) ([]RemovedS
 		}
 		for _, directory := range plan.paths {
 			name := filepath.Base(directory)
-			delete(
-				lock.skills,
-				name,
-			)
+			if _, tracked := lock.skills[name]; tracked {
+				delete(
+					lock.skills,
+					name,
+				)
+				lock.dirty = true
+			}
 		}
 	}
 	filesystem := afero.NewIOFS(afero.NewBasePathFs(

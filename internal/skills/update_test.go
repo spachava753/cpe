@@ -33,7 +33,6 @@ func TestUpdate(t *testing.T) {
 		project             bool
 		global              bool
 		atHome              bool
-		rootAlias           bool
 		native              bool
 		overlapping         bool
 		duplicate           bool
@@ -49,12 +48,7 @@ func TestUpdate(t *testing.T) {
 		missingHash         bool
 		legacyHash          bool
 		github              bool
-		editDuringFetch     bool
-		editDuringStaging   bool
-		deleteDuringStaging bool
-		editDuringBackup    bool
 		unreadableInstalled bool
-		nonComparableFiles  bool
 		consumeSource       bool
 		differentSource     bool
 		missingSourceSkill  bool
@@ -113,20 +107,6 @@ func TestUpdate(t *testing.T) {
 			name:        "native shared-root tracked collisions skip while disjoint updates continue",
 			atHome:      true,
 			native:      true,
-			duplicate:   true,
-			overlapping: true,
-			wantPaths: []string{
-				"global/beta",
-			},
-			warnings: []string{
-				"one installed bundle",
-				"explicit --scope",
-			},
-		},
-		{
-			name:        "root aliases retain collision detection",
-			atHome:      true,
-			rootAlias:   true,
 			duplicate:   true,
 			overlapping: true,
 			wantPaths: []string{
@@ -426,27 +406,6 @@ func TestUpdate(t *testing.T) {
 			},
 		},
 		{
-			name:            "edits made during shared acquisition are preserved",
-			editDuringFetch: true,
-			wantFetches:     new(1),
-			wantPaths: []string{
-				"global/beta",
-			},
-			warnings: []string{
-				"installed contents do not match",
-			},
-		},
-		{
-			name:            "override also permits edits made during acquisition",
-			project:         true,
-			editDuringFetch: true,
-			override:        true,
-			wantFetches:     new(1),
-			wantPaths: []string{
-				"project/alpha",
-			},
-		},
-		{
 			name:                "unverifiable installed resource warns without cloning",
 			project:             true,
 			unreadableInstalled: true,
@@ -464,62 +423,6 @@ func TestUpdate(t *testing.T) {
 			wantFetches:         new(1),
 			wantPaths: []string{
 				"project/alpha",
-			},
-		},
-		{
-			name:              "edits made during staging abort publication without losing content",
-			project:           true,
-			editDuringStaging: true,
-			wantFetches:       new(1),
-			wantError:         "changed during update",
-		},
-		{
-			name:              "override permits replacing edits made during staging",
-			project:           true,
-			editDuringStaging: true,
-			override:          true,
-			wantFetches:       new(1),
-			wantPaths: []string{
-				"project/alpha",
-			},
-		},
-		{
-			name:                "bundle deletion during staging is not undone by a default update",
-			project:             true,
-			deleteDuringStaging: true,
-			wantFetches:         new(1),
-			wantError:           "no longer exists",
-		},
-		{
-			name:                "native bundle deletion during staging is not undone by a default update",
-			project:             true,
-			native:              true,
-			deleteDuringStaging: true,
-			wantFetches:         new(1),
-			wantError:           "no longer exists",
-		},
-		{
-			name:             "edits immediately before backup capture are verified and restored",
-			project:          true,
-			editDuringBackup: true,
-			wantFetches:      new(1),
-			wantError:        "changed during update",
-		},
-		{
-			name:             "native edits immediately before backup capture are verified and restored",
-			project:          true,
-			native:           true,
-			editDuringBackup: true,
-			wantFetches:      new(1),
-			wantError:        "changed during update",
-		},
-		{
-			name:               "valid memory file values need not be comparable",
-			nonComparableFiles: true,
-			wantFetches:        new(1),
-			wantPaths: []string{
-				"project/alpha",
-				"global/beta",
 			},
 		},
 		{
@@ -575,13 +478,6 @@ func TestUpdate(t *testing.T) {
 					project = home
 				}
 				t.Chdir(project)
-				canonicalHome := home
-				if test.rootAlias {
-					home = filepath.Join(
-						filepath.Dir(home),
-						strings.ToUpper(filepath.Base(home)),
-					)
-				}
 				t.Setenv(
 					"HOME",
 					home,
@@ -619,13 +515,6 @@ func TestUpdate(t *testing.T) {
 						afero.NewOsFs(),
 						t.TempDir(),
 					)
-				}
-				if test.rootAlias {
-					filesystem = rootAliasFS{
-						Fs:    filesystem,
-						alias: home,
-						root:  canonicalHome,
-					}
 				}
 				writeTrackingFixture(
 					t,
@@ -810,14 +699,6 @@ func TestUpdate(t *testing.T) {
 						"invalid JSON",
 					)
 				}
-				if test.native && test.wantError != "" {
-					writeTrackingFixture(
-						t,
-						filesystem,
-						projectLock+".cpe-lock",
-						"",
-					)
-				}
 				before := snapshotManagerFS(
 					t,
 					filesystem,
@@ -844,51 +725,11 @@ func TestUpdate(t *testing.T) {
 						"beta/SKILL.md",
 					)
 				}
-				if test.deleteDuringStaging {
-					for filename := range before {
-						if filename == filepath.Join(
-							projectRoot,
-							"alpha",
-						) || strings.HasPrefix(
-							filename,
-							filepath.Join(
-								projectRoot,
-								"alpha",
-							)+string(filepath.Separator),
-						) {
-							delete(
-								before,
-								filename,
-							)
-						}
-					}
-				}
-				if (test.editDuringStaging || test.editDuringBackup) && !test.override {
-					before[filepath.Join(
-						projectRoot,
-						"alpha",
-						"obsolete.txt",
-					)] = "edit during staging"
-				}
 				var fetches []string
 				cleanups := 0
 				client := updateSourceClient{
 					files:   remote,
 					fetches: &fetches,
-					beforeFetch: func() {
-						if test.editDuringFetch {
-							writeTrackingFixture(
-								t,
-								filesystem,
-								filepath.Join(
-									projectRoot,
-									"alpha",
-									"obsolete.txt",
-								),
-								"edit during fetch",
-							)
-						}
-					},
 					cleanup: func() error {
 						cleanups++
 						if test.consumeSource {
@@ -909,34 +750,11 @@ func TestUpdate(t *testing.T) {
 						},
 						unreadableOther:     test.unreadableOther,
 						unreadableInstalled: test.unreadableInstalled,
-						nonComparableFiles:  test.nonComparableFiles,
 						resource: filepath.Join(
 							projectRoot,
 							"alpha",
 							"obsolete.txt",
 						),
-						beforeStage: func(directory string) {
-							if test.deleteDuringStaging {
-								if err := filesystem.RemoveAll(filepath.Join(
-									projectRoot,
-									"alpha",
-								)); err != nil {
-									t.Fatal(err)
-								}
-							}
-							if test.editDuringStaging || (test.editDuringBackup && filepath.Base(directory) == "old") {
-								writeTrackingFixture(
-									t,
-									filesystem,
-									filepath.Join(
-										projectRoot,
-										"alpha",
-										"obsolete.txt",
-									),
-									"edit during staging",
-								)
-							}
-						},
 					},
 				)
 				var output, warnings bytes.Buffer
@@ -1060,7 +878,7 @@ func TestUpdate(t *testing.T) {
 						warnings.String(),
 					)
 				}
-				if (test.localEdit || test.localDirectory != "" || test.editDuringFetch || test.missingHash || test.legacyHash) && !test.override && !test.global {
+				if (test.localEdit || test.localDirectory != "" || test.missingHash || test.legacyHash) && !test.override && !test.global {
 					data, err := afero.ReadFile(
 						filesystem,
 						projectLock,
@@ -1079,9 +897,6 @@ func TestUpdate(t *testing.T) {
 					want := "obsolete"
 					if test.localEdit {
 						want = "local edit"
-					}
-					if test.editDuringFetch {
-						want = "edit during fetch"
 					}
 					if err != nil || string(data) != want {
 						t.Fatalf(
@@ -1207,10 +1022,9 @@ func TestUpdate(t *testing.T) {
 }
 
 type updateSourceClient struct {
-	files       fs.FS
-	fetches     *[]string
-	beforeFetch func()
-	cleanup     func() error
+	files   fs.FS
+	fetches *[]string
+	cleanup func() error
 }
 
 func (client updateSourceClient) Fetch(_ context.Context, locator string) (source.Checkout, error) {
@@ -1218,7 +1032,6 @@ func (client updateSourceClient) Fetch(_ context.Context, locator string) (sourc
 		*client.fetches,
 		locator,
 	)
-	client.beforeFetch()
 	return source.Checkout{
 		FS:      client.files,
 		Cleanup: client.cleanup,
@@ -1229,9 +1042,7 @@ type updateInventoryFS struct {
 	afero.Fs
 	unreadableOther     bool
 	unreadableInstalled bool
-	nonComparableFiles  bool
 	resource            string
-	beforeStage         func(string)
 }
 
 func (filesystem updateInventoryFS) Stat(filename string) (fs.FileInfo, error) {
@@ -1246,50 +1057,6 @@ func (filesystem updateInventoryFS) Open(filename string) (afero.File, error) {
 		return nil, fs.ErrPermission
 	}
 	return filesystem.Fs.Open(filename)
-}
-
-func (filesystem updateInventoryFS) OpenFile(filename string, flags int, mode fs.FileMode) (afero.File, error) {
-	if filesystem.unreadableInstalled && filename == filesystem.resource {
-		return nil, fs.ErrPermission
-	}
-	file, err := filesystem.Fs.OpenFile(
-		filename,
-		flags,
-		mode,
-	)
-	if err != nil {
-		return nil, err
-	}
-	if filesystem.nonComparableFiles {
-		return nonComparableUpdateFile{
-			File: file,
-			marker: []byte{
-				0,
-			},
-		}, nil
-	}
-	return file, nil
-}
-
-type nonComparableUpdateFile struct {
-	afero.File
-	marker []byte
-}
-
-func (filesystem updateInventoryFS) MkdirAll(directory string, mode fs.FileMode) error {
-	if err := filesystem.Fs.MkdirAll(
-		directory,
-		mode,
-	); err != nil {
-		return err
-	}
-	if strings.Contains(
-		directory,
-		".cpe-stage-",
-	) {
-		filesystem.beforeStage(directory)
-	}
-	return nil
 }
 
 func writeTrackingFixture(t *testing.T, filesystem afero.Fs, filename string, content string) {

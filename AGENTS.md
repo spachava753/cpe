@@ -29,6 +29,8 @@ README.md     CLI installation and usage
   or streams.
 - Keep changes scoped and simple; avoid speculative abstractions and performance work unless
   a demonstrated need or the task calls for it.
+- Skill mutations assume a single writer. Do not add cross-process coordination or
+  defenses against concurrent filesystem replacement unless explicitly requested.
 - Keep errors opaque by default, especially at exported API boundaries. Do not
   introduce exported error types or sentinel errors unless a concrete API consumer
   needs to branch on that specific failure. Keep operation outcomes separate from

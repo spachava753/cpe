@@ -13,11 +13,25 @@ func TestReadLock(t *testing.T) {
 		name      string
 		content   string
 		format    LockFormat
+		exists    bool
+		readOnly  bool
 		wantError string
 	}{
 		{
 			name:   "missing project lock",
 			format: ProjectLock,
+		},
+		{
+			name:      "empty lock is corrupt, not absent",
+			format:    ProjectLock,
+			exists:    true,
+			wantError: "lock",
+		},
+		{
+			name:     "read-only tracking needs no sidecar",
+			format:   ProjectLock,
+			content:  `{"version":1,"skills":{}}`,
+			readOnly: true,
 		},
 		{
 			name:    "project lock preserves unsupported records",
@@ -62,7 +76,7 @@ func TestReadLock(t *testing.T) {
 			test.name,
 			func(t *testing.T) {
 				filesystem := afero.NewMemMapFs()
-				if test.content != "" {
+				if test.content != "" || test.exists {
 					if err := afero.WriteFile(
 						filesystem,
 						"/skills-lock.json",
@@ -71,6 +85,9 @@ func TestReadLock(t *testing.T) {
 					); err != nil {
 						t.Fatal(err)
 					}
+				}
+				if test.readOnly {
+					filesystem = afero.NewReadOnlyFs(filesystem)
 				}
 				manager := NewManager(
 					nil,
