@@ -13,6 +13,30 @@ type skillScope struct {
 }
 
 func resolveScopes(options commandio.ScopeOptions, requireScope bool) ([]skillScope, error) {
+	if options.Directory == nil && !options.Project && !options.Global && !requireScope {
+		project, err := resolveScopes(
+			commandio.ScopeOptions{
+				Project: true,
+			},
+			false,
+		)
+		if err != nil {
+			return nil, err
+		}
+		global, err := resolveScopes(
+			commandio.ScopeOptions{
+				Global: true,
+			},
+			false,
+		)
+		if err != nil {
+			return nil, err
+		}
+		return append(
+			project,
+			global...,
+		), nil
+	}
 	directories, err := options.Directories(
 		"skills",
 		requireScope,
@@ -21,21 +45,17 @@ func resolveScopes(options commandio.ScopeOptions, requireScope bool) ([]skillSc
 		return nil, err
 	}
 	var result []skillScope
-	for index, directory := range directories {
+	for _, directory := range directories {
 		file := LockFile{
 			Format: ProjectLock,
 		}
 		switch {
 		case options.Directory != nil:
-			file.Path = filepath.Join(
-				directory,
-				"skills-lock.json",
-			)
-		case options.Global || index > 0:
+			file.Path = directory + string(filepath.Separator) + "skills-lock.json"
+		case options.Global:
 			file.Format = GlobalLock
 			if state := os.Getenv("XDG_STATE_HOME"); state != "" {
-				file.Path = filepath.Join(
-					state,
+				file.Path = state + string(filepath.Separator) + filepath.Join(
 					"skills",
 					".skill-lock.json",
 				)

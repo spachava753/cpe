@@ -24,6 +24,7 @@ func TestResolveScopes(t *testing.T) {
 		name      string
 		options   commandio.ScopeOptions
 		stateHome string
+		atHome    bool
 		want      []skillScope
 	}{
 		{
@@ -53,6 +54,64 @@ func TestResolveScopes(t *testing.T) {
 						Path: filepath.Join(
 							home,
 							".agents",
+							".skill-lock.json",
+						),
+						Format: GlobalLock,
+					},
+				},
+			},
+		},
+		{
+			name:   "equal physical roots retain distinct project and global inventories",
+			atHome: true,
+			want: []skillScope{
+				{
+					directory: filepath.Join(
+						home,
+						".agents",
+						"skills",
+					),
+					lock: LockFile{
+						Path: filepath.Join(
+							home,
+							"skills-lock.json",
+						),
+						Format: ProjectLock,
+					},
+				},
+				{
+					directory: filepath.Join(
+						home,
+						".agents",
+						"skills",
+					),
+					lock: LockFile{
+						Path: filepath.Join(
+							home,
+							".agents",
+							".skill-lock.json",
+						),
+						Format: GlobalLock,
+					},
+				},
+			},
+		},
+		{
+			name: "XDG state preserves raw parent components",
+			options: commandio.ScopeOptions{
+				Global: true,
+			},
+			stateHome: state + string(filepath.Separator) + "link" + string(filepath.Separator) + ".." + string(filepath.Separator) + "outside",
+			want: []skillScope{
+				{
+					directory: filepath.Join(
+						home,
+						".agents",
+						"skills",
+					),
+					lock: LockFile{
+						Path: state + string(filepath.Separator) + "link" + string(filepath.Separator) + ".." + string(filepath.Separator) + "outside" + string(filepath.Separator) + filepath.Join(
+							"skills",
 							".skill-lock.json",
 						),
 						Format: GlobalLock,
@@ -133,6 +192,9 @@ func TestResolveScopes(t *testing.T) {
 		t.Run(
 			test.name,
 			func(t *testing.T) {
+				if test.atHome {
+					t.Chdir(home)
+				}
 				t.Setenv(
 					"XDG_STATE_HOME",
 					test.stateHome,

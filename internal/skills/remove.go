@@ -37,6 +37,9 @@ func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams c
 	var directories []string
 	locks := map[string]LockFile{}
 	for _, scope := range scopes {
+		if _, exists := locks[scope.directory]; exists {
+			return errors.New("project and global inventories share a directory; provide an explicit --scope to remove skills")
+		}
 		directories = append(
 			directories,
 			scope.directory,

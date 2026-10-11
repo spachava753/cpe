@@ -12,7 +12,8 @@ import (
 )
 
 // FileChange supplies a regular file to publish alongside bundle changes.
-// Path uses native filesystem syntax; Data replaces the complete file contents.
+// Path uses native filesystem syntax. Non-nil Data replaces the complete contents;
+// nil Data checks the snapshot without changing the file.
 // Previous must match the existing bytes; nil requires the file to be absent.
 type FileChange struct {
 	Path     string
@@ -132,6 +133,9 @@ func prepareFile(ctx context.Context, filesystem afero.Fs, file FileChange) (_ *
 			)
 		}
 	}()
+	if file.Data == nil {
+		return staged, nil
+	}
 	staged.created, err = missingDirectories(
 		filesystem,
 		filepath.Dir(file.Path),
@@ -229,6 +233,13 @@ func checkRegularFile(filesystem afero.Fs, filename string) error {
 }
 
 func (file *stagedFile) publish() error {
+	if file.newPath == "" {
+		return checkFileSnapshot(
+			file.filesystem,
+			file.path,
+			file.previous,
+		)
+	}
 	if err := checkFileSnapshot(
 		file.filesystem,
 		file.path,
