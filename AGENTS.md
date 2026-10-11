@@ -51,6 +51,8 @@ version/       Build-time version information
   legacy fallbacks unless requested.
 - CPE and its configured plugins/MCP servers run with the user's full machine
   access. Do not add approval gates, permission policies, or sandboxing.
+- Skill mutations assume a single writer. Do not add cross-process coordination or
+  defenses against concurrent filesystem replacement unless requested.
 
 ## Go conventions
 

@@ -412,8 +412,8 @@ tool may also need `--override` on their first CPE update. Listing and removal w
 for manually copied skills too.
 
 CPE records project skill sources in `skills-lock.json`, or inside the selected
-custom directory when using `--dir`. Keep this file for updates. Do not commit
-`*.cpe-lock` files created alongside it.
+custom directory when using `--dir`. Keep this file for updates. Run skill
+installation, update, and removal commands one at a time.
 
 Skill commands print tables on a terminal and JSON arrays when stdout is
 redirected. Use `--json` to request JSON on a terminal. Warnings go to stderr.

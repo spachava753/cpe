@@ -4,12 +4,10 @@ import (
 	"context"
 	"errors"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/afero"
 
 	"github.com/spachava753/cpe/internal/bundlefs"
@@ -17,156 +15,117 @@ import (
 
 func TestApplyWithFile(t *testing.T) {
 	for _, test := range []struct {
-		name         string
-		fault        fileFault
-		missing      bool
-		inside       bool
-		empty        bool
-		snapshotOnly bool
-		wantOutcome  bundlefs.Outcome
-		wantError    bool
-		retained     bool
+		name           string
+		native         bool
+		absent         bool
+		unchanged      bool
+		stageFailure   bool
+		publishFailure bool
+		bundleFault    transactionFault
+		wantBundle     string
+		wantTracking   string
+		wantOutcome    bundlefs.Outcome
+		wantError      error
 	}{
 		{
-			name:        "replace bundle and lock",
-			wantOutcome: bundlefs.Committed,
-		},
-		{
-			name:        "create bundle and lock with missing parents",
-			missing:     true,
-			wantOutcome: bundlefs.Committed,
-		},
-		{
-			name:         "snapshot-only publication leaves existing metadata byte-identical",
-			snapshotOnly: true,
+			name:         "replace tracking after publishing bundles",
+			wantBundle:   "new bundle",
+			wantTracking: "new tracking",
 			wantOutcome:  bundlefs.Committed,
 		},
 		{
-			name:         "snapshot-only publication leaves missing metadata absent",
-			snapshotOnly: true,
-			missing:      true,
+			name:         "native filesystem replaces existing tracking",
+			native:       true,
+			wantBundle:   "new bundle",
+			wantTracking: "new tracking",
 			wantOutcome:  bundlefs.Committed,
 		},
 		{
-			name:      "file staging failure changes nothing",
-			fault:     fileStageFailure,
-			wantError: true,
+			name:         "create missing tracking",
+			absent:       true,
+			wantBundle:   "new bundle",
+			wantTracking: "new tracking",
+			wantOutcome:  bundlefs.Committed,
 		},
 		{
-			name:      "file backup failure restores published bundle",
-			fault:     fileBackupFailure,
-			wantError: true,
+			name:         "nil data keeps tracking unchanged",
+			unchanged:    true,
+			wantBundle:   "new bundle",
+			wantTracking: "old tracking",
+			wantOutcome:  bundlefs.Committed,
 		},
 		{
-			name:      "file publication failure restores lock and bundle",
-			fault:     filePublishFailure,
-			wantError: true,
+			name:         "tracking staging failure leaves bundles untouched",
+			stageFailure: true,
+			wantBundle:   "old bundle",
+			wantTracking: "old tracking",
+			wantError:    fs.ErrPermission,
 		},
 		{
-			name:      "failed first publication removes new ancestors",
-			missing:   true,
-			fault:     filePublishFailure,
-			wantError: true,
+			name:           "tracking rename failure rolls back bundles",
+			publishFailure: true,
+			wantBundle:     "old bundle",
+			wantTracking:   "old tracking",
+			wantError:      fs.ErrPermission,
 		},
 		{
-			name:      "cancellation after file publication restores both",
-			fault:     fileCancelPublication,
-			wantError: true,
+			name:         "bundle failure leaves tracking untouched",
+			bundleFault:  backupFault,
+			wantBundle:   "old bundle",
+			wantTracking: "old tracking",
+			wantError:    fs.ErrPermission,
 		},
 		{
-			name:        "backup cleanup failure reports committed state",
-			fault:       fileCleanupFailure,
-			wantOutcome: bundlefs.Committed,
-			wantError:   true,
-			retained:    true,
-		},
-		{
-			name:      "failed lock rollback retains original lock",
-			fault:     fileRestoreFailure,
-			wantError: true,
-			retained:  true,
-		},
-		{
-			name:      "failed first lock rollback identifies the surviving published file",
-			missing:   true,
-			fault:     fileCancelRollbackFailure,
-			wantError: true,
-		},
-		{
-			name:      "file cannot overlap bundle payload",
-			inside:    true,
-			wantError: true,
-		},
-		{
-			name:        "no changes leave lock untouched",
-			empty:       true,
-			wantOutcome: bundlefs.Committed,
+			name:         "cancellation before tracking publication rolls back bundles",
+			bundleFault:  cancelPublication,
+			wantBundle:   "old bundle",
+			wantTracking: "old tracking",
+			wantError:    context.Canceled,
 		},
 	} {
 		t.Run(
 			test.name,
 			func(t *testing.T) {
 				filesystem := afero.NewMemMapFs()
-				root := filepath.FromSlash("/project/.agents/skills")
-				filename := filepath.FromSlash("/state/skills/.skill-lock.json")
-				marker := filepath.Join(
-					root,
-					"alpha",
-					"marker",
-				)
-				if !test.missing {
-					for name, content := range map[string]string{
-						marker:   "old bundle",
-						filename: "old lock",
-					} {
-						if err := filesystem.MkdirAll(
-							filepath.Dir(name),
-							0o700,
-						); err != nil {
-							t.Fatal(err)
-						}
-						if err := afero.WriteFile(
-							filesystem,
-							name,
-							[]byte(content),
-							0o600,
-						); err != nil {
-							t.Fatal(err)
-						}
-					}
-				}
-				before := fileSnapshot(
-					t,
-					filesystem,
-				)
-				if test.inside {
-					filename = filepath.Join(
-						root,
-						"alpha",
-						"lock.json",
+				if test.native {
+					filesystem = afero.NewBasePathFs(
+						afero.NewOsFs(),
+						t.TempDir(),
 					)
 				}
-				changes := []bundlefs.Change{
-					{
-						Name:   "alpha",
-						Action: bundlefs.Replace,
-						Payload: []bundlefs.Entry{
-							{
-								Path: "marker",
-								Data: []byte("new bundle"),
-							},
-						},
-					},
+				root := filepath.FromSlash("skills")
+				tracking := filepath.FromSlash("skills-lock.json")
+				bundle := filepath.Join(
+					root,
+					"beta",
+					"marker",
+				)
+				if err := filesystem.MkdirAll(
+					filepath.Dir(bundle),
+					0o700,
+				); err != nil {
+					t.Fatal(err)
 				}
-				if test.empty {
-					changes = nil
+				if err := afero.WriteFile(
+					filesystem,
+					bundle,
+					[]byte("old bundle"),
+					0o600,
+				); err != nil {
+					t.Fatal(err)
 				}
-				var previous []byte
-				if !test.missing {
-					previous = []byte("old lock")
+				if !test.absent {
+					if err := afero.WriteFile(
+						filesystem,
+						tracking,
+						[]byte("old tracking"),
+						0o600,
+					); err != nil {
+						t.Fatal(err)
+					}
 				}
-				data := []byte("new lock")
-				if test.snapshotOnly {
+				data := []byte("new tracking")
+				if test.unchanged {
 					data = nil
 				}
 				ctx, cancel := context.WithCancel(t.Context())
@@ -174,218 +133,122 @@ func TestApplyWithFile(t *testing.T) {
 				outcome, err := bundlefs.ApplyWithFile(
 					ctx,
 					fileFaultFS{
-						Fs:           filesystem,
-						fault:        test.fault,
-						cancel:       cancel,
-						publications: new(int),
+						Fs: transactionFS{
+							Fs:     filesystem,
+							fault:  test.bundleFault,
+							cancel: cancel,
+						},
+						tracking:       tracking,
+						stageFailure:   test.stageFailure,
+						publishFailure: test.publishFailure,
 					},
 					root,
-					changes,
+					[]bundlefs.Change{
+						{
+							Name:   "beta",
+							Action: bundlefs.Replace,
+							Payload: []bundlefs.Entry{
+								{
+									Path: "marker",
+									Data: []byte("new bundle"),
+								},
+							},
+						},
+					},
 					func(string) error { return nil },
 					bundlefs.FileChange{
-						Path:     filename,
-						Data:     data,
-						Previous: previous,
+						Path: tracking,
+						Data: data,
 					},
 				)
-				if outcome != test.wantOutcome || (err != nil) != test.wantError {
+				if outcome != test.wantOutcome || !errors.Is(
+					err,
+					test.wantError,
+				) {
 					t.Fatalf(
-						"ApplyWithFile = %v, %v",
+						"outcome = %v, error = %v; want %v, %v",
 						outcome,
 						err,
+						test.wantOutcome,
+						test.wantError,
 					)
 				}
-				after := fileSnapshot(
-					t,
-					filesystem,
-				)
-				if test.retained {
-					found := false
-					for filename, data := range after {
+				for filename, want := range map[string]string{
+					bundle:   test.wantBundle,
+					tracking: test.wantTracking,
+				} {
+					data, err := afero.ReadFile(
+						filesystem,
+						filename,
+					)
+					if err != nil || string(data) != want {
+						t.Fatalf(
+							"%s = %q, %v; want %q",
+							filename,
+							data,
+							err,
+							want,
+						)
+					}
+				}
+				for _, directory := range []string{
+					".",
+					root,
+				} {
+					entries, err := afero.ReadDir(
+						filesystem,
+						directory,
+					)
+					if err != nil {
+						t.Fatal(err)
+					}
+					for _, entry := range entries {
 						if strings.HasPrefix(
-							filepath.Base(filename),
-							".cpe-backup-",
+							entry.Name(),
+							".cpe-",
+						) || strings.HasSuffix(
+							entry.Name(),
+							".cpe-lock",
 						) {
-							found = data == "old lock"
-							delete(
-								after,
-								filename,
+							t.Fatalf(
+								"unexpected staging or guard file: %s",
+								entry.Name(),
 							)
 						}
 					}
-					if !found {
-						t.Fatal("original lock recovery file was discarded")
-					}
-				}
-				if outcome == bundlefs.Committed && !test.empty {
-					wantLock := "new lock"
-					if test.snapshotOnly {
-						wantLock = before[filename]
-					}
-					if after[marker] != "new bundle" || after[filename] != wantLock {
-						t.Fatalf(
-							"committed state = %v",
-							after,
-						)
-					}
-				} else if test.fault == fileCancelRollbackFailure {
-					identified := false
-					for path, data := range after {
-						if strings.HasPrefix(
-							filepath.Base(path),
-							".cpe-displaced-",
-						) && data == "new lock" && strings.Contains(
-							err.Error(),
-							"published file remains at "+path,
-						) {
-							identified = true
-						}
-					}
-					if !identified {
-						t.Fatalf(
-							"failed first rollback did not identify surviving lock: %v, %v",
-							after,
-							err,
-						)
-					}
-				} else if test.fault == fileRestoreFailure {
-					if after[marker] != "old bundle" || after[filename] != "" || !strings.Contains(
-						err.Error(),
-						"recovery file retained",
-					) {
-						t.Fatalf(
-							"failed rollback state = %v, %v",
-							after,
-							err,
-						)
-					}
-				} else if diff := cmp.Diff(
-					before,
-					after,
-				); diff != "" {
-					t.Fatal(diff)
 				}
 			},
 		)
 	}
 }
 
-type fileFault uint8
-
-const (
-	fileNoFault fileFault = iota
-	fileStageFailure
-	fileBackupFailure
-	filePublishFailure
-	fileCancelPublication
-	fileCleanupFailure
-	fileRestoreFailure
-	fileCancelRollbackFailure
-)
-
 type fileFaultFS struct {
 	afero.Fs
-	fault        fileFault
-	cancel       context.CancelFunc
-	publications *int
+	tracking       string
+	stageFailure   bool
+	publishFailure bool
 }
 
-func (filesystem fileFaultFS) OpenFile(name string, flag int, mode fs.FileMode) (afero.File, error) {
-	if filesystem.fault == fileStageFailure && strings.HasPrefix(
-		filepath.Base(name),
+func (filesystem fileFaultFS) OpenFile(filename string, flags int, mode fs.FileMode) (afero.File, error) {
+	if filesystem.stageFailure && strings.HasPrefix(
+		filepath.Base(filename),
 		".cpe-file-",
 	) {
 		return nil, fs.ErrPermission
 	}
-	publication := filepath.Base(name) == ".skill-lock.json" && flag&os.O_EXCL != 0
-	if publication {
-		*filesystem.publications++
-		if filesystem.fault == fileRestoreFailure || (filesystem.fault == filePublishFailure && *filesystem.publications == 1) {
-			return nil, fs.ErrPermission
-		}
-	}
-	file, err := filesystem.Fs.OpenFile(
-		name,
-		flag,
+	return filesystem.Fs.OpenFile(
+		filename,
+		flags,
 		mode,
 	)
-	if err == nil && publication && (filesystem.fault == fileCancelPublication || filesystem.fault == fileCancelRollbackFailure) {
-		filesystem.cancel()
-	}
-	return file, err
 }
 
-func (filesystem fileFaultFS) Rename(oldname string, newname string) error {
-	newBase := filepath.Base(newname)
-	if filesystem.fault == fileBackupFailure && strings.HasPrefix(
-		newBase,
-		".cpe-backup-",
-	) {
+func (filesystem fileFaultFS) Rename(oldName, newName string) error {
+	if filesystem.publishFailure && newName == filesystem.tracking {
 		return fs.ErrPermission
 	}
 	return filesystem.Fs.Rename(
-		oldname,
-		newname,
+		oldName,
+		newName,
 	)
-}
-
-func (filesystem fileFaultFS) Remove(name string) error {
-	if filesystem.fault == fileCancelRollbackFailure && strings.HasPrefix(
-		filepath.Base(name),
-		".cpe-displaced-",
-	) {
-		data, err := afero.ReadFile(
-			filesystem.Fs,
-			name,
-		)
-		if err == nil && string(data) == "new lock" {
-			return fs.ErrPermission
-		}
-	}
-	if filesystem.fault == fileCleanupFailure && strings.HasPrefix(
-		filepath.Base(name),
-		".cpe-backup-",
-	) {
-		data, err := afero.ReadFile(
-			filesystem.Fs,
-			name,
-		)
-		if err == nil && string(data) == "old lock" {
-			return fs.ErrPermission
-		}
-	}
-	return filesystem.Fs.Remove(name)
-}
-
-func fileSnapshot(t *testing.T, filesystem afero.Fs) map[string]string {
-	t.Helper()
-	result := map[string]string{}
-	if err := afero.Walk(
-		filesystem,
-		string(filepath.Separator),
-		func(filename string, info fs.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			if info.IsDir() {
-				result[filename] = "<directory>"
-				return nil
-			}
-			data, err := afero.ReadFile(
-				filesystem,
-				filename,
-			)
-			if err != nil {
-				return err
-			}
-			result[filename] = string(data)
-			return nil
-		},
-	); err != nil && !errors.Is(
-		err,
-		fs.ErrNotExist,
-	) {
-		t.Fatal(err)
-	}
-	return result
 }

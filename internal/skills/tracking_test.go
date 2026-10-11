@@ -3,9 +3,7 @@ package skills_test
 import (
 	"encoding/json"
 	"io/fs"
-	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -21,7 +19,6 @@ func TestSkillTracking(t *testing.T) {
 		format         skills.LockFormat
 		corrupt        bool
 		publishFailure bool
-		concurrent     bool
 	}{
 		{
 			name:   "project install and remove preserve unrelated records",
@@ -35,11 +32,6 @@ func TestSkillTracking(t *testing.T) {
 			name:    "corrupt lock prevents install",
 			format:  skills.ProjectLock,
 			corrupt: true,
-		},
-		{
-			name:       "concurrent lock record and preference changes are not overwritten",
-			format:     skills.ProjectLock,
-			concurrent: true,
 		},
 		{
 			name:           "lock publication failure rolls back bundles",
@@ -81,37 +73,19 @@ func TestSkillTracking(t *testing.T) {
 					filename,
 					string(initial),
 				)
+				// Bundle rollback removes its root, not empty ancestor directories.
+				if err := filesystem.MkdirAll(
+					filepath.Dir(directory),
+					0o700,
+				); err != nil {
+					t.Fatal(err)
+				}
 				before := snapshotManagerFS(
 					t,
 					filesystem,
 				)
-				var cleanup func() error
-				if test.concurrent {
-					external := strings.Replace(
-						string(initial),
-						`"skills":{`,
-						`"skills":{"concurrent":{"sourceType":"local"},`,
-						1,
-					)
-					external = strings.Replace(
-						external,
-						`"lastSelectedAgents":["claude-code"]`,
-						`"lastSelectedAgents":["codex"]`,
-						1,
-					)
-					before[filename] = external
-					cleanup = func() error {
-						return afero.WriteFile(
-							filesystem,
-							filename,
-							[]byte(external),
-							0o600,
-						)
-					}
-				}
 				manager := skills.NewManager(
 					managerSourceClient{
-						cleanup: cleanup,
 						files: fstest.MapFS{
 							"nested/alpha/SKILL.md": {
 								Data: []byte(alphaSkill),
@@ -122,10 +96,9 @@ func TestSkillTracking(t *testing.T) {
 						},
 					},
 					trackingFaultFS{
-						Fs:           filesystem,
-						filename:     filename,
-						fail:         test.publishFailure,
-						publications: new(int),
+						Fs:       filesystem,
+						filename: filename,
+						fail:     test.publishFailure,
 					},
 				)
 				lock := &skills.LockFile{
@@ -140,7 +113,7 @@ func TestSkillTracking(t *testing.T) {
 						Lock:      lock,
 					},
 				)
-				if test.corrupt || test.publishFailure || test.concurrent {
+				if test.corrupt || test.publishFailure {
 					if err == nil || len(installed) != 0 {
 						t.Fatalf(
 							"Install = %v, %v; want uncommitted error",
@@ -231,21 +204,16 @@ func TestSkillTracking(t *testing.T) {
 
 type trackingFaultFS struct {
 	afero.Fs
-	filename     string
-	fail         bool
-	publications *int
+	filename string
+	fail     bool
 }
 
-func (filesystem trackingFaultFS) OpenFile(name string, flags int, mode fs.FileMode) (afero.File, error) {
-	if name == filesystem.filename && flags&os.O_EXCL != 0 {
-		*filesystem.publications++
-		if filesystem.fail && *filesystem.publications == 1 {
-			return nil, fs.ErrPermission
-		}
+func (filesystem trackingFaultFS) Rename(oldName, newName string) error {
+	if filesystem.fail && newName == filesystem.filename {
+		return fs.ErrPermission
 	}
-	return filesystem.Fs.OpenFile(
-		name,
-		flags,
-		mode,
+	return filesystem.Fs.Rename(
+		oldName,
+		newName,
 	)
 }

@@ -161,15 +161,7 @@ func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams c
 			if len(selected[other]) == 0 {
 				continue
 			}
-			same, err := bundlefs.SameDirectory(
-				manager.destinations,
-				directory,
-				other,
-			)
-			if err != nil {
-				return err
-			}
-			if directory == other || same {
+			if filepath.Clean(directory) == filepath.Clean(other) {
 				return errors.New("project and global inventories share a directory; provide an explicit --scope to remove skills")
 			}
 		}

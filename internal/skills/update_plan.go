@@ -11,16 +11,17 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/spf13/afero"
+
 	"github.com/spachava753/cpe/internal/bundlefs"
 	"github.com/spachava753/cpe/internal/commandio"
 	"github.com/spachava753/cpe/internal/source"
 )
 
 type skillUpdate struct {
-	name     string
-	record   lockedSkill
-	previous string
-	source   *updateSource
+	name   string
+	record lockedSkill
+	source *updateSource
 }
 
 type updateSource struct {
@@ -123,10 +124,9 @@ func (m *Manager) planUpdates(ctx context.Context, scopes []skillScope, locks []
 			plan[index] = append(
 				plan[index],
 				skillUpdate{
-					name:     name,
-					record:   record,
-					previous: previous,
-					source:   acquisition,
+					name:   name,
+					record: record,
+					source: acquisition,
 				},
 			)
 		}
@@ -134,21 +134,11 @@ func (m *Manager) planUpdates(ctx context.Context, scopes []skillScope, locks []
 	return plan, nil
 }
 
-func (m *Manager) installedHash(ctx context.Context, directory string) (hash string, err error) {
-	filesystem, err := openInstalledFilesystem(
-		ctx,
+func (m *Manager) installedHash(ctx context.Context, directory string) (string, error) {
+	filesystem := afero.NewIOFS(afero.NewBasePathFs(
 		m.destinations,
 		directory,
-	)
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		err = errors.Join(
-			err,
-			filesystem.Close(),
-		)
-	}()
+	))
 	payload, err := collectPayload(
 		ctx,
 		filesystem,
