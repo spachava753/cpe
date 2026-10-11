@@ -40,19 +40,6 @@ func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams c
 	var directories []string
 	locks := map[string]LockFile{}
 	for _, scope := range scopes {
-		for _, directory := range directories {
-			same, err := bundlefs.SameDirectory(
-				manager.destinations,
-				directory,
-				scope.directory,
-			)
-			if err != nil {
-				return err
-			}
-			if directory == scope.directory || same {
-				return errors.New("project and global inventories share a directory; provide an explicit --scope to remove skills")
-			}
-		}
 		directories = append(
 			directories,
 			scope.directory,
@@ -135,7 +122,7 @@ func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams c
 			}
 			if len(matches) > 1 {
 				return fmt.Errorf(
-					"skill %q exists in both directories; --scope is required",
+					"skill %q exists in both directories; provide an explicit --scope",
 					name,
 				)
 			}
@@ -164,6 +151,27 @@ func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams c
 			locks[directory],
 		); err != nil {
 			return err
+		}
+	}
+	for first, directory := range directories {
+		if len(selected[directory]) == 0 {
+			continue
+		}
+		for _, other := range directories[first+1:] {
+			if len(selected[other]) == 0 {
+				continue
+			}
+			same, err := bundlefs.SameDirectory(
+				manager.destinations,
+				directory,
+				other,
+			)
+			if err != nil {
+				return err
+			}
+			if directory == other || same {
+				return errors.New("project and global inventories share a directory; provide an explicit --scope to remove skills")
+			}
 		}
 	}
 	var result []RemovedSkill
