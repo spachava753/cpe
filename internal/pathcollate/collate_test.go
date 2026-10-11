@@ -110,6 +110,12 @@ func TestKey(t *testing.T) {
 			want:   0,
 		},
 		{
+			name:   "contiguous contraction wins over competing discontiguous suffix",
+			first:  "\u0f71\u0f80\u0f74.txt",
+			second: "\u0f71\u0f74.txt",
+			want:   -1,
+		},
+		{
 			name:   "skipped marks form a contraction with subsequent input",
 			first:  "\u0f71\u0f71\u0f72\u0f72.txt",
 			second: "\u0f73\u0f72.txt",
@@ -335,6 +341,48 @@ func TestRootCorpus(t *testing.T) {
 			},
 		)
 	}
+	tibetanTexts := []string{
+		"\u0f71\u0f80\u0f74.txt",
+		"\u0f71\u0f74.txt",
+		"\u0f71\u0f80.txt",
+		"\u0f81\u0f74.txt",
+	}
+	tibetanAlphabet := []rune{
+		'\u0f71',
+		'\u0f72',
+		'\u0f74',
+		'\u0f80',
+	}
+	for length := 1; length <= 6; length++ {
+		for value := range 1 << (length * 2) {
+			var text strings.Builder
+			for position := range length {
+				text.WriteRune(tibetanAlphabet[value>>(2*(length-position-1))&3])
+			}
+			s := text.String()
+			tibetanTexts = append(
+				tibetanTexts,
+				s,
+				s+".txt",
+				"и"+s+"\u0306.txt",
+			)
+		}
+	}
+	seen := make(map[string]bool)
+	var tibetan []character
+	for _, text := range tibetanTexts {
+		if seen[text] {
+			continue
+		}
+		seen[text] = true
+		tibetan = append(
+			tibetan,
+			character{
+				text: text,
+				key:  Key(text),
+			},
+		)
+	}
 	for _, test := range []struct {
 		name       string
 		characters []character
@@ -349,6 +397,11 @@ func TestRootCorpus(t *testing.T) {
 			name:       "10000 mixed-script paths",
 			characters: mixed,
 			want:       "06ae0a12e99dc5173172871cf0b92683739dc9fd547b7355b60f955c89976ed7",
+		},
+		{
+			name:       "16381 competing Tibetan contractions",
+			characters: tibetan,
+			want:       "307b82c8a0cb097e64b260f736633c893f2b5a860d9bab216abd629ae9a591cb",
 		},
 	} {
 		t.Run(
