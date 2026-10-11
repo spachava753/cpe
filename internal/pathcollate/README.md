@@ -24,7 +24,7 @@ at runtime.
 `tables.go` contains compressed data derived from
 [ICU 78.3 FractionalUCA.txt](https://github.com/unicode-org/icu/blob/release-78.3/icu4c/source/data/unidata/FractionalUCA.txt).
 The data is covered by the [Unicode License V3](LICENSE); release archives include
-it as `UNICODE-LICENSE`.
+it as `licenses/unicode/LICENSE`.
 
 Regenerate the checked-in table with:
 

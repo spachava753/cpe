@@ -40,7 +40,8 @@ archives:
       - LICENSE
       - README.md
       - src: internal/pathcollate/LICENSE
-        dst: UNICODE-LICENSE
+        dst: licenses/unicode
+        strip_parent: true
     format_overrides:
       - goos: windows
         formats:
