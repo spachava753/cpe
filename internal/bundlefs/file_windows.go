@@ -7,6 +7,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+const directoryOpenFlags = 0
+
 func tryFileLock(descriptor uintptr, access guardAccess) (bool, error) {
 	flags := uint32(windows.LOCKFILE_FAIL_IMMEDIATELY)
 	if access == writerGuard {

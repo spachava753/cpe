@@ -3,6 +3,7 @@ package bundlefs_test
 import (
 	"errors"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -21,6 +22,8 @@ func TestSameDirectory(t *testing.T) {
 		hiddenIdentity bool
 		openError      bool
 		closeError     bool
+		fifo           bool
+		replacedFIFO   bool
 		wantSame       bool
 		wantError      bool
 	}{
@@ -51,6 +54,19 @@ func TestSameDirectory(t *testing.T) {
 		{
 			name:   "regular file is not a directory",
 			second: "file",
+		},
+		{
+			name:   "native FIFO is rejected without opening its stream",
+			native: true,
+			fifo:   true,
+			second: "fifo",
+		},
+		{
+			name:         "native replacement with FIFO cannot block directory acquisition",
+			native:       true,
+			replacedFIFO: true,
+			second:       "second",
+			wantError:    true,
 		},
 		{
 			name:        "filesystem is required",
@@ -108,6 +124,54 @@ func TestSameDirectory(t *testing.T) {
 				); err != nil {
 					t.Fatal(err)
 				}
+				if test.fifo {
+					fifo := filepath.Join(
+						root,
+						test.second,
+					)
+					makeIdentityFIFO(
+						t,
+						fifo,
+					)
+					filesystem = directoryIdentityFS{
+						Fs:        filesystem,
+						forbidden: fifo,
+					}
+				}
+				if test.replacedFIFO {
+					replaced := filepath.Join(
+						root,
+						test.second,
+					)
+					// Verify native FIFO support before installing the acquisition hook.
+					makeIdentityFIFO(
+						t,
+						filepath.Join(
+							root,
+							"probe",
+						),
+					)
+					filesystem = directoryIdentityFS{
+						Fs: filesystem,
+						beforeOpen: func(name string, flags int) error {
+							if name != replaced {
+								return nil
+							}
+							if !identityOpenIsNonblocking(flags) {
+								t.Error("directory acquisition must be directory-only and nonblocking")
+								return fs.ErrPermission
+							}
+							if err := os.Remove(replaced); err != nil {
+								return err
+							}
+							makeIdentityFIFO(
+								t,
+								replaced,
+							)
+							return nil
+						},
+					}
+				}
 				if test.unavailable {
 					filesystem = nil
 				} else if test.hiddenIdentity || test.openError || test.closeError {
@@ -155,13 +219,38 @@ type directoryIdentityFS struct {
 	hidden     bool
 	openError  bool
 	closeError bool
+	forbidden  string
+	beforeOpen func(string, int) error
 }
 
 func (filesystem directoryIdentityFS) Open(name string) (afero.File, error) {
+	return filesystem.OpenFile(
+		name,
+		os.O_RDONLY,
+		0,
+	)
+}
+
+func (filesystem directoryIdentityFS) OpenFile(name string, flags int, mode fs.FileMode) (afero.File, error) {
+	if filesystem.forbidden == name {
+		return nil, errors.New("non-directory stream must not be opened")
+	}
+	if filesystem.beforeOpen != nil {
+		if err := filesystem.beforeOpen(
+			name,
+			flags,
+		); err != nil {
+			return nil, err
+		}
+	}
 	if filesystem.openError {
 		return nil, fs.ErrPermission
 	}
-	file, err := filesystem.Fs.Open(name)
+	file, err := filesystem.Fs.OpenFile(
+		name,
+		flags,
+		mode,
+	)
 	if err != nil {
 		return nil, err
 	}

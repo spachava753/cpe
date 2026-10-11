@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 
 	"github.com/spf13/afero"
 )
@@ -35,7 +36,24 @@ func SameDirectory(filesystem afero.Fs, first string, second string) (bool, erro
 }
 
 func directoryIdentity(filesystem afero.Fs, filename string) (_ fs.FileInfo, err error) {
-	file, err := filesystem.Open(filename)
+	info, err := filesystem.Stat(filename)
+	if errors.Is(
+		err,
+		fs.ErrNotExist,
+	) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, nil
+	}
+	file, err := filesystem.OpenFile(
+		filename,
+		os.O_RDONLY|directoryOpenFlags,
+		0,
+	)
 	if errors.Is(
 		err,
 		fs.ErrNotExist,
@@ -51,7 +69,7 @@ func directoryIdentity(filesystem afero.Fs, filename string) (_ fs.FileInfo, err
 			file.Close(),
 		)
 	}()
-	info, err := file.Stat()
+	info, err = file.Stat()
 	if err != nil {
 		return nil, err
 	}
