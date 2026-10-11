@@ -376,6 +376,10 @@ Project skills live in `./.agents/skills` and are tracked in `./skills-lock.json
 `~/.agents/.skill-lock.json` (version 3). These are the lock formats used by
 [the skills CLI](https://github.com/vercel-labs/skills). Project records use its
 folder-content SHA-256 algorithm; global GitHub records use Git tree hashes.
+Filename ordering is pinned to ICU 78.3 English/root collation (Unicode 17),
+implemented entirely in Go. No Node or system ICU installation is required.
+Upstream environments using another locale or collation version can produce
+different content hashes. See [collation data and verification](internal/pathcollate/README.md).
 With `--dir`, CPE uses that exact skill directory and keeps a `skills-lock.json`
 inside it, separate from the default project inventory.
 
