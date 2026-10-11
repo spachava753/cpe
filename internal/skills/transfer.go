@@ -9,9 +9,25 @@ import (
 	"github.com/spachava753/cpe/internal/bundlefs"
 )
 
-// Skills reject payload links and omit dependency directories. Plugins use a
-// different collection policy; only the prepared filesystem entries are shared.
+type payloadPolicy uint8
+
+const (
+	sourcePayload payloadPolicy = iota + 1
+	installedPayload
+)
+
+// Source bundles omit dependency directories. Installed fingerprints include all
+// files, so locally added files in otherwise excluded directories remain protected.
 func readPayload(ctx context.Context, filesystem fs.FS, directory string) ([]bundlefs.Entry, error) {
+	return collectPayload(
+		ctx,
+		filesystem,
+		directory,
+		sourcePayload,
+	)
+}
+
+func collectPayload(ctx context.Context, filesystem fs.FS, directory string, policy payloadPolicy) ([]bundlefs.Entry, error) {
 	if err := bundlefs.CheckSourceDirectory(
 		filesystem,
 		directory,
@@ -29,7 +45,7 @@ func readPayload(ctx context.Context, filesystem fs.FS, directory string) ([]bun
 			if walkErr != nil {
 				return walkErr
 			}
-			if filename != directory && entry.IsDir() && excludedDirectory(entry.Name()) {
+			if policy == sourcePayload && filename != directory && entry.IsDir() && excludedDirectory(entry.Name()) {
 				return fs.SkipDir
 			}
 			info, err := entry.Info()

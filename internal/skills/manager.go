@@ -287,16 +287,11 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 			return nil, err
 		}
 		if lock != nil {
-			record, err := lock.hashRecord(
-				ctx,
-				checkout,
+			record := lock.hashRecord(
 				skill,
 				payload,
 				sourceRecord(request.Source),
 			)
-			if err != nil {
-				return nil, err
-			}
 			if err := lock.put(
 				name,
 				record,
@@ -340,6 +335,7 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 		request.Directory,
 		changes,
 		lock,
+		m.checkDefinition,
 	); err != nil {
 		if outcome != bundlefs.Committed {
 			result = nil
@@ -511,6 +507,7 @@ func (m *Manager) Remove(ctx context.Context, request RemoveRequest) ([]RemovedS
 		request.Directory,
 		plan.changes,
 		lock,
+		m.checkDefinition,
 	); err != nil {
 		if outcome == bundlefs.Committed {
 			return result, fmt.Errorf(

@@ -79,14 +79,7 @@ func (GitClient) Fetch(ctx context.Context, source string) (Checkout, error) {
 		)
 	}
 	return Checkout{
-		FS: os.DirFS(directory),
-		GitTreeHash: func(ctx context.Context, path string) (string, error) {
-			return readGitTreeHash(
-				ctx,
-				directory,
-				path,
-			)
-		},
+		FS:      os.DirFS(directory),
 		Cleanup: cleanup,
 	}, nil
 }

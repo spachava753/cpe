@@ -365,6 +365,7 @@ Install skills from a Git repository and update them from their recorded source:
 ```sh
 cpe skills install mattpocock/skills --skill writing-great-skills --scope project
 cpe skills update writing-great-skills --scope project
+cpe skills update writing-great-skills --scope project --override
 cpe skills update
 cpe skills list
 cpe skills remove writing-great-skills --scope project
@@ -374,12 +375,12 @@ Project skills live in `./.agents/skills` and are tracked in `./skills-lock.json
 (version 1). Global skills live in `~/.agents/skills`; their lock is
 `$XDG_STATE_HOME/skills/.skill-lock.json` when `XDG_STATE_HOME` is set, otherwise
 `~/.agents/.skill-lock.json` (version 3). These are the lock formats used by
-[the skills CLI](https://github.com/vercel-labs/skills). Project records use its
-folder-content SHA-256 algorithm; global GitHub records use Git tree hashes.
-Filename ordering is pinned to ICU 78.3 English/root collation (Unicode 17),
-implemented entirely in Go. No Node or system ICU installation is required.
-Upstream environments using another locale or collation version can produce
-different content hashes. See [collation data and verification](internal/pathcollate/README.md).
+[the skills CLI](https://github.com/vercel-labs/skills). In both formats, CPE hashes
+file paths and contents with Go's SHA-256, sorting relative paths by their raw
+bytes and prefixing each path and content value with its byte length. Empty
+directories and file permissions do not affect the hash. These fingerprints are
+not compatible with the skills CLI's locale-based content hashes or Git tree IDs.
+Switching tools can therefore require a reinstall and a rewritten hash.
 With `--dir`, CPE uses that exact skill directory and keeps a `skills-lock.json`
 inside it, separate from the default project inventory.
 
@@ -387,8 +388,16 @@ inside it, separate from the default project inventory.
 A named skill installed in both scopes is skipped with a warning unless a scope
 is explicit. Missing and untracked skills are also warned about and skipped.
 CPE updates GitHub and Git sources at their default checkout; records using other
-source types or explicit refs are skipped. Updates replace local edits and remove
-obsolete files, just like installing with `--override`.
+source types or explicit refs are skipped. Before fetching, CPE hashes each
+selected installation and compares it with its lock record. Mismatches are warned
+about and skipped; use `--override` to replace local edits or adopt an incompatible
+upstream hash. Unverifiable installed contents also require `--override`, which
+does not bypass destination safety or provenance checks. Eligible skills from the
+same Git locator share one fetched source snapshot, including across scopes.
+Updates replace complete bundles and remove obsolete files even when the source
+has not changed. Installed contents are checked again after fetching and before
+publication; a change detected during publication aborts and rolls back that
+scope. CPE does not yet use remote Git tree IDs to avoid fetching.
 
 Listing includes untracked skills. Removal also works for untracked skills and
 removes the lock record when one exists. If project and global installations share

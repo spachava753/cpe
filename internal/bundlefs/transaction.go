@@ -17,8 +17,9 @@ import (
 //
 // checkExisting is required and must inspect an existing directory's eligibility
 // before replacement or removal, returning an error to abort. root and callback
-// paths use native syntax; Entry.Path uses io/fs slash paths. Inputs are checked
-// before mutation.
+// paths use native syntax; Entry.Path uses io/fs slash paths. ReplaceExisting calls
+// checkExisting on the captured old directory, restoring it if rejected. Inputs
+// are checked before mutation.
 //
 // Cancellation or publication failure triggers rollback. Failed rollback retains
 // recovery files identified in the error. Committed with an error means changes
@@ -251,8 +252,10 @@ func apply(ctx context.Context, filesystem afero.Fs, root string, changes []Chan
 					filename,
 				))
 			}
-			if err := checkExisting(filename); err != nil {
-				return NotCommitted, rollback(err)
+			if change.Action != ReplaceExisting {
+				if err := checkExisting(filename); err != nil {
+					return NotCommitted, rollback(err)
+				}
 			}
 			if err := filesystem.MkdirAll(
 				filepath.Join(
@@ -277,11 +280,40 @@ func apply(ctx context.Context, filesystem afero.Fs, root string, changes []Chan
 				moved,
 				change.Name,
 			)
+			if change.Action == ReplaceExisting {
+				captured := filepath.Join(
+					stage,
+					"old",
+					change.Name,
+				)
+				info, err := Lstat(
+					filesystem,
+					captured,
+				)
+				if err != nil {
+					return NotCommitted, rollback(err)
+				}
+				if !info.IsDir() || info.Mode()&fs.ModeSymlink != 0 {
+					return NotCommitted, rollback(fmt.Errorf(
+						"captured bundle %s is not a regular directory",
+						captured,
+					))
+				}
+				if err := checkExisting(captured); err != nil {
+					return NotCommitted, rollback(err)
+				}
+			}
 		} else if !errors.Is(
 			statErr,
 			fs.ErrNotExist,
 		) {
 			return NotCommitted, rollback(statErr)
+		} else if change.Action == ReplaceExisting {
+			return NotCommitted, rollback(fmt.Errorf(
+				"destination %s no longer exists: %w",
+				filename,
+				fs.ErrNotExist,
+			))
 		}
 		if change.Action != Remove {
 			if err := filesystem.Rename(
@@ -366,7 +398,7 @@ func checkChanges(changes []Change) error {
 		}
 		seen[change.Name] = true
 		switch change.Action {
-		case Install, Replace:
+		case Install, Replace, ReplaceExisting:
 		case Remove:
 			if len(change.Payload) != 0 {
 				return errors.New("removal must not contain a payload")

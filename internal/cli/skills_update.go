@@ -11,7 +11,7 @@ import (
 )
 
 func skillsUpdateCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.UpdateOptions, commandio.IO) error) {
-	var asJSON bool
+	var asJSON, override bool
 	c := &cobra.Command{
 		Use:   "update [SKILL...]",
 		Short: "Update installed agent skills",
@@ -24,8 +24,10 @@ func skillsUpdateCmd(parent *cobra.Command, manager *skills.Manager, run func(co
 		to choose one. Missing skills and skills absent from the lock file are
 		also warned about and skipped.
 
-		Updates replace the complete skill bundle, including local edits, and
-		remove obsolete files. Unsupported recorded sources are skipped.
+		Installed contents must match the lock hash; mismatches are warned about
+		and skipped before fetching. --override permits replacing those bundles.
+		Updates replace complete bundles and remove obsolete files. Each eligible
+		Git source is fetched once. Unsupported recorded sources are skipped.
 		Output is a JSON array when stdout is not a terminal or --json is set.
 		`),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -37,9 +39,10 @@ func skillsUpdateCmd(parent *cobra.Command, manager *skills.Manager, run func(co
 				cmd.Context(),
 				manager,
 				skills.UpdateOptions{
-					Scope:  so,
-					Skills: args,
-					JSON:   asJSON,
+					Scope:    so,
+					Skills:   args,
+					Override: override,
+					JSON:     asJSON,
 				},
 				commandio.IO{
 					In:  cmd.InOrStdin(),
@@ -54,6 +57,12 @@ func skillsUpdateCmd(parent *cobra.Command, manager *skills.Manager, run func(co
 		"json",
 		false,
 		"Output a JSON array (automatic when stdout is not a terminal)",
+	)
+	c.Flags().BoolVar(
+		&override,
+		"override",
+		false,
+		"Replace skills whose installed contents do not match the lock hash",
 	)
 	parent.AddCommand(c)
 }

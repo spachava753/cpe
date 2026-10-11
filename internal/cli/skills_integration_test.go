@@ -429,6 +429,102 @@ func TestSkillsLifecycle(t *testing.T) {
 		},
 	)
 	t.Run(
+		"update protects local edits unless overridden",
+		func(t *testing.T) {
+			const local = "locally edited definition"
+			if err := afero.WriteFile(
+				destinations,
+				"/skills/alpha/SKILL.md",
+				[]byte(local),
+				0o600,
+			); err != nil {
+				t.Fatal(err)
+			}
+			for _, test := range []struct {
+				name     string
+				override bool
+			}{
+				{
+					name: "default skips without git available",
+				},
+				{
+					name:     "override replaces the edited bundle",
+					override: true,
+				},
+			} {
+				t.Run(
+					test.name,
+					func(t *testing.T) {
+						if !test.override {
+							t.Setenv(
+								"PATH",
+								t.TempDir(),
+							)
+						}
+						var output, warnings bytes.Buffer
+						command := Root(
+							"test",
+							manager,
+							nil,
+							nil,
+							auth.LoginOptions{},
+						)
+						args := []string{
+							"skills",
+							"update",
+							"alpha",
+							"--dir",
+							"/skills",
+						}
+						if test.override {
+							args = append(
+								args,
+								"--override",
+							)
+						}
+						command.SetArgs(args)
+						command.SetOut(&output)
+						command.SetErr(&warnings)
+						if err := command.ExecuteContext(t.Context()); err != nil {
+							t.Fatal(err)
+						}
+						data, err := afero.ReadFile(
+							destinations,
+							"/skills/alpha/SKILL.md",
+						)
+						want := local
+						if test.override {
+							want = definition
+						}
+						if err != nil || string(data) != want {
+							t.Fatalf(
+								"installed definition = %q, %v; want %q",
+								data,
+								err,
+								want,
+							)
+						}
+						if !test.override && !strings.Contains(
+							warnings.String(),
+							"--override",
+						) {
+							t.Fatalf(
+								"missing edit protection warning: %s",
+								warnings.String(),
+							)
+						}
+						if test.override && warnings.Len() != 0 {
+							t.Fatalf(
+								"unexpected override warnings: %s",
+								warnings.String(),
+							)
+						}
+					},
+				)
+			}
+		},
+	)
+	t.Run(
 		"remove",
 		func(t *testing.T) {
 			var output bytes.Buffer

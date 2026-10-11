@@ -290,7 +290,7 @@ func TestGitClientFetch(t *testing.T) {
 	}{
 		// Accepted locators, with real HTTP(S) transport only for loopback servers.
 		{
-			name:   "Git tree metadata is independent of CRLF checkout bytes",
+			name:   "Git checkout honors CRLF attributes",
 			source: transformedLocator,
 			crlf:   true,
 		},
@@ -809,65 +809,6 @@ func TestGitClientFetch(t *testing.T) {
 							"nested",
 						); readErr != nil {
 							t.Fatal(readErr)
-						}
-					}
-					if checkout.GitTreeHash == nil {
-						t.Fatal("Git tree metadata is unavailable")
-					}
-					if !test.empty {
-						original := repository
-						if test.crlf {
-							original = transformed
-						}
-						for _, directory := range []string{
-							".",
-							"nested",
-							"scripts",
-						} {
-							object := "HEAD:" + directory
-							if directory == "." {
-								object = "HEAD^{tree}"
-							}
-							expected, err := exec.CommandContext(
-								t.Context(),
-								"git",
-								"-C",
-								original,
-								"rev-parse",
-								"--verify",
-								object,
-							).Output()
-							if err != nil {
-								t.Fatal(err)
-							}
-							got, err := checkout.GitTreeHash(
-								t.Context(),
-								directory,
-							)
-							if err != nil || got != strings.TrimSpace(string(expected)) {
-								t.Fatalf(
-									"GitTreeHash(%q) = %q, %v; want %q",
-									directory,
-									got,
-									err,
-									expected,
-								)
-							}
-						}
-						for _, directory := range []string{
-							"../outside",
-							"SKILL.md",
-							"missing",
-						} {
-							if _, err := checkout.GitTreeHash(
-								t.Context(),
-								directory,
-							); err == nil {
-								t.Fatalf(
-									"invalid tree %q was accepted",
-									directory,
-								)
-							}
 						}
 					}
 					// Two acquisitions own separate resources; releasing the first must

@@ -327,14 +327,14 @@ func (lock *skillLock) encode() ([]byte, error) {
 	), nil
 }
 
-func (m *Manager) applyTracked(ctx context.Context, directory string, changes []bundlefs.Change, lock *skillLock) (bundlefs.Outcome, error) {
+func (m *Manager) applyTracked(ctx context.Context, directory string, changes []bundlefs.Change, lock *skillLock, checkExisting func(string) error) (bundlefs.Outcome, error) {
 	if lock == nil {
 		return bundlefs.Apply(
 			ctx,
 			m.destinations,
 			directory,
 			changes,
-			m.checkDefinition,
+			checkExisting,
 		)
 	}
 	var data []byte
@@ -359,7 +359,7 @@ func (m *Manager) applyTracked(ctx context.Context, directory string, changes []
 		m.destinations,
 		directory,
 		changes,
-		m.checkDefinition,
+		checkExisting,
 		bundlefs.FileChange{
 			Path:     lock.file.Path,
 			Data:     data,

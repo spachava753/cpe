@@ -24,6 +24,8 @@ const (
 	Replace
 	// Remove deletes an existing bundle; an absent destination is a no-op.
 	Remove
+	// ReplaceExisting replaces a required existing bundle after checking its captured contents.
+	ReplaceExisting
 )
 
 // Change describes a change to one named bundle beneath Apply's root.
