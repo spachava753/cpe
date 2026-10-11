@@ -22,7 +22,13 @@
 
 ## Tests
 
+- Test only command plumbing: registration, help, aliases, argument and flag
+  validation and translation, dependency/context/stream forwarding, and error
+  propagation.
+- Inject fake actions through the `*CmdWithActions` helpers. Do not run real
+  package-specific command functions, acquire sources, or mutate installations
+  or credentials in CLI tests.
 - Keep adapter and help tests in `<group>_test.go`; extend the existing test tables
   for new subcommands, flags, and invalid invocations.
-- Keep real command lifecycle tests in `<group>_integration_test.go`, using
-  temporary fixtures and the real domain operations.
+- Test domain behavior in its owning package (`skills`, `plugins`, or `auth`).
+  Do not add CLI integration or lifecycle tests.
