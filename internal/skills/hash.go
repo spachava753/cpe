@@ -1,22 +1,25 @@
 package skills
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"slices"
 
-	"golang.org/x/text/collate"
-	"golang.org/x/text/language"
-
 	"github.com/spachava753/cpe/internal/bundlefs"
+	"github.com/spachava753/cpe/internal/pathcollate"
 	"github.com/spachava753/cpe/internal/source"
 )
 
 func folderHash(payload []bundlefs.Entry) string {
+	type sortableFile struct {
+		bundlefs.Entry
+		key []byte
+	}
 	files := make(
-		[]bundlefs.Entry,
+		[]sortableFile,
 		0,
 		len(payload),
 	)
@@ -24,18 +27,20 @@ func folderHash(payload []bundlefs.Entry) string {
 		if !entry.Mode.IsDir() {
 			files = append(
 				files,
-				entry,
+				sortableFile{
+					Entry: entry,
+					key:   pathcollate.Key(entry.Path),
+				},
 			)
 		}
 	}
-	// Upstream sorts with JavaScript localeCompare, rather than byte ordering.
-	order := collate.New(language.English)
-	slices.SortFunc(
+	// Upstream's localeCompare sort is stable, including canonical-equivalence ties.
+	slices.SortStableFunc(
 		files,
-		func(a, b bundlefs.Entry) int {
-			return order.CompareString(
-				a.Path,
-				b.Path,
+		func(a, b sortableFile) int {
+			return bytes.Compare(
+				a.key,
+				b.key,
 			)
 		},
 	)

@@ -2,6 +2,7 @@ package skills
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -134,41 +135,199 @@ func TestReadLock(t *testing.T) {
 }
 
 func TestFolderHash(t *testing.T) {
-	// Generated with upstream's Node SHA-256 algorithm and localeCompare sort.
-	payload := []bundlefs.Entry{
-		{
-			Path: "SKILL.md",
-			Data: []byte("---\nname: alpha\ndescription: Alpha skill\n---\n"),
-		},
-		{
-			Path: "A.txt",
-			Data: []byte("upper"),
-		},
-		{
-			Path: "a.txt",
-			Data: []byte("lower"),
-		},
-		{
-			Path: "assets/z.bin",
-			Data: []byte{
-				0,
-				1,
-				255,
+	// Generated with upstream's SHA-256 algorithm and Node 26.8.2 / ICU 78.3
+	// en-US localeCompare. No external executable is used by these tests.
+	var equivalents []bundlefs.Entry
+	for i, name := range []string{
+		"a\u0327\u0323\u0301\u0315.txt",
+		"a\u0327\u0323\u0315\u0301.txt",
+		"a\u0327\u0301\u0323\u0315.txt",
+		"a\u0327\u0301\u0315\u0323.txt",
+		"a\u0327\u0315\u0323\u0301.txt",
+		"a\u0327\u0315\u0301\u0323.txt",
+		"a\u0323\u0327\u0301\u0315.txt",
+		"a\u0323\u0327\u0315\u0301.txt",
+		"a\u0323\u0301\u0327\u0315.txt",
+		"a\u0323\u0301\u0315\u0327.txt",
+		"a\u0323\u0315\u0327\u0301.txt",
+		"a\u0323\u0315\u0301\u0327.txt",
+		"a\u0301\u0327\u0323\u0315.txt",
+		"a\u0301\u0327\u0315\u0323.txt",
+		"a\u0301\u0323\u0327\u0315.txt",
+		"a\u0301\u0323\u0315\u0327.txt",
+		"a\u0301\u0315\u0327\u0323.txt",
+		"a\u0301\u0315\u0323\u0327.txt",
+		"a\u0315\u0327\u0323\u0301.txt",
+		"a\u0315\u0327\u0301\u0323.txt",
+		"a\u0315\u0323\u0327\u0301.txt",
+		"a\u0315\u0323\u0301\u0327.txt",
+		"a\u0315\u0301\u0327\u0323.txt",
+		"a\u0315\u0301\u0323\u0327.txt",
+	} {
+		equivalents = append(
+			equivalents,
+			bundlefs.Entry{
+				Path: name,
+				Data: []byte(strconv.Itoa(i)),
 			},
-		},
-		{
-			Path: "é.txt",
-			Data: []byte("accent"),
-		},
-		{
-			Path: "_note",
-			Data: []byte("punctuation"),
-		},
+		)
 	}
-	if got := folderHash(payload); got != "1b605fff4f64b77114d26a9ef43415ae38b87df5f51c48b729316c9b31eda674" {
-		t.Fatalf(
-			"folderHash = %s",
-			got,
+	for _, test := range []struct {
+		name    string
+		payload []bundlefs.Entry
+		want    string
+	}{
+		{
+			name: "original upstream vector",
+			payload: []bundlefs.Entry{
+				{
+					Path: "SKILL.md",
+					Data: []byte("---\nname: alpha\ndescription: Alpha skill\n---\n"),
+				},
+				{
+					Path: "A.txt",
+					Data: []byte("upper"),
+				},
+				{
+					Path: "a.txt",
+					Data: []byte("lower"),
+				},
+				{
+					Path: "assets/z.bin",
+					Data: []byte{
+						0,
+						1,
+						255,
+					},
+				},
+				{
+					Path: "é.txt",
+					Data: []byte("accent"),
+				},
+				{
+					Path: "_note",
+					Data: []byte("punctuation"),
+				},
+			},
+			want: "1b605fff4f64b77114d26a9ef43415ae38b87df5f51c48b729316c9b31eda674",
+		},
+		{
+			name: "robot regression",
+			payload: []bundlefs.Entry{
+				{
+					Path: "SKILL.md",
+					Data: []byte("skill"),
+				},
+				{
+					Path: "a.txt",
+					Data: []byte("letter"),
+				},
+				{
+					Path: "🤖.txt",
+					Data: []byte("robot"),
+				},
+			},
+			want: "cd4bd4942f844457860f54f12fd4bec412d11c51f1647ddd618ad40d1a26a95a",
+		},
+		{
+			name: "Unicode 15 through 17 emoji",
+			payload: []bundlefs.Entry{
+				{
+					Path: "SKILL.md",
+					Data: []byte("skill"),
+				},
+				{
+					Path: "🫪.txt",
+					Data: []byte("distorted"),
+				},
+				{
+					Path: "🫩.txt",
+					Data: []byte("bags"),
+				},
+				{
+					Path: "🩷.txt",
+					Data: []byte("heart"),
+				},
+				{
+					Path: "a.txt",
+					Data: []byte("letter"),
+				},
+			},
+			want: "2092299d8ef699f32b1e725e2c657213bf9af00df47db355ff99c4315a6468d4",
+		},
+		{
+			name: "Han ligatures and case",
+			payload: []bundlefs.Entry{
+				{
+					Path: "SKILL.md",
+					Data: []byte("skill"),
+				},
+				{
+					Path: "𠀀.txt",
+					Data: []byte("han-extension"),
+				},
+				{
+					Path: "三.txt",
+					Data: []byte("han-base"),
+				},
+				{
+					Path: "æ.txt",
+					Data: []byte("ligature"),
+				},
+				{
+					Path: "ae.txt",
+					Data: []byte("letters"),
+				},
+				{
+					Path: "A.txt",
+					Data: []byte("upper"),
+				},
+				{
+					Path: "a.txt",
+					Data: []byte("lower"),
+				},
+			},
+			want: "2c39124e255670f669e6f34fc917c3e4f503d4e89bbd9ef57f32143651c2ac59",
+		},
+		{
+			name: "canonically equivalent paths retain input order",
+			payload: []bundlefs.Entry{
+				{
+					Path: "SKILL.md",
+					Data: []byte("skill"),
+				},
+				{
+					Path: "é.txt",
+					Data: []byte("composed"),
+				},
+				{
+					Path: "é.txt",
+					Data: []byte("decomposed"),
+				},
+				{
+					Path: "a.txt",
+					Data: []byte("letter"),
+				},
+			},
+			want: "9e2ad943f33d8dd50afdf1c17ecc846c00c206ab238e0c0a68bdc8a853259c4c",
+		},
+		{
+			name:    "large canonical-equivalence class is stable",
+			payload: equivalents,
+			want:    "f0b517683635388be856156cad74550335b8c16c93aaff7d52cfcd3b79206fec",
+		},
+	} {
+		t.Run(
+			test.name,
+			func(t *testing.T) {
+				if got := folderHash(test.payload); got != test.want {
+					t.Fatalf(
+						"folderHash = %s; want %s",
+						got,
+						test.want,
+					)
+				}
+			},
 		)
 	}
 }

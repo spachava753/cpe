@@ -36,6 +36,11 @@ archives:
       {{- else }}{{ .Arch }}{{- end }}
     formats:
       - tar.gz
+    files:
+      - LICENSE
+      - README.md
+      - src: internal/pathcollate/LICENSE
+        dst: UNICODE-LICENSE
     format_overrides:
       - goos: windows
         formats:
