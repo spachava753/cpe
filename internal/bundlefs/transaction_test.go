@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -121,6 +122,10 @@ func TestApply(t *testing.T) {
 			},
 		},
 	}
+	required := slices.Clone(replacements)
+	for index := range required {
+		required[index].Action = bundlefs.ReplaceExisting
+	}
 	replaced := map[string]string{
 		"alpha/marker":  "new alpha",
 		"alpha/bin/run": "executable",
@@ -132,6 +137,7 @@ func TestApply(t *testing.T) {
 		changes        []bundlefs.Change
 		fault          transactionFault
 		rejectExisting bool
+		capturedCheck  bool
 		nilCheck       bool
 		wantOutcome    bundlefs.Outcome
 		wantCause      error
@@ -145,6 +151,29 @@ func TestApply(t *testing.T) {
 			changes:     replacements,
 			wantOutcome: bundlefs.Committed,
 			wantFiles:   replaced,
+		},
+		{
+			name:          "required replacements verify captured old bundles",
+			initial:       initial,
+			changes:       required,
+			capturedCheck: true,
+			wantOutcome:   bundlefs.Committed,
+			wantFiles:     replaced,
+		},
+		{
+			name:      "required replacement cannot recreate a missing bundle",
+			changes:   required,
+			wantCause: fs.ErrNotExist,
+			wantFiles: map[string]string{},
+		},
+		{
+			name:           "rejected captured bundle restores every prior replacement",
+			initial:        initial,
+			changes:        required,
+			capturedCheck:  true,
+			rejectExisting: true,
+			wantCause:      fs.ErrPermission,
+			wantFiles:      initial,
 		},
 		{
 			name:        "empty selection",
@@ -492,6 +521,15 @@ func TestApply(t *testing.T) {
 					cancel: cancel,
 				}
 				check := func(directory string) error {
+					if test.capturedCheck && (filepath.Base(filepath.Dir(directory)) != "old" || !strings.Contains(
+						directory,
+						".cpe-stage-",
+					)) {
+						t.Fatalf(
+							"eligibility check did not receive the captured bundle: %s",
+							directory,
+						)
+					}
 					if test.rejectExisting && filepath.Base(directory) == "beta" {
 						return fs.ErrPermission
 					}

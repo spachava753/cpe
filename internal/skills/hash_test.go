@@ -1,71 +1,46 @@
 package skills
 
 import (
-	"context"
+	"io/fs"
+	"slices"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/spachava753/cpe/internal/bundlefs"
-	"github.com/spachava753/cpe/internal/source"
 )
 
 func TestHashRecord(t *testing.T) {
 	for _, test := range []struct {
-		name         string
-		format       LockFormat
-		sourceType   skillSourceType
-		metadata     bool
-		wantMetadata bool
-		wantError    bool
+		name       string
+		format     LockFormat
+		sourceType skillSourceType
 	}{
 		{
-			name:         "global GitHub record uses acquired tree metadata",
-			format:       GlobalLock,
-			sourceType:   githubSource,
-			metadata:     true,
-			wantMetadata: true,
-		},
-		{
-			name:       "global GitHub requires tree metadata rather than checkout-byte fallback",
-			format:     GlobalLock,
-			sourceType: githubSource,
-			wantError:  true,
-		},
-		{
-			name:       "project uses content hashing even for GitHub sources",
+			name:       "project GitHub uses a folder fingerprint",
 			format:     ProjectLock,
 			sourceType: githubSource,
-			metadata:   true,
 		},
 		{
-			name:       "generic global Git uses content hashing",
+			name:       "global GitHub uses a folder fingerprint without Git metadata",
+			format:     GlobalLock,
+			sourceType: githubSource,
+		},
+		{
+			name:       "global generic Git uses a folder fingerprint",
 			format:     GlobalLock,
 			sourceType: gitSource,
-			metadata:   true,
 		},
 	} {
 		t.Run(
 			test.name,
 			func(t *testing.T) {
-				const tree = "70993c44c50665a842d44706f3daf42d0530412f"
-				checkout := source.Checkout{}
-				called := false
-				if test.metadata {
-					checkout.GitTreeHash = func(ctx context.Context, directory string) (string, error) {
-						called = true
-						if ctx != t.Context() || directory != "nested/alpha" {
-							t.Fatal("tree metadata request did not preserve context and source directory")
-						}
-						return tree, nil
-					}
-				}
 				lock := &skillLock{
 					file: LockFile{
 						Format: test.format,
 					},
 				}
-				got, err := lock.hashRecord(
-					t.Context(),
-					checkout,
+				got := lock.hashRecord(
 					Skill{
 						Path: "nested/alpha/SKILL.md",
 					},
@@ -79,24 +54,175 @@ func TestHashRecord(t *testing.T) {
 						SourceType: test.sourceType,
 					},
 				)
-				if (err != nil) != test.wantError || called != test.wantMetadata {
-					t.Fatalf(
-						"hashRecord = %v; metadata called = %v",
-						err,
-						called,
-					)
-				}
-				if test.wantError {
-					return
-				}
 				if got.SkillPath != "nested/alpha/SKILL.md" {
 					t.Fatal("source-relative skill path was lost")
 				}
-				if test.wantMetadata && got.SkillFolderHash != tree {
-					t.Fatal("record did not retain the Git tree object ID")
+				if test.format == ProjectLock && (len(got.ComputedHash) != 64 || got.SkillFolderHash != "") {
+					t.Fatalf(
+						"incorrect project hash fields: %+v",
+						got,
+					)
 				}
-				if !test.wantMetadata && len(got.ComputedHash)+len(got.SkillFolderHash) != 64 {
-					t.Fatal("content hash was not recorded in the selected schema")
+				if test.format == GlobalLock && (len(got.SkillFolderHash) != 64 || got.ComputedHash != "") {
+					t.Fatalf(
+						"incorrect global hash fields: %+v",
+						got,
+					)
+				}
+			},
+		)
+	}
+}
+
+func TestFolderHash(t *testing.T) {
+	// This vector was independently calculated with Python's hashlib and struct.
+	vector := []bundlefs.Entry{
+		{
+			Path: "SKILL.md",
+			Data: []byte("skill"),
+		},
+		{
+			Path: "A.txt",
+			Data: []byte("upper"),
+		},
+		{
+			Path: "a.txt",
+			Data: []byte("lower"),
+		},
+		{
+			Path: "é.txt",
+			Data: []byte("composed"),
+		},
+		{
+			Path: "e\u0301.txt",
+			Data: []byte("decomposed"),
+		},
+		{
+			Path: "🤖.txt",
+			Data: []byte{
+				0,
+				255,
+			},
+		},
+	}
+	reversed := slices.Clone(vector)
+	slices.Reverse(reversed)
+	withDirectory := append(
+		slices.Clone(vector),
+		bundlefs.Entry{
+			Path: "empty",
+			Mode: fs.ModeDir | 0o700,
+		},
+	)
+	for _, test := range []struct {
+		name    string
+		payload []bundlefs.Entry
+		other   []bundlefs.Entry
+		want    string
+	}{
+		{
+			name:    "byte ordering distinguishes case and canonical-equivalent paths",
+			payload: vector,
+			want:    "aa08ed019672689cd4d864384edd2df0febde62dddd4c1117e29bb6dde1a78ee",
+		},
+		{
+			name:    "traversal order does not affect the fingerprint",
+			payload: reversed,
+			want:    "aa08ed019672689cd4d864384edd2df0febde62dddd4c1117e29bb6dde1a78ee",
+		},
+		{
+			name:    "empty directories do not affect the fingerprint",
+			payload: withDirectory,
+			want:    "aa08ed019672689cd4d864384edd2df0febde62dddd4c1117e29bb6dde1a78ee",
+		},
+		{
+			name: "path and content boundaries are unambiguous",
+			payload: []bundlefs.Entry{
+				{
+					Path: "a",
+					Data: []byte("bc"),
+				},
+			},
+			other: []bundlefs.Entry{
+				{
+					Path: "ab",
+					Data: []byte("c"),
+				},
+			},
+		},
+		{
+			name: "file boundaries are unambiguous",
+			payload: []bundlefs.Entry{
+				{
+					Path: "a",
+					Data: []byte("bcd"),
+				},
+			},
+			other: []bundlefs.Entry{
+				{
+					Path: "a",
+					Data: []byte("b"),
+				},
+				{
+					Path: "c",
+					Data: []byte("d"),
+				},
+			},
+		},
+		{
+			name: "renaming a resource changes the fingerprint",
+			payload: []bundlefs.Entry{
+				{
+					Path: "a.txt",
+					Data: []byte("same content"),
+				},
+			},
+			other: []bundlefs.Entry{
+				{
+					Path: "b.txt",
+					Data: []byte("same content"),
+				},
+			},
+		},
+		{
+			name: "editing a resource changes the fingerprint",
+			payload: []bundlefs.Entry{
+				{
+					Path: "a.txt",
+					Data: []byte("before"),
+				},
+			},
+			other: []bundlefs.Entry{
+				{
+					Path: "a.txt",
+					Data: []byte("after"),
+				},
+			},
+		},
+	} {
+		t.Run(
+			test.name,
+			func(t *testing.T) {
+				before := slices.Clone(test.payload)
+				got := folderHash(test.payload)
+				if test.want != "" && got != test.want {
+					t.Fatalf(
+						"folderHash = %s; want %s",
+						got,
+						test.want,
+					)
+				}
+				if test.other != nil && got == folderHash(test.other) {
+					t.Fatal("different file trees produced the same fingerprint")
+				}
+				if diff := cmp.Diff(
+					before,
+					test.payload,
+				); diff != "" {
+					t.Fatalf(
+						"hashing mutated the payload: %s",
+						diff,
+					)
 				}
 			},
 		)

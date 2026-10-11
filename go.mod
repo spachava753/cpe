@@ -282,7 +282,7 @@ require (
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0
 	golang.org/x/telemetry v0.0.0-20260811182544-a038080d80e5 // indirect
-	golang.org/x/text v0.41.0
+	golang.org/x/text v0.41.0 // indirect
 	google.golang.org/api v0.293.0 // indirect
 	google.golang.org/genai v1.70.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260825221802-da73d73af1c5 // indirect

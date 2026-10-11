@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"path"
 	"path/filepath"
 	"slices"
-	"sort"
 
 	"github.com/spf13/afero"
 
@@ -22,13 +20,16 @@ type UpdateOptions struct {
 	Scope commandio.ScopeOptions
 	// Skills contains installed directory names. Empty selects every installed skill.
 	Skills []string
+	// Override replaces bundles whose installed contents differ from tracking.
+	Override bool
 	// JSON forces JSON results even when output is a terminal.
 	JSON bool
 }
 
 // Update replaces tracked skills from their recorded Git sources and writes results.
-// Missing, ambiguous, and untracked selections are warned about and skipped.
-// Results identify committed updates, including when a later scope or cleanup fails.
+// Missing, ambiguous, untracked, and locally changed selections are warned about
+// and skipped. Override permits content mismatches; each eligible source is fetched
+// once. Results identify updates committed before a later scope or cleanup fails.
 func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams commandio.IO) error {
 	scopes, err := resolveScopes(
 		opts.Scope,
@@ -128,17 +129,28 @@ func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams c
 	); err != nil {
 		return err
 	}
+	plan, err := manager.planUpdates(
+		ctx,
+		scopes,
+		locks,
+		selected,
+		opts.Override,
+		streams,
+	)
+	if err != nil {
+		return err
+	}
 	var result []InstalledSkill
 	for index, scope := range scopes {
-		if len(selected[index]) == 0 {
+		if len(plan[index]) == 0 {
 			continue
 		}
-		sort.Strings(selected[index])
 		updated, err := manager.updateScope(
 			ctx,
 			scope,
 			locks[index],
-			selected[index],
+			plan[index],
+			opts.Override,
 			streams,
 		)
 		result = append(
@@ -297,41 +309,26 @@ func (m *Manager) installedNames(ctx context.Context, directory string, requeste
 	return names, nil
 }
 
-func (m *Manager) updateScope(ctx context.Context, scope skillScope, lock *skillLock, names []string, streams commandio.IO) ([]InstalledSkill, error) {
+func (m *Manager) updateScope(ctx context.Context, scope skillScope, lock *skillLock, updates []skillUpdate, override bool, streams commandio.IO) ([]InstalledSkill, error) {
 	var changes []bundlefs.Change
 	var result []InstalledSkill
-	for _, name := range names {
-		if _, exists := lock.skills[name]; !exists {
-			if err := writeWarning(
-				streams,
-				fmt.Sprintf(
-					"cannot update skill %q in %s: not in the lock file",
-					name,
-					scope.directory,
-				),
-			); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		record, err := lock.record(name)
+	expected := map[string]string{}
+	for _, update := range updates {
+		bundle, err := update.source.bundle(
+			ctx,
+			m,
+			update.record.SkillPath,
+		)
 		if err != nil {
-			if err := writeWarning(
-				streams,
-				fmt.Sprintf(
-					"cannot update skill %q in %s: %v",
-					name,
-					scope.directory,
-					err,
-				),
-			); err != nil {
-				return nil, err
-			}
-			continue
+			return nil, fmt.Errorf(
+				"update skill %q: %w",
+				update.name,
+				err,
+			)
 		}
 		filename := filepath.Join(
 			scope.directory,
-			name,
+			update.name,
 		)
 		if err := m.destination(
 			ctx,
@@ -342,32 +339,45 @@ func (m *Manager) updateScope(ctx context.Context, scope skillScope, lock *skill
 		if err := m.checkDefinition(filename); err != nil {
 			return nil, err
 		}
-		skill, payload, record, err := m.prepareUpdate(
-			ctx,
-			lock,
-			record,
-		)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"update skill %q: %w",
-				name,
-				err,
+		if !override {
+			matches, err := m.matchesInstalled(
+				ctx,
+				filename,
+				update.previous,
+				streams,
 			)
+			if err != nil {
+				return nil, err
+			}
+			if !matches {
+				continue
+			}
 		}
+		record := lock.hashRecord(
+			bundle.skill,
+			bundle.payload,
+			update.record,
+		)
 		if err := lock.put(
-			name,
+			update.name,
 			record,
 		); err != nil {
 			return nil, err
 		}
+		expected[update.name] = update.previous
+		action := bundlefs.ReplaceExisting
+		if override {
+			action = bundlefs.Replace
+		}
 		changes = append(
 			changes,
 			bundlefs.Change{
-				Name:    name,
-				Payload: payload,
-				Action:  bundlefs.Replace,
+				Name:    update.name,
+				Payload: bundle.payload,
+				Action:  action,
 			},
 		)
+		skill := bundle.skill
 		skill.Path = filepath.Join(
 			filename,
 			"SKILL.md",
@@ -380,11 +390,41 @@ func (m *Manager) updateScope(ctx context.Context, scope skillScope, lock *skill
 			},
 		)
 	}
+	checkExisting := m.checkDefinition
+	if !override {
+		checkExisting = func(directory string) error {
+			if err := m.checkDefinition(directory); err != nil {
+				return err
+			}
+			previous, exists := expected[filepath.Base(directory)]
+			if !exists {
+				return errors.New("installed skill tracking is unavailable")
+			}
+			hash, err := m.installedHash(
+				ctx,
+				directory,
+			)
+			if err != nil {
+				return fmt.Errorf(
+					"verify installed contents before publication: %w",
+					err,
+				)
+			}
+			if hash != previous {
+				return fmt.Errorf(
+					"installed skill in %s changed during update; retry or use --override",
+					directory,
+				)
+			}
+			return nil
+		}
+	}
 	outcome, err := m.applyTracked(
 		ctx,
 		scope.directory,
 		changes,
 		lock,
+		checkExisting,
 	)
 	if err != nil {
 		if outcome != bundlefs.Committed {
@@ -396,50 +436,4 @@ func (m *Manager) updateScope(ctx context.Context, scope skillScope, lock *skill
 		)
 	}
 	return result, nil
-}
-
-func (m *Manager) prepareUpdate(ctx context.Context, lock *skillLock, record lockedSkill) (skill Skill, payload []bundlefs.Entry, updated lockedSkill, err error) {
-	checkout, err := m.acquire(
-		ctx,
-		record.locator(),
-	)
-	if err != nil {
-		return Skill{}, nil, lockedSkill{}, err
-	}
-	defer func() {
-		err = errors.Join(
-			err,
-			checkout.Close(),
-		)
-	}()
-	directory := path.Dir(record.SkillPath)
-	if err := bundlefs.CheckSourceDirectory(
-		checkout.FS,
-		directory,
-	); err != nil {
-		return Skill{}, nil, lockedSkill{}, err
-	}
-	skill, err = readDefinition(
-		checkout.FS,
-		directory,
-	)
-	if err != nil {
-		return Skill{}, nil, lockedSkill{}, err
-	}
-	payload, err = readPayload(
-		ctx,
-		checkout.FS,
-		directory,
-	)
-	if err != nil {
-		return Skill{}, nil, lockedSkill{}, err
-	}
-	updated, err = lock.hashRecord(
-		ctx,
-		checkout,
-		skill,
-		payload,
-		record,
-	)
-	return skill, payload, updated, err
 }

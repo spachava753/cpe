@@ -60,6 +60,32 @@ func TestSkillsCommands(t *testing.T) {
 			},
 		},
 		{
+			name: "update override flag is forwarded",
+			args: []string{
+				"skills",
+				"update",
+				"one",
+				"--override",
+			},
+			update: &skills.UpdateOptions{
+				Skills: []string{
+					"one",
+				},
+				Override: true,
+			},
+		},
+		{
+			name: "update false override flag preserves protection",
+			args: []string{
+				"skills",
+				"update",
+				"--override=false",
+			},
+			update: &skills.UpdateOptions{
+				Skills: []string{},
+			},
+		},
+		{
 			name: "update custom directory",
 			args: []string{
 				"skills",

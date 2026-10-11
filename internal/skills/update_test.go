@@ -2,7 +2,9 @@ package skills_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -14,32 +16,59 @@ import (
 
 	"github.com/spachava753/cpe/internal/commandio"
 	"github.com/spachava753/cpe/internal/skills"
+	"github.com/spachava753/cpe/internal/source"
 )
 
 func TestUpdate(t *testing.T) {
+	// Independently calculated full-folder fingerprints for these fixtures.
+	const (
+		alphaHash         = "28b5fd9343e6d47f395462fc3d0e9f17779bb14fcbbd6cc0c762ee323b2d2010"
+		alphaObsoleteHash = "f407deda4e5076b0e73c1aaa28b73f07a5c6f5a5be69bfc29f2ef158c3aa7ec2"
+		betaHash          = "47a0f558e4360d8a9b0f18ea5b6052a5050da4029b0bb150e2987e5529233ffb"
+		otherSource       = "https://example.com/other.git"
+	)
 	for _, test := range []struct {
-		name               string
-		names              []string
-		project            bool
-		global             bool
-		atHome             bool
-		rootAlias          bool
-		native             bool
-		overlapping        bool
-		duplicate          bool
-		untracked          bool
-		unsupported        bool
-		unsupportedLocator bool
-		missingURL         bool
-		unreadableOther    bool
-		corrupt            bool
-		fault              managerFSFault
-		wantPaths          []string
-		warnings           []string
-		wantError          string
+		name                string
+		names               []string
+		project             bool
+		global              bool
+		atHome              bool
+		rootAlias           bool
+		native              bool
+		overlapping         bool
+		duplicate           bool
+		untracked           bool
+		unsupported         bool
+		unsupportedLocator  bool
+		missingURL          bool
+		unreadableOther     bool
+		corrupt             bool
+		override            bool
+		localEdit           bool
+		localDirectory      string
+		missingHash         bool
+		legacyHash          bool
+		github              bool
+		editDuringFetch     bool
+		editDuringStaging   bool
+		deleteDuringStaging bool
+		editDuringBackup    bool
+		unreadableInstalled bool
+		nonComparableFiles  bool
+		consumeSource       bool
+		differentSource     bool
+		missingSourceSkill  bool
+		cleanupFailure      bool
+		wantCommitted       bool
+		wantFetches         *int
+		fault               managerFSFault
+		wantPaths           []string
+		warnings            []string
+		wantError           string
 	}{
 		{
-			name: "all scopes include both inventories",
+			name:        "all scopes include both inventories and share one source acquisition",
+			wantFetches: new(1),
 			wantPaths: []string{
 				"project/alpha",
 				"global/beta",
@@ -265,6 +294,272 @@ func TestUpdate(t *testing.T) {
 			},
 		},
 		{
+			name:        "local edits are skipped before any clone",
+			project:     true,
+			localEdit:   true,
+			wantFetches: new(0),
+			warnings: []string{
+				"installed contents do not match",
+				"--override",
+			},
+		},
+		{
+			name:           "locally added dependency files require override",
+			project:        true,
+			localDirectory: "node_modules",
+			wantFetches:    new(0),
+			warnings: []string{
+				"installed contents do not match",
+			},
+		},
+		{
+			name:           "locally added Git metadata requires override",
+			project:        true,
+			localDirectory: ".git",
+			wantFetches:    new(0),
+			warnings: []string{
+				"installed contents do not match",
+			},
+		},
+		{
+			name:           "override replaces locally added dependency files",
+			project:        true,
+			localDirectory: "node_modules",
+			override:       true,
+			wantFetches:    new(1),
+			wantPaths: []string{
+				"project/alpha",
+			},
+		},
+		{
+			name:        "override replaces local edits",
+			project:     true,
+			localEdit:   true,
+			override:    true,
+			wantFetches: new(1),
+			wantPaths: []string{
+				"project/alpha",
+			},
+		},
+		{
+			name:        "missing hash cannot establish unmodified installed content",
+			project:     true,
+			missingHash: true,
+			wantFetches: new(0),
+			warnings: []string{
+				"installed contents do not match",
+				"--override",
+			},
+		},
+		{
+			name:        "incompatible hash requires explicit override",
+			project:     true,
+			legacyHash:  true,
+			wantFetches: new(0),
+			warnings: []string{
+				"incompatible tracking",
+				"--override",
+			},
+		},
+		{
+			name:        "override adopts an incompatible project hash",
+			project:     true,
+			legacyHash:  true,
+			override:    true,
+			wantFetches: new(1),
+			wantPaths: []string{
+				"project/alpha",
+			},
+		},
+		{
+			name:        "global GitHub tree ID cannot verify installed content",
+			global:      true,
+			github:      true,
+			legacyHash:  true,
+			wantFetches: new(0),
+			warnings: []string{
+				"incompatible tracking",
+				"--override",
+			},
+		},
+		{
+			name:        "override adopts a global GitHub folder fingerprint",
+			global:      true,
+			github:      true,
+			legacyHash:  true,
+			override:    true,
+			wantFetches: new(1),
+			wantPaths: []string{
+				"global/beta",
+			},
+		},
+		{
+			name:        "eligible sibling proceeds while edited skill is skipped",
+			localEdit:   true,
+			wantFetches: new(1),
+			wantPaths: []string{
+				"global/beta",
+			},
+			warnings: []string{
+				"installed contents do not match",
+			},
+		},
+		{
+			name:            "skipped source is not acquired while a different eligible source proceeds",
+			localEdit:       true,
+			differentSource: true,
+			wantFetches:     new(1),
+			wantPaths: []string{
+				"global/beta",
+			},
+			warnings: []string{
+				"installed contents do not match",
+			},
+		},
+		{
+			name:            "different eligible sources each get one acquisition",
+			differentSource: true,
+			wantFetches:     new(2),
+			wantPaths: []string{
+				"project/alpha",
+				"global/beta",
+			},
+		},
+		{
+			name:            "edits made during shared acquisition are preserved",
+			editDuringFetch: true,
+			wantFetches:     new(1),
+			wantPaths: []string{
+				"global/beta",
+			},
+			warnings: []string{
+				"installed contents do not match",
+			},
+		},
+		{
+			name:            "override also permits edits made during acquisition",
+			project:         true,
+			editDuringFetch: true,
+			override:        true,
+			wantFetches:     new(1),
+			wantPaths: []string{
+				"project/alpha",
+			},
+		},
+		{
+			name:                "unverifiable installed resource warns without cloning",
+			project:             true,
+			unreadableInstalled: true,
+			wantFetches:         new(0),
+			warnings: []string{
+				"cannot verify installed contents",
+				"--override",
+			},
+		},
+		{
+			name:                "override does not need to read installed resources",
+			project:             true,
+			unreadableInstalled: true,
+			override:            true,
+			wantFetches:         new(1),
+			wantPaths: []string{
+				"project/alpha",
+			},
+		},
+		{
+			name:              "edits made during staging abort publication without losing content",
+			project:           true,
+			editDuringStaging: true,
+			wantFetches:       new(1),
+			wantError:         "changed during update",
+		},
+		{
+			name:              "override permits replacing edits made during staging",
+			project:           true,
+			editDuringStaging: true,
+			override:          true,
+			wantFetches:       new(1),
+			wantPaths: []string{
+				"project/alpha",
+			},
+		},
+		{
+			name:                "bundle deletion during staging is not undone by a default update",
+			project:             true,
+			deleteDuringStaging: true,
+			wantFetches:         new(1),
+			wantError:           "no longer exists",
+		},
+		{
+			name:                "native bundle deletion during staging is not undone by a default update",
+			project:             true,
+			native:              true,
+			deleteDuringStaging: true,
+			wantFetches:         new(1),
+			wantError:           "no longer exists",
+		},
+		{
+			name:             "edits immediately before backup capture are verified and restored",
+			project:          true,
+			editDuringBackup: true,
+			wantFetches:      new(1),
+			wantError:        "changed during update",
+		},
+		{
+			name:             "native edits immediately before backup capture are verified and restored",
+			project:          true,
+			native:           true,
+			editDuringBackup: true,
+			wantFetches:      new(1),
+			wantError:        "changed during update",
+		},
+		{
+			name:               "valid memory file values need not be comparable",
+			nonComparableFiles: true,
+			wantFetches:        new(1),
+			wantPaths: []string{
+				"project/alpha",
+				"global/beta",
+			},
+		},
+		{
+			name:          "shared snapshots remain usable after source cleanup consumes the checkout",
+			consumeSource: true,
+			wantFetches:   new(1),
+			wantPaths: []string{
+				"project/alpha",
+				"global/beta",
+			},
+		},
+		{
+			name:        "override does not make unsupported provenance eligible",
+			unsupported: true,
+			override:    true,
+			wantFetches: new(1),
+			wantPaths: []string{
+				"global/beta",
+			},
+			warnings: []string{
+				"unsupported",
+			},
+		},
+		{
+			name:           "shared source cleanup failure prevents publication",
+			cleanupFailure: true,
+			wantFetches:    new(1),
+			wantError:      "cleanup failed",
+		},
+		{
+			name:               "later scope source error still reports earlier committed updates",
+			missingSourceSkill: true,
+			wantCommitted:      true,
+			wantFetches:        new(1),
+			wantPaths: []string{
+				"project/alpha",
+			},
+			wantError: "some skills updates committed",
+		},
+		{
 			name:      "bundle failure leaves lock unchanged",
 			project:   true,
 			fault:     managerPublishFailure,
@@ -373,9 +668,43 @@ func TestUpdate(t *testing.T) {
 						"sourceType":   sourceType,
 						"sourceUrl":    managerSource,
 						"skillPath":    "alpha/SKILL.md",
-						"computedHash": "old",
+						"computedHash": alphaObsoleteHash,
 						"extra":        "preserved",
 					}
+				}
+				if test.missingHash {
+					delete(
+						projectRecords["alpha"].(map[string]any),
+						"computedHash",
+					)
+				}
+				if test.legacyHash && !test.global {
+					projectRecords["alpha"].(map[string]any)["computedHash"] = "old"
+				}
+				if test.localEdit {
+					writeTrackingFixture(
+						t,
+						filesystem,
+						filepath.Join(
+							projectRoot,
+							"alpha",
+							"obsolete.txt",
+						),
+						"local edit",
+					)
+				}
+				if test.localDirectory != "" {
+					writeTrackingFixture(
+						t,
+						filesystem,
+						filepath.Join(
+							projectRoot,
+							"alpha",
+							test.localDirectory,
+							"local.txt",
+						),
+						"local addition",
+					)
 				}
 				if test.unsupportedLocator {
 					projectRecords["alpha"].(map[string]any)["sourceUrl"] = "git@github.com:owner/repo.git"
@@ -410,9 +739,19 @@ func TestUpdate(t *testing.T) {
 						"sourceType":      "git",
 						"sourceUrl":       managerSource,
 						"skillPath":       "beta/SKILL.md",
-						"skillFolderHash": "old",
+						"skillFolderHash": betaHash,
 						"installedAt":     "2026-01-01T00:00:00.000Z",
 					},
+				}
+				if test.differentSource {
+					globalRecords["beta"].(map[string]any)["sourceUrl"] = otherSource
+					globalRecords["beta"].(map[string]any)["source"] = otherSource
+				}
+				if test.github {
+					globalRecords["beta"].(map[string]any)["sourceType"] = "github"
+				}
+				if test.legacyHash && test.global {
+					globalRecords["beta"].(map[string]any)["skillFolderHash"] = "70993c44c50665a842d44706f3daf42d0530412f"
 				}
 				if test.duplicate {
 					writeTrackingFixture(
@@ -430,7 +769,10 @@ func TestUpdate(t *testing.T) {
 						"sourceType":      "git",
 						"sourceUrl":       managerSource,
 						"skillPath":       "alpha/SKILL.md",
-						"skillFolderHash": "old",
+						"skillFolderHash": alphaHash,
+					}
+					if test.atHome {
+						globalRecords["alpha"].(map[string]any)["skillFolderHash"] = alphaObsoleteHash
 					}
 				}
 				if test.overlapping {
@@ -468,35 +810,133 @@ func TestUpdate(t *testing.T) {
 						"invalid JSON",
 					)
 				}
+				if test.native && test.wantError != "" {
+					writeTrackingFixture(
+						t,
+						filesystem,
+						projectLock+".cpe-lock",
+						"",
+					)
+				}
 				before := snapshotManagerFS(
 					t,
 					filesystem,
 				)
-				manager := skills.NewManager(
-					managerSourceClient{
-						files: fstest.MapFS{
-							"alpha/SKILL.md": {
-								Data: []byte(alphaUpdated),
-							},
-							"beta/SKILL.md": {
-								Data: []byte(betaSkill),
-							},
-							"global-alpha/SKILL.md": {
-								Data: []byte(strings.Replace(
-									alphaUpdated,
-									"Updated alpha",
-									"Different global payload",
-									1,
-								)),
-							},
-						},
+				remote := fstest.MapFS{
+					"alpha/SKILL.md": {
+						Data: []byte(alphaUpdated),
 					},
+					"beta/SKILL.md": {
+						Data: []byte(betaSkill),
+					},
+					"global-alpha/SKILL.md": {
+						Data: []byte(strings.Replace(
+							alphaUpdated,
+							"Updated alpha",
+							"Different global payload",
+							1,
+						)),
+					},
+				}
+				if test.missingSourceSkill {
+					delete(
+						remote,
+						"beta/SKILL.md",
+					)
+				}
+				if test.deleteDuringStaging {
+					for filename := range before {
+						if filename == filepath.Join(
+							projectRoot,
+							"alpha",
+						) || strings.HasPrefix(
+							filename,
+							filepath.Join(
+								projectRoot,
+								"alpha",
+							)+string(filepath.Separator),
+						) {
+							delete(
+								before,
+								filename,
+							)
+						}
+					}
+				}
+				if (test.editDuringStaging || test.editDuringBackup) && !test.override {
+					before[filepath.Join(
+						projectRoot,
+						"alpha",
+						"obsolete.txt",
+					)] = "edit during staging"
+				}
+				var fetches []string
+				cleanups := 0
+				client := updateSourceClient{
+					files:   remote,
+					fetches: &fetches,
+					beforeFetch: func() {
+						if test.editDuringFetch {
+							writeTrackingFixture(
+								t,
+								filesystem,
+								filepath.Join(
+									projectRoot,
+									"alpha",
+									"obsolete.txt",
+								),
+								"edit during fetch",
+							)
+						}
+					},
+					cleanup: func() error {
+						cleanups++
+						if test.consumeSource {
+							clear(remote)
+						}
+						if test.cleanupFailure {
+							return errors.New("cleanup failed")
+						}
+						return nil
+					},
+				}
+				manager := skills.NewManager(
+					client,
 					updateInventoryFS{
 						Fs: managerFaultFS{
 							Fs:    filesystem,
 							fault: test.fault,
 						},
-						unreadableOther: test.unreadableOther,
+						unreadableOther:     test.unreadableOther,
+						unreadableInstalled: test.unreadableInstalled,
+						nonComparableFiles:  test.nonComparableFiles,
+						resource: filepath.Join(
+							projectRoot,
+							"alpha",
+							"obsolete.txt",
+						),
+						beforeStage: func(directory string) {
+							if test.deleteDuringStaging {
+								if err := filesystem.RemoveAll(filepath.Join(
+									projectRoot,
+									"alpha",
+								)); err != nil {
+									t.Fatal(err)
+								}
+							}
+							if test.editDuringStaging || (test.editDuringBackup && filepath.Base(directory) == "old") {
+								writeTrackingFixture(
+									t,
+									filesystem,
+									filepath.Join(
+										projectRoot,
+										"alpha",
+										"obsolete.txt",
+									),
+									"edit during staging",
+								)
+							}
+						},
 					},
 				)
 				var output, warnings bytes.Buffer
@@ -508,13 +948,44 @@ func TestUpdate(t *testing.T) {
 							Project: test.project,
 							Global:  test.global,
 						},
-						Skills: test.names,
+						Skills:   test.names,
+						Override: test.override,
 					},
 					commandio.IO{
 						Out: &output,
 						Err: &warnings,
 					},
 				)
+				if test.wantFetches != nil && len(fetches) != *test.wantFetches {
+					t.Fatalf(
+						"source acquisitions = %v; want %d",
+						fetches,
+						*test.wantFetches,
+					)
+				}
+				if cleanups != len(fetches) {
+					t.Fatalf(
+						"source cleanup count = %d; acquisitions = %v",
+						cleanups,
+						fetches,
+					)
+				}
+				for index, locator := range fetches {
+					for _, earlier := range fetches[:index] {
+						if locator == earlier {
+							t.Fatalf(
+								"source acquired more than once: %v",
+								fetches,
+							)
+						}
+					}
+				}
+				if test.localEdit && test.differentSource && (len(fetches) != 1 || fetches[0] != otherSource) {
+					t.Fatalf(
+						"skipped source was acquired: %v",
+						fetches,
+					)
+				}
 				if test.wantError != "" {
 					if err == nil || !strings.Contains(
 						err.Error(),
@@ -526,18 +997,19 @@ func TestUpdate(t *testing.T) {
 							test.wantError,
 						)
 					}
-					if diff := cmp.Diff(
-						before,
-						snapshotManagerFS(
-							t,
-							filesystem,
-						),
-					); diff != "" {
-						t.Fatal(diff)
+					if !test.wantCommitted {
+						if diff := cmp.Diff(
+							before,
+							snapshotManagerFS(
+								t,
+								filesystem,
+							),
+						); diff != "" {
+							t.Fatal(diff)
+						}
+						return
 					}
-					return
-				}
-				if err != nil {
+				} else if err != nil {
 					t.Fatal(err)
 				}
 				var summaries []struct {
@@ -588,6 +1060,38 @@ func TestUpdate(t *testing.T) {
 						warnings.String(),
 					)
 				}
+				if (test.localEdit || test.localDirectory != "" || test.editDuringFetch || test.missingHash || test.legacyHash) && !test.override && !test.global {
+					data, err := afero.ReadFile(
+						filesystem,
+						projectLock,
+					)
+					if err != nil || string(data) != before[projectLock] {
+						t.Fatal("skipped project lock was modified")
+					}
+					data, err = afero.ReadFile(
+						filesystem,
+						filepath.Join(
+							projectRoot,
+							"alpha",
+							"obsolete.txt",
+						),
+					)
+					want := "obsolete"
+					if test.localEdit {
+						want = "local edit"
+					}
+					if test.editDuringFetch {
+						want = "edit during fetch"
+					}
+					if err != nil || string(data) != want {
+						t.Fatalf(
+							"skipped contents = %q, %v; want %q",
+							data,
+							err,
+							want,
+						)
+					}
+				}
 				if test.overlapping && !test.project {
 					for _, filename := range []string{
 						projectLock,
@@ -631,7 +1135,7 @@ func TestUpdate(t *testing.T) {
 					); err != nil {
 						t.Fatal(err)
 					}
-					if lock.Skills["alpha"]["skillFolderHash"] != "old" {
+					if lock.Skills["alpha"]["skillFolderHash"] != alphaObsoleteHash {
 						t.Fatalf(
 							"colliding global record was changed: %s",
 							data,
@@ -702,9 +1206,32 @@ func TestUpdate(t *testing.T) {
 	}
 }
 
+type updateSourceClient struct {
+	files       fs.FS
+	fetches     *[]string
+	beforeFetch func()
+	cleanup     func() error
+}
+
+func (client updateSourceClient) Fetch(_ context.Context, locator string) (source.Checkout, error) {
+	*client.fetches = append(
+		*client.fetches,
+		locator,
+	)
+	client.beforeFetch()
+	return source.Checkout{
+		FS:      client.files,
+		Cleanup: client.cleanup,
+	}, nil
+}
+
 type updateInventoryFS struct {
 	afero.Fs
-	unreadableOther bool
+	unreadableOther     bool
+	unreadableInstalled bool
+	nonComparableFiles  bool
+	resource            string
+	beforeStage         func(string)
 }
 
 func (filesystem updateInventoryFS) Stat(filename string) (fs.FileInfo, error) {
@@ -712,6 +1239,57 @@ func (filesystem updateInventoryFS) Stat(filename string) (fs.FileInfo, error) {
 		return nil, fs.ErrPermission
 	}
 	return filesystem.Fs.Stat(filename)
+}
+
+func (filesystem updateInventoryFS) Open(filename string) (afero.File, error) {
+	if filesystem.unreadableInstalled && filename == filesystem.resource {
+		return nil, fs.ErrPermission
+	}
+	return filesystem.Fs.Open(filename)
+}
+
+func (filesystem updateInventoryFS) OpenFile(filename string, flags int, mode fs.FileMode) (afero.File, error) {
+	if filesystem.unreadableInstalled && filename == filesystem.resource {
+		return nil, fs.ErrPermission
+	}
+	file, err := filesystem.Fs.OpenFile(
+		filename,
+		flags,
+		mode,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if filesystem.nonComparableFiles {
+		return nonComparableUpdateFile{
+			File: file,
+			marker: []byte{
+				0,
+			},
+		}, nil
+	}
+	return file, nil
+}
+
+type nonComparableUpdateFile struct {
+	afero.File
+	marker []byte
+}
+
+func (filesystem updateInventoryFS) MkdirAll(directory string, mode fs.FileMode) error {
+	if err := filesystem.Fs.MkdirAll(
+		directory,
+		mode,
+	); err != nil {
+		return err
+	}
+	if strings.Contains(
+		directory,
+		".cpe-stage-",
+	) {
+		filesystem.beforeStage(directory)
+	}
+	return nil
 }
 
 func writeTrackingFixture(t *testing.T, filesystem afero.Fs, filename string, content string) {

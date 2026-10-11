@@ -21,9 +21,6 @@ type Client interface {
 type Checkout struct {
 	// FS is rooted at the fetched tree and uses io/fs-relative paths.
 	FS fs.FS
-	// GitTreeHash returns a Git tree object ID for a source-relative directory.
-	// Nil means Git metadata is unavailable. "." selects the source root.
-	GitTreeHash func(context.Context, string) (string, error)
 	// Cleanup releases acquisition resources. Nil means no cleanup is needed.
 	Cleanup func() error
 }
