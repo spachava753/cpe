@@ -387,7 +387,9 @@ source types or explicit refs are skipped. Updates replace local edits and remov
 obsolete files, just like installing with `--override`.
 
 Listing includes untracked skills. Removal also works for untracked skills and
-removes the lock record when one exists. A malformed or unsupported lock file
+removes the lock record when one exists. If project and global installations share
+one directory, such as when running from HOME, removal requires an explicit scope;
+updates still inspect both logical inventories. A malformed or unsupported lock file
 blocks changes to its inventory rather than being discarded. A lock changed by
 another writer during acquisition causes the operation to abort; retry to use its
 new contents. Native operations retain a `<lock-file>.cpe-lock` sidecar to

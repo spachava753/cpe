@@ -22,6 +22,7 @@ func TestUpdate(t *testing.T) {
 		names              []string
 		project            bool
 		global             bool
+		atHome             bool
 		duplicate          bool
 		untracked          bool
 		unsupported        bool
@@ -39,6 +40,28 @@ func TestUpdate(t *testing.T) {
 			wantPaths: []string{
 				"project/alpha",
 				"global/beta",
+			},
+		},
+		{
+			name:      "updating from home retains global tracking",
+			atHome:    true,
+			untracked: true,
+			wantPaths: []string{
+				"global/beta",
+			},
+			warnings: []string{
+				"not in the lock file",
+			},
+		},
+		{
+			name:   "updating from home handles both logical inventories",
+			atHome: true,
+			wantPaths: []string{
+				"project/alpha",
+				"global/beta",
+			},
+			warnings: []string{
+				"not in the lock file",
 			},
 		},
 		{
@@ -196,6 +219,9 @@ func TestUpdate(t *testing.T) {
 			func(t *testing.T) {
 				project := t.TempDir()
 				home := t.TempDir()
+				if test.atHome {
+					project = home
+				}
 				t.Chdir(project)
 				t.Setenv(
 					"HOME",
@@ -442,7 +468,7 @@ func TestUpdate(t *testing.T) {
 					if strings.HasPrefix(
 						summary.Path,
 						projectRoot,
-					) {
+					) && (!test.atHome || summary.Name != "beta") {
 						root = "project/"
 					}
 					gotPaths = append(

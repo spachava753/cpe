@@ -17,14 +17,15 @@ import (
 
 func TestApplyWithFile(t *testing.T) {
 	for _, test := range []struct {
-		name        string
-		fault       fileFault
-		missing     bool
-		inside      bool
-		empty       bool
-		wantOutcome bundlefs.Outcome
-		wantError   bool
-		retained    bool
+		name         string
+		fault        fileFault
+		missing      bool
+		inside       bool
+		empty        bool
+		snapshotOnly bool
+		wantOutcome  bundlefs.Outcome
+		wantError    bool
+		retained     bool
 	}{
 		{
 			name:        "replace bundle and lock",
@@ -34,6 +35,17 @@ func TestApplyWithFile(t *testing.T) {
 			name:        "create bundle and lock with missing parents",
 			missing:     true,
 			wantOutcome: bundlefs.Committed,
+		},
+		{
+			name:         "snapshot-only publication leaves existing metadata byte-identical",
+			snapshotOnly: true,
+			wantOutcome:  bundlefs.Committed,
+		},
+		{
+			name:         "snapshot-only publication leaves missing metadata absent",
+			snapshotOnly: true,
+			missing:      true,
+			wantOutcome:  bundlefs.Committed,
 		},
 		{
 			name:      "file staging failure changes nothing",
@@ -153,6 +165,10 @@ func TestApplyWithFile(t *testing.T) {
 				if !test.missing {
 					previous = []byte("old lock")
 				}
+				data := []byte("new lock")
+				if test.snapshotOnly {
+					data = nil
+				}
 				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
 				outcome, err := bundlefs.ApplyWithFile(
@@ -168,7 +184,7 @@ func TestApplyWithFile(t *testing.T) {
 					func(string) error { return nil },
 					bundlefs.FileChange{
 						Path:     filename,
-						Data:     []byte("new lock"),
+						Data:     data,
 						Previous: previous,
 					},
 				)
@@ -202,7 +218,11 @@ func TestApplyWithFile(t *testing.T) {
 					}
 				}
 				if outcome == bundlefs.Committed && !test.empty {
-					if after[marker] != "new bundle" || after[filename] != "new lock" {
+					wantLock := "new lock"
+					if test.snapshotOnly {
+						wantLock = before[filename]
+					}
+					if after[marker] != "new bundle" || after[filename] != wantLock {
 						t.Fatalf(
 							"committed state = %v",
 							after,

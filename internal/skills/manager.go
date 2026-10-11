@@ -473,19 +473,12 @@ func (m *Manager) Remove(ctx context.Context, request RemoveRequest) ([]RemovedS
 		if err != nil {
 			return nil, err
 		}
-		changed := false
 		for _, directory := range plan.paths {
 			name := filepath.Base(directory)
-			if _, exists := lock.skills[name]; exists {
-				delete(
-					lock.skills,
-					name,
-				)
-				changed = true
-			}
-		}
-		if !changed {
-			lock = nil
+			delete(
+				lock.skills,
+				name,
+			)
 		}
 	}
 	filesystem := afero.NewIOFS(afero.NewBasePathFs(

@@ -1,6 +1,7 @@
 package skills
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -37,10 +38,11 @@ type LockFile struct {
 // Keep records opaque until an update selects them. Unrelated entries and tool
 // preferences survive writes, including source types that CPE cannot acquire.
 type skillLock struct {
-	file     LockFile
-	fields   map[string]json.RawMessage
-	skills   map[string]json.RawMessage
-	original []byte
+	file           LockFile
+	fields         map[string]json.RawMessage
+	skills         map[string]json.RawMessage
+	original       []byte
+	previousSkills map[string]json.RawMessage
 }
 
 type skillSourceType string
@@ -130,6 +132,7 @@ func (m *Manager) readLock(ctx context.Context, file LockFile) (*skillLock, erro
 			file.Path,
 		)
 	}
+	lock.previousSkills = maps.Clone(lock.skills)
 	return lock, nil
 }
 
@@ -334,9 +337,22 @@ func (m *Manager) applyTracked(ctx context.Context, directory string, changes []
 			m.checkDefinition,
 		)
 	}
-	data, err := lock.encode()
-	if err != nil {
-		return bundlefs.NotCommitted, err
+	var data []byte
+	if !maps.EqualFunc(
+		lock.previousSkills,
+		lock.skills,
+		func(previous json.RawMessage, current json.RawMessage) bool {
+			return bytes.Equal(
+				previous,
+				current,
+			)
+		},
+	) {
+		var err error
+		data, err = lock.encode()
+		if err != nil {
+			return bundlefs.NotCommitted, err
+		}
 	}
 	return bundlefs.ApplyWithFile(
 		ctx,

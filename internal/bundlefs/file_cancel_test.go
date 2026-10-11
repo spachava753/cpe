@@ -221,6 +221,12 @@ func (filesystem *canceledPublicationFS) Open(filename string) (afero.File, erro
 			func() error {
 				filesystem.once.Do(func() {
 					filesystem.err = filesystem.Remove(filesystem.source)
+					if errors.Is(
+						filesystem.err,
+						fs.ErrNotExist,
+					) {
+						filesystem.err = nil
+					}
 					filesystem.cancel()
 				})
 				return filesystem.err
