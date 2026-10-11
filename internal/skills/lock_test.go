@@ -230,6 +230,24 @@ func TestFolderHash(t *testing.T) {
 			want: "cd4bd4942f844457860f54f12fd4bec412d11c51f1647ddd618ad40d1a26a95a",
 		},
 		{
+			name: "contiguous contraction takes precedence over a competing suffix",
+			payload: []bundlefs.Entry{
+				{
+					Path: "\u0f71\u0f80\u0f74.txt",
+					Data: []byte("competing suffixes"),
+				},
+				{
+					Path: "\u0f71\u0f74.txt",
+					Data: []byte("one contraction"),
+				},
+				{
+					Path: "SKILL.md",
+					Data: []byte("skill"),
+				},
+			},
+			want: "60231b23161300776173caa72ef432365fbbb9a8f89c2661217476c7d68dc23b",
+		},
+		{
 			name: "skipped Tibetan marks form another contraction",
 			payload: []bundlefs.Entry{
 				{

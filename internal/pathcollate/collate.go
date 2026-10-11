@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"slices"
 	"sync"
 
 	"golang.org/x/text/unicode/norm"
@@ -128,32 +129,29 @@ func decompose(s string) []rune {
 }
 
 func (t table) match(text []rune, start int, consumed []bool) ([]uint64, []int) {
-	var selected *mapping
+	weights := t.single(text[start])
+	matchedText := []rune{
+		text[start],
+	}
+	prefixLength := -1
 	var suffix []int
+	prefixMatches := func(prefix []rune) bool {
+		return len(prefix) <= start && slices.Equal(
+			prefix,
+			text[start-len(prefix):start],
+		)
+	}
+
+	// UCA S2.1: find the longest complete contiguous match first.
 	for _, candidate := range t.mappings[text[start]] {
-		if len(candidate.prefix) > start || !runesEqual(
-			candidate.prefix,
-			text[start-len(candidate.prefix):start],
-		) {
+		if !prefixMatches(candidate.prefix) {
 			continue
 		}
 		position := start + 1
 		var positions []int
 		matched := true
 		for _, wanted := range candidate.text[1:] {
-			ccc := norm.NFD.PropertiesString(string(wanted)).CCC()
-			for position < len(text) {
-				if consumed[position] {
-					position++
-					continue
-				}
-				if text[position] == wanted {
-					break
-				}
-				other := norm.NFD.PropertiesString(string(text[position])).CCC()
-				if other == 0 || other >= ccc {
-					break
-				}
+			for position < len(text) && consumed[position] {
 				position++
 			}
 			if position == len(text) || text[position] != wanted {
@@ -166,26 +164,53 @@ func (t table) match(text []rune, start int, consumed []bool) ([]uint64, []int) 
 			)
 			position++
 		}
-		if matched && (selected == nil || len(candidate.text) > len(selected.text) || len(candidate.text) == len(selected.text) && len(candidate.prefix) > len(selected.prefix)) {
-			selected, suffix = &candidate, positions
+		if matched && (len(candidate.text) > len(matchedText) || len(candidate.text) == len(matchedText) && len(candidate.prefix) > prefixLength) {
+			weights, matchedText, suffix, prefixLength = candidate.weights, candidate.text, positions, len(candidate.prefix)
 		}
 	}
-	if selected != nil {
-		return selected.weights, suffix
+	if prefixLength < 0 {
+		return weights, suffix // A default implicit weight is not a match in the table.
 	}
-	return t.single(text[start]), nil
-}
 
-func runesEqual(a, b []rune) bool {
-	if len(a) != len(b) {
-		return false
+	// UCA S2.1.1–3: extend that match one unblocked non-starter at a time.
+	position := start + 1
+	if len(suffix) != 0 {
+		position = suffix[len(suffix)-1] + 1
 	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
+	var blocked uint8
+	for ; position < len(text); position++ {
+		if consumed[position] {
+			continue
 		}
+		r := text[position]
+		ccc := norm.NFD.PropertiesString(string(r)).CCC()
+		if ccc == 0 {
+			break
+		}
+		var extension *mapping
+		if blocked < ccc {
+			for _, candidate := range t.mappings[text[start]] {
+				if len(candidate.text) == len(matchedText)+1 && candidate.text[len(matchedText)] == r && slices.Equal(
+					candidate.text[:len(matchedText)],
+					matchedText,
+				) && prefixMatches(candidate.prefix) {
+					if extension == nil || len(candidate.prefix) > len(extension.prefix) {
+						extension = &candidate
+					}
+				}
+			}
+		}
+		if extension == nil {
+			blocked = ccc
+			continue
+		}
+		weights, matchedText = extension.weights, extension.text
+		suffix = append(
+			suffix,
+			position,
+		)
 	}
-	return true
+	return weights, suffix
 }
 
 func (t table) single(r rune) []uint64 {

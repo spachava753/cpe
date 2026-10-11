@@ -38,8 +38,10 @@ table once. Normalization uses `x/text/unicode/norm`'s Unicode 17 data; update
 and verify both data versions together if the collation pin changes.
 
 The Go tests include upstream-generated folder hashes, named comparison vectors,
-and reference digests for 208,174 scalar values and 10,000 mixed-script paths.
-They cover modern emoji, case and compatibility weights, canonical-equivalence
-ties, long combining sequences, contractions, Han, and noncharacter boundaries.
+and reference digests for 208,174 scalar values, 10,000 mixed-script paths,
+and 16,381 strings with competing Tibetan contractions. They cover modern emoji,
+case and compatibility weights, canonical-equivalence ties, long combining
+sequences, contiguous/discontiguous contraction precedence and replay, Han,
+and noncharacter boundaries.
 These expected results were generated with Node 26.8.2 / ICU 78.3 and `en-US`;
 Node is not needed to run the tests.
