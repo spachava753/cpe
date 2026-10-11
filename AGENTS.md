@@ -8,7 +8,7 @@ build/        Goyek developer tasks and repository-specific linting
 internal/     Business logic
 main.go       CLI entry point
 go.mod        Go version, dependencies, and developer tools
-README.md     User workflows and verification instructions
+README.md     CLI installation and usage
 ```
 
 ## Design
@@ -65,8 +65,11 @@ README.md     User workflows and verification instructions
 
 ## Repository workflows
 
-- `go run ./build` lists tasks; `go run ./build lint` runs the repository's combined
-  analyzers. Add developer tasks as `build/*_task.go` using `goyek.Define`.
+- Keep `README.md` focused on CLI usage and user-visible behavior. Keep developer
+  guidance here and implementation details in code and package documentation.
+- `go test ./...` runs package tests. `go run ./build` lists tasks;
+  `go run ./build lint` runs the repository's combined analyzers. Add developer
+  tasks as `build/*_task.go` using `goyek.Define`.
 - Prefer targeted `go doc` lookups for Go APIs; avoid dumping entire packages.
 - Use Conventional Commits. `.gitignore` is an allowlist: do not edit it or
   force-add ignored files without explicit permission.
