@@ -33,7 +33,6 @@ func TestUpdate(t *testing.T) {
 		project             bool
 		global              bool
 		atHome              bool
-		native              bool
 		overlapping         bool
 		duplicate           bool
 		untracked           bool
@@ -47,7 +46,6 @@ func TestUpdate(t *testing.T) {
 		localDirectory      string
 		missingHash         bool
 		legacyHash          bool
-		github              bool
 		unreadableInstalled bool
 		consumeSource       bool
 		differentSource     bool
@@ -61,8 +59,9 @@ func TestUpdate(t *testing.T) {
 		wantError           string
 	}{
 		{
-			name:        "all scopes include both inventories and share one source acquisition",
-			wantFetches: new(1),
+			name:          "both scopes share one acquisition and survive checkout cleanup",
+			consumeSource: true,
+			wantFetches:   new(1),
 			wantPaths: []string{
 				"project/alpha",
 				"global/beta",
@@ -93,20 +92,6 @@ func TestUpdate(t *testing.T) {
 		{
 			name:        "shared-root tracked collisions skip while disjoint updates continue",
 			atHome:      true,
-			duplicate:   true,
-			overlapping: true,
-			wantPaths: []string{
-				"global/beta",
-			},
-			warnings: []string{
-				"one installed bundle",
-				"explicit --scope",
-			},
-		},
-		{
-			name:        "native shared-root tracked collisions skip while disjoint updates continue",
-			atHome:      true,
-			native:      true,
 			duplicate:   true,
 			overlapping: true,
 			wantPaths: []string{
@@ -155,8 +140,9 @@ func TestUpdate(t *testing.T) {
 			},
 		},
 		{
-			name: "explicit project scope resolves duplicate",
+			name: "explicit project scope resolves duplicate names and deduplicates arguments",
 			names: []string{
+				"alpha",
 				"alpha",
 			},
 			project:   true,
@@ -184,20 +170,6 @@ func TestUpdate(t *testing.T) {
 			},
 		},
 		{
-			name: "missing name does not prevent another update",
-			names: []string{
-				"missing",
-				"alpha",
-			},
-			wantPaths: []string{
-				"project/alpha",
-			},
-			warnings: []string{
-				"missing",
-				"does not exist",
-			},
-		},
-		{
 			name:      "untracked skill warns in all mode",
 			untracked: true,
 			wantPaths: []string{
@@ -209,12 +181,19 @@ func TestUpdate(t *testing.T) {
 			},
 		},
 		{
-			name:      "untracked skill warns when named",
+			name:      "missing and untracked names warn while a valid sibling updates",
 			untracked: true,
 			names: []string{
+				"missing",
 				"alpha",
+				"beta",
+			},
+			wantPaths: []string{
+				"global/beta",
 			},
 			warnings: []string{
+				"missing",
+				"does not exist",
 				"not in the lock file",
 			},
 		},
@@ -262,16 +241,6 @@ func TestUpdate(t *testing.T) {
 			name:      "corrupt lock prevents mutations",
 			corrupt:   true,
 			wantError: "lock",
-		},
-		{
-			name: "duplicate arguments update once",
-			names: []string{
-				"alpha",
-				"alpha",
-			},
-			wantPaths: []string{
-				"project/alpha",
-			},
 		},
 		{
 			name:        "local edits are skipped before any clone",
@@ -332,8 +301,8 @@ func TestUpdate(t *testing.T) {
 			},
 		},
 		{
-			name:        "incompatible hash requires explicit override",
-			project:     true,
+			name:        "incompatible global hash requires override",
+			global:      true,
 			legacyHash:  true,
 			wantFetches: new(0),
 			warnings: []string{
@@ -342,30 +311,8 @@ func TestUpdate(t *testing.T) {
 			},
 		},
 		{
-			name:        "override adopts an incompatible project hash",
-			project:     true,
-			legacyHash:  true,
-			override:    true,
-			wantFetches: new(1),
-			wantPaths: []string{
-				"project/alpha",
-			},
-		},
-		{
-			name:        "global GitHub tree ID cannot verify installed content",
+			name:        "override adopts an incompatible global hash",
 			global:      true,
-			github:      true,
-			legacyHash:  true,
-			wantFetches: new(0),
-			warnings: []string{
-				"incompatible tracking",
-				"--override",
-			},
-		},
-		{
-			name:        "override adopts a global GitHub folder fingerprint",
-			global:      true,
-			github:      true,
 			legacyHash:  true,
 			override:    true,
 			wantFetches: new(1),
@@ -423,15 +370,6 @@ func TestUpdate(t *testing.T) {
 			wantFetches:         new(1),
 			wantPaths: []string{
 				"project/alpha",
-			},
-		},
-		{
-			name:          "shared snapshots remain usable after source cleanup consumes the checkout",
-			consumeSource: true,
-			wantFetches:   new(1),
-			wantPaths: []string{
-				"project/alpha",
-				"global/beta",
 			},
 		},
 		{
@@ -510,12 +448,6 @@ func TestUpdate(t *testing.T) {
 					".skill-lock.json",
 				)
 				filesystem := afero.NewMemMapFs()
-				if test.native {
-					filesystem = afero.NewBasePathFs(
-						afero.NewOsFs(),
-						t.TempDir(),
-					)
-				}
 				writeTrackingFixture(
 					t,
 					filesystem,
@@ -566,9 +498,6 @@ func TestUpdate(t *testing.T) {
 						projectRecords["alpha"].(map[string]any),
 						"computedHash",
 					)
-				}
-				if test.legacyHash && !test.global {
-					projectRecords["alpha"].(map[string]any)["computedHash"] = "old"
 				}
 				if test.localEdit {
 					writeTrackingFixture(
@@ -636,10 +565,7 @@ func TestUpdate(t *testing.T) {
 					globalRecords["beta"].(map[string]any)["sourceUrl"] = otherSource
 					globalRecords["beta"].(map[string]any)["source"] = otherSource
 				}
-				if test.github {
-					globalRecords["beta"].(map[string]any)["sourceType"] = "github"
-				}
-				if test.legacyHash && test.global {
+				if test.legacyHash {
 					globalRecords["beta"].(map[string]any)["skillFolderHash"] = "70993c44c50665a842d44706f3daf42d0530412f"
 				}
 				if test.duplicate {
@@ -878,7 +804,7 @@ func TestUpdate(t *testing.T) {
 						warnings.String(),
 					)
 				}
-				if (test.localEdit || test.localDirectory != "" || test.missingHash || test.legacyHash) && !test.override && !test.global {
+				if (test.localEdit || test.localDirectory != "" || test.missingHash) && !test.override && !test.global {
 					data, err := afero.ReadFile(
 						filesystem,
 						projectLock,

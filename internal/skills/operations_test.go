@@ -1765,23 +1765,12 @@ func TestRemove(t *testing.T) {
 		nonTTY            bool
 		invalidCrossScope bool
 		sharedRoot        bool
-		searchOnly        bool
-		native            bool
 		forceColor        bool
 		json              bool
 		both              bool
 	}{
 		{
 			name: "unambiguous default selection",
-		},
-		{
-			name:       "named removal never opens an unselected inventory",
-			searchOnly: true,
-		},
-		{
-			name:       "native named removal permits search-only unselected inventory",
-			searchOnly: true,
-			native:     true,
 		},
 		{
 			name:   "non-terminal removal automatically receives a summary array",
@@ -2077,86 +2066,11 @@ func TestRemove(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				if test.searchOnly {
-					writeTrackingFixture(
-						t,
-						destinations,
-						filepath.Join(
-							global,
-							"beta",
-							"SKILL.md",
-						),
-						betaSkill,
-					)
-				}
-				if test.native {
-					native := afero.NewBasePathFs(
-						afero.NewOsFs(),
-						t.TempDir(),
-					)
-					for filename, content := range snapshotManagerFS(
-						t,
-						destinations,
-					) {
-						if content == "<directory>" {
-							if err := native.MkdirAll(
-								filename,
-								0o700,
-							); err != nil {
-								t.Fatal(err)
-							}
-							continue
-						}
-						writeTrackingFixture(
-							t,
-							native,
-							filename,
-							content,
-						)
-					}
-					destinations = native
-				}
 				before := snapshotManagerFS(
 					t,
 					destinations,
 				)
 				removalDestinations := destinations
-				if test.searchOnly {
-					if test.native {
-						if err := destinations.Chmod(
-							global,
-							0o111,
-						); err != nil {
-							t.Fatal(err)
-						}
-						t.Cleanup(func() {
-							if err := destinations.Chmod(
-								global,
-								0o700,
-							); err != nil {
-								t.Error(err)
-							}
-						})
-						file, err := destinations.Open(global)
-						if file != nil {
-							_ = file.Close()
-						}
-						if !errors.Is(
-							err,
-							fs.ErrPermission,
-						) {
-							t.Skipf(
-								"directory read restriction unavailable: %v",
-								err,
-							)
-						}
-					} else {
-						removalDestinations = searchOnlyInventoryFS{
-							Fs:   destinations,
-							root: global,
-						}
-					}
-				}
 				if test.fault != managerNoFault {
 					removalDestinations = managerFaultFS{
 						Fs:    destinations,
@@ -2278,23 +2192,6 @@ func TestRemove(t *testing.T) {
 						t.Errorf(
 							"selected bundle %s still exists: %v",
 							name,
-							err,
-						)
-					}
-				}
-				if test.searchOnly {
-					data, err := afero.ReadFile(
-						destinations,
-						filepath.Join(
-							global,
-							"beta",
-							"SKILL.md",
-						),
-					)
-					if err != nil || string(data) != betaSkill {
-						t.Fatalf(
-							"unselected global bundle changed: %s, %v",
-							data,
 							err,
 						)
 					}

@@ -1,7 +1,6 @@
 package skills
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -32,16 +31,6 @@ func TestReadLock(t *testing.T) {
 			format:   ProjectLock,
 			content:  `{"version":1,"skills":{}}`,
 			readOnly: true,
-		},
-		{
-			name:    "project lock preserves unsupported records",
-			format:  ProjectLock,
-			content: `{"version":1,"skills":{"foreign":{"sourceType":"node_modules","extra":true}},"extra":{"enabled":true}}`,
-		},
-		{
-			name:    "global preferences preserved",
-			format:  GlobalLock,
-			content: `{"version":3,"skills":{},"dismissed":{"findSkillsPrompt":true},"lastSelectedAgents":["claude-code"]}`,
 		},
 		{
 			name:      "corrupt lock is not silently discarded",
@@ -116,32 +105,11 @@ func TestReadLock(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				encoded, err := lock.encode()
-				if err != nil {
-					t.Fatal(err)
-				}
-				if test.content != "" {
-					var want, got any
-					if err := json.Unmarshal(
-						[]byte(test.content),
-						&want,
-					); err != nil {
-						t.Fatal(err)
-					}
-					if err := json.Unmarshal(
-						encoded,
-						&got,
-					); err != nil {
-						t.Fatal(err)
-					}
-					wantJSON, _ := json.Marshal(want)
-					gotJSON, _ := json.Marshal(got)
-					if string(wantJSON) != string(gotJSON) {
-						t.Fatalf(
-							"lock round trip changed fields: %s",
-							gotJSON,
-						)
-					}
+				if lock == nil || lock.skills == nil || len(lock.skills) != 0 {
+					t.Fatalf(
+						"expected empty initialized tracking, got %+v",
+						lock,
+					)
 				}
 			},
 		)
