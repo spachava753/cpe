@@ -132,49 +132,50 @@ func (m *Manager) readLock(ctx context.Context, file LockFile) (*skillLock, erro
 	return lock, nil
 }
 
-func (lock *skillLock) record(name string) (lockedSkill, error) {
+func (lock *skillLock) record(name string) (lockedSkill, source.GitLocator, error) {
 	var record lockedSkill
+	var locator source.GitLocator
 	if err := json.Unmarshal(
 		lock.skills[name],
 		&record,
 	); err != nil {
-		return record, errors.New("invalid lock record")
+		return record, locator, errors.New("invalid lock record")
 	}
 	if record.SourceType != githubSource && record.SourceType != gitSource {
-		return record, fmt.Errorf(
+		return record, locator, fmt.Errorf(
 			"unsupported source type %q",
 			record.SourceType,
 		)
 	}
 	if record.Ref != "" {
-		return record, fmt.Errorf(
+		return record, locator, fmt.Errorf(
 			"unsupported recorded ref %q",
 			record.Ref,
 		)
 	}
 	if strings.TrimSpace(record.Source) == "" {
-		return record, errors.New("lock record has no source")
+		return record, locator, errors.New("lock record has no source")
 	}
 	if !fs.ValidPath(record.SkillPath) || strings.ContainsAny(
 		record.SkillPath,
 		"\\\x00",
 	) || path.Base(record.SkillPath) != skillDefinition {
-		return record, errors.New("lock record has no valid skillPath")
+		return record, locator, errors.New("lock record has no valid skillPath")
 	}
-	locator := record.locator()
 	if record.SourceType == gitSource && record.SourceURL == "" && !strings.Contains(
 		record.Source,
 		"://",
 	) {
-		return record, errors.New("generic Git source has no unambiguous sourceUrl")
+		return record, locator, errors.New("generic Git source has no unambiguous sourceUrl")
 	}
-	if _, err := source.ParseGitLocator(locator); err != nil {
-		return record, fmt.Errorf(
+	locator, err := source.ParseGitLocator(record.locator())
+	if err != nil {
+		return record, locator, fmt.Errorf(
 			"unsupported recorded source: %w",
 			err,
 		)
 	}
-	return record, nil
+	return record, locator, nil
 }
 
 func (record lockedSkill) locator() string {
