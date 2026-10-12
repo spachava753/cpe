@@ -18,6 +18,13 @@ import (
 	"github.com/spachava753/cpe/internal/source"
 )
 
+type scopeUpdate struct {
+	target  skillScope
+	lock    *skillLock
+	names   []string
+	updates []skillUpdate
+}
+
 type skillUpdate struct {
 	name   string
 	record lockedSkill
@@ -42,58 +49,54 @@ type updateBundle struct {
 }
 
 // planUpdates checks every selected installation before any source is acquired.
-func (m *Manager) planUpdates(ctx context.Context, scopes []skillScope, locks []*skillLock, selected [][]string, override bool, streams commandio.IO) ([][]skillUpdate, error) {
-	plan := make(
-		[][]skillUpdate,
-		len(scopes),
-	)
+func (m *Manager) planUpdates(ctx context.Context, scopes []scopeUpdate, override bool, streams commandio.IO) error {
 	sources := map[source.GitLocator]*updateSource{}
-	for index, scope := range scopes {
-		sort.Strings(selected[index])
-		lock := locks[index]
-		for _, name := range selected[index] {
-			if _, exists := lock.skills[name]; !exists {
+	for index := range scopes {
+		scope := &scopes[index]
+		sort.Strings(scope.names)
+		for _, name := range scope.names {
+			if _, exists := scope.lock.skills[name]; !exists {
 				if err := writeWarning(
 					streams,
 					fmt.Sprintf(
 						"cannot update skill %q in %s: not in the lock file",
 						name,
-						scope.directory,
+						scope.target.directory,
 					),
 				); err != nil {
-					return nil, err
+					return err
 				}
 				continue
 			}
-			record, err := lock.record(name)
+			record, locator, err := scope.lock.record(name)
 			if err != nil {
 				if err := writeWarning(
 					streams,
 					fmt.Sprintf(
 						"cannot update skill %q in %s: %v",
 						name,
-						scope.directory,
+						scope.target.directory,
 						err,
 					),
 				); err != nil {
-					return nil, err
+					return err
 				}
 				continue
 			}
 			filename := filepath.Join(
-				scope.directory,
+				scope.target.directory,
 				name,
 			)
 			if err := m.destination(
 				ctx,
 				filename,
 			); err != nil {
-				return nil, err
+				return err
 			}
 			if err := m.checkDefinition(filename); err != nil {
-				return nil, err
+				return err
 			}
-			previous := lock.recordedHash(record)
+			previous := scope.lock.recordedHash(record)
 			if !override {
 				matches, err := m.matchesInstalled(
 					ctx,
@@ -102,15 +105,11 @@ func (m *Manager) planUpdates(ctx context.Context, scopes []skillScope, locks []
 					streams,
 				)
 				if err != nil {
-					return nil, err
+					return err
 				}
 				if !matches {
 					continue
 				}
-			}
-			locator, err := source.ParseGitLocator(record.locator())
-			if err != nil {
-				return nil, err
 			}
 			acquisition := sources[locator]
 			if acquisition == nil {
@@ -121,8 +120,8 @@ func (m *Manager) planUpdates(ctx context.Context, scopes []skillScope, locks []
 				sources[locator] = acquisition
 			}
 			acquisition.paths[record.SkillPath] = struct{}{}
-			plan[index] = append(
-				plan[index],
+			scope.updates = append(
+				scope.updates,
 				skillUpdate{
 					name:   name,
 					record: record,
@@ -131,7 +130,7 @@ func (m *Manager) planUpdates(ctx context.Context, scopes []skillScope, locks []
 			)
 		}
 	}
-	return plan, nil
+	return nil
 }
 
 func (m *Manager) installedHash(ctx context.Context, directory string) (string, error) {

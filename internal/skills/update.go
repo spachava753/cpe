@@ -31,7 +31,7 @@ type UpdateOptions struct {
 // and skipped. Override permits content mismatches; each eligible source is fetched
 // once. Results identify updates committed before a later scope or cleanup fails.
 func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams commandio.IO) error {
-	scopes, err := resolveScopes(
+	resolved, err := resolveScopes(
 		opts.Scope,
 		false,
 	)
@@ -42,16 +42,9 @@ func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams c
 	if err != nil {
 		return err
 	}
-	locks := make(
-		[]*skillLock,
-		len(scopes),
-	)
-	inventory := make(
-		[][]string,
-		len(scopes),
-	)
-	for index, scope := range scopes {
-		inventory[index], err = manager.installedNames(
+	var scopes []scopeUpdate
+	for _, scope := range resolved {
+		installed, err := manager.installedNames(
 			ctx,
 			scope.directory,
 			names,
@@ -59,22 +52,24 @@ func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams c
 		if err != nil {
 			return err
 		}
+		scopes = append(
+			scopes,
+			scopeUpdate{
+				target: scope,
+				names:  installed,
+			},
+		)
 	}
-	selected := make(
-		[][]string,
-		len(scopes),
-	)
-	if len(names) == 0 {
-		selected = inventory
-	} else {
+	if len(names) != 0 {
 		matches := map[string][]int{}
-		for index, installed := range inventory {
-			for _, name := range installed {
+		for index, scope := range scopes {
+			for _, name := range scope.names {
 				matches[name] = append(
 					matches[name],
 					index,
 				)
 			}
+			scopes[index].names = nil
 		}
 		for _, name := range names {
 			switch found := matches[name]; len(found) {
@@ -89,8 +84,8 @@ func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams c
 					return err
 				}
 			case 1:
-				selected[found[0]] = append(
-					selected[found[0]],
+				scopes[found[0]].names = append(
+					scopes[found[0]].names,
 					name,
 				)
 			default:
@@ -109,12 +104,12 @@ func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams c
 	// Read selected locks before publishing any scope. Unselected inventories
 	// remain independent, including when their lock files are damaged.
 	for index, scope := range scopes {
-		if len(selected[index]) == 0 {
+		if len(scope.names) == 0 {
 			continue
 		}
-		locks[index], err = manager.readLock(
+		scopes[index].lock, err = manager.readLock(
 			ctx,
-			scope.lock,
+			scope.target.lock,
 		)
 		if err != nil {
 			return err
@@ -122,33 +117,26 @@ func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams c
 	}
 	if err := skipOverlappingUpdates(
 		scopes,
-		locks,
-		selected,
 		streams,
 	); err != nil {
 		return err
 	}
-	plan, err := manager.planUpdates(
+	if err := manager.planUpdates(
 		ctx,
 		scopes,
-		locks,
-		selected,
 		opts.Override,
 		streams,
-	)
-	if err != nil {
+	); err != nil {
 		return err
 	}
 	var result []InstalledSkill
-	for index, scope := range scopes {
-		if len(plan[index]) == 0 {
+	for _, scope := range scopes {
+		if len(scope.updates) == 0 {
 			continue
 		}
 		updated, err := manager.updateScope(
 			ctx,
 			scope,
-			locks[index],
-			plan[index],
 		)
 		result = append(
 			result,
@@ -178,24 +166,26 @@ func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams c
 	)
 }
 
-func skipOverlappingUpdates(scopes []skillScope, locks []*skillLock, selected [][]string, streams commandio.IO) error {
-	for first, scope := range scopes {
-		if locks[first] == nil {
+func skipOverlappingUpdates(scopes []scopeUpdate, streams commandio.IO) error {
+	for first := range scopes {
+		scope := &scopes[first]
+		if scope.lock == nil {
 			continue
 		}
 		for second := first + 1; second < len(scopes); second++ {
-			if locks[second] == nil {
+			other := &scopes[second]
+			if other.lock == nil {
 				continue
 			}
-			if filepath.Clean(scope.directory) != filepath.Clean(scopes[second].directory) {
+			if filepath.Clean(scope.target.directory) != filepath.Clean(other.target.directory) {
 				continue
 			}
-			for _, name := range slices.Clone(selected[first]) {
-				if _, tracked := locks[first].skills[name]; !tracked {
+			for _, name := range slices.Clone(scope.names) {
+				if _, tracked := scope.lock.skills[name]; !tracked {
 					continue
 				}
-				if _, tracked := locks[second].skills[name]; !tracked || !slices.Contains(
-					selected[second],
+				if _, tracked := other.lock.skills[name]; !tracked || !slices.Contains(
+					other.names,
 					name,
 				) {
 					continue
@@ -209,12 +199,12 @@ func skipOverlappingUpdates(scopes []skillScope, locks []*skillLock, selected []
 				); err != nil {
 					return err
 				}
-				selected[first] = slices.DeleteFunc(
-					selected[first],
+				scope.names = slices.DeleteFunc(
+					scope.names,
 					func(candidate string) bool { return candidate == name },
 				)
-				selected[second] = slices.DeleteFunc(
-					selected[second],
+				other.names = slices.DeleteFunc(
+					other.names,
 					func(candidate string) bool { return candidate == name },
 				)
 			}
@@ -298,10 +288,10 @@ func (m *Manager) installedNames(ctx context.Context, directory string, requeste
 	return names, nil
 }
 
-func (m *Manager) updateScope(ctx context.Context, scope skillScope, lock *skillLock, updates []skillUpdate) ([]InstalledSkill, error) {
+func (m *Manager) updateScope(ctx context.Context, scope scopeUpdate) ([]InstalledSkill, error) {
 	var changes []bundlefs.Change
 	var result []InstalledSkill
-	for _, update := range updates {
+	for _, update := range scope.updates {
 		bundle, err := update.source.bundle(
 			ctx,
 			m,
@@ -315,24 +305,15 @@ func (m *Manager) updateScope(ctx context.Context, scope skillScope, lock *skill
 			)
 		}
 		filename := filepath.Join(
-			scope.directory,
+			scope.target.directory,
 			update.name,
 		)
-		if err := m.destination(
-			ctx,
-			filename,
-		); err != nil {
-			return nil, err
-		}
-		if err := m.checkDefinition(filename); err != nil {
-			return nil, err
-		}
-		record := lock.hashRecord(
+		record := scope.lock.hashRecord(
 			bundle.skill,
 			bundle.payload,
 			update.record,
 		)
-		if err := lock.put(
+		if err := scope.lock.put(
 			update.name,
 			record,
 		); err != nil {
@@ -361,9 +342,9 @@ func (m *Manager) updateScope(ctx context.Context, scope skillScope, lock *skill
 	}
 	outcome, err := m.applyTracked(
 		ctx,
-		scope.directory,
+		scope.target.directory,
 		changes,
-		lock,
+		scope.lock,
 		m.checkDefinition,
 	)
 	if err != nil {

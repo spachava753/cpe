@@ -206,12 +206,9 @@ func TestApplyWithFile(t *testing.T) {
 						if strings.HasPrefix(
 							entry.Name(),
 							".cpe-",
-						) || strings.HasSuffix(
-							entry.Name(),
-							".cpe-lock",
 						) {
 							t.Fatalf(
-								"unexpected staging or guard file: %s",
+								"unexpected staging file: %s",
 								entry.Name(),
 							)
 						}
