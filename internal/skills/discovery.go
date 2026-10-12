@@ -58,7 +58,7 @@ func discover(ctx context.Context, filesystem fs.FS, opts DiscoveryOptions, name
 				return err
 			}
 			for _, child := range entries {
-				if child.Name() != "SKILL.md" {
+				if child.Name() != skillDefinition {
 					continue
 				}
 				if err := bundlefs.CheckSourceDirectory(
@@ -165,7 +165,7 @@ func readDefinitionData(filesystem fs.FS, directory string) ([]byte, error) {
 	}
 	regular := false
 	for _, entry := range entries {
-		if entry.Name() == "SKILL.md" {
+		if entry.Name() == skillDefinition {
 			info, err := entry.Info()
 			if err != nil {
 				return nil, err

@@ -8,7 +8,7 @@ build/        Goyek developer tasks and repository-specific linting
 internal/     Business logic
 main.go       CLI entry point
 go.mod        Go version, dependencies, and developer tools
-README.md     User workflows and verification instructions
+README.md     CLI installation and usage
 ```
 
 ## Design
@@ -29,6 +29,8 @@ README.md     User workflows and verification instructions
   or streams.
 - Keep changes scoped and simple; avoid speculative abstractions and performance work unless
   a demonstrated need or the task calls for it.
+- Skill mutations assume a single writer. Do not add cross-process coordination or
+  defenses against concurrent filesystem replacement unless explicitly requested.
 - Keep errors opaque by default, especially at exported API boundaries. Do not
   introduce exported error types or sentinel errors unless a concrete API consumer
   needs to branch on that specific failure. Keep operation outcomes separate from
@@ -65,8 +67,11 @@ README.md     User workflows and verification instructions
 
 ## Repository workflows
 
-- `go run ./build` lists tasks; `go run ./build lint` runs the repository's combined
-  analyzers. Add developer tasks as `build/*_task.go` using `goyek.Define`.
+- Keep `README.md` focused on CLI usage and user-visible behavior. Keep developer
+  guidance here and implementation details in code and package documentation.
+- `go test ./...` runs package tests. `go run ./build` lists tasks;
+  `go run ./build lint` runs the repository's combined analyzers. Add developer
+  tasks as `build/*_task.go` using `goyek.Define`.
 - Prefer targeted `go doc` lookups for Go APIs; avoid dumping entire packages.
 - Use Conventional Commits. `.gitignore` is an allowlist: do not edit it or
   force-add ignored files without explicit permission.

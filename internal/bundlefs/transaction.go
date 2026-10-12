@@ -23,7 +23,18 @@ import (
 // Cancellation or publication failure triggers rollback. Failed rollback retains
 // recovery files identified in the error. Committed with an error means changes
 // took effect but staging cleanup failed. NotCommitted may include failed rollback.
-func Apply(ctx context.Context, filesystem afero.Fs, root string, changes []Change, checkExisting func(string) error) (outcome Outcome, err error) {
+func Apply(ctx context.Context, filesystem afero.Fs, root string, changes []Change, checkExisting func(string) error) (Outcome, error) {
+	return apply(
+		ctx,
+		filesystem,
+		root,
+		changes,
+		checkExisting,
+		nil,
+	)
+}
+
+func apply(ctx context.Context, filesystem afero.Fs, root string, changes []Change, checkExisting func(string) error, file *FileChange) (outcome Outcome, err error) {
 	if err := CheckDestination(
 		ctx,
 		filesystem,
@@ -39,6 +50,23 @@ func Apply(ctx context.Context, filesystem afero.Fs, root string, changes []Chan
 	}
 	if len(changes) == 0 {
 		return Committed, nil
+	}
+	var metadata *stagedFile
+	if file != nil && file.Data != nil {
+		metadata, err = prepareFile(
+			ctx,
+			filesystem,
+			*file,
+		)
+		if err != nil {
+			return NotCommitted, err
+		}
+		defer func() {
+			err = errors.Join(
+				err,
+				metadata.cleanup(),
+			)
+		}()
 	}
 	_, statErr := filesystem.Stat(root)
 	created := errors.Is(
@@ -268,6 +296,11 @@ func Apply(ctx context.Context, filesystem afero.Fs, root string, changes []Chan
 	}
 	if err := ctx.Err(); err != nil {
 		return NotCommitted, rollback(err)
+	}
+	if metadata != nil {
+		if err := metadata.publish(); err != nil {
+			return NotCommitted, rollback(err)
+		}
 	}
 	return Committed, nil
 }

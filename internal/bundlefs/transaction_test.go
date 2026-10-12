@@ -68,7 +68,7 @@ func (filesystem transactionFS) Rename(oldName string, newName string) error {
 	}
 	if filesystem.fault == cancelPublication && strings.Contains(
 		oldPath,
-		"/new/alpha",
+		"/new/",
 	) {
 		filesystem.cancel()
 	}

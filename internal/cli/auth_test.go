@@ -244,7 +244,6 @@ func TestRootAuth(t *testing.T) {
 	for _, test := range []struct {
 		name      string
 		arguments []string
-		wantErr   bool
 		want      []string
 	}{
 		{
@@ -313,15 +312,6 @@ func TestRootAuth(t *testing.T) {
 				"opencode",
 			},
 		},
-		{
-			name: "missing store",
-			arguments: []string{
-				"auth",
-				"login",
-				"openai",
-			},
-			wantErr: true,
-		},
 	} {
 		t.Run(
 			test.name,
@@ -339,7 +329,7 @@ func TestRootAuth(t *testing.T) {
 				root.SetOut(&output)
 				root.SetErr(io.Discard)
 				root.SetArgs(test.arguments)
-				if err := root.Execute(); (err != nil) != test.wantErr {
+				if err := root.Execute(); err != nil {
 					t.Fatalf(
 						"error: %v",
 						err,

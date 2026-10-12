@@ -16,6 +16,7 @@ type skillActions struct {
 	install func(context.Context, *skills.Manager, skills.InstallOptions, commandio.IO) error
 	list    func(context.Context, *skills.Manager, skills.ListOptions, commandio.IO) error
 	remove  func(context.Context, *skills.Manager, skills.RemoveOptions, commandio.IO) error
+	update  func(context.Context, *skills.Manager, skills.UpdateOptions, commandio.IO) error
 }
 
 func skillsCmd(parent *cobra.Command, manager *skills.Manager) {
@@ -26,6 +27,7 @@ func skillsCmd(parent *cobra.Command, manager *skills.Manager) {
 			install: skills.Install,
 			list:    skills.List,
 			remove:  skills.Remove,
+			update:  skills.Update,
 		},
 	)
 }
@@ -35,14 +37,15 @@ func skillsCmdWithActions(parent *cobra.Command, manager *skills.Manager, action
 		Use:   "skills",
 		Short: "Manage agent skills",
 		Long: dedent.Dedent(`
-		Install, list, and remove agent skills from Git sources.
+		Install, update, list, and remove agent skills from Git sources.
 
 		The default skill directories are ~/.agents/skills for global scope and
 		./.agents/skills for project scope.
 
 		--dir selects an exact custom skill directory; .agents/skills is not
 		appended. Only that directory is selected, even when scope is omitted.
-		--dir cannot be combined with --scope global.
+		--dir cannot be combined with --scope global. Its lock file is
+		<directory>/skills-lock.json, separate from the default project inventory.
 
 		Result output is a styled table on a terminal and a JSON array otherwise.
 		--json forces JSON output, including when stdout is a terminal.
@@ -74,6 +77,11 @@ func skillsCmdWithActions(parent *cobra.Command, manager *skills.Manager, action
 		manager,
 		actions.remove,
 	)
+	skillsUpdateCmd(
+		c,
+		manager,
+		actions.update,
+	)
 }
 
 func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.InstallOptions, commandio.IO) error) {
@@ -104,6 +112,8 @@ func skillsInstallCmd(parent *cobra.Command, manager *skills.Manager, run func(c
 
 		Existing skills are preserved unless --override is set. With --override,
 		replace the complete selected skill directory, removing obsolete files.
+
+		Installations are recorded in the scope's lock file for skills update.
 
 		Search up to five directory levels by default. --full-depth removes
 		that depth limit.
@@ -253,6 +263,63 @@ func skillsListCmd(parent *cobra.Command, manager *skills.Manager, run func(cont
 	parent.AddCommand(c)
 }
 
+func skillsUpdateCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.UpdateOptions, commandio.IO) error) {
+	var asJSON, override bool
+	c := &cobra.Command{
+		Use:   "update [SKILL...]",
+		Short: "Update installed agent skills",
+		Long: dedent.Dedent(`
+		Update installed skills from the Git sources recorded in their lock file.
+		Without names, update all installed skills in project and global scope.
+		--scope restricts updates to that scope; --dir selects only that directory.
+
+		Named skills found in both scopes are skipped with a warning; use --scope
+		to choose one. Missing skills and skills absent from the lock file are
+		also warned about and skipped.
+
+		Installed contents must match the lock hash; mismatches are warned about
+		and skipped before fetching. --override permits replacing those bundles.
+		Updates replace complete bundles and remove obsolete files. Each eligible
+		Git source is fetched once. Unsupported recorded sources are skipped.
+		Output is a JSON array when stdout is not a terminal or --json is set.
+		`),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			so, err := scopeOptsFromFlags(cmd.Flags())
+			if err != nil {
+				return err
+			}
+			return run(
+				cmd.Context(),
+				manager,
+				skills.UpdateOptions{
+					Scope:    so,
+					Skills:   args,
+					Override: override,
+					JSON:     asJSON,
+				},
+				commandio.IO{
+					In:  cmd.InOrStdin(),
+					Out: cmd.OutOrStdout(),
+					Err: cmd.ErrOrStderr(),
+				},
+			)
+		},
+	}
+	c.Flags().BoolVar(
+		&asJSON,
+		"json",
+		false,
+		"Output a JSON array (automatic when stdout is not a terminal)",
+	)
+	c.Flags().BoolVar(
+		&override,
+		"override",
+		false,
+		"Replace skills whose installed contents do not match the lock hash",
+	)
+	parent.AddCommand(c)
+}
+
 func skillsRemoveCmd(parent *cobra.Command, manager *skills.Manager, run func(context.Context, *skills.Manager, skills.RemoveOptions, commandio.IO) error) {
 	var asJSON bool
 	c := &cobra.Command{
@@ -264,6 +331,7 @@ func skillsRemoveCmd(parent *cobra.Command, manager *skills.Manager, run func(co
 		Long: dedent.Dedent(`
 		Remove named installed skills, including manually copied skills.
 		Damaged skill definitions can be removed without requiring valid frontmatter.
+		If a lock record exists, it is removed with the bundle.
 
 		Without --scope or --dir, find each name in the global and project
 		directories. If a name exists in both, --scope is required to choose one.

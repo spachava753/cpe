@@ -1758,6 +1758,7 @@ func TestRemove(t *testing.T) {
 		committed         bool
 		outputErr         error
 		invalidCrossScope bool
+		sharedRoot        bool
 		forceColor        bool
 		wantText          []string
 		errText           string
@@ -1873,6 +1874,17 @@ func TestRemove(t *testing.T) {
 			errText:           "skill directory",
 		},
 		{
+			name:       "shared logical roots require explicit removal scope",
+			sharedRoot: true,
+			errText:    "explicit --scope",
+		},
+		{
+			name:       "bulk removal preserves shared logical roots without an explicit scope",
+			sharedRoot: true,
+			all:        true,
+			errText:    "explicit --scope",
+		},
+		{
 			name:    "ambiguous default selection",
 			both:    true,
 			errText: "scope",
@@ -1923,6 +1935,18 @@ func TestRemove(t *testing.T) {
 				}
 				project := skills.ProjectPath(cwd)
 				global := filepath.FromSlash("/test-home/.agents/skills")
+				home := cwd
+				if test.sharedRoot {
+					t.Setenv(
+						"HOME",
+						home,
+					)
+					t.Setenv(
+						"USERPROFILE",
+						home,
+					)
+					global = skills.ProjectPath(home)
+				}
 				files := test.files
 				if files == nil {
 					files = fstest.MapFS{
@@ -1936,6 +1960,27 @@ func TestRemove(t *testing.T) {
 					project,
 					files,
 				)
+				if test.sharedRoot {
+					writeTrackingFixture(
+						t,
+						destinations,
+						filepath.Join(
+							cwd,
+							"skills-lock.json",
+						),
+						`{"version":1,"skills":{"alpha":{"opaque":true}}}`,
+					)
+					writeTrackingFixture(
+						t,
+						destinations,
+						filepath.Join(
+							home,
+							".agents",
+							".skill-lock.json",
+						),
+						`{"version":3,"skills":{"alpha":{"opaque":true}}}`,
+					)
+				}
 				if test.both {
 					if err := destinations.MkdirAll(
 						filepath.Join(
