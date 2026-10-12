@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"maps"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,970 +20,1667 @@ import (
 	"github.com/spachava753/cpe/internal/source"
 )
 
+// Independently calculated folder fingerprints for the installed fixtures.
+const (
+	updateAlphaHash         = "28b5fd9343e6d47f395462fc3d0e9f17779bb14fcbbd6cc0c762ee323b2d2010"
+	updateAlphaObsoleteHash = "f407deda4e5076b0e73c1aaa28b73f07a5c6f5a5be69bfc29f2ef158c3aa7ec2"
+	updateBetaHash          = "47a0f558e4360d8a9b0f18ea5b6052a5050da4029b0bb150e2987e5529233ffb"
+)
+
 func TestUpdate(t *testing.T) {
-	// Independently calculated full-folder fingerprints for these fixtures.
-	const (
-		alphaHash         = "28b5fd9343e6d47f395462fc3d0e9f17779bb14fcbbd6cc0c762ee323b2d2010"
-		alphaObsoleteHash = "f407deda4e5076b0e73c1aaa28b73f07a5c6f5a5be69bfc29f2ef158c3aa7ec2"
-		betaHash          = "47a0f558e4360d8a9b0f18ea5b6052a5050da4029b0bb150e2987e5529233ffb"
-		otherSource       = "https://example.com/other.git"
-	)
-	for _, test := range []struct {
-		name                string
-		names               []string
-		project             bool
-		global              bool
-		atHome              bool
-		overlapping         bool
-		duplicate           bool
-		untracked           bool
-		unsupported         bool
-		unsupportedLocator  bool
-		missingURL          bool
-		unreadableOther     bool
-		corrupt             bool
-		override            bool
-		localEdit           bool
-		localDirectory      string
-		missingHash         bool
-		legacyHash          bool
-		unreadableInstalled bool
-		consumeSource       bool
-		differentSource     bool
-		missingSourceSkill  bool
-		cleanupFailure      bool
-		wantCommitted       bool
-		wantFetches         *int
-		fault               managerFSFault
-		wantPaths           []string
-		warnings            []string
-		wantError           string
-	}{
-		{
-			name:          "both scopes share one acquisition and survive checkout cleanup",
-			consumeSource: true,
-			wantFetches:   new(1),
-			wantPaths: []string{
-				"project/alpha",
-				"global/beta",
-			},
-		},
-		{
-			name:      "updating from home retains global tracking",
-			atHome:    true,
-			untracked: true,
-			wantPaths: []string{
-				"global/beta",
-			},
-			warnings: []string{
-				"not in the lock file",
-			},
-		},
-		{
-			name:   "updating from home handles both logical inventories",
-			atHome: true,
-			wantPaths: []string{
-				"project/alpha",
-				"global/beta",
-			},
-			warnings: []string{
-				"not in the lock file",
-			},
-		},
-		{
-			name:        "shared-root tracked collisions skip while disjoint updates continue",
-			atHome:      true,
-			duplicate:   true,
-			overlapping: true,
-			wantPaths: []string{
-				"global/beta",
-			},
-			warnings: []string{
-				"one installed bundle",
-				"explicit --scope",
-			},
-		},
-		{
-			name:        "explicit scope resolves a shared-root tracked collision",
-			atHome:      true,
-			project:     true,
-			duplicate:   true,
-			overlapping: true,
-			wantPaths: []string{
-				"project/alpha",
-			},
-			warnings: []string{
-				"not in the lock file",
-			},
-		},
-		{
-			name:      "all scopes update duplicate names independently",
-			duplicate: true,
-			wantPaths: []string{
-				"project/alpha",
-				"global/alpha",
-				"global/beta",
-			},
-		},
-		{
-			name: "ambiguous named skill warns and skips",
-			names: []string{
-				"alpha",
-				"beta",
-			},
-			duplicate: true,
-			wantPaths: []string{
-				"global/beta",
-			},
-			warnings: []string{
-				"alpha",
-				"explicit --scope",
-			},
-		},
-		{
-			name: "explicit project scope resolves duplicate names and deduplicates arguments",
-			names: []string{
-				"alpha",
-				"alpha",
-			},
-			project:   true,
-			duplicate: true,
-			wantPaths: []string{
-				"project/alpha",
-			},
-		},
-		{
-			name:   "global all restricts scope",
-			global: true,
-			wantPaths: []string{
-				"global/beta",
-			},
-		},
-		{
-			name:    "missing scoped skill warns even if installed elsewhere",
-			project: true,
-			names: []string{
-				"beta",
-			},
-			warnings: []string{
-				"beta",
-				"does not exist",
-			},
-		},
-		{
-			name:      "untracked skill warns in all mode",
-			untracked: true,
-			wantPaths: []string{
-				"global/beta",
-			},
-			warnings: []string{
-				"alpha",
-				"not in the lock file",
-			},
-		},
-		{
-			name:      "missing and untracked names warn while a valid sibling updates",
-			untracked: true,
-			names: []string{
-				"missing",
-				"alpha",
-				"beta",
-			},
-			wantPaths: []string{
-				"global/beta",
-			},
-			warnings: []string{
-				"missing",
-				"does not exist",
-				"not in the lock file",
-			},
-		},
-		{
-			name:        "unsupported source warns without blocking supported skills",
-			unsupported: true,
-			wantPaths: []string{
-				"global/beta",
-			},
-			warnings: []string{
-				"unsupported",
-			},
-		},
-		{
-			name:               "unsupported Git locator warns without blocking a supported sibling",
-			unsupportedLocator: true,
-			wantPaths: []string{
-				"global/beta",
-			},
-			warnings: []string{
-				"unsupported recorded source",
-			},
-		},
-		{
-			name:       "generic Git source without URL is not guessed as GitHub",
-			missingURL: true,
-			wantPaths: []string{
-				"global/beta",
-			},
-			warnings: []string{
-				"unambiguous sourceUrl",
-			},
-		},
-		{
-			name: "named selection does not inspect unrelated definitions in either scope",
-			names: []string{
-				"alpha",
-			},
-			unreadableOther: true,
-			wantPaths: []string{
-				"project/alpha",
-			},
-		},
-		{
-			name:      "corrupt lock prevents mutations",
-			corrupt:   true,
-			wantError: "lock",
-		},
-		{
-			name:        "local edits are skipped before any clone",
-			project:     true,
-			localEdit:   true,
-			wantFetches: new(0),
-			warnings: []string{
-				"installed contents do not match",
-				"--override",
-			},
-		},
-		{
-			name:           "locally added dependency files require override",
-			project:        true,
-			localDirectory: "node_modules",
-			wantFetches:    new(0),
-			warnings: []string{
-				"installed contents do not match",
-			},
-		},
-		{
-			name:           "locally added Git metadata requires override",
-			project:        true,
-			localDirectory: ".git",
-			wantFetches:    new(0),
-			warnings: []string{
-				"installed contents do not match",
-			},
-		},
-		{
-			name:           "override replaces locally added dependency files",
-			project:        true,
-			localDirectory: "node_modules",
-			override:       true,
-			wantFetches:    new(1),
-			wantPaths: []string{
-				"project/alpha",
-			},
-		},
-		{
-			name:        "override replaces local edits",
-			project:     true,
-			localEdit:   true,
-			override:    true,
-			wantFetches: new(1),
-			wantPaths: []string{
-				"project/alpha",
-			},
-		},
-		{
-			name:        "missing hash cannot establish unmodified installed content",
-			project:     true,
-			missingHash: true,
-			wantFetches: new(0),
-			warnings: []string{
-				"installed contents do not match",
-				"--override",
-			},
-		},
-		{
-			name:        "incompatible global hash requires override",
-			global:      true,
-			legacyHash:  true,
-			wantFetches: new(0),
-			warnings: []string{
-				"incompatible tracking",
-				"--override",
-			},
-		},
-		{
-			name:        "override adopts an incompatible global hash",
-			global:      true,
-			legacyHash:  true,
-			override:    true,
-			wantFetches: new(1),
-			wantPaths: []string{
-				"global/beta",
-			},
-		},
-		{
-			name:        "eligible sibling proceeds while edited skill is skipped",
-			localEdit:   true,
-			wantFetches: new(1),
-			wantPaths: []string{
-				"global/beta",
-			},
-			warnings: []string{
-				"installed contents do not match",
-			},
-		},
-		{
-			name:            "skipped source is not acquired while a different eligible source proceeds",
-			localEdit:       true,
-			differentSource: true,
-			wantFetches:     new(1),
-			wantPaths: []string{
-				"global/beta",
-			},
-			warnings: []string{
-				"installed contents do not match",
-			},
-		},
-		{
-			name:            "different eligible sources each get one acquisition",
-			differentSource: true,
-			wantFetches:     new(2),
-			wantPaths: []string{
-				"project/alpha",
-				"global/beta",
-			},
-		},
-		{
-			name:                "unverifiable installed resource warns without cloning",
-			project:             true,
-			unreadableInstalled: true,
-			wantFetches:         new(0),
-			warnings: []string{
-				"cannot verify installed contents",
-				"--override",
-			},
-		},
-		{
-			name:                "override does not need to read installed resources",
-			project:             true,
-			unreadableInstalled: true,
-			override:            true,
-			wantFetches:         new(1),
-			wantPaths: []string{
-				"project/alpha",
-			},
-		},
-		{
-			name:        "override does not make unsupported provenance eligible",
-			unsupported: true,
-			override:    true,
-			wantFetches: new(1),
-			wantPaths: []string{
-				"global/beta",
-			},
-			warnings: []string{
-				"unsupported",
-			},
-		},
-		{
-			name:           "shared source cleanup failure prevents publication",
-			cleanupFailure: true,
-			wantFetches:    new(1),
-			wantError:      "cleanup failed",
-		},
-		{
-			name:               "later scope source error still reports earlier committed updates",
-			missingSourceSkill: true,
-			wantCommitted:      true,
-			wantFetches:        new(1),
-			wantPaths: []string{
-				"project/alpha",
-			},
-			wantError: "some skills updates committed",
-		},
-		{
-			name:      "bundle failure leaves lock unchanged",
-			project:   true,
-			fault:     managerPublishFailure,
-			wantError: "permission",
-		},
-	} {
-		t.Run(
-			test.name,
-			func(t *testing.T) {
-				project := t.TempDir()
-				home := t.TempDir()
-				if test.atHome {
-					project = home
-				}
-				t.Chdir(project)
-				t.Setenv(
-					"HOME",
-					home,
-				)
-				t.Setenv(
-					"USERPROFILE",
-					home,
-				)
-				t.Setenv(
-					"XDG_STATE_HOME",
-					"",
-				)
-				projectRoot := filepath.Join(
-					project,
-					".agents",
-					"skills",
-				)
-				globalRoot := filepath.Join(
-					home,
-					".agents",
-					"skills",
-				)
-				projectLock := filepath.Join(
-					project,
-					"skills-lock.json",
-				)
-				globalLock := filepath.Join(
-					home,
-					".agents",
-					".skill-lock.json",
-				)
-				filesystem := afero.NewMemMapFs()
-				writeTrackingFixture(
-					t,
-					filesystem,
-					filepath.Join(
-						projectRoot,
-						"alpha",
-						"SKILL.md",
-					),
-					alphaSkill,
-				)
-				writeTrackingFixture(
-					t,
-					filesystem,
-					filepath.Join(
-						projectRoot,
-						"alpha",
-						"obsolete.txt",
-					),
-					"obsolete",
-				)
-				writeTrackingFixture(
-					t,
-					filesystem,
-					filepath.Join(
-						globalRoot,
-						"beta",
-						"SKILL.md",
-					),
-					betaSkill,
-				)
-				projectRecords := map[string]any{}
-				if !test.untracked {
-					sourceType := "git"
-					if test.unsupported {
-						sourceType = "node_modules"
-					}
-					projectRecords["alpha"] = map[string]any{
-						"source":       managerSource,
-						"sourceType":   sourceType,
-						"sourceUrl":    managerSource,
-						"skillPath":    "alpha/SKILL.md",
-						"computedHash": alphaObsoleteHash,
-						"extra":        "preserved",
-					}
-				}
-				if test.missingHash {
-					delete(
-						projectRecords["alpha"].(map[string]any),
-						"computedHash",
-					)
-				}
-				if test.localEdit {
-					writeTrackingFixture(
-						t,
-						filesystem,
-						filepath.Join(
-							projectRoot,
+	// Both inventories contain alpha; names and scope determine which bundles update.
+	t.Run(
+		"selection",
+		func(t *testing.T) {
+			for _, test := range []struct {
+				name    string
+				options skills.UpdateOptions
+				want    []string
+				warning string
+			}{
+				// No names means both alpha installations are independent selections.
+				{
+					name: "all inventories",
+					want: []string{
+						"project/alpha",
+						"global/alpha",
+						"global/beta",
+					},
+				},
+				// A named collision is skipped, but the unambiguous beta still updates.
+				{
+					name: "ambiguous name",
+					options: skills.UpdateOptions{
+						Skills: []string{
 							"alpha",
-							"obsolete.txt",
-						),
-						"local edit",
-					)
-				}
-				if test.localDirectory != "" {
-					writeTrackingFixture(
-						t,
-						filesystem,
-						filepath.Join(
-							projectRoot,
+							"beta",
+						},
+					},
+					want: []string{
+						"global/beta",
+					},
+					warning: "explicit --scope",
+				},
+				// Explicit scope resolves the collision, and repeated arguments update only once.
+				{
+					name: "project names",
+					options: skills.UpdateOptions{
+						Scope: commandio.ScopeOptions{
+							Project: true,
+						},
+						Skills: []string{
 							"alpha",
-							test.localDirectory,
-							"local.txt",
-						),
-						"local addition",
-					)
-				}
-				if test.unsupportedLocator {
-					projectRecords["alpha"].(map[string]any)["sourceUrl"] = "git@github.com:owner/repo.git"
-				}
-				if test.missingURL {
-					projectRecords["alpha"].(map[string]any)["source"] = "owner/repo"
-					delete(
-						projectRecords["alpha"].(map[string]any),
-						"sourceUrl",
-					)
-				}
-				if test.unreadableOther {
-					for _, root := range []string{
-						projectRoot,
-						globalRoot,
-					} {
+							"alpha",
+						},
+					},
+					want: []string{
+						"project/alpha",
+					},
+				},
+				// Global scope must leave the project installation alone.
+				{
+					name: "global inventory",
+					options: skills.UpdateOptions{
+						Scope: commandio.ScopeOptions{
+							Global: true,
+						},
+					},
+					want: []string{
+						"global/alpha",
+						"global/beta",
+					},
+				},
+				// A skill in another scope is still missing from the selected scope.
+				{
+					name: "missing in scope",
+					options: skills.UpdateOptions{
+						Scope: commandio.ScopeOptions{
+							Project: true,
+						},
+						Skills: []string{
+							"beta",
+						},
+					},
+					warning: "does not exist",
+				},
+			} {
+				t.Run(
+					test.name,
+					func(t *testing.T) {
+						f := newUpdateFixture(t)
 						writeTrackingFixture(
 							t,
-							filesystem,
+							f.filesystem,
 							filepath.Join(
-								root,
-								"ignored",
+								f.globalRoot,
+								"alpha",
 								"SKILL.md",
 							),
-							"invalid definition",
+							alphaSkill,
 						)
-					}
-				}
-				globalRecords := map[string]any{
-					"beta": map[string]any{
-						"source":          managerSource,
-						"sourceType":      "git",
-						"sourceUrl":       managerSource,
-						"skillPath":       "beta/SKILL.md",
-						"skillFolderHash": betaHash,
-						"installedAt":     "2026-01-01T00:00:00.000Z",
-					},
-				}
-				if test.differentSource {
-					globalRecords["beta"].(map[string]any)["sourceUrl"] = otherSource
-					globalRecords["beta"].(map[string]any)["source"] = otherSource
-				}
-				if test.legacyHash {
-					globalRecords["beta"].(map[string]any)["skillFolderHash"] = "70993c44c50665a842d44706f3daf42d0530412f"
-				}
-				if test.duplicate {
-					writeTrackingFixture(
-						t,
-						filesystem,
-						filepath.Join(
-							globalRoot,
-							"alpha",
-							"SKILL.md",
-						),
-						alphaSkill,
-					)
-					globalRecords["alpha"] = map[string]any{
-						"source":          managerSource,
-						"sourceType":      "git",
-						"sourceUrl":       managerSource,
-						"skillPath":       "alpha/SKILL.md",
-						"skillFolderHash": alphaHash,
-					}
-					if test.atHome {
-						globalRecords["alpha"].(map[string]any)["skillFolderHash"] = alphaObsoleteHash
-					}
-				}
-				if test.overlapping {
-					globalRecords["alpha"].(map[string]any)["skillPath"] = "global-alpha/SKILL.md"
-				}
-				for filename, data := range map[string]any{
-					projectLock: map[string]any{
-						"version": 1,
-						"skills":  projectRecords,
-					},
-					globalLock: map[string]any{
-						"version": 3,
-						"skills":  globalRecords,
-						"dismissed": map[string]any{
-							"findSkillsPrompt": true,
-						},
-					},
-				} {
-					encoded, err := json.Marshal(data)
-					if err != nil {
-						t.Fatal(err)
-					}
-					writeTrackingFixture(
-						t,
-						filesystem,
-						filename,
-						string(encoded),
-					)
-				}
-				if test.corrupt {
-					writeTrackingFixture(
-						t,
-						filesystem,
-						projectLock,
-						"invalid JSON",
-					)
-				}
-				before := snapshotManagerFS(
-					t,
-					filesystem,
-				)
-				remote := fstest.MapFS{
-					"alpha/SKILL.md": {
-						Data: []byte(alphaUpdated),
-					},
-					"beta/SKILL.md": {
-						Data: []byte(betaSkill),
-					},
-					"global-alpha/SKILL.md": {
-						Data: []byte(strings.Replace(
-							alphaUpdated,
-							"Updated alpha",
-							"Different global payload",
-							1,
-						)),
-					},
-				}
-				if test.missingSourceSkill {
-					delete(
-						remote,
-						"beta/SKILL.md",
-					)
-				}
-				var fetches []string
-				cleanups := 0
-				client := updateSourceClient{
-					files:   remote,
-					fetches: &fetches,
-					cleanup: func() error {
-						cleanups++
-						if test.consumeSource {
-							clear(remote)
+						f.global.Skills["alpha"] = updateRecord{
+							Source:          managerSource,
+							SourceType:      "git",
+							SourceURL:       managerSource,
+							SkillPath:       "alpha/SKILL.md",
+							SkillFolderHash: updateAlphaHash,
 						}
-						if test.cleanupFailure {
-							return errors.New("cleanup failed")
+						f.saveLocks(t)
+						before := snapshotManagerFS(
+							t,
+							f.filesystem,
+						)
+						paths, err := f.run(
+							t,
+							test.options,
+						)
+						if err != nil {
+							t.Fatal(err)
 						}
-						return nil
-					},
-				}
-				manager := skills.NewManager(
-					client,
-					updateInventoryFS{
-						Fs: managerFaultFS{
-							Fs:    filesystem,
-							fault: test.fault,
-						},
-						unreadableOther:     test.unreadableOther,
-						unreadableInstalled: test.unreadableInstalled,
-						resource: filepath.Join(
-							projectRoot,
-							"alpha",
-							"obsolete.txt",
-						),
-					},
-				)
-				var output, warnings bytes.Buffer
-				err := skills.Update(
-					t.Context(),
-					manager,
-					skills.UpdateOptions{
-						Scope: commandio.ScopeOptions{
-							Project: test.project,
-							Global:  test.global,
-						},
-						Skills:   test.names,
-						Override: test.override,
-					},
-					commandio.IO{
-						Out: &output,
-						Err: &warnings,
-					},
-				)
-				if test.wantFetches != nil && len(fetches) != *test.wantFetches {
-					t.Fatalf(
-						"source acquisitions = %v; want %d",
-						fetches,
-						*test.wantFetches,
-					)
-				}
-				if cleanups != len(fetches) {
-					t.Fatalf(
-						"source cleanup count = %d; acquisitions = %v",
-						cleanups,
-						fetches,
-					)
-				}
-				for index, locator := range fetches {
-					for _, earlier := range fetches[:index] {
-						if locator == earlier {
-							t.Fatalf(
-								"source acquired more than once: %v",
-								fetches,
+						var wantPaths []string
+						for _, name := range test.want {
+							root, skill, _ := strings.Cut(
+								name,
+								"/",
+							)
+							directory := f.projectRoot
+							if root == "global" {
+								directory = f.globalRoot
+							}
+							wantPaths = append(
+								wantPaths,
+								filepath.Join(
+									directory,
+									skill,
+									"SKILL.md",
+								),
 							)
 						}
-					}
-				}
-				if test.localEdit && test.differentSource && (len(fetches) != 1 || fetches[0] != otherSource) {
-					t.Fatalf(
-						"skipped source was acquired: %v",
-						fetches,
-					)
-				}
-				if test.wantError != "" {
-					if err == nil || !strings.Contains(
-						err.Error(),
-						test.wantError,
-					) {
-						t.Fatalf(
-							"Update = %v, want %q",
-							err,
-							test.wantError,
-						)
-					}
-					if !test.wantCommitted {
 						if diff := cmp.Diff(
-							before,
-							snapshotManagerFS(
-								t,
-								filesystem,
-							),
+							wantPaths,
+							paths,
 						); diff != "" {
 							t.Fatal(diff)
 						}
-						return
-					}
-				} else if err != nil {
-					t.Fatal(err)
-				}
-				var summaries []struct {
-					Name string `json:"name"`
-					Path string `json:"path"`
-				}
-				if err := json.Unmarshal(
-					output.Bytes(),
-					&summaries,
-				); err != nil {
-					t.Fatal(err)
-				}
-				var gotPaths []string
-				for _, summary := range summaries {
-					root := "global/"
-					if strings.HasPrefix(
-						summary.Path,
-						projectRoot,
-					) && (!test.atHome || summary.Name != "beta") {
-						root = "project/"
-					}
-					gotPaths = append(
-						gotPaths,
-						root+filepath.Base(filepath.Dir(summary.Path)),
-					)
-				}
-				if diff := cmp.Diff(
-					test.wantPaths,
-					gotPaths,
-				); diff != "" {
-					t.Fatal(diff)
-				}
-				for _, warning := range test.warnings {
-					if !strings.Contains(
-						warnings.String(),
-						warning,
-					) {
-						t.Fatalf(
-							"warnings %q missing %q",
-							warnings.String(),
-							warning,
-						)
-					}
-				}
-				if len(test.warnings) == 0 && warnings.Len() != 0 {
-					t.Fatalf(
-						"unexpected warnings: %s",
-						warnings.String(),
-					)
-				}
-				if (test.localEdit || test.localDirectory != "" || test.missingHash) && !test.override && !test.global {
-					data, err := afero.ReadFile(
-						filesystem,
-						projectLock,
-					)
-					if err != nil || string(data) != before[projectLock] {
-						t.Fatal("skipped project lock was modified")
-					}
-					data, err = afero.ReadFile(
-						filesystem,
-						filepath.Join(
-							projectRoot,
-							"alpha",
-							"obsolete.txt",
-						),
-					)
-					want := "obsolete"
-					if test.localEdit {
-						want = "local edit"
-					}
-					if err != nil || string(data) != want {
-						t.Fatalf(
-							"skipped contents = %q, %v; want %q",
-							data,
-							err,
-							want,
-						)
-					}
-				}
-				if test.overlapping && !test.project {
-					for _, filename := range []string{
-						projectLock,
-						filepath.Join(
-							projectRoot,
-							"alpha",
-							"SKILL.md",
-						),
-						filepath.Join(
-							projectRoot,
-							"alpha",
-							"obsolete.txt",
-						),
-					} {
-						data, err := afero.ReadFile(
-							filesystem,
-							filename,
-						)
-						if err != nil || string(data) != before[filename] {
+						if test.warning == "" && f.warnings.Len() != 0 || test.warning != "" && !strings.Contains(
+							f.warnings.String(),
+							test.warning,
+						) {
 							t.Fatalf(
-								"colliding update changed %s: %s, %v",
+								"warnings = %q; want %q",
+								f.warnings.String(),
+								test.warning,
+							)
+						}
+						// Every selected alpha is replaced; every unselected alpha keeps its old bytes.
+						for _, root := range []string{
+							f.projectRoot,
+							f.globalRoot,
+						} {
+							filename := filepath.Join(
+								root,
+								"alpha",
+								"SKILL.md",
+							)
+							want := before[filename]
+							for _, selected := range paths {
+								if selected == filename {
+									want = alphaUpdated
+								}
+							}
+							data, err := afero.ReadFile(
+								f.filesystem,
 								filename,
+							)
+							if err != nil || string(data) != want {
+								t.Fatalf(
+									"%s = %q, %v; want %q",
+									filename,
+									data,
+									err,
+									want,
+								)
+							}
+						}
+					},
+				)
+			}
+		},
+	)
+
+	// Untracked and missing selections warn without blocking a tracked sibling.
+	t.Run(
+		"untracked selections",
+		func(t *testing.T) {
+			for _, test := range []struct {
+				name     string
+				names    []string
+				warnings []string
+			}{
+				{
+					name: "all installed",
+					warnings: []string{
+						"not in the lock file",
+					},
+				},
+				{
+					name: "named and missing",
+					names: []string{
+						"missing",
+						"alpha",
+						"beta",
+					},
+					warnings: []string{
+						"does not exist",
+						"not in the lock file",
+					},
+				},
+			} {
+				t.Run(
+					test.name,
+					func(t *testing.T) {
+						f := newUpdateFixture(t)
+						delete(
+							f.project.Skills,
+							"alpha",
+						)
+						f.saveLocks(t)
+						paths, err := f.run(
+							t,
+							skills.UpdateOptions{
+								Skills: test.names,
+							},
+						)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if diff := cmp.Diff(
+							[]string{
+								filepath.Join(
+									f.globalRoot,
+									"beta",
+									"SKILL.md",
+								),
+							},
+							paths,
+						); diff != "" {
+							t.Fatal(diff)
+						}
+						for _, warning := range test.warnings {
+							if !strings.Contains(
+								f.warnings.String(),
+								warning,
+							) {
+								t.Fatalf(
+									"warnings = %q; missing %q",
+									f.warnings.String(),
+									warning,
+								)
+							}
+						}
+						data, err := afero.ReadFile(
+							f.filesystem,
+							filepath.Join(
+								f.projectRoot,
+								"alpha",
+								"SKILL.md",
+							),
+						)
+						if err != nil || string(data) != alphaSkill {
+							t.Fatalf(
+								"untracked skill changed: %q, %v",
 								data,
 								err,
 							)
 						}
-					}
-					data, err := afero.ReadFile(
-						filesystem,
-						globalLock,
-					)
-					if err != nil {
-						t.Fatal(err)
-					}
-					var lock struct {
-						Skills map[string]map[string]any `json:"skills"`
-					}
-					if err := json.Unmarshal(
-						data,
-						&lock,
-					); err != nil {
-						t.Fatal(err)
-					}
-					if lock.Skills["alpha"]["skillFolderHash"] != alphaObsoleteHash {
-						t.Fatalf(
-							"colliding global record was changed: %s",
-							data,
+					},
+				)
+			}
+		},
+	)
+
+	// Running from HOME shares a bundle directory, but the tracking files remain distinct.
+	t.Run(
+		"shared directory",
+		func(t *testing.T) {
+			alpha := updateRecord{
+				Source:       managerSource,
+				SourceType:   "git",
+				SourceURL:    managerSource,
+				SkillPath:    "alpha/SKILL.md",
+				ComputedHash: updateAlphaObsoleteHash,
+			}
+			otherAlpha := updateRecord{
+				Source:          managerSource,
+				SourceType:      "git",
+				SourceURL:       managerSource,
+				SkillPath:       "other-alpha/SKILL.md",
+				SkillFolderHash: updateAlphaObsoleteHash,
+			}
+			for _, test := range []struct {
+				name         string
+				projectAlpha *updateRecord
+				globalAlpha  *updateRecord
+				scope        commandio.ScopeOptions
+				want         []string
+				warning      string
+			}{
+				// Missing project tracking must not hide the globally tracked beta.
+				{
+					name: "global tracking only",
+					want: []string{
+						"beta",
+					},
+					warning: "not in the lock file",
+				},
+				// Disjoint records in the two locks can update their respective bundles.
+				{
+					name:         "disjoint records",
+					projectAlpha: &alpha,
+					want: []string{
+						"alpha",
+						"beta",
+					},
+					warning: "not in the lock file",
+				},
+				// Two records for one physical alpha cannot choose competing source contents.
+				{
+					name:         "conflicting records",
+					projectAlpha: &alpha,
+					globalAlpha:  &otherAlpha,
+					want: []string{
+						"beta",
+					},
+					warning: "one installed bundle",
+				},
+				// Explicit scope chooses the project record without touching the global record.
+				{
+					name:         "explicit project",
+					projectAlpha: &alpha,
+					globalAlpha:  &otherAlpha,
+					scope: commandio.ScopeOptions{
+						Project: true,
+					},
+					want: []string{
+						"alpha",
+					},
+					warning: "not in the lock file",
+				},
+			} {
+				t.Run(
+					test.name,
+					func(t *testing.T) {
+						f := newUpdateFixture(t)
+						t.Chdir(f.home)
+						f.projectRoot = f.globalRoot
+						f.projectPath = filepath.Join(
+							f.home,
+							"skills-lock.json",
 						)
-					}
-				}
-				for _, updated := range test.wantPaths {
-					parts := strings.Split(
-						updated,
-						"/",
-					)
-					root, filename, hashField := projectRoot, projectLock, "computedHash"
-					if parts[0] == "global" {
-						root, filename, hashField = globalRoot, globalLock, "skillFolderHash"
-					}
-					data, err := afero.ReadFile(
-						filesystem,
-						filename,
-					)
-					if err != nil {
-						t.Fatal(err)
-					}
-					var lock struct {
-						Skills map[string]map[string]any `json:"skills"`
-					}
-					if err := json.Unmarshal(
-						data,
-						&lock,
-					); err != nil {
-						t.Fatal(err)
-					}
-					if hash, ok := lock.Skills[parts[1]][hashField].(string); !ok || len(hash) != 64 {
-						t.Fatalf(
-							"updated lock has no folder hash: %s",
-							data,
-						)
-					}
-					if parts[1] == "alpha" {
-						data, err := afero.ReadFile(
-							filesystem,
+						f.project.Skills = map[string]updateRecord{}
+						if test.projectAlpha != nil {
+							f.project.Skills["alpha"] = *test.projectAlpha
+						}
+						if test.globalAlpha != nil {
+							f.global.Skills["alpha"] = *test.globalAlpha
+						}
+						writeTrackingFixture(
+							t,
+							f.filesystem,
 							filepath.Join(
-								root,
+								f.projectRoot,
+								"alpha",
+								"SKILL.md",
+							),
+							alphaSkill,
+						)
+						writeTrackingFixture(
+							t,
+							f.filesystem,
+							filepath.Join(
+								f.projectRoot,
+								"alpha",
+								"obsolete.txt",
+							),
+							"obsolete",
+						)
+						f.source.files["other-alpha/SKILL.md"] = &fstest.MapFile{
+							Data: []byte(betaSkill),
+						}
+						f.saveLocks(t)
+						paths, err := f.run(
+							t,
+							skills.UpdateOptions{
+								Scope: test.scope,
+							},
+						)
+						if err != nil {
+							t.Fatal(err)
+						}
+						var wantPaths []string
+						for _, name := range test.want {
+							wantPaths = append(
+								wantPaths,
+								filepath.Join(
+									f.projectRoot,
+									name,
+									"SKILL.md",
+								),
+							)
+						}
+						if diff := cmp.Diff(
+							wantPaths,
+							paths,
+						); diff != "" {
+							t.Fatal(diff)
+						}
+						if !strings.Contains(
+							f.warnings.String(),
+							test.warning,
+						) {
+							t.Fatalf(
+								"warnings = %q; want %q",
+								f.warnings.String(),
+								test.warning,
+							)
+						}
+						wantAlpha := alphaSkill
+						for _, name := range test.want {
+							if name == "alpha" {
+								wantAlpha = alphaUpdated
+							}
+						}
+						data, err := afero.ReadFile(
+							f.filesystem,
+							filepath.Join(
+								f.projectRoot,
+								"alpha",
+								"SKILL.md",
+							),
+						)
+						if err != nil || string(data) != wantAlpha {
+							t.Fatalf(
+								"shared alpha = %q, %v; want %q",
+								data,
+								err,
+								wantAlpha,
+							)
+						}
+						// Regardless of the chosen scope, the competing global alpha record is preserved.
+						global := readUpdateLock(
+							t,
+							f.filesystem,
+							f.globalPath,
+						)
+						if diff := cmp.Diff(
+							f.global.Skills["alpha"],
+							global.Skills["alpha"],
+						); diff != "" {
+							t.Fatal(diff)
+						}
+					},
+				)
+			}
+		},
+	)
+
+	// Unsupported provenance is skipped before acquisition, even with override.
+	t.Run(
+		"recorded sources",
+		func(t *testing.T) {
+			for _, test := range []struct {
+				name     string
+				record   updateRecord
+				override bool
+				warning  string
+			}{
+				{
+					name: "unsupported type",
+					record: updateRecord{
+						Source:     managerSource,
+						SourceType: "node_modules",
+						SkillPath:  "alpha/SKILL.md",
+					},
+					warning: "unsupported source type",
+				},
+				{
+					name: "unsupported URL",
+					record: updateRecord{
+						Source:     managerSource,
+						SourceType: "git",
+						SourceURL:  "git@github.com:owner/repo.git",
+						SkillPath:  "alpha/SKILL.md",
+					},
+					warning: "unsupported recorded source",
+				},
+				{
+					name: "missing URL",
+					record: updateRecord{
+						Source:     "owner/repo",
+						SourceType: "git",
+						SkillPath:  "alpha/SKILL.md",
+					},
+					warning: "unambiguous sourceUrl",
+				},
+				{
+					name: "override does not bypass provenance",
+					record: updateRecord{
+						Source:     managerSource,
+						SourceType: "node_modules",
+						SkillPath:  "alpha/SKILL.md",
+					},
+					override: true,
+					warning:  "unsupported source type",
+				},
+			} {
+				t.Run(
+					test.name,
+					func(t *testing.T) {
+						f := newUpdateFixture(t)
+						f.project.Skills["alpha"] = test.record
+						f.saveLocks(t)
+						before, err := afero.ReadFile(
+							f.filesystem,
+							f.projectPath,
+						)
+						if err != nil {
+							t.Fatal(err)
+						}
+						paths, err := f.run(
+							t,
+							skills.UpdateOptions{
+								Override: test.override,
+							},
+						)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if diff := cmp.Diff(
+							[]string{
+								filepath.Join(
+									f.globalRoot,
+									"beta",
+									"SKILL.md",
+								),
+							},
+							paths,
+						); diff != "" {
+							t.Fatal(diff)
+						}
+						if !strings.Contains(
+							f.warnings.String(),
+							test.warning,
+						) {
+							t.Fatalf(
+								"warnings = %q; want %q",
+								f.warnings.String(),
+								test.warning,
+							)
+						}
+						after, err := afero.ReadFile(
+							f.filesystem,
+							f.projectPath,
+						)
+						if err != nil || !bytes.Equal(
+							before,
+							after,
+						) {
+							t.Fatalf(
+								"unsupported record changed: %s, %v",
+								after,
+								err,
+							)
+						}
+					},
+				)
+			}
+		},
+	)
+
+	// Edited resources and added files are protected; override replaces the whole bundle.
+	t.Run(
+		"installed contents",
+		func(t *testing.T) {
+			for _, test := range []struct {
+				name     string
+				file     string
+				content  string
+				override bool
+			}{
+				{
+					name:    "edited resource",
+					file:    "obsolete.txt",
+					content: "local edit",
+				},
+				{
+					name:    "added dependency",
+					file:    "node_modules/local.txt",
+					content: "local addition",
+				},
+				{
+					name:    "added Git metadata",
+					file:    ".git/local.txt",
+					content: "local addition",
+				},
+				{
+					name:     "override edited resource",
+					file:     "obsolete.txt",
+					content:  "local edit",
+					override: true,
+				},
+				{
+					name:     "override added dependency",
+					file:     "node_modules/local.txt",
+					content:  "local addition",
+					override: true,
+				},
+			} {
+				t.Run(
+					test.name,
+					func(t *testing.T) {
+						f := newUpdateFixture(t)
+						filename := filepath.Join(
+							f.projectRoot,
+							"alpha",
+							filepath.FromSlash(test.file),
+						)
+						writeTrackingFixture(
+							t,
+							f.filesystem,
+							filename,
+							test.content,
+						)
+						before := snapshotManagerFS(
+							t,
+							f.filesystem,
+						)
+						paths, err := f.run(
+							t,
+							skills.UpdateOptions{
+								Scope: commandio.ScopeOptions{
+									Project: true,
+								},
+								Override: test.override,
+							},
+						)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if !test.override {
+							if len(paths) != 0 || len(f.source.fetches) != 0 || !strings.Contains(
+								f.warnings.String(),
+								"--override",
+							) {
+								t.Fatalf(
+									"edited skill was not skipped: paths=%v fetches=%v warnings=%q",
+									paths,
+									f.source.fetches,
+									f.warnings.String(),
+								)
+							}
+							if diff := cmp.Diff(
+								before,
+								snapshotManagerFS(
+									t,
+									f.filesystem,
+								),
+							); diff != "" {
+								t.Fatal(diff)
+							}
+							return
+						}
+						if diff := cmp.Diff(
+							[]string{
+								filepath.Join(
+									f.projectRoot,
+									"alpha",
+									"SKILL.md",
+								),
+							},
+							paths,
+						); diff != "" {
+							t.Fatal(diff)
+						}
+						if len(f.source.fetches) != 1 || f.warnings.Len() != 0 {
+							t.Fatalf(
+								"override fetches=%v warnings=%q",
+								f.source.fetches,
+								f.warnings.String(),
+							)
+						}
+						if _, err := f.filesystem.Stat(filename); !errors.Is(
+							err,
+							fs.ErrNotExist,
+						) {
+							t.Fatalf(
+								"local file survived override: %v",
+								err,
+							)
+						}
+						data, err := afero.ReadFile(
+							f.filesystem,
+							paths[0],
+						)
+						if err != nil || string(data) != alphaUpdated {
+							t.Fatalf(
+								"replacement = %q, %v",
+								data,
+								err,
+							)
+						}
+					},
+				)
+			}
+		},
+	)
+
+	// A missing fingerprint cannot establish that project contents are unmodified.
+	t.Run(
+		"missing project hash",
+		func(t *testing.T) {
+			f := newUpdateFixture(t)
+			record := f.project.Skills["alpha"]
+			record.ComputedHash = ""
+			f.project.Skills["alpha"] = record
+			f.saveLocks(t)
+			before := snapshotManagerFS(
+				t,
+				f.filesystem,
+			)
+			paths, err := f.run(
+				t,
+				skills.UpdateOptions{
+					Scope: commandio.ScopeOptions{
+						Project: true,
+					},
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(paths) != 0 || len(f.source.fetches) != 0 || !strings.Contains(
+				f.warnings.String(),
+				"--override",
+			) {
+				t.Fatalf(
+					"missing hash was not skipped: %v, %v, %q",
+					paths,
+					f.source.fetches,
+					f.warnings.String(),
+				)
+			}
+			if diff := cmp.Diff(
+				before,
+				snapshotManagerFS(
+					t,
+					f.filesystem,
+				),
+			); diff != "" {
+				t.Fatal(diff)
+			}
+		},
+	)
+
+	// An incompatible global fingerprint needs override before CPE can replace it.
+	t.Run(
+		"incompatible global hash",
+		func(t *testing.T) {
+			for _, override := range []bool{
+				false,
+				true,
+			} {
+				name := "skip"
+				if override {
+					name = "override"
+				}
+				t.Run(
+					name,
+					func(t *testing.T) {
+						f := newUpdateFixture(t)
+						record := f.global.Skills["beta"]
+						record.SkillFolderHash = "70993c44c50665a842d44706f3daf42d0530412f"
+						f.global.Skills["beta"] = record
+						f.saveLocks(t)
+						before := snapshotManagerFS(
+							t,
+							f.filesystem,
+						)
+						paths, err := f.run(
+							t,
+							skills.UpdateOptions{
+								Scope: commandio.ScopeOptions{
+									Global: true,
+								},
+								Override: override,
+							},
+						)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if !override {
+							if len(paths) != 0 || len(f.source.fetches) != 0 || !strings.Contains(
+								f.warnings.String(),
+								"incompatible tracking",
+							) {
+								t.Fatalf(
+									"incompatible hash was not skipped: %v, %v, %q",
+									paths,
+									f.source.fetches,
+									f.warnings.String(),
+								)
+							}
+							if diff := cmp.Diff(
+								before,
+								snapshotManagerFS(
+									t,
+									f.filesystem,
+								),
+							); diff != "" {
+								t.Fatal(diff)
+							}
+							return
+						}
+						if diff := cmp.Diff(
+							[]string{
+								filepath.Join(
+									f.globalRoot,
+									"beta",
+									"SKILL.md",
+								),
+							},
+							paths,
+						); diff != "" {
+							t.Fatal(diff)
+						}
+						lock := readUpdateLock(
+							t,
+							f.filesystem,
+							f.globalPath,
+						)
+						if lock.Skills["beta"].SkillFolderHash != updateBetaHash || len(f.source.fetches) != 1 || f.warnings.Len() != 0 {
+							t.Fatalf(
+								"override did not adopt CPE tracking: %+v; fetches=%v warnings=%q",
+								lock,
+								f.source.fetches,
+								f.warnings.String(),
+							)
+						}
+					},
+				)
+			}
+		},
+	)
+
+	// A resource read failure is a warning by default; override does not read that resource.
+	t.Run(
+		"unreadable installed resource",
+		func(t *testing.T) {
+			for _, override := range []bool{
+				false,
+				true,
+			} {
+				name := "skip"
+				if override {
+					name = "override"
+				}
+				t.Run(
+					name,
+					func(t *testing.T) {
+						f := newUpdateFixture(t)
+						base := f.filesystem
+						before := snapshotManagerFS(
+							t,
+							base,
+						)
+						f.filesystem = updateUnreadableFS{
+							Fs: base,
+							filename: filepath.Join(
+								f.projectRoot,
+								"alpha",
+								"obsolete.txt",
+							),
+						}
+						paths, err := f.run(
+							t,
+							skills.UpdateOptions{
+								Scope: commandio.ScopeOptions{
+									Project: true,
+								},
+								Override: override,
+							},
+						)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if !override {
+							if len(paths) != 0 || len(f.source.fetches) != 0 || !strings.Contains(
+								f.warnings.String(),
+								"cannot verify installed contents",
+							) {
+								t.Fatalf(
+									"unreadable bundle was not skipped: %v, %v, %q",
+									paths,
+									f.source.fetches,
+									f.warnings.String(),
+								)
+							}
+							if diff := cmp.Diff(
+								before,
+								snapshotManagerFS(
+									t,
+									base,
+								),
+							); diff != "" {
+								t.Fatal(diff)
+							}
+							return
+						}
+						if diff := cmp.Diff(
+							[]string{
+								filepath.Join(
+									f.projectRoot,
+									"alpha",
+									"SKILL.md",
+								),
+							},
+							paths,
+						); diff != "" {
+							t.Fatal(diff)
+						}
+						if len(f.source.fetches) != 1 || f.warnings.Len() != 0 {
+							t.Fatalf(
+								"override fetches=%v warnings=%q",
+								f.source.fetches,
+								f.warnings.String(),
+							)
+						}
+					},
+				)
+			}
+		},
+	)
+
+	// Only eligible sources are cloned, once each; payloads survive checkout cleanup.
+	t.Run(
+		"source acquisition",
+		func(t *testing.T) {
+			const otherSource = "https://example.com/other.git"
+			for _, test := range []struct {
+				name          string
+				betaSource    string
+				alphaResource string
+				wantSources   []string
+				wantNames     []string
+				warning       string
+			}{
+				{
+					name:          "shared source",
+					betaSource:    managerSource,
+					alphaResource: "obsolete",
+					wantSources: []string{
+						managerSource,
+					},
+					wantNames: []string{
+						"alpha",
+						"beta",
+					},
+				},
+				{
+					name:          "different sources",
+					betaSource:    otherSource,
+					alphaResource: "obsolete",
+					wantSources: []string{
+						managerSource,
+						otherSource,
+					},
+					wantNames: []string{
+						"alpha",
+						"beta",
+					},
+				},
+				{
+					name:          "shared source with edited skill",
+					betaSource:    managerSource,
+					alphaResource: "local edit",
+					wantSources: []string{
+						managerSource,
+					},
+					wantNames: []string{
+						"beta",
+					},
+					warning: "installed contents do not match",
+				},
+				{
+					name:          "skip edited skills source",
+					betaSource:    otherSource,
+					alphaResource: "local edit",
+					wantSources: []string{
+						otherSource,
+					},
+					wantNames: []string{
+						"beta",
+					},
+					warning: "installed contents do not match",
+				},
+			} {
+				t.Run(
+					test.name,
+					func(t *testing.T) {
+						f := newUpdateFixture(t)
+						record := f.global.Skills["beta"]
+						record.Source, record.SourceURL = test.betaSource, test.betaSource
+						f.global.Skills["beta"] = record
+						f.saveLocks(t)
+						writeTrackingFixture(
+							t,
+							f.filesystem,
+							filepath.Join(
+								f.projectRoot,
+								"alpha",
+								"obsolete.txt",
+							),
+							test.alphaResource,
+						)
+						before := snapshotManagerFS(
+							t,
+							f.filesystem,
+						)
+						paths, err := f.run(
+							t,
+							skills.UpdateOptions{},
+						)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if diff := cmp.Diff(
+							test.wantSources,
+							f.source.fetches,
+						); diff != "" {
+							t.Fatal(diff)
+						}
+						if f.source.cleanups != len(test.wantSources) {
+							t.Fatalf(
+								"cleanups = %d; want %d",
+								f.source.cleanups,
+								len(test.wantSources),
+							)
+						}
+						var wantPaths []string
+						for _, name := range test.wantNames {
+							root := f.projectRoot
+							if name == "beta" {
+								root = f.globalRoot
+							}
+							wantPaths = append(
+								wantPaths,
+								filepath.Join(
+									root,
+									name,
+									"SKILL.md",
+								),
+							)
+						}
+						if diff := cmp.Diff(
+							wantPaths,
+							paths,
+						); diff != "" {
+							t.Fatal(diff)
+						}
+						if test.warning == "" && f.warnings.Len() != 0 || test.warning != "" && !strings.Contains(
+							f.warnings.String(),
+							test.warning,
+						) {
+							t.Fatalf(
+								"warnings = %q; want %q",
+								f.warnings.String(),
+								test.warning,
+							)
+						}
+						if test.warning != "" {
+							for _, filename := range []string{
+								f.projectPath,
+								filepath.Join(
+									f.projectRoot,
+									"alpha",
+									"obsolete.txt",
+								),
+							} {
+								data, err := afero.ReadFile(
+									f.filesystem,
+									filename,
+								)
+								if err != nil || string(data) != before[filename] {
+									t.Fatalf(
+										"skipped installation changed %s: %q, %v",
+										filename,
+										data,
+										err,
+									)
+								}
+							}
+							return
+						}
+						// Successful publication replaces resources and writes the new project fingerprint.
+						data, err := afero.ReadFile(
+							f.filesystem,
+							filepath.Join(
+								f.projectRoot,
 								"alpha",
 								"SKILL.md",
 							),
 						)
 						if err != nil || string(data) != alphaUpdated {
 							t.Fatalf(
-								"skill not updated: %s, %v",
+								"replacement = %q, %v",
 								data,
 								err,
 							)
 						}
-						if exists, err := afero.Exists(
-							filesystem,
-							filepath.Join(
-								root,
-								"alpha",
-								"obsolete.txt",
-							),
-						); err != nil || exists {
-							t.Fatal("obsolete file survived update")
+						if _, err := f.filesystem.Stat(filepath.Join(
+							f.projectRoot,
+							"alpha",
+							"obsolete.txt",
+						)); !errors.Is(
+							err,
+							fs.ErrNotExist,
+						) {
+							t.Fatalf(
+								"obsolete resource survived: %v",
+								err,
+							)
 						}
-					}
+						lock := readUpdateLock(
+							t,
+							f.filesystem,
+							f.projectPath,
+						)
+						if len(lock.Skills["alpha"].ComputedHash) != 64 {
+							t.Fatalf(
+								"missing updated fingerprint: %+v",
+								lock,
+							)
+						}
+					},
+				)
+			}
+		},
+	)
+
+	// Named selection must not stat an unrelated damaged definition in either scope.
+	t.Run(
+		"unselected definitions",
+		func(t *testing.T) {
+			f := newUpdateFixture(t)
+			blocked := map[string]bool{}
+			for _, root := range []string{
+				f.projectRoot,
+				f.globalRoot,
+			} {
+				filename := filepath.Join(
+					root,
+					"ignored",
+					"SKILL.md",
+				)
+				writeTrackingFixture(
+					t,
+					f.filesystem,
+					filename,
+					"invalid definition",
+				)
+				blocked[filename] = true
+			}
+			f.filesystem = updateUnselectedFS{
+				Fs:      f.filesystem,
+				blocked: blocked,
+			}
+			paths, err := f.run(
+				t,
+				skills.UpdateOptions{
+					Skills: []string{
+						"alpha",
+					},
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diff := cmp.Diff(
+				[]string{
+					filepath.Join(
+						f.projectRoot,
+						"alpha",
+						"SKILL.md",
+					),
+				},
+				paths,
+			); diff != "" {
+				t.Fatal(diff)
+			}
+			if f.warnings.Len() != 0 {
+				t.Fatalf(
+					"unexpected warnings: %s",
+					f.warnings.String(),
+				)
+			}
+		},
+	)
+
+	// Invalid tracking prevents fetching and leaves both inventories untouched.
+	t.Run(
+		"corrupt tracking",
+		func(t *testing.T) {
+			f := newUpdateFixture(t)
+			writeTrackingFixture(
+				t,
+				f.filesystem,
+				f.projectPath,
+				"invalid JSON",
+			)
+			before := snapshotManagerFS(
+				t,
+				f.filesystem,
+			)
+			paths, err := f.run(
+				t,
+				skills.UpdateOptions{},
+			)
+			if err == nil || !strings.Contains(
+				err.Error(),
+				"lock",
+			) || len(paths) != 0 || len(f.source.fetches) != 0 {
+				t.Fatalf(
+					"paths=%v fetches=%v error=%v",
+					paths,
+					f.source.fetches,
+					err,
+				)
+			}
+			if diff := cmp.Diff(
+				before,
+				snapshotManagerFS(
+					t,
+					f.filesystem,
+				),
+			); diff != "" {
+				t.Fatal(diff)
+			}
+		},
+	)
+
+	// A failed checkout cleanup stops publication even after its payload was read.
+	t.Run(
+		"source cleanup failure",
+		func(t *testing.T) {
+			f := newUpdateFixture(t)
+			f.source.cleanupErr = errors.New("cleanup failed")
+			before := snapshotManagerFS(
+				t,
+				f.filesystem,
+			)
+			paths, err := f.run(
+				t,
+				skills.UpdateOptions{},
+			)
+			if !errors.Is(
+				err,
+				f.source.cleanupErr,
+			) || len(paths) != 0 || len(f.source.fetches) != 1 || f.source.cleanups != 1 {
+				t.Fatalf(
+					"paths=%v fetches=%v cleanups=%d error=%v",
+					paths,
+					f.source.fetches,
+					f.source.cleanups,
+					err,
+				)
+			}
+			if diff := cmp.Diff(
+				before,
+				snapshotManagerFS(
+					t,
+					f.filesystem,
+				),
+			); diff != "" {
+				t.Fatal(diff)
+			}
+		},
+	)
+
+	// A bundle publication failure must leave its tracking and old contents intact.
+	t.Run(
+		"bundle publication failure",
+		func(t *testing.T) {
+			f := newUpdateFixture(t)
+			before := snapshotManagerFS(
+				t,
+				f.filesystem,
+			)
+			f.filesystem = managerFaultFS{
+				Fs:    f.filesystem,
+				fault: managerPublishFailure,
+			}
+			paths, err := f.run(
+				t,
+				skills.UpdateOptions{
+					Scope: commandio.ScopeOptions{
+						Project: true,
+					},
+				},
+			)
+			if !errors.Is(
+				err,
+				fs.ErrPermission,
+			) || len(paths) != 0 {
+				t.Fatalf(
+					"paths=%v error=%v",
+					paths,
+					err,
+				)
+			}
+			if diff := cmp.Diff(
+				before,
+				snapshotManagerFS(
+					t,
+					f.filesystem,
+				),
+			); diff != "" {
+				t.Fatal(diff)
+			}
+		},
+	)
+
+	// Failure in global scope still reports the already committed project update.
+	t.Run(
+		"partial results",
+		func(t *testing.T) {
+			f := newUpdateFixture(t)
+			delete(
+				f.source.files,
+				"beta/SKILL.md",
+			)
+			before := snapshotManagerFS(
+				t,
+				f.filesystem,
+			)
+			paths, err := f.run(
+				t,
+				skills.UpdateOptions{},
+			)
+			if err == nil || !strings.Contains(
+				err.Error(),
+				"some skills updates committed",
+			) {
+				t.Fatalf(
+					"error = %v",
+					err,
+				)
+			}
+			if diff := cmp.Diff(
+				[]string{
+					filepath.Join(
+						f.projectRoot,
+						"alpha",
+						"SKILL.md",
+					),
+				},
+				paths,
+			); diff != "" {
+				t.Fatal(diff)
+			}
+			data, err := afero.ReadFile(
+				f.filesystem,
+				paths[0],
+			)
+			if err != nil || string(data) != alphaUpdated {
+				t.Fatalf(
+					"project update missing: %q, %v",
+					data,
+					err,
+				)
+			}
+			for _, filename := range []string{
+				f.globalPath,
+				filepath.Join(
+					f.globalRoot,
+					"beta",
+					"SKILL.md",
+				),
+			} {
+				data, err := afero.ReadFile(
+					f.filesystem,
+					filename,
+				)
+				if err != nil || string(data) != before[filename] {
+					t.Fatalf(
+						"failed global scope changed %s: %q, %v",
+						filename,
+						data,
+						err,
+					)
 				}
+			}
+			if len(f.source.fetches) != 1 || f.source.cleanups != 1 {
+				t.Fatalf(
+					"fetches=%v cleanups=%d",
+					f.source.fetches,
+					f.source.cleanups,
+				)
+			}
+		},
+	)
+}
+
+// The fixture starts with project alpha (including an obsolete resource), global
+// beta, and valid tracking. Tests change concrete files or records before running.
+type updateFixture struct {
+	filesystem  afero.Fs
+	home        string
+	projectRoot string
+	globalRoot  string
+	projectPath string
+	globalPath  string
+	project     updateLock
+	global      updateLock
+	source      *updateSourceClient
+	warnings    bytes.Buffer
+}
+
+type updateRecord struct {
+	Source          string `json:"source"`
+	SourceType      string `json:"sourceType"`
+	SourceURL       string `json:"sourceUrl,omitempty"`
+	SkillPath       string `json:"skillPath"`
+	ComputedHash    string `json:"computedHash,omitempty"`
+	SkillFolderHash string `json:"skillFolderHash,omitempty"`
+}
+
+type updateLock struct {
+	Version int                     `json:"version"`
+	Skills  map[string]updateRecord `json:"skills"`
+}
+
+func newUpdateFixture(t *testing.T) *updateFixture {
+	t.Helper()
+	project, home := t.TempDir(), t.TempDir()
+	t.Chdir(project)
+	t.Setenv(
+		"HOME",
+		home,
+	)
+	t.Setenv(
+		"USERPROFILE",
+		home,
+	)
+	t.Setenv(
+		"XDG_STATE_HOME",
+		"",
+	)
+	f := &updateFixture{
+		filesystem: afero.NewMemMapFs(),
+		home:       home,
+		projectRoot: filepath.Join(
+			project,
+			".agents",
+			"skills",
+		),
+		globalRoot: filepath.Join(
+			home,
+			".agents",
+			"skills",
+		),
+		projectPath: filepath.Join(
+			project,
+			"skills-lock.json",
+		),
+		globalPath: filepath.Join(
+			home,
+			".agents",
+			".skill-lock.json",
+		),
+		project: updateLock{
+			Version: 1,
+			Skills: map[string]updateRecord{
+				"alpha": {
+					Source:       managerSource,
+					SourceType:   "git",
+					SourceURL:    managerSource,
+					SkillPath:    "alpha/SKILL.md",
+					ComputedHash: updateAlphaObsoleteHash,
+				},
 			},
+		},
+		global: updateLock{
+			Version: 3,
+			Skills: map[string]updateRecord{
+				"beta": {
+					Source:          managerSource,
+					SourceType:      "git",
+					SourceURL:       managerSource,
+					SkillPath:       "beta/SKILL.md",
+					SkillFolderHash: updateBetaHash,
+				},
+			},
+		},
+		source: &updateSourceClient{
+			files: fstest.MapFS{
+				"alpha/SKILL.md": {
+					Data: []byte(alphaUpdated),
+				},
+				"beta/SKILL.md": {
+					Data: []byte(betaSkill),
+				},
+			},
+		},
+	}
+	for filename, content := range map[string]string{
+		filepath.Join(
+			f.projectRoot,
+			"alpha",
+			"SKILL.md",
+		): alphaSkill,
+		filepath.Join(
+			f.projectRoot,
+			"alpha",
+			"obsolete.txt",
+		): "obsolete",
+		filepath.Join(
+			f.globalRoot,
+			"beta",
+			"SKILL.md",
+		): betaSkill,
+	} {
+		writeTrackingFixture(
+			t,
+			f.filesystem,
+			filename,
+			content,
+		)
+	}
+	f.saveLocks(t)
+	return f
+}
+
+func (f *updateFixture) saveLocks(t *testing.T) {
+	t.Helper()
+	for filename, lock := range map[string]updateLock{
+		f.projectPath: f.project,
+		f.globalPath:  f.global,
+	} {
+		data, err := json.Marshal(lock)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeTrackingFixture(
+			t,
+			f.filesystem,
+			filename,
+			string(data),
 		)
 	}
 }
 
-type updateSourceClient struct {
-	files   fs.FS
-	fetches *[]string
-	cleanup func() error
+// run invokes the package command and decodes its reported paths, including any
+// partial results. Success, warnings, and filesystem effects are asserted by tests.
+func (f *updateFixture) run(t *testing.T, options skills.UpdateOptions) ([]string, error) {
+	t.Helper()
+	var output bytes.Buffer
+	err := skills.Update(
+		t.Context(),
+		skills.NewManager(
+			f.source,
+			f.filesystem,
+		),
+		options,
+		commandio.IO{
+			Out: &output,
+			Err: &f.warnings,
+		},
+	)
+	var summaries []struct {
+		Path string `json:"path"`
+	}
+	if output.Len() != 0 {
+		if decodeErr := json.Unmarshal(
+			output.Bytes(),
+			&summaries,
+		); decodeErr != nil {
+			t.Fatal(decodeErr)
+		}
+	}
+	var paths []string
+	for _, summary := range summaries {
+		paths = append(
+			paths,
+			summary.Path,
+		)
+	}
+	return paths, err
 }
 
-func (client updateSourceClient) Fetch(_ context.Context, locator string) (source.Checkout, error) {
-	*client.fetches = append(
-		*client.fetches,
+func readUpdateLock(t *testing.T, filesystem afero.Fs, filename string) updateLock {
+	t.Helper()
+	data, err := afero.ReadFile(
+		filesystem,
+		filename,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lock updateLock
+	if err := json.Unmarshal(
+		data,
+		&lock,
+	); err != nil {
+		t.Fatal(err)
+	}
+	return lock
+}
+
+type updateSourceClient struct {
+	files      fstest.MapFS
+	fetches    []string
+	cleanups   int
+	cleanupErr error
+}
+
+func (client *updateSourceClient) Fetch(_ context.Context, locator string) (source.Checkout, error) {
+	client.fetches = append(
+		client.fetches,
 		locator,
 	)
+	files := maps.Clone(client.files)
 	return source.Checkout{
-		FS:      client.files,
-		Cleanup: client.cleanup,
+		FS: files,
+		Cleanup: func() error {
+			// A closed checkout is no longer usable; cached payloads must own their bytes.
+			clear(files)
+			client.cleanups++
+			return client.cleanupErr
+		},
 	}, nil
 }
 
-type updateInventoryFS struct {
+type updateUnreadableFS struct {
 	afero.Fs
-	unreadableOther     bool
-	unreadableInstalled bool
-	resource            string
+	filename string
 }
 
-func (filesystem updateInventoryFS) Stat(filename string) (fs.FileInfo, error) {
-	if filesystem.unreadableOther && filepath.Base(filepath.Dir(filename)) == "ignored" {
-		return nil, fs.ErrPermission
-	}
-	return filesystem.Fs.Stat(filename)
-}
-
-func (filesystem updateInventoryFS) Open(filename string) (afero.File, error) {
-	if filesystem.unreadableInstalled && filename == filesystem.resource {
+func (filesystem updateUnreadableFS) Open(filename string) (afero.File, error) {
+	if filename == filesystem.filename {
 		return nil, fs.ErrPermission
 	}
 	return filesystem.Fs.Open(filename)
+}
+
+type updateUnselectedFS struct {
+	afero.Fs
+	blocked map[string]bool
+}
+
+func (filesystem updateUnselectedFS) Stat(filename string) (fs.FileInfo, error) {
+	if filesystem.blocked[filename] {
+		return nil, fs.ErrPermission
+	}
+	return filesystem.Fs.Stat(filename)
 }
 
 func writeTrackingFixture(t *testing.T, filesystem afero.Fs, filename string, content string) {
