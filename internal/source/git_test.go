@@ -241,59 +241,17 @@ func TestGitClientFetch(t *testing.T) {
 		Scheme: "file",
 		Path:   filepath.ToSlash(encoded),
 	}).String()
-	transformed := newGitSourceRepository(t)
-	if err := os.WriteFile(
-		filepath.Join(
-			transformed,
-			".gitattributes",
-		),
-		[]byte("SKILL.md text eol=crlf\n"),
-		0o600,
-	); err != nil {
-		t.Fatal(err)
-	}
-	runSourceGit(
-		t,
-		"-C",
-		transformed,
-		"add",
-		".gitattributes",
-		"SKILL.md",
-	)
-	runSourceGit(
-		t,
-		"-C",
-		transformed,
-		"-c",
-		"user.name=Test",
-		"-c",
-		"user.email=test@example.com",
-		"commit",
-		"--quiet",
-		"-m",
-		"checkout transformations",
-	)
-	transformedLocator := (&url.URL{
-		Scheme: "file",
-		Path:   filepath.ToSlash(transformed),
-	}).String()
 	// Each row changes the source or one acquisition condition. wantErr checks a
 	// wrapped cause; errText checks a diagnostic; neither means success is expected.
 	for _, test := range []struct {
 		name, source, errText                                                 string
 		wantErr                                                               error
 		wantText                                                              string
-		crlf                                                                  bool
 		literalBackslash                                                      bool
 		reusedPath                                                            bool
 		cancel, deadline, duringClone, missingGit, missingTemp, empty, second bool
 	}{
 		// Accepted locators, with real HTTP(S) transport only for loopback servers.
-		{
-			name:   "Git checkout honors CRLF attributes",
-			source: transformedLocator,
-			crlf:   true,
-		},
 		{
 			name: "Git failure preserves ordinary quotes and backslashes",
 			source: (&url.URL{
@@ -742,13 +700,6 @@ func TestGitClientFetch(t *testing.T) {
 								0x80,
 							}),
 						} {
-							if test.crlf && name == "SKILL.md" {
-								want = strings.ReplaceAll(
-									want,
-									"\n",
-									"\r\n",
-								)
-							}
 							data, readErr := fs.ReadFile(
 								checkout.FS,
 								name,

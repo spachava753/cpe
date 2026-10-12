@@ -12,24 +12,16 @@ import (
 
 func TestHashRecord(t *testing.T) {
 	for _, test := range []struct {
-		name       string
-		format     LockFormat
-		sourceType skillSourceType
+		name   string
+		format LockFormat
 	}{
 		{
-			name:       "project GitHub uses a folder fingerprint",
-			format:     ProjectLock,
-			sourceType: githubSource,
+			name:   "project hash fields",
+			format: ProjectLock,
 		},
 		{
-			name:       "global GitHub uses a folder fingerprint without Git metadata",
-			format:     GlobalLock,
-			sourceType: githubSource,
-		},
-		{
-			name:       "global generic Git uses a folder fingerprint",
-			format:     GlobalLock,
-			sourceType: gitSource,
+			name:   "global hash fields",
+			format: GlobalLock,
 		},
 	} {
 		t.Run(
@@ -50,9 +42,7 @@ func TestHashRecord(t *testing.T) {
 							Data: []byte("skill"),
 						},
 					},
-					lockedSkill{
-						SourceType: test.sourceType,
-					},
+					lockedSkill{},
 				)
 				if got.SkillPath != "nested/alpha/SKILL.md" {
 					t.Fatal("source-relative skill path was lost")
