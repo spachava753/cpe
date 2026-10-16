@@ -2,160 +2,184 @@ package agent
 
 import (
 	"context"
-	"io/fs"
+	"errors"
+	"fmt"
+	"sync"
+	"time"
 
 	"github.com/spachava753/acp-sdk/acp"
-	"github.com/spachava753/cpe/internal/version"
-	"github.com/spachava753/gai/agent"
 )
 
-// skill is a type to represent skills loaded from skill paths or agent plugins
-type skill struct {
-	name        string
-	description string
-	path        string
-}
-
-// Server implements the ACP server spec, and is meant to be passed to [acp.RunAgent]
-//
-// TODO: skills will be loaded as slash commands. Skills can be loaded from file system paths, or from agent plugins
-// TODO: we need to be able juggle multiple sessions, many sessions can be inflight, as well as be able to cancel an session
-// TODO: need to be able figure out when we want to swap models mid session (I say we can stop current generation, and resume from last message (tool result or assistant), or we can swap model while tool execution is happening)
-// TODO: durability: for now, the starlark repl is not persistent, so we can simply just persist the tool result. And also want to support ATIF v1.8 natively. I think we can just of the server emit atif trajectory traces, and have separate engine that actually persists the trajectory? Whether that be JSONL files, or sqlite or whatever. We may be even able to support import and export from different harnesses
-// TODO: observability: want to support the gen ai otel standard
-// TODO: we will support terminal style auth, sign in with chatgpt, and opencode go
-// TODO: since only a single tool will be exposed, starlark execution, we want tools to be loaded via MCP as functions that are callable. And to support on demand mcp server loading (like in the case of agent plugins), we should have something like `load_mcp_tools` function. MCP today is stateless, but many MCP servers that are older will still be a stateful connection, so need to figure out how to handle that
-// TODO: we want to design the server to also be able to run in something like a wasm worker or an http server
-// TODO: similar to pi, lets use a models.json to store configured models that we can use
+// Server serves one ACP connection and owns its live sessions. Use Serve.
 type Server struct {
-	// ac is the agent connection that can be used to send session updates or notications to the client
-	ac *acp.AgentConnection
-	// loop is the [gai.Agent] that we use and extend for the core agentic loop
-	loop agent.Agent
-	// skills are skills loaded from filesystem or plugins, are used to construct slash commands
-	skills []skill
+	ac       *acp.AgentConnection
+	config   Config
+	deps     Dependencies
+	lifetime context.Context
+	cancel   context.CancelFunc
+	// lifecycle serializes session creation, restore, close, fork, and deletion.
+	// Prompts and cancellation never acquire it.
+	lifecycle   sync.Mutex
+	mu          sync.Mutex
+	initialized bool
+	closed      bool
+	sessions    map[SessionID]*session
 }
 
-// Logout implements [acp.LogoutHandler].
-func (s *Server) Logout(context.Context, *acp.LogoutRequest) (*acp.LogoutResponse, error) {
-	panic("unimplemented")
-}
-
-// Authenticate implements [acp.AuthenticateHandler].
-func (s *Server) Authenticate(context.Context, *acp.AuthenticateRequest) (*acp.AuthenticateResponse, error) {
-	panic("unimplemented")
-}
-
-// Initialize implements [acp.InitializeHandler].
-func (s *Server) Initialize(context.Context, *acp.InitializeRequest) (*acp.InitializeResponse, error) {
-	return &acp.InitializeResponse{
-		Meta: acp.Meta{},
-		AgentCapabilities: &acp.AgentCapabilities{
-			Meta: acp.Meta{},
-			Auth: &acp.AgentAuthCapabilities{
-				Logout: &acp.LogoutCapabilities{},
-			},
-			LoadSession: true,
-			McpCapabilities: &acp.McpCapabilities{
-				Acp:  false,
-				Http: true,
-				Sse:  true,
-			},
-			PromptCapabilities: &acp.PromptCapabilities{
-				Audio:           true,
-				EmbeddedContext: true,
-				Image:           true,
-			},
-			SessionCapabilities: &acp.SessionCapabilities{
-				AdditionalDirectories: &acp.SessionAdditionalDirectoriesCapabilities{},
-				Close:                 &acp.SessionCloseCapabilities{},
-				Delete:                &acp.SessionDeleteCapabilities{},
-				Fork:                  &acp.SessionForkCapabilities{},
-				List:                  &acp.SessionListCapabilities{},
-				Resume:                &acp.SessionResumeCapabilities{},
-			},
+// Serve runs one ACP connection and joins all session work before returning.
+// Dependencies are borrowed; their owner closes them after Serve returns.
+func Serve(ctx context.Context, transport acp.Transport, config Config, deps Dependencies) error {
+	if transport == nil {
+		return errors.New("ACP transport is required")
+	}
+	s, err := newServer(
+		ctx,
+		config,
+		deps,
+	)
+	if err != nil {
+		return err
+	}
+	//nolint:contextcheck // lifetime is derived from ctx and cancelled on transport failure.
+	err = acp.RunAgent(
+		s.lifetime,
+		lifetimeTransport{
+			base:     transport,
+			lifetime: s.lifetime,
+			cancel:   s.cancel,
 		},
-		AgentInfo: &acp.Implementation{
-			Name:    "CPE",
-			Title:   new("CPE"),
-			Version: version.Get(),
+		func(ac *acp.AgentConnection) any {
+			s.ac = ac
+			return s
 		},
-		AuthMethods:     []acp.AuthMethod{},
-		ProtocolVersion: acp.ProtocolVersion(1),
+	)
+	s.cancel()
+	cleanup, cancel := context.WithTimeout(
+		context.WithoutCancel(ctx),
+		10*time.Second,
+	)
+	defer cancel()
+	return errors.Join(
+		err,
+		s.close(cleanup),
+	)
+}
+
+func newServer(ctx context.Context, config Config, deps Dependencies) (*Server, error) {
+	if err := checkConfig(
+		config,
+		deps,
+	); err != nil {
+		return nil, err
+	}
+	lifetime, cancel := context.WithCancel(ctx)
+	return &Server{
+		config:   config,
+		deps:     deps,
+		lifetime: lifetime,
+		cancel:   cancel,
+		sessions: make(map[SessionID]*session),
 	}, nil
 }
 
-// Cancel implements [acp.SessionHandler].
-func (s *Server) Cancel(context.Context, *acp.CancelNotification) error {
-	panic("unimplemented")
-}
-
-// CloseSession implements [acp.SessionHandler].
-func (s *Server) CloseSession(context.Context, *acp.CloseSessionRequest) (*acp.CloseSessionResponse, error) {
-	panic("unimplemented")
-}
-
-// DeleteSession implements [acp.SessionHandler].
-func (s *Server) DeleteSession(context.Context, *acp.DeleteSessionRequest) (*acp.DeleteSessionResponse, error) {
-	panic("unimplemented")
-}
-
-// ForkSession implements [acp.SessionHandler].
-func (s *Server) ForkSession(context.Context, *acp.ForkSessionRequest) (*acp.ForkSessionResponse, error) {
-	panic("unimplemented")
-}
-
-// ListSessions implements [acp.SessionHandler].
-func (s *Server) ListSessions(context.Context, *acp.ListSessionsRequest) (*acp.ListSessionsResponse, error) {
-	panic("unimplemented")
-}
-
-// LoadSession implements [acp.SessionHandler].
-func (s *Server) LoadSession(context.Context, *acp.LoadSessionRequest) (*acp.LoadSessionResponse, error) {
-	panic("unimplemented")
-}
-
-// NewSession implements [acp.SessionHandler].
-func (s *Server) NewSession(context.Context, *acp.NewSessionRequest) (*acp.NewSessionResponse, error) {
-	panic("unimplemented")
-}
-
-// Prompt implements [acp.SessionHandler].
-func (s *Server) Prompt(context.Context, *acp.PromptRequest) (*acp.PromptResponse, error) {
-	panic("unimplemented")
-}
-
-// ResumeSession implements [acp.SessionHandler].
-func (s *Server) ResumeSession(context.Context, *acp.ResumeSessionRequest) (*acp.ResumeSessionResponse, error) {
-	panic("unimplemented")
-}
-
-// SetSessionConfigOption implements [acp.SessionHandler].
-func (s *Server) SetSessionConfigOption(context.Context, *acp.SetSessionConfigOptionRequest) (*acp.SetSessionConfigOptionResponse, error) {
-	panic("unimplemented")
-}
-
-// SetSessionMode implements [acp.SessionHandler].
-func (s *Server) SetSessionMode(context.Context, *acp.SetSessionModeRequest) (*acp.SetSessionModeResponse, error) {
-	panic("unimplemented")
-}
-
-// ServerFactory returns a [acp.AgentFactory] that constructs a [Server].
-//
-// TODO: need to accept
-// - model configs
-// - skills path
-// - dyson host boundary modules
-// - agent plugin loading
-func ServerFactory(
-	skillsPaths []fs.ReadDirFS,
-	pluginsPath []fs.ReadDirFS,
-) acp.AgentFactory {
-	return func(ac *acp.AgentConnection) any {
-		return &Server{
-			ac: ac,
-		}
+func (s *Server) ready() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.lifetime.Err() != nil {
+		return errors.New("ACP connection is closed")
 	}
+	if !s.initialized {
+		return errors.New("initialize must precede session operations")
+	}
+	return nil
+}
+
+func (s *Server) findSession(id SessionID) (*session, error) {
+	if err := s.ready(); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	live, ok := s.sessions[id]
+	if !ok {
+		return nil, fmt.Errorf(
+			"session %q is not open",
+			id,
+		)
+	}
+	return live, nil
+}
+
+// openSession requires lifecycle ownership and publishes only fully initialized sessions.
+func (s *Server) openSession(ctx context.Context, spec sessionSpec, record SessionRecord) (*session, error) {
+	if err := s.ready(); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	_, exists := s.sessions[spec.id]
+	s.mu.Unlock()
+	if exists {
+		return nil, errors.New("session is already open")
+	}
+	setup, cancel := context.WithCancel(ctx)
+	defer cancel()
+	//nolint:contextcheck // Setup must stop on either request or connection cancellation.
+	stop := context.AfterFunc(
+		s.lifetime,
+		cancel,
+	)
+	defer stop()
+	live, err := newSession(
+		setup,
+		s.lifetime,
+		spec,
+		record,
+		s.config,
+		s.deps,
+		&sessionClient{
+			ac: s.ac,
+			id: spec.id,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.deps.History.Save(
+		setup,
+		live.record,
+	); err != nil {
+		return nil, errors.Join(
+			err,
+			live.close(context.WithoutCancel(ctx)),
+		)
+	}
+	s.mu.Lock()
+	s.sessions[spec.id] = live
+	s.mu.Unlock()
+	return live, nil
+}
+
+func (s *Server) close(ctx context.Context) error {
+	s.cancel()
+	s.lifecycle.Lock()
+	defer s.lifecycle.Unlock()
+	s.mu.Lock()
+	s.closed = true
+	live := s.sessions
+	s.sessions = make(map[SessionID]*session)
+	s.mu.Unlock()
+	// Cancel every session first so shutdown does not serialize cancellation.
+	for _, session := range live {
+		session.cancel()
+	}
+	var errs []error
+	for _, session := range live {
+		errs = append(
+			errs,
+			session.close(ctx),
+		)
+	}
+	return errors.Join(errs...)
 }
 
 var (

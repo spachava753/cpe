@@ -1,0 +1,212 @@
+package cli
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/spachava753/acp-sdk/acp"
+	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
+	"go.opentelemetry.io/otel"
+
+	"github.com/spachava753/cpe/internal/agent"
+	"github.com/spachava753/cpe/internal/auth"
+	"github.com/spachava753/cpe/internal/models"
+)
+
+type serveAgent func(context.Context, acp.Transport, agent.Config, agent.Dependencies) error
+
+func acpCmd(root *cobra.Command, filesystem afero.Fs, store *auth.Store, authOptions auth.LoginOptions) {
+	acpCmdWithServe(
+		root,
+		filesystem,
+		store,
+		authOptions,
+		agent.Serve,
+	)
+}
+
+func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store, authOptions auth.LoginOptions, serve serveAgent) {
+	var modelFile, historyPath, modelID, effort string
+	var timeout time.Duration
+	var generations uint
+	var skillPaths, pluginPaths []string
+	command := &cobra.Command{
+		Use:   "acp",
+		Short: "Serve one ACP client over stdin/stdout",
+		Args:  cobra.NoArgs,
+		RunE: func(command *cobra.Command, _ []string) error {
+			if modelID == "" {
+				return errors.New("--model is required")
+			}
+			if authOptions.Path == "" {
+				return errors.New("CPE configuration directory is unavailable")
+			}
+			if modelFile == "" {
+				modelFile = filepath.Join(
+					filepath.Dir(authOptions.Path),
+					"models.json",
+				)
+			}
+			if historyPath == "" {
+				historyPath = filepath.Join(
+					filepath.Dir(authOptions.Path),
+					"sessions",
+				)
+			}
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return fmt.Errorf(
+					"resolve global discovery roots: %w",
+					err,
+				)
+			}
+			skillPaths = append(
+				[]string{
+					filepath.Join(
+						home,
+						".agents",
+						"skills",
+					),
+				},
+				skillPaths...,
+			)
+			pluginPaths = append(
+				[]string{
+					filepath.Join(
+						home,
+						".agents",
+						"plugins",
+					),
+				},
+				pluginPaths...,
+			)
+			for _, roots := range [][]string{
+				skillPaths,
+				pluginPaths,
+			} {
+				for i, root := range roots {
+					roots[i], err = filepath.Abs(root)
+					if err != nil {
+						return err
+					}
+				}
+			}
+			file, err := filesystem.Open(modelFile)
+			if err != nil {
+				return err
+			}
+			configured, loadErr := models.LoadModels(file)
+			if err := errors.Join(
+				loadErr,
+				file.Close(),
+			); err != nil {
+				return err
+			}
+			catalog := make(map[agent.ModelID]models.Model)
+			for _, model := range configured {
+				id := agent.ModelID(model.ID)
+				if _, exists := catalog[id]; exists {
+					return fmt.Errorf(
+						"duplicate model ID %q",
+						id,
+					)
+				}
+				catalog[id] = model
+			}
+			history, err := agent.NewSessionStore(historyPath)
+			if err != nil {
+				return err
+			}
+			providers, err := agent.NewProviders(
+				store,
+				authOptions.Path,
+				&http.Client{
+					CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+				},
+			)
+			if err != nil {
+				return err
+			}
+			return serve(
+				command.Context(),
+				&acp.StdioTransport{},
+				agent.Config{
+					Models: catalog,
+					Initial: agent.SessionOptions{
+						Model:     agent.ModelID(modelID),
+						Reasoning: agent.ReasoningLevel(effort),
+					},
+					SkillPaths:     skillPaths,
+					PluginPaths:    pluginPaths,
+					TurnTimeout:    timeout,
+					MaxGenerations: generations,
+					Instructions:   "You are CPE, a coding assistant. Use bash for simple commands and starlark_repl for structured orchestration. Dyson uses Python-like Starlark, not Python: load modules with load(\"subprocess.star\", \"subprocess\"), load(\"requests.star\", \"requests\"), etc. Globals persist within this live session but are reset on load, resume, or fork. Use print for text and emit for selected MCP content. Discover MCP servers with mcp_servers(), inspect schemas with describe_mcp_tools(server), then call load_mcp_tools(server)[name](arguments). Inspect result.is_error, result.structured_content, and result.content. Failed scripts may already have changed files or executed tools; do not blindly repeat them. Commands are invocation-owned; background processes are not supported. Tools run directly with the user's full machine access; no execution approval is required.",
+				},
+				agent.Dependencies{
+					Filesystem:     filesystem,
+					Authentication: providers,
+					Generators:     providers.Generator,
+					Hosts:          agent.LocalHost,
+					MCP:            agent.ConnectMCP,
+					History:        history,
+					Traces:         otel.GetTracerProvider(),
+				},
+			)
+		},
+	}
+	command.Flags().StringVar(
+		&modelID,
+		"model",
+		"",
+		"Initial model ID from models.json (required)",
+	)
+	command.Flags().StringVar(
+		&effort,
+		"reasoning",
+		"",
+		"Initial reasoning effort (empty uses provider default)",
+	)
+	command.Flags().StringVar(
+		&modelFile,
+		"models",
+		"",
+		"Model configuration file (default ~/.cpe/models.json)",
+	)
+	command.Flags().StringVar(
+		&historyPath,
+		"sessions",
+		"",
+		"Absolute checkpoint directory (default ~/.cpe/sessions)",
+	)
+	command.Flags().DurationVar(
+		&timeout,
+		"turn-timeout",
+		10*time.Minute,
+		"Maximum duration of a prompt turn",
+	)
+	command.Flags().UintVar(
+		&generations,
+		"max-generations",
+		32,
+		"Maximum model requests in a turn",
+	)
+	command.Flags().StringSliceVar(
+		&skillPaths,
+		"skills",
+		nil,
+		"Additional skill roots; project .agents/skills is always loaded",
+	)
+	command.Flags().StringSliceVar(
+		&pluginPaths,
+		"plugins",
+		nil,
+		"Additional plugin roots; project .agents/plugins is always loaded",
+	)
+	root.AddCommand(command)
+}

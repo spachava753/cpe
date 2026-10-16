@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 
 	"github.com/spachava753/cpe/internal/auth"
@@ -25,6 +26,12 @@ func Root(version string, skillManager *skills.Manager, pluginManager *plugins.M
 	)
 	authCmd(
 		r,
+		authStore,
+		authOptions,
+	)
+	acpCmd(
+		r,
+		afero.NewOsFs(),
 		authStore,
 		authOptions,
 	)

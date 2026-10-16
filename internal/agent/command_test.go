@@ -1,0 +1,113 @@
+package agent
+
+import (
+	"context"
+	"errors"
+	"os/exec"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/spachava753/dyson"
+)
+
+func TestCommandRunner(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash is not installed")
+	}
+	for _, test := range []struct {
+		name      string
+		command   string
+		timeout   time.Duration
+		code      int
+		want      string
+		cancelled bool
+	}{
+		{
+			name:    "exit and separate stderr",
+			command: "printf hello; printf problem >&2; exit 7",
+			code:    7,
+			want:    "hello",
+		},
+		{
+			name:    "stdin is closed",
+			command: "if read line; then exit 1; fi; printf closed",
+			want:    "closed",
+		},
+		{
+			name:    "bounded capture",
+			command: "printf '%200000s' x",
+			want:    "[output truncated]",
+		},
+		{
+			name:      "cancel sleeping child",
+			command:   "sleep 100",
+			timeout:   30 * time.Millisecond,
+			cancelled: true,
+		},
+	} {
+		t.Run(
+			test.name,
+			func(t *testing.T) {
+				ctx := t.Context()
+				if test.timeout != 0 {
+					var cancel context.CancelFunc
+					ctx, cancel = context.WithTimeout(
+						ctx,
+						test.timeout,
+					)
+					defer cancel()
+				}
+				runner := localCommandRunner{}
+				result, err := runner.RunCommand(
+					ctx,
+					dyson.Command{
+						Args: []string{
+							bash,
+							"--noprofile",
+							"--norc",
+							"-c",
+							test.command,
+						},
+						Dir:    t.TempDir(),
+						Stdin:  dyson.StreamDiscard,
+						Stdout: dyson.StreamPipe,
+						Stderr: dyson.StreamPipe,
+					},
+				)
+				if test.cancelled {
+					if !errors.Is(
+						err,
+						context.DeadlineExceeded,
+					) {
+						t.Fatalf(
+							"cancellation: %v",
+							err,
+						)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if result.ReturnCode != test.code || !strings.Contains(
+					string(result.Stdout),
+					test.want,
+				) {
+					t.Fatalf(
+						"result code=%d, bytes=%d",
+						result.ReturnCode,
+						len(result.Stdout),
+					)
+				}
+				if len(result.Stdout) > maxTextBytes+100 {
+					t.Fatal("unbounded command output")
+				}
+				if test.name == "exit and separate stderr" && string(result.Stderr) != "problem" {
+					t.Fatal("stderr was not captured separately")
+				}
+			},
+		)
+	}
+}

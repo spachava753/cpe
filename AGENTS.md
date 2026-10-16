@@ -16,6 +16,10 @@ README.md     User workflows and verification instructions
 - **Greenfield:** CPE has no existing users or deployed state. Do not add
   migrations, backward-compatibility layers, or legacy fallbacks unless explicitly
   requested. Design for the current requirements rather than hypothetical old data.
+- **Trusted host execution:** the CPE runtime and configured plugins/MCP servers
+  run with the user's full machine access. Do not add execution approval gates,
+  permission policies, or sandboxing. Cancellation, cleanup, and protocol output
+  handling are lifecycle concerns, not access controls.
 - Model domain concepts and state transitions explicitly with types. Prefer
   meaningful domain values over loose maps, strings, and boolean combinations.
 - **Parse, don't validate:** convert configuration and protocol input into domain
