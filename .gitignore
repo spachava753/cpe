@@ -23,6 +23,8 @@
 !README.md
 !LICENSE
 !AGENTS.md
+!/internal/cli/system_prompt.md
+!/internal/cli/compaction_prompt.md
 !/install.sh
 
 !skills/

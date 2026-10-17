@@ -111,6 +111,8 @@ func (t headerTransport) RoundTrip(request *http.Request) (*http.Response, error
 type MCPTools interface {
 	Servers() []MCPServerID
 	Load(context.Context, MCPServerID) ([]*mcp.Tool, error)
+	// Instructions returns initialization guidance for a loaded server.
+	Instructions(MCPServerID) string
 	Call(context.Context, MCPServerID, *mcp.CallToolParams) (*mcp.CallToolResult, error)
 }
 
@@ -198,6 +200,15 @@ func (m *mcpRegistry) Load(ctx context.Context, id MCPServerID) ([]*mcp.Tool, er
 	}
 	m.tools[id] = tools
 	return tools, nil
+}
+
+func (m *mcpRegistry) Instructions(id MCPServerID) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if connection := m.connections[id]; connection != nil {
+		return connection.InitializeResult().Instructions
+	}
+	return ""
 }
 
 func (m *mcpRegistry) Call(ctx context.Context, id MCPServerID, params *mcp.CallToolParams) (*mcp.CallToolResult, error) {

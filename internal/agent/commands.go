@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"maps"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -143,9 +142,19 @@ func (c commandCatalog) available() []acp.AvailableCommand {
 	commands := make(
 		[]acp.AvailableCommand,
 		0,
-		len(c.commands),
+		len(c.commands)+1,
+	)
+	commands = append(
+		commands,
+		acp.AvailableCommand{
+			Name:        compactToolName,
+			Description: "Ask the model to compact the conversation.",
+		},
 	)
 	for name, skill := range c.commands {
+		if name == compactToolName {
+			continue
+		}
 		commands = append(
 			commands,
 			acp.AvailableCommand{
@@ -184,6 +193,14 @@ func (c commandCatalog) expand(message gai.Message) gai.Message {
 		arguments = strings.TrimSpace(name[index:])
 		name = name[:index]
 	}
+	if name == compactToolName {
+		text := "Compact the conversation now by calling the compact tool."
+		if arguments != "" {
+			text += "\n\nUser request:\n" + arguments
+		}
+		message.Blocks[0] = gai.TextBlock(text)
+		return message
+	}
 	skill, ok := c.commands[name]
 	if !ok {
 		return message
@@ -199,7 +216,7 @@ func (c commandCatalog) expand(message gai.Message) gai.Message {
 
 // instructions advertises skill locations without loading their bodies into context.
 func (c commandCatalog) instructions() string {
-	if len(c.commands) == 0 && len(c.plugins) == 0 {
+	if len(c.commands) == 0 {
 		return ""
 	}
 	var text strings.Builder
@@ -207,6 +224,9 @@ func (c commandCatalog) instructions() string {
 		text.WriteString("\n\nAvailable skills: read a relevant SKILL.md with bash or starlark_repl when needed. Bundled resources are relative to the skill file.\n")
 	}
 	for _, command := range c.available() {
+		if command.Name == compactToolName {
+			continue
+		}
 		skill := c.commands[command.Name]
 		if skill.InvocationDisabled {
 			continue
@@ -219,36 +239,15 @@ func (c commandCatalog) instructions() string {
 			skill.Path,
 		)
 	}
-	if len(c.plugins) != 0 {
-		text.WriteString("\n\nInstalled plugins (MCP servers remain disconnected until requested): use load_plugin(name) in starlark_repl only when the user asks to load a plugin or you need its tools. It returns tools keyed by full server ID (plugin:server). Skill files can be read without loading MCP.\n")
-		for _, plugin := range c.plugins {
-			fmt.Fprintf(
-				&text,
-				"- %s: %s\n",
-				plugin.Name,
-				plugin.Description,
-			)
-		}
-	}
 	return text.String()
 }
 
-func (c commandCatalog) pluginServers() map[string][]MCPServerID {
-	result := make(map[string][]MCPServerID)
+func (c commandCatalog) serverDescriptions() map[MCPServerID]string {
+	result := make(map[MCPServerID]string)
 	for _, plugin := range c.plugins {
-		ids := make(
-			[]MCPServerID,
-			0,
-			len(plugin.MCPConfig),
-		)
 		for name := range plugin.MCPConfig {
-			ids = append(
-				ids,
-				MCPServerID(plugin.Name+":"+name),
-			)
+			result[MCPServerID(plugin.Name+":"+name)] = plugin.Description
 		}
-		slices.Sort(ids)
-		result[plugin.Name] = ids
 	}
 	return result
 }

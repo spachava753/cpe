@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
-	"slices"
 	"sync"
 	"time"
 
@@ -40,6 +38,9 @@ type session struct {
 }
 
 func newSession(setup context.Context, lifetime context.Context, spec sessionSpec, record SessionRecord, config Config, deps Dependencies, client *sessionClient) (*session, error) {
+	if err := record.checkCompaction(); err != nil {
+		return nil, err
+	}
 	if err := checkOptions(
 		config.Models,
 		record.Options,
@@ -75,26 +76,13 @@ func newSession(setup context.Context, lifetime context.Context, spec sessionSpe
 		connections: make(map[MCPServerID]*mcp.ClientSession),
 		tools:       make(map[MCPServerID][]*mcp.Tool),
 	}
-	// Client-supplied servers are explicit session configuration; installed plugins stay idle.
-	for id := range spec.servers {
-		if _, err := registry.Load(
-			setup,
-			id,
-		); err != nil {
-			return nil, errors.Join(
-				err,
-				registry.close(),
-			)
-		}
-	}
 	host, err := deps.Hosts(
 		setup,
 		HostConfig{
-			Session:       spec.id,
-			Cwd:           spec.cwd,
-			MCP:           registry,
-			Plugins:       catalog.pluginServers(),
-			ClientServers: slices.Sorted(maps.Keys(spec.servers)),
+			Session:      spec.id,
+			Cwd:          spec.cwd,
+			MCP:          registry,
+			Descriptions: catalog.serverDescriptions(),
 		},
 	)
 	if err != nil {

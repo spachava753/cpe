@@ -48,6 +48,16 @@ func TestCommandDiscovery(t *testing.T) {
 			want:   "User request:\ninspect this diff",
 		},
 		{
+			name:   "compact command takes precedence over a skill",
+			prompt: "/compact",
+			want:   "Compact the conversation now by calling the compact tool.",
+		},
+		{
+			name:   "compact request preserves user notes",
+			prompt: "/compact retain the next steps",
+			want:   "User request:\nretain the next steps",
+		},
+		{
 			name:   "ordinary prompt",
 			prompt: "hello",
 			want:   "hello",
@@ -58,6 +68,7 @@ func TestCommandDiscovery(t *testing.T) {
 			func(t *testing.T) {
 				filesystem := afero.NewMemMapFs()
 				for path, body := range map[string]string{
+					"/global/compact/SKILL.md":                "---\nname: compact\ndescription: A skill with a reserved name\n---\nunused skill body",
 					"/global/review/SKILL.md":                 "---\nname: review\ndescription: Review changes\n---\nglobal review",
 					"/global/global/SKILL.md":                 "---\nname: global\ndescription: Global skill\n---\nglobal definition",
 					"/project/.agents/skills/review/SKILL.md": "---\nname: review\ndescription: Review changes\n---\nproject definition",
@@ -105,7 +116,7 @@ func TestCommandDiscovery(t *testing.T) {
 					t.Fatal(err)
 				}
 				commands := catalog.available()
-				if len(commands) != 2 || commands[0].Name != "global" || commands[1].Name != "review" {
+				if len(commands) != 3 || commands[0].Name != "compact" || commands[1].Name != "global" || commands[2].Name != "review" {
 					t.Fatalf(
 						"commands: %#v",
 						commands,
@@ -168,8 +179,9 @@ func TestPluginServers(t *testing.T) {
 				catalog := commandCatalog{
 					plugins: []plugins.Plugin{
 						{
-							Name: "foo",
-							Path: "/plugins/foo",
+							Name:        "foo",
+							Description: "Foo tools",
+							Path:        "/plugins/foo",
 							MCPConfig: map[string]plugins.MCPServer{
 								"server": {
 									Type:    plugins.Stdio,
@@ -180,18 +192,8 @@ func TestPluginServers(t *testing.T) {
 						},
 					},
 				}
-				pluginServers := catalog.pluginServers()
-				if len(pluginServers["foo"]) != 1 || pluginServers["foo"][0] != "foo:server" {
-					t.Fatalf(
-						"plugin server catalog: %v",
-						pluginServers,
-					)
-				}
-				if !strings.Contains(
-					catalog.instructions(),
-					"- foo:",
-				) {
-					t.Fatal("MCP-only plugin is missing from model instructions")
+				if catalog.serverDescriptions()["foo:server"] != "Foo tools" {
+					t.Fatal("plugin description missing from namespace metadata")
 				}
 				servers, err := catalog.servers(
 					nil,

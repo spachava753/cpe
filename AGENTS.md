@@ -74,6 +74,17 @@ README.md     User workflows and verification instructions
 - Empty literals and zero/one-argument calls may stay compact. Apply these rules
   recursively to nested literals and calls, and run `gofmt` after wrapping.
 
+## Embedded text
+
+- Store substantial non-test text (roughly five lines or more when formatted
+  naturally) in separate files and include it with `go:embed` when shipped with
+  or used by the binary. This includes prompts, help text, and templates,
+  including Go templates.
+- Use an appropriate file format, such as Markdown for prompts. Keep loading,
+  parsing, and rendering logic in Go, not the text itself. Do not flatten long
+  content into a single-line literal to avoid this rule.
+- Short literals may remain inline. Text in tests is exempt.
+
 ## Exported API documentation
 
 - Write comments for readers who have only the symbol's signature and documentation.

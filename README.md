@@ -57,6 +57,21 @@ from completed generations, respect provider retry delays, and remain within the
 turn deadline. Explicit cancellation, expired turn deadlines, and permanent
 provider errors do not retry.
 
+### System prompt
+
+CPE uses its built-in system prompt unless `~/.cpe/SYSTEM.md` exists. That file
+replaces the built-in base prompt, including its host-tool guidance.
+`~/.cpe/APPEND-SYSTEM.md` adds instructions after the selected prompt: the custom
+prompt when present, otherwise the built-in prompt. Use the uppercase filenames
+shown here; `APPEND-SYSTEM.md` uses a hyphen.
+
+Files are read when `cpe acp` starts; restart the process after editing them.
+Missing files are optional; other read errors stop startup. An empty `SYSTEM.md`
+selects an empty base prompt, while an empty `APPEND-SYSTEM.md` adds nothing.
+Compaction guidance, skill metadata, and MCP namespace summaries are supplied
+separately with the system instructions, even with a custom base prompt.
+`AGENTS.md` loading is not implemented yet.
+
 ### Host tools
 
 Starlark globals persist across turns in a live session. Dyson provides filesystem,
@@ -77,33 +92,49 @@ platforms terminate the direct child only. Failed or canceled tools are recorded
 without automatic replay: a failure can still have changed files or external state.
 
 MCP uses the official Go SDK and accepts client-supplied or plugin-defined stdio,
-streamable HTTP, and SSE servers. Installing a plugin does not connect its servers.
-Session setup reads plugin metadata only; listing configured server IDs with
-`mcp_servers()` also makes no connections. When the user asks to load a plugin or
-the model needs its tools, it calls `load_plugin(name)` in Starlark. This connects
-only that plugin's servers and returns tool dictionaries keyed by full server ID
-(`plugin:server`):
+streamable HTTP, and SSE servers. Every discovered plugin MCP server is enabled,
+along with servers supplied by the ACP client. CPE connects and discovers their
+tools during session setup; a connection or discovery failure fails setup and
+closes connections already opened. There is no model-facing loading step.
+
+Tools are exposed as Starlark builtins named `mcp__<server>__<tool>`. Plugin server
+IDs include the plugin name, so `screenshots:server` becomes
+`mcp__screenshots_server`. Invalid identifier characters become underscores;
+colliding names receive deterministic hash suffixes. Use the names returned by
+discovery rather than constructing them.
+
+The effective system prompt includes namespace names and one-line descriptions
+alongside skills, including when a custom system prompt is used. A namespace
+uses its plugin description when present, otherwise the first line of the MCP
+server's initialization instructions. Full server instructions and tool schemas
+remain available through discovery:
+
+- `search_tools(query, limit=8, namespace="")` ranks tool metadata with local BM25
+  keyword search. It searches names, descriptions, input-schema property names
+  and descriptions, and namespace descriptions/instructions—not remote data.
+- `describe_tool(name)` returns the description, namespace, callable signature,
+  and input schema.
+- `describe_namespace(name)` returns the namespace description, full server
+  instructions, and tool names.
+
+Search returns a list of names and descriptions; an unmatched query returns an
+empty list. Unknown names passed to either description function return `None`.
+Discovery functions do not execute remote tools. For example, after discovering
+a screenshot tool:
 
 ```python
-plugin = load_plugin("screenshots")
-tools = plugin["screenshots:server"]
-print(describe_mcp_tools("screenshots:server"))
-result = tools["capture"]({})
+print(describe_tool("mcp__screenshots_server__capture"))
+result = mcp__screenshots_server__capture({})
 print(result.is_error)
 # Inspect structured_content and content before choosing what the model sees.
 emit(result.content[0])
 ```
 
-`load_plugin(name)` is the only explicit loading operation. Schema inspection
-with `describe_mcp_tools(server)` never implicitly starts a plugin. Repeated loads reuse the live session's connections and tool catalog;
-closing the session releases them. Restoring or forking a session does not
-reactivate previously loaded plugins. MCP servers explicitly supplied by the ACP
-client are connected during session setup and available in `mcp_tools[server]`
-without a loading operation.
-
-The model receives installed plugin names and descriptions so it can select a
-plugin when needed. Reading a plugin's skill files does not load its MCP servers.
-An unavailable plugin server fails its explicit load, not session creation.
+Connections and the discovered catalog are reused for the live session and
+released when it closes. Loading, resuming, or forking a saved session creates
+fresh connections and a fresh catalog; historical tool calls are never replayed.
+Installing or uninstalling a plugin determines whether its servers are discovered
+for new sessions. Skill-only plugins require no MCP connections.
 
 Results retain content blocks, structured content, metadata, and `is_error` for
 scripts. Only `print` and `emit` expose output to the model; intermediate tool
@@ -128,6 +159,31 @@ Unknown slash commands and absolute paths are passed through as ordinary prompt
 text. Plugin MCP configuration supports `${PLUGIN_ROOT}`; `${PLUGIN_DATA}` is not
 supported yet.
 
+### Compaction
+
+Use `/compact` to ask the model to summarize the conversation now. The model
+calls the direct `compact` tool with one required string field, `summary`;
+it can also choose to call the tool during a task. `/compact` is reserved and
+takes precedence over a skill with that name.
+
+Summary-writing guidance is included in the system instructions from the first
+request, rather than injected as a user message. The default guidance covers
+the current goal, constraints, completed work, decisions, unresolved questions,
+and next steps. `~/.cpe/COMPACTION.md` replaces this guidance independently of
+`SYSTEM.md` and `APPEND-SYSTEM.md`. It is read at startup; an empty file removes
+the default guidance, and read errors other than a missing file stop startup.
+
+Compaction saves the summary without deleting the full transcript. Later model
+requests use the summary plus the entire assistant/tool batch containing the
+compact call and all subsequent messages. Keeping that batch intact preserves
+tool-call/result pairing. The summary is checkpointed before the next model
+request, or at turn end if the turn stops. Loading, resuming, and forking retain
+the compacted working context; ACP transcript replay still shows the full history.
+Compaction does not reset live Starlark globals or rerun tools.
+
+There is no automatic token-budget trigger or separate summarization request.
+The model writes the summary using the context already available to it.
+
 ### Saved sessions
 
 JSON checkpoints under `~/.cpe/sessions` preserve conversation and selected model
@@ -150,8 +206,8 @@ Completed tool effects are not rerun. A checkpoint failure stops retrying, and
 restoring a saved session never automatically restarts an aborted response.
 
 Text and inline-image prompts are supported. Additional working directories,
-ACP-tunneled MCP, session modes, audio prompts, and automatic context compaction
-are not implemented. Unsupported operations return explicit errors.
+ACP-tunneled MCP, session modes, audio prompts, and automatic context-budget
+management are not implemented. Unsupported operations return explicit errors.
 
 ## Authentication
 

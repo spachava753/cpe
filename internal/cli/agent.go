@@ -47,6 +47,13 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 			if authOptions.Path == "" {
 				return errors.New("CPE configuration directory is unavailable")
 			}
+			instructions, err := loadSystemPrompt(
+				filesystem,
+				filepath.Dir(authOptions.Path),
+			)
+			if err != nil {
+				return err
+			}
 			if modelFile == "" {
 				modelFile = filepath.Join(
 					filepath.Dir(authOptions.Path),
@@ -147,7 +154,7 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 					TurnTimeout:        timeout,
 					MaxGenerations:     generations,
 					MaxResponseRetries: responseRetries,
-					Instructions:       "You are CPE, a coding assistant. Use bash for simple commands and starlark_repl for structured orchestration. Dyson uses Python-like Starlark, not Python: load modules with load(\"subprocess.star\", \"subprocess\"), load(\"requests.star\", \"requests\"), etc. Globals persist within this live session but are reset on load, resume, or fork. Use print for text and emit for selected MCP content. Installed plugins do not start MCP connections until explicitly requested. List configured server IDs with mcp_servers() without connecting. When the user asks to load a plugin or you need its tools, call load_plugin(name); it returns tool dictionaries keyed by full server ID (plugin:server). ACP-client-supplied tools are already available in mcp_tools[server]. After loading, inspect schemas with describe_mcp_tools(server), then call the returned functions with an arguments dictionary. Repeated loads reuse this session's connections. Inspect result.is_error, result.structured_content, and result.content. Failed scripts may already have changed files or executed tools; do not blindly repeat them. Commands are invocation-owned; background processes are not supported. Tools run directly with the user's full machine access; no execution approval is required.",
+					Instructions:       instructions,
 				},
 				agent.Dependencies{
 					Filesystem:     filesystem,

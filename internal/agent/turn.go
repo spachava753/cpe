@@ -43,6 +43,7 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (acp.StopReas
 	s.active = running
 	options := s.record.Options
 	dialog := slices.Clone(s.record.Dialog)
+	compaction := s.record.Compaction
 	s.mu.Unlock()
 	defer func() {
 		cancel()
@@ -90,6 +91,8 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (acp.StopReas
 		return "", errors.New("generator factory returned no generator")
 	}
 	hooks := &turnHooks{
+		session:        s,
+		compaction:     compaction,
 		client:         s.client,
 		model:          model,
 		modelID:        options.Model,
@@ -104,9 +107,12 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (acp.StopReas
 			session: s,
 			hooks:   hooks,
 		},
-		Model:            model.ID,
-		Instructions:     gai.SystemMessage(gai.TextBlock(s.config.Instructions + s.catalog.instructions())),
-		Tools:            s.runtime.Tools(),
+		Model:        model.ID,
+		Instructions: gai.SystemMessage(gai.TextBlock(s.config.Instructions + s.catalog.instructions() + s.runtime.Instructions())),
+		Tools: append(
+			slices.Clone(s.runtime.Tools()),
+			hooks.compactionTool(),
+		),
 		BeforeGeneration: hooks,
 		AfterGeneration:  hooks,
 		BeforeTool:       hooks,
@@ -148,11 +154,19 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (acp.StopReas
 	s.record.Dialog = dialog
 	s.record.Info.UpdatedAt = time.Now().UTC()
 	checkpoint := s.record
+	if hooks.pendingCompaction != nil {
+		checkpoint.Compaction = hooks.pendingCompaction
+	}
 	s.mu.Unlock()
 	saveErr := s.deps.History.Save(
 		cleanup,
 		checkpoint,
 	)
+	if saveErr == nil {
+		s.mu.Lock()
+		s.record.Compaction = checkpoint.Compaction
+		s.mu.Unlock()
+	}
 	if runErr != nil {
 		span.RecordError(runErr)
 		span.SetStatus(
@@ -204,29 +218,37 @@ func missingResult(dialog gai.Dialog, id string) bool {
 }
 
 type turnHooks struct {
-	client         *sessionClient
-	model          models.Model
-	modelID        ModelID
-	maxGenerations uint
-	completed      map[string]gai.Message
-	pending        map[string]bool
-	streamed       map[uint]bool
-	generation     uint
-	dialog         gai.Dialog
+	session           *session
+	compaction        *Compaction
+	pendingCompaction *Compaction
+	client            *sessionClient
+	model             models.Model
+	modelID           ModelID
+	maxGenerations    uint
+	completed         map[string]gai.Message
+	pending           map[string]bool
+	streamed          map[uint]bool
+	generation        uint
+	dialog            gai.Dialog
 }
 
 // Prepare each provider request without altering canonical saved history.
-func (h *turnHooks) BeforeGeneration(_ context.Context, event gaiagent.BeforeGenerationRequest) (gaiagent.BeforeGenerationDecision, error) {
+func (h *turnHooks) BeforeGeneration(ctx context.Context, event gaiagent.BeforeGenerationRequest) (gaiagent.BeforeGenerationDecision, error) {
+	h.generation = event.Generation
+	h.dialog = event.Request.Dialog
+	if h.pendingCompaction != nil {
+		if err := h.checkpointCompaction(ctx); err != nil {
+			return gaiagent.BeforeGenerationDecision{}, err
+		}
+	}
 	if event.Generation >= h.maxGenerations {
 		return gaiagent.BeforeGenerationDecision{
 			StopReason: "generation_limit",
 		}, nil
 	}
-	h.generation = event.Generation
-	h.dialog = event.Request.Dialog
 	request := event.Request
 	request.Dialog = nil
-	for _, message := range event.Request.Dialog {
+	for _, message := range h.compaction.workingDialog(event.Request.Dialog) {
 		foreign := message.Role == gai.Assistant && message.ExtraFields["cpe.model"] != string(h.modelID)
 		blocks := message.Blocks
 		message.Blocks = nil

@@ -30,6 +30,10 @@ func TestSessionStore(t *testing.T) {
 					directory:  "/sessions",
 				}
 				record := SessionRecord{
+					Compaction: &Compaction{
+						Summary:       "Greeting received.",
+						AfterMessages: 1,
+					},
 					Info: SessionInfo{
 						ID:        "a",
 						Cwd:       "/work",
@@ -77,12 +81,16 @@ func TestSessionStore(t *testing.T) {
 							loaded,
 						)
 					}
+					if loaded.Compaction == nil || *loaded.Compaction != *record.Compaction {
+						t.Fatal("compaction was not persisted")
+					}
+					loaded.Compaction.Summary = "changed"
 					loaded.Dialog[0].Blocks[0] = gai.TextBlock("changed")
 					again, err := store.Load(
 						t.Context(),
 						"a",
 					)
-					if err != nil || again.Dialog[0].Blocks[0].Content.String() != "hello" {
+					if err != nil || again.Dialog[0].Blocks[0].Content.String() != "hello" || again.Compaction.Summary != "Greeting received." {
 						t.Fatalf(
 							"borrowed persisted state: %v",
 							err,
