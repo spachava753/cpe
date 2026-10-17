@@ -49,8 +49,13 @@ metadata is omitted from requests, without deleting it from saved history.
 Each process handles one ACP connection with independent sessions. A session
 accepts one active prompt at a time; other sessions remain usable. `session/cancel`
 stops that turn, while disconnecting closes all live runtimes and MCP connections.
-The defaults are a ten-minute turn deadline and 32 model requests per turn,
-configurable with `--turn-timeout` and `--max-generations`.
+The defaults are a ten-minute deadline per session setup or prompt turn and
+32 completed model generations per turn, configurable with `--turn-timeout` and
+`--max-generations`. Interrupted/transient model responses can retry twice by
+default (`--response-retries`; zero disables retries). Retries count separately
+from completed generations, respect provider retry delays, and remain within the
+turn deadline. Explicit cancellation, expired turn deadlines, and permanent
+provider errors do not retry.
 
 ### Host tools
 
@@ -72,16 +77,33 @@ platforms terminate the direct child only. Failed or canceled tools are recorded
 without automatic replay: a failure can still have changed files or external state.
 
 MCP uses the official Go SDK and accepts client-supplied or plugin-defined stdio,
-streamable HTTP, and SSE servers. Discover with `mcp_servers()`, inspect schemas
-with `describe_mcp_tools(server)`, and call tools through `load_mcp_tools(server)`:
+streamable HTTP, and SSE servers. Installing a plugin does not connect its servers.
+Session setup reads plugin metadata only; listing configured server IDs with
+`mcp_servers()` also makes no connections. When the user asks to load a plugin or
+the model needs its tools, it calls `load_plugin(name)` in Starlark. This connects
+only that plugin's servers and returns tool dictionaries keyed by full server ID
+(`plugin:server`):
 
 ```python
-tools = load_mcp_tools("screenshots")
+plugin = load_plugin("screenshots")
+tools = plugin["screenshots:server"]
+print(describe_mcp_tools("screenshots:server"))
 result = tools["capture"]({})
 print(result.is_error)
 # Inspect structured_content and content before choosing what the model sees.
 emit(result.content[0])
 ```
+
+`load_plugin(name)` is the only explicit loading operation. Schema inspection
+with `describe_mcp_tools(server)` never implicitly starts a plugin. Repeated loads reuse the live session's connections and tool catalog;
+closing the session releases them. Restoring or forking a session does not
+reactivate previously loaded plugins. MCP servers explicitly supplied by the ACP
+client are connected during session setup and available in `mcp_tools[server]`
+without a loading operation.
+
+The model receives installed plugin names and descriptions so it can select a
+plugin when needed. Reading a plugin's skill files does not load its MCP servers.
+An unavailable plugin server fails its explicit load, not session creation.
 
 Results retain content blocks, structured content, metadata, and `is_error` for
 scripts. Only `print` and `emit` expose output to the model; intermediate tool
@@ -93,9 +115,18 @@ fetched. Models without image input receive a text notice instead of the image.
 Skills and plugins are discovered from `~/.agents/{skills,plugins}` and each
 session's `.agents/{skills,plugins}`. `--skills` and `--plugins` add roots, resolving
 relative flag paths against the launch directory. Project skills override global
-skills with the same name; duplicate plugin names are errors. Skills appear as
-slash commands, with plugin skills named `/plugin:skill`. Plugin MCP configuration
-supports `${PLUGIN_ROOT}`; `${PLUGIN_DATA}` is not supported yet.
+skills with the same name; duplicate plugin names are errors. Nonfatal plugin
+diagnostics are written to stderr, not ACP updates or conversation history,
+rather than blocking session creation;
+malformed manifests and unsupported manifest schemas remain fatal.
+
+The model receives skill names, descriptions, and file paths, not their bodies.
+It reads relevant skill files and bundled resources using bash or Starlark/Dyson.
+Skills also appear as slash commands, with plugin skills named `/plugin:skill`;
+a recognized command supplies the skill file reference and the user's arguments.
+Unknown slash commands and absolute paths are passed through as ordinary prompt
+text. Plugin MCP configuration supports `${PLUGIN_ROOT}`; `${PLUGIN_DATA}` is not
+supported yet.
 
 ### Saved sessions
 
@@ -109,6 +140,14 @@ the checkpoint; deleting removes it. Loading, resuming, or forking creates a fre
 Starlark interpreter and MCP connections: checkpoints are not VM snapshots, side
 effects are never replayed, and this format is not ATIF. On Windows, protect the
 checkpoint directory with filesystem ACLs.
+
+Incomplete model responses are explicitly stored in `AbortedResponses`, separate
+from accepted conversation. They are never supplied to the model or replayed to
+an ACP client when a session is loaded, resumed, or forked. In a live turn, CPE
+checkpoints the abort, sends an advisory notice (or a text update for clients
+without notice support), and retries only the model response when eligible.
+Completed tool effects are not rerun. A checkpoint failure stops retrying, and
+restoring a saved session never automatically restarts an aborted response.
 
 Text and inline-image prompts are supported. Additional working directories,
 ACP-tunneled MCP, session modes, audio prompts, and automatic context compaction

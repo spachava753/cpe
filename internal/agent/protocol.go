@@ -33,6 +33,9 @@ func (s *Server) Initialize(_ context.Context, request *acp.InitializeRequest) (
 		return nil, errors.New("only ACP protocol version 1 is supported")
 	}
 	s.initialized = true
+	if caps := request.ClientCapabilities; caps != nil && caps.Session != nil {
+		s.notices = caps.Session.Notices != nil
+	}
 	openai := acp.TerminalAuthMethod(
 		"openai",
 		"Sign in with ChatGPT",
@@ -141,10 +144,7 @@ func (s *Server) NewSession(ctx context.Context, request *acp.NewSessionRequest)
 	if err != nil {
 		return nil, err
 	}
-	if err := live.client.update(
-		ctx,
-		acp.AvailableCommandsUpdateSessionUpdate(live.catalog.available()),
-	); err != nil {
+	if err := live.announce(ctx); err != nil {
 		return nil, err
 	}
 	options := configOptions(
@@ -325,10 +325,7 @@ func (s *Server) restore(ctx context.Context, id acp.SessionId, cwd string, serv
 	if err != nil {
 		return nil, err
 	}
-	if err := live.client.update(
-		ctx,
-		acp.AvailableCommandsUpdateSessionUpdate(live.catalog.available()),
-	); err != nil {
+	if err := live.announce(ctx); err != nil {
 		return nil, err
 	}
 	return live, nil
@@ -370,10 +367,7 @@ func (s *Server) ForkSession(ctx context.Context, request *acp.ForkSessionReques
 		s.config,
 		live.record.Options,
 	)
-	if err := live.client.update(
-		ctx,
-		acp.AvailableCommandsUpdateSessionUpdate(live.catalog.available()),
-	); err != nil {
+	if err := live.announce(ctx); err != nil {
 		return nil, err
 	}
 	return &acp.ForkSessionResponse{
@@ -588,9 +582,10 @@ func configOptions(config Config, current SessionOptions) []acp.SessionConfigOpt
 }
 
 type sessionClient struct {
-	ac     *acp.AgentConnection
-	id     SessionID
-	sendMu sync.Mutex
+	ac      *acp.AgentConnection
+	id      SessionID
+	sendMu  sync.Mutex
+	notices bool
 }
 
 func (c *sessionClient) update(ctx context.Context, update acp.SessionUpdate) error {
@@ -602,6 +597,25 @@ func (c *sessionClient) update(ctx context.Context, update acp.SessionUpdate) er
 			SessionID: acp.SessionId(c.id),
 			Update:    update,
 		},
+	)
+}
+
+func (c *sessionClient) notice(ctx context.Context, title, description string) error {
+	if c.notices {
+		update := acp.NoticeSessionUpdate(
+			acp.NoticeSeverityWarning,
+			title,
+		)
+		update.Description = &description
+		return c.update(
+			ctx,
+			update,
+		)
+	}
+	// Standard text updates are supported even by clients without advisory notices.
+	return c.update(
+		ctx,
+		acp.AgentMessageChunkSessionUpdate(acp.TextContentBlock("\n["+title+": "+description+"]\n")),
 	)
 }
 

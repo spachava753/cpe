@@ -28,9 +28,19 @@ type SessionInfo struct {
 // SessionRecord checkpoints conversation and configuration, never live resources.
 // Resuming or forking creates fresh Starlark globals and MCP connections.
 type SessionRecord struct {
-	Info    SessionInfo
-	Options SessionOptions
-	Dialog  gai.Dialog
+	Info             SessionInfo
+	Options          SessionOptions
+	Dialog           gai.Dialog
+	AbortedResponses []AbortedResponse
+}
+
+// AbortedResponse records an incomplete model response excluded from conversation and replay.
+type AbortedResponse struct {
+	Model         ModelID
+	At            time.Time
+	AfterMessages int
+	Reason        string
+	Partial       gai.Message
 }
 
 // SessionQuery filters saved conversations. Cursor is the last returned session ID.
@@ -267,10 +277,16 @@ type storedMessage struct {
 	Blocks []storedBlock `json:"blocks"`
 }
 
+type storedAbortedResponse struct {
+	AbortedResponse
+	Partial storedMessage
+}
+
 type storedRecord struct {
-	Info    SessionInfo
-	Options SessionOptions
-	Dialog  []storedMessage
+	Info             SessionInfo
+	Options          SessionOptions
+	Dialog           []storedMessage
+	AbortedResponses []storedAbortedResponse
 }
 
 func encodeRecord(record SessionRecord) ([]byte, error) {
@@ -279,27 +295,61 @@ func encodeRecord(record SessionRecord) ([]byte, error) {
 		Options: record.Options,
 	}
 	for _, message := range record.Dialog {
-		item := storedMessage{
-			Message: message,
-		}
-		for _, block := range message.Blocks {
-			if block.Content == nil {
-				return nil, errors.New("history contains an empty block")
-			}
-			item.Blocks = append(
-				item.Blocks,
-				storedBlock{
-					Block:   block,
-					Content: block.Content.String(),
-				},
-			)
+		item, err := storeMessage(message)
+		if err != nil {
+			return nil, err
 		}
 		stored.Dialog = append(
 			stored.Dialog,
 			item,
 		)
 	}
+	for _, aborted := range record.AbortedResponses {
+		partial, err := storeMessage(aborted.Partial)
+		if err != nil {
+			return nil, err
+		}
+		stored.AbortedResponses = append(
+			stored.AbortedResponses,
+			storedAbortedResponse{
+				AbortedResponse: aborted,
+				Partial:         partial,
+			},
+		)
+	}
 	return json.Marshal(stored)
+}
+
+func storeMessage(message gai.Message) (storedMessage, error) {
+	item := storedMessage{
+		Message: message,
+	}
+	for _, block := range message.Blocks {
+		if block.Content == nil {
+			return storedMessage{}, errors.New("history contains an empty block")
+		}
+		item.Blocks = append(
+			item.Blocks,
+			storedBlock{
+				Block:   block,
+				Content: block.Content.String(),
+			},
+		)
+	}
+	return item, nil
+}
+
+func restoreMessage(item storedMessage) gai.Message {
+	message := item.Message
+	message.Blocks = nil
+	for _, block := range item.Blocks {
+		block.Block.Content = gai.Str(block.Content)
+		message.Blocks = append(
+			message.Blocks,
+			block.Block,
+		)
+	}
+	return message
 }
 
 func decodeRecord(data []byte) (SessionRecord, error) {
@@ -315,18 +365,17 @@ func decodeRecord(data []byte) (SessionRecord, error) {
 		Options: stored.Options,
 	}
 	for _, item := range stored.Dialog {
-		message := item.Message
-		message.Blocks = nil
-		for _, block := range item.Blocks {
-			block.Block.Content = gai.Str(block.Content)
-			message.Blocks = append(
-				message.Blocks,
-				block.Block,
-			)
-		}
 		record.Dialog = append(
 			record.Dialog,
-			message,
+			restoreMessage(item),
+		)
+	}
+	for _, item := range stored.AbortedResponses {
+		aborted := item.AbortedResponse
+		aborted.Partial = restoreMessage(item.Partial)
+		record.AbortedResponses = append(
+			record.AbortedResponses,
+			aborted,
 		)
 	}
 	return record, nil

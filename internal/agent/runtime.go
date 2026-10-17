@@ -28,6 +28,10 @@ type HostConfig struct {
 	Session SessionID
 	Cwd     string
 	MCP     MCPTools
+	// Plugins maps installed plugin names to their MCP server IDs; nil means none.
+	Plugins map[string][]MCPServerID
+	// ClientServers identifies MCP servers explicitly supplied by the ACP client.
+	ClientServers []MCPServerID
 }
 
 // HostFactory creates session-owned tools; ctx bounds setup, not their lifetime.
@@ -60,12 +64,13 @@ type invocation struct {
 }
 
 type toolHost struct {
-	mu     sync.Mutex
-	closed bool
-	config HostConfig
-	sphere *dyson.Sphere
-	runner dyson.CommandRunner
-	tools  []gaiagent.Tool
+	mu       sync.Mutex
+	closed   bool
+	config   HostConfig
+	sphere   *dyson.Sphere
+	runner   dyson.CommandRunner
+	tools    []gaiagent.Tool
+	mcpTools map[MCPServerID]*starlark.Dict
 }
 
 func newHost(ctx context.Context, config HostConfig, stdlib dyson.StdlibConfig) (*toolHost, error) {
@@ -76,11 +81,34 @@ func newHost(ctx context.Context, config HostConfig, stdlib dyson.StdlibConfig) 
 		return nil, errors.New("host requires an absolute cwd, MCP, and a command runner")
 	}
 	h := &toolHost{
-		config: config,
-		runner: stdlib.CommandRunner,
+		config:   config,
+		runner:   stdlib.CommandRunner,
+		mcpTools: make(map[MCPServerID]*starlark.Dict),
 	}
 	stdlib.CommandRunner = h
+	clientTools := starlark.NewDict(len(config.ClientServers))
+	for _, id := range config.ClientServers {
+		functions, err := h.loadFunctions(
+			ctx,
+			id,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if err := clientTools.SetKey(
+			starlark.String(id),
+			functions,
+		); err != nil {
+			return nil, err
+		}
+	}
+	clientTools.Freeze()
 	globals := starlark.StringDict{
+		"mcp_tools": clientTools,
+		"load_plugin": starlark.NewBuiltin(
+			"load_plugin",
+			h.loadPlugin,
+		),
 		"emit": starlark.NewBuiltin(
 			"emit",
 			h.emit,
@@ -88,10 +116,6 @@ func newHost(ctx context.Context, config HostConfig, stdlib dyson.StdlibConfig) 
 		"mcp_servers": starlark.NewBuiltin(
 			"mcp_servers",
 			h.servers,
-		),
-		"load_mcp_tools": starlark.NewBuiltin(
-			"load_mcp_tools",
-			h.loadMCP,
 		),
 		"describe_mcp_tools": starlark.NewBuiltin(
 			"describe_mcp_tools",
@@ -115,7 +139,7 @@ func newHost(ctx context.Context, config HostConfig, stdlib dyson.StdlibConfig) 
 		{
 			Definition: gai.Tool{
 				Name:        starlarkToolName,
-				Description: "Execute Starlark in a persistent session. Use Dyson modules for files, HTTP, and subprocesses. mcp_servers() lists servers; describe_mcp_tools(server) returns schemas; load_mcp_tools(server) returns a dictionary of functions accepting an arguments dictionary. Results expose content, structured_content, is_error. print emits text; emit(content_item) emits selected MCP text/images. Intermediate results are not shown to the model. Errors do not undo side effects or globals.",
+				Description: "Execute Starlark in a persistent session. Use Dyson modules for files, HTTP, and subprocesses. mcp_servers() lists configured servers without connecting. load_plugin(name) explicitly connects that plugin's servers and returns tool dictionaries keyed by server ID. Tool functions accept an arguments dictionary. ACP-client-supplied tools are already available in mcp_tools[server]. describe_mcp_tools(server) returns schemas after loading. Installed plugins stay disconnected until requested. Results expose content, structured_content, is_error. print emits text; emit(content_item) emits selected MCP text/images. Intermediate results are not shown to the model. Errors do not undo side effects or globals.",
 				InputSchema: stringSchema("code"),
 			},
 			Handler: gaiagent.ToolHandlerFunc(h.execute),
@@ -306,6 +330,9 @@ func (h *toolHost) describeMCP(thread *starlark.Thread, fn *starlark.Builtin, ar
 	); err != nil {
 		return nil, err
 	}
+	if _, loaded := h.mcpTools[MCPServerID(server)]; !loaded {
+		return nil, errors.New("load the plugin with load_plugin before inspecting its server schemas")
+	}
 	tools, err := h.config.MCP.Load(
 		dyson.EvaluationContext(thread),
 		MCPServerID(server),
@@ -319,24 +346,77 @@ func (h *toolHost) describeMCP(thread *starlark.Thread, fn *starlark.Builtin, ar
 	)
 }
 
-func (h *toolHost) loadMCP(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	var server string
+func (h *toolHost) loadPlugin(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var name string
 	if err := starlark.UnpackArgs(
 		fn.Name(),
 		args,
 		kwargs,
-		"server",
-		&server,
+		"name",
+		&name,
 	); err != nil {
 		return nil, err
 	}
+	servers, found := h.config.Plugins[name]
+	if !found {
+		return nil, fmt.Errorf(
+			"unknown plugin %q",
+			name,
+		)
+	}
+	loaded := starlark.NewDict(len(servers))
+	for _, server := range servers {
+		functions, err := h.loadFunctions(
+			dyson.EvaluationContext(thread),
+			server,
+		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"load plugin %q server %q: %w",
+				name,
+				server,
+				err,
+			)
+		}
+		if err := loaded.SetKey(
+			starlark.String(server),
+			functions,
+		); err != nil {
+			return nil, err
+		}
+	}
+	loaded.Freeze()
+	return loaded, nil
+}
+
+func (h *toolHost) loadFunctions(ctx context.Context, server MCPServerID) (*starlark.Dict, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if functions, found := h.mcpTools[server]; found {
+		return functions, nil
+	}
 	tools, err := h.config.MCP.Load(
-		dyson.EvaluationContext(thread),
-		MCPServerID(server),
+		ctx,
+		server,
 	)
 	if err != nil {
 		return nil, err
 	}
+	//nolint:contextcheck // Bound callbacks use their invocation context.
+	functions, err := h.bindMCP(
+		string(server),
+		tools,
+	)
+	if err != nil {
+		return nil, err
+	}
+	functions.Freeze()
+	h.mcpTools[server] = functions
+	return functions, nil
+}
+
+func (h *toolHost) bindMCP(server string, tools []*mcp.Tool) (*starlark.Dict, error) {
 	functions := starlark.NewDict(len(tools))
 	for _, tool := range tools {
 		call := starlark.NewBuiltin(

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"path/filepath"
@@ -18,10 +19,11 @@ import (
 func TestACPCommand(t *testing.T) {
 	const model = `{"id":"fixture","base_url":"http://localhost:1234/v1/","api":"Openai","input_modalities":["text"],"output_modalities":["text"],"limit":8192,"max_tokens":256}`
 	for _, test := range []struct {
-		name      string
-		args      []string
-		config    string
-		wantError string
+		name        string
+		args        []string
+		config      string
+		wantError   string
+		wantRetries uint
 	}{
 		{
 			name: "default roots",
@@ -29,7 +31,19 @@ func TestACPCommand(t *testing.T) {
 				"--model",
 				"fixture",
 			},
-			config: "[" + model + "]",
+			config:      "[" + model + "]",
+			wantRetries: 2,
+		},
+		{
+			name: "retries disabled",
+			args: []string{
+				"--model",
+				"fixture",
+				"--response-retries",
+				"0",
+			},
+			config:      "[" + model + "]",
+			wantRetries: 0,
 		},
 		{
 			name: "relative additional roots",
@@ -41,7 +55,8 @@ func TestACPCommand(t *testing.T) {
 				"--plugins",
 				"extra-plugins",
 			},
-			config: "[" + model + "]",
+			config:      "[" + model + "]",
+			wantRetries: 2,
 		},
 		{
 			name:      "missing model",
@@ -99,7 +114,8 @@ func TestACPCommand(t *testing.T) {
 					SilenceUsage:  true,
 				}
 				root.SetOut(io.Discard)
-				root.SetErr(io.Discard)
+				var stderr bytes.Buffer
+				root.SetErr(&stderr)
 				called := false
 				acpCmdWithServe(
 					root,
@@ -110,6 +126,15 @@ func TestACPCommand(t *testing.T) {
 					},
 					func(_ context.Context, _ acp.Transport, config agent.Config, deps agent.Dependencies) error {
 						called = true
+						if deps.Stderr != &stderr {
+							t.Fatal("diagnostics are not wired to command stderr")
+						}
+						if config.MaxResponseRetries != test.wantRetries {
+							t.Fatalf(
+								"response retries: %d",
+								config.MaxResponseRetries,
+							)
+						}
 						if config.Initial.Model != "fixture" || deps.Generators == nil || deps.Hosts == nil || deps.MCP == nil || deps.History == nil {
 							t.Fatal("incomplete runtime wiring")
 						}

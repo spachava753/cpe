@@ -13,25 +13,39 @@ import (
 
 func TestCommandDiscovery(t *testing.T) {
 	for _, test := range []struct {
-		name      string
-		prompt    string
-		want      string
-		wantError bool
+		name   string
+		prompt string
+		want   string
 	}{
 		{
 			name:   "project overrides global",
 			prompt: "/review changes",
-			want:   "project definition",
+			want:   "/project/.agents/skills/review/SKILL.md",
 		},
 		{
 			name:   "global remains available",
 			prompt: "/global context",
-			want:   "global definition",
+			want:   "/global/global/SKILL.md",
 		},
 		{
-			name:      "unknown command",
-			prompt:    "/missing",
-			wantError: true,
+			name:   "unknown command",
+			prompt: "/missing",
+			want:   "/missing",
+		},
+		{
+			name:   "absolute path at beginning",
+			prompt: "/tmp/example.go has a bug",
+			want:   "/tmp/example.go has a bug",
+		},
+		{
+			name:   "absolute path in middle",
+			prompt: "Fix /tmp/example.go",
+			want:   "Fix /tmp/example.go",
+		},
+		{
+			name:   "known command followed by newline",
+			prompt: "/review\ninspect this diff",
+			want:   "User request:\ninspect this diff",
 		},
 		{
 			name:   "ordinary prompt",
@@ -76,6 +90,20 @@ func TestCommandDiscovery(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				instructions := catalog.instructions()
+				if !strings.Contains(
+					instructions,
+					"/project/.agents/skills/review/SKILL.md",
+				) || strings.Contains(
+					instructions,
+					"project definition",
+				) {
+					t.Fatal("skill catalog must contain file references, not skill bodies")
+				}
+				// Invoking a known command must not read or inline the skill body.
+				if err := filesystem.Remove("/project/.agents/skills/review/SKILL.md"); err != nil {
+					t.Fatal(err)
+				}
 				commands := catalog.available()
 				if len(commands) != 2 || commands[0].Name != "global" || commands[1].Name != "review" {
 					t.Fatalf(
@@ -83,8 +111,7 @@ func TestCommandDiscovery(t *testing.T) {
 						commands,
 					)
 				}
-				message, err := catalog.expand(
-					filesystem,
+				message := catalog.expand(
 					gai.Message{
 						Role: gai.User,
 						Blocks: []gai.Block{
@@ -92,13 +119,7 @@ func TestCommandDiscovery(t *testing.T) {
 						},
 					},
 				)
-				if (err != nil) != test.wantError {
-					t.Fatalf(
-						"expand: %v",
-						err,
-					)
-				}
-				if err == nil && !strings.Contains(
+				if !strings.Contains(
 					message.Blocks[0].Content.String(),
 					test.want,
 				) {
@@ -158,6 +179,19 @@ func TestPluginServers(t *testing.T) {
 							},
 						},
 					},
+				}
+				pluginServers := catalog.pluginServers()
+				if len(pluginServers["foo"]) != 1 || pluginServers["foo"][0] != "foo:server" {
+					t.Fatalf(
+						"plugin server catalog: %v",
+						pluginServers,
+					)
+				}
+				if !strings.Contains(
+					catalog.instructions(),
+					"- foo:",
+				) {
+					t.Fatal("MCP-only plugin is missing from model instructions")
 				}
 				servers, err := catalog.servers(
 					nil,

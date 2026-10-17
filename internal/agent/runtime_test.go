@@ -36,15 +36,19 @@ func (f runnerFunc) RunCommand(ctx context.Context, command dyson.Command) (dyso
 	)
 }
 
-func hostFixture(t *testing.T, tools MCPTools, runner dyson.CommandRunner) *toolHost {
+func hostFixture(t *testing.T, tools MCPTools, runner dyson.CommandRunner, configure ...func(*HostConfig)) *toolHost {
 	t.Helper()
+	config := HostConfig{
+		Session: "test",
+		Cwd:     "/work",
+		MCP:     tools,
+	}
+	for _, option := range configure {
+		option(&config)
+	}
 	host, err := newHost(
 		t.Context(),
-		HostConfig{
-			Session: "test",
-			Cwd:     "/work",
-			MCP:     tools,
-		},
+		config,
 		dyson.StdlibConfig{
 			FS:            afero.NewMemMapFs(),
 			CommandRunner: runner,
@@ -391,13 +395,18 @@ func TestMCPEmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, test := range []struct {
-		name          string
-		emit          bool
-		toolError     bool
-		protocolError bool
+		name           string
+		emit           bool
+		toolError      bool
+		protocolError  bool
+		clientProvided bool
 	}{
 		{
 			name: "raw results stay private",
+		},
+		{
+			name:           "client-supplied tools need no loading operation",
+			clientProvided: true,
 		},
 		{
 			name: "explicit image",
@@ -451,6 +460,7 @@ func TestMCPEmission(t *testing.T) {
 						"test": {},
 					},
 					connections: make(map[MCPServerID]*mcp.ClientSession),
+					tools:       make(map[MCPServerID][]*mcp.Tool),
 					connector: func(ctx context.Context, _ mcpServer) (*mcp.ClientSession, error) {
 						a, b := mcp.NewInMemoryTransports()
 						session, err := server.Connect(
@@ -480,8 +490,25 @@ func TestMCPEmission(t *testing.T) {
 					t,
 					registry,
 					runnerFunc(func(context.Context, dyson.Command) (dyson.CommandResult, error) { return dyson.CommandResult{}, nil }),
+					func(config *HostConfig) {
+						if test.clientProvided {
+							config.ClientServers = []MCPServerID{
+								"test",
+							}
+						} else {
+							config.Plugins = map[string][]MCPServerID{
+								"fixture": {
+									"test",
+								},
+							}
+						}
+					},
 				)
-				code := "tools = load_mcp_tools('test')\nr = tools['screenshot']({})\nprint(r.structured_content['count'])\nprint(r.is_error)"
+				code := "tools = load_plugin('fixture')['test']\n"
+				if test.clientProvided {
+					code = "tools = mcp_tools['test']\n"
+				}
+				code += "r = tools['screenshot']({})\nprint(r.structured_content['count'])\nprint(r.is_error)"
 				if test.emit {
 					code += "\nemit(r.content[0])"
 				}

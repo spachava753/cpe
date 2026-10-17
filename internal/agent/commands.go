@@ -8,8 +8,10 @@ import (
 	"io/fs"
 	"maps"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
@@ -22,6 +24,7 @@ import (
 type commandCatalog struct {
 	commands map[string]skills.Skill
 	plugins  []plugins.Plugin
+	warnings []error
 }
 
 func loadCommands(ctx context.Context, filesystem afero.Fs, cwd string, config Config) (commandCatalog, error) {
@@ -39,18 +42,21 @@ func loadCommands(ctx context.Context, filesystem afero.Fs, cwd string, config C
 		if err := ctx.Err(); err != nil {
 			return catalog, err
 		}
+		if _, err := filesystem.Stat(root); err != nil {
+			if errors.Is(
+				err,
+				fs.ErrNotExist,
+			) {
+				continue
+			}
+			return catalog, err
+		}
 		loaded, err := skills.Load(afero.IOFS{
 			Fs: afero.NewBasePathFs(
 				filesystem,
 				root,
 			),
 		})
-		if errors.Is(
-			err,
-			fs.ErrNotExist,
-		) {
-			continue
-		}
 		if err != nil {
 			return catalog, err
 		}
@@ -76,18 +82,21 @@ func loadCommands(ctx context.Context, filesystem afero.Fs, cwd string, config C
 	)
 	seen := make(map[string]bool)
 	for _, root := range roots {
+		if _, err := filesystem.Stat(root); err != nil {
+			if errors.Is(
+				err,
+				fs.ErrNotExist,
+			) {
+				continue
+			}
+			return catalog, err
+		}
 		loaded, err := plugins.Load(afero.IOFS{
 			Fs: afero.NewBasePathFs(
 				filesystem,
 				root,
 			),
 		})
-		if errors.Is(
-			err,
-			fs.ErrNotExist,
-		) {
-			continue
-		}
 		if err != nil {
 			return catalog, err
 		}
@@ -99,9 +108,10 @@ func loadCommands(ctx context.Context, filesystem afero.Fs, cwd string, config C
 				)
 			}
 			seen[plugin.Name] = true
-			if len(plugin.Diagnostics) != 0 {
-				return catalog, errors.Join(plugin.Diagnostics...)
-			}
+			catalog.warnings = append(
+				catalog.warnings,
+				plugin.Diagnostics...,
+			)
 			plugin.Path = filepath.Join(
 				root,
 				filepath.FromSlash(plugin.Path),
@@ -151,49 +161,96 @@ func (c commandCatalog) available() []acp.AvailableCommand {
 	return commands
 }
 
-func (c commandCatalog) expand(filesystem afero.Fs, message gai.Message) (gai.Message, error) {
+func (c commandCatalog) expand(message gai.Message) gai.Message {
 	if len(message.Blocks) == 0 || message.Blocks[0].ModalityType != gai.Text {
-		return message, nil
+		return message
 	}
 	text := message.Blocks[0].Content.String()
 	if !strings.HasPrefix(
 		text,
 		"/",
 	) {
-		return message, nil
+		return message
 	}
-	name, arguments, _ := strings.Cut(
-		strings.TrimPrefix(
-			text,
-			"/",
-		),
-		" ",
+	name := strings.TrimPrefix(
+		text,
+		"/",
 	)
+	arguments := ""
+	if index := strings.IndexFunc(
+		name,
+		unicode.IsSpace,
+	); index >= 0 {
+		arguments = strings.TrimSpace(name[index:])
+		name = name[:index]
+	}
 	skill, ok := c.commands[name]
 	if !ok {
-		return gai.Message{}, fmt.Errorf(
-			"unknown slash command %q",
-			name,
-		)
-	}
-	data, err := afero.ReadFile(
-		filesystem,
-		skill.Path,
-	)
-	if err != nil {
-		return gai.Message{}, err
-	}
-	if len(data) > maxTextBytes {
-		return gai.Message{}, errors.New("skill exceeds instruction size limit")
+		return message
 	}
 	message.Blocks[0] = gai.TextBlock(fmt.Sprintf(
-		"Skill %s from %s:\n%s\n\nUser arguments:\n%s",
+		"Use the %q skill. Read its instructions at %q with bash or starlark_repl; resolve bundled resources relative to that file.\n\nUser request:\n%s",
 		name,
 		skill.Path,
-		data,
 		arguments,
 	))
-	return message, nil
+	return message
+}
+
+// instructions advertises skill locations without loading their bodies into context.
+func (c commandCatalog) instructions() string {
+	if len(c.commands) == 0 && len(c.plugins) == 0 {
+		return ""
+	}
+	var text strings.Builder
+	if len(c.commands) != 0 {
+		text.WriteString("\n\nAvailable skills: read a relevant SKILL.md with bash or starlark_repl when needed. Bundled resources are relative to the skill file.\n")
+	}
+	for _, command := range c.available() {
+		skill := c.commands[command.Name]
+		if skill.InvocationDisabled {
+			continue
+		}
+		fmt.Fprintf(
+			&text,
+			"- %s: %s (file: %q)\n",
+			command.Name,
+			skill.Description,
+			skill.Path,
+		)
+	}
+	if len(c.plugins) != 0 {
+		text.WriteString("\n\nInstalled plugins (MCP servers remain disconnected until requested): use load_plugin(name) in starlark_repl only when the user asks to load a plugin or you need its tools. It returns tools keyed by full server ID (plugin:server). Skill files can be read without loading MCP.\n")
+		for _, plugin := range c.plugins {
+			fmt.Fprintf(
+				&text,
+				"- %s: %s\n",
+				plugin.Name,
+				plugin.Description,
+			)
+		}
+	}
+	return text.String()
+}
+
+func (c commandCatalog) pluginServers() map[string][]MCPServerID {
+	result := make(map[string][]MCPServerID)
+	for _, plugin := range c.plugins {
+		ids := make(
+			[]MCPServerID,
+			0,
+			len(plugin.MCPConfig),
+		)
+		for name := range plugin.MCPConfig {
+			ids = append(
+				ids,
+				MCPServerID(plugin.Name+":"+name),
+			)
+		}
+		slices.Sort(ids)
+		result[plugin.Name] = ids
+	}
+	return result
 }
 
 func (c commandCatalog) servers(client map[MCPServerID]mcpServer, cwd string) (map[MCPServerID]mcpServer, error) {

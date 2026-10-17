@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"slices"
 	"time"
@@ -38,6 +39,8 @@ type Config struct {
 	Instructions   string
 	TurnTimeout    time.Duration
 	MaxGenerations uint
+	// MaxResponseRetries limits retries of one interrupted model response; zero disables retries.
+	MaxResponseRetries uint
 }
 
 // Dependencies supplies concurrency-safe services borrowed until Serve returns.
@@ -50,6 +53,8 @@ type Dependencies struct {
 	MCP            MCPConnector
 	History        SessionStore
 	Traces         trace.TracerProvider
+	// Stderr receives nonfatal discovery diagnostics, separate from ACP output.
+	Stderr io.Writer
 }
 
 // Authenticator verifies credentials established by the separate terminal login flow.
@@ -65,7 +70,7 @@ func checkConfig(config Config, deps Dependencies) error {
 	if len(config.Models) == 0 || config.TurnTimeout <= 0 || config.MaxGenerations == 0 {
 		return errors.New("models, a positive turn timeout, and a positive generation limit are required")
 	}
-	if deps.Filesystem == nil || deps.Authentication == nil || deps.Generators == nil || deps.Hosts == nil || deps.MCP == nil || deps.History == nil || deps.Traces == nil {
+	if deps.Filesystem == nil || deps.Authentication == nil || deps.Generators == nil || deps.Hosts == nil || deps.MCP == nil || deps.History == nil || deps.Traces == nil || deps.Stderr == nil {
 		return errors.New("all agent dependencies must be configured")
 	}
 	for _, roots := range [][]string{

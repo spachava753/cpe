@@ -11,6 +11,31 @@ go.mod        Go version, dependencies, and developer tools
 README.md     User workflows and verification instructions
 ```
 
+## Engineering discipline
+
+- Implement only the behavior the user requested. Ask before adding anything
+  beyond that scope. If you believe another capability, interface, dependency, or
+  abstraction is necessary, explain why and get approval before adding it.
+  Convenience, symmetry, and possible future use are not authorization.
+- Resolve consequential ambiguity with the user before coding. Identify the
+  requested behavior and how to verify it; do not invent adjacent requirements
+  or reinterpret a specific request as permission to build a broader system.
+- Keep the user-facing interface minimal. Give each requested operation one clear
+  entry point. Do not expose lower-level implementation operations as additional
+  APIs, tools, commands, or configuration options without approval.
+- Prefer the smallest cohesive implementation that satisfies the requirement.
+  Reuse existing domain concepts and established patterns. Do not add extension
+  points, wrappers, or generic frameworks without a concrete, approved need.
+- When an unwanted addition is rejected, remove its implementation, wiring,
+  documentation, and unnecessary tests. Do not retain aliases, compatibility
+  paths, or tests that memorialize the rejected interface.
+- Review the complete diff against the request, not just for code correctness.
+  Every addition must have a purpose within the approved scope. Independent
+  review and passing checks do not authorize extra behavior.
+- Verify observable outcomes with relevant tests and repository checks. Report
+  what changed, which checks ran, and any remaining uncertainty. Do not equate
+  more code, more tests, or more abstractions with better engineering.
+
 ## Design
 
 - **Greenfield:** CPE has no existing users or deployed state. Do not add
@@ -60,6 +85,14 @@ README.md     User workflows and verification instructions
 
 ## Tests
 
+- Test requested behavior, domain invariants, and concrete failure modes. Prefer
+  observable outcomes over implementation details, symbol names, or duplicated
+  implementation logic. For bug fixes, reproduce the failure and verify the
+  corrected behavior.
+- Do not add tests merely asserting that a removed or never-requested API is
+  unavailable. Remove obsolete tests along with the unwanted feature. Negative
+  tests should exercise meaningful supported behavior, such as invalid inputs,
+  cancellation, or failure handling.
 - Do not add tests in the main package. Test behavior in the relevant internal package.
 - Prefer table-driven unit tests with named `t.Run` cases. For the same function
   or method, extend its existing test table instead of creating another top-level

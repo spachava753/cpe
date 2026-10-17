@@ -121,6 +121,7 @@ type mcpRegistry struct {
 	connector   MCPConnector
 	servers     map[MCPServerID]mcpServer
 	connections map[MCPServerID]*mcp.ClientSession
+	tools       map[MCPServerID][]*mcp.Tool
 }
 
 func (m *mcpRegistry) Servers() []MCPServerID {
@@ -179,6 +180,9 @@ func (m *mcpRegistry) Load(ctx context.Context, id MCPServerID) ([]*mcp.Tool, er
 	if err != nil {
 		return nil, err
 	}
+	if tools, ok := m.tools[id]; ok {
+		return tools, nil
+	}
 	var tools []*mcp.Tool
 	for tool, err := range connection.Tools(
 		ctx,
@@ -192,6 +196,7 @@ func (m *mcpRegistry) Load(ctx context.Context, id MCPServerID) ([]*mcp.Tool, er
 			tool,
 		)
 	}
+	m.tools[id] = tools
 	return tools, nil
 }
 

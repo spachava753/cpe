@@ -34,7 +34,7 @@ func acpCmd(root *cobra.Command, filesystem afero.Fs, store *auth.Store, authOpt
 func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store, authOptions auth.LoginOptions, serve serveAgent) {
 	var modelFile, historyPath, modelID, effort string
 	var timeout time.Duration
-	var generations uint
+	var generations, responseRetries uint
 	var skillPaths, pluginPaths []string
 	command := &cobra.Command{
 		Use:   "acp",
@@ -142,11 +142,12 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 						Model:     agent.ModelID(modelID),
 						Reasoning: agent.ReasoningLevel(effort),
 					},
-					SkillPaths:     skillPaths,
-					PluginPaths:    pluginPaths,
-					TurnTimeout:    timeout,
-					MaxGenerations: generations,
-					Instructions:   "You are CPE, a coding assistant. Use bash for simple commands and starlark_repl for structured orchestration. Dyson uses Python-like Starlark, not Python: load modules with load(\"subprocess.star\", \"subprocess\"), load(\"requests.star\", \"requests\"), etc. Globals persist within this live session but are reset on load, resume, or fork. Use print for text and emit for selected MCP content. Discover MCP servers with mcp_servers(), inspect schemas with describe_mcp_tools(server), then call load_mcp_tools(server)[name](arguments). Inspect result.is_error, result.structured_content, and result.content. Failed scripts may already have changed files or executed tools; do not blindly repeat them. Commands are invocation-owned; background processes are not supported. Tools run directly with the user's full machine access; no execution approval is required.",
+					SkillPaths:         skillPaths,
+					PluginPaths:        pluginPaths,
+					TurnTimeout:        timeout,
+					MaxGenerations:     generations,
+					MaxResponseRetries: responseRetries,
+					Instructions:       "You are CPE, a coding assistant. Use bash for simple commands and starlark_repl for structured orchestration. Dyson uses Python-like Starlark, not Python: load modules with load(\"subprocess.star\", \"subprocess\"), load(\"requests.star\", \"requests\"), etc. Globals persist within this live session but are reset on load, resume, or fork. Use print for text and emit for selected MCP content. Installed plugins do not start MCP connections until explicitly requested. List configured server IDs with mcp_servers() without connecting. When the user asks to load a plugin or you need its tools, call load_plugin(name); it returns tool dictionaries keyed by full server ID (plugin:server). ACP-client-supplied tools are already available in mcp_tools[server]. After loading, inspect schemas with describe_mcp_tools(server), then call the returned functions with an arguments dictionary. Repeated loads reuse this session's connections. Inspect result.is_error, result.structured_content, and result.content. Failed scripts may already have changed files or executed tools; do not blindly repeat them. Commands are invocation-owned; background processes are not supported. Tools run directly with the user's full machine access; no execution approval is required.",
 				},
 				agent.Dependencies{
 					Filesystem:     filesystem,
@@ -156,6 +157,7 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 					MCP:            agent.ConnectMCP,
 					History:        history,
 					Traces:         otel.GetTracerProvider(),
+					Stderr:         command.ErrOrStderr(),
 				},
 			)
 		},
@@ -188,13 +190,19 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 		&timeout,
 		"turn-timeout",
 		10*time.Minute,
-		"Maximum duration of a prompt turn",
+		"Maximum duration of session setup or a prompt turn",
 	)
 	command.Flags().UintVar(
 		&generations,
 		"max-generations",
 		32,
-		"Maximum model requests in a turn",
+		"Maximum completed model generations in a turn",
+	)
+	command.Flags().UintVar(
+		&responseRetries,
+		"response-retries",
+		2,
+		"Maximum retries of one interrupted model response (zero disables)",
 	)
 	command.Flags().StringSliceVar(
 		&skillPaths,

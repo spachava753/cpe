@@ -3,12 +3,17 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/terminaltext"
 )
 
 // SessionID identifies a saved conversation and its connection-owned live state.
@@ -68,8 +73,9 @@ func newSession(setup context.Context, lifetime context.Context, spec sessionSpe
 		connector:   deps.MCP,
 		servers:     servers,
 		connections: make(map[MCPServerID]*mcp.ClientSession),
+		tools:       make(map[MCPServerID][]*mcp.Tool),
 	}
-	// ACP-provided servers are connected eagerly, plugin servers on demand.
+	// Client-supplied servers are explicit session configuration; installed plugins stay idle.
 	for id := range spec.servers {
 		if _, err := registry.Load(
 			setup,
@@ -84,9 +90,11 @@ func newSession(setup context.Context, lifetime context.Context, spec sessionSpe
 	host, err := deps.Hosts(
 		setup,
 		HostConfig{
-			Session: spec.id,
-			Cwd:     spec.cwd,
-			MCP:     registry,
+			Session:       spec.id,
+			Cwd:           spec.cwd,
+			MCP:           registry,
+			Plugins:       catalog.pluginServers(),
+			ClientServers: slices.Sorted(maps.Keys(spec.servers)),
 		},
 	)
 	if err != nil {
@@ -107,6 +115,21 @@ func newSession(setup context.Context, lifetime context.Context, spec sessionSpe
 		runtime:  host,
 		mcp:      registry,
 	}, nil
+}
+
+func (s *session) announce(ctx context.Context) error {
+	for _, warning := range s.catalog.warnings {
+		// Diagnostic output failure must not turn a warning into a session failure.
+		_, _ = fmt.Fprintf(
+			s.deps.Stderr,
+			"cpe: plugin warning: %s\n",
+			terminaltext.Sanitize(warning.Error()),
+		)
+	}
+	return s.client.update(
+		ctx,
+		acp.AvailableCommandsUpdateSessionUpdate(s.catalog.available()),
+	)
 }
 
 // configure changes only idle sessions; a model change leaves history and tools intact.

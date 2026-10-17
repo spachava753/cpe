@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"sync"
@@ -56,7 +57,7 @@ func (c *testClient) RequestPermission(context.Context, *acp.RequestPermissionRe
 
 type agentFixture struct {
 	client         *acp.Client
-	store          *fileSessionStore
+	store          SessionStore
 	cancel         context.CancelFunc
 	done           chan error
 	disconnect     func() error
@@ -64,7 +65,7 @@ type agentFixture struct {
 	notifications  *testClient
 }
 
-func serverFixture(t *testing.T, generator GeneratorFactory) agentFixture {
+func serverFixture(t *testing.T, generator GeneratorFactory, configure ...func(*Config, *Dependencies, *acp.InitializeRequest)) agentFixture {
 	t.Helper()
 	filesystem := afero.NewMemMapFs()
 	if err := filesystem.MkdirAll(
@@ -102,9 +103,10 @@ func serverFixture(t *testing.T, generator GeneratorFactory) agentFixture {
 		Initial: SessionOptions{
 			Model: "one",
 		},
-		Instructions:   "test agent",
-		TurnTimeout:    5 * time.Second,
-		MaxGenerations: 4,
+		Instructions:       "test agent",
+		TurnTimeout:        5 * time.Second,
+		MaxGenerations:     4,
+		MaxResponseRetries: 1,
 	}
 	commandStarted := make(
 		chan struct{},
@@ -134,6 +136,17 @@ func serverFixture(t *testing.T, generator GeneratorFactory) agentFixture {
 		MCP:     ConnectMCP,
 		History: store,
 		Traces:  noop.NewTracerProvider(),
+		Stderr:  io.Discard,
+	}
+	initialize := &acp.InitializeRequest{
+		ProtocolVersion: 1,
+	}
+	for _, option := range configure {
+		option(
+			&config,
+			&deps,
+			initialize,
+		)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	a, b := acp.NewInMemoryTransports()
@@ -175,16 +188,14 @@ func serverFixture(t *testing.T, generator GeneratorFactory) agentFixture {
 	})
 	_, err = client.Initialize(
 		t.Context(),
-		&acp.InitializeRequest{
-			ProtocolVersion: 1,
-		},
+		initialize,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return agentFixture{
 		client:         client,
-		store:          store,
+		store:          deps.History,
 		cancel:         cancel,
 		done:           done,
 		disconnect:     transport.connection.Close,

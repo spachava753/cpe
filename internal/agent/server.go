@@ -22,6 +22,7 @@ type Server struct {
 	lifecycle   sync.Mutex
 	mu          sync.Mutex
 	initialized bool
+	notices     bool
 	closed      bool
 	sessions    map[SessionID]*session
 }
@@ -121,7 +122,10 @@ func (s *Server) openSession(ctx context.Context, spec sessionSpec, record Sessi
 	if exists {
 		return nil, errors.New("session is already open")
 	}
-	setup, cancel := context.WithCancel(ctx)
+	setup, cancel := context.WithTimeout(
+		ctx,
+		s.config.TurnTimeout,
+	)
 	defer cancel()
 	//nolint:contextcheck // Setup must stop on either request or connection cancellation.
 	stop := context.AfterFunc(
@@ -137,8 +141,9 @@ func (s *Server) openSession(ctx context.Context, spec sessionSpec, record Sessi
 		s.config,
 		s.deps,
 		&sessionClient{
-			ac: s.ac,
-			id: spec.id,
+			ac:      s.ac,
+			id:      spec.id,
+			notices: s.notices,
 		},
 	)
 	if err != nil {

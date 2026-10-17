@@ -73,13 +73,7 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (acp.StopReas
 			string(s.record.Info.ID),
 		),
 	)
-	message, err := s.catalog.expand(
-		s.deps.Filesystem,
-		message,
-	)
-	if err != nil {
-		return "", err
-	}
+	message = s.catalog.expand(message)
 	dialog = append(
 		dialog,
 		message,
@@ -105,15 +99,18 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (acp.StopReas
 		streamed:       make(map[uint]bool),
 	}
 	loop, err := gaiagent.New(gaiagent.Config{
-		Generator:        generator,
+		Generator: &responseGenerator{
+			source:  generator,
+			session: s,
+			hooks:   hooks,
+		},
 		Model:            model.ID,
-		Instructions:     gai.SystemMessage(gai.TextBlock(s.config.Instructions)),
+		Instructions:     gai.SystemMessage(gai.TextBlock(s.config.Instructions + s.catalog.instructions())),
 		Tools:            s.runtime.Tools(),
 		BeforeGeneration: hooks,
 		AfterGeneration:  hooks,
 		BeforeTool:       hooks,
 		AfterTool:        hooks,
-		GenerationChunk:  hooks,
 	})
 	if err != nil {
 		return "", err
@@ -214,6 +211,8 @@ type turnHooks struct {
 	completed      map[string]gai.Message
 	pending        map[string]bool
 	streamed       map[uint]bool
+	generation     uint
+	dialog         gai.Dialog
 }
 
 // Prepare each provider request without altering canonical saved history.
@@ -223,6 +222,8 @@ func (h *turnHooks) BeforeGeneration(_ context.Context, event gaiagent.BeforeGen
 			StopReason: "generation_limit",
 		}, nil
 	}
+	h.generation = event.Generation
+	h.dialog = event.Request.Dialog
 	request := event.Request
 	request.Dialog = nil
 	for _, message := range event.Request.Dialog {
