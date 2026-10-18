@@ -177,9 +177,11 @@ supported yet.
 ### Compaction
 
 Use `/compact` to ask the model to summarize the conversation now. The model
-calls the direct `compact` tool with one required string field, `summary`;
-it can also choose to call the tool during a task. `/compact` is reserved and
-takes precedence over a skill with that name.
+calls `compact(summary)` inside `starlark_repl`, using Starlark string construction
+and scripting to build the summary. The builtin takes one nonempty string and
+returns `None`; the last accepted call supplies the summary if called repeatedly.
+The model can also compact during a task. `/compact` is reserved and takes
+precedence over a skill with that name.
 
 Summary-writing guidance is included in the system instructions from the first
 request, rather than injected as a user message. The default guidance covers
@@ -188,11 +190,16 @@ and next steps. `~/.cpe/COMPACTION.md` replaces this guidance independently of
 `SYSTEM.md` and `APPEND-SYSTEM.md`. It is read at startup; an empty file removes
 the default guidance, and read errors other than a missing file stop startup.
 
-Compaction saves the summary without deleting the full transcript. Later model
-requests use the summary plus the entire assistant/tool batch containing the
-compact call and all subsequent messages. Keeping that batch intact preserves
-tool-call/result pairing. The summary is checkpointed before the next model
-request, or at turn end if the turn stops. Loading, resuming, and forking retain
+Compaction saves the summary without deleting the full transcript. The next model
+request contains only the system instructions and summary. All tool calls in
+the current response finish normally before compaction takes effect, including
+bash calls alongside the Starlark script. The entire response and its tool
+results are dropped from working context, including output produced after
+`compact` runs. Any information needed from those results must be captured in
+the summary by the script. Subsequent messages accumulate after that summary.
+The summary is checkpointed before the next model request, or after outstanding
+calls are settled at turn end if the turn stops. A later script error does not
+undo an accepted summary. Loading, resuming, and forking retain
 the compacted working context; ACP transcript replay still shows the full history.
 Compaction does not reset live Starlark globals or rerun tools.
 

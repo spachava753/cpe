@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/spachava753/acp-sdk/acp"
+	"github.com/spachava753/dyson"
 	"github.com/spachava753/gai"
 	"github.com/spachava753/gai/agent/agenttest"
 
@@ -55,6 +57,7 @@ func TestCompaction(t *testing.T) {
 		"load",
 		"resume",
 		"repeat compaction",
+		"script failure after compact",
 	} {
 		t.Run(
 			operation,
@@ -68,12 +71,16 @@ func TestCompaction(t *testing.T) {
 						"code": "counter = 1",
 					},
 				)
+				code := "save_summary = compact\nsave_summary('initial draft')\nparts = ['Goal: update CPE.', 'Next: finish the requested work.']\nresult = save_summary(summary=' '.join(parts))\nif result != None:\n    fail('compact must return None')"
+				if operation == "script failure after compact" {
+					code += "\nfail('later failure')"
+				}
 				compact := compactionCall(
 					t,
 					"compact-first",
-					"compact",
+					"starlark_repl",
 					map[string]any{
-						"summary": summary,
+						"code": code,
 					},
 				)
 				increment := compactionCall(
@@ -96,9 +103,9 @@ func TestCompaction(t *testing.T) {
 					read = compactionCall(
 						t,
 						"compact-second",
-						"compact",
+						"starlark_repl",
 						map[string]any{
-							"summary": "Updated goal and next steps.",
+							"code": "save_summary('Updated goal and next steps.')",
 						},
 					)
 				}
@@ -113,16 +120,7 @@ func TestCompaction(t *testing.T) {
 							) {
 								return errors.New("guidance is missing from the initial system instructions")
 							}
-							for _, tool := range request.Tools {
-								if tool.Name == "compact" {
-									schema := tool.InputSchema
-									if len(schema.Properties) != 1 || schema.Properties["summary"].Type != "string" || len(schema.Required) != 1 || schema.Required[0] != "summary" {
-										return errors.New("compact must take exactly one required summary string")
-									}
-									return nil
-								}
-							}
-							return errors.New("compact tool unavailable from the first request")
+							return nil
 						},
 						Response: compactionResponse(setup),
 					},
@@ -131,7 +129,7 @@ func TestCompaction(t *testing.T) {
 					},
 					agenttest.GenerateStep{
 						Check: func(request gai.GenerationRequest) error {
-							if request.Dialog[len(request.Dialog)-1].Blocks[0].Content.String() != "Compact the conversation now by calling the compact tool." {
+							if request.Dialog[len(request.Dialog)-1].Blocks[0].Content.String() != "Compact the conversation now by calling compact(summary) in starlark_repl." {
 								return errors.New("slash command did not request compaction")
 							}
 							return nil
@@ -143,9 +141,9 @@ func TestCompaction(t *testing.T) {
 					},
 					agenttest.GenerateStep{
 						Check: func(request gai.GenerationRequest) error {
-							if len(request.Dialog) != 4 || request.Dialog[0].Blocks[0].Content.String() != "Summary of earlier conversation:\n\n"+summary || len(request.Dialog[1].Blocks) != 2 || request.Dialog[2].Blocks[0].ID != "compact-first" || request.Dialog[3].Blocks[0].ID != "increment" || request.Dialog[3].Blocks[0].Content.String() != "2\n" {
+							if len(request.Dialog) != 1 || request.Dialog[0].Role != gai.User || request.Dialog[0].Blocks[0].Content.String() != "Summary of earlier conversation:\n\n"+summary {
 								return fmt.Errorf(
-									"compaction lost context, tool pairing, or runtime state: %#v",
+									"next context must contain only the final scripted summary: %#v",
 									request.Dialog,
 								)
 							}
@@ -153,7 +151,7 @@ func TestCompaction(t *testing.T) {
 								context.Background(),
 								SessionID(id),
 							)
-							if err != nil || persisted.Compaction == nil || persisted.Compaction.Summary != summary || persisted.Compaction.AfterMessages != 5 || len(persisted.Dialog) != 8 || persisted.Dialog[0].Blocks[0].Content.String() != "old task detail" {
+							if err != nil || persisted.Compaction == nil || persisted.Compaction.Summary != summary || persisted.Compaction.AfterMessages != 8 || len(persisted.Dialog) != 8 || persisted.Dialog[0].Blocks[0].Content.String() != "old task detail" || persisted.Dialog[7].Blocks[0].Content.String() != "2\n" || persisted.Dialog[6].ToolResultError != (operation == "script failure after compact") {
 								return fmt.Errorf(
 									"summary and full transcript not saved before next generation: %#v, %v",
 									persisted,
@@ -166,7 +164,7 @@ func TestCompaction(t *testing.T) {
 					},
 					agenttest.GenerateStep{
 						Check: func(request gai.GenerationRequest) error {
-							if len(request.Dialog) != 6 || request.Dialog[0].Blocks[0].Content.String() != "Summary of earlier conversation:\n\n"+summary {
+							if len(request.Dialog) != 3 || request.Dialog[0].Blocks[0].Content.String() != "Summary of earlier conversation:\n\n"+summary {
 								return errors.New("later turn lost compacted context")
 							}
 							if operation == "model switch" && request.Model != "two" {
@@ -181,7 +179,7 @@ func TestCompaction(t *testing.T) {
 							last := request.Dialog[len(request.Dialog)-1]
 							switch operation {
 							case "repeat compaction":
-								if len(request.Dialog) != 3 || request.Dialog[0].Blocks[0].Content.String() != "Summary of earlier conversation:\n\nUpdated goal and next steps." {
+								if len(request.Dialog) != 1 || request.Dialog[0].Blocks[0].Content.String() != "Summary of earlier conversation:\n\nUpdated goal and next steps." {
 									return errors.New("second compaction did not replace the earlier working context")
 								}
 							case "load", "resume", "fork":
@@ -324,6 +322,137 @@ func TestCompaction(t *testing.T) {
 	}
 }
 
+func TestCompactionWithBash(t *testing.T) {
+	for _, order := range []string{
+		"bash before script",
+		"bash after script",
+	} {
+		t.Run(
+			order,
+			func(t *testing.T) {
+				script := compactionCall(
+					t,
+					"script",
+					"starlark_repl",
+					map[string]any{
+						"code": "load('subprocess.star', 'subprocess')\nresult = subprocess.run(['capture'], capture_output=True)\ncompact(summary='Result: ' + result.stdout.decode())\nprint('script output after compact')",
+					},
+				)
+				bash := compactionCall(
+					t,
+					"bash",
+					"bash",
+					map[string]any{
+						"command": "effect",
+					},
+				)
+				calls := []gai.Block{
+					script,
+					bash,
+					gai.TextBlock("assistant text in the compacted response"),
+				}
+				if order == "bash before script" {
+					calls[0], calls[1] = calls[1], calls[0]
+				}
+				var effects atomic.Int32
+				var fixture agentFixture
+				var id acp.SessionId
+				generator := agenttest.NewScriptedGenerator(
+					agenttest.GenerateStep{
+						Response: compactionResponse(calls...),
+					},
+					agenttest.GenerateStep{
+						Check: func(request gai.GenerationRequest) error {
+							if effects.Load() != 2 {
+								return errors.New("generation resumed before all command effects finished")
+							}
+							if len(request.Dialog) != 1 || request.Dialog[0].Role != gai.User || len(request.Dialog[0].Blocks) != 1 || request.Dialog[0].Blocks[0].Content.String() != "Summary of earlier conversation:\n\nResult: captured" {
+								return errors.New("working context must contain only the summary built from command output")
+							}
+							record, err := fixture.store.Load(
+								context.Background(),
+								SessionID(id),
+							)
+							if err != nil {
+								return err
+							}
+							if record.Compaction == nil || record.Compaction.AfterMessages != 4 || len(record.Dialog) != 4 {
+								return errors.New("full completed response was not checkpointed before generation")
+							}
+							var saved strings.Builder
+							for _, message := range record.Dialog {
+								if message.ToolResultError {
+									return errors.New("a command failed instead of finishing normally")
+								}
+								for _, block := range message.Blocks {
+									saved.WriteString(block.Content.String())
+								}
+							}
+							for _, text := range []string{
+								"independent bash output",
+								"script output after compact",
+								"assistant text in the compacted response",
+							} {
+								if !strings.Contains(
+									saved.String(),
+									text,
+								) {
+									return fmt.Errorf(
+										"full transcript lost %q",
+										text,
+									)
+								}
+							}
+							return nil
+						},
+						Response: compactionResponse(gai.TextBlock("done")),
+					},
+				)
+				fixture = serverFixture(
+					t,
+					func(context.Context, models.Model, ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+						return generator, gai.GenerationOptions{}, nil
+					},
+					func(_ *Config, deps *Dependencies, _ *acp.InitializeRequest) {
+						deps.Hosts = func(ctx context.Context, config HostConfig) (Host, error) {
+							return newHost(
+								ctx,
+								config,
+								dyson.StdlibConfig{
+									FS: deps.Filesystem,
+									CommandRunner: runnerFunc(func(_ context.Context, command dyson.Command) (dyson.CommandResult, error) {
+										effects.Add(1)
+										output := "captured"
+										if command.Args[0] == "bash" {
+											output = "independent bash output"
+										}
+										return dyson.CommandResult{
+											Stdout: []byte(output),
+										}, nil
+									}),
+								},
+							)
+						}
+					},
+				)
+				id = openFixtureSession(
+					t,
+					fixture.client,
+				)
+				promptFixture(
+					t,
+					fixture.client,
+					id,
+					"run the commands and compact",
+				)
+				if len(generator.Requests()) != 2 || effects.Load() != 2 {
+					t.Fatal("compaction repeated model requests or command effects")
+				}
+			},
+		)
+	}
+}
+
 // Reject only compaction checkpoints, allowing session setup and older history to persist.
 type rejectCompactionStore struct {
 	SessionStore
@@ -342,59 +471,44 @@ func (s rejectCompactionStore) Save(ctx context.Context, record SessionRecord) e
 func TestCompactionFailures(t *testing.T) {
 	for _, test := range []struct {
 		name              string
-		arguments         map[string]any
+		code              string
 		checkpointFailure bool
 		cancelBatch       bool
 		generationLimit   bool
 	}{
 		{
 			name: "empty summary",
-			arguments: map[string]any{
-				"summary": "",
-			},
+			code: "compact('')",
 		},
 		{
 			name: "whitespace summary",
-			arguments: map[string]any{
-				"summary": " \n\t",
-			},
+			code: "compact(' \\n\\t')",
 		},
 		{
 			name: "wrong type",
-			arguments: map[string]any{
-				"summary": 1,
-			},
+			code: "compact(1)",
 		},
 		{
-			name:      "missing summary",
-			arguments: map[string]any{},
+			name: "missing summary",
+			code: "compact()",
 		},
 		{
 			name: "extra argument",
-			arguments: map[string]any{
-				"summary": "Saved goal.",
-				"extra":   true,
-			},
+			code: "compact('Saved goal.', extra=True)",
 		},
 		{
-			name: "checkpoint failure prevents following generation",
-			arguments: map[string]any{
-				"summary": "Saved goal.",
-			},
+			name:              "checkpoint failure prevents following generation",
+			code:              "compact('Saved goal.')",
 			checkpointFailure: true,
 		},
 		{
-			name: "cancellation in a later tool preserves accepted summary",
-			arguments: map[string]any{
-				"summary": "Saved goal.",
-			},
+			name:        "cancellation in a later tool preserves accepted summary",
+			code:        "compact('Saved goal.')",
 			cancelBatch: true,
 		},
 		{
-			name: "generation limit preserves accepted summary",
-			arguments: map[string]any{
-				"summary": "Saved goal.",
-			},
+			name:            "generation limit preserves accepted summary",
+			code:            "compact('Saved goal.')",
 			generationLimit: true,
 		},
 	} {
@@ -405,8 +519,10 @@ func TestCompactionFailures(t *testing.T) {
 					compactionCall(
 						t,
 						"compact",
-						"compact",
-						test.arguments,
+						"starlark_repl",
+						map[string]any{
+							"code": test.code,
+						},
 					),
 				}
 				if test.cancelBatch {
@@ -539,7 +655,7 @@ func TestCompactionFailures(t *testing.T) {
 					)
 				}
 				if test.cancelBatch || test.generationLimit {
-					if record.Compaction == nil || record.Compaction.Summary != "Saved goal." || record.Compaction.AfterMessages != 3 {
+					if record.Compaction == nil || record.Compaction.Summary != "Saved goal." || record.Compaction.AfterMessages != len(record.Dialog) {
 						t.Fatal("accepted summary not persisted at turn end")
 					}
 				} else if record.Compaction != nil {

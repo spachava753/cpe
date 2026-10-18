@@ -34,9 +34,9 @@ func TestUsageReporting(t *testing.T) {
 			func(t *testing.T) {
 				call, err := gai.ToolCallBlock(
 					"compact",
-					"compact",
+					"starlark_repl",
 					map[string]any{
-						"summary": "Continue the current task.",
+						"code": "compact('Continue the current task.')",
 					},
 				)
 				if err != nil {
@@ -648,9 +648,9 @@ func TestUsageStopReasons(t *testing.T) {
 				if test.finish == gai.ToolUse {
 					call, err := gai.ToolCallBlock(
 						"compact",
-						"compact",
+						"starlark_repl",
 						map[string]any{
-							"summary": "Current task and next steps.",
+							"code": "compact('Current task and next steps.')",
 						},
 					)
 					if err != nil {

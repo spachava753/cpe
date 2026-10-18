@@ -95,6 +95,10 @@ func newHost(ctx context.Context, config HostConfig, stdlib dyson.StdlibConfig) 
 	}
 	stdlib.CommandRunner = h
 	globals := starlark.StringDict{
+		compactName: starlark.NewBuiltin(
+			compactName,
+			compact,
+		),
 		"emit": starlark.NewBuiltin(
 			"emit",
 			h.emit,
@@ -144,7 +148,7 @@ func newHost(ctx context.Context, config HostConfig, stdlib dyson.StdlibConfig) 
 		{
 			Definition: gai.Tool{
 				Name:        starlarkToolName,
-				Description: "Execute Starlark in a persistent Dyson session. Discover MCP builtins with search_tools, describe_tool, and describe_namespace; call them with an arguments dictionary. Only print/emit reach the model. Errors do not undo side effects.",
+				Description: "Execute Starlark in a persistent Dyson session. Use print/emit for output and compact(summary) to replace working context. Discover MCP tools with search_tools, describe_tool, and describe_namespace. Errors do not undo side effects.",
 				InputSchema: stringSchema("code"),
 			},
 			Handler: gaiagent.ToolHandlerFunc(h.execute),

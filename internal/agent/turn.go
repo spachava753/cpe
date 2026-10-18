@@ -101,18 +101,20 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptR
 		pending:        make(map[string]bool),
 		streamed:       make(map[uint]bool),
 	}
+	ctx = context.WithValue(
+		ctx,
+		compactionKey{},
+		&hooks.compactionRequest,
+	)
 	loop, err := gaiagent.New(gaiagent.Config{
 		Generator: &responseGenerator{
 			source:  generator,
 			session: s,
 			hooks:   hooks,
 		},
-		Model:        model.ID,
-		Instructions: gai.SystemMessage(gai.TextBlock(s.config.Instructions + s.projectInstructions + s.catalog.instructions() + s.runtime.Instructions())),
-		Tools: append(
-			slices.Clone(s.runtime.Tools()),
-			hooks.compactionTool(),
-		),
+		Model:            model.ID,
+		Instructions:     gai.SystemMessage(gai.TextBlock(s.config.Instructions + s.projectInstructions + s.catalog.instructions() + s.runtime.Instructions())),
+		Tools:            s.runtime.Tools(),
 		BeforeGeneration: hooks,
 		AfterGeneration:  hooks,
 		BeforeTool:       hooks,
@@ -154,8 +156,8 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptR
 	s.record.Dialog = dialog
 	s.record.Info.UpdatedAt = time.Now().UTC()
 	checkpoint := s.record
-	if hooks.pendingCompaction != nil {
-		checkpoint.Compaction = hooks.pendingCompaction
+	if pending := hooks.compactionRequest.checkpoint(len(dialog)); pending != nil {
+		checkpoint.Compaction = pending
 	}
 	s.mu.Unlock()
 	saveErr := s.deps.History.Save(
@@ -224,7 +226,7 @@ type turnHooks struct {
 	session           *session
 	usage             TokenUsage
 	compaction        *Compaction
-	pendingCompaction *Compaction
+	compactionRequest compactionRequest
 	client            *sessionClient
 	model             models.Model
 	modelID           ModelID
@@ -240,7 +242,7 @@ type turnHooks struct {
 func (h *turnHooks) BeforeGeneration(ctx context.Context, event gaiagent.BeforeGenerationRequest) (gaiagent.BeforeGenerationDecision, error) {
 	h.generation = event.Generation
 	h.dialog = event.Request.Dialog
-	if h.pendingCompaction != nil {
+	if h.compactionRequest.summary != nil {
 		if err := h.checkpointCompaction(ctx); err != nil {
 			return gaiagent.BeforeGenerationDecision{}, err
 		}

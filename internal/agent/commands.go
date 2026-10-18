@@ -147,12 +147,12 @@ func (c commandCatalog) available() []acp.AvailableCommand {
 	commands = append(
 		commands,
 		acp.AvailableCommand{
-			Name:        compactToolName,
+			Name:        compactName,
 			Description: "Ask the model to compact the conversation.",
 		},
 	)
 	for name, skill := range c.commands {
-		if name == compactToolName {
+		if name == compactName {
 			continue
 		}
 		commands = append(
@@ -193,8 +193,8 @@ func (c commandCatalog) expand(message gai.Message) gai.Message {
 		arguments = strings.TrimSpace(name[index:])
 		name = name[:index]
 	}
-	if name == compactToolName {
-		text := "Compact the conversation now by calling the compact tool."
+	if name == compactName {
+		text := "Compact the conversation now by calling compact(summary) in starlark_repl."
 		if arguments != "" {
 			text += "\n\nUser request:\n" + arguments
 		}
@@ -224,7 +224,7 @@ func (c commandCatalog) instructions() string {
 		text.WriteString("\n\nAvailable skills: read a relevant SKILL.md with bash or starlark_repl when needed. Bundled resources are relative to the skill file.\n")
 	}
 	for _, command := range c.available() {
-		if command.Name == compactToolName {
+		if command.Name == compactName {
 			continue
 		}
 		skill := c.commands[command.Name]

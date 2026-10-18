@@ -7,52 +7,61 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spachava753/dyson"
 	"github.com/spachava753/gai"
-	gaiagent "github.com/spachava753/gai/agent"
+	"github.com/spachava753/starlarkx/starlark"
 )
 
-const compactToolName = "compact"
+const compactName = "compact"
+
+type compactionKey struct{}
+
+type compactionRequest struct {
+	summary *string
+}
 
 // Compaction replaces the first AfterMessages transcript messages in model context.
-// The original transcript remains intact, including the compact call and its result.
+// The original transcript remains intact.
 type Compaction struct {
 	Summary       string
 	AfterMessages int
 }
 
-func (h *turnHooks) compactionTool() gaiagent.Tool {
-	return gaiagent.Tool{
-		Definition: gai.Tool{
-			Name:        compactToolName,
-			Description: "Compact earlier conversation context into a summary.",
-			InputSchema: stringSchema("summary"),
-		},
-		Handler: gaiagent.ToolHandlerFunc(h.compact),
+func compact(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var summary string
+	if err := starlark.UnpackArgs(
+		fn.Name(),
+		args,
+		kwargs,
+		"summary",
+		&summary,
+	); err != nil {
+		return nil, err
 	}
+	if strings.TrimSpace(summary) == "" {
+		return nil, errors.New("summary must be a nonempty string")
+	}
+	ctx := dyson.EvaluationContext(thread)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	request, ok := ctx.Value(compactionKey{}).(*compactionRequest)
+	if !ok {
+		return nil, errors.New("compact requires an active prompt")
+	}
+	request.summary = new(summary)
+	return starlark.None, nil
 }
 
-func (h *turnHooks) compact(ctx context.Context, request gaiagent.ToolRequest) (gai.Message, error) {
-	if err := ctx.Err(); err != nil {
-		return gai.Message{}, err
+// Resolve the boundary only after the response's calls have finished or been settled.
+func (r compactionRequest) checkpoint(afterMessages int) *Compaction {
+	if r.summary == nil {
+		return nil
 	}
-	summary, ok := request.Call.Parameters["summary"].(string)
-	if !ok || strings.TrimSpace(summary) == "" {
-		result := gai.ToolResultMessage(
-			request.Block.ID,
-			gai.TextBlock("summary must be a nonempty string"),
-		)
-		result.ToolResultError = true
-		return result, nil
+	return &Compaction{
+		Summary:       *r.summary,
+		AfterMessages: afterMessages,
 	}
-	// Keep the current response's whole tool batch, including results not yet available.
-	h.pendingCompaction = &Compaction{
-		Summary:       summary,
-		AfterMessages: len(h.dialog),
-	}
-	return gai.ToolResultMessage(
-		request.Block.ID,
-		gai.TextBlock("Summary accepted for compaction."),
-	), nil
 }
 
 func (h *turnHooks) checkpointCompaction(ctx context.Context) error {
@@ -60,7 +69,7 @@ func (h *turnHooks) checkpointCompaction(ctx context.Context) error {
 	record := h.session.record
 	h.session.mu.Unlock()
 	record.Dialog = slices.Clone(h.dialog)
-	record.Compaction = h.pendingCompaction
+	record.Compaction = h.compactionRequest.checkpoint(len(h.dialog))
 	record.Info.UpdatedAt = time.Now().UTC()
 	if err := h.session.deps.History.Save(
 		ctx,
@@ -71,8 +80,8 @@ func (h *turnHooks) checkpointCompaction(ctx context.Context) error {
 	h.session.mu.Lock()
 	h.session.record = record
 	h.session.mu.Unlock()
-	h.compaction = h.pendingCompaction
-	h.pendingCompaction = nil
+	h.compaction = record.Compaction
+	h.compactionRequest.summary = nil
 	return nil
 }
 
