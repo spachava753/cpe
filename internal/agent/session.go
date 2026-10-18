@@ -24,17 +24,18 @@ type sessionSpec struct {
 }
 
 type session struct {
-	mu       sync.Mutex
-	closed   bool
-	active   *turn
-	lifetime context.Context
-	config   Config
-	deps     Dependencies
-	client   *sessionClient
-	record   SessionRecord
-	catalog  commandCatalog
-	runtime  Host
-	mcp      *mcpRegistry
+	mu                  sync.Mutex
+	closed              bool
+	active              *turn
+	lifetime            context.Context
+	config              Config
+	deps                Dependencies
+	client              *sessionClient
+	record              SessionRecord
+	catalog             commandCatalog
+	projectInstructions string
+	runtime             Host
+	mcp                 *mcpRegistry
 }
 
 func newSession(setup context.Context, lifetime context.Context, spec sessionSpec, record SessionRecord, config Config, deps Dependencies, client *sessionClient) (*session, error) {
@@ -56,6 +57,14 @@ func newSession(setup context.Context, lifetime context.Context, spec sessionSpe
 	}
 	if !info.IsDir() {
 		return nil, errors.New("session cwd must be a directory")
+	}
+	projectInstructions, err := loadProjectInstructions(
+		setup,
+		deps.Filesystem,
+		spec.cwd,
+	)
+	if err != nil {
+		return nil, err
 	}
 	catalog, err := loadCommands(
 		setup,
@@ -97,14 +106,15 @@ func newSession(setup context.Context, lifetime context.Context, spec sessionSpe
 	record.Info.ID = spec.id
 	record.Info.Cwd = spec.cwd
 	return &session{
-		lifetime: lifetime,
-		config:   config,
-		deps:     deps,
-		client:   client,
-		record:   record,
-		catalog:  catalog,
-		runtime:  host,
-		mcp:      registry,
+		lifetime:            lifetime,
+		config:              config,
+		deps:                deps,
+		client:              client,
+		record:              record,
+		catalog:             catalog,
+		projectInstructions: projectInstructions,
+		runtime:             host,
+		mcp:                 registry,
 	}, nil
 }
 

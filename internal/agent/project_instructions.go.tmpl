@@ -1,0 +1,18 @@
+{{- if .Root}}
+## Project instructions: {{printf "%q" .Root}}
+
+These instructions apply throughout the session working directory.
+
+{{.Content}}
+{{- end}}
+{{- if .Nested}}
+
+## Nested project instructions
+
+Before working on files, read the applicable AGENTS.md files below using bash or starlark_repl.
+Each applies to its directory and descendants; more specific instructions take precedence.
+Read them from outermost to innermost.
+
+{{range .Nested}}- {{printf "%q" .}}
+{{end}}
+{{- end}}

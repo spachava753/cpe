@@ -68,9 +68,24 @@ shown here; `APPEND-SYSTEM.md` uses a hyphen.
 Files are read when `cpe acp` starts; restart the process after editing them.
 Missing files are optional; other read errors stop startup. An empty `SYSTEM.md`
 selects an empty base prompt, while an empty `APPEND-SYSTEM.md` adds nothing.
-Compaction guidance, skill metadata, and MCP namespace summaries are supplied
-separately with the system instructions, even with a custom base prompt.
-`AGENTS.md` loading is not implemented yet.
+Compaction guidance, project instructions, skill metadata, and MCP namespace
+summaries are supplied separately with the system instructions, even with a
+custom base prompt.
+
+The ACP session's working directory is the project root. CPE includes that
+directory's `AGENTS.md` contents in the system prompt and recursively lists the
+paths of nested `AGENTS.md` files without reading their bodies. The model is
+instructed to read applicable nested files before working in those directories,
+from outermost to innermost; more specific instructions take precedence.
+
+Project instructions and their index are loaded when a session is created,
+loaded, resumed, or forked. They remain unchanged across turns in that live
+session. Discovery stays beneath the session working directory: it does not
+search ancestor directories or infer a Git root. It skips `.git` directories
+and does not traverse directory symlinks. Regular files and file symlinks named
+`AGENTS.md` are included, including those in hidden or Git-ignored directories.
+Missing instruction files are optional; read or directory-scan errors fail
+session setup rather than silently dropping instructions.
 
 ### Host tools
 

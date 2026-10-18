@@ -108,7 +108,7 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptR
 			hooks:   hooks,
 		},
 		Model:        model.ID,
-		Instructions: gai.SystemMessage(gai.TextBlock(s.config.Instructions + s.catalog.instructions() + s.runtime.Instructions())),
+		Instructions: gai.SystemMessage(gai.TextBlock(s.config.Instructions + s.projectInstructions + s.catalog.instructions() + s.runtime.Instructions())),
 		Tools: append(
 			slices.Clone(s.runtime.Tools()),
 			hooks.compactionTool(),
