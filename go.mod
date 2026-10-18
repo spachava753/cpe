@@ -12,7 +12,7 @@ require (
 	github.com/google/jsonschema-go v0.4.3
 	github.com/goyek/goyek/v2 v2.3.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	github.com/spachava753/acp-sdk v0.4.1-0.20260927221852-f735eb732467
+	github.com/spachava753/acp-sdk v0.5.0
 	github.com/spachava753/dyson v0.0.0-20260921004927-b790356d9233
 	github.com/spachava753/starlarkx v0.0.0-20260911120245-40a94bc8c78e
 	golang.org/x/net v0.58.0

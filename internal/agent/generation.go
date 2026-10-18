@@ -2,11 +2,14 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"iter"
+	"maps"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/spachava753/gai"
@@ -27,14 +30,23 @@ func (g *responseGenerator) Generate(ctx context.Context, request gai.Generation
 			return gai.Response{}, err
 		}
 		g.hooks.streamed[g.hooks.generation] = false
-		response, partial, deliveryErr, err := g.generate(
+		response, partial, metadata, deliveryErr, err := g.generate(
 			ctx,
 			request,
 		)
+		usage, usageErr := parseTokenUsage(metadata)
+		if usageErr == nil {
+			usageErr = g.session.recordUsage(usage)
+		}
+		err = errors.Join(
+			err,
+			usageErr,
+		)
 		if err == nil {
+			g.hooks.usage = usage
 			return response, nil
 		}
-		retry := ctx.Err() == nil && deliveryErr == nil && attempt < g.session.config.MaxResponseRetries && retryResponse(
+		retry := usageErr == nil && ctx.Err() == nil && deliveryErr == nil && attempt < g.session.config.MaxResponseRetries && retryResponse(
 			err,
 			len(partial.Blocks) != 0,
 		)
@@ -104,7 +116,7 @@ func (g *responseGenerator) Generate(ctx context.Context, request gai.Generation
 	}
 }
 
-func (g *responseGenerator) generate(ctx context.Context, request gai.GenerationRequest) (gai.Response, gai.Message, error, error) {
+func (g *responseGenerator) generate(ctx context.Context, request gai.GenerationRequest) (gai.Response, gai.Message, gai.Metadata, error, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	partial := gai.Message{
@@ -112,9 +124,10 @@ func (g *responseGenerator) generate(ctx context.Context, request gai.Generation
 	}
 	if source, ok := g.source.(gai.StreamingGenerator); ok {
 		observed := &responseStream{
-			source:  source,
-			hooks:   g.hooks,
-			partial: &partial,
+			source:   source,
+			hooks:    g.hooks,
+			partial:  &partial,
+			metadata: make(gai.Metadata),
 		}
 		adapter := gai.StreamingAdapter{
 			S: observed,
@@ -123,7 +136,7 @@ func (g *responseGenerator) generate(ctx context.Context, request gai.Generation
 			ctx,
 			request,
 		)
-		return response, partial, observed.deliveryErr, err
+		return response, partial, observed.metadata, observed.deliveryErr, err
 	}
 	response, err := g.source.Generate(
 		ctx,
@@ -132,7 +145,7 @@ func (g *responseGenerator) generate(ctx context.Context, request gai.Generation
 	if err != nil && len(response.Candidates) != 0 {
 		partial = response.Candidates[0]
 	}
-	return response, partial, nil, err
+	return response, partial, response.UsageMetadata, nil, err
 }
 
 type responseStream struct {
@@ -140,6 +153,7 @@ type responseStream struct {
 	hooks       *turnHooks
 	partial     *gai.Message
 	deliveryErr error
+	metadata    gai.Metadata
 }
 
 func (s *responseStream) Stream(ctx context.Context, request gai.GenerationRequest) iter.Seq[gai.StreamChunk] {
@@ -148,6 +162,25 @@ func (s *responseStream) Stream(ctx context.Context, request gai.GenerationReque
 			ctx,
 			request,
 		) {
+			if chunk.Block.BlockType == gai.MetadataBlockType && chunk.Block.Content != nil {
+				// Keep final per-attempt snapshots even if assembly later fails or is cancelled.
+				decoder := json.NewDecoder(strings.NewReader(chunk.Block.Content.String()))
+				decoder.UseNumber()
+				var metadata gai.Metadata
+				if err := decoder.Decode(&metadata); err != nil {
+					yield(gai.StreamChunk{
+						Err: fmt.Errorf(
+							"decode provider usage: %w",
+							err,
+						),
+					})
+					return
+				}
+				maps.Copy(
+					s.metadata,
+					metadata,
+				)
+			}
 			if err := ctx.Err(); err != nil {
 				yield(gai.StreamChunk{
 					Err: err,

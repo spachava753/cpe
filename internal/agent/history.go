@@ -33,6 +33,7 @@ type SessionRecord struct {
 	Dialog           gai.Dialog
 	AbortedResponses []AbortedResponse
 	Compaction       *Compaction
+	Usage            TokenUsage
 }
 
 // AbortedResponse records an incomplete model response excluded from conversation and replay.
@@ -289,16 +290,21 @@ type storedRecord struct {
 	Dialog           []storedMessage
 	AbortedResponses []storedAbortedResponse
 	Compaction       *Compaction
+	Usage            TokenUsage
 }
 
 func encodeRecord(record SessionRecord) ([]byte, error) {
 	if err := record.checkCompaction(); err != nil {
 		return nil, err
 	}
+	if err := record.Usage.check(); err != nil {
+		return nil, err
+	}
 	stored := storedRecord{
 		Info:       record.Info,
 		Options:    record.Options,
 		Compaction: record.Compaction,
+		Usage:      record.Usage,
 	}
 	for _, message := range record.Dialog {
 		item, err := storeMessage(message)
@@ -370,6 +376,7 @@ func decodeRecord(data []byte) (SessionRecord, error) {
 		Info:       stored.Info,
 		Options:    stored.Options,
 		Compaction: stored.Compaction,
+		Usage:      stored.Usage,
 	}
 	for _, item := range stored.Dialog {
 		record.Dialog = append(
@@ -386,6 +393,9 @@ func decodeRecord(data []byte) (SessionRecord, error) {
 		)
 	}
 	if err := record.checkCompaction(); err != nil {
+		return SessionRecord{}, err
+	}
+	if err := record.Usage.check(); err != nil {
 		return SessionRecord{}, err
 	}
 	return record, nil

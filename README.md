@@ -205,6 +205,32 @@ without notice support), and retries only the model response when eligible.
 Completed tool effects are not rerun. A checkpoint failure stops retrying, and
 restoring a saved session never automatically restarts an aborted response.
 
+### Usage reporting
+
+ACP `usage_update` notifications report the latest successful generation's input
+plus output tokens as `used`, and the selected model's context limit as `size`.
+These are context measurements, not cumulative token consumption. Cached input
+still occupies context. Updates require both token counts and a known window
+size; CPE does not invent counts at startup or restoration. Tool results,
+compaction, and model changes are reflected in the next measured generation,
+not estimated or counted through extra provider requests.
+
+`PromptResponse.usage` reports cumulative provider-reported consumption across
+all turns and generation attempts in the saved conversation, including retries
+and cancelled attempts when their usage is available. Totals survive load,
+resume, and fork along with the conversation; new sessions start without counts.
+Input and output totals are added once; cache reads/writes and reasoning are
+breakdowns, not additional tokens in `totalTokens`. Missing categories stay
+unreported, and the usage object is omitted until both input and output counts
+have been reported. Missing provider measurements cannot be reconstructed.
+
+This follows the individual cumulative field definitions in the ACP SDK v0.5.0
+schema. The [end-turn usage proposal](https://agentclientprotocol.com/rfds/end-turn-token-usage)
+is still unstable and has conflicting per-turn wording. The stable
+[context and cost contract](https://agentclientprotocol.com/rfds/session-usage)
+is separate. CPE omits optional cost because it does not have reliable billed-cost
+data; configured list prices are not treated as actual charges.
+
 Text and inline-image prompts are supported. Additional working directories,
 ACP-tunneled MCP, session modes, audio prompts, and automatic context-budget
 management are not implemented. Unsupported operations return explicit errors.

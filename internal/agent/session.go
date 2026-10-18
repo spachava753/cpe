@@ -41,6 +41,9 @@ func newSession(setup context.Context, lifetime context.Context, spec sessionSpe
 	if err := record.checkCompaction(); err != nil {
 		return nil, err
 	}
+	if err := record.Usage.check(); err != nil {
+		return nil, err
+	}
 	if err := checkOptions(
 		config.Models,
 		record.Options,

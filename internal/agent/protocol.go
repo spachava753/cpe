@@ -167,16 +167,10 @@ func (s *Server) Prompt(ctx context.Context, request *acp.PromptRequest) (*acp.P
 	if err != nil {
 		return nil, err
 	}
-	reason, err := live.prompt(
+	return live.prompt(
 		ctx,
 		message,
 	)
-	if err != nil {
-		return nil, err
-	}
-	return &acp.PromptResponse{
-		StopReason: reason,
-	}, nil
 }
 
 // Cancel stops the active turn without discarding session state.

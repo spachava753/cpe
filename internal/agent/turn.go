@@ -21,11 +21,11 @@ type turn struct {
 	done   chan struct{}
 }
 
-func (s *session) prompt(ctx context.Context, message gai.Message) (acp.StopReason, error) {
+func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptResponse, error) {
 	s.mu.Lock()
 	if s.closed || s.active != nil {
 		s.mu.Unlock()
-		return "", errors.New("session is closed or already has an active prompt")
+		return nil, errors.New("session is closed or already has an active prompt")
 	}
 	ctx, cancel := context.WithTimeout(
 		ctx,
@@ -85,10 +85,10 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (acp.StopReas
 		options.Reasoning,
 	)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if generator == nil {
-		return "", errors.New("generator factory returned no generator")
+		return nil, errors.New("generator factory returned no generator")
 	}
 	hooks := &turnHooks{
 		session:        s,
@@ -119,7 +119,7 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (acp.StopReas
 		AfterTool:        hooks,
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	result, runErr := loop.Run(
 		ctx,
@@ -174,8 +174,13 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (acp.StopReas
 			"generation failed",
 		)
 	}
+	response := &acp.PromptResponse{
+		StopReason: acp.StopReasonEndTurn,
+		Usage:      checkpoint.Usage.protocolUsage(),
+	}
 	if ctx.Err() != nil {
-		return acp.StopReasonCancelled, errors.Join(
+		response.StopReason = acp.StopReasonCancelled
+		return response, errors.Join(
 			saveErr,
 			updateErr,
 		)
@@ -185,19 +190,17 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (acp.StopReas
 		saveErr,
 		updateErr,
 	); err != nil {
-		return "", err
+		return nil, err
 	}
-	if result.StopReason == "generation_limit" {
-		return acp.StopReasonMaxTurnRequests, nil
+	switch {
+	case result.StopReason == "generation_limit":
+		response.StopReason = acp.StopReasonMaxTurnRequests
+	case result.ModelFinishReason == gai.MaxGenerationLimit:
+		response.StopReason = acp.StopReasonMaxTokens
+	case result.ModelFinishReason == gai.ContentPolicyViolation:
+		response.StopReason = acp.StopReasonRefusal
 	}
-	switch result.ModelFinishReason {
-	case gai.MaxGenerationLimit:
-		return acp.StopReasonMaxTokens, nil
-	case gai.ContentPolicyViolation:
-		return acp.StopReasonRefusal, nil
-	default:
-		return acp.StopReasonEndTurn, nil
-	}
+	return response, nil
 }
 
 func missingResult(dialog gai.Dialog, id string) bool {
@@ -219,6 +222,7 @@ func missingResult(dialog gai.Dialog, id string) bool {
 
 type turnHooks struct {
 	session           *session
+	usage             TokenUsage
 	compaction        *Compaction
 	pendingCompaction *Compaction
 	client            *sessionClient
@@ -341,6 +345,18 @@ func (h *turnHooks) AfterGeneration(ctx context.Context, event gaiagent.AfterGen
 			); err != nil {
 				return nil, err
 			}
+		}
+	}
+	if h.model.Limit != 0 && h.usage.InputTokens != nil && h.usage.OutputTokens != nil {
+		// This is the latest measured request plus its output, not accumulated usage.
+		if err := h.client.update(
+			ctx,
+			acp.UsageUpdateSessionUpdate(
+				*h.usage.InputTokens+*h.usage.OutputTokens,
+				uint64(h.model.Limit),
+			),
+		); err != nil {
+			return nil, err
 		}
 	}
 	return &response, nil
