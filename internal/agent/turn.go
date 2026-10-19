@@ -93,6 +93,7 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptR
 	hooks := &turnHooks{
 		session:        s,
 		compaction:     compaction,
+		runtimeReset:   s.runtimeReset,
 		client:         s.client,
 		model:          model,
 		modelID:        options.Model,
@@ -227,6 +228,7 @@ type turnHooks struct {
 	usage             TokenUsage
 	compaction        *Compaction
 	compactionRequest compactionRequest
+	runtimeReset      *runtimeReset
 	client            *sessionClient
 	model             models.Model
 	modelID           ModelID
@@ -254,7 +256,10 @@ func (h *turnHooks) BeforeGeneration(ctx context.Context, event gaiagent.BeforeG
 	}
 	request := event.Request
 	request.Dialog = nil
-	for _, message := range h.compaction.workingDialog(event.Request.Dialog) {
+	for _, message := range h.runtimeReset.workingDialog(
+		event.Request.Dialog,
+		h.compaction,
+	) {
 		foreign := message.Role == gai.Assistant && message.ExtraFields["cpe.model"] != string(h.modelID)
 		blocks := message.Blocks
 		message.Blocks = nil

@@ -35,6 +35,7 @@ type session struct {
 	catalog             commandCatalog
 	projectInstructions string
 	runtime             Host
+	runtimeReset        *runtimeReset
 	mcp                 *mcpRegistry
 }
 
@@ -103,6 +104,12 @@ func newSession(setup context.Context, lifetime context.Context, spec sessionSpe
 			registry.close(),
 		)
 	}
+	var reset *runtimeReset
+	if len(record.Dialog) != 0 {
+		reset = &runtimeReset{
+			afterMessages: len(record.Dialog),
+		}
+	}
 	record.Info.ID = spec.id
 	record.Info.Cwd = spec.cwd
 	return &session{
@@ -114,6 +121,7 @@ func newSession(setup context.Context, lifetime context.Context, spec sessionSpe
 		catalog:             catalog,
 		projectInstructions: projectInstructions,
 		runtime:             host,
+		runtimeReset:        reset,
 		mcp:                 registry,
 	}, nil
 }

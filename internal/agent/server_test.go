@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -298,6 +299,7 @@ func lastToolOutput(record SessionRecord) string {
 
 func TestSessionLifecycle(t *testing.T) {
 	for _, operation := range []string{
+		"live session",
 		"model switch",
 		"fork",
 		"load",
@@ -308,9 +310,26 @@ func TestSessionLifecycle(t *testing.T) {
 		t.Run(
 			operation,
 			func(t *testing.T) {
+				requests := make(
+					chan gai.GenerationRequest,
+					16,
+				)
 				fixture := serverFixture(
 					t,
-					scriptGenerator,
+					func(ctx context.Context, model models.Model, reasoning ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+						generator, options, err := scriptGenerator(
+							ctx,
+							model,
+							reasoning,
+						)
+						return generatorFunc(func(ctx context.Context, request gai.GenerationRequest) (gai.Response, error) {
+							requests <- request
+							return generator.Generate(
+								ctx,
+								request,
+							)
+						}), options, err
+					},
 				)
 				id := openFixtureSession(
 					t,
@@ -322,6 +341,14 @@ func TestSessionLifecycle(t *testing.T) {
 					id,
 					"value = 41",
 				)
+				for range 2 {
+					request := <-requests
+					for _, message := range request.Dialog {
+						if message.Blocks[0].Content.String() == runtimeResetNotice {
+							t.Fatal("new session was described as a runtime reset")
+						}
+					}
+				}
 				target := id
 				want := "42"
 				switch operation {
@@ -459,6 +486,81 @@ func TestSessionLifecycle(t *testing.T) {
 						"options: %#v",
 						record.Options,
 					)
+				}
+				// Reconstructed state must survive later turns and model changes.
+				promptFixture(
+					t,
+					fixture.client,
+					target,
+					"value = 10",
+				)
+				if _, err := fixture.client.SetSessionConfigOption(
+					t.Context(),
+					&acp.SetSessionConfigOptionRequest{
+						SessionID: target,
+						ConfigID:  "model",
+						Value:     "two",
+					},
+				); err != nil {
+					t.Fatal(err)
+				}
+				promptFixture(
+					t,
+					fixture.client,
+					target,
+					"value += 1\nprint(value)",
+				)
+				for range 6 {
+					request := <-requests
+					notices := 0
+					for index, message := range request.Dialog {
+						if message.Blocks[0].Content.String() == runtimeResetNotice {
+							notices++
+							if index != 4 || message.Role != gai.User || request.Dialog[index+1].Blocks[0].Content.String() != "print(value + 1)" {
+								t.Fatal("reset notice moved away from the restoration boundary")
+							}
+						}
+					}
+					wantNotices := 0
+					switch operation {
+					case "load", "resume", "fork":
+						wantNotices = 1
+					}
+					if notices != wantNotices {
+						t.Fatalf(
+							"reset notices: got %d, want %d",
+							notices,
+							wantNotices,
+						)
+					}
+				}
+				record, err = fixture.store.Load(
+					t.Context(),
+					SessionID(target),
+				)
+				if err != nil || lastToolOutput(record) != "11\n" {
+					t.Fatalf(
+						"reconstructed runtime state did not persist: %#v, %v",
+						record,
+						err,
+					)
+				}
+				for _, message := range record.Dialog {
+					if message.Blocks[0].Content.String() == runtimeResetNotice {
+						t.Fatal("model-only notice was saved in the transcript")
+					}
+				}
+				if err := fixture.client.Close(); err != nil {
+					t.Fatal(err)
+				}
+				fixture.notifications.mu.Lock()
+				defer fixture.notifications.mu.Unlock()
+				updates, err := json.Marshal(fixture.notifications.updates)
+				if err != nil || strings.Contains(
+					string(updates),
+					runtimeResetNotice,
+				) {
+					t.Fatal("model-only notice was sent to the ACP client")
 				}
 			},
 		)

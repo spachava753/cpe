@@ -98,6 +98,17 @@ allowlists, or sandbox boundaries. The session working directory is a path base,
 not an access restriction. Dyson environment and process APIs also have host
 access; process-global mutations affect the shared CLI process.
 
+Loading, resuming, or forking a conversation starts a fresh Dyson sphere. When
+there is restored history, the model receives a notice before new work: earlier
+variables, functions, and imports are unavailable, but files and external effects
+may still exist. The model must reconstruct needed state without blindly
+repeating earlier actions. State created after that boundary persists normally;
+continuing a live session or switching models does not reset it.
+
+This notice is model-only, not part of saved history or ACP transcript replay.
+It follows any restored compaction summary. A new compaction covering the reset
+replaces the notice along with the earlier context.
+
 Cancellation, process cleanup, and output capture manage execution lifetime and
 protect the ACP protocol stream; they do not restrict machine access.
 Both direct bash and Starlark subprocess calls capture bounded output and never

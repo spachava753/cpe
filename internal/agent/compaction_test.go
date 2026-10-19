@@ -57,6 +57,7 @@ func TestCompaction(t *testing.T) {
 		"load",
 		"resume",
 		"repeat compaction",
+		"compact after resume",
 		"script failure after compact",
 	} {
 		t.Run(
@@ -99,13 +100,17 @@ func TestCompaction(t *testing.T) {
 						"code": "print(counter)",
 					},
 				)
-				if operation == "repeat compaction" {
+				if operation == "repeat compaction" || operation == "compact after resume" {
+					code := "save_summary('Updated goal and next steps.')"
+					if operation == "compact after resume" {
+						code = "compact('Updated goal and next steps.')"
+					}
 					read = compactionCall(
 						t,
 						"compact-second",
 						"starlark_repl",
 						map[string]any{
-							"code": "save_summary('Updated goal and next steps.')",
+							"code": code,
 						},
 					)
 				}
@@ -164,7 +169,15 @@ func TestCompaction(t *testing.T) {
 					},
 					agenttest.GenerateStep{
 						Check: func(request gai.GenerationRequest) error {
-							if len(request.Dialog) != 3 || request.Dialog[0].Blocks[0].Content.String() != "Summary of earlier conversation:\n\n"+summary {
+							wantMessages := 3
+							switch operation {
+							case "load", "resume", "fork", "compact after resume":
+								wantMessages++
+								if request.Dialog[2].Blocks[0].Content.String() != runtimeResetNotice {
+									return errors.New("restored summary is missing its runtime reset boundary")
+								}
+							}
+							if len(request.Dialog) != wantMessages || request.Dialog[0].Blocks[0].Content.String() != "Summary of earlier conversation:\n\n"+summary {
 								return errors.New("later turn lost compacted context")
 							}
 							if operation == "model switch" && request.Model != "two" {
@@ -178,7 +191,7 @@ func TestCompaction(t *testing.T) {
 						Check: func(request gai.GenerationRequest) error {
 							last := request.Dialog[len(request.Dialog)-1]
 							switch operation {
-							case "repeat compaction":
+							case "repeat compaction", "compact after resume":
 								if len(request.Dialog) != 1 || request.Dialog[0].Blocks[0].Content.String() != "Summary of earlier conversation:\n\nUpdated goal and next steps." {
 									return errors.New("second compaction did not replace the earlier working context")
 								}
@@ -247,7 +260,7 @@ func TestCompaction(t *testing.T) {
 						t.Fatal(err)
 					}
 					target = fork.SessionID
-				case "load", "resume":
+				case "load", "resume", "compact after resume":
 					_, err := fixture.client.CloseSession(
 						t.Context(),
 						&acp.CloseSessionRequest{
