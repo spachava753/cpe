@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spf13/afero"
@@ -41,6 +42,7 @@ func TestACPCommand(t *testing.T) {
 		config           string
 		wantError        string
 		wantRetries      uint
+		wantSetupTimeout time.Duration
 		promptFiles      map[string]string
 		unreadablePrompt string
 		wantInstructions string
@@ -53,6 +55,19 @@ func TestACPCommand(t *testing.T) {
 			},
 			config:           "[" + model + "]",
 			wantRetries:      2,
+			wantInstructions: defaultSystemPrompt + "\n\n" + defaultCompactionPrompt,
+		},
+		{
+			name: "custom setup timeout",
+			args: []string{
+				"--model",
+				"fixture",
+				"--setup-timeout",
+				"45s",
+			},
+			config:           "[" + model + "]",
+			wantRetries:      2,
+			wantSetupTimeout: 45 * time.Second,
 			wantInstructions: defaultSystemPrompt + "\n\n" + defaultCompactionPrompt,
 		},
 		{
@@ -331,6 +346,17 @@ func TestACPCommand(t *testing.T) {
 						}
 						if deps.Stderr != &stderr {
 							t.Fatal("diagnostics are not wired to command stderr")
+						}
+						wantSetupTimeout := test.wantSetupTimeout
+						if wantSetupTimeout == 0 {
+							wantSetupTimeout = 10 * time.Minute
+						}
+						if config.SetupTimeout != wantSetupTimeout {
+							t.Fatalf(
+								"setup timeout: got %s, want %s",
+								config.SetupTimeout,
+								wantSetupTimeout,
+							)
 						}
 						if config.MaxResponseRetries != test.wantRetries {
 							t.Fatalf(

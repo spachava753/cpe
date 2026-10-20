@@ -108,8 +108,7 @@ func serverFixture(t *testing.T, generator GeneratorFactory, configure ...func(*
 			Model: "one",
 		},
 		Instructions:       "test agent",
-		TurnTimeout:        5 * time.Second,
-		MaxGenerations:     4,
+		SetupTimeout:       5 * time.Second,
 		MaxResponseRetries: 1,
 	}
 	commandStarted := make(

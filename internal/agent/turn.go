@@ -29,10 +29,7 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptR
 		s.mu.Unlock()
 		return nil, errors.New("session is closed or already has an active prompt")
 	}
-	ctx, cancel := context.WithTimeout(
-		ctx,
-		s.config.TurnTimeout,
-	)
+	ctx, cancel := context.WithCancel(ctx)
 	//nolint:contextcheck // A turn is cancelled by both its request and its connection lifetime.
 	stopLifetime := context.AfterFunc(
 		s.lifetime,
@@ -93,16 +90,15 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptR
 		return nil, errors.New("generator factory returned no generator")
 	}
 	hooks := &turnHooks{
-		session:        s,
-		compaction:     compaction,
-		runtimeReset:   s.runtimeReset,
-		client:         s.client,
-		model:          model,
-		modelID:        options.Model,
-		maxGenerations: s.config.MaxGenerations,
-		completed:      make(map[string]gai.Message),
-		pending:        make(map[string]bool),
-		streamed:       make(map[uint]bool),
+		session:      s,
+		compaction:   compaction,
+		runtimeReset: s.runtimeReset,
+		client:       s.client,
+		model:        model,
+		modelID:      options.Model,
+		completed:    make(map[string]gai.Message),
+		pending:      make(map[string]bool),
+		streamed:     make(map[uint]bool),
 	}
 	ctx = toolruntime.WithCompaction(
 		ctx,
@@ -198,12 +194,10 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptR
 	); err != nil {
 		return nil, err
 	}
-	switch {
-	case result.StopReason == "generation_limit":
-		response.StopReason = acp.StopReasonMaxTurnRequests
-	case result.ModelFinishReason == gai.MaxGenerationLimit:
+	switch result.ModelFinishReason {
+	case gai.MaxGenerationLimit:
 		response.StopReason = acp.StopReasonMaxTokens
-	case result.ModelFinishReason == gai.ContentPolicyViolation:
+	case gai.ContentPolicyViolation:
 		response.StopReason = acp.StopReasonRefusal
 	}
 	return response, nil
@@ -235,7 +229,6 @@ type turnHooks struct {
 	client            *sessionClient
 	model             models.Model
 	modelID           models.ID
-	maxGenerations    uint
 	completed         map[string]gai.Message
 	pending           map[string]bool
 	streamed          map[uint]bool
@@ -251,11 +244,6 @@ func (h *turnHooks) BeforeGeneration(ctx context.Context, event gaiagent.BeforeG
 		if err := h.checkpointCompaction(ctx); err != nil {
 			return gaiagent.BeforeGenerationDecision{}, err
 		}
-	}
-	if event.Generation >= h.maxGenerations {
-		return gaiagent.BeforeGenerationDecision{
-			StopReason: "generation_limit",
-		}, nil
 	}
 	request := event.Request
 	request.Dialog = nil

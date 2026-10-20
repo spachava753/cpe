@@ -19,9 +19,6 @@ func (localCommandRunner) RunCommand(ctx context.Context, command dyson.Command)
 	if len(command.Args) == 0 {
 		return dyson.CommandResult{}, errors.New("command arguments are empty")
 	}
-	if len(command.Input) > maxOutputBytes {
-		return dyson.CommandResult{}, errors.New("command input exceeds limit")
-	}
 	args := command.Args
 	if command.Shell {
 		args = append(

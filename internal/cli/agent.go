@@ -38,7 +38,7 @@ func acpCmd(root *cobra.Command, filesystem afero.Fs, store *auth.Store, authOpt
 func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store, authOptions auth.LoginOptions, serve serveAgent) {
 	var modelFile, historyPath, modelID, effort string
 	var timeout time.Duration
-	var generations, responseRetries uint
+	var responseRetries uint
 	var skillPaths, pluginPaths []string
 	command := &cobra.Command{
 		Use:   "acp",
@@ -156,8 +156,7 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 					},
 					SkillPaths:         skillPaths,
 					PluginPaths:        pluginPaths,
-					TurnTimeout:        timeout,
-					MaxGenerations:     generations,
+					SetupTimeout:       timeout,
 					MaxResponseRetries: responseRetries,
 					Instructions:       instructions,
 				},
@@ -200,15 +199,9 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 	)
 	command.Flags().DurationVar(
 		&timeout,
-		"turn-timeout",
+		"setup-timeout",
 		10*time.Minute,
-		"Maximum duration of session setup or a prompt turn",
-	)
-	command.Flags().UintVar(
-		&generations,
-		"max-generations",
-		32,
-		"Maximum completed model generations in a turn",
+		"Maximum duration of session setup",
 	)
 	command.Flags().UintVar(
 		&responseRetries,

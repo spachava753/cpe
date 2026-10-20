@@ -49,13 +49,13 @@ metadata is omitted from requests, without deleting it from saved history.
 Each process handles one ACP connection with independent sessions. A session
 accepts one active prompt at a time; other sessions remain usable. `session/cancel`
 stops that turn, while disconnecting closes all live runtimes and MCP connections.
-The defaults are a ten-minute deadline per session setup or prompt turn and
-32 completed model generations per turn, configurable with `--turn-timeout` and
-`--max-generations`. Interrupted/transient model responses can retry twice by
-default (`--response-retries`; zero disables retries). Retries count separately
-from completed generations, respect provider retry delays, and remain within the
-turn deadline. Explicit cancellation, expired turn deadlines, and permanent
-provider errors do not retry.
+Session setup has a ten-minute deadline by default, configurable with
+`--setup-timeout`. Prompt turns have no CPE-imposed deadline or model-generation
+count limit. Prompt text, input images, and command stdin have no CPE-imposed
+size cap; provider limits and tool-output bounds still apply.
+Interrupted/transient model responses can retry twice by default
+(`--response-retries`; zero disables retries). Retries respect provider retry
+delays. Cancellation and permanent provider errors do not retry.
 
 ### System prompt
 

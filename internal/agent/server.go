@@ -126,7 +126,7 @@ func (s *Server) openSession(ctx context.Context, spec sessionSpec, record conve
 	}
 	setup, cancel := context.WithTimeout(
 		ctx,
-		s.config.TurnTimeout,
+		s.config.SetupTimeout,
 	)
 	defer cancel()
 	//nolint:contextcheck // Setup must stop on either request or connection cancellation.

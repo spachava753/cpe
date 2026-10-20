@@ -630,11 +630,6 @@ func TestUsageStopReasons(t *testing.T) {
 			finish: gai.ContentPolicyViolation,
 			want:   acp.StopReasonRefusal,
 		},
-		{
-			name:   "generation limit after compaction",
-			finish: gai.ToolUse,
-			want:   acp.StopReasonMaxTurnRequests,
-		},
 	} {
 		t.Run(
 			test.name,
@@ -644,28 +639,12 @@ func TestUsageStopReasons(t *testing.T) {
 					gai.UsageMetricGenerationTokens: 20,
 				})
 				response.FinishReason = test.finish
-				if test.finish == gai.ToolUse {
-					call, err := gai.ToolCallBlock(
-						"compact",
-						"starlark_repl",
-						map[string]any{
-							"code": "compact('Current task and next steps.')",
-						},
-					)
-					if err != nil {
-						t.Fatal(err)
-					}
-					response.Candidates[0].Blocks[0] = call
-				}
 				fixture := serverFixture(
 					t,
 					func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 						return agenttest.NewScriptedGenerator(agenttest.GenerateStep{
 							Response: response,
 						}), gai.GenerationOptions{}, nil
-					},
-					func(config *Config, _ *Dependencies, _ *acp.InitializeRequest) {
-						config.MaxGenerations = 1
 					},
 				)
 				actual := usagePrompt(

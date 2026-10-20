@@ -488,7 +488,6 @@ func TestCompactionFailures(t *testing.T) {
 		code              string
 		checkpointFailure bool
 		cancelBatch       bool
-		generationLimit   bool
 	}{
 		{
 			name: "empty summary",
@@ -519,11 +518,6 @@ func TestCompactionFailures(t *testing.T) {
 			name:        "cancellation in a later tool preserves accepted summary",
 			code:        "compact('Saved goal.')",
 			cancelBatch: true,
-		},
-		{
-			name:            "generation limit preserves accepted summary",
-			code:            "compact('Saved goal.')",
-			generationLimit: true,
 		},
 	} {
 		t.Run(
@@ -574,14 +568,11 @@ func TestCompactionFailures(t *testing.T) {
 					func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 						return generator, gai.GenerationOptions{}, nil
 					},
-					func(config *Config, deps *Dependencies, _ *acp.InitializeRequest) {
+					func(_ *Config, deps *Dependencies, _ *acp.InitializeRequest) {
 						if test.checkpointFailure {
 							deps.History = rejectCompactionStore{
 								Store: deps.History,
 							}
-						}
-						if test.generationLimit {
-							config.MaxGenerations = 1
 						}
 					},
 				)
@@ -611,9 +602,6 @@ func TestCompactionFailures(t *testing.T) {
 					)
 					if err == nil && test.cancelBatch && response.StopReason != acp.StopReasonCancelled {
 						err = errors.New("turn was not cancelled")
-					}
-					if err == nil && test.generationLimit && response.StopReason != acp.StopReasonMaxTurnRequests {
-						err = errors.New("turn did not stop at generation limit")
 					}
 					finished <- err
 				}()
@@ -647,7 +635,7 @@ func TestCompactionFailures(t *testing.T) {
 					t.Fatal(err)
 				}
 				wantCalls := 3
-				if test.checkpointFailure || test.cancelBatch || test.generationLimit {
+				if test.checkpointFailure || test.cancelBatch {
 					wantCalls = 2
 				}
 				if len(generator.Requests()) != wantCalls {
@@ -668,7 +656,7 @@ func TestCompactionFailures(t *testing.T) {
 						err,
 					)
 				}
-				if test.cancelBatch || test.generationLimit {
+				if test.cancelBatch {
 					if record.Compaction == nil || record.Compaction.Summary != "Saved goal." || record.Compaction.AfterMessages != len(record.Dialog) {
 						t.Fatal("accepted summary not persisted at turn end")
 					}

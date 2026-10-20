@@ -2,8 +2,11 @@ package agent
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
@@ -80,6 +83,163 @@ func TestStreamingTurn(t *testing.T) {
 	}
 }
 
+func TestToolTurn(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		calls int
+	}{
+		{
+			name:  "single tool round",
+			calls: 1,
+		},
+		{
+			name:  "extended tool work",
+			calls: 40,
+		},
+	} {
+		t.Run(
+			test.name,
+			func(t *testing.T) {
+				var steps []agenttest.GenerateStep
+				for i := range test.calls {
+					call, err := gai.ToolCallBlock(
+						strconv.Itoa(i),
+						"bash",
+						map[string]any{
+							"command": "true",
+						},
+					)
+					if err != nil {
+						t.Fatal(err)
+					}
+					steps = append(
+						steps,
+						agenttest.GenerateStep{
+							Response: compactionResponse(call),
+						},
+					)
+				}
+				steps = append(
+					steps,
+					agenttest.GenerateStep{
+						Response: compactionResponse(gai.TextBlock("done")),
+					},
+				)
+				generator := agenttest.NewScriptedGenerator(steps...)
+				fixture := serverFixture(
+					t,
+					func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+						return generator, gai.GenerationOptions{}, nil
+					},
+				)
+				id := openFixtureSession(
+					t,
+					fixture.client,
+				)
+				response, err := fixture.client.Prompt(
+					t.Context(),
+					&acp.PromptRequest{
+						SessionID: id,
+						Prompt: []acp.ContentBlock{
+							acp.TextContentBlock("Complete the task."),
+						},
+					},
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if response.StopReason != acp.StopReasonEndTurn || len(generator.Requests()) != test.calls+1 {
+					t.Fatalf(
+						"task stopped before completion: %s, %d generations",
+						response.StopReason,
+						len(generator.Requests()),
+					)
+				}
+				record, err := fixture.store.Load(
+					t.Context(),
+					conversation.ID(id),
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(record.Dialog) != 2*test.calls+2 || record.Dialog[len(record.Dialog)-1].Blocks[0].Content.String() != "done" {
+					t.Fatal("completed conversation was not saved")
+				}
+				for i := range test.calls {
+					result := record.Dialog[2*i+2]
+					if result.Role != gai.ToolResult || result.ToolResultError || result.Blocks[0].ID != strconv.Itoa(i) {
+						t.Fatalf(
+							"tool round %d did not complete successfully",
+							i,
+						)
+					}
+				}
+			},
+		)
+	}
+}
+
+func TestPromptDuration(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		duration time.Duration
+	}{
+		{
+			name:     "short task",
+			duration: time.Second,
+		},
+		{
+			name:     "long task",
+			duration: 15 * time.Minute,
+		},
+	} {
+		t.Run(
+			test.name,
+			func(t *testing.T) {
+				synctest.Test(
+					t,
+					func(t *testing.T) {
+						fixture := serverFixture(
+							t,
+							func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+								return generatorFunc(func(ctx context.Context, _ gai.GenerationRequest) (gai.Response, error) {
+									time.Sleep(test.duration)
+									if err := ctx.Err(); err != nil {
+										return gai.Response{}, err
+									}
+									return compactionResponse(gai.TextBlock("done")), nil
+								}), gai.GenerationOptions{}, nil
+							},
+						)
+						id := openFixtureSession(
+							t,
+							fixture.client,
+						)
+						response, err := fixture.client.Prompt(
+							t.Context(),
+							&acp.PromptRequest{
+								SessionID: id,
+								Prompt: []acp.ContentBlock{
+									acp.TextContentBlock("Complete the task."),
+								},
+							},
+						)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if response.StopReason != acp.StopReasonEndTurn {
+							t.Fatalf(
+								"task stopped before completion: %s",
+								response.StopReason,
+							)
+						}
+					},
+				)
+			},
+		)
+	}
+}
+
 func TestProviderHistory(t *testing.T) {
 	for _, test := range []struct {
 		name         string
@@ -139,7 +299,6 @@ func TestProviderHistory(t *testing.T) {
 							gai.Text,
 						},
 					},
-					maxGenerations: 5,
 				}
 				decision, err := hooks.BeforeGeneration(
 					t.Context(),

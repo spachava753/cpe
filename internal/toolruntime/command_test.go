@@ -19,6 +19,7 @@ func TestCommandRunner(t *testing.T) {
 	for _, test := range []struct {
 		name      string
 		command   string
+		input     []byte
 		timeout   time.Duration
 		code      int
 		want      string
@@ -34,6 +35,15 @@ func TestCommandRunner(t *testing.T) {
 			name:    "stdin is closed",
 			command: "if read line; then exit 1; fi; printf closed",
 			want:    "closed",
+		},
+		{
+			name:    "large stdin",
+			command: "wc -c",
+			input: []byte(strings.Repeat(
+				"x",
+				9<<20,
+			)),
+			want: "9437184",
 		},
 		{
 			name:    "bounded capture",
@@ -59,6 +69,10 @@ func TestCommandRunner(t *testing.T) {
 					)
 					defer cancel()
 				}
+				stdin := dyson.StreamDiscard
+				if test.input != nil {
+					stdin = dyson.StreamPipe
+				}
 				runner := localCommandRunner{}
 				result, err := runner.RunCommand(
 					ctx,
@@ -71,7 +85,8 @@ func TestCommandRunner(t *testing.T) {
 							test.command,
 						},
 						Dir:    t.TempDir(),
-						Stdin:  dyson.StreamDiscard,
+						Stdin:  stdin,
+						Input:  test.input,
 						Stdout: dyson.StreamPipe,
 						Stderr: dyson.StreamPipe,
 					},

@@ -9,11 +9,9 @@ import (
 	"github.com/spachava753/gai"
 )
 
-const maxPromptBytes = 8 << 20
-
 func imageBlock(data []byte) (gai.Block, error) {
-	if len(data) == 0 || len(data) > maxPromptBytes*3/4 {
-		return gai.Block{}, errors.New("image is empty or exceeds output limit")
+	if len(data) == 0 {
+		return gai.Block{}, errors.New("image is empty")
 	}
 	mime := http.DetectContentType(data)
 	switch mime {
@@ -54,17 +52,11 @@ func parseContent(contents []acp.ContentBlock) (gai.Message, error) {
 	for _, content := range contents {
 		switch content.Type {
 		case acp.ContentBlockTypeText:
-			if len(content.Text) > maxPromptBytes {
-				return gai.Message{}, errors.New("prompt text exceeds limit")
-			}
 			message.Blocks = append(
 				message.Blocks,
 				gai.TextBlock(content.Text),
 			)
 		case acp.ContentBlockTypeImage:
-			if len(content.Data) > maxPromptBytes {
-				return gai.Message{}, errors.New("prompt image exceeds limit")
-			}
 			data, err := base64.StdEncoding.DecodeString(content.Data)
 			if err != nil {
 				return gai.Message{}, err

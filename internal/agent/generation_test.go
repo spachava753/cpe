@@ -386,104 +386,87 @@ func (f streamingFunc) Generate(ctx context.Context, request gai.GenerationReque
 }
 
 func TestResponseCancellation(t *testing.T) {
-	for _, mode := range []string{
-		"explicit cancel",
-		"turn deadline",
-	} {
-		t.Run(
-			mode,
-			func(t *testing.T) {
-				entered := make(
-					chan struct{},
-					1,
-				)
-				var calls atomic.Int32
-				fixture := serverFixture(
-					t,
-					func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
-						return streamingFunc(func(ctx context.Context, _ gai.GenerationRequest) iter.Seq[gai.StreamChunk] {
-							return func(yield func(gai.StreamChunk) bool) {
-								calls.Add(1)
-								if !yield(gai.StreamChunk{
-									Block: gai.TextBlock("cancelled fragment"),
-								}) {
-									return
-								}
-								entered <- struct{}{}
-								<-ctx.Done()
-								yield(gai.StreamChunk{
-									Err: ctx.Err(),
-								})
-							}
-						}), gai.GenerationOptions{}, nil
-					},
-					func(config *Config, _ *Dependencies, _ *acp.InitializeRequest) {
-						if mode == "turn deadline" {
-							config.TurnTimeout = 100 * time.Millisecond
-						}
-					},
-				)
-				id := openFixtureSession(
-					t,
-					fixture.client,
-				)
-				done := make(
-					chan error,
-					1,
-				)
-				go func() {
-					response, err := fixture.client.Prompt(
-						t.Context(),
-						&acp.PromptRequest{
-							SessionID: id,
-							Prompt: []acp.ContentBlock{
-								acp.TextContentBlock("question"),
-							},
-						},
-					)
-					if err == nil && response.StopReason != acp.StopReasonCancelled {
-						err = errors.New("turn did not report cancellation")
+	entered := make(
+		chan struct{},
+		1,
+	)
+	var calls atomic.Int32
+	fixture := serverFixture(
+		t,
+		func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+			return streamingFunc(func(ctx context.Context, _ gai.GenerationRequest) iter.Seq[gai.StreamChunk] {
+				return func(yield func(gai.StreamChunk) bool) {
+					calls.Add(1)
+					if !yield(gai.StreamChunk{
+						Block: gai.TextBlock("cancelled fragment"),
+					}) {
+						return
 					}
-					done <- err
-				}()
-				select {
-				case <-entered:
-				case <-time.After(time.Second):
-					t.Fatal("stream never started")
+					entered <- struct{}{}
+					<-ctx.Done()
+					yield(gai.StreamChunk{
+						Err: ctx.Err(),
+					})
 				}
-				if mode == "explicit cancel" {
-					if err := fixture.client.Cancel(
-						t.Context(),
-						&acp.CancelNotification{
-							SessionID: id,
-						},
-					); err != nil {
-						t.Fatal(err)
-					}
-				}
-				select {
-				case err := <-done:
-					if err != nil {
-						t.Fatal(err)
-					}
-				case <-time.After(time.Second):
-					t.Fatal("cancelled stream did not finish")
-				}
-				if calls.Load() != 1 {
-					t.Fatal("explicit cancellation or timeout retried the provider")
-				}
-				record, err := fixture.store.Load(
-					t.Context(),
-					conversation.ID(id),
-				)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if len(record.AbortedResponses) != 1 || record.AbortedResponses[0].Partial.Blocks[0].Content.String() != "cancelled fragment" {
-					t.Fatal("cancellation not persisted as aborted")
-				}
+			}), gai.GenerationOptions{}, nil
+		},
+	)
+	id := openFixtureSession(
+		t,
+		fixture.client,
+	)
+	done := make(
+		chan error,
+		1,
+	)
+	go func() {
+		response, err := fixture.client.Prompt(
+			t.Context(),
+			&acp.PromptRequest{
+				SessionID: id,
+				Prompt: []acp.ContentBlock{
+					acp.TextContentBlock("question"),
+				},
 			},
 		)
+		if err == nil && response.StopReason != acp.StopReasonCancelled {
+			err = errors.New("turn did not report cancellation")
+		}
+		done <- err
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("stream never started")
+	}
+	if err := fixture.client.Cancel(
+		t.Context(),
+		&acp.CancelNotification{
+			SessionID: id,
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled stream did not finish")
+	}
+	if calls.Load() != 1 {
+		t.Fatal("explicit cancellation retried the provider")
+	}
+	record, err := fixture.store.Load(
+		t.Context(),
+		conversation.ID(id),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(record.AbortedResponses) != 1 || record.AbortedResponses[0].Partial.Blocks[0].Content.String() != "cancelled fragment" {
+		t.Fatal("cancellation not persisted as aborted")
 	}
 }
 

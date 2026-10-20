@@ -190,7 +190,7 @@ func TestSessionDiscovery(t *testing.T) {
 					func(config *Config, deps *Dependencies, initialize *acp.InitializeRequest) {
 						deps.Stderr = &stderr
 						if test.setupTimeout {
-							config.TurnTimeout = 25 * time.Millisecond
+							config.SetupTimeout = 25 * time.Millisecond
 						}
 						if test.customPrompt {
 							config.Instructions = "Custom base.\n\nAdditional instructions."

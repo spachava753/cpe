@@ -23,13 +23,12 @@ import (
 // Config supplies models, discovery paths, and execution limits.
 // Callers must not mutate referenced values until Serve returns.
 type Config struct {
-	Models         map[models.ID]models.Model
-	Initial        models.Selection
-	SkillPaths     []string
-	PluginPaths    []string
-	Instructions   string
-	TurnTimeout    time.Duration
-	MaxGenerations uint
+	Models       map[models.ID]models.Model
+	Initial      models.Selection
+	SkillPaths   []string
+	PluginPaths  []string
+	Instructions string
+	SetupTimeout time.Duration
 	// MaxResponseRetries limits retries of one interrupted model response; zero disables retries.
 	MaxResponseRetries uint
 }
@@ -58,8 +57,8 @@ type Authenticator interface {
 type GeneratorFactory func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error)
 
 func checkConfig(config Config, deps Dependencies) error {
-	if len(config.Models) == 0 || config.TurnTimeout <= 0 || config.MaxGenerations == 0 {
-		return errors.New("models, a positive turn timeout, and a positive generation limit are required")
+	if len(config.Models) == 0 || config.SetupTimeout <= 0 {
+		return errors.New("models and a positive session setup timeout are required")
 	}
 	if deps.Filesystem == nil || deps.Authentication == nil || deps.Generators == nil || deps.Hosts == nil || deps.MCP == nil || deps.History == nil || deps.Traces == nil || deps.Stderr == nil {
 		return errors.New("all agent dependencies must be configured")
