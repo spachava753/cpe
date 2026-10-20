@@ -16,7 +16,7 @@ import (
 func TestStreamingTurn(t *testing.T) {
 	fixture := serverFixture(
 		t,
-		func(context.Context, models.Model, ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+		func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 			return agenttest.NewScriptedStreamingGenerator(agenttest.StreamStep{
 				Chunks: []gai.StreamChunk{
 					{

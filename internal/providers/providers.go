@@ -1,4 +1,4 @@
-package agent
+package providers
 
 import (
 	"context"
@@ -18,6 +18,8 @@ import (
 	"github.com/spachava753/cpe/internal/models"
 )
 
+const httpsScheme = "https"
+
 // Providers resolves configured API models and locally stored subscription credentials.
 // ChatGPT credentials are refreshed near expiry and reread for every HTTP request.
 type Providers struct {
@@ -30,9 +32,9 @@ type Providers struct {
 	workers sync.WaitGroup
 }
 
-// NewProviders binds the credential store and HTTP client used for model execution.
+// New binds the credential store and HTTP client used for model execution.
 // Call Close when the ACP connection ends to stop credential refresh work.
-func NewProviders(store *auth.Store, path string, client *http.Client) (*Providers, error) {
+func New(store *auth.Store, path string, client *http.Client) (*Providers, error) {
 	if store == nil || path == "" || client == nil {
 		return nil, errors.New("credential store, path, and HTTP client are required")
 	}
@@ -90,7 +92,7 @@ func (p *Providers) Logout(ctx context.Context) error {
 
 // Generator creates a GAI provider adapter and turn-specific generation options.
 // Subscription tokens are only attached to their exact HTTPS provider host.
-func (p *Providers) Generator(ctx context.Context, model models.Model, effort ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+func (p *Providers) Generator(ctx context.Context, model models.Model, effort models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}

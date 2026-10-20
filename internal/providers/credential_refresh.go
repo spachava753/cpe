@@ -1,4 +1,4 @@
-package agent
+package providers
 
 import (
 	"context"
@@ -167,4 +167,11 @@ func (t subscriptionTransport) RoundTrip(request *http.Request) (*http.Response,
 		"cpe",
 	)
 	return t.base.RoundTrip(copy)
+}
+
+// IsCredentialError reports whether err prevents model-response retries because
+// subscription credentials could not be used or renewed.
+func IsCredentialError(err error) bool {
+	_, ok := errors.AsType[*credentialError](err)
+	return ok
 }

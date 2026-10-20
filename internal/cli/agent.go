@@ -17,6 +17,7 @@ import (
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/auth"
 	"github.com/spachava753/cpe/internal/models"
+	"github.com/spachava753/cpe/internal/providers"
 )
 
 type serveAgent func(context.Context, acp.Transport, agent.Config, agent.Dependencies) error
@@ -130,7 +131,7 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 			if err != nil {
 				return err
 			}
-			providers, err := agent.NewProviders(
+			providerSet, err := providers.New(
 				store,
 				authOptions.Path,
 				&http.Client{
@@ -140,7 +141,7 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 			if err != nil {
 				return err
 			}
-			defer providers.Close()
+			defer providerSet.Close()
 			return serve(
 				command.Context(),
 				&acp.StdioTransport{},
@@ -148,7 +149,7 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 					Models: catalog,
 					Initial: agent.SessionOptions{
 						Model:     agent.ModelID(modelID),
-						Reasoning: agent.ReasoningLevel(effort),
+						Reasoning: models.ReasoningLevel(effort),
 					},
 					SkillPaths:         skillPaths,
 					PluginPaths:        pluginPaths,
@@ -159,8 +160,8 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 				},
 				agent.Dependencies{
 					Filesystem:     filesystem,
-					Authentication: providers,
-					Generators:     providers.Generator,
+					Authentication: providerSet,
+					Generators:     providerSet.Generator,
 					Hosts:          agent.LocalHost,
 					MCP:            agent.ConnectMCP,
 					History:        history,

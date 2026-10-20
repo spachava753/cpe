@@ -1,4 +1,4 @@
-package agent
+package providers
 
 import (
 	"context"
@@ -37,7 +37,7 @@ func refreshProviderFixture(t *testing.T, expiry time.Time, transport http.Round
 	); err != nil {
 		t.Fatal(err)
 	}
-	providers, err := NewProviders(
+	providers, err := New(
 		store,
 		"/auth.json",
 		&http.Client{
@@ -293,10 +293,7 @@ func TestCredentialRefreshLifetime(t *testing.T) {
 							t.Context(),
 							refreshRequest(options),
 						)
-						if err == nil || modelCalls.Load() != 1 || retryResponse(
-							err,
-							false,
-						) || strings.Contains(
+						if err == nil || modelCalls.Load() != 1 || !IsCredentialError(err) || strings.Contains(
 							err.Error(),
 							"private-auth-error",
 						) {

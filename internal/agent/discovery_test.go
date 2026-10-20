@@ -168,7 +168,7 @@ func TestSessionDiscovery(t *testing.T) {
 				)
 				fixture := serverFixture(
 					t,
-					func(ctx context.Context, model models.Model, reasoning ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+					func(ctx context.Context, model models.Model, reasoning models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 						base, options, err := scriptGenerator(
 							ctx,
 							model,

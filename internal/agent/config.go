@@ -20,13 +20,10 @@ import (
 // ModelID names a configured model, independently of its provider's identifier.
 type ModelID string
 
-// ReasoningLevel names a supported effort; empty means provider default.
-type ReasoningLevel string
-
 // SessionOptions selects the model and reasoning effort for subsequent turns.
 type SessionOptions struct {
 	Model     ModelID
-	Reasoning ReasoningLevel
+	Reasoning models.ReasoningLevel
 }
 
 // Config supplies models, discovery paths, and execution limits.
@@ -64,7 +61,7 @@ type Authenticator interface {
 }
 
 // GeneratorFactory constructs a generator and options using current credentials.
-type GeneratorFactory func(context.Context, models.Model, ReasoningLevel) (gai.Generator, gai.GenerationOptions, error)
+type GeneratorFactory func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error)
 
 func checkConfig(config Config, deps Dependencies) error {
 	if len(config.Models) == 0 || config.TurnTimeout <= 0 || config.MaxGenerations == 0 {

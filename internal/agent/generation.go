@@ -14,6 +14,8 @@ import (
 
 	"github.com/spachava753/gai"
 	gaiagent "github.com/spachava753/gai/agent"
+
+	"github.com/spachava753/cpe/internal/providers"
 )
 
 // responseGenerator retries one provider call, never an agent loop or a tool call.
@@ -218,7 +220,7 @@ func (s *responseStream) Stream(ctx context.Context, request gai.GenerationReque
 }
 
 func retryResponse(err error, partial bool) bool {
-	if _, ok := errors.AsType[*credentialError](err); ok {
+	if providers.IsCredentialError(err) {
 		return false
 	}
 	if api, ok := errors.AsType[*gai.ApiErr](err); ok {

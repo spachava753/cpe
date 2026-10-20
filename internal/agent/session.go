@@ -11,6 +11,7 @@ import (
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/models"
 	"github.com/spachava753/cpe/internal/terminaltext"
 )
 
@@ -158,7 +159,7 @@ func (s *session) configure(ctx context.Context, id string, value string) ([]acp
 		if value == defaultReasoning {
 			value = ""
 		}
-		options.Reasoning = ReasoningLevel(value)
+		options.Reasoning = models.ReasoningLevel(value)
 	default:
 		return nil, errors.New("unknown session configuration option")
 	}
