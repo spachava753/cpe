@@ -11,6 +11,17 @@ go.mod        Go version, dependencies, and developer tools
 README.md     User workflows and verification instructions
 ```
 
+## Agent package boundaries
+
+- `internal/agent` owns ACP translation, live sessions, and turn orchestration.
+- `internal/conversation` owns saved records, compaction invariants, token accounting,
+  and checkpoint storage.
+- `internal/providers` owns model adapters and credential-refresh workers.
+- `internal/mcpclient` owns MCP transports and session connections.
+- `internal/toolruntime` owns Dyson/bash execution, tool discovery, and output conversion.
+- The CLI assembles these packages. Extracted packages must not import `agent` or ACP.
+  See `internal/agent/README.md` for resource ownership and compaction handoff.
+
 ## Engineering discipline
 
 - Implement only the behavior the user requested. Ask before adding anything
