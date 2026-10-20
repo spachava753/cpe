@@ -10,16 +10,18 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/dyson"
+
+	"github.com/spachava753/cpe/internal/mcpclient"
 )
 
 type catalogMCP struct {
-	tools        map[MCPServerID][]*mcp.Tool
-	instructions map[MCPServerID]string
+	tools        map[mcpclient.ServerID][]*mcp.Tool
+	instructions map[mcpclient.ServerID]string
 	calls        int
 }
 
-func (m *catalogMCP) Servers() []MCPServerID {
-	var servers []MCPServerID
+func (m *catalogMCP) Servers() []mcpclient.ServerID {
+	var servers []mcpclient.ServerID
 	for server := range m.tools {
 		servers = append(
 			servers,
@@ -29,13 +31,13 @@ func (m *catalogMCP) Servers() []MCPServerID {
 	return servers
 }
 
-func (m *catalogMCP) Load(ctx context.Context, id MCPServerID) ([]*mcp.Tool, error) {
+func (m *catalogMCP) Load(ctx context.Context, id mcpclient.ServerID) ([]*mcp.Tool, error) {
 	return m.tools[id], ctx.Err()
 }
 
-func (m *catalogMCP) Instructions(id MCPServerID) string { return m.instructions[id] }
+func (m *catalogMCP) Instructions(id mcpclient.ServerID) string { return m.instructions[id] }
 
-func (m *catalogMCP) Call(ctx context.Context, id MCPServerID, params *mcp.CallToolParams) (*mcp.CallToolResult, error) {
+func (m *catalogMCP) Call(ctx context.Context, id mcpclient.ServerID, params *mcp.CallToolParams) (*mcp.CallToolResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -132,7 +134,7 @@ func TestToolDiscovery(t *testing.T) {
 			test.name,
 			func(t *testing.T) {
 				remote := &catalogMCP{
-					tools: map[MCPServerID][]*mcp.Tool{
+					tools: map[mcpclient.ServerID][]*mcp.Tool{
 						"records": {
 							{
 								Name:        "listPullRequests",
@@ -153,7 +155,7 @@ func TestToolDiscovery(t *testing.T) {
 							},
 						},
 					},
-					instructions: map[MCPServerID]string{
+					instructions: map[mcpclient.ServerID]string{
 						"records": "Issue triage.\nDetailed instructions.",
 					},
 				}
@@ -164,7 +166,7 @@ func TestToolDiscovery(t *testing.T) {
 						return dyson.CommandResult{}, nil
 					}),
 					func(config *HostConfig) {
-						config.Descriptions = map[MCPServerID]string{
+						config.Descriptions = map[mcpclient.ServerID]string{
 							"records": "Archive service",
 						}
 					},
@@ -206,12 +208,12 @@ func TestToolDiscovery(t *testing.T) {
 func TestMCPIdentifiers(t *testing.T) {
 	for _, test := range []struct {
 		name    string
-		servers []MCPServerID
+		servers []mcpclient.ServerID
 		tools   []string
 	}{
 		{
 			name: "punctuation and keyword tool names",
-			servers: []MCPServerID{
+			servers: []mcpclient.ServerID{
 				"plugin:server",
 			},
 			tools: []string{
@@ -221,7 +223,7 @@ func TestMCPIdentifiers(t *testing.T) {
 		},
 		{
 			name: "server normalization collisions",
-			servers: []MCPServerID{
+			servers: []mcpclient.ServerID{
 				"my-server",
 				"my_server",
 			},
@@ -231,7 +233,7 @@ func TestMCPIdentifiers(t *testing.T) {
 		},
 		{
 			name: "tool normalization collisions",
-			servers: []MCPServerID{
+			servers: []mcpclient.ServerID{
 				"test",
 			},
 			tools: []string{
@@ -241,7 +243,7 @@ func TestMCPIdentifiers(t *testing.T) {
 		},
 		{
 			name: "namespace boundary collisions",
-			servers: []MCPServerID{
+			servers: []mcpclient.ServerID{
 				"a",
 				"a__b",
 			},
@@ -255,7 +257,7 @@ func TestMCPIdentifiers(t *testing.T) {
 			test.name,
 			func(t *testing.T) {
 				remote := &catalogMCP{
-					tools: make(map[MCPServerID][]*mcp.Tool),
+					tools: make(map[mcpclient.ServerID][]*mcp.Tool),
 				}
 				for _, server := range test.servers {
 					for _, name := range test.tools {

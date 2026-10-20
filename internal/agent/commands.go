@@ -16,6 +16,7 @@ import (
 	"github.com/spachava753/gai"
 	"github.com/spf13/afero"
 
+	"github.com/spachava753/cpe/internal/mcpclient"
 	"github.com/spachava753/cpe/internal/plugins"
 	"github.com/spachava753/cpe/internal/skills"
 )
@@ -242,25 +243,25 @@ func (c commandCatalog) instructions() string {
 	return text.String()
 }
 
-func (c commandCatalog) serverDescriptions() map[MCPServerID]string {
-	result := make(map[MCPServerID]string)
+func (c commandCatalog) serverDescriptions() map[mcpclient.ServerID]string {
+	result := make(map[mcpclient.ServerID]string)
 	for _, plugin := range c.plugins {
 		for name := range plugin.MCPConfig {
-			result[MCPServerID(plugin.Name+":"+name)] = plugin.Description
+			result[mcpclient.ServerID(plugin.Name+":"+name)] = plugin.Description
 		}
 	}
 	return result
 }
 
-func (c commandCatalog) servers(client map[MCPServerID]mcpServer, cwd string) (map[MCPServerID]mcpServer, error) {
-	servers := make(map[MCPServerID]mcpServer)
+func (c commandCatalog) servers(client map[mcpclient.ServerID]plugins.MCPServer, cwd string) (map[mcpclient.ServerID]plugins.MCPServer, error) {
+	servers := make(map[mcpclient.ServerID]plugins.MCPServer)
 	maps.Copy(
 		servers,
 		client,
 	)
 	for _, plugin := range c.plugins {
 		for name, server := range plugin.MCPConfig {
-			id := MCPServerID(plugin.Name + ":" + name)
+			id := mcpclient.ServerID(plugin.Name + ":" + name)
 			if _, exists := servers[id]; exists {
 				return nil, fmt.Errorf(
 					"duplicate MCP server %q",

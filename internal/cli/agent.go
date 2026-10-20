@@ -17,6 +17,7 @@ import (
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/auth"
 	"github.com/spachava753/cpe/internal/conversation"
+	"github.com/spachava753/cpe/internal/mcpclient"
 	"github.com/spachava753/cpe/internal/models"
 	"github.com/spachava753/cpe/internal/providers"
 )
@@ -164,7 +165,7 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 					Authentication: providerSet,
 					Generators:     providerSet.Generator,
 					Hosts:          agent.LocalHost,
-					MCP:            agent.ConnectMCP,
+					MCP:            mcpclient.Connect,
 					History:        history,
 					Traces:         otel.GetTracerProvider(),
 					Stderr:         command.ErrOrStderr(),

@@ -17,6 +17,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/auth"
 	"github.com/spachava753/cpe/internal/conversation"
+	"github.com/spachava753/cpe/internal/mcpclient"
 	"github.com/spachava753/cpe/internal/models"
 	"github.com/spachava753/cpe/internal/plugins"
 	"github.com/spachava753/cpe/internal/version"
@@ -457,7 +458,7 @@ func parseSessionSpec(id conversation.ID, cwd string, servers []acp.McpServer, a
 	spec := sessionSpec{
 		id:      id,
 		cwd:     filepath.Clean(cwd),
-		servers: make(map[MCPServerID]mcpServer),
+		servers: make(map[mcpclient.ServerID]plugins.MCPServer),
 	}
 	if id == "" || !filepath.IsAbs(cwd) {
 		return spec, errors.New("session ID and absolute cwd are required")
@@ -466,14 +467,14 @@ func parseSessionSpec(id conversation.ID, cwd string, servers []acp.McpServer, a
 		return spec, errors.New("additional directories are not supported")
 	}
 	for _, server := range servers {
-		id := MCPServerID(server.Name)
+		id := mcpclient.ServerID(server.Name)
 		if id == "" {
 			return spec, errors.New("MCP server name is required")
 		}
 		if _, exists := spec.servers[id]; exists {
 			return spec, errors.New("duplicate MCP server name")
 		}
-		config := mcpServer{
+		config := plugins.MCPServer{
 			Cwd:     spec.cwd,
 			Args:    server.Args,
 			Env:     make(map[string]string),
@@ -491,7 +492,7 @@ func parseSessionSpec(id conversation.ID, cwd string, servers []acp.McpServer, a
 			}
 		case acp.McpServerTypeHttp, acp.McpServerTypeSse:
 			parsed, err := url.Parse(server.Url)
-			if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != httpsScheme) {
+			if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 				return spec, errors.New("invalid MCP HTTP(S) URL")
 			}
 			config.URL = *parsed

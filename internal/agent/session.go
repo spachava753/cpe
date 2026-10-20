@@ -7,19 +7,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/conversation"
+	"github.com/spachava753/cpe/internal/mcpclient"
 	"github.com/spachava753/cpe/internal/models"
+	"github.com/spachava753/cpe/internal/plugins"
 	"github.com/spachava753/cpe/internal/terminaltext"
 )
 
 type sessionSpec struct {
 	id      conversation.ID
 	cwd     string
-	servers map[MCPServerID]mcpServer
+	servers map[mcpclient.ServerID]plugins.MCPServer
 }
 
 type session struct {
@@ -35,7 +36,7 @@ type session struct {
 	projectInstructions string
 	runtime             Host
 	runtimeReset        *runtimeReset
-	mcp                 *mcpRegistry
+	mcp                 *mcpclient.Registry
 }
 
 func newSession(setup context.Context, lifetime context.Context, spec sessionSpec, record conversation.Record, config Config, deps Dependencies, client *sessionClient) (*session, error) {
@@ -79,11 +80,12 @@ func newSession(setup context.Context, lifetime context.Context, spec sessionSpe
 	if err != nil {
 		return nil, err
 	}
-	registry := &mcpRegistry{
-		connector:   deps.MCP,
-		servers:     servers,
-		connections: make(map[MCPServerID]*mcp.ClientSession),
-		tools:       make(map[MCPServerID][]*mcp.Tool),
+	registry, err := mcpclient.NewRegistry(
+		deps.MCP,
+		servers,
+	)
+	if err != nil {
+		return nil, err
 	}
 	host, err := deps.Hosts(
 		setup,
@@ -97,7 +99,7 @@ func newSession(setup context.Context, lifetime context.Context, spec sessionSpe
 	if err != nil {
 		return nil, errors.Join(
 			err,
-			registry.close(),
+			registry.Close(),
 		)
 	}
 	var reset *runtimeReset
@@ -215,7 +217,7 @@ func (s *session) close(ctx context.Context) error {
 	}
 	return errors.Join(
 		s.runtime.Close(ctx),
-		s.mcp.close(),
+		s.mcp.Close(),
 	)
 }
 

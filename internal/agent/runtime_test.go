@@ -15,16 +15,19 @@ import (
 	"github.com/spachava753/gai"
 	gaiagent "github.com/spachava753/gai/agent"
 	"github.com/spf13/afero"
+
+	"github.com/spachava753/cpe/internal/mcpclient"
+	"github.com/spachava753/cpe/internal/plugins"
 )
 
 type emptyMCP struct{}
 
-func (emptyMCP) Servers() []MCPServerID          { return nil }
-func (emptyMCP) Instructions(MCPServerID) string { return "" }
-func (emptyMCP) Load(context.Context, MCPServerID) ([]*mcp.Tool, error) {
+func (emptyMCP) Servers() []mcpclient.ServerID          { return nil }
+func (emptyMCP) Instructions(mcpclient.ServerID) string { return "" }
+func (emptyMCP) Load(context.Context, mcpclient.ServerID) ([]*mcp.Tool, error) {
 	return nil, errors.New("no MCP server")
 }
-func (emptyMCP) Call(context.Context, MCPServerID, *mcp.CallToolParams) (*mcp.CallToolResult, error) {
+func (emptyMCP) Call(context.Context, mcpclient.ServerID, *mcp.CallToolParams) (*mcp.CallToolResult, error) {
 	return nil, errors.New("no MCP server")
 }
 
@@ -451,13 +454,8 @@ func TestMCPEmission(t *testing.T) {
 						}, nil
 					},
 				)
-				registry := &mcpRegistry{
-					servers: map[MCPServerID]mcpServer{
-						"test": {},
-					},
-					connections: make(map[MCPServerID]*mcp.ClientSession),
-					tools:       make(map[MCPServerID][]*mcp.Tool),
-					connector: func(ctx context.Context, _ mcpServer) (*mcp.ClientSession, error) {
+				registry, err := mcpclient.NewRegistry(
+					func(ctx context.Context, _ plugins.MCPServer) (*mcp.ClientSession, error) {
 						a, b := mcp.NewInMemoryTransports()
 						session, err := server.Connect(
 							ctx,
@@ -480,8 +478,14 @@ func TestMCPEmission(t *testing.T) {
 							nil,
 						)
 					},
+					map[mcpclient.ServerID]plugins.MCPServer{
+						"test": {},
+					},
+				)
+				if err != nil {
+					t.Fatal(err)
 				}
-				t.Cleanup(func() { _ = registry.close() })
+				t.Cleanup(func() { _ = registry.Close() })
 				host := hostFixture(
 					t,
 					registry,

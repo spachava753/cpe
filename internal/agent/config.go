@@ -15,6 +15,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/auth"
 	"github.com/spachava753/cpe/internal/conversation"
+	"github.com/spachava753/cpe/internal/mcpclient"
 	"github.com/spachava753/cpe/internal/models"
 )
 
@@ -39,7 +40,7 @@ type Dependencies struct {
 	Authentication Authenticator
 	Generators     GeneratorFactory
 	Hosts          HostFactory
-	MCP            MCPConnector
+	MCP            mcpclient.Connector
 	History        conversation.Store
 	Traces         trace.TracerProvider
 	// Stderr receives nonfatal discovery diagnostics, separate from ACP output.

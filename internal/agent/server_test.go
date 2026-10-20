@@ -20,6 +20,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/auth"
 	"github.com/spachava753/cpe/internal/conversation"
+	"github.com/spachava753/cpe/internal/mcpclient"
 	"github.com/spachava753/cpe/internal/models"
 )
 
@@ -135,7 +136,7 @@ func serverFixture(t *testing.T, generator GeneratorFactory, configure ...func(*
 				},
 			)
 		},
-		MCP:     ConnectMCP,
+		MCP:     mcpclient.Connect,
 		History: store,
 		Traces:  noop.NewTracerProvider(),
 		Stderr:  io.Discard,

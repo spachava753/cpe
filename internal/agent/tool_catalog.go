@@ -9,6 +9,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/spachava753/cpe/internal/mcpclient"
 )
 
 type toolCatalog struct {
@@ -29,7 +31,7 @@ type catalogTool struct {
 	Description string         `json:"description"`
 	Signature   string         `json:"signature"`
 	InputSchema map[string]any `json:"input_schema"`
-	server      MCPServerID
+	server      mcpclient.ServerID
 	remoteName  string
 	searchText  string
 }
@@ -39,7 +41,7 @@ type identifierCandidate struct {
 	name     string
 }
 
-func discoverTools(ctx context.Context, mcp MCPTools, descriptions map[MCPServerID]string) (toolCatalog, error) {
+func discoverTools(ctx context.Context, mcp MCPTools, descriptions map[mcpclient.ServerID]string) (toolCatalog, error) {
 	catalog := toolCatalog{}
 	servers := slices.Clone(mcp.Servers())
 	slices.Sort(servers)

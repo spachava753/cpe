@@ -18,6 +18,7 @@ import (
 	"github.com/spachava753/starlarkx/starlarkstruct"
 
 	"github.com/spachava753/cpe/internal/conversation"
+	"github.com/spachava753/cpe/internal/mcpclient"
 )
 
 const (
@@ -31,7 +32,7 @@ type HostConfig struct {
 	Cwd     string
 	MCP     MCPTools
 	// Descriptions supplies optional plugin descriptions for MCP namespaces.
-	Descriptions map[MCPServerID]string
+	Descriptions map[mcpclient.ServerID]string
 }
 
 // HostFactory creates session-owned tools; ctx bounds setup, not their lifetime.
@@ -557,4 +558,13 @@ func (o *outputCollector) add(block gai.Block) error {
 	)
 	o.bytes += size
 	return nil
+}
+
+// MCPTools retains SDK results for scripts; conversion to model content is separate.
+type MCPTools interface {
+	Servers() []mcpclient.ServerID
+	Load(context.Context, mcpclient.ServerID) ([]*mcp.Tool, error)
+	// Instructions returns initialization guidance for a loaded server.
+	Instructions(mcpclient.ServerID) string
+	Call(context.Context, mcpclient.ServerID, *mcp.CallToolParams) (*mcp.CallToolResult, error)
 }

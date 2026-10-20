@@ -18,6 +18,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/models"
+	"github.com/spachava753/cpe/internal/plugins"
 )
 
 func TestSessionDiscovery(t *testing.T) {
@@ -239,7 +240,7 @@ func TestSessionDiscovery(t *testing.T) {
 								t.Fatal(err)
 							}
 						}
-						deps.MCP = func(ctx context.Context, config mcpServer) (*mcp.ClientSession, error) {
+						deps.MCP = func(ctx context.Context, config plugins.MCPServer) (*mcp.ClientSession, error) {
 							connections.Add(1)
 							if test.setupTimeout {
 								<-ctx.Done()
