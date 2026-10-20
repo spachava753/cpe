@@ -140,6 +140,7 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 			if err != nil {
 				return err
 			}
+			defer providers.Close()
 			return serve(
 				command.Context(),
 				&acp.StdioTransport{},

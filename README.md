@@ -299,14 +299,32 @@ logout removes only that entry. Other providers are preserved, including during
 concurrent commands, and failed or canceled updates leave credentials unchanged.
 Logout leaves remote sessions and provider-issued API keys active.
 
-ACP model execution reads credentials again at the start of each turn. A
-`Responses` model at `https://chatgpt.com/backend-api/codex/` can omit `api_key`
+A `Responses` model at `https://chatgpt.com/backend-api/codex/` can omit `api_key`
 to use the stored ChatGPT subscription; models at the exact HTTPS host
 `opencode.ai` can use the stored OpenCode key. Explicit model keys take precedence.
 Stored subscription credentials are never attached to other hosts or plain HTTP.
-ACP authentication verifies a prior terminal login; it does not open a login UI.
-Expired ChatGPT credentials require `cpe auth login openai` again; automatic token
-refresh is not implemented.
+ACP authentication verifies stored credentials without opening a login UI.
+
+ChatGPT credentials are checked before every provider request, including streamed
+requests and subsequent requests within a turn. When the access token is within
+five minutes of expiry, CPE starts a background refresh. Requests continue using
+the unexpired token while refresh is pending or failing, and use newly saved
+credentials once refresh succeeds. API keys, including OpenCode keys, are not
+refreshed.
+
+Refresh attempts have a 30-second timeout and retry with exponential backoff from
+one to 30 seconds until success or the existing access token expires. Retries
+continue independently of individual turns, but stop on ACP logout or connection
+shutdown. Once the exchange succeeds, CPE retains the rotated tokens and retries
+saving them atomically, even beyond the old access token's expiry. It does not
+exchange the old refresh token again. Saving stops on success, replacement by
+login/logout, or shutdown. Other providers' credentials are preserved.
+
+Expired tokens are never sent to the model provider. A request finding expired
+credentials waits for renewal and persistence, subject to the request deadline.
+Already-expired credentials get one token exchange attempt with a 30-second
+timeout; successful rotation then follows the same save-only retry policy.
+If credentials cannot be renewed and saved, the request fails. Revoked refresh credentials require `cpe auth login openai` again.
 
 ## Agent Plugins
 

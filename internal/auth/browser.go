@@ -47,7 +47,7 @@ func (client openAIClient) browserLogin(ctx context.Context, output io.Writer) (
 		"response_type": {
 			"code",
 		},
-		"client_id": {
+		clientIDParameter: {
 			openAIClientID,
 		},
 		"redirect_uri": {

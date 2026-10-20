@@ -25,8 +25,9 @@ const maxCredentialFile = 2 * maxAuthResponse
 // Store retrieves and saves provider credentials using an injected filesystem.
 // Reuse one Store for concurrent access to backends without native file descriptors.
 type Store struct {
-	filesystem afero.Fs
-	gate       chan struct{}
+	filesystem  afero.Fs
+	gate        chan struct{}
+	refreshGate chan struct{}
 }
 
 // NewStore uses filesystem for all credential file operations.
@@ -35,6 +36,10 @@ func NewStore(filesystem afero.Fs) *Store {
 	return &Store{
 		filesystem: filesystem,
 		gate: make(
+			chan struct{},
+			1,
+		),
+		refreshGate: make(
 			chan struct{},
 			1,
 		),

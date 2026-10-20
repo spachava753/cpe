@@ -18,6 +18,7 @@ import (
 // TODO: replace with sign in with chatgpt
 // This public client is also used by Codex and OpenCode's ChatGPT integration.
 const openAIClientID = "app_EMoamEEZ73f0CkXaXp7hrann"
+const clientIDParameter = "client_id"
 const loginTimeout = 15 * time.Minute
 const maxAuthResponse = 1024 * 1024
 
@@ -42,7 +43,7 @@ func (client openAIClient) exchange(ctx context.Context, code, verifier, redirec
 		"grant_type": {
 			"authorization_code",
 		},
-		"client_id": {
+		clientIDParameter: {
 			openAIClientID,
 		},
 		"code": {

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"time"
+	"sync"
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	anthropicoption "github.com/anthropics/anthropic-sdk-go/option"
@@ -19,14 +19,19 @@ import (
 )
 
 // Providers resolves configured API models and locally stored subscription credentials.
-// Credentials are read on each turn; expired ChatGPT credentials require terminal login.
+// ChatGPT credentials are refreshed near expiry and reread for every HTTP request.
 type Providers struct {
-	store  *auth.Store
-	path   string
-	client *http.Client
+	store   *auth.Store
+	path    string
+	client  *http.Client
+	mu      sync.Mutex
+	closed  bool
+	refresh *credentialRefresh
+	workers sync.WaitGroup
 }
 
 // NewProviders binds the credential store and HTTP client used for model execution.
+// Call Close when the ACP connection ends to stop credential refresh work.
 func NewProviders(store *auth.Store, path string, client *http.Client) (*Providers, error) {
 	if store == nil || path == "" || client == nil {
 		return nil, errors.New("credential store, path, and HTTP client are required")
@@ -40,6 +45,10 @@ func NewProviders(store *auth.Store, path string, client *http.Client) (*Provide
 
 // Authenticate verifies that terminal login established usable local credentials.
 func (p *Providers) Authenticate(ctx context.Context, provider auth.Provider) error {
+	if provider == auth.OpenAI {
+		_, err := p.openAICredentials(ctx)
+		return err
+	}
 	credentials, err := p.store.Retrieve(
 		ctx,
 		p.path,
@@ -48,10 +57,6 @@ func (p *Providers) Authenticate(ctx context.Context, provider auth.Provider) er
 		return err
 	}
 	switch provider {
-	case auth.OpenAI:
-		if credentials.OpenAI == nil || !credentials.OpenAI.ExpiresAt.After(time.Now()) {
-			return errors.New("run cpe auth login openai before continuing")
-		}
 	case auth.OpenCode:
 		if credentials.OpenCode == nil {
 			return errors.New("run cpe auth login opencode before continuing")
@@ -64,6 +69,9 @@ func (p *Providers) Authenticate(ctx context.Context, provider auth.Provider) er
 
 // Logout removes both local subscription entries without revoking remote sessions.
 func (p *Providers) Logout(ctx context.Context) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.stopRefresh()
 	return errors.Join(
 		p.store.Save(
 			ctx,
@@ -91,7 +99,7 @@ func (p *Providers) Generator(ctx context.Context, model models.Model, effort Re
 		key = model.APIKey.ExposeSecret()
 	}
 	codex := model.API == models.Responses && model.BaseUrl.Scheme == httpsScheme && model.BaseUrl.Host == "chatgpt.com"
-	account := ""
+	client := p.client
 	if key == "" && (codex || model.BaseUrl.Scheme == httpsScheme && model.BaseUrl.Host == "opencode.ai") {
 		credentials, err := p.store.Retrieve(
 			ctx,
@@ -101,11 +109,20 @@ func (p *Providers) Generator(ctx context.Context, model models.Model, effort Re
 			return nil, nil, err
 		}
 		if codex {
-			if credentials.OpenAI == nil || !credentials.OpenAI.ExpiresAt.After(time.Now()) {
-				return nil, nil, errors.New("ChatGPT login missing or expired; run cpe auth login openai")
+			if _, err := p.openAICredentials(ctx); err != nil {
+				return nil, nil, err
 			}
-			key = credentials.OpenAI.AccessToken
-			account = credentials.OpenAI.AccountID
+			copy := *p.client
+			transport := p.client.Transport
+			if transport == nil {
+				transport = http.DefaultTransport
+			}
+			copy.Transport = subscriptionTransport{
+				providers: p,
+				base:      transport,
+			}
+			copy.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+			client = &copy
 		} else {
 			if credentials.OpenCode == nil {
 				return nil, nil, errors.New("OpenCode Go login missing; run cpe auth login opencode")
@@ -168,23 +185,10 @@ func (p *Providers) Generator(ctx context.Context, model models.Model, effort Re
 		)
 	case models.Responses:
 		opts := []openaioption.RequestOption{
-			openaioption.WithHTTPClient(p.client),
+			openaioption.WithHTTPClient(client),
 			openaioption.WithBaseURL(base),
 			openaioption.WithAPIKey(key),
 			openaioption.WithMaxRetries(0),
-		}
-		if account != "" {
-			opts = append(
-				opts,
-				openaioption.WithHeader(
-					"ChatGPT-Account-Id",
-					account,
-				),
-				openaioption.WithHeader(
-					"originator",
-					"cpe",
-				),
-			)
 		}
 		client := openai.NewClient(opts...)
 		generator = gai.NewResponsesGenerator(&client.Responses)

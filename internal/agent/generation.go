@@ -218,6 +218,9 @@ func (s *responseStream) Stream(ctx context.Context, request gai.GenerationReque
 }
 
 func retryResponse(err error, partial bool) bool {
+	if _, ok := errors.AsType[*credentialError](err); ok {
+		return false
+	}
 	if api, ok := errors.AsType[*gai.ApiErr](err); ok {
 		if api.Retryable() {
 			return true

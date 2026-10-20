@@ -75,6 +75,14 @@ func TestProviders(t *testing.T) {
 			wantKey:  "explicit-fixture",
 		},
 		{
+			name:     "explicit ChatGPT API key bypasses OAuth refresh",
+			base:     "https://chatgpt.com/backend-api/codex/",
+			api:      models.Responses,
+			expired:  true,
+			explicit: true,
+			wantKey:  "explicit-fixture",
+		},
+		{
 			name:     "explicit key takes precedence",
 			base:     "https://opencode.ai/zen/go/v1/",
 			api:      models.Openai,
@@ -128,6 +136,15 @@ func TestProviders(t *testing.T) {
 					"/auth.json",
 					&http.Client{
 						Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+							if request.URL.Host == "auth.openai.com" {
+								if !test.expired || test.explicit {
+									t.Error("unexpected OAuth refresh")
+								}
+								return &http.Response{
+									StatusCode: http.StatusBadRequest,
+									Body:       io.NopCloser(strings.NewReader("{}")),
+								}, nil
+							}
 							called = true
 							key := strings.TrimPrefix(
 								request.Header.Get("Authorization"),
@@ -174,6 +191,7 @@ func TestProviders(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
+				t.Cleanup(providers.Close)
 				base, err := url.Parse(test.base)
 				if err != nil {
 					t.Fatal(err)
@@ -201,7 +219,7 @@ func TestProviders(t *testing.T) {
 				}
 				if test.wantError {
 					if called {
-						t.Fatal("HTTP called before generator configuration succeeded")
+						t.Fatal("model HTTP called before generator configuration succeeded")
 					}
 					return
 				}
