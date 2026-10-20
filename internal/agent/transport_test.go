@@ -8,6 +8,8 @@ import (
 
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/acp-sdk/jsonrpc"
+
+	"github.com/spachava753/cpe/internal/conversation"
 )
 
 type capturedTransport struct {
@@ -75,7 +77,7 @@ func TestSessionToolCancellation(t *testing.T) {
 	)
 	record, err := fixture.store.Load(
 		t.Context(),
-		SessionID(id),
+		conversation.ID(id),
 	)
 	if err != nil {
 		t.Fatal(err)

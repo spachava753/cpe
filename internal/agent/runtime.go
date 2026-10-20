@@ -16,6 +16,8 @@ import (
 	starjson "github.com/spachava753/starlarkx/lib/json"
 	"github.com/spachava753/starlarkx/starlark"
 	"github.com/spachava753/starlarkx/starlarkstruct"
+
+	"github.com/spachava753/cpe/internal/conversation"
 )
 
 const (
@@ -25,7 +27,7 @@ const (
 
 // HostConfig defines the session scope of a tool runtime.
 type HostConfig struct {
-	Session SessionID
+	Session conversation.ID
 	Cwd     string
 	MCP     MCPTools
 	// Descriptions supplies optional plugin descriptions for MCP namespaces.

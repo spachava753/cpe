@@ -14,23 +14,15 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/spachava753/cpe/internal/auth"
+	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/models"
 )
-
-// ModelID names a configured model, independently of its provider's identifier.
-type ModelID string
-
-// SessionOptions selects the model and reasoning effort for subsequent turns.
-type SessionOptions struct {
-	Model     ModelID
-	Reasoning models.ReasoningLevel
-}
 
 // Config supplies models, discovery paths, and execution limits.
 // Callers must not mutate referenced values until Serve returns.
 type Config struct {
-	Models         map[ModelID]models.Model
-	Initial        SessionOptions
+	Models         map[models.ID]models.Model
+	Initial        models.Selection
 	SkillPaths     []string
 	PluginPaths    []string
 	Instructions   string
@@ -48,7 +40,7 @@ type Dependencies struct {
 	Generators     GeneratorFactory
 	Hosts          HostFactory
 	MCP            MCPConnector
-	History        SessionStore
+	History        conversation.Store
 	Traces         trace.TracerProvider
 	// Stderr receives nonfatal discovery diagnostics, separate from ACP output.
 	Stderr io.Writer
@@ -94,7 +86,7 @@ func checkConfig(config Config, deps Dependencies) error {
 	)
 }
 
-func checkOptions(catalog map[ModelID]models.Model, options SessionOptions) error {
+func checkOptions(catalog map[models.ID]models.Model, options models.Selection) error {
 	model, ok := catalog[options.Model]
 	if !ok {
 		return fmt.Errorf(

@@ -19,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/spachava753/cpe/internal/auth"
+	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/models"
 )
 
@@ -58,7 +59,7 @@ func (c *testClient) RequestPermission(context.Context, *acp.RequestPermissionRe
 
 type agentFixture struct {
 	client         *acp.Client
-	store          SessionStore
+	store          conversation.Store
 	cancel         context.CancelFunc
 	done           chan error
 	disconnect     func() error
@@ -75,12 +76,12 @@ func serverFixture(t *testing.T, generator GeneratorFactory, configure ...func(*
 	); err != nil {
 		t.Fatal(err)
 	}
-	store := &fileSessionStore{
-		filesystem: filesystem,
-		directory:  "/history",
+	store, err := conversation.NewStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
 	}
 	config := Config{
-		Models: map[ModelID]models.Model{
+		Models: map[models.ID]models.Model{
 			"one": {
 				ID: "one",
 				InputModalities: []gai.Modality{
@@ -101,7 +102,7 @@ func serverFixture(t *testing.T, generator GeneratorFactory, configure ...func(*
 				},
 			},
 		},
-		Initial: SessionOptions{
+		Initial: models.Selection{
 			Model: "one",
 		},
 		Instructions:       "test agent",
@@ -284,7 +285,7 @@ func promptFixture(t *testing.T, client *acp.Client, id acp.SessionId, text stri
 	}
 }
 
-func lastToolOutput(record SessionRecord) string {
+func lastToolOutput(record conversation.Record) string {
 	for i := range slices.Backward(record.Dialog) {
 		if record.Dialog[i].Role == gai.ToolResult {
 			var output strings.Builder
@@ -466,7 +467,7 @@ func TestSessionLifecycle(t *testing.T) {
 				)
 				record, err := fixture.store.Load(
 					t.Context(),
-					SessionID(target),
+					conversation.ID(target),
 				)
 				if err != nil {
 					t.Fatal(err)
@@ -536,7 +537,7 @@ func TestSessionLifecycle(t *testing.T) {
 				}
 				record, err = fixture.store.Load(
 					t.Context(),
-					SessionID(target),
+					conversation.ID(target),
 				)
 				if err != nil || lastToolOutput(record) != "11\n" {
 					t.Fatalf(

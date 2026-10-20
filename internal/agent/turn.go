@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
+	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/models"
 )
 
@@ -179,7 +180,7 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptR
 	}
 	response := &acp.PromptResponse{
 		StopReason: acp.StopReasonEndTurn,
-		Usage:      checkpoint.Usage.protocolUsage(),
+		Usage:      protocolUsage(checkpoint.Usage),
 	}
 	if ctx.Err() != nil {
 		response.StopReason = acp.StopReasonCancelled
@@ -225,13 +226,13 @@ func missingResult(dialog gai.Dialog, id string) bool {
 
 type turnHooks struct {
 	session           *session
-	usage             TokenUsage
-	compaction        *Compaction
+	usage             conversation.TokenUsage
+	compaction        *conversation.Compaction
 	compactionRequest compactionRequest
 	runtimeReset      *runtimeReset
 	client            *sessionClient
 	model             models.Model
-	modelID           ModelID
+	modelID           models.ID
 	maxGenerations    uint
 	completed         map[string]gai.Message
 	pending           map[string]bool

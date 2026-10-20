@@ -15,6 +15,7 @@ import (
 	"github.com/spachava753/gai"
 	"github.com/spachava753/gai/agent/agenttest"
 
+	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/models"
 )
 
@@ -150,7 +151,7 @@ func TestResponseRecovery(t *testing.T) {
 						step,
 					)
 				}
-				var history SessionStore
+				var history conversation.Store
 				var id acp.SessionId
 				steps = append(
 					steps,
@@ -158,7 +159,7 @@ func TestResponseRecovery(t *testing.T) {
 						Check: func(request gai.GenerationRequest) error {
 							record, err := history.Load(
 								t.Context(),
-								SessionID(id),
+								conversation.ID(id),
 							)
 							if err != nil {
 								return err
@@ -195,7 +196,7 @@ func TestResponseRecovery(t *testing.T) {
 						config.MaxResponseRetries = test.retries
 						if test.failCheckpoint {
 							deps.History = rejectAbortedStore{
-								SessionStore: deps.History,
+								Store: deps.History,
 							}
 						}
 						if test.notices {
@@ -235,7 +236,7 @@ func TestResponseRecovery(t *testing.T) {
 				}
 				record, err := history.Load(
 					t.Context(),
-					SessionID(id),
+					conversation.ID(id),
 				)
 				if err != nil {
 					t.Fatal(err)
@@ -352,14 +353,14 @@ func TestResponseRecovery(t *testing.T) {
 }
 
 type rejectAbortedStore struct {
-	SessionStore
+	conversation.Store
 }
 
-func (s rejectAbortedStore) Save(ctx context.Context, record SessionRecord) error {
+func (s rejectAbortedStore) Save(ctx context.Context, record conversation.Record) error {
 	if len(record.AbortedResponses) != 0 {
 		return errors.New("checkpoint unavailable")
 	}
-	return s.SessionStore.Save(
+	return s.Store.Save(
 		ctx,
 		record,
 	)
@@ -472,7 +473,7 @@ func TestResponseCancellation(t *testing.T) {
 				}
 				record, err := fixture.store.Load(
 					t.Context(),
-					SessionID(id),
+					conversation.ID(id),
 				)
 				if err != nil {
 					t.Fatal(err)

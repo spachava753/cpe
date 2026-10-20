@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/spachava753/acp-sdk/acp"
+
+	"github.com/spachava753/cpe/internal/conversation"
 )
 
 // Server serves one ACP connection and owns its live sessions. Use Serve.
@@ -24,7 +26,7 @@ type Server struct {
 	initialized bool
 	notices     bool
 	closed      bool
-	sessions    map[SessionID]*session
+	sessions    map[conversation.ID]*session
 }
 
 // Serve runs one ACP connection and joins all session work before returning.
@@ -79,7 +81,7 @@ func newServer(ctx context.Context, config Config, deps Dependencies) (*Server, 
 		deps:     deps,
 		lifetime: lifetime,
 		cancel:   cancel,
-		sessions: make(map[SessionID]*session),
+		sessions: make(map[conversation.ID]*session),
 	}, nil
 }
 
@@ -95,7 +97,7 @@ func (s *Server) ready() error {
 	return nil
 }
 
-func (s *Server) findSession(id SessionID) (*session, error) {
+func (s *Server) findSession(id conversation.ID) (*session, error) {
 	if err := s.ready(); err != nil {
 		return nil, err
 	}
@@ -112,7 +114,7 @@ func (s *Server) findSession(id SessionID) (*session, error) {
 }
 
 // openSession requires lifecycle ownership and publishes only fully initialized sessions.
-func (s *Server) openSession(ctx context.Context, spec sessionSpec, record SessionRecord) (*session, error) {
+func (s *Server) openSession(ctx context.Context, spec sessionSpec, record conversation.Record) (*session, error) {
 	if err := s.ready(); err != nil {
 		return nil, err
 	}
@@ -171,7 +173,7 @@ func (s *Server) close(ctx context.Context) error {
 	s.mu.Lock()
 	s.closed = true
 	live := s.sessions
-	s.sessions = make(map[SessionID]*session)
+	s.sessions = make(map[conversation.ID]*session)
 	s.mu.Unlock()
 	// Cancel every session first so shutdown does not serialize cancellation.
 	for _, session := range live {

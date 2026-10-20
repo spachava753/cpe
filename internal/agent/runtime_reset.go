@@ -1,6 +1,10 @@
 package agent
 
-import "github.com/spachava753/gai"
+import (
+	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/conversation"
+)
 
 const runtimeResetNotice = "[Dyson/Starlark reset here: earlier variables, functions, and imports are unavailable. Rebuild needed state. Files and external effects may remain; inspect them before repeating actions. State created after this point persists normally.]"
 
@@ -9,12 +13,12 @@ type runtimeReset struct {
 	afterMessages int
 }
 
-func (r *runtimeReset) workingDialog(dialog gai.Dialog, compaction *Compaction) gai.Dialog {
+func (r *runtimeReset) workingDialog(dialog gai.Dialog, compaction *conversation.Compaction) gai.Dialog {
 	if r == nil || compaction != nil && compaction.AfterMessages > r.afterMessages {
-		return compaction.workingDialog(dialog)
+		return compaction.WorkingDialog(dialog)
 	}
 	// Compact only the inherited prefix so the notice follows even a restored summary.
-	prefix := compaction.workingDialog(dialog[:r.afterMessages])
+	prefix := compaction.WorkingDialog(dialog[:r.afterMessages])
 	working := make(
 		gai.Dialog,
 		0,

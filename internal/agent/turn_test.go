@@ -10,6 +10,7 @@ import (
 	gaiagent "github.com/spachava753/gai/agent"
 	"github.com/spachava753/gai/agent/agenttest"
 
+	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/models"
 )
 
@@ -69,7 +70,7 @@ func TestStreamingTurn(t *testing.T) {
 	}
 	record, err := fixture.store.Load(
 		t.Context(),
-		SessionID(id),
+		conversation.ID(id),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +83,7 @@ func TestStreamingTurn(t *testing.T) {
 func TestProviderHistory(t *testing.T) {
 	for _, test := range []struct {
 		name         string
-		selected     ModelID
+		selected     models.ID
 		wantMessages int
 	}{
 		{

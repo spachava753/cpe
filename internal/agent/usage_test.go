@@ -2,11 +2,9 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"iter"
-	"math"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -17,6 +15,7 @@ import (
 	"github.com/spachava753/gai"
 	"github.com/spachava753/gai/agent/agenttest"
 
+	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/models"
 )
 
@@ -211,28 +210,28 @@ func TestUsageReporting(t *testing.T) {
 				}
 				saved, err := fixture.store.Load(
 					t.Context(),
-					SessionID(target),
+					conversation.ID(target),
 				)
 				if err != nil {
 					t.Fatal(err)
 				}
 				if diff := cmp.Diff(
 					want,
-					saved.Usage.protocolUsage(),
+					protocolUsage(saved.Usage),
 				); diff != "" {
 					t.Fatal(diff)
 				}
 				if target != id {
 					original, err := fixture.store.Load(
 						t.Context(),
-						SessionID(id),
+						conversation.ID(id),
 					)
 					if err != nil {
 						t.Fatal(err)
 					}
 					if diff := cmp.Diff(
 						wantFirst,
-						original.Usage.protocolUsage(),
+						protocolUsage(original.Usage),
 					); diff != "" {
 						t.Fatal(diff)
 					}
@@ -574,14 +573,14 @@ func TestUsageAttempts(t *testing.T) {
 				}
 				record, err := fixture.store.Load(
 					t.Context(),
-					SessionID(id),
+					conversation.ID(id),
 				)
 				if err != nil {
 					t.Fatal(err)
 				}
 				if diff := cmp.Diff(
 					test.want,
-					record.Usage.protocolUsage(),
+					protocolUsage(record.Usage),
 				); diff != "" {
 					t.Fatal(diff)
 				}
@@ -689,109 +688,6 @@ func TestUsageStopReasons(t *testing.T) {
 					actual,
 				); diff != "" {
 					t.Fatal(diff)
-				}
-			},
-		)
-	}
-}
-
-func TestTokenUsage(t *testing.T) {
-	for _, test := range []struct {
-		name      string
-		previous  TokenUsage
-		metadata  gai.Metadata
-		wantError bool
-		wantInput uint64
-	}{
-		{
-			name: "preserves exact JSON integers",
-			metadata: gai.Metadata{
-				gai.UsageMetricInputTokens: json.Number("9007199254740993"),
-			},
-			wantInput: 9007199254740993,
-		},
-		{
-			name: "adding does not mutate the earlier checkpoint",
-			previous: TokenUsage{
-				InputTokens: new(uint64(10)),
-			},
-			metadata: gai.Metadata{
-				gai.UsageMetricInputTokens: 7,
-			},
-			wantInput: 17,
-		},
-		{
-			name: "counter overflow",
-			previous: TokenUsage{
-				InputTokens: new(uint64(math.MaxUint64)),
-			},
-			metadata: gai.Metadata{
-				gai.UsageMetricInputTokens: 1,
-			},
-			wantError: true,
-		},
-		{
-			name: "total overflow",
-			previous: TokenUsage{
-				InputTokens: new(uint64(math.MaxUint64)),
-			},
-			metadata: gai.Metadata{
-				gai.UsageMetricGenerationTokens: 1,
-			},
-			wantError: true,
-		},
-		{
-			name: "negative token count",
-			metadata: gai.Metadata{
-				gai.UsageMetricInputTokens: -1,
-			},
-			wantError: true,
-		},
-		{
-			name: "fractional token count",
-			metadata: gai.Metadata{
-				gai.UsageMetricInputTokens: json.Number("1.5"),
-			},
-			wantError: true,
-		},
-		{
-			name: "wrong token type",
-			metadata: gai.Metadata{
-				gai.UsageMetricInputTokens: "12",
-			},
-			wantError: true,
-		},
-	} {
-		t.Run(
-			test.name,
-			func(t *testing.T) {
-				before, err := json.Marshal(test.previous)
-				if err != nil {
-					t.Fatal(err)
-				}
-				delta, err := parseTokenUsage(test.metadata)
-				var actual TokenUsage
-				if err == nil {
-					actual, err = test.previous.add(delta)
-				}
-				if (err != nil) != test.wantError {
-					t.Fatalf(
-						"usage error: %v",
-						err,
-					)
-				}
-				if err == nil && (actual.InputTokens == nil || *actual.InputTokens != test.wantInput) {
-					t.Fatalf(
-						"input tokens: %#v",
-						actual,
-					)
-				}
-				after, err := json.Marshal(test.previous)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if string(before) != string(after) {
-					t.Fatal("accumulation mutated an earlier checkpoint")
 				}
 			},
 		)

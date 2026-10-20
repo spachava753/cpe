@@ -16,6 +16,7 @@ import (
 	"github.com/spachava753/gai"
 	"github.com/spf13/afero"
 
+	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/models"
 )
 
@@ -374,7 +375,7 @@ func TestSessionDiscovery(t *testing.T) {
 					}
 					record, err := fixture.store.Load(
 						t.Context(),
-						SessionID(response.SessionID),
+						conversation.ID(response.SessionID),
 					)
 					if err != nil {
 						t.Fatal(err)

@@ -16,6 +16,8 @@ import (
 	"github.com/spachava753/gai"
 
 	"github.com/spachava753/cpe/internal/auth"
+	"github.com/spachava753/cpe/internal/conversation"
+	"github.com/spachava753/cpe/internal/models"
 	"github.com/spachava753/cpe/internal/plugins"
 	"github.com/spachava753/cpe/internal/version"
 )
@@ -121,7 +123,7 @@ func (s *Server) NewSession(ctx context.Context, request *acp.NewSessionRequest)
 	s.lifecycle.Lock()
 	defer s.lifecycle.Unlock()
 	spec, err := parseSessionSpec(
-		SessionID(rand.Text()),
+		conversation.ID(rand.Text()),
 		request.Cwd,
 		request.McpServers,
 		request.AdditionalDirectories,
@@ -132,8 +134,8 @@ func (s *Server) NewSession(ctx context.Context, request *acp.NewSessionRequest)
 	live, err := s.openSession(
 		ctx,
 		spec,
-		SessionRecord{
-			Info: SessionInfo{
+		conversation.Record{
+			Info: conversation.Info{
 				ID:        spec.id,
 				Cwd:       spec.cwd,
 				UpdatedAt: time.Now().UTC(),
@@ -159,7 +161,7 @@ func (s *Server) NewSession(ctx context.Context, request *acp.NewSessionRequest)
 
 // Prompt runs one turn; different sessions may execute concurrently.
 func (s *Server) Prompt(ctx context.Context, request *acp.PromptRequest) (*acp.PromptResponse, error) {
-	live, err := s.findSession(SessionID(request.SessionID))
+	live, err := s.findSession(conversation.ID(request.SessionID))
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +177,7 @@ func (s *Server) Prompt(ctx context.Context, request *acp.PromptRequest) (*acp.P
 
 // Cancel stops the active turn without discarding session state.
 func (s *Server) Cancel(_ context.Context, request *acp.CancelNotification) error {
-	live, err := s.findSession(SessionID(request.SessionID))
+	live, err := s.findSession(conversation.ID(request.SessionID))
 	if err != nil {
 		return err
 	}
@@ -189,14 +191,14 @@ func (s *Server) CloseSession(ctx context.Context, request *acp.CloseSessionRequ
 	defer s.lifecycle.Unlock()
 	if err := s.closeSession(
 		ctx,
-		SessionID(request.SessionID),
+		conversation.ID(request.SessionID),
 	); err != nil {
 		return nil, err
 	}
 	return &acp.CloseSessionResponse{}, nil
 }
 
-func (s *Server) closeSession(ctx context.Context, id SessionID) error {
+func (s *Server) closeSession(ctx context.Context, id conversation.ID) error {
 	live, err := s.findSession(id)
 	if err != nil {
 		return err
@@ -218,7 +220,7 @@ func (s *Server) DeleteSession(ctx context.Context, request *acp.DeleteSessionRe
 	if err := s.ready(); err != nil {
 		return nil, err
 	}
-	id := SessionID(request.SessionID)
+	id := conversation.ID(request.SessionID)
 	s.mu.Lock()
 	live := s.sessions[id]
 	s.mu.Unlock()
@@ -296,7 +298,7 @@ func (s *Server) restore(ctx context.Context, id acp.SessionId, cwd string, serv
 		return nil, err
 	}
 	spec, err := parseSessionSpec(
-		SessionID(id),
+		conversation.ID(id),
 		cwd,
 		servers,
 		additional,
@@ -329,7 +331,7 @@ func (s *Server) restore(ctx context.Context, id acp.SessionId, cwd string, serv
 func (s *Server) ForkSession(ctx context.Context, request *acp.ForkSessionRequest) (*acp.ForkSessionResponse, error) {
 	s.lifecycle.Lock()
 	defer s.lifecycle.Unlock()
-	source, err := s.findSession(SessionID(request.SessionID))
+	source, err := s.findSession(conversation.ID(request.SessionID))
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +340,7 @@ func (s *Server) ForkSession(ctx context.Context, request *acp.ForkSessionReques
 		return nil, err
 	}
 	spec, err := parseSessionSpec(
-		SessionID(rand.Text()),
+		conversation.ID(rand.Text()),
 		request.Cwd,
 		request.McpServers,
 		request.AdditionalDirectories,
@@ -375,7 +377,7 @@ func (s *Server) ListSessions(ctx context.Context, request *acp.ListSessionsRequ
 	if err := s.ready(); err != nil {
 		return nil, err
 	}
-	query := SessionQuery{
+	query := conversation.Query{
 		Limit: 100,
 	}
 	if request.Cwd != nil {
@@ -414,7 +416,7 @@ func (s *Server) ListSessions(ctx context.Context, request *acp.ListSessionsRequ
 
 // SetSessionConfigOption changes model or reasoning effort while the session is idle.
 func (s *Server) SetSessionConfigOption(ctx context.Context, request *acp.SetSessionConfigOptionRequest) (*acp.SetSessionConfigOptionResponse, error) {
-	live, err := s.findSession(SessionID(request.SessionID))
+	live, err := s.findSession(conversation.ID(request.SessionID))
 	if err != nil {
 		return nil, err
 	}
@@ -451,7 +453,7 @@ func (*Server) SetSessionMode(context.Context, *acp.SetSessionModeRequest) (*acp
 	return nil, errors.New("session modes are not supported; use model/reasoning configuration")
 }
 
-func parseSessionSpec(id SessionID, cwd string, servers []acp.McpServer, additional []string) (sessionSpec, error) {
+func parseSessionSpec(id conversation.ID, cwd string, servers []acp.McpServer, additional []string) (sessionSpec, error) {
 	spec := sessionSpec{
 		id:      id,
 		cwd:     filepath.Clean(cwd),
@@ -511,7 +513,7 @@ func parseSessionSpec(id SessionID, cwd string, servers []acp.McpServer, additio
 	return spec, nil
 }
 
-func configOptions(config Config, current SessionOptions) []acp.SessionConfigOption {
+func configOptions(config Config, current models.Selection) []acp.SessionConfigOption {
 	ids := make(
 		[]string,
 		0,
@@ -577,7 +579,7 @@ func configOptions(config Config, current SessionOptions) []acp.SessionConfigOpt
 
 type sessionClient struct {
 	ac      *acp.AgentConnection
-	id      SessionID
+	id      conversation.ID
 	sendMu  sync.Mutex
 	notices bool
 }
@@ -641,7 +643,7 @@ func (c *sessionClient) toolResult(ctx context.Context, id string, message gai.M
 	)
 }
 
-func (c *sessionClient) replay(ctx context.Context, record SessionRecord) error {
+func (c *sessionClient) replay(ctx context.Context, record conversation.Record) error {
 	for _, message := range record.Dialog {
 		if message.Role == gai.ToolResult {
 			if len(message.Blocks) != 0 {

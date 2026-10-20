@@ -14,6 +14,7 @@ import (
 	"github.com/spachava753/gai"
 	"github.com/spf13/afero"
 
+	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/models"
 )
 
@@ -508,7 +509,7 @@ func TestSessionProjectInstructions(t *testing.T) {
 				}
 				record, err := fixture.store.Load(
 					t.Context(),
-					SessionID(target),
+					conversation.ID(target),
 				)
 				if err != nil || len(record.Dialog) != 4 {
 					t.Fatalf(

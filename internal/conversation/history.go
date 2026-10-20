@@ -1,4 +1,4 @@
-package agent
+package conversation
 
 import (
 	"context"
@@ -14,22 +14,27 @@ import (
 
 	"github.com/spachava753/gai"
 	"github.com/spf13/afero"
+
+	"github.com/spachava753/cpe/internal/models"
 )
 
-// SessionInfo describes saved history, not a live execution.
-type SessionInfo struct {
-	ID        SessionID
-	ParentID  *SessionID
+// ID identifies a saved conversation and its connection-owned live state.
+type ID string
+
+// Info describes saved history, not a live execution.
+type Info struct {
+	ID        ID
+	ParentID  *ID
 	Cwd       string
 	Title     string
 	UpdatedAt time.Time
 }
 
-// SessionRecord checkpoints conversation and configuration, never live resources.
+// Record checkpoints conversation and configuration, never live resources.
 // Resuming or forking creates fresh Starlark globals and MCP connections.
-type SessionRecord struct {
-	Info             SessionInfo
-	Options          SessionOptions
+type Record struct {
+	Info             Info
+	Options          models.Selection
 	Dialog           gai.Dialog
 	AbortedResponses []AbortedResponse
 	Compaction       *Compaction
@@ -38,38 +43,38 @@ type SessionRecord struct {
 
 // AbortedResponse records an incomplete model response excluded from conversation and replay.
 type AbortedResponse struct {
-	Model         ModelID
+	Model         models.ID
 	At            time.Time
 	AfterMessages int
 	Reason        string
 	Partial       gai.Message
 }
 
-// SessionQuery filters saved conversations. Cursor is the last returned session ID.
-type SessionQuery struct {
+// Query filters saved conversations. Cursor is the last returned session ID.
+type Query struct {
 	Cwd    string
 	Cursor string
 	Limit  uint
 }
 
-// SessionPage contains saved sessions and an optional continuation cursor.
-type SessionPage struct {
-	Sessions   []SessionInfo
+// Page contains saved sessions and an optional continuation cursor.
+type Page struct {
+	Sessions   []Info
 	NextCursor string
 }
 
-// SessionStore persists whole checkpoints atomically; returned records are owned.
+// Store persists whole checkpoints atomically; returned records are owned.
 // Save borrows its argument until return. This is not a VM replay journal or ATIF trace.
-type SessionStore interface {
-	Save(context.Context, SessionRecord) error
-	Load(context.Context, SessionID) (SessionRecord, error)
-	List(context.Context, SessionQuery) (SessionPage, error)
-	Delete(context.Context, SessionID) error
+type Store interface {
+	Save(context.Context, Record) error
+	Load(context.Context, ID) (Record, error)
+	List(context.Context, Query) (Page, error)
+	Delete(context.Context, ID) error
 }
 
-// NewSessionStore stores JSON checkpoints beneath directory with private permissions.
+// NewStore stores JSON checkpoints beneath directory with private permissions.
 // The store is safe for concurrent sessions in one process.
-func NewSessionStore(directory string) (SessionStore, error) {
+func NewStore(directory string) (Store, error) {
 	if !filepath.IsAbs(directory) {
 		return nil, errors.New("session directory must be absolute")
 	}
@@ -85,7 +90,7 @@ type fileSessionStore struct {
 	directory  string
 }
 
-func (s *fileSessionStore) filename(id SessionID) (string, error) {
+func (s *fileSessionStore) filename(id ID) (string, error) {
 	if id == "" || strings.IndexFunc(
 		string(id),
 		func(r rune) bool {
@@ -101,7 +106,7 @@ func (s *fileSessionStore) filename(id SessionID) (string, error) {
 	), nil
 }
 
-func (s *fileSessionStore) Save(ctx context.Context, record SessionRecord) error {
+func (s *fileSessionStore) Save(ctx context.Context, record Record) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -154,33 +159,33 @@ func (s *fileSessionStore) Save(ctx context.Context, record SessionRecord) error
 	)
 }
 
-func (s *fileSessionStore) Load(ctx context.Context, id SessionID) (SessionRecord, error) {
+func (s *fileSessionStore) Load(ctx context.Context, id ID) (Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := ctx.Err(); err != nil {
-		return SessionRecord{}, err
+		return Record{}, err
 	}
 	filename, err := s.filename(id)
 	if err != nil {
-		return SessionRecord{}, err
+		return Record{}, err
 	}
 	data, err := afero.ReadFile(
 		s.filesystem,
 		filename,
 	)
 	if err != nil {
-		return SessionRecord{}, err
+		return Record{}, err
 	}
 	record, err := decodeRecord(data)
 	if err == nil && record.Info.ID != id {
-		return SessionRecord{}, errors.New("stored session ID mismatch")
+		return Record{}, errors.New("stored session ID mismatch")
 	}
 	return record, err
 }
 
-func (s *fileSessionStore) List(ctx context.Context, query SessionQuery) (SessionPage, error) {
+func (s *fileSessionStore) List(ctx context.Context, query Query) (Page, error) {
 	if query.Limit == 0 {
-		return SessionPage{}, errors.New("page limit must be positive")
+		return Page{}, errors.New("page limit must be positive")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -192,15 +197,15 @@ func (s *fileSessionStore) List(ctx context.Context, query SessionQuery) (Sessio
 		err,
 		fs.ErrNotExist,
 	) {
-		return SessionPage{}, nil
+		return Page{}, nil
 	}
 	if err != nil {
-		return SessionPage{}, err
+		return Page{}, err
 	}
-	var infos []SessionInfo
+	var infos []Info
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
-			return SessionPage{}, err
+			return Page{}, err
 		}
 		if entry.IsDir() || !strings.HasSuffix(
 			entry.Name(),
@@ -223,11 +228,11 @@ func (s *fileSessionStore) List(ctx context.Context, query SessionQuery) (Sessio
 			),
 		)
 		if err != nil {
-			return SessionPage{}, err
+			return Page{}, err
 		}
 		record, err := decodeRecord(data)
 		if err != nil {
-			return SessionPage{}, fmt.Errorf(
+			return Page{}, fmt.Errorf(
 				"read session %q: %w",
 				id,
 				err,
@@ -244,7 +249,7 @@ func (s *fileSessionStore) List(ctx context.Context, query SessionQuery) (Sessio
 		infos,
 		func(i, j int) bool { return infos[i].ID < infos[j].ID },
 	)
-	page := SessionPage{
+	page := Page{
 		Sessions: infos,
 	}
 	if uint(len(infos)) > query.Limit {
@@ -254,7 +259,7 @@ func (s *fileSessionStore) List(ctx context.Context, query SessionQuery) (Sessio
 	return page, nil
 }
 
-func (s *fileSessionStore) Delete(ctx context.Context, id SessionID) error {
+func (s *fileSessionStore) Delete(ctx context.Context, id ID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -285,19 +290,16 @@ type storedAbortedResponse struct {
 }
 
 type storedRecord struct {
-	Info             SessionInfo
-	Options          SessionOptions
+	Info             Info
+	Options          models.Selection
 	Dialog           []storedMessage
 	AbortedResponses []storedAbortedResponse
 	Compaction       *Compaction
 	Usage            TokenUsage
 }
 
-func encodeRecord(record SessionRecord) ([]byte, error) {
-	if err := record.checkCompaction(); err != nil {
-		return nil, err
-	}
-	if err := record.Usage.check(); err != nil {
+func encodeRecord(record Record) ([]byte, error) {
+	if err := record.Validate(); err != nil {
 		return nil, err
 	}
 	stored := storedRecord{
@@ -364,15 +366,15 @@ func restoreMessage(item storedMessage) gai.Message {
 	return message
 }
 
-func decodeRecord(data []byte) (SessionRecord, error) {
+func decodeRecord(data []byte) (Record, error) {
 	var stored storedRecord
 	if err := json.Unmarshal(
 		data,
 		&stored,
 	); err != nil {
-		return SessionRecord{}, err
+		return Record{}, err
 	}
-	record := SessionRecord{
+	record := Record{
 		Info:       stored.Info,
 		Options:    stored.Options,
 		Compaction: stored.Compaction,
@@ -392,19 +394,25 @@ func decodeRecord(data []byte) (SessionRecord, error) {
 			aborted,
 		)
 	}
-	if err := record.checkCompaction(); err != nil {
-		return SessionRecord{}, err
-	}
-	if err := record.Usage.check(); err != nil {
-		return SessionRecord{}, err
+	if err := record.Validate(); err != nil {
+		return Record{}, err
 	}
 	return record, nil
 }
 
-func cloneRecord(record SessionRecord) (SessionRecord, error) {
+// Clone returns a deep copy, preserving provider metadata and block contents.
+func (record Record) Clone() (Record, error) {
 	data, err := encodeRecord(record)
 	if err != nil {
-		return SessionRecord{}, err
+		return Record{}, err
 	}
 	return decodeRecord(data)
+}
+
+// Validate checks checkpoint invariants without accessing the filesystem.
+func (record Record) Validate() error {
+	if err := record.checkCompaction(); err != nil {
+		return err
+	}
+	return record.Usage.check()
 }

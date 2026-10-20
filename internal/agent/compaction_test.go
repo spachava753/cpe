@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"github.com/spachava753/gai"
 	"github.com/spachava753/gai/agent/agenttest"
 
+	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/models"
 )
 
@@ -154,7 +154,7 @@ func TestCompaction(t *testing.T) {
 							}
 							persisted, err := fixture.store.Load(
 								context.Background(),
-								SessionID(id),
+								conversation.ID(id),
 							)
 							if err != nil || persisted.Compaction == nil || persisted.Compaction.Summary != summary || persisted.Compaction.AfterMessages != 8 || len(persisted.Dialog) != 8 || persisted.Dialog[0].Blocks[0].Content.String() != "old task detail" || persisted.Dialog[7].Blocks[0].Content.String() != "2\n" || persisted.Dialog[6].ToolResultError != (operation == "script failure after compact") {
 								return fmt.Errorf(
@@ -302,7 +302,7 @@ func TestCompaction(t *testing.T) {
 				}
 				record, err := fixture.store.Load(
 					t.Context(),
-					SessionID(target),
+					conversation.ID(target),
 				)
 				if err != nil || len(record.Dialog) != 13 || record.Dialog[0].Blocks[0].Content.String() != "old task detail" || record.Compaction == nil {
 					t.Fatalf(
@@ -384,7 +384,7 @@ func TestCompactionWithBash(t *testing.T) {
 							}
 							record, err := fixture.store.Load(
 								context.Background(),
-								SessionID(id),
+								conversation.ID(id),
 							)
 							if err != nil {
 								return err
@@ -468,14 +468,14 @@ func TestCompactionWithBash(t *testing.T) {
 
 // Reject only compaction checkpoints, allowing session setup and older history to persist.
 type rejectCompactionStore struct {
-	SessionStore
+	conversation.Store
 }
 
-func (s rejectCompactionStore) Save(ctx context.Context, record SessionRecord) error {
+func (s rejectCompactionStore) Save(ctx context.Context, record conversation.Record) error {
 	if record.Compaction != nil {
 		return errors.New("compaction checkpoint unavailable")
 	}
-	return s.SessionStore.Save(
+	return s.Store.Save(
 		ctx,
 		record,
 	)
@@ -576,7 +576,7 @@ func TestCompactionFailures(t *testing.T) {
 					func(config *Config, deps *Dependencies, _ *acp.InitializeRequest) {
 						if test.checkpointFailure {
 							deps.History = rejectCompactionStore{
-								SessionStore: deps.History,
+								Store: deps.History,
 							}
 						}
 						if test.generationLimit {
@@ -658,7 +658,7 @@ func TestCompactionFailures(t *testing.T) {
 				}
 				record, err := fixture.store.Load(
 					t.Context(),
-					SessionID(id),
+					conversation.ID(id),
 				)
 				if err != nil || record.Dialog[0].Blocks[0].Content.String() != "old task detail" {
 					t.Fatalf(
@@ -681,102 +681,6 @@ func TestCompactionFailures(t *testing.T) {
 						fixture.client,
 						id,
 						"continue without compaction",
-					)
-				}
-			},
-		)
-	}
-}
-
-func TestCompactionCheckpointBoundary(t *testing.T) {
-	call := compactionCall(
-		t,
-		"effect",
-		"bash",
-		map[string]any{
-			"command": "pwd",
-		},
-	)
-	for _, test := range []struct {
-		name      string
-		summary   string
-		boundary  int
-		wantError bool
-	}{
-		{
-			name:     "complete batch",
-			summary:  "Completed work.",
-			boundary: 3,
-		},
-		{
-			name:      "negative boundary",
-			summary:   "Completed work.",
-			boundary:  -1,
-			wantError: true,
-		},
-		{
-			name:      "past transcript",
-			summary:   "Completed work.",
-			boundary:  4,
-			wantError: true,
-		},
-		{
-			name:      "splits tool batch",
-			summary:   "Completed work.",
-			boundary:  2,
-			wantError: true,
-		},
-		{
-			name:      "empty summary",
-			boundary:  3,
-			wantError: true,
-		},
-	} {
-		t.Run(
-			test.name,
-			func(t *testing.T) {
-				stored := storedRecord{
-					Compaction: &Compaction{
-						Summary:       test.summary,
-						AfterMessages: test.boundary,
-					},
-				}
-				for _, message := range []gai.Message{
-					{
-						Role: gai.User,
-						Blocks: []gai.Block{
-							gai.TextBlock("work"),
-						},
-					},
-					{
-						Role: gai.Assistant,
-						Blocks: []gai.Block{
-							call,
-						},
-					},
-					gai.ToolResultMessage(
-						"effect",
-						gai.TextBlock("/work"),
-					),
-				} {
-					item, err := storeMessage(message)
-					if err != nil {
-						t.Fatal(err)
-					}
-					stored.Dialog = append(
-						stored.Dialog,
-						item,
-					)
-				}
-				data, err := json.Marshal(stored)
-				if err != nil {
-					t.Fatal(err)
-				}
-				_, err = decodeRecord(data)
-				if (err != nil) != test.wantError {
-					t.Fatalf(
-						"decode checkpoint: %v",
-						err,
 					)
 				}
 			},

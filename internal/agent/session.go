@@ -11,15 +11,13 @@ import (
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 
+	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/models"
 	"github.com/spachava753/cpe/internal/terminaltext"
 )
 
-// SessionID identifies a saved conversation and its connection-owned live state.
-type SessionID string
-
 type sessionSpec struct {
-	id      SessionID
+	id      conversation.ID
 	cwd     string
 	servers map[MCPServerID]mcpServer
 }
@@ -32,7 +30,7 @@ type session struct {
 	config              Config
 	deps                Dependencies
 	client              *sessionClient
-	record              SessionRecord
+	record              conversation.Record
 	catalog             commandCatalog
 	projectInstructions string
 	runtime             Host
@@ -40,11 +38,8 @@ type session struct {
 	mcp                 *mcpRegistry
 }
 
-func newSession(setup context.Context, lifetime context.Context, spec sessionSpec, record SessionRecord, config Config, deps Dependencies, client *sessionClient) (*session, error) {
-	if err := record.checkCompaction(); err != nil {
-		return nil, err
-	}
-	if err := record.Usage.check(); err != nil {
+func newSession(setup context.Context, lifetime context.Context, spec sessionSpec, record conversation.Record, config Config, deps Dependencies, client *sessionClient) (*session, error) {
+	if err := record.Validate(); err != nil {
 		return nil, err
 	}
 	if err := checkOptions(
@@ -152,7 +147,7 @@ func (s *session) configure(ctx context.Context, id string, value string) ([]acp
 	options := s.record.Options
 	switch id {
 	case "model":
-		options.Model = ModelID(value)
+		options.Model = models.ID(value)
 		// Reasoning names differ by provider. A model switch resets effort explicitly.
 		options.Reasoning = ""
 	case "reasoning":
@@ -193,13 +188,13 @@ func (s *session) cancel() {
 	}
 }
 
-func (s *session) snapshot() (SessionRecord, error) {
+func (s *session) snapshot() (conversation.Record, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed || s.active != nil {
-		return SessionRecord{}, errors.New("session must be open and idle")
+		return conversation.Record{}, errors.New("session must be open and idle")
 	}
-	return cloneRecord(s.record)
+	return s.record.Clone()
 }
 
 func (s *session) close(ctx context.Context) error {

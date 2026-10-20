@@ -6,13 +6,15 @@ import (
 	"testing"
 
 	"github.com/spachava753/gai"
+
+	"github.com/spachava753/cpe/internal/conversation"
 )
 
 func TestRuntimeResetContext(t *testing.T) {
 	for _, test := range []struct {
 		name       string
 		reset      *runtimeReset
-		compaction *Compaction
+		compaction *conversation.Compaction
 		want       []string
 	}{
 		{
@@ -40,7 +42,7 @@ func TestRuntimeResetContext(t *testing.T) {
 			reset: &runtimeReset{
 				afterMessages: 2,
 			},
-			compaction: &Compaction{
+			compaction: &conversation.Compaction{
 				Summary:       "earlier work",
 				AfterMessages: 1,
 			},
@@ -56,7 +58,7 @@ func TestRuntimeResetContext(t *testing.T) {
 			reset: &runtimeReset{
 				afterMessages: 2,
 			},
-			compaction: &Compaction{
+			compaction: &conversation.Compaction{
 				Summary:       "earlier work",
 				AfterMessages: 2,
 			},
@@ -71,7 +73,7 @@ func TestRuntimeResetContext(t *testing.T) {
 			reset: &runtimeReset{
 				afterMessages: 2,
 			},
-			compaction: &Compaction{
+			compaction: &conversation.Compaction{
 				Summary:       "current state",
 				AfterMessages: 3,
 			},

@@ -1,4 +1,4 @@
-package agent
+package conversation
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 
 	"github.com/spachava753/gai"
 	"github.com/spf13/afero"
+
+	"github.com/spachava753/cpe/internal/models"
 )
 
 func TestSessionStore(t *testing.T) {
@@ -29,18 +31,18 @@ func TestSessionStore(t *testing.T) {
 					filesystem: filesystem,
 					directory:  "/sessions",
 				}
-				record := SessionRecord{
+				record := Record{
 					Compaction: &Compaction{
 						Summary:       "Greeting received.",
 						AfterMessages: 1,
 					},
-					Info: SessionInfo{
+					Info: Info{
 						ID:        "a",
 						Cwd:       "/work",
 						Title:     "first",
 						UpdatedAt: time.Now().UTC(),
 					},
-					Options: SessionOptions{
+					Options: models.Selection{
 						Model:     "one",
 						Reasoning: "high",
 					},
@@ -141,7 +143,7 @@ func TestSessionStore(t *testing.T) {
 					}
 					page, err := store.List(
 						t.Context(),
-						SessionQuery{
+						Query{
 							Limit: 1,
 							Cwd:   "/work",
 						},
@@ -155,7 +157,7 @@ func TestSessionStore(t *testing.T) {
 					}
 					next, err := store.List(
 						t.Context(),
-						SessionQuery{
+						Query{
 							Limit:  1,
 							Cursor: page.NextCursor,
 						},

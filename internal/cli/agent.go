@@ -16,6 +16,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/agent"
 	"github.com/spachava753/cpe/internal/auth"
+	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/models"
 	"github.com/spachava753/cpe/internal/providers"
 )
@@ -116,9 +117,9 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 			); err != nil {
 				return err
 			}
-			catalog := make(map[agent.ModelID]models.Model)
+			catalog := make(map[models.ID]models.Model)
 			for _, model := range configured {
-				id := agent.ModelID(model.ID)
+				id := models.ID(model.ID)
 				if _, exists := catalog[id]; exists {
 					return fmt.Errorf(
 						"duplicate model ID %q",
@@ -127,7 +128,7 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 				}
 				catalog[id] = model
 			}
-			history, err := agent.NewSessionStore(historyPath)
+			history, err := conversation.NewStore(historyPath)
 			if err != nil {
 				return err
 			}
@@ -147,8 +148,8 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 				&acp.StdioTransport{},
 				agent.Config{
 					Models: catalog,
-					Initial: agent.SessionOptions{
-						Model:     agent.ModelID(modelID),
+					Initial: models.Selection{
+						Model:     models.ID(modelID),
 						Reasoning: models.ReasoningLevel(effort),
 					},
 					SkillPaths:         skillPaths,

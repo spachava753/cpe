@@ -15,6 +15,7 @@ import (
 	"github.com/spachava753/gai"
 	gaiagent "github.com/spachava753/gai/agent"
 
+	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/providers"
 )
 
@@ -36,7 +37,7 @@ func (g *responseGenerator) Generate(ctx context.Context, request gai.Generation
 			ctx,
 			request,
 		)
-		usage, usageErr := parseTokenUsage(metadata)
+		usage, usageErr := conversation.ParseTokenUsage(metadata)
 		if usageErr == nil {
 			usageErr = g.session.recordUsage(usage)
 		}
@@ -59,7 +60,7 @@ func (g *responseGenerator) Generate(ctx context.Context, request gai.Generation
 		saveErr := g.session.recordAborted(
 			cleanup,
 			g.hooks.dialog,
-			AbortedResponse{
+			conversation.AbortedResponse{
 				Model:         g.hooks.modelID,
 				At:            time.Now().UTC(),
 				AfterMessages: len(g.hooks.dialog),
@@ -255,7 +256,7 @@ func retryResponse(err error, partial bool) bool {
 	return partial
 }
 
-func (s *session) recordAborted(ctx context.Context, dialog gai.Dialog, aborted AbortedResponse) error {
+func (s *session) recordAborted(ctx context.Context, dialog gai.Dialog, aborted conversation.AbortedResponse) error {
 	s.mu.Lock()
 	s.record.Dialog = dialog
 	s.record.AbortedResponses = append(
