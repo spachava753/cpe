@@ -1,6 +1,6 @@
 //go:build !linux && !darwin && !freebsd && !openbsd && !netbsd && !dragonfly
 
-package agent
+package toolruntime
 
 import "os/exec"
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/models"
+	"github.com/spachava753/cpe/internal/toolruntime"
 )
 
 type turn struct {
@@ -103,10 +104,11 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptR
 		pending:        make(map[string]bool),
 		streamed:       make(map[uint]bool),
 	}
-	ctx = context.WithValue(
+	ctx = toolruntime.WithCompaction(
 		ctx,
-		compactionKey{},
-		&hooks.compactionRequest,
+		func(summary string) {
+			hooks.compactionRequest.summary = new(summary)
+		},
 	)
 	loop, err := gaiagent.New(gaiagent.Config{
 		Generator: &responseGenerator{

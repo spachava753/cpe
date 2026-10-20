@@ -22,6 +22,7 @@ import (
 	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/mcpclient"
 	"github.com/spachava753/cpe/internal/models"
+	"github.com/spachava753/cpe/internal/toolruntime"
 )
 
 type generatorFunc func(context.Context, gai.GenerationRequest) (gai.Response, error)
@@ -119,8 +120,8 @@ func serverFixture(t *testing.T, generator GeneratorFactory, configure ...func(*
 		Filesystem:     filesystem,
 		Authentication: testAuth{},
 		Generators:     generator,
-		Hosts: func(ctx context.Context, config HostConfig) (Host, error) {
-			return newHost(
+		Hosts: func(ctx context.Context, config toolruntime.Config) (toolruntime.Host, error) {
+			return toolruntime.New(
 				ctx,
 				config,
 				dyson.StdlibConfig{
@@ -726,4 +727,13 @@ func TestInterruptedToolHistory(t *testing.T) {
 	if len(settleDialog(settled)) != 2 {
 		t.Fatal("duplicated tool result")
 	}
+}
+
+type runnerFunc func(context.Context, dyson.Command) (dyson.CommandResult, error)
+
+func (f runnerFunc) RunCommand(ctx context.Context, command dyson.Command) (dyson.CommandResult, error) {
+	return f(
+		ctx,
+		command,
+	)
 }

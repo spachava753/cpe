@@ -1,4 +1,4 @@
-package agent
+package toolruntime
 
 import (
 	"context"
@@ -17,7 +17,6 @@ import (
 	"github.com/spachava753/starlarkx/starlark"
 	"github.com/spachava753/starlarkx/starlarkstruct"
 
-	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/mcpclient"
 )
 
@@ -26,17 +25,16 @@ const (
 	bashToolName     = "bash"
 )
 
-// HostConfig defines the session scope of a tool runtime.
-type HostConfig struct {
-	Session conversation.ID
-	Cwd     string
-	MCP     MCPTools
+// Config defines the session scope of a tool runtime.
+type Config struct {
+	Cwd string
+	MCP MCPTools
 	// Descriptions supplies optional plugin descriptions for MCP namespaces.
 	Descriptions map[mcpclient.ServerID]string
 }
 
-// HostFactory creates session-owned tools; ctx bounds setup, not their lifetime.
-type HostFactory func(context.Context, HostConfig) (Host, error)
+// Factory creates session-owned tools; ctx bounds setup, not their lifetime.
+type Factory func(context.Context, Config) (Host, error)
 
 // Host owns a session's code environment and model-facing tools.
 // Callers serialize execution and join active calls before Close.
@@ -47,13 +45,13 @@ type Host interface {
 	Close(context.Context) error
 }
 
-// LocalHost creates a Dyson sphere and bash tool with explicit local host access.
+// Local creates a Dyson sphere and bash tool with explicit local host access.
 // Tools run with the user's privileges without approval or filesystem restrictions.
-func LocalHost(ctx context.Context, config HostConfig) (Host, error) {
+func Local(ctx context.Context, config Config) (Host, error) {
 	stdlib := dyson.HostStdlibConfig(config.Cwd)
 	stdlib.CommandRunner = localCommandRunner{}
 	stdlib.HTTPClient = dyson.HostHTTPClient()
-	return newHost(
+	return New(
 		ctx,
 		config,
 		stdlib,
@@ -69,14 +67,15 @@ type invocation struct {
 type toolHost struct {
 	mu      sync.Mutex
 	closed  bool
-	config  HostConfig
+	config  Config
 	sphere  *dyson.Sphere
 	runner  dyson.CommandRunner
 	tools   []gaiagent.Tool
 	catalog toolCatalog
 }
 
-func newHost(ctx context.Context, config HostConfig, stdlib dyson.StdlibConfig) (*toolHost, error) {
+// New creates a runtime using the supplied filesystem, command runner, and standard library.
+func New(ctx context.Context, config Config, stdlib dyson.StdlibConfig) (Host, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -185,10 +184,13 @@ func stringSchema(name string) *jsonschema.Schema {
 	}
 }
 
+// Tools returns the model-facing Starlark and bash tools.
 func (h *toolHost) Tools() []gaiagent.Tool { return h.tools }
 
+// Instructions returns MCP namespace guidance for the system prompt.
 func (h *toolHost) Instructions() string { return h.catalog.instructions() }
 
+// Close releases the Dyson environment after active calls have finished.
 func (h *toolHost) Close(context.Context) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()

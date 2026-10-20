@@ -15,6 +15,7 @@ import (
 	"github.com/spachava753/cpe/internal/models"
 	"github.com/spachava753/cpe/internal/plugins"
 	"github.com/spachava753/cpe/internal/terminaltext"
+	"github.com/spachava753/cpe/internal/toolruntime"
 )
 
 type sessionSpec struct {
@@ -34,7 +35,7 @@ type session struct {
 	record              conversation.Record
 	catalog             commandCatalog
 	projectInstructions string
-	runtime             Host
+	runtime             toolruntime.Host
 	runtimeReset        *runtimeReset
 	mcp                 *mcpclient.Registry
 }
@@ -89,8 +90,7 @@ func newSession(setup context.Context, lifetime context.Context, spec sessionSpe
 	}
 	host, err := deps.Hosts(
 		setup,
-		HostConfig{
-			Session:      spec.id,
+		toolruntime.Config{
 			Cwd:          spec.cwd,
 			MCP:          registry,
 			Descriptions: catalog.serverDescriptions(),

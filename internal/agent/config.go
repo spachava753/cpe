@@ -17,6 +17,7 @@ import (
 	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/mcpclient"
 	"github.com/spachava753/cpe/internal/models"
+	"github.com/spachava753/cpe/internal/toolruntime"
 )
 
 // Config supplies models, discovery paths, and execution limits.
@@ -39,7 +40,7 @@ type Dependencies struct {
 	Filesystem     afero.Fs
 	Authentication Authenticator
 	Generators     GeneratorFactory
-	Hosts          HostFactory
+	Hosts          toolruntime.Factory
 	MCP            mcpclient.Connector
 	History        conversation.Store
 	Traces         trace.TracerProvider

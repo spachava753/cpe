@@ -20,6 +20,7 @@ import (
 	"github.com/spachava753/cpe/internal/mcpclient"
 	"github.com/spachava753/cpe/internal/models"
 	"github.com/spachava753/cpe/internal/providers"
+	"github.com/spachava753/cpe/internal/toolruntime"
 )
 
 type serveAgent func(context.Context, acp.Transport, agent.Config, agent.Dependencies) error
@@ -164,7 +165,7 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 					Filesystem:     filesystem,
 					Authentication: providerSet,
 					Generators:     providerSet.Generator,
-					Hosts:          agent.LocalHost,
+					Hosts:          toolruntime.Local,
 					MCP:            mcpclient.Connect,
 					History:        history,
 					Traces:         otel.GetTracerProvider(),

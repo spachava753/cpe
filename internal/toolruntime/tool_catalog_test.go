@@ -1,4 +1,4 @@
-package agent
+package toolruntime
 
 import (
 	"context"
@@ -165,7 +165,7 @@ func TestToolDiscovery(t *testing.T) {
 					runnerFunc(func(context.Context, dyson.Command) (dyson.CommandResult, error) {
 						return dyson.CommandResult{}, nil
 					}),
-					func(config *HostConfig) {
+					func(config *Config) {
 						config.Descriptions = map[mcpclient.ServerID]string{
 							"records": "Archive service",
 						}

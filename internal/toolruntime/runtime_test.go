@@ -1,4 +1,4 @@
-package agent
+package toolruntime
 
 import (
 	"context"
@@ -40,17 +40,16 @@ func (f runnerFunc) RunCommand(ctx context.Context, command dyson.Command) (dyso
 	)
 }
 
-func hostFixture(t *testing.T, tools MCPTools, runner dyson.CommandRunner, configure ...func(*HostConfig)) *toolHost {
+func hostFixture(t *testing.T, tools MCPTools, runner dyson.CommandRunner, configure ...func(*Config)) *toolHost {
 	t.Helper()
-	config := HostConfig{
-		Session: "test",
-		Cwd:     "/work",
-		MCP:     tools,
+	config := Config{
+		Cwd: "/work",
+		MCP: tools,
 	}
 	for _, option := range configure {
 		option(&config)
 	}
-	host, err := newHost(
+	host, err := New(
 		t.Context(),
 		config,
 		dyson.StdlibConfig{
@@ -66,7 +65,7 @@ func hostFixture(t *testing.T, tools MCPTools, runner dyson.CommandRunner, confi
 			t.Error(err)
 		}
 	})
-	return host
+	return host.(*toolHost)
 }
 
 func toolRequest(name, key, value string) gaiagent.ToolRequest {
@@ -140,12 +139,11 @@ func TestLocalHost(t *testing.T) {
 				); err != nil {
 					t.Fatal(err)
 				}
-				host, err := LocalHost(
+				host, err := Local(
 					t.Context(),
-					HostConfig{
-						Session: "test",
-						Cwd:     cwd,
-						MCP:     emptyMCP{},
+					Config{
+						Cwd: cwd,
+						MCP: emptyMCP{},
 					},
 				)
 				if err != nil {

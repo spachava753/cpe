@@ -16,6 +16,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/models"
+	"github.com/spachava753/cpe/internal/toolruntime"
 )
 
 func compactionCall(t *testing.T, id, name string, arguments map[string]any) gai.Block {
@@ -427,8 +428,8 @@ func TestCompactionWithBash(t *testing.T) {
 						return generator, gai.GenerationOptions{}, nil
 					},
 					func(_ *Config, deps *Dependencies, _ *acp.InitializeRequest) {
-						deps.Hosts = func(ctx context.Context, config HostConfig) (Host, error) {
-							return newHost(
+						deps.Hosts = func(ctx context.Context, config toolruntime.Config) (toolruntime.Host, error) {
+							return toolruntime.New(
 								ctx,
 								config,
 								dyson.StdlibConfig{
