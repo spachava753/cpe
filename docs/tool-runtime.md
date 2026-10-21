@@ -78,14 +78,23 @@ itself tell the model what went wrong. Captured stdout and stderr become visible
 when the script prints them.
 
 Commands receive explicit input or an empty input stream. They do not inherit
-the ACP protocol streams. Captured output is bounded and can be truncated, so
-filter large logs or write them to a file and inspect relevant sections.
+the ACP protocol streams. Each command retains the first **128 KiB of stdout**
+and **128 KiB of stderr**, adding a truncation notice when more was produced.
+Merged stdout and stderr share one 128 KiB budget. The command keeps running
+after capture fills. For large logs, write them to a file and inspect relevant
+sections; the discarded capture data cannot be recovered by printing it later.
 
 Commands belong to the invocation. On Unix, CPE cleans up their process group
 on completion or cancellation, including children that remain in that group.
 On other platforms it terminates the direct child. Starting a background command
 inside a script is therefore unsuitable for keeping a service alive between
 calls. A job submitted to an external service has that service's lifetime.
+
+Subprocess calls have no timeout by default. Scripts can set one in seconds,
+for example `subprocess.run(..., timeout=30)`. After cancellation or an observed
+process exit, CPE allows **1 second** for command exit or lingering output pipes
+before forcing cleanup as needed. See
+[Timeouts and retries](limits.md#sessions-timeouts-and-retries).
 
 ## Choosing what the model sees
 
@@ -120,11 +129,29 @@ Successful exact edits automatically emit a confirmation and diff. Runtime
 errors also appear in the tool result. If nothing is emitted, CPE returns a
 short completion notice.
 
-Tool output has per-text and overall size bounds. Large text can be truncated;
-exceeding the overall limit fails the invocation. Earlier host effects remain,
-even if reporting them exceeds the output limit. Images also count toward the
-output budget. A selected model without image input gets a text notice in place
-of the image, while the original remains in saved history.
+Each emitted text block retains up to **128 KiB**, plus a truncation notice if
+needed. One invocation can emit up to **8 MiB** of content and **1,024 blocks**.
+Exceeding either shared budget fails the invocation; earlier host effects remain.
+
+An image can contain up to **6 MiB of raw bytes**, and its base64-encoded size
+counts against the shared 8 MiB budget. A 6 MiB image fills that entire budget,
+leaving no room for other output. A selected model without image input gets a
+text notice in place of the image, while the original remains in saved history.
+
+The [output-limit reference](limits.md#tool-output) explains how capture,
+truncation notices, images, and block counts interact.
+
+## HTTP request limits
+
+Dyson's `requests` module buffers up to **64 MiB per response body**, including
+each response retained from a redirect. Larger responses fail the request.
+When redirect following is enabled, a request can follow at most **30 redirects**.
+
+The script can set `timeout=30` for connect and read timeouts in seconds, or use
+a pair such as `timeout=(5, 30)`. The default is `None`, with no overall request
+deadline supplied by the module. The read timeout is renewed on reads, so a
+response that keeps delivering data can take longer in total. See
+[HTTP limits](limits.md#http-requests-from-scripts) for details.
 
 ## Exact file edits
 
@@ -143,11 +170,12 @@ Edits in one script run in sequence against the current file contents:
 ```
 
 Each replacement is atomic for that file. Symlinks are followed and retained,
-and permission bits are preserved. Ownership, ACLs, and extended metadata may
-change. The edit checks for content changes during its own operation, but cannot
-guarantee protection against concurrent writers. It also cannot detect every
-change since the model's earlier read. Read the current file before editing and
-review the resulting diff when sharing a workspace.
+with a limit of **40 followed links** across the target path. Permission bits
+are preserved. Ownership, ACLs, and extended metadata may change. The edit checks
+for content changes during its own operation, but cannot guarantee protection
+against concurrent writers. It also cannot detect every change since the model's
+earlier read. Read the current file before editing and review the resulting diff
+when sharing a workspace.
 
 For interruption and retry decisions, continue with
 [Failures and cancellation](failures.md).

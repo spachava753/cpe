@@ -76,9 +76,12 @@ Inside Starlark, the model can use:
 - `describe_namespace(name)` to read a namespace's description, server
   instructions, and tool names.
 
-Search examines local tool metadata: names, descriptions, schema fields, and
-server guidance. Discovery queries perform no remote tool actions. An unmatched
-search returns an empty list; an unknown description target returns `None`.
+Search returns up to **8 matches by default**. A positive `limit` argument can
+request a different maximum; emitted results still share the script's output
+budget. Search examines local tool metadata: names, descriptions, schema fields,
+and server guidance. Discovery queries perform no remote tool actions. An
+unmatched search returns an empty list; an unknown description target returns
+`None`.
 
 Discovered tools are callable Starlark builtins with names beginning `mcp__`.
 Use the returned names. Names are normalized for Starlark and disambiguated when
@@ -130,6 +133,13 @@ Component problems can produce warnings while leaving the bundle installed.
 During session discovery, nonfatal diagnostics go to stderr. Malformed manifests
 and unsupported manifest schemas fail discovery. Plugin MCP configuration can
 refer to its bundle through `${PLUGIN_ROOT}`; `${PLUGIN_DATA}` is unsupported.
+
+Installation searches up to **5 directory levels** below the source root by
+default. Use `--full-depth` to remove that cap or `--path` to select an exact
+package directory. Plugin names have a **64-character maximum**. Skill names
+over **64 Unicode characters** and descriptions over **1,024** are retained
+with warnings; a skill's compatibility field over **500** makes its definition
+invalid. See [Discovery limits](limits.md#discovery-and-file-editing).
 
 See the [main README](../README.md#agent-plugins) for installation commands and
 scope selection. Plugins and servers have the host access described in

@@ -116,6 +116,11 @@ This data survives turns, model changes, compaction, closing and reopening, and
 process restarts. Forks inherit independent copies. New unrelated sessions
 start empty, and deleting a session removes its data.
 
+CPE sets no separate byte quota for checkpoints or KV values, and no fixed
+count cap for keys or saved sessions. Host memory and storage still constrain
+them. The [limit reference](limits.md#data-without-a-separate-cpe-size-quota)
+explains how stored data differs from emitted output.
+
 Stored values enter model context only when a script emits them. A large saved
 result can remain available without repeatedly appearing in the conversation.
 A [compaction summary](compaction.md) can mention the useful keys so the model

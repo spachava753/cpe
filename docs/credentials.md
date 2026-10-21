@@ -6,6 +6,10 @@ CPE can use an API key supplied in a model's configuration or credentials saved
 through `cpe auth login`. Explicit model keys take precedence. Saved credentials
 are attached only to the supported HTTPS provider hosts.
 
+The [authentication limits](limits.md#authentication) list the exact login,
+request, and refresh timeouts, retry delays, and size limits for keys, credential
+files, and authentication responses.
+
 ## Signing in
 
 ChatGPT login normally prints a browser link and waits for a callback on the

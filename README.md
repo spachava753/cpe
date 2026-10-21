@@ -11,7 +11,8 @@ commands, filesystem and HTTP operations, and MCP orchestration.
 The [behavior guides](docs/README.md) explain sessions and turns, persistence,
 compaction, tool execution, extensions, instructions, models, credentials, usage,
 and recovery. They include diagrams and examples of what happens during normal
-work and interruptions.
+work and interruptions. [Limits and defaults](docs/limits.md) lists the exact
+output budgets, timeouts, retry counts, and configurable limits.
 
 ## ACP server
 

@@ -40,7 +40,8 @@ plugins. It checks that the directory exists, prepares the session's guidance,
 connects its MCP servers, discovers their tools, and saves an initial checkpoint.
 The session becomes available after setup succeeds.
 
-Setup has a deadline, ten minutes by default. A failure to read required
+Setup has a **10-minute deadline** by default, configurable with a positive
+`--setup-timeout` value such as `--setup-timeout=2m`. A failure to read required
 configuration or connect a configured MCP server prevents the session from
 opening. Connections already opened during failed setup are closed. Once setup
 succeeds, its deadline has no effect on later work.
@@ -75,7 +76,8 @@ to the client or continuing with later work. These checkpoints make
 
 CPE places no overall time limit or generation-count limit on prompt turns.
 A provider can still limit a response, refuse a request, or return an error.
-The user or client can cancel an active turn.
+The user or client can cancel an active turn. The [limit reference](limits.md)
+collects the exact timeouts, retry budgets, output limits, and defaults.
 
 ## Session controls
 
@@ -87,7 +89,7 @@ The user or client can cancel an active turn.
 | Resume | Opens a saved session with fresh resources, leaving transcript display to the client's existing state. |
 | Fork | Copies an open, idle session into a new session with its own identifier and resources. |
 | Delete | Closes live resources if necessary, then removes the saved session, including durable script data. |
-| List | Lists saved sessions, including sessions with no live resources. |
+| List | Returns up to **100 saved sessions per page**, including sessions with no live resources. The client can request the next page with the returned cursor. |
 
 Loading and resuming require the session to be closed in that connection.
 Changing the model or reasoning setting also requires an idle session.

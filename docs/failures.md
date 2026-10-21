@@ -33,11 +33,15 @@ session is later loaded.
                    continue the turn
 ```
 
-Eligible transient or interrupted responses can retry twice by default.
-`--response-retries` changes that number; zero disables retries. CPE respects
-provider-requested delays and waits between attempts. Permanent provider errors,
-credential failures, and user cancellation do not trigger response retries.
-Unknown failures before any output are not blindly retried.
+Eligible transient or interrupted responses can retry **twice by default**,
+for up to **three attempts** including the first. `--response-retries` changes
+the retry count; zero disables retries. Each model response gets its own budget.
+
+The first two retry delays are **250 ms** and **500 ms**. If more retries are
+configured, the delay doubles up to **8 seconds**. A longer provider-requested
+delay takes precedence. Permanent provider errors, credential failures, and
+user cancellation do not trigger response retries. Unknown failures before any
+output are not blindly retried.
 
 A retry repeats the model request at the failure point. Completed tools from
 earlier responses retain their results and are never automatically rerun.
@@ -75,6 +79,12 @@ Canceling stops the active turn and leaves the session available. CPE stops
 local command execution, closes invocation resources, and attempts to save the
 known results. A tool call with no known completed result is recorded as
 interrupted with an uncertain outcome.
+
+Cleanup after an aborted response, at turn end, and during connection shutdown
+each receives a **10-second budget**. Active work still has to finish and
+resources still have to close, so total shutdown can take longer. The
+[limit reference](limits.md#sessions-timeouts-and-retries) separates these cleanup
+budgets from setup, command, and turn timeouts.
 
 Cancellation leaves earlier effects in place. A remote service may have accepted
 a request before cancellation reached it. Check that service or the affected

@@ -11,6 +11,22 @@ available reasoning levels. The [main README](../README.md#acp-server) has a
 configuration example. Use the provider's actual capabilities: CPE relies on
 these settings when preparing requests and reporting context usage.
 
+## Context and output limits
+
+Each model entry supplies two required positive token counts:
+
+- `limit` is the context-window size used by the meter and the 85% warning.
+- `max_tokens` is the requested per-response output limit sent to the provider.
+  CPE omits this setting for Responses models on the ChatGPT subscription host,
+  where the service controls output.
+
+There is no shared default for either value. For example, the README's
+`limit: 128000` gives a warning threshold of **108,800 tokens**, while
+`max_tokens: 8192` requests up to **8,192 output tokens** where supported. Use
+the actual limits for your provider and model. The
+[limit reference](limits.md#model-context-and-output) explains the threshold
+and how these settings differ from turn and tool limits.
+
 ## How a new session chooses its model
 
 ```text

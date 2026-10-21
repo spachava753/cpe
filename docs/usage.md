@@ -80,7 +80,14 @@ smaller context does not mean a smaller saved conversation.
 CPE omits billed cost because it has no reliable billing data. Configured list
 prices alone cannot account for what the provider actually charged.
 
-The model catalog supplies context and output limits; provider behavior still
-determines whether a request fits and how it finishes. CPE imposes no size cap
-on prompt text, input images, or command stdin. Providers and
-[tool-output bounds](tool-runtime.md) can still limit what is usable.
+The model catalog's required `limit` and `max_tokens` values supply the context
+and requested output limits in tokens. There is no universal default. The
+85% warning threshold is rounded up to a whole token: a configured window of
+128,000 tokens produces a warning at **108,800 tokens**. Provider behavior still
+determines whether a request fits and how it finishes.
+
+CPE imposes no size cap on prompt text, input images, or command stdin.
+Tool-emitted output has separate limits: **128 KiB per text block**, **6 MiB of
+raw bytes per image**, and **8 MiB of text and encoded images across at most
+1,024 blocks per invocation**. See [Limits and defaults](limits.md) for the
+complete values, truncation behavior, and configurable settings.

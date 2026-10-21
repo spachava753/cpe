@@ -69,6 +69,7 @@ error or canceled turn can leave completed effects behind. See
 | [Persistence and recovery](persistence.md) | What gets saved? How does script data survive? What happens after a crash? |
 | [Compaction](compaction.md) | What does the model forget? When does a summary take effect? |
 | [Tool execution](tool-runtime.md) | How do scripts, commands, edits, and output behave? |
+| [Limits and defaults](limits.md) | What are the exact size limits, timeouts, retry counts, and configurable defaults? |
 | [MCP, plugins, and skills](extensions.md) | How are capabilities discovered, connected, and refreshed? |
 | [Instructions and context](instructions.md) | What guidance reaches the model, and when is it read? |
 | [Models and reasoning](models.md) | How are defaults chosen? What changes when switching models? |
