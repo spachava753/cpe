@@ -33,7 +33,7 @@ func TestUsageReporting(t *testing.T) {
 			func(t *testing.T) {
 				call, err := gai.ToolCallBlock(
 					"compact",
-					"starlark_repl",
+					"starlark",
 					map[string]any{
 						"code": "compact('Continue the current task.')",
 					},

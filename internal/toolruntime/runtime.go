@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"path/filepath"
 	"sync"
 
@@ -20,10 +19,7 @@ import (
 	"github.com/spachava753/cpe/internal/mcpclient"
 )
 
-const (
-	starlarkToolName = "starlark_repl"
-	bashToolName     = "bash"
-)
+const starlarkToolName = "starlark"
 
 // Config defines the session scope of a tool runtime.
 type Config struct {
@@ -45,8 +41,8 @@ type Host interface {
 	Close(context.Context) error
 }
 
-// Local creates a Dyson sphere and bash tool with explicit local host access.
-// Tools run with the user's privileges without approval or filesystem restrictions.
+// Local creates a Starlark tool with explicit local host access.
+// Scripts run with the user's privileges without approval or filesystem restrictions.
 func Local(ctx context.Context, config Config) (Host, error) {
 	stdlib := dyson.HostStdlibConfig(config.Cwd)
 	stdlib.CommandRunner = localCommandRunner{}
@@ -68,7 +64,8 @@ type toolHost struct {
 	mu      sync.Mutex
 	closed  bool
 	config  Config
-	sphere  *dyson.Sphere
+	stdlib  dyson.StdlibConfig
+	state   *sessionState
 	runner  dyson.CommandRunner
 	tools   []gaiagent.Tool
 	catalog toolCatalog
@@ -94,16 +91,35 @@ func New(ctx context.Context, config Config, stdlib dyson.StdlibConfig) (Host, e
 		config:  config,
 		runner:  stdlib.CommandRunner,
 		catalog: catalog,
+		state: &sessionState{
+			entries: starlark.NewDict(0),
+		},
 	}
 	stdlib.CommandRunner = h
+	h.stdlib = stdlib
+	h.tools = []gaiagent.Tool{
+		{
+			Definition: gai.Tool{
+				Name:        starlarkToolName,
+				Description: "Execute Starlark in a fresh runtime. Use state[string] for frozen session data, print() for text and image(bytes) for images, and compact(summary) for compaction. Discover MCP builtins with search_tools, describe_tool, and describe_namespace. Errors do not undo effects.",
+				InputSchema: stringSchema("code"),
+			},
+			Handler: gaiagent.ToolHandlerFunc(h.execute),
+		},
+	}
+	return h, nil
+}
+
+func (h *toolHost) newSphere() *dyson.Sphere {
 	globals := starlark.StringDict{
+		"state": h.state,
 		compactName: starlark.NewBuiltin(
 			compactName,
 			compact,
 		),
-		"emit": starlark.NewBuiltin(
-			"emit",
-			h.emit,
+		"image": starlark.NewBuiltin(
+			"image",
+			image,
 		),
 		"search_tools": starlark.NewBuiltin(
 			"search_tools",
@@ -133,7 +149,7 @@ func New(ctx context.Context, config Config, stdlib dyson.StdlibConfig) (Host, e
 			},
 		)
 	}
-	h.sphere = dyson.NewSphere(
+	return dyson.NewSphere(
 		func(thread *starlark.Thread, text string) {
 			current, ok := dyson.EvaluationContext(thread).Value(invocationKey{}).(*invocation)
 			if !ok {
@@ -143,28 +159,9 @@ func New(ctx context.Context, config Config, stdlib dyson.StdlibConfig) (Host, e
 				thread.Cancel(err.Error())
 			}
 		},
-		dyson.NewStdlib(stdlib),
+		dyson.NewStdlib(h.stdlib),
 		dyson.GlobalSet(globals),
 	)
-	h.tools = []gaiagent.Tool{
-		{
-			Definition: gai.Tool{
-				Name:        starlarkToolName,
-				Description: "Execute Starlark in a persistent Dyson session. Use print/emit for output and compact(summary) to replace working context. Discover MCP tools with search_tools, describe_tool, and describe_namespace. Errors do not undo side effects.",
-				InputSchema: stringSchema("code"),
-			},
-			Handler: gaiagent.ToolHandlerFunc(h.execute),
-		},
-		{
-			Definition: gai.Tool{
-				Name:        bashToolName,
-				Description: "Execute a bash command in the session cwd. Output is captured; nonzero exit status is returned to the model. No persistent shell state. Prefer this for simple CLI and file inspection operations.",
-				InputSchema: stringSchema("command"),
-			},
-			Handler: gaiagent.ToolHandlerFunc(h.execute),
-		},
-	}
-	return h, nil
 }
 
 func stringSchema(name string) *jsonschema.Schema {
@@ -184,18 +181,23 @@ func stringSchema(name string) *jsonschema.Schema {
 	}
 }
 
-// Tools returns the model-facing Starlark and bash tools.
+// Tools returns the model-facing Starlark tool.
 func (h *toolHost) Tools() []gaiagent.Tool { return h.tools }
 
 // Instructions returns MCP namespace guidance for the system prompt.
-func (h *toolHost) Instructions() string { return h.catalog.instructions() }
+func (h *toolHost) Instructions() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.catalog.instructions()
+}
 
-// Close releases the Dyson environment after active calls have finished.
+// Close discards session state and prevents further tool calls.
 func (h *toolHost) Close(context.Context) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.closed = true
-	return h.sphere.Close()
+	h.state = nil
+	return nil
 }
 
 func (h *toolHost) execute(ctx context.Context, request gaiagent.ToolRequest) (gai.Message, error) {
@@ -210,58 +212,18 @@ func (h *toolHost) execute(ctx context.Context, request gaiagent.ToolRequest) (g
 		invocationKey{},
 		current,
 	)
+	if request.Call.Name != starlarkToolName {
+		return gai.Message{}, errors.New("unknown runtime tool")
+	}
 	var runErr error
-	var exitCode int
-	switch request.Call.Name {
-	case starlarkToolName:
-		code, ok := request.Call.Parameters["code"].(string)
-		if !ok || code == "" {
-			runErr = errors.New("code must be a nonempty string")
-			break
-		}
-		runErr = h.sphere.Eval(
+	code, ok := request.Call.Parameters["code"].(string)
+	if !ok || code == "" {
+		runErr = errors.New("code must be a nonempty string")
+	} else {
+		runErr = h.eval(
 			ctx,
 			code,
 		)
-	case bashToolName:
-		command, ok := request.Call.Parameters["command"].(string)
-		if !ok || command == "" {
-			runErr = errors.New("command must be a nonempty string")
-			break
-		}
-		var result dyson.CommandResult
-		result, runErr = h.RunCommand(
-			ctx,
-			dyson.Command{
-				Args: []string{
-					bashToolName,
-					"--noprofile",
-					"--norc",
-					"-c",
-					command,
-				},
-				Dir:    h.config.Cwd,
-				Stdin:  dyson.StreamDiscard,
-				Stdout: dyson.StreamPipe,
-				Stderr: dyson.StreamPipe,
-			},
-		)
-		exitCode = result.ReturnCode
-		for _, text := range []string{
-			fmt.Sprintf(
-				"exit_code: %d",
-				result.ReturnCode,
-			),
-			"stdout:\n" + string(result.Stdout),
-			"stderr:\n" + string(result.Stderr),
-		} {
-			runErr = errors.Join(
-				runErr,
-				current.output.add(gai.TextBlock(text)),
-			)
-		}
-	default:
-		return gai.Message{}, errors.New("unknown runtime tool")
 	}
 	runErr = errors.Join(
 		runErr,
@@ -283,12 +245,37 @@ func (h *toolHost) execute(ctx context.Context, request gaiagent.ToolRequest) (g
 		request.Block.ID,
 		current.output.blocks...,
 	)
-	message.ToolResultError = runErr != nil || exitCode != 0
+	message.ToolResultError = runErr != nil
 	return message, nil
 }
 
-// RunCommand is shared by direct bash and Dyson subprocess calls. It never gives
-// a child the ACP streams. The runner owns waiting and cancellation of the process.
+// eval runs under the host lock so discovery and builtins use the same catalog snapshot.
+func (h *toolHost) eval(ctx context.Context, code string) (err error) {
+	catalog, err := discoverTools(
+		ctx,
+		h.config.MCP,
+		h.config.Descriptions,
+	)
+	if err != nil {
+		return err
+	}
+	h.catalog = catalog
+	//nolint:contextcheck // Builtins receive the invocation context through Dyson at evaluation time.
+	sphere := h.newSphere()
+	defer func() {
+		err = errors.Join(
+			err,
+			sphere.Close(),
+		)
+	}()
+	return sphere.Eval(
+		ctx,
+		code,
+	)
+}
+
+// RunCommand executes Dyson subprocess calls without giving children the ACP streams.
+// The runner owns waiting and cancellation of the process.
 func (h *toolHost) RunCommand(ctx context.Context, command dyson.Command) (dyson.CommandResult, error) {
 	if err := ctx.Err(); err != nil {
 		return dyson.CommandResult{}, err
@@ -498,32 +485,24 @@ func mcpResultValue(thread *starlark.Thread, result *mcp.CallToolResult) (starla
 	), nil
 }
 
-func (h *toolHost) emit(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	var value starlark.Value
+func image(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var data starlark.Bytes
 	if err := starlark.UnpackArgs(
 		fn.Name(),
 		args,
 		kwargs,
-		"value",
-		&value,
+		"data",
+		&data,
 	); err != nil {
 		return nil, err
 	}
 	current, ok := dyson.EvaluationContext(thread).Value(invocationKey{}).(*invocation)
 	if !ok {
-		return nil, errors.New("emit outside an invocation")
+		return nil, errors.New("image outside an invocation")
 	}
-	var block gai.Block
-	if content, ok := value.(*mcpContentValue); ok {
-		var err error
-		block, err = contentBlock(content.content)
-		if err != nil {
-			return nil, err
-		}
-	} else if text, ok := starlark.AsString(value); ok {
-		block = gai.TextBlock(text)
-	} else {
-		return nil, errors.New("emit expects text or an MCP content item")
+	block, err := imageBlock([]byte(data))
+	if err != nil {
+		return nil, err
 	}
 	if err := current.output.add(block); err != nil {
 		return nil, err
@@ -551,7 +530,7 @@ func (o *outputCollector) add(block gai.Block) error {
 		size = len(block.Content.String())
 	}
 	if len(o.blocks) >= 1024 || size > maxOutputBytes-o.bytes {
-		o.err = errors.New("execution output limit exceeded; emit less content")
+		o.err = errors.New("execution output limit exceeded; produce less output")
 		return o.err
 	}
 	o.blocks = append(

@@ -17,12 +17,17 @@ const httpsScheme = "https"
 // ServerID identifies a server in one session's catalog.
 type ServerID string
 
-// Connector returns a session-owned SDK connection. ctx bounds connection setup.
-type Connector func(context.Context, plugins.MCPServer) (*mcp.ClientSession, error)
+// Connector opens a session-owned connection and registers toolsChanged for list notifications.
+// ctx bounds connection setup; toolsChanged must not block.
+type Connector func(ctx context.Context, server plugins.MCPServer, toolsChanged func()) (*mcp.ClientSession, error)
 
 // Connect opens a stdio, streamable HTTP, or SSE connection using the official SDK.
-// Closing the returned session releases its transport and subprocess.
-func Connect(ctx context.Context, server plugins.MCPServer) (*mcp.ClientSession, error) {
+// toolsChanged must be non-nil and nonblocking. Closing the returned session
+// releases its transport and subprocess.
+func Connect(ctx context.Context, server plugins.MCPServer, toolsChanged func()) (*mcp.ClientSession, error) {
+	if toolsChanged == nil {
+		return nil, errors.New("MCP tool-list change handler is required")
+	}
 	var transport mcp.Transport
 	switch server.Type {
 	case plugins.Stdio:
@@ -77,7 +82,9 @@ func Connect(ctx context.Context, server plugins.MCPServer) (*mcp.ClientSession,
 			Name:    "cpe",
 			Version: "1",
 		},
-		nil,
+		&mcp.ClientOptions{
+			ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) { toolsChanged() },
+		},
 	)
 	return client.Connect(
 		ctx,

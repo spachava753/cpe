@@ -6,9 +6,9 @@ import (
 	"github.com/spachava753/cpe/internal/conversation"
 )
 
-const runtimeResetNotice = "[Dyson/Starlark reset here: earlier variables, functions, and imports are unavailable. Rebuild needed state. Files and external effects may remain; inspect them before repeating actions. State created after this point persists normally.]"
+const runtimeResetNotice = "[Starlark state reset here: the session state store is empty. Rebuild needed data. Files and external effects may remain; inspect them before repeating actions. Newly stored data persists for this live session, but globals and imports last one call.]"
 
-// runtimeReset marks the end of history inherited by a fresh Dyson sphere.
+// runtimeReset marks the end of history inherited by a fresh session state store.
 type runtimeReset struct {
 	afterMessages int
 }

@@ -1,6 +1,6 @@
 ## Compaction
 
-Call compact(summary) inside starlark_repl to replace conversation context with
+Call compact(summary) inside starlark to replace conversation context with
 a concise, self-contained summary when the user requests compaction or the
 earlier history is no longer useful in full. Use Starlark string construction
 and scripting to build the summary; compact accepts one nonempty string and
@@ -22,5 +22,5 @@ not claim pending actions have completed or repeat tools just because their
 results were compacted away. Omit details that no longer affect the task.
 
 Compaction preserves the full saved transcript and does not reset the live
-Starlark environment. A later script failure does not undo an accepted summary.
+state store. A later script failure does not undo an accepted summary.
 Continue the task using the summary and subsequent messages.

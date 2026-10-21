@@ -68,9 +68,9 @@ func TestCompaction(t *testing.T) {
 				setup := compactionCall(
 					t,
 					"setup",
-					"starlark_repl",
+					"starlark",
 					map[string]any{
-						"code": "counter = 1",
+						"code": "state['counter'] = 1",
 					},
 				)
 				code := "save_summary = compact\nsave_summary('initial draft')\nparts = ['Goal: update CPE.', 'Next: finish the requested work.']\nresult = save_summary(summary=' '.join(parts))\nif result != None:\n    fail('compact must return None')"
@@ -80,7 +80,7 @@ func TestCompaction(t *testing.T) {
 				compact := compactionCall(
 					t,
 					"compact-first",
-					"starlark_repl",
+					"starlark",
 					map[string]any{
 						"code": code,
 					},
@@ -88,28 +88,25 @@ func TestCompaction(t *testing.T) {
 				increment := compactionCall(
 					t,
 					"increment",
-					"starlark_repl",
+					"starlark",
 					map[string]any{
-						"code": "counter += 1\nprint(counter)",
+						"code": "state['counter'] += 1\nprint(state['counter'])",
 					},
 				)
 				read := compactionCall(
 					t,
 					"read",
-					"starlark_repl",
+					"starlark",
 					map[string]any{
-						"code": "print(counter)",
+						"code": "print(state['counter'])",
 					},
 				)
 				if operation == "repeat compaction" || operation == "compact after resume" {
-					code := "save_summary('Updated goal and next steps.')"
-					if operation == "compact after resume" {
-						code = "compact('Updated goal and next steps.')"
-					}
+					code := "compact('Updated goal and next steps.')"
 					read = compactionCall(
 						t,
 						"compact-second",
-						"starlark_repl",
+						"starlark",
 						map[string]any{
 							"code": code,
 						},
@@ -135,7 +132,7 @@ func TestCompaction(t *testing.T) {
 					},
 					agenttest.GenerateStep{
 						Check: func(request gai.GenerationRequest) error {
-							if request.Dialog[len(request.Dialog)-1].Blocks[0].Content.String() != "Compact the conversation now by calling compact(summary) in starlark_repl." {
+							if request.Dialog[len(request.Dialog)-1].Blocks[0].Content.String() != "Compact the conversation now by calling compact(summary) in starlark." {
 								return errors.New("slash command did not request compaction")
 							}
 							return nil
@@ -336,10 +333,10 @@ func TestCompaction(t *testing.T) {
 	}
 }
 
-func TestCompactionWithBash(t *testing.T) {
+func TestCompactionWithSubprocess(t *testing.T) {
 	for _, order := range []string{
-		"bash before script",
-		"bash after script",
+		"command before compaction",
+		"command after compaction",
 	} {
 		t.Run(
 			order,
@@ -347,25 +344,25 @@ func TestCompactionWithBash(t *testing.T) {
 				script := compactionCall(
 					t,
 					"script",
-					"starlark_repl",
+					"starlark",
 					map[string]any{
 						"code": "load('subprocess.star', 'subprocess')\nresult = subprocess.run(['capture'], capture_output=True)\ncompact(summary='Result: ' + result.stdout.decode())\nprint('script output after compact')",
 					},
 				)
-				bash := compactionCall(
+				command := compactionCall(
 					t,
-					"bash",
-					"bash",
+					"command",
+					"starlark",
 					map[string]any{
-						"command": "effect",
+						"code": "load('subprocess.star', 'subprocess')\nr = subprocess.run(['effect'], capture_output=True)\nprint(r.stdout.decode())",
 					},
 				)
 				calls := []gai.Block{
 					script,
-					bash,
+					command,
 					gai.TextBlock("assistant text in the compacted response"),
 				}
-				if order == "bash before script" {
+				if order == "command before compaction" {
 					calls[0], calls[1] = calls[1], calls[0]
 				}
 				var effects atomic.Int32
@@ -403,7 +400,7 @@ func TestCompactionWithBash(t *testing.T) {
 								}
 							}
 							for _, text := range []string{
-								"independent bash output",
+								"independent command output",
 								"script output after compact",
 								"assistant text in the compacted response",
 							} {
@@ -437,8 +434,8 @@ func TestCompactionWithBash(t *testing.T) {
 									CommandRunner: runnerFunc(func(_ context.Context, command dyson.Command) (dyson.CommandResult, error) {
 										effects.Add(1)
 										output := "captured"
-										if command.Args[0] == "bash" {
-											output = "independent bash output"
+										if command.Args[0] == "effect" {
+											output = "independent command output"
 										}
 										return dyson.CommandResult{
 											Stdout: []byte(output),
@@ -527,7 +524,7 @@ func TestCompactionFailures(t *testing.T) {
 					compactionCall(
 						t,
 						"compact",
-						"starlark_repl",
+						"starlark",
 						map[string]any{
 							"code": test.code,
 						},
@@ -539,7 +536,7 @@ func TestCompactionFailures(t *testing.T) {
 						compactionCall(
 							t,
 							"block",
-							"starlark_repl",
+							"starlark",
 							map[string]any{
 								"code": "load('subprocess.star', 'subprocess')\nsubprocess.run(['block'])",
 							},

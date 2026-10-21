@@ -212,7 +212,7 @@ func (s *session) close(ctx context.Context) error {
 	}
 	s.mu.Unlock()
 	if running != nil {
-		// Host evaluation must exit before closing a non-concurrent Dyson sphere.
+		// Host evaluation must exit before discarding session state and MCP connections.
 		<-running.done
 	}
 	return errors.Join(

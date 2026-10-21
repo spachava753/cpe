@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -20,7 +21,15 @@ type Registry struct {
 	connector   Connector
 	servers     map[ServerID]plugins.MCPServer
 	connections map[ServerID]*mcp.ClientSession
-	tools       map[ServerID][]*mcp.Tool
+	tools       map[ServerID]*toolList
+}
+
+// Notification callbacks only advance revision: they must never wait on the registry
+// mutex while an MCP request or connection shutdown holds it.
+type toolList struct {
+	revision       atomic.Uint64
+	loadedRevision uint64
+	tools          []*mcp.Tool
 }
 
 // Servers returns configured server IDs in sorted order.
@@ -59,9 +68,11 @@ func (m *Registry) connect(ctx context.Context, id ServerID) (*mcp.ClientSession
 			id,
 		)
 	}
+	list := m.tools[id]
 	connection, err := m.connector(
 		ctx,
 		server,
+		func() { list.revision.Add(1) },
 	)
 	if err != nil {
 		return nil, err
@@ -70,7 +81,7 @@ func (m *Registry) connect(ctx context.Context, id ServerID) (*mcp.ClientSession
 	return connection, nil
 }
 
-// Load connects to a server and caches its tool list until Close.
+// Load returns a cached tool list, refreshing it after tool-list change notifications.
 func (m *Registry) Load(ctx context.Context, id ServerID) ([]*mcp.Tool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -81,8 +92,10 @@ func (m *Registry) Load(ctx context.Context, id ServerID) ([]*mcp.Tool, error) {
 	if err != nil {
 		return nil, err
 	}
-	if tools, ok := m.tools[id]; ok {
-		return tools, nil
+	list := m.tools[id]
+	revision := list.revision.Load()
+	if list.loadedRevision == revision {
+		return list.tools, nil
 	}
 	var tools []*mcp.Tool
 	for tool, err := range connection.Tools(
@@ -97,7 +110,10 @@ func (m *Registry) Load(ctx context.Context, id ServerID) ([]*mcp.Tool, error) {
 			tool,
 		)
 	}
-	m.tools[id] = tools
+	// Keep the revision captured before discovery so a concurrent notification
+	// still triggers another refresh on the next Load. Failed loads never cache.
+	list.tools = tools
+	list.loadedRevision = revision
 	return tools, nil
 }
 
@@ -156,10 +172,16 @@ func NewRegistry(connector Connector, servers map[ServerID]plugins.MCPServer) (*
 	if connector == nil {
 		return nil, errors.New("MCP connector is required")
 	}
+	tools := make(map[ServerID]*toolList)
+	for id := range servers {
+		list := &toolList{}
+		list.revision.Store(1)
+		tools[id] = list
+	}
 	return &Registry{
 		connector:   connector,
 		servers:     servers,
 		connections: make(map[ServerID]*mcp.ClientSession),
-		tools:       make(map[ServerID][]*mcp.Tool),
+		tools:       tools,
 	}, nil
 }

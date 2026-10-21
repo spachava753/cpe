@@ -228,7 +228,7 @@ func scriptGenerator(_ context.Context, _ models.Model, _ models.ReasoningLevel)
 				"call-%d",
 				len(request.Dialog),
 			),
-			"starlark_repl",
+			"starlark",
 			map[string]any{
 				"code": last.Blocks[0].Content.String(),
 			},
@@ -341,7 +341,7 @@ func TestSessionLifecycle(t *testing.T) {
 					t,
 					fixture.client,
 					id,
-					"value = 41",
+					"state['value'] = 41",
 				)
 				for range 2 {
 					request := <-requests
@@ -464,7 +464,7 @@ func TestSessionLifecycle(t *testing.T) {
 					t,
 					fixture.client,
 					target,
-					"print(value + 1)",
+					"print(state['value'] + 1)",
 				)
 				record, err := fixture.store.Load(
 					t.Context(),
@@ -494,7 +494,7 @@ func TestSessionLifecycle(t *testing.T) {
 					t,
 					fixture.client,
 					target,
-					"value = 10",
+					"state['value'] = 10",
 				)
 				if _, err := fixture.client.SetSessionConfigOption(
 					t.Context(),
@@ -510,7 +510,7 @@ func TestSessionLifecycle(t *testing.T) {
 					t,
 					fixture.client,
 					target,
-					"value += 1\nprint(value)",
+					"state['value'] += 1\nprint(state['value'])",
 				)
 				for range 6 {
 					request := <-requests
@@ -518,7 +518,7 @@ func TestSessionLifecycle(t *testing.T) {
 					for index, message := range request.Dialog {
 						if message.Blocks[0].Content.String() == runtimeResetNotice {
 							notices++
-							if index != 4 || message.Role != gai.User || request.Dialog[index+1].Blocks[0].Content.String() != "print(value + 1)" {
+							if index != 4 || message.Role != gai.User || request.Dialog[index+1].Blocks[0].Content.String() != "print(state['value'] + 1)" {
 								t.Fatal("reset notice moved away from the restoration boundary")
 							}
 						}
@@ -701,9 +701,9 @@ func TestSessionCancellation(t *testing.T) {
 func TestInterruptedToolHistory(t *testing.T) {
 	block, err := gai.ToolCallBlock(
 		"effect",
-		"bash",
+		"starlark",
 		map[string]any{
-			"command": "touch file",
+			"code": "state['effect'] = True",
 		},
 	)
 	if err != nil {

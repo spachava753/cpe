@@ -3,8 +3,8 @@
 CPE is a coding agent served over the Agent Client Protocol (ACP), built with
 [gai](https://github.com/spachava753/gai),
 [StarlarkX](https://github.com/spachava753/starlarkx), and
-[Dyson](https://github.com/spachava753/dyson). Models can use a persistent
-`starlark_repl` for structured orchestration or `bash` for direct commands.
+[Dyson](https://github.com/spachava753/dyson). Models use one `starlark` tool for
+commands, filesystem and HTTP operations, and MCP orchestration.
 
 ## ACP server
 
@@ -42,7 +42,7 @@ configure the placeholder accepted by your local server explicitly.
 
 `--models` selects another model file; `--reasoning` sets the initial effort.
 Clients can switch model and reasoning through ACP session configuration options
-between turns. A model switch keeps the conversation and live Starlark globals,
+between turns. A model switch keeps the conversation and live session state,
 but resets reasoning to the new provider's default. Foreign-model reasoning
 metadata is omitted from requests, without deleting it from saved history.
 
@@ -89,21 +89,55 @@ session setup rather than silently dropping instructions.
 
 ### Host tools
 
-Starlark globals persist across turns in a live session. Dyson provides filesystem,
-HTTP, subprocess, and other standard-library modules, for example
-`load("subprocess.star", "subprocess")`. Installing and running CPE grants the
-agent full access to the machine with the user's privileges, including configured
-plugins and MCP servers. Tools execute directly: there are no approval prompts,
+Each `starlark` call runs in a fresh Dyson sphere. Variables, functions, and
+imports last only for that call, and open files are closed when it finishes.
+Dyson provides filesystem, HTTP, subprocess, and other standard-library modules,
+for example `load("subprocess.star", "subprocess")`. Installing and running CPE
+grants the agent full access to the machine with the user's privileges, including
+configured plugins and MCP servers. Tools execute directly: there are no approval prompts,
 allowlists, or sandbox boundaries. The session working directory is a path base,
 not an access restriction. Dyson environment and process APIs also have host
 access; process-global mutations affect the shared CLI process.
 
-Loading, resuming, or forking a conversation starts a fresh Dyson sphere. When
-there is restored history, the model receives a notice before new work: earlier
-variables, functions, and imports are unavailable, but files and external effects
-may still exist. The model must reconstruct needed state without blindly
-repeating earlier actions. State created after that boundary persists normally;
-continuing a live session or switching models does not reset it.
+Run commands through Dyson's subprocess module. Shell syntax is available by
+invoking a shell explicitly:
+
+```python
+load("subprocess.star", "subprocess")
+result = subprocess.run(["bash", "--noprofile", "--norc", "-c", "pwd && ls"], capture_output=True)
+print(result.stdout.decode())
+print(result.stderr.decode())
+print(result.returncode)
+```
+
+Inspect `returncode`, or pass `check=True` to make a nonzero exit fail the script.
+Subprocess output stays inside the script until explicitly printed.
+
+Use the session-owned `state` mapping to retain data explicitly:
+
+```python
+state["results"] = [{"name": "example", "count": 1}]
+
+# In a later call, read the frozen value or assign a replacement.
+print(state["results"])
+state["results"] = list(state["results"]) + [{"name": "next", "count": 2}]
+```
+
+Keys must be strings. Values may be `None`, booleans, integers, floats, strings,
+bytes, and acyclic lists, tuples, or dictionaries containing those types.
+Assignment recursively freezes the value, including existing aliases; stored
+collections cannot be mutated in place. Functions, modules, resource handles,
+and MCP result wrappers are rejected. Store an MCP result's `structured_content`
+or a content item's `raw` data instead. Indexing, assignment, membership tests,
+iteration over keys, and `len(state)` are supported. Missing keys raise an error.
+Assignments accepted before a script fails remain stored.
+
+State persists across calls, turns, model switches, and compaction in a live
+session. It is not checkpointed. Loading, resuming, or forking a conversation
+starts with an empty store. When there is restored history, the model receives a
+notice before new work: earlier stored data is unavailable, but files and external
+effects may still exist. Reconstruct needed state without blindly repeating
+earlier actions.
 
 This notice is model-only, not part of saved history or ACP transcript replay.
 It follows any restored compaction summary. A new compaction covering the reset
@@ -111,8 +145,8 @@ replaces the notice along with the earlier context.
 
 Cancellation, process cleanup, and output capture manage execution lifetime and
 protect the ACP protocol stream; they do not restrict machine access.
-Both direct bash and Starlark subprocess calls capture bounded output and never
-inherit ACP stdin/stdout. Commands belong to the invocation, not a background-job
+Starlark subprocess calls capture bounded output and never inherit ACP
+stdin/stdout. Commands belong to the invocation, not a background-job
 service; Unix process groups are cleaned up on completion or cancellation. Other
 platforms terminate the direct child only. Failed or canceled tools are recorded
 without automatic replay: a failure can still have changed files or external state.
@@ -153,21 +187,42 @@ print(describe_tool("mcp__screenshots_server__capture"))
 result = mcp__screenshots_server__capture({})
 print(result.is_error)
 # Inspect structured_content and content before choosing what the model sees.
-emit(result.content[0])
+image(result.content[0].data)
 ```
 
-Connections and the discovered catalog are reused for the live session and
-released when it closes. Loading, resuming, or forking a saved session creates
-fresh connections and a fresh catalog; historical tool calls are never replayed.
+Connections and cached tool lists belong to the live session. An MCP
+`notifications/tools/list_changed` notification invalidates that server's cache.
+Before the next Starlark invocation, CPE refreshes changed lists and builds a
+catalog shared by discovery and callable builtins for the entire invocation.
+Notifications received during execution take effect on the next call. A refresh
+failure fails the invocation and is retried on the next call; it does not silently
+use stale tools. A remote tool removed during execution may itself fail.
+Connections and cached lists are released when the session closes. Loading,
+resuming, or forking a saved session creates fresh connections and a fresh
+catalog; historical tool calls are never replayed.
 Installing or uninstalling a plugin determines whether its servers are discovered
 for new sessions. Skill-only plugins require no MCP connections.
 
 Results retain content blocks, structured content, metadata, and `is_error` for
-scripts. Only `print` and `emit` expose output to the model; intermediate tool
-results do not become separate conversation messages. `emit` supports text and
-PNG/JPEG/GIF/WebP images. Audio and other binary resources remain inspectable in
-the result and emit an omission notice; resource links are not automatically
-fetched. Models without image input receive a text notice instead of the image.
+scripts. Only `print(...)` and `image(data)` expose output to the model;
+intermediate tool results do not become separate conversation messages. Use
+`print(item.text)` for an MCP text item and `image(item.data)` for an image item.
+
+`image(data)` accepts raw Starlark bytes containing a PNG, JPEG, GIF, or WebP image.
+It detects the media type from the bytes and enforces the output size limit. It
+does not accept paths, URLs, or base64 strings and performs no file or network
+access itself. Use Dyson to obtain bytes, or retain them in `state` for a later
+call. For example:
+
+```python
+image(open("screenshot.png", "rb").read())
+```
+
+Text and image output retain their order, including output produced before a
+script fails. Audio and other binary resources remain inspectable through MCP
+result fields but cannot be displayed as images. Resource links are not
+automatically fetched. Models without image input receive a text notice instead
+of the image.
 
 Skills and plugins are discovered from `~/.agents/{skills,plugins}` and each
 session's `.agents/{skills,plugins}`. `--skills` and `--plugins` add roots, resolving
@@ -188,7 +243,7 @@ supported yet.
 ### Compaction
 
 Use `/compact` to ask the model to summarize the conversation now. The model
-calls `compact(summary)` inside `starlark_repl`, using Starlark string construction
+calls `compact(summary)` inside `starlark`, using Starlark string construction
 and scripting to build the summary. The builtin takes one nonempty string and
 returns `None`; the last accepted call supplies the summary if called repeatedly.
 The model can also compact during a task. `/compact` is reserved and takes
@@ -204,15 +259,16 @@ the default guidance, and read errors other than a missing file stop startup.
 Compaction saves the summary without deleting the full transcript. The next model
 request contains only the system instructions and summary. All tool calls in
 the current response finish normally before compaction takes effect, including
-bash calls alongside the Starlark script. The entire response and its tool
-results are dropped from working context, including output produced after
+other Starlark calls alongside the script requesting compaction. The entire
+response and its tool results are dropped from working context, including output
+produced after
 `compact` runs. Any information needed from those results must be captured in
 the summary by the script. Subsequent messages accumulate after that summary.
 The summary is checkpointed before the next model request, or after outstanding
 calls are settled at turn end if the turn stops. A later script error does not
 undo an accepted summary. Loading, resuming, and forking retain
 the compacted working context; ACP transcript replay still shows the full history.
-Compaction does not reset live Starlark globals or rerun tools.
+Compaction does not reset the live `state` store or rerun tools.
 
 There is no automatic token-budget trigger or separate summarization request.
 The model writes the summary using the context already available to it.
@@ -226,7 +282,7 @@ output, images, and provider reasoning metadata, so treat them as sensitive.
 
 ACP clients can list, load, resume, fork, close, and delete sessions. Closing keeps
 the checkpoint; deleting removes it. Loading, resuming, or forking creates a fresh
-Starlark interpreter and MCP connections: checkpoints are not VM snapshots, side
+state store and MCP connections: checkpoints are not VM snapshots, side
 effects are never replayed, and this format is not ATIF. On Windows, protect the
 checkpoint directory with filesystem ACLs.
 

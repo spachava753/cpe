@@ -87,7 +87,6 @@ func TestLocalHost(t *testing.T) {
 		name string
 		code string
 		want string
-		bash bool
 	}{
 		{
 			name: "host environment process and working directory",
@@ -95,15 +94,14 @@ func TestLocalHost(t *testing.T) {
 			want: "host-access\nTrue\nTrue",
 		},
 		{
-			name: "bash inherits updated host environment",
-			code: "printf '%s' \"$CPE_HOST_TEST\"",
-			want: "host-access",
-			bash: true,
-		},
-		{
 			name: "subprocess inherits updated host environment",
 			code: "load('subprocess.star', 'subprocess')\nprint(subprocess.run(['sh', '-c', 'printf %s \"$CPE_HOST_TEST\"'], capture_output=True).stdout.decode())",
 			want: "host-access",
+		},
+		{
+			name: "shell pipelines through subprocess",
+			code: "load('subprocess.star', 'subprocess')\nr = subprocess.run(['bash', '--noprofile', '--norc', '-c', 'printf hello | tr a-z A-Z'], capture_output=True)\nprint(r.stdout.decode())",
+			want: "HELLO",
 		},
 		{
 			name: "subprocess explicit environment overrides host",
@@ -169,15 +167,12 @@ func TestLocalHost(t *testing.T) {
 						err,
 					)
 				}
-				name, parameter := starlarkToolName, "code"
-				if test.bash {
-					name, parameter = bashToolName, "command"
-				}
+
 				result, err := host.(*toolHost).execute(
 					t.Context(),
 					toolRequest(
-						name,
-						parameter,
+						starlarkToolName,
+						"code",
 						test.code,
 					),
 				)
@@ -210,8 +205,26 @@ func TestToolHost(t *testing.T) {
 		failed bool
 	}{
 		{
-			name: "persistent globals",
-			code: "print(value + 1)",
+			name:   "fresh globals",
+			code:   "print(value + 1)",
+			want:   "undefined: value",
+			failed: true,
+		},
+		{
+			name:   "fresh imports",
+			code:   "print(json)",
+			want:   "undefined: json",
+			failed: true,
+		},
+		{
+			name:   "fresh functions",
+			code:   "print(previous())",
+			want:   "undefined: previous",
+			failed: true,
+		},
+		{
+			name: "explicit state persists",
+			code: "print(state['value'] + 1)",
 			want: "42",
 		},
 		{
@@ -249,9 +262,9 @@ func TestToolHost(t *testing.T) {
 				initial, err := host.execute(
 					t.Context(),
 					toolRequest(
-						"starlark_repl",
+						"starlark",
 						"code",
-						"value = 41",
+						"value = 41\nload('json.star', 'json')\ndef previous():\n    return value\nstate['value'] = value",
 					),
 				)
 				if err != nil || initial.ToolResultError {
@@ -264,7 +277,7 @@ func TestToolHost(t *testing.T) {
 				result, err := host.execute(
 					t.Context(),
 					toolRequest(
-						"starlark_repl",
+						"starlark",
 						"code",
 						test.code,
 					),
@@ -297,33 +310,26 @@ func TestToolHost(t *testing.T) {
 func TestCommandPaths(t *testing.T) {
 	for _, test := range []struct {
 		name        string
-		request     gaiagent.ToolRequest
+		code        string
 		largeOutput bool
+		exitCode    int
+		failed      bool
 	}{
 		{
-			name: "stderr survives large stdout",
-			request: toolRequest(
-				"bash",
-				"command",
-				"build",
-			),
+			name:        "stderr and nonzero status survive large stdout",
+			code:        "load('subprocess.star', 'subprocess')\nr = subprocess.run(['build'], capture_output=True)\nprint(r.stdout.decode())\nprint(r.stderr.decode())\nprint('exit_code:', r.returncode)",
 			largeOutput: true,
-		},
-		{
-			name: "direct bash",
-			request: toolRequest(
-				"bash",
-				"command",
-				"printf hello",
-			),
+			exitCode:    1,
 		},
 		{
 			name: "Starlark subprocess",
-			request: toolRequest(
-				"starlark_repl",
-				"code",
-				"load('subprocess.star', 'subprocess')\nr = subprocess.run(['printf', 'hello'], capture_output=True)\nprint(r.stdout.decode())",
-			),
+			code: "load('subprocess.star', 'subprocess')\nr = subprocess.run(['printf', 'hello'], capture_output=True)\nprint(r.stdout.decode())",
+		},
+		{
+			name:     "explicit nonzero status check fails execution",
+			code:     "load('subprocess.star', 'subprocess')\nsubprocess.run(['build'], capture_output=True, check=True)",
+			exitCode: 7,
+			failed:   true,
 		},
 	} {
 		t.Run(
@@ -344,26 +350,29 @@ func TestCommandPaths(t *testing.T) {
 								command.Dir,
 							)
 						}
+						stdout := "hello"
 						if test.largeOutput {
-							return dyson.CommandResult{
-								Stdout: []byte(strings.Repeat(
-									"x",
-									maxTextBytes,
-								)),
-								Stderr:     []byte("fatal: build failed"),
-								ReturnCode: 1,
-							}, nil
+							stdout = strings.Repeat(
+								"x",
+								maxTextBytes,
+							)
 						}
 						return dyson.CommandResult{
-							Stdout: []byte("hello"),
+							Stdout:     []byte(stdout),
+							Stderr:     []byte("fatal: build failed"),
+							ReturnCode: test.exitCode,
 						}, nil
 					}),
 				)
 				result, err := host.execute(
 					t.Context(),
-					test.request,
+					toolRequest(
+						starlarkToolName,
+						"code",
+						test.code,
+					),
 				)
-				if err != nil || result.ToolResultError != test.largeOutput || calls != 1 {
+				if err != nil || result.ToolResultError != test.failed || calls != 1 {
 					t.Fatalf(
 						"execute: %#v, %v, calls=%d",
 						result,
@@ -398,7 +407,7 @@ func TestMCPEmission(t *testing.T) {
 	}
 	for _, test := range []struct {
 		name          string
-		emit          bool
+		showImage     bool
 		toolError     bool
 		protocolError bool
 	}{
@@ -406,12 +415,12 @@ func TestMCPEmission(t *testing.T) {
 			name: "raw results stay private",
 		},
 		{
-			name: "explicit image",
-			emit: true,
+			name:      "explicit image",
+			showImage: true,
 		},
 		{
 			name:      "tool error remains inspectable",
-			emit:      true,
+			showImage: true,
 			toolError: true,
 		},
 		{
@@ -453,7 +462,7 @@ func TestMCPEmission(t *testing.T) {
 					},
 				)
 				registry, err := mcpclient.NewRegistry(
-					func(ctx context.Context, _ plugins.MCPServer) (*mcp.ClientSession, error) {
+					func(ctx context.Context, _ plugins.MCPServer, toolsChanged func()) (*mcp.ClientSession, error) {
 						a, b := mcp.NewInMemoryTransports()
 						session, err := server.Connect(
 							ctx,
@@ -469,7 +478,9 @@ func TestMCPEmission(t *testing.T) {
 								Name:    "test",
 								Version: "1",
 							},
-							nil,
+							&mcp.ClientOptions{
+								ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) { toolsChanged() },
+							},
 						).Connect(
 							ctx,
 							b,
@@ -490,13 +501,13 @@ func TestMCPEmission(t *testing.T) {
 					runnerFunc(func(context.Context, dyson.Command) (dyson.CommandResult, error) { return dyson.CommandResult{}, nil }),
 				)
 				code := "r = mcp__test__screenshot({})\nprint(r.structured_content['count'])\nprint(r.is_error)"
-				if test.emit {
-					code += "\nemit(r.content[0])"
+				if test.showImage {
+					code += "\nimage(r.content[0].data)"
 				}
 				result, err := host.execute(
 					t.Context(),
 					toolRequest(
-						"starlark_repl",
+						"starlark",
 						"code",
 						code,
 					),
@@ -516,7 +527,7 @@ func TestMCPEmission(t *testing.T) {
 						images++
 					}
 				}
-				if (images == 1) != test.emit {
+				if (images == 1) != test.showImage {
 					t.Fatalf(
 						"images: %d",
 						images,
@@ -544,7 +555,7 @@ func TestHostCancellation(t *testing.T) {
 	result, err := host.execute(
 		ctx,
 		toolRequest(
-			"starlark_repl",
+			"starlark",
 			"code",
 			"load('subprocess.star', 'subprocess')\nsubprocess.run(['sleep', '100'])",
 		),
@@ -559,7 +570,7 @@ func TestHostCancellation(t *testing.T) {
 	result, err = host.execute(
 		t.Context(),
 		toolRequest(
-			"starlark_repl",
+			"starlark",
 			"code",
 			"print('still alive')",
 		),
@@ -569,6 +580,157 @@ func TestHostCancellation(t *testing.T) {
 			"next invocation: %#v %v",
 			result,
 			err,
+		)
+	}
+}
+
+type trackedFile struct {
+	afero.File
+	closed   bool
+	closeErr error
+}
+
+func (f *trackedFile) Close() error {
+	f.closed = true
+	return errors.Join(
+		f.File.Close(),
+		f.closeErr,
+	)
+}
+
+type trackingFS struct {
+	afero.Fs
+	files    []*trackedFile
+	closeErr error
+}
+
+func (f *trackingFS) Open(name string) (afero.File, error) {
+	file, err := f.Fs.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	tracked := &trackedFile{
+		File:     file,
+		closeErr: f.closeErr,
+	}
+	f.files = append(
+		f.files,
+		tracked,
+	)
+	return tracked, nil
+}
+
+func TestInvocationResources(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		code       string
+		failed     bool
+		closeError bool
+		cancel     bool
+	}{
+		{
+			name: "successful execution closes resources",
+			code: `file = open("/data")`,
+		},
+		{
+			name: "failed execution closes resources",
+			code: `file = open("/data")
+fail("later error")`,
+			failed: true,
+		},
+		{
+			name:       "cleanup failure is reported",
+			code:       `file = open("/data")`,
+			failed:     true,
+			closeError: true,
+		},
+		{
+			name: "cancellation closes resources and retains accepted state",
+			code: `load("subprocess.star", "subprocess")
+file = open("/data")
+state["accepted"] = 42
+subprocess.run(["wait"])`,
+			failed: true,
+			cancel: true,
+		},
+	} {
+		t.Run(
+			test.name,
+			func(t *testing.T) {
+				filesystem := &trackingFS{
+					Fs: afero.NewMemMapFs(),
+				}
+				if test.closeError {
+					filesystem.closeErr = errors.New("fixture close failure")
+				}
+				if err := afero.WriteFile(
+					filesystem.Fs,
+					"/data",
+					[]byte("data"),
+					0o600,
+				); err != nil {
+					t.Fatal(err)
+				}
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				host, err := New(
+					t.Context(),
+					Config{
+						Cwd: "/work",
+						MCP: emptyMCP{},
+					},
+					dyson.StdlibConfig{
+						FS: filesystem,
+						CommandRunner: runnerFunc(func(ctx context.Context, _ dyson.Command) (dyson.CommandResult, error) {
+							cancel()
+							return dyson.CommandResult{}, ctx.Err()
+						}),
+					},
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer host.Close(context.Background())
+				result, err := host.(*toolHost).execute(
+					ctx,
+					toolRequest(
+						starlarkToolName,
+						"code",
+						test.code,
+					),
+				)
+				if err != nil || result.ToolResultError != test.failed || len(filesystem.files) != 1 || !filesystem.files[0].closed {
+					t.Fatalf(
+						"resource lifetime: %v, %v, files=%v",
+						result,
+						err,
+						filesystem.files,
+					)
+				}
+				if test.closeError && !strings.Contains(
+					result.Blocks[0].Content.String(),
+					"fixture close failure",
+				) {
+					t.Fatal("close error was not reported")
+				}
+				if test.cancel {
+					result, err := host.(*toolHost).execute(
+						t.Context(),
+						toolRequest(
+							starlarkToolName,
+							"code",
+							`print(state["accepted"])`,
+						),
+					)
+					if err != nil || result.ToolResultError || result.Blocks[0].Content.String() != "42\n" {
+						t.Fatalf(
+							"state after cancellation: %v, %v",
+							result,
+							err,
+						)
+					}
+				}
+			},
 		)
 	}
 }

@@ -104,9 +104,9 @@ func TestToolTurn(t *testing.T) {
 				for i := range test.calls {
 					call, err := gai.ToolCallBlock(
 						strconv.Itoa(i),
-						"bash",
+						"starlark",
 						map[string]any{
-							"command": "true",
+							"code": "print('done')",
 						},
 					)
 					if err != nil {

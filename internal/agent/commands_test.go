@@ -50,7 +50,7 @@ func TestCommandDiscovery(t *testing.T) {
 		{
 			name:   "compact command takes precedence over a skill",
 			prompt: "/compact",
-			want:   "Compact the conversation now by calling compact(summary) in starlark_repl.",
+			want:   "Compact the conversation now by calling compact(summary) in starlark.",
 		},
 		{
 			name:   "compact request preserves user notes",

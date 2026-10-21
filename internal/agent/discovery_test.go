@@ -85,7 +85,7 @@ func TestSessionDiscovery(t *testing.T) {
 			name:            "direct builtins and restored sessions",
 			manifest:        manifest,
 			mcp:             true,
-			code:            "emit(mcp__example_tools__echo({'value': 'hello'}).content[0])",
+			code:            "print(mcp__example_tools__echo({'value': 'hello'}).content[0].text)",
 			wantOutput:      "ready",
 			wantConnections: 2,
 			wantCalls:       2,
@@ -96,7 +96,7 @@ func TestSessionDiscovery(t *testing.T) {
 			manifest:        manifest,
 			mcp:             true,
 			multipleServers: true,
-			code:            "emit(mcp__example_other__echo({}).content[0])",
+			code:            "print(mcp__example_other__echo({}).content[0].text)",
 			wantOutput:      "ready",
 			wantConnections: 3,
 			wantCalls:       1,
@@ -136,7 +136,7 @@ func TestSessionDiscovery(t *testing.T) {
 			name:            "client-provided servers use the same discovery and calling interface",
 			manifest:        manifest,
 			clientServer:    true,
-			code:            "emit(mcp__client__echo({}).content[0])",
+			code:            "print(mcp__client__echo({}).content[0].text)",
 			wantOutput:      "ready",
 			wantConnections: 1,
 			wantCalls:       1,
@@ -240,7 +240,7 @@ func TestSessionDiscovery(t *testing.T) {
 								t.Fatal(err)
 							}
 						}
-						deps.MCP = func(ctx context.Context, config plugins.MCPServer) (*mcp.ClientSession, error) {
+						deps.MCP = func(ctx context.Context, config plugins.MCPServer, toolsChanged func()) (*mcp.ClientSession, error) {
 							connections.Add(1)
 							if test.setupTimeout {
 								<-ctx.Done()
@@ -299,7 +299,9 @@ func TestSessionDiscovery(t *testing.T) {
 									Name:    "fixture",
 									Version: "1",
 								},
-								nil,
+								&mcp.ClientOptions{
+									ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) { toolsChanged() },
+								},
 							).Connect(
 								ctx,
 								b,

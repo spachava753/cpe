@@ -31,7 +31,7 @@ type Info struct {
 }
 
 // Record checkpoints conversation and configuration, never live resources.
-// Resuming or forking creates fresh Starlark globals and MCP connections.
+// Resuming or forking creates an empty Starlark state store and MCP connections.
 type Record struct {
 	Info             Info
 	Options          models.Selection

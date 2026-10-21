@@ -75,7 +75,7 @@ func TestCompaction(t *testing.T) {
 				result, err := host.execute(
 					ctx,
 					toolRequest(
-						"starlark_repl",
+						"starlark",
 						"code",
 						test.code,
 					),

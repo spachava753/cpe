@@ -195,7 +195,7 @@ func (c commandCatalog) expand(message gai.Message) gai.Message {
 		name = name[:index]
 	}
 	if name == compactName {
-		text := "Compact the conversation now by calling compact(summary) in starlark_repl."
+		text := "Compact the conversation now by calling compact(summary) in starlark."
 		if arguments != "" {
 			text += "\n\nUser request:\n" + arguments
 		}
@@ -207,7 +207,7 @@ func (c commandCatalog) expand(message gai.Message) gai.Message {
 		return message
 	}
 	message.Blocks[0] = gai.TextBlock(fmt.Sprintf(
-		"Use the %q skill. Read its instructions at %q with bash or starlark_repl; resolve bundled resources relative to that file.\n\nUser request:\n%s",
+		"Use the %q skill. Read its instructions at %q with starlark; resolve bundled resources relative to that file.\n\nUser request:\n%s",
 		name,
 		skill.Path,
 		arguments,
@@ -222,7 +222,7 @@ func (c commandCatalog) instructions() string {
 	}
 	var text strings.Builder
 	if len(c.commands) != 0 {
-		text.WriteString("\n\nAvailable skills: read a relevant SKILL.md with bash or starlark_repl when needed. Bundled resources are relative to the skill file.\n")
+		text.WriteString("\n\nAvailable skills: read a relevant SKILL.md with starlark when needed. Bundled resources are relative to the skill file.\n")
 	}
 	for _, command := range c.available() {
 		if command.Name == compactName {

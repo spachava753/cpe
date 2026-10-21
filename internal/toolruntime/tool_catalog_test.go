@@ -18,6 +18,7 @@ type catalogMCP struct {
 	tools        map[mcpclient.ServerID][]*mcp.Tool
 	instructions map[mcpclient.ServerID]string
 	calls        int
+	onCall       func()
 }
 
 func (m *catalogMCP) Servers() []mcpclient.ServerID {
@@ -42,6 +43,9 @@ func (m *catalogMCP) Call(ctx context.Context, id mcpclient.ServerID, params *mc
 		return nil, err
 	}
 	m.calls++
+	if m.onCall != nil {
+		m.onCall()
+	}
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
@@ -174,7 +178,7 @@ func TestToolDiscovery(t *testing.T) {
 				result, err := host.execute(
 					t.Context(),
 					toolRequest(
-						"starlark_repl",
+						"starlark",
 						"code",
 						test.code,
 					),
@@ -286,9 +290,9 @@ func TestMCPIdentifiers(t *testing.T) {
 					result, err := host.execute(
 						t.Context(),
 						toolRequest(
-							"starlark_repl",
+							"starlark",
 							"code",
-							"emit("+tool.Name+"({}).content[0])",
+							"print("+tool.Name+"({}).content[0].text)",
 						),
 					)
 					if err != nil || result.ToolResultError || !strings.Contains(
@@ -397,6 +401,137 @@ func TestToolSearchRanking(t *testing.T) {
 					t.Fatalf(
 						"ranked matches: %v",
 						names,
+					)
+				}
+			},
+		)
+	}
+}
+
+func TestToolCatalogRefresh(t *testing.T) {
+	original := []*mcp.Tool{
+		{
+			Name:        "echo",
+			Description: "old metadata",
+			InputSchema: json.RawMessage(`{"type":"object"}`),
+		},
+		{
+			Name:        "obsolete",
+			InputSchema: json.RawMessage(`{"type":"object"}`),
+		},
+	}
+	updated := []*mcp.Tool{
+		{
+			Name:        "echo",
+			Description: "updated metadata",
+			InputSchema: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}}}`),
+		},
+		{
+			Name:        "added",
+			Description: "newly available",
+			InputSchema: json.RawMessage(`{"type":"object"}`),
+		},
+	}
+	remote := &catalogMCP{
+		tools: map[mcpclient.ServerID][]*mcp.Tool{
+			"test": original,
+		},
+	}
+	remote.onCall = func() { remote.tools["test"] = updated }
+	host := hostFixture(
+		t,
+		remote,
+		runnerFunc(func(context.Context, dyson.Command) (dyson.CommandResult, error) {
+			return dyson.CommandResult{}, nil
+		}),
+	)
+	for _, test := range []struct {
+		name   string
+		tools  []*mcp.Tool
+		code   string
+		want   string
+		failed bool
+	}{
+		{
+			name: "change during call keeps discovery snapshot",
+			code: `mcp__test__echo({})
+print(describe_tool("mcp__test__echo")["description"])
+print(describe_tool("mcp__test__added"))
+print(search_tools("newly"))
+print(describe_namespace("mcp__test")["tools"])`,
+			want: "old metadata\nNone\n[]\n[\"mcp__test__echo\", \"mcp__test__obsolete\"]\n",
+		},
+		{
+			name: "next call sees metadata schemas search and new builtin",
+			code: `print(describe_tool("mcp__test__echo")["description"])
+print(describe_tool("mcp__test__echo")["input_schema"]["properties"]["query"]["type"])
+print(search_tools("newly")[0]["name"])
+print(describe_tool("mcp__test__obsolete"))
+print(describe_namespace("mcp__test")["tools"])
+print(mcp__test__added({}).content[0].text)`,
+			want: "updated metadata\nstring\nmcp__test__added\nNone\n[\"mcp__test__added\", \"mcp__test__echo\"]\ntest/added",
+		},
+		{
+			name:   "removed builtin is unavailable",
+			code:   `mcp__test__obsolete({})`,
+			want:   "undefined: mcp__test__obsolete",
+			failed: true,
+		},
+		{
+			name: "invalid refreshed catalog prevents execution",
+			tools: []*mcp.Tool{
+				{
+					Name:        "broken",
+					InputSchema: json.RawMessage(`null`),
+				},
+			},
+			code:   `state["executed"] = True`,
+			want:   "requires an input schema object",
+			failed: true,
+		},
+		{
+			name:  "refresh recovers without replaying failed script",
+			tools: updated,
+			code: `print("executed" in state)
+print(mcp__test__added({}).content[0].text)`,
+			want: "False\ntest/added",
+		},
+		{
+			name:  "empty catalog removes all tools",
+			tools: []*mcp.Tool{},
+			code: `print(describe_namespace("mcp__test")["tools"])
+print(search_tools("echo"))`,
+			want: "[]\n[]\n",
+		},
+	} {
+		t.Run(
+			test.name,
+			func(t *testing.T) {
+				if test.tools != nil {
+					remote.tools["test"] = test.tools
+				}
+				result, err := host.execute(
+					t.Context(),
+					toolRequest(
+						starlarkToolName,
+						"code",
+						test.code,
+					),
+				)
+				var output strings.Builder
+				for _, block := range result.Blocks {
+					output.WriteString(block.Content.String())
+				}
+				if err != nil || result.ToolResultError != test.failed || !strings.Contains(
+					output.String(),
+					test.want,
+				) {
+					t.Fatalf(
+						"catalog execution: %v, %q, %v; want %q",
+						result.ToolResultError,
+						output.String(),
+						err,
+						test.want,
 					)
 				}
 			},

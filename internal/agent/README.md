@@ -10,7 +10,7 @@ assembles their implementations in `internal/cli/agent.go`.
 | `conversation` | Saved records, transcript and compaction invariants, token accounting, and atomic JSON checkpoint storage |
 | `providers` | Model adapters, subscription credential attachment, and credential refresh workers |
 | `mcpclient` | MCP transports, session-owned connections, and cached remote tool lists |
-| `toolruntime` | Dyson globals, bash and subprocess execution, tool naming and search, MCP result values, and model-facing output |
+| `toolruntime` | Invocation-scoped Dyson spheres, session data, subprocess execution, tool naming and search, MCP result values, and model-facing output |
 | `models` | Configured model definitions, model IDs, and reasoning selections |
 
 The extracted packages do not import `agent` or ACP. `agent` depends on
@@ -35,9 +35,10 @@ execution approval or sandbox policy.
 
 A `conversation.Record` contains the transcript, selected model and reasoning,
 usage, aborted responses, and optional compaction boundary. It does not contain
-live resources. Loading, resuming, or forking restores the record into a fresh
-runtime without replaying tool calls. `agent` adds the runtime-reset notice to
-model context so inherited globals are not mistaken for live state.
+live resources or the Starlark state store. Loading, resuming, or forking restores
+the record with an empty state store without replaying tool calls. `agent` adds
+the runtime-reset notice to model context so inherited stored data is not mistaken
+for live state.
 
 The Starlark `compact(summary)` builtin belongs to `toolruntime`. It passes each
 accepted summary synchronously to a receiver installed by `agent` for the turn.
@@ -46,7 +47,7 @@ chooses the checkpoint boundary. An accepted summary survives a later script
 failure. `conversation` checks that the saved boundary does not split a tool call
 from its result, and constructs model context without deleting the transcript.
 
-ACP prompt parsing stays in `agent`; MCP output conversion stays in
+ACP prompt parsing stays in `agent`; script output conversion stays in
 `toolruntime`. Each boundary owns its media checks and limits, rather than
 making incoming prompts depend on runtime output policy. The small image
 conversion functions are private to those boundaries.

@@ -479,7 +479,7 @@ func TestResponseRetryPreservesToolEffects(t *testing.T) {
 						ID:           "effect",
 						BlockType:    gai.ToolCall,
 						ModalityType: gai.Text,
-						Content:      gai.Str("starlark_repl"),
+						Content:      gai.Str("starlark"),
 					},
 				},
 				{
