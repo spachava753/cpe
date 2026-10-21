@@ -21,6 +21,6 @@ results you need in the summary using the script before calling compact. Do
 not claim pending actions have completed or repeat tools just because their
 results were compacted away. Omit details that no longer affect the task.
 
-Compaction preserves the full saved transcript and does not reset the live
-state store. A later script failure does not undo an accepted summary.
+Compaction preserves the full saved transcript and does not reset the durable
+session KV store. A later script failure does not undo an accepted summary.
 Continue the task using the summary and subsequent messages.
