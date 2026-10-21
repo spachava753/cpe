@@ -6,6 +6,13 @@ CPE is a coding agent served over the Agent Client Protocol (ACP), built with
 [Dyson](https://github.com/spachava753/dyson). Models use one `starlark` tool for
 commands, filesystem and HTTP operations, and MCP orchestration.
 
+## Understanding the agent
+
+The [behavior guides](docs/README.md) explain sessions and turns, persistence,
+compaction, tool execution, extensions, instructions, models, credentials, usage,
+and recovery. They include diagrams and examples of what happens during normal
+work and interruptions.
+
 ## ACP server
 
 Configure a JSON array of models in `~/.cpe/models.json`, then configure your ACP
