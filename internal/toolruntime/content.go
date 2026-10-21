@@ -58,8 +58,10 @@ func (c *mcpContentValue) Attr(name string) (starlark.Value, error) {
 	return starlark.None, nil
 }
 
+const maxImageBytes = 6 << 20
+
 func imageBlock(data []byte) (gai.Block, error) {
-	if len(data) == 0 || len(data) > maxOutputBytes*3/4 {
+	if len(data) == 0 || len(data) > maxImageBytes {
 		return gai.Block{}, errors.New("image is empty or exceeds output limit")
 	}
 	mime := http.DetectContentType(data)

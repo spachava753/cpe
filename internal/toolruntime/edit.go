@@ -60,13 +60,11 @@ func (h *toolHost) edit(thread *starlark.Thread, fn *starlark.Builtin, args star
 			err,
 		)
 	}
-	if err := current.output.add(gai.TextBlock(fmt.Sprintf(
+	current.output.add(gai.TextBlock(fmt.Sprintf(
 		"Edited %q: replaced one occurrence.\n%s",
 		filename,
 		diff,
-	))); err != nil {
-		return nil, err
-	}
+	)))
 	return starlark.None, nil
 }
 

@@ -383,6 +383,17 @@ func TestCommandPaths(t *testing.T) {
 					)
 				}
 				if test.largeOutput {
+					result, err = host.execute(
+						t.Context(),
+						toolRequest(
+							starlarkToolName,
+							"code",
+							"print(kv.get(kv.keys()[0])[-100:])",
+						),
+					)
+					if err != nil || result.ToolResultError || calls != 1 {
+						t.Fatal("could not retrieve diagnostics without rerunning the command")
+					}
 					var output strings.Builder
 					for _, block := range result.Blocks {
 						output.WriteString(block.Content.String())

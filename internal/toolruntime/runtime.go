@@ -156,9 +156,7 @@ func (h *toolHost) newSphere() *dyson.Sphere {
 			if !ok {
 				panic("Starlark output outside an invocation")
 			}
-			if err := current.output.add(gai.TextBlock(text)); err != nil {
-				thread.Cancel(err.Error())
-			}
+			current.output.add(gai.TextBlock(text))
 		},
 		dyson.NewStdlib(h.stdlib),
 		dyson.GlobalSet(globals),
@@ -206,7 +204,11 @@ func (h *toolHost) execute(ctx context.Context, request gaiagent.ToolRequest) (g
 	if h.closed {
 		return gai.Message{}, errors.New("tool runtime is closed")
 	}
-	current := &invocation{}
+	current := &invocation{
+		output: outputCollector{
+			kv: h.config.KV,
+		},
+	}
 	ctx = context.WithValue(
 		ctx,
 		invocationKey{},
@@ -225,25 +227,19 @@ func (h *toolHost) execute(ctx context.Context, request gaiagent.ToolRequest) (g
 			code,
 		)
 	}
-	runErr = errors.Join(
+	blocks, runErr := current.output.finish(
+		ctx,
 		runErr,
-		current.output.err,
 	)
-	if runErr != nil {
-		if err := current.output.add(gai.TextBlock("Execution error: " + runErr.Error())); err != nil {
-			// A full collector already contains output; reserve its final block for the failure.
-			current.output.blocks[len(current.output.blocks)-1] = gai.TextBlock("Execution failed; output limit reached.")
-		}
-	}
-	if len(current.output.blocks) == 0 {
-		current.output.blocks = append(
-			current.output.blocks,
+	if len(blocks) == 0 {
+		blocks = append(
+			blocks,
 			gai.TextBlock("Execution completed without emitted output."),
 		)
 	}
 	message := gai.ToolResultMessage(
 		request.Block.ID,
-		current.output.blocks...,
+		blocks...,
 	)
 	message.ToolResultError = runErr != nil
 	return message, nil
@@ -504,41 +500,8 @@ func image(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, k
 	if err != nil {
 		return nil, err
 	}
-	if err := current.output.add(block); err != nil {
-		return nil, err
-	}
+	current.output.add(block)
 	return starlark.None, nil
-}
-
-// Keep code output separate from programmatic MCP results.
-const maxOutputBytes = 8 << 20
-const maxTextBytes = 128 << 10
-
-type outputCollector struct {
-	blocks []gai.Block
-	bytes  int
-	err    error
-}
-
-func (o *outputCollector) add(block gai.Block) error {
-	if o.err != nil {
-		return o.err
-	}
-	size := len(block.Content.String())
-	if block.ModalityType == gai.Text && size > maxTextBytes {
-		block = gai.TextBlock(block.Content.String()[:maxTextBytes] + "\n[output truncated]")
-		size = len(block.Content.String())
-	}
-	if len(o.blocks) >= 1024 || size > maxOutputBytes-o.bytes {
-		o.err = errors.New("execution output limit exceeded; produce less output")
-		return o.err
-	}
-	o.blocks = append(
-		o.blocks,
-		block,
-	)
-	o.bytes += size
-	return nil
 }
 
 // MCPTools retains SDK results for scripts; conversion to model content is separate.

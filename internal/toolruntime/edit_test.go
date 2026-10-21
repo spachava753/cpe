@@ -249,11 +249,16 @@ func TestEdit(t *testing.T) {
 				for _, block := range result.Blocks {
 					text := block.Content.String()
 					output.WriteString(text)
-					if strings.HasPrefix(
+					for line := range strings.SplitSeq(
 						text,
-						"Edited ",
+						"\n",
 					) {
-						applied++
+						if strings.HasPrefix(
+							line,
+							"Edited ",
+						) {
+							applied++
+						}
 					}
 				}
 				if applied != test.applied {

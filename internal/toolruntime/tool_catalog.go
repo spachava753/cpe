@@ -41,6 +41,8 @@ type identifierCandidate struct {
 	name     string
 }
 
+// TODO: Keep MCP discovery failures from blocking session creation or local
+// scripts that do not use the failing server.
 func discoverTools(ctx context.Context, mcp MCPTools, descriptions map[mcpclient.ServerID]string) (toolCatalog, error) {
 	catalog := toolCatalog{}
 	servers := slices.Clone(mcp.Servers())

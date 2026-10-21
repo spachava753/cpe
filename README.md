@@ -183,11 +183,27 @@ and historical tool calls are never replayed.
 
 Cancellation, process cleanup, and output capture manage execution lifetime and
 protect the ACP protocol stream; they do not restrict machine access.
-Starlark subprocess calls capture bounded output and never inherit ACP
+Starlark subprocess calls return complete captured streams and never inherit ACP
 stdin/stdout. Commands belong to the invocation, not a background-job
 service; Unix process groups are cleaned up on completion or cancellation. Other
 platforms terminate the direct child only. Failed or canceled tools are recorded
 without automatic replay: a failure can still have changed files or external state.
+
+All emitted script text is combined into one text block. Printing does not impose
+an execution budget or a block-count limit. When the invocation finishes, output
+longer than 128 KiB is saved in full as a string under `overflow_<sha256>` in
+session KV. The model receives a bounded head preview with the exact key.
+Identical complete output reuses the same key. Use `kv.get(key)` to search or
+slice the log and print only the relevant portion. These values use the same
+checkpoints as other KV data, so they survive compaction, load/resume, and restart,
+and fork independently with the session.
+
+Command stdout and stderr remain complete script-local data unless the script
+prints or explicitly stores them. Overflow storage applies only to emitted
+script text and execution diagnostics, including those produced before failure
+or cancellation. Persistence happens after execution; a failed save is reported
+in the result without interrupting earlier script work or claiming an unsaved
+log is available. No temporary log files or additional retrieval tools are needed.
 
 MCP uses the official Go SDK and accepts client-supplied or plugin-defined stdio,
 streamable HTTP, and SSE servers. Every discovered plugin MCP server is enabled,
@@ -247,18 +263,18 @@ intermediate tool results do not become separate conversation messages. Use
 `print(item.text)` for an MCP text item and `image(item.data)` for an image item.
 
 `image(data)` accepts raw Starlark bytes containing a PNG, JPEG, GIF, or WebP image.
-It detects the media type from the bytes and enforces the output size limit. It
-does not accept paths, URLs, or base64 strings and performs no file or network
-access itself. Use Dyson to obtain bytes, or retain them with `kv.store` for a later
+It detects the media type from the bytes and rejects individual images larger
+than 6 MiB. It does not accept paths, URLs, or base64 strings and performs no file
+or network access itself. Use Dyson to obtain bytes, or retain them with `kv.store` for a later
 call. For example:
 
 ```python
 image(open("screenshot.png", "rb").read())
 ```
 
-Text and image output retain their order, including output produced before a
-script fails. Audio and other binary resources remain inspectable through MCP
-result fields but cannot be displayed as images. Resource links are not
+The combined text block precedes image blocks. Images retain their emission
+order, including those produced before a script fails. Audio and other binary
+resources remain inspectable through MCP result fields but cannot be displayed as images. Resource links are not
 automatically fetched. Models without image input receive a text notice instead
 of the image.
 

@@ -46,9 +46,12 @@ func TestCommandRunner(t *testing.T) {
 			want: "9437184",
 		},
 		{
-			name:    "bounded capture",
-			command: "printf '%200000s' x",
-			want:    "[output truncated]",
+			name:    "complete capture",
+			command: "printf '%200000s' x; printf final-summary",
+			want: strings.Repeat(
+				" ",
+				199999,
+			) + "xfinal-summary",
 		},
 		{
 			name:      "cancel sleeping child",
@@ -115,9 +118,6 @@ func TestCommandRunner(t *testing.T) {
 						result.ReturnCode,
 						len(result.Stdout),
 					)
-				}
-				if len(result.Stdout) > maxTextBytes+100 {
-					t.Fatal("unbounded command output")
 				}
 				if test.name == "exit and separate stderr" && string(result.Stderr) != "problem" {
 					t.Fatal("stderr was not captured separately")

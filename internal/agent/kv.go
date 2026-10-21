@@ -25,6 +25,8 @@ func (s *session) Get(ctx context.Context, key string) ([]byte, error) {
 	return bytes.Clone(value), nil
 }
 
+// TODO: Revisit whole-record KV persistence: changing one key currently rewrites
+// all saved values and conversation history, which becomes costly with large logs.
 func (s *session) Store(ctx context.Context, key string, value []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

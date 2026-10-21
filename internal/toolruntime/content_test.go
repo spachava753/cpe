@@ -59,7 +59,7 @@ func TestImage(t *testing.T) {
 		ordered    bool
 	}{
 		{
-			name: "PNG file bytes with ordered text and image output",
+			name: "combined text precedes image output",
 			data: pngData.Bytes(),
 			code: `print("before")
 image(open("/image", "rb").read())
@@ -128,21 +128,20 @@ fail("later failure")`,
 				pngData.Bytes(),
 				make(
 					[]byte,
-					maxOutputBytes*3/4,
+					maxImageBytes,
 				)...,
 			),
 			code:      `image(open("/image", "rb").read())`,
 			wantError: "exceeds output limit",
 		},
 		{
-			name: "image output respects the shared collector limit",
+			name: "image sequence is retained",
 			data: pngData.Bytes(),
 			code: `data = open("/image", "rb").read()
 for i in range(1025):
     image(data)`,
 			mime:       "image/png",
-			wantImages: 1023,
-			wantError:  "output limit reached",
+			wantImages: 1025,
 		},
 	} {
 		t.Run(
@@ -222,8 +221,8 @@ for i in range(1025):
 						test.wantError,
 					)
 				}
-				if test.ordered && (len(result.Blocks) != 3 || result.Blocks[0].Content.String() != "before\n" || result.Blocks[1].ModalityType != gai.Image || result.Blocks[2].Content.String() != "after\n") {
-					t.Fatal("text and image output were reordered")
+				if test.ordered && (len(result.Blocks) != 2 || result.Blocks[0].Content.String() != "before\nafter\n" || result.Blocks[1].ModalityType != gai.Image) {
+					t.Fatal("text was not combined before images")
 				}
 			},
 		)

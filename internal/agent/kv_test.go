@@ -18,6 +18,8 @@ func TestSessionKVCheckpoint(t *testing.T) {
 	for _, operation := range []string{
 		"script failure",
 		"cancellation",
+		"overflow",
+		"overflow before cancellation",
 	} {
 		t.Run(
 			operation,
@@ -39,7 +41,13 @@ func TestSessionKVCheckpoint(t *testing.T) {
 					fixture.client,
 				)
 				code := "kv.store('value', ({'count': 42}, b'bytes'))\n"
-				if operation == "script failure" {
+				if strings.HasPrefix(
+					operation,
+					"overflow",
+				) {
+					code += "print('x' * 200000 + 'final summary')\n"
+				}
+				if operation == "script failure" || operation == "overflow" {
 					promptFixture(
 						t,
 						fixture.client,
@@ -130,11 +138,18 @@ func TestSessionKVCheckpoint(t *testing.T) {
 				); err != nil {
 					t.Fatal(err)
 				}
+				read := "print(kv.get('value') == ({'count': 42}, b'bytes'))"
+				if strings.HasPrefix(
+					operation,
+					"overflow",
+				) {
+					read = "keys = [key for key in kv.keys() if key.startswith('overflow_')]\nprint(len(keys) == 1 and kv.get(keys[0]).startswith('x' * 200000 + 'final summary\\n'))"
+				}
 				promptFixture(
 					t,
 					restored.client,
 					id,
-					"print(kv.get('value') == ({'count': 42}, b'bytes'))",
+					read,
 				)
 				record, err := reopened.Load(
 					t.Context(),

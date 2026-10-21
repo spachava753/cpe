@@ -31,6 +31,11 @@ README.md     User workflows and verification instructions
 - Resolve consequential ambiguity with the user before coding. Identify the
   requested behavior and how to verify it; do not invent adjacent requirements
   or reinterpret a specific request as permission to build a broader system.
+- Do not introduce limits, caps, timeouts, or execution budgets without a concrete,
+  justified need. Always present the reason, proposed limit, and behavior when it
+  is reached to the user, and obtain their explicit approval before implementing
+  it. The user makes the final decision; convenience or a defensive default is
+  not sufficient justification.
 - Keep the user-facing interface minimal. Give each requested operation one clear
   entry point. Do not expose lower-level implementation operations as additional
   APIs, tools, commands, or configuration options without approval.

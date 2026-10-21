@@ -11,7 +11,8 @@ import (
 	"github.com/spachava753/dyson"
 )
 
-// localCommandRunner bounds captured output while continuing to drain the pipes.
+// localCommandRunner returns complete captured streams to the script.
+// TODO: Revisit the memory cost of buffering large command streams in full.
 // Commands inherit the current process environment unless Env is explicitly supplied.
 type localCommandRunner struct{}
 
@@ -39,8 +40,8 @@ func (localCommandRunner) RunCommand(ctx context.Context, command dyson.Command)
 	process.WaitDelay = time.Second
 	cleanup := configureProcess(process)
 	defer cleanup()
-	stdout := &boundedBuffer{}
-	stderr := &boundedBuffer{}
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
 	process.Stdout = stdout
 	process.Stderr = stderr
 	if command.Stdout == dyson.StreamDiscard {
@@ -57,8 +58,8 @@ func (localCommandRunner) RunCommand(ctx context.Context, command dyson.Command)
 	}
 	err := process.Run()
 	result := dyson.CommandResult{
-		Stdout: stdout.result(),
-		Stderr: stderr.result(),
+		Stdout: stdout.Bytes(),
+		Stderr: stderr.Bytes(),
 	}
 	if ctx.Err() != nil {
 		return result, ctx.Err()
@@ -68,33 +69,4 @@ func (localCommandRunner) RunCommand(ctx context.Context, command dyson.Command)
 		return result, nil
 	}
 	return result, err
-}
-
-type boundedBuffer struct {
-	data      []byte
-	truncated bool
-}
-
-func (b *boundedBuffer) Write(data []byte) (int, error) {
-	size := len(data)
-	remaining := maxTextBytes - len(b.data)
-	if len(data) > remaining {
-		data = data[:remaining]
-		b.truncated = true
-	}
-	b.data = append(
-		b.data,
-		data...,
-	)
-	return size, nil
-}
-
-func (b *boundedBuffer) result() []byte {
-	if b.truncated {
-		return append(
-			b.data,
-			[]byte("\n[output truncated]")...,
-		)
-	}
-	return b.data
 }
