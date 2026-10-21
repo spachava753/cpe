@@ -52,6 +52,15 @@ the record with an empty state store without replaying tool calls. `agent` adds
 the runtime-reset notice to model context so inherited stored data is not mistaken
 for live state.
 
+Accepted user messages are checkpointed before generation. The complete tool-call
+response is checkpointed before execution, and each completed tool result is saved
+before its ACP completion notification or further execution. Checkpoint failures
+stop the turn; bounded turn-end cleanup still attempts to save known results.
+Loading or resuming a checkpoint with missing tool results records those calls as
+interrupted with uncertain outcomes before exposing the restored session. Effects
+may have occurred even when no result was saved, so recovery never replays calls.
+Checkpoints do not restore the VM or prevent concurrent writers in other processes.
+
 The Starlark `compact(summary)` builtin belongs to `toolruntime`. It passes each
 accepted summary synchronously to a receiver installed by `agent` for the turn.
 `agent` keeps the last accepted summary, settles the response's tool calls, and

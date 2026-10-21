@@ -102,6 +102,8 @@ func newSession(setup context.Context, lifetime context.Context, spec sessionSpe
 			registry.Close(),
 		)
 	}
+	// Calls without durable results must never be replayed after a runtime reset.
+	record.Dialog = settleDialog(record.Dialog)
 	var reset *runtimeReset
 	if len(record.Dialog) != 0 {
 		reset = &runtimeReset{
@@ -227,6 +229,8 @@ func (s *session) close(ctx context.Context) error {
 	)
 }
 
+const interruptedToolResult = "Execution interrupted; outcome uncertain. Effects may have occurred. Inspect state before retrying."
+
 // settleDialog records uncertain outcomes rather than executing historical calls again.
 func settleDialog(dialog gai.Dialog) gai.Dialog {
 	pending := make(map[string]bool)
@@ -245,7 +249,7 @@ func settleDialog(dialog gai.Dialog) gai.Dialog {
 	for id := range pending {
 		message := gai.ToolResultMessage(
 			id,
-			gai.TextBlock("Execution was interrupted; effects may have occurred. Inspect state before retrying."),
+			gai.TextBlock(interruptedToolResult),
 		)
 		message.ToolResultError = true
 		dialog = append(

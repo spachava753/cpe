@@ -78,6 +78,12 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptR
 		dialog,
 		message,
 	)
+	if err := s.checkpointDialog(
+		ctx,
+		dialog,
+	); err != nil {
+		return nil, err
+	}
 	generator, generationOptions, err := s.deps.Generators(
 		ctx,
 		model,
@@ -207,6 +213,25 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptR
 	return response, nil
 }
 
+// checkpointDialog publishes live history only after the checkpoint succeeds.
+func (s *session) checkpointDialog(ctx context.Context, dialog gai.Dialog) error {
+	s.mu.Lock()
+	record := s.record
+	s.mu.Unlock()
+	record.Dialog = slices.Clone(dialog)
+	record.Info.UpdatedAt = time.Now().UTC()
+	if err := s.deps.History.Save(
+		ctx,
+		record,
+	); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.record = record
+	s.mu.Unlock()
+	return nil
+}
+
 func missingResult(dialog gai.Dialog, id string) bool {
 	found := false
 	for _, message := range dialog {
@@ -246,6 +271,14 @@ func (h *turnHooks) BeforeGeneration(ctx context.Context, event gaiagent.BeforeG
 	h.dialog = event.Request.Dialog
 	if h.compactionRequest.summary != nil {
 		if err := h.checkpointCompaction(ctx); err != nil {
+			return gaiagent.BeforeGenerationDecision{}, err
+		}
+	} else if event.Generation != 0 {
+		// Include results synthesized by the loop (for example, invalid arguments).
+		if err := h.session.checkpointDialog(
+			ctx,
+			h.dialog,
+		); err != nil {
 			return gaiagent.BeforeGenerationDecision{}, err
 		}
 	}
@@ -361,10 +394,21 @@ func (h *turnHooks) AfterGeneration(ctx context.Context, event gaiagent.AfterGen
 			return nil, err
 		}
 	}
+	h.dialog = append(
+		slices.Clone(h.dialog),
+		response.Candidates[0],
+	)
 	return &response, nil
 }
 
 func (h *turnHooks) BeforeTool(ctx context.Context, event gaiagent.BeforeToolRequest) (gaiagent.BeforeToolDecision, error) {
+	// Persist the whole response's intent before any call can have effects.
+	if err := h.session.checkpointDialog(
+		ctx,
+		h.dialog,
+	); err != nil {
+		return gaiagent.BeforeToolDecision{}, err
+	}
 	h.pending[event.Block.ID] = true
 	update := acp.ToolCallSessionUpdate(
 		acp.ToolCallId(event.Block.ID),
@@ -403,6 +447,16 @@ func (h *turnHooks) AfterTool(ctx context.Context, event gaiagent.AfterToolReque
 		h.pending,
 		event.Block.ID,
 	)
+	h.dialog = append(
+		h.dialog,
+		result,
+	)
+	if err := h.session.checkpointDialog(
+		ctx,
+		h.dialog,
+	); err != nil {
+		return gaiagent.AfterToolDecision{}, err
+	}
 	return gaiagent.AfterToolDecision{
 		Result: &result,
 	}, h.client.toolResult(
@@ -417,7 +471,7 @@ func (h *turnHooks) finish(ctx context.Context) error {
 	for id := range h.pending {
 		message := gai.ToolResultMessage(
 			id,
-			gai.TextBlock("Execution interrupted; inspect state before retrying."),
+			gai.TextBlock(interruptedToolResult),
 		)
 		message.ToolResultError = true
 		errs = append(
