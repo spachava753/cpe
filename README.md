@@ -124,6 +124,34 @@ print(result.returncode)
 Inspect `returncode`, or pass `check=True` to make a nonzero exit fail the script.
 Subprocess output stays inside the script until explicitly printed.
 
+Use the `edit(filename, old, new)` builtin for exact text replacement in an
+existing file. It requires exactly one literal match, including overlapping
+matches; missing or ambiguous matches raise an error without changing the file.
+`old` must be nonempty. `new` may be empty to delete the match. A replacement that
+would leave the contents unchanged also raises an error. Whitespace and line
+endings are matched as supplied, without normalization.
+
+```python
+edit("app.go", "old function", "new function")
+edit("app.go", "old caller", "new caller")
+edit("app_test.go", "old expectation", "new expectation")
+```
+
+Each successful edit automatically emits a confirmation and unified diff in the
+tool result; no `print()` or return-value inspection is needed. The builtin returns
+`None`. Calls execute sequentially against the current contents, including earlier
+edits. An error stops the script: earlier edits and their confirmations remain,
+and later calls do not run. There is no batch transaction or rollback.
+
+Relative paths use the session working directory; absolute paths and parent
+traversal are also supported. Symlinks are followed and retained. Replacement uses
+a temporary file in the target directory and an atomic rename, preserving
+permission bits, but not ownership, ACLs, or other extended metadata. A
+best-effort content check detects changes during the edit, not changes since the
+model's earlier read. Other writers are not locked out and can still write between
+the final check and rename. Dyson's `open()` is read-only; `edit` does not create
+missing files.
+
 Use the session-owned `state` mapping to retain data explicitly:
 
 ```python

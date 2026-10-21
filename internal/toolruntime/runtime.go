@@ -101,7 +101,7 @@ func New(ctx context.Context, config Config, stdlib dyson.StdlibConfig) (Host, e
 		{
 			Definition: gai.Tool{
 				Name:        starlarkToolName,
-				Description: "Execute Starlark in a fresh runtime. Use state[string] for frozen session data, print() for text and image(bytes) for images, and compact(summary) for compaction. Discover MCP builtins with search_tools, describe_tool, and describe_namespace. Errors do not undo effects.",
+				Description: "Execute Starlark in a fresh runtime. Use state for session data; print and image for output; compact(summary) to compact; edit(filename, old, new) for exact file edits. Discover MCP tools with search_tools, describe_tool, and describe_namespace. Errors do not undo effects.",
 				InputSchema: stringSchema("code"),
 			},
 			Handler: gaiagent.ToolHandlerFunc(h.execute),
@@ -113,6 +113,10 @@ func New(ctx context.Context, config Config, stdlib dyson.StdlibConfig) (Host, e
 func (h *toolHost) newSphere() *dyson.Sphere {
 	globals := starlark.StringDict{
 		"state": h.state,
+		"edit": starlark.NewBuiltin(
+			"edit",
+			h.edit,
+		),
 		compactName: starlark.NewBuiltin(
 			compactName,
 			compact,
