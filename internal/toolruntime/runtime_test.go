@@ -45,6 +45,7 @@ func hostFixture(t *testing.T, tools MCPTools, runner dyson.CommandRunner, confi
 	config := Config{
 		Cwd: "/work",
 		MCP: tools,
+		KV:  memoryKV{},
 	}
 	for _, option := range configure {
 		option(&config)
@@ -142,6 +143,7 @@ func TestLocalHost(t *testing.T) {
 					Config{
 						Cwd: cwd,
 						MCP: emptyMCP{},
+						KV:  memoryKV{},
 					},
 				)
 				if err != nil {
@@ -224,7 +226,7 @@ func TestToolHost(t *testing.T) {
 		},
 		{
 			name: "explicit state persists",
-			code: "print(state['value'] + 1)",
+			code: "print(kv.get('value') + 1)",
 			want: "42",
 		},
 		{
@@ -264,7 +266,7 @@ func TestToolHost(t *testing.T) {
 					toolRequest(
 						"starlark",
 						"code",
-						"value = 41\nload('json.star', 'json')\ndef previous():\n    return value\nstate['value'] = value",
+						"value = 41\nload('json.star', 'json')\ndef previous():\n    return value\nkv.store('value', value)",
 					),
 				)
 				if err != nil || initial.ToolResultError {
@@ -648,7 +650,7 @@ fail("later error")`,
 			name: "cancellation closes resources and retains accepted state",
 			code: `load("subprocess.star", "subprocess")
 file = open("/data")
-state["accepted"] = 42
+kv.store("accepted", 42)
 subprocess.run(["wait"])`,
 			failed: true,
 			cancel: true,
@@ -678,6 +680,7 @@ subprocess.run(["wait"])`,
 					Config{
 						Cwd: "/work",
 						MCP: emptyMCP{},
+						KV:  memoryKV{},
 					},
 					dyson.StdlibConfig{
 						FS: filesystem,
@@ -719,7 +722,7 @@ subprocess.run(["wait"])`,
 						toolRequest(
 							starlarkToolName,
 							"code",
-							`print(state["accepted"])`,
+							`print(kv.get("accepted"))`,
 						),
 					)
 					if err != nil || result.ToolResultError || result.Blocks[0].Content.String() != "42\n" {

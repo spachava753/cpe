@@ -96,15 +96,14 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptR
 		return nil, errors.New("generator factory returned no generator")
 	}
 	hooks := &turnHooks{
-		session:      s,
-		compaction:   compaction,
-		runtimeReset: s.runtimeReset,
-		client:       s.client,
-		model:        model,
-		modelID:      options.Model,
-		completed:    make(map[string]gai.Message),
-		pending:      make(map[string]bool),
-		streamed:     make(map[uint]bool),
+		session:    s,
+		compaction: compaction,
+		client:     s.client,
+		model:      model,
+		modelID:    options.Model,
+		completed:  make(map[string]gai.Message),
+		pending:    make(map[string]bool),
+		streamed:   make(map[uint]bool),
 	}
 	ctx = toolruntime.WithCompaction(
 		ctx,
@@ -254,7 +253,6 @@ type turnHooks struct {
 	usage             conversation.TokenUsage
 	compaction        *conversation.Compaction
 	compactionRequest compactionRequest
-	runtimeReset      *runtimeReset
 	client            *sessionClient
 	model             models.Model
 	modelID           models.ID
@@ -284,10 +282,7 @@ func (h *turnHooks) BeforeGeneration(ctx context.Context, event gaiagent.BeforeG
 	}
 	request := event.Request
 	request.Dialog = nil
-	for _, message := range h.runtimeReset.workingDialog(
-		event.Request.Dialog,
-		h.compaction,
-	) {
+	for _, message := range h.compaction.WorkingDialog(event.Request.Dialog) {
 		foreign := message.Role == gai.Assistant && message.ExtraFields["cpe.model"] != string(h.modelID)
 		blocks := message.Blocks
 		message.Blocks = nil

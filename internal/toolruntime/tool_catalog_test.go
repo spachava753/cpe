@@ -485,14 +485,14 @@ print(mcp__test__added({}).content[0].text)`,
 					InputSchema: json.RawMessage(`null`),
 				},
 			},
-			code:   `state["executed"] = True`,
+			code:   `kv.store("executed", True)`,
 			want:   "requires an input schema object",
 			failed: true,
 		},
 		{
 			name:  "refresh recovers without replaying failed script",
 			tools: updated,
-			code: `print("executed" in state)
+			code: `print("executed" in kv.keys())
 print(mcp__test__added({}).content[0].text)`,
 			want: "False\ntest/added",
 		},

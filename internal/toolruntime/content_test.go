@@ -92,7 +92,7 @@ print("after")`,
 		{
 			name:       "stored bytes survive source removal and a fresh invocation",
 			data:       pngData.Bytes(),
-			code:       `image(state["image"])`,
+			code:       `image(kv.get("image"))`,
 			mime:       "image/png",
 			wantImages: 1,
 			save:       true,
@@ -169,7 +169,7 @@ for i in range(1025):
 						toolRequest(
 							starlarkToolName,
 							"code",
-							`state["image"] = open("/image", "rb").read()`,
+							`kv.store("image", open("/image", "rb").read())`,
 						),
 					)
 					if err != nil || result.ToolResultError {

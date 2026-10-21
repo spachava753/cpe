@@ -396,6 +396,7 @@ func TestEditHostPaths(t *testing.T) {
 					Config{
 						Cwd: cwd,
 						MCP: emptyMCP{},
+						KV:  memoryKV{},
 					},
 				)
 				if err != nil {

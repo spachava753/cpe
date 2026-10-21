@@ -36,7 +36,6 @@ type session struct {
 	catalog             commandCatalog
 	projectInstructions string
 	runtime             toolruntime.Host
-	runtimeReset        *runtimeReset
 	mcp                 *mcpclient.Registry
 }
 
@@ -88,11 +87,26 @@ func newSession(setup context.Context, lifetime context.Context, spec sessionSpe
 	if err != nil {
 		return nil, err
 	}
+	// Calls without durable results must never be replayed after restoration.
+	record.Dialog = settleDialog(record.Dialog)
+	record.Info.ID = spec.id
+	record.Info.Cwd = spec.cwd
+	s := &session{
+		lifetime:            lifetime,
+		config:              config,
+		deps:                deps,
+		client:              client,
+		record:              record,
+		catalog:             catalog,
+		projectInstructions: projectInstructions,
+		mcp:                 registry,
+	}
 	host, err := deps.Hosts(
 		setup,
 		toolruntime.Config{
 			Cwd:          spec.cwd,
 			MCP:          registry,
+			KV:           s,
 			Descriptions: catalog.serverDescriptions(),
 		},
 	)
@@ -102,28 +116,8 @@ func newSession(setup context.Context, lifetime context.Context, spec sessionSpe
 			registry.Close(),
 		)
 	}
-	// Calls without durable results must never be replayed after a runtime reset.
-	record.Dialog = settleDialog(record.Dialog)
-	var reset *runtimeReset
-	if len(record.Dialog) != 0 {
-		reset = &runtimeReset{
-			afterMessages: len(record.Dialog),
-		}
-	}
-	record.Info.ID = spec.id
-	record.Info.Cwd = spec.cwd
-	return &session{
-		lifetime:            lifetime,
-		config:              config,
-		deps:                deps,
-		client:              client,
-		record:              record,
-		catalog:             catalog,
-		projectInstructions: projectInstructions,
-		runtime:             host,
-		runtimeReset:        reset,
-		mcp:                 registry,
-	}, nil
+	s.runtime = host
+	return s, nil
 }
 
 func (s *session) announce(ctx context.Context) error {

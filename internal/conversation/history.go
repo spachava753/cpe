@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -30,8 +32,7 @@ type Info struct {
 	UpdatedAt time.Time
 }
 
-// Record checkpoints conversation and configuration, never live resources.
-// Resuming or forking creates an empty Starlark state store and MCP connections.
+// Record checkpoints conversation, configuration, and session KV data, never live resources.
 type Record struct {
 	Info             Info
 	Options          models.Selection
@@ -39,6 +40,8 @@ type Record struct {
 	AbortedResponses []AbortedResponse
 	Compaction       *Compaction
 	Usage            TokenUsage
+	// KV holds opaque runtime-encoded values by session-local key.
+	KV map[string][]byte
 }
 
 // AbortedResponse records an incomplete model response excluded from conversation and replay.
@@ -289,6 +292,12 @@ type storedAbortedResponse struct {
 	Partial storedMessage
 }
 
+// Byte keys preserve Starlark strings that are not valid UTF-8.
+type storedKVEntry struct {
+	Key   []byte
+	Value []byte
+}
+
 type storedRecord struct {
 	Info             Info
 	Options          models.Selection
@@ -296,6 +305,7 @@ type storedRecord struct {
 	AbortedResponses []storedAbortedResponse
 	Compaction       *Compaction
 	Usage            TokenUsage
+	KV               []storedKVEntry
 }
 
 func encodeRecord(record Record) ([]byte, error) {
@@ -308,6 +318,16 @@ func encodeRecord(record Record) ([]byte, error) {
 		Compaction: record.Compaction,
 		Usage:      record.Usage,
 	}
+	for _, key := range slices.Sorted(maps.Keys(record.KV)) {
+		stored.KV = append(
+			stored.KV,
+			storedKVEntry{
+				Key:   []byte(key),
+				Value: record.KV[key],
+			},
+		)
+	}
+
 	for _, message := range record.Dialog {
 		item, err := storeMessage(message)
 		if err != nil {
@@ -380,6 +400,13 @@ func decodeRecord(data []byte) (Record, error) {
 		Compaction: stored.Compaction,
 		Usage:      stored.Usage,
 	}
+	if len(stored.KV) != 0 {
+		record.KV = make(map[string][]byte)
+		for _, entry := range stored.KV {
+			record.KV[string(entry.Key)] = entry.Value
+		}
+	}
+
 	for _, item := range stored.Dialog {
 		record.Dialog = append(
 			record.Dialog,

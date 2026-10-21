@@ -70,7 +70,7 @@ func TestCompaction(t *testing.T) {
 					"setup",
 					"starlark",
 					map[string]any{
-						"code": "state['counter'] = 1",
+						"code": "kv.store('counter', 1)",
 					},
 				)
 				code := "save_summary = compact\nsave_summary('initial draft')\nparts = ['Goal: update CPE.', 'Next: finish the requested work.']\nresult = save_summary(summary=' '.join(parts))\nif result != None:\n    fail('compact must return None')"
@@ -90,7 +90,7 @@ func TestCompaction(t *testing.T) {
 					"increment",
 					"starlark",
 					map[string]any{
-						"code": "state['counter'] += 1\nprint(state['counter'])",
+						"code": "kv.store('counter', kv.get('counter') + 1)\nprint(kv.get('counter'))",
 					},
 				)
 				read := compactionCall(
@@ -98,7 +98,7 @@ func TestCompaction(t *testing.T) {
 					"read",
 					"starlark",
 					map[string]any{
-						"code": "print(state['counter'])",
+						"code": "print(kv.get('counter'))",
 					},
 				)
 				if operation == "repeat compaction" || operation == "compact after resume" {
@@ -167,15 +167,7 @@ func TestCompaction(t *testing.T) {
 					},
 					agenttest.GenerateStep{
 						Check: func(request gai.GenerationRequest) error {
-							wantMessages := 3
-							switch operation {
-							case "load", "resume", "fork", "compact after resume":
-								wantMessages++
-								if request.Dialog[2].Blocks[0].Content.String() != runtimeResetNotice {
-									return errors.New("restored summary is missing its runtime reset boundary")
-								}
-							}
-							if len(request.Dialog) != wantMessages || request.Dialog[0].Blocks[0].Content.String() != "Summary of earlier conversation:\n\n"+summary {
+							if len(request.Dialog) != 3 || request.Dialog[0].Blocks[0].Content.String() != "Summary of earlier conversation:\n\n"+summary {
 								return errors.New("later turn lost compacted context")
 							}
 							if operation == "model switch" && request.Model != "two" {
@@ -192,10 +184,6 @@ func TestCompaction(t *testing.T) {
 							case "repeat compaction", "compact after resume":
 								if len(request.Dialog) != 1 || request.Dialog[0].Blocks[0].Content.String() != "Summary of earlier conversation:\n\nUpdated goal and next steps." {
 									return errors.New("second compaction did not replace the earlier working context")
-								}
-							case "load", "resume", "fork":
-								if !last.ToolResultError {
-									return errors.New("restoration replayed historical runtime effects")
 								}
 							default:
 								if last.Blocks[0].Content.String() != "2\n" {

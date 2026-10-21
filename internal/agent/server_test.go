@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -321,26 +320,9 @@ func TestSessionLifecycle(t *testing.T) {
 		t.Run(
 			operation,
 			func(t *testing.T) {
-				requests := make(
-					chan gai.GenerationRequest,
-					16,
-				)
 				fixture := serverFixture(
 					t,
-					func(ctx context.Context, model models.Model, reasoning models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
-						generator, options, err := scriptGenerator(
-							ctx,
-							model,
-							reasoning,
-						)
-						return generatorFunc(func(ctx context.Context, request gai.GenerationRequest) (gai.Response, error) {
-							requests <- request
-							return generator.Generate(
-								ctx,
-								request,
-							)
-						}), options, err
-					},
+					scriptGenerator,
 				)
 				id := openFixtureSession(
 					t,
@@ -350,16 +332,8 @@ func TestSessionLifecycle(t *testing.T) {
 					t,
 					fixture.client,
 					id,
-					"state['value'] = 41",
+					"kv.store('value', 41)",
 				)
-				for range 2 {
-					request := <-requests
-					for _, message := range request.Dialog {
-						if message.Blocks[0].Content.String() == runtimeResetNotice {
-							t.Fatal("new session was described as a runtime reset")
-						}
-					}
-				}
 				target := id
 				want := "42"
 				switch operation {
@@ -409,7 +383,6 @@ func TestSessionLifecycle(t *testing.T) {
 						t.Fatal(err)
 					}
 					target = fork.SessionID
-					want = "Execution error"
 				case "load", "resume":
 					if _, err := fixture.client.CloseSession(
 						t.Context(),
@@ -440,7 +413,6 @@ func TestSessionLifecycle(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					want = "Execution error"
 				case "isolated sessions":
 					target = openFixtureSession(
 						t,
@@ -473,7 +445,7 @@ func TestSessionLifecycle(t *testing.T) {
 					t,
 					fixture.client,
 					target,
-					"print(state['value'] + 1)",
+					"print(kv.get('value') + 1)",
 				)
 				record, err := fixture.store.Load(
 					t.Context(),
@@ -498,12 +470,12 @@ func TestSessionLifecycle(t *testing.T) {
 						record.Options,
 					)
 				}
-				// Reconstructed state must survive later turns and model changes.
+				// Stored data must survive later turns and model changes.
 				promptFixture(
 					t,
 					fixture.client,
 					target,
-					"state['value'] = 10",
+					"kv.store('value', 10)",
 				)
 				if _, err := fixture.client.SetSessionConfigOption(
 					t.Context(),
@@ -519,59 +491,37 @@ func TestSessionLifecycle(t *testing.T) {
 					t,
 					fixture.client,
 					target,
-					"state['value'] += 1\nprint(state['value'])",
+					"kv.store('value', kv.get('value') + 1)\nprint(kv.get('value'))",
 				)
-				for range 6 {
-					request := <-requests
-					notices := 0
-					for index, message := range request.Dialog {
-						if message.Blocks[0].Content.String() == runtimeResetNotice {
-							notices++
-							if index != 4 || message.Role != gai.User || request.Dialog[index+1].Blocks[0].Content.String() != "print(state['value'] + 1)" {
-								t.Fatal("reset notice moved away from the restoration boundary")
-							}
-						}
-					}
-					wantNotices := 0
-					switch operation {
-					case "load", "resume", "fork":
-						wantNotices = 1
-					}
-					if notices != wantNotices {
-						t.Fatalf(
-							"reset notices: got %d, want %d",
-							notices,
-							wantNotices,
-						)
-					}
-				}
 				record, err = fixture.store.Load(
 					t.Context(),
 					conversation.ID(target),
 				)
 				if err != nil || lastToolOutput(record) != "11\n" {
 					t.Fatalf(
-						"reconstructed runtime state did not persist: %#v, %v",
+						"session KV did not persist: %#v, %v",
 						record,
 						err,
 					)
 				}
-				for _, message := range record.Dialog {
-					if message.Blocks[0].Content.String() == runtimeResetNotice {
-						t.Fatal("model-only notice was saved in the transcript")
+				if operation == "fork" {
+					promptFixture(
+						t,
+						fixture.client,
+						id,
+						"print(kv.get('value'))",
+					)
+					parent, err := fixture.store.Load(
+						t.Context(),
+						conversation.ID(id),
+					)
+					if err != nil || lastToolOutput(parent) != "41\n" {
+						t.Fatalf(
+							"fork changed parent KV: %v, %v",
+							parent,
+							err,
+						)
 					}
-				}
-				if err := fixture.client.Close(); err != nil {
-					t.Fatal(err)
-				}
-				fixture.notifications.mu.Lock()
-				defer fixture.notifications.mu.Unlock()
-				updates, err := json.Marshal(fixture.notifications.updates)
-				if err != nil || strings.Contains(
-					string(updates),
-					runtimeResetNotice,
-				) {
-					t.Fatal("model-only notice was sent to the ACP client")
 				}
 			},
 		)
@@ -712,7 +662,7 @@ func TestInterruptedToolHistory(t *testing.T) {
 		"effect",
 		"starlark",
 		map[string]any{
-			"code": "state['effect'] = True",
+			"code": "kv.store('effect', True)",
 		},
 	)
 	if err != nil {

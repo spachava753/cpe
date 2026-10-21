@@ -25,6 +25,7 @@ const starlarkToolName = "starlark"
 type Config struct {
 	Cwd string
 	MCP MCPTools
+	KV  KeyValueStore
 	// Descriptions supplies optional plugin descriptions for MCP namespaces.
 	Descriptions map[mcpclient.ServerID]string
 }
@@ -65,7 +66,6 @@ type toolHost struct {
 	closed  bool
 	config  Config
 	stdlib  dyson.StdlibConfig
-	state   *sessionState
 	runner  dyson.CommandRunner
 	tools   []gaiagent.Tool
 	catalog toolCatalog
@@ -76,8 +76,8 @@ func New(ctx context.Context, config Config, stdlib dyson.StdlibConfig) (Host, e
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if !filepath.IsAbs(config.Cwd) || config.MCP == nil || stdlib.CommandRunner == nil {
-		return nil, errors.New("host requires an absolute cwd, MCP, and a command runner")
+	if !filepath.IsAbs(config.Cwd) || config.MCP == nil || config.KV == nil || stdlib.CommandRunner == nil {
+		return nil, errors.New("host requires an absolute cwd, MCP, KV store, and a command runner")
 	}
 	catalog, err := discoverTools(
 		ctx,
@@ -91,9 +91,6 @@ func New(ctx context.Context, config Config, stdlib dyson.StdlibConfig) (Host, e
 		config:  config,
 		runner:  stdlib.CommandRunner,
 		catalog: catalog,
-		state: &sessionState{
-			entries: starlark.NewDict(0),
-		},
 	}
 	stdlib.CommandRunner = h
 	h.stdlib = stdlib
@@ -101,7 +98,7 @@ func New(ctx context.Context, config Config, stdlib dyson.StdlibConfig) (Host, e
 		{
 			Definition: gai.Tool{
 				Name:        starlarkToolName,
-				Description: "Execute Starlark in a fresh runtime. Use state for session data; print and image for output; compact(summary) to compact; edit(filename, old, new) for exact file edits. Discover MCP tools with search_tools, describe_tool, and describe_namespace. Errors do not undo effects.",
+				Description: "Execute Starlark in a fresh runtime. Use kv.get, kv.store, and kv.keys for durable session data; print and image for output; compact(summary) to compact; edit(filename, old, new) for exact file edits. Discover MCP tools with search_tools, describe_tool, and describe_namespace. Errors do not undo effects.",
 				InputSchema: stringSchema("code"),
 			},
 			Handler: gaiagent.ToolHandlerFunc(h.execute),
@@ -112,7 +109,7 @@ func New(ctx context.Context, config Config, stdlib dyson.StdlibConfig) (Host, e
 
 func (h *toolHost) newSphere() *dyson.Sphere {
 	globals := starlark.StringDict{
-		"state": h.state,
+		"kv": h.kvModule(),
 		"edit": starlark.NewBuiltin(
 			"edit",
 			h.edit,
@@ -195,12 +192,11 @@ func (h *toolHost) Instructions() string {
 	return h.catalog.instructions()
 }
 
-// Close discards session state and prevents further tool calls.
+// Close prevents further tool calls.
 func (h *toolHost) Close(context.Context) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.closed = true
-	h.state = nil
 	return nil
 }
 

@@ -10,7 +10,7 @@ assembles their implementations in `internal/cli/agent.go`.
 | `conversation` | Saved records, transcript and compaction invariants, token accounting, and atomic JSON checkpoint storage |
 | `providers` | Model adapters, subscription credential attachment, and credential refresh workers |
 | `mcpclient` | MCP transports, session-owned connections, and cached remote tool lists |
-| `toolruntime` | Invocation-scoped Dyson spheres, session data, subprocess execution, tool naming and search, MCP result values, and model-facing output |
+| `toolruntime` | Invocation-scoped Dyson spheres, KV encoding and builtins, subprocess execution, tool naming and search, MCP result values, and model-facing output |
 | `models` | Configured model definitions, model IDs, reasoning selections, and the persisted last-used model preference |
 
 The extracted packages do not import `agent` or ACP. `agent` depends on
@@ -46,11 +46,12 @@ previous session's effort.
 ## Saved history and working context
 
 A `conversation.Record` contains the transcript, selected model and reasoning,
-usage, aborted responses, and optional compaction boundary. It does not contain
-live resources or the Starlark state store. Loading, resuming, or forking restores
-the record with an empty state store without replaying tool calls. `agent` adds
-the runtime-reset notice to model context so inherited stored data is not mistaken
-for live state.
+usage, aborted responses, optional compaction boundary, and encoded session KV
+values. It does not contain live resources. `toolruntime` requires a
+`KeyValueStore`; the session implements it by saving a replacement record before
+publishing each accepted write. Loading and resuming restore KV data, and forking
+copies it independently, without replaying tool calls. Each invocation still
+starts with fresh globals and imports.
 
 Accepted user messages are checkpointed before generation. The complete tool-call
 response is checkpointed before execution, and each completed tool result is saved

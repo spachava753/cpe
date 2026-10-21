@@ -152,35 +152,34 @@ model's earlier read. Other writers are not locked out and can still write betwe
 the final check and rename. Dyson's `open()` is read-only; `edit` does not create
 missing files.
 
-Use the session-owned `state` mapping to retain data explicitly:
+Use the session-owned durable KV store to retain data explicitly:
 
 ```python
-state["results"] = [{"name": "example", "count": 1}]
+kv.store("results", [{"name": "example", "count": 1}])
 
-# In a later call, read the frozen value or assign a replacement.
-print(state["results"])
-state["results"] = list(state["results"]) + [{"name": "next", "count": 2}]
+# In a later call, load a mutable copy and store the updated value.
+results = kv.get("results")
+results.append({"name": "next", "count": 2})
+kv.store("results", results)
+print(kv.keys())
 ```
 
 Keys must be strings. Values may be `None`, booleans, integers, floats, strings,
 bytes, and acyclic lists, tuples, or dictionaries containing those types.
-Assignment recursively freezes the value, including existing aliases; stored
-collections cannot be mutated in place. Functions, modules, resource handles,
-and MCP result wrappers are rejected. Store an MCP result's `structured_content`
-or a content item's `raw` data instead. Indexing, assignment, membership tests,
-iteration over keys, and `len(state)` are supported. Missing keys raise an error.
-Assignments accepted before a script fails remain stored.
+`kv.store` snapshots the value without freezing its aliases; `kv.get` returns an
+independent, mutable copy. Mutating a loaded value does not update storage until
+another `kv.store`. Functions, modules, resource handles, and MCP result wrappers
+are rejected. Store an MCP result's `structured_content` or a content item's `raw`
+data instead. `kv.keys()` returns a sorted list of strings. Missing keys raise an
+error.
 
-State persists across calls, turns, model switches, and compaction in a live
-session. It is not checkpointed. Loading, resuming, or forking a conversation
-starts with an empty store. When there is restored history, the model receives a
-notice before new work: earlier stored data is unavailable, but files and external
-effects may still exist. Reconstruct needed state without blindly repeating
-earlier actions.
-
-This notice is model-only, not part of saved history or ACP transcript replay.
-It follows any restored compaction summary. A new compaction covering the reset
-replaces the notice along with the earlier context.
+Each store is saved atomically alongside session history before returning. A
+failed write leaves the previous value intact; accepted writes survive later
+script errors or cancellation. Data persists across calls, turns, model switches,
+compaction, load/resume, and process restarts. Forks inherit an independent copy.
+Unrelated sessions start empty; there is no global store. Deleting a session
+also deletes its KV data. No VM, functions, or resource handles are restored,
+and historical tool calls are never replayed.
 
 Cancellation, process cleanup, and output capture manage execution lifetime and
 protect the ACP protocol stream; they do not restrict machine access.
@@ -250,7 +249,7 @@ intermediate tool results do not become separate conversation messages. Use
 `image(data)` accepts raw Starlark bytes containing a PNG, JPEG, GIF, or WebP image.
 It detects the media type from the bytes and enforces the output size limit. It
 does not accept paths, URLs, or base64 strings and performs no file or network
-access itself. Use Dyson to obtain bytes, or retain them in `state` for a later
+access itself. Use Dyson to obtain bytes, or retain them with `kv.store` for a later
 call. For example:
 
 ```python
@@ -307,7 +306,7 @@ The summary is checkpointed before the next model request, or after outstanding
 calls are settled at turn end if the turn stops. A later script error does not
 undo an accepted summary. Loading, resuming, and forking retain
 the compacted working context; ACP transcript replay still shows the full history.
-Compaction does not reset the live `state` store or rerun tools.
+Compaction does not reset the durable session KV store or rerun tools.
 
 When the latest successful generation's reported input plus output tokens reach
 85% of the selected model's required `limit`, CPE prepends a warning to each tool
@@ -319,16 +318,16 @@ writes the summary using the context already available to it.
 
 ### Saved sessions
 
-JSON checkpoints under `~/.cpe/sessions` preserve conversation and selected model
-settings. `--sessions` selects another absolute directory. Files are written
+JSON checkpoints under `~/.cpe/sessions` preserve conversation, session KV data,
+and selected model settings. `--sessions` selects another absolute directory. Files are written
 atomically with private permissions on Unix; they can contain prompts, tool
 output, images, and provider reasoning metadata, so treat them as sensitive.
 
 ACP clients can list, load, resume, fork, close, and delete sessions. Closing keeps
-the checkpoint; deleting removes it. Loading, resuming, or forking creates a fresh
-state store and MCP connections: checkpoints are not VM snapshots, side
-effects are never replayed, and this format is not ATIF. On Windows, protect the
-checkpoint directory with filesystem ACLs.
+the checkpoint; deleting removes it. Loading, resuming, or forking restores KV data
+with fresh MCP connections; forks copy the data independently. Checkpoints are
+not VM snapshots, side effects are never replayed, and this format is not ATIF.
+On Windows, protect the checkpoint directory with filesystem ACLs.
 
 Incomplete model responses are explicitly stored in `AbortedResponses`, separate
 from accepted conversation. They are never supplied to the model or replayed to
