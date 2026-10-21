@@ -58,6 +58,17 @@ use `subprocess.run(args, capture_output=True, check=True)`, then print
 `["bash", "--noprofile", "--norc", "-c", "pwd && ls"]`. Commands are invocation-owned;
 background processes are not supported.
 
+All emitted script text is combined into one block; images follow as separate
+blocks in emission order. Printing does not stop execution because of output
+size or block count. When the invocation finishes, text over 128 KiB is saved in
+full as a string under `overflow_<sha256>` in session KV, including execution
+diagnostics. The result gives a head preview and the exact key. Use `kv.get(key)`
+to search or slice the log, then print only the needed portion. Identical output
+reuses its key. Logs survive compaction and session restoration. Subprocess
+streams remain complete script-local data unless you print or explicitly store
+them. If overflow persistence fails, the result reports that failure rather than
+claiming the full output was saved.
+
 MCP tools are directly callable builtins; CPE manages their connections. Discover
 them with `search_tools(query, limit=8, namespace="")`, `describe_tool(name)`, and
 `describe_namespace(name)`, then call the named builtin with an arguments dictionary.
