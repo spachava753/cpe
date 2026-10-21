@@ -11,7 +11,7 @@ assembles their implementations in `internal/cli/agent.go`.
 | `providers` | Model adapters, subscription credential attachment, and credential refresh workers |
 | `mcpclient` | MCP transports, session-owned connections, and cached remote tool lists |
 | `toolruntime` | Invocation-scoped Dyson spheres, session data, subprocess execution, tool naming and search, MCP result values, and model-facing output |
-| `models` | Configured model definitions, model IDs, and reasoning selections |
+| `models` | Configured model definitions, model IDs, reasoning selections, and the persisted last-used model preference |
 
 The extracted packages do not import `agent` or ACP. `agent` depends on
 `providers` only to recognize credential failures that must not be retried as
@@ -30,6 +30,18 @@ session does not determine the lifetime of successfully opened resources.
 `toolruntime.New` accepts an injected Dyson standard library for tests and other
 explicit wiring. Both return the same `Host` interface. Neither introduces
 execution approval or sandbox policy.
+
+## Model selection
+
+New sessions read the shared last-used model preference. They use the configured
+fallback model when no preference exists or the remembered model is no longer in
+the catalog. Successful ACP model selections and accepted prompt executions
+remember their model for future sessions. Preference writes do not change other
+sessions and failures are reported on stderr without undoing session changes.
+Loading, resuming, and forking use the saved record's model and reasoning without
+reading or updating the preference. Continued prompts remember that saved model
+when they run. New sessions use the configured initial reasoning effort, not the
+previous session's effort.
 
 ## Saved history and working context
 

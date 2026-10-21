@@ -132,6 +132,14 @@ func (s *Server) NewSession(ctx context.Context, request *acp.NewSessionRequest)
 	if err != nil {
 		return nil, err
 	}
+	initial := s.config.Initial
+	lastModel, err := s.deps.LastModel.Load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, configured := s.config.Models[lastModel]; configured {
+		initial.Model = lastModel
+	}
 	live, err := s.openSession(
 		ctx,
 		spec,
@@ -141,7 +149,7 @@ func (s *Server) NewSession(ctx context.Context, request *acp.NewSessionRequest)
 				Cwd:       spec.cwd,
 				UpdatedAt: time.Now().UTC(),
 			},
-			Options: s.config.Initial,
+			Options: initial,
 		},
 	)
 	if err != nil {

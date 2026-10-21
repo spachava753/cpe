@@ -23,7 +23,8 @@ import (
 // Config supplies models, discovery paths, and execution limits.
 // Callers must not mutate referenced values until Serve returns.
 type Config struct {
-	Models       map[models.ID]models.Model
+	Models map[models.ID]models.Model
+	// Initial supplies the fallback model and the reasoning effort for new sessions.
 	Initial      models.Selection
 	SkillPaths   []string
 	PluginPaths  []string
@@ -42,8 +43,9 @@ type Dependencies struct {
 	Hosts          toolruntime.Factory
 	MCP            mcpclient.Connector
 	History        conversation.Store
+	LastModel      *models.LastUsed
 	Traces         trace.TracerProvider
-	// Stderr receives nonfatal discovery diagnostics, separate from ACP output.
+	// Stderr receives nonfatal diagnostics, separate from ACP output.
 	Stderr io.Writer
 }
 
@@ -60,7 +62,7 @@ func checkConfig(config Config, deps Dependencies) error {
 	if len(config.Models) == 0 || config.SetupTimeout <= 0 {
 		return errors.New("models and a positive session setup timeout are required")
 	}
-	if deps.Filesystem == nil || deps.Authentication == nil || deps.Generators == nil || deps.Hosts == nil || deps.MCP == nil || deps.History == nil || deps.Traces == nil || deps.Stderr == nil {
+	if deps.Filesystem == nil || deps.Authentication == nil || deps.Generators == nil || deps.Hosts == nil || deps.MCP == nil || deps.History == nil || deps.LastModel == nil || deps.Traces == nil || deps.Stderr == nil {
 		return errors.New("all agent dependencies must be configured")
 	}
 	for _, roots := range [][]string{
@@ -83,7 +85,9 @@ func checkConfig(config Config, deps Dependencies) error {
 	}
 	return checkOptions(
 		config.Models,
-		config.Initial,
+		models.Selection{
+			Model: config.Initial.Model,
+		},
 	)
 }
 

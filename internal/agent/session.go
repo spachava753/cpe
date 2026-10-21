@@ -176,6 +176,12 @@ func (s *session) configure(ctx context.Context, id string, value string) ([]acp
 		return nil, err
 	}
 	s.record = record
+	if id == "model" {
+		s.rememberModel(
+			ctx,
+			options.Model,
+		)
+	}
 	return configOptions(
 		s.config,
 		options,
@@ -248,4 +254,17 @@ func settleDialog(dialog gai.Dialog) gai.Dialog {
 		)
 	}
 	return dialog
+}
+
+func (s *session) rememberModel(ctx context.Context, model models.ID) {
+	if err := s.deps.LastModel.Save(
+		ctx,
+		model,
+	); err != nil {
+		_, _ = fmt.Fprintf(
+			s.deps.Stderr,
+			"cpe: could not remember last-used model: %s\n",
+			terminaltext.Sanitize(err.Error()),
+		)
+	}
 }

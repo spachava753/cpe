@@ -48,20 +48,24 @@ func TestACPCommand(t *testing.T) {
 		wantInstructions string
 	}{
 		{
-			name: "default roots",
-			args: []string{
-				"--model",
-				"fixture",
-			},
+			name:             "default roots",
 			config:           "[" + model + "]",
+			wantRetries:      2,
+			wantInstructions: defaultSystemPrompt + "\n\n" + defaultCompactionPrompt,
+		},
+		{
+			name: "first configured model supplies the bootstrap default",
+			config: "[" + model + "," + strings.ReplaceAll(
+				model,
+				`"fixture"`,
+				`"aaa"`,
+			) + "]",
 			wantRetries:      2,
 			wantInstructions: defaultSystemPrompt + "\n\n" + defaultCompactionPrompt,
 		},
 		{
 			name: "custom setup timeout",
 			args: []string{
-				"--model",
-				"fixture",
 				"--setup-timeout",
 				"45s",
 			},
@@ -73,8 +77,6 @@ func TestACPCommand(t *testing.T) {
 		{
 			name: "retries disabled",
 			args: []string{
-				"--model",
-				"fixture",
 				"--response-retries",
 				"0",
 			},
@@ -85,8 +87,6 @@ func TestACPCommand(t *testing.T) {
 		{
 			name: "relative additional roots",
 			args: []string{
-				"--model",
-				"fixture",
 				"--skills",
 				"extra-skills",
 				"--plugins",
@@ -97,11 +97,7 @@ func TestACPCommand(t *testing.T) {
 			wantInstructions: defaultSystemPrompt + "\n\n" + defaultCompactionPrompt,
 		},
 		{
-			name: "custom system prompt",
-			args: []string{
-				"--model",
-				"fixture",
-			},
+			name:        "custom system prompt",
 			config:      "[" + model + "]",
 			wantRetries: 2,
 			promptFiles: map[string]string{
@@ -110,11 +106,7 @@ func TestACPCommand(t *testing.T) {
 			wantInstructions: "Custom instructions.\n" + "\n\n" + defaultCompactionPrompt,
 		},
 		{
-			name: "append to built-in prompt",
-			args: []string{
-				"--model",
-				"fixture",
-			},
+			name:        "append to built-in prompt",
 			config:      "[" + model + "]",
 			wantRetries: 2,
 			promptFiles: map[string]string{
@@ -123,11 +115,7 @@ func TestACPCommand(t *testing.T) {
 			wantInstructions: defaultSystemPrompt + "\n\nAdditional instructions.\n" + "\n\n" + defaultCompactionPrompt,
 		},
 		{
-			name: "append to custom prompt",
-			args: []string{
-				"--model",
-				"fixture",
-			},
+			name:        "append to custom prompt",
 			config:      "[" + model + "]",
 			wantRetries: 2,
 			promptFiles: map[string]string{
@@ -137,11 +125,7 @@ func TestACPCommand(t *testing.T) {
 			wantInstructions: "Custom instructions.\n\nAdditional instructions." + "\n\n" + defaultCompactionPrompt,
 		},
 		{
-			name: "empty custom prompt replaces default",
-			args: []string{
-				"--model",
-				"fixture",
-			},
+			name:        "empty custom prompt replaces default",
 			config:      "[" + model + "]",
 			wantRetries: 2,
 			promptFiles: map[string]string{
@@ -150,11 +134,7 @@ func TestACPCommand(t *testing.T) {
 			wantInstructions: defaultCompactionPrompt,
 		},
 		{
-			name: "append to empty custom prompt",
-			args: []string{
-				"--model",
-				"fixture",
-			},
+			name:        "append to empty custom prompt",
 			config:      "[" + model + "]",
 			wantRetries: 2,
 			promptFiles: map[string]string{
@@ -164,11 +144,7 @@ func TestACPCommand(t *testing.T) {
 			wantInstructions: "Additional instructions." + "\n\n" + defaultCompactionPrompt,
 		},
 		{
-			name: "empty append preserves default",
-			args: []string{
-				"--model",
-				"fixture",
-			},
+			name:        "empty append preserves default",
 			config:      "[" + model + "]",
 			wantRetries: 2,
 			promptFiles: map[string]string{
@@ -177,31 +153,19 @@ func TestACPCommand(t *testing.T) {
 			wantInstructions: defaultSystemPrompt + "\n\n" + defaultCompactionPrompt,
 		},
 		{
-			name: "system prompt read failure",
-			args: []string{
-				"--model",
-				"fixture",
-			},
+			name:             "system prompt read failure",
 			config:           "[" + model + "]",
 			unreadablePrompt: "SYSTEM.md",
 			wantError:        `read system prompt "/config/SYSTEM.md"`,
 		},
 		{
-			name: "append prompt read failure",
-			args: []string{
-				"--model",
-				"fixture",
-			},
+			name:             "append prompt read failure",
 			config:           "[" + model + "]",
 			unreadablePrompt: "APPEND-SYSTEM.md",
 			wantError:        `read system prompt "/config/APPEND-SYSTEM.md"`,
 		},
 		{
-			name: "custom compaction guidance",
-			args: []string{
-				"--model",
-				"fixture",
-			},
+			name:        "custom compaction guidance",
 			config:      "[" + model + "]",
 			wantRetries: 2,
 			promptFiles: map[string]string{
@@ -210,11 +174,7 @@ func TestACPCommand(t *testing.T) {
 			wantInstructions: defaultSystemPrompt + "\n\nPreserve the current goal and blockers.",
 		},
 		{
-			name: "custom compaction guidance after custom system and append",
-			args: []string{
-				"--model",
-				"fixture",
-			},
+			name:        "custom compaction guidance after custom system and append",
 			config:      "[" + model + "]",
 			wantRetries: 2,
 			promptFiles: map[string]string{
@@ -225,11 +185,7 @@ func TestACPCommand(t *testing.T) {
 			wantInstructions: "Custom base.\n\nExtra instructions.\n\nCustom summary guidance.",
 		},
 		{
-			name: "empty compaction file replaces default guidance",
-			args: []string{
-				"--model",
-				"fixture",
-			},
+			name:        "empty compaction file replaces default guidance",
 			config:      "[" + model + "]",
 			wantRetries: 2,
 			promptFiles: map[string]string{
@@ -238,34 +194,23 @@ func TestACPCommand(t *testing.T) {
 			wantInstructions: defaultSystemPrompt,
 		},
 		{
-			name: "compaction guidance read failure",
-			args: []string{
-				"--model",
-				"fixture",
-			},
+			name:             "compaction guidance read failure",
 			config:           "[" + model + "]",
 			unreadablePrompt: "COMPACTION.md",
 			wantError:        `read compaction instructions "/config/COMPACTION.md"`,
 		},
 		{
-			name:      "missing model",
-			wantError: "--model is required",
+			name:      "empty model catalog",
+			config:    "[]",
+			wantError: "at least one model must be configured",
 		},
 		{
-			name: "invalid models",
-			args: []string{
-				"--model",
-				"fixture",
-			},
+			name:      "invalid models",
 			config:    "{bad",
 			wantError: "decode models",
 		},
 		{
-			name: "duplicate model IDs",
-			args: []string{
-				"--model",
-				"fixture",
-			},
+			name:      "duplicate model IDs",
 			config:    "[" + model + "," + model + "]",
 			wantError: "duplicate model ID",
 		},
@@ -364,7 +309,7 @@ func TestACPCommand(t *testing.T) {
 								config.MaxResponseRetries,
 							)
 						}
-						if config.Initial.Model != "fixture" || deps.Generators == nil || deps.Hosts == nil || deps.MCP == nil || deps.History == nil {
+						if config.Initial.Model != "fixture" || deps.Generators == nil || deps.Hosts == nil || deps.MCP == nil || deps.History == nil || deps.LastModel == nil {
 							t.Fatal("incomplete runtime wiring")
 						}
 						if config.SkillPaths[0] != filepath.Join(

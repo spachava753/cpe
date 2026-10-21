@@ -123,6 +123,10 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptR
 	if err != nil {
 		return nil, err
 	}
+	s.rememberModel(
+		ctx,
+		options.Model,
+	)
 	result, runErr := loop.Run(
 		ctx,
 		gaiagent.RunRequest{

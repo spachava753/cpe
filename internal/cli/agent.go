@@ -36,7 +36,7 @@ func acpCmd(root *cobra.Command, filesystem afero.Fs, store *auth.Store, authOpt
 }
 
 func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store, authOptions auth.LoginOptions, serve serveAgent) {
-	var modelFile, historyPath, modelID, effort string
+	var modelFile, historyPath, effort string
 	var timeout time.Duration
 	var responseRetries uint
 	var skillPaths, pluginPaths []string
@@ -45,9 +45,6 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 		Short: "Serve one ACP client over stdin/stdout",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
-			if modelID == "" {
-				return errors.New("--model is required")
-			}
 			if authOptions.Path == "" {
 				return errors.New("CPE configuration directory is unavailable")
 			}
@@ -119,6 +116,9 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 			); err != nil {
 				return err
 			}
+			if len(configured) == 0 {
+				return errors.New("at least one model must be configured")
+			}
 			catalog := make(map[models.ID]models.Model)
 			for _, model := range configured {
 				id := models.ID(model.ID)
@@ -129,6 +129,13 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 					)
 				}
 				catalog[id] = model
+			}
+			lastModel, err := models.NewLastUsed(filepath.Join(
+				filepath.Dir(authOptions.Path),
+				"last-model.json",
+			))
+			if err != nil {
+				return err
 			}
 			history, err := conversation.NewStore(historyPath)
 			if err != nil {
@@ -151,7 +158,7 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 				agent.Config{
 					Models: catalog,
 					Initial: models.Selection{
-						Model:     models.ID(modelID),
+						Model:     models.ID(configured[0].ID),
 						Reasoning: models.ReasoningLevel(effort),
 					},
 					SkillPaths:         skillPaths,
@@ -167,18 +174,13 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 					Hosts:          toolruntime.Local,
 					MCP:            mcpclient.Connect,
 					History:        history,
+					LastModel:      lastModel,
 					Traces:         otel.GetTracerProvider(),
 					Stderr:         command.ErrOrStderr(),
 				},
 			)
 		},
 	}
-	command.Flags().StringVar(
-		&modelID,
-		"model",
-		"",
-		"Initial model ID from models.json (required)",
-	)
 	command.Flags().StringVar(
 		&effort,
 		"reasoning",

@@ -1,6 +1,6 @@
-// Package models loads model configurations from a caller-supplied JSON file.
+// Package models loads model configurations and persists the last-used model preference.
 //
-// The document must be UTF-8 and contain one JSON array of objects, with no
+// The model configuration document must be UTF-8 and contain one JSON array of objects, with no
 // trailing data. Each object requires base_url (an absolute HTTP(S) URL with a hostname), api, a
 // nonblank id, nonempty input_modalities and output_modalities lists, and positive
 // integer limit and max_tokens values. API names are case-sensitive: Responses,

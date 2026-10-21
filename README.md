@@ -12,7 +12,7 @@ Configure a JSON array of models in `~/.cpe/models.json`, then configure your AC
 client to launch:
 
 ```sh
-cpe acp --model my-model
+cpe acp
 ```
 
 For example, an OpenAI-compatible endpoint can use:
@@ -40,11 +40,22 @@ Model IDs must be unique in the file. API names are case-sensitive: `Responses`,
 Some OpenAI-compatible adapters require a nonempty key even for local endpoints;
 configure the placeholder accepted by your local server explicitly.
 
-`--models` selects another model file; `--reasoning` sets the initial effort.
-Clients can switch model and reasoning through ACP session configuration options
-between turns. A model switch keeps the conversation and live session state,
-but resets reasoning to the new provider's default. Foreign-model reasoning
+New sessions default to the last model selected through ACP or used for a prompt,
+remembered across launches in `~/.cpe/last-model.json`. If no model has been
+remembered, or it is no longer configured, the first entry in `models.json` is
+used. Creating or restoring a session alone does not change this preference.
+Loaded, resumed, and forked sessions keep their saved model and reasoning
+selection; the global default never overrides them. A saved model that is no
+longer configured produces an error rather than silently switching models.
+
+`--models` selects another model file; `--reasoning` sets the initial effort for
+new sessions, otherwise the provider default is used. Clients can switch model
+and reasoning through ACP session configuration options between turns. A model
+switch keeps the conversation and live session state, but resets reasoning to the new provider's default. Foreign-model reasoning
 metadata is omitted from requests, without deleting it from saved history.
+A failure to remember the last-used model is reported on stderr without undoing
+a successful session selection or stopping a prompt. An unreadable or malformed
+preference file fails new-session creation, but does not block restoration.
 
 Each process handles one ACP connection with independent sessions. A session
 accepts one active prompt at a time; other sessions remain usable. `session/cancel`

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -82,6 +83,13 @@ func serverFixture(t *testing.T, generator GeneratorFactory, configure ...func(*
 	if err != nil {
 		t.Fatal(err)
 	}
+	lastModel, err := models.NewLastUsed(filepath.Join(
+		t.TempDir(),
+		"last-model.json",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
 	config := Config{
 		Models: map[models.ID]models.Model{
 			"one": {
@@ -136,10 +144,11 @@ func serverFixture(t *testing.T, generator GeneratorFactory, configure ...func(*
 				},
 			)
 		},
-		MCP:     mcpclient.Connect,
-		History: store,
-		Traces:  noop.NewTracerProvider(),
-		Stderr:  io.Discard,
+		MCP:       mcpclient.Connect,
+		History:   store,
+		LastModel: lastModel,
+		Traces:    noop.NewTracerProvider(),
+		Stderr:    io.Discard,
 	}
 	initialize := &acp.InitializeRequest{
 		ProtocolVersion: 1,
