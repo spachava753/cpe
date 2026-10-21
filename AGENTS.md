@@ -5,6 +5,7 @@
 ```text
 .github/      CI, releases, and issue templates
 build/        Goyek developer tasks and repository-specific linting
+docs/         Human-readable guides to agent architecture and behavior
 internal/     Business logic
 main.go       CLI entry point
 go.mod        Go version, dependencies, and developer tools
