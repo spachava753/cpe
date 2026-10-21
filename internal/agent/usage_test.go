@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"iter"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -667,6 +668,238 @@ func TestUsageStopReasons(t *testing.T) {
 					actual,
 				); diff != "" {
 					t.Fatal(diff)
+				}
+			},
+		)
+	}
+}
+
+func TestContextBudgetToolResults(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		limit    uint
+		metadata gai.Metadata
+		warn     bool
+	}{
+		{
+			name:  "below threshold despite cumulative usage",
+			limit: 1000,
+			metadata: gai.Metadata{
+				gai.UsageMetricInputTokens:      800,
+				gai.UsageMetricGenerationTokens: 49,
+			},
+		},
+		{
+			name:  "exactly at threshold including cached input",
+			limit: 1000,
+			metadata: gai.Metadata{
+				gai.UsageMetricInputTokens:      800,
+				gai.UsageMetricGenerationTokens: 50,
+				gai.UsageMetricCacheReadTokens:  700,
+			},
+			warn: true,
+		},
+		{
+			name:  "above threshold",
+			limit: 1000,
+			metadata: gai.Metadata{
+				gai.UsageMetricInputTokens:      900,
+				gai.UsageMetricGenerationTokens: 50,
+			},
+			warn: true,
+		},
+		{
+			name:  "cache and reasoning breakdowns are not added",
+			limit: 1000,
+			metadata: gai.Metadata{
+				gai.UsageMetricInputTokens:      700,
+				gai.UsageMetricGenerationTokens: 100,
+				gai.UsageMetricCacheReadTokens:  500,
+				gai.UsageMetricCacheWriteTokens: 100,
+				gai.UsageMetricReasoningTokens:  90,
+			},
+		},
+		{
+			name:  "selected model limit",
+			limit: 2000,
+			metadata: gai.Metadata{
+				gai.UsageMetricInputTokens:      900,
+				gai.UsageMetricGenerationTokens: 50,
+			},
+		},
+		{
+			name:  "fractional threshold rounds up",
+			limit: 1001,
+			metadata: gai.Metadata{
+				gai.UsageMetricInputTokens:      800,
+				gai.UsageMetricGenerationTokens: 50,
+			},
+		},
+		{
+			name:  "first whole token above fractional threshold",
+			limit: 1001,
+			metadata: gai.Metadata{
+				gai.UsageMetricInputTokens:      800,
+				gai.UsageMetricGenerationTokens: 51,
+			},
+			warn: true,
+		},
+		{
+			name:  "missing usage does not reuse previous measurement",
+			limit: 1000,
+		},
+		{
+			name:  "missing output",
+			limit: 1000,
+			metadata: gai.Metadata{
+				gai.UsageMetricInputTokens: 900,
+			},
+		},
+		{
+			name:  "missing input",
+			limit: 1000,
+			metadata: gai.Metadata{
+				gai.UsageMetricGenerationTokens: 900,
+			},
+		},
+	} {
+		t.Run(
+			test.name,
+			func(t *testing.T) {
+				var calls []gai.Block
+				for _, script := range []struct {
+					id   string
+					code string
+				}{
+					{
+						id:   "success",
+						code: "print('tool output')",
+					},
+					{
+						id:   "failure",
+						code: "fail('tool failure')",
+					},
+				} {
+					call, err := gai.ToolCallBlock(
+						script.id,
+						"starlark",
+						map[string]any{
+							"code": script.code,
+						},
+					)
+					if err != nil {
+						t.Fatal(err)
+					}
+					calls = append(
+						calls,
+						call,
+					)
+				}
+				checkResults := func(dialog gai.Dialog, warn bool) error {
+					for i, result := range dialog[len(dialog)-2:] {
+						if result.Role != gai.ToolResult || result.ToolResultError != (i == 1) {
+							return errors.New("tool result role or error status changed")
+						}
+						blocks := result.Blocks
+						if warn {
+							if len(blocks) < 2 || !strings.Contains(
+								blocks[0].Content.String(),
+								"85%",
+							) || !strings.Contains(
+								blocks[0].Content.String(),
+								"compact(summary)",
+							) {
+								return errors.New("missing prepended context warning")
+							}
+							blocks = blocks[1:]
+						}
+						if len(blocks) != 1 {
+							return errors.New("unexpected tool output blocks")
+						}
+						if i == 0 && blocks[0].Content.String() != "tool output\n" || i == 1 && !strings.Contains(
+							blocks[0].Content.String(),
+							"tool failure",
+						) {
+							return errors.New("tool output changed")
+						}
+					}
+					return nil
+				}
+				response := gai.Response{
+					Candidates: []gai.Message{
+						{
+							Role:   gai.Assistant,
+							Blocks: calls,
+						},
+					},
+					FinishReason: gai.ToolUse,
+					UsageMetadata: gai.Metadata{
+						gai.UsageMetricInputTokens:      int(test.limit),
+						gai.UsageMetricGenerationTokens: 0,
+					},
+				}
+				next := response
+				next.Candidates = slices.Clone(response.Candidates)
+				next.Candidates[0].Blocks = slices.Clone(calls)
+				for i := range next.Candidates[0].Blocks {
+					next.Candidates[0].Blocks[i].ID += "-next"
+				}
+				next.UsageMetadata = test.metadata
+				generator := agenttest.NewScriptedGenerator(
+					agenttest.GenerateStep{
+						Response: response,
+					},
+					agenttest.GenerateStep{
+						Check: func(request gai.GenerationRequest) error {
+							return checkResults(
+								request.Dialog,
+								true,
+							)
+						},
+						Response: next,
+					},
+					agenttest.GenerateStep{
+						Check: func(request gai.GenerationRequest) error {
+							return checkResults(
+								request.Dialog,
+								test.warn,
+							)
+						},
+						Response: usageResponse(nil),
+					},
+				)
+				fixture := serverFixture(
+					t,
+					func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+						return generator, gai.GenerationOptions{}, nil
+					},
+					func(config *Config, _ *Dependencies, _ *acp.InitializeRequest) {
+						model := config.Models["one"]
+						model.Limit = test.limit
+						config.Models["one"] = model
+					},
+				)
+				id := openFixtureSession(
+					t,
+					fixture.client,
+				)
+				usagePrompt(
+					t,
+					fixture.client,
+					id,
+				)
+				saved, err := fixture.store.Load(
+					t.Context(),
+					conversation.ID(id),
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := checkResults(
+					saved.Dialog[:len(saved.Dialog)-1],
+					test.warn,
+				); err != nil {
+					t.Fatal(err)
 				}
 			},
 		)

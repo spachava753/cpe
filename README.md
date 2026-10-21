@@ -281,8 +281,13 @@ undo an accepted summary. Loading, resuming, and forking retain
 the compacted working context; ACP transcript replay still shows the full history.
 Compaction does not reset the live `state` store or rerun tools.
 
-There is no automatic token-budget trigger or separate summarization request.
-The model writes the summary using the context already available to it.
+When the latest successful generation's reported input plus output tokens reach
+85% of the selected model's required `limit`, CPE prepends a warning to each tool
+result asking the model to finish the current task and call `compact(summary)`.
+Cached input still counts toward the limit. The warning requires both token
+counts; tool-result size is not estimated. It is advisory: CPE does not stop the
+turn, compact automatically, or make a separate summarization request. The model
+writes the summary using the context already available to it.
 
 ### Saved sessions
 
@@ -332,8 +337,8 @@ is separate. CPE omits optional cost because it does not have reliable billed-co
 data; configured list prices are not treated as actual charges.
 
 Text and inline-image prompts are supported. Additional working directories,
-ACP-tunneled MCP, session modes, audio prompts, and automatic context-budget
-management are not implemented. Unsupported operations return explicit errors.
+ACP-tunneled MCP, session modes, audio prompts, and automatic compaction
+are not implemented. Unsupported operations return explicit errors.
 
 ## Authentication
 

@@ -379,9 +379,23 @@ func (h *turnHooks) BeforeTool(ctx context.Context, event gaiagent.BeforeToolReq
 }
 
 func (h *turnHooks) AfterTool(ctx context.Context, event gaiagent.AfterToolRequest) (gaiagent.AfterToolDecision, error) {
+	blocks := event.Result.Blocks
+	if h.model.Limit != 0 && h.usage.InputTokens != nil && h.usage.OutputTokens != nil {
+		limit := uint64(h.model.Limit)
+		// Round 85% up to a whole token without overflowing the configured limit.
+		threshold := limit/100*85 + (limit%100*85+99)/100
+		if *h.usage.InputTokens+*h.usage.OutputTokens >= threshold {
+			blocks = append(
+				[]gai.Block{
+					gai.TextBlock("Context is nearing its limit (at least 85% used). Finish the current task and call compact(summary) to preserve the information needed to continue."),
+				},
+				blocks...,
+			)
+		}
+	}
 	result := gai.ToolResultMessage(
 		event.Block.ID,
-		event.Result.Blocks...,
+		blocks...,
 	)
 	result.ToolResultError = event.Result.ToolResultError
 	h.completed[event.Block.ID] = result
@@ -389,7 +403,9 @@ func (h *turnHooks) AfterTool(ctx context.Context, event gaiagent.AfterToolReque
 		h.pending,
 		event.Block.ID,
 	)
-	return gaiagent.AfterToolDecision{}, h.client.toolResult(
+	return gaiagent.AfterToolDecision{
+		Result: &result,
+	}, h.client.toolResult(
 		ctx,
 		event.Block.ID,
 		result,
