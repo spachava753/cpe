@@ -102,6 +102,10 @@ Loading, resuming, and forking preserve the compacted working context. They do
 not rerun the historical tools. Scripts still start with fresh variables on
 every invocation, as described in [Tool execution](tool-runtime.md).
 
+Saved [overflow logs](persistence.md#saved-script-output) remain available through
+KV after their previews leave working context. A summary can retain useful keys
+from earlier invocations. Scripts can also use `kv.keys()` to find saved logs.
+
 ## The context warning
 
 When the latest successful model response reports input plus output usage at

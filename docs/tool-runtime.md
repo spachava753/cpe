@@ -78,11 +78,10 @@ itself tell the model what went wrong. Captured stdout and stderr become visible
 when the script prints them.
 
 Commands receive explicit input or an empty input stream. They do not inherit
-the ACP protocol streams. Each command retains the first **128 KiB of stdout**
-and **128 KiB of stderr**, adding a truncation notice when more was produced.
-Merged stdout and stderr share one 128 KiB budget. The command keeps running
-after capture fills. For large logs, write them to a file and inspect relevant
-sections; the discarded capture data cannot be recovered by printing it later.
+the ACP protocol streams. Captured stdout and stderr are returned in full, with
+no CPE byte cap. A script can search or slice the complete streams before
+printing them. Captured streams remain script-local unless the script prints
+or explicitly stores them, and large captures consume host memory.
 
 Commands belong to the invocation. On Unix, CPE cleans up their process group
 on completion or cancellation, including children that remain in that group.
@@ -112,13 +111,15 @@ A script can hold much more data than it sends back:
  kv.store(selected data)    print(text) / image(bytes)
        |                         |
        v                         v
- saved for later            model-visible tool result
+ saved for later            text preview / images
+                           full long text saved in KV
 ```
 
 `print(...)` emits text. `image(data)` emits an image from raw PNG, JPEG, GIF, or
 WebP bytes. The image function requires the bytes themselves; a script obtains
-them from a file, HTTP response, or MCP result first. Text and images retain
-their emission order.
+them from a file, HTTP response, or MCP result first. All emitted text is combined
+into one block, followed by image blocks. Images retain their relative emission
+order even when the script interleaves text and images.
 
 MCP results remain available to the script as structured values. Merely calling
 a remote tool adds no separate message to the conversation. The script can
@@ -129,17 +130,42 @@ Successful exact edits automatically emit a confirmation and diff. Runtime
 errors also appear in the tool result. If nothing is emitted, CPE returns a
 short completion notice.
 
-Each emitted text block retains up to **128 KiB**, plus a truncation notice if
-needed. One invocation can emit up to **8 MiB** of content and **1,024 blocks**.
-Exceeding either shared budget fails the invocation; earlier host effects remain.
+## Long output and retrieval
 
-An image can contain up to **6 MiB of raw bytes**, and its base64-encoded size
-counts against the shared 8 MiB budget. A 6 MiB image fills that entire budget,
-leaving no room for other output. A selected model without image input gets a
+Printing does not impose an execution budget or block-count limit. When an
+invocation finishes, CPE combines its emitted text and execution diagnostics.
+Text of **128 KiB or less** reaches the model in full. Longer text is saved as a
+string in session KV under `overflow_<sha256>`. The model receives a head preview
+with the exact retrieval key; the preview and notice together fit in 128 KiB.
+Identical complete text reuses the same key.
+
+Use the key supplied in the result to inspect the saved output. For example,
+with that key assigned to `key` in a later script:
+
+```python
+log = kv.get(key)
+print(log[-4000:])
+```
+
+This shows the last 4,000 bytes, which can be useful for a build summary
+that falls beyond the preview. Scripts can also search the full string and
+print just the relevant lines. Printing the whole log again produces another
+preview if the combined text remains over 128 KiB.
+
+Overflow saving happens after script execution. It includes text emitted before
+failure or cancellation, along with the execution diagnostic. If saving fails,
+the result reports the failure without claiming that a full log is available.
+Earlier script actions remain completed. Saved logs survive compaction and
+restoration, and forks inherit independent copies; see
+[Persistence and recovery](persistence.md#saved-script-output).
+
+Each image still has a **6 MiB raw-byte limit**. There is no combined text-and-image
+byte cap or image-count cap in CPE. A selected model without image input gets a
 text notice in place of the image, while the original remains in saved history.
+Provider limits and host memory still constrain practical output sizes.
 
-The [output-limit reference](limits.md#tool-output) explains how capture,
-truncation notices, images, and block counts interact.
+The [output-limit reference](limits.md#tool-output) lists the exact thresholds
+and explains the differences between captured streams, saved logs, and previews.
 
 ## HTTP request limits
 

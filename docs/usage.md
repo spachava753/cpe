@@ -87,7 +87,8 @@ and requested output limits in tokens. There is no universal default. The
 determines whether a request fits and how it finishes.
 
 CPE imposes no size cap on prompt text, input images, or command stdin.
-Tool-emitted output has separate limits: **128 KiB per text block**, **6 MiB of
-raw bytes per image**, and **8 MiB of text and encoded images across at most
-1,024 blocks per invocation**. See [Limits and defaults](limits.md) for the
-complete values, truncation behavior, and configurable settings.
+Emitted script text longer than **128 KiB** is saved in full in session KV;
+the model receives a preview and retrieval notice within that 128 KiB allowance.
+Each emitted image has a **6 MiB raw-byte limit**. CPE has no combined output-byte
+or block-count cap. See [Limits and defaults](limits.md) for the complete values,
+overflow behavior, and configurable settings.

@@ -3,7 +3,8 @@
 [All guides](README.md)
 
 CPE saves a session as work progresses. Returning to it restores the conversation
-and explicitly saved data, then opens fresh resources for new work.
+and saved data, including script-output overflow logs, then opens fresh resources
+for new work.
 
 ## What survives
 
@@ -125,6 +126,28 @@ Stored values enter model context only when a script emits them. A large saved
 result can remain available without repeatedly appearing in the conversation.
 A [compaction summary](compaction.md) can mention the useful keys so the model
 knows where to look later.
+
+## Saved script output
+
+When an invocation's combined emitted text exceeds **128 KiB**, CPE saves the
+complete text as a string in session KV. The tool result contains a preview and
+the exact `overflow_<sha256>` key. Use that key with `kv.get` to inspect the full
+log; identical complete output reuses the same key.
+
+These logs include execution diagnostics and text emitted before a script fails
+or is canceled. They survive model changes, compaction, closing and reopening,
+and process restarts. Forks inherit independent copies, and deleting the session
+removes them along with its other KV data.
+
+Automatic overflow saving happens when the invocation ends. A crash before that
+point can lose the emitted text. Explicit `kv.store` calls still checkpoint
+immediately when used earlier in a script. If automatic saving fails, the tool
+result reports the failure and gives no claim that the complete log was saved.
+
+Captured command stdout and stderr reach the script in full. Automatic overflow
+storage covers text the script emits and execution diagnostics. To preserve an
+unprinted command stream, explicitly store it before the invocation ends.
+See [Long output and retrieval](tool-runtime.md#long-output-and-retrieval).
 
 ## Restoring the environment
 

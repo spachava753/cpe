@@ -12,69 +12,74 @@ Byte limits apply to the data size; a character can occupy several bytes.
 
 ## Tool output
 
-Output passes through several limits before it reaches the model. Capturing a
-command's output and emitting it from a script are separate steps.
+CPE keeps captured command streams complete for the script to inspect. Emitted
+text is collected through the end of the invocation, then shown to the model as
+one text block. Long text is saved in full, with a preview and retrieval key in
+the tool result.
 
-| Output | Limit | What happens at the limit |
+| Output | Limit or threshold | What happens |
 | --- | --- | --- |
-| Captured command stdout | 128 KiB (131,072 bytes) per command | Keeps the first 128 KiB, then appends a truncation notice if more was produced. |
-| Captured command stderr | 128 KiB (131,072 bytes) per command | Same behavior as stdout. When stderr is merged into stdout, they share one 128 KiB capture budget. |
-| One emitted text block | 128 KiB (131,072 bytes) | Keeps the first 128 KiB and appends a truncation notice. This includes printed text, edit confirmations and diffs, and execution-error text. |
-| All emitted content in one Starlark invocation | 8 MiB (8,388,608 bytes) | An emission that would exceed the budget fails the invocation. Text and encoded images share this budget. |
-| Emitted blocks in one Starlark invocation | 1,024 blocks | Attempting to emit a 1,025th block fails the invocation, even if the byte budget has room. |
+| Captured command stdout and stderr | No CPE byte cap | Complete captured streams are returned to the script. They remain script-local unless printed or explicitly stored. |
+| Combined emitted script text, including execution diagnostics | 128 KiB (131,072 bytes) for the model-facing text block | At or below this size, all text is included. Above it, the complete text is saved in session KV and the model receives a head preview with the retrieval key. |
+| Preview and retrieval notice together | At most 128 KiB (131,072 bytes) | The notice fits inside the preview budget; it reduces the space available for the beginning of the log. |
+| Total emitted text and image bytes | No combined CPE byte cap | Text follows the preview behavior above; each image is checked separately. Host memory and provider limits still apply. |
+| Number of prints or emitted images | No CPE count cap | Prints combine into one text block. Images follow in separate blocks. |
 | One image passed to `image(data)` | 6 MiB (6,291,456 raw bytes) | A larger image is rejected. Empty images are also rejected. |
 
-The truncation notice is a newline followed by `[output truncated]`: **19 extra
-bytes** beyond the retained text or command output. For emitted text, those
-extra bytes count toward the invocation's 8 MiB budget.
-
-Each `print(...)` call emits one text block. Each successful `image(...)` call
-emits one image block, and each successful `edit(...)` emits one text block with
-its confirmation and diff. Many small prints can reach the block ceiling before
-reaching the byte ceiling.
-
-Images count at their base64-encoded size: **4 bytes for every 3 raw bytes**,
-rounding the encoded length up to a multiple of 4. A 6 MiB image occupies the
-entire 8 MiB budget. It fits only if no other content consumes that budget. A
-3 MiB image occupies 4 MiB, leaving 4 MiB for other output.
+Printing a large amount of text leaves later script statements free to run.
+When execution finishes, text over 128 KiB is stored as a string under
+`overflow_<sha256>`. The key is based on the complete text, so identical output
+reuses the same key. The result supplies the exact key to pass to `kv.get`.
 
 ```text
- Command output
-   stdout: keep 128 KiB     stderr: keep 128 KiB
-              \              /
-               v            v
-                 Script data
-                      |
-           print / image / edit
-                      |
-       +--------------+----------------+
-       |                               |
- text block: 128 KiB             image: 6 MiB raw
- + notice if truncated          counts after base64 encoding
-       |                               |
-       +--------------+----------------+
-                      |
-       shared invocation budget:
-       8 MiB and 1,024 emitted blocks
-                      |
-                      v
-               Model-visible output
+ Complete command stdout and stderr
+                  |
+                  v
+          Script inspects data
+                  |
+          print / edit / diagnostics
+                  |
+                  v
+      Combine text when invocation ends
+                  |
+         +--------+----------+
+         |                   |
+     <= 128 KiB          > 128 KiB
+         |                   |
+         |            Save full text in KV
+         |                   |
+         v                   v
+    Full text block     Head preview + key
+                         together <= 128 KiB
+         |                   |
+         +--------+----------+
+                  |
+                  v
+       Image blocks follow in emission order
+       each image: at most 6 MiB of raw bytes
 ```
 
-A command continues running and its pipes continue to be drained after capture
-fills. Truncation alone does not make the command fail. The discarded bytes are
-unavailable to the script; printing the captured result in smaller pieces
-cannot recover them. For large logs, have the command write a file and inspect
-selected sections.
+The saved text includes emitted output and execution diagnostics from failed
+or canceled scripts. It survives compaction and session restoration, using the
+same persistence as other KV values. A later script can retrieve it, search for
+an error, or print a small slice. Printing the whole saved log again produces
+another preview if it still exceeds 128 KiB.
 
-An invocation that exceeds the combined byte or block budget reports an output
-limit error. The final retained block may be replaced with a failure notice.
-Earlier file changes, successful stores, and remote effects remain. See
-[Tool execution](tool-runtime.md) and [Failures and cancellation](failures.md).
+If saving the complete text fails, the result contains a head preview and a
+save-failure notice, and the tool is marked failed. It provides no retrieval
+claim for unsaved output. Saving happens after execution, so earlier script
+work and effects remain. A process crash before the save can lose emitted text;
+use an explicit `kv.store` during execution when a value needs an earlier
+checkpoint.
 
-These output budgets apply to emitted content. Data kept inside the script or
-saved through `kv.store` does not consume them until emitted. The selected
-provider's context and image limits still apply to what is sent to it.
+Images are supplied separately from the text preview. A 6 MiB image does not
+reduce the text preview's allowance or prevent another valid image from being
+emitted. All text precedes the images, even if a script interleaved `print` and
+`image` calls. Images retain their relative emission order.
+
+See [Tool execution](tool-runtime.md#long-output-and-retrieval) for retrieving
+logs and [Persistence and recovery](persistence.md#saved-script-output) for their
+lifetime. The selected provider's context and image limits still apply.
 
 ## HTTP requests from scripts
 
@@ -93,8 +98,9 @@ With no explicit timeout, there is no overall request deadline supplied by the
 module; network and transport failures can still end the request. Turn
 cancellation also stops the request.
 
-A response below 64 MiB may still be too large to print in full because of the
-128 KiB text-block and 8 MiB invocation budgets above.
+Printing a response that takes the combined text over 128 KiB produces a preview
+and saves the complete emitted text in KV. The 64 MiB HTTP response-body limit
+applies earlier, while receiving the response.
 
 ## Sessions, timeouts, and retries
 
@@ -163,7 +169,7 @@ concurrent login or logout interact.
 
 | Operation or field | Value | Behavior |
 | --- | --- | --- |
-| `search_tools` results | 8 by default | Set a positive `limit` argument to request another maximum. There is no additional fixed result-count ceiling; available matches and emitted-output limits still apply. |
+| `search_tools` results | 8 by default | Set a positive `limit` argument to request another maximum. There is no additional fixed result-count ceiling. Available matches determine the result count; large printed results use the text-preview behavior above. |
 | Skill/plugin source search during installation | 5 directory levels below the source root by default | Deeper packages are skipped. `--full-depth` removes the depth limit; `--path` selects an exact package directory. |
 | Plugin name | 1–64 ASCII characters | An invalid or longer name is rejected. |
 | Skill name length | 64 Unicode characters | A longer name is retained with a length warning. |
@@ -182,9 +188,10 @@ See [MCP, plugins, and skills](extensions.md),
 ## Data without a separate CPE size quota
 
 CPE adds no explicit byte-size cap for prompt text, incoming prompt images,
-command stdin, compaction summaries, session checkpoints, or durable KV values.
-It also adds no fixed count cap for KV keys or saved sessions. These still use
-host memory and storage, and data sent to a model is subject to the provider's
+command stdin, captured command stdout and stderr, complete emitted script text,
+compaction summaries, session checkpoints, or durable KV values. It also adds no
+fixed count cap for KV keys or saved sessions. These still use host memory and
+storage, and data sent to a model is subject to the provider's
 limits. Incoming prompt images and images emitted by tools have different
 limits: the **6 MiB** image limit above applies to `image(data)` output.
 

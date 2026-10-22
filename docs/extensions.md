@@ -77,9 +77,10 @@ Inside Starlark, the model can use:
   instructions, and tool names.
 
 Search returns up to **8 matches by default**. A positive `limit` argument can
-request a different maximum; emitted results still share the script's output
-budget. Search examines local tool metadata: names, descriptions, schema fields,
-and server guidance. Discovery queries perform no remote tool actions. An
+request a different maximum. Large printed results use the script's
+[preview and overflow storage](tool-runtime.md#long-output-and-retrieval). Search
+examines local tool metadata: names, descriptions, schema fields, and server
+guidance. Discovery queries perform no remote tool actions. An
 unmatched search returns an empty list; an unknown description target returns
 `None`.
 

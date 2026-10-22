@@ -70,8 +70,11 @@ as an exception through `check=True`. An MCP tool can report an error as an
 inspectable result; connection and protocol errors fail the execution. See
 [Tool execution](tool-runtime.md) and [MCP, plugins, and skills](extensions.md).
 
-A successful action may also be followed by an output-limit error. Missing or
-truncated confirmation does not prove that the action failed.
+Long emitted text is saved in session KV after execution, with a preview and
+retrieval key in the result. If that save fails, the tool reports the storage
+failure even though its earlier actions may have succeeded. A preview alone
+does not show everything the script did; retrieve the full log when available.
+See [Long output and retrieval](tool-runtime.md#long-output-and-retrieval).
 
 ## Cancellation
 
