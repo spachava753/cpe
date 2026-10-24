@@ -27,6 +27,7 @@ func TestProviders(t *testing.T) {
 		name        string
 		base        string
 		api         models.API
+		effort      models.ReasoningLevel
 		expired     bool
 		explicit    bool
 		wantKey     string
@@ -38,12 +39,14 @@ func TestProviders(t *testing.T) {
 			name:    "ChatGPT subscription",
 			base:    "https://chatgpt.com/backend-api/codex/",
 			api:     models.Responses,
+			effort:  "high",
 			wantKey: "access-fixture",
 		},
 		{
 			name:      "expired subscription",
 			base:      "https://chatgpt.com/backend-api/codex/",
 			api:       models.Responses,
+			effort:    "high",
 			expired:   true,
 			wantError: true,
 		},
@@ -51,28 +54,33 @@ func TestProviders(t *testing.T) {
 			name:    "OpenCode subscription",
 			base:    "https://opencode.ai/zen/go/v1/",
 			api:     models.Openai,
+			effort:  "high",
 			wantKey: "opencode-fixture",
 		},
 		{
-			name: "no token to lookalike host",
-			base: "https://chatgpt.com.invalid/v1/",
-			api:  models.Responses,
+			name:   "no token to lookalike host",
+			base:   "https://chatgpt.com.invalid/v1/",
+			api:    models.Responses,
+			effort: "high",
 		},
 		{
-			name: "no token over HTTP",
-			base: "http://chatgpt.com/backend-api/codex/",
-			api:  models.Responses,
+			name:   "no token over HTTP",
+			base:   "http://chatgpt.com/backend-api/codex/",
+			api:    models.Responses,
+			effort: "high",
 		},
 		{
 			name:      "no token to unrelated endpoint",
 			base:      "https://example.invalid/v1/",
 			api:       models.Openai,
+			effort:    "high",
 			wantError: true,
 		},
 		{
 			name:     "Anthropic ignores ambient credentials",
 			base:     "https://proxy.invalid/",
 			api:      models.Anthropic,
+			effort:   "high",
 			explicit: true,
 			wantKey:  "explicit-fixture",
 		},
@@ -80,6 +88,7 @@ func TestProviders(t *testing.T) {
 			name:     "explicit ChatGPT API key bypasses OAuth refresh",
 			base:     "https://chatgpt.com/backend-api/codex/",
 			api:      models.Responses,
+			effort:   "high",
 			expired:  true,
 			explicit: true,
 			wantKey:  "explicit-fixture",
@@ -88,6 +97,7 @@ func TestProviders(t *testing.T) {
 			name:     "explicit key takes precedence",
 			base:     "https://opencode.ai/zen/go/v1/",
 			api:      models.Openai,
+			effort:   "high",
 			explicit: true,
 			wantKey:  "explicit-fixture",
 		},
@@ -95,6 +105,7 @@ func TestProviders(t *testing.T) {
 			name:     "Chat Completions streaming cache key",
 			base:     "https://proxy.invalid/v1/",
 			api:      models.Openai,
+			effort:   "high",
 			explicit: true,
 			wantKey:  "explicit-fixture",
 			stream:   true,
@@ -103,6 +114,7 @@ func TestProviders(t *testing.T) {
 			name:     "Responses streaming cache key",
 			base:     "https://proxy.invalid/v1/",
 			api:      models.Responses,
+			effort:   "high",
 			explicit: true,
 			wantKey:  "explicit-fixture",
 			stream:   true,
@@ -111,6 +123,112 @@ func TestProviders(t *testing.T) {
 			name:     "Anthropic streaming caching",
 			base:     "https://proxy.invalid/",
 			api:      models.Anthropic,
+			effort:   "high",
+			explicit: true,
+			wantKey:  "explicit-fixture",
+			stream:   true,
+		},
+		{
+			name:     "Responses default effort summary",
+			base:     "https://proxy.invalid/v1/",
+			api:      models.Responses,
+			explicit: true,
+			wantKey:  "explicit-fixture",
+		},
+		{
+			name:     "Responses streaming default effort summary",
+			base:     "https://proxy.invalid/v1/",
+			api:      models.Responses,
+			explicit: true,
+			wantKey:  "explicit-fixture",
+			stream:   true,
+		},
+		{
+			name:    "ChatGPT default effort summary",
+			base:    "https://chatgpt.com/backend-api/codex/",
+			api:     models.Responses,
+			wantKey: "access-fixture",
+			stream:  true,
+		},
+		{
+			name:     "Anthropic adaptive thinking summary",
+			base:     "https://proxy.invalid/",
+			api:      models.Anthropic,
+			effort:   "adaptive",
+			explicit: true,
+			wantKey:  "explicit-fixture",
+		},
+		{
+			name:     "Anthropic streaming adaptive thinking summary",
+			base:     "https://proxy.invalid/",
+			api:      models.Anthropic,
+			effort:   "adaptive",
+			explicit: true,
+			wantKey:  "explicit-fixture",
+			stream:   true,
+		},
+		{
+			name:     "Anthropic default effort summary",
+			base:     "https://proxy.invalid/",
+			api:      models.Anthropic,
+			explicit: true,
+			wantKey:  "explicit-fixture",
+		},
+		{
+			name:     "Anthropic streaming default effort summary",
+			base:     "https://proxy.invalid/",
+			api:      models.Anthropic,
+			explicit: true,
+			wantKey:  "explicit-fixture",
+			stream:   true,
+		},
+		{
+			name:     "Anthropic max effort summary",
+			base:     "https://proxy.invalid/",
+			api:      models.Anthropic,
+			effort:   "max",
+			explicit: true,
+			wantKey:  "explicit-fixture",
+		},
+		{
+			name:     "Anthropic streaming max effort summary",
+			base:     "https://proxy.invalid/",
+			api:      models.Anthropic,
+			effort:   "max",
+			explicit: true,
+			wantKey:  "explicit-fixture",
+			stream:   true,
+		},
+		{
+			name:     "Anthropic xhigh effort summary",
+			base:     "https://proxy.invalid/",
+			api:      models.Anthropic,
+			effort:   "xhigh",
+			explicit: true,
+			wantKey:  "explicit-fixture",
+		},
+		{
+			name:     "Anthropic streaming xhigh effort summary",
+			base:     "https://proxy.invalid/",
+			api:      models.Anthropic,
+			effort:   "xhigh",
+			explicit: true,
+			wantKey:  "explicit-fixture",
+			stream:   true,
+		},
+		{
+			name:     "Anthropic disabled thinking",
+			base:     "https://proxy.invalid/",
+			api:      models.Anthropic,
+			effort:   "disabled",
+			explicit: true,
+			wantKey:  "explicit-fixture",
+		},
+		{
+			name:     "Anthropic streaming disabled thinking",
+			base:     "https://proxy.invalid/",
+			api:      models.Anthropic,
+			effort:   "disabled",
 			explicit: true,
 			wantKey:  "explicit-fixture",
 			stream:   true,
@@ -119,6 +237,7 @@ func TestProviders(t *testing.T) {
 			name:        "Anthropic tool result caching",
 			base:        "https://proxy.invalid/",
 			api:         models.Anthropic,
+			effort:      "high",
 			explicit:    true,
 			wantKey:     "explicit-fixture",
 			toolResults: true,
@@ -127,6 +246,7 @@ func TestProviders(t *testing.T) {
 			name:        "Anthropic streaming tool result caching",
 			base:        "https://proxy.invalid/",
 			api:         models.Anthropic,
+			effort:      "high",
 			explicit:    true,
 			wantKey:     "explicit-fixture",
 			stream:      true,
@@ -213,18 +333,75 @@ func TestProviders(t *testing.T) {
 								Content      json.RawMessage   `json:"content"`
 							}
 							var body struct {
-								ReasoningEffort string       `json:"reasoning_effort"`
-								PromptCacheKey  string       `json:"prompt_cache_key"`
-								System          []cacheBlock `json:"system"`
-								Messages        []struct {
+								ReasoningEffort string `json:"reasoning_effort"`
+								Reasoning       struct {
+									Effort  string `json:"effort"`
+									Summary string `json:"summary"`
+								} `json:"reasoning"`
+								Thinking *struct {
+									Type    string `json:"type"`
+									Display string `json:"display"`
+								} `json:"thinking"`
+								OutputConfig struct {
+									Effort *string `json:"effort"`
+								} `json:"output_config"`
+								PromptCacheKey string       `json:"prompt_cache_key"`
+								System         []cacheBlock `json:"system"`
+								Messages       []struct {
 									Content json.RawMessage `json:"content"`
 								} `json:"messages"`
 							}
 							if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 								t.Error(err)
 							}
-							if test.api == models.Openai && body.ReasoningEffort != "high" {
+							if test.api == models.Openai && body.ReasoningEffort != string(test.effort) {
 								t.Error("reasoning effort was not applied")
+							}
+							if test.api == models.Responses {
+								if body.Reasoning.Effort != string(test.effort) || body.Reasoning.Summary != "auto" {
+									t.Errorf(
+										"reasoning configuration: %#v",
+										body.Reasoning,
+									)
+								}
+							}
+							if test.api == models.Anthropic {
+								switch test.effort {
+								case "disabled":
+									if body.Thinking == nil || body.Thinking.Type != "disabled" || body.Thinking.Display != "" {
+										t.Errorf(
+											"disabled thinking configuration: %#v",
+											body.Thinking,
+										)
+									}
+								default:
+									if body.Thinking == nil || body.Thinking.Type != "adaptive" || body.Thinking.Display != "summarized" {
+										t.Errorf(
+											"thinking summary configuration: %#v",
+											body.Thinking,
+										)
+									}
+								}
+								wantEffort := string(test.effort)
+								if test.effort == "adaptive" || test.effort == "disabled" {
+									wantEffort = ""
+								}
+								if wantEffort == "" {
+									if body.OutputConfig.Effort != nil {
+										t.Errorf(
+											"unexpected explicit thinking effort: %q",
+											*body.OutputConfig.Effort,
+										)
+									}
+								} else if body.OutputConfig.Effort == nil {
+									t.Error("missing explicit thinking effort")
+								} else if *body.OutputConfig.Effort != wantEffort {
+									t.Errorf(
+										"thinking effort: got %q, want %q",
+										*body.OutputConfig.Effort,
+										wantEffort,
+									)
+								}
 							}
 							if (test.api == models.Openai || test.api == models.Responses) && body.PromptCacheKey != "conversation-fixture" {
 								t.Errorf(
@@ -362,7 +539,7 @@ func TestProviders(t *testing.T) {
 				generator, options, err := providers.Generator(
 					t.Context(),
 					model,
-					"high",
+					test.effort,
 				)
 				if (err != nil) != test.wantError {
 					t.Fatalf(

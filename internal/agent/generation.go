@@ -28,6 +28,7 @@ type responseGenerator struct {
 }
 
 func (g *responseGenerator) Generate(ctx context.Context, request gai.GenerationRequest) (gai.Response, error) {
+	request = g.hooks.providerRequest(request)
 	for attempt := uint(0); ; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return gai.Response{}, err

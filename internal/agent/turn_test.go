@@ -10,7 +10,6 @@ import (
 
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
-	gaiagent "github.com/spachava753/gai/agent"
 	"github.com/spachava753/gai/agent/agenttest"
 
 	"github.com/spachava753/cpe/internal/conversation"
@@ -307,29 +306,21 @@ func TestProviderHistory(t *testing.T) {
 						},
 					},
 				}
-				decision, err := hooks.BeforeGeneration(
-					t.Context(),
-					gaiagent.BeforeGenerationRequest{
-						Request: gai.GenerationRequest{
-							Dialog: dialog,
-						},
-					},
-				)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if len(decision.Request.Dialog) != test.wantMessages {
+				request := hooks.providerRequest(gai.GenerationRequest{
+					Dialog: dialog,
+				})
+				if len(request.Dialog) != test.wantMessages {
 					t.Fatalf(
 						"adapted messages: %d",
-						len(decision.Request.Dialog),
+						len(request.Dialog),
 					)
 				}
-				for _, message := range decision.Request.Dialog {
+				for _, message := range request.Dialog {
 					if len(message.Blocks) == 0 {
 						t.Fatal("empty provider message")
 					}
 				}
-				if decision.Request.Dialog[0].Blocks[0].ModalityType != gai.Text {
+				if request.Dialog[0].Blocks[0].ModalityType != gai.Text {
 					t.Fatal("unsupported media sent to selected model")
 				}
 				if dialog[0].Blocks[0].ModalityType != gai.Image || len(dialog[1].Blocks) != 1 || dialog[1].ExtraFields["provider.replay"] != "retained" {

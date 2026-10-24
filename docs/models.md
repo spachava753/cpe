@@ -84,6 +84,19 @@ The new model's context window may be smaller. Changing models leaves the
 working conversation intact, so consider [compaction](compaction.md) before
 moving a long conversation to a smaller window.
 
+## Reasoning display
+
+CPE requests readable reasoning summaries from Responses models, including when
+reasoning effort is left at the provider default. For Anthropic, CPE requests
+adaptive thinking with summarized display, including when no effort is selected.
+With default effort, CPE omits the API effort field so the provider chooses its
+own level. Explicit efforts such as `xhigh` and `max` are preserved; explicitly
+disabled thinking remains disabled. Anthropic models must support adaptive
+thinking unless thinking is disabled.
+
+These summaries do not expose raw internal reasoning. CPE forwards returned
+reasoning text as ACP thought chunks, and the client decides how to display them.
+
 ## Provider requests
 
 A turn can contain many model requests as the agent works through tools. CPE

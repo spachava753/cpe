@@ -188,6 +188,7 @@ func (p *Providers) Generator(ctx context.Context, model models.Model, effort mo
 			key,
 		)
 	case models.Responses:
+		gai.WithResponsesThoughtSummaryDetail("auto")(options)
 		opts := []openaioption.RequestOption{
 			openaioption.WithHTTPClient(client),
 			openaioption.WithBaseURL(base),
@@ -197,6 +198,9 @@ func (p *Providers) Generator(ctx context.Context, model models.Model, effort mo
 		client := openai.NewClient(opts...)
 		generator = gai.NewResponsesGenerator(&client.Responses)
 	case models.Anthropic:
+		if effort == "" {
+			gai.WithReasoningEffort("adaptive")(options)
+		}
 		client := anthropic.NewClient(
 			anthropicoption.WithoutEnvironmentDefaults(),
 			anthropicoption.WithHTTPClient(p.client),
@@ -206,6 +210,7 @@ func (p *Providers) Generator(ctx context.Context, model models.Model, effort mo
 		)
 		generator = gai.NewAnthropicGenerator(gai.NewAnthropicServiceWrapper(
 			&client.Messages,
+			summarizeAnthropicThinking,
 			stabilizeAnthropicToolResults,
 			gai.EnableSystemCaching,
 			gai.EnableMultiTurnCaching,
@@ -236,6 +241,13 @@ func (p *Providers) Generator(ctx context.Context, model models.Model, effort mo
 		)
 	}
 	return generator, options, err
+}
+
+func summarizeAnthropicThinking(_ context.Context, params *anthropic.MessageNewParams) error {
+	if params.Thinking.OfAdaptive != nil {
+		params.Thinking.OfAdaptive.Display = anthropic.ThinkingConfigAdaptiveDisplaySummarized
+	}
+	return nil
 }
 
 // GAI groups tool results through a map; keep serialized cache prefixes stable.

@@ -263,7 +263,7 @@ type turnHooks struct {
 	dialog            gai.Dialog
 }
 
-// Prepare each provider request without altering canonical saved history.
+// Checkpoint canonical history before each provider request.
 func (h *turnHooks) BeforeGeneration(ctx context.Context, event gaiagent.BeforeGenerationRequest) (gaiagent.BeforeGenerationDecision, error) {
 	h.generation = event.Generation
 	h.dialog = event.Request.Dialog
@@ -280,10 +280,15 @@ func (h *turnHooks) BeforeGeneration(ctx context.Context, event gaiagent.BeforeG
 			return gaiagent.BeforeGenerationDecision{}, err
 		}
 	}
-	request := event.Request
+	return gaiagent.BeforeGenerationDecision{}, nil
+}
+
+// Prepare model context without replacing the loop's canonical history.
+func (h *turnHooks) providerRequest(request gai.GenerationRequest) gai.GenerationRequest {
 	request.PromptCacheKey = string(h.session.record.Info.ID)
+	dialog := h.compaction.WorkingDialog(request.Dialog)
 	request.Dialog = nil
-	for _, message := range h.compaction.WorkingDialog(event.Request.Dialog) {
+	for _, message := range dialog {
 		foreign := message.Role == gai.Assistant && message.ExtraFields["cpe.model"] != string(h.modelID)
 		blocks := message.Blocks
 		message.Blocks = nil
@@ -317,9 +322,7 @@ func (h *turnHooks) BeforeGeneration(ctx context.Context, event gaiagent.BeforeG
 			)
 		}
 	}
-	return gaiagent.BeforeGenerationDecision{
-		Request: &request,
-	}, nil
+	return request
 }
 
 func (h *turnHooks) GenerationChunk(ctx context.Context, event gaiagent.GenerationChunkEvent) error {
