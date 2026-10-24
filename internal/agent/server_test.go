@@ -307,6 +307,77 @@ func lastToolOutput(record conversation.Record) string {
 	return ""
 }
 
+func TestSessionConfigCategories(t *testing.T) {
+	for _, tc := range []struct {
+		id       acp.SessionConfigId
+		category acp.SessionConfigOptionCategory
+		value    string
+	}{
+		{
+			id:       "model",
+			category: acp.SessionConfigOptionCategoryModel,
+			value:    "two",
+		},
+		{
+			id:       "reasoning",
+			category: acp.SessionConfigOptionCategoryThoughtLevel,
+			value:    "high",
+		},
+	} {
+		t.Run(
+			string(tc.id),
+			func(t *testing.T) {
+				fixture := serverFixture(
+					t,
+					scriptGenerator,
+				)
+				response, err := fixture.client.NewSession(
+					t.Context(),
+					&acp.NewSessionRequest{
+						Cwd: "/work",
+					},
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if response.ConfigOptions == nil {
+					t.Fatal("session did not advertise configuration options")
+				}
+				updated, err := fixture.client.SetSessionConfigOption(
+					t.Context(),
+					&acp.SetSessionConfigOptionRequest{
+						SessionID: response.SessionID,
+						ConfigID:  tc.id,
+						Value:     tc.value,
+					},
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, options := range [][]acp.SessionConfigOption{
+					*response.ConfigOptions,
+					updated.ConfigOptions,
+				} {
+					index := slices.IndexFunc(
+						options,
+						func(option acp.SessionConfigOption) bool { return option.ID == tc.id },
+					)
+					if index < 0 {
+						t.Fatal("missing configuration option")
+					}
+					if category := options[index].Category; category == nil || *category != tc.category {
+						t.Fatalf(
+							"category: got %v, want %q",
+							category,
+							tc.category,
+						)
+					}
+				}
+			},
+		)
+	}
+}
+
 func TestSessionLifecycle(t *testing.T) {
 	for _, operation := range []string{
 		"live session",

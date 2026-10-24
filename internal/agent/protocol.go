@@ -566,23 +566,27 @@ func configOptions(config Config, current models.Selection) []acp.SessionConfigO
 	if effort == "" {
 		effort = defaultReasoning
 	}
+	modelOption := acp.SelectSessionConfigOption(
+		"model",
+		"Model",
+		acp.SessionConfigValueId(current.Model),
+		acp.SessionConfigSelectOptions{
+			Ungrouped: &models,
+		},
+	)
+	modelOption.Category = new(acp.SessionConfigOptionCategoryModel)
+	reasoningOption := acp.SelectSessionConfigOption(
+		"reasoning",
+		"Reasoning effort",
+		effort,
+		acp.SessionConfigSelectOptions{
+			Ungrouped: &efforts,
+		},
+	)
+	reasoningOption.Category = new(acp.SessionConfigOptionCategoryThoughtLevel)
 	return []acp.SessionConfigOption{
-		acp.SelectSessionConfigOption(
-			"model",
-			"Model",
-			acp.SessionConfigValueId(current.Model),
-			acp.SessionConfigSelectOptions{
-				Ungrouped: &models,
-			},
-		),
-		acp.SelectSessionConfigOption(
-			"reasoning",
-			"Reasoning effort",
-			effort,
-			acp.SessionConfigSelectOptions{
-				Ungrouped: &efforts,
-			},
-		),
+		modelOption,
+		reasoningOption,
 	}
 }
 
