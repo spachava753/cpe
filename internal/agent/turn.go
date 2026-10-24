@@ -86,6 +86,7 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptR
 	}
 	generator, generationOptions, err := s.deps.Generators(
 		ctx,
+		s.record.Info.ID,
 		model,
 		options.Reasoning,
 	)

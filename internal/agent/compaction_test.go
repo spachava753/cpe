@@ -197,7 +197,7 @@ func TestCompaction(t *testing.T) {
 				)
 				fixture = serverFixture(
 					t,
-					func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+					func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 						return generator, gai.GenerationOptions{}, nil
 					},
 					func(config *Config, _ *Dependencies, _ *acp.InitializeRequest) {
@@ -409,7 +409,7 @@ func TestCompactionWithSubprocess(t *testing.T) {
 				)
 				fixture = serverFixture(
 					t,
-					func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+					func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 						return generator, gai.GenerationOptions{}, nil
 					},
 					func(_ *Config, deps *Dependencies, _ *acp.InitializeRequest) {
@@ -550,7 +550,7 @@ func TestCompactionFailures(t *testing.T) {
 				)
 				fixture := serverFixture(
 					t,
-					func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+					func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 						return generator, gai.GenerationOptions{}, nil
 					},
 					func(_ *Config, deps *Dependencies, _ *acp.InitializeRequest) {

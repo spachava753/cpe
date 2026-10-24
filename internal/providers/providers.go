@@ -17,6 +17,7 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/spachava753/cpe/internal/auth"
+	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/models"
 )
 
@@ -92,9 +93,9 @@ func (p *Providers) Logout(ctx context.Context) error {
 	)
 }
 
-// Generator creates a GAI provider adapter and turn-specific generation options.
-// Subscription tokens are only attached to their exact HTTPS provider host.
-func (p *Providers) Generator(ctx context.Context, model models.Model, effort models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+// Generator creates a provider adapter and options for the conversation.
+// Subscription tokens and OpenCode session headers are restricted to their exact HTTPS hosts.
+func (p *Providers) Generator(ctx context.Context, sessionID conversation.ID, model models.Model, effort models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
@@ -103,8 +104,12 @@ func (p *Providers) Generator(ctx context.Context, model models.Model, effort mo
 		key = model.APIKey.ExposeSecret()
 	}
 	codex := model.API == models.Responses && model.BaseUrl.Scheme == httpsScheme && model.BaseUrl.Host == "chatgpt.com"
+	opencode := model.BaseUrl.Scheme == httpsScheme && model.BaseUrl.Host == "opencode.ai"
+	if opencode && sessionID == "" {
+		return nil, nil, errors.New("OpenCode requires a conversation ID")
+	}
 	client := p.client
-	if key == "" && (codex || model.BaseUrl.Scheme == httpsScheme && model.BaseUrl.Host == "opencode.ai") {
+	if key == "" && (codex || opencode) {
 		credentials, err := p.store.Retrieve(
 			ctx,
 			p.path,
@@ -134,6 +139,18 @@ func (p *Providers) Generator(ctx context.Context, model models.Model, effort mo
 			key = credentials.OpenCode.APIKey
 		}
 	}
+	if opencode {
+		copy := *p.client
+		transport := p.client.Transport
+		if transport == nil {
+			transport = http.DefaultTransport
+		}
+		copy.Transport = openCodeTransport{
+			base:      transport,
+			sessionID: sessionID,
+		}
+		client = &copy
+	}
 	options := gai.NewGenerationOptions(gai.WithMaxGenerationTokens(int(model.MaxTokens)))
 	if codex {
 		options = gai.GenerationOptions{}
@@ -153,37 +170,37 @@ func (p *Providers) Generator(ctx context.Context, model models.Model, effort mo
 	switch model.API {
 	case models.Openai:
 		generator, err = gai.NewOpenAiGenerator(
-			p.client,
+			client,
 			base,
 			key,
 		)
 	case models.Zai:
 		generator, err = gai.NewZaiGenerator(
-			p.client,
+			client,
 			base,
 			key,
 		)
 	case models.Moonshot:
 		generator, err = gai.NewMoonshotGenerator(
-			p.client,
+			client,
 			base,
 			key,
 		)
 	case models.Deepseek:
 		generator, err = gai.NewDeepSeekGenerator(
-			p.client,
+			client,
 			base,
 			key,
 		)
 	case models.Cerebras:
 		generator, err = gai.NewCerebrasGenerator(
-			p.client,
+			client,
 			base,
 			key,
 		)
 	case models.OpenRouter:
 		generator, err = gai.NewOpenRouterGenerator(
-			p.client,
+			client,
 			base,
 			key,
 		)
@@ -203,7 +220,7 @@ func (p *Providers) Generator(ctx context.Context, model models.Model, effort mo
 		}
 		client := anthropic.NewClient(
 			anthropicoption.WithoutEnvironmentDefaults(),
-			anthropicoption.WithHTTPClient(p.client),
+			anthropicoption.WithHTTPClient(client),
 			anthropicoption.WithBaseURL(base),
 			anthropicoption.WithAPIKey(key),
 			anthropicoption.WithMaxRetries(0),
@@ -219,20 +236,20 @@ func (p *Providers) Generator(ctx context.Context, model models.Model, effort mo
 		if key == "" {
 			return nil, nil, errors.New("gemini requires an explicit API key")
 		}
-		var client *genai.Client
-		client, err = genai.NewClient(
+		var gemini *genai.Client
+		gemini, err = genai.NewClient(
 			ctx,
 			&genai.ClientConfig{
 				APIKey:     key,
 				Backend:    genai.BackendGeminiAPI,
-				HTTPClient: p.client,
+				HTTPClient: client,
 				HTTPOptions: genai.HTTPOptions{
 					BaseURL: base,
 				},
 			},
 		)
 		if err == nil {
-			generator = gai.NewGeminiGenerator(client)
+			generator = gai.NewGeminiGenerator(gemini)
 		}
 	default:
 		err = fmt.Errorf(

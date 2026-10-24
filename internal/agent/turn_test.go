@@ -19,7 +19,7 @@ import (
 func TestStreamingTurn(t *testing.T) {
 	fixture := serverFixture(
 		t,
-		func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+		func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 			return agenttest.NewScriptedStreamingGenerator(agenttest.StreamStep{
 				Chunks: []gai.StreamChunk{
 					{
@@ -127,7 +127,7 @@ func TestToolTurn(t *testing.T) {
 				generator := agenttest.NewScriptedGenerator(steps...)
 				fixture := serverFixture(
 					t,
-					func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+					func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 						return generator, gai.GenerationOptions{}, nil
 					},
 				)
@@ -200,7 +200,7 @@ func TestPromptDuration(t *testing.T) {
 					func(t *testing.T) {
 						fixture := serverFixture(
 							t,
-							func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+							func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 								return generatorFunc(func(ctx context.Context, _ gai.GenerationRequest) (gai.Response, error) {
 									time.Sleep(test.duration)
 									if err := ctx.Err(); err != nil {

@@ -89,7 +89,7 @@ func TestUsageReporting(t *testing.T) {
 				)
 				fixture := serverFixture(
 					t,
-					func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+					func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 						return generator, gai.GenerationOptions{}, nil
 					},
 					func(config *Config, _ *Dependencies, _ *acp.InitializeRequest) {
@@ -497,7 +497,7 @@ func TestUsageAttempts(t *testing.T) {
 				}
 				fixture := serverFixture(
 					t,
-					func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+					func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 						return generator, gai.GenerationOptions{}, nil
 					},
 					func(config *Config, _ *Dependencies, _ *acp.InitializeRequest) {
@@ -642,7 +642,7 @@ func TestUsageStopReasons(t *testing.T) {
 				response.FinishReason = test.finish
 				fixture := serverFixture(
 					t,
-					func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+					func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 						return agenttest.NewScriptedGenerator(agenttest.GenerateStep{
 							Response: response,
 						}), gai.GenerationOptions{}, nil
@@ -870,7 +870,7 @@ func TestContextBudgetToolResults(t *testing.T) {
 				)
 				fixture := serverFixture(
 					t,
-					func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+					func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 						return generator, gai.GenerationOptions{}, nil
 					},
 					func(config *Config, _ *Dependencies, _ *acp.InitializeRequest) {

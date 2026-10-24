@@ -15,7 +15,9 @@ import (
 	"github.com/spf13/afero"
 
 	"github.com/spachava753/cpe/internal/auth"
+	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/models"
+	"github.com/spachava753/cpe/internal/version"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -31,6 +33,8 @@ func TestProviders(t *testing.T) {
 		expired     bool
 		explicit    bool
 		wantKey     string
+		wantSession string
+		noSession   bool
 		wantError   bool
 		stream      bool
 		toolResults bool
@@ -51,11 +55,78 @@ func TestProviders(t *testing.T) {
 			wantError: true,
 		},
 		{
-			name:    "OpenCode subscription",
-			base:    "https://opencode.ai/zen/go/v1/",
-			api:     models.Openai,
-			effort:  "high",
-			wantKey: "opencode-fixture",
+			name:        "OpenCode subscription",
+			base:        "https://opencode.ai/zen/go/v1/",
+			api:         models.Openai,
+			effort:      "high",
+			wantKey:     "opencode-fixture",
+			wantSession: "conversation-fixture",
+		},
+		{
+			name:        "OpenCode Chat Completions streaming",
+			base:        "https://opencode.ai/zen/go/v1/",
+			api:         models.Openai,
+			effort:      "high",
+			wantKey:     "opencode-fixture",
+			wantSession: "conversation-fixture",
+			stream:      true,
+		},
+		{
+			name:        "OpenCode Anthropic subscription",
+			base:        "https://opencode.ai/zen/go/",
+			api:         models.Anthropic,
+			effort:      "high",
+			wantKey:     "opencode-fixture",
+			wantSession: "conversation-fixture",
+		},
+		{
+			name:        "OpenCode Anthropic explicit key streaming",
+			base:        "https://opencode.ai/zen/go/",
+			api:         models.Anthropic,
+			effort:      "high",
+			explicit:    true,
+			wantKey:     "explicit-fixture",
+			wantSession: "conversation-fixture",
+			stream:      true,
+		},
+		{
+			name:        "OpenCode Responses subscription",
+			base:        "https://opencode.ai/zen/go/v1/",
+			api:         models.Responses,
+			effort:      "high",
+			wantKey:     "opencode-fixture",
+			wantSession: "conversation-fixture",
+		},
+		{
+			name:        "OpenCode Responses explicit key streaming",
+			base:        "https://opencode.ai/zen/go/v1/",
+			api:         models.Responses,
+			effort:      "high",
+			explicit:    true,
+			wantKey:     "explicit-fixture",
+			wantSession: "conversation-fixture",
+			stream:      true,
+		},
+		{
+			name:      "OpenCode requires a conversation ID",
+			base:      "https://opencode.ai/zen/go/v1/",
+			api:       models.Openai,
+			effort:    "high",
+			explicit:  true,
+			noSession: true,
+			wantError: true,
+		},
+		{
+			name:   "no OpenCode headers to lookalike host",
+			base:   "https://opencode.ai.invalid/v1/",
+			api:    models.Responses,
+			effort: "high",
+		},
+		{
+			name:   "no OpenCode headers over HTTP",
+			base:   "http://opencode.ai/zen/go/v1/",
+			api:    models.Responses,
+			effort: "high",
 		},
 		{
 			name:   "no token to lookalike host",
@@ -94,12 +165,13 @@ func TestProviders(t *testing.T) {
 			wantKey:  "explicit-fixture",
 		},
 		{
-			name:     "explicit key takes precedence",
-			base:     "https://opencode.ai/zen/go/v1/",
-			api:      models.Openai,
-			effort:   "high",
-			explicit: true,
-			wantKey:  "explicit-fixture",
+			name:        "explicit key takes precedence",
+			base:        "https://opencode.ai/zen/go/v1/",
+			api:         models.Openai,
+			effort:      "high",
+			explicit:    true,
+			wantKey:     "explicit-fixture",
+			wantSession: "conversation-fixture",
 		},
 		{
 			name:     "Chat Completions streaming cache key",
@@ -294,6 +366,7 @@ func TestProviders(t *testing.T) {
 					}
 				}
 				called := false
+				wantSession := test.wantSession
 				var toolResultPrefix string
 				providers, err := New(
 					store,
@@ -310,6 +383,19 @@ func TestProviders(t *testing.T) {
 								}, nil
 							}
 							called = true
+							if got := request.Header.Get("X-Opencode-Session"); got != wantSession {
+								t.Errorf(
+									"OpenCode session: got %q, want %q",
+									got,
+									wantSession,
+								)
+							}
+							if test.wantSession != "" && request.Header.Get("User-Agent") != "cpe/"+version.Get() {
+								t.Errorf(
+									"OpenCode user agent: %q",
+									request.Header.Get("User-Agent"),
+								)
+							}
 							key := strings.TrimPrefix(
 								request.Header.Get("Authorization"),
 								"Bearer ",
@@ -403,7 +489,11 @@ func TestProviders(t *testing.T) {
 									)
 								}
 							}
-							if (test.api == models.Openai || test.api == models.Responses) && body.PromptCacheKey != "conversation-fixture" {
+							wantCacheKey := "conversation-fixture"
+							if wantSession != "" {
+								wantCacheKey = wantSession
+							}
+							if (test.api == models.Openai || test.api == models.Responses) && body.PromptCacheKey != wantCacheKey {
 								t.Errorf(
 									"prompt cache key: %q",
 									body.PromptCacheKey,
@@ -536,8 +626,13 @@ func TestProviders(t *testing.T) {
 					secret := secrecy.NewSecretString([]byte("explicit-fixture"))
 					model.APIKey = &secret
 				}
+				sessionID := conversation.ID("conversation-fixture")
+				if test.noSession {
+					sessionID = ""
+				}
 				generator, options, err := providers.Generator(
 					t.Context(),
+					sessionID,
 					model,
 					test.effort,
 				)
@@ -640,6 +735,39 @@ func TestProviders(t *testing.T) {
 				}
 				if !called {
 					t.Fatal("provider did not use injected HTTP client")
+				}
+				if test.wantSession != "" {
+					// Another conversation must not change an existing generator's headers.
+					other, _, err := providers.Generator(
+						t.Context(),
+						"other-conversation",
+						model,
+						test.effort,
+					)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if test.stream {
+						other = &gai.StreamingAdapter{
+							S: other.(gai.StreamingGenerator),
+						}
+					}
+					wantSession = "other-conversation"
+					otherRequest := request
+					otherRequest.PromptCacheKey = wantSession
+					if _, err := other.Generate(
+						t.Context(),
+						otherRequest,
+					); err != nil {
+						t.Fatal(err)
+					}
+					wantSession = test.wantSession
+					if _, err := generator.Generate(
+						t.Context(),
+						request,
+					); err != nil {
+						t.Fatal(err)
+					}
 				}
 				if err := providers.Logout(context.Background()); err != nil {
 					t.Fatal(err)

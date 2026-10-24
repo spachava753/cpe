@@ -190,7 +190,7 @@ func TestResponseRecovery(t *testing.T) {
 				generator := agenttest.NewScriptedStreamingGenerator(steps...)
 				fixture := serverFixture(
 					t,
-					func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+					func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 						return generator, gai.GenerationOptions{}, nil
 					},
 					func(config *Config, deps *Dependencies, initialize *acp.InitializeRequest) {
@@ -297,7 +297,7 @@ func TestResponseRecovery(t *testing.T) {
 				var restoredCalls atomic.Int32
 				restored := serverFixture(
 					t,
-					func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+					func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 						return generatorFunc(func(_ context.Context, request gai.GenerationRequest) (gai.Response, error) {
 							restoredCalls.Add(1)
 							for _, message := range request.Dialog {
@@ -401,7 +401,7 @@ func TestResponseCancellation(t *testing.T) {
 	var calls atomic.Int32
 	fixture := serverFixture(
 		t,
-		func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+		func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 			return streamingFunc(func(ctx context.Context, _ gai.GenerationRequest) iter.Seq[gai.StreamChunk] {
 				return func(yield func(gai.StreamChunk) bool) {
 					calls.Add(1)
@@ -526,7 +526,7 @@ func TestResponseRetryPreservesToolEffects(t *testing.T) {
 	var effects atomic.Int32
 	fixture := serverFixture(
 		t,
-		func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+		func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 			return generator, gai.GenerationOptions{}, nil
 		},
 		func(_ *Config, deps *Dependencies, _ *acp.InitializeRequest) {

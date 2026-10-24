@@ -215,7 +215,7 @@ func serverFixture(t *testing.T, generator GeneratorFactory, configure ...func(*
 	}
 }
 
-func scriptGenerator(_ context.Context, _ models.Model, _ models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+func scriptGenerator(_ context.Context, _ conversation.ID, _ models.Model, _ models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 	return generatorFunc(func(_ context.Context, request gai.GenerationRequest) (gai.Response, error) {
 		last := request.Dialog[len(request.Dialog)-1]
 		if last.Role == gai.ToolResult {
@@ -323,9 +323,17 @@ func TestSessionLifecycle(t *testing.T) {
 				var wantCacheKey string
 				fixture := serverFixture(
 					t,
-					func(ctx context.Context, model models.Model, effort models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+					func(ctx context.Context, sessionID conversation.ID, model models.Model, effort models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+						if string(sessionID) != wantCacheKey {
+							return nil, nil, fmt.Errorf(
+								"provider conversation ID: got %q, want %q",
+								sessionID,
+								wantCacheKey,
+							)
+						}
 						generator, options, err := scriptGenerator(
 							ctx,
+							sessionID,
 							model,
 							effort,
 						)
@@ -565,7 +573,7 @@ func TestSessionCancellation(t *testing.T) {
 					chan struct{},
 					2,
 				)
-				generator := func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+				generator := func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 					return generatorFunc(func(ctx context.Context, request gai.GenerationRequest) (gai.Response, error) {
 						last := request.Dialog[len(request.Dialog)-1]
 						if last.Blocks[0].Content.String() == "wait" {

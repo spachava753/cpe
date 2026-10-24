@@ -131,6 +131,7 @@ func TestCredentialRefreshRequests(t *testing.T) {
 						defer providers.Close()
 						generator, options, err := providers.Generator(
 							t.Context(),
+							"conversation-fixture",
 							refreshModel(),
 							"",
 						)
@@ -246,6 +247,7 @@ func TestCredentialRefreshLifetime(t *testing.T) {
 						defer cancel()
 						generator, options, err := providers.Generator(
 							ctx,
+							"conversation-fixture",
 							refreshModel(),
 							"",
 						)

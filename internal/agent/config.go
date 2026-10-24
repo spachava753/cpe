@@ -55,8 +55,8 @@ type Authenticator interface {
 	Logout(context.Context) error
 }
 
-// GeneratorFactory constructs a generator and options using current credentials.
-type GeneratorFactory func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error)
+// GeneratorFactory constructs conversation-bound providers using current credentials.
+type GeneratorFactory func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error)
 
 func checkConfig(config Config, deps Dependencies) error {
 	if len(config.Models) == 0 || config.SetupTimeout <= 0 {

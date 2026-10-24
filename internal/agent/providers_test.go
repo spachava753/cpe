@@ -45,6 +45,7 @@ func credentialFailure(t *testing.T) error {
 	defer providerSet.Close()
 	generator, options, err := providerSet.Generator(
 		t.Context(),
+		"conversation-fixture",
 		models.Model{
 			ID:  "fixture",
 			API: models.Responses,

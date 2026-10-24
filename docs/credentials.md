@@ -49,6 +49,12 @@ host `chatgpt.com`. Stored OpenCode credentials can be used for models on the
 exact HTTPS host `opencode.ai`. They are never attached to other hosts or plain
 HTTP. The usual ChatGPT subscription endpoint is shown in the README.
 
+OpenCode requests also send `User-Agent: cpe/<version>` and
+`x-opencode-session` with the saved conversation ID for routing and prompt
+caching. The ID stays the same across turns, retries, compaction, and resuming
+that conversation; new conversations and forks have their own IDs. These headers
+are sent whether the API key is configured directly or saved by login.
+
 ## Refreshing ChatGPT access
 
 ChatGPT credentials are checked before every provider request, including later

@@ -368,7 +368,7 @@ func TestSessionProjectInstructions(t *testing.T) {
 				var filesystem afero.Fs
 				fixture := serverFixture(
 					t,
-					func(context.Context, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+					func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 						return generatorFunc(func(_ context.Context, request gai.GenerationRequest) (gai.Response, error) {
 							prompts <- request
 							return gai.Response{
