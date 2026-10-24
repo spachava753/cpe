@@ -361,6 +361,21 @@ without notice support), and retries only the model response when eligible.
 Completed tool effects are not rerun. A checkpoint failure stops retrying, and
 restoring a saved session never automatically restarts an aborted response.
 
+### Prompt caching
+
+CPE uses the saved conversation ID as a stable `prompt_cache_key` for Responses
+and Chat Completions adapters that support it. Turns, tool rounds, retries,
+loading, and resuming reuse that key; forks and new sessions use their own IDs.
+The key helps route requests to cached prefixes; it does not itself enable caching.
+
+Native Anthropic requests use GAI's system and multi-turn caching helpers to add
+`ephemeral` cache controls to the system instructions and latest conversation
+content block. Parallel tool results are ordered consistently so unchanged
+history remains a stable cache prefix. CPE leaves retention at provider defaults
+and does not select OpenAI's explicit breakpoint mode. Cache hits still depend
+on matching prompt prefixes and provider requirements. Provider-reported cache
+reads and writes are included in usage reporting.
+
 ### Usage reporting
 
 ACP `usage_update` notifications report the latest successful generation's input

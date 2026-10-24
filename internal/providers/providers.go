@@ -1,10 +1,12 @@
 package providers
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sync"
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
@@ -202,7 +204,12 @@ func (p *Providers) Generator(ctx context.Context, model models.Model, effort mo
 			anthropicoption.WithAPIKey(key),
 			anthropicoption.WithMaxRetries(0),
 		)
-		generator = gai.NewAnthropicGenerator(&client.Messages)
+		generator = gai.NewAnthropicGenerator(gai.NewAnthropicServiceWrapper(
+			&client.Messages,
+			stabilizeAnthropicToolResults,
+			gai.EnableSystemCaching,
+			gai.EnableMultiTurnCaching,
+		))
 	case models.Gemini:
 		if key == "" {
 			return nil, nil, errors.New("gemini requires an explicit API key")
@@ -229,4 +236,31 @@ func (p *Providers) Generator(ctx context.Context, model models.Model, effort mo
 		)
 	}
 	return generator, options, err
+}
+
+// GAI groups tool results through a map; keep serialized cache prefixes stable.
+func stabilizeAnthropicToolResults(_ context.Context, params *anthropic.MessageNewParams) error {
+	for _, message := range params.Messages {
+		for start := 0; start < len(message.Content); {
+			if message.Content[start].OfToolResult == nil {
+				start++
+				continue
+			}
+			end := start + 1
+			for end < len(message.Content) && message.Content[end].OfToolResult != nil {
+				end++
+			}
+			slices.SortFunc(
+				message.Content[start:end],
+				func(a, b anthropic.ContentBlockParamUnion) int {
+					return cmp.Compare(
+						a.OfToolResult.ToolUseID,
+						b.OfToolResult.ToolUseID,
+					)
+				},
+			)
+			start = end
+		}
+	}
+	return nil
 }

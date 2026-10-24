@@ -293,6 +293,13 @@ func TestProviderHistory(t *testing.T) {
 					},
 				}
 				hooks := &turnHooks{
+					session: &session{
+						record: conversation.Record{
+							Info: conversation.Info{
+								ID: "fixture",
+							},
+						},
+					},
 					modelID: test.selected,
 					model: models.Model{
 						InputModalities: []gai.Modality{

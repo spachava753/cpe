@@ -235,6 +235,14 @@ func TestResponseRecovery(t *testing.T) {
 						len(generator.Requests()),
 					)
 				}
+				for _, request := range generator.Requests() {
+					if request.PromptCacheKey != string(id) {
+						t.Fatalf(
+							"streaming attempt lost the conversation cache key: %q",
+							request.PromptCacheKey,
+						)
+					}
+				}
 				record, err := history.Load(
 					t.Context(),
 					conversation.ID(id),

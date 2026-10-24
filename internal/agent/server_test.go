@@ -320,14 +320,35 @@ func TestSessionLifecycle(t *testing.T) {
 		t.Run(
 			operation,
 			func(t *testing.T) {
+				var wantCacheKey string
 				fixture := serverFixture(
 					t,
-					scriptGenerator,
+					func(ctx context.Context, model models.Model, effort models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+						generator, options, err := scriptGenerator(
+							ctx,
+							model,
+							effort,
+						)
+						return generatorFunc(func(ctx context.Context, request gai.GenerationRequest) (gai.Response, error) {
+							if request.PromptCacheKey == "" || request.PromptCacheKey != wantCacheKey {
+								return gai.Response{}, fmt.Errorf(
+									"prompt cache key: got %q, want %q",
+									request.PromptCacheKey,
+									wantCacheKey,
+								)
+							}
+							return generator.Generate(
+								ctx,
+								request,
+							)
+						}), options, err
+					},
 				)
 				id := openFixtureSession(
 					t,
 					fixture.client,
 				)
+				wantCacheKey = string(id)
 				promptFixture(
 					t,
 					fixture.client,
@@ -441,6 +462,7 @@ func TestSessionLifecycle(t *testing.T) {
 					}
 					return
 				}
+				wantCacheKey = string(target)
 				promptFixture(
 					t,
 					fixture.client,
@@ -505,6 +527,7 @@ func TestSessionLifecycle(t *testing.T) {
 					)
 				}
 				if operation == "fork" {
+					wantCacheKey = string(id)
 					promptFixture(
 						t,
 						fixture.client,

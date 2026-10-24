@@ -24,13 +24,15 @@ func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) 
 
 func TestProviders(t *testing.T) {
 	for _, test := range []struct {
-		name      string
-		base      string
-		api       models.API
-		expired   bool
-		explicit  bool
-		wantKey   string
-		wantError bool
+		name        string
+		base        string
+		api         models.API
+		expired     bool
+		explicit    bool
+		wantKey     string
+		wantError   bool
+		stream      bool
+		toolResults bool
 	}{
 		{
 			name:    "ChatGPT subscription",
@@ -89,6 +91,47 @@ func TestProviders(t *testing.T) {
 			explicit: true,
 			wantKey:  "explicit-fixture",
 		},
+		{
+			name:     "Chat Completions streaming cache key",
+			base:     "https://proxy.invalid/v1/",
+			api:      models.Openai,
+			explicit: true,
+			wantKey:  "explicit-fixture",
+			stream:   true,
+		},
+		{
+			name:     "Responses streaming cache key",
+			base:     "https://proxy.invalid/v1/",
+			api:      models.Responses,
+			explicit: true,
+			wantKey:  "explicit-fixture",
+			stream:   true,
+		},
+		{
+			name:     "Anthropic streaming caching",
+			base:     "https://proxy.invalid/",
+			api:      models.Anthropic,
+			explicit: true,
+			wantKey:  "explicit-fixture",
+			stream:   true,
+		},
+		{
+			name:        "Anthropic tool result caching",
+			base:        "https://proxy.invalid/",
+			api:         models.Anthropic,
+			explicit:    true,
+			wantKey:     "explicit-fixture",
+			toolResults: true,
+		},
+		{
+			name:        "Anthropic streaming tool result caching",
+			base:        "https://proxy.invalid/",
+			api:         models.Anthropic,
+			explicit:    true,
+			wantKey:     "explicit-fixture",
+			stream:      true,
+			toolResults: true,
+		},
 	} {
 		t.Run(
 			test.name,
@@ -131,6 +174,7 @@ func TestProviders(t *testing.T) {
 					}
 				}
 				called := false
+				var toolResultPrefix string
 				providers, err := New(
 					store,
 					"/auth.json",
@@ -162,12 +206,104 @@ func TestProviders(t *testing.T) {
 							if test.wantKey == "access-fixture" && request.Header.Get("ChatGPT-Account-Id") != "account-fixture" {
 								t.Error("missing account header")
 							}
-							var body map[string]any
+							type cacheBlock struct {
+								Type         string            `json:"type"`
+								CacheControl map[string]string `json:"cache_control"`
+								ToolUseID    string            `json:"tool_use_id"`
+								Content      json.RawMessage   `json:"content"`
+							}
+							var body struct {
+								ReasoningEffort string       `json:"reasoning_effort"`
+								PromptCacheKey  string       `json:"prompt_cache_key"`
+								System          []cacheBlock `json:"system"`
+								Messages        []struct {
+									Content json.RawMessage `json:"content"`
+								} `json:"messages"`
+							}
 							if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 								t.Error(err)
 							}
-							if test.api == models.Openai && body["reasoning_effort"] != "high" {
+							if test.api == models.Openai && body.ReasoningEffort != "high" {
 								t.Error("reasoning effort was not applied")
+							}
+							if (test.api == models.Openai || test.api == models.Responses) && body.PromptCacheKey != "conversation-fixture" {
+								t.Errorf(
+									"prompt cache key: %q",
+									body.PromptCacheKey,
+								)
+							}
+							if test.api == models.Anthropic {
+								if len(body.System) != 1 || body.System[0].CacheControl["type"] != "ephemeral" || body.System[0].CacheControl["ttl"] != "" {
+									t.Errorf(
+										"system cache control: %#v",
+										body.System,
+									)
+								}
+								if len(body.Messages) == 0 {
+									t.Error("missing conversation messages")
+								} else {
+									var content []cacheBlock
+									if err := json.Unmarshal(
+										body.Messages[len(body.Messages)-1].Content,
+										&content,
+									); err != nil {
+										t.Error(err)
+									}
+									if len(content) == 0 || content[len(content)-1].CacheControl["type"] != "ephemeral" || content[len(content)-1].CacheControl["ttl"] != "" {
+										t.Errorf(
+											"conversation cache control: %#v",
+											content,
+										)
+									}
+									if len(content) == 2 && content[0].Type == "tool_result" && content[0].CacheControl != nil {
+										t.Errorf(
+											"cache breakpoint must follow all parallel tool results: %#v",
+											content,
+										)
+									}
+								}
+								if test.toolResults {
+									found := false
+									for _, message := range body.Messages {
+										var content []cacheBlock
+										if err := json.Unmarshal(
+											message.Content,
+											&content,
+										); err != nil {
+											t.Error(err)
+										}
+										if len(content) == 0 || content[0].Type != "tool_result" {
+											continue
+										}
+										found = true
+										if len(content) != 2 || content[0].ToolUseID != "first" || content[1].ToolUseID != "second" {
+											t.Errorf(
+												"unstable tool result order: %#v",
+												content,
+											)
+										}
+										// Cache directives move to the newest block as the conversation grows.
+										for i := range content {
+											content[i].CacheControl = nil
+										}
+										prefix, err := json.Marshal(content)
+										if err != nil {
+											t.Error(err)
+										}
+										if toolResultPrefix == "" {
+											toolResultPrefix = string(prefix)
+										} else if string(prefix) != toolResultPrefix {
+											t.Errorf(
+												"unchanged tool result prefix changed: %s != %s",
+												prefix,
+												toolResultPrefix,
+											)
+										}
+									}
+									if !found {
+										t.Error("missing parallel tool results")
+									}
+								}
 							}
 							response := `{"id":"fixture","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`
 							if test.api == models.Anthropic {
@@ -176,11 +312,28 @@ func TestProviders(t *testing.T) {
 							if test.api == models.Responses {
 								response = `{"id":"fixture","object":"response","status":"completed","output":[{"id":"message","type":"message","role":"assistant","content":[{"type":"output_text","text":"ok","annotations":[]}]}]}`
 							}
+							contentType := "application/json"
+							if test.stream {
+								contentType = "text/event-stream"
+								switch test.api {
+								case models.Openai:
+									response = "data: " + `{"choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}` + "\n\ndata: [DONE]\n\n"
+								case models.Responses:
+									response = "data: " + `{"type":"response.output_text.delta","delta":"ok"}` + "\n\ndata: " + `{"type":"response.completed","response":` + response + "}\n\n"
+								case models.Anthropic:
+									response = "event: message_start\ndata: " + `{"type":"message_start","message":{"id":"fixture","type":"message","role":"assistant","model":"fixture","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}` + "\n\n" +
+										"event: content_block_start\ndata: " + `{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}` + "\n\n" +
+										"event: content_block_delta\ndata: " + `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}` + "\n\n" +
+										"event: content_block_stop\ndata: " + `{"type":"content_block_stop","index":0}` + "\n\n" +
+										"event: message_delta\ndata: " + `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}` + "\n\n" +
+										"event: message_stop\ndata: " + `{"type":"message_stop"}` + "\n\n"
+								}
+							}
 							return &http.Response{
 								StatusCode: http.StatusOK,
 								Header: http.Header{
 									"Content-Type": []string{
-										"application/json",
+										contentType,
 									},
 								},
 								Body: io.NopCloser(strings.NewReader(response)),
@@ -223,23 +376,90 @@ func TestProviders(t *testing.T) {
 					}
 					return
 				}
-				_, err = generator.Generate(
-					t.Context(),
-					gai.GenerationRequest{
-						Model: "fixture",
-						Dialog: gai.Dialog{
-							{
-								Role: gai.User,
+				dialog := gai.Dialog{
+					{
+						Role: gai.User,
+						Blocks: []gai.Block{
+							gai.TextBlock("hello"),
+						},
+					},
+				}
+				if test.toolResults {
+					var calls []gai.Block
+					for _, id := range []string{
+						"first",
+						"second",
+					} {
+						call, err := gai.ToolCallBlock(
+							id,
+							"lookup",
+							map[string]any{},
+						)
+						if err != nil {
+							t.Fatal(err)
+						}
+						calls = append(
+							calls,
+							call,
+						)
+					}
+					dialog = append(
+						dialog,
+						gai.Message{
+							Role:   gai.Assistant,
+							Blocks: calls,
+						},
+						gai.ToolResultMessage(
+							"first",
+							gai.TextBlock("first result"),
+						),
+						gai.ToolResultMessage(
+							"second",
+							gai.TextBlock("second result"),
+						),
+					)
+				}
+				if test.stream {
+					generator = &gai.StreamingAdapter{
+						S: generator.(gai.StreamingGenerator),
+					}
+				}
+				request := gai.GenerationRequest{
+					Model:          "fixture",
+					PromptCacheKey: "conversation-fixture",
+					Instructions:   gai.SystemMessage(gai.TextBlock("system fixture")),
+					Dialog:         dialog,
+					Options:        options,
+				}
+				repetitions := 1
+				if test.toolResults {
+					// Repeated serialization exposes nondeterministic tool-result map iteration.
+					repetitions = 64
+				}
+				for attempt := range repetitions {
+					if test.toolResults && attempt == repetitions/2 {
+						request.Dialog = append(
+							request.Dialog,
+							gai.Message{
+								Role: gai.Assistant,
 								Blocks: []gai.Block{
-									gai.TextBlock("hello"),
+									gai.TextBlock("ok"),
 								},
 							},
-						},
-						Options: options,
-					},
-				)
-				if err != nil {
-					t.Fatal(err)
+							gai.Message{
+								Role: gai.User,
+								Blocks: []gai.Block{
+									gai.TextBlock("continue"),
+								},
+							},
+						)
+					}
+					if _, err := generator.Generate(
+						t.Context(),
+						request,
+					); err != nil {
+						t.Fatal(err)
+					}
 				}
 				if !called {
 					t.Fatal("provider did not use injected HTTP client")

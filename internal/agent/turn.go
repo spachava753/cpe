@@ -281,6 +281,7 @@ func (h *turnHooks) BeforeGeneration(ctx context.Context, event gaiagent.BeforeG
 		}
 	}
 	request := event.Request
+	request.PromptCacheKey = string(h.session.record.Info.ID)
 	request.Dialog = nil
 	for _, message := range h.compaction.WorkingDialog(event.Request.Dialog) {
 		foreign := message.Role == gai.Assistant && message.ExtraFields["cpe.model"] != string(h.modelID)
