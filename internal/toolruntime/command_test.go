@@ -19,10 +19,10 @@ func TestCommandRunner(t *testing.T) {
 	for _, test := range []struct {
 		name      string
 		command   string
+		want      string
 		input     []byte
 		timeout   time.Duration
 		code      int
-		want      string
 		cancelled bool
 	}{
 		{

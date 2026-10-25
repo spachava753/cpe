@@ -19,13 +19,13 @@ import (
 const httpScheme = "http"
 
 func parseMCP(data []byte, pkg packageFS) (map[string]MCPServer, []error, error) {
-	fields, err := jsonObject(data)
-	if err != nil {
-		return nil, nil, err
+	fields, parseErr := jsonObject(data)
+	if parseErr != nil {
+		return nil, nil, parseErr
 	}
-	validators, err := mcpSchemas()
-	if err != nil {
-		return nil, nil, err
+	validators, parseErr := mcpSchemas()
+	if parseErr != nil {
+		return nil, nil, parseErr
 	}
 	if err := validateMCPEnvelope(
 		data,
@@ -33,11 +33,11 @@ func parseMCP(data []byte, pkg packageFS) (map[string]MCPServer, []error, error)
 	); err != nil {
 		return nil, nil, err
 	}
-	entries, err := jsonObject(fields["mcpServers"])
-	if err != nil {
+	entries, parseErr := jsonObject(fields["mcpServers"])
+	if parseErr != nil {
 		return nil, nil, fmt.Errorf(
 			"mcpServers: %w",
-			err,
+			parseErr,
 		)
 	}
 	servers := make(map[string]MCPServer)
@@ -65,9 +65,9 @@ func parseMCP(data []byte, pkg packageFS) (map[string]MCPServer, []error, error)
 }
 
 func parseServer(data []byte, pkg packageFS, schema *jsonschema.Resolved) (MCPServer, error) {
-	fields, err := jsonObject(data)
-	if err != nil {
-		return MCPServer{}, err
+	fields, parseErr := jsonObject(data)
+	if parseErr != nil {
+		return MCPServer{}, parseErr
 	}
 	var instance any
 	if err := json.Unmarshal(
@@ -96,13 +96,13 @@ func parseServer(data []byte, pkg packageFS, schema *jsonschema.Resolved) (MCPSe
 		}
 	}
 	var config struct {
-		Type    Transport         `json:"type"`
-		Command string            `json:"command"`
-		Args    []string          `json:"args"`
 		Env     map[string]string `json:"env"`
 		Cwd     *string           `json:"cwd"`
-		URL     string            `json:"url"`
 		Headers map[string]string `json:"headers"`
+		Type    Transport         `json:"type"`
+		Command string            `json:"command"`
+		URL     string            `json:"url"`
+		Args    []string          `json:"args"`
 	}
 	if err := json.Unmarshal(
 		data,
@@ -136,8 +136,8 @@ func parseServer(data []byte, pkg packageFS, schema *jsonschema.Resolved) (MCPSe
 		return server, nil
 	}
 	endpoint := config.URL
-	parsed, err := url.Parse(endpoint)
-	if err != nil || parsed.Hostname() == "" || (parsed.Scheme != httpScheme && parsed.Scheme != "https") || parsed.User != nil || strings.Contains(
+	parsed, parseErr := url.Parse(endpoint)
+	if parseErr != nil || parsed.Hostname() == "" || (parsed.Scheme != httpScheme && parsed.Scheme != "https") || parsed.User != nil || strings.Contains(
 		endpoint,
 		"#",
 	) {

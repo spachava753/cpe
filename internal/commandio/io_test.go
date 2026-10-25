@@ -16,11 +16,11 @@ func TestIO(t *testing.T) {
 	input := strings.NewReader("input")
 	var output, diagnostics bytes.Buffer
 	for _, test := range []struct {
-		name    string
 		streams commandio.IO
 		in      io.Reader
 		out     io.Writer
 		err     io.Writer
+		name    string
 	}{
 		{
 			name: "process streams",
@@ -76,8 +76,8 @@ func TestUseJSON(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = reader.Close(); _ = pipe.Close() })
 	type jsonCase struct {
-		name      string
 		output    io.Writer
+		name      string
 		requested bool
 		want      bool
 	}
@@ -163,10 +163,10 @@ func (writer failingWriter) Write([]byte) (int, error) { return 0, writer.err }
 func TestWriteTable(t *testing.T) {
 	writeErr := errors.New("write failed")
 	for _, test := range []struct {
-		name     string
-		rows     [][]string
 		writeErr error
 		wantErr  error
+		name     string
+		rows     [][]string
 	}{
 		{
 			name:     "empty results do not write",

@@ -27,12 +27,12 @@ const httpsScheme = "https"
 // ChatGPT credentials are refreshed near expiry and reread for every HTTP request.
 type Providers struct {
 	store   *auth.Store
-	path    string
 	client  *http.Client
+	refresh *credentialRefresh
+	path    string
+	workers sync.WaitGroup
 	mu      sync.Mutex
 	closed  bool
-	refresh *credentialRefresh
-	workers sync.WaitGroup
 }
 
 // New binds the credential store and HTTP client used for model execution.
@@ -103,8 +103,8 @@ func (p *Providers) Generator(ctx context.Context, sessionID conversation.ID, mo
 	if model.APIKey != nil {
 		key = model.APIKey.ExposeSecret()
 	}
-	codex := model.API == models.Responses && model.BaseUrl.Scheme == httpsScheme && model.BaseUrl.Host == "chatgpt.com"
-	opencode := model.BaseUrl.Scheme == httpsScheme && model.BaseUrl.Host == "opencode.ai"
+	codex := model.API == models.Responses && model.BaseURL.Scheme == httpsScheme && model.BaseURL.Host == "chatgpt.com"
+	opencode := model.BaseURL.Scheme == httpsScheme && model.BaseURL.Host == "opencode.ai"
 	if opencode && sessionID == "" {
 		return nil, nil, errors.New("OpenCode requires a conversation ID")
 	}
@@ -164,7 +164,7 @@ func (p *Providers) Generator(ctx context.Context, sessionID conversation.ID, mo
 	if len(model.ExtraFields) != 0 {
 		gai.WithOpenAIExtraBody(model.ExtraFields)(options)
 	}
-	base := model.BaseUrl.String()
+	base := model.BaseURL.String()
 	var generator gai.Generator
 	var err error
 	switch model.API {

@@ -26,18 +26,18 @@ func TestSessionDiscovery(t *testing.T) {
 	const manifest = `{"$schema":"` + schema + `","name":"example","description":"Example plugin summary.\nAdditional metadata."}`
 	const instructions = "Fixture server summary.\nDetailed server instructions."
 	for _, test := range []struct {
-		name            string
-		manifest        string
-		mcp             bool
-		notices         bool
-		wantWarning     bool
-		wantError       bool
-		missingRoot     bool
-		missingManifest bool
 		code            string
+		manifest        string
+		name            string
 		wantOutput      string
-		wantConnections int32
 		wantCalls       int32
+		wantConnections int32
+		wantWarning     bool
+		missingManifest bool
+		missingRoot     bool
+		wantError       bool
+		notices         bool
+		mcp             bool
 		connectError    bool
 		reopen          bool
 		multipleServers bool
@@ -412,15 +412,15 @@ func TestSessionDiscovery(t *testing.T) {
 					if connections.Load() != test.wantConnections {
 						t.Fatal("repeated calls opened new connections")
 					}
-					fork, err := fixture.client.ForkSession(
+					fork, forkErr := fixture.client.ForkSession(
 						t.Context(),
 						&acp.ForkSessionRequest{
 							SessionID: response.SessionID,
 							Cwd:       "/work",
 						},
 					)
-					if err != nil {
-						t.Fatal(err)
+					if forkErr != nil {
+						t.Fatal(forkErr)
 					}
 					if _, err := fixture.client.CloseSession(
 						t.Context(),
@@ -443,7 +443,7 @@ func TestSessionDiscovery(t *testing.T) {
 							t.Fatal(err)
 						}
 						if operation == "load" {
-							_, err = fixture.client.LoadSession(
+							_, forkErr = fixture.client.LoadSession(
 								t.Context(),
 								&acp.LoadSessionRequest{
 									SessionID: response.SessionID,
@@ -451,7 +451,7 @@ func TestSessionDiscovery(t *testing.T) {
 								},
 							)
 						} else {
-							_, err = fixture.client.ResumeSession(
+							_, forkErr = fixture.client.ResumeSession(
 								t.Context(),
 								&acp.ResumeSessionRequest{
 									SessionID: response.SessionID,
@@ -459,8 +459,8 @@ func TestSessionDiscovery(t *testing.T) {
 								},
 							)
 						}
-						if err != nil {
-							t.Fatal(err)
+						if forkErr != nil {
+							t.Fatal(forkErr)
 						}
 					}
 				}

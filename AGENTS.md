@@ -64,6 +64,24 @@ version/       Build-time version information
 - Do not add tests in the main package; test behavior in the relevant internal
   package.
 
+## Documentation
+
+- Keep `README.md` focused on users: setup, configuration, and usage.
+- Put implementation details in code comments or relevant developer documentation.
+  Do not duplicate code or configuration inventories, or add task-specific design
+  explanations, to the README.
+- Use `docs/` to explain current architecture and behavior for readers: lifetimes,
+  guarantees, failure cases, and limitations. Avoid source-code tours, symbol
+  inventories, and task histories.
+- Update affected guides in the same change when documented behavior changes.
+  Internal refactors alone do not require documentation changes.
+- Prefer updating an existing guide over adding a new one. When adding, moving,
+  or removing guides, keep the `docs/README.md` index and relative links accurate.
+- Keep shared explanations and reference values in one place; link to them rather
+  than copying them between guides or the README.
+- Describe implemented behavior, not plans or intended behavior. Verify claims
+  and examples against the code and tests.
+
 ## Repository workflow
 
 - Run `go test ./...` for tests and `go run ./build lint` for the combined

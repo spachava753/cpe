@@ -19,24 +19,24 @@ import (
 )
 
 type sessionSpec struct {
+	servers map[mcpclient.ServerID]plugins.MCPServer
 	id      conversation.ID
 	cwd     string
-	servers map[mcpclient.ServerID]plugins.MCPServer
 }
 
 type session struct {
+	record              conversation.Record
+	deps                Dependencies
+	lifetime            context.Context
+	runtime             toolruntime.Host
+	active              *turn
+	client              *sessionClient
+	mcp                 *mcpclient.Registry
+	projectInstructions string
+	catalog             commandCatalog
+	config              Config
 	mu                  sync.Mutex
 	closed              bool
-	active              *turn
-	lifetime            context.Context
-	config              Config
-	deps                Dependencies
-	client              *sessionClient
-	record              conversation.Record
-	catalog             commandCatalog
-	projectInstructions string
-	runtime             toolruntime.Host
-	mcp                 *mcpclient.Registry
 }
 
 func newSession(setup context.Context, lifetime context.Context, spec sessionSpec, record conversation.Record, config Config, deps Dependencies, client *sessionClient) (*session, error) {

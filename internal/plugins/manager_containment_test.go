@@ -20,11 +20,11 @@ func TestManagerContainment(t *testing.T) {
 		name         string
 		link         string
 		target       string
+		wantFile     string
+		errText      string
 		absolute     bool
 		manifestLink bool
 		rootLink     bool
-		wantFile     string
-		errText      string
 	}{
 		{
 			name:     "contained file link materialized",
@@ -156,7 +156,7 @@ func TestManagerContainment(t *testing.T) {
 					},
 					afero.NewOsFs(),
 				)
-				result, err := manager.Install(
+				result, installErr := manager.Install(
 					t.Context(),
 					plugins.InstallRequest{
 						Source:    managerSource,
@@ -165,14 +165,14 @@ func TestManagerContainment(t *testing.T) {
 					},
 				)
 				if test.errText != "" {
-					if err == nil || !strings.Contains(
-						err.Error(),
+					if installErr == nil || !strings.Contains(
+						installErr.Error(),
 						test.errText,
 					) || result != nil {
 						t.Fatalf(
 							"Install = %#v, %v; want %q",
 							result,
-							err,
+							installErr,
 							test.errText,
 						)
 					}
@@ -184,11 +184,11 @@ func TestManagerContainment(t *testing.T) {
 					}
 					return
 				}
-				if err != nil || len(result) != 1 {
+				if installErr != nil || len(result) != 1 {
 					t.Fatalf(
 						"Install = %#v, %v",
 						result,
-						err,
+						installErr,
 					)
 				}
 				filename := filepath.Join(
@@ -196,20 +196,20 @@ func TestManagerContainment(t *testing.T) {
 					"alpha",
 					filepath.FromSlash(test.wantFile),
 				)
-				info, err := os.Lstat(filename)
-				if err != nil || !info.Mode().IsRegular() {
+				info, installErr := os.Lstat(filename)
+				if installErr != nil || !info.Mode().IsRegular() {
 					t.Fatal("contained link was not materialized into a regular file")
 				}
-				data, err := os.ReadFile(filename)
+				data, installErr := os.ReadFile(filename)
 				want := "support"
 				if test.manifestLink {
 					want = alphaPlugin
 				}
-				if err != nil || string(data) != want {
+				if installErr != nil || string(data) != want {
 					t.Fatalf(
 						"materialized file = %q, %v",
 						data,
-						err,
+						installErr,
 					)
 				}
 			},
@@ -220,8 +220,8 @@ func TestManagerContainment(t *testing.T) {
 func TestManagerDestinationLinks(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
-		name      string
 		operation func(*plugins.Manager, *testing.T) error
+		name      string
 	}{
 		{
 			name: "override does not replace a linked package",
@@ -309,8 +309,8 @@ func TestManagerDestinationLinks(t *testing.T) {
 		)
 	}
 	for _, test := range []struct {
-		name string
 		path func(string) string
+		name string
 	}{
 		{
 			name: "intermediate link with native separators",

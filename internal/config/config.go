@@ -1,3 +1,4 @@
+// Package config locates and loads runtime configuration.
 package config
 
 import (

@@ -135,8 +135,8 @@ func TestDeviceResponse(t *testing.T) {
 func TestPollDevice(t *testing.T) {
 	for _, test := range []struct {
 		name     string
-		statuses []int
 		body     string
+		statuses []int
 		cancel   bool
 		wantErr  bool
 	}{
@@ -355,7 +355,7 @@ func TestDeviceLogin(t *testing.T) {
 					credentialFile,
 				)
 				var output, diagnostics bytes.Buffer
-				err := login(
+				loginErr := login(
 					context.Background(),
 					store,
 					LoginOptions{
@@ -374,10 +374,10 @@ func TestDeviceLogin(t *testing.T) {
 						},
 					},
 				)
-				if (err != nil) != test.wantErr {
+				if (loginErr != nil) != test.wantErr {
 					t.Fatalf(
 						"error: %v",
-						err,
+						loginErr,
 					)
 				}
 				for _, secret := range []string{
@@ -408,12 +408,12 @@ func TestDeviceLogin(t *testing.T) {
 				) {
 					t.Error("missing device instructions")
 				}
-				data, err := afero.ReadFile(
+				data, loginErr := afero.ReadFile(
 					filesystem,
 					path,
 				)
-				if err != nil {
-					t.Fatal(err)
+				if loginErr != nil {
+					t.Fatal(loginErr)
 				}
 				var document Credentials
 				if err := json.Unmarshal(

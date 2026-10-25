@@ -19,12 +19,12 @@ import (
 func TestPluginsCommands(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
-		name    string
-		args    []string
 		install *plugins.InstallOptions
 		list    *plugins.ListOptions
 		remove  *plugins.RemoveOptions
+		name    string
 		err     string
+		args    []string
 	}{
 		{
 			name: "install global",

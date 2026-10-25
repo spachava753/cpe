@@ -110,10 +110,11 @@ func TestLoadValidPlugins(t *testing.T) {
 
 func TestLoadInvalidManifests(t *testing.T) {
 	for _, change := range []struct {
-		name, field string
-		value       any
-		omit        bool
-		text        string
+		value any
+		name  string
+		field string
+		text  string
+		omit  bool
 	}{
 		{
 			name:  "missing schema",
@@ -332,12 +333,13 @@ func TestLoadInvalidManifests(t *testing.T) {
 
 func TestLoadComponentIsolation(t *testing.T) {
 	for _, change := range []struct {
-		name, field string
-		value       any
-		manifest    bool
-		wholeMCP    string
-		serverJSON  string
-		skill       bool
+		value      any
+		name       string
+		field      string
+		wholeMCP   string
+		serverJSON string
+		manifest   bool
+		skill      bool
 	}{
 		{
 			name:     "unknown manifest field",
@@ -669,9 +671,10 @@ func TestLoadComponentIsolation(t *testing.T) {
 
 func TestLoadRemoteServers(t *testing.T) {
 	for _, test := range []struct {
-		name, endpoint string
-		headers        map[string]any
-		valid          bool
+		headers  map[string]any
+		name     string
+		endpoint string
+		valid    bool
 	}{
 		{
 			name:     "HTTPS",
@@ -825,13 +828,14 @@ func TestLoadRemoteServers(t *testing.T) {
 
 func TestLoadFilesystem(t *testing.T) {
 	for _, test := range []struct {
-		name            string
-		files           fstest.MapFS
-		fault           string
-		fatal           bool
-		cause           error
-		skills, servers int
-		diagnostic      bool
+		cause      error
+		files      fstest.MapFS
+		name       string
+		fault      string
+		skills     int
+		servers    int
+		fatal      bool
+		diagnostic bool
 	}{
 		{
 			name:  "empty",
@@ -975,10 +979,13 @@ func TestLoadFilesystem(t *testing.T) {
 
 func TestLoadContainment(t *testing.T) {
 	for _, test := range []struct {
-		name, link, target string
-		fatal              bool
-		skills, servers    int
-		diagnostic         bool
+		name       string
+		link       string
+		target     string
+		skills     int
+		servers    int
+		fatal      bool
+		diagnostic bool
 	}{
 		{
 			name:    "internal manifest link",
@@ -1302,8 +1309,8 @@ func FuzzLoadPluginFiles(f *testing.F) {
 }
 
 type pluginFixture struct {
-	want  plugins.Plugin
 	files fstest.MapFS
+	want  plugins.Plugin
 }
 
 func pluginGenerator() *rapid.Generator[pluginFixture] {

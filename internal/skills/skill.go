@@ -17,6 +17,8 @@ import (
 
 // Skill contains parsed Agent Skills frontmatter and its definition's location.
 type Skill struct {
+	// Metadata preserves client-specific attributes, including nested values.
+	Metadata map[string]any
 	// Name is the skill identifier declared in frontmatter.
 	Name string
 	// Description explains what the skill does and when to use it.
@@ -25,17 +27,15 @@ type Skill struct {
 	License string
 	// Compatibility describes environment requirements (up to 500 characters).
 	Compatibility string
-	// Metadata preserves client-specific attributes, including nested values.
-	Metadata map[string]any
-	// AllowedTools lists tool names parsed from the allowed-tools field.
-	AllowedTools []string
-	// InvocationDisabled indicates that the model should not invoke this skill.
-	InvocationDisabled bool
 	// Path names SKILL.md. Loaded paths are source-relative slash paths;
 	// installed paths include the supplied installation root and use native syntax.
 	Path string
+	// AllowedTools lists tool names parsed from the allowed-tools field.
+	AllowedTools []string
 	// Violations records non-fatal length and directory-name warnings.
 	Violations []string `json:",omitempty"`
+	// InvocationDisabled indicates that the model should not invoke this skill.
+	InvocationDisabled bool
 }
 
 // ProjectPath returns the default skill directory, cwd/.agents/skills.
@@ -172,45 +172,45 @@ func parseSkill(data []byte, filename string) (Skill, error) {
 	var allowedTools string
 	for _, field := range []struct {
 		node     *yaml.Node
-		name     string
-		required bool
-		limit    int
 		value    *string
+		name     string
+		limit    int
+		required bool
 	}{
 		{
-			&fields.Name,
-			"name",
-			true,
-			0,
-			&skill.Name,
+			node:     &fields.Name,
+			value:    &skill.Name,
+			name:     "name",
+			limit:    0,
+			required: true,
 		},
 		{
-			&fields.Description,
-			"description",
-			true,
-			0,
-			&skill.Description,
+			node:     &fields.Description,
+			value:    &skill.Description,
+			name:     "description",
+			limit:    0,
+			required: true,
 		},
 		{
-			&fields.License,
-			"license",
-			false,
-			0,
-			&skill.License,
+			node:     &fields.License,
+			value:    &skill.License,
+			name:     "license",
+			limit:    0,
+			required: false,
 		},
 		{
-			&fields.Compatibility,
-			"compatibility",
-			fields.Compatibility.Kind != 0,
-			500,
-			&skill.Compatibility,
+			node:     &fields.Compatibility,
+			value:    &skill.Compatibility,
+			name:     "compatibility",
+			limit:    500,
+			required: fields.Compatibility.Kind != 0,
 		},
 		{
-			&fields.AllowedTools,
-			"allowed-tools",
-			false,
-			0,
-			&allowedTools,
+			node:     &fields.AllowedTools,
+			value:    &allowedTools,
+			name:     "allowed-tools",
+			limit:    0,
+			required: false,
 		},
 	} {
 		value, err := skillString(

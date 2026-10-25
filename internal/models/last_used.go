@@ -16,9 +16,9 @@ import (
 // LastUsed stores the model to prefer for new sessions, separately from session selections.
 // Reads and writes are safe across concurrent sessions; writes replace the file atomically.
 type LastUsed struct {
-	mu         sync.Mutex
 	filesystem afero.Fs
 	filename   string
+	mu         sync.Mutex
 }
 
 type lastUsedModel struct {
@@ -92,11 +92,11 @@ func (s *LastUsed) Save(ctx context.Context, model ID) error {
 		return err
 	}
 	directory := filepath.Dir(s.filename)
-	if err := s.filesystem.MkdirAll(
+	if mkdirErr := s.filesystem.MkdirAll(
 		directory,
 		0o700,
-	); err != nil {
-		return err
+	); mkdirErr != nil {
+		return mkdirErr
 	}
 	file, err := afero.TempFile(
 		s.filesystem,

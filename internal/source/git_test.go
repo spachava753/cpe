@@ -536,8 +536,8 @@ func TestGitClientFetch(t *testing.T) {
 					cancel()
 				}
 				source := test.source
-				var checkout acquisition.Checkout
-				var err error
+				var resultCheckout acquisition.Checkout
+				var fetchErr error
 				if test.duringClone {
 					// Hold the HTTP response open, then cancel only after Git reaches it.
 					// Fetch must return AND its transport must disconnect without a reply.
@@ -597,7 +597,7 @@ func TestGitClientFetch(t *testing.T) {
 					cancel()
 					select {
 					case result := <-finished:
-						checkout, err = result.checkout, result.err
+						resultCheckout, fetchErr = result.checkout, result.err
 					case <-time.After(5 * time.Second):
 						t.Fatal("cancelled clone did not return while server withheld response")
 					}
@@ -607,7 +607,7 @@ func TestGitClientFetch(t *testing.T) {
 						t.Error("cancelled transport still owns server connection")
 					}
 				} else {
-					checkout, err = (acquisition.GitClient{}).Fetch(
+					resultCheckout, fetchErr = (acquisition.GitClient{}).Fetch(
 						ctx,
 						source,
 					)
@@ -615,58 +615,58 @@ func TestGitClientFetch(t *testing.T) {
 				// Check the operation's error before inspecting failure or success state.
 				if test.wantErr != nil {
 					if !errors.Is(
-						err,
+						fetchErr,
 						test.wantErr,
 					) {
 						t.Fatalf(
 							"error = %v, want cause %v",
-							err,
+							fetchErr,
 							test.wantErr,
 						)
 					}
 				} else if test.errText != "" {
-					if err == nil || !strings.Contains(
-						err.Error(),
+					if fetchErr == nil || !strings.Contains(
+						fetchErr.Error(),
 						test.errText,
 					) {
 						t.Fatalf(
 							"error = %v, want %q",
-							err,
+							fetchErr,
 							test.errText,
 						)
 					}
-				} else if err != nil {
-					t.Fatal(err)
+				} else if fetchErr != nil {
+					t.Fatal(fetchErr)
 				}
-				if test.wantText != "" && (err == nil || !strings.Contains(
-					err.Error(),
+				if test.wantText != "" && (fetchErr == nil || !strings.Contains(
+					fetchErr.Error(),
 					test.wantText,
 				)) {
 					t.Fatalf(
 						"error = %v, want readable text %q",
-						err,
+						fetchErr,
 						test.wantText,
 					)
 				}
-				if err != nil {
+				if fetchErr != nil {
 					// Failure returns no usable checkout and must not expose the password.
-					if checkout.FS != nil || checkout.Cleanup != nil {
+					if resultCheckout.FS != nil || resultCheckout.Cleanup != nil {
 						t.Error("failed acquisition returned a checkout")
 					}
 					if strings.Contains(
-						err.Error(),
+						fetchErr.Error(),
 						"fixture-secret",
 					) {
 						t.Error("password disclosed in error")
 					}
 				} else {
-					if checkout.FS == nil || checkout.Cleanup == nil {
+					if resultCheckout.FS == nil || resultCheckout.Cleanup == nil {
 						t.Fatal("missing checkout filesystem or cleanup")
 					}
 					// This defer protects against early test failure. Explicit releases below
 					// also let us assert the filesystem's state after cleanup.
 					defer func() {
-						if err := checkout.Cleanup(); err != nil {
+						if err := resultCheckout.Cleanup(); err != nil {
 							t.Error(err)
 						}
 					}()
@@ -674,7 +674,7 @@ func TestGitClientFetch(t *testing.T) {
 					// Empty repositories may contain Git's own bookkeeping, but no payload.
 					if test.empty {
 						entries, err := fs.ReadDir(
-							checkout.FS,
+							resultCheckout.FS,
 							".",
 						)
 						if err != nil {
@@ -701,7 +701,7 @@ func TestGitClientFetch(t *testing.T) {
 							}),
 						} {
 							data, readErr := fs.ReadFile(
-								checkout.FS,
+								resultCheckout.FS,
 								name,
 							)
 							if readErr != nil || string(data) != want {
@@ -714,7 +714,7 @@ func TestGitClientFetch(t *testing.T) {
 							}
 						}
 						info, statErr := fs.Stat(
-							checkout.FS,
+							resultCheckout.FS,
 							"scripts/run.sh",
 						)
 						if statErr != nil || info.Mode().Perm()&0o111 == 0 {
@@ -725,7 +725,7 @@ func TestGitClientFetch(t *testing.T) {
 							)
 						}
 						if _, readErr := fs.ReadFile(
-							checkout.FS,
+							resultCheckout.FS,
 							"untracked.txt",
 						); !errors.Is(
 							readErr,
@@ -742,7 +742,7 @@ func TestGitClientFetch(t *testing.T) {
 							"/SKILL.md",
 						} {
 							if _, readErr := fs.ReadFile(
-								checkout.FS,
+								resultCheckout.FS,
 								name,
 							); !errors.Is(
 								readErr,
@@ -756,7 +756,7 @@ func TestGitClientFetch(t *testing.T) {
 							}
 						}
 						if _, readErr := fs.ReadDir(
-							checkout.FS,
+							resultCheckout.FS,
 							"nested",
 						); readErr != nil {
 							t.Fatal(readErr)
@@ -777,7 +777,7 @@ func TestGitClientFetch(t *testing.T) {
 								t.Error(err)
 							}
 						}()
-						if err := checkout.Cleanup(); err != nil {
+						if err := resultCheckout.Cleanup(); err != nil {
 							t.Fatal(err)
 						}
 						data, readErr := fs.ReadFile(
@@ -808,7 +808,7 @@ func TestGitClientFetch(t *testing.T) {
 							entries[0].Name(),
 						)
 					}
-					if err := checkout.Cleanup(); err != nil {
+					if err := resultCheckout.Cleanup(); err != nil {
 						t.Fatal(err)
 					}
 					if test.reusedPath {
@@ -830,7 +830,7 @@ func TestGitClientFetch(t *testing.T) {
 						}
 						defer os.RemoveAll(releasedPath)
 					}
-					if err := checkout.Cleanup(); err != nil {
+					if err := resultCheckout.Cleanup(); err != nil {
 						t.Errorf(
 							"repeated cleanup = %v",
 							err,
@@ -855,7 +855,7 @@ func TestGitClientFetch(t *testing.T) {
 					// The released checkout is gone, but the original repository and its
 					// untracked workspace file must remain untouched.
 					if _, readErr := fs.ReadDir(
-						checkout.FS,
+						resultCheckout.FS,
 						".",
 					); !errors.Is(
 						readErr,

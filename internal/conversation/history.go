@@ -25,22 +25,22 @@ type ID string
 
 // Info describes saved history, not a live execution.
 type Info struct {
-	ID        ID
+	UpdatedAt time.Time
 	ParentID  *ID
+	ID        ID
 	Cwd       string
 	Title     string
-	UpdatedAt time.Time
 }
 
 // Record checkpoints conversation, configuration, and session KV data, never live resources.
 type Record struct {
 	Info       Info
-	Options    models.Selection
-	Dialog     gai.Dialog
-	Compaction *Compaction
 	Usage      TokenUsage
+	Compaction *Compaction
 	// KV holds opaque runtime-encoded values by session-local key.
-	KV map[string][]byte
+	KV      map[string][]byte
+	Options models.Selection
+	Dialog  gai.Dialog
 }
 
 // Query filters saved conversations. Cursor is the last returned session ID.
@@ -52,8 +52,8 @@ type Query struct {
 
 // Page contains saved sessions and an optional continuation cursor.
 type Page struct {
-	Sessions   []Info
 	NextCursor string
+	Sessions   []Info
 }
 
 // Store persists whole checkpoints atomically; returned records are owned.
@@ -78,9 +78,9 @@ func NewStore(directory string) (Store, error) {
 }
 
 type fileSessionStore struct {
-	mu         sync.Mutex
 	filesystem afero.Fs
 	directory  string
+	mu         sync.Mutex
 }
 
 func (s *fileSessionStore) filename(id ID) (string, error) {
@@ -113,11 +113,11 @@ func (s *fileSessionStore) Save(ctx context.Context, record Record) error {
 	if err != nil {
 		return err
 	}
-	if err := s.filesystem.MkdirAll(
+	if mkdirErr := s.filesystem.MkdirAll(
 		s.directory,
 		0o700,
-	); err != nil {
-		return err
+	); mkdirErr != nil {
+		return mkdirErr
 	}
 	file, err := afero.TempFile(
 		s.filesystem,

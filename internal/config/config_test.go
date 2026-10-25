@@ -16,11 +16,11 @@ import (
 
 func TestLoadConfig(t *testing.T) {
 	for _, test := range []struct {
-		name            string
-		content         string
 		openErr         error
 		readErr         error
 		wantErr         error
+		name            string
+		content         string
 		wantSyntaxError bool
 	}{
 		{

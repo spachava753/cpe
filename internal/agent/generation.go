@@ -142,10 +142,10 @@ func (g *responseGenerator) generate(ctx context.Context, request gai.Generation
 
 type responseStream struct {
 	source      gai.StreamingGenerator
-	hooks       *turnHooks
-	partial     bool
 	deliveryErr error
+	hooks       *turnHooks
 	metadata    gai.Metadata
+	partial     bool
 }
 
 func (s *responseStream) Stream(ctx context.Context, request gai.GenerationRequest) iter.Seq[gai.StreamChunk] {

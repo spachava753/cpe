@@ -28,12 +28,12 @@ func TestProviders(t *testing.T) {
 	for _, test := range []struct {
 		name        string
 		base        string
-		api         models.API
 		effort      models.ReasoningLevel
-		expired     bool
-		explicit    bool
 		wantKey     string
 		wantSession string
+		api         models.API
+		expired     bool
+		explicit    bool
 		noSession   bool
 		wantError   bool
 		stream      bool
@@ -368,7 +368,7 @@ func TestProviders(t *testing.T) {
 				called := false
 				wantSession := test.wantSession
 				var toolResultPrefix string
-				providers, err := New(
+				providers, providerErr := New(
 					store,
 					"/auth.json",
 					&http.Client{
@@ -608,17 +608,17 @@ func TestProviders(t *testing.T) {
 						}),
 					},
 				)
-				if err != nil {
-					t.Fatal(err)
+				if providerErr != nil {
+					t.Fatal(providerErr)
 				}
 				t.Cleanup(providers.Close)
-				base, err := url.Parse(test.base)
-				if err != nil {
-					t.Fatal(err)
+				base, providerErr := url.Parse(test.base)
+				if providerErr != nil {
+					t.Fatal(providerErr)
 				}
 				model := models.Model{
 					ID:        "fixture",
-					BaseUrl:   *base,
+					BaseURL:   *base,
 					API:       test.api,
 					MaxTokens: 64,
 				}
@@ -630,16 +630,16 @@ func TestProviders(t *testing.T) {
 				if test.noSession {
 					sessionID = ""
 				}
-				generator, options, err := providers.Generator(
+				generator, options, providerErr := providers.Generator(
 					t.Context(),
 					sessionID,
 					model,
 					test.effort,
 				)
-				if (err != nil) != test.wantError {
+				if (providerErr != nil) != test.wantError {
 					t.Fatalf(
 						"generator: %v",
-						err,
+						providerErr,
 					)
 				}
 				if test.wantError {
@@ -772,11 +772,11 @@ func TestProviders(t *testing.T) {
 				if err := providers.Logout(context.Background()); err != nil {
 					t.Fatal(err)
 				}
-				remaining, err := store.Retrieve(
+				remaining, providerErr := store.Retrieve(
 					t.Context(),
 					"/auth.json",
 				)
-				if err != nil || remaining.OpenAI != nil || remaining.OpenCode != nil {
+				if providerErr != nil || remaining.OpenAI != nil || remaining.OpenCode != nil {
 					t.Fatal("logout did not clear local credentials")
 				}
 			},

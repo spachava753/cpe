@@ -68,9 +68,9 @@ func TestParseProvider(t *testing.T) {
 
 func TestLogin(t *testing.T) {
 	for _, test := range []struct {
+		promptErr     error
 		name          string
 		key           string
-		promptErr     error
 		provider      Provider
 		device        bool
 		cancel        bool
@@ -281,8 +281,8 @@ func TestLogin(t *testing.T) {
 
 func TestPromptAPIKey(t *testing.T) {
 	for _, test := range []struct {
-		name string
 		ctx  context.Context
+		name string
 	}{
 		{
 			name: "nonterminal",

@@ -528,18 +528,18 @@ func TestLoadFilesystem(t *testing.T) {
 		}
 	}
 	for _, test := range []struct {
-		name        string
+		wantCause   error
 		files       fstest.MapFS
 		faults      map[string]error
-		wantCount   int
-		wantError   bool
-		wantCause   error
+		metadata    map[string]any
+		name        string
 		unopened    string
 		description string
 		skillName   string
 		violations  []string
-		metadata    map[string]any
 		tools       []string
+		wantCount   int
+		wantError   bool
 	}{
 		{
 			name:  "empty root",

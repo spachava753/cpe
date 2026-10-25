@@ -138,7 +138,7 @@ func TestLocalHost(t *testing.T) {
 				); err != nil {
 					t.Fatal(err)
 				}
-				host, err := Local(
+				host, hostErr := Local(
 					t.Context(),
 					Config{
 						Cwd: cwd,
@@ -146,15 +146,15 @@ func TestLocalHost(t *testing.T) {
 						KV:  memoryKV{},
 					},
 				)
-				if err != nil {
-					t.Fatal(err)
+				if hostErr != nil {
+					t.Fatal(hostErr)
 				}
 				t.Cleanup(func() {
 					if err := host.Close(context.Background()); err != nil {
 						t.Error(err)
 					}
 				})
-				setup, err := host.(*toolHost).execute(
+				setup, hostErr := host.(*toolHost).execute(
 					t.Context(),
 					toolRequest(
 						starlarkToolName,
@@ -162,15 +162,15 @@ func TestLocalHost(t *testing.T) {
 						"load('os.star', 'os')\nos.putenv('CPE_HOST_TEST', 'host-access')",
 					),
 				)
-				if err != nil || setup.ToolResultError {
+				if hostErr != nil || setup.ToolResultError {
 					t.Fatalf(
 						"set host environment: %v %v",
 						setup,
-						err,
+						hostErr,
 					)
 				}
 
-				result, err := host.(*toolHost).execute(
+				result, hostErr := host.(*toolHost).execute(
 					t.Context(),
 					toolRequest(
 						starlarkToolName,
@@ -178,8 +178,8 @@ func TestLocalHost(t *testing.T) {
 						test.code,
 					),
 				)
-				if err != nil {
-					t.Fatal(err)
+				if hostErr != nil {
+					t.Fatal(hostErr)
 				}
 				var output strings.Builder
 				for _, block := range result.Blocks {
@@ -313,8 +313,8 @@ func TestCommandPaths(t *testing.T) {
 	for _, test := range []struct {
 		name        string
 		code        string
-		largeOutput bool
 		exitCode    int
+		largeOutput bool
 		failed      bool
 	}{
 		{
@@ -599,8 +599,8 @@ func TestHostCancellation(t *testing.T) {
 
 type trackedFile struct {
 	afero.File
-	closed   bool
 	closeErr error
+	closed   bool
 }
 
 func (f *trackedFile) Close() error {
@@ -613,8 +613,8 @@ func (f *trackedFile) Close() error {
 
 type trackingFS struct {
 	afero.Fs
-	files    []*trackedFile
 	closeErr error
+	files    []*trackedFile
 }
 
 func (f *trackingFS) Open(name string) (afero.File, error) {

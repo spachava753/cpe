@@ -23,11 +23,11 @@ const starlarkToolName = "starlark"
 
 // Config defines the session scope of a tool runtime.
 type Config struct {
-	Cwd string
 	MCP MCPTools
 	KV  KeyValueStore
 	// Descriptions supplies optional plugin descriptions for MCP namespaces.
 	Descriptions map[mcpclient.ServerID]string
+	Cwd          string
 }
 
 // Factory creates session-owned tools; ctx bounds setup, not their lifetime.
@@ -62,13 +62,13 @@ type invocation struct {
 }
 
 type toolHost struct {
+	stdlib  dyson.StdlibConfig
+	config  Config
+	runner  dyson.CommandRunner
+	catalog toolCatalog
+	tools   []gaiagent.Tool
 	mu      sync.Mutex
 	closed  bool
-	config  Config
-	stdlib  dyson.StdlibConfig
-	runner  dyson.CommandRunner
-	tools   []gaiagent.Tool
-	catalog toolCatalog
 }
 
 // New creates a runtime using the supplied filesystem, command runner, and standard library.

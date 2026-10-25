@@ -367,10 +367,10 @@ func TestTurnCheckpointFailures(t *testing.T) {
 	for _, test := range []struct {
 		name            string
 		messages        int
-		once            bool
 		wantGenerations int
-		wantExecutions  int32
 		wantSaved       int
+		wantExecutions  int32
+		once            bool
 	}{
 		{
 			name:      "user checkpoint prevents generation",

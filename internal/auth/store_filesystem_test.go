@@ -117,11 +117,11 @@ func TestStoreMemoryRoundTrip(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	got, err := store.Retrieve(
+	got, retrieveErr := store.Retrieve(
 		t.Context(),
 		path,
 	)
-	if err != nil || got.OpenCode == nil || got.OpenCode.APIKey != "synthetic-key" {
+	if retrieveErr != nil || got.OpenCode == nil || got.OpenCode.APIKey != "synthetic-key" {
 		t.Fatal("injected filesystem did not retain credentials")
 	}
 	if _, err := filesystem.Stat(credentialFile); !errors.Is(
@@ -138,11 +138,11 @@ func TestStoreMemoryRoundTrip(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	got, err = store.Retrieve(
+	got, retrieveErr = store.Retrieve(
 		t.Context(),
 		path,
 	)
-	if err != nil || got.OpenAI != nil || got.OpenCode != nil {
+	if retrieveErr != nil || got.OpenAI != nil || got.OpenCode != nil {
 		t.Fatal("injected filesystem did not remove credentials")
 	}
 }
@@ -200,8 +200,8 @@ func TestStoreGateCancellation(t *testing.T) {
 
 type credentialFaultFS struct {
 	afero.Fs
-	phase  string
 	cancel context.CancelFunc
+	phase  string
 }
 
 func (filesystem *credentialFaultFS) OpenFile(name string, flags int, mode fs.FileMode) (afero.File, error) {
@@ -245,8 +245,8 @@ func (filesystem *credentialFaultFS) Rename(oldName, newName string) error {
 
 type credentialFaultFile struct {
 	afero.File
-	phase  string
 	cancel context.CancelFunc
+	phase  string
 }
 
 func (file *credentialFaultFile) Write(data []byte) (int, error) {

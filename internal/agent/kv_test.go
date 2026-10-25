@@ -25,9 +25,9 @@ func TestSessionKVCheckpoint(t *testing.T) {
 			operation,
 			func(t *testing.T) {
 				directory := t.TempDir()
-				history, err := conversation.NewStore(directory)
-				if err != nil {
-					t.Fatal(err)
+				history, storeErr := conversation.NewStore(directory)
+				if storeErr != nil {
+					t.Fatal(storeErr)
 				}
 				fixture := serverFixture(
 					t,
@@ -118,9 +118,9 @@ func TestSessionKVCheckpoint(t *testing.T) {
 					t.Fatal(err)
 				}
 				// Recreate both the server and file store; no live runtime data is shared.
-				reopened, err := conversation.NewStore(directory)
-				if err != nil {
-					t.Fatal(err)
+				reopened, storeErr := conversation.NewStore(directory)
+				if storeErr != nil {
+					t.Fatal(storeErr)
 				}
 				restored := serverFixture(
 					t,
@@ -151,15 +151,15 @@ func TestSessionKVCheckpoint(t *testing.T) {
 					id,
 					read,
 				)
-				record, err := reopened.Load(
+				record, storeErr := reopened.Load(
 					t.Context(),
 					conversation.ID(id),
 				)
-				if err != nil || lastToolOutput(record) != "True\n" {
+				if storeErr != nil || lastToolOutput(record) != "True\n" {
 					t.Fatalf(
 						"KV lost across server restart: %#v, %v",
 						record,
-						err,
+						storeErr,
 					)
 				}
 			},
@@ -176,9 +176,9 @@ func TestSessionKVStore(t *testing.T) {
 		t.Run(
 			outcome,
 			func(t *testing.T) {
-				history, err := conversation.NewStore(t.TempDir())
-				if err != nil {
-					t.Fatal(err)
+				history, storeErr := conversation.NewStore(t.TempDir())
+				if storeErr != nil {
+					t.Fatal(storeErr)
 				}
 				s := &session{
 					deps: Dependencies{
@@ -197,9 +197,9 @@ func TestSessionKVStore(t *testing.T) {
 				); err != nil {
 					t.Fatal(err)
 				}
-				snapshot, err := s.snapshot()
-				if err != nil {
-					t.Fatal(err)
+				snapshot, storeErr := s.snapshot()
+				if storeErr != nil {
+					t.Fatal(storeErr)
 				}
 				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
@@ -212,7 +212,7 @@ func TestSessionKVStore(t *testing.T) {
 					cancel()
 				}
 				value := []byte("new")
-				err = s.Store(
+				storeErr = s.Store(
 					ctx,
 					"value",
 					value,
@@ -220,50 +220,50 @@ func TestSessionKVStore(t *testing.T) {
 				want := "new"
 				if outcome != "success" {
 					want = "old"
-					if err == nil {
+					if storeErr == nil {
 						t.Fatal("failed write succeeded")
 					}
 					if outcome == "canceled context" && !errors.Is(
-						err,
+						storeErr,
 						context.Canceled,
 					) {
-						t.Fatal(err)
+						t.Fatal(storeErr)
 					}
 					if outcome == "save failure" && !strings.Contains(
-						err.Error(),
+						storeErr.Error(),
 						"checkpoint unavailable",
 					) {
-						t.Fatal(err)
+						t.Fatal(storeErr)
 					}
-				} else if err != nil {
-					t.Fatal(err)
+				} else if storeErr != nil {
+					t.Fatal(storeErr)
 				}
 				value[0] = '!'
-				got, err := s.Get(
+				got, storeErr := s.Get(
 					t.Context(),
 					"value",
 				)
-				if err != nil || string(got) != want {
+				if storeErr != nil || string(got) != want {
 					t.Fatalf(
 						"live value: %q, %v; want %q",
 						got,
-						err,
+						storeErr,
 						want,
 					)
 				}
 				got[0] = '!'
-				again, err := s.Get(
+				again, storeErr := s.Get(
 					t.Context(),
 					"value",
 				)
-				if err != nil || string(again) != want {
+				if storeErr != nil || string(again) != want {
 					t.Fatal("Get did not return owned bytes")
 				}
-				saved, err := history.Load(
+				saved, storeErr := history.Load(
 					t.Context(),
 					s.record.Info.ID,
 				)
-				if err != nil || string(saved.KV["value"]) != want {
+				if storeErr != nil || string(saved.KV["value"]) != want {
 					t.Fatal("saved value differs from live value")
 				}
 				if !bytes.Equal(
@@ -272,8 +272,8 @@ func TestSessionKVStore(t *testing.T) {
 				) {
 					t.Fatal("write mutated existing snapshot")
 				}
-				keys, err := s.Keys(t.Context())
-				if err != nil || !slices.Equal(
+				keys, storeErr := s.Keys(t.Context())
+				if storeErr != nil || !slices.Equal(
 					keys,
 					[]string{
 						"value",

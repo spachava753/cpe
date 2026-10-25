@@ -57,9 +57,9 @@ func discoverTools(ctx context.Context, mcp MCPTools, descriptions map[mcpclient
 			},
 		)
 	}
-	names, err := uniqueMCPNames(candidates)
-	if err != nil {
-		return catalog, err
+	names, namesErr := uniqueMCPNames(candidates)
+	if namesErr != nil {
+		return catalog, namesErr
 	}
 	candidates = nil
 	for _, server := range servers {
@@ -125,9 +125,9 @@ func discoverTools(ctx context.Context, mcp MCPTools, descriptions map[mcpclient
 			namespace,
 		)
 	}
-	names, err = uniqueMCPNames(candidates)
-	if err != nil {
-		return catalog, err
+	names, namesErr = uniqueMCPNames(candidates)
+	if namesErr != nil {
+		return catalog, namesErr
 	}
 	for i := range catalog.tools {
 		tool := &catalog.tools[i]

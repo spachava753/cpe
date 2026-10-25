@@ -35,9 +35,9 @@ func (t lifetimeTransport) Connect(context.Context) (acp.Connection, error) {
 
 type lifetimeConnection struct {
 	acp.Connection
+	err    error
 	cancel context.CancelFunc
 	once   sync.Once
-	err    error
 }
 
 func (c *lifetimeConnection) Read(ctx context.Context) (jsonrpc.Message, error) {

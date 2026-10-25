@@ -110,11 +110,11 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 				return err
 			}
 			configured, loadErr := models.LoadModels(file)
-			if err := errors.Join(
+			if closeErr := errors.Join(
 				loadErr,
 				file.Close(),
-			); err != nil {
-				return err
+			); closeErr != nil {
+				return closeErr
 			}
 			if len(configured) == 0 {
 				return errors.New("at least one model must be configured")

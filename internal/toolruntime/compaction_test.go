@@ -12,8 +12,8 @@ func TestCompaction(t *testing.T) {
 	for _, test := range []struct {
 		name   string
 		code   string
-		active bool
 		want   []string
+		active bool
 		failed bool
 	}{
 		{

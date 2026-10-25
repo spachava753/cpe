@@ -8,10 +8,10 @@ import (
 
 // ListOptions selects installed or source packages and their output format.
 type ListOptions struct {
-	// Scope selects installed roots; its zero value lists project and global roots.
-	Scope commandio.ScopeOptions
 	// Source selects source discovery when non-nil, ignoring Scope.
 	Source *string
+	// Scope selects installed roots; its zero value lists project and global roots.
+	Scope commandio.ScopeOptions
 	// JSON forces JSON results even when output is a terminal.
 	JSON bool
 }

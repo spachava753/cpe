@@ -47,7 +47,7 @@ func TestRegistryLifecycle(t *testing.T) {
 	)
 	connections := 0
 	var remote *mcp.ServerSession
-	registry, err := NewRegistry(
+	registry, registryErr := NewRegistry(
 		func(ctx context.Context, _ plugins.MCPServer, toolsChanged func()) (*mcp.ClientSession, error) {
 			connections++
 			a, b := mcp.NewInMemoryTransports()
@@ -79,8 +79,8 @@ func TestRegistryLifecycle(t *testing.T) {
 			"fixture": {},
 		},
 	)
-	if err != nil {
-		t.Fatal(err)
+	if registryErr != nil {
+		t.Fatal(registryErr)
 	}
 	t.Cleanup(func() { _ = registry.Close() })
 	if connections != 0 || registry.Instructions("fixture") != "" {
@@ -102,18 +102,18 @@ func TestRegistryLifecycle(t *testing.T) {
 	if connections != 1 || calls != 0 || registry.Instructions("fixture") != "fixture instructions" {
 		t.Fatal("discovery did not reuse the connection or executed a tool")
 	}
-	result, err := registry.Call(
+	result, registryErr := registry.Call(
 		t.Context(),
 		"fixture",
 		&mcp.CallToolParams{
 			Name: "echo",
 		},
 	)
-	if err != nil || !result.IsError || len(result.Content) != 1 || calls != 1 {
+	if registryErr != nil || !result.IsError || len(result.Content) != 1 || calls != 1 {
 		t.Fatalf(
 			"tool result was not retained: %v, %v",
 			result,
-			err,
+			registryErr,
 		)
 	}
 	if err := registry.Close(); err != nil {
@@ -291,18 +291,18 @@ func TestRegistryToolChanges(t *testing.T) {
 						if failList.Swap(false) {
 							return nil, errors.New("discovery unavailable")
 						}
-						result, err := next(
+						result, callErr := next(
 							ctx,
 							method,
 							request,
 						)
-						if err == nil && changeDuringList.Swap(false) {
+						if callErr == nil && changeDuringList.Swap(false) {
 							server.RemoveTools("new")
 							if err := waitChanged(ctx); err != nil {
 								return nil, err
 							}
 						}
-						return result, err
+						return result, callErr
 					}
 				})
 				getServer := func(*http.Request) *mcp.Server { return server }
@@ -318,12 +318,12 @@ func TestRegistryToolChanges(t *testing.T) {
 				}
 				httpServer := httptest.NewServer(httpHandler)
 				defer httpServer.Close()
-				endpoint, err := url.Parse(httpServer.URL)
-				if err != nil {
-					t.Fatal(err)
+				endpoint, registryErr := url.Parse(httpServer.URL)
+				if registryErr != nil {
+					t.Fatal(registryErr)
 				}
 				connections := 0
-				registry, err := NewRegistry(
+				registry, registryErr := NewRegistry(
 					func(ctx context.Context, config plugins.MCPServer, toolsChanged func()) (*mcp.ClientSession, error) {
 						connections++
 						return Connect(
@@ -342,8 +342,8 @@ func TestRegistryToolChanges(t *testing.T) {
 						},
 					},
 				)
-				if err != nil {
-					t.Fatal(err)
+				if registryErr != nil {
+					t.Fatal(registryErr)
 				}
 				defer registry.Close()
 				for range 2 {
@@ -392,29 +392,29 @@ func TestRegistryToolChanges(t *testing.T) {
 					t.Fatal(err)
 				}
 				before := lists.Load()
-				tools, err := registry.Load(
+				tools, registryErr := registry.Load(
 					ctx,
 					"fixture",
 				)
 				if lists.Load() != before+1 {
 					t.Fatal("notification during discovery was lost")
 				}
-				if err != nil || len(tools) != 1 || tools[0].Name != "change" || tools[0].Description != "updated metadata" {
+				if registryErr != nil || len(tools) != 1 || tools[0].Name != "change" || tools[0].Description != "updated metadata" {
 					t.Fatalf(
 						"refreshed tools: %v, %v",
 						tools,
-						err,
+						registryErr,
 					)
 				}
-				schema, err := json.Marshal(tools[0].InputSchema)
-				if err != nil || !strings.Contains(
+				schema, registryErr := json.Marshal(tools[0].InputSchema)
+				if registryErr != nil || !strings.Contains(
 					string(schema),
 					`"query"`,
 				) {
 					t.Fatalf(
 						"schema was not refreshed: %s, %v",
 						schema,
-						err,
+						registryErr,
 					)
 				}
 				count := lists.Load()

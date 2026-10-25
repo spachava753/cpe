@@ -37,10 +37,10 @@ func TestScopeDirectories(t *testing.T) {
 	type scopeCase struct {
 		name         string
 		scope        commandio.ScopeOptions
+		errText      string
+		want         []string
 		requireScope bool
 		noHome       bool
-		want         []string
-		errText      string
 	}
 	cases := []scopeCase{
 		{

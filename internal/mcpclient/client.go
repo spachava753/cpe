@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"slices"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -101,10 +102,7 @@ type headerTransport struct {
 func (t headerTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 	copy := request.Clone(request.Context())
 	for key, values := range t.headers {
-		copy.Header[key] = append(
-			[]string(nil),
-			values...,
-		)
+		copy.Header[key] = slices.Clone(values)
 	}
 	return t.base.RoundTrip(copy)
 }

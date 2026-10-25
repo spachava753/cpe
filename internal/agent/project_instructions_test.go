@@ -58,14 +58,14 @@ func writeProjectFile(t *testing.T, filesystem afero.Fs, path, content string) {
 
 func TestLoadProjectInstructions(t *testing.T) {
 	for _, test := range []struct {
-		name      string
+		wantError error
 		files     map[string]string
 		denied    map[string]bool
+		name      string
 		cancelAt  string
-		cancelled bool
 		want      []string
+		cancelled bool
 		wantEmpty bool
-		wantError error
 	}{
 		{
 			name: "no instruction files",

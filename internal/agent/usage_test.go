@@ -318,14 +318,14 @@ func usagePrompt(t *testing.T, client *acp.Client, id acp.SessionId) *acp.Prompt
 
 func TestUsageAttempts(t *testing.T) {
 	for _, test := range []struct {
-		name         string
 		metadata     gai.Metadata
+		want         *acp.Usage
+		name         string
+		wantContext  []uint64
 		failures     int
+		limit        uint
 		nonStreaming bool
 		cancel       bool
-		limit        uint
-		want         *acp.Usage
-		wantContext  []uint64
 		wantError    bool
 	}{
 		{
@@ -634,8 +634,8 @@ func TestUsageAttempts(t *testing.T) {
 func TestUsageStopReasons(t *testing.T) {
 	for _, test := range []struct {
 		name   string
-		finish gai.FinishReason
 		want   acp.StopReason
+		finish gai.FinishReason
 	}{
 		{
 			name:   "end turn",
@@ -697,9 +697,9 @@ func TestUsageStopReasons(t *testing.T) {
 
 func TestContextBudgetToolResults(t *testing.T) {
 	for _, test := range []struct {
+		metadata gai.Metadata
 		name     string
 		limit    uint
-		metadata gai.Metadata
 		warn     bool
 	}{
 		{

@@ -25,8 +25,8 @@ func TestExchange(t *testing.T) {
 	valid := `{"access_token":"access-secret","refresh_token":"refresh-secret","id_token":"` + testToken("account") + `","expires_in":3600}`
 	for _, test := range []struct {
 		name    string
-		status  int
 		body    string
+		status  int
 		cancel  bool
 		wantErr bool
 	}{
@@ -389,9 +389,9 @@ func TestCallbackHandler(t *testing.T) {
 }
 
 type loginLinkWriter struct {
-	mu     sync.Mutex
-	buffer bytes.Buffer
 	link   chan string
+	buffer bytes.Buffer
+	mu     sync.Mutex
 }
 
 func (writer *loginLinkWriter) Write(data []byte) (int, error) {
@@ -484,9 +484,9 @@ func TestBrowserLogin(t *testing.T) {
 				case <-ctx.Done():
 					t.Fatal("no login link")
 				}
-				parsed, err := url.Parse(link)
-				if err != nil {
-					t.Fatal(err)
+				parsed, parseErr := url.Parse(link)
+				if parseErr != nil {
+					t.Fatal(parseErr)
 				}
 				authorization = parsed.Query()
 				for name, want := range map[string]string{
@@ -522,18 +522,18 @@ func TestBrowserLogin(t *testing.T) {
 						t.Error("callback failed")
 					}
 				}
-				err = <-finished
+				parseErr = <-finished
 				if test.cancel && !errors.Is(
-					err,
+					parseErr,
 					context.Canceled,
 				) {
 					t.Errorf(
 						"cancel error: %v",
-						err,
+						parseErr,
 					)
 				}
-				if !test.cancel && err != nil {
-					t.Fatal(err)
+				if !test.cancel && parseErr != nil {
+					t.Fatal(parseErr)
 				}
 				if response, err := http.Get(redirect); err == nil {
 					response.Body.Close()

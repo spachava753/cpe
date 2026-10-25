@@ -102,9 +102,9 @@ func TestLastUsedModel(t *testing.T) {
 					t.TempDir(),
 					"last-model.json",
 				)
-				preference, err := models.NewLastUsed(filename)
-				if err != nil {
-					t.Fatal(err)
+				preference, preferenceErr := models.NewLastUsed(filename)
+				if preferenceErr != nil {
+					t.Fatal(preferenceErr)
 				}
 				fixture := serverFixture(
 					t,
@@ -117,15 +117,15 @@ func TestLastUsedModel(t *testing.T) {
 					t,
 					fixture.client,
 				)
-				record, err := fixture.store.Load(
+				record, preferenceErr := fixture.store.Load(
 					t.Context(),
 					conversation.ID(original),
 				)
-				if err != nil || record.Options.Model != "one" {
+				if preferenceErr != nil || record.Options.Model != "one" {
 					t.Fatalf(
 						"bootstrap model: %v, %v",
 						record.Options,
-						err,
+						preferenceErr,
 					)
 				}
 				if _, err := fixture.client.SetSessionConfigOption(
@@ -273,24 +273,24 @@ func TestLastUsedModel(t *testing.T) {
 						fixture.client,
 					)
 				}
-				record, err = fixture.store.Load(
+				record, preferenceErr = fixture.store.Load(
 					t.Context(),
 					conversation.ID(target),
 				)
-				if err != nil || record.Options != test.want {
+				if preferenceErr != nil || record.Options != test.want {
 					t.Fatalf(
 						"session selection: %v, %v; want %v",
 						record.Options,
-						err,
+						preferenceErr,
 						test.want,
 					)
 				}
-				last, err := preference.Load(t.Context())
-				if err != nil || last != test.wantLast {
+				last, preferenceErr := preference.Load(t.Context())
+				if preferenceErr != nil || last != test.wantLast {
 					t.Fatalf(
 						"last used: %q, %v; want %q",
 						last,
-						err,
+						preferenceErr,
 						test.wantLast,
 					)
 				}
@@ -319,8 +319,8 @@ func TestLastUsedModel(t *testing.T) {
 func TestModelPreferenceFailure(t *testing.T) {
 	for _, test := range []struct {
 		name      string
-		directory bool
 		wantError string
+		directory bool
 	}{
 		{
 			name:      "corrupt preference does not block restoration",
@@ -339,9 +339,9 @@ func TestModelPreferenceFailure(t *testing.T) {
 					t.TempDir(),
 					"last-model.json",
 				)
-				preference, err := models.NewLastUsed(filename)
-				if err != nil {
-					t.Fatal(err)
+				preference, preferenceErr := models.NewLastUsed(filename)
+				if preferenceErr != nil {
+					t.Fatal(preferenceErr)
 				}
 				var diagnostics bytes.Buffer
 				fixture := serverFixture(
@@ -417,15 +417,15 @@ func TestModelPreferenceFailure(t *testing.T) {
 					id,
 					"print('continued')",
 				)
-				record, err := fixture.store.Load(
+				record, preferenceErr := fixture.store.Load(
 					t.Context(),
 					conversation.ID(id),
 				)
-				if err != nil || record.Options.Model != "two" {
+				if preferenceErr != nil || record.Options.Model != "two" {
 					t.Fatalf(
 						"session selection was not retained: %v, %v",
 						record.Options,
-						err,
+						preferenceErr,
 					)
 				}
 				if test.directory && !strings.Contains(

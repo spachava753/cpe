@@ -21,9 +21,9 @@ func TestEdit(t *testing.T) {
 		code       string
 		after      string
 		output     string
-		failed     bool
-		applied    int
 		otherAfter string
+		applied    int
+		failed     bool
 	}{
 		{
 			name:    "relative filename and automatic diff",
@@ -233,7 +233,7 @@ func TestEdit(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				result, err := host.execute(
+				result, executeErr := host.execute(
 					t.Context(),
 					toolRequest(
 						"starlark",
@@ -241,8 +241,8 @@ func TestEdit(t *testing.T) {
 						test.code,
 					),
 				)
-				if err != nil {
-					t.Fatal(err)
+				if executeErr != nil {
+					t.Fatal(executeErr)
 				}
 				var output strings.Builder
 				applied := 0
@@ -281,24 +281,24 @@ func TestEdit(t *testing.T) {
 						test.output,
 					)
 				}
-				after, err := afero.ReadFile(
+				after, executeErr := afero.ReadFile(
 					filesystem,
 					"/work/file",
 				)
-				if err != nil || string(after) != test.after {
+				if executeErr != nil || string(after) != test.after {
 					t.Fatalf(
 						"file after edit: %q, %v; want %q",
 						after,
-						err,
+						executeErr,
 						test.after,
 					)
 				}
-				info, err := filesystem.Stat("/work/file")
-				if err != nil || info.Mode().Perm() != 0o751 {
+				info, executeErr := filesystem.Stat("/work/file")
+				if executeErr != nil || info.Mode().Perm() != 0o751 {
 					t.Fatalf(
 						"file permissions changed: %v, %v",
 						info,
-						err,
+						executeErr,
 					)
 				}
 				wantFiles := 1
@@ -317,15 +317,15 @@ func TestEdit(t *testing.T) {
 						)
 					}
 				}
-				entries, err := afero.ReadDir(
+				entries, executeErr := afero.ReadDir(
 					filesystem,
 					"/work",
 				)
-				if err != nil || len(entries) != wantFiles {
+				if executeErr != nil || len(entries) != wantFiles {
 					t.Fatalf(
 						"edit left unexpected files: %v, %v",
 						entries,
-						err,
+						executeErr,
 					)
 				}
 			},
@@ -396,7 +396,7 @@ func TestEditHostPaths(t *testing.T) {
 				); err != nil {
 					t.Fatal(err)
 				}
-				host, err := Local(
+				host, hostErr := Local(
 					t.Context(),
 					Config{
 						Cwd: cwd,
@@ -404,15 +404,15 @@ func TestEditHostPaths(t *testing.T) {
 						KV:  memoryKV{},
 					},
 				)
-				if err != nil {
-					t.Fatal(err)
+				if hostErr != nil {
+					t.Fatal(hostErr)
 				}
 				t.Cleanup(func() {
 					if err := host.Close(context.Background()); err != nil {
 						t.Error(err)
 					}
 				})
-				result, err := host.(*toolHost).execute(
+				result, hostErr := host.(*toolHost).execute(
 					t.Context(),
 					toolRequest(
 						"starlark",
@@ -420,35 +420,35 @@ func TestEditHostPaths(t *testing.T) {
 						"edit("+strconv.Quote(test.filename)+", 'old', 'new')",
 					),
 				)
-				if err != nil || result.ToolResultError {
+				if hostErr != nil || result.ToolResultError {
 					t.Fatalf(
 						"edit failed: %v, %v",
 						result,
-						err,
+						hostErr,
 					)
 				}
-				after, err := os.ReadFile(target)
-				if err != nil || string(after) != "new" {
+				after, hostErr := os.ReadFile(target)
+				if hostErr != nil || string(after) != "new" {
 					t.Fatalf(
 						"target not edited: %q, %v",
 						after,
-						err,
+						hostErr,
 					)
 				}
-				info, err := os.Lstat(link)
-				if err != nil || info.Mode()&fs.ModeSymlink == 0 {
+				info, hostErr := os.Lstat(link)
+				if hostErr != nil || info.Mode()&fs.ModeSymlink == 0 {
 					t.Fatalf(
 						"edit replaced the symbolic link: %v, %v",
 						info,
-						err,
+						hostErr,
 					)
 				}
-				info, err = os.Stat(target)
-				if err != nil || info.Mode().Perm() != 0o751 {
+				info, hostErr = os.Stat(target)
+				if hostErr != nil || info.Mode().Perm() != 0o751 {
 					t.Fatalf(
 						"edit changed target permissions: %v, %v",
 						info,
-						err,
+						hostErr,
 					)
 				}
 			},
@@ -458,8 +458,8 @@ func TestEditHostPaths(t *testing.T) {
 
 type editFaultFS struct {
 	*afero.MemMapFs
-	fault  string
 	cancel context.CancelFunc
+	fault  string
 }
 
 func (f *editFaultFS) OpenFile(name string, flag int, mode fs.FileMode) (afero.File, error) {

@@ -75,26 +75,26 @@ func editFile(ctx context.Context, filesystem afero.Fs, filename, old, replaceme
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	target, err := editTarget(
+	target, editErr := editTarget(
 		filesystem,
 		filename,
 	)
-	if err != nil {
-		return "", err
+	if editErr != nil {
+		return "", editErr
 	}
-	info, err := filesystem.Stat(target)
-	if err != nil {
-		return "", err
+	info, editErr := filesystem.Stat(target)
+	if editErr != nil {
+		return "", editErr
 	}
 	if !info.Mode().IsRegular() {
 		return "", errors.New("edit requires a regular file")
 	}
-	before, err := afero.ReadFile(
+	before, editErr := afero.ReadFile(
 		filesystem,
 		target,
 	)
-	if err != nil {
-		return "", err
+	if editErr != nil {
+		return "", editErr
 	}
 	text := string(before)
 	start := strings.Index(
@@ -115,13 +115,13 @@ func editFile(ctx context.Context, filesystem afero.Fs, filename, old, replaceme
 		return "", errors.New("replacement would not change the file")
 	}
 	after := text[:start] + replacement + text[start+len(old):]
-	temporary, err := afero.TempFile(
+	temporary, editErr := afero.TempFile(
 		filesystem,
 		filepath.Dir(target),
 		".cpe-edit-",
 	)
-	if err != nil {
-		return "", err
+	if editErr != nil {
+		return "", editErr
 	}
 	defer filesystem.Remove(temporary.Name())
 	written, writeErr := temporary.WriteString(after)
@@ -143,12 +143,12 @@ func editFile(ctx context.Context, filesystem afero.Fs, filename, old, replaceme
 	); err != nil {
 		return "", err
 	}
-	current, err := afero.ReadFile(
+	current, editErr := afero.ReadFile(
 		filesystem,
 		target,
 	)
-	if err != nil {
-		return "", err
+	if editErr != nil {
+		return "", editErr
 	}
 	if !bytes.Equal(
 		before,

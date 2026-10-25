@@ -152,15 +152,15 @@ func readDefinitionData(filesystem fs.FS, directory string) ([]byte, error) {
 		directory,
 		"SKILL.md",
 	)
-	entries, err := fs.ReadDir(
+	entries, readErr := fs.ReadDir(
 		filesystem,
 		directory,
 	)
-	if err != nil {
+	if readErr != nil {
 		return nil, fmt.Errorf(
 			"read %s: %w",
 			filename,
-			err,
+			readErr,
 		)
 	}
 	regular := false
@@ -180,15 +180,15 @@ func readDefinitionData(filesystem fs.FS, directory string) ([]byte, error) {
 			filename,
 		)
 	}
-	data, err := fs.ReadFile(
+	data, readErr := fs.ReadFile(
 		filesystem,
 		filename,
 	)
-	if err != nil {
+	if readErr != nil {
 		return nil, fmt.Errorf(
 			"read %s: %w",
 			filename,
-			err,
+			readErr,
 		)
 	}
 	if !utf8.Valid(data) {

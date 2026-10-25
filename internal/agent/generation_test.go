@@ -26,15 +26,15 @@ import (
 
 func TestResponseRecovery(t *testing.T) {
 	for _, test := range []struct {
+		failure      error
 		name         string
 		failures     int
-		failure      error
-		partial      bool
-		nonStreaming bool
-		notices      bool
 		retries      uint
 		wantCalls    int
 		wantUpdates  int
+		partial      bool
+		nonStreaming bool
+		notices      bool
 		wantError    bool
 	}{
 		{
@@ -155,9 +155,9 @@ func TestResponseRecovery(t *testing.T) {
 			test.name,
 			func(t *testing.T) {
 				directory := t.TempDir()
-				history, err := conversation.NewStore(directory)
-				if err != nil {
-					t.Fatal(err)
+				history, storeErr := conversation.NewStore(directory)
+				if storeErr != nil {
+					t.Fatal(storeErr)
 				}
 				var id acp.SessionId
 				var checkpoint []byte
@@ -280,7 +280,7 @@ func TestResponseRecovery(t *testing.T) {
 					t,
 					fixture.client,
 				)
-				_, err = fixture.client.Prompt(
+				_, storeErr = fixture.client.Prompt(
 					t.Context(),
 					&acp.PromptRequest{
 						SessionID: id,
@@ -289,10 +289,10 @@ func TestResponseRecovery(t *testing.T) {
 						},
 					},
 				)
-				if (err != nil) != test.wantError {
+				if (storeErr != nil) != test.wantError {
 					t.Fatalf(
 						"prompt: %v",
-						err,
+						storeErr,
 					)
 				}
 				if len(requests()) != test.wantCalls {
@@ -309,12 +309,12 @@ func TestResponseRecovery(t *testing.T) {
 						)
 					}
 				}
-				record, err := history.Load(
+				record, storeErr := history.Load(
 					t.Context(),
 					conversation.ID(id),
 				)
-				if err != nil {
-					t.Fatal(err)
+				if storeErr != nil {
+					t.Fatal(storeErr)
 				}
 				wantMessages := 2
 				if test.wantError {
@@ -326,12 +326,12 @@ func TestResponseRecovery(t *testing.T) {
 						record.Dialog,
 					)
 				}
-				data, err := os.ReadFile(filepath.Join(
+				data, storeErr := os.ReadFile(filepath.Join(
 					directory,
 					string(id)+".json",
 				))
-				if err != nil {
-					t.Fatal(err)
+				if storeErr != nil {
+					t.Fatal(storeErr)
 				}
 				for _, fragment := range []string{
 					"aborted fragment",

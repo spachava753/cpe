@@ -37,15 +37,15 @@ func (f unreadablePromptFS) Open(name string) (afero.File, error) {
 func TestACPCommand(t *testing.T) {
 	const model = `{"id":"fixture","base_url":"http://localhost:1234/v1/","api":"Openai","input_modalities":["text"],"output_modalities":["text"],"limit":8192,"max_tokens":256}`
 	for _, test := range []struct {
+		promptFiles      map[string]string
 		name             string
-		args             []string
 		config           string
 		wantError        string
-		wantRetries      uint
-		wantSetupTimeout time.Duration
-		promptFiles      map[string]string
 		unreadablePrompt string
 		wantInstructions string
+		args             []string
+		wantRetries      uint
+		wantSetupTimeout time.Duration
 	}{
 		{
 			name:             "default roots",

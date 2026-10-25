@@ -24,11 +24,11 @@ func TestLastUsed(t *testing.T) {
 		name        string
 		initial     string
 		save        ID
-		cancelled   bool
-		rejectWrite bool
 		want        ID
 		saveError   string
 		loadError   string
+		cancelled   bool
+		rejectWrite bool
 	}{
 		{
 			name: "no preference yet",

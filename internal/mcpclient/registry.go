@@ -16,20 +16,20 @@ import (
 // Registry owns one session's MCP connections and cached tool lists.
 // Its methods serialize calls, discovery, and shutdown.
 type Registry struct {
-	mu          sync.Mutex
-	closed      bool
 	connector   Connector
 	servers     map[ServerID]plugins.MCPServer
 	connections map[ServerID]*mcp.ClientSession
 	tools       map[ServerID]*toolList
+	mu          sync.Mutex
+	closed      bool
 }
 
 // Notification callbacks only advance revision: they must never wait on the registry
 // mutex while an MCP request or connection shutdown holds it.
 type toolList struct {
+	tools          []*mcp.Tool
 	revision       atomic.Uint64
 	loadedRevision uint64
-	tools          []*mcp.Tool
 }
 
 // Servers returns configured server IDs in sorted order.

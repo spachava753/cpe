@@ -40,10 +40,10 @@ type DiscoveryOptions struct {
 
 // InstalledPlugin pairs a plugin with its installed package directory.
 type InstalledPlugin struct {
-	// Plugin.Path equals Directory; skill paths name installed SKILL.md files.
-	Plugin Plugin
 	// Directory is the package's location beneath the supplied destination root.
 	Directory string
+	// Plugin.Path equals Directory; skill paths name installed SKILL.md files.
+	Plugin Plugin
 }
 
 // RemovedPlugin identifies a deleted package. Unreadable manifests yield the
@@ -58,15 +58,15 @@ type RemovedPlugin struct {
 // InstallRequest selects packages and an exact root for Manager.Install.
 // Empty Plugins and nil Path select all discovered native packages.
 type InstallRequest struct {
+	// Path selects a source-relative package directory; "." selects the root.
+	// It uses io/fs slash paths and is mutually exclusive with Plugins.
+	Path *string
 	// Source is a locator accepted by the configured source.Client.
 	Source string
 	// Directory receives packages at Directory/<declared plugin name>.
 	Directory string
 	// Plugins selects declared manifest names. Use Path to resolve ambiguity.
 	Plugins []string
-	// Path selects a source-relative package directory; "." selects the root.
-	// It uses io/fs slash paths and is mutually exclusive with Plugins.
-	Path *string
 	// Override replaces existing packages, including obsolete files.
 	Override bool
 	// Discovery controls search when Path is nil.
@@ -117,7 +117,7 @@ func (m *Manager) ListSource(ctx context.Context, source string, opts DiscoveryO
 // Publication failures attempt rollback. Non-nil results with an error identify
 // committed installations whose cleanup failed; rollback failures retain recovery
 // files described in the error. Component problems remain in Plugin.Diagnostics.
-func (m *Manager) Install(ctx context.Context, request InstallRequest) (result []InstalledPlugin, err error) {
+func (m *Manager) Install(ctx context.Context, request InstallRequest) (result []InstalledPlugin, installErr error) {
 	if err := m.destination(
 		ctx,
 		request.Directory,
@@ -138,25 +138,25 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 			)
 		}
 	}
-	names, err := selectedNames(request.Plugins)
-	if err != nil {
-		return nil, err
+	names, installErr := selectedNames(request.Plugins)
+	if installErr != nil {
+		return nil, installErr
 	}
-	checkout, err := m.acquire(
+	checkout, installErr := m.acquire(
 		ctx,
 		request.Source,
 	)
-	if err != nil {
-		return nil, err
+	if installErr != nil {
+		return nil, installErr
 	}
 	released := false
 	defer func() {
 		if !released {
-			err = errors.Join(
-				err,
+			installErr = errors.Join(
+				installErr,
 				checkout.Close(),
 			)
-			if err != nil {
+			if installErr != nil {
 				result = nil
 			}
 		}
@@ -183,14 +183,14 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 			plugin.Name,
 		}
 	} else {
-		available, err = discover(
+		available, installErr = discover(
 			ctx,
 			checkout.FS,
 			request.Discovery,
 			names,
 		)
-		if err != nil {
-			return nil, err
+		if installErr != nil {
+			return nil, installErr
 		}
 	}
 	candidates := map[string][]Plugin{}

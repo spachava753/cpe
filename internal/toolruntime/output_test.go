@@ -20,13 +20,13 @@ func TestScriptOutput(t *testing.T) {
 		code        string
 		stdout      string
 		stderr      string
+		full        string
+		diagnostic  string
 		exit        int
 		cancel      bool
 		saveFailure bool
 		failed      bool
 		completes   bool
-		full        string
-		diagnostic  string
 	}{
 		{
 			name: "prints form one text block",

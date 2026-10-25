@@ -29,14 +29,17 @@ func TestManagerListSource(t *testing.T) {
 	fetchErr := errors.New("source unavailable")
 	cleanupErr := errors.New("cleanup failed")
 	for _, test := range []struct {
-		name                     string
-		files                    fstest.MapFS
-		options                  skills.DiscoveryOptions
-		fetchErr, cleanupErr     error
-		cancel, nilClient, nilFS bool
-		want                     []skills.Skill
-		wantErr                  error
-		errText                  string
+		fetchErr   error
+		cleanupErr error
+		wantErr    error
+		files      fstest.MapFS
+		name       string
+		errText    string
+		want       []skills.Skill
+		options    skills.DiscoveryOptions
+		cancel     bool
+		nilClient  bool
+		nilFS      bool
 	}{
 		{
 			name:  "empty source",
@@ -311,19 +314,26 @@ func TestManagerInstall(t *testing.T) {
 	t.Parallel()
 	fetchErr := errors.New("source unavailable")
 	for _, test := range []struct {
-		name                            string
-		files, existing                 fstest.MapFS
-		names                           []string
-		sourcePath                      *string
-		override, committed, recovery   bool
-		fault                           managerFSFault
-		links                           []string
-		fetchErr, cleanupErr            error
-		cancel, readOnly, missingRoot   bool
-		want                            []string
-		violations, installedViolations map[string][]string
-		wantErr                         error
-		errText                         string
+		fetchErr            error
+		wantErr             error
+		cleanupErr          error
+		files               fstest.MapFS
+		existing            fstest.MapFS
+		sourcePath          *string
+		installedViolations map[string][]string
+		violations          map[string][]string
+		errText             string
+		name                string
+		want                []string
+		links               []string
+		names               []string
+		cancel              bool
+		readOnly            bool
+		missingRoot         bool
+		fault               managerFSFault
+		recovery            bool
+		committed           bool
+		override            bool
 	}{
 		{
 			name: "selected bundle includes supporting files",
@@ -1510,13 +1520,14 @@ func TestManagerInstall(t *testing.T) {
 func TestManagerListInstalled(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
-		name            string
-		files           fstest.MapFS
-		missing, cancel bool
-		link            string
-		want            []string
-		errText         string
-		wantErr         error
+		wantErr error
+		files   fstest.MapFS
+		name    string
+		link    string
+		errText string
+		want    []string
+		missing bool
+		cancel  bool
 	}{
 		{
 			name: "empty root",
@@ -1694,14 +1705,16 @@ func TestManagerListInstalled(t *testing.T) {
 func TestManagerRemove(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
-		name             string
-		files            fstest.MapFS
-		names, want      []string
-		wantName         string
-		wantDescription  *string
-		cancel, readOnly bool
-		errText          string
-		wantErr          error
+		wantErr         error
+		files           fstest.MapFS
+		wantDescription *string
+		name            string
+		wantName        string
+		errText         string
+		names           []string
+		want            []string
+		cancel          bool
+		readOnly        bool
 	}{
 		{
 			name: "selected installed skill",

@@ -24,8 +24,8 @@ func (c toolCatalog) search(query string, limit int, namespace string) []toolMat
 		return result
 	}
 	type document struct {
-		tool   catalogTool
 		counts map[string]int
+		tool   catalogTool
 		length float64
 		score  float64
 	}

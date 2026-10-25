@@ -250,18 +250,18 @@ func missingResult(dialog gai.Dialog, id string) bool {
 }
 
 type turnHooks struct {
-	session           *session
 	usage             conversation.TokenUsage
+	session           *session
 	compaction        *conversation.Compaction
 	compactionRequest compactionRequest
 	client            *sessionClient
-	model             models.Model
-	modelID           models.ID
 	completed         map[string]gai.Message
 	pending           map[string]bool
 	streamed          map[uint]bool
-	generation        uint
+	modelID           models.ID
 	dialog            gai.Dialog
+	model             models.Model
+	generation        uint
 }
 
 // Checkpoint canonical history before each provider request.

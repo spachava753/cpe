@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"maps"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -32,10 +33,7 @@ func loadCommands(ctx context.Context, filesystem afero.Fs, cwd string, config C
 		commands: make(map[string]skills.Skill),
 	}
 	roots := append(
-		append(
-			[]string(nil),
-			config.SkillPaths...,
-		),
+		slices.Clone(config.SkillPaths),
 		skills.ProjectPath(cwd),
 	)
 	for _, root := range roots {
@@ -70,10 +68,7 @@ func loadCommands(ctx context.Context, filesystem afero.Fs, cwd string, config C
 		}
 	}
 	roots = append(
-		append(
-			[]string(nil),
-			config.PluginPaths...,
-		),
+		slices.Clone(config.PluginPaths),
 		filepath.Join(
 			cwd,
 			".agents",
@@ -296,10 +291,7 @@ func (c commandCatalog) servers(client map[mcpclient.ServerID]plugins.MCPServer,
 					server.Cwd,
 				)
 			}
-			server.Args = append(
-				[]string(nil),
-				server.Args...,
-			)
+			server.Args = slices.Clone(server.Args)
 			for i, argument := range server.Args {
 				server.Args[i] = expand(argument)
 			}

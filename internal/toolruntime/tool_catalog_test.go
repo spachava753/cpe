@@ -17,8 +17,8 @@ import (
 type catalogMCP struct {
 	tools        map[mcpclient.ServerID][]*mcp.Tool
 	instructions map[mcpclient.ServerID]string
-	calls        int
 	onCall       func()
+	calls        int
 }
 
 func (m *catalogMCP) Servers() []mcpclient.ServerID {
@@ -350,9 +350,9 @@ func TestToolSearchRanking(t *testing.T) {
 	for _, test := range []struct {
 		name      string
 		query     string
-		limit     int
 		namespace string
 		want      []string
+		limit     int
 	}{
 		{
 			name:  "more matching terms rank first",
@@ -447,9 +447,9 @@ func TestToolCatalogRefresh(t *testing.T) {
 	)
 	for _, test := range []struct {
 		name   string
-		tools  []*mcp.Tool
 		code   string
 		want   string
+		tools  []*mcp.Tool
 		failed bool
 	}{
 		{

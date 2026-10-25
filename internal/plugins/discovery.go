@@ -72,23 +72,23 @@ func discover(ctx context.Context, filesystem fs.FS, opts DiscoveryOptions, name
 					},
 					directory: directory,
 				}
-				data, err := fs.ReadFile(
+				data, manifestErr := fs.ReadFile(
 					pkg,
 					"plugin.json",
 				)
-				if err != nil {
-					return err
+				if manifestErr != nil {
+					return manifestErr
 				}
-				fields, err := jsonObject(data)
-				if err != nil {
+				fields, manifestErr := jsonObject(data)
+				if manifestErr != nil {
 					return fmt.Errorf(
 						"%s/plugin.json: %w",
 						directory,
-						err,
+						manifestErr,
 					)
 				}
-				schema, err := jsonString(fields["$schema"])
-				if err != nil || schema != manifestSchema {
+				schema, manifestErr := jsonString(fields["$schema"])
+				if manifestErr != nil || schema != manifestSchema {
 					continue
 				}
 				if len(names) > 0 {
@@ -100,12 +100,12 @@ func discover(ctx context.Context, filesystem fs.FS, opts DiscoveryOptions, name
 						return fs.SkipDir
 					}
 				}
-				plugin, err := readPlugin(
+				plugin, manifestErr := readPlugin(
 					filesystem,
 					directory,
 				)
-				if err != nil {
-					return err
+				if manifestErr != nil {
+					return manifestErr
 				}
 				result = append(
 					result,

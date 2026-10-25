@@ -40,10 +40,10 @@ type DiscoveryOptions struct {
 
 // InstalledSkill pairs a skill with its installed bundle directory.
 type InstalledSkill struct {
-	// Skill.Path names the installed SKILL.md file in native filesystem syntax.
-	Skill Skill
 	// Directory is the bundle's location beneath the supplied destination root.
 	Directory string
+	// Skill.Path names the installed SKILL.md file in native filesystem syntax.
+	Skill Skill
 }
 
 // RemovedSkill identifies a deleted bundle. Unreadable frontmatter yields the
@@ -58,15 +58,15 @@ type RemovedSkill struct {
 // InstallRequest selects skills and an exact root for Manager.Install.
 // Empty Skills and nil Path select all discovered skills.
 type InstallRequest struct {
+	// Path selects a source-relative bundle directory; "." selects the root.
+	// It uses io/fs slash paths and is mutually exclusive with Skills.
+	Path *string
 	// Source is a locator accepted by the configured source.Client.
 	Source string
 	// Directory receives bundles at Directory/<declared skill name>.
 	Directory string
 	// Skills selects declared frontmatter names. Use Path to resolve ambiguity.
 	Skills []string
-	// Path selects a source-relative bundle directory; "." selects the root.
-	// It uses io/fs slash paths and is mutually exclusive with Skills.
-	Path *string
 	// Override replaces existing bundles, including obsolete files.
 	Override bool
 	// Discovery controls search when Path is nil.
@@ -116,7 +116,7 @@ func (m *Manager) ListSource(ctx context.Context, source string, opts DiscoveryO
 // Publication failures attempt rollback. Non-nil results with an error identify
 // committed installations whose cleanup failed; rollback failures retain recovery
 // files described in the error.
-func (m *Manager) Install(ctx context.Context, request InstallRequest) (result []InstalledSkill, err error) {
+func (m *Manager) Install(ctx context.Context, request InstallRequest) (result []InstalledSkill, installErr error) {
 	if err := m.destination(
 		ctx,
 		request.Directory,
@@ -137,25 +137,25 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 			)
 		}
 	}
-	names, err := selectedNames(request.Skills)
-	if err != nil {
-		return nil, err
+	names, installErr := selectedNames(request.Skills)
+	if installErr != nil {
+		return nil, installErr
 	}
-	checkout, err := m.acquire(
+	checkout, installErr := m.acquire(
 		ctx,
 		request.Source,
 	)
-	if err != nil {
-		return nil, err
+	if installErr != nil {
+		return nil, installErr
 	}
 	released := false
 	defer func() {
 		if !released {
-			err = errors.Join(
-				err,
+			installErr = errors.Join(
+				installErr,
 				checkout.Close(),
 			)
-			if err != nil {
+			if installErr != nil {
 				result = nil
 			}
 		}
@@ -182,14 +182,14 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 			skill.Name,
 		}
 	} else {
-		available, err = discover(
+		available, installErr = discover(
 			ctx,
 			checkout.FS,
 			request.Discovery,
 			names,
 		)
-		if err != nil {
-			return nil, err
+		if installErr != nil {
+			return nil, installErr
 		}
 	}
 	candidates := map[string][]Skill{}
@@ -357,23 +357,23 @@ func (m *Manager) ListInstalled(ctx context.Context, directory string) ([]Instal
 			continue
 		}
 		name := entry.Name()
-		info, err := bundlefs.Lstat(
+		info, statErr := bundlefs.Lstat(
 			m.destinations,
 			filepath.Join(
 				directory,
 				name,
 			),
 		)
-		if err != nil {
-			return nil, err
+		if statErr != nil {
+			return nil, statErr
 		}
 		if info.Mode()&fs.ModeSymlink != 0 {
-			info, err = m.destinations.Stat(filepath.Join(
+			info, statErr = m.destinations.Stat(filepath.Join(
 				directory,
 				name,
 			))
-			if err != nil {
-				return nil, err
+			if statErr != nil {
+				return nil, statErr
 			}
 		}
 		if !info.IsDir() {
@@ -394,12 +394,12 @@ func (m *Manager) ListInstalled(ctx context.Context, directory string) ([]Instal
 		} else if err != nil {
 			return nil, err
 		}
-		skill, err := readDefinition(
+		skill, definitionErr := readDefinition(
 			filesystem,
 			name,
 		)
-		if err != nil {
-			return nil, err
+		if definitionErr != nil {
+			return nil, definitionErr
 		}
 		skill.Path = filepath.Join(
 			directory,

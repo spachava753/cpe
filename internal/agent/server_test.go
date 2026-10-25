@@ -41,8 +41,8 @@ func (testAuth) Logout(context.Context) error                      { return nil 
 
 type testClient struct {
 	t       *testing.T
-	mu      sync.Mutex
 	updates []acp.SessionNotification
+	mu      sync.Mutex
 }
 
 func (c *testClient) Update(_ context.Context, notification *acp.SessionNotification) error {
@@ -548,12 +548,12 @@ func TestSessionLifecycle(t *testing.T) {
 					target,
 					"print(kv.get('value') + 1)",
 				)
-				record, err := fixture.store.Load(
+				record, loadErr := fixture.store.Load(
 					t.Context(),
 					conversation.ID(target),
 				)
-				if err != nil {
-					t.Fatal(err)
+				if loadErr != nil {
+					t.Fatal(loadErr)
 				}
 				if output := lastToolOutput(record); !strings.Contains(
 					output,
@@ -594,15 +594,15 @@ func TestSessionLifecycle(t *testing.T) {
 					target,
 					"kv.store('value', kv.get('value') + 1)\nprint(kv.get('value'))",
 				)
-				record, err = fixture.store.Load(
+				record, loadErr = fixture.store.Load(
 					t.Context(),
 					conversation.ID(target),
 				)
-				if err != nil || lastToolOutput(record) != "11\n" {
+				if loadErr != nil || lastToolOutput(record) != "11\n" {
 					t.Fatalf(
 						"session KV did not persist: %#v, %v",
 						record,
-						err,
+						loadErr,
 					)
 				}
 				if operation == "fork" {

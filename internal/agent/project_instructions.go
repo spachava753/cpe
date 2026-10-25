@@ -88,15 +88,15 @@ func projectInstructionPaths(ctx context.Context, filesystem afero.Fs, directory
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	entries, err := afero.ReadDir(
+	entries, readErr := afero.ReadDir(
 		filesystem,
 		directory,
 	)
-	if err != nil {
+	if readErr != nil {
 		return nil, fmt.Errorf(
 			"read directory %q: %w",
 			directory,
-			err,
+			readErr,
 		)
 	}
 	var paths []string
@@ -131,9 +131,9 @@ func projectInstructionPaths(ctx context.Context, filesystem afero.Fs, directory
 		}
 		// Inspect file links without following directory links and creating scan cycles.
 		if entry.Mode()&fs.ModeSymlink != 0 {
-			entry, err = filesystem.Stat(path)
-			if err != nil {
-				return nil, err
+			entry, readErr = filesystem.Stat(path)
+			if readErr != nil {
+				return nil, readErr
 			}
 		}
 		if entry.Mode().IsRegular() {

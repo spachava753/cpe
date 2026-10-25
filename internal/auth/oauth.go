@@ -29,10 +29,10 @@ type openAIClient struct {
 }
 
 type tokenResponse struct {
+	ExpiresIn    *int64 `json:"expires_in"`
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 	IDToken      string `json:"id_token"`
-	ExpiresIn    *int64 `json:"expires_in"`
 }
 
 func (client openAIClient) exchange(ctx context.Context, code, verifier, redirect string) (OAuthCredentials, error) {

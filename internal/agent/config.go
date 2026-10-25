@@ -26,9 +26,9 @@ type Config struct {
 	Models map[models.ID]models.Model
 	// Initial supplies the fallback model and the reasoning effort for new sessions.
 	Initial      models.Selection
+	Instructions string
 	SkillPaths   []string
 	PluginPaths  []string
-	Instructions string
 	SetupTimeout time.Duration
 	// MaxResponseRetries limits retries of one interrupted model response; zero disables retries.
 	MaxResponseRetries uint

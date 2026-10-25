@@ -50,11 +50,11 @@ func TestImage(t *testing.T) {
 	}
 	for _, test := range []struct {
 		name       string
-		data       []byte
 		code       string
 		mime       string
-		wantImages int
 		wantError  string
+		data       []byte
+		wantImages int
 		save       bool
 		ordered    bool
 	}{

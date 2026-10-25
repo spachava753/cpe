@@ -12,18 +12,18 @@ import (
 
 // LoginOptions selects a provider, credential file, and sign-in flow.
 type LoginOptions struct {
-	Provider Provider
-	// Path is the native path to the shared auth.json file.
-	Path string
 	// Client performs OpenAI authentication requests and is required for OpenAI login.
 	Client *http.Client
+	// Path is the native path to the shared auth.json file.
+	Path     string
+	Provider Provider
 	// Device uses OpenAI's device-code flow for remote or headless terminals.
 	Device bool
 }
 
 type loginFlow struct {
-	oauth     openAIClient
 	promptKey func(context.Context, commandio.IO) (string, error)
+	oauth     openAIClient
 }
 
 // Login signs in, saves the provider's credentials at opts.Path, and writes a confirmation.
@@ -68,44 +68,44 @@ func login(ctx context.Context, store *Store, opts LoginOptions, streams command
 		return err
 	}
 	var credentials Credentials
-	var err error
+	var loginErr error
 	switch opts.Provider {
 	case OpenAI:
 		var tokens OAuthCredentials
 		if opts.Device {
-			tokens, err = flow.oauth.deviceLogin(
+			tokens, loginErr = flow.oauth.deviceLogin(
 				ctx,
 				streams.ErrorOutput(),
 			)
 		} else {
-			tokens, err = flow.oauth.browserLogin(
+			tokens, loginErr = flow.oauth.browserLogin(
 				ctx,
 				streams.ErrorOutput(),
 			)
 		}
-		if err == nil {
+		if loginErr == nil {
 			credentials.OpenAI = &tokens
 		}
 	case OpenCode:
 		var key string
-		key, err = flow.promptKey(
+		key, loginErr = flow.promptKey(
 			ctx,
 			streams,
 		)
-		if err == nil {
+		if loginErr == nil {
 			key = strings.TrimSpace(key)
-			err = validateAPIKey(key)
+			loginErr = validateAPIKey(key)
 		}
-		if err == nil {
+		if loginErr == nil {
 			credentials.OpenCode = &APIKeyCredentials{
 				APIKey: key,
 			}
 		}
 	}
-	if err != nil {
+	if loginErr != nil {
 		return fmt.Errorf(
 			"login: %w",
-			err,
+			loginErr,
 		)
 	}
 	if err := store.Save(
@@ -116,14 +116,14 @@ func login(ctx context.Context, store *Store, opts LoginOptions, streams command
 	); err != nil {
 		return err
 	}
-	name, err := opts.Provider.name()
-	if err != nil {
-		return err
+	name, loginErr := opts.Provider.name()
+	if loginErr != nil {
+		return loginErr
 	}
-	_, err = fmt.Fprintf(
+	_, loginErr = fmt.Fprintf(
 		streams.Output(),
 		"Saved %s credentials.\n",
 		name,
 	)
-	return err
+	return loginErr
 }

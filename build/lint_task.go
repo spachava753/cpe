@@ -10,20 +10,78 @@ import (
 	"regexp"
 
 	"github.com/goyek/goyek/v2"
+	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/passes/modernize"
+	"golang.org/x/tools/go/analysis/passes/scannererr"
+	"golang.org/x/tools/go/analysis/passes/sqlrowserr"
+
+	"github.com/spachava753/cpe/build/internal/lintanalysis"
 )
 
+const goTool = "tool"
+
+func runLintAnalyzers(a *goyek.A, patterns []string) {
+	if err := lintanalysis.Run(
+		a.Context(),
+		[]*analysis.Analyzer{
+			scannererr.Analyzer,
+			sqlrowserr.Analyzer,
+			modernize.AppendClippedAnalyzer,
+			modernize.BLoopAnalyzer,
+			modernize.FmtAppendfAnalyzer,
+			modernize.SlicesDeleteAnalyzer,
+		},
+		patterns,
+		lintanalysis.Options{
+			Output:  os.Stderr,
+			Fix:     *lintFix,
+			Verbose: *lintVerbose,
+		},
+	); err != nil {
+		a.Errorf(
+			"additional analyzers: %v",
+			err,
+		)
+	}
+}
+
 // Register the repository lint task used by local development and CI.
-// It executes `go tool golangci-lint run ./...`, runs the modernize analyzer
-// (honoring -lint-fix and -lint-verbose where supported), reports package-level
-// declarations that can be unexported, checks for unreachable code with
-// `go tool deadcode -test ./...`, and then enforces repo-specific architecture
-// rules.
+// It checks formatting, runs golangci-lint and modernize, reports additional
+// public analyzer diagnostics, and checks for unreachable code with deadcode.
+// The -lint-fix flag also applies fixes from the optional modernizers.
 var _ = goyek.Define(goyek.Task{
 	Name:  "lint",
 	Usage: "Run golangci-lint and custom linters. Use -lint-fix to auto-fix, -lint-verbose for details",
 	Action: func(a *goyek.A) {
+		formatArgs := []string{
+			goTool,
+			"golangci-lint",
+			"fmt",
+		}
+		if !*lintFix {
+			formatArgs = append(
+				formatArgs,
+				"--diff",
+			)
+		}
+		if *lintVerbose {
+			formatArgs = append(
+				formatArgs,
+				"-v",
+			)
+		}
+		formatArgs = append(
+			formatArgs,
+			"./...",
+		)
+		runLintCommand(
+			a,
+			"formatters",
+			formatArgs...,
+		)
+
 		args := []string{
-			"tool",
+			goTool,
 			"golangci-lint",
 			"run",
 		}
@@ -50,8 +108,9 @@ var _ = goyek.Define(goyek.Task{
 			args...,
 		)
 
+		modernizePackages := modernizePackageArgs(a)
 		modernizeArgs := []string{
-			"tool",
+			goTool,
 			"modernize",
 		}
 		if *lintFix {
@@ -68,18 +127,25 @@ var _ = goyek.Define(goyek.Task{
 		}
 		modernizeArgs = append(
 			modernizeArgs,
-			modernizePackageArgs(a)...,
+			modernizePackages...,
 		)
-		runLintCommand(
+		if len(modernizePackages) != 0 {
+			runLintCommand(
+				a,
+				"modernize",
+				modernizeArgs...,
+			)
+		}
+
+		runLintAnalyzers(
 			a,
-			"modernize",
-			modernizeArgs...,
+			modernizePackages,
 		)
 
 		runLintCommand(
 			a,
 			"deadcode",
-			"tool",
+			goTool,
 			"deadcode",
 			"-test",
 			"./...",
