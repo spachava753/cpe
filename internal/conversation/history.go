@@ -34,23 +34,13 @@ type Info struct {
 
 // Record checkpoints conversation, configuration, and session KV data, never live resources.
 type Record struct {
-	Info             Info
-	Options          models.Selection
-	Dialog           gai.Dialog
-	AbortedResponses []AbortedResponse
-	Compaction       *Compaction
-	Usage            TokenUsage
+	Info       Info
+	Options    models.Selection
+	Dialog     gai.Dialog
+	Compaction *Compaction
+	Usage      TokenUsage
 	// KV holds opaque runtime-encoded values by session-local key.
 	KV map[string][]byte
-}
-
-// AbortedResponse records an incomplete model response excluded from conversation and replay.
-type AbortedResponse struct {
-	Model         models.ID
-	At            time.Time
-	AfterMessages int
-	Reason        string
-	Partial       gai.Message
 }
 
 // Query filters saved conversations. Cursor is the last returned session ID.
@@ -287,11 +277,6 @@ type storedMessage struct {
 	Blocks []storedBlock `json:"blocks"`
 }
 
-type storedAbortedResponse struct {
-	AbortedResponse
-	Partial storedMessage
-}
-
 // Byte keys preserve Starlark strings that are not valid UTF-8.
 type storedKVEntry struct {
 	Key   []byte
@@ -299,13 +284,12 @@ type storedKVEntry struct {
 }
 
 type storedRecord struct {
-	Info             Info
-	Options          models.Selection
-	Dialog           []storedMessage
-	AbortedResponses []storedAbortedResponse
-	Compaction       *Compaction
-	Usage            TokenUsage
-	KV               []storedKVEntry
+	Info       Info
+	Options    models.Selection
+	Dialog     []storedMessage
+	Compaction *Compaction
+	Usage      TokenUsage
+	KV         []storedKVEntry
 }
 
 func encodeRecord(record Record) ([]byte, error) {
@@ -336,19 +320,6 @@ func encodeRecord(record Record) ([]byte, error) {
 		stored.Dialog = append(
 			stored.Dialog,
 			item,
-		)
-	}
-	for _, aborted := range record.AbortedResponses {
-		partial, err := storeMessage(aborted.Partial)
-		if err != nil {
-			return nil, err
-		}
-		stored.AbortedResponses = append(
-			stored.AbortedResponses,
-			storedAbortedResponse{
-				AbortedResponse: aborted,
-				Partial:         partial,
-			},
 		)
 	}
 	return json.Marshal(stored)
@@ -411,14 +382,6 @@ func decodeRecord(data []byte) (Record, error) {
 		record.Dialog = append(
 			record.Dialog,
 			restoreMessage(item),
-		)
-	}
-	for _, item := range stored.AbortedResponses {
-		aborted := item.AbortedResponse
-		aborted.Partial = restoreMessage(item.Partial)
-		record.AbortedResponses = append(
-			record.AbortedResponses,
-			aborted,
 		)
 	}
 	if err := record.Validate(); err != nil {

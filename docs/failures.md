@@ -12,19 +12,21 @@ effects may already have happened.
 ## An interrupted model response
 
 Text and reasoning can stream to the client before a response finishes. If the
-response fails, some of that text may already be visible. CPE records the
-incomplete response separately as aborted and excludes it from accepted
-conversation, future model context, and later transcript replay.
+response fails, some of that text may already be visible. CPE discards the
+incomplete response rather than saving it. It never enters future model context
+or later transcript replay.
 
-The client receives an advisory notice explaining the interruption and whether
-CPE will retry. Clients without notice support receive a text update instead.
-Live display can therefore contain partial text that will be absent when the
-session is later loaded.
+The client always receives an assistant-message update explaining the
+interruption and whether CPE will retry. Clients with session-notice support also
+receive an advisory notice. These messages and notices are not saved or replayed.
+Live display can therefore contain partial text and retry messages that will be
+absent when the session is later loaded.
 
 ```text
  Saved conversation --> model attempt --> partial output --> failure
           |                                      |
-          |                               record as aborted
+          |                          discard incomplete response
+          |                             send live updates
           |                                      |
           +---- same request, if retryable <------+
                           |
@@ -43,12 +45,13 @@ delay takes precedence. Permanent provider errors, credential failures, and
 user cancellation do not trigger response retries. Unknown failures before any
 output are not blindly retried.
 
-A retry repeats the model request at the failure point. Completed tools from
-earlier responses retain their results and are never automatically rerun.
-Tools requested by an incomplete response have not started. A failure to save
-the aborted response stops retrying, as does failure to deliver updates to the
-client. Restoring a saved session never automatically restarts an aborted
-response.
+A retry repeats the model request at the failure point. Failure to deliver
+updates to the client stops retrying. Restoring a saved session never
+automatically restarts an aborted response.
+
+Provider-reported token consumption still accumulates across failed attempts and
+retries. These counters are saved at normal checkpoints, not at every failure. A
+process crash before the next checkpoint can lose the latest usage counts.
 
 ## A failed script or command
 

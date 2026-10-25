@@ -1,10 +1,14 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"iter"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -22,35 +26,46 @@ import (
 
 func TestResponseRecovery(t *testing.T) {
 	for _, test := range []struct {
-		name           string
-		failures       int
-		failure        error
-		partial        bool
-		notices        bool
-		retries        uint
-		wantCalls      int
-		wantAborted    int
-		wantError      bool
-		failCheckpoint bool
+		name         string
+		failures     int
+		failure      error
+		partial      bool
+		nonStreaming bool
+		notices      bool
+		retries      uint
+		wantCalls    int
+		wantUpdates  int
+		wantError    bool
 	}{
 		{
-			name:        "partial stream retries with notice",
+			name:        "partial stream retries with message and notice",
 			failures:    1,
 			failure:     io.ErrUnexpectedEOF,
 			partial:     true,
 			notices:     true,
 			retries:     1,
 			wantCalls:   2,
-			wantAborted: 1,
+			wantUpdates: 1,
 		},
 		{
-			name:        "partial stream retries with text fallback",
+			name:        "partial stream retries with message only",
 			failures:    1,
 			failure:     io.ErrUnexpectedEOF,
 			partial:     true,
 			retries:     1,
 			wantCalls:   2,
-			wantAborted: 1,
+			wantUpdates: 1,
+		},
+		{
+			name:         "non-streaming partial response retries with message and notice",
+			failures:     1,
+			failure:      errors.New("interrupted generation"),
+			partial:      true,
+			nonStreaming: true,
+			notices:      true,
+			retries:      1,
+			wantCalls:    2,
+			wantUpdates:  1,
 		},
 		{
 			name:        "transport failure before output",
@@ -58,7 +73,25 @@ func TestResponseRecovery(t *testing.T) {
 			failure:     io.ErrUnexpectedEOF,
 			retries:     1,
 			wantCalls:   2,
-			wantAborted: 1,
+			wantUpdates: 1,
+		},
+		{
+			name:        "unknown failure after partial output retries",
+			failures:    1,
+			failure:     errors.New("interrupted generation"),
+			partial:     true,
+			retries:     1,
+			wantCalls:   2,
+			wantUpdates: 1,
+		},
+		{
+			name:        "unknown failure before output is not retried",
+			failures:    1,
+			failure:     errors.New("invalid generation configuration"),
+			retries:     1,
+			wantCalls:   1,
+			wantUpdates: 1,
+			wantError:   true,
 		},
 		{
 			name:     "provider-wrapped transport failure retries",
@@ -69,7 +102,7 @@ func TestResponseRecovery(t *testing.T) {
 			},
 			retries:     1,
 			wantCalls:   2,
-			wantAborted: 1,
+			wantUpdates: 1,
 		},
 		{
 			name:     "permanent provider error is not retried",
@@ -80,7 +113,7 @@ func TestResponseRecovery(t *testing.T) {
 			},
 			retries:     1,
 			wantCalls:   1,
-			wantAborted: 1,
+			wantUpdates: 1,
 			wantError:   true,
 		},
 		{
@@ -93,7 +126,7 @@ func TestResponseRecovery(t *testing.T) {
 			partial:     true,
 			retries:     1,
 			wantCalls:   1,
-			wantAborted: 1,
+			wantUpdates: 1,
 			wantError:   true,
 		},
 		{
@@ -101,20 +134,11 @@ func TestResponseRecovery(t *testing.T) {
 			failures:    2,
 			failure:     io.ErrUnexpectedEOF,
 			partial:     true,
+			notices:     true,
 			retries:     1,
 			wantCalls:   2,
-			wantAborted: 2,
+			wantUpdates: 2,
 			wantError:   true,
-		},
-		{
-			name:           "checkpoint failure prevents retry",
-			failures:       1,
-			failure:        io.ErrUnexpectedEOF,
-			partial:        true,
-			retries:        1,
-			wantCalls:      1,
-			wantError:      true,
-			failCheckpoint: true,
 		},
 		{
 			name:        "retries disabled",
@@ -123,21 +147,66 @@ func TestResponseRecovery(t *testing.T) {
 			partial:     true,
 			retries:     0,
 			wantCalls:   1,
-			wantAborted: 1,
+			wantUpdates: 1,
 			wantError:   true,
 		},
 	} {
 		t.Run(
 			test.name,
 			func(t *testing.T) {
+				directory := t.TempDir()
+				history, err := conversation.NewStore(directory)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var id acp.SessionId
+				var checkpoint []byte
+				check := func(request gai.GenerationRequest) error {
+					data, err := os.ReadFile(filepath.Join(
+						directory,
+						string(id)+".json",
+					))
+					if err != nil {
+						return err
+					}
+					if checkpoint == nil {
+						checkpoint = data
+					} else if !bytes.Equal(
+						checkpoint,
+						data,
+					) {
+						return errors.New("retry changed the persisted checkpoint")
+					}
+					if len(request.Dialog) != 1 || request.Dialog[0].Role != gai.User || request.Dialog[0].Blocks[0].Content.String() != "question" {
+						return errors.New("attempt did not use only the accepted conversation")
+					}
+					return nil
+				}
+				var partial gai.Message
+				if test.partial {
+					partial = gai.Message{
+						Role: gai.Assistant,
+						Blocks: []gai.Block{
+							gai.TextBlock("aborted fragment"),
+							{
+								BlockType:    gai.Thinking,
+								ModalityType: gai.Text,
+								Content:      gai.Str("aborted reasoning"),
+							},
+						},
+					}
+				}
 				var steps []agenttest.StreamStep
+				var nonStreamingSteps []agenttest.GenerateStep
 				for range test.failures {
-					step := agenttest.StreamStep{}
-					if test.partial {
+					step := agenttest.StreamStep{
+						Check: check,
+					}
+					for _, block := range partial.Blocks {
 						step.Chunks = append(
 							step.Chunks,
 							gai.StreamChunk{
-								Block: gai.TextBlock("aborted fragment"),
+								Block: block,
 							},
 						)
 					}
@@ -151,35 +220,23 @@ func TestResponseRecovery(t *testing.T) {
 						steps,
 						step,
 					)
+					nonStreamingSteps = append(
+						nonStreamingSteps,
+						agenttest.GenerateStep{
+							Check: check,
+							Response: gai.Response{
+								Candidates: []gai.Message{
+									partial,
+								},
+							},
+							Err: test.failure,
+						},
+					)
 				}
-				var history conversation.Store
-				var id acp.SessionId
 				steps = append(
 					steps,
 					agenttest.StreamStep{
-						Check: func(request gai.GenerationRequest) error {
-							record, err := history.Load(
-								t.Context(),
-								conversation.ID(id),
-							)
-							if err != nil {
-								return err
-							}
-							if len(record.AbortedResponses) != test.failures {
-								return errors.New("retry started before aborted response was checkpointed")
-							}
-							for _, message := range request.Dialog {
-								for _, block := range message.Blocks {
-									if strings.Contains(
-										block.Content.String(),
-										"aborted fragment",
-									) {
-										return errors.New("aborted output entered retry context")
-									}
-								}
-							}
-							return nil
-						},
+						Check: check,
 						Chunks: []gai.StreamChunk{
 							{
 								Block: gai.TextBlock("accepted answer"),
@@ -187,7 +244,21 @@ func TestResponseRecovery(t *testing.T) {
 						},
 					},
 				)
-				generator := agenttest.NewScriptedStreamingGenerator(steps...)
+				streaming := agenttest.NewScriptedStreamingGenerator(steps...)
+				var generator gai.Generator = streaming
+				requests := streaming.Requests
+				if test.nonStreaming {
+					nonStreamingSteps = append(
+						nonStreamingSteps,
+						agenttest.GenerateStep{
+							Check:    check,
+							Response: compactionResponse(gai.TextBlock("accepted answer")),
+						},
+					)
+					nonStreaming := agenttest.NewScriptedGenerator(nonStreamingSteps...)
+					generator = nonStreaming
+					requests = nonStreaming.Requests
+				}
 				fixture := serverFixture(
 					t,
 					func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
@@ -195,11 +266,7 @@ func TestResponseRecovery(t *testing.T) {
 					},
 					func(config *Config, deps *Dependencies, initialize *acp.InitializeRequest) {
 						config.MaxResponseRetries = test.retries
-						if test.failCheckpoint {
-							deps.History = rejectAbortedStore{
-								Store: deps.History,
-							}
-						}
+						deps.History = history
 						if test.notices {
 							initialize.ClientCapabilities = &acp.ClientCapabilities{
 								Session: &acp.ClientSessionCapabilities{
@@ -209,12 +276,11 @@ func TestResponseRecovery(t *testing.T) {
 						}
 					},
 				)
-				history = fixture.store
 				id = openFixtureSession(
 					t,
 					fixture.client,
 				)
-				_, err := fixture.client.Prompt(
+				_, err = fixture.client.Prompt(
 					t.Context(),
 					&acp.PromptRequest{
 						SessionID: id,
@@ -229,16 +295,16 @@ func TestResponseRecovery(t *testing.T) {
 						err,
 					)
 				}
-				if len(generator.Requests()) != test.wantCalls {
+				if len(requests()) != test.wantCalls {
 					t.Fatalf(
 						"provider calls: %d",
-						len(generator.Requests()),
+						len(requests()),
 					)
 				}
-				for _, request := range generator.Requests() {
+				for _, request := range requests() {
 					if request.PromptCacheKey != string(id) {
 						t.Fatalf(
-							"streaming attempt lost the conversation cache key: %q",
+							"attempt lost the conversation cache key: %q",
 							request.PromptCacheKey,
 						)
 					}
@@ -250,46 +316,74 @@ func TestResponseRecovery(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if len(record.AbortedResponses) != test.wantAborted {
+				wantMessages := 2
+				if test.wantError {
+					wantMessages = 1
+				}
+				if len(record.Dialog) != wantMessages || record.Dialog[0].Blocks[0].Content.String() != "question" {
 					t.Fatalf(
-						"aborted responses: %d",
-						len(record.AbortedResponses),
+						"accepted history: %#v",
+						record.Dialog,
 					)
 				}
-				for _, aborted := range record.AbortedResponses {
-					if aborted.Model != "one" || aborted.At.IsZero() || aborted.Reason == "" || aborted.AfterMessages != 1 {
+				data, err := os.ReadFile(filepath.Join(
+					directory,
+					string(id)+".json",
+				))
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, fragment := range []string{
+					"aborted fragment",
+					"aborted reasoning",
+					"The model call was aborted",
+					"Model response aborted",
+				} {
+					if bytes.Contains(
+						data,
+						[]byte(fragment),
+					) {
 						t.Fatalf(
-							"incomplete aborted record: %#v",
-							aborted,
+							"checkpoint retained %q",
+							fragment,
 						)
-					}
-					if test.partial && (len(aborted.Partial.Blocks) != 1 || aborted.Partial.Blocks[0].Content.String() != "aborted fragment") {
-						t.Fatal("aborted output not preserved")
 					}
 				}
 				if err := fixture.client.Close(); err != nil {
 					t.Fatal(err)
 				}
 				fixture.notifications.mu.Lock()
-				abortNotices := 0
-				for _, notification := range fixture.notifications.updates {
+				updates := slices.Clone(fixture.notifications.updates)
+				fixture.notifications.mu.Unlock()
+				abortMessages, abortNotices, retryMessages := 0, 0, 0
+				for _, notification := range updates {
 					update := notification.Update
-					if test.notices {
-						if update.SessionUpdate == acp.SessionUpdateTypeNotice && update.Title != nil && *update.Title == "Model response aborted" {
-							abortNotices++
-						}
-					} else if content, ok := update.Content.(acp.ContentBlock); ok && strings.Contains(
-						content.Text,
-						"Model response aborted",
-					) {
+					if update.SessionUpdate == acp.SessionUpdateTypeNotice && update.Title != nil && *update.Title == "Model response aborted" {
 						abortNotices++
 					}
+					if content, ok := update.Content.(acp.ContentBlock); ok && update.SessionUpdate == acp.SessionUpdateTypeAgentMessageChunk && strings.Contains(
+						content.Text,
+						"The model call was aborted",
+					) {
+						abortMessages++
+						if strings.Contains(
+							content.Text,
+							"Retrying the model response",
+						) {
+							retryMessages++
+						}
+					}
 				}
-				fixture.notifications.mu.Unlock()
-				if abortNotices != test.wantAborted {
+				wantNotices := 0
+				if test.notices {
+					wantNotices = test.wantUpdates
+				}
+				if abortMessages != test.wantUpdates || abortNotices != wantNotices || retryMessages != test.wantCalls-1 {
 					t.Fatalf(
-						"abort notices: %d",
+						"abort messages=%d notices=%d retry messages=%d",
+						abortMessages,
 						abortNotices,
+						retryMessages,
 					)
 				}
 
@@ -300,30 +394,22 @@ func TestResponseRecovery(t *testing.T) {
 					func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 						return generatorFunc(func(_ context.Context, request gai.GenerationRequest) (gai.Response, error) {
 							restoredCalls.Add(1)
-							for _, message := range request.Dialog {
-								for _, block := range message.Blocks {
-									if strings.Contains(
-										block.Content.String(),
-										"aborted fragment",
-									) {
-										t.Error("restored provider context includes aborted output")
-									}
-								}
+							if len(request.Dialog) != wantMessages+1 || request.Dialog[0].Blocks[0].Content.String() != "question" {
+								t.Error("restored provider context did not retain accepted history")
 							}
-							return gai.Response{
-								Candidates: []gai.Message{
-									{
-										Role: gai.Assistant,
-										Blocks: []gai.Block{
-											gai.TextBlock("continued"),
-										},
-									},
-								},
-								FinishReason: gai.EndTurn,
-							}, nil
+							return compactionResponse(gai.TextBlock("continued")), nil
 						}), gai.GenerationOptions{}, nil
 					},
-					func(_ *Config, deps *Dependencies, _ *acp.InitializeRequest) { deps.History = history },
+					func(_ *Config, deps *Dependencies, initialize *acp.InitializeRequest) {
+						deps.History = history
+						if test.notices {
+							initialize.ClientCapabilities = &acp.ClientCapabilities{
+								Session: &acp.ClientSessionCapabilities{
+									Notices: &acp.NoticeCapabilities{},
+								},
+							}
+						}
+					},
 				)
 				if _, err := restored.client.LoadSession(
 					t.Context(),
@@ -348,31 +434,39 @@ func TestResponseRecovery(t *testing.T) {
 				}
 				restored.notifications.mu.Lock()
 				defer restored.notifications.mu.Unlock()
+				replayedAnswer := false
 				for _, notification := range restored.notifications.updates {
-					if content, ok := notification.Update.Content.(acp.ContentBlock); ok && strings.Contains(
-						content.Text,
-						"aborted fragment",
-					) {
-						t.Fatal("aborted response replayed to ACP client")
+					update := notification.Update
+					if update.SessionUpdate == acp.SessionUpdateTypeNotice && update.Title != nil && *update.Title == "Model response aborted" {
+						t.Fatal("abort notice replayed to ACP client")
 					}
+					if content, ok := update.Content.(acp.ContentBlock); ok {
+						for _, fragment := range []string{
+							"aborted fragment",
+							"aborted reasoning",
+							"The model call was aborted",
+						} {
+							if strings.Contains(
+								content.Text,
+								fragment,
+							) {
+								t.Fatalf(
+									"replay retained %q",
+									fragment,
+								)
+							}
+						}
+						if content.Text == "accepted answer" {
+							replayedAnswer = true
+						}
+					}
+				}
+				if replayedAnswer == test.wantError {
+					t.Fatal("accepted answer was not replayed as expected")
 				}
 			},
 		)
 	}
-}
-
-type rejectAbortedStore struct {
-	conversation.Store
-}
-
-func (s rejectAbortedStore) Save(ctx context.Context, record conversation.Record) error {
-	if len(record.AbortedResponses) != 0 {
-		return errors.New("checkpoint unavailable")
-	}
-	return s.Store.Save(
-		ctx,
-		record,
-	)
 }
 
 type streamingFunc func(context.Context, gai.GenerationRequest) iter.Seq[gai.StreamChunk]
@@ -473,8 +567,11 @@ func TestResponseCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(record.AbortedResponses) != 1 || record.AbortedResponses[0].Partial.Blocks[0].Content.String() != "cancelled fragment" {
-		t.Fatal("cancellation not persisted as aborted")
+	if len(record.Dialog) != 1 || record.Dialog[0].Role != gai.User || record.Dialog[0].Blocks[0].Content.String() != "question" {
+		t.Fatalf(
+			"cancellation changed accepted history: %#v",
+			record.Dialog,
+		)
 	}
 }
 

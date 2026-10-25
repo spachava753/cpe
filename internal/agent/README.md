@@ -46,12 +46,16 @@ previous session's effort.
 ## Saved history and working context
 
 A `conversation.Record` contains the transcript, selected model and reasoning,
-usage, aborted responses, optional compaction boundary, and encoded session KV
-values. It does not contain live resources. `toolruntime` requires a
-`KeyValueStore`; the session implements it by saving a replacement record before
-publishing each accepted write. Loading and resuming restore KV data, and forking
-copies it independently, without replaying tool calls. Each invocation still
-starts with fresh globals and imports.
+usage, optional compaction boundary, and encoded session KV values. It does not
+contain live resources. `toolruntime` requires a `KeyValueStore`; the session
+implements it by saving a replacement record before publishing each accepted
+write. Loading and resuming restore KV data, and forking copies it independently,
+without replaying tool calls. Each invocation still starts with fresh globals
+and imports.
+
+Aborted model responses and their live assistant-message updates and notices are
+not saved. Reported token usage accumulates across all attempts in memory and is
+saved at normal checkpoints, without a separate save for an aborted response.
 
 Accepted user messages are checkpointed before generation. The complete tool-call
 response is checkpointed before execution, and each completed tool result is saved
