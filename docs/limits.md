@@ -114,7 +114,7 @@ applies earlier, while receiving the response.
 | Model-response retry delay | 250 ms, 500 ms, 1 s, 2 s, 4 s, then 8 s for later retries | A longer provider-requested delay takes precedence. With the default retry count, only the first two delays are used. |
 | Subprocess runtime | No timeout by default | A script can set `subprocess.run(..., timeout=30)` to use a timeout in seconds. Turn cancellation also stops the command. |
 | Waiting for command exit or lingering output pipes after cancellation or observed process exit | 1 second | CPE terminates the child or closes remaining pipes when needed to finish waiting. This does not limit a normally running command to one second. |
-| Cleanup after an aborted response, at turn end, or during connection shutdown | 10-second budget for each cleanup phase | Gives checkpointing and client notifications a chance to finish after cancellation. It is not a guarantee that the entire shutdown finishes within ten seconds; joining active work and resource shutdown can take longer. |
+| Cleanup after an aborted response, at turn end, or during connection shutdown | 10-second budget for each cleanup phase | Allows client notifications and, at turn end or shutdown, checkpointing after cancellation. It is not a guarantee that the entire shutdown finishes within ten seconds; joining active work and resource shutdown can take longer. |
 | Listing saved sessions | Up to 100 sessions per page | The client uses the returned cursor to request the next page. |
 
 [Sessions and turns](sessions.md) explains resource lifetimes.

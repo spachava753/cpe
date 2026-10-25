@@ -320,7 +320,7 @@ func TestUsageAttempts(t *testing.T) {
 	for _, test := range []struct {
 		name         string
 		metadata     gai.Metadata
-		retry        bool
+		failures     int
 		nonStreaming bool
 		cancel       bool
 		limit        uint
@@ -375,8 +375,8 @@ func TestUsageAttempts(t *testing.T) {
 				gai.UsageMetricGenerationTokens: 2,
 				gai.UsageMetricCacheReadTokens:  0,
 			},
-			retry: true,
-			limit: 1000,
+			failures: 1,
+			limit:    1000,
 			want: &acp.Usage{
 				InputTokens:      30,
 				OutputTokens:     5,
@@ -394,7 +394,7 @@ func TestUsageAttempts(t *testing.T) {
 				gai.UsageMetricInputTokens:      10,
 				gai.UsageMetricGenerationTokens: 2,
 			},
-			retry:        true,
+			failures:     1,
 			nonStreaming: true,
 			limit:        1000,
 			want: &acp.Usage{
@@ -402,6 +402,26 @@ func TestUsageAttempts(t *testing.T) {
 				OutputTokens:  5,
 				TotalTokens:   35,
 				ThoughtTokens: new(uint64(1)),
+			},
+			wantContext: []uint64{
+				23,
+			},
+		},
+		{
+			name: "all failed attempts and the successful retry count once each",
+			metadata: gai.Metadata{
+				gai.UsageMetricInputTokens:      10,
+				gai.UsageMetricGenerationTokens: 2,
+				gai.UsageMetricCacheReadTokens:  0,
+			},
+			failures: 2,
+			limit:    1000,
+			want: &acp.Usage{
+				InputTokens:      40,
+				OutputTokens:     7,
+				TotalTokens:      47,
+				CachedReadTokens: new(uint64(0)),
+				ThoughtTokens:    new(uint64(1)),
 			},
 			wantContext: []uint64{
 				23,
@@ -444,7 +464,7 @@ func TestUsageAttempts(t *testing.T) {
 						}) {
 							return
 						}
-						if attempt > 1 {
+						if test.failures != 0 && attempt > int32(test.failures) {
 							yield(gai.StreamChunk{
 								Block: gai.MetadataBlock(gai.Metadata{
 									gai.UsageMetricInputTokens:      20,
@@ -454,7 +474,7 @@ func TestUsageAttempts(t *testing.T) {
 							})
 							return
 						}
-						if test.retry {
+						if test.failures != 0 {
 							// Metadata is a snapshot, not an additive delta within an attempt.
 							if !yield(gai.StreamChunk{
 								Block: gai.MetadataBlock(gai.Metadata{
@@ -476,7 +496,7 @@ func TestUsageAttempts(t *testing.T) {
 							yield(gai.StreamChunk{
 								Err: ctx.Err(),
 							})
-						} else if test.retry {
+						} else if test.failures != 0 {
 							yield(gai.StreamChunk{
 								Err: io.ErrUnexpectedEOF,
 							})
@@ -485,7 +505,7 @@ func TestUsageAttempts(t *testing.T) {
 				})
 				if test.nonStreaming {
 					generator = generatorFunc(func(context.Context, gai.GenerationRequest) (gai.Response, error) {
-						if calls.Add(1) == 1 {
+						if calls.Add(1) <= int32(test.failures) {
 							return usageResponse(test.metadata), io.ErrUnexpectedEOF
 						}
 						return usageResponse(gai.Metadata{
@@ -501,6 +521,10 @@ func TestUsageAttempts(t *testing.T) {
 						return generator, gai.GenerationOptions{}, nil
 					},
 					func(config *Config, _ *Dependencies, _ *acp.InitializeRequest) {
+						config.MaxResponseRetries = max(
+							config.MaxResponseRetries,
+							uint(test.failures),
+						)
 						model := config.Models["one"]
 						model.Limit = test.limit
 						config.Models["one"] = model
@@ -565,10 +589,7 @@ func TestUsageAttempts(t *testing.T) {
 						t.Fatal(diff)
 					}
 				}
-				wantCalls := int32(1)
-				if test.retry {
-					wantCalls = 2
-				}
+				wantCalls := int32(test.failures + 1)
 				if calls.Load() != wantCalls {
 					t.Fatal("unexpected provider attempts")
 				}

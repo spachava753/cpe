@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
 	gaiagent "github.com/spachava753/gai/agent"
 
@@ -52,32 +53,19 @@ func (g *responseGenerator) Generate(ctx context.Context, request gai.Generation
 		}
 		retry := usageErr == nil && ctx.Err() == nil && deliveryErr == nil && attempt < g.session.config.MaxResponseRetries && retryResponse(
 			err,
-			len(partial.Blocks) != 0,
+			partial,
 		)
+		if deliveryErr != nil {
+			return gai.Response{}, errors.Join(
+				err,
+				deliveryErr,
+			)
+		}
 		cleanup, cancel := context.WithTimeout(
 			context.WithoutCancel(ctx),
 			10*time.Second,
 		)
-		saveErr := g.session.recordAborted(
-			cleanup,
-			g.hooks.dialog,
-			conversation.AbortedResponse{
-				Model:         g.hooks.modelID,
-				At:            time.Now().UTC(),
-				AfterMessages: len(g.hooks.dialog),
-				Reason:        err.Error(),
-				Partial:       partial,
-			},
-		)
-		if saveErr != nil || deliveryErr != nil {
-			cancel()
-			return gai.Response{}, errors.Join(
-				err,
-				saveErr,
-				deliveryErr,
-			)
-		}
-		description := "The incomplete response was recorded as aborted and will not be replayed."
+		description := "The model call was aborted."
 		if retry {
 			description += fmt.Sprintf(
 				" Retrying the model response (%d of %d).",
@@ -89,16 +77,22 @@ func (g *responseGenerator) Generate(ctx context.Context, request gai.Generation
 		} else {
 			description += " No further retry will be made: " + err.Error()
 		}
-		noticeErr := g.session.client.notice(
+		updateErr := g.session.client.update(
 			cleanup,
-			"Model response aborted",
-			description,
+			acp.AgentMessageChunkSessionUpdate(acp.TextContentBlock("\n["+description+"]\n")),
 		)
+		if updateErr == nil && g.session.client.notices {
+			updateErr = g.session.client.notice(
+				cleanup,
+				"Model response aborted",
+				description,
+			)
+		}
 		cancel()
-		if noticeErr != nil || !retry {
+		if updateErr != nil || !retry {
 			return gai.Response{}, errors.Join(
 				err,
-				noticeErr,
+				updateErr,
 			)
 		}
 		delay := 250 * time.Millisecond << min(
@@ -120,17 +114,13 @@ func (g *responseGenerator) Generate(ctx context.Context, request gai.Generation
 	}
 }
 
-func (g *responseGenerator) generate(ctx context.Context, request gai.GenerationRequest) (gai.Response, gai.Message, gai.Metadata, error, error) {
+func (g *responseGenerator) generate(ctx context.Context, request gai.GenerationRequest) (gai.Response, bool, gai.Metadata, error, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	partial := gai.Message{
-		Role: gai.Assistant,
-	}
 	if source, ok := g.source.(gai.StreamingGenerator); ok {
 		observed := &responseStream{
 			source:   source,
 			hooks:    g.hooks,
-			partial:  &partial,
 			metadata: make(gai.Metadata),
 		}
 		adapter := gai.StreamingAdapter{
@@ -140,22 +130,20 @@ func (g *responseGenerator) generate(ctx context.Context, request gai.Generation
 			ctx,
 			request,
 		)
-		return response, partial, observed.metadata, observed.deliveryErr, err
+		return response, observed.partial, observed.metadata, observed.deliveryErr, err
 	}
 	response, err := g.source.Generate(
 		ctx,
 		request,
 	)
-	if err != nil && len(response.Candidates) != 0 {
-		partial = response.Candidates[0]
-	}
+	partial := len(response.Candidates) != 0 && len(response.Candidates[0].Blocks) != 0
 	return response, partial, response.UsageMetadata, nil, err
 }
 
 type responseStream struct {
 	source      gai.StreamingGenerator
 	hooks       *turnHooks
-	partial     *gai.Message
+	partial     bool
 	deliveryErr error
 	metadata    gai.Metadata
 }
@@ -196,10 +184,7 @@ func (s *responseStream) Stream(ctx context.Context, request gai.GenerationReque
 				return
 			}
 			if chunk.Block.Content != nil && chunk.Block.BlockType != gai.MetadataBlockType {
-				s.partial.Blocks = append(
-					s.partial.Blocks,
-					chunk.Block,
-				)
+				s.partial = true
 			}
 			if err := s.hooks.GenerationChunk(
 				ctx,
@@ -255,20 +240,4 @@ func retryResponse(err error, partial bool) bool {
 	// An unknown failure after output began is an interrupted response, not a
 	// configuration failure. Errors before any output are not blindly retried.
 	return partial
-}
-
-func (s *session) recordAborted(ctx context.Context, dialog gai.Dialog, aborted conversation.AbortedResponse) error {
-	s.mu.Lock()
-	s.record.Dialog = dialog
-	s.record.AbortedResponses = append(
-		s.record.AbortedResponses,
-		aborted,
-	)
-	s.record.Info.UpdatedAt = aborted.At
-	checkpoint := s.record
-	s.mu.Unlock()
-	return s.deps.History.Save(
-		ctx,
-		checkpoint,
-	)
 }

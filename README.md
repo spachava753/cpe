@@ -353,13 +353,11 @@ with fresh MCP connections; forks copy the data independently. Checkpoints are
 not VM snapshots, side effects are never replayed, and this format is not ATIF.
 On Windows, protect the checkpoint directory with filesystem ACLs.
 
-Incomplete model responses are explicitly stored in `AbortedResponses`, separate
-from accepted conversation. They are never supplied to the model or replayed to
-an ACP client when a session is loaded, resumed, or forked. In a live turn, CPE
-checkpoints the abort, sends an advisory notice (or a text update for clients
-without notice support), and retries only the model response when eligible.
-Completed tool effects are not rerun. A checkpoint failure stops retrying, and
-restoring a saved session never automatically restarts an aborted response.
+Incomplete model responses are not saved or supplied to future model requests.
+In a live turn, CPE sends an assistant-message update explaining the interruption
+and whether it will retry. Clients with session-notice support also receive an
+advisory notice. Neither update is saved or replayed when a session is loaded.
+Restoring a saved session never automatically restarts an aborted response.
 
 ### Prompt caching
 

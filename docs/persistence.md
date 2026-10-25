@@ -17,16 +17,15 @@ There are three places to think about state:
  | Compaction summary     |    | Open file handles    |   | Git state        |
  | Model and reasoning    |    | Running commands     |   | Remote services  |
  | Token usage            |    | MCP connections      |   | External jobs    |
- | Aborted responses      |    +----------------------+   +------------------+
- | Durable script data    |        created afresh          keep their own
- +------------------------+        as needed               current state
-       restored from disk
+ | Durable script data    |    +----------------------+   +------------------+
+ +------------------------+        created afresh          keep their own
+       restored from disk          as needed               current state
 ```
 
 The transcript can include prompts, images, tool inputs and output, and provider
-reasoning metadata. Incomplete model responses are also saved, but kept apart
-from the accepted transcript. They are excluded from future model context and
-from transcript replay to the client. See [Failures and cancellation](failures.md).
+reasoning metadata. Incomplete model responses and their live abort/retry
+messages and notices are not saved. They are excluded from future model context
+and transcript replay to the client. See [Failures and cancellation](failures.md).
 
 The default checkpoint directory is `~/.cpe/sessions`. The `--sessions` launch
 option selects another absolute directory. Checkpoints are saved with
