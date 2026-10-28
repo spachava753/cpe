@@ -38,7 +38,9 @@ still useful from the earlier summary.
 
 Send `/compact` to ask the model to summarize the conversation. You can add
 instructions, such as `/compact keep the failed test and the next debugging step`.
-The command asks the model to call `compact(summary)` inside a Starlark script.
+The command asks the model to call `compact(summary)` inside a `starlark_exec`
+script. Because it is a script builtin, the model can build the summary with
+code, for example from files it saved or from `bash("git diff --stat")`.
 The model can also choose to compact during ordinary work.
 
 The call accepts a nonempty summary. If several summaries are accepted before
@@ -93,18 +95,18 @@ failures more generally.
 Compaction leaves the following intact:
 
 - The full saved transcript and measured usage totals.
-- The session's durable key-value data.
+- Files written by scripts, which have their own lifetime.
 - The selected model and reasoning setting.
 - Live session resources, including MCP connections.
 - File changes and external effects from earlier work.
 
 Loading, resuming, and forking preserve the compacted working context. They do
 not rerun the historical tools. Scripts still start with fresh variables on
-every invocation, as described in [Tool execution](tool-runtime.md).
+every call, as described in [Tool execution](tool-runtime.md).
 
-Saved [overflow logs](persistence.md#saved-script-output) remain available through
-KV after their previews leave working context. A summary can retain useful keys
-from earlier invocations. Scripts can also use `kv.keys()` to find saved logs.
+Files written by earlier scripts, and [overflow files](persistence.md#overflow-files)
+while they last, remain on disk after their tool results leave working context.
+A summary can retain the paths that matter.
 
 ## The context warning
 

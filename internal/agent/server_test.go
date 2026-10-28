@@ -12,9 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spachava753/acp-sdk/acp"
-	"github.com/spachava753/dyson"
 	"github.com/spachava753/gai"
+	gaiagent "github.com/spachava753/gai/agent"
 	"github.com/spf13/afero"
 	"go.opentelemetry.io/otel/trace/noop"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/mcpclient"
 	"github.com/spachava753/cpe/internal/models"
+	"github.com/spachava753/cpe/internal/plugins"
 	"github.com/spachava753/cpe/internal/toolruntime"
 )
 
@@ -116,6 +118,7 @@ func serverFixture(t *testing.T, generator GeneratorFactory, configure ...func(*
 		},
 		Instructions:       "test agent",
 		SetupTimeout:       5 * time.Second,
+		MCPTimeout:         5 * time.Second,
 		MaxResponseRetries: 1,
 	}
 	commandStarted := make(
@@ -126,24 +129,16 @@ func serverFixture(t *testing.T, generator GeneratorFactory, configure ...func(*
 		Filesystem:     filesystem,
 		Authentication: testAuth{},
 		Generators:     generator,
-		Hosts: func(ctx context.Context, config toolruntime.Config) (toolruntime.Host, error) {
-			return toolruntime.New(
-				ctx,
-				config,
-				dyson.StdlibConfig{
-					FS: filesystem,
-					CommandRunner: runnerFunc(func(ctx context.Context, command dyson.Command) (dyson.CommandResult, error) {
-						if len(command.Args) > 0 && command.Args[0] == "block" {
-							commandStarted <- struct{}{}
-							<-ctx.Done()
-							return dyson.CommandResult{}, ctx.Err()
-						}
-						return dyson.CommandResult{}, nil
-					}),
-				},
-			)
-		},
-		MCP:       mcpclient.Connect,
+		Hosts: testHosts(
+			t,
+			blockHook(commandStarted),
+		),
+		MCP: testPool(
+			t,
+			func(context.Context, plugins.MCPServer, io.Writer) (*mcp.ClientSession, error) {
+				return nil, errors.New("no MCP servers in this fixture")
+			},
+		),
 		History:   store,
 		LastModel: lastModel,
 		Traces:    noop.NewTracerProvider(),
@@ -236,7 +231,7 @@ func scriptGenerator(_ context.Context, _ conversation.ID, _ models.Model, _ mod
 				"call-%d",
 				len(request.Dialog),
 			),
-			"starlark",
+			toolruntime.StarlarkToolName,
 			map[string]any{
 				"code": last.Blocks[0].Content.String(),
 			},
@@ -386,7 +381,6 @@ func TestSessionLifecycle(t *testing.T) {
 		"load",
 		"resume",
 		"delete",
-		"isolated sessions",
 	} {
 		t.Run(
 			operation,
@@ -432,7 +426,7 @@ func TestSessionLifecycle(t *testing.T) {
 					t,
 					fixture.client,
 					id,
-					"kv.store('value', 41)",
+					"write_file('value', '41')",
 				)
 				target := id
 				want := "42"
@@ -513,12 +507,6 @@ func TestSessionLifecycle(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-				case "isolated sessions":
-					target = openFixtureSession(
-						t,
-						fixture.client,
-					)
-					want = "Execution error"
 				case "delete":
 					if _, err := fixture.client.DeleteSession(
 						t.Context(),
@@ -546,7 +534,7 @@ func TestSessionLifecycle(t *testing.T) {
 					t,
 					fixture.client,
 					target,
-					"print(kv.get('value') + 1)",
+					"print(int(read_file('value').decode()) + 1)",
 				)
 				record, loadErr := fixture.store.Load(
 					t.Context(),
@@ -571,12 +559,12 @@ func TestSessionLifecycle(t *testing.T) {
 						record.Options,
 					)
 				}
-				// Stored data must survive later turns and model changes.
+				// Files written by scripts survive later turns and model changes.
 				promptFixture(
 					t,
 					fixture.client,
 					target,
-					"kv.store('value', 10)",
+					"write_file('value', '10')",
 				)
 				if _, err := fixture.client.SetSessionConfigOption(
 					t.Context(),
@@ -592,38 +580,18 @@ func TestSessionLifecycle(t *testing.T) {
 					t,
 					fixture.client,
 					target,
-					"kv.store('value', kv.get('value') + 1)\nprint(kv.get('value'))",
+					"n = int(read_file('value').decode()) + 1\nwrite_file('value', str(n))\nprint(n)",
 				)
 				record, loadErr = fixture.store.Load(
 					t.Context(),
 					conversation.ID(target),
 				)
-				if loadErr != nil || lastToolOutput(record) != "11\n" {
+				if loadErr != nil || lastToolOutput(record) != "11" {
 					t.Fatalf(
-						"session KV did not persist: %#v, %v",
+						"file state did not persist: %#v, %v",
 						record,
 						loadErr,
 					)
-				}
-				if operation == "fork" {
-					wantCacheKey = string(id)
-					promptFixture(
-						t,
-						fixture.client,
-						id,
-						"print(kv.get('value'))",
-					)
-					parent, err := fixture.store.Load(
-						t.Context(),
-						conversation.ID(id),
-					)
-					if err != nil || lastToolOutput(parent) != "41\n" {
-						t.Fatalf(
-							"fork changed parent KV: %v, %v",
-							parent,
-							err,
-						)
-					}
 				}
 			},
 		)
@@ -762,9 +730,9 @@ func TestSessionCancellation(t *testing.T) {
 func TestInterruptedToolHistory(t *testing.T) {
 	block, err := gai.ToolCallBlock(
 		"effect",
-		"starlark",
+		toolruntime.StarlarkToolName,
 		map[string]any{
-			"code": "kv.store('effect', True)",
+			"code": "write_file('effect', 'done')",
 		},
 	)
 	if err != nil {
@@ -789,11 +757,94 @@ func TestInterruptedToolHistory(t *testing.T) {
 	}
 }
 
-type runnerFunc func(context.Context, dyson.Command) (dyson.CommandResult, error)
-
-func (f runnerFunc) RunCommand(ctx context.Context, command dyson.Command) (dyson.CommandResult, error) {
-	return f(
-		ctx,
-		command,
+// testPool shares connections like the CLI's pool, without a grace period.
+func testPool(t *testing.T, connector mcpclient.Connector) *mcpclient.Pool {
+	t.Helper()
+	pool, err := mcpclient.NewPool(
+		connector,
+		0,
+		nil,
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
+	return pool
+}
+
+// toolHook intercepts a tool call before the runtime sees it; handled reports
+// whether the hook produced the result.
+type toolHook func(ctx context.Context, script string) (output string, handled bool, err error)
+
+// testHosts runs the real runtime in a real temporary directory, because the
+// fixture's session directory exists only in its in-memory filesystem. hook may
+// answer chosen scripts directly so tests can observe or hold calls open.
+func testHosts(t *testing.T, hook toolHook) toolruntime.Factory {
+	cwd := t.TempDir()
+	return func(ctx context.Context, config toolruntime.Config) (toolruntime.Host, error) {
+		config.Cwd = cwd
+		host, err := toolruntime.New(
+			ctx,
+			config,
+		)
+		if err != nil {
+			return nil, err
+		}
+		return hookedHost{
+			Host: host,
+			hook: hook,
+		}, nil
+	}
+}
+
+// blockHook holds a script that is exactly "block" open until cancellation.
+func blockHook(started chan<- struct{}) toolHook {
+	return func(ctx context.Context, script string) (string, bool, error) {
+		if script != "block" {
+			return "", false, nil
+		}
+		started <- struct{}{}
+		<-ctx.Done()
+		return "", true, ctx.Err()
+	}
+}
+
+type hookedHost struct {
+	toolruntime.Host
+	hook toolHook
+}
+
+func (h hookedHost) Tools() []gaiagent.Tool {
+	var tools []gaiagent.Tool
+	for _, tool := range h.Host.Tools() {
+		handler := tool.Handler
+		tool.Handler = gaiagent.ToolHandlerFunc(func(ctx context.Context, request gaiagent.ToolRequest) (gai.Message, error) {
+			script, _ := request.Call.Parameters["code"].(string)
+			if script == "" {
+				script, _ = request.Call.Parameters["script"].(string)
+			}
+			output, handled, err := h.hook(
+				ctx,
+				script,
+			)
+			if err != nil {
+				return gai.Message{}, err
+			}
+			if handled {
+				return gai.ToolResultMessage(
+					request.Block.ID,
+					gai.TextBlock(output),
+				), nil
+			}
+			return handler.Execute(
+				ctx,
+				request,
+			)
+		})
+		tools = append(
+			tools,
+			tool,
+		)
+	}
+	return tools
 }

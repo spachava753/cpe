@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/spachava753/acp-sdk/acp"
-	"github.com/spachava753/dyson"
 	"github.com/spachava753/gai"
 	"github.com/spachava753/gai/agent/agenttest"
 
@@ -584,14 +583,14 @@ func TestResponseRetryPreservesToolEffects(t *testing.T) {
 						ID:           "effect",
 						BlockType:    gai.ToolCall,
 						ModalityType: gai.Text,
-						Content:      gai.Str("starlark"),
+						Content:      gai.Str(toolruntime.StarlarkToolName),
 					},
 				},
 				{
 					Block: gai.Block{
 						BlockType:    gai.ToolCall,
 						ModalityType: gai.Text,
-						Content:      gai.Str(`{"code":"load('subprocess.star', 'subprocess')\nsubprocess.run(['effect'])"}`),
+						Content:      gai.Str(`{"code":"# effect"}`),
 					},
 				},
 			},
@@ -627,19 +626,10 @@ func TestResponseRetryPreservesToolEffects(t *testing.T) {
 			return generator, gai.GenerationOptions{}, nil
 		},
 		func(_ *Config, deps *Dependencies, _ *acp.InitializeRequest) {
-			deps.Hosts = func(ctx context.Context, config toolruntime.Config) (toolruntime.Host, error) {
-				return toolruntime.New(
-					ctx,
-					config,
-					dyson.StdlibConfig{
-						FS: deps.Filesystem,
-						CommandRunner: runnerFunc(func(context.Context, dyson.Command) (dyson.CommandResult, error) {
-							effects.Add(1)
-							return dyson.CommandResult{}, nil
-						}),
-					},
-				)
-			}
+			deps.Hosts = testHosts(
+				t,
+				countingHook(&effects),
+			)
 		},
 	)
 	id := openFixtureSession(

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io/fs"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -33,13 +32,6 @@ func TestSessionStore(t *testing.T) {
 					directory:  "/sessions",
 				}
 				record := Record{
-					KV: map[string][]byte{
-						"data": []byte("opaque runtime data"),
-						"\xff": {
-							0,
-							255,
-						},
-					},
 					Compaction: &Compaction{
 						Summary:       "Greeting received.",
 						AfterMessages: 1,
@@ -91,27 +83,14 @@ func TestSessionStore(t *testing.T) {
 							loaded,
 						)
 					}
-					if !reflect.DeepEqual(
-						loaded.KV,
-						record.KV,
-					) {
-						t.Fatalf(
-							"KV round trip: %#v, want %#v",
-							loaded.KV,
-							record.KV,
-						)
-					}
 					cloned, err := loaded.Clone()
 					if err != nil {
 						t.Fatal(err)
 					}
-					cloned.KV["data"][0] = '!'
-					cloned.KV["extra"] = []byte("new")
-					if !reflect.DeepEqual(
-						loaded.KV,
-						record.KV,
-					) {
-						t.Fatal("clone borrowed KV data")
+					cloned.Dialog[0].Blocks[0] = gai.TextBlock("changed")
+					cloned.Dialog[0].ExtraFields["signature"] = "changed"
+					if loaded.Dialog[0].Blocks[0].Content.String() != "hello" || loaded.Dialog[0].ExtraFields["signature"] != "keep me" {
+						t.Fatal("clone borrowed dialog data")
 					}
 					if loaded.Compaction == nil || *loaded.Compaction != *record.Compaction {
 						t.Fatal("compaction was not persisted")

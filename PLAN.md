@@ -217,7 +217,7 @@ outs = parallel([
 
 `parallel` runs only host functions concurrently, meaning MCP tools, `bash`, and the file builtins. StarlarkX code itself stays single-threaded. Starlark values are not safe to share between threads until they are frozen, and StarlarkX deliberately has no user-level concurrency syntax. Running only host calls concurrently captures nearly all of the latency benefit without introducing shared mutable state into the language. If any call raises, the remaining calls are cancelled and the error propagates. A call that merely reports `is_error` does not stop the others.
 
-**Across tool calls.** Models can request several tool calls in one turn. Invocations share nothing but the filesystem and MCP connections, with no interpreter state carried between them, so `bash` and `starlark_exec` calls from the same turn can run concurrently. Two concurrent calls that edit the same file can conflict. That is the same risk as two concurrent shell commands, and the model has to coordinate them.
+**Across tool calls.** Models can request several tool calls in one turn. Invocations share nothing but the filesystem and MCP connections, with no interpreter state carried between them, so the runtime does not serialize `bash` and `starlark_exec` calls from the same turn. gai's agent loop currently executes a response's tool calls in order, so concurrent execution across calls also needs that loop to dispatch them concurrently. Two concurrent calls that edit the same file can conflict. That is the same risk as two concurrent shell commands, and the model has to coordinate them.
 
 ### Builtin StarlarkX Tools
 
@@ -393,7 +393,7 @@ The responsibilities divide as follows:
 - `agent` merges the three MCP sources into one list of server specifications at session setup and builds the system prompt from the layers above. It does not open connections.
 - `mcpclient` owns connections, shared across sessions (see [Connection re-use](#connection-re-use)), and per-session views of them.
 - `cli` gains the `cpe mcp` commands, built on the same `mcpclient` connection and naming code as sessions.
-- `toolruntime` owns the two tools, the StarlarkX environment, naming, and output handling.
+- `toolruntime` owns the two tools, the StarlarkX environment, and output handling. Naming lives in `mcpclient` so the `cpe mcp` commands and sessions name tools identically.
 - Sessions have no key-value store at all. Neither scripts nor session records carry one, so checkpoints and restored sessions consist of the conversation and its options alone. Everything a model wants to keep goes to the filesystem.
 
 The guides in `docs/` and the README's configuration section describe tool execution, MCP, limits, and persistence. They will be rewritten to match this design in the same change.
@@ -505,7 +505,7 @@ Instead, both tools write their output into a shared sink that never holds more 
 
 For bash, the sink is connected directly to the process: stdout and stderr share one pipe into it, which is also what preserves their interleaving. For `starlark_exec`, `print` writes to it. The wrapper is the one place that knows the limits and the notice format, so the two tools cannot drift apart.
 
-Overflow files go in one temporary directory per session (for example `$TMPDIR/cpe-<session id>/`), named by tool-call ID, so related files are grouped and easy to find. If the overflow file cannot be created, for example because the disk is full, the result still includes the tail. The notice then states that the full output could not be saved instead of naming a path that does not exist.
+Overflow files go in one temporary directory per session (for example `$TMPDIR/cpe-session-<random>/`), named by tool-call ID, so related files are grouped and easy to find. If the overflow file cannot be created, for example because the disk is full, the result still includes the tail. The notice then states that the full output could not be saved instead of naming a path that does not exist.
 
 ## Deferred
 

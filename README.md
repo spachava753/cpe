@@ -1,10 +1,10 @@
 # CPE
 
 CPE is a coding agent served over the Agent Client Protocol (ACP), built with
-[gai](https://github.com/spachava753/gai),
-[StarlarkX](https://github.com/spachava753/starlarkx), and
-[Dyson](https://github.com/spachava753/dyson). Models use one `starlark` tool for
-commands, filesystem and HTTP operations, and MCP orchestration.
+[gai](https://github.com/spachava753/gai) and
+[StarlarkX](https://github.com/spachava753/starlarkx). Models use two tools:
+`bash` for commands, and `starlark_exec` for exact file edits, MCP tool
+orchestration, and viewing media.
 
 ## Understanding the agent
 
@@ -70,8 +70,8 @@ accepts one active prompt at a time; other sessions remain usable. `session/canc
 stops that turn, while disconnecting closes all live runtimes and MCP connections.
 Session setup has a ten-minute deadline by default, configurable with
 `--setup-timeout`. Prompt turns have no CPE-imposed deadline or model-generation
-count limit. Prompt text, input images, and command stdin have no CPE-imposed
-size cap; provider limits and tool-output bounds still apply.
+count limit. Prompt text and input images have no CPE-imposed size cap; provider
+limits and tool-output bounds still apply.
 Interrupted/transient model responses can retry twice by default
 (`--response-retries`; zero disables retries). Retries respect provider retry
 delays. Cancellation and permanent provider errors do not retry.
@@ -87,9 +87,9 @@ shown here; `APPEND-SYSTEM.md` uses a hyphen.
 Files are read when `cpe acp` starts; restart the process after editing them.
 Missing files are optional; other read errors stop startup. An empty `SYSTEM.md`
 selects an empty base prompt, while an empty `APPEND-SYSTEM.md` adds nothing.
-Compaction guidance, project instructions, skill metadata, and MCP namespace
-summaries are supplied separately with the system instructions, even with a
-custom base prompt.
+Compaction guidance, project instructions, skill metadata, and the list of
+plugins and MCP servers with their tools are supplied separately with the system
+instructions, even with a custom base prompt.
 
 The ACP session's working directory is the project root. CPE includes that
 directory's `AGENTS.md` contents in the system prompt and recursively lists the
@@ -108,183 +108,79 @@ session setup rather than silently dropping instructions.
 
 ### Host tools
 
-Each `starlark` call runs in a fresh Dyson sphere. Variables, functions, and
-imports last only for that call, and open files are closed when it finishes.
-Dyson provides filesystem, HTTP, subprocess, and other standard-library modules,
-for example `load("subprocess.star", "subprocess")`. Installing and running CPE
-grants the agent full access to the machine with the user's privileges, including
-configured plugins and MCP servers. Tools execute directly: there are no approval prompts,
-allowlists, or sandbox boundaries. The session working directory is a path base,
-not an access restriction. Dyson environment and process APIs also have host
-access; process-global mutations affect the shared CLI process.
+The model has two tools. `bash` runs a bash script in the session directory and
+returns its output and exit status. `starlark_exec` runs a StarlarkX script, a
+Python dialect without classes, exceptions, or a standard library, with these
+builtins:
 
-Run commands through Dyson's subprocess module. Shell syntax is available by
-invoking a shell explicitly:
+- `read_file`, `write_file`, and `edit_file` for files; `edit_file` replaces
+  exactly one literal occurrence and raises otherwise.
+- `bash(script)` to run a command from a script.
+- `view(data, mime_type)` to show the model an image, audio, video, or PDF.
+- `tools.<name>(...)`, `search_tools`, `describe_tool`, and `describe_server`
+  for MCP tools, and `parallel` to run several calls at once.
+- `compact(summary)` for compaction.
 
-```python
-load("subprocess.star", "subprocess")
-result = subprocess.run(["bash", "--noprofile", "--norc", "-c", "pwd && ls"], capture_output=True)
-print(result.stdout.decode())
-print(result.stderr.decode())
-print(result.returncode)
+Each call starts fresh; scripts keep data across calls by writing files. Both
+tools accept an optional `timeout` in seconds. Each tool result shows at most the
+last 2,000 lines or 50 KiB of output; longer output is saved to a temporary file
+that the result names. [Tool execution](docs/tool-runtime.md) explains the
+builtins, errors, and output in detail.
+
+Installing and running CPE grants the agent full access to the machine with the
+user's privileges, including configured plugins and MCP servers. Tools execute
+directly: there are no approval prompts, allowlists, or sandbox boundaries. The
+session working directory is a path base, not an access restriction.
+
+### MCP servers
+
+Configure MCP servers in `~/.cpe/settings.json`. A server with a `command` uses
+stdio; a server with a `url` uses streamable HTTP, or SSE with `"type": "sse"`:
+
+```json
+{
+  "mcpServers": {
+    "docs": {
+      "command": "docs-mcp",
+      "args": ["--readonly"],
+      "env": {"DOCS_ROOT": "/srv/docs"},
+      "description": "Internal documentation search"
+    },
+    "tracker": {
+      "url": "https://example.com/mcp",
+      "headers": {"Authorization": "Bearer <token>"},
+      "enabled": false
+    }
+  }
+}
 ```
 
-Inspect `returncode`, or pass `check=True` to make a nonzero exit fail the script.
-Subprocess output stays inside the script until explicitly printed.
+`description` replaces what the server says about itself in the system prompt,
+and `"enabled": false` removes a server from sessions. A stdio server's `cwd`
+must be absolute. Unknown fields are errors. CPE reads the file at startup.
 
-Use the `edit(filename, old, new)` builtin for exact text replacement in an
-existing file. It requires exactly one literal match, including overlapping
-matches; missing or ambiguous matches raise an error without changing the file.
-`old` must be nonempty. `new` may be empty to delete the match. A replacement that
-would leave the contents unchanged also raises an error. Whitespace and line
-endings are matched as supplied, without normalization.
+Installed plugins and the ACP client can also supply servers. A client server
+whose name matches a configured or plugin server fails the session with an
+error naming both. Each session connects to every server when it opens; a server
+that fails to connect within `--mcp-timeout` (1 minute by default) is skipped
+and reported on stderr. Sessions in one process share connections to
+identically configured servers.
 
-```python
-edit("app.go", "old function", "new function")
-edit("app.go", "old caller", "new caller")
-edit("app_test.go", "old expectation", "new expectation")
+Use these commands to check servers outside a session:
+
+```sh
+cpe mcp list               # connect to every server; report status and tools
+cpe mcp show docs          # one server's info, instructions, and tools
+cpe mcp show docs --schemas
 ```
 
-Each successful edit automatically emits a confirmation and unified diff in the
-tool result; no `print()` or return-value inspection is needed. The builtin returns
-`None`. Calls execute sequentially against the current contents, including earlier
-edits. An error stops the script: earlier edits and their confirmations remain,
-and later calls do not run. There is no batch transaction or rollback.
+Both resolve the servers a session started in the current directory would use,
+from settings and installed plugins. Output is a table on a terminal and JSON
+otherwise; pass `--json` to force JSON. `list` exits nonzero if any enabled
+server failed, and `show` prints a failing stdio server's stderr. See
+[MCP, plugins, and skills](docs/extensions.md) for naming, discovery, and results.
 
-Relative paths use the session working directory; absolute paths and parent
-traversal are also supported. Symlinks are followed and retained. Replacement uses
-a temporary file in the target directory and an atomic rename, preserving
-permission bits, but not ownership, ACLs, or other extended metadata. A
-best-effort content check detects changes during the edit, not changes since the
-model's earlier read. Other writers are not locked out and can still write between
-the final check and rename. Dyson's `open()` is read-only; `edit` does not create
-missing files.
-
-Use the session-owned durable KV store to retain data explicitly:
-
-```python
-kv.store("results", [{"name": "example", "count": 1}])
-
-# In a later call, load a mutable copy and store the updated value.
-results = kv.get("results")
-results.append({"name": "next", "count": 2})
-kv.store("results", results)
-print(kv.keys())
-```
-
-Keys must be strings. Values may be `None`, booleans, integers, floats, strings,
-bytes, and acyclic lists, tuples, or dictionaries containing those types.
-`kv.store` snapshots the value without freezing its aliases; `kv.get` returns an
-independent, mutable copy. Mutating a loaded value does not update storage until
-another `kv.store`. Functions, modules, resource handles, and MCP result wrappers
-are rejected. Store an MCP result's `structured_content` or a content item's `raw`
-data instead. `kv.keys()` returns a sorted list of strings. Missing keys raise an
-error.
-
-Each store is saved atomically alongside session history before returning. A
-failed write leaves the previous value intact; accepted writes survive later
-script errors or cancellation. Data persists across calls, turns, model switches,
-compaction, load/resume, and process restarts. Forks inherit an independent copy.
-Unrelated sessions start empty; there is no global store. Deleting a session
-also deletes its KV data. No VM, functions, or resource handles are restored,
-and historical tool calls are never replayed.
-
-Cancellation, process cleanup, and output capture manage execution lifetime and
-protect the ACP protocol stream; they do not restrict machine access.
-Starlark subprocess calls return complete captured streams and never inherit ACP
-stdin/stdout. Commands belong to the invocation, not a background-job
-service; Unix process groups are cleaned up on completion or cancellation. Other
-platforms terminate the direct child only. Failed or canceled tools are recorded
-without automatic replay: a failure can still have changed files or external state.
-
-All emitted script text is combined into one text block. Printing does not impose
-an execution budget or a block-count limit. When the invocation finishes, output
-longer than 128 KiB is saved in full as a string under `overflow_<sha256>` in
-session KV. The model receives a bounded head preview with the exact key.
-Identical complete output reuses the same key. Use `kv.get(key)` to search or
-slice the log and print only the relevant portion. These values use the same
-checkpoints as other KV data, so they survive compaction, load/resume, and restart,
-and fork independently with the session.
-
-Command stdout and stderr remain complete script-local data unless the script
-prints or explicitly stores them. Overflow storage applies only to emitted
-script text and execution diagnostics, including those produced before failure
-or cancellation. Persistence happens after execution; a failed save is reported
-in the result without interrupting earlier script work or claiming an unsaved
-log is available. No temporary log files or additional retrieval tools are needed.
-
-MCP uses the official Go SDK and accepts client-supplied or plugin-defined stdio,
-streamable HTTP, and SSE servers. Every discovered plugin MCP server is enabled,
-along with servers supplied by the ACP client. CPE connects and discovers their
-tools during session setup; a connection or discovery failure fails setup and
-closes connections already opened. There is no model-facing loading step.
-
-Tools are exposed as Starlark builtins named `mcp__<server>__<tool>`. Plugin server
-IDs include the plugin name, so `screenshots:server` becomes
-`mcp__screenshots_server`. Invalid identifier characters become underscores;
-colliding names receive deterministic hash suffixes. Use the names returned by
-discovery rather than constructing them.
-
-The effective system prompt includes namespace names and one-line descriptions
-alongside skills, including when a custom system prompt is used. A namespace
-uses its plugin description when present, otherwise the first line of the MCP
-server's initialization instructions. Full server instructions and tool schemas
-remain available through discovery:
-
-- `search_tools(query, limit=8, namespace="")` ranks tool metadata with local BM25
-  keyword search. It searches names, descriptions, input-schema property names
-  and descriptions, and namespace descriptions/instructions—not remote data.
-- `describe_tool(name)` returns the description, namespace, callable signature,
-  and input schema.
-- `describe_namespace(name)` returns the namespace description, full server
-  instructions, and tool names.
-
-Search returns a list of names and descriptions; an unmatched query returns an
-empty list. Unknown names passed to either description function return `None`.
-Discovery functions do not execute remote tools. For example, after discovering
-a screenshot tool:
-
-```python
-print(describe_tool("mcp__screenshots_server__capture"))
-result = mcp__screenshots_server__capture({})
-print(result.is_error)
-# Inspect structured_content and content before choosing what the model sees.
-image(result.content[0].data)
-```
-
-Connections and cached tool lists belong to the live session. An MCP
-`notifications/tools/list_changed` notification invalidates that server's cache.
-Before the next Starlark invocation, CPE refreshes changed lists and builds a
-catalog shared by discovery and callable builtins for the entire invocation.
-Notifications received during execution take effect on the next call. A refresh
-failure fails the invocation and is retried on the next call; it does not silently
-use stale tools. A remote tool removed during execution may itself fail.
-Connections and cached lists are released when the session closes. Loading,
-resuming, or forking a saved session creates fresh connections and a fresh
-catalog; historical tool calls are never replayed.
-Installing or uninstalling a plugin determines whether its servers are discovered
-for new sessions. Skill-only plugins require no MCP connections.
-
-Results retain content blocks, structured content, metadata, and `is_error` for
-scripts. Only `print(...)` and `image(data)` expose output to the model;
-intermediate tool results do not become separate conversation messages. Use
-`print(item.text)` for an MCP text item and `image(item.data)` for an image item.
-
-`image(data)` accepts raw Starlark bytes containing a PNG, JPEG, GIF, or WebP image.
-It detects the media type from the bytes and rejects individual images larger
-than 6 MiB. It does not accept paths, URLs, or base64 strings and performs no file
-or network access itself. Use Dyson to obtain bytes, or retain them with `kv.store` for a later
-call. For example:
-
-```python
-image(open("screenshot.png", "rb").read())
-```
-
-The combined text block precedes image blocks. Images retain their emission
-order, including those produced before a script fails. Audio and other binary
-resources remain inspectable through MCP result fields but cannot be displayed as images. Resource links are not
-automatically fetched. Models without image input receive a text notice instead
-of the image.
+### Skills and plugins
 
 Skills and plugins are discovered from `~/.agents/{skills,plugins}` and each
 session's `.agents/{skills,plugins}`. `--skills` and `--plugins` add roots, resolving
@@ -294,19 +190,19 @@ diagnostics are written to stderr, not ACP updates or conversation history,
 rather than blocking session creation;
 malformed manifests and unsupported manifest schemas remain fatal.
 
-The model receives skill names, descriptions, and file paths, not their bodies.
-It reads relevant skill files and bundled resources using bash or Starlark/Dyson.
-Skills also appear as slash commands, with plugin skills named `/plugin:skill`;
-a recognized command supplies the skill file reference and the user's arguments.
-Unknown slash commands and absolute paths are passed through as ordinary prompt
-text. Plugin MCP configuration supports `${PLUGIN_ROOT}`; `${PLUGIN_DATA}` is not
-supported yet.
+The model receives skill names, descriptions, and file paths, not their bodies,
+and reads relevant skill files with bash or `read_file`. Plugins are listed with
+their skills and MCP servers. Skills also appear as slash commands, with plugin
+skills named `/plugin:skill`; a recognized command supplies the skill file
+reference and the user's arguments. Unknown slash commands and absolute paths
+are passed through as ordinary prompt text. Plugin MCP configuration supports
+`${PLUGIN_ROOT}`; `${PLUGIN_DATA}` is not supported yet.
 
 ### Compaction
 
 Use `/compact` to ask the model to summarize the conversation now. The model
-calls `compact(summary)` inside `starlark`, using Starlark string construction
-and scripting to build the summary. The builtin takes one nonempty string and
+calls `compact(summary)` inside `starlark_exec`, using string construction and
+scripting to build the summary. The builtin takes one nonempty string and
 returns `None`; the last accepted call supplies the summary if called repeatedly.
 The model can also compact during a task. `/compact` is reserved and takes
 precedence over a skill with that name.
@@ -321,7 +217,7 @@ the default guidance, and read errors other than a missing file stop startup.
 Compaction saves the summary without deleting the full transcript. The next model
 request contains only the system instructions and summary. All tool calls in
 the current response finish normally before compaction takes effect, including
-other Starlark calls alongside the script requesting compaction. The entire
+other tool calls alongside the script requesting compaction. The entire
 response and its tool results are dropped from working context, including output
 produced after
 `compact` runs. Any information needed from those results must be captured in
@@ -330,7 +226,7 @@ The summary is checkpointed before the next model request, or after outstanding
 calls are settled at turn end if the turn stops. A later script error does not
 undo an accepted summary. Loading, resuming, and forking retain
 the compacted working context; ACP transcript replay still shows the full history.
-Compaction does not reset the durable session KV store or rerun tools.
+Compaction does not touch files or rerun tools.
 
 When the latest successful generation's reported input plus output tokens reach
 85% of the selected model's required `limit`, CPE prepends a warning to each tool
@@ -342,15 +238,15 @@ writes the summary using the context already available to it.
 
 ### Saved sessions
 
-JSON checkpoints under `~/.cpe/sessions` preserve conversation, session KV data,
-and selected model settings. `--sessions` selects another absolute directory. Files are written
+JSON checkpoints under `~/.cpe/sessions` preserve the conversation and selected
+model settings. `--sessions` selects another absolute directory. Files are written
 atomically with private permissions on Unix; they can contain prompts, tool
 output, images, and provider reasoning metadata, so treat them as sensitive.
 
 ACP clients can list, load, resume, fork, close, and delete sessions. Closing keeps
-the checkpoint; deleting removes it. Loading, resuming, or forking restores KV data
-with fresh MCP connections; forks copy the data independently. Checkpoints are
-not VM snapshots, side effects are never replayed, and this format is not ATIF.
+the checkpoint; deleting removes it. Loading, resuming, or forking reconnects MCP
+servers and lists their tools again. Checkpoints are not VM snapshots, side
+effects are never replayed, and this format is not ATIF.
 On Windows, protect the checkpoint directory with filesystem ACLs.
 
 Incomplete model responses are not saved or supplied to future model requests.

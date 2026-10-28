@@ -3,6 +3,7 @@ package mcpclient
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -11,24 +12,24 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/spachava753/cpe/internal/plugins"
+	"github.com/spachava753/cpe/internal/version"
 )
 
-const httpsScheme = "https"
+const (
+	httpScheme  = "http"
+	httpsScheme = "https"
+)
 
-// ServerID identifies a server in one session's catalog.
+// ServerID identifies a server among one session's configured servers.
 type ServerID string
 
-// Connector opens a session-owned connection and registers toolsChanged for list notifications.
-// ctx bounds connection setup; toolsChanged must not block.
-type Connector func(ctx context.Context, server plugins.MCPServer, toolsChanged func()) (*mcp.ClientSession, error)
+// Connector opens a connection. ctx bounds connection setup only. Stdio servers
+// write their stderr to stderr, which may be nil to discard it.
+type Connector func(ctx context.Context, server plugins.MCPServer, stderr io.Writer) (*mcp.ClientSession, error)
 
 // Connect opens a stdio, streamable HTTP, or SSE connection using the official SDK.
-// toolsChanged must be non-nil and nonblocking. Closing the returned session
-// releases its transport and subprocess.
-func Connect(ctx context.Context, server plugins.MCPServer, toolsChanged func()) (*mcp.ClientSession, error) {
-	if toolsChanged == nil {
-		return nil, errors.New("MCP tool-list change handler is required")
-	}
+// Closing the returned session releases its transport and subprocess.
+func Connect(ctx context.Context, server plugins.MCPServer, stderr io.Writer) (*mcp.ClientSession, error) {
 	var transport mcp.Transport
 	switch server.Type {
 	case plugins.Stdio:
@@ -50,11 +51,12 @@ func Connect(ctx context.Context, server plugins.MCPServer, toolsChanged func())
 				key+"="+value,
 			)
 		}
+		command.Stderr = stderr
 		transport = &mcp.CommandTransport{
 			Command: command,
 		}
 	case plugins.StreamableHTTP, plugins.SSE:
-		if server.URL.Host == "" || (server.URL.Scheme != "http" && server.URL.Scheme != httpsScheme) {
+		if server.URL.Host == "" || (server.URL.Scheme != httpScheme && server.URL.Scheme != httpsScheme) {
 			return nil, errors.New("MCP URL must be absolute HTTP(S)")
 		}
 		client := &http.Client{
@@ -78,19 +80,25 @@ func Connect(ctx context.Context, server plugins.MCPServer, toolsChanged func())
 	default:
 		return nil, errors.New("unsupported MCP transport")
 	}
-	client := mcp.NewClient(
-		&mcp.Implementation{
-			Name:    "cpe",
-			Version: "1",
-		},
-		&mcp.ClientOptions{
-			ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) { toolsChanged() },
-		},
-	)
-	return client.Connect(
+	return newClient().Connect(
 		ctx,
 		transport,
 		nil,
+	)
+}
+
+func newClient() *mcp.Client {
+	return mcp.NewClient(
+		&mcp.Implementation{
+			Name:    "cpe",
+			Version: version.Get(),
+		},
+		&mcp.ClientOptions{
+			// Session catalogs stay fixed, but subscribing lets the SDK drop its
+			// cached tool list when a server announces a change, so the next
+			// session to list a shared connection's tools sees the current list.
+			ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) {},
+		},
 	)
 }
 

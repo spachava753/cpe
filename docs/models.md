@@ -67,8 +67,7 @@ selection resets reasoning to the new provider's default because effort names
 and capabilities differ between providers. You can then choose one of that
 model's supported efforts.
 
-The session keeps its transcript, compaction state, durable script data, and
-MCP connections. Future requests are adapted for the selected model:
+The session keeps its transcript, compaction state, and MCP connections. Future requests are adapted for the selected model:
 
 - Earlier assistant reasoning from other models is omitted from the request,
   along with model-specific replay metadata.

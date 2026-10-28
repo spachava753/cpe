@@ -6,9 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"maps"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -32,15 +30,13 @@ type Info struct {
 	Title     string
 }
 
-// Record checkpoints conversation, configuration, and session KV data, never live resources.
+// Record checkpoints conversation and configuration, never live resources.
 type Record struct {
 	Info       Info
 	Usage      TokenUsage
 	Compaction *Compaction
-	// KV holds opaque runtime-encoded values by session-local key.
-	KV      map[string][]byte
-	Options models.Selection
-	Dialog  gai.Dialog
+	Options    models.Selection
+	Dialog     gai.Dialog
 }
 
 // Query filters saved conversations. Cursor is the last returned session ID.
@@ -277,19 +273,12 @@ type storedMessage struct {
 	Blocks []storedBlock `json:"blocks"`
 }
 
-// Byte keys preserve Starlark strings that are not valid UTF-8.
-type storedKVEntry struct {
-	Key   []byte
-	Value []byte
-}
-
 type storedRecord struct {
+	Usage      TokenUsage
+	Compaction *Compaction
 	Info       Info
 	Options    models.Selection
 	Dialog     []storedMessage
-	Compaction *Compaction
-	Usage      TokenUsage
-	KV         []storedKVEntry
 }
 
 func encodeRecord(record Record) ([]byte, error) {
@@ -302,16 +291,6 @@ func encodeRecord(record Record) ([]byte, error) {
 		Compaction: record.Compaction,
 		Usage:      record.Usage,
 	}
-	for _, key := range slices.Sorted(maps.Keys(record.KV)) {
-		stored.KV = append(
-			stored.KV,
-			storedKVEntry{
-				Key:   []byte(key),
-				Value: record.KV[key],
-			},
-		)
-	}
-
 	for _, message := range record.Dialog {
 		item, err := storeMessage(message)
 		if err != nil {
@@ -371,13 +350,6 @@ func decodeRecord(data []byte) (Record, error) {
 		Compaction: stored.Compaction,
 		Usage:      stored.Usage,
 	}
-	if len(stored.KV) != 0 {
-		record.KV = make(map[string][]byte)
-		for _, entry := range stored.KV {
-			record.KV[string(entry.Key)] = entry.Value
-		}
-	}
-
 	for _, item := range stored.Dialog {
 		record.Dialog = append(
 			record.Dialog,

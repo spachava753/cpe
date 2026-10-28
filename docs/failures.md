@@ -56,33 +56,33 @@ process crash before the next checkpoint can lose the latest usage counts.
 ## A failed script or command
 
 A script error stops later statements. Earlier file changes, remote actions,
-accepted key-value stores, and emitted output remain. A failed script is returned
-to the model as a tool result, so the model can inspect the situation and decide
-how to continue.
+and printed output remain. A failed script is returned to the model as a tool
+result, so the model can inspect the situation and decide how to continue.
 
 ```text
  Script
    edit a file           succeeds; file stays changed
-   save a result         succeeds; value stays saved
-   call a remote tool    fails
+   write a result file   succeeds; file stays written
+   call a remote tool    connection fails
    run a test            never reached
 ```
 
-A command's nonzero exit status needs to be checked by the script or requested
-as an exception through `check=True`. An MCP tool can report an error as an
-inspectable result; connection and protocol errors fail the execution. See
-[Tool execution](tool-runtime.md) and [MCP, plugins, and skills](extensions.md).
+A failed `edit_file` ends the script the same way. A command's nonzero exit
+status from the `bash` tool marks the result as failed; inside a script, the
+`bash` builtin returns it in `exit_code` for the script to check. An MCP tool can
+report an error as an inspectable result; connection and protocol errors fail
+the execution. See [Tool execution](tool-runtime.md) and
+[MCP, plugins, and skills](extensions.md).
 
-Long emitted text is saved in session KV after execution, with a preview and
-retrieval key in the result. If that save fails, the tool reports the storage
-failure even though its earlier actions may have succeeded. A preview alone
-does not show everything the script did; retrieve the full log when available.
-See [Long output and retrieval](tool-runtime.md#long-output-and-retrieval).
+Long output is cut to its last lines, and the complete output is written to a
+file the result names. If that file cannot be created, the result says so; the
+visible tail does not show everything the command printed. See
+[Output the model sees](tool-runtime.md#output-the-model-sees).
 
 ## Cancellation
 
 Canceling stops the active turn and leaves the session available. CPE stops
-local command execution, closes invocation resources, and attempts to save the
+local command execution, stops running scripts, and attempts to save the
 known results. A tool call with no known completed result is recorded as
 interrupted with an uncertain outcome.
 

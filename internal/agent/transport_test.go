@@ -42,7 +42,7 @@ func TestSessionToolCancellation(t *testing.T) {
 			&acp.PromptRequest{
 				SessionID: id,
 				Prompt: []acp.ContentBlock{
-					acp.TextContentBlock("load('subprocess.star', 'subprocess')\nsubprocess.run(['block'])"),
+					acp.TextContentBlock("block"),
 				},
 			},
 		)

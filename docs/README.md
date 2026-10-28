@@ -26,22 +26,22 @@ configuration examples, see the [main README](../README.md).
   |     returns text and requests to run tools
   |
   +-- Tool runtime
-  |     runs Starlark scripts
-  |       +-- files, commands, HTTP on the host
+  |     runs bash scripts and StarlarkX scripts
+  |       +-- files and commands on the host
   |       +-- tools supplied by MCP servers
   |
   +-- Saved session
         transcript, model settings, usage,
-        compaction summary, and durable script data
+        and compaction summary
 ```
 
 A prompt starts a **turn**. During a turn, the model can ask for tools, inspect
 their results, and ask for more tools before it answers. Each **generation** is
-one model response within that turn. Each Starlark **invocation** is one script
-execution. A **session** holds the conversation across turns.
+one model response within that turn. Each **tool call** runs one bash or
+StarlarkX script. A **session** holds the conversation across turns.
 
 Those lifetimes explain many everyday behaviors. A script variable disappears
-when its invocation ends. A session's saved data survives a process restart.
+when its call ends. A session's saved conversation survives a process restart.
 Stopping a turn leaves its completed file changes in place.
 
 ## Start with these three ideas

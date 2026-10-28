@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"path/filepath"
+
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 
@@ -34,6 +36,15 @@ func Root(version string, skillManager *skills.Manager, pluginManager *plugins.M
 		afero.NewOsFs(),
 		authStore,
 		authOptions,
+	)
+	configDir := ""
+	if authOptions.Path != "" {
+		configDir = filepath.Dir(authOptions.Path)
+	}
+	mcpCmd(
+		r,
+		afero.NewOsFs(),
+		configDir,
 	)
 	return r
 }

@@ -94,7 +94,7 @@ see the file at that time.
 | Root project instructions and nested paths | Session creation, load, resume, or fork. |
 | Skill metadata and installed plugin discovery | Session creation, load, resume, or fork. |
 | A skill body or nested instruction body | When the model reads the file. |
-| An MCP tool-list change announced by the server | Before the next Starlark invocation. |
+| MCP servers and their tool lists | Session creation, load, resume, or fork. Tool lists stay fixed for the rest of the session. |
 
 [MCP, plugins, and skills](extensions.md) covers extension discovery in more
 detail. [Models and reasoning](models.md) explains how model-specific reasoning

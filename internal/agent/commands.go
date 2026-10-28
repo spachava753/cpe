@@ -24,13 +24,16 @@ import (
 
 type commandCatalog struct {
 	commands map[string]skills.Skill
-	plugins  []plugins.Plugin
-	warnings []error
+	// pluginSkills marks commands that belong to a plugin rather than standing alone.
+	pluginSkills map[string]bool
+	plugins      []plugins.Plugin
+	warnings     []error
 }
 
 func loadCommands(ctx context.Context, filesystem afero.Fs, cwd string, config Config) (commandCatalog, error) {
 	catalog := commandCatalog{
-		commands: make(map[string]skills.Skill),
+		commands:     make(map[string]skills.Skill),
+		pluginSkills: make(map[string]bool),
 	}
 	roots := append(
 		slices.Clone(config.SkillPaths),
@@ -124,6 +127,7 @@ func loadCommands(ctx context.Context, filesystem afero.Fs, cwd string, config C
 					)
 				}
 				catalog.commands[name] = skill
+				catalog.pluginSkills[name] = true
 			}
 			catalog.plugins = append(
 				catalog.plugins,
@@ -190,7 +194,7 @@ func (c commandCatalog) expand(message gai.Message) gai.Message {
 		name = name[:index]
 	}
 	if name == compactName {
-		text := "Compact the conversation now by calling compact(summary) in starlark."
+		text := "Compact the conversation now by calling compact(summary) in starlark_exec."
 		if arguments != "" {
 			text += "\n\nUser request:\n" + arguments
 		}
@@ -202,7 +206,7 @@ func (c commandCatalog) expand(message gai.Message) gai.Message {
 		return message
 	}
 	message.Blocks[0] = gai.TextBlock(fmt.Sprintf(
-		"Use the %q skill. Read its instructions at %q with starlark; resolve bundled resources relative to that file.\n\nUser request:\n%s",
+		"Use the %q skill. Read its instructions at %q with bash or read_file; resolve bundled resources relative to that file.\n\nUser request:\n%s",
 		name,
 		skill.Path,
 		arguments,
@@ -210,59 +214,35 @@ func (c commandCatalog) expand(message gai.Message) gai.Message {
 	return message
 }
 
-// instructions advertises skill locations without loading their bodies into context.
-func (c commandCatalog) instructions() string {
-	if len(c.commands) == 0 {
-		return ""
-	}
-	var text strings.Builder
-	if len(c.commands) != 0 {
-		text.WriteString("\n\nAvailable skills: read a relevant SKILL.md with starlark when needed. Bundled resources are relative to the skill file.\n")
-	}
-	for _, command := range c.available() {
-		if command.Name == compactName {
+// promptSkills lists the invocable skills for the system prompt, sorted by name.
+func (c commandCatalog) promptSkills(include func(string) bool) []promptSkill {
+	var result []promptSkill
+	for _, name := range slices.Sorted(maps.Keys(c.commands)) {
+		skill := c.commands[name]
+		if name == compactName || skill.InvocationDisabled || !include(name) {
 			continue
 		}
-		skill := c.commands[command.Name]
-		if skill.InvocationDisabled {
-			continue
-		}
-		fmt.Fprintf(
-			&text,
-			"- %s: %s (file: %q)\n",
-			command.Name,
-			skill.Description,
-			skill.Path,
+		result = append(
+			result,
+			promptSkill{
+				Name:        name,
+				Description: skill.Description,
+				Path:        skill.Path,
+			},
 		)
-	}
-	return text.String()
-}
-
-func (c commandCatalog) serverDescriptions() map[mcpclient.ServerID]string {
-	result := make(map[mcpclient.ServerID]string)
-	for _, plugin := range c.plugins {
-		for name := range plugin.MCPConfig {
-			result[mcpclient.ServerID(plugin.Name+":"+name)] = plugin.Description
-		}
 	}
 	return result
 }
 
-func (c commandCatalog) servers(client map[mcpclient.ServerID]plugins.MCPServer, cwd string) (map[mcpclient.ServerID]plugins.MCPServer, error) {
-	servers := make(map[mcpclient.ServerID]plugins.MCPServer)
-	maps.Copy(
-		servers,
-		client,
-	)
+// pluginSpecs expands each plugin's MCP configuration into server specs. A
+// server that cannot be expanded is returned as a failure, to be skipped.
+func (c commandCatalog) pluginSpecs() ([]mcpclient.ServerSpec, []mcpclient.Failure, error) {
+	var specs []mcpclient.ServerSpec
+	var failures []mcpclient.Failure
 	for _, plugin := range c.plugins {
-		for name, server := range plugin.MCPConfig {
+		for _, name := range slices.Sorted(maps.Keys(plugin.MCPConfig)) {
+			server := plugin.MCPConfig[name]
 			id := mcpclient.ServerID(plugin.Name + ":" + name)
-			if _, exists := servers[id]; exists {
-				return nil, fmt.Errorf(
-					"duplicate MCP server %q",
-					id,
-				)
-			}
 			// Expand the supported placeholder once. Never perform shell expansion.
 			expand := func(value string) string {
 				return strings.ReplaceAll(
@@ -281,15 +261,17 @@ func (c commandCatalog) servers(client map[mcpclient.ServerID]plugins.MCPServer,
 					server.Command,
 				)
 			}
-			server.Cwd = expand(server.Cwd)
-			if server.Cwd == "" {
-				server.Cwd = plugin.Path
-			}
-			if !filepath.IsAbs(server.Cwd) {
-				server.Cwd = filepath.Join(
-					plugin.Path,
-					server.Cwd,
-				)
+			if server.Type == plugins.Stdio {
+				server.Cwd = expand(server.Cwd)
+				if server.Cwd == "" {
+					server.Cwd = plugin.Path
+				}
+				if !filepath.IsAbs(server.Cwd) {
+					server.Cwd = filepath.Join(
+						plugin.Path,
+						server.Cwd,
+					)
+				}
 			}
 			server.Args = slices.Clone(server.Args)
 			for i, argument := range server.Args {
@@ -300,28 +282,35 @@ func (c commandCatalog) servers(client map[mcpclient.ServerID]plugins.MCPServer,
 				env[key] = expand(value)
 			}
 			server.Env = env
+			spec := mcpclient.ServerSpec{
+				ID:        id,
+				Source:    mcpclient.SourcePlugin,
+				Plugin:    plugin.Name,
+				Transport: server,
+			}
 			// PLUGIN_DATA needs an explicit writable data-directory policy.
 			encoded, err := json.Marshal(server)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if strings.Contains(
 				string(encoded),
 				"${",
 			) {
-				return nil, fmt.Errorf(
-					"MCP server %q uses an unsupported placeholder",
-					id,
+				failures = append(
+					failures,
+					mcpclient.Failure{
+						Spec: spec,
+						Err:  errors.New("invalid configuration: unsupported placeholder; only ${PLUGIN_ROOT} is supported"),
+					},
 				)
+				continue
 			}
-			servers[id] = server
+			specs = append(
+				specs,
+				spec,
+			)
 		}
 	}
-	for id, server := range servers {
-		if server.Cwd == "" {
-			server.Cwd = cwd
-			servers[id] = server
-		}
-	}
-	return servers, nil
+	return specs, failures, nil
 }

@@ -2,177 +2,116 @@ package toolruntime
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/spachava753/dyson"
 	"github.com/spachava753/gai"
 	gaiagent "github.com/spachava753/gai/agent"
-	starjson "github.com/spachava753/starlarkx/lib/json"
 	"github.com/spachava753/starlarkx/starlark"
-	"github.com/spachava753/starlarkx/starlarkstruct"
 
 	"github.com/spachava753/cpe/internal/mcpclient"
 )
 
-const starlarkToolName = "starlark"
+const (
+	// BashToolName is the model-facing name of the bash tool.
+	BashToolName = "bash"
+	// StarlarkToolName is the model-facing name of the StarlarkX tool.
+	StarlarkToolName = "starlark_exec"
+
+	bashDescription     = "Execute the generated bash script in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, the full output is saved to a temporary file, and filepath will be provided in the tool result. Optionally provide a timeout in seconds."
+	starlarkDescription = "Execute StarlarkX code in the current working directory. Returns the text printed in the script. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, the full output is saved to a temporary file, and filepath will be provided in the tool result. Optionally provide a timeout in seconds."
+)
 
 // Config defines the session scope of a tool runtime.
 type Config struct {
-	MCP MCPTools
-	KV  KeyValueStore
-	// Descriptions supplies optional plugin descriptions for MCP namespaces.
-	Descriptions map[mcpclient.ServerID]string
-	Cwd          string
+	// Catalog names the session's connected MCP servers and tools; it is fixed
+	// for the session's lifetime.
+	Catalog *mcpclient.Catalog
+	// Cwd is the absolute working directory for commands and relative paths.
+	Cwd string
+	// TempDir receives overflow output; the runtime never deletes it.
+	TempDir string
 }
 
 // Factory creates session-owned tools; ctx bounds setup, not their lifetime.
 type Factory func(context.Context, Config) (Host, error)
 
-// Host owns a session's code environment and model-facing tools.
-// Callers serialize execution and join active calls before Close.
+// Host owns a session's model-facing tools. Calls may run concurrently; callers
+// join active calls before Close.
 type Host interface {
 	Tools() []gaiagent.Tool
-	// Instructions returns supplemental system context for the host's tools.
-	Instructions() string
 	Close(context.Context) error
 }
 
-// Local creates a Starlark tool with explicit local host access.
-// Scripts run with the user's privileges without approval or filesystem restrictions.
-func Local(ctx context.Context, config Config) (Host, error) {
-	stdlib := dyson.HostStdlibConfig(config.Cwd)
-	stdlib.CommandRunner = localCommandRunner{}
-	stdlib.HTTPClient = dyson.HostHTTPClient()
-	return New(
-		ctx,
-		config,
-		stdlib,
-	)
-}
-
-type invocationKey struct{}
-
-type invocation struct {
-	output outputCollector
-}
-
-type toolHost struct {
-	stdlib  dyson.StdlibConfig
+type runtime struct {
+	globals starlark.StringDict
+	index   *searchIndex
 	config  Config
-	runner  dyson.CommandRunner
-	catalog toolCatalog
 	tools   []gaiagent.Tool
 	mu      sync.Mutex
 	closed  bool
 }
 
-// New creates a runtime using the supplied filesystem, command runner, and standard library.
-func New(ctx context.Context, config Config, stdlib dyson.StdlibConfig) (Host, error) {
+// New creates the bash and starlark_exec tools. Both run with the user's full
+// privileges, without approval prompts or sandboxing.
+func New(ctx context.Context, config Config) (Host, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if !filepath.IsAbs(config.Cwd) || config.MCP == nil || config.KV == nil || stdlib.CommandRunner == nil {
-		return nil, errors.New("host requires an absolute cwd, MCP, KV store, and a command runner")
+	if !filepath.IsAbs(config.Cwd) || !filepath.IsAbs(config.TempDir) || config.Catalog == nil {
+		return nil, errors.New("tool runtime requires an absolute cwd and temporary directory, and an MCP catalog")
 	}
-	catalog, err := discoverTools(
-		ctx,
-		config.MCP,
-		config.Descriptions,
-	)
-	if err != nil {
-		return nil, err
+	r := &runtime{
+		config: config,
+		index:  newSearchIndex(config.Catalog),
 	}
-	h := &toolHost{
-		config:  config,
-		runner:  stdlib.CommandRunner,
-		catalog: catalog,
-	}
-	stdlib.CommandRunner = h
-	h.stdlib = stdlib
-	h.tools = []gaiagent.Tool{
+	r.globals = r.builtins()
+	r.tools = []gaiagent.Tool{
 		{
 			Definition: gai.Tool{
-				Name:        starlarkToolName,
-				Description: "Execute Starlark in a fresh runtime. Use kv.get, kv.store, and kv.keys for durable session data; print and image for output; compact(summary) to compact; edit(filename, old, new) for exact file edits. Discover MCP tools with search_tools, describe_tool, and describe_namespace. Errors do not undo effects.",
-				InputSchema: stringSchema("code"),
+				Name:        BashToolName,
+				Description: bashDescription,
+				InputSchema: inputSchema(
+					"script",
+					"Bash script to execute",
+				),
 			},
-			Handler: gaiagent.ToolHandlerFunc(h.execute),
+			Handler: gaiagent.ToolHandlerFunc(r.bashTool),
+		},
+		{
+			Definition: gai.Tool{
+				Name:        StarlarkToolName,
+				Description: starlarkDescription,
+				InputSchema: inputSchema(
+					"code",
+					"StarlarkX code to execute",
+				),
+			},
+			Handler: gaiagent.ToolHandlerFunc(r.starlarkTool),
 		},
 	}
-	return h, nil
+	return r, nil
 }
 
-func (h *toolHost) newSphere() *dyson.Sphere {
-	globals := starlark.StringDict{
-		"kv": h.kvModule(),
-		"edit": starlark.NewBuiltin(
-			"edit",
-			h.edit,
-		),
-		compactName: starlark.NewBuiltin(
-			compactName,
-			compact,
-		),
-		"image": starlark.NewBuiltin(
-			"image",
-			image,
-		),
-		"search_tools": starlark.NewBuiltin(
-			"search_tools",
-			h.searchTools,
-		),
-		"describe_tool": starlark.NewBuiltin(
-			"describe_tool",
-			h.describeTool,
-		),
-		"describe_namespace": starlark.NewBuiltin(
-			"describe_namespace",
-			h.describeNamespace,
-		),
-	}
-	for _, tool := range h.catalog.tools {
-		globals[tool.Name] = starlark.NewBuiltin(
-			tool.Name,
-			//nolint:contextcheck // Calls use the script invocation context, not session setup.
-			func(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-				return h.callMCP(
-					thread,
-					tool,
-					fn,
-					args,
-					kwargs,
-				)
-			},
-		)
-	}
-	return dyson.NewSphere(
-		func(thread *starlark.Thread, text string) {
-			current, ok := dyson.EvaluationContext(thread).Value(invocationKey{}).(*invocation)
-			if !ok {
-				panic("Starlark output outside an invocation")
-			}
-			current.output.add(gai.TextBlock(text))
-		},
-		dyson.NewStdlib(h.stdlib),
-		dyson.GlobalSet(globals),
-	)
-}
-
-func stringSchema(name string) *jsonschema.Schema {
+func inputSchema(field, description string) *jsonschema.Schema {
 	return &jsonschema.Schema{
 		Type: "object",
 		Properties: map[string]*jsonschema.Schema{
-			name: {
-				Type: "string",
+			field: {
+				Type:        "string",
+				Description: description,
+			},
+			"timeout": {
+				Type:        "number",
+				Description: "Timeout in seconds (optional, no default timeout)",
 			},
 		},
 		Required: []string{
-			name,
+			field,
 		},
 		AdditionalProperties: &jsonschema.Schema{
 			Not: &jsonschema.Schema{},
@@ -180,335 +119,112 @@ func stringSchema(name string) *jsonschema.Schema {
 	}
 }
 
-// Tools returns the model-facing Starlark tool.
-func (h *toolHost) Tools() []gaiagent.Tool { return h.tools }
+// Tools returns the bash and starlark_exec tools.
+func (r *runtime) Tools() []gaiagent.Tool { return r.tools }
 
-// Instructions returns MCP namespace guidance for the system prompt.
-func (h *toolHost) Instructions() string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.catalog.instructions()
-}
-
-// Close prevents further tool calls.
-func (h *toolHost) Close(context.Context) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.closed = true
+// Close rejects later calls. Overflow files remain for the model to read later.
+func (r *runtime) Close(context.Context) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.closed = true
 	return nil
 }
 
-func (h *toolHost) execute(ctx context.Context, request gaiagent.ToolRequest) (gai.Message, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.closed {
-		return gai.Message{}, errors.New("tool runtime is closed")
+func (r *runtime) open() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return errors.New("tool runtime is closed")
 	}
-	current := &invocation{
-		output: outputCollector{
-			kv: h.config.KV,
+	return nil
+}
+
+// outputPattern names overflow files after the tool call that produced them.
+func outputPattern(callID, kind string) string {
+	safe := strings.Map(
+		func(r rune) rune {
+			if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
+				return r
+			}
+			return '_'
 		},
-	}
-	ctx = context.WithValue(
-		ctx,
-		invocationKey{},
-		current,
+		callID,
 	)
-	if request.Call.Name != starlarkToolName {
-		return gai.Message{}, errors.New("unknown runtime tool")
+	if len(safe) > 64 {
+		safe = safe[:64]
 	}
-	var runErr error
-	code, ok := request.Call.Parameters["code"].(string)
-	if !ok || code == "" {
-		runErr = errors.New("code must be a nonempty string")
-	} else {
-		runErr = h.eval(
-			ctx,
-			code,
-		)
-	}
-	blocks, runErr := current.output.finish(
-		ctx,
-		runErr,
+	return fmt.Sprintf(
+		"%s-%s-*.txt",
+		safe,
+		kind,
 	)
-	if len(blocks) == 0 {
-		blocks = append(
-			blocks,
-			gai.TextBlock("Execution completed without emitted output."),
-		)
+}
+
+func errorResult(callID string, err error) gai.Message {
+	message := gai.ToolResultMessage(
+		callID,
+		gai.TextBlock("Error: "+err.Error()),
+	)
+	message.ToolResultError = true
+	return message
+}
+
+func (r *runtime) bashTool(ctx context.Context, request gaiagent.ToolRequest) (gai.Message, error) {
+	if err := r.open(); err != nil {
+		return gai.Message{}, err
+	}
+	callID := request.Block.ID
+	script, _ := request.Call.Parameters["script"].(string)
+	if strings.TrimSpace(script) == "" {
+		return errorResult(
+			callID,
+			errors.New("script must be a nonempty string"),
+		), nil
+	}
+	timeout, err := parseTimeout(request.Call.Parameters["timeout"])
+	if err != nil {
+		return errorResult(
+			callID,
+			err,
+		), nil
+	}
+	sink := newTailSink(
+		r.config.TempDir,
+		outputPattern(
+			callID,
+			"bash",
+		),
+		toolMaxBytes,
+		toolMaxLines,
+	)
+	run, err := runBash(
+		ctx,
+		r.config.Cwd,
+		script,
+		timeout,
+		sink,
+	)
+	if ctx.Err() != nil {
+		return gai.Message{}, ctx.Err()
+	}
+	if err != nil {
+		return errorResult(
+			callID,
+			err,
+		), nil
+	}
+	text := joinSections(
+		run.output.notice(),
+		run.output.text,
+		run.diagnostics(),
+	)
+	if text == "" {
+		text = "(no output)"
 	}
 	message := gai.ToolResultMessage(
-		request.Block.ID,
-		blocks...,
+		callID,
+		gai.TextBlock(text),
 	)
-	message.ToolResultError = runErr != nil
+	message.ToolResultError = run.timedOut || run.exitCode != 0
 	return message, nil
-}
-
-// eval runs under the host lock so discovery and builtins use the same catalog snapshot.
-func (h *toolHost) eval(ctx context.Context, code string) (err error) {
-	catalog, err := discoverTools(
-		ctx,
-		h.config.MCP,
-		h.config.Descriptions,
-	)
-	if err != nil {
-		return err
-	}
-	h.catalog = catalog
-	//nolint:contextcheck // Builtins receive the invocation context through Dyson at evaluation time.
-	sphere := h.newSphere()
-	defer func() {
-		err = errors.Join(
-			err,
-			sphere.Close(),
-		)
-	}()
-	return sphere.Eval(
-		ctx,
-		code,
-	)
-}
-
-// RunCommand executes Dyson subprocess calls without giving children the ACP streams.
-// The runner owns waiting and cancellation of the process.
-func (h *toolHost) RunCommand(ctx context.Context, command dyson.Command) (dyson.CommandResult, error) {
-	if err := ctx.Err(); err != nil {
-		return dyson.CommandResult{}, err
-	}
-	if command.Dir == "" {
-		command.Dir = h.config.Cwd
-	}
-	if !filepath.IsAbs(command.Dir) {
-		command.Dir = filepath.Join(
-			h.config.Cwd,
-			command.Dir,
-		)
-	}
-	if command.Stdin == dyson.StreamInherit {
-		command.Stdin = dyson.StreamDiscard
-	}
-	if command.Stdout == dyson.StreamInherit {
-		command.Stdout = dyson.StreamPipe
-	}
-	if command.Stderr == dyson.StreamInherit {
-		command.Stderr = dyson.StreamPipe
-	}
-	return h.runner.RunCommand(
-		ctx,
-		command,
-	)
-}
-
-func (h *toolHost) callMCP(thread *starlark.Thread, tool catalogTool, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	arguments := starlark.NewDict(0)
-	if err := starlark.UnpackArgs(
-		fn.Name(),
-		args,
-		kwargs,
-		"arguments?",
-		&arguments,
-	); err != nil {
-		return nil, err
-	}
-	encoded, err := starlark.Call(
-		thread,
-		starjson.Module.Members["encode"],
-		starlark.Tuple{
-			arguments,
-		},
-		nil,
-	)
-	if err != nil {
-		return nil, err
-	}
-	text, ok := starlark.AsString(encoded)
-	if !ok {
-		return nil, errors.New("JSON encoder did not return a string")
-	}
-	result, err := h.config.MCP.Call(
-		dyson.EvaluationContext(thread),
-		tool.server,
-		&mcp.CallToolParams{
-			Name:      tool.remoteName,
-			Arguments: json.RawMessage(text),
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-	return mcpResultValue(
-		thread,
-		result,
-	)
-}
-
-func (h *toolHost) searchTools(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	var query, namespace string
-	limit := 8
-	if err := starlark.UnpackArgs(
-		fn.Name(),
-		args,
-		kwargs,
-		"query",
-		&query,
-		"limit?",
-		&limit,
-		"namespace?",
-		&namespace,
-	); err != nil {
-		return nil, err
-	}
-	if limit <= 0 {
-		return nil, errors.New("search limit must be positive")
-	}
-	return toStarlark(
-		thread,
-		h.catalog.search(
-			query,
-			limit,
-			namespace,
-		),
-	)
-}
-
-func (h *toolHost) describeTool(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	var name string
-	if err := starlark.UnpackArgs(
-		fn.Name(),
-		args,
-		kwargs,
-		"name",
-		&name,
-	); err != nil {
-		return nil, err
-	}
-	for _, tool := range h.catalog.tools {
-		if tool.Name == name {
-			return toStarlark(
-				thread,
-				tool,
-			)
-		}
-	}
-	return starlark.None, nil
-}
-
-func (h *toolHost) describeNamespace(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	var name string
-	if err := starlark.UnpackArgs(
-		fn.Name(),
-		args,
-		kwargs,
-		"name",
-		&name,
-	); err != nil {
-		return nil, err
-	}
-	for _, namespace := range h.catalog.namespaces {
-		if namespace.Name == name {
-			return toStarlark(
-				thread,
-				namespace,
-			)
-		}
-	}
-	return starlark.None, nil
-}
-
-func toStarlark(thread *starlark.Thread, value any) (starlark.Value, error) {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	return starlark.Call(
-		thread,
-		starjson.Module.Members["decode"],
-		starlark.Tuple{
-			starlark.String(data),
-		},
-		nil,
-	)
-}
-
-func mcpResultValue(thread *starlark.Thread, result *mcp.CallToolResult) (starlark.Value, error) {
-	if result == nil {
-		return nil, errors.New("MCP returned no result")
-	}
-	structured, err := toStarlark(
-		thread,
-		result.StructuredContent,
-	)
-	if err != nil {
-		return nil, err
-	}
-	metadata, err := toStarlark(
-		thread,
-		result.Meta,
-	)
-	if err != nil {
-		return nil, err
-	}
-	items := make(
-		[]starlark.Value,
-		0,
-		len(result.Content),
-	)
-	for _, content := range result.Content {
-		raw, err := toStarlark(
-			thread,
-			content,
-		)
-		if err != nil {
-			return nil, err
-		}
-		items = append(
-			items,
-			&mcpContentValue{
-				content: content,
-				raw:     raw,
-			},
-		)
-	}
-	return starlarkstruct.FromStringDict(
-		starlark.String("MCPResult"),
-		starlark.StringDict{
-			"content":            starlark.NewList(items),
-			"structured_content": structured,
-			"is_error":           starlark.Bool(result.IsError),
-			"meta":               metadata,
-		},
-	), nil
-}
-
-func image(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	var data starlark.Bytes
-	if err := starlark.UnpackArgs(
-		fn.Name(),
-		args,
-		kwargs,
-		"data",
-		&data,
-	); err != nil {
-		return nil, err
-	}
-	current, ok := dyson.EvaluationContext(thread).Value(invocationKey{}).(*invocation)
-	if !ok {
-		return nil, errors.New("image outside an invocation")
-	}
-	block, err := imageBlock([]byte(data))
-	if err != nil {
-		return nil, err
-	}
-	current.output.add(block)
-	return starlark.None, nil
-}
-
-// MCPTools retains SDK results for scripts; conversion to model content is separate.
-type MCPTools interface {
-	Servers() []mcpclient.ServerID
-	Load(context.Context, mcpclient.ServerID) ([]*mcp.Tool, error)
-	// Instructions returns initialization guidance for a loaded server.
-	Instructions(mcpclient.ServerID) string
-	Call(context.Context, mcpclient.ServerID, *mcp.CallToolParams) (*mcp.CallToolResult, error)
 }

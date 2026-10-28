@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/spachava753/cpe/internal/auth"
+	"github.com/spachava753/cpe/internal/config"
 	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/mcpclient"
 	"github.com/spachava753/cpe/internal/models"
@@ -27,9 +28,14 @@ type Config struct {
 	// Initial supplies the fallback model and the reasoning effort for new sessions.
 	Initial      models.Selection
 	Instructions string
-	SkillPaths   []string
-	PluginPaths  []string
+	// MCPServers are the servers configured in settings.json.
+	MCPServers  map[string]config.MCPServer
+	SkillPaths  []string
+	PluginPaths []string
+	// SetupTimeout bounds session setup; MCPTimeout bounds connecting to and
+	// listing the tools of one MCP server, which is skipped when it runs out.
 	SetupTimeout time.Duration
+	MCPTimeout   time.Duration
 	// MaxResponseRetries limits retries of one interrupted model response; zero disables retries.
 	MaxResponseRetries uint
 }
@@ -41,10 +47,11 @@ type Dependencies struct {
 	Authentication Authenticator
 	Generators     GeneratorFactory
 	Hosts          toolruntime.Factory
-	MCP            mcpclient.Connector
-	History        conversation.Store
-	LastModel      *models.LastUsed
-	Traces         trace.TracerProvider
+	// MCP shares connections between the sessions of this process.
+	MCP       *mcpclient.Pool
+	History   conversation.Store
+	LastModel *models.LastUsed
+	Traces    trace.TracerProvider
 	// Stderr receives nonfatal diagnostics, separate from ACP output.
 	Stderr io.Writer
 }
@@ -59,8 +66,8 @@ type Authenticator interface {
 type GeneratorFactory func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error)
 
 func checkConfig(config Config, deps Dependencies) error {
-	if len(config.Models) == 0 || config.SetupTimeout <= 0 {
-		return errors.New("models and a positive session setup timeout are required")
+	if len(config.Models) == 0 || config.SetupTimeout <= 0 || config.MCPTimeout <= 0 {
+		return errors.New("models and positive session setup and MCP timeouts are required")
 	}
 	if deps.Filesystem == nil || deps.Authentication == nil || deps.Generators == nil || deps.Hosts == nil || deps.MCP == nil || deps.History == nil || deps.LastModel == nil || deps.Traces == nil || deps.Stderr == nil {
 		return errors.New("all agent dependencies must be configured")

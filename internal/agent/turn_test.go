@@ -14,6 +14,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/models"
+	"github.com/spachava753/cpe/internal/toolruntime"
 )
 
 func TestStreamingTurn(t *testing.T) {
@@ -103,7 +104,7 @@ func TestToolTurn(t *testing.T) {
 				for i := range test.calls {
 					call, err := gai.ToolCallBlock(
 						strconv.Itoa(i),
-						"starlark",
+						toolruntime.StarlarkToolName,
 						map[string]any{
 							"code": "print('done')",
 						},

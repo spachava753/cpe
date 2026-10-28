@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"slices"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -188,4 +189,65 @@ func (file *configFile) Read(data []byte) (int, error) {
 func (file *configFile) Close() error {
 	file.root.closes++
 	return file.File.Close()
+}
+
+func TestLoadConfigMCPServers(t *testing.T) {
+	got, err := config.LoadConfig(fstest.MapFS{
+		"settings.json": {
+			Data: []byte(`{
+  "mcpServers": {
+    "mcp-stdio": {"command": "mcp-command", "args": ["--flag"], "enabled": false},
+    "mcp-http": {"url": "https://example.com/mcp", "description": "Example server"}
+  }
+}`),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	disabled := false
+	want := config.Config{
+		MCPServers: map[string]config.MCPServer{
+			"mcp-stdio": {
+				Command: "mcp-command",
+				Args: []string{
+					"--flag",
+				},
+				Enabled: &disabled,
+			},
+			"mcp-http": {
+				URL:         "https://example.com/mcp",
+				Description: "Example server",
+			},
+		},
+	}
+	if diff := cmp.Diff(
+		want,
+		got,
+	); diff != "" {
+		t.Fatalf(
+			"LoadConfig (-want +got):\n%s",
+			diff,
+		)
+	}
+	if got.MCPServers["mcp-stdio"].IsEnabled() || !got.MCPServers["mcp-http"].IsEnabled() {
+		t.Fatal("enabled defaults are wrong")
+	}
+}
+
+func TestLoadConfigRejectsUnknownFields(t *testing.T) {
+	_, err := config.LoadConfig(fstest.MapFS{
+		"settings.json": {
+			Data: []byte(`{"mcpServers": {"x": {"comand": "typo"}}}`),
+		},
+	})
+	if err == nil || !strings.Contains(
+		err.Error(),
+		"comand",
+	) {
+		t.Fatalf(
+			"LoadConfig error = %v; want an unknown-field error",
+			err,
+		)
+	}
 }

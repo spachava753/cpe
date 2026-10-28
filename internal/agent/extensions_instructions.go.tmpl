@@ -1,0 +1,46 @@
+{{- define "tools"}}{{range .Tools}}
+- {{.Name}}{{if .Summary}}: {{.Summary}}{{end}}{{end}}{{end}}
+{{- define "skills"}}{{range .}}
+- {{.Name}}: {{.Description}}
+  file: {{printf "%q" .Path}}{{end}}{{end}}
+{{- if .Skills}}
+
+# Available skills
+
+Read a skill's SKILL.md with bash or read_file when it is relevant to the task. Paths in a skill are relative to its SKILL.md.
+{{template "skills" .Skills}}
+{{- end}}
+{{- if .Plugins}}
+
+# Available plugins
+
+Each plugin bundles skills and MCP servers. Read its skills like any other skill; call its tools from starlark_exec.
+{{- range .Plugins}}
+
+## {{.Name}}
+{{- if .Description}}
+{{.Description}}
+{{- end}}
+{{- if .Skills}}
+
+Skills:{{template "skills" .Skills}}
+{{- end}}
+{{- range .Servers}}
+
+MCP server {{.Prefix}}{{if .Description}}: {{.Description}}{{end}}{{template "tools" .}}
+{{- end}}
+{{- end}}
+{{- end}}
+{{- if .Servers}}
+
+# MCP servers
+
+Call these tools from starlark_exec as tools.<name>(...); use describe_tool(name) for a tool's input schema.
+{{- range .Servers}}
+
+## {{.Prefix}}
+{{- if .Description}}
+{{.Description}}
+{{- end}}{{template "tools" .}}
+{{- end}}
+{{- end}}

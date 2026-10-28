@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/spachava753/acp-sdk/acp"
-	"github.com/spachava753/dyson"
 	"github.com/spachava753/gai"
 	"github.com/spachava753/gai/agent/agenttest"
 
@@ -41,7 +40,7 @@ func TestTurnCheckpoints(t *testing.T) {
 				var id acp.SessionId
 				started := make(chan struct{})
 				release := make(chan struct{})
-				prefix := "load('subprocess.star', 'subprocess')\nsubprocess.run(['checkpoint'])\n"
+				prefix := "# checkpoint\n"
 				generator := agenttest.NewScriptedGenerator(
 					agenttest.GenerateStep{
 						Check: func(gai.GenerationRequest) error {
@@ -61,7 +60,7 @@ func TestTurnCheckpoints(t *testing.T) {
 							compactionCall(
 								t,
 								"first",
-								"starlark",
+								toolruntime.StarlarkToolName,
 								map[string]any{
 									"code": prefix + test.code,
 								},
@@ -69,7 +68,7 @@ func TestTurnCheckpoints(t *testing.T) {
 							compactionCall(
 								t,
 								"second",
-								"starlark",
+								toolruntime.StarlarkToolName,
 								map[string]any{
 									"code": prefix + "print('second result')",
 								},
@@ -100,28 +99,29 @@ func TestTurnCheckpoints(t *testing.T) {
 					},
 					func(_ *Config, deps *Dependencies, _ *acp.InitializeRequest) {
 						history = deps.History
-						deps.Hosts = func(ctx context.Context, config toolruntime.Config) (toolruntime.Host, error) {
-							return toolruntime.New(
-								ctx,
-								config,
-								dyson.StdlibConfig{
-									FS: deps.Filesystem,
-									CommandRunner: runnerFunc(func(ctx context.Context, _ dyson.Command) (dyson.CommandResult, error) {
-										select {
-										case started <- struct{}{}:
-										case <-ctx.Done():
-											return dyson.CommandResult{}, ctx.Err()
-										}
-										select {
-										case <-release:
-											return dyson.CommandResult{}, nil
-										case <-ctx.Done():
-											return dyson.CommandResult{}, ctx.Err()
-										}
-									}),
-								},
-							)
-						}
+						deps.Hosts = testHosts(
+							t,
+							func(ctx context.Context, script string) (string, bool, error) {
+								if !strings.HasPrefix(
+									script,
+									prefix,
+								) {
+									return "", false, nil
+								}
+								select {
+								case started <- struct{}{}:
+								case <-ctx.Done():
+									return "", true, ctx.Err()
+								}
+								select {
+								case <-release:
+									// Let the runtime run the rest of the script.
+									return "", false, nil
+								case <-ctx.Done():
+									return "", true, ctx.Err()
+								}
+							},
+						)
 					},
 				)
 				id = openFixtureSession(
@@ -203,9 +203,9 @@ func TestInterruptedCheckpointRestore(t *testing.T) {
 					return compactionCall(
 						t,
 						id,
-						"starlark",
+						toolruntime.StarlarkToolName,
 						map[string]any{
-							"code": "load('subprocess.star', 'subprocess')\nsubprocess.run(['historical'])",
+							"code": "# historical",
 						},
 					)
 				}
@@ -266,19 +266,10 @@ func TestInterruptedCheckpointRestore(t *testing.T) {
 						); err != nil {
 							t.Fatal(err)
 						}
-						deps.Hosts = func(ctx context.Context, config toolruntime.Config) (toolruntime.Host, error) {
-							return toolruntime.New(
-								ctx,
-								config,
-								dyson.StdlibConfig{
-									FS: deps.Filesystem,
-									CommandRunner: runnerFunc(func(context.Context, dyson.Command) (dyson.CommandResult, error) {
-										executions.Add(1)
-										return dyson.CommandResult{}, nil
-									}),
-								},
-							)
-						}
+						deps.Hosts = testHosts(
+							t,
+							countingHook(&executions),
+						)
 					},
 				)
 				var err error
@@ -409,17 +400,17 @@ func TestTurnCheckpointFailures(t *testing.T) {
 							compactionCall(
 								t,
 								"first",
-								"starlark",
+								toolruntime.StarlarkToolName,
 								map[string]any{
-									"code": "load('subprocess.star', 'subprocess')\nsubprocess.run(['effect'])\nprint('completed')",
+									"code": "# effect\nprint('completed')",
 								},
 							),
 							compactionCall(
 								t,
 								"second",
-								"starlark",
+								toolruntime.StarlarkToolName,
 								map[string]any{
-									"code": "load('subprocess.star', 'subprocess')\nsubprocess.run(['effect'])",
+									"code": "# effect",
 								},
 							),
 						),
@@ -439,19 +430,10 @@ func TestTurnCheckpointFailures(t *testing.T) {
 							messages: test.messages,
 							once:     test.once,
 						}
-						deps.Hosts = func(ctx context.Context, config toolruntime.Config) (toolruntime.Host, error) {
-							return toolruntime.New(
-								ctx,
-								config,
-								dyson.StdlibConfig{
-									FS: deps.Filesystem,
-									CommandRunner: runnerFunc(func(context.Context, dyson.Command) (dyson.CommandResult, error) {
-										executions.Add(1)
-										return dyson.CommandResult{}, nil
-									}),
-								},
-							)
-						}
+						deps.Hosts = testHosts(
+							t,
+							countingHook(&executions),
+						)
 					},
 				)
 				id := openFixtureSession(
@@ -507,5 +489,18 @@ func TestTurnCheckpointFailures(t *testing.T) {
 				}
 			},
 		)
+	}
+}
+
+// countingHook counts scripts that begin with a "# " marker, then lets them run.
+func countingHook(executions *atomic.Int32) toolHook {
+	return func(_ context.Context, script string) (string, bool, error) {
+		if strings.HasPrefix(
+			script,
+			"# ",
+		) {
+			executions.Add(1)
+		}
+		return "", false, nil
 	}
 }

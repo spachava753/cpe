@@ -26,14 +26,14 @@ cli/           CLI command assembly and dependency wiring
 commandio/     Shared command streams, output formatting, and scope resolution
 config/        Runtime configuration paths and settings loading
 conversation/  Saved transcripts, checkpoints, compaction, and token accounting
-mcpclient/     MCP server connections and their lifecycle
+mcpclient/     Shared MCP connections, session server setup, and tool naming
 models/        Model configuration and last-used model preferences
 plugins/       Agent Plugin discovery, installation, and management
 providers/     Model adapters and subscription credential refresh
 skills/        Agent Skill discovery, installation, and management
 source/        Source-tree acquisition and checkout cleanup
 terminaltext/  Sanitizing untrusted text for terminal output
-toolruntime/   Dyson execution, tool discovery, and model-facing output
+toolruntime/   The bash and starlark_exec tools, their builtins, and output limits
 version/       Build-time version information
 ```
 

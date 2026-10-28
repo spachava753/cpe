@@ -2,749 +2,892 @@ package toolruntime
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/spachava753/dyson"
 	"github.com/spachava753/gai"
 	gaiagent "github.com/spachava753/gai/agent"
-	"github.com/spf13/afero"
 
 	"github.com/spachava753/cpe/internal/mcpclient"
 	"github.com/spachava753/cpe/internal/plugins"
 )
 
-type emptyMCP struct{}
-
-func (emptyMCP) Servers() []mcpclient.ServerID          { return nil }
-func (emptyMCP) Instructions(mcpclient.ServerID) string { return "" }
-func (emptyMCP) Load(context.Context, mcpclient.ServerID) ([]*mcp.Tool, error) {
-	return nil, errors.New("no MCP server")
-}
-func (emptyMCP) Call(context.Context, mcpclient.ServerID, *mcp.CallToolParams) (*mcp.CallToolResult, error) {
-	return nil, errors.New("no MCP server")
+type testRuntime struct {
+	*runtime
+	cwd     string
+	tempDir string
+	calls   int
 }
 
-type runnerFunc func(context.Context, dyson.Command) (dyson.CommandResult, error)
-
-func (f runnerFunc) RunCommand(ctx context.Context, command dyson.Command) (dyson.CommandResult, error) {
-	return f(
-		ctx,
-		command,
-	)
-}
-
-func hostFixture(t *testing.T, tools MCPTools, runner dyson.CommandRunner, configure ...func(*Config)) *toolHost {
+// newTestRuntime connects the given in-memory servers, keyed by configured name.
+func newTestRuntime(t *testing.T, servers map[string]*mcp.Server) *testRuntime {
 	t.Helper()
-	config := Config{
-		Cwd: "/work",
-		MCP: tools,
-		KV:  memoryKV{},
+	pool, err := mcpclient.NewPool(
+		func(ctx context.Context, server plugins.MCPServer, _ io.Writer) (*mcp.ClientSession, error) {
+			remote := servers[server.Command]
+			a, b := mcp.NewInMemoryTransports()
+			session, err := remote.Connect(
+				ctx,
+				a,
+				nil,
+			)
+			if err != nil {
+				return nil, err
+			}
+			t.Cleanup(func() { _ = session.Close() })
+			return mcp.NewClient(
+				&mcp.Implementation{
+					Name:    "test",
+					Version: "1",
+				},
+				nil,
+			).Connect(
+				ctx,
+				b,
+				nil,
+			)
+		},
+		0,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, option := range configure {
-		option(&config)
+	t.Cleanup(func() { _ = pool.Close() })
+	var specs []mcpclient.ServerSpec
+	for name := range servers {
+		specs = append(
+			specs,
+			mcpclient.ServerSpec{
+				ID:          mcpclient.ServerID(name),
+				Source:      mcpclient.SourceSettings,
+				Description: "configured " + name,
+				Transport: plugins.MCPServer{
+					Type:    plugins.Stdio,
+					Command: name,
+				},
+			},
+		)
 	}
+	connected, failures := mcpclient.Setup(
+		t.Context(),
+		pool,
+		specs,
+		5*time.Second,
+	)
+	t.Cleanup(connected.Close)
+	if len(failures) != 0 {
+		t.Fatal(failures[0].Err)
+	}
+	prefixes, err := mcpclient.Prefixes(specs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := mcpclient.NewCatalog(
+		prefixes,
+		connected.Connected(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cwd := t.TempDir()
+	tempDir := t.TempDir()
 	host, err := New(
 		t.Context(),
-		config,
-		dyson.StdlibConfig{
-			FS:            afero.NewMemMapFs(),
-			CommandRunner: runner,
+		Config{
+			Cwd:     cwd,
+			TempDir: tempDir,
+			Catalog: catalog,
 		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if err := host.Close(context.Background()); err != nil {
-			t.Error(err)
+	return &testRuntime{
+		runtime: host.(*runtime),
+		cwd:     cwd,
+		tempDir: tempDir,
+	}
+}
+
+func (r *testRuntime) call(t *testing.T, ctx context.Context, tool string, parameters map[string]any) gai.Message {
+	t.Helper()
+	r.calls++
+	id := fmt.Sprintf(
+		"call_%d",
+		r.calls,
+	)
+	for _, candidate := range r.Tools() {
+		if candidate.Definition.Name != tool {
+			continue
 		}
-	})
-	return host.(*toolHost)
-}
-
-func toolRequest(name, key, value string) gaiagent.ToolRequest {
-	return gaiagent.ToolRequest{
-		Block: gai.Block{
-			ID: "call-1",
-		},
-		Call: gai.ToolCallInput{
-			Name: name,
-			Parameters: map[string]any{
-				key: value,
-			},
-		},
-	}
-}
-
-func TestLocalHost(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		code string
-		want string
-	}{
-		{
-			name: "host environment process and working directory",
-			code: "load('os.star', 'os')\nprint(os.getenv('CPE_HOST_TEST'))\nprint(os.getpid() > 0)\nprint(os.getcwd() != '')",
-			want: "host-access\nTrue\nTrue",
-		},
-		{
-			name: "subprocess inherits updated host environment",
-			code: "load('subprocess.star', 'subprocess')\nprint(subprocess.run(['sh', '-c', 'printf %s \"$CPE_HOST_TEST\"'], capture_output=True).stdout.decode())",
-			want: "host-access",
-		},
-		{
-			name: "shell pipelines through subprocess",
-			code: "load('subprocess.star', 'subprocess')\nr = subprocess.run(['bash', '--noprofile', '--norc', '-c', 'printf hello | tr a-z A-Z'], capture_output=True)\nprint(r.stdout.decode())",
-			want: "HELLO",
-		},
-		{
-			name: "subprocess explicit environment overrides host",
-			code: "load('subprocess.star', 'subprocess')\nprint(subprocess.run(['sh', '-c', 'printf %s \"$CPE_HOST_TEST\"'], capture_output=True, env={'CPE_HOST_TEST': 'explicit'}).stdout.decode())",
-			want: "explicit",
-		},
-		{
-			name: "subprocess empty environment does not inherit host",
-			code: "load('subprocess.star', 'subprocess')\nprint(subprocess.run(['sh', '-c', 'printf %s \"${CPE_HOST_TEST-unset}\"'], capture_output=True, env={}).stdout.decode())",
-			want: "unset",
-		},
-		{
-			name: "filesystem access outside session directory",
-			code: "load('os.star', 'os')\nos.mkdir('../outside')\nprint(os.path.isdir('../outside'))",
-			want: "True",
-		},
-	} {
-		t.Run(
-			test.name,
-			func(t *testing.T) {
-				t.Setenv(
-					"CPE_HOST_TEST",
-					"before-host-creation",
-				)
-				cwd := filepath.Join(
-					t.TempDir(),
-					"work",
-				)
-				filesystem := afero.NewOsFs()
-				if err := filesystem.MkdirAll(
-					cwd,
-					0o700,
-				); err != nil {
-					t.Fatal(err)
-				}
-				host, hostErr := Local(
-					t.Context(),
-					Config{
-						Cwd: cwd,
-						MCP: emptyMCP{},
-						KV:  memoryKV{},
-					},
-				)
-				if hostErr != nil {
-					t.Fatal(hostErr)
-				}
-				t.Cleanup(func() {
-					if err := host.Close(context.Background()); err != nil {
-						t.Error(err)
-					}
-				})
-				setup, hostErr := host.(*toolHost).execute(
-					t.Context(),
-					toolRequest(
-						starlarkToolName,
-						"code",
-						"load('os.star', 'os')\nos.putenv('CPE_HOST_TEST', 'host-access')",
-					),
-				)
-				if hostErr != nil || setup.ToolResultError {
-					t.Fatalf(
-						"set host environment: %v %v",
-						setup,
-						hostErr,
-					)
-				}
-
-				result, hostErr := host.(*toolHost).execute(
-					t.Context(),
-					toolRequest(
-						starlarkToolName,
-						"code",
-						test.code,
-					),
-				)
-				if hostErr != nil {
-					t.Fatal(hostErr)
-				}
-				var output strings.Builder
-				for _, block := range result.Blocks {
-					output.WriteString(block.Content.String())
-				}
-				if result.ToolResultError || !strings.Contains(
-					output.String(),
-					test.want,
-				) {
-					t.Fatalf(
-						"host execution: %q",
-						output.String(),
-					)
-				}
+		message, err := candidate.Handler.Execute(
+			ctx,
+			gaiagent.ToolRequest{
+				Block: gai.Block{
+					ID: id,
+				},
+				Call: gai.ToolCallInput{
+					Name:       tool,
+					Parameters: parameters,
+				},
 			},
 		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return message
 	}
+	t.Fatalf(
+		"unknown tool %q",
+		tool,
+	)
+	return gai.Message{}
 }
 
-func TestToolHost(t *testing.T) {
-	for _, test := range []struct {
-		name   string
-		code   string
-		want   string
-		failed bool
-	}{
-		{
-			name:   "fresh globals",
-			code:   "print(value + 1)",
-			want:   "undefined: value",
-			failed: true,
+func (r *testRuntime) script(t *testing.T, code string) (string, bool) {
+	t.Helper()
+	message := r.call(
+		t,
+		t.Context(),
+		StarlarkToolName,
+		map[string]any{
+			"code": code,
 		},
-		{
-			name:   "fresh imports",
-			code:   "print(json)",
-			want:   "undefined: json",
-			failed: true,
+	)
+	return resultText(message), message.ToolResultError
+}
+
+func (r *testRuntime) bash(t *testing.T, script string) (string, bool) {
+	t.Helper()
+	message := r.call(
+		t,
+		t.Context(),
+		BashToolName,
+		map[string]any{
+			"script": script,
 		},
-		{
-			name:   "fresh functions",
-			code:   "print(previous())",
-			want:   "undefined: previous",
-			failed: true,
-		},
-		{
-			name: "explicit state persists",
-			code: "print(kv.get('value') + 1)",
-			want: "42",
-		},
-		{
-			name:   "syntax error is tool result",
-			code:   "this is invalid",
-			want:   "Execution error",
-			failed: true,
-		},
-		{
-			name:   "partial output survives error",
-			code:   "print('before')\nfail('boom')",
-			want:   "before",
-			failed: true,
-		},
-		{
-			name: "output is bounded",
-			code: "print('x' * 200000)",
-			want: "[output truncated]",
-		},
-		{
-			name:   "error output is bounded",
-			code:   "fail('x' * 200000)",
-			want:   "[output truncated]",
-			failed: true,
-		},
-	} {
-		t.Run(
-			test.name,
-			func(t *testing.T) {
-				host := hostFixture(
-					t,
-					emptyMCP{},
-					runnerFunc(func(context.Context, dyson.Command) (dyson.CommandResult, error) { return dyson.CommandResult{}, nil }),
-				)
-				initial, err := host.execute(
-					t.Context(),
-					toolRequest(
-						"starlark",
-						"code",
-						"value = 41\nload('json.star', 'json')\ndef previous():\n    return value\nkv.store('value', value)",
-					),
-				)
-				if err != nil || initial.ToolResultError {
-					t.Fatalf(
-						"initialize: %v %v",
-						initial,
-						err,
-					)
-				}
-				result, err := host.execute(
-					t.Context(),
-					toolRequest(
-						"starlark",
-						"code",
-						test.code,
-					),
-				)
-				if err != nil {
-					t.Fatal(err)
-				}
-				var output strings.Builder
-				for _, block := range result.Blocks {
-					output.WriteString(block.Content.String())
-				}
-				if result.ToolResultError != test.failed || !strings.Contains(
-					output.String(),
-					test.want,
-				) {
-					t.Fatalf(
-						"result: %v %q",
-						result.ToolResultError,
-						output.String(),
-					)
-				}
-				if len(output.String()) > maxTextBytes+1024 {
-					t.Fatal("unbounded output")
-				}
-			},
+	)
+	return resultText(message), message.ToolResultError
+}
+
+func resultText(message gai.Message) string {
+	var texts []string
+	for _, block := range message.Blocks {
+		if block.ModalityType == gai.Text {
+			texts = append(
+				texts,
+				block.Content.String(),
+			)
+		}
+	}
+	return strings.Join(
+		texts,
+		"\n",
+	)
+}
+
+func TestToolDefinitions(t *testing.T) {
+	r := newTestRuntime(
+		t,
+		nil,
+	)
+	tools := r.Tools()
+	if len(tools) != 2 || tools[0].Definition.Name != "bash" || tools[1].Definition.Name != "starlark_exec" {
+		t.Fatalf(
+			"tools = %+v",
+			tools,
 		)
 	}
-}
-
-func TestCommandPaths(t *testing.T) {
-	for _, test := range []struct {
-		name        string
-		code        string
-		exitCode    int
-		largeOutput bool
-		failed      bool
-	}{
-		{
-			name:        "stderr and nonzero status survive large stdout",
-			code:        "load('subprocess.star', 'subprocess')\nr = subprocess.run(['build'], capture_output=True)\nprint(r.stdout.decode())\nprint(r.stderr.decode())\nprint('exit_code:', r.returncode)",
-			largeOutput: true,
-			exitCode:    1,
-		},
-		{
-			name: "Starlark subprocess",
-			code: "load('subprocess.star', 'subprocess')\nr = subprocess.run(['printf', 'hello'], capture_output=True)\nprint(r.stdout.decode())",
-		},
-		{
-			name:     "explicit nonzero status check fails execution",
-			code:     "load('subprocess.star', 'subprocess')\nsubprocess.run(['build'], capture_output=True, check=True)",
-			exitCode: 7,
-			failed:   true,
-		},
-	} {
-		t.Run(
-			test.name,
-			func(t *testing.T) {
-				calls := 0
-				host := hostFixture(
-					t,
-					emptyMCP{},
-					runnerFunc(func(_ context.Context, command dyson.Command) (dyson.CommandResult, error) {
-						calls++
-						if command.Stdin == dyson.StreamInherit || command.Stdout == dyson.StreamInherit || command.Stderr == dyson.StreamInherit {
-							t.Error("child inherited ACP streams")
-						}
-						if command.Dir != "/work" {
-							t.Errorf(
-								"cwd: %q",
-								command.Dir,
-							)
-						}
-						stdout := "hello"
-						if test.largeOutput {
-							stdout = strings.Repeat(
-								"x",
-								maxTextBytes,
-							)
-						}
-						return dyson.CommandResult{
-							Stdout:     []byte(stdout),
-							Stderr:     []byte("fatal: build failed"),
-							ReturnCode: test.exitCode,
-						}, nil
-					}),
-				)
-				result, err := host.execute(
-					t.Context(),
-					toolRequest(
-						starlarkToolName,
-						"code",
-						test.code,
-					),
-				)
-				if err != nil || result.ToolResultError != test.failed || calls != 1 {
-					t.Fatalf(
-						"execute: %#v, %v, calls=%d",
-						result,
-						err,
-						calls,
-					)
-				}
-				if test.largeOutput {
-					result, err = host.execute(
-						t.Context(),
-						toolRequest(
-							starlarkToolName,
-							"code",
-							"print(kv.get(kv.keys()[0])[-100:])",
-						),
-					)
-					if err != nil || result.ToolResultError || calls != 1 {
-						t.Fatal("could not retrieve diagnostics without rerunning the command")
-					}
-					var output strings.Builder
-					for _, block := range result.Blocks {
-						output.WriteString(block.Content.String())
-					}
-					if !strings.Contains(
-						output.String(),
-						"fatal: build failed",
-					) || !strings.Contains(
-						output.String(),
-						"exit_code: 1",
-					) {
-						t.Fatal("stderr or exit status lost behind stdout")
-					}
-				}
-			},
-		)
-	}
-}
-
-func TestMCPEmission(t *testing.T) {
-	imageData, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=")
+	schema, err := json.Marshal(tools[0].Definition.InputSchema)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, test := range []struct {
-		name          string
-		showImage     bool
-		toolError     bool
-		protocolError bool
-	}{
-		{
-			name: "raw results stay private",
-		},
-		{
-			name:      "explicit image",
-			showImage: true,
-		},
-		{
-			name:      "tool error remains inspectable",
-			showImage: true,
-			toolError: true,
-		},
-		{
-			name:          "protocol error becomes failed execution",
-			protocolError: true,
-		},
-	} {
-		t.Run(
-			test.name,
-			func(t *testing.T) {
-				server := mcp.NewServer(
-					&mcp.Implementation{
-						Name:    "fixture",
-						Version: "1",
-					},
-					nil,
-				)
-				server.AddTool(
-					&mcp.Tool{
-						Name:        "screenshot",
-						InputSchema: json.RawMessage(`{"type":"object"}`),
-					},
-					func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-						if test.protocolError {
-							return nil, errors.New("transport-side failure")
-						}
-						return &mcp.CallToolResult{
-							Content: []mcp.Content{
-								&mcp.ImageContent{
-									Data:     imageData,
-									MIMEType: "image/png",
-								},
-							},
-							StructuredContent: map[string]any{
-								"count": 7,
-							},
-							IsError: test.toolError,
-						}, nil
-					},
-				)
-				registry, err := mcpclient.NewRegistry(
-					func(ctx context.Context, _ plugins.MCPServer, toolsChanged func()) (*mcp.ClientSession, error) {
-						a, b := mcp.NewInMemoryTransports()
-						session, err := server.Connect(
-							ctx,
-							a,
-							nil,
-						)
-						if err != nil {
-							return nil, err
-						}
-						t.Cleanup(func() { _ = session.Close() })
-						return mcp.NewClient(
-							&mcp.Implementation{
-								Name:    "test",
-								Version: "1",
-							},
-							&mcp.ClientOptions{
-								ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) { toolsChanged() },
-							},
-						).Connect(
-							ctx,
-							b,
-							nil,
-						)
-					},
-					map[mcpclient.ServerID]plugins.MCPServer{
-						"test": {},
-					},
-				)
-				if err != nil {
-					t.Fatal(err)
-				}
-				t.Cleanup(func() { _ = registry.Close() })
-				host := hostFixture(
-					t,
-					registry,
-					runnerFunc(func(context.Context, dyson.Command) (dyson.CommandResult, error) { return dyson.CommandResult{}, nil }),
-				)
-				code := "r = mcp__test__screenshot({})\nprint(r.structured_content['count'])\nprint(r.is_error)"
-				if test.showImage {
-					code += "\nimage(r.content[0].data)"
-				}
-				result, err := host.execute(
-					t.Context(),
-					toolRequest(
-						"starlark",
-						"code",
-						code,
-					),
-				)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if result.ToolResultError != test.protocolError {
-					t.Fatalf(
-						"unexpected failed result: %#v",
-						result,
-					)
-				}
-				images := 0
-				for _, block := range result.Blocks {
-					if block.ModalityType == gai.Image {
-						images++
-					}
-				}
-				if (images == 1) != test.showImage {
-					t.Fatalf(
-						"images: %d",
-						images,
-					)
-				}
-			},
+	if !strings.Contains(
+		string(schema),
+		`"required":["script"]`,
+	) || !strings.Contains(
+		string(schema),
+		`"timeout"`,
+	) {
+		t.Fatalf(
+			"bash schema = %s",
+			schema,
 		)
 	}
 }
 
-func TestHostCancellation(t *testing.T) {
-	host := hostFixture(
+func TestBashTool(t *testing.T) {
+	r := newTestRuntime(
 		t,
-		emptyMCP{},
-		runnerFunc(func(ctx context.Context, _ dyson.Command) (dyson.CommandResult, error) {
-			<-ctx.Done()
-			return dyson.CommandResult{}, ctx.Err()
-		}),
+		nil,
 	)
-	ctx, cancel := context.WithTimeout(
-		t.Context(),
-		20*time.Millisecond,
+	text, failed := r.bash(
+		t,
+		"echo out; echo err >&2; echo again; pwd",
 	)
-	defer cancel()
-	result, err := host.execute(
-		ctx,
-		toolRequest(
-			"starlark",
-			"code",
-			"load('subprocess.star', 'subprocess')\nsubprocess.run(['sleep', '100'])",
-		),
-	)
-	if err != nil || !result.ToolResultError {
+	if failed || text != "out\nerr\nagain\n"+r.cwd {
 		t.Fatalf(
-			"cancelled execution: %#v %v",
-			result,
-			err,
+			"output = %q, failed = %t",
+			text,
+			failed,
 		)
 	}
-	result, err = host.execute(
-		t.Context(),
-		toolRequest(
-			"starlark",
-			"code",
-			"print('still alive')",
-		),
+	text, failed = r.bash(
+		t,
+		"echo partial; exit 3",
 	)
-	if err != nil || result.ToolResultError {
+	if !failed || text != "partial\n[Exit status 3]" {
 		t.Fatalf(
-			"next invocation: %#v %v",
-			result,
-			err,
+			"nonzero exit output = %q, failed = %t",
+			text,
+			failed,
+		)
+	}
+	text, failed = r.bash(
+		t,
+		"true",
+	)
+	if failed || text != "(no output)" {
+		t.Fatalf(
+			"silent output = %q",
+			text,
+		)
+	}
+	text, failed = r.bash(
+		t,
+		"  ",
+	)
+	if !failed || !strings.Contains(
+		text,
+		"nonempty",
+	) {
+		t.Fatalf(
+			"empty script = %q",
+			text,
 		)
 	}
 }
 
-type trackedFile struct {
-	afero.File
-	closeErr error
-	closed   bool
-}
-
-func (f *trackedFile) Close() error {
-	f.closed = true
-	return errors.Join(
-		f.File.Close(),
-		f.closeErr,
+func TestBashToolTimeoutKillsProcessGroup(t *testing.T) {
+	r := newTestRuntime(
+		t,
+		nil,
 	)
+	marker := filepath.Join(
+		r.cwd,
+		"survived",
+	)
+	start := time.Now()
+	message := r.call(
+		t,
+		t.Context(),
+		BashToolName,
+		map[string]any{
+			"script":  "echo started; (sleep 2; touch " + marker + ") & sleep 30",
+			"timeout": 0.5,
+		},
+	)
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Fatalf(
+			"timeout took %s",
+			elapsed,
+		)
+	}
+	text := resultText(message)
+	if !message.ToolResultError || !strings.HasPrefix(
+		text,
+		"started\n[Timed out after 500ms",
+	) {
+		t.Fatalf(
+			"timeout output = %q",
+			text,
+		)
+	}
+	time.Sleep(3 * time.Second)
+	if _, err := os.Stat(marker); !errors.Is(
+		err,
+		os.ErrNotExist,
+	) {
+		t.Fatal("a background child outlived the timed-out call")
+	}
+	bad := r.call(
+		t,
+		t.Context(),
+		BashToolName,
+		map[string]any{
+			"script":  "true",
+			"timeout": -1.0,
+		},
+	)
+	if !bad.ToolResultError {
+		t.Fatal("negative timeout was accepted")
+	}
 }
 
-type trackingFS struct {
-	afero.Fs
-	closeErr error
-	files    []*trackedFile
-}
-
-func (f *trackingFS) Open(name string) (afero.File, error) {
-	file, err := f.Fs.Open(name)
+func TestBashToolTruncatesToTail(t *testing.T) {
+	r := newTestRuntime(
+		t,
+		nil,
+	)
+	text, failed := r.bash(
+		t,
+		"for i in $(seq 1 5000); do echo line $i; done; echo done >&2; exit 1",
+	)
+	if !failed {
+		t.Fatal("nonzero exit was not an error")
+	}
+	lines := strings.Split(
+		text,
+		"\n",
+	)
+	if !strings.HasPrefix(
+		lines[0],
+		"[Output truncated: showing lines 3002-5001 of 5001",
+	) || lines[1] != "line 3002" || lines[len(lines)-2] != "done" || lines[len(lines)-1] != "[Exit status 1]" {
+		t.Fatalf(
+			"head = %q, tail = %q",
+			lines[:2],
+			lines[len(lines)-2:],
+		)
+	}
+	path := lines[0][strings.Index(
+		lines[0],
+		"Full output: ",
+	)+len("Full output: ") : len(lines[0])-1]
+	if !strings.HasPrefix(
+		path,
+		r.tempDir,
+	) || !strings.Contains(
+		filepath.Base(path),
+		"call_1-bash-",
+	) {
+		t.Fatalf(
+			"overflow path = %q",
+			path,
+		)
+	}
+	saved, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		t.Fatal(err)
 	}
-	tracked := &trackedFile{
-		File:     file,
-		closeErr: f.closeErr,
+	if !strings.HasPrefix(
+		string(saved),
+		"line 1\nline 2\n",
+	) || !strings.HasSuffix(
+		string(saved),
+		"line 5000\ndone\n",
+	) {
+		t.Fatalf(
+			"saved output has %d bytes",
+			len(saved),
+		)
 	}
-	f.files = append(
-		f.files,
-		tracked,
-	)
-	return tracked, nil
 }
 
-func TestInvocationResources(t *testing.T) {
+func TestStarlarkBasics(t *testing.T) {
+	r := newTestRuntime(
+		t,
+		nil,
+	)
 	for _, test := range []struct {
 		name       string
 		code       string
-		failed     bool
-		closeError bool
-		cancel     bool
+		want       string
+		wantFailed bool
 	}{
 		{
-			name: "successful execution closes resources",
-			code: `file = open("/data")`,
+			name: "print",
+			code: "print('hello', 1)\nprint(json.encode({'a': [1, 2]}))",
+			want: "hello 1\n{\"a\":[1,2]}",
 		},
 		{
-			name: "failed execution closes resources",
-			code: `file = open("/data")
-fail("later error")`,
-			failed: true,
+			name: "silent",
+			code: "x = 1",
+			want: "Script completed with no output.",
 		},
 		{
-			name:       "cleanup failure is reported",
-			code:       `file = open("/data")`,
-			failed:     true,
-			closeError: true,
+			name: "while and top-level control",
+			code: "i = 0\nwhile i < 3:\n    i += 1\nif i == 3:\n    print('looped', i)",
+			want: "looped 3",
 		},
 		{
-			name: "cancellation closes resources and retains accepted state",
-			code: `load("subprocess.star", "subprocess")
-file = open("/data")
-kv.store("accepted", 42)
-subprocess.run(["wait"])`,
-			failed: true,
-			cancel: true,
+			name: "sets",
+			code: "print(sorted(set([3, 1, 3])))",
+			want: "[1, 3]",
+		},
+		{
+			name:       "error keeps earlier output",
+			code:       "print('before')\nfail('boom')\nprint('after')",
+			want:       "before\nError: Traceback",
+			wantFailed: true,
+		},
+		{
+			name:       "recursion is disabled",
+			code:       "def f(n):\n    return f(n - 1) if n else 0\nprint(f(2))",
+			want:       "Error: Traceback",
+			wantFailed: true,
+		},
+		{
+			name:       "no load",
+			code:       "load('os.star', 'os')",
+			want:       "Error:",
+			wantFailed: true,
 		},
 	} {
 		t.Run(
 			test.name,
 			func(t *testing.T) {
-				filesystem := &trackingFS{
-					Fs: afero.NewMemMapFs(),
-				}
-				if test.closeError {
-					filesystem.closeErr = errors.New("fixture close failure")
-				}
-				if err := afero.WriteFile(
-					filesystem.Fs,
-					"/data",
-					[]byte("data"),
-					0o600,
-				); err != nil {
-					t.Fatal(err)
-				}
-				ctx, cancel := context.WithCancel(t.Context())
-				defer cancel()
-				host, err := New(
-					t.Context(),
-					Config{
-						Cwd: "/work",
-						MCP: emptyMCP{},
-						KV:  memoryKV{},
-					},
-					dyson.StdlibConfig{
-						FS: filesystem,
-						CommandRunner: runnerFunc(func(ctx context.Context, _ dyson.Command) (dyson.CommandResult, error) {
-							cancel()
-							return dyson.CommandResult{}, ctx.Err()
-						}),
-					},
+				text, failed := r.script(
+					t,
+					test.code,
 				)
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer host.Close(context.Background())
-				result, err := host.(*toolHost).execute(
-					ctx,
-					toolRequest(
-						starlarkToolName,
-						"code",
-						test.code,
-					),
-				)
-				if err != nil || result.ToolResultError != test.failed || len(filesystem.files) != 1 || !filesystem.files[0].closed {
-					t.Fatalf(
-						"resource lifetime: %v, %v, files=%v",
-						result,
-						err,
-						filesystem.files,
-					)
-				}
-				if test.closeError && !strings.Contains(
-					result.Blocks[0].Content.String(),
-					"fixture close failure",
+				if failed != test.wantFailed || !strings.HasPrefix(
+					text,
+					test.want,
 				) {
-					t.Fatal("close error was not reported")
-				}
-				if test.cancel {
-					result, err := host.(*toolHost).execute(
-						t.Context(),
-						toolRequest(
-							starlarkToolName,
-							"code",
-							`print(kv.get("accepted"))`,
-						),
+					t.Fatalf(
+						"output = %q, failed = %t",
+						text,
+						failed,
 					)
-					if err != nil || result.ToolResultError || result.Blocks[0].Content.String() != "42\n" {
-						t.Fatalf(
-							"state after cancellation: %v, %v",
-							result,
-							err,
-						)
-					}
+				}
+				if strings.Contains(
+					text,
+					"after",
+				) {
+					t.Fatal("statements after an error ran")
 				}
 			},
 		)
+	}
+}
+
+func TestStarlarkTimeout(t *testing.T) {
+	r := newTestRuntime(
+		t,
+		nil,
+	)
+	start := time.Now()
+	message := r.call(
+		t,
+		t.Context(),
+		StarlarkToolName,
+		map[string]any{
+			"code":    "print('spinning')\nwhile True:\n    pass",
+			"timeout": 0.2,
+		},
+	)
+	if time.Since(start) > 5*time.Second {
+		t.Fatal("timeout did not stop the script")
+	}
+	text := resultText(message)
+	if !message.ToolResultError || !strings.HasPrefix(
+		text,
+		"spinning\n[Timed out after 200ms",
+	) {
+		t.Fatalf(
+			"output = %q",
+			text,
+		)
+	}
+	start = time.Now()
+	message = r.call(
+		t,
+		t.Context(),
+		StarlarkToolName,
+		map[string]any{
+			"code":    "bash('sleep 30')",
+			"timeout": 0.2,
+		},
+	)
+	if time.Since(start) > 5*time.Second || !message.ToolResultError {
+		t.Fatalf(
+			"timeout did not stop a bash builtin: %q",
+			resultText(message),
+		)
+	}
+}
+
+func TestStarlarkCancellationReturnsContextError(t *testing.T) {
+	r := newTestRuntime(
+		t,
+		nil,
+	)
+	ctx, cancel := context.WithCancel(t.Context())
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+	for _, tool := range r.Tools() {
+		_, err := tool.Handler.Execute(
+			ctx,
+			gaiagent.ToolRequest{
+				Block: gai.Block{
+					ID: "x",
+				},
+				Call: gai.ToolCallInput{
+					Name: tool.Definition.Name,
+					Parameters: map[string]any{
+						"code":   "bash('sleep 30')",
+						"script": "sleep 30",
+					},
+				},
+			},
+		)
+		if !errors.Is(
+			err,
+			context.Canceled,
+		) {
+			t.Fatalf(
+				"%s cancellation error = %v",
+				tool.Definition.Name,
+				err,
+			)
+		}
+	}
+}
+
+func TestFileBuiltins(t *testing.T) {
+	r := newTestRuntime(
+		t,
+		nil,
+	)
+	text, failed := r.script(
+		t,
+		`write_file("a/b/c.txt", "hello world\n")
+write_file("raw.bin", b"\x00\x01")
+data = read_file("a/b/c.txt")
+print(type(data), data.decode())
+print(len(read_file("raw.bin")))
+print(edit_file("a/b/c.txt", "world", "there"))
+print(read_file("a/b/c.txt").decode())`,
+	)
+	if failed || text != "bytes hello world\n\n2\nNone\nhello there" {
+		t.Fatalf(
+			"output = %q, failed = %t",
+			text,
+			failed,
+		)
+	}
+	target := filepath.Join(
+		r.cwd,
+		"target.txt",
+	)
+	if err := os.WriteFile(
+		target,
+		[]byte("one"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(
+		r.cwd,
+		"link.txt",
+	)
+	if err := os.Symlink(
+		target,
+		link,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if text, failed := r.script(
+		t,
+		`write_file("link.txt", "two")
+edit_file("link.txt", "two", "three")`,
+	); failed {
+		t.Fatal(text)
+	}
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetInfo, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 || string(content) != "three" || targetInfo.Mode().Perm() != 0o600 {
+		t.Fatalf(
+			"link kept = %t, content = %q, mode = %v",
+			info.Mode()&os.ModeSymlink != 0,
+			content,
+			targetInfo.Mode().Perm(),
+		)
+	}
+}
+
+func TestEditFileFailureStopsScript(t *testing.T) {
+	r := newTestRuntime(
+		t,
+		nil,
+	)
+	for name, content := range map[string]string{
+		"one.txt":   "alpha",
+		"two.txt":   "beta beta",
+		"three.txt": "gamma",
+	} {
+		if err := os.WriteFile(
+			filepath.Join(
+				r.cwd,
+				name,
+			),
+			[]byte(content),
+			0o644,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	text, failed := r.script(
+		t,
+		`edit_file("one.txt", "alpha", "ALPHA")
+print("first edited")
+edit_file("two.txt", "beta", "BETA")
+edit_file("three.txt", "gamma", "GAMMA")
+print("never")`,
+	)
+	if !failed || !strings.Contains(
+		text,
+		"first edited",
+	) || !strings.Contains(
+		text,
+		"matches 2 times",
+	) || strings.Contains(
+		text,
+		"never",
+	) {
+		t.Fatalf(
+			"output = %q",
+			text,
+		)
+	}
+	for name, want := range map[string]string{
+		"one.txt":   "ALPHA",
+		"two.txt":   "beta beta",
+		"three.txt": "gamma",
+	} {
+		got, err := os.ReadFile(filepath.Join(
+			r.cwd,
+			name,
+		))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != want {
+			t.Fatalf(
+				"%s = %q, want %q",
+				name,
+				got,
+				want,
+			)
+		}
+	}
+	for code, want := range map[string]string{
+		`edit_file("one.txt", "missing", "x")`:   "was not found",
+		`edit_file("one.txt", "ALPHA", "ALPHA")`: "would not change",
+		`edit_file("one.txt", "", "x")`:          "must be nonempty",
+		`write_file("x.txt", 3)`:                 "must be str or bytes",
+	} {
+		text, failed := r.script(
+			t,
+			code,
+		)
+		if !failed || !strings.Contains(
+			text,
+			want,
+		) {
+			t.Fatalf(
+				"%s: output = %q",
+				code,
+				text,
+			)
+		}
+	}
+	if text, failed := r.script(
+		t,
+		`edit_file("two.txt", "aa", "x")`,
+	); !failed {
+		t.Fatal(text)
+	}
+	if err := os.WriteFile(
+		filepath.Join(
+			r.cwd,
+			"overlap.txt",
+		),
+		[]byte("aaa"),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if text, failed := r.script(
+		t,
+		`edit_file("overlap.txt", "aa", "b")`,
+	); !failed || !strings.Contains(
+		text,
+		"matches 2 times",
+	) {
+		t.Fatalf(
+			"overlapping match output = %q",
+			text,
+		)
+	}
+}
+
+func TestBashBuiltin(t *testing.T) {
+	r := newTestRuntime(
+		t,
+		nil,
+	)
+	text, failed := r.script(
+		t,
+		`result = bash("echo hi; echo there >&2; exit 4")
+print(repr(result.output), result.exit_code, result.timed_out, result.truncated, result.full_output_path)
+big = bash("head -c 1100000 /dev/zero | tr '\\0' 'x'; echo; echo END")
+print(big.truncated, len(big.output) <= 1048576, big.output.endswith("END\n"))
+print(len(read_file(big.full_output_path)))
+slow = bash("sleep 5", timeout=0.2)
+print(slow.timed_out, slow.exit_code)`,
+	)
+	if failed || text != "\"hi\\nthere\\n\" 4 False False None\nTrue True True\n1100005\nTrue 137" {
+		t.Fatalf(
+			"output = %q, failed = %t",
+			text,
+			failed,
+		)
+	}
+}
+
+func TestView(t *testing.T) {
+	r := newTestRuntime(
+		t,
+		nil,
+	)
+	png := []byte("\x89PNG\r\n\x1a\nrest")
+	if err := os.WriteFile(
+		filepath.Join(
+			r.cwd,
+			"shot.png",
+		),
+		png,
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	message := r.call(
+		t,
+		t.Context(),
+		StarlarkToolName,
+		map[string]any{
+			"code": `print("look")
+view(read_file("shot.png"), "image/png")
+view(b"%PDF-1.4", "application/pdf")
+view(b"RIFF", "audio/wav")`,
+		},
+	)
+	if message.ToolResultError || len(message.Blocks) != 4 {
+		t.Fatalf(
+			"message = %+v",
+			message,
+		)
+	}
+	if message.Blocks[0].Content.String() != "look" || message.Blocks[1].ModalityType != gai.Image || message.Blocks[1].MimeType != "image/png" || message.Blocks[2].MimeType != "application/pdf" || message.Blocks[3].ModalityType != gai.Audio {
+		t.Fatalf(
+			"blocks = %+v",
+			message.Blocks,
+		)
+	}
+	for code, want := range map[string]string{
+		`view(b"x", "")`:           "mime_type is required",
+		`view(b"x")`:               "missing argument for mime_type",
+		`view(b"", "image/png")`:   "empty",
+		`view(b"x", "text/plain")`: "cannot show",
+	} {
+		text, failed := r.script(
+			t,
+			code,
+		)
+		if !failed || !strings.Contains(
+			text,
+			want,
+		) {
+			t.Fatalf(
+				"%s: output = %q",
+				code,
+				text,
+			)
+		}
+	}
+}
+
+func TestCompact(t *testing.T) {
+	r := newTestRuntime(
+		t,
+		nil,
+	)
+	text, failed := r.script(
+		t,
+		`compact("summary")`,
+	)
+	if !failed || !strings.Contains(
+		text,
+		"requires an active prompt",
+	) {
+		t.Fatalf(
+			"output = %q",
+			text,
+		)
+	}
+	var accepted string
+	message := r.call(
+		t,
+		WithCompaction(
+			t.Context(),
+			func(summary string) { accepted = summary },
+		),
+		StarlarkToolName,
+		map[string]any{
+			"code": `compact("done: " + str(1 + 1))`,
+		},
+	)
+	if message.ToolResultError || accepted != "done: 2" {
+		t.Fatalf(
+			"accepted = %q, output = %q",
+			accepted,
+			resultText(message),
+		)
+	}
+}
+
+func TestClosedRuntimeRejectsCalls(t *testing.T) {
+	r := newTestRuntime(
+		t,
+		nil,
+	)
+	if err := r.Close(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	_, err := r.Tools()[0].Handler.Execute(
+		t.Context(),
+		gaiagent.ToolRequest{
+			Call: gai.ToolCallInput{
+				Parameters: map[string]any{
+					"script": "true",
+				},
+			},
+		},
+	)
+	if err == nil {
+		t.Fatal("closed runtime ran a command")
 	}
 }

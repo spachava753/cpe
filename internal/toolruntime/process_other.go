@@ -2,7 +2,10 @@
 
 package toolruntime
 
-import "os/exec"
+import (
+	"os"
+	"os/exec"
+)
 
 func configureProcess(command *exec.Cmd) func() {
 	return func() {
@@ -10,4 +13,8 @@ func configureProcess(command *exec.Cmd) func() {
 			_ = command.Process.Kill()
 		}
 	}
+}
+
+func exitStatus(state *os.ProcessState) int {
+	return state.ExitCode()
 }

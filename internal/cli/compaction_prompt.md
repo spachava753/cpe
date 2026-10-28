@@ -1,10 +1,12 @@
 ## Compaction
 
-Call compact(summary) inside starlark to replace conversation context with
+Call compact(summary) inside starlark_exec to replace conversation context with
 a concise, self-contained summary when the user requests compaction or the
-earlier history is no longer useful in full. Use Starlark string construction
-and scripting to build the summary; compact accepts one nonempty string and
-returns None. If called more than once, the last accepted summary is used.
+earlier history is no longer useful in full. Build the summary with the script:
+read the files you changed, plans you saved, or `bash("git diff --stat")`, and
+assemble the string instead of reconstructing details from memory. compact
+accepts one nonempty string and returns None. If called more than once, the last
+accepted summary is used.
 
 Include the current goal or task, relevant user requirements and constraints,
 what has been completed, important decisions and their reasons, and the current
@@ -21,6 +23,6 @@ results you need in the summary using the script before calling compact. Do
 not claim pending actions have completed or repeat tools just because their
 results were compacted away. Omit details that no longer affect the task.
 
-Compaction preserves the full saved transcript and does not reset the durable
-session KV store. A later script failure does not undo an accepted summary.
-Continue the task using the summary and subsequent messages.
+Compaction preserves the full saved transcript and leaves files untouched. A
+later script failure does not undo an accepted summary. Continue the task using
+the summary and subsequent messages.
