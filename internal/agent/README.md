@@ -9,27 +9,30 @@ assembles their implementations in `internal/cli/agent.go`.
 | `agent` | ACP translation and notifications, live sessions, turn cancellation, response retries, slash commands, prompt assembly, and checkpoint timing |
 | `conversation` | Saved records, transcript and compaction invariants, token accounting, and atomic JSON checkpoint storage |
 | `providers` | Model adapters, subscription credential attachment, and credential refresh workers |
-| `mcpclient` | MCP transports, session-owned connections, and cached remote tool lists |
-| `toolruntime` | Invocation-scoped Dyson spheres, KV encoding and builtins, subprocess execution, tool naming and search, MCP result values, and model-facing output |
+| `mcpclient` | MCP transports, the process-wide connection pool, eager session server setup, settings conversion, and tool naming |
+| `toolruntime` | The `bash` and `starlark_exec` tools, StarlarkX builtins, bash execution, tool search, MCP result values, and output truncation and overflow |
 | `models` | Configured model definitions, model IDs, reasoning selections, and the persisted last-used model preference |
 
 The extracted packages do not import `agent` or ACP. `agent` depends on
 `providers` only to recognize credential failures that must not be retried as
-interrupted model responses. `toolruntime` uses `mcpclient.ServerID` and an
-`MCPTools` interface; it does not own MCP connection shutdown.
+interrupted model responses. `toolruntime` receives an `mcpclient.Catalog` and
+calls tools through it; it does not own MCP connection shutdown.
 
 ## Resource ownership
 
 The CLI creates the provider set and closes it when the ACP connection ends.
-The provider set owns credential-refresh workers, while each live session owns
-its MCP registry and tool runtime. Closing a session cancels and joins its active
-turn before closing the runtime and MCP connections. A context used to set up a
+The provider set owns credential-refresh workers. The CLI also creates the
+`mcpclient.Pool`, which owns MCP connections shared by every session in the
+process, and closes it when the ACP connection ends. Each live session owns its
+leases on those connections, its tool runtime, and its temporary directory for
+overflow output and saved media. Closing a session cancels and joins its active
+turn before closing the runtime and releasing its leases; the pool keeps an
+unused connection open briefly before closing it. A context used to set up a
 session does not determine the lifetime of successfully opened resources.
 
-`toolruntime.Local` supplies trusted host filesystem, HTTP, and command access.
-`toolruntime.New` accepts an injected Dyson standard library for tests and other
-explicit wiring. Both return the same `Host` interface. Neither introduces
-execution approval or sandbox policy.
+`toolruntime.New` builds the runtime with full host access to the filesystem
+and commands. Tests wrap the returned `Host` to intercept chosen calls. Nothing
+introduces execution approval or sandbox policy.
 
 ## Model selection
 
@@ -46,12 +49,9 @@ previous session's effort.
 ## Saved history and working context
 
 A `conversation.Record` contains the transcript, selected model and reasoning,
-usage, optional compaction boundary, and encoded session KV values. It does not
-contain live resources. `toolruntime` requires a `KeyValueStore`; the session
-implements it by saving a replacement record before publishing each accepted
-write. Loading and resuming restore KV data, and forking copies it independently,
-without replaying tool calls. Each invocation still starts with fresh globals
-and imports.
+usage, and optional compaction boundary. It does not contain live resources or
+script data; scripts keep data in files. Loading, resuming, and forking never
+replay tool calls, and each `starlark_exec` call starts with fresh globals.
 
 Aborted model responses and their live assistant-message updates and notices are
 not saved. Reported token usage accumulates across all attempts in memory and is
@@ -66,7 +66,7 @@ interrupted with uncertain outcomes before exposing the restored session. Effect
 may have occurred even when no result was saved, so recovery never replays calls.
 Checkpoints do not restore the VM or prevent concurrent writers in other processes.
 
-The Starlark `compact(summary)` builtin belongs to `toolruntime`. It passes each
+The StarlarkX `compact(summary)` builtin belongs to `toolruntime`. It passes each
 accepted summary synchronously to a receiver installed by `agent` for the turn.
 `agent` keeps the last accepted summary, settles the response's tool calls, and
 chooses the checkpoint boundary. An accepted summary survives a later script
@@ -74,14 +74,15 @@ failure. `conversation` checks that the saved boundary does not split a tool cal
 from its result, and constructs model context without deleting the transcript.
 
 ACP prompt parsing stays in `agent`; script output conversion stays in
-`toolruntime`. Each boundary owns its media checks and limits, rather than
-making incoming prompts depend on runtime output policy. The small image
-conversion functions are private to those boundaries.
+`toolruntime`. `toolruntime` builds media blocks from a declared MIME type
+without size limits. `agent` replaces media the selected model cannot accept
+with notices naming saved copies, and retries once when the provider rejects
+media from the latest tool results.
 
 ## Tests
 
 Package-local tests cover persistence, accounting, credential refresh, MCP
-connection lifecycle, and runtime execution. `agent` integration tests exercise
+connection sharing and naming, and runtime execution. `agent` integration tests exercise
 these packages together through ACP, including compaction, cancellation,
 response retries, and restoration. Run `go test ./...`, `go test -race ./...`, and
 `go run ./build lint` from the repository root.
