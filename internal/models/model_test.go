@@ -29,7 +29,7 @@ func TestLoadModels(t *testing.T) {
 		"max_tokens": 4096
 	}]`
 	localModel := models.Model{
-		BaseUrl: url.URL{
+		BaseURL: url.URL{
 			Scheme: "http",
 			Host:   "localhost:8080",
 			Path:   "/v1",
@@ -48,13 +48,13 @@ func TestLoadModels(t *testing.T) {
 	secret := secrecy.NewSecretString([]byte("test-api-key"))
 
 	type testCase struct {
+		readErr          error
+		wantErr          error
 		name             string
 		content          string
-		readErr          error
-		failAfterContent bool
-		want             []models.Model
-		wantErr          error
 		wantErrText      string
+		want             []models.Model
+		failAfterContent bool
 	}
 	tests := []testCase{
 		{
@@ -118,7 +118,7 @@ func TestLoadModels(t *testing.T) {
 				"extra_fields": {"temperature":0.7,"thinking":{"enabled":true},"vendor_flag":null}
 			}]`,
 			want: []models.Model{{
-				BaseUrl: url.URL{
+				BaseURL: url.URL{
 					Scheme:   "https",
 					Host:     "api.example.com",
 					Path:     "/v1",

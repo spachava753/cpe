@@ -3,8 +3,7 @@
 [All guides](README.md)
 
 CPE saves a session as work progresses. Returning to it restores the conversation
-and saved data, including script-output overflow logs, then opens fresh resources
-for new work.
+and its settings, then opens fresh resources for new work.
 
 ## What survives
 
@@ -17,8 +16,9 @@ There are three places to think about state:
  | Compaction summary     |    | Open file handles    |   | Git state        |
  | Model and reasoning    |    | Running commands     |   | Remote services  |
  | Token usage            |    | MCP connections      |   | External jobs    |
- | Durable script data    |    +----------------------+   +------------------+
- +------------------------+        created afresh          keep their own
+ +------------------------+    +----------------------+   | Overflow files   |
+                                   created afresh         +------------------+
+                                                           keep their own
        restored from disk          as needed               current state
 ```
 
@@ -74,85 +74,42 @@ Session storage supports concurrent sessions in a process. Avoid opening and
 writing the same saved session from several CPE processes; checkpoints provide
 no cross-process coordination for that use.
 
-## Durable data for scripts
+## Keeping data across scripts
 
-Every Starlark invocation starts fresh. The session's key-value store gives
-scripts a place to retain selected data across invocations:
-
-```python
-kv.store("checked_packages", ["parser", "renderer"])
-```
-
-A later invocation can retrieve and update it:
+Every `starlark_exec` call starts fresh, and CPE keeps no separate store for
+script data. A script that needs to keep a result writes it to a file, and a
+later script or command reads it back:
 
 ```python
-packages = kv.get("checked_packages")
-packages.append("cli")
-kv.store("checked_packages", packages)
-print(kv.keys())
+write_file(".cpe-notes/checked.json", json.encode(["parser", "renderer"]))
 ```
 
-Each successful `kv.store` is checkpointed before it returns. It survives a later
-error or cancellation in the same script. A failed store leaves the previous
-stored value intact. Retrieval returns an independent copy; changes become
-persistent when explicitly stored again.
-
-Keys are strings, and `kv.keys()` returns them in sorted order. A missing key
-raises an error. Values can contain numbers, strings, booleans, `None`, bytes,
-and lists, tuples, or dictionaries without cycles. Functions, modules, open
-resources, and MCP result wrappers cannot be stored. For MCP data, save the
-structured content or a content item's raw data.
-
-```text
- Invocation 1                  Saved session               Invocation 2
- local data -- kv.store -----> snapshot
- local data can change            |
- independently                    +---- kv.get ----------> mutable copy
-                                                            |
-                              new snapshot <--- kv.store ---+
+```python
+checked = json.decode(read_file(".cpe-notes/checked.json").decode())
 ```
 
-This data survives turns, model changes, compaction, closing and reopening, and
-process restarts. Forks inherit independent copies. New unrelated sessions
-start empty, and deleting a session removes its data.
+Files have their own lifetime: they survive turns, compaction, restarts, and
+restoration, and every session working in the directory sees the same files.
+Forking a conversation does not copy them. Commands can process them with any
+program, such as `jq` or `rg`. A [compaction summary](compaction.md) can mention
+useful paths so the model knows where to look later.
 
-CPE sets no separate byte quota for checkpoints or KV values, and no fixed
-count cap for keys or saved sessions. Host memory and storage still constrain
-them. The [limit reference](limits.md#data-without-a-separate-cpe-size-quota)
-explains how stored data differs from emitted output.
+## Overflow files
 
-Stored values enter model context only when a script emits them. A large saved
-result can remain available without repeatedly appearing in the conversation.
-A [compaction summary](compaction.md) can mention the useful keys so the model
-knows where to look later.
-
-## Saved script output
-
-When an invocation's combined emitted text exceeds **128 KiB**, CPE saves the
-complete text as a string in session KV. The tool result contains a preview and
-the exact `overflow_<sha256>` key. Use that key with `kv.get` to inspect the full
-log; identical complete output reuses the same key.
-
-These logs include execution diagnostics and text emitted before a script fails
-or is canceled. They survive model changes, compaction, closing and reopening,
-and process restarts. Forks inherit independent copies, and deleting the session
-removes them along with its other KV data.
-
-Automatic overflow saving happens when the invocation ends. A crash before that
-point can lose the emitted text. Explicit `kv.store` calls still checkpoint
-immediately when used earlier in a script. If automatic saving fails, the tool
-result reports the failure and gives no claim that the complete log was saved.
-
-Captured command stdout and stderr reach the script in full. Automatic overflow
-storage covers text the script emits and execution diagnostics. To preserve an
-unprinted command stream, explicitly store it before the invocation ends.
-See [Long output and retrieval](tool-runtime.md#long-output-and-retrieval).
+When a tool's output exceeds the [output limits](limits.md#tool-output), the
+complete output is written to a file in the session's temporary directory, under
+the system temporary directory, and the tool result names it. CPE does not
+delete these files, so a resumed conversation can still refer to them, but they
+are not part of the saved session. The operating system may remove them, for
+example at reboot, in which case the model has to run the command again.
+Restoring or forking a session creates a new temporary directory.
 
 ## Restoring the environment
 
 Restoration brings back the saved model and reasoning choices, even if the
 global default has changed. A model missing from the current configuration
-causes an error. MCP connections are reopened and their tools rediscovered.
+causes an error. MCP servers are connected again, or an existing shared
+connection is reused, and their tools are listed again.
 Project instructions and skill metadata are read again.
 
 Files, databases, remote accounts, and command processes have their own

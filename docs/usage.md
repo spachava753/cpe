@@ -86,9 +86,8 @@ and requested output limits in tokens. There is no universal default. The
 128,000 tokens produces a warning at **108,800 tokens**. Provider behavior still
 determines whether a request fits and how it finishes.
 
-CPE imposes no size cap on prompt text, input images, or command stdin.
-Emitted script text longer than **128 KiB** is saved in full in session KV;
-the model receives a preview and retrieval notice within that 128 KiB allowance.
-Each emitted image has a **6 MiB raw-byte limit**. CPE has no combined output-byte
-or block-count cap. See [Limits and defaults](limits.md) for the complete values,
-overflow behavior, and configurable settings.
+CPE imposes no size cap on prompt text or input images. Each tool result shows
+at most the last **2,000 lines or 50 KiB** of output; longer output is saved to a
+file the result names. Media attached with `view` has no CPE size limit. See
+[Limits and defaults](limits.md) for the complete values, overflow behavior, and
+configurable settings.

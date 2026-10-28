@@ -24,31 +24,32 @@ func TestInstall(t *testing.T) {
 	outputErr := errors.New("output unavailable")
 	warningErr := errors.New("warnings unavailable")
 	for _, test := range []struct {
-		name             string
-		scope            commandio.ScopeOptions
-		source           string
-		names            []string
+		outputErr        error
+		warningErr       error
+		existing         fstest.MapFS
 		sourcePath       *string
 		sourceFiles      fstest.MapFS
-		existing         fstest.MapFS
-		override         bool
-		fault            managerFSFault
-		committed        bool
-		wantDefinition   string
-		deep             bool
-		link             bool
-		json             bool
-		nonTTY, pipe     bool
-		empty            bool
 		errText          string
-		outputErr        error
-		forceColor       bool
-		description      string
+		name             string
+		scope            commandio.ScopeOptions
+		wantDefinition   string
 		otherDescription string
-		invalidOther     bool
-		warningErr       error
-		wantWarnings     []string
+		description      string
+		source           string
 		wantText         []string
+		wantWarnings     []string
+		names            []string
+		fault            managerFSFault
+		empty            bool
+		pipe             bool
+		nonTTY           bool
+		forceColor       bool
+		link             bool
+		deep             bool
+		invalidOther     bool
+		committed        bool
+		json             bool
+		override         bool
 	}{
 		{
 			name: "custom project directory",
@@ -913,21 +914,22 @@ func (writer commandOutputFailure) Write([]byte) (int, error) {
 func TestList(t *testing.T) {
 	warningErr := errors.New("warnings unavailable")
 	for _, test := range []struct {
+		warningErr        error
+		invocation        *bool
+		source            *string
+		description       string
 		name              string
 		scope             commandio.ScopeOptions
-		source            *string
-		json              bool
-		nonTTY, pipe      bool
-		empty             bool
+		wantWarnings      []string
 		want              []string
-		unsafeDescription bool
-		directoryMismatch bool
-		description       string
-		invocation        *bool
 		wantText          []string
 		wantLineCount     int
-		wantWarnings      []string
-		warningErr        error
+		unsafeDescription bool
+		json              bool
+		directoryMismatch bool
+		nonTTY            bool
+		empty             bool
+		pipe              bool
 		nestedMetadata    bool
 		nonJSONMetadata   bool
 		forceColor        bool
@@ -1377,9 +1379,9 @@ func TestList(t *testing.T) {
 					"HOME",
 					"/test-home",
 				)
-				cwd, err := os.Getwd()
-				if err != nil {
-					t.Fatal(err)
+				cwd, cwdErr := os.Getwd()
+				if cwdErr != nil {
+					t.Fatal(cwdErr)
 				}
 				t.Setenv(
 					"CLICOLOR_FORCE",
@@ -1524,7 +1526,7 @@ func TestList(t *testing.T) {
 						err: test.warningErr,
 					}
 				}
-				err = skills.List(
+				cwdErr = skills.List(
 					t.Context(),
 					manager,
 					skills.ListOptions{
@@ -1539,16 +1541,16 @@ func TestList(t *testing.T) {
 				)
 				if test.warningErr != nil {
 					if !errors.Is(
-						err,
+						cwdErr,
 						test.warningErr,
 					) {
 						t.Fatalf(
 							"error = %v, want original warning writer failure",
-							err,
+							cwdErr,
 						)
 					}
-				} else if err != nil {
-					t.Fatal(err)
+				} else if cwdErr != nil {
+					t.Fatal(cwdErr)
 				}
 				if count := strings.Count(
 					diagnostics.String(),
@@ -1746,21 +1748,25 @@ func TestList(t *testing.T) {
 func TestRemove(t *testing.T) {
 	outputErr := errors.New("output unavailable")
 	for _, test := range []struct {
-		name              string
-		scope             commandio.ScopeOptions
-		both, json, all   bool
-		nonTTY, pipe      bool
-		files             fstest.MapFS
-		removed           []string
+		outputErr         error
 		summaryNames      map[string]string
-		damaged, empty    bool
+		files             fstest.MapFS
+		scope             commandio.ScopeOptions
+		errText           string
+		name              string
+		removed           []string
+		wantText          []string
+		all               bool
+		pipe              bool
+		damaged           bool
+		empty             bool
 		fault             managerFSFault
 		committed         bool
-		outputErr         error
+		nonTTY            bool
 		invalidCrossScope bool
 		forceColor        bool
-		wantText          []string
-		errText           string
+		json              bool
+		both              bool
 	}{
 		{
 			name: "unambiguous default selection",
@@ -1903,9 +1909,9 @@ func TestRemove(t *testing.T) {
 					"HOME",
 					"/test-home",
 				)
-				cwd, err := os.Getwd()
-				if err != nil {
-					t.Fatal(err)
+				cwd, cwdErr := os.Getwd()
+				if cwdErr != nil {
+					t.Fatal(cwdErr)
 				}
 				t.Setenv(
 					"CLICOLOR_FORCE",
@@ -2051,7 +2057,7 @@ func TestRemove(t *testing.T) {
 					)
 				}
 				asJSON := test.json || test.nonTTY
-				err = skills.Remove(
+				cwdErr = skills.Remove(
 					t.Context(),
 					skills.NewManager(
 						nil,
@@ -2068,13 +2074,13 @@ func TestRemove(t *testing.T) {
 					},
 				)
 				if test.errText != "" {
-					if err == nil || !strings.Contains(
-						err.Error(),
+					if cwdErr == nil || !strings.Contains(
+						cwdErr.Error(),
 						test.errText,
 					) {
 						t.Fatalf(
 							"error = %v",
-							err,
+							cwdErr,
 						)
 					}
 					if diff := cmp.Diff(
@@ -2090,26 +2096,26 @@ func TestRemove(t *testing.T) {
 				}
 				if test.committed {
 					if !errors.Is(
-						err,
+						cwdErr,
 						fs.ErrPermission,
 					) || !strings.Contains(
-						err.Error(),
+						cwdErr.Error(),
 						"bundle changes committed; cleanup failed for ",
 					) {
 						t.Fatalf(
 							"error = %v, want committed cleanup failure",
-							err,
+							cwdErr,
 						)
 					}
 				} else if test.outputErr != nil {
 					if !errors.Is(
-						err,
+						cwdErr,
 						test.outputErr,
 					) {
-						t.Fatal(err)
+						t.Fatal(cwdErr)
 					}
-				} else if err != nil {
-					t.Fatal(err)
+				} else if cwdErr != nil {
+					t.Fatal(cwdErr)
 				}
 				selected := project
 				if test.scope.Directory != nil {

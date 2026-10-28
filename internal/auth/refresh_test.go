@@ -41,13 +41,13 @@ func TestRefreshOpenAI(t *testing.T) {
 	for _, test := range []struct {
 		name         string
 		body         string
+		operation    string
+		wantAccess   string
 		failures     int
 		saveFailures int
 		expires      time.Duration
-		operation    string
 		wantCalls    int
 		wantError    bool
-		wantAccess   string
 	}{
 		{
 			name:       "rotated tokens",

@@ -13,10 +13,10 @@ import (
 const credentialRefreshWindow = 5 * time.Minute
 
 type credentialRefresh struct {
-	previous auth.OAuthCredentials
+	err      error
 	cancel   context.CancelFunc
 	done     chan struct{}
-	err      error
+	previous auth.OAuthCredentials
 }
 
 // Close stops and joins outstanding credential refresh work.

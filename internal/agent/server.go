@@ -14,11 +14,12 @@ import (
 
 // Server serves one ACP connection and owns its live sessions. Use Serve.
 type Server struct {
-	ac       *acp.AgentConnection
-	config   Config
 	deps     Dependencies
 	lifetime context.Context
+	ac       *acp.AgentConnection
 	cancel   context.CancelFunc
+	sessions map[conversation.ID]*session
+	config   Config
 	// lifecycle serializes session creation, restore, close, fork, and deletion.
 	// Prompts and cancellation never acquire it.
 	lifecycle   sync.Mutex
@@ -26,7 +27,6 @@ type Server struct {
 	initialized bool
 	notices     bool
 	closed      bool
-	sessions    map[conversation.ID]*session
 }
 
 // Serve runs one ACP connection and joins all session work before returning.

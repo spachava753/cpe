@@ -1,5 +1,5 @@
 # golangci-lint configuration v2
-# Focus: bug detection, correctness - minimal false positives
+# Includes the public gopls analyzer families available in the pinned tools.
 
 version: "2"
 
@@ -38,6 +38,20 @@ linters:
     # Type safety
     - forcetypeassert # Unchecked type assertions
   settings:
+    govet:
+      # Additional public analyzers in the gopls catalog, beyond vet's defaults.
+      enable:
+        - atomicalign
+        - deepequalerrors
+        - fieldalignment
+        - nilness
+        - shadow
+        - sortslice
+        - unusedwrite
+    staticcheck:
+      # Includes SA*, S*, ST*, and QF*, including non-default style checks.
+      checks:
+        - all
     unused:
       field-writes-are-uses: false
       post-statements-are-reads: false

@@ -23,7 +23,7 @@ import (
 // Cancellation or publication failure triggers rollback. Failed rollback retains
 // recovery files identified in the error. Committed with an error means changes
 // took effect but staging cleanup failed. NotCommitted may include failed rollback.
-func Apply(ctx context.Context, filesystem afero.Fs, root string, changes []Change, checkExisting func(string) error) (outcome Outcome, err error) {
+func Apply(ctx context.Context, filesystem afero.Fs, root string, changes []Change, checkExisting func(string) error) (outcome Outcome, applyErr error) {
 	if err := CheckDestination(
 		ctx,
 		filesystem,
@@ -54,16 +54,16 @@ func Apply(ctx context.Context, filesystem afero.Fs, root string, changes []Chan
 	); err != nil {
 		return NotCommitted, err
 	}
-	stage, err := afero.TempDir(
+	stage, applyErr := afero.TempDir(
 		filesystem,
 		root,
 		".cpe-stage-",
 	)
-	if err != nil {
+	if applyErr != nil {
 		if created {
 			_ = filesystem.Remove(root)
 		}
-		return NotCommitted, err
+		return NotCommitted, applyErr
 	}
 	preserveStage := false
 	defer func() {
@@ -72,7 +72,7 @@ func Apply(ctx context.Context, filesystem afero.Fs, root string, changes []Chan
 		}
 		cleanupErr := filesystem.RemoveAll(stage)
 		if outcome == Committed && cleanupErr != nil {
-			err = fmt.Errorf(
+			applyErr = fmt.Errorf(
 				"bundle changes committed; cleanup failed for %s: %w",
 				stage,
 				cleanupErr,
@@ -90,8 +90,8 @@ func Apply(ctx context.Context, filesystem afero.Fs, root string, changes []Chan
 				)
 			}
 		}
-		err = errors.Join(
-			err,
+		applyErr = errors.Join(
+			applyErr,
 			cleanupErr,
 		)
 	}()

@@ -5,11 +5,10 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/spachava753/dyson"
 	"github.com/spachava753/starlarkx/starlark"
 )
 
-const compactName = "compact"
+const compactBuiltinName = "compact"
 
 type compactionKey struct{}
 
@@ -37,11 +36,14 @@ func compact(thread *starlark.Thread, fn *starlark.Builtin, args starlark.Tuple,
 	if strings.TrimSpace(summary) == "" {
 		return nil, errors.New("summary must be a nonempty string")
 	}
-	ctx := dyson.EvaluationContext(thread)
-	if err := ctx.Err(); err != nil {
+	current, err := currentInvocation(thread)
+	if err != nil {
 		return nil, err
 	}
-	accept, ok := ctx.Value(compactionKey{}).(func(string))
+	if err := current.ctx.Err(); err != nil {
+		return nil, err
+	}
+	accept, ok := current.ctx.Value(compactionKey{}).(func(string))
 	if !ok || accept == nil {
 		return nil, errors.New("compact requires an active prompt")
 	}

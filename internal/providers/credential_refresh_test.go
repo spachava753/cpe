@@ -54,7 +54,7 @@ func refreshModel() models.Model {
 	return models.Model{
 		ID:  "fixture",
 		API: models.Responses,
-		BaseUrl: url.URL{
+		BaseURL: url.URL{
 			Scheme: "https",
 			Host:   "chatgpt.com",
 			Path:   "/backend-api/codex/",
@@ -129,14 +129,14 @@ func TestCredentialRefreshRequests(t *testing.T) {
 							}),
 						)
 						defer providers.Close()
-						generator, options, err := providers.Generator(
+						generator, options, generatorErr := providers.Generator(
 							t.Context(),
 							"conversation-fixture",
 							refreshModel(),
 							"",
 						)
-						if err != nil {
-							t.Fatal(err)
+						if generatorErr != nil {
+							t.Fatal(generatorErr)
 						}
 						invoke := func() {
 							if mode == "streaming" {
@@ -178,11 +178,11 @@ func TestCredentialRefreshRequests(t *testing.T) {
 						if attempts.Load() != 3 || len(keys) != 4 || keys[0] != "Bearer old-access" || keys[1] != "Bearer old-access" || keys[2] != "Bearer old-access" || keys[3] != "Bearer new-access" {
 							t.Fatal("requests did not continue with valid credentials and then switch to renewed credentials")
 						}
-						stored, err := store.Retrieve(
+						stored, generatorErr := store.Retrieve(
 							t.Context(),
 							"/auth.json",
 						)
-						if err != nil || stored.OpenAI == nil || stored.OpenAI.RefreshToken != "new-refresh" {
+						if generatorErr != nil || stored.OpenAI == nil || stored.OpenAI.RefreshToken != "new-refresh" {
 							t.Fatal("rotated refresh token was not persisted")
 						}
 					},
@@ -245,14 +245,14 @@ func TestCredentialRefreshLifetime(t *testing.T) {
 						defer providers.Close()
 						ctx, cancel := context.WithCancel(t.Context())
 						defer cancel()
-						generator, options, err := providers.Generator(
+						generator, options, generatorErr := providers.Generator(
 							ctx,
 							"conversation-fixture",
 							refreshModel(),
 							"",
 						)
-						if err != nil {
-							t.Fatal(err)
+						if generatorErr != nil {
+							t.Fatal(generatorErr)
 						}
 						synctest.Wait()
 						if _, err := generator.Generate(
@@ -291,17 +291,17 @@ func TestCredentialRefreshLifetime(t *testing.T) {
 							}
 							return
 						}
-						_, err = generator.Generate(
+						_, generatorErr = generator.Generate(
 							t.Context(),
 							refreshRequest(options),
 						)
-						if err == nil || modelCalls.Load() != 1 || !IsCredentialError(err) || strings.Contains(
-							err.Error(),
+						if generatorErr == nil || modelCalls.Load() != 1 || !IsCredentialError(generatorErr) || strings.Contains(
+							generatorErr.Error(),
 							"private-auth-error",
 						) {
 							t.Fatalf(
 								"unavailable credentials reached the provider, became retryable, or leaked errors: %v",
-								err,
+								generatorErr,
 							)
 						}
 					},

@@ -16,6 +16,7 @@ import (
 func TestCommands(t *testing.T) {
 	for _, test := range []struct {
 		name        string
+		wantOutput  string
 		logout      bool
 		provider    Provider
 		cancel      bool
@@ -24,7 +25,6 @@ func TestCommands(t *testing.T) {
 		nilStore    bool
 		wantError   bool
 		wantChanged bool
-		wantOutput  string
 	}{
 		{
 			name:        "login confirmation",

@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/spachava753/acp-sdk/acp"
-	"github.com/spachava753/dyson"
 	"github.com/spachava753/gai"
 	"github.com/spachava753/gai/agent/agenttest"
 
@@ -26,15 +25,15 @@ import (
 
 func TestResponseRecovery(t *testing.T) {
 	for _, test := range []struct {
+		failure      error
 		name         string
 		failures     int
-		failure      error
-		partial      bool
-		nonStreaming bool
-		notices      bool
 		retries      uint
 		wantCalls    int
 		wantUpdates  int
+		partial      bool
+		nonStreaming bool
+		notices      bool
 		wantError    bool
 	}{
 		{
@@ -155,9 +154,9 @@ func TestResponseRecovery(t *testing.T) {
 			test.name,
 			func(t *testing.T) {
 				directory := t.TempDir()
-				history, err := conversation.NewStore(directory)
-				if err != nil {
-					t.Fatal(err)
+				history, storeErr := conversation.NewStore(directory)
+				if storeErr != nil {
+					t.Fatal(storeErr)
 				}
 				var id acp.SessionId
 				var checkpoint []byte
@@ -280,7 +279,7 @@ func TestResponseRecovery(t *testing.T) {
 					t,
 					fixture.client,
 				)
-				_, err = fixture.client.Prompt(
+				_, storeErr = fixture.client.Prompt(
 					t.Context(),
 					&acp.PromptRequest{
 						SessionID: id,
@@ -289,10 +288,10 @@ func TestResponseRecovery(t *testing.T) {
 						},
 					},
 				)
-				if (err != nil) != test.wantError {
+				if (storeErr != nil) != test.wantError {
 					t.Fatalf(
 						"prompt: %v",
-						err,
+						storeErr,
 					)
 				}
 				if len(requests()) != test.wantCalls {
@@ -309,12 +308,12 @@ func TestResponseRecovery(t *testing.T) {
 						)
 					}
 				}
-				record, err := history.Load(
+				record, storeErr := history.Load(
 					t.Context(),
 					conversation.ID(id),
 				)
-				if err != nil {
-					t.Fatal(err)
+				if storeErr != nil {
+					t.Fatal(storeErr)
 				}
 				wantMessages := 2
 				if test.wantError {
@@ -326,12 +325,12 @@ func TestResponseRecovery(t *testing.T) {
 						record.Dialog,
 					)
 				}
-				data, err := os.ReadFile(filepath.Join(
+				data, storeErr := os.ReadFile(filepath.Join(
 					directory,
 					string(id)+".json",
 				))
-				if err != nil {
-					t.Fatal(err)
+				if storeErr != nil {
+					t.Fatal(storeErr)
 				}
 				for _, fragment := range []string{
 					"aborted fragment",
@@ -584,14 +583,14 @@ func TestResponseRetryPreservesToolEffects(t *testing.T) {
 						ID:           "effect",
 						BlockType:    gai.ToolCall,
 						ModalityType: gai.Text,
-						Content:      gai.Str("starlark"),
+						Content:      gai.Str(toolruntime.StarlarkToolName),
 					},
 				},
 				{
 					Block: gai.Block{
 						BlockType:    gai.ToolCall,
 						ModalityType: gai.Text,
-						Content:      gai.Str(`{"code":"load('subprocess.star', 'subprocess')\nsubprocess.run(['effect'])"}`),
+						Content:      gai.Str(`{"code":"# effect"}`),
 					},
 				},
 			},
@@ -627,19 +626,10 @@ func TestResponseRetryPreservesToolEffects(t *testing.T) {
 			return generator, gai.GenerationOptions{}, nil
 		},
 		func(_ *Config, deps *Dependencies, _ *acp.InitializeRequest) {
-			deps.Hosts = func(ctx context.Context, config toolruntime.Config) (toolruntime.Host, error) {
-				return toolruntime.New(
-					ctx,
-					config,
-					dyson.StdlibConfig{
-						FS: deps.Filesystem,
-						CommandRunner: runnerFunc(func(context.Context, dyson.Command) (dyson.CommandResult, error) {
-							effects.Add(1)
-							return dyson.CommandResult{}, nil
-						}),
-					},
-				)
-			}
+			deps.Hosts = testHosts(
+				t,
+				countingHook(&effects),
+			)
 		},
 	)
 	id := openFixtureSession(

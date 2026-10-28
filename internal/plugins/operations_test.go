@@ -24,17 +24,17 @@ func (writer commandOutputFailure) Write([]byte) (int, error) { return 0, writer
 func TestInstall(t *testing.T) {
 	outputErr := errors.New("output unavailable")
 	for _, test := range []struct {
+		outputErr     error
+		wantErr       error
 		name          string
 		scope         commandio.ScopeOptions
+		wantDirectory string
+		errText       string
 		terminal      bool
 		pipe          bool
 		json          bool
 		empty         bool
 		fault         managerFSFault
-		outputErr     error
-		wantErr       error
-		wantDirectory string
-		errText       string
 	}{
 		{
 			name: "project default automatic JSON",
@@ -458,13 +458,13 @@ func TestRemove(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		scope    commandio.ScopeOptions
+		errText  string
 		both     bool
 		all      bool
 		noNames  bool
 		terminal bool
 		json     bool
 		fault    managerFSFault
-		errText  string
 	}{
 		{
 			name: "unambiguous default scopes automatic JSON",

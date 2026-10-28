@@ -119,7 +119,7 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptR
 			hooks:   hooks,
 		},
 		Model:            model.ID,
-		Instructions:     gai.SystemMessage(gai.TextBlock(s.config.Instructions + s.projectInstructions + s.catalog.instructions() + s.runtime.Instructions())),
+		Instructions:     gai.SystemMessage(gai.TextBlock(s.config.Instructions + s.projectInstructions + s.extensions)),
 		Tools:            s.runtime.Tools(),
 		BeforeGeneration: hooks,
 		AfterGeneration:  hooks,
@@ -143,6 +143,7 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptR
 	if len(result.Dialog) != 0 {
 		dialog = result.Dialog
 	}
+	dialog = hooks.applyMediaReplacements(dialog)
 	// Recover known completed results before marking any remaining calls uncertain.
 	for _, completed := range hooks.completed {
 		if missingResult(
@@ -250,18 +251,20 @@ func missingResult(dialog gai.Dialog, id string) bool {
 }
 
 type turnHooks struct {
-	session           *session
 	usage             conversation.TokenUsage
+	session           *session
 	compaction        *conversation.Compaction
 	compactionRequest compactionRequest
 	client            *sessionClient
-	model             models.Model
-	modelID           models.ID
 	completed         map[string]gai.Message
 	pending           map[string]bool
 	streamed          map[uint]bool
-	generation        uint
+	// mediaReplacements holds notices for media the provider rejected this turn.
+	mediaReplacements map[mediaKey]gai.Block
+	modelID           models.ID
 	dialog            gai.Dialog
+	model             models.Model
+	generation        uint
 }
 
 // Checkpoint canonical history before each provider request.
@@ -287,7 +290,7 @@ func (h *turnHooks) BeforeGeneration(ctx context.Context, event gaiagent.BeforeG
 // Prepare model context without replacing the loop's canonical history.
 func (h *turnHooks) providerRequest(request gai.GenerationRequest) gai.GenerationRequest {
 	request.PromptCacheKey = string(h.session.record.Info.ID)
-	dialog := h.compaction.WorkingDialog(request.Dialog)
+	dialog := h.compaction.WorkingDialog(h.applyMediaReplacements(request.Dialog))
 	request.Dialog = nil
 	for _, message := range dialog {
 		foreign := message.Role == gai.Assistant && message.ExtraFields["cpe.model"] != string(h.modelID)
@@ -305,7 +308,12 @@ func (h *turnHooks) providerRequest(request gai.GenerationRequest) gai.Generatio
 				block.ModalityType,
 			) {
 				id := block.ID
-				block = gai.TextBlock("[Media retained in history but unsupported by the selected model.]")
+				text := "[Media retained in history but unsupported by the selected model.]"
+				if message.Role == gai.ToolResult {
+					// Tool media may exist nowhere else, so keep it reachable as a file.
+					text = h.unsupportedMediaNotice(block)
+				}
+				block = gai.TextBlock(text)
 				block.ID = id
 			}
 			message.Blocks = append(

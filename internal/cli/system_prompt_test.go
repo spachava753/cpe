@@ -1,50 +1,18 @@
 package cli
 
 import (
-	"maps"
 	"regexp"
-	"slices"
-	"strings"
 	"testing"
 
-	"github.com/spachava753/dyson"
-	"github.com/spachava753/starlarkx/starlark"
-	"github.com/spf13/afero"
+	"github.com/spachava753/gai"
+	gaiagent "github.com/spachava753/gai/agent"
+
+	"github.com/spachava753/cpe/internal/mcpclient"
+	"github.com/spachava753/cpe/internal/toolruntime"
 )
 
-func TestSystemPromptModules(t *testing.T) {
-	stdlib := dyson.NewStdlib(dyson.StdlibConfig{
-		FS: afero.NewMemMapFs(),
-	})
-	defer func() {
-		if err := stdlib.Close(); err != nil {
-			t.Error(err)
-		}
-	}()
-	var documented []string
-	for _, match := range regexp.MustCompile("(?m)^- `([a-z]+\\.star)`:").FindAllStringSubmatch(
-		defaultSystemPrompt,
-		-1,
-	) {
-		documented = append(
-			documented,
-			match[1],
-		)
-	}
-	slices.Sort(documented)
-	available := slices.Sorted(maps.Keys(stdlib.Modules()))
-	if !slices.Equal(
-		documented,
-		available,
-	) {
-		t.Fatalf(
-			"prompt module inventory %v differs from installed Dyson %v",
-			documented,
-			available,
-		)
-	}
-}
-
+// TestSystemPromptExamples runs every Python example in the default prompt
+// through the real starlark_exec tool, so the prompt cannot drift from the runtime.
 func TestSystemPromptExamples(t *testing.T) {
 	examples := regexp.MustCompile("(?s)```python\n(.*?)\n```").FindAllStringSubmatch(
 		defaultSystemPrompt,
@@ -53,33 +21,55 @@ func TestSystemPromptExamples(t *testing.T) {
 	if len(examples) == 0 {
 		t.Fatal("no runnable examples")
 	}
+	catalog, err := mcpclient.NewCatalog(
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, err := toolruntime.New(
+		t.Context(),
+		toolruntime.Config{
+			Cwd:     t.TempDir(),
+			TempDir: t.TempDir(),
+			Catalog: catalog,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, example := range examples {
 		t.Run(
 			example[1],
 			func(t *testing.T) {
-				var output strings.Builder
-				sphere := dyson.NewSphere(
-					func(_ *starlark.Thread, text string) { output.WriteString(text) },
-					dyson.NewStdlib(dyson.StdlibConfig{
-						FS: afero.NewMemMapFs(),
-					}),
-				)
-				defer func() {
-					if err := sphere.Close(); err != nil {
-						t.Error(err)
+				for _, tool := range host.Tools() {
+					if tool.Definition.Name != toolruntime.StarlarkToolName {
+						continue
 					}
-				}()
-				if err := sphere.Eval(
-					t.Context(),
-					example[1],
-				); err != nil {
-					t.Fatal(err)
-				}
-				if output.String() != "{\"ok\": True}\n" {
-					t.Fatalf(
-						"file/JSON example output: %q",
-						output.String(),
+					result, err := tool.Handler.Execute(
+						t.Context(),
+						gaiagent.ToolRequest{
+							Block: gai.Block{
+								ID: "example",
+							},
+							Call: gai.ToolCallInput{
+								Name: toolruntime.StarlarkToolName,
+								Parameters: map[string]any{
+									"code": example[1],
+								},
+							},
+						},
 					)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if result.ToolResultError {
+						t.Fatalf(
+							"example failed: %s",
+							result.Blocks[0].Content.String(),
+						)
+					}
 				}
 			},
 		)

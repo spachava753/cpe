@@ -33,3 +33,11 @@ func configureProcess(command *exec.Cmd) func() {
 	command.Cancel = kill
 	return func() { _ = kill() }
 }
+
+// exitStatus reports a signal-terminated process as 128 plus the signal, as shells do.
+func exitStatus(state *os.ProcessState) int {
+	if status, ok := state.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+		return 128 + int(status.Signal())
+	}
+	return state.ExitCode()
+}

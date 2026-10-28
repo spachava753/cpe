@@ -26,13 +26,13 @@ const testAuthDocument = `{"openai":` + testOpenAIEntry + `,"opencode":{"api_key
 
 func TestStoreSave(t *testing.T) {
 	for _, test := range []struct {
+		setup       func(*testing.T, string, string)
 		name        string
 		original    string
-		setup       func(*testing.T, string, string)
+		badOAuth    string
 		cancel      bool
 		provider    Provider
 		missingPath bool
-		badOAuth    string
 		missingFS   bool
 		zeroStore   bool
 		nilStore    bool
@@ -421,20 +421,20 @@ func TestStoreSave(t *testing.T) {
 						credentials.OpenAI.AccountID = "\xff"
 					}
 				}
-				err := store.Save(
+				saveErr := store.Save(
 					ctx,
 					path,
 					test.provider,
 					credentials,
 				)
-				if (err != nil) != test.wantErr {
+				if (saveErr != nil) != test.wantErr {
 					t.Fatalf(
 						"unexpected error: %v",
-						err,
+						saveErr,
 					)
 				}
-				data, err := os.ReadFile(outsidePath)
-				if err != nil || string(data) != "keep" {
+				outsideData, readErr := os.ReadFile(outsidePath)
+				if readErr != nil || string(outsideData) != "keep" {
 					t.Error("external file changed")
 				}
 				if test.wantErr {
@@ -454,9 +454,9 @@ func TestStoreSave(t *testing.T) {
 					}
 					return
 				}
-				data, err = os.ReadFile(path)
-				if err != nil {
-					t.Fatal(err)
+				data, readErr := os.ReadFile(path)
+				if readErr != nil {
+					t.Fatal(readErr)
 				}
 				var document Credentials
 				if err := json.Unmarshal(
@@ -471,16 +471,16 @@ func TestStoreSave(t *testing.T) {
 				if test.original == testAuthDocument && (document.OpenAI == nil || document.OpenAI.AccessToken != "access") {
 					t.Error("other provider was changed")
 				}
-				entries, err := os.ReadDir(directory)
-				if err != nil {
-					t.Fatal(err)
+				entries, saveErr := os.ReadDir(directory)
+				if saveErr != nil {
+					t.Fatal(saveErr)
 				}
 				if len(entries) != 2 {
 					t.Error("unexpected files; expected auth.json and its lock")
 				}
-				info, err := os.Stat(path)
-				if err != nil {
-					t.Fatal(err)
+				info, saveErr := os.Stat(path)
+				if saveErr != nil {
+					t.Fatal(saveErr)
 				}
 				if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 					t.Error("credential file not private")
@@ -493,8 +493,8 @@ func TestStoreSave(t *testing.T) {
 func TestStoreRemove(t *testing.T) {
 	for _, test := range []struct {
 		name             string
-		provider         Provider
 		original         string
+		provider         Provider
 		cancel           bool
 		missingDirectory bool
 		wantErr          bool
@@ -592,16 +592,16 @@ func TestStoreRemove(t *testing.T) {
 					cancel()
 				}
 				store := NewStore(afero.NewOsFs())
-				err := store.Save(
+				saveErr := store.Save(
 					ctx,
 					path,
 					test.provider,
 					Credentials{},
 				)
-				if (err != nil) != test.wantErr {
+				if (saveErr != nil) != test.wantErr {
 					t.Fatalf(
 						"unexpected error: %v",
-						err,
+						saveErr,
 					)
 				}
 				if test.original == "" {
@@ -619,9 +619,9 @@ func TestStoreRemove(t *testing.T) {
 					}
 					return
 				}
-				data, err := os.ReadFile(path)
-				if err != nil {
-					t.Fatal(err)
+				data, saveErr := os.ReadFile(path)
+				if saveErr != nil {
+					t.Fatal(saveErr)
 				}
 				if test.wantErr {
 					if string(data) != test.original {
@@ -811,9 +811,9 @@ func TestStoreLockCancellation(t *testing.T) {
 					"CPE_TEST_HOLD_AUTH_LOCK=1",
 					"CPE_TEST_AUTH_DIRECTORY="+directory,
 				)
-				pipe, err := command.StdoutPipe()
-				if err != nil {
-					t.Fatal(err)
+				pipe, pipeErr := command.StdoutPipe()
+				if pipeErr != nil {
+					t.Fatal(pipeErr)
 				}
 				if err := command.Start(); err != nil {
 					t.Fatal(err)
@@ -839,14 +839,14 @@ func TestStoreLockCancellation(t *testing.T) {
 				defer cancel()
 				store := NewStore(afero.NewOsFs())
 				if test.remove {
-					err = store.Save(
+					pipeErr = store.Save(
 						ctx,
 						path,
 						OpenCode,
 						Credentials{},
 					)
 				} else {
-					err = store.Save(
+					pipeErr = store.Save(
 						ctx,
 						path,
 						OpenCode,
@@ -858,12 +858,12 @@ func TestStoreLockCancellation(t *testing.T) {
 					)
 				}
 				if !errors.Is(
-					err,
+					pipeErr,
 					context.DeadlineExceeded,
 				) {
 					t.Fatalf(
 						"expected lock wait cancellation, got %v",
-						err,
+						pipeErr,
 					)
 				}
 				if data, err := os.ReadFile(path); err != nil || string(data) != testAuthDocument {

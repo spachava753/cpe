@@ -9,9 +9,9 @@ import (
 
 // LogoutOptions selects the provider and shared credential file.
 type LogoutOptions struct {
-	Provider Provider
 	// Path is the native path to the shared auth.json file.
-	Path string
+	Path     string
+	Provider Provider
 }
 
 // Logout removes the provider's entry from opts.Path and writes a confirmation.

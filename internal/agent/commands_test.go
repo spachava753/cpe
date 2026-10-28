@@ -8,6 +8,7 @@ import (
 	"github.com/spachava753/gai"
 	"github.com/spf13/afero"
 
+	"github.com/spachava753/cpe/internal/mcpclient"
 	"github.com/spachava753/cpe/internal/plugins"
 )
 
@@ -50,7 +51,7 @@ func TestCommandDiscovery(t *testing.T) {
 		{
 			name:   "compact command takes precedence over a skill",
 			prompt: "/compact",
-			want:   "Compact the conversation now by calling compact(summary) in starlark.",
+			want:   "Compact the conversation now by calling compact(summary) in starlark_exec.",
 		},
 		{
 			name:   "compact request preserves user notes",
@@ -101,7 +102,17 @@ func TestCommandDiscovery(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				instructions := catalog.instructions()
+				empty, err := mcpclient.NewCatalog(
+					nil,
+					nil,
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				instructions, err := catalog.extensionInstructions(empty)
+				if err != nil {
+					t.Fatal(err)
+				}
 				if !strings.Contains(
 					instructions,
 					"/project/.agents/skills/review/SKILL.md",
@@ -151,7 +162,7 @@ func TestPluginServers(t *testing.T) {
 		cwd         string
 		wantCommand string
 		wantCwd     string
-		wantError   bool
+		wantSkipped bool
 	}{
 		{
 			name:        "root expansion",
@@ -167,10 +178,10 @@ func TestPluginServers(t *testing.T) {
 			wantCwd:     "/plugins/foo/subdir",
 		},
 		{
-			name:      "unsupported data placeholder",
-			command:   "server",
-			cwd:       "${PLUGIN_DATA}",
-			wantError: true,
+			name:        "unsupported data placeholder",
+			command:     "server",
+			cwd:         "${PLUGIN_DATA}",
+			wantSkipped: true,
 		},
 	} {
 		t.Run(
@@ -192,23 +203,30 @@ func TestPluginServers(t *testing.T) {
 						},
 					},
 				}
-				if catalog.serverDescriptions()["foo:server"] != "Foo tools" {
-					t.Fatal("plugin description missing from namespace metadata")
-				}
-				servers, err := catalog.servers(
-					nil,
-					"/work",
-				)
-				if (err != nil) != test.wantError {
-					t.Fatalf(
-						"servers: %v",
-						err,
-					)
-				}
+				specs, failures, err := catalog.pluginSpecs()
 				if err != nil {
+					t.Fatal(err)
+				}
+				if test.wantSkipped {
+					if len(specs) != 0 || len(failures) != 1 || failures[0].Spec.ID != "foo:server" || !strings.Contains(
+						failures[0].Err.Error(),
+						"unsupported placeholder",
+					) {
+						t.Fatalf(
+							"specs = %+v, failures = %+v",
+							specs,
+							failures,
+						)
+					}
 					return
 				}
-				server := servers["foo:server"]
+				if len(specs) != 1 || specs[0].ID != "foo:server" || specs[0].Source != mcpclient.SourcePlugin || specs[0].Plugin != "foo" {
+					t.Fatalf(
+						"specs: %+v",
+						specs,
+					)
+				}
+				server := specs[0].Transport
 				if server.Command != test.wantCommand || server.Cwd != test.wantCwd {
 					t.Fatalf(
 						"resolved server: %q %q",

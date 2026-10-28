@@ -17,8 +17,8 @@ import (
 )
 
 type authorizationResult struct {
-	code string
 	err  error
+	code string
 }
 
 func (client openAIClient) browserLogin(ctx context.Context, output io.Writer) (OAuthCredentials, error) {

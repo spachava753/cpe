@@ -30,6 +30,7 @@ type responseGenerator struct {
 
 func (g *responseGenerator) Generate(ctx context.Context, request gai.GenerationRequest) (gai.Response, error) {
 	request = g.hooks.providerRequest(request)
+	var rejected map[mediaKey]gai.Block
 	for attempt := uint(0); ; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return gai.Response{}, err
@@ -49,7 +50,36 @@ func (g *responseGenerator) Generate(ctx context.Context, request gai.Generation
 		)
 		if err == nil {
 			g.hooks.usage = usage
+			// Keep replacements only once the retry without the media succeeded;
+			// otherwise the media was not the cause and stays in history.
+			for key, block := range rejected {
+				if g.hooks.mediaReplacements == nil {
+					g.hooks.mediaReplacements = make(map[mediaKey]gai.Block)
+				}
+				g.hooks.mediaReplacements[key] = block
+			}
 			return response, nil
+		}
+		if reason, media := mediaRejection(err); media && rejected == nil && usageErr == nil && deliveryErr == nil && ctx.Err() == nil {
+			if dialog, replacements := g.hooks.rejectMedia(
+				request.Dialog,
+				reason,
+			); replacements != nil {
+				request.Dialog = dialog
+				rejected = replacements
+				if updateErr := g.session.client.update(
+					ctx,
+					acp.AgentMessageChunkSessionUpdate(acp.TextContentBlock("\n[The provider rejected media from a tool result. Retrying once with the media replaced by a notice.]\n")),
+				); updateErr != nil {
+					return gai.Response{}, errors.Join(
+						err,
+						updateErr,
+					)
+				}
+				// The media retry does not count against interrupted-response retries.
+				attempt--
+				continue
+			}
 		}
 		retry := usageErr == nil && ctx.Err() == nil && deliveryErr == nil && attempt < g.session.config.MaxResponseRetries && retryResponse(
 			err,
@@ -142,10 +172,10 @@ func (g *responseGenerator) generate(ctx context.Context, request gai.Generation
 
 type responseStream struct {
 	source      gai.StreamingGenerator
-	hooks       *turnHooks
-	partial     bool
 	deliveryErr error
+	hooks       *turnHooks
 	metadata    gai.Metadata
+	partial     bool
 }
 
 func (s *responseStream) Stream(ctx context.Context, request gai.GenerationRequest) iter.Seq[gai.StreamChunk] {

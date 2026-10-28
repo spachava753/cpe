@@ -36,17 +36,17 @@ func (client openAIClient) deviceLogin(ctx context.Context, output io.Writer) (O
 		loginTimeout,
 	)
 	defer cancel()
-	response, err := client.post(
+	response, loginErr := client.post(
 		ctx,
 		"/api/accounts/deviceauth/usercode",
 		"application/json",
 		bytes.NewBufferString(`{"client_id":"`+openAIClientID+`"}`),
 	)
-	if err != nil {
-		return OAuthCredentials{}, err
+	if loginErr != nil {
+		return OAuthCredentials{}, loginErr
 	}
 	var issued deviceResponse
-	err = func() error {
+	loginErr = func() error {
 		defer response.Body.Close()
 		if response.StatusCode != http.StatusOK {
 			return fmt.Errorf(
@@ -59,12 +59,12 @@ func (client openAIClient) deviceLogin(ctx context.Context, output io.Writer) (O
 			&issued,
 		)
 	}()
-	if err != nil {
-		return OAuthCredentials{}, err
+	if loginErr != nil {
+		return OAuthCredentials{}, loginErr
 	}
-	device, err := issued.parse()
-	if err != nil {
-		return OAuthCredentials{}, err
+	device, loginErr := issued.parse()
+	if loginErr != nil {
+		return OAuthCredentials{}, loginErr
 	}
 	if _, err := fmt.Fprintf(
 		output,
@@ -77,12 +77,12 @@ func (client openAIClient) deviceLogin(ctx context.Context, output io.Writer) (O
 			err,
 		)
 	}
-	grant, err := client.pollDevice(
+	grant, loginErr := client.pollDevice(
 		ctx,
 		device,
 	)
-	if err != nil {
-		return OAuthCredentials{}, err
+	if loginErr != nil {
+		return OAuthCredentials{}, loginErr
 	}
 	return client.exchange(
 		ctx,

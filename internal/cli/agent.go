@@ -37,7 +37,7 @@ func acpCmd(root *cobra.Command, filesystem afero.Fs, store *auth.Store, authOpt
 
 func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store, authOptions auth.LoginOptions, serve serveAgent) {
 	var modelFile, historyPath, effort string
-	var timeout time.Duration
+	var timeout, mcpTimeout time.Duration
 	var responseRetries uint
 	var skillPaths, pluginPaths []string
 	command := &cobra.Command{
@@ -67,54 +67,46 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 					"sessions",
 				)
 			}
-			home, err := os.UserHomeDir()
-			if err != nil {
-				return fmt.Errorf(
-					"resolve global discovery roots: %w",
-					err,
-				)
-			}
-			skillPaths = append(
-				[]string{
-					filepath.Join(
-						home,
-						".agents",
-						"skills",
-					),
-				},
-				skillPaths...,
-			)
-			pluginPaths = append(
-				[]string{
-					filepath.Join(
-						home,
-						".agents",
-						"plugins",
-					),
-				},
-				pluginPaths...,
-			)
-			for _, roots := range [][]string{
+			skillPaths, err = discoveryRoots(
+				"skills",
 				skillPaths,
-				pluginPaths,
-			} {
-				for i, root := range roots {
-					roots[i], err = filepath.Abs(root)
-					if err != nil {
-						return err
-					}
-				}
+			)
+			if err != nil {
+				return err
 			}
+			pluginPaths, err = discoveryRoots(
+				"plugins",
+				pluginPaths,
+			)
+			if err != nil {
+				return err
+			}
+			settings, err := loadSettings(
+				filesystem,
+				filepath.Dir(authOptions.Path),
+			)
+			if err != nil {
+				return err
+			}
+			pool, err := mcpclient.NewPool(
+				mcpclient.Connect,
+				mcpGracePeriod,
+				nil,
+			)
+			if err != nil {
+				return err
+			}
+			defer pool.Close()
 			file, err := filesystem.Open(modelFile)
 			if err != nil {
 				return err
 			}
 			configured, loadErr := models.LoadModels(file)
-			if err := errors.Join(
+			if closeErr := errors.Join(
 				loadErr,
 				file.Close(),
-			); err != nil {
-				return err
+			); closeErr != nil {
+				return closeErr
 			}
 			if len(configured) == 0 {
 				return errors.New("at least one model must be configured")
@@ -161,9 +153,11 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 						Model:     models.ID(configured[0].ID),
 						Reasoning: models.ReasoningLevel(effort),
 					},
+					MCPServers:         settings.MCPServers,
 					SkillPaths:         skillPaths,
 					PluginPaths:        pluginPaths,
 					SetupTimeout:       timeout,
+					MCPTimeout:         mcpTimeout,
 					MaxResponseRetries: responseRetries,
 					Instructions:       instructions,
 				},
@@ -171,8 +165,8 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 					Filesystem:     filesystem,
 					Authentication: providerSet,
 					Generators:     providerSet.Generator,
-					Hosts:          toolruntime.Local,
-					MCP:            mcpclient.Connect,
+					Hosts:          toolruntime.New,
+					MCP:            pool,
 					History:        history,
 					LastModel:      lastModel,
 					Traces:         otel.GetTracerProvider(),
@@ -205,6 +199,12 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 		10*time.Minute,
 		"Maximum duration of session setup",
 	)
+	command.Flags().DurationVar(
+		&mcpTimeout,
+		"mcp-timeout",
+		defaultMCPTimeout,
+		"Maximum time to connect to one MCP server and list its tools; slower servers are skipped",
+	)
 	command.Flags().UintVar(
 		&responseRetries,
 		"response-retries",
@@ -224,4 +224,37 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 		"Additional plugin roots; project .agents/plugins is always loaded",
 	)
 	root.AddCommand(command)
+}
+
+// mcpGracePeriod keeps an unused MCP connection open briefly, so closing one
+// session and opening another does not restart every server.
+const mcpGracePeriod = 30 * time.Second
+
+// discoveryRoots returns ~/.agents/<kind> followed by extra roots, all absolute.
+// Project roots are added per session.
+func discoveryRoots(kind string, extra []string) ([]string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf(
+			"resolve global discovery roots: %w",
+			err,
+		)
+	}
+	roots := append(
+		[]string{
+			filepath.Join(
+				home,
+				".agents",
+				kind,
+			),
+		},
+		extra...,
+	)
+	for i, root := range roots {
+		roots[i], err = filepath.Abs(root)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return roots, nil
 }

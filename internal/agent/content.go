@@ -3,7 +3,9 @@ package agent
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/spachava753/acp-sdk/acp"
 	"github.com/spachava753/gai"
@@ -29,16 +31,28 @@ func acpContent(block gai.Block) (acp.ContentBlock, error) {
 	if block.Content == nil {
 		return acp.ContentBlock{}, errors.New("empty message block")
 	}
-	switch block.ModalityType {
-	case gai.Text:
+	switch {
+	case block.ModalityType == gai.Text:
 		return acp.TextContentBlock(block.Content.String()), nil
-	case gai.Image:
+	case block.ModalityType == gai.Image && strings.HasPrefix(
+		block.MimeType,
+		"image/",
+	):
 		return acp.ImageContentBlock(
 			block.Content.String(),
 			block.MimeType,
 		), nil
+	case block.ModalityType == gai.Audio:
+		return acp.AudioContentBlock(
+			block.Content.String(),
+			block.MimeType,
+		), nil
 	default:
-		return acp.ContentBlock{}, errors.New("unsupported output modality")
+		// ACP has no inline content for video or documents; describe them instead.
+		return acp.TextContentBlock(fmt.Sprintf(
+			"[%s media shown to the model]",
+			block.MimeType,
+		)), nil
 	}
 }
 

@@ -9,13 +9,13 @@ import (
 
 // InstallOptions selects source packages, destination scope, and result format.
 type InstallOptions struct {
+	// Path selects a source-relative package directory and is exclusive with Plugins.
+	Path *string
 	// Scope requires Project or Global; Directory selects an exact custom root.
 	Scope  commandio.ScopeOptions
 	Source string
 	// Plugins selects declared names; empty Plugins and nil Path select all.
 	Plugins []string
-	// Path selects a source-relative package directory and is exclusive with Plugins.
-	Path *string
 	// Override replaces existing packages, including obsolete files.
 	Override bool
 	// FullDepth searches beyond the default five directory components.

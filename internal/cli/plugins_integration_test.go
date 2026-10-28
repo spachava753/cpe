@@ -137,11 +137,11 @@ func TestPluginsLifecycle(t *testing.T) {
 	)
 	for _, test := range []struct {
 		name      string
-		args      []string
 		wantPath  string
+		errText   string
+		args      []string
 		installed bool
 		update    bool
-		errText   string
 	}{
 		{
 			name: "source listing recognizes only native package",
@@ -269,21 +269,21 @@ func TestPluginsLifecycle(t *testing.T) {
 				command.SetOut(&output)
 				command.SetErr(&diagnostics)
 				command.SetArgs(test.args)
-				err := command.ExecuteContext(t.Context())
+				commandErr := command.ExecuteContext(t.Context())
 				if test.errText != "" {
-					if err == nil || !strings.Contains(
-						err.Error(),
+					if commandErr == nil || !strings.Contains(
+						commandErr.Error(),
 						test.errText,
 					) {
 						t.Fatalf(
 							"command error = %v, want %q",
-							err,
+							commandErr,
 							test.errText,
 						)
 					}
 				} else {
-					if err != nil {
-						t.Fatal(err)
+					if commandErr != nil {
+						t.Fatal(commandErr)
 					}
 					var summaries []map[string]string
 					if err := json.Unmarshal(
@@ -312,15 +312,15 @@ func TestPluginsLifecycle(t *testing.T) {
 					}
 					return
 				}
-				installed, err := manager.ListInstalled(
+				installed, commandErr := manager.ListInstalled(
 					t.Context(),
 					destination,
 				)
-				if err != nil || len(installed) != 1 {
+				if commandErr != nil || len(installed) != 1 {
 					t.Fatalf(
 						"installed packages = %#v, %v",
 						installed,
-						err,
+						commandErr,
 					)
 				}
 				plugin := installed[0].Plugin
@@ -359,12 +359,12 @@ func TestPluginsLifecycle(t *testing.T) {
 						)
 					}
 				}
-				info, err := filesystem.Stat(filepath.Join(
+				info, commandErr := filesystem.Stat(filepath.Join(
 					installedPath,
 					"bin",
 					"never-run",
 				))
-				if err != nil || info.Mode().Perm() != 0o755 {
+				if commandErr != nil || info.Mode().Perm() != 0o755 {
 					t.Fatal("bundled executable mode was lost")
 				}
 				if test.update {

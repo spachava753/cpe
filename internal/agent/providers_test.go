@@ -34,22 +34,22 @@ func credentialFailure(t *testing.T) error {
 	); err != nil {
 		t.Fatal(err)
 	}
-	providerSet, err := providers.New(
+	providerSet, providerErr := providers.New(
 		store,
 		"/auth.json",
 		&http.Client{},
 	)
-	if err != nil {
-		t.Fatal(err)
+	if providerErr != nil {
+		t.Fatal(providerErr)
 	}
 	defer providerSet.Close()
-	generator, options, err := providerSet.Generator(
+	generator, options, providerErr := providerSet.Generator(
 		t.Context(),
 		"conversation-fixture",
 		models.Model{
 			ID:  "fixture",
 			API: models.Responses,
-			BaseUrl: url.URL{
+			BaseURL: url.URL{
 				Scheme: "https",
 				Host:   "chatgpt.com",
 				Path:   "/backend-api/codex/",
@@ -57,13 +57,13 @@ func credentialFailure(t *testing.T) error {
 		},
 		"",
 	)
-	if err != nil {
-		t.Fatal(err)
+	if providerErr != nil {
+		t.Fatal(providerErr)
 	}
 	if err := providerSet.Logout(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	_, err = generator.Generate(
+	_, providerErr = generator.Generate(
 		t.Context(),
 		gai.GenerationRequest{
 			Model: "fixture",
@@ -78,11 +78,11 @@ func credentialFailure(t *testing.T) error {
 			Options: options,
 		},
 	)
-	if !providers.IsCredentialError(err) {
+	if !providers.IsCredentialError(providerErr) {
 		t.Fatalf(
 			"expected adapter credential failure, got %v",
-			err,
+			providerErr,
 		)
 	}
-	return err
+	return providerErr
 }

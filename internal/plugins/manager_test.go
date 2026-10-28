@@ -46,18 +46,18 @@ func TestManagerListSource(t *testing.T) {
 	fetchErr := errors.New("fetch failed")
 	cleanupErr := errors.New("cleanup failed")
 	for _, test := range []struct {
-		name            string
-		files           fstest.MapFS
-		options         plugins.DiscoveryOptions
 		fetchErr        error
 		cleanupErr      error
+		wantErr         error
+		files           fstest.MapFS
+		name            string
+		errText         string
+		want            []plugins.Plugin
+		wantDiagnostics int
+		options         plugins.DiscoveryOptions
 		cancel          bool
 		nilClient       bool
 		nilFS           bool
-		want            []plugins.Plugin
-		wantDiagnostics int
-		wantErr         error
-		errText         string
 	}{
 		{
 			name:  "empty source",
@@ -337,21 +337,21 @@ func TestManagerInstall(t *testing.T) {
 	t.Parallel()
 	cleanupErr := errors.New("checkout cleanup failed")
 	for _, test := range []struct {
-		name            string
+		cleanupErr      error
+		wantFiles       map[string]string
 		files           fstest.MapFS
 		initial         fstest.MapFS
-		names           []string
 		selectedPath    *string
-		override        bool
-		fullDepth       bool
-		fault           managerFSFault
-		cleanupErr      error
-		cancel          bool
-		wantFiles       map[string]string
+		errText         string
+		name            string
+		names           []string
 		wantNames       []string
 		wantDiagnostics int
+		fullDepth       bool
+		cancel          bool
+		fault           managerFSFault
 		committed       bool
-		errText         string
+		override        bool
 	}{
 		{
 			name: "install source root bundle",
@@ -847,10 +847,10 @@ func writeManagerFiles(t *testing.T, filesystem afero.Fs, files fstest.MapFS) {
 func TestManagerListInstalled(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
-		name      string
 		files     fstest.MapFS
-		wantNames []string
+		name      string
 		errText   string
+		wantNames []string
 	}{
 		{
 			name: "missing root",
@@ -943,12 +943,12 @@ func TestManagerListInstalled(t *testing.T) {
 func TestManagerRemove(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
-		name    string
 		files   fstest.MapFS
-		names   []string
-		fault   managerFSFault
-		want    []plugins.RemovedPlugin
+		name    string
 		errText string
+		names   []string
+		want    []plugins.RemovedPlugin
+		fault   managerFSFault
 	}{
 		{
 			name: "named manual package",

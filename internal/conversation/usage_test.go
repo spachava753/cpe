@@ -10,11 +10,11 @@ import (
 
 func TestTokenUsage(t *testing.T) {
 	for _, test := range []struct {
-		name      string
 		previous  TokenUsage
 		metadata  gai.Metadata
-		wantError bool
+		name      string
 		wantInput uint64
+		wantError bool
 	}{
 		{
 			name: "preserves exact JSON integers",

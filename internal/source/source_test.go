@@ -29,18 +29,18 @@ func TestAcquire(t *testing.T) {
 		},
 	}
 	for _, test := range []struct {
+		fetchErr    error
+		cleanupErr  error
+		wantCause   error
 		name        string
 		locator     string
+		errText     string
+		wantFetch   int
+		wantCleanup int
 		noClient    bool
 		canceled    bool
 		noFS        bool
 		noCleanup   bool
-		fetchErr    error
-		cleanupErr  error
-		errText     string
-		wantCause   error
-		wantFetch   int
-		wantCleanup int
 	}{
 		{
 			name:        "owned checkout",

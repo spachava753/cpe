@@ -23,8 +23,8 @@ type TokenUsage struct {
 func ParseTokenUsage(metadata gai.Metadata) (TokenUsage, error) {
 	var usage TokenUsage
 	for _, field := range []struct {
-		key    string
 		target **uint64
+		key    string
 	}{
 		{
 			key:    gai.UsageMetricInputTokens,

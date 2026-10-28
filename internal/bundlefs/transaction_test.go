@@ -28,8 +28,8 @@ const (
 
 type transactionFS struct {
 	afero.Fs
-	fault  transactionFault
 	cancel context.CancelFunc
+	fault  transactionFault
 }
 
 func (filesystem transactionFS) OpenFile(name string, flag int, perm fs.FileMode) (afero.File, error) {
@@ -127,16 +127,16 @@ func TestApply(t *testing.T) {
 		"beta/marker":   "new beta",
 	}
 	for _, test := range []struct {
-		name           string
+		wantCause      error
 		initial        map[string]string
+		wantFiles      map[string]string
+		name           string
+		errText        string
 		changes        []bundlefs.Change
 		fault          transactionFault
 		rejectExisting bool
 		nilCheck       bool
 		wantOutcome    bundlefs.Outcome
-		wantCause      error
-		errText        string
-		wantFiles      map[string]string
 		wantRecovery   bool
 	}{
 		{

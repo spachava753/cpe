@@ -26,18 +26,18 @@ const (
 // MCPServer holds validated launch or connection settings for an MCP server.
 // Runtime placeholders remain available for expansion by the launcher.
 type MCPServer struct {
-	Type Transport
-	// Command is the executable for Stdio servers.
-	Command string
-	Args    []string
 	// Env supplies environment overrides for Stdio servers.
 	Env map[string]string
+	// Headers contains canonicalized HTTP request headers.
+	Headers http.Header
+	Type    Transport
+	// Command is the executable for Stdio servers.
+	Command string
 	// Cwd is the Stdio working directory; its default is ${PLUGIN_ROOT}.
 	Cwd string
 	// URL is the endpoint for StreamableHTTP and SSE servers.
-	URL url.URL
-	// Headers contains canonicalized HTTP request headers.
-	Headers http.Header
+	URL  url.URL
+	Args []string
 }
 
 // Plugin contains a native Agent Plugin's manifest metadata and loaded components.

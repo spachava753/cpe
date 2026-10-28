@@ -33,16 +33,16 @@ func (c *Compaction) WorkingDialog(dialog gai.Dialog) gai.Dialog {
 	)
 }
 
-func (r Record) checkCompaction() error {
-	if r.Compaction == nil {
+func (record Record) checkCompaction() error {
+	if record.Compaction == nil {
 		return nil
 	}
-	c := r.Compaction
-	if strings.TrimSpace(c.Summary) == "" || c.AfterMessages < 0 || c.AfterMessages > len(r.Dialog) {
+	c := record.Compaction
+	if strings.TrimSpace(c.Summary) == "" || c.AfterMessages < 0 || c.AfterMessages > len(record.Dialog) {
 		return errors.New("invalid compaction summary or transcript boundary")
 	}
 	pending := make(map[string]bool)
-	for _, message := range r.Dialog[:c.AfterMessages] {
+	for _, message := range record.Dialog[:c.AfterMessages] {
 		for _, block := range message.Blocks {
 			if block.BlockType == gai.ToolCall {
 				pending[block.ID] = true

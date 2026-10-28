@@ -209,7 +209,7 @@ func TestSkillsLifecycle(t *testing.T) {
 			if err := command.ExecuteContext(t.Context()); err != nil {
 				t.Fatal(err)
 			}
-			data, err := afero.ReadFile(
+			data, readErr := afero.ReadFile(
 				destinations,
 				"/skills/alpha/SKILL.md",
 			)
@@ -228,30 +228,30 @@ func TestSkillsLifecycle(t *testing.T) {
 					summaries,
 				)
 			}
-			if err != nil || string(data) != definition {
+			if readErr != nil || string(data) != definition {
 				t.Fatalf(
 					"installed definition = %q, %v",
 					data,
-					err,
+					readErr,
 				)
 			}
-			info, err := destinations.Stat("/skills/alpha/run.sh")
-			if err != nil || info.Mode().Perm() != 0o755 {
+			info, readErr := destinations.Stat("/skills/alpha/run.sh")
+			if readErr != nil || info.Mode().Perm() != 0o755 {
 				t.Fatalf(
 					"executable support file = %v, %v",
 					info,
-					err,
+					readErr,
 				)
 			}
-			entries, err := afero.ReadDir(
+			entries, readErr := afero.ReadDir(
 				destinations,
 				"/skills",
 			)
-			if err != nil || len(entries) != 1 || entries[0].Name() != "alpha" {
+			if readErr != nil || len(entries) != 1 || entries[0].Name() != "alpha" {
 				t.Fatalf(
 					"installation wrote more than its bundle: %v, %v",
 					entries,
-					err,
+					readErr,
 				)
 			}
 		},

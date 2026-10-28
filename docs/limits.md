@@ -12,95 +12,41 @@ Byte limits apply to the data size; a character can occupy several bytes.
 
 ## Tool output
 
-CPE keeps captured command streams complete for the script to inspect. Emitted
-text is collected through the end of the invocation, then shown to the model as
-one text block. Long text is saved in full, with a preview and retrieval key in
-the tool result.
+Both tools show the model the end of their output, within fixed limits. Longer
+output is written in full to a file and the result names it.
 
 | Output | Limit or threshold | What happens |
 | --- | --- | --- |
-| Captured command stdout and stderr | No CPE byte cap | Complete captured streams are returned to the script. They remain script-local unless printed or explicitly stored. |
-| Combined emitted script text, including execution diagnostics | 128 KiB (131,072 bytes) for the model-facing text block | At or below this size, all text is included. Above it, the complete text is saved in session KV and the model receives a head preview with the retrieval key. |
-| Preview and retrieval notice together | At most 128 KiB (131,072 bytes) | The notice fits inside the preview budget; it reduces the space available for the beginning of the log. |
-| Total emitted text and image bytes | No combined CPE byte cap | Text follows the preview behavior above; each image is checked separately. Host memory and provider limits still apply. |
-| Number of prints or emitted images | No CPE count cap | Prints combine into one text block. Images follow in separate blocks. |
-| One image passed to `image(data)` | 6 MiB (6,291,456 raw bytes) | A larger image is rejected. Empty images are also rejected. |
+| Text in one tool result | Last 2,000 lines or 50 KiB (51,200 bytes), whichever is reached first | Longer output is cut from the front. The result starts with a notice giving the lines shown, the sizes, and the path of a file holding the complete output. |
+| Exit status, timeout notice, or script error | Never truncated | Appended after the visible output, outside the limit. |
+| A single line longer than the byte limit | Its last 50 KiB, from a character boundary | The notice says the first line shown is partial. |
+| Output from the `bash` builtin inside a script | Last 1 MiB (1,048,576 bytes) | `truncated` and `full_output_path` report a longer stream; no line limit applies. |
+| Media attached with `view` | No CPE limit | Not counted toward the text limit. The provider decides what it accepts. |
+| Concurrent calls in one `parallel` call | 16 | Further calls wait for a free slot. |
 
-Printing a large amount of text leaves later script statements free to run.
-When execution finishes, text over 128 KiB is stored as a string under
-`overflow_<sha256>`. The key is based on the complete text, so identical output
-reuses the same key. The result supplies the exact key to pass to `kv.get`.
+Output within the limits stays in memory. Once it exceeds them, the complete
+stream is written to a file in the session's temporary directory while the
+command runs, so the full output never has to fit in memory. If that file
+cannot be created, the notice says the complete output could not be saved, and
+the visible tail is still returned.
 
 ```text
- Complete command stdout and stderr
-                  |
-                  v
-          Script inspects data
-                  |
-          print / edit / diagnostics
-                  |
-                  v
-      Combine text when invocation ends
-                  |
-         +--------+----------+
-         |                   |
-     <= 128 KiB          > 128 KiB
-         |                   |
-         |            Save full text in KV
-         |                   |
-         v                   v
-    Full text block     Head preview + key
-                         together <= 128 KiB
-         |                   |
-         +--------+----------+
-                  |
-                  v
-       Image blocks follow in emission order
-       each image: at most 6 MiB of raw bytes
+ command or script output
+            |
+   within the limits? ---- yes ----> whole output in the result
+            |
+            no
+            |
+ complete stream written to a file
+            |
+ result: notice with file path + last lines
+            |
+ then exit status, timeout, or error (never cut)
 ```
 
-The saved text includes emitted output and execution diagnostics from failed
-or canceled scripts. It survives compaction and session restoration, using the
-same persistence as other KV values. A later script can retrieve it, search for
-an error, or print a small slice. Printing the whole saved log again produces
-another preview if it still exceeds 128 KiB.
-
-If saving the complete text fails, the result contains a head preview and a
-save-failure notice, and the tool is marked failed. It provides no retrieval
-claim for unsaved output. Saving happens after execution, so earlier script
-work and effects remain. A process crash before the save can lose emitted text;
-use an explicit `kv.store` during execution when a value needs an earlier
-checkpoint.
-
-Images are supplied separately from the text preview. A 6 MiB image does not
-reduce the text preview's allowance or prevent another valid image from being
-emitted. All text precedes the images, even if a script interleaved `print` and
-`image` calls. Images retain their relative emission order.
-
-See [Tool execution](tool-runtime.md#long-output-and-retrieval) for retrieving
-logs and [Persistence and recovery](persistence.md#saved-script-output) for their
-lifetime. The selected provider's context and image limits still apply.
-
-## HTTP requests from scripts
-
-Dyson's `requests` module has its own limits before a script prints any result.
-These apply to script HTTP requests independently of model-provider requests.
-
-| Operation | Limit or default | What to expect |
-| --- | --- | --- |
-| Buffered HTTP response body | 64 MiB (67,108,864 bytes) per response | A larger body fails the request. The limit also applies separately to bodies retained from redirects. |
-| Redirect chain | At most 30 followed redirects | Attempting another redirect fails the request. `allow_redirects=False` disables following redirects. |
-| Explicit request timeout | `timeout=None` by default | The script can supply a positive number of seconds for both connect and read timeouts, or a pair such as `timeout=(5, 30)`. |
-
-The read timeout limits a wait for incoming data and is renewed on reads. A
-response that keeps delivering data can take longer than that timeout in total.
-With no explicit timeout, there is no overall request deadline supplied by the
-module; network and transport failures can still end the request. Turn
-cancellation also stops the request.
-
-Printing a response that takes the combined text over 128 KiB produces a preview
-and saves the complete emitted text in KV. The 64 MiB HTTP response-body limit
-applies earlier, while receiving the response.
+Overflow files are temporary; see
+[Persistence and recovery](persistence.md#overflow-files). The selected
+provider's context and media limits still apply.
 
 ## Sessions, timeouts, and retries
 
@@ -108,11 +54,13 @@ applies earlier, while receiving the response.
 | --- | --- | --- |
 | Active prompts in one session | 1 | A second prompt is rejected while the first is active. Different sessions can run concurrently. |
 | Session setup | 10 minutes | Set `--setup-timeout`, for example `--setup-timeout=2m`. It must be positive. Expiry fails setup. |
+| Connecting to one MCP server and listing its tools | 1 minute | Set `--mcp-timeout` for `cpe acp`, or `--timeout` for `cpe mcp`. A server that exceeds it is skipped. |
+| Keeping an unused shared MCP connection open | 30 seconds | After the last session using it closes. |
 | Prompt-turn duration | No CPE-imposed deadline | The client can cancel; provider and individual operation limits still apply. |
 | Model generations in a turn | No CPE-imposed count limit | Tool use can continue across many model responses. |
 | Retries of one eligible model response | 2 retries by default: up to 3 attempts including the first | Set `--response-retries`; `0` disables these retries. This budget starts afresh for each model response. |
 | Model-response retry delay | 250 ms, 500 ms, 1 s, 2 s, 4 s, then 8 s for later retries | A longer provider-requested delay takes precedence. With the default retry count, only the first two delays are used. |
-| Subprocess runtime | No timeout by default | A script can set `subprocess.run(..., timeout=30)` to use a timeout in seconds. Turn cancellation also stops the command. |
+| `bash` and `starlark_exec` runtime | No timeout by default | Pass `timeout` in seconds to either tool or to the `bash` builtin. Turn cancellation also stops the call. |
 | Waiting for command exit or lingering output pipes after cancellation or observed process exit | 1 second | CPE terminates the child or closes remaining pipes when needed to finish waiting. This does not limit a normally running command to one second. |
 | Cleanup after an aborted response, at turn end, or during connection shutdown | 10-second budget for each cleanup phase | Allows client notifications and, at turn end or shutdown, checkpointing after cancellation. It is not a guarantee that the entire shutdown finishes within ten seconds; joining active work and resource shutdown can take longer. |
 | Listing saved sessions | Up to 100 sessions per page | The client uses the returned cursor to request the next page. |
@@ -169,14 +117,14 @@ concurrent login or logout interact.
 
 | Operation or field | Value | Behavior |
 | --- | --- | --- |
-| `search_tools` results | 8 by default | Set a positive `limit` argument to request another maximum. There is no additional fixed result-count ceiling. Available matches determine the result count; large printed results use the text-preview behavior above. |
+| `search_tools` results | 8 by default | Set a positive `limit` argument to request another maximum. There is no additional fixed result-count ceiling. |
+| Tool and server descriptions in the system prompt | First line, cut at 500 characters | Full descriptions remain available through `describe_tool` and `describe_server`. |
 | Skill/plugin source search during installation | 5 directory levels below the source root by default | Deeper packages are skipped. `--full-depth` removes the depth limit; `--path` selects an exact package directory. |
 | Plugin name | 1–64 ASCII characters | An invalid or longer name is rejected. |
 | Skill name length | 64 Unicode characters | A longer name is retained with a length warning. |
 | Skill description length | 1,024 Unicode characters | A longer description is retained with a length warning. |
 | Skill compatibility field | 500 Unicode characters | A longer value makes the skill definition invalid. |
-| Symlinks followed while resolving an `edit` target | 40 across the path | Following a 41st link fails the edit. |
-| Matches for an exact `edit` | Exactly 1 | Zero or multiple matches, including overlaps, fail without replacing the file. |
+| Matches for `edit_file` | Exactly 1 | Zero or multiple matches, including overlaps, fail without replacing the file and end the script. |
 
 The installation search depth applies to finding packages in a source tree.
 Project `AGENTS.md` discovery has no fixed depth cap; it skips directory symlinks
@@ -188,14 +136,11 @@ See [MCP, plugins, and skills](extensions.md),
 ## Data without a separate CPE size quota
 
 CPE adds no explicit byte-size cap for prompt text, incoming prompt images,
-command stdin, captured command stdout and stderr, complete emitted script text,
-compaction summaries, session checkpoints, or durable KV values. It also adds no
-fixed count cap for KV keys or saved sessions. These still use host memory and
-storage, and data sent to a model is subject to the provider's
-limits. Incoming prompt images and images emitted by tools have different
-limits: the **6 MiB** image limit above applies to `image(data)` output.
+files a script reads or writes, media attached with `view`, overflow files,
+compaction summaries, or session checkpoints. It also adds no fixed count cap for
+saved sessions. These still use host memory and storage, and data sent to a
+model is subject to the provider's limits.
 
-A compaction summary must contain non-whitespace text. KV values must be
-supported data without cycles. Having no byte quota does not remove those
-requirements or make arbitrarily large data practical. See
+A compaction summary must contain non-whitespace text. Having no byte quota does
+not make arbitrarily large data practical. See
 [Persistence and recovery](persistence.md).

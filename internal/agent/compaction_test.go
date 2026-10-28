@@ -5,12 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/spachava753/acp-sdk/acp"
-	"github.com/spachava753/dyson"
 	"github.com/spachava753/gai"
 	"github.com/spachava753/gai/agent/agenttest"
 
@@ -68,9 +66,9 @@ func TestCompaction(t *testing.T) {
 				setup := compactionCall(
 					t,
 					"setup",
-					"starlark",
+					toolruntime.StarlarkToolName,
 					map[string]any{
-						"code": "kv.store('counter', 1)",
+						"code": "write_file('counter', '1')",
 					},
 				)
 				code := "save_summary = compact\nsave_summary('initial draft')\nparts = ['Goal: update CPE.', 'Next: finish the requested work.']\nresult = save_summary(summary=' '.join(parts))\nif result != None:\n    fail('compact must return None')"
@@ -80,7 +78,7 @@ func TestCompaction(t *testing.T) {
 				compact := compactionCall(
 					t,
 					"compact-first",
-					"starlark",
+					toolruntime.StarlarkToolName,
 					map[string]any{
 						"code": code,
 					},
@@ -88,17 +86,17 @@ func TestCompaction(t *testing.T) {
 				increment := compactionCall(
 					t,
 					"increment",
-					"starlark",
+					toolruntime.StarlarkToolName,
 					map[string]any{
-						"code": "kv.store('counter', kv.get('counter') + 1)\nprint(kv.get('counter'))",
+						"code": "n = int(read_file('counter').decode()) + 1\nwrite_file('counter', str(n))\nprint(n)",
 					},
 				)
 				read := compactionCall(
 					t,
 					"read",
-					"starlark",
+					toolruntime.StarlarkToolName,
 					map[string]any{
-						"code": "print(kv.get('counter'))",
+						"code": "print(read_file('counter').decode())",
 					},
 				)
 				if operation == "repeat compaction" || operation == "compact after resume" {
@@ -106,7 +104,7 @@ func TestCompaction(t *testing.T) {
 					read = compactionCall(
 						t,
 						"compact-second",
-						"starlark",
+						toolruntime.StarlarkToolName,
 						map[string]any{
 							"code": code,
 						},
@@ -132,7 +130,7 @@ func TestCompaction(t *testing.T) {
 					},
 					agenttest.GenerateStep{
 						Check: func(request gai.GenerationRequest) error {
-							if request.Dialog[len(request.Dialog)-1].Blocks[0].Content.String() != "Compact the conversation now by calling compact(summary) in starlark." {
+							if request.Dialog[len(request.Dialog)-1].Blocks[0].Content.String() != "Compact the conversation now by calling compact(summary) in starlark_exec." {
 								return errors.New("slash command did not request compaction")
 							}
 							return nil
@@ -154,7 +152,7 @@ func TestCompaction(t *testing.T) {
 								context.Background(),
 								conversation.ID(id),
 							)
-							if err != nil || persisted.Compaction == nil || persisted.Compaction.Summary != summary || persisted.Compaction.AfterMessages != 8 || len(persisted.Dialog) != 8 || persisted.Dialog[0].Blocks[0].Content.String() != "old task detail" || persisted.Dialog[7].Blocks[0].Content.String() != "2\n" || persisted.Dialog[6].ToolResultError != (operation == "script failure after compact") {
+							if err != nil || persisted.Compaction == nil || persisted.Compaction.Summary != summary || persisted.Compaction.AfterMessages != 8 || len(persisted.Dialog) != 8 || persisted.Dialog[0].Blocks[0].Content.String() != "old task detail" || persisted.Dialog[7].Blocks[0].Content.String() != "2" || persisted.Dialog[6].ToolResultError != (operation == "script failure after compact") {
 								return fmt.Errorf(
 									"summary and full transcript not saved before next generation: %#v, %v",
 									persisted,
@@ -186,7 +184,7 @@ func TestCompaction(t *testing.T) {
 									return errors.New("second compaction did not replace the earlier working context")
 								}
 							default:
-								if last.Blocks[0].Content.String() != "2\n" {
+								if last.Blocks[0].Content.String() != "2" {
 									return errors.New("compaction reset or repeated runtime effects")
 								}
 							}
@@ -332,17 +330,17 @@ func TestCompactionWithSubprocess(t *testing.T) {
 				script := compactionCall(
 					t,
 					"script",
-					"starlark",
+					toolruntime.StarlarkToolName,
 					map[string]any{
-						"code": "load('subprocess.star', 'subprocess')\nresult = subprocess.run(['capture'], capture_output=True)\ncompact(summary='Result: ' + result.stdout.decode())\nprint('script output after compact')",
+						"code": "result = bash('printf captured')\ncompact(summary='Result: ' + result.output)\nprint('script output after compact')",
 					},
 				)
 				command := compactionCall(
 					t,
 					"command",
-					"starlark",
+					toolruntime.StarlarkToolName,
 					map[string]any{
-						"code": "load('subprocess.star', 'subprocess')\nr = subprocess.run(['effect'], capture_output=True)\nprint(r.stdout.decode())",
+						"code": "r = bash('printf \"independent command output\"')\nprint(r.output)",
 					},
 				)
 				calls := []gai.Block{
@@ -353,7 +351,6 @@ func TestCompactionWithSubprocess(t *testing.T) {
 				if order == "command before compaction" {
 					calls[0], calls[1] = calls[1], calls[0]
 				}
-				var effects atomic.Int32
 				var fixture agentFixture
 				var id acp.SessionId
 				generator := agenttest.NewScriptedGenerator(
@@ -362,9 +359,6 @@ func TestCompactionWithSubprocess(t *testing.T) {
 					},
 					agenttest.GenerateStep{
 						Check: func(request gai.GenerationRequest) error {
-							if effects.Load() != 2 {
-								return errors.New("generation resumed before all command effects finished")
-							}
 							if len(request.Dialog) != 1 || request.Dialog[0].Role != gai.User || len(request.Dialog[0].Blocks) != 1 || request.Dialog[0].Blocks[0].Content.String() != "Summary of earlier conversation:\n\nResult: captured" {
 								return errors.New("working context must contain only the summary built from command output")
 							}
@@ -412,27 +406,6 @@ func TestCompactionWithSubprocess(t *testing.T) {
 					func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
 						return generator, gai.GenerationOptions{}, nil
 					},
-					func(_ *Config, deps *Dependencies, _ *acp.InitializeRequest) {
-						deps.Hosts = func(ctx context.Context, config toolruntime.Config) (toolruntime.Host, error) {
-							return toolruntime.New(
-								ctx,
-								config,
-								dyson.StdlibConfig{
-									FS: deps.Filesystem,
-									CommandRunner: runnerFunc(func(_ context.Context, command dyson.Command) (dyson.CommandResult, error) {
-										effects.Add(1)
-										output := "captured"
-										if command.Args[0] == "effect" {
-											output = "independent command output"
-										}
-										return dyson.CommandResult{
-											Stdout: []byte(output),
-										}, nil
-									}),
-								},
-							)
-						}
-					},
 				)
 				id = openFixtureSession(
 					t,
@@ -444,8 +417,8 @@ func TestCompactionWithSubprocess(t *testing.T) {
 					id,
 					"run the commands and compact",
 				)
-				if len(generator.Requests()) != 2 || effects.Load() != 2 {
-					t.Fatal("compaction repeated model requests or command effects")
+				if len(generator.Requests()) != 2 {
+					t.Fatal("compaction repeated model requests")
 				}
 			},
 		)
@@ -512,7 +485,7 @@ func TestCompactionFailures(t *testing.T) {
 					compactionCall(
 						t,
 						"compact",
-						"starlark",
+						toolruntime.StarlarkToolName,
 						map[string]any{
 							"code": test.code,
 						},
@@ -524,9 +497,9 @@ func TestCompactionFailures(t *testing.T) {
 						compactionCall(
 							t,
 							"block",
-							"starlark",
+							toolruntime.StarlarkToolName,
 							map[string]any{
-								"code": "load('subprocess.star', 'subprocess')\nsubprocess.run(['block'])",
+								"code": "block",
 							},
 						),
 					)

@@ -244,8 +244,8 @@ func TestRootAuth(t *testing.T) {
 	for _, test := range []struct {
 		name      string
 		arguments []string
-		wantErr   bool
 		want      []string
+		wantErr   bool
 	}{
 		{
 			name: "registered",

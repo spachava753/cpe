@@ -5,8 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -26,18 +29,18 @@ func TestSessionDiscovery(t *testing.T) {
 	const manifest = `{"$schema":"` + schema + `","name":"example","description":"Example plugin summary.\nAdditional metadata."}`
 	const instructions = "Fixture server summary.\nDetailed server instructions."
 	for _, test := range []struct {
-		name            string
-		manifest        string
-		mcp             bool
-		notices         bool
-		wantWarning     bool
-		wantError       bool
-		missingRoot     bool
-		missingManifest bool
 		code            string
+		manifest        string
+		name            string
 		wantOutput      string
-		wantConnections int32
 		wantCalls       int32
+		wantConnections int32
+		wantWarning     bool
+		missingManifest bool
+		missingRoot     bool
+		wantError       bool
+		notices         bool
+		mcp             bool
 		connectError    bool
 		reopen          bool
 		multipleServers bool
@@ -85,7 +88,7 @@ func TestSessionDiscovery(t *testing.T) {
 			name:            "direct builtins and restored sessions",
 			manifest:        manifest,
 			mcp:             true,
-			code:            "print(mcp__example_tools__echo({'value': 'hello'}).content[0].text)",
+			code:            "print(tools.example_tools__echo(value = 'hello').content[0].text)",
 			wantOutput:      "ready",
 			wantConnections: 2,
 			wantCalls:       2,
@@ -96,16 +99,17 @@ func TestSessionDiscovery(t *testing.T) {
 			manifest:        manifest,
 			mcp:             true,
 			multipleServers: true,
-			code:            "print(mcp__example_other__echo({}).content[0].text)",
+			code:            "print(tools.example_other__echo().text)",
 			wantOutput:      "ready",
-			wantConnections: 3,
+			// Both servers in the plugin have identical configurations, so they share a connection.
+			wantConnections: 2,
 			wantCalls:       1,
 		},
 		{
-			name:            "namespace metadata preserves server instructions",
+			name:            "server description preserves server instructions",
 			manifest:        manifest,
 			mcp:             true,
-			code:            "print(describe_namespace('mcp__example_tools')['instructions'])",
+			code:            "print(describe_server('example_tools').instructions)",
 			wantOutput:      instructions,
 			wantConnections: 2,
 		},
@@ -113,20 +117,20 @@ func TestSessionDiscovery(t *testing.T) {
 			name:            "tool description exposes argument schema",
 			manifest:        manifest,
 			mcp:             true,
-			code:            "print(describe_tool('mcp__example_tools__echo')['input_schema']['properties']['value']['description'])",
+			code:            "print(describe_tool('example_tools__echo').input_schema['properties']['value']['description'])",
 			wantOutput:      "Text to echo",
 			wantConnections: 2,
 		},
 		{
-			name:            "search discovers a callable builtin without remote execution",
+			name:            "search discovers a callable tool without remote execution",
 			manifest:        manifest,
 			mcp:             true,
-			code:            "print(search_tools('echo', namespace='mcp__example_tools')[0]['name'])",
-			wantOutput:      "mcp__example_tools__echo",
+			code:            "print(search_tools('echo', server='example_tools')[0].name)",
+			wantOutput:      "example_tools__echo",
 			wantConnections: 2,
 		},
 		{
-			name:            "namespaces augment a custom system prompt",
+			name:            "servers augment a custom system prompt",
 			manifest:        manifest,
 			mcp:             true,
 			customPrompt:    true,
@@ -136,7 +140,7 @@ func TestSessionDiscovery(t *testing.T) {
 			name:            "client-provided servers use the same discovery and calling interface",
 			manifest:        manifest,
 			clientServer:    true,
-			code:            "print(mcp__client__echo({}).content[0].text)",
+			code:            "print(tools.client__echo().text)",
 			wantOutput:      "ready",
 			wantConnections: 1,
 			wantCalls:       1,
@@ -147,15 +151,17 @@ func TestSessionDiscovery(t *testing.T) {
 			mcp:             true,
 			setupTimeout:    true,
 			wantError:       true,
-			wantConnections: 1,
+			wantConnections: 2,
 		},
 		{
-			name:            "failed setup closes earlier server connections",
+			name:            "a failing server is skipped and the session still opens",
 			manifest:        manifest,
 			mcp:             true,
 			connectError:    true,
-			wantError:       true,
+			code:            "print(tools.example_tools__echo().text, describe_server('second_tools'))",
+			wantOutput:      "ready None",
 			wantConnections: 2,
+			wantCalls:       1,
 		},
 	} {
 		t.Run(
@@ -164,6 +170,7 @@ func TestSessionDiscovery(t *testing.T) {
 				var connections, calls atomic.Int32
 				var stderr bytes.Buffer
 				var closed []<-chan struct{}
+				var closedMu sync.Mutex
 				prompts := make(
 					chan string,
 					1,
@@ -241,7 +248,7 @@ func TestSessionDiscovery(t *testing.T) {
 								t.Fatal(err)
 							}
 						}
-						deps.MCP = func(ctx context.Context, config plugins.MCPServer, toolsChanged func()) (*mcp.ClientSession, error) {
+						deps.MCP = testPool(t, func(ctx context.Context, config plugins.MCPServer, _ io.Writer) (*mcp.ClientSession, error) {
 							connections.Add(1)
 							if test.setupTimeout {
 								<-ctx.Done()
@@ -287,10 +294,12 @@ func TestSessionDiscovery(t *testing.T) {
 							}
 							t.Cleanup(func() { _ = session.Close() })
 							done := make(chan struct{})
+							closedMu.Lock()
 							closed = append(
 								closed,
 								done,
 							)
+							closedMu.Unlock()
 							go func() {
 								_ = session.Wait()
 								close(done)
@@ -300,15 +309,13 @@ func TestSessionDiscovery(t *testing.T) {
 									Name:    "fixture",
 									Version: "1",
 								},
-								&mcp.ClientOptions{
-									ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) { toolsChanged() },
-								},
+								nil,
 							).Connect(
 								ctx,
 								b,
 								nil,
 							)
-						}
+						})
 					},
 				)
 				request := &acp.NewSessionRequest{
@@ -347,26 +354,42 @@ func TestSessionDiscovery(t *testing.T) {
 						code,
 					)
 					system := <-prompts
+					wantSecond := "\n\n## second\n\nMCP server second_tools: Fixture server summary.\n- second_tools__echo: Echo a message"
 					if test.mcp && (!strings.Contains(
 						system,
-						"- mcp__example_tools: Example plugin summary.",
+						"\n\n## example\nExample plugin summary.\nAdditional metadata.\n\nSkills:\n- example:review: Review code\n",
 					) || !strings.Contains(
 						system,
-						"- mcp__second_tools: Fixture server summary.",
+						"MCP server example_tools: Fixture server summary.\n- example_tools__echo: Echo a message",
 					) || strings.Contains(
 						system,
 						"Detailed server instructions.",
-					)) {
+					) || strings.Contains(
+						system,
+						wantSecond,
+					) == test.connectError) {
 						t.Fatalf(
-							"namespace summaries missing or not summarized: %s",
+							"plugin servers missing or not summarized: %s",
 							system,
 						)
 					}
 					if test.clientServer && !strings.Contains(
 						system,
-						"- mcp__client: Fixture server summary.",
+						"# MCP servers\n\nCall these tools from starlark_exec as tools.<name>(...); use describe_tool(name) for a tool's input schema.\n\n## client\nFixture server summary.\n- client__echo: Echo a message",
 					) {
-						t.Fatal("client namespace missing from prompt")
+						t.Fatalf(
+							"client server missing from prompt: %s",
+							system,
+						)
+					}
+					if test.connectError && !strings.Contains(
+						stderr.String(),
+						`cpe: skipping MCP server "second:tools": connect: fixture unavailable`,
+					) {
+						t.Fatalf(
+							"skipped server was not reported: %q",
+							stderr.String(),
+						)
 					}
 					if test.customPrompt && (!strings.HasPrefix(
 						system,
@@ -412,15 +435,15 @@ func TestSessionDiscovery(t *testing.T) {
 					if connections.Load() != test.wantConnections {
 						t.Fatal("repeated calls opened new connections")
 					}
-					fork, err := fixture.client.ForkSession(
+					fork, forkErr := fixture.client.ForkSession(
 						t.Context(),
 						&acp.ForkSessionRequest{
 							SessionID: response.SessionID,
 							Cwd:       "/work",
 						},
 					)
-					if err != nil {
-						t.Fatal(err)
+					if forkErr != nil {
+						t.Fatal(forkErr)
 					}
 					if _, err := fixture.client.CloseSession(
 						t.Context(),
@@ -443,7 +466,7 @@ func TestSessionDiscovery(t *testing.T) {
 							t.Fatal(err)
 						}
 						if operation == "load" {
-							_, err = fixture.client.LoadSession(
+							_, forkErr = fixture.client.LoadSession(
 								t.Context(),
 								&acp.LoadSessionRequest{
 									SessionID: response.SessionID,
@@ -451,7 +474,7 @@ func TestSessionDiscovery(t *testing.T) {
 								},
 							)
 						} else {
-							_, err = fixture.client.ResumeSession(
+							_, forkErr = fixture.client.ResumeSession(
 								t.Context(),
 								&acp.ResumeSessionRequest{
 									SessionID: response.SessionID,
@@ -459,14 +482,16 @@ func TestSessionDiscovery(t *testing.T) {
 								},
 							)
 						}
-						if err != nil {
-							t.Fatal(err)
+						if forkErr != nil {
+							t.Fatal(forkErr)
 						}
 					}
 				}
 				wantConnections := test.wantConnections
 				if test.reopen {
-					wantConnections *= 4
+					// The fork shares the open session's connections; load and
+					// resume reconnect after every lease was released.
+					wantConnections *= 3
 				}
 				if connections.Load() != wantConnections || calls.Load() != test.wantCalls {
 					t.Fatalf(
@@ -478,7 +503,10 @@ func TestSessionDiscovery(t *testing.T) {
 				if err := fixture.client.Close(); err != nil {
 					t.Fatal(err)
 				}
-				for _, done := range closed {
+				closedMu.Lock()
+				waits := slices.Clone(closed)
+				closedMu.Unlock()
+				for _, done := range waits {
 					select {
 					case <-done:
 					case <-time.After(time.Second):

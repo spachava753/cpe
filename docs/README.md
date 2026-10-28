@@ -26,22 +26,22 @@ configuration examples, see the [main README](../README.md).
   |     returns text and requests to run tools
   |
   +-- Tool runtime
-  |     runs Starlark scripts
-  |       +-- files, commands, HTTP on the host
+  |     runs bash scripts and StarlarkX scripts
+  |       +-- files and commands on the host
   |       +-- tools supplied by MCP servers
   |
   +-- Saved session
         transcript, model settings, usage,
-        compaction summary, and durable script data
+        and compaction summary
 ```
 
 A prompt starts a **turn**. During a turn, the model can ask for tools, inspect
 their results, and ask for more tools before it answers. Each **generation** is
-one model response within that turn. Each Starlark **invocation** is one script
-execution. A **session** holds the conversation across turns.
+one model response within that turn. Each **tool call** runs one bash or
+StarlarkX script. A **session** holds the conversation across turns.
 
 Those lifetimes explain many everyday behaviors. A script variable disappears
-when its invocation ends. A session's saved data survives a process restart.
+when its call ends. A session's saved conversation survives a process restart.
 Stopping a turn leaves its completed file changes in place.
 
 ## Start with these three ideas
@@ -70,7 +70,7 @@ error or canceled turn can leave completed effects behind. See
 | [Compaction](compaction.md) | What does the model forget? When does a summary take effect? |
 | [Tool execution](tool-runtime.md) | How do scripts, commands, edits, and output behave? |
 | [Limits and defaults](limits.md) | What are the exact size limits, timeouts, retry counts, and configurable defaults? |
-| [MCP, plugins, and skills](extensions.md) | How are capabilities discovered, connected, and refreshed? |
+| [MCP, plugins, and skills](extensions.md) | How are servers configured, connected, shared, and called? |
 | [Instructions and context](instructions.md) | What guidance reaches the model, and when is it read? |
 | [Models and reasoning](models.md) | How are defaults chosen? What changes when switching models? |
 | [Credentials](credentials.md) | How does login work? What happens when a token expires? |

@@ -6,7 +6,7 @@ A session is a continuing conversation with a working directory, a selected
 model, saved history, and its own tool resources. You can send many prompts to
 one session, close it, and return to it later.
 
-## From connection to invocation
+## From connection to tool call
 
 One CPE process serves one ACP connection. That connection can have several live
 sessions. Each session accepts one active prompt at a time; separate sessions
@@ -20,15 +20,16 @@ can work concurrently.
  |    +-- Turn: one user prompt through completion or interruption
  |         |
  |         +-- Generation: model response
- |         +-- Tool invocation: fresh script execution
+ |         +-- Tool call: one bash or StarlarkX script, run fresh
  |         +-- Generation: model sees results and continues
  |         +-- ... final response
  |
  +-- Session B: its own conversation and live resources
 ```
 
-Separate sessions have independent conversation and durable script data. They
-can still touch the same files, environment, or external services on the host.
+Separate sessions have independent conversations. They can still touch the same
+files, environment, or external services on the host, and sessions in one
+process share connections to identically configured MCP servers.
 Two agents editing the same checkout need the same care as two people editing
 it. A separate worktree can separate their file changes.
 
@@ -37,13 +38,15 @@ it. A separate worktree can separate their file changes.
 The client supplies an absolute working directory. CPE uses it as the base for
 relative tool paths and for discovering project instructions, skills, and
 plugins. It checks that the directory exists, prepares the session's guidance,
-connects its MCP servers, discovers their tools, and saves an initial checkpoint.
+connects its MCP servers, lists their tools, and saves an initial checkpoint.
 The session becomes available after setup succeeds.
 
 Setup has a **10-minute deadline** by default, configurable with a positive
 `--setup-timeout` value such as `--setup-timeout=2m`. A failure to read required
-configuration or connect a configured MCP server prevents the session from
-opening. Connections already opened during failed setup are closed. Once setup
+configuration prevents the session from opening, and so does a client-supplied
+MCP server whose name clashes with a configured one. An MCP server that fails to
+connect does not: it is skipped, as described in
+[MCP, plugins, and skills](extensions.md#connecting-at-session-setup). Once setup
 succeeds, its deadline has no effect on later work.
 
 The working directory also determines the scope of automatic instruction
@@ -84,18 +87,18 @@ collects the exact timeouts, retry budgets, output limits, and defaults.
 | Action | What happens |
 | --- | --- |
 | Cancel | Stops the active turn; the session remains available for another prompt. |
-| Close | Cancels and waits for active work, then releases tool resources and MCP connections. The saved session remains. |
+| Close | Cancels and waits for active work, then releases tool resources and its MCP connections, which other sessions may still be sharing. The saved session remains. |
 | Load | Opens a saved session with fresh resources and sends its accepted transcript to the client for display. |
 | Resume | Opens a saved session with fresh resources, leaving transcript display to the client's existing state. |
 | Fork | Copies an open, idle session into a new session with its own identifier and resources. |
-| Delete | Closes live resources if necessary, then removes the saved session, including durable script data. |
+| Delete | Closes live resources if necessary, then removes the saved session. Files the session's scripts wrote are not removed. |
 | List | Returns up to **100 saved sessions per page**, including sessions with no live resources. The client can request the next page with the returned cursor. |
 
 Loading and resuming require the session to be closed in that connection.
 Changing the model or reasoning setting also requires an idle session.
 
 A fork inherits the transcript, compaction state, model and reasoning selection,
-usage totals, and an independent copy of durable script data. The client supplies
+and usage totals. The client supplies
 its working directory and MCP configuration. Forking leaves files and remote
 services untouched, so choosing the same directory means both sessions see the
 same workspace.

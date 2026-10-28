@@ -168,8 +168,8 @@ func (p packageFS) ReadDir(name string) ([]fs.DirEntry, error) {
 // skills.Load is deliberately fail-fast. Give it exactly one discovered skill
 // so the plugin layer can isolate a bad skill without duplicating its parser.
 type singleSkillFS struct {
-	pkg   packageFS
 	entry fs.DirEntry
+	pkg   packageFS
 }
 
 func (s singleSkillFS) Open(name string) (fs.File, error) {

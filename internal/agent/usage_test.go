@@ -18,6 +18,7 @@ import (
 
 	"github.com/spachava753/cpe/internal/conversation"
 	"github.com/spachava753/cpe/internal/models"
+	"github.com/spachava753/cpe/internal/toolruntime"
 )
 
 func TestUsageReporting(t *testing.T) {
@@ -34,7 +35,7 @@ func TestUsageReporting(t *testing.T) {
 			func(t *testing.T) {
 				call, err := gai.ToolCallBlock(
 					"compact",
-					"starlark",
+					toolruntime.StarlarkToolName,
 					map[string]any{
 						"code": "compact('Continue the current task.')",
 					},
@@ -318,14 +319,14 @@ func usagePrompt(t *testing.T, client *acp.Client, id acp.SessionId) *acp.Prompt
 
 func TestUsageAttempts(t *testing.T) {
 	for _, test := range []struct {
-		name         string
 		metadata     gai.Metadata
+		want         *acp.Usage
+		name         string
+		wantContext  []uint64
 		failures     int
+		limit        uint
 		nonStreaming bool
 		cancel       bool
-		limit        uint
-		want         *acp.Usage
-		wantContext  []uint64
 		wantError    bool
 	}{
 		{
@@ -634,8 +635,8 @@ func TestUsageAttempts(t *testing.T) {
 func TestUsageStopReasons(t *testing.T) {
 	for _, test := range []struct {
 		name   string
-		finish gai.FinishReason
 		want   acp.StopReason
+		finish gai.FinishReason
 	}{
 		{
 			name:   "end turn",
@@ -697,9 +698,9 @@ func TestUsageStopReasons(t *testing.T) {
 
 func TestContextBudgetToolResults(t *testing.T) {
 	for _, test := range []struct {
+		metadata gai.Metadata
 		name     string
 		limit    uint
-		metadata gai.Metadata
 		warn     bool
 	}{
 		{
@@ -803,7 +804,7 @@ func TestContextBudgetToolResults(t *testing.T) {
 				} {
 					call, err := gai.ToolCallBlock(
 						script.id,
-						"starlark",
+						toolruntime.StarlarkToolName,
 						map[string]any{
 							"code": script.code,
 						},
@@ -837,7 +838,7 @@ func TestContextBudgetToolResults(t *testing.T) {
 						if len(blocks) != 1 {
 							return errors.New("unexpected tool output blocks")
 						}
-						if i == 0 && blocks[0].Content.String() != "tool output\n" || i == 1 && !strings.Contains(
+						if i == 0 && blocks[0].Content.String() != "tool output" || i == 1 && !strings.Contains(
 							blocks[0].Content.String(),
 							"tool failure",
 						) {

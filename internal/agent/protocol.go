@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -464,9 +465,8 @@ func (*Server) SetSessionMode(context.Context, *acp.SetSessionModeRequest) (*acp
 
 func parseSessionSpec(id conversation.ID, cwd string, servers []acp.McpServer, additional []string) (sessionSpec, error) {
 	spec := sessionSpec{
-		id:      id,
-		cwd:     filepath.Clean(cwd),
-		servers: make(map[mcpclient.ServerID]plugins.MCPServer),
+		id:  id,
+		cwd: filepath.Clean(cwd),
 	}
 	if id == "" || !filepath.IsAbs(cwd) {
 		return spec, errors.New("session ID and absolute cwd are required")
@@ -474,14 +474,19 @@ func parseSessionSpec(id conversation.ID, cwd string, servers []acp.McpServer, a
 	if len(additional) != 0 {
 		return spec, errors.New("additional directories are not supported")
 	}
+	seen := make(map[mcpclient.ServerID]bool)
 	for _, server := range servers {
 		id := mcpclient.ServerID(server.Name)
 		if id == "" {
 			return spec, errors.New("MCP server name is required")
 		}
-		if _, exists := spec.servers[id]; exists {
-			return spec, errors.New("duplicate MCP server name")
+		if seen[id] {
+			return spec, fmt.Errorf(
+				"duplicate MCP server name %q",
+				id,
+			)
 		}
+		seen[id] = true
 		config := plugins.MCPServer{
 			Cwd:     spec.cwd,
 			Args:    server.Args,
@@ -517,7 +522,14 @@ func parseSessionSpec(id conversation.ID, cwd string, servers []acp.McpServer, a
 		default:
 			return spec, errors.New("ACP-tunneled MCP is not supported")
 		}
-		spec.servers[id] = config
+		spec.servers = append(
+			spec.servers,
+			mcpclient.ServerSpec{
+				ID:        id,
+				Source:    mcpclient.SourceClient,
+				Transport: config,
+			},
+		)
 	}
 	return spec, nil
 }

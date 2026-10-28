@@ -19,12 +19,12 @@ import (
 func TestSkillsCommands(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
-		name    string
-		args    []string
 		install *skills.InstallOptions
 		list    *skills.ListOptions
 		remove  *skills.RemoveOptions
+		name    string
 		err     string
+		args    []string
 	}{
 		{
 			name: "install global",

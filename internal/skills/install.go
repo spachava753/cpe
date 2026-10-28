@@ -9,13 +9,13 @@ import (
 
 // InstallOptions selects source skills, destination scope, and result format.
 type InstallOptions struct {
+	// Path selects a source-relative bundle directory and is exclusive with Skills.
+	Path *string
 	// Scope requires Project or Global; Directory selects an exact custom root.
 	Scope  commandio.ScopeOptions
 	Source string
 	// Skills selects declared names; empty Skills and nil Path select all.
 	Skills []string
-	// Path selects a source-relative bundle directory and is exclusive with Skills.
-	Path *string
 	// Override replaces existing bundles, including obsolete files.
 	Override bool
 	// FullDepth searches beyond the default five directory components.
