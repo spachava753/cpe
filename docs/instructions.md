@@ -18,7 +18,7 @@ have no immediate effect on a live conversation.
    compaction guidance
    project instructions and nested-file index
    skill metadata
-   MCP namespace summaries
+   plugins, MCP servers, and their tools
              |
              +-----------------------+
                                      |
@@ -30,9 +30,11 @@ have no immediate effect on a live conversation.
 ```
 
 The system guidance remains available after
-[compaction](compaction.md). Skill bodies, nested project instructions, and full
-MCP tool descriptions enter the conversation when a script reads them and emits
-their contents as tool output. Compaction can remove those earlier results from
+[compaction](compaction.md). It lists each MCP tool's name and the first line of
+its description; [MCP, plugins, and skills](extensions.md#how-the-model-finds-and-calls-tools)
+shows how. Skill bodies, nested project instructions, and full MCP tool
+descriptions and schemas enter the conversation when a tool call reads them and
+returns their contents. Compaction can remove those earlier results from
 working context, so the model may need to read them again.
 
 ## Personal system guidance
@@ -50,8 +52,8 @@ them. A missing file is optional; other read failures stop startup. An empty
 `SYSTEM.md` selects an empty base prompt. Empty append or compaction files add
 no guidance for their respective part.
 
-Project instructions, skill metadata, and MCP namespace summaries are still
-supplied with a custom base prompt. Replacing the base therefore changes the
+Project instructions, skill metadata, and the list of plugins and MCP servers
+with their tools are still supplied with a custom base prompt. Replacing the base therefore changes the
 agent's general guidance while preserving its awareness of the session's
 project and available extensions.
 

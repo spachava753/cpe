@@ -70,7 +70,7 @@ error or canceled turn can leave completed effects behind. See
 | [Compaction](compaction.md) | What does the model forget? When does a summary take effect? |
 | [Tool execution](tool-runtime.md) | How do scripts, commands, edits, and output behave? |
 | [Limits and defaults](limits.md) | What are the exact size limits, timeouts, retry counts, and configurable defaults? |
-| [MCP, plugins, and skills](extensions.md) | How are capabilities discovered, connected, and refreshed? |
+| [MCP, plugins, and skills](extensions.md) | How are servers configured, connected, shared, and called? |
 | [Instructions and context](instructions.md) | What guidance reaches the model, and when is it read? |
 | [Models and reasoning](models.md) | How are defaults chosen? What changes when switching models? |
 | [Credentials](credentials.md) | How does login work? What happens when a token expires? |

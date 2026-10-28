@@ -67,11 +67,14 @@ selection resets reasoning to the new provider's default because effort names
 and capabilities differ between providers. You can then choose one of that
 model's supported efforts.
 
-The session keeps its transcript, compaction state, and MCP connections. Future requests are adapted for the selected model:
+The session keeps its transcript, compaction state, and MCP connections. Future
+requests are adapted for the selected model:
 
 - Earlier assistant reasoning from other models is omitted from the request,
   along with model-specific replay metadata.
-- Media the model cannot accept is replaced with a text notice.
+- Media the model cannot accept is replaced with a text notice. For media a
+  tool returned, the notice names a file holding a copy, so the model can still
+  convert it, for example to text.
 - The original reasoning, metadata, and media stay in saved history.
 
 This allows a conversation to move between models without discarding its

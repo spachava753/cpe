@@ -53,6 +53,17 @@ Provider-reported token consumption still accumulates across failed attempts and
 retries. These counters are saved at normal checkpoints, not at every failure. A
 process crash before the next checkpoint can lose the latest usage counts.
 
+## Media the provider rejects
+
+A request can also fail because the provider rejects media that a tool attached
+with `view`, such as an image that is too large. When an invalid-request error
+follows tool results containing media, CPE saves each item to a file, replaces it
+with a notice giving the provider's message and the file path, and retries the
+request once. The model can then convert the file and view it again. This retry
+does not use the response-retry budget above. If it fails as well, the media was
+not the cause: the turn fails as usual and history keeps the media. See
+[Viewing media](tool-runtime.md#viewing-media).
+
 ## A failed script or command
 
 A script error stops later statements. Earlier file changes, remote actions,
