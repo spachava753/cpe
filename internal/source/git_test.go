@@ -441,6 +441,11 @@ func TestGitClientFetch(t *testing.T) {
 			errText: "password",
 		},
 		{
+			name:    "HTTP token in user information rejected",
+			source:  "https://fixture-token@127.0.0.1:1/skills",
+			errText: "user information",
+		},
+		{
 			name:    "relative file URL",
 			source:  "file://./skills",
 			errText: "absolute local",

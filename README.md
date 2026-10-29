@@ -6,6 +6,24 @@ CPE is a coding agent served over the Agent Client Protocol (ACP), built with
 `bash` for commands, and `starlark_exec` for exact file edits, MCP tool
 orchestration, and viewing media.
 
+## Installation
+
+On Linux or macOS:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/spachava753/cpe/main/install.sh | sh
+```
+
+The installer puts `cpe` in `~/.local/bin`; make sure that directory is on your
+`PATH`. You can also download a binary from
+[GitHub releases](https://github.com/spachava753/cpe/releases).
+Git must be on your `PATH` to install or update bundles from repositories.
+Private repositories authenticate through your Git configuration, such as a
+credential helper or SSH key; HTTP source URLs must not embed credentials.
+
+Use `cpe --help` to see commands and `cpe skills install --help`, for example,
+to see a command's options.
+
 ## Understanding the agent
 
 The [behavior guides](docs/README.md) explain sessions and turns, persistence,
@@ -357,6 +375,50 @@ credentials waits for renewal and persistence, subject to the request deadline.
 Already-expired credentials get one token exchange attempt with a 30-second
 timeout; successful rotation then follows the same save-only retry policy.
 If credentials cannot be renewed and saved, the request fails. Revoked refresh credentials require `cpe auth login openai` again.
+
+## Skills
+
+Install skills from a GitHub repository using `owner/repo`, or use a full Git URL:
+
+```sh
+cpe skills install mattpocock/skills --skill writing-great-skills --scope project
+cpe skills list
+cpe skills update writing-great-skills --scope project
+cpe skills remove writing-great-skills --scope project
+```
+
+Install requires `--scope project` or `--scope global`. Project skills go in
+`./.agents/skills`; global skills go in `~/.agents/skills`. With project scope,
+`--dir PATH` selects an exact custom directory instead.
+
+Without `--skill` or `--path`, install includes all skills found in the repository.
+Repeat `--skill NAME` to select skills by name, or use `--path DIR` for one exact
+source-relative skill directory. These options cannot be combined. Existing
+bundles are preserved unless `--override` is set.
+
+Run `cpe skills update` to update all installed, tracked skills in both scopes.
+Use `--scope` to restrict updates to one scope. When a named skill exists in both
+scopes, specify its scope to update or remove it. Missing, untracked, and
+unsupported skills are skipped during updates with a warning. Updates follow the
+recorded Git repository's default branch.
+
+Update skips bundles with modified or unverifiable contents. Use `--override`
+only when you want to replace them from the source:
+
+```sh
+cpe skills update writing-great-skills --scope project --override
+```
+
+Replacement removes local changes and obsolete files. Skills installed by another
+tool may also need `--override` on their first CPE update. Listing and removal work
+for manually copied skills too.
+
+CPE records project skill sources in `skills-lock.json`, or inside the selected
+custom directory when using `--dir`. Keep this file for updates. Run skill
+installation, update, and removal commands one at a time.
+
+Skill commands print tables on a terminal and JSON arrays when stdout is
+redirected. Use `--json` to request JSON on a terminal. Warnings go to stderr.
 
 ## Agent Plugins
 

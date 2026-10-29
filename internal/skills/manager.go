@@ -58,6 +58,8 @@ type RemovedSkill struct {
 // InstallRequest selects skills and an exact root for Manager.Install.
 // Empty Skills and nil Path select all discovered skills.
 type InstallRequest struct {
+	// Lock tracks committed installations when non-nil.
+	Lock *LockFile
 	// Path selects a source-relative bundle directory; "." selects the root.
 	// It uses io/fs slash paths and is mutually exclusive with Skills.
 	Path *string
@@ -75,6 +77,8 @@ type InstallRequest struct {
 
 // RemoveRequest selects installed bundle directories for Manager.Remove.
 type RemoveRequest struct {
+	// Lock removes records for committed removals when non-nil.
+	Lock *LockFile
 	// Directory is the exact installation root in native filesystem syntax.
 	Directory string
 	// Skills contains child directory names. At least one name is required.
@@ -140,6 +144,16 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 	names, installErr := selectedNames(request.Skills)
 	if installErr != nil {
 		return nil, installErr
+	}
+	var lock *skillLock
+	if request.Lock != nil {
+		lock, installErr = m.readLock(
+			ctx,
+			*request.Lock,
+		)
+		if installErr != nil {
+			return nil, installErr
+		}
 	}
 	checkout, installErr := m.acquire(
 		ctx,
@@ -272,6 +286,19 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 		if err != nil {
 			return nil, err
 		}
+		if lock != nil {
+			record := lock.hashRecord(
+				skill,
+				payload,
+				sourceRecord(request.Source),
+			)
+			if err := lock.put(
+				name,
+				record,
+			); err != nil {
+				return nil, err
+			}
+		}
 		action := bundlefs.Install
 		if request.Override {
 			action = bundlefs.Replace
@@ -303,11 +330,11 @@ func (m *Manager) Install(ctx context.Context, request InstallRequest) (result [
 			err,
 		)
 	}
-	if outcome, err := bundlefs.Apply(
+	if outcome, err := m.applyTracked(
 		ctx,
-		m.destinations,
 		request.Directory,
 		changes,
+		lock,
 		m.checkDefinition,
 	); err != nil {
 		if outcome != bundlefs.Committed {
@@ -433,6 +460,26 @@ func (m *Manager) Remove(ctx context.Context, request RemoveRequest) ([]RemovedS
 	if err != nil {
 		return nil, err
 	}
+	var lock *skillLock
+	if request.Lock != nil {
+		lock, err = m.readLock(
+			ctx,
+			*request.Lock,
+		)
+		if err != nil {
+			return nil, err
+		}
+		for _, directory := range plan.paths {
+			name := filepath.Base(directory)
+			if _, tracked := lock.skills[name]; tracked {
+				delete(
+					lock.skills,
+					name,
+				)
+				lock.dirty = true
+			}
+		}
+	}
 	filesystem := afero.NewIOFS(afero.NewBasePathFs(
 		m.destinations,
 		request.Directory,
@@ -458,11 +505,11 @@ func (m *Manager) Remove(ctx context.Context, request RemoveRequest) ([]RemovedS
 			removed,
 		)
 	}
-	if outcome, err := bundlefs.Apply(
+	if outcome, err := m.applyTracked(
 		ctx,
-		m.destinations,
 		request.Directory,
 		plan.changes,
+		lock,
 		m.checkDefinition,
 	); err != nil {
 		if outcome == bundlefs.Committed {

@@ -15,6 +15,8 @@ import (
 	"github.com/spachava753/cpe/internal/commandio"
 )
 
+const skillDefinition = "SKILL.md"
+
 // Skill contains parsed Agent Skills frontmatter and its definition's location.
 type Skill struct {
 	// Metadata preserves client-specific attributes, including nested values.

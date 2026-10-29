@@ -36,6 +36,9 @@ archives:
       {{- else }}{{ .Arch }}{{- end }}
     formats:
       - tar.gz
+    files:
+      - LICENSE
+      - README.md
     format_overrides:
       - goos: windows
         formats:

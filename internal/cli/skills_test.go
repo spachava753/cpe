@@ -22,10 +22,94 @@ func TestSkillsCommands(t *testing.T) {
 		install *skills.InstallOptions
 		list    *skills.ListOptions
 		remove  *skills.RemoveOptions
+		update  *skills.UpdateOptions
 		name    string
 		err     string
 		args    []string
 	}{
+		{
+			name: "update all scopes",
+			args: []string{
+				"skills",
+				"update",
+			},
+			update: &skills.UpdateOptions{
+				Skills: []string{},
+			},
+		},
+		{
+			name: "update named project skills as JSON",
+			args: []string{
+				"skills",
+				"update",
+				"one",
+				"two",
+				"--scope",
+				"project",
+				"--json",
+			},
+			update: &skills.UpdateOptions{
+				Scope: commandio.ScopeOptions{
+					Project: true,
+				},
+				Skills: []string{
+					"one",
+					"two",
+				},
+				JSON: true,
+			},
+		},
+		{
+			name: "update override flag is forwarded",
+			args: []string{
+				"skills",
+				"update",
+				"one",
+				"--override",
+			},
+			update: &skills.UpdateOptions{
+				Skills: []string{
+					"one",
+				},
+				Override: true,
+			},
+		},
+		{
+			name: "update false override flag preserves protection",
+			args: []string{
+				"skills",
+				"update",
+				"--override=false",
+			},
+			update: &skills.UpdateOptions{
+				Skills: []string{},
+			},
+		},
+		{
+			name: "update custom directory",
+			args: []string{
+				"skills",
+				"update",
+				"--dir",
+				"./custom",
+			},
+			update: &skills.UpdateOptions{
+				Scope: commandio.ScopeOptions{
+					Directory: new("./custom"),
+				},
+				Skills: []string{},
+			},
+		},
+		{
+			name: "invalid update scope",
+			args: []string{
+				"skills",
+				"update",
+				"--scope",
+				"other",
+			},
+			err: "--scope must be project or global",
+		},
 		{
 			name: "install global",
 			args: []string{
@@ -520,6 +604,23 @@ func TestSkillsCommands(t *testing.T) {
 							); diff != "" {
 								t.Fatalf(
 									"list options (-want +got):\n%s",
+									diff,
+								)
+							}
+							return operationErr
+						},
+						update: func(ctx context.Context, manager *skills.Manager, opts skills.UpdateOptions, streams commandio.IO) error {
+							checkBoundary(
+								ctx,
+								manager,
+								streams,
+							)
+							if diff := cmp.Diff(
+								test.update,
+								&opts,
+							); diff != "" {
+								t.Fatalf(
+									"update options (-want +got):\n%s",
 									diff,
 								)
 							}

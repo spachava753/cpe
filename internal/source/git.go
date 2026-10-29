@@ -28,7 +28,7 @@ func (GitClient) Fetch(ctx context.Context, source string) (Checkout, error) {
 	if err := ctx.Err(); err != nil {
 		return Checkout{}, err
 	}
-	locator, err := gitLocator(source)
+	locator, err := ParseGitLocator(source)
 	if err != nil {
 		return Checkout{}, err
 	}
@@ -53,7 +53,7 @@ func (GitClient) Fetch(ctx context.Context, source string) (Checkout, error) {
 		"clone",
 		"--quiet",
 		"--",
-		locator,
+		locator.String(),
 		directory,
 	)
 	configureGitCancellation(command)
@@ -130,6 +130,11 @@ func gitLocator(source string) (string, error) {
 	case "https", "http", "ssh", "git":
 		if locator.Host == "" || locator.Path == "" || locator.Path == "/" {
 			return "", errors.New("source URL requires a host and repository path")
+		}
+		// HTTP user information usually carries an access token, and locators are
+		// recorded in shareable lock files. Git credential helpers supply it instead.
+		if locator.User != nil && (locator.Scheme == "https" || locator.Scheme == "http") {
+			return "", errors.New("HTTP source URL must not contain user information; use a Git credential helper")
 		}
 	case "file":
 		if locator.User != nil {

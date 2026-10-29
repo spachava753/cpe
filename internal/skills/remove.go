@@ -27,12 +27,25 @@ type RemoveOptions struct {
 // Results are terminal tables or JSON arrays containing name, description, and
 // former SKILL.md path. Errors can follow committed removals or result writes.
 func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams commandio.IO) error {
-	directories, err := opts.Scope.Directories(
-		"skills",
+	if manager == nil {
+		return errors.New("skills manager is unavailable")
+	}
+	scopes, err := resolveScopes(
+		opts.Scope,
 		false,
 	)
 	if err != nil {
 		return err
+	}
+	var requests []RemoveRequest
+	for _, scope := range scopes {
+		requests = append(
+			requests,
+			RemoveRequest{
+				Directory: scope.directory,
+				Lock:      &scope.lock,
+			},
+		)
 	}
 	names, err := selectedNames(opts.Skills)
 	if err != nil {
@@ -44,27 +57,27 @@ func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams c
 	if !opts.All && len(names) == 0 {
 		return errors.New("select at least one skill to remove")
 	}
-	selected := make(map[string][]string)
 	if opts.All {
-		for _, directory := range directories {
+		for index, request := range requests {
 			installed, err := manager.ListInstalled(
 				ctx,
-				directory,
+				request.Directory,
 			)
 			if err != nil {
 				return err
 			}
 			for _, entry := range installed {
-				selected[directory] = append(
-					selected[directory],
+				requests[index].Skills = append(
+					requests[index].Skills,
 					filepath.Base(entry.Directory),
 				)
 			}
 		}
 	} else {
 		for _, name := range names {
-			var matches []string
-			for _, directory := range directories {
+			var matches []int
+			for index, request := range requests {
+				directory := request.Directory
 				if err := manager.destination(
 					ctx,
 					directory,
@@ -98,7 +111,7 @@ func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams c
 				}
 				matches = append(
 					matches,
-					directory,
+					index,
 				)
 			}
 			if len(matches) == 0 {
@@ -110,42 +123,55 @@ func Remove(ctx context.Context, manager *Manager, opts RemoveOptions, streams c
 			}
 			if len(matches) > 1 {
 				return fmt.Errorf(
-					"skill %q exists in both directories; --scope is required",
+					"skill %q exists in both directories; provide an explicit --scope",
 					name,
 				)
 			}
-			selected[matches[0]] = append(
-				selected[matches[0]],
+			requests[matches[0]].Skills = append(
+				requests[matches[0]].Skills,
 				name,
 			)
 		}
 	}
 	// Check every selection's eligibility before removing the first scope.
-	for _, directory := range directories {
-		if len(selected[directory]) == 0 {
+	for _, request := range requests {
+		if len(request.Skills) == 0 {
 			continue
 		}
 		if _, err := manager.prepareRemoval(
 			ctx,
-			RemoveRequest{
-				Directory: directory,
-				Skills:    selected[directory],
-			},
+			request,
+		); err != nil {
+			return err
+		}
+		if _, err := manager.readLock(
+			ctx,
+			*request.Lock,
 		); err != nil {
 			return err
 		}
 	}
+	for first, request := range requests {
+		if len(request.Skills) == 0 {
+			continue
+		}
+		for _, other := range requests[first+1:] {
+			if len(other.Skills) == 0 {
+				continue
+			}
+			if filepath.Clean(request.Directory) == filepath.Clean(other.Directory) {
+				return errors.New("project and global inventories share a directory; provide an explicit --scope to remove skills")
+			}
+		}
+	}
 	var result []RemovedSkill
-	for _, directory := range directories {
-		if len(selected[directory]) == 0 {
+	for _, request := range requests {
+		if len(request.Skills) == 0 {
 			continue
 		}
 		removed, err := manager.Remove(
 			ctx,
-			RemoveRequest{
-				Directory: directory,
-				Skills:    selected[directory],
-			},
+			request,
 		)
 		result = append(
 			result,
