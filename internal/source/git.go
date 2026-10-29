@@ -131,6 +131,11 @@ func gitLocator(source string) (string, error) {
 		if locator.Host == "" || locator.Path == "" || locator.Path == "/" {
 			return "", errors.New("source URL requires a host and repository path")
 		}
+		// HTTP user information usually carries an access token, and locators are
+		// recorded in shareable lock files. Git credential helpers supply it instead.
+		if locator.User != nil && (locator.Scheme == "https" || locator.Scheme == "http") {
+			return "", errors.New("HTTP source URL must not contain user information; use a Git credential helper")
+		}
 	case "file":
 		if locator.User != nil {
 			return "", errors.New("file source URL must not contain user information")

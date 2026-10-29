@@ -18,6 +18,8 @@ The installer puts `cpe` in `~/.local/bin`; make sure that directory is on your
 `PATH`. You can also download a binary from
 [GitHub releases](https://github.com/spachava753/cpe/releases).
 Git must be on your `PATH` to install or update bundles from repositories.
+Private repositories authenticate through your Git configuration, such as a
+credential helper or SSH key; HTTP source URLs must not embed credentials.
 
 Use `cpe --help` to see commands and `cpe skills install --help`, for example,
 to see a command's options.
