@@ -24,8 +24,8 @@ func TestResolveScopes(t *testing.T) {
 		name      string
 		options   commandio.ScopeOptions
 		stateHome string
-		atHome    bool
 		want      []skillScope
+		atHome    bool
 	}{
 		{
 			name: "default inventories use separate upstream lock formats",

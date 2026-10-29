@@ -15,17 +15,17 @@ import (
 
 func TestApplyWithFile(t *testing.T) {
 	for _, test := range []struct {
+		wantError      error
 		name           string
+		wantBundle     string
+		wantTracking   string
 		native         bool
 		absent         bool
 		unchanged      bool
 		stageFailure   bool
 		publishFailure bool
 		bundleFault    transactionFault
-		wantBundle     string
-		wantTracking   string
 		wantOutcome    bundlefs.Outcome
-		wantError      error
 	}{
 		{
 			name:         "replace tracking after publishing bundles",

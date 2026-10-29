@@ -34,9 +34,9 @@ func TestUpdate(t *testing.T) {
 		func(t *testing.T) {
 			for _, test := range []struct {
 				name    string
-				options skills.UpdateOptions
-				want    []string
 				warning string
+				want    []string
+				options skills.UpdateOptions
 			}{
 				// No names means both alpha installations are independent selections.
 				{
@@ -318,12 +318,12 @@ func TestUpdate(t *testing.T) {
 				SkillFolderHash: updateAlphaObsoleteHash,
 			}
 			for _, test := range []struct {
-				name         string
 				projectAlpha *updateRecord
 				globalAlpha  *updateRecord
+				name         string
 				scope        commandio.ScopeOptions
-				want         []string
 				warning      string
+				want         []string
 			}{
 				// Missing project tracking must not hide the globally tracked beta.
 				{
@@ -489,10 +489,10 @@ func TestUpdate(t *testing.T) {
 		"recorded sources",
 		func(t *testing.T) {
 			for _, test := range []struct {
-				name     string
 				record   updateRecord
-				override bool
+				name     string
 				warning  string
+				override bool
 			}{
 				{
 					name: "unsupported type",
@@ -654,7 +654,7 @@ func TestUpdate(t *testing.T) {
 							t,
 							f.filesystem,
 						)
-						paths, err := f.run(
+						paths, runErr := f.run(
 							t,
 							skills.UpdateOptions{
 								Scope: commandio.ScopeOptions{
@@ -663,8 +663,8 @@ func TestUpdate(t *testing.T) {
 								Override: test.override,
 							},
 						)
-						if err != nil {
-							t.Fatal(err)
+						if runErr != nil {
+							t.Fatal(runErr)
 						}
 						if !test.override {
 							if len(paths) != 0 || len(f.source.fetches) != 0 || !strings.Contains(
@@ -969,9 +969,9 @@ func TestUpdate(t *testing.T) {
 				name          string
 				betaSource    string
 				alphaResource string
+				warning       string
 				wantSources   []string
 				wantNames     []string
-				warning       string
 			}{
 				{
 					name:          "shared source",
@@ -1045,12 +1045,12 @@ func TestUpdate(t *testing.T) {
 							t,
 							f.filesystem,
 						)
-						paths, err := f.run(
+						paths, runErr := f.run(
 							t,
 							skills.UpdateOptions{},
 						)
-						if err != nil {
-							t.Fatal(err)
+						if runErr != nil {
+							t.Fatal(runErr)
 						}
 						if diff := cmp.Diff(
 							test.wantSources,
@@ -1454,8 +1454,8 @@ type updateRecord struct {
 }
 
 type updateLock struct {
-	Version int                     `json:"version"`
 	Skills  map[string]updateRecord `json:"skills"`
+	Version int                     `json:"version"`
 }
 
 func newUpdateFixture(t *testing.T) *updateFixture {
@@ -1636,10 +1636,10 @@ func readUpdateLock(t *testing.T, filesystem afero.Fs, filename string) updateLo
 }
 
 type updateSourceClient struct {
+	cleanupErr error
 	files      fstest.MapFS
 	fetches    []string
 	cleanups   int
-	cleanupErr error
 }
 
 func (client *updateSourceClient) Fetch(_ context.Context, locator string) (source.Checkout, error) {

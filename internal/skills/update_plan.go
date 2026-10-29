@@ -26,15 +26,15 @@ type scopeUpdate struct {
 }
 
 type skillUpdate struct {
-	name   string
-	record lockedSkill
 	source *updateSource
+	record lockedSkill
+	name   string
 }
 
 type updateSource struct {
-	locator  source.GitLocator
 	paths    map[string]struct{}
 	snapshot *updateSnapshot
+	locator  source.GitLocator
 }
 
 type updateSnapshot struct {
@@ -43,9 +43,9 @@ type updateSnapshot struct {
 }
 
 type updateBundle struct {
-	skill   Skill
-	payload []bundlefs.Entry
 	err     error
+	payload []bundlefs.Entry
+	skill   Skill
 }
 
 // planUpdates checks every selected installation before any source is acquired.
@@ -68,15 +68,15 @@ func (m *Manager) planUpdates(ctx context.Context, scopes []scopeUpdate, overrid
 				}
 				continue
 			}
-			record, locator, err := scope.lock.record(name)
-			if err != nil {
+			record, locator, recordErr := scope.lock.record(name)
+			if recordErr != nil {
 				if err := writeWarning(
 					streams,
 					fmt.Sprintf(
 						"cannot update skill %q in %s: %v",
 						name,
 						scope.target.directory,
-						err,
+						recordErr,
 					),
 				); err != nil {
 					return err

@@ -49,7 +49,7 @@ func TestSkillTracking(t *testing.T) {
 				if test.format == skills.GlobalLock {
 					version = 3
 				}
-				initial, err := json.Marshal(map[string]any{
+				initial, marshalErr := json.Marshal(map[string]any{
 					"version": version,
 					"skills": map[string]any{
 						"foreign": map[string]any{
@@ -61,8 +61,8 @@ func TestSkillTracking(t *testing.T) {
 						"claude-code",
 					},
 				})
-				if err != nil {
-					t.Fatal(err)
+				if marshalErr != nil {
+					t.Fatal(marshalErr)
 				}
 				if test.corrupt {
 					initial = []byte("conflict markers")
@@ -105,7 +105,7 @@ func TestSkillTracking(t *testing.T) {
 					Path:   filename,
 					Format: test.format,
 				}
-				installed, err := manager.Install(
+				installed, installErr := manager.Install(
 					t.Context(),
 					skills.InstallRequest{
 						Source:    managerSource,
@@ -114,11 +114,11 @@ func TestSkillTracking(t *testing.T) {
 					},
 				)
 				if test.corrupt || test.publishFailure {
-					if err == nil || len(installed) != 0 {
+					if installErr == nil || len(installed) != 0 {
 						t.Fatalf(
 							"Install = %v, %v; want uncommitted error",
 							installed,
-							err,
+							installErr,
 						)
 					}
 					if diff := cmp.Diff(
@@ -132,15 +132,15 @@ func TestSkillTracking(t *testing.T) {
 					}
 					return
 				}
-				if err != nil {
-					t.Fatal(err)
+				if installErr != nil {
+					t.Fatal(installErr)
 				}
-				data, err := afero.ReadFile(
+				data, readErr := afero.ReadFile(
 					filesystem,
 					filename,
 				)
-				if err != nil {
-					t.Fatal(err)
+				if readErr != nil {
+					t.Fatal(readErr)
 				}
 				var document struct {
 					Skills map[string]map[string]any `json:"skills"`
@@ -171,12 +171,12 @@ func TestSkillTracking(t *testing.T) {
 				); err != nil {
 					t.Fatal(err)
 				}
-				data, err = afero.ReadFile(
+				data, readErr = afero.ReadFile(
 					filesystem,
 					filename,
 				)
-				if err != nil {
-					t.Fatal(err)
+				if readErr != nil {
+					t.Fatal(readErr)
 				}
 				var want, got any
 				if err := json.Unmarshal(

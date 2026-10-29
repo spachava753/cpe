@@ -106,9 +106,9 @@ func TestFolderHash(t *testing.T) {
 	)
 	for _, test := range []struct {
 		name    string
+		want    string
 		payload []bundlefs.Entry
 		other   []bundlefs.Entry
-		want    string
 	}{
 		{
 			name:    "byte ordering distinguishes case and canonical-equivalent paths",

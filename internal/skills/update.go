@@ -44,13 +44,13 @@ func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams c
 	}
 	var scopes []scopeUpdate
 	for _, scope := range resolved {
-		installed, err := manager.installedNames(
+		installed, listErr := manager.installedNames(
 			ctx,
 			scope.directory,
 			names,
 		)
-		if err != nil {
-			return err
+		if listErr != nil {
+			return listErr
 		}
 		scopes = append(
 			scopes,
@@ -74,14 +74,14 @@ func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams c
 		for _, name := range names {
 			switch found := matches[name]; len(found) {
 			case 0:
-				if err := writeWarning(
+				if warningErr := writeWarning(
 					streams,
 					fmt.Sprintf(
 						"skill %q does not exist in the selected scope",
 						name,
 					),
-				); err != nil {
-					return err
+				); warningErr != nil {
+					return warningErr
 				}
 			case 1:
 				scopes[found[0]].names = append(
@@ -89,14 +89,14 @@ func Update(ctx context.Context, manager *Manager, opts UpdateOptions, streams c
 					name,
 				)
 			default:
-				if err := writeWarning(
+				if warningErr := writeWarning(
 					streams,
 					fmt.Sprintf(
 						"skill %q exists in project and global scope; provide an explicit --scope",
 						name,
 					),
-				); err != nil {
-					return err
+				); warningErr != nil {
+					return warningErr
 				}
 			}
 		}

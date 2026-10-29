@@ -11,10 +11,10 @@ func TestReadLock(t *testing.T) {
 	for _, test := range []struct {
 		name      string
 		content   string
+		wantError string
 		format    LockFormat
 		exists    bool
 		readOnly  bool
-		wantError string
 	}{
 		{
 			name:   "missing project lock",

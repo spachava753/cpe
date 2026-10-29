@@ -37,9 +37,9 @@ type LockFile struct {
 // Keep records opaque until an update selects them. Unrelated entries and tool
 // preferences survive writes, including source types that CPE cannot acquire.
 type skillLock struct {
-	file   LockFile
 	fields map[string]json.RawMessage
 	skills map[string]json.RawMessage
+	file   LockFile
 	dirty  bool
 }
 
@@ -290,11 +290,11 @@ func (lock *skillLock) put(name string, record lockedSkill) error {
 		)
 	}
 	var updated map[string]json.RawMessage
-	if err := json.Unmarshal(
+	if decodeErr := json.Unmarshal(
 		data,
 		&updated,
-	); err != nil {
-		return err
+	); decodeErr != nil {
+		return decodeErr
 	}
 	maps.Copy(
 		fields,
