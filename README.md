@@ -6,6 +6,22 @@ CPE is a coding agent served over the Agent Client Protocol (ACP), built with
 `bash` for commands, and `starlark_exec` for exact file edits, MCP tool
 orchestration, and viewing media.
 
+## Installation
+
+On Linux or macOS:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/spachava753/cpe/main/install.sh | sh
+```
+
+The installer puts `cpe` in `~/.local/bin`; make sure that directory is on your
+`PATH`. You can also download a binary from
+[GitHub releases](https://github.com/spachava753/cpe/releases).
+Git must be on your `PATH` to install or update bundles from repositories.
+
+Use `cpe --help` to see commands and `cpe skills install --help`, for example,
+to see a command's options.
+
 ## Understanding the agent
 
 The [behavior guides](docs/README.md) explain sessions and turns, persistence,
@@ -360,60 +376,47 @@ If credentials cannot be renewed and saved, the request fails. Revoked refresh c
 
 ## Skills
 
-Install skills from a Git repository and update them from their recorded source:
+Install skills from a GitHub repository using `owner/repo`, or use a full Git URL:
 
 ```sh
 cpe skills install mattpocock/skills --skill writing-great-skills --scope project
-cpe skills update writing-great-skills --scope project
-cpe skills update writing-great-skills --scope project --override
-cpe skills update
 cpe skills list
+cpe skills update writing-great-skills --scope project
 cpe skills remove writing-great-skills --scope project
 ```
 
-Project skills live in `./.agents/skills` and are tracked in `./skills-lock.json`
-(version 1). Global skills live in `~/.agents/skills`; their lock is
-`$XDG_STATE_HOME/skills/.skill-lock.json` when `XDG_STATE_HOME` is set, otherwise
-`~/.agents/.skill-lock.json` (version 3). These are the lock formats used by
-[the skills CLI](https://github.com/vercel-labs/skills). In both formats, CPE hashes
-file paths and contents with Go's SHA-256, sorting relative paths by their raw
-bytes and prefixing each path and content value with its byte length. Empty
-directories and file permissions do not affect the hash. These fingerprints are
-not compatible with the skills CLI's locale-based content hashes or Git tree IDs.
-Switching tools can therefore require a reinstall and a rewritten hash.
-With `--dir`, CPE uses that exact skill directory and keeps a `skills-lock.json`
-inside it, separate from the default project inventory.
+Install requires `--scope project` or `--scope global`. Project skills go in
+`./.agents/skills`; global skills go in `~/.agents/skills`. With project scope,
+`--dir PATH` selects an exact custom directory instead.
 
-`update` without names updates both scopes; `--scope` restricts it to one.
-A named skill installed in both scopes is skipped with a warning unless a scope
-is explicit. Missing and untracked skills are also warned about and skipped.
-CPE updates GitHub and Git sources at their default checkout; records using other
-source types or explicit refs are skipped. Before fetching, CPE hashes each
-selected installation and compares it with its lock record. Mismatches are warned
-about and skipped; use `--override` to replace local edits or adopt an incompatible
-upstream hash. Unverifiable installed contents also require `--override`, which
-does not bypass destination safety or provenance checks. Eligible skills from the
-same Git locator share one fetched source snapshot, including across scopes.
-Updates replace complete bundles and remove obsolete files even when the source
-has not changed. Installed contents are checked again after fetching and before
-publication; a change detected during publication aborts and rolls back that
-scope. CPE does not yet use remote Git tree IDs to avoid fetching.
+Without `--skill` or `--path`, install includes all skills found in the repository.
+Repeat `--skill NAME` to select skills by name, or use `--path DIR` for one exact
+source-relative skill directory. These options cannot be combined. Existing
+bundles are preserved unless `--override` is set.
 
-Listing includes untracked skills. Removal also works for untracked skills and
-removes the lock record when one exists. If project and global installations share
-one directory, such as when running from HOME, removal requires an explicit scope;
-updates still inspect both logical inventories, but warn and skip bundles tracked
-in both until an explicit scope is selected. A malformed or unsupported lock file
-blocks changes to its inventory rather than being discarded. A lock changed by
-another writer during acquisition causes the operation to abort; retry to use its
-new contents. Native operations retain a `<lock-file>.cpe-lock` sidecar to
-coordinate concurrent CPE commands; do not commit these sidecars. If a consistent
-lock snapshot cannot be acquired, the operation aborts rather than treating skills
-as untracked. Read-only inventories without an existing sidecar require a writable
-lock directory to establish that guard. Bundle changes and lock changes are published together with rollback on failure; an error reports
-any committed results or recovery files left by failed cleanup or rollback.
-Results are JSON arrays when stdout is redirected; `--json` forces JSON on a
-terminal. Warnings go to stderr.
+Run `cpe skills update` to update all installed, tracked skills in both scopes.
+Use `--scope` to restrict updates to one scope. When a named skill exists in both
+scopes, specify its scope to update or remove it. Missing, untracked, and
+unsupported skills are skipped during updates with a warning. Updates follow the
+recorded Git repository's default branch.
+
+Update skips bundles with modified or unverifiable contents. Use `--override`
+only when you want to replace them from the source:
+
+```sh
+cpe skills update writing-great-skills --scope project --override
+```
+
+Replacement removes local changes and obsolete files. Skills installed by another
+tool may also need `--override` on their first CPE update. Listing and removal work
+for manually copied skills too.
+
+CPE records project skill sources in `skills-lock.json`, or inside the selected
+custom directory when using `--dir`. Keep this file for updates. Do not commit
+`*.cpe-lock` files created alongside it.
+
+Skill commands print tables on a terminal and JSON arrays when stdout is
+redirected. Use `--json` to request JSON on a terminal. Warnings go to stderr.
 
 ## Agent Plugins
 
