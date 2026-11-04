@@ -27,11 +27,15 @@ reasoning metadata. Incomplete model responses and their live abort/retry
 messages and notices are not saved. They are excluded from future model context
 and transcript replay to the client. See [Failures and cancellation](failures.md).
 
-The default checkpoint directory is `~/.cpe/sessions`. The `--sessions` launch
-option selects another absolute directory. Checkpoints are saved with
-private permissions on Unix. On Windows, protect the directory with filesystem
-ACLs. The contents can be as sensitive as the source code, screenshots, and
-credentials encountered during a task. Compaction leaves those contents on disk.
+Saved sessions live in one SQLite database, `~/.cpe/sessions.db` by default.
+The `--sessions` launch option selects another absolute file path. On Unix,
+CPE makes the database file private when it opens it, including an existing
+file, and its rollback journal inherits that mode. On Windows, protect the file
+with filesystem ACLs. The contents can be as sensitive
+as the source code, screenshots, and credentials encountered during a task.
+Compaction leaves those contents on disk. Deleting a session, or replacing part
+of its transcript, overwrites the removed data inside the database file rather
+than leaving it in free space.
 
 ## Checkpoints during a turn
 
@@ -54,14 +58,16 @@ what happened:
  save final state at turn end
 ```
 
-A checkpoint write replaces the previous checkpoint atomically. If a required
+Each checkpoint is one database transaction, synced to disk before CPE
+continues. It replaces the saved session completely or not at all; only the
+messages that changed since the previous checkpoint are written. If a required
 save fails, the turn stops; turn-end cleanup still attempts to save known
 results. This reduces the chance of further effects accumulating without a
 saved record of them.
 
 The checkpoint and an external action cannot be saved as one transaction. There
 is always a possible interval between a command changing a file or a remote
-service and CPE saving its result. Atomic checkpoint writes protect the saved
+service and CPE saving its result. Transactional checkpoints protect the saved
 record from partial replacement; they cannot make an external action and its
 record inseparable.
 
@@ -70,9 +76,11 @@ uncertain outcome. CPE never reruns it automatically. Check the affected state
 before deciding whether to repeat it. A pushed branch or submitted remote job,
 for example, may already exist even if its success message was lost.
 
-Session storage supports concurrent sessions in a process. Avoid opening and
-writing the same saved session from several CPE processes; checkpoints provide
-no cross-process coordination for that use.
+Several CPE processes can share the database, each working on its own sessions;
+a process waits while another commits a checkpoint. Avoid opening and writing
+the same saved session from several processes at once: the database stays
+consistent, but each checkpoint replaces the session, so the last writer's
+transcript wins.
 
 ## Keeping data across scripts
 

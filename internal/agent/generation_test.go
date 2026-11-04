@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"iter"
@@ -153,18 +154,25 @@ func TestResponseRecovery(t *testing.T) {
 		t.Run(
 			test.name,
 			func(t *testing.T) {
-				directory := t.TempDir()
-				history, storeErr := conversation.NewStore(directory)
-				if storeErr != nil {
-					t.Fatal(storeErr)
-				}
+				path := filepath.Join(
+					t.TempDir(),
+					"sessions.db",
+				)
+				history := testHistory(
+					t,
+					path,
+				)
 				var id acp.SessionId
 				var checkpoint []byte
 				check := func(request gai.GenerationRequest) error {
-					data, err := os.ReadFile(filepath.Join(
-						directory,
-						string(id)+".json",
-					))
+					record, err := history.Load(
+						t.Context(),
+						conversation.ID(id),
+					)
+					if err != nil {
+						return err
+					}
+					data, err := json.Marshal(record)
 					if err != nil {
 						return err
 					}
@@ -279,7 +287,7 @@ func TestResponseRecovery(t *testing.T) {
 					t,
 					fixture.client,
 				)
-				_, storeErr = fixture.client.Prompt(
+				_, promptErr := fixture.client.Prompt(
 					t.Context(),
 					&acp.PromptRequest{
 						SessionID: id,
@@ -288,10 +296,10 @@ func TestResponseRecovery(t *testing.T) {
 						},
 					},
 				)
-				if (storeErr != nil) != test.wantError {
+				if (promptErr != nil) != test.wantError {
 					t.Fatalf(
 						"prompt: %v",
-						storeErr,
+						promptErr,
 					)
 				}
 				if len(requests()) != test.wantCalls {
@@ -325,10 +333,8 @@ func TestResponseRecovery(t *testing.T) {
 						record.Dialog,
 					)
 				}
-				data, storeErr := os.ReadFile(filepath.Join(
-					directory,
-					string(id)+".json",
-				))
+				// Secure deletion means discarded text cannot linger in free pages.
+				data, storeErr := os.ReadFile(path)
 				if storeErr != nil {
 					t.Fatal(storeErr)
 				}

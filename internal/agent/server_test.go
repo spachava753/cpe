@@ -71,6 +71,24 @@ type agentFixture struct {
 	notifications  *testClient
 }
 
+// testHistory opens a session store that is closed when the test ends.
+func testHistory(t *testing.T, path string) *conversation.SQLiteStore {
+	t.Helper()
+	store, err := conversation.NewStore(
+		t.Context(),
+		path,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	return store
+}
+
 func serverFixture(t *testing.T, generator GeneratorFactory, configure ...func(*Config, *Dependencies, *acp.InitializeRequest)) agentFixture {
 	t.Helper()
 	filesystem := afero.NewMemMapFs()
@@ -80,10 +98,13 @@ func serverFixture(t *testing.T, generator GeneratorFactory, configure ...func(*
 	); err != nil {
 		t.Fatal(err)
 	}
-	store, err := conversation.NewStore(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := testHistory(
+		t,
+		filepath.Join(
+			t.TempDir(),
+			"sessions.db",
+		),
+	)
 	lastModel, err := models.NewLastUsed(filepath.Join(
 		t.TempDir(),
 		"last-model.json",
