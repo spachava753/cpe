@@ -1,7 +1,6 @@
 package conversation
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/spachava753/gai"
@@ -56,47 +55,34 @@ func TestCompactionCheckpointBoundary(t *testing.T) {
 		t.Run(
 			test.name,
 			func(t *testing.T) {
-				stored := storedRecord{
+				record := Record{
 					Compaction: &Compaction{
 						Summary:       test.summary,
 						AfterMessages: test.boundary,
 					},
-				}
-				for _, message := range []gai.Message{
-					{
-						Role: gai.User,
-						Blocks: []gai.Block{
-							gai.TextBlock("work"),
+					Dialog: gai.Dialog{
+						{
+							Role: gai.User,
+							Blocks: []gai.Block{
+								gai.TextBlock("work"),
+							},
 						},
-					},
-					{
-						Role: gai.Assistant,
-						Blocks: []gai.Block{
-							call,
+						{
+							Role: gai.Assistant,
+							Blocks: []gai.Block{
+								call,
+							},
 						},
+						gai.ToolResultMessage(
+							"effect",
+							gai.TextBlock("/work"),
+						),
 					},
-					gai.ToolResultMessage(
-						"effect",
-						gai.TextBlock("/work"),
-					),
-				} {
-					item, err := storeMessage(message)
-					if err != nil {
-						t.Fatal(err)
-					}
-					stored.Dialog = append(
-						stored.Dialog,
-						item,
-					)
 				}
-				data, err := json.Marshal(stored)
-				if err != nil {
-					t.Fatal(err)
-				}
-				_, err = decodeRecord(data)
+				err := record.Validate()
 				if (err != nil) != test.wantError {
 					t.Fatalf(
-						"decode checkpoint: %v",
+						"validate checkpoint: %v",
 						err,
 					)
 				}

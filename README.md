@@ -256,16 +256,17 @@ writes the summary using the context already available to it.
 
 ### Saved sessions
 
-JSON checkpoints under `~/.cpe/sessions` preserve the conversation and selected
-model settings. `--sessions` selects another absolute directory. Files are written
-atomically with private permissions on Unix; they can contain prompts, tool
-output, images, and provider reasoning metadata, so treat them as sensitive.
+A SQLite database at `~/.cpe/sessions.db` preserves the conversation and
+selected model settings. `--sessions` selects another absolute file path.
+Checkpoints are transactional and the database is private on Unix; it can
+contain prompts, tool output, images, and provider reasoning metadata, so treat
+it as sensitive.
 
 ACP clients can list, load, resume, fork, close, and delete sessions. Closing keeps
 the checkpoint; deleting removes it. Loading, resuming, or forking reconnects MCP
 servers and lists their tools again. Checkpoints are not VM snapshots, side
 effects are never replayed, and this format is not ATIF.
-On Windows, protect the checkpoint directory with filesystem ACLs.
+On Windows, protect the database file with filesystem ACLs.
 
 Incomplete model responses are not saved or supplied to future model requests.
 In a live turn, CPE sends an assistant-message update explaining the interruption

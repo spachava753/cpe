@@ -64,7 +64,7 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 			if historyPath == "" {
 				historyPath = filepath.Join(
 					filepath.Dir(authOptions.Path),
-					"sessions",
+					"sessions.db",
 				)
 			}
 			skillPaths, err = discoveryRoots(
@@ -129,10 +129,14 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 			if err != nil {
 				return err
 			}
-			history, err := conversation.NewStore(historyPath)
+			history, err := conversation.NewStore(
+				command.Context(),
+				historyPath,
+			)
 			if err != nil {
 				return err
 			}
+			defer history.Close()
 			providerSet, err := providers.New(
 				store,
 				authOptions.Path,
@@ -191,7 +195,7 @@ func acpCmdWithServe(root *cobra.Command, filesystem afero.Fs, store *auth.Store
 		&historyPath,
 		"sessions",
 		"",
-		"Absolute checkpoint directory (default ~/.cpe/sessions)",
+		"Absolute session database file (default ~/.cpe/sessions.db)",
 	)
 	command.Flags().DurationVar(
 		&timeout,

@@ -339,9 +339,15 @@ func TestACPCommand(t *testing.T) {
 						return nil
 					},
 				)
+				// The session database lives on the real filesystem.
 				root.SetArgs(append(
 					[]string{
 						"acp",
+						"--sessions",
+						filepath.Join(
+							t.TempDir(),
+							"sessions.db",
+						),
 					},
 					test.args...,
 				))

@@ -25,6 +25,7 @@
 !AGENTS.md
 !/internal/cli/system_prompt.md
 !/internal/cli/compaction_prompt.md
+!/internal/conversation/schema.sql
 !/install.sh
 
 !skills/

@@ -92,7 +92,7 @@ collects the exact timeouts, retry budgets, output limits, and defaults.
 | Resume | Opens a saved session with fresh resources, leaving transcript display to the client's existing state. |
 | Fork | Copies an open, idle session into a new session with its own identifier and resources. |
 | Delete | Closes live resources if necessary, then removes the saved session. Files the session's scripts wrote are not removed. |
-| List | Returns up to **100 saved sessions per page**, including sessions with no live resources. The client can request the next page with the returned cursor. |
+| List | Returns up to **100 saved sessions per page**, most recently updated first, including sessions with no live resources. The client can request the next page with the returned cursor. A session updated while the client pages moves to the front and can be missed by later pages. |
 
 Loading and resuming require the session to be closed in that connection.
 Changing the model or reasoning setting also requires an idle session.

@@ -12,6 +12,7 @@ require (
 	github.com/google/jsonschema-go v0.4.3
 	github.com/goyek/goyek/v2 v2.3.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
+	github.com/ncruces/go-sqlite3 v0.36.0
 	github.com/spachava753/acp-sdk v0.5.0
 	github.com/spachava753/starlarkx v0.0.0-20260911120245-40a94bc8c78e
 	golang.org/x/net v0.61.0
@@ -28,6 +29,8 @@ require (
 	github.com/charmbracelet/x/exp/strings v0.0.0-20240722160745-212f7b056ed0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
+	github.com/ncruces/go-sqlite3-wasm/v6 v6.4.35401 // indirect
+	github.com/ncruces/julianday v1.0.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
