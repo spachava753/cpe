@@ -279,15 +279,18 @@ Restoring a saved session never automatically restarts an aborted response.
 CPE uses the saved conversation ID as a stable `prompt_cache_key` for Responses
 and Chat Completions adapters that support it. Turns, tool rounds, retries,
 loading, and resuming reuse that key; forks and new sessions use their own IDs.
-The key helps route requests to cached prefixes; it does not itself enable caching.
+On those adapters the key helps route requests to cached prefixes; it does not
+itself enable caching.
 
-Native Anthropic requests use GAI's system and multi-turn caching helpers to add
-`ephemeral` cache controls to the system instructions and latest conversation
-content block. Parallel tool results are ordered consistently so unchanged
-history remains a stable cache prefix. CPE leaves retention at provider defaults
-and does not select OpenAI's explicit breakpoint mode. Cache hits still depend
-on matching prompt prefixes and provider requirements. Provider-reported cache
-reads and writes are included in usage reporting.
+Native Anthropic requests enable automatic prompt caching with a top-level
+`ephemeral` cache control; the conversation ID is not sent and does not partition
+the cache. The provider moves that breakpoint to the latest cacheable block as
+the conversation grows. CPE also adds an `ephemeral` cache control to the system
+instructions. Parallel tool results are ordered consistently so unchanged history
+remains a stable cache prefix. CPE leaves retention at provider defaults and does
+not select OpenAI's explicit breakpoint mode. Cache hits still depend on matching
+prompt prefixes and provider requirements. Provider-reported cache reads and
+writes are included in usage reporting.
 
 ### Usage reporting
 

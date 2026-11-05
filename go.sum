@@ -695,8 +695,8 @@ github.com/sourcegraph/go-diff v0.9.0 h1:7xcVsayWHhvxZGrqt1o89vvBApCa4nyCgO7tNxD
 github.com/sourcegraph/go-diff v0.9.0/go.mod h1:hWlcO7Al+UZStZAP8rBumHpCK5ZHQ5BXsMls8p4+F5E=
 github.com/spachava753/acp-sdk v0.5.0 h1:RUwWcJO8e+8Iix0PRwjsjt1Uj0sN8W+xA1SvKer7yG4=
 github.com/spachava753/acp-sdk v0.5.0/go.mod h1:h0vk6zWhLvg2LMBmbLJXAQbsUhzSMgpwlXi6wOWmi90=
-github.com/spachava753/gai v0.42.1-0.20261024183645-96f3ccba886d h1:tlHLOCcZEK29u8RPR9bKZaLDHfdvL/BslmALzI7HOHY=
-github.com/spachava753/gai v0.42.1-0.20261024183645-96f3ccba886d/go.mod h1:4b5/BgRJ6mA40uY2Ljs01mGaBBwM9pLyOh0R/GWKLaQ=
+github.com/spachava753/gai v0.42.1-0.20261025015851-14b1f3ba25ac h1:FtH/xMo0NY13Ra35+JAzeE0rtAs1fohI/VCERfwP2rs=
+github.com/spachava753/gai v0.42.1-0.20261025015851-14b1f3ba25ac/go.mod h1:4b5/BgRJ6mA40uY2Ljs01mGaBBwM9pLyOh0R/GWKLaQ=
 github.com/spachava753/starlarkx v0.0.0-20260911120245-40a94bc8c78e h1:MAzQiEpR+N7aue36mI8PabKYSQSanQPvFKZ5jO3AWaM=
 github.com/spachava753/starlarkx v0.0.0-20260911120245-40a94bc8c78e/go.mod h1:mQB4STwTJ4DdqhXA0HGMKWDA01F1JbfMuUEXuB9Tc9I=
 github.com/spf13/afero v1.15.0 h1:b/YBCLWAJdFWJTN9cLhiXXcD7mzKn9Dm86dNnfyQw1I=

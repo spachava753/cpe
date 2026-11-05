@@ -225,12 +225,12 @@ func (p *Providers) Generator(ctx context.Context, sessionID conversation.ID, mo
 			anthropicoption.WithAPIKey(key),
 			anthropicoption.WithMaxRetries(0),
 		)
+		// PromptCacheKey makes GAI enable automatic caching for the conversation tail.
 		generator = gai.NewAnthropicGenerator(gai.NewAnthropicServiceWrapper(
 			&client.Messages,
 			summarizeAnthropicThinking,
 			stabilizeAnthropicToolResults,
 			gai.EnableSystemCaching,
-			gai.EnableMultiTurnCaching,
 		))
 	case models.Gemini:
 		if key == "" {

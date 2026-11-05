@@ -239,7 +239,7 @@ require (
 	github.com/sivchari/containedctx v1.0.3 // indirect
 	github.com/sonatard/noctx v0.5.1 // indirect
 	github.com/sourcegraph/go-diff v0.9.0 // indirect
-	github.com/spachava753/gai v0.42.1-0.20261024183645-96f3ccba886d
+	github.com/spachava753/gai v0.42.1-0.20261025015851-14b1f3ba25ac
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
