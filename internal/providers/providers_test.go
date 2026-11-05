@@ -559,7 +559,7 @@ func TestProviders(t *testing.T) {
 											continue
 										}
 										found = true
-										if len(content) != 2 || content[0].ToolUseID != "first" || content[1].ToolUseID != "second" {
+										if len(content) != 2 || content[0].ToolUseID != "second" || content[1].ToolUseID != "first" {
 											t.Errorf(
 												"unstable tool result order: %#v",
 												content,
@@ -670,9 +670,10 @@ func TestProviders(t *testing.T) {
 				}
 				if test.toolResults {
 					var calls []gai.Block
+					// Out of ID order, so the request must keep dialog order rather than sort.
 					for _, id := range []string{
-						"first",
 						"second",
+						"first",
 					} {
 						call, err := gai.ToolCallBlock(
 							id,
@@ -694,12 +695,12 @@ func TestProviders(t *testing.T) {
 							Blocks: calls,
 						},
 						gai.ToolResultMessage(
-							"first",
-							gai.TextBlock("first result"),
-						),
-						gai.ToolResultMessage(
 							"second",
 							gai.TextBlock("second result"),
+						),
+						gai.ToolResultMessage(
+							"first",
+							gai.TextBlock("first result"),
 						),
 					)
 				}

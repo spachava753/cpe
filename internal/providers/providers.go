@@ -1,12 +1,10 @@
 package providers
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 	"sync"
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
@@ -229,7 +227,6 @@ func (p *Providers) Generator(ctx context.Context, sessionID conversation.ID, mo
 		generator = gai.NewAnthropicGenerator(gai.NewAnthropicServiceWrapper(
 			&client.Messages,
 			summarizeAnthropicThinking,
-			stabilizeAnthropicToolResults,
 			gai.EnableSystemCaching,
 		))
 	case models.Gemini:
@@ -263,33 +260,6 @@ func (p *Providers) Generator(ctx context.Context, sessionID conversation.ID, mo
 func summarizeAnthropicThinking(_ context.Context, params *anthropic.MessageNewParams) error {
 	if params.Thinking.OfAdaptive != nil {
 		params.Thinking.OfAdaptive.Display = anthropic.ThinkingConfigAdaptiveDisplaySummarized
-	}
-	return nil
-}
-
-// GAI groups tool results through a map; keep serialized cache prefixes stable.
-func stabilizeAnthropicToolResults(_ context.Context, params *anthropic.MessageNewParams) error {
-	for _, message := range params.Messages {
-		for start := 0; start < len(message.Content); {
-			if message.Content[start].OfToolResult == nil {
-				start++
-				continue
-			}
-			end := start + 1
-			for end < len(message.Content) && message.Content[end].OfToolResult != nil {
-				end++
-			}
-			slices.SortFunc(
-				message.Content[start:end],
-				func(a, b anthropic.ContentBlockParamUnion) int {
-					return cmp.Compare(
-						a.OfToolResult.ToolUseID,
-						b.OfToolResult.ToolUseID,
-					)
-				},
-			)
-			start = end
-		}
 	}
 	return nil
 }
