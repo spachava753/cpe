@@ -431,8 +431,9 @@ func TestProviders(t *testing.T) {
 								OutputConfig struct {
 									Effort *string `json:"effort"`
 								} `json:"output_config"`
-								PromptCacheKey string       `json:"prompt_cache_key"`
-								System         []cacheBlock `json:"system"`
+								PromptCacheKey string            `json:"prompt_cache_key"`
+								CacheControl   map[string]string `json:"cache_control"`
+								System         []cacheBlock      `json:"system"`
 								Messages       []struct {
 									Content json.RawMessage `json:"content"`
 								} `json:"messages"`
@@ -500,6 +501,19 @@ func TestProviders(t *testing.T) {
 								)
 							}
 							if test.api == models.Anthropic {
+								// The cache key enables automatic caching; its value is never sent.
+								if body.CacheControl["type"] != "ephemeral" || body.CacheControl["ttl"] != "" {
+									t.Errorf(
+										"automatic cache control: %#v",
+										body.CacheControl,
+									)
+								}
+								if body.PromptCacheKey != "" {
+									t.Errorf(
+										"prompt cache key sent to Anthropic: %q",
+										body.PromptCacheKey,
+									)
+								}
 								if len(body.System) != 1 || body.System[0].CacheControl["type"] != "ephemeral" || body.System[0].CacheControl["ttl"] != "" {
 									t.Errorf(
 										"system cache control: %#v",
@@ -509,24 +523,26 @@ func TestProviders(t *testing.T) {
 								if len(body.Messages) == 0 {
 									t.Error("missing conversation messages")
 								} else {
-									var content []cacheBlock
-									if err := json.Unmarshal(
-										body.Messages[len(body.Messages)-1].Content,
-										&content,
-									); err != nil {
-										t.Error(err)
-									}
-									if len(content) == 0 || content[len(content)-1].CacheControl["type"] != "ephemeral" || content[len(content)-1].CacheControl["ttl"] != "" {
-										t.Errorf(
-											"conversation cache control: %#v",
-											content,
-										)
-									}
-									if len(content) == 2 && content[0].Type == "tool_result" && content[0].CacheControl != nil {
-										t.Errorf(
-											"cache breakpoint must follow all parallel tool results: %#v",
-											content,
-										)
+									for _, message := range body.Messages {
+										var content []cacheBlock
+										if err := json.Unmarshal(
+											message.Content,
+											&content,
+										); err != nil {
+											t.Error(err)
+										}
+										if len(content) == 0 {
+											t.Error("empty conversation message")
+										}
+										// Automatic caching places the tail breakpoint; an explicit one is redundant.
+										for _, block := range content {
+											if block.CacheControl != nil {
+												t.Errorf(
+													"explicit conversation cache control: %#v",
+													content,
+												)
+											}
+										}
 									}
 								}
 								if test.toolResults {
@@ -548,10 +564,6 @@ func TestProviders(t *testing.T) {
 												"unstable tool result order: %#v",
 												content,
 											)
-										}
-										// Cache directives move to the newest block as the conversation grows.
-										for i := range content {
-											content[i].CacheControl = nil
 										}
 										prefix, err := json.Marshal(content)
 										if err != nil {
