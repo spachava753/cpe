@@ -26,15 +26,17 @@ import (
 
 const defaultReasoning = "default"
 
-// Initialize negotiates the implemented ACP capabilities.
+// Initialize negotiates the implemented ACP capabilities. CPE implements only
+// protocol version 1, so it answers every requested version with 1 and leaves
+// the client to decide whether it can continue.
 func (s *Server) Initialize(_ context.Context, request *acp.InitializeRequest) (*acp.InitializeResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.initialized || s.closed {
 		return nil, errors.New("connection already initialized or closed")
 	}
-	if request == nil || request.ProtocolVersion != 1 {
-		return nil, errors.New("only ACP protocol version 1 is supported")
+	if request == nil {
+		return nil, errors.New("initialize request is required")
 	}
 	s.initialized = true
 	if caps := request.ClientCapabilities; caps != nil && caps.Session != nil {

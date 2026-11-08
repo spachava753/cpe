@@ -323,6 +323,48 @@ func lastToolOutput(record conversation.Record) string {
 	return ""
 }
 
+func TestInitializeVersionNegotiation(t *testing.T) {
+	for _, requested := range []acp.ProtocolVersion{
+		0,
+		1,
+		2,
+		65535,
+	} {
+		t.Run(
+			fmt.Sprintf(
+				"requested %d",
+				requested,
+			),
+			func(t *testing.T) {
+				server := &Server{}
+				response, err := server.Initialize(
+					t.Context(),
+					&acp.InitializeRequest{
+						ProtocolVersion: requested,
+					},
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if response.ProtocolVersion != 1 {
+					t.Fatalf(
+						"negotiated version %d, want 1",
+						response.ProtocolVersion,
+					)
+				}
+				if _, err := server.Initialize(
+					t.Context(),
+					&acp.InitializeRequest{
+						ProtocolVersion: 1,
+					},
+				); err == nil {
+					t.Fatal("second initialize succeeded")
+				}
+			},
+		)
+	}
+}
+
 func TestSessionConfigCategories(t *testing.T) {
 	for _, tc := range []struct {
 		id       acp.SessionConfigId
