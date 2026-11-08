@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -791,6 +792,210 @@ func TestProviders(t *testing.T) {
 				)
 				if providerErr != nil || remaining.OpenAI != nil || remaining.OpenCode != nil {
 					t.Fatal("logout did not clear local credentials")
+				}
+			},
+		)
+	}
+}
+
+func TestStreamingUsageCost(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		body      string
+		want      float64
+		api       models.API
+		wantError bool
+	}{
+		{
+			// An attempt that ends in an error was still billed.
+			name: "Anthropic output limit",
+			api:  models.Anthropic,
+			body: strings.Join(
+				[]string{
+					`event: message_start`,
+					`data: {"type":"message_start","message":{"id":"msg","type":"message","role":"assistant","model":"fixture","content":[],"usage":{"input_tokens":500000,"cache_read_input_tokens":400000,"cache_creation_input_tokens":100000,"output_tokens":1}}}`,
+					``,
+					`event: message_delta`,
+					`data: {"type":"message_delta","delta":{"stop_reason":"max_tokens","stop_sequence":null},"usage":{"output_tokens":100000}}`,
+					``,
+					``,
+				},
+				"\n",
+			),
+			want:      2.6,
+			wantError: true,
+		},
+		{
+			name: "Anthropic stream error",
+			api:  models.Anthropic,
+			body: strings.Join(
+				[]string{
+					`event: message_start`,
+					`data: {"type":"message_start","message":{"id":"msg","type":"message","role":"assistant","model":"fixture","content":[],"usage":{"input_tokens":500000,"cache_read_input_tokens":400000,"cache_creation_input_tokens":100000,"output_tokens":100000}}}`,
+					``,
+					`event: error`,
+					`data: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`,
+					``,
+					``,
+				},
+				"\n",
+			),
+			want:      2.6,
+			wantError: true,
+		},
+		{
+			name: "Gemini output limit",
+			api:  models.Gemini,
+			body: strings.Join(
+				[]string{
+					`data: {"candidates":[{"content":{"role":"model","parts":[{"text":"cut"}]},"finishReason":"MAX_TOKENS"}],"usageMetadata":{"promptTokenCount":1000000,"candidatesTokenCount":100000,"thoughtsTokenCount":900000,"totalTokenCount":2000000}}`,
+					``,
+					``,
+				},
+				"\n",
+			),
+			want:      12,
+			wantError: true,
+		},
+		{
+			// Input and cache counts arrive only on message_start.
+			name: "Anthropic delta reports only output",
+			api:  models.Anthropic,
+			body: strings.Join(
+				[]string{
+					`event: message_start`,
+					`data: {"type":"message_start","message":{"id":"msg","type":"message","role":"assistant","model":"fixture","content":[],"usage":{"input_tokens":500000,"cache_read_input_tokens":400000,"cache_creation_input_tokens":100000,"output_tokens":1}}}`,
+					``,
+					`event: message_delta`,
+					`data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":100000}}`,
+					``,
+					`event: message_stop`,
+					`data: {"type":"message_stop"}`,
+					``,
+					``,
+				},
+				"\n",
+			),
+			want: 2.6,
+		},
+		{
+			// Thinking is charged as output and earlier reports do not add up.
+			name: "Gemini thinking is output",
+			api:  models.Gemini,
+			body: strings.Join(
+				[]string{
+					`data: {"candidates":[{"content":{"role":"model","parts":[{"text":"partial"}]}}],"usageMetadata":{"promptTokenCount":1000000,"candidatesTokenCount":50000,"thoughtsTokenCount":900000,"totalTokenCount":1950000}}`,
+					``,
+					`data: {"candidates":[{"content":{"role":"model","parts":[{"text":"done"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1000000,"candidatesTokenCount":100000,"thoughtsTokenCount":900000,"totalTokenCount":2000000}}`,
+					``,
+					``,
+				},
+				"\n",
+			),
+			want: 12,
+		},
+	} {
+		t.Run(
+			test.name,
+			func(t *testing.T) {
+				base, err := url.Parse("https://proxy.invalid/")
+				if err != nil {
+					t.Fatal(err)
+				}
+				key := secrecy.NewSecretString([]byte("explicit-fixture"))
+				model := models.Model{
+					API:        test.api,
+					APIKey:     &key,
+					ID:         "fixture",
+					BaseURL:    *base,
+					MaxTokens:  100,
+					Input:      2,
+					Output:     10,
+					CacheRead:  0.5,
+					CacheWrite: 4,
+				}
+				client := &http.Client{
+					Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+						return &http.Response{
+							StatusCode: http.StatusOK,
+							Header: http.Header{
+								"Content-Type": {
+									"text/event-stream",
+								},
+							},
+							Body:    io.NopCloser(strings.NewReader(test.body)),
+							Request: request,
+						}, nil
+					}),
+				}
+				subscriptions, err := New(
+					auth.NewStore(afero.NewMemMapFs()),
+					"/auth.json",
+					client,
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(subscriptions.Close)
+				generator, options, err := subscriptions.Generator(
+					t.Context(),
+					"conversation-fixture",
+					model,
+					"",
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				stream, ok := generator.(gai.StreamingGenerator)
+				if !ok {
+					t.Fatal("generator does not stream")
+				}
+				metadata := make(gai.Metadata)
+				var streamErr error
+				for chunk := range stream.Stream(
+					t.Context(),
+					gai.GenerationRequest{
+						Model: "fixture",
+						Dialog: gai.Dialog{
+							{
+								Role: gai.User,
+								Blocks: []gai.Block{
+									gai.TextBlock("hello"),
+								},
+							},
+						},
+						Options: options,
+					},
+				) {
+					if chunk.Err != nil {
+						if !test.wantError {
+							t.Fatal(chunk.Err)
+						}
+						streamErr = chunk.Err
+						continue
+					}
+					if chunk.Block.BlockType == gai.MetadataBlockType {
+						decoder := json.NewDecoder(strings.NewReader(chunk.Block.Content.String()))
+						decoder.UseNumber()
+						if err = decoder.Decode(&metadata); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				if test.wantError && streamErr == nil {
+					t.Fatal("stream did not fail")
+				}
+				usage, err := conversation.ParseTokenUsage(metadata)
+				if err != nil {
+					t.Fatal(err)
+				}
+				cost := usage.Priced(model).Cost
+				if cost == nil || math.Abs(*cost-test.want) > 1e-9 {
+					t.Fatalf(
+						"cost: %v, usage: %#v",
+						cost,
+						metadata,
+					)
 				}
 			},
 		)

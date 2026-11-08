@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"iter"
+	"math"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -925,5 +926,230 @@ func TestContextBudgetToolResults(t *testing.T) {
 				}
 			},
 		)
+	}
+}
+
+func TestUsageCost(t *testing.T) {
+	metadata := func(input, output, cacheRead, cacheWrite int) gai.Metadata {
+		return gai.Metadata{
+			gai.UsageMetricInputTokens:      input,
+			gai.UsageMetricGenerationTokens: output,
+			gai.UsageMetricCacheReadTokens:  cacheRead,
+			gai.UsageMetricCacheWriteTokens: cacheWrite,
+		}
+	}
+	steps := []struct {
+		err      error
+		metadata gai.Metadata
+	}{
+		{
+			// An aborted attempt was still billed, so its reported usage counts.
+			metadata: metadata(
+				1_000_000,
+				0,
+				0,
+				0,
+			),
+			err: io.ErrUnexpectedEOF,
+		},
+		{
+			metadata: metadata(
+				1_000_000,
+				100_000,
+				400_000,
+				100_000,
+			),
+		},
+		{
+			metadata: metadata(
+				1_000_000,
+				1_000_000,
+				0,
+				0,
+			),
+		},
+		{
+			metadata: metadata(
+				1_000_000,
+				0,
+				0,
+				0,
+			),
+		},
+	}
+	var calls atomic.Int32
+	fixture := serverFixture(
+		t,
+		func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+			return generatorFunc(func(context.Context, gai.GenerationRequest) (gai.Response, error) {
+				step := steps[calls.Add(1)-1]
+				return usageResponse(step.metadata), step.err
+			}), nil, nil
+		},
+		func(config *Config, _ *Dependencies, _ *acp.InitializeRequest) {
+			priced := config.Models["one"]
+			priced.Limit = 10_000_000
+			priced.Input = 2
+			priced.Output = 10
+			priced.CacheRead = 0.5
+			priced.CacheWrite = 4
+			config.Models["one"] = priced
+			unpriced := config.Models["two"]
+			unpriced.Limit = 10_000_000
+			config.Models["two"] = unpriced
+		},
+	)
+	id := openFixtureSession(
+		t,
+		fixture.client,
+	)
+	costs := func() []*acp.Cost {
+		fixture.notifications.mu.Lock()
+		defer fixture.notifications.mu.Unlock()
+		var reported []*acp.Cost
+		for _, notification := range fixture.notifications.updates {
+			if notification.Update.SessionUpdate == acp.SessionUpdateTypeUsageUpdate {
+				reported = append(
+					reported,
+					notification.Update.Cost,
+				)
+			}
+		}
+		return reported
+	}
+	selectModel := func(model string) {
+		t.Helper()
+		if _, err := fixture.client.SetSessionConfigOption(
+			t.Context(),
+			&acp.SetSessionConfigOptionRequest{
+				SessionID: id,
+				ConfigID:  "model",
+				Value:     model,
+			},
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The retried first turn charges the aborted 2.00 and the successful 2.60.
+	usagePrompt(
+		t,
+		fixture.client,
+		id,
+	)
+	// A model without prices adds nothing.
+	selectModel("two")
+	usagePrompt(
+		t,
+		fixture.client,
+		id,
+	)
+	// The total survives closing and resuming the session.
+	selectModel("one")
+	if _, err := fixture.client.CloseSession(
+		t.Context(),
+		&acp.CloseSessionRequest{
+			SessionID: id,
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.client.ResumeSession(
+		t.Context(),
+		&acp.ResumeSessionRequest{
+			SessionID: id,
+			Cwd:       "/work",
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	usagePrompt(
+		t,
+		fixture.client,
+		id,
+	)
+	if err := fixture.client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	want := []float64{
+		4.6,
+		4.6,
+		6.6,
+	}
+	reported := costs()
+	if len(reported) != len(want) {
+		t.Fatalf(
+			"usage updates: %#v",
+			reported,
+		)
+	}
+	for i, cost := range reported {
+		if cost == nil || cost.Currency != "USD" || math.Abs(cost.Amount-want[i]) > 1e-9 {
+			t.Fatalf(
+				"update %d cost: %#v",
+				i,
+				cost,
+			)
+		}
+	}
+}
+
+func TestUsageWithoutPricesOmitsCost(t *testing.T) {
+	fixture := serverFixture(
+		t,
+		func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+			return generatorFunc(func(context.Context, gai.GenerationRequest) (gai.Response, error) {
+				return usageResponse(gai.Metadata{
+					gai.UsageMetricInputTokens:      10,
+					gai.UsageMetricGenerationTokens: 1,
+				}), nil
+			}), nil, nil
+		},
+		func(config *Config, _ *Dependencies, _ *acp.InitializeRequest) {
+			model := config.Models["one"]
+			model.Limit = 1000
+			config.Models["one"] = model
+		},
+	)
+	id := openFixtureSession(
+		t,
+		fixture.client,
+	)
+	usagePrompt(
+		t,
+		fixture.client,
+		id,
+	)
+	record, err := fixture.store.Load(
+		t.Context(),
+		conversation.ID(id),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Usage.Cost != nil {
+		t.Fatalf(
+			"saved cost: %v",
+			*record.Usage.Cost,
+		)
+	}
+	if err := fixture.client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	fixture.notifications.mu.Lock()
+	defer fixture.notifications.mu.Unlock()
+	found := false
+	for _, notification := range fixture.notifications.updates {
+		if notification.Update.SessionUpdate == acp.SessionUpdateTypeUsageUpdate {
+			found = true
+			if notification.Update.Cost != nil {
+				t.Fatalf(
+					"reported cost: %#v",
+					notification.Update.Cost,
+				)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no usage update")
 	}
 }

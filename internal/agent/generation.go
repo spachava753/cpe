@@ -42,7 +42,7 @@ func (g *responseGenerator) Generate(ctx context.Context, request gai.Generation
 		)
 		usage, usageErr := conversation.ParseTokenUsage(metadata)
 		if usageErr == nil {
-			usageErr = g.session.recordUsage(usage)
+			usageErr = g.session.recordUsage(usage.Priced(g.hooks.model))
 		}
 		err = errors.Join(
 			err,
@@ -180,6 +180,7 @@ type responseStream struct {
 
 func (s *responseStream) Stream(ctx context.Context, request gai.GenerationRequest) iter.Seq[gai.StreamChunk] {
 	return func(yield func(gai.StreamChunk) bool) {
+		var canceled error
 		for chunk := range s.source.Stream(
 			ctx,
 			request,
@@ -204,10 +205,10 @@ func (s *responseStream) Stream(ctx context.Context, request gai.GenerationReque
 				)
 			}
 			if err := ctx.Err(); err != nil {
-				yield(gai.StreamChunk{
-					Err: err,
-				})
-				return
+				// Keep reading so the provider can report usage it already holds.
+				// The same context stops it, and nothing further reaches the client.
+				canceled = err
+				continue
 			}
 			if chunk.Err != nil {
 				yield(chunk)
@@ -223,6 +224,9 @@ func (s *responseStream) Stream(ctx context.Context, request gai.GenerationReque
 					Chunk:      chunk,
 				},
 			); err != nil {
+				if canceled = ctx.Err(); canceled != nil {
+					continue
+				}
 				s.deliveryErr = err
 				yield(gai.StreamChunk{
 					Err: err,
@@ -232,6 +236,11 @@ func (s *responseStream) Stream(ctx context.Context, request gai.GenerationReque
 			if !yield(chunk) {
 				return
 			}
+		}
+		if canceled != nil {
+			yield(gai.StreamChunk{
+				Err: canceled,
+			})
 		}
 	}
 }

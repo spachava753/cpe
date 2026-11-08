@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/spachava753/acp-sdk/acp"
+	"github.com/spachava753/acp-sdk/jsonrpc"
 	"github.com/spachava753/gai"
 	"github.com/spachava753/gai/agent/agenttest"
 
@@ -653,6 +654,187 @@ func TestResponseRetryPreservesToolEffects(t *testing.T) {
 			"effects=%d provider calls=%d",
 			effects.Load(),
 			len(generator.Requests()),
+		)
+	}
+}
+
+func TestResponseStreamKeepsUsageAfterCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	stream := &responseStream{
+		source: streamingFunc(func(ctx context.Context, _ gai.GenerationRequest) iter.Seq[gai.StreamChunk] {
+			return func(yield func(gai.StreamChunk) bool) {
+				// Cancellation lands while a content chunk is on its way.
+				cancel()
+				if !yield(gai.StreamChunk{
+					Block: gai.TextBlock("must not reach the client"),
+				}) {
+					return
+				}
+				if !yield(gai.StreamChunk{
+					Block: gai.MetadataBlock(gai.Metadata{
+						gai.UsageMetricInputTokens: 10,
+					}),
+				}) {
+					return
+				}
+				yield(gai.StreamChunk{
+					Err: ctx.Err(),
+				})
+			}
+		}),
+		metadata: make(gai.Metadata),
+	}
+	var chunks []gai.StreamChunk
+	for chunk := range stream.Stream(
+		ctx,
+		gai.GenerationRequest{},
+	) {
+		chunks = append(
+			chunks,
+			chunk,
+		)
+	}
+	if len(chunks) != 1 || !errors.Is(
+		chunks[0].Err,
+		context.Canceled,
+	) {
+		t.Fatalf(
+			"chunks: %#v",
+			chunks,
+		)
+	}
+	usage, err := conversation.ParseTokenUsage(stream.metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usage.InputTokens == nil || *usage.InputTokens != 10 {
+		t.Fatalf(
+			"usage: %#v",
+			stream.metadata,
+		)
+	}
+	if stream.partial {
+		t.Fatal("cancelled chunk counted as output")
+	}
+}
+
+// cancelingConnection cancels a turn while its notification is being written.
+type cancelingConnection struct {
+	acp.Connection
+	cancel context.CancelFunc
+}
+
+func (c cancelingConnection) Write(ctx context.Context, _ jsonrpc.Message) error {
+	c.cancel()
+	return ctx.Err()
+}
+
+type connectionTransport struct {
+	connection acp.Connection
+}
+
+func (t connectionTransport) Connect(context.Context) (acp.Connection, error) {
+	return t.connection, nil
+}
+
+func TestResponseStreamKeepsUsageWhenCancellationInterruptsDelivery(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	_, transport := acp.NewInMemoryTransports()
+	connection, err := transport.Connect(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ready := make(
+		chan *acp.AgentConnection,
+		1,
+	)
+	done := make(
+		chan error,
+		1,
+	)
+	go func() {
+		done <- acp.RunAgent(
+			t.Context(),
+			connectionTransport{
+				connection: cancelingConnection{
+					Connection: connection,
+					cancel:     cancel,
+				},
+			},
+			func(ac *acp.AgentConnection) any {
+				ready <- ac
+				return nil
+			},
+		)
+	}()
+	ac := <-ready
+	t.Cleanup(func() {
+		_ = ac.Close()
+		<-done
+	})
+	stream := &responseStream{
+		source: streamingFunc(func(ctx context.Context, _ gai.GenerationRequest) iter.Seq[gai.StreamChunk] {
+			return func(yield func(gai.StreamChunk) bool) {
+				if !yield(gai.StreamChunk{
+					Block: gai.TextBlock("delivery is interrupted"),
+				}) {
+					return
+				}
+				if !yield(gai.StreamChunk{
+					Block: gai.MetadataBlock(gai.Metadata{
+						gai.UsageMetricInputTokens: 10,
+					}),
+				}) {
+					return
+				}
+				yield(gai.StreamChunk{
+					Err: ctx.Err(),
+				})
+			}
+		}),
+		hooks: &turnHooks{
+			client: &sessionClient{
+				ac: ac,
+			},
+			streamed: make(map[uint]bool),
+		},
+		metadata: make(gai.Metadata),
+	}
+	var chunks []gai.StreamChunk
+	for chunk := range stream.Stream(
+		ctx,
+		gai.GenerationRequest{},
+	) {
+		chunks = append(
+			chunks,
+			chunk,
+		)
+	}
+	if len(chunks) != 1 || !errors.Is(
+		chunks[0].Err,
+		context.Canceled,
+	) {
+		t.Fatalf(
+			"chunks: %#v",
+			chunks,
+		)
+	}
+	if stream.deliveryErr != nil {
+		t.Fatalf(
+			"cancellation reported as a delivery failure: %v",
+			stream.deliveryErr,
+		)
+	}
+	usage, err := conversation.ParseTokenUsage(stream.metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usage.InputTokens == nil || *usage.InputTokens != 10 {
+		t.Fatalf(
+			"usage: %#v",
+			stream.metadata,
 		)
 	}
 }

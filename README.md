@@ -60,6 +60,8 @@ For example, an OpenAI-compatible endpoint can use:
 ```
 
 Use the provider's actual model ID, limits, modalities, and reasoning levels.
+To estimate cost, also set `input`, `output`, `cache_read`, and `cache_write` to
+the model's prices in US dollars per million tokens.
 Model IDs must be unique in the file. API names are case-sensitive: `Responses`,
 `Anthropic`, `Gemini`, `Openai`, `Zai`, `Moonshot`, `Deepseek`, `Cerebras`, and
 `OpenRouter`. Protect `models.json` like a credential file when it contains keys.
@@ -315,8 +317,9 @@ This follows the individual cumulative field definitions in the ACP SDK v0.5.0
 schema. The [end-turn usage proposal](https://agentclientprotocol.com/rfds/end-turn-token-usage)
 is still unstable and has conflicting per-turn wording. The stable
 [context and cost contract](https://agentclientprotocol.com/rfds/session-usage)
-is separate. CPE omits optional cost because it does not have reliable billed-cost
-data; configured list prices are not treated as actual charges.
+is separate. `usage_update` carries a cumulative `cost` in USD when configured
+prices apply, calculated from them rather than reported by the provider. See
+[Usage and context limits](docs/usage.md#costs-and-limits).
 
 Text and inline-image prompts are supported. Additional working directories,
 ACP-tunneled MCP, session modes, audio prompts, and automatic compaction

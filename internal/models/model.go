@@ -31,13 +31,13 @@ type Model struct {
 	OutputModalities []gai.Modality
 	// Supported input modalities of the model
 	InputModalities []gai.Modality
-	// Input token cost of $ per million tokens
+	// Input is the US dollar cost per million uncached input tokens.
 	Input float64
-	// Output token cost of $ per million tokens
+	// Output is the US dollar cost per million output tokens.
 	Output float64
-	// CacheRead is the cost of $ per million input tokens read from model provider cache. May not be applicable if the model provider does not support caching.
+	// CacheRead is the US dollar cost per million input tokens read from the provider cache. Zero charges those tokens at Input.
 	CacheRead float64
-	// CacheWrite is the cost of $ per million input tokens written to the model provider cache. May not be applicable if the model provider does not support caching, or simply does not charge for cache writes.
+	// CacheWrite is the US dollar cost per million input tokens written to the provider cache. Zero charges those tokens at Input.
 	CacheWrite float64
 	// Limit is the context window limit of the model
 	Limit uint
