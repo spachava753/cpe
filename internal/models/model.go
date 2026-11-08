@@ -43,10 +43,6 @@ type Model struct {
 	Limit uint
 	// MaxTokens is the generation limit of the model, that is, max amount of the tokens the model can generate in a single generation call.
 	MaxTokens uint
-	// Openai-compatible specific settings
-
-	// ReasoningField decides what field to use for reading reasoning from the model. This field is specific to OpenAI Chat Completions compatible endpoints, as different model providers use different fields for preserving reasoning traces of the model between turns. See [gai.OpenAIExtraFieldReasoningSource]. Some provider specific generators like [gai.ZaiGenerator], [gai.MoonshotGenerator], or [gai.CerebrasGenerator] set this field automatically.
-	ReasoningField ReasoningField
 	// API is the model provider type
 	API API
 	// UseMaxTokens decides what field to use for limiting the max tokens the model can generate. This field is specific to OpenAI Chat Completions compatible endpoints, as different model providers use either `max_tokens` or `max_completion_tokens`. See [gai.OpenAIGenerationOptionTokenLimitField]. Some provider specific generators like [gai.ZaiGenerator], [gai.MoonshotGenerator], or [gai.CerebrasGenerator] set this field automatically.
@@ -54,23 +50,21 @@ type Model struct {
 }
 
 type modelEntry struct {
-	ExtraFields map[string]json.RawMessage `json:"extra_fields"`
-	BaseURL     string                     `json:"base_url"`
-	API         string                     `json:"api"`
-	APIKey      string                     `json:"api_key"`
-	ID          string                     `json:"id"`
-	// Openai-compatible specific settings
-	ReasoningField   string   `json:"reasoning_field"`
-	ReasoningLevels  []string `json:"reasoning_levels"`
-	OutputModalities []string `json:"output_modalities"`
-	InputModalities  []string `json:"input_modalities"`
-	CacheRead        float64  `json:"cache_read"`
-	CacheWrite       float64  `json:"cache_write"`
-	Output           float64  `json:"output"`
-	Limit            uint     `json:"limit"`
-	MaxTokens        uint     `json:"max_tokens"`
-	Input            float64  `json:"input"`
-	UseMaxTokens     bool     `json:"use_max_tokens"`
+	ExtraFields      map[string]json.RawMessage `json:"extra_fields"`
+	BaseURL          string                     `json:"base_url"`
+	API              string                     `json:"api"`
+	APIKey           string                     `json:"api_key"`
+	ID               string                     `json:"id"`
+	ReasoningLevels  []string                   `json:"reasoning_levels"`
+	OutputModalities []string                   `json:"output_modalities"`
+	InputModalities  []string                   `json:"input_modalities"`
+	CacheRead        float64                    `json:"cache_read"`
+	CacheWrite       float64                    `json:"cache_write"`
+	Output           float64                    `json:"output"`
+	Limit            uint                       `json:"limit"`
+	MaxTokens        uint                       `json:"max_tokens"`
+	Input            float64                    `json:"input"`
+	UseMaxTokens     bool                       `json:"use_max_tokens"`
 }
 
 // LoadModels reads a JSON array of model configurations from f. It returns nil
@@ -176,11 +170,6 @@ func (entry modelEntry) parse() (Model, error) {
 			return Model{}, fmt.Errorf("reasoning_levels[%d]: must not be blank", i)
 		}
 	}
-	reasoningField, err := parseReasoningField(entry.ReasoningField)
-	if err != nil {
-		return Model{}, err
-	}
-
 	var apiKey *secrecy.SecretString
 	if entry.APIKey != "" {
 		secret := secrecy.NewSecretString([]byte(entry.APIKey))
@@ -200,7 +189,6 @@ func (entry modelEntry) parse() (Model, error) {
 		Limit:            entry.Limit,
 		MaxTokens:        entry.MaxTokens,
 		ReasoningLevels:  entry.ReasoningLevels,
-		ReasoningField:   reasoningField,
 		UseMaxTokens:     entry.UseMaxTokens,
 		ExtraFields:      entry.ExtraFields,
 	}, nil
@@ -235,16 +223,4 @@ func parseModalities(field string, values []string) ([]gai.Modality, error) {
 		}
 	}
 	return parsed, nil
-}
-
-func parseReasoningField(value string) (ReasoningField, error) {
-	if value == "" {
-		return ReasoningDetails, nil
-	}
-	for _, field := range []ReasoningField{ReasoningDetails, ReasoningContent, Reasoning} {
-		if value == field.String() {
-			return field, nil
-		}
-	}
-	return 0, fmt.Errorf("reasoning_field: unknown reasoning field %q", value)
 }

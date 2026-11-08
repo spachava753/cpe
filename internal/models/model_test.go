@@ -113,7 +113,6 @@ func TestLoadModels(t *testing.T) {
 				"limit": 32768,
 				"max_tokens": 4096,
 				"reasoning_levels": ["low", "high"],
-				"reasoning_field": "reasoning_content",
 				"use_max_tokens": true,
 				"extra_fields": {"temperature":0.7,"thinking":{"enabled":true},"vendor_flag":null}
 			}]`,
@@ -136,7 +135,6 @@ func TestLoadModels(t *testing.T) {
 				Limit:            32768,
 				MaxTokens:        4096,
 				ReasoningLevels:  []string{"low", "high"},
-				ReasoningField:   models.ReasoningContent,
 				UseMaxTokens:     true,
 				ExtraFields: map[string]json.RawMessage{
 					"temperature": json.RawMessage(`0.7`),
@@ -468,11 +466,6 @@ func TestLoadModels(t *testing.T) {
 			wantErrText: "models[0]",
 		},
 		{
-			name:        "unknown reasoning field",
-			content:     strings.Replace(validJSON, `"api": "Openai"`, `"api": "Openai", "reasoning_field": "unknown"`, 1),
-			wantErrText: ".reasoning_field",
-		},
-		{
 			name:        "blank reasoning level",
 			content:     strings.Replace(validJSON, `"api": "Openai"`, `"api": "Openai", "reasoning_levels": ["low", " "]`, 1),
 			wantErrText: ".reasoning_levels[1]",
@@ -499,7 +492,7 @@ func TestLoadModels(t *testing.T) {
 		},
 	}
 
-	for _, field := range []string{"input", "output", "cache_read", "cache_write", "api_key", "reasoning_levels", "reasoning_field", "use_max_tokens", "extra_fields"} {
+	for _, field := range []string{"input", "output", "cache_read", "cache_write", "api_key", "reasoning_levels", "use_max_tokens", "extra_fields"} {
 		tests = append(tests, testCase{
 			name:        "null optional field " + field,
 			content:     strings.Replace(validJSON, `"api": "Openai"`, `"api": "Openai", "`+field+`": null`, 1),
@@ -582,31 +575,6 @@ func TestLoadModels(t *testing.T) {
 		tests = append(tests, testCase{
 			name:    "modality " + modality.name,
 			content: strings.ReplaceAll(strings.Replace(validJSON, `["text", "image"]`, `["text"]`, 1), `"text"`, `"`+modality.name+`"`),
-			want:    []models.Model{want},
-		})
-	}
-	for _, reasoning := range []struct {
-		name string
-		want models.ReasoningField
-	}{
-		{
-			name: "reasoning_details",
-			want: models.ReasoningDetails,
-		},
-		{
-			name: "reasoning_content",
-			want: models.ReasoningContent,
-		},
-		{
-			name: "reasoning",
-			want: models.Reasoning,
-		},
-	} {
-		want := localModel
-		want.ReasoningField = reasoning.want
-		tests = append(tests, testCase{
-			name:    "reasoning field " + reasoning.name,
-			content: strings.Replace(validJSON, `"api": "Openai"`, `"api": "Openai", "reasoning_field": "`+reasoning.name+`"`, 1),
 			want:    []models.Model{want},
 		})
 	}
