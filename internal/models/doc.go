@@ -11,11 +11,10 @@
 // Optional input, output, cache_read, and cache_write costs are nonnegative
 // numbers, defaulting to zero. An omitted or empty api_key produces no secret;
 // other API keys are stored as secrecy.SecretString values. Optional
-// reasoning_levels are provider-defined nonblank strings. reasoning_field is
-// reasoning_details (the default when omitted or empty), reasoning_content, or
-// reasoning. use_max_tokens defaults to false. extra_fields is an optional object
-// of provider-specific JSON values, preserved without interpretation. Unknown
-// model fields are rejected; provider-specific keys belong in extra_fields.
+// reasoning_levels are provider-defined nonblank strings. use_max_tokens defaults
+// to false. extra_fields is an optional object of provider-specific JSON values,
+// preserved without interpretation. Unknown model fields are rejected;
+// provider-specific keys belong in extra_fields.
 // Present configuration fields cannot be null, but values inside extra_fields
 // may be null.
 //
