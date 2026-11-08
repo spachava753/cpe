@@ -77,8 +77,19 @@ smaller context does not mean a smaller saved conversation.
 
 ## Costs and limits
 
-CPE omits billed cost because it has no reliable billing data. Configured list
-prices alone cannot account for what the provider actually charged.
+When the selected model has any of `input`, `output`, `cache_read`, or
+`cache_write` set, CPE calculates a cost for each generation attempt from those
+prices, in US dollars per million tokens. Cache reads and writes are charged at
+their own rates and the rest of the input at `input`. A cache rate left unset or
+set to zero charges those tokens at `input`. A subscription model with prices set
+is calculated like any other.
+
+The total accumulates and is saved the same way as token consumption, so it
+includes retries and canceled attempts when their usage was reported, survives
+loading and resuming, and is inherited by a fork. Attempts on a model with no
+prices add nothing. ACP `usage_update` notifications carry the total as `cost`
+once a priced attempt has been recorded. The figure is an estimate from your
+configuration, not what the provider billed.
 
 The model catalog's required `limit` and `max_tokens` values supply the context
 and requested output limits in tokens. There is no universal default. The

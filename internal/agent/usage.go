@@ -20,6 +20,19 @@ func protocolUsage(u conversation.TokenUsage) *acp.Usage {
 	}
 }
 
+// sessionCost reports the accumulated cost, or nil before any priced usage.
+func (s *session) sessionCost() *acp.Cost {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.record.Usage.Cost == nil {
+		return nil
+	}
+	return &acp.Cost{
+		Amount:   *s.record.Usage.Cost,
+		Currency: "USD",
+	}
+}
+
 func (s *session) recordUsage(usage conversation.TokenUsage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

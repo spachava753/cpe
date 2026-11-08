@@ -392,12 +392,14 @@ func (h *turnHooks) AfterGeneration(ctx context.Context, event gaiagent.AfterGen
 	}
 	if h.model.Limit != 0 && h.usage.InputTokens != nil && h.usage.OutputTokens != nil {
 		// This is the latest measured request plus its output, not accumulated usage.
+		update := acp.UsageUpdateSessionUpdate(
+			*h.usage.InputTokens+*h.usage.OutputTokens,
+			uint64(h.model.Limit),
+		)
+		update.Cost = h.session.sessionCost()
 		if err := h.client.update(
 			ctx,
-			acp.UsageUpdateSessionUpdate(
-				*h.usage.InputTokens+*h.usage.OutputTokens,
-				uint64(h.model.Limit),
-			),
+			update,
 		); err != nil {
 			return nil, err
 		}
