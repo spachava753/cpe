@@ -42,6 +42,10 @@ type session struct {
 	tempDir string
 	catalog commandCatalog
 	config  Config
+	// persist serializes record saves, so a configuration change during a turn
+	// cannot be overwritten by, or overwrite, a concurrent turn checkpoint.
+	// Acquire it before mu.
+	persist sync.Mutex
 	mu      sync.Mutex
 	closed  bool
 }
@@ -219,14 +223,20 @@ func (s *session) announce(ctx context.Context) error {
 	)
 }
 
-// configure changes only idle sessions; a model change leaves history and tools intact.
+// configure stores a model or reasoning selection, including while a turn runs.
+// A running turn keeps the selection it started with; the next turn uses the
+// new one. A model change leaves history and tools intact.
 func (s *session) configure(ctx context.Context, id string, value string) ([]acp.SessionConfigOption, error) {
+	s.persist.Lock()
+	defer s.persist.Unlock()
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed || s.active != nil {
-		return nil, errors.New("session must be open and idle to change configuration")
+	closed := s.closed
+	record := s.record
+	s.mu.Unlock()
+	if closed {
+		return nil, errors.New("session must be open to change configuration")
 	}
-	options := s.record.Options
+	options := record.Options
 	switch id {
 	case "model":
 		options.Model = models.ID(value)
@@ -246,7 +256,6 @@ func (s *session) configure(ctx context.Context, id string, value string) ([]acp
 	); err != nil {
 		return nil, err
 	}
-	record := s.record
 	record.Options = options
 	record.Info.UpdatedAt = time.Now().UTC()
 	if err := s.deps.History.Save(
@@ -255,7 +264,10 @@ func (s *session) configure(ctx context.Context, id string, value string) ([]acp
 	); err != nil {
 		return nil, err
 	}
-	s.record = record
+	s.mu.Lock()
+	s.record.Options = record.Options
+	s.record.Info.UpdatedAt = record.Info.UpdatedAt
+	s.mu.Unlock()
 	if id == "model" {
 		s.rememberModel(
 			ctx,
@@ -301,6 +313,11 @@ func (s *session) close(ctx context.Context) error {
 		// Host evaluation must exit before discarding session state and MCP connections.
 		<-running.done
 	}
+	// A configuration save accepted before closing must not land after the
+	// caller deletes or reopens the session.
+	s.persist.Lock()
+	//nolint:staticcheck // Acquiring persist waits for any in-flight save to finish.
+	s.persist.Unlock()
 	err := s.runtime.Close(ctx)
 	s.mcp.Close()
 	return err

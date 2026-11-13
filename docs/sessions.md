@@ -95,7 +95,8 @@ collects the exact timeouts, retry budgets, output limits, and defaults.
 | List | Returns up to **100 saved sessions per page**, most recently updated first, including sessions with no live resources. The client can request the next page with the returned cursor. A session updated while the client pages moves to the front and can be missed by later pages. |
 
 Loading and resuming require the session to be closed in that connection.
-Changing the model or reasoning setting also requires an idle session.
+The model and reasoning setting can change during a turn; the change applies
+from the next prompt, as described in [Models](models.md#switching-during-a-conversation).
 
 A fork inherits the transcript, compaction state, model and reasoning selection,
 and usage totals. The client supplies

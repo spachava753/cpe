@@ -26,6 +26,8 @@ func (r compactionRequest) checkpoint(afterMessages int) *conversation.Compactio
 }
 
 func (h *turnHooks) checkpointCompaction(ctx context.Context) error {
+	h.session.persist.Lock()
+	defer h.session.persist.Unlock()
 	h.session.mu.Lock()
 	record := h.session.record
 	h.session.mu.Unlock()

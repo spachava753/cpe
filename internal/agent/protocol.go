@@ -426,7 +426,8 @@ func (s *Server) ListSessions(ctx context.Context, request *acp.ListSessionsRequ
 	return response, nil
 }
 
-// SetSessionConfigOption changes model or reasoning effort while the session is idle.
+// SetSessionConfigOption changes model or reasoning effort. A change made while
+// a prompt turn runs takes effect at the next turn.
 func (s *Server) SetSessionConfigOption(ctx context.Context, request *acp.SetSessionConfigOptionRequest) (*acp.SetSessionConfigOptionResponse, error) {
 	live, err := s.findSession(conversation.ID(request.SessionID))
 	if err != nil {

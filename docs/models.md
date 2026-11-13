@@ -62,10 +62,11 @@ sessions keep their own saved effort.
 
 ## Switching during a conversation
 
-Model and reasoning changes are available while a session is idle. A model
-selection resets reasoning to the new provider's default because effort names
-and capabilities differ between providers. You can then choose one of that
-model's supported efforts.
+Model and reasoning can be changed at any time, including while a prompt turn
+is running. A turn keeps the selection it started with, so a change made during
+a turn takes effect at the next prompt. A model selection resets reasoning to
+the new provider's default because effort names and capabilities differ between
+providers. You can then choose one of that model's supported efforts.
 
 The session keeps its transcript, compaction state, and MCP connections. Future
 requests are adapted for the selected model:

@@ -731,17 +731,6 @@ func TestSessionCancellation(t *testing.T) {
 				case <-time.After(time.Second):
 					t.Fatal("generation did not start")
 				}
-				_, err := fixture.client.SetSessionConfigOption(
-					t.Context(),
-					&acp.SetSessionConfigOptionRequest{
-						SessionID: id,
-						ConfigID:  "model",
-						Value:     "two",
-					},
-				)
-				if err == nil {
-					t.Fatal("configuration changed during active turn")
-				}
 				switch mode {
 				case "disconnect":
 					_ = fixture.disconnect()
