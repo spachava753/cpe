@@ -78,6 +78,45 @@ func TestParseContent(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "resource link",
+			content: acp.ResourceLinkContentBlock(
+				"README.md",
+				"file:///work/README.md",
+			),
+			want:     "[Resource link]\nName: README.md\nURI: file:///work/README.md",
+			modality: gai.Text,
+		},
+		{
+			name: "resource link metadata",
+			content: acp.ContentBlock{
+				Type:        acp.ContentBlockTypeResourceLink,
+				Name:        "spec.pdf",
+				URI:         new("https://example.com/spec.pdf"),
+				Title:       new("Protocol spec"),
+				Description: new("Wire format reference"),
+				MimeType:    new("application/pdf"),
+				Size:        new(int64(2048)),
+			},
+			want:     "[Resource link]\nName: spec.pdf\nURI: https://example.com/spec.pdf\nTitle: Protocol spec\nDescription: Wire format reference\nMIME type: application/pdf\nSize: 2048 bytes",
+			modality: gai.Text,
+		},
+		{
+			name: "resource link with empty URI",
+			content: acp.ResourceLinkContentBlock(
+				"README.md",
+				"",
+			),
+			wantErr: true,
+		},
+		{
+			name: "resource link without URI",
+			content: acp.ContentBlock{
+				Type: acp.ContentBlockTypeResourceLink,
+				Name: "README.md",
+			},
+			wantErr: true,
+		},
+		{
 			name: "unsupported image format",
 			content: acp.ImageContentBlock(
 				base64.StdEncoding.EncodeToString([]byte("not an image")),

@@ -83,6 +83,90 @@ func TestStreamingTurn(t *testing.T) {
 	}
 }
 
+func TestResourceLinkPrompt(t *testing.T) {
+	var received gai.Message
+	fixture := serverFixture(
+		t,
+		func(context.Context, conversation.ID, models.Model, models.ReasoningLevel) (gai.Generator, gai.GenerationOptions, error) {
+			return generatorFunc(func(_ context.Context, request gai.GenerationRequest) (gai.Response, error) {
+				received = request.Dialog[len(request.Dialog)-1]
+				return gai.Response{
+					Candidates: []gai.Message{
+						{
+							Role: gai.Assistant,
+							Blocks: []gai.Block{
+								gai.TextBlock("done"),
+							},
+						},
+					},
+					FinishReason: gai.EndTurn,
+				}, nil
+			}), gai.GenerationOptions{}, nil
+		},
+	)
+	id := openFixtureSession(
+		t,
+		fixture.client,
+	)
+	if _, err := fixture.client.Prompt(
+		t.Context(),
+		&acp.PromptRequest{
+			SessionID: id,
+			Prompt: []acp.ContentBlock{
+				acp.TextContentBlock("Summarize this file."),
+				acp.ResourceLinkContentBlock(
+					"README.md",
+					"file:///work/README.md",
+				),
+			},
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"Summarize this file.",
+		"[Resource link]\nName: README.md\nURI: file:///work/README.md",
+	}
+	record, err := fixture.store.Load(
+		t.Context(),
+		conversation.ID(id),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, message := range []struct {
+		message gai.Message
+		name    string
+	}{
+		{
+			message: received,
+			name:    "generator request",
+		},
+		{
+			message: record.Dialog[0],
+			name:    "checkpoint",
+		},
+	} {
+		if message.message.Role != gai.User || len(message.message.Blocks) != len(want) {
+			t.Fatalf(
+				"%s prompt: %+v",
+				message.name,
+				message.message,
+			)
+		}
+		for i, block := range message.message.Blocks {
+			if block.ModalityType != gai.Text || block.Content.String() != want[i] {
+				t.Fatalf(
+					"%s block %d: %q",
+					message.name,
+					i,
+					block.Content.String(),
+				)
+			}
+		}
+	}
+}
+
 func TestToolTurn(t *testing.T) {
 	for _, test := range []struct {
 		name  string

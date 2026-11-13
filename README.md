@@ -321,9 +321,9 @@ is separate. `usage_update` carries a cumulative `cost` in USD when configured
 prices apply, calculated from them rather than reported by the provider. See
 [Usage and context limits](docs/usage.md#costs-and-limits).
 
-Text and inline-image prompts are supported. Additional working directories,
-ACP-tunneled MCP, session modes, audio prompts, and automatic compaction
-are not implemented. Unsupported operations return explicit errors.
+Text, inline-image, and resource-link prompts are supported. Additional working
+directories, ACP-tunneled MCP, session modes, audio prompts, embedded-resource
+prompts, and automatic compaction are not implemented. Unsupported operations return explicit errors.
 
 ## Authentication
 
