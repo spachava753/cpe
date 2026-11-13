@@ -79,6 +79,8 @@ error or canceled turn can leave completed effects behind. See
 
 The pages describe CPE's current behavior. Client interfaces vary: a client may
 expose only some of the session controls or display progress differently. CPE
-currently accepts text and inline images in prompts. Audio prompts, additional
-working-directory declarations, ACP-tunneled MCP, and session modes are
-unsupported.
+currently accepts text, inline images, and resource links in prompts. A resource
+link reaches the model as text naming its URI and any metadata the client sent;
+CPE does not fetch it, so the model reads it with its tools if needed. Audio
+prompts, embedded resources, additional working-directory declarations,
+ACP-tunneled MCP, and session modes are unsupported.
