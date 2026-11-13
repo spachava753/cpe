@@ -163,6 +163,7 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptR
 	)
 	defer cleanupCancel()
 	updateErr := hooks.finish(cleanup)
+	s.persist.Lock()
 	s.mu.Lock()
 	s.record.Dialog = dialog
 	s.record.Info.UpdatedAt = time.Now().UTC()
@@ -180,6 +181,7 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptR
 		s.record.Compaction = checkpoint.Compaction
 		s.mu.Unlock()
 	}
+	s.persist.Unlock()
 	if runErr != nil {
 		span.RecordError(runErr)
 		span.SetStatus(
@@ -216,6 +218,8 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptR
 
 // checkpointDialog publishes live history only after the checkpoint succeeds.
 func (s *session) checkpointDialog(ctx context.Context, dialog gai.Dialog) error {
+	s.persist.Lock()
+	defer s.persist.Unlock()
 	s.mu.Lock()
 	record := s.record
 	s.mu.Unlock()

@@ -78,8 +78,8 @@ longer configured produces an error rather than silently switching models.
 
 `--models` selects another model file; `--reasoning` sets the initial effort for
 new sessions, otherwise the provider default is used. Clients can switch model
-and reasoning through ACP session configuration options between turns. A model
-switch keeps the conversation and live session state, but resets reasoning to the new provider's default. Foreign-model reasoning
+and reasoning through ACP session configuration options at any time; a change
+made during a turn applies from the next prompt. A model switch keeps the conversation and live session state, but resets reasoning to the new provider's default. Foreign-model reasoning
 metadata is omitted from requests, without deleting it from saved history.
 A failure to remember the last-used model is reported on stderr without undoing
 a successful session selection or stopping a prompt. An unreadable or malformed
