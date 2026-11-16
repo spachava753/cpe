@@ -177,12 +177,8 @@ CPE sets no size or format limits of its own. Whether media is acceptable
 depends on the provider and model. When the selected model's configuration does
 not accept a modality, the model receives a notice instead, naming a file that
 holds a copy of the media; history keeps the original for models that can use
-it. When the provider rejects media in the latest tool results, CPE saves each
-rejected item to a file, replaces it with a notice containing the provider's
-message and the file path, and retries the request once. The model can then
-resize or convert the file and view it again. If the retry fails as well, the
-media was not the cause; it stays in history and the turn fails as usual. The
-retry does not count against [response retries](failures.md).
+it. Media the provider itself rejects fails the turn; see
+[Media the provider rejects](failures.md#media-the-provider-rejects).
 
 ## Output the model sees
 

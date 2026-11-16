@@ -106,6 +106,46 @@ func TestResponseRecovery(t *testing.T) {
 			wantUpdates: 1,
 		},
 		{
+			name:     "provider server error retries",
+			failures: 1,
+			failure: &gai.ApiErr{
+				Provider:   gai.ProviderAnthropic,
+				Kind:       gai.APIErrorKindServer,
+				StatusCode: 500,
+				Message:    "Internal server error",
+			},
+			retries:     1,
+			wantCalls:   2,
+			wantUpdates: 1,
+		},
+		{
+			name:     "overloaded provider retries",
+			failures: 1,
+			failure: &gai.ApiErr{
+				Provider:   gai.ProviderAnthropic,
+				Kind:       gai.APIErrorKindOverloaded,
+				StatusCode: 529,
+				Message:    "Overloaded",
+			},
+			retries:     1,
+			wantCalls:   2,
+			wantUpdates: 1,
+		},
+		{
+			name:     "invalid request is not retried",
+			failures: 1,
+			failure: &gai.ApiErr{
+				Provider:   gai.ProviderAnthropic,
+				Kind:       gai.APIErrorKindInvalidRequest,
+				StatusCode: 400,
+				Message:    "messages.1.content.0: Invalid `signature` in `thinking` block",
+			},
+			retries:     1,
+			wantCalls:   1,
+			wantUpdates: 1,
+			wantError:   true,
+		},
+		{
 			name:     "permanent provider error is not retried",
 			failures: 1,
 			failure: &gai.ApiErr{
