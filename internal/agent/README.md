@@ -76,8 +76,7 @@ from its result, and constructs model context without deleting the transcript.
 ACP prompt parsing stays in `agent`; script output conversion stays in
 `toolruntime`. `toolruntime` builds media blocks from a declared MIME type
 without size limits. `agent` replaces media the selected model cannot accept
-with notices naming saved copies, and retries once when the provider rejects
-media from the latest tool results.
+with notices naming saved copies.
 
 ## Tests
 

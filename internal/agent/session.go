@@ -38,7 +38,7 @@ type session struct {
 	projectInstructions string
 	// extensions lists skills, plugins, and MCP servers; it is fixed at setup.
 	extensions string
-	// tempDir holds tool overflow output and rejected media for this session.
+	// tempDir holds tool overflow output and saved media for this session.
 	tempDir string
 	catalog commandCatalog
 	config  Config

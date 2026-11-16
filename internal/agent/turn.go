@@ -143,7 +143,6 @@ func (s *session) prompt(ctx context.Context, message gai.Message) (*acp.PromptR
 	if len(result.Dialog) != 0 {
 		dialog = result.Dialog
 	}
-	dialog = hooks.applyMediaReplacements(dialog)
 	// Recover known completed results before marking any remaining calls uncertain.
 	for _, completed := range hooks.completed {
 		if missingResult(
@@ -263,8 +262,6 @@ type turnHooks struct {
 	completed         map[string]gai.Message
 	pending           map[string]bool
 	streamed          map[uint]bool
-	// mediaReplacements holds notices for media the provider rejected this turn.
-	mediaReplacements map[mediaKey]gai.Block
 	modelID           models.ID
 	dialog            gai.Dialog
 	model             models.Model
@@ -294,7 +291,7 @@ func (h *turnHooks) BeforeGeneration(ctx context.Context, event gaiagent.BeforeG
 // Prepare model context without replacing the loop's canonical history.
 func (h *turnHooks) providerRequest(request gai.GenerationRequest) gai.GenerationRequest {
 	request.PromptCacheKey = string(h.session.record.Info.ID)
-	dialog := h.compaction.WorkingDialog(h.applyMediaReplacements(request.Dialog))
+	dialog := h.compaction.WorkingDialog(request.Dialog)
 	request.Dialog = nil
 	for _, message := range dialog {
 		foreign := message.Role == gai.Assistant && message.ExtraFields["cpe.model"] != string(h.modelID)

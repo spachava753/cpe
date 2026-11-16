@@ -56,12 +56,10 @@ process crash before the next checkpoint can lose the latest usage counts.
 ## Media the provider rejects
 
 A request can also fail because the provider rejects media that a tool attached
-with `view`, such as an image that is too large. When an invalid-request error
-follows tool results containing media, CPE saves each item to a file, replaces it
-with a notice giving the provider's message and the file path, and retries the
-request once. The model can then convert the file and view it again. This retry
-does not use the response-retry budget above. If it fails as well, the media was
-not the cause: the turn fails as usual and history keeps the media. See
+with `view`, such as an image in an unsupported format or one that is too large.
+CPE has no special handling for this: the error fails the turn like any other
+invalid request, and is not retried. The media stays in history, so later
+requests that include that tool result are rejected the same way. See
 [Viewing media](tool-runtime.md#viewing-media).
 
 ## A failed script or command
